@@ -35,5 +35,7 @@ export interface FieldSpec {
 	color?: string | null;
 	/** Per-state colours of a switch field, by state name. */
 	state_colors?: Record<string, string>;
+	/** The character an occur of the field draws in place of the dot (da-gzowt). */
+	glyph?: string | null;
 	[key: string]: unknown;
 }

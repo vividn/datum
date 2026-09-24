@@ -7,7 +7,8 @@
 	`datum fields --json`, da-d08c), spec or no spec — the ones on now
 	first, then as high up the pictures as they are drawn (`buttonsFor`,
 	da-vu7pi) — each shaped by its kind and painted by what it is
-	now (`lookOf` in fields.ts): a point is a filled pill; a block is a
+	now (`lookOf` in fields.ts): a point is an empty pill with its occur
+	mark beside the name; a block is a
 	rectangle, filled while it is on; a switch is a rectangle filled with
 	its current state's colour; a keyed record is its name, underlined, and
 	a click prefills `add <field> ` in the bottom bar rather than running
@@ -536,7 +537,7 @@
 					data-pilled={$fieldPill === button.field ? '' : undefined}
 					title={titleOf(button)}
 					on:click={() => press(button)}
-				>{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
+				>{#if look.glyph}<span class="glyph" aria-hidden="true">{look.glyph}</span>{/if}{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
 			{/if}
 		</div>
 	{/if}
@@ -582,6 +583,12 @@
 
 	.widget.point {
 		border-radius: 999px;
+	}
+
+	/* A point's mark (da-h2io6): what an occur of it draws, in its colour. */
+	.glyph {
+		margin-right: 0.35em;
+		color: var(--line);
 	}
 
 	.widget:hover:not(:disabled) {

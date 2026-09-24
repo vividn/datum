@@ -42,6 +42,8 @@ export interface FieldButton {
 	color: string;
 	/** Every listed state's RESOLVED colour (`#rrggbb`) — `fields --json`'s `state_colors`. */
 	stateColors: Record<string, string>;
+	/** The spec's `glyph`: what an occur of the field draws instead of `●` (da-h2io6). */
+	glyph?: string;
 	/**
 	 * What the field is in now, by `datum now --json`: `true` for an open
 	 * block, the state's name for a switch; absent when it is off.
@@ -137,6 +139,7 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 			ignored,
 			color,
 			stateColors: state_colors,
+			glyph: spec?.glyph ?? undefined,
 			active: now.has(field),
 			current: state === true || (typeof state === 'string' && state !== '') ? state : undefined
 		};
@@ -178,11 +181,16 @@ export interface Look {
 	/** The text colour. */
 	text: string;
 	label: string;
+	/** The mark drawn beside the label, in the field's colour — a point's alone. */
+	glyph?: string;
 }
 
 /**
- * How a button is painted now (vividn's rules, da-c7u8): a point is always
- * filled with its field's colour; a block is filled while it is on and
+ * How a button is painted now (vividn's rules, da-c7u8): a point is an
+ * empty outline with the mark an occur of it draws beside its name — the
+ * spec's glyph, else the CLI's dot — in the field's colour, and the name
+ * in the app's ink (da-h2io6: «Empty button, but with the occur symbol
+ * glyph next to the field name»); a block is filled while it is on and
  * outlined otherwise; a switch in a state is filled with that state's
  * colour (the field's, where the state has none) inside the field's
  * outline. `button.color` / `button.stateColors` are already resolved
@@ -197,13 +205,14 @@ export interface Look {
  * all — printed the field's name in exactly its own background: contrast
  * 1.00, an invisible label (da-qnvh). Setting a field colour only changed
  * which colour was duplicated. Only an unfilled button keeps the field's
- * colour as its ink, and that is over the pane, not over itself.
+ * colour as its ink, and that is over the pane, not over itself — a
+ * point's name excepted, which is the app's ink beside its coloured mark.
  */
 export function lookOf(button: FieldButton, variant: SwitchLabel = 'field'): Look {
 	const field = button.color;
 	const { current, shape } = button;
 	const filled = (fill: string, label: string): Look => ({ fill, line: field, text: inkOver(fill), label });
-	if (shape.kind === 'point') return filled(field, button.field);
+	if (shape.kind === 'point') return { fill: null, line: field, text: 'var(--ink)', label: button.field, glyph: button.glyph ?? '●' };
 	if (shape.kind === 'record' || current === undefined) return { fill: null, line: field, text: field, label: button.field };
 	if (current === true || shape.kind === 'state') return filled(field, button.field);
 	const fill = button.stateColors[current] ?? button.color;

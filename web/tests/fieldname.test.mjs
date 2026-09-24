@@ -90,12 +90,14 @@ async function chipIndex(app, field) {
 	await app.page.waitForFunction(
 		(name) =>
 			[...document.querySelectorAll('.bar button.widget')].some(
-				(chip) => chip.textContent.trim() === name
+				(chip) => chip.dataset.field === name
 			),
 		field
 	);
-	const labels = await app.page.locator('.bar button.widget').allInnerTexts();
-	return labels.findIndex((label) => label.trim() === field);
+	// By `data-field`, not the label: an occur chip's label leads with its
+	// glyph (da-h2io6).
+	const names = await app.page.locator('.bar button.widget').evaluateAll((all) => all.map((chip) => chip.dataset.field));
+	return names.indexOf(field);
 }
 
 /** Press that chip, and wait for the REPL to echo what it ran. */

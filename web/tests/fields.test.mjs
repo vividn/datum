@@ -54,16 +54,18 @@ describe('the logic', () => {
 			[
 				{ field: 'a', spec: null, states: [true], color: '#111111', state_colors: {}, ignored: false, y: 0 },
 				{ field: 'b', spec: spec('b', { verb: 'start' }), states: [], color: '#222222', state_colors: {}, ignored: true, y: 0 },
-				{ field: 'c', spec: spec('c', { verb: 'switch' }), states: ['x'], color: '#333333', state_colors: { x: '#444444' }, ignored: false, y: 0 }
+				{ field: 'c', spec: spec('c', { verb: 'switch' }), states: ['x'], color: '#333333', state_colors: { x: '#444444' }, ignored: false, y: 0 },
+				{ field: 'd', spec: spec('d', { verb: 'occur', glyph: '☕' }), states: [], color: '#555555', state_colors: {}, ignored: false, y: 1 }
 			],
 			// `now --json`'s active rows, which are only ever the truthy ones:
 			// a field it does not name — `a` — is off.
 			[{ field: 'b', state: true }, { field: 'c', state: 'x' }]
 		);
-		assert.deepEqual(widgets.map((w) => [w.field, w.shape.kind, w.ignored, w.current]), [
-			['b', 'state', true, true],
-			['c', 'states', false, 'x'],
-			['a', 'state', false, undefined]
+		assert.deepEqual(widgets.map((w) => [w.field, w.shape.kind, w.ignored, w.current, w.glyph]), [
+			['b', 'state', true, true, undefined],
+			['c', 'states', false, 'x', undefined],
+			['a', 'state', false, undefined, undefined],
+			['d', 'point', false, undefined, '☕']
 		]);
 	});
 
@@ -112,10 +114,14 @@ describe('the logic', () => {
 		assert.equal(inkOver('#818181'), '#000000');
 	});
 
-	test('a point is filled; a block fills while on; a switch takes its state colour inside the field outline; a label is always the fill’s ink', () => {
+	test('a point is an outline with its mark; a block fills while on; a switch takes its state colour inside the field outline; a filled label is always the fill’s ink', () => {
 		const w = (shape, rest = {}) => ({ field: 'f', shape, tracked: true, color: '#7c7cff', stateColors: {}, ...rest });
-		assert.deepEqual(lookOf(w({ kind: 'point' }, { color: '#ffff00' })), { fill: '#ffff00', line: '#ffff00', text: '#000000', label: 'f' });
-		assert.deepEqual(lookOf(w({ kind: 'point' }, { color: '#ffff00', current: 'x' })).fill, '#ffff00', 'never coloured by a state');
+		// da-h2io6: empty, the name in the app's ink, and beside it the mark
+		// an occur of it draws — the CLI's dot, or the spec's glyph.
+		assert.deepEqual(lookOf(w({ kind: 'point' }, { color: '#ffff00' })), { fill: null, line: '#ffff00', text: 'var(--ink)', label: 'f', glyph: '●' });
+		assert.equal(lookOf(w({ kind: 'point' }, { glyph: '☕' })).glyph, '☕');
+		assert.equal(lookOf(w({ kind: 'point' }, { color: '#ffff00', current: 'x' })).fill, null, 'never coloured by a state');
+		assert.equal(lookOf(w({ kind: 'state' })).glyph, undefined, 'a point\'s alone');
 		assert.deepEqual(lookOf(w({ kind: 'state' }, { color: '#0000ff' })), { fill: null, line: '#0000ff', text: '#0000ff', label: 'f' });
 		assert.deepEqual(lookOf(w({ kind: 'state' }, { color: '#0000ff', current: true })).fill, '#0000ff');
 		const mood = w({ kind: 'states', states: ['good', 'meh'] }, { color: '#800080', stateColors: { good: '#00ff00' }, current: 'good' });
@@ -176,7 +182,9 @@ const look = (page, field) =>
 			color: cs.color,
 			radius: parseFloat(cs.borderTopLeftRadius),
 			underline: cs.textDecorationLine,
-			underlineColor: cs.textDecorationColor
+			underlineColor: cs.textDecorationColor,
+			text: el.textContent.trim(),
+			glyph: ((g) => g && { text: g.textContent, color: getComputedStyle(g).color })(el.querySelector('.glyph'))
 		};
 	});
 
@@ -213,10 +221,14 @@ describe('in the app', () => {
 			const heights = await page.locator('.bar button.widget').evaluateAll((all) => all.map((el) => el.getBoundingClientRect().height));
 			assert.ok(heights.every((h) => track.height > h), `Track + is ${track.height}px, the fields ${heights}`);
 
+			// da-h2io6: an occur is an empty pill, its mark beside the name in
+			// the field's colour — the CLI's dot until the spec names a glyph.
 			const coffee = await look(page, 'coffee');
-			assert.equal(coffee.bg, ORANGE);
+			assert.deepEqual([coffee.bg, coffee.border, coffee.glyph], [CLEAR, ORANGE, { text: '●', color: ORANGE }]);
+			assert.equal(coffee.text, '●coffee');
 			assert.ok(coffee.radius >= 12, `coffee's radius is ${coffee.radius}`);
-			assert.equal(coffee.color, 'rgb(0, 0, 0)', "orange's ink, by the CLI's rule");
+			assert.equal((await look(page, 'untracked')).glyph?.text, '●', 'a spec-less point draws the dot too');
+			assert.equal((await look(page, 'work')).glyph, null, 'a point\'s alone');
 
 			const work = await look(page, 'work');
 			assert.deepEqual([work.bg, work.border, work.color], [CLEAR, BLUE, BLUE]);
@@ -234,6 +246,10 @@ describe('in the app', () => {
 
 			// No spec, logged once: a point, a button like any other.
 			assert.equal((await look(page, 'untracked')).tag, 'BUTTON');
+
+			await type(page, 'spec set coffee --glyph ☕');
+			await page.waitForFunction(() => document.querySelector('.bar [data-field="coffee"] .glyph')?.textContent === '☕');
+			assert.equal((await look(page, 'coffee')).text, '☕coffee', "the spec's glyph, in place of the dot");
 		});
 	});
 
