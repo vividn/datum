@@ -27,7 +27,7 @@
 //! ANSI escapes are embedded as plain UTF-8 — callers decide whether the
 //! destination understands them.
 
-use crate::nowview::NowviewField;
+use crate::nowview::{NowviewField, NowviewPoint};
 
 /// Selects the layout used by [`render_nowview_terminal`]. See the module
 /// docs for the visual differences.
@@ -566,14 +566,13 @@ fn push_history_row(
             }
         }
 
-        let point_color = field
+        let point = field
             .points
             .iter()
-            .find(|p| p.time_ms >= cell_start_ms && p.time_ms < cell_end_ms)
-            .map(|p| p.fg_color.as_str());
+            .find(|p| p.time_ms >= cell_start_ms && p.time_ms < cell_end_ms);
 
-        match (point_color, block_colors) {
-            (Some(pc), _) => push_cell_point(out, pc, use_color),
+        match (point, block_colors) {
+            (Some(p), _) => push_cell_point(out, p, use_color),
             (None, Some(cs)) => push_block_cell(out, cs, use_color),
             (None, None) => push_cell_empty(out),
         }
@@ -595,12 +594,11 @@ fn push_now_row(out: &mut String, field: &NowviewField, end_ms: i64, cols: usize
         .max_by_key(|b| b.start_ms)
         .map(|b| b.colors.as_slice());
 
-    let recent_point: Option<&str> = field
+    let recent_point: Option<&NowviewPoint> = field
         .points
         .iter()
         .filter(|p| p.time_ms >= end_ms - 1_000 && p.time_ms <= end_ms)
-        .max_by_key(|p| p.time_ms)
-        .map(|p| p.fg_color.as_str());
+        .max_by_key(|p| p.time_ms);
 
     for i in 0..cols {
         match (recent_point, active_colors) {
@@ -658,14 +656,23 @@ fn push_cell_empty(out: &mut String) {
     out.push('░');
 }
 
-fn push_cell_point(out: &mut String, hex: &str, use_color: bool) {
+/// An occur dot's cell: its glyph (da-gzowt) when that is ONE column wide,
+/// else `●`. Every cell of the band is one slice of time, so a two-column
+/// glyph (most emoji) would push the rest of the row a column right; it
+/// draws as the dot here and as itself in the SVG.
+fn push_cell_point(out: &mut String, p: &NowviewPoint, use_color: bool) {
+    let mark = p
+        .glyph
+        .as_deref()
+        .filter(|g| unicode_width::UnicodeWidthStr::width(*g) == 1)
+        .unwrap_or("●");
     if use_color {
-        if let Some((r, g, b)) = parse_hex(hex) {
-            out.push_str(&format!("\x1b[38;2;{r};{g};{b}m●\x1b[0m"));
+        if let Some((r, g, b)) = parse_hex(&p.fg_color) {
+            out.push_str(&format!("\x1b[38;2;{r};{g};{b}m{mark}\x1b[0m"));
             return;
         }
     }
-    out.push('●');
+    out.push_str(mark);
 }
 
 fn push_axis_border(out: &mut String, label_w: usize, history_cols: usize, now_cols: usize) {
@@ -938,6 +945,7 @@ mod tests {
                 fg_color: "#00ff00".into(),
                 bg_color: "#000000".into(),
                 state_label: None,
+                glyph: None,
             }],
             y_frac: 0.0,
             height_frac: 0.0,
@@ -946,6 +954,42 @@ mod tests {
         }];
         let s = render_nowview_terminal(&fields, &cfg(now));
         assert!(s.contains('●'), "expected point dot in:\n{s}");
+    }
+
+    /// da-gzowt: the band draws a one-column glyph as itself, and a
+    /// two-column one (an emoji) as `●` — so the row is exactly as wide as
+    /// the unglyphed row and no column after the dot moves.
+    #[test]
+    fn point_glyph_draws_when_one_column_wide_and_a_wide_one_draws_the_dot() {
+        let now = 1_700_000_000_000_i64;
+        let band = |glyph: Option<&str>| {
+            let fields = vec![NowviewField {
+                field: "coffee".into(),
+                blocks: vec![],
+                points: vec![NowviewPoint {
+                    time_ms: now - 30 * 60_000,
+                    fg_color: "#00ff00".into(),
+                    bg_color: "#000000".into(),
+                    state_label: None,
+                    glyph: glyph.map(str::to_string),
+                }],
+                y_frac: 0.0,
+                height_frac: 0.0,
+                z_index: 0.0,
+                default_colors: vec![],
+            }];
+            render_nowview_terminal(&fields, &cfg(now))
+        };
+        let plain = band(None);
+        let tri = band(Some("▲"));
+        assert!(
+            tri.contains('▲') && !tri.contains('●'),
+            "narrow glyph drawn:\n{tri}"
+        );
+        assert_eq!(tri.replace('▲', "●"), plain, "only the mark changed");
+        let wide = band(Some("☕"));
+        assert_eq!(unicode_width::UnicodeWidthStr::width("☕"), 2);
+        assert_eq!(wide, plain, "a two-column glyph draws as the dot:\n{wide}");
     }
 
     #[test]

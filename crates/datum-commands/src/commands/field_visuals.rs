@@ -247,6 +247,7 @@ pub(crate) fn render_field_visuals(
                         state_label: mark_state(entry.state.as_ref()),
                         id: Some(entry.hid.to_string()),
                         title: None,
+                        glyph: dot_glyph(entry, spec),
                     });
                 }
             }
@@ -280,6 +281,15 @@ pub(crate) fn render_field_visuals(
         punch_holes(blocks, &holes, dayview_block_span, set_dayview_block_span),
         points,
     )
+}
+
+/// The glyph an occur dot of `entry` draws (da-gzowt), `None` for the
+/// circle. One resolver for both timeline walks, the SVG and the terminal.
+pub(crate) fn dot_glyph(entry: &Entry, spec: Option<&FieldSpec>) -> Option<String> {
+    spec?
+        .presentation
+        .glyph_for(entry.state.as_ref(), entry.data.as_ref())
+        .map(str::to_string)
 }
 
 /// True for the states that make a block a hole rather than a mark: the

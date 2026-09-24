@@ -329,14 +329,22 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 let outer_r = p.r;
                 let inner_r = (p.r * 0.6).max(0.5);
                 // The outer circle is the mark; the inner one lets the
-                // pointer through to it.
+                // pointer through to it. A glyph over a disc of its own
+                // colour would vanish into it, so there the disc stays
+                // the mark but is not painted (da-gzowt).
+                let unpainted = p.glyph.is_some() && p.bg_color == p.fg_color;
                 let _ = write!(
                     &mut out,
-                    r#"<circle class="point-bg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}"{close}"#,
+                    r#"<circle class="point-bg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}"{o}{close}"#,
                     cx = cx,
                     cy = cy,
                     r = outer_r,
                     c = p.bg_color,
+                    o = if unpainted {
+                        r#" fill-opacity="0""#
+                    } else {
+                        ""
+                    },
                     close = mark_close(
                         "circle",
                         &field.field,
@@ -346,14 +354,29 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                         p.title.as_deref(),
                     ),
                 );
-                let _ = write!(
-                    &mut out,
-                    r#"<circle class="point-fg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" pointer-events="none"/>"#,
-                    cx = cx,
-                    cy = cy,
-                    r = inner_r,
-                    c = p.fg_color,
-                );
+                // da-gzowt: a glyph stands where the inner circle would,
+                // centred on the same point, in the same colour, over the
+                // same bg disc. Sized to the outer disc so it reads as the
+                // mark rather than as a label on it.
+                let _ = match p.glyph.as_deref() {
+                    None => write!(
+                        &mut out,
+                        r#"<circle class="point-fg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" pointer-events="none"/>"#,
+                        cx = cx,
+                        cy = cy,
+                        r = inner_r,
+                        c = p.fg_color,
+                    ),
+                    Some(g) => write!(
+                        &mut out,
+                        r#"<text class="point-fg" x="{cx}" y="{cy}" dy="0.35em" text-anchor="middle" font-size="{fs}" fill="{c}" pointer-events="none">{g}</text>"#,
+                        cx = cx,
+                        cy = cy,
+                        fs = outer_r * 1.6,
+                        c = p.fg_color,
+                        g = escape_xml(g),
+                    ),
+                };
             }
             out.push_str("</g>");
         }
@@ -890,6 +913,7 @@ mod tests {
                         state_label: None,
                         id: None,
                         title: None,
+                        glyph: None,
                     }],
                 }],
             }],

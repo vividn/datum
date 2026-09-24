@@ -9,6 +9,9 @@
 //!   — chains a field's effective position off another field's resolved
 //!   position.
 //! - **`render`** — per-surface visibility (hide on `dayview` only, etc.).
+//! - **Glyph triple** (`glyph`, `state_glyphs`, `glyph_by`) — what an occur
+//!   dot draws instead of a circle (da-gzowt), in the same shape as
+//!   `color` / `state_colors`.
 //!
 //! Stored inline in [`super::FieldSpec`] via `#[serde(flatten)]` so a spec is
 //! still a single JSON blob with a single SQL row; the split is structural
@@ -17,6 +20,7 @@
 //! instead of reaching through the full [`super::FieldSpec`].
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
 /// Visual layout + visibility for a single field.
@@ -80,6 +84,34 @@ pub struct PresentationSpec {
     /// `field_specs.render_json` at save time (NULL = visible everywhere).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub render: Option<Render>,
+
+    /// The character an occur dot of this field draws in place of the
+    /// circle (da-gzowt). `None` draws the circle, byte for byte as before.
+    /// The field-level fallback of [`PresentationSpec::glyph_for`], as
+    /// `color` is `state_colors`' fallback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glyph: Option<String>,
+
+    /// Per-state glyph overrides, keyed by state name — `state_colors`'
+    /// shape, for the states where the mark carries meaning.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub state_glyphs: HashMap<String, String>,
+
+    /// A glyph chosen by the value of one data key: `coffee size=large`
+    /// draws `map["large"]`. A value the map does not name falls through
+    /// to [`PresentationSpec::glyph`] — the field's glyph IS the default,
+    /// so there is one default and not two.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glyph_by: Option<GlyphBy>,
+}
+
+/// [`PresentationSpec::glyph_by`]: the data key to read and the glyph for
+/// each of its values.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct GlyphBy {
+    pub key: String,
+    #[serde(default)]
+    pub map: HashMap<String, String>,
 }
 
 /// Visibility setting for a [`super::FieldSpec`] across visual surfaces.
@@ -183,6 +215,34 @@ impl PresentationSpec {
             .as_ref()
             .map(|r| r.is_visible_on(surface))
             .unwrap_or(true)
+    }
+
+    /// The glyph an occur dot draws for an entry with this `state` and
+    /// `data`, or `None` for the circle. Precedence: the state's own glyph,
+    /// then the `glyph_by` key's mapped value, then the field's glyph.
+    pub fn glyph_for(&self, state: Option<&JsonValue>, data: Option<&JsonValue>) -> Option<&str> {
+        let by_state = state
+            .and_then(scalar_key)
+            .and_then(|s| self.state_glyphs.get(&s));
+        let by_key = || {
+            let gb = self.glyph_by.as_ref()?;
+            let v = data?.get(&gb.key).and_then(scalar_key)?;
+            gb.map.get(&v)
+        };
+        by_state
+            .or_else(by_key)
+            .or(self.glyph.as_ref())
+            .map(String::as_str)
+    }
+}
+
+/// A scalar JSON value as the word a glyph map is keyed by — a string as
+/// itself, a number or bool as it prints. Arrays and objects name nothing.
+fn scalar_key(v: &JsonValue) -> Option<String> {
+    match v {
+        JsonValue::String(s) => Some(s.clone()),
+        JsonValue::Number(_) | JsonValue::Bool(_) => Some(v.to_string()),
+        _ => None,
     }
 }
 
@@ -354,5 +414,86 @@ mod tests {
         assert!(pres.validate_anchor_triple("a").is_ok());
         pres.anchor_size_ratio = None;
         assert!(pres.validate_anchor_triple("a").is_err());
+    }
+
+    // ─── Glyphs (da-gzowt) ───────────────────────────────────────────────────
+
+    fn coffee() -> PresentationSpec {
+        PresentationSpec {
+            glyph: Some("●".into()),
+            state_glyphs: HashMap::from([("decaf".into(), "○".into())]),
+            glyph_by: Some(GlyphBy {
+                key: "size".into(),
+                map: HashMap::from([("small".into(), "•".into()), ("large".into(), "☕".into())]),
+            }),
+            ..PresentationSpec::default()
+        }
+    }
+
+    #[test]
+    fn glyph_for_is_none_without_a_glyph() {
+        let pres = PresentationSpec::default();
+        assert_eq!(
+            pres.glyph_for(
+                Some(&"x".into()),
+                Some(&serde_json::json!({"size": "large"}))
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn glyph_for_maps_the_named_key_and_an_unmapped_value_draws_the_field_glyph() {
+        let pres = coffee();
+        let data = |v: JsonValue| serde_json::json!({ "size": v });
+        assert_eq!(
+            pres.glyph_for(None, Some(&data("large".into()))),
+            Some("☕")
+        );
+        assert_eq!(pres.glyph_for(None, Some(&data("small".into()))), Some("•"));
+        assert_eq!(
+            pres.glyph_for(None, Some(&data("medium".into()))),
+            Some("●")
+        );
+        assert_eq!(
+            pres.glyph_for(None, Some(&serde_json::json!({}))),
+            Some("●")
+        );
+        assert_eq!(pres.glyph_for(None, None), Some("●"));
+        // With no field glyph, the unmapped value draws the circle.
+        let bare = PresentationSpec {
+            glyph: None,
+            ..coffee()
+        };
+        assert_eq!(bare.glyph_for(None, Some(&data("medium".into()))), None);
+    }
+
+    #[test]
+    fn glyph_for_state_override_wins_and_other_states_draw_the_field_glyph() {
+        let pres = coffee();
+        let large = serde_json::json!({ "size": "large" });
+        assert_eq!(
+            pres.glyph_for(Some(&"decaf".into()), Some(&large)),
+            Some("○")
+        );
+        assert_eq!(pres.glyph_for(Some(&"espresso".into()), None), Some("●"));
+    }
+
+    #[test]
+    fn glyph_keys_round_trip_and_an_old_spec_loads_without_them() {
+        let pres = coffee();
+        let json = serde_json::to_value(&pres).unwrap();
+        assert_eq!(json["glyph_by"]["map"]["large"], "☕");
+        assert_eq!(
+            serde_json::from_value::<PresentationSpec>(json).unwrap(),
+            pres
+        );
+        let old: PresentationSpec = serde_json::from_str(r#"{"y": 0.5}"#).unwrap();
+        assert_eq!(old.glyph_for(None, None), None);
+        let back = serde_json::to_string(&old).unwrap();
+        assert_eq!(
+            back, r#"{"y":0.5}"#,
+            "no glyph key is written for an unglyphed field"
+        );
     }
 }

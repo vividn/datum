@@ -663,6 +663,7 @@ fn dayview_scene_single_block() -> DayviewLayoutResult {
                 state_label: Some("coffee".into()),
                 id: None,
                 title: None,
+                glyph: None,
             }],
         }],
     };
@@ -818,6 +819,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
                 state_label: Some("coffee".into()),
                 id: None,
                 title: None,
+                glyph: None,
             }],
         }],
     };

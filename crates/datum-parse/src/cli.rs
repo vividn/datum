@@ -602,15 +602,17 @@ pub enum SpecCommand {
         field: String,
         text: bool,
     },
-    /// `datum spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION]` — merge a
-    /// single state into a field spec without disturbing the others
+    /// `datum spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION] [GLYPH]` —
+    /// merge a single state into a field spec without disturbing the others
     /// (da-t9ps). The safe, incremental counterpart to `spec set --state`,
-    /// which replaces the whole list.
+    /// which replaces the whole list. `-` in a slot leaves it alone.
     AddState {
         field: String,
         name: String,
         color: Option<String>,
         description: Option<String>,
+        /// The state's occur-dot glyph (da-gzowt).
+        glyph: Option<String>,
     },
     Set(Box<SpecSetArgs>),
     List {
@@ -666,6 +668,18 @@ pub struct SpecSetArgs {
     /// `orphaned_extra_data_key` check fires for undeclared keys);
     /// `Some(false)` clears strictness; `None` leaves the existing value.
     pub strict: Option<bool>,
+    /// `--glyph <CHAR>` — what the field's occur dots draw instead of a
+    /// circle (da-gzowt). An empty value clears it.
+    pub glyph: Option<String>,
+    /// `--state-glyph STATE=CHAR`, the `state_colors` shape and clear
+    /// convention.
+    pub state_glyphs: Vec<String>,
+    /// `--glyph-by <KEY>` — the data key whose value picks the glyph. An
+    /// empty value clears it, map and all.
+    pub glyph_by: Option<String>,
+    /// `--glyph-map VALUE=CHAR` — one entry of the `--glyph-by` map; an
+    /// empty CHAR removes the entry.
+    pub glyph_map: Vec<String>,
 }
 
 #[derive(Debug)]

@@ -5,10 +5,11 @@ use datum_core::{
     action::Action,
     db::{Db, IGNORED_STATE_VALUE},
     entry::{Entry, Verb},
-    field_spec::FieldSpec,
+    field_spec::{FieldSpec, GlyphBy},
     time::DatumTime,
 };
 use serde_json::Value as JsonValue;
+use unicode_width::UnicodeWidthChar;
 
 use crate::args::{SpecCommand, SpecSetArgs};
 use crate::config::device_id;
@@ -25,7 +26,15 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
             name,
             color,
             description,
-        } => spec_add_state(&field, &name, color.as_deref(), description.as_deref(), db)?,
+            glyph,
+        } => spec_add_state(
+            &field,
+            &name,
+            color.as_deref(),
+            description.as_deref(),
+            glyph.as_deref(),
+            db,
+        )?,
         SpecCommand::Set(args) => spec_set(*args, db)?,
         SpecCommand::List { tag } => {
             if let Some(tag) = tag {
@@ -103,35 +112,61 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     if let Some(u) = &args.unit {
         spec.unit = Some(u.clone());
     }
-    // Clear convention for STATE=VALUE flags (--state-color, --state-description,
-    // and any future sibling): an empty VALUE removes the entry for that state.
-    for sc in &args.state_colors {
-        match sc.split_once('=') {
-            Some((state, "")) => {
-                spec.state_colors.remove(state);
-            }
-            Some((state, color)) => {
-                spec.state_colors
-                    .insert(state.to_string(), color.to_string());
-            }
-            None => anyhow::bail!("Invalid --state-color format: expected STATE=COLOR, got '{sc}'"),
-        }
-    }
+    let any = |_: &str, _: &str| Ok(());
+    set_pairs(
+        &mut spec.state_colors,
+        &args.state_colors,
+        "--state-color",
+        "STATE=COLOR",
+        any,
+    )?;
     // da-zwqk: per-state descriptions, same STATE=TEXT shape as colors.
-    // Empty TEXT clears the description for that state.
-    for sd in &args.state_descriptions {
-        match sd.split_once('=') {
-            Some((state, "")) => {
-                spec.state_descriptions.remove(state);
-            }
-            Some((state, text)) => {
-                spec.state_descriptions
-                    .insert(state.to_string(), text.to_string());
-            }
-            None => {
-                anyhow::bail!("Invalid --state-description format: expected STATE=TEXT, got '{sd}'")
-            }
+    set_pairs(
+        &mut spec.state_descriptions,
+        &args.state_descriptions,
+        "--state-description",
+        "STATE=TEXT",
+        any,
+    )?;
+    // da-gzowt: occur-dot glyphs, in `color` / `state_colors`' shape. An
+    // empty value clears, as it does for every STATE=VALUE flag.
+    if let Some(g) = &args.glyph {
+        if !g.is_empty() {
+            check_glyph("--glyph", g)?;
         }
+        spec.presentation.glyph = Some(g.clone()).filter(|g| !g.is_empty());
+    }
+    let pres = &mut spec.presentation;
+    set_pairs(
+        &mut pres.state_glyphs,
+        &args.state_glyphs,
+        "--state-glyph",
+        "STATE=CHAR",
+        check_glyph,
+    )?;
+    match args.glyph_by.as_deref() {
+        Some("") => pres.glyph_by = None,
+        // A new key starts a new map: the old values were another key's.
+        Some(key) if pres.glyph_by.as_ref().map(|g| g.key.as_str()) != Some(key) => {
+            pres.glyph_by = Some(GlyphBy {
+                key: key.to_string(),
+                map: Default::default(),
+            })
+        }
+        _ => {}
+    }
+    if !args.glyph_map.is_empty() {
+        let by = pres
+            .glyph_by
+            .as_mut()
+            .context("--glyph-map needs --glyph-by <KEY> to say which data key it maps")?;
+        set_pairs(
+            &mut by.map,
+            &args.glyph_map,
+            "--glyph-map",
+            "VALUE=CHAR",
+            check_glyph,
+        )?;
     }
     // da-2sr: --track / --ignore on `spec set` write switch entries rather
     // than mutating the spec. The flags are kept on the parser surface for
@@ -201,6 +236,46 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
+/// Apply `KEY=VALUE` flags to a map — the clear convention shared by every
+/// such flag here: an empty VALUE removes KEY's entry. `check` vets a
+/// non-empty VALUE.
+fn set_pairs(
+    map: &mut std::collections::HashMap<String, String>,
+    pairs: &[String],
+    flag: &str,
+    shape: &str,
+    check: impl Fn(&str, &str) -> Result<()>,
+) -> Result<()> {
+    for pair in pairs {
+        match pair.split_once('=') {
+            Some((key, "")) => {
+                map.remove(key);
+            }
+            Some((key, value)) => {
+                check(flag, value)?;
+                map.insert(key.to_string(), value.to_string());
+            }
+            None => anyhow::bail!("Invalid {flag} format: expected {shape}, got '{pair}'"),
+        }
+    }
+    Ok(())
+}
+
+/// A glyph is ONE printable character (da-gzowt): the SVG draws it as
+/// given; the terminal band draws it when it is one column wide and `●`
+/// when it is two (most emoji), so no column of the band moves.
+fn check_glyph(flag: &str, glyph: &str) -> Result<()> {
+    let mut chars = glyph.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c), None)
+            if !c.is_whitespace() && UnicodeWidthChar::width(c).is_some_and(|w| w > 0) =>
+        {
+            Ok(())
+        }
+        _ => anyhow::bail!("{flag} expects one printable character, got '{glyph}'"),
+    }
+}
+
 /// Print the `⚠ auto-alias … skipped` lines from a save report to stderr.
 /// Shared by every spec-mutating command that regenerates aliases.
 fn warn_alias_conflicts(report: &datum_core::db::SaveSpecReport) {
@@ -231,8 +306,12 @@ fn spec_add_state(
     name: &str,
     color: Option<&str>,
     description: Option<&str>,
+    glyph: Option<&str>,
     db: &Db,
 ) -> Result<()> {
+    if let Some(g) = glyph {
+        check_glyph("GLYPH", g)?;
+    }
     let mut spec = match db.load_spec(field)? {
         Some(s) => s,
         // A field named only by its states is a switch field — that is
@@ -251,6 +330,11 @@ fn spec_add_state(
     if let Some(d) = description {
         spec.state_descriptions
             .insert(name.to_string(), d.to_string());
+    }
+    if let Some(g) = glyph {
+        spec.presentation
+            .state_glyphs
+            .insert(name.to_string(), g.to_string());
     }
 
     spec.validate_verb().map_err(|e| anyhow::anyhow!(e))?;
@@ -281,14 +365,25 @@ fn render_spec_text(spec: &FieldSpec) {
     if let Some(c) = &spec.color {
         println!("  color: {c}");
     }
+    if let Some(g) = &spec.presentation.glyph {
+        println!("  glyph: {g}");
+    }
+    if let Some(by) = &spec.presentation.glyph_by {
+        let mut values: Vec<_> = by.map.iter().map(|(v, g)| format!("{v}={g}")).collect();
+        values.sort();
+        println!("  glyph by {}: {}", by.key, values.join(" "));
+    }
     if let Some(states) = &spec.allowed_states {
         println!("  states:");
         for state in states {
-            let color = spec
+            let mut color = spec
                 .state_colors
                 .get(state)
-                .map(String::as_str)
-                .unwrap_or("(auto)");
+                .cloned()
+                .unwrap_or_else(|| "(auto)".to_string());
+            if let Some(g) = spec.presentation.state_glyphs.get(state) {
+                color = format!("{color} {g}");
+            }
             let desc = spec
                 .state_descriptions
                 .get(state)
@@ -353,6 +448,7 @@ mod tests {
             z_index: None,
             tags: vec![],
             strict: None,
+            ..Default::default()
         };
         spec_set(args, &db).unwrap();
 
@@ -395,6 +491,7 @@ mod tests {
             z_index: None,
             tags: vec![],
             strict: None,
+            ..Default::default()
         };
         spec_set(args2, &db).unwrap();
         assert!(db.lookup_alias("sad").unwrap().is_none());
@@ -419,7 +516,7 @@ mod tests {
         .unwrap();
 
         // Add one state with color + description — the others must survive.
-        spec_add_state("mood", "meh", Some("yellow"), Some("so-so"), &db).unwrap();
+        spec_add_state("mood", "meh", Some("yellow"), Some("so-so"), None, &db).unwrap();
 
         let spec = db.load_spec("mood").unwrap().unwrap();
         let states = spec.allowed_states.as_ref().unwrap();
@@ -447,7 +544,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
 
         // No spec yet — add-state creates an Occur-default spec.
-        spec_add_state("energy", "high", Some("green"), Some("wired"), &db).unwrap();
+        spec_add_state("energy", "high", Some("green"), Some("wired"), None, &db).unwrap();
         let spec = db.load_spec("energy").unwrap().unwrap();
         assert_eq!(
             spec.allowed_states.as_deref(),
@@ -456,7 +553,7 @@ mod tests {
 
         // Re-adding refreshes the color but does not duplicate the state or
         // clobber a description that wasn't re-supplied.
-        spec_add_state("energy", "high", Some("lime"), None, &db).unwrap();
+        spec_add_state("energy", "high", Some("lime"), None, None, &db).unwrap();
         let spec = db.load_spec("energy").unwrap().unwrap();
         assert_eq!(
             spec.allowed_states.as_deref(),

@@ -362,6 +362,7 @@ pub fn build_fields(
                 state_label: state_label(p.state_label.as_ref().or(p.fg.as_ref())),
                 id: None,
                 title: None,
+                glyph: None,
             })
             .collect();
         let y_frac = style

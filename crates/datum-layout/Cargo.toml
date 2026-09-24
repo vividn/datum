@@ -11,3 +11,4 @@ wasm = []
 [dependencies]
 chrono = { workspace = true }
 serde = { workspace = true }
+unicode-width = { workspace = true }

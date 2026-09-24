@@ -447,6 +447,7 @@ mod tests {
                     state_label: None,
                     id: None,
                     title: None,
+                    glyph: None,
                 }],
             }],
         };
@@ -539,6 +540,7 @@ mod tests {
                         state_label: None,
                         id: None,
                         title: None,
+                        glyph: None,
                     }],
                 },
             ],

@@ -211,6 +211,7 @@ fn day_fields(start_ms: i64, end_ms: i64) -> Vec<DayviewFieldInput> {
                 state_label: None,
                 id: None,
                 title: None,
+                glyph: None,
             }],
         },
         DayviewFieldInput {

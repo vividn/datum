@@ -50,10 +50,10 @@ pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
     }
 }
 
-/// `spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION]` — up to four
-/// positionals, no flags. COLOR and DESCRIPTION are optional; a lone dash
-/// (`-`) in the COLOR slot leaves the color unset while still supplying a
-/// description (`add-state mood meh - "so-so"`).
+/// `spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION] [GLYPH]` — up to
+/// five positionals, no flags. The last three are optional; a lone dash
+/// (`-`) in a slot leaves it unset while still supplying the ones after it
+/// (`add-state mood meh - "so-so"`, `add-state mood meh - - ▼`).
 pub(crate) fn parse_spec_add_state(tail: &[&str]) -> Result<SpecCommand> {
     let mut pos: Vec<&str> = Vec::new();
     for arg in tail {
@@ -71,11 +71,11 @@ pub(crate) fn parse_spec_add_state(tail: &[&str]) -> Result<SpecCommand> {
         .next()
         .ok_or_else(|| ParseError::MissingRequiredKey("<NAME>".to_string()))?
         .to_string();
-    let color = match it.next() {
-        Some("-") | None => None,
-        Some(c) => Some(c.to_string()),
-    };
-    let description = it.next().map(str::to_string);
+    // `-` in any slot leaves that slot alone.
+    let mut slot = || it.next().filter(|v| *v != "-").map(str::to_string);
+    let color = slot();
+    let description = slot();
+    let glyph = slot();
     if let Some(extra) = it.next() {
         return Err(ParseError::InvalidArg(format!(
             "unexpected argument: '{extra}'"
@@ -86,6 +86,7 @@ pub(crate) fn parse_spec_add_state(tail: &[&str]) -> Result<SpecCommand> {
         name,
         color,
         description,
+        glyph,
     })
 }
 
@@ -278,6 +279,42 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
             }
             FlagSplit::LongAttached("tag", v) => {
                 out.tags.push(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("glyph") => {
+                let (v, ni) = take_value(tail, i, None, "--glyph")?;
+                out.glyph = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("glyph", v) => {
+                out.glyph = Some(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("state-glyph") => {
+                let (v, ni) = take_value(tail, i, None, "--state-glyph")?;
+                out.state_glyphs.push(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("state-glyph", v) => {
+                out.state_glyphs.push(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("glyph-by") => {
+                let (v, ni) = take_value(tail, i, None, "--glyph-by")?;
+                out.glyph_by = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("glyph-by", v) => {
+                out.glyph_by = Some(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("glyph-map") => {
+                let (v, ni) = take_value(tail, i, None, "--glyph-map")?;
+                out.glyph_map.push(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("glyph-map", v) => {
+                out.glyph_map.push(v.to_string());
                 i += 1;
             }
             // `-weird` is a field name someone typed, not a flag they

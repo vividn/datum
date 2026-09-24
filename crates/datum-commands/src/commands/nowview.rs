@@ -41,9 +41,9 @@ use serde_json::Value as JsonValue;
 
 use crate::args::{NowviewArgs, ShowFlag};
 use crate::commands::field_visuals::{
-    block_span, canonical_verb, dur_seconds, is_hole_state, leading_edge_ms, occur_time_ms,
-    occur_time_ms_opt, punch_holes, push_switch_region, render_field_visuals, rgb_to_hex,
-    state_label, switch_region_end_ms, title_marks,
+    block_span, canonical_verb, dot_glyph, dur_seconds, is_hole_state, leading_edge_ms,
+    occur_time_ms, occur_time_ms_opt, punch_holes, push_switch_region, render_field_visuals,
+    rgb_to_hex, state_label, switch_region_end_ms, title_marks,
 };
 use crate::render::colors::{field_rgb, md5_rgb, state_value_colors, state_value_rgb, Rgb};
 use crate::render::term_layout;
@@ -877,6 +877,7 @@ fn render_field_visuals_terminal(
                     fg_color: rgb_to_hex(fg),
                     bg_color: rgb_to_hex(bg),
                     state_label: state_label(entry.state.as_ref()),
+                    glyph: dot_glyph(entry, spec),
                 });
             }
         }

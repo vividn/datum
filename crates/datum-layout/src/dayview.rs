@@ -148,6 +148,10 @@ pub struct DayviewPoint {
     /// As [`DayviewBlock::title`].
     #[serde(default)]
     pub title: Option<String>,
+    /// The character drawn in place of the dot's inner circle (da-gzowt),
+    /// resolved by the caller from the field's spec. `None` is the circle.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glyph: Option<String>,
 }
 
 /// Top-level dayview knobs. Per-day data is in `days`. The `now_ms` field
@@ -350,6 +354,9 @@ pub struct RenderedPoint {
     pub time_ms: i64,
     #[serde(default)]
     pub title: Option<String>,
+    /// As [`DayviewPoint::glyph`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glyph: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -603,6 +610,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                     id: p.id.clone(),
                     time_ms: p.time_ms,
                     title: p.title.clone(),
+                    glyph: p.glyph.clone(),
                 });
             }
 
@@ -901,6 +909,7 @@ mod tests {
                         state_label: None,
                         id: None,
                         title: None,
+                        glyph: None,
                     }],
                 },
             ],

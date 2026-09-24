@@ -58,6 +58,10 @@ pub struct NowviewPoint {
     /// color at this instant (per the `da-k5z` fg/bg rule).
     pub bg_color: String,
     pub state_label: Option<String>,
+    /// As [`crate::dayview::DayviewPoint::glyph`]. The band draws it only
+    /// when it is one column wide — see [`crate::nowview_terminal`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glyph: Option<String>,
 }
 
 /// One field's data for the nowview window.
