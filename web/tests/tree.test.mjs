@@ -951,7 +951,7 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 			'../src/lib/layout/defaults.ts'
 		);
 		const gated = Object.keys(KINDS).filter((kind) => KINDS[kind].db);
-		assert.deepEqual(gated, ['debug'], 'a new gated kind wants its line here');
+		assert.deepEqual(gated, ['debug', 'seed'], 'a new gated kind wants its line here');
 		for (const kind of gated) {
 			assert.ok(!PICKABLE.includes(kind), `${kind} is gated and still in PICKABLE`);
 			assert.ok(!BUILTIN_NAMES.includes(kind), `${kind} is gated and still has a built-in layout`);
@@ -963,10 +963,11 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 		assert.deepEqual(pickableIn(DEBUG_DB), [...PICKABLE, ...gated].sort((a, b) =>
 			Object.keys(KINDS).indexOf(a) - Object.keys(KINDS).indexOf(b)
 		));
-		// The tree the DEBUG database is shipped is that widget alone, named
-		// as the kind is titled — which is what lets a root tab hold it.
+		// The tree the DEBUG database is shipped holds every gated kind, and
+		// is named as the first is titled.
 		assert.equal(DEBUG_LAYOUT_TREE.name, DEBUG_LAYOUT);
 		assert.equal(DEBUG_LAYOUT, titleOf('debug'));
-		assert.deepEqual(kinds(DEBUG_LAYOUT_TREE.root), ['debug']);
+		assert.deepEqual(['debug-bar', 'debug-seed'].flatMap((id) => kinds(findPane(DEBUG_LAYOUT_TREE, id))), gated);
+		assert.ok(isCanonical(DEBUG_LAYOUT_TREE), 'the shipped DEBUG tree is not canonical');
 	});
 });

@@ -564,9 +564,14 @@ async function fillRoot(state: RootState): Promise<void> {
  * nothing — which is what it means in every other database anyway.
  */
 async function shipDebugLayout(): Promise<void> {
-	if (currentDb() !== DEBUG_DB || kitLayout(DEBUG_LAYOUT)) return;
+	if (currentDb() !== DEBUG_DB) return;
+	// A tree shipped by an older app (the knobs alone, before da-6ecm5) is
+	// brought up to this one: the kit row is the app's, never the reader's
+	// — a save of the name goes to `_internal` and shadows it.
+	const shipped = kitLayout(DEBUG_LAYOUT);
+	if (shipped && !isModified(DEBUG_LAYOUT_TREE, shipped)) return;
 	try {
-		await installKitLayout(DEBUG_LAYOUT_TREE, DEBUG_KIT);
+		await installKitLayout(DEBUG_LAYOUT_TREE, DEBUG_KIT, !!shipped);
 	} catch {
 		// The slug is taken by a row that is not a kit's, or the write
 		// failed. Either way there is nothing here to put right.

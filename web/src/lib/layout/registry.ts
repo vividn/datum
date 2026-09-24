@@ -193,9 +193,10 @@ const meta = (
 ): WidgetKindMeta => ({ kind, title, defaultSettings, ...(options ? { options } : {}) });
 
 /** A widget of the DEBUG database: `db`-gated, and named as it is titled. */
-const debugKind = (kind: string, component: ComponentType, legible: Floor): WidgetKind => ({
+const debugKind = (kind: 'debug' | 'seed', legible: Floor): WidgetKind => ({
 	meta: meta(kind, kind),
-	component,
+	component: DebugPane,
+	props: () => ({ kind }),
 	db: DEBUG_DB,
 	legible
 });
@@ -378,7 +379,11 @@ export const KINDS: Record<string, WidgetKind> = {
 	// the body's padding — narrower or shorter and a slider is not a
 	// slider. "we could even have different DEBUG widgets eventually": the
 	// next one is another `debugKind` line here, not a rewrite of this one.
-	debug: debugKind('debug', DebugPane, { width: 200, height: 94 }),
+	debug: debugKind('debug', { width: 200, height: 94 }),
+	// The second (da-6ecm5): a plausible week of sample data, seeded
+	// into the database it runs in. Legible at its two buttons and a line
+	// of report; the log under them scrolls.
+	seed: debugKind('seed', { width: 200, height: 60 }),
 	// What the shell shows in a tab whose layout cannot be inlined (da-0a5o).
 	notice: { meta: meta('notice', 'notice'), component: Notice, hidden: true, legible: { width: 120, height: 40 } }
 };

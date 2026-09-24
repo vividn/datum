@@ -336,12 +336,13 @@ export const DEBUG_LAYOUT = 'debug';
 export const DEBUG_KIT = 'debug';
 
 /**
- * The tree `DEBUG` is shipped: the debug widget alone, filling the root.
+ * The tree `DEBUG` is shipped: the bar's knobs over the sample seeder
+ * (da-6ecm5), one column.
  *
- * The widget's whole subject is the BOTTOM BAR, which is on every screen
- * and needs room to travel — so a screen of nothing but knobs and bar is
- * the layout this instrument wants. A second debug widget (da-6ecm5)
- * makes this a split; that is a line here, not a rewrite.
+ * The knobs' subject is the BOTTOM BAR, which is on every screen and
+ * needs room to travel, so the page is nothing but these two and the bar.
+ * The knobs get their legible 94px and its frame (108) against the
+ * seeder's 250 — its buttons, its report and a log worth scrolling.
  *
  * ⚑ NOT IN `BUILTIN`, and that is the point. It is installed as a KIT
  * layout into the DEBUG database itself (`shipDebugLayout`, shell.ts), so
@@ -351,4 +352,11 @@ export const DEBUG_KIT = 'debug';
  * whose only word would be that it is in the wrong place — and `settle`
  * writes the list back without it.
  */
-export const DEBUG_LAYOUT_TREE: Layout = only(DEBUG_LAYOUT, 'debug');
+export const DEBUG_LAYOUT_TREE: Layout = {
+	version: LAYOUT_VERSION,
+	name: DEBUG_LAYOUT,
+	root: holder(
+		'debug',
+		split('debug-tools', 'column', legibly([108, 250]), [widgetPane('debug-bar', 'debug'), widgetPane('debug-seed', 'seed')])
+	)
+};

@@ -23,13 +23,14 @@
 	    pane that says where its contents live is the only one a reader can
 	    act on.
 
-	One tool today — the bottom bar's two knobs. A second is another
-	`debugKind` line in the registry and another component beside this one;
-	nothing here is a plugin system for a population of one.
+	Each tool is a `debugKind` line in the registry naming one of the
+	components below: `debug`, the bottom bar's two knobs, and `seed`, a
+	sample week (da-6ecm5). The gate is written once, here.
 -->
 <script lang="ts">
 	import Pane from './Pane.svelte';
 	import DebugBar from './DebugBar.svelte';
+	import DebugSeed from './DebugSeed.svelte';
 	import { currentDb } from './database.js';
 	import { DEBUG_DB } from './layout/defaults.js';
 
@@ -39,17 +40,22 @@
 	 * which builds the tree again.
 	 */
 	const here = currentDb();
+
+	/** Which debug widget this is: the kind, and the heading and component it draws. */
+	export let kind: 'debug' | 'seed' = 'debug';
+	const TOOLS = { debug: ['bar', DebugBar], seed: ['sample data', DebugSeed] } as const;
+	$: [heading, tool] = TOOLS[kind];
 </script>
 
 <!-- `.debug-widget` is how this widget is FOUND, here and in the tests: a
      one-widget layout is lifted into its root tab (`inline`, shell.ts), so
      the pane drawing it is `shell` and its `data-title` is whichever tab is
      in front — neither of which names the widget. -->
-<Pane title="debug">
-	<div class="debug-widget">
+<Pane title={kind}>
+	<div class="debug-widget" data-kind={kind}>
 		{#if here === DEBUG_DB}
-			<h3>bar</h3>
-			<DebugBar />
+			<h3>{heading}</h3>
+			<svelte:component this={tool} />
 		{:else}
 			<p class="elsewhere">
 				the debug widgets live in the <code>{DEBUG_DB}</code> database — this page is on

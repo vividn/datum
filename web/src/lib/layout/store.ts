@@ -153,16 +153,14 @@ export async function refreshKitLayouts(): Promise<void> {
  *
  * REJECTS WHEN THE SLUG IS TAKEN, which is the install path's own
  * conflict policy: an entry already under the name is left alone, kit's
- * or person's.
+ * or person's. `replace` is the one exception — a new version of a kit
+ * row the caller has just read as its own kit's (`kitLayout`).
  */
-export async function installKitLayout(layout: Layout, kit: string): Promise<void> {
+export async function installKitLayout(layout: Layout, kit: string, replace = false): Promise<void> {
 	await data(
-		'occur',
-		'layout',
-		'--id',
-		'%name',
-		'-k',
-		`name=${JSON.stringify(layout.name)}`,
+		...(replace
+			? ['update', slug(layout.name)]
+			: ['occur', 'layout', '--id', '%name', '-k', `name=${JSON.stringify(layout.name)}`]),
 		...keys(layout),
 		'-k',
 		`kit_id=${JSON.stringify(kit)}`

@@ -206,6 +206,9 @@ writing it down.
    widget reaches the deployed site, where the question it answers can be asked. And because a
    saved layout is the DEVICE's and opens in every database, the WIDGET says where it lives when it
    is drawn anywhere else — an empty pane and a crash are the two answers a reader cannot act on.
+   The DEBUG kinds share ONE shipped layout, `debug` (da-6ecm5): each is a `debugKind` line in the
+   registry drawn by `DebugPane.svelte`, which holds the gate once, and a new kind goes into
+   `DEBUG_LAYOUT_TREE`. A database carrying an older shipped tree gets the current one at boot.
 
 ## Looks
 

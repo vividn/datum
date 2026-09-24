@@ -45,12 +45,12 @@ const WIDE_DEBUG = { ...DEBUG, viewport: { width: 1280, height: 900 } };
 /**
  * The widget itself, by the class it draws — never by a pane's title.
  *
- * The shipped layout is ONE widget, and a one-widget layout is lifted into
- * its root tab (`inline`, shell.ts): the pane that draws it is `shell` and
- * its `data-title` is whichever root tab is in front. So neither the pane
- * id nor the title names this widget, and `.debug-widget` does.
+ * A one-widget layout is lifted into its root tab (`inline`, shell.ts), so
+ * the pane that draws a debug widget may be `shell`, and its `data-title`
+ * whichever root tab is in front. So neither the pane id nor the title
+ * names this widget, and `.debug-widget` and its kind do.
  */
-const PANE = '.debug-widget';
+const PANE = '.debug-widget[data-kind="debug"]';
 
 /** Every pane on the page, by name — said out loud before anything is measured. */
 const paneNames = (page) =>
@@ -498,5 +498,156 @@ describe('a knob reaches the very next release', () => {
 			assert.ok(brief.ms < long.ms / 2, `TAU 60 glided as long as TAU 1200 (${took})`);
 			assert.deepEqual(app.errors, []);
 		}, WIDE_DEBUG);
+	});
+});
+
+// The second debug widget (da-6ecm5): a sample week, written into the
+// database it runs in. vividn on #118: "adding sample data shouldn't delete
+// existing data or vice versa." Every count below is read back through the
+// seam, never taken from the widget's own list.
+describe('the sample seeder', () => {
+	const SEED = '.debug-widget[data-kind="seed"]';
+
+	/** The entries per field, as the database counts them. */
+	const counts = async (app) =>
+		Object.fromEntries(
+			JSON.parse((await app.run(['count', '--group-by', 'field', '--json'])).stdout).map((g) => [g.key, g.count])
+		);
+
+	/** The sample's entries, as the database finds them by their tag. */
+	const tagged = async (app) =>
+		(await app.run(['grep', '"sample":true', '-o', '%full_hid%'])).stdout
+			.split('\n')
+			.filter((l) => /^[0-9a-z]+$/.test(l)).length;
+
+	/** Press one of the widget's buttons and wait for its report, which a press takes down first. */
+	async function press(page, label) {
+		await page.locator(`${SEED} button`, { hasText: label }).click();
+		await page.locator(`${SEED} .report`).waitFor({ timeout: 240000 });
+		return page.locator(`${SEED} .report`).innerText();
+	}
+
+	/** The commands the log shows that wrote a sample entry, and whether each came back with a CREATE. */
+	const written = (page) =>
+		page.evaluate((seed) =>
+			[...document.querySelectorAll(`${seed} .log li`)]
+				.filter((li) => li.querySelector('code').textContent.endsWith(' sample=true'))
+				.map((li) => ({
+					argv: li.querySelector('code').textContent,
+					created: /^CREATE /m.test(li.querySelector('pre')?.textContent ?? ''),
+					failed: li.classList.contains('failed')
+				})),
+		SEED);
+
+	test('seeds seven days ending now, one block still open, and says what ran', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const report = await press(page, 'seed the last 7 days');
+			const n = Number(/^(\d+) sample entries in this database$/.exec(report)?.[1]);
+			assert.ok(n > 60, `a week of sample is ${report}`);
+			assert.equal(await tagged(app), n, 'the report is not what the database holds');
+
+			// The log shows every command against THIS database, each dated and
+			// timed, and each answered with a CREATE.
+			const log = await written(page);
+			assert.equal(log.length, n);
+			for (const { argv, created } of log) {
+				assert.match(argv, /^❯ datum --db DEBUG \w+ \w+ .*-d \d{4}-\d\d-\d\d -t \d\d:\d\d:\d\d\.\d{3} sample=true$/);
+				assert.ok(created, `${argv} came back without a CREATE`);
+			}
+
+			// Seven days of it, nothing in the future, and a block still running.
+			const now = JSON.parse((await app.run(['now', '--json'])).stdout);
+			const open = now.active.filter((a) => ['work', 'sleep', 'read'].includes(a.field) && a.state === true);
+			assert.equal(open.length, 1, `open blocks: ${JSON.stringify(now.active)}`);
+			const rows = JSON.parse((await app.run(['tail', '--json', '-n', '1000'])).stdout).rows;
+			const ago = rows.filter((r) => r.data?.sample).map((r) => (Date.parse(now.now) - Date.parse(r.time)) / 86400000);
+			assert.equal(ago.length, n);
+			assert.ok(Math.min(...ago) >= 0, 'a sample entry is in the future');
+			assert.ok(Math.max(...ago) <= 7 && Math.max(...ago) > 6, `the oldest is ${Math.max(...ago)} days ago`);
+			assert.deepEqual(app.errors, []);
+		}, DEBUG);
+	});
+
+	// What DEBUG is FOR is logging by hand beside the sample, in the sample's
+	// own fields as much as any other — so those are the entries to keep.
+	test('seeding only adds, and clearing takes only what seeding wrote', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const hand = [
+				['occur', 'coffee', '-t', '-5'],
+				['switch', 'mood', 'calm', '-t', '-2'],
+				['occur', 'posture', '-t', '-3']
+			];
+			for (const argv of hand) assert.equal((await app.run(argv)).code, 0, argv.join(' '));
+
+			const first = Number(/^(\d+) sample entries/.exec(await press(page, 'seed the last 7 days'))[1]);
+			const again = await press(page, 'seed the last 7 days');
+			const [, total, earlier] =
+				/^(\d+) sample entries in this database — (\d+) from an earlier seed, which seeding does not remove$/.exec(
+					again
+				) ?? [];
+			assert.equal(Number(earlier), first, again);
+			assert.ok(Number(total) > first * 1.5, again);
+			assert.equal(await tagged(app), Number(total));
+			assert.equal(Object.values(await counts(app)).reduce((a, b) => a + b), Number(total) + hand.length + 1);
+
+			assert.equal(await press(page, 'clear the sample'), '0 sample entries in this database');
+			assert.deepEqual(
+				await counts(app),
+				{ coffee: 1, layout: 1, mood: 1, posture: 1 },
+				'the clear took more than the sample'
+			);
+			assert.deepEqual(app.errors, []);
+		}, DEBUG);
+	});
+
+	test('stops at a command that fails, and says which', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			// Every day has a morning; refuse the SECOND one, so there is a
+			// sample before the failure and a week after it that must not run.
+			await page.evaluate(() => {
+				let mornings = 0;
+				const previous = window.datum.setRunner((argv, ...rest) =>
+					argv.includes('end') && argv.includes('sleep') && ++mornings === 2
+						? Promise.resolve({ argv, code: 1, stdout: '', stderr: 'Error: refused\n' })
+						: previous(argv, ...rest)
+				);
+			});
+			const report = await press(page, 'seed the last 7 days');
+			assert.match(report, /^stopped: `datum end sleep -d [\d-]+ -t [\d:.]+ sample=true` exited 1: Error: refused$/);
+			const log = await written(page);
+			assert.ok(log.at(-1).failed, 'the last command shown is not the one that failed');
+			assert.equal(log.filter((l) => l.failed).length, 1);
+			assert.equal(await tagged(app), log.length - 1, 'the database holds more than ran before the failure');
+			assert.ok(log.length > 1);
+		}, DEBUG);
+	});
+
+	// A DEBUG database opened before this widget carries the knobs alone:
+	// its kit row is brought up to the shipped tree, once.
+	test('an older DEBUG layout gains the seeder', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await page.locator(SEED).waitFor();
+			const old = {
+				id: 'debug-only',
+				tabs: [{ id: 'debug-only-tab', content: { id: 'debug-only-widget', kind: 'debug', settings: {} } }],
+				active: 0,
+				bar: { edge: 'top', align: 'start' }
+			};
+			const put = await app.run(['update', 'layout:debug', '-k', `root=${JSON.stringify(old)}`]);
+			assert.equal(put.code, 0, put.stderr);
+			for (const round of [1, 2]) {
+				await app.reload();
+				await page.locator(SEED).waitFor();
+				const rows = JSON.parse((await app.run(['tail', 'layout', '--json', '-n', '10'])).stdout).rows;
+				const shipped = rows.filter((r) => r.data?.kit_id === 'debug');
+				assert.equal(shipped.length, 1, `reload ${round}: ${shipped.length} debug layouts`);
+			}
+			const trail = JSON.parse((await app.run(['history', 'layout:debug', '--json'])).stdout);
+			assert.equal(trail.length, 3, 'the shipped tree was written again on a reload that needed nothing');
+		}, DEBUG);
 	});
 });
