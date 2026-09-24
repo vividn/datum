@@ -20,10 +20,16 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
+
+// ONE APP for the file (da-6b3dj, sharedApp in support/app.mjs): `solo`
+// empties the database before each hint is typed, and a hint is typed
+// through the quiet door, so the REPL's scrollback stays the empty one the
+// examples are read from.
+const shared = sharedApp();
 
 /**
  * Every command the freshly opened page offers, as the reader sees it.
@@ -36,7 +42,7 @@ after(stopApp);
 let offered;
 async function hints() {
 	if (!offered) {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			offered = {
 				placeholder: await page.locator('.prompt-bar input').getAttribute('placeholder'),
 				examples: await page.locator('.repl .quiet code').allInnerTexts()
@@ -49,7 +55,7 @@ async function hints() {
 /** Type the hint verbatim into a first-time reader's empty database. */
 async function typedFresh(line) {
 	let result;
-	await withApp(async ({ runLine }) => {
+	await shared.solo(async ({ runLine }) => {
 		result = await runLine(line);
 	});
 	return result;

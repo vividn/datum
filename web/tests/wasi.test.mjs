@@ -9,16 +9,22 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { startApp, stopApp, withApp, workerClock } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp, workerClock } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
+
+// ONE APP for the tests in the reader's default zone (da-6b3dj, sharedApp
+// in support/app.mjs): `solo` empties the database between them. The
+// Berlin ones open their own — a zone, and a worker clock set before the
+// first page.
+const shared = sharedApp();
 
 const plain = (text) => text.replace(/\x1b\[[0-9;]*m/g, '');
 
 describe('the wasi CLI', () => {
 	test('logs, reads back through a reload, and passes check', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const logged = await app.run(['occur', 'coffee', '-t', '0915']);
 			assert.equal(logged.code, 0, logged.stderr);
 			assert.match(plain(logged.stdout), /^CREATE [0-9a-z]{5} coffee:\d{4}-\d\d-\d\dT09:15:00\.000Z$/m);
@@ -34,7 +40,7 @@ describe('the wasi CLI', () => {
 	});
 
 	test('an unknown command is the CLI’s own error', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const result = await app.run(['nosuch']);
 			assert.equal(result.code, 1);
 			assert.equal(result.stderr, "Error: Invalid argument: unknown subcommand: 'nosuch'");
@@ -44,7 +50,7 @@ describe('the wasi CLI', () => {
 	// @bjorn3/browser_wasi_shim sizes argv in UTF-16 units and writes UTF-8,
 	// so the argument after a non-ASCII one arrived mangled ($lib/cli.ts).
 	test('a non-ASCII argument arrives intact, and so does the next one', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const set = await app.run(['spec', 'set', '日本語', '--verb', 'occur']);
 			assert.equal(set.code, 0, set.stderr);
 			const logged = await app.run(['occur', 'café', 'note=très bien', '-t', '0700']);
@@ -56,7 +62,7 @@ describe('the wasi CLI', () => {
 	});
 
 	test('a command reads its standard input', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, 0);
 			const dump = await app.run(['db', 'backup', '-']);
 			assert.equal(dump.code, 0, dump.stderr);
@@ -76,7 +82,7 @@ describe('the wasi CLI', () => {
 	// Insurance before sync (vividn, 2026-09-10): the one copy of the data that
 	// is not in this browser. One command, handed over as a file.
 	test('export hands over `db backup -` as a file `db restore` reads', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, 0);
 			const [download] = await Promise.all([
 				app.page.waitForEvent('download'),

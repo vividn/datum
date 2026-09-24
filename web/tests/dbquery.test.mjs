@@ -15,7 +15,8 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { ONE_PANE } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -30,6 +31,17 @@ after(stopApp);
  * about.
  */
 const onSeam = (query) => ({ query: `repl${query}` });
+
+// ONE APP per query for the tests that write the page's database alone
+// (da-6b3dj, sharedApp in support/app.mjs), `day` opened as a draft of one
+// REPL pane — the repl layout's scenery. `solo` empties the page's database
+// between tests and no other, so a test that writes the second one as well
+// still opens its own app, as does one that reloads, navigates, opens a
+// second tab, reads the whole scrollback, or is alone on its query.
+const atOther = sharedApp(onSeam('?db=other'));
+const atDefault = sharedApp(onSeam(''));
+const onOther = (fn) => atOther.solo(fn, ONE_PANE);
+const onDefault = (fn) => atDefault.solo(fn, ONE_PANE);
 
 /**
  * What was LOGGED in `db`, read from this tab by naming the database —
@@ -55,26 +67,28 @@ const fieldsIn = async (app, db) => (await entriesIn(app, db)).map((entry) => en
 
 describe('the database in the URL', () => {
 	test('a command lands in the named database and not in the default one', async () => {
-		await withApp(async (app) => {
+		await onOther(async (app) => {
 			assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, 0);
 
 			assert.deepEqual(await fieldsIn(app, 'other'), ['coffee']);
 			assert.deepEqual(await fieldsIn(app, 'datum'), []);
-		}, onSeam('?db=other'));
+		});
 	});
 
 	test('no ?db, and an empty one, are the default database', async () => {
 		for (const query of ['', '?db=']) {
-			await withApp(async (app) => {
+			const body = async (app) => {
 				assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, 0);
 				assert.deepEqual(await fieldsIn(app, 'datum'), ['coffee']);
 				assert.deepEqual(await fieldsIn(app, 'other'), []);
-			}, onSeam(query));
+			};
+			// `?db=` is alone on its query: an app of its own.
+			await (query === '' ? onDefault(body) : withApp(body, onSeam(query)));
 		}
 	});
 
 	test('the named database survives a reload — the URL is the state', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // reloads
 			assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, 0);
 			await app.reload();
 			assert.deepEqual(await fieldsIn(app, 'other'), ['coffee']);
@@ -87,7 +101,7 @@ describe('the database in the URL', () => {
 	});
 
 	test('the tail pane shows the named database’s rows and not the default one’s', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // reloads
 			// One row in each, so "it shows coffee" cannot pass by showing
 			// a `datum` the page never left.
 			assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, 0);
@@ -101,7 +115,7 @@ describe('the database in the URL', () => {
 	});
 
 	test('the scrollback echoes the command as typed, with no --db in it', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // reads the whole scrollback
 			await app.submit('occur coffee -t 0700');
 			assert.deepEqual(await app.echoes(), ['occur coffee -t 0700']);
 			// The flag is the web's, like `--width` (da-xfa4) — and the row
@@ -111,18 +125,18 @@ describe('the database in the URL', () => {
 	});
 
 	test('the tab is named after the database', async () => {
-		await withApp(async (app) => {
+		await onOther(async (app) => {
 			assert.equal(await app.page.title(), 'datum · other');
-		}, onSeam('?db=other'));
-		await withApp(async (app) => {
+		});
+		await onDefault(async (app) => {
 			assert.equal(await app.page.title(), 'datum');
-		}, onSeam(''));
+		});
 	});
 });
 
 describe('a database the page may not be pointed at', () => {
 	test('?db=_internal is refused, and the page runs on the default', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // alone on its query
 			const notice = await app.page.locator('main .notice').innerText();
 			assert.match(notice, /_internal/);
 			assert.match(notice, /datum/);
@@ -135,7 +149,7 @@ describe('a database the page may not be pointed at', () => {
 	});
 
 	test('a path is refused too — there is no filesystem out there', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // alone on its query
 			assert.match(await app.page.locator('main .notice').innerText(), /not a database name/);
 			assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, 0);
 			assert.deepEqual(await fieldsIn(app, 'datum'), ['coffee']);
@@ -145,7 +159,7 @@ describe('a database the page may not be pointed at', () => {
 
 describe('navigating inside a database', () => {
 	test('a /<name> tab stays in it, and the logo says which one', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // navigates
 			// `/tail` opens that tab and puts the page back at `/` — with the
 			// query, or the reader has silently changed database.
 			await app.goto('/tail?db=other');
@@ -168,7 +182,7 @@ describe('navigating inside a database', () => {
 
 describe('the layouts are the device’s, not the database’s', () => {
 	test('a layout saved under one database is listed under the other', async () => {
-		await withApp(async (first) => {
+		await withApp(async (first) => { // a second tab
 			const other = await first.newTab('repl?db=other');
 			const named = (app) =>
 				app.page.evaluate(async () =>
@@ -213,7 +227,7 @@ describe('the cross-tab refresh is keyed by database', () => {
 		});
 
 	test('a write in an `other` tab reaches the other `other` tab and not the `datum` one', async () => {
-		await withApp(async (writer) => {
+		await withApp(async (writer) => { // second and third tabs
 			const peer = await writer.newTab('repl?db=other');
 			const elsewhere = await writer.newTab('repl');
 			const heardByPeer = await peer.spyOnRunner();
@@ -260,7 +274,7 @@ describe('two databases behind one worker', () => {
 	// second LOCK — whether a write to `other` and a write to `datum` from
 	// the same worker can block each other, or lose a row between them.
 	test('forty writes split across both all land, once each, and check is clean', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // writes both databases
 			const logged = await Promise.all(
 				Array.from({ length: 40 }, (_, i) =>
 					i % 2
@@ -296,7 +310,7 @@ describe('two databases behind one worker', () => {
 // test she asked for. All three go red on ddc41b50, the head she reviewed.
 describe('the seam under review', () => {
 	test('a per-command flag that is not --db does not suppress the injection', async () => {
-		await withApp(async (app) => {
+		await onOther(async (app) => {
 			// `-D` is the CLI's `--full-day`
 			// (`crates/datum-parse/src/alias/scope.rs`), not a database flag.
 			// The seam's scanner read it as one, so a command carrying it
@@ -313,11 +327,11 @@ describe('the seam under review', () => {
 			const [row] = await entriesIn(app, 'other');
 			assert.equal(row.occur_time?.uncertainty, 'P1D', `-D did not log a full day: ${JSON.stringify(row)}`);
 			assert.match(row.slug, /^coffee:\d{4}-\d{2}-\d{2}$/, `a full day is slugged without a time: ${row.slug}`);
-		}, onSeam('?db=other'));
+		});
 	});
 
 	test('db purge names the database it will destroy, and destroys only that one', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // writes both databases
 			const { page } = app;
 			assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, 0);
 			assert.equal((await app.run(['--db', 'datum', 'occur', 'tea', '-t', '0800'])).code, 0);
@@ -362,7 +376,7 @@ describe('the seam under review', () => {
 	// filesystem, exited 0, and the row was gone. Measured 36/36 lost between
 	// 1 ms and 30 ms (vremya). The handles are asked what they cover now.
 	test('a first-time --db that lands mid-acquisition still gets a real file', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // reloads
 			const lost = [];
 			for (const delay of [1, 3, 5, 10, 20, 30]) {
 				const db = `fresh${delay}`;

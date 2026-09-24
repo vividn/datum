@@ -24,7 +24,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
 	PHONE,
@@ -45,6 +45,13 @@ import {
 
 before(startApp);
 after(stopApp);
+
+// ONE APP per screen (da-6b3dj, sharedApp in support/app.mjs): `solo` puts
+// back a `day` a test edited (`restoreDay`), and the shell's `restore` drops
+// any maximize left in force with it. The one that still opens an app of
+// its own reloads.
+const shared = sharedApp(DESKTOP);
+const phone = sharedApp(PHONE);
 
 /** The desktop default (defaults.ts), as the panes are titled. */
 const SIX = ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields'];
@@ -85,7 +92,7 @@ const pressed = (page) => page.locator('button.maximize[aria-pressed="true"]').c
 
 describe('the maximize badge', () => {
 	test('fills the root with the one pane, and puts the tree back exactly', async () => {
-		await withApp(async ({ page, errors }) => {
+		await shared.solo(async ({ page, errors }) => {
 			// The box the whole tree has is the box the one pane must take.
 			const whole = await boxOf(page.locator('[data-split="main"]'));
 			const before = { ratios: await ratios(page), draft: await draftOf(page) };
@@ -109,12 +116,12 @@ describe('the maximize badge', () => {
 				'maximize the repl pane'
 			);
 			assert.deepEqual(errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	// «leaving the layout and coming back should unmaximize the pane».
 	test('is dropped by opening another layout and coming back', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await press(page, 'repl');
 			assert.deepEqual(await titles(page), ['repl']);
 
@@ -128,7 +135,7 @@ describe('the maximize badge', () => {
 			await settled(page);
 			assert.deepEqual(await titles(page), SIX);
 			assert.equal(await pressed(page), 0);
-		}, DESKTOP);
+		});
 	});
 
 	test('is gone after a reload', async () => {
@@ -148,7 +155,7 @@ describe('the maximize badge', () => {
 	// The healing: the state names a pane, and a pane that is not in the
 	// tab's tree any more is simply not honoured. Nothing has to notice.
 	test('heals when the maximized pane is closed', async () => {
-		await withApp(async ({ page, errors }) => {
+		await shared.solo(async ({ page, errors }) => {
 			await press(page, 'repl');
 			await manage(page, 'repl', 'Close pane');
 			await settled(page);
@@ -158,13 +165,13 @@ describe('the maximize badge', () => {
 			);
 			assert.equal(await pressed(page), 0);
 			assert.deepEqual(errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	// A maximize into a small box is not a maximize: a pane drawn inside a
 	// nested layout tab fills the ROOT, not the layout that holds it.
 	test('a pane inside a nested layout fills the root, not the nested box', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			const whole = await boxOf(page.locator('[data-split="main"]'));
 			await page.evaluate((mine) => window.datum.layouts.saveLayout(mine), MINE);
@@ -180,13 +187,13 @@ describe('the maximize badge', () => {
 			assert.deepEqual(await titles(page), ['nowview']);
 			sameBox(await boxOf(pane(page, 'm-a')), whole, "the nested layout's maximized pane");
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	// A lock keeps the LAYOUT from changing; maximizing changes nothing
 	// saved, so it is the one badge that stays.
 	test('a locked layout keeps the badge and loses the `+` and the `▾`', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await toggleRootLock(page);
 			await settled(page);
 			assert.equal(await page.locator('section.pane button.add').count(), 0, 'a locked layout kept its `+`');
@@ -200,12 +207,12 @@ describe('the maximize badge', () => {
 			assert.deepEqual(await titles(page), ['repl']);
 			await press(page, 'repl');
 			assert.deepEqual(await titles(page), SIX);
-		}, DESKTOP);
+		});
 	});
 
 	// Nothing to fill, and no bar to put it on.
 	test('the root and a bare holder draw none', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const stray = await page.evaluate(() =>
 				[...document.querySelectorAll('button.maximize')]
 					.map((el) => el.closest('section'))
@@ -215,7 +222,7 @@ describe('the maximize badge', () => {
 			assert.deepEqual(stray, []);
 			// The badge is on the panes that DO draw a bar, all six of them.
 			assert.equal(await page.locator('section.pane > .titlebar button.maximize').count(), SIX.length);
-		}, DESKTOP);
+		});
 	});
 
 	// The DOM order is the KEYBOARD's and, since da-bzhq, the drawn order
@@ -225,7 +232,7 @@ describe('the maximize badge', () => {
 	// title or the tabs, then `+`, then `▾` — and since da-efr4i the `×`
 	// after those, the one destructive badge at the far end from the `+`.
 	test('the maximize comes first, before the title, and the `+`, `▾` and `×` after it', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const names = (id) =>
 				pane(page, id)
 					.locator('> .titlebar > .along')
@@ -240,7 +247,7 @@ describe('the maximize badge', () => {
 			// And with a strip in place of the title, the same order.
 			await addTab(page, 'repl', 'aliases');
 			assert.deepEqual(await names('repl'), ['maximize', 'tabs', 'add', 'manage', 'close']);
-		}, DESKTOP);
+		});
 	});
 });
 
@@ -287,7 +294,7 @@ describe('the maximize badge, drawn and placed', () => {
 	// The glyph was a fixed 16px square in a 16px button with a 1px
 	// outline, so it hung a pixel out of every side.
 	test('the glyph fits inside its button, on a horizontal bar and on a vertical one', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			for (const edge of ['top', 'right', 'left', 'bottom']) {
 				if (edge !== 'top') {
 					await chooseBar(page, 'repl', edge);
@@ -300,7 +307,7 @@ describe('the maximize badge, drawn and placed', () => {
 				// Smaller than the button, which is what «fits» asks for.
 				assert.ok(svg.width < box.width, `the ${edge} bar's glyph is ${svg.width}px in a ${box.width}px button`);
 			}
-		}, DESKTOP);
+		});
 	});
 
 	/**
@@ -373,10 +380,10 @@ describe('the maximize badge, drawn and placed', () => {
 	// and the glyph SIXTEEN, twice what a cursor saw, with this file
 	// green throughout. They read `--mark` now: the size of the DRAWING,
 	// one value whatever the pointer is.
-	for (const [pointer, where, floor] of [['a cursor', DESKTOP, 16], ['a finger', PHONE, 24]])
+	for (const [pointer, where, floor] of [['a cursor', shared, 16], ['a finger', phone, 24]])
 		for (const edge of ['top', 'left']) {
 			test(`under ${pointer}, on a ${edge} bar its centre is on the pane's corner, and the box it draws is smaller than the box it offers a finger`, async () => {
-				await withApp(async ({ page }) => {
+				await where.solo(async ({ page }) => {
 					if (edge !== 'top') {
 						await chooseBar(page, 'repl', edge);
 						await settled(page);
@@ -432,7 +439,7 @@ describe('the maximize badge, drawn and placed', () => {
 						box.width >= floor && box.height >= floor,
 						`the hit area is ${box.width}x${box.height} under ${pointer}, not ${floor}`
 					);
-				}, where);
+				});
 			});
 		}
 
@@ -450,7 +457,7 @@ describe('the maximize badge, drawn and placed', () => {
 	test('every badge on the row draws one box, at one size under either pointer', async () => {
 		const read = async (where) => {
 			let out;
-			await withApp(async ({ page }) => {
+			await where.solo(async ({ page }) => {
 				out = await page.evaluate(() => {
 					const row = document.querySelector('section[data-pane="repl"] > .titlebar > .along');
 					const seen = {};
@@ -471,10 +478,10 @@ describe('the maximize badge, drawn and placed', () => {
 					}
 					return { coarse: matchMedia('(pointer: coarse)').matches, seen };
 				});
-			}, where);
+			});
 			return out;
 		};
-		const [fine, coarse] = [await read(DESKTOP), await read(PHONE)];
+		const [fine, coarse] = [await read(shared), await read(phone)];
 		assert.equal(fine.coarse, false);
 		assert.equal(coarse.coarse, true);
 		for (const name of ['+', '▾', '×']) {
@@ -503,17 +510,17 @@ describe('the maximize badge, drawn and placed', () => {
 	test('the drawing is the same under a cursor and under a finger; the target is not', async () => {
 		const read = async (where) => {
 			let out;
-			await withApp(async ({ page }) => {
+			await where.solo(async ({ page }) => {
 				const { box, svg } = await drawn(page, 'repl');
 				const seen = await maximizeButton(page, 'repl').evaluate((el) => {
 					const d = getComputedStyle(el, '::before');
 					return { coarse: matchMedia('(pointer: coarse)').matches, drawn: parseFloat(d.width) };
 				});
 				out = { ...seen, button: box.width, glyph: svg.width };
-			}, where);
+			});
 			return out;
 		};
-		const [fine, coarse] = [await read(DESKTOP), await read(PHONE)];
+		const [fine, coarse] = [await read(shared), await read(phone)];
 		assert.equal(fine.coarse, false);
 		assert.equal(coarse.coarse, true);
 		assert.equal(coarse.drawn, fine.drawn, `the drawn box is ${fine.drawn} under a cursor and ${coarse.drawn} under a finger`);
@@ -552,7 +559,7 @@ describe('the maximize badge, drawn and placed', () => {
 		['×', 'button.close']
 	])
 		test(`pointing at the ${what} moves the drawn edge, and does not give the button one`, async () => {
-			await withApp(async ({ page }) => {
+			await shared.solo(async ({ page }) => {
 				const badge = pane(page, 'repl').locator(`> .titlebar ${selector}`);
 				const look = () =>
 					badge.evaluate((el) => {
@@ -579,13 +586,13 @@ describe('the maximize badge, drawn and placed', () => {
 					assert.match(seen.ground, /^rgba\(.*,\s*0\)$/, `${when}: the button draws its own ground (${seen.ground})`);
 					assert.match(seen.ownEdge, /^rgba\(.*,\s*0\)$/, `${when}: the button draws its own outline (${seen.ownEdge})`);
 				}
-			}, DESKTOP);
+			});
 		});
 
 	// The other end of the row is untouched: at `align: end` the last badge
 	// keeps the 0.5rem that holds it off the rounded corner there.
 	test('the badges at the row\'s other end keep their clearance', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await chooseBar(page, 'repl', 'end');
 			await settled(page);
 			const trail = await page.evaluate(() => {
@@ -595,7 +602,7 @@ describe('the maximize badge, drawn and placed', () => {
 				return at.right - last.right;
 			});
 			assert.ok(trail >= 6, `the last badge is ${trail.toFixed(1)}px from the row's end`);
-		}, DESKTOP);
+		});
 	});
 
 	// vividn, 2026-09-21 (da-bzhq): «move the maximize button to be before
@@ -604,7 +611,7 @@ describe('the maximize badge, drawn and placed', () => {
 	// bar too — which is the old far-corner rule (da-jlgp) withdrawn.
 	for (const edge of ['top', 'left']) {
 		test(`on a ${edge} bar the badge is before the tab names, at either alignment`, async () => {
-			await withApp(async ({ page }) => {
+			await shared.solo(async ({ page }) => {
 				if (edge !== 'top') {
 					await chooseBar(page, 'repl', edge);
 					await settled(page);
@@ -625,7 +632,7 @@ describe('the maximize badge, drawn and placed', () => {
 				// Pressing it there still maximizes: the place is all that moved.
 				await press(page, 'repl');
 				assert.deepEqual(await titles(page), ['repl']);
-			}, DESKTOP);
+			});
 		});
 	}
 });

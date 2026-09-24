@@ -33,9 +33,9 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { atEachScreen, seedLines, startApp, stopApp, withApp } from './support/app.mjs';
-import { dragBar } from './support/bar.mjs';
-import { chooser } from './support/layout.mjs';
+import { atEachScreen, seedLines, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { dragBar, fold } from './support/bar.mjs';
+import { chooser, inRoom } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -49,6 +49,18 @@ const SHORT = { width: 390, height: 560 };
 /** An SE's width, which is still common, and the narrowest phone there is. */
 const NARROW = { width: 320, height: 664 };
 const TINY = { width: 280, height: 664 };
+
+// ONE APP per screen for most of this file (da-6b3dj, sharedApp in
+// support/app.mjs): a phone, a 1280x900 desktop and Playwright's 1280x720,
+// each test on `day` alone with an empty database. A test that leaves a
+// widget's own state behind — a field pressed into its states, the custom
+// pane's command — takes a room, whose widgets go with it, and one that
+// opens the Track modal shuts it again. What still opens an app of its own
+// is alone at its options: the chooser's 320px, a coarse pointer, and a
+// locked `day` from `prepare`.
+const phone = sharedApp({ viewport: PHONE });
+const desktop = sharedApp({ viewport: { width: 1280, height: 900 } });
+const plain = sharedApp();
 
 /** Both axes of the bug: how short the screen is and how narrow it is. */
 const SCREENS = [PHONE, SHORT, NARROW, TINY];
@@ -111,35 +123,35 @@ async function assertOnScreen(page, selector, what) {
 
 describe('on a phone-sized screen', () => {
 	test("the fields widget's Track + is on screen", async (t) => {
-		await withApp(async ({ page }) => {
+		await phone.solo(async ({ page }) => {
 			await atEachScreen(t, page, [PHONE, SHORT], async () => {
 				await assertOnScreen(page, '.bar button.track', 'Track +');
 			});
-		}, { viewport: PHONE });
+		});
 	});
 
 	test("a tracked field's button is on screen", async (t) => {
-		await withApp(async (app) => {
+		await phone.solo(async (app) => {
 			const { page, submit } = app;
 			await submit('spec set coffee --verb occur');
 			await page.locator('.bar button.widget', { hasText: 'coffee' }).waitFor();
 			await atEachScreen(t, page, [PHONE, SHORT], async () => {
 				await assertOnScreen(page, '.bar button.widget', "the coffee field's chip");
 			});
-		}, { viewport: PHONE });
+		});
 	});
 
 	// The two edges of a wrapped bar, and the one that da-hkpd's fix and its
 	// verification both missed: the bar is pinned to the bottom, and wrapping
 	// must push it neither DOWNWARD past that edge nor upward off the top.
 	test(`a bar of ${FIELDS.length} fields keeps both its edges on screen`, async (t) => {
-		await withApp(async (app) => {
+		await phone.solo(async (app) => {
 			await track(app, FIELDS);
 			await atEachScreen(t, app.page, SCREENS, async () => {
 				await assertOnScreen(app.page, '.bar button.track', 'Track +');
 				await assertOnScreen(app.page, '.bar button.widget', "the first field's chip");
 			});
-		}, { viewport: PHONE });
+		});
 	});
 
 	// The gear (da-pp1a) is the root bar's right end: the global settings
@@ -149,7 +161,7 @@ describe('on a phone-sized screen', () => {
 	// and its menu, which opens from the right edge, has to land on the
 	// screen as well.
 	test('the gear and its menu are on screen', async (t) => {
-		await withApp(async ({ page }) => {
+		await phone.solo(async ({ page }) => {
 			await atEachScreen(t, page, [...SCREENS, { width: 320, height: 480 }], async () => {
 				await assertOnScreen(page, '.root-bar button.gear', 'the gear');
 				const box = await page.locator('.root-bar button.gear').boundingBox();
@@ -174,7 +186,7 @@ describe('on a phone-sized screen', () => {
 				await page.keyboard.press('Escape');
 				await page.locator('[role="menu"][aria-label="settings"]').waitFor({ state: 'detached' });
 			});
-		}, { viewport: PHONE });
+		});
 	});
 
 	// The day strip's own two controls (da-iu9i): the `+` on the divider,
@@ -183,7 +195,7 @@ describe('on a phone-sized screen', () => {
 	// strip, so a phone that leaves the strip a few dozen pixels is the
 	// case that puts them off the screen — and both are fingertips.
 	test("the strip's + handle and freeze toggle are fingertips on screen", async (t) => {
-		await withApp(async ({ page }) => {
+		await phone.solo(async ({ page }) => {
 			await atEachScreen(t, page, [PHONE, SHORT], async () => {
 				for (const [selector, what] of [
 					['.strip button.day-grip', "the strip's + handle"],
@@ -199,7 +211,7 @@ describe('on a phone-sized screen', () => {
 					);
 				}
 			});
-		}, { viewport: PHONE });
+		});
 	});
 
 	// The one chooser (da-uyx1) is a modal over the whole page, so the
@@ -246,7 +258,7 @@ describe('on a phone-sized screen', () => {
 	// screen at every phone width (a mark off the edge suggests nothing), and
 	// the output the drag opens is on the screen too.
 	test('the arrow is on screen, and the output it opens is too', async (t) => {
-		await withApp(async ({ page }) => {
+		await phone.solo(async ({ page }) => {
 			await atEachScreen(t, page, SCREENS, async () => {
 				await assertOnScreen(page, '.prompt-bar .caret', 'the arrow');
 				const box = await page.locator('.prompt-bar .caret').boundingBox();
@@ -268,7 +280,7 @@ describe('on a phone-sized screen', () => {
 				await dragBar(page, 40);
 				await page.locator('.prompt-bar .section.output').waitFor({ state: 'detached' });
 			});
-		}, { viewport: PHONE });
+		});
 	});
 
 	// And the history itself: a phone reaches it by pulling the bar up
@@ -276,7 +288,7 @@ describe('on a phone-sized screen', () => {
 	// `close history` on the screen — a control at the END of a history
 	// thousands of entries long would be no control at all.
 	test('the log a pull on the bar opens, and its way back, are on screen', async (t) => {
-		await withApp(async (app) => {
+		await phone.solo(async (app) => {
 			const { page } = app;
 			await app.submit('occur coffee');
 			await atEachScreen(t, page, SCREENS, async () => {
@@ -327,17 +339,24 @@ describe('on a phone-sized screen', () => {
 				);
 			});
 			assert.deepEqual(app.errors, []);
-		}, { viewport: PHONE });
+			// `close history` leaves the output open at the notch; folded
+			// again, as a fresh phone has it, for the shared app's next test.
+			await fold(page);
+		});
 	});
 
 	// Track + opens a modal now (da-94q1) — over the page rather than
 	// hanging off the bar's bottom row, so what it has to clear is the
 	// screen's own box. Its pictograms are measured in tests/track.test.mjs.
 	test('the modal Track + opens is on screen', async () => {
-		await withApp(async ({ page }) => {
+		await phone.solo(async ({ page }) => {
 			await page.locator('.bar button.track').click();
 			await assertOnScreen(page, 'dialog.track', 'the Track modal');
-		}, { viewport: PHONE });
+			// Shut again: a modal left open makes the page under it inert
+			// for the shared app's next test.
+			await page.keyboard.press('Escape');
+			await page.locator('dialog.track').waitFor({ state: 'detached' });
+		});
 	});
 
 	// The fields widget has NO floating surface left: the hold panel was the
@@ -347,7 +366,7 @@ describe('on a phone-sized screen', () => {
 	// same height rules, so the list itself is what has to be on screen —
 	// which is the test below, and now the only one there is to write.
 	test("the states a press fills the bar with are on screen", async () => {
-		await withApp(async (app) => {
+		await phone.room('pressed', async (app) => {
 			const { page, submit } = app;
 			// mood is the switch here, so the other four are what wrap the bar.
 			await submit('spec set mood --verb switch --state happy --state sad');
@@ -358,7 +377,7 @@ describe('on a phone-sized screen', () => {
 			await assertOnScreen(page, '.bar [data-back]', 'the way back to the fields');
 			await assertOnScreen(page, '.bar [data-state="happy"]', "mood's happy");
 			await assertOnScreen(page, '.bar [data-add-state]', 'the + that adds a state');
-		}, { viewport: PHONE });
+		});
 	});
 
 	// The stats widget (da-n7r0) as a root tab (da-0a5o): reached by its
@@ -366,7 +385,7 @@ describe('on a phone-sized screen', () => {
 	// opens on — the range picker and the argv it is running. There is no
 	// field picker any more (da-ptuwr): a bare `stats` is every field.
 	test('/stats and its range picker are on screen', async (t) => {
-		await withApp(async (app) => {
+		await phone.solo(async (app) => {
 			const { page } = app;
 			await track(app, FIELDS);
 			await app.goto('/stats');
@@ -380,16 +399,20 @@ describe('on a phone-sized screen', () => {
 				await assertOnScreen(page, '.prompt-bar input', "the bottom bar's prompt");
 				await assertOnScreen(page, '.root-bar .hint-button', 'the beta hint');
 			});
-		}, { viewport: PHONE });
+		});
 	});
 
 	test('the modal Track + opens is on screen with a wrapped bar', async () => {
-		await withApp(async (app) => {
+		await phone.solo(async (app) => {
 			const { page } = app;
 			await track(app, FIELDS);
 			await page.locator('.bar button.track').click();
 			await assertOnScreen(page, 'dialog.track', 'the Track modal');
-		}, { viewport: PHONE });
+			// Shut again: a modal left open makes the page under it inert
+			// for the shared app's next test.
+			await page.keyboard.press('Escape');
+			await page.locator('dialog.track').waitFor({ state: 'detached' });
+		});
 	});
 });
 
@@ -408,8 +431,8 @@ describe('by keyboard', () => {
 	}
 
 	test("the custom pane's ✎ and ▶ are reachable", async () => {
-		await withApp(async ({ page }) => {
-			await page.locator('section[data-pane="repl"] .titlebar button.title').focus();
+		await plain.room('keys', async ({ page }, room) => {
+			await page.locator(`section[data-pane="${inRoom(room, 'repl')}"] .titlebar button.title`).focus();
 			await tabTo(page, 'button.edit');
 			await page.keyboard.press('Enter');
 			await page.keyboard.type('occur tea');
@@ -457,7 +480,7 @@ describe('the layout engine, by keyboard', () => {
 	}
 
 	test('a Tab walk reaches every menu button, every border and the nowview steps', async () => {
-		await withApp(async ({ page }) => {
+		await desktop.solo(async ({ page }) => {
 			const reached = await tabWalk(page);
 			// The root bar's `+` and its active tab — which is the page's own
 			// menu button (da-wjob) — the beta hint (da-0a5o) and the logo,
@@ -505,11 +528,11 @@ describe('the layout engine, by keyboard', () => {
 			for (const control of controls) {
 				assert.ok(control.walk && reached.has(control.walk), `${control.what} is not in the Tab order`);
 			}
-		}, { viewport: { width: 1280, height: 900 } });
+		});
 	});
 
 	test('every menu item is on screen and reachable by the arrows', async () => {
-		await withApp(async ({ page }) => {
+		await desktop.solo(async ({ page }) => {
 			// A pane's title, the `▾` beside each `+` (da-bzhq), and the root
 			// bar's active tab (da-wjob) and gear.
 			const openers = page.locator(
@@ -559,7 +582,7 @@ describe('the layout engine, by keyboard', () => {
 			// screen and on the arrows' path, in the menu of `day` — the
 			// built-in root tab this page opens with.
 			assert.ok(seen.has('Reset layout'), `Reset layout was never walked: ${[...seen].join(' | ')}`);
-		}, { viewport: { width: 1280, height: 900 } });
+		});
 	});
 
 	// The floors a pointer needs, after the margins came down (da-jgrn) and
@@ -572,20 +595,16 @@ describe('the layout engine, by keyboard', () => {
 	// Two screens share one app; the coarse pointer cannot — `hasTouch` is a
 	// property of the browser context, not of the viewport, so it needs one
 	// of its own.
-	for (const [name, screens, options] of [
-		[
-			'by pointer',
-			[{ width: 1280, height: 900 }, { width: 390, height: 844 }],
-			{ viewport: { width: 1280, height: 900 } }
-		],
+	for (const [name, screens, withIt] of [
+		['by pointer', [{ width: 1280, height: 900 }, { width: 390, height: 844 }], (fn) => desktop.solo(fn)],
 		[
 			'under a finger',
 			[{ width: 390, height: 844 }],
-			{ viewport: { width: 390, height: 844 }, device: { hasTouch: true, isMobile: true } }
+			(fn) => withApp(fn, { viewport: { width: 390, height: 844 }, device: { hasTouch: true, isMobile: true } })
 		]
 	]) {
 		test(`every border is ≥ 8px and every … badge is on its floor, ${name}`, async (t) => {
-			await withApp(async ({ page }) => {
+			await withIt(async ({ page }) => {
 				await atEachScreen(t, page, screens, async () => {
 					const sizes = await page.evaluate(() => {
 						const box = (el) => {
@@ -611,7 +630,7 @@ describe('the layout engine, by keyboard', () => {
 					for (const [w, h] of sizes.panes) assert.ok(w >= floor && h >= floor, `a pane's menu button is ${w}x${h}`);
 					for (const [w, h] of sizes.root) assert.ok(w >= 24 && h >= 24, `a root bar control is ${w}x${h}`);
 				});
-			}, options);
+			});
 		});
 	}
 
@@ -619,7 +638,7 @@ describe('the layout engine, by keyboard', () => {
 	// each way and on screen, under a top bar and under a left-hand one —
 	// whose rotation the row, portalled to the body, does not inherit.
 	test('every Bar submenu icon is ≥ 24px and on screen, on a left-hand bar too', async (t) => {
-		await withApp(async ({ page }) => {
+		await desktop.solo(async ({ page }) => {
 			const icons = page.locator('[role="menu"][aria-label="Bar"] button');
 			await atEachScreen(t, page, [{ width: 1280, height: 900 }, { width: 390, height: 844 }], async () => {
 				for (const edge of ['top', 'left']) {
@@ -654,7 +673,7 @@ describe('the layout engine, by keyboard', () => {
 					await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 				}
 			});
-		}, { viewport: { width: 1280, height: 900 } });
+		});
 	});
 
 	// Locked (da-2a5y), a layout has FEWER targets, not unreachable ones:
@@ -699,7 +718,7 @@ describe('the layout engine, by keyboard', () => {
 	});
 
 	test('an arrow on a focused border moves it by 2%', async () => {
-		await withApp(async ({ page }) => {
+		await desktop.solo(async ({ page }) => {
 			const border = page.locator('.split.row > [role="separator"]');
 			await border.focus();
 			const was = Number(await border.getAttribute('aria-valuenow'));
@@ -713,7 +732,7 @@ describe('the layout engine, by keyboard', () => {
 				(w) => Number(document.querySelector('.split.row > [role="separator"]').getAttribute('aria-valuenow')) === w,
 				was
 			);
-		}, { viewport: { width: 1280, height: 900 } });
+		});
 	});
 });
 
@@ -759,7 +778,7 @@ const LOCKED = JSON.stringify({
 // fold, or one only a click can reach, is not a command line.
 describe('the input widget at /input', () => {
 	test('its box and its receipt are on screen', async (t) => {
-		await withApp(
+		await phone.solo(
 			async (app) => {
 				await app.goto('/input');
 				await app.page.locator('.input-widget input').waitFor();
@@ -769,13 +788,12 @@ describe('the input widget at /input', () => {
 					// And the bar it stands beside is still there and still usable.
 					await assertOnScreen(app.page, '.prompt-bar input', "the bottom bar's prompt");
 				});
-			},
-			{ viewport: PHONE }
+			}
 		);
 	});
 
 	test('a Tab walk from the top of the page reaches its input, as it does the bar’s', async () => {
-		await withApp(async (app) => {
+		await plain.solo(async (app) => {
 			await app.goto('/input');
 			await app.page.locator('.input-widget input').waitFor();
 			await app.page.evaluate(() => document.body.focus());

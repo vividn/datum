@@ -15,7 +15,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { isDeepStrictEqual } from 'node:util';
-import { inWorker, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
+import { inWorker, sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
 import {
 	chooseRoot,
@@ -98,6 +98,13 @@ const internal = (argv) => argv[0] === '--db' && argv[1] === '_internal';
 before(startApp);
 after(stopApp);
 
+// ONE APP for the tests that stay on this page (da-6b3dj, sharedApp in
+// support/app.mjs): `solo` deletes every layout the reader saved and puts
+// `day` back. The rest open their own: they reload, open a second tab,
+// refuse storage, hold the clock, or leave the root without `day` (Save
+// layout as…), which `solo` cannot undo.
+const shared = sharedApp();
+
 describe('the store', () => {
 	test('a saved layout is listed, and loads back whole, after a reload', async () => {
 		await withApp(async (app) => {
@@ -123,7 +130,7 @@ describe('the store', () => {
 	});
 
 	test('two saves are two versions, either of which can be restored; save-as copies', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const first = tree('home', 'daystrip');
 			const second = tree('home', 'nowview');
 			await layouts(app, 'saveLayout', first);
@@ -331,7 +338,7 @@ describe('the draft', () => {
 
 describe('the controls', () => {
 	test('an unmodified Restore lists the versions, and one of them can be picked', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			await controlsReady(app);
 			const first = shellTree('day', 'daystrip');
 			await layouts(app, 'saveLayout', first);
@@ -479,7 +486,7 @@ describe('Reset layout', () => {
 	});
 
 	test('with no save to shadow it, a reset just discards this device’s draft', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await controlsReady(app);
 			const panes = await paneCount(page);

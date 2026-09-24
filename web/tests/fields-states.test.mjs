@@ -23,7 +23,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { pressArgv } from '../src/lib/fields.ts';
-import { startApp, stopApp, todayAt, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { CLEAR, GREEN, MOOD, seed, untilFieldStyle } from './support/fields.mjs';
 
 // A state field asks WHICH, so its button reads `name:` and a press fills
@@ -35,6 +35,14 @@ describe('a state field fills the widget with its states', () => {
 	before(startApp);
 	after(stopApp);
 
+	// ONE APP at 15:00 (da-6b3dj, sharedApp in support/app.mjs): `solo`
+	// empties the database each test wrote, and the REPL is read from its
+	// end. A test that ends with the states still drawn takes a ROOM, since
+	// the widget keeps them over an emptied database and the next test's
+	// `mood:` would never come. The scroll test keeps an app of its own, the
+	// one on its screen.
+	const shared = sharedApp({ clock: todayAt(15) });
+
 	/** Every button the bar is showing, in order, by the word on it. */
 	const bar = (page) =>
 		page.locator('.bar').evaluate((el) =>
@@ -42,7 +50,7 @@ describe('a state field fills the widget with its states', () => {
 		);
 
 	test('the button reads `mood:`, a press fills the bar with its states, and one logs a switch', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await seed(app, MOOD, 'mood');
 			assert.equal(await page.locator('.bar [data-field="mood"]').innerText(), 'mood:');
@@ -61,11 +69,11 @@ describe('a state field fills the widget with its states', () => {
 			assert.equal((await app.echoes()).at(-1), 'switch mood happy');
 			await page.locator('.bar [data-field="mood"]').waitFor();
 			assert.deepEqual(await bar(page), ['Track +', 'mood:']);
-		}, { clock: todayAt(15) });
+		});
 	});
 
 	test('`< Back` runs nothing and the fields are back', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await seed(app, MOOD, 'mood');
 			const before = (await app.echoes()).length;
@@ -76,11 +84,11 @@ describe('a state field fills the widget with its states', () => {
 			await page.locator('.bar [data-field="mood"]').waitFor();
 			assert.deepEqual(await bar(page), ['Track +', 'mood:']);
 			assert.equal((await app.echoes()).length, before, 'Back logged something');
-		}, { clock: todayAt(15) });
+		});
 	});
 
 	test('`+` takes a state the field has never been in, and it is in the list next time', async () => {
-		await withApp(async (app) => {
+		await shared.room('new-state', async (app) => {
 			const { page } = app;
 			await seed(app, MOOD, 'mood');
 			const before = (await app.echoes()).length;
@@ -97,11 +105,11 @@ describe('a state field fills the widget with its states', () => {
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-state="sad"]').waitFor();
 			assert.deepEqual(await bar(page), ['< Back', 'calm', 'happy', 'sad', '+']);
-		}, { clock: todayAt(15) });
+		});
 	});
 
 	test('the states are painted the colours `fields --json` reports for them', async () => {
-		await withApp(async (app) => {
+		await shared.room('painted', async (app) => {
 			const { page } = app;
 			const rgb = (hex) =>
 				`rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
@@ -133,11 +141,11 @@ describe('a state field fills the widget with its states', () => {
 				{ state: 'good', bg: rgb('#008000'), border: rgb('#800080'), color: 'rgb(255, 255, 255)' },
 				{ state: 'bad', bg: CLEAR, border: rgb('#ff0000'), color: rgb('#ff0000') }
 			]);
-		}, { clock: todayAt(15) });
+		});
 	});
 
 	test('the states are in the Tab order in that sequence, and Escape is Back', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await seed(app, MOOD, 'mood');
 			const before = (await app.echoes()).length;
@@ -156,7 +164,7 @@ describe('a state field fills the widget with its states', () => {
 			await page.keyboard.press('Escape');
 			await page.locator('.bar [data-field="mood"]').waitFor();
 			assert.equal((await app.echoes()).length, before, 'Escape logged something');
-		}, { clock: todayAt(15) });
+		});
 	});
 
 	// The states are fewer than the fields, so the shorter list scrolls the

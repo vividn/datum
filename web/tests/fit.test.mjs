@@ -30,7 +30,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { devices } from 'playwright';
-import { startApp, stopApp, withApp, todayAt, seedLines } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp, todayAt, seedLines } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
@@ -56,6 +56,17 @@ const DRAWN = ['dayview', 'nowview'];
  * evening and nowview draws no current state at all (da-ldct).
  */
 const AFTERNOON = todayAt(15);
+
+// ONE APP per screen of SCREENS (da-6b3dj, sharedApp in support/app.mjs):
+// the database is emptied and `day` put back between tests, so each logs
+// its day onto a fresh one. What still opens its own: `never scrolls
+// sideways`, which measures the REPL pane and so wants a scrollback of its
+// own test alone; the prompts, which start from a stored scrollback; and
+// the tail's widths and the shell's narrower ones, which no other test
+// shares.
+const shared = Object.fromEntries(
+	SCREENS.map(({ name, viewport, device }) => [name, sharedApp({ viewport, device, clock: AFTERNOON })])
+);
 
 /** Enough of a day that every pane has something in it. */
 const A_DAY = [
@@ -164,7 +175,7 @@ async function drawn(app, title) {
 describe('a pane', () => {
 	for (const { name, viewport, device } of SCREENS) {
 		test(`shows its drawn views whole on ${name}`, async () => {
-			await withApp(
+			await shared[name].solo(
 				async (app) => {
 					await logADay(app);
 					for (const title of DRAWN) {
@@ -175,8 +186,7 @@ describe('a pane', () => {
 						assert.ok(box.scrollHeight <= box.clientHeight, `scrolls down — ${said}`);
 						assert.ok(box.scrollWidth <= box.clientWidth, `scrolls sideways — ${said}`);
 					}
-				},
-				{ viewport, device, clock: AFTERNOON }
+				}
 			);
 		});
 
@@ -206,7 +216,7 @@ describe('a pane', () => {
 		// the pixel, at every width — which is only true if the pane
 		// ASKED for that size rather than squeezing what came back.
 		test(`draws its views at 1:1, never scaled, on ${name}`, async () => {
-			await withApp(
+			await shared[name].solo(
 				async (app) => {
 					await logADay(app);
 					await show(app, 'nowview');
@@ -230,8 +240,7 @@ describe('a pane', () => {
 							`${title} on ${name} authored ${natural}px and is shown at ${shown.toFixed(1)}px — ×${(shown / natural).toFixed(3)}`
 						);
 					}
-				},
-				{ viewport, device, clock: AFTERNOON }
+				}
 			);
 		});
 	}
@@ -249,8 +258,8 @@ describe('a pane', () => {
 	// been drawn at the size it is shown at, which is the fix.
 	test('says the same thing however narrow it gets', async () => {
 		let wide;
-		for (const { name, viewport, device } of SCREENS) {
-			await withApp(
+		for (const { name } of SCREENS) {
+			await shared[name].solo(
 				async (app) => {
 					await logADay(app);
 					await show(app, 'nowview');
@@ -280,8 +289,7 @@ describe('a pane', () => {
 						Math.min(...shown.fonts) >= 6,
 						`nowview on ${name} drew ${Math.min(...shown.fonts)}px text`
 					);
-				},
-				{ viewport, device, clock: AFTERNOON }
+				}
 			);
 		}
 	});
@@ -385,7 +393,7 @@ describe('a pane', () => {
 	// `width` it declares: a stretched picture keeps its declared size and
 	// only a re-run changes it.
 	test('redraws both views when the window changes, with no reload', async () => {
-		await withApp(
+		await shared['1280x900'].solo(
 			async (app) => {
 				await logADay(app);
 				const canvases = () =>
@@ -416,8 +424,7 @@ describe('a pane', () => {
 				for (const title of DRAWN) {
 					assert.ok(after[title] < before[title], `${title} kept its ${before[title]}px canvas`);
 				}
-			},
-			{ viewport: { width: 1280, height: 900 }, clock: AFTERNOON }
+			}
 		);
 	});
 });
@@ -520,7 +527,12 @@ describe('the tail pane', () => {
 describe('the shell', () => {
 	for (const width of [360, 390, 768, 1280]) {
 		test(`the root bar and the bottom bar fit at ${width}px`, async () => {
-			await withApp(
+			// 1280x900 is the first screen's, and shares its app.
+			const open =
+				width === 1280
+					? shared['1280x900'].solo
+					: (fn) => withApp(fn, { viewport: { width, height: 900 }, clock: AFTERNOON });
+			await open(
 				async (app) => {
 					await logADay(app);
 					const seen = await app.page.evaluate(() => {
@@ -543,8 +555,7 @@ describe('the shell', () => {
 					assert.equal(seen.sideways, 0, `the page scrolls sideways by ${seen.sideways}px`);
 					assert.equal(seen.mainSideways, 0, `main scrolls sideways by ${seen.mainSideways}px`);
 					assert.ok(seen.input >= seen.bar.width * 0.35, `the prompt has ${seen.input.toFixed(0)}px of a ${seen.bar.width.toFixed(0)}px bar`);
-				},
-				{ viewport: { width, height: 900 }, clock: AFTERNOON }
+				}
 			);
 		});
 	}

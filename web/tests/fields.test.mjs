@@ -29,7 +29,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { inkOver, lookOf, pressArgv, shapeFor, buttonsFor } from '../src/lib/fields.ts';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, GREEN, ORANGE, PURPLE, type, untilFieldStyle } from './support/fields.mjs';
 import { listed } from './support/rows.mjs';
 
@@ -184,8 +184,12 @@ describe('in the app', () => {
 	before(startApp);
 	after(stopApp);
 
+	// ONE APP for the file (da-6b3dj, sharedApp in support/app.mjs): `solo`
+	// empties the database each test wrote, and the REPL is read from its end.
+	const shared = sharedApp();
+
 	test('Track + first and largest, then every field as high up the pictures as the CLI draws it, each drawn by its kind', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of FIXTURE) await type(page, line);
 			await page.locator('.bar [data-field="untracked"]').waitFor();
@@ -236,7 +240,7 @@ describe('in the app', () => {
 	// da-d08c, the three cases as measured: whether a field has a spec says
 	// nothing about whether it gets a button — its track/ignore status does.
 	test('track tea and occur walk are buttons; an ignored run with a spec is not, and Track + un-ignores it', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of ['track tea --verb occur', 'occur walk', 'spec set run --verb occur']) await type(page, line);
 			// Drawn BEFORE it is ignored. `['tea', 'walk']` is also what the bar
@@ -261,7 +265,7 @@ describe('in the app', () => {
 	});
 
 	test('a field that arrives by `db restore -` is a button after that command, with no reload', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await type(page, 'occur walk');
 			await page.locator('.bar button[data-field="walk"]').waitFor();
@@ -290,7 +294,7 @@ describe('in the app', () => {
 	});
 
 	test('a block fills while it is on, a switch takes its state colour inside the field outline', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			for (const line of FIXTURE) await type(page, line);
 			await type(page, 'start work');
 			await untilFieldStyle(page, 'work', 'backgroundColor', BLUE);
@@ -305,7 +309,7 @@ describe('in the app', () => {
 	});
 
 	test('Track + is there on an empty database, the hint one line beside it', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const track = await page.locator('.bar button.track').boundingBox();
 			const hint = await page.locator('.bar .hint.empty').boundingBox();
 			assert.ok(Math.abs(hint.y + hint.height / 2 - (track.y + track.height / 2)) < 4, 'the hint is not beside Track +');

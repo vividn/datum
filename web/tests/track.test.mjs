@@ -18,7 +18,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { splitStates, trackArgv, trackLabel, VERBS, verbAsked } from '../src/lib/track.ts';
 import { stripAnsi } from './support/tail.mjs';
 
@@ -84,6 +84,12 @@ describe('in the app', () => {
 	before(startApp);
 	after(stopApp);
 
+	// ONE APP for the tests on the default screen (da-6b3dj, sharedApp in
+	// support/app.mjs): `solo` empties the database between them and each
+	// reads its own echo from the end. The pictograms (`?repl`), the phone
+	// screen and a test that leaves the modal open open their own.
+	const shared = sharedApp();
+
 	// The claim this file exists for. One field per verb, declared through
 	// the real CLI, and the action cell `tail` paints for each declaration
 	// read back: the web's table has to BE those four glyphs.
@@ -103,7 +109,7 @@ describe('in the app', () => {
 	});
 
 	test('Track + opens the modal: four pictograms, `track it` shut until a name and a verb', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // leaves the modal open, which `solo` does not close
 			const { page } = app;
 			await openIt(page);
 			const glyphs = await page.locator(`${MODAL} .verb .glyph`).allInnerTexts();
@@ -136,7 +142,7 @@ describe('in the app', () => {
 	});
 
 	test('`track it` declares the field — TRACK▞ in the log, a button in the bar', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
 			await fill(page, 'mood', 'switch');
@@ -155,7 +161,7 @@ describe('in the app', () => {
 	});
 
 	test('Escape runs nothing', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
 			await fill(page, 'mood', 'occur');
@@ -170,7 +176,7 @@ describe('in the app', () => {
 	// The door a filtered list's `+` comes in by (the commands widget): the
 	// verb is already chosen, so the modal opens on it.
 	test('a preset verb opens already chosen, and only that one', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			const ran = page.evaluate(() => window.datum.track({ verb: 'occur' }));
 			await page.locator(MODAL).waitFor();
@@ -191,7 +197,7 @@ describe('in the app', () => {
 	// with neither a spec nor a log comes back asking, and the modal is the
 	// asking. What it answers with replaces the refused command.
 	test('a bare `track` on a new field opens the modal, with the field already in it', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			const typed = page.evaluate(() => window.datum.runLine('track sleep'));
 			await page.locator(MODAL).waitFor();
@@ -205,7 +211,7 @@ describe('in the app', () => {
 	});
 
 	test('an ignored field is offered back, and a press re-tracks it', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.submit('track run --verb occur');
 			// Drawn BEFORE it is taken away: a bar that has not got round to
@@ -226,7 +232,7 @@ describe('in the app', () => {
 	// at all (da-hkpd). A modal has none of those problems and the form has
 	// no second life.
 	test('the form that used to hang off the bar is gone from the DOM', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => { // leaves the modal open: last of the shared
 			await page.locator('.bar button.track').click();
 			await page.locator(MODAL).waitFor();
 			assert.equal(await page.locator('.bar form.add, .bar .panel.add').count(), 0);

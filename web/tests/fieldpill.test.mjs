@@ -19,7 +19,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp as withAnyApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp as withAnyApp } from './support/app.mjs';
 import { DESKTOP, along, draft, pane, widgetPane } from './support/layout.mjs';
 import { listed } from './support/rows.mjs';
 
@@ -52,6 +52,13 @@ const withApp = (fn, options = {}) =>
 			await context.addInitScript(draft, PAGE);
 		}
 	});
+
+// ONE APP for the tests that stay on this page at 1280x900 (da-6b3dj,
+// sharedApp in support/app.mjs): `solo` empties the database and the pills,
+// and opens `day` from PAGE as a draft, as `prepare` does at boot. What
+// reloads, counts a load's writes, or is the finger's screen keeps its own.
+const shared = sharedApp(DESKTOP);
+const onPage = (fn) => shared.solo(fn, PAGE);
 
 /**
  * Two fields with entries of their own, and colours the CLI resolves
@@ -152,7 +159,7 @@ const commands = async (page) => (await listed(pane(page, 'cmd').locator('.bar')
 
 describe('the gesture, and the pill it mints', () => {
 	test('a hold mints the field pill, in the field’s own colour', async () => {
-		await withApp(async (app) => {
+		await onPage(async (app) => {
 			const { page } = app;
 			await ready(app);
 			assert.equal(await fieldPill(page).count(), 0, 'a pill before the gesture');
@@ -194,7 +201,7 @@ describe('the gesture, and the pill it mints', () => {
 	// meaning at every count (da-e78x6). Held twice, the field is simply
 	// pilled twice.
 	test('shift+click mints it too, and the same gesture again still only mints', async () => {
-		await withApp(async (app) => {
+		await onPage(async (app) => {
 			const { page } = app;
 			await ready(app);
 
@@ -231,7 +238,8 @@ describe('the gesture, and the pill it mints', () => {
 	]) {
 		const finger = pointer === 'a finger';
 		test(`a long press with ${pointer} mints, and mints again on an already-pilled field`, async () => {
-			await withApp(async (app) => {
+			// The finger is the one test on its screen: an app of its own.
+			await (finger ? withApp : onPage)(async (app) => {
 				const { page } = app;
 				await ready(app);
 
@@ -261,7 +269,7 @@ describe('the gesture, and the pill it mints', () => {
 	// the right click comes through, and the pill's × is a button in the
 	// tab order.
 	test('the keyboard mints it and the keyboard takes it away', async () => {
-		await withApp(async (app) => {
+		await onPage(async (app) => {
 			const { page } = app;
 			await ready(app);
 
@@ -281,7 +289,7 @@ describe('the gesture, and the pill it mints', () => {
 	// spends it and the filter is gone. Named here so it can be corrected
 	// in a word if it turns out to be annoying in use.
 	test('it is unlocked, so a successful command clears it', async () => {
-		await withApp(async (app) => {
+		await onPage(async (app) => {
 			const { page } = app;
 			await ready(app);
 			await hold(page, 'coffee');
@@ -298,7 +306,7 @@ describe('the gesture, and the pill it mints', () => {
 	// is field-first, so `occur coffee` under a `mood` pill would log mood as
 	// coffee's STATE. The pill is refused and stays loaded.
 	test('a press that already names a field does not get the pill appended', async () => {
-		await withApp(async (app) => {
+		await onPage(async (app) => {
 			const { page } = app;
 			await ready(app);
 			await hold(page, 'mood');
@@ -328,7 +336,7 @@ describe('what narrows to it', () => {
 	// nothing at all while looking as though it worked. The claim is the
 	// HIDING, and that `spec` — the way to the spec editor — survives.
 	test('the commands widget keeps the commands that name a field, and hides the rest', async () => {
-		await withApp(async (app) => {
+		await onPage(async (app) => {
 			const { page } = app;
 			await ready(app);
 			const whole = await commands(page);
@@ -350,7 +358,7 @@ describe('what narrows to it', () => {
 	});
 
 	test('the stats widget narrows to that field, and widens back when the pill clears', async () => {
-		await withApp(async (app) => {
+		await onPage(async (app) => {
 			const { page } = app;
 			await ready(app);
 			const stats = pane(page, 'stats');
@@ -378,7 +386,7 @@ describe('what narrows to it', () => {
 	});
 
 	test('the tail pane lists that field alone', async () => {
-		await withApp(async (app) => {
+		await onPage(async (app) => {
 			const { page } = app;
 			await ready(app);
 			const rows = () =>
@@ -405,7 +413,7 @@ describe('what narrows to it', () => {
 	// The claim is both halves: the pilled field's marks carry the halo, and
 	// nothing at all is done to the others.
 	test('a picture outlines that field’s own marks and leaves every other field alone', async () => {
-		await withApp(async (app) => {
+		await onPage(async (app) => {
 			const { page } = app;
 			await ready(app);
 			const groups = () =>
@@ -465,7 +473,7 @@ describe('what narrows to it', () => {
 // the stats widget's argv AND its body back.
 describe('what survives a reload', () => {
 	test('a LOCKED field pill comes back, and narrows stats exactly as a fresh one does', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // reloads
 			const { page } = app;
 			await ready(app);
 			await hold(page, 'coffee');
@@ -506,7 +514,7 @@ describe('what survives a reload', () => {
 	});
 
 	test('an unlocked one does not, and stats is every field again', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // reloads
 			const { page } = app;
 			await ready(app);
 			await hold(page, 'coffee');
@@ -535,7 +543,7 @@ describe('what survives a reload', () => {
 	// minimax-m3-preview on PR #86). A claim in a comment that nothing
 	// checks is a claim that rots, so this counts the writes.
 	test('an ordinary load does not write to storage, and still restores the pill', async () => {
-		await withSpyingApp(async (app) => {
+		await withSpyingApp(async (app) => { // an init script of its own, and reloads
 			const { page } = app;
 			await ready(app);
 			await hold(page, 'coffee');
@@ -576,7 +584,7 @@ describe('what survives a reload', () => {
 	// Locking is not the only way out: a locked pill taken away stays away,
 	// which is the half a store that only ever WROTE would get wrong.
 	test('a locked pill removed before the reload does not come back', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // reloads
 			const { page } = app;
 			await ready(app);
 			await hold(page, 'coffee');

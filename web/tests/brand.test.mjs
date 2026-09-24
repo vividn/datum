@@ -20,11 +20,22 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
+
+// ONE APP per screen where tests share their options (da-6b3dj, sharedApp in
+// support/app.mjs): Playwright's 1280x720 and a 390x640 phone on `datum`,
+// and the beta mark's phone. `solo` empties only the page's own database,
+// so a database another test seeded is still in the logo's menu — none of
+// the shared tests counts that list after another has grown it. What still
+// opens an app of its own is at a `?db` or screen of its own, watches the
+// requests (`prepare`), or moves the page to another database, reloads or
+// opens a second tab: a shared app keeps its query, so it would stay there.
+const plain = sharedApp();
+const phone = sharedApp({ viewport: { width: 390, height: 640 } });
 
 const BRAND = '.prompt-bar .brand';
 const MENU = '[role="menu"][aria-label="databases"]';
@@ -221,7 +232,7 @@ describe('the logo', () => {
 	});
 
 	test('opens a menu of the databases, the page’s own checked, without `_internal`', async () => {
-		await withApp(async (app) => {
+		await plain.solo(async (app) => {
 			const { page } = app;
 			await seed(app, 'other', 'coffee');
 			const items = await openMenu(page);
@@ -349,7 +360,7 @@ describe('the logo', () => {
 	});
 
 	test('the dialog closes on Escape and on cancel, goes nowhere, and gives the focus back to the mark', async () => {
-		await withApp(async ({ page }) => {
+		await plain.solo(async ({ page }) => {
 			const before = page.url();
 			for (const dismiss of [
 				(ask) => ask.locator('input').press('Escape'),
@@ -377,7 +388,7 @@ describe('the logo', () => {
 		// unless the placement follows the size (PaneMenu's `place`). Held at
 		// the phone, where there is least room, and stated as the rule: the
 		// box lies inside the screen.
-		await withApp(
+		await phone.solo(
 			async (app) => {
 				const { page } = app;
 				await seed(app, 'other', 'coffee');
@@ -396,13 +407,12 @@ describe('the logo', () => {
 					`the menu ends at ${box.y + box.height}, the screen at ${screen.height}`
 				);
 				assert.ok(box.x >= 0 && box.x + box.width <= screen.width, 'the menu is off the side');
-			},
-			{ viewport: { width: 390, height: 640 } }
+			}
 		);
 	});
 
 	test('Escape closes the menu and the logo keeps the focus', async () => {
-		await withApp(async ({ page }) => {
+		await plain.solo(async ({ page }) => {
 			await openMenu(page);
 			await page.keyboard.press('Escape');
 			await page.locator(MENU).waitFor({ state: 'detached' });
@@ -424,13 +434,12 @@ describe('the logo', () => {
 	});
 
 	test('it is a fingertip’s 24px on a phone', async () => {
-		await withApp(
+		await phone.solo(
 			async ({ page }) => {
 				const box = await page.locator(BRAND).boundingBox();
 				assert.ok(box.height >= 24, `the logo is ${box.height}px tall`);
 				assert.ok(box.width >= 24, `the logo is ${box.width}px wide`);
-			},
-			{ viewport: { width: 390, height: 640 } }
+			}
 		);
 	});
 });
@@ -457,7 +466,7 @@ const paletteOf = async (page, tokens) =>
 
 describe('the base colour follows the database', () => {
 	test('the default database is the palette datum has always had, grounds and accent, to the byte', async () => {
-		await withApp(async ({ page }) => {
+		await plain.solo(async ({ page }) => {
 			assert.deepEqual(await paletteOf(page, DATUM), DATUM);
 			assert.deepEqual(await paletteOf(page, MEANING), MEANING);
 		});
@@ -516,6 +525,7 @@ describe('the base colour follows the database', () => {
 
 describe('the beta mark', () => {
 	const PHONE = { width: 412, height: 563 };
+	const beta = sharedApp({ viewport: PHONE });
 
 	// The bar's right end reads ⓘ · lock · gear (da-fphjw): the lock came
 	// across the gear — vividn, "move the lock button to the other side of
@@ -525,7 +535,9 @@ describe('the beta mark', () => {
 	// so the chain is asserted as a chain rather than as one gap.
 	test('is in the root bar, last before the lock and the gear, its ⓘ a fingertip’s 24px, and not on the bottom bar', async () => {
 		for (const viewport of [{ width: 1280, height: 900 }, PHONE, { width: 320, height: 664 }]) {
-			await withApp(
+			// The phone's app is the note's below; the other two screens are alone.
+			const open = viewport === PHONE ? beta.solo : (fn) => withApp(fn, { viewport });
+			await open(
 				async ({ page }) => {
 					const at = await page.evaluate(() => {
 						const box = (s) => document.querySelector(s)?.getBoundingClientRect() ?? null;
@@ -552,14 +564,13 @@ describe('the beta mark', () => {
 					// And the gear, now the bar's last thing, is still on the
 					// screen at the narrowest.
 					assert.ok(at.gear.right <= at.screen, `${size}: the gear is off the screen`);
-				},
-				{ viewport }
+				}
 			);
 		}
 	});
 
 	test('its note opens DOWN from the top bar and is whole on a phone', async () => {
-		await withApp(
+		await beta.solo(
 			async ({ page }) => {
 				await page.locator('.root-bar .hint-button').click();
 				const at = await page.evaluate(() => ({
@@ -571,8 +582,7 @@ describe('the beta mark', () => {
 				assert.ok(at.note.top >= at.bar.bottom, 'the note does not hang below the bar');
 				assert.ok(at.note.left >= 0 && at.note.right <= at.width, `the note is off the side: ${at.note.left}..${at.note.right}`);
 				assert.ok(at.note.bottom <= at.height, 'the note is off the bottom');
-			},
-			{ viewport: PHONE }
+			}
 		);
 	});
 });

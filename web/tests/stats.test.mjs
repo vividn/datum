@@ -13,8 +13,8 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp as withAnyApp, workerClock } from './support/app.mjs';
-import { chooseRoot, draft, unlockRoot, widgetPane } from './support/layout.mjs';
+import { sharedApp, startApp, stopApp, withApp as withAnyApp, workerClock } from './support/app.mjs';
+import { chooseRoot, unlockRoot, widgetPane } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -31,6 +31,15 @@ const withApp = (fn, { prepare, ...options } = {}) =>
 			await prepare?.(context);
 		}
 	});
+
+// ONE APP for the tests on this clock (da-6b3dj, sharedApp in
+// support/app.mjs), each on `day` alone with an empty database — or on
+// `day` from a stored draft, `solo`'s second argument; `openStats`
+// navigates, and the stats tab it opens is closed by the next `solo`. What
+// still opens an app of its own goes to another database (a shared app
+// keeps its query), opens a second page, reloads, or starts from blocked
+// storage or a screen of its own.
+const shared = sharedApp({ prepare: clock.prepare });
 
 /** Terminal text as a reader sees it: no colour codes, runs of space as one. */
 const plain = (s) => s.replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+/g, ' ').trim();
@@ -86,7 +95,7 @@ async function expectStats({ page, run }, argv) {
 
 describe('/stats', () => {
 	test('opened fresh it is every field, and there is no field selector left', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			await seed(app);
 			await openStats(app);
 			await expectStats(app, ['stats']);
@@ -110,7 +119,7 @@ describe('/stats', () => {
 	// tiles ARE there and hold the CLI's own numbers — it fails when the
 	// empty state is empty.
 	test('nothing selected: the headline is the database — entries, tracked, fields', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			await seed(app);
 			await openStats(app);
 			await expectStats(app, ['stats']);
@@ -144,7 +153,7 @@ describe('/stats', () => {
 	// leaves out a field with nothing in it. So the widget says which
 	// database and which window, and both are read rather than printed.
 	test('the tiles say what they cover: this database, this window', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			await seed(app);
 			await openStats(app);
 			await expectStats(app, ['stats']);
@@ -186,7 +195,7 @@ describe('/stats', () => {
 	// A database with nothing in it is the widget WORKING, not an error and
 	// not a pane still loading. It says so in zeroes.
 	test('an empty database is three zeroes, not a blank pane', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			await openStats(app);
 			await expectStats(app, ['stats']);
 			assert.deepEqual(await tiles(app.page), [
@@ -199,7 +208,7 @@ describe('/stats', () => {
 	});
 
 	test('the share bar is the ratio column: one slice per field, in the CLI’s own colours', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			await seed(app);
 			await openStats(app);
 			await expectStats(app, ['stats']);
@@ -237,7 +246,7 @@ describe('/stats', () => {
 	});
 
 	test('the range adds its flags: a period, or --since / --until', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			await seed(app);
 			await openStats(app);
 
@@ -318,7 +327,7 @@ describe('/stats', () => {
 	});
 
 	test('a field saved by an older layout is not a selection the widget comes back to', async () => {
-		await withApp(
+		await shared.solo(
 			async (app) => {
 				await seed(app);
 				await app.goto('/');
@@ -329,17 +338,11 @@ describe('/stats', () => {
 				await expectStats(app, ['stats']);
 				assert.deepEqual(app.errors, []);
 			},
-			{
-				prepare: (context) =>
-					context.addInitScript(
-						draft,
-						JSON.stringify({
-							version: 1,
-							name: 'default',
-							root: widgetPane('stats', 'stats', { field: 'mood', state: 'happy', range: 'all' })
-						})
-					)
-			}
+			JSON.stringify({
+				version: 1,
+				name: 'default',
+				root: widgetPane('stats', 'stats', { field: 'mood', state: 'happy', range: 'all' })
+			})
 		);
 	});
 

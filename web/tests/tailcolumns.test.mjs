@@ -107,6 +107,10 @@ const THREE = ['time', 'field', 'state'];
 /** The columns a box `width` wide draws, by the probe's `needs`: the widest set that fits. */
 const drops = (needs, width) => (needs.all <= width ? ALL : needs.noHid <= width ? NO_HID : THREE);
 
+// Every test here opens an app of its own (da-6b3dj): each seeds and then
+// RELOADS (the layouts have no REPL), so a shared app saves no boot — the
+// three at 400x700 through `solo(fn, draft)` measured no faster — and the
+// phones are FRESH.
 describe('a narrow tail gives up hid, then _n', () => {
 	test('at 250px: hid goes, no word broken, every row keeps its hid', async () => {
 		await withApp(

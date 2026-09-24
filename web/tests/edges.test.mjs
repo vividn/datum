@@ -15,7 +15,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	fill,
 	lockButton,
@@ -32,6 +32,12 @@ const SCREENS = [
 	{ width: 1280, height: 800 },
 	{ width: 390, height: 844 }
 ];
+
+// ONE APP for the tests at the desktop screen that stay on the page
+// (da-6b3dj, sharedApp in support/app.mjs): `solo` puts the split `day`
+// back. A reload, the phone's screen and a device that stored a lock open
+// their own.
+const desk = sharedApp({ viewport: SCREENS[0] });
 
 /** Which arrow of `Split` puts a pane down each side. */
 const WHERE = { top: 'above', bottom: 'below', left: 'to the left', right: 'to the right' };
@@ -64,7 +70,7 @@ const near = (a, b) => Math.abs(a - b) <= 1;
 
 describe('extending the dashboard from its edges', () => {
 	test('the four margin handles are gone; the root menu carries the act instead', async () => {
-		await withApp(async ({ page }) => {
+		await desk.solo(async ({ page }) => {
 			await page.locator('section.root').waitFor();
 			assert.equal(await page.locator('button.faint').count(), 0, 'a margin handle is still drawn');
 			assert.equal(
@@ -78,7 +84,7 @@ describe('extending the dashboard from its edges', () => {
 			assert.ok(lines.includes('Split ← ↓ ↑ →'), 'the root ▾ has no Split row');
 			assert.ok(!lines.includes('Break out ← ↓ ↑ →'), 'the root ▾ still offers Break out');
 			await page.keyboard.press('Escape');
-		}, { viewport: SCREENS[0] });
+		});
 	});
 
 	for (const viewport of SCREENS) {
@@ -109,7 +115,8 @@ describe('extending the dashboard from its edges', () => {
 		});
 
 		test(`← adds a pane down the whole left, the old content intact to its right, at ${size}`, async () => {
-			await withApp(async ({ page }) => {
+			const open = viewport === SCREENS[0] ? desk.solo : (fn) => withApp(fn, { viewport });
+			await open(async ({ page }) => {
 				const before = await page.evaluate(() =>
 					[...document.querySelectorAll('section.pane')].map((el) => el.dataset.pane)
 				);
@@ -130,7 +137,7 @@ describe('extending the dashboard from its edges', () => {
 					assert.ok(left !== null, `pane ${before[i]} is gone`);
 					assert.ok(left >= fresh.right, `pane ${before[i]} is not to the right of the new one`);
 				}
-			}, { viewport });
+			});
 		});
 	}
 

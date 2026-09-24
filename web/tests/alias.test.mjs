@@ -14,11 +14,16 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { fill } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
+
+// ONE APP for the REPL's tests (da-6b3dj, sharedApp in support/app.mjs):
+// an alias is a row, and `solo` empties the database between tests. The
+// reload, the navigation and the lone test at 1280x900 keep their own.
+const shared = sharedApp();
 
 /** `run`, asserting the command succeeded, and handing back its stdout. */
 async function ok(run, argv) {
@@ -29,7 +34,7 @@ async function ok(run, argv) {
 
 describe('aliases in the REPL', () => {
 	test('an alias set in one line fires on the next, with no reload', async () => {
-		await withApp(async ({ run, entries }) => {
+		await shared.solo(async ({ run, entries }) => {
 			assert.equal(
 				await ok(run, ['alias', 'set', 'cof', 'occur coffee strength=strong']),
 				"✓ Alias 'cof' saved."
@@ -53,7 +58,7 @@ describe('aliases in the REPL', () => {
 	// %comment%`, so two transactions on one day are two rows keyed by what
 	// each was for, rather than one row per minute.
 	test('an `--id %comment%` alias slugs the row on its own data', async () => {
-		await withApp(async ({ run, entries }) => {
+		await shared.solo(async ({ run, entries }) => {
 			await ok(run, ['alias', 'set', 'tx', 'occur tx --id %comment%']);
 			await ok(run, ['tx', 'amount=40', 'comment=electricity', '-d', '2026-09-01']);
 			await ok(run, ['tx', 'amount=12', 'comment=coffee', '-d', '2026-09-01']);
@@ -72,7 +77,7 @@ describe('aliases in the REPL', () => {
 	});
 
 	test('a field spec makes its own names commands', async () => {
-		await withApp(async ({ run, entries }) => {
+		await shared.solo(async ({ run, entries }) => {
 			await ok(run, ['spec', 'set', 'mood', '--verb', 'switch', '--state', 'happy']);
 
 			// The bare field name, and the state name, both without a verb.
@@ -92,7 +97,7 @@ describe('aliases in the REPL', () => {
 	});
 
 	test('a chain expands through every hop, and a cycle is refused', async () => {
-		await withApp(async ({ run, entries }) => {
+		await shared.solo(async ({ run, entries }) => {
 			await ok(run, ['alias', 'set', 'a', 'b strength=strong']);
 			await ok(run, ['alias', 'set', 'b', 'occur coffee']);
 			await ok(run, ['a', '-t', '0915']);
@@ -113,7 +118,7 @@ describe('aliases in the REPL', () => {
 	});
 
 	test('`alias list` prints the CLI’s lines, and `alias remove` unmakes one', async () => {
-		await withApp(async ({ run }) => {
+		await shared.solo(async ({ run }) => {
 			assert.equal(await ok(run, ['alias', 'list']), 'No aliases defined.');
 
 			await ok(run, ['alias', 'set', 'cof', 'occur coffee']);
@@ -138,7 +143,7 @@ describe('aliases in the REPL', () => {
 	});
 
 	test('a derived alias has no row to remove, and says which spec owns it', async () => {
-		await withApp(async ({ run }) => {
+		await shared.solo(async ({ run }) => {
 			await ok(run, ['spec', 'set', 'sleep', '--verb', 'start']);
 			const refused = await run(['alias', 'remove', 'sleep']);
 			assert.notEqual(refused.code, 0);
@@ -147,7 +152,7 @@ describe('aliases in the REPL', () => {
 	});
 
 	test('an alias survives a reload, because it is a row and not a variable', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // reloads
 			await ok(app.run, ['alias', 'set', 'cof', 'occur coffee']);
 			await app.reload();
 			await ok(app.run, ['cof', '-t', '0915']);
@@ -164,7 +169,7 @@ describe('the aliases widget', () => {
 	const rows = (page) => page.locator('section.pane[data-title="aliases"] li').allInnerTexts();
 
 	test('picked into a pane, it lists every alias and grows a row on a typed alias set', async () => {
-		await withApp(async ({ page, run }) => {
+		await withApp(async ({ page, run }) => { // alone at 1280x900
 			// Hex, not a CSS colour name: the fields widget's `color` is now
 			// resolved server-side by `crates/datum-commands/src/render/colors.rs`,
 			// which only understands `#rrggbb` (or a legacy ANSI-256 number) —
@@ -193,7 +198,7 @@ describe('the aliases widget', () => {
 	});
 
 	test('datum.day/aliases opens it alone', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // navigates
 			await app.goto('/aliases');
 			await app.page.locator('.root-bar [role="tab"][aria-selected="true"]', { hasText: 'aliases' }).waitFor();
 			assert.deepEqual(

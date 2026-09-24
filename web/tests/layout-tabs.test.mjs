@@ -12,12 +12,18 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, todayAt, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { DESKTOP, PHONE, activeTab, addTab, pane, swipeOver } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
+
+// ONE APP for the two desktop tests with no clock (da-6b3dj, sharedApp in
+// support/app.mjs): the tabs they add are `day`'s edits, which `solo` puts
+// back. The rest keep apps of their own: each is alone on its options, and
+// one opens a second tab.
+const shared = sharedApp(DESKTOP);
 
 /** A phone's `day`: strip / REPL / [tail, nowview, custom] / fields. */
 const PHONE_DAY = { ...PHONE, clock: todayAt(15) };
@@ -81,7 +87,7 @@ describe("the widget's own controls, with every tab mounted", () => {
 			.evaluateAll((els) => els.filter((el) => el.checkVisibility({ visibilityProperty: true })).length);
 
 	test('the ✎ is on the bar once, for the tab in front, and moves with it', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await addTab(page, 'custom', 'custom');
 			await addTab(page, 'custom', 'aliases');
 			const custom = pane(page, 'custom');
@@ -109,7 +115,7 @@ describe("the widget's own controls, with every tab mounted", () => {
 			await tabs.nth(0).click();
 			await own.filter({ hasText: 'tail -n 1' }).waitFor();
 			assert.equal(await pencils(page, 'custom'), 1);
-		}, DESKTOP);
+		});
 	});
 });
 
@@ -151,7 +157,7 @@ describe('a tab behind takes no focus and no key', () => {
 	// there to the bar's. It was the hold panel's `note` until da-e78x6
 	// removed that panel; both are the same `prefill` store.
 	test('a prefill skips an input widget behind: to the widget in front, else the bar', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.submit('spec set coffee --verb add');
 			await addTab(page, 'custom', 'input');
@@ -175,6 +181,6 @@ describe('a tab behind takes no focus and no key', () => {
 			await pane(page, 'custom').locator('[role="tab"]', { hasText: 'custom' }).click();
 			assert.equal(await note(), 'bar', 'not the bar, with every input widget behind');
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 });

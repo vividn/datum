@@ -19,7 +19,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
 import {
 	DESKTOP,
@@ -47,6 +47,15 @@ import {
 
 before(startApp);
 after(stopApp);
+
+// ONE APP for most of this file (da-6b3dj, sharedApp in support/app.mjs):
+// what a test here leaves behind is layout — `mine` saved and embedded,
+// `day` saved over, a sublayout or the root locked — which `solo` puts
+// back: every saved layout dropped, every lock put back as the page opened,
+// `day` restored to what it shipped as. What still opens an app of its own
+// reloads, opens a second tab, or holds a widget option this session, which
+// `solo` does not put back.
+const shared = sharedApp(DESKTOP);
 
 /** «Save options with layout» (da-vhwq): the one option item that writes the tree. */
 const SAVE_OPTIONS = 'Save options with layout';
@@ -143,7 +152,7 @@ async function embed(app) {
 
 describe('an edit inside an embedded layout', () => {
 	test('survives a reload — the reproduction', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // own app: it reloads
 			const { page } = app;
 			await embed(app);
 			assert.deepEqual(await inside(copy(page)), ['nowview', 'fields']);
@@ -161,7 +170,7 @@ describe('an edit inside an embedded layout', () => {
 	});
 
 	test("does not go into the outer layout's save: day keeps mine by reference", async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await embed(app);
 			await manage(page, 'm-a', 'split: a new pane to the right');
@@ -186,13 +195,13 @@ describe('an edit inside an embedded layout', () => {
 			assert.equal(found[0].content.kind, 'empty');
 			assert.equal(JSON.stringify(day).includes('nowview'), true, 'day has its own nowview');
 			assert.equal(JSON.stringify(found[0]).includes('m-a'), false, "mine's panes were inlined into day's save");
-		}, DESKTOP);
+		});
 	});
 });
 
 describe('the dot and the acts on a nested layout', () => {
 	test('the nested pane wears its own dot, and its menu saves it away', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await embed(app);
 			// Embedding changed `day`, not `mine`.
@@ -212,11 +221,11 @@ describe('the dot and the acts on a nested layout', () => {
 			const saved = await layouts(app, 'loadLayout', 'mine');
 			assert.equal(JSON.stringify(saved).includes('"empty"'), true, JSON.stringify(saved));
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('lock reaches a nested layout, and unlock is still reachable under it', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await embed(app);
 			const inner = page.locator('section.pane[data-title="mine"]').first();
@@ -238,7 +247,7 @@ describe('the dot and the acts on a nested layout', () => {
 			assert.equal(await inner.locator('section.pane button.title').count(), 2);
 			assert.equal(await inner.locator('.border.static').count(), 0);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 });
 
@@ -254,7 +263,7 @@ describe('two copies of one layout', () => {
 	}
 
 	test('each wears its own dot; saving one moves the other’s', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await embedTwice(app);
 			const one = copy(page, 'm-a');
@@ -274,11 +283,11 @@ describe('two copies of one layout', () => {
 			assert.equal(await dotted(one), false);
 			assert.deepEqual(await inside(two), ['nowview', 'fields'], 'the other copy is not rewritten by the save');
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('the ids stay apart across a save and a reload', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // own app: it reloads
 			const { page } = app;
 			await embedTwice(app);
 			await chooseRoot(page, 'Save layout');
@@ -302,7 +311,7 @@ describe('two copies of one layout', () => {
 
 describe('a save in another tab', () => {
 	test('reaches a nested copy of that layout', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // own app: it opens a second tab
 			const { page } = app;
 			await embed(app);
 			assert.deepEqual(await inside(copy(page)), ['nowview', 'fields']);
@@ -356,7 +365,7 @@ describe('a widget chosen for a tab that holds a layout', () => {
 	const tabsOf = (page, id) => pane(page, id).locator('[role="tab"]').allInnerTexts();
 
 	test('a pane tab sheds the layout: the tab IS the widget, and the save is untouched', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await layouts(app, 'saveLayout', MINE);
 			const before = await layouts(app, 'loadLayout', 'mine');
@@ -389,7 +398,7 @@ describe('a widget chosen for a tab that holds a layout', () => {
 			await until(() => rootDotted(page, 'day'), (dot) => dot === false);
 			assert.deepEqual(await layouts(app, 'loadLayout', 'mine'), before, 'saving day wrote over mine');
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	// At the ROOT the shed would cost the tab its name, and a root tab's
@@ -399,7 +408,7 @@ describe('a widget chosen for a tab that holds a layout', () => {
 	// instead (da-y2f6) — the tab IS the widget and is called `tail`, with
 	// the four acts a named tab has and a line in the open list.
 	test('a ROOT tab becomes the built-in layout of that widget, and survives a reload', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // own app: it reloads
 			const { page } = app;
 			await layouts(app, 'saveLayout', MINE);
 			const before = await layouts(app, 'loadLayout', 'mine');
@@ -523,7 +532,7 @@ describe('a pane holding a sublayout', () => {
 	// same tree: the control first, then the child's lock, then the
 	// parent's on top of it.
 	test('its + and its ▾ follow the PARENT’s lock and not its own', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await embed(app);
 			const id = await holderId(page);
@@ -555,11 +564,11 @@ describe('a pane holding a sublayout', () => {
 			assert.deepEqual(await chrome(page, id), [], 'the holder kept its chrome under the parent’s lock');
 			assert.deepEqual(await chromeInside(page), [[a, []], [b, []]]);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('the + on a LOCKED sublayout’s pane adds a tab beside it, in the parent’s tree', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await embed(app);
 			const id = await holderId(page);
@@ -575,11 +584,11 @@ describe('a pane holding a sublayout', () => {
 			const saved = await layouts(app, 'loadLayout', 'mine');
 			assert.equal(saved.root.tabs.length, 1, JSON.stringify(saved));
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('Change Widget is in that ▾, and it replaces the locked sublayout', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await embed(app);
 			const id = await holderId(page);
@@ -603,7 +612,7 @@ describe('a pane holding a sublayout', () => {
 			assert.equal(await pane(page, id).getAttribute('data-title'), 'tail');
 			assert.deepEqual(await layouts(app, 'loadLayout', 'mine'), before);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	// A ONE-WIDGET sublayout is where the two locks come apart in a way
@@ -623,7 +632,7 @@ describe('a pane holding a sublayout', () => {
 	// widget — not because anything is locked. A fixture that cannot
 	// express the failure is not coverage.
 	test('a LOCKED one-widget sublayout: the parent’s chrome, but nothing that writes its tree', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // own app: it holds a widget option this session
 			const { page } = app;
 			await layouts(app, 'saveLayout', SOLO);
 			await manage(page, 'tail', 'split: a new pane to the right');
@@ -688,7 +697,7 @@ describe('a pane holding a sublayout', () => {
 	// no claim on the page that holds it — the sharpest case of this bead,
 	// and the one with no way out if it were wrong.
 	test('the root’s + is never hidden, by any lock', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await embed(app);
 			await act(page, 'Lock layout');
@@ -710,6 +719,6 @@ describe('a pane holding a sublayout', () => {
 				['day', 'stats']
 			);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 });

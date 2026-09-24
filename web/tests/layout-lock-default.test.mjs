@@ -46,6 +46,8 @@ async function lockedClean(page, name) {
 	assert.equal(await stored(page, name), null, 'a first open wrote a lock down');
 }
 
+// Every test here opens an app of its own (da-6b3dj): each is about what a
+// FIRST visit finds, which a shared app has already made.
 describe('a layout that shipped', () => {
 	for (const [what, device, name] of [
 		['a fresh phone: `mobile`', FRESH_PHONE, 'mobile'],

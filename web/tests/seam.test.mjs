@@ -12,8 +12,9 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { startApp, stopApp, withApp, todayAt, TIMEZONE } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp, todayAt, TIMEZONE } from './support/app.mjs';
 import { comparableTail, rowTexts, stripAnsi } from './support/tail.mjs';
+import { ONE_PANE } from './support/layout.mjs';
 
 /** What the real `datum tail` printed for the same day. See support/tail.mjs. */
 const tailFixture = JSON.parse(
@@ -24,19 +25,22 @@ before(startApp);
 after(stopApp);
 
 /**
- * `withApp` on the repl layout: for a test that never looks at the page.
+ * ONE app for the tests that never look at the page (da-6b3dj, sharedApp
+ * in support/app.mjs).
  *
  * Most of this file asks the seam a question and reads the answer back
- * through the seam, and the day frame around it is scenery — scenery that
- * costs a fortnight of `dayview` bands on every open, better than a second
- * a test and two dozen tests over (da-x6ea). A context each is still a
- * database each, which is the isolation these need.
+ * through the seam, and the day frame around it is scenery that costs a
+ * fortnight of `dayview` bands to draw (da-x6ea) — so `day` is opened as a
+ * draft of ONE REPL pane, which is what the repl layout gave each of these
+ * when it was a context each. `solo` empties the database between tests,
+ * which is the isolation these need.
  *
  * The tests that DO read the page — the tail table, the two drawn panes, a
- * widget press, the banner — keep `withApp` and the day page, because the
- * page is what they are about.
+ * widget press — reload it, or read the REPL's scrollback from its start,
+ * and keep `withApp` of their own.
  */
-const onSeam = (fn, options) => withApp(fn, { query: 'repl', ...options });
+const shared = sharedApp();
+const onSeam = (fn) => shared.solo(fn, ONE_PANE);
 
 /** Exit codes: success, the CLI's generic failure, and its duplicate. */
 const OK = 0;
@@ -45,7 +49,7 @@ const DUPLICATE = 11;
 
 describe('logging verbs', () => {
 	test('occur / start / stop / switch each land an entry the tail shows', async () => {
-		await withApp(async ({ run, entries, reload, paneTable }) => {
+		await withApp(async ({ run, entries, reload, paneTable }) => { // reloads
 			// Distinct times, because a field's slug is its field and its
 			// occur time: `start work` and `stop work` at the same instant
 			// are one slug and the second is a duplicate.
@@ -255,7 +259,7 @@ describe('the teach-echo', () => {
 	});
 
 	test('a widget press echoes the argv it ran, not a reconstruction of it', async () => {
-		await withApp(async ({ run, reload, pressWidget, echoes, spyOnRunner }) => {
+		await withApp(async ({ run, reload, pressWidget, echoes, spyOnRunner }) => { // reloads
 			// Give the bar a widget to press: a declared field gets one before
 			// its first entry.
 			assert.equal((await run(['spec', 'set', 'coffee', '--verb', 'occur'])).code, OK);
@@ -276,7 +280,7 @@ describe('the teach-echo', () => {
 
 describe('storage', () => {
 	test('entries survive a reload', async () => {
-		await withApp(async ({ run, reload, entries, paneText }) => {
+		await withApp(async ({ run, reload, entries, paneText }) => { // reloads
 			assert.equal((await run(['switch', 'mood', 'happy', '-t', '0915'])).code, OK);
 			const before = await entries();
 			assert.equal(before.length, 1);
@@ -294,7 +298,7 @@ describe('storage', () => {
 	});
 
 	test('the app does not claim durability it lacks', async () => {
-		await withApp(async ({ bannerText }) => {
+		await shared.solo(async ({ bannerText }) => {
 			// The banner reads the storage that actually opened. In-memory
 			// wording here means the OPFS database failed to open — the
 			// da-5iqw regression, and the one a missing COOP/COEP header
@@ -349,7 +353,7 @@ describe('the visual views', () => {
 		);
 
 	test('dayview draws the day as an SVG, and the pane shows it', async () => {
-		await withApp(async ({ page, run, reload, paneSvg }) => {
+		await withApp(async ({ page, run, reload, paneSvg }) => { // reloads
 			const drawn = await run(['dayview']);
 			assert.equal(drawn.code, OK, drawn.stderr);
 			assert.equal(drawn.stderr, '');
@@ -410,7 +414,7 @@ describe('the visual views', () => {
 	// unpinned it is the runner's hour — so the assertion below about its
 	// SHAPE was an assertion about the machine (da-ldct).
 	test('nowview carries the clock and the current state', async () => {
-		await withApp(async ({ run, reload, paneSvg }) => {
+		await withApp(async ({ run, reload, paneSvg }) => { // reloads
 			assert.equal((await run(['switch', 'focus', 'deep', '-t', '-5'])).code, OK);
 
 			const drawn = await run(['nowview', '--context', '30m', '-o', '-']);
@@ -637,7 +641,7 @@ describe('spec', () => {
 		// The report this came from was of a blank REPL — so one case walks
 		// the whole way a reader does, and reads the answer back off the
 		// scrollback (da-e0m6's trap).
-		await withApp(async ({ submit, page }) => {
+		await withApp(async ({ submit, page }) => { // reads the whole scrollback
 			await submit('spec remove coffee');
 			// The rendered output blocks, not the whole pane: the echoed
 			// `❯ spec remove coffee` above them carries every word of the
@@ -701,7 +705,7 @@ describe('help and version', () => {
 	});
 
 	test('the REPL shows the help a user typed, not an error', async () => {
-		await withApp(async ({ page, runLine }) => {
+		await withApp(async ({ page, runLine }) => { // reads the scrollback from its start
 			// Through the prompt itself: what the bead reported is what a
 			// person sees in the scrollback, and the scrollback paints
 			// stderr as an error.
@@ -746,7 +750,7 @@ describe('the tail is the CLI\'s tail', () => {
 	// only because the request says to (`RenderRequest::color`) — it has
 	// no environment and no terminal to ask.
 	test('paints the field badge, and the pane shows that colour', async () => {
-		await withApp(async ({ run, reload, paneCellColors, tailRows }) => {
+		await withApp(async ({ run, reload, paneCellColors, tailRows }) => { // reloads
 			assert.equal((await run(['occur', 'coffee', '-t', '0700'])).code, OK);
 			assert.equal((await run(['switch', 'mood', 'happy', '-t', '0800'])).code, OK);
 			const listed = await run(['tail']);

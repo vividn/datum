@@ -14,13 +14,19 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
-import { choose, chooser, exactly, manage, toggleOption } from './support/layout.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { choose, chooser, exactly, inRoom, manage, toggleOption } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
 
 const DESKTOP = { viewport: { width: 1280, height: 800 } };
+
+// ONE APP for the tests that stay on `/` (da-6b3dj, sharedApp in
+// support/app.mjs); the one that sets a widget option does it in a room of
+// its own, since `solo` keeps an option this session set. What navigates
+// (`/input`, a saved layout) or opens on a phone keeps an app of its own.
+const shared = sharedApp(DESKTOP);
 
 const WIDGET = '.input-widget input';
 const BAR = '.prompt-bar input';
@@ -232,7 +238,7 @@ describe('a focus nobody clicked', () => {
 	});
 
 	test('lands in the bar when there is none', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page, submit } = app;
 			await submit('spec set coffee --verb add');
 			await page.locator('.bar [data-field="coffee"]').waitFor();
@@ -247,7 +253,7 @@ describe('a focus nobody clicked', () => {
 				BAR
 			);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 });
 
@@ -266,9 +272,9 @@ describe('reversed', () => {
 		});
 
 	test('from the menu: the prompt row on top, and typing, a pill and Enter work as before', async () => {
-		await withApp(async (app) => {
+		await shared.room('reversed', async (app, room) => {
 			const { page } = app;
-			await manage(page, 'custom', 'Change Widget');
+			await manage(page, inRoom(room, 'custom'), 'Change Widget');
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('input') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
@@ -279,7 +285,7 @@ describe('reversed', () => {
 			let box = await tops(page);
 			assert.ok(box.receipt.height > 0 && box.receipt.bottom <= box.prompt.top + 1, `the default: ${JSON.stringify(box)}`);
 
-			await toggleOption(page, 'custom', 'prompt on top');
+			await toggleOption(page, inRoom(room, 'custom'), 'prompt on top');
 			box = await tops(page);
 			assert.ok(box.prompt.bottom <= box.receipt.top + 1, `reversed: ${JSON.stringify(box)}`);
 
@@ -293,7 +299,7 @@ describe('reversed', () => {
 			assert.match(entry.occur_time.utc, /T14:30/);
 			assert.equal(await valueOf(page, WIDGET), '');
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('at /input on a phone, reversed, both rows are on the screen', async () => {

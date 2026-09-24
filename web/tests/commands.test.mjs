@@ -12,7 +12,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp as withAnyApp, seedLines, workerClock } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp as withAnyApp, seedLines, workerClock } from './support/app.mjs';
 import { DESKTOP, along, draft, widgetPane } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { atRows, axes, boxes, gaps, lastReached, listed, packed } from './support/rows.mjs';
@@ -37,6 +37,26 @@ const withApp = (fn, options = {}) =>
 			await context.addInitScript(draft, PAGE);
 		}
 	});
+
+// ONE APP for the file (da-6b3dj, sharedApp in support/app.mjs), the
+// worker's clock held at `AT` throughout and `day` opened from `PAGE` for
+// each test. The bar's line is the shell's and not the layout's, so `solo`
+// leaves what the test before typed in it: it is put back as a fresh page
+// has it — empty, unfocused, no input mode. What navigates (`/command`) or
+// moves the clock (Undo) keeps an app of its own.
+const shared = sharedApp({ ...DESKTOP, prepare: (context) => clock.prepare(context) });
+
+const onPage = (fn) =>
+	shared.solo(async (app) => {
+		await app.page.evaluate(() => {
+			const el = document.querySelector('.prompt-bar input');
+			el.value = '';
+			el.dispatchEvent(new Event('input', { bubbles: true }));
+			el.removeAttribute('inputmode');
+			el.blur();
+		});
+		return fn(app);
+	}, PAGE);
 
 /**
  * One field of every shape, and two of them running.
@@ -111,7 +131,7 @@ async function tap(page, name) {
 
 describe('the bar of commands', () => {
 	test('Undo leads, the verbs follow, and note is not among them', async () => {
-		await withApp(async ({ page }) => {
+		await onPage(async ({ page }) => {
 			const buttons = await drawn(page);
 			assert.deepEqual(buttons.slice(0, 7), [
 				'Undo',
@@ -141,7 +161,7 @@ describe('the bar of commands', () => {
 
 describe('a verb fills the line and filters the fields', () => {
 	test('occur leaves the occur fields, and a tap on one runs at once', async () => {
-		await withApp(async (app) => {
+		await onPage(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			assert.deepEqual(await showing(page), ['coffee', 'light', 'mood', 'rec', 'sleep', 'work']);
@@ -183,7 +203,7 @@ describe('a verb fills the line and filters the fields', () => {
 	});
 
 	test('start, end, switch and add each leave what they can be spent on', async () => {
-		await withApp(async (app) => {
+		await onPage(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 
@@ -215,7 +235,7 @@ describe('a verb fills the line and filters the fields', () => {
 	});
 
 	test('the word typed into the line filters exactly as the button does', async () => {
-		await withApp(async (app) => {
+		await onPage(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			const input = page.locator('.prompt-bar input');
@@ -245,7 +265,7 @@ describe('the scroll rule', () => {
 	// scrolling in the commands widget, so when it is tall enough, do three
 	// rows that scroll horizontally» — and each row packs on its own.
 	test('one, two and three rows high draw that many rows, each packed, all reached sideways; taller stays three', async () => {
-		await withApp(async (app) => {
+		await onPage(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 

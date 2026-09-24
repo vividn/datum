@@ -91,6 +91,9 @@ const span0 = (block) => block.evaluate((r) => [r.dataset.from, r.dataset.to]);
 /** The commands of one name the seam was handed, since the spy was armed. */
 const ranOf = async (seen, name) => (await seen()).filter((argv) => argv[0] === name);
 
+// Every test here opens an app of its own (da-6b3dj): each installs a
+// clock in the page and the worker and moves it, which a shared app would
+// hand on to the next test already moved.
 describe('the minute tick', () => {
 	test("nowview's open block grows by a minute, with nothing written", async () => {
 		const clock = clocks(AT);

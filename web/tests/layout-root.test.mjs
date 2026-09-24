@@ -14,7 +14,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
 	PHONE,
@@ -24,7 +24,6 @@ import {
 	bar,
 	boxOf,
 	chooseBar,
-	draft,
 	fill,
 	manage,
 	manageButton,
@@ -42,11 +41,21 @@ import {
 before(startApp);
 after(stopApp);
 
+// ONE APP per screen for most of this file (da-6b3dj, sharedApp in
+// support/app.mjs): what a test here leaves behind is layout — a split, a
+// saved layout, a tab — and a row or two, which `solo` puts back to `day`
+// and an empty database; a test that starts from a draft of `day` hands it
+// to `solo`, which opens `day` from it as boot would. What still opens an
+// app of its own blocks the store (`prepare`), reloads, installs a runner of
+// its own, or is the one test on its screen.
+const shared = sharedApp(DESKTOP);
+const phone = sharedApp(PHONE);
+
 describe('the default layout', () => {
 	test('shows the strip, the REPL, nowview, tail and the widget bar in panes', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields']);
-		}, DESKTOP);
+		});
 	});
 
 	// The root column's ratios are [0.2, 0.7, 0.1] with the content-sized
@@ -54,7 +63,7 @@ describe('the default layout', () => {
 	// to 0.9 — and flexbox hands out only that fraction of the free
 	// space, which left a tenth of it empty under the bar (da-6twf).
 	test('fills its column: the last cell reaches the bottom of the split', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const { last, split } = await page.evaluate(() => {
 				const el = document.querySelector('[data-split="main"]');
 				return {
@@ -63,11 +72,11 @@ describe('the default layout', () => {
 				};
 			});
 			assert.ok(Math.abs(split - last) <= 1, `the column ends at ${last}px in a split that ends at ${split}px`);
-		}, DESKTOP);
+		});
 	});
 
 	test('a command through the REPL still reaches tail and nowview', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			await app.submit('switch mood happy');
 			await app.page.waitForFunction(
 				() =>
@@ -76,13 +85,13 @@ describe('the default layout', () => {
 						'data-field="mood"'
 					)
 			);
-		}, DESKTOP);
+		});
 	});
 });
 
 describe('the draft', () => {
 	test('is back after a reload, and a layout with no draft is the default', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // own app: it reloads
 			const { page } = app;
 			await manage(page, 'tail', 'split: a new pane to the right');
 			await fill(page, 'nowview');
@@ -98,7 +107,7 @@ describe('the draft', () => {
 	});
 
 	test('a blocked localStorage renders the default with no error', async () => {
-		await withApp(
+		await withApp( // own app: a `prepare` that blocks the store
 			async (app) => {
 				assert.deepEqual(await titles(app.page), ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields']);
 				// Nothing remembers an unlock here, so `day` opens locked as a
@@ -125,7 +134,7 @@ describe('the draft', () => {
 
 describe('on a phone', () => {
 	test('the mobile default is one column with the bar on screen, tail, nowview and custom as tabs', async () => {
-		await withApp(async ({ page }) => {
+		await phone.solo(async ({ page }) => {
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'tail', 'fields']);
 			const boxes = await page.evaluate(() =>
 				[...document.querySelectorAll('section.pane')].map((p) => {
@@ -138,11 +147,11 @@ describe('on a phone', () => {
 			const add = await page.locator('.bar button.add-button').boundingBox();
 			const screen = await page.evaluate(() => document.documentElement.clientHeight);
 			assert.ok(add.y >= 0 && add.y + add.height <= screen, `the + is off-screen: ${JSON.stringify(add)}`);
-		}, PHONE);
+		});
 	});
 
 	test('a swipe moves between tabs, and never over a scroll', async () => {
-		await withApp(async (app) => {
+		await phone.solo(async (app) => {
 			const { page } = app;
 			// Scrolled to the top of the screen first: on a 664px phone the
 			// tabbed pane sits mostly behind the pinned widget bar until the
@@ -188,14 +197,14 @@ describe('on a phone', () => {
 			await swipe(page, box.x + box.width * 0.8, box.y + box.height / 2, -120, 0);
 			await atRest(pane(page, 'repl').locator('> .content'));
 			assert.equal(await activeTab(page, 'repl'), 'repl', 'a swipe over a sideways scroll changed the tab');
-		}, PHONE);
+		});
 	});
 });
 
 // The three review threads folded in (da-jgrn): Copilot on #167 and #163.
 describe('review follow-ups', () => {
 	test('a malformed `fields --json` does not throw, and the bar keeps its last good listing', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // own app: it installs a runner of its own
 			const { page } = app;
 			await app.submit('occur coffee');
 			await page.locator('.bar [data-field="coffee"]').waitFor();
@@ -221,7 +230,7 @@ describe('review follow-ups', () => {
 // menu — on the tab in front (da-9vtw) — leaves splitting to the children.
 describe('holders', () => {
 	test('a holder with one tab draws no bar and no menu, beside a widget pane that has both', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const side = page.locator('section.holder[data-pane="side"]');
 			assert.equal(await side.count(), 1);
 			assert.equal(await side.locator('> .titlebar').count(), 0);
@@ -235,11 +244,11 @@ describe('holders', () => {
 			const [holder, split] = await Promise.all([boxOf(side), boxOf(side.locator('> .content > .tab-body > .split'))]);
 			assert.equal(Math.round(holder.y), Math.round(split.y), 'the split does not start where the holder does');
 			assert.equal(Math.round(holder.height), Math.round(split.height));
-		}, DESKTOP);
+		});
 	});
 
 	test('a holder with two tabs keeps its strip, and its menu splits the tab, renames it and saves it as a layout', async () => {
-		await withApp(
+		await shared.solo(
 			async ({ page }) => {
 				const holder = page.locator('section.holder[data-pane="tabbed"]');
 				assert.equal(await holder.count(), 1);
@@ -266,7 +275,7 @@ describe('holders', () => {
 				]);
 				await page.keyboard.press('Escape');
 			},
-			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(tabbedHolder())) }
+			JSON.stringify(tabbedHolder())
 		);
 	});
 
@@ -275,7 +284,7 @@ describe('holders', () => {
 	// the root bar, so the page root draws none; a saved layout whose root
 	// has two tabs is inlined whole under its root tab, and keeps its strip.
 	test("a layout's root with two tabs keeps its strip; the page root's strip is the root bar (Copilot on #172)", async () => {
-		await withApp(
+		await shared.solo(
 			async ({ page }) => {
 				assert.equal(await page.locator('section.root > .titlebar').count(), 0, 'the page root drew a strip');
 				const inner = pane(page, 'root');
@@ -283,17 +292,17 @@ describe('holders', () => {
 				await inner.locator('> .titlebar [role="tab"]', { hasText: 'tail' }).click();
 				assert.deepEqual(await titles(page), ['tail']);
 			},
-			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, TWO_ROOT_TABS) }
+			TWO_ROOT_TABS
 		);
 	});
 
 	test('the root holder draws no bar: its split starts at the top of the frame', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const root = page.locator('section.root');
 			assert.equal(await root.locator('> .titlebar').count(), 0);
 			const [frame, split] = await Promise.all([boxOf(root), boxOf(root.locator('> .content > .tab-body > .split'))]);
 			assert.equal(Math.round(frame.y), Math.round(split.y));
-		}, DESKTOP);
+		});
 	});
 });
 
@@ -343,7 +352,7 @@ describe('a tab that holds a layout', () => {
 	const boxes = (locator) => locator.evaluateAll((all) => all.map((el) => el.getBoundingClientRect()).map((b) => ({ x: b.x, y: b.y, right: b.right, bottom: b.bottom })));
 
 	test('a layout of several panes draws a frame, titled with its name — not «split» — and its panes sit inside it', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await save(app, TWO);
 			await put(app, 'mine');
@@ -373,11 +382,11 @@ describe('a tab that holds a layout', () => {
 			const [first] = await boxes(mine.locator(':scope > .content h2'));
 			assert.ok(outer.bottom <= first.y, `the layout's title (${outer.y}–${outer.bottom}) lies on its first pane's (${first.y}–${first.bottom})`);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('a layout of one widget is that widget in a normal frame, wearing the layout name', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await save(app, ONE);
 			await put(app, 'one');
@@ -389,11 +398,11 @@ describe('a tab that holds a layout', () => {
 			assert.equal(await one.locator('section.pane, section.holder').count(), 0, 'a second frame inside the one-widget layout');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'one', 'custom', 'fields']);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('a holder made by splitting draws no frame, and the page root none either, though its tab is the `day` layout', async () => {
-		await withApp(
+		await shared.solo(
 			async ({ page }) => {
 				// The scaffolding case, unchanged: a pane one of whose tabs is
 				// a split that is nobody's layout, beside a widget tab.
@@ -408,12 +417,12 @@ describe('a tab that holds a layout', () => {
 				assert.equal(await root.evaluate((el) => getComputedStyle(el).borderTopWidth), '0px');
 				assert.equal(await root.locator('> .titlebar').count(), 0);
 			},
-			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(tabbedHolder())) }
+			JSON.stringify(tabbedHolder())
 		);
 	});
 
 	test('on a 320px phone a layout in a pane still fits inside its frame', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // own app: its own screen, which no other test shares
 			const { page } = app;
 			await save(app, TWO);
 			await manage(page, 'repl', 'split: a new pane below');
@@ -443,7 +452,7 @@ describe('the lock', () => {
 		page.evaluate(() => [...document.querySelectorAll('.split.row > .cell')].map((c) => c.getBoundingClientRect().width));
 
 	test('a locked root: no separators, no …, a drag and an arrow move nothing, the tabs still switch', async () => {
-		await withApp(
+		await withApp( // own app: a `prepare` that writes a draft and a lock, and it reloads
 			async (app) => {
 				const { page } = app;
 				assert.deepEqual(await titles(page), ['repl', 'tail']);

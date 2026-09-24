@@ -23,11 +23,17 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, PHONE, chooser, rootMenuButton } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
+
+// ONE APP for the desktop tests that neither reload nor save (da-6b3dj,
+// sharedApp in support/app.mjs): `solo` empties the database the kit went
+// into and closes the tab it opened. A test that reloads, and the phone's
+// chooser, open their own.
+const shared = sharedApp(DESKTOP);
 
 /** A whole `Layout.root` of one named widget — enough to tell two trees apart. */
 const root = (id, kind) => ({
@@ -83,7 +89,7 @@ const layoutOffers = (page) =>
 
 describe('a kit ships a layout', () => {
 	test('the chooser lists it under its kit, it opens, and `_internal` is untouched', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			await installKit(app, 'focus', [{ name: 'focus-day', root: root('focus', 'nowview') }]);
 
 			// Nothing of the install reached the person's own store — the
@@ -108,7 +114,7 @@ describe('a kit ships a layout', () => {
 				),
 				['nowview']
 			);
-		}, DESKTOP);
+		});
 	});
 
 	test('a save of the same name shadows it, and `Reset layout` goes back to the kit’s tree', async () => {
@@ -179,20 +185,20 @@ describe('the device a layout was designed for', () => {
 	test('the chooser puts this device’s layouts first, and hides neither', async () => {
 		// `withApp` hands its app to the body and returns nothing, so the
 		// reading comes out through a binding, as `dayOn` above does.
-		async function order(options) {
+		async function order(open) {
 			let names;
-			await withApp(async (app) => {
+			await open(async (app) => {
 				await installKit(app, 'both', [
 					{ name: 'deskish', designedFor: 'desktop', root: root('d', 'tail') },
 					{ name: 'phonish', designedFor: 'mobile', root: root('p', 'tail') }
 				]);
 				await openChooser(app.page);
 				names = (await layoutOffers(app.page)).map((o) => o.name);
-			}, options);
+			});
 			return names;
 		}
 
-		assert.deepEqual(await order(DESKTOP), ['day', 'deskish', 'phonish']);
-		assert.deepEqual(await order(PHONE), ['day', 'phonish', 'deskish']);
+		assert.deepEqual(await order(shared.solo), ['day', 'deskish', 'phonish']);
+		assert.deepEqual(await order((fn) => withApp(fn, PHONE)), ['day', 'phonish', 'deskish']);
 	});
 });

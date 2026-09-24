@@ -28,7 +28,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { atEachScreen, startApp, stopApp, todayAt, withApp, workerClock } from './support/app.mjs';
+import { atEachScreen, sharedApp, startApp, stopApp, todayAt, withApp, workerClock } from './support/app.mjs';
 import { fold as foldBar, unfold as openBar } from './support/bar.mjs';
 
 before(startApp);
@@ -56,6 +56,26 @@ const DAY = { viewport: DESKTOP.viewport };
 
 const BAR = '.prompt-bar';
 const DOC = `${BAR} .doc`;
+
+// ONE APP per screen for most of this file (da-6b3dj, sharedApp in
+// support/app.mjs): the database is emptied between tests and every claim
+// reads the bar's own last answer. The repl-page apps are tidied by hand
+// rather than by `solo`, which would close the repl tab and draw `day`
+// behind the bar: a sheet left open, a half-typed line, the page and the
+// pills. What still opens an app of its own is a fresh device (`home:
+// null`), a held clock, a runner a test installs, a fold (which the device
+// remembers), and a screen only one test asks for.
+const repl = (shared) => async (fn) => {
+	const app = await shared();
+	await app.page.evaluate(() => document.querySelectorAll('dialog[open]').forEach((d) => d.close()));
+	await app.page.locator(`${BAR} input`).fill('');
+	await app.home();
+	await app.empty();
+	return fn(app);
+};
+const desktop = repl(sharedApp(DESKTOP));
+const narrow = repl(sharedApp(NARROW));
+const day = sharedApp(DAY);
 
 /** The bar's height on screen, to the pixel it is drawn at. */
 const barHeight = (page) =>
@@ -111,7 +131,7 @@ const ESC = /\u001b\[[0-9;]*m/g;
 
 describe('the bar never changes height', () => {
 	test('a command with data, one without, and one with no echo at all all leave it where it was', async () => {
-		await withApp(async (app) => {
+		await day.solo(async (app) => {
 			const { page } = app;
 			const was = { bar: await barHeight(page), main: await mainHeight(page) };
 			// Not a round number by accident: the height is the bar's own
@@ -132,13 +152,13 @@ describe('the bar never changes height', () => {
 				assert.equal(await mainHeight(page), was.main, `the dashboard reflowed after \`${line}\``);
 			}
 			assert.deepEqual(app.errors, []);
-		}, DAY);
+		});
 	});
 });
 
 describe('one document', () => {
 	test('data or none, two lines at the two-line size — and the data beside them in a brace', async () => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 
 			// The fields already exist, so each command echoes its own
@@ -177,11 +197,11 @@ describe('one document', () => {
 				`the brace is ${rich.braceHigh}px against the lines' ${rich.linesHigh}px`
 			);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('past four keys: four rows and a +N, whose sheet lists every one', async () => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 			await app.declare('brew');
 			await app.submit('occur brew a=1 b=2 c=3 d=4 e=5 f=6');
@@ -203,11 +223,11 @@ describe('one document', () => {
 			await keys.first().waitFor();
 			assert.deepEqual(await keys.allInnerTexts(), doc.data, 'the sheet lost a key');
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('the full id is behind the hid: a title for a pointer, a tap for a finger', async () => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 			await app.declare('water');
 			await app.submit('occur water');
@@ -225,13 +245,13 @@ describe('one document', () => {
 			await page.locator(`${DOC} .hid`).click();
 			assert.equal(await page.locator(`${DOC} .hid`).textContent(), doc.hid);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 });
 
 describe('several documents', () => {
 	test('a two-sided command draws a section each', async () => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 			await app.declare('coffee');
 			await app.declare('mood', 'switch');
@@ -247,11 +267,11 @@ describe('several documents', () => {
 			assert.ok(first.info.includes('coffee'), first.info);
 			assert.ok(second.info.includes('happy'), second.info);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('more than fit draws +N, and the modal lists every one', async () => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 			const fields = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
 			for (const f of fields) await app.declare(f);
@@ -277,11 +297,11 @@ describe('several documents', () => {
 				[...fields].sort()
 			);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('320px: one whole section, and the box still takes a command', async () => {
-		await withApp(async (app) => {
+		await narrow(async (app) => {
 			const { page } = app;
 			await unfold(page);
 			for (const f of ['a', 'b', 'c', 'tea']) await app.declare(f);
@@ -300,11 +320,11 @@ describe('several documents', () => {
 				document.querySelector('.prompt-bar .doc .info')?.textContent.includes('tea')
 			);
 			assert.deepEqual(app.errors, []);
-		}, NARROW);
+		});
 	});
 
 	test('320px: a section too narrow for the rows draws the count, and the info line is whole', async () => {
-		await withApp(async (app) => {
+		await narrow(async (app) => {
 			const { page } = app;
 			await unfold(page);
 			await app.declare('brew');
@@ -329,13 +349,13 @@ describe('several documents', () => {
 			await keys.first().waitFor();
 			assert.equal(await keys.count(), 6);
 			assert.deepEqual(app.errors, []);
-		}, NARROW);
+		});
 	});
 });
 
 describe('a command with no echo', () => {
 	test('a tail shows its own LAST four lines', async () => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 			for (const f of ['a', 'b', 'c', 'd', 'e', 'f']) assert.equal((await app.run(['occur', f])).code, 0);
 			await app.submit('tail');
@@ -353,11 +373,11 @@ describe('a command with no echo', () => {
 			// area itself offers none any more (da-bhvy).
 			assert.equal(await page.locator(`${BAR} .expand`).count(), 0);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('an error is marked, and shown from stderr', async () => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 			await app.submit('occur');
 			// `.raw.error` — the error mark went with the raw lines when they
@@ -368,11 +388,11 @@ describe('a command with no echo', () => {
 			const printed = (await app.run(['occur'])).stderr.replace(ESC, '').replace(/\n+$/, '').split('\n');
 			assert.ok(shown.length > 0);
 			assert.deepEqual(shown, printed.slice(-4));
-		}, DESKTOP);
+		});
 	});
 
 	test('with no document in the stdout, the raw lines still show', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // its own: it installs a runner
 			const { page } = app;
 			// An older module: one that does not know `--show json` and prints
 			// the two lines the default show prints. The web must fall back to
@@ -450,7 +470,7 @@ describe('the anatomy: INPUT over OUTPUT', () => {
 	// it is that each is the height the shell declares for it and the input
 	// is the SHORTER of the two, which is the change he asked for.
 	test('the input section is above the output, each is its declared height, and the input is the shorter', async (t) => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 			await atEachScreen(t, page, [{ width: 1280, height: 900 }, { width: 390, height: 664 }], async () => {
 				const p = await parts(page);
@@ -479,11 +499,11 @@ describe('the anatomy: INPUT over OUTPUT', () => {
 				);
 			});
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('the input row is the mark, the clock with seconds, the ❯ and the box — in that order, at every width', async (t) => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 			await atEachScreen(t, page, [{ width: 1280, height: 900 }, { width: 390, height: 664 }, { width: 360, height: 640 }], async (viewport) => {
 				const p = await parts(page);
@@ -518,7 +538,7 @@ describe('the anatomy: INPUT over OUTPUT', () => {
 				assert.equal(p.rule, '0px', `the prompt line still rules itself off with ${p.rule}`);
 			});
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 });
 
@@ -633,7 +653,7 @@ describe('the arrow folds the output, and a drag does too', () => {
 	});
 
 	test('the dashboard reflows when a person folds, and never when a command answers', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // its own: the fold is remembered by the device
 			const { page } = app;
 			const open = { bar: await barHeight(page), main: await mainHeight(page) };
 
@@ -668,7 +688,7 @@ describe('the arrow folds the output, and a drag does too', () => {
 	// was the brand's neighbour here until da-y992 moved it to the root bar;
 	// the brand, which is a menu button now, took its place in this test.)
 	test('the brand and the clock keep their taps', async (t) => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 			await atEachScreen(t, page, [DESKTOP.viewport, NARROW.viewport], async () => {
 				const reached = await page.evaluate(() =>
@@ -691,7 +711,7 @@ describe('the arrow folds the output, and a drag does too', () => {
 				await page.keyboard.press('Escape');
 				await page.locator('[role="menu"][aria-label="databases"]').waitFor({ state: 'detached' });
 			});
-		}, DESKTOP);
+		});
 	});
 });
 
@@ -1025,7 +1045,7 @@ const setPill = (page, pill) =>
 
 describe('the pills ride with the text', () => {
 	test('a pill sits just after the ❯ when the box is empty, and moves right as the line grows', async () => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 			await setPill(page, { text: '-t 14:30' });
 			await page.locator(`${BAR} .pill`).waitFor();
@@ -1079,11 +1099,11 @@ describe('the pills ride with the text', () => {
 				return pill.left >= box.left - 1 && pill.right <= box.right + 1;
 			});
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('a press spends its unlocked pill beside the ghost; a locked one stays and comes back left', async () => {
-		await withApp(async (app) => {
+		await day.solo(async (app) => {
 			const { page } = app;
 			await withCoffee(app);
 			await setPill(page, { text: '-t 14:30', locked: true });
@@ -1112,7 +1132,7 @@ describe('the pills ride with the text', () => {
 			assert.deepEqual(app.errors, []);
 			// The day page: `withCoffee` presses the FIELDS widget, which is a
 			// pane of the day frame and is not on the repl layout.
-		}, DAY);
+		});
 	});
 
 	test('a spent pill fades in step with the ghost it went into, though it is spent later', async () => {
@@ -1145,7 +1165,7 @@ describe('the pills ride with the text', () => {
 	});
 
 	test('an unlocked pill leaves the live set at once and fades as a spent one', async () => {
-		await withApp(async (app) => {
+		await day.solo(async (app) => {
 			const { page } = app;
 			await withCoffee(app);
 			await setPill(page, { text: '-t 14:30' });
@@ -1160,7 +1180,7 @@ describe('the pills ride with the text', () => {
 			await page.waitForFunction(() => !document.querySelector('.prompt-bar .spent'));
 			assert.deepEqual(app.errors, []);
 			// The day page, as above: the press is the fields widget's.
-		}, DAY);
+		});
 	});
 });
 
@@ -1238,7 +1258,7 @@ const pillLook = (page) =>
 // neither number is written twice.
 describe('the pills are prominent', () => {
 	test('solid in its kind’s colour, at the input’s size, with an SVG lock and no × of its own', async () => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 			await setPill(page, { text: '-t 14:30' });
 			await page.locator(`${BAR} .pill`).waitFor();
@@ -1255,11 +1275,11 @@ describe('the pills are prominent', () => {
 			assert.ok(!look.nested, 'a button inside a button');
 			assert.deepEqual(look.labels, ['remove -t 14:30', 'lock -t 14:30']);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('a press anywhere but the lock removes it — text, ×, padding and Enter alike', async () => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 			const seen = await app.spyOnRunner();
 			const live = () => page.evaluate(() => window.datum.bar.pills().length);
@@ -1306,11 +1326,11 @@ describe('the pills are prominent', () => {
 				'a removed pill still reached the argv'
 			);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('three pills do not grow the bar', async (t) => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 			await atEachScreen(t, page, [{ width: 1280, height: 900 }, { width: 390, height: 640 }], async () => {
 				const bare = await barHeight(page);
@@ -1370,7 +1390,7 @@ describe('the pills are prominent', () => {
 				await page.locator(`${BAR} input`).fill('');
 				await page.locator(`${BAR} .pill`).waitFor({ state: 'detached' });
 			});
-		}, DESKTOP);
+		});
 	});
 });
 
@@ -1421,7 +1441,7 @@ describe('two pills on a phone', () => {
 
 	for (const width of [360, 390]) {
 		test(`at ${width} the pills stay right of the \u276f, typed line or not`, async (t) => {
-			await withApp(async (app) => {
+			await withApp(async (app) => { // its own: one screen per test
 				const { page } = app;
 				await page.evaluate((p) => window.datum.bar.setPills(p), TWO);
 				await page.locator(`${BAR} .pill`).nth(1).waitFor();
@@ -1484,7 +1504,7 @@ describe('the clock', () => {
 	// ONE row, so the claim moves with it: the clock is BESIDE the mark, on
 	// the row, and still on the box's own line.
 	test('is beside the logo, on the input row’s line', async () => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 			const boxes = await page.evaluate(() => {
 				const rect = (s) => {
@@ -1509,6 +1529,6 @@ describe('the clock', () => {
 				`the clock's middle at ${boxes.stamp.mid}, the prompt's at ${boxes.input.mid}`
 			);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 });

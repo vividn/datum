@@ -26,16 +26,15 @@
 //     another device opens`, the second half of the lock test;
 //   - `an edit in tab A survives a save from tab B`, which wants two pages
 //     that both booted from the same saved `day`;
-//   - the two cycle-guard tests and `the one chooser`, which are about
-//     `day` ITSELF being the tab in front — the layout a room exists not
-//     to touch;
-//   - the lock test, which reloads, and a preview does not survive a
-//     reload: that is what it is for;
-//   - the bottom-bar tests that LOG — one app is one database, so a test
-//     that counts rows, or that logs `tea` in the same minute as its
-//     neighbour, still wants its own (da-vk1x, the `?db=` bead);
-//   - the phone, the memory-only storage prelude and the fallback-only
-//     server, each of which is a different browser.
+//   - the cycle guard that saves `day` into itself, and the lock test,
+//     which reload, and a preview does not survive a reload: that is what
+//     it is for;
+//   - the phone, the 1280x800 bar, the memory-only storage prelude and the
+//     fallback-only server, each of which is a different browser.
+//
+// The tests about `day` itself being in front are `solo`'s now, which puts
+// a modified `day` back (`restoreDay`), and the bar tests that LOG share
+// too: `solo` and `empty` start each on an empty database (da-6b3dj).
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -82,17 +81,13 @@ const shared = sharedApp(DESKTOP);
 const BAR_ONLY = { ...DESKTOP, query: 'repl' };
 
 /**
- * The one repl-page app the bar tests share, and the state they do share:
- * the PILLS, which a test that leaves one behind would hand to the next.
- * Not `shared.solo`, which puts the root bar back to `day` alone and would
- * take the cheap page out from under them.
+ * The one repl-page app the bar tests share, `empty`'d before each: the
+ * PILLS, which a test that leaves one behind would hand to the next, and
+ * the rows a test logged. Not `shared.solo`, which puts the root bar back
+ * to `day` alone and would take the cheap page out from under them.
  */
 const barShared = sharedApp(BAR_ONLY);
-const onBar = async (fn) => {
-	const app = await barShared();
-	await app.page.evaluate(() => window.datum.bar.setPills([]));
-	return fn(app);
-};
+const onBar = async (fn) => fn(await (await barShared()).empty());
 
 /** The root bar's tab labels, in order, the modified dot stripped. */
 const rootTabs = (page) =>
@@ -649,7 +644,7 @@ describe('the acts', () => {
 	// attribute, because what he could not see was the drawn mark and the
 	// two states used to differ by about a pixel of one shackle's end.
 	test('the lock is LOUD when unlocked, and the two states are different shapes', async () => {
-		await withApp(async ({ page }) => {
+		await shared.room('act-loud', async ({ page }) => {
 			/**
 			 * The button's colour, and where the shackle is DRAWN, in the
 			 * button's own box.
@@ -728,7 +723,7 @@ describe('the acts', () => {
 						`${state}: the shackle reaches y=${y.toFixed(2)} in a ${m.box.height}px button`
 					);
 				}
-		}, DESKTOP);
+		});
 	});
 
 	test('an unmodified restore lists the versions, and one of them can be picked', async () => {
@@ -787,8 +782,9 @@ describe('the acts', () => {
 
 describe('the bottom bar', () => {
 	test('a typed line is run and receipted with the hid from the listing; a press ghosts in the field; foo is an error', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
+			const echoed = (await app.echoes()).length;
 			const input = page.locator('.prompt-bar input');
 			// Tracked, so the fields widget has a button to press (da-c7u8).
 			await app.run(['spec', 'set', 'coffee', '--verb', 'occur']);
@@ -803,7 +799,7 @@ describe('the bottom bar', () => {
 			assert.ok(hid.length >= 4 && rows[0].hid.startsWith(hid), `the receipt's ${hid} is not the row's ${rows[0].hid}`);
 			assert.equal(await receipt(page).evaluate((el) => el.classList.contains('error')), false);
 			// As if typed at the REPL: it is in its scrollback.
-			assert.deepEqual(await app.echoes(), ['occur coffee']);
+			assert.deepEqual((await app.echoes()).slice(echoed), ['occur coffee']);
 
 			// A widget-bar press: the bar's field GHOSTS the command — beside
 			// the prompt, never as the box's value (da-jprg) — and the
@@ -833,7 +829,7 @@ describe('the bottom bar', () => {
 				'rgb(244, 100, 90)'
 			);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	// The page's one command line and its status line (da-rfs9): tall
@@ -919,7 +915,7 @@ describe('the bottom bar', () => {
 	});
 
 	test('a submit runs typed + pills, then an unlocked pill clears on success', async () => {
-		await withApp(async (app) => {
+		await onBar(async (app) => {
 			const { page } = app;
 			const seen = await app.spyOnRunner();
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 0700', kind: 'time' }]));
@@ -937,11 +933,11 @@ describe('the bottom bar', () => {
 			);
 			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill').length === 0);
 			assert.deepEqual(await page.evaluate(() => window.datum.bar.pills()), []);
-		}, BAR_ONLY);
+		});
 	});
 
 	test('a locked pill survives a successful press; an unlocked one does not', async () => {
-		await withApp(async (app) => {
+		await onBar(async (app) => {
 			const { page } = app;
 			const seen = await app.spyOnRunner();
 			await page.evaluate(() =>
@@ -968,7 +964,7 @@ describe('the bottom bar', () => {
 				]
 			);
 			assert.equal(await page.locator('.prompt-bar .pill').count(), 1, 'the locked pill survives');
-		}, BAR_ONLY);
+		});
 	});
 
 	test('a failed command leaves its pill in place', async () => {
@@ -1041,7 +1037,7 @@ describe('the cycle guard', () => {
 	});
 
 	test('the chooser offers day inside a pane, and a nested layout draws', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			// mine: the nowview alone, then embedded in day's tail.
 			await layouts(app, 'saveLayout', { version: 1, name: 'mine', root: { id: 'm', tabs: [{ id: 'm-tab', content: { id: 'm-w', kind: 'nowview', settings: {} } }], active: 0, bar: { edge: 'top', align: 'start' } } });
@@ -1052,7 +1048,7 @@ describe('the cycle guard', () => {
 			// The pane wears the LAYOUT's name, not its one widget's (da-9puz).
 			await page.locator('section.pane[data-title="mine"]').locator('svg.svg').waitFor();
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'mine', 'custom', 'fields']);
-		}, DESKTOP);
+		});
 	});
 });
 
@@ -1060,7 +1056,7 @@ describe('the one chooser', () => {
 	// da-uyx1: the empty pane's button and the root bar's `+` open the SAME
 	// modal, so what they offer cannot drift apart — one list, one order.
 	test("the root + and an empty pane offer the same items in the same order, minus the pane's ancestors", async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			// A saved layout, so the Layouts section holds more than `day`.
 			await layouts(app, 'saveLayout', { version: 1, name: 'mine', root: { id: 'm', tabs: [{ id: 'm-tab', content: { id: 'm-w', kind: 'nowview', settings: {} } }], active: 0, bar: { edge: 'top', align: 'start' } } });
@@ -1090,7 +1086,7 @@ describe('the one chooser', () => {
 			await settled(page);
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'custom', 'fields']);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 });
 

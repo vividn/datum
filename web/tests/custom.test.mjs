@@ -12,10 +12,17 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
+
+// ONE APP for the tests that neither reload nor resize (da-6b3dj, sharedApp
+// in support/app.mjs). The pane's line is kept in `localStorage`
+// (`datum.command-pane.v1`), which `solo` does not clear, so each of them
+// sets its own line before it asserts anything. What reloads, blocks the
+// store or opens on another screen opens an app of its own.
+const shared = sharedApp();
 
 /** The custom pane: the one with an edit affordance or an open editor. */
 const PANE = 'section.pane:has(h2 button.edit, h2 input.command)';
@@ -44,7 +51,7 @@ const count = async ({ entries }, field) =>
 
 describe('the custom pane', () => {
 	test('follows the database like the other panes', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			await setCommand(app.page, 'tail -n 1');
 			await app.submit('occur coffee');
 			assert.match(await shows(app.page, /coffee/), /coffee/);
@@ -56,7 +63,7 @@ describe('the custom pane', () => {
 	});
 
 	test('runs a command that writes once, then only on ▶', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			await setCommand(app.page, 'occur tea');
 			await app.page.locator(`${PANE} button.play`).waitFor();
 			assert.match(
@@ -219,7 +226,7 @@ describe('the custom pane', () => {
 	});
 
 	test('shows a failing command’s own error and stays editable', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const said = await app.run(['foo']);
 			assert.notEqual(said.code, 0, `datum foo succeeded: ${said.stdout}`);
 			const first = said.stderr.replace(/\x1b\[[0-9;]*m/g, '').split('\n')[0];

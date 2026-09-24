@@ -17,7 +17,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp, todayAt } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, todayAt } from './support/app.mjs';
 import { stripAnsi } from './support/tail.mjs';
 
 before(startApp);
@@ -99,6 +99,11 @@ const painted = (spans) => spans.map((s) => s.background).filter((c) => c !== 'r
  */
 const AFTERNOON = todayAt(15);
 
+// ONE APP for the file (da-6b3dj, sharedApp in support/app.mjs): `solo`
+// empties the database, so each test seeds its three entries afresh, and
+// the REPL is read from its newest block.
+const shared = sharedApp({ clock: AFTERNOON });
+
 async function twoSurfaces(app) {
 	assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, OK);
 	assert.equal((await app.run(['switch', 'mood', 'happy', '-t', '0800'])).code, OK);
@@ -117,7 +122,7 @@ async function twoSurfaces(app) {
 
 describe('the spans one component paints', () => {
 	test("carry the CLI's own cell text, and not one space more", async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { tail, cli } = await twoSurfaces(app);
 			const column = (key) => cli.columns.find((c) => c.key === key);
 
@@ -161,19 +166,19 @@ describe('the spans one component paints', () => {
 					row.map((td) => stripAnsi(column(td.key).cells[offset + i]))
 				);
 			}
-		}, { clock: AFTERNOON });
+		});
 	});
 
 	test("are the REPL's block, character for character", async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { repl, listed } = await twoSurfaces(app);
 			assert.equal(repl.text, repl.spans.map((s) => s.text).join(''));
 			assert.equal(repl.text, stripAnsi(listed.stdout));
-		}, { clock: AFTERNOON });
+		});
 	});
 
 	test('paint one escape the same colour on both surfaces', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { tail, repl } = await twoSurfaces(app);
 			const badges = painted(repl.spans);
 			assert.ok(badges.length > 0, 'the REPL painted no background at all');
@@ -188,11 +193,11 @@ describe('the spans one component paints', () => {
 			for (const colour of shown) {
 				assert.ok(badges.includes(colour), `the tail pane paints ${colour}, the REPL does not`);
 			}
-		}, { clock: AFTERNOON });
+		});
 	});
 
 	test('paint bold and underline, on both surfaces, for the escapes datum writes', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { tail, repl } = await twoSurfaces(app);
 			const bold = (spans) => spans.filter((s) => Number(s.weight) >= 700 && s.text.trim());
 			const under = (spans) => spans.filter((s) => s.decoration.includes('underline') && s.text.trim());
@@ -220,6 +225,6 @@ describe('the spans one component paints', () => {
 				ahead,
 				'the tail pane underlines a different set of stamps than the REPL'
 			);
-		}, { clock: AFTERNOON });
+		});
 	});
 });

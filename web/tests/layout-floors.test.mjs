@@ -4,7 +4,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, todayAt, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import {
 	CHROME,
 	DESKTOP,
@@ -13,7 +13,6 @@ import {
 	canvasWidth,
 	dragFor,
 	drawnRuns,
-	draft,
 	grab,
 	pane,
 	settled,
@@ -23,9 +22,17 @@ import {
 before(startApp);
 after(stopApp);
 
+// ONE APP on the desktop (da-6b3dj, sharedApp in support/app.mjs): a drag
+// moves `day`'s ratios, which `solo` restores, and the panes that shrink to
+// their frame open `day` from a draft of their own (`solo(fn, draft)`).
+// The resizing tests that COUNT redraws keep an app each: after `solo`
+// restores a dragged `day`, nowview redraws once more at its restored size
+// AFTER `solo` has returned, and that run lands in their count.
+const shared = sharedApp(DESKTOP);
+
 describe('a border', () => {
 	test('dragged 100px moves the ratio and redraws the picture at the new width', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const border = page.locator('.split.row > [role="separator"]');
 			const repl = pane(page, 'repl');
 			const before = await repl.boundingBox();
@@ -50,13 +57,13 @@ describe('a border', () => {
 			const img = pane(page, 'nowview').locator('svg.svg');
 			const shown = await img.evaluate((el) => ({ natural: el.width.baseVal.value, box: el.getBoundingClientRect().width }));
 			assert.ok(Math.abs(shown.natural - shown.box) <= 1, `scaled: ${JSON.stringify(shown)}`);
-		}, DESKTOP);
+		});
 	});
 
 	// The kinds have no floor (da-zh2o): the side column, a holder over
 	// nowview and the tail, drags down to its panes' outlines and no further.
 	test('drags the side column down to its panes\' outlines and no further', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const border = page.locator('.split.row > [role="separator"]');
 			const box = await border.boundingBox();
 			const x = box.x + box.width / 2;
@@ -68,7 +75,7 @@ describe('a border', () => {
 			await settled(page);
 			const side = await pane(page, 'side').boundingBox();
 			assert.ok(Math.abs(side.width - CHROME.width) <= 1, `the side column was dragged to ${side.width}px`);
-		}, DESKTOP);
+		});
 	});
 });
 
@@ -212,7 +219,7 @@ describe('resizing', () => {
 
 
 	test('a border is grabbed right beside the badges, which hang half over the gap', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			// The tail's badges are centred on its top outline, so half of each
 			// hangs into the gap above — the column border between nowview and
 			// tail — and no further: 8px of a 16px badge in an 8px gap (da-om9v).
@@ -246,7 +253,7 @@ describe('resizing', () => {
 				[tailBefore.height]
 			);
 			assert.equal(await page.locator('[role="menu"]').count(), 0, 'the drag opened the menu instead');
-		}, DESKTOP);
+		});
 	});
 });
 
@@ -263,7 +270,7 @@ describe('a widget pane shrinks to its frame', () => {
 		for (const direction of ['column', 'row']) {
 			const axis = direction === 'row' ? 'width' : 'height';
 			test(`${kind}, across a ${direction}: only its frame is left, ${CHROME[axis]}px ${axis}`, async () => {
-				await withApp(
+				await shared.solo(
 					async ({ page }) => {
 						const at = await grab(page, page.locator(`.split.${direction} > [role="separator"]`));
 						for (let i = 1; i <= 20; i++) {
@@ -289,7 +296,7 @@ describe('a widget pane shrinks to its frame', () => {
 						assert.ok(!seen.spills, `${kind}: the widget paints outside its frame`);
 						assert.ok(Math.abs(seen.section - CHROME[axis]) <= 1, `${kind}: the frame is ${seen.section}px ${axis}, not ${CHROME[axis]}`);
 					},
-					{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(along(direction, widgetPane('a', kind), widgetPane('b', 'repl')))) }
+					JSON.stringify(along(direction, widgetPane('a', kind), widgetPane('b', 'repl')))
 				);
 			});
 		}

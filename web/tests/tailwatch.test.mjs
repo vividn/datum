@@ -12,10 +12,26 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp, seedLines } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp, seedLines } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
+
+// ONE APP per screen that more than one test is measured at (da-6b3dj,
+// sharedApp in support/app.mjs): 1280x1200 and 1280x2300. `solo` empties
+// the database between them, and `seed`'s reload draws the pane afresh
+// over what it restored. A screen only one test uses opens its own, as
+// does a test that watches the worker from before the first page
+// (`watchAsks`).
+const TALL = sharedApp({ viewport: { width: 1280, height: 1200 } });
+const TALLEST = sharedApp({ viewport: { width: 1280, height: 2300 } });
+/** `fn` in the shared app at `width`×`height` if there is one, or an app of its own. */
+const at = (width, height, fn) =>
+	width === 1280 && height === 1200
+		? TALL.solo(fn)
+		: width === 1280 && height === 2300
+			? TALLEST.solo(fn)
+			: withApp(fn, { viewport: { width, height } });
 
 /** The tail pane's body and table, measured. */
 const geometry = (page) =>
@@ -188,84 +204,78 @@ describe('rows from height', () => {
 		[768, 1200]
 	]) {
 		test(`at ${width}x${height} a pane shows exactly the rows its box holds, newest last, whole header words`, async () => {
-			await withApp(
-				async (app) => {
-					const { page } = app;
-					await seed(app, 40);
-					await atRest(page);
-					const g = await geometry(page);
-					assertFits(g, `${width}x${height}`);
-					assert.ok(g.n < 40, `the pane holds all forty rows (n = ${g.n}), which tests nothing`);
-					assert.equal(g.hids.at(-1), seedHid(39), 'the newest row is not last');
-					assert.deepEqual(g.hids, g.hids.map((_, i) => seedHid(40 - g.n + i)), 'the rows are not the newest n');
-					// The CLI shrinks `field` and `state` to `f` and `s` when no
-					// row is wide — here none is — and the pane says the whole
-					// words, as `tail -w` over a wide terminal would. The 240px
-					// pane at 768 gives up `hid` and `_n` to keep them whole
-					// (da-kk0d; tailcolumns.test.mjs).
-					assert.deepEqual(
-						g.headers.map((h) => h.split(' ')[0]),
-						width > 768 ? ['_n', 'time', 'field', 'state', 'hid'] : ['time', 'field', 'state'],
-						'the header words are not the whole words'
-					);
-				},
-				{ viewport: { width, height } }
-			);
+			await at(width, height, async (app) => {
+				const { page } = app;
+				await seed(app, 40);
+				await atRest(page);
+				const g = await geometry(page);
+				assertFits(g, `${width}x${height}`);
+				assert.ok(g.n < 40, `the pane holds all forty rows (n = ${g.n}), which tests nothing`);
+				assert.equal(g.hids.at(-1), seedHid(39), 'the newest row is not last');
+				assert.deepEqual(g.hids, g.hids.map((_, i) => seedHid(40 - g.n + i)), 'the rows are not the newest n');
+				// The CLI shrinks `field` and `state` to `f` and `s` when no
+				// row is wide — here none is — and the pane says the whole
+				// words, as `tail -w` over a wide terminal would. The 240px
+				// pane at 768 gives up `hid` and `_n` to keep them whole
+				// (da-kk0d; tailcolumns.test.mjs).
+				assert.deepEqual(
+					g.headers.map((h) => h.split(' ')[0]),
+					width > 768 ? ['_n', 'time', 'field', 'state', 'hid'] : ['time', 'field', 'state'],
+					'the header words are not the whole words'
+				);
+			});
 		});
 	}
 });
 
 describe('scrolling up', () => {
 	test('the wheel pages older rows in, the top row stays put, the header stays pinned, to the start of the log', async () => {
-		await withApp(
-			async (app) => {
-				const { page } = app;
-				await seed(app, 60);
-				await atRest(page);
-				const g0 = await geometry(page);
-				assertFits(g0, 'at rest');
-				const n = g0.n;
+		await TALL.solo(async (app) => {
+			const { page } = app;
+			await seed(app, 60);
+			await atRest(page);
+			const g0 = await geometry(page);
+			assertFits(g0, 'at rest');
+			const n = g0.n;
 
-				// The table fits its box exactly, so there is nothing to
-				// scroll: the wheel, turned up over it, asks for the page above.
-				await wheelUp(page);
-				await waitRows(page, 'n === arg', 2 * n);
-				const g1 = await geometry(page);
-				const top = g0.hids[0];
-				assert.deepEqual(g1.hids, g1.hids.map((_, i) => seedHid(60 - 2 * n + i)), 'the page above is not contiguous');
-				// To the pixel: scroll offsets are whole pixels and the rows are not.
-				assert.ok(Math.abs(g1.ys[top] - g0.ys[top]) <= 1, `the row that was at the top moved: ${g0.ys[top]} → ${g1.ys[top]}`);
-				assert.ok(g1.headInside, 'the header scrolled out of the pane');
+			// The table fits its box exactly, so there is nothing to
+			// scroll: the wheel, turned up over it, asks for the page above.
+			await wheelUp(page);
+			await waitRows(page, 'n === arg', 2 * n);
+			const g1 = await geometry(page);
+			const top = g0.hids[0];
+			assert.deepEqual(g1.hids, g1.hids.map((_, i) => seedHid(60 - 2 * n + i)), 'the page above is not contiguous');
+			// To the pixel: scroll offsets are whole pixels and the rows are not.
+			assert.ok(Math.abs(g1.ys[top] - g0.ys[top]) <= 1, `the row that was at the top moved: ${g0.ys[top]} → ${g1.ys[top]}`);
+			assert.ok(g1.headInside, 'the header scrolled out of the pane');
 
-				// Up to the top of that, and the page above it.
-				const ys = await toTop(page);
-				const top2 = g1.hids[0];
-				await waitRows(page, 'n === arg', 3 * n);
-				const g2 = await geometry(page);
-				assert.ok(Math.abs(g2.ys[top2] - ys[top2]) <= 1, `the row that was at the top moved: ${ys[top2]} → ${g2.ys[top2]}`);
-				assert.ok(g2.headInside, 'after two pages, the header is not in the pane');
-				assert.ok(g2.scrollTop > 0, 'the page above landed with the reader at its top, not at their row');
-				assert.equal(g2.start.length, 0, 'the start of the log marked before it was reached');
+			// Up to the top of that, and the page above it.
+			const ys = await toTop(page);
+			const top2 = g1.hids[0];
+			await waitRows(page, 'n === arg', 3 * n);
+			const g2 = await geometry(page);
+			assert.ok(Math.abs(g2.ys[top2] - ys[top2]) <= 1, `the row that was at the top moved: ${ys[top2]} → ${g2.ys[top2]}`);
+			assert.ok(g2.headInside, 'after two pages, the header is not in the pane');
+			assert.ok(g2.scrollTop > 0, 'the page above landed with the reader at its top, not at their row');
+			assert.equal(g2.start.length, 0, 'the start of the log marked before it was reached');
 
-				// On to the start of the log: every row, oldest first.
-				let count = g2.hids.length;
-				for (let pages = 0; pages < 20 && count < 60; pages++) {
-					await toTop(page);
-					await waitRows(page, 'n !== arg', count);
-					count = await rowCount(page);
-				}
-				assert.equal(count, 60, 'the whole log is not listed');
-				// Once more, at the start: nothing comes, and the first row
-				// says it is the first.
+			// On to the start of the log: every row, oldest first.
+			let count = g2.hids.length;
+			for (let pages = 0; pages < 20 && count < 60; pages++) {
 				await toTop(page);
-				await page.locator('section.pane[data-title="tail"] tbody tr.start').waitFor();
-				const g3 = await geometry(page);
-				assert.equal(g3.hids.length, 60, 'rows came from before the start of the log');
-				assert.deepEqual(g3.start, [seedHid(0)], 'the first row of the log is not marked as the start');
-				assert.ok(g3.headInside, 'at the start of the log, the header is not in the pane');
-			},
-			{ viewport: { width: 1280, height: 1200 } }
-		);
+				await waitRows(page, 'n !== arg', count);
+				count = await rowCount(page);
+			}
+			assert.equal(count, 60, 'the whole log is not listed');
+			// Once more, at the start: nothing comes, and the first row
+			// says it is the first.
+			await toTop(page);
+			await page.locator('section.pane[data-title="tail"] tbody tr.start').waitFor();
+			const g3 = await geometry(page);
+			assert.equal(g3.hids.length, 60, 'rows came from before the start of the log');
+			assert.deepEqual(g3.start, [seedHid(0)], 'the first row of the log is not marked as the start');
+			assert.ok(g3.headInside, 'at the start of the log, the header is not in the pane');
+		});
 	});
 
 	test('a touch pull at 390x844 pages the rows above in', async () => {
@@ -306,156 +316,144 @@ describe('scrolling up', () => {
 	// start of the log — a dotted edge over it, "the start of the log" on
 	// hover — and nothing else moving.
 	test('with the whole log on screen, the wheel brings nothing and the first row is marked', async () => {
-		await withApp(
-			async (app) => {
-				const { page } = app;
-				await seed(app, 3);
-				await waitRows(page, 'n === 3');
-				await app.idle();
-				const g0 = await geometry(page);
-				assert.ok(g0.n > 3, `the pane holds ${g0.n} rows, which is not more than the log`);
-				await wheelUp(page);
-				await page.locator('section.pane[data-title="tail"] tbody tr.start').waitFor();
-				await app.idle();
-				const g1 = await geometry(page);
-				assert.deepEqual(g1.hids, g0.hids, 'the rows changed');
-				assert.deepEqual(g1.ys, g0.ys, 'the rows moved');
-				assert.deepEqual(g1.start, [seedHid(0)]);
-				assert.equal(
-					await page.locator('section.pane[data-title="tail"] tbody tr.start').getAttribute('title'),
-					'the start of the log'
-				);
-			},
-			{ viewport: { width: 1280, height: 1200 } }
-		);
+		await TALL.solo(async (app) => {
+			const { page } = app;
+			await seed(app, 3);
+			await waitRows(page, 'n === 3');
+			await app.idle();
+			const g0 = await geometry(page);
+			assert.ok(g0.n > 3, `the pane holds ${g0.n} rows, which is not more than the log`);
+			await wheelUp(page);
+			await page.locator('section.pane[data-title="tail"] tbody tr.start').waitFor();
+			await app.idle();
+			const g1 = await geometry(page);
+			assert.deepEqual(g1.hids, g0.hids, 'the rows changed');
+			assert.deepEqual(g1.ys, g0.ys, 'the rows moved');
+			assert.deepEqual(g1.start, [seedHid(0)]);
+			assert.equal(
+				await page.locator('section.pane[data-title="tail"] tbody tr.start').getAttribute('title'),
+				'the start of the log'
+			);
+		});
 	});
 
 	test('stops at the cap: past 300 rows, the newest go as older ones come', async () => {
-		await withApp(
-			async (app) => {
-				const { page } = app;
-				await seed(app, 320);
-				await atRest(page);
-				// The first page by the wheel: a table that fits has no scroll to set.
-				let count = await rowCount(page);
-				await wheelUp(page);
-				await waitRows(page, 'n === arg', 2 * count);
-				count = await rowCount(page);
-				for (let pages = 0; pages < 60 && count < 300; pages++) {
-					await toTop(page);
-					await waitRows(page, 'n !== arg', count);
-					count = await rowCount(page);
-				}
-				assert.equal(count, 300, 'the cap');
-				const before = await geometry(page);
+		await TALLEST.solo(async (app) => {
+			const { page } = app;
+			await seed(app, 320);
+			await atRest(page);
+			// The first page by the wheel: a table that fits has no scroll to set.
+			let count = await rowCount(page);
+			await wheelUp(page);
+			await waitRows(page, 'n === arg', 2 * count);
+			count = await rowCount(page);
+			for (let pages = 0; pages < 60 && count < 300; pages++) {
 				await toTop(page);
-				await waitTopNot(page, before.hids[0]);
-				await app.idle();
-				const after = await geometry(page);
-				assert.equal(after.hids.length, 300, 'grew past the cap');
-				assert.ok(seedIndex(after.hids[0]) < seedIndex(before.hids[0]), 'past the cap, older rows no longer come');
-				assert.ok(seedIndex(after.hids.at(-1)) < seedIndex(before.hids.at(-1)), 'past the cap, the newest rows stayed');
-				// The live end has gone off the bottom, and the foot says so.
-				await marker(page).waitFor();
-			},
-			{ viewport: { width: 1280, height: 2300 } }
-		);
+				await waitRows(page, 'n !== arg', count);
+				count = await rowCount(page);
+			}
+			assert.equal(count, 300, 'the cap');
+			const before = await geometry(page);
+			await toTop(page);
+			await waitTopNot(page, before.hids[0]);
+			await app.idle();
+			const after = await geometry(page);
+			assert.equal(after.hids.length, 300, 'grew past the cap');
+			assert.ok(seedIndex(after.hids[0]) < seedIndex(before.hids[0]), 'past the cap, older rows no longer come');
+			assert.ok(seedIndex(after.hids.at(-1)) < seedIndex(before.hids.at(-1)), 'past the cap, the newest rows stayed');
+			// The live end has gone off the bottom, and the foot says so.
+			await marker(page).waitFor();
+		});
 	});
 });
 
 describe('a write', () => {
 	test('while scrolled up keeps the place and shows ↓ new, which returns to the live end', async () => {
-		await withApp(
-			async (app) => {
-				const { page } = app;
-				await seed(app, 30);
-				await atRest(page);
-				const g0 = await geometry(page);
-				// A page above, then up to its top: scrolled up, not at the bottom.
-				await wheelUp(page);
-				await waitRows(page, 'n === arg', 2 * g0.n);
-				// Up the older rows, a little short of the top — the top asks
-				// for the page above, and this is about a write, not a page.
-				await page.evaluate(() => {
-					document.querySelector('section.pane[data-title="tail"] .body:not(.behind .body)').scrollTop = 10;
-				});
-				const g1 = await geometry(page);
-				assert.equal(g1.scrollTop, 10);
-				assert.ok(!g1.atBottom, 'still at the bottom after scrolling up');
-				assert.equal(await marker(page).count(), 0, '↓ new before anything is new');
+		await TALL.solo(async (app) => {
+			const { page } = app;
+			await seed(app, 30);
+			await atRest(page);
+			const g0 = await geometry(page);
+			// A page above, then up to its top: scrolled up, not at the bottom.
+			await wheelUp(page);
+			await waitRows(page, 'n === arg', 2 * g0.n);
+			// Up the older rows, a little short of the top — the top asks
+			// for the page above, and this is about a write, not a page.
+			await page.evaluate(() => {
+				document.querySelector('section.pane[data-title="tail"] .body:not(.behind .body)').scrollTop = 10;
+			});
+			const g1 = await geometry(page);
+			assert.equal(g1.scrollTop, 10);
+			assert.ok(!g1.atBottom, 'still at the bottom after scrolling up');
+			assert.equal(await marker(page).count(), 0, '↓ new before anything is new');
 
-				await app.submit('occur tea');
-				await app.idle();
-				await marker(page).waitFor();
-				const g2 = await geometry(page);
-				assert.equal(g2.hids[0], g1.hids[0], 'the top row changed');
-				assert.ok(Math.abs(g2.ys[g1.hids[0]] - g1.ys[g1.hids[0]]) < 1, `the table jumped: ${g1.ys[g1.hids[0]]} → ${g2.ys[g1.hids[0]]}`);
-				assert.ok(!g2.atBottom, 'the table scrolled to the bottom on its own');
-				assert.ok(g2.headInside, 'the header is not in the pane');
-				const [newest] = await app.entries(1);
-				assert.equal(newest.field, 'tea');
+			await app.submit('occur tea');
+			await app.idle();
+			await marker(page).waitFor();
+			const g2 = await geometry(page);
+			assert.equal(g2.hids[0], g1.hids[0], 'the top row changed');
+			assert.ok(Math.abs(g2.ys[g1.hids[0]] - g1.ys[g1.hids[0]]) < 1, `the table jumped: ${g1.ys[g1.hids[0]]} → ${g2.ys[g1.hids[0]]}`);
+			assert.ok(!g2.atBottom, 'the table scrolled to the bottom on its own');
+			assert.ok(g2.headInside, 'the header is not in the pane');
+			const [newest] = await app.entries(1);
+			assert.equal(newest.field, 'tea');
 
-				// The marker: to the bottom, fresh — the newest page, the new row last.
-				await marker(page).click();
-				await waitRows(page, 'n === arg', g0.n);
-				await app.idle();
-				const g3 = await geometry(page);
-				assertFits(g3, 'after ↓ new');
-				assert.equal(g3.hids.at(-1), newest.hid, 'the new row is not last');
-				assert.equal(await marker(page).count(), 0, '↓ new is still up');
-			},
-			{ viewport: { width: 1280, height: 1200 } }
-		);
+			// The marker: to the bottom, fresh — the newest page, the new row last.
+			await marker(page).click();
+			await waitRows(page, 'n === arg', g0.n);
+			await app.idle();
+			const g3 = await geometry(page);
+			assertFits(g3, 'after ↓ new');
+			assert.equal(g3.hids.at(-1), newest.hid, 'the new row is not last');
+			assert.equal(await marker(page).count(), 0, '↓ new is still up');
+		});
 	});
 
 	// The start of the log is what the last pull found, not a fact: a
 	// write older than the first row makes it wrong, so a write forgets it
 	// and the next pull at the top asks again.
 	test('a backdated write below the start of the log is found by the next pull at the top', async () => {
-		await withApp(
-			async (app) => {
-				const { page } = app;
-				await seed(app, 20);
-				await atRest(page);
-				let count = await rowCount(page);
-				await wheelUp(page);
-				await waitRows(page, 'n > arg', count);
-				count = await rowCount(page);
-				for (let pages = 0; pages < 10 && count < 20; pages++) {
-					await toTop(page);
-					await waitRows(page, 'n !== arg', count);
-					count = await rowCount(page);
-				}
-				assert.equal(count, 20, 'the whole log is not listed');
-				// From the top: a pane tall enough to list the log in one pull
-				// never went round the loop, and sits where that pull kept it.
+		await TALL.solo(async (app) => {
+			const { page } = app;
+			await seed(app, 20);
+			await atRest(page);
+			let count = await rowCount(page);
+			await wheelUp(page);
+			await waitRows(page, 'n > arg', count);
+			count = await rowCount(page);
+			for (let pages = 0; pages < 10 && count < 20; pages++) {
 				await toTop(page);
-				await wheelUp(page);
-				await page.locator('section.pane[data-title="tail"] tbody tr.start').waitFor();
-				assert.deepEqual((await geometry(page)).start, [seedHid(0)]);
+				await waitRows(page, 'n !== arg', count);
+				count = await rowCount(page);
+			}
+			assert.equal(count, 20, 'the whole log is not listed');
+			// From the top: a pane tall enough to list the log in one pull
+			// never went round the loop, and sits where that pull kept it.
+			await toTop(page);
+			await wheelUp(page);
+			await page.locator('section.pane[data-title="tail"] tbody tr.start').waitFor();
+			assert.deepEqual((await geometry(page)).start, [seedHid(0)]);
 
-				// A day before the first seed, typed while at the top. The
-				// field is declared first so the write is one row (da-c8mh).
-				await app.declare('tea');
-				await app.submit('occur tea -d 2026-09-09');
-				await app.idle();
-				const tea = (await app.entries(50)).find((entry) => entry.field === 'tea');
-				assert.ok(tea, 'the tea was not stored');
-				const g1 = await geometry(page);
-				assert.equal(g1.start.length, 0, 'the old first row is still marked as the start after a write');
+			// A day before the first seed, typed while at the top. The
+			// field is declared first so the write is one row (da-c8mh).
+			await app.declare('tea');
+			await app.submit('occur tea -d 2026-09-09');
+			await app.idle();
+			const tea = (await app.entries(50)).find((entry) => entry.field === 'tea');
+			assert.ok(tea, 'the tea was not stored');
+			const g1 = await geometry(page);
+			assert.equal(g1.start.length, 0, 'the old first row is still marked as the start after a write');
 
-				await wheelUp(page);
-				await waitRows(page, 'n === arg', 22);
-				const g2 = await geometry(page);
-				assert.equal(g2.hids[0], tea.hid, 'the backdated row is not first');
-				await wheelUp(page);
-				await page.waitForFunction(
-					(hid) => document.querySelector('section.pane[data-title="tail"] tbody tr.start')?.dataset.hid === hid,
-					tea.hid
-				);
-			},
-			{ viewport: { width: 1280, height: 1200 } }
-		);
+			await wheelUp(page);
+			await waitRows(page, 'n === arg', 22);
+			const g2 = await geometry(page);
+			assert.equal(g2.hids[0], tea.hid, 'the backdated row is not first');
+			await wheelUp(page);
+			await page.waitForFunction(
+				(hid) => document.querySelector('section.pane[data-title="tail"] tbody tr.start')?.dataset.hid === hid,
+				tea.hid
+			);
+		});
 	});
 
 	/**

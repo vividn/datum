@@ -20,10 +20,10 @@ import {
 before(startApp);
 after(stopApp);
 
-// ONE desktop app for the tests that stay at its size (da-b7sfp): nothing
-// here reads a row, and `solo` puts the layout back to `day` between them.
-// What resizes (`atEachScreen`), needs the other pointer, or starts from a
-// worker of its own opens its own app, as before.
+// ONE desktop app (da-b7sfp): nothing here reads a row, and `solo` puts
+// the layout back to `day` between tests — and the screen back to its size
+// after an `atEachScreen` (da-6b3dj). What starts on another screen or
+// under the other pointer, or from a worker of its own, opens its own app.
 const shared = sharedApp(DESKTOP);
 
 // The bar, after vividn's first look (da-jgrn): with one tab no tab strip at
@@ -234,9 +234,9 @@ describe('the title row, as tall as its words', () => {
 	// regression: the words back to compact but the button off the touch
 	// floor, or the floor kept by growing the title again.
 	test('the title draws the same height under a cursor and under a finger, and its button keeps the touch floor', async () => {
-		const read = async (where) => {
+		const read = async (open) => {
 			let out;
-			await withApp(async ({ page }) => {
+			await open(async ({ page }) => {
 				// `repl`, which both trees carry with a title of its own:
 				// the phone's `day` drops `nowview` and `custom` and tabs
 				// `tail` into a pane whose heading is the tab in front.
@@ -252,10 +252,10 @@ describe('the title row, as tall as its words', () => {
 						button: button.getBoundingClientRect().height
 					};
 				});
-			}, where);
+			});
 			return out;
 		};
-		const [fine, coarse] = [await read(DESKTOP), await read(PHONE)];
+		const [fine, coarse] = [await read(shared.solo), await read((fn) => withApp(fn, PHONE))];
 		assert.equal(fine.coarse, false);
 		assert.equal(coarse.coarse, true);
 		assert.equal(coarse.drawn, fine.drawn, `the title is ${fine.drawn}px under a cursor and ${coarse.drawn}px under a finger`);
@@ -343,7 +343,7 @@ describe('the title row, as tall as its words', () => {
 // computed styles, on a desktop and on a phone.
 describe('the margins', () => {
 	test('the gap is 8px and the body padding 0.33rem 0.4rem', async (t) => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await atEachScreen(t, page, [{ width: 1280, height: 900 }, { width: 390, height: 844 }], async () => {
 				const seen = await page.evaluate(() => {
 					const border = document.querySelector('.split .border:not(.static)');
@@ -360,7 +360,7 @@ describe('the margins', () => {
 				assert.ok(near(seen.padding[0], 0.33 * rem) && near(seen.padding[2], 0.33 * rem), `top/bottom ${seen.padding}`);
 				assert.ok(near(seen.padding[1], 0.4 * rem) && near(seen.padding[3], 0.4 * rem), `left/right ${seen.padding}`);
 			});
-		}, { viewport: { width: 1280, height: 900 } });
+		});
 	});
 });
 
@@ -369,7 +369,7 @@ describe('the margins', () => {
 // match the frame color." One rule for every scroll container, in app.css.
 describe('scrollbars', () => {
 	test("are thin on a pane's body and on the root scroller", async (t) => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			await atEachScreen(t, page, [{ width: 1280, height: 900 }, { width: 390, height: 844 }], async () => {
 				const seen = await page.evaluate(() => {
 					const style = (el) => {
@@ -386,7 +386,7 @@ describe('scrollbars', () => {
 				// No pointer over it: the thumb is transparent.
 				assert.match(seen.body.color, /^rgba\(0, 0, 0, 0\) rgba\(0, 0, 0, 0\)$|^transparent transparent$/);
 			});
-		}, { viewport: { width: 1280, height: 900 } });
+		});
 	});
 });
 

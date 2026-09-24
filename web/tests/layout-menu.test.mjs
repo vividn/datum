@@ -20,7 +20,6 @@ import {
 	chooseBar,
 	chooseRoot,
 	chooser,
-	draft,
 	exactly,
 	manage,
 	manageButton,
@@ -48,11 +47,10 @@ after(stopApp);
 // ONE APP per screen for most of this file (da-b7sfp, sharedApp in
 // support/app.mjs): a context is 2.5 s of boot, and nothing here reads a
 // ROW, so what a test leaves behind is layout alone, which `solo` puts back
-// to `day` before the next one. What still opens an app of its own leaves
-// the root WITHOUT `day` (Save layout as…, Change Widget at the root), locks
-// it (`solo` drops the stored lock, not the tab's), starts from another
-// device (a fresh phone, a `ONE_PANE` draft), all of which `solo` cannot
-// undo.
+// to `day` before the next one — its lock too, and a `ONE_PANE` draft is
+// `solo`'s to open (da-6b3dj). What still opens an app of its own leaves
+// the root WITHOUT `day` (Save layout as…, Change Widget at the root) or
+// starts on a fresh phone, neither of which `solo` can undo.
 const shared = sharedApp(DESKTOP);
 const phone = sharedApp(PHONE);
 
@@ -338,7 +336,7 @@ describe('the menu the title opens', () => {
 	// `nameOf` already preferred over the kind's name. The act is in the
 	// `▾`, with the rest of what is DONE to a pane, so a lock hides it.
 	test('Rename pane… names a lone pane everywhere; emptied, the key goes with the name', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			const tabOf = () =>
 				page.evaluate(() => {
@@ -386,7 +384,7 @@ describe('the menu the title opens', () => {
 			// not drawn, which is the lock this bead asked for, for free.
 			await toggleRootLock(page);
 			await until(() => manageButton(page, 'tail').count(), (n) => n === 0);
-		}, DESKTOP);
+		});
 	});
 
 	// da-cesj: the strip of a tab stack is a row of its own, and the panes
@@ -484,34 +482,28 @@ describe('the menu the title opens', () => {
 	// it — and the root frame, which used to grey the item, draws no bar
 	// of its own now (da-2a5y): its tabs are the shell's top bar.
 	test('the root frame draws no bar: a lone root widget has no title, no menu and no inset', async () => {
-		await withApp(
-			async ({ page }) => {
-				assert.deepEqual(await titles(page), ['repl']);
-				const root = page.locator('section.root');
-				assert.equal(await root.locator('.titlebar').count(), 0);
-				assert.equal(await root.locator('button.title, button.add').count(), 0);
-				assert.equal(await root.locator('h2').count(), 0);
-				assert.equal(await root.locator('> .content').evaluate((el) => getComputedStyle(el).paddingTop), '0px');
-			},
-			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, ONE_PANE) }
-		);
+		await shared.solo(async ({ page }) => {
+			assert.deepEqual(await titles(page), ['repl']);
+			const root = page.locator('section.root');
+			assert.equal(await root.locator('.titlebar').count(), 0);
+			assert.equal(await root.locator('button.title, button.add').count(), 0);
+			assert.equal(await root.locator('h2').count(), 0);
+			assert.equal(await root.locator('> .content').evaluate((el) => getComputedStyle(el).paddingTop), '0px');
+		}, ONE_PANE);
 	});
 
 	test('Close tab is disabled on the last root tab', async () => {
-		await withApp(
-			async ({ page }) => {
-				// The root's tabs are the root bar's (da-0a5o), and the last
-				// of them cannot be closed from the `▾` that holds Close.
-				await rootManageButton(page).click();
-				// Named by the label alone: the × is decoration, `aria-hidden`.
-				const close = page.getByRole('menuitem', { name: 'Close tab', exact: true });
-				assert.equal(await close.isDisabled(), true);
-				// Disabled, it keeps both its glyph and its place (da-ygc9).
-				assert.equal((await menuLines(page)).at(-1), '× Close tab');
-				await page.keyboard.press('Escape');
-			},
-			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, ONE_PANE) }
-		);
+		await shared.solo(async ({ page }) => {
+			// The root's tabs are the root bar's (da-0a5o), and the last
+			// of them cannot be closed from the `▾` that holds Close.
+			await rootManageButton(page).click();
+			// Named by the label alone: the × is decoration, `aria-hidden`.
+			const close = page.getByRole('menuitem', { name: 'Close tab', exact: true });
+			assert.equal(await close.isDisabled(), true);
+			// Disabled, it keeps both its glyph and its place (da-ygc9).
+			assert.equal((await menuLines(page)).at(-1), '× Close tab');
+			await page.keyboard.press('Escape');
+		}, ONE_PANE);
 	});
 
 	test('closing panes unnests their split', async () => {

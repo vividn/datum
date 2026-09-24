@@ -21,14 +21,13 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	PHONE,
 	activeTab,
 	addTab,
 	atRest,
 	bar,
-	draft,
 	fill,
 	manage,
 	pane,
@@ -42,6 +41,13 @@ import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
+
+// ONE phone app for the tests that start from `day` alone or from a draft
+// of it (da-6b3dj, sharedApp in support/app.mjs): `solo` puts `day` back
+// after a swipe moved its tabs. What still opens an app of its own starts
+// with a second layout open (`twoLayouts`, which `solo` would close), or on
+// another screen or with reduced motion.
+const phone = sharedApp(PHONE);
 
 /** This device's open layouts: `day` in front, the built-in `tail` behind it. */
 const twoLayouts = (context) =>
@@ -188,7 +194,7 @@ describe('a scroller keeps the gesture until its end', () => {
 	});
 
 	test('at its start it takes a swipe left and yields one right; at its end it yields both', async () => {
-		await withApp(
+		await phone.solo(
 			async (app) => {
 				const { page } = app;
 				// A field whose name is sixty characters, listed: the line the
@@ -220,7 +226,7 @@ describe('a scroller keeps the gesture until its end', () => {
 				await until(() => activeTab(page, 'wide'), (t) => t === 'custom');
 				assert.deepEqual(app.errors, []);
 			},
-			{ ...PHONE, prepare: (context) => context.addInitScript(draft, JSON.stringify(threeTabs())) }
+			JSON.stringify(threeTabs())
 		);
 	});
 });
@@ -309,7 +315,7 @@ describe('the frame always swipes', () => {
 
 describe('the motion', () => {
 	test('the content follows the finger, slides on, and comes back to rest', async () => {
-		await withApp(async ({ page }) => {
+		await phone.solo(async ({ page }) => {
 			const content = pane(page, 'side').locator('> .content');
 			const body = pane(page, 'side').locator('.body:not(.behind .body)');
 			const rows = await pane(page, 'side').locator('tbody tr').count();
@@ -329,11 +335,11 @@ describe('the motion', () => {
 			// tail asks for as many rows as its box holds (da-zfkx).
 			await pane(page, 'side').locator('[role="tab"]', { hasText: 'tail' }).click();
 			await until(() => pane(page, 'side').locator('tbody tr').count(), (n) => n === rows);
-		}, PHONE);
+		});
 	});
 
 	test('a swipe too short comes back, and the tab does not move', async () => {
-		await withApp(async ({ page }) => {
+		await phone.solo(async ({ page }) => {
 			const content = pane(page, 'side').locator('> .content');
 			const body = pane(page, 'side').locator('.body:not(.behind .body)');
 			await scrollX(body, true);
@@ -342,13 +348,13 @@ describe('the motion', () => {
 			assert.ok((await moved(page)).length > 0, 'a claimed gesture moved nothing while the finger was down');
 			await atRest(content);
 			assert.equal(await activeTab(page, 'side'), 'tail');
-		}, PHONE);
+		});
 	});
 });
 
 describe('a widget that takes the axis itself', () => {
 	test('a one-finger drag across the nowview band leaves the tab alone', async () => {
-		await withApp(async ({ page }) => {
+		await phone.solo(async ({ page }) => {
 			await pane(page, 'side').locator('[role="tab"]', { hasText: 'nowview' }).click();
 			// The BAND declares the axis, not the widget: the margin above it
 			// is room a swipe may start in (da-rskp).
@@ -363,6 +369,6 @@ describe('a widget that takes the axis itself', () => {
 			await swipeOver(page, band, 120, 0);
 			await atRest(content);
 			assert.equal(await activeTab(page, 'side'), 'nowview', 'a drag back across the band moved the tab');
-		}, PHONE);
+		});
 	});
 });

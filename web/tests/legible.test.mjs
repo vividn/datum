@@ -25,7 +25,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
 before(startApp);
@@ -120,8 +120,14 @@ function assertLabelled(shown, sizes) {
 	assert.ok(shown.ticks >= 4, `only ${shown.ticks} hour labels — ${sizes}`);
 }
 
+// ONE APP per screen (da-6b3dj, sharedApp in support/app.mjs): `solo`
+// empties the database each test logged a day into, and a REPL drawing is
+// read from the end of the scrollback, which is where the newest is.
+const shared = sharedApp();
+
 describe('a drawn view', () => {
 	for (const { name, viewport } of VIEWPORTS) {
+		const screen = sharedApp({ viewport });
 		// The strip's pane is the one place the labels are NOT datum's since
 		// da-iu9i: it asks for bands only and writes the date stamps and
 		// the hour ruler itself. So the claim splits in two — the picture
@@ -129,48 +135,42 @@ describe('a drawn view', () => {
 		// text illegible in the first place), and the strip's own text
 		// clears the same floor.
 		test(`is legible in the dayview pane on ${name}`, async () => {
-			await withApp(
-				async (app) => {
-					await logADay(app);
+			await screen.solo(async (app) => {
+				await logADay(app);
 
-					const shown = await measure(paneImage(app, 'dayview'));
-					const sizes = `dayview pane at ${viewport.width}px: ${shown.natural} → ${shown.rendered.toFixed(1)} (×${shown.scale.toFixed(3)})`;
-					assert.ok(Math.abs(shown.scale - 1) <= 0.005, `the band is scaled — ${sizes}`);
-					assert.equal(shown.dateLines, 0, `the band still carries date labels — ${sizes}`);
-					assert.equal(shown.ticks, 0, `the band still carries the hour axis — ${sizes}`);
+				const shown = await measure(paneImage(app, 'dayview'));
+				const sizes = `dayview pane at ${viewport.width}px: ${shown.natural} → ${shown.rendered.toFixed(1)} (×${shown.scale.toFixed(3)})`;
+				assert.ok(Math.abs(shown.scale - 1) <= 0.005, `the band is scaled — ${sizes}`);
+				assert.equal(shown.dateLines, 0, `the band still carries date labels — ${sizes}`);
+				assert.equal(shown.ticks, 0, `the band still carries the hour axis — ${sizes}`);
 
-					const drawn = await app.page.evaluate(() => {
-						const strip = document.querySelector('.strip');
-						const stamp = strip.querySelector('.row.pinned .stamp');
-						const labels = [...strip.querySelectorAll('.axis text.tick-label')];
-						const px = (el) => parseFloat(getComputedStyle(el).fontSize);
-						return {
-							lines: stamp.querySelectorAll('span').length,
-							stamp: px(stamp),
-							ticks: labels.length,
-							tick: labels.length ? Math.min(...labels.map(px)) : 0
-						};
-					});
-					assert.equal(drawn.lines, 3, `date stamp missing — ${sizes}`);
-					assert.ok(drawn.ticks >= 4, `only ${drawn.ticks} hour labels — ${sizes}`);
-					assert.ok(drawn.stamp >= FLOOR, `the date stamp is ${drawn.stamp}px — ${sizes}`);
-					assert.ok(drawn.tick >= FLOOR, `the hour labels are ${drawn.tick}px — ${sizes}`);
-				},
-				{ viewport }
-			);
+				const drawn = await app.page.evaluate(() => {
+					const strip = document.querySelector('.strip');
+					const stamp = strip.querySelector('.row.pinned .stamp');
+					const labels = [...strip.querySelectorAll('.axis text.tick-label')];
+					const px = (el) => parseFloat(getComputedStyle(el).fontSize);
+					return {
+						lines: stamp.querySelectorAll('span').length,
+						stamp: px(stamp),
+						ticks: labels.length,
+						tick: labels.length ? Math.min(...labels.map(px)) : 0
+					};
+				});
+				assert.equal(drawn.lines, 3, `date stamp missing — ${sizes}`);
+				assert.ok(drawn.ticks >= 4, `only ${drawn.ticks} hour labels — ${sizes}`);
+				assert.ok(drawn.stamp >= FLOOR, `the date stamp is ${drawn.stamp}px — ${sizes}`);
+				assert.ok(drawn.tick >= FLOOR, `the hour labels are ${drawn.tick}px — ${sizes}`);
+			});
 		});
 
 		test(`is legible as dayview typed into the repl on ${name}`, async () => {
-			await withApp(
-				async (app) => {
-					await logADay(app);
-					await app.submit('dayview');
+			await screen.solo(async (app) => {
+				await logADay(app);
+				await app.submit('dayview');
 
-					const shown = await measure(replImage(app));
-					assertLabelled(shown, assertLegible(shown, `dayview in the repl at ${viewport.width}px`));
-				},
-				{ viewport }
-			);
+				const shown = await measure(replImage(app));
+				assertLabelled(shown, assertLegible(shown, `dayview in the repl at ${viewport.width}px`));
+			});
 		});
 
 		// nowview used to pass on its own: authored at 520px, it was only
@@ -181,15 +181,12 @@ describe('a drawn view', () => {
 		// so a fix there could take it down silently. `-o -`, because bare
 		// `nowview` is the CLI's terminal band, not a picture (da-57dj).
 		test(`is legible as nowview typed into the repl on ${name}`, async () => {
-			await withApp(
-				async (app) => {
-					await logADay(app);
-					await app.submit('nowview -o -');
+			await screen.solo(async (app) => {
+				await logADay(app);
+				await app.submit('nowview -o -');
 
-					assertLegible(await measure(replImage(app)), `nowview in the repl at ${viewport.width}px`);
-				},
-				{ viewport }
-			);
+				assertLegible(await measure(replImage(app)), `nowview in the repl at ${viewport.width}px`);
+			});
 		});
 	}
 
@@ -209,7 +206,7 @@ describe('a drawn view', () => {
 		[['nowview', '--context', '30m', '-o', '-'], 400]
 	]) {
 		test(`is still the CLI’s ${width}px ${argv[0]} canvas when the argv asks for nothing`, async () => {
-			await withApp(async (app) => {
+			await shared.solo(async (app) => {
 				await logADay(app);
 				const drawn = await app.run(argv);
 				assert.equal(drawn.code, 0, drawn.stderr);
@@ -233,7 +230,7 @@ describe('a drawn view', () => {
 		const { REACH_PX } = await import('../src/lib/lanes.ts');
 		const floor = KINDS.nowview.legible({ history: '0' }).width;
 
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			assert.equal((await app.run(['switch', 'mood', 'happy'])).code, 0);
 			const drawn = await app.run(['nowview', '-o', '-', '--width', String(floor)]);
 			assert.equal(drawn.code, 0, drawn.stderr);

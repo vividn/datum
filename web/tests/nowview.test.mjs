@@ -10,11 +10,17 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, todayAt, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { DESKTOP, activeTab, choose, chooseRoot, draft, pane, settled, swipe } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
+
+// ONE APP for the two tests on the default screen (da-6b3dj, sharedApp in
+// support/app.mjs); the one that steps the window does it in a room, the
+// step being a session setting of `day`'s nowview. Every other test opens
+// its own: a screen, clock, touch or seeded draft of its own, or a reload.
+const shared = sharedApp();
 
 const PANE = 'section.pane[data-title="nowview"]';
 const shorter = (page) => page.locator(`${PANE} button[aria-label="shorter window"]`);
@@ -77,7 +83,7 @@ async function beside(page, pane) {
 
 describe('the nowview widget', () => {
 	test('sit just right of the far axis label, − then +, with no label', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			const where = await beside(page, PANE);
 			assert.equal(where.far, '-30m');
 			assert.deepEqual(where.wrong, []);
@@ -108,7 +114,7 @@ describe('the nowview widget', () => {
 	});
 
 	test('steps its window with + and −, through the seam, down to the snapshot and up to 12h', async () => {
-		await withApp(async (app) => {
+		await shared.room('steps', async (app) => {
 			const { page } = app;
 			assert.deepEqual(await titles(page), ['longer window (45m)', 'shorter window (20m)']);
 			await app.spyOnRunner();
@@ -149,7 +155,7 @@ describe('the nowview widget', () => {
 	// layout» is what hands it over; only then is it a draft edit, and only
 	// then does `Save layout` write it down.
 	test('the step is this session’s, and the draft and a save take it only when asked', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // reloads, and saves `day`
 			const { page } = app;
 			await app.spyOnRunner();
 			await longer(page).click();

@@ -20,10 +20,16 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, webkit } from 'playwright';
 import { fileArgv } from '../src/lib/fileargv.ts';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
+
+// ONE APP for the two chromium tests below the browser legs (da-6b3dj,
+// sharedApp in support/app.mjs): `solo` empties the database, so each
+// still counts from zero. The legs keep an app each: their browser is a
+// persistent profile of its own, and the phone's has an init script.
+const desk = sharedApp({ viewport: { width: 1280, height: 1000 } });
 
 // The rewrite keeps every option and its value, in order, and makes only
 // the input source `-` (da-1vz2): read off the CLI's option table, not
@@ -325,7 +331,7 @@ for (const engine of [chromium, webkit]) {
 // A ~50 MB import on a phone ran in silence (da-h9vj). The CLI counts on
 // stderr, and the worker streams it out while the process still holds it.
 test('an import shows its progress while it runs, and the result after', async () => {
-	await withApp(
+	await desk.solo(
 		async (app) => {
 			const { page } = app;
 			const utc = (i) => new Date(Date.UTC(2025, 0, 1) + i * 60000).toISOString();
@@ -358,13 +364,12 @@ test('an import shows its progress while it runs, and the result after', async (
 			assert.ok((await app.outputs()).some((o) => /5000 imported/.test(o)));
 			assert.equal(await page.locator('.repl .progress').count(), 0);
 			assert.deepEqual(app.errors, []);
-		},
-		{ viewport: { width: 1280, height: 1000 } }
+		}
 	);
 });
 
 test('an option keeps its value, and only the source is the chosen file (da-1vz2)', async () => {
-	await withApp(
+	await desk.solo(
 		async (app) => {
 			const { page } = app;
 			// What the CLI is asked — argv and stdin — through the seam's own hook.
@@ -419,7 +424,6 @@ test('an option keeps its value, and only the source is the chosen file (da-1vz2
 			await answer(page, 'install');
 			assert.deepEqual((await asked()).argv, ['kit', 'install', '--force', '-', '--yes']);
 			assert.deepEqual(app.errors, []);
-		},
-		{ viewport: { width: 1280, height: 1000 } }
+		}
 	);
 });

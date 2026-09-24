@@ -29,7 +29,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp } from './support/app.mjs';
 
 const { cases } = JSON.parse(
 	readFileSync(
@@ -48,6 +48,11 @@ const refused = cases.filter((c) => !c.ok && c.field !== '');
 
 before(startApp);
 after(stopApp);
+
+// ONE APP for the file (da-6b3dj, sharedApp in support/app.mjs): `solo`
+// empties the database each test wrote, so the counts below are this
+// test's, and closes the Track modal a test left open.
+const shared = sharedApp();
 
 /**
  * Open the Track modal and type `field` into it, without submitting.
@@ -106,7 +111,7 @@ async function pressChip(app, field) {
 
 describe('a field name the (+) form accepts', () => {
 	test('the form refuses the names nothing can log to, and names the rule', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			for (const testCase of refused) {
 				const { submittable, hint } = await typeIntoTheForm(page, testCase.field);
 				assert.equal(submittable, false, `${testCase.name}: (+) still offered to create it`);
@@ -123,7 +128,7 @@ describe('a field name the (+) form accepts', () => {
 	});
 
 	test('the form still accepts every name that works, unicode included', async () => {
-		await withApp(async ({ page }) => {
+		await shared.solo(async ({ page }) => {
 			for (const testCase of acceptable) {
 				const { submittable, hint } = await typeIntoTheForm(page, testCase.field);
 				assert.equal(hint, null, `${testCase.name}: refused a working name`);
@@ -133,7 +138,7 @@ describe('a field name the (+) form accepts', () => {
 	});
 
 	test('one press of the offered name gets you a usable one', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			await typeIntoTheForm(app.page, 'my coffee');
 			await app.page.locator('dialog.track p.hint button.fix').click();
 			assert.equal(await app.page.locator('dialog.track input.field').inputValue(), 'my_coffee');
@@ -147,7 +152,7 @@ describe('a field name the (+) form accepts', () => {
 	});
 
 	test('typing `spec set` refuses the same names', async () => {
-		await withApp(async ({ submit, outputs, run }) => {
+		await shared.solo(async ({ submit, outputs, run }) => {
 			for (const testCase of refused) {
 				const result = await run(['spec', 'set', testCase.field, '--verb', 'occur']);
 				assert.notEqual(result.code, 0, `${testCase.name}: '✓ Spec saved' for a dead field`);
@@ -169,7 +174,7 @@ describe('a field name the (+) form accepts', () => {
 	// test, which the parallel suite stretched past its two minutes. Each
 	// name's rows are its own, and the total says nothing else was stored.
 	test('every accepted name logs from the chip AND from the keyboard', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const stored = async (field) => {
 				const all = await app.entries(100);
 				return { total: all.length, mine: all.filter((e) => e.field === field).length };

@@ -75,6 +75,10 @@ async function stallNextFlush(page) {
 before(startApp);
 after(stopApp);
 
+// An app per test, not `sharedApp` (da-6b3dj): every test here prepares the
+// worker's storage before the page exists, reloads, or opens a second tab
+// of the same OPFS — what a shared app's `empty` cannot stand in for.
+
 /**
  * The repl layout, for the tests the day page is only scenery for.
  *

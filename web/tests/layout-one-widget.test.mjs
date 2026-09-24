@@ -28,7 +28,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
 	chooseRoot,
@@ -44,6 +44,12 @@ import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
+
+// ONE APP for the desktop tests (da-6b3dj, sharedApp in support/app.mjs).
+// Those that open `/<name>` first take `wipe`, since the navigation builds
+// the page anew from a device with no layouts kept; `day` takes `solo`. The
+// phone's round trip keeps an app of its own: the one test on that screen.
+const shared = sharedApp(DESKTOP);
 
 const NEWEST = 'newest first';
 const HISTORY = 'history';
@@ -89,7 +95,7 @@ describe('a root tab whose layout is one widget', () => {
 	// Locked is what a first visit finds (da-gshh), and da-gvdc's rule
 	// decides what a lock leaves: the settings door, not the structure.
 	test('/repl opens locked with its option; unlocked it has Change Widget and Reset widget too', async () => {
-		await withApp(async (app) => {
+		await shared.wipe(async (app) => {
 			const { page } = app;
 			await openPage(app, 'repl');
 
@@ -109,7 +115,7 @@ describe('a root tab whose layout is one widget', () => {
 			assert.ok(lines.indexOf(RESET_WIDGET) < lines.indexOf('Save layout'));
 			assert.ok(lines.indexOf(RESET_LAYOUT) > lines.indexOf('Restore layout'));
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	// On a phone this menu is the only door to the widget, so the whole
@@ -154,7 +160,7 @@ describe('a root tab whose layout is one widget', () => {
 	});
 
 	test('/nowview: Reset widget from the root menu puts history back, saved or held', async () => {
-		await withApp(async (app) => {
+		await shared.wipe(async (app) => {
 			const { page } = app;
 			await openPage(app, 'nowview');
 			await toggleRootLock(page);
@@ -171,7 +177,7 @@ describe('a root tab whose layout is one widget', () => {
 				'✓ 30m · default'
 			]);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	// `custom` declares neither options nor defaults (registry.ts), so it has
@@ -180,7 +186,7 @@ describe('a root tab whose layout is one widget', () => {
 	// one: da-hkjp gave that kind a declared `type`, and a kind that declares
 	// something has both items.
 	test('/custom: neither item, because its kind declares neither', async () => {
-		await withApp(async (app) => {
+		await shared.wipe(async (app) => {
 			const { page } = app;
 			await openPage(app, 'custom');
 			await toggleRootLock(page);
@@ -193,13 +199,13 @@ describe('a root tab whose layout is one widget', () => {
 			assert.deepEqual(lines, [...ACTS, 'export backup…'], `custom reads ${lines.join(' | ')}`);
 			assert.ok(!lines.includes(RESET_WIDGET), `custom reads ${lines.join(' | ')}`);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	// More than one widget: the root tab holds a split, so there is no one
 	// widget to mean and the menu is what it always was.
 	test('day: the root menu is unchanged, and its panes keep their own', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			const lines = await rootLines(page);
 			assert.ok(!lines.includes(NEWEST), `day reads ${lines.join(' | ')}`);
@@ -208,13 +214,13 @@ describe('a root tab whose layout is one widget', () => {
 			assert.equal(lines.at(-1), 'export backup…');
 			assert.deepEqual(await rootManageLines(page), ['Change Widget', 'Split ← ↓ ↑ →', '× Close tab']);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	// A layout the reader saved themselves is the same shape and gets the
 	// same menu — the rule is never the layout's NAME (da-ze1x's trap).
 	test('a one-widget layout a person saved gets the items too, and no Reset layout', async () => {
-		await withApp(async (app) => {
+		await shared.wipe(async (app) => {
 			const { page } = app;
 			await openPage(app, 'repl');
 			await toggleRootLock(page);
@@ -229,6 +235,6 @@ describe('a root tab whose layout is one widget', () => {
 			// go back to (da-luwe) — which is the one act the two differ on.
 			assert.ok(!lines.includes(RESET_LAYOUT), `mine reads ${lines.join(' | ')}`);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 });

@@ -20,11 +20,16 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { echoArgv, parseEcho } from '../src/lib/echo.ts';
 
 before(startApp);
 after(stopApp);
+
+// ONE APP for the file (da-6b3dj, sharedApp in support/app.mjs): `solo`
+// empties the database between tests, and what is read off the screen is
+// the NEWEST document, so the scrollback of the tests before is not in it.
+const shared = sharedApp();
 
 describe('echoArgv', () => {
 	test('a write verb is asked for its echo', () => {
@@ -120,7 +125,7 @@ describe('parseEcho', () => {
 describe('the echo is painted in datum’s colours', () => {
 	/** Every run of one surface's info line, as the browser drew it. */
 	const runs = (page, root) =>
-		page.locator(`${root} .doc .info`).first().evaluate((el) =>
+		page.locator(`${root} .doc .info`).last().evaluate((el) =>
 			[...el.querySelectorAll('span')].map((s) => ({
 				text: s.textContent,
 				color: getComputedStyle(s).color
@@ -134,7 +139,7 @@ describe('the echo is painted in datum’s colours', () => {
 	};
 
 	test('the field is in its own colour, in the bar and in the REPL alike', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			await app.submit('occur coffee');
 			const [doc] = parseEcho((await app.run(['get', 'coffee', '--show', 'json'])).stdout);
 			assert.ok(doc.field_color, 'the CLI answered no field colour');
@@ -159,7 +164,7 @@ describe('the echo is painted in datum’s colours', () => {
 	});
 
 	test('a state gets its own colour, which is not the field’s', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			// The field exists first, so the echo is its own entry alone.
 			await app.declare('mood', 'switch');
 			await app.submit('switch mood happy');
@@ -239,7 +244,7 @@ const WRITERS = [
 
 describe('the list says what the CLI does', () => {
 	test('every reader would gain nothing or break, which is why it is on the list', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			await app.run(['occur', 'coffee']);
 			for (const argv of READERS) {
 				assert.deepEqual(echoArgv(argv), argv, `${argv.join(' ')} is not on the list`);
@@ -254,7 +259,7 @@ describe('the list says what the CLI does', () => {
 	});
 
 	test('every echoing verb still answers with a document', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			for (const argv of WRITERS) {
 				const result = await app.run(echoArgv(argv));
 				assert.notDeepEqual(echoArgv(argv), argv, `${argv.join(' ')} is on the list by mistake`);

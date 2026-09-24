@@ -25,7 +25,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { unfold as openBar } from './support/bar.mjs';
 import { DESKTOP, pane, titles } from './support/layout.mjs';
 import { until } from './support/until.mjs';
@@ -42,6 +42,14 @@ const phone = (width = 390, height = 844) => ({
 
 /** A desktop that has never opened the site. */
 const FRESH_DESKTOP = { ...DESKTOP, home: null };
+
+// ONE fresh phone for the first two tests (da-6b3dj, sharedApp in
+// support/app.mjs), taken as it is rather than through `solo`, which puts
+// back `day` and not the `mobile` a fresh phone opens: the first reads the
+// app as it opened, the second only type sizes. Everything else opens its
+// own — a screen of its own, a reload, a fresh device, a navigation.
+const freshPhone = sharedApp(phone());
+const asOpened = async (fn) => fn(await freshPhone());
 
 /**
  * The four screens the tree's geometry was measured at (da-shzs, redone
@@ -148,7 +156,7 @@ const typeSize = (page, id) =>
 
 describe('a fresh phone', () => {
 	test('opens `mobile`: dayview / tail | nowview / fields + nowview / command', async () => {
-		await withApp(async (app) => {
+		await asOpened(async (app) => {
 			const { page } = app;
 			await app.spyOnRunner();
 			assert.deepEqual(await rootNames(page), ['mobile']);
@@ -178,7 +186,7 @@ describe('a fresh phone', () => {
 			await asked(page, '0');
 			await asked(page, '30m');
 			assert.deepEqual(app.errors, []);
-		}, phone());
+		});
 	});
 
 	// vividn: «decrease fontsize of tail a little bit». It is a declared
@@ -192,7 +200,7 @@ describe('a fresh phone', () => {
 	// either reads 0.89 and says nothing about the option; the strip, the
 	// snapshot and the windowed nowview are all at the shared 13.6px.
 	test("the tail's type is 0.85 of the rule every other pane body keeps", async () => {
-		await withApp(async ({ page }) => {
+		await asOpened(async ({ page }) => {
 			const tail = await typeSize(page, 'tail');
 			const plain = await typeSize(page, 'nowview');
 			assert.equal(plain, await typeSize(page, 'strip'), 'the panes that asked for nothing disagree');
@@ -200,7 +208,7 @@ describe('a fresh phone', () => {
 				Math.abs(tail - plain * 0.85) < 0.01,
 				`the tail's type is ${tail}px, not 0.85 of the ${plain}px every other body keeps`
 			);
-		}, phone());
+		});
 	});
 
 	// vividn: «decrease dayview height to be just 1 day», and (da-r0ydu) «a

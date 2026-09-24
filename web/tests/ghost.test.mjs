@@ -19,12 +19,17 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
 
 const DESKTOP = { viewport: { width: 1280, height: 800 } };
+
+// ONE APP for the ghost's own tests (da-6b3dj, sharedApp in
+// support/app.mjs). What slows the runner (`slowRunner` installs one, which
+// `solo` does not take out) or asks for no motion opens an app of its own.
+const shared = sharedApp(DESKTOP);
 
 /**
  * Make any command carrying `slowly` take `ms`, through the seam's own
@@ -127,7 +132,7 @@ describe('the bar after Enter', () => {
 
 describe('the ghost', () => {
 	test('a press shows the argv it ran without it becoming the input’s value, and fades within a second', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await withCoffee(app);
 
@@ -154,7 +159,7 @@ describe('the ghost', () => {
 			const took = Date.now() - from;
 			assert.ok(took < 2500, `the ghost was still there ${took}ms after it was seen`);
 			assert.equal(await page.locator('.prompt-bar input').inputValue(), '');
-		}, DESKTOP);
+		});
 	});
 
 	test('the ghost is up at the press, before the command lands, and holds before it fades', async () => {
@@ -193,7 +198,7 @@ describe('the ghost', () => {
 	});
 
 	test('a second press replaces the first and restarts the fade — never two at once', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await withCoffee(app);
 
@@ -211,11 +216,11 @@ describe('the ghost', () => {
 				return !!g && g.dataset.mark !== 'first' && (g.getAnimations()[0]?.currentTime ?? 0) < 400;
 			});
 			assert.equal(await page.locator('.prompt-bar .ghost').count(), 1, 'two ghosts at once');
-		}, DESKTOP);
+		});
 	});
 
 	test('a keystroke takes the ghost away at once — the box is the reader’s', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await withCoffee(app);
 			const input = page.locator('.prompt-bar input');
@@ -249,15 +254,15 @@ describe('the ghost', () => {
 			const took = Date.now() - pressed;
 			assert.ok(took < 400, `the ghost took ${took}ms to go, long enough that it could have simply expired`);
 			assert.equal(await input.inputValue(), '');
-		}, DESKTOP);
+		});
 	});
 
 	test('the console ghosts too: a command nobody typed says what it ran', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await page.evaluate(() => window.datum.run(['occur', 'tea']).then(() => {}));
 			assert.deepEqual(await ghostAndValue(page), { ghost: 'occur tea', value: '' });
-		}, DESKTOP);
+		});
 	});
 
 	test('no motion asked for, no fade: the ghost is shown and then removed', async () => {

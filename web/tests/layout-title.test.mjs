@@ -33,7 +33,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp as withAnyApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
 	addTab,
@@ -62,14 +62,11 @@ after(stopApp);
  */
 const PAGE = JSON.stringify(along('row', widgetPane('repl', 'repl'), widgetPane('cmd', 'command')));
 
-const withApp = (fn, options = {}) =>
-	withAnyApp(fn, {
-		...DESKTOP,
-		...options,
-		prepare: async (context) => {
-			await context.addInitScript(draft, PAGE);
-		}
-	});
+// ONE APP for the file (da-6b3dj, sharedApp in support/app.mjs), each test
+// on `day` opened from the PAGE draft (`solo(fn, PAGE)`), locks put back
+// between them. The finger's test alone opens its own: a touch context.
+const shared = sharedApp(DESKTOP);
+const onPage = (fn) => shared.solo(fn, PAGE);
 
 const closeButton = (page, id) => pane(page, id).locator('> .titlebar button.close');
 
@@ -97,6 +94,10 @@ const content = (page, id) => pane(page, id).locator('> .content');
 const watchMenus = (page) =>
 	page.evaluate(() => {
 		window.__menus = [];
+		// Once a page: a shared app's next test watches again, and a second
+		// listener would record every menu twice.
+		if (window.__menusWatched) return;
+		window.__menusWatched = true;
 		document.addEventListener('contextmenu', (e) => window.__menus.push(e.defaultPrevented));
 	});
 const menusSeen = (page) => page.evaluate(() => window.__menus);
@@ -124,7 +125,7 @@ async function longPress(page, locator) {
 
 describe('the × on the widget title', () => {
 	test('it closes what the title names, and writes only the draft doing it', async () => {
-		await withApp(async ({ page }) => {
+		await onPage(async ({ page }) => {
 			await unlockRoot(page);
 			assert.deepEqual(await titles(page), ['repl', 'command']);
 			const before = await layoutStorage(page);
@@ -149,7 +150,7 @@ describe('the × on the widget title', () => {
 	});
 
 	test('a lock takes it away, with the `+` and the `▾`', async () => {
-		await withApp(async ({ page }) => {
+		await onPage(async ({ page }) => {
 			await unlockRoot(page);
 			assert.equal(await page.locator('section.pane button.close').count(), 2);
 
@@ -165,7 +166,7 @@ describe('the × on the widget title', () => {
 	});
 
 	test('the last pane of a layout closes to an EMPTY pane, never to nothing', async () => {
-		await withApp(async ({ page }) => {
+		await onPage(async ({ page }) => {
 			await unlockRoot(page);
 			await closeButton(page, 'cmd').click();
 			await settled(page);
@@ -187,7 +188,7 @@ describe('the × on the widget title', () => {
 
 describe('the hold on the widget title', () => {
 	test('a right click opens Change Widget and eats the browser’s own menu', async () => {
-		await withApp(async ({ page }) => {
+		await onPage(async ({ page }) => {
 			await unlockRoot(page);
 			await watchMenus(page);
 
@@ -216,7 +217,7 @@ describe('the hold on the widget title', () => {
 	});
 
 	test('a pane with no title menu at all is still held', async () => {
-		await withApp(async ({ page }) => {
+		await onPage(async ({ page }) => {
 			await unlockRoot(page);
 			// The premise, and it is the point of the pane: `command`
 			// declares neither defaults nor options, so its name opens
@@ -240,12 +241,16 @@ describe('the hold on the widget title', () => {
 				// title's own menu ($lib/hold.ts swallows the click behind it).
 				assert.equal(await page.locator('[role="menu"]').count(), 0, 'the hold also opened the title’s menu');
 			},
-			{ viewport: { width: 1280, height: 900 }, device: { hasTouch: true, isMobile: false } }
+			{
+				viewport: { width: 1280, height: 900 },
+				device: { hasTouch: true, isMobile: false },
+				prepare: (context) => context.addInitScript(draft, PAGE)
+			}
 		);
 	});
 
 	test('a lock closes this door too', async () => {
-		await withApp(async ({ page }) => {
+		await onPage(async ({ page }) => {
 			await unlockRoot(page);
 			await toggleRootLock(page);
 			await settled(page);
@@ -259,7 +264,7 @@ describe('the hold on the widget title', () => {
 	});
 
 	test('with a strip, it is the tab IN FRONT that is held, and the `×` closes that tab', async () => {
-		await withApp(async ({ page }) => {
+		await onPage(async ({ page }) => {
 			await unlockRoot(page);
 			await addTab(page, 'repl', 'aliases');
 			await settled(page);
@@ -293,7 +298,7 @@ describe('the hold on the widget title', () => {
 	});
 
 	test('the door it was given is a SECOND one: the press and the `▾` are unchanged', async () => {
-		await withApp(async ({ page }) => {
+		await onPage(async ({ page }) => {
 			await unlockRoot(page);
 
 			// A press on the title still opens what the pane IS.

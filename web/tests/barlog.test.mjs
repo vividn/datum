@@ -34,7 +34,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { swipe } from './support/layout.mjs';
 
 before(startApp);
@@ -48,6 +48,21 @@ const PHONE = {
 };
 
 const BAR = '.prompt-bar';
+
+// ONE desktop app for the three tests below that begin and end with the
+// bar at rest and read the log from its newest row (da-6b3dj, sharedApp in
+// support/app.mjs) — tidied by hand, not by `solo`, which would close the
+// repl tab under them. Everything else opens its own: a phone starts
+// FOLDED and the device remembers every fold a test leaves it in, a drag's
+// swallow window outlives the test that armed it, and a count of the log's
+// or the pane's rows would count the tests before.
+const shared = sharedApp(DESKTOP);
+const desktop = async (fn) => {
+	const app = await shared();
+	await app.home();
+	await app.empty();
+	return fn(app);
+};
 
 /** How far the bar is open, and where the things that move with it are. */
 const where = (page) =>
@@ -300,7 +315,7 @@ describe('the bar is the way in', () => {
 	});
 
 	test('a wheel over the bar goes down and comes back; over a pane it moves nothing', async () => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 			await app.submit('occur coffee');
 			await app.idle();
@@ -327,7 +342,7 @@ describe('the bar is the way in', () => {
 			await settled(page);
 			assert.equal((await where(page)).height, 0, 'wheeling back left the log open');
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	// A pointercancel BEFORE the threshold: the system took a gesture that was
@@ -664,7 +679,7 @@ describe('the way back', () => {
 	});
 
 	test('Escape returns too', async () => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 			await app.submit('occur coffee');
 			await app.idle();
@@ -674,7 +689,7 @@ describe('the way back', () => {
 			await page.keyboard.press('Escape');
 			await settled(page);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 });
 
@@ -713,7 +728,7 @@ describe('down there it is still the bar', () => {
 	// lost, only somewhere else. The claim that moves here is the one that
 	// replaced it: two surfaces, one list, and no entry on both.
 	test('the newest entry is the bar’s row, and the log carries on from the second', async () => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
 			await app.declare('brew');
 			await app.submit('occur brew a=1 b=2 c=3 d=4 e=5 f=6');
@@ -747,7 +762,7 @@ describe('down there it is still the bar', () => {
 			]);
 			assert.equal(await doc.locator('.brace .more').count(), 0);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 });
 

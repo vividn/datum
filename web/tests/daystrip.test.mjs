@@ -43,6 +43,7 @@ import { createHash } from 'node:crypto';
 import { devices } from 'playwright';
 import {
 	atEachScreen,
+	sharedApp,
 	startApp,
 	stopApp,
 	withApp,
@@ -57,6 +58,35 @@ const SAVE_OPTIONS = 'Save options with layout';
 
 before(startApp);
 after(stopApp);
+
+// ONE APP per set of options for most of this file (da-6b3dj, sharedApp in
+// support/app.mjs). A test that only sizes the box, writes the tree (`say`)
+// or logs rows is `solo`: the box is set before anything is measured, and
+// `solo` restores `day` and empties the database. A test that moves the
+// strip ITSELF — the handle, the keyboard, the freeze toggle, a zoom — sets
+// a session option on the widget, which `solo` does not put back, so it
+// takes a ROOM, whose strip is a new widget — as does a test that scrolls
+// a stack the test before it scrolled, since `solo` keeps `day`'s strip and
+// its scroll position. Which is why the helpers below read and write the
+// strip of the root tab in FRONT. What still opens an
+// app of its own has options no other test shares (a viewport, a clock), a
+// `prepare`, a moved clock, or a reload.
+const shared = sharedApp();
+const clocked = sharedApp({ clock: todayAt(12) });
+
+/**
+ * A room on `on`, once its strip has heard its box. A room's strip is a new
+ * widget, and it hears its box a settle after the room is drawn
+ * (layout/resizing.ts) — for ~100 ms it holds a day height from before —
+ * where a fresh boot has long since settled. Waited out, as the tests below
+ * wait out a settle.
+ */
+const settledRoom = (on, name, fn) =>
+	on.room(name, async (app) => {
+		await app.page.waitForTimeout(3 * 150);
+		await app.idle();
+		return fn(app);
+	});
 
 /** datum's 3-line day label, as `format_day_label` builds one. */
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -339,7 +369,8 @@ const widthOf = async ({ page }) =>
  * strip's owner (the layout, da-jdop) last heard from it, with whatever
  * THIS SESSION holds over it. Since da-vhwq a move of the strip's own
  * lands in the session and reaches the tree only on «Save options with
- * layout», so the tree alone is no longer what the strip was told.
+ * layout», so the tree alone is no longer what the strip was told. The
+ * strip of the root tab in FRONT, so a room reads its own (da-6b3dj).
  */
 const stripSettings = () => {
 	const walk = (pane) => {
@@ -350,7 +381,8 @@ const stripSettings = () => {
 			} else if (tab.content.kind === 'daystrip') return window.datum.layout.settings(tab.id);
 		}
 	};
-	return walk(window.datum.layout.current().root);
+	const { root } = window.datum.layout.current();
+	return walk({ tabs: [root.tabs[root.active]] });
 };
 
 const heard = ({ page }, key = 'dayHeight') =>
@@ -360,7 +392,7 @@ const heard = ({ page }, key = 'dayHeight') =>
 const heardIs = ({ page }, want, key = 'dayHeight') =>
 	page.waitForFunction(`(${stripSettings})().${key} === ${JSON.stringify(want)}`);
 
-/** Tell the strip's owner some settings, as a saved layout would. */
+/** Tell the strip's owner — the root tab in front's — some settings, as a saved layout would. */
 const say = ({ page }, settings) =>
 	page.evaluate(
 		`window.datum.layout.apply((tree) => {
@@ -371,7 +403,7 @@ const say = ({ page }, settings) =>
 					else if (tab.content.kind === 'daystrip') tab.content.settings = { ...tab.content.settings, ...${JSON.stringify(settings)} };
 				}
 			};
-			walk(copy.root);
+			walk({ tabs: [copy.root.tabs[copy.root.active]] });
 			return copy;
 		})`
 	);
@@ -505,7 +537,7 @@ const storeKeys = ({ page }) =>
 
 describe('the day strip', () => {
 	test('the box says how many days: today, and the past that fits above it, a picture each', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const nowMs = await app.page.evaluate(() => Date.now());
 
 			// A short box: today, and the day or two above it that fit.
@@ -573,7 +605,7 @@ describe('the day strip', () => {
 	// five separate `dayview` runs of ONE day each — the snappiness is
 	// that a band lands on its own, not that the past arrives at once.
 	test('five days is five one-day dayviews, each asked bands-only', async () => {
-		await withApp(
+		await withApp( // own app: its own screen and clock, which no other test shares
 			async (app) => {
 				await seedLines(app, [...[1, 2, 3, 4].map((back) => `occur coffee -d -${back}`), 'occur coffee']);
 				await sizeWhole(app, 5);
@@ -629,7 +661,7 @@ describe('the day strip', () => {
 	});
 
 	test('the strip draws the date column and the ruler, and its gridlines run through every band', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			await sizeWhole(app, 5);
 			const nowMs = await app.page.evaluate(() => Date.now());
 
@@ -701,7 +733,7 @@ describe('the day strip', () => {
 	});
 
 	test('the stack holds a fortnight above the box, whether or not the box holds whole days', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			// Room for three whole days. The box is three days tall — and
 			// the stack is a fortnight, which is what there is to scroll to.
 			// It used to be three days, to the pixel, which left the wheel
@@ -727,7 +759,7 @@ describe('the day strip', () => {
 	});
 
 	test('a wheel over the past scrolls back through the days, today staying put', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			// A box three days tall: a date stamp fits in it whole, so there
 			// is something legible to arrive at.
 			await sizeFor(app, 3);
@@ -775,7 +807,7 @@ describe('the day strip', () => {
 	test('a finger over the past scrolls it on a phone, and the page does not move', async () => {
 		// The phone as it comes (390x640, da-hkpd): the box the default
 		// layout gives the strip, which is the box vividn could not scroll.
-		await withApp(
+		await phone.solo(
 			async (app) => {
 				// A day SHORT enough that the phone's strip holds a past at
 				// all (da-r0ydu): the day follows the widget until the reader
@@ -816,8 +848,7 @@ describe('the day strip', () => {
 				);
 				assert.deepEqual(await todayBand(app), today, "today's band moved");
 				assert.equal(await app.page.evaluate(() => window.scrollY), 0, 'the page scrolled instead');
-			},
-			{ device: devices['Pixel 5'], viewport: { width: 390, height: 640 } }
+			}
 		);
 	});
 
@@ -834,7 +865,7 @@ describe('the day strip', () => {
 		// what reddened main's run 296 (da-y7r9); it is a clock, so the
 		// clock is pinned, as this file's other clock-sensitive tests pin
 		// theirs. A `Date.now()` that never changes minute never ticks.
-		await withApp(
+		await withApp( // own app: its own screen and clock, which no other test shares
 			async (app) => {
 				await say(app, { dayHeight: 40 });
 				await app.page.waitForFunction(
@@ -880,7 +911,7 @@ describe('the day strip', () => {
 	// is the next command, so the entry just logged for ten days ago was
 	// not in the band, and would not be until something else ran.
 	test('a stale band scrolled into view is re-drawn, and it alone', async () => {
-		await withApp(async (app) => {
+		await clocked.solo(async (app) => {
 			// A box a hair SHORT of one whole day, so the stack's viewport
 			// holds the band scrolled to it and not a pixel of the one above
 			// — what runs below is then a count of that one band.
@@ -909,11 +940,11 @@ describe('the day strip', () => {
 			// the fortnight above it, and not the geometry, which is at this
 			// epoch already.
 			assert.deepEqual(await viewsOf(seen), [10]);
-		}, { clock: todayAt(12) });
+		});
 	});
 
 	test('a scroll over bands already at this epoch asks for nothing', async () => {
-		await withApp(async (app) => {
+		await settledRoom(clocked, 'epoch', async (app) => {
 			await sizeWhole(app, 2);
 			await app.idle();
 
@@ -937,7 +968,7 @@ describe('the day strip', () => {
 			assert.ok(moved.top < rest.top, `the wheel moved the stack ${rest.top - moved.top}px`);
 
 			assert.deepEqual(await viewsOf(seen), []);
-		}, { clock: todayAt(12) });
+		});
 	});
 
 	// ⛔ FOLLOW UNTIL TOUCHED, THEN HOLD — and back onto the derived value
@@ -956,7 +987,7 @@ describe('the day strip', () => {
 	// and what the OWNER holds — a day that happened to land at the right
 	// height with a number still held is the bug this rule prevents.
 	test('follows its widget until touched, holds after, and follows again when let go', async () => {
-		await withApp(async (app) => {
+		await settledRoom(shared, 'follows', async (app) => {
 			const box = await boxOf(app);
 			assert.equal(await heard(app), undefined, 'a fresh strip holds a day height');
 			assert.equal(await valueOf(app), await following(app), 'one day does not fill the widget');
@@ -1031,7 +1062,7 @@ describe('the day strip', () => {
 	// box would derive, which is the one state where the two are
 	// indistinguishable by value and only the MOVE tells them apart.
 	test('a sideways drag keeps a held day height, even when it equals the derived one', async () => {
-		await withApp(async (app) => {
+		await settledRoom(shared, 'sideways-hold', async (app) => {
 			// Held at the derived value: `say` writes the tree, so the day
 			// is the reader's — and it is the number the box would pick.
 			//
@@ -1078,7 +1109,7 @@ describe('the day strip', () => {
 	// onto it. That is the whole of «then it stays», and this is the leg
 	// of it that the edge case appeared to deny.
 	test('the floor, held from a taller box, stays held when the box shrinks onto it', async () => {
-		await withApp(async (app) => {
+		await settledRoom(shared, 'floor', async (app) => {
 			const box = await boxOf(app);
 
 			// A box that derives something well clear of the floor, so the
@@ -1120,7 +1151,7 @@ describe('the day strip', () => {
 	// nothing, and the strip follows, which is the state an unusable
 	// setting should leave a reader in.
 	test('a held day height the strip cannot draw is clamped, and a non-number follows', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const floor = 40;
 			await say(app, { dayHeight: 0 });
 			await settledAt(app, floor);
@@ -1144,13 +1175,13 @@ describe('the day strip', () => {
 		// until the handle is touched, so the owner's settings are silent
 		// about it and the handle still says a number.
 		let fallback;
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			fallback = await valueOf(app);
 			assert.ok(fallback > 0, `the handle says ${fallback}`);
 			assert.equal(await heard(app), undefined);
 		});
 
-		await withApp(async (app) => {
+		await settledRoom(shared, 'prop', async (app) => {
 			// The owner said 120 — through the tree, as a saved layout does:
 			// the handle says so, and every band is drawn in the box that
 			// height gives it.
@@ -1177,7 +1208,7 @@ describe('the day strip', () => {
 	});
 
 	test('the handle re-draws every day at the new height, and the days stay on one x-axis', async () => {
-		await withApp(async (app) => {
+		await settledRoom(shared, 'redraw', async (app) => {
 			// A day height set first, and not the derived one: this test
 			// drags 40px each way from it TWICE, and the shortest day the
 			// strip may draw is 40 (da-r0ydu — a day that follows its widget
@@ -1224,7 +1255,7 @@ describe('the day strip', () => {
 	// strip's own now, so how wide it is is a setting, and the `+` at the
 	// 00 mark drags it sideways.
 	test('the handle dragged sideways widens the date column, and the bands give up the room', async () => {
-		await withApp(async (app) => {
+		await settledRoom(shared, 'widen', async (app) => {
 			await sizeFor(app, 3);
 			const was = await widthOf(app);
 			const before = await metrics(app);
@@ -1263,7 +1294,7 @@ describe('the day strip', () => {
 	// the finger as scaled pictures, and datum is asked again only once the
 	// handle is let go.
 	test('the bands scale live under the drag and are re-drawn on the drop', async () => {
-		await withApp(async (app) => {
+		await settledRoom(clocked, 'scale', async (app) => {
 			await sizeFor(app, 2);
 			const was = await valueOf(app);
 			const before = await app.page
@@ -1302,11 +1333,11 @@ describe('the day strip', () => {
 				.locator('.band[data-days-ago="0"] svg.svg')
 				.evaluate((el) => el.getBoundingClientRect().height);
 			assert.ok(Math.abs(after - (was + 40)) <= 1, `the drawn band is ${after}px, not ${was + 40}`);
-		}, { clock: todayAt(12) });
+		});
 	});
 
 	test('the keyboard works both axes of the handle', async () => {
-		await withApp(async (app) => {
+		await settledRoom(shared, 'keys', async (app) => {
 			const tall = await valueOf(app);
 			const wide = await widthOf(app);
 
@@ -1338,7 +1369,7 @@ describe('the day strip', () => {
 	// vividn, 2026-09-15: «at the very left side of the dividing line, put a
 	// little icon to freeze today at the bottom».
 	test('the freeze toggle takes today out of the pin and puts it back', async () => {
-		await withApp(async (app) => {
+		await settledRoom(shared, 'freeze', async (app) => {
 			await sizeFor(app, 3);
 			const toggle = app.page.locator('button.freeze');
 			assert.equal(await toggle.getAttribute('aria-checked'), 'true', 'today does not start frozen');
@@ -1383,7 +1414,7 @@ describe('the day strip', () => {
 	// da-iu9i: «the ↻ goes» — resetting the widget's settings is the pane
 	// menu's `Reset widget` (da-7ymx), not a button of the strip's own.
 	test('the strip has no reset button', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			assert.equal(await app.page.locator('.strip button.reset').count(), 0);
 			assert.equal(await app.page.locator('section.pane[data-title="dayview"] button.reset').count(), 0);
 		});
@@ -1393,7 +1424,7 @@ describe('the day strip', () => {
 		// Whatever is in the store before the handle moves is what is in it
 		// after: the strip has no key of its own, and adds none.
 		let fallback;
-		await withApp(async (app) => {
+		await settledRoom(shared, 'nowrite', async (app) => {
 			fallback = await valueOf(app);
 			await sizeFor(app, 2);
 			const before = await storeKeys(app);
@@ -1412,7 +1443,7 @@ describe('the day strip', () => {
 		// And a store that throws on the ACCESS — which is what a browser
 		// set to block site data actually does — changes nothing: the strip
 		// draws, and the handle works for the visit.
-		await withApp(
+		await withApp( // own app: a `prepare` that blocks the store
 			async (app) => {
 				await app.page.locator('.band[data-days-ago="0"] svg.svg').waitFor();
 				assert.equal(await valueOf(app), fallback);
@@ -1437,7 +1468,7 @@ describe('the day strip', () => {
 	});
 
 	test('the jagged line says the day above the divider is not the newest', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			// Deeper than the box shows whole, so there is something to
 			// scroll. Nothing to tear yet: yesterday is at the bottom,
 			// against the divider.
@@ -1495,7 +1526,7 @@ describe('the day strip', () => {
 		const clock = workerClock(noon);
 		/** The days `from` back to 0 before `ms`, oldest first, as stamps. */
 		const marks = (ms, from) => Array.from({ length: from + 1 }, (_, i) => labelFor(ms, from - i));
-		await withApp(
+		await withApp( // own app: it moves the clock
 			async (app) => {
 				// Deep enough that the stack scrolls, so the jagged line has
 				// something to say at the end.
@@ -1535,7 +1566,7 @@ describe('the day strip', () => {
 	// it landed the day before this did (1ceada8) — so every depth the
 	// box can hold is swept, at every width the app is read at.
 	test('never scrolls the page sideways, at any width or depth', async (t) => {
-		await withApp(
+		await withApp( // own app: its own screen, which no other test shares
 			async (app) => {
 				const widths = [360, 390, 768, 1280].map((width) => ({ width, height: 800 }));
 				await atEachScreen(t, app.page, widths, async ({ width }) => {
@@ -1561,7 +1592,7 @@ describe('the day strip', () => {
 	// long as that height is one a phone can spare.
 	test("the strip's row leaves the widget bar on screen", async () => {
 		const screen = { width: 360, height: 640 };
-		await withApp(
+		await withApp( // own app: its own screen, which no other test shares
 			async (app) => {
 				await app.submit('occur coffee');
 				await app.page.locator('.bar [data-field="coffee"]').waitFor();
@@ -1701,6 +1732,7 @@ async function doubleTap(page, box) {
 }
 
 const PHONE = { device: devices['Pixel 5'], viewport: { width: 390, height: 640 } };
+const phone = sharedApp(PHONE);
 
 /** The zoom reset in the strip's corner (da-8rqb9). */
 const UNZOOM = '.strip button.unzoom';
@@ -1710,7 +1742,7 @@ const TODAY = '.band[data-days-ago="0"]';
 
 describe('the day strip zooms onto an hour range', () => {
 	test('a pinch windows every band at once, and the stamps stay where they are', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // own app: a phone with a clock, which no other test shares
 			const { page } = app;
 			// More than one band to move TOGETHER, which is the whole claim:
 			// a day follows its widget until the reader shrinks it
@@ -1768,7 +1800,7 @@ describe('the day strip zooms onto an hour range', () => {
 	});
 
 	test('the ⊖ gives the whole day back, and a double tap no longer does', async () => {
-		await withApp(async (app) => {
+		await settledRoom(phone, 'unzoom', async (app) => {
 			await app.idle();
 			const box = await bandBox(app);
 
@@ -1793,7 +1825,7 @@ describe('the day strip zooms onto an hour range', () => {
 			assert.equal(await hoursShown(app), 25);
 			assert.equal(await app.page.locator(UNZOOM).count(), 0, 'the ⊖ outlived the window');
 			assert.deepEqual(app.errors, []);
-		}, PHONE);
+		});
 	});
 
 	// ⛑ THE REASON FOR THE BUTTON, asserted on the shape that produced it.
@@ -1813,7 +1845,7 @@ describe('the day strip zooms onto an hour range', () => {
 	// a picture is not, and the `⊖` is in the date column, which no
 	// picture is ever drawn in.
 	test('on a day whose lanes are full, a double tap inspects — and the ⊖ still gives the day back', async () => {
-		await withApp(async (app) => {
+		await withApp(async (app) => { // own app: it reloads
 			const { page } = app;
 			await seedLines(
 				app,
@@ -1907,7 +1939,7 @@ describe('the day strip zooms onto an hour range', () => {
 	});
 
 	test('the ⊖ is a fingertip, in the one column no picture is drawn in', async () => {
-		await withApp(async (app) => {
+		await settledRoom(phone, 'fingertip', async (app) => {
 			const { page } = app;
 			await app.idle();
 			const box = await bandBox(app);
@@ -1949,11 +1981,11 @@ describe('the day strip zooms onto an hour range', () => {
 				`the ⊖ (${reset.left}–${reset.right}) sits on the freeze toggle (${freeze.left}–${freeze.right})`
 			);
 			assert.deepEqual(app.errors, []);
-		}, PHONE);
+		});
 	});
 
 	test('ctrl+wheel zooms, shift+wheel pans, and the ⊖ is the way back', async () => {
-		await withApp(
+		await withApp( // own app: its own screen, which no other test shares
 			async (app) => {
 				const { page } = app;
 				await app.idle();
@@ -2024,7 +2056,7 @@ describe('the day strip zooms onto an hour range', () => {
 	});
 
 	test('the window is a setting: this session’s, saved with the layout when asked, reset with the widget', async () => {
-		await withApp(
+		await withApp( // own app: it saves `day` and reloads
 			async (app) => {
 				const { page } = app;
 				await app.idle();

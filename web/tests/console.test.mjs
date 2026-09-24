@@ -14,21 +14,20 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP, along, draft, widgetPane } from './support/layout.mjs';
+import { sharedApp, startApp, stopApp } from './support/app.mjs';
+import { DESKTOP, along, widgetPane } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
 
-/** A page with a tail pane and no REPL at all: `press`'s other half. */
-const NO_REPL = {
-	...DESKTOP,
-	prepare: (context) =>
-		context.addInitScript(
-			draft,
-			JSON.stringify(along('column', widgetPane('tail', 'tail'), widgetPane('nowview', 'nowview')))
-		)
-};
+// ONE desktop app for the file (da-6b3dj, sharedApp in support/app.mjs):
+// `solo` empties the database between tests, the scrollback is read from
+// where the test found it, and the page with no REPL is `day` opened from
+// a draft of its own.
+const shared = sharedApp(DESKTOP);
+
+/** A page with a tail pane and no REPL at all: `press`'s other half, as `day`'s draft. */
+const NO_REPL = JSON.stringify(along('column', widgetPane('tail', 'tail'), widgetPane('nowview', 'nowview')));
 
 const receipt = (page) => page.locator('.prompt-bar .receipt');
 
@@ -59,12 +58,13 @@ const samePage = (page) => page.evaluate(() => window.__stillTheSamePage === tru
 
 describe('window.datum.run — the loud door', () => {
 	test('through the mounted REPL: the pane shows the row, the bar receipts the hid, the scrollback echoes it', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			// The field exists first, so the bar receipts one document: a
 			// field's first log draws its TRACK declaration too (da-c8mh).
 			await app.declare('coffee');
 			await markNoReload(page);
+			const scrolled = (await app.echoes()).length;
 
 			const result = await console_(page, 'run', ['occur', 'coffee']);
 			assert.equal(result.code, 0, result.stderr);
@@ -89,29 +89,30 @@ describe('window.datum.run — the loud door', () => {
 			);
 
 			// And it taught: the command is in the scrollback as typed.
-			assert.deepEqual(await app.echoes(), ['occur coffee']);
+			assert.deepEqual((await app.echoes()).slice(scrolled), ['occur coffee']);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('a line is shell-split and echoed as written', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			// A quoted word, so the split is visible in the argv: the app
 			// does the splitting, as it does for a typed line.
 			const line = 'switch mood "quite happy"';
+			const scrolled = (await app.echoes()).length;
 			const result = await app.page.evaluate((l) => window.datum.runLine(l), line);
 			assert.equal(result.code, 0, result.stderr);
 			// The words the app split, in front of the `--show json` the web
 			// appends to every command it runs (da-xfa4): `result.argv` is
 			// what the runner received, plumbing included.
 			assert.deepEqual(result.argv.slice(0, 3), ['switch', 'mood', 'quite happy']);
-			assert.deepEqual(await app.echoes(), [line]);
+			assert.deepEqual((await app.echoes()).slice(scrolled), [line]);
 			await tailShows(app.page, 'quite happy');
-		}, DESKTOP);
+		});
 	});
 
 	test('with no REPL mounted it records and bumps the beat itself', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			assert.equal(await page.locator('section.pane[data-title="repl"]').count(), 0);
 			await app.declare('cocoa');
@@ -135,7 +136,7 @@ describe('window.datum.run — the loud door', () => {
 
 describe('window.datum.runQuiet — the exception', () => {
 	test('the entry is stored and nothing on the page moves', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.declare('tea');
 			const before = {
@@ -164,6 +165,6 @@ describe('window.datum.runQuiet — the exception', () => {
 			assert.deepEqual(await app.echoes(), before.echoes, 'the scrollback grew');
 			assert.equal(await receiptText(page), before.receipt, 'the bar receipted it');
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 });

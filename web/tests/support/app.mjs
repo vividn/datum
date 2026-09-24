@@ -21,6 +21,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { preview } from 'vite';
 import { chromium } from 'playwright';
+import { OPFS_DIR } from '../../src/lib/databases.ts';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -329,10 +330,15 @@ async function openApp({
  * deleted and every draft and lock this device kept is dropped, so what a
  * test opens onto is the layout world a fresh install has.
  *
- * What a room does NOT isolate is the DATABASE: one app is one OPFS, so
- * entries a test logs are entries the next test sees (da-vk1x). A test
- * that counts rows, or that logs a field a neighbour logs in the same
- * minute, still wants `withApp` of its own.
+ * The DATABASE is one too — one app is one OPFS (da-vk1x) — so `solo` and
+ * `room` EMPTY it whenever the test before wrote (`empty`, da-6b3dj), and
+ * a test may count rows as it would in a context of its own. What they do
+ * NOT put back is the rest of the page: the REPL's scrollback, a widget
+ * option THIS SESSION set on `day`'s own widgets (a room's are new ids, so
+ * a test that sets one wants a room), a runner a test installed, and
+ * anything in `localStorage` outside the layouts. A test that reads any of
+ * those from a fresh device, reloads, navigates elsewhere or opens a second
+ * tab still wants `withApp` of its own.
  *
  * Usage: `const shared = sharedApp(DESKTOP)` at the top of a file, then
  * either shape inside a test —
@@ -358,8 +364,11 @@ export function sharedApp(options) {
 		if (!shared) ({ app: shared, close } = await openApp(options));
 		return shared;
 	};
-	/** `fn` against the shared app with the layout world back to `day` alone. */
-	open.solo = async (fn) => fn(await (await open()).solo());
+	/**
+	 * `fn` against the shared app with the layout world back to `day` alone —
+	 * or to `day` opened from `draft`, a device's stored draft of it (`redraft`).
+	 */
+	open.solo = async (fn, draft) => fn(await (await open()).solo(draft));
 	/**
 	 * `fn` against the shared app with every layout this device kept
 	 * dropped and the page NOT rebuilt: for a test whose first act is a
@@ -382,7 +391,19 @@ async function open(page, query) {
 	await page.goto(baseUrl() + '/' + query);
 	await ready(page);
 	await countRuns(page);
-	return app(page, errors, query);
+	// What the database's change counter reads as it opened — empty, on a
+	// fresh context: `empty` has nothing to do until something writes.
+	// And the locks it opened with — `home`'s unlocked `day` — which `wipe`
+	// takes with every other layout key and `relock` puts back.
+	// A test may have blocked the store, which is then nothing to put back.
+	const locks = await page.evaluate(() => {
+		try {
+			return Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.startsWith('datum.layout.locked.v1.')));
+		} catch {
+			return {};
+		}
+	});
+	return app(page, errors, query, await changeCounter(page), locks, await changeCounter(page, '_internal'));
 }
 
 /**
@@ -397,11 +418,57 @@ async function open(page, query) {
 function countRuns(page) {
 	return page.evaluate(() => {
 		window.__datumInflight = 0;
+		window.__datumStarted = 0;
 		const previous = window.datum.setRunner((...args) => {
 			window.__datumInflight += 1;
+			window.__datumStarted += 1;
 			return previous(...args).finally(() => (window.__datumInflight -= 1));
 		});
 	});
+}
+
+/**
+ * Every command a tidy set off, run out: two frames for a pane that asks
+ * one late — a restored `day`'s nowview does — then nothing in flight, so a
+ * test that counts runs counts its own (da-6b3dj).
+ */
+async function settled(app) {
+	await app.page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+	await app.idle();
+}
+
+/**
+ * Database `db`'s files gone from OPFS, under the worker's own lock: no
+ * handle is open there ($lib/cli.ts), and the next command makes it anew.
+ */
+function removeDb(page, db) {
+	return page.evaluate(
+		async ([dir, db]) =>
+			navigator.storage?.getDirectory &&
+			navigator.locks.request('datum-cli-files', async () => {
+				const files = await (await navigator.storage.getDirectory()).getDirectoryHandle(dir);
+				for (const name of [`${db}.db`, `${db}.db-journal`]) await files.removeEntry(name).catch(() => {});
+			}),
+		[OPFS_DIR, db]
+	);
+}
+
+/** The change counter of the page's database — or of `named` — read under the worker's own lock: 0 with no file. */
+function changeCounter(page, named) {
+	return page.evaluate(async ([dir, named]) => {
+		const db = named ?? (new URLSearchParams(location.search).get('db') || 'datum');
+		// A browser with no OPFS keeps the database in memory, and has no file to read.
+		if (!navigator.storage?.getDirectory) return 0;
+		return navigator.locks.request('datum-cli-files', async () => {
+			const files = await (await navigator.storage.getDirectory()).getDirectoryHandle(dir);
+			const bytes = await files
+				.getFileHandle(`${db}.db`)
+				.then((f) => f.getFile())
+				.then((f) => f.slice(24, 28).arrayBuffer())
+				.catch(() => new ArrayBuffer(0));
+			return bytes.byteLength === 4 ? new DataView(bytes).getUint32(0) : 0;
+		});
+	}, [OPFS_DIR, named]);
 }
 
 async function ready(page) {
@@ -423,7 +490,11 @@ async function ready(page) {
 	);
 }
 
-function app(page, errors, query) {
+function app(page, errors, query, clean, locks, internal) {
+	/** The layouts of the reader's own the last `wipe` deleted. */
+	let wiped = [];
+	/** The screen the app opened on, which `home` puts back. */
+	const viewport = page.viewportSize();
 	const self = {
 		page,
 		/** Uncaught errors the page threw, in order. */
@@ -660,13 +731,26 @@ function app(page, errors, query) {
 		 * navigate next.
 		 */
 		async wipe() {
-			await page.evaluate(async () => {
-				const { layouts } = window.datum;
-				for (const l of await layouts.listLayouts())
-					if (l.source === 'user') await layouts.deleteLayout(l.name);
+			await page.evaluate(() => {
 				for (const key of Object.keys(localStorage))
 					if (key.startsWith('datum.layout.')) localStorage.removeItem(key);
 			});
+			// The reader's saves, and their HISTORY with them — a delete
+			// leaves a save's versions behind, which a layout saved again
+			// under the name would list: `_internal` holds the saves alone and
+			// nothing caches them ($lib/layout/store.ts), so its file goes, as
+			// `empty` takes the page's database. Only if something was saved
+			// since the last wipe, by the same witness `empty` reads; the
+			// listing after makes it anew, so the counter it leaves is one no
+			// read moves.
+			wiped = [];
+			if ((await changeCounter(page, '_internal')) === internal) return self;
+			wiped = await page.evaluate(async () =>
+				(await window.datum.layouts.listLayouts()).filter((l) => l.source === 'user').map((l) => l.name)
+			);
+			await removeDb(page, '_internal');
+			await page.evaluate(() => window.datum.layouts.listLayouts());
+			internal = await changeCounter(page, '_internal');
 			return self;
 		},
 
@@ -679,7 +763,7 @@ function app(page, errors, query) {
 		 * are dropped, and `day` is put back while it is behind another tab
 		 * wherever it can be.
 		 */
-		async solo() {
+		async solo(draft) {
 			await self.home();
 			await page.evaluate(async () => {
 				const { layout, shell } = window.datum;
@@ -687,9 +771,106 @@ function app(page, errors, query) {
 				for (let i = tabs().length - 1; i >= 0; i--) if (tabs()[i].layout !== 'day') shell.close(i);
 			});
 			await self.wipe();
-			await self.restoreDay();
+			await self.relock();
+			// A draft rebuilds `day` whole, so what it was left as is moot.
+			if (draft === undefined) await self.restoreDay();
 			await self.settleRoot();
+			if (draft !== undefined) await self.redraft(draft);
+			await self.empty();
 			await ready(page);
+			await settled(self);
+			return self;
+		},
+
+		/**
+		 * The locks the page opened with, back (da-6b3dj): written where
+		 * `wipe` took them from, and every open tab's own `locked` turned to
+		 * match — a lock is the TAB's too, so a test that locked `day` would
+		 * otherwise hand the next one a locked `day`.
+		 */
+		async relock() {
+			await page.evaluate((locks) => {
+				const { layout, shell } = window.datum;
+				for (const [key, value] of Object.entries(locks)) localStorage.setItem(key, value);
+				for (const tab of layout.current().root.tabs) {
+					const stored = locks[`datum.layout.locked.v1.${tab.layout}`];
+					if (stored !== undefined && !!tab.locked !== (stored === '1')) shell.toggleLock(tab.id);
+				}
+			}, locks);
+			return self;
+		},
+
+		/**
+		 * `day` opened again from a DRAFT (`draft` in `support/layout.mjs`,
+		 * a `Layout` as JSON), as a device that had it stored opens it
+		 * (da-6b3dj) — what an init script writing the draft before the page
+		 * loads gives `withApp`, on a page that is already up.
+		 *
+		 * Through the shell's own door: with `day` closed behind a scratch
+		 * preview, the draft is written where boot reads it and
+		 * `shell.open('day')` builds the tab from it exactly as boot does;
+		 * the scratch tab goes after. `solo` puts `day` back after the test.
+		 */
+		async redraft(json) {
+			await page.evaluate(async () => {
+				const { layout, shell } = window.datum;
+				const at = (name) => layout.current().root.tabs.findIndex((t) => t.layout === name);
+				// Seeded from `input`, which runs nothing: `day` is not drawn twice.
+				await shell.openPreview('__redraft', 'input');
+				shell.close(at('day'));
+			});
+			// Emptied now, while only the scratch tab is drawn: the draft's
+			// panes then draw once, on the empty database.
+			await self.empty();
+			await page.evaluate(async (json) => {
+				const { layout, shell } = window.datum;
+				const at = (name) => layout.current().root.tabs.findIndex((t) => t.layout === name);
+				localStorage.setItem('datum.layout.draft.v1.day', json);
+				if (!(await shell.open('day'))) throw new Error('day did not open from its draft');
+				shell.close(at('__redraft'));
+			}, json);
+			await ready(page);
+			return self;
+		},
+
+		/**
+		 * The page's database EMPTIED, and every pane re-drawn from it
+		 * (da-6b3dj): what a fresh context gave a test, without a boot.
+		 *
+		 * The worker opens its files per burst and gives them back under the
+		 * `datum-cli-files` Web Lock ($lib/cli.ts), so under that lock no
+		 * handle is open and the file can go; the next command makes an
+		 * empty one, as on a first visit. The panes hear it the way they
+		 * hear another tab's write — the change channel ($lib/changes.ts) —
+		 * and this waits for that refresh to start and then to finish.
+		 *
+		 * Only if something WROTE since it was last empty — or opened: SQLite
+		 * bumps its header's change counter (offset 24) on every write, the
+		 * same witness `cli.ts` announces changes by, so a counter that has
+		 * not moved is a database that is still empty and costs nothing.
+		 * `_internal` stays: its layouts are `wipe`'s. The bar's pills and
+		 * the time cursor go too; the REPL's scrollback does NOT, so a test
+		 * reads its own commands from the end.
+		 */
+		async empty() {
+			await self.idle();
+			await page.evaluate(() => {
+				window.datum.bar.setPills([]);
+				window.datum.cursor.set(null);
+			});
+			if ((await changeCounter(page)) === clean) return self;
+			const db = await page.evaluate(() => new URLSearchParams(location.search).get('db') || 'datum');
+			await removeDb(page, db);
+			const started = await page.evaluate((db) => {
+				const n = window.__datumStarted;
+				const channel = new BroadcastChannel('datum-db-changes');
+				channel.postMessage({ from: 'empty', dbs: [db] });
+				channel.close();
+				return n;
+			}, db);
+			await page.waitForFunction((n) => window.__datumStarted > n, started);
+			await self.idle();
+			clean = await changeCounter(page);
 			return self;
 		},
 
@@ -701,6 +882,11 @@ function app(page, errors, query) {
 		 * (da-vk1x) and a navigation that drops it is a navigation into
 		 * another database.
 		 *
+		 * The screen back to the size the app opened on, the pointer at its
+		 * corner, the page's errors forgotten, any modal closed and the bar's
+		 * line empty, for a shared app's next test
+		 * (da-6b3dj).
+		 *
 		 * And no menu left open over it (da-b7sfp): a pointerdown on the
 		 * page's own body is a reader tapping nothing, which closes every
 		 * menu (PaneMenu's window listener) and hover card (`away` in
@@ -708,10 +894,28 @@ function app(page, errors, query) {
 		 * submenu open handed the next one a menu it never opened.
 		 */
 		async home() {
+			// What a test before may have changed of the page itself: the
+			// screen it was resized to, and the errors it has already read.
+			if (JSON.stringify(page.viewportSize()) !== JSON.stringify(viewport)) await page.setViewportSize(viewport);
+			errors.length = 0;
+			// And the pointer off whatever the last test left it hovering.
+			await page.mouse.move(0, 0);
 			const url = new URL(page.url());
 			if (url.pathname !== '/') await self.goto('/' + url.search);
+			// A test that went round `goto` — a bare `page.reload()` — left a
+			// document with no count behind the seam, and `idle` would wait on it.
+			if (await page.evaluate(() => window.__datumInflight === undefined)) await countRuns(page);
 			await page.evaluate(() => document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })));
 			await page.waitForFunction(() => !document.querySelector('[role="menu"]'));
+			// A modal left open (the Track form, the `+N` sheet) takes every
+			// pointer on the page: closed as a reader closes one, with Escape.
+			for (let i = 0; i < 3 && (await page.locator('dialog[open]').count()) > 0; i++) await page.keyboard.press('Escape');
+			await page.waitForFunction(() => !document.querySelector('dialog[open]'));
+			// And the bar's line empty: what a test left typed there filters
+			// the fields widget for the next one ($lib/bar.ts's `text`).
+			const line = page.locator('.prompt-bar input');
+			if ((await line.inputValue()) !== '') await line.fill('');
+			await line.blur();
 			return self;
 		},
 
@@ -727,9 +931,15 @@ function app(page, errors, query) {
 
 		/** `day` back to the tree it ships with, if something moved it. Draws nothing on its own. */
 		async restoreDay() {
-			await page.evaluate(async () => {
+			await page.evaluate(async (saved) => {
 				const { layout, shell } = window.datum;
 				const day = layout.current().root.tabs.find((t) => t.layout === 'day');
+				// A test that SAVED `day` left it drawn from a save `wipe` has
+				// just deleted, and a tab that matches its save is not modified
+				// — so nothing below would move it (da-6b3dj). The reset makes
+				// it differ from that stale baseline; the restore then goes to
+				// what `day` means now, the shipped tree.
+				if (day && saved) await shell.resetLayout(day.id);
 				// Svelte's `get`, by hand: a store calls a new subscriber at
 				// once with the value it holds, and `subscribe` hands back the
 				// unsubscriber — named here rather than invoked on the same
@@ -738,7 +948,7 @@ function app(page, errors, query) {
 				const stop = shell.modified.subscribe((m) => (dirty = !!day && m.has(day.id)));
 				stop();
 				if (dirty) await shell.restore(day.id);
-			});
+			}, wiped.includes('day'));
 			return self;
 		},
 
@@ -781,9 +991,12 @@ function app(page, errors, query) {
 				}
 			}, name);
 			await self.wipe();
+			await self.relock();
 			await self.restoreDay();
 			await self.settleRoot();
+			await self.empty();
 			await ready(page);
+			await settled(self);
 			return name;
 		},
 
@@ -797,6 +1010,8 @@ function app(page, errors, query) {
 			await page.goto(baseUrl() + path);
 			await ready(page);
 			await page.waitForFunction(() => location.pathname === '/' || !!document.querySelector('main .notice'));
+			// A new document: `idle` counts through the runner installed here.
+			await countRuns(page);
 		},
 
 		/** Reload the page and wait for the app to come back up. */
@@ -836,6 +1051,11 @@ function app(page, errors, query) {
 				// Quiet: priming the runner is not a command the page should
 				// show, and the spy is to see the test's commands, not this one's
 				// refresh.
+				window.__datumSeen = [];
+				// Once a page: a shared app's next test asks again, and a
+				// second spy over the first would record every argv twice.
+				if (window.__datumSpied) return;
+				window.__datumSpied = true;
 				await window.datum.runQuiet(['tail']);
 				window.__datumSeen = [];
 				const previous = window.datum.setRunner((argv, ...rest) => {

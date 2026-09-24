@@ -6,8 +6,8 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp as withAnyApp, seedLines } from './support/app.mjs';
-import { DESKTOP, along, draft, widgetPane } from './support/layout.mjs';
+import { sharedApp, startApp, stopApp, withApp as withAnyApp, seedLines } from './support/app.mjs';
+import { DESKTOP, along, widgetPane } from './support/layout.mjs';
 import { listed } from './support/rows.mjs';
 
 before(startApp);
@@ -18,8 +18,12 @@ const PAGE = JSON.stringify(
 	along('column', widgetPane('repl', 'repl'), widgetPane('tail', 'tail'), widgetPane('cmd', 'command'))
 );
 
-const withApp = (fn, options = DESKTOP) =>
-	withAnyApp(fn, { ...options, prepare: (context) => context.addInitScript(draft, PAGE) });
+// ONE APP for every desktop test (da-6b3dj, sharedApp in support/app.mjs),
+// `day` opened from PAGE's draft by `solo`, which empties the database and
+// the bar's pills between them; each reads the REPL from its end. The
+// phone opens its own: a fresh device, which opens `mobile`.
+const shared = sharedApp(DESKTOP);
+const solo = (fn) => shared.solo(fn, PAGE);
 
 /** A phone that has never opened the site: it opens `mobile` (da-shzs). */
 const PHONE = { viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true }, home: null };
@@ -55,7 +59,7 @@ const ID_COMMANDS = ['undo', 'redo', 'retime', 'update', 'delete', 'history', 'g
 
 describe('a tap on a tail row', () => {
 	test('loads its hid as a pill; only the id commands are drawn; get runs on it', async () => {
-		await withApp(async (app) => {
+		await solo(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			const whole = await drawn(page);
@@ -87,7 +91,7 @@ describe('a tap on a tail row', () => {
 	});
 
 	test('which commands take an id is what the CLI’s own `help --json` says', async () => {
-		await withApp(async (app) => {
+		await solo(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			const help = await page.evaluate(() => window.datum.runQuiet(['help', '--json']));
@@ -113,7 +117,7 @@ describe('a line the grammar does not know', () => {
 	// hid as its STATE. A bare field is the CLI's typo guard, so the line is
 	// the field-first form, which the grammar does not know either.
 	test('never gets the hid: `a occur` logs a stateless entry, and the pill stays', async () => {
-		await withApp(async (app) => {
+		await solo(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			const [row] = await last(page, 1);
@@ -137,7 +141,7 @@ describe('a line the grammar does not know', () => {
 
 describe('selecting several', () => {
 	test('ctrl-click two rows: one pill, two sections; update gets them as ONE comma word; delete takes both; one Undo brings both back', async () => {
-		await withApp(async (app) => {
+		await solo(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			const [first, , third] = await last(page, 4);
@@ -181,7 +185,7 @@ describe('selecting several', () => {
 	});
 
 	test('two selected: get is offered, and runs on both — one document each', async () => {
-		await withApp(async (app) => {
+		await solo(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			const [first, , third] = await last(page, 4);
@@ -204,7 +208,7 @@ describe('selecting several', () => {
 	});
 
 	test('shift-click takes the range of four, and it is drawn in tail and on the REPL’s document', async () => {
-		await withApp(async (app) => {
+		await solo(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			const four = await last(page, 4);
@@ -226,7 +230,7 @@ describe('selecting several', () => {
 	});
 
 	test('the hid button keeps its own tap: it swaps to the full id and selects nothing', async () => {
-		await withApp(async (app) => {
+		await solo(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			await page.locator('.repl .doc .hid').last().click();
@@ -238,7 +242,7 @@ describe('selecting several', () => {
 
 describe('a -t pill', () => {
 	test('leaves the commands that take -t; its dismiss restores them all', async () => {
-		await withApp(async (app) => {
+		await solo(async (app) => {
 			const { page } = app;
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 't', kind: 'time', text: '-t 10:00' }]));
 			await page.waitForFunction(() => !document.querySelector('.bar.commands [data-command="now"]'));

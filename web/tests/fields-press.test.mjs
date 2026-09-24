@@ -22,12 +22,16 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, type, untilFieldStyle } from './support/fields.mjs';
 
 describe('a press', () => {
 	before(startApp);
 	after(stopApp);
+
+	// ONE APP for the file (da-6b3dj, sharedApp in support/app.mjs): `solo`
+	// empties the database each test wrote, and the REPL is read from its end.
+	const shared = sharedApp();
 
 	// da-emze's bug, as da-c8mh settles it. A colour needs a spec to live
 	// in, and the spec used to be minted with `occur` — so colouring a
@@ -42,7 +46,7 @@ describe('a press', () => {
 				(k) => document.querySelector('.bar [data-field="sleep"]')?.classList.contains(k),
 				kind
 			);
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of ['start sleep -t -60', 'end sleep -t -1', 'track sleep --color #0000ff']) await type(page, line);
 			await untilFieldStyle(page, 'sleep', 'borderTopColor', BLUE);
@@ -63,7 +67,7 @@ describe('a press', () => {
 	// The modal is tests/track.test.mjs's; what belongs here is that Track +
 	// opens it and that the field it declares is the field the bar then draws.
 	test('the Track modal asks for the verb and writes it', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await page.locator('.bar button.track').click();
 			const modal = page.locator('dialog.track');
@@ -80,7 +84,7 @@ describe('a press', () => {
 	});
 
 	test('a press runs what its shape means, with the bar’s pills after it', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of FIXTURE) await type(page, line);
 			await page.locator('.bar [data-field="coffee"]').click();
@@ -129,7 +133,7 @@ describe('a press', () => {
 	// field — because "you can still set it, just elsewhere" is a claim
 	// about a path that has to be walked, not asserted.
 	test('a `dur=` pill, and a time with it, ride into the press the widget composes', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of FIXTURE) await type(page, line);
 			await untilFieldStyle(page, 'work', 'backgroundColor', CLEAR);
@@ -167,7 +171,7 @@ describe('a press', () => {
 	});
 
 	test('a record fills the prompt with its line, focused, and runs nothing', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of FIXTURE) await type(page, line);
 			const echoes = (await app.echoes()).length;
@@ -190,7 +194,7 @@ describe('a press', () => {
 	// remains, and it is the half that was always the point: `note` routes
 	// the bare words that follow into the comment, no quotes and no `-C`.
 	test('`note <field> <words>` typed in the bar puts the words in the comment', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of FIXTURE) await type(page, line);
 			const echoes = (await app.echoes()).length;

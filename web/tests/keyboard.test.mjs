@@ -12,7 +12,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp as withAnyApp, seedLines } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp, seedLines } from './support/app.mjs';
 import { DESKTOP, along, draft, widgetPane } from './support/layout.mjs';
 
 before(startApp);
@@ -25,8 +25,23 @@ const page_ = (...extra) =>
 		along('column', widgetPane('repl', 'repl'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar'), ...extra)
 	);
 
-const withApp = (fn, options = PHONE, layout = page_()) =>
-	withAnyApp(fn, { ...options, prepare: (context) => context.addInitScript(draft, layout) });
+// ONE phone app for the file (da-6b3dj, sharedApp in support/app.mjs),
+// `day` opened from each test's own draft. The bar's line is the shell's and
+// not the layout's, so `solo` leaves what the test before typed in it: the
+// line is put back as a fresh page has it — empty, unfocused, no input mode.
+// The one desktop test keeps an app of its own, the only one on that screen.
+const phone = sharedApp(PHONE);
+
+const onPhone = (fn, layout = page_()) =>
+	phone.solo(async (app) => {
+		await app.page.locator(BAR).evaluate((el) => {
+			el.value = '';
+			el.dispatchEvent(new Event('input', { bubbles: true }));
+			el.removeAttribute('inputmode');
+			el.blur();
+		});
+		return fn(app);
+	}, layout);
 
 const SEED = ['spec set coffee --verb occur', 'spec set sleep --verb start', 'spec set rec --verb add'];
 
@@ -58,7 +73,7 @@ async function tapCommand(page, name, selector = BAR) {
 
 describe('a command tap focuses the line without the keyboard', () => {
 	test('occur: focused, no keyboard, fields filtered, shell unchanged; a field spends it', async () => {
-		await withApp(async (app) => {
+		await onPhone(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			const height = await shellHeight(page);
@@ -79,7 +94,7 @@ describe('a command tap focuses the line without the keyboard', () => {
 	});
 
 	test('a tap on the box brings the keyboard on that first tap', async () => {
-		await withApp(async ({ page }) => {
+		await onPhone(async ({ page }) => {
 			await tapCommand(page, 'start');
 			await page.locator(BAR).tap();
 			assert.deepEqual(await state(page), { text: 'start ', focused: true, mode: '' });
@@ -87,14 +102,14 @@ describe('a command tap focuses the line without the keyboard', () => {
 	});
 
 	test('update opens the keyboard: what comes next is typing', async () => {
-		await withApp(async ({ page }) => {
+		await onPhone(async ({ page }) => {
 			await tapCommand(page, 'update');
 			assert.deepEqual(await state(page), { text: 'update ', focused: true, mode: '' });
 		});
 	});
 
 	test('retime with the hid alone fills; the tap after the time pill arrives runs it and empties the line', async () => {
-		await withApp(async (app) => {
+		await onPhone(async (app) => {
 			const { page } = app;
 			await seedLines(app, [...SEED, 'occur coffee -t -60']);
 			const [entry] = await app.entries(1);
@@ -130,7 +145,7 @@ describe('a command tap focuses the line without the keyboard', () => {
 	});
 
 	test('the fields widget’s `add <field> ` opens the keyboard at once', async () => {
-		await withApp(async (app) => {
+		await onPhone(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			await fieldsBar(page).locator('[data-field="rec"]').tap();
@@ -140,7 +155,7 @@ describe('a command tap focuses the line without the keyboard', () => {
 	});
 
 	test('every way out of the quiet state gives the next focus the keyboard', async () => {
-		await withApp(async (app) => {
+		await onPhone(async (app) => {
 			const { page } = app;
 			await seedLines(app, SEED);
 			const refocused = async (why) => {
@@ -175,14 +190,13 @@ describe('a command tap focuses the line without the keyboard', () => {
 
 	test('an input widget on the page follows the same rule', async () => {
 		const WIDGET = '.input-widget input';
-		await withApp(
+		await onPhone(
 			async ({ page }) => {
 				await tapCommand(page, 'occur', WIDGET);
 				assert.deepEqual(await state(page, WIDGET), { text: 'occur ', focused: true, mode: 'none' });
 				await page.locator(WIDGET).tap();
 				assert.equal((await state(page, WIDGET)).mode, '');
 			},
-			PHONE,
 			page_(widgetPane('in', 'input'))
 		);
 	});
@@ -198,6 +212,6 @@ describe('a command tap focuses the line without the keyboard', () => {
 			await page.waitForFunction((s) => document.querySelector(s).value === '', BAR);
 			await app.idle();
 			assert.equal((await app.entries(1))[0].field, 'coffee');
-		}, DESKTOP);
+		}, { ...DESKTOP, prepare: (context) => context.addInitScript(draft, page_()) });
 	});
 });
