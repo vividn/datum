@@ -585,12 +585,20 @@
 	}
 
 	async function anchor(): Promise<void> {
+		// A scroll whose event has not fired yet — it fires a frame later —
+		// is newer than whatever grew the stack: read it now, or the re-pin
+		// below takes back what the reader just did (da-6m5s).
+		if (stackEl && stackEl.scrollTop !== seenTop) onScroll();
 		if (!atBottom) return;
 		await tick();
 		toNewest();
 	}
 
+	/** Where `onScroll` last found the stack. */
+	let seenTop = 0;
+
 	function onScroll(): void {
+		seenTop = stackEl?.scrollTop ?? 0;
 		atBottom = !stackEl || stackEl.scrollTop + stackEl.clientHeight >= stackEl.scrollHeight - 1;
 		refreshVisible();
 	}

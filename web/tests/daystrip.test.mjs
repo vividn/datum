@@ -1518,6 +1518,23 @@ describe('the day strip', () => {
 		});
 	});
 
+	test('a re-pin does not take back a scroll the strip has not heard yet', async () => {
+		// A scroll's event fires a frame after the scroll. Anything that
+		// re-anchors the stack in that frame — a band landing, the minute's
+		// redraw of today, here the freeze toggle — used to read the stale
+		// «at the bottom» and pin the reader straight back down (da-6m5s:
+		// the jagged test's second scroll, lost in CI to a band landing).
+		await withApp(async (app) => {
+			await sizeFor(app, 5);
+			await app.page.locator('.stack').evaluate((el) => {
+				el.scrollTop = 0;
+				document.querySelector('button.freeze').click();
+			});
+			await app.page.locator('button.jagged').waitFor();
+			assert.equal((await stackScroll(app)).top, 0, 'the re-pin took the scroll back');
+		});
+	});
+
 	test('a midnight moves the whole strip on by a day', async () => {
 		// 10:00 UTC, so the fast-forward below lands after midnight and
 		// inside the next day rather than on its boundary.
