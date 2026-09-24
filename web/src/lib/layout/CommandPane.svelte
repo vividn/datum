@@ -16,14 +16,26 @@
 	`retime` with BOTH an hid and a time pill loaded is complete, so the tap
 	runs it (vividn, 09-17: «retime should just fire when you tap it»). Only
 	retime: `delete` keeps its Enter, and `get` / `history` were not asked.
+
+	`spec` with a FIELD pill loaded opens the spec modal on that field at
+	once (da-ybai9, vividn: «no need for sub commands or pressing enter. It
+	should just work»): the pill named the subject, so it is spent at the
+	tap, like any command's. Without one, `spec ` goes on the line as ever.
 -->
 <script lang="ts">
 	import CommandsWidget from '$lib/CommandsWidget.svelte';
-	import { pills, prefill, text } from '$lib/bar.js';
-	import { grammar, pressWithPills, ready } from './engine.js';
+	import { clearUnlockedPills, pills, prefill, text } from '$lib/bar.js';
+	import { openSpec } from '$lib/specModal.js';
+	import { grammar, press, pressWithPills, ready } from './engine.js';
 
 	function fill({ name, line, keyboard }: { name: string; line: string; keyboard: boolean }): void {
 		const loaded = (kind: string) => $pills.some((p) => p.kind === kind);
+		const field = $pills.find((p) => p.kind === 'field');
+		if (name === 'spec' && field) {
+			clearUnlockedPills([field]);
+			void openSpec(field.text).then((argv) => argv && press(argv));
+			return;
+		}
 		if (name === 'retime' && loaded('hid') && loaded('time')) {
 			// A thumb that tapped retime before its second pill has no Enter:
 			// the tap that fires takes back the `retime ` the first one put there.

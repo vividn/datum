@@ -612,3 +612,71 @@ describe('what survives a reload', () => {
 		});
 	});
 });
+
+// da-ybai9. vividn, 2026-09-23: «long pressing a field adds a pill, yes, and
+// then tapping the spec command should open up the spec modal immediately,
+// no need for sub commands or pressing enter. It should just work.» Two
+// gestures with a settle between them: the long press MOUNTS the pill, and
+// the tap is only driven once the pill is drawn.
+describe('`spec` under the pill', () => {
+	const MODAL = 'dialog.spec';
+	const specButton = (page) => pane(page, 'cmd').locator('[data-command="spec"]');
+	const line = (page) => page.locator('.prompt-bar input').first();
+
+	test('long press, tap `spec`: the modal is open on that field, and the pill is spent', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await ready(app);
+			await longPress(page, 'mood');
+			await fieldPill(page).waitFor();
+
+			await specButton(page).click();
+			await page.locator(`${MODAL}[aria-label="the spec of mood"]`).waitFor();
+			assert.equal(await page.locator(`${MODAL} h2`).innerText(), 'mood');
+			assert.equal(await page.locator(`${MODAL} [data-verb="switch"]`).getAttribute('aria-checked'), 'true');
+			assert.equal(await fieldPill(page).count(), 0, 'the pill outlived the tap');
+			assert.equal(await line(page).inputValue(), '', 'the tap wrote a line as well');
+
+			// And what it saves is the one `spec set`, with no pill after it.
+			await page.locator(`${MODAL} button[type="submit"]`).click();
+			await page.locator(MODAL).waitFor({ state: 'detached' });
+			await app.idle();
+			assert.match((await app.echoes()).at(-1), /^spec set mood --from-json /);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('a field with no spec opens on the verb question, its name already in', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await ready(app);
+			// Logging declares a field, so its spec is taken away after.
+			await app.submit('occur tea');
+			await app.submit('spec remove tea');
+			assert.match((await app.run(['spec', 'show', 'tea'])).stdout, /No spec defined/, 'tea has a spec to edit');
+			await chip(page, 'tea').waitFor();
+			await longPress(page, 'tea');
+			await fieldPill(page).waitFor();
+
+			await specButton(page).click();
+			await page.locator(`${MODAL}[aria-label="track a field"]`).waitFor();
+			assert.equal(await page.locator(`${MODAL} input.field`).inputValue(), 'tea');
+			assert.equal(await page.locator(`${MODAL} [role="radio"][aria-checked="true"]`).count(), 0);
+			assert.equal(await fieldPill(page).count(), 0, 'the pill outlived the tap');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// Unchanged: with no pill there is no subject, so `spec ` goes on the
+	// line for the subcommand to be typed, and nothing opens.
+	test('with no pill, `spec` still only writes `spec ` on the line', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await ready(app);
+			await specButton(page).click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input')?.value === 'spec ');
+			assert.equal(await page.locator(MODAL).count(), 0);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+});
