@@ -30,7 +30,10 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    # `ci/**` is for bisecting a red main (da-2f1vp): push the midpoint commit
+    # as `ci/<sha8>`, read its verdict, delete the branch. Such a run is never
+    # dropped as superseded — that step is main's alone.
+    branches: [main, 'ci/**']
     # `hero/**` used to be here so a hero's branch reached the runner through
     # the mirror before the cutover, when the forge had no PRs. Since
     # 2026-09-16 17:0x branches are pushed to the forge itself and their PRs
@@ -40,9 +43,16 @@ on:
 # One run per ref at a time. On a PR ref a newer push cancels the run of the
 # head it replaced instead of queueing behind it: four runs sat «waiting» at
 # 17:09 behind one another, each for a head that no longer mattered. NOT on
-# main (da-rwbq9) — a merge asks a new question about a new commit, it does
-# not supersede the answer to the old one, so main's runs QUEUE, oldest
-# first, and every merged commit gets its own verdict.
+# main (da-rwbq9): a main run already RUNNING is never cancelled — a merge
+# does not supersede an answer being worked out — so main's runs queue.
+#
+# But main verifies its NEWEST commit only (vividn, 2026-09-24, da-2f1vp). At
+# 40–60 min a run, a day of merges queued eleven runs behind one that had
+# waited three hours to start, and a verdict that late tells nobody anything.
+# So a queued main run that starts for a commit main has moved past cancels
+# itself (the first step below) and ends CANCELLED, never green; only the
+# tip is verified. An older commit is verified on demand, when main goes red,
+# by bisecting through `ci/**` branches (see `on.push`).
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -64,6 +74,31 @@ jobs:
     # on 3 cores the bead expects 45–75 min. The runner's own cap is 3 h.
     timeout-minutes: 150
     steps:
+      # A main run for a commit main has moved past cancels its own run with
+      # the job's token (write on its own repo: Forgejo 16.0.5's
+      # routers/api/v1/permissions/repo_access.go) and then waits for the
+      # runner to kill it, so no step after this one runs. The forge maps a
+      # cancelled job to a `failure` commit status — never `success`. If the
+      # tip cannot be read or the cancel is refused, the run goes on in full:
+      # a real verdict, as before this step existed.
+      - name: Cancel this run if main has moved past its commit
+        if: github.ref == 'refs/heads/main'
+        env:
+          TOKEN: ${{ github.token }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          set -uo pipefail
+          api="${SERVER%/}/api/v1/repos/${{ github.repository }}"
+          call() { printf 'header = "Authorization: token %s"\n' "$TOKEN" | curl -sSf -K - "$@"; }
+          tip=$(call "$api/branches/main" | node -p 'JSON.parse(require("fs").readFileSync(0)).commit.id' 2>/dev/null) || tip=
+          if [ -z "$tip" ]; then echo "::warning::could not read main's tip; verifying ${{ github.sha }} in full"; exit 0; fi
+          if [ "$tip" = "${{ github.sha }}" ]; then echo "${{ github.sha }} is main's tip"; exit 0; fi
+          echo "superseded by $tip"
+          call -X POST "$api/actions/runs/${{ github.run_id }}/cancel" || { echo "::warning::cancel refused; verifying ${{ github.sha }} in full"; exit 0; }
+          sleep 600
+          echo "::error::the run was cancelled but the runner did not stop this job"
+          exit 1
+
       - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: System tools the image lacks (time, for max RSS per step)
