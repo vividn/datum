@@ -1,9 +1,8 @@
 // Today's page, as data.
 //
-// The day frame the wireframe (da-hrz0) drew — strip across the top, the
-// REPL beside a column of nowview, tail and the custom pane (da-wb2n),
-// the widget bar along the bottom — was a CSS grid with four fixed areas. It is a tree now, and this is
-// that tree: what a reader who has never touched the `…` menu sees.
+// The day frame the wireframe (da-hrz0) drew was a CSS grid with four
+// fixed areas. It is a tree now, and this is that tree: what a reader who
+// has never touched the `…` menu sees.
 //
 // The ids are fixed rather than minted: a default is the same layout
 // every time, and a stable id is what lets a test (or a saved draft from
@@ -12,10 +11,7 @@
 //
 // The phone default is a second tree, not a media query over the first:
 // vividn wants to EXPERIMENT with mobile layouts, so the phone's starting
-// point has to be as reachable and editable as the desktop's. It is the
-// same widgets stacked in one column, with tail and nowview as two tabs
-// of one pane — a pane too short to show both is better spent showing one
-// whole.
+// point has to be as reachable and editable as the desktop's.
 
 import type { Layout, Pane, Split, Tab } from './types.js';
 import { LAYOUT_VERSION } from './types.js';
@@ -82,17 +78,22 @@ const legibly = (heights: number[]): number[] =>
 	heights.map((h) => h / heights.reduce((a, b) => a + b, 0));
 
 /**
- * The desktop: strip / [REPL | nowview / tail / custom] / fields.
+ * The desktop: dayview / tail | nowview | stats / fields / commands.
  *
- * The strip (one SHORTEST day, 85 — da-r0ydu: the day follows the box, so
- * the strip's floor is `todayBox(MIN_DAY_HEIGHT) + 16`, plus its frame,
- * and not one day at a height written down), the middle row (the side
- * column's nowview, tail and custom at 122, 116 and 116, and their two
- * borders: 370) and the fields pane (63) share the column in that
- * proportion — 0.164 / 0.714 / 0.122. At a laptop's height that is one
- * day drawn tall rather than today with a little of yesterday above it:
- * the past is a drag of the day-height handle away, and that drag HOLDS.
- * The row is the wireframe's 2fr/1fr.
+ * vividn, 2026-09-23 (da-ncsyn): «change the default desktop interface to be
+ * more similar to the mobile interface, so commands along the bottom, next
+ * row up can just be fields. In the second row, let's have tail, nowview,
+ * and stats. Then dayview along the top». So it is `MOBILE_LAYOUT`'s four
+ * rows with stats added to the second and the third reduced to fields
+ * alone. The second row is a row of three side by side, not tabs: the
+ * desktop has the width, and mobile's rows are splits for the reason he
+ * gave there (da-hkjp) — so all three are visible by default. No `input`
+ * pane, for the reason `MOBILE_LAYOUT` gives: the bottom bar is one.
+ *
+ * Every share is `legibly`'s: the strip's 85 (da-r0ydu), the row's max
+ * (tail 116, nowview 122, stats 154), fields 63 and commands 63 —
+ * 0.233 / 0.422 / 0.173 / 0.173. Across the row, their legible WIDTHS
+ * (200, 160, 240), as mobile's fields | nowview pair is.
  */
 export const DEFAULT_LAYOUT: Layout = {
 	version: LAYOUT_VERSION,
@@ -100,23 +101,18 @@ export const DEFAULT_LAYOUT: Layout = {
 	designedFor: 'desktop',
 	root: holder(
 		'root',
-		split('main', 'column', legibly([85, 370, 63]), [
+		split('main', 'column', legibly([85, 154, 63, 63]), [
 			strip(),
 			holder(
-				'middle',
-				split('across', 'row', [2 / 3, 1 / 3], [
-					widgetPane('repl', 'repl'),
-					holder(
-						'side',
-						split('aside', 'column', legibly([122, 116, 116]), [
-							widgetPane('nowview', 'nowview'),
-							widgetPane('tail', 'tail'),
-							widgetPane('custom', 'custom')
-						])
-					)
+				'row',
+				split('glance', 'row', legibly([200, 160, 240]), [
+					widgetPane('tail', 'tail'),
+					widgetPane('nowview', 'nowview'),
+					widgetPane('stats', 'stats')
 				])
 			),
-			widgetPane('bar', 'widgetbar')
+			widgetPane('bar', 'widgetbar'),
+			widgetPane('command', 'command')
 		])
 	)
 };
@@ -250,8 +246,21 @@ export const MOBILE_LAYOUT: Layout = {
 /** The phone breakpoint the old grid used (da-hkpd), kept as the one number. */
 export const PHONE_WIDTH = 720;
 
+/**
+ * A desktop tree the page was handed before it loaded, in place of the one
+ * above — the web suite's, and nobody else's (da-ncsyn). The suite is
+ * written against a `day` with a REPL, a custom pane and a side column,
+ * so `tests/support/desk.mjs` pins THAT tree and the default can move
+ * without taking two hundred tests with it; the default itself is tested
+ * with the pin off. Nothing a READER can do reaches it: it is not a query,
+ * not storage, not a setting — only a script that runs before the app's
+ * own modules (Playwright's `addInitScript`) can put it there.
+ */
+const pinned = (): Layout | undefined =>
+	(globalThis as { __datumDesktopLayout?: Layout }).__datumDesktopLayout;
+
 export const defaultLayoutFor = (phone: boolean): Layout =>
-	phone ? DEFAULT_LAYOUT_MOBILE : DEFAULT_LAYOUT;
+	phone ? DEFAULT_LAYOUT_MOBILE : (pinned() ?? DEFAULT_LAYOUT);
 
 // ---- the built-in layouts (da-0a5o) ------------------------------------
 //

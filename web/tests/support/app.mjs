@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { preview } from 'vite';
 import { chromium } from 'playwright';
 import { OPFS_DIR } from '../../src/lib/databases.ts';
+import { DESK } from './desk.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -246,6 +247,10 @@ function baseUrl() {
  * It has also unlocked it (da-gshh), which a fresh device finds locked.
  * `home: null` is a device that has never opened the site.
  *
+ * `desk` is the desktop tree `day` is drawn from: `DESK` (support/desk.mjs),
+ * the tree the suite is written against, unless a test says otherwise.
+ * `desk: null` is the shipped default (da-ncsyn).
+ *
  * `clock` is the instant the app is held at — the page's and, because
  * the CLI runs there, the worker's. Any test that seeds a bare `HH:MM`
  * or reads what is current NOW wants one, with `todayAt` above; a test
@@ -271,6 +276,7 @@ async function openApp({
 	engine,
 	reducedMotion,
 	home = 'day',
+	desk = DESK,
 	timezone = TIMEZONE
 } = {}) {
 	const options = {
@@ -293,6 +299,7 @@ async function openApp({
 			await context.clock.setFixedTime(new Date(clock));
 			await workerClock(clock).prepare(context);
 		}
+		if (desk) await context.addInitScript((tree) => (window.__datumDesktopLayout = tree), desk);
 		if (home)
 			await context.addInitScript((name) => {
 				const key = 'datum.layout.root.v1';
