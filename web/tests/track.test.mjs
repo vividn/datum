@@ -605,6 +605,9 @@ describe('in the app', () => {
 			assert.equal(spec.no_autoalias, true);
 			assert.deepEqual(spec.derived_aliases.map((a) => [a.state, a.expands_to]), [['sleepe', 'end sleep'], ['zz', 'start sleep']]);
 
+			// Each start a minute on: at one instant it would collide with the one
+			// before it, or with `track`'s own document (da-edr7t).
+			await app.clock.forward(60_000);
 			const zz = await app.run(['zz']);
 			assert.equal(zz.code, 0, zz.stderr);
 			assert.match(stripAnsi(zz.stdout), /sleep\s+start/, 'zz ran `start sleep`');
@@ -618,6 +621,7 @@ describe('in the app', () => {
 			assert.equal(spec.no_autoalias, false);
 			assert.deepEqual(spec.derived_aliases.map((a) => a.state), ['sleep', 'sleepe']);
 			assert.notEqual((await app.run(['zz'])).code, 0, 'a hand alias outlived the switch back');
+			await app.clock.forward(60_000);
 			assert.equal((await app.run(['sleep'])).code, 0);
 		});
 	});
@@ -637,6 +641,10 @@ describe('in the app', () => {
 
 	// da-ogyxa: the glyph picker. Each test reads what it wrote back through
 	// the CLI, and what the CLI then DRAWS: the dayview's SVG and `now`'s band.
+	// `track` writes its document at the held instant (#132), and an entry for
+	// the same field at the same instant is a duplicate the CLI refuses, so a
+	// test moves the clock a second on before it logs the dot, and checks the
+	// log went in: a refused one drew nothing and read as a drawing bug (da-edr7t).
 
 	/** The glyph tile labelled `label`, in the open modal. */
 	const tile = (page, label) => page.locator(`${MODAL} .tile[aria-expanded][aria-label^="${label}:"]`);
@@ -673,7 +681,9 @@ describe('in the app', () => {
 			assert.equal(echoes.length, before + 1, `one command: ${echoes.slice(before).join(' | ')}`);
 			assert.equal(JSON.parse((await app.run(['spec', 'show', 'tea'])).stdout).glyph, '▲');
 
-			await app.run(['occur', 'tea']);
+			await app.clock.forward(1000);
+			const logged = await app.run(['occur', 'tea']);
+			assert.equal(logged.code, 0, logged.stderr);
 			assert.match(await band(app, 'tea'), /▲/);
 			assert.deepEqual(await drawn(app), ['▲']);
 		});
@@ -694,7 +704,9 @@ describe('in the app', () => {
 			assert.equal((await saved).code, 0);
 			assert.deepEqual(JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout).state_glyphs, { up: '✺' });
 
-			await app.run(['switch', 'mood', 'up', '-m']);
+			await app.clock.forward(1000);
+			const logged = await app.run(['switch', 'mood', 'up', '-m']);
+			assert.equal(logged.code, 0, logged.stderr);
 			assert.match(await band(app, 'mood'), /✺/);
 			assert.deepEqual(await drawn(app), ['✺']);
 		});
@@ -743,7 +755,9 @@ describe('in the app', () => {
 			assert.equal(JSON.parse(shown).glyph, '○');
 
 			await app.run(['occur', 'tea', 'size=large', '-t', '-20']);
-			await app.run(['occur', 'tea', 'size=small']);
+			await app.clock.forward(1000);
+			const logged = await app.run(['occur', 'tea', 'size=small']);
+			assert.equal(logged.code, 0, logged.stderr);
 			assert.deepEqual(await drawn(app), ['☕', '○']);
 			// Two columns wide, so the band draws the mapped ☕ as ●.
 			const row = await band(app, 'tea');
