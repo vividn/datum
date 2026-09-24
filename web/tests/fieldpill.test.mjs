@@ -19,7 +19,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp, withApp as withAnyApp } from './support/app.mjs';
+import { seedLines, sharedApp, startApp, stopApp, withApp as withAnyApp } from './support/app.mjs';
 import { DESKTOP, along, draft, pane, widgetPane } from './support/layout.mjs';
 import { listed } from './support/rows.mjs';
 
@@ -75,9 +75,14 @@ const SEED = [
 const ORANGE = 'rgb(255, 165, 0)';
 const BLUE = 'rgb(0, 0, 255)';
 
-/** Seed, and wait until the fields widget has drawn both buttons. */
+/**
+ * Seed, and wait until the fields widget has drawn both buttons AND every
+ * refresh the seed set off has landed (da-ij6iy). A late one reorders the
+ * bar — `mood` goes ahead of `coffee` — so a gesture aimed at a button that
+ * merely EXISTS can land on its neighbour, or on a node already replaced.
+ */
 async function ready(app) {
-	for (const line of SEED) await app.submit(line);
+	await seedLines(app, SEED);
 	await fieldsBar(app.page).locator('[data-field="coffee"]').waitFor();
 	await fieldsBar(app.page).locator('[data-field="mood"]').waitFor();
 }
@@ -248,6 +253,7 @@ describe('the gesture, and the pill it mints', () => {
 				// «nothing opened» below would be true of a gesture that never
 				// landed on the chip at all.
 				await fieldPill(page).waitFor();
+				assert.equal(await fieldPill(page).locator('.label').innerText(), 'coffee', 'the press landed on another field');
 				assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), '');
 
 				await longPress(page, 'coffee', { finger });
