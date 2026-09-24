@@ -1141,6 +1141,18 @@
 		margin-inline-start: calc(-8.5px - var(--badge) / 2);
 	}
 
+	/* «reduce the distance between maximize and tabnames and then between
+	   tabnames and the + and downarrow» (vividn, 2026-09-23, da-33ves).
+	   `.along`'s gap is EVERY distance on the row, so the two he named are
+	   taken in at their ends instead, and `+`, `▾` and `×` keep theirs.
+	   Two pixels, which still leaves two between the hit areas. */
+	.along > .maximize {
+		margin-inline-end: -2px;
+	}
+	.along > .add {
+		margin-inline-start: -2px;
+	}
+
 	/* THE BUTTON READS SMALLER; THE HIT AREA DOES NOT. vividn, 2026-09-22
 	   (da-lihui): «maximize button didn't actually seem to get smaller
 	   […] it can still be a bit smaller than it is (reduce padding
@@ -1151,10 +1163,10 @@
 	   thing a finger lands on is not. The BUTTON keeps `--badge` square —
 	   the 16px/24px floor `reachable.test.mjs` holds every badge to — and
 	   draws nothing of its own; the ground, the outline and the radius go
-	   on a `::before` four pixels smaller, in the same grid cell as the
+	   on a `::before` smaller than it, in the same grid cell as the
 	   glyph, so the two are centred together and the mark paints over the
-	   ground. Two pixels of padding a side where there were four, and the
-	   glyph is untouched: `--badge` sizes the hit area and the mark, and
+	   ground. Two pixels of padding a side where there were four (three
+	   since da-33ves, below), and the glyph is untouched: `--badge` sizes the hit area and the mark, and
 	   only the visible box is off it now.
 
 	   `.control.badge`'s hover colours the BUTTON's border, which is not
@@ -1164,7 +1176,11 @@
 	   The size of that drawn box came off `--badge` until da-wyofs, which
 	   meant it was 12px under a cursor and 20px under a finger — the same
 	   badge drawn twice, at two sizes, and only the first of them ever
-	   measured. It comes off `--mark` now, so it is 12px for everyone.
+	   measured. It comes off `--mark` now, so it is one size for everyone:
+	   12px until «now the maximize button is too small, make a little
+	   bigger» (vividn, 2026-09-23, da-33ves), and two pixels off `--mark`
+	   since — 14px, which is what the `+`, the `▾` and the `×` beside it
+	   paint (below). It was the one badge on the row drawn smaller.
 
 	   THE OTHER THREE BADGES ARE THE SAME CLAIM, so they are the same rule
 	   (da-wyofs; the `×` joined them in da-efr4i). The `+`, the `▾` and the
@@ -1174,9 +1190,10 @@
 	   below lay 3.5px over the pane above — half of vividn's «overlap with
 	   other panes», the title being the other half. They keep the finger's
 	   box and draw inside it, like the maximize. Their box is `--mark`
-	   whole rather than four pixels in from it: that is the size they have
-	   always drawn at under a cursor, and nothing about a cursor changes
-	   here. Absolutely placed instead of `grid-area`, because their glyph
+	   whole rather than inset from it: that is the size they have always
+	   drawn at under a cursor, and nothing about a cursor changes here.
+	   `--mark` less two, as painted: the inset is from the button's
+	   PADDING box, one transparent pixel inside its border. Absolutely placed instead of `grid-area`, because their glyph
 	   is a character and an anonymous grid item cannot be sent to a named
 	   cell; `isolation` makes the button the stacking context the `z-index`
 	   is measured in, so the box lands under the glyph and over nothing
@@ -1211,8 +1228,8 @@
 	.maximize::before {
 		content: '';
 		grid-area: 1 / 1;
-		inline-size: calc(var(--mark) - 4px);
-		block-size: calc(var(--mark) - 4px);
+		inline-size: calc(var(--mark) - 2px);
+		block-size: calc(var(--mark) - 2px);
 		background: var(--ground);
 		border: 1px solid var(--edge);
 		border-radius: 5px;

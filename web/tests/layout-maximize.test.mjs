@@ -402,9 +402,10 @@ describe('the maximize badge, drawn and placed', () => {
 
 					// A BIT SMALLER, and the HIT AREA is not what shrank. The
 					// button paints nothing itself; the box on the screen is the
-					// `::before` inside it, four pixels off `--mark` — so the
-					// glyph, eight pixels off the same mark, has two pixels of
-					// padding a side where it had four.
+					// `::before` inside it, two pixels off `--mark` (four until
+					// da-33ves: «too small, make a little bigger») — so the
+					// glyph, eight pixels off the same mark, has three pixels of
+					// padding a side.
 					const { box, svg } = await drawn(page, 'repl');
 					const seen = await maximizeButton(page, 'repl').evaluate((el) => {
 						const own = getComputedStyle(el);
@@ -425,8 +426,8 @@ describe('the maximize badge, drawn and placed', () => {
 							`the glyph is ${svg[side].toFixed(1)} on a ${seen.mark}px mark`
 						);
 						assert.ok(
-							Math.abs(seen[side] - (seen.mark - 4)) <= 0.5,
-							`the drawn box is ${seen[side]}, not ${seen.mark - 4}`
+							Math.abs(seen[side] - (seen.mark - 2)) <= 0.5,
+							`the drawn box is ${seen[side]}, not ${seen.mark - 2}`
 						);
 						assert.ok(seen[side] < box[side], `the drawn box is ${seen[side]} in a ${box[side]}px button`);
 						assert.ok(seen[side] > svg[side], `the drawn box (${seen[side]}) does not clear the glyph (${svg[side]})`);
@@ -449,11 +450,13 @@ describe('the maximize badge, drawn and placed', () => {
 	// down in two runs. A cursor's reading is the one that was already
 	// right, so a regression that moved BOTH pointers together — which is
 	// exactly what the single token did — still fails here.
-	// THE SAME CLAIM FOR THE ROW'S OWN THREE (da-wyofs, da-efr4i): the `+`,
-	// the `▾` and the `×` draw a `::before` inside a button that is the
-	// finger's box. One drawn size under either pointer, and no badge
-	// drawing on the button itself — the four are one mechanism, so a new
-	// badge that misses it is caught here rather than by eye on a phone.
+	// THE SAME CLAIM FOR THE WHOLE ROW (da-wyofs, da-efr4i): the maximize,
+	// the `+`, the `▾` and the `×` draw a `::before` inside a button that
+	// is the finger's box. One drawn size under either pointer, and no
+	// badge drawing on the button itself — the four are one mechanism, so
+	// a new badge that misses it is caught here rather than by eye on a
+	// phone. And one size AMONG them (da-33ves): the maximize drew 12
+	// beside three 14s, and was the one vividn called too small.
 	test('every badge on the row draws one box, at one size under either pointer', async () => {
 		const read = async (where) => {
 			let out;
@@ -461,17 +464,19 @@ describe('the maximize badge, drawn and placed', () => {
 				out = await page.evaluate(() => {
 					const row = document.querySelector('section[data-pane="repl"] > .titlebar > .along');
 					const seen = {};
-					for (const [name, sel] of [['+', 'button.add'], ['▾', 'button.manage'], ['×', 'button.close']]) {
+					for (const [name, sel] of [['maximize', 'button.maximize'], ['+', 'button.add'], ['▾', 'button.manage'], ['×', 'button.close']]) {
 						const el = row.querySelector(sel);
 						if (!el) { seen[name] = null; continue; }
 						const own = getComputedStyle(el);
 						const before = getComputedStyle(el, '::before');
 						seen[name] = {
 							button: Math.round(el.getBoundingClientRect().width),
-							// The drawn box is the `::before`'s border box: its
-							// computed `width` is the content box, and it is
-							// `box-sizing: border-box` with a 1px outline.
-							drawn: parseFloat(before.width) + 2,
+							// The drawn box is the `::before`'s border box, which
+							// is its computed `width` under `box-sizing:
+							// border-box` (app.css). It was read as that plus 2,
+							// which put the three at 16 while they painted 14
+							// (counted in pixels, da-33ves).
+							drawn: parseFloat(before.width),
 							ownEdge: own.borderTopColor,
 							ownGround: own.backgroundColor
 						};
@@ -484,7 +489,7 @@ describe('the maximize badge, drawn and placed', () => {
 		const [fine, coarse] = [await read(shared), await read(phone)];
 		assert.equal(fine.coarse, false);
 		assert.equal(coarse.coarse, true);
-		for (const name of ['+', '▾', '×']) {
+		for (const name of ['maximize', '+', '▾', '×']) {
 			const [a, b] = [fine.seen[name], coarse.seen[name]];
 			assert.ok(a && b, `the ${name} was not on the row`);
 			// The hit area is the one thing that differs, which is what says
@@ -501,9 +506,9 @@ describe('the maximize badge, drawn and placed', () => {
 				assert.match(seen.ownGround, /^rgba\(.*,\s*0\)$/, `${when} the ${name} grounds its button (${seen.ownGround})`);
 			}
 		}
-		// And all three draw the SAME box as each other, which is what
+		// And all four draw the SAME box as each other, which is what
 		// «one mechanism» means and what the eye actually reads on the row.
-		const sizes = ['+', '▾', '×'].map((n) => fine.seen[n].drawn);
+		const sizes = ['maximize', '+', '▾', '×'].map((n) => fine.seen[n].drawn);
 		assert.equal(new Set(sizes).size, 1, `the row's badges draw ${sizes.join(', ')}`);
 	});
 
