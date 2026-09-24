@@ -64,7 +64,7 @@ query = ["get", "weight:2024-01-15T06:00:00.000Z"]
 
 [[fixture]]
 name = "get_with_unit"
-description = "`get` with a unit annotation (TS-side parses `=NUM<unit>`)"
+description = "`get` with digits-then-letters (`200mg` is stored as the string typed)"
 surface = "get"
 setup = [
   ["occur", "caffeine", "-d", "2024-01-15", "-t", "1000", "amount=200mg"],

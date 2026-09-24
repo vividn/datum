@@ -7,8 +7,6 @@
 //! * **Reserved columns** — `field`, `verb`, `state` / `value`, `dur`
 //!   (seconds), `start_time` / `end_time` (RFC3339 strings).
 //! * **`extra_data` paths** — dotted notation (`weight`, `session.mood`).
-//!   Unit-annotated leaves `{"v": x, "u": "kg"}` are unwrapped to `x`
-//!   for numeric comparisons so `weight>75` works on either form.
 //!
 //! Value comparison policy:
 //! * **Eq/Ne** — string-equal first; falls back to numeric equality so
@@ -91,26 +89,13 @@ fn resolve_key(entry: &Entry, key: &str) -> Option<JsonValue> {
     }
 }
 
-/// Walk a dotted path through a JSON value. Returns leaves directly;
-/// unwraps `{"v": x, "u": "..."}` unit-annotation objects to `x` so
-/// matchers don't have to know about the annotation shape.
+/// Walk a dotted path through a JSON value.
 fn lookup_path(root: &JsonValue, path: &str) -> Option<JsonValue> {
     let mut cur = root;
     for segment in path.split('.') {
         cur = cur.get(segment)?;
     }
-    Some(unwrap_unit_annotation(cur))
-}
-
-fn unwrap_unit_annotation(v: &JsonValue) -> JsonValue {
-    if let Some(obj) = v.as_object() {
-        if let (Some(num), Some(_)) = (obj.get("v"), obj.get("u")) {
-            if num.is_number() || num.is_string() {
-                return num.clone();
-            }
-        }
-    }
-    v.clone()
+    Some(cur.clone())
 }
 
 fn compare_eq(lhs: Option<&JsonValue>, rhs: &str) -> bool {
@@ -324,20 +309,6 @@ mod tests {
         assert!(match_one(&e, &m("session.mood", MatcherOp::Eq, "tired")));
         assert!(!match_one(&e, &m("session.mood", MatcherOp::Eq, "happy")));
         assert!(!match_one(&e, &m("session.missing", MatcherOp::Eq, "x")));
-    }
-
-    /// Unit-annotated leaves (`{"v": 75.2, "u": "kg"}`) unwrap to the
-    /// numeric for matcher purposes, so `weight>75` works without
-    /// caring about the annotation form.
-    #[test]
-    fn unit_annotated_leaf_unwraps_for_numeric_compare() {
-        let e = point(
-            "weight",
-            json!(null),
-            Some(json!({"weight": {"v": 75.2, "u": "kg"}})),
-        );
-        assert!(match_one(&e, &m("weight", MatcherOp::Gt, "75")));
-        assert!(!match_one(&e, &m("weight", MatcherOp::Gt, "80")));
     }
 
     #[test]

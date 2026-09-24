@@ -160,8 +160,7 @@ The workhorse: turns the raw `data` positional list + `-k/-K/-R/-S/-C/-c
     (daydumb dispatches verb-first by design).
 - **Target (step 2/N):** `datum_parse::input::data_args` module with a
   `DataArgs` struct + `handle_data_args(&mut DataArgs) -> DatumData`
-  returning `serde_json::Value` (matching the extra_data leaf layout
-  with `{"v": x, "u": "unit"}` tagging).
+  returning `serde_json::Value`.
 - **Divergences to carry forward:** daydumb's `value` column is a
   first-class field; datum stored the primary value under a variant
   key in `data` (e.g. `state` for switch). Our `DataArgs` output needs

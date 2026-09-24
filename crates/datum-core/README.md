@@ -31,9 +31,7 @@ off to remain WASM-clean (see `datum-parse`, `datum-layout`).
 - `time_start` and `time_end` are independently optional. All four
   combinations (open, closed, start+dur, end+dur) are valid; duration
   is always derived, never stored.
-- `extra_data` is arbitrarily nested JSON. Leaf values may use
-  `{"v": x, "u": "unit"}` for unit annotation; bare values are
-  unit-less. Both forms round-trip.
+- `extra_data` is arbitrarily nested JSON.
 - `content_hash` is a SHA-256 over the canonical JSON form and is the
   only safe dedup key — IDs and slugs alone do not catch re-imports.
 

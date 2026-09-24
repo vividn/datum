@@ -297,10 +297,7 @@
 					"state": null,
 					"dur": null,
 					"data": {
-						"amount": {
-							"u": "kg",
-							"v": 75.2
-						}
+						"amount": "75.2kg"
 					},
 					"slug": "weight:<t>",
 					"rawInput": "occur weight amount=75.2kg -t 0920",

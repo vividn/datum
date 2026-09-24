@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS entries (
     -- following_state) triple at insert/update time; `dm check verbs`
     -- detects drift between stored and re-derived values.
     verb            TEXT NOT NULL DEFAULT 'point',
-    data            TEXT,                        -- JSON (nested, may use {v,u} unit annotations)
+    data            TEXT,                        -- JSON (nested)
 
     -- When
     occur_time           TEXT,                   -- ISO 8601 UTC; NULL = timeless (bare `add`), da-lxyw

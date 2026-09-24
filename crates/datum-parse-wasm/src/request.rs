@@ -288,15 +288,6 @@ mod tests {
         assert_eq!(e["data"]["strength"], "strong");
     }
 
-    /// A unit rides inside the value, `{"v": 75.2, "u": "kg"}` — there is
-    /// no `unit` column.
-    #[test]
-    fn a_unit_annotates_the_value_it_belongs_to() {
-        let e = entry(&["occur", "weight", "amount=75.2kg"]);
-        assert_eq!(e["data"]["amount"]["v"], 75.2);
-        assert_eq!(e["data"]["amount"]["u"], "kg");
-    }
-
     #[test]
     fn the_hid_is_base36_and_the_stamps_are_rfc3339() {
         let e = entry(&["occur", "coffee"]);

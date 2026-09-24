@@ -52,25 +52,22 @@ fn time_suffix_handles_hhmm_input() {
     assert_eq!(extra["bed_time"], json!("15:13:00"));
 }
 
-/// `weight=75.2kg` — unit-annotation form lands as `{"v": 75.2, "u": "kg"}`
-/// even when routed through `handle_data_args`. The unit-annot detector
-/// is a daydumb extension over datum's `inferType`. Uses `switch` so the
-/// bare `75.2kg` positional is peeled into `state` (occur is stateless
-/// per da-k5o6 and rejects bare positionals).
+/// `weight=75.2kg` is the string typed, as the switch state and as a
+/// data value alike — there is no number+unit inference (da-jh7io). Uses
+/// `switch` so the bare `75.2kg` positional is peeled into `state` (occur
+/// is stateless per da-k5o6 and rejects bare positionals).
 #[test]
-fn unit_annotation_survives_handle_data_args() {
+fn digits_then_letters_stay_strings_through_handle_data_args() {
     let db = fresh_db();
-    run_cli(&["switch", "weight", "75.2kg", "src=morning"], &db)
-        .expect("switch weight 75.2kg src=morning");
+    run_cli(&["switch", "weight", "75.2kg", "src=5pm", "n=007"], &db)
+        .expect("switch weight 75.2kg src=5pm n=007");
 
     let entry = &datum_core::test_util::logged_entries(&db, "weight")[0];
-    assert_eq!(
-        entry.state,
-        Some(json!({"v": 75.2, "u": "kg"})),
-        "unit-annotated primary value preserved",
-    );
+    assert_eq!(entry.state, Some(json!("75.2kg")));
     let extra = entry.data.as_ref().expect("extra_data populated");
-    assert_eq!(extra["src"], json!("morning"));
+    assert_eq!(extra["src"], json!("5pm"));
+    // datum's `inferType`: `007` is not strict JSON, so it stays a string.
+    assert_eq!(extra["n"], json!("007"));
 }
 
 /// `-R <field>` (da-4t5f): un-keyed positionals route to `extra_data.<field>`
@@ -226,4 +223,32 @@ fn single_comment_stays_scalar() {
     let entry = &datum_core::test_util::logged_entries(&db, "log")[0];
     let extra = entry.data.as_ref().expect("extra_data populated");
     assert_eq!(extra["comment"], json!("lone comment"));
+}
+
+/// Durations and time flags have their own grammar, untouched by the
+/// removal of number+unit inference (da-jh7io): `-t +30s` is thirty
+/// seconds ahead, `-q` five minutes ago, and `dur=30m` half an hour.
+#[test]
+fn durations_and_time_flags_keep_their_units() {
+    let db = fresh_db();
+    let before = chrono::Utc::now();
+    run_cli(&["occur", "ahead", "-t", "+30s"], &db).expect("occur ahead -t +30s");
+    run_cli(&["occur", "back", "-q"], &db).expect("occur back -q");
+    run_cli(&["start", "half", "dur=30m"], &db).expect("start half dur=30m");
+    let after = chrono::Utc::now();
+
+    let at = |field: &str| {
+        datum_core::test_util::logged_entries(&db, field)[0]
+            .occur_time
+            .as_ref()
+            .unwrap()
+            .utc
+    };
+    let ahead = at("ahead") - chrono::Duration::seconds(30);
+    assert!(before <= ahead && ahead <= after, "-t +30s: {ahead}");
+    let back = at("back") + chrono::Duration::minutes(5);
+    assert!(before <= back && back <= after, "-q: {back}");
+
+    let half = &datum_core::test_util::logged_entries(&db, "half")[0];
+    assert_eq!(half.duration_seconds(), Some(30 * 60));
 }

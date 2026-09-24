@@ -8,10 +8,9 @@
 //! - literal `null` → `Value::Null`
 //! - path-suffix coercions (`*time`, `*date`, `*dur`/`*duration`) when
 //!   classification flagged a temporal slot
-//! - daydumb's unit-annotation extension (`75.2kg` → `{v, u}`)
 //! - generic [`infer_type`] (booleans, numbers, JSON, comma arrays)
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use crate::error::{ParseError, Result};
 use crate::input::data_args::Compat;
@@ -78,9 +77,9 @@ pub(super) fn infer_typed_value(
             // Relative offset (`+30`, `-15`, `+1h`, `-90m`) resolves against
             // the entry's effective occur-time. `parse_time` now handles
             // decimal/unit forms directly, so this is the single relative
-            // branch — bare `1h` (no sign) still falls through to the
-            // unit-annotation extension. With no base anchor (reparse/update
-            // payload) it drops through to raw-string passthrough.
+            // branch — bare `1h` (no sign) falls through to a plain string.
+            // With no base anchor (reparse/update payload) it drops through
+            // to raw-string passthrough.
             if let (Some(offset), Some(base)) = (t.offset, compat.base_local) {
                 let resolved = base + offset;
                 return Ok(Some(Value::String(
@@ -120,14 +119,6 @@ pub(super) fn infer_typed_value(
         }
     }
 
-    // Unit-annotated number — daydumb extension over datum's `inferType`.
-    // `75.2kg` / `500ml` → `{"v": <num>, "u": "<unit>"}`. Time/date/dur
-    // suffix coercions above already won where they applied (e.g. `dur=5m`
-    // → ISO duration, not unit-annotation).
-    if let Some(v) = unit_annotated_value(value) {
-        return Ok(Some(v));
-    }
-
     Ok(infer_type(value))
 }
 
@@ -146,76 +137,6 @@ fn time_ctx(compat: Compat) -> TimeCtx {
 fn resolve_date_arg(d: &DateArg, compat: Compat) -> Option<chrono::NaiveDate> {
     d.absolute
         .or_else(|| Some(compat.base_local?.date() + chrono::Duration::days(d.days_offset)))
-}
-
-/// Minimum length at which an all-hex token is read as an opaque
-/// identifier (hash/commit prefix) rather than a `<number><unit>` quantity.
-/// Git short-hashes are 7+ chars; real measurements with an `a`–`f` unit on
-/// a 7+-digit value are implausible, so this never shadows `5d`, `98f`, etc.
-const HEX_ID_MIN_LEN: usize = 7;
-
-/// daydumb extension: detect `75.2kg` / `500ml` style tokens and emit
-/// `{"v": <num>, "u": "<unit>"}`. Returns `None` when the token isn't of
-/// `<number><alpha-unit>` form. Public so the verb-specific switch-state
-/// parser in `datum-commands` can apply the same coercion.
-///
-/// A long all-hex token (`8291251c`, a SHA/commit prefix) is treated as an
-/// opaque string, not a quantity — silently turning a logged hash into
-/// `{"v": 8291251.0, "u": "c"}` is data corruption (da-srfh). To force any
-/// ambiguous token to a string, wrap it in literal JSON quotes:
-/// `ref='"8291251c"'`.
-pub fn unit_annotated_value(value: &str) -> Option<Value> {
-    if looks_like_hex_id(value) {
-        return None;
-    }
-    let (num, unit) = split_numeric_unit(value)?;
-    let n: f64 = num.parse().ok()?;
-    let n_value = serde_json::Number::from_f64(n).map(Value::Number)?;
-    let mut obj = Map::new();
-    obj.insert("v".to_string(), n_value);
-    obj.insert("u".to_string(), Value::String(unit.to_string()));
-    Some(Value::Object(obj))
-}
-
-/// `true` for a token long enough, and made entirely of hex digits, to be
-/// an opaque identifier (a hash/commit prefix like `8291251c`) rather than a
-/// `<number><unit>` quantity. Requiring all chars to be hex means a real
-/// unit suffix (`kg`, `ml`, `m`, `s` — non-hex letters) never qualifies; the
-/// only collisions are `a`–`f` "units" on long integer runs, which are not
-/// real measurements (da-srfh).
-fn looks_like_hex_id(s: &str) -> bool {
-    s.len() >= HEX_ID_MIN_LEN && s.bytes().all(|b| b.is_ascii_hexdigit())
-}
-
-/// Split `"75.2kg"` → `Some(("75.2", "kg"))`, `"hello"` → `None`. The
-/// numeric prefix may include digits, `.`, and a leading `-`; the unit
-/// suffix must be all-alphabetic.
-fn split_numeric_unit(s: &str) -> Option<(&str, &str)> {
-    let idx = s
-        .char_indices()
-        .take_while(|(_, c)| c.is_ascii_digit() || *c == '.' || *c == '-')
-        .last()
-        .map(|(i, _)| i + 1)?;
-    if idx == 0 || idx == s.len() {
-        return None;
-    }
-    let (num, unit) = s.split_at(idx);
-    if unit.chars().all(|c| c.is_alphabetic()) {
-        Some((num, unit))
-    } else {
-        None
-    }
-}
-
-/// Resolve a free-form value with no path context — applies the
-/// daydumb unit-annotation extension first, then datum's [`infer_type`].
-/// Used by call sites (switch-state list expansion) that have a single
-/// scalar token with no key path to dispatch on.
-pub fn infer_value(value: &str) -> Option<Value> {
-    if let Some(v) = unit_annotated_value(value) {
-        return Some(v);
-    }
-    infer_type(value)
 }
 
 /// Port of datum's `inferType`: turn a raw string into the most specific
@@ -380,57 +301,14 @@ mod tests {
         assert_eq!(infer_type("\"\""), Some(Value::String(String::new())));
     }
 
+    /// Digits followed by letters are a string, stored as typed — there
+    /// is no number+unit inference (da-jh7io).
     #[test]
-    fn unit_annotation_still_works_for_real_units() {
-        assert_eq!(
-            unit_annotated_value("75.2kg"),
-            Some(json!({"v": 75.2, "u": "kg"}))
-        );
-        assert_eq!(
-            unit_annotated_value("500ml"),
-            Some(json!({"v": 500.0, "u": "ml"}))
-        );
-        assert_eq!(
-            unit_annotated_value("5m"),
-            Some(json!({"v": 5.0, "u": "m"}))
-        );
-        assert_eq!(
-            unit_annotated_value("10s"),
-            Some(json!({"v": 10.0, "u": "s"}))
-        );
-        // Short hex-collision units (`a`–`f`) stay annotated — below the
-        // identifier length threshold and genuinely ambiguous with units.
-        assert_eq!(
-            unit_annotated_value("5d"),
-            Some(json!({"v": 5.0, "u": "d"}))
-        );
-        assert_eq!(
-            unit_annotated_value("98f"),
-            Some(json!({"v": 98.0, "u": "f"}))
-        );
-    }
-
-    #[test]
-    fn long_hex_id_is_not_coerced_to_quantity() {
-        // da-srfh: a SHA/commit prefix must not become {"v":…,"u":…}.
-        assert_eq!(unit_annotated_value("8291251c"), None);
-        assert_eq!(unit_annotated_value("1234567f"), None);
-        // It falls through to a plain string via infer_type / infer_value.
-        assert_eq!(
-            infer_value("8291251c"),
-            Some(Value::String("8291251c".into()))
-        );
-        // Pure-digit hashes never had an alpha suffix to annotate anyway,
-        // and must still read as plain strings, not numbers.
-        assert_eq!(
-            infer_value("0000000a"),
-            Some(Value::String("0000000a".into()))
-        );
-    }
-
-    #[test]
-    fn json_quote_escape_forces_string() {
-        // The documented escape: literal JSON quotes bypass coercion.
-        assert_eq!(infer_value("\"5kg\""), Some(Value::String("5kg".into())));
+    fn digits_then_letters_stay_a_string() {
+        for typed in [
+            "4th", "5pm", "2x", "16gb", "3d", "6orhg", "75.2kg", "8291251c",
+        ] {
+            assert_eq!(infer_type(typed), Some(Value::String(typed.into())));
+        }
     }
 }

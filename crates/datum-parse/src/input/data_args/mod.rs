@@ -49,7 +49,7 @@ use classify::{
     datum_path, find_default_for_path, inferred_value_for_default, is_dot_scalar, split_first_eq,
 };
 
-pub use coerce::{infer_type, infer_value, unit_annotated_value};
+pub use coerce::infer_type;
 
 /// Canonical flag set for the data concern.
 ///

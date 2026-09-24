@@ -1436,12 +1436,6 @@ pub(crate) fn expand_array_states(value: Option<JsonValue>) -> Result<Option<Jso
 
 /// Parse a single value token. Tries number, bool, then falls back to string.
 pub(crate) fn parse_value_token(s: &str) -> JsonValue {
-    // Unit-annotated number: "75.2kg", "500ml"
-    if let Some((num, unit)) = split_numeric_unit(s) {
-        if let Ok(n) = num.parse::<f64>() {
-            return serde_json::json!({"v": n, "u": unit});
-        }
-    }
     if let Ok(n) = s.parse::<i64>() {
         return JsonValue::Number(n.into());
     }
@@ -1455,24 +1449,6 @@ pub(crate) fn parse_value_token(s: &str) -> JsonValue {
         return JsonValue::Bool(false);
     }
     JsonValue::String(s.to_string())
-}
-
-/// Split "75.2kg" → Some(("75.2", "kg")), "hello" → None.
-pub(crate) fn split_numeric_unit(s: &str) -> Option<(&str, &str)> {
-    let idx = s
-        .char_indices()
-        .take_while(|(_, c)| c.is_ascii_digit() || *c == '.' || *c == '-')
-        .last()
-        .map(|(i, _)| i + 1)?;
-    if idx == 0 || idx == s.len() {
-        return None;
-    }
-    let (num, unit) = s.split_at(idx);
-    if unit.chars().all(|c| c.is_alphabetic()) {
-        Some((num, unit))
-    } else {
-        None
-    }
 }
 
 /// da-mjwq: `start_time=` / `end_time=` lifted off a log line — the raw
@@ -1649,9 +1625,8 @@ pub(crate) fn extract_reserved_columns(
 }
 
 /// Coerce a parsed JSON value back to an ISO-8601 duration string. The
-/// CLI parses `dur=PT1H` into `JsonValue::String("PT1H")`; the unit-
-/// annotated forms (`dur=5m` → `{"v": 5, "u": "m"}`) get reconstructed
-/// via [`json_to_raw_token`].
+/// CLI parses `dur=PT1H` into `JsonValue::String("PT1H")`; a bare number
+/// is reconstructed via [`json_to_raw_token`].
 fn json_to_dur_string(v: &JsonValue) -> Result<String> {
     if let Some(s) = v.as_str() {
         return Ok(s.to_string());
@@ -1660,24 +1635,10 @@ fn json_to_dur_string(v: &JsonValue) -> Result<String> {
 }
 
 /// Undo `parse_value_token` for temporal keys: reconstruct the user's raw
-/// token string from its parsed JSON form. Handles unit-annotated objects
-/// (`{"v": 5, "u": "m"}` ← `5m`), numbers, and bare strings.
+/// token string from its parsed JSON form: numbers and bare strings.
 fn json_to_raw_token(v: &JsonValue) -> String {
     if let Some(s) = v.as_str() {
         return s.to_string();
-    }
-    if let Some(obj) = v.as_object() {
-        if let (Some(num), Some(u)) = (obj.get("v"), obj.get("u")) {
-            let num_s = if let Some(n) = num.as_i64() {
-                n.to_string()
-            } else if let Some(n) = num.as_f64() {
-                n.to_string()
-            } else {
-                num.to_string()
-            };
-            let unit_s = u.as_str().unwrap_or("");
-            return format!("{num_s}{unit_s}");
-        }
     }
     if let Some(n) = v.as_i64() {
         return n.to_string();
@@ -1859,11 +1820,13 @@ mod tests {
         assert_eq!(parse_value_token("true"), JsonValue::Bool(true));
     }
 
+    /// A switch state typed as digits-then-letters is the string typed
+    /// (da-jh7io): `5pm` is not `{v: 5, u: "pm"}`.
     #[test]
-    fn test_parse_value_token_unit_annotated() {
-        let v = parse_value_token("75.2kg");
-        assert_eq!(v["v"], serde_json::json!(75.2));
-        assert_eq!(v["u"], serde_json::json!("kg"));
+    fn test_parse_value_token_digits_then_letters_is_a_string() {
+        for typed in ["75.2kg", "5pm", "4th"] {
+            assert_eq!(parse_value_token(typed), JsonValue::String(typed.into()));
+        }
     }
 
     #[test]
@@ -1872,14 +1835,6 @@ mod tests {
             parse_value_token("happy"),
             JsonValue::String("happy".to_string())
         );
-    }
-
-    #[test]
-    fn test_split_numeric_unit() {
-        assert_eq!(split_numeric_unit("75.2kg"), Some(("75.2", "kg")));
-        assert_eq!(split_numeric_unit("500ml"), Some(("500", "ml")));
-        assert_eq!(split_numeric_unit("hello"), None);
-        assert_eq!(split_numeric_unit("42"), None);
     }
 
     #[test]

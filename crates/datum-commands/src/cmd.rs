@@ -996,7 +996,7 @@ mod tests {
             Verb::Point,
             Some(serde_json::json!(1)),
             Some(serde_json::json!({
-                "weight": {"v": 70.0, "u": "kg"},
+                "weight": "70kg",
                 "pose": "standing",
                 "reps": 10,
             })),
@@ -1014,8 +1014,7 @@ mod tests {
         let after = db.get_entry(&e.slug).unwrap();
         let ex = after.data.as_ref().unwrap();
         // weight replaced
-        assert_eq!(ex["weight"]["v"], serde_json::json!(80.0));
-        assert_eq!(ex["weight"]["u"], serde_json::json!("kg"));
+        assert_eq!(ex["weight"], serde_json::json!("80kg"));
         // unmentioned keys preserved
         assert_eq!(ex["pose"], serde_json::json!("standing"));
         assert_eq!(ex["reps"], serde_json::json!(10));

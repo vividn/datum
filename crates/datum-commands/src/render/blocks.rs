@@ -17,8 +17,7 @@
 //!   Chip background is hashed by `key=value` (rule 5) so `.format=audio`
 //!   and `.format=video` get different colors.
 //! * Value rendering (rule 11): strings quoted, numbers/bools bare, null
-//!   left as `null`. The unit-annotated `{v, u}` shape compacts to
-//!   `"<v><u>"` matching the existing data-block treatment.
+//!   left as `null`.
 //!
 //! Widths are measured with [`super::colors::visible_width`] so ANSI
 //! escapes don't throw off alignment. Since da-dhtp that measure is
@@ -183,27 +182,16 @@ fn render_value_chip(key: &str, value: &JsonValue, spec: Option<&FieldSpec>) -> 
 }
 
 /// Render a JSON value as a plain string per rule 11. Strings get quoted,
-/// numbers and booleans render bare. The unit-annotated `{v, u}` shape
-/// (e.g. `{v: 75.2, u: "kg"}`) is treated as a string and emerges as
-/// `"75.2kg"`, matching the existing parity treatment of unit-annotated
-/// leaves.
+/// numbers and booleans render bare.
 fn render_value_body(value: &JsonValue) -> String {
     match value {
         JsonValue::String(s) => format!("\"{s}\""),
         JsonValue::Number(n) => n.to_string(),
         JsonValue::Bool(b) => b.to_string(),
         JsonValue::Null => "null".to_string(),
-        JsonValue::Object(m) => {
-            if let (Some(v), Some(u)) = (m.get("v"), m.get("u").and_then(JsonValue::as_str)) {
-                let inner = match v {
-                    JsonValue::String(s) => s.clone(),
-                    other => other.to_string(),
-                };
-                return format!("\"{inner}{u}\"");
-            }
+        JsonValue::Object(_) | JsonValue::Array(_) => {
             serde_json::to_string(value).unwrap_or_default()
         }
-        JsonValue::Array(_) => serde_json::to_string(value).unwrap_or_default(),
     }
 }
 
@@ -407,14 +395,6 @@ mod tests {
         assert!(block.contains("label: \"hi\""), "{block}");
     }
 
-    #[test]
-    fn data_block_unit_annotated_renders_quoted() {
-        let mut entry = sample_entry();
-        entry.data = Some(json!({"weight": {"v": 75.2, "u": "kg"}}));
-        let block = format_data_block(&entry).unwrap();
-        assert!(block.contains("weight: \"75.2kg\""), "{block}");
-    }
-
     fn sample_entry() -> Entry {
         use datum_core::entry::Verb;
         use datum_core::time::DatumTime;
@@ -488,13 +468,6 @@ mod tests {
         assert_eq!(render_value_body(&json!(true)), "true");
         assert_eq!(render_value_body(&json!(false)), "false");
         assert_eq!(render_value_body(&json!(null)), "null");
-    }
-
-    // K ── unit-annotated leaf — surfaces as quoted concatenation
-    #[test]
-    fn value_unit_annotated_renders_quoted_concatenated() {
-        let v = json!({"v": 75.2, "u": "kg"});
-        assert_eq!(render_value_body(&v), "\"75.2kg\"");
     }
 
     // I ── multiline alignment: keys right-aligned, `:` aligned

@@ -208,8 +208,8 @@ dot (`-5`, `-5.3` are values).
 | `\.`                 | the one-character string `"."`                      |
 | `''` `""`            | the empty string                                    |
 | `true` `{"a":1}`     | anything strict JSON parses keeps its JSON shape    |
-| `75.2kg`             | `{"v": 75.2, "u": "kg"}` — a quantity with a unit   |
-| `'"8291251c"'`       | JSON quotes force a string                          |
+| `75.2kg` `4th`       | a string, exactly as typed — no unit is inferred    |
+| `'"42"'`             | JSON quotes force a string                          |
 | `=2`                 | an empty key is no key — the whole token is data    |
 
 ### `.key` and `a.b` — paths
@@ -336,72 +336,26 @@ CREATE qe1ts f:2026-09-22T16:06:14.628Z
   raw: "=2"
 ```
 
-### `75.2kg` — a number with a unit
+### `75.2kg` — a string, as typed
 
-`<number><letters>` becomes the annotated form. This is why `datum tail`
-can print it back as one word.
+Digits followed by letters are not a number with a unit: `75.2kg`,
+`4th`, `5pm` and an id like `6orhg` are stored exactly as typed. Only
+what strict JSON parses is a number.
 
 ```bash
-datum occur lift weight=75.2kg reps=10
-datum get lift -A
+datum occur lift weight=75.2kg reps=10 set=4th
 ```
-
-The compact line renders it back as `75.2kg`; the `data` block of
-`get -A` shows what is actually stored:
 
 ```
 CREATE f2f8i lift:2026-09-22T15:59:04.152Z
 17:59:04+2  lift ∅●
-  reps: 10, weight: "75.2kg"
+  reps: 10, set: "4th", weight: "75.2kg"
 ```
-
-```
-  data
-    {
-      "reps": 10,
-      "weight": {
-        "u": "kg",
-        "v": 75.2
-      }
-    }
-```
-
-A long all-hex token is left alone, so a commit prefix does not become a
-measurement:
-
-```bash
-datum occur build sha=8291251c
-```
-
-```
-CREATE vshlf build:2026-09-22T15:59:04.219Z
-17:59:04+2  build ∅●
-  sha: "8291251c"
-```
-
-To force *any* ambiguous token to a string, wrap it in literal JSON
-quotes — `ref='"8291251c"'`.
 
 A key whose name ends in `time`, `date`, `dur` or `duration` (at a word
 boundary, or camelCased, optionally with trailing digits) is parsed as
-that kind first, and only falls through to the unit rule if it is not
-one. So `dur=5m` stores a duration and `splits.first=5m` a quantity:
-
-```bash
-datum start w dur=5m
-datum occur r splits.first=5m
-```
-
-```
-CREATE 9wsxq w:2026-09-22T15:59:04.256Z
-17:59:04+2  w  start  5m
-CREATE 3udb0 r:2026-09-22T15:59:04.279Z
-17:59:04+2  r ∅●
-  splits: {"first":{"u":"m","v":5.0}}
-```
-
-`datum get w -A` shows `dur  PT5M` — the `m` was minutes there, and a
-bare unit here.
+that kind first. So `dur=5m` stores the duration `PT5M`, while
+`splits.first=5m` stores the string `"5m"`.
 
 ## 3. Inside a time
 

@@ -69,8 +69,7 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
   log verbs — `undo` is its own command.
 - **Divergences:** daydumb always records `alias_chain` + `raw_input`
   (da-gnj.3); datum does not. daydumb's auto-alias generation from spec
-  states (da-gnj.3) has no datum equivalent. Unit annotation is captured
-  via `{"v": x, "u": "unit"}` in `extra_data`; datum stores bare values.
+  states (da-gnj.3) has no datum equivalent.
 - **Tests in datum not in daydumb:** the 25 tests in `addCmd.test.ts`
   (doc creation, undo/force-undo, metadata suppression, custom id
   templates, data parsing variations) are not mechanically ported;

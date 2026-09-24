@@ -1410,20 +1410,13 @@ pub fn print_logged(entry: &Entry) {
 
 /// Render a value for non-block consumers — format-string interpolation
 /// (`%amount%`) and the `tail --columns` extractor. These callers want a
-/// bare, copy-paste-friendly form (no quotes around strings, unit-annotated
-/// `{v,u}` concatenated as `<v><u>`), distinct from the user-data block
+/// bare, copy-paste-friendly form (no quotes around strings), distinct
+/// from the user-data block
 /// renderer in [`blocks::format_data_block`] which follows the rule-11
 /// quoting convention.
 fn render_extra_value(v: &JsonValue) -> String {
     match v {
         JsonValue::String(s) => s.clone(),
-        JsonValue::Object(m) => {
-            // {"v": x, "u": "unit"} → "xu"
-            if let (Some(val), Some(unit)) = (m.get("v"), m.get("u").and_then(|u| u.as_str())) {
-                return format!("{}{unit}", render_extra_value(val));
-            }
-            serde_json::to_string(v).unwrap_or_default()
-        }
         other => other.to_string(),
     }
 }
@@ -2086,12 +2079,6 @@ mod tests {
         };
         // Smoke: does not panic, produces no output.
         print_table(&[], None, &args);
-    }
-
-    #[test]
-    fn extra_data_unit_annotated_renders_compact() {
-        let v = serde_json::json!({"v": 75.2, "u": "kg"});
-        assert_eq!(render_extra_value(&v), "75.2kg");
     }
 
     #[test]

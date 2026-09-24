@@ -603,7 +603,7 @@ fn extract_reserved(data: &mut Option<JsonValue>) -> Result<Reserved> {
         }
     }
     if let Some(v) = obj.remove("field") {
-        out.field = Some(slug_string(&v));
+        out.field = Some(plain(&v));
     }
     if let Some(v) = obj.remove("state") {
         out.state = Some(normalize_state(v));
@@ -613,7 +613,7 @@ fn extract_reserved(data: &mut Option<JsonValue>) -> Result<Reserved> {
         // duration" — leave it unset rather than writing the string "null",
         // which `derive_verb` would reject.
         if !(v.is_null() || matches!(v.as_str(), Some("null"))) {
-            let s = dur_string(&v);
+            let s = plain(&v);
             out.dur = Some(
                 Dur::parse(&s)
                     .ok_or_else(|| ParseError::InvalidArg(format!("invalid dur value: {s:?}")))?,
@@ -646,40 +646,12 @@ fn normalize_state(state: JsonValue) -> JsonValue {
 }
 
 /// A JSON value as the plain string a slug / field name is built from.
-/// Mirrors `log_core::datum_value_to_slug_string`: strings unquote, unit
-/// annotations recompose, everything else takes its JSON form.
-fn slug_string(v: &JsonValue) -> String {
-    match v {
-        JsonValue::String(s) => s.clone(),
-        other => raw_token(other),
-    }
-}
-
-/// Recompose the token the user typed from its parsed value. The unit-
-/// annotated form (`dur=5m` → `{"v": 5, "u": "m"}`) is the case that
-/// matters: the duration grammar wants `5m` back, not the object.
-fn raw_token(v: &JsonValue) -> String {
-    if let JsonValue::Object(obj) = v {
-        if obj.len() == 2 {
-            if let (Some(value), Some(JsonValue::String(unit))) = (obj.get("v"), obj.get("u")) {
-                return format!("{}{}", plain(value), unit);
-            }
-        }
-    }
-    plain(v)
-}
-
+/// Mirrors `log_core::datum_value_to_slug_string`: strings unquote,
+/// everything else takes its JSON form.
 fn plain(v: &JsonValue) -> String {
     match v {
         JsonValue::String(s) => s.clone(),
         other => other.to_string(),
-    }
-}
-
-fn dur_string(v: &JsonValue) -> String {
-    match v.as_str() {
-        Some(s) => s.to_string(),
-        None => raw_token(v),
     }
 }
 

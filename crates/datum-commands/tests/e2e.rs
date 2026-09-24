@@ -829,16 +829,21 @@ e2e_case!(full, switch_float_value: CaseSpec {
     freeze_time: Some("09:00"),
 });
 
-// Unit-annotated values parse to {"v": <n>, "u": "<unit>"} per the data
-// model. `occur` carries dur=MOMENT.
-e2e_case!(full, occur_with_unit_annotated_data: CaseSpec {
-    argv: "occur weight -k value=75.2kg",
+// Digits followed by letters are stored as the string typed — there is
+// no number+unit inference (da-jh7io). `occur` carries dur=MOMENT.
+e2e_case!(full, occur_digits_then_letters_stay_strings: CaseSpec {
+    argv: "occur probe a=4th b=5pm c=2x d=16gb e=3d f=6orhg g=75.2kg x=75.2",
     setup: no_setup,
     expected: rows(vec![
-        row("weight").no_state().dur("MOMENT").data(
-            "value",
-            json!({"v": 75.2, "u": "kg"}),
-        ),
+        row("probe").no_state().dur("MOMENT")
+            .data("a", json!("4th"))
+            .data("b", json!("5pm"))
+            .data("c", json!("2x"))
+            .data("d", json!("16gb"))
+            .data("e", json!("3d"))
+            .data("f", json!("6orhg"))
+            .data("g", json!("75.2kg"))
+            .data("x", json!(75.2)),
     ]),
     freeze_time: Some("09:00"),
 });

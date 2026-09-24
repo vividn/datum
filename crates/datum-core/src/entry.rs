@@ -114,7 +114,7 @@ pub struct Entry {
     /// `dur` is set (the SQL CHECK enforces this).
     #[serde(default)]
     pub following_state: Option<JsonValue>,
-    /// Arbitrarily nested JSON. Individual leaf values may use {"v": x, "u": "unit"}.
+    /// Arbitrarily nested JSON.
     pub data: Option<JsonValue>,
 
     // --- When ---

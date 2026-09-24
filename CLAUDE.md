@@ -47,7 +47,7 @@ a top-level `migrations/` folder.)
 - `verb`: the STORED classification, derived from state + dur — `point` | `switch` | `block` | `block-switch` | `point-switch` (`crates/datum-parse/src/verb.rs`). The words a person types — `occur`, `start`, `stop`/`end`, `switch`, `note`, `add` — are the COMMANDS; they set the state and the duration the verb is derived from.
 - `state`: the primary JSON value (the state for a switch, the quantity for an occur). **There is no `value` field** — `state` is the canonical name, and a `value` appearing in new code is a bug, not a synonym.
 - `following_state`: the trailing-edge state of a switch-style verb; meaningful only alongside a `dur`.
-- `data`: arbitrarily nested JSON; leaf values may use `{"v": x, "u": "unit"}` for unit annotation. (Not `extra_data`.)
+- `data`: arbitrarily nested JSON. (Not `extra_data`.) Nothing infers a unit: `weight=75.2kg` stores the string `"75.2kg"` (da-jh7io).
 - `occur_time` + `dur`: the one instant and the span it covers — see the time model below. There are no `time_start` / `time_end` columns.
 - the zone travels with the time (`occur_time_tz`): an IANA name, e.g. "America/Chicago"
 - `create_time` / `modify_time` / `device_id`
@@ -65,12 +65,6 @@ matching the original datum's `durationBlocks` view). So a `(start, end)`
 pair lands as `occur_time = end`, and a bare `start` with no end — an
 open block — is the one shape whose `occur_time` is its leading edge,
 because it has no other instant to store.
-
-### Unit annotation in extra_data
-Both forms valid:
-- `"reps": 10` — bare value
-- `"weight": {"v": 75.2, "u": "kg"}` — annotated
-CLI parses `weight=75.2kg` → annotated form automatically.
 
 ## CLI conventions
 
