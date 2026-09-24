@@ -513,9 +513,9 @@ describe('widget options', () => {
 			// It is a SECOND way to see them, not a replacement for the one that
 			// exists: Track + still offers `run` back.
 			await page.locator('.bar button.track').click();
-			await page.locator('dialog.track [data-ignored="run"]').waitFor();
+			await page.locator('dialog.spec [data-ignored="run"]').waitFor();
 			await page.keyboard.press('Escape');
-			await page.locator('dialog.track').waitFor({ state: 'detached' });
+			await page.locator('dialog.spec').waitFor({ state: 'detached' });
 
 			// The layout never hears of it: no dot, and the key is nowhere in
 			// the tree the draft is written from.

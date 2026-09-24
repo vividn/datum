@@ -99,7 +99,7 @@
 	import { holds } from './hold.js';
 	import { fieldPill, setFieldPill } from './bar.js';
 	import { promoted, type Near } from './lanes.js';
-	import { openTrack } from './trackModal.js';
+	import { openTrack } from './specModal.js';
 	import {
 		declaredVerb,
 		fieldsUnder,

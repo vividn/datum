@@ -24,7 +24,7 @@ import { echoArgv, parseEcho } from '$lib/echo.js';
 import { record } from '$lib/replStore.js';
 import { run, type RunResult } from '$lib/run.js';
 import { verbAsked } from '$lib/track.js';
-import { openTrack } from '$lib/trackModal.js';
+import { openTrack } from '$lib/specModal.js';
 import { buttonsFor, type FieldButton, type FieldListing, type NowActive } from '$lib/fields.js';
 
 /** Bumped after every command; the panes re-run theirs when it changes. */

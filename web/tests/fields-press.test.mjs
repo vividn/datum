@@ -70,7 +70,7 @@ describe('a press', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await page.locator('.bar button.track').click();
-			const modal = page.locator('dialog.track');
+			const modal = page.locator('dialog.spec');
 			await modal.waitFor();
 			assert.equal(await modal.locator('.verb[aria-checked="true"]').count(), 0, 'a verb was chosen for them');
 

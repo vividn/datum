@@ -28,7 +28,7 @@ import * as shell from './layout/shell.js';
 import { pills, removePill, setPills, type Pill } from './bar.js';
 import { cursor, pointAt, setCursor, type Cursor } from './cursor.js';
 import { shellSplit } from './shellSplit.js';
-import { openTrack, type TrackOptions } from './trackModal.js';
+import { openSpec, openTrack, type TrackOptions } from './specModal.js';
 import { get } from 'svelte/store';
 import { apply, layout } from './layout/current.js';
 import { keyOf, session, withSession } from './layout/session.js';
@@ -89,6 +89,11 @@ export interface DatumConsole {
 	 * door a filtered list's `+` comes in by. Null if it was dismissed.
 	 */
 	track(options?: TrackOptions): Promise<RunResult | null>;
+	/**
+	 * Open the same modal on `field`'s spec (da-ci85o) and run the one
+	 * `spec set` it answers with. Null if it was dismissed.
+	 */
+	spec(field: string): Promise<RunResult | null>;
 }
 
 /** Publish the handle on `target` (the window, in the app). */
@@ -122,6 +127,10 @@ export function installConsole(target: Record<string, unknown>): void {
 		cursor: { at: () => get(cursor)?.at ?? null, set: setCursor, of: () => get(cursor), point: pointAt },
 		track: async (options) => {
 			const argv = await openTrack(options);
+			return argv && (await press(argv));
+		},
+		spec: async (field) => {
+			const argv = await openSpec(field);
 			return argv && (await press(argv));
 		}
 	};

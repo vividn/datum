@@ -184,13 +184,13 @@ describe('a verb fills the line and filters the fields', () => {
 			// chosen — the door that presets one, which `startTracking` leaves
 			// to whoever has a verb in hand.
 			await fieldsBar(page).locator('[data-add-field]').click();
-			await page.locator('dialog.track').waitFor();
+			await page.locator('dialog.spec').waitFor();
 			assert.equal(
-				await page.locator('dialog.track button[data-verb="occur"]').getAttribute('aria-checked'),
+				await page.locator('dialog.spec button[data-verb="occur"]').getAttribute('aria-checked'),
 				'true'
 			);
 			await page.keyboard.press('Escape');
-			await page.locator('dialog.track').waitFor({ state: 'detached' });
+			await page.locator('dialog.spec').waitFor({ state: 'detached' });
 
 			await echoed(app, () => fieldsBar(page).locator('[data-field="coffee"]').click());
 			assert.equal((await app.echoes()).at(-1), 'occur coffee');
@@ -226,9 +226,9 @@ describe('a verb fills the line and filters the fields', () => {
 			// opens the modal on `start`: a block you are ending is a block.
 			await tap(page, 'end');
 			await fieldsBar(page).locator('[data-add-field]').click();
-			await page.locator('dialog.track').waitFor();
+			await page.locator('dialog.spec').waitFor();
 			assert.equal(
-				await page.locator('dialog.track button[data-verb="start"]').getAttribute('aria-checked'),
+				await page.locator('dialog.spec button[data-verb="start"]').getAttribute('aria-checked'),
 				'true'
 			);
 		});

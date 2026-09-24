@@ -57,16 +57,16 @@ const shared = sharedApp();
 /**
  * Open the Track modal and type `field` into it, without submitting.
  *
- * A verb is chosen at the same time: `track it` needs both (da-94q1), so a
+ * A verb is chosen at the same time: Done needs both (da-94q1), so a
  * test about the NAME has to answer the other half or every case would
  * read as refused for the wrong reason.
  */
 async function typeIntoTheForm(page, field) {
-	if ((await page.locator('dialog.track').count()) === 0) {
+	if ((await page.locator('dialog.spec').count()) === 0) {
 		await page.locator('.bar button.add-button').click();
-		await page.locator('dialog.track').waitFor();
+		await page.locator('dialog.spec').waitFor();
 	}
-	const form = page.locator('dialog.track');
+	const form = page.locator('dialog.spec');
 	await form.locator('input.field').fill(field);
 	await form.locator('button[data-verb="occur"]').click();
 	const hint = form.locator('p.hint');
@@ -76,9 +76,9 @@ async function typeIntoTheForm(page, field) {
 	};
 }
 
-/** Press "track it" on the open modal, the way a user declares a field. */
+/** Press Done on the open modal, the way a user declares a field. */
 async function trackIt(app, field) {
-	await app.page.locator('dialog.track button.commit').click();
+	await app.page.locator('dialog.spec button.commit').click();
 	await chipIndex(app, field);
 }
 
@@ -140,8 +140,8 @@ describe('a field name the (+) form accepts', () => {
 	test('one press of the offered name gets you a usable one', async () => {
 		await shared.solo(async (app) => {
 			await typeIntoTheForm(app.page, 'my coffee');
-			await app.page.locator('dialog.track p.hint button.fix').click();
-			assert.equal(await app.page.locator('dialog.track input.field').inputValue(), 'my_coffee');
+			await app.page.locator('dialog.spec p.hint button.fix').click();
+			assert.equal(await app.page.locator('dialog.spec input.field').inputValue(), 'my_coffee');
 
 			await trackIt(app, 'my_coffee');
 			await pressChip(app, 'my_coffee');

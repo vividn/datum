@@ -19,10 +19,10 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
-import { splitStates, trackArgv, trackLabel, VERBS, verbAsked } from '../src/lib/track.ts';
+import { editedSpec, specArgv, stateRows, trackArgv, trackLabel, VERBS, verbAsked } from '../src/lib/track.ts';
 import { stripAnsi } from './support/tail.mjs';
 
-const MODAL = 'dialog.track';
+const MODAL = 'dialog.spec';
 const PHONE = { width: 320, height: 480 };
 
 /**
@@ -47,25 +47,63 @@ async function fill(page, field, verb) {
 	if (verb) await page.locator(`${MODAL} button[data-verb="${verb}"]`).click();
 }
 
+/** On the States tab, add one row per name. */
+async function addStates(page, names) {
+	await page.locator(`${MODAL} [data-tab="states"]`).click();
+	for (const name of names) {
+		await page.locator(`${MODAL} button.add`).click();
+		await page.locator(`${MODAL} .state input.name`).last().fill(name);
+	}
+}
+
 describe('the argv it composes', () => {
 	test('`track`, not `spec set`: declaring a field is an event in the log', () => {
 		assert.deepEqual(trackArgv('coffee', 'occur'), ['track', 'coffee', '--verb', 'occur']);
 		assert.deepEqual(trackArgv('sleep', 'start'), ['track', 'sleep', '--verb', 'start']);
 	});
 
-	test('a switch carries its states, one flag each; a colour is optional', () => {
-		assert.deepEqual(trackArgv('mood', 'switch', ['good', 'bad']), [
-			'track', 'mood', '--verb', 'switch', '--state', 'good', '--state', 'bad'
+	const row = (name, color = '', description = '') => ({ name, color, description });
+
+	test('a switch carries its states, one flag each, a painted one twice; a colour is optional', () => {
+		assert.deepEqual(trackArgv('mood', 'switch', [row('good', '#00ff00'), row(' bad '), row('  ')]), [
+			'track', 'mood', '--verb', 'switch', '--state', 'good', '--state', 'bad', '--state', 'good=#00ff00'
 		]);
 		assert.deepEqual(trackArgv('coffee', 'occur', [], '#ffa500').slice(-2), ['--color', '#ffa500']);
-		// The states box belongs to `switch` alone: a point with one typed
-		// into it and then changed away would otherwise smuggle it out.
-		assert.deepEqual(trackArgv('coffee', 'occur', ['good']), ['track', 'coffee', '--verb', 'occur']);
+		// The states belong to `switch` alone: a point with one added and
+		// then changed away would otherwise smuggle it out.
+		assert.deepEqual(trackArgv('coffee', 'occur', [row('good')]), ['track', 'coffee', '--verb', 'occur']);
 	});
 
-	test('the states box splits on commas and drops the blanks a trailing one leaves', () => {
-		assert.deepEqual(splitStates(' good , bad ,'), ['good', 'bad']);
-		assert.deepEqual(splitStates(''), []);
+	// da-ci85o: an edited spec is saved WHOLE, in one `spec set` — the
+	// shape that replaces the list, so a state removed takes its colour and
+	// description with it, and a blank clears where a flag could not.
+	test('an edited spec is the whole spec, in one `spec set --from-json`', () => {
+		const spec = {
+			field: 'mood', verb: 'switch', color: '#123456', unit: 'pts', description: null,
+			allowed_states: ['good', 'bad'], state_colors: { good: '#00ff00', bad: '#ff0000' },
+			state_descriptions: { bad: 'awful' }, subfields: { note: {} }, tags: ['x']
+		};
+		assert.deepEqual(stateRows(spec), [row('good', '#00ff00'), row('bad', '#ff0000', 'awful')]);
+		const edited = editedSpec(spec, {
+			verb: 'start', color: '', unit: ' ', description: ' how I feel ',
+			states: [row('good', '#00ff00', 'fine'), row(' meh ', ''), row('')]
+		});
+		assert.deepEqual(edited, {
+			...spec, verb: 'start', color: null, unit: null, description: 'how I feel',
+			allowed_states: ['good', 'meh'], state_colors: { good: '#00ff00' },
+			state_descriptions: { good: 'fine' }
+		});
+		assert.deepEqual(edited.subfields, spec.subfields, 'what the modal does not edit is carried');
+		// `spec show` leaves an empty description map out; so does the save.
+		const bare = { ...spec, state_descriptions: undefined };
+		delete bare.state_descriptions;
+		assert.deepEqual(stateRows(bare), [row('good', '#00ff00'), row('bad', '#ff0000')]);
+		assert.equal('state_descriptions' in editedSpec(bare, { verb: 'switch', color: '', unit: '', description: '', states: stateRows(bare) }), false);
+		// A spec with no list keeps none when none is added.
+		assert.equal(editedSpec({ ...spec, allowed_states: null }, { verb: 'occur', color: '', unit: '', description: '', states: [] }).allowed_states, null);
+		const argv = specArgv(edited);
+		assert.deepEqual(argv.slice(0, 4), ['spec', 'set', 'mood', '--from-json']);
+		assert.deepEqual(JSON.parse(argv[4]), edited);
 	});
 
 	test('the refusal is read for the field it names, and nothing else is', () => {
@@ -108,7 +146,7 @@ describe('in the app', () => {
 		}, { query: 'repl' });
 	});
 
-	test('Track + opens the modal: four pictograms, `track it` shut until a name and a verb', async () => {
+	test('Track + opens the modal: four pictograms, Done shut until a name and a verb', async () => {
 		await withApp(async (app) => { // leaves the modal open, which `solo` does not close
 			const { page } = app;
 			await openIt(page);
@@ -128,11 +166,10 @@ describe('in the app', () => {
 			await fill(page, 'mood', null);
 			assert.equal(await commit.isEnabled(), true);
 
-			// The states box belongs to the switch, and to nothing else.
-			assert.equal(await page.locator(`${MODAL} input.states`).count(), 0);
+			// The States tab belongs to the switch, and to nothing else.
+			assert.equal(await page.locator(`${MODAL} [data-tab="states"]`).isEnabled(), false);
 			await page.locator(`${MODAL} button[data-verb="switch"]`).click();
-			await page.locator(`${MODAL} input.states`).waitFor();
-			await page.locator(`${MODAL} input.states`).fill('good, bad');
+			await addStates(page, ['good', 'bad']);
 			assert.equal(
 				(await page.locator(`${MODAL} code.preview`).innerText()).trim(),
 				'track mood --verb switch --state good --state bad'
@@ -141,12 +178,12 @@ describe('in the app', () => {
 		});
 	});
 
-	test('`track it` declares the field — TRACK▞ in the log, a button in the bar', async () => {
+	test('Done declares the field — TRACK▞ in the log, a button in the bar', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
 			await fill(page, 'mood', 'switch');
-			await page.locator(`${MODAL} input.states`).fill('good, bad');
+			await addStates(page, ['good', 'bad']);
 			await page.locator(`${MODAL} button.commit`).click();
 
 			await page.locator('.bar button[data-field="mood"]').waitFor();
@@ -224,6 +261,176 @@ describe('in the app', () => {
 			await page.locator(`${MODAL} [data-ignored="run"]`).click();
 			await page.locator('.bar button[data-field="run"]').waitFor();
 			assert.equal((await app.echoes()).at(-1), 'track run');
+		});
+	});
+
+	// da-ci85o: Track is the spec modal opened on Basics, and it must stay
+	// as quick as the modal it absorbed — `Track +`, a pictogram, Done:
+	// three taps, the name typed into the box that already has the focus.
+	test('declaring a field is three taps, as it was before the tabs', async () => {
+		await withApp(async (app) => { // a listener of its own, which `solo` would keep
+			const { page } = app;
+			await page.evaluate(() => {
+				window.__taps = 0;
+				document.addEventListener('pointerdown', (e) => e.isTrusted && window.__taps++, true);
+			});
+			await openIt(page);
+			await page.keyboard.type('coffee');
+			await page.locator(`${MODAL} button[data-verb="occur"]`).click();
+			await page.locator(`${MODAL} button.commit`).click();
+			await page.locator('.bar button[data-field="coffee"]').waitFor();
+			assert.equal(await page.evaluate(() => window.__taps), 3);
+		});
+	});
+
+	// The same modal on a field that has a spec: everything it edits comes
+	// back in ONE `spec set`, and `spec show` then reads what was sent.
+	test('editing a spec writes one `spec set`, and the CLI reads back what it was sent', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'sleep', '--verb', 'start']);
+			await app.run(['spec', 'set', 'sleep', '--description', 'night']);
+			const before = (await app.echoes()).length;
+			const saved = page.evaluate(() => window.datum.spec('sleep'));
+			await page.locator(MODAL).waitFor();
+			assert.equal((await page.locator(`${MODAL} h2`).innerText()).trim(), 'sleep');
+			assert.deepEqual(await page.locator(`${MODAL} .verb[aria-checked="true"] .name`).allInnerTexts(), ['start']);
+			assert.equal(await page.locator(`${MODAL} input.description`).inputValue(), 'night');
+
+			await page.locator(`${MODAL} button[data-verb="switch"]`).click();
+			// The swatch is the control: a tap opens the set, a pick sets it and folds the set away.
+			const swatch = page.locator(`${MODAL} .row .swatch[aria-expanded]`);
+			await swatch.click();
+			const pick = page.locator(`${MODAL} .set .swatch`).nth(3);
+			const color = await pick.getAttribute('data-color');
+			await pick.click();
+			assert.equal(await page.locator(`${MODAL} .set`).count(), 0);
+			assert.equal(await swatch.getAttribute('data-color'), color);
+			await page.locator(`${MODAL} input.unit`).fill('h');
+
+			await addStates(page, ['awake', 'asleep']);
+			await page.locator(`${MODAL} .state`).nth(1).locator('.swatch[aria-expanded]').click();
+			const statePick = page.locator(`${MODAL} .state .set .swatch`).nth(8);
+			const stateColor = await statePick.getAttribute('data-color');
+			await statePick.click();
+			await page.locator(`${MODAL} .state input.description`).first().fill('up');
+			await page.locator(`${MODAL} button.commit`).click();
+
+			const result = await saved;
+			assert.equal(result.code, 0, result.stderr);
+			await app.idle();
+			const echoes = await app.echoes();
+			assert.equal(echoes.length, before + 1, `one command, not a stream: ${echoes.slice(before).join(' | ')}`);
+			assert.match(echoes.at(-1), /^spec set sleep --from-json /);
+
+			const sent = JSON.parse(result.argv[result.argv.indexOf('--from-json') + 1]);
+			const shown = JSON.parse((await app.run(['spec', 'show', 'sleep'])).stdout);
+			// The CLI regenerates the aliases a spec derives from its states,
+			// so those are the one key it does not take as sent.
+			const { derived_aliases: _sent, ...kept } = sent;
+			const { derived_aliases: _shown, ...read } = shown;
+			assert.deepEqual(read, kept);
+			assert.equal(shown.verb, 'switch');
+			assert.equal(shown.color, color);
+			assert.equal(shown.unit, 'h');
+			assert.equal(shown.description, 'night');
+			assert.deepEqual(shown.allowed_states, ['awake', 'asleep']);
+			assert.deepEqual(shown.state_colors, { asleep: stateColor });
+			assert.deepEqual(shown.state_descriptions, { awake: 'up' });
+
+			// Opened and saved untouched, a spec with no state descriptions —
+			// the key `spec show` leaves out — reads back byte for byte.
+			await app.run(['spec', 'set', 'sleep', '--state-description', 'awake=']);
+			const untouched = (await app.run(['spec', 'show', 'sleep'])).stdout;
+			assert.doesNotMatch(untouched, /state_descriptions/);
+			const again = page.evaluate(() => window.datum.spec('sleep'));
+			await page.locator(`${MODAL} button.commit`).click();
+			assert.equal((await again).code, 0);
+			assert.equal((await app.run(['spec', 'show', 'sleep'])).stdout, untouched);
+		});
+	});
+
+	test('Escape and the backdrop close a spec and write nothing', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'sleep', '--verb', 'start']);
+			const spec = (await app.run(['spec', 'show', 'sleep'])).stdout;
+			const before = (await app.echoes()).length;
+			for (const dismiss of [() => page.keyboard.press('Escape'), () => page.mouse.click(2, 2)]) {
+				const shut = page.evaluate(() => window.datum.spec('sleep'));
+				await page.locator(`${MODAL} input.unit`).fill('h');
+				await dismiss();
+				assert.equal(await shut, null);
+				await page.waitForFunction((sel) => !document.querySelector(sel), MODAL);
+			}
+			await app.idle();
+			assert.equal((await app.run(['spec', 'show', 'sleep'])).stdout, spec);
+			assert.equal((await app.echoes()).length, before);
+		});
+	});
+
+	// vividn: «show the color swatch, and then if the user taps on it, they can
+	// easily select a new one» — no hex box, declaring or editing.
+	test('no hex box anywhere: every input is a name or words, and a colour is a swatch', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			const inputs = () =>
+				page.locator(`${MODAL} input`).evaluateAll((els) => els.map((e) => [e.type, e.value, e.placeholder, e.className]));
+			const noHex = async (where) => {
+				for (const [type, value, placeholder, cls] of await inputs()) {
+					assert.equal(type, 'text', `${where}: input.${cls} is a ${type}`);
+					assert.doesNotMatch(`${value} ${placeholder}`, /#|hex|rgb/i, `${where}: input.${cls} takes a colour`);
+				}
+			};
+			await openIt(page);
+			await page.locator(`${MODAL} button[data-verb="switch"]`).click();
+			await noHex('track, basics');
+			await addStates(page, ['good']);
+			await noHex('track, states');
+			await page.keyboard.press('Escape');
+			await page.waitForFunction((sel) => !document.querySelector(sel), MODAL);
+
+			await app.run(['track', 'mood', '--verb', 'switch', '--state', 'good', '--state', 'good=#00ff00', '--color', '#123456']);
+			const shut = page.evaluate(() => window.datum.spec('mood'));
+			await page.locator(MODAL).waitFor();
+			await noHex('spec, basics');
+			assert.equal(await page.locator(`${MODAL} .row .swatch[aria-expanded]`).getAttribute('data-color'), '#123456');
+			await page.locator(`${MODAL} [data-tab="states"]`).click();
+			await noHex('spec, states');
+			assert.equal(await page.locator(`${MODAL} .state .swatch[aria-expanded]`).getAttribute('data-color'), '#00ff00');
+			await page.keyboard.press('Escape');
+			assert.equal(await shut, null);
+		});
+	});
+
+	test('`spec` on a field with no spec declares it, with the field already in the box', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			const ran = page.evaluate(() => window.datum.spec('walk'));
+			await page.locator(MODAL).waitFor();
+			assert.equal(await page.locator(`${MODAL} input.field`).inputValue(), 'walk');
+			await page.locator(`${MODAL} button[data-verb="occur"]`).click();
+			await page.locator(`${MODAL} button.commit`).click();
+			assert.equal((await ran).code, 0);
+			assert.equal(JSON.parse((await app.run(['spec', 'show', 'walk'])).stdout).verb, 'occur');
+		});
+	});
+
+	// Keys and Aliases are their own bead (da-cap5m): tabs today, and they say so.
+	test('Keys and Aliases are tabs that say «not yet»', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await openIt(page);
+			assert.deepEqual(
+				(await page.locator(`${MODAL} [role="tab"]`).allInnerTexts()).map((t) => t.trim().toLowerCase()),
+				['basics', 'states', 'keys', 'aliases']
+			);
+			for (const tab of ['keys', 'aliases']) {
+				await page.locator(`${MODAL} [data-tab="${tab}"]`).click();
+				assert.equal((await page.locator(`${MODAL} .later`).innerText()).trim(), 'not yet');
+			}
+			await page.keyboard.press('Escape');
+			await page.locator(MODAL).waitFor({ state: 'detached' });
 		});
 	});
 

@@ -257,7 +257,7 @@ describe('in the app', () => {
 			assert.deepEqual(await drawn(), ['BUTTON:tea', 'BUTTON:walk']);
 
 			await page.locator('.bar button.track').click();
-			await page.locator('dialog.track [data-ignored="run"]').click();
+			await page.locator('dialog.spec [data-ignored="run"]').click();
 			await page.locator('.bar button[data-field="run"]').waitFor();
 			assert.equal((await app.echoes()).at(-1), 'track run');
 			assert.deepEqual(await drawn(), ['BUTTON:run', 'BUTTON:tea', 'BUTTON:walk']);

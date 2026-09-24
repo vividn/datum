@@ -351,11 +351,11 @@ describe('on a phone-sized screen', () => {
 	test('the modal Track + opens is on screen', async () => {
 		await phone.solo(async ({ page }) => {
 			await page.locator('.bar button.track').click();
-			await assertOnScreen(page, 'dialog.track', 'the Track modal');
+			await assertOnScreen(page, 'dialog.spec', 'the Track modal');
 			// Shut again: a modal left open makes the page under it inert
 			// for the shared app's next test.
 			await page.keyboard.press('Escape');
-			await page.locator('dialog.track').waitFor({ state: 'detached' });
+			await page.locator('dialog.spec').waitFor({ state: 'detached' });
 		});
 	});
 
@@ -407,11 +407,11 @@ describe('on a phone-sized screen', () => {
 			const { page } = app;
 			await track(app, FIELDS);
 			await page.locator('.bar button.track').click();
-			await assertOnScreen(page, 'dialog.track', 'the Track modal');
+			await assertOnScreen(page, 'dialog.spec', 'the Track modal');
 			// Shut again: a modal left open makes the page under it inert
 			// for the shared app's next test.
 			await page.keyboard.press('Escape');
-			await page.locator('dialog.track').waitFor({ state: 'detached' });
+			await page.locator('dialog.spec').waitFor({ state: 'detached' });
 		});
 	});
 });
