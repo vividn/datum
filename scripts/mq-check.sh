@@ -40,7 +40,7 @@ fi
 if [ -n "$web" ]; then
   if ! command -v pnpm >/dev/null 2>&1; then
     node_bin="$(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | tail -1 || true)"
-    export PATH="${node_bin:+$node_bin:}$HOME/.local/share/pnpm:$PATH"
+    export PATH="${node_bin:+$node_bin:}$HOME/.local/share/pnpm/bin:$HOME/.local/share/pnpm:$PATH"
   fi
   echo "mq-check: web/ changed — running the web check and suite"
   # The suite otherwise reads the box's load average and yields to it, which is
