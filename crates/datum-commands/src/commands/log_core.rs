@@ -582,9 +582,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
     if field_spec::contains_template(&entry.field) {
         let template = entry.field.clone();
-        let uid = entry.short_uid();
-        let ctx = InterpolationContext::from_entry(&entry, &uid);
-        entry.field = field_spec::interpolate(&template, &ctx, &delim);
+        let ctx = InterpolationContext::from_entry(&entry);
+        entry.field = field_spec::interpolate_field(&template, &ctx, &delim)?;
         entry.field_structure = Some(template);
     }
 
@@ -642,8 +641,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         "%create_time%".to_string()
     };
     {
-        let uid = entry.short_uid();
-        let ctx = InterpolationContext::from_entry(&entry, &uid);
+        let ctx = InterpolationContext::from_entry(&entry);
         let body = field_spec::interpolate(&id_structure, &ctx, &delim);
         entry.slug = datum_core::ids::Slug(format!("{}:{}", entry.field, body));
         entry.id_structure = Some(id_structure);

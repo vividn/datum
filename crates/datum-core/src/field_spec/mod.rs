@@ -42,7 +42,7 @@ pub use alias::{
     SpecAliasCollision, SpecAliasIndex, SpecRegistry,
 };
 pub use interpolation::{
-    contains_template, interpolate, InterpolationContext, DEFAULT_ID_DELIMITER,
+    contains_template, interpolate, interpolate_field, InterpolationContext, DEFAULT_ID_DELIMITER,
 };
 pub use position::{detect_anchor_cycles, format_cycle, resolve_positions, PositionResolution};
 pub use presentation::{GlyphBy, PresentationSpec, Render, ResolvedPosition, DEFAULT_FIELD_HEIGHT};

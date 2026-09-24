@@ -431,17 +431,15 @@ impl Db {
     ) -> Result<(Entry, Option<Slug>)> {
         use crate::field_spec::{self, InterpolationContext};
         if let Some(tmpl) = updated.field_structure.clone() {
-            let uid = updated.short_uid();
-            let ctx = InterpolationContext::from_entry(&updated, &uid);
-            updated.field = field_spec::interpolate(&tmpl, &ctx, slug_delimiter);
+            let ctx = InterpolationContext::from_entry(&updated);
+            updated.field = field_spec::interpolate_field(&tmpl, &ctx, slug_delimiter)?;
         }
         // da-ivld: slug = `<field>:<body>` where body is
         // interpolate(id_structure). The `<field>:` prefix is implicit
         // and never lives in id_structure; see cmd.rs's slug-precedence
         // block for write-time derivation.
         let new_slug = if let Some(tmpl) = updated.id_structure.clone() {
-            let uid = updated.short_uid();
-            let ctx = InterpolationContext::from_entry(&updated, &uid);
+            let ctx = InterpolationContext::from_entry(&updated);
             let body = field_spec::interpolate(&tmpl, &ctx, slug_delimiter);
             Some(Slug(format!("{}:{}", updated.field, body)))
         } else {

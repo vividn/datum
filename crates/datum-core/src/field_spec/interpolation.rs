@@ -1,19 +1,27 @@
 //! Template interpolation for entry slugs / id templates.
 //!
-//! Templates use `%key%` placeholders. `%field%`, `%uid%`, and the column-
-//! bound state/dur/following_state/occur_time keys come from the
+//! Templates use `%key%` placeholders. `%field%`, `%hid%`, `%uid%`, and the
+//! column-bound state/dur/following_state/occur_time keys come from the
 //! [`InterpolationContext`]; everything else falls through to a dot-path
 //! lookup against `extra_data`. `\%` is a literal `%`.
 //!
-//! A leading `?` (`%?key%`) marks the placeholder as optional. Missing keys
-//! always render as the empty string and the surrounding delimiters collapse,
-//! so `%?key%` and `%key%` produce identical output today; the `?` documents
-//! intent and reserves a hook for a future strict-required mode.
+//! `%hid%` is the entry's full hid, `%uid%` its first [`SHORT_HID_LEN`]
+//! characters, and `%hid:N%` its first N (N ≥ [`SHORT_HID_LEN`]) — five
+//! characters collide often enough at a few thousand entries that a field
+//! keyed on them silently merges two (da-0ibow).
+//!
+//! A leading `?` (`%?key%`) marks the placeholder as optional. In an id
+//! template a missing key renders as the empty string and the surrounding
+//! delimiters collapse, whether or not it carries the `?`. A FIELD template
+//! ([`interpolate_field`]) refuses a plain `%key%` that expands to nothing,
+//! since that lands the entry in another field; the `?` is how a field
+//! template says the key may be absent.
 
 use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
 
-use crate::entry::Entry;
+use crate::entry::{Entry, SHORT_HID_LEN};
+use crate::error::{DatumError, Result};
 use crate::time::DatumTime;
 
 /// Default delimiter used when `--id-delimiter` is not provided.
@@ -28,7 +36,8 @@ use datum_parse::entry_id;
 pub struct InterpolationContext<'a> {
     pub field: &'a str,
     pub extra_data: Option<&'a JsonValue>,
-    pub uid: &'a str,
+    /// The entry's full hid. `%uid%` and `%hid:N%` are prefixes of it.
+    pub hid: &'a str,
     /// da-5ns.4: column-bound state. `%state%` resolves from this first,
     /// falling back to `extra_data["state"]` for legacy entries that never
     /// migrated to the column form.
@@ -64,14 +73,12 @@ pub struct InterpolationContext<'a> {
 }
 
 impl<'a> InterpolationContext<'a> {
-    /// Build an [`InterpolationContext`] and the associated short-uid buffer
-    /// from an [`Entry`]. The uid buffer is returned separately so the
-    /// borrow-checker can keep the context tied to it.
-    pub fn from_entry(entry: &'a Entry, uid_buf: &'a str) -> Self {
+    /// Build an [`InterpolationContext`] from an [`Entry`].
+    pub fn from_entry(entry: &'a Entry) -> Self {
         Self {
             field: &entry.field,
             extra_data: entry.data.as_ref(),
-            uid: uid_buf,
+            hid: entry.hid.as_str(),
             state: entry.state.as_ref(),
             dur: entry.dur.as_ref().map(crate::dur::Dur::to_storage_string),
             following_state: entry.following_state.as_ref(),
@@ -123,6 +130,35 @@ pub fn interpolate(template: &str, ctx: &InterpolationContext, delimiter: &str) 
     collapse_delimiters(&out, delimiter)
 }
 
+/// [`interpolate`] for a FIELD-name template (da-0ibow). A plain `%key%`
+/// that expands to nothing — an unknown name, a typo, an absent data key —
+/// would otherwise drop out of the name and land the entry in a different
+/// field, so it refuses, naming the key. `%?key%` may still be empty.
+pub fn interpolate_field(
+    template: &str,
+    ctx: &InterpolationContext,
+    delimiter: &str,
+) -> Result<String> {
+    let parts = split_raw_and_fields(template);
+    let empty: Vec<&str> = parts
+        .iter()
+        .skip(1)
+        .step_by(2)
+        .filter(|k| !k.is_empty() && !k.starts_with('?') && lookup_field(k, ctx).is_empty())
+        .map(String::as_str)
+        .collect();
+    if !empty.is_empty() {
+        let names = empty.iter().map(|k| format!("%{k}%")).collect::<Vec<_>>();
+        return Err(DatumError::Other(format!(
+            "field template '{template}': {} expands to nothing, which would \
+             put the entry in another field. Give the key a value, or mark it \
+             optional with %?key%.",
+            names.join(", ")
+        )));
+    }
+    Ok(interpolate(template, ctx, delimiter))
+}
+
 fn split_raw_and_fields(template: &str) -> Vec<String> {
     // Replace unescaped `%` with NUL then split. `\%` → literal `%`.
     let mut buf = String::with_capacity(template.len());
@@ -158,7 +194,8 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
     match key {
         "" => String::new(),
         "field" => ctx.field.to_string(),
-        "uid" => ctx.uid.to_string(),
+        "hid" => ctx.hid.to_string(),
+        "uid" => ctx.hid.chars().take(SHORT_HID_LEN).collect(),
         "state" => {
             // da-5ns.4: column-bound state wins. The column is canonical
             // post-pivot; the data-blob path is kept as a fallback for
@@ -188,7 +225,11 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
         // the `c<time>` the tail/dayview surfaces show.
         "create_time" => prefix_when_present(ctx.create_time.map(entry_id::render_stamp), 'c'),
         "modify_time" => prefix_when_present(ctx.modify_time.map(entry_id::render_stamp), 'm'),
-        _ => lookup_extra_data(ctx.extra_data, key).unwrap_or_default(),
+        _ => match key.strip_prefix("hid:").map(str::parse::<usize>) {
+            Some(Ok(n)) if n >= SHORT_HID_LEN => ctx.hid.chars().take(n).collect(),
+            Some(_) => String::new(),
+            None => lookup_extra_data(ctx.extra_data, key).unwrap_or_default(),
+        },
     }
 }
 
@@ -270,12 +311,12 @@ mod tests {
     fn occur_ctx<'a>(
         field: &'a str,
         extra: Option<&'a JsonValue>,
-        uid: &'a str,
+        hid: &'a str,
     ) -> InterpolationContext<'a> {
         InterpolationContext {
             field,
             extra_data: extra,
-            uid,
+            hid,
             state: None,
             dur: None,
             following_state: None,
@@ -293,6 +334,36 @@ mod tests {
         assert_eq!(got, "coffee:abc12");
     }
 
+    /// da-0ibow: `%hid%` whole, `%uid%` the first five, `%hid:N%` the first
+    /// N from five up; below five it expands to nothing.
+    #[test]
+    fn interpolate_hid_uid_and_hid_prefix() {
+        let ctx = occur_ctx("f", None, "a1b2c3d4e5f6");
+        let got = interpolate("%hid%:%uid%:%hid:8%:%hid:99%", &ctx, DEFAULT_ID_DELIMITER);
+        assert_eq!(got, "a1b2c3d4e5f6:a1b2c:a1b2c3d4:a1b2c3d4e5f6");
+        assert_eq!(interpolate("x__%hid:3%", &ctx, "__"), "x");
+    }
+
+    /// da-0ibow: a field template refuses a plain placeholder that expands
+    /// to nothing, naming it; `%?key%` and a present key pass.
+    #[test]
+    fn interpolate_field_refuses_empty_expansion() {
+        let extra = serde_json::json!({"lang": "pt"});
+        let ctx = occur_ctx("f", Some(&extra), "a1b2c3d4e5f6");
+        let err = interpolate_field("x__%nope%__%hid:3%", &ctx, "__")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("%nope%") && err.contains("%hid:3%"), "{err}");
+        assert_eq!(
+            interpolate_field("w__%lang%__%?nope%", &ctx, "__").unwrap(),
+            "w__pt"
+        );
+        assert_eq!(
+            interpolate_field("w__%lang%", &ctx, "__").unwrap(),
+            interpolate("w__%lang%", &ctx, "__")
+        );
+    }
+
     #[test]
     fn interpolate_state_from_extra_data() {
         // Legacy fallback: %state% pulls from extra_data.state when the
@@ -307,7 +378,7 @@ mod tests {
         let switch_ctx = InterpolationContext {
             field: "mood",
             extra_data: None,
-            uid: "zz",
+            hid: "zz",
             state: Some(&state),
             dur: None,
             following_state: None,
@@ -347,7 +418,7 @@ mod tests {
         let ctx = InterpolationContext {
             field: "word",
             extra_data: Some(&extra),
-            uid: "xx",
+            hid: "xx",
             state: None,
             dur: None,
             following_state: None,
@@ -383,7 +454,7 @@ mod tests {
         InterpolationContext {
             field: "f",
             extra_data: None,
-            uid: "u",
+            hid: "u",
             state: None,
             dur: None,
             following_state: None,
@@ -417,7 +488,7 @@ mod tests {
         let ctx = InterpolationContext {
             field: "f",
             extra_data: None,
-            uid: "u",
+            hid: "u",
             state: None,
             dur: None,
             following_state: None,
@@ -470,7 +541,7 @@ mod tests {
         let ctx = InterpolationContext {
             field: "f",
             extra_data: Some(&extra),
-            uid: "u",
+            hid: "u",
             state: None,
             dur: None,
             following_state: None,
@@ -593,7 +664,7 @@ mod tests {
         let ctx = InterpolationContext {
             field: "task",
             extra_data: None,
-            uid: "z",
+            hid: "z",
             state: None,
             dur: None,
             following_state: None,

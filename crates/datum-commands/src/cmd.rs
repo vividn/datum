@@ -201,8 +201,7 @@ fn normalize_shared_occur_time(
         // da-ivld: every entry now carries an id_structure; rebuild the
         // slug as `<field>:<body>` where body = interpolate(id_structure).
         if let Some(tmpl) = entry.id_structure.clone() {
-            let uid = entry.short_uid();
-            let ctx = InterpolationContext::from_entry(entry, &uid);
+            let ctx = InterpolationContext::from_entry(entry);
             let body = field_spec::interpolate(&tmpl, &ctx, ":");
             entry.slug = datum_core::ids::Slug(format!("{}:{}", entry.field, body));
         } else {
@@ -819,6 +818,84 @@ mod tests {
         assert_eq!(live[0].field, "word__es");
         assert_eq!(live[0].field_structure.as_deref(), Some("word__%srcLang%"));
         assert_eq!(live[0].slug, "word__es:noun__fundo");
+    }
+
+    /// da-0ibow: `%hid%` is the whole hid and `%hid:N%` its first N.
+    #[test]
+    fn field_template_hid_and_hid_prefix() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let doc = || Some("doc".to_string());
+        let rest = || vec!["a=1".to_string()];
+
+        log_entry(Action::Add, log_args("x__%hid%", rest(), doc()), &db).unwrap();
+        log_entry(Action::Add, log_args("y__%hid:8%", rest(), doc()), &db).unwrap();
+
+        let all = db.list_including_deleted().unwrap();
+        let x = all.iter().find(|e| e.field.starts_with("x__")).unwrap();
+        assert_eq!(x.field, format!("x__{}", x.hid.as_str()));
+        assert_eq!(x.hid.as_str().len(), 12);
+        let y = all.iter().find(|e| e.field.starts_with("y__")).unwrap();
+        assert_eq!(y.field, format!("y__{}", &y.hid.as_str()[..8]));
+    }
+
+    /// da-0ibow: a field template whose placeholder expands to nothing
+    /// refuses, names the key, and writes nothing — it used to drop out
+    /// of the name and land the entry in field `x`.
+    #[test]
+    fn field_template_empty_expansion_refuses() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let doc = || Some("doc".to_string());
+
+        for (field, key) in [("x__%nope%", "%nope%"), ("w__%lang%", "%lang%")] {
+            let err = log_entry(Action::Add, log_args(field, vec!["a=1".into()], doc()), &db)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains(key), "{err}");
+        }
+        assert!(db.list_including_deleted().unwrap().is_empty());
+
+        // The key present, or marked optional, still lands.
+        let args = log_args("w__%lang%", vec!["lang=pt".into()], doc());
+        log_entry(Action::Add, args, &db).unwrap();
+        let args = log_args("v__%?lang%", vec!["a=1".into()], doc());
+        log_entry(Action::Add, args, &db).unwrap();
+        let mut fields: Vec<_> = db
+            .list_including_deleted()
+            .unwrap()
+            .into_iter()
+            .map(|e| e.field)
+            .collect();
+        fields.sort();
+        assert_eq!(fields, ["v", "w__pt"]);
+    }
+
+    /// da-0ibow: an update that drops a field template's key refuses too —
+    /// the re-interpolation would otherwise move the entry to another field.
+    #[test]
+    fn field_template_update_dropping_key_refuses() {
+        use crate::commands::update_core::{update_with_strategy, UpdateRequest, UpdateStrategy};
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let args = log_args("w__%lang%", vec!["lang=pt".into()], Some("doc".into()));
+        log_entry(Action::Add, args, &db).unwrap();
+
+        let err = update_with_strategy(
+            UpdateRequest {
+                id_or_slug: "w__pt:doc",
+                payload_value: None,
+                payload_extra: Some(serde_json::json!({"lang": null})),
+                strategy: UpdateStrategy::Replace,
+                slug_delimiter: ":",
+            },
+            &db,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("%lang%"), "{err}");
+        let live = datum_core::test_util::logged_entries(&db, "w__pt");
+        assert_eq!(live.len(), 1);
+        assert_eq!(live[0].data, Some(serde_json::json!({"lang": "pt"})));
     }
 
     #[test]

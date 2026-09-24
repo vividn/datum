@@ -33,7 +33,6 @@
 //! the honest answer until the web side can hold a timeless entry.
 
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-use datum_core::entry::SHORT_HID_LEN;
 use datum_core::field_spec::{
     alias_effect, interpolate, Alias, AliasEffect, FieldSpec, InterpolationContext, SpecAliasIndex,
     DEFAULT_ID_DELIMITER,
@@ -408,7 +407,7 @@ fn build_entry(
         &InterpolationContext {
             field: &field,
             extra_data: data.as_ref(),
-            uid: &hid.chars().take(SHORT_HID_LEN).collect::<String>(),
+            hid: &hid,
             state: state.as_ref(),
             dur: dur_str.clone(),
             following_state: reserved.following_state.as_ref(),

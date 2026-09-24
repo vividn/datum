@@ -561,8 +561,7 @@ fn collect_slug_drift(db: &Db, delim: &str) -> Result<SlugReport> {
         if e.id_structure.is_none() && e.field_structure.is_none() {
             continue;
         }
-        let uid = e.short_uid();
-        let ctx = InterpolationContext::from_entry(e, &uid);
+        let ctx = InterpolationContext::from_entry(e);
 
         let expected_field = match &e.field_structure {
             Some(tmpl) => field_spec::interpolate(tmpl, &ctx, delim),
@@ -2637,8 +2636,7 @@ mod tests {
         );
         entry.id_structure = Some("%occur_time%".to_string());
         // Mirror cmd.rs: slug body is the interpolated id_structure.
-        let uid = entry.short_uid();
-        let ctx = InterpolationContext::from_entry(&entry, &uid);
+        let ctx = InterpolationContext::from_entry(&entry);
         let body = field_spec::interpolate("%occur_time%", &ctx, ":");
         entry.slug = Slug(format!("mood:{body}"));
         db.insert_entry(&entry).unwrap();
