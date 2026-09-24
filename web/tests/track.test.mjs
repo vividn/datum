@@ -19,7 +19,9 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
-import { editedSpec, specArgv, stateRows, trackArgv, trackLabel, VERBS, verbAsked } from '../src/lib/track.ts';
+import {
+	editedSpec, GLYPHS, specArgv, specKeys, stateRows, trackArgv, trackLabel, VERBS, verbAsked, wide
+} from '../src/lib/track.ts';
 import { stripAnsi } from './support/tail.mjs';
 
 const MODAL = 'dialog.spec';
@@ -62,7 +64,7 @@ describe('the argv it composes', () => {
 		assert.deepEqual(trackArgv('sleep', 'start'), ['track', 'sleep', '--verb', 'start']);
 	});
 
-	const row = (name, color = '', description = '') => ({ name, color, description });
+	const row = (name, color = '', description = '', glyph = '') => ({ name, color, description, glyph });
 
 	test('a switch carries its states, one flag each, a painted one twice; a colour is optional', () => {
 		assert.deepEqual(trackArgv('mood', 'switch', [row('good', '#00ff00'), row(' bad '), row('  ')]), [
@@ -104,6 +106,61 @@ describe('the argv it composes', () => {
 		const argv = specArgv(edited);
 		assert.deepEqual(argv.slice(0, 4), ['spec', 'set', 'mood', '--from-json']);
 		assert.deepEqual(JSON.parse(argv[4]), edited);
+	});
+
+	// da-ogyxa: a state's glyph goes with the state when the state leaves the
+	// list, and ONLY then — `state_glyphs` may name a state the list never
+	// did, and a caller whose rows carry no glyph must not wipe them.
+	test('a removed state takes its glyph with it; a kept or renamed one keeps it', () => {
+		const spec = {
+			field: 'mood', verb: 'switch', color: null, unit: null, description: null,
+			allowed_states: ['up', 'down', 'flat'], state_colors: {},
+			state_glyphs: { up: '▲', down: '▼', flat: '■', logged: '○' }
+		};
+		assert.deepEqual(stateRows(spec).map((r) => r.glyph), ['▲', '▼', '■']);
+		const base = { verb: 'switch', color: '', unit: '', description: '' };
+		// `down` removed, `flat` renamed to `level` (the row carries its glyph), `up` cleared.
+		const [up, , flat] = stateRows(spec);
+		const edited = editedSpec(spec, { ...base, states: [{ ...up, glyph: '' }, { ...flat, name: 'level' }] });
+		assert.deepEqual(edited.state_glyphs, { level: '■', logged: '○' });
+		// Rows with no glyph key — the rows that re-add colours — keep every glyph of a kept state.
+		const bare = editedSpec(spec, { ...base, states: [{ name: 'up', color: '', description: '' }] });
+		assert.deepEqual(bare.state_glyphs, { up: '▲', logged: '○' });
+		// None left: the key is left out, as `spec show` leaves it out.
+		assert.equal('state_glyphs' in editedSpec({ ...spec, state_glyphs: { down: '▼' } }, { ...base, states: [{ ...up, glyph: '' }] }), false);
+	});
+
+	test('one glyph, or a glyph by a key with the field\'s as the default', () => {
+		const spec = {
+			field: 'tea', verb: 'occur', color: null, unit: null, description: null,
+			allowed_states: null, state_colors: {}, glyph: '●', glyph_by: { key: 'size', map: { big: '☕' } },
+			subfields: { size: {} }, data_keys: ['cup=mug', 'size']
+		};
+		const base = { verb: 'occur', color: '', unit: '', description: '', states: [] };
+		assert.deepEqual(specKeys(spec), ['size', 'cup']);
+		// Not edited: carried as it was.
+		assert.deepEqual(editedSpec(spec, base).glyph_by, spec.glyph_by);
+		assert.equal(editedSpec(spec, base).glyph, '●');
+		// «one glyph»: no key; an empty glyph draws the circle and is left out.
+		const one = editedSpec(spec, { ...base, glyph: '', glyph_by: null });
+		assert.equal('glyph' in one, false);
+		assert.equal('glyph_by' in one, false);
+		// A map row with no value or no glyph says nothing, and is dropped.
+		const by = editedSpec(spec, { ...base, glyph: '○', glyph_by: { key: ' cup ', map: { ' mug ': '🍵', '': '▲', tiny: '' } } });
+		assert.deepEqual(by.glyph_by, { key: 'cup', map: { mug: '🍵' } });
+		assert.equal(by.glyph, '○');
+		assert.equal('glyph_by' in editedSpec(spec, { ...base, glyph_by: { key: ' ', map: {} } }), false);
+	});
+
+	// The band gives each slice of time ONE column, so a glyph two wide draws
+	// as `●` there (`push_cell_point`, by unicode-width 0.2.2). These are that
+	// crate's answers, measured, for the whole grid and a few probes past it.
+	test('the two-column flag is unicode-width\'s, over the whole grid', () => {
+		const measured = [...'☔⚡🌙🌈⛅⭐☕🍵🍺🍷🥛🍎🍞🍕🍫🍩🍪🥗'];
+		const grid = GLYPHS.flatMap((g) => g.glyphs);
+		assert.deepEqual(grid.filter(wide), measured);
+		assert.deepEqual([...'日한Ａｱ¢é▞'].filter(wide), [...'日한Ａ']);
+		assert.equal(wide(''), false);
 	});
 
 	test('the refusal is read for the field it names, and nothing else is', () => {
@@ -444,6 +501,129 @@ describe('in the app', () => {
 			await page.locator(MODAL).waitFor();
 			assert.equal(await page.locator('.bar form.add, .bar .panel.add').count(), 0);
 			assert.equal(await page.locator(`${MODAL} select`).count(), 0, 'the `<select>` came along');
+		});
+	});
+
+	// da-ogyxa: the glyph picker. Each test reads what it wrote back through
+	// the CLI, and what the CLI then DRAWS: the dayview's SVG and `now`'s band.
+
+	/** The glyph tile labelled `label`, in the open modal. */
+	const tile = (page, label) => page.locator(`${MODAL} .tile[aria-expanded][aria-label^="${label}:"]`);
+	/** The row `now` draws for `field` in its band. */
+	const band = async (app, field) =>
+		stripAnsi((await app.run(['now'])).stdout).split('\n').find((l) => l.startsWith(`${field} `)) ?? '';
+	/** The glyphs the dayview draws for its dots. */
+	const drawn = async (app) =>
+		[...(await app.run(['dayview'])).stdout.matchAll(/<text class="point-fg"[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+
+	test('a field glyph is picked from the grid, saved in one `spec set`, and drawn by `now` and the dayview', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'tea', '--verb', 'occur']);
+			const before = (await app.echoes()).length;
+			const saved = page.evaluate(() => window.datum.spec('tea'));
+			await page.locator(MODAL).waitFor();
+			const field = tile(page, "the field's glyph");
+			assert.equal(await field.getAttribute('data-glyph'), '', 'no glyph yet: the circle');
+			await field.click();
+			// Two columns wide is said where it is picked: ☕ is marked, ▲ is not.
+			const picker = page.locator(`${MODAL} .picker`);
+			assert.equal(await picker.locator('[data-glyph="☕"]').getAttribute('data-wide'), 'true');
+			assert.match(await picker.locator('[data-glyph="☕"]').getAttribute('title'), /the band draws it ●/);
+			assert.equal(await picker.locator('[data-glyph="▲"]').getAttribute('data-wide'), null);
+			assert.match(await picker.locator('.legend').innerText(), /two columns wide: .*draws it as ●/);
+			await picker.locator('[data-glyph="▲"]').click();
+			assert.equal(await picker.count(), 0, 'a pick folds the set away');
+			assert.equal(await field.getAttribute('data-glyph'), '▲');
+			await page.locator(`${MODAL} button.commit`).click();
+			assert.equal((await saved).code, 0);
+			await app.idle();
+			const echoes = await app.echoes();
+			assert.equal(echoes.length, before + 1, `one command: ${echoes.slice(before).join(' | ')}`);
+			assert.equal(JSON.parse((await app.run(['spec', 'show', 'tea'])).stdout).glyph, '▲');
+
+			await app.run(['occur', 'tea']);
+			assert.match(await band(app, 'tea'), /▲/);
+			assert.deepEqual(await drawn(app), ['▲']);
+		});
+	});
+
+	test('a state glyph is typed beside its swatch and drawn on a `switch -m` dot', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'mood', '--verb', 'switch', '--state', 'up', '--state', 'down']);
+			const saved = page.evaluate(() => window.datum.spec('mood'));
+			await page.locator(MODAL).waitFor();
+			await page.locator(`${MODAL} [data-tab="states"]`).click();
+			await tile(page, 'the glyph of up').click();
+			// Any one character: the first of whatever is typed.
+			await page.locator(`${MODAL} .picker input.any`).fill('✺✺');
+			assert.equal(await tile(page, 'the glyph of up').getAttribute('data-glyph'), '✺');
+			await page.locator(`${MODAL} button.commit`).click();
+			assert.equal((await saved).code, 0);
+			assert.deepEqual(JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout).state_glyphs, { up: '✺' });
+
+			await app.run(['switch', 'mood', 'up', '-m']);
+			assert.match(await band(app, 'mood'), /✺/);
+			assert.deepEqual(await drawn(app), ['✺']);
+		});
+	});
+
+	test('removing a state leaves no glyph for it; the states kept keep theirs', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'mood', '--verb', 'switch', '--state', 'up', '--state', 'down', '--state', 'flat']);
+			await app.run(['spec', 'set', 'mood', '--state-glyph', 'up=▲', '--state-glyph', 'down=▼', '--state-glyph', 'flat=■']);
+			const saved = page.evaluate(() => window.datum.spec('mood'));
+			await page.locator(MODAL).waitFor();
+			await page.locator(`${MODAL} [data-tab="states"]`).click();
+			await page.locator(`${MODAL} button.remove[aria-label="remove down"]`).click();
+			// A rename is the same row under a new name, and its glyph comes along.
+			await page.locator(`${MODAL} .state input.name`).nth(1).fill('level');
+			await page.locator(`${MODAL} button.commit`).click();
+			assert.equal((await saved).code, 0);
+			const shown = JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout);
+			assert.deepEqual(shown.allowed_states, ['up', 'level']);
+			assert.deepEqual(shown.state_glyphs, { up: '▲', level: '■' });
+		});
+	});
+
+	test('a glyph by a key: a value → glyph table, the field\'s glyph for any other value', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'tea', '--verb', 'occur']);
+			const saved = page.evaluate(() => window.datum.spec('tea'));
+			await page.locator(MODAL).waitFor();
+			await page.locator(`${MODAL} .glyph-by [role="radio"]`, { hasText: 'by a key' }).click();
+			await page.locator(`${MODAL} input.glyph-key`).fill('size');
+			await page.locator(`${MODAL} .glyphs + button.add`).click();
+			await page.locator(`${MODAL} .glyphs input.value`).fill('large');
+			await tile(page, 'the glyph for large').click();
+			await page.locator(`${MODAL} .picker [data-glyph="☕"]`).click();
+			assert.equal(await tile(page, 'the glyph for large').getAttribute('data-wide'), 'true', 'the tile keeps the mark');
+			assert.equal((await page.locator(`${MODAL} .glyphs .default .value`).innerText()).trim(), '(other)');
+			assert.equal(await tile(page, "the field's glyph").getAttribute('data-glyph'), '', 'the default is the circle until picked');
+			await tile(page, "the field's glyph").click();
+			await page.locator(`${MODAL} .picker [data-glyph="○"]`).click();
+			await page.locator(`${MODAL} button.commit`).click();
+			assert.equal((await saved).code, 0);
+			const shown = (await app.run(['spec', 'show', 'tea'])).stdout;
+			assert.deepEqual(JSON.parse(shown).glyph_by, { key: 'size', map: { large: '☕' } });
+			assert.equal(JSON.parse(shown).glyph, '○');
+
+			await app.run(['occur', 'tea', 'size=large', '-t', '-20']);
+			await app.run(['occur', 'tea', 'size=small']);
+			assert.deepEqual(await drawn(app), ['☕', '○']);
+			// Two columns wide, so the band draws the mapped ☕ as ●.
+			const row = await band(app, 'tea');
+			assert.match(row, /●.*○/);
+			assert.doesNotMatch(row, /☕/);
+
+			// Opened and saved untouched, the glyphs read back byte for byte.
+			const again = page.evaluate(() => window.datum.spec('tea'));
+			await page.locator(`${MODAL} button.commit`).click();
+			assert.equal((await again).code, 0);
+			assert.equal((await app.run(['spec', 'show', 'tea'])).stdout, shown);
 		});
 	});
 

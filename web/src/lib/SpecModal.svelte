@@ -11,6 +11,11 @@
 	is about to write will print `TRACK●` in every action column there is,
 	so what a person presses here is the shape they will meet again.
 
+	A field with a spec also picks the GLYPH its dots draw (da-ogyxa):
+	one for the field, or one by a data key's value with the field's as
+	the default, and one per state beside the state's colour. `track`
+	carries none, so declaring asks for none.
+
 	Segmented: Basics · States · Keys · Aliases. Track is this modal opened
 	on Basics, and that is all it needs — name, pictogram, Done, the same
 	taps it always took. Keys and Aliases are their own beads (da-cap5m).
@@ -31,10 +36,12 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { fieldNameHint, suggestFieldName } from './fieldName.js';
+	import Glyph from './Glyph.svelte';
 	import Swatch from './Swatch.svelte';
 	import {
 		editedSpec,
 		specArgv,
+		specKeys,
 		stateRows,
 		trackArgv,
 		VERBS,
@@ -61,6 +68,11 @@
 	let unit = spec?.unit ?? '';
 	let description = spec?.description ?? '';
 	let states: StateRow[] = spec ? stateRows(spec) : [];
+	let glyph = spec?.glyph ?? '';
+	let byKey = !!spec?.glyph_by;
+	let glyphKey = spec?.glyph_by?.key ?? '';
+	let glyphMap = Object.entries(spec?.glyph_by?.map ?? {}).map(([value, glyph]) => ({ value, glyph }));
+	const keys = spec ? specKeys(spec) : [];
 	if (spec) verb = spec.verb;
 	/** The argv to run, set by whatever was pressed; null closes and runs nothing. */
 	let chosen: string[] | null = null;
@@ -77,8 +89,11 @@
 	// an expression mentions, so a preview built inside a function would sit
 	// at the first argv while the form said otherwise — and a preview that
 	// disagrees with the command teaches a lie.
+	$: glyph_by = byKey
+		? { key: glyphKey, map: Object.fromEntries(glyphMap.map((r) => [r.value, r.glyph])) }
+		: null;
 	$: argv = spec
-		? specArgv(editedSpec(spec, { verb: verb ?? spec.verb, color, unit, description, states }))
+		? specArgv(editedSpec(spec, { verb: verb ?? spec.verb, color, unit, description, states, glyph, glyph_by }))
 		: trackArgv(field.trim() || '<field>', verb ?? 'occur', states, color);
 	// A new field's states are a switch's: `track` carries them for no other verb.
 	$: statesOpen = spec !== null || verb === 'switch';
@@ -171,12 +186,71 @@
 					<span class="label">description</span>
 					<input class="description" bind:value={description} />
 				</label>
+				<div class="row">
+					<span class="label">glyph</span>
+					<div class="glyph-by" role="radiogroup" aria-label="the field's glyph">
+						<button type="button" role="radio" aria-checked={!byKey} on:click={() => (byKey = false)}
+							>one glyph</button
+						>
+						<button type="button" role="radio" aria-checked={byKey} on:click={() => (byKey = true)}
+							>by a key</button
+						>
+					</div>
+				</div>
+				{#if byKey}
+					<label class="row">
+						<span class="label">key</span>
+						<input class="glyph-key" list="spec-keys" bind:value={glyphKey} spellcheck="false" autocapitalize="none" />
+						<datalist id="spec-keys">
+							{#each keys as key (key)}<option value={key}></option>{/each}
+						</datalist>
+					</label>
+				{/if}
+				<ul class="glyphs">
+					{#if byKey}
+						{#each glyphMap as row, i (row)}
+							<li>
+								<input
+									class="value"
+									bind:value={row.value}
+									placeholder="value"
+									aria-label="a value of {glyphKey || 'the key'}"
+									spellcheck="false"
+									autocapitalize="none"
+								/>
+								<Glyph bind:value={row.glyph} {color} label="the glyph for {row.value || 'this value'}" />
+								<button
+									type="button"
+									class="remove"
+									aria-label="remove {row.value}"
+									on:click={() => (glyphMap = glyphMap.filter((_, j) => j !== i))}>✕</button
+								>
+							</li>
+						{/each}
+					{/if}
+					<li class="default">
+						{#if byKey}<span class="value">(other)</span>{/if}
+						<Glyph bind:value={glyph} {color} label="the field's glyph" />
+					</li>
+				</ul>
+				{#if byKey}
+					<button type="button" class="add" on:click={() => (glyphMap = [...glyphMap, { value: '', glyph: '' }])}
+						>+ value</button
+					>
+				{/if}
 			{/if}
 		{:else if tab === 'states'}
-			<ul class="states">
+			<ul class="states" class:glyphed={spec}>
 				{#each states as state, i (state)}
 					<li class="state">
 						<Swatch bind:value={state.color} label="the colour of {state.name || 'this state'}" />
+						{#if spec}
+							<Glyph
+								bind:value={state.glyph}
+								color={state.color || color}
+								label="the glyph of {state.name || 'this state'}"
+							/>
+						{/if}
 						<input
 							class="name"
 							bind:value={state.name}
@@ -205,7 +279,7 @@
 			<button
 				type="button"
 				class="add"
-				on:click={() => (states = [...states, { name: '', color: '', description: '' }])}
+				on:click={() => (states = [...states, { name: '', color: '', description: '', glyph: '' }])}
 				>+ state</button
 			>
 		{:else}
@@ -425,8 +499,66 @@
 		gap: 0.4rem;
 	}
 
+	.states.glyphed .state {
+		grid-template-columns: auto auto 1fr auto;
+	}
+
+	/* After a glyph's set, which opens under the row it was tapped in. */
 	.state .description {
 		grid-column: 1 / -1;
+		order: 2;
+	}
+
+	/* The glyph, or the value → glyph table: indented under the label. */
+	.glyphs {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		margin: 0;
+		padding: 0 0 0 7rem;
+		list-style: none;
+	}
+
+	.glyphs li {
+		display: grid;
+		grid-template-columns: 1fr auto auto;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
+	.glyphs .value {
+		min-inline-size: 0;
+	}
+
+	.glyphs .default .value {
+		color: var(--muted);
+	}
+
+	.glyph-by {
+		display: flex;
+		border: 1px solid var(--rule);
+		border-radius: 4px;
+		overflow: hidden;
+	}
+
+	.glyph-by button {
+		min-block-size: 24px;
+		background: #1a1a30;
+		border: 0;
+		border-block-end: 2px solid transparent;
+		padding: 0.2rem 0.6rem;
+		color: var(--muted);
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.glyph-by button[aria-checked='true'] {
+		color: var(--ink-bright);
+		border-block-end-color: var(--accent);
+	}
+
+	.glyphs + .add {
+		margin-inline-start: 7rem;
 	}
 
 	.later {
