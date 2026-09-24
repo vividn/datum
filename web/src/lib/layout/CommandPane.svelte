@@ -5,17 +5,15 @@
 	else: the BAR is the scroller (CommandsWidget.svelte), because the
 	scroll rule is about the bar's rows and the axis it scrolls on.
 
-	`Undo` and `Redo` go through `pressWithPills`, which hands a command
-	only the pills its grammar takes: a selected hid (`undo <hid>`), never
-	the time cursor. Everything else only writes a line into the bottom
-	bar's prompt, unrun, for a person to finish. The loaded pills decide
-	which buttons are active and in what order (da-r13j). A line whose next
-	step is a tap is focused without a phone's keyboard (`next` in
+	A tap that RUNS — `Undo`, `Redo`, and whatever the loaded pills
+	complete (`fires` in $lib/commands.ts, da-3lxol: `delete` with an hid
+	selected) — goes through `pressWithPills`, which hands the command only
+	the pills its grammar takes: a selected hid (`undo <hid>`), a time for
+	`retime`. Everything else only writes a line into the bottom bar's
+	prompt, unrun, for a person to finish. The loaded pills decide which
+	buttons are active and in what order (da-r13j). A line whose next step
+	is a tap is focused without a phone's keyboard (`next` in
 	$lib/commands.ts, da-k34p).
-
-	`retime` with BOTH an hid and a time pill loaded is complete, so the tap
-	runs it (vividn, 09-17: «retime should just fire when you tap it»). Only
-	retime: `delete` keeps its Enter, and `get` / `history` were not asked.
 
 	`spec` with a FIELD pill loaded opens the spec modal on that field at
 	once (da-ybai9, vividn: «no need for sub commands or pressing enter. It
@@ -28,19 +26,19 @@
 	import { openSpec } from '$lib/specModal.js';
 	import { grammar, press, pressWithPills, ready } from './engine.js';
 
+	function runNow(argv: string[]): void {
+		// A thumb that tapped the command before its pills were all loaded
+		// has no Enter: the tap that fires takes back the `<name> ` the
+		// first one put there.
+		if ($text === `${argv[0]} `) $text = '';
+		void pressWithPills(argv);
+	}
+
 	function fill({ name, line, keyboard }: { name: string; line: string; keyboard: boolean }): void {
-		const loaded = (kind: string) => $pills.some((p) => p.kind === kind);
 		const field = $pills.find((p) => p.kind === 'field');
 		if (name === 'spec' && field) {
 			clearUnlockedPills([field]);
 			void openSpec(field.text).then((argv) => argv && press(argv));
-			return;
-		}
-		if (name === 'retime' && loaded('hid') && loaded('time')) {
-			// A thumb that tapped retime before its second pill has no Enter:
-			// the tap that fires takes back the `retime ` the first one put there.
-			if ($text === line) $text = '';
-			void pressWithPills(['retime']);
 		} else prefill.set({ line, keyboard });
 	}
 </script>
@@ -50,7 +48,7 @@
 		disabled={!$ready}
 		grammar={$grammar}
 		pills={$pills}
-		on:run={(e) => void pressWithPills(e.detail)}
+		on:run={(e) => runNow(e.detail)}
 		on:line={(e) => fill(e.detail)}
 	/>
 </div>

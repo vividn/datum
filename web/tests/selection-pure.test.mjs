@@ -18,7 +18,7 @@ registerHooks({
 	}
 });
 
-const { COMMANDS, commandsUnder, grammarOf, takesOf } = await import('../src/lib/commands.ts');
+const { COMMANDS, commandsUnder, fires, grammarOf, takesOf } = await import('../src/lib/commands.ts');
 const { hidPill, picked, pickOf, withPills } = await import('../src/lib/selection.ts');
 
 const entry = (name, usage, flags = [], aliases = []) => ({ name, aliases, usage, flags });
@@ -78,7 +78,8 @@ describe('what the grammar says a command takes', () => {
 		assert.deepEqual(takesOf(entry('history', ['datum history <ID_OR_SLUG> [--version N | --diff A B]'])), {
 			id: 'one',
 			time: false,
-			field: false
+			field: false,
+			more: false
 		});
 	});
 
@@ -92,6 +93,43 @@ describe('what the grammar says a command takes', () => {
 		// Not a positional at all: a bare word in `grep`'s place is a second
 		// PATTERN, and `get`/`now` name no field.
 		assert.deepEqual(['grep', 'get', 'now', 'delete'].map(field), [false, false, false, false]);
+	});
+});
+
+// da-3lxol. Which taps RUN is read off the same grammar, never listed:
+// an id command runs on a selected hid unless its usage has a word still
+// to come after the id — `update`'s VALUE, `retime`'s SHIFT, which a time
+// pill supplies and nothing else does.
+describe('what a tap runs rather than fills', () => {
+	const firing = (pills) => COMMANDS.map((c) => c.name).filter((n) => fires(GRAMMAR.get(n), pills));
+
+	test('the word after the id is read as a word, a flag group is not', () => {
+		const more = (name) => GRAMMAR.get(name).more;
+		assert.deepEqual(['update', 'retime'].map(more), [true, true]);
+		assert.deepEqual(['get', 'history', 'delete', 'undo', 'reparse'].map(more), [false, false, false, false, false]);
+	});
+
+	// Review 6642/6673: a stray closer must not take the depth below zero,
+	// where whitespace stops splitting and the VALUE after it would be glued
+	// onto the flag before it — read as a flag, and `more` lost.
+	test('a stray closer does not glue the words after it into one', () => {
+		assert.equal(takesOf(entry('x', ['datum x <HID> [--fix]] VALUE'])).more, true);
+	});
+
+	test('one hid: delete, get, history, undo run; update and retime fill', () => {
+		assert.deepEqual(firing([one]), ['undo', 'delete', 'history', 'get']);
+		assert.deepEqual(firing([two]), ['delete'], 'only a comma list takes two');
+	});
+
+	test('a time beside the hid completes retime, and only a command that takes -t', () => {
+		assert.deepEqual(firing([one, time]), ['retime']);
+	});
+
+	test('nothing fires without an hid', () => {
+		assert.deepEqual(firing([]), []);
+		assert.deepEqual(firing([time]), []);
+		assert.deepEqual(firing([mood]), []);
+		assert.equal(fires(undefined, [one]), false, 'a command the grammar does not know');
 	});
 });
 

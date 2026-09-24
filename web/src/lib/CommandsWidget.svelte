@@ -14,6 +14,10 @@
 	  (da-s6no: with a way forward the fifteen-minute gate cost more than
 	  it saved), so there is no second clock here — the widget runs `undo`
 	  and the CLI's own warning past ten minutes is shown with the echo.
+	- a command the loaded pills COMPLETE runs at once too (da-3lxol):
+	  `delete` with an hid selected deletes it. `fires` in commands.ts
+	  decides, and the same answer draws the button with a DOUBLE outline
+	  (`.act`), so what looks as if it fires is what fires.
 	- a VERB puts `<verb> ` on the command line and leaves the caret in
 	  it. That is the whole of pending a verb: the fields widget reads the
 	  line's first word, so tapping `occur` and typing `occur` reach the
@@ -34,7 +38,7 @@
 	import { createEventDispatcher } from 'svelte';
 	import type { Pill } from './bar.js';
 	import ButtonRows from './ButtonRows.svelte';
-	import { commandsUnder, type Grammar } from './commands.js';
+	import { commandsUnder, fires, type CommandButton, type Grammar } from './commands.js';
 
 	export let disabled = false;
 	export let grammar: Grammar | null = null;
@@ -43,18 +47,19 @@
 	const dispatch = createEventDispatcher<{ run: string[]; line: { name: string; line: string; keyboard: boolean } }>();
 
 	$: listed = commandsUnder(grammar, pills);
+	$: runs = (command: CommandButton) => command.press === 'run' || fires(grammar?.get(command.name), pills);
 </script>
 
 <ButtonRows class="commands" items={listed} key={(command) => command.name} let:item={command}>
 	<button slot="probe" class="command" tabindex="-1">probe</button>
 	<button
 		class="command"
-		class:act={command.press === 'run'}
+		class:act={runs(command)}
 		{disabled}
 		data-command={command.name}
-		title={command.press === 'run' ? `run ${command.name}` : `${command.name} …`}
+		title={runs(command) ? `run ${command.name}` : `${command.name} …`}
 		on:click={() =>
-			command.press === 'run'
+			runs(command)
 				? dispatch('run', [command.name])
 				: dispatch('line', { name: command.name, line: `${command.name} `, keyboard: command.next !== 'tap' })}
 	>
@@ -79,11 +84,15 @@
 		touch-action: manipulation;
 	}
 
-	/* Undo and Redo do something the moment they are pressed, where every
-	   other button only writes a line — so they are drawn in the accent
-	   that the rest are not. */
+	/* A button that does something the moment it is pressed, where the
+	   rest only write a line, is drawn in a DOUBLE outline of the accent
+	   (vividn, 09-22: «some sort of distinctive design feature, like a double
+	   outline»). Inside the box, as a border, so the bar's scroll edge never
+	   clips it and focus keeps the outline; the padding gives back the two
+	   pixels the border takes, so a button does not grow when it arms. */
 	.command.act {
-		border-color: var(--accent);
+		border: 3px double var(--accent);
+		padding: calc(0.35rem - 2px) calc(0.85rem - 2px);
 		color: var(--ink-bright);
 	}
 

@@ -46,13 +46,19 @@ const button = (page, name) => page.locator(`.bar.commands button[data-command="
 /** The command buttons drawn, in order. */
 const drawn = async (page) => (await listed(page.locator('.bar.commands'), 'button[data-command]')).map((b) => b.command);
 
-/** Press a filling command, then Enter in the bar, and wait for the run to settle. */
+/** The last `.repl .echo`'s count, before a press. */
+const echoCount = (page) => page.evaluate(() => document.querySelectorAll('.repl .echo').length);
+
+/**
+ * Press a command the selection COMPLETES — it runs at the tap, with no
+ * Enter (da-3lxol) — and wait for the run to settle.
+ */
 async function run(app, name) {
+	const echoes = await echoCount(app.page);
 	await button(app.page, name).click();
-	const input = app.page.locator('.prompt-bar input');
-	await app.page.waitForFunction((n) => document.querySelector('.prompt-bar input').value === `${n} `, name);
-	await input.press('Enter');
+	await app.page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, echoes);
 	await app.idle();
+	assert.equal(await app.page.locator('.prompt-bar input').inputValue(), '', 'the tap put something on the line');
 }
 
 const ID_COMMANDS = ['undo', 'redo', 'retime', 'update', 'delete', 'history', 'get'];
@@ -86,6 +92,50 @@ describe('a tap on a tail row', () => {
 			await hidPill(page).waitFor({ state: 'detached' });
 			await page.locator('.bar.commands [data-command="occur"]').waitFor();
 			assert.deepEqual(await drawn(page), whole, 'the dismiss brings the whole list back');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// da-3lxol, acceptance 4: the double outline and the tap read ONE
+	// predicate, so the selection flips both together.
+	test('delete fills with nothing selected; a selected row arms it and the tap deletes; update never arms', async () => {
+		await solo(async (app) => {
+			const { page } = app;
+			await seedLines(app, SEED);
+			const armed = (name) => button(page, name).evaluate((b) => b.classList.contains('act'));
+			const input = page.locator('.prompt-bar input');
+			// The shared app empties the pills between tests, not the line.
+			await input.fill('');
+
+			const echoes = await echoCount(page);
+			assert.equal(await armed('delete'), false);
+			await button(page, 'delete').click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'delete ');
+			assert.equal(await echoCount(page), echoes, 'nothing selected: the tap ran something');
+
+			const before = await rowCount(page);
+			const [row] = await last(page, 1);
+			const hid = await row.getAttribute('data-hid');
+			await row.click();
+			await hidPill(page).waitFor();
+			await page.waitForFunction(() => document.querySelector('.bar.commands [data-command="delete"]')?.classList.contains('act'));
+			assert.deepEqual([await armed('delete'), await armed('update'), await armed('get')], [true, false, true]);
+
+			await run(app, 'delete');
+			assert.equal((await app.echoes()).at(-1), `delete ${hid}`);
+			await page.waitForFunction((n) => document.querySelectorAll('section[data-title="tail"] tbody tr[data-hid]').length === n, before - 1);
+			await page.waitForFunction(() => !document.querySelector('.bar.commands [data-command="delete"]')?.classList.contains('act'));
+
+			const [next] = await last(page, 1);
+			await next.click();
+			await hidPill(page).waitFor();
+			const quiet = await echoCount(page);
+			await button(page, 'update').click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'update ');
+			assert.equal(await echoCount(page), quiet, 'update ran on a tap');
+			assert.equal(await armed('update'), false);
+			assert.equal(await input.inputValue(), 'update ');
+			await input.fill('');
 			assert.deepEqual(app.errors, []);
 		});
 	});

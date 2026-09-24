@@ -237,6 +237,14 @@ export interface Takes {
 	 * (`fieldSlotOpen` in $lib/selection.ts is the other half of this).
 	 */
 	field: false | 1 | 2;
+	/**
+	 * Some usage line puts a POSITIONAL after the id (da-3lxol): a VALUE
+	 * (`update <ID> [VALUE | KEY=VALUE]...`) or a SHIFT (`retime [SLUG]
+	 * [SHIFT]`) the command is waiting for. Measured: `retime <hid>` alone
+	 * moves the entry to NOW and `update <hid>` alone rewrites nothing —
+	 * both run, neither is what a tap meant.
+	 */
+	more: boolean;
 }
 
 /** Commands by name AND by alias (`end` is `stop`'s). */
@@ -257,8 +265,28 @@ const ID_ARG = /^datum \S+ [<[](?:ID_OR_SLUG|SLUG|HID)(\[,)?/;
  */
 const FIELD_ARG = /^datum \S+(?: ([a-z][\w-]*))? [<[]FIELD/;
 
+/** A usage line's words, a bracketed group (`[--version N | --diff A B]`) being one. */
+function words(usage: string): string[] {
+	const out: string[] = [];
+	let depth = 0;
+	let word = '';
+	for (const c of usage) {
+		if (/\s/.test(c) && !depth) {
+			if (word) out.push(word);
+			word = '';
+			continue;
+		}
+		if ('[<('.includes(c)) depth++;
+		else if (']>)'.includes(c)) depth = Math.max(0, depth - 1);
+		word += c;
+	}
+	if (word) out.push(word);
+	return out;
+}
+
 export function takesOf(entry: GrammarEntry): Takes {
-	const ids = entry.usage.map((u) => ID_ARG.exec(u.trim())).filter((m) => m !== null);
+	const idLines = entry.usage.map((u) => u.trim()).filter((u) => ID_ARG.test(u));
+	const ids = idLines.map((u) => ID_ARG.exec(u)!);
 	const id = ids.some((m) => m[1]) ? 'list' : ids.length ? 'one' : false;
 	const time = entry.flags.some((f) => f.short === 't') || entry.usage.some((u) => /[\s[]-t[\s\]]/.test(u));
 	// The shallowest slot any usage line puts it in: `meta <FIELD> <TEXT>`
@@ -269,7 +297,9 @@ export function takesOf(entry: GrammarEntry): Takes {
 		.filter((m) => m !== null)
 		.map((m): 1 | 2 => (m[1] === undefined ? 1 : 2));
 	const field = slots.length ? (Math.min(...slots) as 1 | 2) : false;
-	return { id, time, field };
+	// Past `datum <name> <ID>`, anything but a flag is a word still to come.
+	const more = idLines.some((u) => words(u).slice(3).some((w) => !/^\[?-/.test(w)));
+	return { id, time, field, more };
 }
 
 export function grammarOf(entries: GrammarEntry[]): Grammar {
@@ -312,6 +342,28 @@ export function commandsUnder(grammar: Grammar | null, pills: Pill[]): CommandBu
 		const takes = grammar?.get(command.name);
 		return pills.every((p) => fits(takes, p));
 	});
+}
+
+/**
+ * Does a tap on a command with this grammar RUN, with `pills` loaded,
+ * rather than fill the line (da-3lxol)? The one predicate: the press path
+ * and the button's `runs` class both read it, so a button never looks as
+ * if it fires when it does not.
+ *
+ * vividn, 09-22: «if I select a document, and then hit delete, it should be
+ * deleted. Same with all the commands except for update». Derived rather
+ * than listed: a selected hid completes an id command that waits for
+ * nothing after the id (`delete`, `get`, `history`, `undo`, `redo`), and
+ * a command that does wait (`more`) is completed by a loaded time only
+ * when `-t` is what it takes instead — `retime`, whose `[SHIFT]` and
+ * `-t T` are two lines of one grammar (vividn, 09-17: «retime should just
+ * fire when you tap it»). `update`'s VALUE no pill holds, so it fills.
+ * With no hid loaded, nothing here fires: `undo`/`redo` are `press:
+ * 'run'` on their own.
+ */
+export function fires(takes: Takes | undefined, pills: Pill[]): boolean {
+	if (!takes?.id || !pills.some((p) => p.kind === 'hid') || !pills.every((p) => fits(takes, p))) return false;
+	return !takes.more || (takes.time && pills.some((p) => p.kind === 'time'));
 }
 
 // ---- the scroll rule (every button bar) --------------------------------
