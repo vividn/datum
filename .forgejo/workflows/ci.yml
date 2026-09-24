@@ -187,16 +187,22 @@ jobs:
         working-directory: web
         run: pnpm exec playwright install --with-deps --only-shell chromium
 
-      # Last, so the browser peak never overlaps the link peak. ONE file at a
-      # time: a file under test is about two cores' worth (concurrency.mjs's
-      # own coefficient), and this box has three. Measured 2026-09-16: task
-      # 184 at 3 cut twelve files at the 120 s budget, run 235 at 2 cut nine
-      # (25m28s, 528 pass, 0 fail) — the cuts are oversubscription, not the
-      # suite. GitHub's runner turned out to be 2 cores and runs 1 for the
-      # same reason (da-buqa, #224).
+      # Last, so the browser peak never overlaps the link peak. THREE files at
+      # a time (da-gqwh2, vividn 2026-09-24: «parallelize», and «going
+      # immediately to 3 … the new CI box can handle it»). One at a time made the
+      # suite fully serial — run 800's files sum to 45.7 of its 46:46 — while
+      # `time -v` gave it 67% of ONE core (1898 CPU-s over 2807 s): it waits on
+      # the browser and the app far more than it computes, and a lane has 3
+      # cores. The old «a file is two cores' worth» was measured 2026-09-16 on
+      # the 3-core runner, before one shared app per file (#109) and at a 120 s
+      # budget (now 300 s): then task 184 at 3 cut twelve files and run 235 at
+      # 2 cut nine. Three files at ~0.7 core each is ~2 of the lane's 3. If a
+      # run cuts a file at the budget, read WHICH (by name) before changing
+      # this. `availableParallelism()` in the job reports the host's 12
+      # cores, not the lane's 3, so the scaler cannot pick this.
       - name: pnpm test
         if: ${{ !cancelled() && steps.browser.outcome == 'success' }}
         working-directory: web
         run: /usr/bin/time -v pnpm test
         env:
-          DATUM_TEST_CONCURRENCY: 1
+          DATUM_TEST_CONCURRENCY: 3
