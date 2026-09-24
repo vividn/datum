@@ -20,7 +20,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
-	editedSpec, GLYPHS, specArgv, specKeys, stateRows, trackArgv, trackLabel, VERBS, verbAsked, wide
+	editedSpec, GLYPHS, keyRows, specArgv, specKeys, stateRows, trackArgv, trackLabel, VERBS, verbAsked, wide
 } from '../src/lib/track.ts';
 import { stripAnsi } from './support/tail.mjs';
 
@@ -161,6 +161,39 @@ describe('the argv it composes', () => {
 		assert.deepEqual(grid.filter(wide), measured);
 		assert.deepEqual([...'日한Ａｱ¢é▞'].filter(wide), [...'日한Ａ']);
 		assert.equal(wide(''), false);
+	});
+
+	// da-cap5m: the keys are the whole map, a default stored as it was
+	// typed; the aliases are sent only once datum no longer makes them.
+	test('keys are saved whole, and only a list datum does not make is sent', () => {
+		const key = (over) => ({ required: false, value_type: 'any', in_slug: false, default: null, unit: null, ...over });
+		const spec = {
+			field: 'word', verb: 'add', color: null, unit: null, description: null, allowed_states: null, state_colors: {},
+			subfields: { pos: key({ required: true, value_type: 'string', in_slug: true }), reps: key({ value_type: 'number', default: 3, unit: 'x' }) },
+			derived_aliases: [{ state: 'word', expands_to: 'add word', kind: 'bare_field' }], no_autoalias: false
+		};
+		const keys = keyRows(spec);
+		assert.deepEqual(keys, [
+			{ ...key({ required: true, value_type: 'string', in_slug: true }), name: 'pos', default: '' },
+			{ ...key({ value_type: 'number', unit: 'x' }), name: 'reps', default: '3' }
+		]);
+		const base = { verb: 'add', color: '', unit: '', description: '', states: [] };
+		keys[0].required = false;
+		keys[0].default = '42';
+		keys[1].default = ' ';
+		const made = editedSpec(spec, { ...base, keys: [...keys, { ...key(), name: 'n', default: '42' }, { ...key(), name: ' ', default: '' }], autoalias: true, aliases: [] });
+		assert.deepEqual(made.subfields, {
+			pos: key({ value_type: 'string', in_slug: true, default: '42' }),
+			reps: key({ value_type: 'number', unit: 'x' }),
+			n: key({ default: 42 })
+		});
+		assert.equal(made.no_autoalias, false);
+		assert.deepEqual(made.derived_aliases, spec.derived_aliases, 'a made list is carried: the CLI makes it again');
+
+		const mine = editedSpec(spec, { ...base, autoalias: false, aliases: [{ state: ' zz ', expands_to: ' add word ' }, { state: '', expands_to: 'x' }] });
+		assert.equal(mine.no_autoalias, true);
+		assert.deepEqual(mine.derived_aliases, [{ state: 'zz', expands_to: 'add word' }]);
+		assert.deepEqual(mine.subfields, spec.subfields, 'keys the edit leaves out are carried');
 	});
 
 	test('the refusal is read for the field it names, and nothing else is', () => {
@@ -473,8 +506,8 @@ describe('in the app', () => {
 		});
 	});
 
-	// Keys and Aliases are their own bead (da-cap5m): tabs today, and they say so.
-	test('Keys and Aliases are tabs that say «not yet»', async () => {
+	// `track` carries neither keys nor aliases, so a field being declared has them shut.
+	test('Keys and Aliases are a spec\'s tabs: declaring a field has them shut', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
@@ -482,12 +515,106 @@ describe('in the app', () => {
 				(await page.locator(`${MODAL} [role="tab"]`).allInnerTexts()).map((t) => t.trim().toLowerCase()),
 				['basics', 'states', 'keys', 'aliases']
 			);
-			for (const tab of ['keys', 'aliases']) {
-				await page.locator(`${MODAL} [data-tab="${tab}"]`).click();
-				assert.equal((await page.locator(`${MODAL} .later`).innerText()).trim(), 'not yet');
-			}
+			for (const tab of ['keys', 'aliases']) assert.ok(await page.locator(`${MODAL} [data-tab="${tab}"]`).isDisabled(), tab);
 			await page.keyboard.press('Escape');
 			await page.locator(MODAL).waitFor({ state: 'detached' });
+		});
+	});
+
+	/**
+	 * Open `field`'s spec on `tab`. What saving it ran comes back boxed: an
+	 * async function returning the bare promise would wait for the save.
+	 */
+	async function openSpecTab(page, field, tab) {
+		const saved = page.evaluate((f) => window.datum.spec(f), field);
+		await page.locator(MODAL).waitFor();
+		await page.locator(`${MODAL} [data-tab="${tab}"]`).click();
+		return { saved };
+	}
+
+	/** Press Done, and hold the save to ONE command that the CLI took. */
+	async function save(app, saved) {
+		const before = (await app.echoes()).length;
+		await app.page.locator(`${MODAL} button.commit`).click();
+		const result = await saved;
+		assert.equal(result.code, 0, result.stderr);
+		await app.idle();
+		const echoes = (await app.echoes()).slice(before);
+		assert.equal(echoes.length, 1, `one command, not a stream: ${echoes.join(' | ')}`);
+		assert.match(echoes[0], /^spec set /);
+	}
+
+	test('a key toggled required moves to the required group, and `spec show` reads it back', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			const names = (group) => page.locator(`${MODAL} .keys[data-group="${group}"] input.name`).evaluateAll((els) => els.map((e) => e.value));
+			const subfields = async () => JSON.parse((await app.run(['spec', 'show', 'word'])).stdout).subfields;
+			await app.run(['track', 'word', '--verb', 'add']);
+
+			let { saved } = await openSpecTab(page, 'word', 'keys');
+			for (const name of ['pos', 'gloss']) {
+				await page.locator(`${MODAL} button.add`).click();
+				await page.locator(`${MODAL} .key input.name`).last().fill(name);
+			}
+			assert.deepEqual(await names('optional'), ['pos', 'gloss']);
+			const pos = page.locator(`${MODAL} .key`).first();
+			await pos.locator('input.in-slug').check();
+			await pos.locator('input.default').fill('noun');
+			await pos.locator('input.required').check();
+			assert.deepEqual(await names('required'), ['pos'], 'required reads off the group, not only the toggle');
+			assert.deepEqual(await names('optional'), ['gloss']);
+			await save(app, saved);
+			assert.deepEqual(await subfields(), {
+				pos: { required: true, value_type: 'any', in_slug: true, default: 'noun', unit: null },
+				gloss: { required: false, value_type: 'any', in_slug: false, default: null, unit: null }
+			});
+
+			({ saved } = await openSpecTab(page, 'word', 'keys'));
+			assert.deepEqual(await names('required'), ['pos']);
+			// A click, not `uncheck`: the row leaves the group the locator names,
+			// so there is nothing left there to confirm unchecked.
+			await page.locator(`${MODAL} .keys[data-group="required"] input.required`).click();
+			assert.equal(await page.locator(`${MODAL} .keys[data-group="required"]`).count(), 0);
+			await save(app, saved);
+			assert.equal((await subfields()).pos.required, false);
+		});
+	});
+
+	// The acceptance is the behaviour, not the stored list: an alias removed
+	// must stop RESOLVING, and one added must run what it says.
+	test('an alias removed stops resolving, one added runs, and made again when switched back on', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			const shown = async () => JSON.parse((await app.run(['spec', 'show', 'sleep'])).stdout);
+			await app.run(['track', 'sleep', '--verb', 'start']);
+
+			let { saved } = await openSpecTab(page, 'sleep', 'aliases');
+			assert.deepEqual(await page.locator(`${MODAL} .alias code.name`).allInnerTexts(), ['sleep', 'sleepe']);
+			assert.equal(await page.locator(`${MODAL} .alias input`).count(), 0, 'a made alias is not edited: the save makes it again');
+			await page.locator(`${MODAL} input.autoalias`).uncheck();
+			await page.locator(`${MODAL} button[aria-label="remove sleep"]`).click();
+			await page.locator(`${MODAL} button.add`).click();
+			await page.locator(`${MODAL} .alias input.name`).last().fill('zz');
+			await page.locator(`${MODAL} .alias input.expands`).last().fill('start sleep');
+			await save(app, saved);
+			let spec = await shown();
+			assert.equal(spec.no_autoalias, true);
+			assert.deepEqual(spec.derived_aliases.map((a) => [a.state, a.expands_to]), [['sleepe', 'end sleep'], ['zz', 'start sleep']]);
+
+			const zz = await app.run(['zz']);
+			assert.equal(zz.code, 0, zz.stderr);
+			assert.match(stripAnsi(zz.stdout), /sleep\s+start/, 'zz ran `start sleep`');
+			const bare = await app.run(['sleep']);
+			assert.notEqual(bare.code, 0, 'the removed alias still resolves');
+
+			({ saved } = await openSpecTab(page, 'sleep', 'aliases'));
+			await page.locator(`${MODAL} input.autoalias`).check();
+			await save(app, saved);
+			spec = await shown();
+			assert.equal(spec.no_autoalias, false);
+			assert.deepEqual(spec.derived_aliases.map((a) => a.state), ['sleep', 'sleepe']);
+			assert.notEqual((await app.run(['zz'])).code, 0, 'a hand alias outlived the switch back');
+			assert.equal((await app.run(['sleep'])).code, 0);
 		});
 	});
 

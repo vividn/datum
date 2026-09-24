@@ -115,7 +115,8 @@ pub struct FieldSpec {
     #[serde(default)]
     pub data_keys: Vec<String>,
     /// When true, no auto-aliases are emitted for this field (the user takes
-    /// over).
+    /// over): `derived_aliases` is then the user's list, kept as written
+    /// rather than rebuilt on save (da-cap5m).
     #[serde(default)]
     pub no_autoalias: bool,
 
@@ -232,12 +233,12 @@ impl FieldSpec {
     /// 3. One `<state>` → `switch <field> <state>` per allowed state
     ///    (kind=State).
     ///
-    /// Idempotent. When `no_autoalias` is set, returns an empty list.
+    /// Idempotent. When `no_autoalias` is set, the list is the user's and is
+    /// left as it stands (da-cap5m).
     /// Cross-field state collisions are resolved at save time (see
     /// `db::Db::save_field_spec`).
     pub fn regenerate_derived_aliases(&mut self) {
         if self.no_autoalias {
-            self.derived_aliases = Vec::new();
             return;
         }
         let mut out: Vec<DerivedAlias> = Vec::new();
@@ -348,6 +349,20 @@ mod tests {
         spec.no_autoalias = true;
         spec.regenerate_derived_aliases();
         assert!(spec.derived_aliases.is_empty());
+    }
+
+    #[test]
+    fn no_autoalias_keeps_the_users_list() {
+        let mut spec = FieldSpec::new("sleep", Action::Start);
+        spec.no_autoalias = true;
+        let mine = DerivedAlias {
+            name: "zz".into(),
+            expands_to: "start sleep".into(),
+            kind: DerivedAliasKind::BareField,
+        };
+        spec.derived_aliases = vec![mine.clone()];
+        spec.regenerate_derived_aliases();
+        assert_eq!(spec.derived_aliases, vec![mine]);
     }
 
     #[test]

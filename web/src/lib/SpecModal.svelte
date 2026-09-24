@@ -18,7 +18,15 @@
 
 	Segmented: Basics · States · Keys · Aliases. Track is this modal opened
 	on Basics, and that is all it needs — name, pictogram, Done, the same
-	taps it always took. Keys and Aliases are their own beads (da-cap5m).
+	taps it always took. Keys and Aliases are a spec's alone (da-cap5m):
+	`track` carries neither, so a field being declared has them shut.
+
+	Keys are grouped required over optional, so which is which reads at a
+	glance and not only off each row's toggle, and each row says whether
+	the key is IN THE SLUG — whether it identifies an entry or merely
+	annotates it. Aliases are made by datum from the verb and the states
+	until that is switched off (`no_autoalias`); from then on the list is
+	the person's, added to and removed from here.
 
 	What it writes is decided by what it was opened on. A new field gets
 	`track`, the one command that writes the TRACK document, and so only
@@ -40,11 +48,15 @@
 	import Swatch from './Swatch.svelte';
 	import {
 		editedSpec,
+		keyRows,
+		KEY_TYPES,
 		specArgv,
 		specKeys,
 		stateRows,
 		trackArgv,
 		VERBS,
+		type DerivedAlias,
+		type KeyRow,
 		type Spec,
 		type StateRow,
 		type Verb
@@ -72,7 +84,11 @@
 	let byKey = !!spec?.glyph_by;
 	let glyphKey = spec?.glyph_by?.key ?? '';
 	let glyphMap = Object.entries(spec?.glyph_by?.map ?? {}).map(([value, glyph]) => ({ value, glyph }));
-	const keys = spec ? specKeys(spec) : [];
+	/** The data keys the saved spec names, which «by a key» suggests. */
+	const keyNames = spec ? specKeys(spec) : [];
+	let keys: KeyRow[] = spec ? keyRows(spec) : [];
+	let autoalias = !spec?.no_autoalias;
+	let aliases: DerivedAlias[] = (spec?.derived_aliases ?? []).map((a) => ({ ...a }));
 	if (spec) verb = spec.verb;
 	/** The argv to run, set by whatever was pressed; null closes and runs nothing. */
 	let chosen: string[] | null = null;
@@ -93,7 +109,20 @@
 		? { key: glyphKey, map: Object.fromEntries(glyphMap.map((r) => [r.value, r.glyph])) }
 		: null;
 	$: argv = spec
-		? specArgv(editedSpec(spec, { verb: verb ?? spec.verb, color, unit, description, states, glyph, glyph_by }))
+		? specArgv(
+				editedSpec(spec, {
+					verb: verb ?? spec.verb,
+					color,
+					unit,
+					description,
+					states,
+					keys,
+					autoalias,
+					aliases,
+					glyph,
+					glyph_by
+				})
+			)
 		: trackArgv(field.trim() || '<field>', verb ?? 'occur', states, color);
 	// A new field's states are a switch's: `track` carries them for no other verb.
 	$: statesOpen = spec !== null || verb === 'switch';
@@ -148,7 +177,7 @@
 					role="tab"
 					data-tab={name}
 					aria-selected={tab === name}
-					disabled={name === 'states' && !statesOpen}
+					disabled={name === 'states' ? !statesOpen : name !== 'basics' && !spec}
 					on:click={() => (tab = name)}>{name}</button
 				>
 			{/each}
@@ -202,7 +231,7 @@
 						<span class="label">key</span>
 						<input class="glyph-key" list="spec-keys" bind:value={glyphKey} spellcheck="false" autocapitalize="none" />
 						<datalist id="spec-keys">
-							{#each keys as key (key)}<option value={key}></option>{/each}
+							{#each keyNames as key (key)}<option value={key}></option>{/each}
 						</datalist>
 					</label>
 				{/if}
@@ -282,8 +311,101 @@
 				on:click={() => (states = [...states, { name: '', color: '', description: '', glyph: '' }])}
 				>+ state</button
 			>
+		{:else if tab === 'keys'}
+			{#each [true, false] as required (required)}
+				{#if keys.some((k) => k.required === required)}
+					<ul class="keys" data-group={required ? 'required' : 'optional'}>
+						<li class="group">{required ? 'required' : 'optional'}</li>
+						{#each keys.filter((k) => k.required === required) as key (key)}
+							<li class="key">
+								<input
+									class="name"
+									bind:value={key.name}
+									placeholder="key"
+									aria-label="the key's name"
+									spellcheck="false"
+									autocapitalize="none"
+								/>
+								<button
+									type="button"
+									class="remove"
+									aria-label="remove {key.name}"
+									on:click={() => (keys = keys.filter((k) => k !== key))}>✕</button
+								>
+								<div class="flags">
+									<label><input type="checkbox" class="required" bind:checked={key.required} /> required</label>
+									<label title="a key in the slug identifies an entry; one outside it annotates it"
+										><input type="checkbox" class="in-slug" bind:checked={key.in_slug} /> in slug</label
+									>
+									<select class="type" bind:value={key.value_type} aria-label="the type of {key.name}">
+										{#each KEY_TYPES as type (type)}<option>{type}</option>{/each}
+									</select>
+								</div>
+								<input
+									class="default"
+									bind:value={key.default}
+									placeholder="default"
+									aria-label="the default of {key.name || 'this key'}"
+								/>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			{/each}
+			<button
+				type="button"
+				class="add"
+				on:click={() =>
+					(keys = [
+						...keys,
+						{ name: '', required: false, value_type: 'any', in_slug: false, default: '', unit: null }
+					])}>+ key</button
+			>
 		{:else}
-			<p class="later">not yet</p>
+			<label class="auto"
+				><input type="checkbox" class="autoalias" bind:checked={autoalias} /> made from the verb and states</label
+			>
+			<ul class="aliases">
+				{#each aliases as alias (alias)}
+					<li class="alias">
+						{#if autoalias}
+							<code class="name">{alias.state}</code><code class="expands">{alias.expands_to}</code>
+						{:else}
+							<input
+								class="name"
+								bind:value={alias.state}
+								placeholder="alias"
+								aria-label="the alias"
+								spellcheck="false"
+								autocapitalize="none"
+							/>
+							<input
+								class="expands"
+								bind:value={alias.expands_to}
+								placeholder="{verb ?? 'occur'} {field}"
+								aria-label="what {alias.state || 'it'} runs"
+								spellcheck="false"
+								autocapitalize="none"
+							/>
+							<button
+								type="button"
+								class="remove"
+								aria-label="remove {alias.state}"
+								on:click={() => (aliases = aliases.filter((a) => a !== alias))}>✕</button
+							>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+			{#if autoalias}
+				<p class="later">made again from the verb and states when saved</p>
+			{:else}
+				<button
+					type="button"
+					class="add"
+					on:click={() => (aliases = [...aliases, { state: '', expands_to: '' }])}>+ alias</button
+				>
+			{/if}
 		{/if}
 
 		<div class="buttons">
@@ -559,6 +681,76 @@
 
 	.glyphs + .add {
 		margin-inline-start: 7rem;
+	}
+
+	/* A group's name heads its rows: which keys are required reads at a
+	   glance, before any toggle is. */
+	.keys,
+	.aliases {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.group {
+		color: var(--muted);
+		font-size: 0.75rem;
+		letter-spacing: 0.06em;
+	}
+
+	.keys[data-group='required'] .group {
+		color: var(--accent);
+	}
+
+	.key {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		gap: 0.3rem;
+	}
+
+	.flags,
+	.key .default {
+		grid-column: 1 / -1;
+	}
+
+	.flags {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		color: var(--muted);
+		font-size: 0.75rem;
+	}
+
+	.flags select {
+		margin-inline-start: auto;
+		background: #1a1a30;
+		border: 1px solid var(--rule);
+		border-radius: 4px;
+		color: var(--ink-bright);
+		font: inherit;
+	}
+
+	.alias {
+		display: grid;
+		grid-template-columns: 1fr 1.6fr auto;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
+	.alias code {
+		overflow-wrap: anywhere;
+	}
+
+	.alias code.name {
+		color: var(--ink-bright);
+	}
+
+	.auto {
+		color: var(--muted);
+		font-size: 0.8rem;
 	}
 
 	.later {

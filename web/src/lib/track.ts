@@ -92,6 +92,9 @@ export interface Spec {
 	glyph?: string;
 	state_glyphs?: Record<string, string>;
 	glyph_by?: GlyphBy;
+	subfields?: Record<string, Subfield>;
+	derived_aliases?: DerivedAlias[];
+	no_autoalias?: boolean;
 	[key: string]: unknown;
 }
 
@@ -121,6 +124,55 @@ export const wide = (glyph: string): boolean =>
 		glyph
 	);
 
+/** A key's type — `SubfieldType` in datum-core's field_spec. */
+export type KeyType = 'string' | 'number' | 'bool' | 'array' | 'any';
+export const KEY_TYPES: KeyType[] = ['string', 'number', 'bool', 'array', 'any'];
+
+/** A key of the entry's data as the spec declares it — `SubfieldSpec`. */
+export interface Subfield {
+	required: boolean;
+	value_type: KeyType;
+	/** Whether the key's value is part of the entry's slug: it identifies, not annotates. */
+	in_slug: boolean;
+	default: unknown;
+	unit: string | null;
+}
+
+/** One row of the Keys tab: a subfield under its name, its default as typed. */
+export interface KeyRow extends Omit<Subfield, 'default'> {
+	name: string;
+	default: string;
+}
+
+/**
+ * An alias the spec carries — `DerivedAlias`, whose NAME is stored under
+ * `state` (a serde rename), whatever kind of alias it is.
+ */
+export interface DerivedAlias {
+	state: string;
+	expands_to: string;
+	kind?: 'bare_field' | 'terminal_end' | 'state';
+}
+
+/** The Keys tab's rows for `spec`, a default shown as it would be typed. */
+export const keyRows = (spec: Spec): KeyRow[] =>
+	Object.entries(spec.subfields ?? {}).map(([name, key]) => ({
+		...key,
+		name,
+		default: key.default == null ? '' : typeof key.default === 'string' ? key.default : JSON.stringify(key.default)
+	}));
+
+/** A typed default as it is stored: blank is none, a string key's is its text, any other's is JSON if it parses. */
+function storedDefault({ default: typed, value_type }: KeyRow): unknown {
+	if (typed.trim() === '') return null;
+	if (value_type === 'string') return typed;
+	try {
+		return JSON.parse(typed);
+	} catch {
+		return typed;
+	}
+}
+
 /** The States tab's rows for `spec`: its allowed states, each with its colour and description. */
 export const stateRows = (spec: Spec): StateRow[] =>
 	(spec.allowed_states ?? []).map((name) => ({
@@ -140,7 +192,8 @@ export const specKeys = (spec: Spec): string[] => [
 
 /**
  * `spec` with the modal's edits laid over it — everything it does not
- * edit (subfields, placement, tags, keys) carried as it was.
+ * edit (placement, tags, id keys) carried as it was, and so are the keys
+ * and aliases when the edit leaves them out.
  *
  * The states are the WHOLE list, which is `spec set`'s shape and not
  * `add-state`'s: a state removed takes its colour, description and glyph
@@ -162,6 +215,10 @@ export function editedSpec(
 		states: StateRow[];
 		glyph?: string;
 		glyph_by?: GlyphBy | null;
+		keys?: KeyRow[];
+		/** Whether datum makes the aliases (`!no_autoalias`); when not, `aliases` is the list. */
+		autoalias?: boolean;
+		aliases?: DerivedAlias[];
 	}
 ): Spec {
 	const rows = edit.states.map((s) => ({ ...s, name: s.name.trim() })).filter((s) => s.name);
@@ -201,7 +258,26 @@ export function editedSpec(
 		...(Object.keys(state_descriptions).length ? { state_descriptions } : {}),
 		...(glyph ? { glyph } : {}),
 		...(Object.keys(state_glyphs).length ? { state_glyphs } : {}),
-		...(glyph_by ? { glyph_by } : {})
+		...(glyph_by ? { glyph_by } : {}),
+		...(edit.keys && {
+			subfields: Object.fromEntries(
+				edit.keys
+					.filter((k) => k.name.trim())
+					.map((k) => {
+						const { name, ...key } = k;
+						return [name.trim(), { ...key, default: storedDefault(k) }];
+					})
+			)
+		}),
+		...(edit.autoalias !== undefined && { no_autoalias: !edit.autoalias }),
+		// Only a list datum does not make is the person's to send; the CLI
+		// rebuilds a made one on save whatever it is sent.
+		...(edit.autoalias === false &&
+			edit.aliases && {
+				derived_aliases: edit.aliases
+					.map((a) => ({ ...a, state: a.state.trim(), expands_to: a.expands_to.trim() }))
+					.filter((a) => a.state && a.expands_to)
+			})
 	};
 }
 

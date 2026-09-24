@@ -203,8 +203,11 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     if !args.data_keys.is_empty() {
         spec.data_keys = args.data_keys.clone();
     }
-    if args.no_autoalias {
+    // Turning the auto-aliases off drops them; once off, the list is the
+    // user's own (da-cap5m) and a repeat of the flag leaves it alone.
+    if args.no_autoalias && !spec.no_autoalias {
         spec.no_autoalias = true;
+        spec.derived_aliases.clear();
     }
     if let Some(s) = args.strict {
         spec.strict = s;
@@ -496,6 +499,48 @@ mod tests {
         spec_set(args2, &db).unwrap();
         assert!(db.lookup_alias("sad").unwrap().is_none());
         assert!(db.lookup_alias("happy").unwrap().is_some());
+    }
+
+    #[test]
+    fn no_autoalias_flag_drops_the_aliases_then_keeps_a_hand_list() {
+        let db = Db::open_in_memory().unwrap();
+        let set = |args: SpecSetArgs| spec_set(args, &db).unwrap();
+        set(SpecSetArgs {
+            field: "sleep".into(),
+            verb: Some("start".into()),
+            ..Default::default()
+        });
+        assert!(db.lookup_alias("sleep").unwrap().is_some());
+
+        set(SpecSetArgs {
+            field: "sleep".into(),
+            no_autoalias: true,
+            ..Default::default()
+        });
+        assert!(db.lookup_alias("sleep").unwrap().is_none());
+
+        // A hand list survives the save, and a repeat of the flag.
+        let mut spec = db.load_spec("sleep").unwrap().unwrap();
+        spec.derived_aliases = vec![datum_core::field_spec::DerivedAlias {
+            name: "zz".into(),
+            expands_to: "start sleep".into(),
+            kind: Default::default(),
+        }];
+        set(SpecSetArgs {
+            field: "sleep".into(),
+            from_json: Some(serde_json::to_string(&spec).unwrap()),
+            ..Default::default()
+        });
+        set(SpecSetArgs {
+            field: "sleep".into(),
+            no_autoalias: true,
+            ..Default::default()
+        });
+        assert_eq!(
+            db.lookup_alias("zz").unwrap().unwrap().expands_to,
+            "start sleep"
+        );
+        assert!(db.lookup_alias("sleep").unwrap().is_none());
     }
 
     #[test]
