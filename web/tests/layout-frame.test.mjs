@@ -21,7 +21,7 @@ before(startApp);
 after(stopApp);
 
 // ONE desktop app (da-b7sfp): nothing here reads a row, and `solo` puts
-// the layout back to `day` between tests — and the screen back to its size
+// the layout back to `main` between tests — and the screen back to its size
 // after an `atEachScreen` (da-6b3dj). What starts on another screen or
 // under the other pointer, or from a worker of its own, opens its own app.
 const shared = sharedApp(DESKTOP);
@@ -238,7 +238,7 @@ describe('the title row, as tall as its words', () => {
 			let out;
 			await open(async ({ page }) => {
 				// `repl`, which both trees carry with a title of its own:
-				// the phone's `day` drops `nowview` and `custom` and tabs
+				// the phone's `main` drops `nowview` and `custom` and tabs
 				// `tail` into a pane whose heading is the tab in front.
 				out = await pane(page, 'repl').evaluate((p) => {
 					const h2 = p.querySelector(':scope > .titlebar h2');

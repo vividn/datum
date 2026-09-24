@@ -39,7 +39,7 @@ const withApp = (fn, options = {}) =>
 	});
 
 // ONE APP for the file (da-6b3dj, sharedApp in support/app.mjs), the
-// worker's clock held at `AT` throughout and `day` opened from `PAGE` for
+// worker's clock held at `AT` throughout and `main` opened from `PAGE` for
 // each test. The bar's line is the shell's and not the layout's, so `solo`
 // leaves what the test before typed in it: it is put back as a fresh page
 // has it — empty, unfocused, no input mode. What navigates (`/command`) or

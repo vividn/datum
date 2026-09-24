@@ -28,10 +28,10 @@ export interface Offer {
 }
 
 /**
- * The layouts the modal offers, in the one order: `day`, then the rest —
- * every built-in but `day` IS a kind's one-widget layout, and is listed
+ * The layouts the modal offers, in the one order: `main`, then the rest —
+ * every built-in but `main` IS a kind's one-widget layout, and is listed
  * once, among the widgets — less the names already open above the tab,
- * since `day` may not hold `day` (the shell refuses such names too; the
+ * since `main` may not hold `main` (the shell refuses such names too; the
  * modal does not offer them).
  *
  * The rest, which is the person's saves and whatever a kit installed into
@@ -53,7 +53,7 @@ async function layoutsFor(ancestors: string[]): Promise<Offer[]> {
 	const here = device();
 	const mine = listed.filter((l) => l.designedFor === here);
 	const rest = listed.filter((l) => l.designedFor !== here);
-	return [{ name: 'day', source: 'builtin' as const }, ...mine, ...rest]
+	return [{ name: 'main', source: 'builtin' as const }, ...mine, ...rest]
 		.map(({ name, source }) => ({ name, source }))
 		.filter((o) => !ancestors.includes(o.name));
 }

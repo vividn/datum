@@ -803,7 +803,7 @@ describe('the snapshot says «a selected time, not now»', () => {
 
 // ── the phone ──────────────────────────────────────────────────────────
 
-/** Bring the nowview tab of `day`'s phone column to the front, and wait for it. */
+/** Bring the nowview tab of `main`'s phone column to the front, and wait for it. */
 async function toNowviewTab(app) {
 	await pane(app.page, 'side').locator('[role="tab"]', { hasText: 'nowview' }).click();
 	await showBand(app, BAND);

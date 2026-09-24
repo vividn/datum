@@ -47,9 +47,9 @@ after(stopApp);
 // ONE APP per screen for most of this file (da-b7sfp, sharedApp in
 // support/app.mjs): a context is 2.5 s of boot, and nothing here reads a
 // ROW, so what a test leaves behind is layout alone, which `solo` puts back
-// to `day` before the next one — its lock too, and a `ONE_PANE` draft is
+// to `main` before the next one — its lock too, and a `ONE_PANE` draft is
 // `solo`'s to open (da-6b3dj). What still opens an app of its own leaves
-// the root WITHOUT `day` (Save layout as…, Change Widget at the root) or
+// the root WITHOUT `main` (Save layout as…, Change Widget at the root) or
 // starts on a fresh phone, neither of which `solo` can undo.
 const shared = sharedApp(DESKTOP);
 const phone = sharedApp(PHONE);
@@ -177,7 +177,7 @@ describe('the menu the title opens', () => {
 			assert.equal(Math.round(made.x), Math.round(tail.x));
 			assert.ok(made.y > tail.y + tail.height, 'the new pane is not under the tail');
 			// One button, not a grid of them (da-uyx1) — and it opens the
-			// chooser: the layouts it could hold first (`day` is open above
+			// chooser: the layouts it could hold first (`main` is open above
 			// this pane, so it is not offered — da-0a5o), then the kinds.
 			assert.deepEqual(await empty.locator('.body button').allInnerTexts(), ['Change Widget']);
 			await openChooser(page);
@@ -291,8 +291,8 @@ describe('the menu the title opens', () => {
 			assert.ok(kept, 'the tail widget lost its id');
 			// Splitting minted no layout: nothing new saved, no new draft name.
 			assert.deepEqual(await names(), namesBefore);
-			// The split is an edit to `day`, the enclosing layout: its draft, its dot.
-			assert.deepEqual((await stored()).filter((k) => !storedBefore.includes(k)), ['datum.layout.draft.v1.day']);
+			// The split is an edit to `main`, the enclosing layout: its draft, its dot.
+			assert.deepEqual((await stored()).filter((k) => !storedBefore.includes(k)), ['datum.layout.draft.v1.main']);
 			assert.equal(await rootMenuButton(page).locator('.dot').count(), 1, 'the edit is not the enclosing layout’s');
 
 			// The empty half filled — from its own button, an empty pane
@@ -547,12 +547,12 @@ describe("the root bar's menu", () => {
 	test('the active layout name is the button, and Save layout is the first item', async () => {
 		await shared.solo(async ({ page }) => {
 			const name = rootMenuButton(page);
-			assert.equal(await name.innerText(), 'day');
+			assert.equal(await name.innerText(), 'main');
 			assert.equal(await name.getAttribute('aria-haspopup'), 'menu');
 			assert.equal(await name.getAttribute('title'), 'layout menu');
 			assert.equal(await page.locator('.root-bar button.more').count(), 0, 'the … badge is still there');
 			await name.click();
-			assert.equal(await page.locator('[role="menu"]').getAttribute('aria-label'), 'menu of the day layout');
+			assert.equal(await page.locator('[role="menu"]').getAttribute('aria-label'), 'menu of the main layout');
 			// Change Widget is the `▾`'s first item now (da-z8klv), so the
 			// name's slice opens on the acts.
 			assert.equal((await menuLines(page))[0], 'Save layout');
@@ -567,12 +567,12 @@ describe("the root bar's menu", () => {
 			await chooser(page).locator('button').filter({ hasText: exactly('stats') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
 			await page.locator('.root-bar [role="tab"]').nth(1).waitFor();
-			assert.deepEqual(await tabs.allInnerTexts(), ['day', 'stats']);
+			assert.deepEqual(await tabs.allInnerTexts(), ['main', 'stats']);
 			// The one behind carries no menu: a click on it switches.
 			assert.equal(await tabs.nth(0).getAttribute('aria-haspopup'), null);
 			await tabs.nth(0).click();
 			assert.equal(await page.locator('[role="menu"]').count(), 0, 'switching opened the menu');
-			await page.locator('.root-bar [role="tab"][aria-selected="true"]', { hasText: 'day' }).waitFor();
+			await page.locator('.root-bar [role="tab"][aria-selected="true"]', { hasText: 'main' }).waitFor();
 			await tabs.nth(0).click();
 			await page.locator('[role="menu"]').waitFor();
 			await page.keyboard.press('Escape');
@@ -584,21 +584,21 @@ describe("the root bar's menu", () => {
 			// A pane whose menu has everything a pane menu can have: several
 			// tabs (so it says `Close tab`, as the root's always does) and an
 			// active tab holding a LAYOUT (so the four acts are on it too,
-			// da-crp5). `day` is only choosable once the root tab is `mine`.
+			// da-crp5). `main` is only choosable once the root tab is `mine`.
 			page.once('dialog', (dialog) => dialog.accept('mine'));
 			await chooseRoot(page, 'Save layout as…');
 			await page.locator('.root-bar [role="tab"]', { hasText: 'mine' }).waitFor();
-			await addTab(page, 'tail', 'day');
+			await addTab(page, 'tail', 'main');
 			// The chooser closes before the layout is inlined; the tab wears
 			// its name once it is.
-			await pane(page, 'tail').locator('[role="tab"]', { hasText: 'day' }).waitFor();
+			await pane(page, 'tail').locator('[role="tab"]', { hasText: 'main' }).waitFor();
 
 			// The NAME's slice: what the tab shows and what it is saved as.
 			const paneLines = await linesOf(page, () => menuButton(page, 'tail').click());
 			assert.deepEqual(paneLines, [
 				'Save layout',
 				'Restore layout',
-				// This tab holds `day`, which ships with datum (da-luwe).
+				// This tab holds `main`, which ships with datum (da-luwe).
 				'Reset layout',
 				'Save layout as…',
 				NO_LOCK
@@ -612,7 +612,7 @@ describe("the root bar's menu", () => {
 			//
 			// `Reset layout` is dropped from the comparison rather than
 			// missing from one side: it is a fact about the LAYOUT — this
-			// pane holds the built-in `day`, the root tab holds the `mine`
+			// pane holds the built-in `main`, the root tab holds the `mine`
 			// the reader just saved — and not about which menu is open, so
 			// it is the one item the two menus may differ on (da-luwe).
 			const rootLines = await linesOf(page, () => rootMenuButton(page).click());
@@ -627,7 +627,7 @@ describe("the root bar's menu", () => {
 	// The tab BECOMES the widget (da-8o07): a root tab is a copy of the
 	// layout it names, and a widget chosen for it replaces the copy rather
 	// than being put inside it — so the tab reads the widget's own title,
-	// not `day`. `layout-nested.test.mjs` holds the rest of that rule.
+	// not `main`. `layout-nested.test.mjs` holds the rest of that rule.
 	test('Change Widget replaces the root tab with what the chooser came back with', async () => {
 		await withApp(async (app) => {
 			const { page } = app;

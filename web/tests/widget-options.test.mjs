@@ -56,7 +56,7 @@ before(startApp);
 after(stopApp);
 
 // ONE APP for most of this file (da-6b3dj, sharedApp in support/app.mjs).
-// An option this session sets on `day`'s own widgets outlives `solo`, so a
+// An option this session sets on `main`'s own widgets outlives `solo`, so a
 // test that sets one takes a ROOM, whose widgets are new ids (`inRoom`);
 // `solo` serves a test that only reads, or whose last act hands the session
 // back (a save, or the pane closed). What still opens an app of its own
@@ -203,7 +203,7 @@ describe('widget options', () => {
 					[pane(page, strip).locator('svg.svg'), pane(page, strip)].map((l) => l.evaluate((e) => e.getBoundingClientRect().width))
 				);
 				assert.ok(drawn <= box, `the week overflows the pane: ${drawn} > ${box}`);
-				assert.equal(await dotted(page, room ?? 'day'), false, 'the pivot dirtied the layout');
+				assert.equal(await dotted(page, room ?? 'main'), false, 'the pivot dirtied the layout');
 
 				await pickOption(page, strip, 'orientation', 'horizontal');
 				await days('x').first().waitFor({ state: 'attached' });
@@ -224,7 +224,7 @@ describe('widget options', () => {
 			await toggleOption(page, 'repl', NEWEST);
 			assert.deepEqual(await replEchoes(page), [...oldestFirst].reverse());
 			// ⚑ The change this bead is: the layout never heard of it.
-			assert.equal(await dotted(page, 'day'), false, 'a session setting dirtied the layout');
+			assert.equal(await dotted(page, 'main'), false, 'a session setting dirtied the layout');
 			assert.ok(!(await tree(page)).includes('"reversed":true'), 'a session setting reached the tree');
 
 			// An entry keeps its own order: the command, then what it
@@ -436,7 +436,7 @@ describe('widget options', () => {
 	});
 
 	// `solo`, not a room: the edit below walks the WHOLE root, and in a room
-	// `day`'s repl behind it would be the first one `settings` finds. The
+	// `main`'s repl behind it would be the first one `settings` finds. The
 	// save hands the session's value to the tree, which `solo` puts back.
 	test('a key this build does not declare survives a save', async () => {
 		await shared.solo(async ({ page }) => {
@@ -519,7 +519,7 @@ describe('widget options', () => {
 
 			// The layout never hears of it: no dot, and the key is nowhere in
 			// the tree the draft is written from.
-			assert.equal(await dotted(page, 'day'), false, 'a session setting dirtied the layout');
+			assert.equal(await dotted(page, 'main'), false, 'a session setting dirtied the layout');
 			assert.equal((await tree(page)).includes('showIgnored'), false, 'a session setting reached the tree');
 
 			// «defaults» means the widget as it starts, session and all.
@@ -537,7 +537,7 @@ describe('widget options', () => {
 		}, DESKTOP);
 	});
 
-	// ⛔ `defaults.ts` mints tab ids from a literal name, so `day` and
+	// ⛔ `defaults.ts` mints tab ids from a literal name, so `main` and
 	// `mobile` both hold a `strip-tab` — and a session setting keyed by the
 	// bare tab id would have been one layout's AND the other's the moment
 	// options went session-level. So the key carries the LAYOUT (da-vhwq,
@@ -562,7 +562,7 @@ describe('widget options', () => {
 			const mobileStrip = await titledPane(page, 'dayview').first().getAttribute('data-pane');
 			assert.equal(await optionChecked(page, mobileStrip, FROZEN), true, 'the two layouts shared one tab’s setting');
 
-			// BOTH DIRECTIONS (the panel on #64): day's write not showing on
+			// BOTH DIRECTIONS (the panel on #64): main's write not showing on
 			// mobile is half the claim. Write on mobile too and hold the two
 			// to their own values — a collision the other way round, where the
 			// second layout's write lands on the first layout's entry, reads
@@ -570,7 +570,7 @@ describe('widget options', () => {
 			await toggleOption(page, mobileStrip, FROZEN);
 			assert.equal(await optionChecked(page, mobileStrip, FROZEN), false);
 
-			// Back on `day`: its own strip still holds what was set on it, so
+			// Back on `main`: its own strip still holds what was set on it, so
 			// leaving a root tab and coming back keeps this session's — and
 			// mobile's write did not reach it.
 			await page.locator('.root-bar [role="tab"]').filter({ hasText: exactly(room) }).click();
@@ -578,12 +578,12 @@ describe('widget options', () => {
 			assert.equal(await optionChecked(page, dayStrip, FROZEN), false, 'leaving a root tab lost what it held');
 
 			// And once more the other way, with the two now set apart: put
-			// day's back to the default and mobile's must not follow.
+			// main's back to the default and mobile's must not follow.
 			await toggleOption(page, dayStrip, FROZEN);
 			assert.equal(await optionChecked(page, dayStrip, FROZEN), true);
 			await page.locator('.root-bar [role="tab"]').filter({ hasText: exactly('mobile') }).click();
 			await titledPane(page, 'dayview').first().waitFor();
-			assert.equal(await optionChecked(page, mobileStrip, FROZEN), false, 'day’s write reached mobile');
+			assert.equal(await optionChecked(page, mobileStrip, FROZEN), false, 'main’s write reached mobile');
 			assert.deepEqual(app.errors, []);
 		});
 	});

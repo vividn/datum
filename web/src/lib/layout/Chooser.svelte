@@ -11,7 +11,7 @@
 	than this dialog, which offers the Layouts group below as well; said
 	rather than silently widened.
 
-	The order: the layouts `chooser.ts` handed it (`day`, then the rest by
+	The order: the layouts `chooser.ts` handed it (`main`, then the rest by
 	device, less what is open above the tab), and then every kind this
 	DATABASE offers by its title, in the registry's order — `pickableIn`,
 	which is every kind but the ones another database gates (da-o2wm8:
@@ -62,7 +62,7 @@
 	on:click={(e) => e.target === dialog && dialog.close()}
 >
 	<h2>{CHANGE}</h2>
-	<!-- Nothing to offer, nothing to head: inside `day`, with nothing else
+	<!-- Nothing to offer, nothing to head: inside `main`, with nothing else
 	     saved, the layouts section is empty and is not drawn. -->
 	{#if layouts.length}
 		<h3>Layouts</h3>

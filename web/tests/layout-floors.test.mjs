@@ -23,10 +23,10 @@ before(startApp);
 after(stopApp);
 
 // ONE APP on the desktop (da-6b3dj, sharedApp in support/app.mjs): a drag
-// moves `day`'s ratios, which `solo` restores, and the panes that shrink to
-// their frame open `day` from a draft of their own (`solo(fn, draft)`).
+// moves `main`'s ratios, which `solo` restores, and the panes that shrink to
+// their frame open `main` from a draft of their own (`solo(fn, draft)`).
 // The resizing tests that COUNT redraws keep an app each: after `solo`
-// restores a dragged `day`, nowview redraws once more at its restored size
+// restores a dragged `main`, nowview redraws once more at its restored size
 // AFTER `solo` has returned, and that run lands in their count.
 const shared = sharedApp(DESKTOP);
 

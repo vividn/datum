@@ -241,13 +241,13 @@ function baseUrl() {
  * to be shown and taken away instead (da-jprg).
  *
  * `home` is the layout this device already has open, as if it had been
- * here before — `day` unless a test says otherwise, because the suite is
- * written against `day` and a FRESH phone opens `mobile` (da-shzs). Written
+ * here before — `main` unless a test says otherwise, because the suite is
+ * written against `main` and a FRESH phone opens `mobile` (da-shzs). Written
  * only where nothing is stored, so a reload keeps what the test changed.
  * It has also unlocked it (da-gshh), which a fresh device finds locked.
  * `home: null` is a device that has never opened the site.
  *
- * `desk` is the desktop tree `day` is drawn from: `DESK` (support/desk.mjs),
+ * `desk` is the desktop tree `main` is drawn from: `DESK` (support/desk.mjs),
  * the tree the suite is written against, unless a test says otherwise.
  * `desk: null` is the shipped default (da-ncsyn).
  *
@@ -275,7 +275,7 @@ async function openApp({
 	query = '',
 	engine,
 	reducedMotion,
-	home = 'day',
+	home = 'main',
 	desk = DESK,
 	timezone = TIMEZONE
 } = {}) {
@@ -329,11 +329,11 @@ async function openApp({
  * shared app costs is shared STATE — for the shell and the layout menu,
  * the layout state a test mutates on its way through.
  *
- * `app().room('acts')` is the answer: `/acts?from=day` opens `day`'s tree
+ * `app().room('acts')` is the answer: `/acts?from=main` opens `main`'s tree
  * as a PREVIEW tab under a name of the test's own, written nowhere
  * (shell.ts), so the test may split it, drag it, lock it and save it
  * without the next test ever meeting any of it. The room is taken fresh:
- * every root tab but `day` is closed, every layout the reader saved is
+ * every root tab but `main` is closed, every layout the reader saved is
  * deleted and every draft and lock this device kept is dropped, so what a
  * test opens onto is the layout world a fresh install has.
  *
@@ -346,13 +346,13 @@ async function openApp({
  *   menu or modal open, the bar's line and pills and the time cursor empty,
  *   no errors yet, and no command in flight (`home`, `settled`);
  * - no layout of the reader's own and none of their history (`wipe`), the
- *   locks the page opened with (`relock`), and `day` as it ships (`restoreDay`)
+ *   locks the page opened with (`relock`), and `main` as it ships (`restoreMain`)
  *   — or as `draft` has it (`redraft`), or a room in front of it (`room`);
  * - an empty database (`empty`), and `spyOnRunner` free to be called again.
  *
  * What they do
  * NOT put back is the rest of the page: the REPL's scrollback, a widget
- * option THIS SESSION set on `day`'s own widgets (a room's are new ids, so
+ * option THIS SESSION set on `main`'s own widgets (a room's are new ids, so
  * a test that sets one wants a room), a runner a test installed, and
  * anything in `localStorage` outside the layouts. A test that reads any of
  * those from a fresh device, reloads, navigates elsewhere or opens a second
@@ -361,7 +361,7 @@ async function openApp({
  * Usage: `const shared = sharedApp(DESKTOP)` at the top of a file, then
  * either shape inside a test —
  *
- *     await shared.solo(async (app) => { … })        // `day` alone
+ *     await shared.solo(async (app) => { … })        // `main` alone
  *     await shared.room('acts', async (app, room) => { … })
  *
  * — or `await shared()` for the app itself. It opens on the FIRST ask
@@ -383,8 +383,8 @@ export function sharedApp(options) {
 		return shared;
 	};
 	/**
-	 * `fn` against the shared app with the layout world back to `day` alone —
-	 * or to `day` opened from `draft`, a device's stored draft of it (`redraft`).
+	 * `fn` against the shared app with the layout world back to `main` alone —
+	 * or to `main` opened from `draft`, a device's stored draft of it (`redraft`).
 	 */
 	open.solo = async (fn, draft) => fn(await (await open()).solo(draft));
 	/**
@@ -411,7 +411,7 @@ async function open(page, query) {
 	await countRuns(page);
 	// What the database's change counter reads as it opened — empty, on a
 	// fresh context: `empty` has nothing to do until something writes.
-	// And the locks it opened with — `home`'s unlocked `day` — which `wipe`
+	// And the locks it opened with — `home`'s unlocked `main` — which `wipe`
 	// takes with every other layout key and `relock` puts back.
 	// A test may have blocked the store, which is then nothing to put back.
 	const locks = await page.evaluate(() => {
@@ -447,7 +447,7 @@ function countRuns(page) {
 
 /**
  * Every command a tidy set off, run out: two frames for a pane that asks
- * one late — a restored `day`'s nowview does — then nothing in flight, so a
+ * one late — a restored `main`'s nowview does — then nothing in flight, so a
  * test that counts runs counts its own (da-6b3dj).
  */
 async function settled(app) {
@@ -773,12 +773,12 @@ function app(page, errors, query, clean, locks, internal) {
 		},
 
 		/**
-		 * `wipe`, and the page in front of you back to `day` alone, as it
-		 * came: every other root tab closed and `day` itself restored if the
+		 * `wipe`, and the page in front of you back to `main` alone, as it
+		 * came: every other root tab closed and `main` itself restored if the
 		 * test before it left a mark.
 		 *
 		 * At most ONE frame is drawn — the tabs are closed before the saves
-		 * are dropped, and `day` is put back while it is behind another tab
+		 * are dropped, and `main` is put back while it is behind another tab
 		 * wherever it can be.
 		 */
 		async solo(draft) {
@@ -786,12 +786,12 @@ function app(page, errors, query, clean, locks, internal) {
 			await page.evaluate(async () => {
 				const { layout, shell } = window.datum;
 				const tabs = () => layout.current().root.tabs;
-				for (let i = tabs().length - 1; i >= 0; i--) if (tabs()[i].layout !== 'day') shell.close(i);
+				for (let i = tabs().length - 1; i >= 0; i--) if (tabs()[i].layout !== 'main') shell.close(i);
 			});
 			await self.wipe();
 			await self.relock();
-			// A draft rebuilds `day` whole, so what it was left as is moot.
-			if (draft === undefined) await self.restoreDay();
+			// A draft rebuilds `main` whole, so what it was left as is moot.
+			if (draft === undefined) await self.restoreMain();
 			await self.settleRoot();
 			if (draft !== undefined) await self.redraft(draft);
 			await self.empty();
@@ -803,8 +803,8 @@ function app(page, errors, query, clean, locks, internal) {
 		/**
 		 * The locks the page opened with, back (da-6b3dj): written where
 		 * `wipe` took them from, and every open tab's own `locked` turned to
-		 * match — a lock is the TAB's too, so a test that locked `day` would
-		 * otherwise hand the next one a locked `day`.
+		 * match — a lock is the TAB's too, so a test that locked `main` would
+		 * otherwise hand the next one a locked `main`.
 		 */
 		async relock() {
 			await page.evaluate((locks) => {
@@ -819,23 +819,23 @@ function app(page, errors, query, clean, locks, internal) {
 		},
 
 		/**
-		 * `day` opened again from a DRAFT (`draft` in `support/layout.mjs`,
+		 * `main` opened again from a DRAFT (`draft` in `support/layout.mjs`,
 		 * a `Layout` as JSON), as a device that had it stored opens it
 		 * (da-6b3dj) — what an init script writing the draft before the page
 		 * loads gives `withApp`, on a page that is already up.
 		 *
-		 * Through the shell's own door: with `day` closed behind a scratch
+		 * Through the shell's own door: with `main` closed behind a scratch
 		 * preview, the draft is written where boot reads it and
-		 * `shell.open('day')` builds the tab from it exactly as boot does;
-		 * the scratch tab goes after. `solo` puts `day` back after the test.
+		 * `shell.open('main')` builds the tab from it exactly as boot does;
+		 * the scratch tab goes after. `solo` puts `main` back after the test.
 		 */
 		async redraft(json) {
 			await page.evaluate(async () => {
 				const { layout, shell } = window.datum;
 				const at = (name) => layout.current().root.tabs.findIndex((t) => t.layout === name);
-				// Seeded from `input`, which runs nothing: `day` is not drawn twice.
+				// Seeded from `input`, which runs nothing: `main` is not drawn twice.
 				await shell.openPreview('__redraft', 'input');
-				shell.close(at('day'));
+				shell.close(at('main'));
 			});
 			// Emptied now, while only the scratch tab is drawn: the draft's
 			// panes then draw once, on the empty database.
@@ -843,8 +843,8 @@ function app(page, errors, query, clean, locks, internal) {
 			await page.evaluate(async (json) => {
 				const { layout, shell } = window.datum;
 				const at = (name) => layout.current().root.tabs.findIndex((t) => t.layout === name);
-				localStorage.setItem('datum.layout.draft.v1.day', json);
-				if (!(await shell.open('day'))) throw new Error('day did not open from its draft');
+				localStorage.setItem('datum.layout.draft.v1.main', json);
+				if (!(await shell.open('main'))) throw new Error('main did not open from its draft');
 				shell.close(at('__redraft'));
 			}, json);
 			await ready(page);
@@ -947,16 +947,16 @@ function app(page, errors, query, clean, locks, internal) {
 			return self;
 		},
 
-		/** `day` back to the tree it ships with, if something moved it. Draws nothing on its own. */
-		async restoreDay() {
+		/** `main` back to the tree it ships with, if something moved it. Draws nothing on its own. */
+		async restoreMain() {
 			await page.evaluate(async (saved) => {
 				const { layout, shell } = window.datum;
-				const day = layout.current().root.tabs.find((t) => t.layout === 'day');
-				// A test that SAVED `day` left it drawn from a save `wipe` has
+				const day = layout.current().root.tabs.find((t) => t.layout === 'main');
+				// A test that SAVED `main` left it drawn from a save `wipe` has
 				// just deleted, and a tab that matches its save is not modified
 				// — so nothing below would move it (da-6b3dj). The reset makes
 				// it differ from that stale baseline; the restore then goes to
-				// what `day` means now, the shipped tree.
+				// what `main` means now, the shipped tree.
 				if (day && saved) await shell.resetLayout(day.id);
 				// Svelte's `get`, by hand: a store calls a new subscriber at
 				// once with the value it holds, and `subscribe` hands back the
@@ -966,28 +966,28 @@ function app(page, errors, query, clean, locks, internal) {
 				const stop = shell.modified.subscribe((m) => (dirty = !!day && m.has(day.id)));
 				stop();
 				if (dirty) await shell.restore(day.id);
-			}, wiped.includes('day'));
+			}, wiped.includes('main'));
 			return self;
 		},
 
 		/**
-		 * A ROOM of this test's own in a shared app (da-xamd): `day`'s tree
+		 * A ROOM of this test's own in a shared app (da-xamd): `main`'s tree
 		 * as a PREVIEW tab called `name`, written nowhere, on a fresh world.
 		 *
 		 * Whatever the test does in here — split it, drag it, lock it, save
-		 * it under its own name — is the room's and not `day`'s, and a
+		 * it under its own name — is the room's and not `main`'s, and a
 		 * preview leaves no trace at all unless the test asks for one.
 		 *
 		 * The room is opened FIRST and the world tidied behind it, so ONE
 		 * day frame is drawn: the room's. Closing the last test's tabs first
-		 * would draw `day` on the way past, which is the whole cost of a
+		 * would draw `main` on the way past, which is the whole cost of a
 		 * boot again. Closing them AFTER draws nothing: every one of them is
 		 * behind the room by then, the renderer draws the active tab alone,
 		 * and the tab in front is the same object throughout — `closeTab`
 		 * moves the active INDEX when it removes a tab before it, never the
 		 * tab, and the strip is keyed by tab id, so nothing remounts.
 		 *
-		 * A room's panes carry the room's name: the tree is `day`'s inlined
+		 * A room's panes carry the room's name: the tree is `main`'s inlined
 		 * a SECOND time, so `inline` re-mints the ids it already has as
 		 * `<id>@<room>` (shell.ts). `inRoom` in `support/layout.mjs` names one.
 		 */
@@ -998,19 +998,19 @@ function app(page, errors, query, clean, locks, internal) {
 			// whole boot again — a fresh wasm compile and every pane's first
 			// command — which is the cost a shared app is here to avoid.
 			// That the URL reaches this is `preview.test.mjs`'s to say.
-			const missing = await page.evaluate((n) => window.datum.shell.openPreview(n, 'day'), name);
+			const missing = await page.evaluate((n) => window.datum.shell.openPreview(n, 'main'), name);
 			if (missing !== null) throw new Error(`a room seeded from a layout that is nothing: ${missing}`);
 			await page.evaluate(async (keep) => {
 				const { layout, shell } = window.datum;
 				const tabs = () => layout.current().root.tabs;
 				for (let i = tabs().length - 1; i >= 0; i--) {
 					const held = tabs()[i].layout;
-					if (held !== 'day' && held !== keep) shell.close(i);
+					if (held !== 'main' && held !== keep) shell.close(i);
 				}
 			}, name);
 			await self.wipe();
 			await self.relock();
-			await self.restoreDay();
+			await self.restoreMain();
 			await self.settleRoot();
 			await self.empty();
 			await ready(page);

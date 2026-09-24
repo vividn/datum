@@ -19,11 +19,11 @@ export const DESKTOP = { viewport: { width: 1280, height: 900 } };
 export const PHONE = { device: devices['iPhone 12'] };
 
 /**
- * A pane of a ROOM, by the id `day` gives it (da-xamd).
+ * A pane of a ROOM, by the id `main` gives it (da-xamd).
  *
- * A room is `day`'s tree inlined a SECOND time — `day` itself is still a
+ * A room is `main`'s tree inlined a SECOND time — `main` itself is still a
  * root tab — and `inline` re-mints an id the tree already holds as
- * `<id>@<name>` (shell.ts), so `day`'s own `tail` is `tail@acts` inside
+ * `<id>@<name>` (shell.ts), so `main`'s own `tail` is `tail@acts` inside
  * the room called `acts`.
  */
 export const inRoom = (room, id) => `${id}@${room}`;
@@ -66,7 +66,7 @@ export const pane = (page, id) => page.locator(`section[data-pane="${id}"]`);
 
 /**
  * A pane by its TITLE, which is what a copy of a layout keeps when its ids
- * are re-minted (da-xamd): `day`'s `tail` is `tail@acts` inside the room
+ * are re-minted (da-xamd): `main`'s `tail` is `tail@acts` inside the room
  * called `acts`, and its title is `tail` in both.
  */
 export const titledPane = (page, title) => page.locator(`section.pane[data-title="${title}"]`);
@@ -503,10 +503,10 @@ export const along = (direction, ...children) => ({
 	}
 });
 
-/** A draft of one REPL pane for the `day` tab, written before the app loads. */
+/** A draft of one REPL pane for the `main` tab, written before the app loads. */
 export const ONE_PANE = JSON.stringify({
 	version: 1,
-	name: 'day',
+	name: 'main',
 	root: {
 		id: 'only',
 		tabs: [{ id: 'only-tab', content: { id: 'only-widget', kind: 'repl', settings: {} } }],
@@ -515,7 +515,7 @@ export const ONE_PANE = JSON.stringify({
 	}
 });
 
-/** An init script: `json` as the `day` tab's draft. */
+/** An init script: `json` as the `main` tab's draft. */
 export function draft(json) {
-	localStorage.setItem('datum.layout.draft.v1.day', json);
+	localStorage.setItem('datum.layout.draft.v1.main', json);
 }

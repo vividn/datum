@@ -47,7 +47,7 @@ after(stopApp);
 
 // ONE APP for the desktop tests (da-6b3dj, sharedApp in support/app.mjs).
 // Those that open `/<name>` first take `wipe`, since the navigation builds
-// the page anew from a device with no layouts kept; `day` takes `solo`. The
+// the page anew from a device with no layouts kept; `main` takes `solo`. The
 // phone's round trip keeps an app of its own: the one test on that screen.
 const shared = sharedApp(DESKTOP);
 
@@ -208,8 +208,8 @@ describe('a root tab whose layout is one widget', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			const lines = await rootLines(page);
-			assert.ok(!lines.includes(NEWEST), `day reads ${lines.join(' | ')}`);
-			assert.ok(!lines.includes(RESET_WIDGET), `day reads ${lines.join(' | ')}`);
+			assert.ok(!lines.includes(NEWEST), `main reads ${lines.join(' | ')}`);
+			assert.ok(!lines.includes(RESET_WIDGET), `main reads ${lines.join(' | ')}`);
 			assert.equal(lines[0], 'Save layout');
 			assert.equal(lines.at(-1), 'export backup…');
 			assert.deepEqual(await rootManageLines(page), ['Change Widget', 'Split ← ↓ ↑ →', '× Close tab']);

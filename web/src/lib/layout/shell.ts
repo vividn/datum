@@ -32,12 +32,12 @@
 //     edited, the outer copy's edit is the one kept over a reload.
 //
 // Ids: a saved layout's ids are unique within it and no further. Two
-// root tabs made from one save (`day` and a `mine` saved from it) share
+// root tabs made from one save (`main` and a `mine` saved from it) share
 // every id, and the tree operations find a pane by id — a split on one
 // tab's `tail` would split both. So `inline` re-mints an id that is
 // already in the tree as `<id>@<name>`, and `extract` strips that suffix
 // again, so the save keeps the ids it had and nothing has to remember a
-// map. Only colliding ids are touched: the first `day` keeps `tail`,
+// map. Only colliding ids are touched: the first `main` keeps `tail`,
 // `strip` and the rest, which is how a test and a reader name them.
 //
 // Modified, per tab, is the tab's `extract` against the save's own
@@ -52,7 +52,7 @@
 // saving the outer layout never inlines the inner one into it, and an edit
 // made inside the inner one goes to the inner one's own save and draft.
 // A nested tab is expanded on load from that draft, else that save, with
-// one guard: a name already open above it (`day` inside `day`) is a
+// one guard: a name already open above it (`main` inside `main`) is a
 // notice, not a recursion.
 //
 // A PREVIEW is a root tab that is none of this device's business
@@ -130,11 +130,11 @@ const phone = () =>
 	typeof matchMedia === 'function' && matchMedia(`(max-width: ${PHONE_WIDTH}px)`).matches;
 
 /**
- * The layout a device starts with: `mobile` on a phone (da-shzs), `day`
+ * The layout a device starts with: `mobile` on a phone (da-shzs), `main`
  * elsewhere. Asked only where nothing is stored — once the open list is
  * written, turning or widening the screen never swaps it.
  */
-const home = () => (phone() ? 'mobile' : 'day');
+const home = () => (phone() ? 'mobile' : 'main');
 
 /** The root bar a fresh install shows: the one layout, in front. */
 const fresh = (): RootState => ({ names: [home()], active: 0 });
@@ -590,7 +590,7 @@ const withDebug = (state: RootState): RootState =>
 		? { names: [DEBUG_LAYOUT, ...state.names], active: 0 }
 		: state;
 
-/** Fill the root from this device's open layouts (`day` or `mobile` alone at first). Once. */
+/** Fill the root from this device's open layouts (`main` or `mobile` alone at first). Once. */
 export function boot(): Promise<void> {
 	return (booting ??= (async () => {
 		await initDb().catch(() => {});
@@ -646,9 +646,9 @@ function settle(): void {
 	// in front when it is written, and otherwise — a preview in front being
 	// written nowhere — the last one before it. Worked:
 	//
-	//   [day, x*]        active 1 → none in front is kept, one before → 0 (day)
-	//   [day, mine, x*]  active 2 → two before → 1 (mine)
-	//   [x*, day]        active 0 → none before → 0 (day, the only name left)
+	//   [main, x*]        active 1 → none in front is kept, one before → 0 (main)
+	//   [main, mine, x*]  active 2 → two before → 1 (mine)
+	//   [x*, main]        active 0 → none before → 0 (main, the only name left)
 	const front = names.indexOf(tabs[$layout.root.active]);
 	const before = tabs.slice(0, $layout.root.active).filter(kept).length;
 	saveRoot({
@@ -772,7 +772,7 @@ export async function openPreview(name: string, from: string): Promise<string | 
 	const n = canonicalName(name);
 	// Anything the name already MEANS wins — a tab in front of you (a
 	// preview of it included, which is brought forward), a save, a kit's, a
-	// built-in, a widget kind. `/day?from=day` lands here on `resolve`, so a
+	// built-in, a widget kind. `/main?from=main` lands here on `resolve`, so a
 	// name that exists is never seeded over even when `from` names it too.
 	if (rootTabs(get(layout)).some((t) => t.layout === n) || (await resolve(n))) {
 		await open(n);
@@ -1061,7 +1061,7 @@ export async function inlineInto(tabId: NodeId, name: string): Promise<void> {
  * no act is left over for a copy that is not there.
  *
  * At the ROOT it is the built-in ONE-WIDGET LAYOUT the kind is instead
- * (da-y2f6): every built-in but `day` and `mobile` is exactly that widget alone, named
+ * (da-y2f6): every built-in but `main` and `mobile` is exactly that widget alone, named
  * as its pane is titled, so the tab can be the widget AND have a name —
  * and it has to have one, because this device's open list is a list of
  * NAMES (`settle`, `saveRoot`) and a nameless root tab has nothing to

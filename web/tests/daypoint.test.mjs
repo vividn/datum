@@ -677,7 +677,7 @@ describe('what the bands take, and what they leave', () => {
 		await withStrip(
 			async (app) => {
 				const { page } = app;
-				assert.deepEqual(await page.locator('.root-bar [role="tab"]').allInnerTexts(), ['day', 'tail']);
+				assert.deepEqual(await page.locator('.root-bar [role="tab"]').allInnerTexts(), ['main', 'tail']);
 
 				// On a band: the strip's, so the layout stays put — and it
 				// panned or selected instead, which the tests above are about.
@@ -700,7 +700,7 @@ describe('what the bands take, and what they leave', () => {
 				prepare: (context) =>
 					context.addInitScript(
 						(json) => localStorage.setItem('datum.layout.root.v1', json),
-						JSON.stringify({ names: ['day', 'tail'], active: 0 })
+						JSON.stringify({ names: ['main', 'tail'], active: 0 })
 					)
 			}
 		);

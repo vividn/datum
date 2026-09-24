@@ -241,7 +241,7 @@ describe('the DEBUG database', () => {
 			// database and nothing else about the device or the layout.
 			await page.goto(`${page.url()}?db=DEBUG`);
 			await page.locator('.root-bar [role="tab"]').first().waitFor();
-			await page.locator('.root-bar [role="tab"]', { hasText: 'day' }).click();
+			await page.locator('.root-bar [role="tab"]', { hasText: 'main' }).click();
 			const inDebug = await offered();
 			assert.ok(inDebug.includes('debug'), `DEBUG did not offer it either: ${inDebug.join(', ')}`);
 			assert.deepEqual(app.errors, []);

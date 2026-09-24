@@ -55,7 +55,7 @@ const withApp = (fn, options = {}) =>
 
 // ONE APP for the tests that stay on this page at 1280x900 (da-6b3dj,
 // sharedApp in support/app.mjs): `solo` empties the database and the pills,
-// and opens `day` from PAGE as a draft, as `prepare` does at boot. What
+// and opens `main` from PAGE as a draft, as `prepare` does at boot. What
 // reloads, counts a load's writes, or is the finger's screen keeps its own.
 const shared = sharedApp(DESKTOP);
 const onPage = (fn) => shared.solo(fn, PAGE);

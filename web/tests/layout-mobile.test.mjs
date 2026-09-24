@@ -6,7 +6,7 @@
 // holds the tree, that every pane of it is on the screen at a phone's
 // sizes, that the two taps of a log work inside it, and that only a FRESH
 // phone gets it: a device with an open list keeps it, and a desktop still
-// opens `day`.
+// opens `main`.
 //
 // vividn, 2026-09-21, changed three things about it (da-hkjp): the strip
 // shows ONE day, the tail's type is smaller, and row 3 is a SPLIT of the
@@ -45,7 +45,7 @@ const FRESH_DESKTOP = { ...DESKTOP, home: null };
 
 // ONE fresh phone for the first two tests (da-6b3dj, sharedApp in
 // support/app.mjs), taken as it is rather than through `solo`, which puts
-// back `day` and not the `mobile` a fresh phone opens: the first reads the
+// back `main` and not the `mobile` a fresh phone opens: the first reads the
 // app as it opened, the second only type sizes. Everything else opens its
 // own — a screen of its own, a reload, a fresh device, a navigation.
 const freshPhone = sharedApp(phone());
@@ -323,9 +323,9 @@ describe('a fresh phone', () => {
 });
 
 describe('who gets it', () => {
-	test('a fresh desktop still opens `day`', async () => {
+	test('a fresh desktop still opens `main`', async () => {
 		await withApp(async ({ page }) => {
-			assert.deepEqual(await rootNames(page), ['day']);
+			assert.deepEqual(await rootNames(page), ['main']);
 		}, FRESH_DESKTOP);
 	});
 
@@ -345,10 +345,10 @@ describe('who gets it', () => {
 		}, phone());
 	});
 
-	test('Reset default layouts lands on `mobile` on a phone and `day` on a desktop', async () => {
+	test('Reset default layouts lands on `mobile` on a phone and `main` on a desktop', async () => {
 		for (const [device, want] of [
 			[phone(), 'mobile'],
-			[FRESH_DESKTOP, 'day']
+			[FRESH_DESKTOP, 'main']
 		])
 			await withApp(async ({ page }) => {
 				await page.evaluate(() => window.datum.shell.open('tail'));

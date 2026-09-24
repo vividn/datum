@@ -63,7 +63,7 @@ after(stopApp);
 const PAGE = JSON.stringify(along('row', widgetPane('repl', 'repl'), widgetPane('cmd', 'command')));
 
 // ONE APP for the file (da-6b3dj, sharedApp in support/app.mjs), each test
-// on `day` opened from the PAGE draft (`solo(fn, PAGE)`), locks put back
+// on `main` opened from the PAGE draft (`solo(fn, PAGE)`), locks put back
 // between them. The finger's test alone opens its own: a touch context.
 const shared = sharedApp(DESKTOP);
 const onPage = (fn) => shared.solo(fn, PAGE);

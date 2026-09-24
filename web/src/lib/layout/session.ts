@@ -47,7 +47,7 @@ export const session = { subscribe: store.subscribe };
  * the TAB, and WHAT THE TAB HOLDS (`scopes`, tree.ts).
  *
  * Not the bare tab id. `defaults.ts` mints tab ids from a literal name, so
- * `day` and `mobile` both hold a `tail-tab` and a window set on one would
+ * `main` and `mobile` both hold a `tail-tab` and a window set on one would
  * have shown on the other; and `Change Widget` leaves the tab where it is
  * and mints a new widget inside it, so a setting made on what was there
  * would have landed on what is there now. Either way the entry is orphaned

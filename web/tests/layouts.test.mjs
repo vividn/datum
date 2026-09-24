@@ -5,7 +5,7 @@
 // restoring is `undo`, the versions are the entry's history. Everything
 // here goes through `window.datum.layouts` — the store, which is CLI
 // commands through the seam — or through the icons on the root bar, which
-// act on the active root tab's layout (da-0a5o): `day`, on a fresh device.
+// act on the active root tab's layout (da-0a5o): `main`, on a fresh device.
 //
 // Where a test needs a modified layout it writes the draft the way the
 // shell does: into `localStorage`, under the layout's name, as the layout
@@ -87,7 +87,7 @@ const controlsReady = (app) => app.page.locator('.root-bar[aria-busy="false"] [r
 const isModified = (app) =>
 	app.page.locator('.root-bar').evaluate((el) => el.classList.contains('modified'));
 
-const DRAFT = 'datum.layout.draft.v1.day';
+const DRAFT = 'datum.layout.draft.v1.main';
 const draft = (app) => app.page.evaluate((key) => localStorage.getItem(key), DRAFT);
 const setDraft = (app, layout) =>
 	app.page.evaluate(([key, value]) => localStorage.setItem(key, value), [DRAFT, JSON.stringify(layout)]);
@@ -100,8 +100,8 @@ after(stopApp);
 
 // ONE APP for the tests that stay on this page (da-6b3dj, sharedApp in
 // support/app.mjs): `solo` deletes every layout the reader saved and puts
-// `day` back. The rest open their own: they reload, open a second tab,
-// refuse storage, hold the clock, or leave the root without `day` (Save
+// `main` back. The rest open their own: they reload, open a second tab,
+// refuse storage, hold the clock, or leave the root without `main` (Save
 // layout as…), which `solo` cannot undo.
 const shared = sharedApp();
 
@@ -280,7 +280,7 @@ describe('the draft', () => {
 			assert.equal(await isModified(app), false);
 			assert.equal(await draft(app), null);
 
-			const edited = shellTree('day', 'nowview');
+			const edited = shellTree('main', 'nowview');
 			await setDraft(app, edited);
 			await app.reload();
 			await controlsReady(app);
@@ -290,10 +290,10 @@ describe('the draft', () => {
 
 			await chooseRoot(app.page, 'Save layout');
 			await until(() => isModified(app), (m) => m === false);
-			assert.deepEqual(await layouts(app, 'loadLayout', 'day'), edited);
+			assert.deepEqual(await layouts(app, 'loadLayout', 'main'), edited);
 			assert.equal(await draft(app), null);
 
-			await setDraft(app, shellTree('day', 'repl'));
+			await setDraft(app, shellTree('main', 'repl'));
 			await app.reload();
 			await controlsReady(app);
 			assert.equal(await isModified(app), true);
@@ -305,7 +305,7 @@ describe('the draft', () => {
 			await app.reload();
 			await controlsReady(app);
 			assert.equal(await isModified(app), false);
-			assert.deepEqual(await layouts(app, 'loadLayout', 'day'), edited);
+			assert.deepEqual(await layouts(app, 'loadLayout', 'main'), edited);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -317,7 +317,7 @@ describe('the draft', () => {
 				assert.equal(await isModified(app), false);
 				await chooseRoot(app.page, 'Save layout');
 				await controlsReady(app);
-				assert.equal(await layouts(app, 'loadLayout', 'day').then((l) => l.name), 'day');
+				assert.equal(await layouts(app, 'loadLayout', 'main').then((l) => l.name), 'main');
 				assert.equal(await app.page.locator('.root-bar .error').count(), 0);
 				assert.deepEqual(app.errors, []);
 			},
@@ -340,9 +340,9 @@ describe('the controls', () => {
 	test('an unmodified Restore lists the versions, and one of them can be picked', async () => {
 		await shared.solo(async (app) => {
 			await controlsReady(app);
-			const first = shellTree('day', 'daystrip');
+			const first = shellTree('main', 'daystrip');
 			await layouts(app, 'saveLayout', first);
-			await layouts(app, 'saveLayout', shellTree('day', 'nowview'));
+			await layouts(app, 'saveLayout', shellTree('main', 'nowview'));
 
 			await chooseRoot(app.page, 'Restore layout');
 			const items = app.page.locator('.root-bar .versions button');
@@ -352,7 +352,7 @@ describe('the controls', () => {
 				['→ forward', 'v2', 'v1']
 			);
 			await items.filter({ hasText: /^v1 / }).click();
-			await until(() => layouts(app, 'loadLayout', 'day'), (l) => isDeepStrictEqual(l, first));
+			await until(() => layouts(app, 'loadLayout', 'main'), (l) => isDeepStrictEqual(l, first));
 			assert.equal(await isModified(app), false);
 			// And the tab shows it: the strip alone, titled by the draft's tab.
 			await until(
@@ -365,7 +365,7 @@ describe('the controls', () => {
 	test('Save as makes a new layout and shows it as the tab', async () => {
 		await withApp(async (app) => {
 			await controlsReady(app);
-			const edited = shellTree('day', 'nowview');
+			const edited = shellTree('main', 'nowview');
 			await setDraft(app, edited);
 			await app.reload();
 			await controlsReady(app);
@@ -384,7 +384,7 @@ describe('the controls', () => {
 			);
 			// The original was never saved, and keeps no draft of the edit.
 			assert.equal(await draft(app), null);
-			await assert.rejects(layouts(app, 'loadLayout', 'day'));
+			await assert.rejects(layouts(app, 'loadLayout', 'main'));
 		});
 	});
 });
@@ -412,11 +412,11 @@ describe('Reset layout', () => {
 	/** This device's tree, as the shell writes it down: save it, then read the save. */
 	async function treeOf(app) {
 		await chooseRoot(app.page, 'Save layout');
-		return until(() => layouts(app, 'loadLayout', 'day').catch(() => null), (l) => l !== null);
+		return until(() => layouts(app, 'loadLayout', 'main').catch(() => null), (l) => l !== null);
 	}
 
 	/**
-	 * The tree the `day` tab is HOLDING, without writing anything: the
+	 * The tree the `main` tab is HOLDING, without writing anything: the
 	 * copy, through `extract` — the same form a save is stored in, which is
 	 * what lets it be compared with one. A test that saved to read would
 	 * destroy the fact it is checking, since the point of a reset is that
@@ -425,7 +425,7 @@ describe('Reset layout', () => {
 	const held = (app) =>
 		app.page.evaluate(() => {
 			const { extract, layoutTabs } = window.datum.shell;
-			return extract(layoutTabs(window.datum.layout.current()).find((t) => t.layout === 'day'));
+			return extract(layoutTabs(window.datum.layout.current()).find((t) => t.layout === 'main'));
 		});
 
 	const paneCount = (page) => page.locator('section.pane').count();
@@ -460,7 +460,7 @@ describe('Reset layout', () => {
 			// What shipped is what is on screen...
 			assert.deepEqual((await held(app)).root, builtin.root);
 			// ...and the SAVE is untouched: the reset only wrote the draft.
-			assert.deepEqual((await layouts(app, 'loadLayout', 'day')).root, edited.root);
+			assert.deepEqual((await layouts(app, 'loadLayout', 'main')).root, edited.root);
 			await until(() => draft(app), (d) => d !== null);
 			// So the two differ, and the dot says so.
 			await until(() => isModified(app), (m) => m === true);
@@ -477,7 +477,7 @@ describe('Reset layout', () => {
 			await reset(app, panes);
 			await chooseRoot(page, 'Save layout');
 			await until(
-				() => layouts(app, 'loadLayout', 'day').then((l) => l.root),
+				() => layouts(app, 'loadLayout', 'main').then((l) => l.root),
 				(root) => isDeepStrictEqual(root, builtin.root)
 			);
 			await until(() => isModified(app), (m) => m === false);
@@ -497,11 +497,11 @@ describe('Reset layout', () => {
 
 			await reset(app, panes);
 
-			// Nothing was ever saved under `day`, so there is nothing to
+			// Nothing was ever saved under `main`, so there is nothing to
 			// differ from: the draft goes and the dot clears.
 			await until(() => draft(app), (d) => d === null);
 			await until(() => isModified(app), (m) => m === false);
-			await assert.rejects(layouts(app, 'loadLayout', 'day'));
+			await assert.rejects(layouts(app, 'loadLayout', 'main'));
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -510,7 +510,7 @@ describe('Reset layout', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await controlsReady(app);
-			// `day`, which ships, has it.
+			// `main`, which ships, has it.
 			await rootMenuButton(page).click();
 			assert.ok((await menuLines(page)).includes('Reset layout'));
 			await page.keyboard.press('Escape');

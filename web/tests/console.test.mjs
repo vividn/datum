@@ -22,11 +22,11 @@ after(stopApp);
 
 // ONE desktop app for the file (da-6b3dj, sharedApp in support/app.mjs):
 // `solo` empties the database between tests, the scrollback is read from
-// where the test found it, and the page with no REPL is `day` opened from
+// where the test found it, and the page with no REPL is `main` opened from
 // a draft of its own.
 const shared = sharedApp(DESKTOP);
 
-/** A page with a tail pane and no REPL at all: `press`'s other half, as `day`'s draft. */
+/** A page with a tail pane and no REPL at all: `press`'s other half, as `main`'s draft. */
 const NO_REPL = JSON.stringify(along('column', widgetPane('tail', 'tail'), widgetPane('nowview', 'nowview')));
 
 const receipt = (page) => page.locator('.prompt-bar .receipt');

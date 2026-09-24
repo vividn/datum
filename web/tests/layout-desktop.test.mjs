@@ -1,4 +1,4 @@
-// The desktop default (da-ncsyn): `day` on a desktop that has never opened
+// The desktop default (da-ncsyn): `main` on a desktop that has never opened
 // the site.
 //
 // vividn, 2026-09-23: «change the default desktop interface to be more
@@ -8,7 +8,7 @@
 // / fields / commands, over the app's own bottom bar and with no `input`
 // pane drawing that bar a second time.
 //
-// The rest of the suite opens `day` on a tree it PINS (support/desk.mjs),
+// The rest of the suite opens `main` on a tree it PINS (support/desk.mjs),
 // so this file is the one that asks for the shipped tree (`desk: null`).
 // The weights are `legibly`'s over the panes' legible floors, and a weight
 // is a claim about every screen, so the claim is measured at five.
@@ -82,17 +82,17 @@ const wholeCommands = (page) =>
 		});
 
 describe('a fresh desktop', () => {
-	test('opens `day`: dayview / tail | nowview | stats / fields / command', async () => {
+	test('opens `main`: dayview / tail | nowview | stats / fields / command', async () => {
 		const { page, errors } = await fresh();
 		assert.deepEqual(
 			await page.evaluate(() => window.datum.shell.rootTabs(window.datum.layout.current()).map((t) => t.layout)),
-			['day']
+			['main']
 		);
 		assert.deepEqual(await titles(page), ['dayview', 'tail', 'nowview', 'stats', 'fields', 'command']);
 		// No `input`: the bottom bar is the command line, and one is enough.
 		assert.equal(await page.locator('main section.pane[data-title="input"]').count(), 0);
 		// Splits, not tabs: all three of row two are on the screen at once.
-		assert.equal(await page.locator('main [role="tab"]').count(), 0, 'something in `day` is tabbed');
+		assert.equal(await page.locator('main [role="tab"]').count(), 0, 'something in `main` is tabbed');
 
 		const { panes: p } = await screen(page);
 		const near = (a, b) => Math.abs(a - b) <= 1;

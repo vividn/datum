@@ -40,7 +40,7 @@ after(stopApp);
 
 const DESKTOP = { viewport: { width: 1280, height: 900 } };
 
-/** The day frame's panes, which is what a room seeded from `day` draws. */
+/** The day frame's panes, which is what a room seeded from `main` draws. */
 const DAY = ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields'];
 
 const rootTabs = (page) =>
@@ -73,21 +73,21 @@ const openList = (page) =>
 const app = sharedApp(DESKTOP);
 
 describe('a preview tab', () => {
-	test('/t-1?from=day is day’s tree in italics, and this device is not told about it', async () => {
+	test('/t-1?from=main is main’s tree in italics, and this device is not told about it', async () => {
 		const a = await app();
 		await a.solo();
 		const { page } = a;
 
 		// The URL itself, a real navigation: the door a reader comes in by.
-		await a.goto('/t-1?from=day');
-		assert.deepEqual(await rootTabs(page), ['day', 't-1']);
+		await a.goto('/t-1?from=main');
+		assert.deepEqual(await rootTabs(page), ['main', 't-1']);
 		assert.equal(await activeRootTab(page), 't-1');
 		assert.deepEqual(await italic(page), ['t-1'], 'the preview is not the one italic tab');
-		// Seeded from `day`: what it draws is the day frame, under its own name.
+		// Seeded from `main`: what it draws is the day frame, under its own name.
 		assert.deepEqual(await titles(page), DAY);
 
 		// And nothing about it is written down.
-		assert.deepEqual(await openList(page), { names: ['day'], active: 0 });
+		assert.deepEqual(await openList(page), { names: ['main'], active: 0 });
 		assert.deepEqual(
 			(await layouts(a, 'listLayouts')).map((l) => l.name),
 			[],
@@ -100,7 +100,7 @@ describe('a preview tab', () => {
 
 		// A reload has never heard of it.
 		await a.reload();
-		assert.deepEqual(await rootTabs(page), ['day']);
+		assert.deepEqual(await rootTabs(page), ['main']);
 		assert.deepEqual(await italic(page), []);
 		assert.deepEqual(a.errors, []);
 	});
@@ -110,11 +110,11 @@ describe('a preview tab', () => {
 		await a.solo();
 		const { page } = a;
 
-		// `day` is a name something answers to, so `?from=` is ignored and it
+		// `main` is a name something answers to, so `?from=` is ignored and it
 		// opens exactly as `/day` does — no second tab, nothing italic, and
 		// the repl tree it was pointed at nowhere in sight.
-		await a.goto('/day?from=repl');
-		assert.deepEqual(await rootTabs(page), ['day']);
+		await a.goto('/main?from=repl');
+		assert.deepEqual(await rootTabs(page), ['main']);
 		assert.deepEqual(await italic(page), []);
 		assert.deepEqual(await titles(page), DAY);
 
@@ -123,18 +123,18 @@ describe('a preview tab', () => {
 		// second one is followed WITHOUT a navigation, which is the only way
 		// to ask the question — a real one boots the app afresh, and a fresh
 		// app has no preview to find.
-		await a.goto('/t-2?from=day');
-		assert.deepEqual(await rootTabs(page), ['day', 't-2']);
-		await page.locator('.root-bar [role="tab"]', { hasText: 'day' }).click();
-		await until(() => activeRootTab(page), (t) => t === 'day');
-		assert.equal(await page.evaluate(() => window.datum.shell.openPreview('t-2', 'day')), null);
-		assert.deepEqual(await rootTabs(page), ['day', 't-2']);
+		await a.goto('/t-2?from=main');
+		assert.deepEqual(await rootTabs(page), ['main', 't-2']);
+		await page.locator('.root-bar [role="tab"]', { hasText: 'main' }).click();
+		await until(() => activeRootTab(page), (t) => t === 'main');
+		assert.equal(await page.evaluate(() => window.datum.shell.openPreview('t-2', 'main')), null);
+		assert.deepEqual(await rootTabs(page), ['main', 't-2']);
 		assert.equal(await activeRootTab(page), 't-2');
 
 		// An EMPTY `?from=` is no `from`: the name opens plainly, so a name
 		// that means something opens as itself and nothing is seeded.
-		await a.goto('/day?from=');
-		assert.deepEqual(await rootTabs(page), ['day']);
+		await a.goto('/main?from=');
+		assert.deepEqual(await rootTabs(page), ['main']);
 		assert.deepEqual(await italic(page), []);
 		assert.deepEqual(await titles(page), DAY);
 
@@ -155,12 +155,12 @@ describe('a preview tab', () => {
 		// A navigation is a fresh app, and a fresh app has never heard of a
 		// preview: `t-2` is gone with the page that held it, which is the
 		// whole of what «written nowhere» buys.
-		assert.deepEqual(await rootTabs(page), ['day']);
+		assert.deepEqual(await rootTabs(page), ['main']);
 		assert.deepEqual(await layoutStorage(page), before, 'a refused link wrote to this device');
 		assert.deepEqual(a.errors, []);
 	});
 
-	test('an edit inside the preview is the preview’s alone: day, and day’s save, are untouched', async () => {
+	test('an edit inside the preview is the preview’s alone: main, and main’s save, are untouched', async () => {
 		const a = await app();
 		await a.solo();
 		const { page } = a;
@@ -175,12 +175,12 @@ describe('a preview tab', () => {
 		const moved = await cellExtents(page, 'column');
 		assert.notDeepEqual(moved, day, 'the drag moved nothing');
 
-		// `day` itself, behind the other tab, is the tree it always was.
-		await page.locator('.root-bar [role="tab"]', { hasText: 'day' }).click();
-		await until(() => activeRootTab(page), (t) => t === 'day');
+		// `main` itself, behind the other tab, is the tree it always was.
+		await page.locator('.root-bar [role="tab"]', { hasText: 'main' }).click();
+		await until(() => activeRootTab(page), (t) => t === 'main');
 		assert.deepEqual(await titles(page), DAY);
-		assert.deepEqual(await cellExtents(page, 'column'), day, 'the drag moved day’s own border');
-		// Nor is there a save of `day` to have moved: the room's edit is the
+		assert.deepEqual(await cellExtents(page, 'column'), day, 'the drag moved main’s own border');
+		// Nor is there a save of `main` to have moved: the room's edit is the
 		// room's, and nobody's layout was written.
 		assert.deepEqual(
 			(await layouts(a, 'listLayouts')).map((l) => l.name),
@@ -209,9 +209,9 @@ describe('a preview tab', () => {
 		await until(() => rootTabs(page), (t) => t.includes('mine'));
 		// The copy moved to the new name, and it is real: italic nowhere, and
 		// in this device's open list.
-		assert.deepEqual(await rootTabs(page), ['day', 'mine']);
+		assert.deepEqual(await rootTabs(page), ['main', 'mine']);
 		assert.deepEqual(await italic(page), []);
-		assert.deepEqual(await openList(page), { names: ['day', 'mine'], active: 1 });
+		assert.deepEqual(await openList(page), { names: ['main', 'mine'], active: 1 });
 
 		// And `t-9` is a name like any other again: a layout saved under it
 		// opens as itself, not as the preview it used to be.
@@ -230,7 +230,7 @@ describe('a preview tab', () => {
 		await page.evaluate(() => window.datum.shell.open('t-9'));
 		await until(() => rootTabs(page), (t) => t.includes('t-9'));
 		assert.deepEqual(await italic(page), [], 'a real layout was drawn as a preview');
-		assert.deepEqual(await openList(page), { names: ['day', 'mine', 't-9'], active: 2 });
+		assert.deepEqual(await openList(page), { names: ['main', 'mine', 't-9'], active: 2 });
 		assert.deepEqual(await titles(page), ['nowview']);
 		await a.solo();
 	});
@@ -242,7 +242,7 @@ describe('a preview tab', () => {
 		const before = await layoutStorage(page);
 
 		await a.room('t-5');
-		assert.deepEqual(await rootTabs(page), ['day', 't-5']);
+		assert.deepEqual(await rootTabs(page), ['main', 't-5']);
 		// An edit first, so what is thrown away is a tree somebody changed.
 		await manageRoot(page, 'split: a new pane to the right');
 		await until(() => titles(page), (t) => t.includes('empty'));
@@ -271,12 +271,12 @@ describe('Keep tab', () => {
 
 		const listed = (await layouts(a, 'listLayouts')).filter((l) => l.name === 't-6');
 		assert.deepEqual(listed.map((l) => l.source), ['user']);
-		assert.deepEqual(await openList(page), { names: ['day', 't-6'], active: 1 });
+		assert.deepEqual(await openList(page), { names: ['main', 't-6'], active: 1 });
 		// And what was saved is the tree that was on screen.
 		assert.deepEqual(await titles(page), DAY);
 
 		await a.reload();
-		assert.deepEqual(await rootTabs(page), ['day', 't-6']);
+		assert.deepEqual(await rootTabs(page), ['main', 't-6']);
 		assert.equal(await activeRootTab(page), 't-6');
 		assert.deepEqual(await italic(page), [], 'a kept tab is still italic after a reload');
 		assert.deepEqual(await titles(page), DAY);
@@ -299,7 +299,7 @@ describe('Keep tab', () => {
 		};
 		const items = () => from(() => page.locator('.root-bar [role="tab"][aria-selected="true"]').click());
 		const manage = () => from(() => page.locator('.root-bar button.manage').click());
-		assert.ok(!(await items()).includes('Keep tab'), 'day is offered Keep tab');
+		assert.ok(!(await items()).includes('Keep tab'), 'main is offered Keep tab');
 
 		await a.room('t-7');
 		const menu = await items();
@@ -324,8 +324,8 @@ describe('on a phone', () => {
 		await withApp(
 			async (a) => {
 				const { page } = a;
-				await a.goto('/t-8?from=day');
-				assert.deepEqual(await rootTabs(page), ['day', 't-8']);
+				await a.goto('/t-8?from=main');
+				assert.deepEqual(await rootTabs(page), ['main', 't-8']);
 				assert.deepEqual(await italic(page), ['t-8']);
 				const row = await page.locator('.root-bar').evaluate((el) => ({
 					tabs: [...el.querySelectorAll('[role="tab"]')].map((t) => {

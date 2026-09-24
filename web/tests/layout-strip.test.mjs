@@ -26,7 +26,7 @@ after(stopApp);
 // Every test here opens an app of its own (da-6b3dj): the four on a draft
 // measured no faster through a shared app's `solo(fn, draft)` — a boot into
 // a small tree is mostly its strips' drawing, which `solo` pays too, and
-// the shared app's first boot draws the whole `day` — and the drag over a
+// the shared app's first boot draws the whole `main` — and the drag over a
 // second is alone on a taller screen and a held clock.
 
 /** The strip body's padding as the strip's snap counts it (registry.ts). */

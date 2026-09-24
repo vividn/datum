@@ -18,7 +18,7 @@ after(stopApp);
 
 // ONE APP for the two tests on the default screen (da-6b3dj, sharedApp in
 // support/app.mjs); the one that steps the window does it in a room, the
-// step being a session setting of `day`'s nowview. Every other test opens
+// step being a session setting of `main`'s nowview. Every other test opens
 // its own: a screen, clock, touch or seeded draft of its own, or a reload.
 const shared = sharedApp();
 
@@ -155,7 +155,7 @@ describe('the nowview widget', () => {
 	// layout» is what hands it over; only then is it a draft edit, and only
 	// then does `Save layout` write it down.
 	test('the step is this session’s, and the draft and a save take it only when asked', async () => {
-		await withApp(async (app) => { // reloads, and saves `day`
+		await withApp(async (app) => { // reloads, and saves `main`
 			const { page } = app;
 			await app.spyOnRunner();
 			await longer(page).click();
@@ -188,11 +188,11 @@ describe('the nowview widget', () => {
 				'the draft did not keep the handed-over step'
 			);
 
-			// The root bar's save icon, on the `day` tab (da-0a5o).
+			// The root bar's save icon, on the `main` tab (da-0a5o).
 			await chooseRoot(page, 'Save layout');
 			await page.waitForFunction(() => !document.querySelector('.root-bar.modified'));
 			const other = await app.newTab();
-			const saved = await other.page.evaluate(() => window.datum.layouts.loadLayout('day'));
+			const saved = await other.page.evaluate(() => window.datum.layouts.loadLayout('main'));
 			assert.deepEqual(
 				nowviewSettings(saved.root).map((s) => s.history),
 				['45m']
@@ -247,11 +247,11 @@ const anchorX = (page) =>
 /** The picture's own box. */
 const pictureBox = (page) => page.locator(`${PANE} svg.svg`).boundingBox();
 
-/** A layout of one nowview pane, as the `day` tab's draft. */
+/** A layout of one nowview pane, as the `main` tab's draft. */
 const soloNowview = (settings) =>
 	JSON.stringify({
 		version: 1,
-		name: 'day',
+		name: 'main',
 		root: {
 			id: 'only',
 			tabs: [{ id: 'only-tab', content: { id: 'only-widget', kind: 'nowview', settings } }],
@@ -443,7 +443,7 @@ describe('the nowview steps stay off the picture', () => {
 		);
 	});
 
-	// The tab stack is the phone's `day` tree (`[tail, nowview, custom]`)
+	// The tab stack is the phone's `main` tree (`[tail, nowview, custom]`)
 	// rather than `mobile`, whose row 3 stopped being tabs (da-hkjp). What
 	// is under test is a pan that begins on a step inside a STACK, so any
 	// shipped stack holding a nowview answers it.

@@ -19,7 +19,7 @@ const PAGE = JSON.stringify(
 );
 
 // ONE APP for every desktop test (da-6b3dj, sharedApp in support/app.mjs),
-// `day` opened from PAGE's draft by `solo`, which empties the database and
+// `main` opened from PAGE's draft by `solo`, which empties the database and
 // the bar's pills between them; each reads the REPL from its end. The
 // phone opens its own: a fresh device, which opens `mobile`.
 const shared = sharedApp(DESKTOP);

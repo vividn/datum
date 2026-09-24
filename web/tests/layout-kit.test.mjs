@@ -100,7 +100,7 @@ describe('a kit ships a layout', () => {
 
 			await openChooser(app.page);
 			assert.deepEqual(await layoutOffers(app.page), [
-				{ name: 'day', source: 'builtin' },
+				{ name: 'main', source: 'builtin' },
 				{ name: 'focus-day', source: 'kit:focus' }
 			]);
 
@@ -157,13 +157,13 @@ describe('a kit ships a layout', () => {
 });
 
 describe('the device a layout was designed for', () => {
-	/** Save a mobile-designed `day`, then reload and report the panes on screen. */
+	/** Save a mobile-designed `main`, then reload and report the panes on screen. */
 	async function dayOn(options) {
 		let panes;
 		await withApp(async (app) => {
 			await layouts(app, 'saveLayout', {
 				version: 1,
-				name: 'day',
+				name: 'main',
 				designedFor: 'mobile',
 				root: root('phone-day', 'aliases')
 			});
@@ -175,9 +175,9 @@ describe('the device a layout was designed for', () => {
 		return panes;
 	}
 
-	test('a mobile save of `day` shadows the built-in on a phone and not on a desktop', async () => {
+	test('a mobile save of `main` shadows the built-in on a phone and not on a desktop', async () => {
 		// On the phone it IS the page; on the desktop the built-in day wins
-		// and the save is simply not what `day` means there.
+		// and the save is simply not what `main` means there.
 		assert.deepEqual(await dayOn(PHONE), ['aliases']);
 		assert.notDeepEqual(await dayOn({ viewport: { width: 1280, height: 900 } }), ['aliases']);
 	});
@@ -198,7 +198,7 @@ describe('the device a layout was designed for', () => {
 			return names;
 		}
 
-		assert.deepEqual(await order(shared.solo), ['day', 'deskish', 'phonish']);
-		assert.deepEqual(await order((fn) => withApp(fn, PHONE)), ['day', 'phonish', 'deskish']);
+		assert.deepEqual(await order(shared.solo), ['main', 'deskish', 'phonish']);
+		assert.deepEqual(await order((fn) => withApp(fn, PHONE)), ['main', 'phonish', 'deskish']);
 	});
 });

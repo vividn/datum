@@ -50,9 +50,9 @@ after(stopApp);
 
 // ONE APP for most of this file (da-6b3dj, sharedApp in support/app.mjs):
 // what a test here leaves behind is layout — `mine` saved and embedded,
-// `day` saved over, a sublayout or the root locked — which `solo` puts
+// `main` saved over, a sublayout or the root locked — which `solo` puts
 // back: every saved layout dropped, every lock put back as the page opened,
-// `day` restored to what it shipped as. What still opens an app of its own
+// `main` restored to what it shipped as. What still opens an app of its own
 // reloads, opens a second tab, or holds a widget option this session, which
 // `solo` does not put back.
 const shared = sharedApp(DESKTOP);
@@ -140,7 +140,7 @@ async function act(page, label, holder = copy(page)) {
 	await settled(page);
 }
 
-/** Save `mine`, then embed it in a pane split off the day layout's tail. */
+/** Save `mine`, then embed it in a pane split off the main layout's tail. */
 async function embed(app) {
 	const { page } = app;
 	await layouts(app, 'saveLayout', MINE);
@@ -175,13 +175,13 @@ describe('an edit inside an embedded layout', () => {
 			await embed(app);
 			await manage(page, 'm-a', 'split: a new pane to the right');
 
-			// Save `day` with the edit inside `mine` standing.
+			// Save `main` with the edit inside `mine` standing.
 			await chooseRoot(page, 'Save layout');
-			await until(() => rootDotted(page, 'day'), (dot) => dot === false);
+			await until(() => rootDotted(page, 'main'), (dot) => dot === false);
 
-			// What `day` stored is the REFERENCE: a tab naming `mine`, its
+			// What `main` stored is the REFERENCE: a tab naming `mine`, its
 			// content a stub — never the panes of `mine` inlined into it.
-			const day = await layouts(app, 'loadLayout', 'day');
+			const day = await layouts(app, 'loadLayout', 'main');
 			const found = [];
 			const walk = (pane) => {
 				for (const tab of pane.tabs) {
@@ -193,8 +193,8 @@ describe('an edit inside an embedded layout', () => {
 			assert.equal(found.length, 1, JSON.stringify(found));
 			assert.equal(found[0].layout, 'mine');
 			assert.equal(found[0].content.kind, 'empty');
-			assert.equal(JSON.stringify(day).includes('nowview'), true, 'day has its own nowview');
-			assert.equal(JSON.stringify(found[0]).includes('m-a'), false, "mine's panes were inlined into day's save");
+			assert.equal(JSON.stringify(day).includes('nowview'), true, 'main has its own nowview');
+			assert.equal(JSON.stringify(found[0]).includes('m-a'), false, "mine's panes were inlined into main's save");
 		});
 	});
 });
@@ -204,14 +204,14 @@ describe('the dot and the acts on a nested layout', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await embed(app);
-			// Embedding changed `day`, not `mine`.
+			// Embedding changed `main`, not `mine`.
 			await chooseRoot(page, 'Save layout');
-			await until(() => rootDotted(page, 'day'), (dot) => dot === false);
+			await until(() => rootDotted(page, 'main'), (dot) => dot === false);
 			assert.equal(await dotted(copy(page)), false);
 
 			await manage(page, 'm-a', 'split: a new pane to the right');
 			assert.equal(await dotted(copy(page)), true, 'the edit inside mine did not dot mine');
-			assert.equal(await rootDotted(page, 'day'), false, "the edit inside mine dotted day, which holds it by reference");
+			assert.equal(await rootDotted(page, 'main'), false, "the edit inside mine dotted day, which holds it by reference");
 
 			await act(page, 'Save layout');
 			await until(() => dotted(copy(page)), (dot) => dot === false);
@@ -291,19 +291,19 @@ describe('two copies of one layout', () => {
 			const { page } = app;
 			await embedTwice(app);
 			await chooseRoot(page, 'Save layout');
-			await until(() => rootDotted(page, 'day'), (dot) => dot === false);
+			await until(() => rootDotted(page, 'main'), (dot) => dot === false);
 
 			await app.reload();
 			await until(() => page.locator('section.pane[data-title="mine"]').count(), (n) => n === 2);
 			await settled(page);
 			// Both copies drew, from the one save, with ids that did not
-			// collide — and nothing drifted, so `day` is not modified by
+			// collide — and nothing drifted, so `main` is not modified by
 			// having been loaded.
 			assert.deepEqual(await inside(copy(page, 'm-a')), ['nowview', 'fields']);
 			assert.deepEqual(await inside(copy(page, 'm-a@mine')), ['nowview', 'fields']);
 			const ids = await page.locator('section.pane').evaluateAll((all) => all.map((p) => p.dataset.pane));
 			assert.equal(new Set(ids).size, ids.length, `duplicate pane ids: ${ids.join(', ')}`);
-			assert.equal(await rootDotted(page, 'day'), false, 'a reload reported day as modified');
+			assert.equal(await rootDotted(page, 'main'), false, 'a reload reported day as modified');
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
@@ -395,7 +395,7 @@ describe('a widget chosen for a tab that holds a layout', () => {
 			// The save is whole: the tab was a copy, and the copy is gone.
 			assert.deepEqual(await layouts(app, 'loadLayout', 'mine'), before);
 			await chooseRoot(page, 'Save layout');
-			await until(() => rootDotted(page, 'day'), (dot) => dot === false);
+			await until(() => rootDotted(page, 'main'), (dot) => dot === false);
 			assert.deepEqual(await layouts(app, 'loadLayout', 'mine'), before, 'saving day wrote over mine');
 			assert.deepEqual(app.errors, []);
 		});
@@ -440,7 +440,7 @@ describe('a widget chosen for a tab that holds a layout', () => {
 			assert.equal(tab.layout, 'tail', JSON.stringify(tab));
 			assert.equal(tab.content.kind, 'tail');
 			assert.deepEqual(await titles(page), ['tail']);
-			assert.deepEqual(await page.locator('.root-bar [role="tab"]').allInnerTexts(), ['day', 'tail']);
+			assert.deepEqual(await page.locator('.root-bar [role="tab"]').allInnerTexts(), ['main', 'tail']);
 			assert.equal(await page.locator('.root-bar [role="tab"] .dot').count(), 0, 'the built-in came up modified');
 			assert.equal(await page.locator('section.pane[data-title="mine"]').count(), 0);
 
@@ -458,7 +458,7 @@ describe('a widget chosen for a tab that holds a layout', () => {
 			await app.reload();
 			await page.locator('.root-bar [role="tab"]', { hasText: 'tail' }).waitFor();
 			await settled(page);
-			assert.deepEqual(await page.locator('.root-bar [role="tab"]').allInnerTexts(), ['day', 'tail']);
+			assert.deepEqual(await page.locator('.root-bar [role="tab"]').allInnerTexts(), ['main', 'tail']);
 			assert.equal((await activeTabOf(page, 'shell')).layout, 'tail');
 			assert.deepEqual(await titles(page), ['tail']);
 
@@ -712,11 +712,11 @@ describe('a pane holding a sublayout', () => {
 			await chooser(page).waitFor({ state: 'detached' });
 			await page.locator('.root-bar [role="tab"]', { hasText: 'stats' }).waitFor();
 			await settled(page);
-			// The dot is dropped: embedding `mine` modified `day`, which is
+			// The dot is dropped: embedding `mine` modified `main`, which is
 			// not what this is about.
 			assert.deepEqual(
 				await page.locator('.root-bar [role="tab"]').evaluateAll((all) => all.map((b) => b.textContent.replace('•', '').trim())),
-				['day', 'stats']
+				['main', 'stats']
 			);
 			assert.deepEqual(app.errors, []);
 		});

@@ -42,18 +42,18 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
-// ONE phone app for the tests that start from `day` alone or from a draft
-// of it (da-6b3dj, sharedApp in support/app.mjs): `solo` puts `day` back
+// ONE phone app for the tests that start from `main` alone or from a draft
+// of it (da-6b3dj, sharedApp in support/app.mjs): `solo` puts `main` back
 // after a swipe moved its tabs. What still opens an app of its own starts
 // with a second layout open (`twoLayouts`, which `solo` would close), or on
 // another screen or with reduced motion.
 const phone = sharedApp(PHONE);
 
-/** This device's open layouts: `day` in front, the built-in `tail` behind it. */
+/** This device's open layouts: `main` in front, the built-in `tail` behind it. */
 const twoLayouts = (context) =>
 	context.addInitScript(
 		(json) => localStorage.setItem('datum.layout.root.v1', json),
-		JSON.stringify({ names: ['day', 'tail'], active: 0 })
+		JSON.stringify({ names: ['main', 'tail'], active: 0 })
 	);
 
 /**
@@ -107,7 +107,7 @@ describe('the root swipes between layouts', () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
-				assert.deepEqual(await page.locator('.root-bar [role="tab"]').allInnerTexts(), ['day', 'tail']);
+				assert.deepEqual(await page.locator('.root-bar [role="tab"]').allInnerTexts(), ['main', 'tail']);
 				// Over a widget, not the page's margin: the pane under the
 				// finger has one tab and no swipe of its own, so the gesture is
 				// the root's — and its body is at its end, so it has nowhere to
@@ -121,7 +121,7 @@ describe('the root swipes between layouts', () => {
 				const back = page.locator('section.pane .body:not(.behind .body)').first();
 				await scrollX(back, false);
 				await swipeOver(page, back, 120, 0);
-				await until(() => shown(page), (name) => name === 'day');
+				await until(() => shown(page), (name) => name === 'main');
 				assert.deepEqual(await titles(page), ['dayview', 'repl', 'tail', 'fields']);
 
 				// And the page it came back to does not hang off its own edge:
@@ -162,7 +162,7 @@ describe('a scroller keeps the gesture until its end', () => {
 	 */
 	const threeTabs = () => ({
 		version: 1,
-		name: 'day',
+		name: 'main',
 		root: {
 			id: 'root',
 			active: 0,
@@ -239,7 +239,7 @@ describe('the innermost frame that can move takes the gesture', () => {
 				await scrollX(body, true);
 				await swipeOver(page, body, -120, 0);
 				await until(() => activeTab(page, 'side'), (t) => t === 'nowview');
-				assert.equal(await shown(page), 'day', 'the swipe moved the layout as well as the tab');
+				assert.equal(await shown(page), 'main', 'the swipe moved the layout as well as the tab');
 
 				// On the pane's LAST tab there is nowhere for it to go, so the
 				// same swipe reaches the root and moves the whole layout.
@@ -253,7 +253,7 @@ describe('the innermost frame that can move takes the gesture', () => {
 				const back = page.locator('section.pane .body:not(.behind .body)').first();
 				await scrollX(back, false);
 				await swipeOver(page, back, 120, 0);
-				await until(() => shown(page), (name) => name === 'day');
+				await until(() => shown(page), (name) => name === 'main');
 				assert.equal(await activeTab(page, 'side'), 'custom');
 			},
 			{ ...PHONE, prepare: twoLayouts }

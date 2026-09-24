@@ -33,8 +33,8 @@ const withApp = (fn, { prepare, ...options } = {}) =>
 	});
 
 // ONE APP for the tests on this clock (da-6b3dj, sharedApp in
-// support/app.mjs), each on `day` alone with an empty database — or on
-// `day` from a stored draft, `solo`'s second argument; `openStats`
+// support/app.mjs), each on `main` alone with an empty database — or on
+// `main` from a stored draft, `solo`'s second argument; `openStats`
 // navigates, and the stats tab it opens is closed by the next `solo`. What
 // still opens an app of its own goes to another database (a shared app
 // keeps its query), opens a second page, reloads, or starts from blocked

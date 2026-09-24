@@ -58,7 +58,7 @@ const DRAWN = ['dayview', 'nowview'];
 const AFTERNOON = todayAt(15);
 
 // ONE APP per screen of SCREENS (da-6b3dj, sharedApp in support/app.mjs):
-// the database is emptied and `day` put back between tests, so each logs
+// the database is emptied and `main` put back between tests, so each logs
 // its day onto a fresh one. What still opens its own: `never scrolls
 // sideways`, which measures the REPL pane and so wants a scrollback of its
 // own test alone; the prompts, which start from a stored scrollback; and

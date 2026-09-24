@@ -21,9 +21,9 @@ after(stopApp);
 
 const SEED = ['switch activity working', 'start music', 'occur coffee'];
 
-/** The `day` tab as one tail pane, so the pane's width is the viewport's less its frame. */
+/** The `main` tab as one tail pane, so the pane's width is the viewport's less its frame. */
 const ONLY_TAIL = (context) =>
-	context.addInitScript(draft, JSON.stringify({ version: 1, name: 'day', root: widgetPane('only', 'tail') }));
+	context.addInitScript(draft, JSON.stringify({ version: 1, name: 'main', root: widgetPane('only', 'tail') }));
 
 /** Store `lines` through the seam's quiet door, then a fresh visit: these layouts have no REPL to type into. */
 async function seedLines(app, lines) {

@@ -62,11 +62,11 @@ after(stopApp);
 // ONE APP per set of options for most of this file (da-6b3dj, sharedApp in
 // support/app.mjs). A test that only sizes the box, writes the tree (`say`)
 // or logs rows is `solo`: the box is set before anything is measured, and
-// `solo` restores `day` and empties the database. A test that moves the
+// `solo` restores `main` and empties the database. A test that moves the
 // strip ITSELF — the handle, the keyboard, the freeze toggle, a zoom — sets
 // a session option on the widget, which `solo` does not put back, so it
 // takes a ROOM, whose strip is a new widget — as does a test that scrolls
-// a stack the test before it scrolled, since `solo` keeps `day`'s strip and
+// a stack the test before it scrolled, since `solo` keeps `main`'s strip and
 // its scroll position. Which is why the helpers below read and write the
 // strip of the root tab in FRONT. What still opens an
 // app of its own has options no other test shares (a viewport, a clock), a
@@ -2073,7 +2073,7 @@ describe('the day strip zooms onto an hour range', () => {
 	});
 
 	test('the window is a setting: this session’s, saved with the layout when asked, reset with the widget', async () => {
-		await withApp( // own app: it saves `day` and reloads
+		await withApp( // own app: it saves `main` and reloads
 			async (app) => {
 				const { page } = app;
 				await app.idle();

@@ -34,7 +34,7 @@ const SCREENS = [
 ];
 
 // ONE APP for the tests at the desktop screen that stay on the page
-// (da-6b3dj, sharedApp in support/app.mjs): `solo` puts the split `day`
+// (da-6b3dj, sharedApp in support/app.mjs): `solo` puts the split `main`
 // back. A reload, the phone's screen and a device that stored a lock open
 // their own.
 const desk = sharedApp({ viewport: SCREENS[0] });
@@ -62,7 +62,7 @@ const boxes = (page) =>
 /** The active root tab's content, from the draft the page saved. */
 const draft = (page) =>
 	page.evaluate(() => {
-		const layout = JSON.parse(localStorage.getItem('datum.layout.draft.v1.day'));
+		const layout = JSON.parse(localStorage.getItem('datum.layout.draft.v1.main'));
 		return layout.root.tabs[layout.root.active].content;
 	});
 
@@ -153,13 +153,13 @@ describe('extending the dashboard from its edges', () => {
 				assert.deepEqual(await menuLines(page), [
 					'Save layout',
 					'Restore layout',
-					// `day` ships with datum, so it can be reset (da-luwe).
+					// `main` ships with datum, so it can be reset (da-luwe).
 					'Reset layout',
 					'Save layout as…'
 				]);
 				await page.keyboard.press('Escape');
 			},
-			{ prepare: (context) => context.addInitScript(() => localStorage.setItem('datum.layout.locked.v1.day', '1')) }
+			{ prepare: (context) => context.addInitScript(() => localStorage.setItem('datum.layout.locked.v1.main', '1')) }
 		);
 	});
 });

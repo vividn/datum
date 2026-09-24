@@ -43,9 +43,9 @@ after(stopApp);
 
 // ONE APP per screen for most of this file (da-6b3dj, sharedApp in
 // support/app.mjs): what a test here leaves behind is layout — a split, a
-// saved layout, a tab — and a row or two, which `solo` puts back to `day`
-// and an empty database; a test that starts from a draft of `day` hands it
-// to `solo`, which opens `day` from it as boot would. What still opens an
+// saved layout, a tab — and a row or two, which `solo` puts back to `main`
+// and an empty database; a test that starts from a draft of `main` hands it
+// to `solo`, which opens `main` from it as boot would. What still opens an
 // app of its own blocks the store (`prepare`), reloads, installs a runner of
 // its own, or is the one test on its screen.
 const shared = sharedApp(DESKTOP);
@@ -110,7 +110,7 @@ describe('the draft', () => {
 		await withApp( // own app: a `prepare` that blocks the store
 			async (app) => {
 				assert.deepEqual(await titles(app.page), ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields']);
-				// Nothing remembers an unlock here, so `day` opens locked as a
+				// Nothing remembers an unlock here, so `main` opens locked as a
 				// first open does (da-gshh) — and unlocks for the visit.
 				await toggleRootLock(app.page);
 				await addTab(app.page, 'tail', 'aliases');
@@ -401,7 +401,7 @@ describe('a tab that holds a layout', () => {
 		});
 	});
 
-	test('a holder made by splitting draws no frame, and the page root none either, though its tab is the `day` layout', async () => {
+	test('a holder made by splitting draws no frame, and the page root none either, though its tab is the `main` layout', async () => {
 		await shared.solo(
 			async ({ page }) => {
 				// The scaffolding case, unchanged: a pane one of whose tabs is
@@ -410,7 +410,7 @@ describe('a tab that holds a layout', () => {
 				assert.equal(await tail.count(), 1, 'a holder made by splitting drew a frame');
 				assert.deepEqual(await tail.locator('> .titlebar [role="tab"]').allInnerTexts(), ['tail | nowview', 'aliases']);
 
-				// And the root, whose tab carries `day`, is still no box at all:
+				// And the root, whose tab carries `main`, is still no box at all:
 				// the shell draws its name and its tabs (da-0a5o).
 				const root = page.locator('section.root');
 				assert.equal(await root.evaluate((el) => el.classList.contains('holder')), true);
@@ -443,7 +443,7 @@ describe('a tab that holds a layout', () => {
 // The lock (da-2a5y): "Layouts should have the ability to be locked,
 // which prevents the resizing of panes […] no splitting, new tabs, or
 // resizing." Where the lock is toggled from is the shell's; here it
-// arrives as this device's lock on the `day` tab (per device, never in
+// arrives as this device's lock on the `main` tab (per device, never in
 // the tree — da-0a5o), and covers the whole tree.
 describe('the lock', () => {
 
@@ -496,7 +496,7 @@ describe('the lock', () => {
 				// pane a menu and a `+` (the root has none of its own): the
 				// title where there is one tab, the tab in front where there
 				// are two.
-				await page.evaluate(() => localStorage.removeItem('datum.layout.locked.v1.day'));
+				await page.evaluate(() => localStorage.removeItem('datum.layout.locked.v1.main'));
 				await app.reload();
 				assert.equal(await page.locator('.split.row > [role="separator"]').count(), 1);
 				assert.equal(await pane(page, 'repl').locator('button.title').count(), 1);
@@ -517,7 +517,7 @@ describe('the lock', () => {
 function tabbedHolder() {
 	return {
 		version: 1,
-		name: 'day',
+		name: 'main',
 		root: {
 			id: 'root',
 			tabs: [
@@ -578,7 +578,7 @@ function lockable() {
 			]
 		}
 	};
-	return { version: 1, name: 'day', root: { id: 'root', tabs: [tab], active: 0, bar } };
+	return { version: 1, name: 'main', root: { id: 'root', tabs: [tab], active: 0, bar } };
 }
 
 /** A root pane with two widget tabs, the REPL and the tail. */
@@ -597,7 +597,7 @@ const TWO_ROOT_TABS = JSON.stringify({
 });
 
 function lockedOnce(json) {
-	if (localStorage.getItem('datum.layout.draft.v1.day')) return;
-	localStorage.setItem('datum.layout.draft.v1.day', json);
-	localStorage.setItem('datum.layout.locked.v1.day', '1');
+	if (localStorage.getItem('datum.layout.draft.v1.main')) return;
+	localStorage.setItem('datum.layout.draft.v1.main', json);
+	localStorage.setItem('datum.layout.locked.v1.main', '1');
 }

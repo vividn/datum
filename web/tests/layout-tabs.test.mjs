@@ -20,12 +20,12 @@ before(startApp);
 after(stopApp);
 
 // ONE APP for the two desktop tests with no clock (da-6b3dj, sharedApp in
-// support/app.mjs): the tabs they add are `day`'s edits, which `solo` puts
+// support/app.mjs): the tabs they add are `main`'s edits, which `solo` puts
 // back. The rest keep apps of their own: each is alone on its options, and
 // one opens a second tab.
 const shared = sharedApp(DESKTOP);
 
-/** A phone's `day`: strip / REPL / [tail, nowview, custom] / fields. */
+/** A phone's `main`: strip / REPL / [tail, nowview, custom] / fields. */
 const PHONE_DAY = { ...PHONE, clock: todayAt(15) };
 
 /** The bodies of `id`'s tabs that are behind the one in front. */

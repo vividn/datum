@@ -84,7 +84,7 @@ describe('Reset widget', () => {
 			await dayHeightIs(page, fallback + grow);
 			// da-vhwq: the drag is what THIS TAB shows, and nothing more —
 			// until it is asked for, which is what lights the dot.
-			assert.equal(await dotted(page, 'day'), false, 'a session setting dirtied the layout');
+			assert.equal(await dotted(page, 'main'), false, 'a session setting dirtied the layout');
 			await choose(page, 'strip', SAVE);
 			await page.waitForFunction(() => document.querySelector('.root-bar [role="tab"].modified'));
 
@@ -101,12 +101,12 @@ describe('Reset widget', () => {
 
 			await choose(page, 'strip', RESET);
 			await dayHeightIs(page, fallback);
-			assert.equal(await dotted(page, 'day'), true, 'the reset was not a draft change');
+			assert.equal(await dotted(page, 'main'), true, 'the reset was not a draft change');
 
 			// A draft change and nothing more: the save still holds the +40.
 			await chooseRoot(page, 'Restore layout');
 			await dayHeightIs(page, fallback + grow);
-			assert.equal(await dotted(page, 'day'), false, 'a restored layout is still modified');
+			assert.equal(await dotted(page, 'main'), false, 'a restored layout is still modified');
 		}, DESKTOP);
 	});
 
@@ -152,7 +152,7 @@ describe('Reset widget', () => {
 			// Widget having moved to the `▾` (da-z8klv).
 			assert.equal(await menuButton(page, 'custom').count(), 0);
 
-			// The root tab holds the `day` layout, so the root menu has none
+			// The root tab holds the `main` layout, so the root menu has none
 			// either — the same rule, not a second one.
 			await page.locator('.root-bar [role="tab"][aria-selected="true"]').click();
 			const root = await menuLines(page);
@@ -161,13 +161,13 @@ describe('Reset widget', () => {
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 
 			// And a PANE tab holding a layout: its content is a split of
-			// panes, not a widget of its own. (`day` is choosable in a pane
+			// panes, not a widget of its own. (`main` is choosable in a pane
 			// only once the root tab is called something else.)
 			page.once('dialog', (dialog) => dialog.accept('mine'));
 			await chooseRoot(page, 'Save layout as…');
 			await page.locator('.root-bar [role="tab"]', { hasText: 'mine' }).waitFor();
-			await addTab(page, 'tail', 'day');
-			await pane(page, 'tail').locator('[role="tab"]', { hasText: 'day' }).waitFor();
+			await addTab(page, 'tail', 'main');
+			await pane(page, 'tail').locator('[role="tab"]', { hasText: 'main' }).waitFor();
 			const held = await linesOf(page, 'tail');
 			assert.ok(!held.includes(RESET), `a tab holding a layout reads ${held.join(' | ')}`);
 		}, DESKTOP);

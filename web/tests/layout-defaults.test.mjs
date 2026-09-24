@@ -140,11 +140,11 @@ async function stage(app) {
 	const { page } = app;
 	const grip = '.dayview button.day-grip';
 	await page.locator(grip).waitFor();
-	const shipped = await treeOf(page, 'day');
+	const shipped = await treeOf(page, 'main');
 	const fallback = await dayHeight(page);
 	const grown = fallback + 40;
 
-	// A built-in, modified and saved: `day`'s save now shadows the tree
+	// A built-in, modified and saved: `main`'s save now shadows the tree
 	// `defaults.ts` holds, which is the only thing a reset has to undo.
 	// The drag is this session's until it is handed over (da-vhwq), so the
 	// layout hears of it through «Save options with layout» first.
@@ -163,12 +163,12 @@ async function stage(app) {
 	// shipped set either.
 	await installKit(app, 'focus', { name: 'focus-day', root: kitRoot('focus', 'nowview') });
 	await openRoot(page, 'focus-day');
-	await until(() => rootNames(page), (names) => names.join() === 'day,focus-day');
+	await until(() => rootNames(page), (names) => names.join() === 'main,focus-day');
 
 	// And, saved off it under a name nothing ships, the reader's own layout.
 	page.once('dialog', (dialog) => dialog.accept('mine'));
 	await chooseRoot(page, 'Save layout as…');
-	await until(() => rootNames(page), (names) => names.join() === 'day,mine');
+	await until(() => rootNames(page), (names) => names.join() === 'main,mine');
 
 	return { shipped, fallback, grown, mine: JSON.stringify(await layouts(page, 'loadLayout', 'mine')) };
 }
@@ -214,15 +214,15 @@ describe('Reset default layouts', () => {
 
 			// The root's tabs are the shipped set: the one tab a fresh
 			// install shows.
-			await until(() => rootNames(page), (names) => names.join() === 'day');
+			await until(() => rootNames(page), (names) => names.join() === 'main');
 
 			// And the built-in is the tree it shipped with — the same tree,
 			// through the same lens, that this app started on.
 			await dayHeightIs(page, fallback);
-			assert.equal(await treeOf(page, 'day'), shipped);
+			assert.equal(await treeOf(page, 'main'), shipped);
 			// Nothing of the reader's is left shadowing it, so the chooser
 			// calls the name built-in again.
-			await assert.rejects(() => layouts(page, 'loadLayout', 'day'));
+			await assert.rejects(() => layouts(page, 'loadLayout', 'main'));
 
 			// The built-in that was never open went back the same way.
 			await assert.rejects(() => layouts(page, 'loadLayout', 'tail'));
@@ -234,10 +234,10 @@ describe('Reset default layouts', () => {
 				(await layouts(page, 'listLayouts')).map((l) => `${l.name} ${l.source}`),
 				['mine user', 'focus-day kit:focus']
 			);
-			// (`day` is the one built-in the chooser lists as a LAYOUT: the
+			// (`main` is the one built-in the chooser lists as a LAYOUT: the
 			// others are each one widget, and are listed among the widgets.)
 			assert.deepEqual(await layoutOffers(page), [
-				{ name: 'day', source: 'builtin' },
+				{ name: 'main', source: 'builtin' },
 				{ name: 'mine', source: 'user' },
 				{ name: 'focus-day', source: 'kit:focus' }
 			]);
@@ -248,18 +248,18 @@ describe('Reset default layouts', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const { grown, mine } = await stage(app);
-			const before = await treeOf(page, 'day');
+			const before = await treeOf(page, 'main');
 
 			await chooseSettings(page, RESET);
 			await answer(page, 'cancel');
 
-			assert.deepEqual(await rootNames(page), ['day', 'mine']);
-			assert.equal(await treeOf(page, 'day'), before);
+			assert.deepEqual(await rootNames(page), ['main', 'mine']);
+			assert.equal(await treeOf(page, 'main'), before);
 			assert.equal(JSON.stringify(await layouts(page, 'loadLayout', 'mine')), mine);
 			// The save the act would have removed is still there, taller day
 			// and all.
-			const saved = await layouts(page, 'loadLayout', 'day');
-			assert.equal(JSON.stringify(saved).includes(`"dayHeight":${grown}`), true, 'day’s save lost its edit');
+			const saved = await layouts(page, 'loadLayout', 'main');
+			assert.equal(JSON.stringify(saved).includes(`"dayHeight":${grown}`), true, 'main’s save lost its edit');
 			assert.equal((await layouts(page, 'loadLayout', 'tail')).name, 'tail');
 		}, DESKTOP);
 	});

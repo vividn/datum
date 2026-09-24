@@ -51,7 +51,7 @@ async function lockedClean(page, name) {
 describe('a layout that shipped', () => {
 	for (const [what, device, name] of [
 		['a fresh phone: `mobile`', FRESH_PHONE, 'mobile'],
-		['a fresh desktop: `day`', FRESH_DESKTOP, 'day']
+		['a fresh desktop: `main`', FRESH_DESKTOP, 'main']
 	])
 		test(`${what} opens locked; unlocked it drags, and stays unlocked over a reload`, async () => {
 			await withApp(async (app) => {
@@ -86,15 +86,15 @@ describe('a layout that shipped', () => {
 		}, FRESH_DESKTOP);
 	});
 
-	test('a device that already had `day` open, with nothing said of its lock, finds it locked', async () => {
+	test('a device that already had `main` open, with nothing said of its lock, finds it locked', async () => {
 		await withApp(
-			async ({ page }) => lockedClean(page, 'day'),
+			async ({ page }) => lockedClean(page, 'main'),
 			{
 				...FRESH_DESKTOP,
 				prepare: (context) =>
 					context.addInitScript(() => {
 						if (!localStorage.getItem('datum.layout.root.v1'))
-							localStorage.setItem('datum.layout.root.v1', JSON.stringify({ names: ['day'], active: 0 }));
+							localStorage.setItem('datum.layout.root.v1', JSON.stringify({ names: ['main'], active: 0 }));
 					})
 			}
 		);
@@ -110,9 +110,9 @@ describe('a layout that shipped', () => {
 			const dialog = page.locator('dialog.confirm');
 			await dialog.getByRole('button', { name: 'reset', exact: true }).click();
 			await dialog.waitFor({ state: 'detached' });
-			await lockedClean(page, 'day');
+			await lockedClean(page, 'main');
 			await app.reload();
-			await lockedClean(page, 'day');
+			await lockedClean(page, 'main');
 		}, FRESH_DESKTOP);
 	});
 });
@@ -133,14 +133,14 @@ describe('a layout a person made', () => {
 		}, FRESH_DESKTOP);
 	});
 
-	test('a save of their own over `day` is theirs: with nothing said, it opens unlocked', async () => {
+	test('a save of their own over `main` is theirs: with nothing said, it opens unlocked', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await toggleRootLock(page);
 			await until(() => locked(page), (l) => l === false);
 			await chooseRoot(page, 'Save layout');
-			await until(() => page.evaluate(() => window.datum.shell.versions('day').catch(() => [])), (v) => v.length === 1);
-			await page.evaluate(() => localStorage.removeItem('datum.layout.locked.v1.day'));
+			await until(() => page.evaluate(() => window.datum.shell.versions('main').catch(() => [])), (v) => v.length === 1);
+			await page.evaluate(() => localStorage.removeItem('datum.layout.locked.v1.main'));
 			await app.reload();
 			assert.equal(await locked(page), false);
 		}, FRESH_DESKTOP);

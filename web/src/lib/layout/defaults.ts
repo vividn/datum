@@ -249,7 +249,7 @@ export const PHONE_WIDTH = 720;
 /**
  * A desktop tree the page was handed before it loaded, in place of the one
  * above — the web suite's, and nobody else's (da-ncsyn). The suite is
- * written against a `day` with a REPL, a custom pane and a side column,
+ * written against a `main` with a REPL, a custom pane and a side column,
  * so `tests/support/desk.mjs` pins THAT tree and the default can move
  * without taking two hundred tests with it; the default itself is tested
  * with the pin off. Nothing a READER can do reaches it: it is not a query,
@@ -265,7 +265,7 @@ export const defaultLayoutFor = (phone: boolean): Layout =>
 // ---- the built-in layouts (da-0a5o) ------------------------------------
 //
 // What the root bar's `+` and a URL can name without anything saved:
-// `day` — today's page, the desktop or the phone tree by the screen's
+// `main` — today's page, the desktop or the phone tree by the screen's
 // width at first load — and one layout per widget kind that is just that
 // widget, named as its pane is titled (`nowview`, `tail`, `stats`, …), so
 // `datum.day/nowview` is the nowview alone. A saved layout of the same
@@ -279,9 +279,9 @@ const only = (name: string, kind: string, settings: Record<string, unknown> = {}
 	root: widgetPane(`${name}-only`, kind, settings)
 });
 
-/** The built-ins by name; `day` is looked up through `builtinLayout`, since it depends on the screen. */
+/** The built-ins by name; `main` is looked up through `builtinLayout`, since it depends on the screen. */
 export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
-	day: (phone) => ({ ...defaultLayoutFor(phone), name: 'day' }),
+	main: (phone) => ({ ...defaultLayoutFor(phone), name: 'main' }),
 	mobile: () => MOBILE_LAYOUT,
 	dayview: () => only('dayview', 'daystrip', { ...STRIP }),
 	repl: () => only('repl', 'repl'),
@@ -310,13 +310,13 @@ export const ALIASES: Record<string, string> = {
 	widgetbar: 'fields'
 };
 
-/** The built-in layout `name` names, if any; `phone` picks `day`'s tree. */
+/** The built-in layout `name` names, if any; `phone` picks `main`'s tree. */
 export function builtinLayout(name: string, phone: boolean): Layout | null {
 	const make = BUILTIN[ALIASES[name] ?? name];
 	return make ? make(phone) : null;
 }
 
-/** The built-in names, `day` first, in the order the chooser offers them. */
+/** The built-in names, `main` first, in the order the chooser offers them. */
 export const BUILTIN_NAMES = Object.keys(BUILTIN);
 
 // ---- the DEBUG database (da-o2wm8) -------------------------------------

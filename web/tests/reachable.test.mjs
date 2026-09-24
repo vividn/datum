@@ -52,12 +52,12 @@ const TINY = { width: 280, height: 664 };
 
 // ONE APP per screen for most of this file (da-6b3dj, sharedApp in
 // support/app.mjs): a phone, a 1280x900 desktop and Playwright's 1280x720,
-// each test on `day` alone with an empty database. A test that leaves a
+// each test on `main` alone with an empty database. A test that leaves a
 // widget's own state behind — a field pressed into its states, the custom
 // pane's command — takes a room, whose widgets go with it, and one that
 // opens the Track modal shuts it again. What still opens an app of its own
 // is alone at its options: the chooser's 320px, a coarse pointer, and a
-// locked `day` from `prepare`.
+// locked `main` from `prepare`.
 const phone = sharedApp({ viewport: PHONE });
 const desktop = sharedApp({ viewport: { width: 1280, height: 900 } });
 const plain = sharedApp();
@@ -579,7 +579,7 @@ describe('the layout engine, by keyboard', () => {
 				);
 			}
 			// `Reset layout` (da-luwe) is an act like the other four: on the
-			// screen and on the arrows' path, in the menu of `day` — the
+			// screen and on the arrows' path, in the menu of `main` — the
 			// built-in root tab this page opens with.
 			assert.ok(seen.has('Reset layout'), `Reset layout was never walked: ${[...seen].join(' | ')}`);
 		});
@@ -681,7 +681,7 @@ describe('the layout engine, by keyboard', () => {
 	// only where a widget has options (da-gvdc, and since da-vhwq it reads
 	// those options and nothing else), and what is left — the tabs — is
 	// still walked to. The lock is this
-	// device's, on the `day` tab (da-0a5o); the way out is the lock button
+	// device's, on the `main` tab (da-0a5o); the way out is the lock button
 	// beside the gear, which the walk above reaches.
 	test('a locked layout has no `+`, no `▾` and no border, a menu only for options, and its tabs are still in the Tab order', async () => {
 		await withApp(
@@ -710,8 +710,8 @@ describe('the layout engine, by keyboard', () => {
 				viewport: { width: 1280, height: 900 },
 				prepare: (context) =>
 					context.addInitScript((json) => {
-						localStorage.setItem('datum.layout.draft.v1.day', json);
-						localStorage.setItem('datum.layout.locked.v1.day', '1');
+						localStorage.setItem('datum.layout.draft.v1.main', json);
+						localStorage.setItem('datum.layout.locked.v1.main', '1');
 					}, LOCKED)
 			}
 		);
@@ -736,11 +736,11 @@ describe('the layout engine, by keyboard', () => {
 	});
 });
 
-/** The `day` layout this device locks: a root holder over [the REPL | a tabbed tail/nowview pane]. */
+/** The `main` layout this device locks: a root holder over [the REPL | a tabbed tail/nowview pane]. */
 const bar = { edge: 'top', align: 'start' };
 const LOCKED = JSON.stringify({
 	version: 1,
-	name: 'day',
+	name: 'main',
 	root: {
 		id: 'root',
 		active: 0,

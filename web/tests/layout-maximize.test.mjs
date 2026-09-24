@@ -47,7 +47,7 @@ before(startApp);
 after(stopApp);
 
 // ONE APP per screen (da-6b3dj, sharedApp in support/app.mjs): `solo` puts
-// back a `day` a test edited (`restoreDay`), and the shell's `restore` drops
+// back a `main` a test edited (`restoreMain`), and the shell's `restore` drops
 // any maximize left in force with it. The one that still opens an app of
 // its own reloads.
 const shared = sharedApp(DESKTOP);
@@ -66,8 +66,8 @@ async function press(page, id) {
 const ratios = (page) =>
 	page.locator('[role="separator"]').evaluateAll((all) => all.map((el) => el.getAttribute('aria-valuenow')));
 
-/** The `day` layout's draft, as stored — null when nothing has been edited. */
-const draftOf = (page) => page.evaluate(() => localStorage.getItem('datum.layout.draft.v1.day'));
+/** The `main` layout's draft, as stored — null when nothing has been edited. */
+const draftOf = (page) => page.evaluate(() => localStorage.getItem('datum.layout.draft.v1.main'));
 
 /** How many root tabs wear the orange modified dot. */
 const dots = (page) => page.locator('.root-bar [role="tab"].modified').count();
@@ -131,7 +131,7 @@ describe('the maximize badge', () => {
 			await chooser(page).waitFor({ state: 'detached' });
 			await page.locator('.root-bar [role="tab"][aria-selected="true"]').filter({ hasText: 'stats' }).waitFor();
 
-			await page.locator('.root-bar [role="tab"]').filter({ hasText: exactly('day') }).click();
+			await page.locator('.root-bar [role="tab"]').filter({ hasText: exactly('main') }).click();
 			await settled(page);
 			assert.deepEqual(await titles(page), SIX);
 			assert.equal(await pressed(page), 0);

@@ -34,9 +34,9 @@ import { draft, widgetPane } from './support/layout.mjs';
 before(startApp);
 after(stopApp);
 
-/** The `day` tab as one tail pane, so the pane is the viewport less its frame. */
+/** The `main` tab as one tail pane, so the pane is the viewport less its frame. */
 const ONLY_TAIL = (context) =>
-	context.addInitScript(draft, JSON.stringify({ version: 1, name: 'day', root: widgetPane('only', 'tail') }));
+	context.addInitScript(draft, JSON.stringify({ version: 1, name: 'main', root: widgetPane('only', 'tail') }));
 
 /**
  * The app, held at noon, showing nothing but the tail. The clock is pinned

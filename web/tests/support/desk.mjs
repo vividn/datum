@@ -1,4 +1,4 @@
-// The desktop `day` the suite is written against (da-ncsyn): strip /
+// The desktop `main` the suite is written against (da-ncsyn): strip /
 // [REPL | nowview / tail / custom] / fields — the shipped default until
 // da-ncsyn moved it to the mobile shape.
 //
@@ -19,7 +19,7 @@
 //
 // HOW. `openApp` hands it to the page before the app loads, as
 // `window.__datumDesktopLayout` (`defaultLayoutFor` in layout/defaults.ts),
-// so `day` is this tree for every test that does not ask for `desk: null`.
+// so `main` is this tree for every test that does not ask for `desk: null`.
 // The shipped default's own tests (layout-desktop.test.mjs) are those that
 // do.
 

@@ -26,7 +26,7 @@ const page_ = (...extra) =>
 	);
 
 // ONE phone app for the file (da-6b3dj, sharedApp in support/app.mjs),
-// `day` opened from each test's own draft. The bar's line is the shell's and
+// `main` opened from each test's own draft. The bar's line is the shell's and
 // not the layout's, so `solo` leaves what the test before typed in it: the
 // line is put back as a fresh page has it — empty, unfocused, no input mode.
 // The one desktop test keeps an app of its own, the only one on that screen.

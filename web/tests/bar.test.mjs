@@ -60,7 +60,7 @@ const DOC = `${BAR} .doc`;
 // ONE APP per screen for most of this file (da-6b3dj, sharedApp in
 // support/app.mjs): the database is emptied between tests and every claim
 // reads the bar's own last answer. The repl-page apps are tidied by hand
-// rather than by `solo`, which would close the repl tab and draw `day`
+// rather than by `solo`, which would close the repl tab and draw `main`
 // behind the bar: a sheet left open, a half-typed line, the page and the
 // pills. What still opens an app of its own is a fresh device (`home:
 // null`), a held clock, a runner a test installs, a fold (which the device

@@ -30,7 +30,7 @@ after(stopApp);
  *
  * Most of this file asks the seam a question and reads the answer back
  * through the seam, and the day frame around it is scenery that costs a
- * fortnight of `dayview` bands to draw (da-x6ea) — so `day` is opened as a
+ * fortnight of `dayview` bands to draw (da-x6ea) — so `main` is opened as a
  * draft of ONE REPL pane, which is what the repl layout gave each of these
  * when it was a context each. `solo` empties the database between tests,
  * which is the isolation these need.

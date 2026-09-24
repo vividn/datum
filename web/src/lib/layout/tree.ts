@@ -703,7 +703,7 @@ export function rootFloorOf(
  *
  * What a session key is made of (da-vhwq, `session.ts`). A tab id alone is
  * unique within ONE layout and not across several: `defaults.ts` mints them
- * from a literal name, so `day` and `mobile` both hold a `tail-tab`, and
+ * from a literal name, so `main` and `mobile` both hold a `tail-tab`, and
  * two layouts open side by side would otherwise share one tab's session
  * settings. The CONTENT's id is in it for the other direction: `Change
  * Widget` leaves the tab where it is and puts a freshly minted widget in

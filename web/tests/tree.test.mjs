@@ -172,7 +172,7 @@ describe('breakOut', () => {
 		assert.equal(shape(after.root), 'ROW(nowview, tail)');
 		assert.deepEqual(after.root.tabs[0].content.ratios, [0.5, 0.5]);
 		// A root whose tabs hold layouts is the shell’s bar, not a stack.
-		const bar = { ...layout, root: { ...root, tabs: [{ ...root.tabs[0], layout: 'day' }, root.tabs[1]] } };
+		const bar = { ...layout, root: { ...root, tabs: [{ ...root.tabs[0], layout: 'main' }, root.tabs[1]] } };
 		assert.equal(canBreakOut(bar, root.id), false);
 		assert.equal(breakOut(bar, root.id, 'right'), bar);
 	});
@@ -207,7 +207,7 @@ describe('breakOut', () => {
 		assert.equal(row.children[0].tabs[0].content.children[0].id, left.id, 'the stack keeps its id');
 	});
 
-	/** The phone’s `day` column: COL(daystrip, TABS[tail · nowview · custom], widgetbar). */
+	/** The phone’s `main` column: COL(daystrip, TABS[tail · nowview · custom], widgetbar). */
 	function phone() {
 		const stack = newPane([widgetTab('tail'), widgetTab('nowview'), widgetTab('custom')]);
 		const column = newSplit('column', [newPane([widgetTab('daystrip')]), stack, newPane([widgetTab('widgetbar')])]);
@@ -318,7 +318,7 @@ describe('breakOut', () => {
 // da-6ji5 (vividn, 2026-09-17: «Split should split the current tab so that
 // it then has two widgets»): in a strip, Split goes one level deeper.
 describe('splitTab', () => {
-	/** The phone’s `day` column: COL(daystrip, TABS[tail · nowview · custom], widgetbar). */
+	/** The phone’s `main` column: COL(daystrip, TABS[tail · nowview · custom], widgetbar). */
 	function phone() {
 		const stack = newPane([widgetTab('tail'), widgetTab('nowview'), widgetTab('custom')]);
 		const column = newSplit('column', [newPane([widgetTab('daystrip')]), stack, newPane([widgetTab('widgetbar')])]);
@@ -395,7 +395,7 @@ describe('nameOf', () => {
 	test('a widget tab is its kind, a titled one its title, a layout its name', () => {
 		assert.equal(label(widgetTab('tail')), 'tail');
 		assert.equal(label({ ...widgetTab('tail'), title: 'log' }), 'log');
-		assert.equal(label({ ...widgetTab('tail'), title: 'log', layout: 'day' }), 'day');
+		assert.equal(label({ ...widgetTab('tail'), title: 'log', layout: 'main' }), 'main');
 	});
 
 	test('a row is ` | `, a column ` / `, a nested split in parentheses, each pane by its front tab', () => {
@@ -877,11 +877,11 @@ describe('any sequence of operations', () => {
 // than dissolving the tab into that child's tabs, and gives it a fresh
 // empty tab rather than dropping it when everything under it closes.
 describe('a layout tab', () => {
-	/** A root whose one tab holds layout `day`: a row split of two widget panes. */
+	/** A root whose one tab holds layout `main`: a row split of two widget panes. */
 	function held() {
 		const left = newPane([widgetTab('repl')]);
 		const right = newPane([widgetTab('tail')]);
-		const tab = { ...newTab(newSplit('row', [left, right])), layout: 'day' };
+		const tab = { ...newTab(newSplit('row', [left, right])), layout: 'main' };
 		return { layout: { version: 1, name: 'root', root: newPane([tab]) }, tab, left, right };
 	}
 
@@ -891,7 +891,7 @@ describe('a layout tab', () => {
 		assert.ok(isCanonical(after));
 		const kept = after.root.tabs[0];
 		assert.equal(kept.id, tab.id, 'the tab dissolved');
-		assert.equal(kept.layout, 'day');
+		assert.equal(kept.layout, 'main');
 		assert.equal(kept.content.children.length, 1);
 		assert.deepEqual(kept.content.ratios, [1]);
 		// Without the layout the same close unnests, as before.
@@ -906,7 +906,7 @@ describe('a layout tab', () => {
 		assert.ok(isCanonical(after));
 		assert.equal(after.root.tabs.length, 1);
 		assert.equal(after.root.tabs[0].id, tab.id);
-		assert.equal(after.root.tabs[0].layout, 'day');
+		assert.equal(after.root.tabs[0].layout, 'main');
 		assert.equal(after.root.tabs[0].content.kind, EMPTY_KIND);
 	});
 });
@@ -927,7 +927,7 @@ describe('PICKABLE ⊆ BUILTIN', () => {
 		for (const kind of PICKABLE) {
 			const name = ALIASES[kind] ?? kind;
 			assert.ok(BUILTIN_NAMES.includes(name), `${kind} has no built-in layout (${name})`);
-			assert.notEqual(name, 'day', `${kind} may not be the day layout`);
+			assert.notEqual(name, 'main', `${kind} may not be the main layout`);
 			// The root bar's `+` reaches the same layout by the kind's TITLE
 			// and `widgetInto` by its alias: one name, or the two doors part.
 			assert.equal(name, titleOf(kind), `${kind} is titled ${titleOf(kind)} but aliased to ${name}`);
