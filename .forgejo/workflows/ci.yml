@@ -101,6 +101,35 @@ jobs:
 
       - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      # A PR whose every changed file is Rust test SOURCE (crates/*/tests/*.rs),
+      # docs, markdown or scripts/mq-check.sh cannot change what the web runs,
+      # so it skips the wasm rebuild and the ~40-minute web suite (da-waghz).
+      # Anything else runs everything: crates/*/src (the wasm is rebuilt from
+      # it), web/, Cargo.*, .forgejo/, and the rest of crates/*/tests/ —
+      # web/tests/dbio.test.mjs reads crates/datum-cli/tests/fixtures/. Markdown
+      # under web/ or crates/*/src/ runs too (web/static/ is served), and so
+      # does an empty diff. Every push to main runs everything. WEB is always
+      # set and the web steps test `== '1'`: an expression compares loosely,
+      # so an UNSET env.WEB equals '0' and `!= '0'` would skip them on main.
+      - name: Can this change reach the web?
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != pull_request ]; then echo "WEB=1" >> "$GITHUB_ENV"; exit 0; fi
+          git fetch -q --no-tags --unshallow origin "+refs/heads/$BASE:refs/remotes/origin/$BASE"
+          files=$(git diff --name-only "origin/$BASE...HEAD")
+          if [ -n "$files" ] && ! grep -qvE '^crates/[^/]+/tests/.*\.rs$|^docs/|\.md$|^scripts/mq-check\.sh$' <<<"$files" \
+            && ! grep -qE '^(web|crates/[^/]+/src)/' <<<"$files"; then
+            echo "WEB=0" >> "$GITHUB_ENV"
+            echo "web suite skipped: $(wc -l <<<"$files") changed files, none can reach the web"
+          else
+            echo "WEB=1" >> "$GITHUB_ENV"
+            echo "web suite runs: a changed file can reach the web"
+          fi
+          echo "$files"
+
       - name: System tools the image lacks (time, for max RSS per step)
         run: apt-get update -qq && apt-get install -y -qq --no-install-recommends time >/dev/null && /usr/bin/time --version 2>&1 | head -1
 
@@ -188,6 +217,7 @@ jobs:
       # reproducibility fact this step measures; the script remaps absolute
       # paths, so it should.
       - name: Rebuild the CLI module and compare with the committed copy
+        if: ${{ env.WEB == '1' }}
         run: |
           set -euo pipefail
           git ls-files --error-unmatch web/src/lib/wasm/datum-cli.wasm >/dev/null
@@ -204,7 +234,7 @@ jobs:
       # ignore working-directory.
       - uses: https://github.com/pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         id: pnpm
-        if: ${{ !cancelled() && steps.node.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.node.outcome == 'success' && env.WEB == '1' }}
         with:
           package_json_file: web/package.json
 
