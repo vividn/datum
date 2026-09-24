@@ -31,7 +31,7 @@ export interface PaneSpec {
 	view?: 'text' | 'tail-table';
 }
 
-/** A pane's content box, in whole pixels. */
+/** A pane's content box, in whole pixels — but the tail table's, which is exact (da-zs3t9). */
 export interface PaneBox {
 	width: number;
 	height: number;

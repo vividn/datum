@@ -39,7 +39,11 @@ const geometry = (page) =>
 		const pane = document.querySelector('section.pane[data-title="tail"]');
 		const body = pane.querySelector('.body:not(.behind .body)');
 		const style = getComputedStyle(body);
-		const box = body.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+		// Exact, as the pane counts it (da-zs3t9): `clientHeight` is rounded,
+		// and the page lays a padding out in 64ths of a pixel, truncated —
+		// `5.28px` is 5.265625 — and either is a row off at the edge of one.
+		const pad = (px) => Math.trunc(parseFloat(px) * 64) / 64;
+		const box = body.getBoundingClientRect().height - pad(style.paddingTop) - pad(style.paddingBottom);
 		const thead = pane.querySelector('thead');
 		const head = thead?.getBoundingClientRect().height ?? 0;
 		const trs = [...pane.querySelectorAll('tbody tr')];
@@ -87,7 +91,7 @@ const waitRows = (page, expr, arg = 0) =>
  * (a phone's layout does), and a measurement taken then is of a pane that
  * is about to ask again.
  */
-const atRest = (page) =>
+const atRest = (page, timeout) =>
 	page.waitForFunction(
 		() => {
 			if (window.__datumInflight !== 0) return false;
@@ -96,12 +100,14 @@ const atRest = (page) =>
 			const trs = [...(pane?.querySelectorAll('tbody tr') ?? [])];
 			if (!body || trs.length === 0) return false;
 			const style = getComputedStyle(body);
-			const box = body.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+			const pad = (px) => Math.trunc(parseFloat(px) * 64) / 64;
+			const box = body.getBoundingClientRect().height - pad(style.paddingTop) - pad(style.paddingBottom);
 			const head = pane.querySelector('thead').getBoundingClientRect().height;
 			const row = Math.min(...trs.map((tr) => tr.getBoundingClientRect().height));
 			return trs.length === Math.floor((box - head) / row);
 		},
-		null
+		null,
+		{ timeout }
 	);
 
 /** Wait until the tail's first row is not `hid`. */
@@ -226,6 +232,36 @@ describe('rows from height', () => {
 			});
 		});
 	}
+
+	// A box of n rows and a hair draws n (da-zs3t9): the box was floored to
+	// whole pixels, so in the fraction of a pixel past the edge where the
+	// nth row fits, the pane counted one fewer and left a row's gap. A
+	// single height proves nothing about an edge, so this sweeps a pixel at
+	// a time — the box moves under half a pixel a step — across more than
+	// a row, asserts at every step, and asserts that a step landed within
+	// half a pixel past an edge, or the sweep missed what it is for.
+	test('at every height across a row boundary a pane shows exactly the rows its box holds', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await seed(app, 40);
+				let hair = Infinity;
+				for (let height = 790; height <= 850; height++) {
+					await page.setViewportSize({ width: 1280, height });
+					// Two frames: the box is laid out at the new size, so the
+					// pane is not found at rest in the box it is leaving.
+					await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+					// A pane that never settles fails on the count below, which says why.
+					await atRest(page, 5000).catch(() => {});
+					const g = await geometry(page);
+					assertFits(g, `1280x${height}`);
+					hair = Math.min(hair, g.box - g.head - g.n * g.row);
+				}
+				assert.ok(hair < 0.5, `no step landed within half a pixel past an edge (closest ${hair}px)`);
+			},
+			{ viewport: { width: 1280, height: 790 } }
+		);
+	});
 });
 
 describe('scrolling up', () => {
@@ -474,9 +510,10 @@ describe('a write', () => {
 				if (message?.op === 'cli' && message.argv[0] === 'tail' && message.argv[1] === '--json') {
 					const body = document.querySelector('section.pane[data-title="tail"] .body:not(.behind .body)');
 					const style = body && getComputedStyle(body);
+					const pad = (px) => Math.trunc(parseFloat(px) * 64) / 64;
 					window.__tailAsks.push({
 						n: Number(message.argv[message.argv.indexOf('-n') + 1]),
-						box: body ? body.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) : null
+						box: body ? body.getBoundingClientRect().height - pad(style.paddingTop) - pad(style.paddingBottom) : null
 					});
 				}
 				return post.call(this, message, ...rest);
@@ -526,26 +563,8 @@ describe('a write', () => {
 		);
 	});
 
-	// ⚠ 1280x810 RATHER THAN x800, AND 1280x800 IS NOW KNOWN-BAD AND
-	// UNCOVERED HERE (da-zs3t9; canary qwen-3-8-2-4t on PR #73 asked for
-	// this said out loud rather than left in a PR body).
-	//
-	// da-r0ydu's ratios land 1280x800 — an ordinary laptop — on a tail box
-	// of 126.44px, which is 5.003 rows, and a pane whose box holds a whole
-	// number of rows plus a hair draws one FEWER. So at that one size a
-	// reader on the desktop default sees a blank row's worth of gap under
-	// the last row. The defect is NOT da-r0ydu's: clean main draws 4 rows
-	// in the same 126.44px box at 1280x852, and a sweep of a hundred
-	// heights on both trees showed every other height drawing what it
-	// holds. It is filed as da-zs3t9, with that sweep and a repro.
-	//
-	// This file moves off the edge rather than asserting on it, because a
-	// case pinned to 800 would fail by TIMEOUT (`atRest` waits for a count
-	// that never settles) — thirty seconds a run, on a suite that already
-	// takes an hour, to restate what the bead records. da-zs3t9 carries the
-	// repro; when it goes green, 800 belongs back in this list.
 	for (const [width, height] of [
-		[1280, 810],
+		[1280, 800],
 		[390, 844]
 	]) {
 		test(`pinned at the bottom, a typed occur lands last with the count unchanged, at ${width}x${height}`, async () => {

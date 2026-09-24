@@ -72,10 +72,11 @@
 		const observer = new ResizeObserver(([entry]) => {
 			// Whole pixels, rounded down: a band a fraction of a pixel wider
 			// than its box is a band the browser scales, and the text with it.
-			settled.push({
-				width: Math.floor(entry.contentRect.width),
-				height: Math.floor(entry.contentRect.height)
-			});
+			// Not the tail's: its rows are fractions of a pixel tall and are
+			// counted against the box as it is, and a floored box drops the
+			// row its fraction holds (da-zs3t9).
+			const { width, height } = entry.contentRect;
+			settled.push(table ? { width, height } : { width: Math.floor(width), height: Math.floor(height) });
 		});
 		observer.observe(body);
 		return () => {
