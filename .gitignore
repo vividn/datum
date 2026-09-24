@@ -22,3 +22,7 @@ CLAUDE.local.md
 # local working notes (not shipped)
 /notes/
 .env
+
+# datum-cli.wasm and its SOURCE: a build product, fetched from the `wasm`
+# branch or built by web/scripts/ensure-wasm.mjs (da-0qa4x)
+/web/src/lib/wasm/

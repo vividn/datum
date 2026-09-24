@@ -363,9 +363,16 @@ The browser runs `datum-cli` itself, compiled to wasm32-wasip1 by
 `target/toolchains/`) and loaded through `@bjorn3/browser_wasi_shim`. What
 the page supplies is what a shell would: argv, stdin, `TZ`, a device id,
 `DATUM_COLOR=1` (there is no tty), and `HOME`/`DATUM_DB` inside the
-preopened `/data`. The artifact is committed under `web/src/lib/wasm/` the
-way the fixtures are, so the web CI job needs no Rust toolchain — rebuild
-and commit it whenever the CLI's crates change. It lives under `src/`
+preopened `/data`. The module is NOT committed (da-0qa4x): a binary cannot
+merge, and every CLI merge conflicted every other open CLI PR on it. Each
+push to main builds one onto the `wasm` branch (`.forgejo/workflows/wasm.yml`)
+— `datum-cli.wasm` plus `SOURCE`, the main sha it is for, one commit per
+main commit — and `web/scripts/ensure-wasm.mjs`, the `predev` and
+`prebuild` of `web/`, puts one in `web/src/lib/wasm/` like a build product
+in `target/`: it keeps the one there if its crates are this tree's, fetches
+the `wasm` branch's if this tree's crates are the merge-base's with
+`origin/main`, and builds otherwise, printing which and why. Deploy runs on
+a push to `wasm`, so it needs no Rust toolchain either. It lives under `src/`
 rather than `static/` so the app reaches it as a `?url` import and Vite
 emits it content-hashed under `/_app/immutable/`: a runtime artifact must
 not have a stable name, because the service worker serves precached names
@@ -374,21 +381,15 @@ together those handed a returning browser the previous deploy's module to
 run the current deploy's JavaScript against (da-tvg0). `deploy.sh
 --check-dist <dir>` is that rule on its own.
 
-Forgetting to rebuild is not a silent failure (da-nig7). CI's `wasm-check`
-job re-runs `build:cli-wasm` and fails on any byte of difference, and
-`build-and-test` does the same for the fixtures with `pnpm run
-test:fixtures`. Both comparisons are byte-for-byte, which the build earns by
-remapping the absolute paths rustc and clang bake into the bytes.
+Reusing a module built elsewhere is honest because the build is
+byte-reproducible: it remaps the absolute paths rustc and clang bake into
+the bytes. The fixtures are still committed, and `build-and-test` re-runs
+`pnpm run test:fixtures` and fails on any byte of difference (da-nig7).
 
-A conflict in `datum-cli.wasm` is a real one (da-r7fd0). It fires when main
-and your branch both rebuilt it, so the merged source needs a binary nobody
-has built yet, and neither side's copy is right. The forge reports it as
-`405 {"message":"Please try again later"}` on merge, which is permanent, not
-transient. The fix: rebase onto `origin/main`, run `pnpm run build:cli-wasm`,
-and commit what it writes. Never take `--ours`/`--theirs` for the binary, and
-never add a `merge=ours` driver for it: the forge has no such driver and
-conflicts regardless, and in a rebase `ours` is main, so it silently throws
-away the wasm you just rebuilt.
+A branch cut before da-0qa4x still carries `datum-cli.wasm`, and rebasing it
+conflicts once (modify/delete). The fix is `git rm
+web/src/lib/wasm/datum-cli.wasm` — no rebuild; nothing commits the module
+any more.
 
 (The `datum-parse-wasm`, `datum-layout-wasm` and `datum-render-wasm` crates
 built the three modules the browser ran before the swap; nothing in `web/`

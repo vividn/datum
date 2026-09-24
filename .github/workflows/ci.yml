@@ -63,13 +63,13 @@ jobs:
         with:
           node-version: 22
 
-      # The other committed-and-unwatched artifact. web/tests/fixtures is
+      # A committed-and-unwatched artifact. web/tests/fixtures is
       # what the web job compares datum.day against, and it is captured from
       # the real CLI — so when the CLI's stored shape changes and nobody
       # re-captures, the web suite goes on passing against a remembered
       # datum. Re-capture here (`cargo build --workspace` above already
       # produced target/debug/datum) and fail if anything moved. Same shape
-      # as the wasm comparison in `wasm-check` and as `toolchain-pin`.
+      # as `toolchain-pin`.
       - name: Re-capture the CLI-parity fixtures and compare with the committed copy
         run: |
           set -euo pipefail
@@ -180,31 +180,17 @@ jobs:
         with:
           node-version: 22
 
-      # The module datum.day loads, rebuilt and compared against the
-      # committed copy.
-      #
-      # Why compare rather than merely build: the artifact is committed (the
-      # web job has no Rust toolchain) and nothing else regenerates it. On
-      # 2026-09-04 the then parser module was 1.706 bytes behind its own
-      # source — the `conflicts` command had landed in Rust that morning and
-      # never reached the browser. Building alone catches only the
-      # precondition for that (the CLI ceasing to build for wasm at all),
-      # not the drift itself.
-      #
-      # The comparison is byte-for-byte and that is safe: the script remaps
-      # the absolute paths rustc and clang bake into the bytes, so the output
-      # does not depend on where the repo or the cargo registry lives.
-      - name: Rebuild the CLI module and compare with the committed copy
-        run: |
-          set -euo pipefail
-          # A gate that finds nothing must not pass.
-          git ls-files --error-unmatch web/src/lib/wasm/datum-cli.wasm >/dev/null
-          node web/scripts/build-cli-wasm.mjs
-          if [ -n "$(git status --porcelain -- web/src/lib/wasm)" ]; then
-            git status --short -- web/src/lib/wasm
-            echo "::error::web/src/lib/wasm/datum-cli.wasm is out of date with the CLI. Fix: pnpm run build:cli-wasm && git add web/src/lib/wasm/datum-cli.wasm"
-            exit 1
-          fi
+      # The module datum.day loads, which is no longer committed (da-0qa4x):
+      # built here and handed to the web job as an artifact, with the SOURCE
+      # ensure-wasm.mjs writes beside it, so that job needs no Rust toolchain.
+      - name: Build the CLI module
+        run: node web/scripts/ensure-wasm.mjs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: datum-cli-wasm
+          path: web/src/lib/wasm/
+          if-no-files-found: error
 
   honesty:
     name: Honesty gates (da-8y2q.7)
@@ -275,11 +261,20 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
+    # The CLI module is built there; this job has no Rust toolchain.
+    needs: wasm-check
     defaults:
       run:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
+
+      # With its SOURCE, which is this commit, so `pretest`'s ensure-wasm.mjs
+      # keeps it rather than building.
+      - uses: actions/download-artifact@v4
+        with:
+          name: datum-cli-wasm
+          path: web/src/lib/wasm/
 
       # pnpm before setup-node: setup-node's `cache: pnpm` needs the binary
       # present to resolve the store path. Version comes from package.json's
@@ -310,8 +305,8 @@ jobs:
         run: pnpm exec playwright install --with-deps --only-shell chromium
 
       # `pretest` builds the app first; the CLI-parity fixtures under
-      # web/tests/fixtures are committed, so this job needs no Rust
-      # toolchain. Regenerate them with `pnpm run test:fixtures` against a
+      # web/tests/fixtures are committed and the CLI module comes from
+      # `wasm-check`, so this job needs no Rust toolchain. Regenerate them with `pnpm run test:fixtures` against a
       # built `datum` binary when the CLI's stored shape changes — and if
       # you forget, `build-and-test` re-captures them and goes red.
       # A runner is dedicated, and the load average it carries here is the

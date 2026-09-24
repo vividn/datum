@@ -1,0 +1,81 @@
+# The `wasm` branch (da-0qa4x): datum-cli.wasm for every main commit, so the
+# module can leave main. A committed binary cannot merge, and every CLI merge
+# conflicted every other open CLI PR on that one file — eight at once on
+# 2026-09-24. This is the gh-pages pattern: an artifact branch with linear
+# history, one commit per main commit, `wasm for <sha>`, holding
+#
+#   datum-cli.wasm                the module
+#   SOURCE                        the full main sha it is for
+#   .github/workflows/deploy.yml  main@SOURCE's copy
+#
+# GitHub runs a branch's push workflows from THAT branch's tree, and deploy
+# runs on a push to `wasm` (the forge's push mirror carries it there), so the
+# deploy that runs is always the one belonging to the code it deploys.
+#
+# `web/scripts/ensure-wasm.mjs` is what reads the branch: locally, in CI, and
+# here — where a main commit whose crate inputs an earlier one shares reuses
+# its bytes (they are reproducible) instead of building for minutes, and Rust
+# is installed only when a build is needed.
+name: wasm
+
+on:
+  push:
+    branches: [main]
+
+# Only the newest main commit is worth a module: a deploy of a superseded one
+# is pointless, and SOURCE names the commit, so nothing is lost.
+concurrency:
+  group: wasm
+  cancel-in-progress: true
+
+jobs:
+  wasm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      # Full history: ensure-wasm compares crate inputs against the SOURCE
+      # of earlier `wasm` commits. The persisted job token is also what the
+      # push below uses (write on its own repo, as on #134).
+      - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - uses: https://github.com/actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Reuse an earlier module, or build one
+        run: |
+          set -euo pipefail
+          node web/scripts/ensure-wasm.mjs --fetch-only && exit 0 || [ $? = 2 ]
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal --no-modify-path
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup toolchain install --no-self-update
+          rustup target add wasm32-wasip1
+          node web/scripts/ensure-wasm.mjs
+
+      # Plumbing, so the checkout is never touched: a tree of three blobs,
+      # parented on the branch's tip as fetched just now.
+      - name: Commit it to `wasm`
+        env:
+          GIT_AUTHOR_NAME: wasm workflow
+          GIT_AUTHOR_EMAIL: wasm@git.vividn.dev
+          GIT_COMMITTER_NAME: wasm workflow
+          GIT_COMMITTER_EMAIL: wasm@git.vividn.dev
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD)
+          export GIT_INDEX_FILE=$(mktemp -u)
+          git read-tree --empty
+          add() { git update-index --add --cacheinfo "100644,$1,$2"; }
+          add "$(git hash-object -w web/src/lib/wasm/datum-cli.wasm)" datum-cli.wasm
+          add "$(echo "$sha" | git hash-object -w --stdin)" SOURCE
+          add "$(git rev-parse HEAD:.github/workflows/deploy.yml)" .github/workflows/deploy.yml
+          tree=$(git write-tree)
+          git fetch -q origin +refs/heads/wasm:refs/remotes/origin/wasm || true
+          parent=()
+          tip=$(git rev-parse -q --verify refs/remotes/origin/wasm) && parent=(-p "$tip")
+          commit=$(git commit-tree "$tree" "${parent[@]}" -m "wasm for $sha")
+          git push origin "$commit:refs/heads/wasm"
+          echo "wasm $commit: $(git show "$commit:SOURCE")"
+          git ls-tree -r -l "$commit"

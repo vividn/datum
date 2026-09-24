@@ -19,9 +19,10 @@ profile = "default"
 # locations from the local sysroot; without it, as `/rustc/<commit>/...` -- and
 # the two do not merely spell paths differently, they emit DIFFERENT AMOUNTS of
 # location info (measured 2026-09-08: 12 std references vs 1 in datum-parse.wasm).
-# So `wasm-check`, which rebuilds the committed wasm and compares bytes, can only
-# pass if CI and developers agree on this component. Every developer with a
-# working IDE has it; CI did not, and the committed artifact matched only CI.
+# So a module built by CI is the one a developer would build -- which is what lets
+# web/scripts/ensure-wasm.mjs fetch the `wasm` branch's in place of building --
+# only if CI and developers agree on this component. Every developer with a
+# working IDE has it; CI did not, and the then-committed artifact matched only CI.
 components = ["rustfmt", "clippy", "rust-src"]
 # `wasm-check` builds datum-sync-client for the browser.
 targets = ["wasm32-unknown-unknown"]

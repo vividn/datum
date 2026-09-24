@@ -103,8 +103,8 @@ jobs:
 
       # A PR whose every changed file is Rust test SOURCE (crates/*/tests/*.rs),
       # docs, markdown or scripts/mq-check.sh cannot change what the web runs,
-      # so it skips the wasm rebuild and the ~40-minute web suite (da-waghz).
-      # Anything else runs everything: crates/*/src (the wasm is rebuilt from
+      # so it skips the wasm build and the ~40-minute web suite (da-waghz).
+      # Anything else runs everything: crates/*/src (the wasm is built from
       # it), web/, Cargo.*, .forgejo/, and the rest of crates/*/tests/ —
       # web/tests/dbio.test.mjs reads crates/datum-cli/tests/fixtures/. Markdown
       # under web/ or crates/*/src/ runs too (web/static/ is served), and so
@@ -181,8 +181,8 @@ jobs:
       # web suite (da-vnebg): skipped reads as judged, and the web result at
       # that commit would not exist. Each web step runs unless the run was
       # cancelled or the web step before it failed — so a broken install is
-      # still one red, not a pile of red after it. The fixture and wasm
-      # comparisons between them keep the default: they read cargo's output.
+      # still one red, not a pile of red after it. The fixture comparison and
+      # the wasm build between them keep the default: they need cargo.
       #
       # node 22 for the two capture scripts and the web suite. GitHub's job
       # uses setup-node's pnpm cache; there is no cache service here, so no
@@ -210,23 +210,14 @@ jobs:
       - name: cargo check datum-sync-client (wasm32, --no-default-features --features wasm)
         run: cargo check -p datum-sync-client --target wasm32-unknown-unknown --no-default-features --features wasm
 
-      # build-cli-wasm.mjs fetches a pinned wasi-sdk and binaryen (~100 MB,
-      # sha256-checked) into target/toolchains/ — uncached here — and rebuilds
-      # the committed module, compared byte-for-byte. Whether the comparison
-      # holds inside this image (a different libc from GitHub's runner) is a
-      # reproducibility fact this step measures; the script remaps absolute
-      # paths, so it should.
-      - name: Rebuild the CLI module and compare with the committed copy
+      # The module is not committed (da-0qa4x), so there is nothing to compare
+      # with: ensure-wasm.mjs builds it from this tree's crates — the pinned
+      # wasi-sdk and binaryen (~100 MB, sha256-checked, uncached here) into
+      # target/toolchains/ — or, when they are the merge-base's, fetches the
+      # `wasm` branch's module for them. `pnpm test`'s build keeps it.
+      - name: Build the CLI module (or fetch it, for a PR whose crates are main's)
         if: ${{ env.WEB == '1' }}
-        run: |
-          set -euo pipefail
-          git ls-files --error-unmatch web/src/lib/wasm/datum-cli.wasm >/dev/null
-          /usr/bin/time -v node web/scripts/build-cli-wasm.mjs
-          if [ -n "$(git status --porcelain -- web/src/lib/wasm)" ]; then
-            git status --short -- web/src/lib/wasm
-            echo "::error::web/src/lib/wasm/datum-cli.wasm is out of date with the CLI. Fix: pnpm run build:cli-wasm && git add web/src/lib/wasm/datum-cli.wasm"
-            exit 1
-          fi
+        run: /usr/bin/time -v node web/scripts/ensure-wasm.mjs
 
       # ── web ───────────────────────────────────────────────────────────────
       # pnpm's version comes from web/package.json's packageManager field;

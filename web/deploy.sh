@@ -49,75 +49,23 @@ DRY="--dryrun"
 command -v aws >/dev/null || { echo "aws CLI not found; see web/DEPLOY.md" >&2; exit 1; }
 
 cd "$(dirname "$0")"
-# The wasm is COMMITTED, not built here -- deliberately, so a deploy needs no
-# Rust toolchain (vividn's concern: "will this continue to work on ci on other
-# servers"). The cost is that src/lib/wasm/*.wasm can silently fall behind the Rust it
-# was built from, and the deploy would ship a parser that is not main's. Not
-# hypothetical: on 2026-09-04 the committed datum-parse.wasm was 1.317.259 bytes
-# and the same source rebuilt to 1.318.965 -- the conflicts command had landed in
-# Rust and never reached the artifact.
+# The wasm is not committed (da-0qa4x): ensure-wasm.mjs keeps, fetches from
+# the `wasm` branch, or builds the module for this tree's crates, and records
+# in src/lib/wasm/SOURCE the commit whose crates it matches — HEAD whenever
+# the working tree's crates are HEAD's. CI's deploy puts the `wasm` branch's
+# module and SOURCE here, so it keeps them and needs no Rust toolchain
+# (vividn's concern: "will this continue to work on ci on other servers").
 #
-# Refuse rather than rebuild: refusing keeps the no-toolchain property, and this
-# runs BEFORE the install so it costs nothing when it fires.
-#
-# *** DO NOT DELETE THIS AS REDUNDANT WITH CI. *** As of 9454289 the wasm-check
-# job rebuilds and compares BYTES against the committed copies, which is
-# strictly stronger than the mtime test below -- for what is COMMITTED. This
-# check guards a different thing: the DEPLOYER'S WORKING TREE. `pnpm run build`
-# below does not rebuild wasm, so someone with uncommitted Rust edits deploys
-# the committed artifact without knowing it, and CI never saw that tree.
-#
-# I wrote in da-nig7 that a CI comparison would make this redundant and it
-# should be removed in the same change. That was written before the CI check
-# existed and it was wrong: they cover the repository and the deployer's
-# machine, which are not the same place. Two checks for one property is a real
-# hazard; two checks for two properties is not.
-#
-# Paths are relative to web/ (cd'd above). Floors first, because `find` on a
-# missing directory returns empty, which reads exactly like "the wasm is fresh".
-[ -f src/lib/wasm/datum-cli.wasm ] || {
-  echo "REFUSING: src/lib/wasm/datum-cli.wasm does not exist; nothing to compare." >&2
-  echo "  Build it first: pnpm run build:cli-wasm" >&2
-  exit 1
-}
-[ -d ../crates ] || {
-  echo "REFUSING: ../crates not found, so the staleness check cannot run." >&2
-  echo "  A silent pass here would ship whatever wasm happens to be committed." >&2
-  exit 1
-}
-# BUILD the wasm rather than police it. The check below compares TIMESTAMPS,
-# and a source change does not imply a different wasm -- a change behind a
-# `native` feature gate cannot alter a build that excludes it -- so as a gate it
-# refuses correct deploys, which is exactly what it did on 2026-09-08.
-#
-# Building removes the question instead of detecting it. Safe to do here since
-# the rust-src pin (#138): the output is byte-reproducible across machines, so a
-# no-op build leaves the tree clean rather than churning the committed artifact.
-#
-# The CLI module needs the wasm32-wasip1 target (and fetches its pinned C
-# toolchain on first use), so a machine without the target takes the
-# committed-artifact path below rather than failing half-way into a build.
-if command -v cargo >/dev/null 2>&1 && rustup target list --installed 2>/dev/null | grep -qx wasm32-wasip1; then
-  echo "==> building wasm"
-  pnpm run build:cli-wasm
-else
-  # The toolchain-free path, which is why the artifacts are committed at all.
-  # HERE the staleness check earns its keep: we are about to ship bytes we did
-  # not just produce, so their age is the only evidence available.
-  echo "==> no cargo with wasm32-wasip1; shipping the COMMITTED wasm" >&2
-  newest_rust=$(find ../crates -name '*.rs' -newer src/lib/wasm/datum-cli.wasm -print -quit 2>/dev/null)
-  if [ -n "$newest_rust" ]; then
-    echo "REFUSING: src/lib/wasm/*.wasm is older than Rust source ($newest_rust)." >&2
-    echo "  Install a Rust toolchain with wasm32-wasip1 and re-run, so the deploy builds it, or:" >&2
-    echo "    just wasm && git add web/src/lib/wasm/*.wasm" >&2
-    echo "  Or set STALE_WASM_OK=1 to ship the committed one deliberately." >&2
-    echo "" >&2
-    echo "  NOTE: this compares TIMESTAMPS, not content. CI's WASM check rebuilds" >&2
-    echo "  and compares bytes, so if CI is green on this commit the committed" >&2
-    echo "  wasm is current and STALE_WASM_OK=1 is the right answer:" >&2
-    echo "    gh run list -c \$(git rev-parse HEAD) --json name,conclusion" >&2
-    [ "${STALE_WASM_OK:-}" = "1" ] || exit 1
-  fi
+# Refuse unless SOURCE is HEAD: anything else ships a CLI that is not the
+# commit's — uncommitted Rust edits, most likely, in the deployer's tree.
+# STALE_WASM_OK=1 ships it deliberately. Runs BEFORE the install, so it costs
+# nothing when it fires.
+node scripts/ensure-wasm.mjs
+head=$(git rev-parse HEAD)
+if [ "$(cat src/lib/wasm/SOURCE 2>/dev/null)" != "$head" ]; then
+  echo "REFUSING: src/lib/wasm/datum-cli.wasm is not built from HEAD ($head)'s crates." >&2
+  echo "  Commit or stash the crate changes and re-run, or set STALE_WASM_OK=1 to ship it deliberately." >&2
+  [ "${STALE_WASM_OK:-}" = "1" ] || exit 1
 fi
 
 echo "==> building"

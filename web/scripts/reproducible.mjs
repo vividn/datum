@@ -1,7 +1,8 @@
-// The environment the committed wasm artifact is built in.
+// The environment the wasm artifact is built in.
 //
-// Used by build-cli-wasm.mjs, because CI rebuilds the module and compares
-// bytes, and this is the rule that makes that comparison honest.
+// Used by build-cli-wasm.mjs, because ensure-wasm.mjs takes the module the
+// `wasm` branch holds as the one this tree would build, and this is the rule
+// that makes that honest.
 
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
@@ -10,16 +11,15 @@ import { fileURLToPath } from 'node:url';
 
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-// The bytes must not depend on WHERE the build ran, because CI rebuilds
-// these and compares them against the committed copies (`wasm-check` in
-// .github/workflows/ci.yml). Panic payloads carry `file!()` strings, and
+// The bytes must not depend on WHERE the build ran, because a module built
+// on the forge's runner stands in for one built here. Panic payloads carry `file!()` strings, and
 // for registry dependencies cargo passes those as absolute paths — so
 // without this the artifact encodes `/home/cans/.cargo/...` here and
 // `/home/runner/.cargo/...` on a runner, and the comparison fails for a
 // reason that has nothing to do with drift. rustc already remaps its own
 // standard library to `/rustc/<hash>`; these two flags do the same for
-// the registry and the checkout. Both sides of the comparison run this
-// script, so the flags are the same on both.
+// the registry and the checkout. Every build runs this script, so the flags
+// are the same on every machine.
 export const cargoHome = process.env.CARGO_HOME ?? resolve(homedir(), '.cargo');
 
 // The standard library needs remapping too, and it has TWO spellings depending

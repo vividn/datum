@@ -210,8 +210,19 @@ immediately. It also forces `Content-Type: application/wasm`, because a `.wasm` 
 ### Step 3b: the same thing from CI
 
 `.github/workflows/deploy.yml` runs `web/deploy.sh --yes` and then `just verify` on every
-push to `main`, and on demand from the Actions tab. It is **inert until the repository is
-configured** — it reads four values and none of them have defaults:
+push to the **`wasm` branch**, and on demand from the Actions tab (dispatched on `wasm`).
+Not on `main`: the CLI module is no longer committed (da-0qa4x). The forge's
+`.forgejo/workflows/wasm.yml` builds it for each main commit and commits it to `wasm` with
+`SOURCE`, the main sha it is for, and a copy of main@SOURCE's `deploy.yml` — GitHub runs a
+branch's push workflows from that branch's tree. The deploy checks out main at `SOURCE`, puts
+the module beside it, and runs `deploy.sh`, which needs no Rust toolchain. So a push to main
+deploys once its module is built, and a newer one cancels a deploy still running.
+
+For that to reach GitHub, **the forge's push mirror must push all branches**, not only `main`,
+and if the `production` environment restricts deployment branches it must allow `wasm`.
+
+It is **inert until the repository is configured** — it reads four values and none of them
+have defaults:
 
 - a GitHub **Environment** named `production`, holding
 - secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (the same bucket-scoped key as above), and
@@ -277,12 +288,14 @@ no banner, because someone will trust it.
 
 ## Rollback
 
-Deploys are a file sync, so rollback is redeploying a previous build:
+Deploys are a file sync, so rollback is redeploying a previous build. Check out the WHOLE
+commit, not just `web/`: the module is not in the tree, and `deploy.sh` fetches the one the
+`wasm` branch holds for that commit (or builds it) and refuses one that is not HEAD's:
 
 ```sh
-git checkout <previous-commit> -- web/
+git checkout --detach <previous-main-commit>
 ./web/deploy.sh --yes
-git checkout HEAD -- web/
+git checkout -
 ```
 
 There is no server state to migrate. Users' data lives in their own browsers and is not

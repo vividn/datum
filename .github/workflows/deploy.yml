@@ -5,21 +5,33 @@
 # release gate.
 name: Deploy datum.day
 
+# A push to the `wasm` branch, not to main (da-0qa4x): the module left main,
+# and .forgejo/workflows/wasm.yml commits one to `wasm` for each main commit,
+# with SOURCE naming it. GitHub runs a branch's push workflows from that
+# branch's tree, so THIS file runs as the copy the wasm workflow took from
+# main@SOURCE — the deploy that runs is the one belonging to the code it
+# deploys. The forge's push mirror must push every branch for `wasm` to
+# arrive, and the `production` environment must allow deploying from it.
 on:
   push:
-    branches: [main]
+    branches: [wasm]
   # A deploy is sometimes needed with no commit behind it. The bucket's error
   # document and its public-read policy are not in this repo, and the verify
   # step below is how you find out whether a change to either actually landed.
+  # Dispatch it on the `wasm` branch: it deploys that branch's tip.
   workflow_dispatch:
 
-# `aws s3 sync` is not atomic, so two runs overlapping can leave the bucket
-# holding half of each build. They queue instead. cancel-in-progress stays false
-# because cancelling mid-upload produces exactly that mixed bucket and schedules
-# nothing to repair it: waiting is strictly better than a half-written site.
+# A newer deploy cancels the one in progress. `aws s3 sync` is not atomic, so a
+# cancelled upload leaves the bucket holding part of each build — but the run
+# that cancelled it then syncs the whole of the newer build over it, which is
+# the repair; content-hashed files a half-run left behind are never
+# referenced. Queueing never deployed a superseded commit either — GitHub
+# keeps one pending run per group and cancels an older pending one — so what
+# cancelling changes is only that the deploy already in flight stops instead
+# of finishing first.
 concurrency:
   group: deploy-datum-day
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 # Nothing here writes to the repo. The only credentials that matter are the
 # bucket's, and they come from the `production` environment below.
@@ -45,7 +57,25 @@ jobs:
       name: production
       url: https://datum.day
     steps:
+      # The `wasm` commit this run is for, then main at its SOURCE for the web
+      # sources, with the module and SOURCE put back where ensure-wasm.mjs
+      # looks: it keeps them, since SOURCE is HEAD, and nothing needs Rust.
       - uses: actions/checkout@v4
+
+      - name: Read the module and the main commit it is for
+        id: wasm
+        run: |
+          cp datum-cli.wasm SOURCE "$RUNNER_TEMP/"
+          echo "source=$(cat SOURCE)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.wasm.outputs.source }}
+
+      - name: Put the module in web/src/lib/wasm
+        run: |
+          mkdir -p web/src/lib/wasm
+          cp "$RUNNER_TEMP/datum-cli.wasm" "$RUNNER_TEMP/SOURCE" web/src/lib/wasm/
 
       # ubuntu-24.04 ships aws-cli 2.36.35 (checked 2026-09-08 against
       # actions/runner-images), but `ubuntu-latest` is a moving label and the
@@ -84,31 +114,12 @@ jobs:
       # directly rather than through `just deploy` — that recipe's `build`
       # dependency would build a second time, and would do it before any install
       # has happened.
-      #
-      # STALE_WASM_OK=1, deliberately. deploy.sh refuses when any crates/**/*.rs
-      # is newer than web/src/lib/wasm/datum-cli.wasm, and on a fresh checkout every
-      # file is written at checkout time — so what that comparison reports is
-      # the order git happened to write the tree. Measured in a fresh worktree
-      # on 2026-09-08: it does NOT fire, because `crates/` is written before
-      # `web/`. Passing anyway, because a deploy that survives on alphabetical
-      # luck fails the first time a checkout action, a sparse checkout or a
-      # reused workspace changes that order, and it fails as a refusal to ship.
-      #
-      # Suppressing it costs nothing here. What the guard protects is the
-      # DEPLOYER'S WORKING TREE — uncommitted Rust edits shipping the committed
-      # wasm — and a CI checkout has no uncommitted edits by construction. The
-      # artifact's content is covered instead by ci.yml's `WASM check`, which
-      # rebuilds the CLI module and compares bytes; deploy.sh's own refusal
-      # message names exactly that as the case for this flag. Caveat, because it
-      # is not free: that job runs in parallel with this one, so a commit whose
-      # WASM check goes red is still deployed here.
       - name: Build and upload
         env:
           DATUM_DAY_BUCKET: ${{ vars.DATUM_DAY_BUCKET }}
           DATUM_DAY_ENDPOINT: ${{ vars.DATUM_DAY_ENDPOINT }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          STALE_WASM_OK: "1"
         run: ./web/deploy.sh --yes
 
       # From outside, over the real CDN, because every failure this can catch

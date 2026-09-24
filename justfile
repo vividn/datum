@@ -16,8 +16,8 @@ default:
 # --- web app -------------------------------------------------------------
 
 # ~1 min warm. The output is byte-reproducible across machines as of the rust-src
-# pin, so a no-op run leaves the tree clean — if it does not, the committed
-# artifact was genuinely behind and wants committing.
+# pin. Nothing commits it (da-0qa4x): `pnpm dev`/`build`/`test` already fetch or
+# build it through web/scripts/ensure-wasm.mjs; this forces a build.
 #
 # Rebuild the real CLI for the browser into web/src/lib/wasm/datum-cli.wasm.
 wasm:

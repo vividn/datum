@@ -13,14 +13,15 @@
 // tarballs do not exist (they are x86_64-linux), the failure is "the CLI
 // module does not build here", never "the repo does not build".
 //
-// The artifact is committed; CI's `wasm-check` rebuilds it with the same
-// pins and compares bytes.
+// The artifact is not committed (da-0qa4x): `ensure-wasm.mjs` fetches the
+// one the `wasm` branch holds for this tree's crates, and runs this when
+// there is none. The bytes are reproducible, so either is the same module.
 //
 // Usage:  pnpm run build:cli-wasm
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { cargoHome, env, repoRoot } from './reproducible.mjs';
@@ -96,6 +97,9 @@ execFileSync(
 );
 
 mkdirSync(resolve(out, '..'), { recursive: true });
+// ensure-wasm.mjs's record of what the module was built from; it writes it
+// again after a build it ran, and a build by hand is from nobody knows what.
+rmSync(resolve(out, '..', 'SOURCE'), { force: true });
 execFileSync(
 	`${binaryen}/bin/wasm-opt`,
 	[
