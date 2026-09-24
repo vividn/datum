@@ -6,7 +6,7 @@ mod common;
 use chrono::{Local, Utc};
 use common::run_cli;
 use datum_core::entry::Verb;
-use datum_core::test_util::{entry_builder, fresh_db};
+use datum_core::test_util::{entry_builder, freeze_time, fresh_db};
 use datum_core::time::Zone;
 
 /// A UTC timestamp at local noon today — guaranteed to land in the same
@@ -400,6 +400,9 @@ fn block_switch_following_band_opens_at_the_blocks_trailing_edge() {
 /// reading drew it running four minutes into the future.
 #[test]
 fn a_just_logged_dur_block_ends_on_the_now_line() {
+    // Midday: in the first four minutes of a day the block would straddle
+    // midnight into a day this one-day render does not draw (da-tyggo).
+    let _g = freeze_time("2026-09-10T12:00:00");
     let db = fresh_db();
     run_cli(&["start", "posture", "4"], &db).expect("start posture 4");
 
@@ -431,8 +434,8 @@ fn a_just_logged_dur_block_ends_on_the_now_line() {
     let offset = block["time_offset"].as_f64().unwrap();
     let extent = block["time_extent"].as_f64().unwrap();
 
-    // A second's worth of pixels: the entry is stamped a hair before the
-    // render reads the clock, so the two can't be bit-equal.
+    // A second's worth of pixels, as slack for float rounding: the clock
+    // is frozen, so the entry and the render read the same instant.
     let one_second = axis / (24.0 * 60.0 * 60.0);
     assert!(
         (offset + extent - now_pos).abs() < 2.0 * one_second,

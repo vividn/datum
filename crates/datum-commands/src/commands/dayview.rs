@@ -32,7 +32,7 @@ use datum_parse::time::{parse_date, DateArg, TimeCtx};
 
 use crate::args::{DayviewArgs, ShowFlag};
 use crate::commands::field_visuals::{
-    occur_time_ms, render_field_visuals, switch_region_end_ms, title_marks,
+    leading_edge_ms, occur_time_ms, render_field_visuals, switch_region_end_ms, title_marks,
 };
 
 /// Datum default per-day band height (matches dayview.ts:50).
@@ -124,8 +124,11 @@ fn today() -> NaiveDate {
 }
 
 fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
-    // 1. Resolve the visible day window.
-    let today = today();
+    // 1. Resolve the visible day window. One reading of the clock for the
+    // days and the now-line both, so they cannot disagree about which day
+    // is today, not even across midnight (da-tyggo).
+    let now = DatumTime::now();
+    let today = now.local_time().date_naive();
     let end_date = match args.end_date.as_deref() {
         Some(s) => {
             resolve_date_arg(s, today).with_context(|| format!("invalid --end-date: '{s}'"))?
@@ -174,8 +177,7 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
 
     // 4. For each day, build the field input list.
     let mut days_input: Vec<DayviewDayInput> = Vec::with_capacity(day_dates.len());
-    let now_utc = Utc::now();
-    let now_ms = now_utc.timestamp_millis();
+    let now_ms = now.utc.timestamp_millis();
 
     for date in &day_dates {
         let (day_start_ms, day_end_ms) = local_day_bounds_ms(*date)?;
@@ -441,17 +443,24 @@ fn build_day_fields(
 
     // Pull every entry whose hybrid time intersects this day. We include
     // a leading buffer so a still-open block that started before the day
-    // starts can render. The layout clips to the visible window.
+    // starts can render, and a trailing one because a block's stored
+    // instant is its END (da-zwct): one that began today and ends after
+    // midnight is kept by its leading edge (da-tyggo). The layout clips
+    // to the visible window.
     let buffer = chrono::Duration::days(2);
     let entries = db.list_entries(&super::render_helpers::live_window_params(
         day_start_utc - buffer,
-        day_end_utc,
+        day_end_utc + buffer,
     ))?;
 
     // Bucket by field.
     let mut by_field: std::collections::BTreeMap<String, Vec<Entry>> =
         std::collections::BTreeMap::new();
-    for e in entries {
+    for e in entries.into_iter().filter(|e| {
+        e.occur_time
+            .as_ref()
+            .is_none_or(|t| leading_edge_ms(e, t.utc.timestamp_millis()) <= day_end_ms)
+    }) {
         by_field.entry(e.field.clone()).or_default().push(e);
     }
 

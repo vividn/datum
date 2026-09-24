@@ -261,44 +261,68 @@ fn end_time_alone_on_switch_is_end_asserting_the_state() {
 }
 
 /// The drawing agrees with the row (the da-zwct test shape): after the
-/// pair, the block's `time_offset + time_extent` is the now-line less five
-/// minutes, and its extent is fifteen. On the wall clock, as da-zwct's
-/// test is: the now-line is the render's own reading of it.
+/// pair, the block ends on the now-line less five minutes and lasted
+/// fifteen. The now-line is the render's own reading of the clock, which a
+/// frozen clock reaches through the same `clock::now()` as the wall clock.
+///
+/// Near midnight the block straddles two days (da-tyggo): at 00:03 it lies
+/// wholly in yesterday, at 00:10 it is cut in two. So two days are drawn
+/// and the block's slices summed across them — the wall clock left this
+/// test red for the first twenty minutes of every day, reading today alone.
 #[test]
 fn dayview_draws_the_pair_ending_five_minutes_before_now() {
-    let db = fresh_db();
-    run_cli(&["start", "posture", "start_time=-20", "end_time=-5"], &db).unwrap();
+    for now in [
+        "2026-09-10T00:03:00",
+        "2026-09-10T00:10:00",
+        "2026-09-10T12:00:00",
+    ] {
+        let _g = freeze_time(now);
+        let db = fresh_db();
+        run_cli(&["start", "posture", "start_time=-20", "end_time=-5"], &db).unwrap();
 
-    let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
-    let path = tmp.path().to_str().unwrap().to_string();
-    run_cli(&["dayview", "--width", "2400", "--json", "-o", &path], &db).expect("dayview --json");
-    let json: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        run_cli(
+            &[
+                "dayview", "-n", "2", "--width", "2400", "--json", "-o", &path,
+            ],
+            &db,
+        )
+        .expect("dayview --json");
+        let json: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
 
-    let axis = json["time_axis_extent"].as_f64().expect("time_axis_extent");
-    let day = json["days"].as_array().unwrap().last().expect("today");
-    let now_pos = day["now_time_pos"].as_f64().expect("today's now-line");
-    let block = day["fields"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|f| f["field"].as_str() == Some("posture"))
-        .expect("posture rendered")["blocks"][0]
-        .clone();
-    let offset = block["time_offset"].as_f64().unwrap();
-    let extent = block["time_extent"].as_f64().unwrap();
+        // Minutes since yesterday's midnight, from a band's pixels.
+        let minute = json["time_axis_extent"].as_f64().expect("time_axis_extent") / (24.0 * 60.0);
+        let at = |day: usize, px: f64| day as f64 * 24.0 * 60.0 + px / minute;
+        let days = json["days"].as_array().unwrap();
+        assert_eq!(days.len(), 2, "{now}: yesterday and today");
+        let now_line = at(
+            1,
+            days[1]["now_time_pos"].as_f64().expect("today's now-line"),
+        );
+        let mut slices = vec![];
+        for (i, day) in days.iter().enumerate() {
+            let fields = day["fields"].as_array().unwrap();
+            for f in fields.iter().filter(|f| f["field"] == "posture") {
+                for b in f["blocks"].as_array().unwrap() {
+                    let offset = b["time_offset"].as_f64().unwrap();
+                    let extent = b["time_extent"].as_f64().unwrap();
+                    slices.push((at(i, offset), at(i, offset + extent)));
+                }
+            }
+        }
 
-    let minute = axis / (24.0 * 60.0);
-    // Two seconds' worth of pixels: the row is stamped a hair before the
-    // render reads the clock.
-    assert!(
-        (offset + extent - (now_pos - 5.0 * minute)).abs() < minute / 30.0,
-        "the block ends five minutes before the now-line: ends at {}, now-line at {now_pos}",
-        offset + extent
-    );
-    assert!(
-        (extent - 15.0 * minute).abs() < minute / 30.0,
-        "and lasted fifteen minutes: extent {extent}, minute {minute}"
-    );
+        let end = slices.last().expect("posture rendered").1;
+        let lasted: f64 = slices.iter().map(|(s, e)| e - s).sum();
+        assert!(
+            (end - (now_line - 5.0)).abs() < 1e-6,
+            "{now}: the block ends five minutes before the now-line: {slices:?}, now-line {now_line}"
+        );
+        assert!(
+            (lasted - 15.0).abs() < 1e-6,
+            "{now}: and lasted fifteen minutes: {slices:?}"
+        );
+    }
 }
 
 /// Relative and absolute forms through the key parse exactly as through
