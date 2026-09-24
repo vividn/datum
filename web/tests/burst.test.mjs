@@ -187,8 +187,12 @@ describe('a burst of writes in another tab', () => {
 			// itself, so each one of them is one external refresh.
 			const refreshes = (await seen()).filter((argv) => argv[0] === 'fields').length;
 			assert.ok(told >= 10, `a burst of ${told} announcements is no burst`);
+			// Half the writes, not a count: the coalesced spread is 3-4 on an
+			// idle box and a loaded lane slows each refresh against the writes
+			// it stands in for, which reached 5 in CI (da-ef2tx). One each is
+			// still twice the bound.
 			assert.ok(
-				refreshes <= 4,
+				refreshes <= told / 2,
 				`${refreshes} refreshes for ${told} writes next door — one each is the bug`
 			);
 			assert.ok(refreshes >= 1, 'the other tab\'s writes refreshed nothing at all');
