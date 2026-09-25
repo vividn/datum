@@ -9,7 +9,7 @@
 //!   with sensible defaults so tests only specify fields they care about.
 //! - [`assert_entry_matches!`] / [`assert_count!`] — concise assertion macros.
 
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::cell::Cell;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -24,18 +24,29 @@ use crate::entry::{Entry, Verb};
 use crate::field_spec::{Alias, FieldSpec, SubfieldSpec};
 use crate::time::DatumTime;
 
-/// Process-wide monotonic millisecond offset added to each
-/// [`EntryBuilder::new`] default `start_time`. Slug uniqueness now hard-errors
-/// on collision (da-p5j), so two back-to-back builders must not produce
-/// identical slugs. The slug encodes time at millisecond resolution, so
-/// stepping the default time by ≥1 ms per builder guarantees distinct slugs
-/// without forcing every test to call `time_start_utc(...)` explicitly.
-static TIME_NUDGE_MS: AtomicI64 = AtomicI64::new(0);
+thread_local! {
+    /// The clock's last reading and the last default handed out, in ms, per
+    /// thread (the mock clock is per thread too).
+    static LAST_DEFAULT_MS: Cell<(i64, i64)> = const { Cell::new((i64::MIN, i64::MIN)) };
+}
 
+/// The default `start_time` of [`EntryBuilder::new`]: now, or 1 ms past the
+/// previous default when that is not behind now. Slug uniqueness hard-errors
+/// on collision (da-p5j) and the slug encodes time at millisecond resolution,
+/// so back-to-back builders must step. It steps from the previous default
+/// rather than adding a running count to now, which pushed rows seconds into
+/// the future once a test binary had made a few thousand builders (da-djhsd).
+/// A clock set back (a mock at an earlier instant) starts over at now.
 fn next_default_time() -> DatumTime {
-    let nudge = TIME_NUDGE_MS.fetch_add(1, Ordering::Relaxed);
     let mut t = DatumTime::now();
-    t.utc += chrono::Duration::milliseconds(nudge);
+    let now = t.utc.timestamp_millis();
+    let out = LAST_DEFAULT_MS.with(|c| {
+        let (seen, last) = c.get();
+        let out = if now < seen { now } else { now.max(last + 1) };
+        c.set((now, out));
+        out
+    });
+    t.utc += chrono::Duration::milliseconds(out - now);
     t
 }
 
