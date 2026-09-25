@@ -1553,14 +1553,12 @@ fn render_now_state(
                 .map(|item| render_now_state_scalar(item, field, field_stored_color, state_colors))
                 .collect();
             let rendered = parts.join(",");
-            let vw: usize = items.iter().map(|it| scalar_text(it).len()).sum::<usize>()
-                + items.len().saturating_sub(1); // commas
+            let vw = colors::visible_width(&rendered);
             (rendered, vw)
         }
         other => {
-            let text = scalar_text(other);
             let rendered = render_now_state_scalar(other, field, field_stored_color, state_colors);
-            let vw = text.len();
+            let vw = colors::visible_width(&rendered);
             (rendered, vw)
         }
     }
@@ -1618,12 +1616,18 @@ fn render_now_state_scalar(
 ///
 /// `color` is the caller's colour gate (da-5v3pl): off, the view carries
 /// no escape at all, the DIM of the tracked-false and ignored rows included.
+///
+/// `cols` is the width to fit (da-coi0m): the field column is capped at a
+/// third of it, as the band's label is, the state column takes what the
+/// time column leaves, each cut with `…`, and no line runs past it. `None`
+/// (piped, no `$COLUMNS`) prints every column whole.
 #[cfg(feature = "db")]
 pub fn render_snapshot(
     snapshot: &datum_core::db::NowSnapshot,
     state_colors: &HashMap<(String, String), String>,
     overlap_counts: &HashMap<String, u32>,
     color: bool,
+    cols: Option<usize>,
 ) -> String {
     use std::fmt::Write;
     let now = chrono::Utc::now();
@@ -1726,61 +1730,69 @@ pub fn render_snapshot(
         .iter()
         .chain(tracked_false.iter())
         .chain(ignored_rows.iter());
-    let field_w = all_visible
+    let mut field_w = all_visible
         .clone()
-        .map(|r| r.field.len())
+        .map(|r| colors::visible_width(&r.field))
         .max()
         .unwrap_or(0)
         .max(1);
-    let state_w = all_visible.map(|r| r.state_vw).max().unwrap_or(0);
+    let mut state_w = all_visible.clone().map(|r| r.state_vw).max().unwrap_or(0);
+    let max_w = cols.unwrap_or(usize::MAX);
+    if let Some(c) = cols {
+        let time_w = all_visible
+            .map(|r| colors::visible_width(&r.time_str))
+            .max()
+            .unwrap_or(0);
+        field_w = field_w.min((c / 3).max(6));
+        state_w = state_w.min(c.saturating_sub(2 + field_w + 2 + 2 + time_w).max(1));
+    }
+    // A cell cut to its column, then padded to it by display width —
+    // `{:<w$}` pads by chars, which a wide glyph throws out.
+    let fit = |s: &str, w: usize| {
+        let s = term_layout::truncate_visible(s, w);
+        let pad = w.saturating_sub(colors::visible_width(&s));
+        format!("{s}{}", " ".repeat(pad))
+    };
 
     let sep_len = 1 + 1 + field_w + 2 + state_w.max(1) + 2 + 10;
-    let sep: String = "─".repeat(sep_len);
+    let sep: String = "─".repeat(sep_len.min(max_w));
 
     let mut out = String::new();
     let write_row = |out: &mut String, row: &NowRow| {
         if let Some(&n) = overlap_counts.get(&row.field) {
             if n >= 2 {
-                writeln!(
-                    out,
+                let warn = format!(
                     "⚠ {n} overlapping opens on '{field}' — datum check",
                     field = row.field,
-                )
-                .unwrap();
+                );
+                writeln!(out, "{}", term_layout::truncate_visible(&warn, max_w)).unwrap();
             }
         }
         let fc = &row.field_ansi;
-        if row.is_dim && row.state_rendered.is_empty() {
+        let field = fit(&row.field, field_w);
+        let state = fit(&row.state_rendered, state_w);
+        let line = if row.is_dim && row.state_rendered.is_empty() {
             // Ignored row — no state column, just the field name dim.
-            write!(out, "{DIM}{fc}  {field}{RESET}", field = row.field).unwrap();
+            let field = term_layout::truncate_visible(&row.field, field_w);
+            format!("{DIM}{fc}  {field}{RESET}")
         } else if row.is_dim {
             // Tracked-but-false row — dim throughout, but keep field
             // colour visible so visually it still belongs to the
             // tracked-set.
-            let pad = state_w.saturating_sub(row.state_vw);
-            let padding: String = " ".repeat(pad);
-            write!(
-                out,
-                "{DIM}{bullet} {field:<field_w$}  {state}{padding}  {time}{RESET}",
+            format!(
+                "{DIM}{bullet} {field}  {state}  {time}{RESET}",
                 bullet = row.bullet,
-                field = row.field,
-                state = row.state_rendered,
                 time = row.time_str,
             )
-            .unwrap();
         } else {
-            let pad = state_w.saturating_sub(row.state_vw);
-            let padding: String = " ".repeat(pad);
-            write!(
-                out,
-                "{fc}{bullet}{RESET} {fc}{field:<field_w$}{RESET}  {state}{padding}  {time}",
+            format!(
+                "{fc}{bullet}{RESET} {fc}{field}{RESET}  {state}  {time}",
                 bullet = row.bullet,
-                field = row.field,
-                state = row.state_rendered,
                 time = row.time_str,
             )
-            .unwrap();
-        }
+        };
+        // The last word on a width too narrow for even the time column.
+        out.push_str(&term_layout::truncate_visible(&line, max_w));
         out.push('\n');
     };
 

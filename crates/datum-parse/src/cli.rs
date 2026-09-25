@@ -811,13 +811,14 @@ pub struct NowArgs {
     /// Force-disable color in the state list and the nowview band.
     /// Mirrors `NO_COLOR` env var behavior; useful for redirected output.
     pub no_color: bool,
-    /// Override terminal width in cells for the nowview band. None →
-    /// auto-detect from `$COLUMNS`, fall back to 80.
+    /// Width in cells for the whole view, the state list and the band
+    /// (da-coi0m). None → `$COLUMNS`, else the terminal, else the list
+    /// prints whole and the band at 80.
     pub cols: Option<u16>,
     /// `-t/-d/-y/-q/-z` — composed timing concern (da-tx8j). When any
     /// of these are set, `datum now` shows the state-at-that-point
-    /// instead of the live wall-clock state, and suppresses the
-    /// terminal nowview band (which is anchored to the *real* now).
+    /// instead of the live wall-clock state, and centres the terminal
+    /// nowview band on that point (da-coi0m).
     pub time: TimeArgs,
 }
 

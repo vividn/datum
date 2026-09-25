@@ -76,6 +76,14 @@ pub fn now(args: NowArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
 
     let state_colors = db.get_all_state_colors()?;
 
+    // da-coi0m: one width for the list and the band — `--cols`, else
+    // `$COLUMNS`, else the terminal. Piped with none of them the list
+    // prints whole and the band keeps its 80.
+    let cols = args
+        .cols
+        .map(usize::from)
+        .or_else(|| crate::render::term_layout::given_cols(20));
+
     // Overlap-count map is still computed per-field outside the
     // snapshot — `current_now` doesn't carry overlap state. Compute
     // only for the fields actually visible (active + tracked_false +
@@ -101,21 +109,18 @@ pub fn now(args: NowArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
             &state_colors,
             &overlap_counts,
             !args.no_color && crate::render::colors::color_enabled(),
+            cols,
         )
     );
 
     // da-raz: `datum now` also renders a terminal nowview band beneath the
     // active-states list. `--bare` suppresses it (e.g. for piping). The
     // band defaults to a 1-hour window, paralleling the SVG `nowview`
-    // surface but in cells instead of pixels.
-    //
-    // da-tx8j: also suppress the band when the user pinned a past
-    // snapshot_time. The band is anchored to *real* now (its
-    // history-minutes window literally runs up to `Utc::now()`); a band
-    // anchored to wall-clock now alongside a snapshot showing the past
-    // would conflict semantically — vividn's intuition in the bead.
-    if !args.bare && snapshot_time.is_none() {
-        print_now_band(&args, db);
+    // surface but in cells instead of pixels. A pinned snapshot_time
+    // centres it on that instant (da-coi0m), as nowview's is.
+    if !args.bare {
+        let cols = cols.unwrap_or(80).min(u16::MAX as usize) as u16;
+        print_now_band(&args, db, cols, snapshot_time);
     }
     Ok(())
 }
@@ -139,36 +144,42 @@ fn resolve_snapshot_time(args: &NowArgs) -> Result<Option<chrono::DateTime<Utc>>
 
 /// Render the terminal nowview band beneath `datum now`. Mirrors the old
 /// `datum nowview --terminal` path that lived in commands/nowview.rs.
-fn print_now_band(args: &NowArgs, db: &Db) {
+///
+/// `at` is the pinned snapshot time: the band is then centred on it, half
+/// its window either side with the clock on the divider (da-coi0m), in
+/// place of the history-then-now-panel it draws at the wall clock.
+fn print_now_band(args: &NowArgs, db: &Db, cols: u16, at: Option<chrono::DateTime<Utc>>) {
     use datum_layout::nowview_terminal::{render_nowview_terminal, RenderMode, TerminalConfig};
 
     use crate::commands::nowview::{build_fields, format_local_hh_mm};
-    use crate::render::{colors, term_layout};
+    use crate::render::colors;
 
     const HISTORY_MINUTES: f64 = 60.0;
     const NOW_WIDTH_MINUTES: f64 = 5.0;
 
-    let end = Utc::now();
+    let now = Utc::now();
+    let (pivot, history, after) = match at {
+        Some(t) => (t, HISTORY_MINUTES / 2.0, HISTORY_MINUTES / 2.0),
+        None => (now, HISTORY_MINUTES, 0.0),
+    };
+    let end = pivot + chrono::Duration::milliseconds((after * 60_000.0) as i64);
     let fields = match build_fields(db, end, HISTORY_MINUTES, false) {
         Ok(f) => f,
         Err(_) => return, // never block the state list on a band-render error
     };
-    // da-tpny: canonical probe (ioctl-first, $COLUMNS fallback) and the
-    // canonical color gate (DATUM_COLOR → NO_COLOR → TTY), so the band
-    // reflows and colors exactly like the state list above it.
-    let cols = args
-        .cols
-        .unwrap_or_else(|| term_layout::detect_cols_or(20, 80).min(u16::MAX as usize) as u16);
+    // da-tpny: the canonical color gate (DATUM_COLOR → NO_COLOR → TTY),
+    // so the band colors exactly like the state list above it.
     let use_color = !args.no_color && colors::color_enabled();
     let cfg = TerminalConfig {
-        end_ms: end.timestamp_millis(),
-        now_ms: end.timestamp_millis(),
-        history_minutes: HISTORY_MINUTES,
+        end_ms: pivot.timestamp_millis(),
+        now_ms: now.timestamp_millis(),
+        history_minutes: history,
         now_width_minutes: NOW_WIDTH_MINUTES,
+        after_minutes: after,
         cols,
         rows: 0,
         use_color,
-        current_time_label: format_local_hh_mm(end),
+        current_time_label: format_local_hh_mm(pivot),
         mode: RenderMode::InlineBand,
     };
     let band = render_nowview_terminal(&fields, &cfg);

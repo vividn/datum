@@ -141,7 +141,7 @@ fn render_empty_tracked_shows_sentinel() {
     // No tracked fields at all (e.g. brand-new db) → the view prints its
     // terminal sentinel rather than silently producing nothing.
     let snap = build_snapshot(&[], &HashMap::new(), false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
     let plain = strip_ansi(&out);
     assert!(
         plain.contains("No tracked (non-ignored) fields"),
@@ -156,7 +156,7 @@ fn render_tracked_field_with_no_entries_shows_no_entries_marker() {
     // marker in the time column — rather than being silently hidden.
     let tf = [tracked("mood")];
     let snap = build_snapshot(&tf, &HashMap::new(), false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
     let plain = strip_ansi(&out);
     assert!(plain.contains("mood"), "field must appear:\n{plain}");
     assert!(
@@ -174,7 +174,7 @@ fn render_switch_entry_appears_as_active_row_with_bullet_and_state() {
     latest.insert("mood".to_string(), switch_entry("mood", "happy"));
 
     let snap = build_snapshot(&tf, &latest, false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
     let plain = strip_ansi(&out);
     assert!(
         plain.contains("●"),
@@ -201,7 +201,7 @@ fn render_array_state_shows_comma_joined_members() {
     );
 
     let snap = build_snapshot(&tf, &latest, false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
     let plain = strip_ansi(&out);
     assert!(plain.contains("datum"), "first state must appear:\n{plain}");
     assert!(
@@ -225,7 +225,7 @@ fn render_ignored_field_hidden_by_default() {
     // "no (non-ignored)" sentinel should fire because nothing else is tracked.
     let tf = [ignored("youtube")];
     let snap = build_snapshot(&tf, &HashMap::new(), false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
     let plain = strip_ansi(&out);
     assert!(
         !plain.contains("youtube"),
@@ -246,7 +246,7 @@ fn render_ignored_field_shown_dim_after_separator_with_show_all() {
     latest.insert("mood".to_string(), switch_entry("mood", "happy"));
 
     let snap = build_snapshot(&tf, &latest, true);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
     let plain = strip_ansi(&out);
 
     assert!(
@@ -289,7 +289,7 @@ fn render_separator_divides_active_from_stopped() {
     );
 
     let snap = build_snapshot(&tf, &latest, false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
     let plain = strip_ansi(&out);
 
     let mood_at = plain.find("mood").expect("active mood row missing");
@@ -460,7 +460,7 @@ fn render_old_stopped_field_uses_iso_date_prefix() {
     );
 
     let snap = build_snapshot(&tf, &latest, false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
     let plain = strip_ansi(&out);
 
     // Compute the expected date through the same FixedOffset the
@@ -521,7 +521,7 @@ fn render_p1d_entry_shows_bare_date_in_last_seen_column() {
     latest.insert("birthday".to_string(), e);
 
     let snap = build_snapshot(&tf, &latest, false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
     let plain = strip_ansi(&out);
 
     let expected = local_today.format("%Y-%m-%d").to_string();
@@ -625,7 +625,7 @@ fn render_honors_spec_color_on_tracked_field() {
     latest.insert("mood".to_string(), switch_entry("mood", "happy"));
 
     let snap = build_snapshot(&tf, &latest, false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
 
     // True-color escape for #ff6600: `\x1b[38;2;255;102;0m`.
     assert!(
@@ -666,7 +666,7 @@ fn active_row(field: &str, state: &str) -> NowFieldActive {
 fn snapshot_render_default_shows_only_active() {
     let mut snap = empty_snapshot();
     snap.active.push(active_row("mood", "happy"));
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
     let plain = strip_ansi(&out);
     assert!(plain.contains("mood"), "active field must appear:\n{plain}");
     assert!(
@@ -699,7 +699,7 @@ fn snapshot_render_tracked_false_uses_dim_block() {
         entry: None,
     });
 
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
     let plain = strip_ansi(&out);
 
     assert!(plain.contains("mood"), "active row present:\n{plain}");
@@ -740,7 +740,7 @@ fn snapshot_render_ignored_block_renders_dim() {
         color: None,
     });
 
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true, None);
     let plain = strip_ansi(&out);
 
     assert!(plain.contains("mood"));
@@ -756,7 +756,13 @@ fn snapshot_render_ignored_block_renders_dim() {
 /// the user is in a brand-new DB or has filter-hidden everything.
 #[test]
 fn snapshot_render_empty_emits_sentinel() {
-    let out = render_snapshot(&empty_snapshot(), &HashMap::new(), &HashMap::new(), true);
+    let out = render_snapshot(
+        &empty_snapshot(),
+        &HashMap::new(),
+        &HashMap::new(),
+        true,
+        None,
+    );
     let plain = strip_ansi(&out);
     assert!(
         plain.contains("No tracked"),
@@ -772,7 +778,7 @@ fn snapshot_render_overlap_warning_prepends_active_row() {
     snap.active.push(active_row("mood", "happy"));
     let mut overlaps = HashMap::new();
     overlaps.insert("mood".to_string(), 3u32);
-    let out = render_snapshot(&snap, &HashMap::new(), &overlaps, true);
+    let out = render_snapshot(&snap, &HashMap::new(), &overlaps, true, None);
     let plain = strip_ansi(&out);
     assert!(
         plain.contains("3 overlapping opens on 'mood'"),
@@ -1079,4 +1085,186 @@ fn now_state_list_honours_the_colour_gate() {
         out.contains("\x1b[38;2;"),
         "state list must be coloured:\n{out:?}"
     );
+}
+
+/// Run the real binary against `db` with colour off, `TZ=UTC`, a `HOME`
+/// beside the db (no sync config, so no banner) and the given env on top —
+/// `datum now`'s width is only honest end to end (da-coi0m).
+fn run_datum(db: &std::path::Path, env: &[(&str, &str)], args: &[&str]) -> String {
+    use std::process::{Command, Stdio};
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_datum"));
+    cmd.env("DATUM_DB", db)
+        .env("HOME", db.parent().expect("db dir"))
+        .env("DATUM_COLOR", "0")
+        .env("TZ", "UTC")
+        .env_remove("COLUMNS")
+        .stdout(Stdio::piped())
+        .args(args);
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let out = cmd.output().expect("run datum");
+    assert!(out.status.success(), "{args:?} failed: {out:?}");
+    String::from_utf8(out.stdout).expect("utf8 stdout")
+}
+
+fn width(line: &str) -> usize {
+    datum_cli::output::term_layout::visible_width(line)
+}
+
+/// A db whose `now` cannot fit a narrow terminal whole: a long field name,
+/// a long state, a parallel state and wide (CJK) text.
+fn wide_now_db(dir: &tempfile::TempDir) -> std::path::PathBuf {
+    let db = dir.path().join("wide.db");
+    let long_field = "an_extremely_long_field_name_that_goes_on";
+    run_datum(
+        &db,
+        &[],
+        &[
+            "switch",
+            "project",
+            "daydumb-very-long-project-name",
+            "-t",
+            "-40",
+        ],
+    );
+    run_datum(
+        &db,
+        &[],
+        &[
+            "switch",
+            "mood",
+            "happy and content with the world",
+            "-t",
+            "-20",
+        ],
+    );
+    run_datum(&db, &[], &["start", long_field, "-t", "-10"]);
+    run_datum(
+        &db,
+        &[],
+        &["switch", "body", "[vertical,sitting,typing]", "-t", "-30"],
+    );
+    run_datum(
+        &db,
+        &[],
+        &["switch", "場所", "東京の事務所の机", "-t", "-15"],
+    );
+    run_datum(&db, &[], &["occur", "coffee", "-t", "-5"]);
+    db
+}
+
+/// da-coi0m (1): `$COLUMNS` sizes the whole of `datum now` — the state list
+/// as well as the band — and `--cols` beats it. Before, only the band read
+/// it and the list ran on at its natural width.
+#[test]
+fn now_sizes_list_and_band_to_columns() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db = wide_now_db(&dir);
+    for (env, args, cols) in [
+        (&[("COLUMNS", "60")][..], &["now"][..], 60),
+        (&[("COLUMNS", "60")][..], &["now", "--cols", "44"][..], 44),
+    ] {
+        let out = run_datum(&db, env, args);
+        let list = out.lines().find(|l| l.contains("mood")).expect("mood row");
+        assert_eq!(width(list), cols, "state list at {cols}:\n{out}");
+        let band = out
+            .lines()
+            .find(|l| l.starts_with("coffee"))
+            .expect("band row");
+        assert_eq!(width(band), cols, "band at {cols}:\n{out}");
+    }
+    // Piped with nothing set, the list is printed whole.
+    let out = run_datum(&db, &[], &["now", "--bare"]);
+    assert!(out.contains("happy and content with the world"), "{out}");
+}
+
+/// da-coi0m (2): at every width no line of `datum now` runs past it — the
+/// columns are cut with `…` on purpose — the band's floor is as wide as its
+/// rows with `┴` under the divider `│`, and an axis label is drawn whole or
+/// not at all (a narrow band once wrote `-6-45-30m`).
+#[test]
+fn now_fits_every_width_without_wrapping() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db = wide_now_db(&dir);
+    for cols in [25, 32, 40, 60, 100] {
+        let c = cols.to_string();
+        let out = run_datum(&db, &[("COLUMNS", &c)], &["now"]);
+        for line in out.lines() {
+            assert!(
+                width(line) <= cols,
+                "{cols}: {line:?} is {} wide:\n{out}",
+                width(line)
+            );
+        }
+        assert!(out.contains('…'), "{cols}: something was cut:\n{out}");
+        let lines: Vec<&str> = out.lines().collect();
+        let floor = lines.iter().position(|l| l.contains('└')).expect("floor");
+        let row = lines[floor - 1];
+        assert_eq!(width(lines[floor]), cols, "{cols}: floor:\n{out}");
+        let col = |l: &str, ch| l.find(ch).map(|i| width(&l[..i]));
+        assert_eq!(col(lines[floor], '┴'), col(row, '│'), "{cols}:\n{out}");
+        for label in lines[floor + 1].split_whitespace() {
+            let minutes = label
+                .strip_prefix(['-', '+'])
+                .and_then(|m| m.strip_suffix('m'))
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+            let clock = label.len() == 5
+                && label.bytes().enumerate().all(|(i, b)| match i {
+                    2 => b == b':',
+                    _ => b.is_ascii_digit(),
+                });
+            let whole = minutes || clock;
+            assert!(whole, "{cols}: axis label {label:?} is cut:\n{out}");
+        }
+    }
+}
+
+/// da-coi0m (3): with a time arg the band is centred on that instant, half
+/// its hour either side, the clock on the divider — as nowview's is — where
+/// it used to be dropped. Fixed times: a coffee ten minutes after the
+/// instant lands right of the divider, a switch before it left.
+#[test]
+fn now_band_centres_on_the_time_args() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db = dir.path().join("pinned.db");
+    run_datum(
+        &db,
+        &[],
+        &["switch", "mood", "happy", "-d", "2026-01-05", "-t", "1000"],
+    );
+    run_datum(
+        &db,
+        &[],
+        &["occur", "coffee", "-d", "2026-01-05", "-t", "1025"],
+    );
+    let out = run_datum(
+        &db,
+        &[("COLUMNS", "60")],
+        &["now", "-d", "2026-01-05", "-t", "1015"],
+    );
+    let lines: Vec<&str> = out.lines().collect();
+    let divider = |l: &str| l.chars().position(|c| c == '│').expect("divider");
+    let coffee = lines
+        .iter()
+        .find(|l| l.starts_with("coffee"))
+        .expect("band row");
+    let dot = coffee.chars().position(|c| c == '●').expect("coffee dot");
+    assert!(dot > divider(coffee), "10:25 is after 10:15:\n{out}");
+    let mood = lines
+        .iter()
+        .find(|l| l.starts_with("mood"))
+        .expect("mood row");
+    let left: String = mood.chars().take(divider(mood)).collect();
+    assert!(
+        left.contains('░') && left.contains('█'),
+        "happy began at 10:00:\n{out}"
+    );
+    let axis = lines.last().expect("axis");
+    let clock = axis.find("10:15").expect("the instant's clock") + 2;
+    assert!(
+        clock.abs_diff(divider(mood)) <= 1,
+        "clock on the divider:\n{out}"
+    );
+    assert!(axis.contains("-30m") && axis.contains("+30m"), "{out}");
 }

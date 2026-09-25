@@ -74,6 +74,23 @@ pub fn detect_cols_or(min: usize, fallback: usize) -> usize {
     env_dim_or("COLUMNS", min, fallback)
 }
 
+/// The width a caller was GIVEN (da-coi0m): `$COLUMNS` when set — a
+/// `COLUMNS=60 datum now` means sixty, whatever the terminal is — else the
+/// terminal's, else `None`: piped with nothing set, where `datum now`
+/// prints its list whole. Env first is the opposite of [`detect_cols_or`],
+/// which `tail --watch` needs so a resize beats a stale exported value.
+pub fn given_cols(min: usize) -> Option<usize> {
+    let env = std::env::var("COLUMNS").ok().and_then(|s| s.parse().ok());
+    let tty = || {
+        is_stdout_tty()
+            .then(query_winsize)
+            .flatten()
+            .map(|(c, _)| c)
+    };
+    env.filter(|&c| c >= min)
+        .or_else(|| tty().filter(|&c| c >= min))
+}
+
 /// Detect terminal height. Same ioctl-first / env-fallback shape as
 /// [`detect_cols`]. Used to pick a default `tail -n` that fills the
 /// visible window. The minimum 5 keeps tests/CI runs from collapsing

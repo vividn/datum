@@ -60,6 +60,12 @@ pub struct TerminalConfig {
     /// Width of the right "now" panel in minutes. Only meaningful for
     /// [`RenderMode::InlineBand`].
     pub now_width_minutes: f64,
+    /// [`RenderMode::InlineBand`] only: minutes of timeline drawn right of
+    /// the divider, after `end_ms` — a band CENTRED on a pinned instant
+    /// (da-coi0m, `datum now -t`), `history_minutes` either side and the
+    /// clock on the divider. Past `now_ms` a cell is blank: not yet known.
+    /// 0 → the solid now panel.
+    pub after_minutes: f64,
     /// Total terminal width in cells.
     pub cols: u16,
     /// Total terminal height in rows. Used by [`RenderMode::Snapshot`] /
@@ -81,6 +87,7 @@ impl Default for TerminalConfig {
             now_ms: 0,
             history_minutes: 60.0,
             now_width_minutes: 5.0,
+            after_minutes: 0.0,
             cols: 80,
             rows: 24,
             use_color: true,
@@ -109,17 +116,22 @@ fn render_inline_band(fields: &[NowviewField], config: &TerminalConfig) -> Strin
     sorted.sort_by(|a, b| a.field.cmp(&b.field));
     let max_label_len = sorted
         .iter()
-        .map(|f| f.field.chars().count())
+        .map(|f| unicode_width::UnicodeWidthStr::width(f.field.as_str()))
         .max()
         .unwrap_or(11);
     let max_label_cap = (cols / 3).max(6);
     let label_w = max_label_len.min(max_label_cap).max(1);
+    let after = config.after_minutes > 0.0;
 
     let chrome = label_w + 1 + 1;
     let plot_w = cols.saturating_sub(chrome).max(2);
 
     let history_minutes = config.history_minutes.max(0.0);
-    let now_width_minutes = config.now_width_minutes.max(0.5);
+    let now_width_minutes = if after {
+        config.after_minutes
+    } else {
+        config.now_width_minutes.max(0.5)
+    };
 
     let (history_cols, now_cols) = if history_minutes > 0.0 {
         let total = history_minutes + now_width_minutes;
@@ -143,12 +155,27 @@ fn render_inline_band(fields: &[NowviewField], config: &TerminalConfig) -> Strin
                 f,
                 history_start_ms,
                 config.end_ms,
+                config.now_ms,
                 history_cols,
                 config.use_color,
             );
         }
         push_divider(&mut out, history_cols > 0);
-        push_now_row(&mut out, f, config.end_ms, now_cols, config.use_color);
+        if after {
+            let after_end_ms = config.end_ms + (config.after_minutes * 60_000.0) as i64;
+            let (end, now) = (config.end_ms, config.now_ms);
+            push_history_row(
+                &mut out,
+                f,
+                end,
+                after_end_ms,
+                now,
+                now_cols,
+                config.use_color,
+            );
+        } else {
+            push_now_row(&mut out, f, config.end_ms, now_cols, config.use_color);
+        }
         out.push('\n');
     }
 
@@ -169,6 +196,7 @@ fn render_inline_band(fields: &[NowviewField], config: &TerminalConfig) -> Strin
         history_cols,
         now_cols,
         history_minutes,
+        config.after_minutes,
         &config.current_time_label,
     );
 
@@ -522,13 +550,24 @@ fn place_chars_skip_filled(row: &mut [char], start: usize, chars: &[char]) {
 
 // ─── Shared low-level cells ────────────────────────────────────────────────
 
+/// `label` in exactly `width` columns: padded, or cut with `…` when it
+/// does not fit (da-coi0m) — by display width, so a wide glyph is dropped
+/// rather than pushing the row a column right.
 fn push_padded_label(out: &mut String, label: &str, width: usize) {
-    if width == 0 {
-        return;
-    }
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+    let fits = label.width() <= width;
+    let budget = if fits { width } else { width.saturating_sub(1) };
     let mut count = 0;
-    for ch in label.chars().take(width) {
+    for ch in label.chars() {
+        let w = ch.width().unwrap_or(0);
+        if count + w > budget {
+            break;
+        }
         out.push(ch);
+        count += w;
+    }
+    if !fits && width > 0 {
+        out.push('…');
         count += 1;
     }
     for _ in count..width {
@@ -544,11 +583,16 @@ fn push_divider(out: &mut String, has_history: bool) {
     }
 }
 
+/// One timeline row over `[history_start_ms, end_ms]`; a cell that starts
+/// at or after `now_ms` is blank — a band centred on an instant can run
+/// past now, and what has not happened yet is not `░` (no state). A
+/// `now_ms` of 0 (the config's default: no clock given) blanks nothing.
 fn push_history_row(
     out: &mut String,
     field: &NowviewField,
     history_start_ms: i64,
     end_ms: i64,
+    now_ms: i64,
     cols: usize,
     use_color: bool,
 ) {
@@ -558,6 +602,10 @@ fn push_history_row(
         let cell_center_ms = history_start_ms + (cell_ms * (i as f64 + 0.5)) as i64;
         let cell_start_ms = history_start_ms + (cell_ms * i as f64) as i64;
         let cell_end_ms = history_start_ms + (cell_ms * (i + 1) as f64) as i64;
+        if now_ms > 0 && cell_start_ms >= now_ms {
+            out.push(' ');
+            continue;
+        }
 
         let mut block_colors: Option<&[String]> = None;
         for b in &field.blocks {
@@ -675,21 +723,19 @@ fn push_cell_point(out: &mut String, p: &NowviewPoint, use_color: bool) {
     out.push_str(mark);
 }
 
+/// The band's floor, exactly as wide as a row above it (da-coi0m): `└`
+/// under the gap after the label, `┴` under the divider `│`, `┘` under the
+/// last cell.
 fn push_axis_border(out: &mut String, label_w: usize, history_cols: usize, now_cols: usize) {
     for _ in 0..label_w {
         out.push(' ');
     }
-    out.push(' ');
-    if history_cols > 0 {
-        out.push('└');
-        for _ in 0..history_cols {
-            out.push('─');
-        }
-        out.push('┴');
-    } else {
-        out.push('└');
+    out.push('└');
+    for _ in 0..history_cols {
+        out.push('─');
     }
-    for _ in 0..now_cols {
+    out.push(if history_cols > 0 { '┴' } else { '─' });
+    for _ in 1..now_cols {
         out.push('─');
     }
     out.push('┘');
@@ -701,19 +747,28 @@ fn push_axis_labels(
     history_cols: usize,
     now_cols: usize,
     history_minutes: f64,
+    after_minutes: f64,
     current_time_label: &str,
 ) {
-    let plot_w = history_cols + 1 + now_cols;
+    // The row under the band's cells and divider, and no wider (da-coi0m).
+    let row_w = history_cols + 1 + now_cols;
     let now_label: String = if current_time_label.is_empty() {
         "now".into()
     } else {
         current_time_label.to_string()
     };
-    let row_w = plot_w + now_label.chars().count();
     let mut row: Vec<char> = vec![' '; row_w];
 
-    let now_anchor = history_cols;
-    place_label(&mut row, now_anchor, &now_label, false);
+    // The clock starts at the divider, or is centred on it when the band
+    // runs on past the instant; `place_label` keeps it inside the row.
+    place_label(&mut row, history_cols, &now_label, after_minutes > 0.0);
+
+    if after_minutes > 0.0 {
+        for m in pick_ticks(after_minutes) {
+            let x = history_cols + (m / after_minutes * now_cols as f64).round() as usize;
+            place_label(&mut row, x, &format!("+{}m", m as i64), true);
+        }
+    }
 
     if history_cols > 0 && history_minutes > 0.0 {
         let ticks = pick_ticks(history_minutes);
@@ -728,32 +783,33 @@ fn push_axis_labels(
         }
     }
 
-    for _ in 0..label_w {
+    for _ in 0..=label_w {
         out.push(' ');
     }
-    out.push(' ');
     let s: String = row.into_iter().collect();
     out.push_str(s.trim_end());
 }
 
+/// Place `text` at `at` (centred on it when `center`), pulled back inside
+/// the row at either edge — whole, with a blank column either side of it,
+/// or not at all (da-coi0m): a narrow band once wrote `-6-45-30m`.
 fn place_label(row: &mut [char], at: usize, text: &str, center: bool) {
     let chars: Vec<char> = text.chars().collect();
+    let Some(last_start) = row.len().checked_sub(chars.len()) else {
+        return;
+    };
     let start = if center {
-        let half = chars.len() / 2;
-        at.saturating_sub(half)
+        at.saturating_sub(chars.len() / 2)
     } else {
         at
-    };
-    for (i, ch) in chars.iter().enumerate() {
-        let pos = start + i;
-        if pos >= row.len() {
-            break;
-        }
-        if row[pos] != ' ' {
-            return;
-        }
-        row[pos] = *ch;
     }
+    .min(last_start);
+    let end = start + chars.len();
+    let clear = start.saturating_sub(1)..(end + 1).min(row.len());
+    if row[clear].iter().any(|&c| c != ' ') {
+        return;
+    }
+    row[start..end].copy_from_slice(&chars);
 }
 
 fn pick_ticks(history_minutes: f64) -> Vec<f64> {
@@ -814,6 +870,7 @@ mod tests {
             now_ms,
             history_minutes: 60.0,
             now_width_minutes: 5.0,
+            after_minutes: 0.0,
             cols: 50,
             rows: 12,
             use_color: false,
@@ -913,6 +970,19 @@ mod tests {
         }];
         let s = render_nowview_terminal(&fields, &c);
         assert!(!s.contains('┴'), "did not expect history boundary in:\n{s}");
+    }
+
+    /// A config with no clock (`now_ms: 0`, the default) draws its history:
+    /// only a real now blanks the cells past it (da-coi0m).
+    #[test]
+    fn zero_now_ms_blanks_no_history() {
+        let now = 1_700_000_000_000_i64;
+        let c = TerminalConfig {
+            now_ms: 0,
+            ..cfg(now)
+        };
+        let s = render_nowview_terminal(&fields_one_block(now), &c);
+        assert!(s.contains('█'), "history drawn:\n{s}");
     }
 
     #[test]
@@ -1061,6 +1131,7 @@ mod tests {
             now_ms,
             history_minutes: 0.0,
             now_width_minutes: 0.0,
+            after_minutes: 0.0,
             cols: 20,
             rows: 11,
             use_color: false,
@@ -1186,6 +1257,7 @@ mod tests {
             now_ms,
             history_minutes: 30.0,
             now_width_minutes: 0.0,
+            after_minutes: 0.0,
             cols: 40,
             rows: 11,
             use_color: false,
