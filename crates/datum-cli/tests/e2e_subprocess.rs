@@ -1128,7 +1128,8 @@ fn subprocess_backup_rotation_indexes_the_db_it_backed_up() {
 
     let listed = run(&["db", "backup", "--list", dir, "--json"]);
     assert_eq!(listed["backups"][0]["source_db"], "fitness");
-    assert_eq!(listed["backups"][0]["entry_count"], 1);
+    // The entry and the spec its first log wrote (specs are entries, da-lc26c).
+    assert_eq!(listed["backups"][0]["entry_count"], 2);
     assert_eq!(listed["rotations"]["fitness"]["every_secs"], 3600);
 
     let path = std::path::Path::new(dir).join(file);
@@ -1140,5 +1141,5 @@ fn subprocess_backup_rotation_indexes_the_db_it_backed_up() {
         path.to_str().unwrap(),
         "--json",
     ]);
-    assert_eq!(restored["inserted"], 1);
+    assert_eq!(restored["inserted"], 2);
 }
