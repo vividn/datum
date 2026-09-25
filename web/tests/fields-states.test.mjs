@@ -37,10 +37,9 @@ describe('a state field fills the widget with its states', () => {
 
 	// ONE APP at 15:00 (da-6b3dj, sharedApp in support/app.mjs): `solo`
 	// empties the database each test wrote, and the REPL is read from its
-	// end. A test that ends with the states still drawn takes a ROOM, since
-	// the widget keeps them over an emptied database and the next test's
-	// `mood:` would never come. The scroll test keeps an app of its own, the
-	// one on its screen.
+	// end. A test may end with the states still drawn: the field going with
+	// the database is Back (da-mv8ng), so the next test's `mood:` comes. The
+	// scroll test keeps an app of its own, the one on its screen.
 	const shared = sharedApp({ clock: todayAt(15) });
 
 	/** Every button the bar is showing, in order, by the word on it. */
@@ -87,8 +86,27 @@ describe('a state field fills the widget with its states', () => {
 		});
 	});
 
+	// The field going away under an open list — a delete, a restore, another
+	// tab, here the database emptied — is Back (da-mv8ng). Held instead, the
+	// list waited for a field of that name and took the bar over again.
+	test('the states give way to the fields when their field is gone, and stay gone when it returns', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await seed(app, MOOD, 'mood');
+			await page.locator('.bar [data-field="mood"]').click();
+			await page.locator('.bar [data-state="happy"]').waitFor();
+
+			await app.empty();
+			await seed(app, ['occur coffee'], 'coffee');
+			assert.equal(await page.locator('.bar [data-back]').count(), 0, 'the states outlived their field');
+
+			await seed(app, MOOD, 'mood');
+			assert.equal(await page.locator('.bar [data-back]').count(), 0, 'the states came back with the field');
+		});
+	});
+
 	test('`+` takes a state the field has never been in, and it is in the list next time', async () => {
-		await shared.room('new-state', async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			await seed(app, MOOD, 'mood');
 			const before = (await app.echoes()).length;
@@ -109,7 +127,7 @@ describe('a state field fills the widget with its states', () => {
 	});
 
 	test('the states are painted the colours `fields --json` reports for them', async () => {
-		await shared.room('painted', async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			const rgb = (hex) =>
 				`rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;

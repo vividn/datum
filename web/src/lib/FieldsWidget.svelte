@@ -207,6 +207,11 @@
 	);
 	$: ignored = fields.filter((w) => w.ignored);
 	$: picking = picked === null ? null : (buttons.find((b) => b.field === picked) ?? null);
+	// A picked field no longer on the bar — deleted, the database emptied or
+	// restored, another tab's write, or a verb or `dur=` pill filtering it
+	// out — is Back, not a list held in waiting to take the bar over again
+	// the moment a field of that name returns (da-mv8ng).
+	$: if (picked !== null && picking === null) back();
 
 	/**
 	 * What the bar draws. A picked field's states (da-g635): `< Back` first
