@@ -472,7 +472,10 @@ fn build_day_fields(
 
     let mut out: Vec<DayviewFieldInput> = Vec::with_capacity(by_field.len());
     for (field, mut entries_for_field) in by_field {
-        let spec = specs.get(&field).cloned();
+        let mut spec = specs.get(&field).cloned();
+        if let Some(s) = spec.as_mut() {
+            super::spec::drop_unvetted_icon(s);
+        }
         // da-2zd: per-surface visibility. When the spec says this field
         // is hidden on `dayview`, drop it before doing per-entry work —
         // data still flows through tail/get/grep/view, only the visual
@@ -522,6 +525,7 @@ fn build_day_fields(
             z_index: resolved.z_index,
             blocks,
             points,
+            icon: spec.and_then(|s| s.presentation.icon),
         });
     }
     Ok(out)

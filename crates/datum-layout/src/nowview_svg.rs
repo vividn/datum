@@ -448,7 +448,9 @@ mod tests {
                     id: None,
                     title: None,
                     glyph: None,
+                    icon: false,
                 }],
+                icon: None,
             }],
         };
         let cfg = DayviewConfig {
@@ -526,6 +528,7 @@ mod tests {
                         title: None,
                     }],
                     points: vec![],
+                    icon: None,
                 },
                 DayviewFieldInput {
                     field: "coffee".into(),
@@ -541,7 +544,9 @@ mod tests {
                         id: None,
                         title: None,
                         glyph: None,
+                        icon: false,
                     }],
+                    icon: None,
                 },
             ],
         };
@@ -628,6 +633,7 @@ mod tests {
                     title: None,
                 }],
                 points: vec![],
+                icon: None,
             }],
         };
         let cfg = DayviewConfig {
@@ -710,6 +716,7 @@ mod tests {
                     title: None,
                 }],
                 points: vec![],
+                icon: None,
             }],
         };
         let cfg = DayviewConfig {
@@ -778,6 +785,7 @@ mod tests {
                     title: None,
                 }],
                 points: vec![],
+                icon: None,
             }],
         };
         let cfg = DayviewConfig {
@@ -840,6 +848,7 @@ mod tests {
                     title: None,
                 }],
                 points: vec![],
+                icon: None,
             }],
         };
         let cfg = DayviewConfig {

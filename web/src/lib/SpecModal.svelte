@@ -95,6 +95,9 @@
 	let autoalias = !spec?.no_autoalias;
 	let aliases: DerivedAlias[] = (spec?.derived_aliases ?? []).map((a) => ({ ...a }));
 	let place: Place = spec ? placeOf(spec) : {};
+	let icon = spec?.icon ?? '';
+	/** The file the icon came from, while this modal is open; a stored icon has none. */
+	let iconName = '';
 	if (spec) verb = spec.verb;
 	/** The argv to run, set by whatever was pressed; null closes and runs nothing. */
 	let chosen: string[] | null = null;
@@ -127,12 +130,23 @@
 					aliases,
 					glyph,
 					glyph_by,
-					place
+					place,
+					icon
 				})
 			)
 		: trackArgv(field.trim() || '<field>', verb ?? 'occur', states, color);
 	// A new field's states are a switch's: `track` carries them for no other verb.
 	$: statesOpen = spec !== null || verb === 'switch';
+
+	// da-45wgz: the file is read as it is; whether it is an icon — SVG,
+	// under the cap, nothing that runs — is the CLI's to say on Done, in
+	// the one refusal every surface gets.
+	async function pickIcon(e: Event) {
+		const file = (e.currentTarget as HTMLInputElement).files?.[0];
+		if (!file) return;
+		icon = await file.text();
+		iconName = file.name;
+	}
 
 	function run(next: string[]) {
 		chosen = next;
@@ -274,6 +288,23 @@
 						>+ value</button
 					>
 				{/if}
+				<!-- da-45wgz: an .svg dropped or picked; the input covers the box, so a drop lands on it. -->
+				<div class="row">
+					<span class="label">icon</span>
+					<label class="drop">
+						<input type="file" class="icon" accept=".svg,image/svg+xml" aria-label="the field's icon" on:change={pickIcon} />
+						{#if icon}
+							▸ {iconName || 'icon'} &nbsp;{(new Blob([icon]).size / 1024).toFixed(1)} kB
+						{:else}
+							drop an .svg here
+						{/if}
+					</label>
+					{#if icon}
+						<button type="button" class="remove" aria-label="remove the icon" on:click={() => ((icon = ''), (iconName = ''))}
+							>✕</button
+						>
+					{/if}
+				</div>
 			{/if}
 		{:else if tab === 'states'}
 			<ul class="states" class:glyphed={spec}>
@@ -605,6 +636,24 @@
 	.row input {
 		flex: 1;
 		min-inline-size: 0;
+	}
+
+	.drop {
+		position: relative;
+		flex: 1;
+		min-inline-size: 0;
+		border: 1px dashed var(--rule);
+		border-radius: 4px;
+		padding: 0.25rem 0.4rem;
+		color: var(--muted);
+		overflow-wrap: anywhere;
+	}
+
+	.drop input {
+		position: absolute;
+		inset: 0;
+		opacity: 0;
+		cursor: pointer;
 	}
 
 	.label {

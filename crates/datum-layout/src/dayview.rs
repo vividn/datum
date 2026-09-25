@@ -98,6 +98,11 @@ pub struct DayviewFieldInput {
     pub z_index: f64,
     pub blocks: Vec<DayviewBlock>,
     pub points: Vec<DayviewPoint>,
+    /// The field's custom SVG icon (da-45wgz), the whole `<svg>` element.
+    /// The renderer writes it ONCE, in `<defs>`, and each dot whose
+    /// [`DayviewPoint::icon`] is set `<use>`s it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 /// One block (closed or ongoing) on a field row. Blocks may extend beyond
@@ -152,6 +157,10 @@ pub struct DayviewPoint {
     /// resolved by the caller from the field's spec. `None` is the circle.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glyph: Option<String>,
+    /// Draw the field's [`DayviewFieldInput::icon`] here, over `glyph`
+    /// (da-45wgz). Resolved by the caller, as `glyph` is.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub icon: bool,
 }
 
 /// Top-level dayview knobs. Per-day data is in `days`. The `now_ms` field
@@ -315,6 +324,9 @@ pub struct RenderedField {
     pub z_index: f64,
     pub blocks: Vec<RenderedBlock>,
     pub points: Vec<RenderedPoint>,
+    /// As [`DayviewFieldInput::icon`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -357,6 +369,9 @@ pub struct RenderedPoint {
     /// As [`DayviewPoint::glyph`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glyph: Option<String>,
+    /// As [`DayviewPoint::icon`].
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub icon: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -611,6 +626,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                     time_ms: p.time_ms,
                     title: p.title.clone(),
                     glyph: p.glyph.clone(),
+                    icon: p.icon,
                 });
             }
 
@@ -621,6 +637,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                 z_index: f.z_index,
                 blocks,
                 points,
+                icon: f.icon.clone(),
             });
         }
 
@@ -895,6 +912,7 @@ mod tests {
                     z_index: 0.1,
                     blocks: vec![],
                     points: vec![],
+                    icon: None,
                 },
                 DayviewFieldInput {
                     field: "has_data".into(),
@@ -910,7 +928,9 @@ mod tests {
                         id: None,
                         title: None,
                         glyph: None,
+                        icon: false,
                     }],
+                    icon: None,
                 },
             ],
         };
@@ -946,6 +966,7 @@ mod tests {
                 title: None,
             }],
             points: vec![],
+            icon: None,
         };
         let day = DayviewDayInput {
             date: None,
@@ -993,6 +1014,7 @@ mod tests {
                     title: None,
                 }],
                 points: vec![],
+                icon: None,
             }],
         };
         let cfg = horizontal(DayviewConfig {
@@ -1066,6 +1088,7 @@ mod tests {
                     title: None,
                 }],
                 points: vec![],
+                icon: None,
             }],
         };
         let cfg = horizontal(DayviewConfig {
@@ -1200,6 +1223,7 @@ mod tests {
                     title: None,
                 }],
                 points: vec![],
+                icon: None,
             }],
         };
         let cfg = DayviewConfig {

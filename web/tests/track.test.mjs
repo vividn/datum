@@ -196,6 +196,17 @@ describe('the argv it composes', () => {
 		assert.deepEqual(mine.subfields, spec.subfields, 'keys the edit leaves out are carried');
 	});
 
+	// da-45wgz: the icon is replaced when given, cleared when given empty —
+	// the key left out, as `spec show` leaves it — and carried when not given.
+	test('an edited icon is set, cleared, or carried', () => {
+		const spec = { field: 'coffee', verb: 'occur', color: null, unit: null, description: null, allowed_states: null, state_colors: {}, icon: '<svg/>' };
+		const edit = { verb: 'occur', color: '', unit: '', description: '', states: [] };
+		assert.equal(editedSpec(spec, edit).icon, '<svg/>');
+		assert.equal('icon' in editedSpec(spec, { ...edit, icon: '' }), false);
+		const set = editedSpec({ ...spec, icon: undefined }, { ...edit, icon: '<svg viewBox="0 0 1 1"/>\n' });
+		assert.equal(set.icon, '<svg viewBox="0 0 1 1"/>');
+	});
+
 	test('the refusal is read for the field it names, and nothing else is', () => {
 		const said = (stderr, code = 1) => ({ argv: [], code, stdout: '', stderr });
 		assert.equal(
@@ -444,6 +455,43 @@ describe('in the app', () => {
 		});
 	});
 
+	// da-45wgz: an .svg picked on Basics is saved with the spec, and the
+	// dayview draws it; a field given an icon and nothing else SAVES, its
+	// band fallback left the standard dot. What the file must be is the
+	// CLI's to say, and it says it here too.
+	test('an .svg picked on Basics is the field\'s icon, and a bad one is the CLI\'s refusal', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'coffee', '--verb', 'occur']);
+			// The clock is held (da-ydao): a second on, or the dot lands on the TRACK and is not written.
+			await app.clock.forward(1000);
+			await app.run(['occur', 'coffee']);
+			const beans = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="6" ry="9" fill="currentColor"/></svg>';
+			const pick = async (name, svg) => {
+				const saved = page.evaluate(() => window.datum.spec('coffee'));
+				await page.locator(MODAL).waitFor();
+				await page.locator(`${MODAL} .drop input[type="file"]`).setInputFiles({ name, mimeType: 'image/svg+xml', buffer: Buffer.from(svg) });
+				await page.locator(`${MODAL} .drop`, { hasText: name }).waitFor();
+				await page.locator(`${MODAL} button.commit`).click();
+				return saved;
+			};
+
+			const ok = await pick('beans.svg', beans);
+			assert.equal(ok.code, 0, ok.stderr);
+			const shown = JSON.parse((await app.run(['spec', 'show', 'coffee'])).stdout);
+			assert.equal(shown.icon, beans);
+			assert.equal('glyph' in shown, false, 'no fallback named: the standard dot');
+			const svg = (await app.run(['dayview'])).stdout;
+			assert.equal(svg.match(/<svg id="icon-coffee"/g)?.length, 1);
+			assert.match(svg, /href="#icon-coffee"/);
+
+			const big = await pick('big.svg', `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="${'M0 0'.repeat(1200)}"/></svg>`);
+			assert.notEqual(big.code, 0);
+			assert.match(big.stderr, /at most 4 kB/);
+			assert.equal(JSON.parse((await app.run(['spec', 'show', 'coffee'])).stdout).icon, beans, 'the refusal wrote nothing');
+		});
+	});
+
 	test('Escape and the backdrop close a spec and write nothing', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
@@ -472,7 +520,8 @@ describe('in the app', () => {
 				page.locator(`${MODAL} input`).evaluateAll((els) => els.map((e) => [e.type, e.value, e.placeholder, e.className]));
 			const noHex = async (where) => {
 				for (const [type, value, placeholder, cls] of await inputs()) {
-					assert.equal(type, 'text', `${where}: input.${cls} is a ${type}`);
+					// The icon's picker (da-45wgz) takes a file, and no typing at all.
+					assert.ok(type === 'text' || (type === 'file' && cls.includes('icon')), `${where}: input.${cls} is a ${type}`);
 					assert.doesNotMatch(`${value} ${placeholder}`, /#|hex|rgb/i, `${where}: input.${cls} takes a colour`);
 				}
 			};

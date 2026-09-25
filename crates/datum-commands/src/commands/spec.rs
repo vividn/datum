@@ -168,6 +168,22 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             check_glyph,
         )?;
     }
+    // da-45wgz: `--icon FILE` reads the file; an empty value clears. An
+    // icon from `--from-json` is vetted the same way, so none is stored
+    // unread.
+    if let Some(path) = &args.icon {
+        spec.presentation.icon = if path.is_empty() {
+            None
+        } else {
+            Some(
+                String::from_utf8(std::fs::read(path).with_context(|| format!("--icon {path}"))?)
+                    .map_err(|_| not_svg())?,
+            )
+        };
+    }
+    if let Some(svg) = &spec.presentation.icon {
+        spec.presentation.icon = Some(check_icon(svg)?);
+    }
     // da-2sr: --track / --ignore on `spec set` write switch entries rather
     // than mutating the spec. The flags are kept on the parser surface for
     // backwards compatibility; they no longer touch the spec.
@@ -279,6 +295,113 @@ fn check_glyph(flag: &str, glyph: &str) -> Result<()> {
     }
 }
 
+/// The most SVG an icon may be (da-45wgz): a few kB keeps a spec something
+/// a person could read, and one copy is all a dayview carries.
+const ICON_MAX_BYTES: usize = 4096;
+
+fn not_svg() -> anyhow::Error {
+    anyhow::anyhow!("an icon must be an .svg file (one <svg> element)")
+}
+
+/// Vet an icon and return what is stored: the `<svg>` element alone, with
+/// no prolog. It is drawn inside the dayview's own SVG and so inside the
+/// page, so nothing that could run, restyle the page or reach outside the
+/// picture is let in — and it needs a `viewBox` to scale to a dot.
+fn check_icon(svg: &str) -> Result<String> {
+    let whole = roxmltree::Document::parse(svg).map_err(|_| not_svg())?;
+    let svg = &svg[whole.root_element().range()];
+    if svg.len() > ICON_MAX_BYTES {
+        anyhow::bail!(
+            "the icon is {:.1} kB of SVG; an icon may be at most {} kB",
+            svg.len() as f64 / 1024.0,
+            ICON_MAX_BYTES / 1024
+        );
+    }
+    let doc = roxmltree::Document::parse(svg).map_err(|_| not_svg())?;
+    let root = doc.root_element();
+    if !svg.starts_with("<svg") || root.tag_name().name() != "svg" {
+        return Err(not_svg());
+    }
+    if root.attribute("viewBox").is_none() {
+        anyhow::bail!("an icon needs a viewBox on its <svg>, to scale to the size of a dot");
+    }
+    if root.attribute("id").is_some() {
+        anyhow::bail!("an icon's <svg> may not carry an id: the dayview names it");
+    }
+    for el in root.descendants().filter(|n| n.is_element()) {
+        let name = el.tag_name().name();
+        if matches!(name, "script" | "style" | "foreignObject") {
+            anyhow::bail!("an icon may not contain <{name}>");
+        }
+        // `<set>` / `<animate>` can write an href or a handler later.
+        let target = el.attribute("attributeName").unwrap_or("");
+        if target.starts_with("on") || target.ends_with("href") {
+            anyhow::bail!("an icon may not animate {target}");
+        }
+        for a in el.attributes() {
+            if a.name().starts_with("on")
+                || (a.name() == "href" && !a.value().starts_with('#'))
+                || fetches(a.value())
+            {
+                anyhow::bail!("an icon may not carry {}=\"{}\"", a.name(), a.value());
+            }
+        }
+    }
+    Ok(svg.to_string())
+}
+
+/// Vet a STORED icon again where it is drawn (da-45wgz): a spec can arrive
+/// by sync or a hand edit without passing `spec set`, so the stored text is
+/// untrusted whatever route it came by. One that fails is dropped — its dots
+/// draw as if it had none — and said once per field on stderr.
+pub(crate) fn drop_unvetted_icon(spec: &mut FieldSpec) {
+    static WARNED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    let Some(Err(e)) = spec.presentation.icon.as_deref().map(check_icon) else {
+        return;
+    };
+    spec.presentation.icon = None;
+    let mut warned = WARNED.lock().unwrap_or_else(|p| p.into_inner());
+    if !warned.contains(&spec.field) {
+        eprintln!("⚠ {}: icon not drawn — {e}", spec.field);
+        warned.push(spec.field.clone());
+    }
+}
+
+/// Whether an attribute value could make a browser fetch (da-45wgz). A
+/// match on a function's NAME is one CSS escape from missing it — `\75 rl(`
+/// IS `url(` — and `image-set('…')` fetches with no `url(` at all, so this
+/// refuses the escape character outright and every function but those an
+/// icon draws with: a transform, a colour, and `url()` to a `#fragment`.
+fn fetches(value: &str) -> bool {
+    const DRAWS: [&str; 10] = [
+        "matrix",
+        "translate",
+        "scale",
+        "rotate",
+        "skewx",
+        "skewy",
+        "rgb",
+        "rgba",
+        "hsl",
+        "hsla",
+    ];
+    let value = value.to_ascii_lowercase();
+    value.contains('\\')
+        || value.match_indices('(').any(|(i, _)| {
+            let head = value[..i].trim_end();
+            let name = &head[head
+                .trim_end_matches(|c: char| c.is_ascii_alphanumeric() || c == '-')
+                .len()..];
+            match name {
+                "url" => !value[i + 1..]
+                    .trim_start()
+                    .trim_start_matches(['\'', '"'])
+                    .starts_with('#'),
+                _ => !DRAWS.contains(&name),
+            }
+        })
+}
+
 /// Print the `⚠ auto-alias … skipped` lines from a save report to stderr.
 /// Shared by every spec-mutating command that regenerates aliases.
 fn warn_alias_conflicts(report: &datum_core::db::SaveSpecReport) {
@@ -370,6 +493,9 @@ fn render_spec_text(spec: &FieldSpec) {
     }
     if let Some(g) = &spec.presentation.glyph {
         println!("  glyph: {g}");
+    }
+    if let Some(icon) = &spec.presentation.icon {
+        println!("  icon: {:.1} kB of SVG", icon.len() as f64 / 1024.0);
     }
     if let Some(by) = &spec.presentation.glyph_by {
         let mut values: Vec<_> = by.map.iter().map(|(v, g)| format!("{v}={g}")).collect();

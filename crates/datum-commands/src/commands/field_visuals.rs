@@ -248,6 +248,11 @@ pub(crate) fn render_field_visuals(
                         id: Some(entry.hid.to_string()),
                         title: None,
                         glyph: dot_glyph(entry, spec),
+                        icon: spec.is_some_and(|s| {
+                            (s.presentation)
+                                .icon_for(entry.state.as_ref(), entry.data.as_ref())
+                                .is_some()
+                        }),
                     });
                 }
             }

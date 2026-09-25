@@ -55,6 +55,8 @@ ulid = { workspace = true, optional = true }
 md-5 = { workspace = true }
 regex-lite = { workspace = true }
 unicode-width = { workspace = true }
+# Vets a field's custom SVG icon (da-45wgz) before it is stored.
+roxmltree = "0.21"
 tempfile = { version = "3", optional = true }
 flate2 = { workspace = true }
 tar = { workspace = true }

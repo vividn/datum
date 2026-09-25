@@ -363,6 +363,7 @@ pub fn build_fields(
                 id: None,
                 title: None,
                 glyph: None,
+                icon: false,
             })
             .collect();
         let y_frac = style
@@ -375,6 +376,7 @@ pub fn build_fields(
             z_index: style.and_then(|s| s.z_index).unwrap_or(y_frac),
             blocks,
             points,
+            icon: None,
         });
     }
     out

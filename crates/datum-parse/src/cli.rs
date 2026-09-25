@@ -690,6 +690,9 @@ pub struct SpecSetArgs {
     /// `--glyph-map VALUE=CHAR` — one entry of the `--glyph-by` map; an
     /// empty CHAR removes the entry.
     pub glyph_map: Vec<String>,
+    /// `--icon <FILE>` — an `.svg` the dayview draws for the field's dots
+    /// (da-45wgz). An empty value clears it.
+    pub icon: Option<String>,
 }
 
 #[derive(Debug)]

@@ -95,6 +95,8 @@ export interface Spec {
 	subfields?: Record<string, Subfield>;
 	derived_aliases?: DerivedAlias[];
 	no_autoalias?: boolean;
+	/** The field's `<svg>` icon for the dayview (da-45wgz); the band draws `glyph` in its place. */
+	icon?: string;
 	[key: string]: unknown;
 }
 
@@ -222,6 +224,9 @@ export const specKeys = (spec: Spec): string[] => [
  *
  * `glyph_by` is null for «one glyph»; its map rows with no value or no
  * glyph are dropped.
+ *
+ * An `icon` given replaces the spec's and an empty one clears it; one
+ * not given is carried (da-45wgz).
  */
 export function editedSpec(
 	spec: Spec,
@@ -238,6 +243,7 @@ export function editedSpec(
 		autoalias?: boolean;
 		aliases?: DerivedAlias[];
 		place?: Place;
+		icon?: string;
 	}
 ): Spec {
 	const rows = edit.states.map((s) => ({ ...s, name: s.name.trim() })).filter((s) => s.name);
@@ -264,7 +270,8 @@ export function editedSpec(
 	);
 	const glyph = edit.glyph ?? spec.glyph ?? '';
 	const glyph_by = edit.glyph_by === undefined ? spec.glyph_by : key ? { key, map } : undefined;
-	const { state_descriptions: _d, glyph: _g, state_glyphs: _s, glyph_by: _b, ...rest } = spec;
+	const icon = edit.icon === undefined ? spec.icon : edit.icon.trim();
+	const { state_descriptions: _d, glyph: _g, state_glyphs: _s, glyph_by: _b, icon: _i, ...rest } = spec;
 	// The placement is the Placement tab's whole answer: free drops the anchor, tied drops y/height.
 	if (edit.place) for (const k of PLACE_KEYS) delete rest[k];
 	return {
@@ -281,6 +288,7 @@ export function editedSpec(
 		...(glyph ? { glyph } : {}),
 		...(Object.keys(state_glyphs).length ? { state_glyphs } : {}),
 		...(glyph_by ? { glyph_by } : {}),
+		...(icon ? { icon } : {}),
 		...(edit.keys && {
 			subfields: Object.fromEntries(
 				edit.keys

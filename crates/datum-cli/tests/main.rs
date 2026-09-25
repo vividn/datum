@@ -34,6 +34,7 @@ mod db_import;
 mod db_import_regression;
 mod delete_cmd;
 mod dot_glyphs;
+mod dot_icons;
 mod dot_skip_positional;
 mod dur_flag_removed;
 mod e2e_subprocess;

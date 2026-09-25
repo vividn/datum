@@ -19,7 +19,7 @@
 //! - Time-axis strip on the side opposite the date labels (bottom for
 //!   horizontal, left for vertical).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
 use crate::dayview::{BlockFill, DayviewAxisTick, DayviewLayout, Orientation};
@@ -146,6 +146,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
     let mut out = String::with_capacity(8192);
     let mut defs = String::new();
     let mut patterns: HashMap<String, String> = HashMap::new();
+    let mut icons: HashSet<&str> = HashSet::new();
     let geom = PlotGeom::new(layout);
 
     let _ = write!(
@@ -332,7 +333,11 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 // pointer through to it. A glyph over a disc of its own
                 // colour would vanish into it, so there the disc stays
                 // the mark but is not painted (da-gzowt).
-                let unpainted = p.glyph.is_some() && p.bg_color == p.fg_color;
+                // An icon (da-45wgz) is its own picture: no disc behind it.
+                let icon = (field.icon.as_deref())
+                    .and_then(|svg| svg.strip_prefix("<svg"))
+                    .filter(|_| p.icon);
+                let unpainted = icon.is_some() || (p.glyph.is_some() && p.bg_color == p.fg_color);
                 let _ = write!(
                     &mut out,
                     r#"<circle class="point-bg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}"{o}{close}"#,
@@ -354,6 +359,26 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                         p.title.as_deref(),
                     ),
                 );
+                // da-45wgz: an icon is written ONCE, in `<defs>`, under an
+                // id named for its field — the same in every band the page
+                // stacks, so a reference can never find another field's —
+                // and each dot `<use>`s it, sized to the disc and handed the
+                // dot's colour as `currentColor`.
+                if let Some(rest) = icon {
+                    let id = icon_id(&field.field);
+                    if icons.insert(&field.field) {
+                        let _ = write!(&mut defs, r#"<svg id="{id}"{rest}"#);
+                    }
+                    let _ = write!(
+                        &mut out,
+                        r##"<use class="point-fg" href="#{id}" x="{x}" y="{y}" width="{d}" height="{d}" color="{c}" pointer-events="none"/>"##,
+                        x = cx - outer_r,
+                        y = cy - outer_r,
+                        d = outer_r * 2.0,
+                        c = p.fg_color,
+                    );
+                    continue;
+                }
                 // da-gzowt: a glyph stands where the inner circle would,
                 // centred on the same point, in the same colour, over the
                 // same bg disc. Sized to the outer disc so it reads as the
@@ -489,6 +514,19 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
 
     out.push_str("</svg>");
     out
+}
+
+/// The `<defs>` id of `field`'s icon: the name with anything an id or a
+/// `#` reference would trip on spelled as its code point.
+fn icon_id(field: &str) -> String {
+    field.chars().fold(String::from("icon-"), |mut id, c| {
+        if c.is_ascii_alphanumeric() || c == '-' {
+            id.push(c);
+        } else {
+            let _ = write!(id, "_{:x}_", c as u32);
+        }
+        id
+    })
 }
 
 /// Index of the byte just past the first `>` in `s` — the insertion point
@@ -914,7 +952,9 @@ mod tests {
                         id: None,
                         title: None,
                         glyph: None,
+                        icon: false,
                     }],
+                    icon: None,
                 }],
             }],
             now_ms: DAY_START + 12 * HOUR,

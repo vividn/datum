@@ -317,6 +317,15 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
                 out.glyph_map.push(v.to_string());
                 i += 1;
             }
+            FlagSplit::Long("icon") => {
+                let (v, ni) = take_value(tail, i, None, "--icon")?;
+                out.icon = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("icon", v) => {
+                out.icon = Some(v.to_string());
+                i += 1;
+            }
             // `-weird` is a field name someone typed, not a flag they
             // misspelled: a leading dash is the only reason it reaches
             // here, and the field slot is still empty. Report the

@@ -103,6 +103,13 @@ pub struct PresentationSpec {
     /// so there is one default and not two.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glyph_by: Option<GlyphBy>,
+
+    /// A custom SVG icon (da-45wgz): the whole `<svg>` element, vetted and
+    /// size-capped by `spec set`. The dayview draws it where the field's
+    /// glyph would stand; the terminal band cannot draw an image, so there
+    /// the dot keeps its glyph, which is `●` unless one is named.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 /// [`PresentationSpec::glyph_by`]: the data key to read and the glyph for
@@ -221,6 +228,26 @@ impl PresentationSpec {
     /// `data`, or `None` for the circle. Precedence: the state's own glyph,
     /// then the `glyph_by` key's mapped value, then the field's glyph.
     pub fn glyph_for(&self, state: Option<&JsonValue>, data: Option<&JsonValue>) -> Option<&str> {
+        self.glyph_override(state, data)
+            .or(self.glyph.as_ref())
+            .map(String::as_str)
+    }
+
+    /// The icon an occur dot draws in the dayview (da-45wgz): the field's
+    /// icon stands where the field's glyph would, so a state's or a key's
+    /// own glyph still wins over it.
+    pub fn icon_for(&self, state: Option<&JsonValue>, data: Option<&JsonValue>) -> Option<&str> {
+        self.icon
+            .as_deref()
+            .filter(|_| self.glyph_override(state, data).is_none())
+    }
+
+    /// The state's glyph, else the `glyph_by` key's mapped value.
+    fn glyph_override(
+        &self,
+        state: Option<&JsonValue>,
+        data: Option<&JsonValue>,
+    ) -> Option<&String> {
         let by_state = state
             .and_then(scalar_key)
             .and_then(|s| self.state_glyphs.get(&s));
@@ -229,10 +256,7 @@ impl PresentationSpec {
             let v = data?.get(&gb.key).and_then(scalar_key)?;
             gb.map.get(&v)
         };
-        by_state
-            .or_else(by_key)
-            .or(self.glyph.as_ref())
-            .map(String::as_str)
+        by_state.or_else(by_key)
     }
 }
 
