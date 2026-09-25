@@ -40,6 +40,22 @@ pub fn validate_field_name(field: &str) -> Result<()> {
     Ok(())
 }
 
+/// Reject a slug containing `::`, which `datum get <id>::<name>` reads as
+/// the boundary between an id and the value it names (da-u7mgc). Refused
+/// rather than escaped: no slug in any database we hold contained one when
+/// the syntax arrived. Only a slug being written is checked, so a row that
+/// already holds one stays readable and deletable. A sync merge
+/// (`upsert_lww`) does not call it on purpose: a row a peer wrote is stored
+/// as it arrives, or the devices would stop converging.
+pub fn validate_slug(slug: &str) -> Result<()> {
+    if slug.contains("::") {
+        return Err(DatumError::Other(format!(
+            "an id cannot contain '::', which `get <id>::<name>` reads as its boundary (got {slug:?})"
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

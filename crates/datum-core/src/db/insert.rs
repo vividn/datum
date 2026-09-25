@@ -544,6 +544,7 @@ fn save_existing_entry_with_rekey_kind_in_tx(
     entry: &Entry,
     change_kind: ChangeKind,
 ) -> Result<()> {
+    crate::slug::validate_slug(&entry.slug.0)?;
     let pre = fetch_entry_any(conn, old_slug)?;
     if pre.deleted_at.is_some() {
         return Err(DatumError::Tombstoned(old_slug.to_string()));
@@ -736,6 +737,7 @@ fn write_entry_in_tx(
     strategy: ConflictStrategy,
 ) -> Result<(InsertOutcome, Option<Entry>)> {
     crate::slug::validate_field_name(&entry.field)?;
+    crate::slug::validate_slug(&entry.slug.0)?;
     // da-r569: canonicalize content_hash so the dedup lookup uses the same
     // value `try_insert` / `raw_overwrite_mutables` will persist. Live
     // writes mutate the entry post-`Entry::new` (`Dur::moment()` for occur,
@@ -886,6 +888,7 @@ fn write_entry_in_tx(
 /// (`try_insert`) is also cached.
 fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOutcome> {
     crate::slug::validate_field_name(&entry.field)?;
+    crate::slug::validate_slug(&entry.slug.0)?;
     // da-r569: dedup against the canonical storage hash, matching the value
     // `try_insert` will persist (see `insert_entry_in_tx` for the rationale).
     let (_, _, canonical_state) = derive_verb_for_storage(entry)?;

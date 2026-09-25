@@ -32,6 +32,14 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
         .as_deref()
         .unwrap_or(datum_core::ids::resolve::LAST_TOKEN);
 
+    // da-u7mgc: `<id>::<name>` prints one value of the entry, for scripts.
+    // The value prints alone whatever `--show`/`--pretty` say, but a bad
+    // value for them is still refused.
+    if pattern.contains("::") {
+        args.output()?;
+        return crate::commands::helpers::for_each_id(pattern, |piece| project(piece, db));
+    }
+
     // `dm get id1,id2,id3` — comma splits the pattern into independent
     // quickIds via the canonical batch resolver (da-obes), the same path
     // del/update/retime use. Each piece runs the normal precedence
@@ -84,6 +92,46 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
     // do NOT touch the pointer.
     let hids: Vec<datum_core::ids::Hid> = entries.iter().map(|e| e.hid.clone()).collect();
     let _ = datum_core::last_docs::set_last_docs(db, &hids);
+    Ok(())
+}
+
+/// da-u7mgc: print `<name>` of the entry `<id>` names, alone on stdout —
+/// a string bare, anything structured as compact JSON. A column name (any
+/// key of the serialized [`datum_core::entry::Entry`]) means the column,
+/// `.x.y` walks the state, and anything else walks `data`. A null or absent
+/// value is an error, so a script can tell "missing" from an empty string.
+/// An empty `<id>` (`::hid`) is `_LAST`. The pointer is not stamped.
+fn project(piece: &str, db: &Db) -> Result<()> {
+    let (id, name) = piece.split_once("::").ok_or_else(|| {
+        anyhow::anyhow!("'{piece}' is not <id>::<name>, and a list of values takes no plain id")
+    })?;
+    let id = if id.is_empty() {
+        datum_core::ids::resolve::LAST_TOKEN
+    } else {
+        id
+    };
+    let entry = datum_core::ids::resolve_quickid_single(db, id)?;
+    let mut row = serde_json::to_value(&entry)?;
+    row["raw_input"] = serde_json::json!(entry.raw_input);
+    if let Some(t) = &entry.occur_time {
+        row["occur_time"] = serde_json::json!(t.utc);
+    }
+    let (root, path) = match name.strip_prefix('.') {
+        Some(path) => (entry.state.as_ref(), Some(path)),
+        None if row.get(name).is_some() => (row.get(name), None),
+        None => (entry.data.as_ref(), Some(name)),
+    };
+    let value = path
+        .map_or(root, |p| {
+            p.split('.')
+                .try_fold(root?, |v, seg| v.as_object()?.get(seg))
+        })
+        .filter(|v| !v.is_null())
+        .ok_or_else(|| anyhow::anyhow!("{id} has no {name}"))?;
+    match value {
+        serde_json::Value::String(s) => println!("{s}"),
+        other => println!("{other}"),
+    }
     Ok(())
 }
 
