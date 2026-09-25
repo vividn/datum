@@ -42,7 +42,7 @@ mod zone_timeline;
 
 use std::cell::RefCell;
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, TransactionBehavior};
 
 use crate::error::{DatumError, Result};
 
@@ -129,7 +129,17 @@ impl Db {
     /// true of every wasm target the CLI is compiled for. Native keeps
     /// SQLite's compile-time default (FILE), where a genuinely huge sort
     /// should spill to the disk that exists rather than eat the machine.
-    fn configure_connection(conn: &Connection) -> Result<()> {
+    ///
+    /// Every transaction opens IMMEDIATE (da-5pulr): it takes the write lock
+    /// at `BEGIN`, where `busy_timeout` waits for it. A DEFERRED one takes it
+    /// at its first write, and if it read first while another connection
+    /// committed, the upgrade fails at once with SQLITE_BUSY — the busy
+    /// handler is not called, since waiting cannot refresh a stale snapshot.
+    /// Three processes logging at once lost 19 of 30 writes that way, each
+    /// in ~10 ms. Every transaction datum opens writes, so this is set once
+    /// here rather than at each site, and a new site cannot forget it.
+    fn configure_connection(conn: &mut Connection) -> Result<()> {
+        conn.set_transaction_behavior(TransactionBehavior::Immediate);
         conn.execute_batch(
             "PRAGMA busy_timeout = 5000;\n\
              PRAGMA journal_mode = WAL;\n\
@@ -142,8 +152,8 @@ impl Db {
 
     /// Open (or create) the database at the given path.
     pub fn open(path: &str) -> Result<Self> {
-        let conn = Connection::open(path)?;
-        Self::configure_connection(&conn)?;
+        let mut conn = Connection::open(path)?;
+        Self::configure_connection(&mut conn)?;
         let mut db = Db {
             conn,
             spec_alias_cache: RefCell::new(None),
@@ -159,8 +169,8 @@ impl Db {
     /// recovery code has a chance to run — and by read-only reporters such
     /// as `datum info`, which must not rewrite what they report on.
     pub fn open_unmigrated(path: &str) -> Result<Self> {
-        let conn = Connection::open(path)?;
-        Self::configure_connection(&conn)?;
+        let mut conn = Connection::open(path)?;
+        Self::configure_connection(&mut conn)?;
         Ok(Db {
             conn,
             spec_alias_cache: RefCell::new(None),

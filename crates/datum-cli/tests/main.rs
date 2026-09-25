@@ -23,6 +23,7 @@ mod cli_harness;
 mod comma_slugs;
 mod comment_appends;
 mod concurrent_states_cmd;
+mod concurrent_writers;
 mod conflicts_cmd;
 mod count_cmd;
 mod d2_parser;

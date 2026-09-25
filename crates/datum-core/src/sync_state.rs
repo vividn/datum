@@ -185,7 +185,7 @@ pub fn apply_recovery_mutations(
     expected_generation: u64,
 ) -> Result<u64> {
     let conn = db.conn();
-    conn.execute("BEGIN", [])?;
+    conn.execute("BEGIN IMMEDIATE", [])?;
     let inner: Result<u64> = (|| {
         let deleted = delete_pre_reinit_entries(db, generation_started_at)?;
         reset_pull_seq(db, 0)?;
@@ -302,7 +302,7 @@ pub fn rewind_for_replaced_relay(db: &Db, relay_high_seq: u64) -> Result<Option<
         return Ok(None);
     }
     let conn = db.conn();
-    conn.execute("BEGIN", [])?;
+    conn.execute("BEGIN IMMEDIATE", [])?;
     let inner: Result<()> = (|| {
         set_device_seq(db, relay_high_seq)?;
         reset_push_mark(db, 0)?;
