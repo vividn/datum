@@ -40,7 +40,7 @@ content_hash = "ecc13ff36e656560fcc6d460d110cdadb304e02ff317f3c6c588050b02f2fc34
 name = "nested-unsorted-keys"
 description = """
 The load-bearing case: nested objects whose keys arrive unsorted. Both the \
-top level and the nested unit-annotation objects must come out sorted. If \
+top level and the nested objects must come out sorted. If \
 `serde_json`'s `preserve_order` feature is ever enabled anywhere in the \
 workspace graph, `parts[3]` / `parts[4]` change and this fixture fails."""
 field = "workout"
