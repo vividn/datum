@@ -493,6 +493,37 @@ export const widgetPane = (id, kind, settings = {}, edge = 'top') => ({
 	bar: { ...bar, edge }
 });
 
+/**
+ * `mine`: two panes side by side, so a nested layout has an INSIDE — to
+ * edit, or to maximize out of. A saved layout of one pane is lifted into
+ * the tab that holds it (shell.ts), and a lifted one-widget layout has no
+ * inside: splitting the pane it draws in splits the tree AROUND it.
+ *
+ * The second is `widgetbar`, which is the fields widget's KIND: `fields`
+ * is what it is CALLED (da-850j, registry.ts), and a kind nothing is
+ * registered under declares neither defaults nor options.
+ */
+export const MINE = {
+	version: 1,
+	name: 'mine',
+	root: {
+		id: 'm',
+		active: 0,
+		bar,
+		tabs: [
+			{
+				id: 'm-tab',
+				content: {
+					id: 'm-split',
+					direction: 'row',
+					ratios: [0.5, 0.5],
+					children: [widgetPane('m-a', 'nowview'), widgetPane('m-b', 'widgetbar')]
+				}
+			}
+		]
+	}
+};
+
 /** A root holder over `children` along `direction`, in equal shares. */
 export const along = (direction, ...children) => ({
 	version: 1,

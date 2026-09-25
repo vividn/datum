@@ -27,9 +27,9 @@ import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
+	MINE,
 	PHONE,
 	addTab,
-	bar,
 	chooseBar,
 	chooser,
 	exactly,
@@ -39,8 +39,7 @@ import {
 	pane,
 	settled,
 	titles,
-	toggleRootLock,
-	widgetPane
+	toggleRootLock
 } from './support/layout.mjs';
 
 before(startApp);
@@ -641,25 +640,3 @@ describe('the maximize badge, drawn and placed', () => {
 		});
 	}
 });
-
-/** Two panes side by side, so a nested layout has an INSIDE to maximize out of. */
-const MINE = {
-	version: 1,
-	name: 'mine',
-	root: {
-		id: 'm',
-		active: 0,
-		bar,
-		tabs: [
-			{
-				id: 'm-tab',
-				content: {
-					id: 'm-split',
-					direction: 'row',
-					ratios: [0.5, 0.5],
-					children: [widgetPane('m-a', 'nowview'), widgetPane('m-b', 'fields')]
-				}
-			}
-		]
-	}
-};

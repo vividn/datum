@@ -23,6 +23,7 @@ import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
 import {
 	DESKTOP,
+	MINE,
 	addTab,
 	bar,
 	choose,
@@ -64,38 +65,6 @@ const NEWEST = 'newest first';
 
 const layouts = (app, fn, ...args) =>
 	app.page.evaluate(([fn, args]) => window.datum.layouts[fn](...args), [fn, args]);
-
-/**
- * `mine`: two panes side by side, so there is an INSIDE to edit. A saved
- * layout of one pane is lifted into the tab that holds it (shell.ts), and
- * a lifted one-widget layout has no inside — splitting the pane it draws
- * in splits the tree AROUND it, not the layout.
- *
- * The second is `widgetbar`, which is the fields widget's KIND: `fields`
- * is what it is CALLED (da-850j, registry.ts), and a kind nothing is
- * registered under declares neither defaults nor options — so the panes
- * here would not have the menu the tests below read.
- */
-const MINE = {
-	version: 1,
-	name: 'mine',
-	root: {
-		id: 'm',
-		active: 0,
-		bar,
-		tabs: [
-			{
-				id: 'm-tab',
-				content: {
-					id: 'm-split',
-					direction: 'row',
-					ratios: [0.5, 0.5],
-					children: [widgetPane('m-a', 'nowview'), widgetPane('m-b', 'widgetbar')]
-				}
-			}
-		]
-	}
-};
 
 /**
  * `solo`: ONE pane of ONE widget, which `inline` LIFTS into the tab that
