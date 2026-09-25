@@ -1366,17 +1366,15 @@ fn raw_overwrite_mutables(
 fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
     super::spec::check_spec_entry(&entry.slug, entry, entry.data.as_ref())?;
     let now = Utc::now().to_rfc3339();
-    let occur_str = entry
-        .occur_time
-        .as_ref()
-        .map(|t| t.utc.to_rfc3339())
-        .unwrap_or_else(|| entry.create_time.to_rfc3339());
+    // da-plcx4: a timeless entry keeps its NULL `occur_time`, as on the
+    // insert path (da-lxyw).
+    let occur_str: Option<String> = entry.occur_time.as_ref().map(|t| t.utc.to_rfc3339());
     let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
     let occur_tz = entry.occur_time.as_ref().and_then(|t| t.timezone.clone());
     let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
     let content_hash = storage_content_hash(
         entry,
-        &occur_str,
+        &hash_occur_str(entry),
         canonical_state.as_ref(),
         entry.data.as_ref(),
     );
@@ -1461,17 +1459,15 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
 /// fails the revert loudly rather than silently keeping the wrong slug.
 pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> {
     super::spec::check_spec_entry(&entry.slug, entry, entry.data.as_ref())?;
-    let occur_str = entry
-        .occur_time
-        .as_ref()
-        .map(|t| t.utc.to_rfc3339())
-        .unwrap_or_else(|| entry.create_time.to_rfc3339());
+    // da-plcx4: a timeless entry keeps its NULL `occur_time`, as on the
+    // insert path (da-lxyw).
+    let occur_str: Option<String> = entry.occur_time.as_ref().map(|t| t.utc.to_rfc3339());
     let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
     let occur_tz = entry.occur_time.as_ref().and_then(|t| t.timezone.clone());
     let (verb_str, state_str, canonical_state) = derive_verb_for_storage(entry)?;
     let content_hash = storage_content_hash(
         entry,
-        &occur_str,
+        &hash_occur_str(entry),
         canonical_state.as_ref(),
         entry.data.as_ref(),
     );
@@ -1625,6 +1621,43 @@ mod tests {
             stored.expected_content_hash(),
             "content_hash must agree on load for a timeless entry"
         );
+    }
+
+    /// da-plcx4 (regression): an undo (`apply_entry_state`) of a timeless
+    /// row keeps `occur_time` NULL rather than writing `create_time` in.
+    #[test]
+    fn undo_of_timeless_entry_keeps_null_occur_time() {
+        let db = fresh_db();
+        let entry = entry_builder("thing").verb(Verb::Point).no_time().build();
+        db.insert_entry(&entry).unwrap();
+        let mut edited = db.get_entry(&entry.slug).unwrap();
+        edited.data = Some(serde_json::json!({"a": 2}));
+        db.save_existing_entry(&edited).unwrap();
+
+        let restored = db.revert_entry_to(entry.hid.as_ref(), 1).unwrap();
+        assert!(
+            restored.occur_time.is_none(),
+            "got {:?}",
+            restored.occur_time
+        );
+        assert_eq!(restored.content_hash, restored.expected_content_hash());
+    }
+
+    /// da-plcx4 (regression): a rekey (`raw_overwrite_full_by_hid`) of a
+    /// timeless row keeps `occur_time` NULL.
+    #[test]
+    fn rekey_of_timeless_entry_keeps_null_occur_time() {
+        let db = fresh_db();
+        let entry = entry_builder("thing").verb(Verb::Point).no_time().build();
+        db.insert_entry(&entry).unwrap();
+        let mut rekeyed = db.get_entry(&entry.slug).unwrap();
+        rekeyed.slug = Slug("thing:other".into());
+        db.save_existing_entry_with_rekey(&entry.slug, &rekeyed)
+            .unwrap();
+
+        let stored = db.get_entry("thing:other").unwrap();
+        assert!(stored.occur_time.is_none(), "got {:?}", stored.occur_time);
+        assert_eq!(stored.content_hash, stored.expected_content_hash());
     }
 
     /// da-tlk2: storage boundary rejects field names with a `:`. The slug
