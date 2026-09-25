@@ -4,26 +4,25 @@
 # 2026-09-24. This is the gh-pages pattern: an artifact branch with linear
 # history, one commit per main commit, `wasm for <sha>`, holding
 #
-#   datum-cli.wasm                the module
-#   SOURCE                        the full main sha it is for
-#   .github/workflows/deploy.yml  main@SOURCE's copy
+#   datum-cli.wasm  the module
+#   SOURCE          the full main sha it is for
 #
-# GitHub runs a branch's push workflows from THAT branch's tree, and deploy
-# runs on a push to `wasm` (the forge's push mirror carries it there), so the
-# deploy that runs is always the one belonging to the code it deploys.
+# `web/scripts/ensure-wasm.mjs` is what reads the branch: locally, in CI, in
+# GitHub's deploy, and here — where a main commit whose crate inputs an
+# earlier one shares reuses its bytes (they are reproducible) instead of
+# building for minutes, and Rust is installed only when a build is needed.
 #
-# `web/scripts/ensure-wasm.mjs` is what reads the branch: locally, in CI, and
-# here — where a main commit whose crate inputs an earlier one shares reuses
-# its bytes (they are reproducible) instead of building for minutes, and Rust
-# is installed only when a build is needed.
+# It no longer gates a deploy (da-causk): .github/workflows/deploy.yml runs
+# on the push to main and fetches or builds the module itself, so a deploy
+# never waits for this job's lane.
 name: wasm
 
 on:
   push:
     branches: [main]
 
-# Only the newest main commit is worth a module: a deploy of a superseded one
-# is pointless, and SOURCE names the commit, so nothing is lost.
+# Only the newest main commit is worth a module: SOURCE names the commit, and
+# ensure-wasm reuses a module for any later commit with the same crates.
 concurrency:
   group: wasm
   cancel-in-progress: true
@@ -54,7 +53,7 @@ jobs:
           rustup target add wasm32-wasip1
           node web/scripts/ensure-wasm.mjs
 
-      # Plumbing, so the checkout is never touched: a tree of three blobs,
+      # Plumbing, so the checkout is never touched: a tree of two blobs,
       # parented on the branch's tip as fetched just now.
       - name: Commit it to `wasm`
         env:
@@ -70,7 +69,6 @@ jobs:
           add() { git update-index --add --cacheinfo "100644,$1,$2"; }
           add "$(git hash-object -w web/src/lib/wasm/datum-cli.wasm)" datum-cli.wasm
           add "$(echo "$sha" | git hash-object -w --stdin)" SOURCE
-          add "$(git rev-parse HEAD:.github/workflows/deploy.yml)" .github/workflows/deploy.yml
           tree=$(git write-tree)
           git fetch -q origin +refs/heads/wasm:refs/remotes/origin/wasm || true
           parent=()

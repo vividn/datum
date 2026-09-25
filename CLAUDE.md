@@ -372,7 +372,8 @@ main commit — and `web/scripts/ensure-wasm.mjs`, the `predev` and
 in `target/`: it keeps the one there if its crates are this tree's, fetches
 the `wasm` branch's if this tree's crates are the merge-base's with
 `origin/main`, and builds otherwise, printing which and why. Deploy runs on
-a push to `wasm`, so it needs no Rust toolchain either. It lives under `src/`
+the push to main (da-causk) and does the same, so a web-only merge fetches and
+installs no Rust, and nothing waits for the forge's lane. It lives under `src/`
 rather than `static/` so the app reaches it as a `?url` import and Vite
 emits it content-hashed under `/_app/immutable/`: a runtime artifact must
 not have a stable name, because the service worker serves precached names

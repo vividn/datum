@@ -210,16 +210,21 @@ immediately. It also forces `Content-Type: application/wasm`, because a `.wasm` 
 ### Step 3b: the same thing from CI
 
 `.github/workflows/deploy.yml` runs `web/deploy.sh --yes` and then `just verify` on every
-push to the **`wasm` branch**, and on demand from the Actions tab (dispatched on `wasm`).
-Not on `main`: the CLI module is no longer committed (da-0qa4x). The forge's
-`.forgejo/workflows/wasm.yml` builds it for each main commit and commits it to `wasm` with
-`SOURCE`, the main sha it is for, and a copy of main@SOURCE's `deploy.yml` — GitHub runs a
-branch's push workflows from that branch's tree. The deploy checks out main at `SOURCE`, puts
-the module beside it, and runs `deploy.sh`, which needs no Rust toolchain. So a push to main
-deploys once its module is built, and a newer one cancels a deploy still running.
+push to **`main`**, and on demand from the Actions tab. The CLI module is not committed
+(da-0qa4x), so the deploy gets it first with `web/scripts/ensure-wasm.mjs`: a web-only merge
+FETCHES the module an earlier main commit with the same crates already has on the `wasm`
+branch (the log says `ensure-wasm: fetched …`), and a merge that changes Rust BUILDS it,
+installing the pinned toolchain only then — usually, since the deploy starts before the
+forge's `.forgejo/workflows/wasm.yml` has committed that merge's module. Correct either way;
+a build is only slower. A newer push cancels a deploy still running.
 
-For that to reach GitHub, **the forge's push mirror must push all branches**, not only `main`,
-and if the `production` environment restricts deployment branches it must allow `wasm`.
+Until da-causk the deploy ran on the push to `wasm` instead, so every deploy waited for a
+forge PR-CI lane, and `GITHUB_SHA` — the gear menu's hash — was the `wasm` commit's. Now it
+is main's.
+
+For the fetch, **the forge's push mirror must push the `wasm` branch** to GitHub as well as
+`main`. And if the `production` environment restricts deployment branches, it must allow
+**`main`** — an environment still restricted to `wasm` refuses every deploy at the gate.
 
 It is **inert until the repository is configured** — it reads four values and none of them
 have defaults:

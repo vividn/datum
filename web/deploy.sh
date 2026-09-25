@@ -52,8 +52,8 @@ cd "$(dirname "$0")"
 # The wasm is not committed (da-0qa4x): ensure-wasm.mjs keeps, fetches from
 # the `wasm` branch, or builds the module for this tree's crates, and records
 # in src/lib/wasm/SOURCE the commit whose crates it matches — HEAD whenever
-# the working tree's crates are HEAD's. CI's deploy puts the `wasm` branch's
-# module and SOURCE here, so it keeps them and needs no Rust toolchain
+# the working tree's crates are HEAD's. CI's deploy runs it first, installing
+# Rust only when there is nothing to fetch, so here it keeps what is there
 # (vividn's concern: "will this continue to work on ci on other servers").
 #
 # Refuse unless SOURCE is HEAD: anything else ships a CLI that is not the

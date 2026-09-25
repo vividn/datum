@@ -15,8 +15,10 @@
 //   build  — anything else, or no such commit (not built yet, offline):
 //            `build-cli-wasm.mjs`, the pinned toolchain.
 //
-// `--fetch-only` exits 2 instead of building: the wasm workflow installs
-// Rust only when it has to.
+// `--fetch-only` exits 2 instead of building: the wasm workflow and the
+// deploy (.github/workflows/deploy.yml, on the push to main) install Rust
+// only when it has to. A deploy of a merge that changes Rust usually builds,
+// since it starts before the wasm workflow has committed that merge's module.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';

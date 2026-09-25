@@ -5,20 +5,18 @@
 # release gate.
 name: Deploy datum.day
 
-# A push to the `wasm` branch, not to main (da-0qa4x): the module left main,
-# and .forgejo/workflows/wasm.yml commits one to `wasm` for each main commit,
-# with SOURCE naming it. GitHub runs a branch's push workflows from that
-# branch's tree, so THIS file runs as the copy the wasm workflow took from
-# main@SOURCE — the deploy that runs is the one belonging to the code it
-# deploys. The forge's push mirror must push every branch for `wasm` to
-# arrive, and the `production` environment must allow deploying from it.
+# A push to main (da-causk). The module is not committed (da-0qa4x); the
+# deploy gets it itself, below — fetched from the `wasm` branch when an
+# earlier main commit with these crates already has one, built otherwise —
+# rather than waiting for the forge's wasm.yml to commit one to `wasm` and
+# deploying on THAT push, which queued every deploy behind a PR-CI lane and
+# made GITHUB_SHA, and so the gear menu's hash, the `wasm` commit's.
 on:
   push:
-    branches: [wasm]
+    branches: [main]
   # A deploy is sometimes needed with no commit behind it. The bucket's error
   # document and its public-read policy are not in this repo, and the verify
   # step below is how you find out whether a change to either actually landed.
-  # Dispatch it on the `wasm` branch: it deploys that branch's tip.
   workflow_dispatch:
 
 # A newer deploy cancels the one in progress. `aws s3 sync` is not atomic, so a
@@ -57,25 +55,12 @@ jobs:
       name: production
       url: https://datum.day
     steps:
-      # The `wasm` commit this run is for, then main at its SOURCE for the web
-      # sources, with the module and SOURCE put back where ensure-wasm.mjs
-      # looks: it keeps them, since SOURCE is HEAD, and nothing needs Rust.
-      - uses: actions/checkout@v4
-
-      - name: Read the module and the main commit it is for
-        id: wasm
-        run: |
-          cp datum-cli.wasm SOURCE "$RUNNER_TEMP/"
-          echo "source=$(cat SOURCE)" >> "$GITHUB_OUTPUT"
-
+      # Full history: ensure-wasm.mjs compares this commit's crates against
+      # the SOURCE of each `wasm` commit, and needs origin/main and origin/wasm,
+      # which a full-depth checkout fetches along with every other branch.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ steps.wasm.outputs.source }}
-
-      - name: Put the module in web/src/lib/wasm
-        run: |
-          mkdir -p web/src/lib/wasm
-          cp "$RUNNER_TEMP/datum-cli.wasm" "$RUNNER_TEMP/SOURCE" web/src/lib/wasm/
+          fetch-depth: 0
 
       # ubuntu-24.04 ships aws-cli 2.36.35 (checked 2026-09-08 against
       # actions/runner-images), but `ubuntu-latest` is a moving label and the
@@ -103,6 +88,20 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
+
+      # A web-only merge FETCHES: its crates are an earlier main commit's, and
+      # that commit's module is on `wasm` already. A merge that changes Rust
+      # usually BUILDS, because the deploy starts before the forge's wasm.yml
+      # has committed this commit's module — correct, only slower (~73 s of
+      # build plus the toolchain), and Rust is installed only then. deploy.sh
+      # runs ensure-wasm.mjs again, which keeps what this step put there.
+      - name: Fetch the CLI module, or build it
+        run: |
+          set -euo pipefail
+          node web/scripts/ensure-wasm.mjs --fetch-only && exit 0 || [ $? = 2 ]
+          rustup toolchain install --no-self-update
+          rustup target add wasm32-wasip1
+          node web/scripts/ensure-wasm.mjs
 
       # For `just verify` below. install-action is already how this repo
       # installs cargo-nextest, so it is not a new dependency to trust.
