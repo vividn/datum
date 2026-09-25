@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { preview } from 'vite';
+import { median } from './median.mjs';
 
 const web = fileURLToPath(new URL('..', import.meta.url));
 const flag = (name, fallback) => {
@@ -28,8 +29,6 @@ const flag = (name, fallback) => {
 const ENTRIES = flag('entries', 20000);
 const THROTTLE = flag('throttle', 1);
 const BURSTS = 3;
-
-const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] ?? 0;
 
 /** Where a set of processes spent their time, and what they paid to acquire. */
 const phases = (all) => ({
@@ -170,9 +169,7 @@ try {
 			nowviewStarted: nowviews.length,
 			nowviewPaints: got.paints.length,
 			lastClickToFinalPictureMs: Math.round(Math.max(...got.paints) - burst.last),
-			medianNowviewWallMs: Math.round(
-				nowviews.map((r) => r.t1 - r.t0).sort((a, b) => a - b)[Math.floor(nowviews.length / 2)]
-			),
+			medianNowviewWallMs: Math.round(median(nowviews.map((r) => r.t1 - r.t0))),
 			finalAt,
 			pill: got.pill,
 			otherCommands: others,

@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { chromium } from 'playwright';
 import { preview } from 'vite';
+import { median } from './median.mjs';
 
 const web = fileURLToPath(new URL('..', import.meta.url));
 const repo = join(web, '..');
@@ -34,7 +35,6 @@ const server = await preview({
 });
 const base = server.resolvedUrls.local[0].replace(/\/$/, '');
 
-const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 const round = (x) => Math.round(x * 10) / 10;
 
 /** A browser with a profile of its own; `incognito` for Playwright's default. */
