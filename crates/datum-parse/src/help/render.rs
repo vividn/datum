@@ -71,7 +71,8 @@ fn render_topic(topic: &TopicSpec) -> String {
 /// The command table as JSON — `datum help --json` (da-r13j).
 ///
 /// Each command's name, aliases, usage lines, flags (each with its
-/// one-line help and whether it takes a value, da-st2xl) and subcommands,
+/// one-line help, whether it takes a value, da-st2xl, and whether that
+/// value is optional, da-e9e5g) and subcommands,
 /// straight out of [`COMMANDS`], for a caller that asks the grammar rather
 /// than keeping a copy of it: the web's commands widget reads which
 /// commands take an id or `-t` from here, and which drill into
@@ -86,6 +87,7 @@ pub fn render_json() -> String {
                     "short": f.short.map(String::from),
                     "long": f.long,
                     "takes_value": f.takes_value,
+                    "value_optional": f.value_optional,
                     "help": f.summary,
                 })
             })

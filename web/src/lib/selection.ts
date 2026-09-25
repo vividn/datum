@@ -85,17 +85,45 @@ export const hidPill = (hids: string[], locked = false): Pill | null =>
  * appended to it is read as coffee's STATE — no error, just a wrong row. A
  * refused pill stays loaded, as any other pill a command cannot take does.
  *
- * CONSERVATIVE IN BOTH DIRECTIONS, on purpose (canary deepseek, PR #62): a
- * line carrying a flag — `tail -n 20` — has words this rule cannot tell
- * apart from a field, so the pill is refused there too and the reader types
- * the field. Placing it precisely would mean knowing which flags take a
- * VALUE, which `datum help --json` now says (`takes_value`, da-st2xl) but
- * this rule does not yet read; guessing wrong would put a second field into
- * `tail -n 20 coffee`. A refusal is VISIBLE — the pill stays on the bar —
- * where a misplacement is a wrong row, so this is the side to err on.
+ * A FLAG's words are not positionals (da-e9e5g): `tail -n 20` still has
+ * its field slot open, because `datum help --json` says `-n` takes a value
+ * (`takes_value`), so `20` is `-n`'s and the pill makes `tail -n 20 mood`.
+ * STILL CONSERVATIVE where the grammar cannot say (canary deepseek, PR
+ * #62): a flag the command's table does not list (a global one, `--db`), a
+ * `--`, a value flag with nothing after it yet (the pill would BE its
+ * value), or an optional-value flag written bare (`value_optional`:
+ * `stop -L coffee` stops coffee, while `tail -w 5` watches every 5s) — the
+ * pill is refused there and the reader types the field. A refusal is
+ * VISIBLE — the pill stays on the bar — where a misplacement is a wrong
+ * row, so this is the side to err on.
  */
 const fieldSlotOpen = (takes: Takes | undefined, argv: string[]): boolean =>
-	!!takes && takes.field !== false && argv.length === takes.field;
+	!!takes && takes.field !== false && positionals(takes, argv) === takes.field;
+
+/** How many of `argv`'s words are positionals, the name included; -1 when a flag's words cannot be told apart. */
+function positionals(takes: Takes, argv: string[]): number {
+	let n = 1;
+	for (let i = 1; i < argv.length; i++) {
+		const word = argv[i];
+		if (!word.startsWith('-') || word === '-') {
+			n++;
+			continue;
+		}
+		// `--long[=v]`, or a cluster of shorts (`-yy`, `-n20`, `-t=-8`).
+		const long = word.startsWith('--');
+		const names = long ? [word.slice(2).split('=')[0]] : [...word.slice(1)];
+		for (let j = 0; j < names.length; j++) {
+			const flag = takes.flags.find((f) => (long ? !!f.long && f.long === names[j] : f.short === names[j]));
+			if (!flag) return -1;
+			if (!flag.takes_value) continue;
+			const attached = long ? word.includes('=') : j < names.length - 1;
+			if (flag.value_optional && !attached) return -1;
+			if (!attached && ++i >= argv.length) return -1;
+			break;
+		}
+	}
+	return n;
+}
 
 /**
  * The argv a press runs with the pills, and the pills it spent.

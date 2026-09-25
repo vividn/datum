@@ -267,6 +267,8 @@ export interface Flag {
 	short: string | null;
 	long: string;
 	takes_value?: boolean;
+	/** Its value only ever comes attached (`-L=V`): a bare one takes no word after it (da-e9e5g). */
+	value_optional?: boolean;
 	help?: string;
 }
 

@@ -24,13 +24,23 @@ const { COMMANDS, argumentsOf, commandsUnder, fires, fits, grammarOf, roleOf, ta
 const { hidPill, picked, pickOf, withPills } = await import('../src/lib/selection.ts');
 
 const entry = (name, usage, flags = [], aliases = []) => ({ name, aliases, usage, flags });
-const T = { short: 't', long: 'time' };
+const T = { short: 't', long: 'time', takes_value: true };
+const Y = { short: 'y', long: 'yesterday', takes_value: false };
 
 /** A slice of `datum help --json`, verbatim where it matters. */
 const GRAMMAR = grammarOf([
 	entry('occur', ['datum occur <FIELD> [VALUE | KEY=VALUE]...'], [T]),
-	entry('stop', ['datum stop <FIELD> [VALUE | KEY=VALUE]... [DUR]'], [T], ['end']),
-	entry('tail', ['datum tail [FIELD]'], [T]),
+	entry(
+		'stop',
+		['datum stop <FIELD> [VALUE | KEY=VALUE]... [DUR]'],
+		[T, Y, { short: 'L', long: 'last-state', takes_value: true, value_optional: true }],
+		['end']
+	),
+	entry(
+		'tail',
+		['datum tail [FIELD]'],
+		[T, Y, { short: 'n', long: '', takes_value: true }, { short: 'w', long: 'watch', takes_value: true, value_optional: true }]
+	),
 	entry('now', ['datum now [-A] [--bare]']),
 	entry('get', ['datum get <ID_OR_SLUG> [--pretty]']),
 	entry('update', ['datum update <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]...']),
@@ -180,15 +190,36 @@ describe('what a press runs with the pills', () => {
 		]);
 	});
 
-	// And refused on a line with a FLAG in it, where the slot rule cannot
-	// tell a flag's value from a field (it does not read `takes_value`), so
-	// placing one would risk `tail -n 20 coffee` — two fields.
-	// The refusal is visible (the pill stays on the bar); a misplacement
-	// would be a wrong row. Canary deepseek raised it on PR #62.
-	test('and refused on a line carrying a flag, which the slot rule cannot read', () => {
-		const { argv, used } = withPills(GRAMMAR, ['tail', '-n', '20'], [mood]);
-		assert.deepEqual(argv, ['tail', '-n', '20']);
-		assert.deepEqual(used, []);
+	// da-e9e5g. A flag's value is not a positional: `datum help --json`
+	// says which flags take one (`takes_value`), so `-n 20` is one flag and
+	// the slot after `tail` is still open — attached, clustered, or a value
+	// that itself starts with a dash (`-t -8`).
+	test('a field pill is placed past a flag and its value', () => {
+		for (const line of [['tail', '-n', '20'], ['tail', '-n20'], ['tail', '-yt', '-8'], ['tail', '--time=-8'], ['stop', '-L=x']])
+			assert.deepEqual(withPills(GRAMMAR, line, [mood]).argv, [...line, 'mood'], line.join(' '));
+		const { argv, used } = withPills(GRAMMAR, ['tail', '-n', '20', 'coffee'], [mood]);
+		assert.deepEqual([argv, used], [['tail', '-n', '20', 'coffee'], []], 'a flag does not hide a field already there');
+	});
+
+	// Where the grammar cannot say which words are a flag's, the pill is
+	// refused — visible, where a misplacement would be a wrong row. A bare
+	// `-L` takes no word (`stop -L coffee` stops coffee) while `-w` does, so
+	// an optional-value flag is refused bare; a value flag with nothing after
+	// it would take the pill as its value; a flag the table does not list,
+	// or a negative number, could be either. Canary deepseek, PR #62.
+	test("and refused where a flag's words cannot be told apart", () => {
+		for (const line of [
+			['stop', '-L', 'coffee'],
+			['stop', '-L'],
+			['tail', '-w', '5'],
+			['tail', '-n'],
+			['tail', '--db', 'x'],
+			['tail', '--'],
+			['tail', '-5']
+		]) {
+			const { argv, used } = withPills(GRAMMAR, line, [mood]);
+			assert.deepEqual([argv, used], [line, []], line.join(' '));
+		}
 	});
 
 	// The same refusal the hid has (review 1498), for the same reason.
