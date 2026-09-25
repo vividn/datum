@@ -276,3 +276,49 @@ fn an_unvetted_icon_in_the_database_is_not_drawn() {
         assert_eq!(env.dayview(), before, "the standard dot, as with no icon");
     }
 }
+
+/// da-ui2st: an id inside an icon is page-global once the web inlines the
+/// SVG, so each is scoped to its field's icon, with the icon's own
+/// references to match — two fields that both say `id="g"` each draw their
+/// own gradient, and no id appears twice.
+#[test]
+fn ids_inside_two_icons_are_scoped_to_each_field() {
+    let env = Env::new();
+    for (field, colour) in [("coffee", "brown"), ("tea", "green")] {
+        env.run(&["occur", field, "-t", "-30"]);
+        let icon = env.file(
+            &format!("{field}.svg"),
+            &format!(
+                r##"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1 1"><linearGradient id="g"><stop stop-color="{colour}"/></linearGradient><rect id="r" style="fill:url( '#g')" fill="url(#g)" stroke="#fff"/><use xlink:href="#r"/><use href="#r"/></svg>"##
+            ),
+        );
+        env.run(&["spec", "set", field, "--icon", &icon]);
+    }
+    let svg = env.dayview();
+    for field in ["coffee", "tea"] {
+        let (_, icon) = svg
+            .split_once(&format!(r#"<svg id="icon-{field}""#))
+            .unwrap();
+        let icon = &icon[..icon.find("</svg>").unwrap()];
+        assert!(
+            icon.contains(&format!(r#"<linearGradient id="icon-{field}.g">"#)),
+            "{icon}"
+        );
+        assert!(icon.contains(&format!(r##"style="fill:url( '#icon-{field}.g')" fill="url(#icon-{field}.g)" stroke="#fff""##)), "{icon}");
+        assert_eq!(
+            icon.matches(&format!(r##"href="#icon-{field}.r""##))
+                .count(),
+            2,
+            "{icon}"
+        );
+    }
+    let mut ids: Vec<_> = svg
+        .split(" id=\"")
+        .skip(1)
+        .map(|s| &s[..s.find('"').unwrap()])
+        .collect();
+    let all = ids.len();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), all, "a duplicate id:\n{svg}");
+}

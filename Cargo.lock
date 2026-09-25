@@ -574,6 +574,7 @@ name = "datum-layout"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "roxmltree 0.21.1",
  "serde",
  "unicode-width",
 ]

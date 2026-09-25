@@ -12,3 +12,5 @@ wasm = []
 chrono = { workspace = true }
 serde = { workspace = true }
 unicode-width = { workspace = true }
+# Scopes the ids inside a field's SVG icon to it (da-ui2st).
+roxmltree = "0.21"

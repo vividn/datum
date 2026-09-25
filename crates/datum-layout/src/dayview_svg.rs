@@ -334,9 +334,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 // colour would vanish into it, so there the disc stays
                 // the mark but is not painted (da-gzowt).
                 // An icon (da-45wgz) is its own picture: no disc behind it.
-                let icon = (field.icon.as_deref())
-                    .and_then(|svg| svg.strip_prefix("<svg"))
-                    .filter(|_| p.icon);
+                let icon = (field.icon.as_deref()).filter(|svg| p.icon && svg.starts_with("<svg"));
                 let unpainted = icon.is_some() || (p.glyph.is_some() && p.bg_color == p.fg_color);
                 let _ = write!(
                     &mut out,
@@ -364,9 +362,10 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 // stacks, so a reference can never find another field's —
                 // and each dot `<use>`s it, sized to the disc and handed the
                 // dot's colour as `currentColor`.
-                if let Some(rest) = icon {
+                if let Some(svg) = icon {
                     let id = icon_id(&field.field);
                     if icons.insert(&field.field) {
+                        let rest = &scope_ids(svg, &id)["<svg".len()..];
                         let _ = write!(&mut defs, r#"<svg id="{id}"{rest}"#);
                     }
                     let _ = write!(
@@ -527,6 +526,53 @@ fn icon_id(field: &str) -> String {
         }
         id
     })
+}
+
+/// `svg` with each id inside it prefixed by `prefix` and a `.`, and each
+/// `href="#…"` and `url(#…)` to one of them rewritten to match (da-ui2st):
+/// inlined, an icon's ids are page-global, so two fields' `id="g"` would
+/// paint each other's gradient. An [`icon_id`] never holds a `.`, so no
+/// scoped id can meet another icon's, or an icon's own.
+fn scope_ids(svg: &str, prefix: &str) -> String {
+    let Ok(doc) = roxmltree::Document::parse(svg) else {
+        return svg.to_string();
+    };
+    let attrs: Vec<_> = doc.descendants().flat_map(|n| n.attributes()).collect();
+    let ids: HashSet<&str> = attrs
+        .iter()
+        .filter(|a| a.name() == "id")
+        .map(|a| a.value())
+        .collect();
+    let mut at = Vec::new();
+    for a in &attrs {
+        let range = a.range_value();
+        if a.name() == "id" {
+            at.push(range.start);
+            continue;
+        }
+        let raw = &svg[range.clone()];
+        for (i, _) in raw.match_indices('#') {
+            let head =
+                raw[..i].trim_end_matches(|c: char| c.is_whitespace() || c == '\'' || c == '"');
+            let refers =
+                (i == 0 && a.name() == "href") || head.to_ascii_lowercase().ends_with("url(");
+            let name = raw[i + 1..]
+                .split(|c: char| c.is_whitespace() || "'\")".contains(c))
+                .next();
+            if refers && name.is_some_and(|n| ids.contains(n)) {
+                at.push(range.start + i + 1);
+            }
+        }
+    }
+    at.sort_unstable();
+    let mut out = String::with_capacity(svg.len() + at.len() * (prefix.len() + 1));
+    let mut last = 0;
+    for i in at {
+        let _ = write!(out, "{}{prefix}.", &svg[last..i]);
+        last = i;
+    }
+    out.push_str(&svg[last..]);
+    out
 }
 
 /// Index of the byte just past the first `>` in `s` — the insertion point
