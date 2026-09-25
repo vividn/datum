@@ -151,3 +151,42 @@ fn info_all_reports_without_migrating() {
     assert!(stdout.contains(&old_row), "no {old_row:?} in:\n{stdout}");
     assert!(stdout.contains(&new_row), "no {new_row:?} in:\n{stdout}");
 }
+
+/// da-lrn59: `last write` is the newest live row's `modify_time`, read in
+/// the host zone — the query named a column that does not exist, so the
+/// row printed `(none)` on every database.
+#[test]
+fn info_last_write_reads_modify_time() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("w.db");
+    let info = || {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env_remove("DATUM_DB")
+            .env("DATUM_HOME", tmp.path())
+            .env("DATUM_CONFIG_HOME", tmp.path().join("config"))
+            .env("DATUM_COLOR", "0")
+            .env("TZ", "UTC")
+            .args(["info", path.to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let db = datum_core::db::Db::open(path.to_str().unwrap()).unwrap();
+    assert!(info().contains("last write: (none)"));
+
+    entry_builder("coffee").insert(&db);
+    entry_builder("tea").insert(&db);
+    db.conn()
+        .execute_batch(
+            "UPDATE entries SET modify_time = '2024-03-16T09:15:00+00:00' WHERE field = 'coffee';
+             UPDATE entries SET modify_time = '2025-01-01T00:00:00+00:00',
+                                deleted_at = '2025-01-01T00:00:00+00:00' WHERE field = 'tea';",
+        )
+        .unwrap();
+    let stdout = info();
+    assert!(
+        stdout.contains("last write: 2024-03-16 09:15"),
+        "no newest live write in:\n{stdout}"
+    );
+}

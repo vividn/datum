@@ -146,7 +146,7 @@ fn last_modified(db: &Db) -> Option<String> {
     let s: Option<String> = db
         .conn()
         .query_row(
-            "SELECT MAX(modified_at) FROM entries WHERE deleted_at IS NULL",
+            "SELECT MAX(modify_time) FROM entries WHERE deleted_at IS NULL",
             [],
             |row| row.get(0),
         )
