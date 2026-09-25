@@ -75,16 +75,19 @@ impl Env {
 
     /// The marks `field`'s row of the terminal band draws, left to right.
     fn band_marks(&self, field: &str) -> String {
-        let now = self.run(&["now"]);
-        let row = now
-            .lines()
-            .find(|l| l.starts_with(&format!("{field} ")))
-            .unwrap_or_else(|| panic!("no band row for {field}:\n{now}"));
-        row[field.len()..]
+        band_row(&self.run(&["now"]), field)
             .chars()
             .filter(|c| !"░▞█│ ".contains(*c))
             .collect()
     }
+}
+
+/// `field`'s row of the terminal band in `now`, after its name column.
+fn band_row<'a>(now: &'a str, field: &str) -> &'a str {
+    now.lines()
+        .find_map(|l| l.strip_prefix(&format!("{field} ")))
+        .unwrap_or_else(|| panic!("no band row for {field}:\n{now}"))
+        .trim_start_matches(' ')
 }
 
 #[test]
@@ -153,11 +156,16 @@ fn glyph_by_maps_a_data_key_and_an_unmapped_value_draws_the_field_glyph() {
 
 /// A two-column glyph draws as itself in the SVG and as `●` in the band,
 /// which gives every slice of time one column (as `spec --help` says).
+///
+/// Its row is compared with a glyphless field's at the same instant in ONE
+/// render: the band is anchored to the real clock, so two renders a moment
+/// apart can differ in the axis label and the dot's column (da-idb2f).
 #[test]
 fn a_double_width_glyph_draws_the_dot_in_the_band_so_no_column_moves() {
     let env = Env::new();
-    env.run(&["occur", "coffee", "size=large", "-t", "-30"]);
-    let plain = env.run(&["now"]);
+    let at = (chrono::Utc::now() - chrono::Duration::minutes(30)).to_rfc3339();
+    env.run(&["occur", "coffee", "size=large", "-t", &at]);
+    env.run(&["occur", "tea", "size=large", "-t", &at]);
     env.run(&[
         "spec",
         "set",
@@ -169,10 +177,11 @@ fn a_double_width_glyph_draws_the_dot_in_the_band_so_no_column_moves() {
     ]);
     assert_eq!(env.svg_marks("coffee"), ["☕"]);
     assert_eq!(env.band_marks("coffee"), "●");
+    let now = env.run(&["now"]);
     assert_eq!(
-        env.run(&["now"]),
-        plain,
-        "the band is unchanged, byte for byte"
+        band_row(&now, "coffee"),
+        band_row(&now, "tea"),
+        "the glyphless row, byte for byte"
     );
 }
 
