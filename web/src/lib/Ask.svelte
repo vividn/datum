@@ -15,7 +15,8 @@
 	empty field. An empty answer is refused QUIETLY: the button that would
 	take it is disabled, so Enter on an empty field does nothing at all —
 	unless the question is `optional`, where an empty field is an answer of
-	its own (`Rename tab…`: back to the name the tab is given, da-6ji5).
+	its own (`Rename tab…` / `Rename pane…`: back to the name the tab is
+	given, da-6ji5, da-s7sdm).
 	`value` is what the field starts with.
 -->
 <script lang="ts">
