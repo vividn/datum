@@ -112,7 +112,8 @@ OPTIONS:
       --column <NAME>   Extra extra_data column (repeatable)
   -d, --date <VAL>      Date override
   -t, --time <VAL>      Upper-bound time
-  -y / -q               Day / 5-min offsets (stackable)
+  -y, --yesterday       Go back 1 day (stackable)
+  -q, --quick           Go back 5 min (stackable)
   -w, --watch [INT]     Live scrollable view; stream entries (poll 1s)
       --table           Legacy columnar view (default: info-line)
       --show-meta       (alias: --show-all-metadata)  Include flag/meta entries (hidden by default)
@@ -221,8 +222,8 @@ fn log_help_matches_parser_registry() {
     const PARSER_ONLY: &[&str] = &["dryrun", "dur"];
 
     // Identity key: the short letter (`-y`) when present, else the long name
-    // (`dur`). Short-first so the `-y`/`-q` rows — documented short-only even
-    // though the parser also accepts `--yesterday`/`--quick` — still match.
+    // (`dur`). Short-first so a row carrying both keys the same way on
+    // either side.
     fn help_key(f: &FlagSpec) -> String {
         match f.short {
             Some(c) => format!("-{c}"),
