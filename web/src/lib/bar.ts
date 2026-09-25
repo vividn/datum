@@ -308,6 +308,30 @@ export const clearUnlockedPills = (used: Pill[] = get(pills), since = Date.now()
 };
 
 /**
+ * Escape's turn at the input, once nothing else on the page took the key
+ * (da-al892, PromptBar.svelte). vividn: «escape should then clear unlocked
+ * pills -> clear locked pills too -> clear typed in text, in that
+ * progression». Each press peels the first layer that has anything.
+ *
+ * Not `clearUnlockedPills`: that one hands its pills to `spent` to fade
+ * with the ghost of the command they went into, and an Escape ran no
+ * command — so they go outright. The stored locks follow `pills` (the
+ * subscriber above), so a cleared locked pill stays gone on a reload.
+ */
+export function peel(): void {
+	const all = get(pills);
+	if (all.some((p) => !p.locked)) pills.set(all.filter((p) => p.locked));
+	else if (all.length) pills.set([]);
+	else text.set('');
+}
+
+/** The ×'s press: the whole input at once — the text and every pill, locked too. */
+export function clearLine(): void {
+	pills.set([]);
+	text.set('');
+}
+
+/**
  * The selected entries' hids — the `hid` pill's, and none without one
  * (da-r13j, $lib/selection.ts). Every surface that draws an entry reads it,
  * so a selection is shown in tail and on the documents at once.

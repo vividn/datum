@@ -307,7 +307,10 @@
 	// would be gone from the page and read as a key from outside.
 	function onWindowKey(event: KeyboardEvent) {
 		const inside = [menu, subMenu].some((el) => el?.contains(event.target as Node));
-		if (open && event.key === 'Escape' && !inside) close();
+		if (!open || event.key !== 'Escape' || inside) return;
+		close();
+		// Taken: the command line's pills stay (PromptBar.svelte, da-al892).
+		event.preventDefault();
 	}
 </script>
 

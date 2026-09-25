@@ -431,10 +431,14 @@
 		// Innermost first: the input the `+` became, then the state list
 		// itself — Escape is its Back. The modal has its own Escape, and
 		// the dialog swallows it.
+		// It marks the key taken, so the command line does not ALSO peel
+		// its pills (PromptBar.svelte, da-al892).
 		if (addingState) {
 			addingState = false;
 			newState = '';
-		} else back();
+		} else if (picked !== null) back();
+		else return;
+		event.preventDefault();
 	}
 </script>
 

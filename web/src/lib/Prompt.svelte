@@ -61,7 +61,7 @@
 -->
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
-	import { ghost, pills, registerLine, spent, submitLine, text } from '$lib/bar.js';
+	import { clearLine, ghost, pills, registerLine, spent, submitLine, text } from '$lib/bar.js';
 	import Pill from '$lib/Pill.svelte';
 	import { ready } from '$lib/layout/engine.js';
 	import { repl } from '$lib/replStore.js';
@@ -254,6 +254,23 @@
 		</span>
 		</span>
 	</span>
+	<!-- THE ×: the whole input in one tap — the text and every pill, locked
+	     too (da-al892). vividn: «x shows when any text or pills are in the
+	     input bar and clears it». Not staged the way Escape is: it is the
+	     phone's reset, and a phone has no Escape. Outside the scrollport,
+	     so it stays at the right end however long the line runs. The
+	     mousedown's default is the focus moving, so preventing it leaves the
+	     focus — and a phone's keyboard, open or shut — where it was. -->
+	{#if $text || $pills.length}
+		<button
+			type="button"
+			class="clear"
+			aria-label="clear the input"
+			title="clear the input"
+			on:mousedown|preventDefault
+			on:click={clearLine}>×</button
+		>
+	{/if}
 </form>
 
 <style>
@@ -283,6 +300,26 @@
 
 	.prompt {
 		color: var(--accent);
+	}
+
+	/* Grey, and quiet until it is wanted: it is a way out, not an action. */
+	.clear {
+		flex: none;
+		min-width: 24px;
+		min-height: 24px;
+		padding: 0;
+		border: none;
+		background: transparent;
+		color: var(--quiet);
+		font: inherit;
+		font-size: var(--input-font);
+		line-height: 1;
+		cursor: pointer;
+	}
+
+	.clear:hover,
+	.clear:focus-visible {
+		color: var(--ink);
 	}
 
 	/* THE SCROLLPORT: what of the line is on the screen. What runs past its

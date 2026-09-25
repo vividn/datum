@@ -86,7 +86,7 @@
 	import Brand from '$lib/Brand.svelte';
 	import ReplEntry from '$lib/ReplEntry.svelte';
 	import { repl } from '$lib/replStore.js';
-	import { ACTION_MS, ERROR_MS, focusLine, marks, prefill, text } from '$lib/bar.js';
+	import { ACTION_MS, ERROR_MS, focusLine, marks, peel, pills, prefill, text } from '$lib/bar.js';
 	import { clockSecondsLabel, now } from '$lib/clock.js';
 	import { closeLog, inLog, openOutput, output, shown, toggleOutput } from '$lib/log.js';
 	import { grip } from '$lib/grip.js';
@@ -129,10 +129,36 @@
 
 	$: degraded = isDegraded($storage);
 
+	/**
+	 * WHO GETS AN ESCAPE, first to last (da-al892). One key, one meaning:
+	 * the first of these that has something to close takes it, and marks
+	 * it taken with `preventDefault`.
+	 *   1. Help, armed — `help.ts` stops the key in the capture phase, so
+	 *      nothing below ever hears it;
+	 *   2. an open `<dialog>` (Confirm, Ask, Chooser, the spec modal, a
+	 *      Sheet) — the browser's own cancel, which marks nothing, so it is
+	 *      asked for by looking;
+	 *   3. an open menu (PaneMenu), the ⓘ note (Beta), a custom pane's
+	 *      editor, a field's state list or its `+` (FieldsWidget);
+	 *   4. the log, here;
+	 *   5. LAST, the input peels one layer (`peel` in $lib/bar.ts).
+	 * The window's listeners run in mount order, not in this one, so the
+	 * last step waits for the dispatch to finish and reads what it left —
+	 * and peels only the line the key was pressed on, never one written
+	 * since.
+	 */
 	function onKey(event: KeyboardEvent): void {
-		if (event.key !== 'Escape' || !$inLog) return;
-		closeLog();
-		event.preventDefault();
+		if (event.key !== 'Escape' || event.defaultPrevented) return;
+		if ($inLog) {
+			closeLog();
+			event.preventDefault();
+			return;
+		}
+		if (document.querySelector('dialog[open]')) return;
+		const was = [$pills, $text];
+		setTimeout(() => {
+			if (!event.defaultPrevented && was[0] === $pills && was[1] === $text) peel();
+		});
 	}
 
 </script>
