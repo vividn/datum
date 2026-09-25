@@ -39,14 +39,19 @@ fn setup_rejects_newer_schema_version() {
 
 #[test]
 fn info_runs_against_active_db() {
-    let db = fresh_db();
+    // A file, named with `--db`: `info` reports the resolved path, and an
+    // in-memory db has no file there to size (da-gffn4).
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("active.db");
+    let path = path.to_str().unwrap();
+    let db = datum_core::db::Db::open(path).unwrap();
     // da-2sr: writing an entry is the only thing needed to make a field
     // tracked. No separate set_tracked call.
     entry_builder("coffee")
         .state(serde_json::json!(2))
         .insert(&db);
     // info should dispatch cleanly.
-    run_cli(&["info"], &db).expect("info dispatch");
+    run_cli(&["--db", path, "info"], &db).expect("info dispatch");
 }
 
 #[test]
@@ -189,4 +194,126 @@ fn info_last_write_reads_modify_time() {
         stdout.contains("last write: 2024-03-16 09:15"),
         "no newest live write in:\n{stdout}"
     );
+}
+
+/// `datum info <path>` with colour forced `color`: (exit ok, stdout, stderr).
+fn info_on(tmp: &std::path::Path, path: &std::path::Path, color: &str) -> (bool, String, String) {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+        .env_remove("DATUM_DB")
+        .env("DATUM_HOME", tmp)
+        .env("DATUM_CONFIG_HOME", tmp.join("config"))
+        .env("DATUM_COLOR", color)
+        .env("TZ", "UTC")
+        .args(["info", path.to_str().unwrap()])
+        .output()
+        .unwrap();
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// da-gffn4: a line whose query fails prints `QUERY ERROR` (red when colour
+/// is on), never the `0` or `(none)` of an empty database; the reason goes
+/// to stderr, the lines that did read still print, and the exit is non-zero.
+#[test]
+fn info_failed_read_is_query_error() {
+    // (what breaks, lines that fail, lines that still read)
+    let cases: &[(&str, &[&str], &[&str])] = &[
+        (
+            "ALTER TABLE entries RENAME COLUMN modify_time TO mt",
+            &["last write"],
+            &["entries:  1 (1 deleted)", "fields:   1 tracked, 0 ignored"],
+        ),
+        (
+            "ALTER TABLE field_specs RENAME TO fs",
+            &["fields"],
+            &["entries:  1 (1 deleted)", "last write: 2024-03-16 09:15"],
+        ),
+        (
+            "ALTER TABLE entries RENAME COLUMN superseded_by TO sb",
+            &["entries", "fields"],
+            &[
+                "entries:  QUERY ERROR (1 deleted)",
+                "last write: 2024-03-16 09:15",
+            ],
+        ),
+        (
+            "ALTER TABLE entries RENAME COLUMN deleted_at TO da",
+            &["entries", "deleted", "fields", "last write"],
+            &["entries:  QUERY ERROR (QUERY ERROR deleted)"],
+        ),
+    ];
+    for (sql, failed, read) in cases {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("q.db");
+        let db = datum_core::db::Db::open(path.to_str().unwrap()).unwrap();
+        entry_builder("coffee").insert(&db);
+        entry_builder("tea").insert(&db);
+        db.conn()
+            .execute_batch(
+                "UPDATE entries SET modify_time = '2024-03-16T09:15:00+00:00' WHERE field = 'coffee';
+                 UPDATE entries SET deleted_at = '2025-01-01T00:00:00+00:00' WHERE field = 'tea';",
+            )
+            .unwrap();
+        db.conn().execute_batch(sql).unwrap();
+
+        let (ok, stdout, stderr) = info_on(tmp.path(), &path, "0");
+        assert!(!ok, "{sql}: exit 0 with a failed line:\n{stdout}");
+        for line in *failed {
+            assert!(
+                stderr
+                    .lines()
+                    .any(|l| l.starts_with(&format!("info: {line}: ")) && l.contains("no such")),
+                "{sql}: no reason for {line} in:\n{stderr}"
+            );
+        }
+        let label = |l: &str| format!("{}:", if l == "deleted" { "entries" } else { l });
+        for line in ["entries", "fields", "last write"] {
+            let printed = stdout
+                .lines()
+                .find(|l| l.trim_start().starts_with(&label(line)))
+                .unwrap_or_else(|| panic!("{sql}: no {line} line in:\n{stdout}"));
+            assert_eq!(
+                printed.contains("QUERY ERROR"),
+                failed.contains(&line) || (line == "entries" && failed.contains(&"deleted")),
+                "{sql}: {line} line is {printed:?}"
+            );
+        }
+        for want in *read {
+            assert!(stdout.contains(want), "{sql}: no {want:?} in:\n{stdout}");
+        }
+        assert!(
+            stdout.contains("size:"),
+            "{sql}: no size line in:\n{stdout}"
+        );
+        assert!(!stdout.contains("(none)"), "{sql}: `(none)` in:\n{stdout}");
+
+        let (_, stdout, _) = info_on(tmp.path(), &path, "1");
+        assert!(
+            stdout.contains("\x1b[31mQUERY ERROR\x1b[0m"),
+            "{sql}: QUERY ERROR not red in:\n{stdout:?}"
+        );
+    }
+}
+
+/// da-gffn4: an empty database is a read that found nothing — `0` and
+/// `(none)`, exit 0 — so it cannot be mistaken for a failed one.
+#[test]
+fn info_empty_db_reads_zero_and_none() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("e.db");
+    drop(datum_core::db::Db::open(path.to_str().unwrap()).unwrap());
+    let (ok, stdout, stderr) = info_on(tmp.path(), &path, "0");
+    assert!(ok, "{stdout}\n{stderr}");
+    assert!(stderr.is_empty(), "stderr: {stderr}");
+    for want in [
+        "entries:  0 (0 deleted)",
+        "fields:   0 tracked, 0 ignored",
+        "last write: (none)",
+    ] {
+        assert!(stdout.contains(want), "no {want:?} in:\n{stdout}");
+    }
+    assert!(!stdout.contains("QUERY ERROR"), "{stdout}");
 }

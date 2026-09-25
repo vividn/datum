@@ -53,7 +53,11 @@ fn a_timeless_only_field_is_tracked_on_every_surface() {
     run_cli(&["add", "idea", "-T"], &db).unwrap();
 
     assert!(!fields_json_ignored(&db, "idea"));
-    assert_eq!(tracked_ignored_counts(&db), (1, 0), "`info`'s tally");
+    assert_eq!(
+        tracked_ignored_counts(&db).unwrap(),
+        (1, 0),
+        "`info`'s tally"
+    );
     assert!(!now_json_calls_it_ignored(&db, "idea"));
 }
 
@@ -69,7 +73,11 @@ fn a_declared_but_unlogged_field_is_tracked_on_every_surface() {
     .unwrap();
 
     assert!(!fields_json_ignored(&db, "sleep"));
-    assert_eq!(tracked_ignored_counts(&db), (1, 0), "`info`'s tally");
+    assert_eq!(
+        tracked_ignored_counts(&db).unwrap(),
+        (1, 0),
+        "`info`'s tally"
+    );
     assert!(!now_json_calls_it_ignored(&db, "sleep"));
 }
 
@@ -82,7 +90,11 @@ fn ignoring_a_timeless_only_field_still_ignores_it() {
     run_cli(&["ignore", "idea"], &db).unwrap();
 
     assert!(fields_json_ignored(&db, "idea"));
-    assert_eq!(tracked_ignored_counts(&db), (0, 1), "`info`'s tally");
+    assert_eq!(
+        tracked_ignored_counts(&db).unwrap(),
+        (0, 1),
+        "`info`'s tally"
+    );
     assert!(now_json_calls_it_ignored(&db, "idea"));
 }
 
