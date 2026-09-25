@@ -12,7 +12,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -21,6 +21,17 @@ after(stopApp);
 const NOW = Date.UTC(2026, 8, 10, 15, 0, 0);
 const TODAY = '.band[data-days-ago="0"] svg.svg';
 const NOWVIEW = 'section.pane[data-title="nowview"]';
+
+// Told, in the worker, of each `--version` request as it arrives. This
+// listener runs before the app's, but in the same dispatch: by the time the
+// page hears the count, the request is queued.
+const ARRIVALS = `
+	let versions = 0;
+	const channel = new BroadcastChannel('datum-test-arrived');
+	self.addEventListener('message', (e) => {
+		if (e.isTrusted && e.data?.argv?.includes('--version')) channel.postMessage(++versions);
+	});
+`;
 
 describe('a burst of changes', () => {
 	test('10 quick cursor changes start at most 2 nowview runs and paint only the last', async () => {
@@ -122,18 +133,32 @@ describe('a burst of changes', () => {
 	});
 
 	test('a queued keyed job is dropped by a newer one with its key; a keyless job never is', async () => {
-		await withApp(async ({ page }) => {
-			const outcomes = await page.evaluate(async () => {
-				await window.datum.runQuiet(['--version']);
-				const runner = window.datum.setRunner(null);
-				window.datum.setRunner(runner);
-				const go = (key) => runner(['--version'], undefined, undefined, key);
-				// The first holds the queue while the rest arrive behind it.
-				const jobs = [go(), go('k'), go('k'), go(), go('other'), go('k'), go()];
-				return (await Promise.all(jobs)).map((r) => (r.superseded ? 'dropped' : r.stdout ? 'ran' : r.stderr));
-			});
-			assert.deepEqual(outcomes, ['ran', 'dropped', 'dropped', 'ran', 'ran', 'ran', 'ran']);
-		});
+		await withApp(
+			async ({ page }) => {
+				const outcomes = await page.evaluate(async () => {
+					await window.datum.runQuiet(['--version']);
+					const runner = window.datum.setRunner(null);
+					window.datum.setRunner(runner);
+					const keys = [undefined, 'k', 'k', undefined, 'other', 'k', undefined];
+					// Every `--version` the worker has been handed, the warm-up's included.
+					const arrived = new Promise((resolve) => {
+						const channel = new BroadcastChannel('datum-test-arrived');
+						channel.onmessage = (e) => e.data === keys.length + 1 && (channel.close(), resolve());
+					});
+					// The queue is HELD, not hoped to be slow (da-nixla): under the
+					// worker's own lock nothing behind the first job can start, and
+					// the lock goes back only once the last request is in the worker.
+					let jobs;
+					await navigator.locks.request('datum-cli-files', async () => {
+						jobs = keys.map((key) => runner(['--version'], undefined, undefined, key));
+						await arrived;
+					});
+					return (await Promise.all(jobs)).map((r) => (r.superseded ? 'dropped' : r.stdout ? 'ran' : r.stderr));
+				});
+				assert.deepEqual(outcomes, ['ran', 'dropped', 'dropped', 'ran', 'ran', 'ran', 'ran']);
+			},
+			{ prepare: inWorker(ARRIVALS) }
+		);
 	});
 });
 
