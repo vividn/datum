@@ -1,7 +1,7 @@
 //! `datum view <name>` — execute a named SELECT and render the rows.
 //!
-//! The view's SQL text comes from the `views` table (installed via
-//! `datum kit install` or, eventually, via `datum view set`). Slice 4
+//! The view's SQL text comes from its entry `view:<name>` (da-fwwtn),
+//! installed via `datum kit install` or, eventually, `datum view set`. Slice 4
 //! ships the read path only: the SQL is executed under
 //! `PRAGMA query_only = 1` so even a malicious or buggy view can't issue
 //! DDL/DML against the entries DB.

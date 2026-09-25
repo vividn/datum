@@ -1,7 +1,7 @@
 //! Level 2 kit command renderer (slice 6 / da-d4t.6).
 //!
-//! Dispatches an unknown verb that resolves to a Level-2 row in
-//! `kit_commands`: runs the named view, projects/labels/sorts/colorises
+//! Dispatches an unknown verb that resolves to a Level-2 kit command
+//! (the entry `command:<name>`, da-fwwtn): runs the named view, projects/labels/sorts/colorises
 //! the rows, and prints. Level 1 (alias-style) commands never reach this
 //! module — they're handled by the alias-expansion pre-pass.
 //!

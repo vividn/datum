@@ -1,23 +1,24 @@
 //! Kit-installable Level 1 / Level 2 commands.
 //!
-//! Slice 6 (da-d4t.6) — every command is a row in `kit_commands` with
+//! Slice 6 (da-d4t.6) — every command is, since da-fwwtn, the entry
+//! `command:<name>` (`definition.rs`), its data the [`CommandEntry`] with
 //! either:
 //! - `expands_to` set (Level 1): the dispatcher splices the stored token
 //!   list into argv before the parser runs.
-//! - `view_name` set (Level 2): the dispatcher invokes a structured
-//!   renderer that runs the named view, projects `columns_json`, applies
+//! - `view` set (Level 2): the dispatcher invokes a structured
+//!   renderer that runs the named view, projects `columns`, applies
 //!   labels/formats/sort/color_rules, and prints the result.
 //!
-//! Kit installs tag rows with `kit_id`; uninstall drops only the rows it
-//! owns. Round-trip (install → export → diff) re-emits the same TOML.
+//! Kit installs mark theirs with `kit_id`; uninstall removes only its own.
+//! Round-trip (install → export → diff) re-emits the same TOML.
 
-use rusqlite::{params, OptionalExtension};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
 use crate::error::{DatumError, Result};
 use crate::kit::{ColorRuleEntry, CommandEntry};
 
+use super::definition::{definition_data, COMMAND_FIELD, KIT_KEY};
 use super::Db;
 
 /// One row of [`Db::list_kit_commands`].
@@ -67,7 +68,7 @@ impl InstallCommandsReport {
 }
 
 /// Validate one command entry. Surface install-time errors so the user
-/// sees the problem before the row hits the DB. Reject Level 3 (`script`)
+/// sees the problem before the command is stored. Reject Level 3 (`script`)
 /// explicitly so kits that ship one fail clearly rather than silently
 /// installing dead rows.
 pub fn validate_command(c: &CommandEntry) -> Result<()> {
@@ -120,249 +121,91 @@ pub fn validate_command(c: &CommandEntry) -> Result<()> {
 }
 
 impl Db {
-    /// Install a kit's commands. `kit_id` tags every persisted row;
-    /// callers should pass the kit's `[kit].name` from the TOML.
+    /// Install a kit's commands, each the entry `command:<name>` marked
+    /// with `kit_id` (the kit's `[kit].name`) — da-fwwtn, `definition.rs`.
     ///
     /// Conflict policy mirrors [`Db::install_kit`]:
-    /// - `force = false` → leave any existing row, record `SkippedExisting`.
-    /// - `force = true`  → overwrite the row's payload and re-tag its
-    ///   `kit_id`.
+    /// - `force = false` → leave any existing command, record `SkippedExisting`.
+    /// - `force = true`  → overwrite it and re-mark it with this kit.
     pub fn install_kit_commands(
         &self,
         kit_id: &str,
         commands: &[CommandEntry],
         force: bool,
     ) -> Result<InstallCommandsReport> {
+        let mut defs = Vec::with_capacity(commands.len());
         for c in commands {
             validate_command(c)?;
+            defs.push((c.name.clone(), definition_data(c, None)?));
         }
-
-        let tx = self.conn.unchecked_transaction()?;
-        let mut report = InstallCommandsReport::default();
-
-        for c in commands {
-            let existing_kit: Option<Option<String>> = tx
-                .query_row(
-                    "SELECT kit_id FROM kit_commands WHERE name = ?1",
-                    params![c.name],
-                    |row| row.get::<_, Option<String>>(0),
-                )
-                .optional()?;
-
-            if let Some(existing) = existing_kit {
-                if !force {
-                    report.outcomes.push((
-                        c.name.clone(),
-                        KitCommandOutcome::SkippedExisting {
-                            existing_kit: existing,
-                        },
-                    ));
-                    continue;
-                }
-            }
-
-            let columns_json = if c.columns.is_empty() {
-                None
-            } else {
-                Some(serde_json::to_string(&c.columns)?)
-            };
-            let labels_json = if c.labels.is_empty() {
-                None
-            } else {
-                Some(serde_json::to_string(&c.labels)?)
-            };
-            let formats_json = if c.formats.is_empty() {
-                None
-            } else {
-                Some(serde_json::to_string(&c.formats)?)
-            };
-            let flags_json = if c.flags.is_empty() {
-                None
-            } else {
-                Some(serde_json::to_string(&c.flags)?)
-            };
-            let color_rules_json = if c.color_rules.is_empty() {
-                None
-            } else {
-                Some(serde_json::to_string(&c.color_rules)?)
-            };
-
-            tx.execute(
-                "INSERT INTO kit_commands (
-                    name, kit_id, expands_to, view_name, help,
-                    columns_json, labels_json, formats_json,
-                    sort_col, flags_json, color_rules_json, script_text
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
-                 ON CONFLICT(name) DO UPDATE SET
-                    kit_id           = excluded.kit_id,
-                    expands_to       = excluded.expands_to,
-                    view_name        = excluded.view_name,
-                    help             = excluded.help,
-                    columns_json     = excluded.columns_json,
-                    labels_json      = excluded.labels_json,
-                    formats_json     = excluded.formats_json,
-                    sort_col         = excluded.sort_col,
-                    flags_json       = excluded.flags_json,
-                    color_rules_json = excluded.color_rules_json,
-                    script_text      = excluded.script_text",
-                params![
-                    c.name,
-                    kit_id,
-                    c.expands_to,
-                    c.view,
-                    c.help,
-                    columns_json,
-                    labels_json,
-                    formats_json,
-                    c.sort,
-                    flags_json,
-                    color_rules_json,
-                    c.script,
-                ],
-            )?;
-
-            report
-                .outcomes
-                .push((c.name.clone(), KitCommandOutcome::Installed));
-        }
-
-        tx.commit()?;
-        Ok(report)
+        let outcomes = self.install_definitions(COMMAND_FIELD, kit_id, defs, force)?;
+        Ok(InstallCommandsReport {
+            outcomes: outcomes
+                .into_iter()
+                .map(|(name, skipped)| {
+                    let outcome = match skipped {
+                        None => KitCommandOutcome::Installed,
+                        Some(existing_kit) => KitCommandOutcome::SkippedExisting { existing_kit },
+                    };
+                    (name, outcome)
+                })
+                .collect(),
+        })
     }
 
-    /// Drop every command tagged with this `kit_id`. Returns the names
-    /// removed.
+    /// Delete (softly) every command marked with this `kit_id`. Returns the
+    /// names removed.
     pub fn uninstall_kit_commands(&self, kit_id: &str) -> Result<Vec<String>> {
-        let tx = self.conn.unchecked_transaction()?;
-        let mut stmt =
-            tx.prepare("SELECT name FROM kit_commands WHERE kit_id = ?1 ORDER BY name")?;
-        let names: Vec<String> = stmt
-            .query_map(params![kit_id], |row| row.get::<_, String>(0))?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(DatumError::Db)?;
-        drop(stmt);
-        tx.execute(
-            "DELETE FROM kit_commands WHERE kit_id = ?1",
-            params![kit_id],
-        )?;
-        tx.commit()?;
-        Ok(names)
+        self.uninstall_definitions(COMMAND_FIELD, kit_id)
     }
 
     /// Look up a single kit command by name.
     pub fn get_kit_command(&self, name: &str) -> Result<Option<InstalledKitCommand>> {
-        let row = self
-            .conn
-            .query_row(
-                "SELECT name, kit_id, expands_to, view_name, help,
-                        columns_json, labels_json, formats_json,
-                        sort_col, flags_json, color_rules_json, script_text
-                 FROM kit_commands WHERE name = ?1",
-                params![name],
-                row_to_kit_command,
-            )
-            .optional()?;
-        Ok(row)
+        let slug = format!("{COMMAND_FIELD}:{name}");
+        match self.definition_entry(&slug)?.and_then(|e| e.data) {
+            Some(data) => Ok(Some(installed_command(data)?)),
+            None => Ok(None),
+        }
     }
 
-    /// List every kit command in name order.
+    /// List every kit command in name order — less any whose entry is not
+    /// one (edited or synced past the write check), which would otherwise
+    /// hide every other.
     pub fn list_kit_commands(&self) -> Result<Vec<InstalledKitCommand>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT name, kit_id, expands_to, view_name, help,
-                    columns_json, labels_json, formats_json,
-                    sort_col, flags_json, color_rules_json, script_text
-             FROM kit_commands ORDER BY name",
-        )?;
-        let rows = stmt.query_map([], row_to_kit_command)?;
-        let mut out = Vec::new();
-        for r in rows {
-            out.push(r.map_err(DatumError::Db)?);
-        }
-        Ok(out)
+        Ok(self
+            .definitions(COMMAND_FIELD, None)?
+            .into_iter()
+            .filter_map(|data| installed_command(data).ok())
+            .collect())
     }
 
-    /// Load every command tagged with `kit_id` for `kit export`. Returns
-    /// rows projected back into the TOML [`CommandEntry`] shape.
+    /// Every command marked with `kit_id`, in the TOML [`CommandEntry`]
+    /// shape, for `kit export` — less any that is not one, as above.
     pub fn load_commands_by_kit(&self, kit_id: &str) -> Result<Vec<CommandEntry>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT name, kit_id, expands_to, view_name, help,
-                    columns_json, labels_json, formats_json,
-                    sort_col, flags_json, color_rules_json, script_text
-             FROM kit_commands WHERE kit_id = ?1 ORDER BY name",
-        )?;
-        let rows = stmt.query_map(params![kit_id], row_to_kit_command)?;
-        let mut out = Vec::new();
-        for r in rows {
-            let row = r.map_err(DatumError::Db)?;
-            out.push(installed_to_entry(row));
-        }
-        Ok(out)
+        Ok(self
+            .definitions(COMMAND_FIELD, Some(kit_id))?
+            .into_iter()
+            .filter_map(|data| serde_json::from_value(data).ok())
+            .collect())
     }
 }
 
-fn installed_to_entry(row: InstalledKitCommand) -> CommandEntry {
-    CommandEntry {
-        name: row.name,
-        expands_to: row.expands_to,
-        view: row.view_name,
-        help: row.help,
-        columns: row.columns,
-        labels: row.labels,
-        formats: row.formats,
-        sort: row.sort_col,
-        flags: row.flags,
-        color_rules: row.color_rules,
-        script: row.script_text,
-    }
-}
-
-fn row_to_kit_command(row: &rusqlite::Row<'_>) -> rusqlite::Result<InstalledKitCommand> {
-    let columns_json: Option<String> = row.get(5)?;
-    let labels_json: Option<String> = row.get(6)?;
-    let formats_json: Option<String> = row.get(7)?;
-    let flags_json: Option<String> = row.get(9)?;
-    let color_rules_json: Option<String> = row.get(10)?;
-
-    let columns = parse_string_list(columns_json.as_deref());
-    let labels = parse_string_map(labels_json.as_deref());
-    let formats = parse_string_map(formats_json.as_deref());
-    let flags = parse_string_list(flags_json.as_deref());
-    let color_rules = parse_color_rules(color_rules_json.as_deref());
-
+/// A command entry's data as an [`InstalledKitCommand`].
+fn installed_command(data: JsonValue) -> Result<InstalledKitCommand> {
+    let kit_id = data[KIT_KEY].as_str().map(str::to_string);
+    let c: CommandEntry = serde_json::from_value(data)?;
     Ok(InstalledKitCommand {
-        name: row.get(0)?,
-        kit_id: row.get(1)?,
-        expands_to: row.get(2)?,
-        view_name: row.get(3)?,
-        help: row.get(4)?,
-        columns,
-        labels,
-        formats,
-        sort_col: row.get(8)?,
-        flags,
-        color_rules,
-        script_text: row.get(11)?,
+        name: c.name,
+        kit_id,
+        expands_to: c.expands_to,
+        view_name: c.view,
+        help: c.help,
+        columns: c.columns,
+        labels: c.labels,
+        formats: c.formats,
+        sort_col: c.sort,
+        flags: c.flags,
+        color_rules: c.color_rules,
+        script_text: c.script,
     })
-}
-
-fn parse_string_list(s: Option<&str>) -> Vec<String> {
-    let Some(s) = s else { return Vec::new() };
-    serde_json::from_str(s).unwrap_or_default()
-}
-
-fn parse_string_map(s: Option<&str>) -> BTreeMap<String, String> {
-    let Some(s) = s else { return BTreeMap::new() };
-    let v: std::result::Result<JsonValue, _> = serde_json::from_str(s);
-    let Ok(v) = v else { return BTreeMap::new() };
-    let Some(obj) = v.as_object() else {
-        return BTreeMap::new();
-    };
-    obj.iter()
-        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-        .collect()
-}
-
-fn parse_color_rules(s: Option<&str>) -> Vec<ColorRuleEntry> {
-    let Some(s) = s else { return Vec::new() };
-    serde_json::from_str(s).unwrap_or_default()
 }

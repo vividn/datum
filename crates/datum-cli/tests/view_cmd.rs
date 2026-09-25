@@ -102,14 +102,18 @@ fn dispatch_view_blocks_writes() {
         "expected install-time rejection, got: {msg}",
     );
 
-    // Execute-time fence still guards rows written directly to the views
-    // table (bypassing the install screen).
-    db.conn()
-        .execute(
-            "INSERT INTO views (name, sql_text, kit_id) VALUES ('evil', 'DELETE FROM entries', 'test')",
-            [],
-        )
-        .unwrap();
+    // Execute-time fence still guards a view entry edited past the
+    // install screen — by `datum update`, or arriving by sync (da-fwwtn).
+    let views = vec![ViewEntry {
+        name: "evil".into(),
+        sql: "SELECT 1".into(),
+    }];
+    db.install_kit_views("test", &views, false).unwrap();
+    let mut row = db.get_entry("view:evil").unwrap();
+    row.data = Some(serde_json::json!({
+        "name": "evil", "sql": "DELETE FROM entries", "kit_id": "test"
+    }));
+    db.save_existing_entry(&row).unwrap();
     let err = run_cli(&["view", "evil"], &db).unwrap_err();
     // anyhow's `:#` formatter walks the cause chain.
     let msg = format!("{err:#}").to_lowercase();

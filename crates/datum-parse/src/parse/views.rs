@@ -324,7 +324,7 @@ pub(crate) fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
 /// `datum view <name> [--format pretty|tsv|csv|json] [--watch]`.
 ///
 /// One required positional (the view name); everything else is a flag.
-/// Slice 4 (da-d4t.4) — the SQL itself comes from the `views` table at
+/// Slice 4 (da-d4t.4) — the SQL itself comes from the view's entry at
 /// dispatch time, not from argv.
 pub(crate) fn parse_view_args(tail: &[&str]) -> Result<ViewArgs> {
     let mut name: Option<String> = None;

@@ -60,7 +60,8 @@ const AMBIGUOUS_CANDIDATE_CAP: usize = 16;
 /// The order `_`, `__`, `_4`, … count in: most recent first. Shared by the
 /// resolvers below and by [`quick_ordinals`], so what `tail` displays and
 /// what `_N` resolves to can't drift apart. Both skip the meta fields'
-/// entries (specs, layouts, aliases — da-lc26c) unless the field is named.
+/// entries (specs, layouts, aliases, views, commands, index definitions —
+/// da-lc26c) unless the field is named.
 const NTH_ORDER: &str = "ORDER BY occur_time DESC, slug DESC";
 
 /// Resolve a quickId pattern to zero or more live entries.

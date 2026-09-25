@@ -452,31 +452,9 @@ fn export(args: KitExportArgs, db: &Db) -> Result<()> {
     let cmd_count = commands.len();
     let layout_count = layouts.len();
     let index_count = installed_indices.len();
-    // Reconstruct the TOML-side `IndexEntry` shape from the persisted
-    // SQL text. The on-disk DDL is what matters for re-install, and the
-    // `sql_text` is preserved verbatim so users can audit it. Slice 5
-    // serializes a synthetic shape rather than hand-parsing the SQL
-    // back out; future slices can add a proper round-trip when the
-    // TOML layer becomes the source of truth.
-    let synthetic_indices: Vec<IndexEntry> = installed_indices
-        .iter()
-        .map(|row| IndexEntry {
-            name: row.index_name.clone(),
-            on: "entries".into(),
-            expression: format!("/* persisted DDL: {} */", row.sql_text),
-            where_clause: None,
-            unique: false,
-        })
-        .collect();
+    let indices: Vec<IndexEntry> = installed_indices.into_iter().map(|row| row.entry).collect();
     let kit = KitToml::from_kit_rows_full(
-        &args.name,
-        None,
-        &specs,
-        views,
-        &aliases,
-        &synthetic_indices,
-        commands,
-        layouts,
+        &args.name, None, &specs, views, &aliases, &indices, commands, layouts,
     );
     let toml = kit.to_toml()?;
 
@@ -526,7 +504,7 @@ fn list(db: &Db) -> Result<()> {
 
 fn uninstall(args: KitUninstallArgs, db: &Db) -> Result<()> {
     // Capture index ownership before the call so we can report it after
-    // (uninstall_kit drops them inside its transaction).
+    // (uninstall_kit removes the definitions and drops the indices).
     let indices_before = db.load_indices_by_kit(&args.name)?;
     let removed = db.uninstall_kit(&args.name)?;
     // A logged field gets back the bare spec its first log wrote, which a

@@ -420,8 +420,8 @@ pub struct TailArgs {
     /// `extra_metadata.meta = true` (da-xn8j) rows. Default is to hide
     /// them — they're review markers / out-of-band notes, not tracked
     /// data. See da-ghlx. It also brings back the meta fields' entries —
-    /// specs, layouts and aliases (da-lc26c, da-b3752) — which an unnamed
-    /// tail leaves out.
+    /// specs, layouts, aliases, views, kit commands and kit index definitions
+    /// (da-lc26c, da-b3752, da-fwwtn) — which an unnamed tail leaves out.
     pub show_meta: bool,
     /// `-A/--show-all` / `-o/--format-string`, plus the swept `--show`.
     ///
@@ -1277,7 +1277,7 @@ pub enum ViewFormat {
 /// `datum view <name>` arguments.
 #[derive(Debug, Default)]
 pub struct ViewArgs {
-    /// View name, looked up in the `views` table.
+    /// View name, looked up as the entry `view:<name>` (da-fwwtn).
     pub name: String,
     /// `--format pretty|tsv|csv|json`. Defaults to [`ViewFormat::Auto`].
     pub format: ViewFormat,

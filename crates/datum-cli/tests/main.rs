@@ -36,6 +36,7 @@ mod dayview_cmd;
 mod db_cmd;
 mod db_import;
 mod db_import_regression;
+mod definition_entries;
 mod delete_cmd;
 mod dot_glyphs;
 mod dot_icons;

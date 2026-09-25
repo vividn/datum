@@ -1,8 +1,8 @@
 //! Kit-installable named SELECT views.
 //!
-//! Slice 4 (da-d4t.4) — every view is a named row in the `views` table
-//! holding raw SQL text. Kit installs tag rows with `kit_id`; uninstall
-//! drops only the rows it owns. Execution goes through
+//! Slice 4 (da-d4t.4) — every view is named raw SQL text, kept since
+//! da-fwwtn as the entry `view:<name>` (`definition.rs`). Kit installs mark
+//! theirs with `kit_id`; uninstall removes only its own. Execution goes through
 //! [`Db::execute_view`], which requires the SQL to be a single
 //! SELECT/`WITH … SELECT` statement, flips `PRAGMA query_only` for
 //! the duration of the query so a malicious or buggy view can't issue
@@ -18,12 +18,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rusqlite::{params, types::ValueRef, OptionalExtension};
+use rusqlite::types::ValueRef;
 use serde_json::{Number, Value as JsonValue};
 
 use crate::error::{DatumError, Result};
 use crate::kit::ViewEntry;
 
+use super::definition::{definition_data, KIT_KEY, VIEW_FIELD};
 use super::Db;
 
 /// One row of [`Db::list_views`].
@@ -89,135 +90,81 @@ const VIEW_TIME_BUDGET: Duration = Duration::from_secs(10);
 const PROGRESS_OPS_INTERVAL: std::os::raw::c_int = 10_000;
 
 impl Db {
-    /// Install a kit's views. `kit_id` tags every persisted row;
-    /// callers should pass the kit's `[kit].name` from the TOML.
+    /// Install a kit's views, each the entry `view:<name>` marked with
+    /// `kit_id` (the kit's `[kit].name`) — da-fwwtn, `definition.rs`.
     ///
     /// Conflict policy mirrors [`Db::install_kit`]:
-    /// - `force = false` → leave any existing row, record `SkippedExisting`.
-    /// - `force = true`  → overwrite the row's sql_text and re-tag its
-    ///   `kit_id` to the new owner.
+    /// - `force = false` → leave any existing view, record `SkippedExisting`.
+    /// - `force = true`  → overwrite it and re-mark it with this kit.
     pub fn install_kit_views(
         &self,
         kit_id: &str,
         views: &[ViewEntry],
         force: bool,
     ) -> Result<InstallViewsReport> {
-        // Install-time screen (da-w3xg): reject before any row persists.
-        // execute_view re-checks for pre-existing or directly-written rows.
+        // Install-time screen (da-w3xg): reject before any view persists.
+        // execute_view re-checks every run, so a synced view is held too.
+        let mut defs = Vec::with_capacity(views.len());
         for v in views {
             crate::kit::validate_view_entry(v)?;
+            defs.push((v.name.clone(), definition_data(v, None)?));
         }
-
-        let tx = self.conn.unchecked_transaction()?;
-        let mut report = InstallViewsReport::default();
-
-        for v in views {
-            let existing_kit: Option<Option<String>> = tx
-                .query_row(
-                    "SELECT kit_id FROM views WHERE name = ?1",
-                    params![v.name],
-                    |row| row.get::<_, Option<String>>(0),
-                )
-                .optional()?;
-
-            if let Some(existing) = existing_kit {
-                if !force {
-                    report.outcomes.push((
-                        v.name.clone(),
-                        KitViewOutcome::SkippedExisting {
-                            existing_kit: existing,
-                        },
-                    ));
-                    continue;
-                }
-            }
-
-            tx.execute(
-                "INSERT INTO views (name, sql_text, kit_id) VALUES (?1, ?2, ?3)
-                 ON CONFLICT(name) DO UPDATE SET sql_text = excluded.sql_text,
-                                                 kit_id   = excluded.kit_id",
-                params![v.name, v.sql, kit_id],
-            )?;
-
-            report
-                .outcomes
-                .push((v.name.clone(), KitViewOutcome::Installed));
-        }
-
-        tx.commit()?;
-        Ok(report)
+        let outcomes = self.install_definitions(VIEW_FIELD, kit_id, defs, force)?;
+        Ok(InstallViewsReport {
+            outcomes: outcomes
+                .into_iter()
+                .map(|(name, skipped)| {
+                    let outcome = match skipped {
+                        None => KitViewOutcome::Installed,
+                        Some(existing_kit) => KitViewOutcome::SkippedExisting { existing_kit },
+                    };
+                    (name, outcome)
+                })
+                .collect(),
+        })
     }
 
-    /// Drop every view tagged with this `kit_id`. User-declared rows
-    /// (`kit_id IS NULL`) are untouched. Returns the names removed.
+    /// Delete (softly) every view marked with this `kit_id`. The person's
+    /// own are untouched. Returns the names removed.
     pub fn uninstall_kit_views(&self, kit_id: &str) -> Result<Vec<String>> {
-        let tx = self.conn.unchecked_transaction()?;
-        let mut stmt = tx.prepare("SELECT name FROM views WHERE kit_id = ?1 ORDER BY name")?;
-        let names: Vec<String> = stmt
-            .query_map(params![kit_id], |row| row.get::<_, String>(0))?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(DatumError::Db)?;
-        drop(stmt);
-        tx.execute("DELETE FROM views WHERE kit_id = ?1", params![kit_id])?;
-        tx.commit()?;
-        Ok(names)
+        self.uninstall_definitions(VIEW_FIELD, kit_id)
     }
 
-    /// Load every view tagged with `kit_id` for `kit export`.
+    /// Every view marked with `kit_id`, for `kit export`.
     pub fn load_views_by_kit(&self, kit_id: &str) -> Result<Vec<ViewEntry>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT name, sql_text FROM views WHERE kit_id = ?1 ORDER BY name")?;
-        let rows = stmt.query_map(params![kit_id], |row| {
-            Ok(ViewEntry {
-                name: row.get::<_, String>(0)?,
-                sql: row.get::<_, String>(1)?,
+        self.views(Some(kit_id))?
+            .into_iter()
+            .map(|v| {
+                Ok(ViewEntry {
+                    name: v.name,
+                    sql: v.sql_text,
+                })
             })
-        })?;
-        let mut out = Vec::new();
-        for r in rows {
-            out.push(r.map_err(DatumError::Db)?);
-        }
-        Ok(out)
+            .collect()
     }
 
-    /// Look up a single view by name. Returns the full row including the
-    /// owning kit (if any).
+    /// Look up a single view by name, with the kit that shipped it.
     pub fn get_view(&self, name: &str) -> Result<Option<InstalledView>> {
-        let row = self
-            .conn
-            .query_row(
-                "SELECT name, kit_id, sql_text FROM views WHERE name = ?1",
-                params![name],
-                |row| {
-                    Ok(InstalledView {
-                        name: row.get::<_, String>(0)?,
-                        kit_id: row.get::<_, Option<String>>(1)?,
-                        sql_text: row.get::<_, String>(2)?,
-                    })
-                },
-            )
-            .optional()?;
-        Ok(row)
+        let slug = format!("{VIEW_FIELD}:{name}");
+        match self.definition_entry(&slug)?.and_then(|e| e.data) {
+            Some(data) => Ok(Some(installed_view(data)?)),
+            None => Ok(None),
+        }
     }
 
     /// List every view in name order.
     pub fn list_views(&self) -> Result<Vec<InstalledView>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT name, kit_id, sql_text FROM views ORDER BY name")?;
-        let rows = stmt.query_map([], |row| {
-            Ok(InstalledView {
-                name: row.get::<_, String>(0)?,
-                kit_id: row.get::<_, Option<String>>(1)?,
-                sql_text: row.get::<_, String>(2)?,
-            })
-        })?;
-        let mut out = Vec::new();
-        for r in rows {
-            out.push(r.map_err(DatumError::Db)?);
-        }
-        Ok(out)
+        self.views(None)
+    }
+
+    /// The views, less any whose entry is not one (edited or synced past
+    /// the write check), which would otherwise hide every other.
+    fn views(&self, kit_id: Option<&str>) -> Result<Vec<InstalledView>> {
+        Ok(self
+            .definitions(VIEW_FIELD, kit_id)?
+            .into_iter()
+            .filter_map(|data| installed_view(data).ok())
+            .collect())
     }
 
     /// Execute a view's SQL with read-only enforcement, in four layers
@@ -309,6 +256,17 @@ impl Db {
     }
 }
 
+/// A view entry's data as an [`InstalledView`].
+fn installed_view(data: JsonValue) -> Result<InstalledView> {
+    let kit_id = data[KIT_KEY].as_str().map(str::to_string);
+    let view: ViewEntry = serde_json::from_value(data)?;
+    Ok(InstalledView {
+        name: view.name,
+        kit_id,
+        sql_text: view.sql,
+    })
+}
+
 /// The actual prepare + iterate. Split out so the caller can wrap the
 /// PRAGMA toggle around it.
 fn run_view_query(conn: &rusqlite::Connection, sql: &str) -> Result<ViewResult> {
@@ -384,6 +342,63 @@ mod tests {
         Db::open_in_memory().unwrap()
     }
 
+    fn view(name: &str) -> ViewEntry {
+        ViewEntry {
+            name: name.into(),
+            sql: "SELECT 1".into(),
+        }
+    }
+
+    /// A view is the entry `view:<name>`: a re-install under `force` is a
+    /// new version of it, an uninstall a tombstone, and only the kit's own
+    /// go.
+    #[test]
+    fn a_view_is_an_entry() {
+        let db = db();
+        db.install_kit_views("k", &[view("v")], false).unwrap();
+        let row = db.get_entry("view:v").unwrap();
+        assert_eq!(row.field, "view");
+        assert_eq!(
+            row.data.unwrap(),
+            json!({"name": "v", "sql": "SELECT 1", "kit_id": "k"})
+        );
+
+        let other = ViewEntry {
+            sql: "SELECT 2".into(),
+            ..view("v")
+        };
+        let report = db
+            .install_kit_views("j", std::slice::from_ref(&other), false)
+            .unwrap();
+        assert_eq!(report.skipped().collect::<Vec<_>>(), ["v"]);
+        db.install_kit_views("j", &[other], true).unwrap();
+        let got = db.get_view("v").unwrap().unwrap();
+        assert_eq!(
+            (got.kit_id.as_deref(), got.sql_text.as_str()),
+            (Some("j"), "SELECT 2")
+        );
+
+        assert!(db.uninstall_kit_views("k").unwrap().is_empty());
+        assert_eq!(db.uninstall_kit_views("j").unwrap(), ["v"]);
+        assert!(db.get_view("v").unwrap().is_none());
+    }
+
+    /// A plain log of the reserved field, or a view at the wrong slug, is
+    /// refused.
+    #[test]
+    fn a_write_under_the_view_field_is_validated_as_a_view() {
+        let db = db();
+        let plain = crate::test_util::entry_builder("view").build();
+        let err = db.insert_entry(&plain).unwrap_err().to_string();
+        assert!(err.contains("reserved for kit views"), "{err}");
+
+        db.install_kit_views("k", &[view("v")], false).unwrap();
+        let mut row = db.get_entry("view:v").unwrap();
+        row.data = Some(json!({"name": "v"}));
+        let err = db.save_existing_entry(&row).unwrap_err().to_string();
+        assert!(err.contains("not a valid view"), "{err}");
+    }
+
     #[test]
     fn execute_view_runs_select_and_with() {
         let db = db();
@@ -415,8 +430,8 @@ mod tests {
     #[test]
     fn execute_view_rejects_connection_state_pollution() {
         // query_only doesn't block connection-scoped statements; the
-        // statement-kind check must (covers rows written directly to the
-        // views table, bypassing the install screen).
+        // statement-kind check must (covers a view entry edited or synced
+        // past the install screen).
         let db = db();
         for sql in ["PRAGMA case_sensitive_like = ON", "ATTACH ':memory:' AS x"] {
             let err = db.execute_view(sql).unwrap_err().to_string();
@@ -446,20 +461,12 @@ mod tests {
         let db = db();
         db.execute_view("SELECT 1").unwrap();
         // A write on the same connection must succeed after the fence.
-        db.conn
-            .execute(
-                "INSERT INTO views (name, sql_text) VALUES ('after_ok', 'SELECT 1')",
-                [],
-            )
+        db.install_kit_views("t", &[view("after_ok")], false)
             .unwrap();
 
         db.execute_view("SELECT no_such_column FROM entries")
             .unwrap_err();
-        db.conn
-            .execute(
-                "INSERT INTO views (name, sql_text) VALUES ('after_err', 'SELECT 1')",
-                [],
-            )
+        db.install_kit_views("t", &[view("after_err")], false)
             .unwrap();
     }
 
@@ -483,11 +490,7 @@ mod tests {
         // The interrupt path must still clear query_only and remove the
         // progress handler — the shared connection's normal work (the
         // logging hot path) continues afterwards.
-        db.conn
-            .execute(
-                "INSERT INTO views (name, sql_text) VALUES ('after_interrupt', 'SELECT 1')",
-                [],
-            )
+        db.install_kit_views("t", &[view("after_interrupt")], false)
             .unwrap();
         let r = db.execute_view("SELECT 1 AS v").unwrap();
         assert_eq!(r.rows, vec![vec![json!(1)]]);

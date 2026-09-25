@@ -8,8 +8,9 @@
 //! (install → export → diff) is required to be clean.
 //!
 //! Slice 5 also accepts `[[index]]` entries; each becomes a `CREATE INDEX`
-//! against the `entries` table, with the SQL text recorded in
-//! `kit_indices` so uninstall can `DROP INDEX` cleanly. The DDL is gated
+//! against the `entries` table. Its definition is the entry
+//! `index:<kit>/<name>` and the SQLite index is derived from it on every
+//! device (da-fwwtn), so uninstall's deletion drops it everywhere. The DDL is gated
 //! by [`validate_index_entry`] which restricts it to a narrow allowlist
 //! (no triggers, no ATTACH, no statement chaining). Trust enforcement
 //! (prompt the user for local files, reject URLs until signing arrives)
@@ -31,12 +32,12 @@ pub struct KitToml {
     #[serde(default, rename = "field")]
     pub fields: Vec<FieldEntry>,
     /// `[[view]]` declarations. Each is a named read-only SELECT installed
-    /// into the `views` table tagged with the kit's id. Powers
+    /// as the entry `view:<name>` marked with the kit's id (da-fwwtn). Powers
     /// `datum view <name>` (slice 4).
     #[serde(default, rename = "view", skip_serializing_if = "Vec::is_empty")]
     pub views: Vec<ViewEntry>,
-    /// `[[alias]]` declarations. Each row becomes an entry in the `aliases`
-    /// table tagged with the kit's id. Round-trip preserves `expands_to`
+    /// `[[alias]]` declarations. Each becomes the entry `alias:<name>`
+    /// marked with the kit's id (da-b3752). Round-trip preserves `expands_to`
     /// byte-for-byte. Slice 3 (da-d4t.3).
     #[serde(default, rename = "alias", skip_serializing_if = "Vec::is_empty")]
     pub aliases: Vec<AliasEntry>,
@@ -46,7 +47,7 @@ pub struct KitToml {
     #[serde(default, rename = "layout", skip_serializing_if = "Vec::is_empty")]
     pub layouts: Vec<LayoutEntry>,
     /// `[[index]]` declarations. Each becomes a `CREATE INDEX` against
-    /// `entries` recorded in `kit_indices`. Trust-gated at install time;
+    /// `entries`, its definition the entry `index:<kit>/<name>`. Trust-gated at install time;
     /// see slice 5 (da-d4t.5).
     #[serde(default, rename = "index")]
     pub indices: Vec<IndexEntry>,
@@ -230,7 +231,7 @@ pub fn validate_layout_entry(entry: &LayoutEntry) -> Result<serde_json::Value> {
 /// A `[[alias]]` entry — a named expansion of a `datum` invocation.
 ///
 /// Slice 3: round-trips byte-for-byte with the stored [`Alias`]; install
-/// copies `expands_to` verbatim into the `aliases` row, export reads it
+/// copies `expands_to` verbatim into the alias entry, export reads it
 /// back unchanged.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AliasEntry {
@@ -354,8 +355,8 @@ impl KitToml {
     }
 
     /// Build a [`KitToml`] from the kit's stored [`FieldSpec`] rows. Used
-    /// by `datum kit export <name>`. `indices` carries the rows from
-    /// `kit_indices` for the same kit; pass `&[]` if the kit had no
+    /// by `datum kit export <name>`. `indices` carries the index
+    /// definitions of the same kit; pass `&[]` if the kit had no
     /// indices (or the caller doesn't want to round-trip them).
     pub fn from_field_specs(
         name: &str,
@@ -595,8 +596,8 @@ impl IndexEntry {
     }
 
     /// Build the full validated `CREATE INDEX` statement for this entry
-    /// under `kit_id`. Returns the SQL text the installer will execute
-    /// and persist into `kit_indices.sql_text`.
+    /// under `kit_id`. Returns the SQL text every device builds the
+    /// index from (`Db::derive_kit_indices`).
     pub fn build_ddl(&self, kit_id: &str) -> Result<String> {
         validate_index_entry(self)?;
         let unique = if self.unique { "UNIQUE " } else { "" };

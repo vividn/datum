@@ -503,6 +503,14 @@ fn cmd_restore_with_report(args: RestoreArgs, db: &Db) -> Result<RestoreReport> 
 }
 
 fn restore_path(path: &str, db: &Db, mode: Mode) -> Result<RestoreReport> {
+    let report = read_backup(path, db, mode)?;
+    // A kit index's definition is an entry; its SQLite index is this
+    // device's, built from what the restore brought (da-fwwtn).
+    db.derive_kit_indices()?;
+    Ok(report)
+}
+
+fn read_backup(path: &str, db: &Db, mode: Mode) -> Result<RestoreReport> {
     if path == STDIO_PATH {
         return restore_from_reader(std::io::stdin().lock(), db, mode);
     }

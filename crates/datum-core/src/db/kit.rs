@@ -8,9 +8,9 @@
 //! operations.
 //!
 //! Not atomic across a kit's parts (da-lc26c): each spec is its own entry
-//! write, as each layout is, and the indices commit in a transaction of
-//! their own, so an index that fails to build leaves the specs installed.
-//! Re-running the install is idempotent.
+//! write, as each layout and each index definition is (da-fwwtn), so an
+//! index that fails to build leaves the specs installed. Re-running the
+//! install is idempotent.
 //!
 //! Conflict policy on install: if a row already exists for the same field
 //! name, the existing row wins by default (returned in `skipped`). When
@@ -24,7 +24,9 @@ use crate::error::{DatumError, Result};
 use crate::field_spec::FieldSpec;
 use crate::kit::IndexEntry;
 
+use super::definition::{definition_data, INDEX_FIELD, KIT_KEY};
 use super::spec::SPEC_KIT_KEY;
+use super::types::LIVE_SQL;
 use super::Db;
 
 /// The kit a spec entry's data names, if any.
@@ -77,7 +79,7 @@ impl InstallReport {
 }
 
 /// One row of [`Db::list_kits`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct InstalledKit {
     pub kit_id: String,
     pub field_count: usize,
@@ -88,13 +90,20 @@ pub struct InstalledKit {
     pub layout_count: usize,
 }
 
-/// One row from `kit_indices`, returned by [`Db::load_indices_by_kit`].
+/// One kit index definition, returned by [`Db::load_indices_by_kit`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstalledKitIndex {
     pub kit_id: String,
     pub index_name: String,
     pub on_disk_name: String,
     pub sql_text: String,
+    /// The definition itself, as the kit's TOML declared it.
+    pub entry: IndexEntry,
+}
+
+/// `index:<kit>/<name>` — an index definition's slug (`definition.rs`).
+fn index_slug(kit_id: &str, name: &str) -> String {
+    format!("{INDEX_FIELD}:{kit_id}/{name}")
 }
 
 impl Db {
@@ -146,38 +155,45 @@ impl Db {
                 .push((spec.field.clone(), KitFieldOutcome::Installed));
         }
 
-        let tx = self.conn.unchecked_transaction()?;
-        // Indices: drop everything previously owned by this kit, then
-        // (re)create from the new TOML. Re-install is idempotent because
-        // the DDL uses CREATE INDEX IF NOT EXISTS but we drop-first to
-        // ensure obsolete indices don't survive a TOML edit.
-        let mut prev_stmt = tx.prepare(
-            "SELECT on_disk_name FROM kit_indices WHERE kit_id = ?1 ORDER BY index_name",
-        )?;
-        let prev_names: Vec<String> = prev_stmt
-            .query_map(params![kit_id], |row| row.get::<_, String>(0))?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(DatumError::Db)?;
-        drop(prev_stmt);
-        for name in &prev_names {
-            tx.execute_batch(&format!("DROP INDEX IF EXISTS \"{name}\""))?;
-        }
-        tx.execute("DELETE FROM kit_indices WHERE kit_id = ?1", params![kit_id])?;
-        report.indices_dropped = prev_names;
-
+        // Indices: this kit's definitions become exactly the TOML's, and
+        // the device's physical indices follow them (da-fwwtn).
+        let before = self.load_indices_by_kit(kit_id)?;
+        let mut wanted = Vec::with_capacity(indices.len());
         for entry in indices {
             let ddl = entry.build_ddl(kit_id)?;
-            let on_disk = entry.sqlite_name(kit_id);
-            tx.execute_batch(&ddl)?;
-            tx.execute(
-                "INSERT INTO kit_indices (kit_id, index_name, on_disk_name, sql_text)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![kit_id, entry.name, on_disk, ddl],
-            )?;
+            wanted.push(entry.sqlite_name(kit_id));
+            self.write_definition(INDEX_FIELD, definition_data(entry, Some(kit_id))?)?;
             report.indices_installed.push(entry.name.clone());
+            if let Some(old) = before.iter().find(|b| b.index_name == entry.name) {
+                if old.sql_text != ddl {
+                    report.indices_dropped.push(old.on_disk_name.clone());
+                }
+            }
         }
-
-        tx.commit()?;
+        for old in before.iter().filter(|b| !wanted.contains(&b.on_disk_name)) {
+            self.soft_delete_entry(&index_slug(kit_id, &old.index_name))?;
+            report.indices_dropped.push(old.on_disk_name.clone());
+        }
+        // An index that will not build on this data (a UNIQUE one over
+        // duplicates) fails the install, and the kit's indices go back to
+        // what they were — as the one transaction this replaced left them.
+        let failed: Vec<_> = self
+            .derive_kit_indices()?
+            .into_iter()
+            .filter(|(name, _)| wanted.contains(name))
+            .collect();
+        if let Some((_, err)) = failed.first() {
+            for entry in indices {
+                if !before.iter().any(|b| b.index_name == entry.name) {
+                    self.soft_delete_entry(&index_slug(kit_id, &entry.name))?;
+                }
+            }
+            for old in &before {
+                self.write_definition(INDEX_FIELD, definition_data(&old.entry, Some(kit_id))?)?;
+            }
+            self.derive_kit_indices()?;
+            return Err(DatumError::Other(format!("kit '{kit_id}': index: {err}")));
+        }
         Ok(report)
     }
 
@@ -194,149 +210,131 @@ impl Db {
             self.delete_field_spec(field)?;
         }
 
-        let tx = self.conn.unchecked_transaction()?;
-        // Drop installed indices owned by this kit. Index drops are
-        // unconditional — the underlying data is fine, and the design
-        // explicitly declines to gate uninstall on a trust prompt.
-        let mut idx_stmt = tx.prepare("SELECT on_disk_name FROM kit_indices WHERE kit_id = ?1")?;
-        let idx_names: Vec<String> = idx_stmt
-            .query_map(params![kit_id], |row| row.get::<_, String>(0))?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(DatumError::Db)?;
-        drop(idx_stmt);
-        for name in &idx_names {
-            tx.execute_batch(&format!("DROP INDEX IF EXISTS \"{name}\""))?;
-        }
-        tx.execute("DELETE FROM kit_indices WHERE kit_id = ?1", params![kit_id])?;
-
-        tx.commit()?;
+        // Index drops are unconditional — the underlying data is fine, and
+        // the design explicitly declines to gate uninstall on a trust prompt.
+        self.uninstall_definitions(INDEX_FIELD, kit_id)?;
+        self.derive_kit_indices()?;
         Ok(fields)
     }
 
-    /// List installed kits with per-kit field, view, alias, and index
-    /// counts. User-declared rows (no `kit_id` in any of the spec
-    /// or alias entries, `views`, or `kit_indices`) are excluded.
-    /// A kit appears if it owns at least one row in any of those tables.
+    /// List installed kits with a count of each kind of thing they own. A
+    /// kit's specs, views, aliases, indices, commands and layouts are all
+    /// entries whose data names it (da-lc26c, da-b3752, da-gg0v,
+    /// da-fwwtn); the person's own carry no mark and are no kit's.
     pub fn list_kits(&self) -> Result<Vec<InstalledKit>> {
-        let mut stmt = self.conn.prepare(
-            "WITH
-                -- Specs, aliases and layouts are ENTRIES (da-lc26c,
-                -- da-b3752, da-gg0v): the
-                -- kit that shipped one is a key in its data blob.
-                kit_fields AS (
-                    SELECT json_extract(data, '$.kit_id') AS kit_id, COUNT(*) AS n
-                    FROM entries
-                    WHERE field = 'spec'
-                      AND deleted_at IS NULL
-                      AND superseded_by IS NULL
-                      AND json_extract(data, '$.kit_id') IS NOT NULL
-                    GROUP BY 1
-                ),
-                kit_views AS (
-                    SELECT kit_id, COUNT(*) AS n
-                    FROM views
-                    WHERE kit_id IS NOT NULL
-                    GROUP BY kit_id
-                ),
-                kit_aliases AS (
-                    SELECT json_extract(data, '$.kit_id') AS kit_id, COUNT(*) AS n
-                    FROM entries
-                    WHERE field = 'alias'
-                      AND deleted_at IS NULL
-                      AND superseded_by IS NULL
-                      AND json_extract(data, '$.kit_id') IS NOT NULL
-                    GROUP BY 1
-                ),
-                kit_idx AS (
-                    SELECT kit_id, COUNT(*) AS n
-                    FROM kit_indices
-                    GROUP BY kit_id
-                ),
-                kit_cmds AS (
-                    SELECT kit_id, COUNT(*) AS n
-                    FROM kit_commands
-                    WHERE kit_id IS NOT NULL
-                    GROUP BY kit_id
-                ),
-                kit_layouts AS (
-                    SELECT json_extract(data, '$.kit_id') AS kit_id, COUNT(*) AS n
-                    FROM entries
-                    WHERE field = 'layout'
-                      AND deleted_at IS NULL
-                      AND superseded_by IS NULL
-                      AND json_extract(data, '$.kit_id') IS NOT NULL
-                    GROUP BY 1
-                )
-             SELECT k.kit_id,
-                    IFNULL(f.n, 0),
-                    IFNULL(v.n, 0),
-                    IFNULL(a.n, 0),
-                    IFNULL(i.n, 0),
-                    IFNULL(c.n, 0),
-                    IFNULL(l.n, 0)
-             FROM (
-                 SELECT kit_id FROM kit_fields
-                 UNION
-                 SELECT kit_id FROM kit_views
-                 UNION
-                 SELECT kit_id FROM kit_aliases
-                 UNION
-                 SELECT kit_id FROM kit_idx
-                 UNION
-                 SELECT kit_id FROM kit_cmds
-                 UNION
-                 SELECT kit_id FROM kit_layouts
-             ) k
-             LEFT JOIN kit_fields  f ON f.kit_id = k.kit_id
-             LEFT JOIN kit_views   v ON v.kit_id = k.kit_id
-             LEFT JOIN kit_aliases a ON a.kit_id = k.kit_id
-             LEFT JOIN kit_idx     i ON i.kit_id = k.kit_id
-             LEFT JOIN kit_cmds    c ON c.kit_id = k.kit_id
-             LEFT JOIN kit_layouts l ON l.kit_id = k.kit_id
-             ORDER BY k.kit_id",
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(InstalledKit {
-                kit_id: row.get::<_, String>(0)?,
-                field_count: row.get::<_, i64>(1)? as usize,
-                view_count: row.get::<_, i64>(2)? as usize,
-                alias_count: row.get::<_, i64>(3)? as usize,
-                index_count: row.get::<_, i64>(4)? as usize,
-                command_count: row.get::<_, i64>(5)? as usize,
-                layout_count: row.get::<_, i64>(6)? as usize,
-            })
-        })?;
-        let mut out = Vec::new();
-        for r in rows {
-            out.push(r.map_err(DatumError::Db)?);
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT json_extract(data, '$.kit_id') AS kit, field, COUNT(*)
+             FROM entries
+             WHERE field IN ('spec', 'view', 'alias', 'index', 'command', 'layout')
+               AND {LIVE_SQL} AND kit IS NOT NULL
+             GROUP BY kit, field
+             ORDER BY kit"
+        ))?;
+        let mut rows = stmt.query([])?;
+        let mut out: Vec<InstalledKit> = Vec::new();
+        while let Some(row) = rows.next()? {
+            let kit_id: String = row.get(0)?;
+            let field: String = row.get(1)?;
+            let n = row.get::<_, i64>(2)? as usize;
+            if out.last().is_none_or(|k| k.kit_id != kit_id) {
+                out.push(InstalledKit {
+                    kit_id,
+                    ..InstalledKit::default()
+                });
+            }
+            let kit = out.last_mut().expect("pushed above");
+            *match field.as_str() {
+                "spec" => &mut kit.field_count,
+                "view" => &mut kit.view_count,
+                "alias" => &mut kit.alias_count,
+                "index" => &mut kit.index_count,
+                "command" => &mut kit.command_count,
+                _ => &mut kit.layout_count,
+            } = n;
         }
         Ok(out)
     }
 
-    /// Load every kit-owned index entry tagged with `kit_id`. Used by
-    /// `datum kit export` to round-trip the `[[index]]` blocks back to
-    /// TOML. Rows are returned ordered by `index_name` for stable
-    /// output.
-    pub fn load_indices_by_kit(&self, kit_id: &str) -> Result<Vec<InstalledKitIndex>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT kit_id, index_name, on_disk_name, sql_text
-             FROM kit_indices
-             WHERE kit_id = ?1
-             ORDER BY index_name",
-        )?;
-        let rows = stmt.query_map(params![kit_id], |row| {
-            Ok(InstalledKitIndex {
-                kit_id: row.get::<_, String>(0)?,
-                index_name: row.get::<_, String>(1)?,
-                on_disk_name: row.get::<_, String>(2)?,
-                sql_text: row.get::<_, String>(3)?,
-            })
-        })?;
-        let mut out = Vec::new();
-        for r in rows {
-            out.push(r.map_err(DatumError::Db)?);
+    /// The physical SQLite indices this device's kit index definitions
+    /// describe, made so (da-fwwtn): a declared one that is missing — or
+    /// built from another definition — is (re)built, one no definition
+    /// declares any more is dropped. Only the definition travels, so this
+    /// runs whenever definitions may have changed: on open, after a sync or
+    /// a restore, and on a kit install or uninstall.
+    ///
+    /// Each index's DDL is rebuilt from its definition by
+    /// [`IndexEntry::build_ddl`], whose validation is the one a kit install
+    /// runs, so a definition that arrived by sync is held to the same rule.
+    /// One that fails that, or fails to build on this data (a UNIQUE index
+    /// over duplicates), is returned as `(sqlite name, error)` rather than
+    /// failing the rest — an index is this device's, not the data's.
+    pub fn derive_kit_indices(&self) -> Result<Vec<(String, DatumError)>> {
+        let mut failed = Vec::new();
+        let mut declared: Vec<(String, String)> = Vec::new();
+        for data in self.definitions(INDEX_FIELD, None)? {
+            let kit = data[KIT_KEY].as_str().unwrap_or_default().to_string();
+            let slug = index_slug(&kit, data["name"].as_str().unwrap_or_default());
+            let built = serde_json::from_value::<IndexEntry>(data)
+                .map_err(DatumError::from)
+                .and_then(|ix| Ok((ix.sqlite_name(&kit), ix.build_ddl(&kit)?)));
+            match built {
+                Ok(pair) => declared.push(pair),
+                Err(e) => failed.push((slug, e)),
+            }
         }
-        Ok(out)
+        // SQLite keeps a statement's text minus its IF NOT EXISTS.
+        let stored = |ddl: &str| ddl.replacen(" IF NOT EXISTS", "", 1);
+        // `_` is a LIKE wildcard; `!_` is the underscore itself.
+        let mut stmt = self.conn.prepare(
+            "SELECT name, sql FROM sqlite_master
+             WHERE type = 'index' AND tbl_name = 'entries' AND name LIKE 'kit!_%' ESCAPE '!'",
+        )?;
+        let existing: Vec<(String, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        drop(stmt);
+        for (name, sql) in &existing {
+            if !declared
+                .iter()
+                .any(|(n, ddl)| n == name && stored(ddl) == *sql)
+            {
+                self.conn
+                    .execute_batch(&format!("DROP INDEX IF EXISTS \"{name}\""))?;
+            }
+        }
+        for (name, ddl) in declared {
+            if !existing
+                .iter()
+                .any(|(n, sql)| *n == name && stored(&ddl) == *sql)
+            {
+                if let Err(e) = self.conn.execute_batch(&ddl) {
+                    failed.push((name, e.into()));
+                }
+            }
+        }
+        Ok(failed)
+    }
+
+    /// Every index definition marked with `kit_id`, by name — `datum kit
+    /// export`'s source, with the name and DDL it builds on this device.
+    /// One that will not build (edited or synced past the install's screen)
+    /// is left out, as [`Db::derive_kit_indices`] leaves it unbuilt, so it
+    /// cannot stop the kit being exported or uninstalled.
+    pub fn load_indices_by_kit(&self, kit_id: &str) -> Result<Vec<InstalledKitIndex>> {
+        Ok(self
+            .definitions(INDEX_FIELD, Some(kit_id))?
+            .into_iter()
+            .filter_map(|data| {
+                let entry: IndexEntry = serde_json::from_value(data).ok()?;
+                Some(InstalledKitIndex {
+                    kit_id: kit_id.to_string(),
+                    index_name: entry.name.clone(),
+                    on_disk_name: entry.sqlite_name(kit_id),
+                    sql_text: entry.build_ddl(kit_id).ok()?,
+                    entry,
+                })
+            })
+            .collect())
     }
 
     /// Load every [`FieldSpec`] tagged with the given `kit_id`. Used by

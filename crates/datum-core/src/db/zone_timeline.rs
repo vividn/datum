@@ -49,7 +49,7 @@ const ZONE_CHANGES_SQL: &str = "\
            AND superseded_by IS NULL
            AND occur_time IS NOT NULL
            AND occur_time_tz IS NOT NULL
-           AND field NOT IN ('spec', 'layout', 'alias')
+           AND field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index')
     )
     WHERE prev_tz IS NULL OR prev_tz <> occur_time_tz";
 

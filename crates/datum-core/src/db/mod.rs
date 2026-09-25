@@ -20,6 +20,7 @@
 //! historical paths.
 
 mod alias;
+mod definition;
 mod insert;
 mod integrity;
 mod kit;
@@ -49,6 +50,7 @@ use crate::error::{DatumError, Result};
 pub use crate::migrations::{MigrationReport, MAX_PRE_MIGRATION_BACKUPS};
 
 pub use alias::{InstallAliasesReport, KitAliasOutcome, ALIAS_FIELD};
+pub use definition::{COMMAND_FIELD, INDEX_FIELD, VIEW_FIELD};
 pub use kit::{InstallReport, InstalledKit, InstalledKitIndex, KitFieldOutcome};
 pub use kit_command::{
     validate_command, InstallCommandsReport, InstalledKitCommand, KitCommandOutcome,
@@ -72,6 +74,7 @@ pub use view::{InstallViewsReport, InstalledView, KitViewOutcome, ViewResult};
 // at `crate::db::try_insert` to preserve the historical import path used by
 // `crate::migrations`.
 pub(crate) use alias::new_alias_entry;
+pub(crate) use definition::{definition_data, new_definition_entry};
 pub(crate) use insert::try_insert;
 pub(crate) use spec::{new_spec_entry, NOT_META_FIELD_SQL};
 
@@ -262,6 +265,10 @@ impl Db {
         // CREATE … IF NOT EXISTS keeps the pass idempotent on already-current
         // databases.
         self.conn.execute_batch(include_str!("../schema.sql"))?;
+        // A kit index is this device's, derived from the definitions the
+        // file holds (da-fwwtn). One that will not build is no reason not
+        // to open: it is only an index.
+        let _ = self.derive_kit_indices();
 
         if applied.is_empty() {
             return Ok(None);
@@ -302,9 +309,10 @@ impl Db {
         let tables = [
             "entries",
             "entry_history",
-            // Gone since v38 / v39 (specs and aliases are entries,
-            // da-lc26c, da-b3752); dropped here so a purge of an older
-            // file leaves none behind.
+            // Gone since v38 / v39 / v40 (specs, aliases, views, kit
+            // commands and index definitions are entries — da-lc26c,
+            // da-b3752, da-fwwtn); dropped here so a purge of an older file
+            // leaves none behind.
             "field_specs",
             "aliases",
             "kit_indices",
@@ -331,6 +339,10 @@ impl Db {
             }
         }
         self.conn.execute_batch(include_str!("../schema.sql"))?;
+        // A kit index is this device's, derived from the definitions the
+        // file holds (da-fwwtn). One that will not build is no reason not
+        // to open: it is only an index.
+        let _ = self.derive_kit_indices();
         crate::migrations::set_schema_version(
             &self.conn,
             crate::migrations::CURRENT_SCHEMA_VERSION,

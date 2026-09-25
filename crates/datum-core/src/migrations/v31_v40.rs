@@ -7,8 +7,12 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::support::*;
-use crate::db::{new_alias_entry, new_spec_entry, ALIAS_FIELD, SPEC_FIELD};
+use crate::db::{
+    definition_data, new_alias_entry, new_definition_entry, new_spec_entry, ALIAS_FIELD,
+    COMMAND_FIELD, INDEX_FIELD, SPEC_FIELD, VIEW_FIELD,
+};
 use crate::error::{DatumError, Result};
+use crate::kit::{CommandEntry, IndexEntry, ViewEntry};
 
 /// Rewrite the stored `CREATE TABLE` SQL for `table_name`, swapping the
 /// `raw_input` column definition. Matches the trailing comma so the
@@ -505,6 +509,186 @@ pub(super) fn m38_to_39_aliases_are_entries(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Lift 39→40: views, kit commands and kit index definitions become
+/// ENTRIES (da-fwwtn), as specs and aliases did: every `views` row the
+/// entry `view:<name>`, every `kit_commands` row `command:<name>`, every
+/// `kit_indices` row `index:<kit>/<name>`, each's data the kit TOML's
+/// block plus `kit_id`; then the three tables are dropped. An index keeps
+/// its physical SQLite index, which `Db::derive_kit_indices` now answers
+/// for.
+///
+/// Deterministic across devices the same way: the same definition gives the
+/// same slug, data and fixed occur time. **Refuses on a name collision**
+/// with life data already logged under `view`, `command` or `index`, and on
+/// an index whose DDL is not one a kit install writes, writing nothing.
+pub(super) fn m39_to_40_definitions_are_entries(conn: &Connection) -> Result<()> {
+    let tables = ["views", "kit_commands", "kit_indices"];
+    if !table_exists(conn, "entries")?
+        || !tables
+            .iter()
+            .any(|t| table_exists(conn, t).unwrap_or(false))
+    {
+        return Ok(());
+    }
+    let clashing: i64 = conn.query_row(
+        // A deleted log is not in the way: nothing reads it as life data.
+        "SELECT COUNT(*) FROM entries WHERE field IN (?1, ?2, ?3) AND deleted_at IS NULL",
+        [VIEW_FIELD, COMMAND_FIELD, INDEX_FIELD],
+        |row| row.get(0),
+    )?;
+    if clashing > 0 {
+        return Err(DatumError::Other(format!(
+            "cannot move views, kit commands and kit indices into entries: this \
+             database has {clashing} entr{} of a field named `{VIEW_FIELD}`, \
+             `{COMMAND_FIELD}` or `{INDEX_FIELD}`, and those are now reserved. Rename \
+             that field with an older datum first; nothing was changed.",
+            if clashing == 1 { "y" } else { "ies" }
+        )));
+    }
+    let mut defs = Vec::new();
+    if table_exists(conn, "views")? {
+        let mut stmt = conn.prepare("SELECT name, sql_text, kit_id FROM views ORDER BY name")?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get::<_, Option<String>>(2)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for (name, sql, kit) in rows {
+            defs.push((
+                VIEW_FIELD,
+                definition_data(&ViewEntry { name, sql }, kit.as_deref())?,
+            ));
+        }
+    }
+    if table_exists(conn, "kit_commands")? {
+        fn json<T: serde::de::DeserializeOwned + Default>(text: Option<String>) -> T {
+            text.and_then(|t| serde_json::from_str(&t).ok())
+                .unwrap_or_default()
+        }
+        let mut stmt = conn.prepare(
+            "SELECT name, kit_id, expands_to, view_name, help, columns_json, labels_json,
+                    formats_json, sort_col, flags_json, color_rules_json, script_text
+             FROM kit_commands ORDER BY name",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                let command = CommandEntry {
+                    name: row.get(0)?,
+                    expands_to: row.get(2)?,
+                    view: row.get(3)?,
+                    help: row.get(4)?,
+                    columns: json(row.get(5)?),
+                    labels: json(row.get(6)?),
+                    formats: json(row.get(7)?),
+                    sort: row.get(8)?,
+                    flags: json(row.get(9)?),
+                    color_rules: json(row.get(10)?),
+                    script: row.get(11)?,
+                };
+                Ok((command, row.get::<_, Option<String>>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for (command, kit) in rows {
+            defs.push((COMMAND_FIELD, definition_data(&command, kit.as_deref())?));
+        }
+    }
+    if table_exists(conn, "kit_indices")? {
+        let mut stmt = conn.prepare(
+            "SELECT kit_id, index_name, sql_text FROM kit_indices ORDER BY kit_id, index_name",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for (kit, name, sql_text) in rows {
+            let Some(entry) = index_entry_from_ddl(&name, &kit, &sql_text) else {
+                return Err(DatumError::Other(format!(
+                    "cannot move kit '{kit}' index '{name}' into entries: its DDL is not \
+                     one a kit install writes ({sql_text}). Uninstall that kit with an \
+                     older datum first; nothing was changed."
+                )));
+            };
+            defs.push((INDEX_FIELD, definition_data(&entry, Some(&kit))?));
+        }
+    }
+    for (field, data) in defs {
+        let row = new_definition_entry(field, data, "migration-v40");
+        // A deleted log is out of the way, unless it holds this very slug —
+        // as the slug's UNIQUE sees it, which a superseded row is not in.
+        let held: bool = conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM entries WHERE slug = ?1 AND superseded_by IS NULL)",
+            [row.slug.as_str()],
+            |r| r.get(0),
+        )?;
+        if held {
+            return Err(DatumError::Other(format!(
+                "cannot move views, kit commands and kit indices into entries: an \
+                 entry already holds `{}`, which the {field} needs. Move it to another \
+                 slug with an older datum first; nothing was changed.",
+                row.slug.as_str()
+            )));
+        }
+        crate::db::try_insert(conn, &row.slug, &row.hid, &row)?;
+    }
+    conn.execute_batch(
+        "DROP TABLE IF EXISTS views;
+         DROP TABLE IF EXISTS kit_commands;
+         DROP TABLE IF EXISTS kit_indices;",
+    )?;
+    Ok(())
+}
+
+/// The [`IndexEntry`] whose DDL under `kit_id` is `sql_text` — the inverse
+/// of `IndexEntry::build_ddl`, which wrote every `kit_indices` row — or
+/// `None` when rebuilding it would not give those very bytes back.
+pub(super) fn index_entry_from_ddl(name: &str, kit_id: &str, sql_text: &str) -> Option<IndexEntry> {
+    let (unique, rest) = match sql_text.strip_prefix("CREATE UNIQUE INDEX IF NOT EXISTS ") {
+        Some(rest) => (true, rest),
+        None => (false, sql_text.strip_prefix("CREATE INDEX IF NOT EXISTS ")?),
+    };
+    // The quoted name is `[a-zA-Z0-9_]`, so the first ` ON ` ends it.
+    let (on, rest) = rest.split_once(" ON ")?.1.split_once('(')?;
+    // The expression ends at the paren that closes this one; a quoted
+    // literal or identifier — '…', "…", […] or `…` — may hold any
+    // character.
+    let (mut depth, mut quote, mut end) = (1, None, None);
+    for (i, c) in rest.char_indices() {
+        match (quote, c) {
+            (Some(q), c) if c == q => quote = None,
+            (Some(_), _) => {}
+            (None, '\'' | '"' | '`') => quote = Some(c),
+            (None, '[') => quote = Some(']'),
+            (None, '(') => depth += 1,
+            (None, ')') => {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(i);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let end = end?;
+    let where_clause = match &rest[end + 1..] {
+        "" => None,
+        tail => Some(tail.strip_prefix(" WHERE ")?.to_string()),
+    };
+    let entry = IndexEntry {
+        name: name.to_string(),
+        on: on.to_string(),
+        expression: rest[..end].to_string(),
+        where_clause,
+        unique,
+    };
+    (entry.build_ddl(kit_id).ok()? == sql_text).then_some(entry)
+}
+
 // ─── Down migrations ─────────────────────────────────────────────────
 //
 // Each forward migration above has a paired `down` here that reverses
@@ -524,6 +708,88 @@ pub(super) fn m38_to_39_aliases_are_entries(conn: &Connection) -> Result<()> {
 //   docstring. The down still runs to make the schema reversible for
 //   round-trip testing; production callers should back up before
 //   walking back across these.
+
+/// Reverse 40→39 — put the live view, command and index definitions back
+/// in their tables and delete the entries with their history. Loses each
+/// one's history and any deleted one, which the tables never held.
+pub(super) fn down_40_to_39_definitions_are_entries(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "entries")? {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS views (
+            name      TEXT NOT NULL PRIMARY KEY,
+            sql_text  TEXT NOT NULL,
+            kit_id    TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_views_kit_id ON views(kit_id);
+        CREATE TABLE IF NOT EXISTS kit_indices (
+            kit_id      TEXT NOT NULL,
+            index_name  TEXT NOT NULL,
+            on_disk_name TEXT NOT NULL,
+            sql_text    TEXT NOT NULL,
+            PRIMARY KEY (kit_id, index_name)
+        );
+        CREATE TABLE IF NOT EXISTS kit_commands (
+            name              TEXT NOT NULL PRIMARY KEY,
+            kit_id            TEXT,
+            expands_to        TEXT,
+            view_name         TEXT,
+            help              TEXT,
+            columns_json      TEXT,
+            labels_json       TEXT,
+            formats_json      TEXT,
+            sort_col          TEXT,
+            flags_json        TEXT,
+            color_rules_json  TEXT,
+            script_text       TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_kit_commands_kit_id ON kit_commands(kit_id);
+        INSERT INTO views (name, sql_text, kit_id)
+            SELECT json_extract(data, '$.name'), json_extract(data, '$.sql'),
+                   json_extract(data, '$.kit_id')
+              FROM entries
+             WHERE field = 'view' AND deleted_at IS NULL AND superseded_by IS NULL;
+        INSERT INTO kit_commands
+            SELECT json_extract(data, '$.name'), json_extract(data, '$.kit_id'),
+                   json_extract(data, '$.expands_to'), json_extract(data, '$.view'),
+                   json_extract(data, '$.help'), json_extract(data, '$.columns'),
+                   json_extract(data, '$.labels'), json_extract(data, '$.formats'),
+                   json_extract(data, '$.sort'), json_extract(data, '$.flags'),
+                   json_extract(data, '$.color_rules'), json_extract(data, '$.script')
+              FROM entries
+             WHERE field = 'command' AND deleted_at IS NULL AND superseded_by IS NULL;",
+    )?;
+    let mut stmt = conn.prepare(
+        "SELECT data FROM entries
+         WHERE field = 'index' AND deleted_at IS NULL AND superseded_by IS NULL",
+    )?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(stmt);
+    for data in rows {
+        let data: serde_json::Value = serde_json::from_str(&data)?;
+        let kit = data["kit_id"].as_str().unwrap_or_default().to_string();
+        let entry: IndexEntry = serde_json::from_value(data)?;
+        conn.execute(
+            "INSERT INTO kit_indices (kit_id, index_name, on_disk_name, sql_text)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                kit,
+                entry.name,
+                entry.sqlite_name(&kit),
+                entry.build_ddl(&kit)?
+            ],
+        )?;
+    }
+    conn.execute_batch(
+        "DELETE FROM entry_history WHERE entry_hid IN
+            (SELECT hid FROM entries WHERE field IN ('view', 'command', 'index'));
+         DELETE FROM entries WHERE field IN ('view', 'command', 'index');",
+    )?;
+    Ok(())
+}
 
 /// Reverse 39→38 — put the live alias entries back in an `aliases` table
 /// and delete the entries with their history. Loses each alias's history

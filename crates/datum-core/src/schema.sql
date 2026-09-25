@@ -248,62 +248,11 @@ CREATE INDEX IF NOT EXISTS entries_field_structure
 -- `spec:<field>`, its data the spec's JSON plus `kit_id` for a kit's spec
 -- (da-lc26c; `db/spec.rs`).
 
--- Named views: read-only SELECT statements installed by kits or declared
--- by the user. `kit_id` is NULL for user-declared rows, the kit's name
--- for rows installed via `datum kit install`. Powers `datum view <name>`.
--- Read-only enforcement happens at execution time (PRAGMA query_only=1);
--- this table just stores the SQL text.
-CREATE TABLE IF NOT EXISTS views (
-    name      TEXT NOT NULL PRIMARY KEY,
-    sql_text  TEXT NOT NULL,
-    kit_id    TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_views_kit_id ON views(kit_id);
-
--- Kit-installed indices on `entries` (slice 5). Each row tracks one DDL
--- statement created by `datum kit install`; uninstall does
--- `DROP INDEX IF EXISTS <on_disk_name>` for every row matching `kit_id`
--- and then deletes the rows. `sql_text` is stored verbatim so reinstalls
--- can detect "no-op" cases and so a DB inspector can see what was
--- actually run. Re-install drops every row tagged with the kit and
--- rewrites them, so identity is `(kit_id, index_name)`.
-CREATE TABLE IF NOT EXISTS kit_indices (
-    kit_id      TEXT NOT NULL,
-    index_name  TEXT NOT NULL,
-    on_disk_name TEXT NOT NULL,
-    sql_text    TEXT NOT NULL,
-    PRIMARY KEY (kit_id, index_name)
-);
-
--- Kit-defined commands (slice 6). Two flavours, distinguished by which
--- payload column is non-NULL:
---   - Level 1 (alias-style): `expands_to` is set; the dispatcher splices the
---     stored token list before the parser runs.
---   - Level 2 (view-rendered): `view_name` is set; the dispatcher invokes a
---     read-only renderer that runs the named view, projects `columns_json`,
---     applies `labels_json` / `formats_json` / `sort_col` / `color_rules_json`,
---     and prints the result. Level 3 (`script_text`) is parsed and reserved
---     for forward-compat but the renderer errors at execution time.
--- `kit_id` tags the owning kit (NULL for user-declared rows; user-declared
--- rows are not yet wired but the schema permits them for parity with views).
-CREATE TABLE IF NOT EXISTS kit_commands (
-    name              TEXT NOT NULL PRIMARY KEY,
-    kit_id            TEXT,
-    expands_to        TEXT,
-    view_name         TEXT,
-    help              TEXT,
-    columns_json      TEXT,
-    labels_json       TEXT,
-    formats_json      TEXT,
-    sort_col          TEXT,
-    flags_json        TEXT,
-    color_rules_json  TEXT,
-    script_text       TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_kit_commands_kit_id ON kit_commands(kit_id);
-
+-- Views, kit commands and kit index definitions are not tables: since v40
+-- each is the entry `view:<name>`, `command:<name>` or
+-- `index:<kit>/<name>`, its data the kit's block plus `kit_id` (da-fwwtn;
+-- `db/definition.rs`). A kit index's physical SQLite index is this
+-- device's, derived from the definitions on open (`Db::derive_kit_indices`).
 
 -- Aliases are not a table: since v39 a user's or kit's alias is the entry
 -- `alias:<name>`, its data the alias's JSON plus `kit_id` for a kit's

@@ -25,6 +25,7 @@ use crate::time::DatumTime;
 use crate::verb::Verb;
 
 use super::alias::ALIAS_FIELD;
+use super::definition::{COMMAND_FIELD, INDEX_FIELD, VIEW_FIELD};
 use super::kit_layout::LAYOUT_FIELD;
 use super::types::{AliasConflict, AliasConflictReason, SaveSpecReport, LIVE_SQL};
 use super::Db;
@@ -36,14 +37,22 @@ pub const SPEC_FIELD: &str = "spec";
 pub(crate) const SPEC_KIT_KEY: &str = "kit_id";
 
 /// Fields whose entries describe the database rather than the life it
-/// records — specs, layouts, aliases (da-b3752). One rule keeps them all
-/// off the life-data surfaces — tail,
-/// now, dayview, nowview, stats, fields — unless asked for by name
-/// (`tail spec`) or with `--show-meta` / `-A`.
-pub const META_FIELDS: &[&str] = &[SPEC_FIELD, LAYOUT_FIELD, ALIAS_FIELD];
+/// records — specs, layouts, aliases (da-b3752), views, kit commands and
+/// kit index definitions (da-fwwtn). One rule keeps them all off the
+/// life-data surfaces — tail, now, dayview, nowview, stats, fields —
+/// unless asked for by name (`tail spec`) or with `--show-meta` / `-A`.
+pub const META_FIELDS: &[&str] = &[
+    SPEC_FIELD,
+    LAYOUT_FIELD,
+    ALIAS_FIELD,
+    VIEW_FIELD,
+    COMMAND_FIELD,
+    INDEX_FIELD,
+];
 
 /// [`META_FIELDS`] as a SQL predicate on `entries.field`.
-pub(crate) const NOT_META_FIELD_SQL: &str = "field NOT IN ('spec', 'layout', 'alias')";
+pub(crate) const NOT_META_FIELD_SQL: &str =
+    "field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index')";
 
 pub fn is_meta_field(field: &str) -> bool {
     META_FIELDS.contains(&field)
@@ -63,7 +72,7 @@ pub(crate) fn spec_slug(field: &str) -> String {
     format!("{SPEC_FIELD}:{field}")
 }
 
-/// Every spec (and alias) entry's occur time: fixed, not the moment it was
+/// Every meta entry's occur time: fixed, not the moment it was
 /// written, so two devices writing (or migrating) the same one make the
 /// same doc.
 pub(crate) fn meta_occur_time() -> DatumTime {
@@ -94,11 +103,13 @@ pub(crate) fn new_spec_entry(field: &str, data: JsonValue, device_id: &str) -> E
 }
 
 /// Refuse a write under a field the database reserves: a spec
-/// ([`check_spec_entry`]) or an alias ([`super::alias::check_alias_entry`]).
+/// ([`check_spec_entry`]), an alias ([`super::alias::check_alias_entry`]),
+/// or a view, command or index ([`super::definition::check_definition_entry`]).
 /// Every row writer in `insert.rs` calls this.
 pub(crate) fn check_meta_entry(slug: &str, entry: &Entry, data: Option<&JsonValue>) -> Result<()> {
     check_spec_entry(slug, entry, data)?;
-    super::alias::check_alias_entry(slug, entry, data)
+    super::alias::check_alias_entry(slug, entry, data)?;
+    super::definition::check_definition_entry(slug, entry, data)
 }
 
 /// Refuse a write that would store something other than a spec under the
@@ -279,7 +290,7 @@ impl Db {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT json_extract(data, '$.field') AS f FROM entries
              WHERE {SPEC_DOC_SQL}
-               AND f NOT IN ('spec', 'layout', 'alias')
+               AND f NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index')
              ORDER BY f"
         ))?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;

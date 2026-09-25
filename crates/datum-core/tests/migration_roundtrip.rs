@@ -165,6 +165,7 @@ fn every_pair_has_a_roundtrip_test() {
         (36, 37),
         (37, 38),
         (38, 39),
+        (39, 40),
     ];
     assert_eq!(
         covered.len(),
@@ -2340,6 +2341,220 @@ fn v38_to_v39_refuses_a_field_already_named_alias() {
         .query_row("SELECT COUNT(*) FROM aliases", [], |r| r.get(0))
         .unwrap();
     assert_eq!(n, 3);
+}
+
+/// The index a v39 kit install recorded in `kit_indices` and built.
+fn v39_index() -> datum_core::kit::IndexEntry {
+    datum_core::kit::IndexEntry {
+        name: "by_mood".into(),
+        on: "entries".into(),
+        expression: "field, json_extract(data, '$.why')".into(),
+        where_clause: Some("field IN ('mood', 'x)y')".into()),
+        unique: false,
+    }
+}
+
+/// A v39 database holding a kit's view, command and index, a user's view,
+/// and a mood to see.
+fn v39_with_definitions() -> Db {
+    let db = fresh_at(39);
+    let conn = db.conn();
+    insert_tx(conn, "m1", "mood:m1", Some("\"happy\"")).unwrap();
+    let ddl = v39_index().build_ddl("moods").unwrap();
+    conn.execute_batch(&ddl).unwrap();
+    conn.execute(
+        "INSERT INTO kit_indices (kit_id, index_name, on_disk_name, sql_text)
+         VALUES ('moods', 'by_mood', 'kit_moods__by_mood', ?1)",
+        [&ddl],
+    )
+    .unwrap();
+    conn.execute_batch(
+        r#"INSERT INTO views (name, sql_text, kit_id) VALUES
+           ('moods', 'SELECT slug, state FROM entries WHERE field = ''mood''', 'moods'),
+           ('mine', 'SELECT 1 AS one', NULL);
+           INSERT INTO kit_commands (name, kit_id, expands_to, view_name, help,
+               columns_json, labels_json, formats_json, sort_col, flags_json,
+               color_rules_json, script_text) VALUES
+           ('moodlist', 'moods', NULL, 'moods', 'every mood', '["state"]',
+            '{"state":"Mood"}', NULL, 'state', '["watch"]',
+            '[{"when":"state == \"happy\"","color":"green"}]', NULL),
+           ('m', 'moods', 'switch mood', NULL, NULL, NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL);"#,
+    )
+    .unwrap();
+    db
+}
+
+/// da-fwwtn: the views, kit commands and kit index definitions move into
+/// entries and the tables go; every view gives what it gave, every command
+/// and index reads back as it was, the physical index survives, and the
+/// down puts the tables back.
+#[test]
+fn roundtrip_v39_to_v40_definitions_are_entries() {
+    let db = v39_with_definitions();
+    let conn = db.conn();
+    // Compared as JSON where a row is some, so a key's order is not news.
+    let tables = |conn: &Connection| -> Vec<Vec<serde_json::Value>> {
+        [
+            "SELECT name || '|' || sql_text || '|' || IFNULL(kit_id, '-') FROM views ORDER BY name",
+            "SELECT kit_id || '|' || index_name || '|' || on_disk_name || '|' || sql_text FROM kit_indices",
+            "SELECT json_array(name, kit_id, expands_to, view_name, help, json(columns_json),
+                    json(labels_json), json(formats_json), sort_col, json(flags_json),
+                    json(color_rules_json), script_text) FROM kit_commands ORDER BY name",
+        ]
+        .iter()
+        .map(|q| {
+            conn.prepare(q)
+                .unwrap()
+                .query_map([], |r| r.get::<_, String>(0))
+                .unwrap()
+                .map(|row| {
+                    let row = row.unwrap();
+                    serde_json::from_str(&row).unwrap_or(serde_json::Value::String(row))
+                })
+                .collect()
+        })
+        .collect()
+    };
+    let before = tables(conn);
+    let run = |sql: &str| {
+        let r = db.execute_view(sql).unwrap();
+        (r.columns, r.rows)
+    };
+    let seen = run("SELECT slug, state FROM entries WHERE field = 'mood'");
+
+    apply_one_up(conn, 39);
+    for t in ["views", "kit_commands", "kit_indices"] {
+        assert!(!table_exists(conn, t), "{t}");
+    }
+    let rows: Vec<(String, String)> = conn
+        .prepare(
+            "SELECT slug, occur_time FROM entries
+             WHERE field IN ('view', 'command', 'index') ORDER BY slug",
+        )
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(
+        rows.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(),
+        [
+            "command:m",
+            "command:moodlist",
+            "index:moods/by_mood",
+            "view:mine",
+            "view:moods"
+        ]
+    );
+    assert!(rows.iter().all(|r| r.1 == "1970-01-01T00:00:00+00:00"));
+
+    let view = db.get_view("moods").unwrap().unwrap();
+    assert_eq!(view.kit_id.as_deref(), Some("moods"));
+    assert_eq!(run(&view.sql_text), seen);
+    assert_eq!(db.get_view("mine").unwrap().unwrap().kit_id, None);
+    let cmd = db.get_kit_command("moodlist").unwrap().unwrap();
+    assert_eq!(
+        (
+            cmd.view_name.as_deref(),
+            cmd.columns,
+            cmd.flags,
+            cmd.color_rules.len()
+        ),
+        (
+            Some("moods"),
+            vec!["state".to_string()],
+            vec!["watch".to_string()],
+            1
+        )
+    );
+    assert_eq!(cmd.labels.get("state").map(String::as_str), Some("Mood"));
+    let ix = db.load_indices_by_kit("moods").unwrap();
+    assert_eq!(ix.len(), 1);
+    assert_eq!(ix[0].entry, v39_index());
+    assert!(index_exists(conn, "kit_moods__by_mood"));
+    assert!(db.derive_kit_indices().unwrap().is_empty());
+    assert!(index_exists(conn, "kit_moods__by_mood"));
+
+    apply_one_down(conn, 40);
+    assert_eq!(tables(conn), before);
+    let n: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM entries WHERE field IN ('view', 'command', 'index')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(n, 0);
+}
+
+/// Two devices migrating the same definitions make the same docs.
+#[test]
+fn v39_to_v40_is_deterministic_across_devices() {
+    let doc = |db: &Db| -> Vec<(String, String, String, String)> {
+        apply_one_up(db.conn(), 39);
+        db.conn()
+            .prepare(
+                "SELECT slug, data, occur_time, content_hash FROM entries
+                 WHERE field IN ('view', 'command', 'index') ORDER BY slug",
+            )
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    };
+    assert_eq!(doc(&v39_with_definitions()), doc(&v39_with_definitions()));
+}
+
+/// Life data already logged under `view`, `command` or `index` stops the
+/// migration before it writes anything.
+#[test]
+fn v39_to_v40_refuses_a_field_already_named_view() {
+    let db = v39_with_definitions();
+    let conn = db.conn();
+    insert_tx(conn, "h1", "view:h1", None).unwrap();
+    let err = apply_migrations(conn, MIGRATIONS, 39, 40)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("1 entry") && err.contains("`view`"), "{err}");
+    assert_eq!(read_schema_version(conn).unwrap(), Some(39));
+    let n: i64 = conn
+        .query_row("SELECT COUNT(*) FROM views", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(n, 2);
+}
+
+/// A deleted log under `view` is no life data in the way, so v40 goes on —
+/// unless it holds the very slug a definition needs, which is refused by
+/// name rather than failing on the slug's UNIQUE. A superseded row is not
+/// in that UNIQUE, so it is not in the way either.
+#[test]
+fn v39_to_v40_passes_a_deleted_log_unless_it_holds_a_definitions_slug() {
+    let set_aside = |slug: &str, how: &str| {
+        let db = v39_with_definitions();
+        insert_tx(db.conn(), "h1", slug, None).unwrap();
+        db.conn()
+            .execute(&format!("UPDATE entries SET {how} WHERE hid = 'h1'"), [])
+            .unwrap();
+        let moved = apply_migrations(db.conn(), MIGRATIONS, 39, 40);
+        (moved.map_err(|e| e.to_string()), db)
+    };
+    let deleted = |slug: &str| set_aside(slug, "deleted_at = '2026-09-02T00:00:00Z'");
+    let (moved, db) = deleted("view:h1");
+    moved.unwrap();
+    assert!(db.get_view("moods").unwrap().is_some());
+    let (moved, db) = set_aside(
+        "view:moods",
+        "deleted_at = '2026-09-02T00:00:00Z', superseded_by = 'm1'",
+    );
+    moved.unwrap();
+    assert!(db.get_view("moods").unwrap().is_some());
+
+    let (moved, db) = deleted("view:moods");
+    let err = moved.unwrap_err();
+    assert!(err.contains("an entry already holds `view:moods`"), "{err}");
+    assert_eq!(read_schema_version(db.conn()).unwrap(), Some(39));
 }
 
 fn field_occurtime_sql(conn: &Connection) -> String {

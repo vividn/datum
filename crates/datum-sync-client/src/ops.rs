@@ -154,6 +154,9 @@ pub fn apply_changeset(db: &Db, cs: &Changeset) -> Result<()> {
         upsert_lww(&tx, entry)?;
     }
     tx.commit()?;
+    // A kit index travels as its definition; the SQLite index is built
+    // here from what arrived (da-fwwtn).
+    db.derive_kit_indices()?;
     Ok(())
 }
 

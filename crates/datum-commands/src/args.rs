@@ -486,9 +486,9 @@ impl<'a> DbAliasResolver<'a> {
 impl<'a> Resolver for DbAliasResolver<'a> {
     fn lookup(&self, name: &str) -> Option<palias::ResolvedAlias> {
         // Precedence: user alias (and derived state aliases) first;
-        // Level 1 kit_commands (`expands_to`) fall through second so a
+        // Level 1 kit commands (`expands_to`) fall through second so a
         // user can shadow a kit-defined alias by registering their own.
-        // Level 2 kit_commands (no `expands_to`) are NOT splice-style
+        // Level 2 kit commands (no `expands_to`) are NOT splice-style
         // and are handled separately by the post-parse dispatcher.
         if let Some(alias) = self.db.lookup_alias(name).ok().flatten() {
             let tokens = palias::shell_split(&alias.expands_to);

@@ -43,11 +43,8 @@ fn fresh_db_matches_schema_sql_shape() {
         "entries",
         "entry_history",
         "integrity_warnings",
-        "kit_commands",
-        "kit_indices",
         "last_docs",
         "sync_state",
-        "views",
     ];
     assert_eq!(tables, expected_tables);
 
@@ -79,8 +76,6 @@ fn fresh_db_matches_schema_sql_shape() {
         "entries_verb",
         "entry_history_change_kind",
         "entry_history_entry",
-        "idx_kit_commands_kit_id",
-        "idx_views_kit_id",
         "integrity_warnings_hid",
         "integrity_warnings_pending",
         "integrity_warnings_slug",
@@ -1044,4 +1039,37 @@ fn retention_prunes_the_oldest_snapshots() {
 
     // Idempotent once the directory is inside the keep window.
     assert!(prune_pre_migration_backups(&path).is_empty());
+}
+
+/// da-fwwtn: v40 reads a `kit_indices` row's definition back out of its DDL.
+/// A `)` inside any of SQLite's four quotings is not the expression's end,
+/// and every index reads back as the one that wrote the DDL.
+#[test]
+fn v40_reads_an_index_back_out_of_its_ddl() {
+    use crate::kit::IndexEntry;
+    let index = |expression: &str, where_clause: Option<&str>, unique| IndexEntry {
+        name: "ix".into(),
+        on: "entries".into(),
+        expression: expression.into(),
+        where_clause: where_clause.map(str::to_string),
+        unique,
+    };
+    for ix in [
+        index("field", None, false),
+        index("json_extract(data, '$.a)')", None, true),
+        index("\"a)b\", [c)d], `e)f`", None, false),
+        index(
+            "lower(field), (occur_time)",
+            Some("field IN ('x)', (SELECT 1))"),
+            false,
+        ),
+    ] {
+        let ddl = ix.build_ddl("k").unwrap();
+        assert_eq!(index_entry_from_ddl("ix", "k", &ddl), Some(ix), "{ddl}");
+    }
+    // Not DDL a kit install writes: refused, never guessed at.
+    assert_eq!(
+        index_entry_from_ddl("ix", "k", "CREATE INDEX \"kit_k__ix\" ON entries(field)"),
+        None
+    );
 }

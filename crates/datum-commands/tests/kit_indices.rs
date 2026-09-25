@@ -106,7 +106,7 @@ fn install_with_yes_creates_real_index() {
     // The on-disk index exists in sqlite_master with the expected name.
     assert!(index_exists(&db, "kit_chores__by_field_start"));
 
-    // kit_indices row recorded.
+    // The definition is recorded as an entry.
     let installed = db.load_indices_by_kit("chores").unwrap();
     assert_eq!(installed.len(), 1);
     assert_eq!(installed[0].index_name, "by_field_start");
