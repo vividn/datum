@@ -80,12 +80,16 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
     let mut force = false;
     let mut dry_run = false;
     let mut cluster = false;
+    let mut merge = false;
+    let mut yes = false;
     for tok in tail {
         match split_flag(tok) {
             FlagSplit::Positional(s) => pos.push(s),
             FlagSplit::Long("force") => force = true,
             FlagSplit::Long("dry-run") => dry_run = true,
             FlagSplit::Long("cluster") => cluster = true,
+            FlagSplit::Long("merge") => merge = true,
+            FlagSplit::Long("yes") | FlagSplit::Short('y') => yes = true,
             f => return Err(unknown_flag(f)),
         }
     }
@@ -94,6 +98,8 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
         path,
         force,
         dry_run,
+        merge,
+        yes,
         show: Show::default(),
         cluster,
     })

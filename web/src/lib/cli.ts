@@ -446,10 +446,10 @@ function fallToMemory(): void {
  * onto them.
  *
  * The move is two commands of the CLI's own per database — `db backup -` out
- * of memory, `db restore -` into the file — queued like any other, so no
- * command can run against a half-moved pair. Restore is content-hash
- * idempotent, so rows another tab already has are skipped rather than
- * doubled. (It moves the live rows: a layout's older versions, kept in the
+ * of memory, `db restore - --merge` into the file — queued like any other,
+ * so no command can run against a half-moved pair. A merge adds and deletes
+ * nothing, and is content-hash idempotent, so rows another tab already has
+ * are skipped rather than doubled and rows only the file has stay. (It moves the live rows: a layout's older versions, kept in the
  * database's history, stay behind in memory.)
  */
 function keepTrying(delay: number): void {
@@ -471,7 +471,7 @@ function keepTrying(delay: number): void {
 						const restore = await exec(
 							module,
 							handles,
-							['--db', db, 'db', 'restore', '-'],
+							['--db', db, 'db', 'restore', '-', '--merge'],
 							lastEnv,
 							backup.stdout
 						);

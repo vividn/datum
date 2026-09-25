@@ -6,10 +6,13 @@
 //! * `.tar.gz` — a tar archive containing `manifest.json` and `entries.jsonl`
 //!   (same line layout as the plain JSONL form).
 //!
-//! Restore is content-hash idempotent, gates on the `schema_version`
-//! recorded in the header, and commits all entries in a single transaction —
-//! any failure rolls back to "nothing restored". See `RestoreReport` for the
-//! projected/committed outcome contract.
+//! Restore REPLACES by default (da-5fooh): afterwards the live entries are
+//! exactly the backup's, and the rest are tombstoned — ordinary deletions,
+//! so they sync and can be seen. `--merge` only adds, content-hash
+//! idempotent. Either way it gates on the `schema_version` recorded in the
+//! header and commits in a single transaction — any failure rolls back to
+//! "nothing restored". See `RestoreReport` for the projected/committed
+//! outcome contract.
 
 #[cfg(feature = "native")]
 use crate::commands::sync::cluster_ops::bump_generation_for_current_server;
@@ -265,6 +268,11 @@ pub(crate) struct RestoreReport {
     pub inserted: usize,
     pub updated: usize,
     pub skipped: usize,
+    /// Live entries a replace tombstoned (would tombstone, in a dry run)
+    /// because the backup lacks them. Always 0 for `--merge`.
+    pub deleted: usize,
+    /// A replace (the default), not a `--merge`.
+    pub replace: bool,
     /// Schema version the backup declares. `None` for headerless legacy
     /// backups, where we optimistically assume v1.
     pub header_schema_version: Option<u32>,
@@ -286,12 +294,33 @@ impl RestoreReport {
 }
 
 pub fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
+    use std::io::IsTerminal;
     let dry_run = args.dry_run;
     let silent = args.show == ShowFlag::None;
     let json = args.show == ShowFlag::Json;
     let force = args.force;
     let bump_cluster = args.cluster;
-    let report = cmd_restore_with_report(args, db)?;
+    let mode = Mode::of(&args);
+    // A replace that deletes asks first, on a TTY (da-5fooh). The count
+    // comes from a dry run rather than a transaction held open across the
+    // question, which would stall every other writer while a person reads.
+    if mode.replace
+        && !dry_run
+        && !args.yes
+        && args.path != STDIO_PATH
+        && std::io::stdin().is_terminal()
+    {
+        let preview = restore_path(
+            &args.path,
+            db,
+            Mode {
+                dry_run: true,
+                ..mode
+            },
+        )?;
+        confirm_deletions(&preview, &mut std::io::stdin().lock())?;
+    }
+    let report = restore_path(&args.path, db, mode)?;
 
     if silent {
         return Ok(());
@@ -304,9 +333,12 @@ pub fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
             "would_insert": if report.dry_run { Some(report.inserted) } else { None },
             "would_skip_dedupe": if report.dry_run { Some(report.skipped) } else { None },
             "would_update": if report.dry_run { Some(report.updated) } else { None },
+            "would_delete": if report.dry_run { Some(report.deleted) } else { None },
             "inserted": if report.dry_run { None } else { Some(report.inserted) },
             "updated": if report.dry_run { None } else { Some(report.updated) },
             "skipped": if report.dry_run { None } else { Some(report.skipped) },
+            "deleted": if report.dry_run { None } else { Some(report.deleted) },
+            "mode": if report.replace { "replace" } else { "merge" },
             "header": {
                 "schema_version": report.header_schema_version,
                 "source_db": report.header_source_db,
@@ -329,13 +361,24 @@ pub fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
             report.total_processed()
         );
         println!("  Would insert: {}", report.inserted);
-        println!("  Would skip (content_hash dedupe): {}", report.skipped);
-        if force {
-            println!("  Would update (--force): {}", report.updated);
+        if report.replace {
+            println!("  Would update: {}", report.updated);
+            println!("  Would skip (already there): {}", report.skipped);
+            println!("  Would delete: {}", report.deleted);
+        } else {
+            println!("  Would skip (content_hash dedupe): {}", report.skipped);
+            if force {
+                println!("  Would update (--force): {}", report.updated);
+            }
         }
         if let Some((from, to)) = report.migration {
             println!("  Schema migration: v{from} → v{to} (applied to every entry)");
         }
+    } else if report.replace {
+        println!(
+            "✓ Restore: {} inserted, {} updated, {} skipped, {} deleted",
+            report.inserted, report.updated, report.skipped, report.deleted
+        );
     } else {
         println!(
             "✓ Restore: {} inserted, {} updated, {} skipped",
@@ -382,39 +425,72 @@ fn bump_cluster_after_restore(db: &Db) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn cmd_restore_with_report(args: RestoreArgs, db: &Db) -> Result<RestoreReport> {
-    let strategy = if args.force {
-        ConflictStrategy::Update
-    } else {
-        ConflictStrategy::Ignore
-    };
-
-    if args.path == STDIO_PATH {
-        return restore_from_reader(std::io::stdin().lock(), db, strategy, args.dry_run);
+/// Ask before a replace deletes anything; refuse on anything but yes.
+fn confirm_deletions(preview: &RestoreReport, stdin: &mut dyn std::io::BufRead) -> Result<()> {
+    use std::io::Write;
+    if preview.deleted == 0 {
+        return Ok(());
     }
-    match detect_backup_format(&args.path) {
-        BackupFormat::TarGz => restore_targz(&args.path, db, strategy, args.dry_run),
-        BackupFormat::Jsonl => restore_jsonl(&args.path, db, strategy, args.dry_run),
+    let mut stderr = std::io::stderr().lock();
+    write!(
+        stderr,
+        "This restore deletes {} entries the backup lacks ({} inserted, {} updated). \
+         Continue? [y/N] ",
+        preview.deleted, preview.inserted, preview.updated
+    )?;
+    stderr.flush()?;
+    let mut line = String::new();
+    stdin.read_line(&mut line)?;
+    if !matches!(line.trim(), "y" | "Y" | "yes") {
+        anyhow::bail!("db restore: aborted (nothing changed; --merge deletes nothing)");
+    }
+    Ok(())
+}
+
+/// How a restore writes, from its flags.
+#[derive(Debug, Clone, Copy)]
+struct Mode {
+    strategy: ConflictStrategy,
+    replace: bool,
+    dry_run: bool,
+}
+
+impl Mode {
+    fn of(args: &RestoreArgs) -> Self {
+        Mode {
+            strategy: if args.force {
+                ConflictStrategy::Update
+            } else {
+                ConflictStrategy::Ignore
+            },
+            replace: !args.merge,
+            dry_run: args.dry_run,
+        }
     }
 }
 
-fn restore_jsonl(
-    path: &str,
-    db: &Db,
-    strategy: ConflictStrategy,
-    dry_run: bool,
-) -> Result<RestoreReport> {
+#[cfg(test)]
+fn cmd_restore_with_report(args: RestoreArgs, db: &Db) -> Result<RestoreReport> {
+    restore_path(&args.path, db, Mode::of(&args))
+}
+
+fn restore_path(path: &str, db: &Db, mode: Mode) -> Result<RestoreReport> {
+    if path == STDIO_PATH {
+        return restore_from_reader(std::io::stdin().lock(), db, mode);
+    }
+    match detect_backup_format(path) {
+        BackupFormat::TarGz => restore_targz(path, db, mode),
+        BackupFormat::Jsonl => restore_jsonl(path, db, mode),
+    }
+}
+
+fn restore_jsonl(path: &str, db: &Db, mode: Mode) -> Result<RestoreReport> {
     let file = std::fs::File::open(path).with_context(|| format!("Opening backup: {path}"))?;
     let reader = std::io::BufReader::new(file);
-    restore_from_reader(reader, db, strategy, dry_run)
+    restore_from_reader(reader, db, mode)
 }
 
-fn restore_targz(
-    path: &str,
-    db: &Db,
-    strategy: ConflictStrategy,
-    dry_run: bool,
-) -> Result<RestoreReport> {
+fn restore_targz(path: &str, db: &Db, mode: Mode) -> Result<RestoreReport> {
     let file = std::fs::File::open(path).with_context(|| format!("Opening backup: {path}"))?;
     let gz = flate2::read::GzDecoder::new(std::io::BufReader::new(file));
     let mut archive = tar::Archive::new(gz);
@@ -423,7 +499,7 @@ fn restore_targz(
         let in_path = entry.path().context("Reading tar entry path")?.into_owned();
         if in_path.file_name().and_then(|s| s.to_str()) == Some("entries.jsonl") {
             let reader = std::io::BufReader::new(entry);
-            return restore_from_reader(reader, db, strategy, dry_run);
+            return restore_from_reader(reader, db, mode);
         }
     }
     anyhow::bail!("entries.jsonl not found in archive");
@@ -490,11 +566,16 @@ fn migrate_entry_json(_raw: &mut serde_json::Value, from: u32, to: u32) -> Resul
 fn restore_from_reader<R: std::io::BufRead>(
     mut reader: R,
     db: &Db,
-    strategy: ConflictStrategy,
-    dry_run: bool,
+    mode: Mode,
 ) -> Result<RestoreReport> {
+    let Mode {
+        strategy,
+        replace,
+        dry_run,
+    } = mode;
     let mut report = RestoreReport {
         dry_run,
+        replace,
         ..Default::default()
     };
 
@@ -569,7 +650,7 @@ fn restore_from_reader<R: std::io::BufRead>(
         let entry: Entry =
             serde_json::from_value(raw).with_context(|| format!("Deserializing entry: {line}"))?;
 
-        if dry_run {
+        if dry_run && !replace {
             // Read-only: predict the outcome from a content_hash lookup
             // without opening a write transaction.
             let exists = db.has_entry_with_content_hash(&entry.content_hash)?;
@@ -589,7 +670,21 @@ fn restore_from_reader<R: std::io::BufRead>(
     }
     reading.finish(read);
 
-    if !pending.is_empty() {
+    if replace {
+        // Input with neither a header nor an entry is not a backup of
+        // anything, so it replaces nothing; a header over zero entries is
+        // a backup of an empty database, and empties this one.
+        if header.is_some() || !pending.is_empty() {
+            let mut inserting = Progress::new("restore: inserting", Some(pending.len()));
+            let counts =
+                db.replace_entries(&pending, strategy, !dry_run, &mut |n| inserting.tick(n))?;
+            inserting.finish(pending.len());
+            report.inserted = counts.added;
+            report.updated = counts.changed;
+            report.skipped = counts.unchanged;
+            report.deleted = counts.deleted;
+        }
+    } else if !pending.is_empty() {
         // Same per-row semantics as insert_entry_with_strategy (history rows,
         // conflict strategy dispatch), one commit for the whole batch.
         // Tallies are recomputed from the committed outcomes, so the
@@ -747,6 +842,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -835,6 +932,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -872,6 +971,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -892,6 +993,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -958,6 +1061,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: true,
                 dry_run: false,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -1069,6 +1174,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -1121,6 +1228,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -1164,6 +1273,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -1198,6 +1309,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -1245,6 +1358,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -1293,6 +1408,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: true,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -1339,6 +1456,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -1357,6 +1476,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: true,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -1405,6 +1526,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -1418,6 +1541,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: true, // conflict strategy = Update
                 dry_run: true,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -1460,6 +1585,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: true,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -1508,6 +1635,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: true,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -1564,6 +1693,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -1580,6 +1711,155 @@ mod tests {
             "failed restore must roll back cleanly — nothing restored"
         );
 
+        std::fs::remove_file(&path).ok();
+    }
+
+    fn replace_args(path: &std::path::Path, dry_run: bool) -> RestoreArgs {
+        RestoreArgs {
+            path: path.to_string_lossy().into_owned(),
+            force: false,
+            dry_run,
+            merge: false,
+            yes: false,
+            show: ShowFlag::Default,
+            cluster: false,
+        }
+    }
+
+    /// The live set as (hid, content_hash): what "exactly the backup's
+    /// entries" means for a replace restore.
+    fn live_set(entries: &[datum_core::entry::Entry]) -> Vec<(String, String)> {
+        let mut set: Vec<_> = entries
+            .iter()
+            .map(|e| (e.hid.to_string(), e.content_hash.clone()))
+            .collect();
+        set.sort();
+        set
+    }
+
+    fn counts(r: &RestoreReport) -> (usize, usize, usize, usize) {
+        (r.inserted, r.updated, r.skipped, r.deleted)
+    }
+
+    /// A db that has moved on from its backup (da-5fooh): since it, one
+    /// entry was deleted (mood), one edited (coffee) and two logged (walk).
+    /// Returns the db, the backup, what it holds, and the two new hids.
+    fn diverged_from_backup() -> (
+        datum_core::db::Db,
+        std::path::PathBuf,
+        Vec<datum_core::entry::Entry>,
+        Vec<String>,
+    ) {
+        let db = datum_core::db::Db::open_in_memory().unwrap();
+        seed_entries(&db);
+        let path = unique_tmp_path(".jsonl");
+        cmd_backup(
+            BackupArgs {
+                path: path.to_string_lossy().into_owned(),
+                overwrite: false,
+            },
+            None,
+            &db,
+        )
+        .unwrap();
+        let backed = all_entries_sorted(&db);
+        let by_field = |f: &str| backed.iter().find(|e| e.field == f).unwrap().clone();
+        db.soft_delete_entry(&by_field("mood").slug.0).unwrap();
+        let mut coffee = by_field("coffee");
+        coffee.state = Some(serde_json::json!(3));
+        db.save_existing_entry(&coffee).unwrap();
+        let new: Vec<String> = [400, 500]
+            .into_iter()
+            .map(|t| {
+                let e = make_entry("walk", t, serde_json::json!(1), None);
+                db.insert_entry(&e).unwrap();
+                e.hid.to_string()
+            })
+            .collect();
+        (db, path, backed, new)
+    }
+
+    #[test]
+    fn restore_replaces_by_default() {
+        let (db, path, backed, new) = diverged_from_backup();
+        let report = cmd_restore_with_report(replace_args(&path, false), &db).unwrap();
+        // mood back, coffee put back, notes untouched, both walks deleted.
+        assert_eq!(counts(&report), (1, 1, 1, 2));
+        assert_eq!(live_set(&all_entries_sorted(&db)), live_set(&backed));
+        for hid in &new {
+            let row = db.get_entry_including_deleted(hid).unwrap();
+            assert!(row.deleted_at.is_some(), "{hid} is a tombstone, not gone");
+        }
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn restore_replace_dry_run_counts_what_the_run_does() {
+        let (db, path, _, _) = diverged_from_backup();
+        let before = live_set(&all_entries_sorted(&db));
+        let dry = cmd_restore_with_report(replace_args(&path, true), &db).unwrap();
+        assert_eq!(live_set(&all_entries_sorted(&db)), before, "dry run wrote");
+        let real = cmd_restore_with_report(replace_args(&path, false), &db).unwrap();
+        assert_eq!(counts(&dry), counts(&real));
+        assert_eq!(counts(&dry), (1, 1, 1, 2));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn restore_replace_failing_midway_changes_nothing() {
+        let (db, _, backed, _) = diverged_from_backup();
+        let before = live_set(&all_entries_sorted(&db));
+        let tombstones = db.tombstone_ids().unwrap();
+        // The backup's entries, then one the db refuses: by then the walks
+        // are tombstoned and mood and coffee are back, all in the one tx.
+        let mut bad = make_entry("walk", 900, serde_json::json!(1), None);
+        bad.field = "bad:field".into();
+        let mut entries = backed.clone();
+        entries.push(bad);
+        let path = unique_tmp_path(".jsonl");
+        write_jsonl(&path, None, &entries);
+        let err = cmd_restore_with_report(replace_args(&path, false), &db).unwrap_err();
+        assert!(err.to_string().contains("field name"), "{err}");
+        assert_eq!(live_set(&all_entries_sorted(&db)), before);
+        assert_eq!(db.tombstone_ids().unwrap(), tombstones);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn a_replace_that_deletes_asks_first() {
+        let preview = |deleted| RestoreReport {
+            deleted,
+            ..Default::default()
+        };
+        let ask = |deleted, answer: &str| {
+            confirm_deletions(
+                &preview(deleted),
+                &mut std::io::Cursor::new(answer.to_string()),
+            )
+        };
+        assert!(ask(2, "y\n").is_ok());
+        assert!(ask(2, "\n").is_err(), "the default is no");
+        assert!(ask(2, "").is_err(), "no answer is no");
+        assert!(ask(0, "").is_ok(), "nothing to delete, nothing to ask");
+    }
+
+    #[test]
+    fn restore_merge_deletes_nothing() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        seed_entries(&db);
+        let backed = all_entries_sorted(&db);
+        let path = unique_tmp_path(".jsonl");
+        write_jsonl(&path, None, &backed);
+        db.soft_delete_entry(&backed[0].slug.0).unwrap();
+        let walk = make_entry("walk", 400, serde_json::json!(1), None);
+        db.insert_entry(&walk).unwrap();
+        let mut args = replace_args(&path, false);
+        args.merge = true;
+        let report = cmd_restore_with_report(args, &db).unwrap();
+        assert_eq!(counts(&report), (1, 0, 2, 0));
+        assert!(db.get_entry(&walk.slug.0).unwrap().deleted_at.is_none());
+        assert_eq!(db.count_entries().unwrap(), backed.len() + 1);
         std::fs::remove_file(&path).ok();
     }
 
@@ -1645,6 +1925,8 @@ mod tests {
                 path: backup_path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: false,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
@@ -1686,6 +1968,8 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 force: false,
                 dry_run: true,
+                merge: true,
+                yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },

@@ -195,7 +195,9 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   counter (offset 24) decides whether a process wrote, which is what
   `web/src/lib/changes.ts` tells the other tabs. A browser that refuses the
   handles gets a database in memory for the tab, which keeps going back for
-  the file and moves its rows across with `db backup -` / `db restore -`.
+  the file and moves its rows across with `db backup -` / `db restore -
+  --merge` (a bare restore REPLACES, tombstoning what the backup lacks —
+  da-5fooh).
   SQLite runs in rollback-journal mode under the shim (WASI has no WAL); a
   journal left by a killed process is rolled back by the next one.
 - Service Worker caches app shell for offline use — the shell, everything

@@ -296,6 +296,18 @@ pub enum InsertOutcome {
     Ignored { slug: Slug },
 }
 
+/// What [`super::Db::replace_entries`] did to the live set — or, rolled
+/// back for a dry run, would have done: backup entries that were not live
+/// (`added`), were live with other content (`changed`) or already matched
+/// (`unchanged`), and live rows the backup lacks, now tombstones (`deleted`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ReplaceCounts {
+    pub added: usize,
+    pub changed: usize,
+    pub unchanged: usize,
+    pub deleted: usize,
+}
+
 /// Report returned from [`super::Db::save_field_spec_with_report`] describing
 /// which derived aliases from the spec were surfaced vs shadowed at the
 /// time of the save. The check is best-effort: derived aliases are now

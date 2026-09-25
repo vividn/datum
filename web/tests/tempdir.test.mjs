@@ -70,7 +70,7 @@ async function seed({ page, run }, n) {
 					})
 				);
 			}
-			return window.datum.runQuiet(['db', 'restore', '-'], lines.join('\n') + '\n');
+			return window.datum.runQuiet(['db', 'restore', '-', '--merge'], lines.join('\n') + '\n');
 		},
 		[backup[0], backup[1], n]
 	);

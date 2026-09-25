@@ -302,7 +302,7 @@ describe('two tabs', () => {
 				);
 				const flushing = await stallNextFlush(first.page);
 				// Not awaited: the page closes under it.
-				void first.run(['db', 'restore', '-'], [header, ...copies].join('\n')).catch(() => {});
+				void first.run(['db', 'restore', '-', '--merge'], [header, ...copies].join('\n')).catch(() => {});
 				assert.equal(await flushing(), true);
 				await first.page.close();
 

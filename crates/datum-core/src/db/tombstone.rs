@@ -3,7 +3,7 @@
 //! the audit trail is atomic with the entries change.
 
 use chrono::Utc;
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
@@ -104,57 +104,7 @@ impl Db {
         comment: Option<&str>,
     ) -> Result<Entry> {
         let tx = self.conn.unchecked_transaction()?;
-        let pre: Option<Entry> = tx
-            .query_row(
-                "SELECT * FROM entries WHERE slug = ?1 OR hid = ?1 LIMIT 1",
-                params![slug_or_hid],
-                row_to_entry,
-            )
-            .optional()?;
-        let pre = match pre {
-            Some(e) => e,
-            None => return Err(DatumError::NotFound(slug_or_hid.to_string())),
-        };
-        // da-ult68: a reason is written onto the row, and `undelete` (undo's
-        // fallback for a row with no trail: imported, or older than history)
-        // keeps `data`, so it would carry the reason back live. Give such a row
-        // its pre-delete state as v1 first; undo then reverts through history
-        // to exactly that, and no string ever has to be matched to remove it.
-        if comment.is_some() && history::latest_version(&tx, &pre.hid)?.is_none() {
-            history::record(&tx, &pre, ChangeKind::Create)?;
-        }
-        history::record(&tx, &pre, kind)?;
-        let now = Utc::now();
-        // da-4vyw: a tombstone must not hash identically to the live row it
-        // replaced — that equality is what would authorise a silent dedupe
-        // of a deletion against its own original. Rehash with the deleted
-        // marker set (the marker, not the instant — see `HashInputs`).
-        let mut dead = pre.clone();
-        dead.deleted_at = Some(now);
-        if let Some(c) = comment {
-            let data = dead.data.get_or_insert_with(|| serde_json::json!({}));
-            if let Some(obj) = data.as_object_mut() {
-                let slot = obj
-                    .entry("comment")
-                    .or_insert_with(|| serde_json::json!([]));
-                if !slot.is_array() {
-                    *slot = serde_json::Value::Array(vec![slot.take()]);
-                }
-                if let Some(a) = slot.as_array_mut() {
-                    a.push(c.into());
-                }
-            }
-        }
-        tx.execute(
-            "UPDATE entries SET deleted_at = ?1, modify_time = ?1, content_hash = ?3, data = ?4
-             WHERE slug = ?2",
-            params![
-                now.to_rfc3339(),
-                pre.slug,
-                dead.expected_content_hash(),
-                dead.data.as_ref().map(|v| v.to_string())
-            ],
-        )?;
+        let dead = soft_delete_in_tx(&tx, slug_or_hid, kind, comment)?;
         tx.commit()?;
         Ok(dead)
     }
@@ -219,4 +169,67 @@ impl Db {
         tx.commit()?;
         Ok(restored)
     }
+}
+
+/// Transaction-free body of [`Db::soft_delete_entry_as`]: tombstones inside
+/// whatever transaction `conn` already has open, so a replace restore
+/// (`Db::replace_entries`) deletes in the same commit as it writes.
+pub(super) fn soft_delete_in_tx(
+    conn: &Connection,
+    slug_or_hid: &str,
+    kind: ChangeKind,
+    comment: Option<&str>,
+) -> Result<Entry> {
+    let pre: Option<Entry> = conn
+        .query_row(
+            "SELECT * FROM entries WHERE slug = ?1 OR hid = ?1 LIMIT 1",
+            params![slug_or_hid],
+            row_to_entry,
+        )
+        .optional()?;
+    let pre = match pre {
+        Some(e) => e,
+        None => return Err(DatumError::NotFound(slug_or_hid.to_string())),
+    };
+    // da-ult68: a reason is written onto the row, and `undelete` (undo's
+    // fallback for a row with no trail: imported, or older than history)
+    // keeps `data`, so it would carry the reason back live. Give such a row
+    // its pre-delete state as v1 first; undo then reverts through history
+    // to exactly that, and no string ever has to be matched to remove it.
+    if comment.is_some() && history::latest_version(conn, &pre.hid)?.is_none() {
+        history::record(conn, &pre, ChangeKind::Create)?;
+    }
+    history::record(conn, &pre, kind)?;
+    let now = Utc::now();
+    // da-4vyw: a tombstone must not hash identically to the live row it
+    // replaced — that equality is what would authorise a silent dedupe
+    // of a deletion against its own original. Rehash with the deleted
+    // marker set (the marker, not the instant — see `HashInputs`).
+    let mut dead = pre.clone();
+    dead.deleted_at = Some(now);
+    if let Some(c) = comment {
+        let data = dead.data.get_or_insert_with(|| serde_json::json!({}));
+        if let Some(obj) = data.as_object_mut() {
+            let slot = obj
+                .entry("comment")
+                .or_insert_with(|| serde_json::json!([]));
+            if !slot.is_array() {
+                *slot = serde_json::Value::Array(vec![slot.take()]);
+            }
+            if let Some(a) = slot.as_array_mut() {
+                a.push(c.into());
+            }
+        }
+    }
+    conn.execute(
+        "UPDATE entries SET deleted_at = ?1, modify_time = ?1, content_hash = ?3, data = ?4
+         WHERE slug = ?2",
+        params![
+            now.to_rfc3339(),
+            pre.slug,
+            dead.expected_content_hash(),
+            dead.data.as_ref().map(|v| v.to_string())
+        ],
+    )?;
+    Ok(dead)
 }

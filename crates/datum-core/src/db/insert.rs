@@ -5,6 +5,8 @@
 //! fast path; skips both). The `Db::insert_*` methods just open a tx and
 //! delegate.
 
+use std::collections::HashSet;
+
 use chrono::Utc;
 use rand::Rng;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -18,7 +20,8 @@ use crate::verb::derive_verb;
 
 use super::lookup::fetch_entry_any;
 use super::row_mapper::row_to_entry;
-use super::types::{ConflictStrategy, InsertOutcome};
+use super::tombstone::soft_delete_in_tx;
+use super::types::{ConflictStrategy, InsertOutcome, ReplaceCounts, LIVE_SQL};
 use super::Db;
 
 /// Derive the storage-layer verb string and canonical state JSON for an
@@ -290,6 +293,104 @@ impl Db {
         )?;
         tx.commit()?;
         Ok(outcomes)
+    }
+
+    /// Make `entries` the live set, in ONE transaction (da-5fooh): the
+    /// replace behind `db restore`. Every live row whose hid `entries` lacks
+    /// is tombstoned — a deletion like any other, with its history row,
+    /// never a dropped row. Then each entry goes back onto the row that
+    /// holds its hid, live or tombstoned, slug included; one no row holds is
+    /// written as [`Self::insert_entries_batch`] writes it, `strategy` and
+    /// all. With `commit` false the transaction is rolled back, so a dry
+    /// run's counts are what the real run would do, by construction.
+    pub fn replace_entries(
+        &self,
+        entries: &[Entry],
+        strategy: ConflictStrategy,
+        commit: bool,
+        on_row: &mut dyn FnMut(usize),
+    ) -> Result<ReplaceCounts> {
+        let tx = self.conn.unchecked_transaction()?;
+        let keep: HashSet<&str> = entries.iter().map(|e| e.hid.0.as_str()).collect();
+        let live: Vec<Hid> = tx
+            .prepare(&format!("SELECT hid FROM entries WHERE {LIVE_SQL}"))?
+            .query_map([], |row| row.get::<_, Hid>(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        let mut deleted = HashSet::new();
+        for hid in live.into_iter().filter(|h| !keep.contains(h.0.as_str())) {
+            soft_delete_in_tx(&tx, &hid.0, ChangeKind::UserEdit, None)?;
+            deleted.insert(hid);
+        }
+        let mut counts = ReplaceCounts::default();
+        let mut written = Vec::new();
+        for (n, entry) in entries.iter().enumerate() {
+            let held = tx
+                .query_row(
+                    "SELECT * FROM entries WHERE hid = ?1",
+                    params![entry.hid],
+                    row_to_entry,
+                )
+                .optional()?;
+            match held {
+                Some(pre)
+                    if pre.deleted_at.is_none()
+                        && pre.slug == entry.slug
+                        && pre.content_hash == entry.content_hash =>
+                {
+                    counts.unchanged += 1
+                }
+                Some(pre) => {
+                    history::record(&tx, &pre, ChangeKind::UserEdit)?;
+                    tx.execute(
+                        "UPDATE entries SET deleted_at = NULL, slug = ?2 WHERE hid = ?1",
+                        params![entry.hid, entry.slug],
+                    )
+                    .map_err(|e| match collision_kind(&e) {
+                        Some(CollisionKind::Slug) => DatumError::Duplicate(format!(
+                            "Cannot restore {} to {}: another entry holds that slug",
+                            entry.hid, entry.slug
+                        )),
+                        _ => DatumError::Db(e),
+                    })?;
+                    raw_overwrite_mutables(&tx, &entry.slug, entry, None)?;
+                    written.push(fetch_entry_any(&tx, &entry.slug)?);
+                    if pre.deleted_at.is_none() {
+                        counts.changed += 1
+                    } else {
+                        counts.added += 1
+                    }
+                }
+                None => {
+                    let (outcome, row) = write_entry_in_tx(&tx, entry, strategy)?;
+                    written.extend(row);
+                    match outcome {
+                        // A tombstone at the slug revives in place, keeping
+                        // its hid: one this replace just deleted was live.
+                        InsertOutcome::Inserted { hid, .. } if deleted.remove(&hid) => {
+                            counts.changed += 1
+                        }
+                        InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. } => {
+                            counts.added += 1
+                        }
+                        InsertOutcome::Updated { .. } | InsertOutcome::Merged { .. } => {
+                            counts.changed += 1
+                        }
+                        InsertOutcome::Ignored { .. } => counts.unchanged += 1,
+                    }
+                }
+            }
+            on_row(n + 1);
+        }
+        counts.deleted = deleted.len();
+        crate::integrity::detect_for_entries(
+            &tx,
+            &written,
+            crate::integrity::DetectedBy::LocalValidator,
+        )?;
+        if commit {
+            tx.commit()?;
+        }
+        Ok(counts)
     }
 
     /// Bulk-load fast path for one-shot ingestion (e.g. `datum db v2import`).

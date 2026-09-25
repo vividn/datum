@@ -1020,6 +1020,13 @@ pub struct RestoreArgs {
     pub path: String,
     pub force: bool,
     pub dry_run: bool,
+    /// `--merge` — add the backup's entries to what is there and delete
+    /// nothing. Without it a restore REPLACES (da-5fooh): the live entries
+    /// become exactly the backup's, and the rest are tombstoned.
+    pub merge: bool,
+    /// `--yes` / `-y` — replace without asking, on a TTY, even when the
+    /// restore deletes entries.
+    pub yes: bool,
     /// The output level the shared layer swept out of argv (da-qt6z).
     /// `--json` is the value `json`; `Show::None` prints nothing.
     pub show: Show,

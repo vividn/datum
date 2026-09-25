@@ -10,7 +10,7 @@
  */
 const OPTIONS: Record<string, Record<string, boolean>> = {
 	'db v2import': { '--from': true, '--backup': true, '--skip-log': true, '--dry-run': false },
-	'db restore': { '--force': false, '--dry-run': false, '--json': false, '--cluster': false },
+	'db restore': { '--merge': false, '--force': false, '--dry-run': false, '--yes': false, '--json': false, '--cluster': false },
 	'db backup': { '--overwrite': false },
 	'kit install': { '--force': false, '--yes': false, '--dry-run': false }
 };

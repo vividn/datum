@@ -282,8 +282,9 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 
 - **Original datum:** path positional, output args. JSONL only.
 - **Daydumb today:** `RestoreArgs` — `path`, `--force` (maps to
-  `--conflict update`). Lives under `datum db restore` (da-33g).
-  Auto-detects tar.gz.
+  `--conflict update`), `--merge`, `--dry-run`, `--yes`. Lives under
+  `datum db restore` (da-33g). Auto-detects tar.gz. REPLACES by default
+  (da-5fooh): entries the backup lacks are tombstoned; `--merge` only adds.
 - **Missing in daydumb:** nothing significant.
 - **Divergences:** `--force` is daydumb-only; datum relies on entry
   content-hash to dedupe.

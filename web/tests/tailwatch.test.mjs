@@ -155,7 +155,7 @@ async function seed(app, count) {
 			})
 		);
 	}
-	const result = await app.run(['db', 'restore', '-'], lines.join('\n') + '\n');
+	const result = await app.run(['db', 'restore', '-', '--merge'], lines.join('\n') + '\n');
 	assert.equal(result.code, 0, result.stderr);
 	// A run through the seam is not a command the REPL ran, so the panes
 	// do not know; a fresh visit shows the listing as it now stands.
