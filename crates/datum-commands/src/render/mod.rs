@@ -115,6 +115,8 @@ pub enum Outcome {
     Rename,
     Retime,
     NoDiff,
+    /// `--if-changed` found the field already in that state (da-hxmtg).
+    IsLast,
     Failed,
 }
 
@@ -129,6 +131,7 @@ impl Outcome {
             Outcome::Rename => "RENAME",
             Outcome::Retime => "RETIME",
             Outcome::NoDiff => "NODIFF",
+            Outcome::IsLast => "ISLAST",
             Outcome::Failed => "FAILED",
         }
     }
@@ -155,6 +158,7 @@ impl Outcome {
             Outcome::Update | Outcome::Rename | Outcome::Retime => "#2aa1b3", // cyan
             Outcome::OWrite => "#3584e4",                   // blue
             Outcome::NoDiff => "#ffa500",                   // orange, as emitted
+            Outcome::IsLast => "#b8860b",                   // dark amber, as emitted
         }
     }
 
@@ -167,6 +171,7 @@ impl Outcome {
             Outcome::Update | Outcome::Rename | Outcome::Retime => "\x1b[36m", // cyan
             Outcome::OWrite => "\x1b[34m",                   // blue
             Outcome::NoDiff => "\x1b[38;2;255;165;0m",       // orange
+            Outcome::IsLast => "\x1b[38;2;184;134;11m",      // dark amber
         }
     }
 }
@@ -574,6 +579,9 @@ pub fn show_exists(entry: &Entry, registry: Option<&SpecRegistry>, args: &Output
 }
 pub fn show_nodiff(entry: &Entry, registry: Option<&SpecRegistry>, args: &OutputArgs) {
     show_action(entry, Outcome::NoDiff, registry, args);
+}
+pub fn show_islast(entry: &Entry, registry: Option<&SpecRegistry>, args: &OutputArgs) {
+    show_action(entry, Outcome::IsLast, registry, args);
 }
 pub fn show_failed(entry: &Entry, registry: Option<&SpecRegistry>, args: &OutputArgs) {
     show_action(entry, Outcome::Failed, registry, args);
@@ -1925,7 +1933,7 @@ mod tests {
     fn every_outcome_hex_matches_the_role_its_escape_paints() {
         use Outcome::*;
         let all = [
-            Create, Update, Delete, Exists, OWrite, Rename, Retime, NoDiff, Failed,
+            Create, Update, Delete, Exists, OWrite, Rename, Retime, NoDiff, IsLast, Failed,
         ];
         for a in all {
             let hex = a.hex();

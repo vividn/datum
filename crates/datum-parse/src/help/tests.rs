@@ -299,6 +299,7 @@ USAGE:
     `datum end work 12m -t 14:12` is a break from 14:00 to 14:12
 
 OPTIONS:
+      --if-changed      switch/start/end: write nothing if already in this state
   common logging options: `datum help logging`
 
 OUTPUT:

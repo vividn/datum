@@ -138,6 +138,10 @@ pub(crate) fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
         p.dry_run = true;
         Ok(())
     }));
+    r.push(local_switch(None, Some("if-changed"), |p| {
+        p.if_changed = true;
+        Ok(())
+    }));
     r
 }
 

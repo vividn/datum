@@ -196,6 +196,29 @@ the `occur`'s own CREATE line are the archive itself:
 never parsed as a flag, and neither is a dash followed by a digit or a
 dot (`-5`, `-5.3` are values).
 
+### `ISLAST` — what `--if-changed` answers instead of writing
+
+`switch`, `start` and `end` take `--if-changed`: when the field already
+holds that state at the entry's time (`-t`, or now), nothing is written
+and the entry that set it prints as `ISLAST`, exit 0. It is a flag like
+any other, so an alias body can carry it:
+
+```bash
+datum alias set act "switch activity --if-changed"
+datum act reading
+datum act reading
+datum act cooking
+```
+
+```
+CREATE vs2yj activity:2026-09-24T14:47:29.896Z
+16:47:29+2  activity  reading
+ISLAST vs2yj activity:2026-09-24T14:47:29.896Z
+16:47:29+2  activity  reading
+CREATE 19zx6 activity:2026-09-24T14:47:29.927Z
+16:47:29+2  activity  cooking
+```
+
 ## 2. Inside a value
 
 | token                | means                                               |

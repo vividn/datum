@@ -352,6 +352,9 @@ pub struct LogArgs {
     /// interpolation, conflict detection) and print a preview without
     /// touching the database.
     pub dry_run: bool,
+    /// `--if-changed` (switch/start/end only, da-hxmtg) — write nothing
+    /// when the field already holds this state at the entry's time.
+    pub if_changed: bool,
 }
 
 impl LogArgs {

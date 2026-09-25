@@ -331,6 +331,7 @@ const LOG_FLAGS: &[FlagSpec] = &[
         long_description: None,
         left_override: None,
     },
+    IF_CHANGED,
     FlagSpec {
         short: Some('A'),
         long: "show-all",
@@ -1048,6 +1049,28 @@ const LOG_SHARED_FLAGS: SharedFlags = SharedFlags {
     own: &[],
 };
 
+/// `--if-changed` (da-hxmtg): the switch family's one flag of its own.
+const IF_CHANGED: FlagSpec = FlagSpec {
+    short: None,
+    long: "if-changed",
+    takes_value: false,
+    value_hint: None,
+    value_optional: false,
+    summary: "switch/start/end: write nothing if already in this state",
+    long_description: Some(
+        "Compare with the state the field holds at the entry's time (`-t`, or \
+         now). If it is the same JSON value, nothing is written: the entry \
+         that set it prints as ISLAST and the exit is 0.",
+    ),
+    left_override: None,
+};
+
+/// `start`, `stop` and `switch` keep `--if-changed` on their own pages.
+const SWITCH_SHARED_FLAGS: SharedFlags = SharedFlags {
+    topic: "logging",
+    own: &[IF_CHANGED],
+};
+
 /// `add` is the one verb that REQUIRES an id, so the two flags that give it
 /// one stay on its page, worded for `add` rather than for the shared table.
 const ADD_SHARED_FLAGS: SharedFlags = SharedFlags {
@@ -1241,7 +1264,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         ],
         args: NO_ARGS,
         flags: LOG_FLAGS,
-        shared_flags: Some(&LOG_SHARED_FLAGS),
+        shared_flags: Some(&SWITCH_SHARED_FLAGS),
         examples: NO_EXAMPLES,
         summary_col: 24,
         body_override: None,
@@ -1264,7 +1287,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         ],
         args: NO_ARGS,
         flags: LOG_FLAGS,
-        shared_flags: Some(&LOG_SHARED_FLAGS),
+        shared_flags: Some(&SWITCH_SHARED_FLAGS),
         examples: NO_EXAMPLES,
         summary_col: 24,
         body_override: None,
@@ -1283,7 +1306,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         usage: &["datum switch <FIELD> [VALUE | KEY=VALUE]..."],
         args: NO_ARGS,
         flags: LOG_FLAGS,
-        shared_flags: Some(&LOG_SHARED_FLAGS),
+        shared_flags: Some(&SWITCH_SHARED_FLAGS),
         examples: NO_EXAMPLES,
         summary_col: 24,
         body_override: None,

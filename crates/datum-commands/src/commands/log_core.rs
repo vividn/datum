@@ -24,8 +24,8 @@ use crate::{
     args::{LogArgs, LogArgsExt},
     config::device_id,
     render::{
-        show_create_with_context, show_delete, show_exists, show_rename, show_update_with_context,
-        RenderContext, Surface,
+        show_create_with_context, show_delete, show_exists, show_islast, show_rename,
+        show_update_with_context, RenderContext, Surface,
     },
 };
 
@@ -47,6 +47,10 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
                  joined positionals already target the state"
             );
         }
+    }
+
+    if args.if_changed && !matches!(action, Action::Switch | Action::Start | Action::Stop) {
+        anyhow::bail!("`--if-changed` is only valid with `switch`, `start` and `end`");
     }
 
     // da-py5w: `note` is the one verb whose bare words are prose, not a
@@ -645,6 +649,31 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         let body = field_spec::interpolate(&id_structure, &ctx, &delim);
         entry.slug = datum_core::ids::Slug(format!("{}:{}", entry.field, body));
         entry.id_structure = Some(id_structure);
+    }
+
+    // da-hxmtg: `--if-changed` writes nothing when the field already holds
+    // this state at the entry's time — the same governing-state walk `now`
+    // reads — and names the entry that set it as ISLAST. A block (a `dur`)
+    // is a span, not a transition, so it writes as it always did. A dry run
+    // still previews ISLAST but leaves `_` where it was.
+    if args.if_changed && entry.occur_time.is_none() {
+        anyhow::bail!("`--if-changed` needs a time: a timeless entry has no state to compare with");
+    }
+    if let (true, Some(t), None) = (args.if_changed, &entry.occur_time, &entry.dur) {
+        if let Some((state, Some(hid))) = db
+            .batch_governing_at(&[&entry.field], t.utc)?
+            .remove(&entry.field)
+        {
+            if Some(&state) == entry.state.as_ref() {
+                let last = db.get_entry(&hid)?;
+                let registry = crate::commands::helpers::load_registry_opt(db);
+                show_islast(&last, registry.as_ref(), &args.output()?);
+                if !args.dry_run {
+                    let _ = datum_core::last_docs::set_last_docs(db, &[last.hid]);
+                }
+                return Ok(());
+            }
+        }
     }
 
     // da-gvcen: the first log of a field with no spec brings the field
