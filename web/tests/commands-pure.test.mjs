@@ -22,9 +22,10 @@ import {
 	verbPress
 } from '../src/lib/commands.ts';
 
-/** vividn's order: Undo (its redo an icon on it, da-zq91a), the five verbs, then the rest. */
+/** vividn's order: Undo (its redo an icon on it, da-zq91a), Help where Redo was (da-vjwid), the five verbs, then the rest. */
 const ORDER = [
 	'undo',
+	'help',
 	'occur',
 	'start',
 	'end',
@@ -83,6 +84,7 @@ describe('the commands, in order', () => {
 	test('Undo runs; the five verbs pend; everything else writes a line', () => {
 		const pressOf = (name) => COMMANDS.find((c) => c.name === name).press;
 		assert.equal(pressOf('undo'), 'run');
+		assert.equal(pressOf('help'), 'help');
 		for (const verb of VERBS) assert.equal(pressOf(verb), 'verb', verb);
 		for (const name of ['tail', 'db', 'sync']) assert.equal(pressOf(name), 'fill', name);
 	});

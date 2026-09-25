@@ -682,7 +682,7 @@
 	}
 </script>
 
-<div class="host {kind === undefined ? '' : titleOf(kind)}">
+<div class="host {kind === undefined ? '' : titleOf(kind)}" data-widget={kind}>
 <section
 	class="{holder ? 'holder' : 'pane'} edge-{pane.bar.edge}"
 	class:alarm={$alarm}

@@ -31,7 +31,7 @@
 	export let pill: Pill;
 </script>
 
-<span class="pill {pill.kind}" class:locked={pill.locked} style:--pill={pill.color}
+<span class="pill {pill.kind}" class:locked={pill.locked} style:--pill={pill.color} data-pill={pill.id}
 	>{#each sectionsOf(pill) as section, i}<button
 			type="button"
 			class="remove"

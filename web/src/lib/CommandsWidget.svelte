@@ -21,6 +21,9 @@
 	  `delete` with an hid selected deletes it. `fires` in commands.ts
 	  decides, and the same answer draws the button with a DOUBLE outline
 	  (`.act`), so what looks as if it fires is what fires.
+	- `Help` (da-vjwid) ARMS the page — `$lib/help.ts`: the next tap on a
+	  command, a widget or a pill is explained instead of acted on, and a
+	  second press on Help is `datum help`. Its label says so while armed.
 	- a VERB puts `<verb> ` on the command line and leaves the caret in
 	  it. That is the whole of pending a verb: the fields widget reads the
 	  line's first word, so tapping `occur` and typing `occur` reach the
@@ -42,6 +45,7 @@
 	import type { Pill } from './bar.js';
 	import ButtonRows from './ButtonRows.svelte';
 	import { commandsUnder, fires, type CommandButton, type Grammar } from './commands.js';
+	import { arm, helping } from './help.js';
 
 	export let disabled = false;
 	export let grammar: Grammar | null = null;
@@ -78,6 +82,18 @@
 				↷
 			</button>
 		</span>
+	{:else if command.press === 'help'}
+		<!-- Never disabled: it runs nothing until it is asked about something. -->
+		<button
+			class="command help"
+			class:armed={$helping}
+			data-command="help"
+			aria-pressed={$helping}
+			title={$helping ? 'tap anything to have it explained; Help again for general help' : 'explain the next thing you tap'}
+			on:click={arm}
+		>
+			{$helping ? '? tap something' : command.label}
+		</button>
 	{:else}
 		<button
 			class="command"
@@ -124,6 +140,14 @@
 	.command:hover:not(:disabled) {
 		border-color: var(--accent);
 		color: var(--ink-bright);
+	}
+
+	/* Armed, Help is the one lit thing on the bar: filled with the accent,
+	   so the page plainly is in a different state. */
+	.command.help.armed {
+		background: var(--accent);
+		border-color: var(--accent);
+		color: var(--page);
 	}
 
 	/* Undo and its redo are one control of two buttons: they share the

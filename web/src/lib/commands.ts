@@ -32,7 +32,9 @@ export type Press =
 	/** Put `<name> ` on the command line and pend the verb. */
 	| 'verb'
 	/** Put `<name> ` on the command line; there is nothing to pend. */
-	| 'fill';
+	| 'fill'
+	/** Arm the page: the next tap is explained, not acted on ($lib/help.ts). */
+	| 'help';
 
 export interface CommandButton {
 	/** The CLI word — what runs, and what goes on the line. */
@@ -52,7 +54,7 @@ export interface CommandButton {
 const TAPPED = ['retime', 'delete', 'get', 'history'];
 
 /**
- * The commands, in the order the widget draws them: Undo, vividn's five
+ * The commands, in the order the widget draws them: Undo, Help, vividn's five
  * verbs, then the rest by how often a hand reaches for them.
  *
  * `redo` is not a button of its own (da-zq91a, vividn: «rather than dedicated
@@ -72,6 +74,10 @@ const TAPPED = ['retime', 'delete', 'get', 'history'];
  */
 export const COMMANDS: CommandButton[] = [
 	{ name: 'undo', label: 'Undo', press: 'run' },
+	// Where Redo stood before da-zq91a (da-vjwid, vividn: «where redo button
+	// is lets add a help button»). It explains the next tap instead of
+	// running anything, and `datum help` is what it is a button for.
+	{ name: 'help', label: 'Help', press: 'help' },
 	...VERBS.map((name): CommandButton => ({ name, label: name, press: 'verb', next: 'tap' })),
 	...[
 		'retime',
@@ -342,6 +348,8 @@ export function fits(takes: Takes | undefined, pill: Pill): boolean {
  */
 export function commandsUnder(grammar: Grammar | null, pills: Pill[]): CommandButton[] {
 	return COMMANDS.filter((command) => {
+		// Help takes no pill and explains every one, so no pill hides it.
+		if (command.press === 'help') return true;
 		const takes = grammar?.get(command.name);
 		return pills.every((p) => fits(takes, p));
 	});

@@ -84,6 +84,13 @@ export interface WidgetKind {
 	 * not.
 	 */
 	onChange?: (settings: Record<string, unknown>, detail: unknown) => Record<string, unknown>;
+	/**
+	 * What the Help button says about this kind (da-vjwid): what it shows,
+	 * what a tap does, what a hold does — a line each, since the bar shows
+	 * the first four ($lib/help.ts). Required, so a kind cannot ship
+	 * without one; `tree.test.mjs` asks the same of every kind.
+	 */
+	help: string;
 	/** Content-box sizes a border drag snaps to, from the settings: see the note above. */
 	snap?: (settings: Record<string, unknown>) => { width?: number[]; height?: number[] };
 	/** Not offered by the chooser: a kind the app puts in a tab itself. */
@@ -193,8 +200,9 @@ const meta = (
 ): WidgetKindMeta => ({ kind, title, defaultSettings, ...(options ? { options } : {}) });
 
 /** A widget of the DEBUG database: `db`-gated, and named as it is titled. */
-const debugKind = (kind: 'debug' | 'seed', legible: Floor): WidgetKind => ({
+const debugKind = (kind: 'debug' | 'seed', legible: Floor, help: string): WidgetKind => ({
 	meta: meta(kind, kind),
+	help,
 	component: DebugPane,
 	props: () => ({ kind }),
 	db: DEBUG_DB,
@@ -225,6 +233,11 @@ export const KINDS: Record<string, WidgetKind> = {
 			ORIENTATION
 		]),
 		component: DayviewWidget,
+		help: [
+			'Your days as bands of colour: today at the bottom, the days before it above.',
+			'Tap a moment for a -t time pill; hold, then drag, for a span.',
+			'Hold still, or double tap, to select the entry under your finger. Pinch zooms.'
+		].join('\n'),
 		props: ({ dayHeight, labelWidth, freezeToday, hourFrom, hourTo, orientation }) => ({
 			orientation: orientation === 'vertical' ? 'vertical' : 'horizontal',
 			// Undefined on purpose: the strip derives its day from its own
@@ -251,6 +264,10 @@ export const KINDS: Record<string, WidgetKind> = {
 	repl: {
 		meta: meta('repl', 'repl', { reversed: false }, [{ key: 'reversed', label: 'newest first', type: 'boolean' }]),
 		component: ReplWidget,
+		help: [
+			'Every command run on this page and what datum answered, the newest last.',
+			'Tap an entry to select it as an id pill; the bottom bar is its prompt.'
+		].join('\n'),
 		props: ({ reversed }) => ({ reversed: reversed === true }),
 		legible: { width: 200, height: 71 }
 	},
@@ -269,6 +286,11 @@ export const KINDS: Record<string, WidgetKind> = {
 			ORIENTATION
 		]),
 		component: NowviewWidget,
+		help: [
+			'What each field is doing now, and how it got there; − / + reach further back.',
+			'Tap for a -t time pill; drag to pan; hold and drag, or drag left from now, for a span.',
+			'Hold still, or double tap, to select the entry under your finger.'
+		].join('\n'),
 		props: ({ history, at, orientation }) => ({
 			history: typeof history === 'string' ? history : NOWVIEW_HISTORY,
 			at: typeof at === 'string' ? at : undefined,
@@ -297,6 +319,11 @@ export const KINDS: Record<string, WidgetKind> = {
 			}
 		]),
 		component: CliPane,
+		help: [
+			'The newest entries, as `datum tail` lists them; scroll up for older ones.',
+			'Tap a row to select it as an id pill; ctrl or shift adds more.',
+			'A field pill narrows it to that field.'
+		].join('\n'),
 		props: (settings) => ({ spec: TAIL, scale: tailScale(settings) }),
 		legible: (settings) => {
 			const s = tailScale(settings);
@@ -307,13 +334,30 @@ export const KINDS: Record<string, WidgetKind> = {
 	// keeps that line in its own localStorage key for now; making it a
 	// widget setting is its own change. Called `command` until da-zqop,
 	// which freed that id for the commands widget (da-ltux).
-	custom: { meta: meta('custom', 'custom'), component: CustomPane, legible: { width: 200, height: 102 } },
+	custom: {
+		meta: meta('custom', 'custom'),
+		component: CustomPane,
+		help: [
+			'Any datum command you choose, run again whenever something changes.',
+			'✎ in its title edits the command; a command that writes runs only on ▶.'
+		].join('\n'),
+		legible: { width: 200, height: 102 }
+	},
 	// The commands widget (da-ltux): every command as a button, Undo
 	// first. It took the id `command` back from the widget above, which
 	// da-zqop renamed to `custom` to free it. Legible at one button row
 	// (33px) plus the body's padding — the scroll rule takes it from
 	// there, and one row reached sideways is still every command.
-	command: { meta: meta('command', 'command'), component: CommandPane, legible: { width: 160, height: 49 } },
+	command: {
+		meta: meta('command', 'command'),
+		component: CommandPane,
+		help: [
+			'Every datum command as a button: Undo (↷ redoes), Help, the verbs, then the rest.',
+			'A verb goes on the command line and filters the fields; a double outline runs at once.',
+			'The pills you have loaded hide the commands that cannot take them.'
+		].join('\n'),
+		legible: { width: 160, height: 49 }
+	},
 	// The stats widget (da-n7r0): its settings ARE the widget's settings, and
 	// its range chips move them with a `change` like any other widget's own
 	// control — so since da-vhwq THIS SESSION keeps them, not the tree, and
@@ -327,6 +371,10 @@ export const KINDS: Record<string, WidgetKind> = {
 	stats: {
 		meta: meta('stats', 'stats', { ...DEFAULT_STATS }),
 		component: Stats,
+		help: [
+			'How much of each field there is — entries, time, share — over the window chosen.',
+			'The chips choose the window; a field pill narrows it to that field\'s states.'
+		].join('\n'),
 		props: ({ range }) => ({ settings: { range: (range ?? DEFAULT_STATS.range) as StatsRange } }),
 		onChange: (_, settings) => settings as Record<string, unknown>,
 		legible: { width: 240, height: 140 }
@@ -352,6 +400,11 @@ export const KINDS: Record<string, WidgetKind> = {
 			{ key: 'showIgnored', label: 'show ignored fields', type: 'boolean' }
 		]),
 		component: FieldsPane,
+		help: [
+			'Every field you log, as a button, lit when it is on.',
+			'Tap to log it, with any pending verb and pills; hold for a field pill.',
+			'Track + declares a new field.'
+		].join('\n'),
 		props: ({ switchLabel, showIgnored }) => ({
 			switchLabel: switchLabel === 'state' ? 'state' : 'field',
 			showIgnored: showIgnored === true
@@ -359,7 +412,15 @@ export const KINDS: Record<string, WidgetKind> = {
 		legible: { width: 160, height: 49 }
 	},
 	// The aliases widget (da-x6yj): every alias, listed.
-	aliases: { meta: meta('aliases', 'aliases'), component: AliasesWidget, legible: { width: 160, height: 72 } },
+	aliases: {
+		meta: meta('aliases', 'aliases'),
+		component: AliasesWidget,
+		help: [
+			'Every alias: your own, then the ones a spec gives its field.',
+			'An alias is a word that expands into a command: `datum help alias`.'
+		].join('\n'),
+		legible: { width: 160, height: 72 }
+	},
 	// The input widget (da-0dhc, back as da-3zon): the bottom bar's command
 	// line drawn in a pane — the same buffer, the same pills, the same
 	// Enter. Legible at its prompt row (36.4px measured) plus one line of
@@ -369,6 +430,10 @@ export const KINDS: Record<string, WidgetKind> = {
 	input: {
 		meta: meta('input', 'input', { reversed: false }, [{ key: 'reversed', label: 'prompt on top', type: 'boolean' }]),
 		component: InputWidget,
+		help: [
+			'The command line, in a pane: the same line, pills and Enter as the bottom bar.',
+			'Above it, what the last command answered.'
+		].join('\n'),
 		props: ({ reversed }) => ({ reversed: reversed === true }),
 		legible: { width: 200, height: 58 }
 	},
@@ -379,13 +444,27 @@ export const KINDS: Record<string, WidgetKind> = {
 	// the body's padding — narrower or shorter and a slider is not a
 	// slider. "we could even have different DEBUG widgets eventually": the
 	// next one is another `debugKind` line here, not a rewrite of this one.
-	debug: debugKind('debug', { width: 200, height: 94 }),
+	debug: debugKind(
+		'debug',
+		{ width: 200, height: 94 },
+		'How the bottom bar feels, as live knobs: TAU and DETENT. Only in the DEBUG database.'
+	),
 	// The second (da-6ecm5): a plausible week of sample data, seeded
 	// into the database it runs in. Legible at its two buttons and a line
 	// of report; the log under them scrolls.
-	seed: debugKind('seed', { width: 200, height: 60 }),
+	seed: debugKind(
+		'seed',
+		{ width: 200, height: 60 },
+		'Seeds a plausible week of sample data into this database. Only in the DEBUG database.'
+	),
 	// What the shell shows in a tab whose layout cannot be inlined (da-0a5o).
-	notice: { meta: meta('notice', 'notice'), component: Notice, hidden: true, legible: { width: 120, height: 40 } }
+	notice: {
+		meta: meta('notice', 'notice'),
+		component: Notice,
+		hidden: true,
+		help: 'A tab whose layout could not be drawn here, and why.',
+		legible: { width: 120, height: 40 }
+	}
 };
 
 /** The kinds the chooser offers in `db`, in the order it shows them. */

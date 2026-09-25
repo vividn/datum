@@ -75,7 +75,7 @@ async function run(app, name) {
 	assert.equal(await app.page.locator('.prompt-bar input').inputValue(), '', 'the tap put something on the line');
 }
 
-const ID_COMMANDS = ['undo', 'redo', 'retime', 'update', 'delete', 'history', 'get'];
+const ID_COMMANDS = ['undo', 'redo', 'help', 'retime', 'update', 'delete', 'history', 'get'];
 
 describe('a tap on a tail row', () => {
 	test('loads its hid as a pill; only the id commands are drawn; get runs on it', async () => {
@@ -171,7 +171,8 @@ describe('a tap on a tail row', () => {
 			await rows(page).first().click();
 			await hidPill(page).waitFor();
 			await page.waitForFunction(() => !document.querySelector('.bar.commands [data-command="occur"]'));
-			assert.deepEqual(await drawn(page), whole.filter((name) => takesId.has(name)));
+			// Help takes no pill and explains every one, so no pill hides it (da-vjwid).
+			assert.deepEqual(await drawn(page), whole.filter((name) => takesId.has(name) || name === 'help'));
 		});
 	});
 });

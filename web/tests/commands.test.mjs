@@ -130,9 +130,10 @@ describe('the bar of commands', () => {
 	test('Undo leads, the verbs follow, and note is not among them', async () => {
 		await onPage(async ({ page }) => {
 			const buttons = await drawn(page);
-			assert.deepEqual(buttons.slice(0, 7), [
+			assert.deepEqual(buttons.slice(0, 8), [
 				'Undo',
 				'↷',
+				'Help',
 				'occur',
 				'start',
 				'end',
@@ -281,19 +282,19 @@ describe('the scroll rule', () => {
 				// with no gap between them (da-zq91a).
 				packed(await gaps(commands(page), '.lane > *'), `${want} rows`);
 				if (want === 2) {
-					// Dealt by index: Undo and occur start the two rows, start
-					// follows Undo and end follows occur.
+					// Dealt by index: Undo and Help start the two rows (da-vjwid),
+					// occur follows Undo and start follows Help.
 					const at = Object.fromEntries(drawn.map((b) => [b.name, b]));
 					assert.deepEqual(
 						[
 							at.redo.line === at.undo.line && at.redo.left > at.undo.left,
-							at.undo.left === at.occur.left,
-							at.undo.line < at.occur.line,
-							at.start.line === at.undo.line && at.start.left > at.redo.left,
-							at.end.line === at.occur.line && at.end.left > at.occur.left
+							at.undo.left === at.help.left,
+							at.undo.line < at.help.line,
+							at.occur.line === at.undo.line && at.occur.left > at.redo.left,
+							at.start.line === at.help.line && at.start.left > at.help.left
 						],
 						[true, true, true, true, true],
-						'the rows are not Undo ↷ start … over occur end …'
+						'the rows are not Undo ↷ occur … over Help start …'
 					);
 				}
 				// And the rest really is reached by scrolling, not by spilling —

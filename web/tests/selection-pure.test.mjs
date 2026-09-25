@@ -227,8 +227,14 @@ describe('which commands are active under the pills', () => {
 	test('no pills, or no grammar and no hid: all of them, in the usual order', () => {
 		assert.deepEqual(commandsUnder(GRAMMAR, []), COMMANDS);
 		assert.deepEqual(commandsUnder(null, [time]), COMMANDS);
-		// No grammar says who takes an id, so nothing is offered one.
-		assert.deepEqual(commandsUnder(null, [one]), []);
+		// No grammar says who takes an id, so nothing is offered one — but
+		// Help, which takes no pill and explains them all (da-vjwid).
+		assert.deepEqual(commandsUnder(null, [one]).map((c) => c.name), ['help']);
+	});
+
+	test('no pill hides Help', () => {
+		for (const pills of [[one], [two], [time], [mood], [mood, time]])
+			assert.ok(commandsUnder(GRAMMAR, pills).some((c) => c.name === 'help'), JSON.stringify(pills));
 	});
 
 	test('one hid: the id commands, the rest hidden', () => {
