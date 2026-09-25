@@ -67,9 +67,10 @@ const DEFER_BAR = process.argv.includes('--defer-bar');
 const round = (x) => Math.round(x * 10) / 10;
 /**
  * The true median, averaging the two middle values of an even-length run.
- * Not the lower middle: the concurrency control medians EIGHT runs, and a
- * latency figure biased downwards is the wrong direction for a measurement
- * asking why something is slow.
+ * Not the upper middle, which is what `Math.floor(n / 2)` returns: the
+ * concurrency control medians EIGHT runs, where that read 51.6 ms against
+ * a true 49.8 — a latency figure biased upwards, flattering the very gap
+ * the control exists to show.
  */
 const median = (xs) => {
 	const sorted = [...xs].sort((a, b) => a - b);
