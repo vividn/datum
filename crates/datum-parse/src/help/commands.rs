@@ -165,7 +165,7 @@ const LOG_FLAGS: &[FlagSpec] = &[
         takes_value: true,
         value_hint: Some("T"),
         value_optional: false,
-        summary: "Comment",
+        summary: "Append a comment to data.comment (repeatable)",
         long_description: None,
         left_override: None,
     },
@@ -195,7 +195,7 @@ const LOG_FLAGS: &[FlagSpec] = &[
         takes_value: false,
         value_hint: None,
         value_optional: false,
-        summary: "Remainder positionals → extra_data.comment string",
+        summary: "Remainder positionals → one appended comment",
         long_description: None,
         left_override: None,
     },
@@ -596,7 +596,7 @@ const UPDATE_FLAGS: &[FlagSpec] = &[
         takes_value: true,
         value_hint: Some("T"),
         value_optional: false,
-        summary: "Comment",
+        summary: "Append a comment to data.comment (repeatable)",
         long_description: None,
         left_override: None,
     },
@@ -865,7 +865,7 @@ const NOW_BODY: &str = "USAGE:\n  datum now [-A] [--bare] [--no-color] [--cols N
 
 const GET_BODY: &str = "USAGE:\n  datum get <ID_OR_SLUG[,ID_OR_SLUG]...> [--pretty]\n  datum get <ID_OR_SLUG>::<NAME>[,<ID_OR_SLUG>::<NAME>]...\n\nA comma list prints each entry in the order given (`--pretty` and `--show json`\ntoo). An id that does not resolve is named on stderr after the documents that\ndid, and the command exits 1.\n\n`<id>::<name>` prints one value of the entry alone on stdout, for scripts:\n  datum get di91z::hid       the full 12-char hid\n  datum get di91z::state     the whole state\n  datum get di91z::.title    state.title (the `.key` shorthand of data entry)\n  datum get di91z::priority  a data key\nA name is resolved in this order: an entry column (hid, slug, field, verb,\nstate, dur, following_state, data, occur_time, create_time, modify_time, …)\nalways means the column; `.x.y` walks the state; anything else walks data.\nA string prints bare, an object or array as compact JSON. A missing or null\nvalue exits 1 with a message on stderr; an empty string prints an empty line\nand exits 0. A path splits on `.` as data entry does. `::name` alone reads\nthe last entry. A comma list prints one value per line and takes only\n`<id>::<name>` pieces; `--show` and `--pretty` do not apply. An id cannot\ncontain `::`, so the first one splits and a name may hold more (`_::a::b`).\n\nStructured states (objects with `id` and other fields) render as an `{id}`\nchip on the main info line, with sub-fields broken out on a state second\nline below. Parallel states wrap in `[ … ]` with one inner state per line.\nThe per-entry data block follows the same alignment convention — keys are\nright-aligned so their trailing `:` shares a column when the block goes\nmultiline.\n";
 
-const DELETE_BODY: &str = "USAGE:\n  datum delete [ID_OR_SLUG[,ID_OR_SLUG]...] [--force] [--dry-run] [--strict]\n                [-A | -o FMT]\n\nARGS:\n  [ID_OR_SLUG]  QuickId(s) — hid prefix, slug, `_`/`_LAST`, `<field>:_`,\n                slug wildcard. Multiple targets may be comma-batched\n                (`<id>,<id>,...`); resolution is per-token.\n                Omitting the arg targets `_LAST`. Nothing refuses on\n                age: past ten minutes delete warns on stderr with\n                the pointer's age and proceeds (`datum undo` is the\n                way back).\n\nOPTIONS:\n      --force       Accepted, but there is no longer a prompt to skip.\n      --dry-run     Print what would be deleted and exit; no DB writes.\n      --strict      With comma-batched tokens, abort up-front if ANY\n                    token failed to resolve (default: delete the\n                    resolved subset, skip-and-warn on the failures).\n  -A, --show-all    Show the full entry document for each deleted row.\n  -o, --format-string <FMT>\n                    Render each deleted row through datum's format-string DSL.\n\nEXAMPLES:\n  datum delete                    # delete _LAST (warns if > 10 min stale)\n  datum delete activity:_         # delete latest activity row\n  datum delete a1b2,c3d4          # batched\n  datum delete a1b2,c3d4 --dry-run\n                                  # preview only — no DB writes\n";
+const DELETE_BODY: &str = "USAGE:\n  datum delete [ID_OR_SLUG[,ID_OR_SLUG]...] [-c WHY] [--force] [--dry-run] [--strict]\n                [-A | -o FMT]\n\nARGS:\n  [ID_OR_SLUG]  QuickId(s) — hid prefix, slug, `_`/`_LAST`, `<field>:_`,\n                slug wildcard. Multiple targets may be comma-batched\n                (`<id>,<id>,...`); resolution is per-token.\n                Omitting the arg targets `_LAST`. Nothing refuses on\n                age: past ten minutes delete warns on stderr with\n                the pointer's age and proceeds (`datum undo` is the\n                way back).\n\nOPTIONS:\n  -c, --comment <WHY>\n                    Say why: appends `deleted: <WHY>` to each row's\n                    comments, in the write that deletes it.\n      --force       Accepted, but there is no longer a prompt to skip.\n      --dry-run     Print what would be deleted and exit; no DB writes.\n      --strict      With comma-batched tokens, abort up-front if ANY\n                    token failed to resolve (default: delete the\n                    resolved subset, skip-and-warn on the failures).\n  -A, --show-all    Show the full entry document for each deleted row.\n  -o, --format-string <FMT>\n                    Render each deleted row through datum's format-string DSL.\n\nEXAMPLES:\n  datum delete                    # delete _LAST (warns if > 10 min stale)\n  datum delete activity:_         # delete latest activity row\n  datum delete a1b2,c3d4          # batched\n  datum delete _ -c \"wrong time\"  # delete, saying why\n  datum delete a1b2,c3d4 --dry-run\n                                  # preview only — no DB writes\n";
 
 const UNDO_BODY: &str = "USAGE:\n  datum undo [ID_OR_SLUG[,ID_OR_SLUG]...] [--to-version N]\n\nReverts an entry to a prior version via its entry_history trail. By default,\nrestores the immediately-previous version; --to-version N picks an explicit\nversion. With no ID_OR_SLUG it acts on `_LAST`, falling back to the most\nrecent tombstone for legacy entries with no trail. A comma list steps each\nentry back along its own trail; --to-version with a list is refused.\n\nUndo never refuses on age. Past ten minutes it names the age on stderr and\nproceeds anyway: `datum redo` is the way forward again.\n";
 
@@ -1177,7 +1177,7 @@ pub const ENV_VARS: &[EnvVarSpec] = &[
 const ALIAS_EXAMPLES: &[ExampleSpec] = &[
     ExampleSpec {
         command: "datum alias set vbp \"note word srcLang=pt pos=verb\"\ndatum vbp correr \"to run\"",
-        description: "An alias stands in for any PREFIX of an invocation — verb, field, flags, data keys. The call above writes a `word` note with `srcLang=pt`, `pos=verb` and `comment=\"correr to run\"`.",
+        description: "An alias stands in for any PREFIX of an invocation — verb, field, flags, data keys. The call above writes a `word` note with `srcLang=pt`, `pos=verb` and `comment=[\"correr to run\"]`.",
     },
     ExampleSpec {
         command: "datum switch body vertical , switch body sit",
@@ -1541,7 +1541,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         category: Category::Mutate,
         summary: "delete an entry (alias: del)",
         long_description: None,
-        usage: &["datum delete [ID_OR_SLUG[,ID_OR_SLUG]...] [--force] [--dry-run] [--strict]"],
+        usage: &["datum delete [ID_OR_SLUG[,ID_OR_SLUG]...] [-c WHY] [--force] [--dry-run] [--strict]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         shared_flags: None,

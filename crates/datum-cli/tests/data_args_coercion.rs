@@ -110,7 +110,7 @@ fn dash_r_dash_s_joins_remainder_into_string_at_field() {
 /// `-C <words…>` (da-4t5f): shorthand equivalent to `-SR comment` —
 /// remainder positionals join into a single string and land in
 /// `extra_data.comment`. Bead-spec example: `datum log -C ate too many tacos`
-/// → comment='ate too many tacos'.
+/// → comment=['ate too many tacos'] (an array since da-ult68).
 #[test]
 fn dash_c_joins_remainder_into_comment_string() {
     let db = fresh_db();
@@ -119,7 +119,7 @@ fn dash_c_joins_remainder_into_comment_string() {
 
     let entry = &datum_core::test_util::logged_entries(&db, "log")[0];
     let extra = entry.data.as_ref().expect("extra_data populated");
-    assert_eq!(extra["comment"], json!("ate too many tacos"));
+    assert_eq!(extra["comment"], json!(["ate too many tacos"]));
 }
 
 /// `-SR <bucket> <words…>` (da-gq3x): the bundled short form for
@@ -216,13 +216,13 @@ fn multiple_comments_become_array() {
 }
 
 #[test]
-fn single_comment_stays_scalar() {
+fn single_comment_is_still_an_array() {
     let db = fresh_db();
     run_cli(&["occur", "log", "-c", "lone comment"], &db).expect("occur with one -c");
 
     let entry = &datum_core::test_util::logged_entries(&db, "log")[0];
     let extra = entry.data.as_ref().expect("extra_data populated");
-    assert_eq!(extra["comment"], json!("lone comment"));
+    assert_eq!(extra["comment"], json!(["lone comment"]));
 }
 
 /// Durations and time flags have their own grammar, untouched by the

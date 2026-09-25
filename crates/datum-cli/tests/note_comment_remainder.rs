@@ -100,7 +100,7 @@ fn bare_words_become_the_comment() {
 
     assert_eq!(
         data_of(&env, "coffee"),
-        serde_json::json!({ "comment": "too strong today" }),
+        serde_json::json!({ "comment": ["too strong today"] }),
         "the words join into `comment`, in order, single-spaced — and nothing else lands",
     );
     // …and the human view says so too.
@@ -118,7 +118,7 @@ fn key_value_tokens_stay_data_around_the_words() {
 
     assert_eq!(
         data_of(&env, "coffee"),
-        serde_json::json!({ "comment": "too strong today", "tasted": "burnt" }),
+        serde_json::json!({ "comment": ["too strong today"], "tasted": "burnt" }),
         "a `KEY=VALUE` anywhere in the tail is data; the rest is the comment",
     );
 }
@@ -146,7 +146,7 @@ fn a_leading_dash_is_still_a_flag() {
 
     assert_eq!(
         data_of(&env, "coffee"),
-        serde_json::json!({ "comment": "late" }),
+        serde_json::json!({ "comment": ["late"] }),
     );
     let json = env.ok(&["tail", "-n", "1", "coffee", "--show", "json"]);
     let v: serde_json::Value = serde_json::from_str(json.trim()).unwrap();

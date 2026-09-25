@@ -59,6 +59,17 @@ pub fn new_hid() -> Hid {
     Hid(entry_id::hid_from_bytes(&bytes))
 }
 
+/// How the `data` value under `key` READS (da-ult68). `comment` is always an
+/// array, and one comment reads as itself — in the data block, a `%comment%`
+/// id template, a `tail --column` and a `-o` format string alike; two or
+/// more stay the list. Every other value is itself.
+pub fn shown_data_value<'a>(key: &str, v: &'a JsonValue) -> &'a JsonValue {
+    match v {
+        JsonValue::Array(a) if key == "comment" && a.len() == 1 => &a[0],
+        v => v,
+    }
+}
+
 /// An entry is the core data unit. All user-logged data becomes an Entry.
 ///
 /// Time-shape pivot (da-5ns): replaces start_time/end_time/entry_shape

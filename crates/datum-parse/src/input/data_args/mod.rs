@@ -142,7 +142,7 @@ pub struct DataArgs {
     /// calls [`consolidate_keys`] internally.
     pub keys: Vec<String>,
     /// `-c`/`--comment`. Joined into the final doc's `comment` key in
-    /// the order supplied (string → `comment: "x"`, many → `comment: [...]`).
+    /// the order supplied — always an array, one element per comment.
     pub comment: Vec<String>,
     /// `-K` additions — when the user supplies `-K key`, the key name is
     /// pushed here in addition to being appended to `keys`. Callers that
@@ -343,15 +343,7 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
 
     // ── comments ───────────────────────────────────────────────────────
     for comment in &args.comment {
-        alter_datum_data(
-            &mut datum_data,
-            "comment",
-            Some(comment),
-            None,
-            true,
-            false,
-            compat,
-        )?;
+        push_comment(&mut datum_data, comment);
     }
 
     // ── trailing-dur peek (da-vo0y F2) ─────────────────────────────────
@@ -397,7 +389,9 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
             return Err(ParseError::ExtraData(remainder_data));
         };
 
-        if remainder_as_string {
+        if rkey == "comment" && remainder_as_string {
+            push_comment(&mut datum_data, &remainder_data.join(" "));
+        } else if remainder_as_string {
             let joined = remainder_data.join(" ");
             alter_datum_data(
                 &mut datum_data,
@@ -415,7 +409,28 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
         }
     }
 
+    // da-ult68: `comment` is an array whatever wrote it, `comment=x` included.
+    if let Some(c) = datum_data.get_mut("comment") {
+        if !c.is_array() {
+            *c = Value::Array(vec![c.take()]);
+        }
+    }
+
     Ok(datum_data)
+}
+
+/// Append one comment, as typed, to `data.comment` (da-ult68): every
+/// `-c` / `-C` adds an element and none replaces one.
+fn push_comment(data: &mut DatumData, comment: &str) {
+    let slot = data
+        .entry("comment")
+        .or_insert_with(|| Value::Array(Vec::new()));
+    if !slot.is_array() {
+        *slot = Value::Array(vec![slot.take()]);
+    }
+    if let Value::Array(a) = slot {
+        a.push(Value::String(comment.to_string()));
+    }
 }
 
 #[cfg(test)]
@@ -654,7 +669,7 @@ mod tests {
         a.comment = vec!["this is a comment.".into()];
         assert_eq!(
             run(a),
-            *json!({"comment": "this is a comment."})
+            *json!({"comment": ["this is a comment."]})
                 .as_object()
                 .unwrap()
         );
@@ -665,6 +680,11 @@ mod tests {
             run(a),
             *json!({"comment": ["one", "two"]}).as_object().unwrap()
         );
+
+        // A comment is kept as typed — `-c 42` is not the number 42.
+        let mut a = args();
+        a.comment = vec!["42".into()];
+        assert_eq!(run(a), *json!({"comment": ["42"]}).as_object().unwrap());
     }
 
     #[test]
@@ -972,7 +992,7 @@ mod tests {
             *json!({
                 "optional1": "the",
                 "key": "value",
-                "comment": "non filled keys will be a comment.",
+                "comment": ["non filled keys will be a comment."],
             })
             .as_object()
             .unwrap()

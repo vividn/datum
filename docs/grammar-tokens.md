@@ -380,6 +380,33 @@ boundary, or camelCased, optionally with trailing digits) is parsed as
 that kind first. So `dur=5m` stores the duration `PT5M`, while
 `splits.first=5m` stores the string `"5m"`.
 
+### `comment` — an array, only ever appended to
+
+`-c`/`--comment` and `-C`/`--comment-remainder` each APPEND one string to
+`data.comment`, on every logging verb and on `update`; nothing replaces
+one. The key is an array however many it holds (one prints as itself), and
+a comment is kept as typed: `-c 42` is `"42"`. `delete -c WHY` appends
+`deleted: WHY` in the same write that deletes the row, to every row of a
+comma list.
+
+```bash
+datum occur coffee -c decaf
+datum update coffee:_ -c "second cup"
+datum delete coffee:_ -c "wrong day"
+```
+
+```
+CREATE dtgnq coffee:2026-09-24T14:54:52.113Z
+16:54:52+2  coffee ∅●
+  comment: "decaf"
+UPDATE dtgnq coffee:2026-09-24T14:54:52.113Z
+16:54:52+2  coffee ●
+  comment: ["decaf","second cup"]
+DELETE dtgnq coffee:2026-09-24T14:54:52.113Z
+16:54:52+2  coffee ●
+  comment: ["decaf","second cup","deleted: wrong day"]
+```
+
 ## 3. Inside a time
 
 | token        | means                                                        |

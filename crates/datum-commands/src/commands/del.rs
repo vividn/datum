@@ -74,12 +74,13 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
         crate::commands::helpers::warn_if_stale_default_last("deleting an entry", db);
     }
 
+    let why = args.comment.as_ref().map(|c| format!("deleted: {c}"));
     let mut first_err: Option<anyhow::Error> = None;
     let mut deleted_hids: Vec<Hid> = Vec::new();
     for entry in &entries {
-        match db.soft_delete_entry(&entry.slug) {
-            Ok(()) => {
-                show_delete(entry, registry.as_ref(), &output);
+        match db.soft_delete_entry_with_comment(&entry.slug, why.as_deref()) {
+            Ok(dead) => {
+                show_delete(&dead, registry.as_ref(), &output);
                 deleted_hids.push(entry.hid.clone());
             }
             Err(e) => {

@@ -20,6 +20,7 @@ mod alias_list_json;
 mod alias_time_compose;
 mod batch_update_cmd;
 mod cli_harness;
+mod comment_appends;
 mod concurrent_states_cmd;
 mod conflicts_cmd;
 mod count_cmd;

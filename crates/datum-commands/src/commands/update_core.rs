@@ -384,6 +384,19 @@ fn apply_mutation(
     // it locally so it lands on `id_structure` instead of leaking to `data`.
     let id_literal = take_reserved_id(&mut payload_extra);
 
+    // da-ult68: a comment APPENDS — the payload's go after the row's own,
+    // and a row written before comments were arrays holds a string, which
+    // is kept as the first element rather than replaced.
+    if let (Some(old), Some(JsonValue::Array(new))) = (
+        existing.data.as_ref().and_then(|d| d.get("comment")),
+        payload_extra.as_mut().and_then(|p| p.get_mut("comment")),
+    ) {
+        let old = match old {
+            JsonValue::Array(a) => a.clone(),
+            s => vec![s.clone()],
+        };
+        new.splice(0..0, old);
+    }
     let mut updated = existing.clone();
     updated.data = combine_extra(updated.data, payload_extra, mode);
     // da-5t94: `field=` / `id=` re-field and re-slug in place. Setting

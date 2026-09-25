@@ -95,7 +95,7 @@ fn lookup_path(root: &JsonValue, path: &str) -> Option<JsonValue> {
     for segment in path.split('.') {
         cur = cur.get(segment)?;
     }
-    Some(cur.clone())
+    Some(datum_core::entry::shown_data_value(path, cur).clone())
 }
 
 fn compare_eq(lhs: Option<&JsonValue>, rhs: &str) -> bool {

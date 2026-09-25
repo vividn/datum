@@ -78,11 +78,31 @@ impl Db {
         self.soft_delete_entry_as(slug_or_hid, ChangeKind::UserEdit)
     }
 
+    /// [`Db::soft_delete_entry`] that also appends `comment` to the row's
+    /// `data.comment` array in the same transaction (da-ult68, `delete -c`).
+    /// Returns the tombstoned row.
+    pub fn soft_delete_entry_with_comment(
+        &self,
+        slug_or_hid: &str,
+        comment: Option<&str>,
+    ) -> Result<Entry> {
+        self.soft_delete(slug_or_hid, ChangeKind::UserEdit, comment)
+    }
+
     /// [`Db::soft_delete_entry`] with the history row's `change_kind` chosen by
     /// the caller. `undo` of a just-created entry is a delete, and it tags the
     /// row [`ChangeKind::Undo`] so `redo` can see that the newest step was an
     /// undo and step forward again (da-s6no).
     pub fn soft_delete_entry_as(&self, slug_or_hid: &str, kind: ChangeKind) -> Result<()> {
+        self.soft_delete(slug_or_hid, kind, None).map(|_| ())
+    }
+
+    fn soft_delete(
+        &self,
+        slug_or_hid: &str,
+        kind: ChangeKind,
+        comment: Option<&str>,
+    ) -> Result<Entry> {
         let tx = self.conn.unchecked_transaction()?;
         let pre: Option<Entry> = tx
             .query_row(
@@ -95,6 +115,14 @@ impl Db {
             Some(e) => e,
             None => return Err(DatumError::NotFound(slug_or_hid.to_string())),
         };
+        // da-ult68: a reason is written onto the row, and `undelete` (undo's
+        // fallback for a row with no trail: imported, or older than history)
+        // keeps `data`, so it would carry the reason back live. Give such a row
+        // its pre-delete state as v1 first; undo then reverts through history
+        // to exactly that, and no string ever has to be matched to remove it.
+        if comment.is_some() && history::latest_version(&tx, &pre.hid)?.is_none() {
+            history::record(&tx, &pre, ChangeKind::Create)?;
+        }
         history::record(&tx, &pre, kind)?;
         let now = Utc::now();
         // da-4vyw: a tombstone must not hash identically to the live row it
@@ -103,13 +131,32 @@ impl Db {
         // marker set (the marker, not the instant — see `HashInputs`).
         let mut dead = pre.clone();
         dead.deleted_at = Some(now);
+        if let Some(c) = comment {
+            let data = dead.data.get_or_insert_with(|| serde_json::json!({}));
+            if let Some(obj) = data.as_object_mut() {
+                let slot = obj
+                    .entry("comment")
+                    .or_insert_with(|| serde_json::json!([]));
+                if !slot.is_array() {
+                    *slot = serde_json::Value::Array(vec![slot.take()]);
+                }
+                if let Some(a) = slot.as_array_mut() {
+                    a.push(c.into());
+                }
+            }
+        }
         tx.execute(
-            "UPDATE entries SET deleted_at = ?1, modify_time = ?1, content_hash = ?3
+            "UPDATE entries SET deleted_at = ?1, modify_time = ?1, content_hash = ?3, data = ?4
              WHERE slug = ?2",
-            params![now.to_rfc3339(), pre.slug, dead.expected_content_hash()],
+            params![
+                now.to_rfc3339(),
+                pre.slug,
+                dead.expected_content_hash(),
+                dead.data.as_ref().map(|v| v.to_string())
+            ],
         )?;
         tx.commit()?;
-        Ok(())
+        Ok(dead)
     }
 
     /// Revert an entry to the state it held at a prior version, resolving

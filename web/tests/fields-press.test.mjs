@@ -215,7 +215,7 @@ describe('a press', () => {
 			assert.equal((await app.echoes()).at(-1), 'note coffee too strong');
 			await app.idle();
 			const stored = (await app.entries()).find((e) => e.field === 'coffee');
-			assert.deepEqual(stored.data, { comment: 'too strong' });
+			assert.deepEqual(stored.data, { comment: ['too strong'] });
 		});
 	});
 });

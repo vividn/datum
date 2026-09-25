@@ -608,8 +608,8 @@ fn comment_flag_populates_extra_data_comment() {
     assert_eq!(extra.get("foo"), Some(&json!("bar")));
     assert_eq!(
         extra.get("comment"),
-        Some(&json!("comment remainder")),
-        "-c sets comment in extra_data",
+        Some(&json!(["comment remainder"])),
+        "-c appends to the comment array in extra_data",
     );
 }
 

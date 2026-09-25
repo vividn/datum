@@ -435,7 +435,7 @@
 					"dur": null,
 					"data": {
 						"amount": 40,
-						"comment": "electricity"
+						"comment": ["electricity"]
 					},
 					"slug": "tx:electricity",
 					"rawInput": "tx amount=40 comment=electricity -t 0915",

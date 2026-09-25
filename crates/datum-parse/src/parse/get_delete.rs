@@ -64,6 +64,7 @@ pub(crate) struct DeleteParsing {
     force: bool,
     dry_run: bool,
     strict: bool,
+    comment: Option<String>,
 }
 
 pub(crate) fn delete_args_registry() -> Vec<LiftedSpec<DeleteParsing>> {
@@ -83,6 +84,10 @@ pub(crate) fn delete_args_registry() -> Vec<LiftedSpec<DeleteParsing>> {
         p.strict = true;
         Ok(())
     }));
+    r.push(local_value(Some('c'), Some("comment"), |p, v| {
+        p.comment = Some(v.to_string());
+        Ok(())
+    }));
     r
 }
 
@@ -95,6 +100,7 @@ pub(crate) fn parse_delete_args(tail: &[&str]) -> Result<DeleteArgs> {
         force: composed.force,
         dry_run: composed.dry_run,
         strict: composed.strict,
+        comment: composed.comment,
         output: composed.output,
     })
 }

@@ -257,7 +257,10 @@ fn lookup_extra_data(extra: Option<&JsonValue>, key: &str) -> Option<String> {
             _ => return None,
         }
     }
-    Some(json_to_plain_string(cur))
+    // da-ult68: one comment slugs as itself, so `--id %comment%` still does.
+    Some(json_to_plain_string(crate::entry::shown_data_value(
+        key, cur,
+    )))
 }
 
 fn json_to_plain_string(v: &JsonValue) -> String {
@@ -332,6 +335,16 @@ mod tests {
         let ctx = occur_ctx("coffee", None, "abc12");
         let got = interpolate("%field%:%uid%", &ctx, DEFAULT_ID_DELIMITER);
         assert_eq!(got, "coffee:abc12");
+    }
+
+    /// da-ult68: one comment slugs as itself; two stay a list.
+    #[test]
+    fn interpolate_comment_array() {
+        let one = serde_json::json!({"comment": ["electricity"]});
+        let two = serde_json::json!({"comment": ["a", "b"]});
+        let t = |d| interpolate("%comment%", &occur_ctx("tx", Some(d), "h"), "_");
+        assert_eq!(t(&one), "electricity");
+        assert_eq!(t(&two), r#"["a","b"]"#);
     }
 
     /// da-0ibow: `%hid%` whole, `%uid%` the first five, `%hid:N%` the first

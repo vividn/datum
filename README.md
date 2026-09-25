@@ -280,7 +280,7 @@ datum alias set vbp "note word srcLang=pt pos=verb"
 datum vbp correr "to run"
 ```
 
-An alias stands in for any PREFIX of an invocation — verb, field, flags, data keys. The call above writes a `word` note with `srcLang=pt`, `pos=verb` and `comment="correr to run"`.
+An alias stands in for any PREFIX of an invocation — verb, field, flags, data keys. The call above writes a `word` note with `srcLang=pt`, `pos=verb` and `comment=["correr to run"]`.
 
 ```
 datum switch body vertical , switch body sit

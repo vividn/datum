@@ -641,7 +641,7 @@ OPTIONS:
       --id <TEMPLATE>     New id/slug template
       --id-delimiter <S>  Delimiter between empty segments
   -k, --key <KV>          Extra key=value (repeatable)
-  -c, --comment <T>       Comment
+  -c, --comment <T>       Append a comment to data.comment (repeatable)
       --dry-run           Show what would change
       --strict            Abort on first batch error
 

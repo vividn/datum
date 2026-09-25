@@ -426,7 +426,7 @@ mod tests {
         assert_eq!(e["slug"], "tx:electricity");
         assert_eq!(e["idStructure"], "%comment%");
         assert_eq!(e["data"]["amount"], 40);
-        assert_eq!(e["data"]["comment"], "electricity");
+        assert_eq!(e["data"]["comment"], serde_json::json!(["electricity"]));
     }
 
     /// A spec's derived aliases make its bare name a command, the same as

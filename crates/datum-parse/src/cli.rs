@@ -298,9 +298,9 @@ pub struct LogArgs {
     pub undo: bool,
     pub keys: Vec<String>,
     pub slug_keys: Vec<String>,
-    /// `-c` / `--comment`. Repeatable per datum's argparse shape: a single
-    /// flag yields `extra_data.comment = "x"` (string); two or more yield
-    /// `extra_data.comment = [...]` (array). Joined into the entry by
+    /// `-c` / `--comment`. Repeatable; each flag APPENDS one string to the
+    /// `data.comment` array, which is an array however many there are
+    /// (da-ult68). Joined into the entry by
     /// [`datum_parse::input::data_args::handle_data_args`].
     pub comment: Vec<String>,
     /// `-R` / `--remainder`: route un-keyed positionals to `<field>` in
@@ -313,8 +313,8 @@ pub struct LogArgs {
     /// in the `extra_data` bucket rather than erroring.
     pub string_remainder: bool,
     /// `-C` / `--comment-remainder`: shorthand for `-SR comment` —
-    /// remainder positionals join into a single string and land in
-    /// `extra_data.comment`.
+    /// remainder positionals join into a single string, appended to the
+    /// `data.comment` array.
     pub comment_remainder: bool,
     /// `-I` / `--string-state`: join the remainder positionals into the
     /// entry's state (canonical slot `state.id`) as one space-separated
@@ -543,6 +543,9 @@ pub struct DeleteArgs {
     pub force: bool,
     pub dry_run: bool,
     pub strict: bool,
+    /// `-c` / `--comment`: why — appended to each row's `data.comment` as
+    /// `deleted: <why>` in the transaction that tombstones it (da-ult68).
+    pub comment: Option<String>,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
 }
