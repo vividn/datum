@@ -1145,6 +1145,34 @@ fn nowview_one_shot_reads_columns_and_watch_the_live_terminal() {
     assert_eq!((lines.len(), widest(&lines)), (10, 100), "{lines:#?}");
 }
 
+/// da-qsd01: `tail`'s one-shot render is the same rule — `$COLUMNS` caps the
+/// width and `$LINES` the default row count, even in a wider, taller terminal.
+#[test]
+fn tail_one_shot_reads_columns_and_lines_before_the_terminal() {
+    let long = "a-state-long-enough-to-want-more-than-sixty-columns-of-table";
+    let seed = format!(
+        "datum switch mood {long} -t -60 >/dev/null; \
+         for i in 1 2 3 4 5 6 7 8 9 10 11 12; do datum occur tick -t -$i >/dev/null; done"
+    );
+    let size = |cmd: &str| {
+        let lines = on_a_terminal(&format!("{seed}; {cmd}"));
+        (lines.len(), widest(&lines))
+    };
+    let (rows, cols) = size("datum tail mood");
+    assert!(
+        cols > 60,
+        "the terminal's 100 leaves the state whole: {cols}"
+    );
+    let (fit_rows, fit_cols) = size("COLUMNS=60 datum tail mood");
+    assert!(fit_rows == rows && fit_cols <= 60, "{fit_rows}x{fit_cols}");
+    assert_eq!(size("datum tail").0, 14, "13 entries and the header");
+    assert_eq!(
+        size("LINES=8 datum tail").0,
+        7,
+        "LINES-2 entries and the header"
+    );
+}
+
 /// da-q0xe5's guard: the terminal-first probes (`detect_cols` / `detect_rows`
 /// and their `_or` forms) belong to LIVE views, where a resize must beat a
 /// stale `$COLUMNS`. One-shot output reads `given_cols` / `given_rows`. A new
@@ -1183,12 +1211,9 @@ fn every_terminal_first_probe_is_on_a_live_path() {
         // `nowview --watch`.
         format!("{nowview}: term_layout::detect_cols_or(4, 40),"),
         format!("{nowview}: term_layout::detect_rows_or(3, 24),"),
-        // `tail --watch`'s frame signature and loop; the FIRST of each
-        // repeated pair is tail's one-shot render — a known breach, da-qsd01.
+        // `tail --watch`'s frame signature and repaint loop.
         format!("{tail}: (detect_cols(), detect_rows())"),
         format!("{tail}: Some(auto_fill_rows(detect_rows()))"),
-        format!("{tail}: Some(auto_fill_rows(detect_rows()))"),
-        format!("{tail}: let max_total_width = if tty {{ Some(detect_cols()) }} else {{ None }};"),
         format!("{tail}: let max_total_width = if tty {{ Some(detect_cols()) }} else {{ None }};"),
     ];
     allowed.sort();

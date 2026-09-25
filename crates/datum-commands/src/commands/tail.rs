@@ -13,7 +13,7 @@ use crate::args::{OutputFlagsExt, TailArgs};
 use crate::commands::helpers::load_registry_opt;
 use crate::commands::render_helpers::build_table_contexts;
 use crate::render::tail_rows::{tail_rows, TailDocument};
-use crate::render::term_layout::{detect_cols, detect_rows, is_stdout_tty};
+use crate::render::term_layout::{detect_cols, detect_rows, given_cols, given_rows, is_stdout_tty};
 use crate::render::{print_table_with, table_columns_with, TableArgs, TimeMetricCol};
 
 pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
@@ -60,13 +60,12 @@ pub fn tail(args: TailArgs, db: &Db) -> Result<()> {
     // tail actually uses the screen. Piped / redirected output stays on
     // the legacy `Some(10)` so scripts get the stable behaviour they
     // expect.
+    // da-qsd01: a one-shot render sizes to what it was GIVEN — `$COLUMNS` /
+    // `$LINES`, then the terminal (da-coi0m); only `--watch` re-probes live.
     let tty = is_stdout_tty();
-    let max_total_width = if tty { Some(detect_cols()) } else { None };
-    let auto_count = if tty && args.count.is_none() {
-        Some(auto_fill_rows(detect_rows()))
-    } else {
-        None
-    };
+    let max_total_width = tty.then(|| given_cols(20).unwrap_or(80));
+    let auto_count =
+        (tty && args.count.is_none()).then(|| auto_fill_rows(given_rows(5).unwrap_or(24)));
     let entries = tail_entries_with_default_count(&args, auto_count, db)?;
     let registry = load_registry_opt(db);
     let output = args.output()?;
