@@ -203,6 +203,8 @@
 				<button
 					type="button"
 					role="tab"
+					id="spec-tab-{name}"
+					aria-controls="spec-panel"
 					data-tab={name}
 					aria-selected={tab === name}
 					disabled={name === 'states' ? !statesOpen : name !== 'basics' && !spec}
@@ -211,7 +213,7 @@
 			{/each}
 		</div>
 
-		<div class="panel" role="tabpanel" data-panel={tab}>
+		<div class="panel" role="tabpanel" id="spec-panel" aria-labelledby="spec-tab-{tab}" data-panel={tab}>
 			{#if tab === 'basics'}
 				<div class="verbs" role="radiogroup" aria-label="what a press logs">
 					{#each VERBS as choice (choice.verb)}

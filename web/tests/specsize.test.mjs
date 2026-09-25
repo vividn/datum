@@ -48,6 +48,9 @@ describe('the spec modal', () => {
 						}, tab),
 						(seen) => seen !== null
 					);
+					// The panel is named by its tab, and the tab controls it (da-p2l88).
+					assert.equal(await page.locator(MODAL).getByRole('tabpanel', { name: tab, exact: true }).count(), 1, `no tabpanel named ${tab}`);
+					assert.equal(await page.locator(MODAL).getByRole('tab', { name: tab, exact: true }).getAttribute('aria-controls'), 'spec-panel');
 				}
 				// The height is the tallest tab at rest (Basics, 506px at 390px
 				// wide): if it now scrolls, measure again and raise the 32rem.
