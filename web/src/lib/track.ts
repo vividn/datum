@@ -172,6 +172,24 @@ function storedDefault({ default: typed, value_type }: KeyRow): unknown {
 		return typed;
 	}
 }
+/**
+ * Where a field's lane is (da-btyvj): free, `y` and `height` as fractions
+ * of the day; or tied to another field by the anchor triple. A key the
+ * spec does not set is absent — «nobody chose this» — not a default.
+ */
+export interface Place {
+	y?: number;
+	height?: number;
+	relative_to?: string;
+	anchor_pos_ratio?: number;
+	anchor_size_ratio?: number;
+}
+
+const PLACE_KEYS = ['y', 'height', 'relative_to', 'anchor_pos_ratio', 'anchor_size_ratio'] as const;
+
+/** The placement keys `spec` sets, and only those. */
+export const placeOf = (spec: Spec): Place =>
+	Object.fromEntries(PLACE_KEYS.filter((k) => spec[k] != null).map((k) => [k, spec[k]]));
 
 /** The States tab's rows for `spec`: its allowed states, each with its colour and description. */
 export const stateRows = (spec: Spec): StateRow[] =>
@@ -219,6 +237,7 @@ export function editedSpec(
 		/** Whether datum makes the aliases (`!no_autoalias`); when not, `aliases` is the list. */
 		autoalias?: boolean;
 		aliases?: DerivedAlias[];
+		place?: Place;
 	}
 ): Spec {
 	const rows = edit.states.map((s) => ({ ...s, name: s.name.trim() })).filter((s) => s.name);
@@ -246,8 +265,11 @@ export function editedSpec(
 	const glyph = edit.glyph ?? spec.glyph ?? '';
 	const glyph_by = edit.glyph_by === undefined ? spec.glyph_by : key ? { key, map } : undefined;
 	const { state_descriptions: _d, glyph: _g, state_glyphs: _s, glyph_by: _b, ...rest } = spec;
+	// The placement is the Placement tab's whole answer: free drops the anchor, tied drops y/height.
+	if (edit.place) for (const k of PLACE_KEYS) delete rest[k];
 	return {
 		...rest,
+		...edit.place,
 		verb: edit.verb,
 		color: edit.color || null,
 		unit: edit.unit.trim() || null,

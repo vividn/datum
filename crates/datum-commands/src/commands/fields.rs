@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::Result;
 use datum_core::db::Db;
-use datum_core::field_spec::PresentationSpec;
+use datum_core::field_spec::resolve_positions;
 use datum_core::shape::{is_ignored_state, TRACKED_STATE_VALUE};
 use serde_json::{json, Value as JsonValue};
 
@@ -98,7 +98,8 @@ pub fn format_listing(listing: &JsonValue, include_ignored: bool) -> String {
     format_grid(&headers, &rows)
 }
 
-/// `[{"field", "spec", "states", "color", "state_colors"}]`, alphabetical by
+/// `[{"field", "spec", "states", "color", "state_colors", "ignored", "y",
+/// "height"}]`, alphabetical by
 /// field. `color` and `state_colors` are the RESOLVED colours (spec override
 /// → md5 fallback, ANSI-256 legacy numbers included) that
 /// `crates/datum-commands/src/render/colors.rs` paints the CLI with — so a
@@ -107,10 +108,11 @@ pub fn format_listing(listing: &JsonValue, include_ignored: bool) -> String {
 /// every `allowed_states` entry, since a not-yet-logged allowed state still
 /// gets a button. `ignored` is the field's latest track/ignore status
 /// ([`is_ignored_state`], da-d08c) — whether a spec exists has no say in it.
-/// `y` is where the field's band sits across the dayview and nowview, 0 at
-/// the top — resolved as they resolve it (spec `y`, else the name's hash),
-/// so the web orders its buttons by the pictures without re-deriving it
-/// (da-vu7pi).
+/// `y` and `height` are where the field's band sits across the dayview and
+/// nowview, 0 at the top — resolved as they resolve it (the anchor's place
+/// scaled by the ratios for a `relative_to` field, da-btyvj; else spec `y`,
+/// else the name's hash), so the web orders its buttons by the pictures
+/// (da-vu7pi) and the Placement tab draws every lane without re-deriving it.
 pub fn compute_fields(db: &Db) -> Result<JsonValue> {
     let mut by_field: BTreeMap<String, Vec<JsonValue>> = db
         .distinct_fields()?
@@ -131,6 +133,10 @@ pub fn compute_fields(db: &Db) -> Result<JsonValue> {
     }
     let names: Vec<&str> = by_field.keys().map(String::as_str).collect();
     let latest = db.batch_state_at(&names, chrono::Utc::now())?;
+    // Where each field's lane is, anchors honoured (da-btyvj): the web's
+    // Placement tab draws a field against these.
+    let positions =
+        resolve_positions(&registry.fields, names.iter().map(|f| f.to_string())).positions;
     Ok(JsonValue::Array(
         by_field
             .iter()
@@ -155,12 +161,8 @@ pub fn compute_fields(db: &Db) -> Result<JsonValue> {
                     "color": color,
                     "state_colors": state_colors,
                     "ignored": ignored,
-                    "y": spec
-                        .map_or_else(
-                            || PresentationSpec::default().resolve_position(field),
-                            |s| s.presentation.resolve_position(field),
-                        )
-                        .y,
+                    "y": positions[field].y,
+                    "height": positions[field].height,
                 })
             })
             .collect(),
@@ -172,7 +174,7 @@ mod tests {
     use super::*;
     use datum_core::action::Action;
     use datum_core::entry::Verb;
-    use datum_core::field_spec::FieldSpec;
+    use datum_core::field_spec::{FieldSpec, PresentationSpec};
     use datum_core::test_util::{entry_builder, fresh_db};
 
     /// da-1lnf: the plain listing leads with a header, so the second
@@ -308,6 +310,27 @@ mod tests {
             })
             .collect();
         assert_eq!(rows, [("mood", 3.0), ("coffee", 2.75), ("apple", 0.0)]);
+    }
+
+    /// da-btyvj: an anchored field's `y` and `height` are its anchor's,
+    /// scaled by the ratios — where the pictures now draw it.
+    #[test]
+    fn anchored_lane_is_resolved_through_its_anchor() {
+        let db = fresh_db();
+        let mut mood = FieldSpec::new("mood", Action::Switch);
+        mood.presentation.y = Some(0.5);
+        mood.presentation.height = Some(0.25);
+        db.save_field_spec(&mood).unwrap();
+        let mut sleep = FieldSpec::new("sleep", Action::Start);
+        sleep.presentation.relative_to = Some("mood".into());
+        sleep.presentation.anchor_pos_ratio = Some(-1.0);
+        sleep.presentation.anchor_size_ratio = Some(0.5);
+        db.save_field_spec(&sleep).unwrap();
+
+        let listing = compute_fields(&db).unwrap();
+        assert_eq!(listing[0]["height"], json!(0.25));
+        assert_eq!(listing[1]["y"], json!(0.25));
+        assert_eq!(listing[1]["height"], json!(0.125));
     }
 
     #[test]

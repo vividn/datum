@@ -4,13 +4,42 @@
 //! update_core / log_entry can share the per-batch state-probe cache without
 //! pulling in the dispatch shell.
 
+use std::collections::{HashMap, HashSet};
+
 use chrono::{DateTime, Utc};
 use datum_core::{
     db::{Db, ListParams, TimeMetric},
     entry::Entry,
+    field_spec::{resolve_positions, FieldSpec, ResolvedPosition},
 };
 
 use crate::render::RenderContext;
+
+/// Every field's `(y, height, z_index)` with `relative_to` anchors honoured
+/// (da-btyvj): the single-spec resolver cannot see an anchor, so a surface
+/// using it drew an anchored field at its hash. An anchor need not have
+/// marks in the window, so the specs its chain names are read in.
+pub(crate) fn field_positions(
+    db: &Db,
+    specs: &HashMap<String, FieldSpec>,
+    fields: &[&str],
+) -> datum_core::error::Result<HashMap<String, ResolvedPosition>> {
+    let mut all = specs.clone();
+    let mut asked: HashSet<String> = all.keys().cloned().collect();
+    loop {
+        let next: Vec<String> = all
+            .values()
+            .filter_map(|s| s.presentation.relative_to.clone())
+            .filter(|a| asked.insert(a.clone()))
+            .collect();
+        if next.is_empty() {
+            break;
+        }
+        let names: Vec<&str> = next.iter().map(String::as_str).collect();
+        all.extend(db.batch_load_specs(&names)?);
+    }
+    Ok(resolve_positions(&all, fields.iter().map(|f| f.to_string())).positions)
+}
 
 /// Query window shared by the live render surfaces — dayview's day builder
 /// and both nowview field builders (da-v0uy). One constructor so the three

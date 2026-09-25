@@ -21,7 +21,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use datum_core::db::Db;
 use datum_core::entry::Entry;
-use datum_core::field_spec::{FieldSpec, PresentationSpec};
+use datum_core::field_spec::FieldSpec;
 use datum_core::shape::{
     dot_bg_uses_following_state, dot_fg_uses_state, is_block_verb, is_switching_verb,
     is_unrendered_switch_value, opens_secondary_switch_region, render_shape, RenderShape,
@@ -491,6 +491,7 @@ pub(crate) fn build_dayview_fields(
     // instant for all of them, so the batch answers every call.
     let field_names: Vec<&str> = by_field.keys().map(String::as_str).collect();
     let specs = db.batch_load_specs(&field_names)?;
+    let positions = super::render_helpers::field_positions(db, &specs, &field_names)?;
     // da-6hg6v: the governing ROW, not just its state — the synthesized
     // leading region is the open block of an entry BEFORE the window, and
     // it names that entry like every other mark.
@@ -555,10 +556,7 @@ pub(crate) fn build_dayview_fields(
             continue;
         }
 
-        let resolved = match &spec {
-            Some(s) => s.presentation.resolve_position(&field),
-            None => PresentationSpec::default().resolve_position(&field),
-        };
+        let resolved = positions[&field];
 
         out.push(DayviewFieldInput {
             field,
@@ -618,6 +616,7 @@ pub(crate) fn build_fields(
     }
     let field_names: Vec<&str> = all_fields.iter().map(String::as_str).collect();
     let specs = db.batch_load_specs(&field_names)?;
+    let positions = super::render_helpers::field_positions(db, &specs, &field_names)?;
     let leading_states = db.batch_governing_at(&field_names, window_start)?;
 
     let mut out: Vec<NowviewField> = Vec::with_capacity(all_fields.len());
@@ -679,10 +678,7 @@ pub(crate) fn build_fields(
             continue;
         }
 
-        let resolved = match &spec {
-            Some(s) => s.presentation.resolve_position(field),
-            None => PresentationSpec::default().resolve_position(field),
-        };
+        let resolved = positions[field];
 
         // Per-field fallback color — single hex unless the field has a
         // saved parallel-state default (rare).

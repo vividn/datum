@@ -19,7 +19,6 @@ use anyhow::{Context, Result};
 use chrono::{Datelike, NaiveDate, TimeZone, Utc};
 use datum_core::db::Db;
 use datum_core::entry::Entry;
-use datum_core::field_spec::PresentationSpec;
 use datum_core::integrity::ListFilter;
 use datum_core::time::{DatumTime, Zone};
 use datum_layout::dayview::{
@@ -468,6 +467,7 @@ fn build_day_fields(
     // field.
     let field_names: Vec<&str> = by_field.keys().map(String::as_str).collect();
     let specs = db.batch_load_specs(&field_names)?;
+    let positions = super::render_helpers::field_positions(db, &specs, &field_names)?;
     drop(field_names);
 
     let mut out: Vec<DayviewFieldInput> = Vec::with_capacity(by_field.len());
@@ -511,13 +511,9 @@ fn build_day_fields(
             continue;
         }
 
-        // Resolve (y, height, z_index). Without a spec we still want the
-        // deterministic-hash y fallback — `PresentationSpec::resolve_position`
-        // handles it via a transient default-spec instance.
-        let resolved = match &spec {
-            Some(s) => s.presentation.resolve_position(&field),
-            None => PresentationSpec::default().resolve_position(&field),
-        };
+        // Resolved (y, height, z_index): the hash fallback without a spec,
+        // the anchor's place for an anchored one.
+        let resolved = positions[&field];
 
         out.push(DayviewFieldInput {
             field,
@@ -876,6 +872,56 @@ mod tests {
         let mood = &fields[0];
         assert_eq!(mood.blocks.len(), 1);
         assert_eq!(mood.blocks[0].end_ms, day_end);
+    }
+
+    /// da-btyvj: an anchored field sits where its anchor resolves — and
+    /// moves with it — even when the anchor has no marks in the day.
+    #[test]
+    fn anchored_field_follows_its_anchor() {
+        use chrono::TimeZone;
+        use datum_core::entry::Verb;
+        use datum_core::field_spec::FieldSpec;
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        let mut mood = FieldSpec::new("mood", Action::Switch);
+        mood.presentation.y = Some(0.2);
+        mood.presentation.height = Some(0.3);
+        db.save_field_spec(&mood).unwrap();
+        let mut coffee = FieldSpec::new("coffee", Action::Occur);
+        coffee.presentation.relative_to = Some("mood".into());
+        coffee.presentation.anchor_pos_ratio = Some(1.0);
+        coffee.presentation.anchor_size_ratio = Some(0.5);
+        db.save_field_spec(&coffee).unwrap();
+
+        let utc = Utc.with_ymd_and_hms(2026, 4, 27, 9, 0, 0).unwrap();
+        let dt = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
+        db.insert_entry(&Entry::new(
+            "coffee",
+            Verb::Point,
+            None,
+            None,
+            Some(dt),
+            None,
+            "test",
+        ))
+        .unwrap();
+        let day = |h| {
+            Utc.with_ymd_and_hms(2026, 4, 27, h, 0, 0)
+                .unwrap()
+                .timestamp_millis()
+        };
+        let lane = |db: &Db| {
+            let f = build_day_fields(db, day(0), day(23), day(23)).unwrap();
+            assert_eq!(f.len(), 1, "mood has no marks, only coffee draws");
+            (f[0].y_frac, f[0].height_frac)
+        };
+
+        assert_eq!(lane(&db), (0.5, 0.15));
+        mood.presentation.y = Some(0.4);
+        db.save_field_spec(&mood).unwrap();
+        let (y, h) = lane(&db);
+        assert!((y - 0.7).abs() < 1e-9 && (h - 0.15).abs() < 1e-9, "{y} {h}");
     }
 
     /// da-2zd: a spec with `render = false` is dropped from dayview but

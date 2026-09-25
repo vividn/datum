@@ -517,9 +517,20 @@ describe('in the app', () => {
 			await openIt(page);
 			assert.deepEqual(
 				(await page.locator(`${MODAL} [role="tab"]`).allInnerTexts()).map((t) => t.trim().toLowerCase()),
-				['basics', 'states', 'keys', 'aliases']
+				['basics', 'states', 'keys', 'aliases', 'placement']
 			);
-			for (const tab of ['keys', 'aliases']) assert.ok(await page.locator(`${MODAL} [data-tab="${tab}"]`).isDisabled(), tab);
+			// Five words across a 320px phone, none of them cut.
+			await page.setViewportSize({ width: 320, height: 640 });
+			const cut = await page.locator(`${MODAL} [role="tab"]`).evaluateAll((tabs) =>
+				tabs.filter((t) => {
+					const box = t.getBoundingClientRect();
+					const bar = t.parentElement.getBoundingClientRect();
+					return t.scrollWidth > t.clientWidth || box.left < bar.left || box.right > bar.right + 0.5;
+				}).map((t) => t.textContent)
+			);
+			assert.deepEqual(cut, []);
+			// Nor is there a spec to place yet (da-btyvj).
+			for (const tab of ['keys', 'aliases', 'placement']) assert.ok(await page.locator(`${MODAL} [data-tab="${tab}"]`).isDisabled(), tab);
 			await page.keyboard.press('Escape');
 			await page.locator(MODAL).waitFor({ state: 'detached' });
 		});

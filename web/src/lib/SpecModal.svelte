@@ -16,10 +16,12 @@
 	the default, and one per state beside the state's colour. `track`
 	carries none, so declaring asks for none.
 
-	Segmented: Basics · States · Keys · Aliases. Track is this modal opened
-	on Basics, and that is all it needs — name, pictogram, Done, the same
-	taps it always took. Keys and Aliases are a spec's alone (da-cap5m):
-	`track` carries neither, so a field being declared has them shut.
+	Segmented: Basics · States · Keys · Aliases · Placement. Track is this
+	modal opened on Basics, and that is all it needs — name, pictogram,
+	Done, the same taps it always took. Keys, Aliases and Placement are a
+	spec's alone (da-cap5m, da-btyvj): `track` carries none of them, so a
+	field being declared has them shut. Placement is a fifth tab because it
+	is a drag surface, not a row of inputs — cheap to move under Basics.
 
 	Keys are grouped required over optional, so which is which reads at a
 	glance and not only off each row's toggle, and each row says whether
@@ -45,11 +47,13 @@
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { fieldNameHint, suggestFieldName } from './fieldName.js';
 	import Glyph from './Glyph.svelte';
+	import Placement from './Placement.svelte';
 	import Swatch from './Swatch.svelte';
 	import {
 		editedSpec,
 		keyRows,
 		KEY_TYPES,
+		placeOf,
 		specArgv,
 		specKeys,
 		stateRows,
@@ -57,6 +61,7 @@
 		VERBS,
 		type DerivedAlias,
 		type KeyRow,
+		type Place,
 		type Spec,
 		type StateRow,
 		type Verb
@@ -72,7 +77,7 @@
 	export let spec: Spec | null = null;
 
 	const dispatch = createEventDispatcher<{ close: string[] | null }>();
-	const TABS = ['basics', 'states', 'keys', 'aliases'] as const;
+	const TABS = ['basics', 'states', 'keys', 'aliases', 'placement'] as const;
 
 	let dialog: HTMLDialogElement;
 	let tab: (typeof TABS)[number] = 'basics';
@@ -89,6 +94,7 @@
 	let keys: KeyRow[] = spec ? keyRows(spec) : [];
 	let autoalias = !spec?.no_autoalias;
 	let aliases: DerivedAlias[] = (spec?.derived_aliases ?? []).map((a) => ({ ...a }));
+	let place: Place = spec ? placeOf(spec) : {};
 	if (spec) verb = spec.verb;
 	/** The argv to run, set by whatever was pressed; null closes and runs nothing. */
 	let chosen: string[] | null = null;
@@ -120,7 +126,8 @@
 					autoalias,
 					aliases,
 					glyph,
-					glyph_by
+					glyph_by,
+					place
 				})
 			)
 		: trackArgv(field.trim() || '<field>', verb ?? 'occur', states, color);
@@ -361,6 +368,8 @@
 						{ name: '', required: false, value_type: 'any', in_slug: false, default: '', unit: null }
 					])}>+ key</button
 			>
+		{:else if tab === 'placement'}
+			<Placement {field} bind:place />
 		{:else}
 			<label class="auto"
 				><input type="checkbox" class="autoalias" bind:checked={autoalias} /> made from the verb and states</label
@@ -486,24 +495,27 @@
 		font: inherit;
 	}
 
-	/* One control of four segments: the chosen one carries the accent
-	   along its foot, the mockup's underline. */
+	/* One control of five segments: the chosen one carries the accent
+	   along its foot, the mockup's underline. Each is as wide as its word
+	   and shares out the rest, so five words fit a 320px phone. */
 	.tabs {
-		display: grid;
-		grid-template-columns: repeat(4, 1fr);
+		display: flex;
 		border: 1px solid var(--rule);
 		border-radius: 4px;
 		overflow: hidden;
 	}
 
 	.tabs button {
+		flex: 1 1 auto;
 		min-block-size: 28px;
+		padding-inline: 0.2rem;
 		background: #1a1a30;
 		border: 0;
 		border-inline-start: 1px solid var(--rule);
 		border-block-end: 2px solid transparent;
 		color: var(--muted);
 		font: inherit;
+		font-size: 0.7rem;
 		cursor: pointer;
 	}
 
