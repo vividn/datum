@@ -20,7 +20,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp, todayAt } from './support/app.mjs';
+import { startApp, stopApp, withApp, sharedApp, todayAt } from './support/app.mjs';
 import { PHONE, settled, swipe, titles } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { listed } from './support/rows.mjs';
@@ -47,16 +47,24 @@ const HOLD = 650;
  * is a real press over real milliseconds and the long press is a TIMER, so
  * an installed clock would freeze the very thing under test.
  */
-async function withStrip(fn, options = {}) {
-	await withApp(async (app) => {
+async function withStrip(fn, options) {
+	const body = async (app) => {
 		assert.equal((await app.run(['occur', 'coffee', '-t', '08:00'])).code, 0);
-		await app.reload();
+		await app.redraw();
 		await app.page.locator(`${TODAY} svg.svg`).waitFor();
 		await stackOfDays(app.page);
 		await app.idle();
 		await fn(app);
-	}, { clock: NOW, ...DESKTOP, ...options });
+	};
+	// The desktop's tests share ONE app (sharedApp in support/app.mjs), each
+	// in a room of its own: a zoomed or panned strip is the strip's own
+	// state, so a test must not inherit the last one's. A phone is the
+	// context's.
+	if (!options) return desktop.fresh(body);
+	await withApp(body, { clock: NOW, ...DESKTOP, ...options });
 }
+
+const desktop = sharedApp({ clock: NOW, ...DESKTOP });
 
 /**
  * A day height HELD, short enough that YESTERDAY's whole band is on screen
@@ -209,6 +217,9 @@ async function barRun(page, line) {
  * strip's own (the zoom below is one) lands in the session and reaches the
  * tree only on «Save options with layout», so the tree alone is no longer
  * what the strip was told.
+ *
+ * The strip of the root tab IN FRONT: a test's room stands before `main`,
+ * which has a strip of its own (da-s4i98).
  */
 const stripSettings = () => {
 	const walk = (pane) => {
@@ -219,7 +230,8 @@ const stripSettings = () => {
 			} else if (tab.content.kind === 'daystrip') return window.datum.layout.settings(tab.id);
 		}
 	};
-	return walk(window.datum.layout.current().root);
+	const { root } = window.datum.layout.current();
+	return walk({ tabs: [root.tabs[root.active]] });
 };
 
 const windowHeard = ({ page }) =>
@@ -582,39 +594,36 @@ describe('a range made in the strip is the page’s one selection', () => {
 
 describe('a strip range is a DURATION to the fields widget (da-qu16)', () => {
 	test('the bar filters down to the blocks, and dismissing `start_time=` brings the rest back', async () => {
-		await withApp(
-			async (app) => {
-				const { page } = app;
-				// One field of each shape the filter cares about: a point, an
-				// open block and a switch.
-				for (const argv of [
-					['occur', 'coffee', '-t', '08:00'],
-					['start', 'sleep', '-t', '07:00'],
-					['switch', 'mood', 'happy', '-t', '09:30']
-				])
-					assert.equal((await app.run(argv)).code, 0);
-				await app.reload();
-				await page.locator(`${BAR} [data-field="sleep"]`).waitFor();
-				await app.idle();
-				await saysFields(page, ['coffee', 'mood', 'sleep']);
+		await desktop.fresh(async (app) => {
+			const { page } = app;
+			// One field of each shape the filter cares about: a point, an
+			// open block and a switch.
+			for (const argv of [
+				['occur', 'coffee', '-t', '08:00'],
+				['start', 'sleep', '-t', '07:00'],
+				['switch', 'mood', 'happy', '-t', '09:30']
+			])
+				assert.equal((await app.run(argv)).code, 0);
+			await app.redraw();
+			await page.locator(`${BAR} [data-field="sleep"]`).waitFor();
+			await app.idle();
+			await saysFields(page, ['coffee', 'mood', 'sleep']);
 
-				const g = await geom(page);
-				await drag(page, spot(g, msAt(g, 11)), spot(g, msAt(g, 12, 30)));
-				await until(
-					() => pillsOf(page),
-					(seen) => seen.length === 2
-				);
+			const g = await geom(page);
+			await drag(page, spot(g, msAt(g, 11)), spot(g, msAt(g, 12, 30)));
+			await until(
+				() => pillsOf(page),
+				(seen) => seen.length === 2
+			);
 
-				// `hasDuration` asks the pill's KIND, and the strip's
-				// `start_time=` wears the same one the nowview's `dur=` does
-				// — so the rule da-qu16 wrote needs no second clause for it.
-				await saysFields(page, ['mood', 'sleep']);
+			// `hasDuration` asks the pill's KIND, and the strip's
+			// `start_time=` wears the same one the nowview's `dur=` does
+			// — so the rule da-qu16 wrote needs no second clause for it.
+			await saysFields(page, ['mood', 'sleep']);
 
-				await page.locator('.prompt-bar .pill.dur button.remove').last().click();
-				await saysFields(page, ['coffee', 'mood', 'sleep']);
-			},
-			{ clock: NOW, ...DESKTOP }
-		);
+			await page.locator('.prompt-bar .pill.dur button.remove').last().click();
+			await saysFields(page, ['coffee', 'mood', 'sleep']);
+		});
 	});
 });
 

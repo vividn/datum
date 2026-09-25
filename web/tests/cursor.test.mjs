@@ -10,7 +10,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { devices } from 'playwright';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, withApp, sharedApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -24,25 +24,26 @@ const PAST = '.band[data-days-ago="1"]';
 const NOWVIEW = 'section.pane[data-title="nowview"]';
 const PILL = '.prompt-bar .pill';
 
-async function withDay(fn, options = {}) {
-	await withApp(
-		async (app) => {
-			for (const argv of [
-				['occur', 'coffee', '-t', '09:00'],
-				['start', 'work', '-t', '10:00']
-			]) {
-				const logged = await app.run(argv);
-				assert.equal(logged.code, 0, logged.stderr);
-			}
-			await app.reload();
-			await app.page.locator(`${TODAY} rect[data-field="work"]`).waitFor();
-			await fn(app);
-		},
-		{
-			...options,
-			clock: NOW
+// ONE app for the tests on the default screen (sharedApp in support/app.mjs),
+// each in a room of its own so no test meets the widgets the last one moved.
+// A test that says how its app is to be opened opens its own.
+const shared = sharedApp({ clock: NOW });
+
+async function withDay(fn, options) {
+	const body = async (app) => {
+		for (const argv of [
+			['occur', 'coffee', '-t', '09:00'],
+			['start', 'work', '-t', '10:00']
+		]) {
+			const logged = await app.run(argv);
+			assert.equal(logged.code, 0, logged.stderr);
 		}
-	);
+		await app.redraw();
+		await app.page.locator(`${TODAY} rect[data-field="work"]`).waitFor();
+		await fn(app);
+	};
+	if (!options) return shared.fresh(body);
+	await withApp(body, { ...options, clock: NOW });
 }
 
 /**

@@ -25,7 +25,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, withApp, sharedApp } from './support/app.mjs';
 import { PHONE } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { rowsOf } from './support/rows.mjs';
@@ -59,23 +59,24 @@ const USUAL = ['coffee', 'run', 'sleep', 'mood'];
 const BAR = 'section.pane[data-title="fields"] .bar';
 const NOWVIEW = 'section.pane[data-title="nowview"]';
 
+// ONE app for the tests on the default screen (sharedApp in support/app.mjs),
+// each in a room of its own so no test meets the widgets the last one moved.
+// A test that says how its app is to be opened opens its own.
+const shared = sharedApp({ clock: NOW });
+
 /** The app with that seed, its clock pinned on the page and in the worker. */
-async function withFields(fn, options = {}) {
-	await withApp(
-		async (app) => {
-			for (const argv of SEED) {
-				const logged = await app.run(argv);
-				assert.equal(logged.code, 0, logged.stderr);
-			}
-			await app.reload();
-			await app.page.locator(`${BAR} [data-field="sleep"]`).waitFor();
-			await fn(app);
-		},
-		{
-			...options,
-			clock: NOW
+async function withFields(fn, options) {
+	const body = async (app) => {
+		for (const argv of SEED) {
+			const logged = await app.run(argv);
+			assert.equal(logged.code, 0, logged.stderr);
 		}
-	);
+		await app.redraw();
+		await app.page.locator(`${BAR} [data-field="sleep"]`).waitFor();
+		await fn(app);
+	};
+	if (!options) return shared.fresh(body);
+	await withApp(body, { ...options, clock: NOW });
 }
 
 /**

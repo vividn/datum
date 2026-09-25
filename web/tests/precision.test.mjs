@@ -30,7 +30,7 @@ after(stopApp);
 
 describe('the time an entry is rendered with', () => {
 	test('a date-only entry shows its date; entries that have a clock keep it', async () => {
-		await withApp(async ({ run, entries, reload, paneTable }) => {
+		await withApp(async ({ run, entries, redraw, paneTable }) => {
 			for (const argv of [
 				['occur', 'coffee', '-y'],
 				['occur', 'tea', '-t', '0915'],
@@ -77,9 +77,9 @@ describe('the time an entry is rendered with', () => {
 			]);
 
 			// And on the screen, which is where the invented midnight was
-			// read. The panes run their command on mount, so the reload is
+			// read. The seam's quiet door moves no pane, so the redraw is
 			// how the tail pane comes to know about the entries.
-			await reload();
+			await redraw();
 			const table = await paneTable('tail');
 			// One row per log (da-gvcen), so every row is an entry.
 			const times = table.rows.map((cells) => cells[table.keys.indexOf('time')]);

@@ -17,7 +17,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp, todayAt } from './support/app.mjs';
+import { startApp, stopApp, sharedApp, todayAt } from './support/app.mjs';
 import { rowTexts } from './support/tail.mjs';
 
 before(startApp);
@@ -37,12 +37,16 @@ const TWELVE_HOUR = 'en-US';
  */
 const EVENING = todayAt(18);
 
-/** Run `fn` against an app whose reader is on a 12-hour locale. */
-const withTwelveHourReader = (fn) => withApp(fn, { locale: TWELVE_HOUR, clock: EVENING });
+/**
+ * Run `fn` against an app whose reader is on a 12-hour locale: ONE app for
+ * the file (sharedApp in support/app.mjs), its database emptied between them.
+ */
+const twelveHour = sharedApp({ locale: TWELVE_HOUR, clock: EVENING });
+const withTwelveHourReader = (fn) => twelveHour.solo(fn);
 
 describe('the clock the web app prints', () => {
 	test('a 12-hour reader still gets datum 24-hour time, in every pane', async () => {
-		await withTwelveHourReader(async ({ page, run, reload, paneTable, paneSvg }) => {
+		await withTwelveHourReader(async ({ page, run, redraw, paneTable, paneSvg }) => {
 			// First: the pin is real. This is the call the bug was made of,
 			// made in the page itself — if it comes back 24-hour here then
 			// the locale did not take and every assertion below is vacuous.
@@ -67,9 +71,9 @@ describe('the clock the web app prints', () => {
 			assert.deepEqual(rowTexts(tail.stdout).slice(-1), ['_1 16:07:00 coffee ∅● <hid>']);
 
 			// And on the screen, which is where the two conventions sat
-			// next to each other. The panes run their command on mount, so
-			// the reload is how they come to know about the entry.
-			await reload();
+			// next to each other. The seam's quiet door moves no pane, so
+			// the redraw is how they come to know about the entry.
+			await redraw();
 			const table = await paneTable('tail');
 			assert.deepEqual(table.rows.at(-1)[table.keys.indexOf('time')], '16:07:00');
 			const shown = table.rows.flat().join(' ');
@@ -87,7 +91,7 @@ describe('the clock the web app prints', () => {
 
 describe('the date the web app prints', () => {
 	test('an entry older than a day gets a datum date, not the reader\'s', async () => {
-		await withTwelveHourReader(async ({ page, run, entries, reload, paneTable }) => {
+		await withTwelveHourReader(async ({ page, run, entries, redraw, paneTable }) => {
 			// The same pin, on the call *this* bug is made of. `9/4/2026` is
 			// what an en-US browser answers; a runner that already writes
 			// dates the way we want would make everything below vacuous.
@@ -106,7 +110,7 @@ describe('the date the web app prints', () => {
 			// date is the date the reader is owed.
 			const day = stored.occur_time.utc.slice(0, 10);
 
-			await reload();
+			await redraw();
 			const table = await paneTable('tail');
 			// The entry's row: the TRACK document that declared its field
 			// (da-c8mh) is the row above it.

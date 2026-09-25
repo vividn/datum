@@ -447,6 +447,11 @@ async function openApp({
  *
  *     await shared.solo(async (app) => { … })        // `main` alone
  *     await shared.room('acts', async (app, room) => { … })
+ *     await shared.fresh(async (app) => { … })       // a room, named for you
+ *
+ * A test that seeded through the quiet door and wants the panes to show it
+ * calls `app.redraw()`, not `reload`: a reload is a boot, and the boot is
+ * what sharing the app saves (da-s4i98).
  *
  * — or `await shared()` for the app itself. It opens on the FIRST ask
  * rather than in a `before`, so it cannot race the file's own
@@ -483,6 +488,14 @@ export function sharedApp(options) {
 		await app.room(name);
 		return fn(app, name);
 	};
+	/**
+	 * `fn` against a room under a name no test before it asked for
+	 * (da-s4i98): the same panes as `solo`, but MOUNTED ANEW, for a test
+	 * whose widgets keep state of their own between redraws — a panned
+	 * nowview, a zoomed strip — which `solo` would hand to the next test.
+	 */
+	let rooms = 0;
+	open.fresh = (fn) => open.room(`fresh-${++rooms}`, fn);
 	return open;
 }
 
@@ -538,6 +551,9 @@ async function settled(app) {
 	await app.page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
 	await app.idle();
 }
+
+/** The database the page is on: `?db=`'s, or the default one (da-vk1x). */
+const pageDb = (page) => page.evaluate(() => new URLSearchParams(location.search).get('db') || 'datum');
 
 /**
  * Database `db`'s files gone from OPFS, under the worker's own lock: no
@@ -968,18 +984,34 @@ function app(page, errors, query, clean, locks, internal) {
 				window.datum.cursor.set(null);
 			});
 			if ((await changeCounter(page)) === clean) return self;
-			const db = await page.evaluate(() => new URLSearchParams(location.search).get('db') || 'datum');
-			await removeDb(page, db);
+			await removeDb(page, await pageDb(page));
+			await self.redraw();
+			clean = await changeCounter(page);
+			return self;
+		},
+
+		/**
+		 * Every pane re-drawn from the page's database as it now is, without
+		 * a boot (da-s4i98): for a test that seeded through the QUIET door,
+		 * which moves nothing, and wants the panes to show what it stored.
+		 *
+		 * Announced on the change channel ($lib/changes.ts) as another tab's
+		 * write is, which the page answers as it answers a command of its own
+		 * — the epoch bumped and the widget bar rebuilt — so the panes draw
+		 * what a reload would have drawn them, on a page that keeps its
+		 * compiled wasm. Waits for that refresh to start and then to finish.
+		 */
+		async redraw() {
+			await self.idle();
 			const started = await page.evaluate((db) => {
 				const n = window.__datumStarted;
 				const channel = new BroadcastChannel('datum-db-changes');
-				channel.postMessage({ from: 'empty', dbs: [db] });
+				channel.postMessage({ from: 'test', dbs: [db] });
 				channel.close();
 				return n;
-			}, db);
+			}, await pageDb(page));
 			await page.waitForFunction((n) => window.__datumStarted > n, started);
 			await self.idle();
-			clean = await changeCounter(page);
 			return self;
 		},
 
@@ -1089,7 +1121,17 @@ function app(page, errors, query, clean, locks, internal) {
 			// whole boot again — a fresh wasm compile and every pane's first
 			// command — which is the cost a shared app is here to avoid.
 			// That the URL reaches this is `preview.test.mjs`'s to say.
-			const missing = await page.evaluate((n) => window.datum.shell.openPreview(n, 'main'), name);
+			//
+			// Asked AGAIN if Chromium says the answer was "garbage collected":
+			// about one room in 140 on a page that has just booted gets that
+			// for a promise the page still holds — pinned to `window` it was
+			// reported collected all the same (da-s4i98). A second ask is
+			// safe: a name already open is brought forward, not seeded twice.
+			const preview = () => page.evaluate((n) => window.datum.shell.openPreview(n, 'main'), name);
+			const missing = await preview().catch((e) => {
+				if (!/garbage collected/.test(e.message)) throw e;
+				return preview();
+			});
 			if (missing !== null) throw new Error(`a room seeded from a layout that is nothing: ${missing}`);
 			await page.evaluate(async (keep) => {
 				const { layout, shell } = window.datum;

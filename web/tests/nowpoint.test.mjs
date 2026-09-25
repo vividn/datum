@@ -20,8 +20,8 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
-import { PHONE, activeTab, maximizeButton, pane, pickOption, settled, swipe } from './support/layout.mjs';
+import { startApp, stopApp, withApp, sharedApp } from './support/app.mjs';
+import { PHONE, activeTab, inRoom, maximizeButton, pane, pickOption, settled, swipe } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -45,24 +45,25 @@ const TODAY = '.band[data-days-ago="0"]';
  * ($lib/nowpoint.ts), which held timers would freeze.
  */
 async function withBand(fn, { ready, ...options } = {}) {
-	await withApp(
-		async (app) => {
-			const logged = await app.run(['start', 'work', '-t', '14:00']);
-			assert.equal(logged.code, 0, logged.stderr);
-			await app.reload();
-			// `ready` brings the nowview to the front where a layout keeps it
-			// behind a tab — a pane's `data-title` is its ACTIVE tab, so on a
-			// phone there is no `nowview` pane until something selects it.
-			if (ready) await ready(app);
-			else await showBand(app);
-			await fn(app);
-		},
-		{
-			...options,
-			clock: NOW
-		}
-	);
+	const body = async (app, room) => {
+		const logged = await app.run(['start', 'work', '-t', '14:00']);
+		assert.equal(logged.code, 0, logged.stderr);
+		await app.redraw();
+		// `ready` brings the nowview to the front where a layout keeps it
+		// behind a tab — a pane's `data-title` is its ACTIVE tab, so on a
+		// phone there is no `nowview` pane until something selects it.
+		if (ready) await ready(app);
+		else await showBand(app);
+		await fn(app, room);
+	};
+	// The desktop's tests share ONE app (sharedApp in support/app.mjs), each
+	// in a room of its own: a pan is the nowview's own state, so a test
+	// must not inherit the last one's. A phone is the context's.
+	if (!Object.keys(options).length) return desktop.fresh(body);
+	await withApp(body, { ...options, clock: NOW });
 }
+
+const desktop = sharedApp({ clock: NOW });
 
 /** Wait until the nowview's band is drawn and every pane has settled. */
 async function showBand(app, scope = NOWVIEW) {
@@ -281,7 +282,7 @@ describe('a relative selection is measured from NOW, not from the press', () => 
 			async (app) => {
 				const { page } = app;
 				assert.equal((await app.run(['start', 'work', '-t', '14:00'])).code, 0);
-				await app.reload();
+				await app.redraw();
 				await page.locator(`${NOWVIEW} svg.svg .gridline`).first().waitFor({ state: 'attached' });
 				await page.locator(`${TODAY} svg.svg`).waitFor();
 				await app.idle();
@@ -441,7 +442,7 @@ describe('a drag along the band pans the window', () => {
 			async (app) => {
 				const { page } = app;
 				assert.equal((await app.run(['start', 'work', '-t', '14:00'])).code, 0);
-				await app.reload();
+				await app.redraw();
 				await page.locator(`${NOWVIEW} svg.svg .gridline`).first().waitFor({ state: 'attached' });
 				await app.idle();
 				await app.spyOnRunner();
@@ -946,11 +947,14 @@ describe('on a phone', () => {
  * and the desktop pane is short: at ~2px a minute every gesture below is
  * inside the 12px a press snaps by. The tall box is what a vertical
  * picture is for, and each test still checks the room it needs.
+ *
+ * `room` is the one `withBand` drew the test in: its panes' ids are
+ * `main`'s under the room's name (`inRoom`).
  */
-async function turn(app) {
+async function turn(app, room) {
 	const { page } = app;
-	await pickOption(page, 'nowview', 'orientation', 'vertical');
-	await maximizeButton(page, 'nowview').click();
+	await pickOption(page, inRoom(room, 'nowview'), 'orientation', 'vertical');
+	await maximizeButton(page, inRoom(room, 'nowview')).click();
 	await page.waitForFunction(
 		(sel) => {
 			const svg = document.querySelector(sel);
@@ -996,10 +1000,10 @@ const vat = (g, back) => ({ x: g.x, y: g.hi - back * perMinute(g) });
 
 describe('turned on its side, the band is pointed into along its own axis', () => {
 	test('a tap on the −10m gridline says -qq; a long press dragged UP is a range', async () => {
-		await withBand(async (app) => {
+		await withBand(async (app, room) => {
 			const { page } = app;
 			await app.spyOnRunner();
-			await turn(app);
+			await turn(app, room);
 			const argv = (await windows(page)).at(-1);
 			assert.deepEqual(argv.slice(argv.indexOf('--orientation'), argv.indexOf('--orientation') + 2), [
 				'--orientation',
@@ -1022,9 +1026,9 @@ describe('turned on its side, the band is pointed into along its own axis', () =
 	});
 
 	test('from the now strip, a drag UP is a duration ending now', async () => {
-		await withBand(async (app) => {
+		await withBand(async (app, room) => {
 			const { page } = app;
-			await turn(app);
+			await turn(app, room);
 			const g = await vgeometry(page);
 			assert.ok(12 * perMinute(g) > 24 + 12, `twelve minutes is ${12 * perMinute(g)}px`);
 			await drag(page, { x: g.x, y: g.nowLine + 2 }, { x: g.x, y: g.nowLine - 12 * perMinute(g) });
@@ -1033,9 +1037,9 @@ describe('turned on its side, the band is pointed into along its own axis', () =
 	});
 
 	test('a drag DOWN pans the window earlier, and `now ↓` brings it home', async () => {
-		await withBand(async (app) => {
+		await withBand(async (app, room) => {
 			const { page } = app;
-			await turn(app);
+			await turn(app, room);
 			await app.spyOnRunner();
 			const g = await vgeometry(page);
 			const middle = { x: g.x, y: (g.lo + g.hi) / 2 };

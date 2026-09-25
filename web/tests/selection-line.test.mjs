@@ -6,7 +6,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, withApp, sharedApp } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
@@ -18,21 +18,22 @@ const TODAY = '.band[data-days-ago="0"]';
 const NOWVIEW = 'section.pane[data-title="nowview"]';
 const PILL = '.prompt-bar .pill.time';
 
+// ONE app for the default database's tests (sharedApp in support/app.mjs),
+// each in a room of its own; another database is another query, so its
+// test opens its own.
+const shared = sharedApp({ clock: NOW });
+
 async function withDay(fn, query = '') {
-	await withApp(
-		async (app) => {
-			const logged = await app.run(['start', 'work', '-t', '10:00']);
-			assert.equal(logged.code, 0, logged.stderr);
-			await app.reload();
-			await app.page.locator(`${TODAY} rect[data-field="work"]`).waitFor();
-			await app.page.evaluate((iso) => window.datum.cursor.set(new Date(iso)), AT);
-			await fn(app);
-		},
-		{
-			query,
-			clock: NOW
-		}
-	);
+	const body = async (app) => {
+		const logged = await app.run(['start', 'work', '-t', '10:00']);
+		assert.equal(logged.code, 0, logged.stderr);
+		await app.redraw();
+		await app.page.locator(`${TODAY} rect[data-field="work"]`).waitFor();
+		await app.page.evaluate((iso) => window.datum.cursor.set(new Date(iso)), AT);
+		await fn(app);
+	};
+	if (!query) return shared.fresh(body);
+	await withApp(body, { query, clock: NOW });
 }
 
 /** The colour the page paints for `--accent`, through an element drawn in it. */

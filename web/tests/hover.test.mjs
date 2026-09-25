@@ -10,7 +10,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { devices } from 'playwright';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { startApp, stopApp, withApp, sharedApp } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
@@ -24,25 +24,26 @@ const BLOCK = `${BAND} rect[data-field="work"]`;
 const TIP = `${BAND} .tip`;
 const LABELS = { coffee: '14:05 coffee', work: '14:00 work: start 14:00–14:30' };
 
-async function withDay(fn, options = {}) {
-	await withApp(
-		async (app) => {
-			for (const argv of [
-				['occur', 'coffee', '-t', '1405'],
-				['start', 'work', '30m', '-t', '1430']
-			]) {
-				const logged = await app.run(argv);
-				assert.equal(logged.code, 0, logged.stderr);
-			}
-			await app.reload();
-			await app.page.locator(BLOCK).waitFor();
-			await fn(app);
-		},
-		{
-			...options,
-			clock: NOW
+// ONE app for the tests on the default screen (sharedApp in support/app.mjs),
+// each in a room of its own so no test meets the widgets the last one moved.
+// A test that says how its app is to be opened opens its own.
+const shared = sharedApp({ clock: NOW });
+
+async function withDay(fn, options) {
+	const body = async (app) => {
+		for (const argv of [
+			['occur', 'coffee', '-t', '1405'],
+			['start', 'work', '30m', '-t', '1430']
+		]) {
+			const logged = await app.run(argv);
+			assert.equal(logged.code, 0, logged.stderr);
 		}
-	);
+		await app.redraw();
+		await app.page.locator(BLOCK).waitFor();
+		await fn(app);
+	};
+	if (!options) return shared.fresh(body);
+	await withApp(body, { ...options, clock: NOW });
 }
 
 /** The tooltip's `HH:MM` as minutes of the day, and the rest of its text. */
@@ -142,7 +143,7 @@ describe('hovering the day strip', () => {
 			// Inside nowview's window, so its picture has a mark too.
 			const logged = await app.run(['occur', 'coffee', '-t', '1455']);
 			assert.equal(logged.code, 0, logged.stderr);
-			await app.reload();
+			await app.redraw();
 			await app.page.locator('section.pane[data-title="nowview"] [data-state]').first().waitFor();
 			const pictures = await app.page.locator('.picture').evaluateAll((ps) =>
 				ps.map((p) => ({
@@ -172,7 +173,7 @@ describe('hovering the day strip', () => {
 		await withDay(async (app) => {
 			const logged = await app.run(['occur', 'coffee', '-d', '-2', '-t', '0930']);
 			assert.equal(logged.code, 0, logged.stderr);
-			await app.reload();
+			await app.redraw();
 			await app.page.evaluate(() => (document.querySelector('.cell.dayview').style.flex = '0 0 400px'));
 			const dot = app.page.locator('.band[data-days-ago="2"] circle[data-field="coffee"]');
 			await dot.hover();
@@ -186,6 +187,7 @@ describe('the SVG alone', () => {
 	// `wrap_dayview_svg_in_html`): no app, no script. A mark's `<title>`
 	// is still its accessible name, which is what a browser shows on hover.
 	test("a mark's title is its accessible name with no script", async () => {
+		// An app of its own (`{}`): `setContent` replaces the page it would share.
 		await withDay(async ({ page, run }) => {
 			const drawn = await run(['dayview']);
 			await page.setContent(`<!DOCTYPE html><html><body>${drawn.stdout}</body></html>`);
@@ -204,6 +206,6 @@ describe('the SVG alone', () => {
 				});
 				assert.equal(nodes[0].name?.value, name);
 			}
-		});
+		}, {});
 	});
 });

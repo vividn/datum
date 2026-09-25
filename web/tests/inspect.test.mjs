@@ -25,7 +25,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp, todayAt } from './support/app.mjs';
+import { startApp, stopApp, sharedApp, todayAt } from './support/app.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -50,9 +50,15 @@ const HOLD = 650;
  * The clock is FIXED rather than installed: every gesture here is a real
  * press over real milliseconds and the wait is a TIMER, which an installed
  * clock would freeze.
+ *
+ * ONE app for the file (sharedApp in support/app.mjs), each test in a room
+ * of its own: a pan, a zoom and a locked pill are the widgets' own state,
+ * so a test must not inherit the last one's.
  */
-async function withMarks(fn, options = {}) {
-	await withApp(async (app) => {
+const shared = sharedApp({ clock: NOW, ...DESKTOP });
+
+async function withMarks(fn) {
+	await shared.fresh(async (app) => {
 		for (const argv of [
 			['switch', 'work', 'coding', '-t', '14:00'],
 			['switch', 'mood', 'good', '-t', '09:00'],
@@ -62,12 +68,12 @@ async function withMarks(fn, options = {}) {
 				const ran = await app.run(argv);
 				assert.equal(ran.code, 0, `${argv.join(' ')}: ${ran.stderr}`);
 			}
-		await app.reload();
+		await app.redraw();
 		await app.page.locator(`${NOWVIEW} svg.svg`).waitFor();
 		await app.page.locator(`${TODAY} svg.svg`).waitFor();
 		await app.idle();
 		await fn(app);
-	}, { clock: NOW, ...DESKTOP, ...options });
+	});
 }
 
 /**
