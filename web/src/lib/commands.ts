@@ -34,7 +34,9 @@ export type Press =
 	/** Put `<name> ` on the command line; there is nothing to pend. */
 	| 'fill'
 	/** Arm the page: the next tap is explained, not acted on ($lib/help.ts). */
-	| 'help';
+	| 'help'
+	/** Leave a command's subcommands for the whole list (da-803mk). */
+	| 'back';
 
 export interface CommandButton {
 	/** The CLI word — what runs, and what goes on the line. */
@@ -248,6 +250,10 @@ export interface GrammarEntry {
 	aliases: string[];
 	usage: string[];
 	flags: { short: string | null; long: string }[];
+	/** The words that pick a subcommand (`db backup`), from the CLI's own command tree (da-803mk). */
+	subcommands?: { name: string }[];
+	/** Does it run with nothing after its name (`sync` does, `db` does not)? */
+	bare?: boolean;
 }
 
 /** What a command's grammar takes of the pills the bar can hold. */
@@ -280,6 +286,9 @@ export interface Takes {
 	 * both run, neither is what a tap meant.
 	 */
 	more: boolean;
+	/** Its subcommands' names (`setup`, `backup`, … of `db`), and whether it runs without one. */
+	subcommands: string[];
+	bare: boolean;
 }
 
 /** Commands by name AND by alias (`end` is `stop`'s). */
@@ -334,7 +343,7 @@ export function takesOf(entry: GrammarEntry): Takes {
 	const field = slots.length ? (Math.min(...slots) as 1 | 2) : false;
 	// Past `datum <name> <ID>`, anything but a flag is a word still to come.
 	const more = idLines.some((u) => words(u).slice(3).some((w) => !/^\[?-/.test(w)));
-	return { id, time, field, more };
+	return { id, time, field, more, subcommands: (entry.subcommands ?? []).map((s) => s.name), bare: !!entry.bare };
 }
 
 export function grammarOf(entries: GrammarEntry[]): Grammar {
@@ -440,6 +449,41 @@ export function fires(takes: Takes | undefined, all: Pill[]): boolean {
 	const pills = argumentsOf(all);
 	if (!takes?.id || !pills.some((p) => p.kind === 'hid') || !pills.every((p) => fits(takes, p))) return false;
 	return !takes.more || (takes.time && pills.some((p) => p.kind === 'time'));
+}
+
+// ---- subcommands (da-803mk) ---------------------------------------------
+//
+// vividn, 2026-09-25: «for commands with subcommands, like db, clicking on
+// them should then show the subcommands in the commands widget instead.»
+// A tap on `db` DRILLS: the bar shows `< Back` and db's subcommands, and a
+// tap on one fills `db backup ` — so `db `, which runs nothing, is never
+// what a tap leaves on the line. A command that also runs bare (`sync`)
+// is offered among its subcommands as itself.
+
+/**
+ * Does a tap on `name` drill into its subcommands? `spec` under a field pill
+ * does not: that tap opens the field's spec (da-ybai9, vividn: «no need for
+ * sub commands or pressing enter»), which the pane does with the fill.
+ */
+export const drills = (grammar: Grammar | null, name: string, pills: Pill[]): boolean =>
+	!!grammar?.get(name)?.subcommands.length &&
+	!(name === 'spec' && argumentsOf(pills).some((p) => p.kind === 'field'));
+
+/**
+ * The bar while `name` is drilled into: `< Back`, Help (which no bar is
+ * without, so a subcommand can be explained), `name` itself if it runs
+ * bare, then its subcommands.
+ */
+export function subcommandsOf(grammar: Grammar | null, name: string): CommandButton[] {
+	const takes = grammar?.get(name);
+	return [
+		{ name: 'back', label: '< Back', press: 'back' },
+		...COMMANDS.filter((command) => command.press === 'help'),
+		...(takes?.bare ? [{ name, label: name, press: 'fill' as const, next: 'type' as const }] : []),
+		...(takes?.subcommands ?? []).map(
+			(sub): CommandButton => ({ name: `${name} ${sub}`, label: sub, press: 'fill', next: 'type' })
+		)
+	];
 }
 
 // ---- the scroll rule (every button bar) --------------------------------

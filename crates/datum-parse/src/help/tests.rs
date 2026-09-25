@@ -738,3 +738,77 @@ fn nowview_help_documents_the_orientation() {
     assert!(help.contains("--orientation <O>"), "{help}");
     assert!(help.contains("--vertical"), "{help}");
 }
+
+/// da-803mk: `help --json` names `db`'s subcommands outright, so the web's
+/// commands widget drills into them instead of parsing usage lines — and
+/// says `db` alone does not run while `sync` alone does.
+#[test]
+fn help_json_lists_db_subcommands() {
+    let table: serde_json::Value = serde_json::from_str(&render_json()).unwrap();
+    let entry = |name: &str| {
+        table
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == name)
+            .unwrap()
+            .clone()
+    };
+    let db = entry("db");
+    let names: Vec<_> = db["subcommands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        ["setup", "purge", "backup", "restore", "migrate", "v2import"]
+    );
+    assert_eq!(db["subcommands"][2]["usage"].as_array().unwrap().len(), 4);
+    assert_eq!(db["bare"], false);
+    assert_eq!(entry("sync")["bare"], true);
+    assert_eq!(entry("occur")["subcommands"], serde_json::json!([]));
+}
+
+/// The listing is the parser's: every subcommand it names is one the parser
+/// dispatches, its usage lines are its parent's, and a command whose parser
+/// names its subcommands when none is given names exactly these.
+#[test]
+fn help_json_subcommands_are_the_parsers() {
+    let parse = |argv: &[&str]| {
+        let argv: Vec<String> = ["datum"]
+            .iter()
+            .chain(argv)
+            .map(|s| s.to_string())
+            .collect();
+        crate::parse_argv(&argv).err().map(|e| e.to_string())
+    };
+    let mut named = 0;
+    for c in super::commands::COMMANDS {
+        let names: Vec<_> = c.subcommands.iter().map(|s| s.name).collect();
+        for s in c.subcommands {
+            for line in s.usage {
+                assert!(
+                    c.usage.contains(line),
+                    "`{line}` is not a usage line of {}",
+                    c.name
+                );
+            }
+            let err = parse(&[c.name, s.name]).unwrap_or_default();
+            assert!(
+                !err.contains("unknown") && !err.contains("unexpected positional"),
+                "`datum {} {}` is not a subcommand the parser knows: {err}",
+                c.name,
+                s.name
+            );
+        }
+        let err = parse(&[c.name]).unwrap_or_default();
+        if let Some((_, set)) = err.split_once(&format!("missing {} subcommand (", c.name)) {
+            let set: Vec<_> = set.trim_end_matches(')').split('|').collect();
+            assert_eq!(names, set, "{}'s subcommands", c.name);
+            named += 1;
+        }
+    }
+    assert_eq!(named, 5, "db, spec, alias, kit and config name their set");
+}

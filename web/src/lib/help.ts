@@ -64,7 +64,7 @@ async function explain(target: Element | null): Promise<void> {
 	const pill = pillId && [...get(pills), ...get(spent)].find((p) => p.id === pillId);
 	if (pill) return show(pill.text, pillHelp(pill));
 	if (!command && kind && KINDS[kind]) return show(titleOf(kind), KINDS[kind].help);
-	const argv = command && command !== 'help' ? ['help', command] : ['help'];
+	const argv = command && command !== 'help' ? ['help', ...command.split(' ')] : ['help'];
 	const { stdout, stderr } = await run(argv);
 	show(`datum ${argv.join(' ')}`, stdout || stderr);
 }

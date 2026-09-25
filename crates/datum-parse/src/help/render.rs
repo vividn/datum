@@ -70,11 +70,19 @@ fn render_topic(topic: &TopicSpec) -> String {
 
 /// The command table as JSON — `datum help --json` (da-r13j).
 ///
-/// Each command's name, aliases, usage lines and flags, straight out of
-/// [`COMMANDS`], for a caller that asks the grammar rather than keeping a
-/// copy of it: the web's commands widget reads which commands take an id
-/// or `-t` from here.
+/// Each command's name, aliases, usage lines, flags and subcommands,
+/// straight out of [`COMMANDS`], for a caller that asks the grammar rather
+/// than keeping a copy of it: the web's commands widget reads which
+/// commands take an id or `-t` from here, and which drill into
+/// subcommands. `bare` is whether the command runs with nothing after its
+/// name (`sync` does, `db` does not), asked of the parser itself.
 pub fn render_json() -> String {
+    let flags = |flags: &[FlagSpec]| {
+        flags
+            .iter()
+            .map(|f| serde_json::json!({ "short": f.short.map(String::from), "long": f.long }))
+            .collect::<Vec<_>>()
+    };
     let commands: Vec<_> = COMMANDS
         .iter()
         .map(|c| {
@@ -82,10 +90,13 @@ pub fn render_json() -> String {
                 "name": c.name,
                 "aliases": c.aliases,
                 "usage": c.usage,
-                "flags": c.flags.iter().map(|f| serde_json::json!({
-                    "short": f.short.map(String::from),
-                    "long": f.long,
+                "flags": flags(c.flags),
+                "subcommands": c.subcommands.iter().map(|s| serde_json::json!({
+                    "name": s.name,
+                    "usage": s.usage,
+                    "flags": flags(s.flags),
                 })).collect::<Vec<_>>(),
+                "bare": crate::parse_argv(&["datum".into(), c.name.into()]).is_ok(),
             })
         })
         .collect();

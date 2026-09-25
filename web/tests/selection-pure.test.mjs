@@ -81,7 +81,9 @@ describe('what the grammar says a command takes', () => {
 			id: 'one',
 			time: false,
 			field: false,
-			more: false
+			more: false,
+			subcommands: [],
+			bare: false
 		});
 	});
 

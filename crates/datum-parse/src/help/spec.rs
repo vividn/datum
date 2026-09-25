@@ -103,6 +103,20 @@ pub struct CommandSpec {
     /// `name` is always used. Mirrors the historical behaviour of
     /// `log_help(verb)` in the previous hand-written renderer.
     pub display_input_name: bool,
+    /// The words that may follow the name to pick a subcommand (`db
+    /// backup`), each with its own usage lines, as the parser dispatches
+    /// them. Empty for a command that takes none. `datum help --json`
+    /// carries it so a reader never parses one out of a usage line, where
+    /// `add`'s two forms and `db`'s six subcommands look alike (da-803mk).
+    pub subcommands: &'static [SubcommandSpec],
+}
+
+/// One subcommand of a [`CommandSpec`] (`backup` of `db`).
+pub struct SubcommandSpec {
+    pub name: &'static str,
+    /// The parent's usage lines that are this subcommand's, verbatim.
+    pub usage: &'static [&'static str],
+    pub flags: &'static [FlagSpec],
 }
 
 /// One CLI flag.

@@ -146,6 +146,59 @@ describe('the bar of commands', () => {
 	});
 });
 
+// da-803mk. vividn, 2026-09-25: «for commands with subcommands, like db,
+// clicking on them should then show the subcommands in the commands widget
+// instead.» Which are subcommands is `datum help --json`'s to say.
+describe('a command with subcommands drills into them', () => {
+	const back = (page) => commands(page).locator('button[data-back]');
+	const DB = ['setup', 'purge', 'backup', 'restore', 'migrate', 'v2import'];
+
+	test('db shows its subcommands under < Back, and backup fills `db backup `', async () => {
+		await onPage(async ({ page }) => {
+			await commands(page).locator('button[data-command="db"]').click();
+			await back(page).waitFor();
+			assert.equal((await back(page).innerText()).trim(), '< Back');
+			assert.deepEqual(await drawn(page), ['Help', ...DB], 'Help stays, to explain a subcommand');
+			assert.equal((await line(page)).text, '', '`db ` runs nothing, so a tap never writes it');
+
+			await tap(page, 'db backup');
+			assert.equal(await back(page).count(), 1, 'a fill stays among the subcommands');
+		});
+	});
+
+	test('< Back and Escape each return to the whole list, and Escape peels only that', async () => {
+		await onPage(async ({ page }) => {
+			await commands(page).locator('button[data-command="db"]').click();
+			await back(page).click();
+			await back(page).waitFor({ state: 'detached' });
+			assert.ok((await drawn(page)).includes('occur'), 'Back is the whole list');
+
+			await commands(page).locator('button[data-command="db"]').click();
+			await tap(page, 'db restore');
+			await page.keyboard.press('Escape');
+			await back(page).waitFor({ state: 'detached' });
+			assert.ok((await drawn(page)).includes('db'));
+			assert.equal((await line(page)).text, 'db restore ', 'the same Escape peeled the line too');
+		});
+	});
+
+	test('sync, which runs bare, is offered among its own subcommands', async () => {
+		await onPage(async ({ page }) => {
+			await commands(page).locator('button[data-command="sync"]').click();
+			await back(page).waitFor();
+			assert.deepEqual((await drawn(page)).slice(1, 3), ['sync', 'login']);
+			await tap(page, 'sync');
+		});
+	});
+
+	test('a command without subcommands still fills as before', async () => {
+		await onPage(async ({ page }) => {
+			await tap(page, 'tail');
+			assert.equal(await back(page).count(), 0);
+		});
+	});
+});
+
 describe('a verb fills the line and filters the fields', () => {
 	test('occur leaves the occur fields, and a tap on one runs at once', async () => {
 		await onPage(async (app) => {

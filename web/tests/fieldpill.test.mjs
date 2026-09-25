@@ -695,14 +695,15 @@ describe('`spec` under the pill', () => {
 		});
 	});
 
-	// Unchanged: with no pill there is no subject, so `spec ` goes on the
-	// line for the subcommand to be typed, and nothing opens.
-	test('with no pill, `spec` still only writes `spec ` on the line', async () => {
+	// With no pill there is no subject, so `spec` opens its subcommands
+	// (da-803mk), a tap on one writes it on the line, and nothing opens.
+	test('with no pill, `spec` opens its subcommands and `show` writes `spec show `', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
 			await ready(app);
 			await specButton(page).click();
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input')?.value === 'spec ');
+			await pane(page, 'cmd').locator('[data-command="spec show"]').click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input')?.value === 'spec show ');
 			assert.equal(await page.locator(MODAL).count(), 0);
 			assert.deepEqual(app.errors, []);
 		});

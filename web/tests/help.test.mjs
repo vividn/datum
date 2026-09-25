@@ -101,6 +101,22 @@ describe('the Help button', () => {
 		});
 	});
 
+	// da-803mk: a subcommand is explained by the CLI's help for it, and the
+	// Escape that closes the modal leaves the subcommands open.
+	test('then a subcommand: `datum help db backup`, and the bar stays in db', async () => {
+		await onPage(async ({ page }) => {
+			await page.locator('.bar.commands button[data-command="db"]').click();
+			const backup = page.locator('.bar.commands button[data-command="db backup"]');
+			const { title, lines } = await explain(page, backup);
+			assert.equal(title, 'datum help db backup');
+			assert.match(lines[0], /^datum db — /);
+			assert.ok(lines.some((l) => l.includes('datum db backup <PATH | ->')), lines.join('\n'));
+			assert.equal(await page.locator('.prompt-bar input').inputValue(), '', 'backup filled the line');
+			await dismiss(page);
+			assert.equal(await page.locator('.bar.commands button[data-back]').count(), 1, 'Escape left db too');
+		});
+	});
+
 	test('then a widget: its kind\'s help, and a press inside it does nothing else', async () => {
 		await onPage(async (app) => {
 			const { page } = app;

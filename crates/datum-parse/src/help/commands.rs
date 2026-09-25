@@ -50,7 +50,8 @@
 //! keeping whatever is particular to it. See `LOG_SHARED_FLAGS` below.
 
 use super::spec::{
-    ArgSpec, Category, CommandSpec, EnvVarSpec, ExampleSpec, FlagSpec, SharedFlags, TopicSpec,
+    ArgSpec, Category, CommandSpec, EnvVarSpec, ExampleSpec, FlagSpec, SharedFlags, SubcommandSpec,
+    TopicSpec,
 };
 
 const NO_ARGS: &[ArgSpec] = &[];
@@ -63,6 +64,104 @@ const UPDATE_ARGS: &[ArgSpec] = &[ArgSpec {
 }];
 const NO_EXAMPLES: &[ExampleSpec] = &[];
 const NO_FLAGS: &[FlagSpec] = &[];
+const NO_SUBCOMMANDS: &[SubcommandSpec] = &[];
+
+/// A subcommand whose flags are written out in its parent's body, as all of
+/// today's are.
+const fn sub(name: &'static str, usage: &'static [&'static str]) -> SubcommandSpec {
+    SubcommandSpec {
+        name,
+        usage,
+        flags: NO_FLAGS,
+    }
+}
+
+// Each command's subcommands, in the order the parser's error names them.
+// `help_json_subcommands_are_the_parsers` holds these to the parser.
+const SPEC_SUBCOMMANDS: &[SubcommandSpec] = &[
+    sub("show", &["datum spec show <FIELD> [--text]"]),
+    sub(
+        "add-state",
+        &["datum spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION] [GLYPH]"],
+    ),
+    sub(
+        "set",
+        &["datum spec set <FIELD> [--from-json JSON] [--verb V] [--state S]... [--tag T]... ..."],
+    ),
+    sub("list", &["datum spec list [--tag T]"]),
+    sub("remove", &["datum spec remove <FIELD>"]),
+];
+const ALIAS_SUBCOMMANDS: &[SubcommandSpec] = &[
+    sub("show", &["datum alias show <NAME>"]),
+    sub("set", &["datum alias set <NAME> <EXPANSION>"]),
+    sub("list", &["datum alias list"]),
+    sub("remove", &["datum alias remove <NAME>"]),
+];
+const DB_SUBCOMMANDS: &[SubcommandSpec] = &[
+    sub("setup", &["datum db setup"]),
+    sub("purge", &["datum db purge [--yes | -y]"]),
+    sub(
+        "backup",
+        &[
+            "datum db backup <PATH | -> [--overwrite]",
+            "datum db backup --to DIR --every DUR [--slots N]",
+            "datum db backup --list DIR",
+            "datum db backup --plan --every DUR [--slots N] --span DUR",
+        ],
+    ),
+    sub(
+        "restore",
+        &["datum db restore <PATH | -> [--merge] [--force] [--dry-run] [--yes | -y]"],
+    ),
+    sub("migrate", &["datum db migrate (run | status | edit)"]),
+    sub(
+        "v2import",
+        &["datum db v2import [FILE | - | --from FILE] [--dry-run]"],
+    ),
+];
+const CONFIG_SUBCOMMANDS: &[SubcommandSpec] = &[sub("show", &["datum config show"])];
+const SYNC_SUBCOMMANDS: &[SubcommandSpec] = &[
+    sub("login", &["datum sync login [--server URL] [--cluster NAME]"]),
+    sub(
+        "config",
+        &[
+            "datum sync config set-server <URL> [--global]",
+            "datum sync config disable",
+            "datum sync config show",
+        ],
+    ),
+    sub(
+        "key",
+        &["datum sync key (init | unlock | rotate-passphrase | show-fingerprint) [--server URL] [--force]"],
+    ),
+    sub("status", &["datum sync status [--server URL]"]),
+    sub(
+        "install-daemon",
+        &["datum sync install-daemon [--show | --uninstall]"],
+    ),
+    sub(
+        "agent",
+        &["datum sync agent [--pid-file PATH] [-v] [--one-shot]"],
+    ),
+];
+const CONFLICTS_SUBCOMMANDS: &[SubcommandSpec] = &[
+    sub("list", &["datum conflicts [list] [--all]"]),
+    sub(
+        "resolve",
+        &["datum conflicts resolve <HID> (--take-local | --take-remote | --keep-both)"],
+    ),
+];
+const META_SUBCOMMANDS: &[SubcommandSpec] = &[sub("show", &["datum meta show <FIELD>"])];
+// `kit show` is in the usage but not in the parser, so it is not here.
+const KIT_SUBCOMMANDS: &[SubcommandSpec] = &[
+    sub(
+        "install",
+        &["datum kit install <PATH|-> [--force] [--yes] [--dry-run]"],
+    ),
+    sub("export", &["datum kit export <NAME> [PATH]"]),
+    sub("list", &["datum kit list"]),
+    sub("uninstall", &["datum kit uninstall <NAME>"]),
+];
 
 // ---------------------------------------------------------------------------
 // Logging verbs — they share one flag table and one usage shape.
@@ -1211,6 +1310,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 24,
         body_override: None,
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "note",
@@ -1231,6 +1331,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 24,
         body_override: None,
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "occur",
@@ -1246,6 +1347,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 24,
         body_override: None,
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "start",
@@ -1269,6 +1371,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 24,
         body_override: None,
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "stop",
@@ -1296,6 +1399,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         // that by switching to alias-name rendering when looked up via
         // the alias table.
         display_input_name: true,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "switch",
@@ -1311,6 +1415,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 24,
         body_override: None,
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     // ----- READ -----
     CommandSpec {
@@ -1334,6 +1439,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         // render::render_command_structured.
         body_override: None,
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "head",
@@ -1349,6 +1455,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 20,
         body_override: None,
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "get",
@@ -1364,6 +1471,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(GET_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "grep",
@@ -1379,6 +1487,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(GREP_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "dayview",
@@ -1394,6 +1503,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 27,
         body_override: Some(DAYVIEW_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "nowview",
@@ -1409,6 +1519,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 27,
         body_override: Some(NOWVIEW_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "now",
@@ -1424,6 +1535,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(NOW_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "history",
@@ -1439,6 +1551,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(HISTORY_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "why",
@@ -1454,6 +1567,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(WHY_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     // ----- MUTATE -----
     CommandSpec {
@@ -1470,6 +1584,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(EDIT_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "update",
@@ -1485,6 +1600,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 26,
         body_override: None,
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "merge",
@@ -1500,6 +1616,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 26,
         body_override: None,
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "rekey",
@@ -1515,6 +1632,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 26,
         body_override: None,
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "retime",
@@ -1534,6 +1652,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(RETIME_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "delete",
@@ -1549,6 +1668,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(DELETE_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "undo",
@@ -1571,6 +1691,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(UNDO_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "redo",
@@ -1592,6 +1713,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(REDO_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     // ----- ADMIN -----
     CommandSpec {
@@ -1614,6 +1736,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(SPEC_BODY),
         display_input_name: false,
+        subcommands: SPEC_SUBCOMMANDS,
     },
     CommandSpec {
         name: "alias",
@@ -1634,6 +1757,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(ALIAS_BODY),
         display_input_name: false,
+        subcommands: ALIAS_SUBCOMMANDS,
     },
     CommandSpec {
         name: "track",
@@ -1649,6 +1773,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(TRACK_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "ignore",
@@ -1664,6 +1789,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(IGNORE_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "check",
@@ -1679,6 +1805,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(CHECK_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "db",
@@ -1704,6 +1831,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(DB_BODY),
         display_input_name: false,
+        subcommands: DB_SUBCOMMANDS,
     },
     CommandSpec {
         name: "info",
@@ -1719,6 +1847,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(INFO_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "config",
@@ -1734,6 +1863,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(CONFIG_BODY),
         display_input_name: false,
+        subcommands: CONFIG_SUBCOMMANDS,
     },
     // ----- VIEWS / SYNC -----
     CommandSpec {
@@ -1750,6 +1880,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 24,
         body_override: None,
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "stats",
@@ -1771,6 +1902,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 24,
         body_override: None,
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "ids",
@@ -1786,6 +1918,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 22,
         body_override: None,
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "fields",
@@ -1801,6 +1934,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 25,
         body_override: None,
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "sync",
@@ -1826,6 +1960,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(SYNC_BODY),
         display_input_name: false,
+        subcommands: SYNC_SUBCOMMANDS,
     },
     CommandSpec {
         name: "conflicts",
@@ -1844,6 +1979,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(CONFLICTS_BODY),
         display_input_name: false,
+        subcommands: CONFLICTS_SUBCOMMANDS,
     },
     CommandSpec {
         name: "flag",
@@ -1859,6 +1995,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(FLAG_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "meta",
@@ -1877,6 +2014,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(META_BODY),
         display_input_name: false,
+        subcommands: META_SUBCOMMANDS,
     },
     CommandSpec {
         name: "kit",
@@ -1898,6 +2036,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(KIT_BODY),
         display_input_name: false,
+        subcommands: KIT_SUBCOMMANDS,
     },
     // View / reparse — both were dispatched by the parser and answered
     // `--help` via the parser's HelpRequested error before having a
@@ -1922,6 +2061,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(VIEW_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
     CommandSpec {
         name: "reparse",
@@ -1937,6 +2077,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(REPARSE_BODY),
         display_input_name: false,
+        subcommands: NO_SUBCOMMANDS,
     },
 ];
 

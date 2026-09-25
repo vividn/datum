@@ -35,6 +35,9 @@
 	  same state through the same buffer.
 	- anything else puts `<name> ` on the line too — a command with an
 	  argument to finish, and nothing to filter.
+	- a command with SUBCOMMANDS (`db`, `spec`, `sync`, …) opens them
+	  instead (da-803mk): the bar is `< Back` and the subcommands, and a
+	  tap on one fills `db backup `. `< Back` and Escape return to the list.
 
 	The loaded PILLS filter it (da-r13j): a command whose grammar — `datum
 	help --json` — cannot take every pill on the bar is not drawn
@@ -51,7 +54,7 @@
 	import type { Pill } from './bar.js';
 	import type { FieldButton } from './fields.js';
 	import ButtonRows from './ButtonRows.svelte';
-	import { commandsUnder, fires, type CommandButton, type Grammar } from './commands.js';
+	import { commandsUnder, drills, fires, subcommandsOf, type CommandButton, type Grammar } from './commands.js';
 	import { arm, helping } from './help.js';
 
 	export let disabled = false;
@@ -64,16 +67,31 @@
 
 	const dispatch = createEventDispatcher<{ run: string[]; line: { name: string; line: string; keyboard: boolean } }>();
 
+	/** The command whose subcommands the bar shows, if any. Gone with the command, if its pills hide it. */
+	let open: string | null = null;
 	$: listed = commandsUnder(grammar, pills, fields);
+	$: if (open && !listed.some((command) => command.name === open)) open = null;
+	$: shown = open ? subcommandsOf(grammar, open) : listed;
 	$: runs = (command: CommandButton) => command.press === 'run' || fires(grammar?.get(command.name), pills);
 
-	const press = (command: CommandButton) =>
-		runs(command)
-			? dispatch('run', [command.name])
-			: dispatch('line', { name: command.name, line: `${command.name} `, keyboard: command.next !== 'tap' });
+	function press(command: CommandButton): void {
+		if (command.press === 'back') open = null;
+		else if (!open && drills(grammar, command.name, pills)) open = command.name;
+		else if (runs(command)) dispatch('run', [command.name]);
+		else dispatch('line', { name: command.name, line: `${command.name} `, keyboard: command.next !== 'tap' });
+	}
+
+	/** Escape is Back, and marks the key taken so the line does not peel as well. */
+	function onKeyDown(event: KeyboardEvent): void {
+		if (event.key !== 'Escape' || !open || event.defaultPrevented || document.querySelector('dialog[open]')) return;
+		open = null;
+		event.preventDefault();
+	}
 </script>
 
-<ButtonRows class="commands" items={listed} key={(command) => command.name} let:item={command}>
+<svelte:window on:keydown={onKeyDown} />
+
+<ButtonRows class="commands" items={shown} key={(command) => command.name} let:item={command}>
 	<button slot="probe" class="command" tabindex="-1">probe</button>
 	{#if command.name === 'undo'}
 		<span class="undo">
@@ -106,6 +124,10 @@
 			     nothing on the bar. -->
 			<span class="label" class:hidden={$helping}>{command.label}</span>
 			{#if $helping}<span class="label armed">? on what<small>(tap: all)</small></span>{/if}
+		</button>
+	{:else if command.press === 'back'}
+		<button class="command" {disabled} data-back title="back to every command" on:click={() => press(command)}>
+			{command.label}
 		</button>
 	{:else}
 		<button

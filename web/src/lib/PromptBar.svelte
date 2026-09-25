@@ -139,7 +139,8 @@
 	 *      Sheet) — the browser's own cancel, which marks nothing, so it is
 	 *      asked for by looking;
 	 *   3. an open menu (PaneMenu), the ⓘ note (Beta), a custom pane's
-	 *      editor, a field's state list or its `+` (FieldsWidget);
+	 *      editor, a field's state list or its `+` (FieldsWidget), a
+	 *      command's subcommands (CommandsWidget);
 	 *   4. the log, here;
 	 *   5. LAST, the input peels one layer (`peel` in $lib/bar.ts).
 	 * The window's listeners run in mount order, not in this one, so the

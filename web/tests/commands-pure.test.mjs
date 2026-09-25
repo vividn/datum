@@ -19,9 +19,11 @@ import {
 	grammarOf,
 	pendingVerb,
 	declaredVerb,
+	drills,
 	lanesOf,
 	pressKind,
 	rowsIn,
+	subcommandsOf,
 	verbPress
 } from '../src/lib/commands.ts';
 
@@ -307,5 +309,39 @@ describe('the `command` kind', () => {
 		assert.equal(BUILTIN.command(false).root.tabs[0].content.kind, 'command');
 		// And the widget it took the id back from is still reachable.
 		assert.equal(BUILTIN.custom(false).root.tabs[0].content.kind, 'custom');
+	});
+});
+
+// da-803mk: which commands drill, and what the bar is while one is open —
+// read off `help --json`'s `subcommands` and `bare`, never off usage lines.
+describe('subcommands', () => {
+	const sub = (...names) => names.map((name) => ({ name }));
+	const TREE = grammarOf([
+		{ name: 'db', aliases: [], usage: ['datum db setup', 'datum db backup <PATH | ->'], flags: [], subcommands: sub('setup', 'backup'), bare: false },
+		{ name: 'sync', aliases: [], usage: ['datum sync [--push]'], flags: [], subcommands: sub('login'), bare: true },
+		{ name: 'spec', aliases: [], usage: ['datum spec show <FIELD>'], flags: [], subcommands: sub('show'), bare: false },
+		// Two forms, no subcommands: `add` fills as it always did.
+		{ name: 'add', aliases: [], usage: ['datum add <FIELD>', 'datum add <FIELD> <DUR>'], flags: [] }
+	]);
+	const field = { id: 'field', kind: 'field', text: 'mood' };
+
+	test('a command with subcommands drills; alternate forms do not; spec under a field opens its spec instead', () => {
+		assert.deepEqual(['db', 'sync', 'spec', 'add', 'tail'].map((n) => drills(TREE, n, [])), [true, true, true, false, false]);
+		assert.equal(drills(TREE, 'spec', [field]), false, 'da-ybai9: the modal, not the subcommands');
+		assert.equal(drills(TREE, 'db', [field]), true);
+	});
+
+	test('< Back and Help lead; a command that runs bare is offered as itself; each subcommand fills its whole line', () => {
+		const bar = (name) => subcommandsOf(TREE, name).map((c) => [c.name, c.label, c.press]);
+		assert.deepEqual(bar('db'), [
+			['back', '< Back', 'back'],
+			['help', 'Help', 'help'],
+			['db setup', 'setup', 'fill'],
+			['db backup', 'backup', 'fill']
+		]);
+		assert.deepEqual(bar('sync').slice(2), [
+			['sync', 'sync', 'fill'],
+			['sync login', 'login', 'fill']
+		]);
 	});
 });
