@@ -99,6 +99,16 @@ const aMark = (page, scope, selector = '[data-id]') =>
 		};
 	}, selector);
 
+/**
+ * How wide today's picture is on screen, found and measured in ONE task
+ * (da-h39mp). A locator's `evaluate` finds the element first and measures
+ * it on a second round trip, and a picture that lands between the two —
+ * a zoom's own redraw, late under load — replaces the svg, so the one
+ * measured is detached and reads 0 wide whatever the window is.
+ */
+const todayWidth = (page) =>
+	page.evaluate((sel) => document.querySelector(sel).getBoundingClientRect().width, `${TODAY} svg.svg`);
+
 /** A point a fifth of the way along a mark: on it, and well clear of the now region. */
 const early = (mark) => ({ x: Math.round(mark.left + mark.width * 0.2), y: mark.y });
 
@@ -458,13 +468,10 @@ describe('the same gestures on a band of the day strip', () => {
 			await page.keyboard.down('Control');
 			await page.mouse.wheel(0, -300);
 			await page.keyboard.up('Control');
-			await until(
-				() => page.locator(`${TODAY} svg.svg`).evaluate((svg) => svg.getBoundingClientRect().width),
+			const zoomed = await until(
+				() => todayWidth(page),
 				(w) => w > band.width * 1.5
 			);
-			const zoomed = await page
-				.locator(`${TODAY} svg.svg`)
-				.evaluate((svg) => svg.getBoundingClientRect().width);
 
 			// GROUND: over no mark, and far enough into the band to be a
 			// press the strip takes at all.
@@ -493,9 +500,7 @@ describe('the same gestures on a band of the day strip', () => {
 			await page.mouse.dblclick(ground.x, ground.y);
 			await new Promise((r) => setTimeout(r, 250));
 			assert.equal(
-				await page
-					.locator(`${TODAY} svg.svg`)
-					.evaluate((svg) => svg.getBoundingClientRect().width),
+				await todayWidth(page),
 				zoomed,
 				'a double tap on the ground still gives the whole day back'
 			);
