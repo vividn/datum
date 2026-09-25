@@ -1133,17 +1133,7 @@ function app(page, errors, query, clean, locks, internal) {
 			// whole boot again — a fresh wasm compile and every pane's first
 			// command — which is the cost a shared app is here to avoid.
 			// That the URL reaches this is `preview.test.mjs`'s to say.
-			//
-			// Asked AGAIN if Chromium says the answer was "garbage collected":
-			// about one room in 140 on a page that has just booted gets that
-			// for a promise the page still holds — pinned to `window` it was
-			// reported collected all the same (da-s4i98). A second ask is
-			// safe: a name already open is brought forward, not seeded twice.
-			const preview = () => page.evaluate((n) => window.datum.shell.openPreview(n, 'main'), name);
-			const missing = await preview().catch((e) => {
-				if (!/garbage collected/.test(e.message)) throw e;
-				return preview();
-			});
+			const missing = await page.evaluate((n) => window.datum.shell.openPreview(n, 'main'), name);
 			if (missing !== null) throw new Error(`a room seeded from a layout that is nothing: ${missing}`);
 			await page.evaluate(async (keep) => {
 				const { layout, shell } = window.datum;
