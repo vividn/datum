@@ -30,6 +30,9 @@ export interface FieldStats {
 	total_count: number;
 	total_duration_seconds: number;
 	tracked_duration_seconds: number;
+	/** The first / last counted entry's instant, RFC 3339 in the zone it was logged in; null when the window counts nothing. */
+	earliest: string | null;
+	latest: string | null;
 	states: { state: string; count: number; duration_seconds: number; ratio: number | null }[];
 }
 
@@ -49,6 +52,9 @@ export interface AllFieldsStats {
 	fields: FieldRow[];
 	total_count: number;
 	tracked_duration_seconds: number;
+	/** The first / last counted entry's instant, RFC 3339 in the zone it was logged in; null when the window counts nothing. */
+	earliest: string | null;
+	latest: string | null;
 }
 
 /** Which of the two a `stats --json` is: the all-fields table has `fields`. */

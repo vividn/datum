@@ -959,3 +959,76 @@ fn bare_stats_runs_through_cli_dispatch() {
     run_cli(&["stats", "--json"], &db).unwrap();
     run_cli(&["stats", "--today"], &db).unwrap();
 }
+
+// ─── When the window's record starts and ends (da-aynet) ────────────────────
+
+fn instant(t: Option<chrono::DateTime<chrono::FixedOffset>>) -> Option<DateTime<Utc>> {
+    t.map(|t| t.with_timezone(&Utc))
+}
+
+#[test]
+fn stats_says_when_its_window_starts_and_ends() {
+    let _g = freeze_time("2026-06-15T12:00:00Z");
+    let db = fresh_db();
+    seed_three_shapes(&db);
+
+    // Every field: the first coffee to the last activity switch.
+    let all = compute_all_fields(&StatsArgs::default(), &db).unwrap();
+    assert_eq!(instant(all.earliest), Some(at("2026-06-15T08:00:00Z")));
+    assert_eq!(instant(all.latest), Some(at("2026-06-15T11:00:00Z")));
+
+    // One field: its own entries, not the database's.
+    let r = compute_stats(&selector("activity"), &db).unwrap();
+    assert_eq!(instant(r.earliest), Some(at("2026-06-15T10:00:00Z")));
+    assert_eq!(instant(r.latest), Some(at("2026-06-15T11:00:00Z")));
+
+    // The window's, not the whole record's: the coffees and the work block
+    // fall before it.
+    let args = StatsArgs {
+        since: Some("2026-06-15T10:15:00Z".to_string()),
+        ..StatsArgs::default()
+    };
+    let all = compute_all_fields(&args, &db).unwrap();
+    assert_eq!(instant(all.earliest), Some(at("2026-06-15T10:30:00Z")));
+    assert_eq!(instant(all.latest), Some(at("2026-06-15T11:00:00Z")));
+}
+
+#[test]
+fn stats_window_bounds_are_null_when_it_counts_nothing() {
+    let _g = freeze_time("2026-06-15T12:00:00Z");
+    let db = fresh_db();
+    seed_activity(&db);
+
+    // The open coding block runs into this window, but no entry lands in it.
+    let args = StatsArgs {
+        since: Some("2026-06-15T11:30:00Z".to_string()),
+        ..selector("activity")
+    };
+    let r = compute_stats(&args, &db).unwrap();
+    assert!(r.tracked_duration_seconds > 0);
+    assert_eq!((r.earliest, r.latest), (None, None));
+
+    let all = compute_all_fields(&StatsArgs::default(), &fresh_db()).unwrap();
+    assert_eq!((all.earliest, all.latest), (None, None));
+}
+
+#[test]
+fn stats_window_bounds_keep_the_zone_they_were_logged_in() {
+    let _g = freeze_time("2026-06-15T12:00:00Z");
+    let db = fresh_db();
+    entry_builder("coffee")
+        .verb(Verb::Point)
+        .time_start(datum_core::time::DatumTime {
+            utc: at("2026-06-15T09:00:00Z"),
+            offset_minutes: -300,
+            timezone: Some("America/Chicago".to_string()),
+            uncertainty: None,
+        })
+        .insert(&db);
+
+    let r = compute_stats(&selector("coffee"), &db).unwrap();
+    assert_eq!(
+        r.earliest.map(|t| t.to_rfc3339()).as_deref(),
+        Some("2026-06-15T04:00:00-05:00")
+    );
+}

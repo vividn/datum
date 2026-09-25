@@ -26,7 +26,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::{bail, Context, Result};
-use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc, Weekday};
+use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, Utc, Weekday};
 use datum_core::db::{Db, ListParams, TimeMetric};
 use datum_core::shape::{is_inactive_state, is_off_state};
 use datum_core::time::DatumTime;
@@ -66,6 +66,13 @@ pub struct StatsResult {
     /// The ratio denominator: measured duration in states that count as
     /// tracked. Equals `total_duration_seconds` when nothing is excluded.
     pub tracked_duration_seconds: i64,
+    /// The first and last counted entry's instant, in the zone it was
+    /// logged in — when the window's record starts and ends (da-aynet).
+    /// `None` when the window counts no entry. It is the instant the entry
+    /// is counted by, so a block's is its END (da-zwct): its leading edge
+    /// may lie before the window, which bounds are never outside of.
+    pub earliest: Option<DateTime<FixedOffset>>,
+    pub latest: Option<DateTime<FixedOffset>>,
     /// Longest-duration first; ties broken by state name.
     pub states: Vec<StateStat>,
 }
@@ -105,6 +112,9 @@ pub struct AllFieldsStats {
     pub fields: Vec<FieldStat>,
     pub total_count: usize,
     pub tracked_duration_seconds: i64,
+    /// [`StatsResult::earliest`] / [`StatsResult::latest`] across every field.
+    pub earliest: Option<DateTime<FixedOffset>>,
+    pub latest: Option<DateTime<FixedOffset>>,
 }
 
 /// Every field the database has logged, ranked by tracked duration.
@@ -118,8 +128,11 @@ pub fn compute_all_fields(args: &StatsArgs, db: &Db) -> Result<AllFieldsStats> {
     let (start, end) = resolve_window(args, db)?;
     let registry = db.load_registry()?;
     let mut fields: Vec<FieldStat> = Vec::new();
+    let (mut earliest, mut latest) = (None, None);
     for field in db.distinct_fields()? {
         let r = field_stats(&field, None, args, db, start, end)?;
+        earliest = earliest.into_iter().chain(r.earliest).min();
+        latest = latest.into_iter().chain(r.latest).max();
         if r.total_count == 0 && r.tracked_duration_seconds == 0 {
             continue;
         }
@@ -148,6 +161,8 @@ pub fn compute_all_fields(args: &StatsArgs, db: &Db) -> Result<AllFieldsStats> {
         fields,
         total_count,
         tracked_duration_seconds,
+        earliest,
+        latest,
     })
 }
 
@@ -199,6 +214,7 @@ fn field_stats(
                 state: state_label(e.state.as_ref()).unwrap_or_else(|| "(none)".to_string()),
                 class: classify(e.state.as_ref()),
                 occur: e.occur_time.as_ref()?.utc,
+                local: e.occur_time.as_ref()?.local_time(),
                 dur: e.duration_seconds(),
                 following: state_label(e.following_state.as_ref()),
                 following_class: classify(e.following_state.as_ref()),
@@ -210,6 +226,7 @@ fn field_stats(
     let mut dur_by_state: BTreeMap<String, i64> = BTreeMap::new();
     let mut count_by_state: BTreeMap<String, usize> = BTreeMap::new();
     let mut class_by_state: BTreeMap<String, StateClass> = BTreeMap::new();
+    let (mut earliest, mut latest) = (None, None);
 
     // The state the field returns to when a block hands it back: the one
     // that governed just before the block opened. A block is an
@@ -283,8 +300,12 @@ fn field_stats(
         }
 
         // Count the entry itself when its occur instant lands in-window.
+        // The timeline runs oldest→newest, so the first counted row is the
+        // earliest and the last the latest.
         if within(row.occur, start, end) {
             *count_by_state.entry(row.state.clone()).or_default() += 1;
+            earliest.get_or_insert(row.local);
+            latest = Some(row.local);
         }
     }
 
@@ -367,6 +388,8 @@ fn field_stats(
         total_count,
         total_duration_seconds,
         tracked_duration_seconds,
+        earliest,
+        latest,
         states,
     })
 }
@@ -627,6 +650,8 @@ struct TimelineRow {
     state: String,
     class: StateClass,
     occur: DateTime<Utc>,
+    /// `occur` in the zone the entry was logged in.
+    local: DateTime<FixedOffset>,
     dur: Option<i64>,
     following: Option<String>,
     following_class: StateClass,
@@ -811,6 +836,8 @@ fn render_all_json(r: &AllFieldsStats) -> String {
             "fields": fields,
             "total_count": r.total_count,
             "tracked_duration_seconds": r.tracked_duration_seconds,
+            "earliest": r.earliest.map(|t| t.to_rfc3339()),
+            "latest": r.latest.map(|t| t.to_rfc3339()),
         })
     )
 }
@@ -857,6 +884,8 @@ fn render_json(r: &StatsResult) -> String {
             "total_count": r.total_count,
             "total_duration_seconds": r.total_duration_seconds,
             "tracked_duration_seconds": r.tracked_duration_seconds,
+            "earliest": r.earliest.map(|t| t.to_rfc3339()),
+            "latest": r.latest.map(|t| t.to_rfc3339()),
             "states": states,
         })
     )
@@ -1173,5 +1202,35 @@ mod tests {
             set(&mut t);
             assert!(names_a_moment(&t));
         }
+    }
+
+    #[test]
+    fn json_carries_the_window_bounds_and_null_when_it_counts_nothing() {
+        let at = DateTime::parse_from_rfc3339("2026-06-15T04:00:00-05:00").unwrap();
+        let one = StatsResult {
+            field: "coffee".into(),
+            selected_state: None,
+            total_count: 1,
+            total_duration_seconds: 0,
+            tracked_duration_seconds: 0,
+            earliest: Some(at),
+            latest: Some(at),
+            states: vec![],
+        };
+        let json: JsonValue = serde_json::from_str(&render_json(&one)).unwrap();
+        assert_eq!(json["earliest"], "2026-06-15T04:00:00-05:00");
+        assert_eq!(json["latest"], "2026-06-15T04:00:00-05:00");
+
+        let none = AllFieldsStats {
+            fields: vec![],
+            total_count: 0,
+            tracked_duration_seconds: 0,
+            earliest: None,
+            latest: None,
+        };
+        let json: JsonValue = serde_json::from_str(&render_all_json(&none)).unwrap();
+        // null, not left out: the widget reads the key either way.
+        assert_eq!(json.get("earliest"), Some(&JsonValue::Null));
+        assert_eq!(json.get("latest"), Some(&JsonValue::Null));
     }
 }
