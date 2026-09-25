@@ -141,7 +141,7 @@ fn render_empty_tracked_shows_sentinel() {
     // No tracked fields at all (e.g. brand-new db) → the view prints its
     // terminal sentinel rather than silently producing nothing.
     let snap = build_snapshot(&[], &HashMap::new(), false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
     let plain = strip_ansi(&out);
     assert!(
         plain.contains("No tracked (non-ignored) fields"),
@@ -156,7 +156,7 @@ fn render_tracked_field_with_no_entries_shows_no_entries_marker() {
     // marker in the time column — rather than being silently hidden.
     let tf = [tracked("mood")];
     let snap = build_snapshot(&tf, &HashMap::new(), false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
     let plain = strip_ansi(&out);
     assert!(plain.contains("mood"), "field must appear:\n{plain}");
     assert!(
@@ -174,7 +174,7 @@ fn render_switch_entry_appears_as_active_row_with_bullet_and_state() {
     latest.insert("mood".to_string(), switch_entry("mood", "happy"));
 
     let snap = build_snapshot(&tf, &latest, false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
     let plain = strip_ansi(&out);
     assert!(
         plain.contains("●"),
@@ -201,7 +201,7 @@ fn render_array_state_shows_comma_joined_members() {
     );
 
     let snap = build_snapshot(&tf, &latest, false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
     let plain = strip_ansi(&out);
     assert!(plain.contains("datum"), "first state must appear:\n{plain}");
     assert!(
@@ -225,7 +225,7 @@ fn render_ignored_field_hidden_by_default() {
     // "no (non-ignored)" sentinel should fire because nothing else is tracked.
     let tf = [ignored("youtube")];
     let snap = build_snapshot(&tf, &HashMap::new(), false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
     let plain = strip_ansi(&out);
     assert!(
         !plain.contains("youtube"),
@@ -246,7 +246,7 @@ fn render_ignored_field_shown_dim_after_separator_with_show_all() {
     latest.insert("mood".to_string(), switch_entry("mood", "happy"));
 
     let snap = build_snapshot(&tf, &latest, true);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
     let plain = strip_ansi(&out);
 
     assert!(
@@ -289,7 +289,7 @@ fn render_separator_divides_active_from_stopped() {
     );
 
     let snap = build_snapshot(&tf, &latest, false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
     let plain = strip_ansi(&out);
 
     let mood_at = plain.find("mood").expect("active mood row missing");
@@ -460,7 +460,7 @@ fn render_old_stopped_field_uses_iso_date_prefix() {
     );
 
     let snap = build_snapshot(&tf, &latest, false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
     let plain = strip_ansi(&out);
 
     // Compute the expected date through the same FixedOffset the
@@ -521,7 +521,7 @@ fn render_p1d_entry_shows_bare_date_in_last_seen_column() {
     latest.insert("birthday".to_string(), e);
 
     let snap = build_snapshot(&tf, &latest, false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
     let plain = strip_ansi(&out);
 
     let expected = local_today.format("%Y-%m-%d").to_string();
@@ -625,7 +625,7 @@ fn render_honors_spec_color_on_tracked_field() {
     latest.insert("mood".to_string(), switch_entry("mood", "happy"));
 
     let snap = build_snapshot(&tf, &latest, false);
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
 
     // True-color escape for #ff6600: `\x1b[38;2;255;102;0m`.
     assert!(
@@ -666,7 +666,7 @@ fn active_row(field: &str, state: &str) -> NowFieldActive {
 fn snapshot_render_default_shows_only_active() {
     let mut snap = empty_snapshot();
     snap.active.push(active_row("mood", "happy"));
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
     let plain = strip_ansi(&out);
     assert!(plain.contains("mood"), "active field must appear:\n{plain}");
     assert!(
@@ -699,7 +699,7 @@ fn snapshot_render_tracked_false_uses_dim_block() {
         entry: None,
     });
 
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
     let plain = strip_ansi(&out);
 
     assert!(plain.contains("mood"), "active row present:\n{plain}");
@@ -740,7 +740,7 @@ fn snapshot_render_ignored_block_renders_dim() {
         color: None,
     });
 
-    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new());
+    let out = render_snapshot(&snap, &HashMap::new(), &HashMap::new(), true);
     let plain = strip_ansi(&out);
 
     assert!(plain.contains("mood"));
@@ -756,7 +756,7 @@ fn snapshot_render_ignored_block_renders_dim() {
 /// the user is in a brand-new DB or has filter-hidden everything.
 #[test]
 fn snapshot_render_empty_emits_sentinel() {
-    let out = render_snapshot(&empty_snapshot(), &HashMap::new(), &HashMap::new());
+    let out = render_snapshot(&empty_snapshot(), &HashMap::new(), &HashMap::new(), true);
     let plain = strip_ansi(&out);
     assert!(
         plain.contains("No tracked"),
@@ -772,7 +772,7 @@ fn snapshot_render_overlap_warning_prepends_active_row() {
     snap.active.push(active_row("mood", "happy"));
     let mut overlaps = HashMap::new();
     overlaps.insert("mood".to_string(), 3u32);
-    let out = render_snapshot(&snap, &HashMap::new(), &overlaps);
+    let out = render_snapshot(&snap, &HashMap::new(), &overlaps, true);
     let plain = strip_ansi(&out);
     assert!(
         plain.contains("3 overlapping opens on 'mood'"),
@@ -1024,5 +1024,59 @@ fn now_time_travel_excludes_fields_born_after_anchor() {
     assert!(
         past.tracked_false.iter().all(|f| f.field != "coffee"),
         "coffee did not exist at the anchor — no phantom tracked_false row"
+    );
+}
+
+/// da-5v3pl: the state list honours the same colour gate as the band —
+/// `DATUM_COLOR`, `NO_COLOR`, the tty and `--no-color` — and prints no
+/// escape at all when colour is off. `DATUM_COLOR=1` (what the web sets)
+/// still paints it.
+#[test]
+fn now_state_list_honours_the_colour_gate() {
+    use std::process::{Command, Stdio};
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db = dir.path().join("now-colour.db");
+    let run = |env: &[(&str, &str)], args: &[&str]| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_datum"));
+        cmd.env("DATUM_DB", &db)
+            .env_remove("DATUM_COLOR")
+            .env_remove("NO_COLOR")
+            .stdout(Stdio::piped())
+            .args(args);
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+        let out = cmd.output().expect("run datum");
+        assert!(out.status.success(), "{args:?} failed: {out:?}");
+        String::from_utf8(out.stdout).expect("utf8 stdout")
+    };
+    run(&[], &["switch", "activity", "writing"]);
+    run(&[], &["track", "mood", "--verb", "switch"]);
+
+    for (env, args) in [
+        (&[("DATUM_COLOR", "0")][..], &["now", "--tracked"][..]),
+        (&[("NO_COLOR", "1")][..], &["now", "--tracked"][..]),
+        (&[][..], &["now", "--tracked"][..]),
+        (
+            &[("DATUM_COLOR", "1")][..],
+            &["now", "--tracked", "--no-color"][..],
+        ),
+    ] {
+        let out = run(env, args);
+        assert!(out.contains("(off)"), "{env:?} {args:?}:\n{out}");
+        assert!(
+            !out.contains("\x1b["),
+            "{env:?} {args:?} coloured:\n{out:?}"
+        );
+    }
+    let out = run(&[("DATUM_COLOR", "1")], &["now", "--bare", "--tracked"]);
+    assert!(
+        out.contains("\x1b[2m"),
+        "tracked-false row must be DIM:\n{out:?}"
+    );
+    assert!(
+        out.contains("\x1b[38;2;"),
+        "state list must be coloured:\n{out:?}"
     );
 }

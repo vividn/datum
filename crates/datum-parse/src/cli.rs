@@ -808,8 +808,8 @@ pub struct NowArgs {
     /// `--bare` — suppress the trailing terminal nowview band; only show
     /// the active-state list. Useful for piping or scripting.
     pub bare: bool,
-    /// Force-disable color in the terminal nowview band. Mirrors
-    /// `NO_COLOR` env var behavior; useful for redirected output.
+    /// Force-disable color in the state list and the nowview band.
+    /// Mirrors `NO_COLOR` env var behavior; useful for redirected output.
     pub no_color: bool,
     /// Override terminal width in cells for the nowview band. None →
     /// auto-detect from `$COLUMNS`, fall back to 80.

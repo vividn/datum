@@ -1615,11 +1615,15 @@ fn render_now_state_scalar(
 /// the legacy [`render_now_view`] — the snapshot doesn't (yet) own
 /// per-state colour overrides or the overlap-count map, so callers
 /// supply them.
+///
+/// `color` is the caller's colour gate (da-5v3pl): off, the view carries
+/// no escape at all, the DIM of the tracked-false and ignored rows included.
 #[cfg(feature = "db")]
 pub fn render_snapshot(
     snapshot: &datum_core::db::NowSnapshot,
     state_colors: &HashMap<(String, String), String>,
     overlap_counts: &HashMap<String, u32>,
+    color: bool,
 ) -> String {
     use std::fmt::Write;
     let now = chrono::Utc::now();
@@ -1803,7 +1807,11 @@ pub fn render_snapshot(
         )
         .unwrap();
     }
-    out
+    if color {
+        out
+    } else {
+        colors::strip_ansi(&out)
+    }
 }
 
 #[cfg(feature = "db")]

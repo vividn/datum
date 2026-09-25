@@ -96,7 +96,12 @@ pub fn now(args: NowArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
 
     print!(
         "{}",
-        render_snapshot(&snapshot, &state_colors, &overlap_counts)
+        render_snapshot(
+            &snapshot,
+            &state_colors,
+            &overlap_counts,
+            !args.no_color && crate::render::colors::color_enabled(),
+        )
     );
 
     // da-raz: `datum now` also renders a terminal nowview band beneath the

@@ -299,7 +299,7 @@ fn now_view_shows_overlap_warning() {
     );
     let _ = tracked; // unused helper now; kept for symmetry across the file.
 
-    let out = render_snapshot(&snap, &HashMap::new(), &overlap);
+    let out = render_snapshot(&snap, &HashMap::new(), &overlap, true);
     let plain = strip_ansi(&out);
     assert!(
         plain.contains("overlapping opens"),
