@@ -69,11 +69,21 @@ export function todayAt(hour, minute = 0) {
  * Then `idle`, because `submit` returns on the REPL's own echo while the
  * pane commands it set off are still in flight — a measurement taken
  * straight after it can be of the pane as it was an entry ago.
+ *
+ * A line that fails THROWS, naming itself and its code (da-pm48t): a seed
+ * refused in silence reads, further on, as data the page failed to draw
+ * (da-edr7t). The code and not stderr, which a refusal can leave empty —
+ * a duplicate `occur` exits 11 with nothing on it. The bar's line is read
+ * back off the bar's own receipt, because its echo looks the same either way.
  */
 export async function seedLines(app, lines) {
 	if (!lines.length) return;
-	for (const line of lines.slice(0, -1)) await app.runLine(line);
+	const refused = (line, { code, stderr }) => {
+		if (code !== 0) throw new Error(`seed line \`${line}\` exited ${code}${stderr ? `: ${stderr}` : ''}`);
+	};
+	for (const line of lines.slice(0, -1)) refused(line, await app.runLine(line));
 	await app.submit(lines.at(-1));
+	refused(lines.at(-1), (await app.page.evaluate(() => window.datum.bar.last())).result);
 	await app.idle();
 }
 

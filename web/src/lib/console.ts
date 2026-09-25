@@ -25,7 +25,7 @@ import { storedEntries, type StoredEntry } from './backup.js';
 import { tailListing, type TailColumn, type TailRow } from './tail.js';
 import * as layouts from './layout/store.js';
 import * as shell from './layout/shell.js';
-import { pills, removePill, setPills, type Pill } from './bar.js';
+import { last, pills, removePill, setPills, type LastRun, type Pill } from './bar.js';
 import { cursor, pointAt, setCursor, type Cursor } from './cursor.js';
 import { shellSplit } from './shellSplit.js';
 import { openSpec, openTrack, type TrackOptions } from './specModal.js';
@@ -69,8 +69,12 @@ export interface DatumConsole {
 	};
 	/** The root tabs (da-0a5o): open a layout by name, save, restore, save as, lock. */
 	shell: typeof shell;
-	/** The bottom bar's pills: what the time cursor will set, and a test does. */
-	bar: { pills(): Pill[]; setPills(next: Pill[]): void; removePill(id: string): void };
+	/**
+	 * The bottom bar's pills: what the time cursor will set, and a test does.
+	 * And `last`, the bar's receipt: the newest command recorded and its
+	 * result, whichever door it came in by.
+	 */
+	bar: { pills(): Pill[]; setPills(next: Pill[]): void; removePill(id: string): void; last(): LastRun | null };
 	/**
 	 * The time cursor (da-wnt2): the instant the page is pointed at, as a
 	 * click on a day sets it. `of()` is the whole SELECTION (da-rskp) — its
@@ -123,7 +127,7 @@ export function installConsole(target: Record<string, unknown>): void {
 			}
 		},
 		shell,
-		bar: { pills: () => get(pills), setPills, removePill },
+		bar: { pills: () => get(pills), setPills, removePill, last: () => get(last) },
 		cursor: { at: () => get(cursor)?.at ?? null, set: setCursor, of: () => get(cursor), point: pointAt },
 		track: async (options) => {
 			const argv = await openTrack(options);
