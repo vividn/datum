@@ -32,7 +32,9 @@
 	with the reader's place kept. A write lands as the epoch bump does
 	today: pinned at the bottom the newest page simply replaces the screen;
 	scrolled up, the place is kept and a quiet `↓ new` at the foot says
-	something landed below. The table holds at most `CAP` rows — past it,
+	something landed below. A page the reader pulled in is scrolled up
+	until they come back to the bottom, even where it leaves their row at
+	the live end (da-nkkjb). The table holds at most `CAP` rows — past it,
 	the far end goes, and `↓ new` brings the live end back.
 
 	Two things it does NOT decide: the rows (every one is the CLI's), and
@@ -132,6 +134,14 @@
 	/** Bumped whenever the screen is replaced, so a page in flight for the old one is dropped. */
 	let generation = 0;
 	let paging = false;
+	/**
+	 * The reader asked for the past: a page is in flight or landed, and
+	 * the screen is scrolled up until they come back down to the bottom
+	 * (da-nkkjb). Not `nearBottom()`: a screen that fitted its box exactly
+	 * keeps the reader's row at the live end after a page, and a refresh
+	 * reading that as pinned replaced the page they had just asked for.
+	 */
+	let away = false;
 	/** Room a kept place needed past the slack, until the screen is replaced. */
 	let extra = 0;
 
@@ -180,6 +190,7 @@
 		rows = [];
 		exhausted = false;
 		unseen = false;
+		away = false;
 		extra = 0;
 		least = 0;
 		generation++;
@@ -377,9 +388,10 @@
 		// pull at the top.
 		exhausted = false;
 		const page = toShown(table);
-		if (force || rows.length === 0 || nearBottom()) {
+		if (force || rows.length === 0 || (!paging && !away && nearBottom())) {
 			// Pinned: the screen is the CLI's newest page and nothing else.
 			generation++;
+			away = false;
 			extra = 0;
 			rows = page;
 			adopt(table.columns, true);
@@ -429,6 +441,7 @@
 			const held = new Set(rows.map((row) => row.hid));
 			const fresh = toShown(table).filter((row) => !held.has(row.hid));
 			if (fresh.length === 0) return void (exhausted = true);
+			away = true;
 			const a = anchor();
 			rows = [...fresh, ...rows];
 			if (rows.length > CAP) {
@@ -487,7 +500,7 @@
 		const mine = own !== null && top === own;
 		own = null;
 		if (mine) return;
-		if (nearBottom()) unseen = false;
+		if (nearBottom()) unseen = away = false;
 		if (top <= 0 && scroller.scrollHeight > scroller.clientHeight + 1) void page();
 	}
 

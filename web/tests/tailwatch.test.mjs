@@ -445,6 +445,90 @@ describe('a write', () => {
 		});
 	});
 
+	// A page the reader asked for survives a refresh (da-nkkjb). On a
+	// screen that fits its box exactly the reader's row stays at the live
+	// end after a page, so a refresh used to read the screen as pinned:
+	// landing while the page was in flight it replaced the screen and the
+	// page was thrown away; landing after, it replaced the page.
+	const pageKept = async (page, g0, label) => {
+		// Both have come back; two frames for them to be drawn.
+		await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+		const g = await geometry(page);
+		const want = Array.from({ length: 2 * g0.n }, (_, i) => seedHid(30 - 2 * g0.n + i));
+		assert.deepEqual(g.hids.slice(0, want.length), want, `${label}: the page above is gone`);
+		const top = g0.hids[0];
+		assert.ok(Math.abs(g.ys[top] - g0.ys[top]) <= 1, `${label}: the reader's row moved: ${g0.ys[top]} → ${g.ys[top]}`);
+		return g;
+	};
+
+	test('a refresh landing while the page above is in flight keeps the page and the place (da-nkkjb)', async () => {
+		await TALL.solo(async (app) => {
+			const { page } = app;
+			await seed(app, 30);
+			await atRest(page);
+			const g0 = await geometry(page);
+			assertFits(g0, 'at rest');
+			// The page's answer is held until released: the refresh lands first.
+			await page.evaluate(() => {
+				let release;
+				const hold = new Promise((resolve) => (release = resolve));
+				const previous = window.datum.setRunner(async (argv, ...rest) => {
+					const result = await previous(argv, ...rest);
+					if (argv[0] === 'tail' && argv.includes('-t') && !window.__paged) {
+						window.__paged = hold.then(() => result);
+						return window.__paged;
+					}
+					return result;
+				});
+				window.__release = () => {
+					window.datum.setRunner(previous);
+					release();
+					delete window.__release;
+				};
+			});
+			try {
+				await wheelUp(page);
+				await page.waitForFunction(() => !!window.__paged);
+				await app.submit('occur tea');
+				await app.idle();
+				const [newest] = await app.entries(1);
+				await page.waitForFunction(
+					(hid) => document.querySelector(`section.pane[data-title="tail"] tbody tr[data-hid="${hid}"]`),
+					newest.hid
+				);
+				await page.evaluate(() => (window.__release(), window.__paged));
+				const g = await pageKept(page, g0, 'refreshed mid page');
+				assert.equal(g.hids.at(-1), newest.hid, 'the new row is not last');
+				await marker(page).waitFor();
+			} finally {
+				await page.evaluate(() => (window.__release?.(), delete window.__paged));
+			}
+		});
+	});
+
+	test('a refresh landing after the page above keeps the page and the place (da-nkkjb)', async () => {
+		await TALL.solo(async (app) => {
+			const { page } = app;
+			await seed(app, 30);
+			await atRest(page);
+			const g0 = await geometry(page);
+			assertFits(g0, 'at rest');
+			await wheelUp(page);
+			await waitRows(page, 'n === arg', 2 * g0.n);
+			// The case: the reader's row still sits at the live end.
+			assert.ok((await geometry(page)).atBottom, 'the page left the screen off the bottom: not the case this is about');
+			await app.submit('occur tea');
+			await app.idle();
+			const [newest] = await app.entries(1);
+			await page.waitForFunction(
+				(hid) => document.querySelector(`section.pane[data-title="tail"] tbody tr[data-hid="${hid}"]`),
+				newest.hid
+			);
+			await pageKept(page, g0, 'refreshed after the page');
+			await marker(page).waitFor();
+		});
+	});
+
 	// The start of the log is what the last pull found, not a fact: a
 	// write older than the first row makes it wrong, so a write forgets it
 	// and the next pull at the top asks again.
