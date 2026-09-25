@@ -6,8 +6,9 @@
 // that would be a terrible user interface" (vividn, 2026-09-11). So the
 // browser's file dialog IS the command's stdin and a download IS its
 // stdout, and the CLI runs `-` exactly as it would in a pipe. `db purge`,
-// which wants a TTY to ask on, asks in a dialog instead, and so does
-// `kit install`'s trust (da-axrk).
+// which wants a TTY to ask on, asks in a dialog instead, and so do
+// `kit install`'s trust (da-axrk) and a replacing `db restore`'s
+// deletions (da-jrbwc).
 //
 // Every line a person types consults it — the REPL's own runner and the
 // bottom bar's through `press` — and nothing else: `run` is the seam and
@@ -41,7 +42,13 @@ export function fileCommand(argv: string[]): Promise<RunResult> | null {
 	const file = fileArgv(argv);
 	if (!file) return null;
 	const ran =
-		sub === 'backup' ? download(file.name, file.argv) : cmd === 'kit' ? kit(file.argv) : upload(file.argv);
+		sub === 'backup'
+			? download(file.name, file.argv)
+			: cmd === 'kit'
+				? kit(file.argv)
+				: sub === 'restore'
+					? restore(file.argv)
+					: upload(file.argv);
 	if (!file.paths.length) return ran;
 	// A path typed is not a file here — the dialog is the file, or names
 	// the download — and saying so is one quiet line.
@@ -73,13 +80,43 @@ export const progress = writable('');
 
 /** Run `argv` (its source `-`) with a file the reader picks as its stdin. */
 export function upload(argv: string[]): Promise<RunResult> {
+	return pick().then(async (file) => (file ? feed(argv, await file.text()) : nothing(argv, 'no file chosen — nothing ran')));
+}
+
+/** Run `argv` with `stdin`, its stderr counting in `progress` while it runs. */
+function feed(argv: string[], stdin: string): Promise<RunResult> {
+	const said = (text: string) => {
+		const line = text.trim().split(/[\r\n]+/).at(-1);
+		if (line) progress.set(line);
+	};
+	return run(argv, stdin, said).finally(() => progress.set(''));
+}
+
+/**
+ * `db restore -` with the backup the reader picks. A replace tombstones
+ * what the backup lacks, and the CLI asks first only on a TTY (da-5fooh),
+ * which the browser has not got: so the page asks, with the counts of the
+ * CLI's own `--dry-run` on the same bytes, and runs it `--yes` on yes
+ * (da-jrbwc). One that deletes nothing, `--merge`, `--dry-run` and a typed
+ * `--yes` run as asked.
+ */
+export function restore(argv: string[]): Promise<RunResult> {
+	if (['--merge', '--dry-run', '--yes', '-y'].some((a) => argv.includes(a))) return upload(argv);
 	return pick().then(async (file) => {
 		if (!file) return nothing(argv, 'no file chosen — nothing ran');
-		const said = (text: string) => {
-			const line = text.trim().split(/[\r\n]+/).at(-1);
-			if (line) progress.set(line);
-		};
-		return run(argv, await file.text(), said).finally(() => progress.set(''));
+		const backup = await file.text();
+		const seen = await feed([...argv, '--dry-run', '--json'], backup);
+		if (seen.code !== 0) return seen;
+		const { would_delete, would_insert, would_update } = JSON.parse(seen.stdout);
+		if (!would_delete) return feed(argv, backup);
+		const text =
+			`Restore replaces ${dbOf(argv)}: ${would_delete} entries will be deleted, ` +
+			`${would_insert} added, ${would_update} changed. Deleted entries can be brought back with undo/history.`;
+		if (!(await confirm(text, 'restore'))) {
+			// The CLI's own words for a no at its prompt.
+			return { argv, code: 1, stdout: '', stderr: 'db restore: aborted (nothing changed; --merge deletes nothing)' };
+		}
+		return feed([...argv, '--yes'], backup);
 	});
 }
 

@@ -433,3 +433,82 @@ test('an option keeps its value, and only the source is the chosen file (da-1vz2
 		}
 	);
 });
+
+// A replace restore tombstones what the backup lacks, and the CLI asks
+// first only on a TTY, which the browser has not got (da-jrbwc): the page
+// asks, with the counts of the CLI's own dry run on the same bytes, and
+// only when something would be deleted.
+test('a replacing restore confirms its deletions first; one that deletes nothing, or --merge, never asks', async () => {
+	await desk.solo(
+		async (app) => {
+			const { page } = app;
+			// Each `db` argv the CLI is asked, through the seam's own hook —
+			// put back at the end, as the app is shared.
+			await page.evaluate(() => {
+				window.__restores = [];
+				const previous = window.datum.setRunner((argv, stdin) => {
+					if (argv[0] === 'db') window.__restores.push(argv);
+					return previous(argv, stdin);
+				});
+				window.__unhook = () => window.datum.setRunner(previous);
+			});
+			const asked = () => page.evaluate(() => window.__restores.splice(0));
+			const coffee = async (n) => {
+				for (let i = 0; i < n; i++) {
+					await app.submit('occur coffee');
+					await app.clock.forward(1000);
+				}
+			};
+			await app.declare('coffee');
+			await coffee(2);
+			const [download] = await Promise.all([page.waitForEvent('download'), app.submit('db backup')]);
+			const saved = await download.path();
+			await coffee(2);
+			assert.equal(await count(app), 5);
+			await asked();
+
+			// Two newer coffees the backup lacks: the dialog names them, and cancel keeps them.
+			const [chooser] = await Promise.all([page.waitForEvent('filechooser'), type(page, 'db restore')]);
+			await chooser.setFiles(saved);
+			const dialog = page.locator('dialog.confirm');
+			await dialog.waitFor();
+			assert.match(
+				await dialog.locator('p').innerText(),
+				/^Restore replaces datum: 2 entries will be deleted, 0 added, 0 changed\. Deleted entries can be brought back with undo\/history\.$/
+			);
+			await answer(page, 'cancel');
+			assert.match((await app.outputs()).at(-1), /db restore: aborted/);
+			assert.deepEqual(await asked(), [['db', 'restore', '-', '--dry-run', '--json']]);
+			assert.equal(await count(app), 5);
+
+			// Restore replaces: the newer two are tombstoned, the backup's live.
+			const [again] = await Promise.all([page.waitForEvent('filechooser'), type(page, 'db restore')]);
+			await again.setFiles(saved);
+			await dialog.waitFor();
+			await answer(page, 'restore');
+			assert.deepEqual(await asked(), [
+				['db', 'restore', '-', '--dry-run', '--json'],
+				['db', 'restore', '-', '--yes']
+			]);
+			assert.equal(await count(app), 3);
+			await tailShows(page, 3);
+
+			// Nothing left to delete: it runs as asked, with no dialog.
+			await choose(page, 'db restore', saved);
+			assert.equal(await dialog.count(), 0);
+			assert.deepEqual(await asked(), [
+				['db', 'restore', '-', '--dry-run', '--json'],
+				['db', 'restore', '-']
+			]);
+
+			// `--merge` deletes nothing and never asks, not even a dry run.
+			await coffee(1);
+			await choose(page, 'db restore --merge', saved);
+			assert.equal(await dialog.count(), 0);
+			assert.deepEqual(await asked(), [['db', 'restore', '--merge', '-']]);
+			assert.equal(await count(app), 4);
+			await page.evaluate(() => window.__unhook());
+			assert.deepEqual(app.errors, []);
+		}
+	);
+});

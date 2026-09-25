@@ -344,7 +344,7 @@ describe('in the app', () => {
 		});
 	});
 
-	test('a field that arrives by `db restore -` is a button after that command, with no reload', async () => {
+	test('a field that arrives by `db restore --merge -` is a button after that command, with no reload', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await type(page, 'occur walk');
@@ -362,9 +362,11 @@ describe('in the app', () => {
 			// alongside it: the echo cannot land until the file is chosen, so a
 			// `type` that waits for the echo deadlocks the chooser it opened and
 			// the test could never pass (da-q15y).
+			// `--merge`: an import ADDS, and a bare restore would replace —
+			// deleting walk, which the page asks about first (da-jrbwc).
 			const before = await page.locator('.repl .echo').count();
 			const input = page.locator('.prompt-bar input');
-			await input.fill('db restore -');
+			await input.fill('db restore --merge -');
 			const [chooser] = await Promise.all([page.waitForEvent('filechooser'), input.press('Enter')]);
 			await chooser.setFiles({ name: 'swim.jsonl', mimeType: 'application/jsonl', buffer: Buffer.from(`${header}\n${JSON.stringify(swim)}\n`) });
 			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
