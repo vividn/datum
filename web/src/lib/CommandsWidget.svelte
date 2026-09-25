@@ -23,7 +23,12 @@
 	  (`.act`), so what looks as if it fires is what fires.
 	- `Help` (da-vjwid) ARMS the page — `$lib/help.ts`: the next tap on a
 	  command, a widget or a pill is explained instead of acted on, and a
-	  second press on Help is `datum help`. Its label says so while armed.
+	  second press on Help is `datum help`, and the answer opens in a modal.
+	  Armed, its label says so — `? on what`, over how to get the general
+	  help — in the same width, which is small: on a phone's one row of
+	  commands a wider Help pushes the verbs off the screen. It is drawn
+	  in a SINGLE outline of the
+	  accent: it does something, but not at once.
 	- a VERB puts `<verb> ` on the command line and leaves the caret in
 	  it. That is the whole of pending a verb: the fields widget reads the
 	  line's first word, so tapping `occur` and typing `occur` reach the
@@ -92,7 +97,11 @@
 			title={$helping ? 'tap anything to have it explained; Help again for general help' : 'explain the next thing you tap'}
 			on:click={arm}
 		>
-			{$helping ? '? tap something' : command.label}
+			<!-- `Help` alone sizes the button; armed, it is hidden and the
+			     armed label is drawn over the same box, so arming it moves
+			     nothing on the bar. -->
+			<span class="label" class:hidden={$helping}>{command.label}</span>
+			{#if $helping}<span class="label armed">? on what<small>(tap: all)</small></span>{/if}
 		</button>
 	{:else}
 		<button
@@ -140,6 +149,44 @@
 	.command:hover:not(:disabled) {
 		border-color: var(--accent);
 		color: var(--ink-bright);
+	}
+
+	/* Help is outlined as Undo is but once, not twice (da-35f23): the
+	   double outline says a press runs something at once, and this one
+	   only waits for the next tap. Its padding is its idle label's, so the
+	   armed label — no width of its own — has the whole box to be drawn
+	   in, and the button is exactly as big as `Help` makes it. */
+	.command.help {
+		border-color: var(--accent);
+		color: var(--ink-bright);
+		display: inline-grid;
+		padding: 0 2px;
+	}
+
+	.help .label {
+		grid-area: 1 / 1;
+		padding: 0.35rem calc(0.85rem - 2px);
+	}
+
+	.help .label.hidden {
+		visibility: hidden;
+	}
+
+	.help .armed {
+		width: 0;
+		min-width: 100%;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		font-size: 0.62rem;
+		line-height: 1.1;
+	}
+
+	.help small {
+		font-size: 0.5rem;
+		opacity: 0.85;
 	}
 
 	/* Armed, Help is the one lit thing on the bar: filled with the accent,

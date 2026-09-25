@@ -86,8 +86,8 @@ export interface WidgetKind {
 	onChange?: (settings: Record<string, unknown>, detail: unknown) => Record<string, unknown>;
 	/**
 	 * What the Help button says about this kind (da-vjwid): what it shows,
-	 * what a tap does, what a hold does — a line each, since the bar shows
-	 * the first four ($lib/help.ts). Required, so a kind cannot ship
+	 * what a tap does, what a hold does — a line each ($lib/help.ts).
+	 * Required, so a kind cannot ship
 	 * without one; `tree.test.mjs` asks the same of every kind.
 	 */
 	help: string;

@@ -3,7 +3,11 @@
 
 	A real `<dialog>`, as $lib/Confirm.svelte uses: the browser's own modal
 	brings Escape, the backdrop and the focus trap with it, and none of
-	them is a keyboard handler written here a second time.
+	them is a keyboard handler written here a second time. A tap on the
+	backdrop closes it too, which the browser's modal does not: the tap
+	lands on the dialog itself, since the head and body fill the rest of
+	it — and only a press that STARTED there counts, so a text selection
+	dragged out of the body does not close the sheet under it.
 
 	Two chips open one — the documents' `+N`, which lists every document
 	($lib/Docs.svelte), and a document's own, which lists every key of its
@@ -15,12 +19,20 @@
 	export let open = false;
 
 	let sheet: HTMLDialogElement | undefined;
+	let outside = false;
 
 	$: if (sheet && open && !sheet.open) sheet.showModal();
 </script>
 
 {#if open}
-	<dialog class="sheet" bind:this={sheet} on:close={() => (open = false)}>
+	<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-noninteractive-element-interactions -->
+	<dialog
+		class="sheet"
+		bind:this={sheet}
+		on:close={() => (open = false)}
+		on:pointerdown={(e) => (outside = e.target === sheet)}
+		on:click={(e) => outside && e.target === sheet && sheet?.close()}
+	>
 		<div class="sheet-head">
 			<span>{title}</span>
 			<button type="button" class="close" aria-label="close" on:click={() => sheet?.close()}

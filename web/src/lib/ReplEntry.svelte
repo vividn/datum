@@ -76,7 +76,7 @@
 	{#if docs}
 		<Docs {docs} {all} />
 	{:else}
-		<RawLines text={raw} lines={cap} head={entry.head} error={entry.result.code !== 0} />
+		<RawLines text={raw} lines={cap} error={entry.result.code !== 0} />
 	{/if}
 {:else}
 	{#if docs}

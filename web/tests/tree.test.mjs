@@ -913,14 +913,13 @@ describe('a layout tab', () => {
 
 // EVERY KIND SAYS WHAT IT IS (da-vjwid): the Help button explains a widget
 // with its kind's `help`, so a kind added without one would be a widget the
-// button has nothing to say about. The bar shows four lines of it.
+// button has nothing to say about.
 describe('widget help', () => {
-	test('every registered kind has help, in at most four lines', async () => {
+	test('every registered kind has help', async () => {
 		const { KINDS } = await import('../src/lib/layout/registry.ts');
 		for (const [kind, { help }] of Object.entries(KINDS)) {
 			assert.equal(typeof help, 'string', `${kind} has no help`);
 			assert.ok(help.trim().length > 0, `${kind}'s help is empty`);
-			assert.ok(help.split('\n').length <= 4, `${kind}'s help is longer than the bar shows`);
 		}
 	});
 });

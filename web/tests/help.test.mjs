@@ -1,5 +1,5 @@
 // The Help button (da-vjwid): press it, then a command, a widget or a pill,
-// and that thing is explained in the bar's output instead of acted on;
+// and that thing is explained in a modal instead of acted on (da-35f23);
 // press it again for general help. `$lib/help.ts`.
 
 import test, { before, after, describe } from 'node:test';
@@ -26,43 +26,74 @@ const onPage = (fn) =>
 
 const help = (page) => page.locator('.bar.commands button[data-command="help"]');
 
-/** The bar's output section: the lines of the newest entry it shows. */
-const said = (page) => page.locator('.prompt-bar .roll .raw p').allInnerTexts();
+/** The help modal, while it is open. */
+const sheet = (page) => page.locator('dialog.sheet[open]:has(pre.help)');
 
-/** Press Help, then `target`, and wait for the explanation to be the newest entry. */
-async function explain(page, target, first) {
+/** Press Help, then `target`, and wait for the modal: its title and its lines. */
+async function explain(page, target) {
+	const output = () => page.locator('.prompt-bar .roll').allInnerTexts();
+	const [echoes, shown] = [await page.locator('.repl .echo').count(), await output()];
 	await help(page).click();
 	await target.click();
-	await page.waitForFunction(
-		(want) => document.querySelector('.prompt-bar .roll .raw p')?.textContent.startsWith(want),
-		first
-	);
-	return said(page);
+	await sheet(page).waitFor();
+	const title = (await sheet(page).locator('.sheet-head span').innerText()).trim();
+	const lines = (await sheet(page).locator('pre.help').innerText()).split('\n');
+	// Not in the bar's output section, and not in the REPL.
+	assert.deepEqual(await output(), shown, 'the explanation went to the output');
+	assert.equal(await page.locator('.repl .echo').count(), echoes, 'the explanation was recorded');
+	return { title, lines };
 }
 
+/** Close the modal with Escape, for the next test. */
+async function dismiss(page) {
+	await page.keyboard.press('Escape');
+	await sheet(page).waitFor({ state: 'detached' });
+}
+
+const label = async (page) => (await help(page).locator('.label:not(.hidden)').innerText()).trim();
+
 describe('the Help button', () => {
-	test('is second, after Undo, and says what to do while armed; Escape disarms', async () => {
+	test('is second, after Undo, single-outlined; armed it asks "? on what" in the same width; Escape disarms', async () => {
 		await onPage(async ({ page }) => {
 			const names = (await listed(page.locator('.bar.commands'), 'button[data-command]')).map((b) => b.command);
 			assert.deepEqual(names.slice(0, 3), ['undo', 'redo', 'help']);
-			assert.equal((await help(page).innerText()).trim(), 'Help');
+
+			// Undo runs at once and wears the double outline; Help waits, and wears one.
+			const undo = page.locator('.bar.commands button[data-command="undo"]');
+			assert.match(await undo.getAttribute('class'), /\bact\b/);
+			assert.doesNotMatch(await help(page).getAttribute('class'), /\bact\b/);
+			const style = (el) => el.evaluate((b) => getComputedStyle(b).borderTopStyle);
+			assert.equal(await style(undo), 'double');
+			assert.equal(await style(help(page)), 'solid');
+
+			assert.equal(await label(page), 'Help');
+			const before = (await help(page).boundingBox()).width;
 			await help(page).click();
-			assert.equal((await help(page).innerText()).trim(), '? tap something');
+			assert.equal(await label(page), '? on what\n(tap: all)');
 			assert.equal(await help(page).getAttribute('aria-pressed'), 'true');
+			const armed = (await help(page).boundingBox()).width;
+			assert.ok(Math.abs(armed - before) <= 3, `the width moved: ${before} -> ${armed}`);
+			// And the armed words fit inside it: the box holds by not growing, not by spilling.
+			const spill = await help(page).locator('.armed').evaluate((l) => {
+				const words = document.createRange();
+				words.selectNodeContents(l);
+				return words.getBoundingClientRect().width - l.clientWidth;
+			});
+			assert.ok(spill <= 1, `the armed label spills out of the button by ${spill}px`);
 			await page.keyboard.press('Escape');
-			assert.equal((await help(page).innerText()).trim(), 'Help');
+			assert.equal(await label(page), 'Help');
 		});
 	});
 
-	test('then a command: the CLI\'s own help for it, and the command does not run', async () => {
-		await onPage(async (app) => {
-			const { page } = app;
+	test('then a command: the CLI\'s own help for it in a modal, and the command does not run', async () => {
+		await onPage(async ({ page }) => {
 			const occur = page.locator('.bar.commands button[data-command="occur"]');
-			const lines = await explain(page, occur, 'datum occur');
+			const { title, lines } = await explain(page, occur);
+			assert.equal(title, 'datum help occur');
 			assert.match(lines[0], /^datum occur — record a point-in-time event/);
 			assert.equal(await page.locator('.prompt-bar input').inputValue(), '', 'occur filled the line');
-			assert.equal((await app.echoes()).at(-1), 'help occur');
-			assert.equal((await help(page).innerText()).trim(), 'Help', 'one-shot: it disarms');
+			assert.equal(await label(page), 'Help', 'one-shot: it disarms');
+			await dismiss(page);
 
 			// The next tap acts as it always did.
 			await occur.click();
@@ -75,10 +106,11 @@ describe('the Help button', () => {
 			const { page } = app;
 			await seedLines(app, ['spec set coffee --verb occur']);
 			const coffee = page.locator('section[data-pane="bar"] .bar button.widget', { hasText: 'coffee' }).first();
-			const lines = await explain(page, coffee, 'Every field you log');
-			assert.equal(lines.length, 3);
-			assert.equal((await app.echoes()).at(-1), '? fields');
+			const { title, lines } = await explain(page, coffee);
+			assert.equal(title, 'fields');
+			assert.match(lines[0], /^Every field you log/);
 			assert.equal((await app.entries(5)).length, 0, 'the press logged coffee');
+			await dismiss(page);
 		});
 	});
 
@@ -86,19 +118,33 @@ describe('the Help button', () => {
 		await onPage(async ({ page }) => {
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 't', kind: 'time', text: '-t 14:30' }]));
 			const pill = page.locator('.prompt-bar [data-pill="t"]');
-			const lines = await explain(page, pill, '-t 14:30:');
+			const { title, lines } = await explain(page, pill);
+			assert.equal(title, '-t 14:30');
 			assert.match(lines[0], /^-t 14:30: the time cursor/);
 			assert.equal(await pill.count(), 1, 'the tap removed the pill');
+			await dismiss(page);
 		});
 	});
 
-	test('then Help again: general help, `datum help`', async () => {
-		await onPage(async (app) => {
-			const { page } = app;
-			const lines = await explain(page, help(page), 'datum — ');
-			assert.match(lines[0], /^datum — personal data tracker/);
-			assert.equal((await app.echoes()).at(-1), 'help');
-			assert.equal((await help(page).innerText()).trim(), 'Help');
+	test('then Help again: general help, `datum help`; the modal closes by ✕, Escape and a tap outside', async () => {
+		await onPage(async ({ page }) => {
+			const closes = {
+				'✕': () => sheet(page).locator('button.close').click(),
+				Escape: () => page.keyboard.press('Escape'),
+				// The backdrop is the dialog's own box outside its content: a corner of the page.
+				outside: () => page.mouse.click(4, 4)
+			};
+			for (const [how, close] of Object.entries(closes)) {
+				const { title, lines } = await explain(page, help(page));
+				assert.equal(title, 'datum help');
+				assert.match(lines[0], /^datum — personal data tracker/);
+				assert.equal(await label(page), 'Help');
+				// A tap inside it closes nothing.
+				await sheet(page).locator('pre.help').click();
+				assert.equal(await sheet(page).count(), 1, `a tap inside closed it (before ${how})`);
+				await close();
+				await sheet(page).waitFor({ state: 'detached' });
+			}
 		});
 	});
 });

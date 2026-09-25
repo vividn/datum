@@ -26,14 +26,12 @@
 	export let error = false;
 	/** How many lines of it the surface has room for. */
 	export let lines = 4;
-	/** The FIRST lines instead: an explanation's point is at its top (da-vjwid). */
-	export let head = false;
 
 	const SVG_START = /^\s*(?:<\?xml[\s?]|<svg[\s>])/;
 
 	$: drawing = SVG_START.test(text);
 	$: all = stripAnsi(text).replace(/\n+$/, '').split('\n');
-	$: shown = drawing ? [] : head ? all.slice(0, lines) : all.slice(-lines);
+	$: shown = drawing ? [] : all.slice(-lines);
 </script>
 
 <div class="raw" class:error>

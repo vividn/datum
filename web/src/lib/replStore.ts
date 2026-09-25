@@ -17,12 +17,7 @@ import { browser } from '$app/environment';
 import type { RunResult } from './run.js';
 import { noteRun } from './bar.js';
 
-/**
- * `head`: a surface that shows a few lines shows the FIRST ones — an
- * explanation ($lib/help.ts) says what the thing is at the top, and the
- * end of `datum help occur` is its OUTPUT flags.
- */
-export type Command = { line: string; ranAt: number; result: RunResult; head?: boolean };
+export type Command = { line: string; ranAt: number; result: RunResult };
 
 export interface ReplState {
 	scrollback: Command[];
@@ -73,19 +68,13 @@ function restore(): ReplState {
  * A command has run: into the scrollback with its result and the instant
  * it was run, and into the recall history unless it repeats the last one.
  */
-export function record(
-	line: string,
-	ranAt: number,
-	result: RunResult,
-	{ recall = true, head = false } = {}
-): void {
+export function record(line: string, ranAt: number, result: RunResult): void {
 	// Capped here, not only on the way to disk: a tab that stays open all
 	// day would otherwise keep every command in memory and in the DOM while
 	// the store on disk held the last KEEP (review threads on #156, #166).
 	repl.update(({ scrollback, history }) => ({
-		scrollback: [...scrollback, { line, ranAt, result, ...(head ? { head } : {}) }].slice(-KEEP),
-		// A line that is not a command (`? tail`, an explanation) is not one Up should bring back.
-		history: (!recall || history[history.length - 1] === line ? history : [...history, line]).slice(-KEEP)
+		scrollback: [...scrollback, { line, ranAt, result }].slice(-KEEP),
+		history: (history[history.length - 1] === line ? history : [...history, line]).slice(-KEEP)
 	}));
 	// The bottom bar's echo and receipt (da-0a5o): told here, so that
 	// every prompt and every press that records is a command the bar shows.

@@ -11,11 +11,13 @@
 // widget sees it — so nothing runs, fills, pends or starts a hold — and
 // explained; then the page disarms (one-shot). Escape disarms too.
 //
-// What it says is one scrollback entry ($lib/replStore.ts), so it lands in
-// the bar's output section like the answer to a command:
+// What it says opens in a modal, $lib/HelpSheet.svelte (da-35f23) — not
+// the bar's output section, which is where a newcomer, the one asking, is
+// least likely to look (vividn, 2026-09-25: «the output is really quite
+// buried and no one will see it»). It is not recorded in the REPL:
 //
-// - a command: the CLI's own `datum help <command>`, run and recorded as
-//   that line. No help copy for commands lives here.
+// - a command: the CLI's own `datum help <command>`, run through the seam.
+//   No help copy for commands lives here.
 // - Help itself: `datum help`, the general help.
 // - a widget: its kind's `help` in the registry, where kinds are declared.
 // - a pill: what its KIND is and does, with its own value in it (below).
@@ -25,9 +27,8 @@
 
 import { get, writable } from 'svelte/store';
 import { pills, spent, type Pill } from './bar.js';
+import HelpSheet from './HelpSheet.svelte';
 import { KINDS, titleOf } from './layout/registry.js';
-import { openOutput } from './log.js';
-import { record } from './replStore.js';
 import { run } from './run.js';
 
 export const helping = writable(false);
@@ -48,10 +49,12 @@ const PILL_COMMON =
 export const pillHelp = (pill: Pill): string =>
 	`${(PILL_HELP[pill.kind] ?? ((t: string) => `${t}: a pill, added to the next command.`))(pill.text)}\n${PILL_COMMON}`;
 
-/** Put an explanation where a command's answer goes. */
-function show(line: string, result: { code: number; stdout: string; stderr: string }, recall: boolean): void {
-	record(line, Date.now(), { argv: [], ...result }, { recall, head: true });
-	openOutput();
+let sheet: HelpSheet | undefined;
+
+/** Open the explanation, titled with what it explains. One sheet, mounted the first time and opened again after. */
+function show(title: string, text: string): void {
+	sheet ??= new HelpSheet({ target: document.body });
+	sheet.$set({ title, text, open: true });
 }
 
 async function explain(target: Element | null): Promise<void> {
@@ -59,11 +62,11 @@ async function explain(target: Element | null): Promise<void> {
 	const pillId = target?.closest<HTMLElement>('[data-pill]')?.dataset.pill;
 	const kind = target?.closest<HTMLElement>('[data-widget]')?.dataset.widget;
 	const pill = pillId && [...get(pills), ...get(spent)].find((p) => p.id === pillId);
-	if (pill) return show(`? ${pill.text}`, { code: 0, stdout: pillHelp(pill), stderr: '' }, false);
-	if (!command && kind && KINDS[kind])
-		return show(`? ${titleOf(kind)}`, { code: 0, stdout: KINDS[kind].help, stderr: '' }, false);
+	if (pill) return show(pill.text, pillHelp(pill));
+	if (!command && kind && KINDS[kind]) return show(titleOf(kind), KINDS[kind].help);
 	const argv = command && command !== 'help' ? ['help', command] : ['help'];
-	show(argv.join(' '), await run(argv), true);
+	const { stdout, stderr } = await run(argv);
+	show(`datum ${argv.join(' ')}`, stdout || stderr);
 }
 
 /** Every event a tap is made of — none of them reaches the page while armed. */
