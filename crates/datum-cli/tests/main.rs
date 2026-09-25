@@ -9,7 +9,8 @@
 //! `[[test]]` in Cargo.toml, as before, because under a threaded `cargo test`
 //! its writes would reach the in-process tests here that never take
 //! `env_lock`. `every_test_file_is_declared` holds both halves: every file is
-//! declared one way or the other, and none declared here writes the env.
+//! declared one way or the other, and none declared here — nor the shared
+//! `common/` and `sync_content/` it compiles — writes the env.
 
 mod common;
 mod sync_content;
@@ -133,6 +134,19 @@ fn every_test_file_is_declared() {
         } else if let (true, Some(w)) = (here, writes) {
             wrong.push(format!(
                 "{m}: writes the env (`{w}`), so it needs a [[test]] of its own"
+            ));
+        }
+    }
+    for m in main
+        .lines()
+        .filter_map(|l| l.strip_prefix("mod ")?.strip_suffix(';'))
+    {
+        let Ok(src) = std::fs::read_to_string(root.join(format!("tests/{m}/mod.rs"))) else {
+            continue;
+        };
+        if let Some(w) = env_writes.iter().find(|w| src.contains(*w)) {
+            wrong.push(format!(
+                "{m}/mod.rs: shared module writes the env (`{w}`), which reaches every test in main"
             ));
         }
     }
