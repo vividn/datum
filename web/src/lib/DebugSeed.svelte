@@ -1,7 +1,9 @@
 <!--
 	`seed` — a sample week (da-6ecm5), written into the database this page
 	is on, which DebugPane.svelte has already checked is `DEBUG`. The
-	commands are $lib/sample.ts's.
+	commands are $lib/sample.ts's, and so is the sample KIT (da-1mkej) —
+	`kits/sample.toml`, specs and aliases for the same fields, which
+	installing and uninstalling change and nothing else.
 
 	vividn, on #118: "adding sample data shouldn't delete existing data or
 	vice versa." So seeding only adds — a second seed is a second sample,
@@ -14,7 +16,7 @@
 -->
 <script lang="ts">
 	import { ran } from './layout/engine.js';
-	import { clearSample, seedSample, type Step } from './sample.js';
+	import { clearSample, installKit, seedSample, uninstallKit, type Step } from './sample.js';
 	import { stripAnsi } from './ansi.js';
 
 	let steps: Step[] = [];
@@ -41,6 +43,12 @@
 		return entries(left);
 	}
 
+	/** The kit's report only says it ran; what the CLI said is in the log below it. */
+	const kit = (how: typeof installKit, done: string) => async (onStep: (s: Step) => void) => {
+		await how(onStep);
+		return done;
+	};
+
 	async function act(what: typeof seed): Promise<void> {
 		busy = true;
 		failed = false;
@@ -61,6 +69,12 @@
 <p class="acts">
 	<button type="button" class="act" disabled={busy} on:click={() => act(seed)}>seed the last 7 days</button>
 	<button type="button" class="act" disabled={busy} on:click={() => act(clear)}>clear the sample</button>
+	<button type="button" class="act" disabled={busy} on:click={() => act(kit(installKit, 'the sample kit is installed'))}
+		>install the sample kit</button
+	>
+	<button type="button" class="act" disabled={busy} on:click={() => act(kit(uninstallKit, 'the sample kit is uninstalled'))}
+		>uninstall the sample kit</button
+	>
 </p>
 {#if report}<p class="report" class:failed>{report}</p>{/if}
 <ol class="log">

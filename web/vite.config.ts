@@ -1,7 +1,13 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig, type Plugin, type ViteDevServer, type PreviewServer } from 'vite';
+import {
+	defineConfig,
+	searchForWorkspaceRoot,
+	type Plugin,
+	type ViteDevServer,
+	type PreviewServer
+} from 'vite';
 import { execFileSync } from 'node:child_process';
 
 /**
@@ -145,5 +151,11 @@ export default defineConfig({
 	// default worker format — iife — cannot code-split.
 	worker: {
 		format: 'es'
+	},
+	// The DEBUG widget's sample kit is the repo's own `kits/sample.toml`
+	// (da-1mkej), imported `?raw` from outside `web/`, which the dev server
+	// refuses unless it is named — and naming anything drops the default.
+	server: {
+		fs: { allow: [searchForWorkspaceRoot(process.cwd()), '../kits'] }
 	}
 });

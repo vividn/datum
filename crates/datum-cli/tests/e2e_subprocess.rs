@@ -902,6 +902,29 @@ fn subprocess_kit_install_from_stdin_and_dry_run() {
     assert!(String::from_utf8_lossy(&bare.stderr).contains("<PATH>"));
 }
 
+/// A kit's level-2 command runs against the database a leading `--db`
+/// names, as every other command does — the web names one on every
+/// database but the default (da-1mkej). It used to be "unknown subcommand".
+#[test]
+fn subprocess_kit_command_honours_a_leading_db() {
+    let env = Env::new();
+    let kit = include_str!("../../../kits/sample.toml");
+    assert_ok(
+        &env.run_with_stdin(&["kit", "install", "-"], kit),
+        "kit install -",
+    );
+    let db = env.db.to_string_lossy().into_owned();
+    let elsewhere = Env::new();
+    for argv in [
+        vec!["--db", db.as_str(), "hydration"],
+        vec![&format!("--db={db}"), "hydration"],
+    ] {
+        let seen = elsewhere.run(&argv);
+        assert_ok(&seen, &argv.join(" "));
+        assert!(String::from_utf8_lossy(&seen.stdout).starts_with("day (UTC)"));
+    }
+}
+
 /// `fields --json`: every field, logged or declared, with its spec and the
 /// states it was logged with.
 #[test]

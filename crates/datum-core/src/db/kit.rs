@@ -89,7 +89,9 @@ impl Db {
     /// callers should pass the kit's `[kit].name` from the TOML.
     ///
     /// On collision (a row already exists for `spec.field`):
-    /// - `force = false` → leave the existing row, record `SkippedExisting`.
+    /// - `force = false` → leave the existing row, record `SkippedExisting`
+    ///   — unless it is the bare spec a first log writes
+    ///   ([`FieldSpec::is_bare`]), which the kit replaces.
     /// - `force = true`  → overwrite the row's spec_json and re-tag its
     ///   `kit_id` to the new owner.
     ///
@@ -114,7 +116,11 @@ impl Db {
                 )
                 .optional()?;
 
-            if let Some(existing) = existing_kit {
+            // The bare spec a field's first log wrote is no one's choice,
+            // so it does not stand in a kit's way (da-1mkej).
+            let bare = existing_kit == Some(None)
+                && self.load_spec(&spec.field)?.is_some_and(|s| s.is_bare());
+            if let Some(existing) = existing_kit.filter(|_| !bare) {
                 if !force {
                     report.outcomes.push((
                         spec.field.clone(),

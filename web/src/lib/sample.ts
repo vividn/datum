@@ -21,6 +21,7 @@
 
 import { stripAnsi } from './ansi.js';
 import { run, type RunResult } from './run.js';
+import SAMPLE_KIT from '../../../kits/sample.toml?raw';
 
 /** The key every sample entry carries, and the one thing clearing looks at. */
 const TAG = 'sample=true';
@@ -127,8 +128,8 @@ export function sampleCommands(now = new Date()): string[][] {
 export type Step = Pick<RunResult, 'argv' | 'code' | 'stdout' | 'stderr'>;
 
 /** Run `argv`, report it, and throw if it failed — a half-seeded database must not claim success. */
-async function step(argv: string[], onStep: (s: Step) => void): Promise<RunResult> {
-	const result = await run(argv);
+async function step(argv: string[], onStep: (s: Step) => void, stdin?: string): Promise<RunResult> {
+	const result = await run(argv, stdin);
 	onStep(result);
 	if (result.code !== 0) throw new Error(`\`datum ${argv.join(' ')}\` exited ${result.code}: ${result.stderr.trim()}`);
 	return result;
@@ -168,3 +169,14 @@ export async function seedSample(
 	for (const argv of commands) await step(argv, onStep);
 	return { before, after: (await tagged(onStep)).length, sent: commands.length };
 }
+
+/**
+ * The sample kit (da-1mkej), `kits/sample.toml`: specs, aliases, a view and
+ * a command for the fields the sample writes, so its week draws configured.
+ * A kit is specs and aliases only, so neither of these touches an entry,
+ * and uninstalling gives each field back the spec it had.
+ */
+export const installKit = (onStep: (s: Step) => void) =>
+	step(['kit', 'install', '-'], onStep, SAMPLE_KIT);
+export const uninstallKit = (onStep: (s: Step) => void) =>
+	step(['kit', 'uninstall', 'sample'], onStep);

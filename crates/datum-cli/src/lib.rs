@@ -186,12 +186,19 @@ fn dispatch_multi(invocation: Invocation) -> Result<()> {
 }
 
 fn try_kit_level2_dispatch() -> Result<Option<()>> {
-    let raw: Vec<String> = std::env::args().collect();
+    let mut raw: Vec<String> = std::env::args().collect();
+    // A leading `--db NAME` names the database the command runs against —
+    // the web passes one on every named database (da-1mkej).
+    let named = match raw.get(1).map(String::as_str) {
+        Some("--db") if raw.len() > 2 => Some(raw.drain(1..3).nth(1).unwrap_or_default()),
+        Some(a) if a.starts_with("--db=") => Some(raw.remove(1)["--db=".len()..].to_string()),
+        _ => None,
+    };
     if raw.len() < 2 {
         return Ok(None);
     }
 
-    let resolved = config::resolve_db(None)?;
+    let resolved = config::resolve_db(named.as_deref())?;
     if !resolved.path.exists() {
         return Ok(None);
     }

@@ -515,3 +515,43 @@ color = "#000000"
     assert_eq!(kits.len(), 1);
     assert_eq!(kits[0].kit_id, "intruder");
 }
+
+/// da-1mkej: the first log of a field writes a bare spec (da-c8mh). That is
+/// no one's choice, so a kit installs over it — and uninstalling hands the
+/// field back exactly the spec its log wrote, with the entries untouched.
+#[test]
+fn install_replaces_the_bare_spec_a_log_wrote_and_uninstall_restores_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let in_path = dir.path().join("k.toml");
+    fs::write(
+        &in_path,
+        "[kit]\nname = \"k\"\n\n[[field]]\nname = \"coffee\"\nverb = \"occur\"\ncolor = \"#8d5524\"\nglyph = \"☕\"\n",
+    )
+    .unwrap();
+    let argv = |words: &[&str]| -> Vec<String> {
+        std::iter::once("datum")
+            .chain(words.iter().copied())
+            .map(String::from)
+            .collect()
+    };
+    let path = in_path.to_string_lossy().to_string();
+    let db = fresh_db();
+
+    dispatch_argv(argv(&["occur", "coffee"]), &db).unwrap();
+    let logged = db.load_spec("coffee").unwrap().unwrap();
+    assert!(logged.is_bare(), "the first log writes the bare spec");
+    let entries = db.count_entries().unwrap();
+
+    dispatch_argv(argv(&["kit", "install", &path]), &db).unwrap();
+    let installed = db.load_spec("coffee").unwrap().unwrap();
+    assert_eq!(installed.color.as_deref(), Some("#8d5524"));
+    assert_eq!(installed.presentation.glyph.as_deref(), Some("☕"));
+
+    dispatch_argv(argv(&["kit", "uninstall", "k"]), &db).unwrap();
+    let back = db.load_spec("coffee").unwrap().unwrap();
+    assert_eq!(
+        serde_json::to_value(&back).unwrap(),
+        serde_json::to_value(&logged).unwrap()
+    );
+    assert_eq!(db.count_entries().unwrap(), entries);
+}

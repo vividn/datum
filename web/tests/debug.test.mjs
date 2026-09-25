@@ -182,7 +182,7 @@ describe('the sample seeder', () => {
 
 	/** Press one of the widget's buttons and wait for its report, which a press takes down first. */
 	async function press(page, label) {
-		await page.locator(`${SEED} button`, { hasText: label }).click();
+		await page.locator(SEED).getByRole('button', { name: label, exact: true }).click();
 		await page.locator(`${SEED} .report`).waitFor({ timeout: 240000 });
 		return page.locator(`${SEED} .report`).innerText();
 	}
@@ -258,6 +258,42 @@ describe('the sample seeder', () => {
 				{ coffee: 1, layout: 1, mood: 1, posture: 1 },
 				'the clear took more than the sample'
 			);
+			assert.deepEqual(app.errors, []);
+		}, DEBUG);
+	});
+
+	// da-1mkej: the sample KIT, installed over a seeded week. vividn: "a install
+	// sample kit button that then formats it nicely with different spans etc,
+	// adds some aliases and specs so that everything can be tested."
+	test('the sample kit draws the week configured, and uninstalling puts every spec back', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const FIELDS = ['sleep', 'mood', 'work', 'project', 'walk', 'read', 'coffee', 'water'];
+			/** What the kit may change and what it must not: every spec, the aliases, the entries. */
+			const state = async () => ({
+				specs: await Promise.all(FIELDS.map(async (f) => (await app.run(['spec', 'show', f])).stdout)),
+				aliases: (await app.run(['alias', 'list'])).stdout,
+				entries: JSON.parse((await app.run(['tail', '--json', '-n', '1000'])).stdout).rows
+			});
+			const day = async () => (await app.run(['dayview', '-d', '-1'])).stdout;
+
+			await press(page, 'seed the last 7 days');
+			const before = await state();
+			const plain = await day();
+
+			assert.equal(await press(page, 'install the sample kit'), 'the sample kit is installed');
+			const drawn = await day();
+			for (const mark of ['☕', '#8d5524', '#2f9e44', '#5c7cfa']) {
+				assert.ok(!plain.includes(mark), `${mark} is in the dayview before the kit`);
+				assert.ok(drawn.includes(mark), `${mark} is not in the dayview the kit draws`);
+			}
+			assert.match((await app.run(['alias', 'list'])).stdout, /focus → .*switch mood focused , switch project datum , start work/);
+			const hydration = await app.run(['hydration']);
+			assert.equal(hydration.code, 0, hydration.stderr);
+
+			assert.equal(await press(page, 'uninstall the sample kit'), 'the sample kit is uninstalled');
+			assert.deepEqual(await state(), before);
+			assert.equal(await day(), plain);
 			assert.deepEqual(app.errors, []);
 		}, DEBUG);
 	});

@@ -95,6 +95,10 @@ pub struct FieldEntry {
     /// `#RRGGBB`, `#RRGGBBAA`, or a hue name (`red`, `blue`, …).
     #[serde(default)]
     pub color: Option<String>,
+    /// The character an occur dot draws instead of a circle — the spec's
+    /// `--glyph` (da-1mkej: a kit could colour a field but not give it one).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glyph: Option<String>,
     /// When true, the field is hidden from views by default.
     #[serde(default)]
     pub hidden: bool,
@@ -327,6 +331,9 @@ pub struct StateSpec {
     pub pos: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<f64>,
+    /// This state's own glyph, over the field's — the spec's `--state-glyph`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glyph: Option<String>,
 }
 
 impl KitToml {
@@ -440,6 +447,7 @@ impl FieldEntry {
 
         let mut spec = FieldSpec::new(&self.name, action);
         spec.color = color_resolved;
+        spec.presentation.glyph = self.glyph;
         spec.presentation.z_index = self.z_index;
         spec.id_keys = self.id_keys;
         spec.data_keys = self.data_keys;
@@ -466,6 +474,11 @@ impl FieldEntry {
                 if let Some(c) = &s.color {
                     spec.state_colors.insert(name.clone(), c.clone());
                 }
+                if let Some(g) = &s.glyph {
+                    spec.presentation
+                        .state_glyphs
+                        .insert(name.clone(), g.clone());
+                }
             }
             spec.allowed_states = Some(allowed);
         }
@@ -491,6 +504,7 @@ impl FieldEntry {
                             color: spec.state_colors.get(name).cloned(),
                             pos: None,
                             size: None,
+                            glyph: spec.presentation.state_glyphs.get(name).cloned(),
                         },
                     )
                 })
@@ -520,6 +534,7 @@ impl FieldEntry {
             pos,
             size,
             color: spec.color.clone(),
+            glyph: spec.presentation.glyph.clone(),
             hidden: false,
             state_pos: None,
             state_size: None,
@@ -871,6 +886,7 @@ states.japan = {}
             pos: None,
             size: None,
             color: None,
+            glyph: None,
             hidden: false,
             state_pos: None,
             state_size: None,
@@ -896,6 +912,7 @@ states.japan = {}
             pos: Some(0.2),
             size: Some(0.1),
             color: Some("#ff0000".into()),
+            glyph: None,
             hidden: false,
             state_pos: None,
             state_size: None,
@@ -911,6 +928,7 @@ states.japan = {}
                         color: Some("#00ff00".into()),
                         pos: None,
                         size: None,
+                        glyph: None,
                     },
                 );
                 m.insert("sad".into(), StateSpec::default());
@@ -1089,6 +1107,41 @@ tags = ["chore", "daily"]
         let toml = kit.to_toml().unwrap();
         let back = KitToml::from_str(&toml).unwrap();
         assert_eq!(back.fields[0].tags, spec.tags);
+    }
+
+    /// da-1mkej: a kit gives a field and its states glyphs, and export
+    /// hands them back.
+    #[test]
+    fn glyphs_install_and_round_trip() {
+        let src = r##"
+[kit]
+name = "k"
+
+[[field]]
+name = "mood"
+verb = "switch"
+glyph = "◆"
+states.happy = { glyph = "▲" }
+"##;
+        let spec = KitToml::from_str(src).unwrap().fields[0]
+            .clone()
+            .into_spec(None)
+            .unwrap();
+        assert_eq!(spec.presentation.glyph.as_deref(), Some("◆"));
+        assert_eq!(
+            spec.presentation
+                .state_glyphs
+                .get("happy")
+                .map(String::as_str),
+            Some("▲")
+        );
+
+        let toml = KitToml::from_field_specs("k", None, &[spec], &[])
+            .to_toml()
+            .unwrap();
+        let back = &KitToml::from_str(&toml).unwrap().fields[0];
+        assert_eq!(back.glyph.as_deref(), Some("◆"));
+        assert_eq!(back.states["happy"].glyph.as_deref(), Some("▲"));
     }
 
     // ─── Render visibility (da-2zd) ───────────────────────────────────

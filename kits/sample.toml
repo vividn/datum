@@ -1,0 +1,119 @@
+[kit]
+name = "sample"
+version = "0.1"
+description = "Specs, aliases, a view and a command for the fields the web's DEBUG seed writes (da-1mkej): colours, dayview placement and glyphs, so the sample week draws like a configured datum. The DEBUG widget installs it with `kit install - --yes` and removes it with `kit uninstall sample`; neither touches an entry."
+
+# Top to bottom in the dayview: the night, the mood, the working day and
+# its project just under it, time away from the desk, then the two drinks.
+
+[[field]]
+name = "sleep"
+verb = "start"
+color = "#5c7cfa"
+pos = 0.02
+size = 0.14
+
+[[field]]
+name = "mood"
+verb = "switch"
+pos = 0.2
+size = 0.1
+# Written in the order a day goes; kit `states` are a sorted map, so the
+# spec lists them alphabetically (see the PR for da-1mkej).
+states.focused = { color = "#7048e8" }
+states.happy = { color = "#fab005" }
+states.calm = { color = "#20c997" }
+states.tired = { color = "#868e96" }
+
+[[field]]
+name = "work"
+verb = "start"
+color = "#2f9e44"
+pos = 0.36
+size = 0.14
+
+# Anchored to work: a band as tall as 60% of work's, directly below it.
+[[field]]
+name = "project"
+verb = "switch"
+relative_to = "work"
+pos = 1.0
+size = 0.6
+states.datum = { color = "#e8590c" }
+states.email = { color = "#1c7ed6" }
+states.admin = { color = "#adb5bd" }
+
+[[field]]
+name = "walk"
+verb = "start"
+color = "#66a80f"
+pos = 0.62
+size = 0.1
+
+[[field]]
+name = "read"
+verb = "start"
+color = "#d6336c"
+pos = 0.74
+size = 0.1
+
+[[field]]
+name = "coffee"
+verb = "occur"
+color = "#8d5524"
+glyph = "☕"
+pos = 0.86
+size = 0.06
+
+[[field]]
+name = "water"
+verb = "occur"
+color = "#339af0"
+glyph = "◆"
+pos = 0.93
+size = 0.06
+
+[[alias]]
+name = "cof"
+expands_to = "occur coffee"
+description = "a coffee, now"
+
+[[alias]]
+name = "h2o"
+expands_to = "occur water amount=250"
+description = "a glass of water"
+
+[[alias]]
+name = "focus"
+expands_to = "switch mood focused , switch project datum , start work"
+description = "sit down to work on datum"
+
+[[alias]]
+name = "wrap"
+expands_to = "end work , switch mood calm"
+description = "stop for the day"
+
+# Water by day. `occur_time` is UTC and SQLite has no zone database, so the
+# day is the UTC day — a kit view cannot bucket by the entry's own zone.
+[[view]]
+name = "water_by_day"
+sql = """
+SELECT date(occur_time)                        AS day,
+       COUNT(*)                                AS glasses,
+       SUM(json_extract(data, '$.amount'))     AS ml
+FROM entries
+WHERE field = 'water' AND deleted_at IS NULL AND occur_time IS NOT NULL
+GROUP BY day
+"""
+
+[[command]]
+name = "hydration"
+view = "water_by_day"
+help = "Water drunk per day (UTC days), under 1.5 l in yellow"
+columns = ["day", "glasses", "ml"]
+labels = { day = "day (UTC)" }
+sort = "day"
+
+[[command.color_rules]]
+when = "ml < 1500"
+color = "yellow"

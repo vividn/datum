@@ -211,6 +211,16 @@ impl FieldSpec {
         self.tags.iter().any(|t| t == tag)
     }
 
+    /// True when this is the spec a field's first log writes and nothing
+    /// more (da-c8mh): its verb and the aliases derived from it, with
+    /// nothing a person or a kit chose. A kit may replace such a spec
+    /// (da-1mkej) — otherwise a kit could configure no field already logged.
+    pub fn is_bare(&self) -> bool {
+        let mut bare = FieldSpec::new(&self.field, self.verb);
+        bare.regenerate_derived_aliases();
+        serde_json::to_value(&bare).ok() == serde_json::to_value(self).ok()
+    }
+
     /// Validate that `verb` is one of the accepted canonical choices.
     /// Returns an error message if the verb is out of range (e.g.
     /// `Stop`, `Block`).
