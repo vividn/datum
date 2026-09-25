@@ -510,7 +510,8 @@ describe('widget options', () => {
 			assert.equal(drawn.border, 'dashed', 'an ignored field drawn with a tracked field’s outline');
 			const tracked = page.locator('.bar button[data-field="walk"]');
 			assert.equal(await tracked.getAttribute('data-ignored'), null);
-			assert.equal(await tracked.evaluate((b) => getComputedStyle(b).borderTopStyle), 'solid');
+			// A tracked point RUNS on a tap, so it wears the double outline (da-z8z40).
+			assert.equal(await tracked.evaluate((b) => getComputedStyle(b).borderTopStyle), 'double');
 			assert.equal(await tracked.evaluate((b) => parseFloat(getComputedStyle(b).opacity)), 1);
 
 			// It is a SECOND way to see them, not a replacement for the one that

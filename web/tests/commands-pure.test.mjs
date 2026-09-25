@@ -20,6 +20,7 @@ import {
 	pendingVerb,
 	declaredVerb,
 	lanesOf,
+	pressKind,
 	rowsIn,
 	verbPress
 } from '../src/lib/commands.ts';
@@ -210,6 +211,32 @@ describe('what a press under a verb runs', () => {
 	// with, and a block you are ending is a block — so it declares `start`.
 	test('the `+` opens the Track modal on the pending verb, with end declaring start', () => {
 		assert.deepEqual(VERBS.map(declaredVerb), ['occur', 'start', 'start', 'switch', 'add']);
+	});
+});
+
+// What a tap on a field DOES, which its outline is drawn from (da-z8z40):
+// the bead's table, row by row. `run` is the double outline.
+describe('what a field tap does', () => {
+	test('with no verb: a point and a block run, a switch opens, a record fills', () => {
+		assert.equal(pressKind(point, null), 'run');
+		assert.equal(pressKind(offBlock, null), 'run');
+		assert.equal(pressKind(onBlock, null), 'run');
+		assert.equal(pressKind(onSwitch, null), 'open');
+		assert.equal(pressKind(boolSwitch, null), 'open');
+		assert.equal(pressKind(record, null), 'fill');
+	});
+
+	test('under a verb, every field it leaves runs — but where verbPress asks first', () => {
+		for (const verb of VERBS)
+			for (const button of fieldsUnder(ALL, verb))
+				assert.equal(
+					pressKind(button, verb),
+					verbPress(verb, button) ? 'run' : button.shape.kind === 'record' ? 'fill' : 'open',
+					`${verb} ${button.field}`
+				);
+		assert.equal(pressKind(onSwitch, 'switch'), 'open');
+		assert.equal(pressKind(record, 'add'), 'fill');
+		assert.equal(pressKind(boolSwitch, 'start'), 'run');
 	});
 });
 

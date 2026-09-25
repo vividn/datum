@@ -109,6 +109,7 @@
 		fieldsUnder,
 		fieldsWithDuration,
 		lanesOf,
+		pressKind,
 		verbPress,
 		type Verb
 	} from './commands.js';
@@ -368,18 +369,20 @@
 		return null;
 	}
 
+	/**
+	 * A press does what `pressKind` says — the same answer the button's
+	 * outline is drawn from, so the two cannot disagree (da-z8z40).
+	 */
 	function press(button: FieldButton) {
-		// With a verb pending, the press IS that verb (C1: a field tap runs
-		// at once) — except where `<verb> <field>` is not a command, and
-		// `verbPress` hands back null so the two courtesies below apply.
-		const asked = verb === null ? null : verbPress(verb, button);
-		if (asked) return emit(asked);
+		const kind = pressKind(button, verb);
 		// A record is typed, never pressed: its line goes to the prompt.
-		if (button.shape.kind === 'record') return line(`add ${button.field} `);
+		if (kind === 'fill') line(`add ${button.field} `);
 		// A multi-state field can't be logged without saying which, so a
 		// plain press asks — the bar fills with its states.
-		if (button.shape.kind === 'states') pick(button);
-		else emit(pressArgv(button));
+		else if (kind === 'open') pick(button);
+		// With a verb pending, the press IS that verb (C1: a field tap runs
+		// at once).
+		else emit((verb && verbPress(verb, button)) || pressArgv(button));
 	}
 
 	/**
@@ -465,8 +468,9 @@
 	{:else if item.kind === 'state' && picking}
 		{@const look = stateLook(picking, item.state)}
 		<div class="slot">
+			<!-- A state RUNS at once, so it is always drawn as acting (da-z8z40). -->
 			<button
-				class="widget states"
+				class="widget states act"
 				class:on={look.fill !== null}
 				style={vars(look)}
 				{disabled}
@@ -544,6 +548,7 @@
 				     any other, and only what a press MEANS is its own. -->
 				<button
 					class="record"
+					class:act={pressKind(button, verb) === 'run'}
 					class:ignored={button.ignored}
 					class:pilled={$fieldPill === button.field}
 					role="link"
@@ -558,6 +563,7 @@
 			{:else}
 				<button
 					class="widget {button.shape.kind}"
+					class:act={pressKind(button, verb) === 'run'}
 					class:on={look.fill !== null}
 					class:ignored={button.ignored}
 					class:pilled={$fieldPill === button.field}
@@ -656,6 +662,23 @@
 
 	.record.ignored {
 		text-decoration-style: dashed;
+	}
+
+	/* A button a tap RUNS (`pressKind`, da-z8z40) is drawn in a DOUBLE
+	   outline, as the commands widget's are (`.command.act`) — in the
+	   field's own colour, since that is already the button's line. Not on
+	   an IGNORED field: its dashes are what tell it from a tracked one
+	   (da-xhio), and the fade and the word already say it is not kept.
+	   The padding gives back what the wider border takes. */
+	.widget.act:not(.ignored) {
+		border: 3px double var(--line);
+		padding: calc(0.35rem - 1.5px) calc(0.85rem - 1.5px);
+	}
+
+	.record.act:not(.ignored) {
+		border: 3px double var(--line);
+		border-radius: 3px;
+		padding: calc(0.35rem - 3px) calc(0.3rem - 3px);
 	}
 
 	.widget:disabled,

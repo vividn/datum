@@ -204,6 +204,24 @@ export function verbPress(verb: Verb, button: FieldButton): string[] | null {
 }
 
 /**
+ * What a tap on a field button DOES (da-z8z40): `run` — something is
+ * logged at once — `fill` — a line is left in the prompt — or `open` —
+ * the field's states take the bar over.
+ *
+ * The fields widget's press is decided here and its outline is drawn from
+ * the same answer (the `fires` pattern): a `run` is the double outline, so
+ * a button cannot act without looking as if it does. A pending verb runs
+ * wherever `verbPress` has an argv; otherwise a record fills, a
+ * multi-state field opens (vividn's «except for switch») and the rest run.
+ */
+export type PressKind = 'run' | 'fill' | 'open';
+export function pressKind(button: FieldButton, verb: Verb | null): PressKind {
+	if (verb !== null && verbPress(verb, button)) return 'run';
+	if (button.shape.kind === 'record') return 'fill';
+	return button.shape.kind === 'states' ? 'open' : 'run';
+}
+
+/**
  * The verb a pending one DECLARES a field with, for the `+` at the end of
  * a filtered list (da-94q1's modal takes one of four).
  *
