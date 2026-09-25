@@ -283,3 +283,66 @@ fn a_misspelled_week_start_still_shows_in_config_show() {
     assert_eq!(cfg.week_start.value, "funday");
     assert!(config::resolve_week_start().is_err());
 }
+
+/// `stats --week` / `--last-week` open on the configured `week_start`.
+/// Lives here rather than in `stats_cmd.rs` because it sets config, and
+/// only this binary serialises every reader of it (da-s99o3: a `funday`
+/// set there failed a neighbouring stats test that took no lock).
+#[test]
+fn the_week_flags_read_the_week_start_config() {
+    use datum_cli::args::{StatsArgs, StatsPeriod};
+    use datum_commands::commands::stats::compute_stats;
+    use datum_core::entry::Verb;
+    use datum_core::test_util::{entry_builder, freeze_time, fresh_db};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let _g = sandbox(tmp.path());
+    let _t = freeze_time("2026-06-17T09:00:00Z"); // a Wednesday
+    let db = fresh_db();
+    entry_builder("activity")
+        .verb(Verb::Switch)
+        .state(serde_json::json!("coding"))
+        .time_start(
+            datum_core::time::DatumTime::from_utc_and_tz(
+                "2026-05-20T10:00:00Z".parse().unwrap(),
+                "UTC",
+            )
+            .unwrap(),
+        )
+        .insert(&db);
+    let week = |period| {
+        compute_stats(
+            &StatsArgs {
+                selector: Some("activity".to_string()),
+                period: Some(period),
+                ..StatsArgs::default()
+            },
+            &db,
+        )
+        .map(|r| r.total_duration_seconds)
+    };
+
+    write_toml(tmp.path(), "week_start = \"monday\"\n");
+    assert_eq!(
+        week(StatsPeriod::Week).unwrap(),
+        2 * 86400 + 9 * 3600,
+        "Monday midnight through Wednesday 09:00"
+    );
+    assert_eq!(
+        week(StatsPeriod::LastWeek).unwrap(),
+        7 * 86400,
+        "a whole closed week"
+    );
+
+    write_toml(tmp.path(), "week_start = \"sunday\"\n");
+    assert_eq!(
+        week(StatsPeriod::Week).unwrap(),
+        3 * 86400 + 9 * 3600,
+        "a Sunday week opened a day earlier"
+    );
+    assert_eq!(week(StatsPeriod::LastWeek).unwrap(), 7 * 86400);
+
+    write_toml(tmp.path(), "week_start = \"funday\"\n");
+    let err = week(StatsPeriod::Week).unwrap_err().to_string();
+    assert!(err.contains("week_start"), "{err}");
+}

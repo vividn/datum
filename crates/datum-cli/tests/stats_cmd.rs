@@ -759,49 +759,6 @@ fn closed_periods_stop_where_the_open_ones_start() {
 }
 
 #[test]
-fn the_week_flags_read_the_week_start_config() {
-    let _g = freeze_time("2026-06-17T09:00:00Z"); // a Wednesday
-    let db = fresh_db();
-    seed_utc_zoned(&db, &[("2026-05-20T10:00:00Z", "coding")]);
-
-    // `week_start` is user config, so pin it — env is process-wide, hence
-    // the lock the config tests use.
-    let _env = datum_test_util::env_lock();
-    std::env::set_var("DATUM_WEEK_START", "monday");
-    assert_eq!(
-        period_total(&db, StatsPeriod::Week),
-        2 * 86400 + 9 * 3600,
-        "Monday midnight through Wednesday 09:00"
-    );
-    assert_eq!(
-        period_total(&db, StatsPeriod::LastWeek),
-        7 * 86400,
-        "a whole closed week"
-    );
-
-    std::env::set_var("DATUM_WEEK_START", "sunday");
-    assert_eq!(
-        period_total(&db, StatsPeriod::Week),
-        3 * 86400 + 9 * 3600,
-        "a Sunday week opened a day earlier"
-    );
-    assert_eq!(period_total(&db, StatsPeriod::LastWeek), 7 * 86400);
-
-    std::env::set_var("DATUM_WEEK_START", "funday");
-    let err = compute_stats(
-        &StatsArgs {
-            period: Some(StatsPeriod::Week),
-            ..selector("activity")
-        },
-        &db,
-    )
-    .unwrap_err()
-    .to_string();
-    assert!(err.contains("week_start"), "{err}");
-    std::env::remove_var("DATUM_WEEK_START");
-}
-
-#[test]
 fn one_window_start_at_a_time() {
     let db = fresh_db();
     let mut both = selector("activity");
