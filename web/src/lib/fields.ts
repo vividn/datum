@@ -291,16 +291,81 @@ export function pressArgv(button: FieldButton, state?: string): string[] {
 }
 
 /**
- * How one state reads in the list a press fills the widget with (da-g635).
+ * How one state reads when a press opens its field (da-7q3ka), in three
+ * levels — vividn: «the light tint might work … let's try it»:
  *
- * The state the field is in NOW is marked exactly the way the field's own
- * chip marks it — filled with that state's colour inside the field's
- * outline, which is `lookOf`'s switch case and so cannot drift from it.
- * Every other state is outlined in its own resolved colour: the list says
- * what each state is painted as without claiming any of them is on.
+ *   the state the field is in NOW — solid, drawn exactly as the field's
+ *     own chip draws it (`lookOf`'s switch case), and bold (the widget's);
+ *   every other state — a LIGHT TINT, a quarter of its own colour, in its
+ *     own outline, under the app's ink;
+ *   `< Back`, `+ Add state` and `end` — hollow, and not drawn here.
  */
 export function stateLook(button: FieldButton, state: string): Look {
 	if (button.current === state) return lookOf(button, 'state');
 	const color = button.stateColors[state] ?? button.color;
-	return { fill: null, line: color, text: color, label: state };
+	return { fill: `color-mix(in srgb, ${color} 25%, transparent)`, line: color, text: 'var(--ink-bright)', label: state };
+}
+
+/** A button's centre, in pixels from the tap, `y` down. */
+export interface Spot {
+	x: number;
+	y: number;
+}
+
+/** Where each button of an open field stands around the tap (`ringOf`). */
+export interface Ring {
+	back: Spot;
+	add: Spot;
+	end: Spot | null;
+	states: Spot[];
+}
+
+/**
+ * A switch field's states RADIALLY around the tap (da-7q3ka), RANKED BY
+ * DISTANCE — vividn: «make sure that the top ranked states are radially
+ * close to the center». The rank is the spec's `allowed_states` order,
+ * set in the States tab and never by use, so a state is always the same
+ * place relative to the thumb, like a pie menu.
+ *
+ * The centre is the tapped field's own position: a `false` state — `end`
+ * — takes it when the field lists one («to make it easier to turn the
+ * state completely off»), else the first state. `< Back` and `+ Add state`
+ * stand just left and right of it, on its line. Then each state in rank
+ * order takes the nearest free spot — the least distance from the
+ * centre, and among equals the first clockwise from twelve o'clock —
+ * where it clears every button already placed by `gap`. Spots are every
+ * 2px across, and every half row up and down as far as `ry`; a bar too
+ * short for a row above (`ry` under half a row) has only the one line.
+ *
+ * `w` is each button's width, `h` a button's height.
+ */
+export function ringOf(
+	w: { back: number; add: number; end: number | null; states: number[] },
+	h: number,
+	ry: number,
+	gap: number
+): Ring {
+	const half = (h + gap) / 2;
+	const placed: { x: number; y: number; w: number }[] = [];
+	const clear = (x: number, y: number, wide: number) =>
+		placed.every((p) => Math.abs(p.x - x) >= (p.w + wide) / 2 + gap || Math.abs(p.y - y) >= h + gap);
+	const centre = w.end ?? w.states[0];
+	if (centre !== undefined) placed.push({ x: 0, y: 0, w: centre });
+	const side = (centre ?? -gap) / 2 + gap;
+	const back = { x: -(side + w.back / 2), y: 0 };
+	const add = { x: side + w.add / 2, y: 0 };
+	placed.push({ ...back, w: w.back }, { ...add, w: w.add });
+	const rows = Math.floor(ry / half);
+	const cols = Math.ceil([w.back, w.add, ...w.states].reduce((a, b) => a + b + gap, 0) / 2);
+	const turn = (p: Spot) => (Math.atan2(p.x, -p.y) + 2 * Math.PI) % (2 * Math.PI);
+	const spots: Spot[] = [];
+	for (let r = -rows; r <= rows; r++) for (let c = -cols; c <= cols; c++) spots.push({ x: 2 * c, y: r * half });
+	spots.sort((a, b) => Math.hypot(a.x, a.y) - Math.hypot(b.x, b.y) || turn(a) - turn(b));
+	const states = w.states.map((wide, i): Spot => {
+		if (i === 0 && w.end === null) return { x: 0, y: 0 };
+		const spot = spots.find((p) => clear(p.x, p.y, wide))!;
+		placed.push({ ...spot, w: wide });
+		return spot;
+	});
+	return { back, add, end: w.end === null ? null : { x: 0, y: 0 }, states };
 }

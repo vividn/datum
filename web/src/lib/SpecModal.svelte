@@ -148,6 +148,13 @@
 		iconName = file.name;
 	}
 
+	/** `list` with its `from`th item moved to `to`. */
+	function moved<T>(list: T[], from: number, to: number): T[] {
+		const next = [...list.slice(0, from), ...list.slice(from + 1)];
+		next.splice(to, 0, list[from]);
+		return next;
+	}
+
 	function run(next: string[]) {
 		chosen = next;
 		dialog.close();
@@ -327,6 +334,24 @@
 								spellcheck="false"
 								autocapitalize="none"
 							/>
+							<!-- The order is where each state stands around the tap in the
+							     fields widget (da-7q3ka): the first nearest the thumb. -->
+							<button
+								type="button"
+								class="remove"
+								data-up
+								disabled={i === 0}
+								aria-label="move {state.name || 'this state'} up"
+								on:click={() => (states = moved(states, i, i - 1))}>↑</button
+							>
+							<button
+								type="button"
+								class="remove"
+								data-down
+								disabled={i === states.length - 1}
+								aria-label="move {state.name || 'this state'} down"
+								on:click={() => (states = moved(states, i, i + 1))}>↓</button
+							>
 							<button
 								type="button"
 								class="remove"
@@ -693,13 +718,18 @@
 
 	.state {
 		display: grid;
-		grid-template-columns: auto 1fr auto;
+		grid-template-columns: auto 1fr auto auto auto;
 		align-items: start;
 		gap: 0.4rem;
 	}
 
+	/* Or the name's own width pushes ✕ out of the row. */
+	.state .name {
+		min-inline-size: 0;
+	}
+
 	.states.glyphed .state {
-		grid-template-columns: auto auto 1fr auto;
+		grid-template-columns: auto auto 1fr auto auto auto;
 	}
 
 	/* After a glyph's set, which opens under the row it was tapped in. */
@@ -874,7 +904,8 @@
 		color: var(--accent);
 	}
 
-	.buttons button:disabled {
+	.buttons button:disabled,
+	.remove:disabled {
 		opacity: 0.4;
 		cursor: default;
 	}

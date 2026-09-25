@@ -68,6 +68,9 @@
 
 <style>
 	.bar {
+		/* What an item laid over the whole box is placed in — the fields
+		   widget's states (da-7q3ka). */
+		position: relative;
 		flex: 1;
 		/* A flex item will not shrink under its content unless told to, and
 		   a row of buttons that cannot shrink spills out of the pane instead

@@ -57,7 +57,7 @@ describe('the outline says what a tap does', () => {
 			assert.deepEqual(list, {
 				'< Back': 'solid',
 				...Object.fromEntries(states.map((k) => [k, 'double'])),
-				'+': 'solid'
+				'+ Add state': 'solid'
 			});
 			await page.locator('.bar [data-back]').click();
 

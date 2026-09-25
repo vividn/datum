@@ -24,11 +24,11 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { pressArgv } from '../src/lib/fields.ts';
 import { sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
-import { CLEAR, GREEN, MOOD, seed, untilFieldStyle } from './support/fields.mjs';
+import { GREEN, MOOD, seed, untilFieldStyle } from './support/fields.mjs';
 
 // A state field asks WHICH, so its button reads `name:` and a press fills
 // the widget with that field's states in place of the fields — `< Back`
-// first, `+` last (da-g635). Nothing floats: the list is the widget's own
+// first, `+ Add state` last (da-g635), the states around the tap (da-7q3ka). Nothing floats: the list is the widget's own
 // content, so these tests read it out of `.bar` exactly as they read the
 // fields, and the pane's box is unchanged either way.
 describe('a state field fills the widget with its states', () => {
@@ -56,7 +56,7 @@ describe('a state field fills the widget with its states', () => {
 
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-state="happy"]').waitFor();
-			assert.deepEqual(await bar(page), ['< Back', 'calm', 'happy', '+']);
+			assert.deepEqual(await bar(page), ['< Back', 'calm', 'happy', '+ Add state']);
 			assert.equal(await page.locator('.bar [data-field]').count(), 0, 'a field button is still drawn');
 
 			const before = (await app.echoes()).length;
@@ -122,7 +122,7 @@ describe('a state field fills the widget with its states', () => {
 			await app.idle();
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-state="sad"]').waitFor();
-			assert.deepEqual(await bar(page), ['< Back', 'calm', 'happy', 'sad', '+']);
+			assert.deepEqual(await bar(page), ['< Back', 'calm', 'happy', 'sad', '+ Add state']);
 		});
 	});
 
@@ -146,6 +146,14 @@ describe('a state field fills the widget with its states', () => {
 			// which state mood is in — which is what the list marks.
 			await untilFieldStyle(page, 'mood', 'backgroundColor', GREEN);
 			await page.locator('.bar [data-field="mood"]').click();
+			const ink = (page) =>
+				page.evaluate(() => {
+					const probe = document.body.appendChild(document.createElement('span'));
+					probe.style.color = 'var(--ink-bright)';
+					const color = getComputedStyle(probe).color;
+					probe.remove();
+					return color;
+				});
 			const painted = await page.locator('.bar').evaluate((el) =>
 				[...el.querySelectorAll('[data-state]')].map((b) => {
 					const cs = getComputedStyle(b);
@@ -154,10 +162,12 @@ describe('a state field fills the widget with its states', () => {
 			);
 			// `good` is what mood is in now, so it is marked the way the field's
 			// own chip marks it: filled with the state's colour inside the
-			// field's outline. `bad` is outlined in its own colour instead.
+			// field's outline. `bad` is a light TINT of its own colour, a quarter
+			// of it, in its own outline and under the app's ink (da-7q3ka: the
+			// hollow `< Back`, `+ Add state` and `end` stand out against it).
 			assert.deepEqual(painted, [
 				{ state: 'good', bg: rgb('#008000'), border: rgb('#800080'), color: 'rgb(255, 255, 255)' },
-				{ state: 'bad', bg: CLEAR, border: rgb('#ff0000'), color: rgb('#ff0000') }
+				{ state: 'bad', bg: 'color(srgb 1 0 0 / 0.25)', border: rgb('#ff0000'), color: await ink(page) }
 			]);
 		});
 	});
@@ -177,7 +187,7 @@ describe('a state field fills the widget with its states', () => {
 				await page.keyboard.press('Tab');
 				order.push(await focused());
 			}
-			assert.deepEqual(order, ['< Back', 'calm', 'happy', '+']);
+			assert.deepEqual(order, ['< Back', 'calm', 'happy', '+ Add state']);
 
 			await page.keyboard.press('Escape');
 			await page.locator('.bar [data-field="mood"]').waitFor();

@@ -71,10 +71,16 @@
 	the comment (da-py5w).
 
 	A multi-state field asks WHICH, so its button reads `name:` and a press
-	fills the bar with that field's states in place of the fields — `< Back`
-	first, `+` last (da-g635). Nothing floats: the list is the widget's own
-	content, in the same scroller and under the same height rules, and the
-	pane is scrolled back to where it stood when Back returns the fields. A
+	fills the bar with that field's states in place of the fields (da-g635)
+	— RADIALLY AROUND THE TAP (da-7q3ka, `ringOf` in fields.ts): the
+	spec's order is a rank, the first nearest the thumb, so a state is
+	always the same place relative to where the field was, like a pie
+	menu. A `false` state, `end`, takes the field's own position, with
+	`< Back` left of it and `+ Add state` right; those three are hollow,
+	the other states a light tint, the one the field is in solid and bold.
+	Near an edge the ring shifts whole. Nothing floats: the ring is the
+	widget's own content, over the bar's own box, and the pane is
+	scrolled back to where it stood when Back returns the fields. A
 	press on a state runs `switch <field> <state>` — plainly, the bar's own
 	pills being the only thing that adds to it — and comes back; `+` is an
 	input, and Enter on it runs the same command with a state the field has
@@ -91,9 +97,11 @@
 	import { createEventDispatcher, onMount, tick } from 'svelte';
 	import ButtonRows from './ButtonRows.svelte';
 	import {
+		ringOf,
 		lookOf,
 		pressArgv,
 		stateLook,
+		type Spot,
 		type Look,
 		type SwitchLabel,
 		type FieldButton,
@@ -174,6 +182,11 @@
 	 * went stale the moment it was picked.
 	 */
 	let picked: string | null = null;
+	/**
+	 * Where the press that picked it landed: the tapped button's centre,
+	 * from the bar's top left corner as drawn.
+	 */
+	let tap = { x: 0, y: 0 };
 	/** Whether the `+` at the end of that list has become its input. */
 	let addingState = false;
 	let newState = '';
@@ -215,26 +228,21 @@
 	$: if (picked !== null && picking === null) back();
 
 	/**
-	 * What the bar draws. A picked field's states (da-g635): `< Back` first
-	 * — it logs nothing — then one per state in the CLI's order, and `+`
-	 * last, which is how a state never logged gets into the list at all,
-	 * dealt into the rows by index. Otherwise the fields in their rows
+	 * What the bar draws. A picked field's states (da-g635) are ONE entry,
+	 * the ring over the whole bar (da-7q3ka): `< Back`, which logs nothing,
+	 * the states around the tap, and `+ Add state`, which is how a state
+	 * never logged gets into the list at all. Otherwise the fields in their rows
 	 * (`arrange`), with Track + starting the top one — the way into the app
 	 * on an empty database — or, under a pending verb, the `+` ending the
 	 * bottom one (vividn: «There should be a + field at the end of this
 	 * filtered fields view for adding new fields»).
 	 */
 	type Entry =
-		| { kind: 'track' | 'hint' | 'back' | 'add-state' }
-		| { kind: 'state'; state: string }
+		| { kind: 'track' | 'hint' }
+		| { kind: 'ring' }
 		| { kind: 'field'; button: FieldButton; promoted: boolean; edge: boolean };
 	$: entries = ((): Entry[] => {
-		if (picking)
-			return [
-				{ kind: 'back' },
-				...statesOf(picking.shape).map((state): Entry => ({ kind: 'state', state })),
-				{ kind: 'add-state' }
-			];
+		if (picking) return [{ kind: 'ring' }];
 		if (buttons.length > 0) return [];
 		return verb === null ? [{ kind: 'track' }, { kind: 'hint' }] : [{ kind: 'hint' }, { kind: 'track' }];
 	})();
@@ -243,8 +251,9 @@
 	 * along each, as they stood at the last sort — and a press's fields at
 	 * the head of them, the hairline after the last of them in each row.
 	 */
-	$: arrange =
-		picking || buttons.length === 0
+	$: arrange = picking
+		? (items: Entry[]): Entry[][] => [items]
+		: buttons.length === 0
 			? lanesOf
 			: (_: Entry[], rows: number): Entry[][] => {
 					const lanes = rowsUnder(buttons, rows, standings, shown).map(({ lead, rest }): Entry[] => [
@@ -262,7 +271,7 @@
 					else lanes[lanes.length - 1].push({ kind: 'track' });
 					return lanes;
 				};
-	const keyOf = (e: Entry) => (e.kind === 'field' ? `f:${e.button.field}` : e.kind === 'state' ? `s:${e.state}` : e.kind);
+	const keyOf = (e: Entry) => (e.kind === 'field' ? `f:${e.button.field}` : e.kind);
 
 	/** A look as the custom properties every button below is painted from. */
 	function vars(look: Look) {
@@ -352,10 +361,14 @@
 	 * Show `button`'s states in the bar, in place of the fields (da-g635).
 	 *
 	 * Nothing floats: the list is REPLACED inside the widget's own box, so
-	 * the pane keeps the height its layout gives it (da-mbz2) and the
-	 * states are reached by the same scroll the fields are.
+	 * the pane keeps the height its layout gives it (da-mbz2). Where the
+	 * press landed is kept, for the states to stand around (da-7q3ka).
 	 */
-	function pick(button: FieldButton) {
+	/** `el` is the pressed button itself — the click's `currentTarget`, never a glyph inside it. */
+	function pick(button: FieldButton, el: HTMLElement) {
+		const at = el.getBoundingClientRect();
+		const box = bar!.getBoundingClientRect();
+		tap = { x: at.left + at.width / 2 - box.left, y: at.top + at.height / 2 - box.top };
 		scrolled = scrollerOf();
 		scrolledTo = { left: scrolled?.scrollLeft ?? 0, top: scrolled?.scrollTop ?? 0 };
 		picked = button.field;
@@ -373,13 +386,13 @@
 	 * A press does what `pressKind` says — the same answer the button's
 	 * outline is drawn from, so the two cannot disagree (da-z8z40).
 	 */
-	function press(button: FieldButton) {
+	function press(button: FieldButton, el: HTMLElement) {
 		const kind = pressKind(button, verb);
 		// A record is typed, never pressed: its line goes to the prompt.
 		if (kind === 'fill') line(`add ${button.field} `);
 		// A multi-state field can't be logged without saying which, so a
 		// plain press asks — the bar fills with its states.
-		else if (kind === 'open') pick(button);
+		else if (kind === 'open') pick(button, el);
 		// With a verb pending, the press IS that verb (C1: a field tap runs
 		// at once).
 		else emit((verb && verbPress(verb, button)) || pressArgv(button));
@@ -414,6 +427,75 @@
 			return;
 		}
 		emit(pressArgv(button, state));
+	}
+
+	/**
+	 * Stand the ring's buttons around the tap (da-7q3ka): `ringOf` gives the
+	 * shape from their measured sizes, and the whole of it is then moved as
+	 * near the tap as the box allows — shifted, never rearranged, at an
+	 * edge. A ring wider than the box starts at its left edge, and the box
+	 * scrolls its centre under the tap as far as it can — all the way when
+	 * the tap is left of that centre, not at all when right of it. Measured
+	 * in the box's own offsets, never on the screen, since the bar may still
+	 * be scrolled to where the fields were; and again whenever the box or a
+	 * button is resized — `+ Add state` becoming its input is one — or a
+	 * button comes or goes, as a state learned while the ring is open does.
+	 */
+	function around(box: HTMLElement, at: { x: number; y: number }) {
+		const GAP = 6;
+		// Unrounded: `offsetWidth` rounds down, and a ring at the box's edge
+		// then loses its last pixel.
+		const size = (el: HTMLElement) => el.getBoundingClientRect();
+		const place = () => {
+			const spots = [...box.children] as HTMLElement[];
+			const one = (role: string) => spots.find((s) => s.dataset.role === role);
+			const [back, add, end] = [one('back')!, one('add')!, one('end')];
+			const states = spots.filter((s) => s.dataset.role === 'state');
+			const h = Math.max(...spots.map((s) => size(s).height));
+			const ry = Math.min(Math.max(0, (box.clientHeight - h) / 2), 2 * (h + GAP));
+			const ring = ringOf(
+				{
+					back: size(back).width,
+					add: size(add).width,
+					end: end ? size(end).width : null,
+					states: states.map((s) => size(s).width)
+				},
+				h,
+				ry,
+				GAP
+			);
+			const placed: [HTMLElement, Spot][] = [
+				[back, ring.back],
+				[add, ring.add],
+				...(end && ring.end ? [[end, ring.end] as [HTMLElement, Spot]] : []),
+				...states.map((s, i): [HTMLElement, Spot] => [s, ring.states[i]])
+			];
+			// Two pixels short of the box, or a border on its edge is clipped.
+			const edge = (k: 'x' | 'y', side: number) =>
+				2 + Math.max(...placed.map(([el, p]) => side * p[k] + (k === 'x' ? size(el).width : size(el).height) / 2));
+			const cx = Math.max(edge('x', -1), Math.min(at.x, box.clientWidth - edge('x', 1)));
+			const cy = Math.max(edge('y', -1), Math.min(at.y, box.clientHeight - edge('y', 1)));
+			for (const [el, p] of placed) {
+				el.style.left = `${cx + p.x - size(el).width / 2}px`;
+				el.style.top = `${cy + p.y - size(el).height / 2}px`;
+			}
+			box.scrollLeft = cx - at.x;
+		};
+		const observer = new ResizeObserver(place);
+		const watch = () => {
+			observer.observe(box);
+			for (const spot of box.children) observer.observe(spot);
+			// Placed now as well, not a frame later: the buttons are in the
+			// DOM when an action runs, and measuring them lays them out.
+			place();
+		};
+		const children = new MutationObserver(watch);
+		children.observe(box, { childList: true });
+		watch();
+		return {
+			update: (next: { x: number; y: number }) => ((at = next), watch()),
+			destroy: () => (observer.disconnect(), children.disconnect())
+		};
 	}
 
 	/**
@@ -459,54 +541,74 @@
 	<!-- Given a line colour, or `var(--line)` voids its border and the rows
 	     are counted two pixels short of the buttons they hold. -->
 	<button slot="probe" class="widget" style="--line: transparent" tabindex="-1">probe</button>
-	{#if item.kind === 'back'}
-		<div class="slot">
-			<button class="nav back" data-back {disabled} title="back to the fields" on:click={back}>
-				&lt; Back
-			</button>
-		</div>
-	{:else if item.kind === 'state' && picking}
-		{@const look = stateLook(picking, item.state)}
-		<div class="slot">
-			<!-- A state RUNS at once, so it is always drawn as acting (da-z8z40). -->
-			<button
-				class="widget states act"
-				class:on={look.fill !== null}
-				style={vars(look)}
-				{disabled}
-				data-state={item.state}
-				title={pressArgv(picking, item.state).join(' ')}
-				on:click={() => picking && emit(pressArgv(picking, item.state))}
-			>
-				{item.state}
-			</button>
-		</div>
-	{:else if item.kind === 'add-state' && picking}
+	{#if item.kind === 'ring' && picking}
 		{@const chosen = picking}
-		<div class="slot">
-			{#if addingState}
-				<form on:submit|preventDefault={() => addState(chosen)}>
-					<!-- svelte-ignore a11y-autofocus -->
-					<input
-						class="new-state"
-						bind:value={newState}
-						placeholder="state"
-						aria-label="a new state for {chosen.field}"
-						spellcheck="false"
-						autofocus
-					/>
-				</form>
-			{:else}
-				<button
-					class="nav add-state"
-					data-add-state
-					{disabled}
-					title="add a state to {chosen.field}"
-					on:click={() => (addingState = true)}
-				>
-					+
+		{@const states = statesOf(chosen.shape)}
+		<div class="ring" use:around={tap}>
+			<div class="spot" data-role="back">
+				<button class="nav back" data-back {disabled} title="back to the fields" on:click={back}>
+					&lt; Back
 				</button>
+			</div>
+			{#if states.includes('false')}
+				{@const color = chosen.stateColors.false ?? chosen.color}
+				<!-- `false` is off: `end`, on the tap itself, and hollow like the
+				     two ends — the one state a thumb reaches without moving. -->
+				<div class="spot" data-role="end">
+					<button
+						class="widget states act end"
+						style={vars({ fill: null, line: color, text: color, label: 'end' })}
+						{disabled}
+						data-state="false"
+						title="end {chosen.field}"
+						on:click={() => emit(['end', chosen.field])}
+					>
+						end
+					</button>
+				</div>
 			{/if}
+			{#each states.filter((s) => s !== 'false') as state (state)}
+				{@const look = stateLook(chosen, state)}
+				<div class="spot" data-role="state">
+					<!-- A state RUNS at once, so it is always drawn as acting (da-z8z40). -->
+					<button
+						class="widget states act"
+						class:on={chosen.current === state}
+						style={vars(look)}
+						{disabled}
+						data-state={state}
+						title={pressArgv(chosen, state).join(' ')}
+						on:click={() => emit(pressArgv(chosen, state))}
+					>
+						{state}
+					</button>
+				</div>
+			{/each}
+			<div class="spot" data-role="add">
+				{#if addingState}
+					<form on:submit|preventDefault={() => addState(chosen)}>
+						<!-- svelte-ignore a11y-autofocus -->
+						<input
+							class="new-state"
+							bind:value={newState}
+							placeholder="state"
+							aria-label="a new state for {chosen.field}"
+							spellcheck="false"
+							autofocus
+						/>
+					</form>
+				{:else}
+					<button
+						class="nav add-state"
+						data-add-state
+						{disabled}
+						title="add a state to {chosen.field}"
+						on:click={() => (addingState = true)}
+					>
+						+ Add state
+					</button>
+				{/if}
+			</div>
 		</div>
 	{:else if item.kind === 'track'}
 		<div class="slot">
@@ -558,7 +660,7 @@
 					style={vars(look)}
 					{disabled}
 					title={titleOf(button)}
-					on:click={() => press(button)}>{button.field}</button
+					on:click={(e) => press(button, e.currentTarget)}>{button.field}</button
 				>
 			{:else}
 				<button
@@ -573,7 +675,7 @@
 					data-ignored={button.ignored ? '' : undefined}
 					data-pilled={$fieldPill === button.field ? '' : undefined}
 					title={titleOf(button)}
-					on:click={() => press(button)}
+					on:click={(e) => press(button, e.currentTarget)}
 				>{#if look.glyph}<span class="glyph" aria-hidden="true">{look.glyph}</span>{/if}{look.label}{button.shape.kind === 'states' ? ':' : ''}</button>
 			{/if}
 		</div>
@@ -704,9 +806,10 @@
 		cursor: default;
 	}
 
-	/* `< Back` and `+`: the two ends of the state list, and neither of them
-	   a state — so they are drawn in the app's own ink rather than in any
-	   field's colour, and cannot be mistaken for something to log. */
+	/* `< Back` and `+ Add state`: the two sides of the ring, and neither of
+	   them a state — so they are drawn hollow in the app's own ink rather
+	   than filled in any field's colour, and cannot be mistaken for
+	   something to log (da-7q3ka). */
 	.nav {
 		background: var(--ground);
 		border: 1px solid var(--rule);
@@ -723,6 +826,30 @@
 
 	.new-state {
 		width: 7rem;
+	}
+
+	/* A field's states over the whole bar (da-7q3ka), each button placed
+	   by `around` — nothing here decides where. Out of the bar's flex
+	   layout and over its box (`inset: 0` against the bar's
+	   `position: relative`), which is all the bar holds while it is open. */
+	.ring {
+		position: absolute;
+		inset: 0;
+		overflow-x: auto;
+		overflow-y: hidden;
+	}
+
+	.spot {
+		position: absolute;
+		/* Near the box's right edge a spot would otherwise shrink to what
+		   is left of it, and `+ Add state` wrap. */
+		white-space: nowrap;
+	}
+
+	/* The state the field is in now: solid, as the field's own chip draws
+	   it (`stateLook`), and bold — the rest are a tint. */
+	.states.on {
+		font-weight: 700;
 	}
 
 	/* The first thing a person meets: larger than the fields, and filled. */

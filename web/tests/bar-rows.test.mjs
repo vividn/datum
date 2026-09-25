@@ -1,7 +1,7 @@
 // The fields bar at one, two and three button-rows high (da-hs6c,
 // da-vu7pi): it draws as many rows as fit, each packed on its own, and is
-// always reached sideways — with eight tracked fields, and with a field's
-// states filling the same bar. The commands bar's half of this is
+// always reached sideways — with eight tracked fields. A field's states
+// stand around the tap instead (da-7q3ka, `fields-cluster.test.mjs`). The commands bar's half of this is
 // `commands.test.mjs`; the helpers both use are `./support/rows.mjs`.
 
 import test, { before, after, describe } from 'node:test';
@@ -45,17 +45,13 @@ async function holds(page, want, first) {
 }
 
 describe('the fields bar and the scroll rule', () => {
-	test('eight fields, and a field’s states, at one, two and three rows high', async () => {
+	test('eight fields at one, two and three rows high', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
 				await seedLines(app, SEED);
 				await page.locator('.bar [data-field="hotel"]').waitFor();
 				for (const want of [1, 2, 3]) await holds(page, want, 'Track +');
-
-				await page.locator('.bar [data-field="alfa"]').click();
-				await page.locator('.bar [data-state="eight"]').waitFor();
-				for (const want of [1, 2, 3]) await holds(page, want, '< Back');
 			},
 			{
 				// Narrow enough that nine buttons wrap onto three lines.
