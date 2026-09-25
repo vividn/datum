@@ -18,7 +18,6 @@
 //! examples encoded as fixtures.
 
 use chrono::{FixedOffset, Timelike, Utc};
-#[cfg(feature = "db")]
 use datum_core::db::Db;
 use datum_core::state::FieldStateEvents;
 use datum_core::{
@@ -71,19 +70,9 @@ pub fn format_relative_day_prefix(target: &DatumTime, now: &DatumTime) -> Option
 
 /// The one place the host's clock enters the renderer. Every `…_at`
 /// function takes `now` as a parameter; these conveniences supply it from the
-/// local clock, which exists only with `clock` (datum-parse gates
-/// `DatumTime::now()` behind its `native`). The browser renderer keeps the
-/// conveniences compiling — the command layer around them is compiled out —
-/// but must never reach this: it supplies `now` in the request
-/// (`datum-render-wasm`). The wasip1 CLI has `clock`, so it never does.
-#[cfg(feature = "clock")]
+/// local clock.
 pub(crate) fn now_local() -> DatumTime {
     DatumTime::now()
-}
-
-#[cfg(not(feature = "clock"))]
-pub(crate) fn now_local() -> DatumTime {
-    unreachable!("the host clock is not available off `clock`; callers must use the `_at` variants and pass `now`")
 }
 
 // ─── Render context ──────────────────────────────────────────────────────────
@@ -153,7 +142,6 @@ pub enum Surface {
 }
 
 impl RenderContext {
-    #[cfg(feature = "db")]
     /// Canonical [`RenderContext`] constructor — the single entry point all
     /// renderer surfaces route through. Picks the right lead/trail/ongoing
     /// probes and `prior_state_ignored` semantics from `surface`.

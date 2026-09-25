@@ -55,9 +55,7 @@ pub fn version_banner() -> String {
 /// anyone rewords an `#[error(...)]` — is what this function is for, and
 /// holding the set in one place is what keeps a second caller from
 /// honouring a smaller contract than the CLI does. `datum-cli` prints the
-/// text to stdout; `datum-parse-wasm` hands it to the browser, which used
-/// to glue `error: ` in front of the Display string and drop the help
-/// entirely (da-e0m6).
+/// text to stdout (da-e0m6).
 pub fn special_output(e: &crate::ParseError) -> Option<String> {
     use crate::ParseError as E;
     match e {

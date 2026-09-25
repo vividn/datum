@@ -4,11 +4,8 @@ members = [
     "crates/datum-cli",
     "crates/datum-commands",
     "crates/datum-layout",
-    "crates/datum-layout-wasm",
     "crates/datum-parity",
     "crates/datum-parse",
-    "crates/datum-parse-wasm",
-    "crates/datum-render-wasm",
     "crates/datum-sync-agent",
     "crates/datum-sync-client",
     "crates/datum-sync-protocol",
@@ -42,11 +39,8 @@ rusqlite = { version = "0.32", features = ["bundled", "hooks"] }
 # Time
 # `default-features = false` drops chrono's `wasmbind`, which on
 # `wasm32-unknown-unknown` pulls wasm-bindgen in to read the browser's
-# clock. datum's wasm modules take their "now" from the caller instead
-# (da-7scm), and a module with a wasm-bindgen import will not load from a
-# bare `WebAssembly.instantiate` — which is the whole reason the browser
-# needs no toolchain. `clock` + `std` are what the default set otherwise
-# gave us on native; `oldtime` is a deprecated no-op.
+# clock. `clock` + `std` are what the default set otherwise gave us on
+# native; `oldtime` is a deprecated no-op.
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
 chrono-tz = { version = "0.10", features = ["serde"] }
 
@@ -122,10 +116,10 @@ debug = "line-tables-only"
 [profile.test]
 debug = "line-tables-only"
 
-# Size-first profile for the browser layout module (da-6h6p). Separate from
-# `release` so the CLI keeps its speed-first build: this one trades a little
-# throughput — irrelevant for a few hundred blocks of geometry — for an
-# artifact small enough to ship in the app shell.
+# Size-first profile for the browser's `datum-cli.wasm` (da-6h6p, da-g8o8;
+# `web/scripts/build-cli-wasm.mjs`). Separate from `release` so the native
+# CLI keeps its speed-first build: this one trades a little throughput for
+# an artifact small enough to ship in the app shell.
 [profile.wasm-release]
 inherits = "release"
 opt-level = "z"

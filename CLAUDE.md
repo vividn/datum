@@ -13,11 +13,9 @@ Core purpose: let users manually log data about their own lives and review it as
 crates/
   datum-core/         # Rust library: data model, SQLite, field specs
   datum-parse/        # Pure: argv + time parsing, verb truth table, entry identity
-  datum-parse-wasm/   # datum-parse for the browser (argv -> the row to insert)
   datum-cli/          # `datum` binary: clap CLI, commands, output formatting
   datum-commands/     # Command-layer crate: typed + string APIs, dispatched by datum-cli
   datum-layout/       # Pure: dayview/nowview geometry + SVG render
-  datum-layout-wasm/  # datum-layout for the browser
   datum-sync-client/  # Sync client library: wire protocol, crypto, HTTP (WASM-split)
   datum-sync-server/  # Relay server: Rust + axum, E2E-encrypted sync backend
   datum-sync-agent/   # Background sync daemon (planned)
@@ -391,10 +389,6 @@ A branch cut before da-0qa4x still carries `datum-cli.wasm`, and rebasing it
 conflicts once (modify/delete). The fix is `git rm
 web/src/lib/wasm/datum-cli.wasm` — no rebuild; nothing commits the module
 any more.
-
-(The `datum-parse-wasm`, `datum-layout-wasm` and `datum-render-wasm` crates
-built the three modules the browser ran before the swap; nothing in `web/`
-loads them any more.)
 
 `web/tests` drives the built app in a real browser and asserts through
 `run(argv)` — the one seam every region of the app goes through.

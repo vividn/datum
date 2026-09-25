@@ -4,8 +4,7 @@
 //! here — in the crate that compiles to `wasm32-unknown-unknown` — rather
 //! than in `datum-core` beside the database. `datum-core` wraps them back
 //! into its `Hid` / `Slug` newtypes ([`datum_core::entry::new_hid`],
-//! [`datum_core::entry::build_slug`]); the browser calls them through
-//! `datum-parse-wasm` (da-7scm). One definition, two callers, no drift.
+//! [`datum_core::entry::build_slug`]) (da-7scm).
 //!
 //! Randomness is the one thing this module will not source for itself:
 //! [`hid_from_bytes`] takes the bytes. On the host `rand` supplies them,

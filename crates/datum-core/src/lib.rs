@@ -1,30 +1,23 @@
 #![doc = include_str!("../README.md")]
 
 pub mod action;
-#[cfg(feature = "db")]
 pub mod db;
 pub mod doc_ref;
 pub mod entry;
 pub mod error;
 pub mod field_spec;
-#[cfg(feature = "db")]
 pub mod history;
 pub mod ids;
-#[cfg(feature = "db")]
 pub mod integrity;
 pub mod kit;
 pub mod kit_color;
 pub mod kit_color_rule;
-#[cfg(feature = "db")]
 pub mod last_docs;
-#[cfg(feature = "db")]
 pub mod migrations;
 pub mod slug;
 pub mod state;
-#[cfg(feature = "db")]
 pub mod sync_state;
 pub mod track;
-#[cfg(feature = "db")]
 pub mod views;
 
 pub use verb::derive_verb;
@@ -37,6 +30,5 @@ pub mod test_util;
 /// `datum_core::verb::derive_verb`, …) keep compiling.
 ///
 /// They are defined there, not here, because they are pure — no database,
-/// no I/O — and the browser reaches them through `datum-parse-wasm`
-/// (da-7scm). One definition per rule; this crate is one of its callers.
+/// no I/O (da-7scm). One definition per rule; this crate is one of its callers.
 pub use datum_parse::{dur, shape, time, verb};

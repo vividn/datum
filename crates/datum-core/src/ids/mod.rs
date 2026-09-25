@@ -5,11 +5,9 @@
 //! in their own modules in the original TS tree and will be ported in
 //! follow-up beads.
 
-#[cfg(feature = "db")]
 pub mod resolve;
 pub mod types;
 
-#[cfg(feature = "db")]
 pub use resolve::{
     contains_wildcard, parse_underscore_ordinal, quick_ordinals, resolve_quickid,
     resolve_quickid_all, resolve_quickid_single,

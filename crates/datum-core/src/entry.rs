@@ -8,7 +8,6 @@
 //! lands, `Entry::new` writes a stub `Verb::Point` for the verb column.
 
 use chrono::{DateTime, Utc};
-#[cfg(feature = "db")]
 use rand::Rng;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
@@ -48,7 +47,6 @@ pub use datum_parse::entry_id::HID_LEN;
 /// Length of the short hid displayed in action output and used by `%uid%`.
 pub const SHORT_HID_LEN: usize = 5;
 
-#[cfg(feature = "db")]
 /// Generate a new random 12-char base36 hid. The [0-9a-z] alphabet gives
 /// ~36^12 ≈ 4.7 quintillion distinct values, so collisions under normal use
 /// are astronomically unlikely; the DB still enforces uniqueness on the
@@ -218,7 +216,6 @@ fn default_parser_version() -> u32 {
 }
 
 impl Entry {
-    #[cfg(feature = "db")]
     /// Build a new entry with auto-generated hid, slug, and content_hash.
     ///
     /// **Stub for sub-bead 1.** The `verb` argument is currently ignored
@@ -296,7 +293,6 @@ impl Entry {
         }
     }
 
-    #[cfg(feature = "db")]
     /// Compatibility constructor mirroring the v=19 (start_time,
     /// end_time) signature. Computes `dur` from the time delta, maps
     /// `value` → `state`, and otherwise delegates to [`Self::new`].
@@ -491,7 +487,6 @@ impl Entry {
 
 pub(crate) use datum_parse::entry_id::{content_hash as compute_hash, HashInputs};
 
-#[cfg(feature = "db")]
 /// Stored `dur` text → seconds. Handles ISO-8601 spans (`PT5M`, `P1D`,
 /// `P3W`) and the sentinel forms `MOMENT` / `UNKNOWN` (both → `None`,
 /// they have no measurable duration). Used by callers that read raw

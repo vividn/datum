@@ -8,25 +8,17 @@ name = "datum_commands"
 path = "src/lib.rs"
 
 [features]
-default = ["native", "db"]
+default = ["native"]
 # Surfaces that cannot exist in a browser, gathered behind one flag so a wasm
 # build is `--no-default-features` rather than a list of exclusions:
 #   crossterm — terminal control, used only by the `tail --watch` TUI
 #   reqwest   — blocking HTTP, used only by the sync client
 #   tempfile  — on-disk scratch files: the atomic config write, and the
 #               buffer `datum edit` hands to $EDITOR
-# Native builds are unchanged; this feature is on by default. Mirrors the
-# pattern datum-parse already uses for the same reason.
-native = ["db", "clock", "dep:crossterm", "dep:reqwest", "dep:datum-sync-client", "dep:tempfile"]
-# The host's clock and zone (`DatumTime::now()`), apart from the rest of
-# `native`: the wasm32-wasip1 CLI (da-1vat) has a clock — WASI's
-# `clock_time_get`, and `TZ` from its caller — but no terminal and no HTTP.
-# Off only where there is no clock at all: wasm32-unknown-unknown.
-clock = ["datum-parse/native", "datum-core/native"]
-# The database half: every command, the argv layer that opens a db, and the
-# `now` snapshot renderer. Off, what remains is `render` and `config` — the
-# pure formatting the browser renderer (`datum-render-wasm`) links against.
-db = ["datum-core/db", "dep:ulid", "dep:rand"]
+# Native builds are unchanged; this feature is on by default. The
+# wasm32-wasip1 CLI (da-1vat) turns it off: it has a clock (WASI's
+# `clock_time_get`, and `TZ` from its caller) but no terminal and no HTTP.
+native = ["dep:crossterm", "dep:reqwest", "dep:datum-sync-client", "dep:tempfile"]
 # Shared test fixtures (TestPrompter, etc.) — also consumed by datum-cli tests.
 test-util = []
 # Marker for the full E2E case cohort (da-1wat). Cases tagged
@@ -42,16 +34,16 @@ e2e-full = []
 png = ["dep:resvg"]
 
 [dependencies]
-datum-core = { path = "../datum-core", default-features = false }
+datum-core = { path = "../datum-core" }
 datum-layout = { path = "../datum-layout" }
-datum-parse = { path = "../datum-parse", default-features = false }
+datum-parse = { path = "../datum-parse" }
 datum-sync-client = { path = "../datum-sync-client", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
-ulid = { workspace = true, optional = true }
+ulid = { workspace = true }
 md-5 = { workspace = true }
 regex-lite = { workspace = true }
 unicode-width = { workspace = true }
@@ -64,7 +56,7 @@ toml = { workspace = true }
 reqwest = { workspace = true, optional = true }
 rpassword = { workspace = true }
 url = { workspace = true }
-rand = { workspace = true, optional = true }
+rand = { workspace = true }
 libc = { workspace = true }
 # Alt-screen TUI for `datum tail -w` (da-3l6m): key/mouse events + raw mode.
 crossterm = { workspace = true, optional = true }
@@ -81,13 +73,6 @@ resvg = { version = "0.47", default-features = false, features = ["text", "syste
 # above, or `--no-default-features --all-targets` loses it with `native`.
 tempfile = "3"
 datum-core = { path = "../datum-core", features = ["test-util"] }
-# Test-only, and the direction is deliberate: the browser's copy of the
-# colour rules is held to this crate's original (src/render/wasm_parity.rs).
-datum-layout-wasm = { path = "../datum-layout-wasm" }
-# Same direction, same reason: the browser's copy of the write-path
-# assembly is held to this crate's original
-# (tests/wasm_parse_parity.rs).
-datum-parse-wasm = { path = "../datum-parse-wasm" }
 datum-test-util = { path = "../datum-test-util" }
 rusqlite = { workspace = true }
 # Re-exported via `datum_parse::alias::shell_split` for the e2e harness;

@@ -6,8 +6,7 @@
 //! What each subcommand *decides* — which row to write, which sentence to
 //! print — is `datum_core::field_spec::alias_effect`, which takes the rows
 //! rather than the database. This function is the database half: load the
-//! rows, ask, perform. datum.day asks the same question of the same
-//! function through `datum-parse-wasm` (da-5kbj).
+//! rows, ask, perform.
 
 use anyhow::{bail, Result};
 use datum_core::{

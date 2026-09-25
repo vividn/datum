@@ -20,8 +20,7 @@
 //! * The pure entry-shape rules the storage layer applies but does not
 //!   own: the duration type ([`dur`]), the verb truth table ([`verb`]),
 //!   and entry identity ([`entry_id`] — hid, slug, content hash).
-//!   `datum-core` re-exports all three; they live here so the browser
-//!   can reach them through `datum-parse-wasm` (da-7scm).
+//!   `datum-core` re-exports all three (da-7scm).
 //!
 //! ## WASM-safety
 //!

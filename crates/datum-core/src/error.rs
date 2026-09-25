@@ -12,7 +12,6 @@ pub struct PrefixCandidate {
 
 #[derive(Error, Debug)]
 pub enum DatumError {
-    #[cfg(feature = "db")]
     #[error("Database error: {0}")]
     Db(#[from] rusqlite::Error),
 

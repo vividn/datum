@@ -13,14 +13,12 @@
 //! `note` entries never affect state.
 
 use chrono::{DateTime, Utc};
-#[cfg(feature = "db")]
 use rusqlite::{params, Connection};
 use serde_json::{Map, Value};
 use std::fmt;
 
 use crate::dur::Dur;
 use crate::entry::{Entry, Verb};
-#[cfg(feature = "db")]
 use crate::error::DatumError;
 use crate::error::Result;
 use crate::shape::IGNORED_STATE_VALUE;
@@ -317,7 +315,6 @@ pub fn compile_state(entries: &[Entry], at: DateTime<Utc>) -> ActiveState {
         .unwrap_or(Value::Null)
 }
 
-#[cfg(feature = "db")]
 /// Compute the active state of `field` strictly before (or at) `time`,
 /// ignoring an entry identified by `exclude_hid` (so detection run on a
 /// just-inserted row can see "the state as it was without this entry").
@@ -403,14 +400,12 @@ impl FieldStateEvents {
         FieldStateEvents { events }
     }
 
-    #[cfg(feature = "db")]
     /// Load every state-affecting event for `field`. See
     /// [`Self::load_for_field_up_to`] for the bounded variant.
     pub fn load_for_field(conn: &Connection, field: &str) -> Result<Self> {
         Self::load_for_field_up_to(conn, field, None)
     }
 
-    #[cfg(feature = "db")]
     /// [`FieldStateEvents::load_for_field_up_to`] over the field's
     /// TRANSITIONS only: the TRACK document that declares a field is not
     /// one (da-c8mh), so a reader asking "what was this field doing just
@@ -423,7 +418,6 @@ impl FieldStateEvents {
         Self::load_events(conn, field, max_probe, true)
     }
 
-    #[cfg(feature = "db")]
     /// Load state-affecting events for `field`, optionally pruned to entries
     /// that could contribute an event ≤ `max_probe`. Reads only the columns
     /// [`compile_state`] needs.
@@ -442,7 +436,6 @@ impl FieldStateEvents {
         Self::load_events(conn, field, max_probe, false)
     }
 
-    #[cfg(feature = "db")]
     fn load_events(
         conn: &Connection,
         field: &str,

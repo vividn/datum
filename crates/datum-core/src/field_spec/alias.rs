@@ -160,11 +160,8 @@ impl SpecAliasIndex {
 /// What one `datum alias` invocation does: the row to write (if any) and
 /// the text to print.
 ///
-/// Kept apart from the writing so both surfaces can share it. The CLI
-/// loads the rows from SQLite and performs the effect against the same
-/// connection; datum.day sends the rows it holds into
-/// `datum-parse-wasm` and performs the effect against OPFS (da-5kbj).
-/// Neither spells the sentences itself.
+/// Kept apart from the writing: the CLI loads the rows from SQLite and
+/// performs the effect against the same connection (da-5kbj).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AliasEffect {
     /// Print `text`. Nothing is stored.

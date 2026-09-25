@@ -20,10 +20,7 @@ pub mod show_all;
 pub(crate) mod state_truncate;
 pub mod tail_rows;
 
-// Holds `datum-layout-wasm`'s colour derivation to this module's (da-6h6p).
 pub mod term_layout;
-#[cfg(all(test, feature = "db"))]
-mod wasm_parity;
 
 pub use self::action::{
     format_info_line, format_info_line_at, format_relative_day_prefix, format_state_group,
@@ -32,7 +29,6 @@ pub use self::action::{
 pub use self::colors::{strip_ansi, visible_width};
 pub use self::ordinals::{attach_quick_ordinals, quick_ordinal_map};
 
-#[cfg(feature = "db")]
 use datum_core::entry::Verb;
 use datum_core::{entry::Entry, field_spec::SpecRegistry, time::DatumTime};
 use datum_parse::time::{format_human_duration, DurationPrecision};
@@ -363,11 +359,7 @@ pub fn show_action(
 /// [`show_action`].
 /// What [`show_action_with_context`] prints for one entry, as strings.
 ///
-/// The CLI prints these; the browser (`datum-render-wasm`) has no stdout and
-/// asks for them instead. One builder, both callers — so the two can never
-/// disagree about what an action looks like. That disagreement is exactly what
-/// the browser had before: a hand-written TypeScript stand-in that printed
-/// `16:18 mood = happy` where datum prints two lines (da-7scm's other half).
+/// The CLI prints these, and `--show json` carries them as its echo.
 pub struct ActionLines {
     /// `CREATE 65nfi mood:2026-09-08T14:17:25.061Z` — action, hid, slug.
     pub header: String,
@@ -1502,7 +1494,6 @@ pub fn short_hid_of(hid: &str) -> String {
 
 // ─── Now view (preserved) ────────────────────────────────────────────────────
 
-#[cfg(feature = "db")]
 struct NowRow {
     bullet: &'static str,
     field: String,
@@ -1515,7 +1506,6 @@ struct NowRow {
     is_dim: bool,
 }
 
-#[cfg(feature = "db")]
 fn state_ansi(
     field: &str,
     state: &str,
@@ -1531,7 +1521,6 @@ fn state_ansi(
     colors::md5_rgb(state).fg()
 }
 
-#[cfg(feature = "db")]
 /// S12: render the state column for `datum now`. Scalar values get the
 /// original single-color treatment; arrays become a checkerboard-flavored
 /// sequence of per-element blocks so concurrent states are immediately
@@ -1564,7 +1553,6 @@ fn render_now_state(
     }
 }
 
-#[cfg(feature = "db")]
 fn scalar_text(v: &JsonValue) -> String {
     match v {
         JsonValue::String(s) => s.clone(),
@@ -1572,7 +1560,6 @@ fn scalar_text(v: &JsonValue) -> String {
     }
 }
 
-#[cfg(feature = "db")]
 fn render_now_state_scalar(
     v: &JsonValue,
     field: &str,
@@ -1621,7 +1608,6 @@ fn render_now_state_scalar(
 /// third of it, as the band's label is, the state column takes what the
 /// time column leaves, each cut with `…`, and no line runs past it. `None`
 /// (piped, no `$COLUMNS`) prints every column whole.
-#[cfg(feature = "db")]
 pub fn render_snapshot(
     snapshot: &datum_core::db::NowSnapshot,
     state_colors: &HashMap<(String, String), String>,
@@ -1826,7 +1812,6 @@ pub fn render_snapshot(
     }
 }
 
-#[cfg(feature = "db")]
 /// Format an absolute UTC instant for the now-view time column using
 /// the same rules as [`format_now_time`]. Used by the
 /// `tracked_false` / `ignored` snapshot variants where we only have
@@ -1851,7 +1836,6 @@ fn format_now_time_utc(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-#[cfg(feature = "db")]
 fn format_ago(secs: i64) -> String {
     // A negative age means the entry is stamped ahead of now. Sub-minute
     // negatives are clock skew and still read as the present, but anything
@@ -1869,7 +1853,6 @@ fn format_ago(secs: i64) -> String {
     format!("{} ago", format_span(secs))
 }
 
-#[cfg(feature = "db")]
 /// Coarse minute/hour span shared by the past (`… ago`) and future
 /// (`in …`) renderings of the now-view time column. A relative age is
 /// read at a glance and re-read a minute later, so it names minutes
@@ -1879,7 +1862,6 @@ fn format_span(secs: i64) -> String {
     format_human_duration(secs, DurationPrecision::Minutes)
 }
 
-#[cfg(feature = "db")]
 /// Pick the right "last seen" stamp for a `datum now` row. Today entries
 /// keep the existing micro-format (`@HH:MM` for stopped occurs, `Nm ago`
 /// otherwise); rows from a different calendar day show the relative-day

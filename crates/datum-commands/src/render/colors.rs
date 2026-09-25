@@ -259,7 +259,6 @@ pub(crate) fn structured_state_rgb(
     }
 }
 
-#[cfg(feature = "db")]
 /// Resolve a JSON state value to one [`Rgb`] per parallel-state member.
 ///
 /// Per da-9vop, a parallel state set (`switch body vertical,sit`) lands in
@@ -291,15 +290,11 @@ thread_local! {
     /// The in-thread override, ahead of every environment answer. `0` is
     /// unset, `1` forced on, `2` forced off — see [`ColorOverride`].
     ///
-    /// A host with neither an environment nor a terminal cannot say "paint
-    /// this" any other way: `DATUM_COLOR` and `NO_COLOR` are read from a
-    /// process environment the browser does not have, and `is_terminal()` is
-    /// false in wasm however the caller feels about colour. So the wasm
-    /// renderer sets this from its request bit and drops the guard when the
-    /// call returns (`datum-render-wasm`), and the CLI never touches it.
+    /// A caller that must paint regardless of `DATUM_COLOR`, `NO_COLOR` and
+    /// `is_terminal()` sets this and drops the guard when it is done; the
+    /// CLI never touches it.
     ///
-    /// Thread-local, not process-wide: wasm is single-threaded so the two are
-    /// the same there, but a threaded `cargo test` runs renders concurrently,
+    /// Thread-local, not process-wide: a threaded `cargo test` runs renders concurrently,
     /// and a process-wide gate let one test's forced colour decide what
     /// another test painted.
     static COLOR_OVERRIDE: Cell<u8> = const { Cell::new(0) };

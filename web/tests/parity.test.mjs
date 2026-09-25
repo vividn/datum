@@ -16,8 +16,8 @@
 // hatch here — a note saying "the browser gets this one wrong, report it as
 // a todo" — and it accumulated: `-q` off by a factor of three, `-y` read as
 // minutes, `-y` stored as a state. da-7scm removed the thing those notes
-// were describing. The browser now runs datum's own parser
-// (`crates/datum-parse-wasm`), so a divergence is a bug in one shared
+// were describing. The browser now runs datum itself (`datum-cli` built
+// for wasm32-wasip1, da-g8o8), so a divergence is a bug in one shared
 // implementation rather than drift between two, and there is nothing left
 // for an annotation to excuse.
 

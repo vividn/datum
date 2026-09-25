@@ -197,9 +197,7 @@ impl TimeBuilder {
     /// The two things the native path reads from the host — the wall clock
     /// and the effective zone — arrive as arguments here, so the whole
     /// composition runs on `wasm32-unknown-unknown` where neither exists.
-    /// This is the entry point `datum-parse-wasm` calls, and the native
-    /// one delegates to it, so the browser and the CLI compose stacked
-    /// flags through the same body (da-7scm).
+    /// The native entry point delegates to it (da-7scm).
     ///
     /// [`build_with_uncertainty`]: Self::build_with_uncertainty
     pub fn build_with_uncertainty_at(

@@ -172,7 +172,6 @@ mod tests {
 
     // ─── The colours as data (da-yu9s) ───────────────────────────────────
 
-    #[cfg(feature = "db")]
     mod colors {
         use super::super::document;
         use crate::render::action::RenderContext;

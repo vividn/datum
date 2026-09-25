@@ -528,9 +528,7 @@ dependencies = [
  "crossterm",
  "datum-core",
  "datum-layout",
- "datum-layout-wasm",
  "datum-parse",
- "datum-parse-wasm",
  "datum-sync-client",
  "datum-test-util",
  "flate2",
@@ -581,17 +579,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "datum-layout-wasm"
-version = "0.1.0"
-dependencies = [
- "datum-layout",
- "datum-parse",
- "md-5",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "datum-parity"
 version = "0.1.0"
 dependencies = [
@@ -622,30 +609,6 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "datum-parse-wasm"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "datum-core",
- "datum-parse",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "datum-render-wasm"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "datum-commands",
- "datum-core",
- "datum-parse",
- "datum-parse-wasm",
- "serde",
- "serde_json",
 ]
 
 [[package]]

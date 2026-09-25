@@ -81,7 +81,7 @@ path = "tests/sync_refresh.rs"
 
 [dependencies]
 datum-core = { path = "../datum-core" }
-datum-commands = { path = "../datum-commands", default-features = false, features = ["db", "clock"] }
+datum-commands = { path = "../datum-commands", default-features = false }
 datum-parse = { path = "../datum-parse" }
 # `datum sync agent` hosts the sync daemon inside the `datum` binary, so the
 # installed service unit execs a binary the upgrade path already keeps current.
