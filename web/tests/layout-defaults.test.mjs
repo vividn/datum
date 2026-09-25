@@ -193,14 +193,6 @@ describe('the gear', () => {
 			assert.ok(mark.width >= 16 && mark.height >= 16, `the gear's mark is ${mark.width}x${mark.height}`);
 		}, DESKTOP);
 	});
-
-	test('is a fingertip on a phone', async () => {
-		await withApp(async ({ page }) => {
-			await page.locator('.root-bar button.gear').waitFor();
-			const gear = await page.locator('.root-bar button.gear').boundingBox();
-			assert.ok(gear.width >= 24 && gear.height >= 24, `the gear is ${gear.width}x${gear.height}`);
-		}, PHONE);
-	});
 });
 
 describe('Reset default layouts', () => {

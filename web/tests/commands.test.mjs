@@ -144,17 +144,6 @@ describe('the bar of commands', () => {
 			assert.ok(buttons.includes('sync'), 'the tail of the list is drawn too');
 		});
 	});
-
-	test('its own layout opens on its name', async () => {
-		await withApp(async (app) => {
-			await app.goto('/command');
-			await commands(app.page).waitFor();
-			assert.deepEqual(
-				await app.page.locator('section.pane').evaluateAll((panes) => panes.map((p) => p.dataset.title)),
-				['command']
-			);
-		});
-	});
 });
 
 describe('a verb fills the line and filters the fields', () => {

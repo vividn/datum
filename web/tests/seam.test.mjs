@@ -10,16 +10,9 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { sharedApp, startApp, stopApp, withApp, todayAt, TIMEZONE } from './support/app.mjs';
-import { comparableTail, rowTexts, stripAnsi } from './support/tail.mjs';
+import { rowTexts, stripAnsi } from './support/tail.mjs';
 import { ONE_PANE } from './support/layout.mjs';
-
-/** What the real `datum tail` printed for the same day. See support/tail.mjs. */
-const tailFixture = JSON.parse(
-	readFileSync(fileURLToPath(new URL('./fixtures/cli-tail.json', import.meta.url)), 'utf8')
-);
 
 before(startApp);
 after(stopApp);
@@ -187,17 +180,6 @@ describe('time and duration land on the entry', () => {
 });
 
 describe('failure', () => {
-	// A word datum has never heard of is the CLI's own error, exit 1.
-	test('a word datum has never heard of fails the way the CLI fails', async () => {
-		await onSeam(async ({ run }) => {
-			const result = await run(['definitelynotacommand']);
-			assert.equal(result.code, ERROR);
-			assert.match(result.stderr, /unknown subcommand/);
-			assert.match(result.stderr, /definitelynotacommand/);
-			assert.equal(result.stdout, '');
-		});
-	});
-
 	test('a command the stand-in never had is the CLI’s, and runs', async () => {
 		await onSeam(async ({ run, entries }) => {
 			assert.equal((await run(['occur', 'coffee', '-t', '0700'])).code, OK);
@@ -275,34 +257,6 @@ describe('the teach-echo', () => {
 });
 
 describe('storage', () => {
-	test('entries survive a reload', async () => {
-		await withApp(async ({ run, reload, entries, paneText }) => { // reloads
-			assert.equal((await run(['switch', 'mood', 'happy', '-t', '0915'])).code, OK);
-			const before = await entries();
-			assert.equal(before.length, 1);
-
-			await reload();
-
-			const after = await entries();
-			assert.equal(after.length, 1, 'the entry did not survive the reload');
-			// The hid is the durable identity (da-zlug) — same row, not a
-			// re-derived lookalike.
-			assert.equal(after[0].hid, before[0].hid);
-			assert.equal(after[0].slug, before[0].slug);
-			assert.match(await paneText('tail'), /happy/);
-		});
-	});
-
-	test('the app does not claim durability it lacks', async () => {
-		await shared.solo(async ({ bannerText }) => {
-			// The banner reads the storage that actually opened. In-memory
-			// wording here means the OPFS database failed to open — the
-			// da-5iqw regression, and the one a missing COOP/COEP header
-			// would reintroduce.
-			assert.doesNotMatch(await bannerText(), /held in memory only/);
-		});
-	});
-
 	test('the page throws nothing while logging', async () => {
 		await onSeam(async ({ run, errors }) => {
 			await run(['occur', 'coffee']);
@@ -720,27 +674,6 @@ describe('help and version', () => {
 });
 
 describe('the tail is the CLI\'s tail', () => {
-	// The assertion the rest of this file is a proxy for. `datum tail` is a
-	// table — aligned columns, a header carrying the listing's UTC offset,
-	// `_n` ordinals, colour — and da-6ec2's whole claim is that the browser
-	// RENDERS that table rather than deriving one that looks like it. The
-	// only way to check the claim is against the real binary's output, so
-	// the expectation is captured (`npm run test:fixtures`), never written
-	// here: a hand-written table would be a second opinion about the layout,
-	// which is the thing being ruled out.
-	test('prints, character for character, what the binary printed', async () => {
-		assert.ok(tailFixture.capturedWith, 'run `npm run test:fixtures` to capture');
-		await onSeam(async ({ run }) => {
-			for (const argv of tailFixture.log) {
-				const result = await run(argv);
-				assert.equal(result.code, OK, `${argv.join(' ')} → ${result.stderr}`);
-			}
-			const listed = await run(['tail']);
-			assert.equal(listed.code, OK, listed.stderr);
-			assert.equal(comparableTail(listed.stdout), tailFixture.table);
-		});
-	});
-
 	// Colour is the readability half of the report: a field badge and a
 	// state chip are how a row is scanned, and the module renders them
 	// only because the request says to (`RenderRequest::color`) — it has

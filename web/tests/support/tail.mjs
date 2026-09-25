@@ -5,9 +5,6 @@
 // column, which names a row minted on the machine that wrote it. Both
 // sides mask that and compare everything else — the header, the column
 // order, the alignment, the `_n` ordinals, the clock.
-//
-// Used by web/scripts/capture-cli-fixtures.mjs (which captures the CLI's
-// half into tests/fixtures/cli-tail.txt) and by tests/seam.test.mjs.
 
 /** A minted hid: 12 characters of base36 (`entry_id.rs`: `hid_from_bytes`). */
 const HID = /\b[0-9a-z]{12}\b/g;

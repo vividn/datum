@@ -102,3 +102,16 @@ fn alias_remove_existing_succeeds() {
     run_cli(&["alias", "remove", "cof"], &db).expect("remove");
     assert!(db.lookup_alias("cof").unwrap().is_none());
 }
+
+/// A cycle is refused with the path it went round, in the words the
+/// person sees (`datum-parse`'s own tests pin the path, not the message).
+#[test]
+fn alias_cycle_is_refused_naming_the_loop() {
+    let db = fresh_db();
+
+    run_cli(&["alias", "set", "loop", "knot"], &db).expect("save loop");
+    run_cli(&["alias", "set", "knot", "loop"], &db).expect("save knot");
+
+    let err = run_cli(&["loop"], &db).expect_err("a cycle must be refused");
+    assert_eq!(err.to_string(), "Alias cycle: loop → knot → loop");
+}

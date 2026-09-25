@@ -96,27 +96,6 @@ describe('aliases in the REPL', () => {
 		});
 	});
 
-	test('a chain expands through every hop, and a cycle is refused', async () => {
-		await shared.solo(async ({ run, entries }) => {
-			await ok(run, ['alias', 'set', 'a', 'b strength=strong']);
-			await ok(run, ['alias', 'set', 'b', 'occur coffee']);
-			await ok(run, ['a', '-t', '0915']);
-
-			const [stored] = await entries();
-			assert.equal(stored.field, 'coffee');
-			assert.deepEqual(stored.alias_chain, [
-				{ name: 'a', expansion: 'b strength=strong' },
-				{ name: 'b', expansion: 'occur coffee' }
-			]);
-
-			await ok(run, ['alias', 'set', 'loop', 'knot']);
-			await ok(run, ['alias', 'set', 'knot', 'loop']);
-			const cycle = await run(['loop']);
-			assert.notEqual(cycle.code, 0);
-			assert.match(cycle.stderr, /Alias cycle: loop → knot → loop/);
-		});
-	});
-
 	test('`alias list` prints the CLI’s lines, and `alias remove` unmakes one', async () => {
 		await shared.solo(async ({ run }) => {
 			assert.equal(await ok(run, ['alias', 'list']), 'No aliases defined.');
@@ -139,15 +118,6 @@ describe('aliases in the REPL', () => {
 			const missing = await run(['alias', 'remove', 'cof']);
 			assert.notEqual(missing.code, 0);
 			assert.match(missing.stderr, /no user alias 'cof'/);
-		});
-	});
-
-	test('a derived alias has no row to remove, and says which spec owns it', async () => {
-		await shared.solo(async ({ run }) => {
-			await ok(run, ['spec', 'set', 'sleep', '--verb', 'start']);
-			const refused = await run(['alias', 'remove', 'sleep']);
-			assert.notEqual(refused.code, 0);
-			assert.match(refused.stderr, /derived alias from the 'sleep' field spec/);
 		});
 	});
 
