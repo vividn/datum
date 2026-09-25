@@ -49,9 +49,17 @@ const valueOf = (page, selector) => page.locator(selector).inputValue();
 const receipt = async (page, frame) =>
 	(await page.locator(`${frame} .doc`).allInnerTexts()).join('\n');
 
-/** Type into a box the way a person does, one key at a time. */
+/**
+ * Type into a box the way a person does, one key at a time — tapping the
+ * EMPTY end of what is on screen of it, since the pills ride over its left
+ * (Prompt.svelte): the centre was under a `-t` pill once Send held its
+ * place beside the ×.
+ */
 async function typeIn(page, selector, line) {
-	await page.locator(selector).click();
+	// The FIELD's end, which is what is on screen: the input can run wider.
+	const field = page.locator(selector).locator('xpath=ancestor::*[contains(@class, "field")][1]');
+	const box = await field.boundingBox();
+	await field.click({ position: { x: box.width - 6, y: box.height / 2 } });
 	await page.keyboard.type(line);
 }
 

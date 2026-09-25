@@ -277,7 +277,7 @@
 	     too (da-al892). vividn: «x shows when any text or pills are in the
 	     input bar and clears it». Not staged the way Escape is: it is the
 	     phone's reset, and a phone has no Escape. Outside the scrollport,
-	     so it stays at the right end however long the line runs. The
+	     so it stays put however long the line runs, just before Send. The
 	     mousedown's default is the focus moving, so preventing it leaves the
 	     focus — and a phone's keyboard, open or shut — where it was. -->
 	{#if $text || $pills.length}
@@ -288,6 +288,36 @@
 			title="clear the input"
 			on:mousedown|preventDefault
 			on:click={clearLine}>×</button
+		>
+	{/if}
+	<!-- SEND (da-1pzwl): Enter without a keyboard. vividn: «Let's add a
+	     Enter/Send button on the right side of the input box so that you
+	     don't have to open the keyboard and hit enter». It calls Enter's own
+	     `submit`. NOT a submit button: that turns every Enter into a
+	     synthetic click on it, and with one here Enter after dragging the
+	     log open ran nothing (barlog.test.mjs; a click after a drag is
+	     what $lib/grip.ts swallows). Shown only when Enter would run
+	     something — the verb is always typed, so pills alone are not a
+	     line. It acts at once, so the DOUBLE outline; the mousedown
+	     is prevented as the ×'s is, so the focus and the keyboard stay put.
+	     After the ×, a gap between, so a thumb meant for it clears nothing.
+	     And it holds the ×'s place: drawn, HIDDEN, while the × is up and
+	     there is nothing to run, so the × never slides right into the spot
+	     Send was just pressed in — a locked pill outlives the run, and a
+	     second tap there would clear it (vremya on PR #213).
+	     Like the ×, it is inside the bar's drag handle, so a tap within
+	     300ms of letting go of a drag is taken as that drag's click and
+	     does nothing ($lib/grip.ts). Every input widget draws one too: it
+	     is the same line in a second place, so its Send runs it. -->
+	{#if $text || $pills.length}
+		<button
+			type="button"
+			class="send"
+			class:idle={!$text.trim()}
+			aria-label="run the line"
+			title="run the line"
+			on:mousedown|preventDefault
+			on:click={submit}>➤</button
 		>
 	{/if}
 </form>
@@ -364,6 +394,32 @@
 	.clear:hover,
 	.clear:focus-visible {
 		color: var(--ink);
+	}
+
+	/* Runs at once, so the double outline (`.command.act`). */
+	.send {
+		flex: none;
+		min-width: 28px;
+		min-height: 28px;
+		margin-left: 0.25rem;
+		padding: 0 0.3rem;
+		border: 3px double var(--accent);
+		border-radius: 3px;
+		background: transparent;
+		color: var(--ink-bright);
+		font: inherit;
+		line-height: 1;
+		cursor: pointer;
+	}
+
+	.send:hover,
+	.send:focus-visible {
+		border-color: var(--accent-bright);
+	}
+
+	/* Nothing to run: out of sight and out of reach, but still in its place. */
+	.send.idle {
+		visibility: hidden;
 	}
 
 	/* THE SCROLLPORT: what of the line is on the screen. What runs past its
