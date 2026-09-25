@@ -708,3 +708,106 @@ describe('`spec` under the pill', () => {
 		});
 	});
 });
+
+// da-tu30m. vividn: «They pill a field, which then gives them a scrollable
+// tail of that field, then they might tap a particular row in the tail to
+// select that hid … So we need to somehow maintain the field filter, but
+// have active in the input bar only the hid». The field is CONTEXT then:
+// it narrows the panes and is in no command. The rules are
+// `selection-pure.test.mjs`; this is the reader's flow through them.
+describe('a field pill under a selected hid is context', () => {
+	const PROMPT = '.prompt-bar form.line > .prompt';
+	const BOX = '.prompt-bar input';
+	const hidPill = (page) => page.locator('.prompt-bar .pill.hid');
+	/** The tail lists coffee and nothing else. */
+	const onlyCoffee = () => {
+		const cells = [...document.querySelectorAll('section[data-pane="tail"] tbody td.field')];
+		return cells.length > 0 && cells.every((td) => td.textContent.trim() === 'coffee');
+	};
+
+	/** Pill coffee, and select a row of the tail it narrowed: the row's hid. */
+	async function pillThenSelect(app) {
+		const { page } = app;
+		await ready(app);
+		await hold(page, 'coffee');
+		await page.waitForFunction(onlyCoffee);
+		const row = pane(page, 'tail').locator('tbody tr[data-hid]').first();
+		const hid = await row.getAttribute('data-hid');
+		await row.click();
+		await hidPill(page).waitFor();
+		return hid;
+	}
+
+	test('the tail stays narrowed, the field stands between the ❯ and the box, and the hid’s commands come back', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			const hid = await pillThenSelect(app);
+
+			await fieldPill(page).and(page.locator('.context')).waitFor();
+			const [field, prompt, box] = await Promise.all(
+				[fieldPill(page), page.locator(PROMPT), page.locator(BOX)].map((l) => l.boundingBox())
+			);
+			assert.ok(field.x >= prompt.x + prompt.width, 'the context is not right of the ❯');
+			assert.ok(field.x + field.width <= box.x, 'the context is not left of the box');
+			assert.ok((await hidPill(page).boundingBox()).x >= box.x, 'the hid is not in the line');
+			assert.ok(await page.evaluate(onlyCoffee), 'the tail widened');
+			// Outlined, not filled: the reader tells the two roles apart.
+			assert.equal(await fieldPill(page).evaluate((el) => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)');
+
+			await page.waitForFunction(() => document.querySelector('[data-command="get"]'));
+			const under = await commands(page);
+			for (const name of ['get', 'delete', 'retime', 'history'])
+				assert.ok(under.includes(name), `${name} is hidden under a field and an hid`);
+
+			// A press carries no field: the echo is the hid's command alone.
+			const echoes = await page.evaluate(() => document.querySelectorAll('.repl .echo').length);
+			await pane(page, 'cmd').locator('button[data-command="get"]').click();
+			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, echoes);
+			await app.idle();
+			assert.equal((await app.echoes()).at(-1), `get ${hid}`);
+			// The hid was spent; the field was not, and is an argument again.
+			await hidPill(page).waitFor({ state: 'detached' });
+			assert.equal(await fieldPill(page).count(), 1, 'the press spent the context');
+			assert.equal(await fieldPill(page).and(page.locator('.context')).count(), 0);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// canary kimi-k3 on PR #180: a context pill draws no lock button, so
+	// its ring is the only sign a locked field will outlive a press.
+	test('a locked field keeps showing its lock while it is context', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			const ring = () => fieldPill(page).evaluate((el) => getComputedStyle(el).boxShadow);
+			await pillThenSelect(app);
+			await fieldPill(page).and(page.locator('.context')).waitFor();
+			assert.match(await ring(), / 0px 0px 0px 1px inset$/, 'unlocked context');
+
+			await page.evaluate(() =>
+				window.datum.bar.setPills(window.datum.bar.pills().map((p) => (p.kind === 'field' ? { ...p, locked: true } : p)))
+			);
+			await fieldPill(page).and(page.locator('.context.locked')).waitFor();
+			assert.match(await ring(), / 0px 0px 0px 2px inset$/, 'a locked context pill looks unlocked');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('Escape drops the hid, and the field is an argument again; then the field', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await pillThenSelect(app);
+			await page.locator(BOX).focus();
+
+			await page.keyboard.press('Escape');
+			await hidPill(page).waitFor({ state: 'detached' });
+			assert.equal(await fieldPill(page).count(), 1, 'the first Escape took the field too');
+			await page.waitForFunction(() => !document.querySelector('.prompt-bar .pill.field.context'));
+			const [field, box] = await Promise.all([fieldPill(page), page.locator(BOX)].map((l) => l.boundingBox()));
+			assert.ok(field.x >= box.x, 'the argument field is still before the box');
+
+			await page.keyboard.press('Escape');
+			await fieldPill(page).waitFor({ state: 'detached' });
+			assert.deepEqual(app.errors, []);
+		});
+	});
+});

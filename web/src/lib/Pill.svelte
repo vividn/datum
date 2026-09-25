@@ -29,17 +29,31 @@
 	import { dropSection, sectionsOf, toggleLockPill, type Pill } from './bar.js';
 
 	export let pill: Pill;
+	/**
+	 * Drawn as CONTEXT (da-tu30m, `roleOf` in $lib/commands.ts): it narrows
+	 * the panes and is in no command, so it is the smaller outline with a
+	 * filter mark, and a press on it is the only thing it offers.
+	 */
+	export let context = false;
 </script>
 
-<span class="pill {pill.kind}" class:locked={pill.locked} style:--pill={pill.color} data-pill={pill.id}
+<span
+	class="pill {pill.kind}"
+	class:locked={pill.locked}
+	class:context
+	style:--pill={pill.color}
+	data-pill={pill.id}
+	title={context ? `narrowed to ${pill.text}` : undefined}
 	>{#each sectionsOf(pill) as section, i}<button
 			type="button"
 			class="remove"
 			aria-label={section.rest ? `drop ${section.text}` : `remove ${pill.text}`}
 			on:click={() => dropSection(pill.id, i)}
-			><span class="label">{section.text}</span
-			>{#if !section.rest}<span class="x" aria-hidden="true">×</span>{/if}</button
-		>{/each}<button
+			>{#if context}<svg class="glyph funnel" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
+					><path d="M2 3h12l-4.5 5.5V13l-3-1.5v-3z" /></svg
+				>{/if}<span class="label">{section.text}</span
+			>{#if !section.rest && !context}<span class="x" aria-hidden="true">×</span>{/if}</button
+		>{/each}{#if !context}<button
 		type="button"
 		class="lock"
 		aria-label="{pill.locked ? 'unlock' : 'lock'} {pill.text}"
@@ -50,7 +64,7 @@
 				d={pill.locked ? 'M5.5 7V5a2.5 2.5 0 0 1 5 0v2' : 'M10.5 7V5a2.5 2.5 0 0 1 5 0'}
 			/></svg
 		></button
-	></span
+	>{/if}</span
 >
 
 <style>
@@ -136,6 +150,43 @@
 	   An inset ring in the ink, so «will not clear» needs no second colour. */
 	.pill.locked {
 		box-shadow: inset 0 0 0 2px var(--page);
+	}
+
+	/* CONTEXT: the field's colour as an outline, no fill, a step smaller,
+	   and a long name cut to its first letters. The two sizes are the
+	   caller's to set (`--context-font`, `--context-max` on Prompt.svelte's
+	   `.line`) — vividn expects to try a few. */
+	.pill.context {
+		color: var(--pill);
+		background: none;
+		box-shadow: inset 0 0 0 1px var(--pill);
+		font-size: var(--context-font, 0.8rem);
+	}
+
+	/* Locked, the outline doubles: the lock button is not drawn on context,
+	   so the ring is the only thing that says it will outlive a press. */
+	.pill.context.locked {
+		box-shadow: inset 0 0 0 2px var(--pill);
+	}
+
+	.pill.context button {
+		gap: 0.25em;
+		padding: 0.2rem 0.45rem;
+	}
+
+	.pill.context .label {
+		max-width: var(--context-max, 12ch);
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.pill.context .funnel path {
+		fill: currentColor;
+		stroke: none;
+	}
+
+	.pill.context button:hover {
+		background: color-mix(in srgb, var(--pill) 20%, transparent);
 	}
 
 	/* Which half the pointer is over — the only thing that says the lock is

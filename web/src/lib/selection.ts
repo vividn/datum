@@ -10,7 +10,7 @@
 // here is pure; `select` in $lib/bar.ts applies it to the store.
 
 import type { Pill, PillSection } from './bar.js';
-import { fits, type Grammar, type Takes } from './commands.js';
+import { argumentsOf, fits, type Grammar, type Takes } from './commands.js';
 import { shellSplit } from './shellSplit.js';
 
 /** What a tap does to the selection. */
@@ -100,10 +100,10 @@ const fieldSlotOpen = (takes: Takes | undefined, argv: string[]): boolean =>
 /**
  * The argv a press runs with the pills, and the pills it spent.
  *
- * A command gets only the pills its grammar takes — the rest stay loaded
- * for the next one. A first word the grammar does not know (a field-first
- * line, an alias, or no grammar yet) gets every pill but the hid and the
- * field (`fits`). The hids go right after the command's name, where every
+ * A command gets only the ARGUMENT pills its grammar takes — the rest stay
+ * loaded for the next one, and a context pill is never its (`argumentsOf`).
+ * A first word the grammar does not know (a field-first line, an alias, or
+ * no grammar yet) gets every pill but the hid and the field (`fits`). The hids go right after the command's name, where every
  * id-taking usage line has them (`retime <id> -5` parses, `retime -5 <id>`
  * does not), several as ONE comma-joined word (`update A B` takes B as a
  * state); a FIELD goes at the end of the command's own words, which is its
@@ -116,7 +116,7 @@ export function withPills(
 	pills: Pill[]
 ): { argv: string[]; used: Pill[] } {
 	const takes = argv.length ? grammar?.get(argv[0]) : undefined;
-	const used = pills.filter(
+	const used = argumentsOf(pills).filter(
 		(p) => fits(takes, p) && (p.kind !== 'field' || fieldSlotOpen(takes, argv))
 	);
 	const hid = used.find((p) => p.kind === 'hid');

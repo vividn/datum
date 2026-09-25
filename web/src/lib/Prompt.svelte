@@ -62,6 +62,7 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { clearLine, ghost, pills, registerLine, spent, submitLine, text } from '$lib/bar.js';
+	import { roleOf } from '$lib/commands.js';
 	import Pill from '$lib/Pill.svelte';
 	import { ready } from '$lib/layout/engine.js';
 	import { repl } from '$lib/replStore.js';
@@ -100,6 +101,14 @@
 	 */
 	const keyboard = () => box?.removeAttribute('inputmode');
 	$: if (!$text) keyboard();
+
+	/**
+	 * The pills by ROLE (da-tu30m): context stands before the box like a
+	 * breadcrumb — where the line is, not what is in it — and the
+	 * arguments ride after the text, where they go into the argv.
+	 */
+	$: context = $pills.filter((p) => roleOf(p, $pills) === 'context');
+	$: args = $pills.filter((p) => !context.includes(p));
 
 	/** What the pills follow: what is typed, or the ghost while one is up. */
 	$: mirrored = $text || ($ghost ? $ghost.line : '');
@@ -208,6 +217,16 @@
 
 <form class="line" on:submit|preventDefault={submit}>
 	<span class="prompt">❯</span>
+	<!-- After the `❯`, not before it: the `❯` stays where it always stood,
+	     and the ACTION words that start under it (PromptBar.svelte) too. -->
+	{#if context.length}
+		<span class="context">
+			{#each context as pill (pill.id)}
+				<Pill {pill} context />
+			{/each}
+			<span class="crumb" aria-hidden="true">›</span>
+		</span>
+	{/if}
 	<span class="field" bind:this={port} bind:clientWidth={boxWidth}>
 		<span class="run" style="width: {runWidth}px">
 		<input
@@ -239,7 +258,7 @@
 			<!-- One pill is `Pill.svelte`, which the nowview's margin draws
 			     too (da-rskp): one store, two places to see it, and the same
 			     press in either. -->
-			{#each $pills as pill (pill.id)}
+			{#each args as pill (pill.id)}
 				<Pill {pill} />
 			{/each}
 			<!-- Spent, not live: no × and no lock, out of the argv and out of
@@ -291,6 +310,10 @@
 		   for the two to be one size (da-tnv3), so they are one number. A
 		   step up on 2026-09-18: "increase fontsize of input bar slightly". */
 		--input-font: 1.25rem;
+		/* A context pill (da-tu30m): its size, and how much of a name it
+		   shows before it is cut. The two numbers to adjust. */
+		--context-font: 0.8rem;
+		--context-max: 12ch;
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
@@ -300,6 +323,27 @@
 
 	.prompt {
 		color: var(--accent);
+	}
+
+	/* Its own size, out of the scrollport: it stays put while the line
+	   scrolls under what is typed. */
+	.context {
+		flex: none;
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		font-size: var(--context-font);
+	}
+
+	.crumb {
+		color: var(--quiet);
+	}
+
+	/* A phone: the context keeps its first letters, and the line its room. */
+	@media (max-width: 480px) {
+		.line {
+			--context-max: 3ch;
+		}
 	}
 
 	/* Grey, and quiet until it is wanted: it is a way out, not an action. */

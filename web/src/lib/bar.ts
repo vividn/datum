@@ -35,7 +35,7 @@
 // below.
 
 import { derived, get, writable } from 'svelte/store';
-import { hidsOf, pendingVerb as verbOf, type Verb } from './commands.js';
+import { hidsOf, pendingVerb as verbOf, roleOf, type Verb } from './commands.js';
 import { parseEcho } from './echo.js';
 import { pressWithPills } from './layout/engine.js';
 import type { RunResult } from './run.js';
@@ -311,7 +311,9 @@ export const clearUnlockedPills = (used: Pill[] = get(pills), since = Date.now()
  * Escape's turn at the input, once nothing else on the page took the key
  * (da-al892, PromptBar.svelte). vividn: «escape should then clear unlocked
  * pills -> clear locked pills too -> clear typed in text, in that
- * progression». Each press peels the first layer that has anything.
+ * progression». Each press peels the first layer that has anything, and
+ * a layer's arguments before its context: a field under an hid goes with
+ * the NEXT press, once the hid has gone and it is an argument again.
  *
  * Not `clearUnlockedPills`: that one hands its pills to `spent` to fade
  * with the ghost of the command they went into, and an Escape ran no
@@ -320,9 +322,15 @@ export const clearUnlockedPills = (used: Pill[] = get(pills), since = Date.now()
  */
 export function peel(): void {
 	const all = get(pills);
-	if (all.some((p) => !p.locked)) pills.set(all.filter((p) => p.locked));
-	else if (all.length) pills.set([]);
-	else text.set('');
+	for (const layer of [all.filter((p) => !p.locked), all]) {
+		if (!layer.length) continue;
+		// Within a layer, the stack from the top (da-tu30m): the arguments
+		// go first, and a context pill under them is an argument again.
+		const args = layer.filter((p) => roleOf(p, all) === 'argument');
+		const doomed = args.length ? args : layer;
+		return pills.set(all.filter((p) => !doomed.includes(p)));
+	}
+	text.set('');
 }
 
 /** The ×'s press: the whole input at once — the text and every pill, locked too. */

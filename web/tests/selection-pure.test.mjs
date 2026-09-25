@@ -18,7 +18,9 @@ registerHooks({
 	}
 });
 
-const { COMMANDS, commandsUnder, fires, grammarOf, takesOf } = await import('../src/lib/commands.ts');
+const { COMMANDS, argumentsOf, commandsUnder, fires, fits, grammarOf, roleOf, takesOf } = await import(
+	'../src/lib/commands.ts'
+);
 const { hidPill, picked, pickOf, withPills } = await import('../src/lib/selection.ts');
 
 const entry = (name, usage, flags = [], aliases = []) => ({ name, aliases, usage, flags });
@@ -269,6 +271,48 @@ describe('which commands are active under the pills', () => {
 		// `flag` names a field and takes no -t; `retime` takes -t and names
 		// no field. Each pill hides the other's.
 		for (const n of ['flag', 'retime']) assert.ok(!names.includes(n), n);
+	});
+});
+
+// da-tu30m. vividn: «we need to somehow maintain the field filter, but have
+// active in the input bar only the hid». A field pill beside an hid is
+// CONTEXT: it narrows the panes, and no command sees it.
+describe('a pill’s role: argument or context', () => {
+	const active = (pills) =>
+		commandsUnder(GRAMMAR, pills)
+			.map((c) => c.name)
+			.filter((name) => GRAMMAR.has(name));
+
+	test('a field beside an hid is context; everything else is an argument', () => {
+		assert.equal(roleOf(mood, [mood, one]), 'context');
+		assert.equal(roleOf(mood, [one, mood, time]), 'context');
+		assert.equal(roleOf(one, [mood, one]), 'argument');
+		assert.equal(roleOf(time, [mood, one, time]), 'argument');
+		// No hid: the field is the argument it always was.
+		assert.equal(roleOf(mood, [mood]), 'argument');
+		assert.equal(roleOf(mood, [mood, time]), 'argument');
+		assert.deepEqual(argumentsOf([mood, one, time]), [one, time]);
+	});
+
+	test('with a context field, the hid’s commands come back', () => {
+		// The positive arm: without roles a field and an hid leave Help alone.
+		assert.deepEqual(
+			[...GRAMMAR.keys()].filter((name) => [mood, one].every((p) => fits(GRAMMAR.get(name), p))),
+			[]
+		);
+		const names = active([mood, one]);
+		assert.deepEqual(names, active([one]));
+		for (const n of ['get', 'delete', 'retime', 'history']) assert.ok(names.includes(n), n);
+		assert.equal(fires(GRAMMAR.get('delete'), [mood, one]), true);
+		assert.equal(fires(GRAMMAR.get('get'), [mood, one]), true);
+	});
+
+	test('a press carries no field while it is context, and does not spend it', () => {
+		const { argv, used } = withPills(GRAMMAR, ['get'], [mood, one]);
+		assert.deepEqual(argv, ['get', one.text]);
+		assert.deepEqual(used, [one]);
+		// `tail` takes a field, and still gets none: context is in no argv.
+		assert.deepEqual(withPills(GRAMMAR, ['tail'], [mood, one]).argv, ['tail']);
 	});
 });
 

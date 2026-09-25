@@ -28,6 +28,7 @@
 <script lang="ts">
 	import CommandsWidget from '$lib/CommandsWidget.svelte';
 	import { clearUnlockedPills, pills, prefill, text } from '$lib/bar.js';
+	import { argumentsOf } from '$lib/commands.js';
 	import { openSpec } from '$lib/specModal.js';
 	import { run } from '$lib/run.js';
 	import { withPills } from '$lib/selection.js';
@@ -56,7 +57,7 @@
 	}
 
 	function fill({ name, line, keyboard }: { name: string; line: string; keyboard: boolean }): void {
-		const field = $pills.find((p) => p.kind === 'field');
+		const field = argumentsOf($pills).find((p) => p.kind === 'field');
 		if (name === 'spec' && field) {
 			clearUnlockedPills([field]);
 			void openSpec(field.text).then((argv) => argv && press(argv));

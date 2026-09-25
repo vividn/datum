@@ -169,6 +169,22 @@ describe('what a loaded field leaves of the verbs', () => {
 		assert.deepEqual(verbs.filter((name) => VERBS.includes(name)), ['start', 'end', 'switch']);
 	});
 
+	// da-tu30m: beside an hid the field is CONTEXT and narrows no command.
+	// Invisible with the real grammar — no verb takes an id, so the hid
+	// hides all five anyway — so here each verb takes one too.
+	test('a context field (beside an hid) narrows no verb', () => {
+		const byId = grammarOf(
+			VERBS.map((name) => ({ name, aliases: [], usage: [`datum ${name} <FIELD>`, `datum ${name} <ID_OR_SLUG>`], flags: [] }))
+		);
+		const hid = { id: 'hid', kind: 'hid', text: 'abcde' };
+		const verbs = (pills) =>
+			commandsUnder(byId, pills, ALL)
+				.map((c) => c.name)
+				.filter((name) => VERBS.includes(name));
+		assert.deepEqual(verbs([pill(point)]), ['occur'], 'the argument field narrows');
+		assert.deepEqual(verbs([pill(point), hid]), VERBS);
+	});
+
 	test('clearing the pill brings every verb back', () => {
 		assert.deepEqual(verbsUnder([]), VERBS);
 	});

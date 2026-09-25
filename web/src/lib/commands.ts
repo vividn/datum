@@ -344,6 +344,35 @@ export function grammarOf(entries: GrammarEntry[]): Grammar {
 /** The hids an `hid` pill holds, in the order they were selected. */
 export const hidsOf = (pill: Pill): string[] => pill.text.split(',').filter(Boolean);
 
+// ---- a pill's ROLE (da-tu30m) -------------------------------------------
+//
+// vividn, 2026-09-25: «we need to somehow maintain the field filter, but have
+// active in the input bar only the hid». A field pill did two jobs — it
+// narrowed the panes AND named the field in the command — and with an hid
+// beside it no command took both, so every button but Help went.
+//
+// So a pill is an ARGUMENT (in the argv, the preview and the command
+// filter) or CONTEXT (it narrows the panes and nothing else). Only
+// `commandsUnder`, `fires` and `withPills` read pills for a command, and
+// each reads `argumentsOf` itself, so no caller can hand one a context pill.
+
+export type Role = 'argument' | 'context';
+
+/**
+ * The rules that make a pill CONTEXT; any that holds does. A new rule is a
+ * line here, never a case at a call site.
+ */
+const CONTEXT: ((pill: Pill, all: Pill[]) => boolean)[] = [
+	// An entry already fixes its field.
+	(pill, all) => pill.kind === 'field' && all.some((p) => p.kind === 'hid')
+];
+
+export const roleOf = (pill: Pill, all: Pill[]): Role =>
+	CONTEXT.some((rule) => rule(pill, all)) ? 'context' : 'argument';
+
+/** The pills a command sees. */
+export const argumentsOf = (all: Pill[]): Pill[] => all.filter((p) => roleOf(p, all) === 'argument');
+
 /**
  * Can a command whose grammar is `takes` spend this pill? A `time` pill
  * wants `-t`; an `hid` pill wants an id, and more than one hid wants a
@@ -375,18 +404,18 @@ export function fits(takes: Takes | undefined, pill: Pill): boolean {
  * A field pill narrows the VERBS too (da-57j14, vividn: «When an occur field
  * is selected, start, end, and switch should be filtered out»): `fields`
  * are the fields widget's buttons, and a verb stays only if it `verbFits`
- * the pill's field. A field not among them — one not logged yet — keeps
+ * the pill's field — an ARGUMENT field: a context one narrows no command. A field not among them — one not logged yet — keeps
  * every verb, as it has no shape to narrow by.
  */
 export function commandsUnder(grammar: Grammar | null, pills: Pill[], fields: FieldButton[] = []): CommandButton[] {
-	const name = pills.find((p) => p.kind === 'field')?.text;
+	const name = argumentsOf(pills).find((p) => p.kind === 'field')?.text;
 	const field = fields.find((b) => b.field === name);
 	return COMMANDS.filter((command) => {
 		// Help takes no pill and explains every one, so no pill hides it.
 		if (command.press === 'help') return true;
 		if (field && command.press === 'verb' && !verbFits(command.name as Verb, field)) return false;
 		const takes = grammar?.get(command.name);
-		return pills.every((p) => fits(takes, p));
+		return argumentsOf(pills).every((p) => fits(takes, p));
 	});
 }
 
@@ -407,7 +436,8 @@ export function commandsUnder(grammar: Grammar | null, pills: Pill[], fields: Fi
  * With no hid loaded, nothing here fires: `undo` is `press: 'run'` on
  * its own, and its redo icon runs whenever it is lit.
  */
-export function fires(takes: Takes | undefined, pills: Pill[]): boolean {
+export function fires(takes: Takes | undefined, all: Pill[]): boolean {
+	const pills = argumentsOf(all);
 	if (!takes?.id || !pills.some((p) => p.kind === 'hid') || !pills.every((p) => fits(takes, p))) return false;
 	return !takes.more || (takes.time && pills.some((p) => p.kind === 'time'));
 }
