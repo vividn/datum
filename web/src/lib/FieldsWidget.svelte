@@ -666,10 +666,8 @@
 
 	/* A button a tap RUNS (`pressKind`, da-z8z40) is drawn in a DOUBLE
 	   outline, as the commands widget's are (`.command.act`) — in the
-	   field's own colour, since that is already the button's line. Not on
-	   an IGNORED field: its dashes are what tell it from a tracked one
-	   (da-xhio), and the fade and the word already say it is not kept.
-	   The padding gives back what the wider border takes. */
+	   field's own colour, since that is already the button's line. The
+	   padding gives back what the wider border takes. */
 	.widget.act:not(.ignored) {
 		border: 3px double var(--line);
 		padding: calc(0.35rem - 1.5px) calc(0.85rem - 1.5px);
@@ -679,6 +677,23 @@
 		border: 3px double var(--line);
 		border-radius: 3px;
 		padding: calc(0.35rem - 3px) calc(0.3rem - 3px);
+	}
+
+	/* An IGNORED field that runs keeps its dashes, which are what tell it
+	   from a tracked one (da-xhio), and draws them DOUBLE (da-nmna0): CSS
+	   has no double-dashed border, so the second line is a dashed outline
+	   a border's gap inside the dashed border, following its radius. It
+	   gives way to the focus ring, which is an outline too. */
+	.widget.act.ignored:not(:focus-visible),
+	.record.act.ignored:not(:focus-visible) {
+		outline: 1.5px dashed var(--line);
+		outline-offset: -4.5px;
+	}
+
+	.record.act.ignored {
+		border: 1.5px dashed var(--line);
+		border-radius: 3px;
+		padding: calc(0.35rem - 1.5px) calc(0.3rem - 1.5px);
 	}
 
 	.widget:disabled,

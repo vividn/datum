@@ -480,17 +480,22 @@ describe('widget options', () => {
 		await withApp(async (app) => { // reloads
 			const { page } = app;
 			const button = page.locator('.bar button[data-field="run"]');
-			// Two fields, one of them ignored: the mark below says something
-			// only because the field beside it does not wear it.
+			// Two points, one of them ignored: the mark below says something
+			// only because the field beside it does not wear it. And a state
+			// field, ignored too, whose tap opens its states rather than runs.
 			await app.submit('track walk --verb occur');
 			await app.submit('track run --verb occur');
+			await app.submit('switch mood good');
 			// Drawn before it is taken away, as track.test.mjs is careful to do.
 			await button.waitFor();
-			// A second on: the clock is held, and the ignore needs an instant
-			// of its own beside the track.
+			// A second on between writes to one field: the clock is held, and
+			// each needs an instant of its own beside the one before it.
 			await app.clock.forward(1000);
+			await app.submit('switch mood meh');
 			await app.submit('ignore run');
-			await page.waitForFunction(() => !document.querySelector('.bar [data-field="run"]'));
+			await app.clock.forward(1000);
+			await app.submit('ignore mood');
+			await page.waitForFunction(() => !document.querySelector('.bar [data-field="run"], .bar [data-field="mood"]'));
 
 			await toggleOption(page, 'bar', 'show ignored fields');
 
@@ -502,12 +507,26 @@ describe('widget options', () => {
 				'ignored · press to log · hold to filter the page to it'
 			);
 			assert.equal(await button.getAttribute('data-ignored'), '');
-			const drawn = await button.evaluate((b) => {
+			const lines = (b) => {
 				const s = getComputedStyle(b);
-				return { opacity: parseFloat(s.opacity), border: s.borderTopStyle };
-			});
+				return { opacity: parseFloat(s.opacity), border: s.borderTopStyle, outline: s.outlineStyle };
+			};
+			const drawn = await button.evaluate(lines);
 			assert.ok(drawn.opacity < 1, `an ignored field drawn at opacity ${drawn.opacity}`);
-			assert.equal(drawn.border, 'dashed', 'an ignored field drawn with a tracked field’s outline');
+			// A tap RUNS it, so its dashes are DOUBLE: a dashed border and a
+			// dashed outline inside it (da-nmna0).
+			assert.deepEqual(
+				{ border: drawn.border, outline: drawn.outline },
+				{ border: 'dashed', outline: 'dashed' },
+				'an ignored point is not drawn in two dashed lines'
+			);
+			// A state field's tap OPENS its states, so it keeps one dashed line.
+			const mood = await page.locator('.bar button[data-field="mood"]').evaluate(lines);
+			assert.deepEqual(
+				{ border: mood.border, outline: mood.outline },
+				{ border: 'dashed', outline: 'none' },
+				'an ignored state field is not drawn in one dashed line'
+			);
 			const tracked = page.locator('.bar button[data-field="walk"]');
 			assert.equal(await tracked.getAttribute('data-ignored'), null);
 			// A tracked point RUNS on a tap, so it wears the double outline (da-z8z40).
