@@ -157,16 +157,24 @@ fn render_terminal_once(args: &NowviewArgs, db: &Db) -> Result<()> {
 
     let fields = build_fields(db, end, lookback, /* include_empty = */ true)?;
 
-    // da-tpny: canonical ioctl-first probes and the canonical color gate
-    // (DATUM_COLOR → NO_COLOR → TTY). Fallbacks stay nowview's own: 40
-    // cols (matches Snapshot's reference width ~80px / 2 cells per
-    // pixel) and 24 rows.
-    let cols = args
-        .cols
-        .unwrap_or_else(|| term_layout::detect_cols_or(4, 40).min(u16::MAX as usize) as u16);
-    let rows = args
-        .rows
-        .unwrap_or_else(|| term_layout::detect_rows_or(3, 24).min(u16::MAX as usize) as u16);
+    // da-q0xe5: a one-shot render sizes to what it was GIVEN — `--cols`,
+    // then `$COLUMNS`, then the terminal (the rule da-coi0m set for `now`);
+    // only `--watch` asks the live terminal first, so a resize beats a
+    // stale export. Fallbacks stay nowview's own (da-tpny): 40 cols
+    // (Snapshot's reference width ~80px / 2 cells per pixel) and 24 rows.
+    let (auto_cols, auto_rows) = if args.watch {
+        (
+            term_layout::detect_cols_or(4, 40),
+            term_layout::detect_rows_or(3, 24),
+        )
+    } else {
+        (
+            term_layout::given_cols(4).unwrap_or(40),
+            term_layout::given_rows(3).unwrap_or(24),
+        )
+    };
+    let cols = args.cols.unwrap_or(auto_cols.min(u16::MAX as usize) as u16);
+    let rows = args.rows.unwrap_or(auto_rows.min(u16::MAX as usize) as u16);
     let use_color = !args.no_color && crate::render::colors::color_enabled();
 
     let cfg = TerminalConfig {

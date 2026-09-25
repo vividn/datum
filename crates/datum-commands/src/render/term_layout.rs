@@ -80,15 +80,19 @@ pub fn detect_cols_or(min: usize, fallback: usize) -> usize {
 /// prints its list whole. Env first is the opposite of [`detect_cols_or`],
 /// which `tail --watch` needs so a resize beats a stale exported value.
 pub fn given_cols(min: usize) -> Option<usize> {
-    let env = std::env::var("COLUMNS").ok().and_then(|s| s.parse().ok());
-    let tty = || {
-        is_stdout_tty()
-            .then(query_winsize)
-            .flatten()
-            .map(|(c, _)| c)
-    };
-    env.filter(|&c| c >= min)
-        .or_else(|| tty().filter(|&c| c >= min))
+    given_dim("COLUMNS", min, |(c, _)| c)
+}
+
+/// [`given_cols`] for the height (da-q0xe5): `$LINES`, else the terminal's.
+pub fn given_rows(min: usize) -> Option<usize> {
+    given_dim("LINES", min, |(_, r)| r)
+}
+
+fn given_dim(var: &str, min: usize, pick: fn((usize, usize)) -> usize) -> Option<usize> {
+    let env = std::env::var(var).ok().and_then(|s| s.parse().ok());
+    let tty = || is_stdout_tty().then(query_winsize).flatten().map(pick);
+    env.filter(|&n| n >= min)
+        .or_else(|| tty().filter(|&n| n >= min))
 }
 
 /// Detect terminal height. Same ioctl-first / env-fallback shape as

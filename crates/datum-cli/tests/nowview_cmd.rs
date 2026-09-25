@@ -1086,3 +1086,111 @@ fn nowview_vertical_labels_sit_below_the_picture() {
     assert_eq!(num(&v, "width"), 300.0);
     assert!(num(&v, "height") > 400.0, "{v}");
 }
+
+/// Run `datum <cmd>` on a real terminal 100 columns by 30 rows (`script` +
+/// `stty`) and return its lines. `stty rows` matters: a pty of 0 rows fails
+/// the terminal probe, and `$COLUMNS` would then win for the wrong reason.
+fn on_a_terminal(cmd: &str) -> Vec<String> {
+    let dir = tempfile::tempdir().unwrap();
+    let bin = env!("CARGO_BIN_EXE_datum");
+    let out = std::process::Command::new("script")
+        .args(["-qc", &format!("stty rows 30 cols 100; {cmd}"), "/dev/null"])
+        .env("DATUM_DB", dir.path().join("t.db"))
+        .env("HOME", dir.path())
+        .env("DATUM_COLOR", "0")
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", bin.rsplit_once('/').unwrap().0),
+        )
+        .env_remove("COLUMNS")
+        .env_remove("LINES")
+        .output()
+        .expect("run script");
+    let text = String::from_utf8(out.stdout).unwrap();
+    let lines: Vec<String> = text
+        .lines()
+        .map(|l| l.trim_end_matches('\r').into())
+        .collect();
+    assert!(lines.len() > 1, "{cmd}: {text:?}");
+    lines
+}
+
+fn widest(lines: &[String]) -> usize {
+    lines
+        .iter()
+        .map(|l| datum_cli::output::term_layout::visible_width(l))
+        .max()
+        .unwrap()
+}
+
+/// da-q0xe5: a ONE-SHOT terminal render sizes to what it was given —
+/// `--cols`, then `$COLUMNS`/`$LINES`, then the terminal — even when the
+/// terminal is wider; `--watch` asks the live terminal first, so a stale
+/// `$COLUMNS` loses to it. The rule da-coi0m set for `now`.
+#[test]
+fn nowview_one_shot_reads_columns_and_watch_the_live_terminal() {
+    let seed = "datum switch mood happy -t -20 >/dev/null; datum start work -t -10 >/dev/null";
+    for (cmd, cols) in [
+        ("COLUMNS=60 datum nowview", 60),
+        ("COLUMNS=60 datum nowview --context 30m", 60),
+        ("COLUMNS=60 datum nowview --cols 50", 50),
+        ("datum nowview", 100),
+        ("COLUMNS=60 timeout 2 datum nowview --watch", 100),
+    ] {
+        let lines = on_a_terminal(&format!("{seed}; {cmd}"));
+        assert_eq!(widest(&lines), cols, "{cmd}: {lines:#?}");
+        assert_eq!(lines.len(), 30, "{cmd}: {lines:#?}");
+    }
+    let lines = on_a_terminal(&format!("{seed}; LINES=10 datum nowview"));
+    assert_eq!((lines.len(), widest(&lines)), (10, 100), "{lines:#?}");
+}
+
+/// da-q0xe5's guard: the terminal-first probes (`detect_cols` / `detect_rows`
+/// and their `_or` forms) belong to LIVE views, where a resize must beat a
+/// stale `$COLUMNS`. One-shot output reads `given_cols` / `given_rows`. A new
+/// call site fails here, by name: if it is on a `--watch` path, list it.
+#[test]
+fn every_terminal_first_probe_is_on_a_live_path() {
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut found = Vec::new();
+    let mut dirs = vec![crates.clone()];
+    while let Some(dir) = dirs.pop() {
+        for e in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = e.path();
+            let name = p.file_name().unwrap().to_string_lossy().into_owned();
+            if p.is_dir() && !matches!(name.as_str(), "target" | "tests" | "node_modules") {
+                dirs.push(p);
+            } else if name.ends_with(".rs") && name != "term_layout.rs" {
+                let rel = p.strip_prefix(&crates).unwrap().display().to_string();
+                for line in std::fs::read_to_string(&p).unwrap().lines().map(str::trim) {
+                    let probe = [
+                        "detect_cols(",
+                        "detect_rows(",
+                        "detect_cols_or(",
+                        "detect_rows_or(",
+                    ];
+                    if !line.starts_with("//") && probe.iter().any(|c| line.contains(c)) {
+                        found.push(format!("{rel}: {line}"));
+                    }
+                }
+            }
+        }
+    }
+    found.sort();
+    let tail = "datum-commands/src/commands/tail.rs";
+    let nowview = "datum-commands/src/commands/nowview.rs";
+    let mut allowed = vec![
+        // `nowview --watch`.
+        format!("{nowview}: term_layout::detect_cols_or(4, 40),"),
+        format!("{nowview}: term_layout::detect_rows_or(3, 24),"),
+        // `tail --watch`'s frame signature and loop; the FIRST of each
+        // repeated pair is tail's one-shot render — a known breach, da-qsd01.
+        format!("{tail}: (detect_cols(), detect_rows())"),
+        format!("{tail}: Some(auto_fill_rows(detect_rows()))"),
+        format!("{tail}: Some(auto_fill_rows(detect_rows()))"),
+        format!("{tail}: let max_total_width = if tty {{ Some(detect_cols()) }} else {{ None }};"),
+        format!("{tail}: let max_total_width = if tty {{ Some(detect_cols()) }} else {{ None }};"),
+    ];
+    allowed.sort();
+    assert_eq!(found, allowed, "a terminal-first probe off a --watch path?");
+}
