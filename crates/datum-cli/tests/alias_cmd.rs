@@ -5,7 +5,7 @@
 //! the overwrite policy, and the built-in-shadowing warning. `alias
 //! remove` reports what actually happened instead of hedging.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::action::Action;

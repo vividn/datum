@@ -4,7 +4,7 @@
 //! output for a specific datum-compat surface so a one-byte regression in
 //! the renderer / parser / color path fails CI loudly.
 //!
-//! Run with: `cargo test --test parity`.
+//! Run with: `cargo test -p datum-cli --test main parity::`.
 //!
 //! Layout (under `tests/parity/`):
 //! * `md5_colors/` — input names + expected hex per `#md5(name)[:6]`.
@@ -553,7 +553,7 @@ fn dayview_render_snapshot_matches_golden() {
         let diff = pretty_diff_json(&golden, &actual);
         panic!(
             "dayview render drift detected — see diff below.\n\
-             Regen via `PARITY_REGEN=1 cargo test --test parity dayview_render_snapshot` after auditing.\n\
+             Regen via `PARITY_REGEN=1 cargo test -p datum-cli --test main parity::dayview_render_snapshot` after auditing.\n\
              {diff}"
         );
     }

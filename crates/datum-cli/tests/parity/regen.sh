@@ -15,7 +15,7 @@
 #                 match documented daydumb parser semantics. If a
 #                 parser behavior changes intentionally, edit the
 #                 TSV by hand and the tests pin the new behavior.
-#   dayview       Re-runs `cargo test --test parity` with PARITY_REGEN=1
+#   dayview       Re-runs `cargo test --test main parity::` with PARITY_REGEN=1
 #                 to overwrite expected.json with the freshly-rendered
 #                 layout. Use this after deliberately changing the
 #                 layout engine; audit the diff before committing.
@@ -55,8 +55,8 @@ regen_md5_colors() {
 regen_dayview() {
     echo "[dayview] regenerating expected.json via cargo test PARITY_REGEN=1..."
     (cd "$WORKSPACE_ROOT" && \
-        PARITY_REGEN=1 cargo test --test parity -p datum-cli \
-            dayview_render_snapshot_matches_golden -- --nocapture)
+        PARITY_REGEN=1 cargo test --test main -p datum-cli \
+            parity::dayview_render_snapshot_matches_golden -- --nocapture)
     echo "  audit the diff: git diff -- ${FIXTURE_ROOT#$WORKSPACE_ROOT/}/dayview/expected.json"
 }
 
@@ -65,7 +65,7 @@ regen_time_syntax() {
 [time_syntax] no auto-regen — TSVs are hand-curated.
   See tests/parity/README.md for the editing protocol. To verify a
   hand-edit lines up with daydumb's behavior, just run:
-    cargo test --test parity -p datum-cli
+    cargo test --test main -p datum-cli parity::
 NOTE
 }
 

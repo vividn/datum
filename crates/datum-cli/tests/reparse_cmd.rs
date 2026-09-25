@@ -5,7 +5,7 @@
 //! hid. Walking all entries is intentionally out of scope — long-
 //! standing user-validated data is sacrosanct.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::test_util::fresh_db;

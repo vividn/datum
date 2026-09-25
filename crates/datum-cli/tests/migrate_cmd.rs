@@ -15,7 +15,7 @@
 //! the live `MIGRATIONS` registry (empty at v1) cannot exercise the
 //! behavior being verified.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::migrations::{

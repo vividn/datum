@@ -3,7 +3,7 @@
 //! Covers the verb's three confirmation paths: `--yes` (no prompt),
 //! interactive (path match / mismatch), and non-TTY without `--yes`.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_commands::args::DbPurgeArgs;

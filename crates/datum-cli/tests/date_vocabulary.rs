@@ -4,7 +4,7 @@
 //! same words.
 #![allow(clippy::disallowed_types)] // native tests: `chrono::Local` is the host zone the binary reads too
 
-mod common;
+use crate::common;
 
 use chrono::{Datelike, Duration, Local, NaiveDate, Weekday};
 use common::run_cli;

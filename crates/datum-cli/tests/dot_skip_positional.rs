@@ -8,7 +8,7 @@
 //! switch's trailing-duration slot. (Start/stop trailing-duration is
 //! covered by da-l3f3's right-walking peeler.)
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::test_util::fresh_db;

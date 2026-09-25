@@ -6,7 +6,7 @@
 //! resolution paths that still back `datum check` — the sync-conflict
 //! CLI (`datum conflicts`) is covered in `conflicts_cmd.rs`.
 
-mod common;
+use crate::common;
 
 use std::collections::HashMap;
 

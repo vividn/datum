@@ -9,7 +9,7 @@
 //! timeless entries apart. Time-specifying flags or a duration mixed with
 //! `-T` error out.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::dur::Dur;

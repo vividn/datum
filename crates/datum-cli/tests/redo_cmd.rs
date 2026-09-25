@@ -6,7 +6,7 @@
 //! entry back where it was, and a `redo` with nothing ahead says so instead of
 //! oscillating.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::history::ChangeKind;

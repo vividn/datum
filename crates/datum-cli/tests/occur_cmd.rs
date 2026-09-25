@@ -18,7 +18,7 @@
 //!     "composite field" TS case maps to slug interpolation via `--id`.
 #![allow(clippy::disallowed_types)] // native tests: `chrono::Local` is the host zone the binary reads too
 
-mod common;
+use crate::common;
 
 use chrono::{Duration, Utc};
 use common::run_cli;

@@ -17,7 +17,7 @@
 //!
 //! Each Rust test maps 1-to-1 to a TS case; doc headers identify the source.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::entry::Verb;

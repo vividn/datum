@@ -4,7 +4,7 @@
 //! shared `extract_reserved_columns` boundary now routes them onto the
 //! entry's identity columns for both insert and update.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::test_util::fresh_db;

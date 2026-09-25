@@ -1,7 +1,7 @@
 //! D4 — CLI acceptance tests for `datum history`, `datum undo <hid>`, and
 //! `datum why --full`.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::test_util::{entry_builder, fresh_db};

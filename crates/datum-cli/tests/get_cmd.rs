@@ -28,7 +28,7 @@
 //! shell out to the compiled binary with `DATUM_COLOR=0`, mirroring
 //! `delete_cmd.rs` and `output_parity.rs`.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::test_util::{entry_builder, fresh_db};

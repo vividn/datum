@@ -1,6 +1,6 @@
 //! `datum info` and `datum setup` integration tests (da-ndd.11).
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::migrations::{

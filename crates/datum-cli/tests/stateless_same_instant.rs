@@ -7,7 +7,7 @@
 //! These tests hold the narrowed rule from the outside: what the CLI now
 //! accepts, what it still refuses, and what it says when it refuses.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::db::Db;

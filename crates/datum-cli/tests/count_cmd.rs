@@ -4,7 +4,7 @@
 //! `--since` time-bounding. All tests drive through the CLI dispatch path
 //! so argument parsing is exercised alongside the query logic.
 
-mod common;
+use crate::common;
 
 use chrono::{Duration, Utc};
 use common::run_cli;

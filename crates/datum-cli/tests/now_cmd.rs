@@ -10,7 +10,7 @@
 //! inspect). One end-to-end case dispatches through the shared CLI harness
 //! from P0 (da-5mf8) to confirm `cmd_now` is wired up.
 
-mod common;
+use crate::common;
 
 use std::collections::HashMap;
 

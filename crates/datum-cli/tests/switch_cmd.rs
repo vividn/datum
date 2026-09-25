@@ -33,7 +33,7 @@
 //! and re-asserts the A6-scoped behaviors via the P0 CLI harness at the
 //! command-dispatch layer.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::action::Action;

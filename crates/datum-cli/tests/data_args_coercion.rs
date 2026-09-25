@@ -6,7 +6,7 @@
 //! `handle_data_args`. Pre-da-6iy, `wake_time=8am` stored the literal
 //! string `"8am"`; post-da-6iy it should resolve to `"08:00:00"`.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::test_util::fresh_db;

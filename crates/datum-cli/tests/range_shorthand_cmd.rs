@@ -10,7 +10,7 @@
 //! ordering (`ORDER BY occur_time DESC`) — and therefore each row's
 //! ordinal — is deterministic.
 
-mod common;
+use crate::common;
 
 use chrono::{DateTime, Utc};
 use common::run_cli;

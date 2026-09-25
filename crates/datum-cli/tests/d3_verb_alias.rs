@@ -11,7 +11,7 @@
 //!   * Alias-expanded invocations populate `entry.alias_chain`.
 //!   * `datum why <id>` renders the alias chain without erroring.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::action::Action;

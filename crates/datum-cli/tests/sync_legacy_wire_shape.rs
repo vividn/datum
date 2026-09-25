@@ -27,7 +27,7 @@
 //! way, spell the old payload out, and assert nothing was lost between
 //! them.
 
-mod sync_content;
+use crate::sync_content;
 
 use chrono::{Duration, TimeZone, Utc};
 use datum_core::db::Db;

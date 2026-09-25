@@ -1,7 +1,7 @@
 //! `datum track` writes TRACKED on an occur field and `false` on a field
 //! that holds a state, never `true` (da-5ifp).
 
-mod common;
+use crate::common;
 
 use chrono::Utc;
 use common::run_cli;

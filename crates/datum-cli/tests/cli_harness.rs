@@ -1,6 +1,6 @@
 //! Acceptance tests for the shared CLI test harness (da-5mf8).
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::test_util::{entry_builder, fresh_db};

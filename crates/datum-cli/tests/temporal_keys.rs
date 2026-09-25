@@ -9,7 +9,7 @@
 //! Every assertion here is on `occur_time` / `dur` values, never on "a
 //! block exists".
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::db::Db;

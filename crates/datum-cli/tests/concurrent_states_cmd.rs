@@ -9,7 +9,7 @@
 //!     overlap are all flagged via the D5 conflict queue
 //!   * last-state mismatch assertion handles array values order-insensitively
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::integrity::{IntegrityKind, ListFilter};

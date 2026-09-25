@@ -38,7 +38,7 @@
 //!
 //! Counts: 11 imported (8 dur=NULL/zero, 3 dur=positive).
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::derive_verb;

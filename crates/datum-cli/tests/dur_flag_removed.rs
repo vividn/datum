@@ -15,7 +15,7 @@
 //! it is that the duration has two spellings and they agree with each
 //! other.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::test_util::fresh_db;

@@ -20,7 +20,7 @@
 //!     the template had key references. The TS case is ported with the
 //!     daydumb contract locked in.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::entry::Verb;

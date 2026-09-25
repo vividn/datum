@@ -9,7 +9,7 @@
 //! surfaces now read the one rule, so each of these tests asserts all
 //! three against the same db.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_commands::commands::fields::compute_fields;

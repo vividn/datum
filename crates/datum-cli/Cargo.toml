@@ -2,6 +2,8 @@
 name = "datum-cli"
 version.workspace = true
 edition.workspace = true
+# One test binary, not one per file: see tests/main.rs (da-ztzfi).
+autotests = false
 
 [lib]
 name = "datum_cli"
@@ -26,6 +28,56 @@ png = ["datum-commands/png"]
 [[bin]]
 name = "datum"
 path = "src/main.rs"
+
+[[test]]
+name = "main"
+path = "tests/main.rs"
+
+# A file that writes the process env keeps a binary of its own: in `main` its
+# writes would reach the in-process tests that never take `env_lock`.
+[[test]]
+name = "config_layers"
+path = "tests/config_layers.rs"
+
+[[test]]
+name = "db_resolution"
+path = "tests/db_resolution.rs"
+
+[[test]]
+name = "e2e_bin_smoke"
+path = "tests/e2e_bin_smoke.rs"
+
+[[test]]
+name = "stats_cmd"
+path = "tests/stats_cmd.rs"
+
+[[test]]
+name = "sync_agent_hosting"
+path = "tests/sync_agent_hosting.rs"
+
+[[test]]
+name = "sync_cluster_e2e"
+path = "tests/sync_cluster_e2e.rs"
+
+[[test]]
+name = "sync_cluster_ops"
+path = "tests/sync_cluster_ops.rs"
+
+[[test]]
+name = "sync_cmd"
+path = "tests/sync_cmd.rs"
+
+[[test]]
+name = "sync_e2e"
+path = "tests/sync_e2e.rs"
+
+[[test]]
+name = "sync_push_pull"
+path = "tests/sync_push_pull.rs"
+
+[[test]]
+name = "sync_refresh"
+path = "tests/sync_refresh.rs"
 
 [dependencies]
 datum-core = { path = "../datum-core" }

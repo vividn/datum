@@ -1,7 +1,7 @@
 //! `datum spec set` integration tests for da-dqb position flags
 //! (`--y`, `--height`, `--z-index`).
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::field_spec::DEFAULT_FIELD_HEIGHT;

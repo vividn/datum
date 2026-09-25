@@ -20,7 +20,7 @@
 //! `update` and `retime` keep their own prompt: vividn named `undo` and `delete`
 //! only. `stale_update_still_has_its_own_prompt` below is what says so.
 
-mod common;
+use crate::common;
 
 use chrono::{Duration, Utc};
 use common::run_cli;

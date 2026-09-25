@@ -12,7 +12,7 @@
 //! struct's `verb` after a round-trip through the DB doesn't reflect
 //! reality. We re-derive from the data triple instead.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::derive_verb;

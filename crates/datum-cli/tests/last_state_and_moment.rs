@@ -1,6 +1,6 @@
 //! da-1mof — A6: Apply --last-state and --moment to start/end/switch.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::action::Action;

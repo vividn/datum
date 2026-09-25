@@ -9,7 +9,7 @@ use datum_cli::args::{Cli, CliExt, Command, ViewFormat};
 use datum_core::db::Db;
 use datum_core::kit::ViewEntry;
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 

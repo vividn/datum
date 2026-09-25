@@ -12,7 +12,7 @@
 //! the display convention; the old `:unset` sentinel (which UNIQUE-collided
 //! one-per-field) is gone.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::test_util::fresh_db;

@@ -9,7 +9,7 @@
 //!   * `--strict` aborts on first error; default continues.
 //!   * A batched rekey applies its template per-row.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::test_util::{entry_builder, fresh_db};

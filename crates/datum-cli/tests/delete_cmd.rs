@@ -25,7 +25,7 @@
 //!   * `--force` is always passed in tests — the non-force path reads from
 //!     stdin and would block indefinitely under cargo test.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::test_util::{advance_time, entry_builder, fresh_db, set_time};

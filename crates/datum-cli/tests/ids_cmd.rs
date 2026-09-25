@@ -5,7 +5,7 @@
 //! well as membership because the command's whole purpose is producing a
 //! time-ordered slice of ids.
 
-mod common;
+use crate::common;
 
 use chrono::{Duration, Utc};
 use common::run_cli;

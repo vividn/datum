@@ -8,7 +8,7 @@
 //! `resolve_batch` helper that get/del/update share, applying the shift
 //! to every resolved entry.
 
-mod common;
+use crate::common;
 
 use chrono::{DateTime, Utc};
 use common::run_cli;

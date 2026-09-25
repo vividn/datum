@@ -9,7 +9,7 @@
 //!   * `parser_version_increments_in_stored_entries`
 #![allow(non_snake_case)]
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::entry::{UncertaintyUnit, CURRENT_PARSER_VERSION};

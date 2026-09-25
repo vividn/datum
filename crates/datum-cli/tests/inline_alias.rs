@@ -4,7 +4,7 @@
 //! the alias table after a successful run, so future invocations of `datum
 //! <name> ...` expand to the same canonical form.
 
-mod common;
+use crate::common;
 
 use common::run_cli;
 use datum_core::test_util::fresh_db;
