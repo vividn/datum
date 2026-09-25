@@ -7,7 +7,7 @@
 use anyhow::Result;
 use datum_commands::{cmd, config};
 use datum_core::db::Db;
-use datum_parse::{help, shell_split, ParseError};
+use datum_parse::{shell_split, ParseError};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 
@@ -39,7 +39,7 @@ pub fn run(db_hint: Option<&str>) -> Result<()> {
         let _ = rl.load_history(p);
     }
 
-    println!("{}", help::version_banner());
+    println!("{}", crate::VERSION_BANNER);
     println!("Type `help` for commands, `exit` or Ctrl-D to quit.");
 
     loop {

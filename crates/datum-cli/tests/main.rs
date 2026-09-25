@@ -93,6 +93,7 @@ mod track_cmd;
 mod track_declaration;
 mod untimed_field_is_tracked;
 mod update_refield_cmd;
+mod version;
 mod view_cmd;
 
 #[test]

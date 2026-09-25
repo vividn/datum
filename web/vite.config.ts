@@ -8,42 +8,17 @@ import {
 	type ViteDevServer,
 	type PreviewServer
 } from 'vite';
-import { execFileSync } from 'node:child_process';
+import { buildId } from './scripts/build-id.mjs';
 
 /**
- * What is actually running, injected at build time.
- *
- * A deployed static bundle is otherwise anonymous: the only way to tell which
- * commit is live is to compare hashed asset names against a local build, which
- * is exactly the fiddly step this removes.
- *
- * CI's `GITHUB_SHA` wins over `git rev-parse` because a CI checkout can be a
- * detached merge commit that exists nowhere else — the SHA the workflow was
- * triggered for is the honest answer. A build from a dirty tree says so, since
- * a hash that does not describe the working tree is worse than no hash.
+ * What is actually running, injected at build time: `3.beta.<height>` and the
+ * commit (da-5172a, `scripts/build-id.mjs`). A deployed static bundle is
+ * otherwise anonymous — the only way to tell which commit is live would be to
+ * compare hashed asset names against a local build.
  */
-/** The app's own version, from package.json — one source, not a second copy. */
-function pkgVersion(): string {
-	try {
-		const raw = fs.readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf8');
-		return (JSON.parse(raw) as { version?: string }).version ?? '0.0.0';
-	} catch {
-		return '0.0.0';
-	}
-}
-
-function buildVersion(): string {
-	const env = process.env.GITHUB_SHA;
-	if (env) return env.slice(0, 7);
-	try {
-		const sha = execFileSync('git', ['rev-parse', '--short=7', 'HEAD'], { encoding: 'utf8' }).trim();
-		const dirty = execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim();
-		return dirty ? `${sha}+` : sha;
-	} catch {
-		// A tarball with no .git, or no git binary. Unknown is honest; a
-		// fabricated or empty string would read as a real build id.
-		return 'unknown';
-	}
+const build = buildId(fileURLToPath(new URL('.', import.meta.url)), process.env.GITHUB_SHA || undefined);
+if (build.version.endsWith('.unknown')) {
+	console.warn(`vite: no whole git history (a shallow clone, or no .git): the version says ${build.version}`);
 }
 
 // Cross-origin isolation, which the browser grants a document only when
@@ -143,8 +118,8 @@ function workerPrecache(): Plugin {
 
 export default defineConfig({
 	define: {
-		__DATUM_VERSION__: JSON.stringify(pkgVersion()),
-		__DATUM_COMMIT__: JSON.stringify(buildVersion())
+		__DATUM_VERSION__: JSON.stringify(build.version),
+		__DATUM_COMMIT__: JSON.stringify(build.commit)
 	},
 	plugins: [sveltekit(), crossOriginIsolation(), workerPrecache()],
 	// The database worker ($lib/db.worker.ts) is a module worker; Vite's

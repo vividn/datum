@@ -14,7 +14,7 @@
 //! 3. [`render`] consumes that table to emit `--help` text, Markdown,
 //!    or roff.
 //!
-//! [`top_level_help`] / [`command_help`] / [`version_banner`] remain as
+//! [`top_level_help`] / [`command_help`] remain as
 //! thin shims for the existing CLI entry point.
 
 pub mod commands;
@@ -40,11 +40,6 @@ pub fn command_help(cmd: &str) -> String {
     render_help_text(Some(cmd))
 }
 
-/// Version banner (`datum --version`).
-pub fn version_banner() -> String {
-    format!("datum {DATUM_VERSION}")
-}
-
 /// The text a `--help` / `--version` / `--man` request prints, or `None`
 /// for a [`ParseError`] that is a real error.
 ///
@@ -55,8 +50,10 @@ pub fn version_banner() -> String {
 /// anyone rewords an `#[error(...)]` — is what this function is for, and
 /// holding the set in one place is what keeps a second caller from
 /// honouring a smaller contract than the CLI does. `datum-cli` prints the
-/// text to stdout (da-e0m6).
-pub fn special_output(e: &crate::ParseError) -> Option<String> {
+/// text to stdout (da-e0m6). `version` is the `--version` line, which is
+/// the binary's own — its build.rs reads git — and not this crate's
+/// (da-5172a).
+pub fn special_output(e: &crate::ParseError, version: &str) -> Option<String> {
     use crate::ParseError as E;
     match e {
         E::HelpRequested(cmd) => Some(match cmd.as_deref() {
@@ -65,7 +62,7 @@ pub fn special_output(e: &crate::ParseError) -> Option<String> {
         }),
         // The newline `println!` used to add, now part of the text so
         // every caller writes the same bytes.
-        E::VersionRequested => Some(format!("{}\n", version_banner())),
+        E::VersionRequested => Some(format!("{version}\n")),
         E::ManRequested(cmd) => Some(render_roff(cmd.as_deref())),
         E::GrammarRequested => Some(render_json()),
         _ => None,

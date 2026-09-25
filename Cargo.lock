@@ -489,7 +489,7 @@ checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 
 [[package]]
 name = "datum-cli"
-version = "0.1.0"
+version = "3.0.0-beta"
 dependencies = [
  "anyhow",
  "axum",
@@ -520,7 +520,7 @@ dependencies = [
 
 [[package]]
 name = "datum-commands"
-version = "0.1.0"
+version = "3.0.0-beta"
 dependencies = [
  "anyhow",
  "chrono",
@@ -553,7 +553,7 @@ dependencies = [
 
 [[package]]
 name = "datum-core"
-version = "0.1.0"
+version = "3.0.0-beta"
 dependencies = [
  "chrono",
  "datum-core",
@@ -571,7 +571,7 @@ dependencies = [
 
 [[package]]
 name = "datum-layout"
-version = "0.1.0"
+version = "3.0.0-beta"
 dependencies = [
  "chrono",
  "roxmltree 0.21.1",
@@ -581,7 +581,7 @@ dependencies = [
 
 [[package]]
 name = "datum-parity"
-version = "0.1.0"
+version = "3.0.0-beta"
 dependencies = [
  "chrono",
  "datum-core",
@@ -599,7 +599,7 @@ dependencies = [
 
 [[package]]
 name = "datum-parse"
-version = "0.1.0"
+version = "3.0.0-beta"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -614,7 +614,7 @@ dependencies = [
 
 [[package]]
 name = "datum-sync-agent"
-version = "0.1.0"
+version = "3.0.0-beta"
 dependencies = [
  "anyhow",
  "chrono",
@@ -632,7 +632,7 @@ dependencies = [
 
 [[package]]
 name = "datum-sync-client"
-version = "0.1.0"
+version = "3.0.0-beta"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -655,7 +655,7 @@ dependencies = [
 
 [[package]]
 name = "datum-sync-protocol"
-version = "0.1.0"
+version = "3.0.0-beta"
 dependencies = [
  "serde",
  "serde_json",
@@ -664,7 +664,7 @@ dependencies = [
 
 [[package]]
 name = "datum-sync-server"
-version = "0.1.0"
+version = "3.0.0-beta"
 dependencies = [
  "anyhow",
  "axum",
@@ -690,7 +690,7 @@ dependencies = [
 
 [[package]]
 name = "datum-test-util"
-version = "0.1.0"
+version = "3.0.0-beta"
 
 [[package]]
 name = "der-parser"
@@ -3965,7 +3965,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "0.1.0"
+version = "3.0.0-beta"
 dependencies = [
  "anyhow",
  "datum-parse",

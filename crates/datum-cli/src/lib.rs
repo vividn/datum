@@ -24,6 +24,10 @@ use datum_parse::{help, ParseError};
 
 use crate::args::{Cli, Command, DbCommand, InfoArgs, Invocation, SyncArgs, SyncCommand};
 
+/// `datum 3.beta.<height> (<sha7>)`, from git at build time (da-5172a,
+/// `build.rs`).
+pub const VERSION_BANNER: &str = concat!("datum ", env!("DATUM_BUILD"));
+
 /// If `e` is one of the "clean stdout print" parse errors
 /// (help/version/man requested), render it to stdout and return
 /// `Some(Ok(()))`. Otherwise return `None` — the caller should
@@ -33,7 +37,7 @@ use crate::args::{Cli, Command, DbCommand, InfoArgs, Invocation, SyncArgs, SyncC
 /// where the web runner reaches it too (da-e0m6) — so `run`, `repl::run_line`
 /// and the browser all honour exactly the same contract.
 pub fn render_parse_special(e: &ParseError) -> Option<Result<()>> {
-    let text = help::special_output(e)?;
+    let text = help::special_output(e, VERSION_BANNER)?;
     print!("{text}");
     Some(Ok(()))
 }
