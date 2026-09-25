@@ -786,11 +786,12 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     }
 
     let strategy = args.conflict_strategy();
-    let outcome = db.insert_entry_with_strategy(&entry, strategy)?;
-    // The entry landed, so the field exists: now the spec may be written.
-    if declares_field {
-        crate::commands::helpers::save_track_spec(db, &entry.field, action)?;
-    }
+    // The spec is written only if the entry lands, and in its transaction.
+    let declare = match declares_field {
+        true => crate::commands::helpers::track_spec(db, &entry.field, action)?,
+        false => None,
+    };
+    let outcome = db.insert_entry_declaring(&entry, strategy, declare.as_ref())?;
     let registry = crate::commands::helpers::load_registry_opt(db);
     let output = args.output()?;
     // Per da-9p2u: all four context fields (lead/trail/ongoing/first) are

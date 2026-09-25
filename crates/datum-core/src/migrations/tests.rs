@@ -43,7 +43,6 @@ fn fresh_db_matches_schema_sql_shape() {
         "aliases",
         "entries",
         "entry_history",
-        "field_specs",
         "integrity_warnings",
         "kit_commands",
         "kit_indices",
@@ -82,7 +81,6 @@ fn fresh_db_matches_schema_sql_shape() {
         "entry_history_change_kind",
         "entry_history_entry",
         "idx_aliases_kit_id",
-        "idx_field_specs_kit_id",
         "idx_kit_commands_kit_id",
         "idx_views_kit_id",
         "integrity_warnings_hid",
@@ -335,14 +333,10 @@ fn m17_to_18_adds_tags_column_with_default_empty_array() {
     .unwrap();
     set_schema_version(&conn, 17).unwrap();
 
-    // The full migration runner walks the registry; only v17→v18 is
-    // pending in this synthetic conn, so this exercises the new step.
-    let applied = migrate_to_current(&conn).unwrap();
+    // Walk just this step: from v38 on the table is gone (da-lc26c).
+    let applied = apply_migrations(&conn, MIGRATIONS, 17, 18).unwrap();
     assert!(applied.iter().any(|s| s.contains("v17→v18")));
-    assert_eq!(
-        read_schema_version(&conn).unwrap(),
-        Some(CURRENT_SCHEMA_VERSION),
-    );
+    assert_eq!(read_schema_version(&conn).unwrap(), Some(18));
 
     let tags: String = conn
         .query_row(
@@ -355,8 +349,8 @@ fn m17_to_18_adds_tags_column_with_default_empty_array() {
 
     // Re-running migrate_to_current is a no-op and doesn't error on the
     // already-present column.
-    let again = migrate_to_current(&conn).unwrap();
-    assert!(again.is_empty());
+    let step = MIGRATIONS.iter().find(|m| m.from == 17).unwrap();
+    (step.apply)(&conn).unwrap();
 }
 
 /// da-0f8g: a MIGRATED `entry_history.raw_input` must end up nullable, not
@@ -451,12 +445,10 @@ fn m18_to_19_adds_render_json_column_nullable() {
     .unwrap();
     set_schema_version(&conn, 18).unwrap();
 
-    let applied = migrate_to_current(&conn).unwrap();
+    // Walk just this step: from v38 on the table is gone (da-lc26c).
+    let applied = apply_migrations(&conn, MIGRATIONS, 18, 19).unwrap();
     assert!(applied.iter().any(|s| s.contains("v18→v19")));
-    assert_eq!(
-        read_schema_version(&conn).unwrap(),
-        Some(CURRENT_SCHEMA_VERSION),
-    );
+    assert_eq!(read_schema_version(&conn).unwrap(), Some(19));
 
     // Legacy row's render_json must default to NULL — visible everywhere.
     let render_json: Option<String> = conn
@@ -469,8 +461,8 @@ fn m18_to_19_adds_render_json_column_nullable() {
     assert!(render_json.is_none(), "expected NULL, got {render_json:?}");
 
     // Idempotent — re-running is a no-op.
-    let again = migrate_to_current(&conn).unwrap();
-    assert!(again.is_empty());
+    let step = MIGRATIONS.iter().find(|m| m.from == 18).unwrap();
+    (step.apply)(&conn).unwrap();
 }
 
 /// da-ga8b: v24→v25 creates the partial UNIQUE on `(field, occur_time)`

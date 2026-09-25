@@ -75,9 +75,11 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
         spec.add_tag(tag);
     }
     spec.regenerate_derived_aliases();
+    let device = device_id()?;
+    db.set_device_id(&device);
     db.save_field_spec(&spec)?;
 
-    let entry = track_entry(&args.field, verb, DatumTime::now(), &device_id()?);
+    let entry = track_entry(&args.field, verb, DatumTime::now(), &device);
     db.insert_entry(&entry)?;
     let _ = datum_core::last_docs::set_last_docs(db, std::slice::from_ref(&entry.hid));
     println!("✓ Tracking '{}' ({verb})", args.field);

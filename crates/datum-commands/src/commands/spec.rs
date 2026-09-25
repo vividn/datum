@@ -15,6 +15,10 @@ use crate::args::{SpecCommand, SpecSetArgs};
 use crate::config::device_id;
 
 pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
+    // A spec is an entry (da-lc26c): a write is stamped with this device.
+    if matches!(sub, SpecCommand::Set(_) | SpecCommand::AddState { .. }) {
+        db.set_device_id(&device_id()?);
+    }
     match sub {
         SpecCommand::Show { field, text } => match db.load_spec(&field)? {
             Some(spec) if text => render_spec_text(&spec),
@@ -60,7 +64,9 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
             }
         }
         SpecCommand::Remove { field } => {
-            db.delete_field_spec(&field)?;
+            if let Some(hid) = db.delete_field_spec(&field)? {
+                remember(db, hid);
+            }
             println!("✓ Spec removed for '{field}' (derived aliases dropped)");
         }
     }
@@ -250,9 +256,16 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     spec.regenerate_derived_aliases();
 
     let report = db.save_field_spec_with_report(&spec)?;
+    remember(db, report.hid.clone());
     println!("✓ Spec saved for '{}'", spec.field);
     warn_alias_conflicts(&report);
     Ok(())
+}
+
+/// Point `_LAST` at the spec entry a command just wrote, so a bare `undo`
+/// steps it back like any doc's edit.
+fn remember(db: &Db, hid: datum_core::ids::Hid) {
+    let _ = datum_core::last_docs::set_last_docs(db, &[hid]);
 }
 
 /// Apply `KEY=VALUE` flags to a map — the clear convention shared by every
@@ -467,6 +480,7 @@ fn spec_add_state(
     spec.regenerate_derived_aliases();
 
     let report = db.save_field_spec_with_report(&spec)?;
+    remember(db, report.hid.clone());
     let verb = if existed { "updated" } else { "added" };
     println!("✓ State '{name}' {verb} on '{field}'");
     warn_alias_conflicts(&report);

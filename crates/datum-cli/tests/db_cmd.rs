@@ -72,15 +72,19 @@ fn db_purge_yes_recovers_corrupt_db() {
         read_schema_version(db.conn()).unwrap(),
         Some(CURRENT_SCHEMA_VERSION),
     );
-    let kit_id_present: i64 = db
+    // The half-shape table is gone and the current shape is laid down:
+    // specs are entries now (da-lc26c), so there is no `field_specs`.
+    let field_specs: i64 = db
         .conn()
         .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('field_specs') WHERE name = 'kit_id'",
+            "SELECT COUNT(*) FROM sqlite_master WHERE name = 'field_specs'",
             [],
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(kit_id_present, 1);
+    assert_eq!(field_specs, 0);
+    run_cli(&["spec", "set", "mood", "--verb", "switch"], &db).expect("a spec writes");
+    assert!(db.load_spec("mood").unwrap().is_some());
 }
 
 /// Interactive: typing the database path proceeds with the purge. In-memory

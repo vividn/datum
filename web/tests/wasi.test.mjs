@@ -69,10 +69,10 @@ describe('the wasi CLI', () => {
 			// content-hash idempotent, so "skipped" is the proof it was read.
 			const restored = await app.run(['db', 'restore', '-'], dump.stdout);
 			assert.equal(restored.code, 0, restored.stderr);
-			// One row: the entry, which declared its own field in its own
+			// Two rows: the entry, which declared its own field in its own
 			// `following_state` rather than beside a TRACK document
-			// (da-gvcen).
-			assert.match(plain(restored.stdout), /0 inserted, 0 updated, 1 skipped/);
+			// (da-gvcen), and the spec that first log wrote (da-lc26c).
+			assert.match(plain(restored.stdout), /0 inserted, 0 updated, 2 skipped/);
 			const empty = await app.run(['db', 'restore', '-']);
 			assert.match(plain(empty.stdout), /0 inserted, 0 updated, 0 skipped/);
 		});
@@ -96,12 +96,13 @@ describe('the wasi CLI', () => {
 			const text = await readFile(await download.path(), 'utf8');
 			const [header, ...rows] = text.trim().split('\n');
 			assert.equal(JSON.parse(header).type, 'daydumb_backup');
+			// The entry and the spec its first log wrote (da-lc26c).
 			assert.deepEqual(
 				rows.map((row) => JSON.parse(row).field),
-				['coffee']
+				['coffee', 'spec']
 			);
 			const restored = await app.run(['db', 'restore', '-'], text);
-			assert.match(plain(restored.stdout), /1 skipped/);
+			assert.match(plain(restored.stdout), /2 skipped/);
 		});
 	});
 
@@ -122,6 +123,7 @@ describe('the wasi CLI', () => {
 					// `allEntries`: `track` writes only a declaration (da-c8mh),
 					// which is the very row this test is about.
 					const stored = (await app.allEntries())
+						.filter(({ field }) => field !== 'spec')
 						.map(({ field, occur_time: t }) => [field, Date.parse(t.utc), t.offset_minutes, t.timezone])
 						.sort();
 					assert.deepEqual(

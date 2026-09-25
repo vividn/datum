@@ -1,7 +1,7 @@
 //! Kit-installable dashboard layouts (da-gg0v).
 //!
-//! Every other kit block has a table: fields go to `field_specs`, views to
-//! `views`, aliases to `aliases`. A LAYOUT has none. It is an ordinary
+//! Views go to `views` and aliases to `aliases`, but a LAYOUT has no table
+//! (nor, since da-lc26c, has a field spec — `spec.rs`). It is an ordinary
 //! entry of field `layout`, slug `layout:<name>`, in the database the kit
 //! installs into — byte for byte the row the web's layout store writes one
 //! database over (`web/src/lib/layout/store.ts`), plus a `kit_id` in its

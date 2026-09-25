@@ -1108,7 +1108,7 @@ struct AliasReport {
 ///
 /// * `alias_state_collision` — two specs declare the same state name as a
 ///   derived `State` alias. The [`SpecAliasIndex`] resolves these
-///   deterministically by `field_specs.rowid` (UPSERT preserves rowid, so
+///   deterministically by the spec entry's rowid (an edit keeps it, so
 ///   "first-saved wins"); the loser's derived alias is shadowed and is
 ///   reachable only via its owning spec's bare-field expansion. Pre-v21
 ///   the loser's row was silently overwritten in the materialized aliases

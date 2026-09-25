@@ -3,9 +3,9 @@
 //!
 //! Subcommands:
 //! - `install <path|-> [--force] [--yes] [--dry-run]` — parse a kit TOML
-//!   (from stdin when the path is `-`) and upsert each `[[field]]` into
-//!   `field_specs` with `kit_id = <kit name>`. Existing rows for the same
-//!   field win unless `--force` is passed. If the kit declares `[[index]]`
+//!   (from stdin when the path is `-`) and upsert each `[[field]]` as a
+//!   `spec` entry whose data carries `kit_id = <kit name>`. Existing specs
+//!   for the same field win unless `--force` is passed. If the kit declares `[[index]]`
 //!   blocks, the user is prompted for trust unless `--yes`. `--dry-run`
 //!   prints what the kit brings and writes nothing. URLs are blocked until
 //!   the signed-registry hook lands.
@@ -298,6 +298,7 @@ fn install_toml(
         return Ok(());
     }
 
+    db.set_device_id(&device_id()?);
     let report = db.install_kit(&kit.kit.name, &specs, &kit.indices, args.force)?;
     // Views are independent of fields; installed in the same kit-install
     // pass so a TOML containing both lands atomically (per slice 4 bead).

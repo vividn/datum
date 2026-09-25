@@ -59,7 +59,9 @@ async function entriesIn(app, db) {
 	);
 	assert.equal(dumped.code, 0, dumped.stderr);
 	const [, ...lines] = dumped.stdout.split('\n').filter(Boolean);
-	return lines.map((line) => JSON.parse(line)).filter((row) => row.extra_metadata?.track === undefined);
+	return lines
+		.map((line) => JSON.parse(line))
+		.filter((row) => row.extra_metadata?.track === undefined && row.field !== 'spec');
 }
 
 /** The fields stored in `db` right now, sorted. */

@@ -416,7 +416,8 @@ pub struct TailArgs {
     /// `--show-meta`: include `extra_metadata.flag = true` (da-dnnn) and
     /// `extra_metadata.meta = true` (da-xn8j) rows. Default is to hide
     /// them — they're review markers / out-of-band notes, not tracked
-    /// data. See da-ghlx.
+    /// data. See da-ghlx. It also brings back the meta fields' entries —
+    /// specs and layouts (da-lc26c) — which an unnamed tail leaves out.
     pub show_meta: bool,
     /// `-A/--show-all` / `-o/--format-string`, plus the swept `--show`.
     ///

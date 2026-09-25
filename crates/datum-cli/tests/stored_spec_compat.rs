@@ -1,4 +1,4 @@
-//! da-c8mh's compatibility half: a database whose `field_specs` were
+//! da-c8mh's compatibility half: a database whose specs were
 //! written BEFORE this bead is still a database this binary reads.
 //!
 //! The break this guards against was measured, not imagined: with
@@ -86,11 +86,17 @@ impl Env {
         let conn = rusqlite::Connection::open(&self.db).expect("open db");
         let changed = conn
             .execute(
-                "UPDATE field_specs SET spec_json = ?2 WHERE field = ?1",
+                "UPDATE entries SET data = ?2 WHERE slug = 'spec:' || ?1",
                 rusqlite::params![field, spec_json],
             )
             .expect("store the old spec shape");
         assert_eq!(changed, 1, "no spec row for {field}");
+        // A spec is an entry (da-lc26c): keep its content hash honest, as
+        // the binary that wrote the old shape would have.
+        let db = datum_core::db::Db::open(self.db.to_str().unwrap()).unwrap();
+        let slug = format!("spec:{field}");
+        let hash = db.get_entry(&slug).unwrap().expected_content_hash();
+        db.set_entry_content_hash(&slug, &hash).unwrap();
     }
 
     fn spec_verb(&self, field: &str) -> String {

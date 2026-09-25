@@ -523,7 +523,7 @@ const TAIL_FLAGS: &[FlagSpec] = &[
         takes_value: false,
         value_hint: None,
         value_optional: false,
-        summary: "Include flag/meta entries (hidden by default)",
+        summary: "Include flag/meta and spec/layout entries (hidden by default)",
         long_description: None,
         left_override: Some("    --show-meta       (alias: --show-all-metadata)"),
     },

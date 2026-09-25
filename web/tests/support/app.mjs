@@ -648,11 +648,12 @@ function app(page, errors, query, clean, locks, internal) {
 		/**
 		 * What a test LOGGED, newest first: the CLI's `db backup -` rows
 		 * without the TRACK documents that declare each field on its first
-		 * use (da-c8mh). `allEntries` keeps those.
+		 * use (da-c8mh), or the spec entry that first use writes (da-lc26c).
+		 * `allEntries` keeps those.
 		 */
 		entries: async (limit = 50) =>
-			(await page.evaluate((n) => window.datum.entries(n), Math.max(limit * 2, 50)))
-				.filter((row) => row.extra_metadata?.track === undefined)
+			(await page.evaluate((n) => window.datum.entries(n), Math.max(limit * 3, 50)))
+				.filter((row) => row.extra_metadata?.track === undefined && row.field !== 'spec')
 				.slice(0, limit),
 
 		/** Every stored row, declarations included. */

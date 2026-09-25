@@ -40,7 +40,7 @@ mod types;
 mod view;
 mod zone_timeline;
 
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 
 use rusqlite::{params, Connection, TransactionBehavior};
 
@@ -60,6 +60,7 @@ pub use now::{
     SCHEMA_ID as NOW_SCHEMA_ID,
 };
 pub use row_mapper::row_to_entry_public;
+pub use spec::{is_meta_field, META_FIELDS, SPEC_FIELD};
 pub use types::{
     AliasConflict, AliasConflictReason, ConflictStrategy, GroupColumn, InsertOutcome, ListParams,
     ReplaceCounts, RetimeFilter, Retimed, SaveSpecReport, SpecAliasCollision, SpecAliasIndex,
@@ -71,6 +72,7 @@ pub use view::{InstallViewsReport, InstalledView, KitViewOutcome, ViewResult};
 // at `crate::db::try_insert` to preserve the historical import path used by
 // `crate::migrations`.
 pub(crate) use insert::try_insert;
+pub(crate) use spec::{new_spec_entry, NOT_META_FIELD_SQL};
 
 // Canonical state-participation predicate + ordering (da-ylet), shared by
 // every state oracle inside and outside the db module (`crate::state`,
@@ -81,10 +83,14 @@ pub(crate) use types::{
 
 pub struct Db {
     conn: Connection,
-    /// Lazy cache of the spec-derived alias index. Built on first access
-    /// after open or after invalidation. Mutating operations on
-    /// `field_specs` clear it via [`Db::invalidate_spec_alias_index`].
-    spec_alias_cache: RefCell<Option<SpecAliasIndex>>,
+    /// Lazy cache of the spec-derived alias index, stamped with the
+    /// connection's `total_changes()` when it was built: any write since
+    /// makes it stale, so it is never a second copy of the spec entries
+    /// that can drift from them (da-lc26c).
+    spec_alias_cache: RefCell<Option<(u64, SpecAliasIndex)>>,
+    /// The device a spec entry this handle writes is stamped with
+    /// ([`Db::set_device_id`]); unset, the write says `local`.
+    device_id: OnceCell<String>,
     /// What this open did to the schema, if anything. `None` when the DB
     /// was already current. datum-core never prints; the CLI reads this
     /// and tells the user (da-ksao).
@@ -157,6 +163,7 @@ impl Db {
         let mut db = Db {
             conn,
             spec_alias_cache: RefCell::new(None),
+            device_id: OnceCell::new(),
             last_migration: None,
         };
         db.last_migration = db.migrate(Some(std::path::Path::new(path)))?;
@@ -174,6 +181,7 @@ impl Db {
         Ok(Db {
             conn,
             spec_alias_cache: RefCell::new(None),
+            device_id: OnceCell::new(),
             last_migration: None,
         })
     }
@@ -184,6 +192,7 @@ impl Db {
         let mut db = Db {
             conn,
             spec_alias_cache: RefCell::new(None),
+            device_id: OnceCell::new(),
             last_migration: None,
         };
         db.last_migration = db.migrate(None)?;
@@ -292,6 +301,8 @@ impl Db {
         let tables = [
             "entries",
             "entry_history",
+            // Gone since v38 (specs are entries, da-lc26c); dropped here
+            // so a purge of an older file leaves none behind.
             "field_specs",
             "kit_indices",
             "aliases",

@@ -211,15 +211,16 @@ for (const engine of [chromium, webkit]) {
 						app.submit('db backup')
 					]);
 					const saved = await download.path();
+					// The four coffees and the spec the first one wrote (da-lc26c).
 					const lines = (await readFile(saved, 'utf8')).split('\n').filter(Boolean);
-					assert.equal(lines.length, 5);
+					assert.equal(lines.length, 6);
 					const header = JSON.parse(lines[0]);
 					assert.equal(header.type, 'daydumb_backup');
-					assert.equal(header.entry_count, 4);
+					assert.equal(header.entry_count, 5);
 					assert.match(download.suggestedFilename(), /^datum-\d{4}-\d{2}-\d{2}\.jsonl$/);
 					const said = (await app.outputs()).at(-1);
 					assert.match(said, /daydumb_backup/);
-					assert.match(said, /4 entries/);
+					assert.match(said, /5 entries/);
 					assert.doesNotMatch(said, /coffee/);
 
 					// A layout in `_internal`, which a purge of `datum` must not touch.
@@ -250,7 +251,7 @@ for (const engine of [chromium, webkit]) {
 
 					// The downloaded backup, chosen in the dialog, brings them back.
 					await choose(page, 'db restore', saved);
-					assert.match((await app.stdouts()).at(-1), /4 inserted/);
+					assert.match((await app.stdouts()).at(-1), /5 inserted/);
 					await tailShows(page, 4);
 
 					// vividn's legacy backup, twice: the second is all skips.

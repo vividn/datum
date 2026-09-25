@@ -9,6 +9,7 @@ use rusqlite::params;
 use crate::error::{DatumError, Result};
 use crate::ids::Hid;
 
+use super::spec::NOT_META_FIELD_SQL;
 use super::types::{filtered_where, time_expr_endbound, GroupColumn, TimeOrderIssue, LIVE_SQL};
 use super::Db;
 
@@ -155,7 +156,8 @@ impl Db {
 
     /// Distinct field names across all live (non-deleted) entries,
     /// alphabetical. The `now` view feeds this into [`Db::state_at`] to
-    /// build its row set.
+    /// build its row set. The meta fields (`spec`, `layout`) are not life
+    /// fields and are left out (da-lc26c).
     ///
     /// da-vmjh: a skip-scan, not a scan. `SELECT DISTINCT field` walked
     /// every row of `entries_live_field_occur` to return the couple of
@@ -174,7 +176,7 @@ impl Db {
                           WHERE field > f.field AND {LIVE_SQL})
                    FROM f WHERE f.field IS NOT NULL
              )
-             SELECT field FROM f WHERE field IS NOT NULL"
+             SELECT field FROM f WHERE field IS NOT NULL AND {NOT_META_FIELD_SQL}"
         ))?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
@@ -308,7 +310,7 @@ mod tests {
                           WHERE field > f.field AND {LIVE_SQL})
                    FROM f WHERE f.field IS NOT NULL
              )
-             SELECT field FROM f WHERE field IS NOT NULL"
+             SELECT field FROM f WHERE field IS NOT NULL AND {NOT_META_FIELD_SQL}"
         );
         let mut stmt = db
             .conn

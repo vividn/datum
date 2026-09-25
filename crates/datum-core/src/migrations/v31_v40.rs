@@ -7,7 +7,8 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::support::*;
-use crate::error::Result;
+use crate::db::{new_spec_entry, SPEC_FIELD};
+use crate::error::{DatumError, Result};
 
 /// Rewrite the stored `CREATE TABLE` SQL for `table_name`, swapping the
 /// `raw_input` column definition. Matches the trailing comma so the
@@ -395,6 +396,63 @@ pub(super) fn m36_to_37_slug_lookup_index(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Lift 37→38: field specs become ENTRIES (da-lc26c). Every `field_specs`
+/// row is written as the entry `spec:<field>` whose data is the spec's JSON
+/// plus `kit_id` for a kit's spec, then the table is dropped — the entries
+/// table is the one source of truth, so specs back up, sync and have a
+/// history like any doc.
+///
+/// Deterministic across devices: the same spec gives the same slug, the
+/// same data (the JSON is re-read into sorted keys) and the same fixed
+/// occur time, so two devices migrating one spec make the same doc. Rows go
+/// in `field_specs` rowid order, which is the spec-alias index's
+/// first-written-wins tie-break.
+///
+/// **Refuses on a name collision**: entries of a field `spec` that predate
+/// this are life data, and would be read as specs. Nothing is written; the
+/// error names the field and how many entries it has.
+pub(super) fn m37_to_38_specs_are_entries(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "field_specs")? || !table_exists(conn, "entries")? {
+        return Ok(());
+    }
+    let clashing: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM entries WHERE field = ?1",
+        [SPEC_FIELD],
+        |row| row.get(0),
+    )?;
+    if clashing > 0 {
+        return Err(DatumError::Other(format!(
+            "cannot move field specs into entries: this database has {clashing} \
+             entr{} of a field named `{SPEC_FIELD}`, and `{SPEC_FIELD}` is now reserved \
+             for field specs. Rename that field with an older datum first; nothing \
+             was changed.",
+            if clashing == 1 { "y" } else { "ies" }
+        )));
+    }
+    let mut stmt =
+        conn.prepare("SELECT field, spec_json, kit_id FROM field_specs ORDER BY rowid")?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(stmt);
+    for (field, spec_json, kit_id) in rows {
+        let mut data: serde_json::Value = serde_json::from_str(&spec_json)?;
+        if let (Some(kit), Some(obj)) = (kit_id, data.as_object_mut()) {
+            obj.insert("kit_id".into(), kit.into());
+        }
+        let row = new_spec_entry(&field, data, "migration-v38");
+        crate::db::try_insert(conn, &row.slug, &row.hid, &row)?;
+    }
+    conn.execute_batch("DROP TABLE field_specs;")?;
+    Ok(())
+}
+
 // ─── Down migrations ─────────────────────────────────────────────────
 //
 // Each forward migration above has a paired `down` here that reverses
@@ -414,6 +472,38 @@ pub(super) fn m36_to_37_slug_lookup_index(conn: &Connection) -> Result<()> {
 //   docstring. The down still runs to make the schema reversible for
 //   round-trip testing; production callers should back up before
 //   walking back across these.
+
+/// Reverse 38→37 — put the live spec entries back in a `field_specs`
+/// table and delete the entries with their history. Loses each spec's
+/// history and any deleted spec, which the table never held.
+pub(super) fn down_38_to_37_specs_are_entries(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "entries")? {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS field_specs (
+            field       TEXT NOT NULL PRIMARY KEY,
+            spec_json   TEXT NOT NULL,
+            kit_id      TEXT,
+            tags        TEXT NOT NULL DEFAULT '[]',
+            render_json TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_field_specs_kit_id ON field_specs(kit_id);
+        INSERT INTO field_specs (field, spec_json, kit_id, tags, render_json)
+            SELECT json_extract(data, '$.field'),
+                   json_remove(data, '$.kit_id'),
+                   json_extract(data, '$.kit_id'),
+                   COALESCE(data -> '$.tags', '[]'),
+                   data -> '$.render'
+              FROM entries
+             WHERE field = 'spec' AND deleted_at IS NULL AND superseded_by IS NULL
+             ORDER BY rowid;
+        DELETE FROM entry_history
+         WHERE entry_hid IN (SELECT hid FROM entries WHERE field = 'spec');
+        DELETE FROM entries WHERE field = 'spec';",
+    )?;
+    Ok(())
+}
 
 /// Reverse 37→36 — drop the slug lookup index. Lossless.
 pub(super) fn down_37_to_36_slug_lookup_index(conn: &Connection) -> Result<()> {

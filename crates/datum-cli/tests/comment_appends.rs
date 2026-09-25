@@ -53,7 +53,7 @@ fn delete_c_records_why_on_the_tombstone() {
     run_cli(&["occur", "x", "-c", "a"], &db).unwrap();
     run_cli(&["delete", "x:_", "-c", "wrong time"], &db).unwrap();
     assert!(logged_entries(&db, "x").is_empty(), "the row is deleted");
-    let dead = db.list_including_deleted().unwrap();
+    let dead = datum_core::test_util::logged_all(&db);
     assert!(dead[0].deleted_at.is_some());
     assert_eq!(comments(&db, "x"), [json!(["a", "deleted: wrong time"])]);
 }

@@ -69,7 +69,11 @@ fn concurrent_writer_processes_lose_no_writes() {
 
     let count: usize = Connection::open(&db)
         .unwrap()
-        .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM entries WHERE field != 'spec'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(count, PROCS * WRITES);
 }

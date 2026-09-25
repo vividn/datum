@@ -226,11 +226,8 @@ fn info_failed_read_is_query_error() {
             &["last write"],
             &["entries:  1 (1 deleted)", "fields:   1 tracked, 0 ignored"],
         ),
-        (
-            "ALTER TABLE field_specs RENAME TO fs",
-            &["fields"],
-            &["entries:  1 (1 deleted)", "last write: 2024-03-16 09:15"],
-        ),
+        // (A spec is an entry since da-lc26c, so there is no spec table to
+        // break apart from `entries`: the renames below cover `fields`.)
         (
             "ALTER TABLE entries RENAME COLUMN superseded_by TO sb",
             &["entries", "fields"],

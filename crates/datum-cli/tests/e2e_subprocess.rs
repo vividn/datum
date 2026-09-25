@@ -91,7 +91,7 @@ impl Env {
         conn.query_row(
             "SELECT COUNT(*) FROM entries
              WHERE deleted_at IS NULL
-               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL",
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field != 'spec'",
             [],
             |r| r.get::<_, i64>(0),
         )
@@ -327,7 +327,7 @@ fn subprocess_undo_past_the_window_warns_and_acts_on_the_pointer() {
         conn.query_row(
             "SELECT hid FROM entries
              WHERE field = ?1
-               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL",
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field != 'spec'",
             [field],
             |r| r.get(0),
         )
@@ -358,7 +358,7 @@ fn subprocess_undo_past_the_window_warns_and_acts_on_the_pointer() {
     assert_eq!(env.entry_count(), 1, "only the pointer's entry comes back");
     let live_field: String = conn
         .query_row(
-            "SELECT field FROM entries WHERE deleted_at IS NULL",
+            "SELECT field FROM entries WHERE deleted_at IS NULL AND field != 'spec'",
             [],
             |r| r.get(0),
         )
@@ -429,7 +429,7 @@ fn subprocess_redo_restores_the_undone_state_exactly_once() {
         .query_row(
             "SELECT hid FROM entries
              WHERE field = 'coffee'
-               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL",
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field != 'spec'",
             [],
             |r| r.get(0),
         )
@@ -477,7 +477,7 @@ fn subprocess_redo_of_an_undone_create_brings_the_entry_back() {
     // tea's OWN row, not the TRACK document that declared the field beside
     // it (da-c8mh) — `undo` takes both back and `redo` brings both again.
     let live = "deleted_at IS NULL
-                AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL";
+                AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field != 'spec'";
     let hid: String = conn
         .query_row(
             &format!("SELECT hid FROM entries WHERE field = 'tea' AND {live}"),
@@ -854,8 +854,9 @@ fn subprocess_backup_to_stdout_restores_from_stdin() {
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(
         lines.len(),
-        3,
-        "a header and the two entries, each declaring its own field: {text}"
+        5,
+        "a header, the two entries, and the spec each one's first log wrote \
+         (specs are entries, da-lc26c): {text}"
     );
     assert!(lines[0].contains("daydumb_backup"));
 
@@ -865,6 +866,14 @@ fn subprocess_backup_to_stdout_restores_from_stdin() {
         "db restore -",
     );
     assert_eq!(to.entry_count(), 2);
+    // The specs came back with the entries: a backup carries them now.
+    let spec = to.run(&["spec", "show", "mood"]);
+    assert_ok(&spec, "spec show mood");
+    assert!(
+        String::from_utf8_lossy(&spec.stdout).contains(r#""verb": "switch""#),
+        "{}",
+        String::from_utf8_lossy(&spec.stdout)
+    );
 }
 
 /// `kit install -` reads the kit from stdin, and `--dry-run` says what it

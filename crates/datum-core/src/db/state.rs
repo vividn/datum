@@ -377,11 +377,8 @@ impl Db {
     pub fn get_all_state_colors(
         &self,
     ) -> Result<std::collections::HashMap<(String, String), String>> {
-        let mut stmt = self.conn.prepare("SELECT spec_json FROM field_specs")?;
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         let mut map = std::collections::HashMap::new();
-        for r in rows {
-            let spec = self.parse_spec(&r.map_err(DatumError::Db)?)?;
+        for spec in self.stored_specs("")? {
             for (state, color) in spec.state_colors {
                 map.insert((spec.field.clone(), state), color);
             }

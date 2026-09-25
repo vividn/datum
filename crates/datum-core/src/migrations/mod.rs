@@ -53,7 +53,7 @@ use v31_v40::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 37;
+pub const CURRENT_SCHEMA_VERSION: u32 = 38;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -330,5 +330,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entries: add entries_slug_lookup, a plain index on slug — the partial entries_slug serves only queries that say superseded_by IS NULL, so every other slug lookup scanned the table (da-ij3x)",
         apply: m36_to_37_slug_lookup_index,
         down: down_37_to_36_slug_lookup_index,
+    },
+    Migration {
+        from: 37,
+        to: 38,
+        summary: "field specs are entries: every field_specs row becomes the entry spec:<field> (its data the spec, plus kit_id), and the table is dropped — one source of truth that backs up, syncs and has a history (da-lc26c)",
+        apply: m37_to_38_specs_are_entries,
+        down: down_38_to_37_specs_are_entries,
     },
 ];

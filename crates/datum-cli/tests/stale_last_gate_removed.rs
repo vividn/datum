@@ -122,8 +122,8 @@ fn an_old_tombstone_is_reachable_without_a_flag() {
     // path left — exactly the shape the old `--window` refusal guarded.
     db.conn()
         .execute(
-            "UPDATE entries SET deleted_at = ?1",
-            rusqlite::params![(Utc::now() - Duration::hours(30)).to_rfc3339()],
+            "UPDATE entries SET deleted_at = ?1 WHERE hid = ?2",
+            rusqlite::params![(Utc::now() - Duration::hours(30)).to_rfc3339(), hid],
         )
         .unwrap();
     db.conn().execute("DELETE FROM last_docs", []).unwrap();
@@ -173,7 +173,9 @@ fn delete_still_accepts_force_even_with_nothing_to_skip() {
     run_cli(&["occur", "coffee"], &db).expect("create");
     age_pointer(&db, 90);
     run_cli(&["delete", "--force"], &db).expect("--force is still a valid flag");
-    assert_eq!(db.count_entries().unwrap(), 0);
+    assert!(datum_core::test_util::logged_all(&db)[0]
+        .deleted_at
+        .is_some());
 }
 
 /// The boundary that is left. vividn named `undo` and `delete`; `update` keeps

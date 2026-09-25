@@ -336,12 +336,13 @@ pub fn logged_entries(db: &Db, field: &str) -> Vec<Entry> {
         .collect()
 }
 
-/// Every entry in the database that is not a TRACK document.
+/// Every entry in the database that is not a TRACK document or a meta
+/// entry (a field's spec, da-lc26c) — the rows commands LOGGED.
 pub fn logged_all(db: &Db) -> Vec<Entry> {
     db.list_including_deleted()
         .expect("list_including_deleted failed")
         .into_iter()
-        .filter(|e| crate::track::track_verb(e).is_none())
+        .filter(|e| crate::track::track_verb(e).is_none() && !crate::db::is_meta_field(&e.field))
         .collect()
 }
 

@@ -42,10 +42,11 @@ const SPILL_ENTRIES = 20_000;
 async function seed({ page, run }, n) {
 	const logged = await run(['occur', 'coffee', '-t', '0700']);
 	assert.equal(logged.code, 0, logged.stderr);
-	// The header and the entry, which declares its own field (da-gvcen);
-	// the template below is that entry.
+	// The header, the entry, which declares its own field (da-gvcen), and
+	// the spec that first log wrote (da-lc26c, after it by slug); the
+	// template below is the entry.
 	const backup = (await run(['db', 'backup', '-'])).stdout.split('\n');
-	assert.equal(backup.length, 2, `expected a header and one row: ${backup.join('\n')}`);
+	assert.equal(backup.length, 3, `expected a header, one row and its spec: ${backup.join('\n')}`);
 
 	return page.evaluate(
 		async ([header, template, n]) => {

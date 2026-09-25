@@ -165,9 +165,13 @@ pub(super) fn filtered_where(
 ) -> (String, Vec<String>) {
     let mut parts: Vec<String> = vec![LIVE_SQL.to_string()];
     let mut bindings: Vec<String> = Vec::new();
-    if let Some(f) = field {
-        parts.push("field = ?".to_string());
-        bindings.push(f.to_string());
+    match field {
+        Some(f) => {
+            parts.push("field = ?".to_string());
+            bindings.push(f.to_string());
+        }
+        // Specs and layouts are not life data (da-lc26c); naming one counts it.
+        None => parts.push(super::spec::NOT_META_FIELD_SQL.to_string()),
     }
     if let Some(since_utc) = since {
         parts.push(format!("{} >= ?", time_expr_endbound()));
@@ -323,6 +327,8 @@ pub struct SaveSpecReport {
     /// Aliases shadowed by an existing user-defined / kit alias row, or
     /// claimed by another field's spec (cross-spec state collision).
     pub skipped: Vec<AliasConflict>,
+    /// The spec entry the save wrote (da-lc26c) — what `undo` steps back.
+    pub hid: Hid,
 }
 
 /// A single alias-name collision surfaced when saving a field spec.
@@ -348,7 +354,7 @@ pub enum AliasConflictReason {
 // The spec-derived alias index is pure — specs in, names out — so it lives
 // in `field_spec::alias` beside the `Alias` it produces, where the browser
 // can reach it without SQLite (da-5kbj). `Db::spec_alias_index` is the
-// caching read of the `field_specs` table on top of it.
+// caching read of the `spec` entries on top of it.
 pub use crate::field_spec::{SpecAliasCollision, SpecAliasIndex};
 
 /// Max number of candidates returned in [`crate::error::DatumError::AmbiguousPrefix`].

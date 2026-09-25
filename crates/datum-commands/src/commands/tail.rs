@@ -442,7 +442,8 @@ pub fn tail_params(args: &TailArgs) -> Result<ListParams> {
         // (da-xn8j protocol notes). Default off — those rows live
         // off the live tail surface and are surfaced via
         // `datum check flags` / `datum meta show <field>` instead.
-        include_meta: args.show_meta,
+        // `-A` shows everything, the meta fields' entries (da-lc26c) too.
+        include_meta: args.show_meta || args.output()?.show == crate::render::Show::All,
     })
 }
 

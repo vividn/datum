@@ -545,14 +545,28 @@ pub fn save_track_spec(
     field: &str,
     action: datum_core::action::Action,
 ) -> anyhow::Result<()> {
-    if db.load_spec(field)?.is_some() {
-        return Ok(());
+    if let Some(spec) = track_spec(db, field, action)? {
+        db.set_device_id(&crate::config::device_id()?);
+        db.save_field_spec(&spec)?;
+    }
+    Ok(())
+}
+
+/// The spec [`save_track_spec`] would write, or `None` when the field has
+/// one — or is a meta field (a `layout`, say), which describes the
+/// database rather than a life field (da-lc26c).
+pub fn track_spec(
+    db: &Db,
+    field: &str,
+    action: datum_core::action::Action,
+) -> anyhow::Result<Option<datum_core::field_spec::FieldSpec>> {
+    if datum_core::db::is_meta_field(field) || db.load_spec(field)?.is_some() {
+        return Ok(None);
     }
     let mut spec =
         datum_core::field_spec::FieldSpec::new(field, datum_core::track::verb_for_action(action));
     spec.regenerate_derived_aliases();
-    db.save_field_spec(&spec)?;
-    Ok(())
+    Ok(Some(spec))
 }
 
 #[cfg(test)]

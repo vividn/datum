@@ -80,8 +80,7 @@ pub struct PresentationSpec {
     /// `PerSurface` map names individual surfaces (`dayview`, `nowview`,
     /// future renderers) and treats absent surfaces as visible. Affects
     /// only visual presentation: data still flows through `tail`, `get`,
-    /// `grep`, `view`, sync, and export. Mirrored into
-    /// `field_specs.render_json` at save time (NULL = visible everywhere).
+    /// `grep`, `view`, sync, and export. Unset = visible everywhere.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub render: Option<Render>,
 

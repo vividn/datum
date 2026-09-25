@@ -41,7 +41,7 @@ use std::collections::HashMap;
 use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
 
-use crate::db::{row_to_entry_public, Db};
+use crate::db::{row_to_entry_public, Db, NOT_META_FIELD_SQL};
 use crate::entry::Entry;
 use crate::error::{DatumError, PrefixCandidate, Result};
 use crate::ids::{Hid, QUICK_ORDINAL_CAP};
@@ -59,7 +59,8 @@ const AMBIGUOUS_CANDIDATE_CAP: usize = 16;
 
 /// The order `_`, `__`, `_4`, … count in: most recent first. Shared by the
 /// resolvers below and by [`quick_ordinals`], so what `tail` displays and
-/// what `_N` resolves to can't drift apart.
+/// what `_N` resolves to can't drift apart. Both skip the meta fields'
+/// entries (specs, layouts — da-lc26c) unless the field is named.
 const NTH_ORDER: &str = "ORDER BY occur_time DESC, slug DESC";
 
 /// Resolve a quickId pattern to zero or more live entries.
@@ -275,7 +276,7 @@ fn live_entry_range(db: &Db, field: Option<&str>, from: usize, to: usize) -> Res
     let mut stmt = db.conn().prepare(&format!(
         "SELECT * FROM entries
          WHERE deleted_at IS NULL AND superseded_by IS NULL
-           AND (?1 IS NULL OR field = ?1)
+           AND (?1 IS NULL AND {NOT_META_FIELD_SQL} OR field = ?1)
          {NTH_ORDER} LIMIT ?2 OFFSET ?3"
     ))?;
     let rows = stmt.query_map(params![field, limit, offset], row_to_entry_public)?;
@@ -301,7 +302,7 @@ fn live_entry_range(db: &Db, field: Option<&str>, from: usize, to: usize) -> Res
 pub fn quick_ordinals(db: &Db) -> Result<HashMap<Hid, usize>> {
     let mut stmt = db.conn().prepare(&format!(
         "SELECT hid FROM entries WHERE deleted_at IS NULL AND superseded_by IS NULL \
-         {NTH_ORDER} LIMIT {QUICK_ORDINAL_CAP}"
+           AND {NOT_META_FIELD_SQL} {NTH_ORDER} LIMIT {QUICK_ORDINAL_CAP}"
     ))?;
     let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
     let mut out = HashMap::new();

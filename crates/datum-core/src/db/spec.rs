@@ -1,20 +1,132 @@
-//! `field_specs` table: load/save/delete specs and the read-side helpers
-//! that surface them. Also `load_registry`, which materializes specs +
-//! user/kit aliases + spec-derived aliases into the in-memory
-//! [`SpecRegistry`].
+//! Field specs are ENTRIES (da-lc26c): a field's spec is the live entry of
+//! field `spec` at slug `spec:<field>`, its data the spec's JSON plus the
+//! `kit_id` of the kit that shipped it — the shape layouts took in da-gg0v
+//! (`kit_layout.rs`). The entries table is the one source of truth, so a
+//! spec backs up, syncs and has a history like any doc, and `update` /
+//! `edit` / `undo` / `history spec:mood` work on it.
 //!
-//! Derived aliases are no longer written to the `aliases` table — see
-//! [`super::spec_alias_index`] (da-8y2q.5).
+//! This module loads, saves and deletes them, validates any write of one
+//! ([`check_spec_entry`], called by every row writer in `insert.rs`), and
+//! builds the in-memory [`SpecRegistry`] from them. Derived aliases are
+//! read out of the specs lazily — see [`super::spec_alias_index`].
 
+use chrono::DateTime;
 use rusqlite::{params, OptionalExtension};
+use serde_json::Value as JsonValue;
 
 use crate::action::Action;
+use crate::dur::Dur;
+use crate::entry::Entry;
 use crate::error::{DatumError, Result};
 use crate::field_spec::{verb_from_log, Alias, FieldSpec, SpecRegistry};
+use crate::ids::Slug;
 use crate::shape::{is_ignored_state, TRACKED_STATE_VALUE};
+use crate::time::DatumTime;
+use crate::verb::Verb;
 
-use super::types::{AliasConflict, AliasConflictReason, SaveSpecReport};
+use super::kit_layout::LAYOUT_FIELD;
+use super::types::{AliasConflict, AliasConflictReason, SaveSpecReport, LIVE_SQL};
 use super::Db;
+
+/// The field every spec entry is logged under.
+pub const SPEC_FIELD: &str = "spec";
+
+/// The data key naming the kit that shipped a spec, as for layouts.
+pub(crate) const SPEC_KIT_KEY: &str = "kit_id";
+
+/// Fields whose entries describe the database rather than the life it
+/// records. One rule keeps them all off the life-data surfaces — tail,
+/// now, dayview, nowview, stats, fields — unless asked for by name
+/// (`tail spec`) or with `--show-meta` / `-A`.
+pub const META_FIELDS: &[&str] = &[SPEC_FIELD, LAYOUT_FIELD];
+
+/// [`META_FIELDS`] as a SQL predicate on `entries.field`.
+pub(crate) const NOT_META_FIELD_SQL: &str = "field NOT IN ('spec', 'layout')";
+
+pub fn is_meta_field(field: &str) -> bool {
+    META_FIELDS.contains(&field)
+}
+
+/// The rows the readers take for specs: a live `spec` entry at the slug
+/// its own data names. The writers in `insert.rs` hold every row to that
+/// ([`check_spec_entry`]), but sync stores a peer's rows as they arrive,
+/// and a peer from before v38 may hold a plain `occur spec` log. Such a row
+/// is not a spec to read. A malformed spec at its own slug still errors.
+const SPEC_DOC_SQL: &str = "field = 'spec' AND deleted_at IS NULL AND superseded_by IS NULL \
+     AND slug = 'spec:' || json_extract(data, '$.field')";
+
+/// `spec:<field>` — a spec's slug, so the same spec is the same doc on
+/// every device.
+pub(crate) fn spec_slug(field: &str) -> String {
+    format!("{SPEC_FIELD}:{field}")
+}
+
+/// Every spec entry's occur time: fixed, not the moment it was written,
+/// so two devices writing (or migrating) the same spec make the same doc.
+pub(crate) fn spec_occur_time() -> DatumTime {
+    DatumTime {
+        utc: DateTime::UNIX_EPOCH,
+        offset_minutes: 0,
+        timezone: None,
+        uncertainty: None,
+    }
+}
+
+/// A new spec entry for `data` (the spec's JSON, with its kit mark).
+pub(crate) fn new_spec_entry(field: &str, data: JsonValue, device_id: &str) -> Entry {
+    let mut row = Entry::new(
+        SPEC_FIELD,
+        Verb::Point,
+        None,
+        Some(data),
+        Some(spec_occur_time()),
+        Some(Dur::moment()),
+        device_id,
+    );
+    row.slug = Slug::new(spec_slug(field));
+    // A literal template: the slug stays `spec:<field>` through every edit.
+    row.id_structure = Some(field.to_string());
+    row.content_hash = row.expected_content_hash();
+    row
+}
+
+/// Refuse a write that would store something other than a spec under the
+/// `spec` field — a malformed spec, a spec whose slug is not
+/// `spec:<its field>`, or a plain log like `occur spec`. Tombstones pass:
+/// deleting is always allowed.
+pub(crate) fn check_spec_entry(slug: &str, entry: &Entry, data: Option<&JsonValue>) -> Result<()> {
+    if entry.field != SPEC_FIELD || entry.deleted_at.is_some() {
+        return Ok(());
+    }
+    let refuse = |why: String| Err(DatumError::InvalidFieldSpec(format!("`{slug}`: {why}")));
+    let Some(mut data) = data.filter(|d| d.is_object()).cloned() else {
+        return refuse(format!(
+            "`{SPEC_FIELD}` is reserved for field specs, and this entry carries none \
+             (see `datum spec set`)"
+        ));
+    };
+    // A stored spec may predate its verb (da-c8mh); reading fills it from
+    // the log, so a missing one is not malformed.
+    let obj = data.as_object_mut().expect("checked is_object");
+    let stated = |k: &str| obj.get(k).is_some_and(|v| !v.is_null());
+    if !stated("verb") && !stated("default_verb") {
+        obj.remove("default_verb");
+        obj.insert("verb".into(), serde_json::json!(Action::Occur));
+    }
+    let spec: FieldSpec = match serde_json::from_value(data) {
+        Ok(spec) => spec,
+        Err(e) => return refuse(format!("not a valid field spec: {e}")),
+    };
+    crate::slug::validate_field_name(&spec.field)?;
+    if slug != spec_slug(&spec.field) {
+        return refuse(format!(
+            "the spec for `{}` lives at `{}`",
+            spec.field,
+            spec_slug(&spec.field)
+        ));
+    }
+    Ok(())
+}
 
 impl Db {
     /// Deserialize a stored `spec_json`.
@@ -55,13 +167,46 @@ impl Db {
         Ok(serde_json::from_value(value)?)
     }
 
+    /// Every live spec, parsed, in the order `tail_sql` (an `ORDER BY`)
+    /// gives. The kit mark in the data is not a spec key, and serde
+    /// passes over it.
+    pub(crate) fn stored_specs(&self, tail_sql: &str) -> Result<Vec<FieldSpec>> {
+        self.stored_specs_where("", tail_sql, [])
+    }
+
+    pub(super) fn stored_specs_where<P: rusqlite::Params>(
+        &self,
+        filter_sql: &str,
+        tail_sql: &str,
+        params: P,
+    ) -> Result<Vec<FieldSpec>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT data FROM entries WHERE {SPEC_DOC_SQL} {filter_sql} {tail_sql}"
+        ))?;
+        let rows = stmt.query_map(params, |row| row.get::<_, String>(0))?;
+        rows.map(|r| self.parse_spec(&r.map_err(DatumError::Db)?))
+            .collect()
+    }
+
+    /// The live entry holding `field`'s spec, if it has one.
+    pub(crate) fn spec_entry(&self, field: &str) -> Result<Option<Entry>> {
+        Ok(self
+            .conn
+            .query_row(
+                &format!("SELECT * FROM entries WHERE slug = ?1 AND {LIVE_SQL}"),
+                params![spec_slug(field)],
+                super::row_mapper::row_to_entry,
+            )
+            .optional()?)
+    }
+
     /// Load a field spec by name. None if not defined.
     pub fn load_spec(&self, field: &str) -> Result<Option<FieldSpec>> {
         let json: Option<String> = self
             .conn
             .query_row(
-                "SELECT spec_json FROM field_specs WHERE field = ?1",
-                params![field],
+                &format!("SELECT data FROM entries WHERE slug = ?1 AND field = '{SPEC_FIELD}' AND {LIVE_SQL}"),
+                params![spec_slug(field)],
                 |row| row.get(0),
             )
             .optional()?;
@@ -118,10 +263,14 @@ impl Db {
     /// with no entry logged against it yet — `fields` has always listed
     /// it (`compute_fields` unions the registry in) and
     /// [`Db::get_tracked_fields`] does the same (da-m1l8).
+    /// A meta field's spec, if one exists, is not a life field to list.
     pub fn spec_fields(&self) -> Result<Vec<String>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT field FROM field_specs ORDER BY field")?;
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT json_extract(data, '$.field') AS f FROM entries
+             WHERE {SPEC_DOC_SQL}
+               AND f NOT IN ('spec', 'layout')
+             ORDER BY f"
+        ))?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
@@ -140,28 +289,63 @@ impl Db {
         let placeholders = std::iter::repeat_n("?", fields.len())
             .collect::<Vec<_>>()
             .join(",");
-        let sql =
-            format!("SELECT field, spec_json FROM field_specs WHERE field IN ({placeholders})");
-        let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(rusqlite::params_from_iter(fields.iter()), |row| {
-            let field: String = row.get(0)?;
-            let json: String = row.get(1)?;
-            Ok((field, json))
-        })?;
-        for r in rows {
-            let (field, json) = r.map_err(DatumError::Db)?;
-            let spec = self.parse_spec(&json)?;
-            out.insert(field, spec);
+        let slugs = fields.iter().map(|f| spec_slug(f));
+        for spec in self.stored_specs_where(
+            &format!("AND slug IN ({placeholders})"),
+            "",
+            rusqlite::params_from_iter(slugs),
+        )? {
+            out.insert(spec.field.clone(), spec);
         }
         Ok(out)
     }
 
     /// Save a field spec. Derived aliases are not written to the
-    /// `aliases` table — they live in `spec_json` and are surfaced
-    /// lazily via [`Db::spec_alias_index`].
+    /// `aliases` table — they live in the spec and are surfaced lazily via
+    /// [`Db::spec_alias_index`].
     pub fn save_field_spec(&self, spec: &FieldSpec) -> Result<()> {
         let _ = self.save_field_spec_with_report(spec)?;
         Ok(())
+    }
+
+    /// Stamp the spec entries this handle writes with `device_id`. The
+    /// first call wins; unset, they say `local`.
+    pub fn set_device_id(&self, device_id: &str) {
+        let _ = self.device_id.set(device_id.to_string());
+    }
+
+    /// Write `spec` as its entry: an update of the live one (a new version
+    /// in its history, and nothing at all when the spec is unchanged), else
+    /// an insert — which revives a deleted spec's tombstone in place.
+    /// `kit_id` is the mark to write: `Some` sets it, `None` keeps the one
+    /// the entry already carries, so a user's `spec set` on a kit field
+    /// leaves it the kit's. Returns the entry.
+    pub(crate) fn write_spec_entry(&self, spec: &FieldSpec, kit_id: Option<&str>) -> Result<Entry> {
+        crate::slug::validate_field_name(&spec.field)?;
+        let mut data = serde_json::to_value(spec)?;
+        let existing = self.spec_entry(&spec.field)?;
+        let kit = kit_id.map(JsonValue::from).or_else(|| {
+            existing
+                .as_ref()
+                .and_then(|e| e.data.as_ref()?.get(SPEC_KIT_KEY).cloned())
+        });
+        if let (Some(kit), Some(obj)) = (kit, data.as_object_mut()) {
+            obj.insert(SPEC_KIT_KEY.into(), kit);
+        }
+        match existing {
+            Some(row) if row.data.as_ref() == Some(&data) => Ok(row),
+            Some(mut row) => {
+                row.data = Some(data);
+                self.save_existing_entry(&row)?;
+                self.get_entry(&row.slug)
+            }
+            None => {
+                let device = self.device_id.get().map_or("local", String::as_str);
+                let row = new_spec_entry(&spec.field, data, device);
+                self.insert_entry(&row)?;
+                self.get_entry(&row.slug)
+            }
+        }
     }
 
     /// Variant of [`Db::save_field_spec`] that returns a structured
@@ -170,32 +354,7 @@ impl Db {
     /// user/kit alias row or by another spec's earlier registration in
     /// the [`super::types::SpecAliasIndex`].
     pub fn save_field_spec_with_report(&self, spec: &FieldSpec) -> Result<SaveSpecReport> {
-        crate::slug::validate_field_name(&spec.field)?;
-        let json = serde_json::to_string(spec)?;
-        let tags_json = serde_json::to_string(&spec.tags)?;
-        // da-2zd: NULL when the spec leaves render unset (i.e. visible
-        // everywhere), otherwise the canonical JSON form of the Render
-        // enum. The column shape lets us add a SQL-side visibility filter
-        // later without re-parsing spec_json.
-        let render_json: Option<String> = match &spec.presentation.render {
-            Some(r) => Some(serde_json::to_string(r)?),
-            None => None,
-        };
-
-        // UPSERT preserves an existing `kit_id` on re-save. Kit installs go
-        // through `Db::install_kit` (which sets kit_id explicitly); a
-        // user-driven `datum spec set` on a kit-owned field updates the JSON
-        // body in place without breaking the kit linkage. `tags` mirrors
-        // `spec.tags` so SQL filters can avoid a JSON walk; `render_json`
-        // mirrors `spec.presentation.render` for the same reason.
-        self.conn.execute(
-            "INSERT INTO field_specs (field, spec_json, tags, render_json) VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(field) DO UPDATE SET spec_json   = excluded.spec_json,
-                                              tags        = excluded.tags,
-                                              render_json = excluded.render_json",
-            params![spec.field, json, tags_json, render_json],
-        )?;
-        self.invalidate_spec_alias_index();
+        let written = self.write_spec_entry(spec, None)?;
 
         // Compute the report by inspecting the now-current state of the
         // alias namespace. A derived alias is "saved" iff (a) no user/kit
@@ -242,47 +401,37 @@ impl Db {
             }
         }
         drop(index);
-        Ok(SaveSpecReport { saved, skipped })
+        Ok(SaveSpecReport {
+            saved,
+            skipped,
+            hid: written.hid,
+        })
     }
 
-    /// Delete a field spec. Derived aliases are not stored as rows, so
-    /// no alias-table cleanup is required — invalidating the spec-alias
-    /// index ensures subsequent reads no longer surface them.
-    pub fn delete_field_spec(&self, field: &str) -> Result<()> {
-        self.conn
-            .execute("DELETE FROM field_specs WHERE field = ?1", params![field])?;
-        self.invalidate_spec_alias_index();
-        Ok(())
+    /// Delete a field spec: a SOFT delete, as `datum del` makes, so it
+    /// travels to the other devices and `undo` brings it back. Derived
+    /// aliases go with it — they are read out of the live specs.
+    /// Returns the deleted entry's hid, `None` when there was no spec.
+    pub fn delete_field_spec(&self, field: &str) -> Result<Option<crate::ids::Hid>> {
+        let Some(row) = self.spec_entry(field)? else {
+            return Ok(None);
+        };
+        self.soft_delete_entry(&row.hid)?;
+        Ok(Some(row.hid))
     }
 
-    /// Return field specs whose `tags` array contains `tag`. The `tags`
-    /// column stores the canonical JSON form (e.g. `["chore","daily"]`); a
-    /// coarse LIKE prefilter narrows the scan, then Rust-side `has_tag`
-    /// verifies (so a tag substring like `"chore"` doesn't match a tag named
-    /// `"chores"`).
+    /// Return field specs whose `tags` array contains `tag`, by field.
+    /// Membership, not substring: `chore` does not match `chores`.
     pub fn list_specs_by_tag(&self, tag: &str) -> Result<Vec<FieldSpec>> {
-        let needle = format!("%{tag}%");
-        let mut stmt = self
-            .conn
-            .prepare("SELECT spec_json FROM field_specs WHERE tags LIKE ?1 ORDER BY field")?;
-        let rows = stmt.query_map(params![needle], |row| row.get::<_, String>(0))?;
-        let mut out = Vec::new();
-        for row in rows {
-            let spec = self.parse_spec(&row?)?;
-            if spec.has_tag(tag) {
-                out.push(spec);
-            }
-        }
-        Ok(out)
+        let mut specs = self.stored_specs("ORDER BY json_extract(data, '$.field')")?;
+        specs.retain(|s| s.has_tag(tag));
+        Ok(specs)
     }
 
     pub fn load_registry(&self) -> Result<SpecRegistry> {
         let mut registry = SpecRegistry::new();
 
-        let mut stmt = self.conn.prepare("SELECT spec_json FROM field_specs")?;
-        let specs = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        for spec_json in specs {
-            let spec = self.parse_spec(&spec_json?)?;
+        for spec in self.stored_specs("")? {
             registry.register_field(spec);
         }
 
@@ -313,36 +462,125 @@ mod tag_tests {
     use crate::field_spec::{FieldSpec, Render};
     use std::collections::HashMap;
 
+    /// da-lc26c: a spec is the entry `spec:<field>`, and a re-save is a new
+    /// version of that one entry, not a second row.
     #[test]
-    fn save_mirrors_tags_into_column() {
+    fn a_spec_is_an_entry_and_a_resave_is_a_new_version() {
         let db = Db::open_in_memory().unwrap();
         let mut spec = FieldSpec::new("dishes", Action::Occur);
         spec.tags = vec!["chore".into(), "daily".into()];
+        let first = db.save_field_spec_with_report(&spec).unwrap().hid;
+
+        let row = db.get_entry("spec:dishes").unwrap();
+        assert_eq!(row.hid, first);
+        assert_eq!(row.field, "spec");
+        assert_eq!(
+            row.data.as_ref().unwrap()["tags"],
+            serde_json::json!(["chore", "daily"])
+        );
+
+        spec.tags = vec!["chore".into()];
+        let second = db.save_field_spec_with_report(&spec).unwrap().hid;
+        assert_eq!(second, first, "the same entry, edited");
+        assert_eq!(db.load_spec("dishes").unwrap().unwrap().tags, vec!["chore"]);
+        let versions = crate::history::latest_version(db.conn(), &first).unwrap();
+        assert_eq!(versions, Some(2), "create + the edit's pre-image");
+
+        // An unchanged save writes nothing.
         db.save_field_spec(&spec).unwrap();
+        assert_eq!(
+            crate::history::latest_version(db.conn(), &first).unwrap(),
+            Some(2)
+        );
+    }
 
-        let stored: String = db
-            .conn()
-            .query_row(
-                "SELECT tags FROM field_specs WHERE field = 'dishes'",
-                [],
-                |row| row.get(0),
+    /// A malformed spec, a plain log of the reserved field, or a spec at
+    /// the wrong slug is refused with the reason, never stored.
+    #[test]
+    fn a_write_under_the_spec_field_is_validated_as_a_spec() {
+        use crate::error::DatumError;
+        let db = Db::open_in_memory().unwrap();
+
+        let plain = crate::test_util::entry_builder("spec").build();
+        let err = db.insert_entry(&plain).unwrap_err();
+        assert!(
+            matches!(err, DatumError::InvalidFieldSpec(ref m) if m.contains("reserved")),
+            "{err:?}"
+        );
+
+        let bad = super::new_spec_entry(
+            "mood",
+            serde_json::json!({"field": "mood", "verb": "pirouette"}),
+            "d",
+        );
+        let err = db.insert_entry(&bad).unwrap_err();
+        assert!(
+            matches!(err, DatumError::InvalidFieldSpec(ref m) if m.contains("not a valid field spec")),
+            "{err:?}"
+        );
+
+        let moved = super::new_spec_entry(
+            "mood",
+            serde_json::json!({"field": "sleep", "verb": "start"}),
+            "d",
+        );
+        let err = db.insert_entry(&moved).unwrap_err();
+        assert!(
+            matches!(err, DatumError::InvalidFieldSpec(ref m) if m.contains("spec:sleep")),
+            "{err:?}"
+        );
+
+        // An edit is checked too.
+        db.save_field_spec(&FieldSpec::new("mood", Action::Switch))
+            .unwrap();
+        let mut row = db.get_entry("spec:mood").unwrap();
+        row.data = Some(serde_json::json!({"field": "mood", "verb": 7}));
+        assert!(db.save_existing_entry(&row).is_err());
+        assert_eq!(db.load_spec("mood").unwrap().unwrap().verb, Action::Switch);
+    }
+
+    /// Sync stores a peer's rows unchecked, and a peer from before v38 can
+    /// hold a plain log of the field `spec`. The readers pass over it.
+    #[test]
+    fn a_synced_plain_log_of_spec_is_not_read_as_a_spec() {
+        let db = Db::open_in_memory().unwrap();
+        db.save_field_spec(&FieldSpec::new("mood", Action::Switch))
+            .unwrap();
+        let plain = crate::test_util::entry_builder("spec").build();
+        db.conn()
+            .execute(
+                "INSERT INTO entries (hid, slug, content_hash, field, occur_time, create_time,
+                                      modify_time, device_id)
+                 VALUES (?1, ?2, ?1, 'spec', '2026-09-01T00:00:00+00:00',
+                         '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z', 'peer')",
+                rusqlite::params![plain.hid, plain.slug],
             )
             .unwrap();
-        assert_eq!(stored, r#"["chore","daily"]"#);
 
-        // Re-saving with a different tag set updates the column.
-        let mut spec2 = spec.clone();
-        spec2.tags = vec!["chore".into()];
-        db.save_field_spec(&spec2).unwrap();
-        let stored2: String = db
-            .conn()
-            .query_row(
-                "SELECT tags FROM field_specs WHERE field = 'dishes'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(stored2, r#"["chore"]"#);
+        let registry = db.load_registry().unwrap();
+        assert_eq!(registry.fields.keys().collect::<Vec<_>>(), ["mood"]);
+        assert_eq!(db.spec_fields().unwrap(), ["mood"]);
+        assert!(db.get_all_state_colors().unwrap().is_empty());
+        db.spec_alias_index().unwrap();
+    }
+
+    #[test]
+    fn delete_is_a_tombstone_and_a_resave_revives_it() {
+        let db = Db::open_in_memory().unwrap();
+        let hid = db
+            .save_field_spec_with_report(&FieldSpec::new("mood", Action::Switch))
+            .unwrap()
+            .hid;
+        assert_eq!(db.delete_field_spec("mood").unwrap(), Some(hid.clone()));
+        assert!(db.load_spec("mood").unwrap().is_none());
+        assert_eq!(db.delete_field_spec("mood").unwrap(), None);
+
+        let again = db
+            .save_field_spec_with_report(&FieldSpec::new("mood", Action::Occur))
+            .unwrap()
+            .hid;
+        assert_eq!(again, hid, "the tombstone is revived in place");
+        assert_eq!(db.load_spec("mood").unwrap().unwrap().verb, Action::Occur);
     }
 
     #[test]
@@ -353,8 +591,7 @@ mod tag_tests {
         let mut laundry = FieldSpec::new("laundry", Action::Occur);
         laundry.tags = vec!["chore".into(), "weekly".into()];
         let mood = FieldSpec::new("mood", Action::Switch);
-        // `chores` (with trailing s) must NOT match a search for `chore` —
-        // the LIKE prefilter would, but the Rust verifier rejects it.
+        // `chores` (with trailing s) must NOT match a search for `chore`.
         let mut almost = FieldSpec::new("almost", Action::Occur);
         almost.tags = vec!["chores".into()];
 
@@ -363,8 +600,7 @@ mod tag_tests {
         db.save_field_spec(&mood).unwrap();
         db.save_field_spec(&almost).unwrap();
 
-        let mut hits = db.list_specs_by_tag("chore").unwrap();
-        hits.sort_by(|a, b| a.field.cmp(&b.field));
+        let hits = db.list_specs_by_tag("chore").unwrap();
         let names: Vec<&str> = hits.iter().map(|s| s.field.as_str()).collect();
         assert_eq!(names, vec!["dishes", "laundry"]);
 
@@ -372,75 +608,38 @@ mod tag_tests {
         assert!(db.list_specs_by_tag("nonexistent").unwrap().is_empty());
     }
 
-    // ─── Render visibility tests (da-2zd) ────────────────────────────────────
+    // ─── Render visibility round-trips (da-2zd) ─────────────────────────────
 
     #[test]
-    fn save_leaves_render_json_null_when_render_is_none() {
+    fn render_round_trips_unset_bool_and_per_surface() {
         let db = Db::open_in_memory().unwrap();
-        let spec = FieldSpec::new("plain", Action::Occur);
-        db.save_field_spec(&spec).unwrap();
-
-        let stored: Option<String> = db
-            .conn()
-            .query_row(
-                "SELECT render_json FROM field_specs WHERE field = 'plain'",
-                [],
-                |row| row.get(0),
-            )
+        db.save_field_spec(&FieldSpec::new("plain", Action::Occur))
             .unwrap();
-        assert!(
-            stored.is_none(),
-            "render_json must be NULL for default-visible specs, got {stored:?}",
-        );
+        assert!(db
+            .load_spec("plain")
+            .unwrap()
+            .unwrap()
+            .presentation
+            .render
+            .is_none());
 
-        // Round-trip: load_spec returns a None render.
-        let back = db.load_spec("plain").unwrap().unwrap();
-        assert!(back.presentation.render.is_none());
-    }
-
-    #[test]
-    fn save_mirrors_render_bool_into_column() {
-        let db = Db::open_in_memory().unwrap();
         let mut spec = FieldSpec::new("background_telemetry", Action::Occur);
         spec.presentation.render = Some(Render::All(false));
         db.save_field_spec(&spec).unwrap();
-
-        let stored: Option<String> = db
-            .conn()
-            .query_row(
-                "SELECT render_json FROM field_specs WHERE field = 'background_telemetry'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(stored.as_deref(), Some("false"));
-
         let back = db.load_spec("background_telemetry").unwrap().unwrap();
         assert_eq!(back.presentation.render, Some(Render::All(false)));
-    }
 
-    #[test]
-    fn save_mirrors_per_surface_render_into_column() {
-        let db = Db::open_in_memory().unwrap();
+        // Dropping it again clears it.
+        spec.presentation.render = None;
+        db.save_field_spec(&spec).unwrap();
+        let back = db.load_spec("background_telemetry").unwrap().unwrap();
+        assert!(back.presentation.render.is_none());
+
         let mut spec = FieldSpec::new("stretch_routine", Action::Occur);
         let mut map = HashMap::new();
         map.insert("dayview".to_string(), false);
         spec.presentation.render = Some(Render::PerSurface(map));
         db.save_field_spec(&spec).unwrap();
-
-        let stored: Option<String> = db
-            .conn()
-            .query_row(
-                "SELECT render_json FROM field_specs WHERE field = 'stretch_routine'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        // Object form serializes as a JSON object; we don't pin the exact
-        // ordering since HashMap iteration is non-deterministic.
-        let stored = stored.expect("render_json should be set");
-        assert!(stored.contains("\"dayview\":false"), "stored = {stored}");
-
         let back = db.load_spec("stretch_routine").unwrap().unwrap();
         assert!(!back.presentation.renders_on("dayview"));
         assert!(back.presentation.renders_on("nowview"));
@@ -460,28 +659,6 @@ mod tag_tests {
             "expected InvalidFieldSpec, got {err:?}",
         );
     }
-
-    #[test]
-    fn re_save_clears_render_json_when_spec_drops_render() {
-        let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("toggle", Action::Occur);
-        spec.presentation.render = Some(Render::All(false));
-        db.save_field_spec(&spec).unwrap();
-
-        // Drop render and re-save — column must reset to NULL.
-        spec.presentation.render = None;
-        db.save_field_spec(&spec).unwrap();
-
-        let stored: Option<String> = db
-            .conn()
-            .query_row(
-                "SELECT render_json FROM field_specs WHERE field = 'toggle'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert!(stored.is_none(), "expected NULL after drop, got {stored:?}");
-    }
 }
 
 /// da-c8mh's compatibility half: a spec written before this bead is still
@@ -492,14 +669,26 @@ mod tag_tests {
 mod stored_verb_tests {
     use super::Db;
     use crate::action::Action;
+    use crate::field_spec::FieldSpec;
 
+    /// Store `spec_json` verbatim as `field`'s spec entry, past the write
+    /// check — the shape an older datum may have left behind.
     fn store(db: &Db, field: &str, spec_json: &str) {
+        db.save_field_spec(&FieldSpec::new(field, Action::Occur))
+            .unwrap();
         db.conn()
             .execute(
-                "INSERT INTO field_specs (field, spec_json) VALUES (?1, ?2)",
-                rusqlite::params![field, spec_json],
+                "UPDATE entries SET data = ?2 WHERE slug = ?1",
+                rusqlite::params![super::spec_slug(field), spec_json],
             )
             .unwrap();
+    }
+
+    fn stored(db: &Db, field: &str) -> serde_json::Value {
+        db.get_entry(&super::spec_slug(field))
+            .unwrap()
+            .data
+            .unwrap()
     }
 
     #[test]
@@ -527,15 +716,7 @@ mod stored_verb_tests {
 
         // And a re-save writes the new key.
         db.save_field_spec(&spec).unwrap();
-        let stored: String = db
-            .conn()
-            .query_row(
-                "SELECT spec_json FROM field_specs WHERE field = 'activity'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        let stored: serde_json::Value = serde_json::from_str(&stored).unwrap();
+        let stored = stored(&db, "activity");
         assert_eq!(stored["verb"], "switch");
         assert!(stored["default_verb"].is_null());
     }

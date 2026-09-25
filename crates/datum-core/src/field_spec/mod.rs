@@ -7,7 +7,7 @@
 //! visibility) live in a sibling [`PresentationSpec`] held as
 //! `FieldSpec.presentation`. The split is structural: both halves still
 //! serialize into a single flat JSON blob (`#[serde(flatten)]`) and persist
-//! in one `field_specs` row.
+//! as the data of one `spec` entry (da-lc26c).
 //!
 //! Tracking state (tracked / ignored) is NOT stored on the spec — it's
 //! derived from the entry log via [`Db::state_at`](crate::db::Db::state_at).

@@ -92,9 +92,10 @@ fn live_rows(db: &Db) -> Vec<Row> {
         .conn()
         .prepare(
             // The rows a command LOGGED: a field's TRACK document
-            // (da-c8mh) declares it and is not one of them.
+            // (da-c8mh) declares it and is not one of them, nor is the
+            // spec entry its first log writes (da-lc26c).
             "SELECT field, state, dur FROM entries \
-             WHERE deleted_at IS NULL \
+             WHERE deleted_at IS NULL AND field != 'spec' \
                AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL \
              ORDER BY rowid",
         )

@@ -1,23 +1,36 @@
-//! Kit-scoped operations on `field_specs`.
+//! Kit-scoped operations on field specs.
 //!
-//! A kit install writes a batch of [`FieldSpec`] rows with their `kit_id`
-//! column set to the kit's name. Subsequent `kit list` / `kit export` /
-//! `kit uninstall` use that column to find and remove the rows owned by
-//! that kit. User-declared rows (`kit_id IS NULL`) are never touched by
-//! kit-scoped operations.
+//! A kit install writes a batch of [`FieldSpec`]s as `spec` entries whose
+//! data carries `kit_id` = the kit's name (da-lc26c), as its layouts do
+//! (`kit_layout.rs`). Subsequent `kit list` / `kit export` /
+//! `kit uninstall` use that mark to find and remove the specs owned by
+//! that kit. A user's own spec (no mark) is never touched by kit-scoped
+//! operations.
+//!
+//! Not atomic across a kit's parts (da-lc26c): each spec is its own entry
+//! write, as each layout is, and the indices commit in a transaction of
+//! their own, so an index that fails to build leaves the specs installed.
+//! Re-running the install is idempotent.
 //!
 //! Conflict policy on install: if a row already exists for the same field
 //! name, the existing row wins by default (returned in `skipped`). When
 //! the caller passes `force = true`, the kit's spec overwrites the row
 //! and re-tags it with the kit's `kit_id`.
 
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
+use serde_json::Value as JsonValue;
 
 use crate::error::{DatumError, Result};
 use crate::field_spec::FieldSpec;
 use crate::kit::IndexEntry;
 
+use super::spec::SPEC_KIT_KEY;
 use super::Db;
+
+/// The kit a spec entry's data names, if any.
+fn spec_kit(data: &JsonValue) -> Option<&str> {
+    data.get(SPEC_KIT_KEY)?.as_str()
+}
 
 /// Per-field outcome reported by [`Db::install_kit`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,17 +117,13 @@ impl Db {
         indices: &[IndexEntry],
         force: bool,
     ) -> Result<InstallReport> {
-        let tx = self.conn.unchecked_transaction()?;
         let mut report = InstallReport::default();
 
+        // Each spec is its own entry write, as a kit's layouts are.
         for spec in specs {
-            let existing_kit: Option<Option<String>> = tx
-                .query_row(
-                    "SELECT kit_id FROM field_specs WHERE field = ?1",
-                    params![spec.field],
-                    |row| row.get::<_, Option<String>>(0),
-                )
-                .optional()?;
+            let existing_kit: Option<Option<String>> = self
+                .spec_entry(&spec.field)?
+                .map(|e| e.data.as_ref().and_then(spec_kit).map(str::to_string));
 
             // The bare spec a field's first log wrote is no one's choice,
             // so it does not stand in a kit's way (da-1mkej).
@@ -131,27 +140,13 @@ impl Db {
                     continue;
                 }
             }
-
-            let json = serde_json::to_string(spec)?;
-            let tags_json = serde_json::to_string(&spec.tags)?;
-            tx.execute(
-                "INSERT INTO field_specs (field, spec_json, kit_id, tags) VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(field) DO UPDATE SET spec_json = excluded.spec_json,
-                                                  kit_id    = excluded.kit_id,
-                                                  tags      = excluded.tags",
-                params![spec.field, json, kit_id, tags_json],
-            )?;
-
-            // Derived aliases live in `spec_json` and are surfaced via
-            // the in-memory SpecAliasIndex (da-8y2q.5) — no row writes
-            // to `aliases` are needed here. The index is invalidated
-            // once at the end of the kit install along with `field_specs`.
-
+            self.write_spec_entry(spec, Some(kit_id))?;
             report
                 .outcomes
                 .push((spec.field.clone(), KitFieldOutcome::Installed));
         }
 
+        let tx = self.conn.unchecked_transaction()?;
         // Indices: drop everything previously owned by this kit, then
         // (re)create from the new TOML. Re-install is idempotent because
         // the DDL uses CREATE INDEX IF NOT EXISTS but we drop-first to
@@ -183,27 +178,23 @@ impl Db {
         }
 
         tx.commit()?;
-        self.invalidate_spec_alias_index();
         Ok(report)
     }
 
-    /// Remove every field spec tagged with this `kit_id`. User-declared
-    /// rows (`kit_id IS NULL`) are untouched. Derived aliases live in
-    /// the SpecAliasIndex and are evicted via cache invalidation —
-    /// removing the spec rows is sufficient. Returns the list of field
-    /// names removed.
+    /// Remove every field spec tagged with this `kit_id` — soft deletes,
+    /// as `datum del` makes, so the removal travels like any deletion. A
+    /// user's own spec is untouched. Returns the field names removed.
     pub fn uninstall_kit(&self, kit_id: &str) -> Result<Vec<String>> {
+        let fields: Vec<String> = self
+            .load_specs_by_kit(kit_id)?
+            .into_iter()
+            .map(|s| s.field)
+            .collect();
+        for field in &fields {
+            self.delete_field_spec(field)?;
+        }
+
         let tx = self.conn.unchecked_transaction()?;
-        let mut stmt =
-            tx.prepare("SELECT field FROM field_specs WHERE kit_id = ?1 ORDER BY field")?;
-        let fields: Vec<String> = stmt
-            .query_map(params![kit_id], |row| row.get::<_, String>(0))?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(DatumError::Db)?;
-        drop(stmt);
-
-        tx.execute("DELETE FROM field_specs WHERE kit_id = ?1", params![kit_id])?;
-
         // Drop installed indices owned by this kit. Index drops are
         // unconditional — the underlying data is fine, and the design
         // explicitly declines to gate uninstall on a trust prompt.
@@ -219,22 +210,26 @@ impl Db {
         tx.execute("DELETE FROM kit_indices WHERE kit_id = ?1", params![kit_id])?;
 
         tx.commit()?;
-        self.invalidate_spec_alias_index();
         Ok(fields)
     }
 
     /// List installed kits with per-kit field, view, alias, and index
-    /// counts. User-declared rows (`kit_id IS NULL` in any of
-    /// `field_specs`, `views`, `aliases`, or `kit_indices`) are excluded.
+    /// counts. User-declared rows (no `kit_id` in any of the spec
+    /// entries, `views`, `aliases`, or `kit_indices`) are excluded.
     /// A kit appears if it owns at least one row in any of those tables.
     pub fn list_kits(&self) -> Result<Vec<InstalledKit>> {
         let mut stmt = self.conn.prepare(
             "WITH
+                -- Specs and layouts are ENTRIES (da-lc26c, da-gg0v): the
+                -- kit that shipped one is a key in its data blob.
                 kit_fields AS (
-                    SELECT kit_id, COUNT(*) AS n
-                    FROM field_specs
-                    WHERE kit_id IS NOT NULL
-                    GROUP BY kit_id
+                    SELECT json_extract(data, '$.kit_id') AS kit_id, COUNT(*) AS n
+                    FROM entries
+                    WHERE field = 'spec'
+                      AND deleted_at IS NULL
+                      AND superseded_by IS NULL
+                      AND json_extract(data, '$.kit_id') IS NOT NULL
+                    GROUP BY 1
                 ),
                 kit_views AS (
                     SELECT kit_id, COUNT(*) AS n
@@ -259,8 +254,6 @@ impl Db {
                     WHERE kit_id IS NOT NULL
                     GROUP BY kit_id
                 ),
-                -- Layouts are ENTRIES, not a table of their own (da-gg0v):
-                -- the kit that shipped one is a key in its data blob.
                 kit_layouts AS (
                     SELECT json_extract(data, '$.kit_id') AS kit_id, COUNT(*) AS n
                     FROM entries
@@ -346,16 +339,10 @@ impl Db {
     /// `datum kit export`. Returns rows ordered by field name for stable
     /// TOML output.
     pub fn load_specs_by_kit(&self, kit_id: &str) -> Result<Vec<FieldSpec>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT spec_json FROM field_specs WHERE kit_id = ?1 ORDER BY field")?;
-        let rows = stmt.query_map(params![kit_id], |row| row.get::<_, String>(0))?;
-        let mut out = Vec::new();
-        for r in rows {
-            let json = r.map_err(DatumError::Db)?;
-            let spec = self.parse_spec(&json)?;
-            out.push(spec);
-        }
-        Ok(out)
+        self.stored_specs_where(
+            "AND json_extract(data, '$.kit_id') = ?1",
+            "ORDER BY json_extract(data, '$.field')",
+            params![kit_id],
+        )
     }
 }

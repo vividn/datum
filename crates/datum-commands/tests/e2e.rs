@@ -159,7 +159,7 @@ fn live_rows(db: &Db) -> Vec<RowView> {
             // field on its first use (da-c8mh) is not one of them.
             "SELECT field, state, dur, data \
              FROM entries WHERE deleted_at IS NULL \
-               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL \
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field != 'spec' \
              ORDER BY rowid",
         )
         .expect("prepare live_rows query");
@@ -668,8 +668,8 @@ e2e_case!(fast, admin_now: CaseSpec {
 e2e_case!(fast, admin_spec_list: CaseSpec {
     argv: "spec list",
     setup: seed_mood_field_spec,
-    // `spec list` is a read; the seeded spec row lives in field_specs,
-    // not in `entries`, so the entries table stays empty.
+    // `spec list` is a read: nothing is logged (the seeded spec is a
+    // meta entry, which the logged rows leave out).
     expected: no_rows(),
     freeze_time: Some("09:00"),
 });

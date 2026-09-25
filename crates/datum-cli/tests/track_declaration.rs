@@ -189,7 +189,7 @@ fn the_spec_is_the_record_that_the_field_exists() {
         let conn = rusqlite::Connection::open(&env.db).expect("open db");
         let spec: String = conn
             .query_row(
-                "SELECT spec_json FROM field_specs WHERE field = ?1",
+                "SELECT data FROM entries WHERE slug = 'spec:' || ?1 AND deleted_at IS NULL",
                 [field],
                 |r| r.get(0),
             )
@@ -444,7 +444,7 @@ fn a_failed_first_log_leaves_no_spec_behind() {
     let conn = rusqlite::Connection::open(&env.db).expect("open db");
     let specs: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM field_specs WHERE field = 'brandnew'",
+            "SELECT COUNT(*) FROM entries WHERE slug = 'spec:brandnew'",
             [],
             |r| r.get(0),
         )
@@ -536,7 +536,7 @@ fn v2import_declares_every_field_it_brings() {
     for (field, verb) in [("coffee", "occur"), ("mood", "switch"), ("work", "start")] {
         let spec: String = conn
             .query_row(
-                "SELECT spec_json FROM field_specs WHERE field = ?1",
+                "SELECT data FROM entries WHERE slug = 'spec:' || ?1 AND deleted_at IS NULL",
                 [field],
                 |r| r.get(0),
             )

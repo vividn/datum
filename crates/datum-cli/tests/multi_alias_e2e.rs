@@ -45,7 +45,7 @@ fn live_rows(db: &PathBuf) -> Vec<(String, String, Option<String>, Option<String
             // declares it and is not one of them.
             "SELECT field, occur_time, state, data \
              FROM entries WHERE deleted_at IS NULL \
-               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL \
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field != 'spec' \
              ORDER BY rowid",
         )
         .expect("prepare");

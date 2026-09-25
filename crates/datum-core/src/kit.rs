@@ -3,7 +3,7 @@
 //!
 //! A kit is a TOML file declaring named fields with absolute layout (pos /
 //! size / color / states). On install, each `[[field]]` is converted into a
-//! [`FieldSpec`] row in `field_specs` with `kit_id` set to the kit's name;
+//! [`FieldSpec`] `spec` entry whose data carries `kit_id` = the kit's name;
 //! on uninstall, every row tagged with that `kit_id` is deleted. Round-trip
 //! (install → export → diff) is required to be clean.
 //!
@@ -149,7 +149,7 @@ pub struct FieldEntry {
 /// A `[[view]]` entry — a named read-only SELECT.
 ///
 /// Slice 4: views may join system tables (entries, entry_history,
-/// field_specs, _meta). The SQL is screened at install time by
+/// _meta). The SQL is screened at install time by
 /// [`validate_view_entry`] and enforced read-only at execution time
 /// (`PRAGMA query_only = 1` plus statement-kind checks in
 /// `Db::execute_view`); this entry just round-trips the SQL text.
@@ -571,8 +571,8 @@ pub struct IndexEntry {
     /// time — see [`IndexEntry::sqlite_name`]).
     pub name: String,
     /// Target table. Slice 5 hard-codes `entries`; the field is part of
-    /// the schema so future slices (e.g. indexing `field_specs`) can
-    /// extend it without a TOML break.
+    /// the schema so a future slice can index another table
+    /// without a TOML break.
     pub on: String,
     /// Index expression — what goes between the parens. Validated as
     /// SQL fragment; cannot contain `;`, comments, or DDL keywords.
@@ -630,17 +630,15 @@ fn sanitize_ident(s: &str) -> String {
         .collect()
 }
 
-/// Tables a kit's index DDL is allowed to touch. Slice 5 ships only
-/// `entries`; the WHERE clause may also reference `field_specs` for
-/// schema-driven partial indices (see the chore-tracking example in the
-/// design doc).
-pub const ALLOWED_INDEX_TABLES: &[&str] = &["entries", "field_specs"];
+/// Tables a kit's index may be built on. Only `entries`: a field's spec is
+/// an entry too since da-lc26c, so there is no spec table to index.
+pub const ALLOWED_INDEX_TABLES: &[&str] = &["entries"];
 
 /// SQL keywords that have no business appearing inside a kit's index
 /// expression or WHERE clause. The validator rejects any of these as a
 /// whole-word match (case-insensitive). Note that `SELECT`/`FROM` are
 /// allowed: the bead's own design example uses a `field IN (SELECT …
-/// FROM field_specs WHERE …)` partial-index predicate.
+/// FROM … WHERE …)` partial-index predicate.
 const FORBIDDEN_DDL_KEYWORDS: &[&str] = &[
     "ATTACH",
     "DETACH",

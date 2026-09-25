@@ -130,10 +130,8 @@ pub struct FieldSpec {
     pub strict: bool,
 
     /// Free-form tags. Used by views and kit commands to group fields by a
-    /// schema-level marker (e.g. `["chore"]`). Mirrored into the
-    /// `field_specs.tags` column at save time so SQL filters
-    /// (`WHERE tags LIKE '%"chore"%'`) and the
-    /// `datum spec list --tag` filter can avoid a JSON walk.
+    /// schema-level marker (e.g. `["chore"]`); `datum spec list --tag`
+    /// filters on it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
 
@@ -409,7 +407,7 @@ mod tests {
 
     #[test]
     fn legacy_spec_json_deserializes_with_defaults() {
-        // Old field_specs JSON (phase-1 shape) must still deserialize.
+        // Old stored spec JSON (phase-1 shape) must still deserialize.
         // Includes the now-removed `tracked`/`ignored` keys to prove serde
         // tolerates them as unknown fields on a v8 → v9 upgrade.
         let legacy = r#"{

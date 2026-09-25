@@ -7,65 +7,45 @@
 //! `done`) silently raced on save order — the loser's row simply
 //! disappeared.
 //!
-//! From v21 derived aliases live exclusively in `field_specs.spec_json`;
-//! [`Db::spec_alias_index`] walks the rows on first access, builds a
-//! `HashMap<name, Alias>`, and caches it. Any mutation of `field_specs`
-//! clears the cache via [`Db::invalidate_spec_alias_index`]. Cross-spec
-//! collisions are recorded on the index so the caller can render a
-//! warning instead of silently losing one entry.
+//! Derived aliases live only in the specs themselves — since v38 the
+//! `spec` entries (da-lc26c). [`Db::spec_alias_index`] walks them on first
+//! access, builds a `HashMap<name, Alias>`, and caches it until the next
+//! write on the connection. Cross-spec collisions are recorded on the
+//! index so the caller can render a warning instead of silently losing
+//! one entry.
 
 use std::cell::Ref;
 
 use crate::error::Result;
-use crate::field_spec::{FieldSpec, SpecAliasIndex};
+use crate::field_spec::SpecAliasIndex;
 
 use super::Db;
 
 impl Db {
     /// Borrow the lazy spec-derived alias index. Built on first access by
-    /// scanning every row of `field_specs` and pulling each spec's
-    /// `derived_aliases` into a single map. Cross-field collisions are
-    /// resolved in `field`-name lexicographic order — first registrant
-    /// wins, later collisions are recorded under
-    /// [`SpecAliasIndex::collisions`].
+    /// walking every spec and pulling its `derived_aliases` into a single
+    /// map. Cross-field collisions are resolved in the order the specs were
+    /// first written — first registrant wins, later collisions are
+    /// recorded under [`SpecAliasIndex::collisions`].
     ///
-    /// The returned [`Ref`] is valid until dropped; callers should not
-    /// hold it across calls that mutate `field_specs`.
+    /// The cache is stamped with the connection's `total_changes()`, so
+    /// ANY write — `spec set`, a kit install, or an `update` / `undo` of a
+    /// spec entry — rebuilds it on the next read. The returned [`Ref`] is
+    /// valid until dropped; do not hold it across a write.
     pub fn spec_alias_index(&self) -> Result<Ref<'_, SpecAliasIndex>> {
-        if self.spec_alias_cache.borrow().is_none() {
-            let built = build_spec_alias_index(self)?;
-            *self.spec_alias_cache.borrow_mut() = Some(built);
+        let stamp = self.conn.total_changes();
+        let fresh = matches!(&*self.spec_alias_cache.borrow(), Some((s, _)) if *s == stamp);
+        if !fresh {
+            // Rowid order: an update keeps a row's rowid, so the spec
+            // written first stays first across edits — the pre-v21
+            // "first-save wins" tie-break.
+            let specs = self.stored_specs("ORDER BY rowid")?;
+            // The indexing itself is pure — the browser runs the same code
+            // over the specs it holds (da-5kbj).
+            *self.spec_alias_cache.borrow_mut() = Some((stamp, SpecAliasIndex::from_specs(&specs)));
         }
         Ok(Ref::map(self.spec_alias_cache.borrow(), |o| {
-            // Safe: we just populated the cell above.
-            o.as_ref().expect("spec alias cache populated")
+            &o.as_ref().expect("spec alias cache populated").1
         }))
     }
-
-    /// Drop the cached spec-alias index. Mutating operations on
-    /// `field_specs` (`save_field_spec`, `delete_field_spec`,
-    /// `install_kit`, `uninstall_kit`) call this so the next read
-    /// rebuilds.
-    pub(crate) fn invalidate_spec_alias_index(&self) {
-        *self.spec_alias_cache.borrow_mut() = None;
-    }
-}
-
-fn build_spec_alias_index(db: &Db) -> Result<SpecAliasIndex> {
-    // Walk specs in insertion order (rowid). UPSERT preserves rowid on
-    // re-save, so a spec that was saved first stays first-in across edits.
-    // This keeps the pre-v21 "first-save wins" tie-break for state-name
-    // collisions; later registrants are recorded as `collisions`.
-    let mut stmt = db
-        .conn()
-        .prepare("SELECT spec_json FROM field_specs ORDER BY rowid")?;
-    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-
-    let mut specs: Vec<FieldSpec> = Vec::new();
-    for row in rows {
-        specs.push(db.parse_spec(&row?)?);
-    }
-    // The indexing itself is pure — the browser runs the same code over the
-    // specs it holds (da-5kbj).
-    Ok(SpecAliasIndex::from_specs(&specs))
 }

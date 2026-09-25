@@ -68,7 +68,7 @@ fn alias_remove_nonexistent_reports_not_found() {
 }
 
 /// Removing a spec-derived alias points at the owning field's spec —
-/// those aliases live in `field_specs.spec_json`, not the `aliases`
+/// those aliases live in the spec itself, not the `aliases`
 /// table, so deleting the row can't work.
 #[test]
 fn alias_remove_derived_alias_points_at_owning_field() {

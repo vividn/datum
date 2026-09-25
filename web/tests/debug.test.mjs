@@ -250,12 +250,14 @@ describe('the sample seeder', () => {
 			assert.equal(Number(earlier), first, again);
 			assert.ok(Number(total) > first * 1.5, again);
 			assert.equal(await tagged(app), Number(total));
-			assert.equal(Object.values(await counts(app)).reduce((a, b) => a + b), Number(total) + hand.length + 1);
+			// `count` leaves the page's `layout` entry out: it is not life
+			// data (da-lc26c).
+			assert.equal(Object.values(await counts(app)).reduce((a, b) => a + b), Number(total) + hand.length);
 
 			assert.equal(await press(page, 'clear the sample'), '0 sample entries in this database');
 			assert.deepEqual(
 				await counts(app),
-				{ coffee: 1, layout: 1, mood: 1, posture: 1 },
+				{ coffee: 1, mood: 1, posture: 1 },
 				'the clear took more than the sample'
 			);
 			assert.deepEqual(app.errors, []);

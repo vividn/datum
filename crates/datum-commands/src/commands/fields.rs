@@ -9,7 +9,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::Result;
-use datum_core::db::Db;
+use datum_core::db::{is_meta_field, Db};
 use datum_core::field_spec::resolve_positions;
 use datum_core::shape::{is_ignored_state, TRACKED_STATE_VALUE};
 use serde_json::{json, Value as JsonValue};
@@ -128,7 +128,8 @@ pub fn compute_fields(db: &Db) -> Result<JsonValue> {
         }
     }
     let registry = db.load_registry()?;
-    for field in registry.fields.keys() {
+    // A meta field's spec (an old `spec:layout`, say) is no life field.
+    for field in registry.fields.keys().filter(|f| !is_meta_field(f)) {
         by_field.entry(field.clone()).or_default();
     }
     let names: Vec<&str> = by_field.keys().map(String::as_str).collect();

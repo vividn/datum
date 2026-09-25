@@ -163,6 +163,7 @@ fn every_pair_has_a_roundtrip_test() {
         (34, 35),
         (35, 36),
         (36, 37),
+        (37, 38),
     ];
     assert_eq!(
         covered.len(),
@@ -2052,6 +2053,160 @@ fn roundtrip_v36_to_v37_slug_lookup_index() {
     apply_one_down(conn, 37);
     assert!(!index_exists(conn, "entries_slug_lookup"));
     assert_eq!(plan(conn), "SCAN entries");
+}
+
+/// A v37 database with a user's spec (verbless, from before da-c8mh) and a
+/// kit's (tags, state colours, a render override), in that write order.
+fn v37_with_specs() -> Db {
+    let db = fresh_at(37);
+    db.conn()
+        .execute_batch(
+            r#"INSERT INTO field_specs (field, spec_json, kit_id, tags, render_json) VALUES
+               ('mood', '{"field":"mood","default_verb":null,"color":"blue"}', NULL, '[]', NULL),
+               ('dishes', '{"field":"dishes","verb":"occur","tags":["chore"],
+                  "state_colors":{"done":"green"},"allowed_states":["done"],"render":false}',
+                'chores', '["chore"]', 'false');"#,
+        )
+        .unwrap();
+    db
+}
+
+/// da-lc26c: the specs move into entries and the table goes; the specs
+/// read back identical, the kit's mark rides in the data, and the down
+/// puts the table back as it was.
+#[test]
+fn roundtrip_v37_to_v38_specs_are_entries() {
+    let db = v37_with_specs();
+    let conn = db.conn();
+    let before: Vec<(String, String)> = conn
+        .prepare("SELECT field, spec_json FROM field_specs ORDER BY field")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+
+    apply_one_up(conn, 37);
+    assert!(!table_exists(conn, "field_specs"));
+    let rows: Vec<(String, String, String, String)> = conn
+        .prepare("SELECT slug, field, occur_time, data FROM entries ORDER BY rowid")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    let slugs: Vec<&str> = rows.iter().map(|r| r.0.as_str()).collect();
+    assert_eq!(
+        slugs,
+        ["spec:mood", "spec:dishes"],
+        "field_specs rowid order"
+    );
+    for (_, field, occur, _) in &rows {
+        assert_eq!(field, "spec");
+        assert_eq!(occur, "1970-01-01T00:00:00+00:00", "a fixed occur time");
+    }
+    let dishes: serde_json::Value = serde_json::from_str(&rows[1].3).unwrap();
+    assert_eq!(dishes["kit_id"], "chores");
+
+    // Every reader sees the same specs it saw in the table.
+    for (field, json) in &before {
+        let mut was: serde_json::Value = serde_json::from_str(json).unwrap();
+        if field == "mood" {
+            was["verb"] = "occur".into(); // the log-implied verb, read as before
+            was.as_object_mut().unwrap().remove("default_verb");
+        }
+        let was: datum_core::field_spec::FieldSpec = serde_json::from_value(was).unwrap();
+        let now = db.load_spec(field).unwrap().unwrap();
+        assert_eq!(
+            serde_json::to_value(&now).unwrap(),
+            serde_json::to_value(&was).unwrap(),
+            "{field}"
+        );
+    }
+    let tagged: Vec<String> = db
+        .list_specs_by_tag("chore")
+        .unwrap()
+        .into_iter()
+        .map(|s| s.field)
+        .collect();
+    assert_eq!(tagged, ["dishes"]);
+    assert_eq!(
+        db.get_all_state_colors().unwrap()[&("dishes".into(), "done".into())],
+        "green"
+    );
+    assert_eq!(db.load_specs_by_kit("chores").unwrap().len(), 1);
+    assert_eq!(db.load_registry().unwrap().fields.len(), 2);
+
+    apply_one_down(conn, 38);
+    assert!(table_exists(conn, "field_specs"));
+    let back: Vec<(String, Option<String>, String, Option<String>)> = conn
+        .prepare("SELECT field, kit_id, tags, render_json FROM field_specs ORDER BY field")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(
+        back,
+        [
+            (
+                "dishes".into(),
+                Some("chores".into()),
+                r#"["chore"]"#.into(),
+                Some("false".into())
+            ),
+            ("mood".into(), None, "[]".into(), None),
+        ]
+    );
+    let n: i64 = conn
+        .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(n, 0);
+}
+
+/// Two devices migrating the same spec make the same doc: slug, data,
+/// occur time and content hash all agree.
+#[test]
+fn v37_to_v38_is_deterministic_across_devices() {
+    let doc = |db: &Db| -> Vec<(String, String, String, String)> {
+        apply_one_up(db.conn(), 37);
+        db.conn()
+            .prepare("SELECT slug, data, occur_time, content_hash FROM entries ORDER BY slug")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    };
+    assert_eq!(doc(&v37_with_specs()), doc(&v37_with_specs()));
+}
+
+/// Life data already logged under `spec` stops the migration before it
+/// writes anything, naming the field and the count.
+#[test]
+fn v37_to_v38_refuses_a_field_already_named_spec() {
+    let db = v37_with_specs();
+    let conn = db.conn();
+    for hid in ["h1", "h2"] {
+        conn.execute(
+            "INSERT INTO entries (hid, slug, content_hash, field, occur_time,
+                                  create_time, modify_time, device_id)
+             VALUES (?1, 'spec:' || ?1, ?1, 'spec', '2026-09-01T00:00:00+00:00',
+                     '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z', 'dev')",
+            [hid],
+        )
+        .unwrap();
+    }
+    let err = apply_migrations(conn, MIGRATIONS, 37, 38)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("2 entries") && err.contains("`spec`"), "{err}");
+    assert_eq!(read_schema_version(conn).unwrap(), Some(37));
+    assert!(table_exists(conn, "field_specs"));
+    let specs: i64 = conn
+        .query_row("SELECT COUNT(*) FROM field_specs", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(specs, 2);
 }
 
 fn field_occurtime_sql(conn: &Connection) -> String {

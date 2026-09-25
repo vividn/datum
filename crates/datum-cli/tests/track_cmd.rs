@@ -146,11 +146,7 @@ fn default_verb_flag_is_an_error_naming_verb() {
 #[test]
 fn a_stored_verb_wins_over_the_log() {
     let db = fresh_db();
-    db.conn()
-        .execute(
-            "INSERT INTO field_specs (field, spec_json) VALUES (?1, ?2)",
-            rusqlite::params!["sleep", r#"{"field":"sleep","verb":"occur"}"#],
-        )
+    db.save_field_spec(&serde_json::from_str(r#"{"field":"sleep","verb":"occur"}"#).unwrap())
         .unwrap();
     run_cli(&["start", "sleep", "-t", "-60"], &db).unwrap();
     run_cli(&["end", "sleep", "-t", "-1"], &db).unwrap();

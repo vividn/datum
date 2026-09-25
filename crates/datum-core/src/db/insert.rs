@@ -248,8 +248,33 @@ impl Db {
         entry: &Entry,
         strategy: ConflictStrategy,
     ) -> Result<InsertOutcome> {
+        self.insert_entry_declaring(entry, strategy, None)
+    }
+
+    /// [`Self::insert_entry_with_strategy`], and — when the entry lands —
+    /// `declare` as its field's spec entry, in the SAME transaction
+    /// (da-lc26c): a first log and the spec it writes are both-or-neither,
+    /// so a failure (a full disk) leaves the database as it was.
+    pub fn insert_entry_declaring(
+        &self,
+        entry: &Entry,
+        strategy: ConflictStrategy,
+        declare: Option<&crate::field_spec::FieldSpec>,
+    ) -> Result<InsertOutcome> {
         let tx = self.conn.unchecked_transaction()?;
         let outcome = insert_entry_in_tx(&tx, entry, strategy)?;
+        let landed = matches!(
+            outcome,
+            InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. }
+        );
+        if let Some(spec) = declare.filter(|_| landed) {
+            let row = super::spec::new_spec_entry(
+                &spec.field,
+                serde_json::to_value(spec)?,
+                &entry.device_id,
+            );
+            insert_entry_in_tx(&tx, &row, ConflictStrategy::Ignore)?;
+        }
         tx.commit()?;
         Ok(outcome)
     }
@@ -1124,6 +1149,7 @@ pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(Slug, Hid)
 }
 
 pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entry) -> Result<()> {
+    super::spec::check_spec_entry(slug, entry, entry.data.as_ref())?;
     // da-lxyw: a timeless entry (no `occur_time` — the defining trait of
     // `add` with no explicit `-t`) stores NULL, NOT `create_time`. The
     // column is nullable (schema v29); the partial UNIQUE on
@@ -1246,6 +1272,7 @@ fn raw_overwrite_mutables(
         Some(o) => o.as_ref(),
         None => entry.data.as_ref(),
     };
+    super::spec::check_spec_entry(slug, entry, data_value)?;
     let data_json = data_value.map(|v| v.to_string());
     let now = Utc::now().to_rfc3339();
 
@@ -1337,6 +1364,7 @@ fn raw_overwrite_mutables(
 /// `deleted_at` is intentionally NOT touched — a rekey of a live row keeps
 /// it live; tombstoned rows must be filtered out by the caller.
 fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
+    super::spec::check_spec_entry(&entry.slug, entry, entry.data.as_ref())?;
     let now = Utc::now().to_rfc3339();
     let occur_str = entry
         .occur_time
@@ -1432,6 +1460,7 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
 /// live row has since claimed the snapshot's slug, the UNIQUE constraint
 /// fails the revert loudly rather than silently keeping the wrong slug.
 pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> {
+    super::spec::check_spec_entry(&entry.slug, entry, entry.data.as_ref())?;
     let occur_str = entry
         .occur_time
         .as_ref()

@@ -244,27 +244,9 @@ CREATE INDEX IF NOT EXISTS entries_id_structure
 CREATE INDEX IF NOT EXISTS entries_field_structure
     ON entries (hid) WHERE field_structure IS NOT NULL;
 
--- Field specs: single source of truth for a field's schema, tracking state,
--- colors, allowed states, id template, and derived aliases. Stored as a JSON
--- blob so the shape can evolve without migrations. `kit_id` is NULL for
--- user-declared specs and the kit's name for rows installed via
--- `datum kit install`; uninstall removes only rows with that kit_id.
-CREATE TABLE IF NOT EXISTS field_specs (
-    field       TEXT NOT NULL PRIMARY KEY,
-    spec_json   TEXT NOT NULL,
-    kit_id      TEXT,
-    -- Mirror of `FieldSpec.tags` (JSON array of strings, default '[]').
-    -- Pulled out of `spec_json` so SQL filters (`tags LIKE '%"chore"%'`) and
-    -- the `datum spec list --tag` query can avoid JSON parsing.
-    tags        TEXT NOT NULL DEFAULT '[]',
-    -- Mirror of `FieldSpec.render` (JSON: bool or {surface: bool} map).
-    -- NULL means the implicit default — visible on every surface. Pulled
-    -- out of `spec_json` so future per-surface visibility filters can run
-    -- without parsing the full spec body.
-    render_json TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_field_specs_kit_id ON field_specs(kit_id);
+-- Field specs are not a table: since v38 a field's spec is the entry
+-- `spec:<field>`, its data the spec's JSON plus `kit_id` for a kit's spec
+-- (da-lc26c; `db/spec.rs`).
 
 -- Named views: read-only SELECT statements installed by kits or declared
 -- by the user. `kit_id` is NULL for user-declared rows, the kit's name
@@ -324,7 +306,7 @@ CREATE INDEX IF NOT EXISTS idx_kit_commands_kit_id ON kit_commands(kit_id);
 
 
 -- Aliases: user-created and kit-installed. Spec-derived aliases live in
--- `field_specs.spec_json` and are surfaced lazily via the in-memory
+-- the `spec` entries and are surfaced lazily via the in-memory
 -- SpecAliasIndex (see `db::Db::spec_alias_index`); they never write rows
 -- to this table. `kit_id` is non-NULL for rows installed via
 -- `datum kit install` from a `[[alias]]` block; uninstall removes only

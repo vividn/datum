@@ -355,7 +355,7 @@ describe('in the app', () => {
 			// The ENTRY's row, not the TRACK document that declares the field
 			// (da-c8mh) — a declaration re-keyed to `swim` would make the
 			// button without ever logging anything under it.
-			const walk = JSON.parse(rows.find((l) => l.includes('"walk"') && !l.includes('"track"')));
+			const walk = JSON.parse(rows.find((l) => l.includes('"walk"') && !l.includes('"track"') && !l.includes('"field":"spec"')));
 			const swim = { ...walk, hid: 'swim0000', slug: walk.slug.replace('walk', 'swim'), field: 'swim', content_hash: '0'.repeat(64), raw_input: 'occur swim' };
 			// Typed, as a person would: the page's own command, so its own beat
 			// refreshes the bar. The chooser is awaited BEFORE the echo, never

@@ -81,7 +81,7 @@ impl Db {
 
     /// Delete a user-created alias row. Returns whether a row was
     /// actually deleted, so callers can report honestly instead of
-    /// hedging. Spec-derived aliases live in `field_specs.spec_json`,
+    /// hedging. Spec-derived aliases live in the specs themselves,
     /// not in this table, so they cannot be deleted via this entrypoint.
     pub fn delete_alias(&self, name: &str) -> Result<bool> {
         let deleted = self
@@ -178,7 +178,7 @@ impl Db {
     }
 
     /// Load every user/kit alias row from the `aliases` table. Spec-derived
-    /// aliases are NOT included — they live in `field_specs.spec_json` and
+    /// aliases are NOT included — they live in the specs themselves and
     /// are accessible via [`Db::spec_alias_index`]. Used by `dm check
     /// --aliases` to walk every user-defined chain for orphan and cycle
     /// detection. Ordered by name for stable output.

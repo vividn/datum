@@ -866,6 +866,7 @@ mod tests {
             .unwrap()
             .into_iter()
             .map(|e| e.field)
+            .filter(|f| f != "spec")
             .collect();
         fields.sort();
         assert_eq!(fields, ["v", "w__pt"]);

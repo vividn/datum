@@ -72,8 +72,7 @@ impl Alias {
 /// [`FieldSpec`]. Built from the specs themselves by
 /// [`SpecAliasIndex::from_specs`]; the CLI reaches it through
 /// [`Db::spec_alias_index`](crate::db::Db::spec_alias_index), which caches
-/// one over the `field_specs` table and invalidates it whenever that table
-/// is mutated. Replaces the materialized derived rows that lived in the
+/// one over the `spec` entries until the next write on the connection. Replaces the materialized derived rows that lived in the
 /// `aliases` table pre-v21 (da-8y2q.5).
 #[derive(Debug, Clone, Default)]
 pub struct SpecAliasIndex {
@@ -296,7 +295,7 @@ pub fn alias_effect(
                     text: format!("✓ Alias '{name}' removed"),
                 };
             }
-            // Derived aliases live in `field_specs.spec_json`, so there is
+            // Derived aliases live in the spec itself, so there is
             // no row to remove — say where the name actually comes from.
             if derived.entries.contains_key(name) {
                 let field = derived.owner_of(name).unwrap_or_default();

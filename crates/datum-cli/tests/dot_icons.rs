@@ -256,7 +256,7 @@ fn an_unvetted_icon_in_the_database_is_not_drawn() {
         r#"<svg viewBox="0 0 1 1"><script>alert(1)</script></svg>"#,
     ] {
         conn.execute(
-            "UPDATE field_specs SET spec_json = json_set(spec_json, '$.icon', ?1) WHERE field = 'coffee'",
+            "UPDATE entries SET data = json_set(data, '$.icon', ?1) WHERE slug = 'spec:coffee'",
             [bad],
         )
         .unwrap();

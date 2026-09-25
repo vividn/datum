@@ -9,7 +9,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::error::{DatumError, Result};
 
-use super::support::has_column;
+use super::support::{has_column, table_exists};
 use super::{Migration, CURRENT_SCHEMA_VERSION, MIGRATIONS};
 
 /// Create the `_meta` key/value table if it does not exist.
@@ -121,7 +121,8 @@ pub fn infer_legacy_version(conn: &Connection) -> Result<u32> {
         return Ok(11);
     }
     // m12_to_13: field_specs.kit_id — the 2026-04-30 regression site.
-    if !has_column(conn, "field_specs", "kit_id")? {
+    // (`field_specs` is gone from v38 on, so its absence proves nothing.)
+    if table_exists(conn, "field_specs")? && !has_column(conn, "field_specs", "kit_id")? {
         return Ok(12);
     }
     // m15_to_16: aliases.kit_id.
@@ -129,11 +130,11 @@ pub fn infer_legacy_version(conn: &Connection) -> Result<u32> {
         return Ok(15);
     }
     // m17_to_18: field_specs.tags.
-    if !has_column(conn, "field_specs", "tags")? {
+    if table_exists(conn, "field_specs")? && !has_column(conn, "field_specs", "tags")? {
         return Ok(17);
     }
     // m18_to_19: field_specs.render_json.
-    if !has_column(conn, "field_specs", "render_json")? {
+    if table_exists(conn, "field_specs")? && !has_column(conn, "field_specs", "render_json")? {
         return Ok(18);
     }
     // m19_to_20: time-shape pivot — entries.start_time was dropped in

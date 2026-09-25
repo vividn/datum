@@ -8,6 +8,7 @@ use crate::entry::Entry;
 use crate::error::{DatumError, Result};
 
 use super::row_mapper::row_to_entry;
+use super::spec::NOT_META_FIELD_SQL;
 use super::types::{time_expr, time_expr_endbound, ListParams, TimeMetric, LIVE_SQL};
 use super::Db;
 
@@ -185,6 +186,11 @@ pub(super) fn list_entries_sql(params: &ListParams) -> (String, Vec<String>) {
             " AND json_extract(extra_metadata, '$.flag') IS NOT 1 \
               AND json_extract(extra_metadata, '$.meta') IS NOT 1",
         );
+    }
+    // da-lc26c: entries that describe the database — specs, layouts —
+    // are not life data either. Naming the field (`tail spec`) asks for it.
+    if !params.include_meta && params.fields.is_empty() {
+        sql.push_str(&format!(" AND {NOT_META_FIELD_SQL}"));
     }
     if !params.fields.is_empty() {
         // One name → `= ?` (equivalent, slightly tighter plan); two or
