@@ -771,9 +771,6 @@ fn help_json_lists_db_subcommands() {
     assert_eq!(entry("occur")["subcommands"], serde_json::json!([]));
 }
 
-/// The listing is the parser's: every subcommand it names is one the parser
-/// dispatches, its usage lines are its parent's, and a command whose parser
-/// names its subcommands when none is given names exactly these.
 /// A flag in `help --json` says what it does and whether a value follows
 /// it, so the web's flag list explains `-t` and opens a keyboard for it
 /// without a copy of either (da-st2xl).
@@ -807,6 +804,9 @@ fn help_json_flags_carry_help_and_takes_value() {
     );
 }
 
+/// The listing is the parser's: every subcommand it names is one the parser
+/// dispatches, its usage lines are its parent's, and a command whose parser
+/// names its subcommands when none is given names exactly these.
 #[test]
 fn help_json_subcommands_are_the_parsers() {
     let parse = |argv: &[&str]| {
