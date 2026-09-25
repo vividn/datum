@@ -45,6 +45,16 @@
 // it. The number lives here alone, so GitHub's four shards and the forge's one
 // job read the same budget. Making the slow files snappier is the follow-up;
 // the budget is not the place to assert speed.
+//
+// FAIL FAST (da-s2g46). Once THREE files have failed the run is aborted: the
+// files in flight are cut, and the ones never started are named under
+// `NOT RUN:`, so a stopped suite cannot read as a pass. `DATUM_TEST_BAIL=0`
+// runs everything, for the whole picture.
+//
+// DEBUG WIDGETS ARE NOT TESTED IN CI (da-s2g46). Their tests live in
+// `tests/debug*.test.mjs`, and with `CI` set those files are skipped and
+// named — vividn, 2026-09-24: "they are not important in userland". Locally,
+// or with `DATUM_TEST_DEBUG=1`, they run.
 
 import { availableParallelism, loadavg } from 'node:os';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -95,10 +105,14 @@ console.log(
 
 // The same set the old `tests/**/*.test.mjs` glob matched, listed here so the
 // shard can be taken from it — and so the run SAYS what it ran.
-const all = readdirSync('tests', { recursive: true, encoding: 'utf8' })
+const listed = readdirSync('tests', { recursive: true, encoding: 'utf8' })
 	.filter((f) => f.endsWith('.test.mjs'))
 	.map((f) => `tests/${f}`)
 	.sort();
+const debug = (f) => /^tests\/debug[^/]*\.test\.mjs$/.test(f);
+const skipDebug = process.env.CI && process.env.DATUM_TEST_DEBUG !== '1';
+const all = skipDebug ? listed.filter((f) => !debug(f)) : listed;
+if (skipDebug) console.log(`test: skipped under CI (DEBUG widgets): ${listed.filter(debug).join(' ')}`);
 const record = new URL('durations.json', import.meta.url);
 const known = JSON.parse(readFileSync(record, 'utf8'));
 const files = shardFiles(all, shard).sort((a, b) => (known[b] ?? Infinity) - (known[a] ?? Infinity) || a.localeCompare(b));
@@ -111,14 +125,30 @@ const before = cpuStat();
 const t0 = Date.now();
 const took = {};
 process.exitCode = 1; // until the run's own summary says it passed
+const bail = process.env.DATUM_TEST_BAIL === '0' ? Infinity : 3;
+const failed = [];
+const started = new Set();
+let notRun;
+const stop = new AbortController();
 const stream = run({
 	files,
 	concurrency,
+	signal: stop.signal,
 	timeout: 300_000,
 	testNamePatterns: testNamePatterns.length ? testNamePatterns : undefined
 });
+// An aborted run still dequeues and completes every file, so what had
+// started is read up to the abort and no further.
+stream.on('test:dequeue', (t) => {
+	if (t.nesting === 0 && files.includes(t.name) && !notRun) started.add(t.name);
+});
 stream.on('test:complete', (t) => {
-	if (t.nesting === 0 && files.includes(t.name)) took[t.name] = t.details;
+	if (t.nesting !== 0 || !files.includes(t.name)) return;
+	took[t.name] = t.details;
+	if (!t.details.passed && !notRun && failed.push(t.name) >= bail) {
+		notRun = files.filter((f) => !started.has(f));
+		stop.abort();
+	}
 });
 stream.on('test:summary', (s) => {
 	if (s.file === undefined && s.success) process.exitCode = 0;
@@ -129,6 +159,11 @@ out.pipe(process.stdout);
 out.on('end', () => {
 	// A file the runner never reported as its own is a red run, and says which.
 	const missing = files.filter((f) => !(f in took));
+	if (notRun) {
+		process.exitCode = 1;
+		console.log(`test: stopped after ${bail} failed files (${failed.join(' ')}); NOT RUN:`);
+		for (const f of notRun) console.log(`  ${f}`);
+	}
 	if (missing.length) {
 		process.exitCode = 1;
 		console.log(`test: ${missing.length} file${missing.length === 1 ? '' : 's'} never completed: ${missing.join(' ')}`);
@@ -146,11 +181,13 @@ out.on('end', () => {
 				` for ${((after.throttled_usec - before.throttled_usec) / 1e6).toFixed(1)} s`
 		);
 	}
-	if (process.env.DATUM_TEST_RECORD && !shard && ran.length === all.length) {
+	if (process.env.DATUM_TEST_RECORD && !shard && !notRun && ran.length === all.length) {
 		// A failed file's time is a lower bound: it keeps the larger of that and
 		// what it took before, so a cut sorts first and an early failure stays put.
+		// A failed file with no history stays out, unknown, so it starts first.
 		const secs = ([f, d]) => [f, Math.round(Math.max(d.duration_ms / 1000, d.passed ? 0 : (known[f] ?? 0)))];
-		writeFileSync(record, JSON.stringify(Object.fromEntries(ran.map(secs)), null, '\t') + '\n');
+		const kept = ran.filter(([f, d]) => d.passed || f in known);
+		writeFileSync(record, JSON.stringify(Object.fromEntries(kept.map(secs)), null, '\t') + '\n');
 		console.log(`test: wrote ${record.pathname}`);
 	}
 });

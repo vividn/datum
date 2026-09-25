@@ -209,6 +209,11 @@ writing it down.
    The DEBUG kinds share ONE shipped layout, `debug` (da-6ecm5): each is a `debugKind` line in the
    registry drawn by `DebugPane.svelte`, which holds the gate once, and a new kind goes into
    `DEBUG_LAYOUT_TREE`. A database carrying an older shipped tree gets the current one at boot.
+   **A DEBUG widget's tests live in `tests/debug*.test.mjs`, and CI skips them** (da-s2g46). They
+   are for getting the widget right at first, not for locking its behaviour in — vividn, 2026-09-24:
+   "they are not important in userland". With `CI` set, `web/scripts/test.mjs` leaves those files
+   out and names them (`test: skipped under CI (DEBUG widgets): …`), so a skip never reads as a
+   pass; locally, or with `DATUM_TEST_DEBUG=1`, they run.
 
 ## Looks
 
