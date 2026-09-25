@@ -7,7 +7,7 @@
 //! command consumes them so a parser-bug fix can retroactively repair
 //! already-stored rows. Replay is hermetic to the alias state at write
 //! time — `alias_chain` is rehydrated as the resolver, never the live
-//! `aliases` table.
+//! aliases.
 //!
 //! Per da-bkak: reparse operates ONLY on entries the user explicitly
 //! names by hid (or quickId / slug — anything `resolve_quickid_single`

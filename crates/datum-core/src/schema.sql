@@ -305,20 +305,10 @@ CREATE TABLE IF NOT EXISTS kit_commands (
 CREATE INDEX IF NOT EXISTS idx_kit_commands_kit_id ON kit_commands(kit_id);
 
 
--- Aliases: user-created and kit-installed. Spec-derived aliases live in
--- the `spec` entries and are surfaced lazily via the in-memory
--- SpecAliasIndex (see `db::Db::spec_alias_index`); they never write rows
--- to this table. `kit_id` is non-NULL for rows installed via
--- `datum kit install` from a `[[alias]]` block; uninstall removes only
--- rows with the matching kit_id.
-CREATE TABLE IF NOT EXISTS aliases (
-    name                TEXT NOT NULL PRIMARY KEY,
-    alias_json          TEXT NOT NULL,
-    kit_id              TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_aliases_kit_id
-    ON aliases (kit_id);
+-- Aliases are not a table: since v39 a user's or kit's alias is the entry
+-- `alias:<name>`, its data the alias's JSON plus `kit_id` for a kit's
+-- (da-b3752; `db/alias.rs`). Spec-derived aliases live in the `spec`
+-- entries and are surfaced lazily via the in-memory SpecAliasIndex.
 
 -- Sync state: per-DB bookkeeping for push/pull against a relay.
 --

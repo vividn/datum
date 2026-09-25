@@ -77,8 +77,9 @@ function cliWith(env, argv) {
 /**
  * The single entry a fresh database holds, via the CLI's own JSONL dump.
  * The TRACK document a field's first log declares it with (da-c8mh) is not
- * one, nor is the spec entry it writes (da-lc26c) — the same rows on both
- * sides, and this fixture is about what the case's argv itself stores.
+ * one, nor is the spec entry it writes (da-lc26c) or an alias a case's
+ * setup wrote (da-b3752) — the same rows on both sides, and this fixture is
+ * about what the case's argv itself stores.
  */
 function onlyEntry(db, dir) {
 	const path = join(dir, 'backup.jsonl');
@@ -88,7 +89,7 @@ function onlyEntry(db, dir) {
 		.split('\n')
 		.slice(1)
 		.map((line) => JSON.parse(line))
-		.filter((row) => row.extra_metadata?.track === undefined && row.field !== 'spec');
+		.filter((row) => row.extra_metadata?.track === undefined && !['spec', 'alias'].includes(row.field));
 	if (rows.length !== 1) throw new Error(`expected exactly one entry, got ${rows.length}`);
 	return rows[0];
 }

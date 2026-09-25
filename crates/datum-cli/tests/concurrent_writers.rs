@@ -70,7 +70,7 @@ fn concurrent_writer_processes_lose_no_writes() {
     let count: usize = Connection::open(&db)
         .unwrap()
         .query_row(
-            "SELECT COUNT(*) FROM entries WHERE field != 'spec'",
+            "SELECT COUNT(*) FROM entries WHERE field NOT IN ('spec', 'alias')",
             [],
             |r| r.get(0),
         )

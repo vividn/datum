@@ -18,12 +18,13 @@ use crate::action::Action;
 use crate::dur::Dur;
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
-use crate::field_spec::{verb_from_log, Alias, FieldSpec, SpecRegistry};
+use crate::field_spec::{verb_from_log, FieldSpec, SpecRegistry};
 use crate::ids::Slug;
 use crate::shape::{is_ignored_state, TRACKED_STATE_VALUE};
 use crate::time::DatumTime;
 use crate::verb::Verb;
 
+use super::alias::ALIAS_FIELD;
 use super::kit_layout::LAYOUT_FIELD;
 use super::types::{AliasConflict, AliasConflictReason, SaveSpecReport, LIVE_SQL};
 use super::Db;
@@ -35,13 +36,14 @@ pub const SPEC_FIELD: &str = "spec";
 pub(crate) const SPEC_KIT_KEY: &str = "kit_id";
 
 /// Fields whose entries describe the database rather than the life it
-/// records. One rule keeps them all off the life-data surfaces — tail,
+/// records — specs, layouts, aliases (da-b3752). One rule keeps them all
+/// off the life-data surfaces — tail,
 /// now, dayview, nowview, stats, fields — unless asked for by name
 /// (`tail spec`) or with `--show-meta` / `-A`.
-pub const META_FIELDS: &[&str] = &[SPEC_FIELD, LAYOUT_FIELD];
+pub const META_FIELDS: &[&str] = &[SPEC_FIELD, LAYOUT_FIELD, ALIAS_FIELD];
 
 /// [`META_FIELDS`] as a SQL predicate on `entries.field`.
-pub(crate) const NOT_META_FIELD_SQL: &str = "field NOT IN ('spec', 'layout')";
+pub(crate) const NOT_META_FIELD_SQL: &str = "field NOT IN ('spec', 'layout', 'alias')";
 
 pub fn is_meta_field(field: &str) -> bool {
     META_FIELDS.contains(&field)
@@ -61,9 +63,10 @@ pub(crate) fn spec_slug(field: &str) -> String {
     format!("{SPEC_FIELD}:{field}")
 }
 
-/// Every spec entry's occur time: fixed, not the moment it was written,
-/// so two devices writing (or migrating) the same spec make the same doc.
-pub(crate) fn spec_occur_time() -> DatumTime {
+/// Every spec (and alias) entry's occur time: fixed, not the moment it was
+/// written, so two devices writing (or migrating) the same one make the
+/// same doc.
+pub(crate) fn meta_occur_time() -> DatumTime {
     DatumTime {
         utc: DateTime::UNIX_EPOCH,
         offset_minutes: 0,
@@ -79,7 +82,7 @@ pub(crate) fn new_spec_entry(field: &str, data: JsonValue, device_id: &str) -> E
         Verb::Point,
         None,
         Some(data),
-        Some(spec_occur_time()),
+        Some(meta_occur_time()),
         Some(Dur::moment()),
         device_id,
     );
@@ -90,11 +93,19 @@ pub(crate) fn new_spec_entry(field: &str, data: JsonValue, device_id: &str) -> E
     row
 }
 
+/// Refuse a write under a field the database reserves: a spec
+/// ([`check_spec_entry`]) or an alias ([`super::alias::check_alias_entry`]).
+/// Every row writer in `insert.rs` calls this.
+pub(crate) fn check_meta_entry(slug: &str, entry: &Entry, data: Option<&JsonValue>) -> Result<()> {
+    check_spec_entry(slug, entry, data)?;
+    super::alias::check_alias_entry(slug, entry, data)
+}
+
 /// Refuse a write that would store something other than a spec under the
 /// `spec` field — a malformed spec, a spec whose slug is not
 /// `spec:<its field>`, or a plain log like `occur spec`. Tombstones pass:
 /// deleting is always allowed.
-pub(crate) fn check_spec_entry(slug: &str, entry: &Entry, data: Option<&JsonValue>) -> Result<()> {
+fn check_spec_entry(slug: &str, entry: &Entry, data: Option<&JsonValue>) -> Result<()> {
     if entry.field != SPEC_FIELD || entry.deleted_at.is_some() {
         return Ok(());
     }
@@ -268,7 +279,7 @@ impl Db {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT json_extract(data, '$.field') AS f FROM entries
              WHERE {SPEC_DOC_SQL}
-               AND f NOT IN ('spec', 'layout')
+               AND f NOT IN ('spec', 'layout', 'alias')
              ORDER BY f"
         ))?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
@@ -301,7 +312,7 @@ impl Db {
     }
 
     /// Save a field spec. Derived aliases are not written to the
-    /// `aliases` table — they live in the spec and are surfaced lazily via
+    /// alias entries — they live in the spec and are surfaced lazily via
     /// [`Db::spec_alias_index`].
     pub fn save_field_spec(&self, spec: &FieldSpec) -> Result<()> {
         let _ = self.save_field_spec_with_report(spec)?;
@@ -351,30 +362,23 @@ impl Db {
     /// Variant of [`Db::save_field_spec`] that returns a structured
     /// report of which derived aliases this spec contributed to the
     /// effective alias namespace and which were shadowed by an existing
-    /// user/kit alias row or by another spec's earlier registration in
+    /// user/kit alias or by another spec's earlier registration in
     /// the [`super::types::SpecAliasIndex`].
     pub fn save_field_spec_with_report(&self, spec: &FieldSpec) -> Result<SaveSpecReport> {
         let written = self.write_spec_entry(spec, None)?;
 
         // Compute the report by inspecting the now-current state of the
         // alias namespace. A derived alias is "saved" iff (a) no user/kit
-        // row in `aliases` shadows it and (b) the spec-alias index attributes
+        // alias shadows it and (b) the spec-alias index attributes
         // the name to this field. Otherwise it is shadowed and we attach
         // the cause.
         let mut saved: Vec<String> = Vec::new();
         let mut skipped: Vec<AliasConflict> = Vec::new();
+        let user_aliases = self.list_user_aliases()?;
         let index = self.spec_alias_index()?;
         for d in &spec.derived_aliases {
-            // Shadowed by a user/kit alias row?
-            let existing_row: Option<i64> = self
-                .conn
-                .query_row(
-                    "SELECT 1 FROM aliases WHERE name = ?1",
-                    params![&d.name],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            if existing_row.is_some() {
+            // Shadowed by a user/kit alias?
+            if user_aliases.iter().any(|a| a.name == d.name) {
                 skipped.push(AliasConflict {
                     name: d.name.clone(),
                     reason: AliasConflictReason::UserAlias,
@@ -444,10 +448,7 @@ impl Db {
         }
         drop(index);
 
-        let mut stmt = self.conn.prepare("SELECT alias_json FROM aliases")?;
-        let aliases = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        for alias_json in aliases {
-            let alias: Alias = serde_json::from_str(&alias_json?)?;
+        for alias in self.list_user_aliases()? {
             registry.register_alias(alias);
         }
 

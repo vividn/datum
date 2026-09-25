@@ -16,6 +16,7 @@ mod sync_content;
 
 mod add_cmd;
 mod alias_cmd;
+mod alias_entries;
 mod alias_list_json;
 mod alias_time_compose;
 mod batch_update_cmd;

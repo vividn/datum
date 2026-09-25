@@ -53,7 +53,7 @@ use v31_v40::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 38;
+pub const CURRENT_SCHEMA_VERSION: u32 = 39;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -337,5 +337,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "field specs are entries: every field_specs row becomes the entry spec:<field> (its data the spec, plus kit_id), and the table is dropped — one source of truth that backs up, syncs and has a history (da-lc26c)",
         apply: m37_to_38_specs_are_entries,
         down: down_38_to_37_specs_are_entries,
+    },
+    Migration {
+        from: 38,
+        to: 39,
+        summary: "aliases are entries: every aliases row becomes the entry alias:<name> (its data the alias, plus kit_id), and the table is dropped — one source of truth that backs up, syncs and has a history (da-b3752)",
+        apply: m38_to_39_aliases_are_entries,
+        down: down_39_to_38_aliases_are_entries,
     },
 ];

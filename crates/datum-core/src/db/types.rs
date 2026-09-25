@@ -170,7 +170,7 @@ pub(super) fn filtered_where(
             parts.push("field = ?".to_string());
             bindings.push(f.to_string());
         }
-        // Specs and layouts are not life data (da-lc26c); naming one counts it.
+        // Specs, layouts and aliases are not life data (da-lc26c); naming one counts it.
         None => parts.push(super::spec::NOT_META_FIELD_SQL.to_string()),
     }
     if let Some(since_utc) = since {
@@ -316,7 +316,7 @@ pub struct ReplaceCounts {
 /// which derived aliases from the spec were surfaced vs shadowed at the
 /// time of the save. The check is best-effort: derived aliases are now
 /// resolved through the in-memory [`SpecAliasIndex`] rather than written
-/// to the `aliases` table, so the "skipped" set is computed by inspecting
+/// to alias entries, so the "skipped" set is computed by inspecting
 /// the index after the spec is stored.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SaveSpecReport {
@@ -344,7 +344,7 @@ pub struct AliasConflict {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AliasConflictReason {
     /// A user-defined or kit-installed alias row already exists under
-    /// this name (`aliases` table hit).
+    /// this name.
     UserAlias,
     /// Another field's spec already derives an alias under this name
     /// (cross-spec state collision in the [`SpecAliasIndex`]).

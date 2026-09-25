@@ -7,6 +7,9 @@
 //! print — is `datum_core::field_spec::alias_effect`, which takes the rows
 //! rather than the database. This function is the database half: load the
 //! rows, ask, perform.
+//!
+//! An alias is an entry (da-b3752): a write is stamped with this device and
+//! leaves `_LAST` on it, so a bare `undo` steps it back like any doc.
 
 use anyhow::{bail, Result};
 use datum_core::{
@@ -30,20 +33,33 @@ pub fn alias(sub: AliasCommand, db: &Db) -> Result<()> {
             text,
             warning,
         } => {
-            db.save_alias(&alias)?;
+            remember(db, save(db, &alias)?);
             println!("{text}");
             if let Some(w) = warning {
                 eprintln!("{w}");
             }
         }
         AliasEffect::Delete { name, text } => {
-            db.delete_alias(&name)?;
+            if let Some(hid) = db.delete_alias(&name)? {
+                remember(db, hid);
+            }
             println!("{text}");
         }
         AliasEffect::Refuse(message) => bail!(message),
         AliasEffect::Nothing => {}
     }
     Ok(())
+}
+
+/// Write `alias` as this device's entry.
+fn save(db: &Db, alias: &datum_core::field_spec::Alias) -> Result<datum_core::ids::Hid> {
+    db.set_device_id(&crate::config::device_id()?);
+    Ok(db.save_alias(alias)?)
+}
+
+/// Point `_LAST` at the alias entry a command just wrote.
+fn remember(db: &Db, hid: datum_core::ids::Hid) {
+    let _ = datum_core::last_docs::set_last_docs(db, &[hid]);
 }
 
 /// Shared save path for user aliases — the single set of guards both
@@ -70,7 +86,7 @@ fn save_user_alias(name: &str, expands_to: String, overwrite: bool, db: &Db) -> 
     }
 
     let (alias, warning) = user_alias_to_save(name, expands_to).map_err(|e| anyhow::anyhow!(e))?;
-    db.save_alias(&alias)?;
+    save(db, &alias)?;
     if let Some(w) = warning {
         eprintln!("{w}");
     }

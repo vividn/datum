@@ -17,7 +17,7 @@ fn live_rows(db: &datum_core::db::Db) -> Vec<(String, String, Option<String>, Op
             // (da-c8mh) declares it and is not one of them.
             "SELECT field, occur_time, state, data \
              FROM entries WHERE deleted_at IS NULL \
-               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field != 'spec' \
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field NOT IN ('spec', 'alias') \
              ORDER BY rowid",
         )
         .unwrap();
@@ -232,7 +232,7 @@ fn multi_write_slugs_share_canonical_time_format() {
         .conn()
         .prepare(
             "SELECT slug FROM entries WHERE deleted_at IS NULL \
-               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field != 'spec' \
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field NOT IN ('spec', 'alias') \
              ORDER BY rowid",
         )
         .unwrap();

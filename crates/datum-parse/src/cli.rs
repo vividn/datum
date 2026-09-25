@@ -215,7 +215,7 @@ pub struct SetupArgs {}
 /// command is the consumer that lets a parser-bug fix retroactively
 /// correct already-stored rows. Replay is hermetic to the alias state
 /// at write time — `alias_chain` is rehydrated as the resolver, never
-/// the live `aliases` table.
+/// the live aliases.
 ///
 /// Per da-bkak: reparse operates ONLY on entries the user explicitly
 /// names by hid. Walking all entries is out of scope — long-standing
@@ -420,7 +420,8 @@ pub struct TailArgs {
     /// `extra_metadata.meta = true` (da-xn8j) rows. Default is to hide
     /// them — they're review markers / out-of-band notes, not tracked
     /// data. See da-ghlx. It also brings back the meta fields' entries —
-    /// specs and layouts (da-lc26c) — which an unnamed tail leaves out.
+    /// specs, layouts and aliases (da-lc26c, da-b3752) — which an unnamed
+    /// tail leaves out.
     pub show_meta: bool,
     /// `-A/--show-all` / `-o/--format-string`, plus the swept `--show`.
     ///

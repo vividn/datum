@@ -91,7 +91,7 @@ impl Env {
         conn.query_row(
             "SELECT COUNT(*) FROM entries
              WHERE deleted_at IS NULL
-               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field != 'spec'",
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field NOT IN ('spec', 'alias')",
             [],
             |r| r.get::<_, i64>(0),
         )
@@ -327,7 +327,7 @@ fn subprocess_undo_past_the_window_warns_and_acts_on_the_pointer() {
         conn.query_row(
             "SELECT hid FROM entries
              WHERE field = ?1
-               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field != 'spec'",
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field NOT IN ('spec', 'alias')",
             [field],
             |r| r.get(0),
         )
@@ -358,7 +358,7 @@ fn subprocess_undo_past_the_window_warns_and_acts_on_the_pointer() {
     assert_eq!(env.entry_count(), 1, "only the pointer's entry comes back");
     let live_field: String = conn
         .query_row(
-            "SELECT field FROM entries WHERE deleted_at IS NULL AND field != 'spec'",
+            "SELECT field FROM entries WHERE deleted_at IS NULL AND field NOT IN ('spec', 'alias')",
             [],
             |r| r.get(0),
         )
@@ -429,7 +429,7 @@ fn subprocess_redo_restores_the_undone_state_exactly_once() {
         .query_row(
             "SELECT hid FROM entries
              WHERE field = 'coffee'
-               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field != 'spec'",
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field NOT IN ('spec', 'alias')",
             [],
             |r| r.get(0),
         )
@@ -477,7 +477,7 @@ fn subprocess_redo_of_an_undone_create_brings_the_entry_back() {
     // tea's OWN row, not the TRACK document that declared the field beside
     // it (da-c8mh) — `undo` takes both back and `redo` brings both again.
     let live = "deleted_at IS NULL
-                AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field != 'spec'";
+                AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field NOT IN ('spec', 'alias')";
     let hid: String = conn
         .query_row(
             &format!("SELECT hid FROM entries WHERE field = 'tea' AND {live}"),

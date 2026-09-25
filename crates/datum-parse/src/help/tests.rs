@@ -116,7 +116,7 @@ OPTIONS:
   -q, --quick           Go back 5 min (stackable)
   -w, --watch [INT]     Live scrollable view; stream entries (poll 1s)
       --table           Legacy columnar view (default: info-line)
-      --show-meta       (alias: --show-all-metadata)  Include flag/meta and spec/layout entries (hidden by default)
+      --show-meta       (alias: --show-all-metadata)  Include flag/meta and spec/layout/alias entries (hidden by default)
 
 OUTPUT:
       --show <MODE>     default|none|format|json

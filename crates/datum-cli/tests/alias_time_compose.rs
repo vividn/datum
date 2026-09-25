@@ -27,7 +27,7 @@ fn last_offset_minutes(db: &PathBuf) -> i64 {
     let (occur, create): (String, String) = Connection::open(db)
         .unwrap()
         .query_row(
-            "SELECT occur_time, create_time FROM entries WHERE field != 'spec' ORDER BY rowid DESC LIMIT 1",
+            "SELECT occur_time, create_time FROM entries WHERE field NOT IN ('spec', 'alias') ORDER BY rowid DESC LIMIT 1",
             [],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
@@ -67,7 +67,7 @@ fn absolute_time_keeps_the_relative_offset_either_way_round() {
         let occur: String = Connection::open(&db)
             .unwrap()
             .query_row(
-                "SELECT occur_time FROM entries WHERE field != 'spec' ORDER BY rowid DESC LIMIT 1",
+                "SELECT occur_time FROM entries WHERE field NOT IN ('spec', 'alias') ORDER BY rowid DESC LIMIT 1",
                 [],
                 |r| r.get(0),
             )

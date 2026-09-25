@@ -164,6 +164,7 @@ fn every_pair_has_a_roundtrip_test() {
         (35, 36),
         (36, 37),
         (37, 38),
+        (38, 39),
     ];
     assert_eq!(
         covered.len(),
@@ -2207,6 +2208,138 @@ fn v37_to_v38_refuses_a_field_already_named_spec() {
         .query_row("SELECT COUNT(*) FROM field_specs", [], |r| r.get(0))
         .unwrap();
     assert_eq!(specs, 2);
+}
+
+/// A v38 database with a user's alias, a kit's, and a user alias that
+/// shadows a spec-derived name (`mood`, the bare-field alias of the spec).
+fn v38_with_aliases() -> Db {
+    let db = fresh_at(38);
+    let mut spec =
+        datum_core::field_spec::FieldSpec::new("mood", datum_core::action::Action::Switch);
+    spec.regenerate_derived_aliases();
+    db.save_field_spec(&spec).unwrap();
+    db.conn()
+        .execute_batch(
+            r#"INSERT INTO aliases (name, alias_json, kit_id) VALUES
+               ('vbp', '{"name":"vbp","expands_to":"note word pos=verb","description":null}', NULL),
+               ('cof', '{"name":"cof","expands_to":"occur coffee","description":"a cup"}', 'drinks'),
+               ('mood', '{"name":"mood","expands_to":"switch mood happy","description":null}', NULL);"#,
+        )
+        .unwrap();
+    db
+}
+
+/// da-b3752: the aliases move into entries and the table goes; every alias
+/// resolves as it did (the shadowing of a spec-derived name included), the
+/// kit's mark rides in the data, and the down puts the table back.
+#[test]
+fn roundtrip_v38_to_v39_aliases_are_entries() {
+    let db = v38_with_aliases();
+    let conn = db.conn();
+    let before: Vec<(String, String, Option<String>)> = conn
+        .prepare("SELECT name, alias_json, kit_id FROM aliases ORDER BY name")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+
+    apply_one_up(conn, 38);
+    assert!(!table_exists(conn, "aliases"));
+    let rows: Vec<(String, String)> = conn
+        .prepare("SELECT slug, occur_time FROM entries WHERE field = 'alias' ORDER BY slug")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(
+        rows.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(),
+        ["alias:cof", "alias:mood", "alias:vbp"]
+    );
+    assert!(rows.iter().all(|r| r.1 == "1970-01-01T00:00:00+00:00"));
+
+    // Every alias resolves identically, on every reader.
+    let registry = db.load_registry().unwrap();
+    for (name, json, _) in &before {
+        let was: datum_core::field_spec::Alias = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            db.lookup_alias(name).unwrap().as_ref(),
+            Some(&was),
+            "{name}"
+        );
+        assert_eq!(registry.aliases.get(name), Some(&was), "{name}");
+    }
+    assert_eq!(db.list_user_aliases().unwrap().len(), 3);
+    let kit: Vec<String> = db
+        .load_aliases_by_kit("drinks")
+        .unwrap()
+        .into_iter()
+        .map(|a| a.name)
+        .collect();
+    assert_eq!(kit, ["cof"]);
+    // The spec's other derived alias is still reached through the index.
+    assert!(db.lookup_alias("moode").unwrap().is_some());
+
+    apply_one_down(conn, 39);
+    let back: Vec<(String, String, Option<String>)> = conn
+        .prepare("SELECT name, alias_json, kit_id FROM aliases ORDER BY name")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    let parsed = |rows: &[(String, String, Option<String>)]| -> Vec<(String, serde_json::Value, Option<String>)> {
+        rows.iter()
+            .map(|(n, j, k)| (n.clone(), serde_json::from_str(j).unwrap(), k.clone()))
+            .collect()
+    };
+    assert_eq!(parsed(&back), parsed(&before));
+    let n: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM entries WHERE field = 'alias'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(n, 0);
+}
+
+/// Two devices migrating the same alias make the same doc.
+#[test]
+fn v38_to_v39_is_deterministic_across_devices() {
+    let doc = |db: &Db| -> Vec<(String, String, String, String)> {
+        apply_one_up(db.conn(), 38);
+        db.conn()
+            .prepare(
+                "SELECT slug, data, occur_time, content_hash FROM entries
+                 WHERE field = 'alias' ORDER BY slug",
+            )
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    };
+    assert_eq!(doc(&v38_with_aliases()), doc(&v38_with_aliases()));
+}
+
+/// Life data already logged under `alias` stops the migration before it
+/// writes anything.
+#[test]
+fn v38_to_v39_refuses_a_field_already_named_alias() {
+    let db = v38_with_aliases();
+    let conn = db.conn();
+    insert_tx(conn, "h1", "alias:h1", None).unwrap();
+    let err = apply_migrations(conn, MIGRATIONS, 38, 39)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("1 entry") && err.contains("`alias`"), "{err}");
+    assert_eq!(read_schema_version(conn).unwrap(), Some(38));
+    let n: i64 = conn
+        .query_row("SELECT COUNT(*) FROM aliases", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(n, 3);
 }
 
 fn field_occurtime_sql(conn: &Connection) -> String {

@@ -61,7 +61,7 @@ async function entriesIn(app, db) {
 	const [, ...lines] = dumped.stdout.split('\n').filter(Boolean);
 	return lines
 		.map((line) => JSON.parse(line))
-		.filter((row) => row.extra_metadata?.track === undefined && row.field !== 'spec');
+		.filter((row) => row.extra_metadata?.track === undefined && !['spec', 'alias'].includes(row.field));
 }
 
 /** The fields stored in `db` right now, sorted. */

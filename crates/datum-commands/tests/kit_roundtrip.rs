@@ -337,7 +337,7 @@ description = "mark a chore done"
     )
     .unwrap();
 
-    // Aliases are present in the live aliases table tagged with the kit's id.
+    // The kit's aliases are live, marked with the kit's id.
     let chore = db.lookup_alias("chore").unwrap().unwrap();
     assert_eq!(chore.expands_to, "occur -k next_date");
     let done = db.lookup_alias("done").unwrap().unwrap();

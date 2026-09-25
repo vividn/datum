@@ -48,7 +48,7 @@ use crate::error::{DatumError, Result};
 
 pub use crate::migrations::{MigrationReport, MAX_PRE_MIGRATION_BACKUPS};
 
-pub use alias::{InstallAliasesReport, KitAliasOutcome};
+pub use alias::{InstallAliasesReport, KitAliasOutcome, ALIAS_FIELD};
 pub use kit::{InstallReport, InstalledKit, InstalledKitIndex, KitFieldOutcome};
 pub use kit_command::{
     validate_command, InstallCommandsReport, InstalledKitCommand, KitCommandOutcome,
@@ -71,6 +71,7 @@ pub use view::{InstallViewsReport, InstalledView, KitViewOutcome, ViewResult};
 // `try_insert` is a `pub(crate)` free function in `insert.rs`; re-export it
 // at `crate::db::try_insert` to preserve the historical import path used by
 // `crate::migrations`.
+pub(crate) use alias::new_alias_entry;
 pub(crate) use insert::try_insert;
 pub(crate) use spec::{new_spec_entry, NOT_META_FIELD_SQL};
 
@@ -301,11 +302,12 @@ impl Db {
         let tables = [
             "entries",
             "entry_history",
-            // Gone since v38 (specs are entries, da-lc26c); dropped here
-            // so a purge of an older file leaves none behind.
+            // Gone since v38 / v39 (specs and aliases are entries,
+            // da-lc26c, da-b3752); dropped here so a purge of an older
+            // file leaves none behind.
             "field_specs",
-            "kit_indices",
             "aliases",
+            "kit_indices",
             "sync_state",
             "sync_conflicts",
             "views",

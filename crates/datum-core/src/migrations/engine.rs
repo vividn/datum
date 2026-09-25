@@ -125,8 +125,8 @@ pub fn infer_legacy_version(conn: &Connection) -> Result<u32> {
     if table_exists(conn, "field_specs")? && !has_column(conn, "field_specs", "kit_id")? {
         return Ok(12);
     }
-    // m15_to_16: aliases.kit_id.
-    if !has_column(conn, "aliases", "kit_id")? {
+    // m15_to_16: aliases.kit_id. (`aliases` is gone from v39 on.)
+    if table_exists(conn, "aliases")? && !has_column(conn, "aliases", "kit_id")? {
         return Ok(15);
     }
     // m17_to_18: field_specs.tags.

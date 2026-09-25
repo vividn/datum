@@ -40,7 +40,6 @@ fn fresh_db_matches_schema_sql_shape() {
     tables.sort();
     let expected_tables = vec![
         "_meta",
-        "aliases",
         "entries",
         "entry_history",
         "integrity_warnings",
@@ -80,7 +79,6 @@ fn fresh_db_matches_schema_sql_shape() {
         "entries_verb",
         "entry_history_change_kind",
         "entry_history_entry",
-        "idx_aliases_kit_id",
         "idx_kit_commands_kit_id",
         "idx_views_kit_id",
         "integrity_warnings_hid",

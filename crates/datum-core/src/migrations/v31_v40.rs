@@ -7,7 +7,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::support::*;
-use crate::db::{new_spec_entry, SPEC_FIELD};
+use crate::db::{new_alias_entry, new_spec_entry, ALIAS_FIELD, SPEC_FIELD};
 use crate::error::{DatumError, Result};
 
 /// Rewrite the stored `CREATE TABLE` SQL for `table_name`, swapping the
@@ -453,6 +453,58 @@ pub(super) fn m37_to_38_specs_are_entries(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Lift 38→39: user and kit aliases become ENTRIES (da-b3752), as specs
+/// did in v38. Every `aliases` row is written as the entry `alias:<name>`
+/// whose data is the alias's JSON plus `kit_id` for a kit's alias, then the
+/// table is dropped.
+///
+/// Deterministic across devices the same way: the same alias gives the
+/// same slug, data and fixed occur time. **Refuses on a name collision**
+/// with life data already logged under `alias`, writing nothing.
+pub(super) fn m38_to_39_aliases_are_entries(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "aliases")? || !table_exists(conn, "entries")? {
+        return Ok(());
+    }
+    let clashing: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM entries WHERE field = ?1",
+        [ALIAS_FIELD],
+        |row| row.get(0),
+    )?;
+    if clashing > 0 {
+        return Err(DatumError::Other(format!(
+            "cannot move aliases into entries: this database has {clashing} \
+             entr{} of a field named `{ALIAS_FIELD}`, and `{ALIAS_FIELD}` is now reserved \
+             for aliases. Rename that field with an older datum first; nothing \
+             was changed.",
+            if clashing == 1 { "y" } else { "ies" }
+        )));
+    }
+    let mut stmt = conn.prepare("SELECT name, alias_json, kit_id FROM aliases ORDER BY name")?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(stmt);
+    for (name, alias_json, kit_id) in rows {
+        let mut alias: crate::field_spec::Alias = serde_json::from_str(&alias_json)?;
+        // The row's key is the name the alias answered to.
+        alias.name = name;
+        let mut data = serde_json::to_value(alias)?;
+        if let (Some(kit), Some(obj)) = (kit_id, data.as_object_mut()) {
+            obj.insert("kit_id".into(), kit.into());
+        }
+        let row = new_alias_entry(data, "migration-v39");
+        crate::db::try_insert(conn, &row.slug, &row.hid, &row)?;
+    }
+    conn.execute_batch("DROP TABLE aliases;")?;
+    Ok(())
+}
+
 // ─── Down migrations ─────────────────────────────────────────────────
 //
 // Each forward migration above has a paired `down` here that reverses
@@ -472,6 +524,34 @@ pub(super) fn m37_to_38_specs_are_entries(conn: &Connection) -> Result<()> {
 //   docstring. The down still runs to make the schema reversible for
 //   round-trip testing; production callers should back up before
 //   walking back across these.
+
+/// Reverse 39→38 — put the live alias entries back in an `aliases` table
+/// and delete the entries with their history. Loses each alias's history
+/// and any deleted alias, which the table never held.
+pub(super) fn down_39_to_38_aliases_are_entries(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "entries")? {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS aliases (
+            name        TEXT NOT NULL PRIMARY KEY,
+            alias_json  TEXT NOT NULL,
+            kit_id      TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_aliases_kit_id ON aliases (kit_id);
+        INSERT INTO aliases (name, alias_json, kit_id)
+            SELECT json_extract(data, '$.name'),
+                   json_remove(data, '$.kit_id'),
+                   json_extract(data, '$.kit_id')
+              FROM entries
+             WHERE field = 'alias' AND deleted_at IS NULL AND superseded_by IS NULL
+             ORDER BY rowid;
+        DELETE FROM entry_history
+         WHERE entry_hid IN (SELECT hid FROM entries WHERE field = 'alias');
+        DELETE FROM entries WHERE field = 'alias';",
+    )?;
+    Ok(())
+}
 
 /// Reverse 38→37 — put the live spec entries back in a `field_specs`
 /// table and delete the entries with their history. Loses each spec's

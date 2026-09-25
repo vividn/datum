@@ -215,12 +215,13 @@ impl Db {
 
     /// List installed kits with per-kit field, view, alias, and index
     /// counts. User-declared rows (no `kit_id` in any of the spec
-    /// entries, `views`, `aliases`, or `kit_indices`) are excluded.
+    /// or alias entries, `views`, or `kit_indices`) are excluded.
     /// A kit appears if it owns at least one row in any of those tables.
     pub fn list_kits(&self) -> Result<Vec<InstalledKit>> {
         let mut stmt = self.conn.prepare(
             "WITH
-                -- Specs and layouts are ENTRIES (da-lc26c, da-gg0v): the
+                -- Specs, aliases and layouts are ENTRIES (da-lc26c,
+                -- da-b3752, da-gg0v): the
                 -- kit that shipped one is a key in its data blob.
                 kit_fields AS (
                     SELECT json_extract(data, '$.kit_id') AS kit_id, COUNT(*) AS n
@@ -238,10 +239,13 @@ impl Db {
                     GROUP BY kit_id
                 ),
                 kit_aliases AS (
-                    SELECT kit_id, COUNT(*) AS n
-                    FROM aliases
-                    WHERE kit_id IS NOT NULL
-                    GROUP BY kit_id
+                    SELECT json_extract(data, '$.kit_id') AS kit_id, COUNT(*) AS n
+                    FROM entries
+                    WHERE field = 'alias'
+                      AND deleted_at IS NULL
+                      AND superseded_by IS NULL
+                      AND json_extract(data, '$.kit_id') IS NOT NULL
+                    GROUP BY 1
                 ),
                 kit_idx AS (
                     SELECT kit_id, COUNT(*) AS n

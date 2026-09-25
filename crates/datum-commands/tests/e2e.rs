@@ -159,7 +159,7 @@ fn live_rows(db: &Db) -> Vec<RowView> {
             // field on its first use (da-c8mh) is not one of them.
             "SELECT field, state, dur, data \
              FROM entries WHERE deleted_at IS NULL \
-               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field != 'spec' \
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL AND field NOT IN ('spec', 'alias') \
              ORDER BY rowid",
         )
         .expect("prepare live_rows query");
