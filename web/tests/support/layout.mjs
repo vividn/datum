@@ -384,19 +384,21 @@ export async function scrollX(locator, end) {
 }
 
 /**
- * Wait until `locator` is at rest: nothing of the swipe still in flight.
+ * Wait until the content box `locator` is at rest: nothing of the swipe
+ * still in flight.
  *
  * The barrier a swipe wants, `settled` being blind to it: a transform
  * moves what is drawn and nothing that is laid out, so the page's boxes
- * are identical from one frame to the next while the content is sliding.
- * Both endings come back to no transform at all — the tab switched, or
- * the swipe snapped back — so this is where the tab may be read, and a
- * swipe that should have moved NOTHING has had its chance to.
+ * are identical from one frame to the next while the strip is sliding.
+ * The strip moves only while the box is `moving` (da-24fgb), and both
+ * endings put that down — the tab switched, or the swipe snapped back —
+ * so this is where the tab may be read, and a swipe that should have
+ * moved NOTHING has had its chance to.
  */
 export const atRest = (locator) =>
 	until(
-		() => locator.evaluate((el) => getComputedStyle(el).transform),
-		(transform) => transform === 'none'
+		() => locator.evaluate((el) => el.classList.contains('moving')),
+		(moving) => !moving
 	);
 
 /** The `Bar ▸` submenu, open. */

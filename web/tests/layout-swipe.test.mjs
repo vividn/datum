@@ -28,6 +28,7 @@ import {
 	addTab,
 	atRest,
 	bar,
+	chooseBar,
 	fill,
 	manage,
 	pane,
@@ -65,44 +66,46 @@ const shown = async (page) =>
 	(await page.locator('.root-bar [role="tab"][aria-selected="true"]').innerText()).replace(/\s*•\s*$/, '');
 
 /**
- * Report every transform `locator` takes from now on.
+ * Report every transform the strip in the content box `locator` takes
+ * from now on.
  *
- * The motion is over in 150ms twice, so a test that reads the transform
- * after the swipe is a test of how fast the runner is. The inline style is
- * watched instead, and what it took is read once the tab has landed.
+ * The motion is over in 150ms, so a test that reads the transform after
+ * the swipe is a test of how fast the runner is. The box is watched
+ * instead — its tab in front is moved by `--front` while it is `moving`
+ * (da-24fgb), and not at all otherwise — and what it took is read once
+ * the tab has landed.
  */
 const watch = (locator) =>
 	locator.evaluate((el) => {
 		window.__transforms = [];
-		new MutationObserver(() => window.__transforms.push(el.style.transform)).observe(el, {
-			attributes: true,
-			attributeFilter: ['style']
-		});
+		new MutationObserver(() =>
+			window.__transforms.push(el.classList.contains('moving') ? el.style.getPropertyValue('--front') : '')
+		).observe(el, { attributes: true, attributeFilter: ['style', 'class'] });
 	});
 const moved = async (page) => (await page.evaluate(() => window.__transforms ?? [])).filter(Boolean);
 
-describe('the root swipes between layouts', () => {
-	/**
-	 * The REPL pane, scrolling sideways: a `tail` of a sixty-character
-	 * field name printed into it.
-	 *
-	 * The finger has to start over a scroller for this to be a test of
-	 * anything. A widget with nothing to scroll was always the root's — it
-	 * is a widget whose body is WIDER than its box that made the root's
-	 * swipe dead on a phone, since every pane's body scrolls and a picture
-	 * arriving is briefly wider than the box it is drawn for.
-	 */
-	async function wideRepl(app) {
-		await app.submit(`occur ${'x'.repeat(60)}`);
-		await app.submit('tail');
-		const body = pane(app.page, 'repl').locator('.body:not(.behind .body)');
-		assert.ok(
-			await body.evaluate((el) => el.scrollWidth > el.clientWidth),
-			'the REPL does not scroll sideways — this case needs a wider line'
-		);
-		return body;
-	}
+/**
+ * The REPL pane, scrolling sideways: a `tail` of a sixty-character
+ * field name printed into it.
+ *
+ * The finger has to start over a scroller for this to be a test of
+ * anything. A widget with nothing to scroll was always the root's — it
+ * is a widget whose body is WIDER than its box that made the root's
+ * swipe dead on a phone, since every pane's body scrolls and a picture
+ * arriving is briefly wider than the box it is drawn for.
+ */
+async function wideRepl(app) {
+	await app.submit(`occur ${'x'.repeat(60)}`);
+	await app.submit('tail');
+	const body = pane(app.page, 'repl').locator('.body:not(.behind .body)');
+	assert.ok(
+		await body.evaluate((el) => el.scrollWidth > el.clientWidth),
+		'the REPL does not scroll sideways — this case needs a wider line'
+	);
+	return body;
+}
 
+describe('the root swipes between layouts', () => {
 	test('a swipe over the page moves to the next layout, and back', async () => {
 		await withApp(
 			async (app) => {
@@ -338,17 +341,175 @@ describe('the motion', () => {
 		});
 	});
 
-	test('a swipe too short comes back, and the tab does not move', async () => {
+	test('a swipe too short moves nothing, and the tab does not move', async () => {
 		await phone.solo(async ({ page }) => {
 			const content = pane(page, 'side').locator('> .content');
 			const body = pane(page, 'side').locator('.body:not(.behind .body)');
 			await scrollX(body, true);
 			await watch(content);
-			await swipeOver(page, body, -20, 0);
-			assert.ok((await moved(page)).length > 0, 'a claimed gesture moved nothing while the finger was down');
+			// Past COMMIT_PX, so the frame claims it; short of SWIPE_PX, so it
+			// is a touch and the strip stays where it is (da-24fgb).
+			await swipeOver(page, body, -35, 0);
 			await atRest(content);
+			assert.deepEqual(await moved(page), [], 'a drag shorter than a swipe moved the strip');
 			assert.equal(await activeTab(page, 'side'), 'tail');
+			// The control: the same drag a little longer does move it.
+			await swipeOver(page, body, -60, 0);
+			await until(() => activeTab(page, 'side'), (t) => t === 'nowview');
+			assert.ok((await moved(page)).length > 0, 'a swipe past SWIPE_PX never moved the strip');
 		});
+	});
+});
+
+describe('the strip: never a blank between two tabs', () => {
+	// vividn, 2026-09-23: "swiping between tabs or widgets still has an
+	// awkward nomans land between them, the swiping should go immediately
+	// between the two widgets without the blank space" (da-24fgb). The claim
+	// is about FRAMES, so it is read from frames: a sampler on
+	// requestAnimationFrame measures, every frame the box draws, how much of
+	// its extent along the swipe nothing visible covers. A synthetic drag's
+	// moves arrive in one burst and draw nothing between them, so the drag
+	// here waits two frames after every move, and the test asserts that
+	// mid-motion frames WERE drawn before it believes any of them.
+
+	/** Start sampling `box`: the gap along `axis` that the visible `drawn` leave. */
+	const sample = (box, drawn, axis) =>
+		box.evaluate(
+			(el, [drawn, axis]) => {
+				const frames = (window.__frames = []);
+				const span = (r) => (axis === 'x' ? [r.left, r.right] : [r.top, r.bottom]);
+				// How far a box is drawn from where it is laid out.
+				const shift = (d) => {
+					const m = new DOMMatrix(d ? getComputedStyle(d).transform : 'none');
+					return axis === 'x' ? m.m41 : m.m42;
+				};
+				const tick = () => {
+					if (window.__frames !== frames) return;
+					// The window is where the box is LAID OUT: the box itself
+					// may be what moves (it was, before the strip).
+					const [lo, hi] = span(el.getBoundingClientRect()).map((v) => v - shift(el));
+					const spans = [...el.querySelectorAll(drawn)]
+						.filter((d) => getComputedStyle(d).visibility === 'visible')
+						.map((d) => span(d.getBoundingClientRect()))
+						.map(([a, b]) => [Math.max(a, lo), Math.min(b, hi)])
+						.filter(([a, b]) => b > a)
+						.sort((p, q) => p[0] - q[0]);
+					let covered = 0;
+					let reach = lo;
+					for (const [a, b] of spans) {
+						if (b > reach) covered += b - Math.max(a, reach);
+						reach = Math.max(reach, b);
+					}
+					// How far the tab in front is drawn from home, whichever box
+					// carries the transform: the strip's, or the box's own.
+					const at = shift(el) + shift(el.querySelector(':scope > .tab-body:not(.behind)'));
+					frames.push({ moving: el.classList.contains('moving'), at, gap: hi - lo - covered });
+					requestAnimationFrame(tick);
+				};
+				requestAnimationFrame(tick);
+			},
+			[drawn, axis]
+		);
+	const sampled = (page) =>
+		page.evaluate(() => {
+			const frames = window.__frames;
+			window.__frames = null;
+			return frames;
+		});
+
+	/** A finger that lets the page draw a frame after every move. */
+	async function drag(page, locator, dx, dy) {
+		await locator.evaluate((el) => el.scrollIntoView({ block: 'nearest' }));
+		const box = await locator.boundingBox();
+		const x = box.x + box.width / 2;
+		const y = box.y + box.height / 2;
+		const frame = () => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+		const cdp = await page.context().newCDPSession(page);
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+		for (let i = 1; i <= 12; i++) {
+			await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + (dx * i) / 12, y: y + (dy * i) / 12 }] });
+			await frame();
+		}
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+		await cdp.detach();
+	}
+
+	/**
+	 * Swipe over `over` by (dx, dy) until `landed`, and hold every frame of
+	 * the content box `content` to the rest's gap: while the strip moves,
+	 * nothing is uncovered that was not uncovered with one tab standing
+	 * still.
+	 */
+	async function unbroken(page, content, drawn, label, landed, dx, dy, over) {
+		await sample(content, drawn, dx ? 'x' : 'y');
+		await drag(page, over, dx, dy);
+		await until(landed, Boolean);
+		await atRest(content);
+		await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+		const frames = await sampled(page);
+		const rest = Math.max(...frames.filter((f) => !f.moving).map((f) => f.gap));
+		const moving = frames.filter((f) => f.moving && Math.abs(f.at) >= 20);
+		assert.ok(moving.length >= 3, `${label}: too few frames drawn mid-motion to judge: ${JSON.stringify(frames)}`);
+		const blank = frames.filter((f) => f.moving && f.gap > rest + 1);
+		assert.deepEqual(blank, [], `${label}: frames with a blank the tabs at rest do not leave (${rest}px)`);
+	}
+
+	/** The side pane's body in front: the finger's start. */
+	const front = (page) => pane(page, 'side').locator('.body:not(.behind .body)');
+	/** Swipe the side pane from tab `from` and wait for `to`. */
+	const side = (page, from, to, dx, dy) =>
+		unbroken(
+			page,
+			pane(page, 'side').locator('> .content'),
+			'.body',
+			`${from} → ${to}`,
+			async () => (await activeTab(page, 'side')) === to,
+			dx,
+			dy,
+			front(page)
+		);
+
+	test('side to side, both ways: some tab covers the box in every frame', async () => {
+		await phone.solo(async ({ page }) => {
+			await scrollX(front(page), true);
+			await side(page, 'tail', 'nowview', -150, 0);
+			await pane(page, 'side').locator('[role="tab"]', { hasText: 'custom' }).click();
+			await scrollX(front(page), false);
+			await side(page, 'custom', 'nowview', 150, 0);
+		});
+	});
+
+	test('up and down, under a bar on the left: the same', async () => {
+		await phone.solo(async ({ page }) => {
+			await chooseBar(page, 'side', 'left');
+			await side(page, 'tail', 'nowview', 0, -150);
+			await pane(page, 'side').locator('[role="tab"]', { hasText: 'custom' }).click();
+			await side(page, 'custom', 'nowview', 0, 150);
+		});
+	});
+
+	test('the root brings the next layout on beside the one it leaves', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				// The next layout is not mounted until a gesture brings it on.
+				assert.deepEqual(await titles(page), ['dayview', 'repl', 'tail', 'fields']);
+				const body = await wideRepl(app);
+				await scrollX(body, true);
+				await unbroken(
+					page,
+					page.locator('section.root > .content'),
+					'.body',
+					'main → tail',
+					async () => (await shown(page)) === 'tail',
+					-150,
+					0,
+					body
+				);
+				assert.deepEqual(await titles(page), ['tail'], 'the layout left behind is still mounted');
+			},
+			{ ...PHONE, prepare: twoLayouts }
+		);
 	});
 });
 

@@ -300,6 +300,7 @@
 	root={pane.id === rootId}
 	locked={locked}
 	kind={isSplit(content) ? undefined : content.kind}
+	let:peek
 >
 	{#if big}
 		<!-- The pane alone, under the root bar and in place of the whole
@@ -311,10 +312,16 @@
 	{:else}
 		<!-- Every tab of the pane is mounted, the one in front and the ones
 		     behind it (da-rjmg), so a swipe moves a picture already drawn.
-		     Not the root's: its tabs are whole layouts, and one is plenty. -->
-		{#each pane.id === rootId ? [active] : pane.tabs as tab (tab.id)}
+		     Not the root's: its tabs are whole layouts, and one is plenty —
+		     with the one a swipe in hand is bringing on (da-24fgb). Listed,
+		     not filtered out of `pane.tabs` by `=== active`: the slot can be
+		     updated with a newer `pane` than its `active`, and a filter then
+		     drops the tab in front for a frame and remounts it. For the same
+		     reason the neighbour is dropped if it is the tab in front: a key
+		     listed twice is an error. -->
+		{#each pane.id === rootId ? [active, pane.tabs[peek]].filter((t, i) => t && (i === 0 || t.id !== active.id)) : pane.tabs as tab (tab.id)}
 		{@const content = tab.content}
-		<TabBody active={tab === active}>
+		<TabBody active={tab === active} beside={tab === pane.tabs[peek]}>
 			{#if isSplit(content)}
 				{@const split = content}
 				{@const least = pane.id === rootId ? legible(pane) : undefined}

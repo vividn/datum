@@ -134,10 +134,19 @@
 	    margin — has nothing under it and is always the frame's: "always
 	    allow swiping when swiping in the margins or along the frame".
 
-	Then the content follows the finger, and the release slides it the rest
-	of the way off and brings the next tab in from the far side — two
-	phases through the one box. Every tab is mounted and drawn already
-	(da-rjmg, `TabBody.svelte`), so what moves is a picture, not a mount.
+	Then the tab and its neighbour move as ONE STRIP (da-24fgb): the tab
+	the finger is bringing on is drawn beside the one in front, a box away,
+	and the two follow the finger together; the release slides the strip
+	the rest of the way and the neighbour lands where the tab was. At no
+	instant is the box empty — vividn: "swiping between tabs or widgets
+	still has an awkward nomans land between them, the swiping should go
+	immediately between the two widgets without the blank space". The
+	content box itself stays still and clips the strip, and nothing moves
+	until the finger is past `SWIPE_PX`, so a short drag is still a touch.
+	Every tab of a pane is mounted and drawn already (da-rjmg,
+	`TabBody.svelte`), so what moves is a picture, not a mount; the root
+	mounts only its layout in front, and the neighbour for as long as a
+	gesture is in hand (`peek`).
 -->
 <script lang="ts" context="module">
 	/**
@@ -214,9 +223,9 @@
 	/** A swipe shorter than this is a touch, not a swipe. */
 	const SWIPE_PX = 40;
 	/**
-	 * How long the content takes to slide off, and the next tab's to
-	 * arrive. The transition reads it as `--slide`, so the wait after the
-	 * transform and the transition itself are the one number.
+	 * How long the strip takes to finish the swipe the finger started. The
+	 * transition reads it as `--slide`, so the wait after the transform and
+	 * the transition itself are the one number.
 	 */
 	const SLIDE_MS = 150;
 
@@ -503,10 +512,15 @@
 	type Swipe = { x: number; y: number; panners: HTMLElement[]; state: 'pending' | 'ours' | 'theirs' };
 	let touch: Swipe | null = null;
 
-	/** The content box: what follows the finger, and what says how far off is off. */
+	/** The content box: the window the strip moves in, and what says how far off is off. */
 	let contentEl: HTMLElement | null = null;
-	/** How far the content is from home along the bar's axis, in px. */
+	/** How far the strip is from home along the bar's axis, in px. */
 	let offset = 0;
+	/**
+	 * The tab drawn beside the one in front — the one the finger is
+	 * bringing on — or -1. Handed to the slot, so the root mounts it.
+	 */
+	let peek = -1;
 	/** Whether that offset is moving on its own — the slide, or the snap back. */
 	let gliding = false;
 
@@ -596,7 +610,12 @@
 		}
 		event.stopPropagation();
 		event.preventDefault();
-		if (!still()) offset = along;
+		if (still()) return;
+		// The strip waits out the first SWIPE_PX, then follows from there,
+		// and never towards a side with no tab on it.
+		const way = along < 0 ? 1 : -1;
+		if (inRange(pane.active + way)) peek = pane.active + way;
+		offset = Math.abs(along) > SWIPE_PX && peek === pane.active + way ? along + way * SWIPE_PX : 0;
 	}
 
 	function onTouchEnd(event: TouchEvent) {
@@ -608,35 +627,36 @@
 		const along = vertical ? t.clientY - was.y : t.clientX - was.x;
 		// Pushing the content away from the bar's start is "next".
 		const next = pane.active + (along < 0 ? 1 : -1);
-		if (Math.abs(along) < SWIPE_PX || !inRange(next)) void glide(0);
+		if (Math.abs(along) < SWIPE_PX || !inRange(next)) void home();
 		else void slide(next, along < 0 ? -1 : 1);
 	}
 
 	function cancel() {
 		touch = null;
-		void glide(0);
+		void home();
+	}
+
+	/** Back where it started, and the neighbour put away. */
+	async function home() {
+		await glide(0);
+		if (!touch) peek = -1;
 	}
 
 	/**
-	 * The swap, with the motion: the content goes the rest of the way off
-	 * the way the finger went, the tab is switched under it, and what the
-	 * box holds now comes in from the far side. Two phases, ONE box — the
-	 * tab behind is already drawn in it (da-rjmg), so the switch runs
-	 * nothing. A tab pressed in the strip, or reached by an arrow, still
-	 * switches instantly: the motion belongs to the swipe.
+	 * The swap, with the motion: the strip goes the rest of the way, which
+	 * brings the neighbour exactly home, and in the same frame the tab is
+	 * switched and the strip put back — the neighbour becoming the tab in
+	 * front where it already stood, so nothing on screen moves. A tab
+	 * pressed in the strip, or reached by an arrow, still switches
+	 * instantly: the motion belongs to the swipe.
 	 */
 	async function slide(next: number, way: number) {
 		if (still()) return void activate(next);
 		const extent = (vertical ? contentEl?.clientHeight : contentEl?.clientWidth) ?? 0;
 		await glide(way * extent);
 		activate(next);
-		gliding = false;
-		offset = -way * extent;
-		await tick();
-		// Read the layout back, so the far side is a frame of its own: two
-		// writes in one frame are folded together and nothing would move.
-		void contentEl?.clientWidth;
-		await glide(0);
+		offset = 0;
+		peek = -1;
 	}
 
 	/** Move the content to `to` with the transition on, and wait it out. */
@@ -653,7 +673,7 @@
 				resolve();
 			};
 			const onEnd = (e: TransitionEvent) => {
-				if (e.target === el && e.propertyName === 'transform') done();
+				if ((e.target as Element).parentElement === el && e.propertyName === 'transform') done();
 			};
 			const timer = setTimeout(done, SLIDE_MS + 50);
 			el?.addEventListener('transitionend', onEnd);
@@ -828,14 +848,15 @@
 		class:gliding
 		class:moving={offset !== 0 || gliding}
 		bind:this={contentEl}
-		style:transform={offset === 0 ? null : `translate${vertical ? 'Y' : 'X'}(${offset}px)`}
+		style:--front="translate{vertical ? 'Y' : 'X'}({offset}px)"
+		style:--beside="translate{vertical ? 'Y' : 'X'}(calc({offset}px + {peek > pane.active ? 100 : -100}%))"
 		style:--slide="{SLIDE_MS}ms"
 		on:touchstart={many ? onTouchStart : undefined}
 		on:touchmove|nonpassive={many ? onTouchMove : undefined}
 		on:touchend={many ? onTouchEnd : undefined}
 		on:touchcancel={many ? cancel : undefined}
 	>
-		<slot />
+		<slot {peek} />
 	</div>
 </section>
 </div>
@@ -1385,12 +1406,30 @@
 		min-height: 0;
 	}
 
-	/* The swipe's motion (da-kcmp): under the finger the content follows
-	   it with no transition at all; the slide the release finishes and the
-	   snap back of one too short are the same box, moved with one. Under
-	   `prefers-reduced-motion` no transform is ever set (the handlers), so
-	   the swap is the instant one it was. */
-	.content.gliding {
+	/* The swipe's motion (da-kcmp, da-24fgb): the content box stays and
+	   clips, and what moves in it is the strip — the tab in front, made a
+	   box of the same size for the while (it is `display: contents` at
+	   rest, TabBody.svelte), and its neighbour a box away. Under the finger
+	   they follow it with no transition at all; the slide the release
+	   finishes and the snap back of one too short are the same strip,
+	   moved with one. Under `prefers-reduced-motion` nothing is ever
+	   `moving` (the handlers), so the swap is the instant one it was. */
+	.content.moving > :global(.tab-body:not(.behind)) {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-width: 0;
+		min-height: 0;
+		transform: var(--front);
+	}
+	/* `--beside`'s 100% is the neighbour's own box, which is the content's
+	   padding box because `.behind` is `inset: 0` in it (TabBody.svelte):
+	   one box away, whatever the box. */
+	.content.moving > :global(.tab-body.beside) {
+		visibility: visible;
+		transform: var(--beside);
+	}
+	.content.gliding > :global(.tab-body:is(:not(.behind), .beside)) {
 		transition: transform var(--slide) ease-out;
 	}
 	/* A pane dragged down to its frame (da-zh2o) shows nothing of its
@@ -1406,8 +1445,9 @@
 	.root > .content {
 		overflow: auto;
 	}
-	/* A transformed box widens the overflow of whatever scrolls it — and
-	   the root's content IS the page's scroller — so while it is moving,
+	/* The strip's frame: what hangs out of the box is not drawn. And a
+	   transformed box widens the overflow of whatever scrolls it — the
+	   root's content IS the page's scroller — so while it is moving,
 	   nothing scrolls to the part hanging out. */
 	.content.moving {
 		overflow: hidden;

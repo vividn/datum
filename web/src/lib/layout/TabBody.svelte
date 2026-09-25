@@ -6,10 +6,12 @@
 
 	The tab in front is `display: contents`, so the frame's content box lays
 	its widget out exactly as it did when it was the only one mounted. A
-	tab behind it keeps a box of the same size — laid over the content,
-	`visibility: hidden` rather than `display: none`, since a drawn widget
-	measures its box to render — and is `inert`, so nothing in it takes
-	focus, a key or a pointer. It hears the epoch and the minute tick as the
+	tab behind it keeps a box of the same size — laid over the content and
+	padded as it is, `visibility: hidden` rather than `display: none`,
+	since a drawn widget measures its box to render — and is `inert`, so
+	nothing in it takes focus, a key or a pointer. The one `beside` the
+	tab in front is the neighbour a swipe brings on (da-24fgb): the frame
+	shows it, a box away, while the strip moves (PaneFrame.svelte). It hears the epoch and the minute tick as the
 	tab in front does, so a swipe shows a picture already drawn.
 
 	The frame's context is passed down through a gate: what a widget sends
@@ -22,6 +24,8 @@
 	import { derived, writable, type Writable } from 'svelte/store';
 
 	export let active: boolean;
+	/** The tab a swipe in hand is bringing on. */
+	export let beside = false;
 
 	interface Frame {
 		alarm: Writable<boolean>;
@@ -43,7 +47,7 @@
 	});
 </script>
 
-<div class="tab-body" class:behind={!active} inert={!active}><slot /></div>
+<div class="tab-body" class:behind={!active} class:beside inert={!active}><slot /></div>
 
 <style>
 	.tab-body {
@@ -52,6 +56,7 @@
 	.behind {
 		position: absolute;
 		inset: 0;
+		padding: inherit;
 		display: flex;
 		flex-direction: column;
 		visibility: hidden;
