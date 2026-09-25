@@ -120,23 +120,29 @@ export const activeTab = (page, id) =>
  * a swipe, a press on a locked border. Playwright's input calls return once
  * the page has handled the event, and every handler here updates a store,
  * so by the second identical frame whatever the input did is on screen —
- * and whatever it did not do is not coming. The deadline is the test's.
+ * and whatever it did not do is not coming. Polled from node: a
+ * `waitForFunction` predicate that is `async` returns a Promise, which is
+ * truthy, so it never waited at all (da-1grm7).
  */
 export const settled = (page) =>
-	page.waitForFunction(async () => {
-		const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
-		const shape = () =>
-			JSON.stringify(
-				[...document.querySelectorAll('section, .cell, [role="separator"], [role="menu"], [role="tab"]')].map((el) => {
-					const r = el.getBoundingClientRect();
-					return [r.x, r.y, r.width, r.height, el.getAttribute('aria-selected')];
-				})
-			);
-		await frame();
-		const before = shape();
-		await frame();
-		return before === shape();
-	});
+	until(
+		() =>
+			page.evaluate(async () => {
+				const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+				const shape = () =>
+					JSON.stringify(
+						[...document.querySelectorAll('section, .cell, [role="separator"], [role="menu"], [role="tab"]')].map((el) => {
+							const r = el.getBoundingClientRect();
+							return [r.x, r.y, r.width, r.height, el.getAttribute('aria-selected')];
+						})
+					);
+				await frame();
+				const before = shape();
+				await frame();
+				return before === shape();
+			}),
+		(same) => same
+	);
 
 /**
  * What opens a pane's menu (da-9vtw): its title, or — with several tabs —

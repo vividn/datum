@@ -15,6 +15,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { until } from './support/until.mjs';
 import { choose, chooser, exactly, inRoom, manage, toggleOption } from './support/layout.mjs';
 
 before(startApp);
@@ -133,9 +134,7 @@ describe('the widget and the bar are two views of one command line', () => {
 			// Enter in the WIDGET runs it — once — and both boxes are empty.
 			await page.locator(WIDGET).fill('occur coffee');
 			await page.locator(WIDGET).press('Enter');
-			await page.waitForFunction(
-				async () => (await window.datum.entries(50)).some((e) => e.field === 'coffee')
-			);
+			await until(app.entries, (es) => es.some((e) => e.field === 'coffee'));
 			assert.deepEqual(
 				(await app.entries()).map((e) => e.field),
 				['coffee'],
@@ -186,9 +185,7 @@ describe('the widget and the bar are two views of one command line', () => {
 			await page.locator('.input-widget .pill').waitFor();
 			await page.locator(WIDGET).fill('occur coffee');
 			await page.locator(WIDGET).press('Enter');
-			await page.waitForFunction(
-				async () => (await window.datum.entries(50)).some((e) => e.field === 'coffee')
-			);
+			await until(app.entries, (es) => es.some((e) => e.field === 'coffee'));
 			// The zone is UTC here (`TIMEZONE` in support/app.mjs), so 14:30
 			// on the line is 14:30 in what was stored.
 			const [entry] = await app.entries();
@@ -294,7 +291,7 @@ describe('reversed', () => {
 			await typeIn(page, WIDGET, 'occur coffee');
 			assert.equal(await valueOf(page, BAR), 'occur coffee');
 			await page.locator(WIDGET).press('Enter');
-			await page.waitForFunction(async () => (await window.datum.entries(50)).some((e) => e.field === 'coffee'));
+			await until(app.entries, (es) => es.some((e) => e.field === 'coffee'));
 			const entry = (await app.entries()).find((e) => e.field === 'coffee');
 			assert.match(entry.occur_time.utc, /T14:30/);
 			assert.equal(await valueOf(page, WIDGET), '');

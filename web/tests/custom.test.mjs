@@ -13,6 +13,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
@@ -83,10 +84,7 @@ describe('the custom pane', () => {
 			// instant would be the first one again.
 			await app.clock.forward(1000);
 			await app.page.locator(`${PANE} button.play`).click();
-			await app.page.waitForFunction(
-				async () => (await window.datum.entries(500)).filter((e) => e.field === 'tea').length === 2
-			);
-			assert.equal(await count(app, 'tea'), 2);
+			await until(() => count(app, 'tea'), (n) => n === 2);
 		});
 	});
 
