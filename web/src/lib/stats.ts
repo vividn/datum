@@ -110,6 +110,26 @@ export function formatDur(secs: number): string {
 	return `${s}s`;
 }
 
+const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * The fourth tile: how far back the window's record goes — `since 4 Sep`
+ * (da-rcmwc). The day is `earliest`'s own, the date it was in the zone it
+ * was logged in, read off the string and never through a `Date`, which
+ * would move it into the page's zone. The year is said only when it is
+ * not `latest`'s, so a record that stays inside one year costs the one
+ * line no more than it must.
+ *
+ * No tile at all when `earliest` is null: an empty window has no start,
+ * and the zeroes beside it are already the whole answer.
+ */
+function since({ earliest, latest }: { earliest: string | null; latest: string | null }): [string, string][] {
+	if (!earliest) return [];
+	const [y, m, d] = earliest.slice(0, 10).split('-');
+	const day = `${Number(d)} ${MONTH[Number(m) - 1]}`;
+	return [['since', latest?.startsWith(y) ? day : `${day} ${y}`]];
+}
+
 /**
  * The tiles over the all-fields table: what the database itself amounts to
  * in the window (da-vpuxg).
@@ -131,7 +151,8 @@ export function summaryTiles(all: AllFieldsStats): [string, string][] {
 	return [
 		['entries', String(all.total_count)],
 		['tracked', formatDur(all.tracked_duration_seconds)],
-		['fields', String(all.fields.length)]
+		['fields', String(all.fields.length)],
+		...since(all)
 	];
 }
 
@@ -147,7 +168,8 @@ export function fieldTiles(s: FieldStats): [string, string][] {
 	return [
 		['entries', String(s.total_count)],
 		['time', formatDur(s.total_duration_seconds)],
-		['states', String(s.states.length)]
+		['states', String(s.states.length)],
+		...since(s)
 	];
 }
 

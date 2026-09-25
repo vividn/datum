@@ -27,11 +27,12 @@
 	OVER it, THE HEAD, which both states have (da-vpuxg). Whatever the
 	subject is, the figures are how much of it there is: entries, time,
 	and how many parts — the states a field has been in, the fields a
-	database has logged. Un-narrowed that is the answer to "nothing is
+	database has logged — and since when, the first entry the window
+	counts (`earliest`, da-rcmwc). Un-narrowed that is the answer to "nothing is
 	selected", which before this was a bar and a table and no headline at
 	all:
 
-	    entries 128 · tracked 42h30m · fields 9      datum · all time · stats
+	    entries 128 · tracked 42h30m · fields 9 · since 4 Sep   datum · all time · stats
 
 	and the quiet half of the line is there because a figure whose scope
 	the reader has to guess at is worse than no figure — these are ONE
@@ -289,16 +290,19 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
-		justify-content: space-between;
 		gap: 0 0.8rem;
 	}
 
+	/* The figures wrap one by one among the head's items, not as a block:
+	   a figure that will not fit beside the others goes down onto the
+	   source's line, which is there anyway on a phone, rather than onto a
+	   line of its own (da-rcmwc — at 390px `since` cost the table a line). */
 	.tiles {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0 0.8rem;
-		margin: 0;
+		display: contents;
+	}
+
+	.source {
+		margin-left: auto;
 	}
 
 	.tile {

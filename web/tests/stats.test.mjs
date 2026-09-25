@@ -119,8 +119,10 @@ describe('/stats', () => {
 
 			const json = await app.run(['stats', '--json']);
 			assert.equal(json.code, 0, json.stderr);
-			const { fields, total_count, tracked_duration_seconds } = JSON.parse(json.stdout);
+			const { fields, total_count, tracked_duration_seconds, earliest } = JSON.parse(json.stdout);
 			assert.ok(tracked_duration_seconds > 0, 'the seed tracked no time: this proves nothing');
+			// The seed's first entry is 90 minutes before AT, on its day.
+			assert.match(earliest, /^2026-09-10T/);
 			assert.ok(fields.length > 1, `the seed gave ${fields.length} fields`);
 
 			// The duration's SPELLING is the CLI's too, read off the header
@@ -135,7 +137,8 @@ describe('/stats', () => {
 			assert.deepEqual(await tiles(app.page), [
 				['entries', String(total_count)],
 				['tracked', header[1]],
-				['fields', String(fields.length)]
+				['fields', String(fields.length)],
+				['since', '10 Sep']
 			]);
 			assert.deepEqual(app.errors, []);
 		});
@@ -186,7 +189,8 @@ describe('/stats', () => {
 	});
 
 	// A database with nothing in it is the widget WORKING, not an error and
-	// not a pane still loading. It says so in zeroes.
+	// not a pane still loading. It says so in zeroes — and with no `since`,
+	// since `earliest` is null and there is no day to name (da-rcmwc).
 	test('an empty database is three zeroes, not a blank pane', async () => {
 		await shared.solo(async (app) => {
 			await openStats(app);
@@ -397,7 +401,15 @@ describe('/stats', () => {
 						scrolls: ['auto', 'scroll'].includes(getComputedStyle(box).overflowY),
 						shareIn: share.top >= view.top - 1 && share.bottom <= view.bottom + 1,
 						shareWidth: share.width - view.width,
-						linesOfTable: Math.floor((view.bottom - body.top) / line)
+						linesOfTable: Math.floor((view.bottom - body.top) / line),
+						since: !!widget.querySelector('.head .tile.since'),
+						headRows: [...widget.querySelectorAll('.head .tile, .head .source')].reduce((rows, el) => {
+							const b = r(el);
+							const row = rows.find((w) => b.top < w.bottom && w.top < b.bottom);
+							if (row) row.bottom = Math.max(row.bottom, b.bottom);
+							else rows.push({ top: b.top, bottom: b.bottom });
+							return rows;
+						}, []).length
 					};
 				});
 				assert.ok(fit.crowded > 0, 'the table fit the pane: this proves nothing');
@@ -406,6 +418,10 @@ describe('/stats', () => {
 				assert.ok(fit.shareIn, 'the share bar is not in view at the top');
 				assert.ok(fit.shareWidth <= 1, `the share bar is ${fit.shareWidth}px wider than the pane`);
 				assert.ok(fit.linesOfTable >= 3, `only ${fit.linesOfTable} lines of the table are in view`);
+				// da-rcmwc: the fourth figure rides down onto the source's line,
+				// which a phone has anyway — not onto a line of its own.
+				assert.ok(fit.since, 'no since tile: this proves nothing');
+				assert.ok(fit.headRows <= 2, `the head is ${fit.headRows} lines`);
 				assert.deepEqual(app.errors, []);
 			},
 			{ viewport: { width: 390, height: 300 } }
