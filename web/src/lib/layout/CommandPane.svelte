@@ -31,7 +31,7 @@
 	import { openSpec } from '$lib/specModal.js';
 	import { run } from '$lib/run.js';
 	import { withPills } from '$lib/selection.js';
-	import { grammar, press, pressWithPills, ready } from './engine.js';
+	import { fields, grammar, press, pressWithPills, ready } from './engine.js';
 
 	export let epoch = 0;
 
@@ -69,6 +69,7 @@
 		disabled={!$ready}
 		grammar={$grammar}
 		pills={$pills}
+		fields={$fields}
 		{redoable}
 		on:run={(e) => runNow(e.detail)}
 		on:line={(e) => fill(e.detail)}

@@ -356,12 +356,37 @@ describe('what narrows to it', () => {
 				() => !document.querySelector('[data-command="get"]')
 			);
 			const under = await commands(page);
-			for (const name of ['occur', 'end', 'tail', 'stats', 'count', 'ids', 'spec'])
+			for (const name of ['occur', 'tail', 'stats', 'count', 'ids', 'spec'])
 				assert.ok(under.includes(name), `${name} names a field and was hidden`);
 			for (const name of ['get', 'now', 'delete', 'update', 'grep', 'dayview'])
 				assert.ok(!under.includes(name), `${name} names no field and was not hidden`);
+			// coffee is an OCCUR field (da-57j14): the other verbs are hidden.
+			for (const name of ['start', 'end', 'switch', 'add'])
+				assert.ok(!under.includes(name), `${name} does not fit an occur field and was not hidden`);
 			// The order is the widget's usual one; the filter only removes.
 			assert.deepEqual(under, whole.filter((name) => under.includes(name)));
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// da-57j14: the verbs are narrowed by what the FIELD takes — the same
+	// rule the fields widget narrows by under a pending verb. mood is a
+	// switch in a state, so it can be switched or ended, not occurred,
+	// started or added; and taking the pill away brings the five back.
+	test('a switch field leaves switch and end of the verbs, and every verb comes back without it', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await ready(app);
+			const verbs = async () =>
+				(await commands(page)).filter((name) => ['occur', 'start', 'end', 'switch', 'add'].includes(name));
+
+			await hold(page, 'mood');
+			await page.waitForFunction(() => !document.querySelector('[data-command="occur"]'));
+			assert.deepEqual(await verbs(), ['end', 'switch']);
+
+			await fieldPill(page).locator('button.remove').click();
+			await page.waitForFunction(() => document.querySelector('[data-command="occur"]'));
+			assert.deepEqual(await verbs(), ['occur', 'start', 'end', 'switch', 'add']);
 			assert.deepEqual(app.errors, []);
 		});
 	});

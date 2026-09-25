@@ -39,7 +39,8 @@
 	The loaded PILLS filter it (da-r13j): a command whose grammar — `datum
 	help --json` — cannot take every pill on the bar is not drawn
 	(`commandsUnder`). A selected hid leaves the id commands; a `-t` the
-	ones that take a time.
+	ones that take a time; a field the verbs that field can take
+	(da-57j14: an occur field hides start, end and switch).
 
 	The bar is `ButtonRows` — how every button bar is laid out and
 	scrolled (da-vu7pi): as many rows as fit, up to three, each packed on
@@ -48,6 +49,7 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import type { Pill } from './bar.js';
+	import type { FieldButton } from './fields.js';
 	import ButtonRows from './ButtonRows.svelte';
 	import { commandsUnder, fires, type CommandButton, type Grammar } from './commands.js';
 	import { arm, helping } from './help.js';
@@ -55,12 +57,14 @@
 	export let disabled = false;
 	export let grammar: Grammar | null = null;
 	export let pills: Pill[] = [];
+	/** The fields widget's buttons: what a field pill's verbs are read off. */
+	export let fields: FieldButton[] = [];
 	/** Would `redo` move anything? The CLI's own answer, from the pane. */
 	export let redoable = false;
 
 	const dispatch = createEventDispatcher<{ run: string[]; line: { name: string; line: string; keyboard: boolean } }>();
 
-	$: listed = commandsUnder(grammar, pills);
+	$: listed = commandsUnder(grammar, pills, fields);
 	$: runs = (command: CommandButton) => command.press === 'run' || fires(grammar?.get(command.name), pills);
 
 	const press = (command: CommandButton) =>

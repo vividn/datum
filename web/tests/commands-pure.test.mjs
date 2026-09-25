@@ -14,7 +14,9 @@ import { resolveLibAsSource } from './support/libhook.mjs';
 import {
 	COMMANDS,
 	VERBS,
+	commandsUnder,
 	fieldsUnder,
+	grammarOf,
 	pendingVerb,
 	declaredVerb,
 	lanesOf,
@@ -133,6 +135,57 @@ describe('what a pending verb leaves showing', () => {
 
 	test('no verb leaves the list whole', () => {
 		assert.deepEqual(under(null), ALL.map((b) => b.field));
+	});
+});
+
+// da-57j14: a loaded field narrows the VERBS by the same rule a pending
+// verb narrows the fields with (`verbFits`). Every verb names its field at
+// slot 1, as `datum help --json` says, so the pill itself hides none.
+const GRAMMAR = grammarOf(
+	['occur', 'start', 'stop', 'switch', 'add'].map((name) => ({
+		name,
+		aliases: name === 'stop' ? ['end'] : [],
+		usage: [`datum ${name} <FIELD>`],
+		flags: []
+	}))
+);
+const pill = (b) => ({ id: 'field', kind: 'field', text: b.field });
+const verbsUnder = (pills) =>
+	commandsUnder(GRAMMAR, pills, ALL)
+		.map((c) => c.name)
+		.filter((name) => VERBS.includes(name));
+
+describe('what a loaded field leaves of the verbs', () => {
+	test('an occur field leaves occur, and not start, end or switch', () => {
+		assert.deepEqual(verbsUnder([pill(point)]), ['occur']);
+	});
+
+	// `end` only while it is on: off, there is nothing to end.
+	test('a switch with true among its states offers switch, start and end', () => {
+		assert.deepEqual(verbsUnder([pill(boolSwitch)]), ['start', 'switch']);
+		const on = { ...boolSwitch, current: 'true' };
+		const verbs = commandsUnder(GRAMMAR, [pill(on)], [on]).map((c) => c.name);
+		assert.deepEqual(verbs.filter((name) => VERBS.includes(name)), ['start', 'end', 'switch']);
+	});
+
+	test('clearing the pill brings every verb back', () => {
+		assert.deepEqual(verbsUnder([]), VERBS);
+	});
+
+	test('a field with no button yet keeps every verb: it has no shape to narrow by', () => {
+		assert.deepEqual(verbsUnder([{ id: 'field', kind: 'field', text: 'brandnew' }]), VERBS);
+	});
+
+	// The property: for every field kind × verb, the verb shows under the
+	// field exactly when the field shows under the verb.
+	test('the two directions agree for every field and every verb', () => {
+		for (const b of ALL)
+			for (const verb of VERBS)
+				assert.equal(
+					verbsUnder([pill(b)]).includes(verb),
+					fieldsUnder(ALL, verb).includes(b),
+					`${verb} × ${b.field}`
+				);
 	});
 });
 

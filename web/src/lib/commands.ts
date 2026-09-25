@@ -131,26 +131,34 @@ const hasTrue = (button: FieldButton): boolean =>
 const on = (button: FieldButton): boolean => button.current !== undefined;
 
 /**
- * The fields a pending verb leaves showing (vividn's rules above): the ones
- * that verb can actually be spent on. No verb — or a verb that is not one
- * of the five — leaves the list whole.
+ * Can `verb` be spent on `button` (vividn's rules above)? ONE rule, read
+ * both ways (da-57j14): a pending verb keeps the fields it fits
+ * (`fieldsUnder`), and a loaded field keeps the verbs that fit it
+ * (`commandsUnder`) — so the two lists can never disagree.
  */
-export function fieldsUnder(buttons: FieldButton[], verb: Verb | null): FieldButton[] {
+export function verbFits(verb: Verb, button: FieldButton): boolean {
 	switch (verb) {
 		case 'occur':
-			return buttons.filter((b) => b.shape.kind === 'point');
+			return button.shape.kind === 'point';
 		case 'add':
-			return buttons.filter((b) => b.shape.kind === 'record');
+			return button.shape.kind === 'record';
 		case 'switch':
-			return buttons.filter((b) => b.shape.kind === 'states');
+			return button.shape.kind === 'states';
 		case 'start':
-			return buttons.filter((b) => (b.shape.kind === 'state' && !on(b)) || hasTrue(b));
+			return (button.shape.kind === 'state' && !on(button)) || hasTrue(button);
 		case 'end':
-			return buttons.filter((b) => (b.shape.kind === 'state' || b.shape.kind === 'states') && on(b));
+			return (button.shape.kind === 'state' || button.shape.kind === 'states') && on(button);
 		default:
-			return buttons;
+			return true;
 	}
 }
+
+/**
+ * The fields a pending verb leaves showing: the ones that verb can
+ * actually be spent on. No verb leaves the list whole.
+ */
+export const fieldsUnder = (buttons: FieldButton[], verb: Verb | null): FieldButton[] =>
+	verb ? buttons.filter((b) => verbFits(verb, b)) : buttons;
 
 /**
  * Does the bar hold a DURATION — a length waiting to be spent (da-qu16)?
@@ -345,11 +353,20 @@ export function fits(takes: Takes | undefined, pill: Pill): boolean {
  * do hidden»), as the fields widget hides what a pending verb cannot be
  * spent on. No pills is the whole list; with no grammar, an hid pill is
  * taken by nothing and hides every command until the grammar is read.
+ *
+ * A field pill narrows the VERBS too (da-57j14, vividn: «When an occur field
+ * is selected, start, end, and switch should be filtered out»): `fields`
+ * are the fields widget's buttons, and a verb stays only if it `verbFits`
+ * the pill's field. A field not among them — one not logged yet — keeps
+ * every verb, as it has no shape to narrow by.
  */
-export function commandsUnder(grammar: Grammar | null, pills: Pill[]): CommandButton[] {
+export function commandsUnder(grammar: Grammar | null, pills: Pill[], fields: FieldButton[] = []): CommandButton[] {
+	const name = pills.find((p) => p.kind === 'field')?.text;
+	const field = fields.find((b) => b.field === name);
 	return COMMANDS.filter((command) => {
 		// Help takes no pill and explains every one, so no pill hides it.
 		if (command.press === 'help') return true;
+		if (field && command.press === 'verb' && !verbFits(command.name as Verb, field)) return false;
 		const takes = grammar?.get(command.name);
 		return pills.every((p) => fits(takes, p));
 	});
