@@ -37,7 +37,10 @@
 	  argument to finish, and nothing to filter.
 	- a command with SUBCOMMANDS (`db`, `spec`, `sync`, …) opens them
 	  instead (da-803mk): the bar is `< Back` and the subcommands, and a
-	  tap on one fills `db backup `. `< Back` and Escape return to the list.
+	  tap on one fills `db setup `. `< Back` and Escape return to the list.
+	  `db backup` and `db restore` open the «Backups…» sheet instead
+	  (da-9ow8m, $lib/backups.ts) — drawn, as Help is, in a SINGLE outline
+	  of the accent: they open something, and run nothing.
 	- HOLDING a command with flags (da-st2xl, `$lib/hold.ts`) fills it as a
 	  tap does, and the bar becomes `< Back`, Help and its flags
 	  (`flagsOf`). A flag's tap appends it to the line; one that takes a
@@ -69,6 +72,7 @@
 		type CommandButton,
 		type Grammar
 	} from './commands.js';
+	import { openBackups } from './backups.js';
 	import { arm, helping } from './help.js';
 	import { holds } from './hold.js';
 
@@ -114,6 +118,7 @@
 
 	function press(command: CommandButton): void {
 		if (command.press === 'back') back();
+		else if (command.press === 'sheet') void openBackups(command.name === 'db restore' ? 'restore' : 'plans');
 		else if (command.press === 'flag') dispatch('flag', { command: flagged!, flag: command.name, keyboard: command.next === 'type' });
 		else if (!open && drills(grammar, command.name, pills)) open = command.name;
 		else if (runs(command)) dispatch('run', [command.name]);
@@ -184,10 +189,11 @@
 		<button
 			class="command"
 			class:act={runs(command)}
+			class:opens={command.press === 'sheet'}
 			{disabled}
 			data-command={command.name}
 			data-holds={!open && hasFlags(grammar, command.name) ? '' : undefined}
-			title={runs(command) ? `run ${command.name}` : `${command.name} …`}
+			title={runs(command) ? `run ${command.name}` : command.press === 'sheet' ? 'open Backups…' : `${command.name} …`}
 			on:click={() => press(command)}
 		>
 			{command.label}
@@ -221,6 +227,12 @@
 	.command.act {
 		border: 3px double var(--accent);
 		padding: calc(0.35rem - 2px) calc(0.85rem - 2px);
+		color: var(--ink-bright);
+	}
+
+	/* Opens a sheet: once outlined, as Help is (below). */
+	.command.opens {
+		border-color: var(--accent);
 		color: var(--ink-bright);
 	}
 

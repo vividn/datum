@@ -339,7 +339,8 @@ describe('subcommands', () => {
 			['back', '< Back', 'back'],
 			['help', 'Help', 'help'],
 			['db setup', 'setup', 'fill'],
-			['db backup', 'backup', 'fill']
+			// da-9ow8m: it opens «Backups…» rather than fill the line.
+			['db backup', 'backup', 'sheet']
 		]);
 		assert.deepEqual(bar('sync').slice(2), [
 			['sync', 'sync', 'fill'],

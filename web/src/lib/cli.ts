@@ -39,9 +39,9 @@
 
 import { File as MemFile, OpenFile, WASI, type Fd } from '@bjorn3/browser_wasi_shim';
 import cliWasm from './wasm/datum-cli.wasm?url';
-import { DATABASES, dbFiles, MemoryHandle, opfsDirectory, Sink, type Handle } from './wasiFs.js';
+import { DATABASES, dbFiles, MemoryHandle, opfsDirectory, Sink, staged, type Handle } from './wasiFs.js';
 import { OPFS_DIR } from './databases.js';
-import type { CliResult, StorageKind } from './dbProtocol.js';
+import type { CliResult, Stage, StorageKind } from './dbProtocol.js';
 
 /**
  * How long a command waits for the files before failing.
@@ -348,7 +348,8 @@ async function exec(
 	argv: string[],
 	env: string[],
 	stdin = '',
-	onStderr?: (text: string) => void
+	onStderr?: (text: string) => void,
+	stage?: Stage
 ) {
 	const stdout = new Sink();
 	const stderr = new Sink(onStderr);
@@ -361,12 +362,8 @@ async function exec(
 		.map((name) => ({ name, db: handles.get(`${name}.db`) }))
 		.filter((pair): pair is { name: string; db: Handle } => pair.db !== undefined);
 	const before = dbs.map(({ db }) => db.getSize() > 0 && changeCounter(db));
-	const fds: Fd[] = [
-		new OpenFile(new MemFile(new TextEncoder().encode(stdin))),
-		stdout,
-		stderr,
-		opfsDirectory('/data', handles)
-	];
+	const data = opfsDirectory('/data', handles, stage);
+	const fds: Fd[] = [new OpenFile(new MemFile(new TextEncoder().encode(stdin))), stdout, stderr, data];
 	// HOME inside the preopen: datum makes its config dir there, in memory
 	// for the length of the process. The database is DATUM_DB — and datum's
 	// data dir is the preopen itself, so `--db <name>` lands on
@@ -406,6 +403,7 @@ async function exec(
 		// Unterminated, as every stdout on the seam is.
 		stdout: stdout.text().replace(/\n+$/, ''),
 		stderr: stderr.text().replace(/\n+$/, ''),
+		stage: stage && staged(data),
 		changed: dbs
 			.filter(({ db }, i) => before[i] !== false && changeCounter(db) !== before[i])
 			.map(({ name }) => name),
@@ -512,7 +510,8 @@ export function runCli(
 	env: string[],
 	stdin?: string,
 	onStderr?: (text: string) => void,
-	key?: string
+	key?: string,
+	stage?: Stage
 ): Promise<CliResult | null> {
 	lastEnv = env;
 	useDatabase(argv);
@@ -522,13 +521,14 @@ export function runCli(
 		const t1 = performance.now();
 		const runIn = async (handles: Map<string, Handle>, tries: number): Promise<CliResult> => {
 			const t2 = performance.now();
-			const run = await exec(module, handles, argv, env, stdin, onStderr);
+			const run = await exec(module, handles, argv, env, stdin, onStderr, stage);
 			return {
 				argv,
 				code: run.code,
 				stdout: run.stdout,
 				stderr: run.stderr,
 				changed: run.changed,
+				...(run.stage && { stage: run.stage }),
 				storage: handles === memory ? 'memory' : 'opfs',
 				ms: {
 					compile: t1 - t0,

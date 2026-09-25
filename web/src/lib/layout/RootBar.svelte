@@ -27,8 +27,8 @@
 	the shell's). Its `Split` is `addEdge`: a new pane down one whole side
 	of the layout — what the page's four `…` edge handles used to do
 	(da-qk2k) — which is what a split beside the shell can only mean
-	(da-a642). What it has that a pane's has not is `export backup…`:
-	there is one database.
+	(da-a642). What it has that a pane's has not is `Keep tab`, on a
+	preview (below).
 
 	The layout's own acts — save, restore, save as… — are in the menu too,
 	where the orange dot is (vividn: "Inside the menu there could be a lock,
@@ -65,14 +65,17 @@
 	the ROOT tab's layout however deep the layouts under it go.
 
 	At the right end is a gear (da-pp1a): the GLOBAL settings menu, the
-	root's alone the way `export backup…` is, and the same `PaneMenu` as
-	every other menu here. vividn, from the train: "Can we add a global
+	root's alone, and the same `PaneMenu` as every other menu here. vividn, from the train: "Can we add a global
 	settings menu at the top right (little gear icon)? ... Maybe we can put
 	the version and hash string in that menu as well." That stamp — the
 	version, a separator and the short sha, dim and disabled because it is
 	a fact and not an act — is one of the two things it holds. It was the
 	bottom bar's until da-wjob and this bar's until da-pp1a; it is out of
 	the way for good, and still one press from anyone looking for it.
+
+	First in it is «Backups…» (da-9ow8m), the sheet of backup plans and
+	backup files ($lib/BackupsSheet.svelte). It took the place of the root
+	tab menu's `export backup…`, so a backup has one home.
 
 	The other is «Reset default layouts…» (da-jbcv). It held an act of that
 	shape once — «Reset all layouts…», which deleted every saved layout, on
@@ -107,7 +110,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import Beta from '$lib/Beta.svelte';
-	import { downloadBackup } from '$lib/backup.js';
+	import { openBackups } from '$lib/backups.js';
 	import { confirm } from '$lib/confirm.js';
 	import { choose, fillTab } from './chooser.js';
 	import { apply, layout, loaded } from './current.js';
@@ -260,13 +263,10 @@
 				split: { what: 'split: a new pane', run: (t) => apply((l) => addEdge(l, SIDE[t])) },
 				close: { label: 'Close tab', disabled: tabs.length < 2, run: () => close($layout.root.active) },
 				acts,
-				extra: [
-					{ label: 'export backup…', run: () => void act(downloadBackup) },
-					// `Keep tab` (da-xamd), next to the Close that is the other
-					// answer to a preview: only a preview has it, because only a
-					// preview is not kept already.
-					...(preview ? [{ label: 'Keep tab', run: () => void act(async () => id !== undefined && keepTab(id)) }] : [])
-				]
+				// `Keep tab` (da-xamd), next to the Close that is the other
+				// answer to a preview: only a preview has it, because only a
+				// preview is not kept already.
+				extra: preview ? [{ label: 'Keep tab', run: () => void act(async () => id !== undefined && keepTab(id)) }] : []
 			});
 
 	/**
@@ -302,13 +302,14 @@
 
 	/**
 	 * The gear's menu: the page's own settings, which belong to no layout
-	 * and no pane — the one act above, and which build is in front of you,
+	 * and no pane — the backups, the act above, and which build is in front of you,
 	 * disabled, because it is a fact and not an act.
 	 *
 	 * A constant: it does not depend on which layout is in front, which is
 	 * the whole of what makes this menu the page's and not a tab's.
 	 */
 	const settings = [
+		{ label: 'Backups…', run: () => void openBackups() },
 		{ label: 'Reset default layouts…', run: doResetDefaults },
 		{ label: `${__DATUM_VERSION__} · ${__DATUM_COMMIT__}`, disabled: true }
 	];

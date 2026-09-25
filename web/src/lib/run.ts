@@ -11,6 +11,7 @@
 // "datum" itself before dispatching a line).
 
 import { currentDb, DEFAULT_DB } from './database.js';
+import type { Stage } from './dbProtocol.js';
 import { shellSplit } from './shellSplit.js';
 
 /** The outcome of one command, shaped like a process exit. */
@@ -33,6 +34,8 @@ export interface RunResult {
 	 * in the queue (da-eoq3). Not a failure — the caller ignores it.
 	 */
 	superseded?: boolean;
+	/** `/data/stage` after the process, when the caller gave it one (`Stage`). */
+	stage?: Stage;
 }
 
 /**
@@ -44,7 +47,8 @@ export type CommandRunner = (
 	argv: string[],
 	stdin?: string,
 	onStderr?: (text: string) => void,
-	key?: string
+	key?: string,
+	stage?: Stage
 ) => Promise<RunResult>;
 
 /** Generic failure, as `datum-cli`'s `main` reports one. */
@@ -124,20 +128,22 @@ export function setRunner(next: CommandRunner): CommandRunner | null {
 }
 
 /**
- * Run one command, with `stdin` on its standard input if it reads any.
+ * Run one command, with `stdin` on its standard input if it reads any, and
+ * `stage`'s files in `/data/stage` if it is given one.
  * Never rejects — a thrown error becomes a nonzero result.
  */
 export async function run(
 	argv: string[],
 	stdin?: string,
 	onStderr?: (text: string) => void,
-	key?: string
+	key?: string,
+	stage?: Stage
 ): Promise<RunResult> {
 	if (argv.length === 0) return { argv, code: 0, stdout: '', stderr: '' };
 	const against = dbArgv(argv);
 	try {
 		runner ??= (await import('./runners/wasi.js')).wasiRun;
-		return await runner(against, stdin, onStderr, key);
+		return await runner(against, stdin, onStderr, key, stage);
 	} catch (e) {
 		// A runner that throws is a bug in the runner, not in the caller: the
 		// seam still owes the UI a result it can render.

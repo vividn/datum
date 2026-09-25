@@ -7,6 +7,7 @@
 
 import { runCli } from '../db.js';
 import { deviceId } from '../deviceId.js';
+import type { Stage } from '../dbProtocol.js';
 import type { RunResult } from '../run.js';
 
 /** `datum <argv>`, with `stdin` on its standard input; `onStderr` hears stderr as it is written. */
@@ -14,7 +15,8 @@ export async function wasiRun(
 	argv: string[],
 	stdin?: string,
 	onStderr?: (text: string) => void,
-	key?: string
+	key?: string,
+	stage?: Stage
 ): Promise<RunResult> {
 	const env = [
 		`TZ=${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
@@ -23,6 +25,6 @@ export async function wasiRun(
 	];
 	// The whole process record — its timings and storage ride along for
 	// scripts/measure-wasi.mjs, unread by the app.
-	const cli = await runCli(argv, env, stdin, onStderr, key);
+	const cli = await runCli(argv, env, stdin, onStderr, key, stage);
 	return cli ?? { argv, code: 0, stdout: '', stderr: '', superseded: true };
 }

@@ -153,7 +153,7 @@ describe('a command with subcommands drills into them', () => {
 	const back = (page) => commands(page).locator('button[data-back]');
 	const DB = ['setup', 'purge', 'backup', 'restore', 'migrate', 'v2import'];
 
-	test('db shows its subcommands under < Back, and backup fills `db backup `', async () => {
+	test('db shows its subcommands under < Back, and setup fills `db setup `', async () => {
 		await onPage(async ({ page }) => {
 			await commands(page).locator('button[data-command="db"]').click();
 			await back(page).waitFor();
@@ -161,10 +161,34 @@ describe('a command with subcommands drills into them', () => {
 			assert.deepEqual(await drawn(page), ['Help', ...DB], 'Help stays, to explain a subcommand');
 			assert.equal((await line(page)).text, '', '`db ` runs nothing, so a tap never writes it');
 
-			await tap(page, 'db backup');
+			await tap(page, 'db setup');
 			assert.equal(await back(page).count(), 1, 'a fill stays among the subcommands');
 		});
 	});
+
+	// da-9ow8m: vividn, «the "backup" command in the commands widget … should
+	// that open this backups menu directly? It could». So `db backup` opens
+	// the sheet, and `db restore` opens it at the backups to restore from;
+	// neither writes the line, and both are drawn once-outlined.
+	for (const sub of ['backup', 'restore']) {
+		test(`db ${sub} opens «Backups…», and writes nothing on the line`, async () => {
+			await onPage(async ({ page }) => {
+				await commands(page).locator('button[data-command="db"]').click();
+				const button = commands(page).locator(`button[data-command="db ${sub}"]`);
+				assert.match(await button.getAttribute('class'), /\bopens\b/);
+				await button.click();
+				const sheet = page.locator('dialog.sheet', { hasText: 'Backups' });
+				await sheet.waitFor();
+				assert.equal(
+					await page.evaluate(() => document.querySelector('dialog.sheet .sheet-head span')?.textContent),
+					'Backups'
+				);
+				assert.equal((await line(page)).text, '', `db ${sub} wrote the line`);
+				await page.keyboard.press('Escape');
+				await sheet.waitFor({ state: 'detached' });
+			});
+		});
+	}
 
 	test('< Back and Escape each return to the whole list, and Escape peels only that', async () => {
 		await onPage(async ({ page }) => {
@@ -174,11 +198,11 @@ describe('a command with subcommands drills into them', () => {
 			assert.ok((await drawn(page)).includes('occur'), 'Back is the whole list');
 
 			await commands(page).locator('button[data-command="db"]').click();
-			await tap(page, 'db restore');
+			await tap(page, 'db setup');
 			await page.keyboard.press('Escape');
 			await back(page).waitFor({ state: 'detached' });
 			assert.ok((await drawn(page)).includes('db'));
-			assert.equal((await line(page)).text, 'db restore ', 'the same Escape peeled the line too');
+			assert.equal((await line(page)).text, 'db setup ', 'the same Escape peeled the line too');
 		});
 	});
 

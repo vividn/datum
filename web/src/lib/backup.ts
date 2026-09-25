@@ -1,9 +1,10 @@
 // `datum db backup -`: every live entry as the CLI dumps it — a header line,
 // then one entry per line, the JSONL `db restore` reads back.
 //
-// Two readers: the export button, which hands the document over as a file
-// (insurance before sync exists), and `window.datum.entries`, which reads
-// what got stored the way the CLI itself would report it.
+// Its reader here is `window.datum.entries`, which reads what got stored
+// the way the CLI itself would report it. A backup as a FILE is
+// $lib/dbio.ts's (`download`, `saveBackup`), and backup plans are
+// $lib/backups.ts's.
 
 import { run } from './run.js';
 
@@ -37,11 +38,6 @@ export async function storedEntries(limit = 50): Promise<StoredEntry[]> {
 		.map((line) => JSON.parse(line) as StoredEntry)
 		.sort((a, b) => at(b) - at(a))
 		.slice(0, limit);
-}
-
-/** Offer the backup as a file download named for today. */
-export async function downloadBackup(): Promise<void> {
-	saveFile((await backup()) + '\n', `datum-backup-${new Date().toISOString().slice(0, 10)}.jsonl`);
 }
 
 /** Hand `text` to the browser as a download called `name`. */

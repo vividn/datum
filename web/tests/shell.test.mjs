@@ -265,19 +265,20 @@ describe('the shell', () => {
 			// draws it any more.
 			assert.equal(await bar.locator('.build').count(), 0, 'the build stamp is still on the bottom bar');
 			assert.equal(await page.locator('.root-bar .build').count(), 0, 'the build stamp is still on the root bar');
-			// Above it, the gear's one act: «Reset default layouts…»
-			// (da-jbcv), which is the narrow half of the «Reset all
-			// layouts…» that deleted every saved layout on every device and
-			// went for it (da-luwe).
+			// Above it, the gear's acts: «Backups…» (da-9ow8m), and «Reset
+			// default layouts…» (da-jbcv), which is the narrow half of the
+			// «Reset all layouts…» that deleted every saved layout on every
+			// device and went for it (da-luwe).
 			const gear = await gearItems(page);
 			assert.deepEqual(gear.map((i) => i.label.replace(/^\S+ · \S+$/, 'the build stamp')), [
+				'Backups…',
 				'Reset default layouts…',
 				'the build stamp'
 			]);
-			assert.deepEqual(gear.map((i) => i.disabled), [false, true]);
+			assert.deepEqual(gear.map((i) => i.disabled), [false, false, true]);
 			// The stamp is the web's build, `3.beta.<height> · <sha7>`, and
 			// `unknown` where a shallow CI checkout cannot count (da-5172a).
-			assert.match(gear[1].label, /^3\.beta\.(\d+|unknown) · ([0-9a-f]{7}\+?|unknown)$/);
+			assert.match(gear[2].label, /^3\.beta\.(\d+|unknown) · ([0-9a-f]{7}\+?|unknown)$/);
 			// The acts are in the active tab's own menu, no icon row.
 			assert.equal(await page.locator('.root-bar .act').count(), 0, 'the icon row is still there');
 			// The NAME's slice (da-bzhq): what the tab shows and what it is
@@ -285,7 +286,7 @@ describe('the shell', () => {
 			// (da-luwe); no lock, which is the button beside the gear.
 			assert.deepEqual(
 				(await rootItems(page)).map((i) => i.label),
-				['Save layout', 'Restore layout', 'Reset layout', 'Save layout as…', 'export backup…']
+				['Save layout', 'Restore layout', 'Reset layout', 'Save layout as…']
 			);
 			// The `▾`'s: what is DONE to the page, Close last and wearing
 			// its × (da-ygc9). The arrows read in vim order (da-bzhq).

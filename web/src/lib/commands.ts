@@ -38,7 +38,9 @@ export type Press =
 	/** Leave a command's subcommands or flags for the whole list (da-803mk). */
 	| 'back'
 	/** Append the flag to the line (da-st2xl). */
-	| 'flag';
+	| 'flag'
+	/** Open the «Backups…» sheet ($lib/backups.ts, da-9ow8m): `db backup`, and `db restore` at its list. */
+	| 'sheet';
 
 export interface CommandButton {
 	/** The CLI word — what runs, and what goes on the line. */
@@ -474,6 +476,9 @@ export function fires(takes: Takes | undefined, all: Pill[]): boolean {
 // what a tap leaves on the line. A command that also runs bare (`sync`)
 // is offered among its subcommands as itself.
 
+/** The subcommands whose press opens the «Backups…» sheet. */
+const SHEETS = ['db backup', 'db restore'];
+
 /**
  * Does a tap on `name` drill into its subcommands? `spec` under a field pill
  * does not: that tap opens the field's spec (da-ybai9, vividn: «no need for
@@ -487,6 +492,11 @@ export const drills = (grammar: Grammar | null, name: string, pills: Pill[]): bo
  * The bar while `name` is drilled into: `< Back`, Help (which no bar is
  * without, so a subcommand can be explained), `name` itself if it runs
  * bare, then its subcommands.
+ *
+ * `db backup` and `db restore` OPEN the «Backups…» sheet rather than fill
+ * the line (da-9ow8m): vividn, «the "backup" command in the commands widget
+ * … should that open this backups menu directly? It could». A typed `db
+ * backup …` keeps the CLI's meaning.
  */
 export function subcommandsOf(grammar: Grammar | null, name: string): CommandButton[] {
 	const takes = grammar?.get(name);
@@ -495,7 +505,10 @@ export function subcommandsOf(grammar: Grammar | null, name: string): CommandBut
 		...COMMANDS.filter((command) => command.press === 'help'),
 		...(takes?.bare ? [{ name, label: name, press: 'fill' as const, next: 'type' as const }] : []),
 		...(takes?.subcommands ?? []).map(
-			(sub): CommandButton => ({ name: `${name} ${sub}`, label: sub, press: 'fill', next: 'type' })
+			(sub): CommandButton =>
+				SHEETS.includes(`${name} ${sub}`)
+					? { name: `${name} ${sub}`, label: sub, press: 'sheet' }
+					: { name: `${name} ${sub}`, label: sub, press: 'fill', next: 'type' }
 		)
 	];
 }

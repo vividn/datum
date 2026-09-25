@@ -119,7 +119,9 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   or renderer in TypeScript — every pane, the widget bar (`fields --json`),
   the tail table (`tail --json`'s `columns` and, for its state cell alone,
   that row's three state values — da-fknn8), /now (`now --bare`) and the
-  export button (`db backup -`) are CLI commands through `run(argv)`.
+  gear's «Backups…» (`db backup -`, and plans' `db backup --to` into a
+  process's `/data/stage`, whose files a `run` hands in and gets back —
+  da-9ow8m) are CLI commands through `run(argv)`.
   A command a reader runs also carries `--show json` (da-xfa4, `echoArgv`
   in `web/src/lib/echo.ts`), so the bottom bar and the REPL PLACE the
   CLI's own action echo — action, hid, id, info, data — instead of

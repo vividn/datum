@@ -31,7 +31,8 @@ async function serve(request: DbRequest): Promise<DbResponse> {
 			request.env,
 			request.stdin,
 			(text) => ctx.postMessage({ notice: 'stderr', id: request.id, text }),
-			request.key
+			request.key,
+			request.stage
 		);
 		if (!cli) return { id: request.id, ok: true, storage: storageNow() };
 		return { id: request.id, ok: true, storage: cli.storage, cli };

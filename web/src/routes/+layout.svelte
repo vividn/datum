@@ -23,6 +23,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import '../app.css';
+	import { schedule } from '$lib/backups.js';
 	import { installConsole } from '$lib/console.js';
 	import BarLog from '$lib/BarLog.svelte';
 	import { attach, logHeight, rolled, shown } from '$lib/log.js';
@@ -59,6 +60,8 @@
 		installConsole(window as unknown as Record<string, unknown>);
 		void bootEngine();
 		void bootShell();
+		// Backup plans run while a tab is open (da-9ow8m, $lib/backups.ts).
+		schedule();
 		reloadOnceForIsolation();
 		return followViewport();
 	});

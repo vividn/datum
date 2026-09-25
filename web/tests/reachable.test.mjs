@@ -138,8 +138,8 @@ describe('on a phone-sized screen', () => {
 	});
 
 	// The gear (da-pp1a) is the root bar's right end: the global settings
-	// menu, holding «Reset default layouts…» (da-jbcv) and the build
-	// stamp. The bar is one row that never wraps, so the thing that can
+	// menu, holding «Backups…» (da-9ow8m), «Reset default layouts…»
+	// (da-jbcv) and the build stamp. The bar is one row that never wraps, so the thing that can
 	// push the gear off is a crowded strip of tabs on a narrow screen —
 	// and its menu, which opens from the right edge, has to land on the
 	// screen as well.
@@ -154,10 +154,10 @@ describe('on a phone-sized screen', () => {
 
 				await page.locator('.root-bar button.gear').click();
 				const items = page.locator('[role="menu"][aria-label="settings"] button');
-				// The one act (da-jbcv) and the build stamp, which is a fact
-				// and so disabled.
-				assert.equal(await items.count(), 2);
-				assert.equal(await items.evaluateAll((all) => all.filter((b) => !b.disabled).length), 1);
+				// The two acts (da-9ow8m, da-jbcv) and the build stamp, which
+				// is a fact and so disabled.
+				assert.equal(await items.count(), 3);
+				assert.equal(await items.evaluateAll((all) => all.filter((b) => !b.disabled).length), 2);
 				const menu = await page.locator('[role="menu"][aria-label="settings"]').boundingBox();
 				const screen = await page.evaluate(() => ({
 					width: document.documentElement.clientWidth,

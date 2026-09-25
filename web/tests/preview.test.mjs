@@ -305,13 +305,13 @@ describe('Keep tab', () => {
 		const menu = await items();
 		assert.ok(menu.includes('Keep tab'), `the preview is not offered Keep tab: ${menu}`);
 		// `Keep tab` WRITES the tab down, so it stayed with the other acts
-		// that write — last in the name's menu, after `export backup…`. The
+		// that write — last in the name's menu, after the layout's acts. The
 		// Close that is a preview's other answer (da-xamd) is a management
 		// act, so the slicing (da-bzhq) put it under the `▾`, last there.
 		// The two answers are one press apart either way; what they are no
 		// longer is adjacent.
 		assert.equal(menu.indexOf('Keep tab'), menu.length - 1, `Keep tab is not last: ${menu}`);
-		assert.equal(menu.at(-2), 'export backup…');
+		assert.equal(menu.at(-2), 'Save layout as…');
 		assert.match((await manage()).at(-1), /Close tab$/);
 		await a.solo();
 	});

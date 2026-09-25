@@ -109,7 +109,7 @@ describe('the menu the title opens', () => {
 
 	// vividn (da-ygc9): "let's add an icon on Close pane, and move close pane
 	// to be the last entry in the menu." Last means last — after the acts
-	// and after the root's own `export backup…` — in BOTH menus, since one
+	// and after anything a root adds of its own — in BOTH menus, since one
 	// builder makes them (`menu.ts`). The × is decoration, so the item's
 	// name is still its label alone and the keyboard still finds it there.
 	test('Close is the last item of either ▾, and wears an ×', async () => {
@@ -123,11 +123,12 @@ describe('the menu the title opens', () => {
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 
-			// `export backup…` is a fact about the database, so it stayed on
-			// the NAME's menu and is its last item; Close is the last of the
-			// `▾`, which is where the acts on the page are (da-bzhq).
+			// The NAME's menu ends on the layout's acts — `export backup…`
+			// was its last item until it became the gear's «Backups…»
+			// (da-9ow8m) — and Close is the last of the `▾`, which is where
+			// the acts on the page are (da-bzhq).
 			await rootMenuButton(page).click();
-			assert.equal((await menuLines(page)).at(-1), 'export backup…');
+			assert.equal((await menuLines(page)).at(-1), 'Save layout as…');
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 			await rootManageButton(page).click();
@@ -531,7 +532,7 @@ describe("the root bar's menu", () => {
 	/** The root's differences from a pane's, and only these. */
 	const NO_BREAK = 'Break out ← ↓ ↑ →'; // a tab leaves its STRIP, and the root has none (da-a642)
 	const NO_BAR = 'Bar'; //                the root draws no bar of its own — this one is the shell's
-	const ROOT_ONLY = ['export backup…']; // there is one database
+	const ROOT_ONLY = []; //                 `export backup…` was, until it became the gear's «Backups…» (da-9ow8m)
 	const NO_LOCK = 'Lock layout'; //       a button beside the gear at the root (da-bzhq)
 	const CLOSE = '× Close tab'; //        last in the `▾` of both (da-ygc9)
 
@@ -579,7 +580,7 @@ describe("the root bar's menu", () => {
 		});
 	});
 
-	test('the root menus are the pane menus, less Break out, Bar and the lock, plus export backup…', async () => {
+	test('the root menus are the pane menus, less Break out, Bar and the lock', async () => {
 		await withApp(async ({ page }) => {
 			// A pane whose menu has everything a pane menu can have: several
 			// tabs (so it says `Close tab`, as the root's always does) and an

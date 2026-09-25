@@ -23,7 +23,8 @@
 // The process's own stdout and stderr are here too (`Sink`), for the same
 // reason the directory is: what the shim ships grows by copying itself.
 
-import { Directory, Fd, PreopenDirectory, SyncOPFSFile, wasi, type Inode } from '@bjorn3/browser_wasi_shim';
+import { Directory, Fd, File, PreopenDirectory, SyncOPFSFile, wasi, type Inode } from '@bjorn3/browser_wasi_shim';
+import type { Stage } from './dbProtocol.js';
 
 /**
  * The databases that persist before any command has named another: the
@@ -49,8 +50,11 @@ export const DB_FILES = dbFiles(DATABASES);
 /** The part of `FileSystemSyncAccessHandle` the shim uses. */
 export type Handle = ConstructorParameters<typeof SyncOPFSFile>[0];
 
-/** `name`, preopened, with `handles` as the files SQLite creates and deletes. */
-export function opfsDirectory(name: string, handles: Map<string, Handle>): PreopenDirectory {
+/**
+ * `name`, preopened, with `handles` as the files SQLite creates and deletes
+ * — and, given a `stage`, its files in a `stage` directory beside them.
+ */
+export function opfsDirectory(name: string, handles: Map<string, Handle>, stage?: Stage): PreopenDirectory {
 	const backed = new Map([...handles].map(([file, handle]) => [file, new SyncOPFSFile(quotaAware(handle))]));
 
 	class Contents extends Map<string, Inode> {
@@ -72,10 +76,17 @@ export function opfsDirectory(name: string, handles: Map<string, Handle>): Preop
 	}
 
 	const preopen = new PreopenDirectory(name, new Map());
-	preopen.dir = new OpfsDirectory(
-		new Contents([...backed].filter(([, opfs]) => opfs.handle.getSize() > 0))
-	);
+	const files: [string, Inode][] = [...backed].filter(([, opfs]) => opfs.handle.getSize() > 0);
+	if (stage) files.push(['stage', new Directory(Object.entries(stage).map(([file, bytes]) => [file, new File(bytes)]))]);
+	preopen.dir = new OpfsDirectory(new Contents(files));
 	return preopen;
+}
+
+/** The stage's files as the process left them: every file directly in it. */
+export function staged(preopen: PreopenDirectory): Stage {
+	const dir = preopen.dir.contents.get('stage');
+	if (!(dir instanceof Directory)) return {};
+	return Object.fromEntries([...dir.contents].flatMap(([file, inode]) => (inode instanceof File ? [[file, inode.data]] : [])));
 }
 
 const isFull = (e: unknown) => (e as { name?: string } | null)?.name === 'QuotaExceededError';

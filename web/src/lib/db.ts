@@ -4,7 +4,7 @@
 // from a dedicated worker (da-5iqw). This file is the client side of that:
 // one command out, one process's outcome back, and the storage it ran on.
 
-import type { CliResult, DbCommand, DbMessage, DbResponse, StorageKind } from './dbProtocol.js';
+import type { CliResult, DbCommand, DbMessage, DbResponse, Stage, StorageKind } from './dbProtocol.js';
 import { announceChange } from './changes.js';
 
 export type { StorageKind };
@@ -135,9 +135,10 @@ export async function runCli(
 	env: string[],
 	stdin?: string,
 	onStderr?: (text: string) => void,
-	key?: string
+	key?: string,
+	stage?: Stage
 ): Promise<CliResult | null> {
-	const cli = (await request({ op: 'cli', argv, env, stdin, key }, onStderr)).cli;
+	const cli = (await request({ op: 'cli', argv, env, stdin, key, stage }, onStderr)).cli;
 	if (!cli) return null;
 	if (cli.changed.length) {
 		announceChange(cli.changed);

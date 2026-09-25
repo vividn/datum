@@ -30,9 +30,9 @@
 //   widget and gets both (da-ze1x). A layout of several widgets arrives
 //   under a split and gets neither — its panes have their own. Same rule
 //   either menu, as ever.
-// - `export backup…` is the root's alone: there is one database. So is
-//   `Keep tab` (da-xamd), which rides in beside it: only a root tab can be
-//   a PREVIEW, and only a preview has a keeping left to do.
+// - `Keep tab` (da-xamd) is the root's alone: only a root tab can be a
+//   PREVIEW, and only a preview has a keeping left to do. (`export
+//   backup…` rode here once; it is the gear's «Backups…» now, da-9ow8m.)
 //
 // Close is the LAST item of the list, whatever else the caller hands in,
 // and wears an `×` (da-ygc9): the one destructive act, at the far end of
@@ -230,7 +230,7 @@ export function menuItems(spec: {
 	acts?: Acts;
 	/** `Save as layout…` (da-6ji5): a tab holding a split that is nobody's layout yet. */
 	saveAs?: () => void;
-	/** The root's own, appended: `export backup…`. */
+	/** The root's own, appended: `Keep tab`. */
 	extra?: Item[];
 }): Item[] {
 	return [
@@ -253,7 +253,7 @@ export function menuItems(spec: {
 /**
  * The slice the thing's NAME opens: what it IS and what it is SAVED as —
  * `Reset widget`, the widget's own options, the layout's own acts, the
- * root's `export backup…`. A pane whose widget declares neither defaults
+ * root's `Keep tab`. A pane whose widget declares neither defaults
  * nor options, holds nothing in this session and holds no layout, has
  * none of them and wears no title menu at all (da-z8klv).
  */

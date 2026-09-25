@@ -152,6 +152,32 @@ export async function download(name?: string, argv = ['db', 'backup', '-']): Pro
 	return { ...result, stdout: `${header}\n${entries.length} entries → ${name}` };
 }
 
+/**
+ * `db backup -` into a file the reader names in the browser's SAVE picker
+ * (da-9ow8m), or the download where there is no picker. The picker opens
+ * first, inside the press: an `await` before it spends the activation.
+ */
+export async function saveBackup(): Promise<RunResult> {
+	const argv = ['db', 'backup', '-'];
+	const name = `${dbOf(argv)}-${new Date().toLocaleDateString('sv')}.jsonl`;
+	const picker = (window as { showSaveFilePicker?: (o: { suggestedName: string }) => Promise<FileSystemFileHandle> })
+		.showSaveFilePicker;
+	if (!picker) return download(name);
+	let file: FileSystemFileHandle;
+	try {
+		file = await picker({ suggestedName: name });
+	} catch {
+		return nothing(argv, 'no file chosen — nothing ran');
+	}
+	const result = await run(argv);
+	if (result.code !== 0) return result;
+	const out = await file.createWritable();
+	await out.write(result.stdout + '\n');
+	await out.close();
+	const [header, ...entries] = result.stdout.split('\n');
+	return { ...result, stdout: `${header}\n${entries.length} entries → ${file.name}` };
+}
+
 /** `db purge --yes`, once the reader has typed the database's name. */
 export async function purge(flags: string[] = []): Promise<RunResult> {
 	// The database this will really purge, never the word `datum` written

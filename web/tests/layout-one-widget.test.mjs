@@ -106,7 +106,7 @@ describe('a root tab whose layout is one widget', () => {
 
 			await toggleRootLock(page);
 			const lines = await rootLines(page);
-			assert.deepEqual(lines, [RESET_WIDGET, NEWEST, ...ACTS, 'export backup…']);
+			assert.deepEqual(lines, [RESET_WIDGET, NEWEST, ...ACTS]);
 			assert.deepEqual(await rootManageLines(page), ['Change Widget', 'Split ← ↓ ↑ →', '× Close tab']);
 			// The two ways back are told apart by their words and by where
 			// they sit: `Reset widget` is at the head of the NAME's slice,
@@ -196,7 +196,7 @@ describe('a root tab whose layout is one widget', () => {
 			// example until da-hkjp gave it a `type`.) A ROOT tab always
 			// holds a layout, so it keeps its acts and its menu — unlike a
 			// PANE of such a kind, which since da-z8klv has none at all.
-			assert.deepEqual(lines, [...ACTS, 'export backup…'], `custom reads ${lines.join(' | ')}`);
+			assert.deepEqual(lines, ACTS, `custom reads ${lines.join(' | ')}`);
 			assert.ok(!lines.includes(RESET_WIDGET), `custom reads ${lines.join(' | ')}`);
 			assert.deepEqual(app.errors, []);
 		});
@@ -211,7 +211,7 @@ describe('a root tab whose layout is one widget', () => {
 			assert.ok(!lines.includes(NEWEST), `main reads ${lines.join(' | ')}`);
 			assert.ok(!lines.includes(RESET_WIDGET), `main reads ${lines.join(' | ')}`);
 			assert.equal(lines[0], 'Save layout');
-			assert.equal(lines.at(-1), 'export backup…');
+			assert.equal(lines.at(-1), ACTS.at(-1));
 			assert.deepEqual(await rootManageLines(page), ['Change Widget', 'Split ← ↓ ↑ →', '× Close tab']);
 			assert.deepEqual(app.errors, []);
 		});

@@ -14,6 +14,14 @@
  */
 export type StorageKind = 'opfs' | 'memory';
 
+/**
+ * Files by name in `/data/stage`, the process's scratch directory (da-9ow8m):
+ * what a shell's working directory would be to `db backup --to` and `db
+ * restore FILE`. It lives for the one process — the files go in before it
+ * starts and come back out after it exits — and nothing in it persists.
+ */
+export type Stage = Record<string, Uint8Array>;
+
 /** One CLI process's outcome, and where its time went. */
 export interface CliResult {
 	argv: string[];
@@ -25,6 +33,8 @@ export interface CliResult {
 	 * `_internal`) — other tabs refresh what reads that one.
 	 */
 	changed: string[];
+	/** The stage's files once the process has exited, when it was given one. */
+	stage?: Stage;
 	storage: StorageKind;
 	/** Where the time went, in ms; `tries` is how many opens the handles took. */
 	ms: {
@@ -45,7 +55,7 @@ export type DbCommand =
 	 * A `key` lets a newer command with the same key drop this one while it
 	 * is still queued (da-eoq3).
 	 */
-	| { op: 'cli'; argv: string[]; env: string[]; stdin?: string; key?: string };
+	| { op: 'cli'; argv: string[]; env: string[]; stdin?: string; key?: string; stage?: Stage };
 
 /** A command with the tag that pairs its response to it. */
 export type DbRequest = DbCommand & { id: number };
