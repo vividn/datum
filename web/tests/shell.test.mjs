@@ -976,6 +976,18 @@ describe('the bottom bar', () => {
 			const input = page.locator('.prompt-bar input');
 			await input.fill('foo');
 			await input.press('Enter');
+			// Two links, waited for one at a time, so a timeout says which
+			// broke (da-w5m40): run #649 waited 30 s on the drawn error with
+			// its neighbours fast and nothing in flight after, so the command
+			// was either never run or run and not drawn — one wait on the
+			// drawing could not tell those apart. The REPL pane's echo is the
+			// run; the bar's red line is the drawing; a submit that threw is
+			// a page error, which this test never read.
+			await until(
+				async () => ({ echoes: await app.echoes(), errors: app.errors }),
+				(seen) => seen.errors.length > 0 || seen.echoes.some((e) => e.startsWith('foo'))
+			);
+			assert.deepEqual(app.errors, []);
 			await page.locator('.prompt-bar .raw.error').waitFor();
 			assert.equal(await page.locator('.prompt-bar .pill').count(), 1, 'a failed command keeps the pill');
 		});
