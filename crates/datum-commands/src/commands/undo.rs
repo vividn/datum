@@ -159,7 +159,9 @@ pub fn redo(args: RedoArgs, db: &Db) -> Result<()> {
         None => {
             let reference = pointer_with_live_targets(db)
                 .context("Nothing to redo — no entry has been touched yet")?;
-            warn_if_stale("redoing a change", reference.time);
+            if !args.dry_run {
+                warn_if_stale("redoing a change", reference.time);
+            }
             targets = reference.hids;
             Ok(())
         }
@@ -175,6 +177,9 @@ pub fn redo(args: RedoArgs, db: &Db) -> Result<()> {
             }
         };
         match redo_target_version(db, &current.hid)? {
+            // `--dry-run` asks only whether this would move anything, and
+            // one row that would is the answer: exit 0, nothing written.
+            Some(_) if args.dry_run => return resolved,
             Some(version) => {
                 step_to(
                     db,

@@ -27,7 +27,7 @@ export const VERBS: Verb[] = ['occur', 'start', 'end', 'switch', 'add'];
 
 /** What a press on a command button does. */
 export type Press =
-	/** Run it, now, with no argument: `undo`, `redo`. */
+	/** Run it, now, with no argument: `undo` (and its redo icon). */
 	| 'run'
 	/** Put `<name> ` on the command line and pend the verb. */
 	| 'verb'
@@ -37,7 +37,7 @@ export type Press =
 export interface CommandButton {
 	/** The CLI word — what runs, and what goes on the line. */
 	name: string;
-	/** What the button says. `Undo` and `Redo` are named, not typed. */
+	/** What the button says. `Undo` is named, not typed. */
 	label: string;
 	press: Press;
 	/**
@@ -52,9 +52,13 @@ export interface CommandButton {
 const TAPPED = ['retime', 'delete', 'get', 'history'];
 
 /**
- * The commands, in the order the widget draws them: Undo (and Redo beside
- * it, da-s6no), vividn's five verbs, then the rest by how often a hand
- * reaches for them.
+ * The commands, in the order the widget draws them: Undo, vividn's five
+ * verbs, then the rest by how often a hand reaches for them.
+ *
+ * `redo` is not a button of its own (da-zq91a, vividn: «rather than dedicated
+ * redo button, lets make the undo button … have a little redo section»):
+ * the widget draws it as a small icon joined to Undo, lit only when the CLI
+ * says there is an undo to redo (`redo --dry-run`, CommandPane.svelte).
  *
  * `note` is NOT here (vividn, 2026-09-15 19:08): it lived in a field's hold
  * panel (da-py5w), where the field it annotates already was. da-e78x6
@@ -68,7 +72,6 @@ const TAPPED = ['retime', 'delete', 'get', 'history'];
  */
 export const COMMANDS: CommandButton[] = [
 	{ name: 'undo', label: 'Undo', press: 'run' },
-	{ name: 'redo', label: 'Redo', press: 'run' },
 	...VERBS.map((name): CommandButton => ({ name, label: name, press: 'verb', next: 'tap' })),
 	...[
 		'retime',
@@ -358,8 +361,8 @@ export function commandsUnder(grammar: Grammar | null, pills: Pill[]): CommandBu
  * when `-t` is what it takes instead — `retime`, whose `[SHIFT]` and
  * `-t T` are two lines of one grammar (vividn, 09-17: «retime should just
  * fire when you tap it»). `update`'s VALUE no pill holds, so it fills.
- * With no hid loaded, nothing here fires: `undo`/`redo` are `press:
- * 'run'` on their own.
+ * With no hid loaded, nothing here fires: `undo` is `press: 'run'` on
+ * its own, and its redo icon runs whenever it is lit.
  */
 export function fires(takes: Takes | undefined, pills: Pill[]): boolean {
 	if (!takes?.id || !pills.some((p) => p.kind === 'hid') || !pills.every((p) => fits(takes, p))) return false;

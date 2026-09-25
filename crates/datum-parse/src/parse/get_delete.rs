@@ -151,17 +151,23 @@ pub(crate) fn parse_undo_args(tail: &[&str]) -> Result<UndoArgs> {
     })
 }
 
-/// `redo` carries the output family and nothing else — see [`RedoArgs`].
+/// `redo` carries the output family and `--dry-run` — see [`RedoArgs`].
 #[derive(Default)]
 pub(crate) struct RedoParsing {
     output: OutputArgs,
+    dry_run: bool,
 }
 
 pub(crate) fn redo_args_registry() -> Vec<LiftedSpec<RedoParsing>> {
-    input::output_args::FLAG_SPECS
+    let mut r: Vec<LiftedSpec<RedoParsing>> = input::output_args::FLAG_SPECS
         .iter()
         .map(|spec| lift(|p: &mut RedoParsing| &mut p.output, spec))
-        .collect()
+        .collect();
+    r.push(local_switch(None, Some("dry-run"), |p| {
+        p.dry_run = true;
+        Ok(())
+    }));
+    r
 }
 
 pub(crate) fn parse_redo_args(tail: &[&str]) -> Result<RedoArgs> {
@@ -170,6 +176,7 @@ pub(crate) fn parse_redo_args(tail: &[&str]) -> Result<RedoArgs> {
     let pos = fold_args(tail, &mut composed, &registry)?;
     Ok(RedoArgs {
         id_or_slug: pos.first().map(|s| s.to_string()),
+        dry_run: composed.dry_run,
         output: composed.output,
     })
 }

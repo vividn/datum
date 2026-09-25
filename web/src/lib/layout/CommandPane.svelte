@@ -5,7 +5,7 @@
 	else: the BAR is the scroller (CommandsWidget.svelte), because the
 	scroll rule is about the bar's rows and the axis it scrolls on.
 
-	A tap that RUNS — `Undo`, `Redo`, and whatever the loaded pills
+	A tap that RUNS — `Undo`, its redo icon, and whatever the loaded pills
 	complete (`fires` in $lib/commands.ts, da-3lxol: `delete` with an hid
 	selected) — goes through `pressWithPills`, which hands the command only
 	the pills its grammar takes: a selected hid (`undo <hid>`), a time for
@@ -19,12 +19,33 @@
 	once (da-ybai9, vividn: «no need for sub commands or pressing enter. It
 	should just work»): the pill named the subject, so it is spent at the
 	tap, like any command's. Without one, `spec ` goes on the line as ever.
+
+	Undo's REDO icon is lit by the CLI (da-zq91a): `redo --dry-run`, with
+	the pills a press would carry, re-asked on every epoch — which a write
+	in another tab bumps too — so an undo typed anywhere lights it here,
+	and the page never re-derives what counts as something to redo.
 -->
 <script lang="ts">
 	import CommandsWidget from '$lib/CommandsWidget.svelte';
 	import { clearUnlockedPills, pills, prefill, text } from '$lib/bar.js';
 	import { openSpec } from '$lib/specModal.js';
+	import { run } from '$lib/run.js';
+	import { withPills } from '$lib/selection.js';
 	import { grammar, press, pressWithPills, ready } from './engine.js';
+
+	export let epoch = 0;
+
+	let redoable = false;
+	let asked = 0;
+
+	/** Would a press on redo move anything? The newest question's answer wins. */
+	async function ask(argv: string[], _epoch: number): Promise<void> {
+		const mine = ++asked;
+		const { code } = await run(argv);
+		if (mine === asked) redoable = code === 0;
+	}
+
+	$: if ($ready) void ask(withPills($grammar, ['redo', '--dry-run'], $pills).argv, epoch);
 
 	function runNow(argv: string[]): void {
 		// A thumb that tapped the command before its pills were all loaded
@@ -48,6 +69,7 @@
 		disabled={!$ready}
 		grammar={$grammar}
 		pills={$pills}
+		{redoable}
 		on:run={(e) => runNow(e.detail)}
 		on:line={(e) => fill(e.detail)}
 	/>

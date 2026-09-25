@@ -121,7 +121,7 @@ describe('a fresh desktop', () => {
 			// anything above it grows: on the screen, over the bar, whole.
 			assert.ok(panes.command.bottom <= prompt + 0.5, `${width}×${height}: the commands run under the bottom bar`);
 			const commands = await wholeCommands(page);
-			for (const name of ['Undo', 'Redo', 'occur', 'start', 'end'])
+			for (const name of ['Undo', '↷', 'occur', 'start', 'end'])
 				assert.ok(commands.includes(name), `${width}×${height}: ${name} is not whole: ${commands.join(' · ')}`);
 			seen.push(`${width}×${height} ${Object.entries(panes).map(([id, b]) => `${id} ${Math.round(b.width)}×${Math.round(b.height)}`).join(' ')}`);
 		});

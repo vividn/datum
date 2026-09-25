@@ -10,10 +10,13 @@
 	composes and dispatches, and the page runs it through `run()` and
 	echoes the executed argv, exactly as the fields widget does:
 
-	- `Undo` / `Redo` RUN, at once. Undo never refuses on age any more
-	  (da-s6no: with a way forward the fifteen-minute gate cost more than
-	  it saved), so there is no second clock here — the widget runs `undo`
-	  and the CLI's own warning past ten minutes is shown with the echo.
+	- `Undo` RUNS, at once. Undo never refuses on age any more (da-s6no:
+	  with a way forward the fifteen-minute gate cost more than it saved),
+	  so there is no second clock here — the widget runs `undo` and the
+	  CLI's own warning past ten minutes is shown with the echo. Its REDO
+	  is a small icon joined to it (da-zq91a), always drawn and lit only
+	  when `redoable` says so — which is the CLI's answer and not this
+	  widget's guess (`redo --dry-run`, asked in CommandPane.svelte).
 	- a command the loaded pills COMPLETE runs at once too (da-3lxol):
 	  `delete` with an hid selected deletes it. `fires` in commands.ts
 	  decides, and the same answer draws the button with a DOUBLE outline
@@ -43,28 +46,50 @@
 	export let disabled = false;
 	export let grammar: Grammar | null = null;
 	export let pills: Pill[] = [];
+	/** Would `redo` move anything? The CLI's own answer, from the pane. */
+	export let redoable = false;
 
 	const dispatch = createEventDispatcher<{ run: string[]; line: { name: string; line: string; keyboard: boolean } }>();
 
 	$: listed = commandsUnder(grammar, pills);
 	$: runs = (command: CommandButton) => command.press === 'run' || fires(grammar?.get(command.name), pills);
+
+	const press = (command: CommandButton) =>
+		runs(command)
+			? dispatch('run', [command.name])
+			: dispatch('line', { name: command.name, line: `${command.name} `, keyboard: command.next !== 'tap' });
 </script>
 
 <ButtonRows class="commands" items={listed} key={(command) => command.name} let:item={command}>
 	<button slot="probe" class="command" tabindex="-1">probe</button>
-	<button
-		class="command"
-		class:act={runs(command)}
-		{disabled}
-		data-command={command.name}
-		title={runs(command) ? `run ${command.name}` : `${command.name} …`}
-		on:click={() =>
-			runs(command)
-				? dispatch('run', [command.name])
-				: dispatch('line', { name: command.name, line: `${command.name} `, keyboard: command.next !== 'tap' })}
-	>
-		{command.label}
-	</button>
+	{#if command.name === 'undo'}
+		<span class="undo">
+			<button class="command act" {disabled} data-command="undo" aria-label="undo" title="run undo" on:click={() => press(command)}>
+				{command.label}
+			</button>
+			<button
+				class="command act redo"
+				disabled={disabled || !redoable}
+				data-command="redo"
+				aria-label="redo"
+				title={redoable ? 'run redo' : 'nothing to redo'}
+				on:click={() => dispatch('run', ['redo'])}
+			>
+				↷
+			</button>
+		</span>
+	{:else}
+		<button
+			class="command"
+			class:act={runs(command)}
+			{disabled}
+			data-command={command.name}
+			title={runs(command) ? `run ${command.name}` : `${command.name} …`}
+			on:click={() => press(command)}
+		>
+			{command.label}
+		</button>
+	{/if}
 </ButtonRows>
 
 <style>
@@ -99,6 +124,25 @@
 	.command:hover:not(:disabled) {
 		border-color: var(--accent);
 		color: var(--ink-bright);
+	}
+
+	/* Undo and its redo are one control of two buttons: they share the
+	   seam between them, and the redo half is only as wide as its icon. */
+	.undo {
+		display: flex;
+	}
+
+	.undo > .command:first-child {
+		border-top-right-radius: 0;
+		border-bottom-right-radius: 0;
+	}
+
+	.undo > .redo {
+		border-left: none;
+		border-top-left-radius: 0;
+		border-bottom-left-radius: 0;
+		padding-left: calc(0.45rem - 2px);
+		padding-right: calc(0.45rem - 2px);
 	}
 
 	.command:disabled {

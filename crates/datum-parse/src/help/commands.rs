@@ -869,7 +869,7 @@ const DELETE_BODY: &str = "USAGE:\n  datum delete [ID_OR_SLUG[,ID_OR_SLUG]...] [
 
 const UNDO_BODY: &str = "USAGE:\n  datum undo [ID_OR_SLUG[,ID_OR_SLUG]...] [--to-version N]\n\nReverts an entry to a prior version via its entry_history trail. By default,\nrestores the immediately-previous version; --to-version N picks an explicit\nversion. With no ID_OR_SLUG it acts on `_LAST`, falling back to the most\nrecent tombstone for legacy entries with no trail. A comma list steps each\nentry back along its own trail; --to-version with a list is refused.\n\nUndo never refuses on age. Past ten minutes it names the age on stderr and\nproceeds anyway: `datum redo` is the way forward again.\n";
 
-const REDO_BODY: &str = "USAGE:\n  datum redo [ID_OR_SLUG[,ID_OR_SLUG]...]\n\nThe inverse of `datum undo`: re-applies the version the last undo stepped\nback from. Redo of an undone create re-creates the entry under the same hid;\nredo of an undone delete deletes it again. With no ID_OR_SLUG it acts on\n`_LAST`, and every row of a multi-entry `_LAST` steps together, as every entry\nof a comma list does.\n\nExits 1 with 'nothing to redo' when the entry's newest step is not an undo,\nso `undo; redo; redo` moves once, not twice.\n";
+const REDO_BODY: &str = "USAGE:\n  datum redo [ID_OR_SLUG[,ID_OR_SLUG]...] [--dry-run]\n\nThe inverse of `datum undo`: re-applies the version the last undo stepped\nback from. Redo of an undone create re-creates the entry under the same hid;\nredo of an undone delete deletes it again. With no ID_OR_SLUG it acts on\n`_LAST`, and every row of a multi-entry `_LAST` steps together, as every entry\nof a comma list does.\n\nExits 1 with 'nothing to redo' when the entry's newest step is not an undo,\nso `undo; redo; redo` moves once, not twice. --dry-run moves nothing and\nprints nothing: it only exits as the redo would, 0 or 1.\n";
 
 const HISTORY_BODY: &str = "USAGE:\n  datum history <ID_OR_SLUG[,ID_OR_SLUG]...> [--version N | --diff A B]\n\nA comma list prints each entry's trail in turn, each under its own `hid:` line\n(`--show json`: one array of `{hid, versions}`). `--version` and `--diff` number\nONE entry's versions, so with a list they are refused.\n";
 
@@ -1581,9 +1581,10 @@ pub const COMMANDS: &[CommandSpec] = &[
             "Re-applies the version that the last undo on that entry stepped \
              back from. Redo of an undone create re-creates it under the same \
              hid; redo of an undone delete deletes it again. With no ID_OR_SLUG \
-             it acts on `_LAST`. Exits 1 when there is nothing ahead.",
+             it acts on `_LAST`. Exits 1 when there is nothing ahead; \
+             --dry-run only exits as the redo would, moving nothing.",
         ),
-        usage: &["datum redo [ID_OR_SLUG[,ID_OR_SLUG]...]"],
+        usage: &["datum redo [ID_OR_SLUG[,ID_OR_SLUG]...] [--dry-run]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         shared_flags: None,

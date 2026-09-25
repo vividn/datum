@@ -212,3 +212,31 @@ fn redo_accepts_an_explicit_target() {
         3
     );
 }
+
+/// da-zq91a: `redo --dry-run` is the question the web's redo button asks —
+/// it answers as `redo` would (Ok when something lies ahead, "Nothing to
+/// redo" when not), and moves nothing either way.
+#[test]
+fn redo_dry_run_answers_without_moving_anything() {
+    let db = fresh_db();
+    run_cli(&["occur", "coffee", "cups=2"], &db).expect("create");
+    run_cli(&["update", "_", "cups=3"], &db).expect("update");
+    let hid = only_hid(&db);
+
+    let err = run_cli(&["redo", "--dry-run"], &db).expect_err("nothing undone yet");
+    assert!(err.to_string().contains("Nothing to redo"), "got: {err}");
+
+    run_cli(&["undo"], &db).expect("undo");
+    run_cli(&["redo", "--dry-run"], &db).expect("an undo lies behind: something to redo");
+    run_cli(&["redo", "--dry-run", &hid], &db).expect("and by name");
+    assert_eq!(
+        db.get_entry(&hid).unwrap().data.as_ref().unwrap()["cups"],
+        2,
+        "a dry run stepped the entry forward"
+    );
+    assert_eq!(kinds(&db, &hid).len(), 3, "a dry run wrote a history row");
+
+    run_cli(&["redo"], &db).expect("redo");
+    let err = run_cli(&["redo", "--dry-run"], &db).expect_err("the redo was taken");
+    assert!(err.to_string().contains("Nothing to redo"), "got: {err}");
+}

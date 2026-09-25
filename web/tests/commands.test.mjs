@@ -132,7 +132,7 @@ describe('the bar of commands', () => {
 			const buttons = await drawn(page);
 			assert.deepEqual(buttons.slice(0, 7), [
 				'Undo',
-				'Redo',
+				'↷',
 				'occur',
 				'start',
 				'end',
@@ -277,20 +277,23 @@ describe('the scroll rule', () => {
 				});
 				const drawn = await boxes(commands(page), 'button[data-command]');
 				assert.deepEqual(drawn.filter((b) => !b.inside).map((b) => b.name), [], `${want} rows: clipped`);
-				packed(await gaps(commands(page), 'button[data-command]'), `${want} rows`);
+				// Packed by ITEM: Undo and its redo icon are one item, joined
+				// with no gap between them (da-zq91a).
+				packed(await gaps(commands(page), '.lane > *'), `${want} rows`);
 				if (want === 2) {
-					// Dealt by index: Undo and Redo start the two rows, occur
-					// follows Undo and start follows Redo.
+					// Dealt by index: Undo and occur start the two rows, start
+					// follows Undo and end follows occur.
 					const at = Object.fromEntries(drawn.map((b) => [b.name, b]));
 					assert.deepEqual(
 						[
-							at.undo.left === at.redo.left,
-							at.undo.line < at.redo.line,
-							at.occur.line === at.undo.line && at.occur.left > at.undo.left,
-							at.start.line === at.redo.line && at.start.left > at.redo.left
+							at.redo.line === at.undo.line && at.redo.left > at.undo.left,
+							at.undo.left === at.occur.left,
+							at.undo.line < at.occur.line,
+							at.start.line === at.undo.line && at.start.left > at.redo.left,
+							at.end.line === at.occur.line && at.end.left > at.occur.left
 						],
-						[true, true, true, true],
-						'the rows are not Undo occur … over Redo start …'
+						[true, true, true, true, true],
+						'the rows are not Undo ↷ start … over occur end …'
 					);
 				}
 				// And the rest really is reached by scrolling, not by spilling —
@@ -350,6 +353,63 @@ describe('Undo', () => {
 			await page.waitForFunction(() => window.__datumInflight === 0);
 			assert.equal((await app.entries(1)).length, 0, 'the older change was refused');
 			assert.match((await app.outputs()).join('\n'), /warning: undoing a change from 11 minutes ago/);
+		});
+	});
+
+	// da-zq91a (vividn: «make the undo button … have a little redo section
+	// … only enabled when there is an undo to redo»). Lit by the CLI's
+	// `redo --dry-run`, so the page holds no rule of its own — and an undo
+	// it did not run, in another tab, lights it as well.
+	test('its redo icon is lit exactly when the CLI has an undo to redo', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const undo = commands(page).locator('button[data-command="undo"]');
+			const redo = commands(page).locator('button[data-command="redo"]');
+			/** Wait for the icon to settle lit or not, and say what it says. */
+			const lit = async (on) => {
+				await page.waitForFunction(
+					(want) => !document.querySelector('.bar.commands [data-command="redo"]').disabled === want,
+					on
+				);
+				await app.idle();
+				return { label: await redo.getAttribute('aria-label'), title: await redo.getAttribute('title') };
+			};
+			const press = async (button) => {
+				await echoed(app, () => button.click());
+				await app.idle();
+			};
+
+			await seedLines(app, ['spec set coffee --verb occur', 'occur coffee']);
+			assert.deepEqual(await lit(false), { label: 'redo', title: 'nothing to redo' });
+			assert.equal(await undo.getAttribute('aria-label'), 'undo');
+
+			// Tapped while unlit, it runs nothing.
+			const echoes = (await app.echoes()).length;
+			await redo.click({ force: true });
+			await app.idle();
+			assert.equal((await app.echoes()).length, echoes, 'the unlit redo ran something');
+
+			await press(undo);
+			assert.equal((await app.entries(1)).length, 0);
+			assert.equal((await lit(true)).title, 'run redo');
+
+			await press(redo);
+			assert.equal((await app.echoes()).at(-1), 'redo');
+			assert.equal((await app.entries(1))[0].field, 'coffee', 'the redo did not bring coffee back');
+			await lit(false);
+
+			// An undo, then a new log: the new change is the one on top.
+			await press(undo);
+			await lit(true);
+			await app.clock.forward(60_000);
+			await app.submit('occur coffee');
+			await app.idle();
+			await lit(false);
+
+			// An undo from ANOTHER tab, on the seam and not the button, lights it here.
+			const other = await app.newTab();
+			assert.equal((await other.run(['undo'])).code, 0);
+			await lit(true);
 		});
 	});
 });

@@ -289,7 +289,7 @@ describe('a fresh phone', () => {
 					// Four at 360: the fifth, `end`, is a scroll away, since the
 					// five are wider than a 360px phone's pane (da-shzs).
 					if (folded)
-						for (const name of ['Undo', 'Redo', 'occur', 'start', ...(width > 360 ? ['end'] : [])])
+						for (const name of ['Undo', '↷', 'occur', 'start', ...(width > 360 ? ['end'] : [])])
 							assert.ok(commands.includes(name), `${name} is not whole: ${commands.join(' · ')}`);
 					assert.ok((await whole(fieldsBar(page))).includes('Track +'), 'Track + is not whole');
 				}

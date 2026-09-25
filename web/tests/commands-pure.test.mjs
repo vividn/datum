@@ -22,10 +22,9 @@ import {
 	verbPress
 } from '../src/lib/commands.ts';
 
-/** vividn's order: Undo (with Redo beside it), the five verbs, then the rest. */
+/** vividn's order: Undo (its redo an icon on it, da-zq91a), the five verbs, then the rest. */
 const ORDER = [
 	'undo',
-	'redo',
 	'occur',
 	'start',
 	'end',
@@ -65,7 +64,6 @@ describe('the commands, in order', () => {
 			ORDER
 		);
 		assert.equal(COMMANDS[0].label, 'Undo');
-		assert.equal(COMMANDS[1].label, 'Redo');
 	});
 
 	// vividn, 2026-09-15 19:08: `note` is not a button here — it lived in a
@@ -82,9 +80,9 @@ describe('the commands, in order', () => {
 		);
 	});
 
-	test('Undo and Redo run; the five verbs pend; everything else writes a line', () => {
+	test('Undo runs; the five verbs pend; everything else writes a line', () => {
 		const pressOf = (name) => COMMANDS.find((c) => c.name === name).press;
-		assert.deepEqual([pressOf('undo'), pressOf('redo')], ['run', 'run']);
+		assert.equal(pressOf('undo'), 'run');
 		for (const verb of VERBS) assert.equal(pressOf(verb), 'verb', verb);
 		for (const name of ['tail', 'db', 'sync']) assert.equal(pressOf(name), 'fill', name);
 	});

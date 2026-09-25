@@ -572,6 +572,10 @@ pub struct UndoArgs {
 #[derive(Debug, Default)]
 pub struct RedoArgs {
     pub id_or_slug: Option<String>,
+    /// `--dry-run`: step nothing, print nothing, and exit as the redo would —
+    /// 0 when something lies ahead, 1 when there is nothing to redo. What the
+    /// web's redo button asks before it lights (da-zq91a).
+    pub dry_run: bool,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
 }
