@@ -41,17 +41,6 @@ pub struct Registry {
     pub db: BTreeMap<String, DbEntry>,
 }
 
-/// Return the path to the datum SQLite database using the legacy single-DB
-/// resolution order. Preserved for call sites that haven't migrated yet.
-///
-/// Resolution order:
-///   1. DATUM_DB env var (path or name)
-///   2. Default: $XDG_DATA_HOME/datum/datum.db
-pub fn db_path() -> Result<String> {
-    let resolved = resolve_db(None)?;
-    Ok(resolved.path.to_string_lossy().into_owned())
-}
-
 /// Resolve a `--db <value>` arg (or fall back to `DATUM_DB` env / default).
 ///
 /// Rules for `value` (applied also to `DATUM_DB`):

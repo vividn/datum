@@ -75,11 +75,13 @@ fn detect_backup_format(path: &str) -> BackupFormat {
     }
 }
 
-/// Resolve a best-effort identifier for the DB being backed up. Prefers the
-/// registry name, falls back to the resolved path, and finally to an empty
-/// string when neither can be recovered (e.g. in-memory DB in tests).
-fn derive_source_db() -> String {
-    match config::resolve_db(None) {
+/// Resolve a best-effort identifier for the DB being backed up — the one
+/// `cli_db` (the global `--db`) opened, else `DATUM_DB` or the default, as
+/// the command itself resolved it. Prefers the registry name, falls back to
+/// the resolved path, and finally to an empty string when neither can be
+/// recovered (e.g. in-memory DB in tests).
+fn derive_source_db(cli_db: Option<&str>) -> String {
+    match config::resolve_db(cli_db) {
         Ok(r) => r
             .name
             .unwrap_or_else(|| r.path.to_string_lossy().into_owned()),
@@ -93,7 +95,7 @@ fn derive_source_db() -> String {
 /// writes instead.
 const STDIO_PATH: &str = "-";
 
-pub fn cmd_backup(args: BackupArgs, db: &Db) -> Result<()> {
+pub fn cmd_backup(args: BackupArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
     let out_path = std::path::Path::new(&args.path);
     if args.path != STDIO_PATH && out_path.exists() && !args.overwrite {
         anyhow::bail!(
@@ -106,7 +108,7 @@ pub fn cmd_backup(args: BackupArgs, db: &Db) -> Result<()> {
         kind: BACKUP_HEADER_TYPE.to_string(),
         schema_version: datum_core::migrations::CURRENT_SCHEMA_VERSION,
         backup_time: chrono::Utc::now().to_rfc3339(),
-        source_db: derive_source_db(),
+        source_db: derive_source_db(cli_db),
         entry_count: db.count_entries()?,
     };
 
@@ -707,6 +709,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 overwrite: false,
             },
+            None,
             &src,
         )
         .unwrap();
@@ -769,6 +772,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 overwrite: false,
             },
+            None,
             &src,
         )
         .unwrap();
@@ -856,6 +860,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 overwrite: false,
             },
+            None,
             &src,
         )
         .unwrap();
@@ -920,6 +925,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 overwrite: false,
             },
+            None,
             &src,
         )
         .unwrap();
@@ -984,6 +990,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 overwrite: false,
             },
+            None,
             &db,
         )
         .unwrap();
@@ -994,6 +1001,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 overwrite: false,
             },
+            None,
             &db,
         )
         .unwrap_err();
@@ -1008,6 +1016,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 overwrite: true,
             },
+            None,
             &db,
         )
         .unwrap();
@@ -1049,6 +1058,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 overwrite: false,
             },
+            None,
             &src,
         )
         .unwrap();
@@ -1271,6 +1281,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 overwrite: false,
             },
+            None,
             &src,
         )
         .unwrap();
@@ -1316,6 +1327,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 overwrite: false,
             },
+            None,
             &src,
         )
         .unwrap();
@@ -1382,6 +1394,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 overwrite: false,
             },
+            None,
             &src,
         )
         .unwrap();
@@ -1436,6 +1449,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 overwrite: false,
             },
+            None,
             &src,
         )
         .unwrap();

@@ -1044,3 +1044,48 @@ fn subprocess_start_time_key_row_equals_its_t_twin_in_tail_json() {
         "the key is consumed"
     );
 }
+
+/// da-4k37v: a backup's header names the database the command OPENED —
+/// its registry name, else the path it was given — not the default one.
+/// A subprocess because the label comes from the same `--db` / `DATUM_DB`
+/// resolution the binary's `main` does.
+#[test]
+fn subprocess_backup_header_names_the_db_it_backed_up() {
+    let tmp = tempfile::tempdir().expect("create tmpdir");
+    let run = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env_remove("DATUM_DB")
+            .env("DATUM_HOME", tmp.path().join("home"))
+            .env("DATUM_CONFIG_HOME", tmp.path().join("config"))
+            .env("DATUM_COLOR", "0")
+            .args(args)
+            .output()
+            .expect("spawn datum");
+        assert_ok(&out, &format!("{args:?}"));
+        out
+    };
+    let source_db = |args: &[&str]| -> String {
+        let out = run(args);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let header: serde_json::Value =
+            serde_json::from_str(stdout.lines().next().expect("a header line"))
+                .expect("header is JSON");
+        header["source_db"].as_str().expect("source_db").to_string()
+    };
+
+    // A named db, registered by its first use.
+    run(&["--db", "fitness", "occur", "pushups"]);
+    assert_eq!(
+        source_db(&["--db", "fitness", "db", "backup", "-"]),
+        "fitness"
+    );
+
+    // An unregistered file, by path.
+    let path = tmp.path().join("loose.db");
+    let path = path.to_str().unwrap();
+    assert_eq!(source_db(&["--db", path, "db", "backup", "-"]), path);
+
+    // No --db: still the default.
+    let default = tmp.path().join("home").join("datum.db");
+    assert_eq!(source_db(&["db", "backup", "-"]), default.to_string_lossy());
+}

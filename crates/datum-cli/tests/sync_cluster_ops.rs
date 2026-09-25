@@ -319,6 +319,7 @@ fn db_restore_with_cluster_flag_bumps_server_generation() {
             path: backup_path.clone(),
             overwrite: true,
         },
+        None,
         &db,
     )
     .expect("backup");
@@ -364,6 +365,7 @@ fn db_restore_dry_run_with_cluster_does_not_bump() {
             path: backup_path.clone(),
             overwrite: true,
         },
+        None,
         &db,
     )
     .unwrap();

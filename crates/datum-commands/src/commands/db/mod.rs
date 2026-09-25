@@ -24,7 +24,7 @@ pub fn dispatch(cmd: DbCommand, cli_db: Option<&str>, db: &Db) -> Result<()> {
     match cmd {
         DbCommand::Setup(args) => super::setup::setup(args, db),
         DbCommand::Purge(args) => purge(args, cli_db, db),
-        DbCommand::Backup(args) => super::backup_restore::cmd_backup(args, db),
+        DbCommand::Backup(args) => super::backup_restore::cmd_backup(args, cli_db, db),
         DbCommand::Restore(args) => super::backup_restore::cmd_restore(args, db),
         DbCommand::Migrate(sub) => super::migrate::migrate(sub, db),
         DbCommand::V2import(args) => import::import(args, db),

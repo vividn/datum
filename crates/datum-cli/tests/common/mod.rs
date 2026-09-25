@@ -11,7 +11,7 @@ use datum_core::db::Db;
 ///
 /// The `db` is used both for the CLI pre-pass (alias resolution) and as the
 /// target for command dispatch — matching the binary's behavior, minus
-/// `config::db_path()` and process boundaries.
+/// `config::resolve_db` and process boundaries.
 pub fn run_cli(args: &[&str], db: &Db) -> anyhow::Result<()> {
     let argv: Vec<String> = std::iter::once("datum".to_string())
         .chain(args.iter().map(|s| s.to_string()))
