@@ -1140,7 +1140,7 @@ describe('the pills ride with the text', () => {
 			// the command lands (da-jrozq), so a pill that started a fade of
 			// its own would lag the ghost by the whole command. Both clocks
 			// read in one evaluation, the moment the spent pill is there.
-			await app.pressWidget('coffee');
+			await pressLanded(app);
 			const clocks = await page
 				.waitForFunction(() => {
 					const pill = document.querySelector('.prompt-bar .spent');
@@ -1168,10 +1168,9 @@ describe('the pills ride with the text', () => {
 			await setPill(page, { text: '-t 14:30' });
 			await page.locator(`${BAR} .pill`).waitFor();
 
-			await app.pressWidget('coffee');
 			// Gone from the live pills — so gone from the next command's argv
 			// and from the time cursor — and on screen only as a spent one.
-			await page.waitForFunction(() => window.datum.bar.pills().length === 0);
+			await pressLanded(app);
 			assert.equal(await page.locator(`${BAR} .pill`).count(), 0);
 			assert.equal(await page.locator(`${BAR} .spent`).count(), 1);
 			await page.waitForFunction(() => !document.querySelector('.prompt-bar .spent'));
@@ -1180,6 +1179,27 @@ describe('the pills ride with the text', () => {
 		});
 	});
 });
+
+/** How long the ghost stays, and so a spent pill with it ($lib/bar.ts). */
+const GHOST_MS = 1000;
+
+/**
+ * Press the coffee widget and wait for the press to LAND: its unlocked
+ * pill leaving the live set, which is the moment it is spent (da-jrozq).
+ * A spent pill joins the ghost's clock, so a press that lands more than
+ * GHOST_MS after it was pressed leaves none to see, and a test waiting for
+ * one would time out 30s later reading as a missing feature. So the
+ * precondition fails first, and says it was the press (da-wjz42).
+ */
+const pressLanded = async (app) => {
+	const { page } = app;
+	await page.evaluate(() => (window.__pressedAt = performance.now()));
+	await app.pressWidget('coffee');
+	const took = await page
+		.waitForFunction(() => window.datum.bar.pills().length === 0 && performance.now() - window.__pressedAt)
+		.then((h) => h.jsonValue());
+	assert.ok(took < GHOST_MS, `the press took ${Math.round(took)}ms to land, past the ghost's ${GHOST_MS}ms`);
+};
 
 /**
  * Wait for the pills to have stopped moving after a line was typed.
