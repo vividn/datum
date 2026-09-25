@@ -70,7 +70,8 @@ fn render_topic(topic: &TopicSpec) -> String {
 
 /// The command table as JSON — `datum help --json` (da-r13j).
 ///
-/// Each command's name, aliases, usage lines, flags and subcommands,
+/// Each command's name, aliases, usage lines, flags (each with its
+/// one-line help and whether it takes a value, da-st2xl) and subcommands,
 /// straight out of [`COMMANDS`], for a caller that asks the grammar rather
 /// than keeping a copy of it: the web's commands widget reads which
 /// commands take an id or `-t` from here, and which drill into
@@ -80,7 +81,14 @@ pub fn render_json() -> String {
     let flags = |flags: &[FlagSpec]| {
         flags
             .iter()
-            .map(|f| serde_json::json!({ "short": f.short.map(String::from), "long": f.long }))
+            .map(|f| {
+                serde_json::json!({
+                    "short": f.short.map(String::from),
+                    "long": f.long,
+                    "takes_value": f.takes_value,
+                    "help": f.summary,
+                })
+            })
             .collect::<Vec<_>>()
     };
     let commands: Vec<_> = COMMANDS

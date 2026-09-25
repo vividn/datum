@@ -117,6 +117,22 @@ describe('the Help button', () => {
 		});
 	});
 
+	// da-st2xl: a held command's flag is explained by its line of the CLI's
+	// flag table, and the tap appends nothing. A right click is the hold.
+	test('then a flag of a held command: its help line, and the line is left alone', async () => {
+		await onPage(async ({ page }) => {
+			await page.locator('.bar.commands button[data-command="occur"]').click({ button: 'right' });
+			const t = page.locator('.bar.commands button[data-flag="occur -t"]');
+			await t.waitFor();
+			const { title, lines } = await explain(page, t);
+			assert.equal(title, 'datum occur -t');
+			assert.deepEqual(lines, ['Time override (offset, HH:MM, 9:15am, or a date)']);
+			assert.equal(await page.locator('.prompt-bar input').inputValue(), 'occur ', '-t was appended');
+			await dismiss(page);
+			assert.equal(await page.locator('.bar.commands button[data-back]').count(), 1, 'Escape left the flags too');
+		});
+	});
+
 	test('then a widget: its kind\'s help, and a press inside it does nothing else', async () => {
 		await onPage(async (app) => {
 			const { page } = app;

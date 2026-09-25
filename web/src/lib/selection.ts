@@ -89,10 +89,10 @@ export const hidPill = (hids: string[], locked = false): Pill | null =>
  * line carrying a flag — `tail -n 20` — has words this rule cannot tell
  * apart from a field, so the pill is refused there too and the reader types
  * the field. Placing it precisely would mean knowing which flags take a
- * VALUE, and `datum help --json` gives each flag's names and not its arity;
- * guessing wrong would put a second field into `tail -n 20 coffee`. A
- * refusal is VISIBLE — the pill stays on the bar — where a misplacement is
- * a wrong row, so this is the side to err on until the grammar says more.
+ * VALUE, which `datum help --json` now says (`takes_value`, da-st2xl) but
+ * this rule does not yet read; guessing wrong would put a second field into
+ * `tail -n 20 coffee`. A refusal is VISIBLE — the pill stays on the bar —
+ * where a misplacement is a wrong row, so this is the side to err on.
  */
 const fieldSlotOpen = (takes: Takes | undefined, argv: string[]): boolean =>
 	!!takes && takes.field !== false && argv.length === takes.field;

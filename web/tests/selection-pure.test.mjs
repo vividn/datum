@@ -83,7 +83,8 @@ describe('what the grammar says a command takes', () => {
 			field: false,
 			more: false,
 			subcommands: [],
-			bare: false
+			bare: false,
+			flags: []
 		});
 	});
 
@@ -180,8 +181,8 @@ describe('what a press runs with the pills', () => {
 	});
 
 	// And refused on a line with a FLAG in it, where the slot rule cannot
-	// tell a flag's value from a field: `datum help --json` gives no flag
-	// arity, so placing one would risk `tail -n 20 coffee` — two fields.
+	// tell a flag's value from a field (it does not read `takes_value`), so
+	// placing one would risk `tail -n 20 coffee` — two fields.
 	// The refusal is visible (the pill stays on the bar); a misplacement
 	// would be a wrong row. Canary deepseek raised it on PR #62.
 	test('and refused on a line carrying a flag, which the slot rule cannot read', () => {

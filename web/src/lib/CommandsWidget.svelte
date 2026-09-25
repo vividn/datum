@@ -38,6 +38,11 @@
 	- a command with SUBCOMMANDS (`db`, `spec`, `sync`, …) opens them
 	  instead (da-803mk): the bar is `< Back` and the subcommands, and a
 	  tap on one fills `db backup `. `< Back` and Escape return to the list.
+	- HOLDING a command with flags (da-st2xl, `$lib/hold.ts`) fills it as a
+	  tap does, and the bar becomes `< Back`, Help and its flags
+	  (`flagsOf`). A flag's tap appends it to the line; one that takes a
+	  value (`-t`) opens the keyboard for it, one that does not (`-q`)
+	  keeps it shut. Armed Help on a flag shows its help line.
 
 	The loaded PILLS filter it (da-r13j): a command whose grammar — `datum
 	help --json` — cannot take every pill on the bar is not drawn
@@ -50,12 +55,22 @@
 	its own and all of them scrolled left and right.
 -->
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, onMount } from 'svelte';
 	import type { Pill } from './bar.js';
 	import type { FieldButton } from './fields.js';
 	import ButtonRows from './ButtonRows.svelte';
-	import { commandsUnder, drills, fires, subcommandsOf, type CommandButton, type Grammar } from './commands.js';
+	import {
+		commandsUnder,
+		drills,
+		fires,
+		flagsOf,
+		hasFlags,
+		subcommandsOf,
+		type CommandButton,
+		type Grammar
+	} from './commands.js';
 	import { arm, helping } from './help.js';
+	import { holds } from './hold.js';
 
 	export let disabled = false;
 	export let grammar: Grammar | null = null;
@@ -65,17 +80,41 @@
 	/** Would `redo` move anything? The CLI's own answer, from the pane. */
 	export let redoable = false;
 
-	const dispatch = createEventDispatcher<{ run: string[]; line: { name: string; line: string; keyboard: boolean } }>();
+	const dispatch = createEventDispatcher<{
+		run: string[];
+		line: { name: string; line: string; keyboard: boolean };
+		flag: { command: string; flag: string; keyboard: boolean };
+	}>();
 
 	/** The command whose subcommands the bar shows, if any. Gone with the command, if its pills hide it. */
 	let open: string | null = null;
+	/** The command whose flags the bar shows, if any (da-st2xl). The same. */
+	let flagged: string | null = null;
+	let bar: HTMLElement | undefined;
 	$: listed = commandsUnder(grammar, pills, fields);
 	$: if (open && !listed.some((command) => command.name === open)) open = null;
-	$: shown = open ? subcommandsOf(grammar, open) : listed;
+	$: if (flagged && !listed.some((command) => command.name === flagged)) flagged = null;
+	$: shown = flagged ? flagsOf(grammar, flagged) : open ? subcommandsOf(grammar, open) : listed;
 	$: runs = (command: CommandButton) => command.press === 'run' || fires(grammar?.get(command.name), pills);
 
+	/** A hold fills the command, as its tap would, and opens its flags. */
+	function hold(el: HTMLElement): void {
+		const name = el.dataset.command!;
+		flagged = name;
+		dispatch('line', { name, line: `${name} `, keyboard: false });
+	}
+
+	onMount(() => holds(bar!, { within: 'button[data-holds]', run: hold }).destroy);
+
+	/** Back and Escape peel one layer: the flags, else the subcommands. */
+	function back(): void {
+		if (flagged) flagged = null;
+		else open = null;
+	}
+
 	function press(command: CommandButton): void {
-		if (command.press === 'back') open = null;
+		if (command.press === 'back') back();
+		else if (command.press === 'flag') dispatch('flag', { command: flagged!, flag: command.name, keyboard: command.next === 'type' });
 		else if (!open && drills(grammar, command.name, pills)) open = command.name;
 		else if (runs(command)) dispatch('run', [command.name]);
 		else dispatch('line', { name: command.name, line: `${command.name} `, keyboard: command.next !== 'tap' });
@@ -83,15 +122,16 @@
 
 	/** Escape is Back, and marks the key taken so the line does not peel as well. */
 	function onKeyDown(event: KeyboardEvent): void {
-		if (event.key !== 'Escape' || !open || event.defaultPrevented || document.querySelector('dialog[open]')) return;
-		open = null;
+		if (event.key !== 'Escape' || !(open || flagged) || event.defaultPrevented || document.querySelector('dialog[open]'))
+			return;
+		back();
 		event.preventDefault();
 	}
 </script>
 
 <svelte:window on:keydown={onKeyDown} />
 
-<ButtonRows class="commands" items={shown} key={(command) => command.name} let:item={command}>
+<ButtonRows class="commands" items={shown} key={(command) => command.name} bind:bar let:item={command}>
 	<button slot="probe" class="command" tabindex="-1">probe</button>
 	{#if command.name === 'undo'}
 		<span class="undo">
@@ -129,12 +169,24 @@
 		<button class="command" {disabled} data-back title="back to every command" on:click={() => press(command)}>
 			{command.label}
 		</button>
+	{:else if command.press === 'flag'}
+		<button
+			class="command"
+			{disabled}
+			data-flag={`${flagged} ${command.name}`}
+			data-help={command.help}
+			title={command.help}
+			on:click={() => press(command)}
+		>
+			{command.label}
+		</button>
 	{:else}
 		<button
 			class="command"
 			class:act={runs(command)}
 			{disabled}
 			data-command={command.name}
+			data-holds={!open && hasFlags(grammar, command.name) ? '' : undefined}
 			title={runs(command) ? `run ${command.name}` : `${command.name} …`}
 			on:click={() => press(command)}
 		>

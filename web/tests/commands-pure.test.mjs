@@ -20,11 +20,13 @@ import {
 	pendingVerb,
 	declaredVerb,
 	drills,
+	flagsOf,
 	lanesOf,
 	pressKind,
 	rowsIn,
 	subcommandsOf,
-	verbPress
+	verbPress,
+	withFlag
 } from '../src/lib/commands.ts';
 
 /** vividn's order: Undo (its redo an icon on it, da-zq91a), Help where Redo was (da-vjwid), the five verbs, then the rest. */
@@ -343,5 +345,49 @@ describe('subcommands', () => {
 			['sync', 'sync', 'fill'],
 			['sync login', 'login', 'fill']
 		]);
+	});
+});
+
+// da-st2xl: holding a command opens its flags — the CLI's, in a curated
+// order, each knowing whether a value follows it.
+describe('flags', () => {
+	const f = (short, long, takes_value = false) => ({ short, long, takes_value, help: `${long} help` });
+	// The CLI's order, scrambled against the curated one on purpose.
+	const TREE = grammarOf([
+		{
+			name: 'occur',
+			aliases: [],
+			usage: ['datum occur <FIELD>'],
+			flags: [f('y', 'yesterday'), f('q', 'quick'), f('d', 'date', true), f('t', 'time', true), f('z', 'timezone', true), f('c', 'comment', true), f(null, 'id', true), f('m', 'moment')]
+		}
+	]);
+
+	test('< Back and Help lead; the curated flags first, the rest in the CLI order; a value flag is typed next', () => {
+		assert.deepEqual(
+			flagsOf(TREE, 'occur').map((c) => [c.name, c.press, c.next ?? null]),
+			[
+				['back', 'back', null],
+				['help', 'help', null],
+				['-t', 'flag', 'type'],
+				['-d', 'flag', 'type'],
+				['-y', 'flag', 'tap'],
+				['-q', 'flag', 'tap'],
+				['-c', 'flag', 'type'],
+				['-m', 'flag', 'tap'],
+				['-z', 'flag', 'type'],
+				['--id', 'flag', 'type']
+			]
+		);
+		assert.equal(flagsOf(TREE, 'occur')[2].help, 'time help');
+	});
+
+	test('a flag appends to its own command\'s line, and starts any other line afresh', () => {
+		assert.equal(withFlag('occur ', 'occur', '-q'), 'occur -q ');
+		assert.equal(withFlag('occur -q ', 'occur', '-t'), 'occur -q -t ');
+		assert.equal(withFlag('occur', 'occur', '-t'), 'occur -t ');
+		// PR #216: after a run, and under another command.
+		assert.equal(withFlag('', 'occur', '-q'), 'occur -q ');
+		assert.equal(withFlag('tail ', 'occur', '-q'), 'occur -q ');
+		assert.equal(withFlag('occurrence ', 'occur', '-q'), 'occur -q ');
 	});
 });

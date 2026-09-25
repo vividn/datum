@@ -21,6 +21,8 @@
 // - Help itself: `datum help`, the general help.
 // - a widget: its kind's `help` in the registry, where kinds are declared.
 // - a pill: what its KIND is and does, with its own value in it (below).
+// - a flag of a held command (da-st2xl): its line of the CLI's own flag
+//   table, carried on the button from `datum help --json`.
 //
 // Anything else is general help too: the tap asked for help, so it gets
 // some.
@@ -62,7 +64,9 @@ async function explain(target: Element | null): Promise<void> {
 	const pillId = target?.closest<HTMLElement>('[data-pill]')?.dataset.pill;
 	const kind = target?.closest<HTMLElement>('[data-widget]')?.dataset.widget;
 	const pill = pillId && [...get(pills), ...get(spent)].find((p) => p.id === pillId);
+	const flag = target?.closest<HTMLElement>('[data-flag]');
 	if (pill) return show(pill.text, pillHelp(pill));
+	if (flag) return show(`datum ${flag.dataset.flag}`, flag.dataset.help ?? '');
 	if (!command && kind && KINDS[kind]) return show(titleOf(kind), KINDS[kind].help);
 	const argv = command && command !== 'help' ? ['help', ...command.split(' ')] : ['help'];
 	const { stdout, stderr } = await run(argv);

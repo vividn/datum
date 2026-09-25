@@ -20,6 +20,10 @@
 	should just work»): the pill named the subject, so it is spent at the
 	tap, like any command's. Without one, `spec ` goes on the line as ever.
 
+	A FLAG from a held command's list (da-st2xl) is appended to the line when
+	the line is that command's, so taps compose; otherwise it starts the line
+	afresh as `<command> <flag> ` (`withFlag`).
+
 	Undo's REDO icon is lit by the CLI (da-zq91a): `redo --dry-run`, with
 	the pills a press would carry, re-asked on every epoch — which a write
 	in another tab bumps too — so an undo typed anywhere lights it here,
@@ -28,7 +32,7 @@
 <script lang="ts">
 	import CommandsWidget from '$lib/CommandsWidget.svelte';
 	import { clearUnlockedPills, pills, prefill, text } from '$lib/bar.js';
-	import { argumentsOf } from '$lib/commands.js';
+	import { argumentsOf, withFlag } from '$lib/commands.js';
 	import { openSpec } from '$lib/specModal.js';
 	import { run } from '$lib/run.js';
 	import { withPills } from '$lib/selection.js';
@@ -74,6 +78,7 @@
 		{redoable}
 		on:run={(e) => runNow(e.detail)}
 		on:line={(e) => fill(e.detail)}
+		on:flag={(e) => prefill.set({ line: withFlag($text, e.detail.command, e.detail.flag), keyboard: e.detail.keyboard })}
 	/>
 </div>
 

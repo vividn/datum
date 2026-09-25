@@ -35,8 +35,10 @@ export type Press =
 	| 'fill'
 	/** Arm the page: the next tap is explained, not acted on ($lib/help.ts). */
 	| 'help'
-	/** Leave a command's subcommands for the whole list (da-803mk). */
-	| 'back';
+	/** Leave a command's subcommands or flags for the whole list (da-803mk). */
+	| 'back'
+	/** Append the flag to the line (da-st2xl). */
+	| 'flag';
 
 export interface CommandButton {
 	/** The CLI word — what runs, and what goes on the line. */
@@ -50,6 +52,8 @@ export interface CommandButton {
 	 * keyboard; `type`, and the keyboard opens with it.
 	 */
 	next?: 'tap' | 'type';
+	/** A flag's one line of help, from the CLI's own flag table. */
+	help?: string;
 }
 
 /** The fillers a tap completes: an id or a time pill is what comes next. */
@@ -249,11 +253,19 @@ export interface GrammarEntry {
 	name: string;
 	aliases: string[];
 	usage: string[];
-	flags: { short: string | null; long: string }[];
+	flags: Flag[];
 	/** The words that pick a subcommand (`db backup`), from the CLI's own command tree (da-803mk). */
 	subcommands?: { name: string }[];
 	/** Does it run with nothing after its name (`sync` does, `db` does not)? */
 	bare?: boolean;
+}
+
+/** One flag of `datum help --json`: its spellings, its help line, and whether a value follows it (da-st2xl). */
+export interface Flag {
+	short: string | null;
+	long: string;
+	takes_value?: boolean;
+	help?: string;
 }
 
 /** What a command's grammar takes of the pills the bar can hold. */
@@ -289,6 +301,8 @@ export interface Takes {
 	/** Its subcommands' names (`setup`, `backup`, … of `db`), and whether it runs without one. */
 	subcommands: string[];
 	bare: boolean;
+	/** Its flags, as the CLI lists them. */
+	flags: Flag[];
 }
 
 /** Commands by name AND by alias (`end` is `stop`'s). */
@@ -343,7 +357,7 @@ export function takesOf(entry: GrammarEntry): Takes {
 	const field = slots.length ? (Math.min(...slots) as 1 | 2) : false;
 	// Past `datum <name> <ID>`, anything but a flag is a word still to come.
 	const more = idLines.some((u) => words(u).slice(3).some((w) => !/^\[?-/.test(w)));
-	return { id, time, field, more, subcommands: (entry.subcommands ?? []).map((s) => s.name), bare: !!entry.bare };
+	return { id, time, field, more, subcommands: (entry.subcommands ?? []).map((s) => s.name), bare: !!entry.bare, flags: entry.flags };
 }
 
 export function grammarOf(entries: GrammarEntry[]): Grammar {
@@ -484,6 +498,66 @@ export function subcommandsOf(grammar: Grammar | null, name: string): CommandBut
 			(sub): CommandButton => ({ name: `${name} ${sub}`, label: sub, press: 'fill', next: 'type' })
 		)
 	];
+}
+
+// ---- a command's flags (da-st2xl) ---------------------------------------
+//
+// vividn, 2026-09-25: «long pressing on a command, like occur should add it
+// to the input box as well, and then display various flags that you can
+// add, like -q, -t, etc, sorted in a useful order … for -t keyboard should
+// be opened on mobile so that you can type something in.» The flags, their
+// help and whether a value follows are the CLI's (`help --json`); only the
+// order is written here.
+
+/**
+ * The flags a hand reaches for first, in that order: when (`-t`, `-d`,
+ * `-y`, `-q`), then a comment, a moment, a key. Every other flag follows
+ * in the CLI's own order.
+ */
+const FIRST_FLAGS = ['-t', '-d', '-y', '-q', '-c', '-m', '-k'];
+
+/** The word that goes on the line: the short spelling where there is one. */
+export const flagWord = (flag: Flag): string => (flag.short ? `-${flag.short}` : `--${flag.long}`);
+
+/** Does holding `name` open its flags? Only a command that has some. */
+export const hasFlags = (grammar: Grammar | null, name: string): boolean => !!grammar?.get(name)?.flags.length;
+
+/**
+ * The bar while `name`'s flags are open: `< Back`, Help, then its flags. A
+ * flag that takes a value is typed next, so its tap opens the keyboard.
+ */
+export function flagsOf(grammar: Grammar | null, name: string): CommandButton[] {
+	const rank = (flag: Flag) => {
+		const i = FIRST_FLAGS.indexOf(flagWord(flag));
+		return i < 0 ? FIRST_FLAGS.length : i;
+	};
+	// A stable sort, so the rest keep the CLI's order.
+	const flags = [...(grammar?.get(name)?.flags ?? [])].sort((a, b) => rank(a) - rank(b));
+	return [
+		{ name: 'back', label: '< Back', press: 'back' },
+		...COMMANDS.filter((command) => command.press === 'help'),
+		...flags.map(
+			(flag): CommandButton => ({
+				name: flagWord(flag),
+				label: flagWord(flag),
+				press: 'flag',
+				next: flag.takes_value ? 'type' : 'tap',
+				help: flag.help
+			})
+		)
+	];
+}
+
+/**
+ * The line after a tap on `command`'s `flag`: appended, with a space for
+ * what comes next, when the line is that command's; otherwise the command
+ * and the flag afresh. The bar outlives the line — a run spends it, a
+ * reader types another command — so every line a flag builds starts with
+ * the command whose flags are showing (vremya, PR #216).
+ */
+export function withFlag(line: string, command: string, flag: string): string {
+	const [word] = line.trimStart().split(/\s/, 1);
+	return word === command ? `${line.trimEnd()} ${flag} ` : `${command} ${flag} `;
 }
 
 // ---- the scroll rule (every button bar) --------------------------------

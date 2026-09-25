@@ -199,6 +199,103 @@ describe('a command with subcommands drills into them', () => {
 	});
 });
 
+// da-st2xl. vividn, 2026-09-25: «long pressing on a command, like occur
+// should add it to the input box as well, and then display various flags
+// that you can add, like -q, -t, etc, sorted in a useful order … for -t
+// keyboard should be opened on mobile». A REAL long press: the timers are
+// the page's own, so the hold is held for as long as a finger would.
+describe('holding a command fills it and shows its flags', () => {
+	const back = (page) => commands(page).locator('button[data-back]');
+	const flags = async (page) => (await listed(commands(page), 'button[data-flag]')).map((b) => b.text);
+
+	async function hold(page, name) {
+		const box = await commands(page).locator(`button[data-command="${name}"]`).boundingBox();
+		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+		await page.mouse.down();
+		await page.waitForTimeout(600);
+		await page.mouse.up();
+		await back(page).waitFor();
+	}
+
+	/** What the line holds, whether the caret is in it, and whether a phone's keyboard would be up. */
+	const typed = (page) =>
+		page.evaluate(() => {
+			const input = document.querySelector('.prompt-bar input');
+			return { text: input.value, focused: document.activeElement === input, keyboard: input.inputMode !== 'none' };
+		});
+
+	test('occur fills `occur ` and its flags follow Back and Help, the curated ones first', async () => {
+		await onPage(async ({ page }) => {
+			await hold(page, 'occur');
+			assert.equal((await typed(page)).text, 'occur ', 'the hold fills as the tap does');
+			assert.deepEqual(await drawn(page), ['Help'], 'Back, Help, then flags: no command beside them');
+			assert.deepEqual((await flags(page)).slice(0, 7), ['-t', '-d', '-y', '-q', '-c', '-m', '-k']);
+			assert.ok((await flags(page)).includes('--id'), 'the rest follow, long-only ones included');
+		});
+	});
+
+	test('-q appends with the keyboard shut; -t appends and opens it; the line composes', async () => {
+		await onPage(async ({ page }) => {
+			await hold(page, 'occur');
+			await commands(page).locator('button[data-flag="occur -q"]').click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur -q ');
+			assert.deepEqual(await typed(page), { text: 'occur -q ', focused: true, keyboard: false });
+
+			await commands(page).locator('button[data-flag="occur -t"]').click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur -q -t ');
+			assert.deepEqual(await typed(page), { text: 'occur -q -t ', focused: true, keyboard: true });
+		});
+	});
+
+	// PR #216 (vremya): the flags outlive the line — a run spends it, a
+	// reader types another command — and a flag tap then starts the line
+	// afresh with the command whose flags are showing.
+	test('after a run, or under another command, a flag tap starts `occur -q ` again', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await seedLines(app, ['spec set coffee --verb occur']);
+			const q = commands(page).locator('button[data-flag="occur -q"]');
+			const value = (v) => page.waitForFunction((v) => document.querySelector('.prompt-bar input').value === v, v);
+			await hold(page, 'occur');
+			await q.click();
+			await value('occur -q ');
+			await page.keyboard.type('coffee');
+			await page.keyboard.press('Enter');
+			await value('');
+			assert.equal(await back(page).count(), 1, 'the flags stayed open');
+			await q.click();
+			await value('occur -q ');
+
+			await page.locator('.prompt-bar input').fill('tail ');
+			await q.click();
+			await value('occur -q ');
+			await app.idle();
+		});
+	});
+
+	test('< Back and Escape return to the commands, and leave the line as it is', async () => {
+		await onPage(async ({ page }) => {
+			await hold(page, 'occur');
+			await back(page).click();
+			await back(page).waitFor({ state: 'detached' });
+			assert.ok((await drawn(page)).includes('occur'));
+
+			await hold(page, 'occur');
+			await page.keyboard.press('Escape');
+			await back(page).waitFor({ state: 'detached' });
+			assert.ok((await drawn(page)).includes('occur'));
+			assert.equal((await typed(page)).text, 'occur ', 'the same Escape peeled the line too');
+		});
+	});
+
+	test('a command without flags is not held', async () => {
+		await onPage(async ({ page }) => {
+			assert.equal(await commands(page).locator('button[data-command="delete"][data-holds]').count(), 0);
+			assert.equal(await commands(page).locator('button[data-command="occur"][data-holds]').count(), 1);
+		});
+	});
+});
+
 describe('a verb fills the line and filters the fields', () => {
 	test('occur leaves the occur fields, and a tap on one runs at once', async () => {
 		await onPage(async (app) => {
