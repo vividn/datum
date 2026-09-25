@@ -297,6 +297,22 @@ describe('holding a command fills it and shows its flags', () => {
 		});
 	});
 
+	// da-bbmpx: the verb is still pending under `occur -q `, so the fields
+	// narrow to occur's — and a tap on one runs the LINE with the field.
+	test('a field tap under `occur -q ` runs `occur -q coffee` and spends the line', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await seedLines(app, ['spec set coffee --verb occur']);
+			await hold(page, 'occur');
+			await commands(page).locator('button[data-flag="occur -q"]').click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur -q ');
+			await echoed(app, () => fieldsBar(page).locator('[data-field="coffee"]').click());
+			assert.equal((await app.echoes()).at(-1), 'occur -q coffee');
+			assert.equal((await typed(page)).text, '', 'the line was not spent');
+			await app.idle();
+		});
+	});
+
 	test('< Back and Escape return to the commands, and leave the line as it is', async () => {
 		await onPage(async ({ page }) => {
 			await hold(page, 'occur');

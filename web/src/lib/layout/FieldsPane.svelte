@@ -14,8 +14,9 @@
 	prompt, unrun.
 
 	`pending` is the verb the command line holds (da-ltux): it filters the
-	list, and a press under it runs `<verb> <field>` at once and spends the
-	verb — the box empties, and the list is whole again.
+	list, and a press under it runs `<verb> <field>` at once — with the
+	flags the line carries between them (da-bbmpx) — and spends the verb:
+	the box empties, and the list is whole again.
 
 	The SELECTION is the other thing the widget answers (da-qu16): a `dur=`
 	pill among the bar's pills leaves the fields a length can be spent on,
@@ -30,11 +31,12 @@
 -->
 <script lang="ts">
 	import FieldsWidget from '$lib/FieldsWidget.svelte';
-	import { clearPending, pending, pills, prefill } from '$lib/bar.js';
-	import { hasDuration } from '$lib/commands.js';
+	import { clearPending, pending, pills, prefill, text } from '$lib/bar.js';
+	import { flagLine, hasDuration } from '$lib/commands.js';
 	import type { SwitchLabel } from '$lib/fields.js';
 	import { lanes } from '$lib/lanes.js';
-	import { fields, pressWithPills, ready, standings } from './engine.js';
+	import { shellSplit } from '$lib/shellSplit.js';
+	import { fields, grammar, pressWithPills, ready, standings } from './engine.js';
 
 	export let switchLabel: SwitchLabel = 'field';
 	/**
@@ -44,9 +46,16 @@
 	 */
 	export let showIgnored = false;
 
+	/**
+	 * A press under the pending verb runs the LINE with the field after it
+	 * — `occur -q ` and coffee is `occur -q coffee` — and spends it
+	 * (da-bbmpx); a line `flagLine` refuses keeps today's `occur coffee`.
+	 */
 	function run(argv: string[]) {
-		clearPending();
-		void pressWithPills(argv);
+		const line = argv[0] === $pending ? flagLine(shellSplit($text), $grammar?.get(argv[0])) : null;
+		if (line) $text = '';
+		else clearPending();
+		void pressWithPills(line ? [...line, ...argv.slice(1)] : argv);
 	}
 </script>
 

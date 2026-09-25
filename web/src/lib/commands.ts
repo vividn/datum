@@ -575,6 +575,25 @@ export function withFlag(line: string, command: string, flag: string): string {
 	return word === command ? `${line.trimEnd()} ${flag} ` : `${command} ${flag} `;
 }
 
+/**
+ * The line's words when everything after its verb is a flag, each one
+ * that takes a value followed by it (`occur -q`, `occur -t 1400`): a field
+ * tap under that verb runs them with the field after, and spends the line
+ * (da-bbmpx). Null for anything else — a positional (`occur half-typed`)
+ * is a line being typed, which a press never takes, and a trailing `-t`
+ * waits for its value, which the field would otherwise become.
+ */
+export function flagLine(words: string[], takes: Takes | undefined): string[] | null {
+	// No grammar: a value flag cannot be told from a switch, so only a bare verb.
+	if (!takes) return words.length > 1 ? null : words;
+	const valued = takes.flags.filter((f) => f.takes_value).flatMap((f) => [`--${f.long}`, f.short && `-${f.short}`]);
+	for (let i = 1; i < words.length; i++) {
+		if (!words[i].startsWith('-')) return null;
+		if (valued.includes(words[i]) && ++i === words.length) return null;
+	}
+	return words;
+}
+
 // ---- the scroll rule (every button bar) --------------------------------
 //
 // vividn: «we should always maintain horizontal scrolling in the commands

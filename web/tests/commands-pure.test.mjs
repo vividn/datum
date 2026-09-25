@@ -20,6 +20,7 @@ import {
 	pendingVerb,
 	declaredVerb,
 	drills,
+	flagLine,
 	flagsOf,
 	lanesOf,
 	pressKind,
@@ -390,5 +391,21 @@ describe('flags', () => {
 		assert.equal(withFlag('', 'occur', '-q'), 'occur -q ');
 		assert.equal(withFlag('tail ', 'occur', '-q'), 'occur -q ');
 		assert.equal(withFlag('occurrence ', 'occur', '-q'), 'occur -q ');
+	});
+
+	// da-bbmpx: a field tap under `occur -q ` runs `occur -q coffee`.
+	test('a line of flags is what a field tap runs; a positional or a flag waiting for its value is not', () => {
+		const occur = TREE.get('occur');
+		assert.deepEqual(flagLine(['occur'], occur), ['occur']);
+		assert.deepEqual(flagLine(['occur', '-q'], occur), ['occur', '-q']);
+		assert.deepEqual(flagLine(['occur', '-t', '-8', '-qq', '--id', 'x'], occur), ['occur', '-t', '-8', '-qq', '--id', 'x']);
+		assert.equal(flagLine(['occur', 'half-typed'], occur), null);
+		assert.equal(flagLine(['occur', '-q', '-t'], occur), null);
+		assert.equal(flagLine(['occur', '-q', '--time'], occur), null);
+		// No grammar: a value cannot be told from a positional, nor a value
+		// flag from a switch, so only a bare verb is taken (PR #219, kimi-k3).
+		assert.equal(flagLine(['occur', '-t', '1400'], undefined), null);
+		assert.equal(flagLine(['occur', '-t'], undefined), null);
+		assert.deepEqual(flagLine(['occur'], undefined), ['occur']);
 	});
 });
