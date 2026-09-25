@@ -139,7 +139,8 @@ pub enum BlockFill {
     MultiState(Vec<String>),
 }
 
-/// A point-in-time marker (occur dot), drawn in `fg_color` — the state's color.
+/// A point-in-time marker (occur dot), drawn in `fg_color`: the state's color for a
+/// point-switch, the field's own for a plain occur.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DayviewPoint {
     pub time_ms: i64,
