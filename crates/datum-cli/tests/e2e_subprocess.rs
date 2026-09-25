@@ -1098,3 +1098,47 @@ fn subprocess_backup_header_names_the_db_it_backed_up() {
     let default = tmp.path().join("home").join("datum.db");
     assert_eq!(source_db(&["db", "backup", "-"]), default.to_string_lossy());
 }
+
+/// da-d5cmj: `db backup --to DIR` keys the rotation in `index.json` by the
+/// db it opened, and its slot file restores like any other backup.
+#[test]
+fn subprocess_backup_rotation_indexes_the_db_it_backed_up() {
+    let tmp = tempfile::tempdir().expect("create tmpdir");
+    let dir = tmp.path().join("backups");
+    let dir = dir.to_str().unwrap();
+    let run = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env_remove("DATUM_DB")
+            .env("DATUM_HOME", tmp.path().join("home"))
+            .env("DATUM_CONFIG_HOME", tmp.path().join("config"))
+            .env("DATUM_COLOR", "0")
+            .args(args)
+            .output()
+            .expect("spawn datum");
+        assert_ok(&out, &format!("{args:?}"));
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap_or_default()
+    };
+
+    run(&["--db", "fitness", "occur", "pushups"]);
+    let took = run(&[
+        "--db", "fitness", "db", "backup", "--to", dir, "--every", "1h", "--json",
+    ]);
+    assert_eq!(took["slot"], 0);
+    let file = took["written"][0].as_str().expect("the slot's file");
+
+    let listed = run(&["db", "backup", "--list", dir, "--json"]);
+    assert_eq!(listed["backups"][0]["source_db"], "fitness");
+    assert_eq!(listed["backups"][0]["entry_count"], 1);
+    assert_eq!(listed["rotations"]["fitness"]["every_secs"], 3600);
+
+    let path = std::path::Path::new(dir).join(file);
+    let restored = run(&[
+        "--db",
+        "fresh",
+        "db",
+        "restore",
+        path.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(restored["inserted"], 1);
+}

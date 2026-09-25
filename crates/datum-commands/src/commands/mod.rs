@@ -7,6 +7,7 @@
 pub mod add;
 pub mod alias;
 pub mod backup_restore;
+pub mod backup_rotation;
 pub mod check;
 pub mod config;
 pub mod conflicts;

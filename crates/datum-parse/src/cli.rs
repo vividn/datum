@@ -240,6 +240,9 @@ pub enum DbCommand {
     Purge(DbPurgeArgs),
     /// `datum db backup` — dump live entries to JSONL or tar.gz.
     Backup(BackupArgs),
+    /// `datum db backup --to DIR | --list DIR | --plan` — the Tower of
+    /// Hanoi rotation (da-d5cmj).
+    BackupRotation(BackupRotationArgs),
     /// `datum db restore` — replay entries from a backup file.
     Restore(RestoreArgs),
     /// `datum db migrate` — schema migration runner (run/status/edit).
@@ -1014,6 +1017,31 @@ pub enum MigrateCommand {
 pub struct BackupArgs {
     pub path: String,
     pub overwrite: bool,
+}
+
+/// `datum db backup --to DIR --every D [--slots N]`, `--list DIR`, and
+/// `--plan --every D [--slots N] --span S` (da-d5cmj).
+#[derive(Debug)]
+pub struct BackupRotationArgs {
+    pub action: RotationAction,
+    /// `--every`, in seconds: the rotation's period.
+    pub every: i64,
+    /// `--slots N`: the cap on the rotating slots, slot 0 not counted.
+    /// `None` lets the slots grow as time passes.
+    pub slots: Option<u32>,
+    /// The output level the shared layer swept out of argv (da-qt6z).
+    pub show: Show,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum RotationAction {
+    /// Take one backup into the rotation kept in this directory.
+    To(String),
+    /// Read the directory's index: its backups, newest first.
+    List(String),
+    /// The slots a rotation holds after `span` seconds, and how far back
+    /// each reaches — the arithmetic, with no database or directory.
+    Plan { span: i64 },
 }
 
 #[derive(Debug)]

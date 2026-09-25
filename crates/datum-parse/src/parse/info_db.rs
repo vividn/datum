@@ -55,7 +55,7 @@ pub(crate) fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
     match *sub {
         "setup" => Ok(DbCommand::Setup(parse_setup_args(rest)?)),
         "purge" => Ok(DbCommand::Purge(parse_db_purge_args(rest)?)),
-        "backup" => Ok(DbCommand::Backup(parse_backup_args(rest)?)),
+        "backup" => parse_backup_cmd(rest),
         "restore" => Ok(DbCommand::Restore(parse_restore_args(rest)?)),
         "migrate" => Ok(DbCommand::Migrate(parse_migrate_cmd(rest)?)),
         "v2import" => Ok(DbCommand::V2import(parse_db_import(rest)?)),

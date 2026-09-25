@@ -44,7 +44,7 @@ const BACKUP_HEADER_TYPE: &str = "daydumb_backup";
 /// `entries.jsonl`). The restore side uses it to decide whether to migrate,
 /// refuse, or proceed optimistically.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct BackupHeader {
+pub(crate) struct BackupHeader {
     #[serde(rename = "type")]
     kind: String,
     /// DB schema version (from `datum_core::migrations::CURRENT_SCHEMA_VERSION`)
@@ -59,10 +59,29 @@ struct BackupHeader {
     entry_count: usize,
 }
 
+impl BackupHeader {
+    pub(crate) fn new(
+        db: &Db,
+        source_db: String,
+        backup_time: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Self> {
+        Ok(Self {
+            kind: BACKUP_HEADER_TYPE.to_string(),
+            schema_version: datum_core::migrations::CURRENT_SCHEMA_VERSION,
+            backup_time: backup_time.to_rfc3339(),
+            source_db,
+            entry_count: db.count_entries()?,
+        })
+    }
+}
+
 /// On-disk encoding of a backup, picked from the path extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BackupFormat {
     Jsonl,
+    /// `.jsonl.gz` (any other `.gz`): the JSONL form, gzipped — what a
+    /// rotation's slots hold (da-d5cmj).
+    JsonlGz,
     TarGz,
 }
 
@@ -73,6 +92,8 @@ fn detect_backup_format(path: &str) -> BackupFormat {
     let lower = path.to_lowercase();
     if lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
         BackupFormat::TarGz
+    } else if lower.ends_with(".gz") {
+        BackupFormat::JsonlGz
     } else {
         BackupFormat::Jsonl
     }
@@ -83,7 +104,7 @@ fn detect_backup_format(path: &str) -> BackupFormat {
 /// the command itself resolved it. Prefers the registry name, falls back to
 /// the resolved path, and finally to an empty string when neither can be
 /// recovered (e.g. in-memory DB in tests).
-fn derive_source_db(cli_db: Option<&str>) -> String {
+pub(crate) fn derive_source_db(cli_db: Option<&str>) -> String {
     match config::resolve_db(cli_db) {
         Ok(r) => r
             .name
@@ -107,13 +128,7 @@ pub fn cmd_backup(args: BackupArgs, cli_db: Option<&str>, db: &Db) -> Result<()>
         );
     }
 
-    let header = BackupHeader {
-        kind: BACKUP_HEADER_TYPE.to_string(),
-        schema_version: datum_core::migrations::CURRENT_SCHEMA_VERSION,
-        backup_time: chrono::Utc::now().to_rfc3339(),
-        source_db: derive_source_db(cli_db),
-        entry_count: db.count_entries()?,
-    };
+    let header = BackupHeader::new(db, derive_source_db(cli_db), chrono::Utc::now())?;
 
     if args.path == STDIO_PATH {
         // The document is the output, so there is no "✓ Backup" line.
@@ -122,14 +137,19 @@ pub fn cmd_backup(args: BackupArgs, cli_db: Option<&str>, db: &Db) -> Result<()>
     }
     match detect_backup_format(&args.path) {
         BackupFormat::TarGz => backup_targz(out_path, db, &header),
-        BackupFormat::Jsonl => backup_jsonl(out_path, db, &header),
+        BackupFormat::Jsonl => backup_jsonl(out_path, db, &header, false),
+        BackupFormat::JsonlGz => backup_jsonl(out_path, db, &header, true),
     }
 }
 
-fn backup_jsonl(path: &std::path::Path, db: &Db, header: &BackupHeader) -> Result<()> {
+fn backup_jsonl(path: &std::path::Path, db: &Db, header: &BackupHeader, gz: bool) -> Result<()> {
     let file = std::fs::File::create(path)
         .with_context(|| format!("Creating backup file: {}", path.display()))?;
-    let count = write_jsonl(file, db, header)?;
+    let count = if gz {
+        write_jsonl_gz(file, db, header)?
+    } else {
+        write_jsonl(file, db, header)?
+    };
     println!("✓ Backup: {} entries → {}", count, path.display());
     Ok(())
 }
@@ -150,6 +170,14 @@ fn write_jsonl(out: impl std::io::Write, db: &Db, header: &BackupHeader) -> Resu
     Ok(count)
 }
 
+/// [`write_jsonl`], gzipped, and on the disk before it returns.
+pub(crate) fn write_jsonl_gz(file: std::fs::File, db: &Db, header: &BackupHeader) -> Result<usize> {
+    let mut gz = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+    let count = write_jsonl(&mut gz, db, header)?;
+    gz.finish()?.sync_all()?;
+    Ok(count)
+}
+
 /// RAII guard that removes a temp file when dropped (even on panic/error paths).
 struct TempFileGuard(std::path::PathBuf);
 impl Drop for TempFileGuard {
@@ -162,7 +190,7 @@ impl Drop for TempFileGuard {
 /// Used for the backup staging file, which transiently holds the full
 /// plaintext dataset in a shared temp dir (da-903m). On non-Unix we fall
 /// back to a plain create — those platforms don't share `/tmp` the same way.
-fn create_private_file(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+pub(crate) fn create_private_file(path: &std::path::Path) -> std::io::Result<std::fs::File> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -481,6 +509,12 @@ fn restore_path(path: &str, db: &Db, mode: Mode) -> Result<RestoreReport> {
     match detect_backup_format(path) {
         BackupFormat::TarGz => restore_targz(path, db, mode),
         BackupFormat::Jsonl => restore_jsonl(path, db, mode),
+        BackupFormat::JsonlGz => {
+            let file =
+                std::fs::File::open(path).with_context(|| format!("Opening backup: {path}"))?;
+            let gz = flate2::read::GzDecoder::new(std::io::BufReader::new(file));
+            restore_from_reader(std::io::BufReader::new(gz), db, mode)
+        }
     }
 }
 

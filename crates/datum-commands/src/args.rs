@@ -31,15 +31,15 @@ use crate::render::{OutputArgs, Show};
 // ─── Re-exports of the intent shape ──────────────────────────────────────
 
 pub use pcli::{
-    AliasCommand, BackupArgs, CheckArgs, Cli, Command, ConfigCommand, ConfigShowArgs,
-    ConflictStrategyArg, ConflictsCommand, ConflictsKeep, ConflictsListArgs, ConflictsResolveArgs,
-    CountArgs, DayviewArgs, DbCommand, DbImportArgs, DbPurgeArgs, DeleteArgs, EditArgs, FieldsArgs,
-    GetArgs, GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, InfoArgs, KitCommand, KitExportArgs,
-    KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand, NowArgs, NowviewArgs, RedoArgs,
-    ReparseArgs, RestoreArgs, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, StatsArgs,
-    StatsPeriod, SyncAgentArgs, SyncArgs, SyncCommand, SyncConfigCommand, SyncInstallDaemonArgs,
-    SyncKeyCommand, SyncLoginArgs, SyncStatusArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs,
-    ViewArgs, ViewFormat, WhyArgs,
+    AliasCommand, BackupArgs, BackupRotationArgs, CheckArgs, Cli, Command, ConfigCommand,
+    ConfigShowArgs, ConflictStrategyArg, ConflictsCommand, ConflictsKeep, ConflictsListArgs,
+    ConflictsResolveArgs, CountArgs, DayviewArgs, DbCommand, DbImportArgs, DbPurgeArgs, DeleteArgs,
+    EditArgs, FieldsArgs, GetArgs, GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, InfoArgs,
+    KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand, NowArgs,
+    NowviewArgs, RedoArgs, ReparseArgs, RestoreArgs, RetimeArgs, RotationAction, SetupArgs,
+    SpecCommand, SpecSetArgs, StatsArgs, StatsPeriod, SyncAgentArgs, SyncArgs, SyncCommand,
+    SyncConfigCommand, SyncInstallDaemonArgs, SyncKeyCommand, SyncLoginArgs, SyncStatusArgs,
+    TailArgs, TrackArgs, UndoArgs, UpdateArgs, ViewArgs, ViewFormat, WhyArgs,
 };
 
 /// The `--show` level the shared layer swept out of argv (da-qt6z).

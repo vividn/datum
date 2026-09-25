@@ -354,6 +354,7 @@ fn apply_show(command: &mut Command, show: Show) {
         Command::Config(ConfigCommand::Show(a)) => a.show = show,
         Command::Alias(AliasCommand::List { show: s }) => *s = show,
         Command::Db(DbCommand::Restore(a)) => a.show = show,
+        Command::Db(DbCommand::BackupRotation(a)) => a.show = show,
 
         // `shows_for` allowed nothing but `default` for the rest, so
         // there is no level left to carry.
@@ -447,6 +448,62 @@ mod tests {
         let cli = parse_argv(&argv(&["--db", "finance", "get", "xyz"])).unwrap();
         assert!(matches!(cli.command, Command::Get(_)));
         assert_eq!(cli.db.as_deref(), Some("finance"));
+    }
+
+    #[test]
+    fn db_backup_rotation_flags() {
+        // da-d5cmj: --to / --list / --plan are the rotation; a bare path the file.
+        let rot = |words: &[&str]| match parse_argv(&argv(words)).map(|c| c.command) {
+            Ok(Command::Db(DbCommand::BackupRotation(a))) => a,
+            other => panic!("expected a rotation for {words:?}, got {other:?}"),
+        };
+        let a = rot(&[
+            "db",
+            "backup",
+            "--to",
+            "bk",
+            "--every=1h",
+            "--slots",
+            "8",
+            "--json",
+        ]);
+        assert_eq!(a.action, RotationAction::To("bk".into()));
+        assert_eq!((a.every, a.slots, a.show), (3600, Some(8), Show::Json));
+        assert_eq!(
+            rot(&["db", "backup", "--list", "bk"]).action,
+            RotationAction::List("bk".into())
+        );
+        let a = rot(&["db", "backup", "--plan", "--every", "30m", "--span", "2d"]);
+        assert_eq!(
+            (a.action, a.every, a.slots),
+            (RotationAction::Plan { span: 172_800 }, 1800, None)
+        );
+        assert!(matches!(
+            parse_argv(&argv(&["db", "backup", "out.jsonl.gz"]))
+                .unwrap()
+                .command,
+            Command::Db(DbCommand::Backup(_))
+        ));
+        for bad in [
+            &["db", "backup", "--to", "bk"][..],
+            &[
+                "db", "backup", "--to", "bk", "--every", "1h", "--slots", "0",
+            ],
+            &[
+                "db", "backup", "--to", "bk", "--list", "bk", "--every", "1h",
+            ],
+            &["db", "backup", "--plan", "--every", "1h"],
+            &["db", "backup", "out.jsonl", "--every", "1h"],
+            &["db", "backup", "out.jsonl", "--to", "bk", "--every", "1h"],
+            &["db", "backup", "--list", "bk", "--slots", "8"],
+            &["db", "backup", "--list", "bk", "--every", "1h"],
+            &["db", "backup", "--list", "bk", "--span", "2d"],
+            &[
+                "db", "backup", "--to", "bk", "--every", "1h", "--span", "2d",
+            ],
+        ] {
+            assert!(parse_argv(&argv(bad)).is_err(), "{bad:?} should be refused");
+        }
     }
 
     #[test]
