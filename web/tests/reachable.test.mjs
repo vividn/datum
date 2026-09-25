@@ -34,8 +34,9 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { atEachScreen, seedLines, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
-import { dragBar, fold } from './support/bar.mjs';
+import { fold, unfold } from './support/bar.mjs';
 import { chooser, inRoom } from './support/layout.mjs';
+import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
@@ -92,24 +93,6 @@ function boxOf(page, selector) {
 		const { top, bottom } = el.getBoundingClientRect();
 		return { top, bottom, screen: document.documentElement.clientHeight };
 	}, selector);
-}
-
-/** Wait until `selector` exists and its height has stopped changing. */
-async function atRest(page, selector) {
-	await page.locator(selector).waitFor();
-	await page.waitForFunction(
-		(s) => {
-			const el = document.querySelector(s);
-			if (!el) return false;
-			const now = el.getBoundingClientRect().height;
-			const was = window.__atRest;
-			window.__atRest = now;
-			return now > 0 && Math.abs(now - was) < 0.5;
-		},
-		selector,
-		{ polling: 'raf' }
-	);
-	await page.evaluate(() => delete window.__atRest);
 }
 
 async function assertOnScreen(page, selector, what) {
@@ -268,17 +251,14 @@ describe('on a phone-sized screen', () => {
 					`the arrow is ${box.x}–${box.x + box.width} on a ${width}px screen`
 				);
 
-				await dragBar(page, -40);
 				// The bar GLIDES (da-ckw3, $lib/log.ts): the section is in the
 				// DOM on the first frame and grows for ~220ms after it, so what
-				// has to be on the screen is where it comes to REST — measured a
-				// frame too early it is a 0px box that would pass, or, on the
-				// frame before that, no box at all.
-				await atRest(page, '.prompt-bar .section.output');
+				// has to be on the screen is where it comes to REST — which is
+				// what `unfold` waits for.
+				await unfold(page);
 				await assertOnScreen(page, '.prompt-bar .section.output', 'the output it shows');
 				// Folded again, so the next screen starts where this one did.
-				await dragBar(page, 40);
-				await page.locator('.prompt-bar .section.output').waitFor({ state: 'detached' });
+				await fold(page);
 			});
 		});
 	});
@@ -431,7 +411,7 @@ describe('by keyboard', () => {
 	}
 
 	test("the custom pane's ✎ and ▶ are reachable", async () => {
-		await plain.room('keys', async ({ page }, room) => {
+		await plain.room('keys', async ({ page, clock }, room) => {
 			await page.locator(`section[data-pane="${inRoom(room, 'repl')}"] .titlebar button.title`).focus();
 			await tabTo(page, 'button.edit');
 			await page.keyboard.press('Enter');
@@ -445,10 +425,18 @@ describe('by keyboard', () => {
 				assert.equal(await el.getAttribute('aria-label'), name);
 				assert.equal(await el.getAttribute('type'), 'button');
 			}
+			// A minute on, or the second `occur tea` lands on the first one's
+			// instant under the held clock (da-ydao) and there is still one.
+			await clock.forward(60_000);
 			await tabTo(page, 'button.play');
 			await page.keyboard.press('Enter');
-			await page.waitForFunction(
-				async () => (await window.datum.entries(500)).filter((e) => e.field === 'tea').length === 2
+			// From node, one read every 100ms: `entries` is a whole `db
+			// backup` through the CLI. Asked as an async predicate on every
+			// animation frame — the suite's only one — it failed once under
+			// load with "Resulting promise was garbage collected" (da-31464).
+			await until(
+				() => page.evaluate(async () => (await window.datum.entries(500)).filter((e) => e.field === 'tea').length),
+				(n) => n === 2
 			);
 		});
 	});

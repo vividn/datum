@@ -13,61 +13,87 @@
 // a drag a little way up opens to the notch, a drag a little way down shuts.
 // A test about the FLING needs a real touch instead (`swipe` in ./layout.mjs
 // goes through CDP, which does take real time).
+//
+// ONE STAMP FOR THE WHOLE GESTURE (da-31464). An event is stamped when it
+// is constructed, so "no time between them" held only while the loop ran
+// inside `MIN_MS` ($lib/grip.ts, 8ms). On a starved thread the dozen
+// dispatches — each a `moveTo` and a store write — took longer than that,
+// the release read 40px over ~10ms as a 4 px/ms throw, and a drag meant to
+// open the output flung the bar to the ceiling: every pane cut (da-1x6ro),
+// a fold 40px down that left it open (da-jegw1), a log left at 120px
+// (da-7nkdb). So every event carries its pointerdown's stamp, and the
+// speed is zero by construction rather than by the box being quick.
 
 const BAR = '.prompt-bar';
 
-/** Drag the bar by `dy` px (negative opens), as a finger without a flick. */
-export function dragBar(page, dy, steps = 10) {
+/** Drag `selector` by `dy` px (negative opens), as a finger without a flick. */
+export function dragOn(page, selector, dy, steps = 10) {
 	return page.evaluate(
-		([dy, steps]) => {
-			const el = document.querySelector('.prompt-bar');
+		([selector, dy, steps]) => {
+			const el = document.querySelector(selector);
 			const r = el.getBoundingClientRect();
 			const x = r.left + r.width / 2;
 			const y = r.top + r.height / 2;
-			const send = (type, at) =>
-				el.dispatchEvent(
-					new PointerEvent(type, {
-						pointerId: 3,
-						pointerType: 'touch',
-						isPrimary: true,
-						clientX: x,
-						clientY: at,
-						bubbles: true,
-						cancelable: true
-					})
-				);
+			const stamp = performance.now();
+			const send = (type, at) => {
+				const event = new PointerEvent(type, {
+					pointerId: 3,
+					pointerType: 'touch',
+					isPrimary: true,
+					clientX: x,
+					clientY: at,
+					bubbles: true,
+					cancelable: true
+				});
+				Object.defineProperty(event, 'timeStamp', { value: stamp });
+				el.dispatchEvent(event);
+			};
 			send('pointerdown', y);
 			for (let i = 1; i <= steps; i += 1) send('pointermove', y + (dy * i) / steps);
 			send('pointerup', y + dy);
 		},
-		[dy, steps]
+		[selector, dy, steps]
 	);
 }
 
-/** Wait until the bar has come to rest: two reads of its height the same. */
-export const barSettled = (page) =>
-	page.evaluate(
-		() =>
-			new Promise((done) => {
-				let last = -1;
-				let same = 0;
-				const tick = () => {
-					const now = Math.round(document.querySelector('.prompt-bar').getBoundingClientRect().height);
-					same = now === last ? same + 1 : 0;
-					last = now;
-					if (same > 4) return done();
-					requestAnimationFrame(tick);
-				};
-				tick();
-			})
+/** The bar itself, dragged so. */
+export const dragBar = (page, dy, steps) => dragOn(page, BAR, dy, steps);
+
+/**
+ * Wait until the bar RESTS where a drag with no speed in it puts it: at the
+ * notch — the output whole and no log — or shut.
+ *
+ * A place and not a pause (da-31464). This used to wait for five frames of
+ * the bar's own height holding still, which a bar gliding up into the LOG
+ * also does — the log grows under the bar, not in it — so a fling passed
+ * the wait, and the panes a test measured next were cut or not by how fast
+ * its own round trips were (da-1x6ro). A bar that went anywhere else now
+ * times out here, at the drag that sent it.
+ */
+const rests = async (page, open) => {
+	await page.waitForFunction(
+		(open) => {
+			const style = getComputedStyle(document.querySelector('.shell'));
+			const px = (name) => parseFloat(style.getPropertyValue(name)) || 0;
+			const out = document.querySelector('.prompt-bar .section.output');
+			const want = open ? out?.getBoundingClientRect().height : 0;
+			const there = want !== undefined && px('--log-height') < 0.5 && Math.abs(px('--shown') - want) < 1;
+			// For five frames running: a glide on its way up into the log
+			// passes the notch for a frame, and one read would call it there.
+			window.__rests = there ? (window.__rests ?? 0) + 1 : 0;
+			return window.__rests > 4;
+		},
+		open,
+		{ polling: 'raf' }
 	);
+	await page.evaluate(() => delete window.__rests);
+};
 
 /** The output section showing, whatever this screen's default is. */
 export async function unfold(page) {
 	if (await page.locator(`${BAR} .section.output`).count()) return;
 	await dragBar(page, -40);
-	await page.locator(`${BAR} .section.output`).waitFor();
-	await barSettled(page);
+	await rests(page, true);
 }
 
 /** And away again. */
@@ -75,7 +101,7 @@ export async function fold(page) {
 	if (!(await page.locator(`${BAR} .section.output`).count())) return;
 	await dragBar(page, 40);
 	await page.locator(`${BAR} .section.output`).waitFor({ state: 'detached' });
-	await barSettled(page);
+	await rests(page, false);
 }
 
 /**

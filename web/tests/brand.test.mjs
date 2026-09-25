@@ -395,6 +395,12 @@ describe('the logo', () => {
 				await seed(app, 'work', 'standup');
 				const items = await openMenu(page);
 				await until(items, (all) => all.length === 4);
+				// And a rendering step after the fourth arrived: `place` runs
+				// from a ResizeObserver, which the browser delivers in the next
+				// frame's rendering, so a read straight after the items land can
+				// catch the menu grown and not yet moved — which a loaded lane
+				// did, at 648 of 640 (da-31464).
+				await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
 
 				const box = await page.locator(MENU).boundingBox();
 				const screen = await page.evaluate(() => ({

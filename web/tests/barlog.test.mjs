@@ -36,6 +36,11 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { swipe } from './support/layout.mjs';
+// Synthesised rather than driven through `page.touchscreen`, because what is
+// asserted is the POINTER contract the bar listens on — down, a run of
+// moves, up — and a test that sent two events could not tell a threshold
+// that works from one that never fires. With one stamp, so no speed.
+import { dragOn as dragBy } from './support/bar.mjs';
 
 before(startApp);
 after(stopApp);
@@ -132,41 +137,6 @@ async function wheelOver(page, selector, dy) {
 	const box = await page.locator(selector).first().boundingBox();
 	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 	await page.mouse.wheel(0, dy);
-}
-
-/**
- * Drag `selector` by `dy` (negative is upward), as a finger does.
- *
- * Synthesised rather than driven through `page.touchscreen`, because what
- * is being asserted is the POINTER contract the bar listens on — down,
- * a run of moves, up — and a test that sent two events could not tell a
- * threshold that works from one that never fires.
- */
-function dragBy(page, selector, dy, steps = 10) {
-	return page.evaluate(
-		([selector, dy, steps]) => {
-			const el = document.querySelector(selector);
-			const r = el.getBoundingClientRect();
-			const x = r.left + r.width / 2;
-			const y = r.top + r.height / 2;
-			const send = (type, at) =>
-				el.dispatchEvent(
-					new PointerEvent(type, {
-						pointerId: 3,
-						pointerType: 'touch',
-						isPrimary: true,
-						clientX: x,
-						clientY: at,
-						bubbles: true,
-						cancelable: true
-					})
-				);
-			send('pointerdown', y);
-			for (let i = 1; i <= steps; i += 1) send('pointermove', y + (dy * i) / steps);
-			send('pointerup', y + dy);
-		},
-		[selector, dy, steps]
-	);
 }
 
 describe('the bar is the way in', () => {

@@ -1185,17 +1185,16 @@ describe('a layout saved with the day height the defaults used to write', () => 
 			// its owner `undefined` and this would test the other rule.
 			assert.notEqual(follows, 85, 'the box derives 85, so nothing here is held');
 
-			// Down onto 85 by the handle's own step, which is how a reader
-			// gets there: 5 a press, and both clamps are multiples of 5.
-			// The DERIVED height has to be reachable in those steps too, and
-			// it is only because the box is far past the ceiling and lands on
-			// 240 (da-r0ydu, canary kimi-k3 on #73). Said out loud, because
-			// if chrome ever grew enough to derive 237 the loop would stop at
-			// 82 and the wait below would burn its 30s timeout instead of
-			// telling anyone what was wrong.
-			assert.equal((follows - 85) % 5, 0, `the handle's 5px step cannot reach 85 from ${follows}`);
-			await grip.focus();
-			for (let i = 0; i < Math.ceil((follows - 85) / 5); i += 1) await page.keyboard.press('ArrowDown');
+			// Down onto 85 by DRAGGING the handle, which is how a reader
+			// gets there. One drop is one re-render of the stack; the
+			// keyboard's 5px step took thirty-one of them and was a quarter
+			// of this file's time (da-31464).
+			const at = await grip.boundingBox();
+			const [x, y] = [at.x + at.width / 2, at.y + at.height / 2];
+			await page.mouse.move(x, y);
+			await page.mouse.down();
+			await page.mouse.move(x, y + follows - 85, { steps: 4 });
+			await page.mouse.up();
 			await until(() => drawn(page), (n) => n === 85);
 			assert.deepEqual(await dotted(page), [], 'the session alone dirtied the layout');
 
