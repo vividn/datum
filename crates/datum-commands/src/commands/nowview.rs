@@ -23,8 +23,8 @@ use datum_core::db::Db;
 use datum_core::entry::Entry;
 use datum_core::field_spec::FieldSpec;
 use datum_core::shape::{
-    dot_bg_uses_following_state, dot_fg_uses_state, is_block_verb, is_switching_verb,
-    is_unrendered_switch_value, opens_secondary_switch_region, render_shape, RenderShape,
+    dot_fg_uses_state, is_block_verb, is_switching_verb, is_unrendered_switch_value,
+    opens_secondary_switch_region, render_shape, RenderShape,
 };
 use datum_core::time::Zone;
 use datum_layout::dayview::{compute_dayview, DayviewBlock, DayviewFieldInput, Orientation};
@@ -45,7 +45,7 @@ use crate::commands::field_visuals::{
     occur_time_ms, occur_time_ms_opt, punch_holes, push_switch_region, render_field_visuals,
     rgb_to_hex, state_label, switch_region_end_ms, title_marks,
 };
-use crate::render::colors::{field_rgb, md5_rgb, state_value_colors, state_value_rgb, Rgb};
+use crate::render::colors::{field_rgb, md5_rgb, state_value_colors, state_value_rgb};
 use crate::render::term_layout;
 
 /// The SVG's height when `--height` is not given: the band's cross extent,
@@ -543,7 +543,6 @@ pub(crate) fn build_dayview_fields(
             day_start_ms,
             day_end_ms,
             &switch_region_ends,
-            db,
         );
         blocks.extend(entry_blocks);
         title_marks(
@@ -673,7 +672,6 @@ pub(crate) fn build_fields(
             field,
             spec.as_ref(),
             &switch_region_ends,
-            db,
         );
         blocks.extend(entry_blocks);
 
@@ -804,7 +802,6 @@ fn render_field_visuals_terminal(
     field: &str,
     spec: Option<&FieldSpec>,
     switch_region_ends: &[i64],
-    db: &Db,
 ) -> (Vec<NowviewBlock>, Vec<NowviewPoint>) {
     let mut blocks: Vec<NowviewBlock> = Vec::new();
     let mut points: Vec<NowviewPoint> = Vec::new();
@@ -859,22 +856,9 @@ fn render_field_visuals_terminal(
                     )
                     .unwrap_or_else(|| md5_rgb(field))
                 };
-                let bg = if dot_bg_uses_following_state(verb) {
-                    entry
-                        .following_state
-                        .as_ref()
-                        .and_then(|v| state_value_rgb(v, field, spec))
-                        .unwrap_or_else(|| field_rgb(field, spec))
-                } else {
-                    match db.state_at(field, occur_dt.utc).unwrap_or(None) {
-                        Some(v) => state_value_rgb(&v, field, spec).unwrap_or(Rgb::BLACK),
-                        None => Rgb::BLACK,
-                    }
-                };
                 points.push(NowviewPoint {
                     time_ms: occur_ms,
                     fg_color: rgb_to_hex(fg),
-                    bg_color: rgb_to_hex(bg),
                     state_label: state_label(entry.state.as_ref()),
                     glyph: dot_glyph(entry, spec),
                 });
@@ -1230,7 +1214,6 @@ mod tests {
     #[test]
     fn terminal_block_renders_the_duration_before_its_occur_time() {
         use chrono::TimeZone;
-        let db = Db::open_in_memory().unwrap();
         let occur = Utc.with_ymd_and_hms(2026, 4, 27, 12, 30, 0).unwrap();
         let entries = vec![stub_entry(
             "lunch",
@@ -1245,7 +1228,7 @@ mod tests {
             .unwrap()
             .timestamp_millis();
         let ends = switch_region_end_ms(&entries, now_ms);
-        let (blocks, points) = render_field_visuals_terminal(&entries, "lunch", None, &ends, &db);
+        let (blocks, points) = render_field_visuals_terminal(&entries, "lunch", None, &ends);
         assert!(points.is_empty());
         assert_eq!(blocks.len(), 1);
         assert_eq!(
@@ -1264,7 +1247,6 @@ mod tests {
         use crate::commands::field_visuals::render_field_visuals;
         use chrono::TimeZone;
 
-        let db = Db::open_in_memory().unwrap();
         let day_start = Utc
             .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
             .unwrap()
@@ -1300,10 +1282,9 @@ mod tests {
             ),
         ];
         let ends = switch_region_end_ms(&entries, day_end);
-        let (terminal, points) = render_field_visuals_terminal(&entries, "work", None, &ends, &db);
+        let (terminal, points) = render_field_visuals_terminal(&entries, "work", None, &ends);
         assert!(points.is_empty());
-        let (dayview, _) =
-            render_field_visuals(&entries, "work", None, day_start, day_end, &ends, &db);
+        let (dayview, _) = render_field_visuals(&entries, "work", None, day_start, day_end, &ends);
 
         let terminal_spans: Vec<(i64, i64)> =
             terminal.iter().map(|b| (b.start_ms, b.end_ms)).collect();
@@ -1326,7 +1307,6 @@ mod tests {
     #[test]
     fn terminal_point_switch_emits_dot_and_following_region() {
         use chrono::TimeZone;
-        let db = Db::open_in_memory().unwrap();
         let occur = Utc.with_ymd_and_hms(2026, 4, 27, 10, 0, 0).unwrap();
         let entries = vec![stub_entry(
             "task",
@@ -1341,9 +1321,8 @@ mod tests {
             .unwrap()
             .timestamp_millis();
         let ends = switch_region_end_ms(&entries, now_ms);
-        let (blocks, points) = render_field_visuals_terminal(&entries, "task", None, &ends, &db);
+        let (blocks, points) = render_field_visuals_terminal(&entries, "task", None, &ends);
         assert_eq!(points.len(), 1);
-        assert_ne!(points[0].fg_color, points[0].bg_color);
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].start_ms, occur.timestamp_millis());
         assert_eq!(blocks[0].state_label.as_deref(), Some("review"));

@@ -443,7 +443,6 @@ mod tests {
                 points: vec![DayviewPoint {
                     time_ms: now_ms - 10 * 60 * 1000,
                     fg_color: "#ff0000".into(),
-                    bg_color: "#000000".into(),
                     state_label: None,
                     id: None,
                     title: None,
@@ -539,7 +538,6 @@ mod tests {
                     points: vec![DayviewPoint {
                         time_ms: now_ms - 5 * 60 * 1000,
                         fg_color: "#ff0000".into(),
-                        bg_color: "#000000".into(),
                         state_label: None,
                         id: None,
                         title: None,

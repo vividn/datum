@@ -659,7 +659,6 @@ fn dayview_scene_single_block() -> DayviewLayoutResult {
             points: vec![DayviewPoint {
                 time_ms: DAY_START_MS + 14 * HOUR_MS + 30 * MIN_MS,
                 fg_color: "#cc4488".into(),
-                bg_color: "#000000".into(),
                 state_label: Some("coffee".into()),
                 id: None,
                 title: None,
@@ -819,7 +818,6 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
             points: vec![DayviewPoint {
                 time_ms: end_ms - 10 * MIN_MS,
                 fg_color: "#cc4488".into(),
-                bg_color: "#000000".into(),
                 state_label: Some("coffee".into()),
                 id: None,
                 title: None,

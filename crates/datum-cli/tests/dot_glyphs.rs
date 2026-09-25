@@ -47,17 +47,41 @@ impl Env {
     }
 
     /// Each dot of `field` in the dayview of yesterday and today, oldest
-    /// first, as the mark it draws: its glyph, or `●` for the inner circle.
+    /// first, as the mark it draws: its glyph, or `●` for the circle.
     /// Two days, because the entries are minutes old and just after midnight
     /// some of them are yesterday's.
+    ///
+    /// da-qietq: every dot is its symbol alone — the disc under it stays
+    /// the mark but is never painted, and a plain dot's circle is the
+    /// disc's full size.
     fn svg_marks(&self, field: &str) -> Vec<String> {
         let svg = self.run(&["dayview", "-n", "2"]);
         let attr = format!(r#"data-field="{field}""#);
+        let r = |tag: &str| {
+            tag.split(r#" r=""#)
+                .nth(1)
+                .unwrap()
+                .split('"')
+                .next()
+                .unwrap()
+                .to_string()
+        };
         svg.split(r#"<circle class="point-bg""#)
             .skip(1)
             .filter(|dot| dot.split('>').next().unwrap().contains(&attr))
             .map(|dot| {
+                let disc = dot.split('>').next().unwrap();
+                assert!(
+                    disc.contains(r#"fill-opacity="0""#),
+                    "a painted disc: {disc}"
+                );
+                // The split cuts each piece at the next dot's disc, so a
+                // piece holds this dot's own symbol and no other.
+                assert_eq!(dot.matches(r#"class="point-fg""#).count(), 1, "{dot}");
                 let fg = dot.split(r#"class="point-fg""#).nth(1).unwrap();
+                if dot.contains(r#"<circle class="point-fg""#) {
+                    assert_eq!(r(fg), r(disc), "a shrunken dot: {dot}");
+                }
                 match dot.contains(r#"<text class="point-fg""#) {
                     true => fg
                         .split('>')

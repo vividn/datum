@@ -271,17 +271,6 @@ pub fn opens_secondary_switch_region(verb: Verb) -> bool {
     }
 }
 
-/// True for verbs whose primary-dot bg color is sourced from
-/// `entry.following_state` (the post-occur state). [`Verb::PointSwitch`]
-/// uses this; plain [`Verb::Point`] falls back to ambient state at
-/// occur_time via the field's prior-row lookup.
-pub fn dot_bg_uses_following_state(verb: Verb) -> bool {
-    match verb {
-        Verb::PointSwitch => true,
-        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::Point => false,
-    }
-}
-
 /// True for verbs that HAND THE FIELD BACK at their trailing edge instead
 /// of deciding its state past that edge.
 ///
@@ -532,10 +521,8 @@ mod tests {
 
     #[test]
     fn dot_color_helpers_only_for_point_switch() {
-        assert!(dot_bg_uses_following_state(Verb::PointSwitch));
         assert!(dot_fg_uses_state(Verb::PointSwitch));
         for v in [Verb::Point, Verb::Switch, Verb::Block, Verb::BlockSwitch] {
-            assert!(!dot_bg_uses_following_state(v));
             assert!(!dot_fg_uses_state(v));
         }
     }

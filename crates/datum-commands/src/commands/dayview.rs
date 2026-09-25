@@ -498,7 +498,6 @@ fn build_day_fields(
             day_start_ms,
             day_end_ms,
             &switch_region_ends,
-            db,
         );
         title_marks(
             &field,

@@ -139,13 +139,11 @@ pub enum BlockFill {
     MultiState(Vec<String>),
 }
 
-/// A point-in-time marker (occur dot). `fg_color` is the state's color,
-/// `bg_color` is the underlying ongoing-state color (per `da-k5z` rule).
+/// A point-in-time marker (occur dot), drawn in `fg_color` — the state's color.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DayviewPoint {
     pub time_ms: i64,
     pub fg_color: String,
-    pub bg_color: String,
     pub state_label: Option<String>,
     /// As [`DayviewBlock::id`] — a dot's own entry.
     #[serde(default)]
@@ -153,7 +151,7 @@ pub struct DayviewPoint {
     /// As [`DayviewBlock::title`].
     #[serde(default)]
     pub title: Option<String>,
-    /// The character drawn in place of the dot's inner circle (da-gzowt),
+    /// The character drawn in place of the dot's circle (da-gzowt),
     /// resolved by the caller from the field's spec. `None` is the circle.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glyph: Option<String>,
@@ -357,7 +355,6 @@ pub struct RenderedPoint {
     pub cross_pos: f64,
     pub r: f64,
     pub fg_color: String,
-    pub bg_color: String,
     pub state_label: Option<String>,
     /// As [`DayviewBlock::id`].
     #[serde(default)]
@@ -620,7 +617,6 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                     cross_pos: c,
                     r,
                     fg_color: p.fg_color.clone(),
-                    bg_color: p.bg_color.clone(),
                     state_label: p.state_label.clone(),
                     id: p.id.clone(),
                     time_ms: p.time_ms,
@@ -923,7 +919,6 @@ mod tests {
                     points: vec![DayviewPoint {
                         time_ms: DAY_START + 6 * HOUR,
                         fg_color: "#ff0000".into(),
-                        bg_color: "#000000".into(),
                         state_label: None,
                         id: None,
                         title: None,

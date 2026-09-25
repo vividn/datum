@@ -478,11 +478,11 @@ describe('the visual views', () => {
 				new RegExp(`<rect[^>]*fill="${colorOf('happy')}"`),
 				`no band for the switch: ${drawn.stdout}`
 			);
-			// A dot: a circle in the field's colour, over black — nothing
-			// was prevailing under it.
+			// A dot: the DRAWN circle in the field's colour — the disc under
+			// it carries the same fill but is never painted (da-qietq).
 			assert.match(
 				drawn.stdout,
-				new RegExp(`<circle[^>]*fill="${colorOf('coffee')}"`),
+				new RegExp(`<circle class="point-fg"[^>]*fill="${colorOf('coffee')}"`),
 				`no dot for the occur: ${drawn.stdout}`
 			);
 			// And nothing at all for the terminating switch — `sleep` has

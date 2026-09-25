@@ -1013,7 +1013,6 @@ mod tests {
             points: vec![NowviewPoint {
                 time_ms: now - 30 * 60_000,
                 fg_color: "#00ff00".into(),
-                bg_color: "#000000".into(),
                 state_label: None,
                 glyph: None,
             }],
@@ -1039,7 +1038,6 @@ mod tests {
                 points: vec![NowviewPoint {
                     time_ms: now - 30 * 60_000,
                     fg_color: "#00ff00".into(),
-                    bg_color: "#000000".into(),
                     state_label: None,
                     glyph: glyph.map(str::to_string),
                 }],

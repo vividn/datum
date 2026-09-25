@@ -64,6 +64,20 @@ describe('hovering the day strip', () => {
 		});
 	});
 
+	// da-qietq: the disc the pointer lands on is never painted — the dot
+	// is its symbol alone, drawn the disc's full size, so no ring shows.
+	test('a dot is its coloured symbol alone, with no ring around it', async () => {
+		await withDay(async ({ page }) => {
+			const { opacity, disc, drawn } = await page.locator(DOT).evaluate((dot) => ({
+				opacity: getComputedStyle(dot).fillOpacity,
+				disc: dot.getAttribute('r'),
+				drawn: dot.nextElementSibling?.matches('circle.point-fg') && dot.nextElementSibling.getAttribute('r')
+			}));
+			assert.equal(opacity, '0', 'the disc behind the dot is painted');
+			assert.equal(drawn, disc, 'the dot is smaller than its disc');
+		});
+	});
+
 	test('a block shows the time under the pointer, then goes away off it', async () => {
 		await withDay(async ({ page }) => {
 			const block = page.locator(BLOCK);

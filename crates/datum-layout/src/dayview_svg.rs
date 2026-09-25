@@ -13,7 +13,7 @@
 //! - Per-day stack with date labels on the side adjacent to the data area
 //!   (left for horizontal, top for vertical — see bead da-tbe).
 //! - Per-field band rendering: solid blocks, multi-state diagonal stripes,
-//!   point markers (fg + bg circles per da-k5z).
+//!   point markers, each its coloured symbol alone (da-qietq).
 //! - Yellow dashed "now" line on today's row only.
 //! - Warning icon next to date labels for days with conflicts.
 //! - Time-axis strip on the side opposite the date labels (bottom for
@@ -328,26 +328,18 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
             for p in &field.points {
                 let (cx, cy) = to_xy(layout, &geom, p.time_pos, day.day_offset + p.cross_pos);
                 let outer_r = p.r;
-                let inner_r = (p.r * 0.6).max(0.5);
-                // The outer circle is the mark; the inner one lets the
-                // pointer through to it. A glyph over a disc of its own
-                // colour would vanish into it, so there the disc stays
-                // the mark but is not painted (da-gzowt).
-                // An icon (da-45wgz) is its own picture: no disc behind it.
+                // The disc is the mark — the pointer target, the title, the
+                // data attributes — but it is never painted: a dot is its
+                // symbol alone, in its own colour (da-qietq). The symbol
+                // lets the pointer through to it.
                 let icon = (field.icon.as_deref()).filter(|svg| p.icon && svg.starts_with("<svg"));
-                let unpainted = icon.is_some() || (p.glyph.is_some() && p.bg_color == p.fg_color);
                 let _ = write!(
                     &mut out,
-                    r#"<circle class="point-bg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}"{o}{close}"#,
+                    r#"<circle class="point-bg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" fill-opacity="0"{close}"#,
                     cx = cx,
                     cy = cy,
                     r = outer_r,
-                    c = p.bg_color,
-                    o = if unpainted {
-                        r#" fill-opacity="0""#
-                    } else {
-                        ""
-                    },
+                    c = p.fg_color,
                     close = mark_close(
                         "circle",
                         &field.field,
@@ -378,17 +370,16 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                     );
                     continue;
                 }
-                // da-gzowt: a glyph stands where the inner circle would,
-                // centred on the same point, in the same colour, over the
-                // same bg disc. Sized to the outer disc so it reads as the
-                // mark rather than as a label on it.
+                // da-gzowt: a glyph stands where the circle would, centred
+                // on the same point, in the same colour. Sized to the disc
+                // so it reads as the mark rather than as a label on it.
                 let _ = match p.glyph.as_deref() {
                     None => write!(
                         &mut out,
                         r#"<circle class="point-fg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" pointer-events="none"/>"#,
                         cx = cx,
                         cy = cy,
-                        r = inner_r,
+                        r = outer_r,
                         c = p.fg_color,
                     ),
                     Some(g) => write!(
@@ -993,7 +984,6 @@ mod tests {
                     points: vec![DayviewPoint {
                         time_ms: DAY_START + 8 * HOUR,
                         fg_color: "#ff0000".into(),
-                        bg_color: "#000000".into(),
                         state_label: None,
                         id: None,
                         title: None,
@@ -1184,6 +1174,34 @@ mod tests {
             .expect("a dot");
         let dot = &dot[..dot.find('>').expect("tag close")];
         assert!(!dot.contains("data-id"), "{dot}");
+    }
+
+    /// da-qietq: a dot is its symbol alone. The disc stays the mark but is
+    /// never painted, and a plain dot's circle is the disc's full size.
+    #[test]
+    fn a_dot_paints_no_disc_and_its_circle_is_full_size() {
+        let svg = render_dayview_svg(&compute_dayview(&one_day_with_block(
+            false,
+            Orientation::Horizontal,
+        )));
+        let dot = svg
+            .split(r#"<circle class="point-bg""#)
+            .nth(1)
+            .expect("a dot");
+        let (disc, fg) = dot.split_once('>').expect("tag close");
+        assert!(disc.contains(r#"fill-opacity="0""#), "{disc}");
+        let r = |tag: &str| {
+            tag.split(r#" r=""#)
+                .nth(1)
+                .unwrap()
+                .split('"')
+                .next()
+                .unwrap()
+                .to_string()
+        };
+        assert!(fg.starts_with(r##"<circle class="point-fg""##), "{fg}");
+        assert!(fg.contains(r##"fill="#ff0000""##), "{fg}");
+        assert_eq!(r(fg), r(disc));
     }
 
     /// da-6hg6v: the now-chunk is the open block of the state a field is

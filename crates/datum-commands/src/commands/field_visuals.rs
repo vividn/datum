@@ -18,13 +18,13 @@
 //! it exists once in `commands/nowview.rs` and stays there.
 
 use chrono::DateTime;
-use datum_core::db::{Db, IGNORED_STATE_VALUE};
+use datum_core::db::IGNORED_STATE_VALUE;
 use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
 use datum_core::shape::is_off_state;
 use datum_core::shape::{
-    dot_bg_uses_following_state, dot_fg_uses_state, is_block_verb, is_switching_verb,
-    is_unrendered_switch_value, opens_secondary_switch_region, render_shape, RenderShape,
+    dot_fg_uses_state, is_block_verb, is_switching_verb, is_unrendered_switch_value,
+    opens_secondary_switch_region, render_shape, RenderShape,
 };
 use datum_core::time::Zone;
 use datum_layout::dayview::{BlockFill, DayviewBlock, DayviewPoint};
@@ -144,10 +144,8 @@ pub(crate) fn leading_edge_ms(entry: &Entry, occur_ms: i64) -> i64 {
 /// - **Block-switch**: same block, AND open a new switch region at
 ///   `occur` — where the block ends — colored `following_state` until
 ///   the next switching event.
-/// - **Point-switch**: a dot at `occur` (fg = state, bg = following_state),
-///   AND open a new switch region at `occur` colored `following_state`.
-/// - **Point**: a dot at `occur` (fg = field color, bg = state at instant
-///   from prior-row lookup).
+/// - **Point-switch**: a dot at `occur` coloured by `state`, AND open a new switch region at `occur` colored `following_state`.
+/// - **Point**: a dot at `occur` in the field's color.
 /// - **Switch**: a colored region from `occur` to the next switching
 ///   event, fill = `state`.
 ///
@@ -160,7 +158,6 @@ pub(crate) fn render_field_visuals(
     day_start_ms: i64,
     day_end_ms: i64,
     switch_region_ends: &[i64],
-    db: &Db,
 ) -> (Vec<DayviewBlock>, Vec<DayviewPoint>) {
     let mut blocks: Vec<DayviewBlock> = Vec::new();
     let mut points: Vec<DayviewPoint> = Vec::new();
@@ -177,7 +174,7 @@ pub(crate) fn render_field_visuals(
 
         let verb = canonical_verb(entry);
         // Primary visual dispatch flows from the shape table; verb-specific
-        // data sourcing (block fill vs switch region, dot fg/bg origin) is
+        // data sourcing (block fill vs switch region, a dot's colour) is
         // resolved via verb-keyed predicate helpers in `datum_core::shape`.
         // Adding a new verb requires updating the helpers, not this match.
         let shape = render_shape(verb, entry.shape(), &entry.state);
@@ -228,22 +225,9 @@ pub(crate) fn render_field_visuals(
                     } else {
                         field_rgb(field, spec)
                     };
-                    let bg = if dot_bg_uses_following_state(verb) {
-                        entry
-                            .following_state
-                            .as_ref()
-                            .and_then(|v| state_value_rgb(v, field, spec))
-                            .unwrap_or_else(|| field_rgb(field, spec))
-                    } else {
-                        match db.state_at(field, occur_dt.utc).unwrap_or(None) {
-                            Some(v) => state_value_rgb(&v, field, spec).unwrap_or(Rgb::BLACK),
-                            None => Rgb::BLACK,
-                        }
-                    };
                     points.push(DayviewPoint {
                         time_ms: occur_ms,
                         fg_color: rgb_to_hex(fg),
-                        bg_color: rgb_to_hex(bg),
                         state_label: mark_state(entry.state.as_ref()),
                         id: Some(entry.hid.to_string()),
                         title: None,
@@ -690,13 +674,12 @@ mod tests {
     // ─── da-5ns.5: verb-driven render tests ────────────────────────────
     //
     // These construct Entry structs directly and call the pure render
-    // function. State_at queries are satisfied by an empty in-memory Db.
+    // function — no database is involved.
 
     /// Block at [occur − dur, occur] — da-zwct: `occur_time` is the
     /// TRAILING edge and the duration is how long it lasted up to it.
     #[test]
     fn block_renders_the_duration_before_its_occur_time() {
-        let db = Db::open_in_memory().unwrap();
         let occur = Utc.with_ymd_and_hms(2026, 4, 27, 12, 30, 0).unwrap();
         let entries = vec![stub_entry(
             "lunch",
@@ -716,7 +699,7 @@ mod tests {
             .timestamp_millis();
         let ends = switch_region_end_ms(&entries, day_end);
         let (blocks, points) =
-            render_field_visuals(&entries, "lunch", None, day_start, day_end, &ends, &db);
+            render_field_visuals(&entries, "lunch", None, day_start, day_end, &ends);
         assert!(points.is_empty());
         assert_eq!(blocks.len(), 1);
         assert_eq!(
@@ -733,7 +716,6 @@ mod tests {
     /// `dayview.rs::tests::blocks_clip_to_day_window`).
     #[test]
     fn block_crossing_day_boundary_emits_full_interval() {
-        let db = Db::open_in_memory().unwrap();
         // 2-hour block ENDING at 01:00 on day-2 → it began at 23:00 on
         // day-1 and reaches back over the boundary (da-zwct).
         let occur = Utc.with_ymd_and_hms(2026, 4, 28, 1, 0, 0).unwrap();
@@ -755,7 +737,7 @@ mod tests {
             .timestamp_millis();
         let ends = switch_region_end_ms(&entries, day_end);
         let (blocks, _points) =
-            render_field_visuals(&entries, "sleep", None, day_start, day_end, &ends, &db);
+            render_field_visuals(&entries, "sleep", None, day_start, day_end, &ends);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
             blocks[0].start_ms,
@@ -772,7 +754,6 @@ mod tests {
     /// distinct colors, the two emitted regions must hold distinct fills.
     #[test]
     fn block_switch_emits_block_plus_following_region_with_distinct_colors() {
-        let db = Db::open_in_memory().unwrap();
         let occur = Utc.with_ymd_and_hms(2026, 4, 27, 9, 0, 0).unwrap();
         let entries = vec![stub_entry(
             "mood",
@@ -792,7 +773,7 @@ mod tests {
             .timestamp_millis();
         let ends = switch_region_end_ms(&entries, day_end);
         let (blocks, points) =
-            render_field_visuals(&entries, "mood", None, day_start, day_end, &ends, &db);
+            render_field_visuals(&entries, "mood", None, day_start, day_end, &ends);
         assert!(points.is_empty());
         assert_eq!(blocks.len(), 2);
         // Block: [occur − 1h, occur] colored "groggy".
@@ -819,7 +800,6 @@ mod tests {
     /// region opening at occur colored by `following_state`.
     #[test]
     fn point_switch_emits_dot_plus_following_region() {
-        let db = Db::open_in_memory().unwrap();
         let occur = Utc.with_ymd_and_hms(2026, 4, 27, 14, 30, 0).unwrap();
         let entries = vec![stub_entry(
             "task",
@@ -839,13 +819,10 @@ mod tests {
             .timestamp_millis();
         let ends = switch_region_end_ms(&entries, day_end);
         let (blocks, points) =
-            render_field_visuals(&entries, "task", None, day_start, day_end, &ends, &db);
+            render_field_visuals(&entries, "task", None, day_start, day_end, &ends);
         assert_eq!(points.len(), 1);
         assert_eq!(points[0].time_ms, occur.timestamp_millis());
         assert_eq!(points[0].state_label.as_deref(), Some("commit"));
-        // fg = state color, bg = following_state color → must differ for
-        // visibly distinct labels.
-        assert_ne!(points[0].fg_color, points[0].bg_color);
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].start_ms, occur.timestamp_millis());
         assert_eq!(blocks[0].end_ms, day_end);
@@ -856,7 +833,6 @@ mod tests {
     /// region at the switch's occur_time, not at day_end.
     #[test]
     fn block_switch_following_region_ends_at_next_switch() {
-        let db = Db::open_in_memory().unwrap();
         let bs_occur = Utc.with_ymd_and_hms(2026, 4, 27, 9, 0, 0).unwrap();
         let switch_occur = Utc.with_ymd_and_hms(2026, 4, 27, 14, 0, 0).unwrap();
         let entries = vec![
@@ -887,7 +863,7 @@ mod tests {
             .timestamp_millis();
         let ends = switch_region_end_ms(&entries, day_end);
         let (blocks, _points) =
-            render_field_visuals(&entries, "mood", None, day_start, day_end, &ends, &db);
+            render_field_visuals(&entries, "mood", None, day_start, day_end, &ends);
         // 3 blocks expected: the "groggy" block 8:30→9:00, the "focused"
         // region from its trailing edge 9:00→14:00, and the "tired" switch
         // region from 14:00→day_end.
@@ -912,7 +888,6 @@ mod tests {
     /// `-t +30` puts a row beyond it.
     #[test]
     fn block_switch_outlasting_the_window_emits_no_following_band() {
-        let db = Db::open_in_memory().unwrap();
         // Block-switch at 23:00 — two hours of "groggy" reaching back to
         // 21:00 — in a strip that stops at 22:00.
         let bs_occur = Utc.with_ymd_and_hms(2026, 4, 27, 23, 0, 0).unwrap();
@@ -934,7 +909,7 @@ mod tests {
             .timestamp_millis();
         let ends = switch_region_end_ms(&entries, window_end);
         let (blocks, _points) =
-            render_field_visuals(&entries, "mood", None, day_start, window_end, &ends, &db);
+            render_field_visuals(&entries, "mood", None, day_start, window_end, &ends);
         // The "groggy" block alone — no "focused" band at all.
         assert_eq!(blocks.len(), 1);
         assert!(
@@ -983,7 +958,6 @@ mod tests {
     }
 
     fn render_work(entries: &[Entry]) -> Vec<DayviewBlock> {
-        let db = Db::open_in_memory().unwrap();
         let day_start = Utc
             .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
             .unwrap()
@@ -994,7 +968,7 @@ mod tests {
             .timestamp_millis();
         let ends = switch_region_end_ms(entries, day_end);
         let (blocks, points) =
-            render_field_visuals(entries, "work", None, day_start, day_end, &ends, &db);
+            render_field_visuals(entries, "work", None, day_start, day_end, &ends);
         assert!(points.is_empty());
         blocks
     }
@@ -1104,7 +1078,6 @@ mod tests {
     /// null / IGNORED) emits the leading block but no following region.
     #[test]
     fn block_switch_with_unrendered_following_state_emits_only_leading_block() {
-        let db = Db::open_in_memory().unwrap();
         let occur = Utc.with_ymd_and_hms(2026, 4, 27, 12, 0, 0).unwrap();
         let entries = vec![stub_entry(
             "mood",
@@ -1124,7 +1097,7 @@ mod tests {
             .timestamp_millis();
         let ends = switch_region_end_ms(&entries, day_end);
         let (blocks, points) =
-            render_field_visuals(&entries, "mood", None, day_start, day_end, &ends, &db);
+            render_field_visuals(&entries, "mood", None, day_start, day_end, &ends);
         assert!(points.is_empty());
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].state_label.as_deref(), Some("hungry"));

@@ -208,7 +208,6 @@ fn day_fields(start_ms: i64, end_ms: i64) -> Vec<DayviewFieldInput> {
             points: vec![DayviewPoint {
                 time_ms: start_ms + span / 3,
                 fg_color: "#cc7722".into(),
-                bg_color: "#000000".into(),
                 state_label: None,
                 id: None,
                 title: None,

@@ -54,9 +54,6 @@ pub struct NowviewPoint {
     pub time_ms: i64,
     /// Foreground fill — typically the state's color.
     pub fg_color: String,
-    /// Background ring/halo color — typically the underlying ongoing-state
-    /// color at this instant (per the `da-k5z` fg/bg rule).
-    pub bg_color: String,
     pub state_label: Option<String>,
     /// As [`crate::dayview::DayviewPoint::glyph`]. The band draws it only
     /// when it is one column wide — see [`crate::nowview_terminal`].
