@@ -28,10 +28,10 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { inkOver, lookOf, pressArgv, shapeFor, buttonsFor } from '../src/lib/fields.ts';
+import { inkOver, lookOf, pressArgv, shapeFor, buttonsFor, bands, fieldRows } from '../src/lib/fields.ts';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, GREEN, ORANGE, PURPLE, type, untilFieldStyle } from './support/fields.mjs';
-import { listed } from './support/rows.mjs';
+import { listed, rowsOf } from './support/rows.mjs';
 
 const spec = (field, rest = {}) => ({ field, ...rest });
 
@@ -62,24 +62,82 @@ describe('the logic', () => {
 			[{ field: 'b', state: true }, { field: 'c', state: 'x' }]
 		);
 		assert.deepEqual(widgets.map((w) => [w.field, w.shape.kind, w.ignored, w.current, w.glyph]), [
+			['a', 'state', false, undefined, undefined],
 			['b', 'state', true, true, undefined],
 			['c', 'states', false, 'x', undefined],
-			['a', 'state', false, undefined, undefined],
 			['d', 'point', false, undefined, '☕']
 		]);
 	});
 
-	test('the fields on now first, then each as high up the pictures as it is drawn (da-vu7pi)', () => {
-		// vividn: «sorted by their spec y, so those that appear higher on the
-		// nowview are also higher in the list … Active start/switch fields
-		// should appear on the far left». `y` is `fields --json`'s, 0 at
-		// the top; equals keep the CLI's alphabetical order.
+	test('each as high up the pictures as it is drawn, and a field on now moves nowhere (da-xtkcp)', () => {
+		// `y` is `fields --json`'s, 0 at the top; equals keep the CLI's
+		// alphabetical order. The 09-22 rule put the fields on now first,
+		// and that is what moved `mood` in front of `coffee` under a long
+		// press (da-8i1kn): an active button already shows its state.
 		const row = (field, y) => ({ field, spec: null, states: [], color: '#111111', state_colors: {}, ignored: false, y });
 		const widgets = buttonsFor(
 			[row('a', 0.9), row('b', 0.1), row('c', 0.5), row('d', 0.7), row('e', 0.1), row('f', 0.3)],
 			[{ field: 'd', state: true }, { field: 'f', state: 'x' }]
 		);
-		assert.deepEqual(widgets.map((w) => w.field), ['f', 'd', 'b', 'e', 'c', 'a']);
+		assert.deepEqual(widgets.map((w) => w.field), ['b', 'e', 'f', 'c', 'd', 'a']);
+	});
+
+	test('bands: as many runs as rows, of equal count, none empty', () => {
+		const seven = [...'abcdefg'];
+		assert.deepEqual(bands(seven, 3), [['a', 'b'], ['c', 'd'], ['e', 'f', 'g']]);
+		assert.deepEqual(bands(seven, 1), [seven]);
+		assert.deepEqual(bands(['a', 'b'], 3), [['a'], ['b']]);
+		assert.deepEqual(bands([], 3), []);
+	});
+
+	describe('fieldRows: rows by y, most used first along each (da-xtkcp)', () => {
+		const at = (field, y) => ({ field, y });
+		/** Six fields, two of them clustered low — the case fixed ranges of `y` get wrong. */
+		const six = [at('a', 0.05), at('b', 0.1), at('c', 0.15), at('d', 0.2), at('e', 0.9), at('f', 0.95)];
+		const stood = (frecency) => new Map(six.map(({ field, y }) => [field, { y, frecency: frecency[field] ?? 0 }]));
+		const names = (rows) => rows.map((row) => row.map((b) => b.field));
+
+		test('equal-count bands of y, top to bottom; each band by frecency, left to right', () => {
+			const frecency = { a: 1, b: 3, c: 0.5, d: 2, e: 0, f: 4 };
+			assert.deepEqual(names(fieldRows(six, 3, stood(frecency))), [
+				['b', 'a'],
+				['d', 'c'],
+				['f', 'e']
+			]);
+			// Equals keep the order of y.
+			assert.deepEqual(names(fieldRows(six, 2, stood({}))), [
+				['a', 'b', 'c'],
+				['d', 'e', 'f']
+			]);
+		});
+
+		test('it reads the standings, not the fields as they are now', () => {
+			// `a` has since moved to the bottom and been logged a hundred
+			// times: nothing moves until the next sort.
+			const now = [at('a', 0.99), ...six.slice(1)];
+			assert.deepEqual(names(fieldRows(now, 3, stood({ b: 1 }))), [
+				['b', 'a'],
+				['c', 'd'],
+				['e', 'f']
+			]);
+		});
+
+		test('a field new since the sort moves nothing: it ends the row its y falls in', () => {
+			const withNew = [...six, at('g', 0.16), at('h', 0.01)];
+			assert.deepEqual(names(fieldRows(withNew, 3, stood({}))), [
+				['a', 'b', 'h'],
+				['c', 'd', 'g'],
+				['e', 'f']
+			]);
+		});
+
+		test('before any sort, the rows are the bands of y', () => {
+			assert.deepEqual(names(fieldRows(six, 3, new Map())), [
+				['a', 'b'],
+				['c', 'd'],
+				['e', 'f']
+			]);
+		});
 	});
 
 	test('`active` is whether `now` named the field — not whether the state has a colour', () => {
@@ -202,7 +260,10 @@ describe('in the app', () => {
 			for (const line of FIXTURE) await type(page, line);
 			await page.locator('.bar [data-field="untracked"]').waitFor();
 
-			const order = (await listed(page.locator('.bar'), 'button.track, [data-field]')).map((el) => el.field ?? 'Track +');
+			// Read row by row: Track + starts the top row, and with nothing
+			// sorted yet (the seed is typed after the load) the rows are bands
+			// of y, so top to bottom and left to right is the order of y.
+			const order = (await rowsOf(page.locator('.bar'), 'button.track, [data-field]', (el) => el.field ?? 'Track +')).flat();
 			// Nothing is on, so the bar is the pictures' order top to bottom —
 			// the `y` `fields --json` resolves (da-vu7pi) — with no
 			// tracked/untracked partition and so no dim group after it (da-d08c).

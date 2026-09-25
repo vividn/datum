@@ -788,16 +788,28 @@ const STATS_FLAGS: &[FlagSpec] = &[
 ];
 
 // `--json` is documented once, in the shared OUTPUT block (da-qt6z).
-const FIELDS_FLAGS: &[FlagSpec] = &[FlagSpec {
-    short: Some('A'),
-    long: "include-ignored",
-    takes_value: false,
-    value_hint: None,
-    value_optional: false,
-    summary: "List ignored fields too (same as `--show all`)",
-    long_description: None,
-    left_override: None,
-}];
+const FIELDS_FLAGS: &[FlagSpec] = &[
+    FlagSpec {
+        short: Some('A'),
+        long: "include-ignored",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "List ignored fields too (same as `--show all`)",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "sort",
+        takes_value: true,
+        value_hint: Some("frecency"),
+        value_optional: false,
+        summary: "Most used first, recent use weighing more (halving per week)",
+        long_description: None,
+        left_override: None,
+    },
+];
 
 const IDS_FLAGS: &[FlagSpec] = &[
     FlagSpec {
@@ -1754,7 +1766,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         category: Category::ViewsSync,
         summary: "list every field: its spec and the states it was logged with",
         long_description: None,
-        usage: &["datum fields [--include-ignored | -A]"],
+        usage: &["datum fields [--include-ignored | -A] [--sort frecency]"],
         args: NO_ARGS,
         flags: FIELDS_FLAGS,
         shared_flags: None,

@@ -153,8 +153,8 @@ const rangePills = (from, to, day = hhmm) => [
 	`time:end_time=${day(to)}`
 ];
 
-/** Every field button the bar draws, in the order it draws them. */
-const shownFields = async (page) => (await listed(page.locator(BAR), '[data-field]')).map((el) => el.field);
+/** Which field buttons the bar draws — WHICH, since where each stands is fieldsrows.test.mjs's. */
+const shownFields = async (page) => (await listed(page.locator(BAR), '[data-field]')).map((el) => el.field).sort();
 
 /** Wait until the bar reads exactly `want`, and say what it read if it never does. */
 const saysFields = (page, want) =>
@@ -596,9 +596,7 @@ describe('a strip range is a DURATION to the fields widget (da-qu16)', () => {
 				await app.reload();
 				await page.locator(`${BAR} [data-field="sleep"]`).waitFor();
 				await app.idle();
-				// The fields on now first — sleep and mood, as high up as each
-				// is drawn — then coffee (da-vu7pi).
-				await saysFields(page, ['sleep', 'mood', 'coffee']);
+				await saysFields(page, ['coffee', 'mood', 'sleep']);
 
 				const g = await geom(page);
 				await drag(page, spot(g, msAt(g, 11)), spot(g, msAt(g, 12, 30)));
@@ -610,10 +608,10 @@ describe('a strip range is a DURATION to the fields widget (da-qu16)', () => {
 				// `hasDuration` asks the pill's KIND, and the strip's
 				// `start_time=` wears the same one the nowview's `dur=` does
 				// — so the rule da-qu16 wrote needs no second clause for it.
-				await saysFields(page, ['sleep', 'mood']);
+				await saysFields(page, ['mood', 'sleep']);
 
 				await page.locator('.prompt-bar .pill.dur button.remove').last().click();
-				await saysFields(page, ['sleep', 'mood', 'coffee']);
+				await saysFields(page, ['coffee', 'mood', 'sleep']);
 			},
 			{ clock: NOW, ...DESKTOP }
 		);

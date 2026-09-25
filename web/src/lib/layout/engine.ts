@@ -25,7 +25,13 @@ import { record } from '$lib/replStore.js';
 import { run, type RunResult } from '$lib/run.js';
 import { verbAsked } from '$lib/track.js';
 import { openTrack } from '$lib/specModal.js';
-import { buttonsFor, type FieldButton, type FieldListing, type NowActive } from '$lib/fields.js';
+import {
+	buttonsFor,
+	type FieldButton,
+	type FieldListing,
+	type NowActive,
+	type Standings
+} from '$lib/fields.js';
 
 /** Bumped after every command; the panes re-run theirs when it changes. */
 export const epoch = writable(0);
@@ -35,6 +41,36 @@ export const ready = writable(false);
 
 /** The fields widget's entries — `datum fields --json` and `now --json`, rebuilt on every beat. */
 export const fields = writable<FieldButton[]>([]);
+
+/**
+ * Where each field stood at the last sort (da-xtkcp) — which row of the
+ * fields bar it is in and where along it. Written by `resort` alone.
+ */
+export const standings = writable<Standings>(new Map());
+
+/**
+ * Sort the fields bar again: on load, and when the app comes back to the
+ * foreground (vividn, 2026-09-24: a stable order, re-sorted at quiet
+ * moments, not while in use). `fields --sort frecency` is asked here and
+ * only here, so the refresh every command sets off never pays for the read
+ * — and never moves a button.
+ */
+export async function resort(): Promise<void> {
+	const sorted = await run(['fields', '--json', '--sort', 'frecency']);
+	try {
+		if (sorted.code === 0)
+			standings.set(
+				new Map(
+					(JSON.parse(sorted.stdout) as FieldListing[]).map(({ field, y, frecency }) => [
+						field,
+						{ y, frecency: frecency ?? 0 }
+					])
+				)
+			);
+	} catch {
+		// The bar keeps the order it had.
+	}
+}
 
 export interface ReplLike {
 	runArgv(argv: string[], line?: string, stdin?: string): Promise<RunResult>;
@@ -67,7 +103,10 @@ export async function boot(): Promise<void> {
 		// No grammar: every command stays active.
 	}
 	ready.set(true);
-	await refresh();
+	await Promise.all([refresh(), resort()]);
+	document.addEventListener('visibilitychange', () => {
+		if (!document.hidden) void resort();
+	});
 }
 
 /**

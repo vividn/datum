@@ -169,7 +169,8 @@ export function packed(read, what) {
  * them (da-vu7pi). `ButtonRows` deals item `i` into row `i % rows`, so the
  * DOM reads a row at a time; this deals the items back — the first of
  * every row, then the second of every row — and reads each match as its
- * `data-*` names, its text and its tag.
+ * `data-*` names, its text and its tag. Not the fields bar's ORDER, which
+ * is not dealt by index (da-xtkcp): read that with `rowsOf` below.
  */
 export const listed = (locator, selector) =>
 	locator.evaluate(
@@ -184,3 +185,22 @@ export const listed = (locator, selector) =>
 		},
 		selector
 	);
+
+/**
+ * The `selector` elements of a button bar ROW BY ROW, top to bottom, each
+ * left to right, as names — for a bar whose rows MEAN something, which the
+ * fields bar's do (da-xtkcp: a row is a band of height, and its order is
+ * how much each field is used). `name` reads one element.
+ */
+export const rowsOf = (locator, selector, name = (el) => el.field) =>
+	locator
+		.evaluate(
+			(bar, selector) =>
+				[...bar.querySelectorAll('.lane')].map((lane) =>
+					[...lane.children]
+						.flatMap((item) => (item.matches(selector) ? [item] : [...item.querySelectorAll(selector)]))
+						.map((el) => ({ ...el.dataset, text: el.textContent.trim(), tag: el.tagName }))
+				),
+			selector
+		)
+		.then((rows) => rows.map((row) => row.map(name)));

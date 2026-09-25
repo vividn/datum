@@ -196,8 +196,8 @@ pub(crate) fn parse_stats_args(tail: &[&str]) -> Result<StatsArgs> {
     Ok(out)
 }
 
-/// `fields [--include-ignored | -A]` — no positionals: it lists every
-/// field.
+/// `fields [--include-ignored | -A] [--sort frecency]` — no positionals:
+/// it lists every field.
 ///
 /// `--json` and `--show` are gone from here: da-qt6z folded the output
 /// family into the shared layer, which sweeps them out of `tail` before
@@ -210,6 +210,7 @@ pub(crate) fn parse_fields_args(tail: &[&str]) -> Result<FieldsArgs> {
     struct FieldsParsing {
         output: OutputArgs,
         include_ignored: bool,
+        by_frecency: bool,
     }
     let mut registry: Vec<LiftedSpec<FieldsParsing>> = Vec::new();
     for spec in input::output_args::FLAG_SPECS {
@@ -218,6 +219,15 @@ pub(crate) fn parse_fields_args(tail: &[&str]) -> Result<FieldsArgs> {
     registry.push(local_switch(None, Some("include-ignored"), |p| {
         p.include_ignored = true;
         Ok(())
+    }));
+    registry.push(local_value(None, Some("sort"), |p, v| match v {
+        "frecency" => {
+            p.by_frecency = true;
+            Ok(())
+        }
+        other => Err(ParseError::InvalidArg(format!(
+            "fields --sort takes `frecency`, not '{other}'"
+        ))),
     }));
 
     let mut composed = FieldsParsing::default();
@@ -230,6 +240,7 @@ pub(crate) fn parse_fields_args(tail: &[&str]) -> Result<FieldsArgs> {
     Ok(FieldsArgs {
         show: Show::default(),
         include_ignored: composed.include_ignored || composed.output.show_all,
+        by_frecency: composed.by_frecency,
     })
 }
 

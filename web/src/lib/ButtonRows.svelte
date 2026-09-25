@@ -16,8 +16,9 @@
 	each row is its own flex line: every button at its own width, no button
 	padded out to the widest in a column, as the grid this replaced did.
 	The first few items still start the rows, so the widget's order is the
-	reader's. TAB ORDER follows the drawing — along the first row, then
-	the second.
+	reader's. A widget whose rows MEAN something passes its own `arrange`
+	instead — the fields widget's rows are bands of height (da-xtkcp). TAB
+	ORDER follows the drawing — along the first row, then the second.
 
 	A widget hands in its `items`, a `key` for each, and a default slot
 	that draws one (`let:item`); its buttons keep its own classes, which
@@ -30,6 +31,8 @@
 	export let items: T[];
 	export let key: (item: T) => unknown;
 	export let axis: Axis = 'x';
+	/** How `items` are laid into so many rows; dealt by index unless the widget says otherwise. */
+	export let arrange: (items: T[], rows: number) => T[][] = lanesOf;
 	/** The scroller itself, for a widget that has to put a scroll back. */
 	export let bar: HTMLElement | undefined = undefined;
 
@@ -38,7 +41,7 @@
 
 	onMount(() => watchRows(bar!, probe, (n) => (rows = n), axis));
 
-	$: lanes = lanesOf(items, rows);
+	$: lanes = arrange(items, rows);
 </script>
 
 <!-- The measuring stick: the widget's own button, laid out and invisible,

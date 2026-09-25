@@ -34,7 +34,7 @@
 	import { hasDuration } from '$lib/commands.js';
 	import type { SwitchLabel } from '$lib/fields.js';
 	import { lanes } from '$lib/lanes.js';
-	import { fields, pressWithPills, ready } from './engine.js';
+	import { fields, pressWithPills, ready, standings } from './engine.js';
 
 	export let switchLabel: SwitchLabel = 'field';
 	/**
@@ -57,6 +57,7 @@
 		verb={$pending}
 		duration={hasDuration($pills)}
 		rank={$lanes}
+		standings={$standings}
 		{switchLabel}
 		{showIgnored}
 		on:run={(e) => run(e.detail)}

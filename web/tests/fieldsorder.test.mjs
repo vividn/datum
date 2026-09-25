@@ -28,7 +28,7 @@ import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import { PHONE } from './support/layout.mjs';
 import { until } from './support/until.mjs';
-import { listed } from './support/rows.mjs';
+import { rowsOf } from './support/rows.mjs';
 
 before(startApp);
 after(stopApp);
@@ -50,11 +50,11 @@ const SEED = [
 ];
 
 /**
- * The usual order, and what the bar returns to (da-vu7pi): the fields on
- * now — sleep and mood — first, then the rest, each as high up the
- * pictures as the CLI draws it (the `y` of `fields --json`).
+ * The usual order, and what the bar returns to, read row by row (da-xtkcp):
+ * each used once, so every row is in the order of the `y` the CLI draws
+ * it at (`fields --json`) — and a field on now moves nowhere.
  */
-const USUAL = ['sleep', 'mood', 'coffee', 'run'];
+const USUAL = ['coffee', 'run', 'sleep', 'mood'];
 
 const BAR = 'section.pane[data-title="fields"] .bar';
 const NOWVIEW = 'section.pane[data-title="nowview"]';
@@ -78,8 +78,12 @@ async function withFields(fn, options = {}) {
 	);
 }
 
-/** Every field button the bar draws, in the order it draws them. */
-const shownFields = async (page) => (await listed(page.locator(BAR), '[data-field]')).map((el) => el.field);
+/**
+ * Every field button the bar draws, row by row. A press's fields head the
+ * rows and every other keeps its own (`rowsUnder`), so one promoted field
+ * reads as that field, then the usual order without it.
+ */
+const shownFields = async (page) => (await rowsOf(page.locator(BAR), '[data-field]')).flat();
 
 /** Wait until the bar reads exactly `want`, and say what it read if it never does. */
 const saysFields = (page, want) =>
@@ -148,16 +152,17 @@ describe('a click on the picture puts the fields drawn there first', () => {
 				assert.deepEqual(seen.promoted, ['run'], 'the promoted field says so');
 				assert.deepEqual(seen.rule, ['run'], 'and the hairline falls after it');
 
-				// The bar deals its buttons into its rows by index (da-vu7pi),
-				// so the first — a promoted field — starts the top row.
+				// The fields a press reached head the rows, from the top
+				// (da-xtkcp), so the one promoted field is the first on the top
+				// row as DRAWN — after Track +, which starts it.
 				const rows = await page.$eval(BAR, (bar) => Number(bar.dataset.rows));
 				assert.equal(rows, 2, 'this screen was chosen for a two-row bar');
 				const boxes = await page.$$eval(`${BAR} [data-field]`, (els) =>
 					els.map((el) => ({ field: el.dataset.field, ...el.getBoundingClientRect().toJSON() }))
 				);
-				const left = Math.min(...boxes.map((b) => b.left));
-				const column = boxes.filter((b) => b.left <= left + 1).sort((a, b) => a.top - b.top);
-				assert.equal(column[0].field, 'run', `the left column reads ${JSON.stringify(column)}`);
+				const top = Math.min(...boxes.map((b) => b.top));
+				const row = boxes.filter((b) => b.top <= top + 1).sort((a, b) => a.left - b.left);
+				assert.equal(row[0].field, 'run', `the top row reads ${JSON.stringify(row)}`);
 
 				// The ✕ on the selection's pill. Clearing the selection clears
 				// the lanes it published, and the bar is as it was.
@@ -222,7 +227,7 @@ describe('a duration on the bar leaves the fields it can be spent on', () => {
 			await dragARange(page);
 			// The blocks — a `start` field and a `switch`. `coffee`, a point,
 			// has no length to be given.
-			await saysFields(page, ['sleep', 'mood', 'run']);
+			await saysFields(page, ['run', 'sleep', 'mood']);
 
 			await page.locator('.prompt-bar .pill.dur button.remove').last().click();
 			await saysFields(page, USUAL);

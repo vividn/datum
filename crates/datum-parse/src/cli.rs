@@ -875,6 +875,9 @@ pub struct FieldsArgs {
     /// unaffected — it has always carried every field with its `ignored`
     /// flag, and the widget bar reads that.
     pub include_ignored: bool,
+    /// `--sort frecency`: most used first, recent use weighing more, and
+    /// each row carries its `frecency` (da-xtkcp). Otherwise alphabetical.
+    pub by_frecency: bool,
 }
 
 #[derive(Debug)]

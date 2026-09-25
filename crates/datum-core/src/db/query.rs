@@ -1,7 +1,7 @@
 //! Aggregations and consistency checks: counts, group-bys, distinct-fields,
 //! id projections, time-order checks. Pure read paths.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 use rusqlite::params;
@@ -11,6 +11,9 @@ use crate::ids::Hid;
 
 use super::types::{filtered_where, time_expr_endbound, GroupColumn, TimeOrderIssue, LIVE_SQL};
 use super::Db;
+
+/// How far back [`Db::field_frecency`] reads, in weeks.
+pub const FRECENCY_HORIZON_WEEKS: i64 = 26;
 
 impl Db {
     /// Count of live (non-tombstoned) entries in the store.
@@ -198,6 +201,43 @@ impl Db {
             Ok((field, serde_json::from_str(&state)?))
         })
         .collect()
+    }
+
+    /// How much each field is used, recent use weighing more (da-xtkcp):
+    /// every live entry counts `0.5^(age / 7 days)`, aged by its
+    /// `create_time` in whole days as of `now`, summed per field. A
+    /// declaration is not a use.
+    ///
+    /// Only rows touched in the last [`FRECENCY_HORIZON_WEEKS`] are read —
+    /// an older one weighs under `0.5^26`, nothing — and that is a seek on
+    /// `entries_modify_time_ms` (a row is modified no earlier than it is
+    /// created), not a walk of the whole history. A field unused for that
+    /// long is absent, which is a score of 0.
+    pub fn field_frecency(&self, now: DateTime<Utc>) -> Result<HashMap<String, f64>> {
+        let horizon = now - chrono::Duration::weeks(FRECENCY_HORIZON_WEEKS);
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT field, max(0, CAST(julianday(?1) - julianday(create_time) AS INTEGER)) AS age, \
+                    COUNT(*) \
+             FROM entries WHERE modify_time_ms >= ?2 AND {LIVE_SQL} AND {} \
+             GROUP BY field, age",
+            crate::track::NOT_A_DECLARATION_SQL
+        ))?;
+        let rows = stmt.query_map(
+            params![now.to_rfc3339(), horizon.timestamp_millis()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
+        )?;
+        let mut out = HashMap::new();
+        for row in rows {
+            let (field, age, n) = row.map_err(DatumError::Db)?;
+            *out.entry(field).or_insert(0.0) += n as f64 * 0.5f64.powf(age as f64 / 7.0);
+        }
+        Ok(out)
     }
 }
 

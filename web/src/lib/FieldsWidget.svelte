@@ -4,9 +4,11 @@
 
 	Track + comes first: the way into the whole app, so it is there on an
 	empty database too. Then every field that is not ignored (`ignored` in
-	`datum fields --json`, da-d08c), spec or no spec — the ones on now
-	first, then as high up the pictures as they are drawn (`buttonsFor`,
-	da-vu7pi) — each shaped by its kind and painted by what it is
+	`datum fields --json`, da-d08c), spec or no spec — in ROWS by how high
+	up the pictures they are drawn, top to bottom, and most used first
+	along each row (`fieldRows`, da-xtkcp), an order taken on load and on
+	coming back to the foreground and never while in use — each shaped by
+	its kind and painted by what it is
 	now (`lookOf` in fields.ts): a point is an empty pill with its occur
 	mark beside the name; a block is a
 	rectangle, filled while it is on; a switch is a rectangle filled with
@@ -35,12 +37,12 @@
 
 	A SELECTION talks to it too (da-qu16). A `dur=` pill on the bar leaves
 	the fields a length can be spent on — the blocks — and composes with a
-	pending verb, both filters applying. And a press on a PICTURE brings
-	the fields drawn at that height to the front (`rank`, $lib/lanes.ts):
-	that one only ORDERS, so everything is still there, with a hairline
-	after the promoted few to say why the bar changed. Nothing moves under
-	a finger: while a pointer is over the bar the order is held until it
-	leaves.
+	pending verb, both filters applying. And a press on a PICTURE gives
+	the fields drawn near that height the rows to themselves, at the head
+	of them (`rowsUnder`, $lib/lanes.ts): that one only ORDERS, so
+	everything is still there, with a hairline after the promoted few to
+	say why the bar changed. Nothing moves under a finger: while a pointer
+	is over the bar the order is held until it leaves.
 
 	Track + opens that modal (da-94q1, $lib/track.ts) — a `<dialog>` over
 	the whole page with a pictogram per verb — rather than a form hanging
@@ -95,16 +97,18 @@
 		type Look,
 		type SwitchLabel,
 		type FieldButton,
-		type FieldShape
+		type FieldShape,
+		type Standings
 	} from './fields.js';
 	import { holds } from './hold.js';
 	import { fieldPill, setFieldPill } from './bar.js';
-	import { promoted, type Near } from './lanes.js';
+	import { rowsUnder, type Near } from './lanes.js';
 	import { openTrack } from './specModal.js';
 	import {
 		declaredVerb,
 		fieldsUnder,
 		fieldsWithDuration,
+		lanesOf,
 		verbPress,
 		type Verb
 	} from './commands.js';
@@ -150,6 +154,8 @@
 	 * in the registry and held in $lib/layout/session.ts.
 	 */
 	export let showIgnored = false;
+	/** Where each field stood at the last sort (`standings` in $lib/layout/engine.ts, da-xtkcp). */
+	export let standings: Standings = new Map();
 
 	const dispatch = createEventDispatcher<{ run: string[]; line: string }>();
 
@@ -192,34 +198,30 @@
 	let shown: Map<string, Near> | null = null;
 	$: if (!over) shown = rank;
 
-	$: buttons = promoted(
-		fieldsUnder(
-			fieldsWithDuration(
-				fields.filter((w) => showIgnored || !w.ignored),
-				duration
-			),
-			verb
+	$: buttons = fieldsUnder(
+		fieldsWithDuration(
+			fields.filter((w) => showIgnored || !w.ignored),
+			duration
 		),
-		shown
+		verb
 	);
-	/** How many of `buttons` the press promoted: the hairline falls after them. */
-	$: lead = buttons.filter((b) => shown?.has(b.field)).length;
 	$: ignored = fields.filter((w) => w.ignored);
 	$: picking = picked === null ? null : (buttons.find((b) => b.field === picked) ?? null);
 
 	/**
-	 * What the bar draws, in order. A picked field's states (da-g635):
-	 * `< Back` first — it logs nothing — then one per state in the CLI's
-	 * order, and `+` last, which is how a state never logged gets into the
-	 * list at all. Otherwise the fields, with Track + leading them — the way
-	 * into the app on an empty database — or, under a pending verb, the `+`
-	 * at the END (vividn: «There should be a + field at the end of this
+	 * What the bar draws. A picked field's states (da-g635): `< Back` first
+	 * — it logs nothing — then one per state in the CLI's order, and `+`
+	 * last, which is how a state never logged gets into the list at all,
+	 * dealt into the rows by index. Otherwise the fields in their rows
+	 * (`arrange`), with Track + starting the top one — the way into the app
+	 * on an empty database — or, under a pending verb, the `+` ending the
+	 * bottom one (vividn: «There should be a + field at the end of this
 	 * filtered fields view for adding new fields»).
 	 */
 	type Entry =
 		| { kind: 'track' | 'hint' | 'back' | 'add-state' }
 		| { kind: 'state'; state: string }
-		| { kind: 'field'; button: FieldButton; i: number };
+		| { kind: 'field'; button: FieldButton; promoted: boolean; edge: boolean };
 	$: entries = ((): Entry[] => {
 		if (picking)
 			return [
@@ -227,10 +229,33 @@
 				...statesOf(picking.shape).map((state): Entry => ({ kind: 'state', state })),
 				{ kind: 'add-state' }
 			];
-		const hint: Entry[] = buttons.length === 0 ? [{ kind: 'hint' }] : [];
-		const listed = buttons.map((button, i): Entry => ({ kind: 'field', button, i }));
-		return verb === null ? [{ kind: 'track' }, ...hint, ...listed] : [...hint, ...listed, { kind: 'track' }];
+		if (buttons.length > 0) return [];
+		return verb === null ? [{ kind: 'track' }, { kind: 'hint' }] : [{ kind: 'hint' }, { kind: 'track' }];
 	})();
+	/**
+	 * The fields' rows (da-xtkcp): by height top to bottom, most used first
+	 * along each, as they stood at the last sort — and a press's fields at
+	 * the head of them, the hairline after the last of them in each row.
+	 */
+	$: arrange =
+		picking || buttons.length === 0
+			? lanesOf
+			: (_: Entry[], rows: number): Entry[][] => {
+					const lanes = rowsUnder(buttons, rows, standings, shown).map(({ lead, rest }): Entry[] => [
+						...lead.map(
+							(button, k): Entry => ({
+								kind: 'field',
+								button,
+								promoted: true,
+								edge: k === lead.length - 1 && rest.length > 0
+							})
+						),
+						...rest.map((button): Entry => ({ kind: 'field', button, promoted: false, edge: false }))
+					]);
+					if (verb === null) lanes[0].unshift({ kind: 'track' });
+					else lanes[lanes.length - 1].push({ kind: 'track' });
+					return lanes;
+				};
 	const keyOf = (e: Entry) => (e.kind === 'field' ? `f:${e.button.field}` : e.kind === 'state' ? `s:${e.state}` : e.kind);
 
 	/** A look as the custom properties every button below is painted from. */
@@ -412,6 +437,7 @@
 
 <ButtonRows
 	items={entries}
+	{arrange}
 	key={keyOf}
 	bind:bar
 	let:item
@@ -502,11 +528,7 @@
 	{:else if item.kind === 'field'}
 		{@const button = item.button}
 		{@const look = lookOf(button, switchLabel)}
-		<div
-			class="slot"
-			class:edge={item.i + 1 === lead && lead < buttons.length}
-			data-promoted={item.i < lead ? '' : undefined}
-		>
+		<div class="slot" class:edge={item.edge} data-promoted={item.promoted ? '' : undefined}>
 			{#if button.shape.kind === 'record'}
 				<!-- A PRESS runs nothing: the line goes to the bar's prompt. The
 				     HOLD is every field's (da-8810n) — a record is a field like

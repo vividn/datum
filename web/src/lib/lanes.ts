@@ -31,7 +31,7 @@
 
 import { writable } from 'svelte/store';
 
-import type { FieldButton } from './fields.js';
+import { bands, fieldRows, type FieldButton, type Standings } from './fields.js';
 
 /** One mark the picture drew, as the rule below reads it. */
 export interface Drawn {
@@ -209,6 +209,40 @@ export function promoted(buttons: FieldButton[], rank: Map<string, Near> | null)
 		.map((button, i) => ({ button, i, at: near(button) }))
 		.sort((a, b) => order(a.at, b.at) || a.i - b.i)
 		.map((e) => e.button);
+}
+
+/** One row of the bar under a press: the fields it reached, then the row's own. */
+export interface Row {
+	lead: FieldButton[];
+	rest: FieldButton[];
+}
+
+/**
+ * The bar's rows under a press (da-xtkcp). vividn, 2026-09-24: «when
+ * clicking at a y in the nowview, the fields are filtered to those close
+ * by to the click, so they can spread out a little more vertically in this
+ * case to better utilize the space.»
+ *
+ * So the fields a press reached (`promoted`) are given the rows to
+ * themselves — cut by `y` into bands of equal count as the whole bar is,
+ * top to bottom, and nearest first along each — and stand at the head of
+ * them. Every other field keeps the row and the order `fieldRows` gave it,
+ * after them: the press moves only the fields it is about.
+ */
+export function rowsUnder(
+	buttons: FieldButton[],
+	rows: number,
+	standings: Standings,
+	rank: Map<string, Near> | null
+): Row[] {
+	const near = promoted(buttons, rank).filter((b) => rank?.has(b.field));
+	const reached = new Set(near.map((b) => b.field));
+	const usual = fieldRows(buttons, rows, standings).map((row) => row.filter((b) => !reached.has(b.field)));
+	const y = (b: FieldButton) => standings.get(b.field)?.y ?? b.y;
+	const lead = bands([...near].sort((a, b) => y(a) - y(b)), usual.length).map((band) =>
+		band.sort((a, b) => near.indexOf(a) - near.indexOf(b))
+	);
+	return usual.map((rest, i) => ({ lead: lead[i] ?? [], rest }));
 }
 
 /** The ranking a press published, or `null` while nothing is selected. */

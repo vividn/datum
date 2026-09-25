@@ -26,7 +26,7 @@ registerHooks({
 	}
 });
 
-const { REACH_PX, ROW_PX, closer, nearest, promoted } = await import('../src/lib/lanes.ts');
+const { REACH_PX, ROW_PX, closer, nearest, promoted, rowsUnder } = await import('../src/lib/lanes.ts');
 
 const MINUTE = 60_000;
 const T = Date.UTC(2026, 8, 17, 14, 0);
@@ -212,5 +212,52 @@ describe('the ranking orders the bar without hiding anything', () => {
 		assert.deepEqual(names(promoted(fields, null)), names(fields));
 		assert.deepEqual(names(promoted(fields, new Map())), names(fields));
 		assert.equal(promoted(fields, new Map([['sleep', near(0)]])).length, fields.length, 'nothing is removed');
+	});
+});
+
+describe('under a press, the fields it reached get the rows to themselves (da-xtkcp)', () => {
+	// vividn, 2026-09-24: «when clicking at a y in the nowview, the fields are
+	// filtered to those close by to the click, so they can spread out a
+	// little more vertically in this case to better utilize the space.»
+	/** Six fields a sixth apart in y, none used more than another. */
+	const six = ['a', 'b', 'c', 'd', 'e', 'f'].map((field, i) => ({ field, y: i / 6, active: false }));
+	const standings = new Map(six.map(({ field, y }) => [field, { y, frecency: 0 }]));
+	const near = (dy) => ({ rank: 2, dy, dx: 0 });
+	const read = (rows) => rows.map(({ lead, rest }) => [lead.map((b) => b.field), rest.map((b) => b.field)]);
+
+	test('with no press, the rows are the bar\'s own', () => {
+		assert.deepEqual(read(rowsUnder(six, 3, standings, null)), [
+			[[], ['a', 'b']],
+			[[], ['c', 'd']],
+			[[], ['e', 'f']]
+		]);
+	});
+
+	test('three fields near one height spread over three rows, top to bottom; the rest stay in theirs', () => {
+		// `c`, `d`, `e` share two bands of the bar; the press gives them one
+		// row each, in the order of y, and moves no other field's row.
+		const rank = new Map([
+			['d', near(0)],
+			['c', near(4)],
+			['e', near(8)]
+		]);
+		assert.deepEqual(read(rowsUnder(six, 3, standings, rank)), [
+			[['c'], ['a', 'b']],
+			[['d'], []],
+			[['e'], ['f']]
+		]);
+	});
+
+	test('more reached than rows: bands of y, nearest first along each', () => {
+		const rank = new Map([
+			['a', near(9)],
+			['b', near(1)],
+			['c', near(5)],
+			['d', near(0)]
+		]);
+		assert.deepEqual(read(rowsUnder(six, 2, standings, rank)), [
+			[['b', 'a'], []],
+			[['d', 'c'], ['e', 'f']]
+		]);
 	});
 });

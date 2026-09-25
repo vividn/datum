@@ -6,7 +6,7 @@
 //! where one is declared, and the logged states are the evidence where one
 //! is not.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::Result;
 use datum_core::db::Db;
@@ -19,7 +19,10 @@ use crate::render::colors::{field_hex, state_rgb};
 use crate::render::format_grid;
 
 pub fn fields(args: FieldsArgs, db: &Db) -> Result<()> {
-    let listing = compute_fields(db)?;
+    let mut listing = compute_fields(db)?;
+    if args.by_frecency {
+        by_frecency(&mut listing, &db.field_frecency(chrono::Utc::now())?);
+    }
     if args.show == ShowFlag::None {
         return Ok(());
     }
@@ -29,6 +32,27 @@ pub fn fields(args: FieldsArgs, db: &Db) -> Result<()> {
     }
     print!("{}", format_listing(&listing, args.include_ignored));
     Ok(())
+}
+
+/// `--sort frecency` (da-xtkcp): each row gains its `frecency`
+/// ([`Db::field_frecency`]) and the rows go most used first — a stable
+/// sort, so equals keep their alphabetical order. The web's fields bar
+/// orders each of its rows by it, left to right; it asks only when it
+/// re-sorts, so a plain `fields` never pays for the read.
+fn by_frecency(listing: &mut JsonValue, frecency: &HashMap<String, f64>) {
+    let Some(rows) = listing.as_array_mut() else {
+        return;
+    };
+    for row in rows.iter_mut() {
+        let score = row["field"]
+            .as_str()
+            .and_then(|f| frecency.get(f))
+            .copied()
+            .unwrap_or(0.0);
+        row["frecency"] = json!(score);
+    }
+    let score = |row: &JsonValue| row["frecency"].as_f64().unwrap_or(0.0);
+    rows.sort_by(|a, b| score(b).total_cmp(&score(a)));
 }
 
 /// The plain listing (da-1lnf): a `field` / `states` header over one row
@@ -248,6 +272,42 @@ mod tests {
             json!(PresentationSpec::default().resolve_position("coffee").y)
         );
         assert_eq!(listing[1]["y"], json!(0.25));
+    }
+
+    /// da-xtkcp: `--sort frecency` puts the most used first — each use
+    /// counting half as much per week of age — and a field only declared,
+    /// never used, last with none.
+    #[test]
+    fn sort_by_frecency_counts_uses_and_halves_per_week() {
+        let db = fresh_db();
+        let now = chrono::Utc::now();
+        let used = |field: &str, days: &[i64]| {
+            for (i, d) in days.iter().enumerate() {
+                let at = now - chrono::Duration::days(*d) - chrono::Duration::minutes(i as i64);
+                let mut e = entry_builder(field).time_start_utc(at).build();
+                e.create_time = at;
+                db.insert_entry(&e).unwrap();
+            }
+        };
+        used("coffee", &[0, 0, 7, 14]);
+        used("mood", &[0, 0, 0]);
+        db.save_field_spec(&FieldSpec::new("apple", Action::Start))
+            .unwrap();
+
+        let mut listing = compute_fields(&db).unwrap();
+        by_frecency(&mut listing, &db.field_frecency(now).unwrap());
+        let rows: Vec<(&str, f64)> = listing
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| {
+                (
+                    r["field"].as_str().unwrap(),
+                    r["frecency"].as_f64().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(rows, [("mood", 3.0), ("coffee", 2.75), ("apple", 0.0)]);
     }
 
     #[test]

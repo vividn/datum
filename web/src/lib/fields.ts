@@ -62,6 +62,8 @@ export interface FieldButton {
 	 * nothing. A press ranks by this one (`promoted` in $lib/lanes.ts).
 	 */
 	active: boolean;
+	/** Where the field's band sits in the pictures, 0 at the top — `fields --json`'s `y`. */
+	y: number;
 }
 
 /**
@@ -109,6 +111,8 @@ export interface FieldListing {
 	ignored: boolean;
 	/** Where the field's band sits in the dayview and nowview, 0 at the top (da-vu7pi). */
 	y: number;
+	/** How much the field is used, recent use weighing more — `--sort frecency` alone carries it (da-xtkcp). */
+	frecency?: number;
 }
 
 /** One row of `datum now --json`'s `active`. */
@@ -118,32 +122,76 @@ export interface NowActive {
 }
 
 /**
- * The widget's entries: every field `datum fields` lists, in the order the
- * pictures draw them (vividn, 2026-09-22: «sorted by their spec y, so those
- * that appear higher on the nowview are also higher in the list … Active
- * start/switch fields should appear on the far left») — the ACTIVE fields
- * first, then the rest, each by the `y` the CLI resolved (da-vu7pi), and
- * the CLI's alphabetical order among equals. `active` is `datum now
- * --json`'s — a field it does not name is off.
+ * The widget's entries: every field `datum fields` lists, as high up the
+ * pictures as the CLI draws it (the `y` it resolved, da-vu7pi), and the
+ * CLI's alphabetical order among equals — the order a tie falls back to.
+ * `active` is `datum now --json`'s — a field it does not name is off.
+ *
+ * An active field no longer comes first (da-xtkcp): its button already
+ * shows its state, and moving it was what put `mood` in front of `coffee`
+ * under a long press. Where a button STANDS in the bar is `fieldRows`.
  */
 export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): FieldButton[] {
 	const now = new Map(active.map((a) => [a.field, a.state]));
-	const ordered = [...listing].sort(
-		(a, b) => Number(now.has(b.field)) - Number(now.has(a.field)) || a.y - b.y
+	return [...listing]
+		.sort((a, b) => a.y - b.y)
+		.map(({ field, spec, states, color, state_colors, ignored, y }) => {
+			const state = now.get(field);
+			return {
+				field,
+				shape: shapeFor(spec ?? undefined, states),
+				ignored,
+				color,
+				stateColors: state_colors,
+				glyph: spec?.glyph ?? undefined,
+				active: now.has(field),
+				current: state === true || (typeof state === 'string' && state !== '') ? state : undefined,
+				y
+			};
+		});
+}
+
+/**
+ * Where each field stood when the bar was last sorted (da-xtkcp): its `y`,
+ * which picks its row, and its `frecency` (`datum fields --sort
+ * frecency`), which places it along the row. Taken only on load and when
+ * the app comes back to the foreground (`resort` in $lib/layout/engine.ts)
+ * — never while it is in use, so nothing a press sets off can move a
+ * button.
+ */
+export type Standings = Map<string, { y: number; frecency: number }>;
+
+/** `items` cut, in order, into `rows` runs of equal count (one apart at most); none empty. */
+export function bands<T>(items: T[], rows: number): T[][] {
+	const n = Math.min(Math.max(1, rows), items.length);
+	return Array.from({ length: n }, (_, i) =>
+		items.slice(Math.floor((i * items.length) / n), Math.floor(((i + 1) * items.length) / n))
 	);
-	return ordered.map(({ field, spec, states, color, state_colors, ignored }) => {
-		const state = now.get(field);
-		return {
-			field,
-			shape: shapeFor(spec ?? undefined, states),
-			ignored,
-			color,
-			stateColors: state_colors,
-			glyph: spec?.glyph ?? undefined,
-			active: now.has(field),
-			current: state === true || (typeof state === 'string' && state !== '') ? state : undefined
-		};
-	});
+}
+
+/**
+ * The bar's rows (vividn, 2026-09-24: «the frecency is left to right, the y
+ * spec is top to bottom»): the fields that STOOD at the last sort, by `y`,
+ * cut into `rows` bands of equal count — not fixed ranges of `y`, which
+ * overflow one row and leave another empty whenever fields cluster — and
+ * each band most used first, all by the `standings` and not by the
+ * fields as they are now.
+ *
+ * A field that has appeared since (a new one tracked) moves nothing
+ * either: it is not counted into the bands, and goes at the END of the row
+ * its `y` falls in. With nothing standing at all — before the first sort
+ * — the rows are the bands of `y` alone.
+ */
+export function fieldRows(buttons: FieldButton[], rows: number, standings: Standings): FieldButton[][] {
+	const stood = buttons.filter((b) => standings.has(b.field));
+	if (stood.length === 0) return bands(buttons, rows);
+	const at = (b: FieldButton) => standings.get(b.field)!;
+	const cut = bands([...stood].sort((a, b) => at(a).y - at(b).y), rows);
+	const tops = cut.map((band) => at(band[0]).y);
+	const lanes = cut.map((band) => band.sort((a, b) => at(b).frecency - at(a).frecency));
+	for (const b of buttons)
+		if (!standings.has(b.field)) lanes[Math.max(0, tops.findLastIndex((top) => top <= b.y))].push(b);
+	return lanes;
 }
 
 /**
