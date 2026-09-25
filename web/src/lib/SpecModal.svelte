@@ -204,249 +204,251 @@
 			{/each}
 		</div>
 
-		{#if tab === 'basics'}
-			<div class="verbs" role="radiogroup" aria-label="what a press logs">
-				{#each VERBS as choice (choice.verb)}
-					<button
-						type="button"
-						class="verb"
-						class:on={verb === choice.verb}
-						role="radio"
-						aria-checked={verb === choice.verb}
-						data-verb={choice.verb}
-						on:click={() => (verb = choice.verb)}
-					>
-						<span class="glyph">{choice.glyph}</span>
-						<span class="name">{choice.verb}</span>
-						<span class="what">{choice.what}</span>
-					</button>
-				{/each}
-			</div>
-
-			<div class="row top">
-				<span class="label">colour</span>
-				<Swatch bind:value={color} label="the field's colour" />
-			</div>
-			{#if spec}
-				<label class="row">
-					<span class="label">unit</span>
-					<input class="unit" bind:value={unit} spellcheck="false" autocapitalize="none" />
-				</label>
-				<label class="row">
-					<span class="label">description</span>
-					<input class="description" bind:value={description} />
-				</label>
-				<div class="row">
-					<span class="label">glyph</span>
-					<div class="glyph-by" role="radiogroup" aria-label="the field's glyph">
-						<button type="button" role="radio" aria-checked={!byKey} on:click={() => (byKey = false)}
-							>one glyph</button
-						>
-						<button type="button" role="radio" aria-checked={byKey} on:click={() => (byKey = true)}
-							>by a key</button
-						>
-					</div>
-				</div>
-				{#if byKey}
-					<label class="row">
-						<span class="label">key</span>
-						<input class="glyph-key" list="spec-keys" bind:value={glyphKey} spellcheck="false" autocapitalize="none" />
-						<datalist id="spec-keys">
-							{#each keyNames as key (key)}<option value={key}></option>{/each}
-						</datalist>
-					</label>
-				{/if}
-				<ul class="glyphs">
-					{#if byKey}
-						{#each glyphMap as row, i (row)}
-							<li>
-								<input
-									class="value"
-									bind:value={row.value}
-									placeholder="value"
-									aria-label="a value of {glyphKey || 'the key'}"
-									spellcheck="false"
-									autocapitalize="none"
-								/>
-								<Glyph bind:value={row.glyph} {color} label="the glyph for {row.value || 'this value'}" />
-								<button
-									type="button"
-									class="remove"
-									aria-label="remove {row.value}"
-									on:click={() => (glyphMap = glyphMap.filter((_, j) => j !== i))}>✕</button
-								>
-							</li>
-						{/each}
-					{/if}
-					<li class="default">
-						{#if byKey}<span class="value">(other)</span>{/if}
-						<Glyph bind:value={glyph} {color} label="the field's glyph" />
-					</li>
-				</ul>
-				{#if byKey}
-					<button type="button" class="add" on:click={() => (glyphMap = [...glyphMap, { value: '', glyph: '' }])}
-						>+ value</button
-					>
-				{/if}
-				<!-- da-45wgz: an .svg dropped or picked; the input covers the box, so a drop lands on it. -->
-				<div class="row">
-					<span class="label">icon</span>
-					<label class="drop">
-						<input type="file" class="icon" accept=".svg,image/svg+xml" aria-label="the field's icon" on:change={pickIcon} />
-						{#if icon}
-							▸ {iconName || 'icon'} &nbsp;{(new Blob([icon]).size / 1024).toFixed(1)} kB
-						{:else}
-							drop an .svg here
-						{/if}
-					</label>
-					{#if icon}
-						<button type="button" class="remove" aria-label="remove the icon" on:click={() => ((icon = ''), (iconName = ''))}
-							>✕</button
-						>
-					{/if}
-				</div>
-			{/if}
-		{:else if tab === 'states'}
-			<ul class="states" class:glyphed={spec}>
-				{#each states as state, i (state)}
-					<li class="state">
-						<Swatch bind:value={state.color} label="the colour of {state.name || 'this state'}" />
-						{#if spec}
-							<Glyph
-								bind:value={state.glyph}
-								color={state.color || color}
-								label="the glyph of {state.name || 'this state'}"
-							/>
-						{/if}
-						<input
-							class="name"
-							bind:value={state.name}
-							placeholder="state"
-							aria-label="the state's name"
-							spellcheck="false"
-							autocapitalize="none"
-						/>
+		<div class="panel" role="tabpanel" data-panel={tab}>
+			{#if tab === 'basics'}
+				<div class="verbs" role="radiogroup" aria-label="what a press logs">
+					{#each VERBS as choice (choice.verb)}
 						<button
 							type="button"
-							class="remove"
-							aria-label="remove {state.name}"
-							on:click={() => (states = states.filter((_, j) => j !== i))}>✕</button
+							class="verb"
+							class:on={verb === choice.verb}
+							role="radio"
+							aria-checked={verb === choice.verb}
+							data-verb={choice.verb}
+							on:click={() => (verb = choice.verb)}
 						>
-						{#if spec}
-							<input
-								class="description"
-								bind:value={state.description}
-								placeholder="what it means"
-								aria-label="what {state.name || 'this state'} means"
-							/>
-						{/if}
-					</li>
-				{/each}
-			</ul>
-			<button
-				type="button"
-				class="add"
-				on:click={() => (states = [...states, { name: '', color: '', description: '', glyph: '' }])}
-				>+ state</button
-			>
-		{:else if tab === 'keys'}
-			{#each [true, false] as required (required)}
-				{#if keys.some((k) => k.required === required)}
-					<ul class="keys" data-group={required ? 'required' : 'optional'}>
-						<li class="group">{required ? 'required' : 'optional'}</li>
-						{#each keys.filter((k) => k.required === required) as key (key)}
-							<li class="key">
-								<input
-									class="name"
-									bind:value={key.name}
-									placeholder="key"
-									aria-label="the key's name"
-									spellcheck="false"
-									autocapitalize="none"
-								/>
-								<button
-									type="button"
-									class="remove"
-									aria-label="remove {key.name}"
-									on:click={() => (keys = keys.filter((k) => k !== key))}>✕</button
-								>
-								<div class="flags">
-									<label><input type="checkbox" class="required" bind:checked={key.required} /> required</label>
-									<label title="a key in the slug identifies an entry; one outside it annotates it"
-										><input type="checkbox" class="in-slug" bind:checked={key.in_slug} /> in slug</label
+							<span class="glyph">{choice.glyph}</span>
+							<span class="name">{choice.verb}</span>
+							<span class="what">{choice.what}</span>
+						</button>
+					{/each}
+				</div>
+
+				<div class="row top">
+					<span class="label">colour</span>
+					<Swatch bind:value={color} label="the field's colour" />
+				</div>
+				{#if spec}
+					<label class="row">
+						<span class="label">unit</span>
+						<input class="unit" bind:value={unit} spellcheck="false" autocapitalize="none" />
+					</label>
+					<label class="row">
+						<span class="label">description</span>
+						<input class="description" bind:value={description} />
+					</label>
+					<div class="row">
+						<span class="label">glyph</span>
+						<div class="glyph-by" role="radiogroup" aria-label="the field's glyph">
+							<button type="button" role="radio" aria-checked={!byKey} on:click={() => (byKey = false)}
+								>one glyph</button
+							>
+							<button type="button" role="radio" aria-checked={byKey} on:click={() => (byKey = true)}
+								>by a key</button
+							>
+						</div>
+					</div>
+					{#if byKey}
+						<label class="row">
+							<span class="label">key</span>
+							<input class="glyph-key" list="spec-keys" bind:value={glyphKey} spellcheck="false" autocapitalize="none" />
+							<datalist id="spec-keys">
+								{#each keyNames as key (key)}<option value={key}></option>{/each}
+							</datalist>
+						</label>
+					{/if}
+					<ul class="glyphs">
+						{#if byKey}
+							{#each glyphMap as row, i (row)}
+								<li>
+									<input
+										class="value"
+										bind:value={row.value}
+										placeholder="value"
+										aria-label="a value of {glyphKey || 'the key'}"
+										spellcheck="false"
+										autocapitalize="none"
+									/>
+									<Glyph bind:value={row.glyph} {color} label="the glyph for {row.value || 'this value'}" />
+									<button
+										type="button"
+										class="remove"
+										aria-label="remove {row.value}"
+										on:click={() => (glyphMap = glyphMap.filter((_, j) => j !== i))}>✕</button
 									>
-									<select class="type" bind:value={key.value_type} aria-label="the type of {key.name}">
-										{#each KEY_TYPES as type (type)}<option>{type}</option>{/each}
-									</select>
-								</div>
-								<input
-									class="default"
-									bind:value={key.default}
-									placeholder="default"
-									aria-label="the default of {key.name || 'this key'}"
-								/>
-							</li>
-						{/each}
+								</li>
+							{/each}
+						{/if}
+						<li class="default">
+							{#if byKey}<span class="value">(other)</span>{/if}
+							<Glyph bind:value={glyph} {color} label="the field's glyph" />
+						</li>
 					</ul>
+					{#if byKey}
+						<button type="button" class="add" on:click={() => (glyphMap = [...glyphMap, { value: '', glyph: '' }])}
+							>+ value</button
+						>
+					{/if}
+					<!-- da-45wgz: an .svg dropped or picked; the input covers the box, so a drop lands on it. -->
+					<div class="row">
+						<span class="label">icon</span>
+						<label class="drop">
+							<input type="file" class="icon" accept=".svg,image/svg+xml" aria-label="the field's icon" on:change={pickIcon} />
+							{#if icon}
+								▸ {iconName || 'icon'} &nbsp;{(new Blob([icon]).size / 1024).toFixed(1)} kB
+							{:else}
+								drop an .svg here
+							{/if}
+						</label>
+						{#if icon}
+							<button type="button" class="remove" aria-label="remove the icon" on:click={() => ((icon = ''), (iconName = ''))}
+								>✕</button
+							>
+						{/if}
+					</div>
 				{/if}
-			{/each}
-			<button
-				type="button"
-				class="add"
-				on:click={() =>
-					(keys = [
-						...keys,
-						{ name: '', required: false, value_type: 'any', in_slug: false, default: '', unit: null }
-					])}>+ key</button
-			>
-		{:else if tab === 'placement'}
-			<Placement {field} bind:place />
-		{:else}
-			<label class="auto"
-				><input type="checkbox" class="autoalias" bind:checked={autoalias} /> made from the verb and states</label
-			>
-			<ul class="aliases">
-				{#each aliases as alias (alias)}
-					<li class="alias">
-						{#if autoalias}
-							<code class="name">{alias.state}</code><code class="expands">{alias.expands_to}</code>
-						{:else}
+			{:else if tab === 'states'}
+				<ul class="states" class:glyphed={spec}>
+					{#each states as state, i (state)}
+						<li class="state">
+							<Swatch bind:value={state.color} label="the colour of {state.name || 'this state'}" />
+							{#if spec}
+								<Glyph
+									bind:value={state.glyph}
+									color={state.color || color}
+									label="the glyph of {state.name || 'this state'}"
+								/>
+							{/if}
 							<input
 								class="name"
-								bind:value={alias.state}
-								placeholder="alias"
-								aria-label="the alias"
-								spellcheck="false"
-								autocapitalize="none"
-							/>
-							<input
-								class="expands"
-								bind:value={alias.expands_to}
-								placeholder="{verb ?? 'occur'} {field}"
-								aria-label="what {alias.state || 'it'} runs"
+								bind:value={state.name}
+								placeholder="state"
+								aria-label="the state's name"
 								spellcheck="false"
 								autocapitalize="none"
 							/>
 							<button
 								type="button"
 								class="remove"
-								aria-label="remove {alias.state}"
-								on:click={() => (aliases = aliases.filter((a) => a !== alias))}>✕</button
+								aria-label="remove {state.name}"
+								on:click={() => (states = states.filter((_, j) => j !== i))}>✕</button
 							>
-						{/if}
-					</li>
-				{/each}
-			</ul>
-			{#if autoalias}
-				<p class="later">made again from the verb and states when saved</p>
-			{:else}
+							{#if spec}
+								<input
+									class="description"
+									bind:value={state.description}
+									placeholder="what it means"
+									aria-label="what {state.name || 'this state'} means"
+								/>
+							{/if}
+						</li>
+					{/each}
+				</ul>
 				<button
 					type="button"
 					class="add"
-					on:click={() => (aliases = [...aliases, { state: '', expands_to: '' }])}>+ alias</button
+					on:click={() => (states = [...states, { name: '', color: '', description: '', glyph: '' }])}
+					>+ state</button
 				>
+			{:else if tab === 'keys'}
+				{#each [true, false] as required (required)}
+					{#if keys.some((k) => k.required === required)}
+						<ul class="keys" data-group={required ? 'required' : 'optional'}>
+							<li class="group">{required ? 'required' : 'optional'}</li>
+							{#each keys.filter((k) => k.required === required) as key (key)}
+								<li class="key">
+									<input
+										class="name"
+										bind:value={key.name}
+										placeholder="key"
+										aria-label="the key's name"
+										spellcheck="false"
+										autocapitalize="none"
+									/>
+									<button
+										type="button"
+										class="remove"
+										aria-label="remove {key.name}"
+										on:click={() => (keys = keys.filter((k) => k !== key))}>✕</button
+									>
+									<div class="flags">
+										<label><input type="checkbox" class="required" bind:checked={key.required} /> required</label>
+										<label title="a key in the slug identifies an entry; one outside it annotates it"
+											><input type="checkbox" class="in-slug" bind:checked={key.in_slug} /> in slug</label
+										>
+										<select class="type" bind:value={key.value_type} aria-label="the type of {key.name}">
+											{#each KEY_TYPES as type (type)}<option>{type}</option>{/each}
+										</select>
+									</div>
+									<input
+										class="default"
+										bind:value={key.default}
+										placeholder="default"
+										aria-label="the default of {key.name || 'this key'}"
+									/>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				{/each}
+				<button
+					type="button"
+					class="add"
+					on:click={() =>
+						(keys = [
+							...keys,
+							{ name: '', required: false, value_type: 'any', in_slug: false, default: '', unit: null }
+						])}>+ key</button
+				>
+			{:else if tab === 'placement'}
+				<Placement {field} bind:place />
+			{:else}
+				<label class="auto"
+					><input type="checkbox" class="autoalias" bind:checked={autoalias} /> made from the verb and states</label
+				>
+				<ul class="aliases">
+					{#each aliases as alias (alias)}
+						<li class="alias">
+							{#if autoalias}
+								<code class="name">{alias.state}</code><code class="expands">{alias.expands_to}</code>
+							{:else}
+								<input
+									class="name"
+									bind:value={alias.state}
+									placeholder="alias"
+									aria-label="the alias"
+									spellcheck="false"
+									autocapitalize="none"
+								/>
+								<input
+									class="expands"
+									bind:value={alias.expands_to}
+									placeholder="{verb ?? 'occur'} {field}"
+									aria-label="what {alias.state || 'it'} runs"
+									spellcheck="false"
+									autocapitalize="none"
+								/>
+								<button
+									type="button"
+									class="remove"
+									aria-label="remove {alias.state}"
+									on:click={() => (aliases = aliases.filter((a) => a !== alias))}>✕</button
+								>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+				{#if autoalias}
+					<p class="later">made again from the verb and states when saved</p>
+				{:else}
+					<button
+						type="button"
+						class="add"
+						on:click={() => (aliases = [...aliases, { state: '', expands_to: '' }])}>+ alias</button
+					>
+				{/if}
 			{/if}
-		{/if}
+		</div>
 
 		<div class="buttons">
 			<button type="button" class="cancel" on:click={() => dialog.close()}>Cancel</button>
@@ -472,10 +474,13 @@
 
 <style>
 	/* Narrow enough for a 320px phone with the backdrop showing either
-	   side, and never taller than the screen: the form scrolls. */
+	   side. One height whatever the tab (da-laxpn): a centred dialog that
+	   followed its content jumped on every tab press. 32rem is the tallest
+	   tab's natural height, measured; never taller than the screen. */
 	.spec {
+		box-sizing: border-box;
 		inline-size: min(24rem, calc(100vw - 2rem));
-		max-block-size: calc(100dvh - 2rem);
+		block-size: min(32rem, calc(100dvh - 2rem));
 		overflow: auto;
 		background: var(--ground);
 		color: var(--ink);
@@ -493,6 +498,17 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+		block-size: 100%;
+	}
+
+	/* Header, hint, tabs and buttons stay put; a long tab scrolls here. */
+	.panel {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		flex: 1;
+		min-block-size: 0;
+		overflow: auto;
 	}
 
 	header {
