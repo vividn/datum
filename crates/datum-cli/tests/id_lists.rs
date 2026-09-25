@@ -11,6 +11,11 @@ use std::process::{Command, Output};
 
 use tempfile::TempDir;
 
+/// An id nothing resolves: `-` is outside the base36 a hid is drawn from, and
+/// no slug starts with it. A bare `zz` resolved whenever an entry's random
+/// hid began with `zz`, about one run in 650 (da-h0p2y).
+const BAD_ID: &str = "no-such-id";
+
 struct Env {
     _tmp: TempDir,
     db: PathBuf,
@@ -93,10 +98,10 @@ fn get_prints_each_entry_of_a_list_in_order() {
 fn get_with_a_partly_bad_list_prints_the_good_and_fails_naming_the_bad() {
     let env = Env::new();
     let (a, b) = (env.entry("mood", "happy"), env.entry("proj", "code"));
-    let out = env.run(&["get", &format!("{a},zzzz,{b}")]);
+    let out = env.run(&["get", &format!("{a},{BAD_ID},{b}")]);
     assert_eq!(out.status.code(), Some(1));
     assert!(in_order(&stdout(&out), "happy", "code"), "{}", stdout(&out));
-    assert!(stderr(&out).contains("zzzz"), "{}", stderr(&out));
+    assert!(stderr(&out).contains(BAD_ID), "{}", stderr(&out));
 }
 
 #[test]
@@ -113,10 +118,10 @@ fn history_and_why_take_a_list_each_under_its_own_hid_line() {
             "{verb}: {text}"
         );
     }
-    let out = env.run(&["why", &format!("{a},zz")]);
+    let out = env.run(&["why", &format!("{a},{BAD_ID}")]);
     assert_eq!(out.status.code(), Some(1));
     assert!(stdout(&out).contains(&format!("hid: {a}")));
-    assert!(stderr(&out).contains("zz"), "{}", stderr(&out));
+    assert!(stderr(&out).contains(BAD_ID), "{}", stderr(&out));
 }
 
 #[test]
@@ -168,9 +173,9 @@ fn undo_and_redo_step_every_entry_of_a_list() {
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert_eq!(notes(&env), 0, "both entries stepped back");
 
-    let out = env.run(&["redo", &format!("{list},zz")]);
+    let out = env.run(&["redo", &format!("{list},{BAD_ID}")]);
     assert_eq!(out.status.code(), Some(1), "a bad id fails the command");
-    assert!(stderr(&out).contains("zz"), "{}", stderr(&out));
+    assert!(stderr(&out).contains(BAD_ID), "{}", stderr(&out));
     assert_eq!(notes(&env), 2, "the ids that resolved still moved");
 
     let out = env.run(&["undo", &list, "--to-version", "1"]);
