@@ -116,18 +116,19 @@ const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'O
  * The fourth tile: how far back the window's record goes — `since 4 Sep`
  * (da-rcmwc). The day is `earliest`'s own, the date it was in the zone it
  * was logged in, read off the string and never through a `Date`, which
- * would move it into the page's zone. The year is said only when it is
- * not `latest`'s, so a record that stays inside one year costs the one
- * line no more than it must.
+ * would move it into the page's zone. The year is said whenever it is
+ * not the reader's own (da-c6htb): a record wholly in a past year — a
+ * dormant database, a window set back there — would otherwise read as
+ * this one.
  *
  * No tile at all when `earliest` is null: an empty window has no start,
  * and the zeroes beside it are already the whole answer.
  */
-function since({ earliest, latest }: { earliest: string | null; latest: string | null }): [string, string][] {
+function since({ earliest }: { earliest: string | null }): [string, string][] {
 	if (!earliest) return [];
 	const [y, m, d] = earliest.slice(0, 10).split('-');
 	const day = `${Number(d)} ${MONTH[Number(m) - 1]}`;
-	return [['since', latest?.startsWith(y) ? day : `${day} ${y}`]];
+	return [['since', Number(y) === new Date().getFullYear() ? day : `${day} ${y}`]];
 }
 
 /**

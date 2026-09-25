@@ -13,12 +13,12 @@
 //    the one a seeded database happens to produce.
 //  · that the tiles come out of the CLI's JSON untouched.
 
-import test, { describe } from 'node:test';
+import test, { after, before, describe, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
 resolveLibAsSource(import.meta.url);
-const { formatDur, summaryTiles, windowLabel } = await import('../src/lib/stats.ts');
+const { fieldTiles, formatDur, summaryTiles, windowLabel } = await import('../src/lib/stats.ts');
 
 describe('a span in the CLI’s own spelling', () => {
 	// `human_duration_names_two_units_unpadded`, case for case.
@@ -68,14 +68,30 @@ describe('the tiles when nothing is selected', () => {
 describe('since when', () => {
 	const at = (earliest, latest) => summaryTiles({ fields: [], total_count: 1, tracked_duration_seconds: 0, earliest, latest })[3];
 
+	// The year is weighed against the reader's, so the reader's is held.
+	before(() => mock.timers.enable({ apis: ['Date'], now: new Date('2026-09-25T12:00:00Z') }));
+	after(() => mock.timers.reset());
+
 	// The day the entry was logged on, in ITS zone: 23:30 at -05:00 is
 	// already the 5th in UTC, and a `Date` would say so.
 	test('is the first counted entry’s own day, read off the string', () => {
 		assert.deepEqual(at('2026-09-04T23:30:00-05:00', '2026-09-24T08:00:00-05:00'), ['since', '4 Sep']);
 	});
 
-	test('says the year only when the window ends in another one', () => {
+	test('says the year whenever it is not this one', () => {
 		assert.deepEqual(at('2025-12-31T09:00:00+01:00', '2026-01-02T09:00:00+01:00'), ['since', '31 Dec 2025']);
+	});
+
+	// da-c6htb: a record wholly in a past year — its latest in the same
+	// year as its earliest — is not this year's.
+	test('says the year of a record wholly in a past year', () => {
+		assert.deepEqual(at('2025-09-04T23:30:00-05:00', '2025-09-24T08:00:00-05:00'), ['since', '4 Sep 2025']);
+	});
+
+	test('a narrowed field says it the same way', () => {
+		const s = { field: 'work', total_count: 1, total_duration_seconds: 0, tracked_duration_seconds: 0, states: [] };
+		assert.deepEqual(fieldTiles({ ...s, earliest: '2026-09-04T23:30:00-05:00', latest: '2026-09-24T08:00:00-05:00' })[3], ['since', '4 Sep']);
+		assert.deepEqual(fieldTiles({ ...s, earliest: '2025-09-04T23:30:00-05:00', latest: '2025-09-24T08:00:00-05:00' })[3], ['since', '4 Sep 2025']);
 	});
 
 	test('is no tile when the window counts nothing', () => {
