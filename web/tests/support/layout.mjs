@@ -123,6 +123,10 @@ export const activeTab = (page, id) =>
  * and whatever it did not do is not coming. Polled from node: a
  * `waitForFunction` predicate that is `async` returns a Promise, which is
  * truthy, so it never waited at all (da-1grm7).
+ *
+ * The frames' answer is the elements that MOVED between them, each named
+ * with its box before and after, so a page that never settles times out
+ * saying which element kept moving rather than `false` (da-lbkpg).
  */
 export const settled = (page) =>
 	until(
@@ -130,18 +134,24 @@ export const settled = (page) =>
 			page.evaluate(async () => {
 				const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
 				const shape = () =>
-					JSON.stringify(
-						[...document.querySelectorAll('section, .cell, [role="separator"], [role="menu"], [role="tab"]')].map((el) => {
-							const r = el.getBoundingClientRect();
-							return [r.x, r.y, r.width, r.height, el.getAttribute('aria-selected')];
-						})
-					);
+					[...document.querySelectorAll('section, .cell, [role="separator"], [role="menu"], [role="tab"]')].map((el) => {
+						const r = el.getBoundingClientRect();
+						return [el, JSON.stringify([r.x, r.y, r.width, r.height, el.getAttribute('aria-selected')])];
+					});
+				const name = (el) =>
+					el.localName +
+					['data-pane', 'data-title', 'role', 'class']
+						.filter((a) => el.hasAttribute(a))
+						.map((a) => `[${a}=${el.getAttribute(a)}]`)
+						.join('');
 				await frame();
 				const before = shape();
 				await frame();
-				return before === shape();
+				const after = shape();
+				if (after.length !== before.length) return [`${before.length} elements became ${after.length}`];
+				return after.flatMap(([el, box], i) => (box === before[i][1] ? [] : [`${name(el)} ${before[i][1]} → ${box}`]));
 			}),
-		(same) => same
+		(moved) => moved.length === 0
 	);
 
 /**
