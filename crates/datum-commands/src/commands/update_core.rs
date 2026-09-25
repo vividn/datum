@@ -393,6 +393,7 @@ fn apply_mutation(
     ) {
         let old = match old {
             JsonValue::Array(a) => a.clone(),
+            JsonValue::Null => vec![],
             s => vec![s.clone()],
         };
         new.splice(0..0, old);

@@ -15,22 +15,22 @@ use crate::render::action::now_local;
 /// `--version` / `--diff` with a list is refused rather than guessed at.
 /// `--show json` with a list is ONE array of `{hid, versions}`, one per entry.
 pub fn history(args: HistoryArgs, db: &Db) -> Result<()> {
-    if is_id_list(&args.id_or_slug) && (args.version.is_some() || args.diff.is_some()) {
+    if is_id_list(db, &args.id_or_slug) && (args.version.is_some() || args.diff.is_some()) {
         anyhow::bail!(
             "--version and --diff name versions of ONE entry's history; \
              give one id, not the list '{}'",
             args.id_or_slug
         );
     }
-    if args.show == ShowFlag::Json && is_id_list(&args.id_or_slug) {
+    if args.show == ShowFlag::Json && is_id_list(db, &args.id_or_slug) {
         let mut trails = Vec::new();
-        let done = for_each_id(&args.id_or_slug, |id| {
+        let done = for_each_id(db, &args.id_or_slug, |id| {
             history_of(&args, id, db, Some(&mut trails))
         });
         println!("{}", serde_json::to_string_pretty(&trails)?);
         return done;
     }
-    for_each_id(&args.id_or_slug, |id| history_of(&args, id, db, None))
+    for_each_id(db, &args.id_or_slug, |id| history_of(&args, id, db, None))
 }
 
 /// One entry's history. `trails` collects a list's JSON instead of printing it.

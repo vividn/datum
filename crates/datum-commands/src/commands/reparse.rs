@@ -245,13 +245,14 @@ pub fn reparse(args: ReparseArgs, db: &Db) -> Result<()> {
     // than the batch resolver — its da-bkak contract forbids walking all
     // entries, and the batch path would let a wildcard (`*`) expand to
     // the whole store. Single resolution keeps a multi-match wildcard an
-    // AmbiguousPrefix error instead. Empty tokens (trailing comma) drop.
+    // AmbiguousPrefix error instead. Empty tokens (trailing comma) drop,
+    // and a slug holding a comma is one token ([`id_list`], da-7nv8r).
+    //
+    // [`id_list`]: crate::commands::helpers::id_list
     let tokens = args
         .hids
         .iter()
-        .flat_map(|raw| raw.split(','))
-        .map(str::trim)
-        .filter(|t| !t.is_empty());
+        .flat_map(|raw| crate::commands::helpers::id_list(db, raw));
 
     for token in tokens {
         let entry = resolve_quickid_single(db, token)?;

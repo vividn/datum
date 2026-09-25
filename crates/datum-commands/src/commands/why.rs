@@ -13,7 +13,7 @@ use crate::render::action::now_local;
 /// `why A,B` answers for each entry in turn, each under its own `hid:` line
 /// (da-9p3o).
 pub fn why(args: WhyArgs, db: &Db) -> Result<()> {
-    for_each_id(&args.id_or_slug, |id| why_of(&args, id, db))
+    for_each_id(db, &args.id_or_slug, |id| why_of(&args, id, db))
 }
 
 fn why_of(args: &WhyArgs, id: &str, db: &Db) -> Result<()> {

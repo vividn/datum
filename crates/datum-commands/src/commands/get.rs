@@ -37,7 +37,7 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
     // value for them is still refused.
     if pattern.contains("::") {
         args.output()?;
-        return crate::commands::helpers::for_each_id(pattern, |piece| project(piece, db));
+        return crate::commands::helpers::for_each_id(db, pattern, |piece| project(piece, db));
     }
 
     // `dm get id1,id2,id3` — comma splits the pattern into independent

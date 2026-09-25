@@ -159,19 +159,33 @@ pub(crate) fn resolve_prefix_or_tombstone(db: &Db, input: &str) -> Result<Entry>
     }
 }
 
+/// The ids of a comma list. A slug holding a comma — a `%comment%` id reads
+/// `tx:[electricity,paid]` — names ONE entry: the whole argument is tried as
+/// an existing slug first, and split on every comma only when it is not
+/// (da-7nv8r).
+pub(crate) fn id_list<'a>(db: &Db, list: &'a str) -> Vec<&'a str> {
+    let whole = list.trim();
+    if whole.contains(',') && db.get_entry_including_deleted(whole).is_ok() {
+        return vec![whole];
+    }
+    list.split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
 /// Run `each` on every id of a comma list (da-9p3o) — the verbs that act on
 /// one entry at a time (`history`, `why`, `undo`, `redo`). A single id is
 /// passed through untouched, so its error reads as it always has. In a list
 /// a failing id does not stop the rest: it is named on stderr and the
 /// command exits non-zero, `delete`'s precedent for a partly-bad list.
-/// Split on every comma, like `delete`/`update`; a slug whose field holds a
-/// comma is named by its hid.
-pub(crate) fn for_each_id(list: &str, mut each: impl FnMut(&str) -> Result<()>) -> Result<()> {
-    let ids: Vec<&str> = list
-        .split(',')
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-        .collect();
+/// The list is read by [`id_list`], like `delete`/`update`.
+pub(crate) fn for_each_id(
+    db: &Db,
+    list: &str,
+    mut each: impl FnMut(&str) -> Result<()>,
+) -> Result<()> {
+    let ids = id_list(db, list);
     if ids.is_empty() {
         anyhow::bail!("no id given in '{list}'");
     }
@@ -194,8 +208,8 @@ pub(crate) fn for_each_id(list: &str, mut each: impl FnMut(&str) -> Result<()>) 
 
 /// Is `list` more than one id? The flags that name one entry's versions
 /// (`history --version`, `undo --to-version`) refuse a list.
-pub(crate) fn is_id_list(list: &str) -> bool {
-    list.split(',').filter(|t| !t.trim().is_empty()).count() > 1
+pub(crate) fn is_id_list(db: &Db, list: &str) -> bool {
+    id_list(db, list).len() > 1
 }
 
 /// Batch-resolution surface for S3: how "only a tombstone matches" should
@@ -211,7 +225,7 @@ pub(crate) enum BatchMode {
     LiveOrTombstone,
 }
 
-/// Split a comma-separated id argument, resolve each token, and return a
+/// Split a comma-separated id argument ([`id_list`]), resolve each token, and return a
 /// deduplicated entry list plus the tokens that failed to resolve. Wildcards
 /// (`*` / `?`) expand to every live match; literals go through the quickId
 /// resolver (underscore shorthands, exact slug/hid, hid prefix). Empty
@@ -233,11 +247,7 @@ pub(crate) fn resolve_batch(
     let mut seen: std::collections::HashSet<datum_core::ids::Slug> =
         std::collections::HashSet::new();
     let mut errors: Vec<(String, anyhow::Error)> = Vec::new();
-    for raw in input.split(',') {
-        let token = raw.trim();
-        if token.is_empty() {
-            continue;
-        }
+    for token in id_list(db, input) {
         let resolved = if expand_ambiguous {
             resolve_quickid_all(db, token)
         } else {

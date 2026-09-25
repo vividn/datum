@@ -245,17 +245,20 @@ fn prefix_when_present(rendered: Option<String>, marker: char) -> String {
     }
 }
 
-/// Walk `extra_data` using dot-path `key` (e.g. `"a.b"`). Returns None if any
-/// segment is missing or not an object.
+/// Walk `extra_data` using dot-path `key` (e.g. `"a.b"`, `"comment.0"`).
+/// A segment names an object's key or an array's index, `-1` the last
+/// element (da-7nv8r). Returns None if any segment is missing.
 fn lookup_extra_data(extra: Option<&JsonValue>, key: &str) -> Option<String> {
     let mut cur = extra?;
     for segment in key.split('.') {
-        match cur {
-            JsonValue::Object(m) => {
-                cur = m.get(segment)?;
-            }
+        cur = match cur {
+            JsonValue::Object(m) => m.get(segment)?,
+            JsonValue::Array(a) => match segment.parse::<isize>().ok()? {
+                i if i < 0 => a.get(a.len().checked_sub(i.unsigned_abs())?)?,
+                i => a.get(i.unsigned_abs())?,
+            },
             _ => return None,
-        }
+        };
     }
     // da-ult68: one comment slugs as itself, so `--id %comment%` still does.
     Some(json_to_plain_string(crate::entry::shown_data_value(
@@ -266,9 +269,35 @@ fn lookup_extra_data(extra: Option<&JsonValue>, key: &str) -> Option<String> {
 fn json_to_plain_string(v: &JsonValue) -> String {
     match v {
         JsonValue::String(s) => s.clone(),
-        JsonValue::Number(n) => n.to_string(),
-        JsonValue::Bool(b) => b.to_string(),
         JsonValue::Null => String::new(),
+        other => relaxed_json(other),
+    }
+}
+
+/// An array or object as it reads in an id (da-7nv8r): JSON without the
+/// spaces, and without the quotes around a key or string unless it is empty
+/// or holds one of `,[]{}:` — `[electricity,paid]`, `{a:1,b:x}`.
+fn relaxed_json(v: &JsonValue) -> String {
+    let text = |s: &str| {
+        if s.is_empty() || s.contains([',', '[', ']', '{', '}', ':']) {
+            JsonValue::from(s).to_string()
+        } else {
+            s.to_string()
+        }
+    };
+    match v {
+        JsonValue::String(s) => text(s),
+        JsonValue::Array(a) => {
+            let items: Vec<String> = a.iter().map(relaxed_json).collect();
+            format!("[{}]", items.join(","))
+        }
+        JsonValue::Object(m) => {
+            let items: Vec<String> = m
+                .iter()
+                .map(|(k, v)| format!("{}:{}", text(k), relaxed_json(v)))
+                .collect();
+            format!("{{{}}}", items.join(","))
+        }
         other => other.to_string(),
     }
 }
@@ -344,7 +373,37 @@ mod tests {
         let two = serde_json::json!({"comment": ["a", "b"]});
         let t = |d| interpolate("%comment%", &occur_ctx("tx", Some(d), "h"), "_");
         assert_eq!(t(&one), "electricity");
-        assert_eq!(t(&two), r#"["a","b"]"#);
+        assert_eq!(t(&two), "[a,b]");
+    }
+
+    /// da-7nv8r: a non-scalar slugs as relaxed JSON — no spaces, and quotes
+    /// only on a string that is empty or holds one of `,[]{}:`.
+    #[test]
+    fn interpolate_non_scalar_is_relaxed_json() {
+        let d = serde_json::json!({
+            "o": {"a": 1, "b": "x", "c": [true, null]},
+            "q": ["", "a,b", "k:v", "plain words"],
+        });
+        let t = |k| interpolate(k, &occur_ctx("f", Some(&d), "h"), "_");
+        assert_eq!(t("%o%"), "{a:1,b:x,c:[true,null]}");
+        assert_eq!(t("%q%"), r#"["","a,b","k:v",plain words]"#);
+    }
+
+    /// da-7nv8r: a path segment indexes an array, `-1` from the end, and
+    /// mixes with object keys; an index out of range expands to nothing.
+    #[test]
+    fn interpolate_path_indexes_arrays() {
+        let d = serde_json::json!({"comment": ["a", "b", "c"], "x": [{"y": "deep"}]});
+        let t = |k| interpolate(k, &occur_ctx("f", Some(&d), "h"), "_");
+        let got = [
+            "%comment.0%",
+            "%comment.-1%",
+            "%x.0.y%",
+            "%comment.3%",
+            "%comment.-4%",
+        ]
+        .map(t);
+        assert_eq!(got, ["a", "c", "deep", "", ""]);
     }
 
     /// da-0ibow: `%hid%` whole, `%uid%` the first five, `%hid:N%` the first

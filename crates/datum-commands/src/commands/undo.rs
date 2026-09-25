@@ -42,12 +42,12 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
     // A list steps each entry back along its OWN trail (da-9p3o); a version
     // number belongs to one trail, so `--to-version` with a list is refused.
     if let Some(list) = args.id_or_slug.as_deref() {
-        if args.to_version.is_some() && is_id_list(list) {
+        if args.to_version.is_some() && is_id_list(db, list) {
             anyhow::bail!(
                 "--to-version names a version of ONE entry's history; give one id, not the list '{list}'"
             );
         }
-        for_each_id(list, |id| {
+        for_each_id(db, list, |id| {
             undo_one(db, id, args.to_version, registry.as_ref(), &output)
         })
     } else {
@@ -152,7 +152,7 @@ pub fn redo(args: RedoArgs, db: &Db) -> Result<()> {
     // after the ones that do have moved — `delete`'s precedent (da-9p3o).
     let mut targets: Vec<Hid> = Vec::new();
     let resolved = match args.id_or_slug.as_deref() {
-        Some(list) => for_each_id(list, |id| {
+        Some(list) => for_each_id(db, list, |id| {
             targets.push(resolve_prefix_or_tombstone(db, id)?.hid);
             Ok(())
         }),

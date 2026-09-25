@@ -510,6 +510,10 @@ Every command that takes an `ID_OR_SLUG` takes these.
 | `*` `?`                 | slug/hid wildcards — any run, any one character|
 | `a1b2,c3d4`             | a comma-batched list of targets                |
 
+An existing slug that holds a comma — `tx:[electricity,paid]`, from an
+`--id` slot holding a list — is ONE target: the whole argument is tried as
+a slug before the list splits.
+
 `datum tail` prints the ordinals in its `_n` column, so the number you
 read is the one you type.
 
@@ -610,6 +614,12 @@ The column names are `field`, `uid`, `state`, `dur`, `following_state`,
 `occur_time`, `create_time`, `modify_time`. `occurTime` / `createTime` /
 `modifyTime` also resolve, for templates carried over from the original
 datum. Anything else is a dot-path lookup into `data`.
+
+In an `--id`, a path segment also indexes a list — `%comment.0%` is the
+first comment, `%comment.-1%` the last — and a list or object slugs as
+relaxed JSON: no spaces, and quotes only on a key or string that is empty
+or holds one of `, [ ] { } :`. Two comments give `tx:[electricity,paid]`,
+an object `{a:1,b:x}`; one comment is just itself.
 
 ```bash
 datum note word correr --id '%field%:%srcLang%:%pos%' srcLang=pt pos=verb
