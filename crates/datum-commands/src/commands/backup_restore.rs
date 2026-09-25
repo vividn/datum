@@ -9,7 +9,7 @@
 //! Restore REPLACES by default (da-5fooh): afterwards the live entries are
 //! exactly the backup's, and the rest are tombstoned — ordinary deletions,
 //! so they sync and can be seen. `--merge` only adds, content-hash
-//! idempotent. Either way it gates on the `schema_version` recorded in the
+//! idempotent; an entry edited since the backup keeps its live version. Either way it gates on the `schema_version` recorded in the
 //! header and commits in a single transaction — any failure rolls back to
 //! "nothing restored". See `RestoreReport` for the projected/committed
 //! outcome contract.
@@ -359,7 +359,7 @@ pub fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
             "dry_run": report.dry_run,
             "scanned": report.total_processed(),
             "would_insert": if report.dry_run { Some(report.inserted) } else { None },
-            "would_skip_dedupe": if report.dry_run { Some(report.skipped) } else { None },
+            "would_skip": if report.dry_run { Some(report.skipped) } else { None },
             "would_update": if report.dry_run { Some(report.updated) } else { None },
             "would_delete": if report.dry_run { Some(report.deleted) } else { None },
             "inserted": if report.dry_run { None } else { Some(report.inserted) },
@@ -394,7 +394,7 @@ pub fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
             println!("  Would skip (already there): {}", report.skipped);
             println!("  Would delete: {}", report.deleted);
         } else {
-            println!("  Would skip (content_hash dedupe): {}", report.skipped);
+            println!("  Would skip (already there): {}", report.skipped);
             if force {
                 println!("  Would update (--force): {}", report.updated);
             }
@@ -684,6 +684,10 @@ fn restore_from_reader<R: std::io::BufRead>(
         let entry: Entry =
             serde_json::from_value(raw).with_context(|| format!("Deserializing entry: {line}"))?;
 
+        if !replace && edited_since_backup(db, &entry)? {
+            report.skipped += 1;
+            continue;
+        }
         if dry_run && !replace {
             // Read-only: predict the outcome from a content_hash lookup
             // without opening a write transaction.
@@ -750,6 +754,19 @@ fn restore_from_reader<R: std::io::BufRead>(
     }
 
     Ok(report)
+}
+
+/// An entry `--merge` leaves alone (da-cv1i8): a live row holds its hid,
+/// the durable identity, with other content — it was edited since the
+/// backup. A merge only adds, so the live version stays and the entry
+/// counts as skipped, where writing it would collide on its slug and abort
+/// the whole restore.
+fn edited_since_backup(db: &Db, entry: &Entry) -> Result<bool> {
+    match db.get_entry(&entry.hid.0) {
+        Ok(live) => Ok(live.content_hash != entry.content_hash),
+        Err(datum_core::error::DatumError::NotFound(_)) => Ok(false),
+        Err(e) => Err(e.into()),
+    }
 }
 
 #[cfg(test)]
@@ -1894,6 +1911,45 @@ mod tests {
         assert_eq!(counts(&report), (1, 0, 2, 0));
         assert!(db.get_entry(&walk.slug.0).unwrap().deleted_at.is_none());
         assert_eq!(db.count_entries().unwrap(), backed.len() + 1);
+        std::fs::remove_file(&path).ok();
+    }
+
+    /// da-cv1i8: an entry edited since the backup (coffee) keeps its live
+    /// version and counts as skipped, instead of aborting the whole merge
+    /// on its slug — and the dry run says so too. So does one retimed
+    /// (notes), which is not restored as a second copy under a new hid.
+    #[test]
+    fn restore_merge_keeps_an_entry_edited_since_the_backup() {
+        let (db, path, backed, _) = diverged_from_backup();
+        let notes = backed.iter().find(|e| e.field == "notes").unwrap();
+        let filter = datum_core::db::RetimeFilter {
+            slug_or_hid: Some(&notes.hid.0),
+            ..Default::default()
+        };
+        db.update_times(&filter, chrono::Duration::hours(1))
+            .unwrap();
+        let merge = |dry_run| RestoreArgs {
+            merge: true,
+            ..replace_args(&path, dry_run)
+        };
+        let dry = cmd_restore_with_report(merge(true), &db).unwrap();
+        let real = cmd_restore_with_report(merge(false), &db).unwrap();
+        // mood back; coffee and notes skipped; the walks untouched.
+        assert_eq!(counts(&real), (1, 0, 2, 0));
+        assert_eq!(counts(&dry), counts(&real));
+        let coffee = all_entries_sorted(&db)
+            .into_iter()
+            .filter(|e| e.field == "coffee")
+            .collect::<Vec<_>>();
+        assert_eq!(coffee.len(), 1);
+        assert_eq!(coffee[0].state, Some(serde_json::json!(3)));
+        let live: Vec<_> = all_entries_sorted(&db)
+            .into_iter()
+            .filter(|e| e.field == "notes")
+            .collect();
+        assert_eq!(live.len(), 1);
+        let retimed = notes.occur_time.as_ref().unwrap().utc + chrono::Duration::hours(1);
+        assert_eq!(live[0].occur_time.as_ref().unwrap().utc, retimed);
         std::fs::remove_file(&path).ok();
     }
 
