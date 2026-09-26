@@ -1112,8 +1112,17 @@ fn subprocess_start_time_key_row_equals_its_t_twin_in_tail_json() {
         }
         row
     };
-    let keyed = row(&["start", "posture", "start_time=4pm", "15"]);
-    let flagged = row(&["start", "posture", "-t", "16:15", "15"]);
+    // One fixed day: a bare `4pm` / `16:15` is TODAY in each process, and a
+    // midnight between the two would part them (da-sf082).
+    let keyed = row(&[
+        "start",
+        "posture",
+        "-d",
+        "2026-03-16",
+        "start_time=4pm",
+        "15",
+    ]);
+    let flagged = row(&["start", "posture", "-d", "2026-03-16", "-t", "16:15", "15"]);
     assert_eq!(keyed, flagged);
     assert_eq!(keyed["dur"], "PT15M");
     assert!(

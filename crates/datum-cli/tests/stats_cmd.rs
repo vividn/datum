@@ -1074,14 +1074,27 @@ fn an_occur_field_shows_how_often_and_no_time() {
 #[test]
 fn a_field_that_takes_time_keeps_its_time_and_has_no_frequency() {
     let tmp = tempfile::tempdir().unwrap();
-    datum(tmp.path(), &["start", "work", "-t", "-90"]);
-    datum(tmp.path(), &["stop", "work", "-t", "-30"]);
+    // A fixed day and one `--until`: `-t -90` / `-t -30` each read the wall
+    // clock in their own process, and a second boundary between them made
+    // the hour 3601 s (da-sf082).
+    datum(
+        tmp.path(),
+        &["start", "work", "-d", "2026-06-01", "-t", "0630"],
+    );
+    datum(
+        tmp.path(),
+        &["stop", "work", "-d", "2026-06-01", "-t", "0730"],
+    );
+    let until = ["--until", "2026-06-01T08:00:00Z"];
 
-    let text = datum(tmp.path(), &["stats", "work"]);
+    let text = datum(tmp.path(), &[&["stats", "work"][..], &until].concat());
     assert!(text.starts_with("work  ·  1h30m over 2 entries"), "{text}");
     assert!(text.contains("100.0%") && !text.contains("/day"), "{text}");
-    let json: serde_json::Value =
-        serde_json::from_str(&datum(tmp.path(), &["stats", "work", "--json"])).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&datum(
+        tmp.path(),
+        &[&["stats", "work", "--json"][..], &until].concat(),
+    ))
+    .unwrap();
     assert_eq!(json["frequency"], serde_json::Value::Null);
     assert_eq!(json["tracked_duration_seconds"], 3600);
 }

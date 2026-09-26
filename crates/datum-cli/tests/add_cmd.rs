@@ -769,9 +769,12 @@ fn note_verb_removed_but_alias_works() {
     let db_note = fresh_db();
     let db_add = fresh_db();
 
-    run_cli(&["note", "field", "foo=bar", "-t", "09:00"], &db_note)
+    // One fixed day: `-t 09:00` alone is TODAY in each run, and the
+    // content_hash compared below carries the day (da-sf082).
+    let at = ["-d", "2026-03-16", "-t", "09:00"];
+    run_cli(&[&["note", "field", "foo=bar"][..], &at].concat(), &db_note)
         .expect("note → add via seeded alias");
-    run_cli(&["add", "field", "foo=bar", "-t", "09:00"], &db_add).expect("add dispatch");
+    run_cli(&[&["add", "field", "foo=bar"][..], &at].concat(), &db_add).expect("add dispatch");
 
     let n = &datum_core::test_util::logged_entries(&db_note, "field")[0];
     let a = &datum_core::test_util::logged_entries(&db_add, "field")[0];
