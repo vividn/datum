@@ -794,8 +794,16 @@ describe('on a phone', () => {
 		await withBand(
 			async (app) => {
 				const { page } = app;
+				// Re-read until there is a box: a swipe on the band pans the
+				// window and redraws it, and `boundingBox()`, which waits for
+				// the element to be attached but not for it to be drawn, is
+				// null for one caught mid-redraw (da-kptka; the shape
+				// bada9af4 fixed in inspect).
 				const from = async (selector) => {
-					const b = await page.locator(selector).boundingBox();
+					const b = await until(
+						() => page.locator(selector).boundingBox(),
+						(box) => box !== null
+					);
 					return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 				};
 
