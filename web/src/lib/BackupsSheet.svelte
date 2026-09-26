@@ -17,6 +17,7 @@
 	import { tick } from 'svelte';
 	import Sheet from './Sheet.svelte';
 	import { act } from './act.js';
+	import { confirm } from './confirm.js';
 	import { currentDb, INTERNAL_DB } from './database.js';
 	import { listDatabases } from './databases.js';
 	import { restore as restoreFile, saveBackup } from './dbio.js';
@@ -141,6 +142,12 @@
 			await ran();
 		});
 
+	const removePlan = (plan: Plan) =>
+		perform(async () => {
+			const text = `Delete the plan ${plan.name} from this device? The backups already at its destination stay there.`;
+			if (await confirm(text, 'delete')) await deletePlan(plan.name);
+		});
+
 	const restoreSlot = (plan: Plan, db: string, backup: Backup) =>
 		perform(async () => {
 			const r = await restoreFrom(plan, db, backup);
@@ -194,8 +201,8 @@
 		<section class="local">
 			<h3>A file on this device</h3>
 			<div class="row">
-				<button type="button" class="opens" data-backup="save" on:click={saveLocal}>Save a backup file…</button>
-				<button type="button" class="opens" data-backup="restore-file" on:click={restoreLocal}>Restore from a file…</button>
+				<button type="button" use:act={'open'} data-backup="save" on:click={saveLocal}>Save a backup file…</button>
+				<button type="button" use:act={'open'} data-backup="restore-file" on:click={restoreLocal}>Restore from a file…</button>
 			</div>
 		</section>
 
@@ -227,7 +234,7 @@
 					<button type="button" use:act={'run'} data-backup="now" disabled={s?.running} on:click={() => perform(() => backUp(plan))}
 						>{s?.running ? 'Backing up…' : 'Back up now'}</button
 					>
-					<button type="button" class="plain" on:click={() => perform(() => deletePlan(plan.name))}>Delete plan</button>
+					<button type="button" use:act={'open'} data-backup="delete" on:click={() => removePlan(plan)}>Delete plan</button>
 				</div>
 				{#if reach[plan.name]}
 					<p class="quiet explain">{reachText(plan, reach[plan.name])}. {spaceText(plan, reach[plan.name])}</p>
@@ -248,7 +255,7 @@
 								<li data-slot={backup.slot}>
 									<span class="age">{ago(ageOf(s, backup))} ago</span>
 									<span class="quiet">slot {backup.slot} · {backup.entry_count} entries · {bytes(backup.size)}</span>
-									<button type="button" class="opens" on:click={() => restoreSlot(plan, db, backup)}>Restore…</button>
+									<button type="button" use:act={'open'} on:click={() => restoreSlot(plan, db, backup)}>Restore…</button>
 								</li>
 							{/each}
 						</ul>
@@ -339,7 +346,7 @@
 					{#if KINDS[fresh.kind]?.test}
 						<button type="button" use:act={'run'} data-backup="test" on:click={testIt}>Test connection</button>
 					{/if}
-					<button type="button" class="opens" on:click={look}>Look for backups there</button>
+					<button type="button" use:act={'open'} on:click={look}>Look for backups there</button>
 					<button type="button" use:act={'run'} data-backup="add" on:click={add}>Add plan</button>
 				</div>
 			</section>
@@ -480,13 +487,8 @@
 		color: var(--ink-bright);
 	}
 
-	button.opens {
+	button:global([data-act='open']) {
 		border-color: var(--accent);
-	}
-
-	button.plain {
-		border-color: transparent;
-		color: var(--muted);
 	}
 
 	button:hover:not(:disabled) {

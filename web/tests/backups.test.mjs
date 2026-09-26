@@ -158,4 +158,37 @@ describe('«Backups…»', () => {
 			assert.deepEqual(app.errors, []);
 		}, DEBUG);
 	});
+
+	// da-4gfdi: «Delete plan» deleted at once from a button drawn as display.
+	// It opens a confirm now, so it is SINGLE; and act-taps' survey skips
+	// dialogs, so the sheet's kinds are checked here, on the opened sheet.
+	test('«Delete plan» opens a confirm naming the plan: cancel keeps it, delete removes it', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const sheet = await openSheet(page);
+			const plan = await addPlan(sheet, 'hourly', 'b3');
+			await plan.locator('li[data-slot="0"]').waitFor();
+
+			const kinds = await sheet
+				.locator('.backups button')
+				.evaluateAll((bs) => bs.map((b) => `${b.textContent.trim()}: ${b.dataset.act ?? 'no kind'}`));
+			assert.ok(kinds.length >= 7, `found only ${kinds.length} buttons`);
+			assert.deepEqual(kinds.filter((k) => k.endsWith('no kind')), [], 'give every button in the sheet use:act');
+			assert.ok(kinds.includes('Delete plan: open'), kinds.join(' | '));
+
+			const remove = plan.locator('button[data-backup="delete"]');
+			const confirm = page.locator('dialog.confirm');
+			await remove.click();
+			await confirm.waitFor();
+			assert.match(await confirm.innerText(), /Delete the plan hourly from this device\? The backups already at its destination stay there\./);
+			await confirm.getByRole('button', { name: 'cancel', exact: true }).click();
+			await confirm.waitFor({ state: 'detached' });
+			assert.equal(await plan.count(), 1, 'cancel deleted the plan');
+
+			await remove.click();
+			await confirm.getByRole('button', { name: 'delete', exact: true }).click();
+			await plan.waitFor({ state: 'detached' });
+			assert.deepEqual(app.errors, []);
+		}, DEBUG);
+	});
 });
