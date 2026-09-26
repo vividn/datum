@@ -235,6 +235,39 @@ export function inkOver(hex: string): string {
 }
 
 /**
+ * The colour datum paints a name that has none stored — `md5_rgb` in
+ * crates/datum-commands/src/render/colors.rs: the first three bytes of
+ * `md5(name)`. A field falls back to its own name's, a state to the
+ * STATE's name's (`state_rgb`), never to the field's. The spec modal
+ * shows it on a swatch left at auto (da-jf6l2), and needs it for a name
+ * still being typed, which no `fields --json` has listed yet.
+ */
+export function defaultColor(name: string): string {
+	const bytes = new TextEncoder().encode(name);
+	const words = new Uint32Array((((bytes.length + 8) >> 6) + 1) * 16);
+	bytes.forEach((b, i) => (words[i >> 2] |= b << ((i % 4) * 8)));
+	words[bytes.length >> 2] |= 0x80 << ((bytes.length % 4) * 8);
+	words[words.length - 2] = bytes.length * 8;
+	const k = Array.from({ length: 64 }, (_, i) => Math.floor(Math.abs(Math.sin(i + 1)) * 2 ** 32));
+	const r = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21];
+	const h = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476];
+	for (let o = 0; o < words.length; o += 16) {
+		let [a, b, c, d] = h;
+		for (let i = 0; i < 64; i++) {
+			const round = i >> 4;
+			const f = [(b & c) | (~b & d), (d & b) | (~d & c), b ^ c ^ d, c ^ (b | ~d)][round];
+			const g = [i, 5 * i + 1, 3 * i + 5, 7 * i][round] % 16;
+			const s = r[round * 4 + (i % 4)];
+			const t = (a + f + k[i] + words[o + g]) | 0;
+			[a, d, c] = [d, c, b];
+			b = (b + ((t << s) | (t >>> (32 - s)))) | 0;
+		}
+		[a, b, c, d].forEach((v, i) => (h[i] = (h[i] + v) | 0));
+	}
+	return '#' + [0, 8, 16].map((s) => ((h[0] >>> s) & 255).toString(16).padStart(2, '0')).join('');
+}
+
+/**
  * Which WORD a switch in a state is labelled with: `field` — the field's
  * name; `state` — the state's. vividn is to pick (da-c7u8); `field` is the
  * default. It chooses the word only: the ink is the fill's either way.

@@ -552,6 +552,47 @@ describe('in the app', () => {
 		});
 	});
 
+	// da-jf6l2, vividn: «actually show the default color, maybe show that it is
+	// the default somehow else (dashed border perhaps)». The default is the
+	// CLI's — `fields --json` resolves it — not a colour the page picks.
+	test('a swatch left at auto is the colour datum paints it, dashed; a picked one is solid', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'hue', '--verb', 'switch', '--state', 'calm']);
+			const [listed] = JSON.parse((await app.run(['fields', '--json'])).stdout).filter((f) => f.field === 'hue');
+			const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
+			const looks = (swatch) =>
+				swatch.evaluate((el) => {
+					const s = getComputedStyle(el);
+					return { fill: s.backgroundColor, border: s.borderTopStyle, color: el.dataset.color };
+				});
+
+			const shut = page.evaluate(() => window.datum.spec('hue'));
+			await page.locator(MODAL).waitFor();
+			const swatch = page.locator(`${MODAL} .row .swatch[aria-expanded]`);
+			assert.deepEqual(await looks(swatch), { fill: rgb(listed.color), border: 'dashed', color: '' });
+
+			await swatch.click();
+			assert.deepEqual(await looks(page.locator(`${MODAL} .set .swatch[aria-label^="auto"]`)), {
+				fill: rgb(listed.color),
+				border: 'dashed',
+				color: ''
+			});
+			const pick = page.locator(`${MODAL} .set .swatch`).nth(3);
+			const color = await pick.getAttribute('data-color');
+			await pick.click();
+			assert.deepEqual(await looks(swatch), { fill: rgb(color), border: 'solid', color });
+
+			// A state falls back to its OWN name's colour, not the field's.
+			await page.locator(`${MODAL} [data-tab="states"]`).click();
+			const state = page.locator(`${MODAL} .state .swatch[aria-expanded]`);
+			assert.notEqual(listed.state_colors.calm, listed.color);
+			assert.deepEqual(await looks(state), { fill: rgb(listed.state_colors.calm), border: 'dashed', color: '' });
+			await page.keyboard.press('Escape');
+			assert.equal(await shut, null);
+		});
+	});
+
 	test('`spec` on a field with no spec declares it, with the field already in the box', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;

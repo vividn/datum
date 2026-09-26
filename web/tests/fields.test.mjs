@@ -28,7 +28,8 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { inkOver, lookOf, pressArgv, requiredKeys, shapeFor, buttonsFor, bands, fieldRows } from '../src/lib/fields.ts';
+import { createHash } from 'node:crypto';
+import { defaultColor, inkOver, lookOf, pressArgv, requiredKeys, shapeFor, buttonsFor, bands, fieldRows } from '../src/lib/fields.ts';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, GREEN, ORANGE, PURPLE, type, untilFieldStyle } from './support/fields.mjs';
 import { listed, rowsOf } from './support/rows.mjs';
@@ -190,6 +191,17 @@ describe('the logic', () => {
 		assert.equal(inkOver('#000080'), '#ffffff');
 		assert.equal(inkOver('#808080'), '#ffffff', 'brightness 128 is not above 128');
 		assert.equal(inkOver('#818181'), '#000000');
+	});
+
+	test("the default colour is the CLI's md5 of the name, at every padding boundary", () => {
+		// crates/datum-commands/src/render/colors.rs `md5_rgb`: the first three bytes of md5(name).
+		assert.equal(defaultColor(''), '#d41d8c');
+		assert.equal(defaultColor('abc'), '#900150');
+		// Every length through three 64-byte blocks, so the 55/56 padding edge and the second block both run.
+		for (const name of [...Array.from({ length: 140 }, (_, n) => 'x'.repeat(n)), '日本語 state']) {
+			const want = '#' + createHash('md5').update(name).digest('hex').slice(0, 6);
+			assert.equal(defaultColor(name), want, `${name.length} chars`);
+		}
 	});
 
 	test('a point is an outline with its mark; a block fills while on; a switch takes its state colour inside the field outline; a filled label is always the fill’s ink', () => {

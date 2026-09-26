@@ -8,7 +8,12 @@
 	picked the same way and from the same set. The set is the CLI's twelve
 	named hues (`NAMED_HUES` in datum-core's kit_color.rs) at three
 	lightnesses, and `auto` — no colour stored, which the renderer paints
-	with the field's md5 colour as datum always has.
+	with the name's md5 colour as datum always has.
+
+	`auto` is drawn AS that colour, in a dashed border (da-jf6l2). vividn,
+	2026-09-26 — «actually show the default color, maybe show that it is
+	the default somehow else (dashed border perhaps)». Dashed is what the
+	bar already says «not the field's own» with; a picked colour is solid.
 -->
 <script context="module" lang="ts">
 	/** `hsl(h, s%, l%)` as `#rrggbb`, which is what a spec stores. */
@@ -33,6 +38,8 @@
 	export let value = '';
 	/** What it is the colour of, for a reader that cannot see it. */
 	export let label: string;
+	/** What `auto` paints: `defaultColor` of the field's or the state's name. */
+	export let fallback: string;
 
 	let open = false;
 
@@ -47,8 +54,8 @@
 		type="button"
 		class="swatch"
 		class:auto={!value}
-		style:background={value || null}
-		aria-label="{label}: {value || 'auto'}"
+		style:background={value || fallback}
+		aria-label="{label}: {value || `auto, ${fallback}`}"
 		aria-expanded={open}
 		data-color={value}
 		on:click={() => (open = !open)}
@@ -60,8 +67,9 @@
 				class="swatch auto"
 				role="option"
 				aria-selected={!value}
-				aria-label="auto"
+				aria-label="auto, {fallback}"
 				data-color=""
+				style:background={fallback}
 				on:click={() => pick('')}
 			></button>
 			{#each SWATCHES as color (color)}
@@ -98,10 +106,9 @@
 		cursor: pointer;
 	}
 
-	/* No colour stored: a slash through the ground, the way a missing
-	   value is drawn rather than a colour that happens to be dark. */
+	/* No colour stored: the colour it falls back to, dashed as not its own. */
 	.swatch.auto {
-		background: linear-gradient(to top right, #1a1a30 46%, var(--muted) 50%, #1a1a30 54%);
+		border: 2px dashed var(--ink-bright);
 	}
 
 	.swatch:focus-visible,

@@ -51,6 +51,7 @@
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { act } from './act.js';
 	import { fieldNameHint, suggestFieldName } from './fieldName.js';
+	import { defaultColor } from './fields.js';
 	import Glyph from './Glyph.svelte';
 	import Placement from './Placement.svelte';
 	import Swatch from './Swatch.svelte';
@@ -241,7 +242,7 @@
 
 				<div class="row top">
 					<span class="label">colour</span>
-					<Swatch bind:value={color} label="the field's colour" />
+					<Swatch bind:value={color} fallback={defaultColor(field.trim())} label="the field's colour" />
 				</div>
 				<span class="label">keys</span>
 				<ul class="basic-keys">
@@ -351,7 +352,11 @@
 				<ul class="states" class:glyphed={spec}>
 					{#each states as state, i (state)}
 						<li class="state">
-							<Swatch bind:value={state.color} label="the colour of {state.name || 'this state'}" />
+							<Swatch
+								bind:value={state.color}
+								fallback={defaultColor(state.name.trim())}
+								label="the colour of {state.name || 'this state'}"
+							/>
 							{#if spec}
 								<Glyph
 									bind:value={state.glyph}
