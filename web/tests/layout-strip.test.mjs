@@ -118,9 +118,18 @@ describe('resizing', () => {
 			console.log(`  drag: ${took}ms, dayview ran ${during.dayview}x, nowview ${during.nowview}x; shown ${before} → ${mid} of ${held}`);
 			assert.ok(mid > before, `the strip showed ${before} days before and ${mid} during the drag: it did not grow live`);
 			assert.ok(during.nowview >= 2 && during.nowview <= 6, `nowview ran ${during.nowview} times during a ${took}ms drag`);
+			// The drop is counted from where the PAGE takes it, not where this
+			// test asks (da-eghi9): the drag's last throttle tick, or a run
+			// queued behind one still out, can start after `during` was read
+			// and before the button is let go, and was counted as the drop's.
+			await page.evaluate(() =>
+				addEventListener('pointerup', () => (window.__dropAt = window.__datumSeen.length), { capture: true, once: true })
+			);
 			await page.mouse.up();
 			await app.idle();
-			const after = drawnRuns(await seen());
+			const all = await seen();
+			const after = drawnRuns(all);
+			const dropped = drawnRuns(all.slice(await page.evaluate(() => window.__dropAt)));
 			const days = await shownDays(page);
 			assert.ok(days > before, `a 200px taller strip shows no more days (${before} → ${days})`);
 			// And it cost nothing: this drag stays inside the fortnight the
@@ -131,7 +140,7 @@ describe('resizing', () => {
 			assert.equal(await pastDays(page), held, `the drag changed the days held: ${held} → ${await pastDays(page)}`);
 			assert.equal(during.dayview, 0, `${during.dayview} pictures drawn during a drag inside the fortnight`);
 			assert.equal(after.dayview, 0, `${after.dayview} pictures drawn at the drop of a drag inside the fortnight`);
-			assert.ok(after.nowview - during.nowview <= 1, 'nowview, now shorter, redraws at most once at the drop');
+			assert.ok(dropped.nowview <= 1, `nowview, now shorter, redrew ${dropped.nowview} times at the drop`);
 			// The clock is HELD (`clock`, da-r61i): a wall-clock minute re-draws
 			// today's band, and this counts the bands a drag draws over a
 			// second of real time. A fixed clock never turns a minute.
