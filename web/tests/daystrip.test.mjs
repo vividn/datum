@@ -67,22 +67,45 @@ after(stopApp);
 // takes a ROOM, whose strip is a new widget — as does a test that scrolls
 // a stack the test before it scrolled, since `solo` keeps `main`'s strip and
 // its scroll position. Which is why the helpers below read and write the
-// strip of the root tab in FRONT. What still opens an
-// app of its own has options no other test shares (a viewport, a clock), a
-// `prepare`, a moved clock, or a reload.
+// strip of the root tab in FRONT. A moved clock is put back by the next
+// test's `solo` or `room`, and the one reload is the last test on its app
+// (da-d0tfm). What still opens an app of its own has a screen no other test
+// shares, or a `prepare`.
 const shared = sharedApp();
 const clocked = sharedApp({ clock: todayAt(12) });
+const NARROW = { viewport: { width: 360, height: 640 } };
+const narrow = sharedApp(NARROW);
+/** A screen tall enough for sixteen of the shortest days above today. */
+const desk = sharedApp({ viewport: { width: 1280, height: 1400 } });
 
 /**
  * A room on `on`, once its strip has heard its box. A room's strip is a new
  * widget, and it hears its box a settle after the room is drawn
  * (layout/resizing.ts) — for ~100 ms it holds a day height from before —
- * where a fresh boot has long since settled. Waited out, as the tests below
- * wait out a settle.
+ * where a fresh boot has long since settled. Waited FOR, not out: a room's
+ * strip holds nothing, so it has heard its box once its day is the one
+ * that box derives — `dayFilling` of the floored content box its
+ * ResizeObserver reports (DayStrip.svelte), read off the pane's body.
  */
 const settledRoom = (on, name, fn) =>
 	on.room(name, async (app) => {
-		await app.page.waitForTimeout(3 * 150);
+		await app.page.waitForFunction(([min, max]) => {
+			const strip = document.querySelector('.strip');
+			const body = strip?.closest('.body');
+			const grip = strip?.querySelector('button.day-grip');
+			if (!body || !grip) return false;
+			const s = getComputedStyle(body);
+			const px = (name) => parseFloat(s.getPropertyValue(name));
+			const content =
+				body.getBoundingClientRect().height -
+				px('padding-top') -
+				px('padding-bottom') -
+				px('border-top-width') -
+				px('border-bottom-width');
+			const axis = parseFloat(getComputedStyle(strip).getPropertyValue('--axis'));
+			const derived = Math.min(max, Math.max(min, Math.round(Math.floor(content) - axis)));
+			return Number(grip.getAttribute('aria-valuenow')) === derived;
+		}, [MIN_DAY, MAX_DAY]);
 		await app.idle();
 		return fn(app);
 	});
@@ -604,7 +627,7 @@ describe('the day strip', () => {
 	// five separate `dayview` runs of ONE day each — the snappiness is
 	// that a band lands on its own, not that the past arrives at once.
 	test('five days is five one-day dayviews, each asked bands-only', async () => {
-		await withApp( // own app: its own screen and clock, which no other test shares
+		await clocked.solo(
 			async (app) => {
 				await seedLines(app, [...[1, 2, 3, 4].map((back) => `occur coffee -d -${back}`), 'occur coffee']);
 				await sizeWhole(app, 5);
@@ -654,8 +677,7 @@ describe('the day strip', () => {
 				// And ONE geometry run for all of them: the gridlines, the
 				// ruler and the stamps come off a single `--show json`.
 				assert.equal(views.length - pictures.length, 1, 'the geometry was asked for more than once');
-			},
-			{ viewport: { width: 1280, height: 1000 }, clock: todayAt(12) }
+			}
 		);
 	});
 
@@ -864,7 +886,7 @@ describe('the day strip', () => {
 		// what reddened main's run 296 (da-y7r9); it is a clock, so the
 		// clock is pinned, as this file's other clock-sensitive tests pin
 		// theirs. A `Date.now()` that never changes minute never ticks.
-		await withApp( // own app: its own screen and clock, which no other test shares
+		await settledRoom(desk, 'gained',
 			async (app) => {
 				await say(app, { dayHeight: 40 });
 				await app.page.waitForFunction(
@@ -898,8 +920,7 @@ describe('the day strip', () => {
 					.filter((argv) => argv[0] === 'dayview')
 					.map((argv) => [flag(argv, '--n-days'), flag(argv, '--end-date')]);
 				assert.deepEqual(views, [['1', '-16']]);
-			},
-			{ viewport: { width: 1280, height: 1400 }, clock: todayAt(12) }
+			}
 		);
 	});
 
@@ -1168,19 +1189,16 @@ describe('the day strip', () => {
 	});
 
 	test('the day height comes in as a prop and goes out as a change', async () => {
-		// What the default is is the strip's business, not this file's, so
-		// it is read off an ordinary app rather than restated here. Nothing
-		// is HELD on a fresh strip (da-r0ydu): the day follows its widget
-		// until the handle is touched, so the owner's settings are silent
-		// about it and the handle still says a number.
-		let fallback;
-		await shared.solo(async (app) => {
-			fallback = await valueOf(app);
+		await settledRoom(shared, 'prop', async (app) => {
+			// What the default is is the strip's business, not this file's, so
+			// it is read off a fresh strip rather than restated here. Nothing
+			// is HELD on a fresh strip (da-r0ydu): the day follows its widget
+			// until the handle is touched, so the owner's settings are silent
+			// about it and the handle still says a number.
+			const fallback = await valueOf(app);
 			assert.ok(fallback > 0, `the handle says ${fallback}`);
 			assert.equal(await heard(app), undefined);
-		});
 
-		await settledRoom(shared, 'prop', async (app) => {
 			// The owner said 120 — through the tree, as a saved layout does:
 			// the handle says so, and every band is drawn in the box that
 			// height gives it.
@@ -1523,7 +1541,7 @@ describe('the day strip', () => {
 		// redraw of today, here the freeze toggle — used to read the stale
 		// «at the bottom» and pin the reader straight back down (da-6m5s:
 		// the jagged test's second scroll, lost in CI to a band landing).
-		await withApp(async (app) => {
+		await settledRoom(shared, 'repin', async (app) => {
 			await sizeFor(app, 5);
 			await app.page.locator('.stack').evaluate((el) => {
 				el.scrollTop = 0;
@@ -1535,13 +1553,14 @@ describe('the day strip', () => {
 	});
 
 	test('a midnight moves the whole strip on by a day', async () => {
-		// 10:00 UTC, so the fast-forward below lands after midnight and
-		// inside the next day rather than on its boundary.
-		const noon = Date.UTC(2026, 8, 9, 10, 0, 0);
 		/** The days `from` back to 0 before `ms`, oldest first, as stamps. */
 		const marks = (ms, from) => Array.from({ length: from + 1 }, (_, i) => labelFor(ms, from - i));
-		await withApp( // own app: it moves the clock
+		// A room of `clocked`, held at noon, so the fast-forward below lands
+		// after midnight and inside the next day rather than on its
+		// boundary. The next test's room or solo puts the clock back.
+		await settledRoom(clocked, 'midnight',
 			async (app) => {
+				const noon = app.clock.at();
 				// Deep enough that the stack scrolls, so the jagged line has
 				// something to say at the end.
 				await sizeFor(app, 5);
@@ -1565,8 +1584,32 @@ describe('the day strip', () => {
 				assert.equal(await jagged(app), 0);
 				await app.page.locator('.stack').evaluate((el) => (el.scrollTop = 0));
 				await app.page.locator('button.jagged').waitFor();
-			},
-			{ clock: noon }
+			}
+		);
+	});
+
+	// The strip's row is a fixed height now, so it cannot push the thing a
+	// phone user logs with off the bottom of the screen (da-hkpd) — as
+	// long as that height is one a phone can spare.
+	test("the strip's row leaves the widget bar on screen", async () => {
+		const screen = NARROW.viewport;
+		// First on `narrow`, so the strip's row is the one a 360px boot
+		// lays out, which no test before it has sized.
+		await narrow.solo(
+			async (app) => {
+				await app.submit('occur coffee');
+				await app.page.locator('.bar [data-field="coffee"]').waitFor();
+
+				const bar = await app.page.locator('.bar [data-field="coffee"]').boundingBox();
+				assert.ok(
+					bar.y + bar.height <= screen.height,
+					`the widget bar is off the bottom: ${JSON.stringify(bar)}`
+				);
+				// And the row is a box today fits in whole, not one it
+				// scrolls inside.
+				const m = await metrics(app);
+				assert.ok(m.strip >= m.today, `today's band does not fit its row: ${JSON.stringify(m)}`);
+			}
 		);
 	});
 
@@ -1574,7 +1617,8 @@ describe('the day strip', () => {
 	// it landed the day before this did (1ceada8) — so every depth the
 	// box can hold is swept, at every width the app is read at.
 	test('never scrolls the page sideways, at any width or depth', async (t) => {
-		await withApp( // own app: its own screen, which no other test shares
+		// On `narrow`, booted at 360px wide as a phone is.
+		await narrow.solo(
 			async (app) => {
 				const widths = [360, 390, 768, 1280].map((width) => ({ width, height: 800 }));
 				await atEachScreen(t, app.page, widths, async ({ width }) => {
@@ -1590,32 +1634,7 @@ describe('the day strip', () => {
 						);
 					}
 				});
-			},
-			{ viewport: { width: 360, height: 800 } }
-		);
-	});
-
-	// The strip's row is a fixed height now, so it cannot push the thing a
-	// phone user logs with off the bottom of the screen (da-hkpd) — as
-	// long as that height is one a phone can spare.
-	test("the strip's row leaves the widget bar on screen", async () => {
-		const screen = { width: 360, height: 640 };
-		await withApp( // own app: its own screen, which no other test shares
-			async (app) => {
-				await app.submit('occur coffee');
-				await app.page.locator('.bar [data-field="coffee"]').waitFor();
-
-				const bar = await app.page.locator('.bar [data-field="coffee"]').boundingBox();
-				assert.ok(
-					bar.y + bar.height <= screen.height,
-					`the widget bar is off the bottom: ${JSON.stringify(bar)}`
-				);
-				// And the row is a box today fits in whole, not one it
-				// scrolls inside.
-				const m = await metrics(app);
-				assert.ok(m.strip >= m.today, `today's band does not fit its row: ${JSON.stringify(m)}`);
-			},
-			{ viewport: screen }
+			}
 		);
 	});
 });
@@ -1750,7 +1769,7 @@ const TODAY = '.band[data-days-ago="0"]';
 
 describe('the day strip zooms onto an hour range', () => {
 	test('a pinch windows every band at once, and the stamps stay where they are', async () => {
-		await withApp(async (app) => { // own app: a phone with a clock, which no other test shares
+		await settledRoom(phone, 'pinch', async (app) => {
 			const { page } = app;
 			// More than one band to move TOGETHER, which is the whole claim:
 			// a day follows its widget until the reader shrinks it
@@ -1804,7 +1823,7 @@ describe('the day strip zooms onto an hour range', () => {
 			// window does moves them.
 			assert.deepEqual(await stampXs(app), stamps, 'the date stamps moved');
 			assert.deepEqual(app.errors, []);
-		}, { ...PHONE, clock: todayAt(12) });
+		});
 	});
 
 	test('the ⊖ gives the whole day back, and a double tap no longer does', async () => {
@@ -1853,8 +1872,13 @@ describe('the day strip zooms onto an hour range', () => {
 	// a picture is not, and the `⊖` is in the date column, which no
 	// picture is ever drawn in.
 	test('on a day whose lanes are full, a double tap inspects — and the ⊖ still gives the day back', async () => {
-		await withApp(async (app) => { // own app: it reloads
+		await settledRoom(phone, 'dense', async (app) => {
 			const { page } = app;
+			// Late in the day, so the last switch has five hours to run: the
+			// seeds are read against the clock, and the band re-drawn at it
+			// by the seed's last line, which goes through the bar. The next
+			// test's room puts the clock back.
+			await app.clock.set(todayAt(23));
 			await seedLines(
 				app,
 				['mood', 'work', 'place', 'posture'].flatMap((field, lane) =>
@@ -1863,7 +1887,6 @@ describe('the day strip zooms onto an hour range', () => {
 					)
 				)
 			);
-			await app.reload();
 			await page.locator(`${TODAY} svg.svg`).waitFor();
 			await app.idle();
 
@@ -1943,7 +1966,7 @@ describe('the day strip zooms onto an hour range', () => {
 			await app.idle();
 			assert.equal(await hoursShown(app), 25);
 			assert.deepEqual(app.errors, []);
-		}, { ...PHONE, clock: todayAt(23) });
+		});
 	});
 
 	test('the ⊖ is a fingertip, in the one column no picture is drawn in', async () => {
@@ -1993,7 +2016,7 @@ describe('the day strip zooms onto an hour range', () => {
 	});
 
 	test('ctrl+wheel zooms, shift+wheel pans, and the ⊖ is the way back', async () => {
-		await withApp( // own app: its own screen, which no other test shares
+		await settledRoom(desk, 'wheel',
 			async (app) => {
 				const { page } = app;
 				await app.idle();
@@ -2058,13 +2081,14 @@ describe('the day strip zooms onto an hour range', () => {
 				await app.idle();
 				assert.equal(await hoursShown(app), 25);
 				assert.deepEqual(app.errors, []);
-			},
-			{ viewport: { width: 1280, height: 900 } }
+			}
 		);
 	});
 
 	test('the window is a setting: this session’s, saved with the layout when asked, reset with the widget', async () => {
-		await withApp( // own app: it saves `main` and reloads
+		// `main` itself, saved and reloaded: the last test on `desk`, since
+		// what it leaves behind is a boot no other test would want to share.
+		await desk.solo(
 			async (app) => {
 				const { page } = app;
 				await app.idle();
@@ -2109,8 +2133,7 @@ describe('the day strip zooms onto an hour range', () => {
 				await app.idle();
 				assert.equal(await hoursShown(app), 25);
 				assert.deepEqual(app.errors, []);
-			},
-			{ viewport: { width: 1280, height: 900 } }
+			}
 		);
 	});
 });
