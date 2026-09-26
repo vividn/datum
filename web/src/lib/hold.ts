@@ -51,7 +51,10 @@ export function holds(node: HTMLElement, spec: Holding) {
 	 * deliberate second gesture made quickly — two right clicks in a row on
 	 * two different fields is one, and it is what a reader does. The next
 	 * `pointerdown` is the exact end of the press this belongs to, so that
-	 * is what clears it.
+	 * is what clears it — and so is a key (da-zdv2u): a mouse's long press
+	 * leaves no `contextmenu` behind to catch up with, and the menu key's
+	 * own `contextmenu` always follows a keydown, which a finger's never
+	 * does.
 	 */
 	let fired: HTMLElement | null = null;
 	/** Takes the tail swallow down early — on destroy, and nowhere else. */
@@ -70,6 +73,8 @@ export function holds(node: HTMLElement, spec: Holding) {
 		timer = null;
 		on = null;
 	}
+
+	const key = () => void (fired = null);
 
 	function down(event: PointerEvent) {
 		clear();
@@ -151,6 +156,7 @@ export function holds(node: HTMLElement, spec: Holding) {
 	node.addEventListener('pointerleave', clear);
 	node.addEventListener('pointercancel', clear);
 	node.addEventListener('contextmenu', menu);
+	node.addEventListener('keydown', key);
 	node.addEventListener('click', click, true);
 
 	return {
@@ -164,6 +170,7 @@ export function holds(node: HTMLElement, spec: Holding) {
 			node.removeEventListener('pointerleave', clear);
 			node.removeEventListener('pointercancel', clear);
 			node.removeEventListener('contextmenu', menu);
+			node.removeEventListener('keydown', key);
 			node.removeEventListener('click', click, true);
 		}
 	};

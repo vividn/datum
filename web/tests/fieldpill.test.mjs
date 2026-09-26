@@ -341,12 +341,6 @@ describe('the gesture, and the pill it mints', () => {
 	// pointer». The menu key raises `contextmenu`, which is the same door
 	// the right click comes through, and the pill's × is a button in the
 	// tab order.
-	//
-	// BEFORE the long presses: a mouse long press leaves the hold's `fired`
-	// standing until the next pointerdown, and the menu key after it is
-	// taken for the browser catching up and ignored (da-zdv2u) — which a
-	// page of its own per test hid. The ORDER IS LOAD-BEARING until that is
-	// fixed: after a long press this test fails, every time.
 	test('the keyboard mints it and the keyboard takes it away', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
@@ -401,6 +395,24 @@ describe('the gesture, and the pill it mints', () => {
 			});
 		});
 	}
+
+	// A mouse's long press leaves no `contextmenu` behind, so the hold's
+	// «this press already fired» must not outlive it into the menu key
+	// (da-zdv2u): it did, until the next pointerdown, and every menu-key
+	// press in between was taken for the browser catching up.
+	test('the menu key still holds after a long press with the mouse', async () => {
+		await seeded(async (app) => {
+			const { page } = app;
+
+			await longPress(page, 'coffee');
+			await fieldPill(page).waitFor();
+
+			await chip(page, 'coffee').focus();
+			await page.keyboard.press('ContextMenu');
+			await fieldPill(page).waitFor({ state: 'detached' });
+			assert.deepEqual(app.errors, []);
+		});
+	});
 
 	// «it behaves like every other pill»: unlocked, so a successful press
 	// spends it and the filter is gone. Named here so it can be corrected
