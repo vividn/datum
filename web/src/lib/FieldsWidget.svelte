@@ -779,9 +779,14 @@
 	/* A button a tap RUNS (`pressKind`, da-z8z40) is drawn in a DOUBLE
 	   outline, as the commands widget's are ($lib/act.ts) — in the
 	   field's own colour, since that is already the button's line. The
-	   padding gives back what the wider border takes. */
+	   padding gives back what the wider border takes. The fill stops at
+	   the border (da-0lmb7): a double's gap shows the background, and a
+	   button FILLED in its own line's colour would paint the two lines and
+	   the gap as one edge. Clipped, the gap shows the bar behind it, as it
+	   does on a button that is not filled. */
 	.widget:global([data-act='run']):not(.ignored) {
 		border: 3px double var(--line);
+		background-clip: padding-box;
 		padding: calc(0.35rem - 1.5px) calc(0.85rem - 1.5px);
 	}
 

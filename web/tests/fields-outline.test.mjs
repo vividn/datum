@@ -11,7 +11,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
-import { FIXTURE, MOOD, type } from './support/fields.mjs';
+import { BLUE, FIXTURE, MOOD, type, untilFieldStyle } from './support/fields.mjs';
 
 /** Every button the bar draws, by what it is, with its top border's style. */
 const outlines = (page) =>
@@ -27,6 +27,26 @@ const outlines = (page) =>
 /** How many entries the database holds, by the CLI's own count. */
 const entries = async (app) =>
 	JSON.parse((await app.run(['count', '--group-by', 'field', '--json'])).stdout).reduce((n, g) => n + g.count, 0);
+
+/**
+ * The pixels a button DRAWS, not its computed style (da-0lmb7): the double's
+ * gap, a device pixel past the outer line at mid-height, and the fill, just
+ * inside the border — as `[r, g, b]`, read from a screenshot of the button.
+ */
+const drawn = async (page, button) => {
+	const box = await button.boundingBox();
+	const png = await page.screenshot({ clip: box });
+	return page.evaluate(async (b64) => {
+		const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob());
+		const ctx = new OffscreenCanvas(img.width, img.height).getContext('2d');
+		ctx.drawImage(img, 0, 0);
+		const at = (x) => [...ctx.getImageData(x, img.height >> 1, 1, 1).data.slice(0, 3)];
+		return { gap: at(1), fill: at(4) };
+	}, png.toString('base64'));
+};
+
+/** How far apart two colours are, the largest of the three channels. */
+const apart = (a, b) => Math.max(...a.map((v, i) => Math.abs(v - b[i])));
 
 describe('the outline says what a tap does', () => {
 	before(startApp);
@@ -73,6 +93,32 @@ describe('the outline says what a tap does', () => {
 			await input.fill('occur ');
 			await page.waitForFunction(() => !document.querySelector('.bar [data-field="note"]'));
 			assert.equal((await outlines(page)).coffee, 'double');
+		});
+	});
+
+	// vividn: «The double outline is obscured when the button is filled in
+	// with a color». A block that is on is filled in its own line's colour,
+	// and the state a switch is in, in the ring, in its state's; the
+	// double's gap must still show something else than the fill.
+	test('a double reads on a button filled in its own colour', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			for (const line of [...FIXTURE, ...MOOD, 'switch mood good', 'start work']) await type(page, line);
+			await untilFieldStyle(page, 'work', 'backgroundColor', BLUE);
+			await app.idle();
+
+			const work = page.locator('.bar [data-field="work"]');
+			assert.equal(await work.evaluate((b) => getComputedStyle(b).borderTopStyle), 'double');
+			const block = await drawn(page, work);
+			assert.ok(apart(block.gap, block.fill) > 64, `work: gap ${block.gap} on fill ${block.fill}`);
+
+			await page.locator('.bar [data-field="mood"]').click();
+			const now = page.locator('.bar .states.on');
+			await now.waitFor();
+			assert.equal(await now.evaluate((b) => getComputedStyle(b).borderTopStyle), 'double');
+			const state = await drawn(page, now);
+			assert.ok(apart(state.gap, state.fill) > 64, `mood's state: gap ${state.gap} on fill ${state.fill}`);
+			await page.locator('.bar [data-back]').click();
 		});
 	});
 
