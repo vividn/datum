@@ -43,8 +43,7 @@ fn ok(db: &Path, args: &[&str]) -> String {
 
 /// Blank the wall clock a `now`-shaped reader puts in its output — an
 /// RFC-3339 stamp, an epoch-millisecond integer, or a geometry float that
-/// a layout derived from one (`dayview`'s open block runs to *now*). The
-/// two spellings run milliseconds apart, and that difference is not the
+/// a layout derived from one. The two spellings run milliseconds apart, and that difference is not the
 /// one under test — every key, string, label and colour still is, and a
 /// command that ignored the flag would differ in all of them.
 fn mask_times(s: &str) -> String {
@@ -93,14 +92,19 @@ fn is_stamp(c: &[char]) -> bool {
         })
 }
 
+/// The day the seed is logged on — a past one, so `dayview` of it draws
+/// the open `mood` block to the day's end and not to the wall clock, which
+/// moved between the two spellings and made them differ (da-u56cg).
+const DAY: &str = "2024-03-16";
+
 /// A fresh db with three entries — enough that every reader below has
 /// something to render.
 fn seeded() -> (TempDir, std::path::PathBuf) {
     let tmp = tempfile::tempdir().expect("tmpdir");
     let db = tmp.path().join("show_family.db");
-    ok(&db, &["occur", "coffee", "-t", "9:15"]);
-    ok(&db, &["switch", "mood", "happy", "-t", "9:20"]);
-    ok(&db, &["occur", "coffee", "-t", "9:30"]);
+    ok(&db, &["occur", "coffee", "-d", DAY, "-t", "9:15"]);
+    ok(&db, &["switch", "mood", "happy", "-d", DAY, "-t", "9:20"]);
+    ok(&db, &["occur", "coffee", "-d", DAY, "-t", "9:30"]);
     (tmp, db)
 }
 
@@ -111,7 +115,7 @@ const JSON_COMMANDS: &[&[&str]] = &[
     &["now"],
     &["nowview"],
     &["tail"],
-    &["dayview"],
+    &["dayview", "-d", DAY],
     &["stats", "coffee"],
     &["count"],
     &["history", "coffee:_"],
