@@ -352,7 +352,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		meta: meta('command', 'command'),
 		component: CommandPane,
 		help: [
-			'Every datum command as a button: Undo (↷ redoes), Help, the verbs, then the rest.',
+			'Every datum command as a button, in sections: Undo (↷ redoes) and Help, the verbs, setup, edits, analysis, db.',
 			'A verb goes on the command line and filters the fields; a double outline runs at once.',
 			'The pills you have loaded hide the commands that cannot take them.'
 		].join('\n'),

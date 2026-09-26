@@ -132,7 +132,7 @@ describe('what a tap runs rather than fills', () => {
 	});
 
 	test('one hid: delete, get, history, undo run; update and retime fill', () => {
-		assert.deepEqual(firing([one]), ['undo', 'delete', 'history', 'get']);
+		assert.deepEqual(firing([one]), ['undo', 'delete', 'get', 'history']);
 		assert.deepEqual(firing([two]), ['delete'], 'only a comma list takes two');
 	});
 
@@ -274,12 +274,12 @@ describe('which commands are active under the pills', () => {
 	});
 
 	test('one hid: the id commands, the rest hidden', () => {
-		assert.deepEqual(active([one]), ['undo', 'retime', 'update', 'delete', 'history', 'get']);
+		assert.deepEqual(active([one]), ['undo', 'delete', 'update', 'retime', 'get', 'history']);
 		assert.equal(active([one]).includes('occur'), false);
 	});
 
 	test('two hids: what takes a comma list', () => {
-		assert.deepEqual(active([two]), ['retime', 'update', 'delete']);
+		assert.deepEqual(active([two]), ['delete', 'update', 'retime']);
 	});
 
 	test('a -t pill: what takes -t', () => {

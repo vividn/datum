@@ -137,15 +137,17 @@ export const lastReached = (locator, selector) =>
  * The room between every two buttons side by side on one drawn line
  * (da-vu7pi). Each row packs on its own, so every one of these is the
  * bar's gap — a button padded out to the widest in its column, as the
- * column grid drew them, leaves more.
+ * column grid drew them, leaves more. A line is read within its SECTION
+ * (da-0mepr): the room across a divider is the divider's, not a row's.
  */
 export const gaps = (locator, selector) =>
 	locator.evaluate(
 		(bar, selector) => {
 			const lines = new Map();
+			const sections = [...bar.querySelectorAll('.section')];
 			for (const b of bar.querySelectorAll(selector)) {
 				const box = b.getBoundingClientRect();
-				const line = Math.round(box.top + box.height / 2);
+				const line = `${sections.indexOf(b.closest('.section'))}:${Math.round(box.top + box.height / 2)}`;
 				lines.set(line, [...(lines.get(line) ?? []), box]);
 			}
 			return [...lines.values()].flatMap((row) =>
@@ -168,17 +170,20 @@ export function packed(read, what) {
  * The `selector` elements of a button bar in the order the WIDGET listed
  * them (da-vu7pi). `ButtonRows` deals item `i` into row `i % rows`, so the
  * DOM reads a row at a time; this deals the items back — the first of
- * every row, then the second of every row — and reads each match as its
+ * every row, then the second of every row, one section at a time, as
+ * each is dealt on its own (da-0mepr) — and reads each match as its
  * `data-*` names, its text and its tag. Not the fields bar's ORDER, which
  * is not dealt by index (da-xtkcp): read that with `rowsOf` below.
  */
 export const listed = (locator, selector) =>
 	locator.evaluate(
 		(bar, selector) => {
-			const lanes = [...bar.querySelectorAll('.lane')].map((lane) => [...lane.children]);
 			const items = [];
-			for (let k = 0; lanes.some((lane) => k < lane.length); k += 1)
-				for (const lane of lanes) if (k < lane.length) items.push(lane[k]);
+			for (const section of bar.querySelectorAll('.section')) {
+				const lanes = [...section.querySelectorAll('.lane')].map((lane) => [...lane.children]);
+				for (let k = 0; lanes.some((lane) => k < lane.length); k += 1)
+					for (const lane of lanes) if (k < lane.length) items.push(lane[k]);
+			}
 			return items
 				.flatMap((item) => (item.matches(selector) ? [item] : [...item.querySelectorAll(selector)]))
 				.map((el) => ({ ...el.dataset, text: el.textContent.trim(), tag: el.tagName }));

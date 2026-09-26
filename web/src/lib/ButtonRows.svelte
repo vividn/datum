@@ -20,6 +20,11 @@
 	instead — the fields widget's rows are bands of height (da-xtkcp). TAB
 	ORDER follows the drawing — along the first row, then the second.
 
+	SECTIONS (da-0mepr): a widget that passes `section` has its items cut
+	into runs of one section each, every run dealt into rows of its own
+	and set apart from the next by a divider — the commands widget's kinds
+	of action. The runs share the one scroll and the one count of rows.
+
 	A widget hands in its `items`, a `key` for each, and a default slot
 	that draws one (`let:item`); its buttons keep its own classes, which
 	style them where they are written.
@@ -33,6 +38,8 @@
 	export let axis: Axis = 'x';
 	/** How `items` are laid into so many rows; dealt by index unless the widget says otherwise. */
 	export let arrange: (items: T[], rows: number) => T[][] = lanesOf;
+	/** Which section an item is in; consecutive items of one section are drawn together. */
+	export let section: ((item: T) => unknown) | undefined = undefined;
 	/** The scroller itself, for a widget that has to put a scroll back. */
 	export let bar: HTMLElement | undefined = undefined;
 
@@ -41,7 +48,20 @@
 
 	onMount(() => watchRows(bar!, probe, (n) => (rows = n), axis));
 
-	$: lanes = arrange(items, rows);
+	/** Consecutive items of one section, as runs; everything one run without `section`. */
+	const runsOf = (items: T[]): T[][] =>
+		items.reduce<T[][]>((runs, item, i) => {
+			if (i && section && section(item) === section(items[i - 1])) runs.at(-1)!.push(item);
+			else runs.push([item]);
+			return runs;
+		}, []);
+
+	$: groups = (section ? runsOf(items) : [items]).map((run) => ({
+		name: section?.(run[0]),
+		lanes: arrange(run, rows)
+	}));
+	/** Every group is as many lines as the fullest, so a line runs straight across them. */
+	$: lines = Math.max(1, ...groups.map(({ lanes }) => lanes.length));
 </script>
 
 <!-- The measuring stick: the widget's own button, laid out and invisible,
@@ -57,10 +77,14 @@
 	on:pointerenter
 	on:pointerleave
 >
-	{#each lanes as lane}
-		<div class="lane">
-			{#each lane as item (key(item))}
-				<slot {item} />
+	{#each groups as { name, lanes }}
+		<div class="section" data-section={name} style:--lines={lines}>
+			{#each lanes as lane}
+				<div class="lane">
+					{#each lane as item (key(item))}
+						<slot {item} />
+					{/each}
+				</div>
 			{/each}
 		</div>
 	{/each}
@@ -82,36 +106,59 @@
 	}
 
 	.bar.x {
-		flex-direction: column;
+		flex-direction: row;
 		overflow-x: auto;
 		overflow-y: hidden;
 	}
 
 	.bar.y {
-		flex-direction: row;
+		flex-direction: column;
 		overflow-x: hidden;
 		overflow-y: auto;
 	}
 
-	/* Each line takes an equal share of the box and centres its buttons, so
-	   a button taller than the probe (`Track +`) cannot push the next line
-	   out of it; along the axis it is as long as its own buttons. */
+	/* A section's lines each take an equal share of the box, however few it
+	   fills, so every section's first line is the others' first line. */
+	.section {
+		flex: none;
+		display: grid;
+		gap: 0.4rem;
+	}
+
+	.x > .section {
+		grid-template-rows: repeat(var(--lines), minmax(0, 1fr));
+	}
+
+	.y > .section {
+		grid-template-columns: repeat(var(--lines), minmax(0, 1fr));
+	}
+
+	/* The divider between two sections: a rule in the middle of the gap the
+	   bar leaves anyway, so it costs no room. One that added its own width
+	   put `end` off a 412px phone's one row (5.5px over, da-0mepr). */
+	.x > .section + .section {
+		border-left: 1px solid var(--rule);
+		margin-left: calc(-0.2rem - 0.5px);
+		padding-left: calc(0.2rem - 0.5px);
+	}
+
+	.y > .section + .section {
+		border-top: 1px solid var(--rule);
+		margin-top: calc(-0.2rem - 0.5px);
+		padding-top: calc(0.2rem - 0.5px);
+	}
+
+	/* Each line centres its buttons, so a button taller than the probe
+	   (`Track +`) cannot push the next line out of it; along the axis it is
+	   as long as its own buttons. */
 	.lane {
-		flex: 1 1 0;
 		display: flex;
 		align-items: center;
 		gap: 0.4rem;
 	}
 
-	.x > .lane {
-		min-height: 0;
-		width: max-content;
-	}
-
-	.y > .lane {
+	.y .lane {
 		flex-direction: column;
-		min-width: 0;
-		height: max-content;
 	}
 
 	.lane > :global(*) {

@@ -126,6 +126,37 @@ async function tap(page, name) {
 	);
 }
 
+/**
+ * The commands bar's sections as drawn: each one's name, its commands, the
+ * x of the rule at its left edge (null where none is drawn), and how far
+ * its buttons reach either side.
+ */
+const sectionsOf = (page) =>
+	commands(page).evaluate((bar) =>
+		[...bar.querySelectorAll(':scope > .section')].map((section) => {
+			const style = getComputedStyle(section);
+			const buttons = [...section.querySelectorAll('button[data-command]')];
+			const boxes = buttons.map((b) => b.getBoundingClientRect());
+			return {
+				name: section.dataset.section,
+				commands: buttons.map((b) => b.dataset.command),
+				rule: style.borderLeftStyle === 'solid' && parseFloat(style.borderLeftWidth) > 0 ? section.getBoundingClientRect().left : null,
+				left: Math.min(...boxes.map((b) => b.left)),
+				right: Math.max(...boxes.map((b) => b.right))
+			};
+		})
+	);
+
+/** No empty section; a rule before every section but the first, standing between the two sections' buttons. */
+function ruled(sections) {
+	sections.forEach((s, i) => {
+		assert.ok(s.commands.length > 0, `${s.name} is drawn empty`);
+		if (i === 0) return assert.equal(s.rule, null, `a rule before ${s.name}, the first`);
+		assert.notEqual(s.rule, null, `no rule between ${sections[i - 1].name} and ${s.name}`);
+		assert.ok(sections[i - 1].right < s.rule && s.rule < s.left, `the rule before ${s.name} is not between the sections`);
+	});
+}
+
 describe('the bar of commands', () => {
 	test('Undo leads, the verbs follow, and note is not among them', async () => {
 		await onPage(async ({ page }) => {
@@ -144,6 +175,35 @@ describe('the bar of commands', () => {
 			assert.ok(buttons.includes('sync'), 'the tail of the list is drawn too');
 		});
 	});
+
+	// da-0mepr. vividn, 2026-09-26: «let's divide the command widget into
+	// sections. I think that will visually differentiate different kinds of
+	// actions» — undo and help, logging, setup, edits, analysis, db.
+	test('the commands stand in sections, in order, a rule between each; a pill that hides the edits takes their section and its rule', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await seedLines(app, SEED);
+			await atRows(page, 'cmd', 3);
+			const whole = await sectionsOf(page);
+			assert.deepEqual(
+				whole.map((s) => s.name),
+				['undo', 'log', 'setup', 'edit', 'analysis', 'db']
+			);
+			assert.deepEqual(whole.find((s) => s.name === 'edit').commands.sort(), ['delete', 'retime', 'update']);
+			ruled(whole);
+
+			// A field pill: coffee names no edit (fieldpill.test.mjs), so the whole section goes.
+			await fieldsBar(page).locator('[data-field="coffee"]').click({ button: 'right' });
+			await page.waitForFunction(() => !document.querySelector('[data-command="delete"]'));
+			const under = await sectionsOf(page);
+			assert.deepEqual(
+				under.map((s) => s.name),
+				whole.map((s) => s.name).filter((name) => under.some((s) => s.name === name))
+			);
+			assert.equal(under.some((s) => s.name === 'edit'), false, 'the edit section outlived its commands');
+			ruled(under);
+		});
+	});
 });
 
 // da-803mk. vividn, 2026-09-25: «for commands with subcommands, like db,
@@ -159,6 +219,8 @@ describe('a command with subcommands drills into them', () => {
 			await back(page).waitFor();
 			assert.equal((await back(page).innerText()).trim(), '< Back');
 			assert.deepEqual(await drawn(page), ['Help', ...DB], 'Help stays, to explain a subcommand');
+			// A drilled bar is one run: Help's section does not set it apart (da-0mepr).
+			assert.deepEqual((await sectionsOf(page)).map((s) => s.name), [undefined]);
 			assert.equal((await line(page)).text, '', '`db ` runs nothing, so a tap never writes it');
 
 			await tap(page, 'db setup');

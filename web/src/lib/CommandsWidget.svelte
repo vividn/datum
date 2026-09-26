@@ -60,6 +60,11 @@
 	The bar is `ButtonRows` — how every button bar is laid out and
 	scrolled (da-vu7pi): as many rows as fit, up to three, each packed on
 	its own and all of them scrolled left and right.
+	The commands stand in SECTIONS (da-0mepr, `Section`): undo and help,
+	logging, setup, edits, analysis, db — a divider between each, and a
+	section the pills empty is not drawn at all. A drilled bar is drawn
+	without them — its Help carries a section — so it is the one run it
+	always was.
 -->
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
@@ -162,7 +167,14 @@
 
 <svelte:window on:keydown={onKeyDown} />
 
-<ButtonRows class="commands" items={shown} key={(command) => command.name} bind:bar let:item={command}>
+<ButtonRows
+	class="commands"
+	items={shown}
+	key={(command) => command.name}
+	section={open || flagged ? undefined : (command) => command.section}
+	bind:bar
+	let:item={command}
+>
 	<button slot="probe" class="command" tabindex="-1">probe</button>
 	{#if command.name === 'undo'}
 		<span class="undo">

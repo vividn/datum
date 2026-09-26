@@ -31,49 +31,39 @@ import {
 	withFlag
 } from '../src/lib/commands.ts';
 
-/** vividn's order: Undo (its redo an icon on it, da-zq91a), Help where Redo was (da-vjwid), the five verbs, then the rest. */
-const ORDER = [
-	'undo',
-	'help',
-	'occur',
-	'start',
-	'end',
-	'switch',
-	'add',
-	'retime',
-	'update',
-	'delete',
-	'track',
-	'ignore',
-	'flag',
-	'tail',
-	'now',
-	'stats',
-	'fields',
-	'count',
-	'ids',
-	'history',
-	'get',
-	'grep',
-	'dayview',
-	'nowview',
-	'spec',
-	'alias',
-	'kit',
-	'check',
-	'db',
-	'info',
-	'config',
-	'sync'
+/**
+ * vividn's sections (da-0mepr), in order, each in the order he named them:
+ * Undo (its redo an icon on it, da-zq91a) and Help where Redo was
+ * (da-vjwid), the verbs, setup, the edits, analysis, the db. What he did
+ * not name follows in its kind: `flag` logs, `config` sets up.
+ */
+const SECTIONS = [
+	['undo', ['undo', 'help']],
+	['log', ['occur', 'start', 'end', 'switch', 'add', 'flag']],
+	['setup', ['track', 'ignore', 'spec', 'alias', 'kit', 'view', 'config']],
+	['edit', ['delete', 'update', 'retime']],
+	[
+		'analysis',
+		['tail', 'now', 'stats', 'get', 'check', 'info', 'fields', 'count', 'ids', 'history', 'grep', 'dayview', 'nowview']
+	],
+	['db', ['sync', 'db', 'conflicts']]
 ];
+const ORDER = SECTIONS.flatMap(([, names]) => names);
 
 describe('the commands, in order', () => {
-	test('Undo first, then the verbs, then the rest', () => {
+	test('Undo first, then the verbs, then the other sections', () => {
 		assert.deepEqual(
 			COMMANDS.map((c) => c.name),
 			ORDER
 		);
 		assert.equal(COMMANDS[0].label, 'Undo');
+	});
+
+	test('every command is in its section, and the sections come in order', () => {
+		assert.deepEqual(
+			COMMANDS.map((c) => [c.name, c.section]),
+			SECTIONS.flatMap(([section, names]) => names.map((name) => [name, section]))
+		);
 	});
 
 	// vividn, 2026-09-15 19:08: `note` is not a button here — it lived in a

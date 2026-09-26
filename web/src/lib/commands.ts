@@ -56,14 +56,33 @@ export interface CommandButton {
 	next?: 'tap' | 'type';
 	/** A flag's one line of help, from the CLI's own flag table. */
 	help?: string;
+	/** Which kind of action it is (da-0mepr): the bar sets each kind apart. Only the top list has one. */
+	section?: Section;
 }
+
+/**
+ * The kinds of action, in the order the widget draws them, each set apart
+ * from the next by a divider (da-0mepr). vividn, 2026-09-26: «let's divide
+ * the command widget into sections … undo and help are in the first
+ * section, then the logging section, then track, ignore, spec, aliases in
+ * one section, then the various update type functions: delete, update,
+ * retime. then perhaps the anaysis and stuff like get check etc, then
+ * finally db level so sync db etc».
+ */
+export type Section = 'undo' | 'log' | 'setup' | 'edit' | 'analysis' | 'db';
 
 /** The fillers a tap completes: an id or a time pill is what comes next. */
 const TAPPED = ['retime', 'delete', 'get', 'history'];
 
+/** A section's commands that fill the line: `name `, then a tap or the keyboard. */
+const fills = (section: Section, names: string[]): CommandButton[] =>
+	names.map((name) => ({ name, label: name, press: 'fill', next: TAPPED.includes(name) ? 'tap' : 'type', section }));
+
 /**
- * The commands, in the order the widget draws them: Undo, Help, vividn's five
- * verbs, then the rest by how often a hand reaches for them.
+ * The commands, in the order the widget draws them: section by section
+ * (`Section`), vividn's words in the order he named them and the rest after
+ * them where their kind fits — `flag` logs an entry, `config` sets up,
+ * the readers are analysis.
  *
  * `redo` is not a button of its own (da-zq91a, vividn: «rather than dedicated
  * redo button, lets make the undo button … have a little redo section»):
@@ -81,41 +100,31 @@ const TAPPED = ['retime', 'delete', 'get', 'history'];
  * that composes the wrong command is worse than no button.
  */
 export const COMMANDS: CommandButton[] = [
-	{ name: 'undo', label: 'Undo', press: 'run' },
+	{ name: 'undo', label: 'Undo', press: 'run', section: 'undo' },
 	// Where Redo stood before da-zq91a (da-vjwid, vividn: «where redo button
 	// is lets add a help button»). It explains the next tap instead of
 	// running anything, and `datum help` is what it is a button for.
-	{ name: 'help', label: 'Help', press: 'help' },
-	...VERBS.map((name): CommandButton => ({ name, label: name, press: 'verb', next: 'tap' })),
-	...[
-		'retime',
-		'update',
-		'delete',
-		'track',
-		'ignore',
-		'flag',
+	{ name: 'help', label: 'Help', press: 'help', section: 'undo' },
+	...VERBS.map((name): CommandButton => ({ name, label: name, press: 'verb', next: 'tap', section: 'log' })),
+	...fills('log', ['flag']),
+	...fills('setup', ['track', 'ignore', 'spec', 'alias', 'kit', 'view', 'config']),
+	...fills('edit', ['delete', 'update', 'retime']),
+	...fills('analysis', [
 		'tail',
 		'now',
 		'stats',
+		'get',
+		'check',
+		'info',
 		'fields',
 		'count',
 		'ids',
 		'history',
-		'get',
 		'grep',
 		'dayview',
-		'nowview',
-		'spec',
-		'alias',
-		'kit',
-		'check',
-		'db',
-		'info',
-		'config',
-		'sync'
-	].map(
-		(name): CommandButton => ({ name, label: name, press: 'fill', next: TAPPED.includes(name) ? 'tap' : 'type' })
-	)
+		'nowview'
+	]),
+	...fills('db', ['sync', 'db', 'conflicts'])
 ];
 
 /**
