@@ -442,8 +442,9 @@
 	 * spots from their measured sizes and the room the box leaves on each
 	 * side of the tap — capped at an edge, never shifted, so `end` stays
 	 * under the thumb (da-8mk9p). The ring reaches two rows either way, and
-	 * a side the box caps gives what it lost to the other. When the centre's
-	 * line itself cannot fit sideways, or the states run past the right
+	 * a side the box caps gives what it lost to the other; at a side edge
+	 * `< Back` or `+ Add state` steps onto another row (da-u9nfv). When the
+	 * centre itself cannot fit sideways, or a button runs past the right
 	 * edge, the box scrolls its centre under the tap as far as it can. Two
 	 * pixels short of the box, or a border on its edge is clipped. Measured
 	 * in the box's own offsets, never on the screen, since the bar may still

@@ -47,6 +47,7 @@ describe('ringOf', () => {
 		states: Array.from({ length: n }, (_, i) => wide(i))
 	});
 	const far = (p) => Math.hypot(p.x, p.y);
+	const inside = (ring, w, r) => boxes(ring, w).every((b) => b.x - b.w / 2 >= -r.left - 1e-9 && b.x + b.w / 2 <= r.right + 1e-9);
 	/** Room for `ry` of centres above and below, and plenty sideways. */
 	const room = (ry, more = {}) => ({ up: ry + H / 2, down: ry + H / 2, left: 1000, right: 1000, ...more });
 
@@ -104,25 +105,41 @@ describe('ringOf', () => {
 			assert.deepEqual(overlaps(boxes(ring, w)), []);
 		});
 
-	test('capped sideways: the states stay inside, and only a line that cannot fit moves', () => {
+	test('capped sideways: the states stay inside, and the line where it fits', () => {
 		// On one line, so the states would stand either side of it.
 		const w = sizes(6);
-		const inside = (ring, r) =>
-			boxes(ring, w).every((b) => b.x - b.w / 2 >= -r.left - 1e-9 && b.x + b.w / 2 <= r.right + 1e-9);
 		// Room for the line and a little more: `end` stays, the states fit.
 		for (const r of [room(10, { left: 25 + GAP + 80 + 4 }), room(10, { right: 25 + GAP + 110 + 4 })]) {
 			const ring = ringOf(w, H, r, GAP);
 			assert.deepEqual(ring.end, { x: 0, y: 0 });
-			assert.ok(inside(ring, r), `a button is past an edge: ${JSON.stringify(r)}`);
+			assert.ok(inside(ring, w, r), `a button is past an edge: ${JSON.stringify(r)}`);
 			assert.deepEqual(overlaps(boxes(ring, w)), []);
 		}
-		// No room for `< Back`: the line moves right just enough, and no further.
-		const tight = room(72, { left: 10 });
-		const moved = ringOf(w, H, tight, GAP);
-		assert.deepEqual(moved.end, { x: 25 + GAP + 80 - 10, y: 0 });
-		assert.equal(moved.back.x - w.back / 2, -10);
-		assert.ok(inside(moved, tight), 'a button is past the left edge');
 	});
+
+	// da-u9nfv — vividn: «yes shift those into another row if needed».
+	for (const [edge, name, sign] of [
+		['left', 'back', -1],
+		['right', 'add', 1]
+	])
+		test(`no room ${edge} of \`end\`: it stays on the tap, and \`${name}\` steps onto another row inside`, () => {
+			const w = sizes(6);
+			// Just short of the line, so its own side has room on another row;
+			// then room for `end` alone, so it has none.
+			for (const [reach, own] of [
+				[25 + GAP + w[name] - 1, true],
+				[25 + 5, false]
+			]) {
+				const r = room(72, { [edge]: reach });
+				const ring = ringOf(w, H, r, GAP);
+				assert.deepEqual(ring.end, { x: 0, y: 0 });
+				assert.notEqual(ring[name].y, 0, `${reach}: \`${name}\` stayed on the line`);
+				assert.ok(inside(ring, w, r), `${reach}: a button is past an edge`);
+				if (own) assert.ok(sign * ring[name].x > 0, `${reach}: \`${name}\` crossed \`end\``);
+				assert.deepEqual(ring[name === 'back' ? 'add' : 'back'].y, 0, 'the other left the line');
+				assert.deepEqual(overlaps(boxes(ring, w)), []);
+			}
+		});
 
 	test('a state no spot inside holds goes past the right edge, never the left', () => {
 		const w = sizes(12);
@@ -148,25 +165,25 @@ const SEED = [
 
 /**
  * Scroll the bar until mood's centre is at `fraction` of the bar's width
- * (as near as the scroll reaches), press it there, and read where the ring
+ * and `px` more (as near as the scroll reaches), press it there, and read where the ring
  * landed; then Back.
  *
  * The press is the element's own click, not the mouse's: a bar one row
  * high is a viewport so short the bottom bar lies over it, and the widget
  * reads where the BUTTON is, not where the pointer was.
  */
-async function tapAt(page, fraction, field = 'mood') {
+async function tapAt(page, fraction, field = 'mood', px = 0) {
 	const tap = await page.locator(BAR).evaluate(
-		(bar, [fraction, field]) => {
+		(bar, [fraction, field, px]) => {
 			const box = bar.getBoundingClientRect();
 			const button = () => bar.querySelector(`[data-field="${field}"]`);
 			const m = button().getBoundingClientRect();
-			bar.scrollLeft += m.left + m.width / 2 - (box.left + fraction * box.width);
+			bar.scrollLeft += m.left + m.width / 2 - (box.left + fraction * box.width + px);
 			const at = button().getBoundingClientRect();
 			button().click();
 			return { x: at.left + at.width / 2, y: at.top + at.height / 2 };
 		},
-		[fraction, field]
+		[fraction, field, px]
 	);
 	await page.locator(`${BAR} [data-add-state]`).waitFor();
 	const seen = await page.locator(BAR).evaluate((bar) => {
@@ -196,13 +213,12 @@ async function tapAt(page, fraction, field = 'mood') {
 
 /** `name`'s centre relative to `end`'s, to the pixel. */
 const from = (t, name) => [Math.round(t.find(name).x - t.find('false').x), Math.round(t.find(name).y - t.find('false').y)];
-const shape = (t) => t.buttons.map((b) => from(t, b.name));
 
 describe('a switch field’s states around the tap', () => {
 	before(startApp);
 	after(stopApp);
 
-	test('`end` on the tap, one shape from anywhere, the line shifted only when it cannot fit at an edge, reordered by the States tab alone', async () => {
+	test('`end` on the tap, at a side edge too, `< Back` or `+ Add state` on another row there, reordered by the States tab alone', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -211,11 +227,8 @@ describe('a switch field’s states around the tap', () => {
 
 				for (const want of [1, 3]) {
 					await atRows(page, 'bar', want);
-					const [middle, left, right] = [await tapAt(page, 0.5), await tapAt(page, 0.02), await tapAt(page, 0.98)];
+					const middle = await tapAt(page, 0.5);
 					assert.deepEqual(middle.buttons.map((b) => b.name), RING, `${want} rows: not in the spec's order`);
-					// The same shape from every tap, where there are rows to hold it:
-					// on one line the states stay inside the bar instead (da-8mk9p).
-					if (want > 1) for (const t of [left, right]) assert.deepEqual(shape(t), shape(middle), `${want} rows: the shape moved`);
 					// `< Back` and `+ Add state` flank `end` on its own line.
 					const [back, end, add] = [middle.find('< Back'), middle.find('false'), middle.find('+ Add state')];
 					assert.ok(back.right <= end.left && end.right <= add.left, `${want} rows: < Back, end, + Add state are not left to right`);
@@ -233,19 +246,27 @@ describe('a switch field’s states around the tap', () => {
 					// The spec's order is a rank: a no further than b, b than c…
 					const d = STATES.map((name) => Math.hypot(...from(middle, name)));
 					assert.ok(d.every((x, i) => i === 0 || x >= d[i - 1] - 1), `a higher rank stands further: ${d}`);
-					// At an edge `< Back` or `+ Add state` cannot fit beside the tap,
-					// so the line is shifted inside — so the taps really were at
-					// edges, or this proves nothing.
-					for (const [t, side] of [
-						[left, 'left'],
-						[right, 'right']
+
+					// da-u9nfv — vividn: «yes shift those into another row if needed».
+					// Tapped with `end` just inside the bar's left or right edge,
+					// where `< Back` or `+ Add state` cannot stand beside it: `end`
+					// stays on the tap and that one steps onto another row.
+					const margin = (end.right - end.left) / 2 + 4;
+					for (const [side, fraction, px, name, other] of [
+						['left', 0, margin, '< Back', '+ Add state'],
+						['right', 1, -margin, '+ Add state', '< Back']
 					]) {
-						const lo = Math.min(...t.buttons.map((b) => b.left));
-						const hi = Math.max(...t.buttons.map((b) => b.right));
-						assert.ok(lo >= t.ring.left - 1 && hi <= t.ring.right + 1, `${side}: a button is outside the bar`);
-						assert.ok(Math.abs(t.find('false').x - t.tap.x) > 1, `${side}: the tap was not near enough the edge to shift`);
+						const t = await tapAt(page, fraction, 'mood', px);
+						const [e, moved] = [t.find('false'), t.find(name)];
+						assert.ok(Math.abs(e.x - t.tap.x) <= 1 && Math.abs(e.y - t.tap.y) <= 1, `${side}: end at ${e.x},${e.y}, the tap at ${t.tap.x},${t.tap.y}`);
+						// Too near the edge for the line, or this proves nothing.
+						const room = side === 'left' ? t.tap.x - t.ring.left : t.ring.right - t.tap.x;
+						assert.ok(room < margin + GAP + moved.right - moved.left, `${side}: the tap was not near enough the edge`);
+						assert.ok(Math.abs(moved.y - e.y) > 1, `${side}: ${name} stayed on end's line`);
+						assert.ok(Math.abs(t.find(other).y - e.y) < 1, `${side}: ${other} left end's line`);
+						for (const b of t.buttons)
+							assert.ok(b.left >= t.ring.left - 1 && b.right <= t.ring.right + 1, `${side}: ${b.name} is outside the bar`);
 					}
-					assert.ok(left.find('false').x > left.tap.x && right.find('false').x < right.tap.x, 'shifted the wrong way');
 
 					// Tinted states; `end`, `< Back` and `+ Add state` are hollow.
 					const clear = 'rgba(0, 0, 0, 0)';
