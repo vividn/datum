@@ -491,6 +491,8 @@ mod tests {
             color: Some("ff6600".to_string()),
             states: vec!["happy=00ff00".to_string(), "sad=ff0000".to_string()],
             tags: vec![],
+            keys: vec![],
+            required_keys: vec![],
         };
         crate::commands::track::track(track_args, &db).unwrap();
 
@@ -534,6 +536,8 @@ mod tests {
                 color: None,
                 states: vec![],
                 tags: vec![],
+                keys: vec![],
+                required_keys: vec![],
             },
             &db,
         )

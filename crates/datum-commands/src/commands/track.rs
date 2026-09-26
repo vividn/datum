@@ -5,7 +5,7 @@ use anyhow::Result;
 use datum_core::{
     action::Action,
     db::Db,
-    field_spec::{FieldSpec, VERB_CHOICES_TEXT},
+    field_spec::{FieldSpec, SubfieldSpec, SubfieldType, VERB_CHOICES_TEXT},
     time::DatumTime,
     track::track_entry,
 };
@@ -73,6 +73,36 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
     // the tag if absent. To replace the full set, use `datum spec set`.
     for tag in &args.tags {
         spec.add_tag(tag);
+    }
+    // da-h119q: `--key NAME[=DEFAULT]` / `--required-key`, so a field is
+    // declared with the keys a person cares about in the one command. A
+    // default is JSON when it parses and text when it does not, as the
+    // web's key editor stores an `any` key's. Naming a key the spec already
+    // has sets its required and default and keeps the rest — its type, and
+    // whether it is in the slug, which is what an entry IS.
+    let keys = args.keys.iter().map(|k| (k, false));
+    for (key, required) in keys.chain(args.required_keys.iter().map(|k| (k, true))) {
+        let (name, default) = match key.split_once('=') {
+            Some((name, d)) if !d.is_empty() => (
+                name,
+                Some(serde_json::from_str(d).unwrap_or_else(|_| d.into())),
+            ),
+            Some((name, _)) => (name, None),
+            None => (key.as_str(), None),
+        };
+        anyhow::ensure!(!name.trim().is_empty(), "--key needs a name: '{key}'");
+        let sub = spec
+            .subfields
+            .entry(name.to_string())
+            .or_insert(SubfieldSpec {
+                required,
+                value_type: SubfieldType::Any,
+                in_slug: false,
+                default: None,
+                unit: None,
+            });
+        sub.required = required;
+        sub.default = default;
     }
     spec.regenerate_derived_aliases();
     let device = device_id()?;

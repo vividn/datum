@@ -8,7 +8,7 @@ use common::run_cli;
 use datum_commands::commands::fields::compute_fields;
 use datum_core::action::Action;
 use datum_core::db::{Db, NowFilter};
-use datum_core::field_spec::FieldSpec;
+use datum_core::field_spec::{FieldSpec, SubfieldType};
 use datum_core::shape::TRACKED_STATE_VALUE;
 use datum_core::test_util::fresh_db;
 use serde_json::{json, Value as JsonValue};
@@ -199,4 +199,61 @@ fn a_bare_state_is_an_allowed_state_and_a_keyed_one_is_a_colour() {
         again.allowed_states.as_deref().map(<[String]>::len),
         Some(2)
     );
+}
+
+/// `--key` / `--required-key` declare a field's keys in the same command
+/// that declares the field (da-h119q) — the web's spec modal asks for keys
+/// on its first page, and a field being tracked for the first time has no
+/// spec for a second command to edit. A default is JSON when it parses.
+#[test]
+fn keys_ride_on_the_track() {
+    let db = fresh_db();
+    run_cli(
+        &[
+            "track",
+            "coffee",
+            "--verb",
+            "occur",
+            "--required-key",
+            "cups=2",
+            "--key",
+            "place",
+            "--key",
+            "note=decaf",
+        ],
+        &db,
+    )
+    .unwrap();
+
+    let keys = db.load_spec("coffee").unwrap().unwrap().subfields;
+    let (cups, place, note) = (&keys["cups"], &keys["place"], &keys["note"]);
+    assert!(cups.required && !place.required && !note.required);
+    assert_eq!(cups.default, Some(json!(2)));
+    assert_eq!(place.default, None);
+    assert_eq!(note.default, Some(json!("decaf")));
+    assert!(!cups.in_slug);
+
+    // A key the spec already has keeps its type and its place in the slug:
+    // re-tracking sets required and the default, and nothing an entry's
+    // identity rests on.
+    let mut spec = db.load_spec("coffee").unwrap().unwrap();
+    let cups = spec.subfields.get_mut("cups").unwrap();
+    cups.in_slug = true;
+    cups.value_type = SubfieldType::Number;
+    db.save_field_spec(&spec).unwrap();
+    run_cli(&["track", "coffee", "--key", "cups=3"], &db).unwrap();
+    let cups = &db.load_spec("coffee").unwrap().unwrap().subfields["cups"];
+    assert!(cups.in_slug && matches!(cups.value_type, SubfieldType::Number));
+    assert!(!cups.required);
+    assert_eq!(cups.default, Some(json!(3)));
+
+    // A key needs a name.
+    let err = run_cli(&["track", "coffee", "--key", "=5"], &db).unwrap_err();
+    assert!(err.to_string().contains("--key needs a name"), "{err}");
+    assert!(!db
+        .load_spec("coffee")
+        .unwrap()
+        .unwrap()
+        .subfields
+        .contains_key(""));
 }

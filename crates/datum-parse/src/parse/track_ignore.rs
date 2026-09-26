@@ -10,6 +10,8 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
         color: Option<String>,
         states: Vec<String>,
         tags: Vec<String>,
+        keys: Vec<String>,
+        required_keys: Vec<String>,
     }
     let registry: Vec<LiftedSpec<TrackParsing>> = vec![
         local_value(None, Some("verb"), |p, v| {
@@ -26,6 +28,14 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
         }),
         local_value(None, Some("tag"), |p, v| {
             p.tags.push(v.to_string());
+            Ok(())
+        }),
+        local_value(None, Some("key"), |p, v| {
+            p.keys.push(v.to_string());
+            Ok(())
+        }),
+        local_value(None, Some("required-key"), |p, v| {
+            p.required_keys.push(v.to_string());
             Ok(())
         }),
     ];
@@ -54,6 +64,8 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
         color: composed.color,
         states: composed.states,
         tags: composed.tags,
+        keys: composed.keys,
+        required_keys: composed.required_keys,
     })
 }
 

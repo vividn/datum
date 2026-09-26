@@ -76,6 +76,14 @@ describe('the argv it composes', () => {
 		assert.deepEqual(trackArgv('coffee', 'occur', [row('good')]), ['track', 'coffee', '--verb', 'occur']);
 	});
 
+	// da-h119q: a field's keys are declared in the same `track`.
+	test('keys ride on the `track`: a required one as `--required-key`, a default after `=`, a blank name dropped', () => {
+		const key = (name, required, typed = '') => ({ name, required, value_type: 'any', in_slug: false, default: typed, unit: null });
+		assert.deepEqual(trackArgv('coffee', 'occur', [], '', [key(' cups ', true, '2'), key('place', false), key(' ', true)]), [
+			'track', 'coffee', '--verb', 'occur', '--required-key', 'cups=2', '--key', 'place'
+		]);
+	});
+
 	// da-ci85o: an edited spec is saved WHOLE, in one `spec set` — the
 	// shape that replaces the list, so a state removed takes its colour and
 	// description with it, and a blank clears where a flag could not.
@@ -411,7 +419,6 @@ describe('in the app', () => {
 			await pick.click();
 			assert.equal(await page.locator(`${MODAL} .set`).count(), 0);
 			assert.equal(await swatch.getAttribute('data-color'), color);
-			await page.locator(`${MODAL} input.unit`).fill('h');
 
 			await addStates(page, ['awake', 'asleep']);
 			await page.locator(`${MODAL} .state`).nth(1).locator('.swatch[aria-expanded]').click();
@@ -437,7 +444,6 @@ describe('in the app', () => {
 			assert.deepEqual(read, kept);
 			assert.equal(shown.verb, 'switch');
 			assert.equal(shown.color, color);
-			assert.equal(shown.unit, 'h');
 			assert.equal(shown.description, 'night');
 			assert.deepEqual(shown.allowed_states, ['awake', 'asleep']);
 			assert.deepEqual(shown.state_colors, { asleep: stateColor });
@@ -500,7 +506,7 @@ describe('in the app', () => {
 			const before = (await app.echoes()).length;
 			for (const dismiss of [() => page.keyboard.press('Escape'), () => page.mouse.click(2, 2)]) {
 				const shut = page.evaluate(() => window.datum.spec('sleep'));
-				await page.locator(`${MODAL} input.unit`).fill('h');
+				await page.locator(`${MODAL} input.description`).fill('h');
 				await dismiss();
 				assert.equal(await shut, null);
 				await page.waitForFunction((sel) => !document.querySelector(sel), MODAL);
@@ -559,7 +565,43 @@ describe('in the app', () => {
 		});
 	});
 
-	// `track` carries neither keys nor aliases, so a field being declared has them shut.
+	// da-h119q: vividn, «when tracking something new something users
+	// immediately want to do is to add in keys they care about». So Basics
+	// asks for them, in place of the field-level unit nothing read, and a
+	// field being declared carries them in its one `track`.
+	test('Basics asks for keys and not a unit, and a new field\'s keys are saved in its `track`', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await openIt(page);
+			assert.equal(await page.locator(`${MODAL} input.unit`).count(), 0, 'no unit on a new field');
+			await fill(page, 'coffee', 'occur');
+			await page.locator(`${MODAL} .basic-keys + button.add`).click();
+			const row = page.locator(`${MODAL} .basic-keys li`).last();
+			await row.locator('input.name').fill('cups');
+			await row.locator('input.default').fill('2');
+			await row.locator('input.required').check();
+			assert.match(await page.locator(`${MODAL} .preview`).innerText(), /--required-key cups=2$/);
+			const before = (await app.echoes()).length;
+			await page.locator(`${MODAL} button.commit`).click();
+			await page.locator('.bar button[data-field="coffee"]').waitFor();
+			await app.idle();
+			const echoes = (await app.echoes()).slice(before);
+			assert.equal(echoes.length, 1, `one command: ${echoes.join(' | ')}`);
+			assert.match(echoes[0], /^track coffee /);
+			const shown = JSON.parse((await app.run(['spec', 'show', 'coffee'])).stdout);
+			assert.deepEqual(shown.subfields.cups, { required: true, value_type: 'any', in_slug: false, default: 2, unit: null });
+
+			// A spec opens on Basics with its keys there, and still no unit.
+			const shut = page.evaluate(() => window.datum.spec('coffee'));
+			await page.locator(MODAL).waitFor();
+			assert.equal(await page.locator(`${MODAL} input.unit`).count(), 0, 'no unit on a spec');
+			assert.deepEqual(await page.locator(`${MODAL} .basic-keys input.name`).evaluateAll((els) => els.map((e) => e.value)), ['cups']);
+			await page.keyboard.press('Escape');
+			assert.equal(await shut, null);
+		});
+	});
+
+	// `track` carries no aliases, nor a key's type or slug, so a field being declared has those tabs shut.
 	test('Keys and Aliases are a spec\'s tabs: declaring a field has them shut', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;

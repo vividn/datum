@@ -842,6 +842,11 @@ pub struct TrackArgs {
     /// Each `--tag <name>` flag adds the tag to the field's spec
     /// idempotently. Repeatable; order preserved on first-add.
     pub tags: Vec<String>,
+    /// Repeatable `--key NAME[=DEFAULT]`: a data key the field's entries
+    /// may carry, declared in the same breath as the field (da-h119q).
+    pub keys: Vec<String>,
+    /// Repeatable `--required-key NAME[=DEFAULT]`: the same, marked required.
+    pub required_keys: Vec<String>,
 }
 
 #[derive(Debug)]

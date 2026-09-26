@@ -52,8 +52,8 @@ describe('the spec modal', () => {
 					assert.equal(await page.locator(MODAL).getByRole('tabpanel', { name: tab, exact: true }).count(), 1, `no tabpanel named ${tab}`);
 					assert.equal(await page.locator(MODAL).getByRole('tab', { name: tab, exact: true }).getAttribute('aria-controls'), 'spec-panel');
 				}
-				// The height is the tallest tab at rest (Basics, 506px at 390px
-				// wide): if it now scrolls, measure again and raise the 32rem.
+				// The height is the tallest tab at rest (Basics with the two keys,
+				// 593px at 390px wide): if it now scrolls, measure again and raise the 38rem.
 				assert.ok(sizes.basics.overflow <= 1, `basics overflows its panel by ${sizes.basics.overflow}px`);
 				const [first, ...rest] = TABS.map((tab) => sizes[tab]);
 				for (const [i, size] of rest.entries()) {

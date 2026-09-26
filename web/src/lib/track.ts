@@ -64,9 +64,16 @@ export interface StateRow {
  * is for. A bare `--state` names a state the field may be switched to
  * (da-94q1) and `--state NAME=COLOR` paints it, so a switch field is
  * declared whole in one command. A state's description is not something
- * `track` carries, and so the modal does not ask for one there.
+ * `track` carries, and so the modal does not ask for one there. Its keys
+ * are (da-h119q): `--key NAME=DEFAULT`, `--required-key` for a required one.
  */
-export function trackArgv(field: string, verb: Verb, states: StateRow[] = [], color = ''): string[] {
+export function trackArgv(
+	field: string,
+	verb: Verb,
+	states: StateRow[] = [],
+	color = '',
+	keys: KeyRow[] = []
+): string[] {
 	const argv = ['track', field, '--verb', verb];
 	if (verb === 'switch') {
 		const named = states.filter((s) => s.name.trim());
@@ -74,6 +81,8 @@ export function trackArgv(field: string, verb: Verb, states: StateRow[] = [], co
 		for (const { name, color } of named) if (color) argv.push('--state', `${name.trim()}=${color}`);
 	}
 	if (color) argv.push('--color', color);
+	for (const { name, required, default: typed } of keys.filter((k) => k.name.trim()))
+		argv.push(required ? '--required-key' : '--key', typed.trim() ? `${name.trim()}=${typed}` : name.trim());
 	return argv;
 }
 

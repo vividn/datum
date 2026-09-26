@@ -18,10 +18,14 @@
 
 	Segmented: Basics · States · Keys · Aliases · Placement. Track is this
 	modal opened on Basics, and that is all it needs — name, pictogram,
-	Done, the same taps it always took. Keys, Aliases and Placement are a
-	spec's alone (da-cap5m, da-btyvj): `track` carries none of them, so a
-	field being declared has them shut. Placement is a fifth tab because it
-	is a drag surface, not a row of inputs — cheap to move under Basics.
+	Done, the same taps it always took. The keys a field's entries carry
+	are on Basics too, name, default and required (da-h119q): they are the
+	first thing a person adds to a field, and `track` carries them. The
+	Keys tab has the rest of a key — its type, whether it is in the slug —
+	and it, Aliases and Placement are a spec's alone (da-cap5m, da-btyvj),
+	so a field being declared has them shut. Placement is a fifth tab
+	because it is a drag surface, not a row of inputs — cheap to move under
+	Basics.
 
 	Keys are grouped required over optional, so which is which reads at a
 	glance and not only off each row's toggle, and each row says whether
@@ -32,7 +36,7 @@
 
 	What it writes is decided by what it was opened on. A new field gets
 	`track`, the one command that writes the TRACK document, and so only
-	what `track` can carry is asked (no unit, no descriptions). A field with
+	what `track` can carry is asked (no descriptions, no glyphs). A field with
 	a spec gets the whole edited spec back in ONE `spec set --from-json` —
 	the `set` shape, the list entire, never a stream of `add-state`s.
 
@@ -83,7 +87,8 @@
 	let dialog: HTMLDialogElement;
 	let tab: (typeof TABS)[number] = 'basics';
 	let color = spec?.color ?? '';
-	let unit = spec?.unit ?? '';
+	/** Asked nowhere (da-h119q): nothing reads it, and da-6v7z1 takes it out of the spec. */
+	const unit = spec?.unit ?? '';
 	let description = spec?.description ?? '';
 	let states: StateRow[] = spec ? stateRows(spec) : [];
 	let glyph = spec?.glyph ?? '';
@@ -135,7 +140,7 @@
 					icon
 				})
 			)
-		: trackArgv(field.trim() || '<field>', verb ?? 'occur', states, color);
+		: trackArgv(field.trim() || '<field>', verb ?? 'occur', states, color, keys);
 	// A new field's states are a switch's: `track` carries them for no other verb.
 	$: statesOpen = spec !== null || verb === 'switch';
 
@@ -148,6 +153,9 @@
 		icon = await file.text();
 		iconName = file.name;
 	}
+
+	const addKey = () =>
+		(keys = [...keys, { name: '', required: false, value_type: 'any', in_slug: false, default: '', unit: null }]);
 
 	/** `list` with its `from`th item moved to `to`. */
 	function moved<T>(list: T[], from: number, to: number): T[] {
@@ -238,11 +246,36 @@
 					<span class="label">colour</span>
 					<Swatch bind:value={color} label="the field's colour" />
 				</div>
+				<span class="label">keys</span>
+				<ul class="basic-keys">
+					{#each keys as key (key)}
+						<li>
+							<input
+								class="name"
+								bind:value={key.name}
+								placeholder="key"
+								aria-label="the key's name"
+								spellcheck="false"
+								autocapitalize="none"
+							/>
+							<input
+								class="default"
+								bind:value={key.default}
+								placeholder="default"
+								aria-label="the default of {key.name || 'this key'}"
+							/>
+							<label><input type="checkbox" class="required" bind:checked={key.required} /> required</label>
+							<button
+								type="button"
+								class="remove"
+								aria-label="remove {key.name}"
+								on:click={() => (keys = keys.filter((k) => k !== key))}>✕</button
+							>
+						</li>
+					{/each}
+				</ul>
+				<button type="button" class="add" on:click={addKey}>+ key</button>
 				{#if spec}
-					<label class="row">
-						<span class="label">unit</span>
-						<input class="unit" bind:value={unit} spellcheck="false" autocapitalize="none" />
-					</label>
 					<label class="row">
 						<span class="label">description</span>
 						<input class="description" bind:value={description} />
@@ -422,11 +455,7 @@
 				<button
 					type="button"
 					class="add"
-					on:click={() =>
-						(keys = [
-							...keys,
-							{ name: '', required: false, value_type: 'any', in_slug: false, default: '', unit: null }
-						])}>+ key</button
+					on:click={addKey}>+ key</button
 				>
 			{:else if tab === 'placement'}
 				<Placement {field} bind:place />
@@ -503,12 +532,13 @@
 <style>
 	/* Narrow enough for a 320px phone with the backdrop showing either
 	   side. One height whatever the tab (da-laxpn): a centred dialog that
-	   followed its content jumped on every tab press. 32rem is the tallest
-	   tab's natural height, measured; never taller than the screen. */
+	   followed its content jumped on every tab press. 38rem is the tallest
+	   tab's natural height, measured — Basics, with two keys on it since
+	   da-h119q; never taller than the screen. */
 	.spec {
 		box-sizing: border-box;
 		inline-size: min(24rem, calc(100vw - 2rem));
-		block-size: min(32rem, calc(100dvh - 2rem));
+		block-size: min(38rem, calc(100dvh - 2rem));
 		overflow: auto;
 		background: var(--ground);
 		color: var(--ink);
@@ -791,6 +821,35 @@
 
 	.glyphs + .add {
 		margin-inline-start: 7rem;
+	}
+
+	/* Basics' keys: one line each, the Keys tab's first three things. */
+	.basic-keys {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.basic-keys li {
+		display: grid;
+		grid-template-columns: 1fr 1fr auto auto;
+		align-items: center;
+		gap: 0.3rem;
+	}
+
+	.basic-keys input:not([type='checkbox']) {
+		min-inline-size: 0;
+	}
+
+	.basic-keys label {
+		display: flex;
+		align-items: center;
+		gap: 0.2rem;
+		color: var(--muted);
+		font-size: 0.75rem;
 	}
 
 	/* A group's name heads its rows: which keys are required reads at a
