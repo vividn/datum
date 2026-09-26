@@ -334,3 +334,11 @@ fn a_kit_refuses_the_icon_and_glyph_spec_set_refuses() {
     assert!(err.contains("one printable character"), "{err}");
     assert!(db.load_spec("mood").unwrap().is_none(), "nothing installed");
 }
+
+/// `kit show` of a kit nobody installed refuses by name (da-4mu1a).
+#[test]
+fn kit_show_refuses_an_unknown_kit_by_name() {
+    let db = fresh_db();
+    let err = format!("{:#}", run_cli(&["kit", "show", "nope"], &db).unwrap_err());
+    assert!(err.contains("no installed kit named 'nope'"), "{err}");
+}

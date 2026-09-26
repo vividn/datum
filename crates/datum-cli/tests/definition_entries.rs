@@ -154,3 +154,76 @@ fn uninstall_removes_only_its_own() {
         "{exported}"
     );
 }
+
+/// `kit show` reads out what the sample kit installed: its fields with verb
+/// and colour, its aliases, its view, its command (da-4mu1a).
+#[test]
+fn kit_show_reads_out_the_sample_kit() {
+    let env = Env::new();
+    let sample = concat!(env!("CARGO_MANIFEST_DIR"), "/../../kits/sample.toml");
+    env.ok(&["kit", "install", "--yes", sample]);
+    let shown = env.ok(&["kit", "show", "sample"]);
+    for line in [
+        "kit 'sample'",
+        "fields (8):",
+        "  coffee           occur   #8d5524",
+        "  mood             switch  (auto)",
+        "aliases (4):",
+        "  cof              occur coffee",
+        "views (1):",
+        "  water_by_day",
+        "commands (1):",
+        "  hydration        Water drunk per day, under 1.5 l in yellow",
+    ] {
+        assert!(shown.lines().any(|l| l == line), "no `{line}` in:\n{shown}");
+    }
+    assert!(
+        !shown.contains("indices"),
+        "the sample kit has none:\n{shown}"
+    );
+}
+
+/// A UNIQUE index definition that arrives over this device's duplicates —
+/// here by a merging restore, as it would by sync — does not build, and
+/// `kit show` names it with the reason; the kit's other index is built.
+#[test]
+fn kit_show_names_an_index_that_would_not_build_here() {
+    let env = Env::new();
+    let toml = r#"[kit]
+name = "k"
+
+[[index]]
+name = "one_coffee"
+on = "entries"
+expression = "field"
+where = "field = 'coffee'"
+unique = true
+
+[[index]]
+name = "by_field"
+on = "entries"
+expression = "field"
+"#;
+    let path = env.tmp.path().join("k.toml");
+    std::fs::write(&path, toml).unwrap();
+    env.ok(&["kit", "install", "--yes", path.to_str().unwrap()]);
+    let backup = env.ok(&["db", "backup", "-"]);
+
+    let here = env.db("here.db");
+    env.run_on(&here, &["occur", "coffee", "-t", "900"], b"");
+    env.run_on(&here, &["occur", "coffee", "-t", "1000"], b"");
+    env.run_on(&here, &["db", "restore", "-", "--merge"], backup.as_bytes());
+    assert_eq!(kit_indices(&here), ["kit_k__by_field"]);
+
+    let shown = env.run_on(&here, &["kit", "show", "k"], b"");
+    let lines: Vec<&str> = shown.lines().collect();
+    let at = lines
+        .iter()
+        .position(|l| l.starts_with("  ✗ UNIQUE one_coffee ON entries(field)"))
+        .unwrap_or_else(|| panic!("no failed one_coffee in:\n{shown}"));
+    assert!(
+        lines[at + 1].contains("not built on this device") && lines[at + 1].contains("UNIQUE"),
+        "{shown}"
+    );
+    assert!(lines.contains(&"  ✓ by_field ON entries(field)"), "{shown}");
+}

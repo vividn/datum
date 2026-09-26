@@ -12,6 +12,8 @@
 //! - `export <name> [<path>]` — round-trip the rows installed by this kit
 //!   back to TOML. None path → stdout.
 //! - `list` — installed kits with per-kit field/index counts.
+//! - `show <name>` — one kit's installed contents, for reading (export is
+//!   the TOML round-trip), with each index that fails to build here and why.
 //!
 //! A kit may also carry `[[layout]]` blocks (da-gg0v). Those do not go to
 //! a table of their own: each becomes an ordinary entry of field `layout`
@@ -42,6 +44,7 @@ pub fn kit(cmd: KitCommand, db: &Db) -> Result<()> {
         KitCommand::Export(args) => export(args, db),
         KitCommand::List => list(db),
         KitCommand::Uninstall(args) => uninstall(args, db),
+        KitCommand::Show { name } => show(&name, db),
     }
 }
 
@@ -510,6 +513,74 @@ fn list(db: &Db) -> Result<()> {
         );
     }
     Ok(())
+}
+
+fn show(name: &str, db: &Db) -> Result<()> {
+    let specs = db.load_specs_by_kit(name)?;
+    let aliases = db.load_aliases_by_kit(name)?;
+    let views = db.load_views_by_kit(name)?;
+    let commands = db.load_commands_by_kit(name)?;
+    let layouts = db.load_layouts_by_kit(name)?;
+    let indices = db.kit_index_status(name)?;
+    if specs.is_empty()
+        && aliases.is_empty()
+        && views.is_empty()
+        && commands.is_empty()
+        && layouts.is_empty()
+        && indices.is_empty()
+    {
+        anyhow::bail!("no installed kit named '{name}'");
+    }
+    // The DDL of each index that validates, for the line that names it.
+    let built = db.load_indices_by_kit(name)?;
+    println!("kit '{name}'");
+    section(
+        "fields",
+        specs.iter().map(|s| {
+            let color = s.color.as_deref().unwrap_or("(auto)");
+            format!("{:<16} {:<7} {color}", s.field, s.verb.to_string())
+        }),
+    );
+    section(
+        "aliases",
+        aliases
+            .iter()
+            .map(|a| format!("{:<16} {}", a.name, a.expands_to)),
+    );
+    section("views", views.iter().map(|v| v.name.clone()));
+    section(
+        "commands",
+        commands
+            .iter()
+            .map(|c| format!("{:<16} {}", c.name, c.help.as_deref().unwrap_or(""))),
+    );
+    section("layouts", layouts.iter().map(|l| l.name.clone()));
+    section(
+        "indices",
+        indices.iter().map(|(ix, err)| {
+            let ddl = built
+                .iter()
+                .find(|b| b.index_name == *ix)
+                .map_or_else(|| ix.clone(), |b| summarize_index(&b.entry));
+            match err {
+                None => format!("✓ {ddl}"),
+                Some(e) => format!("✗ {ddl}\n      not built on this device: {e}"),
+            }
+        }),
+    );
+    Ok(())
+}
+
+/// One `kit show` section: its title and count, then a line per item — or
+/// nothing, for a kind the kit does not carry.
+fn section(title: &str, lines: impl ExactSizeIterator<Item = String>) {
+    if lines.len() == 0 {
+        return;
+    }
+    println!("{title} ({}):", lines.len());
+    for line in lines {
+        println!("  {}", line.trim_end());
+    }
 }
 
 fn uninstall(args: KitUninstallArgs, db: &Db) -> Result<()> {

@@ -312,6 +312,14 @@ impl Db {
     /// One that fails that, or fails to build on this data (a UNIQUE index
     /// over duplicates), is returned as `(sqlite name, error)` rather than
     /// failing the rest — an index is this device's, not the data's.
+    ///
+    /// A failed one is tried again on the next open, and that is kept on
+    /// purpose (da-4mu1a): whether it builds is a property of this device's
+    /// rows, which any write can change, so a remembered failure would need
+    /// invalidating on every write, and a stale one would leave the index
+    /// missing after the duplicates are gone. The cost — a scan per open —
+    /// lasts only while `datum kit show` names the index as failed, which is
+    /// where the person finds it and fixes the rows or uninstalls the kit.
     pub fn derive_kit_indices(&self) -> Result<Vec<(String, DatumError)>> {
         let mut failed = Vec::new();
         let mut declared: Vec<(String, String)> = Vec::new();
@@ -357,6 +365,35 @@ impl Db {
             }
         }
         Ok(failed)
+    }
+
+    /// Every index definition marked with `kit_id`, by name, with the error
+    /// it fails to build with on this device, or `None` where it is built —
+    /// `datum kit show`'s (da-4mu1a). It builds them again to find out, but
+    /// only for a kit that has index definitions.
+    pub fn kit_index_status(&self, kit_id: &str) -> Result<Vec<(String, Option<DatumError>)>> {
+        let definitions = self.definitions(INDEX_FIELD, Some(kit_id))?;
+        if definitions.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut failed = self.derive_kit_indices()?;
+        Ok(definitions
+            .into_iter()
+            .map(|data| {
+                let name = data["name"].as_str().unwrap_or_default().to_string();
+                // A failure is named by its slug when the definition does
+                // not validate, by its SQLite name when it does not build.
+                let slug = index_slug(kit_id, &name);
+                let on_disk = serde_json::from_value::<IndexEntry>(data)
+                    .ok()
+                    .map(|ix| ix.sqlite_name(kit_id));
+                let err = failed
+                    .iter()
+                    .position(|(n, _)| *n == slug || Some(n) == on_disk.as_ref())
+                    .map(|i| failed.swap_remove(i).1);
+                (name, err)
+            })
+            .collect())
     }
 
     /// Every index definition marked with `kit_id`, by name — `datum kit

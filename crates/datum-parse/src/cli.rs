@@ -722,6 +722,9 @@ pub enum KitCommand {
     /// `datum kit uninstall <name>` — remove every row tagged with this
     /// kit's id; user-declared rows untouched.
     Uninstall(KitUninstallArgs),
+    /// `datum kit show <name>` — the kit's installed contents, for reading,
+    /// with each index definition that failed to build on this device.
+    Show { name: String },
 }
 
 #[derive(Debug)]

@@ -5,7 +5,7 @@ use crate::error::{ParseError, Result};
 pub(crate) fn parse_kit_cmd(tail: &[&str]) -> Result<KitCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(
-            "missing kit subcommand (install|export|list|uninstall)".into(),
+            "missing kit subcommand (install|export|list|uninstall|show)".into(),
         ));
     };
     let rest: &[&str] = &tail[1..];
@@ -51,6 +51,10 @@ pub(crate) fn parse_kit_cmd(tail: &[&str]) -> Result<KitCommand> {
         "uninstall" => {
             let name = require_pos(rest, "<NAME>")?;
             Ok(KitCommand::Uninstall(KitUninstallArgs { name }))
+        }
+        "show" => {
+            let name = require_pos(rest, "<NAME>")?;
+            Ok(KitCommand::Show { name })
         }
         other => Err(ParseError::InvalidArg(format!(
             "unknown kit subcommand: '{other}'"
