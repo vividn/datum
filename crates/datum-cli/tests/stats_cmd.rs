@@ -989,3 +989,121 @@ fn stats_window_bounds_keep_the_zone_they_were_logged_in() {
         Some("2026-06-15T04:00:00-05:00")
     );
 }
+
+// ─── A field that takes no time says how often (da-uv7fu) ───────────────────
+
+/// Run the real binary in a fresh home, TZ=UTC, colour off.
+fn datum(home: &std::path::Path, args: &[&str]) -> String {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+        .env_remove("DATUM_DB")
+        .env("DATUM_HOME", home)
+        .env("DATUM_CONFIG_HOME", home.join("config"))
+        .env("DATUM_COLOR", "0")
+        .env("TZ", "UTC")
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{args:?}: {out:?}");
+    String::from_utf8(out.stdout).unwrap()
+}
+
+/// vividn: «in stats for occur based fields, showing the time doesn't make any
+/// sense […] it would be nice to show some frequency pattern, like how often
+/// per day/week/month/year during the entire history of tracking».
+#[test]
+fn an_occur_field_shows_how_often_and_no_time() {
+    let tmp = tempfile::tempdir().unwrap();
+    for d in ["2026-01-01", "2026-01-02", "2026-03-15"] {
+        datum(tmp.path(), &["occur", "coffee", "-d", d, "-t", "08:00"]);
+    }
+
+    let json: serde_json::Value =
+        serde_json::from_str(&datum(tmp.path(), &["stats", "coffee", "--json"])).unwrap();
+    let f = &json["frequency"];
+    let span = f["span_seconds"].as_i64().unwrap();
+    // First entry to now: the rates are the count over that span.
+    let first = at("2026-01-01T08:00:00Z");
+    assert!(
+        (span - (Utc::now() - first).num_seconds()).abs() < 60,
+        "{span}"
+    );
+    let per_day = 3.0 * 86_400.0 / span as f64;
+    for (key, days) in [
+        ("per_day", 1.0),
+        ("per_week", 7.0),
+        ("per_month", 365.2425 / 12.0),
+        ("per_year", 365.2425),
+    ] {
+        let got = f[key].as_f64().unwrap();
+        assert!((got - per_day * days).abs() < 1e-9, "{key}: {got}");
+    }
+
+    let text = datum(tmp.path(), &["stats", "coffee"]);
+    let head = text.lines().next().unwrap();
+    assert!(
+        head.starts_with("coffee  ·  ") && head.contains("/day · ") && head.contains("/year"),
+        "{text}"
+    );
+    assert!(head.ends_with("3 total since 2026-01-01"), "{text}");
+    // No time anywhere: not the gaps between the coffees, not a share.
+    assert!(!text.contains('%') && !text.contains("tracked"), "{text}");
+    assert!(
+        !text.split_whitespace().any(|w| w.ends_with(['h', 'm', 's'])
+            && w.chars().all(|c| c.is_ascii_digit() || "hms".contains(c))),
+        "{text}"
+    );
+
+    // One level out, the field's cell is its rate, not `0s`.
+    let all = datum(tmp.path(), &["stats"]);
+    let row = all.lines().find(|l| l.ends_with("coffee")).unwrap();
+    assert!(row.contains("/day") && !row.contains("0s"), "{all}");
+    let all: serde_json::Value =
+        serde_json::from_str(&datum(tmp.path(), &["stats", "--json"])).unwrap();
+    assert_eq!(all["fields"][0]["frequency"], json["frequency"]);
+}
+
+#[test]
+fn a_field_that_takes_time_keeps_its_time_and_has_no_frequency() {
+    let tmp = tempfile::tempdir().unwrap();
+    datum(tmp.path(), &["start", "work", "-t", "-90"]);
+    datum(tmp.path(), &["stop", "work", "-t", "-30"]);
+
+    let text = datum(tmp.path(), &["stats", "work"]);
+    assert!(text.starts_with("work  ·  1h30m over 2 entries"), "{text}");
+    assert!(text.contains("100.0%") && !text.contains("/day"), "{text}");
+    let json: serde_json::Value =
+        serde_json::from_str(&datum(tmp.path(), &["stats", "work", "--json"])).unwrap();
+    assert_eq!(json["frequency"], serde_json::Value::Null);
+    assert_eq!(json["tracked_duration_seconds"], 3600);
+}
+
+/// A rare field reads in significant figures, never `0.0/day`; a lone
+/// entry today is a day's worth, not thousands a day.
+#[test]
+fn rates_keep_their_figures_and_a_span_is_at_least_a_day() {
+    let _g = freeze_time("2026-06-15T12:00:00Z");
+    let db = fresh_db();
+    entry_builder("sneeze")
+        .verb(Verb::Point)
+        .state(json!(null))
+        .time_start_utc(at("2026-06-15T11:59:00Z"))
+        .insert(&db);
+    let f = compute_stats(&selector("sneeze"), &db)
+        .unwrap()
+        .frequency
+        .unwrap();
+    assert_eq!((f.span_seconds, f.per_day), (86_400, 1.0));
+
+    let tmp = tempfile::tempdir().unwrap();
+    datum(tmp.path(), &["occur", "eclipse", "-d", "2016-01-01"]);
+    let text = datum(tmp.path(), &["stats", "eclipse"]);
+    let per_day = text
+        .split("/day")
+        .next()
+        .unwrap()
+        .rsplit(' ')
+        .next()
+        .unwrap();
+    assert!(per_day.starts_with("0.000") && per_day != "0.000", "{text}");
+    assert_eq!(per_day.trim_start_matches(['0', '.']).len(), 2, "{text}");
+}

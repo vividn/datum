@@ -75,6 +75,38 @@ pub struct StatsResult {
     pub latest: Option<DateTime<FixedOffset>>,
     /// Longest-duration first; ties broken by state name.
     pub states: Vec<StateStat>,
+    /// How often, for a field that took no time in the window — an occur
+    /// field's, whose only "duration" is the gap between its instants
+    /// (da-uv7fu). Of the selected state's count when there is one. `None`
+    /// when the field tracked any time, or counted nothing.
+    pub frequency: Option<Frequency>,
+}
+
+/// Entries per day / week / month / year over `span_seconds`: from the
+/// first counted entry to the window's end, and never under a day, so one
+/// entry logged a minute ago is not a thousand a day (da-uv7fu).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Frequency {
+    pub span_seconds: i64,
+    pub per_day: f64,
+    pub per_week: f64,
+    pub per_month: f64,
+    pub per_year: f64,
+}
+
+impl Frequency {
+    fn new(count: usize, span_seconds: i64) -> Self {
+        let span_seconds = span_seconds.max(86_400);
+        let per_day = count as f64 * 86_400.0 / span_seconds as f64;
+        let year = 365.2425;
+        Frequency {
+            span_seconds,
+            per_day,
+            per_week: per_day * 7.0,
+            per_month: per_day * year / 12.0,
+            per_year: per_day * year,
+        }
+    }
 }
 
 /// One field's line in the all-fields rollup (da-ptuwr).
@@ -98,6 +130,8 @@ pub struct FieldStat {
     /// Share of [`AllFieldsStats::tracked_duration_seconds`], or `None`
     /// when nothing at all was tracked in the window.
     pub ratio: Option<f64>,
+    /// [`StatsResult::frequency`]: how often, when the field took no time.
+    pub frequency: Option<Frequency>,
 }
 
 /// Structured result of a bare `stats` — every field, ranked.
@@ -142,6 +176,7 @@ pub fn compute_all_fields(args: &StatsArgs, db: &Db) -> Result<AllFieldsStats> {
             count: r.total_count,
             duration_seconds: r.tracked_duration_seconds,
             ratio: None,
+            frequency: r.frequency,
         });
     }
 
@@ -382,6 +417,16 @@ fn field_stats(
         states = vec![one];
     }
 
+    let frequency = earliest
+        .filter(|_| tracked_duration_seconds == 0)
+        .map(|first| {
+            let count = match &selected_state {
+                Some(_) => states[0].count,
+                None => total_count,
+            };
+            Frequency::new(count, (end.min(now) - first.to_utc()).num_seconds())
+        });
+
     Ok(StatsResult {
         field,
         selected_state,
@@ -391,6 +436,7 @@ fn field_stats(
         earliest,
         latest,
         states,
+        frequency,
     })
 }
 
@@ -718,6 +764,33 @@ fn within(t: DateTime<Utc>, start: Option<DateTime<Utc>>, end: DateTime<Utc>) ->
 fn render_text(r: &StatsResult) -> String {
     let total_dur = format_dur(r.total_duration_seconds);
 
+    // A field that took no time says how often instead, and no time at all:
+    // an occur field's "duration" is only the gaps between its instants.
+    if let Some(f) = &r.frequency {
+        let since = r
+            .earliest
+            .map(|t| t.format("%Y-%m-%d").to_string())
+            .unwrap_or_default();
+        let (name, count) = match &r.selected_state {
+            Some(sel) => (format!("{}:{}", r.field, sel), r.states[0].count),
+            None => (r.field.clone(), r.total_count),
+        };
+        let mut out = format!(
+            "{name}  ·  {}  ·  {} total since {since}\n",
+            rates(f),
+            group(count as f64)
+        );
+        if r.selected_state.is_none() {
+            let w = r.states.iter().map(|s| s.count.to_string().len()).max();
+            let w = w.unwrap_or(0);
+            out.push('\n');
+            for s in &r.states {
+                out.push_str(&format!("  {:>w$}×  {}\n", s.count, s.state));
+            }
+        }
+        return out;
+    }
+
     if let Some(sel) = &r.selected_state {
         let s = &r.states[0];
         return format!(
@@ -778,10 +851,16 @@ fn render_all_text(r: &AllFieldsStats) -> String {
     if r.fields.is_empty() {
         return "No entries yet.\n".to_string();
     }
+    // The time a field took, or — for one that took none — how often it
+    // was logged, with no share of the time beside it.
+    let cell = |f: &FieldStat| match &f.frequency {
+        Some(q) => (format!("{}/day", rate(q.per_day)), percent(None)),
+        None => (format_dur(f.duration_seconds), percent(f.ratio)),
+    };
     let dur_w = r
         .fields
         .iter()
-        .map(|f| format_dur(f.duration_seconds).len())
+        .map(|f| cell(f).0.chars().count())
         .max()
         .unwrap_or(0);
     let cnt_w = r
@@ -799,10 +878,11 @@ fn render_all_text(r: &AllFieldsStats) -> String {
         r.total_count,
     );
     for f in &r.fields {
+        let (amount, share) = cell(f);
         out.push_str(&format!(
             "  {:>dur_w$}  {:>6}  {:>cnt_w$}×  {}\n",
-            format_dur(f.duration_seconds),
-            percent(f.ratio),
+            amount,
+            share,
             f.count,
             paint(&ink(&f.color), &f.field),
         ));
@@ -827,6 +907,7 @@ fn render_all_json(r: &AllFieldsStats) -> String {
                 "count": f.count,
                 "duration_seconds": f.duration_seconds,
                 "ratio": f.ratio,
+                "frequency": f.frequency.as_ref().map(frequency_json),
             })
         })
         .collect();
@@ -862,6 +943,7 @@ fn render_json(r: &StatsResult) -> String {
                 "count": s.count,
                 "duration_seconds": s.duration_seconds,
                 "ratio": s.ratio,
+                "frequency": r.frequency.as_ref().map(frequency_json),
             })
         );
     }
@@ -887,8 +969,57 @@ fn render_json(r: &StatsResult) -> String {
             "earliest": r.earliest.map(|t| t.to_rfc3339()),
             "latest": r.latest.map(|t| t.to_rfc3339()),
             "states": states,
+            "frequency": r.frequency.as_ref().map(frequency_json),
         })
     )
+}
+
+fn frequency_json(f: &Frequency) -> JsonValue {
+    serde_json::json!({
+        "span_seconds": f.span_seconds,
+        "per_day": f.per_day,
+        "per_week": f.per_week,
+        "per_month": f.per_month,
+        "per_year": f.per_year,
+    })
+}
+
+/// `3.2/day · 22/week · 96/month · 1,168/year`.
+fn rates(f: &Frequency) -> String {
+    format!(
+        "{}/day · {}/week · {}/month · {}/year",
+        rate(f.per_day),
+        rate(f.per_week),
+        rate(f.per_month),
+        rate(f.per_year)
+    )
+}
+
+/// Two significant figures under ten, so a rare field reads `0.041/day`
+/// and never `0.0/day`; whole numbers, grouped, from ten up.
+fn rate(v: f64) -> String {
+    if v >= 10.0 || v <= 0.0 {
+        return group(v);
+    }
+    let decimals = (1 - v.log10().floor() as i32).max(0) as usize;
+    let s = format!("{v:.decimals$}");
+    match s.contains('.') {
+        true => s.trim_end_matches('0').trim_end_matches('.').to_string(),
+        false => s,
+    }
+}
+
+/// A whole number with thousands grouped: `1,168`.
+fn group(v: f64) -> String {
+    let digits = format!("{:.0}", v.max(0.0));
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// Stats durations are wall-clock totals of tracked activity, so they
@@ -1216,6 +1347,7 @@ mod tests {
             earliest: Some(at),
             latest: Some(at),
             states: vec![],
+            frequency: None,
         };
         let json: JsonValue = serde_json::from_str(&render_json(&one)).unwrap();
         assert_eq!(json["earliest"], "2026-06-15T04:00:00-05:00");

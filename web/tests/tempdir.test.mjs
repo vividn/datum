@@ -89,8 +89,10 @@ describe('a database too big to sort in cache', () => {
 			assert.equal(stats.code, 0, stats.stderr);
 			// The count is the point: `stats` walked every seeded row (and
 			// the one the template was taken from), so the window function
-			// over the whole table really ran.
-			assert.match(stats.stdout, new RegExp(`over ${SPILL_ENTRIES + 1} entries`));
+			// over the whole table really ran. An occur field says it as a
+			// grouped total beside its rates (da-uv7fu).
+			const total = (SPILL_ENTRIES + 1).toLocaleString('en-US');
+			assert.match(stats.stdout, new RegExp(` ${total} total since `));
 			// Held at noon: the template is logged at 07:00 today, and before
 			// 07:00 that entry is in the future, which `stats` leaves out —
 			// 20 000, one short, every night until 07:00 (da-w2oj).

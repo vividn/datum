@@ -94,6 +94,14 @@ describe('since when', () => {
 		assert.deepEqual(fieldTiles({ ...s, earliest: '2025-09-04T23:30:00-05:00', latest: '2025-09-24T08:00:00-05:00' })[3], ['since', '4 Sep 2025']);
 	});
 
+	// da-uv7fu: an occur field's "time" is the gaps between its instants.
+	test('a field that took no time has no time tile', () => {
+		const s = { field: 'coffee', total_count: 3, total_duration_seconds: 226359, tracked_duration_seconds: 0, states: [], earliest: null, latest: null };
+		const frequency = { span_seconds: 226359, per_day: 1.1, per_week: 8, per_month: 35, per_year: 420 };
+		assert.deepEqual(fieldTiles({ ...s, frequency: null }).map(([k]) => k), ['entries', 'time', 'states']);
+		assert.deepEqual(fieldTiles({ ...s, frequency }), [['entries', '3'], ['states', '0']]);
+	});
+
 	test('is no tile when the window counts nothing', () => {
 		assert.equal(at(null, null), undefined);
 	});

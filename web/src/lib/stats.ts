@@ -34,6 +34,17 @@ export interface FieldStats {
 	earliest: string | null;
 	latest: string | null;
 	states: { state: string; count: number; duration_seconds: number; ratio: number | null }[];
+	/** How often, for a field that took no time — an occur field's; null when it took some (da-uv7fu). */
+	frequency: Frequency | null;
+}
+
+/** Entries per day / week / month / year, from the first counted entry to the window's end. */
+export interface Frequency {
+	span_seconds: number;
+	per_day: number;
+	per_week: number;
+	per_month: number;
+	per_year: number;
 }
 
 /** One field's row of a bare `stats --json`. */
@@ -45,6 +56,7 @@ export interface FieldRow {
 	duration_seconds: number;
 	/** Its share of `tracked_duration_seconds`, or null when nothing was tracked. */
 	ratio: number | null;
+	frequency: Frequency | null;
 }
 
 /** Bare `stats --json`: every field, ranked. */
@@ -160,6 +172,9 @@ export function summaryTiles(all: AllFieldsStats): [string, string][] {
 /**
  * The tiles over one field's own table — the same three, one level in:
  * its entries, the time it has taken, and the states it has been in.
+ * A field that took no time has no `time` tile (da-uv7fu): an occur
+ * field's is only the gaps between its instants, and the CLI's text under
+ * the tiles says how often instead.
  *
  * `time` here and `tracked` there because they are different numbers: a
  * field's own total is measured over every state it holds, the all-fields
@@ -168,7 +183,7 @@ export function summaryTiles(all: AllFieldsStats): [string, string][] {
 export function fieldTiles(s: FieldStats): [string, string][] {
 	return [
 		['entries', String(s.total_count)],
-		['time', formatDur(s.total_duration_seconds)],
+		...(s.frequency ? [] : [['time', formatDur(s.total_duration_seconds)] as [string, string]]),
 		['states', String(s.states.length)],
 		...since(s)
 	];
