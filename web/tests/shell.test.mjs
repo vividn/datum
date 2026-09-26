@@ -674,10 +674,6 @@ describe('the acts', () => {
 		});
 	});
 
-	// The three that SAVE `main` come after every room, each followed by a
-	// `solo`: a room is seeded from the `main` tab as it stands before the
-	// world is tidied behind it, so a room opened after one of these would
-	// be a copy of that save rather than of `main` as it ships (da-iwikb).
 	test('a saved day is what another device opens', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
@@ -699,6 +695,17 @@ describe('the acts', () => {
 			} finally {
 				await other.page.close();
 			}
+		});
+	});
+
+	test('a room after a test that SAVED main is main as it ships, not the save (da-x92rt)', async () => {
+		await shared.solo(async ({ page }) => {
+			await manage(page, 'custom', 'Close pane');
+			await act(page, 'save');
+			await until(() => dotted(page), (d) => d.length === 0);
+		});
+		await shared.room('after-save', async ({ page }) => {
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields']);
 		});
 	});
 

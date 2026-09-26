@@ -1136,6 +1136,16 @@ function app(page, errors, query, clean, locks, internal) {
 			// whole boot again — a fresh wasm compile and every pane's first
 			// command — which is the cost a shared app is here to avoid.
 			// That the URL reaches this is `preview.test.mjs`'s to say.
+			//
+			// The seed is what `main` RESOLVES to, and a save shadows the
+			// shipped tree: so if the test before saved anything, the world is
+			// tidied first (da-x92rt) — at the cost, in that case alone, of a
+			// frame of `main` put back.
+			if ((await changeCounter(page, '_internal')) !== internal) {
+				await self.wipe();
+				await self.relock();
+				await self.restoreMain();
+			}
 			const missing = await page.evaluate((n) => window.datum.shell.openPreview(n, 'main'), name);
 			if (missing !== null) throw new Error(`a room seeded from a layout that is nothing: ${missing}`);
 			await page.evaluate(async (keep) => {
