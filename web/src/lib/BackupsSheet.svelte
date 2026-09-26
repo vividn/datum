@@ -16,7 +16,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import Sheet from './Sheet.svelte';
-	import { currentDb } from './database.js';
+	import { currentDb, INTERNAL_DB } from './database.js';
 	import { listDatabases } from './databases.js';
 	import { restore as restoreFile, saveBackup } from './dbio.js';
 	import { ran } from './layout/engine.js';
@@ -27,6 +27,7 @@
 		backupSize,
 		bytes,
 		check,
+		defaults,
 		deletePlan,
 		draft,
 		HOUR,
@@ -46,6 +47,7 @@
 		type Plan,
 		type Reach
 	} from './backups.js';
+	import type { StepResult } from './s3.js';
 
 	export let open = false;
 	/** `restore` scrolls to the first plan's backups, as `db restore` asks. */
@@ -63,6 +65,8 @@
 	let slotsText = '';
 	/** What the new plan's destination already holds, once asked. */
 	let found: Backup[] | null = null;
+	/** «Test connection»'s steps, once run. */
+	let probe: StepResult[] | null = null;
 
 	const EVERY: [number, string][] = [
 		[15 * 60, 'every 15 minutes'],
@@ -74,7 +78,8 @@
 	$: if (open) void opened();
 
 	async function opened(): Promise<void> {
-		dbs = await listDatabases().catch(() => [currentDb()]);
+		// Never `_internal`: it holds every plan's keys, to this bucket and others.
+		dbs = (await listDatabases().catch(() => [currentDb()])).filter((db) => db !== INTERNAL_DB);
 		if (!dbs.includes(currentDb())) dbs = [currentDb(), ...dbs];
 		for (const plan of await loadPlans()) void refresh(plan).then(() => explain(plan));
 		if (fresh.kind) void explain(fresh, '');
@@ -145,10 +150,17 @@
 	function setFresh(next: Partial<Plan>): void {
 		fresh = { ...fresh, ...next };
 		found = null;
+		probe = null;
 		void explain(fresh, '');
 	}
 
 	const look = () => act(async () => (found = await listed(fresh)));
+
+	const testIt = () =>
+		act(async () => {
+			probe = null;
+			probe = (await KINDS[fresh.kind].test?.(fresh.config)) ?? null;
+		});
 
 	const add = () =>
 		act(async () => {
@@ -167,6 +179,7 @@
 			reach = { ...reach, [name]: reach[''] };
 			fresh = draft(currentDb());
 			slotsText = '';
+			probe = null;
 			found = null;
 			// A new plan is due at once, unless the destination already has a backup this period.
 			await check();
@@ -249,28 +262,45 @@
 			>
 		{/if}
 
-		{#if !fresh.kind}
-			<p class="quiet" data-no-destination>Plans need a destination to keep backups at; S3 is next.</p>
-		{:else}
+		{#if fresh.kind}
 			<section class="add">
 				<h3>New plan</h3>
 				<label>Name <input data-plan-field="name" bind:value={fresh.name} placeholder="hourly" /></label>
 				<label
 					>Destination
-					<select value={fresh.kind} on:change={(e) => setFresh({ kind: e.currentTarget.value, config: {} })}>
+					<select
+						data-plan-field="kind"
+						value={fresh.kind}
+						on:change={(e) => setFresh({ kind: e.currentTarget.value, config: defaults(e.currentTarget.value) })}
+					>
 						{#each offered(currentDb()) as kind}<option value={kind}>{KINDS[kind].label}</option>{/each}
 					</select>
 				</label>
-				{#each KINDS[fresh.kind]?.fields ?? [] as field}
+				{#each KINDS[fresh.kind]?.fields ?? [] as field (field.key)}
 					<label
-						>{field}
+						>{field.label}
 						<input
-							data-plan-field={field}
-							value={fresh.config[field] ?? ''}
-							on:change={(e) => setFresh({ config: { ...fresh.config, [field]: e.currentTarget.value } })}
+							data-plan-field={field.key}
+							type={field.secret ? 'password' : 'text'}
+							autocomplete="off"
+							placeholder={field.placeholder ?? ''}
+							value={fresh.config[field.key] ?? ''}
+							on:change={(e) => setFresh({ config: { ...fresh.config, [field.key]: e.currentTarget.value } })}
 						/></label
 					>
+					{#if field.note}<p class="quiet note-field">{field.note}</p>{/if}
 				{/each}
+				{#if KINDS[fresh.kind]?.cors}
+					<details class="cors">
+						<summary>CORS: the bucket must allow this page</summary>
+						<p class="quiet">
+							The browser talks to the bucket directly. Paste these rules into the bucket's CORS settings (S3:
+							Permissions → CORS; R2: Settings → CORS policy; B2, Wasabi and MinIO take them through their S3 API). Listing
+							is a GET on the bucket.
+						</p>
+						<pre data-cors>{KINDS[fresh.kind].cors?.(location.origin)}</pre>
+					</details>
+				{/if}
 				<fieldset>
 					<legend>Databases</legend>
 					{#each dbs as db}
@@ -297,7 +327,17 @@
 				{#if found}<p class="found" data-found
 						>{foundText(found)}{found.length ? ' Add plan continues that rotation.' : ''}</p
 					>{/if}
+				{#if probe}
+					<ul class="probe" data-probe>
+						{#each probe as r}
+							<li class:error={!r.ok} data-step={r.step}>{r.ok ? '✓' : '✗'} {r.step}{r.ok ? '' : ` failed — ${r.cause}`}</li>
+						{/each}
+					</ul>
+				{/if}
 				<div class="row">
+					{#if KINDS[fresh.kind]?.test}
+						<button type="button" class="act" data-backup="test" on:click={testIt}>Test connection</button>
+					{/if}
 					<button type="button" class="opens" on:click={look}>Look for backups there</button>
 					<button type="button" class="act" data-backup="add" on:click={add}>Add plan</button>
 				</div>
@@ -380,6 +420,26 @@
 		display: flex;
 		gap: 0.5rem;
 		align-items: center;
+	}
+
+	.note-field {
+		margin-top: -0.2rem;
+		font-size: 0.8rem;
+	}
+
+	.cors pre {
+		background: var(--ground);
+		border: 1px solid var(--tint);
+		border-radius: 3px;
+		padding: 0.4rem;
+		overflow-x: auto;
+		user-select: all;
+	}
+
+	.probe {
+		list-style: none;
+		margin: 0;
+		padding: 0;
 	}
 
 	fieldset {

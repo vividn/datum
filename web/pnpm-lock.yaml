@@ -11,6 +11,9 @@ importers:
       '@bjorn3/browser_wasi_shim':
         specifier: 0.4.2
         version: 0.4.2
+      aws4fetch:
+        specifier: 1.0.20
+        version: 1.0.20
     devDependencies:
       '@sveltejs/adapter-static':
         specifier: ^3.0.0
@@ -412,6 +415,9 @@ packages:
   aria-query@5.3.2:
     resolution: {integrity: sha512-COROpnaoap1E2F000S62r6A60uHZnmlvomhfyT2DlTcrY1OrBKn2UhH7qn5wTC9zMvD0AY7csdPSNwKP+7WiQw==}
     engines: {node: '>= 0.4'}
+
+  aws4fetch@1.0.20:
+    resolution: {integrity: sha512-/djoAN709iY65ETD6LKCtyyEI04XIBP5xVvfmNxsEP0uJB5tyaGBztSryRr4HqMStr9R06PisQE7m9zDTXKu6g==}
 
   axobject-query@4.1.0:
     resolution: {integrity: sha512-qIj0G9wZbMGNLjLmg1PT6v2mE9AH2zlnADJD/2tC6E00hgmhUOfEB6greHPAfLRSufHqROIUTkw6E+M3lH0PTQ==}
@@ -1008,6 +1014,8 @@ snapshots:
       picomatch: 2.3.2
 
   aria-query@5.3.2: {}
+
+  aws4fetch@1.0.20: {}
 
   axobject-query@4.1.0: {}
 

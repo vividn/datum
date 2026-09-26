@@ -17,12 +17,18 @@
 // last — the order the CLI itself keeps, so a run that dies halfway leaves
 // an index naming whole files — and the file it replaced is removed.
 //
-// A destination is three calls (`Destination`). The one real kind is S3
-// (da-pstzw, next); `memory`, a bucket in this tab, is the one here, and
-// the one the tests use — offered on the DEBUG database alone (vremya on
-// #217): a plan survives a reload and a tab's bucket does not, so offered
-// anywhere else it would look like protection and hold nothing. NOT
-// ENCRYPTED in v1 (vividn, 12:03): the sheet says so.
+// A destination is three calls (`Destination`). The real kind is an
+// S3-compatible bucket (da-pstzw, $lib/s3.ts); `memory`, a bucket in this
+// tab, is offered on the DEBUG database alone (vremya on #217): a plan
+// survives a reload and a tab's bucket does not, so offered anywhere else
+// it would look like protection and hold nothing. NOT ENCRYPTED in v1
+// (vividn, 12:03): the sheet says so.
+//
+// TWO WRITERS, ONE INDEX. `index.json` is read, rotated and written back,
+// so two devices backing up to one bucket could each write an index that
+// lacks the other's slot — naming a file the other removed. So the index
+// is read AGAIN just before it is put, and this run's slot merged into
+// what is there now (`merged`).
 //
 // Plans are THIS DEVICE'S settings — a plan names a destination and its
 // credentials — so they are entries of field `backup_plan` in `_internal`
@@ -33,6 +39,7 @@ import { confirm } from './confirm.js';
 import type { Stage } from './dbProtocol.js';
 import { DEBUG_DB } from './layout/defaults.js';
 import { run, type RunResult } from './run.js';
+import { corsRules, DEFAULT_PREFIX, s3, testConnection, type StepResult } from './s3.js';
 
 /** Where a plan's files go. Names are flat: `index.json` and the slot files. */
 export interface Destination {
@@ -42,23 +49,58 @@ export interface Destination {
 	remove(file: string): Promise<void>;
 }
 
+/** One setting of a destination, as the sheet asks for it. */
+export interface Field {
+	key: string;
+	label: string;
+	/** The value a new plan starts with. */
+	value?: string;
+	placeholder?: string;
+	/** Drawn as a password, with `note` beside it. */
+	secret?: boolean;
+	note?: string;
+}
+
 /** A kind of destination: what the sheet calls it, and how a plan's config opens one. */
 export interface DestinationKind {
 	label: string;
 	/** The config's fields, in the order the sheet asks for them. */
-	fields: string[];
+	fields: Field[];
 	/** Offered on the DEBUG database only: a fake, for trying the sheet and for tests. */
 	debug?: boolean;
 	open(config: Record<string, string>): Destination;
+	/** Write, list, read and delete a probe, naming the step that fails. */
+	test?(config: Record<string, string>): Promise<StepResult[]>;
+	/** The CORS rules the destination needs to allow `origin`, to paste. */
+	cors?(origin: string): string;
 }
 
 /** Buckets of the `memory` kind, by name — gone with the tab. */
 const buckets = new Map<string, Map<string, Uint8Array>>();
 
 export const KINDS: Record<string, DestinationKind> = {
+	s3: {
+		label: 'S3-compatible bucket (AWS, R2, B2, Wasabi, MinIO)',
+		fields: [
+			{ key: 'endpoint', label: 'Endpoint URL', placeholder: 'blank for AWS; https://<account>.r2.cloudflarestorage.com' },
+			{ key: 'bucket', label: 'Bucket' },
+			{ key: 'region', label: 'Region', placeholder: 'us-east-1; auto for R2' },
+			{ key: 'prefix', label: 'Path prefix', value: DEFAULT_PREFIX },
+			{ key: 'key', label: 'Access key id' },
+			{
+				key: 'secret',
+				label: 'Secret',
+				secret: true,
+				note: 'Kept in this browser, unencrypted. Use a key scoped to this one bucket, allowed only to read, write, list and delete in it.'
+			}
+		],
+		open: s3,
+		test: testConnection,
+		cors: corsRules
+	},
 	memory: {
 		label: 'memory (this tab only, for trying it out)',
-		fields: ['bucket'],
+		fields: [{ key: 'bucket', label: 'bucket' }],
 		debug: true,
 		open({ bucket = '' }) {
 			const files = buckets.get(bucket) ?? buckets.set(bucket, new Map()).get(bucket)!;
@@ -89,8 +131,15 @@ export interface Plan {
 
 export const HOUR = 3600;
 
+/** A kind's config as a new plan starts it. */
+export const defaults = (kind: string): Record<string, string> =>
+	Object.fromEntries((KINDS[kind]?.fields ?? []).flatMap((f) => (f.value ? [[f.key, f.value]] : [])));
+
 /** A new plan as the sheet first offers it: the first kind on offer, hourly, no cap, this page's database. */
-export const draft = (db: string): Plan => ({ name: '', kind: offered(db)[0] ?? '', config: {}, dbs: [db], every: HOUR, slots: null });
+export function draft(db: string): Plan {
+	const kind = offered(db)[0] ?? '';
+	return { name: '', kind, config: defaults(kind), dbs: [db], every: HOUR, slots: null };
+}
 
 /** One backup, as `db backup --list --json` reports it. */
 export interface Backup {
@@ -207,17 +256,46 @@ export function overdue(plan: Plan, s: PlanStatus, db: string): boolean {
 
 const everyArgs = (plan: Plan) => ['--every', `${plan.every}s`, ...(plan.slots ? ['--slots', String(plan.slots)] : [])];
 
+/** `index.json` as the CLI writes it: per db, the rotation and its backups. */
+interface Index {
+	version?: number;
+	dbs: Record<string, { every_secs: number; slots: number | null; backups: { slot: number; file: string }[] }>;
+}
+
+/**
+ * `now`, the index at the destination as it is now, with `ours` — the
+ * CLI's — merged in for `db`'s `slot` alone; and the files that merge
+ * replaced. Every other db's rotation and every other slot is left as
+ * `now` has it, so a writer that raced this run keeps what it wrote.
+ */
+export function merged(now: Index | null, ours: Index, db: string, slot: number): { index: Index; replaced: string[] } {
+	const mine = ours.dbs[db];
+	const entry = mine.backups.find((b) => b.slot === slot)!;
+	const index: Index = now ?? { version: ours.version, dbs: {} };
+	const theirs = index.dbs[db]?.backups ?? [];
+	index.dbs[db] = {
+		...mine,
+		backups: [...theirs.filter((b) => b.slot !== slot), entry].sort((a, b) => a.slot - b.slot)
+	};
+	return { index, replaced: theirs.filter((b) => b.slot === slot && b.file !== entry.file).map((b) => b.file) };
+}
+
 /** One run of the rotation for `db`: the CLI writes, and the destination is given what it wrote. */
 async function backupOne(plan: Plan, db: string): Promise<void> {
 	const dest = destination(plan);
 	const index = await dest.get('index.json');
-	const out = await json<{ written: string[]; removed: string[] }>(
+	const out = await json<{ slot: number | null; written: string[]; removed: string[] }>(
 		['--db', db, 'db', 'backup', '--to', '/data/stage', ...everyArgs(plan), '--json'],
 		index ? { 'index.json': index } : {}
 	);
-	// The order the CLI lists them in: the slot file, then the index.
-	for (const file of out.written) await dest.put(file, out.stage![file]);
-	for (const file of out.removed) await dest.remove(file);
+	if (out.slot === null) return;
+	// The order the CLI keeps: the slot file, then the index, then what it replaced.
+	for (const file of out.written) if (file !== 'index.json') await dest.put(file, out.stage![file]);
+	const now = await dest.get('index.json');
+	const ours = JSON.parse(new TextDecoder().decode(out.stage!['index.json']));
+	const next = merged(now && JSON.parse(new TextDecoder().decode(now)), ours, db, out.slot);
+	await dest.put('index.json', new TextEncoder().encode(JSON.stringify(next.index, null, 2)));
+	for (const file of new Set([...out.removed, ...next.replaced])) await dest.remove(file);
 }
 
 /** One run at a time, across every plan: two runs on one index would lose a slot. */

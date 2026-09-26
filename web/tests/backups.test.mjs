@@ -1,8 +1,8 @@
 // «Backups…» (da-9ow8m, $lib/backups.ts, $lib/BackupsSheet.svelte): the
-// gear's sheet of Tower of Hanoi plans, driven here against the one
-// destination this bead ships, `memory` — a bucket in the tab, offered on
-// the DEBUG database alone (vremya on #217), which is why the plan tests
-// open `?db=DEBUG`. S3 is da-pstzw. Every number the sheet shows is the CLI's, so what is asserted
+// gear's sheet of Tower of Hanoi plans, driven here against `memory` — a
+// bucket in the tab, offered on the DEBUG database alone (vremya on #217),
+// which is why the plan tests open `?db=DEBUG`. The S3 destination is
+// s3.test.mjs's. Every number the sheet shows is the CLI's, so what is asserted
 // is what the sheet SAYS and what the database HOLDS, never slot arithmetic.
 
 import test, { before, after, describe } from 'node:test';
@@ -25,11 +25,17 @@ async function openSheet(page) {
 	return sheet;
 }
 
+/** Point the new plan at the tab's memory bucket `bucket`. */
+async function inMemory(sheet, bucket) {
+	await sheet.locator('select[data-plan-field="kind"]').selectOption('memory');
+	await sheet.locator('input[data-plan-field="bucket"]').fill(bucket);
+	await sheet.locator('input[data-plan-field="bucket"]').dispatchEvent('change');
+}
+
 /** Add an hourly, uncapped plan named `name` on bucket `bucket`, for this page's database. */
 async function addPlan(sheet, name, bucket) {
 	await sheet.locator('input[data-plan-field="name"]').fill(name);
-	await sheet.locator('input[data-plan-field="bucket"]').fill(bucket);
-	await sheet.locator('input[data-plan-field="bucket"]').dispatchEvent('change');
+	await inMemory(sheet, bucket);
 	await sheet.locator('button[data-backup="add"]').click();
 	return sheet.locator(`section.plan[data-plan="${name}"]`);
 }
@@ -52,17 +58,31 @@ describe('«Backups…»', () => {
 		});
 	});
 
-	// Off the DEBUG database there is no destination to offer until S3: a
-	// tab's bucket behind a plan that survives the reload would look like
-	// protection and hold nothing. So no form, and a line saying why.
-	test('offers no plan form off the DEBUG database, only the file buttons and why', async () => {
+	// Off the DEBUG database the tab's memory is not offered: a tab's bucket
+	// behind a plan that survives the reload would look like protection and
+	// hold nothing.
+	test('offers no memory destination off the DEBUG database, and both file buttons', async () => {
 		await withApp(async ({ page }) => {
 			const sheet = await openSheet(page);
-			assert.equal(await sheet.locator('[data-no-destination]').innerText(), 'Plans need a destination to keep backups at; S3 is next.');
-			assert.equal(await sheet.locator('button[data-backup="add"]').count(), 0);
 			assert.equal(await sheet.locator('option', { hasText: 'memory' }).count(), 0);
 			assert.equal(await sheet.locator('button[data-backup="save"]').count(), 1);
 			assert.equal(await sheet.locator('button[data-backup="restore-file"]').count(), 1);
+		});
+	});
+
+	// `_internal` holds every plan's keys, to this bucket and to others: a
+	// backup of it would carry them all into a bucket as plain JSONL.
+	test('never offers _internal as a database to back up', async () => {
+		await withApp(async ({ page }) => {
+			// The first open reads the plans from `_internal`, so by the second it is in the pool.
+			await openSheet(page);
+			await page.keyboard.press('Escape');
+			const sheet = await openSheet(page);
+			const offered = sheet.locator('.add fieldset label');
+			await offered.first().waitFor();
+			const names = await offered.allInnerTexts();
+			assert.ok(names.includes('datum'), `offered: ${names.join(', ')}`);
+			assert.ok(!names.includes('_internal'), `offered: ${names.join(', ')}`);
 		});
 	});
 
@@ -92,16 +112,14 @@ describe('«Backups…»', () => {
 
 			// Another plan on the same bucket is told what is already there
 			// before it writes anything.
-			await sheet.locator('input[data-plan-field="bucket"]').fill('b1');
-			await sheet.locator('input[data-plan-field="bucket"]').dispatchEvent('change');
+			await inMemory(sheet, 'b1');
 			await sheet.getByRole('button', { name: 'Look for backups there', exact: true }).click();
 			await sheet.locator('[data-found]').waitFor();
 			const found = '2 backups of DEBUG found, newest 0 s ago Add plan continues that rotation.';
 			assert.equal(await sheet.locator('[data-found]').innerText(), found);
 
 			// And «Add plan» without looking first says the same, and writes nothing yet.
-			await sheet.locator('input[data-plan-field="bucket"]').fill('b1');
-			await sheet.locator('input[data-plan-field="bucket"]').dispatchEvent('change');
+			await inMemory(sheet, 'b1');
 			await sheet.locator('input[data-plan-field="name"]').fill('again');
 			await sheet.locator('button[data-backup="add"]').click();
 			await sheet.locator('[data-found]').waitFor();
