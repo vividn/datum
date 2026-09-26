@@ -87,8 +87,6 @@
 	let dialog: HTMLDialogElement;
 	let tab: (typeof TABS)[number] = 'basics';
 	let color = spec?.color ?? '';
-	/** Asked nowhere (da-h119q): nothing reads it, and da-6v7z1 takes it out of the spec. */
-	const unit = spec?.unit ?? '';
 	let description = spec?.description ?? '';
 	let states: StateRow[] = spec ? stateRows(spec) : [];
 	let glyph = spec?.glyph ?? '';
@@ -128,7 +126,6 @@
 				editedSpec(spec, {
 					verb: verb ?? spec.verb,
 					color,
-					unit,
 					description,
 					states,
 					keys,
@@ -155,7 +152,7 @@
 	}
 
 	const addKey = () =>
-		(keys = [...keys, { name: '', required: false, value_type: 'any', in_slug: false, default: '', unit: null }]);
+		(keys = [...keys, { name: '', required: false, value_type: 'any', in_slug: false, default: '' }]);
 
 	/** `list` with its `from`th item moved to `to`. */
 	function moved<T>(list: T[], from: number, to: number): T[] {

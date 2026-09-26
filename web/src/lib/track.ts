@@ -91,7 +91,6 @@ export interface Spec {
 	field: string;
 	verb: Verb;
 	color: string | null;
-	unit: string | null;
 	description: string | null;
 	allowed_states: string[] | null;
 	state_colors: Record<string, string>;
@@ -146,7 +145,6 @@ export interface Subfield {
 	/** Whether the key's value is part of the entry's slug: it identifies, not annotates. */
 	in_slug: boolean;
 	default: unknown;
-	unit: string | null;
 }
 
 /** One row of the Keys tab: a subfield under its name, its default as typed. */
@@ -242,7 +240,6 @@ export function editedSpec(
 	edit: {
 		verb: Verb;
 		color: string;
-		unit: string;
 		description: string;
 		states: StateRow[];
 		glyph?: string;
@@ -288,7 +285,6 @@ export function editedSpec(
 		...edit.place,
 		verb: edit.verb,
 		color: edit.color || null,
-		unit: edit.unit.trim() || null,
 		description: edit.description.trim() || null,
 		allowed_states: spec.allowed_states === null && names.length === 0 ? null : names,
 		state_colors,
@@ -323,7 +319,7 @@ export function editedSpec(
 /**
  * The ONE command that saves an edited spec: `spec set --from-json` with
  * the whole of it, so it lands entire or not at all — never a stream of
- * `add-state`s half applied — and so a colour, a unit or a state can be
+ * `add-state`s half applied — and so a colour or a state can be
  * cleared, which the one-value flags cannot say.
  */
 export const specArgv = (spec: Spec): string[] => [

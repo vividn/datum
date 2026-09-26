@@ -99,7 +99,6 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
                 value_type: SubfieldType::Any,
                 in_slug: false,
                 default: None,
-                unit: None,
             });
         sub.required = required;
         sub.default = default;

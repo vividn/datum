@@ -1885,7 +1885,6 @@ mod tests {
                 value_type: SubfieldType::Number,
                 in_slug: false,
                 default: None,
-                unit: None,
             },
         );
         let mut spec = FieldSpec::new("mood", Action::Switch);
@@ -1933,7 +1932,6 @@ mod tests {
                 value_type: SubfieldType::Number,
                 in_slug: false,
                 default: None,
-                unit: None,
             },
         );
         let mut spec = FieldSpec::new("mood", Action::Switch);
@@ -3215,7 +3213,7 @@ mod tests {
             Verb::Point,
             Some(serde_json::json!(75.2)),
             Some(serde_json::json!({
-                "unit": "kg",
+                "scale": "bathroom",
                 "note": "morning",
                 "tags": ["calibrated", "indoor"],
                 "nested": {"sensor": "scale-v2", "battery": 87}

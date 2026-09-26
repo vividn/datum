@@ -228,11 +228,6 @@ impl SpecBuilder {
         self
     }
 
-    pub fn unit(mut self, u: impl Into<String>) -> Self {
-        self.spec.unit = Some(u.into());
-        self
-    }
-
     pub fn subfield(mut self, name: impl Into<String>, spec: SubfieldSpec) -> Self {
         self.spec.subfields.insert(name.into(), spec);
         self

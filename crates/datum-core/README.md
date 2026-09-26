@@ -11,7 +11,7 @@ off to remain WASM-clean (see `datum-parse`, `datum-layout`).
 |-----------------|---------------------------------------------------------------|
 | [`db`]          | The [`Db`](db::Db) wrapper around `rusqlite::Connection`.     |
 | [`entry`]       | The [`Entry`](entry::Entry) record + verbs (occur/start/stop/switch/note). |
-| [`field_spec`]  | [`FieldSpec`](field_spec::FieldSpec): per-field schema, units, defaults. |
+| [`field_spec`]  | [`FieldSpec`](field_spec::FieldSpec): per-field schema, defaults.        |
 | [`slug`]        | Human-readable refs (`field:2024-03-16T09:15Z`), datum-compatible. |
 | [`ids`]         | ULID generation and CRDT-safe IDs.                            |
 | [`state`]       | Switch-state derivation (current value + transition history). |

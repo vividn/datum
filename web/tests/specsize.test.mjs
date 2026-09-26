@@ -24,7 +24,7 @@ describe('the spec modal', () => {
 			const { page } = app;
 			await app.run(['track', 'mood', '--verb', 'switch']);
 			const spec = JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout);
-			const key = { required: false, value_type: 'any', in_slug: false, default: null, unit: null };
+			const key = { required: false, value_type: 'any', in_slug: false, default: null };
 			const r = await app.run(['spec', 'set', 'mood', '--from-json', JSON.stringify({
 				...spec,
 				allowed_states: ['happy', 'sad', 'tired'],

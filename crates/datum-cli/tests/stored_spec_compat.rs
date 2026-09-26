@@ -188,3 +188,42 @@ fn a_spec_with_an_unreadable_verb_is_still_an_error() {
     let (ok, text) = env.try_run(&["spec", "show", "tea"]);
     assert!(!ok, "an unreadable verb should error, got:\n{text}");
 }
+
+/// da-6v7z1: datum has no units. A spec stored while it still did — a
+/// field-level `unit` and a subfield's — loads with both ignored, shows
+/// neither, and the next write stores it without them.
+#[test]
+fn a_stored_unit_is_ignored_and_dropped_on_the_next_write() {
+    let env = Env::new();
+    env.run(&["occur", "tea"]);
+    env.store_old_spec(
+        "tea",
+        r#"{"field":"tea","verb":"occur","unit":"cups","subfields":{"dose":{"required":false,"value_type":"number","in_slug":false,"default":null,"unit":"mg"}}}"#,
+    );
+
+    for args in [
+        vec!["spec", "show", "tea"],
+        vec!["spec", "show", "tea", "--text"],
+        vec!["fields", "--json"],
+    ] {
+        let text = env.run(&args);
+        assert!(!text.contains("unit"), "{args:?} shows a unit:\n{text}");
+    }
+    let spec: Value = serde_json::from_str(&env.run(&["spec", "show", "tea"])).unwrap();
+    assert_eq!(spec["subfields"]["dose"]["value_type"], "number");
+
+    env.run(&["spec", "set", "tea", "--description", "green"]);
+    let conn = rusqlite::Connection::open(&env.db).unwrap();
+    let stored: String = conn
+        .query_row(
+            "SELECT data FROM entries WHERE slug = 'spec:tea'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(stored.contains("green"), "the write landed: {stored}");
+    assert!(
+        !stored.contains("unit"),
+        "a unit survived the write: {stored}"
+    );
+}

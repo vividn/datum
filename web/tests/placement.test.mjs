@@ -19,10 +19,10 @@ const round = (n) => Math.round(n * 1000) / 1000;
 
 describe('the spec it saves', () => {
 	const base = {
-		field: 'coffee', verb: 'occur', color: null, unit: null, description: null,
+		field: 'coffee', verb: 'occur', color: null, description: null,
 		allowed_states: null, state_colors: {}, y: 0.3, height: 0.2
 	};
-	const edit = (place) => ({ verb: 'occur', color: '', unit: '', description: '', states: [], place });
+	const edit = (place) => ({ verb: 'occur', color: '', description: '', states: [], place });
 
 	test('untouched, the placement goes back as it came — unset keys stay unset', () => {
 		assert.deepEqual(placeOf(base), { y: 0.3, height: 0.2 });

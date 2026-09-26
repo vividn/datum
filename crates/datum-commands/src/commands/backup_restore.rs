@@ -893,7 +893,7 @@ mod tests {
             "coffee",
             200,
             serde_json::json!(2),
-            Some(serde_json::json!({"unit": "cups"})),
+            Some(serde_json::json!({"roast": "dark"})),
         ))
         .unwrap();
         db.insert_entry(&make_entry(

@@ -33,8 +33,6 @@ pub struct SubfieldSpec {
     pub in_slug: bool,
     /// Default value if not supplied.
     pub default: Option<serde_json::Value>,
-    /// Unit for this subfield's value (if numeric).
-    pub unit: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,9 +77,6 @@ pub struct FieldSpec {
     /// Human description of this field.
     #[serde(default)]
     pub description: Option<String>,
-    /// Default unit for the primary value.
-    #[serde(default)]
-    pub unit: Option<String>,
 
     /// Template for entry ids/slugs, e.g. "%field%:%state%".
     #[serde(default)]
@@ -179,7 +174,6 @@ impl FieldSpec {
             verb,
             subfields: HashMap::new(),
             description: None,
-            unit: None,
             id_template: None,
             color: None,
             allowed_states: None,
@@ -417,7 +411,6 @@ mod tests {
             "verb": "switch",
             "subfields": {},
             "description": null,
-            "unit": null,
             "tracked": true,
             "ignored": true
         }"#;

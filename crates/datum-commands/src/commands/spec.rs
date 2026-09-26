@@ -115,9 +115,6 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     if let Some(d) = &args.description {
         spec.description = Some(d.clone());
     }
-    if let Some(u) = &args.unit {
-        spec.unit = Some(u.clone());
-    }
     let any = |_: &str, _: &str| Ok(());
     set_pairs(
         &mut spec.state_colors,
@@ -520,9 +517,6 @@ fn render_spec_text(spec: &FieldSpec) {
     if let Some(d) = &spec.description {
         println!("  description: {d}");
     }
-    if let Some(u) = &spec.unit {
-        println!("  unit: {u}");
-    }
     if let Some(c) = &spec.color {
         println!("  color: {c}");
     }
@@ -600,7 +594,6 @@ mod tests {
             state_descriptions: vec![],
             id_template: Some("%field%:%state%".to_string()),
             description: None,
-            unit: None,
             track: true,
             ignore: false,
             id_keys: vec![],
@@ -643,7 +636,6 @@ mod tests {
             state_descriptions: vec![],
             id_template: None,
             description: None,
-            unit: None,
             track: false,
             ignore: false,
             id_keys: vec![],

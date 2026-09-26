@@ -78,7 +78,7 @@ describe('the argv it composes', () => {
 
 	// da-h119q: a field's keys are declared in the same `track`.
 	test('keys ride on the `track`: a required one as `--required-key`, a default after `=`, a blank name dropped', () => {
-		const key = (name, required, typed = '') => ({ name, required, value_type: 'any', in_slug: false, default: typed, unit: null });
+		const key = (name, required, typed = '') => ({ name, required, value_type: 'any', in_slug: false, default: typed });
 		assert.deepEqual(trackArgv('coffee', 'occur', [], '', [key(' cups ', true, '2'), key('place', false), key(' ', true)]), [
 			'track', 'coffee', '--verb', 'occur', '--required-key', 'cups=2', '--key', 'place'
 		]);
@@ -89,17 +89,17 @@ describe('the argv it composes', () => {
 	// description with it, and a blank clears where a flag could not.
 	test('an edited spec is the whole spec, in one `spec set --from-json`', () => {
 		const spec = {
-			field: 'mood', verb: 'switch', color: '#123456', unit: 'pts', description: null,
+			field: 'mood', verb: 'switch', color: '#123456', description: null,
 			allowed_states: ['good', 'bad'], state_colors: { good: '#00ff00', bad: '#ff0000' },
 			state_descriptions: { bad: 'awful' }, subfields: { note: {} }, tags: ['x']
 		};
 		assert.deepEqual(stateRows(spec), [row('good', '#00ff00'), row('bad', '#ff0000', 'awful')]);
 		const edited = editedSpec(spec, {
-			verb: 'start', color: '', unit: ' ', description: ' how I feel ',
+			verb: 'start', color: '', description: ' how I feel ',
 			states: [row('good', '#00ff00', 'fine'), row(' meh ', ''), row('')]
 		});
 		assert.deepEqual(edited, {
-			...spec, verb: 'start', color: null, unit: null, description: 'how I feel',
+			...spec, verb: 'start', color: null, description: 'how I feel',
 			allowed_states: ['good', 'meh'], state_colors: { good: '#00ff00' },
 			state_descriptions: { good: 'fine' }
 		});
@@ -108,9 +108,9 @@ describe('the argv it composes', () => {
 		const bare = { ...spec, state_descriptions: undefined };
 		delete bare.state_descriptions;
 		assert.deepEqual(stateRows(bare), [row('good', '#00ff00'), row('bad', '#ff0000')]);
-		assert.equal('state_descriptions' in editedSpec(bare, { verb: 'switch', color: '', unit: '', description: '', states: stateRows(bare) }), false);
+		assert.equal('state_descriptions' in editedSpec(bare, { verb: 'switch', color: '', description: '', states: stateRows(bare) }), false);
 		// A spec with no list keeps none when none is added.
-		assert.equal(editedSpec({ ...spec, allowed_states: null }, { verb: 'occur', color: '', unit: '', description: '', states: [] }).allowed_states, null);
+		assert.equal(editedSpec({ ...spec, allowed_states: null }, { verb: 'occur', color: '', description: '', states: [] }).allowed_states, null);
 		const argv = specArgv(edited);
 		assert.deepEqual(argv.slice(0, 4), ['spec', 'set', 'mood', '--from-json']);
 		assert.deepEqual(JSON.parse(argv[4]), edited);
@@ -121,12 +121,12 @@ describe('the argv it composes', () => {
 	// did, and a caller whose rows carry no glyph must not wipe them.
 	test('a removed state takes its glyph with it; a kept or renamed one keeps it', () => {
 		const spec = {
-			field: 'mood', verb: 'switch', color: null, unit: null, description: null,
+			field: 'mood', verb: 'switch', color: null, description: null,
 			allowed_states: ['up', 'down', 'flat'], state_colors: {},
 			state_glyphs: { up: '▲', down: '▼', flat: '■', logged: '○' }
 		};
 		assert.deepEqual(stateRows(spec).map((r) => r.glyph), ['▲', '▼', '■']);
-		const base = { verb: 'switch', color: '', unit: '', description: '' };
+		const base = { verb: 'switch', color: '', description: '' };
 		// `down` removed, `flat` renamed to `level` (the row carries its glyph), `up` cleared.
 		const [up, , flat] = stateRows(spec);
 		const edited = editedSpec(spec, { ...base, states: [{ ...up, glyph: '' }, { ...flat, name: 'level' }] });
@@ -140,11 +140,11 @@ describe('the argv it composes', () => {
 
 	test('one glyph, or a glyph by a key with the field\'s as the default', () => {
 		const spec = {
-			field: 'tea', verb: 'occur', color: null, unit: null, description: null,
+			field: 'tea', verb: 'occur', color: null, description: null,
 			allowed_states: null, state_colors: {}, glyph: '●', glyph_by: { key: 'size', map: { big: '☕' } },
 			subfields: { size: {} }, data_keys: ['cup=mug', 'size']
 		};
-		const base = { verb: 'occur', color: '', unit: '', description: '', states: [] };
+		const base = { verb: 'occur', color: '', description: '', states: [] };
 		assert.deepEqual(specKeys(spec), ['size', 'cup']);
 		// Not edited: carried as it was.
 		assert.deepEqual(editedSpec(spec, base).glyph_by, spec.glyph_by);
@@ -174,25 +174,25 @@ describe('the argv it composes', () => {
 	// da-cap5m: the keys are the whole map, a default stored as it was
 	// typed; the aliases are sent only once datum no longer makes them.
 	test('keys are saved whole, and only a list datum does not make is sent', () => {
-		const key = (over) => ({ required: false, value_type: 'any', in_slug: false, default: null, unit: null, ...over });
+		const key = (over) => ({ required: false, value_type: 'any', in_slug: false, default: null, ...over });
 		const spec = {
-			field: 'word', verb: 'add', color: null, unit: null, description: null, allowed_states: null, state_colors: {},
-			subfields: { pos: key({ required: true, value_type: 'string', in_slug: true }), reps: key({ value_type: 'number', default: 3, unit: 'x' }) },
+			field: 'word', verb: 'add', color: null, description: null, allowed_states: null, state_colors: {},
+			subfields: { pos: key({ required: true, value_type: 'string', in_slug: true }), reps: key({ value_type: 'number', default: 3 }) },
 			derived_aliases: [{ state: 'word', expands_to: 'add word', kind: 'bare_field' }], no_autoalias: false
 		};
 		const keys = keyRows(spec);
 		assert.deepEqual(keys, [
 			{ ...key({ required: true, value_type: 'string', in_slug: true }), name: 'pos', default: '' },
-			{ ...key({ value_type: 'number', unit: 'x' }), name: 'reps', default: '3' }
+			{ ...key({ value_type: 'number' }), name: 'reps', default: '3' }
 		]);
-		const base = { verb: 'add', color: '', unit: '', description: '', states: [] };
+		const base = { verb: 'add', color: '', description: '', states: [] };
 		keys[0].required = false;
 		keys[0].default = '42';
 		keys[1].default = ' ';
 		const made = editedSpec(spec, { ...base, keys: [...keys, { ...key(), name: 'n', default: '42' }, { ...key(), name: ' ', default: '' }], autoalias: true, aliases: [] });
 		assert.deepEqual(made.subfields, {
 			pos: key({ value_type: 'string', in_slug: true, default: '42' }),
-			reps: key({ value_type: 'number', unit: 'x' }),
+			reps: key({ value_type: 'number' }),
 			n: key({ default: 42 })
 		});
 		assert.equal(made.no_autoalias, false);
@@ -207,8 +207,8 @@ describe('the argv it composes', () => {
 	// da-45wgz: the icon is replaced when given, cleared when given empty —
 	// the key left out, as `spec show` leaves it — and carried when not given.
 	test('an edited icon is set, cleared, or carried', () => {
-		const spec = { field: 'coffee', verb: 'occur', color: null, unit: null, description: null, allowed_states: null, state_colors: {}, icon: '<svg/>' };
-		const edit = { verb: 'occur', color: '', unit: '', description: '', states: [] };
+		const spec = { field: 'coffee', verb: 'occur', color: null, description: null, allowed_states: null, state_colors: {}, icon: '<svg/>' };
+		const edit = { verb: 'occur', color: '', description: '', states: [] };
 		assert.equal(editedSpec(spec, edit).icon, '<svg/>');
 		assert.equal('icon' in editedSpec(spec, { ...edit, icon: '' }), false);
 		const set = editedSpec({ ...spec, icon: undefined }, { ...edit, icon: '<svg viewBox="0 0 1 1"/>\n' });
@@ -589,7 +589,7 @@ describe('in the app', () => {
 			assert.equal(echoes.length, 1, `one command: ${echoes.join(' | ')}`);
 			assert.match(echoes[0], /^track coffee /);
 			const shown = JSON.parse((await app.run(['spec', 'show', 'coffee'])).stdout);
-			assert.deepEqual(shown.subfields.cups, { required: true, value_type: 'any', in_slug: false, default: 2, unit: null });
+			assert.deepEqual(shown.subfields.cups, { required: true, value_type: 'any', in_slug: false, default: 2 });
 
 			// A spec opens on Basics with its keys there, and still no unit.
 			const shut = page.evaluate(() => window.datum.spec('coffee'));
@@ -671,8 +671,8 @@ describe('in the app', () => {
 			assert.deepEqual(await names('optional'), ['gloss']);
 			await save(app, saved);
 			assert.deepEqual(await subfields(), {
-				pos: { required: true, value_type: 'any', in_slug: true, default: 'noun', unit: null },
-				gloss: { required: false, value_type: 'any', in_slug: false, default: null, unit: null }
+				pos: { required: true, value_type: 'any', in_slug: true, default: 'noun' },
+				gloss: { required: false, value_type: 'any', in_slug: false, default: null }
 			});
 
 			({ saved } = await openSpecTab(page, 'word', 'keys'));

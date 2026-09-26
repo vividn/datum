@@ -198,15 +198,6 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
                 out.description = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("unit") => {
-                let (v, ni) = take_value(tail, i, None, "--unit")?;
-                out.unit = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::LongAttached("unit", v) => {
-                out.unit = Some(v.to_string());
-                i += 1;
-            }
             FlagSplit::Long("track") => {
                 out.track = true;
                 i += 1;

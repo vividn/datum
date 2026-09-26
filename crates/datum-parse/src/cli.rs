@@ -281,7 +281,7 @@ pub struct DbImportArgs {
 /// The shared arg bag for all logging verbs. Composed shape (da-e2e
 /// Phase A): timing/duration/output flags live in their concern bags so
 /// callers can call `args.time.build()`, `args.duration.build()`,
-/// `args.output.resolve()` directly. Log-specific extras (unit, keys,
+/// `args.output.resolve()` directly. Log-specific extras (keys,
 /// slug_keys, conflict, …) remain as direct fields since no shared
 /// concern module owns them.
 #[derive(Debug, Default)]
@@ -658,7 +658,6 @@ pub struct SpecSetArgs {
     pub state_descriptions: Vec<String>,
     pub id_template: Option<String>,
     pub description: Option<String>,
-    pub unit: Option<String>,
     pub track: bool,
     pub ignore: bool,
     pub id_keys: Vec<String>,

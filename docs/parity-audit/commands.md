@@ -63,8 +63,10 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
   verb (`point` / `block` / `block-switch` / `point-switch` /
   `switch`). `-K` slug-contributing keys and `-k` data-only keys are
   split (daydumb enhancement). `-m/--moment`, `--last-state`,
-  `--conflict`, `--update`, `--merge`, `-M`, `-z` timezone, `-u` unit,
+  `--conflict`, `--update`, `--merge`, `-M`, `-z` timezone,
   `-c` comment, `--id`, `--id-delimiter`.
+- **Deliberately not carried:** the original's `-u` unit flag. datum has
+  no units (vividn, 2026-09-26, da-6v7z1).
 - **Missing in daydumb:** no `-u/--undo` / `-U/--force-undo` flag on the
   log verbs — `undo` is its own command.
 - **Divergences:** daydumb always records `alias_chain` + `raw_input`
@@ -429,7 +431,9 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
   datum equivalent).
 - **Subcommands:** `set`, `show`, `list`, `remove`.
 - **Notes:** specs drive auto-alias generation, default verbs, state
-  color palettes, unit defaults, slug templates, and id-key shapes.
+  color palettes, slug templates, and id-key shapes. Unit defaults are
+  deliberately not carried: datum has no units (vividn, 2026-09-26,
+  da-6v7z1).
   See `da-gnj.3` for the full spec extension set.
 
 ### alias (daydumb only)

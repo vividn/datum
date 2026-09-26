@@ -46,6 +46,8 @@ a top-level `migrations/` folder.)
 - `state`: the primary JSON value (the state for a switch, the quantity for an occur). **There is no `value` field** — `state` is the canonical name, and a `value` appearing in new code is a bug, not a synonym.
 - `following_state`: the trailing-edge state of a switch-style verb; meaningful only alongside a `dur`.
 - `data`: arbitrarily nested JSON. (Not `extra_data`.) Nothing infers a unit: `weight=75.2kg` stores the string `"75.2kg"` (da-jh7io).
+  datum has no units anywhere, in specs, subfields or entries (da-6v7z1).
+  The only planned form is a typed value (`u://`/`unit://`), not built.
 - `occur_time` + `dur`: the one instant and the span it covers — see the time model below. There are no `time_start` / `time_end` columns.
 - the zone travels with the time (`occur_time_tz`): an IANA name, e.g. "America/Chicago"
 - `create_time` / `modify_time` / `device_id`
