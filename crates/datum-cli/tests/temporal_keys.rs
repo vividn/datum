@@ -110,16 +110,16 @@ fn start_and_end_pair_lands_the_block_between_them() {
 fn end_time_alone_on_start_is_end_at_that_time() {
     let _g = freeze_time("2026-09-10T12:00:00Z");
     let keyed = fresh_db();
-    run_cli(&["start", "posture", "-t", "11:30"], &keyed).unwrap();
+    run_cli(&["start", "posture", "-t", "-30"], &keyed).unwrap();
     run_cli(&["start", "posture", "end_time=-5"], &keyed).expect("end_time= alone");
 
     let flagged = fresh_db();
-    run_cli(&["start", "posture", "-t", "11:30"], &flagged).unwrap();
+    run_cli(&["start", "posture", "-t", "-30"], &flagged).unwrap();
     run_cli(&["end", "posture", "-t", "-5"], &flagged).expect("end -t -5");
 
     let aliased = fresh_db();
     run_cli(&["alias", "set", "posture", "start posture"], &aliased).unwrap();
-    run_cli(&["posture", "-t", "11:30"], &aliased).unwrap();
+    run_cli(&["posture", "-t", "-30"], &aliased).unwrap();
     run_cli(&["posture", "end_time=-5"], &aliased).expect("alias end_time=");
 
     let want = shape(&rows(&flagged, "posture")[1]);
@@ -229,11 +229,11 @@ fn t_flag_with_a_key_is_an_error_naming_both() {
 fn end_time_alone_on_switch_is_end_asserting_the_state() {
     let _g = freeze_time("2026-09-10T12:00:00Z");
     let keyed = fresh_db();
-    run_cli(&["switch", "mood", "happy", "-t", "11:30"], &keyed).unwrap();
+    run_cli(&["switch", "mood", "happy", "-t", "-30"], &keyed).unwrap();
     run_cli(&["switch", "mood", "happy", "end_time=-5"], &keyed).expect("switch end_time=");
 
     let flagged = fresh_db();
-    run_cli(&["switch", "mood", "happy", "-t", "11:30"], &flagged).unwrap();
+    run_cli(&["switch", "mood", "happy", "-t", "-30"], &flagged).unwrap();
     run_cli(&["end", "mood", "-t", "-5", "-L=happy"], &flagged).expect("end -L=happy");
 
     let want = shape(&rows(&flagged, "mood")[1]);
@@ -245,7 +245,7 @@ fn end_time_alone_on_switch_is_end_asserting_the_state() {
 
     // The assertion is checked: `sad` was not what was open.
     let wrong = fresh_db();
-    run_cli(&["switch", "mood", "happy", "-t", "11:30"], &wrong).unwrap();
+    run_cli(&["switch", "mood", "happy", "-t", "-30"], &wrong).unwrap();
     run_cli(&["switch", "mood", "sad", "end_time=-5"], &wrong).expect("still lands");
     run_cli(&["check"], &wrong).expect("check runs");
     let mismatches = wrong

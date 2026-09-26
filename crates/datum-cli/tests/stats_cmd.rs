@@ -807,7 +807,7 @@ fn period_and_timing_flags_parse_and_dispatch() {
     run_cli(&["stats", "activity", "-y"], &db).unwrap();
     run_cli(&["stats", "activity", "-yy", "--until", "now"], &db).unwrap();
     run_cli(&["stats", "activity", "-qq", "--json"], &db).unwrap();
-    run_cli(&["stats", "activity", "-t", "8:00"], &db).unwrap();
+    run_cli(&["stats", "activity", "-t", "8:00", "-z", "UTC"], &db).unwrap();
     run_cli(&["stats", "activity", "-d", "2026-06-14", "-z", "UTC"], &db).unwrap();
 
     // Two different period flags contradict rather than refine.
