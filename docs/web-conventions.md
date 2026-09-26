@@ -367,3 +367,49 @@ writing it down.
     goes back for the files at 2 s and doubles (2, 6, 14 s after it gave up), so an outage
     scripted to end at 8 s is a coin toss between the 6 s try and the 14 s one — 5 s sits
     between two tries and asks the same question in half the time.
+
+## Interaction
+
+What a tap will do has to be readable BEFORE the tap. vividn, 2026-09-25: «put double outlines
+around any command or button that immediately causes an effect», and «hooking up a button to
+do something automatically gives it a double line». Read off `web/src` on 2026-09-25. Where a
+rule is decided but not yet everywhere, it names the bead.
+
+22. **The outline says what a tap does.** DOUBLE: the tap acts at once (it writes or runs).
+    SINGLE: it arms, opens, or fills the line without running. NONE: display. The outline is
+    DERIVED from the same answer the press itself takes, never chosen by hand: `fires()` for
+    the commands widget and `pressKind()` for the fields widget, both in `commands.ts`, so a
+    button cannot act without looking as if it does. An ignored field that runs keeps its
+    dashes and doubles them (da-nmna0). One component for every button, and a tap-everything
+    test that holds double ⇔ something ran, are decided but not built yet (da-y0ocz).
+23. **Tap acts, hold refines.** A hold is `hold.ts`'s `holds` (`HOLD_MS`), never a timer of a
+    component's own. A field held becomes a field pill, and a command held shows its flags
+    (da-st2xl).
+24. **What is loaded narrows what is offered.** Pills filter the commands by what each
+    command's grammar can take (`commandsUnder`, from `datum help --json`). A loaded field
+    filters the verbs by `verbFits`, the same predicate `fieldsUnder` filters fields by, so the
+    two lists cannot disagree. Only ARGUMENT pills narrow anything: a field pill beside a
+    selected hid is CONTEXT, which narrows the panes and no command (`roleOf` / `argumentsOf`,
+    da-tu30m).
+25. **Everything passes through the command line.** A tap composes a visible argv, and the echo
+    shows what ran. A composed line finishes without a phone's keyboard, through the Send
+    button (da-1pzwl).
+26. **Drill down, then `< Back`.** A multi-state switch opens its states (radially round the
+    tap, da-7q3ka), and a command with subcommands opens those (da-803mk). `< Back` returns,
+    and so does Escape.
+27. **Escape peels one layer, innermost first:** Help armed (stopped in the capture phase,
+    `help.ts`), then an open dialog, a menu or a state list, the log, and last the input
+    (unlocked pills, then locked pills, then the text: `peel` in `bar.ts`). The precedence is ONE
+    comment, `PromptBar.svelte`'s `onKey`. Every handler that takes the key marks it with
+    `preventDefault`, and the input peels only if none did. The × clears the whole input at
+    once (`clearLine`).
+28. **Help explains anything tappable.** Every widget kind carries its `help`, and
+    `tree.test.mjs`'s «widget help» fails on a kind without one. A command's help is the CLI's
+    own, and a flag's comes with da-st2xl.
+29. **The current choice is SOLID and bold, the other choices a tint, and actions hollow**
+    (on trial in da-7q3ka's state ring). Not a dot, which reads as an occur dot. Not an
+    underline, which reads as a link. Not a border, because rule 22 owns those. Not a size,
+    because that moves what the thumb has learned.
+30. **Logging the current state again is a record, not a duplicate.** A tap on the state a
+    field is already in logs it again: that's someone confirming it after a forgotten record
+    (vividn, 2026-09-25: «it happens all the time»). Never suppress it.
