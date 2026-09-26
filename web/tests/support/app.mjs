@@ -582,7 +582,7 @@ function removeDb(page, db) {
 }
 
 /** The change counter of the page's database — or of `named` — read under the worker's own lock: 0 with no file. */
-function changeCounter(page, named) {
+export function changeCounter(page, named) {
 	return page.evaluate(async ([dir, named]) => {
 		const db = named ?? (new URLSearchParams(location.search).get('db') || 'datum');
 		// A browser with no OPFS keeps the database in memory, and has no file to read.
@@ -897,8 +897,11 @@ function app(page, errors, query, clean, locks, internal) {
 		 * At most ONE frame is drawn — the tabs are closed before the saves
 		 * are dropped, and `main` is put back while it is behind another tab
 		 * wherever it can be.
+		 *
+		 * `{ keepDb: true }` leaves the database as it is, for a test that
+		 * put the layout back and knows its data is still what it seeded.
 		 */
-		async solo(draft) {
+		async solo(draft, { keepDb = false } = {}) {
 			await self.home();
 			await page.evaluate(async () => {
 				const { layout, shell } = window.datum;
@@ -911,7 +914,7 @@ function app(page, errors, query, clean, locks, internal) {
 			if (draft === undefined) await self.restoreMain();
 			await self.settleRoot();
 			if (draft !== undefined) await self.redraft(draft);
-			await self.empty();
+			if (!keepDb) await self.empty();
 			await ready(page);
 			await settled(self);
 			return self;

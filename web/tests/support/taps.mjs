@@ -9,7 +9,8 @@
 // is per FILE, and the two together took 201 s of its 300 under load.
 //
 // "Ran" is the bar's receipt (`bar.last()`, a fresh object for every
-// command anything runs) moving; "wrote" is the entry count moving. An
+// command anything runs) moving; "wrote" is the database's change counter
+// moving — SQLite's header, read without a CLI process. An
 // IGNORED field that acts draws a double DASHED line (da-nmna0) — a dashed
 // border with a dashed outline inside it — and counts as double here.
 //
@@ -21,16 +22,15 @@
 
 import { before, after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp } from './app.mjs';
+import { changeCounter, sharedApp, startApp, stopApp } from './app.mjs';
 import { toggleOption } from './layout.mjs';
 import { FIXTURE, MOOD } from './fields.mjs';
 
 /** Every shape of field, one of them ignored (`run`, a point). */
 const SEED = [...FIXTURE, ...MOOD, 'occur run -t 0800', 'ignore run'];
 
-/** How many entries the database holds, by the CLI's own count. */
-const entries = async (app) =>
-	JSON.parse((await app.run(['count', '--group-by', 'field', '--json'])).stdout).reduce((n, g) => n + g.count, 0);
+/** Where the database's change counter stands: it moves on every write. */
+const writes = (app) => changeCounter(app.page);
 
 /**
  * Every button a reader can tap, keyed by where it is and what it says, and
@@ -100,16 +100,20 @@ async function reset(app, line) {
 	// A bar a tap drilled into — a field's states, a command's subcommands
 	// or flags — backed out of, as a reader would.
 	for (let back; (back = page.locator('.bar [data-back]')), (await back.count()) > 0; ) await back.first().click();
+	// Once seeded, the layout goes back without the database: whether the
+	// tap wrote is the counter's to say, below.
 	if (app.seeded === undefined || (await world(page)) !== app.world) {
-		await app.solo();
+		await app.solo(undefined, { keepDb: app.seeded !== undefined });
 		app.world = await world(page);
 	}
-	if ((await entries(app)) !== app.seeded) {
+	if ((await writes(app)) !== app.seeded) {
 		await app.empty();
-		// Through the quiet door, and one redraw over all of it.
+		// Through the quiet door, and one redraw over all of it. Line by line
+		// and not a `db restore -`: a backup carries no undo trail, and
+		// `command: undo` then writes nothing.
 		for (const line of SEED) assert.equal((await app.runLine(line)).code, 0, line);
 		await app.redraw();
-		app.seeded = await entries(app);
+		app.seeded = await writes(app);
 	}
 	// The session's «show ignored fields», which `solo` keeps — unless the
 	// tap before closed or changed the pane it was set on. Read once the
@@ -135,14 +139,14 @@ async function tap(app, key, line, within) {
 	assert.ok(found, `${key}: not on the page after a reset`);
 	// A second on, so a tap that logs does not collide with the seed's own `now`.
 	await app.clock.forward(1000);
-	const had = await entries(app);
 	await page.evaluate(() => (window.__lastRun = window.datum.bar.last()));
 	await page.locator('[data-tap]').click();
 	// A press dispatches, and the run starts a frame or two behind it.
 	await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 	await app.idle();
 	const ran = await page.evaluate(() => window.datum.bar.last() !== window.__lastRun);
-	const wrote = (await entries(app)) !== had;
+	// `reset` left the counter at `seeded`.
+	const wrote = (await writes(app)) !== app.seeded;
 	return { ...found, acted: ran || wrote, ran, wrote };
 }
 
