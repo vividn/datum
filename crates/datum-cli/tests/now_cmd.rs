@@ -1087,16 +1087,16 @@ fn now_state_list_honours_the_colour_gate() {
     );
 }
 
-/// Run the real binary against `db` with colour off, `TZ=UTC`, a `HOME`
-/// beside the db (no sync config, so no banner) and the given env on top —
-/// `datum now`'s width is only honest end to end (da-coi0m).
+/// Run the real binary against `db` with colour off, `TZ` = [`noon_zone`], a
+/// `HOME` beside the db (no sync config, so no banner) and the given env on
+/// top — `datum now`'s width is only honest end to end (da-coi0m).
 fn run_datum(db: &std::path::Path, env: &[(&str, &str)], args: &[&str]) -> String {
     use std::process::{Command, Stdio};
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_datum"));
     cmd.env("DATUM_DB", db)
         .env("HOME", db.parent().expect("db dir"))
         .env("DATUM_COLOR", "0")
-        .env("TZ", "UTC")
+        .env("TZ", noon_zone())
         .env_remove("COLUMNS")
         .stdout(Stdio::piped())
         .args(args);
@@ -1106,6 +1106,16 @@ fn run_datum(db: &std::path::Path, env: &[(&str, &str)], args: &[&str]) -> Strin
     let out = cmd.output().expect("run datum");
     assert!(out.status.success(), "{args:?} failed: {out:?}");
     String::from_utf8(out.stdout).expect("utf8 stdout")
+}
+
+/// The `Etc/GMT` zone whose clock reads 12:xx right now, so entries seeded
+/// minutes back never fall on yesterday: under `TZ=UTC` a run in the first
+/// 40 minutes after midnight printed `-1d 23:52` for `20m ago` and the
+/// column widened (da-0ekq7). IANA's `Etc/GMT` signs are inverted.
+fn noon_zone() -> String {
+    let secs = std::time::UNIX_EPOCH.elapsed().expect("clock").as_secs();
+    let offset = 12 - (secs / 3600 % 24) as i64;
+    format!("Etc/GMT{:+}", -offset)
 }
 
 fn width(line: &str) -> usize {
