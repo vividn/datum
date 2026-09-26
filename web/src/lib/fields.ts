@@ -320,6 +320,14 @@ export interface Ring {
 	states: Spot[];
 }
 
+/** How far the box reaches from the tap on each side, in pixels. */
+export interface Room {
+	up: number;
+	down: number;
+	left: number;
+	right: number;
+}
+
 /**
  * A switch field's states RADIALLY around the tap (da-7q3ka), RANKED BY
  * DISTANCE — vividn: «make sure that the top ranked states are radially
@@ -334,15 +342,25 @@ export interface Ring {
  * order takes the nearest free spot — the least distance from the
  * centre, and among equals the first clockwise from twelve o'clock —
  * where it clears every button already placed by `gap`. Spots are every
- * 2px across, and every half row up and down as far as `ry`; a bar too
- * short for a row above (`ry` under half a row) has only the one line.
+ * 2px across and every half row up and down.
  *
- * `w` is each button's width, `h` a button's height.
+ * At the box's edges the ring is CAPPED, never shifted (da-8mk9p) — vividn:
+ * «still radial, just capped on one side and spreading out further in the
+ * non capped direction, but the center should still be end». A spot is
+ * one whose button lies inside `room`, so the states spread along the
+ * free sides. Only the centre's line moves, and only as far as it must to
+ * fit — sideways when `< Back` or `+ Add state` would run past the box
+ * (the left edge wins in a box narrower than the line, which the box then
+ * scrolls) — and a state no spot inside `room` holds goes past its right
+ * edge, where the box scrolls, rather than move anything.
+ *
+ * `w` is each button's width, `h` a button's height; every spot returned
+ * is from the tap.
  */
 export function ringOf(
 	w: { back: number; add: number; end: number | null; states: number[] },
 	h: number,
-	ry: number,
+	room: Room,
 	gap: number
 ): Ring {
 	const half = (h + gap) / 2;
@@ -350,22 +368,27 @@ export function ringOf(
 	const clear = (x: number, y: number, wide: number) =>
 		placed.every((p) => Math.abs(p.x - x) >= (p.w + wide) / 2 + gap || Math.abs(p.y - y) >= h + gap);
 	const centre = w.end ?? w.states[0];
-	if (centre !== undefined) placed.push({ x: 0, y: 0, w: centre });
 	const side = (centre ?? -gap) / 2 + gap;
-	const back = { x: -(side + w.back / 2), y: 0 };
-	const add = { x: side + w.add / 2, y: 0 };
+	const x0 = Math.max(side + w.back - room.left, Math.min(0, room.right - side - w.add));
+	const y0 = Math.max(h / 2 - room.up, Math.min(0, room.down - h / 2));
+	if (centre !== undefined) placed.push({ x: x0, y: y0, w: centre });
+	const back = { x: x0 - (side + w.back / 2), y: y0 };
+	const add = { x: x0 + side + w.add / 2, y: y0 };
 	placed.push({ ...back, w: w.back }, { ...add, w: w.add });
-	const rows = Math.floor(ry / half);
-	const cols = Math.ceil([w.back, w.add, ...w.states].reduce((a, b) => a + b + gap, 0) / 2);
-	const turn = (p: Spot) => (Math.atan2(p.x, -p.y) + 2 * Math.PI) % (2 * Math.PI);
+	const cols = Math.ceil([centre ?? 0, w.back, w.add, ...w.states].reduce((a, b) => a + b + gap, 0) / 2);
+	const turn = (p: Spot) => (Math.atan2(p.x - x0, y0 - p.y) + 2 * Math.PI) % (2 * Math.PI);
+	const far = (p: Spot) => Math.hypot(p.x - x0, p.y - y0);
 	const spots: Spot[] = [];
-	for (let r = -rows; r <= rows; r++) for (let c = -cols; c <= cols; c++) spots.push({ x: 2 * c, y: r * half });
-	spots.sort((a, b) => Math.hypot(a.x, a.y) - Math.hypot(b.x, b.y) || turn(a) - turn(b));
+	const rows = (reach: number) => Math.max(0, Math.floor((reach - h / 2) / half));
+	for (let r = -rows(room.up + y0); r <= rows(room.down - y0); r++)
+		for (let c = -cols; c <= cols; c++) spots.push({ x: x0 + 2 * c, y: y0 + r * half });
+	spots.sort((a, b) => far(a) - far(b) || turn(a) - turn(b));
 	const states = w.states.map((wide, i): Spot => {
-		if (i === 0 && w.end === null) return { x: 0, y: 0 };
-		const spot = spots.find((p) => clear(p.x, p.y, wide))!;
+		if (i === 0 && w.end === null) return { x: x0, y: y0 };
+		const fits = (p: Spot) => p.x - wide / 2 >= -room.left && clear(p.x, p.y, wide);
+		const spot = spots.find((p) => fits(p) && p.x + wide / 2 <= room.right) ?? spots.find(fits)!;
 		placed.push({ ...spot, w: wide });
 		return spot;
 	});
-	return { back, add, end: w.end === null ? null : { x: 0, y: 0 }, states };
+	return { back, add, end: w.end === null ? null : { x: x0, y: y0 }, states };
 }

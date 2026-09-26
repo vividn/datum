@@ -5,8 +5,9 @@
 // as where the field button was».
 //
 // The spec's order is a rank by distance (`ringOf` in fields.ts);
-// near an edge the ring shifts whole; the States tab's ↑ / ↓ is what
-// reorders it, and logging never does. The list's other behaviour — Back,
+// near an edge the ring is capped, not shifted, so `end` stays on the tap
+// (da-8mk9p); the States tab's ↑ / ↓ is what reorders it, and logging
+// never does. The list's other behaviour — Back,
 // `+`, Escape, the colours — is `fields-states.test.mjs`.
 
 import test, { before, after, describe } from 'node:test';
@@ -46,16 +47,18 @@ describe('ringOf', () => {
 		states: Array.from({ length: n }, (_, i) => wide(i))
 	});
 	const far = (p) => Math.hypot(p.x, p.y);
+	/** Room for `ry` of centres above and below, and plenty sideways. */
+	const room = (ry, more = {}) => ({ up: ry + H / 2, down: ry + H / 2, left: 1000, right: 1000, ...more });
 
 	test('`end` on the tap, `< Back` and `+ Add state` either side of it on its line', () => {
-		const ring = ringOf(sizes(5), H, 72, GAP);
+		const ring = ringOf(sizes(5), H, room(72), GAP);
 		assert.deepEqual(ring.end, { x: 0, y: 0 });
 		assert.deepEqual(ring.back, { x: -(25 + GAP + 40), y: 0 });
 		assert.deepEqual(ring.add, { x: 25 + GAP + 55, y: 0 });
 	});
 
 	test('ranked by distance: the first state nearest, ties clockwise from twelve o’clock', () => {
-		const ring = ringOf(sizes(8, 50, () => 40), H, 72, GAP);
+		const ring = ringOf(sizes(8, 50, () => 40), H, room(72), GAP);
 		const d = ring.states.map(far);
 		assert.ok(d.every((x, i) => i === 0 || x >= d[i - 1]), `further for a higher rank: ${d}`);
 		const [a, b] = ring.states;
@@ -64,7 +67,7 @@ describe('ringOf', () => {
 	});
 
 	test('without `end`, the first state takes the tap', () => {
-		const ring = ringOf(sizes(4, null), H, 72, GAP);
+		const ring = ringOf(sizes(4, null), H, room(72), GAP);
 		assert.equal(ring.end, null);
 		assert.deepEqual(ring.states[0], { x: 0, y: 0 });
 	});
@@ -73,14 +76,61 @@ describe('ringOf', () => {
 		for (const end of [50, null])
 			for (let n = 0; n <= 12; n++) {
 				const w = sizes(n, end);
-				assert.deepEqual(overlaps(boxes(ringOf(w, H, 72, GAP), w)), [], `${n} states, end ${end}`);
+				assert.deepEqual(overlaps(boxes(ringOf(w, H, room(72), GAP), w)), [], `${n} states, end ${end}`);
 			}
 	});
 
 	test('a bar too short for a row above lays them all on the tap’s line', () => {
 		const w = sizes(4);
-		const ring = ringOf(w, H, 10, GAP);
+		const ring = ringOf(w, H, room(10), GAP);
 		assert.ok([ring.back, ring.add, ...ring.states].every((s) => s.y === 0), 'off the line');
+		assert.deepEqual(overlaps(boxes(ring, w)), []);
+	});
+
+	// da-8mk9p: the field on the bar's first or last row.
+	for (const [edge, sign] of [
+		['up', -1],
+		['down', 1]
+	])
+		test(`capped ${edge}: \`end\` still on the tap, nothing past the edge, the ranks nearest-first`, () => {
+			const w = sizes(8, 50, () => 40);
+			const ring = ringOf(w, H, room(72, { [edge]: H / 2 }), GAP);
+			assert.deepEqual(ring.end, { x: 0, y: 0 });
+			assert.ok([ring.back, ring.add].every((s) => s.y === 0), '< Back or + Add state left the line');
+			assert.ok(ring.states.every((s) => sign * s.y <= 0), `a state is past the ${edge} edge`);
+			assert.ok(ring.states.some((s) => sign * s.y < 0), 'nothing on the free side');
+			const d = ring.states.map(far);
+			assert.ok(d.every((x, i) => i === 0 || x >= d[i - 1]), `further for a higher rank: ${d}`);
+			assert.deepEqual(overlaps(boxes(ring, w)), []);
+		});
+
+	test('capped sideways: the states stay inside, and only a line that cannot fit moves', () => {
+		// On one line, so the states would stand either side of it.
+		const w = sizes(6);
+		const inside = (ring, r) =>
+			boxes(ring, w).every((b) => b.x - b.w / 2 >= -r.left - 1e-9 && b.x + b.w / 2 <= r.right + 1e-9);
+		// Room for the line and a little more: `end` stays, the states fit.
+		for (const r of [room(10, { left: 25 + GAP + 80 + 4 }), room(10, { right: 25 + GAP + 110 + 4 })]) {
+			const ring = ringOf(w, H, r, GAP);
+			assert.deepEqual(ring.end, { x: 0, y: 0 });
+			assert.ok(inside(ring, r), `a button is past an edge: ${JSON.stringify(r)}`);
+			assert.deepEqual(overlaps(boxes(ring, w)), []);
+		}
+		// No room for `< Back`: the line moves right just enough, and no further.
+		const tight = room(72, { left: 10 });
+		const moved = ringOf(w, H, tight, GAP);
+		assert.deepEqual(moved.end, { x: 25 + GAP + 80 - 10, y: 0 });
+		assert.equal(moved.back.x - w.back / 2, -10);
+		assert.ok(inside(moved, tight), 'a button is past the left edge');
+	});
+
+	test('a state no spot inside holds goes past the right edge, never the left', () => {
+		const w = sizes(12);
+		const r = room(10, { left: 120, right: 150 });
+		const ring = ringOf(w, H, r, GAP);
+		assert.deepEqual(ring.end, { x: 0, y: 0 });
+		assert.ok(ring.states.every((s, i) => s.x - w.states[i] / 2 >= -r.left), 'a state is past the left edge');
+		assert.ok(ring.states.some((s, i) => s.x + w.states[i] / 2 > r.right), 'nothing overflowed: the case is not tested');
 		assert.deepEqual(overlaps(boxes(ring, w)), []);
 	});
 });
@@ -105,21 +155,24 @@ const SEED = [
  * high is a viewport so short the bottom bar lies over it, and the widget
  * reads where the BUTTON is, not where the pointer was.
  */
-async function tapAt(page, fraction) {
-	const tap = await page.locator(BAR).evaluate((bar, fraction) => {
-		const box = bar.getBoundingClientRect();
-		const button = () => bar.querySelector('[data-field="mood"]');
-		const m = button().getBoundingClientRect();
-		bar.scrollLeft += m.left + m.width / 2 - (box.left + fraction * box.width);
-		const at = button().getBoundingClientRect();
-		button().click();
-		return { x: at.left + at.width / 2, y: at.top + at.height / 2 };
-	}, fraction);
+async function tapAt(page, fraction, field = 'mood') {
+	const tap = await page.locator(BAR).evaluate(
+		(bar, [fraction, field]) => {
+			const box = bar.getBoundingClientRect();
+			const button = () => bar.querySelector(`[data-field="${field}"]`);
+			const m = button().getBoundingClientRect();
+			bar.scrollLeft += m.left + m.width / 2 - (box.left + fraction * box.width);
+			const at = button().getBoundingClientRect();
+			button().click();
+			return { x: at.left + at.width / 2, y: at.top + at.height / 2 };
+		},
+		[fraction, field]
+	);
 	await page.locator(`${BAR} [data-add-state]`).waitFor();
 	const seen = await page.locator(BAR).evaluate((bar) => {
 		const ring = bar.querySelector('.ring').getBoundingClientRect();
 		return {
-			ring: { left: ring.left, right: ring.right },
+			ring: { left: ring.left, right: ring.right, top: ring.top, bottom: ring.bottom },
 			buttons: [...bar.querySelectorAll('.ring button')].map((b) => {
 				const r = b.getBoundingClientRect();
 				return {
@@ -128,13 +181,15 @@ async function tapAt(page, fraction) {
 					y: r.top + r.height / 2,
 					left: r.left,
 					right: r.right,
+					top: r.top,
+					bottom: r.bottom,
 					fill: getComputedStyle(b).backgroundColor
 				};
 			})
 		};
 	});
 	await page.locator(`${BAR} [data-back]`).dispatchEvent('click');
-	await page.locator(`${BAR} [data-field="mood"]`).waitFor();
+	await page.locator(`${BAR} [data-field="${field}"]`).waitFor();
 	const find = (name) => seen.buttons.find((b) => b.name === name);
 	return { tap, ...seen, find, states: STATES.map(find) };
 }
@@ -147,7 +202,7 @@ describe('a switch field’s states around the tap', () => {
 	before(startApp);
 	after(stopApp);
 
-	test('`end` on the tap, one shape from anywhere, shifted whole at an edge, reordered by the States tab alone', async () => {
+	test('`end` on the tap, one shape from anywhere, the line shifted only when it cannot fit at an edge, reordered by the States tab alone', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -158,22 +213,29 @@ describe('a switch field’s states around the tap', () => {
 					await atRows(page, 'bar', want);
 					const [middle, left, right] = [await tapAt(page, 0.5), await tapAt(page, 0.02), await tapAt(page, 0.98)];
 					assert.deepEqual(middle.buttons.map((b) => b.name), RING, `${want} rows: not in the spec's order`);
-					// The same shape from every tap.
-					for (const t of [left, right]) assert.deepEqual(shape(t), shape(middle), `${want} rows: the shape moved`);
+					// The same shape from every tap, where there are rows to hold it:
+					// on one line the states stay inside the bar instead (da-8mk9p).
+					if (want > 1) for (const t of [left, right]) assert.deepEqual(shape(t), shape(middle), `${want} rows: the shape moved`);
 					// `< Back` and `+ Add state` flank `end` on its own line.
 					const [back, end, add] = [middle.find('< Back'), middle.find('false'), middle.find('+ Add state')];
 					assert.ok(back.right <= end.left && end.right <= add.left, `${want} rows: < Back, end, + Add state are not left to right`);
 					assert.ok(Math.abs(back.y - end.y) < 1 && Math.abs(add.y - end.y) < 1, `${want} rows: not on one line`);
 					if (want === 1) continue;
 
-					// `end` on the tap, and a ring: states above AND below its line.
+					// `end` on the tap, and a ring: states off its line — above AND
+					// below it where the bar has a row either side (da-8mk9p).
 					assert.ok(Math.abs(end.x - middle.tap.x) <= 1, `end at ${end.x}, the tap at ${middle.tap.x}`);
-					assert.ok(middle.states.some((s) => s.y < end.y - 1) && middle.states.some((s) => s.y > end.y + 1), 'not around the tap');
+					const row = end.bottom - end.top + GAP;
+					const [above, below] = [middle.states.some((s) => s.y < end.y - 1), middle.states.some((s) => s.y > end.y + 1)];
+					assert.ok(above || below, 'not around the tap');
+					if (end.top - middle.ring.top > row) assert.ok(above, 'a row above, and nothing in it');
+					if (middle.ring.bottom - end.bottom > row) assert.ok(below, 'a row below, and nothing in it');
 					// The spec's order is a rank: a no further than b, b than c…
 					const d = STATES.map((name) => Math.hypot(...from(middle, name)));
 					assert.ok(d.every((x, i) => i === 0 || x >= d[i - 1] - 1), `a higher rank stands further: ${d}`);
-					// At an edge the ring is shifted inside, whole — so the taps really
-					// were at edges, or this proves nothing.
+					// At an edge `< Back` or `+ Add state` cannot fit beside the tap,
+					// so the line is shifted inside — so the taps really were at
+					// edges, or this proves nothing.
 					for (const [t, side] of [
 						[left, 'left'],
 						[right, 'right']
@@ -234,6 +296,61 @@ describe('a switch field’s states around the tap', () => {
 				await page.locator(`${BAR} [data-field="mood"]`).click();
 				await page.locator(`${BAR} [data-state="e"]`).waitFor();
 				assert.deepEqual(live, await offset(), 'the learned state was not placed');
+			},
+			{
+				viewport: { width: 390, height: 640 },
+				clock: todayAt(15),
+				prepare: (context) => context.addInitScript(draft, PAGE)
+			}
+		);
+	});
+
+	// da-8mk9p — vividn: «still radial, just capped on one side and spreading
+	// out further in the non capped direction, but the center should still
+	// be end». Every field a switch field, so whichever stands on the first
+	// row and on the last can be tapped.
+	test('on the bar’s first and last rows, `end` stays on the tap and every state is inside the bar', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await seedLines(
+					app,
+					[...OTHERS, 'mood'].map((f) => `spec set ${f} --verb switch --state false ${STATES.map((s) => `--state ${s}`).join(' ')}`)
+				);
+				await page.locator(`${BAR} [data-field="mood"]`).waitFor();
+				await atRows(page, 'bar', 3);
+				const rows = await page.locator(BAR).evaluate((bar) => {
+					const box = bar.getBoundingClientRect();
+					const fields = [...bar.querySelectorAll('[data-field]')].map((b) => {
+						const r = b.getBoundingClientRect();
+						const x = r.left + r.width / 2 - box.left + bar.scrollLeft;
+						// How far short of the bar's middle a scroll leaves it.
+						const miss = Math.abs(x - Math.min(Math.max(x, box.width / 2), bar.scrollWidth - box.width / 2));
+						return { field: b.dataset.field, top: r.top, miss };
+					});
+					const tops = fields.map((f) => f.top);
+					// The row's field the bar scrolls nearest its middle, so the
+					// line has room either side and only the rows are capped.
+					const at = (top) => fields.filter((f) => Math.abs(f.top - top) < 1).sort((a, b) => a.miss - b.miss)[0].field;
+					return { first: at(Math.min(...tops)), last: at(Math.max(...tops)) };
+				});
+				for (const [row, field] of Object.entries(rows)) {
+					const t = await tapAt(page, 0.5, field);
+					const end = t.find('false');
+					assert.ok(Math.abs(end.x - t.tap.x) <= 1 && Math.abs(end.y - t.tap.y) <= 1, `${row} row: end at ${end.x},${end.y}, the tap at ${t.tap.x},${t.tap.y}`);
+					for (const b of t.buttons)
+						assert.ok(
+							b.top >= t.ring.top - 1 && b.bottom <= t.ring.bottom + 1 && b.left >= t.ring.left - 1 && b.right <= t.ring.right + 1,
+							`${row} row: ${b.name} is outside the bar`
+						);
+					// Capped: no state on the edge's side of the line, and some beyond it.
+					const free = row === 'first' ? 1 : -1;
+					assert.ok(t.states.every((s) => free * (s.y - end.y) > -1), `${row} row: a state is on the capped side`);
+					assert.ok(t.states.some((s) => free * (s.y - end.y) > 1), `${row} row: nothing on the free side`);
+					// The rank still decides who is nearest.
+					const d = STATES.map((name) => Math.hypot(...from(t, name)));
+					assert.ok(d.every((x, i) => i === 0 || x >= d[i - 1] - 1), `${row} row: a higher rank stands further: ${d}`);
+				}
 			},
 			{
 				viewport: { width: 390, height: 640 },

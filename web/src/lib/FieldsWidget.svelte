@@ -78,7 +78,8 @@
 	menu. A `false` state, `end`, takes the field's own position, with
 	`< Back` left of it and `+ Add state` right; those three are hollow,
 	the other states a light tint, the one the field is in solid and bold.
-	Near an edge the ring shifts whole. Nothing floats: the ring is the
+	Near an edge the ring is capped, not shifted: `end` stays on the tap
+	and the states spread along the free sides (da-8mk9p). Nothing floats: the ring is the
 	widget's own content, over the bar's own box, and the pane is
 	scrolled back to where it stood when Back returns the fields. A
 	press on a state runs `switch <field> <state>` — plainly, the bar's own
@@ -432,11 +433,13 @@
 
 	/**
 	 * Stand the ring's buttons around the tap (da-7q3ka): `ringOf` gives the
-	 * shape from their measured sizes, and the whole of it is then moved as
-	 * near the tap as the box allows — shifted, never rearranged, at an
-	 * edge. A ring wider than the box starts at its left edge, and the box
-	 * scrolls its centre under the tap as far as it can — all the way when
-	 * the tap is left of that centre, not at all when right of it. Measured
+	 * spots from their measured sizes and the room the box leaves on each
+	 * side of the tap — capped at an edge, never shifted, so `end` stays
+	 * under the thumb (da-8mk9p). The ring reaches two rows either way, and
+	 * a side the box caps gives what it lost to the other. When the centre's
+	 * line itself cannot fit sideways, or the states run past the right
+	 * edge, the box scrolls its centre under the tap as far as it can. Two
+	 * pixels short of the box, or a border on its edge is clipped. Measured
 	 * in the box's own offsets, never on the screen, since the bar may still
 	 * be scrolled to where the fields were; and again whenever the box or a
 	 * button is resized — `+ Add state` becoming its input is one — or a
@@ -453,7 +456,8 @@
 			const [back, add, end] = [one('back')!, one('add')!, one('end')];
 			const states = spots.filter((s) => s.dataset.role === 'state');
 			const h = Math.max(...spots.map((s) => size(s).height));
-			const ry = Math.min(Math.max(0, (box.clientHeight - h) / 2), 2 * (h + GAP));
+			const reach = 2 * (h + GAP) + h / 2;
+			const [up, down] = [at.y - 2, box.clientHeight - at.y - 2];
 			const ring = ringOf(
 				{
 					back: size(back).width,
@@ -462,7 +466,12 @@
 					states: states.map((s) => size(s).width)
 				},
 				h,
-				ry,
+				{
+					up: Math.min(up, 2 * reach - Math.min(down, reach)),
+					down: Math.min(down, 2 * reach - Math.min(up, reach)),
+					left: at.x - 2,
+					right: box.clientWidth - at.x - 2
+				},
 				GAP
 			);
 			const placed: [HTMLElement, Spot][] = [
@@ -471,16 +480,11 @@
 				...(end && ring.end ? [[end, ring.end] as [HTMLElement, Spot]] : []),
 				...states.map((s, i): [HTMLElement, Spot] => [s, ring.states[i]])
 			];
-			// Two pixels short of the box, or a border on its edge is clipped.
-			const edge = (k: 'x' | 'y', side: number) =>
-				2 + Math.max(...placed.map(([el, p]) => side * p[k] + (k === 'x' ? size(el).width : size(el).height) / 2));
-			const cx = Math.max(edge('x', -1), Math.min(at.x, box.clientWidth - edge('x', 1)));
-			const cy = Math.max(edge('y', -1), Math.min(at.y, box.clientHeight - edge('y', 1)));
 			for (const [el, p] of placed) {
-				el.style.left = `${cx + p.x - size(el).width / 2}px`;
-				el.style.top = `${cy + p.y - size(el).height / 2}px`;
+				el.style.left = `${at.x + p.x - size(el).width / 2}px`;
+				el.style.top = `${at.y + p.y - size(el).height / 2}px`;
 			}
-			box.scrollLeft = cx - at.x;
+			box.scrollLeft = (ring.end ?? ring.states[0])?.x ?? 0;
 		};
 		const observer = new ResizeObserver(place);
 		const watch = () => {
