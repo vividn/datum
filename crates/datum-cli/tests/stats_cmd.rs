@@ -1057,9 +1057,18 @@ fn an_occur_field_shows_how_often_and_no_time() {
     let all = datum(tmp.path(), &["stats"]);
     let row = all.lines().find(|l| l.ends_with("coffee")).unwrap();
     assert!(row.contains("/day") && !row.contains("0s"), "{all}");
+    // Both runs pinned to one `--until`: each measures its span to the wall
+    // clock otherwise, and a second boundary between them flakes (da-m3aww).
+    let until = ["--until", "2026-06-01T08:00:00Z", "--json"];
+    let one: serde_json::Value = serde_json::from_str(&datum(
+        tmp.path(),
+        &[&["stats", "coffee"][..], &until].concat(),
+    ))
+    .unwrap();
     let all: serde_json::Value =
-        serde_json::from_str(&datum(tmp.path(), &["stats", "--json"])).unwrap();
-    assert_eq!(all["fields"][0]["frequency"], json["frequency"]);
+        serde_json::from_str(&datum(tmp.path(), &[&["stats"][..], &until].concat())).unwrap();
+    assert_eq!(all["fields"][0]["frequency"], one["frequency"]);
+    assert_eq!(one["frequency"]["span_seconds"], 151 * 86_400);
 }
 
 #[test]
