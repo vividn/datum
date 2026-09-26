@@ -30,7 +30,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { devices } from 'playwright';
-import { sharedApp, startApp, stopApp, withApp, todayAt, seedLines } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, todayAt, seedLines } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
@@ -59,14 +59,30 @@ const AFTERNOON = todayAt(15);
 
 // ONE APP per screen of SCREENS (da-6b3dj, sharedApp in support/app.mjs):
 // the database is emptied and `main` put back between tests, so each logs
-// its day onto a fresh one. What still opens its own: `never scrolls
-// sideways`, which measures the REPL pane and so wants a scrollback of its
-// own test alone; the prompts, which start from a stored scrollback; and
-// the tail's widths and the shell's narrower ones, which no other test
-// shares.
+// its day onto a fresh one.
 const shared = Object.fromEntries(
 	SCREENS.map(({ name, viewport, device }) => [name, sharedApp({ viewport, device, clock: AFTERNOON })])
 );
+
+/**
+ * And ONE APP per width the tail and the shell are held to (da-3b8vn),
+ * 1280's being the first screen's. Per WIDTH, not one app resized to each:
+ * `main` is the phone tree or the desktop tree by the width it FIRST LOADED
+ * at ($lib/layout/defaults.ts), so a desktop narrowed to 360px is a desktop
+ * tree at 360px — not what a phone opens. The tail's taller screen is the
+ * same width, and so the same tree, resized in height alone.
+ */
+const WIDE = Object.fromEntries(
+	[360, 390, 768].map((width) => [width, sharedApp({ viewport: { width, height: 900 }, clock: AFTERNOON })])
+);
+WIDE[1280] = shared['1280x900'];
+
+/** Two animation frames, then no command in flight: a pane's box after a resize is a frame late (`atEachScreen`). */
+async function resize(app, viewport) {
+	await app.page.setViewportSize(viewport);
+	await app.page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+	await app.idle();
+}
 
 /** Enough of a day that every pane has something in it. */
 const A_DAY = [
@@ -173,27 +189,21 @@ async function drawn(app, title) {
 }
 
 describe('a pane', () => {
-	for (const { name, viewport, device } of SCREENS) {
-		test(`shows its drawn views whole on ${name}`, async () => {
-			await shared[name].solo(
-				async (app) => {
-					await logADay(app);
-					for (const title of DRAWN) {
-						await show(app, title);
-						const seen = await boxes(app);
-						const box = seen[title];
-						const said = `${title} on ${name}: ${box.scrollWidth}x${box.scrollHeight} of content in ${box.clientWidth}x${box.clientHeight}`;
-						assert.ok(box.scrollHeight <= box.clientHeight, `scrolls down — ${said}`);
-						assert.ok(box.scrollWidth <= box.clientWidth, `scrolls sideways — ${said}`);
-					}
-				}
-			);
-		});
+	/** What nowview drew on each screen, recorded by that screen's test for `says the same thing`. */
+	const drew = {};
 
-		test(`never scrolls sideways over text it hasn't got on ${name}`, async () => {
-			await withApp(
-				async (app) => {
-					await logADay(app);
+	// ONE day logged per screen and every claim about it asked of that day,
+	// a subtest each (da-3b8vn): the three used to log the same day three
+	// times over, and a day is a whole frame redrawn. `never scrolls
+	// sideways` goes first, because it measures the REPL too and wants a
+	// scrollback of this day's commands alone — and this is the first test
+	// on its screen's app.
+	for (const { name } of SCREENS) {
+		test(`with a day logged on ${name}`, async (t) => {
+			await shared[name].solo(async (app) => {
+				await logADay(app);
+
+				await t.test(`never scrolls sideways over text it hasn't got on ${name}`, async () => {
 					for (const [title, box] of Object.entries(await boxes(app))) {
 						// Text the pane HAS may run wider than a phone — the CLI's
 						// `CREATE <hid> <slug>` line does — and then the pane scrolls
@@ -204,21 +214,26 @@ describe('a pane', () => {
 							`${title} on ${name} scrolls sideways over text it hasn't got: ${box.scrollWidth} of content in ${box.clientWidth}, text reaches ${box.textExtent}`
 						);
 					}
-				},
-				{ viewport, device, clock: AFTERNOON }
-			);
-		});
+				});
 
-		// Fitting a picture to a pane by SCALING it is the other way to
-		// stop the scrollbar, and it is the one da-m0cj already rejected:
-		// the drawing shrinks and every glyph in it shrinks too. So the
-		// canvas the command authored has to be the canvas on screen, to
-		// the pixel, at every width — which is only true if the pane
-		// ASKED for that size rather than squeezing what came back.
-		test(`draws its views at 1:1, never scaled, on ${name}`, async () => {
-			await shared[name].solo(
-				async (app) => {
-					await logADay(app);
+				await t.test(`shows its drawn views whole on ${name}`, async () => {
+					for (const title of DRAWN) {
+						await show(app, title);
+						const seen = await boxes(app);
+						const box = seen[title];
+						const said = `${title} on ${name}: ${box.scrollWidth}x${box.scrollHeight} of content in ${box.clientWidth}x${box.clientHeight}`;
+						assert.ok(box.scrollHeight <= box.clientHeight, `scrolls down — ${said}`);
+						assert.ok(box.scrollWidth <= box.clientWidth, `scrolls sideways — ${said}`);
+					}
+				});
+
+				// Fitting a picture to a pane by SCALING it is the other way to
+				// stop the scrollbar, and it is the one da-m0cj already rejected:
+				// the drawing shrinks and every glyph in it shrinks too. So the
+				// canvas the command authored has to be the canvas on screen, to
+				// the pixel, at every width — which is only true if the pane
+				// ASKED for that size rather than squeezing what came back.
+				await t.test(`draws its views at 1:1, never scaled, on ${name}`, async () => {
 					await show(app, 'nowview');
 					const sizes = await app.page.evaluate(() =>
 						Object.fromEntries(
@@ -240,8 +255,11 @@ describe('a pane', () => {
 							`${title} on ${name} authored ${natural}px and is shown at ${shown.toFixed(1)}px — ×${(shown / natural).toFixed(3)}`
 						);
 					}
-				}
-			);
+				});
+
+				await show(app, 'nowview');
+				drew[name] = await drawn(app, 'nowview');
+			});
 		});
 	}
 
@@ -259,37 +277,39 @@ describe('a pane', () => {
 	test('says the same thing however narrow it gets', async () => {
 		let wide;
 		for (const { name } of SCREENS) {
-			await shared[name].solo(
-				async (app) => {
+			// What the screen's own test above recorded — or, where a name
+			// pattern ran this test without it, a day logged here for it.
+			const shown =
+				drew[name] ??
+				(await shared[name].solo(async (app) => {
 					await logADay(app);
 					await show(app, 'nowview');
-					const shown = await drawn(app, 'nowview');
-					assert.ok(shown.ticks.length >= 1, `nowview on ${name} drew no axis`);
-					// Counted, not compared: the three screens are three runs
-					// of the app, and what is claimed here is that each of
-					// them drew a clock at all, not what it said.
-					assert.equal(shown.clock.length, 1, `nowview on ${name} drew no clock`);
-					if (wide === undefined) {
-						wide = shown;
-						assert.ok(wide.states.length > 0, 'nowview drew no current state even at 1280');
-					} else {
-						assert.deepEqual(
-							shown.states,
-							wide.states,
-							`nowview on ${name} lost a current state: ${JSON.stringify(shown.states)}`
-						);
-					}
-					// What is left to read once the panel is gone is the
-					// axis and the clock, and both have to stay legible in a
-					// cramped band: a pane 78px tall gets the picture drawn
-					// small rather than half of it drawn big behind a
-					// scrollbar. Asserted so a change that draws text
-					// smaller than datum ever does has to say so out loud.
-					assert.ok(
-						Math.min(...shown.fonts) >= 6,
-						`nowview on ${name} drew ${Math.min(...shown.fonts)}px text`
-					);
-				}
+					return drawn(app, 'nowview');
+				}));
+			assert.ok(shown.ticks.length >= 1, `nowview on ${name} drew no axis`);
+			// Counted, not compared: the three screens are three runs
+			// of the app, and what is claimed here is that each of
+			// them drew a clock at all, not what it said.
+			assert.equal(shown.clock.length, 1, `nowview on ${name} drew no clock`);
+			if (wide === undefined) {
+				wide = shown;
+				assert.ok(wide.states.length > 0, 'nowview drew no current state even at 1280');
+			} else {
+				assert.deepEqual(
+					shown.states,
+					wide.states,
+					`nowview on ${name} lost a current state: ${JSON.stringify(shown.states)}`
+				);
+			}
+			// What is left to read once the panel is gone is the
+			// axis and the clock, and both have to stay legible in a
+			// cramped band: a pane 78px tall gets the picture drawn
+			// small rather than half of it drawn big behind a
+			// scrollbar. Asserted so a change that draws text
+			// smaller than datum ever does has to say so out loud.
+			assert.ok(
+				Math.min(...shown.fonts) >= 6,
+				`nowview on ${name} drew ${Math.min(...shown.fonts)}px text`
 			);
 		}
 	});
@@ -315,26 +335,60 @@ describe('a pane', () => {
 	const PROMPTS = [
 		{
 			what: "the bottom bar's input",
-			path: '/',
+			layout: null,
 			line: '.prompt-bar .line',
 			clock: '.prompt-bar .section.input .stamp',
 			frame: '.prompt-bar'
 		},
 		{
 			what: "the input widget's input",
-			path: '/input',
+			layout: 'input',
 			line: '.input-widget .line',
 			clock: null,
 			frame: '.input-widget'
 		}
 	];
 
-	for (const { what, path, line: lineSelector, clock: clockSelector, frame } of PROMPTS) {
+	// ONE app for both, on the stored scrollback (da-3b8vn): neither runs a
+	// command, so the second meets the ten the first did.
+	const phone360 = sharedApp({
+		viewport: { width: 360, height: 640 },
+		clock: AFTERNOON,
+		prepare: (context) =>
+			context.addInitScript((key) => {
+				const ranAt = Date.now();
+				localStorage.setItem(
+					key,
+					JSON.stringify({
+						scrollback: Array.from({ length: 10 }, (_, i) => ({
+							line: `occur coffee cups=${i}`,
+							ranAt: ranAt - (10 - i) * 60_000,
+							result: {
+								argv: ['occur', 'coffee', `cups=${i}`],
+								code: 0,
+								stdout: `CREATE 0192f3c4d5e6 coffee:2026-09-09T0${i}:00:00Z`,
+								stderr: ''
+							}
+						})),
+						history: ['occur coffee cups=9']
+					})
+				);
+			}, 'datum.repl.v1')
+	});
+
+	for (const { what, layout, line: lineSelector, clock: clockSelector, frame } of PROMPTS) {
 		test(`keeps ${what} wide on a 360px phone, ten commands of scrollback and all`, async () => {
-			await withApp(
+			await phone360.solo(
 				async (app) => {
 					const { page } = app;
-					if (path !== '/') await app.goto(path);
+					// The layout `/input` opens, opened where that route opens it
+					// (`routes/[name]/+page.svelte`) rather than by navigating to it,
+					// which is a whole boot again; that the URL reaches it is
+					// `preview.test.mjs`'s to say.
+					if (layout) {
+						assert.ok(await page.evaluate((n) => window.datum.shell.open(n), layout), `${layout} did not open`);
+						await page.locator(frame).waitFor();
+					}
 					if (clockSelector) {
 						const clock = await page.locator(clockSelector).innerText();
 						assert.match(clock, /^\d{2}:\d{2}:\d{2}$/, `the prompt clock dropped its seconds at 360px: ${clock}`);
@@ -356,30 +410,6 @@ describe('a pane', () => {
 						`the prompt gave the input ${input.toFixed(0)}px of a ${line.toFixed(0)}px line`
 					);
 					assert.ok(line <= pane + 1, `the prompt line runs past its pane: ${line} in ${pane}`);
-				},
-				{
-					viewport: { width: 360, height: 640 },
-					clock: AFTERNOON,
-					prepare: (context) =>
-						context.addInitScript((key) => {
-							const ranAt = Date.now();
-							localStorage.setItem(
-								key,
-								JSON.stringify({
-									scrollback: Array.from({ length: 10 }, (_, i) => ({
-										line: `occur coffee cups=${i}`,
-										ranAt: ranAt - (10 - i) * 60_000,
-										result: {
-											argv: ['occur', 'coffee', `cups=${i}`],
-											code: 0,
-											stdout: `CREATE 0192f3c4d5e6 coffee:2026-09-09T0${i}:00:00Z`,
-											stderr: ''
-										}
-									})),
-									history: ['occur coffee cups=9']
-								})
-							);
-						}, 'datum.repl.v1')
 				}
 			);
 		});
@@ -462,8 +492,11 @@ describe('the tail pane', () => {
 
 	for (const width of WIDTHS) {
 		test(`fits ten rows at ${width}px`, async () => {
-			await withApp(
+			// A room, so the tail mounts anew with no rows paged in by the
+			// test before (`fresh`); the screen 1600px tall, back after it.
+			await WIDE[width].fresh(
 				async (app) => {
+					await resize(app, { width, height: 1600 });
 					await seedLines(app, TEN_ROWS);
 					// Up to the top and the wheel turned, until all ten are in
 					// the table: each pull asks for the page above.
@@ -513,8 +546,7 @@ describe('the tail pane', () => {
 						[1],
 						`a time cell wrapped at ${width}px: ${JSON.stringify(heights)}`
 					);
-				},
-				{ viewport: { width, height: 1600 }, clock: AFTERNOON }
+				}
 			);
 		});
 	}
@@ -527,12 +559,7 @@ describe('the tail pane', () => {
 describe('the shell', () => {
 	for (const width of [360, 390, 768, 1280]) {
 		test(`the root bar and the bottom bar fit at ${width}px`, async () => {
-			// 1280x900 is the first screen's, and shares its app.
-			const open =
-				width === 1280
-					? shared['1280x900'].solo
-					: (fn) => withApp(fn, { viewport: { width, height: 900 }, clock: AFTERNOON });
-			await open(
+			await WIDE[width].solo(
 				async (app) => {
 					await logADay(app);
 					const seen = await app.page.evaluate(() => {
