@@ -391,14 +391,15 @@ fn check_factors(spec: &FieldSpec) -> Result<()> {
 /// printable character, and the icon is vetted and stored as `--icon`'s is.
 pub(crate) fn check_presentation(spec: &mut FieldSpec) -> Result<()> {
     let pres = &mut spec.presentation;
-    let by = pres.glyph_by.iter().flat_map(|b| b.map.values());
-    for glyph in pres
-        .glyph
-        .iter()
-        .chain(pres.state_glyphs.values())
-        .chain(by)
-    {
+    // Each glyph names what it belongs to, as spec set's flags do (da-am7cq).
+    if let Some(glyph) = &pres.glyph {
         check_glyph("glyph", glyph)?;
+    }
+    for (state, glyph) in &pres.state_glyphs {
+        check_glyph(&format!("state '{state}' glyph"), glyph)?;
+    }
+    for (value, glyph) in pres.glyph_by.iter().flat_map(|b| &b.map) {
+        check_glyph(&format!("glyph_by value '{value}' glyph"), glyph)?;
     }
     if let Some(svg) = &pres.icon {
         pres.icon = Some(check_icon(svg)?);

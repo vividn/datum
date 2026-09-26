@@ -331,7 +331,19 @@ fn a_kit_refuses_the_icon_and_glyph_spec_set_refuses() {
 
     let kit = whole_field_kit().replace(r#"glyph = "z""#, r#"glyph = "zz""#);
     let err = format!("{:#}", install(&db, &kit, &[]).unwrap_err());
-    assert!(err.contains("one printable character"), "{err}");
+    assert!(
+        err.contains("state 'tired' glyph expects one printable character, got 'zz'"),
+        "{err}"
+    );
+    assert!(db.load_spec("mood").unwrap().is_none(), "nothing installed");
+
+    // A glyph_by map value names the value it draws for (da-am7cq).
+    let kit = whole_field_kit().replace(r#"work = "w""#, r#"work = "ww""#);
+    let err = format!("{:#}", install(&db, &kit, &[]).unwrap_err());
+    assert!(
+        err.contains("glyph_by value 'work' glyph expects one printable character, got 'ww'"),
+        "{err}"
+    );
     assert!(db.load_spec("mood").unwrap().is_none(), "nothing installed");
 }
 
