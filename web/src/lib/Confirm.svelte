@@ -7,6 +7,7 @@
 -->
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
+	import { act } from './act.js';
 
 	export let text: string;
 	export let action: string;
@@ -30,7 +31,7 @@
 			<label>Type <code>{name}</code> to confirm {action}: <input bind:value={typed} spellcheck="false" autocapitalize="none" autocomplete="off" /></label>
 		{/if}
 		<div class="buttons">
-			<button value={action}>{action}</button>
+			<button value={action} use:act={'run'}>{action}</button>
 			<button type="button" on:click={() => dialog.close()}>cancel</button>
 		</div>
 	</form>
@@ -83,6 +84,12 @@
 		color: inherit;
 		font: inherit;
 		padding: 0.2rem 0.8rem;
+	}
+
+	/* The action runs at once, so the double outline ($lib/act.ts). */
+	button:global([data-act='run']) {
+		border: 3px double var(--error);
+		padding: calc(0.2rem - 2px) calc(0.8rem - 2px);
 	}
 
 	button[value] {

@@ -108,6 +108,7 @@
 		type FieldShape,
 		type Standings
 	} from './fields.js';
+	import { act } from './act.js';
 	import { holds } from './hold.js';
 	import { fieldPill, setFieldPill } from './bar.js';
 	import { rowsUnder, type Near } from './lanes.js';
@@ -546,7 +547,7 @@
 		{@const states = statesOf(chosen.shape)}
 		<div class="ring" use:around={tap}>
 			<div class="spot" data-role="back">
-				<button class="nav back" data-back {disabled} title="back to the fields" on:click={back}>
+				<button class="nav back" use:act={'open'} data-back {disabled} title="back to the fields" on:click={back}>
 					&lt; Back
 				</button>
 			</div>
@@ -556,7 +557,8 @@
 				     two ends — the one state a thumb reaches without moving. -->
 				<div class="spot" data-role="end">
 					<button
-						class="widget states act end"
+						class="widget states end"
+						use:act={'run'}
 						style={vars({ fill: null, line: color, text: color, label: 'end' })}
 						{disabled}
 						data-state="false"
@@ -572,7 +574,8 @@
 				<div class="spot" data-role="state">
 					<!-- A state RUNS at once, so it is always drawn as acting (da-z8z40). -->
 					<button
-						class="widget states act"
+						class="widget states"
+						use:act={'run'}
 						class:on={chosen.current === state}
 						style={vars(look)}
 						{disabled}
@@ -600,6 +603,7 @@
 				{:else}
 					<button
 						class="nav add-state"
+						use:act={'open'}
 						data-add-state
 						{disabled}
 						title="add a state to {chosen.field}"
@@ -615,6 +619,7 @@
 			{#if verb === null}
 				<button
 					class="track add-button"
+					use:act={'open'}
 					{disabled}
 					title="track a new field"
 					on:click={() => void startTracking()}
@@ -625,6 +630,7 @@
 				{@const pending = verb}
 				<button
 					class="nav add-field"
+					use:act={'open'}
 					data-add-field
 					{disabled}
 					title="track a new {pending} field"
@@ -650,7 +656,7 @@
 				     any other, and only what a press MEANS is its own. -->
 				<button
 					class="record"
-					class:act={pressKind(button, verb) === 'run'}
+					use:act={pressKind(button, verb)}
 					class:ignored={button.ignored}
 					class:pilled={$fieldPill === button.field}
 					role="link"
@@ -665,7 +671,7 @@
 			{:else}
 				<button
 					class="widget {button.shape.kind}"
-					class:act={pressKind(button, verb) === 'run'}
+					use:act={pressKind(button, verb)}
 					class:on={look.fill !== null}
 					class:ignored={button.ignored}
 					class:pilled={$fieldPill === button.field}
@@ -767,15 +773,15 @@
 	}
 
 	/* A button a tap RUNS (`pressKind`, da-z8z40) is drawn in a DOUBLE
-	   outline, as the commands widget's are (`.command.act`) — in the
+	   outline, as the commands widget's are ($lib/act.ts) — in the
 	   field's own colour, since that is already the button's line. The
 	   padding gives back what the wider border takes. */
-	.widget.act:not(.ignored) {
+	.widget:global([data-act='run']):not(.ignored) {
 		border: 3px double var(--line);
 		padding: calc(0.35rem - 1.5px) calc(0.85rem - 1.5px);
 	}
 
-	.record.act:not(.ignored) {
+	.record:global([data-act='run']):not(.ignored) {
 		border: 3px double var(--line);
 		border-radius: 3px;
 		padding: calc(0.35rem - 3px) calc(0.3rem - 3px);
@@ -786,13 +792,13 @@
 	   has no double-dashed border, so the second line is a dashed outline
 	   a border's gap inside the dashed border, following its radius. It
 	   gives way to the focus ring, which is an outline too. */
-	.widget.act.ignored:not(:focus-visible),
-	.record.act.ignored:not(:focus-visible) {
+	.widget.ignored:global([data-act='run']):not(:focus-visible),
+	.record.ignored:global([data-act='run']):not(:focus-visible) {
 		outline: 1.5px dashed var(--line);
 		outline-offset: -4.5px;
 	}
 
-	.record.act.ignored {
+	.record.ignored:global([data-act='run']) {
 		border: 1.5px dashed var(--line);
 		border-radius: 3px;
 		padding: calc(0.35rem - 1.5px) calc(0.3rem - 1.5px);

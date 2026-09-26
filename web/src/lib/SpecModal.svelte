@@ -45,6 +45,7 @@
 -->
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
+	import { act } from './act.js';
 	import { fieldNameHint, suggestFieldName } from './fieldName.js';
 	import Glyph from './Glyph.svelte';
 	import Placement from './Placement.svelte';
@@ -479,7 +480,7 @@
 
 		<div class="buttons">
 			<button type="button" class="cancel" on:click={() => dialog.close()}>Cancel</button>
-			<button class="commit" type="submit" disabled={!ready}>Done</button>
+			<button class="commit" use:act={'run'} type="submit" disabled={!ready}>Done</button>
 		</div>
 		{#if verb !== null && !spec}
 			<code class="preview">{argv.join(' ')}</code>
@@ -904,6 +905,12 @@
 	.commit {
 		border-color: var(--accent);
 		color: var(--accent);
+	}
+
+	/* Done writes the spec at once, so the double outline ($lib/act.ts). */
+	.commit:global([data-act='run']) {
+		border: 3px double var(--accent);
+		padding: calc(0.2rem - 2px) calc(0.8rem - 2px);
 	}
 
 	.buttons button:disabled,

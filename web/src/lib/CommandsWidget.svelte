@@ -19,8 +19,9 @@
 	  widget's guess (`redo --dry-run`, asked in CommandPane.svelte).
 	- a command the loaded pills COMPLETE runs at once too (da-3lxol):
 	  `delete` with an hid selected deletes it. `fires` in commands.ts
-	  decides, and the same answer draws the button with a DOUBLE outline
-	  (`.act`), so what looks as if it fires is what fires.
+	  decides, and the same answer (`kindOf`) draws the button with a DOUBLE
+	  outline (`use:act`, $lib/act.ts), so what looks as if it fires is
+	  what fires.
 	- `Help` (da-vjwid) ARMS the page — `$lib/help.ts`: the next tap on a
 	  command, a widget or a pill is explained instead of acted on, and a
 	  second press on Help is `datum help`, and the answer opens in a modal.
@@ -70,8 +71,10 @@
 		hasFlags,
 		subcommandsOf,
 		type CommandButton,
-		type Grammar
+		type Grammar,
+		type Press
 	} from './commands.js';
+	import { act, type ActKind } from './act.js';
 	import { openBackups } from './backups.js';
 	import { arm, helping } from './help.js';
 	import { holds } from './hold.js';
@@ -83,6 +86,9 @@
 	export let fields: FieldButton[] = [];
 	/** Would `redo` move anything? The CLI's own answer, from the pane. */
 	export let redoable = false;
+
+	/** The presses whose kind is theirs whatever is loaded. */
+	const FIXED: Partial<Record<Press, ActKind>> = { run: 'run', help: 'arm', back: 'open', flag: 'fill', sheet: 'open' };
 
 	const dispatch = createEventDispatcher<{
 		run: string[];
@@ -99,7 +105,10 @@
 	$: if (open && !listed.some((command) => command.name === open)) open = null;
 	$: if (flagged && !listed.some((command) => command.name === flagged)) flagged = null;
 	$: shown = flagged ? flagsOf(grammar, flagged) : open ? subcommandsOf(grammar, open) : listed;
-	$: runs = (command: CommandButton) => command.press === 'run' || fires(grammar?.get(command.name), pills);
+	/** What a tap on `command` does: the press below and the outline are both this. */
+	$: kindOf = (command: CommandButton): ActKind =>
+		FIXED[command.press] ??
+		(!open && drills(grammar, command.name, pills) ? 'open' : fires(grammar?.get(command.name), pills) ? 'run' : 'fill');
 
 	/** A hold fills the command, as its tap would, and opens its flags. */
 	function hold(el: HTMLElement): void {
@@ -120,8 +129,8 @@
 		if (command.press === 'back') back();
 		else if (command.press === 'sheet') void openBackups(command.name === 'db restore' ? 'restore' : 'plans');
 		else if (command.press === 'flag') dispatch('flag', { command: flagged!, flag: command.name, keyboard: command.next === 'type' });
-		else if (!open && drills(grammar, command.name, pills)) open = command.name;
-		else if (runs(command)) dispatch('run', [command.name]);
+		else if (kindOf(command) === 'open') open = command.name;
+		else if (kindOf(command) === 'run') dispatch('run', [command.name]);
 		else dispatch('line', { name: command.name, line: `${command.name} `, keyboard: command.next !== 'tap' });
 	}
 
@@ -140,11 +149,12 @@
 	<button slot="probe" class="command" tabindex="-1">probe</button>
 	{#if command.name === 'undo'}
 		<span class="undo">
-			<button class="command act" {disabled} data-command="undo" aria-label="undo" title="run undo" on:click={() => press(command)}>
+			<button class="command" use:act={'run'} {disabled} data-command="undo" aria-label="undo" title="run undo" on:click={() => press(command)}>
 				{command.label}
 			</button>
 			<button
-				class="command act redo"
+				class="command redo"
+				use:act={'run'}
 				disabled={disabled || !redoable}
 				data-command="redo"
 				aria-label="redo"
@@ -158,6 +168,7 @@
 		<!-- Never disabled: it runs nothing until it is asked about something. -->
 		<button
 			class="command help"
+			use:act={'arm'}
 			class:armed={$helping}
 			data-command="help"
 			aria-pressed={$helping}
@@ -171,12 +182,13 @@
 			{#if $helping}<span class="label armed">? on what<small>(tap: all)</small></span>{/if}
 		</button>
 	{:else if command.press === 'back'}
-		<button class="command" {disabled} data-back title="back to every command" on:click={() => press(command)}>
+		<button class="command" use:act={'open'} {disabled} data-back title="back to every command" on:click={() => press(command)}>
 			{command.label}
 		</button>
 	{:else if command.press === 'flag'}
 		<button
 			class="command"
+			use:act={'fill'}
 			{disabled}
 			data-flag={`${flagged} ${command.name}`}
 			data-help={command.help}
@@ -188,12 +200,12 @@
 	{:else}
 		<button
 			class="command"
-			class:act={runs(command)}
+			use:act={kindOf(command)}
 			class:opens={command.press === 'sheet'}
 			{disabled}
 			data-command={command.name}
 			data-holds={!open && hasFlags(grammar, command.name) ? '' : undefined}
-			title={runs(command) ? `run ${command.name}` : command.press === 'sheet' ? 'open Backups…' : `${command.name} …`}
+			title={kindOf(command) === 'run' ? `run ${command.name}` : command.press === 'sheet' ? 'open Backups…' : `${command.name} …`}
 			on:click={() => press(command)}
 		>
 			{command.label}
@@ -224,7 +236,7 @@
 	   outline»). Inside the box, as a border, so the bar's scroll edge never
 	   clips it and focus keeps the outline; the padding gives back the two
 	   pixels the border takes, so a button does not grow when it arms. */
-	.command.act {
+	.command:global([data-act='run']) {
 		border: 3px double var(--accent);
 		padding: calc(0.35rem - 2px) calc(0.85rem - 2px);
 		color: var(--ink-bright);

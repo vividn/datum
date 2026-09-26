@@ -15,6 +15,7 @@
 	two differ exactly when something went wrong.
 -->
 <script lang="ts">
+	import { act } from './act.js';
 	import { ran } from './layout/engine.js';
 	import { clearSample, installKit, seedSample, uninstallKit, type Step } from './sample.js';
 	import { stripAnsi } from './ansi.js';
@@ -49,7 +50,7 @@
 		return done;
 	};
 
-	async function act(what: typeof seed): Promise<void> {
+	async function perform(what: typeof seed): Promise<void> {
 		busy = true;
 		failed = false;
 		report = '';
@@ -67,12 +68,12 @@
 </script>
 
 <p class="acts">
-	<button type="button" class="act" disabled={busy} on:click={() => act(seed)}>seed the last 7 days</button>
-	<button type="button" class="act" disabled={busy} on:click={() => act(clear)}>clear the sample</button>
-	<button type="button" class="act" disabled={busy} on:click={() => act(kit(installKit, 'the sample kit is installed'))}
+	<button type="button" class="tool" use:act={'run'} disabled={busy} on:click={() => perform(seed)}>seed the last 7 days</button>
+	<button type="button" class="tool" use:act={'run'} disabled={busy} on:click={() => perform(clear)}>clear the sample</button>
+	<button type="button" class="tool" use:act={'run'} disabled={busy} on:click={() => perform(kit(installKit, 'the sample kit is installed'))}
 		>install the sample kit</button
 	>
-	<button type="button" class="act" disabled={busy} on:click={() => act(kit(uninstallKit, 'the sample kit is uninstalled'))}
+	<button type="button" class="tool" use:act={'run'} disabled={busy} on:click={() => perform(kit(uninstallKit, 'the sample kit is uninstalled'))}
 		>uninstall the sample kit</button
 	>
 </p>
@@ -94,7 +95,7 @@
 		margin: 0;
 	}
 	/* 24px tall, the house rule for a control a finger hits (web-conventions #12). */
-	.act {
+	.tool {
 		min-height: 24px;
 		padding: 0.1rem 0.5rem;
 		font: inherit;
@@ -104,7 +105,12 @@
 		border-radius: 4px;
 		cursor: pointer;
 	}
-	.act[disabled] {
+	/* Each writes the database at once, so the double outline ($lib/act.ts). */
+	.tool:global([data-act='run']) {
+		border: 3px double var(--accent);
+		padding: calc(0.1rem - 2px) calc(0.5rem - 2px);
+	}
+	.tool[disabled] {
 		color: var(--quiet);
 		cursor: default;
 	}

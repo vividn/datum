@@ -102,9 +102,9 @@
 <p class="report">
 	<code class="pair">{pair}</code>
 	{#if canCopy}
-		<button type="button" class="act" on:click={copy}>{copied ? 'copied' : 'copy'}</button>
+		<button type="button" class="tool" on:click={copy}>{copied ? 'copied' : 'copy'}</button>
 	{/if}
-	<button type="button" class="act" disabled={!moved} on:click={resetTuning}>reset to defaults</button>
+	<button type="button" class="tool" disabled={!moved} on:click={resetTuning}>reset to defaults</button>
 </p>
 
 <style>
@@ -172,7 +172,7 @@
 		border: 1px solid var(--rule);
 		border-radius: 4px;
 	}
-	.act {
+	.tool {
 		min-height: 24px;
 		padding: 0.1rem 0.5rem;
 		font: inherit;
@@ -182,7 +182,7 @@
 		border-radius: 4px;
 		cursor: pointer;
 	}
-	.act[disabled] {
+	.tool[disabled] {
 		color: var(--quiet);
 		cursor: default;
 	}

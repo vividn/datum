@@ -13,6 +13,7 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import Pane from './Pane.svelte';
+	import { act } from './act.js';
 	import CliOutput from './CliOutput.svelte';
 	import TailTable from './TailTable.svelte';
 	import { record } from './replStore.js';
@@ -178,7 +179,7 @@
 	{#if manual}
 		<p class="quiet">
 			this command writes — it runs only when you press
-			<button type="button" class="play" title="run it" aria-label="run it" on:click={press}>▶</button>
+			<button type="button" class="play" use:act={'run'} title="run it" aria-label="run it" on:click={press}>▶</button>
 		</p>
 	{/if}
 	{#if spec.view === 'tail-table'}
@@ -213,5 +214,9 @@
 		border: 1px solid var(--rule);
 		border-radius: 4px;
 		cursor: pointer;
+	}
+	/* It runs the command at once, so the double outline ($lib/act.ts). */
+	.play:global([data-act='run']) {
+		border: 3px double var(--accent);
 	}
 </style>

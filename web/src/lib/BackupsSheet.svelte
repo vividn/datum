@@ -16,6 +16,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import Sheet from './Sheet.svelte';
+	import { act } from './act.js';
 	import { currentDb, INTERNAL_DB } from './database.js';
 	import { listDatabases } from './databases.js';
 	import { restore as restoreFile, saveBackup } from './dbio.js';
@@ -117,7 +118,7 @@
 			.join('; ');
 	}
 
-	async function act(job: () => Promise<unknown>): Promise<void> {
+	async function perform(job: () => Promise<unknown>): Promise<void> {
 		note = '';
 		try {
 			await job();
@@ -127,13 +128,13 @@
 	}
 
 	const saveLocal = () =>
-		act(async () => {
+		perform(async () => {
 			const r = await saveBackup();
 			note = r.code === 0 ? r.stdout.split('\n').at(-1) ?? '' : r.stderr;
 		});
 
 	const restoreLocal = () =>
-		act(async () => {
+		perform(async () => {
 			const r = await restoreFile(['db', 'restore', '-']);
 			note = r.code === 0 ? r.stdout.split('\n').at(-1) || 'restored' : r.stderr;
 			// The panes of this tab re-run on it, as after a typed command.
@@ -141,7 +142,7 @@
 		});
 
 	const restoreSlot = (plan: Plan, db: string, backup: Backup) =>
-		act(async () => {
+		perform(async () => {
 			const r = await restoreFrom(plan, db, backup);
 			if (r) note = r.code === 0 ? `${db} restored to its slot ${backup.slot} backup` : r.stderr;
 			if (r) await ran();
@@ -154,16 +155,16 @@
 		void explain(fresh, '');
 	}
 
-	const look = () => act(async () => (found = await listed(fresh)));
+	const look = () => perform(async () => (found = await listed(fresh)));
 
 	const testIt = () =>
-		act(async () => {
+		perform(async () => {
 			probe = null;
 			probe = (await KINDS[fresh.kind].test?.(fresh.config)) ?? null;
 		});
 
 	const add = () =>
-		act(async () => {
+		perform(async () => {
 			const name = fresh.name.trim();
 			if (!name) throw new Error('name the plan');
 			if ($plans.some((p) => p.name === name)) throw new Error(`there is already a plan named ${name}`);
@@ -223,10 +224,10 @@
 							? `${plan.slots} slots`
 							: 'no cap'}</span
 					>
-					<button type="button" class="act" data-backup="now" disabled={s?.running} on:click={() => act(() => backUp(plan))}
+					<button type="button" use:act={'run'} data-backup="now" disabled={s?.running} on:click={() => perform(() => backUp(plan))}
 						>{s?.running ? 'Backing up…' : 'Back up now'}</button
 					>
-					<button type="button" class="plain" on:click={() => act(() => deletePlan(plan.name))}>Delete plan</button>
+					<button type="button" class="plain" on:click={() => perform(() => deletePlan(plan.name))}>Delete plan</button>
 				</div>
 				{#if reach[plan.name]}
 					<p class="quiet explain">{reachText(plan, reach[plan.name])}. {spaceText(plan, reach[plan.name])}</p>
@@ -257,7 +258,7 @@
 		{/each}
 
 		{#if $plans.length > 1}
-			<button type="button" class="act" data-backup="all" on:click={() => act(async () => { for (const p of $plans) await backUp(p); })}
+			<button type="button" use:act={'run'} data-backup="all" on:click={() => perform(async () => { for (const p of $plans) await backUp(p); })}
 				>Back up all now</button
 			>
 		{/if}
@@ -336,10 +337,10 @@
 				{/if}
 				<div class="row">
 					{#if KINDS[fresh.kind]?.test}
-						<button type="button" class="act" data-backup="test" on:click={testIt}>Test connection</button>
+						<button type="button" use:act={'run'} data-backup="test" on:click={testIt}>Test connection</button>
 					{/if}
 					<button type="button" class="opens" on:click={look}>Look for backups there</button>
-					<button type="button" class="act" data-backup="add" on:click={add}>Add plan</button>
+					<button type="button" use:act={'run'} data-backup="add" on:click={add}>Add plan</button>
 				</div>
 			</section>
 		{/if}
@@ -471,9 +472,9 @@
 		cursor: pointer;
 	}
 
-	/* The design language (CommandsWidget.svelte): a DOUBLE outline acts at
-	   once, a SINGLE one of the accent opens something. */
-	button.act {
+	/* The design language ($lib/act.ts): a DOUBLE outline acts at once, a
+	   SINGLE one of the accent opens something. */
+	button:global([data-act='run']) {
 		border: 3px double var(--accent);
 		padding: calc(0.3rem - 2px) calc(0.7rem - 2px);
 		color: var(--ink-bright);

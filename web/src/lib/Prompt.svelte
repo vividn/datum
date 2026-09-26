@@ -61,6 +61,7 @@
 -->
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
+	import { act } from '$lib/act.js';
 	import { clearLine, ghost, pills, registerLine, spent, submitLine, text } from '$lib/bar.js';
 	import { roleOf } from '$lib/commands.js';
 	import Pill from '$lib/Pill.svelte';
@@ -284,6 +285,7 @@
 		<button
 			type="button"
 			class="clear"
+			use:act={'fill'}
 			aria-label="clear the input"
 			title="clear the input"
 			on:mousedown|preventDefault
@@ -313,6 +315,7 @@
 		<button
 			type="button"
 			class="send"
+			use:act={'run'}
 			class:idle={!$text.trim()}
 			aria-label="run the line"
 			title="run the line"
@@ -396,20 +399,23 @@
 		color: var(--ink);
 	}
 
-	/* Runs at once, so the double outline (`.command.act`). */
 	.send {
 		flex: none;
 		min-width: 28px;
 		min-height: 28px;
 		margin-left: 0.25rem;
 		padding: 0 0.3rem;
-		border: 3px double var(--accent);
 		border-radius: 3px;
 		background: transparent;
 		color: var(--ink-bright);
 		font: inherit;
 		line-height: 1;
 		cursor: pointer;
+	}
+
+	/* Runs at once, so the double outline ($lib/act.ts). */
+	.send:global([data-act='run']) {
+		border: 3px double var(--accent);
 	}
 
 	.send:hover,

@@ -60,8 +60,8 @@ describe('the Help button', () => {
 
 			// Undo runs at once and wears the double outline; Help waits, and wears one.
 			const undo = page.locator('.bar.commands button[data-command="undo"]');
-			assert.match(await undo.getAttribute('class'), /\bact\b/);
-			assert.doesNotMatch(await help(page).getAttribute('class'), /\bact\b/);
+			assert.equal(await undo.getAttribute('data-act'), 'run');
+			assert.equal(await help(page).getAttribute('data-act'), 'arm');
 			const style = (el) => el.evaluate((b) => getComputedStyle(b).borderTopStyle);
 			assert.equal(await style(undo), 'double');
 			assert.equal(await style(help(page)), 'solid');

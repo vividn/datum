@@ -116,7 +116,7 @@ describe('a tap on a tail row', () => {
 		await solo(async (app) => {
 			const { page } = app;
 			await seedApart(app);
-			const armed = (name) => button(page, name).evaluate((b) => b.classList.contains('act'));
+			const armed = (name) => button(page, name).evaluate((b) => b.dataset.act === 'run');
 			const input = page.locator('.prompt-bar input');
 			// The shared app empties the pills between tests, not the line.
 			await input.fill('');
@@ -132,13 +132,13 @@ describe('a tap on a tail row', () => {
 			const hid = await row.getAttribute('data-hid');
 			await row.click();
 			await hidPill(page).waitFor();
-			await page.waitForFunction(() => document.querySelector('.bar.commands [data-command="delete"]')?.classList.contains('act'));
+			await page.waitForFunction(() => document.querySelector('.bar.commands [data-command="delete"]')?.dataset.act === 'run');
 			assert.deepEqual([await armed('delete'), await armed('update'), await armed('get')], [true, false, true]);
 
 			await run(app, 'delete');
 			assert.equal((await app.echoes()).at(-1), `delete ${hid}`);
 			await page.waitForFunction((n) => document.querySelectorAll('section[data-title="tail"] tbody tr[data-hid]').length === n, before - 1);
-			await page.waitForFunction(() => !document.querySelector('.bar.commands [data-command="delete"]')?.classList.contains('act'));
+			await page.waitForFunction(() => document.querySelector('.bar.commands [data-command="delete"]')?.dataset.act !== 'run');
 
 			const [next] = await last(page, 1);
 			await next.click();
