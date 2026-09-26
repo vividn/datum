@@ -152,10 +152,13 @@ export function verbFits(verb: Verb, button: FieldButton): boolean {
 			return button.shape.kind === 'record';
 		case 'switch':
 			return button.shape.kind === 'states';
+		// A block takes both whatever its state (da-vpzbv, vividn: «this would
+		// be how a user might enter in a repeated state because of
+		// forgetting»): a start or an end re-logged is one that was missed.
 		case 'start':
-			return (button.shape.kind === 'state' && !on(button)) || hasTrue(button);
+			return button.shape.kind === 'state' || hasTrue(button);
 		case 'end':
-			return (button.shape.kind === 'state' || button.shape.kind === 'states') && on(button);
+			return button.shape.kind === 'state' || (button.shape.kind === 'states' && on(button));
 		default:
 			return true;
 	}

@@ -59,9 +59,9 @@ const onPage = (fn) =>
  * One field of every shape, and two of them running.
  *
  * `work` is an open block and `mood` a switch in a state, so `end` has
- * something to show and `start` has something to hide; `light` is a
- * switch with `true` among its states, which is the other half of
- * `start`'s rule.
+ * a switch to show and `start` one to hide; `sleep` is a stopped block,
+ * which both still show (da-vpzbv); `light` is a switch with `true` among
+ * its states, which is the other half of `start`'s rule.
  */
 const SEED = [
 	'spec set coffee --verb occur',
@@ -384,14 +384,14 @@ describe('a verb fills the line and filters the fields', () => {
 			const { page } = app;
 			await seedLines(app, SEED);
 
-			// A block that is off, and a switch with `true` among its states.
-			// `work` is running, so it is not something to start.
+			// Every block, running or not (da-vpzbv: a start re-logged is a
+			// forgotten one), and a switch with `true` among its states.
 			await tap(page, 'start');
-			assert.deepEqual(await showing(page), ['light', 'sleep']);
+			assert.deepEqual(await showing(page), ['light', 'sleep', 'work']);
 
-			// The ones that are on, by `now`'s truth and nothing remembered.
+			// Every block again, and the switches that are on by `now`'s truth.
 			await tap(page, 'end');
-			assert.deepEqual(await showing(page), ['mood', 'work']);
+			assert.deepEqual(await showing(page), ['mood', 'sleep', 'work']);
 
 			await tap(page, 'switch');
 			assert.deepEqual(await showing(page), ['light', 'mood']);
@@ -408,6 +408,40 @@ describe('a verb fills the line and filters the fields', () => {
 				await page.locator('dialog.spec button[data-verb="start"]').getAttribute('aria-checked'),
 				'true'
 			);
+		});
+	});
+
+	// da-vpzbv, vividn: «show both start and end commands … regardless of the
+	// current state». A block's pill leaves both, running (`work`) or not
+	// (`sleep`), and re-logging either runs: that is how a person records a
+	// start or an end they forgot.
+	test('a block field offers start and end whatever its state, and each runs', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await seedLines(app, SEED);
+			const verbs = async () =>
+				(await drawn(page)).filter((name) => ['occur', 'start', 'end', 'switch', 'add'].includes(name));
+
+			for (const field of ['work', 'sleep']) {
+				await fieldsBar(page).locator(`[data-field="${field}"]`).click({ button: 'right' });
+				await page.waitForFunction(() => !document.querySelector('[data-command="occur"]'));
+				assert.deepEqual(await verbs(), ['start', 'end'], field);
+				await page.locator('.prompt-bar .pill.field button.remove').click();
+				await page.waitForFunction(() => document.querySelector('[data-command="occur"]'));
+			}
+
+			await tap(page, 'start');
+			await echoed(app, () => fieldsBar(page).locator('[data-field="work"]').click());
+			assert.equal((await app.echoes()).at(-1), 'start work');
+			await tap(page, 'end');
+			await echoed(app, () => fieldsBar(page).locator('[data-field="sleep"]').click());
+			assert.equal((await app.echoes()).at(-1), 'end sleep');
+			await app.idle();
+			assert.deepEqual(
+				(await app.entries(2)).map((e) => e.field).sort(),
+				['sleep', 'work']
+			);
+			assert.deepEqual(app.errors, []);
 		});
 	});
 

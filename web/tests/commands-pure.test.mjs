@@ -129,14 +129,15 @@ describe('what a pending verb leaves showing', () => {
 		assert.deepEqual(under('add'), ['rec']);
 	});
 
-	// «Currently on/off» is `now --json`'s truth, which reaches a button as
-	// `current` — so a block that is running is not something to start.
-	test('start: a block that is off, or a switch with true among its states', () => {
-		assert.deepEqual(under('start'), ['sleep', 'light']);
+	// A block takes start and end whatever its state (da-vpzbv): re-logging
+	// one is how a forgotten start or end is recorded. A switch still reads
+	// `current` — `now --json`'s truth — for `end`.
+	test('start: every block, and a switch with true among its states', () => {
+		assert.deepEqual(under('start'), ['sleep', 'work', 'light']);
 	});
 
-	test('end: the blocks and switches that are on', () => {
-		assert.deepEqual(under('end'), ['work', 'mood']);
+	test('end: every block, and the switches that are on', () => {
+		assert.deepEqual(under('end'), ['sleep', 'work', 'mood']);
 	});
 
 	test('no verb leaves the list whole', () => {
@@ -188,6 +189,18 @@ describe('what a loaded field leaves of the verbs', () => {
 				.filter((name) => VERBS.includes(name));
 		assert.deepEqual(verbs([pill(point)]), ['occur'], 'the argument field narrows');
 		assert.deepEqual(verbs([pill(point), hid]), VERBS);
+	});
+
+	// da-vpzbv, vividn: «show both start and end … regardless of the current
+	// state». Running or stopped, a block offers both, and each press runs.
+	test('a block field offers start and end, running or stopped', () => {
+		for (const block of [onBlock, offBlock]) {
+			assert.deepEqual(verbsUnder([pill(block)]), ['start', 'end'], block.field);
+			for (const verb of ['start', 'end']) {
+				assert.deepEqual(verbPress(verb, block), [verb, block.field]);
+				assert.equal(pressKind(block, verb), 'run', `${verb} ${block.field}`);
+			}
+		}
 	});
 
 	test('clearing the pill brings every verb back', () => {
