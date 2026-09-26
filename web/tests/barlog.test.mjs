@@ -427,7 +427,11 @@ describe('the bar is the way in', () => {
 			);
 			await page.locator(`${BAR} .pill`).nth(1).waitFor();
 			const before = await where(page);
-			const box = await page.locator(`${BAR} input`).boundingBox();
+			// The FIELD's box, not the input's: the input's width is the
+			// field's measured back through a resize observer, so for a frame
+			// after the pills land it is still the wider pill-less one, and a
+			// finger placed from it lands past the field's edge (da-xix5m).
+			const box = await page.locator(`${BAR} .field`).boundingBox();
 			await swipe(page, box.x + box.width - 8, box.y + box.height / 2, -120, 0, 10);
 			await settled(page);
 			const scrolled = await page.locator(`${BAR} .field`).evaluate((el) => el.scrollLeft);
