@@ -312,6 +312,18 @@ pub struct ReplaceCounts {
     pub deleted: usize,
 }
 
+/// What [`super::Db::hard_replace_entries`] did — or, rolled back for a
+/// dry run, would have done: backup entries `written`, and the rows DROPPED
+/// before them: live `entries`, `tombstones` (every row not live — deleted
+/// or superseded), and `history` rows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HardReplaceCounts {
+    pub written: usize,
+    pub entries: usize,
+    pub tombstones: usize,
+    pub history: usize,
+}
+
 /// Report returned from [`super::Db::save_field_spec_with_report`] describing
 /// which derived aliases from the spec were surfaced vs shadowed at the
 /// time of the save. The check is best-effort: derived aliases are now

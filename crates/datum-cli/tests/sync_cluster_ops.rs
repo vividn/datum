@@ -330,14 +330,66 @@ fn db_restore_with_cluster_flag_bumps_server_generation() {
             force: true,
             dry_run: false,
             merge: true,
+            hard: false,
             yes: false,
             show: ShowFlag::Default,
             cluster: true,
         },
+        None,
         &db,
     )
     .expect("restore --cluster");
 
+    assert_eq!(read_server_cluster_generation(&relay, &cluster_id), 1);
+    assert_eq!(sync_state::get_cluster_generation(&db).unwrap(), 1);
+}
+
+/// `db restore --hard` leaves the generation where it is, so the next sync
+/// pulls the relay's copy back in on top; `--hard --cluster` bumps it
+/// (da-rle8g). The bump is the reader's choice, never implied.
+#[test]
+fn db_restore_hard_bumps_the_generation_only_with_cluster() {
+    let env = scoped_env();
+    let relay = StubRelay::start();
+    write_token_for(
+        &relay.base_url,
+        &relay.mint_token(),
+        Some(&relay.user_id.to_string()),
+    );
+    write_master_key(&relay.base_url, &[0xb6u8; 32]);
+    configure_default_server(&relay.base_url);
+    let db = fresh_db(&env);
+
+    db.insert_entry(&make_entry("coffee", 0, "dev-1")).unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db).unwrap();
+    let cluster_id = sync_state::get_cluster_id(&db).unwrap().unwrap();
+
+    let backup_path = std::env::var("DATUM_HOME").unwrap() + "/hard.jsonl";
+    backup_restore::cmd_backup(
+        datum_commands::args::BackupArgs {
+            path: backup_path.clone(),
+            overwrite: true,
+        },
+        None,
+        &db,
+    )
+    .unwrap();
+
+    let hard = |cluster| RestoreArgs {
+        path: backup_path.clone(),
+        force: false,
+        dry_run: false,
+        merge: false,
+        hard: true,
+        yes: true,
+        show: ShowFlag::None,
+        cluster,
+    };
+    backup_restore::cmd_restore(hard(false), None, &db).expect("restore --hard");
+    assert_eq!(read_server_cluster_generation(&relay, &cluster_id), 0);
+    assert_eq!(sync_state::get_cluster_generation(&db).unwrap(), 0);
+
+    backup_restore::cmd_restore(hard(true), None, &db).expect("restore --hard --cluster");
     assert_eq!(read_server_cluster_generation(&relay, &cluster_id), 1);
     assert_eq!(sync_state::get_cluster_generation(&db).unwrap(), 1);
 }
@@ -378,10 +430,12 @@ fn db_restore_dry_run_with_cluster_does_not_bump() {
             force: false,
             dry_run: true,
             merge: true,
+            hard: false,
             yes: false,
             show: ShowFlag::Default,
             cluster: true,
         },
+        None,
         &db,
     )
     .expect("dry-run restore --cluster");

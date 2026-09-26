@@ -21,7 +21,7 @@ use crate::verb::derive_verb;
 use super::lookup::fetch_entry_any;
 use super::row_mapper::row_to_entry;
 use super::tombstone::soft_delete_in_tx;
-use super::types::{ConflictStrategy, InsertOutcome, ReplaceCounts, LIVE_SQL};
+use super::types::{ConflictStrategy, HardReplaceCounts, InsertOutcome, ReplaceCounts, LIVE_SQL};
 use super::Db;
 
 /// Derive the storage-layer verb string and canonical state JSON for an
@@ -407,6 +407,51 @@ impl Db {
             on_row(n + 1);
         }
         counts.deleted = deleted.len();
+        crate::integrity::detect_for_entries(
+            &tx,
+            &written,
+            crate::integrity::DetectedBy::LocalValidator,
+        )?;
+        if commit {
+            tx.commit()?;
+        }
+        Ok(counts)
+    }
+
+    /// Make the database exactly `entries` (da-rle8g, `db restore --hard`):
+    /// every entry row, tombstone and `entry_history` row is DROPPED, not
+    /// tombstoned, and each entry is written back verbatim, hid and slug
+    /// included, with no history. The integrity findings are derived again
+    /// from what was written, and the sync pull watermark goes back to 0,
+    /// so the next pull brings what the other devices pushed back in on
+    /// top. One transaction; with `commit` false it is rolled back, so a
+    /// dry run's counts are the real run's.
+    pub fn hard_replace_entries(
+        &self,
+        entries: &[Entry],
+        commit: bool,
+        on_row: &mut dyn FnMut(usize),
+    ) -> Result<HardReplaceCounts> {
+        let tx = self.conn.unchecked_transaction()?;
+        let count = |sql: &str| tx.query_row(sql, [], |row| row.get::<_, usize>(0));
+        let live = count(&format!("SELECT COUNT(*) FROM entries WHERE {LIVE_SQL}"))?;
+        let counts = HardReplaceCounts {
+            written: entries.len(),
+            entries: live,
+            tombstones: count("SELECT COUNT(*) FROM entries")? - live,
+            history: count("SELECT COUNT(*) FROM entry_history")?,
+        };
+        tx.execute_batch(
+            "DELETE FROM entries; DELETE FROM entry_history;
+             DELETE FROM integrity_warnings; DELETE FROM last_docs;
+             UPDATE sync_state SET pull_seq = 0;",
+        )?;
+        let mut written = Vec::with_capacity(entries.len());
+        for (n, entry) in entries.iter().enumerate() {
+            try_insert(&tx, &entry.slug, &entry.hid, entry)?;
+            written.push(fetch_entry_any(&tx, &entry.slug)?);
+            on_row(n + 1);
+        }
         crate::integrity::detect_for_entries(
             &tx,
             &written,

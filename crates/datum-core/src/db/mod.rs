@@ -64,9 +64,10 @@ pub use now::{
 pub use row_mapper::row_to_entry_public;
 pub use spec::{is_meta_field, META_FIELDS, SPEC_FIELD};
 pub use types::{
-    AliasConflict, AliasConflictReason, ConflictStrategy, GroupColumn, InsertOutcome, ListParams,
-    ReplaceCounts, RetimeFilter, Retimed, SaveSpecReport, SpecAliasCollision, SpecAliasIndex,
-    TimeMetric, TimeOrderIssue, TrackedField, IGNORED_STATE_VALUE,
+    AliasConflict, AliasConflictReason, ConflictStrategy, GroupColumn, HardReplaceCounts,
+    InsertOutcome, ListParams, ReplaceCounts, RetimeFilter, Retimed, SaveSpecReport,
+    SpecAliasCollision, SpecAliasIndex, TimeMetric, TimeOrderIssue, TrackedField,
+    IGNORED_STATE_VALUE,
 };
 pub use view::{InstallViewsReport, InstalledView, KitViewOutcome, ViewResult};
 

@@ -28,7 +28,7 @@ pub fn dispatch(cmd: DbCommand, cli_db: Option<&str>, db: &Db) -> Result<()> {
         DbCommand::BackupRotation(args) => {
             super::backup_rotation::cmd_backup_rotation(args, cli_db, db)
         }
-        DbCommand::Restore(args) => super::backup_restore::cmd_restore(args, db),
+        DbCommand::Restore(args) => super::backup_restore::cmd_restore(args, cli_db, db),
         DbCommand::Migrate(sub) => super::migrate::migrate(sub, db),
         DbCommand::V2import(args) => import::import(args, db),
     }
@@ -56,7 +56,7 @@ pub fn purge(args: DbPurgeArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
 /// resolution path: a name-resolved DB confirms by name (the same
 /// token the user passed in `--db <name>` / `DATUM_DB=<name>`); a
 /// path-resolved DB still requires the full path.
-fn purge_confirmation_token(cli_db: Option<&str>, db: &Db) -> String {
+pub(crate) fn purge_confirmation_token(cli_db: Option<&str>, db: &Db) -> String {
     if let Ok(resolved) = crate::config::resolve_db(cli_db) {
         if let Some(name) = resolved.name {
             return name;
@@ -79,37 +79,14 @@ pub fn purge_with_io(
     confirm: &str,
 ) -> Result<()> {
     if !args.yes {
-        if !is_tty {
-            anyhow::bail!(
-                "db purge: stdin is not a TTY; re-run with --yes to purge non-interactively"
-            );
-        }
-        let mut stderr = std::io::stderr().lock();
-        // Render WHAT will be destroyed using the resolved path so the
-        // user sees the real on-disk location even when they confirm
-        // by name. Always include the path; the differing bit is only
-        // the confirmation token.
         let path = current_db_path(db).unwrap_or_else(|_| "(in-memory)".to_string());
-        writeln!(stderr, "This will destroy ALL data in {path}.")?;
-        // Branch the prompt copy on confirmation-token shape so the
-        // user sees "Type 'vremya'" instead of "Type the database
-        // path" when the resolution was name-based.
-        let looks_like_path =
-            confirm.contains('/') || confirm.starts_with('.') || confirm.ends_with(".db");
-        if looks_like_path {
-            write!(stderr, "Type the database path to confirm: ")?;
-        } else {
-            write!(stderr, "Type '{confirm}' to confirm purge: ")?;
-        }
-        stderr.flush()?;
-        drop(stderr);
-
-        let mut line = String::new();
-        stdin.read_line(&mut line)?;
-        let answer = line.trim();
-        if answer != confirm {
-            anyhow::bail!("db purge: aborted (input did not match {confirm})");
-        }
+        confirm_by_name(
+            "purge",
+            &format!("This will destroy ALL data in {path}."),
+            stdin,
+            is_tty,
+            confirm,
+        )?;
     }
 
     // Capture the cluster_id BEFORE the purge wipes sync_state. The
@@ -164,10 +141,49 @@ pub fn purge_with_io(
     Ok(())
 }
 
+/// The confirmation a command that destroys the whole database asks for:
+/// `headline` says what goes, then the database's identifier, retyped —
+/// reflexive `y`-mashing won't do it. Off a TTY it refuses; `--yes` is
+/// how a script says it means it.
+pub(crate) fn confirm_by_name(
+    cmd: &str,
+    headline: &str,
+    stdin: &mut dyn BufRead,
+    is_tty: bool,
+    confirm: &str,
+) -> Result<()> {
+    if !is_tty {
+        anyhow::bail!(
+            "db {cmd}: stdin is not a TTY; re-run with --yes to confirm without a prompt"
+        );
+    }
+    let mut stderr = std::io::stderr().lock();
+    writeln!(stderr, "{headline}")?;
+    // Branch the prompt copy on confirmation-token shape so the
+    // user sees "Type 'vremya'" instead of "Type the database
+    // path" when the resolution was name-based.
+    let looks_like_path =
+        confirm.contains('/') || confirm.starts_with('.') || confirm.ends_with(".db");
+    if looks_like_path {
+        write!(stderr, "Type the database path to confirm: ")?;
+    } else {
+        write!(stderr, "Type '{confirm}' to confirm {cmd}: ")?;
+    }
+    stderr.flush()?;
+    drop(stderr);
+
+    let mut line = String::new();
+    stdin.read_line(&mut line)?;
+    if line.trim() != confirm {
+        anyhow::bail!("db {cmd}: aborted (input did not match {confirm})");
+    }
+    Ok(())
+}
+
 /// Read the active database file path from SQLite's
 /// `pragma_database_list`. Returns the empty string for an in-memory
 /// connection, which is fine for tests — they pass `--yes`.
-fn current_db_path(db: &Db) -> Result<String> {
+pub(crate) fn current_db_path(db: &Db) -> Result<String> {
     let path: String = db.conn().query_row(
         "SELECT file FROM pragma_database_list WHERE name = 'main'",
         [],

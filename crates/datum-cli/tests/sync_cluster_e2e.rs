@@ -1080,6 +1080,116 @@ fn s7_restore_bump_reconciles_to_the_restored_snapshot() {
     );
 }
 
+/// `db restore --hard` as the command runs it (da-rle8g), from a backup
+/// file in this device's DATUM_HOME.
+fn restore_hard(db: &Db, backup: &str, cluster: bool) {
+    datum_commands::commands::backup_restore::cmd_restore(
+        datum_commands::args::RestoreArgs {
+            path: backup.to_string(),
+            force: false,
+            dry_run: false,
+            merge: false,
+            hard: true,
+            yes: true,
+            show: datum_commands::args::ShowFlag::None,
+            cluster,
+        },
+        None,
+        db,
+    )
+    .expect("restore --hard");
+}
+
+fn backup_to(db: &Db, name: &str) -> String {
+    let path = std::env::var("DATUM_HOME").unwrap() + "/" + name;
+    datum_commands::commands::backup_restore::cmd_backup(
+        datum_commands::args::BackupArgs {
+            path: path.clone(),
+            overwrite: true,
+        },
+        None,
+        db,
+    )
+    .expect("backup");
+    path
+}
+
+/// `--hard --cluster` carries the RESTORED rows to the peer, not only the
+/// ones written after it: they keep the backup's modify times, so the push
+/// has to start over for the new generation to hold them (da-rle8g).
+#[test]
+fn s7_restore_hard_cluster_hands_the_peer_the_backup() {
+    let env = ClientEnv::new();
+    let relay = StubRelay::start();
+    let key = [0x74u8; 32];
+    let db_a = provision_client(&env, "A", &relay, &key);
+    let db_b = provision_client(&env, "B", &relay, &key);
+
+    env.use_a();
+    db_a.insert_entry(&make_entry("in-backup", 0, "dev-A"))
+        .unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db_a).unwrap();
+    let backup = backup_to(&db_a, "hard.jsonl");
+    db_a.insert_entry(&make_entry("after-backup", 60, "dev-A"))
+        .unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db_a).unwrap();
+    env.use_b();
+    run_sync_with_client(Some(&relay.base_url), Direction::Both, false, &db_b).unwrap();
+
+    env.use_a();
+    restore_hard(&db_a, &backup, true);
+    run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db_a).unwrap();
+
+    env.use_b();
+    let mut prompter = datum_cli::sync::TestPrompter::new::<Vec<String>, String>(vec![]);
+    prompter.push_confirm(true);
+    datum_cli::sync::run_sync_with_client_and_prompter(
+        Some(&relay.base_url),
+        Direction::PullOnly,
+        false,
+        &db_b,
+        &mut prompter,
+    )
+    .expect("B recovers and pulls the restored snapshot");
+
+    assert_eq!(live_fields(&db_b), vec!["in-backup".to_string()]);
+    assert_eq!(row_for(&db_b, "in-backup"), row_for(&db_a, "in-backup"));
+}
+
+/// `--hard` alone leaves the generation, and the next sync pulls what the
+/// other devices pushed back in on top of the restored state (da-rle8g):
+/// the pull watermark starts over.
+#[test]
+fn s7_restore_hard_without_cluster_pulls_the_peers_rows_back() {
+    let env = ClientEnv::new();
+    let relay = StubRelay::start();
+    let key = [0x75u8; 32];
+    let db_a = provision_client(&env, "A", &relay, &key);
+    let db_b = provision_client(&env, "B", &relay, &key);
+
+    env.use_a();
+    db_a.insert_entry(&make_entry("in-backup", 0, "dev-A"))
+        .unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db_a).unwrap();
+    let backup = backup_to(&db_a, "hard.jsonl");
+    env.use_b();
+    db_b.insert_entry(&make_entry("from-b", 60, "dev-B"))
+        .unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::Both, false, &db_b).unwrap();
+    env.use_a();
+    run_sync_with_client(Some(&relay.base_url), Direction::PullOnly, false, &db_a).unwrap();
+    assert_eq!(live_fields(&db_a).len(), 2);
+
+    restore_hard(&db_a, &backup, false);
+    assert_eq!(live_fields(&db_a), vec!["in-backup".to_string()]);
+    run_sync_with_client(Some(&relay.base_url), Direction::Both, false, &db_a).unwrap();
+
+    let mut fields = live_fields(&db_a);
+    fields.sort();
+    assert_eq!(fields, vec!["from-b".to_string(), "in-backup".to_string()]);
+    assert_eq!(sync_state::get_cluster_generation(&db_a).unwrap(), 0);
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // SCENARIO 8 — a replaced relay (da-od2t)
 // ──────────────────────────────────────────────────────────────────────────

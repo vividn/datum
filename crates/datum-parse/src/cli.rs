@@ -1054,6 +1054,11 @@ pub struct RestoreArgs {
     /// nothing. Without it a restore REPLACES (da-5fooh): the live entries
     /// become exactly the backup's, and the rest are tombstoned.
     pub merge: bool,
+    /// `--hard` (da-rle8g) — the database becomes exactly the backup:
+    /// every entry, tombstone and history row is dropped and the backup's
+    /// entries written verbatim. The sync generation moves only with
+    /// `--cluster`.
+    pub hard: bool,
     /// `--yes` / `-y` — replace without asking, on a TTY, even when the
     /// restore deletes entries.
     pub yes: bool,

@@ -172,6 +172,7 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
     let mut dry_run = false;
     let mut cluster = false;
     let mut merge = false;
+    let mut hard = false;
     let mut yes = false;
     for tok in tail {
         match split_flag(tok) {
@@ -180,9 +181,16 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
             FlagSplit::Long("dry-run") => dry_run = true,
             FlagSplit::Long("cluster") => cluster = true,
             FlagSplit::Long("merge") => merge = true,
+            FlagSplit::Long("hard") => hard = true,
             FlagSplit::Long("yes") | FlagSplit::Short('y') => yes = true,
             f => return Err(unknown_flag(f)),
         }
+    }
+    if hard && (merge || force) {
+        return Err(ParseError::InvalidArg(format!(
+            "--hard and --{} refuse together: --hard writes the backup verbatim over an emptied database",
+            if merge { "merge" } else { "force" }
+        )));
     }
     let path = require_pos(&pos, "<PATH>")?;
     Ok(RestoreArgs {
@@ -190,6 +198,7 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
         force,
         dry_run,
         merge,
+        hard,
         yes,
         show: Show::default(),
         cluster,

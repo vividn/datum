@@ -301,6 +301,9 @@ pub(crate) struct RestoreReport {
     pub deleted: usize,
     /// A replace (the default), not a `--merge`.
     pub replace: bool,
+    /// What a `--hard` restore dropped (would drop, in a dry run); `None`
+    /// for any other restore.
+    pub hard: Option<datum_core::db::HardReplaceCounts>,
     /// Schema version the backup declares. `None` for headerless legacy
     /// backups, where we optimistically assume v1.
     pub header_schema_version: Option<u32>,
@@ -321,7 +324,7 @@ impl RestoreReport {
     }
 }
 
-pub fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
+pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
     use std::io::IsTerminal;
     let dry_run = args.dry_run;
     let silent = args.show == ShowFlag::None;
@@ -329,10 +332,42 @@ pub fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
     let force = args.force;
     let bump_cluster = args.cluster;
     let mode = Mode::of(&args);
+    // A hard restore asks as `db purge` does: the database's name, typed
+    // (da-rle8g).
+    if mode.hard && !dry_run && !args.yes {
+        // The counts come from a dry run, which `-` cannot afford: its
+        // stdin is the backup, read once — and no TTY to answer on.
+        let is_tty = args.path != STDIO_PATH && std::io::stdin().is_terminal();
+        let h = if is_tty {
+            let dry = Mode {
+                dry_run: true,
+                ..mode
+            };
+            restore_path(&args.path, db, dry)?.hard.unwrap_or_default()
+        } else {
+            Default::default()
+        };
+        super::db::confirm_by_name(
+            "restore --hard",
+            &format!(
+                "This replaces ALL data in {} with the backup ({} written); dropped: \
+                 {} live, {} tombstoned or superseded, {} in history.",
+                super::db::current_db_path(db).unwrap_or_default(),
+                h.written,
+                h.entries,
+                h.tombstones,
+                h.history
+            ),
+            &mut std::io::stdin().lock(),
+            is_tty,
+            &super::db::purge_confirmation_token(cli_db, db),
+        )?;
+    }
     // A replace that deletes asks first, on a TTY (da-5fooh). The count
     // comes from a dry run rather than a transaction held open across the
     // question, which would stall every other writer while a person reads.
     if mode.replace
+        && !mode.hard
         && !dry_run
         && !args.yes
         && args.path != STDIO_PATH
@@ -349,9 +384,19 @@ pub fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
         confirm_deletions(&preview, &mut std::io::stdin().lock())?;
     }
     let report = restore_path(&args.path, db, mode)?;
+    // The bump is the restore's, not its printout's: `--json` and
+    // `--show none` bump as quietly as they print.
+    let bump = bump_cluster && !dry_run;
+    let bump_quietly = || {
+        if bump {
+            bump_cluster_after_restore(db, false)
+        } else {
+            Ok(())
+        }
+    };
 
     if silent {
-        return Ok(());
+        return bump_quietly();
     }
 
     if json {
@@ -366,7 +411,10 @@ pub fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
             "updated": if report.dry_run { None } else { Some(report.updated) },
             "skipped": if report.dry_run { None } else { Some(report.skipped) },
             "deleted": if report.dry_run { None } else { Some(report.deleted) },
-            "mode": if report.replace { "replace" } else { "merge" },
+            "mode": if report.hard.is_some() { "hard" } else if report.replace { "replace" } else { "merge" },
+            "dropped": report.hard.map(|h| serde_json::json!({
+                "entries": h.entries, "tombstones": h.tombstones, "history": h.history,
+            })),
             "header": {
                 "schema_version": report.header_schema_version,
                 "source_db": report.header_source_db,
@@ -377,7 +425,7 @@ pub fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
             "warnings": report.warnings,
         });
         println!("{}", serde_json::to_string_pretty(&out)?);
-        return Ok(());
+        return bump_quietly();
     }
 
     for w in &report.warnings {
@@ -389,7 +437,12 @@ pub fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
             report.total_processed()
         );
         println!("  Would insert: {}", report.inserted);
-        if report.replace {
+        if let Some(h) = report.hard {
+            println!(
+                "  Would drop: {} live, {} tombstoned or superseded, {} in history",
+                h.entries, h.tombstones, h.history
+            );
+        } else if report.replace {
             println!("  Would update: {}", report.updated);
             println!("  Would skip (already there): {}", report.skipped);
             println!("  Would delete: {}", report.deleted);
@@ -402,6 +455,11 @@ pub fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
         if let Some((from, to)) = report.migration {
             println!("  Schema migration: v{from} → v{to} (applied to every entry)");
         }
+    } else if let Some(h) = report.hard {
+        println!(
+            "✓ Restore --hard: {} written; dropped {} live, {} tombstoned or superseded, {} in history",
+            report.inserted, h.entries, h.tombstones, h.history
+        );
     } else if report.replace {
         println!(
             "✓ Restore: {} inserted, {} updated, {} skipped, {} deleted",
@@ -414,8 +472,8 @@ pub fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
         );
     }
 
-    if bump_cluster && !dry_run {
-        bump_cluster_after_restore(db)?;
+    if bump {
+        bump_cluster_after_restore(db, true)?;
     }
     Ok(())
 }
@@ -423,9 +481,11 @@ pub fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
 /// da-ws1q sub-5: after a non-dry-run restore, optionally bump the
 /// sync cluster's generation so peers see GenerationMismatchError
 /// instead of re-pushing their stale snapshot on top of the restored
-/// state. No-op when the local DB has no `sync_state.cluster_id` —
-/// nothing has ever been synced, so there are no peers to invalidate.
-fn bump_cluster_after_restore(db: &Db) -> Result<()> {
+/// state, and rewind the push watermark so the next push carries the
+/// snapshot into the new generation. No-op when the local DB has no
+/// `sync_state.cluster_id` — nothing has ever been synced, so there are
+/// no peers to invalidate.
+fn bump_cluster_after_restore(db: &Db, print: bool) -> Result<()> {
     use datum_core::sync_state;
 
     let Some(cluster_id) = sync_state::get_cluster_id(db).ok().flatten() else {
@@ -434,19 +494,32 @@ fn bump_cluster_after_restore(db: &Db) -> Result<()> {
         );
         return Ok(());
     };
+    // The new generation starts empty on the relay; the whole restored
+    // snapshot is what the next push must send, not only what changed
+    // since the last one (da-rle8g). Rewound BEFORE the bump: a failure
+    // here leaves the relay where it was. A bump that then fails leaves
+    // the old generation, which still holds what the restore dropped, so
+    // a sync can bring it back — the warning below says so.
+    sync_state::reset_push_mark(db, 0)?;
     match bump_generation_for_current_server(&cluster_id) {
         Ok(new_generation) => {
             // Stamp the new generation locally so the next push from
             // this device carries it; otherwise we'd hit our own
             // GenerationMismatch on the next sync.
             sync_state::set_cluster_generation(db, new_generation).ok();
-            println!("  cluster {cluster_id}: bumped to generation {new_generation}");
-            println!("  peers on the old generation will see GenerationMismatchError next sync");
+            if print {
+                println!("  cluster {cluster_id}: bumped to generation {new_generation}");
+                println!(
+                    "  peers on the old generation will see GenerationMismatchError next sync"
+                );
+            }
         }
         Err(e) => {
             eprintln!("⚠ db restore: local restore succeeded, but cluster bump failed: {e:#}");
             eprintln!(
-                "  re-run `datum sync` once you can reach the relay; peers may otherwise re-push their stale state on top of the restored snapshot"
+                "  the generation did not move, so the other devices will not go back to this restore, \
+                 and a sync can bring back what it removed. Re-run this restore with --cluster \
+                 once the relay is reachable, before syncing"
             );
         }
     }
@@ -480,6 +553,7 @@ fn confirm_deletions(preview: &RestoreReport, stdin: &mut dyn std::io::BufRead) 
 struct Mode {
     strategy: ConflictStrategy,
     replace: bool,
+    hard: bool,
     dry_run: bool,
 }
 
@@ -492,6 +566,7 @@ impl Mode {
                 ConflictStrategy::Ignore
             },
             replace: !args.merge,
+            hard: args.hard,
             dry_run: args.dry_run,
         }
     }
@@ -613,11 +688,13 @@ fn restore_from_reader<R: std::io::BufRead>(
     let Mode {
         strategy,
         replace,
+        hard,
         dry_run,
     } = mode;
     let mut report = RestoreReport {
         dry_run,
         replace,
+        hard: hard.then(Default::default),
         ..Default::default()
     };
 
@@ -716,7 +793,16 @@ fn restore_from_reader<R: std::io::BufRead>(
     }
     reading.finish(read);
 
-    if replace {
+    if hard {
+        // As a replace: a header over zero entries empties the database.
+        if header.is_some() || !pending.is_empty() {
+            let mut inserting = Progress::new("restore: inserting", Some(pending.len()));
+            let counts = db.hard_replace_entries(&pending, !dry_run, &mut |n| inserting.tick(n))?;
+            inserting.finish(pending.len());
+            report.inserted = counts.written;
+            report.hard = Some(counts);
+        }
+    } else if replace {
         // Input with neither a header nor an entry is not a backup of
         // anything, so it replaces nothing; a header over zero entries is
         // a backup of an empty database, and empties this one.
@@ -902,10 +988,12 @@ mod tests {
                 force: false,
                 dry_run: false,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
+            None,
             &dst,
         )
         .unwrap();
@@ -992,10 +1080,12 @@ mod tests {
                 force: false,
                 dry_run: false,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
+            None,
             &dst,
         )
         .unwrap();
@@ -1031,10 +1121,12 @@ mod tests {
                 force: false,
                 dry_run: false,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
+            None,
             &dst,
         )
         .unwrap();
@@ -1053,10 +1145,12 @@ mod tests {
                 force: false,
                 dry_run: false,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
+            None,
             &dst,
         )
         .unwrap();
@@ -1121,10 +1215,12 @@ mod tests {
                 force: true,
                 dry_run: false,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
+            None,
             &dst,
         )
         .unwrap();
@@ -1234,6 +1330,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
@@ -1288,6 +1385,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
@@ -1333,6 +1431,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
@@ -1369,6 +1468,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
@@ -1418,6 +1518,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
@@ -1468,6 +1569,7 @@ mod tests {
                 force: false,
                 dry_run: true,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
@@ -1516,10 +1618,12 @@ mod tests {
                 force: false,
                 dry_run: false,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
+            None,
             &dst,
         )
         .unwrap();
@@ -1536,6 +1640,7 @@ mod tests {
                 force: false,
                 dry_run: true,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
@@ -1586,10 +1691,12 @@ mod tests {
                 force: false,
                 dry_run: false,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
             },
+            None,
             &dst,
         )
         .unwrap();
@@ -1601,6 +1708,7 @@ mod tests {
                 force: true, // conflict strategy = Update
                 dry_run: true,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
@@ -1645,6 +1753,7 @@ mod tests {
                 force: false,
                 dry_run: true,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
@@ -1695,6 +1804,7 @@ mod tests {
                 force: false,
                 dry_run: true,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
@@ -1753,6 +1863,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
@@ -1779,6 +1890,7 @@ mod tests {
             force: false,
             dry_run,
             merge: false,
+            hard: false,
             yes: false,
             show: ShowFlag::Default,
             cluster: false,
@@ -1938,6 +2050,7 @@ mod tests {
             .unwrap();
         let merge = |dry_run| RestoreArgs {
             merge: true,
+            hard: false,
             ..replace_args(&path, dry_run)
         };
         let dry = cmd_restore_with_report(merge(true), &db).unwrap();
@@ -2024,6 +2137,7 @@ mod tests {
                 force: false,
                 dry_run: false,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,
@@ -2067,6 +2181,7 @@ mod tests {
                 force: false,
                 dry_run: true,
                 merge: true,
+                hard: false,
                 yes: false,
                 show: ShowFlag::Default,
                 cluster: false,

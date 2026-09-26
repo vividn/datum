@@ -489,11 +489,12 @@ mod tests {
                 force: false,
                 dry_run: false,
                 merge: true,
+                hard: false,
                 yes: true,
                 show: ShowFlag::None,
                 cluster: false,
             };
-            super::super::backup_restore::cmd_restore(args, &restored).unwrap();
+            super::super::backup_restore::cmd_restore(args, None, &restored).unwrap();
             assert_eq!(
                 restored.count_entries().unwrap(),
                 b.entry_count,
