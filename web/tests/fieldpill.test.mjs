@@ -206,9 +206,10 @@ describe('the gesture, and the pill it mints', () => {
 	// one of them, so da-8810n made the panel a step BEHIND the pill: hold
 	// again and the bubbles opened. vividn then decided the other way — «mint
 	// the pill, let's remove that -t/dur panel» — so the gesture has ONE
-	// meaning at every count (da-e78x6). Held twice, the field is simply
-	// pilled twice.
-	test('shift+click mints it too, and the same gesture again still only mints', async () => {
+	// meaning at every count (da-e78x6). And then that it TOGGLES (da-05oit):
+	// «long pressing or right clicking on a field again after a pill is
+	// added should remove the pill/filter».
+	test('shift+click mints it too, and the same gesture again takes it away', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
 			await ready(app);
@@ -229,8 +230,8 @@ describe('the gesture, and the pill it mints', () => {
 				0,
 				'the hold opened something'
 			);
-			assert.equal(await fieldPill(page).count(), 1, 'the pill did not survive a second hold');
-			assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), '');
+			assert.equal(await fieldPill(page).count(), 0, 'the pill survived a second hold');
+			assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), null);
 			assert.equal((await app.echoes()).at(-1), 'switch mood happy', 'the second hold ran a command');
 			assert.deepEqual(app.errors, []);
 		});
@@ -245,7 +246,7 @@ describe('the gesture, and the pill it mints', () => {
 		['a finger', { device: { isMobile: true, hasTouch: true }, viewport: { width: 390, height: 844 } }]
 	]) {
 		const finger = pointer === 'a finger';
-		test(`a long press with ${pointer} mints, and mints again on an already-pilled field`, async () => {
+		test(`a long press with ${pointer} mints, and a second takes it away`, async () => {
 			// The finger is the one test on its screen: an app of its own.
 			await (finger ? withApp : onPage)(async (app) => {
 				const { page } = app;
@@ -266,7 +267,7 @@ describe('the gesture, and the pill it mints', () => {
 					0,
 					'the second long press opened something'
 				);
-				assert.equal(await fieldPill(page).count(), 1);
+				assert.equal(await fieldPill(page).count(), 0, 'the second long press kept the pill');
 				assert.equal((await app.echoes()).at(-1), 'switch mood happy', 'a long press logged');
 				assert.deepEqual(app.errors, []);
 			}, options);
@@ -414,6 +415,33 @@ describe('what narrows to it', () => {
 			await page.waitForFunction(() => document.querySelector('.stats code.argv')?.textContent === 'stats');
 			await page.waitForFunction(
 				() => document.querySelector('.stats .body')?.textContent?.includes('all fields')
+			);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// da-05oit: the second hold is the filter's off switch, and a LOCKED
+	// pill goes too — the reader asked for it by name. «Whole again» is read
+	// off the widgets, not the pill: stats is bare `stats` and the tail
+	// lists mood again.
+	test('a second right click takes a locked pill away, and stats and the tail are whole again', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await ready(app);
+			await hold(page, 'coffee');
+			await page.waitForFunction(() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee');
+			await page.waitForFunction(() =>
+				[...document.querySelectorAll('section[data-pane="tail"] tbody td.field')].every((td) => td.textContent.trim() === 'coffee')
+			);
+			await fieldPill(page).locator('button.lock').click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar .pill.field .lock')?.ariaPressed === 'true');
+
+			await hold(page, 'coffee');
+			await fieldPill(page).waitFor({ state: 'detached' });
+			assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), null);
+			await page.waitForFunction(() => document.querySelector('.stats code.argv')?.textContent === 'stats');
+			await page.waitForFunction(() =>
+				[...document.querySelectorAll('section[data-pane="tail"] tbody td.field')].some((td) => td.textContent.trim() === 'mood')
 			);
 			assert.deepEqual(app.errors, []);
 		});
@@ -789,6 +817,22 @@ describe('a field pill under a selected hid is context', () => {
 			);
 			await fieldPill(page).and(page.locator('.context.locked')).waitFor();
 			assert.match(await ring(), / 0px 0px 0px 2px inset$/, 'a locked context pill looks unlocked');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// da-05oit: «Only that field's pill goes. Other pills, and the typed
+	// line, stay.»
+	test('a second hold takes the field pill alone: the hid and the typed line stay', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await pillThenSelect(app);
+			await page.locator(BOX).fill('hello');
+
+			await hold(page, 'coffee');
+			await fieldPill(page).waitFor({ state: 'detached' });
+			assert.equal(await hidPill(page).count(), 1, 'the hid pill went with the field');
+			assert.equal(await page.locator(BOX).inputValue(), 'hello', 'the typed line went with the field');
 			assert.deepEqual(app.errors, []);
 		});
 	});

@@ -54,16 +54,20 @@
 	of the page is narrowed to it: the stats widget and the tail show that
 	field, the commands widget keeps the commands that take one, and the
 	pictures outline that field's own marks. The pill is minted in the
-	field's own colour and cleared like any other pill, by its ×.
+	field's own colour and cleared like any other pill, by its × — or by
+	holding the same field again.
 
 	HOLD HAS EXACTLY THAT ONE MEANING (vividn, 2026-09-22: «mint the pill,
 	let's remove that -t/dur panel»). It had two for a day — da-8810n put
 	the pill first and left the older `-t` / `dur` / `note` panel a second
 	hold away — and da-e78x6 took the panel out rather than keep a gesture
-	that means two things. So a hold on a field already pilled mints it
-	again and opens nothing, and the panel's jobs are reached elsewhere: a
-	TIME or a DURATION comes from the time cursor as a `-t` / `dur=` pill
-	(a click or a drag on any drawn picture, $lib/cursor.ts) or is typed,
+	that means two things. So a hold on a field already pilled opens
+	nothing: it TOGGLES, taking that pill away, locked or not (da-05oit —
+	vividn: «long pressing or right clicking on a field again after a pill is
+	added should remove the pill/filter»). The panel's jobs are reached
+	elsewhere: a TIME or a DURATION comes from the time cursor as a `-t` /
+	`dur=` pill (a click or a drag on any drawn picture, $lib/cursor.ts)
+	or is typed,
 	and both ride after the field pill into the very argv a press composes
 	(`withPills` in $lib/selection.ts); a multi-state field's states are
 	the list a PLAIN press already fills the bar with (da-g635); and `note`
@@ -289,13 +293,15 @@
 	 * shift+click and the menu key, which are the four vividn named
 	 * (da-8810n).
 	 *
-	 * ONE meaning: the field goes on the bar as a pill, in its own colour,
-	 * and the page narrows to it. A field already pilled is pilled again —
-	 * there is no second step to disambiguate against, because the `-t` /
-	 * `dur` / `note` panel that used to be it is gone (da-e78x6).
+	 * A TOGGLE: the field goes on the bar as a pill, in its own colour,
+	 * and the page narrows to it; held again while its pill is there, the
+	 * pill goes — locked or not — and the page is whole again (da-05oit).
+	 * vividn: «long pressing or right clicking on a field again after a pill
+	 * is added should remove the pill/filter». Only that field's pill:
+	 * every other pill and the typed line stay.
 	 */
 	function hold(button: FieldButton) {
-		setFieldPill(button.field, button.color);
+		setFieldPill($fieldPill === button.field ? null : button.field, button.color);
 	}
 
 	/**
