@@ -18,8 +18,7 @@ name = "mood"
 verb = "switch"
 pos = 0.2
 size = 0.1
-# Written in the order a day goes; kit `states` are a sorted map, so the
-# spec lists them alphabetically (see the PR for da-1mkej).
+# In the order a day goes, which the spec keeps (da-dtmlv).
 states.focused = { color = "#7048e8" }
 states.happy = { color = "#fab005" }
 states.calm = { color = "#20c997" }
@@ -72,6 +71,8 @@ color = "#339af0"
 glyph = "◆"
 pos = 0.93
 size = 0.06
+# Millilitres; `hydration` sums it.
+subfields.amount = { value_type = "number" }
 
 [[alias]]
 name = "cof"

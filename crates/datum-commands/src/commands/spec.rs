@@ -166,13 +166,15 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             .glyph_by
             .as_mut()
             .context("--glyph-map needs --glyph-by <KEY> to say which data key it maps")?;
+        let mut map = by.map.clone().into_iter().collect();
         set_pairs(
-            &mut by.map,
+            &mut map,
             &args.glyph_map,
             "--glyph-map",
             "VALUE=CHAR",
             check_glyph,
         )?;
+        by.map = map.into_iter().collect();
     }
     // da-45wgz: `--icon FILE` reads the file; an empty value clears. An
     // icon from `--from-json` is vetted the same way, so none is stored
@@ -363,6 +365,25 @@ fn check_icon(svg: &str) -> Result<String> {
     Ok(svg.to_string())
 }
 
+/// A kit's field meets `spec set`'s checks (da-dtmlv): every glyph is one
+/// printable character, and the icon is vetted and stored as `--icon`'s is.
+pub(crate) fn check_presentation(spec: &mut FieldSpec) -> Result<()> {
+    let pres = &mut spec.presentation;
+    let by = pres.glyph_by.iter().flat_map(|b| b.map.values());
+    for glyph in pres
+        .glyph
+        .iter()
+        .chain(pres.state_glyphs.values())
+        .chain(by)
+    {
+        check_glyph("glyph", glyph)?;
+    }
+    if let Some(svg) = &pres.icon {
+        pres.icon = Some(check_icon(svg)?);
+    }
+    Ok(())
+}
+
 /// Vet a STORED icon again where it is drawn (da-45wgz): a spec can arrive
 /// by sync or a hand edit without passing `spec set`, so the stored text is
 /// untrusted whatever route it came by. One that fails is dropped — its dots
@@ -512,8 +533,7 @@ fn render_spec_text(spec: &FieldSpec) {
         println!("  icon: {:.1} kB of SVG", icon.len() as f64 / 1024.0);
     }
     if let Some(by) = &spec.presentation.glyph_by {
-        let mut values: Vec<_> = by.map.iter().map(|(v, g)| format!("{v}={g}")).collect();
-        values.sort();
+        let values: Vec<_> = by.map.iter().map(|(v, g)| format!("{v}={g}")).collect();
         println!("  glyph by {}: {}", by.key, values.join(" "));
     }
     if let Some(states) = &spec.allowed_states {

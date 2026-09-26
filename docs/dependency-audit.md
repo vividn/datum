@@ -50,6 +50,7 @@ Tool versions used: `cargo-tree` (cargo 1.91), `cargo-machete 0.9.x`, `cargo-blo
 | `flate2` | 1 | gzip layer of backup `.tar.gz` | runtime (cold) |
 | `tar` | 0.4 | Backup/restore archive | runtime (cold) |
 | `toml` | 0.8 | Read/write `dbs.toml` registry + `datumrc.toml` user config, kit TOML | runtime |
+| `indexmap` (`serde`) | 2 | A kit's `states` in the order written (already in the tree via `toml_edit`) | runtime |
 | `url` | 2 | Parse sync-server URL + WebAuthn origin | runtime |
 | `notify` | 6 | Filesystem watcher in `datum-sync-agent` only | runtime (agent only) |
 | `libc` | 0.2 | `getuid`, `kill(pid,0)` for daemon-status pid checks | runtime |

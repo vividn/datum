@@ -1,8 +1,9 @@
 //! Kit format — installable, exportable, shareable bundles of field specs
-//! (slice 1: field-spec subset; slice 5: indices).
+//! (slice 1: field specs, whole since da-dtmlv; slice 5: indices).
 //!
-//! A kit is a TOML file declaring named fields with absolute layout (pos /
-//! size / color / states). On install, each `[[field]]` is converted into a
+//! A kit is a TOML file declaring named fields — each one's whole spec, as
+//! `spec set` would store it (see [`FieldEntry`]). An `icon` is embedded in
+//! the kit as SVG text, under `spec set`'s cap. On install, each `[[field]]` is converted into a
 //! [`FieldSpec`] `spec` entry whose data carries `kit_id` = the kit's name;
 //! on uninstall, every row tagged with that `kit_id` is deleted. Round-trip
 //! (install → export → diff) is required to be clean.
@@ -18,11 +19,12 @@
 
 use std::collections::BTreeMap;
 
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::action::Action;
 use crate::error::{DatumError, Result};
-use crate::field_spec::{Alias, FieldSpec, Render, DEFAULT_FIELD_HEIGHT};
+use crate::field_spec::{Alias, FieldSpec, GlyphBy, Render, SubfieldSpec, DEFAULT_FIELD_HEIGHT};
 
 /// Top-level TOML schema. `[kit]` is required; `[[field]]`, `[[view]]`,
 /// `[[alias]]`, `[[index]]`, and `[[command]]` may all be empty.
@@ -74,6 +76,10 @@ pub struct KitMeta {
 /// Unlike [`FieldSpec`], everything optional in TOML is `Option<T>` so the
 /// presence/absence is preserved through round-trip and merge with defaults
 /// happens at install time only.
+///
+/// It declares the field's whole spec (da-dtmlv): every key `spec set` can
+/// set, except `derived_aliases`, which is computed on save. A kit that
+/// wants its own list sets `no_autoalias` and declares `[[alias]]` entries.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldEntry {
     pub name: String,
@@ -81,6 +87,18 @@ pub struct FieldEntry {
     /// means. Required (da-c8mh): a kit that installs a field says what
     /// the field is.
     pub verb: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Named keys of the entry's `data`, with their constraints.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub subfields: BTreeMap<String, SubfieldSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id_template: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub strict: bool,
+    /// No aliases are derived for the field: `[[alias]]` entries are its own.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_autoalias: bool,
     /// Position perpendicular to the time axis, fraction `[0.0, 1.0]`.
     /// Maps to [`FieldSpec::y`] for the current axis-orientation.
     #[serde(default)]
@@ -95,6 +113,14 @@ pub struct FieldEntry {
     /// `--glyph` (da-1mkej: a kit could colour a field but not give it one).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glyph: Option<String>,
+    /// A glyph chosen by the value of one data key — `--glyph-by` and
+    /// `--glyph-map`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glyph_by: Option<GlyphBy>,
+    /// A custom SVG icon, the whole `<svg>` element, embedded in the kit
+    /// and vetted as `spec set --icon` vets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
     /// When true, the field is hidden from views by default: the spec's
     /// `render = false`, over any `render` beside it.
     #[serde(default)]
@@ -116,10 +142,11 @@ pub struct FieldEntry {
     /// Data-keys declaration (`-k` flag surface).
     #[serde(default)]
     pub data_keys: Vec<String>,
-    /// Allowed states with per-state overrides. Keyed by state name; emit
-    /// order is alphabetical (BTreeMap) so round-trip is diff-clean.
-    #[serde(default, rename = "states", skip_serializing_if = "BTreeMap::is_empty")]
-    pub states: BTreeMap<String, StateSpec>,
+    /// Allowed states with per-state overrides, keyed by state name, in
+    /// the order the kit wrote them: that order is the states' rank, which
+    /// the states ring places them by (da-dtmlv).
+    #[serde(default, rename = "states", skip_serializing_if = "IndexMap::is_empty")]
+    pub states: IndexMap<String, StateSpec>,
     /// Free-form tags used by views and kit commands to group fields
     /// (e.g. `tags = ["chore"]`). Round-trips into [`FieldSpec::tags`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -324,6 +351,9 @@ pub struct StateSpec {
     /// This state's own glyph, over the field's — the spec's `--state-glyph`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glyph: Option<String>,
+    /// What the state means — the spec's `--state-description`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 impl KitToml {
@@ -465,8 +495,15 @@ impl FieldEntry {
         };
 
         let mut spec = FieldSpec::new(&self.name, action);
+        spec.description = self.description;
+        spec.subfields = self.subfields.into_iter().collect();
+        spec.id_template = self.id_template;
+        spec.strict = self.strict;
+        spec.no_autoalias = self.no_autoalias;
         spec.color = color_resolved;
         spec.presentation.glyph = self.glyph;
+        spec.presentation.glyph_by = self.glyph_by;
+        spec.presentation.icon = self.icon;
         spec.presentation.z_index = self.z_index;
         spec.id_keys = self.id_keys;
         spec.data_keys = self.data_keys;
@@ -498,6 +535,9 @@ impl FieldEntry {
                         .state_glyphs
                         .insert(name.clone(), g.clone());
                 }
+                if let Some(d) = &s.description {
+                    spec.state_descriptions.insert(name.clone(), d.clone());
+                }
             }
             spec.allowed_states = Some(allowed);
         }
@@ -516,7 +556,7 @@ impl FieldEntry {
     /// that were never set on install survive as `None` so the round-trip
     /// is clean.
     pub fn from_spec(spec: &FieldSpec) -> Self {
-        let states: BTreeMap<String, StateSpec> = if let Some(allowed) = &spec.allowed_states {
+        let states: IndexMap<String, StateSpec> = if let Some(allowed) = &spec.allowed_states {
             allowed
                 .iter()
                 .map(|name| {
@@ -525,12 +565,13 @@ impl FieldEntry {
                         StateSpec {
                             color: spec.state_colors.get(name).cloned(),
                             glyph: spec.presentation.state_glyphs.get(name).cloned(),
+                            description: spec.state_descriptions.get(name).cloned(),
                         },
                     )
                 })
                 .collect()
         } else {
-            BTreeMap::new()
+            IndexMap::new()
         };
 
         // Anchored specs project `relative_to`/anchor_pos_ratio/anchor_size_ratio
@@ -550,10 +591,17 @@ impl FieldEntry {
         Self {
             name: spec.field.clone(),
             verb: spec.verb.to_string(),
+            description: spec.description.clone(),
+            subfields: spec.subfields.clone().into_iter().collect(),
+            id_template: spec.id_template.clone(),
+            strict: spec.strict,
+            no_autoalias: spec.no_autoalias,
             pos,
             size,
             color: spec.color.clone(),
             glyph: spec.presentation.glyph.clone(),
+            glyph_by: spec.presentation.glyph_by.clone(),
+            icon: spec.presentation.icon.clone(),
             hidden: false,
             z_index: spec.presentation.z_index,
             relative_to,
@@ -894,20 +942,8 @@ states.japan = {}
     #[test]
     fn rejects_invalid_verb() {
         let entry = FieldEntry {
-            name: "x".into(),
             verb: "stop".into(),
-            pos: None,
-            size: None,
-            color: None,
-            glyph: None,
-            hidden: false,
-            z_index: None,
-            relative_to: None,
-            id_keys: vec![],
-            data_keys: vec![],
-            states: BTreeMap::new(),
-            tags: vec![],
-            render: None,
+            ..FieldEntry::from_spec(&FieldSpec::new("x", Action::Occur))
         };
         let err = entry.into_spec(None).unwrap_err();
         let msg = format!("{err}");
@@ -916,32 +952,19 @@ states.japan = {}
 
     #[test]
     fn into_spec_carries_states_and_colors() {
+        let happy = StateSpec {
+            color: Some("#00ff00".into()),
+            ..StateSpec::default()
+        };
         let entry = FieldEntry {
-            name: "mood".into(),
-            verb: "switch".into(),
             pos: Some(0.2),
             size: Some(0.1),
             color: Some("#ff0000".into()),
-            glyph: None,
-            hidden: false,
-            z_index: None,
-            relative_to: None,
-            id_keys: vec![],
-            data_keys: vec![],
-            states: {
-                let mut m = BTreeMap::new();
-                m.insert(
-                    "happy".into(),
-                    StateSpec {
-                        color: Some("#00ff00".into()),
-                        glyph: None,
-                    },
-                );
-                m.insert("sad".into(), StateSpec::default());
-                m
-            },
-            tags: vec![],
-            render: None,
+            states: IndexMap::from([
+                ("happy".into(), happy),
+                ("sad".into(), StateSpec::default()),
+            ]),
+            ..FieldEntry::from_spec(&FieldSpec::new("mood", Action::Switch))
         };
         let spec = entry.into_spec(Some("#ff0000".into())).unwrap();
         assert_eq!(spec.field, "mood");

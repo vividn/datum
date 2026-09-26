@@ -558,6 +558,7 @@ dependencies = [
  "chrono",
  "datum-core",
  "datum-parse",
+ "indexmap",
  "md-5",
  "rand 0.8.6",
  "rusqlite",

@@ -21,7 +21,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// Visual layout + visibility for a single field.
 ///
@@ -116,8 +116,9 @@ pub struct PresentationSpec {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct GlyphBy {
     pub key: String,
+    /// Sorted, so a kit exports it the same way every time.
     #[serde(default)]
-    pub map: HashMap<String, String>,
+    pub map: BTreeMap<String, String>,
 }
 
 /// Visibility setting for a [`super::FieldSpec`] across visual surfaces.
@@ -447,7 +448,7 @@ mod tests {
             state_glyphs: HashMap::from([("decaf".into(), "○".into())]),
             glyph_by: Some(GlyphBy {
                 key: "size".into(),
-                map: HashMap::from([("small".into(), "•".into()), ("large".into(), "☕".into())]),
+                map: BTreeMap::from([("small".into(), "•".into()), ("large".into(), "☕".into())]),
             }),
             ..PresentationSpec::default()
         }

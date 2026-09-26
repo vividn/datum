@@ -24,10 +24,12 @@ use super::DerivedAliasKind;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubfieldSpec {
     /// If true, the CLI will error if this key is not provided.
+    #[serde(default)]
     pub required: bool,
     /// Expected JSON type hint (for documentation and basic validation).
     pub value_type: SubfieldType,
     /// If true, this key's value is incorporated into the entry slug.
+    #[serde(default)]
     pub in_slug: bool,
     /// Default value if not supplied.
     pub default: Option<serde_json::Value>,

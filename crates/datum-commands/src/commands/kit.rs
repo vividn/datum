@@ -254,7 +254,10 @@ fn install_toml(
             color: resolved.clone(),
             ..entry
         };
-        specs.push(entry_with_resolved.into_spec(resolved)?);
+        let mut spec = entry_with_resolved.into_spec(resolved)?;
+        super::spec::check_presentation(&mut spec)
+            .with_context(|| format!("kit field '{}'", spec.field))?;
+        specs.push(spec);
     }
 
     // Cycle detection on the kit's own anchor graph. Cycles abort install —
