@@ -930,8 +930,82 @@ fn subprocess_kit_command_honours_a_leading_db() {
     ] {
         let seen = elsewhere.run(&argv);
         assert_ok(&seen, &argv.join(" "));
-        assert!(String::from_utf8_lossy(&seen.stdout).starts_with("day (UTC)"));
+        assert!(String::from_utf8_lossy(&seen.stdout).starts_with("day "));
     }
+}
+
+/// A kit view groups by the day an entry was logged on with
+/// `local_day(occur_time, occur_time_offset)`, where `date(occur_time)` is
+/// the UTC day: 00:30 in Berlin (+02:00) is the 10th locally and the 9th in
+/// UTC. A timeless entry has no day (da-tgsqs).
+#[test]
+fn subprocess_kit_view_groups_by_the_entrys_local_day() {
+    let env = Env::new();
+    let kit = r#"[kit]
+name = "days"
+
+[[view]]
+name = "by_local"
+sql = "SELECT local_day(occur_time, occur_time_offset) AS day, COUNT(*) AS n FROM entries WHERE field = 'water' GROUP BY day ORDER BY day"
+
+[[view]]
+name = "by_utc"
+sql = "SELECT date(occur_time) AS day, COUNT(*) AS n FROM entries WHERE field = 'water' GROUP BY day ORDER BY day"
+"#;
+    assert_ok(
+        &env.run_with_stdin(&["kit", "install", "-"], kit),
+        "kit install",
+    );
+    let berlin = ["-d", "2026-09-10", "-t", "0030", "-z", "Europe/Berlin"];
+    assert_ok(
+        &env.run(&[&["occur", "water"][..], &berlin].concat()),
+        "occur",
+    );
+    assert_ok(&env.run(&["occur", "water", "-T"]), "occur -T");
+
+    let view = |name| {
+        let out = env.run(&["view", name, "--format", "json"]);
+        assert_ok(&out, name);
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap()
+    };
+    assert_eq!(
+        view("by_local"),
+        serde_json::json!([{"day": null, "n": 1}, {"day": "2026-09-10", "n": 1}])
+    );
+    assert_eq!(
+        view("by_utc"),
+        serde_json::json!([{"day": null, "n": 1}, {"day": "2026-09-09", "n": 1}])
+    );
+}
+
+/// The sample kit's `hydration` counts a glass on the local day it was
+/// drunk, not the UTC one (da-tgsqs).
+#[test]
+fn subprocess_hydration_groups_by_the_local_day() {
+    let env = Env::new();
+    let kit = include_str!("../../../kits/sample.toml");
+    assert_ok(
+        &env.run_with_stdin(&["kit", "install", "-"], kit),
+        "kit install -",
+    );
+    let glass = [
+        "occur",
+        "water",
+        "amount=250",
+        "-d",
+        "2026-09-10",
+        "-t",
+        "0030",
+        "-z",
+        "Europe/Berlin",
+    ];
+    assert_ok(&env.run(&glass), "occur water");
+    let out = env.run(&["hydration"]);
+    assert_ok(&out, "hydration");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let row = |l: &str| l.split_whitespace().collect::<Vec<_>>() == ["2026-09-10", "1", "250"];
+    assert!(stdout.lines().any(row), "{stdout}");
+    assert!(!stdout.contains("2026-09-09"), "{stdout}");
 }
 
 /// `fields --json`: every field, logged or declared, with its spec and the

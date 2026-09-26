@@ -93,12 +93,11 @@ name = "wrap"
 expands_to = "end work , switch mood calm"
 description = "stop for the day"
 
-# Water by day. `occur_time` is UTC and SQLite has no zone database, so the
-# day is the UTC day — a kit view cannot bucket by the entry's own zone.
+# Water by day — each entry's own local day, not the UTC one.
 [[view]]
 name = "water_by_day"
 sql = """
-SELECT date(occur_time)                        AS day,
+SELECT local_day(occur_time, occur_time_offset) AS day,
        COUNT(*)                                AS glasses,
        SUM(json_extract(data, '$.amount'))     AS ml
 FROM entries
@@ -109,9 +108,8 @@ GROUP BY day
 [[command]]
 name = "hydration"
 view = "water_by_day"
-help = "Water drunk per day (UTC days), under 1.5 l in yellow"
+help = "Water drunk per day, under 1.5 l in yellow"
 columns = ["day", "glasses", "ml"]
-labels = { day = "day (UTC)" }
 sort = "day"
 
 [[command.color_rules]]

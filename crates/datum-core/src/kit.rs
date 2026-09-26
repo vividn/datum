@@ -154,6 +154,16 @@ pub struct FieldEntry {
 /// [`validate_view_entry`] and enforced read-only at execution time
 /// (`PRAGMA query_only = 1` plus statement-kind checks in
 /// `Db::execute_view`); this entry just round-trips the SQL text.
+///
+/// `occur_time` is UTC, so `date(occur_time)` groups by the UTC day. A view
+/// groups by the day the entry was logged on with `local_day(occur_time,
+/// occur_time_offset)` → `YYYY-MM-DD`, in the entry's own offset (null for
+/// a timeless entry):
+///
+/// ```sql
+/// SELECT local_day(occur_time, occur_time_offset) AS day, COUNT(*) AS n
+/// FROM entries WHERE field = 'water' AND deleted_at IS NULL GROUP BY day
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewEntry {
     pub name: String,

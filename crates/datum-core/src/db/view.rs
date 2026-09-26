@@ -18,6 +18,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use chrono::{DateTime, Utc};
+use rusqlite::functions::FunctionFlags;
 use rusqlite::types::ValueRef;
 use serde_json::{Number, Value as JsonValue};
 
@@ -210,6 +212,7 @@ impl Db {
             ));
         }
 
+        register_local_day(&self.conn)?;
         self.conn.execute_batch("PRAGMA query_only = 1;")?;
         // Returning true from the progress handler interrupts the query;
         // the flag distinguishes our deadline from a genuine SQL error.
@@ -232,6 +235,9 @@ impl Db {
         // Remove the handler so the shared connection's normal work (the
         // logging hot path) doesn't keep paying the per-callback cost.
         self.conn.progress_handler(0, None::<fn() -> bool>);
+        // `local_day` is the views' alone, never a writer's. A failed
+        // removal leaves only a pure read-only function behind.
+        let _ = self.conn.remove_function(LOCAL_DAY, 2);
         // Always clear query_only, even when the query failed, so a later
         // `datum log …` against the same connection can still write. If
         // the clear itself fails, say so loudly: the shared connection
@@ -254,6 +260,32 @@ impl Db {
             other => other,
         }
     }
+}
+
+const LOCAL_DAY: &str = "local_day";
+
+/// `local_day(occur_time, occur_time_offset)` → `YYYY-MM-DD`, the day in the
+/// offset the entry was logged with (da-tgsqs), as `duration_sum` buckets it
+/// and `stats` reads it: SQLite has no zone data, so `date(occur_time)` is
+/// the UTC day. A null offset is UTC; a timeless entry gives null.
+fn register_local_day(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    conn.create_scalar_function(
+        LOCAL_DAY,
+        2,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| {
+            let Some(occur) = ctx.get::<Option<String>>(0)? else {
+                return Ok(None);
+            };
+            let utc: DateTime<Utc> = occur
+                .parse()
+                .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
+            let offset = ctx.get::<Option<i32>>(1)?.unwrap_or(0);
+            Ok(Some(crate::views::duration_sum::local_date_for(
+                &utc, offset,
+            )))
+        },
+    )
 }
 
 /// A view entry's data as an [`InstalledView`].
@@ -408,6 +440,34 @@ mod tests {
             .execute_view("WITH x(v) AS (SELECT 2) SELECT v FROM x")
             .unwrap();
         assert_eq!(r.rows, vec![vec![json!(2)]]);
+    }
+
+    /// `local_day` is the day in the entry's own offset, UTC without one,
+    /// and null for a timeless entry — and it exists only while a view
+    /// runs, so nothing that writes can call it (da-tgsqs).
+    #[test]
+    fn local_day_is_a_views_alone() {
+        let db = db();
+        let r = db
+            .execute_view(
+                "SELECT local_day('2026-09-09T22:30:00Z', 120), \
+                        local_day('2026-09-09T22:30:00Z', NULL), \
+                        local_day(NULL, 120)",
+            )
+            .unwrap();
+        assert_eq!(
+            r.rows,
+            vec![vec![json!("2026-09-10"), json!("2026-09-09"), json!(null)]]
+        );
+
+        let err = db
+            .conn()
+            .query_row("SELECT local_day('2026-09-09T22:30:00Z', 120)", [], |r| {
+                r.get::<_, String>(0)
+            })
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no such function"), "{err}");
     }
 
     #[test]

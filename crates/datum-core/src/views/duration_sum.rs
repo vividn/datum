@@ -79,7 +79,9 @@ impl View for DurationSumView {
     }
 }
 
-fn local_date_for(utc: &DateTime<Utc>, offset_minutes: i32) -> String {
+/// The `YYYY-MM-DD` day `utc` falls on at `offset_minutes` east of UTC —
+/// also what a kit view's `local_day()` answers (`db/view.rs`).
+pub(crate) fn local_date_for(utc: &DateTime<Utc>, offset_minutes: i32) -> String {
     let offset = chrono::FixedOffset::east_opt(offset_minutes * 60)
         .unwrap_or_else(|| chrono::FixedOffset::east_opt(0).unwrap());
     utc.with_timezone(&offset).format("%Y-%m-%d").to_string()
