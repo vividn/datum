@@ -103,6 +103,33 @@ pub struct DayviewFieldInput {
     /// [`DayviewPoint::icon`] is set `<use>`s it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// How the field's dots are sized against the one the layout picks.
+    #[serde(default, skip_serializing_if = "GlyphSize::is_default")]
+    pub glyph_size: GlyphSize,
+}
+
+/// An occur dot's size (da-c05v1): `scale` multiplies the radius the
+/// layout picks, `aspect` is the mark's width over its height. Blocks
+/// ignore both; `1, 1` draws what was drawn before either existed.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct GlyphSize {
+    pub scale: f64,
+    pub aspect: f64,
+}
+
+impl GlyphSize {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+impl Default for GlyphSize {
+    fn default() -> Self {
+        Self {
+            scale: 1.0,
+            aspect: 1.0,
+        }
+    }
 }
 
 /// One block (closed or ongoing) on a field row. Blocks may extend beyond
@@ -326,6 +353,17 @@ pub struct RenderedField {
     /// As [`DayviewFieldInput::icon`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// [`GlyphSize::aspect`]; the scale is already in each point's `r`.
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub glyph_aspect: f64,
+}
+
+fn one() -> f64 {
+    1.0
+}
+
+fn is_one(n: &f64) -> bool {
+    *n == 1.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -605,7 +643,8 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             let r = five_min_px
                 .min(cross_extent / 2.0)
                 .min(time_axis_extent / 4.0)
-                .clamp(1.0, 10.0);
+                .clamp(1.0, 10.0)
+                * f.glyph_size.scale;
 
             for p in &f.points {
                 if p.time_ms < day.start_ms || p.time_ms > day.end_ms {
@@ -635,6 +674,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                 blocks,
                 points,
                 icon: f.icon.clone(),
+                glyph_aspect: f.glyph_size.aspect,
             });
         }
 
@@ -910,6 +950,7 @@ mod tests {
                     blocks: vec![],
                     points: vec![],
                     icon: None,
+                    glyph_size: Default::default(),
                 },
                 DayviewFieldInput {
                     field: "has_data".into(),
@@ -927,6 +968,7 @@ mod tests {
                         icon: false,
                     }],
                     icon: None,
+                    glyph_size: Default::default(),
                 },
             ],
         };
@@ -963,6 +1005,7 @@ mod tests {
             }],
             points: vec![],
             icon: None,
+            glyph_size: Default::default(),
         };
         let day = DayviewDayInput {
             date: None,
@@ -1011,6 +1054,7 @@ mod tests {
                 }],
                 points: vec![],
                 icon: None,
+                glyph_size: Default::default(),
             }],
         };
         let cfg = horizontal(DayviewConfig {
@@ -1085,6 +1129,7 @@ mod tests {
                 }],
                 points: vec![],
                 icon: None,
+                glyph_size: Default::default(),
             }],
         };
         let cfg = horizontal(DayviewConfig {
@@ -1220,6 +1265,7 @@ mod tests {
                 }],
                 points: vec![],
                 icon: None,
+                glyph_size: Default::default(),
             }],
         };
         let cfg = DayviewConfig {

@@ -450,6 +450,7 @@ mod tests {
                     icon: false,
                 }],
                 icon: None,
+                glyph_size: Default::default(),
             }],
         };
         let cfg = DayviewConfig {
@@ -528,6 +529,7 @@ mod tests {
                     }],
                     points: vec![],
                     icon: None,
+                    glyph_size: Default::default(),
                 },
                 DayviewFieldInput {
                     field: "coffee".into(),
@@ -545,6 +547,7 @@ mod tests {
                         icon: false,
                     }],
                     icon: None,
+                    glyph_size: Default::default(),
                 },
             ],
         };
@@ -632,6 +635,7 @@ mod tests {
                 }],
                 points: vec![],
                 icon: None,
+                glyph_size: Default::default(),
             }],
         };
         let cfg = DayviewConfig {
@@ -715,6 +719,7 @@ mod tests {
                 }],
                 points: vec![],
                 icon: None,
+                glyph_size: Default::default(),
             }],
         };
         let cfg = DayviewConfig {
@@ -784,6 +789,7 @@ mod tests {
                 }],
                 points: vec![],
                 icon: None,
+                glyph_size: Default::default(),
             }],
         };
         let cfg = DayviewConfig {
@@ -847,6 +853,7 @@ mod tests {
                 }],
                 points: vec![],
                 icon: None,
+                glyph_size: Default::default(),
             }],
         };
         let cfg = DayviewConfig {

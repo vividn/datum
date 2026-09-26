@@ -573,8 +573,9 @@ pub(crate) fn build_dayview_fields(
             z_index: resolved.z_index,
             blocks,
             points,
-            // The now pane draws a dot's glyph, not its icon.
+            // The now pane draws a dot's glyph, not its icon, at its own size.
             icon: None,
+            glyph_size: Default::default(),
         });
     }
     Ok(out)

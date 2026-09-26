@@ -192,9 +192,20 @@ export interface Place {
 	relative_to?: string;
 	anchor_pos_ratio?: number;
 	anchor_size_ratio?: number;
+	/** An occur dot's size and width over height (da-c05v1); absent is 1. */
+	glyph_scale?: number;
+	glyph_aspect?: number;
 }
 
-const PLACE_KEYS = ['y', 'height', 'relative_to', 'anchor_pos_ratio', 'anchor_size_ratio'] as const;
+const PLACE_KEYS = [
+	'y',
+	'height',
+	'relative_to',
+	'anchor_pos_ratio',
+	'anchor_size_ratio',
+	'glyph_scale',
+	'glyph_aspect'
+] as const;
 
 /** The placement keys `spec` sets, and only those. */
 export const placeOf = (spec: Spec): Place =>

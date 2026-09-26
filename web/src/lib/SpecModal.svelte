@@ -460,7 +460,7 @@
 					on:click={addKey}>+ key</button
 				>
 			{:else if tab === 'placement'}
-				<Placement {field} bind:place />
+				<Placement {field} occur={verb === 'occur'} bind:place />
 			{:else}
 				<label class="auto"
 					><input type="checkbox" class="autoalias" bind:checked={autoalias} /> made from the verb and states</label

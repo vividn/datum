@@ -39,6 +39,13 @@ describe('the spec it saves', () => {
 		assert.equal('relative_to' in freed || 'anchor_pos_ratio' in freed || 'anchor_size_ratio' in freed, false);
 		assert.deepEqual([freed.y, freed.height], [0.1, 0.2]);
 	});
+
+	test("an occur dot's size is placement too: kept when set, dropped when the tab leaves it at 1", () => {
+		const sized = { ...base, glyph_scale: 2, glyph_aspect: 0.5 };
+		assert.deepEqual(placeOf(sized), { y: 0.3, height: 0.2, glyph_scale: 2, glyph_aspect: 0.5 });
+		const back = JSON.parse(JSON.stringify(editedSpec(sized, edit({ y: 0.3, height: 0.2, glyph_scale: undefined }))));
+		assert.equal('glyph_scale' in back || 'glyph_aspect' in back, false);
+	});
 });
 
 describe('the Placement tab', () => {
@@ -153,6 +160,70 @@ describe('the Placement tab', () => {
 			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /tied to nobody, which has no spec/);
 			await page.keyboard.press('Escape');
 			assert.equal(await dismissed, null);
+		});
+	});
+
+	// da-c05v1: an occur field sizes its dot here, on the band, as it moves.
+	test("an occur field's size slider scales its dot on the band and in the spec; aspect widens it alone", async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'coffee', '--verb', 'occur']);
+			// Not today: the band draws the day of its latest dot instead.
+			await app.run(['occur', 'coffee', '-d', '-2', '-t', '1000']);
+
+			let { saved } = await openPlacement(page, 'coffee');
+			assert.match(await page.locator(`${MODAL} .size`).innerText(), /no dot today/);
+			const dot = page.locator(`${MODAL} .band g.field[data-field="coffee"] .point-fg`);
+			const was = await dot.boundingBox();
+			assert.ok(was && was.width > 0, 'the dot is drawn');
+
+			/** Drag `name`'s slider to `at` of its width; resolves to the factor it now says. */
+			async function slide(name, at) {
+				const input = page.locator(`${MODAL} input[name="${name}"]`);
+				const box = await input.boundingBox();
+				const y = box.y + box.height / 2;
+				await page.mouse.move(box.x + box.width * 0.4, y);
+				await page.mouse.down();
+				await page.mouse.move(box.x + box.width * ((0.4 + at) / 2), y);
+				await page.mouse.move(box.x + box.width * at, y);
+				await page.mouse.up();
+				return Math.round(2 ** Number(await input.inputValue()) * 100) / 100;
+			}
+			const near = (a, b, what) => assert.ok(Math.abs(a / b - 1) < 0.03, `${what}: ${a} vs ${b}`);
+
+			const scale = await slide('glyph_scale', 0.8);
+			assert.ok(scale > 2, `dragged up to ×${scale}`);
+			const big = await dot.boundingBox();
+			near(big.width, was.width * scale, 'width scales');
+			near(big.height, was.height * scale, 'height scales');
+
+			const aspect = await slide('glyph_aspect', 0.15);
+			assert.ok(aspect < 0.7, `dragged down to ${aspect}`);
+			const narrow = await dot.boundingBox();
+			near(narrow.width, big.width * aspect, 'aspect narrows it');
+			near(narrow.height, big.height, 'and leaves its height');
+
+			await done(page, saved);
+			const shown = await spec(app, 'coffee');
+			assert.deepEqual([shown.glyph_scale, shown.glyph_aspect], [scale, aspect]);
+
+			// Opened again, the CLI draws it at the saved size: what the preview showed.
+			({ saved } = await openPlacement(page, 'coffee'));
+			const drawn = await dot.boundingBox();
+			near(drawn.width, narrow.width, 'drawn width');
+			near(drawn.height, narrow.height, 'drawn height');
+			await page.keyboard.press('Escape');
+			assert.equal(await saved, null);
+		});
+	});
+
+	test('a block field has no size to set', async () => {
+		await shared.solo(async (app) => {
+			await app.run(['track', 'work', '--verb', 'start']);
+			const { saved } = await openPlacement(app.page, 'work');
+			assert.equal(await app.page.locator(`${MODAL} .size`).count(), 0);
+			await app.page.keyboard.press('Escape');
+			assert.equal(await saved, null);
 		});
 	});
 });

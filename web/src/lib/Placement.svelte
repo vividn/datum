@@ -12,6 +12,11 @@
 	(⛓), the same drag writes the RATIOS to that neighbour and not `y` /
 	`height`, so the lane moves when its anchor does. Nothing is written
 	here: `place` is bound to the modal, which saves it with the rest.
+
+	An occur field also sizes its dot here (da-c05v1): «size» scales the
+	mark and «aspect» makes it wider or narrower, both drawn on the band as
+	they move. A day with none of the field's dots shows nothing to size,
+	so the band is then the day of its latest one.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -22,6 +27,8 @@
 
 	export let field: string;
 	export let place: Place;
+	/** Whether the field is an occur field, the one whose dots are sized here. */
+	export let occur = false;
 
 	/** The day's height in pixels: tall enough to take a lane's edge with a finger. */
 	const H = 160;
@@ -41,18 +48,37 @@
 	/** The fields today's band draws, whose names label their lanes. */
 	let named: string[] = [];
 	let drag: { mode: 'move' | 'top' | 'bottom'; at: number; y: number; h: number } | null = null;
+	/** The day the band draws when it is not today's. */
+	let sample = '';
+
+	/** The size the band draws the dots at: the saved one, which `place` starts as. */
+	const saved = { scale: place.glyph_scale ?? 1, aspect: place.glyph_aspect ?? 1 };
+
+	/** The day of the field's latest dot, `YYYY-MM-DD` as its own zone reads it. */
+	async function lastDot(): Promise<string | undefined> {
+		const r = await run(['tail', field, '-n', '50', '--json']);
+		if (r.code !== 0) return undefined;
+		const rows = JSON.parse(r.stdout).rows as { verb: string; time: string | null }[];
+		return rows.findLast((row) => row.verb === 'point')?.time?.slice(0, 10);
+	}
 
 	onMount(async () => {
-		const [picture, listing] = await Promise.all([
-			run(bandArgv(Math.floor(band.clientWidth), H)),
-			run(['fields', '--json'])
-		]);
+		const argv = bandArgv(Math.floor(band.clientWidth), H);
+		let [picture, listing] = await Promise.all([run(argv), run(['fields', '--json'])]);
 		if (listing.code === 0) {
 			lanes = Object.fromEntries(
 				(JSON.parse(listing.stdout) as ({ field: string } & Lane)[]).map((f) => [f.field, f])
 			);
 		}
 		svg = picture.code === 0 ? inlineSvg(picture.stdout) : null;
+		if (occur && svg && !svg.querySelector(`[data-field="${CSS.escape(field)}"] .point-fg`)) {
+			const day = await lastDot();
+			if (day) {
+				picture = await run([...argv, '--end-date', day]);
+				svg = picture.code === 0 ? inlineSvg(picture.stdout) : null;
+				sample = day;
+			}
+		}
 		if (!svg) return;
 		band.prepend(svg);
 		named = [...svg.querySelectorAll('g.field')].map((g) => g.getAttribute('data-field') ?? '');
@@ -90,7 +116,9 @@
 	 */
 	function put(y: number, h: number, to = place.relative_to) {
 		const a = to ? lanes[to] : undefined;
-		place =
+		// The dot's size is not the lane's, and goes along as it was.
+		const { glyph_scale, glyph_aspect } = place;
+		const at =
 			to && a?.spec && a.height > 0
 				? {
 						relative_to: to,
@@ -98,7 +126,16 @@
 						anchor_size_ratio: round(h / a.height)
 					}
 				: { y: round(y), height: round(h) };
+		place = { ...at, glyph_scale, glyph_aspect };
 	}
+
+	/** A size factor from its slider, which runs in powers of two (¼× to 8×, ¼ to 4 wide); 1 is unset. */
+	const factor = (log2: number) => {
+		const n = Math.round(2 ** log2 * 100) / 100;
+		return n === 1 ? undefined : n;
+	};
+	$: scale = place.glyph_scale ?? 1;
+	$: aspect = place.glyph_aspect ?? 1;
 
 	function grab(mode: 'move' | 'top' | 'bottom', e: PointerEvent) {
 		e.preventDefault();
@@ -125,6 +162,18 @@
 		const k = lane.h / drawn.height;
 		own.setAttribute('transform', `matrix(1 0 0 ${k} 0 ${(lane.y - drawn.y * k) * H})`);
 	}
+
+	// The dots follow the sliders: each mark is scaled about its own centre
+	// from the size the band drew it at. A CSS transform replaces the
+	// mark's own stretch, so the width is scaled from an unstretched one.
+	// Only this field's marks: the origin would move another's stretch.
+	$: if (own && occur)
+		for (const mark of own.querySelectorAll<SVGElement>('.point-fg'))
+			Object.assign(mark.style, {
+				transformBox: 'fill-box',
+				transformOrigin: 'center',
+				transform: `scale(${(scale * aspect) / saved.scale}, ${scale / saved.scale})`
+			});
 
 	$: relation = !anchor
 		? ''
@@ -173,6 +222,36 @@
 			<span class="edge bottom" on:pointerdown={(e) => grab('bottom', e)}></span>
 		</div>
 	</div>
+
+	{#if occur}
+		<div class="size">
+			<label>
+				size ×{scale.toFixed(2)}
+				<input
+					type="range"
+					name="glyph_scale"
+					min="-2"
+					max="3"
+					step="0.05"
+					value={Math.log2(scale)}
+					on:input={(e) => (place = { ...place, glyph_scale: factor(+e.currentTarget.value) })}
+				/>
+			</label>
+			<label>
+				aspect {aspect.toFixed(2)}
+				<input
+					type="range"
+					name="glyph_aspect"
+					min="-2"
+					max="2"
+					step="0.05"
+					value={Math.log2(aspect)}
+					on:input={(e) => (place = { ...place, glyph_aspect: factor(+e.currentTarget.value) })}
+				/>
+			</label>
+			{#if sample}<span class="unchosen">no dot today — drawn on {sample}</span>{/if}
+		</div>
+	{/if}
 
 	<p class="readout">
 		{#if anchor}
@@ -265,6 +344,25 @@
 
 	.edge.bottom {
 		bottom: -4px;
+	}
+
+	.size {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem 1rem;
+		align-items: center;
+		font-size: 0.75rem;
+		color: var(--ink);
+	}
+
+	.size label {
+		display: flex;
+		gap: 0.4rem;
+		align-items: center;
+	}
+
+	.size input {
+		touch-action: none;
 	}
 
 	.readout {

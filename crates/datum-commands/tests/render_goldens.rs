@@ -666,6 +666,7 @@ fn dayview_scene_single_block() -> DayviewLayoutResult {
                 icon: false,
             }],
             icon: None,
+            glyph_size: Default::default(),
         }],
     };
     let cfg = DayviewConfig {
@@ -717,6 +718,7 @@ fn dayview_scene_multi_state() -> DayviewLayoutResult {
             ],
             points: vec![],
             icon: None,
+            glyph_size: Default::default(),
         }],
     };
     let cfg = DayviewConfig {
@@ -762,6 +764,7 @@ fn dayview_scene_today_now_line() -> DayviewLayoutResult {
             }],
             points: vec![],
             icon: None,
+            glyph_size: Default::default(),
         }],
     };
     let cfg = DayviewConfig {
@@ -825,6 +828,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
                 icon: false,
             }],
             icon: None,
+            glyph_size: Default::default(),
         }],
     };
     let cfg = DayviewConfig {
@@ -893,6 +897,7 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
             }],
             points: vec![],
             icon: None,
+            glyph_size: Default::default(),
         }],
     };
     let cfg = DayviewConfig {

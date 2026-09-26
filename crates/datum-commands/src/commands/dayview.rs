@@ -23,7 +23,7 @@ use datum_core::integrity::ListFilter;
 use datum_core::time::{DatumTime, Zone};
 use datum_layout::dayview::{
     compute_dayview, day_height_for_extent, DayviewConfig, DayviewDayInput, DayviewFieldInput,
-    Orientation,
+    GlyphSize, Orientation,
 };
 use datum_layout::dayview_svg::{render_dayview_svg, wrap_dayview_svg_in_html};
 use datum_parse::cli::DayviewOrientation;
@@ -524,6 +524,15 @@ fn build_day_fields(
             z_index: resolved.z_index,
             blocks,
             points,
+            // A stored spec may not have passed `spec set` (sync, a hand
+            // edit), so a factor that is not above 0 draws as unset.
+            glyph_size: spec.as_ref().map_or_else(Default::default, |s| {
+                let factor = |n: Option<f64>| n.filter(|n| *n > 0.0 && n.is_finite());
+                GlyphSize {
+                    scale: factor(s.presentation.glyph_scale).unwrap_or(1.0),
+                    aspect: factor(s.presentation.glyph_aspect).unwrap_or(1.0),
+                }
+            }),
             icon: spec.and_then(|s| s.presentation.icon),
         });
     }
@@ -1031,6 +1040,60 @@ mod tests {
         assert!(
             fields.iter().all(|f| f.field != "stretch_routine"),
             "render.dayview=false must drop the band",
+        );
+    }
+
+    /// da-c05v1 review: a spec saved without `spec set`'s checks (sync, a
+    /// hand edit) may carry a factor that is not above 0; it draws as unset
+    /// rather than as `r="NaN"`, and a good one still reaches the layout.
+    #[test]
+    fn a_stored_glyph_factor_not_above_zero_draws_as_unset() {
+        use chrono::TimeZone;
+        use datum_core::entry::Verb;
+        use datum_core::field_spec::FieldSpec;
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        let utc = Utc.with_ymd_and_hms(2026, 4, 27, 9, 0, 0).unwrap();
+        let dt = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
+        let day = |h: i64| {
+            Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+                .unwrap()
+                .timestamp_millis()
+                + h * 3_600_000
+        };
+        let sized = |scale: f64, aspect: f64| {
+            let mut spec = FieldSpec::new("coffee", Action::Occur);
+            spec.presentation.glyph_scale = Some(scale);
+            spec.presentation.glyph_aspect = Some(aspect);
+            db.save_field_spec(&spec).unwrap();
+            let fields = build_day_fields(&db, day(0), day(24), day(24)).unwrap();
+            fields
+                .into_iter()
+                .find(|f| f.field == "coffee")
+                .unwrap()
+                .glyph_size
+        };
+        db.insert_entry(&Entry::new(
+            "coffee",
+            Verb::Point,
+            None,
+            None,
+            Some(dt),
+            None,
+            "test",
+        ))
+        .unwrap();
+
+        for (scale, aspect) in [(-1.0, 0.0), (f64::NAN, f64::INFINITY)] {
+            assert_eq!(sized(scale, aspect), GlyphSize::default());
+        }
+        assert_eq!(
+            sized(2.0, 0.5),
+            GlyphSize {
+                scale: 2.0,
+                aspect: 0.5
+            }
         );
     }
 

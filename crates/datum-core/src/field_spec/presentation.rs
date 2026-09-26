@@ -109,6 +109,17 @@ pub struct PresentationSpec {
     /// the dot keeps its glyph, which is `●` unless one is named.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+
+    /// How big an occur dot's mark is drawn, as a multiple of the size the
+    /// dayview picks for it (da-c05v1). `None` is 1. Points only: a
+    /// block's size is its lane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glyph_scale: Option<f64>,
+
+    /// The mark's width over its height (da-c05v1): 2 draws it twice as
+    /// wide at the same height. `None` is 1, and blocks ignore it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glyph_aspect: Option<f64>,
 }
 
 /// [`PresentationSpec::glyph_by`]: the data key to read and the glyph for

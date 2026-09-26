@@ -189,6 +189,16 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     if let Some(svg) = &spec.presentation.icon {
         spec.presentation.icon = Some(check_icon(svg)?);
     }
+    // da-c05v1: 1 is what an unset factor draws, so it is stored as unset
+    // — from a flag or from `--from-json`.
+    let pres = &mut spec.presentation;
+    for (slot, given) in [
+        (&mut pres.glyph_scale, args.glyph_scale),
+        (&mut pres.glyph_aspect, args.glyph_aspect),
+    ] {
+        *slot = given.or(*slot).filter(|&n| n != 1.0);
+    }
+    check_factors(&spec)?;
     // da-2sr: --track / --ignore on `spec set` write switch entries rather
     // than mutating the spec. The flags are kept on the parser surface for
     // backwards compatibility; they no longer touch the spec.
@@ -362,6 +372,21 @@ fn check_icon(svg: &str) -> Result<String> {
     Ok(svg.to_string())
 }
 
+/// A glyph's size factors are numbers above zero (da-c05v1) — whatever
+/// route they came by, `--from-json` included.
+fn check_factors(spec: &FieldSpec) -> Result<()> {
+    let pres = &spec.presentation;
+    for (key, n) in [
+        ("glyph_scale", pres.glyph_scale),
+        ("glyph_aspect", pres.glyph_aspect),
+    ] {
+        if let Some(n) = n.filter(|n| !(*n > 0.0 && n.is_finite())) {
+            anyhow::bail!("{key} must be a number above 0, got {n}");
+        }
+    }
+    Ok(())
+}
+
 /// A kit's field meets `spec set`'s checks (da-dtmlv): every glyph is one
 /// printable character, and the icon is vetted and stored as `--icon`'s is.
 pub(crate) fn check_presentation(spec: &mut FieldSpec) -> Result<()> {
@@ -529,6 +554,12 @@ fn render_spec_text(spec: &FieldSpec) {
     if let Some(by) = &spec.presentation.glyph_by {
         let values: Vec<_> = by.map.iter().map(|(v, g)| format!("{v}={g}")).collect();
         println!("  glyph by {}: {}", by.key, values.join(" "));
+    }
+    if let Some(n) = spec.presentation.glyph_scale {
+        println!("  glyph scale: ×{n}");
+    }
+    if let Some(n) = spec.presentation.glyph_aspect {
+        println!("  glyph aspect: {n}");
     }
     if let Some(states) = &spec.allowed_states {
         println!("  states:");

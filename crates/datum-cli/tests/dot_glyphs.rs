@@ -262,3 +262,146 @@ fn a_glyph_is_one_printable_character() {
     ]);
     assert!(err.contains("--glyph-map needs --glyph-by"), "{err}");
 }
+
+/// da-c05v1: `--glyph-scale` multiplies a dot's radius and `--glyph-aspect`
+/// stretches its mark along x about its centre; 1 is stored as unset, and
+/// a block's picture does not move for either.
+#[test]
+fn glyph_scale_and_aspect_size_a_dot_and_leave_blocks_alone() {
+    let env = Env::new();
+    env.run(&["occur", "coffee", "-t", "-30"]);
+    env.run(&["start", "work", "-t", "-60"]);
+    env.run(&["stop", "work", "-t", "-10"]);
+    let radii = || -> Vec<f64> {
+        let layout: serde_json::Value =
+            serde_json::from_str(&env.run(&["dayview", "-n", "2", "--show", "json"])).unwrap();
+        layout["days"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|d| d["fields"].as_array().unwrap().clone())
+            .filter(|f| f["field"] == "coffee")
+            .flat_map(|f| f["points"].as_array().unwrap().clone())
+            .map(|p| p["r"].as_f64().unwrap())
+            .collect()
+    };
+    let work = || {
+        let svg = env.run(&["dayview", "-n", "2"]);
+        let group = svg.split(r#"data-field="work""#).nth(1).unwrap();
+        group.split("</g>").next().unwrap().to_string()
+    };
+    let (r, blocks) = (radii(), work());
+    assert_eq!(r.len(), 1);
+    assert!(!env
+        .run(&["dayview", "-n", "2"])
+        .contains("transform=\"matrix("));
+
+    env.run(&[
+        "spec",
+        "set",
+        "coffee",
+        "--glyph-scale",
+        "2",
+        "--glyph-aspect",
+        "1.5",
+    ]);
+    env.run(&[
+        "spec",
+        "set",
+        "work",
+        "--glyph-scale",
+        "3",
+        "--glyph-aspect",
+        "2",
+    ]);
+    let json: serde_json::Value =
+        serde_json::from_str(&env.run(&["spec", "show", "coffee"])).unwrap();
+    assert_eq!(
+        (json["glyph_scale"].as_f64(), json["glyph_aspect"].as_f64()),
+        (Some(2.0), Some(1.5))
+    );
+    let text = env.run(&["spec", "show", "coffee", "--text"]);
+    assert!(
+        text.contains("glyph scale: ×2") && text.contains("glyph aspect: 1.5"),
+        "{text}"
+    );
+
+    assert_eq!(radii(), [r[0] * 2.0]);
+    let svg = env.run(&["dayview", "-n", "2"]);
+    let fg = svg.split(r#"<circle class="point-fg""#).nth(1).unwrap();
+    let cx: f64 = fg
+        .split(r#"cx=""#)
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(
+        fg.split('>')
+            .next()
+            .unwrap()
+            .contains(&format!(r#"transform="matrix(1.5 0 0 1 {} 0)""#, cx * -0.5)),
+        "stretched about its centre: {fg}"
+    );
+    assert_eq!(work(), blocks, "a block ignores both");
+
+    env.run(&[
+        "spec",
+        "set",
+        "coffee",
+        "--glyph-scale",
+        "1",
+        "--glyph-aspect",
+        "1",
+    ]);
+    let json: serde_json::Value =
+        serde_json::from_str(&env.run(&["spec", "show", "coffee"])).unwrap();
+    assert!(
+        json.get("glyph_scale").is_none() && json.get("glyph_aspect").is_none(),
+        "{json}"
+    );
+    assert_eq!(radii(), r);
+
+    for bad in ["0", "-1", "x"] {
+        let err = env.fails(&["spec", "set", "coffee", "--glyph-scale", bad]);
+        assert!(
+            err.contains("--glyph-scale expects a number"),
+            "{bad}: {err}"
+        );
+    }
+    json_refuses(
+        &env,
+        r#"{"field":"coffee","verb":"occur","glyph_aspect":-2}"#,
+    );
+}
+
+fn json_refuses(env: &Env, json: &str) {
+    let err = env.fails(&["spec", "set", "coffee", "--from-json", json]);
+    assert!(
+        err.contains("glyph_aspect must be a number above 0"),
+        "{err}"
+    );
+}
+
+/// da-c05v1 review: `--from-json` stores a factor of 1 as unset, as the
+/// flag does.
+#[test]
+fn a_glyph_factor_of_one_from_json_is_stored_unset() {
+    let env = Env::new();
+    env.run(&["occur", "coffee", "-t", "-30"]);
+    env.run(&[
+        "spec",
+        "set",
+        "coffee",
+        "--from-json",
+        r#"{"field":"coffee","verb":"occur","glyph_scale":1,"glyph_aspect":1}"#,
+    ]);
+    let json: serde_json::Value =
+        serde_json::from_str(&env.run(&["spec", "show", "coffee"])).unwrap();
+    assert!(
+        json.get("glyph_scale").is_none() && json.get("glyph_aspect").is_none(),
+        "{json}"
+    );
+}

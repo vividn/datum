@@ -333,6 +333,18 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 // symbol alone, in its own colour (da-qietq). The symbol
                 // lets the pointer through to it.
                 let icon = (field.icon.as_deref()).filter(|svg| p.icon && svg.starts_with("<svg"));
+                // da-c05v1: a mark wider or narrower than it is tall is
+                // stretched along x about its own centre; the disc under it,
+                // the pointer target, is not.
+                let a = field.glyph_aspect;
+                let stretch = if a == 1.0 {
+                    String::new()
+                } else {
+                    format!(
+                        r#" transform="matrix({a} 0 0 1 {dx} 0)""#,
+                        dx = cx * (1.0 - a)
+                    )
+                };
                 let _ = write!(
                     &mut out,
                     r#"<circle class="point-bg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" fill-opacity="0"{close}"#,
@@ -362,7 +374,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                     }
                     let _ = write!(
                         &mut out,
-                        r##"<use class="point-fg" href="#{id}" x="{x}" y="{y}" width="{d}" height="{d}" color="{c}" pointer-events="none"/>"##,
+                        r##"<use class="point-fg" href="#{id}" x="{x}" y="{y}" width="{d}" height="{d}" color="{c}" pointer-events="none"{stretch}/>"##,
                         x = cx - outer_r,
                         y = cy - outer_r,
                         d = outer_r * 2.0,
@@ -376,7 +388,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 let _ = match p.glyph.as_deref() {
                     None => write!(
                         &mut out,
-                        r#"<circle class="point-fg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" pointer-events="none"/>"#,
+                        r#"<circle class="point-fg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" pointer-events="none"{stretch}/>"#,
                         cx = cx,
                         cy = cy,
                         r = outer_r,
@@ -384,7 +396,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                     ),
                     Some(g) => write!(
                         &mut out,
-                        r#"<text class="point-fg" x="{cx}" y="{cy}" dy="0.35em" text-anchor="middle" font-size="{fs}" fill="{c}" pointer-events="none">{g}</text>"#,
+                        r#"<text class="point-fg" x="{cx}" y="{cy}" dy="0.35em" text-anchor="middle" font-size="{fs}" fill="{c}" pointer-events="none"{stretch}>{g}</text>"#,
                         cx = cx,
                         cy = cy,
                         fs = outer_r * 1.6,
@@ -991,6 +1003,7 @@ mod tests {
                         icon: false,
                     }],
                     icon: None,
+                    glyph_size: Default::default(),
                 }],
             }],
             now_ms: DAY_START + 12 * HOUR,

@@ -198,6 +198,7 @@ fn day_fields(start_ms: i64, end_ms: i64) -> Vec<DayviewFieldInput> {
             ],
             points: Vec::new(),
             icon: None,
+            glyph_size: Default::default(),
         },
         DayviewFieldInput {
             field: "coffee".into(),
@@ -215,6 +216,7 @@ fn day_fields(start_ms: i64, end_ms: i64) -> Vec<DayviewFieldInput> {
                 icon: false,
             }],
             icon: None,
+            glyph_size: Default::default(),
         },
         DayviewFieldInput {
             field: "project".into(),
@@ -229,6 +231,7 @@ fn day_fields(start_ms: i64, end_ms: i64) -> Vec<DayviewFieldInput> {
             )],
             points: Vec::new(),
             icon: None,
+            glyph_size: Default::default(),
         },
     ]
 }

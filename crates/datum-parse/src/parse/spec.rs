@@ -317,6 +317,24 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
                 out.icon = Some(v.to_string());
                 i += 1;
             }
+            FlagSplit::Long("glyph-scale") => {
+                let (v, ni) = take_value(tail, i, None, "--glyph-scale")?;
+                out.glyph_scale = Some(parse_factor(v, "--glyph-scale")?);
+                i = ni;
+            }
+            FlagSplit::LongAttached("glyph-scale", v) => {
+                out.glyph_scale = Some(parse_factor(v, "--glyph-scale")?);
+                i += 1;
+            }
+            FlagSplit::Long("glyph-aspect") => {
+                let (v, ni) = take_value(tail, i, None, "--glyph-aspect")?;
+                out.glyph_aspect = Some(parse_factor(v, "--glyph-aspect")?);
+                i = ni;
+            }
+            FlagSplit::LongAttached("glyph-aspect", v) => {
+                out.glyph_aspect = Some(parse_factor(v, "--glyph-aspect")?);
+                i += 1;
+            }
             // `-weird` is a field name someone typed, not a flag they
             // misspelled: a leading dash is the only reason it reaches
             // here, and the field slot is still empty. Report the
@@ -353,6 +371,16 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
     // already in a database becomes unreachable.
     crate::field_name::check(&out.field)?;
     Ok(out)
+}
+
+/// A size factor (da-c05v1): a number above zero.
+fn parse_factor(s: &str, flag: &str) -> Result<f64> {
+    match parse_position_f64(s, flag)? {
+        n if n > 0.0 && n.is_finite() => Ok(n),
+        _ => Err(ParseError::InvalidArg(format!(
+            "{flag} expects a number above 0, got '{s}'"
+        ))),
+    }
 }
 
 pub(crate) fn parse_position_f64(s: &str, flag: &str) -> Result<f64> {
