@@ -66,6 +66,8 @@ export interface FieldButton {
 	y: number;
 	/** The keys a log of it cannot do without (`requiredKeys`). */
 	required: string[];
+	/** Every key its spec declares (`keysOf`): the input line's frames. */
+	keys: Key[];
 }
 
 /**
@@ -99,22 +101,48 @@ export function shapeFor(spec: FieldSpec | undefined, observed: unknown[] = []):
 	return { kind: 'point' };
 }
 
+/** A key the spec declares for the field (`keysOf`). */
+export interface Key {
+	name: string;
+	/** What an unwritten key is filled with, as it would be typed. */
+	default?: string;
+	/** No default, and a log cannot do without it. */
+	required: boolean;
+}
+
+/**
+ * The keys the spec declares, in the order it declares them (da-31d1d):
+ * the `-K`/`-k` keys (`id_keys`, `data_keys`, `key` or `key=default`),
+ * then the subfields. A `-K`/`-k` key with no default is required; a
+ * subfield is when it says so and has none.
+ */
+export function keysOf(spec: FieldSpec | null | undefined): Key[] {
+	const flags = [...((spec?.id_keys as string[] | undefined) ?? []), ...((spec?.data_keys as string[] | undefined) ?? [])];
+	const subfields = Object.entries((spec?.subfields as Record<string, { required?: boolean; default?: unknown }> | undefined) ?? {});
+	const keys: Key[] = [
+		...flags.map((k) => {
+			const [name, ...rest] = k.split('=');
+			return rest.length ? { name, default: rest.join('='), required: false } : { name, required: true };
+		}),
+		...subfields.map(([name, s]) =>
+			s.default == null
+				? { name, required: !!s.required }
+				: { name, default: typeof s.default === 'string' ? s.default : JSON.stringify(s.default), required: false }
+		)
+	];
+	return keys.filter((k, i) => keys.findIndex((o) => o.name === k.name) === i);
+}
+
 /**
  * The keys a log of the field cannot do without (da-lxqqz): an `-K`/`-k`
  * key the spec declares without `=default` (`id_keys`, `data_keys`), and a
  * `required` subfield with no default. A key with a default is filled from
  * it, so it asks nothing of the person.
  */
-export function requiredKeys(spec: FieldSpec | null | undefined): string[] {
-	const keys = [...((spec?.id_keys as string[] | undefined) ?? []), ...((spec?.data_keys as string[] | undefined) ?? [])];
-	const subfields = Object.entries((spec?.subfields as Record<string, { required?: boolean; default?: unknown }> | undefined) ?? {});
-	return [
-		...new Set([
-			...keys.filter((k) => !k.includes('=')),
-			...subfields.filter(([, s]) => s.required && s.default == null).map(([name]) => name)
-		])
-	];
-}
+export const requiredKeys = (spec: FieldSpec | null | undefined): string[] =>
+	keysOf(spec)
+		.filter((k) => k.required)
+		.map((k) => k.name);
 
 /** One row of `datum fields --json`. */
 export interface FieldListing {
@@ -166,7 +194,8 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 				active: now.has(field),
 				current: state === true || (typeof state === 'string' && state !== '') ? state : undefined,
 				y,
-				required: requiredKeys(spec)
+				required: requiredKeys(spec),
+				keys: keysOf(spec)
 			};
 		});
 }

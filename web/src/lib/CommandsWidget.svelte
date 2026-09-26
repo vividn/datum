@@ -23,8 +23,9 @@
 	  outline (`use:act`, $lib/act.ts), so what looks as if it fires is
 	  what fires. So does `occur`, `start` or `end` under a FIELD pill
 	  (da-lxqqz, `fieldVerb`) — unless the field has a key with no
-	  default, when the tap writes `occur <field> ` and opens the keyboard
-	  for the keys, and the pill is spent onto the line.
+	  default, when the tap writes `occur <field> ` with the first key's
+	  `key=` (da-31d1d) and opens the keyboard for the keys, and the pill
+	  is spent onto the line.
 	- `Help` (da-vjwid) ARMS the page — `$lib/help.ts`: the next tap on a
 	  command, a widget or a pill is explained instead of acted on, and a
 	  second press on Help is `datum help`, and the answer opens in a modal.
@@ -71,6 +72,7 @@
 	import type { Pill } from './bar.js';
 	import type { FieldButton } from './fields.js';
 	import ButtonRows from './ButtonRows.svelte';
+	import { advance } from '$lib/keyframes.js';
 	import {
 		commandsUnder,
 		drills,
@@ -151,7 +153,9 @@
 		else {
 			// A field pill whose field wants keys typed: they go after it, so it is on the line, and spent.
 			const field = fieldVerb(command.name, pills, fields)?.field;
-			if (field) dispatch('line', { name: command.name, line: `${command.name} ${field.text} `, keyboard: true, spend: field });
+			// Straight into the first key's frame, as a space after the field would (da-31d1d).
+			const line = `${command.name} ${field?.text}`;
+			if (field) dispatch('line', { name: command.name, line: advance(line, fields) ?? `${line} `, keyboard: true, spend: field });
 			else dispatch('line', { name: command.name, line: `${command.name} `, keyboard: command.next !== 'tap' });
 		}
 	}

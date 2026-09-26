@@ -588,7 +588,7 @@ describe('a verb under a field pill', () => {
 		});
 	});
 
-	test('a required key with no default: single outline, the tap fills the line and opens the keyboard, nothing is logged', async () => {
+	test('a required key with no default: single outline, the tap fills the line to the first key and opens the keyboard, nothing is logged', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
 			await seedLines(app, KEYED);
@@ -598,16 +598,17 @@ describe('a verb under a field pill', () => {
 			assert.equal(await verb(page, 'occur').getAttribute('data-act'), 'fill');
 
 			await verb(page, 'occur').click();
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur tea ');
-			assert.deepEqual(await line(page), { text: 'occur tea ', focused: true });
+			// Straight into the first key's frame (da-31d1d).
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur tea amount=');
+			assert.deepEqual(await line(page), { text: 'occur tea amount=', focused: true });
 			assert.notEqual(await page.locator('.prompt-bar input').getAttribute('inputmode'), 'none', 'the keyboard stayed shut');
 			// The pill is on the line now, so it is spent rather than appended a second time.
 			await fieldPill(page).waitFor({ state: 'detached' });
 			await app.idle();
 			assert.equal((await app.allEntries()).length, before, 'the tap logged something');
 
-			await echoed(app, () => app.submit('occur tea 2'));
-			assert.equal((await app.echoes()).at(-1), 'occur tea 2');
+			await echoed(app, () => app.submit('occur tea amount=2'));
+			assert.equal((await app.echoes()).at(-1), 'occur tea amount=2');
 			assert.deepEqual(app.errors, []);
 		});
 	});

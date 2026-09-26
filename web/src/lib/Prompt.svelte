@@ -58,6 +58,16 @@
 	scroll and not two. (Two earlier rules stood here and he has ruled out
 	both: parking the pills at the box's right edge, and letting them reach
 	back over the `❯`.)
+
+	THE KEY FRAMES (da-31d1d, $lib/keyframes.ts): on `occur|start|end
+	<field>` for a field whose spec declares keys, each key written on the
+	line is outlined where it stands, drawn over the text by a copy of it in
+	the box's font, and each key still to write waits in a frame after the
+	text, before the pills — its name, and an optional key's default as
+	ghost text. A required key's frame is solid in the accent, an optional
+	one's dashed in the quiet line. A space at the end writes the next
+	key's `key=`, but not inside quotes; Enter writes each unwritten
+	optional key's default into the line and runs what the line then says.
 -->
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
@@ -65,7 +75,8 @@
 	import { clearLine, ghost, pills, registerLine, spent, submitLine, text } from '$lib/bar.js';
 	import { roleOf } from '$lib/commands.js';
 	import Pill from '$lib/Pill.svelte';
-	import { ready } from '$lib/layout/engine.js';
+	import { fields, ready } from '$lib/layout/engine.js';
+	import { advance, complete, framesOf, type Frame } from '$lib/keyframes.js';
 	import { repl } from '$lib/replStore.js';
 
 	/**
@@ -111,8 +122,38 @@
 	$: context = $pills.filter((p) => roleOf(p, $pills) === 'context');
 	$: args = $pills.filter((p) => !context.includes(p));
 
+	$: frames = framesOf($text, $fields);
+	/** The keys still to write, waiting in their frames after the text. */
+	$: waiting = frames?.filter((f) => f.from === undefined) ?? [];
+	/** An optional key written with nothing in it yet, at the end: its default is ghosted after it. */
+	$: trailing = frames?.find((f) => f.value === '' && f.default !== undefined && f.to === $text.length);
+	/** The line cut at the frames, for the copy that draws them. */
+	$: pieces = cut($text, frames ?? []);
+
+	function cut(line: string, frames: Frame[]): { text: string; frame?: Frame }[] {
+		const out: { text: string; frame?: Frame }[] = [];
+		let at = 0;
+		for (const frame of frames.filter((f) => f.from !== undefined).sort((a, b) => a.from! - b.from!)) {
+			out.push({ text: line.slice(at, frame.from) }, { text: line.slice(frame.from, frame.to), frame });
+			at = frame.to!;
+		}
+		return [...out, { text: line.slice(at) }];
+	}
+
+	/** Space advances to the next key's frame — at the end of the line, outside quotes. */
+	async function space(event: InputEvent): Promise<void> {
+		if (event.inputType !== 'insertText' || event.data !== ' ') return;
+		if (box.selectionStart !== $text.length || box.selectionEnd !== $text.length) return;
+		const next = advance($text, $fields);
+		if (next === null) return;
+		event.preventDefault();
+		$text = next;
+		await tick();
+		box.setSelectionRange(next.length, next.length);
+	}
+
 	/** What the pills follow: what is typed, or the ghost while one is up. */
-	$: mirrored = $text || ($ghost ? $ghost.line : '');
+	$: mirrored = $text ? $text + (trailing?.default ?? '') : $ghost ? $ghost.line : '';
 	/**
 	 * THE LINE IS ONE SCROLLING RUN: the box, a gap, then the pills.
 	 *
@@ -183,7 +224,7 @@
 	}
 
 	function submit(): void {
-		const line = $text;
+		const line = complete($text, $fields);
 		if (!line.trim()) return;
 		$text = '';
 		draft = '';
@@ -236,6 +277,7 @@
 			bind:this={box}
 			bind:value={$text}
 			on:keydown={recall}
+			on:beforeinput={space}
 			on:pointerdown={keyboard}
 			on:blur={keyboard}
 			disabled={!$ready}
@@ -250,6 +292,13 @@
 		<!-- Keyed on the object, so a second press restarts the fade rather
 		     than joining the first one's. Hidden while there is anything in
 		     the box: the ghost has the placeholder's slot and nothing else. -->
+		<!-- The key frames, drawn over the text by a copy of it: only the
+		     outlines and a default's ghost are seen. One line, so no
+		     whitespace of the template's lands in a `pre`; and in ONE inline
+		     span, since a flex container drops the spaces between frames. -->
+		{#if frames}
+			<span class="frames" aria-hidden="true"><span>{#each pieces as piece}{#if piece.frame}<span class="frame" class:required={piece.frame.required} data-key={piece.frame.name}>{piece.text}{#if piece.frame === trailing}<span class="default">{trailing.default}</span>{/if}</span>{:else}{piece.text}{/if}{/each}</span></span>
+		{/if}
 		{#if $ghost && !$text}
 			{#key $ghost}
 				<span class="ghost" aria-hidden="true">{$ghost.line}</span>
@@ -259,6 +308,11 @@
 			<!-- One pill is `Pill.svelte`, which the nowview's margin draws
 			     too (da-rskp): one store, two places to see it, and the same
 			     press in either. -->
+			{#each waiting as key (key.name)}
+				<span class="key" class:required={key.required} data-key={key.name}
+					>{key.name}{#if key.default !== undefined}<span class="default">{key.default}</span>{/if}</span
+				>
+			{/each}
 			{#each args as pill (pill.id)}
 				<Pill {pill} />
 			{/each}
@@ -486,6 +540,58 @@
 		color: var(--ink);
 		font-size: var(--input-font);
 		animation: ghost-fade 1s forwards;
+	}
+
+	/* The copy the frames are drawn on: the box's text, where the box has
+	   it, and invisible — only the outlines and a default are seen. */
+	.frames {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		white-space: pre;
+		pointer-events: none;
+		color: transparent;
+		font-size: var(--input-font);
+	}
+
+	/* A key: solid in the accent when the log cannot do without it, dashed
+	   in the quiet line when it has a default or may be left out. An
+	   outline, so a frame takes no room from the text it is drawn round,
+	   and INSIDE the text's box: the scrollport clips what stands past it. */
+	.frame {
+		border-radius: 3px;
+		outline: 1px dashed var(--quiet);
+		outline-offset: -1px;
+	}
+
+	.frame.required {
+		outline: 1px solid var(--accent);
+	}
+
+	/* A key still to write: its name, small, in its frame. */
+	.key {
+		padding: 0.1rem 0.35rem;
+		border: 1px dashed var(--quiet);
+		border-radius: 3px;
+		color: var(--quiet);
+		font-size: calc(var(--input-font) * 0.7);
+		line-height: 1.2;
+		white-space: nowrap;
+	}
+
+	.key.required {
+		border: 1px solid var(--accent);
+		color: var(--accent);
+	}
+
+	/* An optional key's default, as ghost text: what the line will say if it is left alone. */
+	.default {
+		color: var(--quiet);
+	}
+
+	.key .default {
+		margin-left: 0.4em;
 	}
 
 	/* Measured, never seen: the same face, size and spacing as the box, so

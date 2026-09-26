@@ -32,15 +32,37 @@ export const DATUM_SPACE =
 	/[\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]/;
 
 export function shellSplit(line: string): string[] {
-	const out: string[] = [];
+	return shellSpans(line).tokens.map((t) => t.text);
+}
+
+/** One token of a line and where it stands in it, in UTF-16 offsets. */
+export interface Span {
+	text: string;
+	from: number;
+	to: number;
+}
+
+/**
+ * `shellSplit` with each token's place in the line, and whether the line
+ * ends inside an open quote — what the key frames (`keyframes.ts`) draw
+ * around, and how they know a space is literal.
+ */
+export function shellSpans(line: string): { tokens: Span[]; quoted: boolean } {
+	const tokens: Span[] = [];
 	let cur = '';
 	let inSingle = false;
 	let inDouble = false;
 	let hasTok = false;
+	let from = 0;
 
 	const chars = [...line];
+	// Where each character starts, and the line's end after the last.
+	const at = [0];
+	for (const c of chars) at.push(at[at.length - 1] + c.length);
+
 	for (let i = 0; i < chars.length; i++) {
 		const c = chars[i];
+		if (!hasTok && !DATUM_SPACE.test(c)) from = at[i];
 		if (inSingle) {
 			if (c === "'") inSingle = false;
 			else cur += c;
@@ -64,7 +86,7 @@ export function shellSplit(line: string): string[] {
 			}
 		} else if (DATUM_SPACE.test(c)) {
 			if (hasTok) {
-				out.push(cur);
+				tokens.push({ text: cur, from, to: at[i] });
 				cur = '';
 				hasTok = false;
 			}
@@ -74,6 +96,6 @@ export function shellSplit(line: string): string[] {
 		}
 	}
 
-	if (hasTok) out.push(cur);
-	return out;
+	if (hasTok) tokens.push({ text: cur, from, to: line.length });
+	return { tokens, quoted: inSingle || inDouble };
 }
