@@ -15,11 +15,13 @@
 // Budget (da-lt0k, da-buqa): node's `--test-timeout` is per TEST and a FILE
 // is a test, so the runner's 300 s is this file's whole budget —
 // `before(startApp)`, the Chromium it launches, and every test in it.
-// Measured alone on the 24-core build box: 84 s for the nine.
+// Measured alone on the 24-core build box (da-h1pi9, loaded, median of 3
+// interleaved): 68.5 s for the 24 before `seeded` and the one reloading
+// app, 34.5 s after.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { seedLines, sharedApp, startApp, stopApp, withApp as withAnyApp } from './support/app.mjs';
+import { changeCounter, seedLines, sharedApp, startApp, stopApp, withApp as withAnyApp } from './support/app.mjs';
 import { DESKTOP, along, draft, pane, widgetPane } from './support/layout.mjs';
 import { listed } from './support/rows.mjs';
 
@@ -58,7 +60,62 @@ const withApp = (fn, options = {}) =>
 // and opens `main` from PAGE as a draft, as `prepare` does at boot. What
 // reloads, counts a load's writes, or is the finger's screen keeps its own.
 const shared = sharedApp(DESKTOP);
-const onPage = (fn) => shared.solo(fn, PAGE);
+const onPage = (fn) => {
+	seed = null;
+	return shared.solo(fn, PAGE);
+};
+
+// THE SEEDED PAGE (da-h1pi9). `onPage` and `ready` are 2.5 s of a 3.5 s
+// test — the page drawn from its draft, then the seed — and most tests here
+// write nothing: they mint a pill, read what narrowed, and take it away. So
+// they share one: drawn and seeded once, and between two of them only what
+// a test that writes nothing can leave is put back — `home` (the line, a
+// modal, a menu, the pointer, the errors), the pills and the time cursor.
+// It is kept only while the DATABASE is the seed's (SQLite's change
+// counter, which a database write moves and nothing else does) and no
+// `onPage` has drawn over it since; otherwise it is drawn and seeded again.
+// So a test that writes to the database may use it too, and spends it; and
+// a test that throws spends it, since what it left is unknown. The rest of
+// the page is the reset's: what it puts back is what `solo` puts back
+// (support/app.mjs) apart from the layouts, which no test here touches —
+// and like `solo` it leaves `localStorage` outside them alone, the pills'
+// key being the one these tests write. A test that leaves a widget
+// somewhere the reset does not reach — the commands widget in `spec`'s
+// subcommands — stays on `onPage`.
+let seed = null;
+async function seeded(fn) {
+	const app = await shared();
+	const kept = seed !== null && (await changeCounter(app.page)) === seed;
+	seed = null;
+	if (kept) {
+		await app.home();
+		await app.page.evaluate(() => {
+			window.datum.bar.setPills([]);
+			window.datum.cursor.set(null);
+		});
+		await frames(app.page);
+		await app.idle();
+	} else {
+		await app.solo(PAGE);
+		await ready(app);
+	}
+	const at = await changeCounter(app.page);
+	await fn(app);
+	seed = at;
+}
+
+/**
+ * A second gesture's beat: the pill gone — the gesture's own effect, capped so
+ * a pill that stays is the test's assertion to report — and two frames after.
+ */
+const settle = async (page) => {
+	await fieldPill(page).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
+	await frames(page);
+};
+
+/** Two animation frames: what a store change sets off has started by then. */
+const frames = (page) =>
+	page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
 
 /**
  * Two fields with entries of their own, and colours the CLI resolves
@@ -88,6 +145,7 @@ async function ready(app) {
 	await app.clock.forward(1000);
 	await fieldsBar(app.page).locator('[data-field="coffee"]').waitFor();
 	await fieldsBar(app.page).locator('[data-field="mood"]').waitFor();
+	return app;
 }
 
 const fieldsBar = (page) => pane(page, 'bar').locator('.bar');
@@ -95,32 +153,56 @@ const chip = (page, field) => fieldsBar(page).locator(`[data-field="${field}"]`)
 const fieldPill = (page) => page.locator('.prompt-bar .pill.field');
 
 /**
- * The same page, with every write to the pills key counted (da-1py00).
+ * The same page, with every write to the pills key counted (da-1py00), as
+ * ONE app for the four tests that reload (da-h1pi9): a reload keeps the
+ * database and the clock, so it is seeded once, and each test starts by
+ * taking away the pill the one before it left.
  *
  * `Storage.prototype` is patched in an init script, so the count is re-made
  * on each load and holds only what that load did — which is the whole
  * point: the claim is about what a LOAD costs.
  */
-const withSpyingApp = (fn) =>
-	withAnyApp(fn, {
-		...DESKTOP,
-		prepare: async (context) => {
-			await context.addInitScript(draft, PAGE);
-			await context.addInitScript(() => {
-				window.__pillWrites = [];
-				const proto = Storage.prototype;
-				const { setItem, removeItem } = proto;
-				proto.setItem = function (key, value) {
-					if (key === 'datum.bar.pills.v1') window.__pillWrites.push(['set', value]);
-					return setItem.call(this, key, value);
-				};
-				proto.removeItem = function (key) {
-					if (key === 'datum.bar.pills.v1') window.__pillWrites.push(['remove']);
-					return removeItem.call(this, key);
-				};
-			});
-		}
-	});
+const reloading = sharedApp({
+	...DESKTOP,
+	prepare: async (context) => {
+		await context.addInitScript(draft, PAGE);
+		await context.addInitScript(() => {
+			window.__pillWrites = [];
+			const proto = Storage.prototype;
+			const { setItem, removeItem } = proto;
+			proto.setItem = function (key, value) {
+				if (key === 'datum.bar.pills.v1') window.__pillWrites.push(['set', value]);
+				return setItem.call(this, key, value);
+			};
+			proto.removeItem = function (key) {
+				if (key === 'datum.bar.pills.v1') window.__pillWrites.push(['remove']);
+				return removeItem.call(this, key);
+			};
+		});
+	}
+});
+
+// Seeded once for the file, as the app lives once for it (`sharedApp`
+// closes it in its `after`). The pills taken away between tests are the
+// STORED ones too — checked, since a pill still kept would come back on
+// the next test's reload. `__pillWrites` is per LOAD, so a test that counts
+// writes starts from one: the first test here, on the app's first load.
+let reloadSeeded = false;
+async function onReloading(fn) {
+	const app = await reloading();
+	if (!reloadSeeded) {
+		await ready(app);
+		reloadSeeded = true;
+	} else {
+		await app.page.evaluate(() => window.datum.bar.setPills([]));
+		await fieldPill(app.page).waitFor({ state: 'detached' });
+		await frames(app.page);
+		await app.idle();
+		const kept = await app.page.evaluate(() => JSON.parse(localStorage.getItem('datum.bar.pills.v1') ?? '[]'));
+		assert.deepEqual(kept, [], 'a pill the test before kept is still stored');
+	}
+	await fn(app);
+}
 
 /** What this load has written to the pills key, in order. */
 const writes = (page) => page.evaluate(() => window.__pillWrites);
@@ -139,23 +221,38 @@ async function hold(page, field) {
  * touchscreen only TAPS, and `page.mouse` on a touch-capable context is
  * still a mouse — so a coarse arm driven by the mouse would be the fine arm
  * again under another name, and would prove nothing about a finger.
+ *
+ * Let go once the gesture has LANDED — the field pill minted, replaced by
+ * another field's, or taken away: each changes its label, no pill reading
+ * as `null` — rather than after a fixed 700 ms (da-h1pi9): the timer fires
+ * while the press is still down, so that is the timer and nothing after
+ * it. Capped, so a press that never lands is let go all the same and the
+ * test's own assertion says what went wrong.
  */
 async function longPress(page, field, { finger = false } = {}) {
 	const at = chip(page, field);
 	await at.scrollIntoViewIfNeeded();
 	const box = await at.boundingBox();
 	const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+	const label = '.prompt-bar .pill.field .label';
+	const was = await page.evaluate((label) => document.querySelector(label)?.textContent ?? null, label);
+	const landed = () =>
+		page
+			.waitForFunction(([label, was]) => (document.querySelector(label)?.textContent ?? null) !== was, [label, was], {
+				timeout: 3000
+			})
+			.catch(() => {});
 	if (!finger) {
 		await page.mouse.move(x, y);
 		await page.mouse.down();
-		await page.waitForTimeout(700);
+		await landed();
 		await page.mouse.up();
 		return;
 	}
 	const cdp = await page.context().newCDPSession(page);
 	try {
 		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
-		await page.waitForTimeout(700);
+		await landed();
 		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 	} finally {
 		await cdp.detach();
@@ -167,9 +264,8 @@ const commands = async (page) => (await listed(pane(page, 'cmd').locator('.bar')
 
 describe('the gesture, and the pill it mints', () => {
 	test('a hold mints the field pill, in the field’s own colour', async () => {
-		await onPage(async (app) => {
+		await seeded(async (app) => {
 			const { page } = app;
-			await ready(app);
 			assert.equal(await fieldPill(page).count(), 0, 'a pill before the gesture');
 
 			await hold(page, 'coffee');
@@ -210,21 +306,25 @@ describe('the gesture, and the pill it mints', () => {
 	// «long pressing or right clicking on a field again after a pill is
 	// added should remove the pill/filter».
 	test('shift+click mints it too, and the same gesture again takes it away', async () => {
-		await onPage(async (app) => {
+		await seeded(async (app) => {
 			const { page } = app;
-			await ready(app);
+			// The REPL as the seed left it: a hold logs nothing, so it stays so.
+			const logged = await app.echoes();
+			assert.equal(logged.at(-1), 'switch mood happy');
 
 			await chip(page, 'coffee').click({ modifiers: ['Shift'] });
 			await fieldPill(page).waitFor();
 			// And nothing was logged: shift+click is the hold, not a press.
-			assert.equal((await app.echoes()).at(-1), 'switch mood happy');
+			assert.deepEqual(await app.echoes(), logged);
 
 			await chip(page, 'coffee').click({ modifiers: ['Shift'] });
 			// The gesture that used to open the panel: a beat to let one
 			// appear, and then the claim that none did. Any floating surface,
 			// not `.panel` alone — the bead removed the thing, so the assertion
-			// must not be aimed at the one class name it went by.
-			await page.waitForTimeout(200);
+			// must not be aimed at the one class name it went by. The beat is
+			// the gesture's own effect, the pill gone, and two frames after it
+			// for anything the same handler opened to be drawn (da-h1pi9).
+			await settle(page);
 			assert.equal(
 				await page.locator('.bar .panel, .bar .bubbles, .bar [aria-expanded="true"]').count(),
 				0,
@@ -232,56 +332,24 @@ describe('the gesture, and the pill it mints', () => {
 			);
 			assert.equal(await fieldPill(page).count(), 0, 'the pill survived a second hold');
 			assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), null);
-			assert.equal((await app.echoes()).at(-1), 'switch mood happy', 'the second hold ran a command');
+			assert.deepEqual(await app.echoes(), logged, 'the second hold ran a command');
 			assert.deepEqual(app.errors, []);
 		});
 	});
-
-	// The long press is the other half of the same gesture, and the bead
-	// names both pointers: «minting a pill by hold, on a coarse pointer and
-	// a fine one». One body, run on each. 450 ms is `HOLD_MS`; 700 clears it
-	// without racing it.
-	for (const [pointer, options] of [
-		['a fine pointer', {}],
-		['a finger', { device: { isMobile: true, hasTouch: true }, viewport: { width: 390, height: 844 } }]
-	]) {
-		const finger = pointer === 'a finger';
-		test(`a long press with ${pointer} mints, and a second takes it away`, async () => {
-			// The finger is the one test on its screen: an app of its own.
-			await (finger ? withApp : onPage)(async (app) => {
-				const { page } = app;
-				await ready(app);
-
-				await longPress(page, 'coffee', { finger });
-				// The mint itself, which is the positive arm: without it the
-				// «nothing opened» below would be true of a gesture that never
-				// landed on the chip at all.
-				await fieldPill(page).waitFor();
-				assert.equal(await fieldPill(page).locator('.label').innerText(), 'coffee', 'the press landed on another field');
-				assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), '');
-
-				await longPress(page, 'coffee', { finger });
-				await page.waitForTimeout(200);
-				assert.equal(
-					await page.locator('.bar .panel, .bar .bubbles, .bar [aria-expanded="true"]').count(),
-					0,
-					'the second long press opened something'
-				);
-				assert.equal(await fieldPill(page).count(), 0, 'the second long press kept the pill');
-				assert.equal((await app.echoes()).at(-1), 'switch mood happy', 'a long press logged');
-				assert.deepEqual(app.errors, []);
-			}, options);
-		});
-	}
 
 	// The bead: «a field pill must be mintable and removable without a
 	// pointer». The menu key raises `contextmenu`, which is the same door
 	// the right click comes through, and the pill's × is a button in the
 	// tab order.
+	//
+	// BEFORE the long presses: a mouse long press leaves the hold's `fired`
+	// standing until the next pointerdown, and the menu key after it is
+	// taken for the browser catching up and ignored (da-zdv2u) — which a
+	// page of its own per test hid. The ORDER IS LOAD-BEARING until that is
+	// fixed: after a long press this test fails, every time.
 	test('the keyboard mints it and the keyboard takes it away', async () => {
-		await onPage(async (app) => {
+		await seeded(async (app) => {
 			const { page } = app;
-			await ready(app);
 
 			await chip(page, 'coffee').focus();
 			await page.keyboard.press('ContextMenu');
@@ -295,13 +363,51 @@ describe('the gesture, and the pill it mints', () => {
 		});
 	});
 
+	// The long press is the other half of the same gesture, and the bead
+	// names both pointers: «minting a pill by hold, on a coarse pointer and
+	// a fine one». One body, run on each. 450 ms is `HOLD_MS`, and the press
+	// is held until it has landed.
+	for (const [pointer, options] of [
+		['a fine pointer', {}],
+		['a finger', { device: { isMobile: true, hasTouch: true }, viewport: { width: 390, height: 844 } }]
+	]) {
+		const finger = pointer === 'a finger';
+		test(`a long press with ${pointer} mints, and a second takes it away`, async () => {
+			// The finger is the one test on its screen: an app of its own.
+			const open = finger ? (fn) => withApp(async (app) => fn(await ready(app)), options) : seeded;
+			await open(async (app) => {
+				const { page } = app;
+				const logged = await app.echoes();
+				assert.equal(logged.at(-1), 'switch mood happy');
+
+				await longPress(page, 'coffee', { finger });
+				// The mint itself, which is the positive arm: without it the
+				// «nothing opened» below would be true of a gesture that never
+				// landed on the chip at all.
+				await fieldPill(page).waitFor();
+				assert.equal(await fieldPill(page).locator('.label').innerText(), 'coffee', 'the press landed on another field');
+				assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), '');
+
+				await longPress(page, 'coffee', { finger });
+				await settle(page);
+				assert.equal(
+					await page.locator('.bar .panel, .bar .bubbles, .bar [aria-expanded="true"]').count(),
+					0,
+					'the second long press opened something'
+				);
+				assert.equal(await fieldPill(page).count(), 0, 'the second long press kept the pill');
+				assert.deepEqual(await app.echoes(), logged, 'a long press logged');
+				assert.deepEqual(app.errors, []);
+			});
+		});
+	}
+
 	// «it behaves like every other pill»: unlocked, so a successful press
 	// spends it and the filter is gone. Named here so it can be corrected
 	// in a word if it turns out to be annoying in use.
 	test('it is unlocked, so a successful command clears it', async () => {
-		await onPage(async (app) => {
+		await seeded(async (app) => {
 			const { page } = app;
-			await ready(app);
 			await hold(page, 'coffee');
 			await fieldPill(page).waitFor();
 
@@ -316,9 +422,8 @@ describe('the gesture, and the pill it mints', () => {
 	// is field-first, so `occur coffee` under a `mood` pill would log mood as
 	// coffee's STATE. The pill is refused and stays loaded.
 	test('a press that already names a field does not get the pill appended', async () => {
-		await onPage(async (app) => {
+		await seeded(async (app) => {
 			const { page } = app;
-			await ready(app);
 			await hold(page, 'mood');
 			await fieldPill(page).waitFor();
 
@@ -346,9 +451,8 @@ describe('what narrows to it', () => {
 	// nothing at all while looking as though it worked. The claim is the
 	// HIDING, and that `spec` — the way to the spec editor — survives.
 	test('the commands widget keeps the commands that name a field, and hides the rest', async () => {
-		await onPage(async (app) => {
+		await seeded(async (app) => {
 			const { page } = app;
-			await ready(app);
 			const whole = await commands(page);
 			for (const name of ['get', 'now', 'delete', 'grep']) assert.ok(whole.includes(name), name);
 
@@ -375,9 +479,8 @@ describe('what narrows to it', () => {
 	// switch in a state, so it can be switched or ended, not occurred,
 	// started or added; and taking the pill away brings the five back.
 	test('a switch field leaves switch and end of the verbs, and every verb comes back without it', async () => {
-		await onPage(async (app) => {
+		await seeded(async (app) => {
 			const { page } = app;
-			await ready(app);
 			const verbs = async () =>
 				(await commands(page)).filter((name) => ['occur', 'start', 'end', 'switch', 'add'].includes(name));
 
@@ -393,9 +496,8 @@ describe('what narrows to it', () => {
 	});
 
 	test('the stats widget narrows to that field, and widens back when the pill clears', async () => {
-		await onPage(async (app) => {
+		await seeded(async (app) => {
 			const { page } = app;
-			await ready(app);
 			const stats = pane(page, 'stats');
 			// Every field until something narrows it (da-ptuwr): a bare `stats`.
 			await stats.locator('code.argv').waitFor();
@@ -425,9 +527,8 @@ describe('what narrows to it', () => {
 	// off the widgets, not the pill: stats is bare `stats` and the tail
 	// lists mood again.
 	test('a second right click takes a locked pill away, and stats and the tail are whole again', async () => {
-		await onPage(async (app) => {
+		await seeded(async (app) => {
 			const { page } = app;
-			await ready(app);
 			await hold(page, 'coffee');
 			await page.waitForFunction(() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee');
 			await page.waitForFunction(() =>
@@ -448,9 +549,8 @@ describe('what narrows to it', () => {
 	});
 
 	test('the tail pane lists that field alone', async () => {
-		await onPage(async (app) => {
+		await seeded(async (app) => {
 			const { page } = app;
-			await ready(app);
 			const rows = () =>
 				pane(page, 'tail').evaluate((el) =>
 					[...el.querySelectorAll('tbody tr')].map((tr) => tr.querySelector('td.field')?.textContent.trim())
@@ -475,9 +575,8 @@ describe('what narrows to it', () => {
 	// The claim is both halves: the pilled field's marks carry the halo, and
 	// nothing at all is done to the others.
 	test('a picture outlines that field’s own marks and leaves every other field alone', async () => {
-		await onPage(async (app) => {
+		await seeded(async (app) => {
 			const { page } = app;
-			await ready(app);
 			const groups = () =>
 				pane(page, 'strip').evaluate((el) =>
 					[...el.querySelectorAll('svg.svg .field[data-field]')].map((g) => ({
@@ -534,10 +633,54 @@ describe('what narrows to it', () => {
 // would pass every assertion about the pill itself, so each test here reads
 // the stats widget's argv AND its body back.
 describe('what survives a reload', () => {
-	test('a LOCKED field pill comes back, and narrows stats exactly as a fresh one does', async () => {
-		await withApp(async (app) => { // reloads
+	// The comment on `written` in bar.ts CLAIMS that an ordinary load — one
+	// where storage already holds what this same code wrote — costs no
+	// storage write at all, the subscriber's first call included (canary
+	// minimax-m3-preview on PR #86). A claim in a comment that nothing
+	// checks is a claim that rots, so this counts the writes. FIRST of the
+	// four, because the count runs from a load: this is the app's first, as
+	// an app of its own gave it (da-h1pi9).
+	test('an ordinary load does not write to storage, and still restores the pill', async () => {
+		await onReloading(async (app) => {
 			const { page } = app;
-			await ready(app);
+			await hold(page, 'coffee');
+			await fieldPill(page).waitFor();
+			await fieldPill(page).locator('button.lock').click();
+			await page.waitForFunction(
+				() => document.querySelector('.prompt-bar .pill.field .lock')?.ariaPressed === 'true'
+			);
+			// The lock itself IS a change, so it writes: the counter works,
+			// and what it wrote is the pill. Read back PARSED rather than as
+			// the exact string (canary minimax-m3-preview on PR #86): a
+			// refactor that reorders the `KeptPill` map in both places keeps
+			// the behaviour and would fail a string compare. Nothing is lost
+			// by it — what pins the round-trip is the count after the reload
+			// below, which can only be zero if the string re-derived at load
+			// is byte-identical to the one written here, in whatever order.
+			const written = await writes(page);
+			assert.equal(written.length, 1, 'the lock did not write exactly once');
+			assert.equal(written[0][0], 'set');
+			assert.deepEqual(JSON.parse(written[0][1]), [
+				{ id: 'field', kind: 'field', text: 'coffee', color: '#ffa500' }
+			]);
+
+			await app.reload();
+
+			// The pill came back and narrows, exactly as the next test says.
+			await fieldPill(page).waitFor();
+			await page.waitForFunction(
+				() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee'
+			);
+			// And this load wrote nothing: the counter is re-made by the init
+			// script on every load, so it holds only what THIS load did.
+			assert.deepEqual(await writes(page), [], 'the load rewrote what it had just read');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('a LOCKED field pill comes back, and narrows stats exactly as a fresh one does', async () => {
+		await onReloading(async (app) => {
+			const { page } = app;
 			await hold(page, 'coffee');
 			await fieldPill(page).waitFor();
 			await page.waitForFunction(
@@ -576,9 +719,8 @@ describe('what survives a reload', () => {
 	});
 
 	test('an unlocked one does not, and stats is every field again', async () => {
-		await withApp(async (app) => { // reloads
+		await onReloading(async (app) => {
 			const { page } = app;
-			await ready(app);
 			await hold(page, 'coffee');
 			await fieldPill(page).waitFor();
 			await page.waitForFunction(
@@ -599,56 +741,11 @@ describe('what survives a reload', () => {
 		});
 	});
 
-	// The comment on `written` in bar.ts CLAIMS that an ordinary load — one
-	// where storage already holds what this same code wrote — costs no
-	// storage write at all, the subscriber's first call included (canary
-	// minimax-m3-preview on PR #86). A claim in a comment that nothing
-	// checks is a claim that rots, so this counts the writes.
-	test('an ordinary load does not write to storage, and still restores the pill', async () => {
-		await withSpyingApp(async (app) => { // an init script of its own, and reloads
-			const { page } = app;
-			await ready(app);
-			await hold(page, 'coffee');
-			await fieldPill(page).waitFor();
-			await fieldPill(page).locator('button.lock').click();
-			await page.waitForFunction(
-				() => document.querySelector('.prompt-bar .pill.field .lock')?.ariaPressed === 'true'
-			);
-			// The lock itself IS a change, so it writes: the counter works,
-			// and what it wrote is the pill. Read back PARSED rather than as
-			// the exact string (canary minimax-m3-preview on PR #86): a
-			// refactor that reorders the `KeptPill` map in both places keeps
-			// the behaviour and would fail a string compare. Nothing is lost
-			// by it — what pins the round-trip is the count after the reload
-			// below, which can only be zero if the string re-derived at load
-			// is byte-identical to the one written here, in whatever order.
-			const written = await writes(page);
-			assert.equal(written.length, 1, 'the lock did not write exactly once');
-			assert.equal(written[0][0], 'set');
-			assert.deepEqual(JSON.parse(written[0][1]), [
-				{ id: 'field', kind: 'field', text: 'coffee', color: '#ffa500' }
-			]);
-
-			await app.reload();
-
-			// The pill came back and narrows, exactly as the test above says.
-			await fieldPill(page).waitFor();
-			await page.waitForFunction(
-				() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee'
-			);
-			// And this load wrote nothing: the counter is re-made by the init
-			// script on every load, so it holds only what THIS load did.
-			assert.deepEqual(await writes(page), [], 'the load rewrote what it had just read');
-			assert.deepEqual(app.errors, []);
-		});
-	});
-
 	// Locking is not the only way out: a locked pill taken away stays away,
 	// which is the half a store that only ever WROTE would get wrong.
 	test('a locked pill removed before the reload does not come back', async () => {
-		await withApp(async (app) => { // reloads
+		await onReloading(async (app) => {
 			const { page } = app;
-			await ready(app);
 			await hold(page, 'coffee');
 			await fieldPill(page).waitFor();
 			await fieldPill(page).locator('button.lock').click();
@@ -680,9 +777,8 @@ describe('`spec` under the pill', () => {
 	const line = (page) => page.locator('.prompt-bar input').first();
 
 	test('long press, tap `spec`: the modal is open on that field, and the pill is spent', async () => {
-		await onPage(async (app) => {
+		await seeded(async (app) => {
 			const { page } = app;
-			await ready(app);
 			await longPress(page, 'mood');
 			await fieldPill(page).waitFor();
 
@@ -703,9 +799,8 @@ describe('`spec` under the pill', () => {
 	});
 
 	test('a field with no spec opens on the verb question, its name already in', async () => {
-		await onPage(async (app) => {
+		await seeded(async (app) => {
 			const { page } = app;
-			await ready(app);
 			// Logging declares a field, so its spec is taken away after.
 			await app.submit('occur tea');
 			await app.submit('spec remove tea');
@@ -725,6 +820,7 @@ describe('`spec` under the pill', () => {
 
 	// With no pill there is no subject, so `spec` opens its subcommands
 	// (da-803mk), a tap on one writes it on the line, and nothing opens.
+	// On `onPage`: it leaves the commands widget in `spec`'s subcommands.
 	test('with no pill, `spec` opens its subcommands and `show` writes `spec show `', async () => {
 		await onPage(async (app) => {
 			const { page } = app;
@@ -757,7 +853,6 @@ describe('a field pill under a selected hid is context', () => {
 	/** Pill coffee, and select a row of the tail it narrowed: the row's hid. */
 	async function pillThenSelect(app) {
 		const { page } = app;
-		await ready(app);
 		await hold(page, 'coffee');
 		await page.waitForFunction(onlyCoffee);
 		const row = pane(page, 'tail').locator('tbody tr[data-hid]').first();
@@ -767,8 +862,64 @@ describe('a field pill under a selected hid is context', () => {
 		return hid;
 	}
 
+	// canary kimi-k3 on PR #180: a context pill draws no lock button, so
+	// its ring is the only sign a locked field will outlive a press.
+	test('a locked field keeps showing its lock while it is context', async () => {
+		await seeded(async (app) => {
+			const { page } = app;
+			const ring = () => fieldPill(page).evaluate((el) => getComputedStyle(el).boxShadow);
+			await pillThenSelect(app);
+			await fieldPill(page).and(page.locator('.context')).waitFor();
+			assert.match(await ring(), / 0px 0px 0px 1px inset$/, 'unlocked context');
+
+			await page.evaluate(() =>
+				window.datum.bar.setPills(window.datum.bar.pills().map((p) => (p.kind === 'field' ? { ...p, locked: true } : p)))
+			);
+			await fieldPill(page).and(page.locator('.context.locked')).waitFor();
+			assert.match(await ring(), / 0px 0px 0px 2px inset$/, 'a locked context pill looks unlocked');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// da-05oit: «Only that field's pill goes. Other pills, and the typed
+	// line, stay.»
+	test('a second hold takes the field pill alone: the hid and the typed line stay', async () => {
+		await seeded(async (app) => {
+			const { page } = app;
+			await pillThenSelect(app);
+			await page.locator(BOX).fill('hello');
+
+			await hold(page, 'coffee');
+			await fieldPill(page).waitFor({ state: 'detached' });
+			assert.equal(await hidPill(page).count(), 1, 'the hid pill went with the field');
+			assert.equal(await page.locator(BOX).inputValue(), 'hello', 'the typed line went with the field');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('Escape drops the hid, and the field is an argument again; then the field', async () => {
+		await seeded(async (app) => {
+			const { page } = app;
+			await pillThenSelect(app);
+			await page.locator(BOX).focus();
+
+			await page.keyboard.press('Escape');
+			await hidPill(page).waitFor({ state: 'detached' });
+			assert.equal(await fieldPill(page).count(), 1, 'the first Escape took the field too');
+			await page.waitForFunction(() => !document.querySelector('.prompt-bar .pill.field.context'));
+			const [field, box] = await Promise.all([fieldPill(page), page.locator(BOX)].map((l) => l.boundingBox()));
+			assert.ok(field.x >= box.x, 'the argument field is still before the box');
+
+			await page.keyboard.press('Escape');
+			await fieldPill(page).waitFor({ state: 'detached' });
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// LAST of the four: its `get` writes (the first `get` of an entry moves
+	// the database's change counter), which spends the seeded page (da-h1pi9).
 	test('the tail stays narrowed, the field stands between the ❯ and the box, and the hid’s commands come back', async () => {
-		await onPage(async (app) => {
+		await seeded(async (app) => {
 			const { page } = app;
 			const hid = await pillThenSelect(app);
 
@@ -798,60 +949,6 @@ describe('a field pill under a selected hid is context', () => {
 			await hidPill(page).waitFor({ state: 'detached' });
 			assert.equal(await fieldPill(page).count(), 1, 'the press spent the context');
 			assert.equal(await fieldPill(page).and(page.locator('.context')).count(), 0);
-			assert.deepEqual(app.errors, []);
-		});
-	});
-
-	// canary kimi-k3 on PR #180: a context pill draws no lock button, so
-	// its ring is the only sign a locked field will outlive a press.
-	test('a locked field keeps showing its lock while it is context', async () => {
-		await onPage(async (app) => {
-			const { page } = app;
-			const ring = () => fieldPill(page).evaluate((el) => getComputedStyle(el).boxShadow);
-			await pillThenSelect(app);
-			await fieldPill(page).and(page.locator('.context')).waitFor();
-			assert.match(await ring(), / 0px 0px 0px 1px inset$/, 'unlocked context');
-
-			await page.evaluate(() =>
-				window.datum.bar.setPills(window.datum.bar.pills().map((p) => (p.kind === 'field' ? { ...p, locked: true } : p)))
-			);
-			await fieldPill(page).and(page.locator('.context.locked')).waitFor();
-			assert.match(await ring(), / 0px 0px 0px 2px inset$/, 'a locked context pill looks unlocked');
-			assert.deepEqual(app.errors, []);
-		});
-	});
-
-	// da-05oit: «Only that field's pill goes. Other pills, and the typed
-	// line, stay.»
-	test('a second hold takes the field pill alone: the hid and the typed line stay', async () => {
-		await onPage(async (app) => {
-			const { page } = app;
-			await pillThenSelect(app);
-			await page.locator(BOX).fill('hello');
-
-			await hold(page, 'coffee');
-			await fieldPill(page).waitFor({ state: 'detached' });
-			assert.equal(await hidPill(page).count(), 1, 'the hid pill went with the field');
-			assert.equal(await page.locator(BOX).inputValue(), 'hello', 'the typed line went with the field');
-			assert.deepEqual(app.errors, []);
-		});
-	});
-
-	test('Escape drops the hid, and the field is an argument again; then the field', async () => {
-		await onPage(async (app) => {
-			const { page } = app;
-			await pillThenSelect(app);
-			await page.locator(BOX).focus();
-
-			await page.keyboard.press('Escape');
-			await hidPill(page).waitFor({ state: 'detached' });
-			assert.equal(await fieldPill(page).count(), 1, 'the first Escape took the field too');
-			await page.waitForFunction(() => !document.querySelector('.prompt-bar .pill.field.context'));
-			const [field, box] = await Promise.all([fieldPill(page), page.locator(BOX)].map((l) => l.boundingBox()));
-			assert.ok(field.x >= box.x, 'the argument field is still before the box');
-
-			await page.keyboard.press('Escape');
-			await fieldPill(page).waitFor({ state: 'detached' });
 			assert.deepEqual(app.errors, []);
 		});
 	});
