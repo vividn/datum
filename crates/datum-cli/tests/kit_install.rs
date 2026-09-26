@@ -192,6 +192,8 @@ no_autoalias = true
 color = "#123456"
 glyph = "●"
 icon = '{ICON}'
+glyph_scale = 2.5
+glyph_aspect = 0.5
 tags = ["feel"]
 subfields.why = {{ value_type = "string" }}
 subfields.level = {{ value_type = "number", required = true }}
@@ -224,6 +226,8 @@ fn a_kit_field_installs_what_spec_set_stores() {
         "color": "#123456",
         "glyph": "●",
         "icon": ICON,
+        "glyph_scale": 2.5,
+        "glyph_aspect": 0.5,
         "tags": ["feel"],
         "subfields": {
             "why": {"value_type": "string"},
@@ -288,6 +292,8 @@ fn kit_export_round_trips_the_whole_field() {
         "no_autoalias = true",
         "icon",
         "glyph_by",
+        "glyph_scale = 2.5",
+        "glyph_aspect = 0.5",
         "subfields",
         "worn out",
     ] {
@@ -345,6 +351,27 @@ fn a_kit_refuses_the_icon_and_glyph_spec_set_refuses() {
         "{err}"
     );
     assert!(db.load_spec("mood").unwrap().is_none(), "nothing installed");
+
+    // A size factor spec set refuses, a kit refuses too (da-gah1q).
+    let kit = whole_field_kit().replace("glyph_aspect = 0.5", "glyph_aspect = 0");
+    let err = format!("{:#}", install(&db, &kit, &[]).unwrap_err());
+    assert!(
+        err.contains("'mood'") && err.contains("glyph_aspect must be a number above 0, got 0"),
+        "{err}"
+    );
+    assert!(db.load_spec("mood").unwrap().is_none(), "nothing installed");
+}
+
+/// A factor of 1 is what an unset one draws: a kit stores it unset, as
+/// `spec set` does (da-gah1q).
+#[test]
+fn a_kit_factor_of_one_is_stored_unset() {
+    let db = fresh_db();
+    let kit = whole_field_kit().replace("glyph_scale = 2.5", "glyph_scale = 1");
+    install(&db, &kit, &[]).unwrap();
+    let spec = db.load_spec("mood").unwrap().unwrap();
+    assert_eq!(spec.presentation.glyph_scale, None);
+    assert_eq!(spec.presentation.glyph_aspect, Some(0.5));
 }
 
 /// `kit show` of a kit nobody installed refuses by name (da-4mu1a).
