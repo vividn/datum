@@ -20,6 +20,7 @@ import {
 	pendingVerb,
 	declaredVerb,
 	drills,
+	fieldVerb,
 	flagLine,
 	flagsOf,
 	lanesOf,
@@ -221,6 +222,30 @@ describe('what a loaded field leaves of the verbs', () => {
 					fieldsUnder(ALL, verb).includes(b),
 					`${verb} × ${b.field}`
 				);
+	});
+});
+
+// da-lxqqz, vividn: «when a field is selected, then the start/end/occur
+// buttons should … auto trigger entry (unless there are extra keys to be
+// filled in…». Required keys only: one with a default does not stop it.
+describe('a verb under a field pill', () => {
+	const keyed = { ...point, required: ['amount'] };
+	const fields = [{ ...point, required: [] }, keyed, { ...onBlock, required: [] }];
+
+	test('occur, start and end run a field that needs nothing typed', () => {
+		assert.deepEqual(fieldVerb('occur', [pill(point)], fields), { field: pill(point), runs: true });
+		for (const verb of ['start', 'end']) assert.equal(fieldVerb(verb, [pill(onBlock)], fields)?.runs, true, verb);
+	});
+
+	test('a key with no default fills instead, with the pill to go on the line', () => {
+		assert.deepEqual(fieldVerb('occur', [pill(keyed)], [keyed]), { field: pill(keyed), runs: false });
+	});
+
+	test('no field pill, another verb, an unknown field, or a context field: the press as it was', () => {
+		assert.equal(fieldVerb('occur', [], fields), null);
+		for (const verb of ['switch', 'add', 'tail']) assert.equal(fieldVerb(verb, [pill(point)], fields), null, verb);
+		assert.equal(fieldVerb('occur', [{ id: 'field', kind: 'field', text: 'brandnew' }], fields), null);
+		assert.equal(fieldVerb('occur', [pill(point), { id: 'hid', kind: 'hid', text: 'abcde' }], fields), null);
 	});
 });
 

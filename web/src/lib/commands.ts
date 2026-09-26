@@ -472,6 +472,23 @@ export function fires(takes: Takes | undefined, all: Pill[]): boolean {
 	return !takes.more || (takes.time && pills.some((p) => p.kind === 'time'));
 }
 
+/**
+ * A verb under a FIELD pill (da-lxqqz), vividn, 09-26: «when a field is
+ * selected, then the start/end/occur buttons should … auto trigger entry
+ * (unless there are extra keys to be filled in, in which case the input
+ * line should automatically be selected for typing in those fields». So
+ * `occur`, `start` and `end` with a known field's pill as an argument
+ * RUN, unless that field has a key with no default (`required`); then the
+ * tap writes `<verb> <field> ` for the keys to be typed after. `null`
+ * where there is no such pill, and the press is what it always was.
+ */
+export function fieldVerb(name: string, all: Pill[], fields: FieldButton[]): { field: Pill; runs: boolean } | null {
+	const field = argumentsOf(all).find((p) => p.kind === 'field');
+	const button = fields.find((b) => b.field === field?.text);
+	if (!field || !button || !['occur', 'start', 'end'].includes(name)) return null;
+	return { field, runs: !button.required.length };
+}
+
 // ---- subcommands (da-803mk) ---------------------------------------------
 //
 // vividn, 2026-09-25: «for commands with subcommands, like db, clicking on

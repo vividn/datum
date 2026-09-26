@@ -64,6 +64,8 @@ export interface FieldButton {
 	active: boolean;
 	/** Where the field's band sits in the pictures, 0 at the top — `fields --json`'s `y`. */
 	y: number;
+	/** The keys a log of it cannot do without (`requiredKeys`). */
+	required: string[];
 }
 
 /**
@@ -95,6 +97,23 @@ export function shapeFor(spec: FieldSpec | undefined, observed: unknown[] = []):
 	if (strings.length > 0) return { kind: 'states', states: strings };
 	if (observed.some((v) => typeof v === 'boolean')) return { kind: 'state' };
 	return { kind: 'point' };
+}
+
+/**
+ * The keys a log of the field cannot do without (da-lxqqz): an `-K`/`-k`
+ * key the spec declares without `=default` (`id_keys`, `data_keys`), and a
+ * `required` subfield with no default. A key with a default is filled from
+ * it, so it asks nothing of the person.
+ */
+export function requiredKeys(spec: FieldSpec | null | undefined): string[] {
+	const keys = [...((spec?.id_keys as string[] | undefined) ?? []), ...((spec?.data_keys as string[] | undefined) ?? [])];
+	const subfields = Object.entries((spec?.subfields as Record<string, { required?: boolean; default?: unknown }> | undefined) ?? {});
+	return [
+		...new Set([
+			...keys.filter((k) => !k.includes('=')),
+			...subfields.filter(([, s]) => s.required && s.default == null).map(([name]) => name)
+		])
+	];
 }
 
 /** One row of `datum fields --json`. */
@@ -146,7 +165,8 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 				glyph: spec?.glyph ?? undefined,
 				active: now.has(field),
 				current: state === true || (typeof state === 'string' && state !== '') ? state : undefined,
-				y
+				y,
+				required: requiredKeys(spec)
 			};
 		});
 }

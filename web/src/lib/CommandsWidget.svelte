@@ -21,7 +21,10 @@
 	  `delete` with an hid selected deletes it. `fires` in commands.ts
 	  decides, and the same answer (`kindOf`) draws the button with a DOUBLE
 	  outline (`use:act`, $lib/act.ts), so what looks as if it fires is
-	  what fires.
+	  what fires. So does `occur`, `start` or `end` under a FIELD pill
+	  (da-lxqqz, `fieldVerb`) — unless the field has a key with no
+	  default, when the tap writes `occur <field> ` and opens the keyboard
+	  for the keys, and the pill is spent onto the line.
 	- `Help` (da-vjwid) ARMS the page — `$lib/help.ts`: the next tap on a
 	  command, a widget or a pill is explained instead of acted on, and a
 	  second press on Help is `datum help`, and the answer opens in a modal.
@@ -66,6 +69,7 @@
 	import {
 		commandsUnder,
 		drills,
+		fieldVerb,
 		fires,
 		flagsOf,
 		hasFlags,
@@ -92,7 +96,7 @@
 
 	const dispatch = createEventDispatcher<{
 		run: string[];
-		line: { name: string; line: string; keyboard: boolean };
+		line: { name: string; line: string; keyboard: boolean; spend?: Pill };
 		flag: { command: string; flag: string; keyboard: boolean };
 	}>();
 
@@ -108,9 +112,17 @@
 	/** What a tap on `command` does: the press below and the outline are both this. */
 	$: kindOf = (command: CommandButton): ActKind =>
 		FIXED[command.press] ??
-		(!open && drills(grammar, command.name, pills) ? 'open' : fires(grammar?.get(command.name), pills) ? 'run' : 'fill');
+		(!open && drills(grammar, command.name, pills)
+			? 'open'
+			: fires(grammar?.get(command.name), pills) || fieldVerb(command.name, pills, fields)?.runs
+				? 'run'
+				: 'fill');
 
-	/** A hold fills the command, as its tap would, and opens its flags. */
+	/**
+	 * A hold fills the bare command and opens its flags — even where a tap
+	 * under a field pill would run it or write the field too (da-lxqqz): the
+	 * pill stays loaded and joins whatever the flags compose.
+	 */
 	function hold(el: HTMLElement): void {
 		const name = el.dataset.command!;
 		flagged = name;
@@ -131,7 +143,12 @@
 		else if (command.press === 'flag') dispatch('flag', { command: flagged!, flag: command.name, keyboard: command.next === 'type' });
 		else if (kindOf(command) === 'open') open = command.name;
 		else if (kindOf(command) === 'run') dispatch('run', [command.name]);
-		else dispatch('line', { name: command.name, line: `${command.name} `, keyboard: command.next !== 'tap' });
+		else {
+			// A field pill whose field wants keys typed: they go after it, so it is on the line, and spent.
+			const field = fieldVerb(command.name, pills, fields)?.field;
+			if (field) dispatch('line', { name: command.name, line: `${command.name} ${field.text} `, keyboard: true, spend: field });
+			else dispatch('line', { name: command.name, line: `${command.name} `, keyboard: command.next !== 'tap' });
+		}
 	}
 
 	/** Escape is Back, and marks the key taken so the line does not peel as well. */

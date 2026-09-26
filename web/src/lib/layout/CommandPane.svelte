@@ -20,6 +20,10 @@
 	should just work»): the pill named the subject, so it is spent at the
 	tap, like any command's. Without one, `spec ` goes on the line as ever.
 
+	`occur`/`start`/`end` under a FIELD pill run it (da-lxqqz); when the
+	field wants keys typed, the tap writes `occur <field> ` instead, and
+	the pill, now on the line, is spent here.
+
 	A FLAG from a held command's list (da-st2xl) is appended to the line when
 	the line is that command's, so taps compose; otherwise it starts the line
 	afresh as `<command> <flag> ` (`withFlag`).
@@ -31,7 +35,7 @@
 -->
 <script lang="ts">
 	import CommandsWidget from '$lib/CommandsWidget.svelte';
-	import { clearUnlockedPills, pills, prefill, text } from '$lib/bar.js';
+	import { clearUnlockedPills, pills, prefill, text, type Pill } from '$lib/bar.js';
 	import { argumentsOf, withFlag } from '$lib/commands.js';
 	import { openSpec } from '$lib/specModal.js';
 	import { run } from '$lib/run.js';
@@ -60,12 +64,15 @@
 		void pressWithPills(argv);
 	}
 
-	function fill({ name, line, keyboard }: { name: string; line: string; keyboard: boolean }): void {
+	function fill({ name, line, keyboard, spend }: { name: string; line: string; keyboard: boolean; spend?: Pill }): void {
 		const field = argumentsOf($pills).find((p) => p.kind === 'field');
 		if (name === 'spec' && field) {
 			clearUnlockedPills([field]);
 			void openSpec(field.text).then((argv) => argv && press(argv));
-		} else prefill.set({ line, keyboard });
+		} else {
+			if (spend) clearUnlockedPills([spend]);
+			prefill.set({ line, keyboard });
+		}
 	}
 </script>
 

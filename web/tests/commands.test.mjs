@@ -471,6 +471,104 @@ describe('a verb fills the line and filters the fields', () => {
 	});
 });
 
+// da-lxqqz, vividn: «when a field is selected, then the start/end/occur
+// buttons should become double lines and auto trigger entry (unless there
+// are extra keys to be filled in, in which case the input line should
+// automatically be selected for typing in those fields». Required keys
+// only: a key with a default is filled from it and stops nothing.
+describe('a verb under a field pill', () => {
+	const KEYED = [
+		...SEED,
+		'spec set tea --verb occur --data-key amount',
+		'spec set juice --verb occur --data-key cups=1'
+	];
+	const verb = (page, name) => commands(page).locator(`button[data-command="${name}"]`);
+	const fieldPill = (page) => page.locator('.prompt-bar .pill.field');
+
+	/** Mint `field`'s pill and wait for the verbs to narrow to it. */
+	async function pillOf(page, field) {
+		await fieldsBar(page).locator(`[data-field="${field}"]`).click({ button: 'right' });
+		await fieldPill(page).waitFor();
+		await page.waitForFunction(() => !document.querySelector('[data-command="switch"]'));
+	}
+
+	test('a field that needs nothing typed: the verb is double-outlined and logs at once, spending the pill', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await seedLines(app, KEYED);
+			await pillOf(page, 'coffee');
+			assert.equal(await verb(page, 'occur').getAttribute('data-act'), 'run');
+
+			await echoed(app, () => verb(page, 'occur').click());
+			assert.equal((await app.echoes()).at(-1), 'occur coffee');
+			await fieldPill(page).waitFor({ state: 'detached' });
+			assert.equal((await line(page)).text, '');
+			await app.idle();
+			assert.equal((await app.entries(1))[0].field, 'coffee');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('a block field: start and end both run', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await seedLines(app, KEYED);
+			for (const name of ['start', 'end']) {
+				await pillOf(page, 'sleep');
+				assert.equal(await verb(page, name).getAttribute('data-act'), 'run', name);
+				await echoed(app, () => verb(page, name).click());
+				assert.equal((await app.echoes()).at(-1), `${name} sleep`);
+				await fieldPill(page).waitFor({ state: 'detached' });
+				// The clock is held, and a second sleep at the same instant collides (da-ydao).
+				await app.clock.forward(60_000);
+			}
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('a required key with no default: single outline, the tap fills the line and opens the keyboard, nothing is logged', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await seedLines(app, KEYED);
+			await app.idle();
+			const before = (await app.allEntries()).length;
+			await pillOf(page, 'tea');
+			assert.equal(await verb(page, 'occur').getAttribute('data-act'), 'fill');
+
+			await verb(page, 'occur').click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur tea ');
+			assert.deepEqual(await line(page), { text: 'occur tea ', focused: true });
+			assert.notEqual(await page.locator('.prompt-bar input').getAttribute('inputmode'), 'none', 'the keyboard stayed shut');
+			// The pill is on the line now, so it is spent rather than appended a second time.
+			await fieldPill(page).waitFor({ state: 'detached' });
+			await app.idle();
+			assert.equal((await app.allEntries()).length, before, 'the tap logged something');
+
+			await echoed(app, () => app.submit('occur tea 2'));
+			assert.equal((await app.echoes()).at(-1), 'occur tea 2');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// «With the default» is the CLI's to fill, and it does not yet (da-9s98k):
+	// the claim here is the web's half, that a default asks nothing of the tap.
+	test('only optional keys: it logs at once, nothing typed', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await seedLines(app, KEYED);
+			await pillOf(page, 'juice');
+			assert.equal(await verb(page, 'occur').getAttribute('data-act'), 'run');
+
+			await echoed(app, () => verb(page, 'occur').click());
+			assert.equal((await app.echoes()).at(-1), 'occur juice');
+			await app.idle();
+			await fieldPill(page).waitFor({ state: 'detached' });
+			assert.equal((await app.entries(1))[0].field, 'juice');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+});
+
 describe('the scroll rule', () => {
 	// vividn, 2026-09-22 (da-vu7pi): «we should always maintain horizontal
 	// scrolling in the commands widget, so when it is tall enough, do three

@@ -28,7 +28,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { inkOver, lookOf, pressArgv, shapeFor, buttonsFor, bands, fieldRows } from '../src/lib/fields.ts';
+import { inkOver, lookOf, pressArgv, requiredKeys, shapeFor, buttonsFor, bands, fieldRows } from '../src/lib/fields.ts';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, GREEN, ORANGE, PURPLE, type, untilFieldStyle } from './support/fields.mjs';
 import { listed, rowsOf } from './support/rows.mjs';
@@ -80,6 +80,26 @@ describe('the logic', () => {
 			[{ field: 'd', state: true }, { field: 'f', state: 'x' }]
 		);
 		assert.deepEqual(widgets.map((w) => w.field), ['b', 'e', 'f', 'c', 'd', 'a']);
+	});
+
+	// da-lxqqz: only a key with no default asks anything of the person.
+	test('requiredKeys: -K/-k keys with no default, and required subfields with none', () => {
+		assert.deepEqual(
+			requiredKeys(
+				spec('word', {
+					id_keys: ['lang', 'pos=noun'],
+					data_keys: ['gloss', 'n=1'],
+					subfields: {
+						src: { required: true, default: null },
+						kind: { required: true, default: 'verb' },
+						note: { required: false, default: null }
+					}
+				})
+			),
+			['lang', 'gloss', 'src']
+		);
+		assert.deepEqual(requiredKeys(spec('coffee', { data_keys: ['cups=1'] })), []);
+		assert.deepEqual(requiredKeys(null), []);
 	});
 
 	test('bands: as many runs as rows, of equal count, none empty', () => {
