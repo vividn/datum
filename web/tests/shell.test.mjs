@@ -22,19 +22,17 @@
 // What still opens an app of its own, and why:
 //
 //   - a test about ANOTHER DEVICE, which is another browser context by
-//     definition — the second half of the `+` test, `a saved day is what
-//     another device opens`, the second half of the lock test;
-//   - `an edit in tab A survives a save from tab B`, which wants two pages
-//     that both booted from the same saved `main`;
-//   - the cycle guard that saves `main` into itself, and the lock test,
-//     which reload, and a preview does not survive a reload: that is what
-//     it is for;
-//   - the phone, the 1280x800 bar, the memory-only storage prelude and the
-//     fallback-only server, each of which is a different browser.
+//     definition — the second half of the `+` test and of the lock test;
+//   - the phone, the memory-only storage prelude and the fallback-only
+//     server, each of which is a different browser.
 //
 // The tests about `main` itself being in front are `solo`'s now, which puts
-// a modified `main` back (`restoreMain`), and the bar tests that LOG share
-// too: `solo` and `empty` start each on an empty database (da-6b3dj).
+// a modified `main` back (`restoreMain`) — the ones that save `main` and
+// reload onto it (the cycle guard, the lock) included, since a reload of
+// `main` is not a room's to survive — and the bar tests that LOG share too:
+// `solo` and `empty` start each on an empty database (da-6b3dj). A second
+// TAB of the same device is `app.newTab()` on the shared context, closed
+// before the test ends so nothing it runs outlives it (da-iwikb).
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -355,6 +353,20 @@ describe('a URL', () => {
 		});
 	});
 
+	// Before a test that navigates first (`wipe` then `goto`): a notice page
+	// draws no tree, and the next `solo` or `room` would boot `/` again to
+	// get off it — a boot the navigation here pays for anyway (da-iwikb).
+	test('/no-such-thing is a quiet notice with a link home', async () => {
+		await shared.wipe(async (app) => {
+			await app.page.goto(new URL('/no-such-thing', app.page.url()).href);
+			const notice = app.page.locator('main .notice');
+			await notice.waitFor();
+			assert.match(await notice.innerText(), /no-such-thing/);
+			assert.equal(await notice.locator('a[href="/"]').count(), 1);
+			assert.deepEqual(await rootTabs(app.page), ['main']);
+		});
+	});
+
 	// The widget bar became the fields widget (da-c7u8); its old name is an alias.
 	test('/fields, /widgets and /widgetbar open the fields widget alone', async () => {
 		await shared.wipe(async (app) => {
@@ -421,21 +433,13 @@ describe('a URL', () => {
 				name: 'a-command',
 				root: { id: 'c', tabs: [{ id: 'c-tab', content: { id: 'c-w', kind: 'command', settings: {} } }], active: 0, bar: { edge: 'top', align: 'start' } }
 			});
-			await app.goto('/a-command');
+			// Through the `+`, not a third boot: which kind the saved id
+			// draws is the claim, and both doors open a layout by its name.
+			await pick(page, 'a-command');
+			await until(() => activeRootTab(page), (t) => t === 'a-command');
 			assert.deepEqual(await titles(page), ['command']);
 			await page.locator('section.pane[data-title="command"] button[data-command="occur"]').waitFor();
 			assert.deepEqual(app.errors, []);
-		});
-	});
-
-	test('/no-such-thing is a quiet notice with a link home', async () => {
-		await shared.wipe(async (app) => {
-			await app.page.goto(new URL('/no-such-thing', app.page.url()).href);
-			const notice = app.page.locator('main .notice');
-			await notice.waitFor();
-			assert.match(await notice.innerText(), /no-such-thing/);
-			assert.equal(await notice.locator('a[href="/"]').count(), 1);
-			assert.deepEqual(await rootTabs(app.page), ['main']);
 		});
 	});
 
@@ -516,26 +520,6 @@ describe('the acts', () => {
 		// by hand: what this checks is that a saved `main` shadows the built-in.)
 	});
 
-	test('a saved day is what another device opens', async () => {
-		await withApp(async (app) => {
-			const { page } = app;
-			await manage(page, 'custom', 'Close pane');
-			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'fields']);
-			await act(page, 'save');
-			await until(() => dotted(page), (d) => d.length === 0);
-			const saved = await layouts(app, 'loadLayout', 'main');
-
-			// Another tab of the same browser, opened fresh: no draft of its
-			// own (the draft is per name, and this one was cleared by the
-			// save), so what it shows is the save.
-			await page.evaluate(() => localStorage.removeItem('datum.layout.root.v1'));
-			const other = await app.newTab();
-			assert.deepEqual(await titles(other.page), ['dayview', 'repl', 'nowview', 'tail', 'fields']);
-			assert.deepEqual(await dotted(other.page), []);
-			assert.deepEqual(await layouts(other, 'loadLayout', 'main'), saved);
-		}, DESKTOP);
-	});
-
 	test('save as renames this copy to mine and leaves the layout it came from alone', async () => {
 		// The room stands in for what `main` was here: `save as` moves THIS
 		// copy to the new name, and the layout it was a copy of keeps its own.
@@ -568,73 +552,6 @@ describe('the acts', () => {
 			assert.deepEqual(await dotted(page), ['mine']);
 			assert.deepEqual(app.errors, []);
 		});
-	});
-
-	test('lock is per device: kept across a reload here, absent on another device and in the save; never the dot', async () => {
-		await withApp(async (app) => {
-			const { page } = app;
-			const locked = () => page.evaluate(() => !!window.datum.layout.current().root.tabs[0].locked);
-			/** What the button beside the gear says it is (da-bzhq). */
-			const pressed = () => lockButton(page).getAttribute('aria-pressed');
-			assert.equal(await locked(), false);
-			assert.equal(await pressed(), 'false');
-			// The lock is not IN the menu any more: it is the button.
-			assert.deepEqual(
-				(await rootItems(page)).filter((i) => /lock/i.test(i.label)),
-				[],
-				'the lock is still an item of the layout menu'
-			);
-			await toggleRootLock(page);
-			await until(locked, (l) => l === true);
-			// Under the lock the menu is the acts alone (the pane rule,
-			// da-crp5): nothing to split or close, so no `▾` at all.
-			assert.deepEqual(
-				(await rootItems(page)).map((i) => i.label),
-				['Save layout', 'Restore layout', 'Reset layout', 'Save layout as…']
-			);
-			assert.equal(await rootManageButton(page).count(), 0, 'a locked layout still offers the ▾');
-			// And the way out is still one press away, where it now lives.
-			assert.equal(await pressed(), 'true');
-			assert.match(await lockButton(page).getAttribute('aria-label'), /^unlock the main layout/);
-			// «by the gear icon» (da-bzhq), on the gear's OTHER side since
-			// da-fphjw — vividn: «Move the lock button to the other side of the
-			// gear» — so the GEAR is the bar's last thing and the lock is the
-			// one before it, with nothing but the bar's own gap between.
-			const beside = await page.evaluate(() => {
-				const box = (s) => document.querySelector(s).getBoundingClientRect();
-				const [lock, gear, bar] = ['.root-bar button.lock', '.root-bar button.gear', '.root-bar'].map(box);
-				return { before: gear.left - lock.right, end: bar.right - gear.right };
-			});
-			assert.ok(beside.before >= 0 && beside.before <= 8, `the lock is ${beside.before}px from the gear`);
-			assert.ok(beside.end <= 12, `the gear is ${beside.end}px from the bar's end`);
-			assert.deepEqual(await dotted(page), [], 'the lock alone showed the modified dot');
-			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.main')), '1');
-
-			await app.reload();
-			assert.equal(await locked(), true);
-			await until(pressed, (p) => p === 'true');
-
-			// Saved while locked: the entry carries no lock.
-			await act(page, 'save');
-			await until(() => layouts(app, 'listLayouts'), (l) => l.length === 1);
-			const saved = await layouts(app, 'loadLayout', 'main');
-			assert.doesNotMatch(JSON.stringify(saved), /"locked"/, 'the lock went into the entry');
-			assert.deepEqual(await dotted(page), []);
-
-			await toggleRootLock(page);
-			await until(locked, (l) => l === false);
-			assert.equal(await pressed(), 'false');
-			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.main')), '0');
-		}, DESKTOP);
-
-		// Another device, FRESH: the unlock above did not travel — it has
-		// nothing said of `main`, so it opens as a first open does, locked
-		// (da-gshh).
-		await withApp(async ({ page }) => {
-			assert.equal(await page.evaluate(() => !!window.datum.layout.current().root.tabs[0].locked), true);
-			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.main')), null);
-			assert.equal(await lockButton(page).getAttribute('aria-pressed'), 'true');
-		}, { ...DESKTOP, home: null });
 	});
 
 	// vividn, 2026-09-21 (da-fphjw): «highlight when it is unlocked rather
@@ -757,30 +674,129 @@ describe('the acts', () => {
 		});
 	});
 
+	// The three that SAVE `main` come after every room, each followed by a
+	// `solo`: a room is seeded from the `main` tab as it stands before the
+	// world is tidied behind it, so a room opened after one of these would
+	// be a copy of that save rather than of `main` as it ships (da-iwikb).
+	test('a saved day is what another device opens', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await manage(page, 'custom', 'Close pane');
+			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'fields']);
+			await act(page, 'save');
+			await until(() => dotted(page), (d) => d.length === 0);
+			const saved = await layouts(app, 'loadLayout', 'main');
+
+			// Another tab of the same browser, opened fresh: no draft of its
+			// own (the draft is per name, and this one was cleared by the
+			// save), so what it shows is the save.
+			await page.evaluate(() => localStorage.removeItem('datum.layout.root.v1'));
+			const other = await app.newTab();
+			try {
+				assert.deepEqual(await titles(other.page), ['dayview', 'repl', 'nowview', 'tail', 'fields']);
+				assert.deepEqual(await dotted(other.page), []);
+				assert.deepEqual(await layouts(other, 'loadLayout', 'main'), saved);
+			} finally {
+				await other.page.close();
+			}
+		});
+	});
+
+	test('lock is per device: kept across a reload here, absent on another device and in the save; never the dot', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			const locked = () => page.evaluate(() => !!window.datum.layout.current().root.tabs[0].locked);
+			/** What the button beside the gear says it is (da-bzhq). */
+			const pressed = () => lockButton(page).getAttribute('aria-pressed');
+			assert.equal(await locked(), false);
+			assert.equal(await pressed(), 'false');
+			// The lock is not IN the menu any more: it is the button.
+			assert.deepEqual(
+				(await rootItems(page)).filter((i) => /lock/i.test(i.label)),
+				[],
+				'the lock is still an item of the layout menu'
+			);
+			await toggleRootLock(page);
+			await until(locked, (l) => l === true);
+			// Under the lock the menu is the acts alone (the pane rule,
+			// da-crp5): nothing to split or close, so no `▾` at all.
+			assert.deepEqual(
+				(await rootItems(page)).map((i) => i.label),
+				['Save layout', 'Restore layout', 'Reset layout', 'Save layout as…']
+			);
+			assert.equal(await rootManageButton(page).count(), 0, 'a locked layout still offers the ▾');
+			// And the way out is still one press away, where it now lives.
+			assert.equal(await pressed(), 'true');
+			assert.match(await lockButton(page).getAttribute('aria-label'), /^unlock the main layout/);
+			// «by the gear icon» (da-bzhq), on the gear's OTHER side since
+			// da-fphjw — vividn: «Move the lock button to the other side of the
+			// gear» — so the GEAR is the bar's last thing and the lock is the
+			// one before it, with nothing but the bar's own gap between.
+			const beside = await page.evaluate(() => {
+				const box = (s) => document.querySelector(s).getBoundingClientRect();
+				const [lock, gear, bar] = ['.root-bar button.lock', '.root-bar button.gear', '.root-bar'].map(box);
+				return { before: gear.left - lock.right, end: bar.right - gear.right };
+			});
+			assert.ok(beside.before >= 0 && beside.before <= 8, `the lock is ${beside.before}px from the gear`);
+			assert.ok(beside.end <= 12, `the gear is ${beside.end}px from the bar's end`);
+			assert.deepEqual(await dotted(page), [], 'the lock alone showed the modified dot');
+			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.main')), '1');
+
+			await app.reload();
+			assert.equal(await locked(), true);
+			await until(pressed, (p) => p === 'true');
+
+			// Saved while locked: the entry carries no lock.
+			await act(page, 'save');
+			await until(() => layouts(app, 'listLayouts'), (l) => l.length === 1);
+			const saved = await layouts(app, 'loadLayout', 'main');
+			assert.doesNotMatch(JSON.stringify(saved), /"locked"/, 'the lock went into the entry');
+			assert.deepEqual(await dotted(page), []);
+
+			await toggleRootLock(page);
+			await until(locked, (l) => l === false);
+			assert.equal(await pressed(), 'false');
+			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.main')), '0');
+		});
+
+		// Another device, FRESH: the unlock above did not travel — it has
+		// nothing said of `main`, so it opens as a first open does, locked
+		// (da-gshh).
+		await withApp(async ({ page }) => {
+			assert.equal(await page.evaluate(() => !!window.datum.layout.current().root.tabs[0].locked), true);
+			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.main')), null);
+			assert.equal(await lockButton(page).getAttribute('aria-pressed'), 'true');
+		}, { ...DESKTOP, home: null });
+	});
+
 	// The review thread on #168: the cross-tab refresh decided "unmodified"
 	// before its awaited load, so an edit made meanwhile was overwritten.
 	test('an edit in tab A survives a save from tab B, dot and all', async () => {
-		await withApp(async (a) => {
+		await shared.solo(async (a) => {
 			const b = await a.newTab();
-			await manage(a.page, 'tail', 'split: a new pane to the right');
-			assert.deepEqual(await dotted(a.page), ['main']);
-			assert.deepEqual(await dotted(b.page), []);
+			try {
+				await manage(a.page, 'tail', 'split: a new pane to the right');
+				assert.deepEqual(await dotted(a.page), ['main']);
+				assert.deepEqual(await dotted(b.page), []);
 
-			const heard = await a.spyOnRunner();
-			await manage(b.page, 'custom', 'Close pane');
-			await act(b.page, 'save');
-			await until(() => dotted(b.page), (d) => d.length === 0);
-			// A hears the save — it reads the saved layout back from
-			// `_internal` — and once that has answered, its baseline has
-			// moved and its edit has not.
-			await until(heard, (argvs) => argvs.some((argv) => argv[0] === '--db' && argv[1] === '_internal'));
-			await a.idle();
-			await settled(a.page);
-			assert.deepEqual(await titles(a.page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'custom', 'fields']);
-			assert.deepEqual(await dotted(a.page), ['main']);
-			// And a tab that was not edited follows: a third tab, and B itself.
-			assert.deepEqual(await titles(b.page), ['dayview', 'repl', 'nowview', 'tail', 'fields']);
-		}, DESKTOP);
+				const heard = await a.spyOnRunner();
+				await manage(b.page, 'custom', 'Close pane');
+				await act(b.page, 'save');
+				await until(() => dotted(b.page), (d) => d.length === 0);
+				// A hears the save — it reads the saved layout back from
+				// `_internal` — and once that has answered, its baseline has
+				// moved and its edit has not.
+				await until(heard, (argvs) => argvs.some((argv) => argv[0] === '--db' && argv[1] === '_internal'));
+				await a.idle();
+				await settled(a.page);
+				assert.deepEqual(await titles(a.page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'custom', 'fields']);
+				assert.deepEqual(await dotted(a.page), ['main']);
+				// And a tab that was not edited follows: a third tab, and B itself.
+				assert.deepEqual(await titles(b.page), ['dayview', 'repl', 'nowview', 'tail', 'fields']);
+			} finally {
+				await b.page.close();
+			}
+		});
 	});
 });
 
@@ -852,48 +868,57 @@ describe('the bottom bar', () => {
 	// The window moves with the shape and stays absolute, and it is the
 	// OPEN bar's, which is what a desktop starts on.
 	test('stands out at 100–112px with a ≥1.05rem prompt; the REPL has no prompt, and the bar and a chip land in its scrollback', async () => {
-		await withApp(
-			async (app) => {
-				const { page } = app;
-				const { height, font, rem } = await page.evaluate(() => ({
-					height: document.querySelector('.prompt-bar').getBoundingClientRect().height,
-					font: parseFloat(getComputedStyle(document.querySelector('.prompt-bar input')).fontSize),
-					rem: parseFloat(getComputedStyle(document.documentElement).fontSize)
-				}));
-				assert.ok(height >= 100 && height <= 112, `the bottom bar is ${height}px tall at 1280x800`);
-				assert.ok(font >= 1.05 * rem, `the prompt's input is ${font}px on a ${rem}px rem`);
+		// The shared desktop, resized: `home` puts its own size back for the
+		// next test. The scrollback is the shared page's, so the echoes and
+		// documents read are the ones past what was there when this began.
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await page.setViewportSize({ width: 1280, height: 800 });
+			const echoed = (await app.echoes()).length;
+			const { height, font, rem } = await page.evaluate(() => ({
+				height: document.querySelector('.prompt-bar').getBoundingClientRect().height,
+				font: parseFloat(getComputedStyle(document.querySelector('.prompt-bar input')).fontSize),
+				rem: parseFloat(getComputedStyle(document.documentElement).fontSize)
+			}));
+			assert.ok(height >= 100 && height <= 112, `the bottom bar is ${height}px tall at 1280x800`);
+			assert.ok(font >= 1.05 * rem, `the prompt's input is ${font}px on a ${rem}px rem`);
 
-				const repl = page.locator('section[data-pane="repl"]');
-				assert.equal(await repl.count(), 1);
-				assert.equal(await repl.locator('input, .line').count(), 0, 'the REPL still has a prompt of its own');
+			const repl = page.locator('section[data-pane="repl"]');
+			assert.equal(await repl.count(), 1);
+			assert.equal(await repl.locator('input, .line').count(), 0, 'the REPL still has a prompt of its own');
 
-				// Tracked, so the fields widget has a button to press (da-c7u8).
-				await app.run(['spec', 'set', 'coffee', '--verb', 'occur']);
-				await app.submit('occur coffee');
-				await until(() => receipt(page).innerText(), (t) => /^CREATE \S+$/.test(t));
-				assert.deepEqual(await app.echoes(), ['occur coffee']);
-				// The scrollback carries the command's DOCUMENT, not its printed
-				// lines: the web asks every command it runs for `--show json`
-				// (da-xfa4), so both surfaces draw the same sections.
-				assert.match(
-					await page.locator('.repl .doc').first().innerText(),
-					/CREATE[\s\S]*coffee/,
-					"the CLI's action is not in the scrollback"
-				);
+			// Tracked, so the fields widget has a button to press (da-c7u8).
+			await app.run(['spec', 'set', 'coffee', '--verb', 'occur']);
+			const docs = await repl.locator('.doc').count();
+			await app.submit('occur coffee');
+			await until(() => receipt(page).innerText(), (t) => /^CREATE \S+$/.test(t));
+			assert.deepEqual((await app.echoes()).slice(echoed), ['occur coffee']);
+			// The scrollback carries the command's DOCUMENT, not its printed
+			// lines: the web asks every command it runs for `--show json`
+			// (da-xfa4), so both surfaces draw the same sections. This
+			// command's: the pane's newest, past the ones already there.
+			await until(() => repl.locator('.doc').count(), (n) => n > docs);
+			assert.match(
+				await repl.locator('.doc').last().innerText(),
+				/CREATE[\s\S]*coffee/,
+				"the CLI's action is not in the scrollback"
+			);
 
-				await app.pressWidget('coffee');
-				assert.deepEqual(await app.echoes(), ['occur coffee', 'occur coffee']);
+			await app.pressWidget('coffee');
+			assert.deepEqual((await app.echoes()).slice(echoed), ['occur coffee', 'occur coffee']);
 
-				await app.submit('tail');
-				const input = page.locator('.prompt-bar input');
-				await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === '');
-				await input.press('ArrowUp');
-				assert.equal(await input.inputValue(), 'tail');
-			},
-			{ viewport: { width: 1280, height: 800 } }
-		);
+			await app.submit('tail');
+			const input = page.locator('.prompt-bar input');
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === '');
+			await input.press('ArrowUp');
+			assert.equal(await input.inputValue(), 'tail');
+		});
 	});
 
+	// REFUSED rather than never settled: both leave the app in memory, and a
+	// handle that never settles holds the boot for `ACQUIRE_DEADLINE_MS`
+	// (5 s, $lib/cli.ts) first. That path is storage.test.mjs's (`NEVER`);
+	// what this test reads is the bar once memory is where the rows are.
 	test('memory-only storage turns the bar orange, with the storage sentence as its title', async () => {
 		await withApp(
 			async ({ page }) => {
@@ -902,7 +927,12 @@ describe('the bottom bar', () => {
 				assert.equal(await bar.evaluate((el) => getComputedStyle(el).borderTopColor), 'rgb(232, 130, 12)');
 				assert.match(await bar.getAttribute('title'), /held in memory only/);
 			},
-			{ ...DESKTOP, prepare: inWorker('FileSystemFileHandle.prototype.createSyncAccessHandle = () => new Promise(() => {});') }
+			{
+				...DESKTOP,
+				prepare: inWorker(
+					"FileSystemFileHandle.prototype.createSyncAccessHandle = () => Promise.reject(new DOMException('refused', 'InvalidStateError'));"
+				)
+			}
 		);
 	});
 
@@ -1038,7 +1068,7 @@ describe('the bottom bar', () => {
 
 describe('the cycle guard', () => {
 	test('a layout that embeds itself loads as a notice, not a recursion', async () => {
-		await withApp(async (app) => {
+		await shared.solo(async (app) => {
 			const { page } = app;
 			// A saved `main` whose tail is a tab holding `main`.
 			const tree = await page.evaluate(() => window.datum.shell.extract(window.datum.layout.current().root.tabs[0]));
@@ -1051,7 +1081,7 @@ describe('the cycle guard', () => {
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'main', 'custom', 'fields']);
 			assert.match(await app.paneText('main'), /cannot hold itself/);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 
 	test('the chooser offers day inside a pane, and a nested layout draws', async () => {
@@ -1344,10 +1374,17 @@ describe('on a phone', () => {
 			assert.ok(withPill.width >= 100, `the prompt is ${withPill.width}px wide with a pill`);
 			await page.evaluate(() => window.datum.bar.removePill('when'));
 
-			for (const name of ['nowview', 'tail', 'stats', 'custom', 'repl', 'fields', 'dayview']) {
-				await pick(page, name);
-				await until(() => rootTabs(page), (t) => t.includes(name));
-			}
+			// Six through the shell's own door in one go rather than six trips
+			// through the `+`, each drawing a widget the next hides: what this
+			// reads is the strip holding eight, not how they came. The last
+			// through the `+`, so the chooser is still driven at phone width
+			// (canary-deepseek-v4-pro on PR #239).
+			const names = ['nowview', 'tail', 'stats', 'custom', 'repl', 'fields'];
+			await page.evaluate((all) => Promise.all(all.map((n) => window.datum.shell.open(n))), names);
+			await until(() => rootTabs(page), (t) => names.every((n) => t.includes(n)));
+			await pick(page, 'dayview');
+			await until(() => rootTabs(page), (t) => t.includes('dayview'));
+			await app.idle();
 			const row = await page.locator('.root-bar').evaluate((el) => {
 				const strip = el.querySelector('.tabs');
 				const box = (s) => el.querySelector(s).getBoundingClientRect();
