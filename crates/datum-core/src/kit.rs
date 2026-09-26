@@ -81,11 +81,6 @@ pub struct FieldEntry {
     /// means. Required (da-c8mh): a kit that installs a field says what
     /// the field is.
     pub verb: String,
-    /// `point | block | ongoing`. Documentation hint at this slice — the
-    /// actual entry shape is decided at log-time. Reserved for slice 2+
-    /// where layout uses it.
-    #[serde(default)]
-    pub kind: Option<String>,
     /// Position perpendicular to the time axis, fraction `[0.0, 1.0]`.
     /// Maps to [`FieldSpec::y`] for the current axis-orientation.
     #[serde(default)]
@@ -100,16 +95,10 @@ pub struct FieldEntry {
     /// `--glyph` (da-1mkej: a kit could colour a field but not give it one).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glyph: Option<String>,
-    /// When true, the field is hidden from views by default.
+    /// When true, the field is hidden from views by default: the spec's
+    /// `render = false`, over any `render` beside it.
     #[serde(default)]
     pub hidden: bool,
-    /// Default state position within the field band (slice 1: round-trip
-    /// only; consumed by views in slice 2+).
-    #[serde(default)]
-    pub state_pos: Option<f64>,
-    /// Default state size within the field band.
-    #[serde(default)]
-    pub state_size: Option<f64>,
     /// Stacking order. Higher renders on top.
     #[serde(default, rename = "zIndex")]
     pub z_index: Option<f64>,
@@ -129,10 +118,6 @@ pub struct FieldEntry {
     pub data_keys: Vec<String>,
     /// Allowed states with per-state overrides. Keyed by state name; emit
     /// order is alphabetical (BTreeMap) so round-trip is diff-clean.
-    /// Per-state values use `pos`/`size` (not `state_pos`/`state_size`) —
-    /// the field-level defaults retain the `state_pos`/`state_size`
-    /// spelling because *those* describe the parent's child-defaults, not
-    /// the parent's own band.
     #[serde(default, rename = "states", skip_serializing_if = "BTreeMap::is_empty")]
     pub states: BTreeMap<String, StateSpec>,
     /// Free-form tags used by views and kit commands to group fields
@@ -330,18 +315,12 @@ pub struct ColorRuleEntry {
 /// Per-state override carried inside `states.<name> = { ... }` inline tables.
 ///
 /// The `name` of the state is the map key in [`FieldEntry::states`], so it's
-/// not duplicated here. `pos`/`size` describe this state's band within its
-/// parent field (not the parent's own band — for that, see
-/// [`FieldEntry::pos`] / [`FieldEntry::size`]). They are round-trip only at
-/// this slice; layout consumes them in slice 2+.
+/// not duplicated here. A state has no band of its own: nothing draws one,
+/// so a kit that gives it `pos`/`size` is refused as unknown (da-uokdb).
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct StateSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pos: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub size: Option<f64>,
     /// This state's own glyph, over the field's — the spec's `--state-glyph`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glyph: Option<String>,
@@ -354,8 +333,18 @@ impl KitToml {
     // to bring `std::str::FromStr` into scope. The `Err` type is
     // `DatumError`, which the dispatcher prefixes with the kit path.
     #[allow(clippy::should_implement_trait)]
+    /// A key no part of the format reads — a typo, or one the format lacks —
+    /// refuses the kit, named with its table (da-uokdb).
     pub fn from_str(s: &str) -> Result<Self> {
-        toml::from_str(s).map_err(|e| DatumError::Other(format!("kit TOML parse: {e}")))
+        let mut unknown = None;
+        let kit = serde_ignored::deserialize(toml::Deserializer::new(s), |path| {
+            unknown.get_or_insert_with(|| path.to_string().replace("?.", ""));
+        })
+        .map_err(|e| DatumError::Other(format!("kit TOML parse: {e}")))?;
+        match unknown {
+            Some(path) => Err(DatumError::Other(unknown_key(s, &path))),
+            None => Ok(kit),
+        }
     }
 
     /// Serialize back to TOML. Round-trip should be diff-clean for any
@@ -432,6 +421,25 @@ impl KitToml {
     }
 }
 
+/// `field.3.unti` → `kit TOML: [[field]] water: unknown key «unti»`: an
+/// array table's entry is named by its `name`.
+fn unknown_key(src: &str, path: &str) -> String {
+    let entry = |t: &str, i: &str| {
+        let doc = src.parse::<toml::Table>().ok()?;
+        let name = doc.get(t)?.get(i.parse::<usize>().ok()?)?.get("name")?;
+        Some(format!("[[{t}]] {}: ", name.as_str()?))
+    };
+    let (at, key) = match path.splitn(3, '.').collect::<Vec<_>>()[..] {
+        [t, i, key] => (
+            entry(t, i).unwrap_or_else(|| format!("[[{t}]] #{i}: ")),
+            key,
+        ),
+        [t, key] => (format!("[{t}]: "), key),
+        _ => (String::new(), path),
+    };
+    format!("kit TOML: {at}unknown key «{key}»")
+}
+
 impl FieldEntry {
     /// Convert the parsed TOML form to a [`FieldSpec`] suitable for storage.
     ///
@@ -496,6 +504,9 @@ impl FieldEntry {
 
         spec.tags = self.tags;
         spec.presentation.render = self.render;
+        if self.hidden {
+            spec.presentation.render = Some(Render::All(false));
+        }
 
         spec.regenerate_derived_aliases();
         Ok(spec)
@@ -513,8 +524,6 @@ impl FieldEntry {
                         name.clone(),
                         StateSpec {
                             color: spec.state_colors.get(name).cloned(),
-                            pos: None,
-                            size: None,
                             glyph: spec.presentation.state_glyphs.get(name).cloned(),
                         },
                     )
@@ -541,14 +550,11 @@ impl FieldEntry {
         Self {
             name: spec.field.clone(),
             verb: spec.verb.to_string(),
-            kind: None,
             pos,
             size,
             color: spec.color.clone(),
             glyph: spec.presentation.glyph.clone(),
             hidden: false,
-            state_pos: None,
-            state_size: None,
             z_index: spec.presentation.z_index,
             relative_to,
             id_keys: spec.id_keys.clone(),
@@ -870,7 +876,7 @@ name = "lang"
 name = "vibe"
 verb = "switch"
 
-states.germany = { color = "#303030", pos = 0.0, size = 1.0 }
+states.germany = { color = "#303030", glyph = "D" }
 states.japan = {}
 "##;
         let kit = KitToml::from_str(src).unwrap();
@@ -879,11 +885,10 @@ states.japan = {}
         assert_eq!(f.states.len(), 2);
         let germany = f.states.get("germany").unwrap();
         assert_eq!(germany.color.as_deref(), Some("#303030"));
-        assert_eq!(germany.pos, Some(0.0));
-        assert_eq!(germany.size, Some(1.0));
+        assert_eq!(germany.glyph.as_deref(), Some("D"));
         let japan = f.states.get("japan").unwrap();
         assert_eq!(japan.color, None);
-        assert_eq!(japan.pos, None);
+        assert_eq!(japan.glyph, None);
     }
 
     #[test]
@@ -891,14 +896,11 @@ states.japan = {}
         let entry = FieldEntry {
             name: "x".into(),
             verb: "stop".into(),
-            kind: None,
             pos: None,
             size: None,
             color: None,
             glyph: None,
             hidden: false,
-            state_pos: None,
-            state_size: None,
             z_index: None,
             relative_to: None,
             id_keys: vec![],
@@ -917,14 +919,11 @@ states.japan = {}
         let entry = FieldEntry {
             name: "mood".into(),
             verb: "switch".into(),
-            kind: None,
             pos: Some(0.2),
             size: Some(0.1),
             color: Some("#ff0000".into()),
             glyph: None,
             hidden: false,
-            state_pos: None,
-            state_size: None,
             z_index: None,
             relative_to: None,
             id_keys: vec![],
@@ -935,8 +934,6 @@ states.japan = {}
                     "happy".into(),
                     StateSpec {
                         color: Some("#00ff00".into()),
-                        pos: None,
-                        size: None,
                         glyph: None,
                     },
                 );
@@ -1047,9 +1044,7 @@ size = 0.05
     #[test]
     fn states_map_round_trips_through_toml() {
         // Authoring-format → emit → re-parse preserves the map shape and
-        // per-state pos/size. (FieldSpec doesn't store per-state pos/size
-        // yet, so this checks the TOML layer only — see slice 2+ for the
-        // install/export side.)
+        // each state's colour and glyph.
         let src = r##"
 [kit]
 name = "lang"
@@ -1058,7 +1053,7 @@ name = "lang"
 name = "vibe"
 verb = "switch"
 
-states.germany = { color = "#303030", pos = 0.0, size = 1.0 }
+states.germany = { color = "#303030", glyph = "D" }
 states.japan = { color = "#aa0000" }
 states.empty = {}
 "##;
@@ -1069,11 +1064,10 @@ states.empty = {}
         assert_eq!(f.states.len(), 3);
         let germany = f.states.get("germany").unwrap();
         assert_eq!(germany.color.as_deref(), Some("#303030"));
-        assert_eq!(germany.pos, Some(0.0));
-        assert_eq!(germany.size, Some(1.0));
+        assert_eq!(germany.glyph.as_deref(), Some("D"));
         let japan = f.states.get("japan").unwrap();
         assert_eq!(japan.color.as_deref(), Some("#aa0000"));
-        assert_eq!(japan.pos, None);
+        assert_eq!(japan.glyph, None);
         let empty = f.states.get("empty").unwrap();
         assert_eq!(empty, &StateSpec::default());
     }

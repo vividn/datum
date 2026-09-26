@@ -81,6 +81,9 @@ tar = "0.4"
 # Config format (dbs.toml registry + datumrc.toml user config)
 toml = "0.8"
 
+# The keys a kit TOML holds that no struct reads, to refuse by name
+serde_ignored = "0.1"
+
 # URL parsing
 url = "2"
 

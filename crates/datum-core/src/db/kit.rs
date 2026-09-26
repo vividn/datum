@@ -15,7 +15,8 @@
 //! Conflict policy on install: if a row already exists for the same field
 //! name, the existing row wins by default (returned in `skipped`). When
 //! the caller passes `force = true`, the kit's spec overwrites the row
-//! and re-tags it with the kit's `kit_id`.
+//! and re-tags it with the kit's `kit_id`, keeping the spec it displaced
+//! for `kit uninstall` to write back (da-uokdb).
 
 use rusqlite::params;
 use serde_json::Value as JsonValue;
@@ -25,13 +26,30 @@ use crate::field_spec::FieldSpec;
 use crate::kit::IndexEntry;
 
 use super::definition::{definition_data, INDEX_FIELD, KIT_KEY};
-use super::spec::SPEC_KIT_KEY;
+use super::spec::{SPEC_DISPLACED_KEY, SPEC_KIT_KEY};
 use super::types::LIVE_SQL;
 use super::Db;
 
 /// The kit a spec entry's data names, if any.
 fn spec_kit(data: &JsonValue) -> Option<&str> {
     data.get(SPEC_KIT_KEY)?.as_str()
+}
+
+/// Spec entry `data` with every layer `kit_id` wrote taken out: a layer of
+/// the kit's gives way to the spec it displaced, or to none (da-uokdb).
+fn without_kit(data: &JsonValue, kit_id: &str) -> Option<JsonValue> {
+    let mut data = data.clone();
+    let obj = data.as_object_mut()?;
+    let inner = obj
+        .remove(SPEC_DISPLACED_KEY)
+        .and_then(|d| without_kit(&d, kit_id));
+    if let Some(inner) = inner {
+        if obj.get(SPEC_KIT_KEY).and_then(JsonValue::as_str) == Some(kit_id) {
+            return Some(inner);
+        }
+        obj.insert(SPEC_DISPLACED_KEY.into(), inner);
+    }
+    (spec_kit(&data) != Some(kit_id)).then_some(data)
 }
 
 /// Per-field outcome reported by [`Db::install_kit`].
@@ -198,16 +216,42 @@ impl Db {
     }
 
     /// Remove every field spec tagged with this `kit_id` — soft deletes,
-    /// as `datum del` makes, so the removal travels like any deletion. A
-    /// user's own spec is untouched. Returns the field names removed.
+    /// as `datum del` makes, so the removal travels like any deletion —
+    /// or, where the kit displaced a spec, write that spec back
+    /// (da-uokdb). A spec another kit displaced in turn loses the kit's
+    /// layer too, so uninstalling that kit later cannot bring this one
+    /// back. A user's own spec is untouched. Returns the field names
+    /// removed.
     pub fn uninstall_kit(&self, kit_id: &str) -> Result<Vec<String>> {
         let fields: Vec<String> = self
             .load_specs_by_kit(kit_id)?
             .into_iter()
             .map(|s| s.field)
             .collect();
-        for field in &fields {
-            self.delete_field_spec(field)?;
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT json_extract(data, '$.field') FROM entries
+             WHERE field = 'spec' AND {LIVE_SQL}
+               AND json_extract(data, '$.displaced') IS NOT NULL"
+        ))?;
+        let displacing: Vec<String> = stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        drop(stmt);
+        for field in fields.iter().chain(&displacing) {
+            let Some(mut row) = self.spec_entry(field)? else {
+                continue;
+            };
+            let Some(data) = row.data.clone() else {
+                continue;
+            };
+            match without_kit(&data, kit_id) {
+                None => self.soft_delete_entry(&row.hid)?,
+                Some(kept) if kept != data => {
+                    row.data = Some(kept);
+                    self.save_existing_entry(&row)?;
+                }
+                Some(_) => {}
+            }
         }
 
         // Index drops are unconditional — the underlying data is fine, and

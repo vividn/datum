@@ -36,6 +36,10 @@ pub const SPEC_FIELD: &str = "spec";
 /// The data key naming the kit that shipped a spec, as for layouts.
 pub(crate) const SPEC_KIT_KEY: &str = "kit_id";
 
+/// The data key holding the whole spec entry data a kit took a field over
+/// from, which uninstalling the kit writes back (da-uokdb).
+pub(crate) const SPEC_DISPLACED_KEY: &str = "displaced";
+
 /// Fields whose entries describe the database rather than the life it
 /// records — specs, layouts, aliases (da-b3752), views, kit commands and
 /// kit index definitions (da-fwwtn). One rule keeps them all off the
@@ -341,18 +345,29 @@ impl Db {
     /// an insert — which revives a deleted spec's tombstone in place.
     /// `kit_id` is the mark to write: `Some` sets it, `None` keeps the one
     /// the entry already carries, so a user's `spec set` on a kit field
-    /// leaves it the kit's. Returns the entry.
+    /// leaves it the kit's. A kit taking the spec over from its owner keeps
+    /// the owner's data as `displaced`, for uninstall to hand back; any
+    /// other write carries the `displaced` already there. Returns the entry.
     pub(crate) fn write_spec_entry(&self, spec: &FieldSpec, kit_id: Option<&str>) -> Result<Entry> {
         crate::slug::validate_field_name(&spec.field)?;
         let mut data = serde_json::to_value(spec)?;
         let existing = self.spec_entry(&spec.field)?;
-        let kit = kit_id.map(JsonValue::from).or_else(|| {
-            existing
-                .as_ref()
-                .and_then(|e| e.data.as_ref()?.get(SPEC_KIT_KEY).cloned())
-        });
-        if let (Some(kit), Some(obj)) = (kit, data.as_object_mut()) {
-            obj.insert(SPEC_KIT_KEY.into(), kit);
+        let old = existing.as_ref().and_then(|e| e.data.as_ref());
+        let old_kit = old.and_then(|d| d.get(SPEC_KIT_KEY));
+        let (kit, displaced) = match kit_id {
+            Some(k) if old_kit.and_then(JsonValue::as_str) != Some(k) => (Some(k.into()), old),
+            _ => (
+                kit_id.map(JsonValue::from).or_else(|| old_kit.cloned()),
+                old.and_then(|d| d.get(SPEC_DISPLACED_KEY)),
+            ),
+        };
+        if let Some(obj) = data.as_object_mut() {
+            if let Some(kit) = kit {
+                obj.insert(SPEC_KIT_KEY.into(), kit);
+            }
+            if let Some(displaced) = displaced {
+                obj.insert(SPEC_DISPLACED_KEY.into(), displaced.clone());
+            }
         }
         match existing {
             Some(row) if row.data.as_ref() == Some(&data) => Ok(row),

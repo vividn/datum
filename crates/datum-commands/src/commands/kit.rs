@@ -240,9 +240,16 @@ fn install_toml(
     // user-supplied color at install time so the saved row carries hex. A
     // missing color stays `None` — the renderer derives one at paint time
     // via the datum-compatible `md5_rgb` (first three bytes of md5(name)).
+    // A state's colour resolves the same way, seeded by the state's name as
+    // the renderer's fallback for it is (da-uokdb).
     let mut specs = Vec::with_capacity(kit.fields.len());
-    for entry in kit.fields {
-        let resolved = resolve_color(entry.color.as_deref(), &entry.name)?;
+    for mut entry in kit.fields {
+        let resolved = resolve_color(entry.color.as_deref(), &entry.name)
+            .with_context(|| format!("kit field '{}'", entry.name))?;
+        for (state, s) in &mut entry.states {
+            s.color = resolve_color(s.color.as_deref(), state)
+                .with_context(|| format!("kit field '{}' state '{state}'", entry.name))?;
+        }
         let entry_with_resolved = FieldEntry {
             color: resolved.clone(),
             ..entry
