@@ -37,13 +37,16 @@ const writes = (app) => changeCounter(app.page);
  * whether it LOOKS as if it acts. `mark` also tags that key's button, so a
  * locator can click it.
  */
-const survey = (page, { within, mark } = {}) =>
+const survey = (page, { within, mark, layer } = {}) =>
 	page.evaluate(
-		({ within, mark }) => {
+		({ within, mark, layer }) => {
 			document.querySelector('[data-tap]')?.removeAttribute('data-tap');
 			const seen = new Map();
 			const out = [];
-			for (const b of document.querySelectorAll(within ? `:is(${within}) button` : 'button')) {
+			// A `layer` survey is of the dialog or menu `open` tagged, and of
+			// nothing over or under it; a page survey is of no layer at all.
+			const root = layer ? document.querySelector('[data-layer]') : null;
+			for (const b of (root ?? document).querySelectorAll(within ? `:is(${within}) button` : 'button')) {
 				const box = b.getBoundingClientRect();
 				const style = getComputedStyle(b);
 				if (
@@ -51,7 +54,8 @@ const survey = (page, { within, mark } = {}) =>
 					b.tabIndex === -1 ||
 					// The output section is the LAST command's result — whichever
 					// ran, gone once a reseed runs quietly — so it is not the page.
-					b.closest('dialog, [role="menu"], .prompt-bar .section.output') ||
+					b.closest('dialog, [role="dialog"], [role="menu"]') !== root ||
+					b.closest('.prompt-bar .section.output') ||
 					style.pointerEvents === 'none' ||
 					!b.checkVisibility({ visibilityProperty: true }) ||
 					box.width === 0 ||
@@ -76,7 +80,7 @@ const survey = (page, { within, mark } = {}) =>
 			}
 			return out;
 		},
-		{ within, mark }
+		{ within, mark, layer }
 	);
 
 /** The layout world as the page shows it: what a tap may have moved. */
@@ -95,6 +99,14 @@ async function reset(app, line) {
 	// The ⓘ's card, which Escape closes (Beta.svelte), and a maximize, which
 	// is view state no `solo` puts back (maximize.ts).
 	if ((await page.locator('.beta-hint').count()) > 0) await page.keyboard.press('Escape');
+	// Help armed (`help.ts`) explains the next tap instead of acting it:
+	// Escape disarms it.
+	if ((await page.locator('.command.help.armed').count()) > 0) await page.keyboard.press('Escape');
+	// A widget option a tap set holds for the session, which `solo` keeps:
+	// forgotten, and the fields widget's own put back below.
+	const session = () => page.evaluate(() => JSON.stringify(window.datum.layout.session()));
+	if (app.session !== undefined && (await session()) !== app.session)
+		await page.evaluate(() => window.datum.layout.forgetSession());
 	const big = page.locator('button.maximize[aria-label^="restore"]');
 	if ((await big.count()) > 0) await big.first().click();
 	// A bar a tap drilled into — a field's states, a command's subcommands
@@ -123,6 +135,14 @@ async function reset(app, line) {
 		const id = await page.locator('section.pane[data-title="fields"]').first().getAttribute('data-pane');
 		await toggleOption(page, id, 'show ignored fields');
 		await page.locator('.bar [data-field="run"]').waitFor();
+	}
+	app.session = await session();
+	// What a layer's buttons need in `_internal` (`everyLayer`'s plan), put
+	// back whenever something there moved — a layout's save as much as a
+	// plan's delete.
+	if (app.internal !== undefined && (await changeCounter(page, '_internal')) !== app.internal) {
+		for (const argv of INTERNAL) await app.run(argv);
+		app.internal = await changeCounter(page, '_internal');
 	}
 	if (line) {
 		await page.locator('.prompt-bar input').fill(line);
@@ -193,6 +213,186 @@ export function everyButton(screen, options, must) {
 				assert.ok(keys.includes(key), `${key} not surveyed; saw ${keys.join(', ')}`);
 				assert.ok(acted.includes(key), `${key} did nothing; acted: ${acted.join(', ')}`);
 			}
+		});
+	});
+}
+
+// ---- the layers: sheets, dialogs and menus (da-juku7) ----------------------
+//
+// The page survey skips every button inside a dialog or a menu, which is how
+// «Delete plan» deleted at once from a button drawn as display (#241). So
+// `everyLayer` taps every button on the page that is not drawn as acting,
+// and follows each one that OPENS a layer — a `<dialog>`, a `role=dialog`
+// card, a `role=menu` — surveying the buttons within it under the page's
+// rule, and deeper where a button there opens another: three layers at
+// most, which is the gear's menu, its Backups sheet and the confirm behind
+// «Delete plan». "Wrote" counts `_internal` too, where plans and saved
+// layouts live.
+//
+// A layer is surveyed once per kind: two openers whose layers hold the same
+// buttons (every pane's `▾`, say) are one survey, named for the first.
+
+/** A layer: a modal, a card that says it is a dialog, or a menu. */
+const LAYERS = 'dialog[open], [role="dialog"], [role="menu"]';
+
+/**
+ * A backup plan, so the Backups sheet has one to delete — on `memory`, the
+ * tab's own bucket, which needs no network (`backups.ts`). Put back by
+ * `reset` whenever `_internal` moves.
+ */
+const PLAN = { name: 'taps', kind: 'memory', config: { bucket: 'taps' }, dbs: ['datum'], every: 3600, slots: null };
+const INTERNAL = [
+	['--db', '_internal', 'delete', 'backup_plan:taps'],
+	['--db', '_internal', 'occur', 'backup_plan', '--id', '%name', '-k', 'name="taps"', '-k', `plan=${JSON.stringify(PLAN)}`]
+];
+
+/**
+ * The buttons in a layer this walk does not tap, by path, each with why:
+ * a deed neither counter can see, or one that needs what a walk has not got.
+ * Each must be met, so the list cannot outlive its buttons.
+ */
+const SKIP = {
+	'page: main › page: Save layout':
+		'writes the layout into `_internal`, but no menu item draws an outline at all: whether one that writes is to be double is for vividn',
+	'page: settings › page: Backups… › page: Back up now': "writes the plan's destination, the tab's memory bucket, which no counter reads",
+	'page: settings › page: Backups… › page: Test connection': "needs the network, an S3 endpoint (s3.test.mjs stubs it)",
+	'page: settings › page: Backups… › page: Add plan': 'acts on a filled form only, which backups.test.mjs fills',
+	'page: settings › page: Reset default layouts… › page: reset':
+		'writes over a saved layout of a name datum ships, and the seeded page has saved none'
+};
+
+/**
+ * The layers a walk opens but does not follow, by path, each with why: the
+ * same buttons as a layer another share walks, which a single walk would
+ * have surveyed once. Each must be met, as `SKIP`'s.
+ */
+const ELSEWHERE = {
+	'page: manage the layout › page: Change Widget':
+		"the widget chooser, whose buttons a pane's «add a tab» holds too (act-taps-dialogs-pane); on the root it changes a widget `solo` does not put back"
+};
+
+/**
+ * Tap `key` — on the page, or in the layer tagged `data-layer` — and tag
+ * the layer that tap opened, if it opened one: its buttons' keys, or null.
+ */
+async function press(app, key, inLayer) {
+	const { page } = app;
+	await page.evaluate((sel) => document.querySelectorAll(sel).forEach((l) => (l.dataset.under = '')), LAYERS);
+	const found = (await survey(page, { mark: key, layer: inLayer })).find((b) => b.key === key);
+	assert.ok(found, `${key}: not there after a reset`);
+	await page.locator('[data-tap]').click();
+	await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+	await app.idle();
+	const opened = await page.evaluate((sel) => {
+		const fresh = [...document.querySelectorAll(sel)].filter((l) => !('under' in l.dataset));
+		if (fresh.length === 0) return false;
+		document.querySelector('[data-layer]')?.removeAttribute('data-layer');
+		fresh.at(-1).dataset.layer = '';
+		return true;
+	}, LAYERS);
+	return { ...found, opened: opened ? (await survey(page, { layer: true })).map((b) => b.key) : null };
+}
+
+/** The seeded page, with the layers `path`'s taps open, open. */
+async function openPath(app, path) {
+	await reset(app);
+	for (const [i, key] of path.entries())
+		assert.ok((await press(app, key, i > 0)).opened, `${path.slice(0, i + 1).join(' › ')}: opened nothing`);
+}
+
+/** Tap `key` in the layer `path` opens, and say what the tap did. */
+async function tapIn(app, path, key) {
+	const { page } = app;
+	await openPath(app, path);
+	await app.clock.forward(1000);
+	await page.evaluate(() => (window.__lastRun = window.datum.bar.last()));
+	const before = [await writes(app), await changeCounter(page, '_internal')];
+	const t = await press(app, key, path.length > 0);
+	const ran = await page.evaluate(() => window.datum.bar.last() !== window.__lastRun);
+	const wrote = (await writes(app)) !== before[0] || (await changeCounter(page, '_internal')) !== before[1];
+	return { ...t, acted: ran || wrote, ran, wrote };
+}
+
+/**
+ * The page's openers, in three shares that together are all of them, one
+ * file each: node's budget is per FILE, and the whole walk took 147 s on an
+ * idle box — more than 300 on CI's lane. What costs is the menus that
+ * reshape the layout, since every split, tab or layout they make is a `solo`
+ * to put back: the root bar's (`layout`) and a pane's (`pane`) are a share
+ * each, and every other layer is `rest`.
+ */
+const ROOT_LAYOUT = /^page: (open a layout|manage the layout)$/;
+const PANE_LAYOUT = /: (add a tab to|manage) the .* pane$/;
+export const SHARES = {
+	layout: (key) => ROOT_LAYOUT.test(key),
+	pane: (key) => PANE_LAYOUT.test(key),
+	rest: (key) => !ROOT_LAYOUT.test(key) && !PANE_LAYOUT.test(key)
+};
+
+/**
+ * Every layer a tap on an opener in `share` opens from the page, and each
+ * layer that opens from those: `{ layers: [{ path, keys }], wrong, skipped }`,
+ * `wrong` naming each button in a layer whose outline and deed disagree.
+ */
+async function walk(app, share, depth = 3) {
+	const layers = [];
+	const wrong = [];
+	const skipped = [];
+	const seen = new Set();
+	const visit = async (path) => {
+		await openPath(app, path);
+		const buttons = await survey(app.page, { layer: path.length > 0 });
+		if (path.length > 0) layers.push({ path, keys: buttons.map((b) => b.key) });
+		const next = [];
+		for (const b of buttons) {
+			// A double on the page acts, which the page's own survey holds.
+			if (path.length === 0 && (b.double || !share(b.key))) continue;
+			const named = [...path, b.key].join(' › ');
+			if (SKIP[named]) {
+				skipped.push(named);
+				continue;
+			}
+			const t = await tapIn(app, path, b.key);
+			if (path.length > 0 && t.double !== t.acted)
+				wrong.push(
+					`${named} (${t.kind ?? 'no kind'}): ${t.double ? 'double, and did nothing' : `single, and ${t.wrote ? 'wrote' : 'ran'}`}`
+				);
+			const kind = t.opened?.join('\n');
+			if (kind !== undefined && ELSEWHERE[named]) skipped.push(named);
+			else if (kind !== undefined && !t.acted && path.length < depth && !seen.has(kind)) {
+				seen.add(kind);
+				next.push(b.key);
+			}
+		}
+		for (const key of next) await visit([...path, key]);
+	};
+	await visit([]);
+	return { layers, wrong, skipped };
+}
+
+/**
+ * Every layer at one screen that the openers in `share` (`SHARES`) open,
+ * and every button in it, tapped: `must` is the layer paths (joined by
+ * ` › `) its walk has to reach — a walk that opened nothing would pass for
+ * the wrong reason.
+ */
+export function everyLayer(screen, options, share, must) {
+	before(startApp);
+	after(stopApp);
+	describe(`every button in a layer at the ${screen} size, ${share} openers`, () => {
+		const shared = sharedApp(options);
+
+		test('a double outline is exactly a tap that wrote or ran, in every sheet, dialog and menu', async () => {
+			const app = await shared();
+			app.internal = -1;
+			const { layers, wrong, skipped } = await walk(app, SHARES[share]);
+			for (const { path, keys } of layers) console.log(`# ${path.join(' › ')}: ${keys.length} buttons`);
+			for (const path of skipped) console.log(`# skipped ${path}: ${SKIP[path] ?? ELSEWHERE[path]}`);
+			assert.deepEqual(wrong, []);
+			const mine = [...Object.keys(SKIP), ...Object.keys(ELSEWHERE)].filter((path) => SHARES[share](path.split(' › ')[0]));
+			assert.deepEqual(mine.filter((path) => !skipped.includes(path)), [], 'skipped, and never met');
+			const reached = layers.map((l) => l.path.join(' › '));
+			for (const path of must) assert.ok(reached.includes(path), `${path} not reached; reached ${reached.join(' | ')}`);
 		});
 	});
 }

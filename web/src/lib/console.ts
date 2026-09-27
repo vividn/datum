@@ -31,7 +31,7 @@ import { shellSplit } from './shellSplit.js';
 import { openSpec, openTrack, type TrackOptions } from './specModal.js';
 import { get } from 'svelte/store';
 import { apply, layout } from './layout/current.js';
-import { keyOf, session, withSession } from './layout/session.js';
+import { forgetSession, keyOf, session, withSession } from './layout/session.js';
 import { findTab } from './layout/tree.js';
 import { isWidget } from './layout/types.js';
 import type { Layout, WidgetKindMeta } from './layout/types.js';
@@ -64,6 +64,8 @@ export interface DatumConsole {
 		apply(op: (layout: Layout) => Layout): void;
 		kinds(): WidgetKindMeta[];
 		session(): Record<string, Record<string, unknown>>;
+		/** Everything this session set, forgotten, as a reload forgets it. */
+		forgetSession(): void;
 		/** What the widget in tab `tabId` is DRAWN from: the tree's settings with this session's over them. */
 		settings(tabId: string): Record<string, unknown> | undefined;
 	};
@@ -118,6 +120,7 @@ export function installConsole(target: Record<string, unknown>): void {
 			apply,
 			kinds: () => Object.values(KINDS).map((k) => k.meta),
 			session: () => get(session),
+			forgetSession,
 			settings: (tabId) => {
 				const tree = get(layout);
 				const tab = findTab(tree, tabId);

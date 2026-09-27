@@ -1,0 +1,21 @@
+// Every button in every sheet, dialog and menu the shipped desktop page
+// opens, tapped (da-juku7): a double outline is exactly a tap that wrote or
+// ran, as on the page itself. The how is `support/taps.mjs`'s `everyLayer`.
+//
+// This file walks the `rest` of the page's openers; the menus that reshape
+// the layout are `act-taps-dialogs-layout` and `act-taps-dialogs-pane`, a
+// file each for node's per-file budget. Desktop alone: a phone walk would
+// double the cost again.
+
+import { everyLayer } from './support/taps.mjs';
+import { DESKTOP } from './support/layout.mjs';
+
+// The shipped tree, as act-taps-desktop has it. What the walk has to reach:
+// the sheet «Delete plan» slipped through in (#241), its confirm, a pane's
+// option menu and its submenu, and the Track form.
+everyLayer('desktop', { ...DESKTOP, desk: null }, 'rest', [
+	'page: settings › page: Backups…',
+	'page: settings › page: Backups… › page: Delete plan',
+	'nowview: menu of the nowview pane › page: history',
+	'fields: Track +'
+]);

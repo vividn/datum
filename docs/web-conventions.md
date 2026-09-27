@@ -380,8 +380,10 @@ rule is decided but not yet everywhere, it names the bead.
     DERIVED from the same answer the press itself takes, never chosen by hand: `fires()` for
     the commands widget and `pressKind()` for the fields widget, both in `commands.ts`, so a
     button cannot act without looking as if it does. An ignored field that runs keeps its
-    dashes and doubles them (da-nmna0). One component for every button, and a tap-everything
-    test that holds double ⇔ something ran, are decided but not built yet (da-y0ocz).
+    dashes and doubles them (da-nmna0). A button says its kind through one door, `use:act`
+    (`$lib/act.ts`, held by `act-guard.test.mjs`), and tap-everything tests hold double ⇔ the
+    tap wrote or ran: on the page (`act-taps-desktop`, `act-taps-phone`, da-y0ocz) and in every
+    sheet, dialog and menu a tap opens from it (`act-taps-dialogs*`, da-juku7).
 23. **Tap acts, hold refines.** A hold is `hold.ts`'s `holds` (`HOLD_MS`), never a timer of a
     component's own. A field held becomes a field pill, and a command held shows its flags
     (da-st2xl).

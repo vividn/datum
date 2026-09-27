@@ -522,7 +522,7 @@
 			<div class="ignored">
 				<span class="label">ignored</span>
 				{#each ignored as name (name)}
-					<button type="button" data-ignored={name} title="track {name}" on:click={() => run(['track', name])}
+					<button type="button" use:act={'run'} data-ignored={name} title="track {name}" on:click={() => run(['track', name])}
 						>{name}</button
 					>
 				{/each}
@@ -991,6 +991,12 @@
 		border-radius: 999px;
 		padding: 0.2rem 0.55rem;
 		font-size: 0.8rem;
+	}
+
+	/* An ignored field's button runs `track <field>` at once (da-juku7). */
+	.ignored button:global([data-act='run']) {
+		border: 3px double var(--rule);
+		padding: calc(0.2rem - 2px) calc(0.55rem - 2px);
 	}
 
 	.ignored .label {

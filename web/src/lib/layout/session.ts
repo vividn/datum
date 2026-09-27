@@ -90,6 +90,9 @@ export function setSession(key: string, base: Settings, next: Settings): void {
 /** Forget everything this session set against `key`: `Reset widget`'s half of the act. */
 export const clearSession = (key: string): void => store.update(({ [key]: _dropped, ...rest }) => rest);
 
+/** Forget everything this session set, as a reload does: a test's way back to the layout (da-juku7). */
+export const forgetSession = (): void => store.set({});
+
 /**
  * A widget's settings with this session's over them — the one merge, so a
  * widget is handed its settings and never learns where each came from.
