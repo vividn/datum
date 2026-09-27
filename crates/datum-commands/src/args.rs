@@ -60,7 +60,7 @@ pub use datum_parse::input::Show as ShowFlag;
 pub struct IntentContext {
     pub raw_input: String,
     /// Pre-expansion argv tail (i.e. argv[1..]). Distinct from
-    /// `raw_input`'s space-joined form so callers that need to
+    /// `raw_input`'s shell-joined form so callers that need to
     /// reconstruct a canonical command (e.g. the `--alias` flag's
     /// post-success persist hook) don't have to re-shell-split.
     pub raw_argv: Vec<String>,
@@ -359,7 +359,7 @@ fn parse_invocation_inner(
     resolver: &dyn Resolver,
 ) -> anyhow::Result<Invocation> {
     let raw_argv: Vec<String> = argv.iter().skip(1).cloned().collect();
-    let raw_input = raw_argv.join(" ");
+    let raw_input = palias::shell_join(&raw_argv);
     let argv0 = argv.first().cloned().unwrap_or_default();
 
     // da-hfi3: strip the global `--db <value>` / `--db=<value>` flag
@@ -456,7 +456,7 @@ pub fn expand_argv_with_db(
     db: &datum_core::db::Db,
 ) -> anyhow::Result<Vec<String>> {
     let raw_argv: Vec<String> = argv.iter().skip(1).cloned().collect();
-    let raw_input = raw_argv.join(" ");
+    let raw_input = palias::shell_join(&raw_argv);
     let mut ctx = IntentContext {
         raw_input,
         raw_argv,

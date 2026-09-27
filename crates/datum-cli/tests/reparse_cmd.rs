@@ -317,3 +317,31 @@ fn reparse_replays_an_alias_logged_with_a_global_db_flag() {
         );
     }
 }
+
+/// da-1bagp: `raw_input` is written with `shell_join`, the inverse of the
+/// `shell_split` replay reads it with, so a token holding whitespace, a
+/// double quote or a backslash comes back as the one token it was typed
+/// as. Space-joined, `text=a b c` replayed as `text=a` plus two extras.
+#[test]
+fn reparse_replays_quoted_tokens_as_typed() {
+    let db = fresh_db();
+    let lines: [&[&str]; 4] = [
+        &["occur", "q1", "text=a b c"],
+        &["switch", "q2", "coding", "-c", "two words"],
+        &["occur", "q3", r#"text=say "hi""#],
+        &["occur", "q4", r"path=C:\dir\x"],
+    ];
+    for line in lines {
+        run_cli(line, &db).unwrap();
+    }
+
+    for field in ["q1", "q2", "q3", "q4"] {
+        let before = datum_core::test_util::logged_entries(&db, field)[0].clone();
+        let hid = before.hid.to_string();
+        run_cli(&["reparse", &hid, "--fix"], &db).unwrap();
+        let after = db.get_entry(&hid).unwrap();
+        assert_eq!(after.content_hash, before.content_hash, "{field} is clean");
+    }
+    let q3 = &datum_core::test_util::logged_entries(&db, "q3")[0];
+    assert_eq!(q3.data, Some(serde_json::json!({"text": r#"say "hi""#})));
+}
