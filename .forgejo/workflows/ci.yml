@@ -137,22 +137,42 @@ jobs:
       # profile, components, wasm32-unknown-unknown). rustup with no default
       # toolchain, then the bare install that reads the file — exactly the
       # GitHub workflow's step, minus the runner's preinstalled rustup.
+      #
+      # The runner shares /root/.cargo between concurrent jobs (da-nmf83), so
+      # an install here rewrites binaries another job may be running: job 1100
+      # (09-25) died on `cargo-nextest … Text file busy`, job 1470 (09-26) on
+      # `/root/.cargo/bin/rustup: Text file busy`. So every install takes
+      # .ci-install.lock (wasm.yml's too), and runs only when missing: the
+      # installer only when rustup does not run, and `toolchain install` is a
+      # no-op once rust-toolchain.toml's toolchain is there.
       - name: Install rustup and the pinned toolchain
         run: |
           set -euo pipefail
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal --no-modify-path
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.cargo/bin:$PATH"
+          mkdir -p "$HOME/.cargo" && exec 9>"$HOME/.cargo/.ci-install.lock" && flock 9
+          RUSTUP_AUTO_INSTALL=0 rustup --version >/dev/null 2>&1 ||
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal --no-modify-path
           rustup toolchain install --no-self-update
           rustup target add wasm32-wasip1
           rustc --version && cargo --version
 
       # The prebuilt binary taiki-e/install-action would have fetched, fetched
-      # directly: no action, no compile.
+      # directly: no action, no compile. Pinned, so a run that finds it already
+      # there downloads nothing; and replaced by RENAME, never untarred over
+      # the binary in place: a job already running the old file keeps its
+      # inode, so none sees `Text file busy` (job 1100). The temp dir is under
+      # ~/.cargo so the `mv` is a rename on one filesystem.
       - name: Install cargo-nextest (prebuilt)
         run: |
           set -euo pipefail
-          curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "$HOME/.cargo/bin"
+          v=0.9.146
+          exec 9>"$HOME/.cargo/.ci-install.lock" && flock 9
+          if ! cargo nextest --version 2>/dev/null | grep -x "release: $v" >/dev/null; then
+            tmp=$(mktemp -d "$HOME/.cargo/.nextest.XXXXXX")
+            curl -LsSf "https://get.nexte.st/$v/linux" | tar zxf - -C "$tmp"
+            mv "$tmp/cargo-nextest" "$HOME/.cargo/bin/cargo-nextest" && rmdir "$tmp"
+          fi
           cargo nextest --version
 
       # ── the Rust battery, in scripts/check.sh's order ─────────────────────

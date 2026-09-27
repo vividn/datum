@@ -47,10 +47,16 @@ jobs:
         run: |
           set -euo pipefail
           node web/scripts/ensure-wasm.mjs --fetch-only && exit 0 || [ $? = 2 ]
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal --no-modify-path
+          # ci.yml's install, under its lock and only when missing: this job
+          # shares the runner's /root/.cargo with CI's (da-nmf83).
           export PATH="$HOME/.cargo/bin:$PATH"
-          rustup toolchain install --no-self-update
-          rustup target add wasm32-wasip1
+          (
+            mkdir -p "$HOME/.cargo" && exec 9>"$HOME/.cargo/.ci-install.lock" && flock 9
+            RUSTUP_AUTO_INSTALL=0 rustup --version >/dev/null 2>&1 ||
+              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal --no-modify-path
+            rustup toolchain install --no-self-update
+            rustup target add wasm32-wasip1
+          )
           node web/scripts/ensure-wasm.mjs
 
       # Plumbing, so the checkout is never touched: a tree of two blobs,
