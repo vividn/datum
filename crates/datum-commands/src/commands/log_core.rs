@@ -121,15 +121,16 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // an invalid `-t`/`-d` flag surfaces from the downstream
     // `build_time_with_uncertainty` call below (line ~410) with its full
     // error message intact; here we only want a clean base when the
-    // flags parse, so `-T` and the undo early-return path keep their
-    // current "no timestamp" semantics.
+    // flags parse. A timeless `-T` entry anchors at now in the local zone —
+    // its create time, which is what v2's shirk counted from: `occur chore
+    // -T next_date=+7` (da-rp2rq). Not through the flags: `-D` rides along
+    // with `-T` unrefused and would move the anchor to midnight.
     let base_local = if args.time.omit_timestamp {
-        None
+        Some(DatumTime::now())
     } else {
-        build_time_with_uncertainty(&args)
-            .ok()
-            .map(|dt| dt.local_time().naive_local())
-    };
+        build_time_with_uncertainty(&args).ok()
+    }
+    .map(|dt| dt.local_time().naive_local());
     let parsed = parse_log_args(&args, action, base_local)?;
     let ParsedLogArgs {
         field,

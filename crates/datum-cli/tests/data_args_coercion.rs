@@ -252,3 +252,50 @@ fn durations_and_time_flags_keep_their_units() {
     let half = &datum_core::test_util::logged_entries(&db, "half")[0];
     assert_eq!(half.duration_seconds(), Some(30 * 60));
 }
+
+/// da-rp2rq: a timeless entry (`-T`, `note`) anchors relative `*date` /
+/// `*time` values at its create time in the local zone — the chore-shirk
+/// `occur chore -T next_date=+7` — as a timed entry anchors at its occur
+/// time. An update payload has no anchor and keeps the text.
+#[test]
+fn relative_temporal_keys_anchor_a_timeless_entry_at_its_create_time() {
+    let _g = datum_core::test_util::freeze_time("2026-09-10T12:00:00");
+    let db = fresh_db();
+    let data = |field: &str| {
+        datum_core::test_util::logged_entries(&db, field)[0]
+            .data
+            .clone()
+    };
+
+    run_cli(
+        &["occur", "vacuum", "-T", "next_date=+7", "next_time=+2h"],
+        &db,
+    )
+    .unwrap();
+    assert_eq!(
+        data("vacuum"),
+        Some(json!({"next_date": "2026-09-17", "next_time": "14:00:00"}))
+    );
+    // `-D` is not refused beside `-T`; it must not move the anchor to midnight.
+    run_cli(&["occur", "mop", "-T", "-D", "next_time=+2h"], &db).unwrap();
+    assert_eq!(data("mop"), Some(json!({"next_time": "14:00:00"})));
+    run_cli(&["note", "chore", "next_date=+3"], &db).unwrap();
+    assert_eq!(data("chore"), Some(json!({"next_date": "2026-09-13"})));
+
+    run_cli(&["occur", "dishes", "-t", "-1d", "next_date=+1"], &db).unwrap();
+    assert_eq!(
+        data("dishes"),
+        Some(json!({"next_date": "2026-09-10"})),
+        "a timed entry anchors at its occur time"
+    );
+
+    let hid = datum_core::test_util::logged_entries(&db, "dishes")[0]
+        .hid
+        .to_string();
+    run_cli(&["update", &hid, "next_date=+7"], &db).unwrap();
+    assert_eq!(
+        data("dishes"),
+        Some(json!({"next_date": "+7"})),
+        "an update payload keeps the text"
+    );
+}
