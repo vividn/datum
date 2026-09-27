@@ -149,6 +149,9 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
         && log_args.duration.duration.is_none()
         && matches!(action, Action::Start | Action::Switch)
     {
+        if matches!(action, Action::Switch) {
+            log_args.last_state = Some(String::new());
+        }
         reserved.state = None;
         action = Action::Stop;
     }
@@ -191,6 +194,20 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
     }
     if matches!(action, Action::Occur) && dur.is_none() {
         dur = Some(Dur::moment());
+    }
+
+    // `-L` on `end` records the closed block's state as `data.last_state`,
+    // which `log_entry` looks up rather than the line spelling it. Keep
+    // the stored one, as the declaration below (da-pdk6q).
+    if matches!(action, Action::Stop) && log_args.last_state.is_some() {
+        if let Some(prior) = entry.data.as_ref().and_then(|d| d.get("last_state")) {
+            let mut obj = match extra_data.take() {
+                Some(JsonValue::Object(m)) => m,
+                _ => serde_json::Map::new(),
+            };
+            obj.insert("last_state".to_string(), prior.clone());
+            extra_data = Some(JsonValue::Object(obj));
+        }
     }
 
     Ok(Some(ReparsedShape {

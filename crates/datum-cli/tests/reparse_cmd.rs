@@ -259,3 +259,32 @@ fn reparse_fix_lifts_start_time_and_end_time() {
         assert_eq!(after.content_hash, before.content_hash, "{field} is clean");
     }
 }
+
+/// da-pdk6q: `end -L` records the closed block's state as
+/// `data.last_state`, which `log_entry` looks up and the line never
+/// spells — nor does `switch … end_time=E`, which runs as one (da-mjwq).
+/// Replay keeps it.
+#[test]
+fn reparse_fix_keeps_the_closed_blocks_last_state() {
+    let db = fresh_db();
+    run_cli(&["start", "p", "-t", "2026-01-01T10:00"], &db).unwrap();
+    run_cli(&["end", "p", "-L", "-t", "2026-01-01T11:00"], &db).unwrap();
+    run_cli(&["start", "q", "-t", "2026-01-01T10:00"], &db).unwrap();
+    run_cli(&["switch", "q", "true", "end_time=2026-01-01T11:00"], &db).unwrap();
+
+    for field in ["p", "q"] {
+        let before = datum_core::test_util::logged_entries(&db, field)
+            .into_iter()
+            .find(|e| e.data.is_some())
+            .unwrap();
+        assert_eq!(
+            before.data,
+            Some(serde_json::json!({"last_state": true})),
+            "{field}"
+        );
+        let hid = before.hid.to_string();
+        run_cli(&["reparse", &hid, "--fix"], &db).unwrap();
+        let after = db.get_entry(&hid).unwrap();
+        assert_eq!(after.content_hash, before.content_hash, "{field} is clean");
+    }
+}
