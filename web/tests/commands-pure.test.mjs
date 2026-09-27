@@ -25,6 +25,7 @@ import {
 	flagsOf,
 	lanesOf,
 	pressKind,
+	typesKeys,
 	rowsIn,
 	subcommandsOf,
 	verbPress,
@@ -101,12 +102,12 @@ describe('the verb a line is pending', () => {
 	});
 });
 
-const point = { field: 'coffee', shape: { kind: 'point' } };
-const record = { field: 'rec', shape: { kind: 'record' } };
-const offBlock = { field: 'sleep', shape: { kind: 'state' } };
-const onBlock = { field: 'work', shape: { kind: 'state' }, current: true };
-const boolSwitch = { field: 'light', shape: { kind: 'states', states: ['false', 'true'] } };
-const onSwitch = { field: 'mood', shape: { kind: 'states', states: ['bad', 'good'] }, current: 'good' };
+const point = { field: 'coffee', shape: { kind: 'point' }, required: [] };
+const record = { field: 'rec', shape: { kind: 'record' }, required: [] };
+const offBlock = { field: 'sleep', shape: { kind: 'state' }, required: [] };
+const onBlock = { field: 'work', shape: { kind: 'state' }, current: true, required: [] };
+const boolSwitch = { field: 'light', shape: { kind: 'states', states: ['false', 'true'] }, required: [] };
+const onSwitch = { field: 'mood', shape: { kind: 'states', states: ['bad', 'good'] }, current: 'good', required: [] };
 const ALL = [point, record, offBlock, onBlock, boolSwitch, onSwitch];
 
 const under = (verb) => fieldsUnder(ALL, verb).map((b) => b.field);
@@ -291,6 +292,23 @@ describe('what a field tap does', () => {
 		assert.equal(pressKind(onSwitch, 'switch'), 'open');
 		assert.equal(pressKind(record, 'add'), 'fill');
 		assert.equal(pressKind(boolSwitch, 'start'), 'run');
+	});
+
+	// da-chml5, vividn: «occur/start/end run at once with a double outline,
+	// unless there are required keys only, in which case fill the line».
+	test('a field with a required key fills, bare or under a verb — but end still runs', () => {
+		const tea = { ...point, field: 'tea', required: ['amount'] };
+		const shift = { ...offBlock, required: ['project'] };
+		const on = { ...onBlock, required: ['project'] };
+		assert.equal(pressKind(tea, null), 'fill');
+		assert.equal(pressKind(tea, 'occur'), 'fill');
+		assert.equal(pressKind(shift, null), 'fill');
+		assert.equal(pressKind(shift, 'start'), 'fill');
+		assert.equal(pressKind(on, null), 'run', 'a tap on a running block ends it');
+		assert.equal(pressKind(on, 'end'), 'run');
+		assert.equal(pressKind({ ...onSwitch, required: ['why'] }, null), 'open', 'the ring still opens');
+		assert.equal(typesKeys('switch', { ...onSwitch, required: ['why'] }), true, 'and its state fills');
+		assert.equal(typesKeys('switch', onSwitch), false);
 	});
 });
 

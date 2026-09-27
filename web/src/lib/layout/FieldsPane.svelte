@@ -10,8 +10,8 @@
 	scroller would clip them, so they are hung against the screen instead
 	(`hang` in FieldsWidget.svelte). A press goes, with the bottom bar's
 	pills after it, to the engine's `press`, which routes it through
-	whichever REPL is on screen; a record's line goes to the bottom bar's
-	prompt, unrun.
+	whichever REPL is on screen; a record's line, and a log with keys to
+	type (da-chml5), go to the bottom bar's prompt, unrun.
 
 	`pending` is the verb the command line holds (da-ltux): it filters the
 	list, and a press under it runs `<verb> <field>` at once — with the
@@ -33,6 +33,7 @@
 	import FieldsWidget from '$lib/FieldsWidget.svelte';
 	import { clearPending, pending, pills, prefill, text } from '$lib/bar.js';
 	import { flagLine, hasDuration } from '$lib/commands.js';
+	import { advance } from '$lib/keyframes.js';
 	import type { SwitchLabel } from '$lib/fields.js';
 	import { lanes } from '$lib/lanes.js';
 	import { shellSplit } from '$lib/shellSplit.js';
@@ -52,10 +53,24 @@
 	 * (da-bbmpx); a line `flagLine` refuses keeps today's `occur coffee`.
 	 */
 	function run(argv: string[]) {
-		const line = argv[0] === $pending ? flagLine(shellSplit($text), $grammar?.get(argv[0])) : null;
+		const line = pendingFlags(argv);
 		if (line) $text = '';
 		else clearPending();
 		void pressWithPills(line ? [...line, ...argv.slice(1)] : argv);
+	}
+
+	/** The pending line's flags, when `argv` spends its verb and it holds only flags. */
+	const pendingFlags = (argv: string[]): string[] | null =>
+		argv[0] === $pending ? flagLine(shellSplit($text), $grammar?.get(argv[0])) : null;
+
+	/**
+	 * The same line, left unrun and straight into its first key's frame
+	 * (da-31d1d). The flags go AFTER the field, where the CLI takes them as
+	 * well: the frames read the field as the second word.
+	 */
+	function fill(argv: string[]) {
+		const line = [...argv, ...(pendingFlags(argv)?.slice(1) ?? [])].join(' ');
+		prefill.set({ line: advance(line, $fields) ?? `${line} `, keyboard: true });
 	}
 </script>
 
@@ -70,7 +85,7 @@
 		{switchLabel}
 		{showIgnored}
 		on:run={(e) => run(e.detail)}
-		on:line={(e) => prefill.set({ line: e.detail, keyboard: true })}
+		on:fill={(e) => fill(e.detail)}
 	/>
 </div>
 

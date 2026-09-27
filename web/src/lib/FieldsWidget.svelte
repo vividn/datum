@@ -124,6 +124,7 @@
 		fieldsWithDuration,
 		lanesOf,
 		pressKind,
+		typesKeys,
 		verbPress,
 		type Verb
 	} from './commands.js';
@@ -172,7 +173,7 @@
 	/** Where each field stood at the last sort (`standings` in $lib/layout/engine.ts, da-xtkcp). */
 	export let standings: Standings = new Map();
 
-	const dispatch = createEventDispatcher<{ run: string[]; line: string }>();
+	const dispatch = createEventDispatcher<{ run: string[]; fill: string[] }>();
 
 	let bar: HTMLElement | undefined;
 	// The hold's action ($lib/hold.ts) on the bar ButtonRows draws — an
@@ -345,10 +346,16 @@
 		dispatch('run', argv);
 	}
 
-	/** Put a line in the command line, unrun, and leave the lists as they were. */
-	function line(text: string) {
+	/** Put `argv` in the command line, unrun, for the rest to be typed. */
+	function fill(argv: string[]) {
 		back();
-		dispatch('line', text);
+		dispatch('fill', argv);
+	}
+
+	/** Run `argv`, or fill it where `button` has keys to type (da-chml5). */
+	function log(argv: string[], button: FieldButton) {
+		if (typesKeys(argv[0], button)) fill(argv);
+		else emit(argv);
 	}
 
 	/**
@@ -396,14 +403,15 @@
 	 */
 	function press(button: FieldButton, el: HTMLElement) {
 		const kind = pressKind(button, verb);
-		// A record is typed, never pressed: its line goes to the prompt.
-		if (kind === 'fill') line(`add ${button.field} `);
-		// A multi-state field can't be logged without saying which, so a
-		// plain press asks — the bar fills with its states.
-		else if (kind === 'open') pick(button, el);
 		// With a verb pending, the press IS that verb (C1: a field tap runs
 		// at once).
-		else emit((verb && verbPress(verb, button)) || pressArgv(button));
+		const argv = (verb && verbPress(verb, button)) || pressArgv(button);
+		// A multi-state field can't be logged without saying which, so a
+		// plain press asks — the bar fills with its states.
+		if (kind === 'open') pick(button, el);
+		// A record, or a field with keys to type: the line goes to the prompt.
+		else if (kind === 'fill') fill(argv);
+		else emit(argv);
 	}
 
 	/**
@@ -434,7 +442,7 @@
 			newState = '';
 			return;
 		}
-		emit(pressArgv(button, state));
+		log(pressArgv(button, state), button);
 	}
 
 	/**
@@ -583,16 +591,16 @@
 			{#each states.filter((s) => s !== 'false') as state (state)}
 				{@const look = stateLook(chosen, state)}
 				<div class="spot" data-role="state">
-					<!-- A state RUNS at once, so it is always drawn as acting (da-z8z40). -->
+					<!-- A state RUNS at once, drawn as acting (da-z8z40) — unless the field has keys to type. -->
 					<button
 						class="widget states"
-						use:act={'run'}
+						use:act={typesKeys('switch', chosen) ? 'fill' : 'run'}
 						class:on={chosen.current === state}
 						style={vars(look)}
 						{disabled}
 						data-state={state}
 						title={pressArgv(chosen, state).join(' ')}
-						on:click={() => emit(pressArgv(chosen, state))}
+						on:click={() => log(pressArgv(chosen, state), chosen)}
 					>
 						{state}
 					</button>

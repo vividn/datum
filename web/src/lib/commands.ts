@@ -231,14 +231,27 @@ export function verbPress(verb: Verb, button: FieldButton): string[] | null {
  * the same answer (the `fires` pattern): a `run` is the double outline, so
  * a button cannot act without looking as if it does. A pending verb runs
  * wherever `verbPress` has an argv; otherwise a record fills, a
- * multi-state field opens (vividn's «except for switch») and the rest run.
+ * multi-state field opens (vividn's «except for switch») and the rest run —
+ * but a run that has keys to type fills instead (`typesKeys`).
  */
 export type PressKind = 'run' | 'fill' | 'open';
 export function pressKind(button: FieldButton, verb: Verb | null): PressKind {
-	if (verb !== null && verbPress(verb, button)) return 'run';
+	if (verb !== null && verbPress(verb, button)) return typesKeys(verb, button) ? 'fill' : 'run';
 	if (button.shape.kind === 'record') return 'fill';
-	return button.shape.kind === 'states' ? 'open' : 'run';
+	if (button.shape.kind === 'states') return 'open';
+	// A bare tap logs `occur` or `start`, or ends a running block (`pressArgv`).
+	return typesKeys(button.current ? 'end' : 'occur', button) ? 'fill' : 'run';
 }
+
+/**
+ * Does a log by `verb` leave its line for keys to be typed rather than run
+ * (da-chml5)? vividn, 09-27: «occur/start/end run at once with a double
+ * outline, unless there are required keys only, in which case fill the
+ * line and focus it» — so any log of a field with a key that has no
+ * default, but `end`, which takes none (da-o4jaa). A field tap, a state
+ * in its ring and a verb under its pill (`fieldVerb`) all ask this.
+ */
+export const typesKeys = (verb: string, button: FieldButton): boolean => verb !== 'end' && button.required.length > 0;
 
 /**
  * The verb a pending one DECLARES a field with, for the `+` at the end of
@@ -497,7 +510,7 @@ export function fieldVerb(name: string, all: Pill[], fields: FieldButton[]): { f
 	const field = argumentsOf(all).find((p) => p.kind === 'field');
 	const button = fields.find((b) => b.field === field?.text);
 	if (!field || !button || !['occur', 'start', 'end'].includes(name)) return null;
-	return { field, runs: name === 'end' || !button.required.length };
+	return { field, runs: !typesKeys(name, button) };
 }
 
 // ---- subcommands (da-803mk) ---------------------------------------------
