@@ -112,6 +112,30 @@ impl ColorRule {
     }
 }
 
+impl Expr {
+    /// The column names the expression reads, in source order.
+    pub fn idents(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(&self.head)
+            .chain(self.tail.iter().map(|(_, t)| t))
+            .flat_map(|t| [&t.left, &t.right])
+            .filter_map(|a| match a {
+                Atom::Ident(s) => Some(s.as_str()),
+                _ => None,
+            })
+    }
+}
+
+/// Whether `s` is a column name as a rule spells one — `[A-Za-z_][A-Za-z0-9_]*`,
+/// the shape a kit command's `columns`, `labels`, `formats` and `sort` must
+/// take too, so every column it shows can also be named in a rule.
+pub fn is_column_name(s: &str) -> bool {
+    let mut chars = s.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 /// Parse a color expression, surfacing readable error messages.
 pub fn parse_expr(src: &str) -> Result<Expr> {
     let toks = tokenise(src)?;
@@ -558,6 +582,12 @@ mod tests {
         assert!(matches!(e.head.op, CmpOp::Lt));
         assert!(matches!(e.head.right, Atom::Now));
         assert!(e.tail.is_empty());
+    }
+
+    #[test]
+    fn idents_lists_every_column_read() {
+        let e = parse_expr("a < now && 'x' = b || c > today + 1d").unwrap();
+        assert_eq!(e.idents().collect::<Vec<_>>(), ["a", "b", "c"]);
     }
 
     #[test]

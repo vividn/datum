@@ -91,21 +91,45 @@ fn render_once(cmd: &InstalledKitCommand, view_name: &str, db: &Db) -> Result<()
     let result = db
         .execute_view(&view_row.sql_text)
         .with_context(|| format!("execute view '{view_name}'"))?;
+    let tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
+    print!("{}", render(cmd, result, tty)?);
+    Ok(())
+}
 
-    let projected = project(&result, &cmd.columns)?;
-    let projected = sort_rows(projected, cmd.sort_col.as_deref());
+/// Sort and colour read the FULL view row; `columns` decides only what is
+/// shown (da-ggzv1). A sort column or rule identifier the view lacks is
+/// refused, naming it, rather than silently ignored.
+fn render(cmd: &InstalledKitCommand, mut view: ViewResult, color: bool) -> Result<String> {
     let rules = parse_rules(&cmd.color_rules)?;
+    for id in rules.iter().flat_map(|r| r.when.idents()) {
+        col_index(&cmd.name, &view.columns, id, "a color rule")?;
+    }
+    if let Some(col) = cmd.sort_col.as_deref() {
+        let idx = col_index(&cmd.name, &view.columns, col, "sort")?;
+        view.rows.sort_by(|a, b| compare_cells(&a[idx], &b[idx]));
+    }
+    let now = Utc::now();
+    let colors: Vec<Option<&str>> = view
+        .rows
+        .iter()
+        .map(|row| {
+            color
+                .then(|| row_color(&rules, &view.columns, row, now))
+                .flatten()
+        })
+        .collect();
+    let projected = project(&cmd.name, &view, &cmd.columns)?;
     let headers = header_labels(&projected.columns, &cmd.labels);
     let formatted = format_cells(&projected, &cmd.formats);
+    Ok(render_pretty(&headers, &formatted, &colors))
+}
 
-    render_pretty(
-        &headers,
-        &projected.columns,
-        &formatted,
-        &rules,
-        projected.rows.iter().collect(),
-    );
-    Ok(())
+/// Where `name` sits in the view's row, or an error naming the command,
+/// the column and what named it.
+fn col_index(cmd: &str, columns: &[String], name: &str, by: &str) -> Result<usize> {
+    columns.iter().position(|c| c == name).ok_or_else(|| {
+        anyhow::anyhow!("kit command '{cmd}': its view has no column '{name}' (named by {by})")
+    })
 }
 
 fn parse_rules(entries: &[datum_core::kit::ColorRuleEntry]) -> Result<Vec<ColorRule>> {
@@ -118,18 +142,14 @@ fn parse_rules(entries: &[datum_core::kit::ColorRuleEntry]) -> Result<Vec<ColorR
 
 /// Project the view's columns down to `cols` (or pass through when empty).
 /// Missing columns are an error — silently dropping them would mask typos.
-fn project(view: &ViewResult, cols: &[String]) -> Result<ViewResult> {
+fn project(cmd: &str, view: &ViewResult, cols: &[String]) -> Result<ViewResult> {
     if cols.is_empty() {
         return Ok(view.clone());
     }
-    let mut indices: Vec<usize> = Vec::with_capacity(cols.len());
-    for c in cols {
-        let idx =
-            view.columns.iter().position(|n| n == c).ok_or_else(|| {
-                anyhow::anyhow!("kit command: view does not produce column '{c}'")
-            })?;
-        indices.push(idx);
-    }
+    let indices = cols
+        .iter()
+        .map(|c| col_index(cmd, &view.columns, c, "columns"))
+        .collect::<Result<Vec<_>>>()?;
     let columns = cols.to_vec();
     let rows = view
         .rows
@@ -137,18 +157,6 @@ fn project(view: &ViewResult, cols: &[String]) -> Result<ViewResult> {
         .map(|row| indices.iter().map(|i| row[*i].clone()).collect())
         .collect();
     Ok(ViewResult { columns, rows })
-}
-
-fn sort_rows(mut view: ViewResult, sort_col: Option<&str>) -> ViewResult {
-    let Some(col) = sort_col else {
-        return view;
-    };
-    let Some(idx) = view.columns.iter().position(|c| c == col) else {
-        // Sort column not present after projection — leave order as-is.
-        return view;
-    };
-    view.rows.sort_by(|a, b| compare_cells(&a[idx], &b[idx]));
-    view
 }
 
 fn compare_cells(a: &JsonValue, b: &JsonValue) -> std::cmp::Ordering {
@@ -266,16 +274,9 @@ fn ansi_for(color: &str) -> &'static str {
 
 const ANSI_RESET: &str = "\x1b[0m";
 
-fn render_pretty(
-    headers: &[String],
-    columns: &[String],
-    cells: &[Vec<String>],
-    rules: &[ColorRule],
-    raw_rows: Vec<&Vec<JsonValue>>,
-) {
-    if columns.is_empty() {
-        println!("(no columns)");
-        return;
+fn render_pretty(headers: &[String], cells: &[Vec<String>], colors: &[Option<&str>]) -> String {
+    if headers.is_empty() {
+        return "(no columns)\n".to_string();
     }
     // Column widths in display columns, not chars (da-dhtp) — emoji/CJK
     // cells occupy two terminal columns each.
@@ -289,28 +290,21 @@ fn render_pretty(
         }
     }
 
-    print_row(headers, &widths, None);
+    let mut out = print_row(headers, &widths, None);
     let sep: Vec<String> = widths.iter().map(|w| "-".repeat(*w)).collect();
-    print_row(&sep, &widths, None);
-
-    let now = Utc::now();
-    let stdout_is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
-    for (i, row) in cells.iter().enumerate() {
-        let color = if stdout_is_tty {
-            row_color(rules, columns, raw_rows[i], now)
-        } else {
-            None
-        };
-        print_row(row, &widths, color);
+    out += &print_row(&sep, &widths, None);
+    for (row, color) in cells.iter().zip(colors) {
+        out += &print_row(row, &widths, *color);
     }
-    println!(
-        "({} row{})",
+    out += &format!(
+        "({} row{})\n",
         cells.len(),
         if cells.len() == 1 { "" } else { "s" }
     );
+    out
 }
 
-fn print_row(cells: &[String], widths: &[usize], color: Option<&str>) {
+fn print_row(cells: &[String], widths: &[usize], color: Option<&str>) -> String {
     let mut line = String::new();
     if let Some(c) = color {
         line.push_str(c);
@@ -326,7 +320,8 @@ fn print_row(cells: &[String], widths: &[usize], color: Option<&str>) {
     if color.is_some() {
         line.push_str(ANSI_RESET);
     }
-    println!("{line}");
+    line.push('\n');
+    line
 }
 
 fn row_color(
@@ -359,10 +354,33 @@ mod tests {
         }
     }
 
+    fn mk_cmd(columns: &[&str], sort: Option<&str>, rules: &[(&str, &str)]) -> InstalledKitCommand {
+        InstalledKitCommand {
+            name: "k".into(),
+            kit_id: None,
+            expands_to: None,
+            view_name: Some("v".into()),
+            help: None,
+            columns: columns.iter().map(|c| c.to_string()).collect(),
+            labels: Default::default(),
+            formats: Default::default(),
+            sort_col: sort.map(str::to_string),
+            flags: vec![],
+            color_rules: rules
+                .iter()
+                .map(|(when, color)| datum_core::kit::ColorRuleEntry {
+                    when: when.to_string(),
+                    color: color.to_string(),
+                })
+                .collect(),
+            script_text: None,
+        }
+    }
+
     #[test]
     fn project_passes_through_when_empty() {
         let v = mk_view();
-        let p = project(&v, &[]).unwrap();
+        let p = project("k", &v, &[]).unwrap();
         assert_eq!(p.columns, v.columns);
         assert_eq!(p.rows, v.rows);
     }
@@ -370,7 +388,7 @@ mod tests {
     #[test]
     fn project_subset_in_order() {
         let v = mk_view();
-        let p = project(&v, &["n".into(), "field".into()]).unwrap();
+        let p = project("k", &v, &["n".into(), "field".into()]).unwrap();
         assert_eq!(p.columns, vec!["n".to_string(), "field".to_string()]);
         assert_eq!(p.rows[0], vec![json!(7), json!("coffee")]);
     }
@@ -378,16 +396,54 @@ mod tests {
     #[test]
     fn project_missing_column_errors() {
         let v = mk_view();
-        let err = project(&v, &["bogus".into()]).unwrap_err();
-        assert!(err.to_string().contains("does not produce column"));
+        let err = project("k", &v, &["bogus".into()]).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "kit command 'k': its view has no column 'bogus' (named by columns)"
+        );
     }
 
     #[test]
     fn sort_by_column_orders_rows() {
-        let v = mk_view();
-        let s = sort_rows(v, Some("n"));
-        assert_eq!(s.rows[0][1], json!(3));
-        assert_eq!(s.rows[1][1], json!(7));
+        let out = render(&mk_cmd(&[], Some("n"), &[]), mk_view(), false).unwrap();
+        assert!(
+            out.find("mood").unwrap() < out.find("coffee").unwrap(),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn sort_on_hidden_column_orders_rows() {
+        let out = render(&mk_cmd(&["field"], Some("n"), &[]), mk_view(), false).unwrap();
+        assert!(!out.contains('7'), "n stays hidden: {out}");
+        assert!(
+            out.find("mood").unwrap() < out.find("coffee").unwrap(),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn rule_on_hidden_column_paints_its_row() {
+        let cmd = mk_cmd(&["field"], None, &[("extra = 'b'", "red")]);
+        let out = render(&cmd, mk_view(), true).unwrap();
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines[2], "coffee", "{out}");
+        assert_eq!(lines[3], "\x1b[31mmood  \x1b[0m", "{out}");
+    }
+
+    #[test]
+    fn a_name_the_view_lacks_is_refused() {
+        let cmd = mk_cmd(&["field"], None, &[("n > 1 && bogus = 1", "red")]);
+        let err = render(&cmd, mk_view(), false).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "kit command 'k': its view has no column 'bogus' (named by a color rule)"
+        );
+        let err = render(&mk_cmd(&["field"], Some("nope"), &[]), mk_view(), false).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "kit command 'k': its view has no column 'nope' (named by sort)"
+        );
     }
 
     #[test]

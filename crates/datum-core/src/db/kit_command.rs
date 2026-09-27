@@ -106,8 +106,23 @@ pub fn validate_command(c: &CommandEntry) -> Result<()> {
             )));
         }
     } else {
-        // Level 2: parse every color rule expression up front so a bad
-        // grammar fails install rather than runtime.
+        // Level 2: every column name must be well formed; whether the view
+        // has it is known only when the command runs (da-ggzv1).
+        if let Some(bad) = c
+            .columns
+            .iter()
+            .chain(c.labels.keys())
+            .chain(c.formats.keys())
+            .chain(&c.sort)
+            .find(|n| !crate::kit_color_rule::is_column_name(n))
+        {
+            return Err(DatumError::Other(format!(
+                "kit command '{}': `{bad}` is not a column name (letters, digits and `_`, not starting with a digit)",
+                c.name
+            )));
+        }
+        // Parse every color rule expression up front so a bad grammar
+        // fails install rather than runtime.
         for r in &c.color_rules {
             crate::kit_color_rule::parse_expr(&r.when).map_err(|e| {
                 DatumError::Other(format!(
@@ -208,4 +223,33 @@ fn installed_command(data: JsonValue) -> Result<InstalledKitCommand> {
         color_rules: c.color_rules,
         script_text: c.script,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn level2(toml: &str) -> CommandEntry {
+        toml::from_str(&format!("name = \"k\"\nview = \"v\"\n{toml}")).unwrap()
+    }
+
+    #[test]
+    fn install_refuses_a_malformed_column_name() {
+        for (toml, bad) in [
+            ("columns = [\"field\", \"next due\"]", "next due"),
+            ("labels = { \"count(*)\" = \"n\" }", "count(*)"),
+            ("formats = { \"1st\" = \"duration\" }", "1st"),
+            ("sort = \"\"", ""),
+        ] {
+            let err = validate_command(&level2(toml)).unwrap_err().to_string();
+            assert!(
+                err.contains(&format!("`{bad}` is not a column name")),
+                "{err}"
+            );
+        }
+        validate_command(&level2(
+            "columns = [\"field\", \"_n2\"]\nsort = \"iti\"\nlabels = { iti = \"freq\" }",
+        ))
+        .unwrap();
+    }
 }
