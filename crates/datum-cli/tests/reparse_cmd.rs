@@ -288,3 +288,32 @@ fn reparse_fix_keeps_the_closed_blocks_last_state() {
         assert_eq!(after.content_hash, before.content_hash, "{field} is clean");
     }
 }
+
+/// da-s1hot: a global `--db` rides at the head of raw_input and would
+/// shadow the alias name at argv[1] on replay, as it would on the insert
+/// (da-hfi3). Replay strips it too, in either spelling.
+#[test]
+fn reparse_replays_an_alias_logged_with_a_global_db_flag() {
+    let db = fresh_db();
+    run_cli(&["alias", "set", "over", "end activity"], &db).unwrap();
+    run_cli(&["switch", "activity", "coding", "-t", "-30"], &db).unwrap();
+    run_cli(&["--db", "g", "over", "-t", "-25"], &db).unwrap();
+    run_cli(&["--db=g", "over", "-t", "-20"], &db).unwrap();
+
+    let rows: Vec<_> = datum_core::test_util::logged_entries(&db, "activity")
+        .into_iter()
+        .filter(|e| e.alias_chain.is_some())
+        .collect();
+    assert_eq!(rows.len(), 2);
+    for before in rows {
+        let hid = before.hid.to_string();
+        run_cli(&["reparse", &hid, "--fix"], &db)
+            .unwrap_or_else(|e| panic!("{:?}: {e:?}", before.raw_input));
+        let after = db.get_entry(&hid).unwrap();
+        assert_eq!(
+            after.content_hash, before.content_hash,
+            "{:?}",
+            before.raw_input
+        );
+    }
+}

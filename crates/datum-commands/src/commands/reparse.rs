@@ -68,6 +68,9 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
 
     let mut argv: Vec<String> = vec!["datum".to_string()];
     argv.extend(shell_split(raw));
+    // A global `--db` would shadow the alias name at argv[1], as on the
+    // insert (da-hfi3); replay has no use for it (da-s1hot).
+    let (argv, _db_flag) = crate::config::split_off_global_db_flag(argv);
 
     let resolver = build_resolver_from_chain(entry.alias_chain.as_ref());
     let (expanded, _chain) =
