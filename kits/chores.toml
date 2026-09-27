@@ -1,74 +1,219 @@
 [kit]
 name = "chores"
-version = "0.2"
-description = "Paradigm bundle for tracking chores by next-due date. Users author their own chore fields with `datum track <name>` and log entries with `datum occur <name> next_date=<ISO ts> done=true`. The kit ships the index, the chores_due view, and the chorelist Level-2 command. Slice 7 (da-d4t.7) — chore/chored alias-creator subcommands deferred until placeholder substitution lands; see follow-up beads filed by the mayor."
+version = "0.3"
+description = "Chores as datum v2 kept them: a chore is any entry whose data says when it is next due (next_date / next_time, or v2's nextDate / nextTime). Log it done with `datum occur <chore> next_date=+7`; shirk it — move the date without claiming it — with `-T`. `datum chorelist` shows what is due or was done today; `datum chorelist-all` shows every chore."
 
-# Index over the next-due timestamp across all four spelling conventions
-# (next_time, nextTime, next_date, nextDate). Partial: only entries that
-# carry a next-due timestamp and aren't tombstoned. Used by chores_due.
+# Every chore query scans only the entries that say when they are next due.
+# This partial index's WHERE is exactly the chore CTE's, so SQLite can use it:
+# live rows only (not deleted, and not superseded by a sync merge).
 [[index]]
-name = "chore_next_due"
+name = "chore_rows"
 on = "entries"
-expression = "COALESCE(json_extract(data,'$.next_time'), json_extract(data,'$.nextTime'), json_extract(data,'$.next_date'), json_extract(data,'$.nextDate'))"
-where = "deleted_at IS NULL AND COALESCE(json_extract(data,'$.next_time'), json_extract(data,'$.nextTime'), json_extract(data,'$.next_date'), json_extract(data,'$.nextDate')) IS NOT NULL"
+expression = "field"
+where = "deleted_at IS NULL AND superseded_by IS NULL AND (json_type(data, '$.next_time') IS NOT NULL OR json_type(data, '$.nextTime') IS NOT NULL OR json_type(data, '$.next_date') IS NOT NULL OR json_type(data, '$.nextDate') IS NOT NULL)"
 
-# One row per field whose latest entry carries a next-due timestamp.
-# MAX(create_time)-wins reduce: same-field entries collapse to the most
-# recently logged. `last_done` is the start_time of that latest entry;
-# `done_today` flags whether it was logged today (local-midnight). The
-# join-on-(field, max_ct) shape lets the chore_next_due index serve the
-# inner aggregate without a sort.
+# One row per chore field, as v2's `chores` map/reduce reduced it
+# (reference: datum-v2 projects/datum/views/chores.ts):
+#   · due        — `next` from the LATEST entry by time, where time is
+#                  occur_time, or create_time for a shirk (no occur_time).
+#                  A JSON null next (v2's cleared nextDate, as v2import
+#                  keeps it) hides the chore. v3 cannot write one yet:
+#                  `next_date=` omits the key and `next_date=null` stores
+#                  the text "null", so a v3 chore has no clear (#267).
+#   · last_occur — the latest occurrence; a shirk never counts as done.
+#   · iti        — v2's inter-time interval in days, from the latest
+#                  occurrence: a date's days plus the fraction of the local
+#                  day it was done at (later in the day sorts after), or a
+#                  datetime's exact days.
+#   · status     — done (today) · overdue (by more than its iti) · late (by
+#                  more than half) · due · '' — v2's colours as a column,
+#                  because a command's colour rules and sort see only the
+#                  columns it shows.
+# Every key spelling is read: v3 writes next_date/next_time, and v2import
+# keeps v2's nextDate and nextTime ({utc, o, tz}).
+# A kit view cannot read another (each runs alone), so `chores_due` repeats
+# this query with a WHERE.
+[[view]]
+name = "chores"
+sql = """
+WITH chore AS (
+  SELECT field, occur_time, occur_time_offset,
+         COALESCE(occur_time, create_time) AS t,
+         COALESCE(json_extract(data, '$.next_time'),
+                  json_extract(data, '$.nextTime.utc'),
+                  json_extract(data, '$.next_date'),
+                  json_extract(data, '$.nextDate'))              AS next,
+         CASE WHEN json_extract(data, '$.next_time') IS NOT NULL
+                OR json_extract(data, '$.nextTime.utc') IS NOT NULL
+              THEN 0 ELSE 1 END                                  AS full_day
+  FROM entries
+  WHERE deleted_at IS NULL AND superseded_by IS NULL
+    AND (json_type(data, '$.next_time') IS NOT NULL
+      OR json_type(data, '$.nextTime') IS NOT NULL
+      OR json_type(data, '$.next_date') IS NOT NULL
+      OR json_type(data, '$.nextDate') IS NOT NULL)
+),
+latest AS (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY field ORDER BY t DESC) AS rn
+  FROM chore
+),
+occ AS (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY field ORDER BY occur_time DESC) AS rn
+  FROM chore WHERE occur_time IS NOT NULL
+),
+row AS (
+  SELECT l.field                                                   AS field,
+         l.next                                                    AS due,
+         l.full_day                                                AS full_day,
+         o.occur_time                                              AS last_occur,
+         CASE
+           WHEN o.next IS NULL THEN NULL
+           WHEN o.full_day = 1 THEN
+             julianday(o.next) - julianday(local_day(o.occur_time, o.occur_time_offset))
+             + (julianday(datetime(o.occur_time, printf('%+d minutes', COALESCE(o.occur_time_offset, 0))))
+                - julianday(date(datetime(o.occur_time, printf('%+d minutes', COALESCE(o.occur_time_offset, 0))))))
+           ELSE julianday(o.next) - julianday(o.occur_time)
+         END                                                       AS iti,
+         CASE WHEN o.occur_time IS NOT NULL
+               AND local_day(o.occur_time, o.occur_time_offset) = date('now', 'localtime')
+              THEN 1 ELSE 0 END                                    AS done_today
+  FROM latest l LEFT JOIN occ o ON o.field = l.field AND o.rn = 1
+  WHERE l.rn = 1 AND l.next IS NOT NULL
+)
+SELECT field, due, last_occur, iti,
+       CAST(iti AS INTEGER)                                        AS iti_days,
+       done_today, is_due, days_overdue,
+       CASE WHEN done_today = 1                                THEN 'done'
+            WHEN is_due = 1 AND days_overdue > iti             THEN 'overdue'
+            WHEN is_due = 1 AND days_overdue > iti / 2.0       THEN 'late'
+            WHEN is_due = 1                                    THEN 'due'
+            ELSE '' END                                        AS status
+FROM (
+  SELECT row.*,
+         CASE WHEN full_day = 1 THEN due <= date('now', 'localtime')
+              ELSE julianday(due) <= julianday('now') END      AS is_due,
+         CAST(julianday(date('now', 'localtime'))
+              - julianday(CASE WHEN full_day = 1 THEN due ELSE date(due, 'localtime') END)
+              AS INTEGER)                                      AS days_overdue
+  FROM row
+)
+ORDER BY iti IS NULL, iti
+"""
+
+# What `chorelist` shows, as v2's did without `--show all`: what is due,
+# and what was done today (a finished chore stays in view, green).
 [[view]]
 name = "chores_due"
 sql = """
-SELECT
-  e.field                                                  AS field,
-  COALESCE(json_extract(e.data, '$.next_time'),
-           json_extract(e.data, '$.nextTime'),
-           json_extract(e.data, '$.next_date'),
-           json_extract(e.data, '$.nextDate'))             AS next_due_raw,
-  e.occur_time                                             AS last_done,
-  CASE
-    WHEN e.occur_time IS NOT NULL
-     AND date(e.occur_time) = date('now') THEN 1
-    ELSE 0
-  END                                                      AS done_today
-FROM entries e
-INNER JOIN (
-  SELECT field, MAX(create_time) AS max_ct
+WITH chore AS (
+  SELECT field, occur_time, occur_time_offset,
+         COALESCE(occur_time, create_time) AS t,
+         COALESCE(json_extract(data, '$.next_time'),
+                  json_extract(data, '$.nextTime.utc'),
+                  json_extract(data, '$.next_date'),
+                  json_extract(data, '$.nextDate'))              AS next,
+         CASE WHEN json_extract(data, '$.next_time') IS NOT NULL
+                OR json_extract(data, '$.nextTime.utc') IS NOT NULL
+              THEN 0 ELSE 1 END                                  AS full_day
   FROM entries
-  WHERE deleted_at IS NULL
-    AND COALESCE(json_extract(data, '$.next_time'),
-                 json_extract(data, '$.nextTime'),
-                 json_extract(data, '$.next_date'),
-                 json_extract(data, '$.nextDate')) IS NOT NULL
-  GROUP BY field
-) latest ON latest.field = e.field AND latest.max_ct = e.create_time
-WHERE e.deleted_at IS NULL
+  WHERE deleted_at IS NULL AND superseded_by IS NULL
+    AND (json_type(data, '$.next_time') IS NOT NULL
+      OR json_type(data, '$.nextTime') IS NOT NULL
+      OR json_type(data, '$.next_date') IS NOT NULL
+      OR json_type(data, '$.nextDate') IS NOT NULL)
+),
+latest AS (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY field ORDER BY t DESC) AS rn
+  FROM chore
+),
+occ AS (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY field ORDER BY occur_time DESC) AS rn
+  FROM chore WHERE occur_time IS NOT NULL
+),
+row AS (
+  SELECT l.field                                                   AS field,
+         l.next                                                    AS due,
+         l.full_day                                                AS full_day,
+         o.occur_time                                              AS last_occur,
+         CASE
+           WHEN o.next IS NULL THEN NULL
+           WHEN o.full_day = 1 THEN
+             julianday(o.next) - julianday(local_day(o.occur_time, o.occur_time_offset))
+             + (julianday(datetime(o.occur_time, printf('%+d minutes', COALESCE(o.occur_time_offset, 0))))
+                - julianday(date(datetime(o.occur_time, printf('%+d minutes', COALESCE(o.occur_time_offset, 0))))))
+           ELSE julianday(o.next) - julianday(o.occur_time)
+         END                                                       AS iti,
+         CASE WHEN o.occur_time IS NOT NULL
+               AND local_day(o.occur_time, o.occur_time_offset) = date('now', 'localtime')
+              THEN 1 ELSE 0 END                                    AS done_today
+  FROM latest l LEFT JOIN occ o ON o.field = l.field AND o.rn = 1
+  WHERE l.rn = 1 AND l.next IS NOT NULL
+)
+SELECT field, due, last_occur, iti,
+       CAST(iti AS INTEGER)                                        AS iti_days,
+       done_today, is_due, days_overdue,
+       CASE WHEN done_today = 1                                THEN 'done'
+            WHEN is_due = 1 AND days_overdue > iti             THEN 'overdue'
+            WHEN is_due = 1 AND days_overdue > iti / 2.0       THEN 'late'
+            WHEN is_due = 1                                    THEN 'due'
+            ELSE '' END                                        AS status
+FROM (
+  SELECT row.*,
+         CASE WHEN full_day = 1 THEN due <= date('now', 'localtime')
+              ELSE julianday(due) <= julianday('now') END      AS is_due,
+         CAST(julianday(date('now', 'localtime'))
+              - julianday(CASE WHEN full_day = 1 THEN due ELSE date(due, 'localtime') END)
+              AS INTEGER)                                      AS days_overdue
+  FROM row
+)
+WHERE is_due = 1 OR done_today = 1
+ORDER BY iti IS NULL, iti
 """
 
-# Level 2 command: `datum chorelist` runs the chores_due view, sorts by
-# next-due ascending, applies smart-date formatting, and paints rows by
-# urgency. Color rules are first-match-wins so done-today wins over
-# overdue (a chore you completed today shouldn't keep glowing red).
+# `datum chorelist` is v2's table: most frequent chores first (the views sort
+# by iti), done today in green, overdue by more than its iti in red, by more
+# than half of it in yellow. Kit commands take no arguments beyond --watch,
+# so v2's `--show all` is its own command, and its sort choices aren't
+# offered.
 [[command]]
 name = "chorelist"
 view = "chores_due"
-help = "List chores by next-due date with overdue/due-soon coloring"
-columns = ["field", "next_due_raw", "last_done", "done_today"]
-labels = { next_due_raw = "due", last_done = "last", done_today = "today?" }
-formats = { next_due_raw = "smart_date", last_done = "smart_date" }
-sort = "next_due_raw"
+help = "Chores due now or done today, most frequent first (v2's chorelist)"
+columns = ["field", "iti_days", "due", "last_occur", "status"]
+labels = { field = "Field", iti_days = "ITI", due = "Due", last_occur = "Last Occur", status = "" }
+formats = { due = "smart_date", last_occur = "smart_date" }
 flags = ["watch"]
 
 [[command.color_rules]]
-when = "done_today = 1"
+when = "status = 'done'"
 color = "green"
 
 [[command.color_rules]]
-when = "next_due_raw < now"
+when = "status = 'overdue'"
 color = "red"
 
 [[command.color_rules]]
-when = "next_due_raw < today + 1d"
+when = "status = 'late'"
+color = "yellow"
+
+# `datum chorelist-all`: every chore, as v2's `chorelist --show all`.
+[[command]]
+name = "chorelist-all"
+view = "chores"
+help = "Every chore, due or not, most frequent first"
+columns = ["field", "iti_days", "due", "last_occur", "status"]
+labels = { field = "Field", iti_days = "ITI", due = "Due", last_occur = "Last Occur", status = "" }
+formats = { due = "smart_date", last_occur = "smart_date" }
+flags = ["watch"]
+
+[[command.color_rules]]
+when = "status = 'done'"
+color = "green"
+
+[[command.color_rules]]
+when = "status = 'overdue'"
+color = "red"
+
+[[command.color_rules]]
+when = "status = 'late'"
 color = "yellow"
