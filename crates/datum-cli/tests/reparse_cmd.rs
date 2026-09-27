@@ -148,3 +148,39 @@ fn reparse_only_touches_named_rows() {
         "unnamed energy row must be left alone (reparse never walks)"
     );
 }
+
+/// da-jbzmb: a relative `*_date` / `*_time` key replays anchored where
+/// the insert anchored it — the row's occur time, or a timeless row's
+/// create time — not at the replay's "now" and not as the raw text. Run
+/// months later, `--fix` must leave the resolved values (and the field)
+/// as they were.
+#[test]
+fn reparse_fix_keeps_relative_temporal_keys_resolved() {
+    let db = fresh_db();
+    // Logged on the real clock: `create_time` is always the wall clock.
+    run_cli(
+        &["occur", "dishes", "-t", "2026-09-20T10:00", "next_date=+1"],
+        &db,
+    )
+    .unwrap();
+    run_cli(
+        &["occur", "vacuum", "-T", "next_date=+7", "next_time=+2h"],
+        &db,
+    )
+    .unwrap();
+    let _g = datum_core::test_util::freeze_time("2030-01-01T12:00:00");
+
+    for field in ["dishes", "vacuum"] {
+        let before = datum_core::test_util::logged_entries(&db, field)[0].clone();
+        let hid = before.hid.to_string();
+        run_cli(&["reparse", &hid, "--fix"], &db).unwrap();
+        let after = db.get_entry(&hid).unwrap();
+        assert_eq!(after.field, field);
+        assert_eq!(after.data, before.data, "{field}");
+    }
+    let dishes = &datum_core::test_util::logged_entries(&db, "dishes")[0];
+    assert_eq!(
+        dishes.data,
+        Some(serde_json::json!({"next_date": "2026-09-21"}))
+    );
+}

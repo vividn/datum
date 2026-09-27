@@ -26,6 +26,7 @@ use datum_core::{
     dur::Dur,
     entry::{Entry, CURRENT_PARSER_VERSION},
     ids::resolve_quickid_single,
+    time::DatumTime,
 };
 use datum_parse::alias::expand_argv;
 use datum_parse::parse_argv;
@@ -96,10 +97,20 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
         }
     }
 
-    // No clean occur-time anchor for reparse — relative-offset values on
-    // `*_time` / `*_date` keys fall through as raw strings rather than
-    // being re-resolved against whatever "now" happens to be.
-    let parsed = parse_log_args(&log_args, action, None)?;
+    // Relative `*_time` / `*_date` keys (`next_date=+7`) anchor where the
+    // insert anchored them (da-jbzmb): the row's own local time, or for a
+    // timeless row its create time in the local zone (da-rp2rq). Never the
+    // replay's "now", which would move the value every time it is asked.
+    let base = match &entry.occur_time {
+        Some(t) => t.clone(),
+        None => {
+            let mut t = DatumTime::now();
+            t.utc = entry.create_time;
+            t.refresh_offset()?;
+            t
+        }
+    };
+    let parsed = parse_log_args(&log_args, action, Some(base.local_time().naive_local()))?;
     let mut extra_data = parsed.extra_data;
     let reserved = extract_reserved_columns(&mut extra_data)?;
 
@@ -131,7 +142,9 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
     }
 
     Ok(Some(ReparsedShape {
-        field: parsed.field,
+        // The flex-field verbs land the field in `reserved.field`, as
+        // `log_entry` reads it (da-5t94).
+        field: reserved.field.unwrap_or(parsed.field),
         state,
         dur,
         following_state: reserved.following_state,
