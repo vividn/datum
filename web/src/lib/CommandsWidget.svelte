@@ -39,7 +39,10 @@
 	  line's first word, so tapping `occur` and typing `occur` reach the
 	  same state through the same buffer.
 	- anything else puts `<name> ` on the line too — a command with an
-	  argument to finish, and nothing to filter.
+	  argument to finish, and nothing to filter. A field or hid pill it
+	  takes goes into the line with it, in its slot, and is spent, when
+	  words are TYPED next (da-8ru0m): `note coffee `, `update <hid> `,
+	  the caret after them.
 	- a command with SUBCOMMANDS (`db`, `spec`, `sync`, …) opens them
 	  instead (da-803mk): the bar is `< Back` and the subcommands, and a
 	  tap on one fills `db setup `. `< Back` and Escape return to the list.
@@ -89,6 +92,7 @@
 	import { openBackups } from './backups.js';
 	import { arm, helping } from './help.js';
 	import { holds } from './hold.js';
+	import { withPills } from './selection.js';
 
 	export let disabled = false;
 	export let grammar: Grammar | null = null;
@@ -103,7 +107,7 @@
 
 	const dispatch = createEventDispatcher<{
 		run: string[];
-		line: { name: string; line: string; keyboard: boolean; spend?: Pill };
+		line: { name: string; line: string; keyboard: boolean; spend?: Pill[] };
 		flag: { command: string; flag: string; keyboard: boolean };
 	}>();
 
@@ -151,12 +155,18 @@
 		else if (kindOf(command) === 'open') open = command.name;
 		else if (kindOf(command) === 'run') dispatch('run', [command.name]);
 		else {
-			// A field pill whose field wants keys typed: they go after it, so it is on the line, and spent.
-			const field = fieldVerb(command.name, pills, fields)?.field;
+			// Words TYPED next go after the field and hid pills, so those are
+			// written into their slots first and spent (da-8ru0m): a pill left
+			// loaded would lose its slot to the words. What a TAP completes
+			// (`retime`, a verb) keeps them loaded for that tap; a verb under
+			// a field it will not run is typed (da-lxqqz).
+			const keyed = fieldVerb(command.name, pills, fields);
+			const slotted = command.next === 'type' || keyed ? pills.filter((p) => p.kind === 'field' || p.kind === 'hid') : [];
+			const { argv, used } = withPills(grammar, [command.name], slotted);
+			const line = argv.join(' ');
 			// Straight into the first key's frame, as a space after the field would (da-31d1d).
-			const line = `${command.name} ${field?.text}`;
-			if (field) dispatch('line', { name: command.name, line: advance(line, fields) ?? `${line} `, keyboard: true, spend: field });
-			else dispatch('line', { name: command.name, line: `${command.name} `, keyboard: command.next !== 'tap' });
+			if (keyed) dispatch('line', { name: command.name, line: advance(line, fields) ?? `${line} `, keyboard: true, spend: used });
+			else dispatch('line', { name: command.name, line: `${line} `, keyboard: command.next !== 'tap', spend: used });
 		}
 	}
 

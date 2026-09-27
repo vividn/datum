@@ -158,7 +158,7 @@ function ruled(sections) {
 }
 
 describe('the bar of commands', () => {
-	test('Undo leads, the verbs follow, and note is not among them', async () => {
+	test('Undo leads, the verbs follow, and note after them', async () => {
 		await onPage(async ({ page }) => {
 			const buttons = await drawn(page);
 			assert.deepEqual(buttons.slice(0, 8), [
@@ -171,7 +171,7 @@ describe('the bar of commands', () => {
 				'switch',
 				'add'
 			]);
-			assert.equal(buttons.includes('note'), false, 'note is typed, not pressed (da-py5w, da-e78x6)');
+			assert.equal(buttons[8], 'note', 'note is on the bar, after the verbs (da-8ru0m)');
 			assert.ok(buttons.includes('sync'), 'the tail of the list is drawn too');
 		});
 	});
@@ -650,6 +650,75 @@ describe('a verb under a field pill', () => {
 			const [entry] = await app.entries(1);
 			assert.equal(entry.field, 'shift');
 			assert.deepEqual(entry.data ?? {}, {});
+			assert.deepEqual(app.errors, []);
+		});
+	});
+});
+
+// da-8ru0m, vividn, 2026-09-27: «when the field pill or hid pills are
+// present, the cursor should go automatically to the end after all the
+// pills when any command requiring typing is clicked since these pills
+// depend on positionality». A pill left loaded loses its slot to the first
+// word typed, so `note ` under a coffee pill logged a field called `too`.
+describe('a typing command under field and hid pills', () => {
+	const input = (page) => page.locator('.prompt-bar input');
+	const pill = (page, kind) => page.locator(`.prompt-bar .pill.${kind}`);
+	const load = (page, pills) => page.evaluate((all) => window.datum.bar.setPills(all), pills);
+	/** The line, whether it has the caret, and where the caret is. */
+	const caret = (page) =>
+		input(page).evaluate((el) => ({ text: el.value, focused: document.activeElement === el, at: el.selectionStart }));
+
+	test('note under a coffee pill writes `note coffee ` with the caret last; the words land after the field', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await seedLines(app, SEED);
+			await fieldsBar(page).locator('[data-field="coffee"]').click({ button: 'right' });
+			await pill(page, 'field').waitFor();
+
+			await commands(page).locator('button[data-command="note"]').click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'note coffee ');
+			assert.deepEqual(await caret(page), { text: 'note coffee ', focused: true, at: 'note coffee '.length });
+			await pill(page, 'field').waitFor({ state: 'detached' });
+
+			await input(page).pressSequentially('too strong');
+			await echoed(app, () => input(page).press('Enter'));
+			assert.equal((await app.echoes()).at(-1), 'note coffee too strong');
+			await app.idle();
+			const all = await app.allEntries();
+			// A note is timeless (da-r17h), so it is found, not taken from the end.
+			const notes = all.filter((e) => /too strong/.test(JSON.stringify(e.data ?? {})));
+			assert.deepEqual(notes.map((e) => e.field), ['coffee']);
+			assert.equal(all.filter((e) => e.field === 'too').length, 0, 'a field called too was logged');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	test('with no pills, a typing command writes its name alone, as it always did', async () => {
+		await onPage(async ({ page }) => {
+			await tap(page, 'note');
+			assert.deepEqual(await caret(page), { text: 'note ', focused: true, at: 5 });
+		});
+	});
+
+	test('update under an hid writes `update <hid> ` with the caret last; a field beside it is context and stays', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await seedLines(app, SEED);
+			const [entry] = await app.entries(1);
+			await load(page, [
+				{ id: 'field', kind: 'field', text: 'mood' },
+				{ id: 'hid', kind: 'hid', text: entry.hid }
+			]);
+			await commands(page).locator('button[data-command="update"]').click();
+			const want = `update ${entry.hid} `;
+			await page.waitForFunction((w) => document.querySelector('.prompt-bar input').value === w, want);
+			assert.deepEqual(await caret(page), { text: want, focused: true, at: want.length });
+			await pill(page, 'hid').waitFor({ state: 'detached' });
+			assert.deepEqual(
+				(await page.evaluate(() => window.datum.bar.pills())).map((p) => p.kind),
+				['field'],
+				'the context field was spent'
+			);
 			assert.deepEqual(app.errors, []);
 		});
 	});

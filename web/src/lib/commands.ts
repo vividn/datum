@@ -89,15 +89,14 @@ const fills = (section: Section, names: string[]): CommandButton[] =>
  * the widget draws it as a small icon joined to Undo, lit only when the CLI
  * says there is an undo to redo (`redo --dry-run`, CommandPane.svelte).
  *
- * `note` is NOT here (vividn, 2026-09-15 19:08): it lived in a field's hold
- * panel (da-py5w), where the field it annotates already was. da-e78x6
- * removed that panel, so `note` is now TYPED — `note <field> <words>` —
- * and it stays off this list for a reason of its own: a `fill` press
- * would put `note ` on the line beside a field pill, and the moment the
- * comment's words are typed after it the pill no longer fits the field
- * slot (`fieldSlotOpen`, $lib/selection.ts) and is refused, so Enter
- * would run `note too strong` and log a field called `too`. A button
- * that composes the wrong command is worse than no button.
+ * `note` is typed after its field — `note <field> <words>` — and a tap on
+ * it under a field pill writes the pill into the line first (da-8ru0m,
+ * vividn, 2026-09-27: «when the field pill or hid pills are present, the
+ * cursor should go automatically to the end after all the pills when any
+ * command requiring typing is clicked since these pills depend on
+ * positionality»). Left loaded, the pill would lose the field slot to the
+ * first word typed (`fieldSlotOpen`, $lib/selection.ts) and Enter would
+ * log a field called `too`, which is why `note` was off this list.
  */
 export const COMMANDS: CommandButton[] = [
 	{ name: 'undo', label: 'Undo', press: 'run', section: 'undo' },
@@ -106,7 +105,7 @@ export const COMMANDS: CommandButton[] = [
 	// running anything, and `datum help` is what it is a button for.
 	{ name: 'help', label: 'Help', press: 'help', section: 'undo' },
 	...VERBS.map((name): CommandButton => ({ name, label: name, press: 'verb', next: 'tap', section: 'log' })),
-	...fills('log', ['flag']),
+	...fills('log', ['note', 'flag']),
 	...fills('setup', ['track', 'ignore', 'spec', 'alias', 'kit', 'view', 'config']),
 	...fills('edit', ['delete', 'update', 'retime']),
 	...fills('analysis', [

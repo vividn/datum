@@ -166,6 +166,15 @@ describe('what a press runs with the pills', () => {
 		assert.deepEqual(withPills(GRAMMAR, ['update', 'note=x'], [two]).argv, ['update', 'abcde12345xy,fghij', 'note=x']);
 	});
 
+	// da-8ru0m: a tap writes a LOCKED hid into the line and it stays loaded,
+	// so the Enter after must not put it there a second time.
+	test('an hid already on the line is not added again, nor spent', () => {
+		const locked = { ...two, locked: true };
+		const { argv, used } = withPills(GRAMMAR, ['update', 'abcde12345xy,fghij', 'note=x'], [locked, time]);
+		assert.deepEqual(argv, ['update', 'abcde12345xy,fghij', 'note=x']);
+		assert.deepEqual(used, [], 'update takes no -t, and its hid is on the line already');
+	});
+
 	// da-8810n. The field goes in the command's OWN field slot — after
 	// `spec show`, not after `spec` — and BEFORE the other pills, since
 	// `tail -t 14:30 mood` is not the command `tail mood -t 14:30` is.

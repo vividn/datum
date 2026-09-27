@@ -144,8 +144,9 @@ export function withPills(
 	pills: Pill[]
 ): { argv: string[]; used: Pill[] } {
 	const takes = argv.length ? grammar?.get(argv[0]) : undefined;
+	// A locked hid a tap already wrote into the line stays loaded (da-8ru0m): it is not added twice.
 	const used = argumentsOf(pills).filter(
-		(p) => fits(takes, p) && (p.kind !== 'field' || fieldSlotOpen(takes, argv))
+		(p) => fits(takes, p) && (p.kind !== 'field' || fieldSlotOpen(takes, argv)) && !(p.kind === 'hid' && argv.includes(p.text))
 	);
 	const hid = used.find((p) => p.kind === 'hid');
 	const field = used.find((p) => p.kind === 'field');

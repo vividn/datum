@@ -143,12 +143,19 @@ describe('a tap on a tail row', () => {
 			const [next] = await last(page, 1);
 			await next.click();
 			await hidPill(page).waitFor();
+			const nextHid = await next.getAttribute('data-hid');
 			const quiet = await echoCount(page);
-			await button(page, 'update').click();
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'update ');
-			assert.equal(await echoCount(page), quiet, 'update ran on a tap');
 			assert.equal(await armed('update'), false);
-			assert.equal(await input.inputValue(), 'update ');
+			await button(page, 'update').click();
+			// The hid goes into its slot on the line, and the caret after it (da-8ru0m).
+			await page.waitForFunction((h) => document.querySelector('.prompt-bar input').value === `update ${h} `, nextHid);
+			assert.equal(await echoCount(page), quiet, 'update ran on a tap');
+			assert.deepEqual(await input.evaluate((el) => [el.selectionStart, el.value.length, document.activeElement === el]), [
+				`update ${nextHid} `.length,
+				`update ${nextHid} `.length,
+				true
+			]);
+			await hidPill(page).waitFor({ state: 'detached' });
 			await input.fill('');
 			assert.deepEqual(app.errors, []);
 		});
@@ -224,7 +231,9 @@ describe('selecting several', () => {
 			await hidPill(page).locator('button.lock').click();
 			await button(page, 'update').click();
 			const input = page.locator('.prompt-bar input');
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'update ');
+			// Locked, the pill is written into the line AND stays for the delete (da-8ru0m).
+			await page.waitForFunction((h) => document.querySelector('.prompt-bar input').value === `update ${h} `, hids.join(','));
+			assert.equal(await hidPill(page).count(), 1);
 			await input.pressSequentially('note=x');
 			await input.press('Enter');
 			await app.idle();

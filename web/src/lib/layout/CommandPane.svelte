@@ -65,13 +65,13 @@
 		void pressWithPills(argv);
 	}
 
-	function fill({ name, line, keyboard, spend }: { name: string; line: string; keyboard: boolean; spend?: Pill }): void {
+	function fill({ name, line, keyboard, spend }: { name: string; line: string; keyboard: boolean; spend?: Pill[] }): void {
 		const field = argumentsOf($pills).find((p) => p.kind === 'field');
 		if (name === 'spec' && field) {
 			clearUnlockedPills([field]);
 			void openSpec(field.text).then((argv) => argv && press(argv));
 		} else {
-			if (spend) clearUnlockedPills([spend]);
+			if (spend) clearUnlockedPills(spend);
 			prefill.set({ line, keyboard });
 		}
 	}

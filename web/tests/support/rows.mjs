@@ -119,14 +119,19 @@ export const boxes = (locator, selector) =>
 		selector
 	);
 
-/** Scroll the bar to its right end: is its last `selector` button then wholly in it? */
+/**
+ * Scroll the bar to its right end: is its last `selector` button then wholly
+ * in it? Within a pixel on the right: `scrollWidth` and `scrollLeft` are
+ * whole pixels, so up to one of a fractional content width is never
+ * scrolled to (measured 0.62px with `note` on the bar, da-8ru0m).
+ */
 export const lastReached = (locator, selector) =>
 	locator.evaluate(
 		(bar, selector) => {
 			bar.scrollLeft = bar.scrollWidth;
 			const outer = bar.getBoundingClientRect();
 			const last = [...bar.querySelectorAll(selector)].at(-1).getBoundingClientRect();
-			const reached = last.left >= outer.left - 0.5 && last.right <= outer.right + 0.5;
+			const reached = last.left >= outer.left - 0.5 && last.right <= outer.right + 1;
 			bar.scrollLeft = 0;
 			return reached;
 		},
