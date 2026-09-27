@@ -44,6 +44,7 @@ mod dot_skip_positional;
 mod dur_flag_removed;
 mod e2e_subprocess;
 mod env_table_coverage;
+mod field_name_commas;
 mod fields_cmd;
 mod float_roundtrip;
 mod get_cmd;

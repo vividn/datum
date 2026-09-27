@@ -40,6 +40,24 @@ pub fn validate_field_name(field: &str) -> Result<()> {
     Ok(())
 }
 
+/// Reject a `,` in a field name being chosen for an entry (da-6p3du): the
+/// CLI splits `undo a,b` and `history a,b` on it and reads a lone `,` as
+/// the entry separator, so such a field could never be named in a list.
+/// Checked where a name is chosen — a logged entry's field once aliases and
+/// its template have expanded, a field an update or `edit` moves it to, and a spec
+/// written for a field that has none (`track`, `spec add-state`, a kit's
+/// `[[field]]`) — not in
+/// [`validate_field_name`], which a restore writes through too, so a row
+/// that already holds one stays restorable. Whitespace stays allowed.
+pub fn validate_new_field_name(field: &str) -> Result<()> {
+    if field.contains(',') {
+        return Err(DatumError::InvalidFieldSpec(format!(
+            "field name cannot contain ',' (got {field:?})"
+        )));
+    }
+    Ok(())
+}
+
 /// Reject a slug containing `::`, which `datum get <id>::<name>` reads as
 /// the boundary between an id and the value it names (da-u7mgc). Refused
 /// rather than escaped: no slug in any database we hold contained one when

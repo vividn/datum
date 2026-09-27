@@ -605,6 +605,12 @@ impl Db {
             let ctx = InterpolationContext::from_entry(&updated);
             updated.field = field_spec::interpolate_field(&tmpl, &ctx, slug_delimiter)?;
         }
+        // A field this save moves the entry to — a template re-derived,
+        // `update field=`, `edit` — is a name being chosen; the stored one is
+        // the slug's prefix, as a field holds no ':'.
+        if existing_slug.as_str().split_once(':').map(|(f, _)| f) != Some(updated.field.as_str()) {
+            crate::slug::validate_new_field_name(&updated.field)?;
+        }
         // da-ivld: slug = `<field>:<body>` where body is
         // interpolate(id_structure). The `<field>:` prefix is implicit
         // and never lives in id_structure; see cmd.rs's slug-precedence

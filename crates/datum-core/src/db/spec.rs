@@ -352,6 +352,9 @@ impl Db {
         crate::slug::validate_field_name(&spec.field)?;
         let mut data = serde_json::to_value(spec)?;
         let existing = self.spec_entry(&spec.field)?;
+        if existing.is_none() {
+            crate::slug::validate_new_field_name(&spec.field)?;
+        }
         let old = existing.as_ref().and_then(|e| e.data.as_ref());
         let old_kit = old.and_then(|d| d.get(SPEC_KIT_KEY));
         let (kit, displaced) = match kit_id {

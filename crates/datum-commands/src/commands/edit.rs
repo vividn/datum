@@ -433,6 +433,28 @@ mod tests {
         assert_eq!(after.state, before.state);
     }
 
+    /// da-6p3du: moving an entry to a field is choosing its name, so a
+    /// comma is refused and the entry stays where it was.
+    #[test]
+    fn edit_refuses_a_comma_field() {
+        let db = Db::open_in_memory().unwrap();
+        let e = seed_entry(&db, "coffee", Verb::Point, None, None);
+        let prep = write_editor_payload(&editor_payload(&e, |doc| doc["field"] = "a,b".into()));
+
+        let err = with_datum_editor_result(&format!("cp {}", prep.path().display()), || {
+            edit(
+                EditArgs {
+                    id_or_slug: e.slug.to_string(),
+                    output: Default::default(),
+                },
+                &db,
+            )
+            .unwrap_err()
+        });
+        assert!(err.to_string().contains("cannot contain ','"), "{err}");
+        assert_eq!(db.get_entry(&e.slug).unwrap().field, "coffee");
+    }
+
     #[test]
     fn edit_runs_the_toml_editor_that_config_show_reports() {
         // da-tkkz3: with DATUM_EDITOR unset, the toml `editor` key outranks

@@ -590,6 +590,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         entry.field = field_spec::interpolate_field(&template, &ctx, &delim)?;
         entry.field_structure = Some(template);
     }
+    datum_core::slug::validate_new_field_name(&entry.field)?;
 
     // da-ivld: id_structure is the single source of truth for slug.
     // Every entry now carries an id_structure on insert; slug is always
