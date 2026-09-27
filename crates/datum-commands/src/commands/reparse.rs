@@ -147,7 +147,17 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
         field: reserved.field.unwrap_or(parsed.field),
         state,
         dur,
-        following_state: reserved.following_state,
+        // The first row of a field carries its declaration as a trailing
+        // switch (da-gvcen), put there by a spec lookup in `log_entry`
+        // rather than by the parser. A line that spelled no
+        // `following_state=` keeps a stored one that IS that declaration:
+        // dropping it would un-ignore nothing and report every field's
+        // first row as drifted (da-9p48y).
+        following_state: reserved.following_state.or_else(|| {
+            let declared =
+                datum_core::track::declared_state(datum_core::track::verb_for_action(action));
+            entry.following_state.clone().filter(|fs| *fs == declared)
+        }),
         data: extra_data,
     }))
 }

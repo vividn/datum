@@ -184,3 +184,34 @@ fn reparse_fix_keeps_relative_temporal_keys_resolved() {
         Some(serde_json::json!({"next_date": "2026-09-21"}))
     );
 }
+
+/// da-9p48y: a field's first row declares the field in its own
+/// `following_state` (da-gvcen), which `log_entry` adds from a spec
+/// lookup and not from the line. Replay must keep that declaration —
+/// and only that: a trailing state the line never spelled is still
+/// drift.
+#[test]
+fn reparse_fix_keeps_the_field_declaration() {
+    let db = fresh_db();
+    run_cli(&["occur", "plain", "x=1"], &db).unwrap();
+    let before = datum_core::test_util::logged_entries(&db, "plain")[0].clone();
+    assert_eq!(before.following_state, Some(serde_json::json!("TRACKED")));
+    let hid = before.hid.to_string();
+
+    run_cli(&["reparse", &hid, "--fix"], &db).unwrap();
+    let after = db.get_entry(&hid).unwrap();
+    assert_eq!(after.following_state, before.following_state);
+    assert_eq!(
+        after.content_hash, before.content_hash,
+        "a clean row is not rewritten"
+    );
+
+    db.conn()
+        .execute(
+            "UPDATE entries SET following_state = '\"sit\"' WHERE hid = ?1",
+            params![hid.as_str()],
+        )
+        .unwrap();
+    run_cli(&["reparse", &hid, "--fix"], &db).unwrap();
+    assert_eq!(db.get_entry(&hid).unwrap().following_state, None);
+}
