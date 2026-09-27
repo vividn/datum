@@ -215,3 +215,47 @@ fn reparse_fix_keeps_the_field_declaration() {
     run_cli(&["reparse", &hid, "--fix"], &db).unwrap();
     assert_eq!(db.get_entry(&hid).unwrap().following_state, None);
 }
+
+/// da-0rx53: `start_time=` / `end_time=` (da-mjwq) place the block, so
+/// replay lifts them as the insert did — nothing of them in `data`, the
+/// pair's span as the dur, `end_time=` alone on `start` an `end` — and a
+/// relative key anchors where the insert anchored it: at `start_time=`
+/// when a duration follows it (a3 crosses midnight: stored at 00:00 on
+/// the 2nd, anchored at 23:00 on the 1st), at the stored time otherwise.
+#[test]
+fn reparse_fix_lifts_start_time_and_end_time() {
+    let db = fresh_db();
+    let lines: [&[&str]; 4] = [
+        &[
+            "start",
+            "a2",
+            "start_time=2026-01-01T10:00",
+            "end_time=2026-01-01T12:00",
+        ],
+        &[
+            "occur",
+            "a7",
+            "start_time=2026-01-01T10:00",
+            "end_time=2026-01-01T11:00",
+        ],
+        &["start", "a5", "end_time=2026-01-01T23:00"],
+        &["start", "a3", "start_time=2026-01-01T23:00", "1h"],
+    ];
+    for line in lines {
+        run_cli(&[line, &["next_date=+1"]].concat(), &db).unwrap();
+    }
+    let _g = datum_core::test_util::freeze_time("2030-01-01T12:00:00");
+
+    for field in ["a2", "a7", "a5", "a3"] {
+        let before = datum_core::test_util::logged_entries(&db, field)[0].clone();
+        assert_eq!(
+            before.data,
+            Some(serde_json::json!({"next_date": "2026-01-02"})),
+            "{field}"
+        );
+        let hid = before.hid.to_string();
+        run_cli(&["reparse", &hid, "--fix"], &db).unwrap();
+        let after = db.get_entry(&hid).unwrap();
+        assert_eq!(after.content_hash, before.content_hash, "{field} is clean");
+    }
+}

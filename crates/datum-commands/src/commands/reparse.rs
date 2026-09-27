@@ -23,20 +23,21 @@ use anyhow::Result;
 use datum_core::{
     action::Action,
     db::Db,
-    dur::Dur,
+    dur::{Dur, DurSpan},
     entry::{Entry, CURRENT_PARSER_VERSION},
     ids::resolve_quickid_single,
     time::DatumTime,
 };
 use datum_parse::alias::expand_argv;
+use datum_parse::input::TimeArgs;
 use datum_parse::parse_argv;
 use serde_json::Value as JsonValue;
 
 use crate::args::{Command, ReparseArgs};
 use crate::commands::helpers::build_resolver_from_chain;
 use crate::commands::log_core::{
-    expand_array_states, extract_reserved_columns, parse_log_args, prepare_log_args,
-    validate_switch_state_token,
+    build_time_from_flags, expand_array_states, extract_reserved_columns, lift_time_keys,
+    parse_log_args, prepare_log_args, validate_switch_state_token, LiftedTimes,
 };
 
 /// Parser-derivable Entry shape — what the parser alone determines from
@@ -73,7 +74,7 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
         expand_argv(argv, &resolver).map_err(|e| anyhow::anyhow!("expand_argv failed: {e}"))?;
     let cli = parse_argv(&expanded).map_err(|e| anyhow::anyhow!("parse_argv failed: {e}"))?;
 
-    let (action, mut log_args) = match cli.command {
+    let (mut action, mut log_args) = match cli.command {
         Command::Occur(a) => (Action::Occur, a),
         Command::Start(a) => (Action::Start, a),
         Command::Stop(a) => (Action::Stop, a),
@@ -97,12 +98,38 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
         }
     }
 
+    // `start_time=` / `end_time=` place the block rather than land in
+    // `data` (da-mjwq), lifted as `log_entry` lifts them (da-0rx53).
+    let lifted = if matches!(
+        action,
+        Action::Add | Action::Note | Action::Start | Action::Switch | Action::Occur
+    ) {
+        lift_time_keys(&mut log_args.rest)
+    } else {
+        LiftedTimes::default()
+    };
+
     // Relative `*_time` / `*_date` keys (`next_date=+7`) anchor where the
     // insert anchored them (da-jbzmb): the row's own local time, or for a
     // timeless row its create time in the local zone (da-rp2rq). Never the
     // replay's "now", which would move the value every time it is asked.
+    // `start_time=S` plus a duration stored S + dur and anchored at S.
     let base = match &entry.occur_time {
-        Some(t) => t.clone(),
+        Some(t) => match (
+            &lifted.start,
+            &lifted.end,
+            entry.dur.as_ref().map(|d| &d.span),
+        ) {
+            (Some(_), None, Some(DurSpan::Of(d))) => {
+                let mut s = DatumTime {
+                    utc: t.utc - *d,
+                    ..t.clone()
+                };
+                s.refresh_offset()?;
+                s
+            }
+            _ => t.clone(),
+        },
         None => {
             let mut t = DatumTime::now();
             t.utc = entry.create_time;
@@ -112,7 +139,19 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
     };
     let parsed = parse_log_args(&log_args, action, Some(base.local_time().naive_local()))?;
     let mut extra_data = parsed.extra_data;
-    let reserved = extract_reserved_columns(&mut extra_data)?;
+    let mut reserved = extract_reserved_columns(&mut extra_data)?;
+
+    // `end_time=` alone on `start` / `switch`, with no duration, ran as
+    // `end` — a switch's state became the `-L` assertion (da-mjwq).
+    if lifted.end.is_some()
+        && lifted.start.is_none()
+        && reserved.dur.is_none()
+        && log_args.duration.duration.is_none()
+        && matches!(action, Action::Start | Action::Switch)
+    {
+        reserved.state = None;
+        action = Action::Stop;
+    }
 
     let value = if matches!(action, Action::Switch) {
         expand_array_states(parsed.value)?
@@ -137,6 +176,19 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
     // Dur: reserved `dur=` wins; Action::Occur with no explicit dur
     // gets `Dur::moment()` (da-ju71.2 lock).
     let mut dur = reserved.dur;
+    // The pair is the block between them: its span is the dur, both ends
+    // resolved as the insert resolved them, against its own clock.
+    if let (Some(s), Some(e)) = (&lifted.start, &lifted.end) {
+        let at = |raw: &String| {
+            let time = TimeArgs {
+                time: Some(raw.clone()),
+                ..log_args.time.clone()
+            };
+            build_time_from_flags(&time, entry.create_time)
+        };
+        let secs = (at(e)?.utc - at(s)?.utc).num_seconds().max(0);
+        dur = Some(Dur::of(chrono::Duration::seconds(secs)));
+    }
     if matches!(action, Action::Occur) && dur.is_none() {
         dur = Some(Dur::moment());
     }

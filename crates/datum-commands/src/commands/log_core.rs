@@ -1501,9 +1501,9 @@ pub(crate) fn parse_value_token(s: &str) -> JsonValue {
 /// suffix rule would coerce them to clock strings, so they reach the one
 /// time parser `-t` uses with their day, sign and `±` uncertainty intact.
 #[derive(Debug, Default)]
-struct LiftedTimes {
-    start: Option<String>,
-    end: Option<String>,
+pub(crate) struct LiftedTimes {
+    pub(crate) start: Option<String>,
+    pub(crate) end: Option<String>,
 }
 
 impl LiftedTimes {
@@ -1522,7 +1522,7 @@ impl LiftedTimes {
 /// Take every `start_time=<v>` / `end_time=<v>` token out of the
 /// positionals (the last of a repeated key wins) and return their raw
 /// values. Nothing of the keys stays behind for the data parser.
-fn lift_time_keys(rest: &mut Vec<String>) -> LiftedTimes {
+pub(crate) fn lift_time_keys(rest: &mut Vec<String>) -> LiftedTimes {
     let mut lifted = LiftedTimes::default();
     rest.retain(|tok| match tok.split_once('=') {
         Some(("start_time", v)) => {
@@ -1827,7 +1827,10 @@ pub(crate) fn build_time_with_uncertainty(args: &LogArgs) -> Result<DatumTime> {
 /// raw value in the `-t` slot, so the keys and the flag cannot disagree —
 /// and both keys of a pair against the same `now`, so `-20` and `-5` are
 /// fifteen minutes apart exactly.
-fn build_time_from_flags(time: &TimeArgs, now: chrono::DateTime<chrono::Utc>) -> Result<DatumTime> {
+pub(crate) fn build_time_from_flags(
+    time: &TimeArgs,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<DatumTime> {
     let tz_name = match time.timezone.as_deref() {
         Some(spec) => Some(
             resolve_timezone(spec)
