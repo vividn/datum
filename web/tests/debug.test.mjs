@@ -17,7 +17,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { HELD_AT, startApp, stopApp, withApp } from './support/app.mjs';
 import { manage } from './support/layout.mjs';
 
 before(startApp);
@@ -297,7 +297,10 @@ describe('the sample seeder', () => {
 			assert.deepEqual(await state(), before);
 			assert.equal(await day(), plain);
 			assert.deepEqual(app.errors, []);
-		}, DEBUG);
+			// Held on a Wednesday, so `-d -1` is a Tuesday: the seed writes no
+			// `work` on a weekend (sample.ts), and on a Sunday or a Monday
+			// #2f9e44 had nothing to draw (da-khw6x).
+		}, { ...DEBUG, clock: HELD_AT - ((new Date(HELD_AT).getUTCDay() + 4) % 7) * 86400000 });
 	});
 
 	test('stops at a command that fails, and says which', async () => {
