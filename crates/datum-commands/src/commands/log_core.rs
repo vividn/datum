@@ -125,13 +125,26 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // its create time, which is what v2's shirk counted from: `occur chore
     // -T next_date=+7` (da-rp2rq). Not through the flags: `-D` rides along
     // with `-T` unrefused and would move the anchor to midnight.
-    let base_local = if args.time.omit_timestamp {
+    let base = if args.time.omit_timestamp {
         Some(DatumTime::now())
     } else {
         build_time_with_uncertainty(&args).ok()
+    };
+    let local = |dt: &DatumTime| dt.local_time().naive_local();
+    let mut parsed = parse_log_args(&args, action, base.as_ref().map(local))?;
+    // da-bcdjm: an `occur_time=` key places the entry, so the relative keys
+    // anchor at it as they do at `-t`. Resolved against the same base the
+    // column gets below, then the line is parsed again at that anchor —
+    // keeping the first pass's `occur_time`, which a second coercion at the
+    // new base would shift again (`occur_time=+5` must not become +10).
+    let data_occur_time = |p: &ParsedLogArgs| p.extra_data.as_ref()?.get("occur_time").cloned();
+    if let Some(t) = data_occur_time(&parsed) {
+        let anchor = parse_reserved_occur_time(&t, &base.unwrap_or_else(DatumTime::now))?;
+        parsed = parse_log_args(&args, action, Some(local(&anchor)))?;
+        if let Some(JsonValue::Object(obj)) = parsed.extra_data.as_mut() {
+            obj.insert("occur_time".into(), t);
+        }
     }
-    .map(|dt| dt.local_time().naive_local());
-    let parsed = parse_log_args(&args, action, base_local)?;
     let ParsedLogArgs {
         field,
         value,

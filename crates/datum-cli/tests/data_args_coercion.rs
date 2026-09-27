@@ -299,3 +299,29 @@ fn relative_temporal_keys_anchor_a_timeless_entry_at_its_create_time() {
         "an update payload keeps the text"
     );
 }
+
+/// da-bcdjm: `occur_time=` places the entry, so relative `*date` / `*time`
+/// keys anchor at it, as they do at `-t` — and the key itself is resolved
+/// once, not again at the anchor it sets.
+#[test]
+fn relative_temporal_keys_anchor_at_an_occur_time_key() {
+    let _g = datum_core::test_util::freeze_time("2026-09-10T12:00:00");
+    let db = fresh_db();
+    let entry = |field: &str| datum_core::test_util::logged_entries(&db, field)[0].clone();
+    let local = |field: &str| {
+        let t = entry(field).occur_time.unwrap();
+        t.local_time().naive_local().to_string()
+    };
+
+    run_cli(
+        &["occur", "a1", "occur_time=2026-01-01T10:00", "next_date=+1"],
+        &db,
+    )
+    .unwrap();
+    assert_eq!(local("a1"), "2026-01-01 10:00:00");
+    assert_eq!(entry("a1").data, Some(json!({"next_date": "2026-01-02"})));
+
+    run_cli(&["occur", "a2", "occur_time=+2h", "next_time=+30m"], &db).unwrap();
+    assert_eq!(local("a2"), "2026-09-10 14:00:00");
+    assert_eq!(entry("a2").data, Some(json!({"next_time": "14:30:00"})));
+}
