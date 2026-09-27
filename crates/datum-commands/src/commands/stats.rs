@@ -80,6 +80,81 @@ pub struct StatsResult {
     /// (da-uv7fu). Of the selected state's count when there is one. `None`
     /// when the field tracked any time, or counted nothing.
     pub frequency: Option<Frequency>,
+    /// How often, or how much time, per the one unit that suits the field
+    /// (da-ehxou) — over the same span as [`Self::frequency`]. `None` when
+    /// the window counts no entry.
+    pub rate: Option<Rate>,
+    /// The field as of the window's end over fixed calendar periods —
+    /// today, this week, … YTD — whatever the window's start (da-ehxou).
+    /// Empty for the all-fields table, which does not compute them.
+    pub periods: Vec<Period>,
+}
+
+/// One named period of [`StatsResult::periods`]: how many entries it
+/// counted and how much time it tracked, of the selected state when there
+/// is one.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Period {
+    pub name: &'static str,
+    pub count: usize,
+    pub duration_seconds: i64,
+}
+
+/// What a rate can be per, with its length in days.
+const PER: [(&str, f64); 4] = [
+    ("day", 1.0),
+    ("week", 7.0),
+    ("month", 365.2425 / 12.0),
+    ("year", 365.2425),
+];
+
+/// ONE rate in the unit that suits the field (da-ehxou). vividn: «I would
+/// pick a denominator that makes the most sense for a given field depending
+/// on its occurrence frequency rather than showing all of them».
+///
+/// The rule: the smallest of day / week / month / year in which the mean is
+/// at least one — one entry, or for a field that takes time one HOUR (the
+/// same rule on the time's own scale) — so coffee reads /day and a haircut
+/// /month. A unit longer than the span is never picked: when the smallest
+/// qualifying unit is longer, the longest unit the span covers stands in,
+/// so three days of data never reads «/year» (#232's 504/year did).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Rate {
+    /// `day`, `week`, `month` or `year`.
+    pub per: &'static str,
+    /// Entries, or seconds when `timed`, per `per`.
+    pub amount: f64,
+    pub timed: bool,
+}
+
+impl Rate {
+    fn new(amount: f64, span_seconds: i64, timed: bool) -> Self {
+        let span_days = span_seconds.max(86_400) as f64 / 86_400.0;
+        let per_day = amount / span_days;
+        let threshold = if timed { 3600.0 } else { 1.0 };
+        // A day is always covered: the span is never under one.
+        let covered = &PER[..PER.iter().filter(|(_, d)| *d <= span_days).count()];
+        let (per, days) = covered
+            .iter()
+            .find(|(_, d)| per_day * d >= threshold)
+            .or(covered.last())
+            .copied()
+            .unwrap_or(PER[0]);
+        Rate {
+            per,
+            amount: per_day * days,
+            timed,
+        }
+    }
+}
+
+impl std::fmt::Display for Rate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.timed {
+            true => write!(f, "{}/{}", format_dur(self.amount.round() as i64), self.per),
+            false => write!(f, "{}/{}", rate(self.amount), self.per),
+        }
+    }
 }
 
 /// Entries per day / week / month / year over `span_seconds`: from the
@@ -132,6 +207,8 @@ pub struct FieldStat {
     pub ratio: Option<f64>,
     /// [`StatsResult::frequency`]: how often, when the field took no time.
     pub frequency: Option<Frequency>,
+    /// [`StatsResult::rate`].
+    pub rate: Option<Rate>,
 }
 
 /// Structured result of a bare `stats` — every field, ranked.
@@ -159,7 +236,7 @@ pub struct AllFieldsStats {
 /// it off the widget bar, not out of the record, and `stats <ignored>`
 /// answers for one today.
 pub fn compute_all_fields(args: &StatsArgs, db: &Db) -> Result<AllFieldsStats> {
-    let (start, end) = resolve_window(args, db)?;
+    let (start, end, _) = resolve_window(args, db)?;
     let registry = db.load_registry()?;
     let mut fields: Vec<FieldStat> = Vec::new();
     let (mut earliest, mut latest) = (None, None);
@@ -177,6 +254,7 @@ pub fn compute_all_fields(args: &StatsArgs, db: &Db) -> Result<AllFieldsStats> {
             duration_seconds: r.tracked_duration_seconds,
             ratio: None,
             frequency: r.frequency,
+            rate: r.rate,
         });
     }
 
@@ -212,8 +290,32 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
         _ => (selector.to_string(), None),
     };
 
-    let (start, end) = resolve_window(args, db)?;
-    field_stats(&field, selected_state, args, db, start, end)
+    let (start, end, zones) = resolve_window(args, db)?;
+    let timeline = load_timeline(&field, db)?;
+    let mut r = rollup(&field, selected_state.clone(), args, &timeline, start, end);
+    // Every period is read as of the window's end, in the window's zones.
+    let anchor = end.min(DatumTime::now().utc);
+    for (name, (s, e)) in named_periods(anchor, resolve_week_start()?, &zones)? {
+        let p = rollup(&field, selected_state.clone(), args, &timeline, Some(s), e);
+        let (count, duration_seconds) = p.subject();
+        r.periods.push(Period {
+            name,
+            count,
+            duration_seconds,
+        });
+    }
+    Ok(r)
+}
+
+impl StatsResult {
+    /// The count and the time of what the selector names: the one state,
+    /// or the whole field's tracked time.
+    fn subject(&self) -> (usize, i64) {
+        match &self.selected_state {
+            Some(_) => (self.states[0].count, self.states[0].duration_seconds),
+            None => (self.total_count, self.tracked_duration_seconds),
+        }
+    }
 }
 
 /// One field's rollup over an already-resolved window — the core both the
@@ -226,9 +328,11 @@ fn field_stats(
     start: Option<DateTime<Utc>>,
     end: DateTime<Utc>,
 ) -> Result<StatsResult> {
-    let field = field.to_string();
-    let now = DatumTime::now().utc;
+    let timeline = load_timeline(field, db)?;
+    Ok(rollup(field, selected_state, args, &timeline, start, end))
+}
 
+fn load_timeline(field: &str, db: &Db) -> Result<Vec<TimelineRow>> {
     // Oldest→newest, time-bearing state rows only. `TimeMetric::Occur` drops
     // TRACK documents too (da-c8mh): declaring a field is not an
     // observation of it.
@@ -236,12 +340,12 @@ fn field_stats(
     // filter drops `flag` / protocol-note markers — the same exclusions
     // tail / dayview / now apply, so the timeline matches what the user sees.
     let params = ListParams {
-        fields: vec![field.clone()],
+        fields: vec![field.to_string()],
         metric: TimeMetric::Occur,
         ..Default::default()
     };
     let entries = db.list_entries(&params)?;
-    let timeline: Vec<TimelineRow> = entries
+    Ok(entries
         .iter()
         .filter(|e| datum_core::track::track_verb(e).is_none())
         .filter_map(|e| {
@@ -256,7 +360,20 @@ fn field_stats(
                 hands_back: datum_parse::shape::hands_field_back(e.verb),
             })
         })
-        .collect();
+        .collect())
+}
+
+/// The rollup of an already-loaded timeline over `[start, end)`.
+fn rollup(
+    field: &str,
+    selected_state: Option<String>,
+    args: &StatsArgs,
+    timeline: &[TimelineRow],
+    start: Option<DateTime<Utc>>,
+    end: DateTime<Utc>,
+) -> StatsResult {
+    let field = field.to_string();
+    let now = DatumTime::now().utc;
 
     let mut dur_by_state: BTreeMap<String, i64> = BTreeMap::new();
     let mut count_by_state: BTreeMap<String, usize> = BTreeMap::new();
@@ -417,17 +534,7 @@ fn field_stats(
         states = vec![one];
     }
 
-    let frequency = earliest
-        .filter(|_| tracked_duration_seconds == 0)
-        .map(|first| {
-            let count = match &selected_state {
-                Some(_) => states[0].count,
-                None => total_count,
-            };
-            Frequency::new(count, (end.min(now) - first.to_utc()).num_seconds())
-        });
-
-    Ok(StatsResult {
+    let mut r = StatsResult {
         field,
         selected_state,
         total_count,
@@ -436,8 +543,19 @@ fn field_stats(
         earliest,
         latest,
         states,
-        frequency,
-    })
+        frequency: None,
+        rate: None,
+        periods: Vec::new(),
+    };
+    let (count, secs) = r.subject();
+    let timed = r.tracked_duration_seconds > 0;
+    let span = earliest.map(|first| (end.min(now) - first.to_utc()).num_seconds());
+    r.frequency = span.filter(|_| !timed).map(|s| Frequency::new(count, s));
+    r.rate = span.map(|s| match timed {
+        true => Rate::new(secs as f64, s, true),
+        false => Rate::new(count as f64, s, false),
+    });
+    r
 }
 
 pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
@@ -488,8 +606,12 @@ pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
 /// Every local boundary here is resolved through the database's
 /// [`ZoneTimeline`] — the zone that was local *at that period*, not the one
 /// that is local now (da-ztae). A machine that moved Berlin → Lisbon has an
-/// hour of skew in every boundary otherwise.
-fn resolve_window(args: &StatsArgs, db: &Db) -> Result<(Option<DateTime<Utc>>, DateTime<Utc>)> {
+/// hour of skew in every boundary otherwise. That timeline is returned
+/// too, so the periods line reads the same zones without a second query.
+fn resolve_window(
+    args: &StatsArgs,
+    db: &Db,
+) -> Result<(Option<DateTime<Utc>>, DateTime<Utc>, ZoneTimeline)> {
     let now = DatumTime::now().utc;
     let zones = window_zones(args, db)?;
 
@@ -557,7 +679,7 @@ fn resolve_window(args: &StatsArgs, db: &Db) -> Result<(Option<DateTime<Utc>>, D
             );
         }
     }
-    Ok((start, end))
+    Ok((start, end, zones))
 }
 
 /// True when the timing flags name a moment at all. `-z` alone only picks
@@ -616,6 +738,32 @@ fn period_window(
             )
         }
     })
+}
+
+/// A half-open `[start, end)`.
+type Span = (DateTime<Utc>, DateTime<Utc>);
+
+/// The periods line's windows as of `anchor`, keyed by the names the JSON
+/// carries (da-ehxou). The calendar ones are `--today`'s and friends' own
+/// windows; the rolling ones are whole days back from the anchor.
+fn named_periods(
+    anchor: DateTime<Utc>,
+    week_start: Weekday,
+    zones: &ZoneTimeline,
+) -> Result<[(&'static str, Span); 8]> {
+    let calendar = |p| period_window(p, week_start, zones, anchor);
+    let back = |days| (anchor - Duration::days(days), anchor);
+    let year = local_date_at(zones, anchor).year();
+    Ok([
+        ("today", calendar(StatsPeriod::Today)?),
+        ("this_week", calendar(StatsPeriod::Week)?),
+        ("last_7_days", back(7)),
+        ("last_week", calendar(StatsPeriod::LastWeek)?),
+        ("this_month", calendar(StatsPeriod::Month)?),
+        ("last_30_days", back(30)),
+        ("last_365_days", back(365)),
+        ("ytd", (midnight(zones, first_of_month(year, 1)?), anchor)),
+    ])
 }
 
 /// The most recent `week_start` weekday at or before `date` — `date` itself
@@ -766,7 +914,7 @@ fn render_text(r: &StatsResult) -> String {
 
     // A field that took no time says how often instead, and no time at all:
     // an occur field's "duration" is only the gaps between its instants.
-    if let Some(f) = &r.frequency {
+    if r.frequency.is_some() {
         let since = r
             .earliest
             .map(|t| t.format("%Y-%m-%d").to_string())
@@ -775,10 +923,11 @@ fn render_text(r: &StatsResult) -> String {
             Some(sel) => (format!("{}:{}", r.field, sel), r.states[0].count),
             None => (r.field.clone(), r.total_count),
         };
+        let rate = r.rate.map(|q| q.to_string()).unwrap_or_default();
         let mut out = format!(
-            "{name}  ·  {}  ·  {} total since {since}\n",
-            rates(f),
-            group(count as f64)
+            "{name}  ·  {rate}  ·  {} total since {since}\n{}",
+            group(count as f64),
+            periods_line(r),
         );
         if r.selected_state.is_none() {
             let w = r.states.iter().map(|s| s.count.to_string().len()).max();
@@ -794,13 +943,15 @@ fn render_text(r: &StatsResult) -> String {
     if let Some(sel) = &r.selected_state {
         let s = &r.states[0];
         return format!(
-            "{}:{}  ·  {}  {} of {}  ({}×)\n",
+            "{}:{}  ·  {}  {} of {}  ({}×){}\n{}",
             r.field,
             sel,
             format_dur(s.duration_seconds),
             percent(s.ratio),
             r.field,
             s.count,
+            rate_note(r),
+            periods_line(r),
         );
     }
 
@@ -830,8 +981,13 @@ fn render_text(r: &StatsResult) -> String {
         format!("  ({} tracked)", format_dur(r.tracked_duration_seconds))
     };
     let mut out = format!(
-        "{}  ·  {} over {} entries{}\n\n",
-        r.field, total_dur, r.total_count, tracked_note
+        "{}  ·  {} over {} entries{}{}\n{}\n",
+        r.field,
+        total_dur,
+        r.total_count,
+        tracked_note,
+        rate_note(r),
+        periods_line(r),
     );
     for s in &r.states {
         out.push_str(&format!(
@@ -853,8 +1009,8 @@ fn render_all_text(r: &AllFieldsStats) -> String {
     }
     // The time a field took, or — for one that took none — how often it
     // was logged, with no share of the time beside it.
-    let cell = |f: &FieldStat| match &f.frequency {
-        Some(q) => (format!("{}/day", rate(q.per_day)), percent(None)),
+    let cell = |f: &FieldStat| match f.rate.filter(|q| !q.timed) {
+        Some(q) => (q.to_string(), percent(None)),
         None => (format_dur(f.duration_seconds), percent(f.ratio)),
     };
     let dur_w = r
@@ -908,6 +1064,7 @@ fn render_all_json(r: &AllFieldsStats) -> String {
                 "duration_seconds": f.duration_seconds,
                 "ratio": f.ratio,
                 "frequency": f.frequency.as_ref().map(frequency_json),
+                "rate": f.rate.as_ref().map(rate_json),
             })
         })
         .collect();
@@ -944,6 +1101,8 @@ fn render_json(r: &StatsResult) -> String {
                 "duration_seconds": s.duration_seconds,
                 "ratio": s.ratio,
                 "frequency": r.frequency.as_ref().map(frequency_json),
+                "rate": r.rate.as_ref().map(rate_json),
+                "periods": periods_json(r),
             })
         );
     }
@@ -970,8 +1129,32 @@ fn render_json(r: &StatsResult) -> String {
             "latest": r.latest.map(|t| t.to_rfc3339()),
             "states": states,
             "frequency": r.frequency.as_ref().map(frequency_json),
+            "rate": r.rate.as_ref().map(rate_json),
+            "periods": periods_json(r),
         })
     )
+}
+
+/// `{"per": "day", "count": 3.2}`, or `duration_seconds` for a field that
+/// took time — the keys a state's own row uses for the same two measures.
+fn rate_json(q: &Rate) -> JsonValue {
+    let measure = if q.timed { "duration_seconds" } else { "count" };
+    serde_json::json!({ "per": q.per, measure: q.amount })
+}
+
+/// Every period by name, each with both figures, so the widget can choose.
+fn periods_json(r: &StatsResult) -> JsonValue {
+    r.periods
+        .iter()
+        .map(|p| {
+            let figures = serde_json::json!({
+                "count": p.count,
+                "duration_seconds": p.duration_seconds,
+            });
+            (p.name.to_string(), figures)
+        })
+        .collect::<serde_json::Map<_, _>>()
+        .into()
 }
 
 fn frequency_json(f: &Frequency) -> JsonValue {
@@ -984,15 +1167,39 @@ fn frequency_json(f: &Frequency) -> JsonValue {
     })
 }
 
-/// `3.2/day · 22/week · 96/month · 1,168/year`.
-fn rates(f: &Frequency) -> String {
-    format!(
-        "{}/day · {}/week · {}/month · {}/year",
-        rate(f.per_day),
-        rate(f.per_week),
-        rate(f.per_month),
-        rate(f.per_year)
-    )
+/// `  ·  45m/day` after a timed head line, or nothing without a rate.
+fn rate_note(r: &StatsResult) -> String {
+    r.rate.map(|q| format!("  ·  {q}")).unwrap_or_default()
+}
+
+/// `  today 2 · this week 9 · 7 d 11 · … · YTD 310`, a count for a field
+/// that took no time and the time for one that did. Empty with no periods.
+fn periods_line(r: &StatsResult) -> String {
+    if r.periods.is_empty() {
+        return String::new();
+    }
+    let timed = r.tracked_duration_seconds > 0;
+    let cells: Vec<String> = r
+        .periods
+        .iter()
+        .map(|p| {
+            let label = match p.name {
+                "this_week" => "this week",
+                "last_7_days" => "7 d",
+                "last_week" => "last week",
+                "this_month" => "this month",
+                "last_30_days" => "30 d",
+                "last_365_days" => "365 d",
+                "ytd" => "YTD",
+                name => name,
+            };
+            match timed {
+                true => format!("{label} {}", format_dur(p.duration_seconds)),
+                false => format!("{label} {}", group(p.count as f64)),
+            }
+        })
+        .collect();
+    format!("  {}\n", cells.join(" · "))
 }
 
 /// Two significant figures under ten, so a rare field reads `0.041/day`
@@ -1348,6 +1555,8 @@ mod tests {
             latest: Some(at),
             states: vec![],
             frequency: None,
+            rate: None,
+            periods: vec![],
         };
         let json: JsonValue = serde_json::from_str(&render_json(&one)).unwrap();
         assert_eq!(json["earliest"], "2026-06-15T04:00:00-05:00");

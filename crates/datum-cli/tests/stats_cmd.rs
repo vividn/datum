@@ -994,7 +994,13 @@ fn stats_window_bounds_keep_the_zone_they_were_logged_in() {
 
 /// Run the real binary in a fresh home, TZ=UTC, colour off.
 fn datum(home: &std::path::Path, args: &[&str]) -> String {
+    datum_with(home, &[], args)
+}
+
+/// [`datum`] with extra environment, e.g. `DATUM_WEEK_START`.
+fn datum_with(home: &std::path::Path, env: &[(&str, &str)], args: &[&str]) -> String {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+        .envs(env.iter().copied())
         .env_remove("DATUM_DB")
         .env("DATUM_HOME", home)
         .env("DATUM_CONFIG_HOME", home.join("config"))
@@ -1038,13 +1044,17 @@ fn an_occur_field_shows_how_often_and_no_time() {
         assert!((got - per_day * days).abs() < 1e-9, "{key}: {got}");
     }
 
-    let text = datum(tmp.path(), &["stats", "coffee"]);
+    // ONE rate (da-ehxou): 3 over 151 days is 7/year, but the span is not a
+    // year, so it reads per month.
+    let text = datum(
+        tmp.path(),
+        &["stats", "coffee", "--until", "2026-06-01T08:00:00Z"],
+    );
     let head = text.lines().next().unwrap();
-    assert!(
-        head.starts_with("coffee  ·  ") && head.contains("/day · ") && head.contains("/year"),
+    assert_eq!(
+        head, "coffee  ·  0.6/month  ·  3 total since 2026-01-01",
         "{text}"
     );
-    assert!(head.ends_with("3 total since 2026-01-01"), "{text}");
     // No time anywhere: not the gaps between the coffees, not a share.
     assert!(!text.contains('%') && !text.contains("tracked"), "{text}");
     assert!(
@@ -1054,9 +1064,9 @@ fn an_occur_field_shows_how_often_and_no_time() {
     );
 
     // One level out, the field's cell is its rate, not `0s`.
-    let all = datum(tmp.path(), &["stats"]);
+    let all = datum(tmp.path(), &["stats", "--until", "2026-06-01T08:00:00Z"]);
     let row = all.lines().find(|l| l.ends_with("coffee")).unwrap();
-    assert!(row.contains("/day") && !row.contains("0s"), "{all}");
+    assert!(row.contains("0.6/month") && !row.contains("0s"), "{all}");
     // Both runs pinned to one `--until`: each measures its span to the wall
     // clock otherwise, and a second boundary between them flakes (da-m3aww).
     let until = ["--until", "2026-06-01T08:00:00Z", "--json"];
@@ -1089,7 +1099,11 @@ fn a_field_that_takes_time_keeps_its_time_and_has_no_frequency() {
 
     let text = datum(tmp.path(), &[&["stats", "work"][..], &until].concat());
     assert!(text.starts_with("work  ·  1h30m over 2 entries"), "{text}");
-    assert!(text.contains("100.0%") && !text.contains("/day"), "{text}");
+    // Its rate is time, not entries (da-ehxou): an hour over the one day.
+    assert!(
+        text.contains("100.0%") && text.contains("  ·  1h/day\n"),
+        "{text}"
+    );
     let json: serde_json::Value = serde_json::from_str(&datum(
         tmp.path(),
         &[&["stats", "work", "--json"][..], &until].concat(),
@@ -1119,13 +1133,225 @@ fn rates_keep_their_figures_and_a_span_is_at_least_a_day() {
     let tmp = tempfile::tempdir().unwrap();
     datum(tmp.path(), &["occur", "eclipse", "-d", "2016-01-01"]);
     let text = datum(tmp.path(), &["stats", "eclipse"]);
-    let per_day = text
-        .split("/day")
+    let per_year = text
+        .split("/year")
         .next()
         .unwrap()
         .rsplit(' ')
         .next()
         .unwrap();
-    assert!(per_day.starts_with("0.000") && per_day != "0.000", "{text}");
-    assert_eq!(per_day.trim_start_matches(['0', '.']).len(), 2, "{text}");
+    assert!(per_year.starts_with("0.0") && per_year != "0.0", "{text}");
+    assert_eq!(per_year.trim_start_matches(['0', '.']).len(), 2, "{text}");
+}
+
+// ─── One rate in the unit that suits the field, and the periods (da-ehxou) ──
+
+/// `stats FIELD --json --until UNTIL` plus any extra args, parsed.
+fn stats_json(home: &std::path::Path, env: &[(&str, &str)], args: &[&str]) -> serde_json::Value {
+    let argv = [&["stats"][..], args, &["--json"]].concat();
+    serde_json::from_str(&datum_with(home, env, &argv)).unwrap()
+}
+
+fn occur_at(home: &std::path::Path, field: &str, day: &str, time: &str) {
+    datum(home, &["occur", field, "-d", day, "-t", time]);
+}
+
+/// vividn: «I would pick a denominator that makes the most sense for a given
+/// field depending on its occurrence frequency rather than showing all of
+/// them». The smallest of day / week / month / year the mean reaches one in.
+#[test]
+fn the_rate_is_per_the_smallest_unit_the_field_reaches_one_in() {
+    let tmp = tempfile::tempdir().unwrap();
+    for day in ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04"] {
+        for time in ["08:00", "13:00", "18:00"] {
+            occur_at(tmp.path(), "coffee", day, time);
+        }
+    }
+    let json = stats_json(
+        tmp.path(),
+        &[],
+        &["coffee", "--until", "2026-06-05T08:00:00Z"],
+    );
+    assert_eq!(json["rate"], json!({"per": "day", "count": 3.0}), "{json}");
+
+    // One a month for a year: under one a week, so it reads per month.
+    let tmp = tempfile::tempdir().unwrap();
+    for month in 1..=12 {
+        occur_at(
+            tmp.path(),
+            "haircut",
+            &format!("2025-{month:02}-15"),
+            "10:00",
+        );
+    }
+    let json = stats_json(
+        tmp.path(),
+        &[],
+        &["haircut", "--until", "2026-01-15T10:00:00Z"],
+    );
+    assert_eq!(json["rate"]["per"], "month", "{json}");
+    let per_month = json["rate"]["count"].as_f64().unwrap();
+    assert!(
+        (per_month - 12.0 * 365.2425 / 12.0 / 365.0).abs() < 1e-9,
+        "{json}"
+    );
+    let text = datum(
+        tmp.path(),
+        &["stats", "haircut", "--until", "2026-01-15T10:00:00Z"],
+    );
+    assert!(
+        text.starts_with("haircut  ·  1/month  ·  12 total"),
+        "{text}"
+    );
+}
+
+/// #232 read «504/year» off three and a half days. A unit longer than the
+/// span is never picked: one entry over three days is under one a day and
+/// would first reach one per week, which the span does not cover.
+#[test]
+fn three_days_of_data_never_reads_per_year() {
+    let tmp = tempfile::tempdir().unwrap();
+    occur_at(tmp.path(), "sneeze", "2026-06-01", "12:00");
+    let json = stats_json(
+        tmp.path(),
+        &[],
+        &["sneeze", "--until", "2026-06-04T12:00:00Z"],
+    );
+    assert_eq!(json["rate"]["per"], "day", "{json}");
+    let text = datum(
+        tmp.path(),
+        &["stats", "sneeze", "--until", "2026-06-04T12:00:00Z"],
+    );
+    assert!(
+        text.starts_with("sneeze  ·  0.33/day  ·  1 total"),
+        "{text}"
+    );
+    assert!(!text.contains("/year") && !text.contains("/week"), "{text}");
+}
+
+/// Every period against a hand-built fixture: the anchor is Thursday
+/// 2026-07-02 12:00, a day after a month opened, and the two Sundays and
+/// Mondays around it fall in different weeks depending on `week_start`.
+#[test]
+fn each_period_counts_its_own_entries_and_honours_week_start() {
+    let tmp = tempfile::tempdir().unwrap();
+    for (day, time) in [
+        ("2026-07-02", "08:00"), // today
+        ("2026-07-01", "08:00"), // this month opened
+        ("2026-06-29", "08:00"), // Monday
+        ("2026-06-28", "08:00"), // Sunday
+        ("2026-06-22", "08:00"), // Monday
+        ("2026-06-21", "08:00"), // Sunday, twice
+        ("2026-06-21", "09:00"),
+        ("2026-01-10", "08:00"), // this year
+        ("2025-12-31", "08:00"), // last year, inside 365 days
+        ("2025-06-01", "08:00"), // outside every period
+    ] {
+        occur_at(tmp.path(), "coffee", day, time);
+    }
+    let until = ["coffee", "--until", "2026-07-02T12:00:00Z"];
+    let count = |c: u64| json!({"count": c, "duration_seconds": 0});
+
+    let monday = stats_json(tmp.path(), &[("DATUM_WEEK_START", "monday")], &until);
+    assert_eq!(
+        monday["periods"],
+        json!({
+            "today": count(1),
+            "this_week": count(3),
+            "last_7_days": count(4),
+            "last_week": count(2),
+            "this_month": count(2),
+            "last_30_days": count(7),
+            "last_365_days": count(9),
+            "ytd": count(8),
+        }),
+    );
+    let sunday = stats_json(tmp.path(), &[("DATUM_WEEK_START", "sunday")], &until);
+    assert_eq!(sunday["periods"]["this_week"], count(4));
+    assert_eq!(sunday["periods"]["last_week"], count(3));
+    assert_eq!(
+        sunday["periods"]["last_7_days"],
+        count(4),
+        "rolling, not calendar"
+    );
+
+    let text = datum_with(
+        tmp.path(),
+        &[("DATUM_WEEK_START", "monday")],
+        &[&["stats"][..], &until].concat(),
+    );
+    assert_eq!(
+        text.lines().nth(1),
+        Some("  today 1 · this week 3 · 7 d 4 · last week 2 · this month 2 · 30 d 7 · 365 d 9 · YTD 8"),
+        "{text}"
+    );
+}
+
+/// The periods are read in the window's zone: `-z` moves today's midnight.
+#[test]
+fn periods_are_read_in_the_zone_minus_z_names() {
+    let tmp = tempfile::tempdir().unwrap();
+    // 02:00 UTC on the 15th is 21:00 on the 14th in Chicago.
+    occur_at(tmp.path(), "coffee", "2026-06-15", "02:00");
+    let at = |zone| {
+        let json = stats_json(
+            tmp.path(),
+            &[],
+            &["coffee", "--until", "2026-06-15T12:00:00Z", "-z", zone],
+        );
+        json["periods"]["today"]["count"].as_u64().unwrap()
+    };
+    assert_eq!((at("UTC"), at("America/Chicago")), (1, 0));
+}
+
+/// vividn: «All these metrics should also be available for duration based
+/// tracking as well». The periods say time, clipped to each period, and
+/// the rate is time per the unit the time reaches an hour in.
+#[test]
+fn a_duration_field_has_its_periods_and_rate_in_time() {
+    let tmp = tempfile::tempdir().unwrap();
+    for (from, to) in [
+        (("2026-01-05", "0900"), ("2026-01-05", "1300")), // 4h, this year
+        (("2026-06-26", "0900"), ("2026-06-26", "1000")), // 1h, last week
+        (("2026-06-30", "2300"), ("2026-07-01", "0100")), // 2h across the month
+        (("2026-07-02", "0900"), ("2026-07-02", "1100")), // 2h, today
+    ] {
+        datum(tmp.path(), &["start", "work", "-d", from.0, "-t", from.1]);
+        datum(tmp.path(), &["stop", "work", "-d", to.0, "-t", to.1]);
+    }
+    let json = stats_json(
+        tmp.path(),
+        &[("DATUM_WEEK_START", "monday")],
+        &["work", "--until", "2026-07-02T12:00:00Z"],
+    );
+    let hours = |p: &str| json["periods"][p]["duration_seconds"].as_i64().unwrap() / 3600;
+    let got: Vec<_> = [
+        "today",
+        "this_week",
+        "last_7_days",
+        "last_week",
+        "this_month",
+        "last_30_days",
+        "last_365_days",
+        "ytd",
+    ]
+    .map(hours)
+    .into();
+    assert_eq!(got, [2, 4, 5, 1, 3, 5, 9, 9], "{json}");
+    // 9h over 178 days is under an hour a week, and over one a month.
+    assert_eq!(json["rate"]["per"], "month", "{json}");
+    assert!(json["rate"]["duration_seconds"].as_f64().unwrap() > 3600.0);
+    assert_eq!(json["frequency"], serde_json::Value::Null);
+
+    let text = datum_with(
+        tmp.path(),
+        &[("DATUM_WEEK_START", "monday")],
+        &["stats", "work", "--until", "2026-07-02T12:00:00Z"],
+    );
+    assert!(text.lines().next().unwrap().ends_with("/month"), "{text}");
+    assert_eq!(
+        text.lines().nth(1),
+        Some("  today 2h · this week 4h · 7 d 5h · last week 1h · this month 3h · 30 d 5h · 365 d 9h · YTD 9h"),
+        "{text}"
+    );
 }
