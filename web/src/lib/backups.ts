@@ -335,7 +335,7 @@ export async function restoreFrom(plan: Plan, db: string, backup: Backup): Promi
 	const text =
 		`Restore ${db} to the backup of ${new Date(backup.backup_time).toLocaleString()} (${backup.entry_count} entries): ` +
 		`${seen.would_delete} deleted, ${seen.would_insert} added, ${seen.would_update} changed. ` +
-		'Deleted entries can be brought back with undo/history.';
+		'Undo reverts the whole restore.';
 	if (!(await confirm(text, 'restore'))) return null;
 	return run([...argv, '--yes'], undefined, undefined, undefined, stage);
 }

@@ -54,6 +54,42 @@ pub fn set_last_docs(db: &Db, hids: &[Hid]) -> Result<()> {
     Ok(())
 }
 
+/// Where `entry_history` stands before a batch command writes: the mark
+/// [`set_last_to_batch`] reads the batch back from.
+pub fn history_mark(db: &Db) -> Result<i64> {
+    Ok(db.conn().query_row(
+        "SELECT COALESCE(MAX(rowid), 0) FROM entry_history",
+        [],
+        |r| r.get(0),
+    )?)
+}
+
+/// Point `_LAST` at the whole batch: every entry written since `mark`, then
+/// `also` (writes that leave no history row, like `v2import`'s bulk path), so
+/// one bare `undo` reverts all of it (da-yyjob). Rows a sync applied are not
+/// this invocation's writes. A batch that wrote nothing leaves the pointer.
+pub fn set_last_to_batch(db: &Db, mark: i64, also: &[Hid]) -> Result<()> {
+    let mut stmt = db.conn().prepare(
+        "SELECT entry_hid FROM entry_history
+         WHERE rowid > ?1 AND change_kind NOT IN ('sync_merge', 'sync_conflict_resolve')
+         GROUP BY entry_hid ORDER BY MIN(rowid)",
+    )?;
+    let written = stmt
+        .query_map(params![mark], |r| r.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut seen = std::collections::HashSet::new();
+    let hids: Vec<Hid> = written
+        .into_iter()
+        .map(Hid::from)
+        .chain(also.iter().cloned())
+        .filter(|h| seen.insert(h.clone()))
+        .collect();
+    if !hids.is_empty() {
+        set_last_docs(db, &hids)?;
+    }
+    Ok(())
+}
+
 /// Read the last-docs pointer. `Ok(None)` means no command has stamped it
 /// yet (fresh DB, or it was cleared by a write of an empty hid list).
 pub fn get_last_docs(db: &Db) -> Result<Option<LastDocsRef>> {
@@ -146,6 +182,40 @@ mod tests {
         let now = Utc::now();
         let age = stale_warning_age(now - Duration::minutes(23), now).expect("past the line");
         assert_eq!(age.num_minutes(), 23);
+    }
+
+    fn write(db: &Db, field: &str) -> Hid {
+        let entry = crate::entry::Entry::new_legacy(
+            field,
+            crate::entry::Verb::Point,
+            None,
+            None,
+            Some(crate::time::DatumTime::now()),
+            None,
+            "d1",
+        );
+        db.insert_entry(&entry).unwrap();
+        entry.hid
+    }
+
+    /// A batch is every entry written since its mark, and a row a sync
+    /// applied meanwhile is not one of them (da-yyjob).
+    #[test]
+    fn the_batch_is_what_was_written_since_the_mark_less_what_a_sync_applied() {
+        let db = fresh_db();
+        write(&db, "before");
+        let mark = history_mark(&db).unwrap();
+        let a = write(&db, "a");
+        let b = write(&db, "b");
+        let synced = write(&db, "synced");
+        db.conn()
+            .execute(
+                "UPDATE entry_history SET change_kind = 'sync_merge' WHERE entry_hid = ?1",
+                params![synced.as_str()],
+            )
+            .unwrap();
+        set_last_to_batch(&db, mark, &[]).unwrap();
+        assert_eq!(get_last_docs(&db).unwrap().unwrap().hids, vec![a, b]);
     }
 
     #[test]

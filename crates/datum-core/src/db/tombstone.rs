@@ -191,14 +191,9 @@ pub(super) fn soft_delete_in_tx(
         Some(e) => e,
         None => return Err(DatumError::NotFound(slug_or_hid.to_string())),
     };
-    // da-ult68: a reason is written onto the row, and `undelete` (undo's
-    // fallback for a row with no trail: imported, or older than history)
-    // keeps `data`, so it would carry the reason back live. Give such a row
-    // its pre-delete state as v1 first; undo then reverts through history
-    // to exactly that, and no string ever has to be matched to remove it.
-    if comment.is_some() && history::latest_version(conn, &pre.hid)?.is_none() {
-        history::record(conn, &pre, ChangeKind::Create)?;
-    }
+    // da-ult68: a reason is written onto the row, so an undo must revert
+    // through history rather than `undelete`, which keeps `data`. A row with
+    // no trail gets its pre-delete state as v1 from `history::record`.
     history::record(conn, &pre, kind)?;
     let now = Utc::now();
     // da-4vyw: a tombstone must not hash identically to the live row it

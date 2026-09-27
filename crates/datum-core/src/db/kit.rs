@@ -21,6 +21,7 @@
 use rusqlite::params;
 use serde_json::Value as JsonValue;
 
+use crate::action::Action;
 use crate::error::{DatumError, Result};
 use crate::field_spec::FieldSpec;
 use crate::kit::IndexEntry;
@@ -245,6 +246,16 @@ impl Db {
                 continue;
             };
             match without_kit(&data, kit_id) {
+                // A logged field gets back the bare spec its first log wrote
+                // (da-1mkej) — in the one write, not a delete and a revival,
+                // so a single `undo` reverts the uninstall (da-yyjob).
+                None if fields.contains(field) && self.field_has_entries(field)? => {
+                    let verb = self.verb_from_field_log(field)?.unwrap_or(Action::Occur);
+                    let mut spec = FieldSpec::new(field, crate::track::verb_for_action(verb));
+                    spec.regenerate_derived_aliases();
+                    row.data = Some(serde_json::to_value(&spec)?);
+                    self.save_existing_entry(&row)?;
+                }
                 None => self.soft_delete_entry(&row.hid)?,
                 Some(kept) if kept != data => {
                     row.data = Some(kept);

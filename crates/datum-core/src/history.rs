@@ -114,8 +114,18 @@ pub fn next_version(conn: &Connection, entry_hid: &str) -> Result<u32> {
 /// Returns the stored version. The `executor` parameter lets this run inside
 /// a caller-owned transaction (recommended — the companion `entries` mutation
 /// should live in the same transaction to keep the trail in lockstep).
+///
+/// A trail opens with the entry as it was created. An entry older than its
+/// trail (bulk-imported by `v2import`, or written before history) has none,
+/// so its first edit seeds a `create` from the pre-edit state: `undo` then
+/// reverts that edit instead of reading it as a create and deleting the row,
+/// and `redo` has a step to come back along (da-yyjob, da-ult68).
 pub fn record(executor: &Connection, snapshot: &Entry, change_kind: ChangeKind) -> Result<u32> {
     let version = next_version(executor, &snapshot.hid)?;
+    if version == 1 && !matches!(change_kind, ChangeKind::Create | ChangeKind::SyncMerge) {
+        record(executor, snapshot, ChangeKind::Create)?;
+        return record(executor, snapshot, change_kind);
+    }
     let snapshot_json = serde_json::to_string(snapshot)?;
     let alias_chain_json = snapshot.alias_chain.as_ref().map(|v| v.to_string());
     executor.execute(

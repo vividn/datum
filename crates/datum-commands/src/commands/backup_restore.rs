@@ -351,7 +351,8 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
             "restore --hard",
             &format!(
                 "This replaces ALL data in {} with the backup ({} written); dropped: \
-                 {} live, {} tombstoned or superseded, {} in history.",
+                 {} live, {} tombstoned or superseded, {} in history. It cannot be undone: \
+                 the history `undo` reads goes with it.",
                 super::db::current_db_path(db).unwrap_or_default(),
                 h.written,
                 h.entries,
@@ -457,7 +458,7 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
         }
     } else if let Some(h) = report.hard {
         println!(
-            "✓ Restore --hard: {} written; dropped {} live, {} tombstoned or superseded, {} in history",
+            "✓ Restore --hard: {} written; dropped {} live, {} tombstoned or superseded, {} in history — it cannot be undone",
             report.inserted, h.entries, h.tombstones, h.history
         );
     } else if report.replace {

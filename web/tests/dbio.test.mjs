@@ -474,7 +474,7 @@ test('a replacing restore confirms its deletions first; one that deletes nothing
 			await dialog.waitFor();
 			assert.match(
 				await dialog.locator('p').innerText(),
-				/^Restore replaces datum: 2 entries will be deleted, 0 added, 0 changed\. Deleted entries can be brought back with undo\/history\.$/
+				/^Restore replaces datum: 2 entries will be deleted, 0 added, 0 changed\. Undo reverts the whole restore\.$/
 			);
 			await answer(page, 'cancel');
 			assert.match((await app.outputs()).at(-1), /db restore: aborted/);

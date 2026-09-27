@@ -111,7 +111,7 @@ export function restore(argv: string[]): Promise<RunResult> {
 		if (!would_delete) return feed(argv, backup);
 		const text =
 			`Restore replaces ${dbOf(argv)}: ${would_delete} entries will be deleted, ` +
-			`${would_insert} added, ${would_update} changed. Deleted entries can be brought back with undo/history.`;
+			`${would_insert} added, ${would_update} changed. Undo reverts the whole restore.`;
 		if (!(await confirm(text, 'restore'))) {
 			// The CLI's own words for a no at its prompt.
 			return { argv, code: 1, stdout: '', stderr: 'db restore: aborted (nothing changed; --merge deletes nothing)' };

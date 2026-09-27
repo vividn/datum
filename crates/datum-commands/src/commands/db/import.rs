@@ -349,19 +349,24 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         // run `datum conflicts list` post-import for belt-and-braces.
         // Dedup (`Ignored`) maps to `skipped` to mirror the previous per-row
         // behavior; skipped rows also retract their point/block tally.
+        let mark = datum_core::last_docs::history_mark(db)?;
         let mut inserting = Progress::new("v2import: inserting", Some(entries.len()));
         let outcomes = db.insert_entries_bulk(&entries, ConflictStrategy::Ignore, &mut |n| {
             inserting.tick(n)
         })?;
         inserting.finish(entries.len());
         let mut inserted = 0usize;
+        let mut inserted_hids = Vec::new();
         for ((entry, outcome), doc_id) in entries
             .iter()
             .zip(outcomes.iter())
             .zip(entry_doc_ids.iter())
         {
             match outcome {
-                InsertOutcome::Inserted { .. } => inserted += 1,
+                InsertOutcome::Inserted { hid, .. } => {
+                    inserted += 1;
+                    inserted_hids.push(hid.clone());
+                }
                 InsertOutcome::Ignored { .. } => {
                     skipped_records.push((SkipReason::Duplicate, doc_id.clone(), None));
                     match entry.shape() {
@@ -375,6 +380,9 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             }
         }
         write_track_documents(db, &entries)?;
+        // The whole import is `_LAST`, so one `undo` reverts it (da-yyjob):
+        // the specs by their history, the bulk rows, which have none, by hid.
+        datum_core::last_docs::set_last_to_batch(db, mark, &inserted_hids)?;
         inserted
     };
 

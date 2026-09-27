@@ -218,7 +218,31 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
     // outermost scope is the one that prints (da-yc9w). Both dispatch entry
     // points open a scope — `datum-cli` reaches `dispatch` directly, while
     // a multi-side run nests one per side.
-    crate::render::json_echo::scope(|| dispatch_inner(cli, db))
+    let mark = writes_a_batch(&cli.command)
+        .then(|| datum_core::last_docs::history_mark(db).ok())
+        .flatten();
+    let result = crate::render::json_echo::scope(|| dispatch_inner(cli, db));
+    if let Some(mark) = mark {
+        let _ = datum_core::last_docs::set_last_to_batch(db, mark, &[]);
+    }
+    result
+}
+
+/// The commands that write a SET of entries in one invocation, whose whole
+/// set becomes `_LAST` so one bare `undo` reverts it (da-yyjob). `delete`,
+/// `update`, `rekey`, `merge` and a multi-side log stamp their own set; a log
+/// verb is left out because its field's auto-declared spec is not part of
+/// what `_LAST` should name. `v2import` stamps its own, as its bulk rows
+/// leave no history to read the batch back from.
+fn writes_a_batch(command: &Command) -> bool {
+    use crate::args::{DbCommand, KitCommand};
+    matches!(
+        command,
+        Command::Db(DbCommand::Restore(_))
+            | Command::Kit(KitCommand::Install(_) | KitCommand::Uninstall(_))
+            | Command::Retime(_)
+            | Command::Reparse(_)
+    )
 }
 
 fn dispatch_inner(cli: Cli, db: &Db) -> Result<()> {

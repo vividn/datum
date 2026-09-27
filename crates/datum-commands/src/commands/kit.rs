@@ -588,13 +588,6 @@ fn uninstall(args: KitUninstallArgs, db: &Db) -> Result<()> {
     // (uninstall_kit removes the definitions and drops the indices).
     let indices_before = db.load_indices_by_kit(&args.name)?;
     let removed = db.uninstall_kit(&args.name)?;
-    // A logged field gets back the bare spec its first log wrote, which a
-    // kit install may have replaced (da-1mkej).
-    for field in &removed {
-        if db.field_has_entries(field)? {
-            super::helpers::save_track_spec(db, field, db.field_verb(field)?)?;
-        }
-    }
     let removed_views = db.uninstall_kit_views(&args.name)?;
     let removed_aliases = db.uninstall_kit_aliases(&args.name)?;
     let removed_cmds = db.uninstall_kit_commands(&args.name)?;

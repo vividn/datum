@@ -20,6 +20,7 @@ mod alias_cmd;
 mod alias_entries;
 mod alias_list_json;
 mod alias_time_compose;
+mod batch_undo;
 mod batch_update_cmd;
 mod cli_harness;
 mod comma_slugs;
