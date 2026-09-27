@@ -542,7 +542,9 @@ describe('a verb under a field pill', () => {
 	const KEYED = [
 		...SEED,
 		'spec set tea --verb occur --data-key amount',
-		'spec set juice --verb occur --data-key cups=1'
+		'spec set juice --verb occur --data-key cups=1',
+		'spec set shift --verb start --data-key project --data-key n=1',
+		'start shift project=a n=1 -t -30'
 	];
 	const verb = (page, name) => commands(page).locator(`button[data-command="${name}"]`);
 	const fieldPill = (page) => page.locator('.prompt-bar .pill.field');
@@ -627,6 +629,27 @@ describe('a verb under a field pill', () => {
 			await app.idle();
 			await fieldPill(page).waitFor({ state: 'detached' });
 			assert.equal((await app.entries(1))[0].field, 'juice');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// da-o4jaa, vividn: «generally speaking I don't save any extra_data in
+	// this one, so I think that should be the default».
+	test('end runs at once whatever keys the field declares, and stores none; start still fills', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await seedLines(app, KEYED);
+			await pillOf(page, 'shift');
+			assert.equal(await verb(page, 'start').getAttribute('data-act'), 'fill');
+			assert.equal(await verb(page, 'end').getAttribute('data-act'), 'run');
+
+			await echoed(app, () => verb(page, 'end').click());
+			assert.equal((await app.echoes()).at(-1), 'end shift');
+			await fieldPill(page).waitFor({ state: 'detached' });
+			await app.idle();
+			const [entry] = await app.entries(1);
+			assert.equal(entry.field, 'shift');
+			assert.deepEqual(entry.data ?? {}, {});
 			assert.deepEqual(app.errors, []);
 		});
 	});

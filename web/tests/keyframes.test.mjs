@@ -17,6 +17,7 @@ after(stopApp);
 const shared = sharedApp({ viewport: { width: 1280, height: 800 } });
 
 const TEA = 'spec set tea --verb occur --data-key amount --data-key cups=1';
+const WORK = 'spec set work --verb start --data-key project --data-key n=1';
 
 /** The bar's line, and the keys it frames: written ones over the text, waiting ones after it. */
 const drawn = (page) =>
@@ -98,6 +99,33 @@ describe('key frames', () => {
 			await app.idle();
 			assert.equal((await app.echoes()).at(-1), 'occur tea amount=3 cups=1');
 			assert.deepEqual((await app.entries(1))[0].data, { amount: 3, cups: 1 });
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// da-o4jaa, vividn: «generally speaking I don't save any extra_data in
+	// this one, so I think that should be the default. But allowing it might
+	// also be nice??» — not prompted, and typed still runs.
+	test('end draws no frames and Enter writes no defaults; a key typed on it runs as typed; start keeps its frames', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await seedLines(app, [WORK, 'start work project=a -t -30']);
+
+			await type(page, 'start work');
+			assert.deepEqual((await drawn(page)).waiting.map((k) => k.key), ['project', 'n']);
+			await page.locator('.prompt-bar input').fill('');
+
+			await type(page, 'end work ');
+			const now = await drawn(page);
+			assert.equal(now.text, 'end work ', 'a space after end is only a space');
+			assert.deepEqual([now.written, now.waiting], [[], []]);
+
+			await type(page, 'project=x');
+			await page.keyboard.press('Enter');
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === '');
+			await app.idle();
+			assert.equal((await app.echoes()).at(-1), 'end work project=x');
+			assert.deepEqual((await app.entries(1))[0].data, { project: 'x' });
 			assert.deepEqual(app.errors, []);
 		});
 	});

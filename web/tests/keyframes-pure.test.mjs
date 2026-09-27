@@ -56,6 +56,12 @@ describe('framesOf', () => {
 	test('none for a field with no keys, an unknown field, or another verb', () => {
 		for (const line of ['occur coffee', 'occur', 'switch tea x', 'tail tea']) assert.equal(framesOf(line, FIELDS), null, line);
 	});
+
+	// da-o4jaa, vividn: «generally speaking I don't save any extra_data in this one».
+	test('none after end; start keeps them', () => {
+		assert.equal(framesOf('end tea', FIELDS), null);
+		assert.deepEqual(framesOf('start tea', FIELDS).map((f) => f.name), ['amount', 'cups']);
+	});
 });
 
 describe('advance: a space at the end', () => {
@@ -88,6 +94,13 @@ describe('complete: the line as Enter runs it', () => {
 		assert.equal(complete('occur tea amount=3 cups=2', FIELDS), 'occur tea amount=3 cups=2');
 		assert.equal(complete('occur tea', FIELDS), 'occur tea cups=1');
 		assert.equal(complete('occur coffee', FIELDS), 'occur coffee');
+	});
+
+	test('end gets no defaults, and a key typed on it runs as typed; start still gets them', () => {
+		assert.equal(complete('end tea', FIELDS), 'end tea');
+		assert.equal(complete('end tea cups=', FIELDS), 'end tea cups=');
+		assert.equal(complete('end tea amount=x', FIELDS), 'end tea amount=x');
+		assert.equal(complete('start tea amount=3', FIELDS), 'start tea amount=3 cups=1');
 	});
 
 	test('a line ending inside an open quote runs as typed', () => {

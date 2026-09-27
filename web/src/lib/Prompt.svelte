@@ -59,12 +59,12 @@
 	both: parking the pills at the box's right edge, and letting them reach
 	back over the `❯`.)
 
-	THE KEY FRAMES (da-31d1d, $lib/keyframes.ts): on `occur|start|end
-	<field>` for a field whose spec declares keys, each key written on the
-	line is outlined where it stands, drawn over the text by a copy of it in
-	the box's font, and each key still to write waits in a frame after the
-	text, before the pills — its name, and an optional key's default as
-	ghost text. A required key's frame is solid in the accent, an optional
+	THE KEY FRAMES (da-31d1d, $lib/keyframes.ts): on `occur|start <field>`
+	(never `end`, da-o4jaa) for a field whose spec declares keys, each key
+	written on the line is outlined where it stands, drawn over the text by
+	a copy of it in the box's font, and each key still to write waits in a
+	frame after the text, before the pills — its name, and an optional key's
+	default as ghost text. A required key's frame is solid in the accent, an optional
 	one's dashed in the quiet line. A space at the end writes the next
 	key's `key=`, but not inside quotes; Enter writes each unwritten
 	optional key's default into the line and runs what the line then says.

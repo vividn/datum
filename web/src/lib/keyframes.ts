@@ -13,8 +13,14 @@
 import type { Key } from './fields.js';
 import { shellSpans, shellSplit } from './shellSplit.js';
 
-/** The verbs a field's keys are typed after — `fieldVerb`'s (da-lxqqz). */
-const VERBS = ['occur', 'start', 'end'];
+/**
+ * The verbs a field's keys are typed after. Not `end` (da-o4jaa), vividn,
+ * 09-27: «generally speaking I don't save any extra_data in this one, so I
+ * think that should be the default. But allowing it might also be nice??»
+ * — so `end <field>` draws no frames and Enter writes it no defaults, and
+ * a `key=value` typed on it by hand still runs as typed.
+ */
+const VERBS = ['occur', 'start'];
 
 /** One declared key, and where its token stands on the line if it is there. */
 export interface Frame extends Key {
@@ -34,7 +40,7 @@ const valueOf = (key: Key, token: string): string | undefined =>
 
 /**
  * The frames for a line — one per key the field declares, in its order —
- * or null when the line is not `occur|start|end <field>` for a field with
+ * or null when the line is not `occur|start <field>` for a field with
  * keys. A key is written when a token after the field carries it.
  */
 export function framesOf(line: string, fields: { field: string; keys: Key[] }[]): Frame[] | null {

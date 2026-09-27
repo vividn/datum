@@ -23,7 +23,7 @@
 	  outline (`use:act`, $lib/act.ts), so what looks as if it fires is
 	  what fires. So does `occur`, `start` or `end` under a FIELD pill
 	  (da-lxqqz, `fieldVerb`) — unless the field has a key with no
-	  default, when the tap writes `occur <field> ` with the first key's
+	  default and the verb is not `end` (da-o4jaa), when the tap writes `occur <field> ` with the first key's
 	  `key=` (da-31d1d) and opens the keyboard for the keys, and the pill
 	  is spent onto the line.
 	- `Help` (da-vjwid) ARMS the page — `$lib/help.ts`: the next tap on a

@@ -231,6 +231,13 @@ describe('a verb under a field pill', () => {
 		assert.deepEqual(fieldVerb('occur', [pill(keyed)], [keyed]), { field: pill(keyed), runs: false });
 	});
 
+	// da-o4jaa, vividn: «generally speaking I don't save any extra_data in this one».
+	test('end runs whatever keys the field declares; start still fills', () => {
+		const block = { ...onBlock, required: ['project'] };
+		assert.deepEqual(fieldVerb('end', [pill(block)], [block]), { field: pill(block), runs: true });
+		assert.equal(fieldVerb('start', [pill(block)], [block])?.runs, false);
+	});
+
 	test('no field pill, another verb, an unknown field, or a context field: the press as it was', () => {
 		assert.equal(fieldVerb('occur', [], fields), null);
 		for (const verb of ['switch', 'add', 'tail']) assert.equal(fieldVerb(verb, [pill(point)], fields), null, verb);

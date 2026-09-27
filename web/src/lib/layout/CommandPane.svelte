@@ -21,7 +21,8 @@
 	tap, like any command's. Without one, `spec ` goes on the line as ever.
 
 	`occur`/`start`/`end` under a FIELD pill run it (da-lxqqz); when the
-	field wants keys typed, the tap writes `occur <field> ` instead, and
+	field wants keys typed, the tap writes `occur <field> ` instead — never
+	for `end`, which always runs (da-o4jaa) — and
 	the pill, now on the line, is spent here.
 
 	A FLAG from a held command's list (da-st2xl) is appended to the line when

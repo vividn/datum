@@ -488,14 +488,17 @@ export function fires(takes: Takes | undefined, all: Pill[]): boolean {
  * line should automatically be selected for typing in those fields». So
  * `occur`, `start` and `end` with a known field's pill as an argument
  * RUN, unless that field has a key with no default (`required`); then the
- * tap writes `<verb> <field> ` for the keys to be typed after. `null`
- * where there is no such pill, and the press is what it always was.
+ * tap writes `<verb> <field> ` for the keys to be typed after. `end`
+ * always runs (da-o4jaa), vividn, 09-27: «generally speaking I don't save
+ * any extra_data in this one, so I think that should be the default» —
+ * its keys are never prompted, only typed. `null` where there is no such
+ * pill, and the press is what it always was.
  */
 export function fieldVerb(name: string, all: Pill[], fields: FieldButton[]): { field: Pill; runs: boolean } | null {
 	const field = argumentsOf(all).find((p) => p.kind === 'field');
 	const button = fields.find((b) => b.field === field?.text);
 	if (!field || !button || !['occur', 'start', 'end'].includes(name)) return null;
-	return { field, runs: !button.required.length };
+	return { field, runs: name === 'end' || !button.required.length };
 }
 
 // ---- subcommands (da-803mk) ---------------------------------------------
