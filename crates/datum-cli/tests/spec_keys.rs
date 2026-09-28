@@ -309,8 +309,11 @@ fn a_switch_binds_after_its_state() {
 /// IGNORED and the track marker log without mood's required `level`.
 #[test]
 fn inactive_entries_ignore_the_specs_keys() {
+    // Each line logs at now (`ignore` and `track` take no -t): step the
+    // clock between them so no two rows share a millisecond's slug.
+    let _clock = set_time("2026-01-15T12:00:00Z");
     let db = mood_db();
-    for (i, line) in [
+    for line in [
         &["end", "mood"][..],
         &["stop", "mood"],
         &["moode"],
@@ -320,20 +323,8 @@ fn inactive_entries_ignore_the_specs_keys() {
         &["switch", "mood", "TRACKED"],
         &["ignore", "mood"],
         &["track", "mood"],
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let t = format!("-{}", 20 - i);
-        let timed = [line, &["-t", &t]].concat();
-        let line = if line[0] == "ignore" || line[0] == "track" {
-            // Both write at now, with no `-t`: in the same millisecond
-            // they share a slug and the second is a duplicate.
-            std::thread::sleep(std::time::Duration::from_millis(2));
-            line
-        } else {
-            &timed
-        };
+    ] {
+        advance_time("1s");
         run_cli(line, &db).unwrap_or_else(|e| panic!("{line:?}: {e:#}"));
     }
 }
