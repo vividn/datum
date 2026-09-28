@@ -260,3 +260,28 @@ fn string_remainder_peek_through_an_alias() {
         assert_eq!(e.duration_seconds(), dur, "{tail:?}");
     }
 }
+
+/// An alias hands its window's `\.` on as typed, so each form stores what
+/// the direct command does: the alias unescaped it first, and the side
+/// then read a trailing `.` as its skip-dur sentinel and a lone one as no
+/// value at all (da-gn23l).
+#[test]
+fn escaped_dot_through_an_alias_matches_the_direct_command() {
+    for (alias, body, field) in [
+        ("mv", "start movie -SR title", "movie"),
+        ("sw", "switch f -I", "f"),
+    ] {
+        for tail in [&["a", "b", r"\."][..], &["a", r"\.", "b"], &[r"\."]] {
+            let stored = |argv: Vec<&str>| {
+                let db = fresh_db();
+                run_cli(&["alias", "set", alias, body], &db).unwrap();
+                run_cli(&argv, &db).expect("log");
+                let e = &datum_core::test_util::logged_entries(&db, field)[0];
+                (e.state.clone(), e.data.clone())
+            };
+            let direct = stored(body.split(' ').chain(tail.iter().copied()).collect());
+            let aliased = stored([alias].into_iter().chain(tail.iter().copied()).collect());
+            assert_eq!(aliased, direct, "{alias} {tail:?}");
+        }
+    }
+}

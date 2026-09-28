@@ -714,12 +714,15 @@ fn walk_region(positionals: Vec<String>, slots: &mut [Slot]) -> Result<Vec<Fill>
             let kind = slots[si].kind.clone();
             push_fill(&mut fills, &kind, open, v);
         }
-        // The window feeds the greedy's still-open declaring sides.
+        // The window feeds the greedy's still-open declaring sides. Its
+        // `\.` goes on as typed: the side unescapes it where the direct
+        // command does, and a `.` here would read as its skip-dur
+        // sentinel (da-gn23l).
         let open = slots[g].open_sides();
         slots[g].mark_all_satisfied();
         fills.push(Fill::Window {
             sides: open,
-            tokens: rest.iter().map(|t| unesc(t)).chain(tail).collect(),
+            tokens: rest.into_iter().chain(tail).collect(),
         });
         return Ok(fills);
     }
@@ -1120,10 +1123,11 @@ mod tests {
     }
 
     #[test]
-    fn escaped_dot_joins_window_literally() {
+    fn escaped_dot_reaches_the_side_escaped() {
+        // The side unescapes it; a bare `.` would be its skip (da-gn23l).
         let out = apply(&[&["switch", "f", "-I", ",,", "ends", "with", "\\."]]).unwrap();
         let side = &out[0];
-        assert!(has_seq(side, &["ends", "with", "."]));
+        assert!(has_seq(side, &["ends", "with", "\\."]));
     }
 
     #[test]
