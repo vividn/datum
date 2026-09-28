@@ -51,6 +51,7 @@
 // moves between the two menus by gaining or losing `manage`, and can be
 // in neither list twice.
 
+import type { ActKind } from '../act.js';
 import type { Toward } from './tree.js';
 
 /** A submenu's button: `icon` is the thick bar `[x, y, w, h]` drawn in a 16px square. */
@@ -78,6 +79,12 @@ export type Item = {
 	row?: Short[];
 	disabled?: boolean;
 	marked?: boolean;
+	/**
+	 * What its tap does, for the outline (`$lib/act.ts`): `run` where it
+	 * WRITES at once, which draws the double (da-kk0vr, rule 22). Absent
+	 * everywhere else — an item that opens a confirm stays single.
+	 */
+	act?: ActKind;
 	/**
 	 * A WIDGET/PANE MANAGEMENT act, and so an item of the `▾` beside the
 	 * `+` rather than of the menu the thing's NAME opens (da-bzhq). See
@@ -160,7 +167,7 @@ export type Acts = {
  * items and a built-in's has five.
  */
 export const layoutActs = (a: Acts): Item[] => [
-	{ label: 'Save layout', marked: a.dirty, run: a.save },
+	{ label: 'Save layout', marked: a.dirty, act: 'run' as const, run: a.save },
 	{ label: 'Restore layout', marked: a.dirty, run: a.restore },
 	...(a.reset ? [{ label: 'Reset layout', run: a.reset }] : []),
 	{ label: 'Save layout as…', run: a.saveAs },

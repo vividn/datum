@@ -54,6 +54,7 @@
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { act } from '../act.js';
 	import type { Item } from './menu.js';
 
 	/** The items, from the one builder both menus use (`menu.ts`). */
@@ -371,6 +372,7 @@
 					class:ticked={!item.glyph && (item.toggled ?? item.checked) !== undefined}
 					class:marked={item.marked}
 					disabled={item.disabled}
+					use:act={item.act}
 					aria-haspopup={opens(item) ? 'menu' : undefined}
 					aria-expanded={opens(item) ? sub?.item === item : undefined}
 					on:pointerenter={(e) => hover(e, item)}
@@ -533,6 +535,13 @@
 	.menu button:hover:not(:disabled) .glyph,
 	.menu button:focus-visible .glyph {
 		color: inherit;
+	}
+
+	/* Writes at once (da-kk0vr): the double outline, the padding taken in
+	   by the border's width so the row keeps its size. */
+	.menu button:global([data-act='run']) {
+		border: 3px double var(--accent);
+		padding: calc(0.25rem - 3px) calc(0.5rem - 3px);
 	}
 
 	.menu button:disabled {

@@ -21,7 +21,9 @@
  */
 export type ActKind = 'run' | 'fill' | 'arm' | 'open';
 
-export function act(node: HTMLElement, kind: ActKind) {
-	node.dataset.act = kind;
-	return { update: (to: ActKind) => (node.dataset.act = to) };
+/** No kind is display: the attribute is taken off, as a menu's plain item has none. */
+export function act(node: HTMLElement, kind?: ActKind) {
+	const set = (to?: ActKind) => (to ? (node.dataset.act = to) : delete node.dataset.act);
+	set(kind);
+	return { update: set };
 }

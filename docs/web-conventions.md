@@ -381,7 +381,9 @@ rule is decided but not yet everywhere, it names the bead.
     the commands widget and `pressKind()` for the fields widget, both in `commands.ts`, so a
     button cannot act without looking as if it does. An ignored field that runs keeps its
     dashes and doubles them (da-nmna0). A button says its kind through one door, `use:act`
-    (`$lib/act.ts`, held by `act-guard.test.mjs`), and tap-everything tests hold double ⇔ the
+    (`$lib/act.ts`, held by `act-guard.test.mjs`); a menu item says it as its `Item`'s `act`
+    (`menu.ts`), so «Save layout», which writes at once, is double and «Reset default
+    layouts…», which opens a confirm, is not (da-kk0vr). Tap-everything tests hold double ⇔ the
     tap wrote or ran: on the page (`act-taps-desktop`, `act-taps-phone`, da-y0ocz) and in every
     sheet, dialog and menu a tap opens from it (`act-taps-dialogs*`, da-juku7).
 23. **Tap acts, hold refines.** A hold is `hold.ts`'s `holds` (`HOLD_MS`), never a timer of a

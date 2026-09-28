@@ -252,8 +252,6 @@ const INTERNAL = [
  * Each must be met, so the list cannot outlive its buttons.
  */
 const SKIP = {
-	'page: main › page: Save layout':
-		'writes the layout into `_internal`, but no menu item draws an outline at all: whether one that writes is to be double is for vividn',
 	'page: settings › page: Backups… › page: Back up now': "writes the plan's destination, the tab's memory bucket, which no counter reads",
 	'page: settings › page: Backups… › page: Test connection': "needs the network, an S3 endpoint (s3.test.mjs stubs it)",
 	'page: settings › page: Backups… › page: Add plan': 'acts on a filled form only, which backups.test.mjs fills',
