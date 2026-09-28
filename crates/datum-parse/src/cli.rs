@@ -102,83 +102,14 @@ pub enum Command {
 
     Config(ConfigCommand),
 
-    Sync(SyncArgs),
+    /// `datum sync` — reserved for Easy Sync, which replaces the deleted
+    /// relay sync; any arguments are accepted and ignored (da-i7hig).
+    Sync,
 
     /// `dm reparse` — replay each entry's stored `raw_input` through the
     /// current parser, reporting (or fixing with `--fix`) drift between
     /// what the parser produces today vs. the persisted columns.
     Reparse(ReparseArgs),
-}
-
-// ─── Sync ─────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Default)]
-pub struct SyncArgs {
-    pub command: Option<SyncCommand>,
-    pub push: bool,
-    pub pull: bool,
-    pub dry_run: bool,
-    pub server: Option<String>,
-}
-
-#[derive(Debug)]
-pub enum SyncCommand {
-    Login(SyncLoginArgs),
-    Config(SyncConfigCommand),
-    Key(SyncKeyCommand),
-    Status(SyncStatusArgs),
-    InstallDaemon(SyncInstallDaemonArgs),
-    /// `datum sync agent` — run the background sync daemon in the
-    /// foreground. This is what the installed service unit execs: one
-    /// binary, kept current by whatever upgrades `datum` (da-ge3e).
-    Agent(SyncAgentArgs),
-}
-
-/// Flags for `datum sync agent`, mirroring the standalone
-/// `datum-sync-agent` binary one-for-one.
-#[derive(Debug, Default)]
-pub struct SyncAgentArgs {
-    /// `--pid-file PATH` — override the single-instance lock location.
-    pub pid_file: Option<String>,
-    /// `-v` / `--verbose` — debug-level logging.
-    pub verbose: bool,
-    /// `--one-shot` — run one poll cycle and exit (smoke tests).
-    pub one_shot: bool,
-}
-
-#[derive(Debug, Default)]
-pub struct SyncStatusArgs {
-    pub server: Option<String>,
-}
-
-#[derive(Debug, Default)]
-pub struct SyncInstallDaemonArgs {
-    pub show: bool,
-    pub uninstall: bool,
-}
-
-#[derive(Debug, Default)]
-pub struct SyncLoginArgs {
-    pub server: Option<String>,
-    /// `--cluster <name>` (da-3fnd): explicitly bind this DB to a named
-    /// sync cluster instead of the file-name default. Used to merge two
-    /// differently-named DBs onto one cluster, or to split a DB off.
-    pub cluster: Option<String>,
-}
-
-#[derive(Debug)]
-pub enum SyncConfigCommand {
-    SetServer { url: String, global: bool },
-    Disable,
-    Show,
-}
-
-#[derive(Debug)]
-pub enum SyncKeyCommand {
-    Init { server: Option<String>, force: bool },
-    Unlock { server: Option<String> },
-    RotatePassphrase { server: Option<String> },
-    ShowFingerprint { server: Option<String> },
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────
@@ -256,13 +187,6 @@ pub struct DbPurgeArgs {
     /// `--yes` / `-y` — skip the type-the-database-path confirmation prompt
     /// and purge non-interactively. Required when stdin is not a TTY.
     pub yes: bool,
-    /// `--cluster` (da-ws1q sub-5 of multi-DB epic): after the local
-    /// purge succeeds, also bump the sync cluster's generation on the
-    /// relay so peers on the old generation get
-    /// `GenerationMismatchError` on their next sync and know to re-init
-    /// instead of re-pushing the wiped state. No-op when the local DB
-    /// has never synced (no `sync_state.cluster_id` recorded).
-    pub cluster: bool,
 }
 
 #[derive(Debug, Default)]
@@ -1099,8 +1023,7 @@ pub struct RestoreArgs {
     pub merge: bool,
     /// `--hard` (da-rle8g) — the database becomes exactly the backup:
     /// every entry, tombstone and history row is dropped and the backup's
-    /// entries written verbatim. The sync generation moves only with
-    /// `--cluster`.
+    /// entries written verbatim.
     pub hard: bool,
     /// `--yes` / `-y` — replace without asking, on a TTY, even when the
     /// restore deletes entries.
@@ -1108,14 +1031,6 @@ pub struct RestoreArgs {
     /// The output level the shared layer swept out of argv (da-qt6z).
     /// `--json` is the value `json`; `Show::None` prints nothing.
     pub show: Show,
-
-    /// `--cluster` (da-ws1q sub-5): after the restore succeeds, bump
-    /// the sync cluster's generation on the relay so peers see a
-    /// `GenerationMismatchError` instead of re-pushing their stale
-    /// state on top of the restored snapshot. No-op when the local DB
-    /// has no recorded `sync_state.cluster_id`, when `--dry-run`, or
-    /// when the restore wrote nothing (no point bumping for nothing).
-    pub cluster: bool,
 }
 
 #[derive(Debug, Default)]

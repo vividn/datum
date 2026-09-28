@@ -16,7 +16,6 @@ instead of round-tripping through argv.
 |------------------|---------------------------------------------------------------|
 | [`args`]         | Typed argument structs, one per command. Doubles as the typed entry point until R2 lands a bespoke parser per command. |
 | [`commands`]     | One module per subcommand (`add`, `switch`, `tail`, `dayview`, …). Each exports a `run`/`exec` function the dispatcher calls. |
-| [`commands::sync`] | Sub-tree for `datum sync` (push/pull/status/setup). Wraps [`datum-sync-client`](../datum-sync-client/). |
 | [`cmd`]          | Dispatcher: takes a [`datum_parse::Cli`] and maps it onto the right `commands::*::run`. |
 | [`config`]       | XDG path resolution, db registry, `datumrc.toml` load/save. |
 | [`render`]       | Entry/table output formatting. The single source of field-cell rendering shared between the info-line and tail table. |
@@ -33,9 +32,7 @@ instead of round-tripping through argv.
    - performs the operation (read or write),
    - hands the result to [`render`] for terminal output.
 
-Commands never re-parse argv and never speak HTTP directly — sync
-commands delegate to [`datum-sync-client`](../datum-sync-client/) for
-that.
+Commands never re-parse argv and never speak HTTP.
 
 ## Adding a new command
 

@@ -10,10 +10,9 @@
 //! its writes would reach the in-process tests here that never take
 //! `env_lock`. `every_test_file_is_declared` holds both halves: every file is
 //! declared one way or the other, and none declared here — nor the shared
-//! `common/` and `sync_content/` it compiles — writes the env.
+//! `common/` it compiles — writes the env.
 
 mod common;
-mod sync_content;
 
 mod add_cmd;
 mod alias_cmd;
@@ -97,9 +96,7 @@ mod state_refs;
 mod stateless_same_instant;
 mod stop_cmd;
 mod stored_spec_compat;
-mod supersession;
 mod switch_cmd;
-mod sync_legacy_wire_shape;
 mod tail_cmd;
 mod temporal_keys;
 mod timeless_id_redesign;

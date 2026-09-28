@@ -16,9 +16,6 @@ crates/
   datum-cli/          # `datum` binary: clap CLI, commands, output formatting
   datum-commands/     # Command-layer crate: typed + string APIs, dispatched by datum-cli
   datum-layout/       # Pure: dayview/nowview geometry + SVG render
-  datum-sync-client/  # Sync client library: wire protocol, crypto, HTTP (WASM-split)
-  datum-sync-server/  # Relay server: Rust + axum, E2E-encrypted sync backend
-  datum-sync-agent/   # Background sync daemon (planned)
 web/            # SvelteKit PWA: static, the real CLI as WASI on OPFS, offline-capable
                 # its conventions — the seam, the beat, the panes, the tests: docs/web-conventions.md
 ```
@@ -106,11 +103,9 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
 
 ## Sync architecture
 
-- Clients encrypt data with AES-256-GCM before upload
-- Relay server stores opaque base64 blobs + metadata (device_id, seq)
-- Sync = push new changesets, pull changesets from other devices since last seq
-- Auth: Passkeys (WebAuthn) — no passwords
-- Key management: encryption key stored locally + wrapped copy on server (encrypted with recovery passphrase)
+The relay sync is deleted (da-i7hig); p2p «Easy Sync» is being built in its
+place. Until it lands, `datum sync` prints "sync is being rebuilt (Easy
+Sync)" and exits 1.
 
 ## Web app (PWA)
 

@@ -10,8 +10,6 @@
 pub use datum_commands::args;
 pub use datum_commands::cmd;
 pub use datum_commands::commands::check;
-#[cfg(feature = "native")]
-pub use datum_commands::commands::sync;
 pub use datum_commands::config;
 pub use datum_commands::render as output;
 
@@ -22,7 +20,7 @@ use anyhow::Result;
 use datum_commands::commands;
 use datum_parse::{help, ParseError};
 
-use crate::args::{Cli, Command, DbCommand, InfoArgs, Invocation, SyncArgs, SyncCommand};
+use crate::args::{Cli, Command, DbCommand, InfoArgs, Invocation};
 
 /// `datum 3.beta.<height> (<sha7>)`, from git at build time (da-5172a,
 /// `build.rs`).
@@ -89,42 +87,9 @@ fn dispatch_single(cli: Cli) -> Result<()> {
         anyhow::bail!("repl is unavailable in this build");
     }
 
-    // `datum sync agent` runs the background daemon in-process. It is
-    // intercepted here rather than in `datum-commands::commands::sync`
-    // because `datum-sync-agent` depends on that crate; the `datum`
-    // binary is the only place both halves are visible. Hosting the
-    // daemon here is the point: the service unit execs `datum`, so the
-    // daemon can never be an older build than the CLI (da-ge3e).
-    #[cfg(feature = "native")]
-    if let Command::Sync(SyncArgs {
-        command: Some(SyncCommand::Agent(a)),
-        ..
-    }) = &cli.command
-    {
-        return datum_sync_agent::agent::run(datum_sync_agent::agent::Options {
-            pid_file: a.pid_file.as_deref().map(std::path::PathBuf::from),
-            verbose: a.verbose,
-            one_shot: a.one_shot,
-        });
-    }
-
-    // `datum config show` and the db-independent `sync` subcommands (server
-    // config, key files, daemon install, status) run against an in-memory
-    // placeholder. But the actual push/pull (`datum sync`, no subcommand)
-    // and `sync login` (which records the cluster in `sync_state`) operate
-    // on the REAL entry db — without it, `datum sync` packs an empty db and
-    // silently pushes nothing, and login's cluster binding is lost. This was
-    // masked because every sync test calls the handlers directly with a real
-    // db rather than through this `run()` path (da-spct).
-    let sync_needs_real_db = matches!(
-        &cli.command,
-        Command::Sync(SyncArgs { command: None, .. })
-            | Command::Sync(SyncArgs {
-                command: Some(SyncCommand::Login(_)),
-                ..
-            })
-    );
-    if matches!(&cli.command, Command::Config(_) | Command::Sync(_)) && !sync_needs_real_db {
+    // `datum config show` and `datum sync` run against an in-memory
+    // placeholder: neither reads the entry db.
+    if matches!(&cli.command, Command::Config(_) | Command::Sync) {
         let placeholder = datum_core::db::Db::open_in_memory()?;
         return cmd::dispatch(cli, &placeholder);
     }

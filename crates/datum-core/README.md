@@ -21,7 +21,6 @@ off to remain WASM-clean (see `datum-parse`, `datum-layout`).
 | [`conflicts`]   | CRDT conflict detection + last-writer-wins resolution.        |
 | [`last_docs`]   | `_LAST` / `_LAST_WITH_PROTECTION` tokens for quickIds.        |
 | [`doc_ref`]     | Stable references between entries (parent/child links).       |
-| [`sync_state`]  | Per-DB sync watermarks, cluster id/generation — local `sync_state` table, no network. |
 | [`error`]       | The crate-wide [`DatumError`](error::DatumError) enum.        |
 
 ## Schema invariants
@@ -53,5 +52,3 @@ tests in sibling crates. Production code never sees them.
 - Top-level [README](../../README.md) for the project overview.
 - `docs/parity-audit/parsing.md` for how entries are constructed
   from CLI argv.
-- `docs/sync-protocol.md` for how entries cross devices via
-  [`datum-sync-client`](../datum-sync-client/).

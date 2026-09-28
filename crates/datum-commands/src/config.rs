@@ -382,39 +382,12 @@ pub struct RawConfig {
     /// var override this. Built-in default is `":"`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id_delimiter: Option<String>,
-    /// Desktop notifications when the daemon files a new conflict
-    /// (C4e). `None` = use the platform default (`true`); explicit
-    /// `false` disables them.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub notifications: Option<bool>,
     /// Which weekday opens a week, for `stats --week` / `--last-week`.
     /// A weekday name (`"monday"`, `"sun"`) or an ISO number (`1` =
     /// Monday … `7` = Sunday). `DATUM_WEEK_START` overrides it; the
     /// built-in default is Monday.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub week_start: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sync: Option<SyncSection>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub databases: BTreeMap<String, DbSection>,
-}
-
-/// Global sync defaults. A per-DB entry under `[databases.*]` may override the
-/// `default_server` with its own `sync_server`.
-#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
-pub struct SyncSection {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_server: Option<String>,
-}
-
-/// Per-DB config overrides: can pin a `sync_server` (URL or the literal
-/// `"none"` to disable sync for this DB) and toggle `auto_sync`.
-#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
-pub struct DbSection {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sync_server: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub auto_sync: Option<bool>,
 }
 
 /// Effective resolved config with per-key source provenance.
@@ -453,99 +426,6 @@ pub fn toml_config_path() -> Result<PathBuf> {
 pub fn load_raw_config_or_default() -> Result<RawConfig> {
     let path = toml_config_path()?;
     Ok(load_toml_config(&path)?.unwrap_or_default())
-}
-
-/// Persist the raw user config to `datumrc.toml`. Creates the parent
-/// directory if needed. Atomic: temp file + rename, so a crash mid-write
-/// never truncates the existing config.
-#[cfg(feature = "native")]
-pub fn save_raw_config(cfg: &RawConfig) -> Result<()> {
-    let path = toml_config_path()?;
-    let body = toml::to_string_pretty(cfg).context("Serializing datumrc.toml")?;
-    write_atomic(&path, body.as_bytes(), 0o644)
-        .with_context(|| format!("Writing config to {path:?}"))
-}
-
-/// Write `body` to `path` atomically: write a temp file in the same
-/// directory, then rename over the target (rename is atomic on POSIX).
-/// Creates the parent directory if needed. On unix the temp file gets
-/// `mode` before any bytes land, so the final file never exists with
-/// looser permissions.
-#[cfg(feature = "native")]
-pub fn write_atomic(path: &std::path::Path, body: &[u8], mode: u32) -> Result<()> {
-    use std::io::Write;
-    let parent = match path.parent() {
-        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
-        _ => PathBuf::from("."),
-    };
-    std::fs::create_dir_all(&parent).with_context(|| format!("Creating directory {parent:?}"))?;
-    let mut tmp = tempfile::NamedTempFile::new_in(&parent)
-        .with_context(|| format!("Creating temp file in {parent:?}"))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        tmp.as_file()
-            .set_permissions(std::fs::Permissions::from_mode(mode))
-            .with_context(|| format!("Setting permissions on temp file for {path:?}"))?;
-    }
-    #[cfg(not(unix))]
-    let _ = mode;
-    tmp.write_all(body)
-        .with_context(|| format!("Writing {path:?}"))?;
-    tmp.persist(path)
-        .with_context(|| format!("Renaming temp file into {path:?}"))?;
-    Ok(())
-}
-
-/// Where the master key for `server_host` lives on disk.
-/// `$XDG_DATA_HOME/datum/keys/<server-host>.key`, file mode 0600.
-pub fn master_key_path(server_host: &str) -> Result<PathBuf> {
-    let dir = data_dir()?.join("keys");
-    std::fs::create_dir_all(&dir).with_context(|| format!("Creating key directory {dir:?}"))?;
-    Ok(dir.join(format!("{server_host}.key")))
-}
-
-/// Where an auth token for `server_host` lives on disk.
-/// `$XDG_CONFIG_HOME/datum/auth/<server-host>.json`.
-pub fn auth_token_path(server_host: &str) -> Result<PathBuf> {
-    let dir = config_dir()?.join("auth");
-    std::fs::create_dir_all(&dir).with_context(|| format!("Creating auth directory {dir:?}"))?;
-    Ok(dir.join(format!("{server_host}.json")))
-}
-
-/// Extract a stable "host" component for an HTTPS URL — used to key per-server
-/// token/key files. Falls back to the URL itself on parse failure.
-pub fn server_host_from_url(url: &str) -> String {
-    match url::Url::parse(url) {
-        Ok(u) => match (u.host_str(), u.port()) {
-            (Some(h), Some(p)) => format!("{h}_{p}"),
-            (Some(h), None) => h.to_string(),
-            _ => url.to_string(),
-        },
-        Err(_) => url.to_string(),
-    }
-}
-
-/// Resolve the effective sync server for a given DB name.
-///
-/// Precedence: per-DB `sync_server` > global `sync.default_server`. The
-/// literal string `"none"` (case-insensitive) means "sync disabled for this
-/// DB" and returns `Ok(None)`.
-pub fn resolve_sync_server(cfg: &RawConfig, db_name: Option<&str>) -> Option<String> {
-    if let Some(name) = db_name {
-        if let Some(db_section) = cfg.databases.get(name) {
-            if let Some(v) = &db_section.sync_server {
-                if v.eq_ignore_ascii_case("none") {
-                    return None;
-                }
-                return Some(v.clone());
-            }
-        }
-    }
-    cfg.sync
-        .as_ref()
-        .and_then(|s| s.default_server.clone())
-        .filter(|v| !v.eq_ignore_ascii_case("none"))
 }
 
 /// Load and parse the toml config. Missing file → `Ok(None)`. Parse errors

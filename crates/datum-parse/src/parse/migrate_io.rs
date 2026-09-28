@@ -170,7 +170,6 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
     let mut pos: Vec<&str> = Vec::new();
     let mut force = false;
     let mut dry_run = false;
-    let mut cluster = false;
     let mut merge = false;
     let mut hard = false;
     let mut yes = false;
@@ -179,7 +178,6 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
             FlagSplit::Positional(s) => pos.push(s),
             FlagSplit::Long("force") => force = true,
             FlagSplit::Long("dry-run") => dry_run = true,
-            FlagSplit::Long("cluster") => cluster = true,
             FlagSplit::Long("merge") => merge = true,
             FlagSplit::Long("hard") => hard = true,
             FlagSplit::Long("yes") | FlagSplit::Short('y') => yes = true,
@@ -201,6 +199,5 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
         hard,
         yes,
         show: Show::default(),
-        cluster,
     })
 }

@@ -100,17 +100,8 @@ fn db_purge_interactive_path_match_proceeds() {
     // In-memory DB → pragma path is "" → bare Enter (trims to "") matches.
     // The confirm token is supplied by `purge`'s wiring; tests pass it
     // directly via `purge_with_io` (da-5df1 added the parameter).
-    purge_with_io(
-        DbPurgeArgs {
-            yes: false,
-            cluster: false,
-        },
-        &db,
-        &mut stdin,
-        true,
-        "",
-    )
-    .expect("matching path should proceed");
+    purge_with_io(DbPurgeArgs { yes: false }, &db, &mut stdin, true, "")
+        .expect("matching path should proceed");
     assert_eq!(db.count_entries().unwrap(), 0);
 }
 
@@ -121,17 +112,8 @@ fn db_purge_interactive_path_mismatch_aborts() {
         .state(serde_json::json!(2))
         .insert(&db);
     let mut stdin = Cursor::new(b"not-the-path\n".to_vec());
-    let err = purge_with_io(
-        DbPurgeArgs {
-            yes: false,
-            cluster: false,
-        },
-        &db,
-        &mut stdin,
-        true,
-        "",
-    )
-    .expect_err("mismatched path must abort");
+    let err = purge_with_io(DbPurgeArgs { yes: false }, &db, &mut stdin, true, "")
+        .expect_err("mismatched path must abort");
     assert!(
         err.to_string().to_lowercase().contains("did not match"),
         "expected 'did not match' message, got: {err}"
@@ -147,17 +129,8 @@ fn db_purge_non_tty_without_yes_aborts() {
         .state(serde_json::json!(2))
         .insert(&db);
     let mut stdin = Cursor::new(Vec::<u8>::new());
-    let err = purge_with_io(
-        DbPurgeArgs {
-            yes: false,
-            cluster: false,
-        },
-        &db,
-        &mut stdin,
-        false,
-        "",
-    )
-    .expect_err("non-tty without --yes must abort");
+    let err = purge_with_io(DbPurgeArgs { yes: false }, &db, &mut stdin, false, "")
+        .expect_err("non-tty without --yes must abort");
     let msg = err.to_string().to_lowercase();
     assert!(
         msg.contains("--yes") && (msg.contains("tty") || msg.contains("non-interactive")),
@@ -198,17 +171,8 @@ fn db_purge_accepts_bare_name_confirmation_when_name_resolved() {
         .state(serde_json::json!(2))
         .insert(&db);
     let mut stdin = Cursor::new(b"vremya\n".to_vec());
-    purge_with_io(
-        DbPurgeArgs {
-            yes: false,
-            cluster: false,
-        },
-        &db,
-        &mut stdin,
-        true,
-        "vremya",
-    )
-    .expect("bare-name confirmation must proceed when it matches");
+    purge_with_io(DbPurgeArgs { yes: false }, &db, &mut stdin, true, "vremya")
+        .expect("bare-name confirmation must proceed when it matches");
     assert_eq!(db.count_entries().unwrap(), 0);
 }
 
@@ -222,17 +186,8 @@ fn db_purge_aborts_when_bare_name_mismatched() {
         .state(serde_json::json!(2))
         .insert(&db);
     let mut stdin = Cursor::new(b"oops\n".to_vec());
-    let err = purge_with_io(
-        DbPurgeArgs {
-            yes: false,
-            cluster: false,
-        },
-        &db,
-        &mut stdin,
-        true,
-        "vremya",
-    )
-    .expect_err("mismatched bare name must abort");
+    let err = purge_with_io(DbPurgeArgs { yes: false }, &db, &mut stdin, true, "vremya")
+        .expect_err("mismatched bare name must abort");
     let msg = err.to_string();
     assert!(
         msg.contains("vremya"),

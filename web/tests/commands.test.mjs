@@ -268,12 +268,12 @@ describe('a command with subcommands drills into them', () => {
 		});
 	});
 
-	test('sync, which runs bare, is offered among its own subcommands', async () => {
+	test('conflicts, which runs bare, is offered among its own subcommands', async () => {
 		await onPage(async ({ page }) => {
-			await commands(page).locator('button[data-command="sync"]').click();
+			await commands(page).locator('button[data-command="conflicts"]').click();
 			await back(page).waitFor();
-			assert.deepEqual((await drawn(page)).slice(1, 3), ['sync', 'login']);
-			await tap(page, 'sync');
+			assert.deepEqual((await drawn(page)).slice(1, 3), ['conflicts', 'list']);
+			await tap(page, 'conflicts');
 		});
 	});
 

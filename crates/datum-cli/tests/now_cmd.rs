@@ -1088,7 +1088,7 @@ fn now_state_list_honours_the_colour_gate() {
 }
 
 /// Run the real binary against `db` with colour off, `TZ` = [`noon_zone`], a
-/// `HOME` beside the db (no sync config, so no banner) and the given env on
+/// `HOME` beside the db and the given env on
 /// top — `datum now`'s width is only honest end to end (da-coi0m).
 fn run_datum(db: &std::path::Path, env: &[(&str, &str)], args: &[&str]) -> String {
     use std::process::{Command, Stdio};

@@ -10,13 +10,9 @@ use std::io::{BufRead, IsTerminal, Write};
 
 use anyhow::Result;
 use datum_core::db::Db;
-use datum_core::sync_state;
 
 use crate::args::DbCommand;
 use crate::args::DbPurgeArgs;
-// Cluster ops are a sync concern; absent from a wasm build.
-#[cfg(feature = "native")]
-use crate::commands::sync::cluster_ops::bump_generation_for_current_server;
 
 pub mod import;
 
@@ -89,17 +85,6 @@ pub fn purge_with_io(
         )?;
     }
 
-    // Capture the cluster_id BEFORE the purge wipes sync_state. The
-    // bump-generation HTTP call happens AFTER the local drop succeeds —
-    // failing partway through is fine because the wipe is the
-    // load-bearing change and the user re-runs to retry the network
-    // step. (da-ws1q sub-5)
-    let prior_cluster = if args.cluster {
-        sync_state::get_cluster_id(db).ok().flatten()
-    } else {
-        None
-    };
-
     let dropped = db.force_recreate_schema()?;
     println!("db purge: complete");
     println!("  dropped: {}", dropped.join(", "));
@@ -107,35 +92,6 @@ pub fn purge_with_io(
         "  schema: v{}",
         datum_core::migrations::CURRENT_SCHEMA_VERSION
     );
-
-    if args.cluster {
-        match prior_cluster {
-            Some(cluster_id) => {
-                match bump_generation_for_current_server(&cluster_id) {
-                    Ok(new_generation) => {
-                        // Re-stamp local sync_state so the NEXT push from
-                        // this device sends the new generation rather than
-                        // the stale 0 the purge reset us to.
-                        sync_state::set_cluster_id(db, &cluster_id).ok();
-                        sync_state::set_cluster_generation(db, new_generation).ok();
-                        println!("  cluster {cluster_id}: bumped to generation {new_generation}");
-                        println!("  peers on the old generation will see GenerationMismatchError next sync");
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "⚠ db purge: local wipe succeeded, but cluster bump failed: {e:#}"
-                        );
-                        eprintln!(
-                        "  re-run `datum sync` once you can reach the relay; peers may otherwise re-push the wiped state"
-                    );
-                    }
-                }
-            }
-            None => {
-                println!("  cluster: nothing to bump (no recorded cluster_id; never synced)");
-            }
-        }
-    }
 
     println!("  OK");
     Ok(())
@@ -190,11 +146,4 @@ pub(crate) fn current_db_path(db: &Db) -> Result<String> {
         |row| row.get(0),
     )?;
     Ok(path)
-}
-
-// Cluster operations talk to a sync server. Without the sync client there is
-// nothing to talk to, so say so rather than appearing to succeed.
-#[cfg(not(feature = "native"))]
-fn bump_generation_for_current_server(_cluster_id: &str) -> anyhow::Result<u64> {
-    anyhow::bail!("cluster operations require sync, which is unavailable in this build")
 }

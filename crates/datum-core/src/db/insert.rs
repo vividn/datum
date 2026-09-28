@@ -443,8 +443,7 @@ impl Db {
         };
         tx.execute_batch(
             "DELETE FROM entries; DELETE FROM entry_history;
-             DELETE FROM integrity_warnings; DELETE FROM last_docs;
-             UPDATE sync_state SET pull_seq = 0;",
+             DELETE FROM integrity_warnings; DELETE FROM last_docs;",
         )?;
         let mut written = Vec::with_capacity(entries.len());
         for (n, entry) in entries.iter().enumerate() {

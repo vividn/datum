@@ -266,8 +266,8 @@ const COMPILE_STEPS: &[Step] = &[
 const UNCOVERED_BY_ALL: &[&str] = &[
     "e2e-full   — cargo nextest run -p datum-commands --test e2e --features e2e-full \
      (feature-gated cohort; its own CI job)",
-    "wasm-check — cargo check -p datum-sync-client --target wasm32-unknown-unknown \
-     --no-default-features --features wasm (needs the wasm32 target installed)",
+    "wasm-check — the wasm32-wasip1 CLI module, web/scripts/build-cli-wasm.mjs \
+     (needs the pinned wasi-sdk and binaryen)",
 ];
 
 /// `lint` is the fast subset and must not be mistaken for the battery.
@@ -494,8 +494,10 @@ fn check_max_file_size() -> Result<()> {
 /// moved on. The gate is the price of letting the version appear twice —
 /// remove it and the second copy is free to drift again.
 ///
-/// Fails if the pin is unreadable, if no Dockerfile names a `rust:` base
-/// (a gate that finds nothing must not pass), or if any tag disagrees.
+/// Fails if the pin is unreadable, if Dockerfiles exist but none names a
+/// `rust:` base (a gate that finds nothing must not pass), or if any tag
+/// disagrees. With no Dockerfile at all the pin is the only copy, so there
+/// is nothing to drift (the last one went with the relay, da-i7hig).
 fn check_toolchain_pin() -> Result<()> {
     let root = workspace_root()?;
     let pin_path = root.join("rust-toolchain.toml");
@@ -509,6 +511,9 @@ fn check_toolchain_pin() -> Result<()> {
             .and_then(|s| s.to_str())
             .is_some_and(|n| n.starts_with("Dockerfile"))
     })?;
+    if dockerfiles.is_empty() {
+        return Ok(());
+    }
 
     let mut examined = 0usize;
     let mut mismatches: Vec<String> = Vec::new();

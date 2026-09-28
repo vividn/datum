@@ -263,7 +263,7 @@ fn dispatch_inner(cli: Cli, db: &Db) -> Result<()> {
         Command::Note(args) => run_log_with_alias(args, db, commands::note::note),
         Command::Tail(args) => commands::tail::tail(args, db),
         Command::Head(args) => commands::head::head(args, db),
-        Command::Now(args) => commands::now::now(args, cli.db.as_deref(), db),
+        Command::Now(args) => commands::now::now(args, db),
         Command::Get(args) => commands::get::get(args, db),
         Command::Delete(args) => commands::del::del(args, db),
         #[cfg(feature = "native")]
@@ -300,12 +300,8 @@ fn dispatch_inner(cli: Cli, db: &Db) -> Result<()> {
         Command::Info(args) => commands::info::info(args, cli.db.as_deref(), db),
         Command::Db(sub) => commands::db::dispatch(sub, cli.db.as_deref(), db),
         Command::Config(sub) => commands::config::config(sub, cli.db.as_deref()),
-        #[cfg(feature = "native")]
-        Command::Sync(args) => commands::sync::dispatch(args, cli.db.as_deref(), db),
-        // Sync speaks HTTP, which a wasm build has no client for. Fail loudly
-        // rather than silently succeeding without having synced.
-        #[cfg(not(feature = "native"))]
-        Command::Sync(_) => anyhow::bail!("sync is unavailable in this build"),
+        // The name is kept for Easy Sync, which replaces the relay sync (da-i7hig).
+        Command::Sync => anyhow::bail!("sync is being rebuilt (Easy Sync)"),
         Command::Reparse(args) => commands::reparse::reparse(args, db),
     }
 }
@@ -589,7 +585,6 @@ mod tests {
                 bare: true,
                 ..NowArgs::default()
             },
-            None,
             &db,
         )
         .unwrap();
@@ -607,7 +602,6 @@ mod tests {
                 bare: true,
                 ..NowArgs::default()
             },
-            None,
             &db,
         )
         .unwrap();
@@ -617,7 +611,6 @@ mod tests {
                 bare: true,
                 ..NowArgs::default()
             },
-            None,
             &db,
         )
         .unwrap();

@@ -48,10 +48,6 @@ pub mod spec;
 pub mod start;
 pub mod stats;
 pub mod switch;
-// Sync speaks HTTP (reqwest); absent from a wasm build. See the `native`
-// feature in Cargo.toml.
-#[cfg(feature = "native")]
-pub mod sync;
 pub mod tail;
 pub mod tail_state;
 // The `tail --watch` TUI drives a terminal (crossterm); absent from a wasm

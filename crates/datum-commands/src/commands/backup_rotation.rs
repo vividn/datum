@@ -492,7 +492,6 @@ mod tests {
                 hard: false,
                 yes: true,
                 show: ShowFlag::None,
-                cluster: false,
             };
             super::super::backup_restore::cmd_restore(args, None, &restored).unwrap();
             assert_eq!(

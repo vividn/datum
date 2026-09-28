@@ -20,17 +20,8 @@ This crate exists to be that reference.
 | `nowview` SVG output | `goldens/text/fixtures.toml` (4 fixtures, all `uncapturable` — see da-t5f5) | yes |
 | `dayview` SVG output | `goldens/text/fixtures.toml` (6 fixtures) | yes |
 | `content_hash` preimage | `goldens/hash/content_hash.toml` (6 fixtures) | no |
-| Cross-version changeset decode | `goldens/changeset/` (2 frozen payloads) | no |
 | Bug regressions (da-438y, etc.) | `tests/regressions.rs` (5 tests + lock) | no |
 | Algorithm fuzz (proptest) | `tests/fuzz_color.rs` (10 props × 500 cases) | no |
-
-One row is not cross-*runtime*: `goldens/changeset/` compares daydumb against
-its own past selves rather than against vividn/datum. It lives here because the
-mechanism is identical — a frozen artefact that today's code did not produce,
-which is the only way to test a reader against a writer you no longer have — and
-because the failure it watches is this crate's signature failure: the silent
-one. Its rules differ from every other golden here in one crucial way; see
-[Changeset goldens](#changeset-goldens-goldenschangeset).
 
 ## Running
 
@@ -132,10 +123,6 @@ crates/datum-parity/
 ├── Cargo.toml          # workspace member, feature `parity-runtime`
 ├── README.md           # this file
 ├── goldens/
-│   ├── changeset/
-│   │   ├── README.md          # the no-regeneration rule, at length
-│   │   ├── changeset_*.json   # frozen wire payloads, one per shape
-│   │   └── expected.json      # what today's build does with each
 │   ├── colors/
 │   │   └── colors.tsv  # field/state name → expected hex (md5-derived)
 │   ├── hash/
@@ -151,7 +138,6 @@ crates/datum-parity/
 │   ├── myspec.rs       # FIELD_SPECS port + emit_kit_toml
 │   └── runtime.rs      # DatumRuntime (gated)
 └── tests/
-    ├── changeset_goldens.rs # cross-version changeset decode (da-4zoa)
     ├── colors.rs           # color goldens TSV → algorithm assertion
     ├── fuzz_color.rs       # proptest harness over the color algebra
     ├── hash_goldens.rs     # content_hash preimage goldens (da-yira)
@@ -165,9 +151,8 @@ Datum has features daydumb intentionally doesn't, and vice-versa. The
 parity harness focuses on the surfaces both runtimes implement; the
 following are deliberate divergences and **not** regressions:
 
-* **CouchDB sync.** Datum can sync to a remote CouchDB; daydumb's sync
-  uses the encrypted relay (`crates/datum-sync-server`). Out of scope
-  for parity.
+* **CouchDB sync.** Datum can sync to a remote CouchDB; daydumb does not.
+  Out of scope for parity.
 * **Named-hue color extension.** Daydumb's kit format accepts hue names
   (`red`, `blue`, …) that resolve to HSL bands. Datum has no such
   extension. The MD5 fallback path is parity; the named-hue extension
@@ -215,24 +200,11 @@ Compute `contrast_fg`: YIQ-brightness `(R*299 + G*587 + B*114) / 1000`;
 `<note>` is mandatory and should explain why the row exists (e.g.,
 "would have caught da-438y for body=run").
 
-### Changeset goldens (`goldens/changeset/`)
-
-**Different rules from every other golden here — read
-`goldens/changeset/README.md` before touching them.** These are frozen records
-of what *older builds* put on the wire, and a cross-version golden's whole value
-is that no current code produced it. **Nothing may regenerate them**: the
-regeneration gate that is correct for `cli-parity.json` would, here, silently
-replace the artefact under test with the thing it is tested against and leave a
-test that can never fail.
-
-To record a new wire shape, **add** a golden — never edit an existing one. The
-set only grows, and the filenames are the compatibility claim.
-
 ### Hash goldens (`goldens/hash/content_hash.toml`)
 
 Append a `[[fixture]]` block describing the entry's hashed columns, then
 the three derived values: `parts` (the seven preimage segments, in the
-order `docs/sync-protocol.md` § "Canonical serialization" specifies),
+order `Entry::expected_content_hash` joins them),
 `preimage_hex` (hex of `parts` joined by a single `0x00` byte), and
 `content_hash` (lowercase-hex `SHA-256` of those bytes).
 

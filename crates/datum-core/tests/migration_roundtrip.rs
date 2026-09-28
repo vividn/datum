@@ -166,6 +166,7 @@ fn every_pair_has_a_roundtrip_test() {
         (37, 38),
         (38, 39),
         (39, 40),
+        (40, 41),
     ];
     assert_eq!(
         covered.len(),
@@ -2555,6 +2556,26 @@ fn v39_to_v40_passes_a_deleted_log_unless_it_holds_a_definitions_slug() {
     let err = moved.unwrap_err();
     assert!(err.contains("an entry already holds `view:moods`"), "{err}");
     assert_eq!(read_schema_version(db.conn()).unwrap(), Some(39));
+}
+
+/// da-i7hig: the relay sync is deleted and its table with it; the down
+/// puts the v40 table back, empty.
+#[test]
+fn roundtrip_v40_to_v41_drop_sync_state() {
+    let db = fresh_at(40);
+    let conn = db.conn();
+    conn.execute(
+        "INSERT INTO sync_state (db_id, push_mark, pull_seq, cluster_id) VALUES ('local', 5, 7, 'c')",
+        [],
+    )
+    .unwrap();
+
+    apply_one_up(conn, 40);
+    assert!(!table_exists(conn, "sync_state"));
+
+    apply_one_down(conn, 41);
+    assert!(table_exists(conn, "sync_state"));
+    assert!(column_exists(conn, "sync_state", "cluster_generation"));
 }
 
 fn field_occurtime_sql(conn: &Connection) -> String {

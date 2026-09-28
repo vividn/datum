@@ -105,8 +105,8 @@ pub struct Db {
 impl Db {
     /// Configure a file-backed connection for concurrent use (da-11qq).
     ///
-    /// datum's design makes concurrency the normal mode — the sync agent
-    /// pulls and `--watch` loops read while the CLI writes — so every
+    /// datum's design makes concurrency the normal mode — `--watch` loops
+    /// read while the CLI writes — so every
     /// connection gets, explicitly and before any migration write:
     ///
     /// * `busy_timeout = 5000` — absorbs writer-vs-writer overlap instead
@@ -312,7 +312,8 @@ impl Db {
             "entry_history",
             // Gone since v38 / v39 / v40 (specs, aliases, views, kit
             // commands and index definitions are entries — da-lc26c,
-            // da-b3752, da-fwwtn); dropped here so a purge of an older file
+            // da-b3752, da-fwwtn) and v41 (`sync_state`, the deleted relay
+            // sync's — da-i7hig); dropped here so a purge of an older file
             // leaves none behind.
             "field_specs",
             "aliases",

@@ -108,8 +108,8 @@ pub fn infer_legacy_version(conn: &Connection) -> Result<u32> {
         return Ok(CURRENT_SCHEMA_VERSION);
     }
 
-    // m6_to_7: sync_state.my_push_seq.
-    if !has_column(conn, "sync_state", "my_push_seq")? {
+    // m6_to_7: sync_state.my_push_seq. (`sync_state` is gone from v41 on.)
+    if table_exists(conn, "sync_state")? && !has_column(conn, "sync_state", "my_push_seq")? {
         return Ok(6);
     }
     // m7_to_8: entries.user_asserted_last_state.

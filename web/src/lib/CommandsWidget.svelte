@@ -43,7 +43,7 @@
 	  takes goes into the line with it, in its slot, and is spent, when
 	  words are TYPED next (da-8ru0m): `note coffee `, `update <hid> `,
 	  the caret after them.
-	- a command with SUBCOMMANDS (`db`, `spec`, `sync`, …) opens them
+	- a command with SUBCOMMANDS (`db`, `spec`, …) opens them
 	  instead (da-803mk): the bar is `< Back` and the subcommands, and a
 	  tap on one fills `db setup `. `< Back` and Escape return to the list.
 	  `db backup` and `db restore` open the «Backups» sheet instead

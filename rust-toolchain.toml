@@ -24,5 +24,5 @@ profile = "default"
 # only if CI and developers agree on this component. Every developer with a
 # working IDE has it; CI did not, and the then-committed artifact matched only CI.
 components = ["rustfmt", "clippy", "rust-src"]
-# `wasm-check` builds datum-sync-client for the browser.
+# datum-parse builds for the browser without default features (its README).
 targets = ["wasm32-unknown-unknown"]

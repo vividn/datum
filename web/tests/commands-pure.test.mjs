@@ -372,7 +372,7 @@ describe('subcommands', () => {
 	const sub = (...names) => names.map((name) => ({ name }));
 	const TREE = grammarOf([
 		{ name: 'db', aliases: [], usage: ['datum db setup', 'datum db backup <PATH | ->'], flags: [], subcommands: sub('setup', 'backup'), bare: false },
-		{ name: 'sync', aliases: [], usage: ['datum sync [--push]'], flags: [], subcommands: sub('login'), bare: true },
+		{ name: 'conflicts', aliases: [], usage: ['datum conflicts [list] [--all]'], flags: [], subcommands: sub('resolve'), bare: true },
 		{ name: 'spec', aliases: [], usage: ['datum spec show <FIELD>'], flags: [], subcommands: sub('show'), bare: false },
 		// Two forms, no subcommands: `add` fills as it always did.
 		{ name: 'add', aliases: [], usage: ['datum add <FIELD>', 'datum add <FIELD> <DUR>'], flags: [] }
@@ -380,7 +380,7 @@ describe('subcommands', () => {
 	const field = { id: 'field', kind: 'field', text: 'mood' };
 
 	test('a command with subcommands drills; alternate forms do not; spec under a field opens its spec instead', () => {
-		assert.deepEqual(['db', 'sync', 'spec', 'add', 'tail'].map((n) => drills(TREE, n, [])), [true, true, true, false, false]);
+		assert.deepEqual(['db', 'conflicts', 'spec', 'add', 'tail'].map((n) => drills(TREE, n, [])), [true, true, true, false, false]);
 		assert.equal(drills(TREE, 'spec', [field]), false, 'da-ybai9: the modal, not the subcommands');
 		assert.equal(drills(TREE, 'db', [field]), true);
 	});
@@ -394,9 +394,9 @@ describe('subcommands', () => {
 			// da-9ow8m: it opens «Backups» rather than fill the line.
 			['db backup', 'backup', 'sheet']
 		]);
-		assert.deepEqual(bar('sync').slice(2), [
-			['sync', 'sync', 'fill'],
-			['sync login', 'login', 'fill']
+		assert.deepEqual(bar('conflicts').slice(2), [
+			['conflicts', 'conflicts', 'fill'],
+			['conflicts resolve', 'resolve', 'fill']
 		]);
 	});
 });

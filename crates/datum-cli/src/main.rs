@@ -24,7 +24,7 @@ fn main() {
     // Rust ignores SIGPIPE, so a closed stdout makes `println!` panic and the
     // process exits 101 with a panic message (da-9p3o). End quietly instead,
     // the way a unix tool does. Only stdout's broken pipe: a socket's EPIPE
-    // (sync) is still an error, and every other panic keeps its report.
+    // is still an error, and every other panic keeps its report.
     let report = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         if info.payload_as_str().is_some_and(|m| {

@@ -219,7 +219,7 @@ const READERS = [
 	['db', 'backup', '-'],
 	['spec', 'list'],
 	['alias', 'list'],
-	['sync', 'status'],
+	['sync'],
 	['kit', 'list'],
 	['track', 'coffee'],
 	['ignore', 'coffee'],

@@ -133,8 +133,6 @@ fn print_info_block(name: Option<&str>, path: &std::path::Path, db: Option<&Db>)
     );
     println!("  last write: {last}");
 
-    println!("  sync:     not configured");
-
     let size = read(
         "size",
         std::fs::metadata(path)

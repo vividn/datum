@@ -14,8 +14,6 @@
 //! "nothing restored". See `RestoreReport` for the projected/committed
 //! outcome contract.
 
-#[cfg(feature = "native")]
-use crate::commands::sync::cluster_ops::bump_generation_for_current_server;
 use anyhow::{Context, Result};
 use datum_core::{
     db::{ConflictStrategy, Db, InsertOutcome},
@@ -330,7 +328,6 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
     let silent = args.show == ShowFlag::None;
     let json = args.show == ShowFlag::Json;
     let force = args.force;
-    let bump_cluster = args.cluster;
     let mode = Mode::of(&args);
     // A hard restore asks as `db purge` does: the database's name, typed
     // (da-rle8g).
@@ -385,19 +382,9 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
         confirm_deletions(&preview, &mut std::io::stdin().lock())?;
     }
     let report = restore_path(&args.path, db, mode)?;
-    // The bump is the restore's, not its printout's: `--json` and
-    // `--show none` bump as quietly as they print.
-    let bump = bump_cluster && !dry_run;
-    let bump_quietly = || {
-        if bump {
-            bump_cluster_after_restore(db, false)
-        } else {
-            Ok(())
-        }
-    };
 
     if silent {
-        return bump_quietly();
+        return Ok(());
     }
 
     if json {
@@ -426,7 +413,7 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
             "warnings": report.warnings,
         });
         println!("{}", serde_json::to_string_pretty(&out)?);
-        return bump_quietly();
+        return Ok(());
     }
 
     for w in &report.warnings {
@@ -473,57 +460,6 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
         );
     }
 
-    if bump {
-        bump_cluster_after_restore(db, true)?;
-    }
-    Ok(())
-}
-
-/// da-ws1q sub-5: after a non-dry-run restore, optionally bump the
-/// sync cluster's generation so peers see GenerationMismatchError
-/// instead of re-pushing their stale snapshot on top of the restored
-/// state, and rewind the push watermark so the next push carries the
-/// snapshot into the new generation. No-op when the local DB has no
-/// `sync_state.cluster_id` — nothing has ever been synced, so there are
-/// no peers to invalidate.
-fn bump_cluster_after_restore(db: &Db, print: bool) -> Result<()> {
-    use datum_core::sync_state;
-
-    let Some(cluster_id) = sync_state::get_cluster_id(db).ok().flatten() else {
-        eprintln!(
-            "⚠ db restore --cluster: no cluster_id recorded locally (never synced); nothing to bump"
-        );
-        return Ok(());
-    };
-    // The new generation starts empty on the relay; the whole restored
-    // snapshot is what the next push must send, not only what changed
-    // since the last one (da-rle8g). Rewound BEFORE the bump: a failure
-    // here leaves the relay where it was. A bump that then fails leaves
-    // the old generation, which still holds what the restore dropped, so
-    // a sync can bring it back — the warning below says so.
-    sync_state::reset_push_mark(db, 0)?;
-    match bump_generation_for_current_server(&cluster_id) {
-        Ok(new_generation) => {
-            // Stamp the new generation locally so the next push from
-            // this device carries it; otherwise we'd hit our own
-            // GenerationMismatch on the next sync.
-            sync_state::set_cluster_generation(db, new_generation).ok();
-            if print {
-                println!("  cluster {cluster_id}: bumped to generation {new_generation}");
-                println!(
-                    "  peers on the old generation will see GenerationMismatchError next sync"
-                );
-            }
-        }
-        Err(e) => {
-            eprintln!("⚠ db restore: local restore succeeded, but cluster bump failed: {e:#}");
-            eprintln!(
-                "  the generation did not move, so the other devices will not go back to this restore, \
-                 and a sync can bring back what it removed. Re-run this restore with --cluster \
-                 once the relay is reachable, before syncing"
-            );
-        }
-    }
     Ok(())
 }
 
@@ -992,7 +928,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             None,
             &dst,
@@ -1084,7 +1019,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             None,
             &dst,
@@ -1125,7 +1059,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             None,
             &dst,
@@ -1149,7 +1082,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             None,
             &dst,
@@ -1219,7 +1151,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             None,
             &dst,
@@ -1334,7 +1265,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             &dst,
         )
@@ -1389,7 +1319,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             &dst,
         )
@@ -1435,7 +1364,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             &dst,
         )
@@ -1472,7 +1400,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             &dst,
         )
@@ -1522,7 +1449,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             &dst,
         )
@@ -1573,7 +1499,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             &dst,
         )
@@ -1622,7 +1547,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             None,
             &dst,
@@ -1644,7 +1568,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             &dst,
         )
@@ -1695,7 +1618,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             None,
             &dst,
@@ -1712,7 +1634,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             &dst,
         )
@@ -1757,7 +1678,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             &dst,
         )
@@ -1808,7 +1728,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             &dst,
         )
@@ -1867,7 +1786,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             &dst,
         )
@@ -1894,7 +1812,6 @@ mod tests {
             hard: false,
             yes: false,
             show: ShowFlag::Default,
-            cluster: false,
         }
     }
 
@@ -2141,7 +2058,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             &dst,
         )
@@ -2185,7 +2101,6 @@ mod tests {
                 hard: false,
                 yes: false,
                 show: ShowFlag::Default,
-                cluster: false,
             },
             &dst,
         )
@@ -2198,11 +2113,4 @@ mod tests {
 
         std::fs::remove_file(&path).ok();
     }
-}
-
-// Cluster operations talk to a sync server. Without the sync client there is
-// nothing to talk to, so say so rather than appearing to succeed.
-#[cfg(not(feature = "native"))]
-fn bump_generation_for_current_server(_cluster_id: &str) -> anyhow::Result<u64> {
-    anyhow::bail!("cluster operations require sync, which is unavailable in this build")
 }

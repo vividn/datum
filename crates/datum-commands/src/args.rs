@@ -37,9 +37,8 @@ pub use pcli::{
     EditArgs, FieldsArgs, GetArgs, GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, InfoArgs,
     KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand, NowArgs,
     NowviewArgs, RedoArgs, ReparseArgs, RestoreArgs, RetimeArgs, RotationAction, SetupArgs,
-    SpecCommand, SpecSetArgs, StatsArgs, StatsPeriod, SyncAgentArgs, SyncArgs, SyncCommand,
-    SyncConfigCommand, SyncInstallDaemonArgs, SyncKeyCommand, SyncLoginArgs, SyncStatusArgs,
-    TailArgs, TrackArgs, UndoArgs, UpdateArgs, ViewArgs, ViewFormat, WhyArgs,
+    SpecCommand, SpecSetArgs, StatsArgs, StatsPeriod, TailArgs, TrackArgs, UndoArgs, UpdateArgs,
+    ViewArgs, ViewFormat, WhyArgs,
 };
 
 /// The `--show` level the shared layer swept out of argv (da-qt6z).

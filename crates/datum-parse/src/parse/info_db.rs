@@ -70,15 +70,13 @@ pub(crate) fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
 
 pub(crate) fn parse_db_purge_args(tail: &[&str]) -> Result<DbPurgeArgs> {
     let mut yes = false;
-    let mut cluster = false;
     for tok in tail {
         match split_flag(tok) {
             FlagSplit::Long("yes") | FlagSplit::Short('y') => yes = true,
-            FlagSplit::Long("cluster") => cluster = true,
             f => return Err(unknown_flag(f)),
         }
     }
-    Ok(DbPurgeArgs { yes, cluster })
+    Ok(DbPurgeArgs { yes })
 }
 
 pub(crate) fn parse_config_cmd(tail: &[&str]) -> Result<ConfigCommand> {

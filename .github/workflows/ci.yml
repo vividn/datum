@@ -161,9 +161,6 @@ jobs:
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@v2
 
-      - name: cargo check datum-sync-client (wasm32, --no-default-features --features wasm)
-        run: cargo check -p datum-sync-client --target wasm32-unknown-unknown --no-default-features --features wasm
-
       # The real CLI for wasm32-wasip1 — datum.day's only runner (da-g8o8).
       # It needs a C compiler targeting wasm: the script fetches a PINNED
       # wasi-sdk and binaryen into target/toolchains/, sha256-checked, and

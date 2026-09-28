@@ -44,7 +44,6 @@ fn fresh_db_matches_schema_sql_shape() {
         "entry_history",
         "integrity_warnings",
         "last_docs",
-        "sync_state",
     ];
     assert_eq!(tables, expected_tables);
 

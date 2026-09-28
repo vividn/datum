@@ -6,10 +6,6 @@ members = [
     "crates/datum-layout",
     "crates/datum-parity",
     "crates/datum-parse",
-    "crates/datum-sync-agent",
-    "crates/datum-sync-client",
-    "crates/datum-sync-protocol",
-    "crates/datum-sync-server",
     "crates/datum-test-util",
     "xtask",
 ]
@@ -51,24 +47,10 @@ ulid = { version = "1", features = ["serde"] }
 thiserror = "2"
 anyhow = "1"
 
-# Async (for sync server)
-tokio = { version = "1", features = ["full"] }
-axum = "0.7"
-
 # Crypto
-aes-gcm = "0.10"
 sha2 = "0.10"
 md-5 = "0.10"
 rand = "0.8"
-argon2 = "0.5"
-rpassword = "7"
-zeroize = "1"
-
-# HTTP client (blocking — CLI is synchronous)
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
-
-# Base64 encoding (url-safe no-pad per sync-protocol.md)
-base64 = "0.22"
 
 # Text
 regex-lite = "0.1"
@@ -87,23 +69,13 @@ serde_ignored = "0.1"
 # A kit's states in the order the kit wrote them (da-dtmlv)
 indexmap = { version = "2", features = ["serde"] }
 
-# URL parsing
-url = "2"
-
-# Filesystem watching (used by datum-sync-agent)
-notify = "6"
-
-# Low-level syscalls (used by datum-sync-agent for pid-alive checks)
+# Low-level syscalls (terminal size for `tail` and the renderers)
 libc = "0.2"
 
 # Terminal UI — alt-screen + key/mouse events for `datum tail -w` (da-3l6m).
 # `event-stream` is intentionally omitted: the watch loop is synchronous and
 # polls `event::poll`, so no async runtime is pulled in.
 crossterm = "0.28"
-
-# Structured logging (journalctl-friendly output for the daemon)
-tracing = "0.1"
-tracing-subscriber = { version = "0.3" }
 
 # ── Build-artifact size, added 2026-09-02 ───────────────────────────────
 # Full debug info was costing ~200 MB PER TEST BINARY and 23 GB across the

@@ -14,8 +14,7 @@
 //! 2. `datum_core`'s `expected_content_hash` reproduces it from the entry's
 //!    columns, so the file cannot drift away from what daydumb actually writes.
 //!
-//! The specification these encode lives in `docs/sync-protocol.md`
-//! § "Canonical serialization".
+//! The implementation these pin is `datum_core::entry::Entry::expected_content_hash`.
 
 use datum_core::dur::Dur;
 use datum_core::entry::{Entry, Verb};
@@ -25,7 +24,6 @@ use sha2::{Digest, Sha256};
 
 #[derive(Deserialize)]
 struct Goldens {
-    hash_version: u32,
     fixture: Vec<Fixture>,
 }
 
@@ -126,25 +124,4 @@ fn core_reproduces_fixture_hashes() {
             f.parts
         );
     }
-}
-
-/// The wire declaration and the definition it names must move together
-/// (da-engu). Peers refuse a changeset whose declared
-/// `CONTENT_HASH_VERSION` is not their own, which is only worth anything
-/// if the number actually tracks the preimage — and the preimage's
-/// definition of record is the golden file above, not a comment.
-///
-/// So changing a digest here without bumping both is the mistake this
-/// catches: it would ship a redefined hash that every peer still declares
-/// as the old one, and the refusal that exists to stop exactly that skew
-/// would wave it through.
-#[test]
-fn declared_hash_version_matches_the_pinned_definition() {
-    assert_eq!(
-        parse_goldens().hash_version,
-        datum_sync_protocol::CONTENT_HASH_VERSION,
-        "the goldens pin the content_hash definition; bump \
-         CONTENT_HASH_VERSION in the same commit that changes them, or \
-         peers will merge across a skew they cannot see",
-    );
 }

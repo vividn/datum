@@ -519,7 +519,7 @@ export function fieldVerb(name: string, all: Pill[], fields: FieldButton[]): { f
 // them should then show the subcommands in the commands widget instead.»
 // A tap on `db` DRILLS: the bar shows `< Back` and db's subcommands, and a
 // tap on one fills `db backup ` — so `db `, which runs nothing, is never
-// what a tap leaves on the line. A command that also runs bare (`sync`)
+// what a tap leaves on the line. A command that also runs bare (`conflicts`)
 // is offered among its subcommands as itself.
 
 /** The subcommands whose press opens the «Backups» sheet. */

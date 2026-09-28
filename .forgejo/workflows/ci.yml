@@ -232,9 +232,6 @@ jobs:
           fi
 
       # ── wasm ──────────────────────────────────────────────────────────────
-      - name: cargo check datum-sync-client (wasm32, --no-default-features --features wasm)
-        run: cargo check -p datum-sync-client --target wasm32-unknown-unknown --no-default-features --features wasm
-
       # The module is not committed (da-0qa4x), so there is nothing to compare
       # with: ensure-wasm.mjs builds it from this tree's crates — the pinned
       # wasi-sdk and binaryen (~100 MB, sha256-checked, uncached here) into

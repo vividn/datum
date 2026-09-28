@@ -16,7 +16,6 @@ pub mod last_docs;
 pub mod migrations;
 pub mod slug;
 pub mod state;
-pub mod sync_state;
 pub mod track;
 pub mod views;
 

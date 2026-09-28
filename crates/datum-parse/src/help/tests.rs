@@ -68,7 +68,7 @@ VIEWS / SYNC:
   stats      Count, total duration, and per-state ratio over a time slice
   ids        List entry ids (newest-first by default)
   fields     List every field: its spec and the states it was logged with
-  sync       Push/pull changesets, manage auth & keys
+  sync       Being rebuilt (Easy Sync)
   conflicts  Triage sync conflicts (see `datum check` for integrity findings)
   view       Execute a named SELECT view and render the rows
 
@@ -312,8 +312,7 @@ OUTPUT:
 #[test]
 fn snapshot_sync_help_starts_with_header() {
     let s = command_help("sync");
-    assert!(s.starts_with("datum sync — push/pull changesets, manage auth & keys\n"));
-    assert!(s.contains("datum sync login [--server URL] [--cluster NAME]\n"));
+    assert!(s.starts_with("datum sync — being rebuilt (Easy Sync)\n"));
 }
 
 // ---------------------------------------------------------------------------

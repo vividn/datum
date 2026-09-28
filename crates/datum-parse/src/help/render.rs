@@ -453,7 +453,7 @@ fn render_roff_top_level() -> String {
     s.push_str(
         "datum is a local-first personal data tracker. \
          Entries are logged from the command line and stored in a local \
-         SQLite database; an optional encrypted relay synchronises devices.\n",
+         SQLite database.\n",
     );
 
     s.push_str(".SH COMMANDS\n");

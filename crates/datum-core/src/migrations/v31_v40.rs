@@ -1,8 +1,7 @@
-//! Migration bodies for schema versions 30 → 40 — the current era.
+//! Migration bodies for schema versions 30 → 40.
 //!
-//! New migrations land here. When `CURRENT_SCHEMA_VERSION` crosses 40,
-//! start `v41_v50.rs` rather than growing this file: the era boundary is
-//! what keeps any one file from becoming the next 3,500-line monolith.
+//! Closed: v41 on lives in `v41_v50.rs`. The era boundary is what keeps
+//! any one file from becoming the next 3,500-line monolith.
 
 use rusqlite::{params, Connection, OptionalExtension};
 

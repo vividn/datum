@@ -12,13 +12,12 @@ default = ["native"]
 # Surfaces that cannot exist in a browser, gathered behind one flag so a wasm
 # build is `--no-default-features` rather than a list of exclusions:
 #   crossterm — terminal control, used only by the `tail --watch` TUI
-#   reqwest   — blocking HTTP, used only by the sync client
 #   tempfile  — on-disk scratch files: the atomic config write, and the
 #               buffer `datum edit` hands to $EDITOR
 # Native builds are unchanged; this feature is on by default. The
 # wasm32-wasip1 CLI (da-1vat) turns it off: it has a clock (WASI's
-# `clock_time_get`, and `TZ` from its caller) but no terminal and no HTTP.
-native = ["dep:crossterm", "dep:reqwest", "dep:datum-sync-client", "dep:tempfile"]
+# `clock_time_get`, and `TZ` from its caller) but no terminal.
+native = ["dep:crossterm", "dep:tempfile"]
 # Shared test fixtures (TestPrompter, etc.) — also consumed by datum-cli tests.
 test-util = []
 # Marker for the full E2E case cohort (da-1wat). Cases tagged
@@ -37,7 +36,6 @@ png = ["dep:resvg"]
 datum-core = { path = "../datum-core" }
 datum-layout = { path = "../datum-layout" }
 datum-parse = { path = "../datum-parse" }
-datum-sync-client = { path = "../datum-sync-client", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
@@ -53,10 +51,6 @@ tempfile = { version = "3", optional = true }
 flate2 = { workspace = true }
 tar = { workspace = true }
 toml = { workspace = true }
-reqwest = { workspace = true, optional = true }
-rpassword = { workspace = true }
-url = { workspace = true }
-rand = { workspace = true }
 libc = { workspace = true }
 # Alt-screen TUI for `datum tail -w` (da-3l6m): key/mouse events + raw mode.
 crossterm = { workspace = true, optional = true }

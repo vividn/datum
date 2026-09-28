@@ -9,8 +9,6 @@ turns the result into something worth looking at.
 
 `datum` is **local-first**: every entry is written to a SQLite database
 on your machine, and the CLI never makes network calls in the hot path.
-An optional encrypted relay (see `crates/datum-sync-server/`) shuttles
-data between your devices end-to-end-encrypted; the relay is content-blind.
 
 ## Status
 
@@ -214,7 +212,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `stats` — Count, total duration, and per-state ratio over a time slice
 - `ids` — List entry ids (newest-first by default)
 - `fields` — List every field: its spec and the states it was logged with
-- `sync` — Push/pull changesets, manage auth & keys
+- `sync` — Being rebuilt (Easy Sync)
 - `conflicts` — Triage sync conflicts (see `datum check` for integrity findings)
 - `view` — Execute a named SELECT view and render the rows
 
@@ -308,15 +306,8 @@ Call-site time flags compose with the alias-bound ones: `-y` / `-q` / `-d` shift
 
 ## Sync
 
-Sync is opt-in and end-to-end encrypted. The relay server stores opaque
-ciphertext blobs and the metadata (device id, sequence number) it needs
-to fan changesets out to your other devices. It cannot read your data.
-
-- `crates/datum-sync-client/` — wire protocol, crypto, HTTP client.
-- `crates/datum-sync-server/` — Rust + axum relay.
-- `crates/datum-sync-agent/` — background daemon (planned).
-
-Per-crate READMEs are planned.
+Sync is being rebuilt (Easy Sync); until it lands, `datum sync` says so
+and exits 1.
 
 ## Configuration
 
@@ -392,7 +383,7 @@ It runs only what the diff can break. A Rust change runs
 test suite (via `cargo-nextest` when installed, otherwise `cargo test`)
 and the doc tests, scoped to the workspace crates the diff touches plus
 their transitive workspace dependents (so a one-line change in
-`datum-cli` does not rebuild and retest `datum-sync-*`). It falls back to
+`datum-layout` does not rebuild and retest `datum-parity`). It falls back to
 the full `scripts/check.sh` battery when a workspace-root config file
 changes, when nothing crate-shaped is touched, or when the dependent
 closure already covers ≥75% of the workspace. A `web/` change runs the
@@ -417,8 +408,8 @@ says so on every run:
 
 - `e2e-full` — the feature-gated E2E cohort
   (`cargo nextest run -p datum-commands --test e2e --features e2e-full`)
-- `wasm-check` — `cargo check -p datum-sync-client --target
-  wasm32-unknown-unknown --no-default-features --features wasm`
+- `wasm-check` — the wasm32-wasip1 CLI module
+  (`web/scripts/build-cli-wasm.mjs`, the pinned wasi-sdk and binaryen)
 
 A step that cannot run fails the battery. If `cargo-nextest` is not
 installed, `check all` exits non-zero and says so; it never substitutes
@@ -455,9 +446,6 @@ crates/
   datum-commands/     command-layer crate dispatched by datum-cli
   datum-parse/        argv parser + help-text introspection
   datum-layout/       dayview / nowview layout primitives
-  datum-sync-client/  sync wire protocol, crypto, HTTP
-  datum-sync-server/  encrypted relay
-  datum-sync-agent/   background sync daemon (stub)
 web/                  SvelteKit PWA (OPFS + SQLite WASM)
 xtask/                workspace task runner (`cargo xtask <task>`)
 ```

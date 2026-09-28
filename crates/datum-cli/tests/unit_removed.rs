@@ -38,8 +38,7 @@ fn spec_set_refuses_unit_as_an_unknown_flag() {
 }
 
 /// Where the word means something else, and why each is left alone. Only
-/// paths the patterns below actually hit are listed: the systemd units of
-/// `install_daemon.rs` and `datum-sync-agent` never spell it these ways.
+/// paths the patterns below actually hit are listed.
 const KEEP: &[(&str, &str)] = &[
     (
         "crates/datum-core/src/migrations/",

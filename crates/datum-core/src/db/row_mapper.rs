@@ -1,7 +1,7 @@
 //! `entries`-row → [`Entry`] adapters.
 //!
 //! [`row_to_entry_public`] is the only `pub` surface here: external crates
-//! (`datum-sync-client`, `views/state_change`, `ids/resolve`, `conflicts`)
+//! (`views/state_change`, `ids/resolve`, `conflicts`)
 //! all build their own `SELECT * FROM entries` queries and need a way to
 //! materialize a row without going through the typed `Db` API.
 //!
@@ -17,8 +17,7 @@ use crate::entry::{Entry, Verb};
 use crate::time::DatumTime;
 
 /// Row → `Entry` adapter for callers that build their own queries over the
-/// `entries` table. Used by `datum-sync-client::ops` for pack/apply, which
-/// reads and writes full entry rows outside the normal `Db` API surface.
+/// `entries` table, outside the normal `Db` API surface.
 pub fn row_to_entry_public(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
     row_to_entry(row)
 }

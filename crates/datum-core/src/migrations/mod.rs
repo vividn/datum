@@ -19,7 +19,7 @@
 //!   change when a migration is added;
 //! * [`support`] holds the introspection and table-rebuild helpers used
 //!   by more than one era;
-//! * `v01_v10`, `v11_v20`, `v21_v30`, `v31_v40` hold the migration
+//! * `v01_v10`, `v11_v20`, `v21_v30`, `v31_v40`, `v41_v50` hold the migration
 //!   **bodies**, one module per decade of schema versions.
 //!
 //! Adding a migration therefore appends one entry here and one function
@@ -36,6 +36,7 @@ mod v01_v10;
 mod v11_v20;
 mod v21_v30;
 mod v31_v40;
+mod v41_v50;
 
 #[cfg(test)]
 mod tests;
@@ -46,6 +47,7 @@ use v01_v10::*;
 use v11_v20::*;
 use v21_v30::*;
 use v31_v40::*;
+use v41_v50::*;
 
 /// The schema version this binary writes.
 ///
@@ -53,7 +55,7 @@ use v31_v40::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 40;
+pub const CURRENT_SCHEMA_VERSION: u32 = 41;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -351,5 +353,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "views, kit commands and kit index definitions are entries: view:<name>, command:<name> and index:<kit>/<name> (their data the kit's block, plus kit_id), and the three tables are dropped — they back up, sync and have a history; a physical index is derived per device (da-fwwtn)",
         apply: m39_to_40_definitions_are_entries,
         down: down_40_to_39_definitions_are_entries,
+    },
+    Migration {
+        from: 40,
+        to: 41,
+        summary: "sync_state is dropped: it held only the relay sync's watermarks and cluster, and that sync is deleted (da-i7hig)",
+        apply: m40_to_41_drop_sync_state,
+        down: down_41_to_40_drop_sync_state,
     },
 ];

@@ -6,12 +6,9 @@ use datum_core::db::{Db, NowFilter};
 use datum_core::time::DatumTime;
 
 use crate::args::{NowArgs, ShowFlag};
-use crate::config;
 use crate::render::{render_pending_integrity_warning, render_snapshot};
 
-/// `cli_db` is the global `--db` flag — it beats `DATUM_DB` when naming
-/// the active DB for the stale-sync warning (da-cyn4).
-pub fn now(args: NowArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
+pub fn now(args: NowArgs, db: &Db) -> Result<()> {
     // da-tx8j: resolve the optional snapshot_time from time_args. When
     // ANY time arg was supplied we treat it as "the user explicitly
     // asked for a past moment" and pin the whole render to it: query
@@ -35,19 +32,12 @@ pub fn now(args: NowArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
     }
 
     if args.show == ShowFlag::Json {
-        // `--show json` bypasses sync banners / integrity warnings /
+        // `--show json` bypasses integrity warnings /
         // nowview band so the output is a single stable JSON document.
         let snapshot = db.current_now(&filter)?;
         let rendered = serde_json::to_string_pretty(&snapshot)?;
         println!("{rendered}");
         return Ok(());
-    }
-
-    // Stale-sync warning is meaningless when the user explicitly
-    // pinned a past time — the current sync state has nothing to do
-    // with the snapshot they asked for. Suppress.
-    if snapshot_time.is_none() {
-        emit_stale_sync_warning(cli_db, db);
     }
 
     // C4e: surface a top-line banner when there are unresolved integrity
@@ -184,78 +174,4 @@ fn print_now_band(args: &NowArgs, db: &Db, cols: u16, at: Option<chrono::DateTim
     };
     let band = render_nowview_terminal(&fields, &cfg);
     println!("{band}");
-}
-
-/// Prepend a stale-sync warning to `datum now` when sync coverage looks
-/// broken for the active DB. C4d upgrade: check daemon liveness too.
-///
-/// Rules:
-/// - No sync configured → no warning
-/// - Daemon running AND recent pull (< 1h) → no warning
-/// - Daemon down OR stale pull (≥ 1h) → warn, explaining why
-fn emit_stale_sync_warning(cli_db: Option<&str>, db: &Db) {
-    let threshold = chrono::Duration::hours(1);
-
-    // Active DB name for per-db config lookup. Bare paths have no name.
-    // `--db` wins over `DATUM_DB` (da-cyn4).
-    let db_name = config::active_db_name(cli_db);
-    let cfg = match config::load_raw_config_or_default() {
-        Ok(c) => c,
-        Err(_) => return,
-    };
-    if config::resolve_sync_server(&cfg, db_name.as_deref()).is_none() {
-        return;
-    }
-
-    #[cfg(feature = "native")]
-    let daemon_running = crate::commands::sync::daemon_status::read().is_running();
-    // No sync client in this build, so no daemon can be running.
-    #[cfg(not(feature = "native"))]
-    let daemon_running = false;
-    // `sync_state` reads a local table and moved to datum-core in da-9d6j, so
-    // this line needs no gate — reading the last-pull timestamp never required
-    // an HTTP client, which was that bead's whole point.
-    let last_pull = datum_core::sync_state::get_last_pull_at(db).ok().flatten();
-    let label = db_name.as_deref().unwrap_or("main");
-
-    match (daemon_running, last_pull) {
-        // Best case: daemon up, recent pull — say nothing.
-        (true, Some(t)) if Utc::now().signed_duration_since(t) <= threshold => {}
-
-        // Daemon running but pull still stale: the daemon's unhealthy
-        // (backing off, wrong server, expired token). Tell the user.
-        (true, Some(t)) => {
-            let age = Utc::now().signed_duration_since(t);
-            println!(
-                "⚠ sync stale: {label} last pulled {} (daemon running)",
-                human_age(age),
-            );
-        }
-        (true, None) => {
-            println!("⚠ sync stale: {label} has never pulled (daemon running)");
-        }
-
-        // Daemon down: user needs to install or start it.
-        (false, _) => {
-            let age_part = match last_pull {
-                Some(t) => format!(
-                    ", last pulled {}",
-                    human_age(Utc::now().signed_duration_since(t)),
-                ),
-                None => "".to_string(),
-            };
-            println!(
-                "⚠ sync daemon not running{age_part} — \
-                 run `datum sync install-daemon` to enable auto-sync",
-            );
-        }
-    }
-}
-
-fn human_age(age: chrono::Duration) -> String {
-    if age.num_hours() < 24 {
-        format!("{}h ago", age.num_hours().max(1))
-    } else {
-        format!("{}d ago", age.num_days().max(1))
-    }
 }
