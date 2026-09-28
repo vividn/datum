@@ -89,7 +89,7 @@ fn render_once(cmd: &InstalledKitCommand, view_name: &str, db: &Db) -> Result<()
             )
         })?;
     let result = db
-        .execute_view(&view_row.sql_text)
+        .run_view(&view_row)
         .with_context(|| format!("execute view '{view_name}'"))?;
     let tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
     print!("{}", render(cmd, result, tty)?);

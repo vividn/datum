@@ -31,8 +31,6 @@ where = "deleted_at IS NULL AND superseded_by IS NULL AND (json_type(data, '$.ne
 #                  columns it shows.
 # Every key spelling is read: v3 writes next_date/next_time, and v2import
 # keeps v2's nextDate and nextTime ({utc, o, tz}).
-# A kit view cannot read another (each runs alone), so `chores_due` repeats
-# this query with a WHERE.
 [[view]]
 name = "chores"
 sql = """
@@ -104,70 +102,9 @@ ORDER BY iti IS NULL, iti
 # and what was done today (a finished chore stays in view, green).
 [[view]]
 name = "chores_due"
+uses = ["chores"]
 sql = """
-WITH chore AS (
-  SELECT field, occur_time, occur_time_offset,
-         COALESCE(occur_time, create_time) AS t,
-         COALESCE(json_extract(data, '$.next_time'),
-                  json_extract(data, '$.nextTime.utc'),
-                  json_extract(data, '$.next_date'),
-                  json_extract(data, '$.nextDate'))              AS next,
-         CASE WHEN json_extract(data, '$.next_time') IS NOT NULL
-                OR json_extract(data, '$.nextTime.utc') IS NOT NULL
-              THEN 0 ELSE 1 END                                  AS full_day
-  FROM entries
-  WHERE deleted_at IS NULL AND superseded_by IS NULL
-    AND (json_type(data, '$.next_time') IS NOT NULL
-      OR json_type(data, '$.nextTime') IS NOT NULL
-      OR json_type(data, '$.next_date') IS NOT NULL
-      OR json_type(data, '$.nextDate') IS NOT NULL)
-),
-latest AS (
-  SELECT *, ROW_NUMBER() OVER (PARTITION BY field ORDER BY t DESC) AS rn
-  FROM chore
-),
-occ AS (
-  SELECT *, ROW_NUMBER() OVER (PARTITION BY field ORDER BY occur_time DESC) AS rn
-  FROM chore WHERE occur_time IS NOT NULL
-),
-row AS (
-  SELECT l.field                                                   AS field,
-         l.next                                                    AS due,
-         l.full_day                                                AS full_day,
-         o.occur_time                                              AS last_occur,
-         CASE
-           WHEN o.next IS NULL THEN NULL
-           WHEN o.full_day = 1 THEN
-             julianday(o.next) - julianday(local_day(o.occur_time, o.occur_time_offset))
-             + (julianday(datetime(o.occur_time, printf('%+d minutes', COALESCE(o.occur_time_offset, 0))))
-                - julianday(date(datetime(o.occur_time, printf('%+d minutes', COALESCE(o.occur_time_offset, 0))))))
-           ELSE julianday(o.next) - julianday(o.occur_time)
-         END                                                       AS iti,
-         CASE WHEN o.occur_time IS NOT NULL
-               AND local_day(o.occur_time, o.occur_time_offset) = date('now', 'localtime')
-              THEN 1 ELSE 0 END                                    AS done_today
-  FROM latest l LEFT JOIN occ o ON o.field = l.field AND o.rn = 1
-  WHERE l.rn = 1 AND l.next IS NOT NULL
-)
-SELECT field, due, last_occur, iti,
-       CAST(iti AS INTEGER)                                        AS iti_days,
-       done_today, is_due, days_overdue,
-       CASE WHEN done_today = 1                                THEN 'done'
-            WHEN is_due = 1 AND days_overdue > iti             THEN 'overdue'
-            WHEN is_due = 1 AND days_overdue > iti / 2.0       THEN 'late'
-            WHEN is_due = 1                                    THEN 'due'
-            ELSE '' END                                        AS status
-FROM (
-  SELECT row.*,
-         CASE WHEN full_day = 1 THEN due <= date('now', 'localtime')
-              ELSE julianday(due) <= julianday('now') END      AS is_due,
-         CAST(julianday(date('now', 'localtime'))
-              - julianday(CASE WHEN full_day = 1 THEN due ELSE date(due, 'localtime') END)
-              AS INTEGER)                                      AS days_overdue
-  FROM row
-)
-WHERE is_due = 1 OR done_today = 1
-ORDER BY iti IS NULL, iti
+SELECT * FROM chores WHERE is_due = 1 OR done_today = 1 ORDER BY iti IS NULL, iti
 """
 
 # `datum chorelist` is v2's table: most frequent chores first (the views sort

@@ -186,6 +186,10 @@ pub struct FieldEntry {
 pub struct ViewEntry {
     pub name: String,
     pub sql: String,
+    /// The views this one reads by name, inlined ahead of its SQL as CTEs
+    /// when it runs (`Db::run_view`, da-3mzyu).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uses: Vec<String>,
 }
 
 /// A `[[layout]]` entry — a dashboard layout the kit ships (da-gg0v).
@@ -810,7 +814,7 @@ pub(crate) fn is_select_like(trimmed: &str) -> bool {
     starts_with_keyword(trimmed, "SELECT") || starts_with_keyword(trimmed, "WITH")
 }
 
-fn starts_with_keyword(s: &str, kw: &str) -> bool {
+pub(crate) fn starts_with_keyword(s: &str, kw: &str) -> bool {
     if s.len() < kw.len() || !s[..kw.len()].eq_ignore_ascii_case(kw) {
         return false;
     }
@@ -1565,6 +1569,7 @@ script = "shellout"
         ViewEntry {
             name: "v".into(),
             sql: sql.into(),
+            uses: vec![],
         }
     }
 

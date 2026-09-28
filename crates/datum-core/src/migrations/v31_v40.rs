@@ -556,7 +556,14 @@ pub(super) fn m39_to_40_definitions_are_entries(conn: &Connection) -> Result<()>
         for (name, sql, kit) in rows {
             defs.push((
                 VIEW_FIELD,
-                definition_data(&ViewEntry { name, sql }, kit.as_deref())?,
+                definition_data(
+                    &ViewEntry {
+                        name,
+                        sql,
+                        uses: vec![],
+                    },
+                    kit.as_deref(),
+                )?,
             ));
         }
     }

@@ -35,6 +35,8 @@ pub struct InstalledView {
     pub name: String,
     pub kit_id: Option<String>,
     pub sql_text: String,
+    /// The views it reads by name (da-3mzyu).
+    pub uses: Vec<String>,
 }
 
 /// Per-view outcome reported by [`Db::install_kit_views`].
@@ -111,6 +113,17 @@ impl Db {
             crate::kit::validate_view_entry(v)?;
             defs.push((v.name.clone(), definition_data(v, None)?));
         }
+        // What each uses must resolve — to this kit's views first, then the
+        // installed ones — without a cycle or shadowing a table (da-3mzyu).
+        let lookup = |n: &str| -> Result<Option<(String, Vec<String>)>> {
+            match views.iter().find(|v| v.name == n) {
+                Some(v) => Ok(Some((v.sql.clone(), v.uses.clone()))),
+                None => Ok(self.get_view(n)?.map(|v| (v.sql_text, v.uses))),
+            }
+        };
+        for v in views {
+            inline_uses(&v.name, &v.sql, &v.uses, &lookup, &|n| self.is_table(n))?;
+        }
         let outcomes = self.install_definitions(VIEW_FIELD, kit_id, defs, force)?;
         Ok(InstallViewsReport {
             outcomes: outcomes
@@ -140,6 +153,7 @@ impl Db {
                 Ok(ViewEntry {
                     name: v.name,
                     sql: v.sql_text,
+                    uses: v.uses,
                 })
             })
             .collect()
@@ -167,6 +181,28 @@ impl Db {
             .into_iter()
             .filter_map(|data| installed_view(data).ok())
             .collect())
+    }
+
+    /// Run an installed view, every view it `uses` inlined ahead of its SQL
+    /// as a CTE (da-3mzyu) — still one SELECT, so [`Db::execute_view`]'s
+    /// fence holds. Every runner of a named view comes through here.
+    pub fn run_view(&self, view: &InstalledView) -> Result<ViewResult> {
+        let lookup = |n: &str| Ok(self.get_view(n)?.map(|v| (v.sql_text, v.uses)));
+        let sql = inline_uses(&view.name, &view.sql_text, &view.uses, &lookup, &|n| {
+            self.is_table(n)
+        })?;
+        self.execute_view(&sql)
+    }
+
+    /// Whether `name` is a table or SQLite view a CTE of that name would
+    /// shadow (SQLite resolves names case-insensitively).
+    fn is_table(&self, name: &str) -> Result<bool> {
+        Ok(self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master \
+             WHERE type IN ('table', 'view') AND name = ?1 COLLATE NOCASE)",
+            [name],
+            |r| r.get(0),
+        )?)
     }
 
     /// Execute a view's SQL with read-only enforcement, in four layers
@@ -288,6 +324,84 @@ fn register_local_day(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     )
 }
 
+type ViewLookup<'a> = dyn Fn(&str) -> Result<Option<(String, Vec<String>)>> + 'a;
+
+/// `sql` with the views it `uses`, transitively and each once, inlined
+/// ahead of it as CTEs in dependency order: A uses B uses C →
+/// `WITH C AS (…), B AS (…) <A>`. A view that opens with its own `WITH
+/// [RECURSIVE]` keeps its CTEs after them in the one list. Refuses a name
+/// that is no view, a cycle, and a name that would shadow a table.
+fn inline_uses(
+    name: &str,
+    sql: &str,
+    uses: &[String],
+    lookup: &ViewLookup,
+    is_table: &dyn Fn(&str) -> Result<bool>,
+) -> Result<String> {
+    let mut ctes = Vec::new();
+    add_uses(
+        uses,
+        lookup,
+        is_table,
+        &mut vec![name.to_string()],
+        &mut ctes,
+    )?;
+    if ctes.is_empty() {
+        return Ok(sql.to_string());
+    }
+    let list = ctes
+        .iter()
+        .map(|(n, body)| format!("\"{}\" AS (\n{body}\n)", n.replace('"', "\"\"")))
+        .collect::<Vec<_>>()
+        .join(",\n");
+    let sql = sql.trim();
+    if !crate::kit::starts_with_keyword(sql, "WITH") {
+        return Ok(format!("WITH {list}\n{sql}"));
+    }
+    let rest = sql[4..].trim_start();
+    Ok(if crate::kit::starts_with_keyword(rest, "RECURSIVE") {
+        format!("WITH RECURSIVE {list},\n{}", rest[9..].trim_start())
+    } else {
+        format!("WITH {list},\n{rest}")
+    })
+}
+
+/// Depth-first over `uses`, pushing each view after the ones it uses.
+/// `path` is the chain being resolved, for the cycle check.
+fn add_uses(
+    uses: &[String],
+    lookup: &ViewLookup,
+    is_table: &dyn Fn(&str) -> Result<bool>,
+    path: &mut Vec<String>,
+    ctes: &mut Vec<(String, String)>,
+) -> Result<()> {
+    let user = path.last().cloned().unwrap_or_default();
+    for used in uses {
+        let refuse = |why: String| {
+            Err(DatumError::Other(format!(
+                "view '{user}' uses '{used}': {why}"
+            )))
+        };
+        if path.contains(used) {
+            return refuse(format!("a cycle ({} → {used})", path.join(" → ")));
+        }
+        if ctes.iter().any(|(n, _)| n == used) {
+            continue;
+        }
+        if is_table(used)? {
+            return refuse("that name is a table, which it would shadow".into());
+        }
+        let Some((sql, next)) = lookup(used)? else {
+            return refuse("no view has that name".into());
+        };
+        path.push(used.clone());
+        add_uses(&next, lookup, is_table, path, ctes)?;
+        path.pop();
+        ctes.push((used.clone(), sql));
+    }
+    Ok(())
+}
+
 /// A view entry's data as an [`InstalledView`].
 fn installed_view(data: JsonValue) -> Result<InstalledView> {
     let kit_id = data[KIT_KEY].as_str().map(str::to_string);
@@ -296,6 +410,7 @@ fn installed_view(data: JsonValue) -> Result<InstalledView> {
         name: view.name,
         kit_id,
         sql_text: view.sql,
+        uses: view.uses,
     })
 }
 
@@ -378,6 +493,7 @@ mod tests {
         ViewEntry {
             name: name.into(),
             sql: "SELECT 1".into(),
+            uses: vec![],
         }
     }
 
@@ -568,6 +684,170 @@ mod tests {
         assert!(!err.contains("execution budget"), "unexpected error: {err}");
     }
 
+    fn using(name: &str, sql: &str, uses: &[&str]) -> ViewEntry {
+        ViewEntry {
+            name: name.into(),
+            sql: sql.into(),
+            uses: uses.iter().map(|u| u.to_string()).collect(),
+        }
+    }
+
+    fn run(db: &Db, name: &str) -> Result<ViewResult> {
+        db.run_view(&db.get_view(name).unwrap().unwrap())
+    }
+
+    fn ints(r: &ViewResult) -> Vec<i64> {
+        r.rows.iter().map(|row| row[0].as_i64().unwrap()).collect()
+    }
+
+    /// A view reads another by name once it says it `uses` it; the
+    /// control is the same SQL run alone (da-3mzyu).
+    #[test]
+    fn a_view_reads_the_views_it_uses() {
+        let db = db();
+        let base = using("base", "SELECT 1 AS v UNION ALL SELECT 2", &[]);
+        let top = using("top", "SELECT v FROM base WHERE v > 1", &["base"]);
+        db.install_kit_views("k", &[base, top.clone()], false)
+            .unwrap();
+        assert_eq!(ints(&run(&db, "top").unwrap()), [2]);
+
+        let err = db.execute_view(&top.sql).unwrap_err().to_string();
+        assert!(err.contains("no such table: base"), "{err}");
+    }
+
+    /// A uses B uses C: C first, then B, each once however often it is
+    /// reached.
+    #[test]
+    fn uses_nest_in_dependency_order() {
+        let db = db();
+        db.install_kit_views(
+            "k",
+            &[
+                using(
+                    "a",
+                    "SELECT v * 10 + (SELECT v FROM c) AS v FROM b",
+                    &["b", "c"],
+                ),
+                using("b", "SELECT v + 1 AS v FROM c", &["c"]),
+                using("c", "SELECT 1 AS v", &[]),
+            ],
+            false,
+        )
+        .unwrap();
+        assert_eq!(ints(&run(&db, "a").unwrap()), [21]);
+
+        let lookup = |n: &str| Ok(db.get_view(n)?.map(|v| (v.sql_text, v.uses)));
+        let sql = inline_uses("a", "SELECT 1", &["b".into(), "c".into()], &lookup, &|_| {
+            Ok(false)
+        })
+        .unwrap();
+        let (c, b) = (sql.find("\"c\" AS").unwrap(), sql.find("\"b\" AS").unwrap());
+        assert!(c < b, "{sql}");
+        assert_eq!(sql.matches("\"c\" AS").count(), 1, "{sql}");
+    }
+
+    /// A view with its own `WITH` or `WITH RECURSIVE` keeps its CTEs in the
+    /// one list, after the used ones, with `RECURSIVE` at the front.
+    #[test]
+    fn a_views_own_with_is_merged() {
+        let db = db();
+        db.install_kit_views(
+            "k",
+            &[
+                using("base", "SELECT 1 AS v", &[]),
+                using(
+                    "own",
+                    "WITH x AS (SELECT v + 1 AS v FROM base) SELECT v FROM x",
+                    &["base"],
+                ),
+                using(
+                    "rec",
+                    "with recursive r(n) AS (SELECT v FROM base UNION ALL \
+                     SELECT n + 1 FROM r WHERE n < 3) SELECT n FROM r",
+                    &["base"],
+                ),
+            ],
+            false,
+        )
+        .unwrap();
+        assert_eq!(ints(&run(&db, "own").unwrap()), [2]);
+        assert_eq!(ints(&run(&db, "rec").unwrap()), [1, 2, 3]);
+
+        let rec = db.get_view("rec").unwrap().unwrap();
+        let lookup = |n: &str| Ok(db.get_view(n)?.map(|v| (v.sql_text, v.uses)));
+        let sql = inline_uses("rec", &rec.sql_text, &rec.uses, &lookup, &|_| Ok(false)).unwrap();
+        assert!(sql.starts_with("WITH RECURSIVE \"base\" AS"), "{sql}");
+        assert!(sql.contains("),\nr(n) AS"), "{sql}");
+    }
+
+    /// Install refuses a name that is no view, a cycle, and a name that
+    /// would shadow a table — and persists none of the kit's views.
+    #[test]
+    fn install_refuses_unknown_cyclic_and_shadowing_uses() {
+        let db = db();
+        for (views, why) in [
+            (
+                vec![using("a", "SELECT 1", &["nope"])],
+                "no view has that name",
+            ),
+            (
+                vec![
+                    using("a", "SELECT 1", &["b"]),
+                    using("b", "SELECT 1", &["a"]),
+                ],
+                "a cycle (a → b → a)",
+            ),
+            (vec![using("a", "SELECT 1", &["a"])], "a cycle (a → a)"),
+            (vec![using("a", "SELECT 1", &["Entries"])], "is a table"),
+            (
+                vec![using("a", "SELECT 1", &["entry_history"])],
+                "is a table",
+            ),
+        ] {
+            let err = db
+                .install_kit_views("k", &views, false)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains(why), "{why}: {err}");
+            assert!(db.get_view("a").unwrap().is_none(), "{why}");
+        }
+
+        // An installed view is found too.
+        db.install_kit_views("k", &[view("other")], false).unwrap();
+        db.install_kit_views("j", &[using("a", "SELECT * FROM other", &["other"])], false)
+            .unwrap();
+    }
+
+    /// A USED view edited past the install screen to write, or to break
+    /// out of its CTE, is held by the fence; nothing is written.
+    #[test]
+    fn the_fence_holds_for_a_used_view() {
+        let db = db();
+        db.install_kit_views(
+            "k",
+            &[view("base"), using("top", "SELECT * FROM base", &["base"])],
+            false,
+        )
+        .unwrap();
+        let count = || -> i64 {
+            db.conn()
+                .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
+                .unwrap()
+        };
+        let before = count();
+        for sql in [
+            "WITH x(v) AS (SELECT 1) DELETE FROM entries WHERE hid IN (SELECT v FROM x)",
+            "SELECT 1) SELECT 1; DELETE FROM entries; SELECT (1",
+            "DELETE FROM entries",
+        ] {
+            let mut row = db.get_entry("view:base").unwrap();
+            row.data = Some(json!({"name": "base", "sql": sql, "kit_id": "k"}));
+            db.save_existing_entry(&row).unwrap();
+            assert!(run(&db, "top").is_err(), "{sql}");
+            assert_eq!(count(), before, "{sql}");
+        }
+    }
+
     #[test]
     fn install_kit_views_screens_sql() {
         let db = db();
@@ -577,6 +857,7 @@ mod tests {
                 &[ViewEntry {
                     name: "evil".into(),
                     sql: "PRAGMA case_sensitive_like = ON".into(),
+                    uses: vec![],
                 }],
                 false,
             )

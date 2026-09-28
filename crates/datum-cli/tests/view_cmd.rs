@@ -80,6 +80,7 @@ fn dispatch_known_view_succeeds() {
     let views = vec![ViewEntry {
         name: "all_one".into(),
         sql: "SELECT 1 AS v".into(),
+        uses: vec![],
     }];
     db.install_kit_views("test", &views, false).unwrap();
     // tsv keeps the test deterministic regardless of TTY autodetect.
@@ -94,6 +95,7 @@ fn dispatch_view_blocks_writes() {
     let views = vec![ViewEntry {
         name: "evil".into(),
         sql: "DELETE FROM entries".into(),
+        uses: vec![],
     }];
     let err = db.install_kit_views("test", &views, false).unwrap_err();
     let msg = format!("{err}").to_lowercase();
@@ -107,6 +109,7 @@ fn dispatch_view_blocks_writes() {
     let views = vec![ViewEntry {
         name: "evil".into(),
         sql: "SELECT 1".into(),
+        uses: vec![],
     }];
     db.install_kit_views("test", &views, false).unwrap();
     let mut row = db.get_entry("view:evil").unwrap();

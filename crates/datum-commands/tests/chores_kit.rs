@@ -55,7 +55,7 @@ fn index_exists(db: &Db, on_disk_name: &str) -> bool {
 
 fn view(db: &Db, name: &str) -> ViewResult {
     let view = db.get_view(name).unwrap().expect("view installed");
-    db.execute_view(&view.sql_text).unwrap()
+    db.run_view(&view).unwrap()
 }
 
 /// `field`'s cell in column `col`.
@@ -108,12 +108,16 @@ fn install_creates_the_index_and_uninstall_drops_everything() {
     let db = fresh_db();
     install_chores(&db);
     assert!(index_exists(&db, "kit_chores__chore_rows"));
-    for name in ["chores", "chores_due"] {
-        let v = db.get_view(name).unwrap().expect("view installed");
-        for spelling in ["next_time", "nextTime", "next_date", "nextDate"] {
-            assert!(v.sql_text.contains(spelling), "{name} reads {spelling}");
-        }
+    let chores = db.get_view("chores").unwrap().expect("view installed");
+    for spelling in ["next_time", "nextTime", "next_date", "nextDate"] {
+        assert!(
+            chores.sql_text.contains(spelling),
+            "chores reads {spelling}"
+        );
     }
+    // chores_due reads them through chores (da-3mzyu).
+    let due = db.get_view("chores_due").unwrap().expect("view installed");
+    assert_eq!(due.uses, ["chores"]);
     assert!(db.get_kit_command("chorelist").unwrap().is_some());
 
     run(&db, &["kit", "uninstall", "chores"]);
