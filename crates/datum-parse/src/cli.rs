@@ -102,9 +102,9 @@ pub enum Command {
 
     Config(ConfigCommand),
 
-    /// `datum sync` — reserved for Easy Sync, which replaces the deleted
-    /// relay sync; any arguments are accepted and ignored (da-i7hig).
-    Sync,
+    /// `datum sync <vector|ops|apply|verify>` — Easy Sync's core (da-k329q):
+    /// ops as JSON lines on stdin/stdout, so two copies sync through a pipe.
+    Sync(SyncCommand),
 
     /// `dm reparse` — replay each entry's stored `raw_input` through the
     /// current parser, reporting (or fixing with `--fix`) drift between
@@ -706,6 +706,21 @@ pub struct KitExportArgs {
 #[derive(Debug)]
 pub struct KitUninstallArgs {
     pub name: String,
+}
+
+// ─── Sync (da-k329q) ──────────────────────────────────────────────────────
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum SyncCommand {
+    /// `datum sync vector` — this copy's version vector as JSON.
+    Vector,
+    /// `datum sync ops [--since <VECTOR>]` — every op the vector lacks
+    /// (all of them without one), one JSON line each.
+    Ops { since: Option<String> },
+    /// `datum sync apply` — apply op lines read from stdin.
+    Apply,
+    /// `datum sync verify [--verbose]` — the state hash; per column too.
+    Verify { verbose: bool },
 }
 
 // ─── Conflicts (da-ttsm) ──────────────────────────────────────────────────

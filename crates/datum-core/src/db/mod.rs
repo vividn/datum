@@ -35,6 +35,7 @@ mod row_mapper;
 mod spec;
 mod spec_alias_index;
 mod state;
+mod sync;
 mod time;
 mod tombstone;
 mod types;
@@ -63,6 +64,7 @@ pub use now::{
 };
 pub use row_mapper::row_to_entry_public;
 pub use spec::{is_meta_field, META_FIELDS, SPEC_FIELD};
+pub use sync::{canonical_json, set_device_source, set_invocation, ApplySummary};
 pub use types::{
     AliasConflict, AliasConflictReason, ConflictStrategy, GroupColumn, HardReplaceCounts,
     InsertOutcome, ListParams, ReplaceCounts, RetimeFilter, Retimed, SaveSpecReport,

@@ -55,7 +55,7 @@ use v41_v50::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 41;
+pub const CURRENT_SCHEMA_VERSION: u32 = 42;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -360,5 +360,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "sync_state is dropped: it held only the relay sync's watermarks and cluster, and that sync is deleted (da-i7hig)",
         apply: m40_to_41_drop_sync_state,
         down: down_41_to_40_drop_sync_state,
+    },
+    Migration {
+        from: 41,
+        to: 42,
+        summary: "ops + sync_local: every entry change is a signed op, and each copy has an Ed25519 endpoint key (da-k329q)",
+        apply: m41_to_42_sync_ops,
+        down: down_42_to_41_sync_ops,
     },
 ];

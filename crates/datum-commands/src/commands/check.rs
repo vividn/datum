@@ -752,6 +752,27 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
                  `datum conflicts` prints the pair and takes the choice.",
                 y = if count == 1 { "y" } else { "ies" },
             ),
+            IntegrityKind::SyncConflict => {
+                let raw = |e: &datum_core::entry::Entry| {
+                    e.extra_metadata
+                        .as_ref()
+                        .and_then(|m| m["sync_op"]["raw"].as_str().map(str::to_string))
+                        .unwrap_or_else(|| "?".into())
+                };
+                let pairs: Vec<String> = group
+                    .iter()
+                    .map(|w| {
+                        let won = w.remote_entry.as_ref().map(raw).unwrap_or_default();
+                        format!("  {}: `{}` lost to `{won}`", w.entry_slug, raw(&w.local_entry))
+                    })
+                    .collect();
+                format!(
+                    "{count} edit{s} from different copies changed one entry concurrently; \
+                     the later one stands. `datum conflicts` prints both versions.\n{}",
+                    pairs.join("\n"),
+                    s = if count == 1 { "" } else { "s" },
+                )
+            }
         };
         let category: &'static str = match kind {
             IntegrityKind::SameStateRepeat => "repeated_state",
@@ -761,6 +782,7 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
             IntegrityKind::LastStateMismatch => "integrity_last_state_mismatch",
             IntegrityKind::LwwOverwrite => "integrity_lww_overwrite",
             IntegrityKind::IdentityCollision => "integrity_identity_collision",
+            IntegrityKind::SyncConflict => "integrity_sync_conflict",
         };
         // da-mkes: collect one FlaggedEntry per warning. The state column
         // gets a leading `!` for `repeated_state` rows so the human render

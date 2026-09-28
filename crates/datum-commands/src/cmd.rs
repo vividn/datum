@@ -214,6 +214,8 @@ fn normalize_shared_occur_time(
 }
 
 pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
+    // An op is signed by this device's endpoint; the id is read only if one is.
+    datum_core::db::set_device_source(|| crate::config::device_id().ok());
     // The `--show json` echo is one document per run, not per entry, so the
     // outermost scope is the one that prints (da-yc9w). Both dispatch entry
     // points open a scope — `datum-cli` reaches `dispatch` directly, while
@@ -300,8 +302,7 @@ fn dispatch_inner(cli: Cli, db: &Db) -> Result<()> {
         Command::Info(args) => commands::info::info(args, cli.db.as_deref(), db),
         Command::Db(sub) => commands::db::dispatch(sub, cli.db.as_deref(), db),
         Command::Config(sub) => commands::config::config(sub, cli.db.as_deref()),
-        // The name is kept for Easy Sync, which replaces the relay sync (da-i7hig).
-        Command::Sync => anyhow::bail!("sync is being rebuilt (Easy Sync)"),
+        Command::Sync(sub) => commands::sync::sync(sub, db),
         Command::Reparse(args) => commands::reparse::reparse(args, db),
     }
 }

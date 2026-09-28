@@ -212,7 +212,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `stats` — Count, total duration, and per-state ratio over a time slice
 - `ids` — List entry ids (newest-first by default)
 - `fields` — List every field: its spec and the states it was logged with
-- `sync` — Being rebuilt (Easy Sync)
+- `sync` — Exchange signed ops with another copy, over a pipe
 - `conflicts` — Triage sync conflicts (see `datum check` for integrity findings)
 - `view` — Execute a named SELECT view and render the rows
 
@@ -306,8 +306,19 @@ Call-site time flags compose with the alias-bound ones: `-y` / `-q` / `-d` shift
 
 ## Sync
 
-Sync is being rebuilt (Easy Sync); until it lands, `datum sync` says so
-and exits 1.
+Every change to an entry is an op signed by this copy's endpoint key, and
+two copies that hold the same ops hold the same entries. Ops move as JSON
+lines, so two databases sync through a pipe (the network transport comes
+next):
+
+```bash,no_run
+datum --db a sync ops --since "$(datum --db b sync vector)" | datum --db b sync apply
+datum --db a sync verify; datum --db b sync verify   # the same hash
+```
+
+Per key the op with the later hybrid logical clock wins; concurrent edits
+of one key, or a delete against a concurrent edit, file a `sync_conflict`
+that `datum check` and `datum conflicts` show.
 
 ## Configuration
 

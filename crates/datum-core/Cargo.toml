@@ -27,3 +27,4 @@ rand = { workspace = true }
 toml = { workspace = true }
 serde_ignored = { workspace = true }
 indexmap = { workspace = true }
+ed25519-dalek = { workspace = true }

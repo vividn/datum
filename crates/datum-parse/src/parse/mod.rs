@@ -48,6 +48,7 @@ mod now;
 mod retime;
 mod search;
 mod spec;
+mod sync;
 mod tail;
 mod track_ignore;
 mod update;
@@ -62,6 +63,7 @@ use self::history::*;
 use self::info_db::*;
 use self::kit::*;
 use self::log::*;
+use self::sync::*;
 // Re-exported so the help-drift guard (`help::tests`) can compare the
 // documented log-verb flags against the flags the parser actually accepts.
 #[cfg(test)]
@@ -271,7 +273,7 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
 
         "config" => Command::Config(parse_config_cmd(rest)?),
 
-        "sync" => Command::Sync,
+        "sync" => Command::Sync(parse_sync_cmd(rest)?),
 
         "reparse" => Command::Reparse(parse_reparse_args(rest)?),
 

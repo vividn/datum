@@ -378,6 +378,7 @@ impl Db {
                         _ => DatumError::Db(e),
                     })?;
                     raw_overwrite_mutables(&tx, &entry.slug, entry, None)?;
+                    super::sync::emit(&tx, Some(&pre), &pre.hid, ChangeKind::UserEdit)?;
                     written.push(fetch_entry_any(&tx, &entry.slug)?);
                     if pre.deleted_at.is_none() {
                         counts.changed += 1
@@ -707,7 +708,7 @@ fn save_existing_entry_with_kind_in_tx(
             let pre = fetch_entry_any(conn, &entry.slug)?;
             history::record(conn, &pre, change_kind)?;
             raw_overwrite_mutables(conn, &entry.slug, entry, None)?;
-            Ok(())
+            super::sync::emit(conn, Some(&pre), &pre.hid, change_kind)
         }
     }
 }
@@ -733,7 +734,7 @@ fn save_existing_entry_with_rekey_kind_in_tx(
     }
     history::record(conn, &pre, change_kind)?;
     match raw_overwrite_full_by_hid(conn, entry) {
-        Ok(()) => Ok(()),
+        Ok(()) => super::sync::emit(conn, Some(&pre), &pre.hid, change_kind),
         Err(DatumError::Db(e)) if collision_kind(&e) == Some(CollisionKind::Slug) => {
             Err(DatumError::Duplicate(format!(
                 "Cannot rekey {old_slug} → {}: slug already taken",
@@ -961,6 +962,7 @@ fn write_entry_in_tx(
                     params![ghost.hid],
                 )?;
                 raw_overwrite_mutables(conn, &entry.slug, entry, None)?;
+                super::sync::emit(conn, Some(&ghost), &ghost.hid, ChangeKind::UserEdit)?;
                 let revived = fetch_entry_any(conn, &entry.slug)?;
                 let outcome = InsertOutcome::Inserted {
                     slug: revived.slug.clone(),
@@ -994,6 +996,7 @@ fn write_entry_in_tx(
                 let (stored_slug, stored_hid) = raw_insert(conn, entry)?;
                 let inserted = fetch_entry_any(conn, &stored_slug)?;
                 history::record(conn, &inserted, ChangeKind::Create)?;
+                super::sync::emit(conn, None, &inserted.hid, ChangeKind::Create)?;
                 let outcome = InsertOutcome::Inserted {
                     slug: stored_slug,
                     hid: stored_hid,
@@ -1006,6 +1009,7 @@ fn write_entry_in_tx(
             let pre = fetch_entry_any(conn, &slug)?;
             history::record(conn, &pre, ChangeKind::UserEdit)?;
             raw_overwrite_mutables(conn, &slug, entry, None)?;
+            super::sync::emit(conn, Some(&pre), &pre.hid, ChangeKind::UserEdit)?;
             (InsertOutcome::Updated { slug }, None)
         }
         (Some((slug, existing_data_json)), ConflictStrategy::Merge) => {
@@ -1016,6 +1020,7 @@ fn write_entry_in_tx(
                 .and_then(|s| serde_json::from_str(s).ok());
             let merged = merge_extra_data(existing_data.as_ref(), entry.data.as_ref());
             raw_overwrite_mutables(conn, &slug, entry, Some(merged))?;
+            super::sync::emit(conn, Some(&pre), &pre.hid, ChangeKind::UserEdit)?;
             (InsertOutcome::Merged { slug }, None)
         }
         (Some((old_slug, _)), ConflictStrategy::Rekey) => {
@@ -1043,6 +1048,7 @@ fn write_entry_in_tx(
             };
             let inserted = fetch_entry_any(conn, &new_slug)?;
             history::record(conn, &inserted, ChangeKind::Create)?;
+            super::sync::emit(conn, None, &inserted.hid, ChangeKind::Create)?;
             let outcome = InsertOutcome::Rekeyed {
                 old_slug,
                 new_slug,
@@ -1217,30 +1223,45 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
         entry.data.as_ref(),
     );
 
-    let mut stmt = conn.prepare_cached(
-        r#"INSERT INTO entries (
-            hid, slug, content_hash, field,
-            verb, state, dur, following_state, data,
-            occur_time, occur_time_offset, occur_time_tz, occur_time_uncertainty,
-            dur_uncertainty,
-            lat, lon, location,
-            create_time, modify_time, device_id,
-            deleted_at, id_structure, field_structure,
-            raw_input, alias_chain, parser_version,
-            user_asserted_last_state, extra_metadata
-        ) VALUES (
-            ?1, ?2, ?3, ?4,
-            ?5, ?6, ?7, ?8, ?9,
-            ?10, ?11, ?12, ?13,
-            ?14,
-            ?15, ?16, ?17,
-            ?18, ?19, ?20,
-            ?21, ?22, ?23,
-            ?24, ?25, ?26,
-            ?27, ?28
-        )"#,
-    )?;
-    stmt.execute(params![
+    // `superseded_by` is named only when set — by a sync apply writing a row
+    // that lost an identity (da-k329q) — so an insert during a migration walk
+    // still runs against a table from before the column (v35).
+    macro_rules! insert_sql {
+        ($col:literal, $val:literal) => {
+            concat!(
+                "INSERT INTO entries (
+                    hid, slug, content_hash, field,
+                    verb, state, dur, following_state, data,
+                    occur_time, occur_time_offset, occur_time_tz, occur_time_uncertainty,
+                    dur_uncertainty,
+                    lat, lon, location,
+                    create_time, modify_time, device_id,
+                    deleted_at, id_structure, field_structure,
+                    raw_input, alias_chain, parser_version,
+                    user_asserted_last_state, extra_metadata",
+                $col,
+                ") VALUES (
+                    ?1, ?2, ?3, ?4,
+                    ?5, ?6, ?7, ?8, ?9,
+                    ?10, ?11, ?12, ?13,
+                    ?14,
+                    ?15, ?16, ?17,
+                    ?18, ?19, ?20,
+                    ?21, ?22, ?23,
+                    ?24, ?25, ?26,
+                    ?27, ?28",
+                $val,
+                ")"
+            )
+        };
+    }
+    let superseded = entry.superseded_by.is_some();
+    let mut stmt = conn.prepare_cached(if superseded {
+        insert_sql!(", superseded_by", ", ?29")
+    } else {
+        insert_sql!("", "")
+    })?;
+    let all = params![
         hid,
         slug,
         content_hash,
@@ -1277,7 +1298,9 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
             .as_ref()
             .map(|v| v.to_string()),
         entry.extra_metadata.as_ref().map(|v| v.to_string()),
-    ])?;
+        entry.superseded_by,
+    ];
+    stmt.execute(&all[..if superseded { 29 } else { 28 }])?;
     Ok(())
 }
 
@@ -1305,7 +1328,7 @@ pub(super) fn rewrite_entry_to_snapshot(conn: &Connection, snapshot: &Entry) -> 
     };
     history::record(conn, &pre, ChangeKind::UserEdit)?;
     raw_overwrite_mutables(conn, &pre.slug, snapshot, None)?;
-    Ok(())
+    super::sync::emit(conn, Some(&pre), &pre.hid, ChangeKind::UserEdit)
 }
 
 /// Overwrite an existing row identified by `slug` with the mutable fields

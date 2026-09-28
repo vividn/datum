@@ -51,6 +51,9 @@ anyhow = "1"
 sha2 = "0.10"
 md-5 = "0.10"
 rand = "0.8"
+# Easy Sync: each database copy signs its ops with an Ed25519 endpoint key —
+# the curve iroh uses, so the same key becomes the iroh endpoint (da-k329q).
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "fast", "rand_core", "zeroize"] }
 
 # Text
 regex-lite = "0.1"

@@ -104,8 +104,12 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
 ## Sync architecture
 
 The relay sync is deleted (da-i7hig); p2p «Easy Sync» is being built in its
-place. Until it lands, `datum sync` prints "sync is being rebuilt (Easy
-Sync)" and exits 1.
+place. Its core is in (da-k329q, `crates/datum-core/src/db/sync.rs`): every
+entry change emits a signed op beside its `history::record` (endpoint key in
+`sync_local`, HLC, the change's own `raw` line, its key-level `effect`), and
+an entry's row is the FOLD of its ops in HLC order, so the same ops in any
+order give the same row. `datum sync vector / ops / apply / verify` move ops
+as JSON lines over a pipe. The transport (iroh) and membership come next.
 
 ## Web app (PWA)
 

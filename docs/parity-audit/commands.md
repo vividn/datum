@@ -409,8 +409,9 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 ### sync
 
 - **Original datum:** custom protocol for CouchDB → CouchDB replication.
-- **Daydumb today:** being rebuilt. The relay sync was deleted (da-i7hig);
-  `datum sync` prints "sync is being rebuilt (Easy Sync)" and exits 1.
+- **Daydumb today:** Easy Sync's core (da-k329q). Every entry change is a
+  signed op; `datum sync vector / ops / apply / verify` move ops as JSON
+  lines, so two copies sync through a pipe. No network transport yet.
 
 ### spec (daydumb only)
 

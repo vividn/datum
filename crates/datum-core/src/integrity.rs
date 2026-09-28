@@ -41,13 +41,18 @@
 //! - `detected_by`: `local_validator` | `sync_pull`.
 //! - `kind`: `double_open` | `orphan_end` | `overlap`
 //!   | `same_state_repeat` | `last_state_mismatch` | `lww_overwrite`
-//!   | `identity_collision`.
+//!   | `identity_collision` | `sync_conflict`.
 //!   `lww_overwrite` rows are filed by the sync-apply path when an
 //!   incoming row wins last-write-wins over an existing local row;
 //!   `local_entry` is the overwritten edit, `remote_entry` the winner.
 //!   `identity_collision` names two distinct rows that claimed one
 //!   identity; `local_entry` is the one now carrying `superseded_by`,
 //!   `remote_entry` the one that kept it.
+//!   `sync_conflict` names two ops from different copies that set one key
+//!   of one entry without either having seen the other (da-k329q);
+//!   `local_entry` is the entry as the losing op would have it,
+//!   `remote_entry` as it stands, and each carries its op's line under
+//!   `extra_metadata.sync_op`.
 
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -125,6 +130,14 @@ pub enum IntegrityKind {
     /// that kept the identity. Only ever filed with
     /// `detected_by = sync_pull`.
     IdentityCollision,
+    /// Two ops from different copies set one key of one entry, neither
+    /// having seen the other (Easy Sync, da-k329q). The op with the later
+    /// HLC won and is applied; `local_entry` is the entry as the loser would
+    /// have left it, `remote_entry` as it stands. A delete and a concurrent
+    /// edit file one too: the delete stands and the edit is the loser. Each
+    /// side's `extra_metadata.sync_op` holds its op (`endpoint/seq`, `hlc`)
+    /// and the command line that made it. Only ever `detected_by = sync_pull`.
+    SyncConflict,
 }
 
 impl IntegrityKind {
@@ -137,6 +150,7 @@ impl IntegrityKind {
             IntegrityKind::LastStateMismatch => "last_state_mismatch",
             IntegrityKind::LwwOverwrite => "lww_overwrite",
             IntegrityKind::IdentityCollision => "identity_collision",
+            IntegrityKind::SyncConflict => "sync_conflict",
         }
     }
 }
@@ -158,6 +172,7 @@ impl std::str::FromStr for IntegrityKind {
             "last_state_mismatch" => Ok(IntegrityKind::LastStateMismatch),
             "lww_overwrite" => Ok(IntegrityKind::LwwOverwrite),
             "identity_collision" => Ok(IntegrityKind::IdentityCollision),
+            "sync_conflict" => Ok(IntegrityKind::SyncConflict),
             other => Err(format!("unknown kind: '{other}'")),
         }
     }
@@ -734,6 +749,23 @@ pub fn file_identity_collision(
     )
 }
 
+/// File an [`IntegrityKind::SyncConflict`] warning: `loser` is the entry as
+/// the losing op would have left it, `winner` as the merge left it. Call
+/// from inside the apply transaction.
+pub fn file_sync_conflict(
+    conn: &Connection,
+    loser: &Entry,
+    winner: &Entry,
+) -> Result<IntegrityWarning> {
+    file_warning(
+        conn,
+        loser,
+        Some(winner),
+        DetectedBy::SyncPull,
+        IntegrityKind::SyncConflict,
+    )
+}
+
 /// Filter for [`list`]. `None` matches any row of that axis.
 #[derive(Debug, Clone, Default)]
 pub struct ListFilter {
@@ -767,11 +799,13 @@ pub fn list(conn: &Connection, filter: &ListFilter) -> Result<Vec<IntegrityWarni
     // tell which side of the pair was tombstoned. Deleting the row that
     // *won* would otherwise silence the warning about the row that is still
     // sitting superseded behind it — hiding a conflict the user never
-    // resolved.
+    // resolved. `sync_conflict` likewise: a delete against a concurrent edit
+    // is filed ON the tombstone, and the deletion is the conflict (da-k329q).
     clauses.push(format!(
-        "(kind = '{}' OR \
+        "(kind IN ('{}', '{}') OR \
           entry_slug NOT IN (SELECT slug FROM entries WHERE deleted_at IS NOT NULL))",
         IntegrityKind::IdentityCollision.as_str(),
+        IntegrityKind::SyncConflict.as_str(),
     ));
     if let Some(kind) = filter.kind {
         clauses.push(format!("kind = ?{}", binds.len() + 1));

@@ -281,6 +281,38 @@ CREATE INDEX IF NOT EXISTS entry_history_entry
 CREATE INDEX IF NOT EXISTS entry_history_change_kind
     ON entry_history(change_kind);
 
+-- Easy Sync (da-k329q). Every change to an entry is a signed op, made here
+-- or received from another copy. Append-only: an op is never edited. `body`
+-- is the op's canonical JSON, signature included; the other columns are
+-- lifted out of it to be queried. `applied` = 0 is an op held until the op
+-- before it on its endpoint, and every op it depends on, have arrived.
+-- An entry's row is the fold of its applied ops in HLC order (`sync.rs`).
+CREATE TABLE IF NOT EXISTS ops (
+    endpoint TEXT NOT NULL,
+    seq      INTEGER NOT NULL,
+    hlc      TEXT NOT NULL,
+    hid      TEXT NOT NULL,
+    slug     TEXT NOT NULL,
+    kind     TEXT NOT NULL,
+    applied  INTEGER NOT NULL,
+    body     TEXT NOT NULL,
+    PRIMARY KEY (endpoint, seq)
+);
+CREATE INDEX IF NOT EXISTS ops_hid ON ops(hid);
+CREATE INDEX IF NOT EXISTS ops_slug ON ops(slug);
+CREATE INDEX IF NOT EXISTS ops_hlc ON ops(hlc);
+
+-- This copy's endpoint: its Ed25519 key, which signs its ops. LOCAL, never
+-- synced, one row. `device_id` is the device the key was minted on: a file
+-- that turns up on another device mints a new key rather than sign as the
+-- copy it was copied from.
+CREATE TABLE IF NOT EXISTS sync_local (
+    id              INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    endpoint_secret TEXT NOT NULL,
+    endpoint_id     TEXT NOT NULL,
+    device_id       TEXT NOT NULL
+);
+
 -- Data-integrity warnings: overlap / double-open / orphan-end / same-state
 -- bookkeeping. Rows are created by the local validator (D5) on insert and
 -- by sync-pull reconciliation (C4e); the `detected_by` column distinguishes

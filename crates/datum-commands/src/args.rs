@@ -37,8 +37,8 @@ pub use pcli::{
     EditArgs, FieldsArgs, GetArgs, GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, InfoArgs,
     KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand, NowArgs,
     NowviewArgs, RedoArgs, ReparseArgs, RestoreArgs, RetimeArgs, RotationAction, SetupArgs,
-    SpecCommand, SpecSetArgs, StatsArgs, StatsPeriod, TailArgs, TrackArgs, UndoArgs, UpdateArgs,
-    ViewArgs, ViewFormat, WhyArgs,
+    SpecCommand, SpecSetArgs, StatsArgs, StatsPeriod, SyncCommand, TailArgs, TrackArgs, UndoArgs,
+    UpdateArgs, ViewArgs, ViewFormat, WhyArgs,
 };
 
 /// The `--show` level the shared layer swept out of argv (da-qt6z).
@@ -134,6 +134,12 @@ thread_local! {
 }
 
 pub fn set_intent_context(ctx: IntentContext) {
+    // Every op this invocation's changes emit carries its own line, not the
+    // entry's first (da-k329q) — less the `--db` it ran against, which names
+    // a file on this device and is no part of the intent.
+    let argv = std::iter::once(String::new()).chain(ctx.raw_argv.iter().cloned());
+    let (argv, _db) = crate::config::split_off_global_db_flag(argv.collect());
+    datum_core::db::set_invocation(Some(palias::shell_join(&argv[1..])), ctx.alias_chain_json());
     INTENT_CTX.with(|slot| *slot.borrow_mut() = Some(ctx));
 }
 

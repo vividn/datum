@@ -98,6 +98,7 @@ mod stateless_same_instant;
 mod stop_cmd;
 mod stored_spec_compat;
 mod switch_cmd;
+mod sync_ops;
 mod tail_cmd;
 mod temporal_keys;
 mod timeless_id_redesign;

@@ -25,9 +25,10 @@ use crate::args::{ConflictsCommand, ConflictsKeep, ConflictsListArgs, ConflictsR
 
 /// The kinds this command owns. Both are only ever filed with
 /// `detected_by = sync_pull`; every other kind belongs to `datum check`.
-const SYNC_KINDS: [IntegrityKind; 2] = [
+const SYNC_KINDS: [IntegrityKind; 3] = [
     IntegrityKind::LwwOverwrite,
     IntegrityKind::IdentityCollision,
+    IntegrityKind::SyncConflict,
 ];
 
 pub fn conflicts(cmd: ConflictsCommand, db: &Db) -> Result<()> {
@@ -57,8 +58,13 @@ fn side(label: &str, e: &Entry) -> String {
         Some(v) => v.to_string(),
         None => "—".to_string(),
     };
+    // A `sync_conflict` side names the op that made it (da-k329q).
+    let by = match e.extra_metadata.as_ref().map(|m| &m["sync_op"]["raw"]) {
+        Some(serde_json::Value::String(raw)) => format!("  by `{raw}`"),
+        _ => String::new(),
+    };
     format!(
-        "    {label:<7} {slug}  state={state}  modified={modified}",
+        "    {label:<7} {slug}  state={state}  modified={modified}{by}",
         slug = e.slug,
         modified = e.modify_time.format("%Y-%m-%d %H:%M"),
     )

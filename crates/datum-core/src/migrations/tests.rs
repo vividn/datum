@@ -44,6 +44,8 @@ fn fresh_db_matches_schema_sql_shape() {
         "entry_history",
         "integrity_warnings",
         "last_docs",
+        "ops",
+        "sync_local",
     ];
     assert_eq!(tables, expected_tables);
 
@@ -78,6 +80,9 @@ fn fresh_db_matches_schema_sql_shape() {
         "integrity_warnings_hid",
         "integrity_warnings_pending",
         "integrity_warnings_slug",
+        "ops_hid",
+        "ops_hlc",
+        "ops_slug",
     ];
     assert_eq!(indexes, expected_indexes);
 }

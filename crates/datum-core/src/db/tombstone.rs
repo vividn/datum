@@ -48,6 +48,7 @@ impl Db {
                 live.expected_content_hash()
             ],
         )?;
+        super::sync::emit(&tx, Some(&pre), &pre.hid, ChangeKind::UserEdit)?;
         tx.commit()?;
         Ok(())
     }
@@ -164,6 +165,7 @@ impl Db {
         // forth — the snapshot drives every mutable column, including the
         // tombstone.
         apply_entry_state(&tx, &target_state)?;
+        super::sync::emit(&tx, Some(&current), &current.hid, kind)?;
 
         let restored = fetch_entry_any(&tx, &target_state.slug)?;
         tx.commit()?;
@@ -226,5 +228,6 @@ pub(super) fn soft_delete_in_tx(
             dead.data.as_ref().map(|v| v.to_string())
         ],
     )?;
+    super::sync::emit(conn, Some(&pre), &pre.hid, kind)?;
     Ok(dead)
 }

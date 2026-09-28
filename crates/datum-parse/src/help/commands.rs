@@ -20,7 +20,7 @@
 //!
 //! - **Multi-`USAGE` / subcommand trees** (`spec`, `db`, `conflicts`,
 //!   `alias`): several calling shapes and prose sections.
-//! - **`sync`**: a placeholder until Easy Sync.
+//! - **`sync`**: Easy Sync's core — ops over a pipe (da-k329q).
 //! - **Narrative bodies with no OPTIONS table** (`now`, `get`, `undo`,
 //!   `delete`, `grep`, `why`, `edit`, `history`, `info`, `config`,
 //!   `track`, `ignore`): nothing to generate.
@@ -127,6 +127,12 @@ const CONFLICTS_SUBCOMMANDS: &[SubcommandSpec] = &[
         "resolve",
         &["datum conflicts resolve <HID> (--take-local | --take-remote | --keep-both)"],
     ),
+];
+const SYNC_SUBCOMMANDS: &[SubcommandSpec] = &[
+    sub("vector", &["datum sync vector"]),
+    sub("ops", &["datum sync ops [--since <VECTOR>]"]),
+    sub("apply", &["datum sync apply"]),
+    sub("verify", &["datum sync verify [--verbose]"]),
 ];
 const META_SUBCOMMANDS: &[SubcommandSpec] = &[sub("show", &["datum meta show <FIELD>"])];
 const KIT_SUBCOMMANDS: &[SubcommandSpec] = &[
@@ -990,7 +996,7 @@ const DB_BODY: &str = "USAGE:\n  datum db setup\n  datum db purge [--yes | -y]\n
 
 const CONFIG_BODY: &str = "USAGE:\n  datum config show\n";
 
-const SYNC_BODY: &str = "USAGE:\n  datum sync\n\nsync is being rebuilt (Easy Sync). The relay sync is gone; until the new\none lands, `datum sync` prints that line and exits 1.\n";
+const SYNC_BODY: &str = "USAGE:\n  datum sync vector\n  datum sync ops [--since <VECTOR>]\n  datum sync apply\n  datum sync verify [--verbose]\n\nEvery change to an entry is an op, signed by this copy's endpoint key.\nOps move as JSON lines, so two copies sync through a pipe:\n\n  datum --db a sync ops --since \"$(datum --db b sync vector)\" | datum --db b sync apply\n\n  vector   This copy's version vector: per endpoint, the highest op held.\n  ops      Every op the vector lacks (all of them with no --since), one\n           per line. An entry no op covers yet is sent as a baseline op.\n  apply    Apply op lines read from stdin. A bad signature is refused and\n           named; an op whose predecessor has not arrived is held until it\n           does. Prints applied / already had / held / conflicts.\n  verify   The state hash over every entry row. Two copies that hold the\n           same ops print the same hash. --verbose adds one per column.\n\nPer key the op with the later hybrid logical clock wins. Two copies that\nset one key without seeing each other's op file a sync_conflict (see\n`datum check` and `datum conflicts`); so does a delete against a\nconcurrent edit, and the delete stands.\n";
 
 const CONFLICTS_BODY: &str = "USAGE:\n  datum conflicts [list] [--all]\n  datum conflicts resolve <HID> (--take-local | --take-remote | --keep-both)\n\nOPTIONS:\n  -a, --all        Include already-resolved conflicts (default: pending only).\n  --take-local     Restore this device's version of the entry.\n  --take-remote    Accept the other device's version.\n  --keep-both      Leave both rows as they are; record the decision.\n\nSync conflicts are the two things a pull can file when two devices claim\none identity: `lww_overwrite` (a newer remote edit replaced a local one)\nand `identity_collision` (two distinct entries claimed one slug, or one\n(field, occur_time)). The losing version survives only in the conflict\nrow, so someone has to say which side wins — `list` prints both.\n\nEverything else the integrity queue holds — double opens, orphan ends,\noverlaps, repeated states — is reported by `datum check` and resolved by\nfixing the data with `datum edit` / `datum delete`, not from here.\n";
 
@@ -1937,9 +1943,14 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "sync",
         aliases: &[],
         category: Category::ViewsSync,
-        summary: "being rebuilt (Easy Sync)",
+        summary: "exchange signed ops with another copy, over a pipe",
         long_description: None,
-        usage: &["datum sync"],
+        usage: &[
+            "datum sync vector",
+            "datum sync ops [--since <VECTOR>]",
+            "datum sync apply",
+            "datum sync verify [--verbose]",
+        ],
         args: NO_ARGS,
         flags: NO_FLAGS,
         shared_flags: None,
@@ -1947,7 +1958,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary_col: 0,
         body_override: Some(SYNC_BODY),
         display_input_name: false,
-        subcommands: NO_SUBCOMMANDS,
+        subcommands: SYNC_SUBCOMMANDS,
     },
     CommandSpec {
         name: "conflicts",

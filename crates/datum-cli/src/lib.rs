@@ -87,9 +87,9 @@ fn dispatch_single(cli: Cli) -> Result<()> {
         anyhow::bail!("repl is unavailable in this build");
     }
 
-    // `datum config show` and `datum sync` run against an in-memory
-    // placeholder: neither reads the entry db.
-    if matches!(&cli.command, Command::Config(_) | Command::Sync) {
+    // `datum config show` runs against an in-memory placeholder: it does
+    // not read the entry db.
+    if matches!(&cli.command, Command::Config(_)) {
         let placeholder = datum_core::db::Db::open_in_memory()?;
         return cmd::dispatch(cli, &placeholder);
     }
