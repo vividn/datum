@@ -332,7 +332,15 @@ const ELSEWHERE = {
 async function press(app, key, inLayer) {
 	const { page } = app;
 	await page.evaluate((sel) => document.querySelectorAll(sel).forEach((l) => (l.dataset.under = '')), LAYERS);
-	const found = (await survey(page, { mark: key, layer: inLayer })).find((b) => b.key === key);
+	// A layer can fill in after an await `idle()` cannot see — the Backups
+	// sheet walks OPFS for its databases before it asks for the plans that
+	// draw «Delete plan» — so the button is looked for until it turns up or
+	// five seconds have passed.
+	let found;
+	for (const end = Date.now() + 5000; ; await new Promise((r) => setTimeout(r, 100))) {
+		found = (await survey(page, { mark: key, layer: inLayer })).find((b) => b.key === key);
+		if (found || Date.now() > end) break;
+	}
 	assert.ok(found, `${key}: not there after a reset`);
 	const modal = await watchModals(page);
 	await page.locator('[data-tap]').click();
