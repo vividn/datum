@@ -399,6 +399,21 @@ describe('in the app', () => {
 		});
 	});
 
+	// da-oxaij: the button's title names a command that works when typed.
+	test('an ignored spaced field’s title quotes it', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.submit('spec set "my x" --verb occur');
+			await page.locator('.bar button[data-field="my x"]').waitFor();
+			await app.clock.forward(1000);
+			await app.submit('ignore "my x"');
+			await page.waitForFunction(() => !document.querySelector('.bar [data-field="my x"]'));
+			await app.clock.forward(1000);
+			await openIt(page);
+			assert.equal(await page.locator(`${MODAL} [data-ignored="my x"]`).getAttribute('title'), 'track "my x"');
+		});
+	});
+
 	// da-ci85o: Track is the spec modal opened on Basics, and it must stay
 	// as quick as the modal it absorbed — `Track +`, a pictogram, Done:
 	// three taps, the name typed into the box that already has the focus.

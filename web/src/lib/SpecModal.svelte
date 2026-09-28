@@ -536,7 +536,7 @@
 			<div class="ignored">
 				<span class="label">ignored</span>
 				{#each ignored as name (name)}
-					<button type="button" use:act={'run'} data-ignored={name} title="track {name}" on:click={() => run(['track', name])}
+					<button type="button" use:act={'run'} data-ignored={name} title={shellJoin(['track', name])} on:click={() => run(['track', name])}
 						>{name}</button
 					>
 				{/each}
