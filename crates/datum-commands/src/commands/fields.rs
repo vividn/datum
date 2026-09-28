@@ -15,6 +15,7 @@ use datum_core::shape::{is_ignored_state, TRACKED_STATE_VALUE};
 use serde_json::{json, Value as JsonValue};
 
 use crate::args::{FieldsArgs, ShowFlag};
+use crate::commands::spec::spec_json;
 use crate::render::colors::{field_hex, state_rgb};
 use crate::render::format_grid;
 
@@ -157,7 +158,7 @@ pub fn compute_fields(db: &Db) -> Result<JsonValue> {
                     .into();
                 json!({
                     "field": field,
-                    "spec": spec,
+                    "spec": spec.map(spec_json),
                     "states": states,
                     "color": color,
                     "state_colors": state_colors,

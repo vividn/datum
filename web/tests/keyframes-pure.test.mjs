@@ -9,28 +9,38 @@ import { resolveLibAsSource } from './support/libhook.mjs';
 
 resolveLibAsSource(import.meta.url);
 const { advance, complete, framesOf } = await import('../src/lib/keyframes.ts');
-const { keysOf } = await import('../src/lib/fields.ts');
+const { keysOf, stateKeysOf } = await import('../src/lib/fields.ts');
 const { shellSpans, shellSplit } = await import('../src/lib/shellSplit.ts');
 
-/** tea: one required key, then one optional with a default. */
-const FIELDS = [{ field: 'tea', keys: keysOf({ data_keys: ['amount', 'cups=1'] }) }];
+/** tea: a required key, an optional one, then one with a default — `spec show`'s parsed `keys`. */
+const TEA = {
+	keys: [
+		{ name: 'amount', kind: 'required', in_slug: false },
+		{ name: 'size', kind: 'optional', in_slug: false },
+		{ name: 'cups', kind: 'default', value: '1', in_slug: false },
+		{ name: 'brand', kind: 'assign', value: 'acme', in_slug: false }
+	]
+};
+/** mood: `sad` declares a key of its own (da-cej7q). */
+const MOOD = { keys: [], keys_by_state: { sad: [{ name: 'reason', kind: 'required', in_slug: false }] } };
+const FIELDS = [
+	{ field: 'tea', keys: keysOf(TEA) },
+	{ field: 'mood', keys: keysOf(MOOD), stateKeys: stateKeysOf(MOOD) }
+];
 
 describe('keysOf', () => {
-	test('the declared order: -K keys, -k keys, subfields; a default makes a key optional', () => {
-		assert.deepEqual(
-			keysOf({
-				id_keys: ['lang'],
-				data_keys: ['n=1', 'lang'],
-				subfields: { src: { required: true, default: null }, kind: { required: true, default: 'verb' }, note: {} }
-			}),
-			[
-				{ name: 'lang', required: true },
-				{ name: 'n', default: '1', required: false },
-				{ name: 'src', required: true },
-				{ name: 'kind', default: 'verb', required: false },
-				{ name: 'note', required: false }
-			]
-		);
+	// da-p3hxn: the CLI parses the spellings; the web reads its list and splits nothing.
+	test("the CLI's list in its order; an assigned key is fixed, and gets no frame", () => {
+		assert.deepEqual(keysOf(TEA), [
+			{ name: 'amount', required: true },
+			{ name: 'size', required: false },
+			{ name: 'cups', default: '1', required: false }
+		]);
+		assert.deepEqual(stateKeysOf(MOOD), { sad: [{ name: 'reason', required: true }] });
+	});
+
+	test('a spelling is never split: a spec without the parsed list has no keys', () => {
+		assert.deepEqual(keysOf({ data_keys: ['amount', 'cups=1'] }), []);
 	});
 });
 
@@ -46,70 +56,77 @@ describe('shellSpans', () => {
 });
 
 describe('framesOf', () => {
-	test('one frame per key, in order, written where a token carries it', () => {
-		const line = 'occur tea cups=2';
+	test('bare words fill the keys in order, as the CLI binds them', () => {
+		const line = 'occur tea 3 2';
 		const frames = framesOf(line, FIELDS);
-		assert.deepEqual(frames.map((f) => [f.name, f.required, f.value]), [['amount', true, undefined], ['cups', false, '2']]);
-		assert.equal(line.slice(frames[1].from, frames[1].to), 'cups=2');
+		assert.deepEqual(frames.map((f) => [f.name, f.required, f.value]), [['amount', true, '3'], ['size', false, '2'], ['cups', false, undefined]]);
+		assert.equal(line.slice(frames[1].from, frames[1].to), '2');
+	});
+
+	test('a named key takes its own frame, and the bare words the rest', () => {
+		const frames = framesOf('occur tea cups=5 3', FIELDS);
+		assert.deepEqual(frames.map((f) => [f.name, f.value]), [['amount', '3'], ['size', undefined], ['cups', '5']]);
+	});
+
+	test("a flag is no key's, nor the word a valued flag takes", () => {
+		const frames = framesOf('occur tea -q -t 1400 3', FIELDS, ['-t']);
+		assert.deepEqual(frames.map((f) => [f.name, f.value]), [['amount', '3'], ['size', undefined], ['cups', undefined]]);
 	});
 
 	test('none for a field with no keys, an unknown field, or another verb', () => {
-		for (const line of ['occur coffee', 'occur', 'switch tea x', 'tail tea']) assert.equal(framesOf(line, FIELDS), null, line);
+		for (const line of ['occur coffee', 'occur', 'tail tea', 'switch mood']) assert.equal(framesOf(line, FIELDS), null, line);
+	});
+
+	test("a switch frames its state's own keys, after the state", () => {
+		assert.deepEqual(framesOf('switch mood sad tired', FIELDS).map((f) => [f.name, f.value]), [['reason', 'tired']]);
+		assert.equal(framesOf('switch mood happy', FIELDS), null);
 	});
 
 	// da-o4jaa, vividn: «generally speaking I don't save any extra_data in this one».
-	test('none after end; start keeps them', () => {
+	test('none after end; start and add keep them', () => {
 		assert.equal(framesOf('end tea', FIELDS), null);
-		assert.deepEqual(framesOf('start tea', FIELDS).map((f) => f.name), ['amount', 'cups']);
+		assert.deepEqual(framesOf('start tea', FIELDS).map((f) => f.name), ['amount', 'size', 'cups']);
+		assert.deepEqual(framesOf('add tea', FIELDS).map((f) => f.name), ['amount', 'size', 'cups']);
 	});
 });
 
 describe('advance: a space at the end', () => {
-	test('writes the next key after the field, and after each value', () => {
-		assert.equal(advance('occur tea', FIELDS), 'occur tea amount=');
-		assert.equal(advance('occur tea ', FIELDS), 'occur tea amount=');
-		assert.equal(advance('occur tea amount=3', FIELDS), 'occur tea amount=3 cups=');
+	test('is only a space after a word: the next bare word falls to the next key', () => {
+		assert.equal(advance('occur tea', FIELDS), null);
+		assert.equal(advance('occur tea 3', FIELDS), null);
 	});
 
-	test('in an empty frame, skips it for the next one', () => {
-		assert.equal(advance('occur tea amount=', FIELDS), 'occur tea cups=');
-		assert.equal(advance('occur tea cups=', FIELDS), 'occur tea amount=');
+	test('in an empty frame, skips it: the key after it is named, as no bare word reaches it', () => {
+		assert.equal(advance('occur tea 3 ', FIELDS), 'occur tea 3 cups=');
+		assert.equal(advance('occur tea 3 cups=', FIELDS), 'occur tea 3 ');
+		assert.equal(advance('occur tea ', FIELDS), 'occur tea size=');
 	});
 
 	test('is only a space inside quotes, with every key written, or with no frames', () => {
-		assert.equal(advance('occur tea amount="a', FIELDS), null);
-		assert.equal(advance('occur tea amount=3 cups=2', FIELDS), null);
-		assert.equal(advance('occur coffee', FIELDS), null);
+		assert.equal(advance('occur tea "a ', FIELDS), null);
+		assert.equal(advance('occur tea 3 2 1 ', FIELDS), null);
+		assert.equal(advance('occur coffee ', FIELDS), null);
 	});
 });
 
 describe('complete: the line as Enter runs it', () => {
-	test('an optional key left unwritten or empty gets its default, on the line', () => {
-		assert.equal(complete('occur tea amount=3', FIELDS), 'occur tea amount=3 cups=1');
-		assert.equal(complete('occur tea amount=3 cups=', FIELDS), 'occur tea amount=3 cups=1');
-		assert.equal(complete('occur tea cups= amount=3', FIELDS), 'occur tea cups=1 amount=3');
+	test('writes no default: the CLI applies it, and an empty key= comes off', () => {
+		assert.equal(complete('occur tea 3', FIELDS), 'occur tea 3');
+		assert.equal(complete('occur tea 3 cups=', FIELDS), 'occur tea 3');
+		assert.equal(complete('occur tea cups= 3', FIELDS), 'occur tea  3');
 	});
 
-	test('a written key, a required one, and a line with no frames are left as they are', () => {
-		assert.equal(complete('occur tea amount=3 cups=2', FIELDS), 'occur tea amount=3 cups=2');
-		assert.equal(complete('occur tea', FIELDS), 'occur tea cups=1');
+	test('a written key and a line with no frames are left as they are', () => {
+		assert.equal(complete('occur tea 3 cups=2', FIELDS), 'occur tea 3 cups=2');
 		assert.equal(complete('occur coffee', FIELDS), 'occur coffee');
 	});
 
-	test('end gets no defaults, and a key typed on it runs as typed; start still gets them', () => {
-		assert.equal(complete('end tea', FIELDS), 'end tea');
+	test('end frames nothing, and a key typed on it runs as typed', () => {
 		assert.equal(complete('end tea cups=', FIELDS), 'end tea cups=');
 		assert.equal(complete('end tea amount=x', FIELDS), 'end tea amount=x');
-		assert.equal(complete('start tea amount=3', FIELDS), 'start tea amount=3 cups=1');
 	});
 
 	test('a line ending inside an open quote runs as typed', () => {
-		assert.equal(complete('occur tea amount="a', FIELDS), 'occur tea amount="a');
-	});
-
-	test('a default that would split is quoted', () => {
-		const fields = [{ field: 'tea', keys: keysOf({ data_keys: ["cup=my mug's"] }) }];
-		const line = complete('occur tea', fields);
-		assert.deepEqual(shellSplit(line), ['occur', 'tea', "cup=my mug's"]);
+		assert.equal(complete('occur tea cups= amount="a', FIELDS), 'occur tea cups= amount="a');
 	});
 });

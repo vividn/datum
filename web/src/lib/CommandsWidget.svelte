@@ -166,7 +166,7 @@
 			const { argv, used } = withPills(grammar, [command.name], slotted);
 			// The command's own words stay bare (`db setup` is two); what follows is quoted.
 			const line = [argv[0], shellJoin(argv.slice(1))].join(' ').trimEnd();
-			// Straight into the first key's frame, as a space after the field would (da-31d1d).
+			// Straight into the first key's frame, where a bare word fills it (da-31d1d, da-p3hxn).
 			if (keyed) dispatch('line', { name: command.name, line: advance(line, fields) ?? `${line} `, keyboard: true, spend: used });
 			else dispatch('line', { name: command.name, line: `${line} `, keyboard: command.next !== 'tap', spend: used });
 		}

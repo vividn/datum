@@ -39,8 +39,8 @@ describe('a field with a required key', () => {
 			const counter = await changeCounter(page);
 
 			await chip(page, 'tea').click();
-			// The first key's frame, as a Space after the field writes it (da-31d1d).
-			await lineIs(page, 'occur tea amount=');
+			// The first key's frame, which a bare word fills (da-31d1d, da-p3hxn).
+			await lineIs(page, 'occur tea ');
 			await app.idle();
 			assert.equal(await changeCounter(page), counter, 'the tap wrote');
 
@@ -49,7 +49,7 @@ describe('a field with a required key', () => {
 			await page.locator('.prompt-bar input').fill('occur -q ');
 			await page.waitForFunction(() => document.querySelector('.bar [data-field="tea"]')?.dataset.act === 'fill');
 			await chip(page, 'tea').click();
-			await lineIs(page, 'occur tea -q amount=');
+			await lineIs(page, 'occur tea -q ');
 			await app.idle();
 			assert.equal(await changeCounter(page), counter, 'the tap wrote');
 			assert.deepEqual(app.errors, []);
@@ -72,7 +72,7 @@ describe('a field with a required key', () => {
 			for (const line of SEED) await type(page, line);
 			assert.equal(await chip(page, 'shift').getAttribute('data-act'), 'fill');
 			await chip(page, 'shift').click();
-			await lineIs(page, 'start shift project=');
+			await lineIs(page, 'start shift ');
 
 			// Not backdated: `track` wrote its TRACKED marker now, which would end it.
 			await app.clock.forward(60_000);
@@ -107,7 +107,7 @@ describe('a field with a required key', () => {
 			await app.clock.forward(1000);
 			await app.idle();
 			await chip(page, 'my coffee').click();
-			await lineIs(page, 'occur "my coffee" amount=');
+			await lineIs(page, 'occur "my coffee" ');
 			await page.keyboard.type('3');
 			await page.keyboard.press('Enter');
 			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === '');
@@ -118,7 +118,7 @@ describe('a field with a required key', () => {
 			await page.locator('.prompt-bar input').fill('occur -q ');
 			await page.waitForFunction(() => document.querySelector('.bar [data-field="my coffee"]')?.dataset.act === 'fill');
 			await chip(page, 'my coffee').click();
-			await lineIs(page, 'occur "my coffee" -q amount=');
+			await lineIs(page, 'occur "my coffee" -q ');
 			assert.deepEqual(app.errors, []);
 		});
 	});

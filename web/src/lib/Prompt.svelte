@@ -59,23 +59,25 @@
 	both: parking the pills at the box's right edge, and letting them reach
 	back over the `❯`.)
 
-	THE KEY FRAMES (da-31d1d, $lib/keyframes.ts): on `occur|start <field>`
-	(never `end`, da-o4jaa) for a field whose spec declares keys, each key
-	written on the line is outlined where it stands, drawn over the text by
-	a copy of it in the box's font, and each key still to write waits in a
-	frame after the text, before the pills — its name, and an optional key's
-	default as ghost text. A required key's frame is solid in the accent, an optional
-	one's dashed in the quiet line. A space at the end writes the next
-	key's `key=`, but not inside quotes; Enter writes each unwritten
-	optional key's default into the line and runs what the line then says.
+	THE KEY FRAMES (da-31d1d, $lib/keyframes.ts): on `occur|start|add
+	<field>` or `switch <field> <state>` (never `end`, da-o4jaa) for a field
+	whose spec declares keys, each key written on the line — a bare value,
+	which the CLI binds in order (da-p3hxn), or a `key=value` — is outlined
+	where it stands, drawn over the text by a copy of it in the box's font,
+	and each key still to write waits in a frame after the text, before the
+	pills — its name, and a default as ghost text. An assigned key is fixed
+	and gets none. A required key's frame is solid in the accent, the rest
+	dashed in the quiet line. A space in an empty frame skips it, but not
+	inside quotes; Enter takes an empty `key=` off, and the CLI fills the
+	defaults.
 -->
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { act } from '$lib/act.js';
 	import { clearLine, ghost, pills, registerLine, spent, submitLine, text } from '$lib/bar.js';
-	import { roleOf } from '$lib/commands.js';
+	import { roleOf, valuedFlags } from '$lib/commands.js';
 	import Pill from '$lib/Pill.svelte';
-	import { fields, ready } from '$lib/layout/engine.js';
+	import { fields, grammar, ready } from '$lib/layout/engine.js';
 	import { advance, complete, framesOf, type Frame } from '$lib/keyframes.js';
 	import { repl } from '$lib/replStore.js';
 
@@ -122,7 +124,9 @@
 	$: context = $pills.filter((p) => roleOf(p, $pills) === 'context');
 	$: args = $pills.filter((p) => !context.includes(p));
 
-	$: frames = framesOf($text, $fields);
+	/** The flags whose next word is their value, which no key's frame takes. */
+	$: valued = valuedFlags($grammar?.get($text.trimStart().split(/\s/)[0]));
+	$: frames = framesOf($text, $fields, valued);
 	/** The keys still to write, waiting in their frames after the text. */
 	$: waiting = frames?.filter((f) => f.from === undefined) ?? [];
 	/** An optional key written with nothing in it yet, at the end: its default is ghosted after it. */
@@ -144,7 +148,7 @@
 	async function space(event: InputEvent): Promise<void> {
 		if (event.inputType !== 'insertText' || event.data !== ' ') return;
 		if (box.selectionStart !== $text.length || box.selectionEnd !== $text.length) return;
-		const next = advance($text, $fields);
+		const next = advance($text, $fields, valued);
 		if (next === null) return;
 		event.preventDefault();
 		$text = next;
@@ -224,7 +228,7 @@
 	}
 
 	function submit(): void {
-		const line = complete($text, $fields);
+		const line = complete($text, $fields, valued);
 		if (!line.trim()) return;
 		$text = '';
 		draft = '';

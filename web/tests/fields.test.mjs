@@ -84,22 +84,18 @@ describe('the logic', () => {
 	});
 
 	// da-lxqqz: only a key with no default asks anything of the person.
-	test('requiredKeys: -K/-k keys with no default, and required subfields with none', () => {
+	// da-p3hxn: the kinds are the CLI's (`spec show`'s `keys`); nothing splits a spelling.
+	test('requiredKeys: the keys of kind required, in binding order', () => {
+		const key = (name, kind, value) => ({ name, kind, value, in_slug: false });
 		assert.deepEqual(
 			requiredKeys(
 				spec('word', {
-					id_keys: ['lang', 'pos=noun'],
-					data_keys: ['gloss', 'n=1'],
-					subfields: {
-						src: { required: true, default: null },
-						kind: { required: true, default: 'verb' },
-						note: { required: false, default: null }
-					}
+					keys: [key('lang', 'required'), key('pos', 'default', 'noun'), key('gloss', 'required'), key('note', 'optional'), key('src', 'assign', 'book')]
 				})
 			),
-			['lang', 'gloss', 'src']
+			['lang', 'gloss']
 		);
-		assert.deepEqual(requiredKeys(spec('coffee', { data_keys: ['cups=1'] })), []);
+		assert.deepEqual(requiredKeys(spec('coffee', { data_keys: ['cups'] })), [], 'a spelling alone is never read');
 		assert.deepEqual(requiredKeys(null), []);
 	});
 

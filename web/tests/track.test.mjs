@@ -77,10 +77,12 @@ describe('the argv it composes', () => {
 	});
 
 	// da-h119q: a field's keys are declared in the same `track`.
-	test('keys ride on the `track`: a required one as `--required-key`, a default after `=`, a blank name dropped', () => {
-		const key = (name, required, typed = '') => ({ name, required, value_type: 'any', in_slug: false, default: typed });
-		assert.deepEqual(trackArgv('coffee', 'occur', [], '', [key(' cups ', true, '2'), key('place', false), key(' ', true)]), [
-			'track', 'coffee', '--verb', 'occur', '--required-key', 'cups=2', '--key', 'place'
+	// da-p3hxn: the four kinds, as `track` spells them.
+	test('keys ride on the `track`: `--required-key`, `--key`, a default after `=`, an assign as `KEY=VALUE`, a blank name dropped', () => {
+		const key = (name, kind, value = '') => ({ name, kind, value, value_type: 'any', in_slug: false });
+		const keys = [key(' cups ', 'required'), key('size', 'optional', 'x'), key('temp', 'default', 'hot'), key('brand', 'assign', 'acme'), key(' ', 'required')];
+		assert.deepEqual(trackArgv('coffee', 'occur', [], '', keys), [
+			'track', 'coffee', '--verb', 'occur', '--required-key', 'cups', '--key', 'size', '--key', 'temp=hot', 'brand=acme'
 		]);
 	});
 
@@ -142,10 +144,12 @@ describe('the argv it composes', () => {
 		const spec = {
 			field: 'tea', verb: 'occur', color: null, description: null,
 			allowed_states: null, state_colors: {}, glyph: '●', glyph_by: { key: 'size', map: { big: '☕' } },
-			subfields: { size: {} }, data_keys: ['cup=mug', 'size']
+			subfields: { size: {} }, data_keys: ['cup=mug'],
+			keys: [{ name: 'cup', kind: 'default', value: 'mug', in_slug: false }, { name: 'size', kind: 'optional', in_slug: false }]
 		};
 		const base = { verb: 'occur', color: '', description: '', states: [] };
-		assert.deepEqual(specKeys(spec), ['size', 'cup']);
+		// The CLI's parsed list (da-p3hxn): no spelling is split here.
+		assert.deepEqual(specKeys(spec), ['cup', 'size']);
 		// Not edited: carried as it was.
 		assert.deepEqual(editedSpec(spec, base).glyph_by, spec.glyph_by);
 		assert.equal(editedSpec(spec, base).glyph, '●');
@@ -171,37 +175,55 @@ describe('the argv it composes', () => {
 		assert.equal(wide(''), false);
 	});
 
-	// da-cap5m: the keys are the whole map, a default stored as it was
+	// da-cap5m: the keys are the whole answer, a default stored as it was
 	// typed; the aliases are sent only once datum no longer makes them.
-	test('keys are saved whole, and only a list datum does not make is sent', () => {
-		const key = (over) => ({ required: false, value_type: 'any', in_slug: false, default: null, ...over });
+	// da-p3hxn: the rows are the CLI's parsed `keys`, and each is saved in
+	// ONE place — a slot stays a slot, an assign goes to the map.
+	test('keys are saved whole, each in one place, and only a list datum does not make is sent', () => {
+		const sub = (over) => ({ required: false, value_type: 'any', in_slug: false, default: null, ...over });
 		const spec = {
 			field: 'word', verb: 'add', color: null, description: null, allowed_states: null, state_colors: {},
-			subfields: { pos: key({ required: true, value_type: 'string', in_slug: true }), reps: key({ value_type: 'number', default: 3 }) },
+			subfields: { pos: sub({ required: true, value_type: 'string', in_slug: true }), reps: sub({ value_type: 'number', default: 3 }) },
+			id_keys: [], data_keys: ['lang=pt'], assign: { src: 'book' },
+			keys: [
+				{ name: 'lang', kind: 'default', value: 'pt', in_slug: false },
+				{ name: 'pos', kind: 'required', in_slug: true },
+				{ name: 'reps', kind: 'default', value: '3', in_slug: false },
+				{ name: 'src', kind: 'assign', value: 'book', in_slug: false }
+			],
 			derived_aliases: [{ state: 'word', expands_to: 'add word', kind: 'bare_field' }], no_autoalias: false
 		};
+		const row = (name, kind, value = '', over = {}) => ({ name, kind, value, value_type: 'any', in_slug: false, ...over });
 		const keys = keyRows(spec);
 		assert.deepEqual(keys, [
-			{ ...key({ required: true, value_type: 'string', in_slug: true }), name: 'pos', default: '' },
-			{ ...key({ value_type: 'number' }), name: 'reps', default: '3' }
+			row('lang', 'default', 'pt'),
+			row('pos', 'required', '', { value_type: 'string', in_slug: true }),
+			row('reps', 'default', '3', { value_type: 'number' }),
+			row('src', 'assign', 'book')
 		]);
 		const base = { verb: 'add', color: '', description: '', states: [] };
-		keys[0].required = false;
-		keys[0].default = '42';
-		keys[1].default = ' ';
-		const made = editedSpec(spec, { ...base, keys: [...keys, { ...key(), name: 'n', default: '42' }, { ...key(), name: ' ', default: '' }], autoalias: true, aliases: [] });
+		keys[0].kind = 'optional';
+		Object.assign(keys[1], { kind: 'default', value: '42' });
+		keys[2].kind = 'assign';
+		keys[3].kind = 'required';
+		const made = editedSpec(spec, { ...base, keys: [...keys, row('n', 'default', '42'), row(' ', 'default')], autoalias: true, aliases: [] });
+		assert.deepEqual(made.data_keys, ['lang='], 'a slot stays a slot, where it bound');
+		assert.deepEqual(made.id_keys, []);
+		assert.deepEqual(made.assign, { reps: '3' }, 'an assign leaves the subfields, and the one that was is gone');
 		assert.deepEqual(made.subfields, {
-			pos: key({ value_type: 'string', in_slug: true, default: '42' }),
-			reps: key({ value_type: 'number' }),
-			n: key({ default: 42 })
+			pos: sub({ value_type: 'string', in_slug: true, default: '42' }),
+			src: sub({ required: true }),
+			n: sub({ default: 42 })
 		});
+		assert.equal('keys' in made, false, "the CLI's reading of the spec is not sent");
+		assert.equal('id_assign' in made, false, 'an empty map is left out, as `spec show` prints it');
 		assert.equal(made.no_autoalias, false);
 		assert.deepEqual(made.derived_aliases, spec.derived_aliases, 'a made list is carried: the CLI makes it again');
 
 		const mine = editedSpec(spec, { ...base, autoalias: false, aliases: [{ state: ' zz ', expands_to: ' add word ' }, { state: '', expands_to: 'x' }] });
 		assert.equal(mine.no_autoalias, true);
 		assert.deepEqual(mine.derived_aliases, [{ state: 'zz', expands_to: 'add word' }]);
-		assert.deepEqual(mine.subfields, spec.subfields, 'keys the edit leaves out are carried');
+		assert.deepEqual([mine.subfields, mine.data_keys, mine.assign], [spec.subfields, spec.data_keys, spec.assign], 'keys the edit leaves out are carried');
 	});
 
 	// da-45wgz: the icon is replaced when given, cleared when given empty —
@@ -438,9 +460,10 @@ describe('in the app', () => {
 			const sent = JSON.parse(result.argv[result.argv.indexOf('--from-json') + 1]);
 			const shown = JSON.parse((await app.run(['spec', 'show', 'sleep'])).stdout);
 			// The CLI regenerates the aliases a spec derives from its states,
-			// so those are the one key it does not take as sent.
+			// so those are the one key it does not take as sent; and `keys` is
+			// its reading of the spec, which is never sent (da-p3hxn).
 			const { derived_aliases: _sent, ...kept } = sent;
-			const { derived_aliases: _shown, ...read } = shown;
+			const { derived_aliases: _shown, keys: _keys, ...read } = shown;
 			assert.deepEqual(read, kept);
 			assert.equal(shown.verb, 'switch');
 			assert.equal(shown.color, color);
@@ -619,9 +642,9 @@ describe('in the app', () => {
 			await page.locator(`${MODAL} .basic-keys + button.add`).click();
 			const row = page.locator(`${MODAL} .basic-keys li`).last();
 			await row.locator('input.name').fill('cups');
-			await row.locator('input.default').fill('2');
-			await row.locator('input.required').check();
-			assert.match(await page.locator(`${MODAL} .preview`).innerText(), /--required-key cups=2$/);
+			await row.locator('select.kind').selectOption('default');
+			await row.locator('input.kind-value').fill('2');
+			assert.match(await page.locator(`${MODAL} .preview`).innerText(), /--key cups=2$/);
 			const before = (await app.echoes()).length;
 			await page.locator(`${MODAL} button.commit`).click();
 			await page.locator('.bar button[data-field="coffee"]').waitFor();
@@ -630,7 +653,7 @@ describe('in the app', () => {
 			assert.equal(echoes.length, 1, `one command: ${echoes.join(' | ')}`);
 			assert.match(echoes[0], /^track coffee /);
 			const shown = JSON.parse((await app.run(['spec', 'show', 'coffee'])).stdout);
-			assert.deepEqual(shown.subfields.cups, { required: true, value_type: 'any', in_slug: false, default: 2 });
+			assert.deepEqual(shown.subfields.cups, { required: false, value_type: 'any', in_slug: false, default: 2 });
 
 			// A spec opens on Basics with its keys there, and still no unit.
 			const shut = page.evaluate(() => window.datum.spec('coffee'));
@@ -691,7 +714,7 @@ describe('in the app', () => {
 		assert.match(echoes[0], /^spec set /);
 	}
 
-	test('a key toggled required moves to the required group, and `spec show` reads it back', async () => {
+	test('a key made required moves to the required group, and `spec show` reads it back', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			const names = (group) => page.locator(`${MODAL} .keys[data-group="${group}"] input.name`).evaluateAll((els) => els.map((e) => e.value));
@@ -706,24 +729,67 @@ describe('in the app', () => {
 			assert.deepEqual(await names('optional'), ['pos', 'gloss']);
 			const pos = page.locator(`${MODAL} .key`).first();
 			await pos.locator('input.in-slug').check();
-			await pos.locator('input.default').fill('noun');
-			await pos.locator('input.required').check();
-			assert.deepEqual(await names('required'), ['pos'], 'required reads off the group, not only the toggle');
+			await pos.locator('select.kind').selectOption('required');
+			assert.deepEqual(await names('required'), ['pos'], 'required reads off the group, not only the kind');
 			assert.deepEqual(await names('optional'), ['gloss']);
 			await save(app, saved);
 			assert.deepEqual(await subfields(), {
-				pos: { required: true, value_type: 'any', in_slug: true, default: 'noun' },
+				pos: { required: true, value_type: 'any', in_slug: true, default: null },
 				gloss: { required: false, value_type: 'any', in_slug: false, default: null }
 			});
 
 			({ saved } = await openSpecTab(page, 'word', 'keys'));
 			assert.deepEqual(await names('required'), ['pos']);
-			// A click, not `uncheck`: the row leaves the group the locator names,
-			// so there is nothing left there to confirm unchecked.
-			await page.locator(`${MODAL} .keys[data-group="required"] input.required`).click();
+			await page.locator(`${MODAL} .keys[data-group="required"] select.kind`).selectOption('optional');
 			assert.equal(await page.locator(`${MODAL} .keys[data-group="required"]`).count(), 0);
 			await save(app, saved);
 			assert.equal((await subfields()).pos.required, false);
+		});
+	});
+
+	// da-p3hxn: vividn, «required · optional · default · assign, mapping onto
+	// `-k key`, `-k key=`, `-k key=default`, `key=value`». Each kind is what
+	// `spec show` reads back, and a key lives in ONE place (da-ulc0v).
+	test('Basics: each kind round-trips through `spec show`, and a key changing kind moves, never copied', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			const shown = async () => JSON.parse((await app.run(['spec', 'show', 'tea'])).stdout);
+			const kinds = (spec) => spec.keys.map(({ name, kind, value }) => [name, kind, value]);
+			await app.run(['track', 'tea', '--verb', 'occur']);
+
+			let saved = page.evaluate(() => window.datum.spec('tea'));
+			await page.locator(MODAL).waitFor();
+			for (const [name, kind, value] of [['a', 'required'], ['b', 'optional'], ['c', 'default', 'hot'], ['d', 'assign', 'acme']]) {
+				await page.locator(`${MODAL} .basic-keys + button.add`).click();
+				const row = page.locator(`${MODAL} .basic-keys li`).last();
+				await row.locator('input.name').fill(name);
+				await row.locator('select.kind').selectOption(kind);
+				if (value) await row.locator('input.kind-value').fill(value);
+			}
+			await save(app, saved);
+			let spec = await shown();
+			assert.deepEqual(kinds(spec), [['a', 'required', undefined], ['b', 'optional', undefined], ['c', 'default', 'hot'], ['d', 'assign', 'acme']]);
+			assert.deepEqual(spec.assign, { d: 'acme' });
+
+			// Opened again, the rows are what the CLI read back; a and d swap places.
+			saved = page.evaluate(() => window.datum.spec('tea'));
+			await page.locator(MODAL).waitFor();
+			const rows = page.locator(`${MODAL} .basic-keys li`);
+			assert.deepEqual(await rows.locator('select.kind').evaluateAll((els) => els.map((e) => e.value)), ['required', 'optional', 'default', 'assign']);
+			await rows.nth(0).locator('select.kind').selectOption('assign');
+			await rows.nth(0).locator('input.kind-value').fill('x');
+			await rows.nth(3).locator('select.kind').selectOption('required');
+			await save(app, saved);
+			spec = await shown();
+			assert.deepEqual(kinds(spec), [['b', 'optional', undefined], ['c', 'default', 'hot'], ['d', 'required', undefined], ['a', 'assign', 'x']]);
+			assert.deepEqual(spec.assign, { a: 'x' }, 'd left the map');
+			assert.equal('a' in spec.subfields, false, 'a left the subfields');
+
+			// And a log binds it: the assign fixed, a bare word to the first slot, the default filled.
+			await app.clock.forward(1000);
+			assert.equal((await app.run(['occur', 'tea', 'p', 'd=r'])).code, 0);
+			assert.deepEqual((await app.entries(1))[0].data, { a: 'x', b: 'p', c: 'hot', d: 'r' });
+			assert.deepEqual(app.errors, []);
 		});
 	});
 

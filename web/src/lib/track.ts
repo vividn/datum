@@ -18,6 +18,7 @@
 // as it is, which is what lets the glyph table be compared with the CLI's
 // own render. The modal itself is `specModal.ts`.
 
+import type { SpecKey } from './fields.js';
 import type { RunResult } from './run.js';
 
 /** The verbs a spec may carry — `VERB_CHOICES` in datum-core's field_spec. */
@@ -65,7 +66,8 @@ export interface StateRow {
  * (da-94q1) and `--state NAME=COLOR` paints it, so a switch field is
  * declared whole in one command. A state's description is not something
  * `track` carries, and so the modal does not ask for one there. Its keys
- * are (da-h119q): `--key NAME=DEFAULT`, `--required-key` for a required one.
+ * are (da-h119q, da-p3hxn): `--required-key NAME`, `--key NAME` for an
+ * optional one, `--key NAME=DEFAULT`, and `NAME=VALUE` for an assign.
  */
 export function trackArgv(
 	field: string,
@@ -81,8 +83,9 @@ export function trackArgv(
 		for (const { name, color } of named) if (color) argv.push('--state', `${name.trim()}=${color}`);
 	}
 	if (color) argv.push('--color', color);
-	for (const { name, required, default: typed } of keys.filter((k) => k.name.trim()))
-		argv.push(required ? '--required-key' : '--key', typed.trim() ? `${name.trim()}=${typed}` : name.trim());
+	for (const { name, kind, value } of keys.filter((k) => k.name.trim()))
+		if (kind === 'assign') argv.push(`${name.trim()}=${value}`);
+		else argv.push(kind === 'required' ? '--required-key' : '--key', kind === 'default' && value.trim() ? `${name.trim()}=${value}` : name.trim());
 	return argv;
 }
 
@@ -147,10 +150,19 @@ export interface Subfield {
 	default: unknown;
 }
 
-/** One row of the Keys tab: a subfield under its name, its default as typed. */
-export interface KeyRow extends Omit<Subfield, 'default'> {
+/** How a log fills a key (da-9s98k): `-k key`, `-k key=`, `-k key=default`, `key=value`. */
+export type KeyKind = SpecKey['kind'];
+export const KEY_KINDS: KeyKind[] = ['required', 'optional', 'default', 'assign'];
+
+/** One key row of the modal: a key the spec declares, as the CLI parsed it, and its type. */
+export interface KeyRow {
 	name: string;
-	default: string;
+	kind: KeyKind;
+	/** A default's or an assign's value, as typed. */
+	value: string;
+	value_type: KeyType;
+	/** Whether the key's value is part of the entry's slug: it identifies, not annotates. */
+	in_slug: boolean;
 }
 
 /**
@@ -163,16 +175,22 @@ export interface DerivedAlias {
 	kind?: 'bare_field' | 'terminal_end' | 'state';
 }
 
-/** The Keys tab's rows for `spec`, a default shown as it would be typed. */
+/**
+ * The modal's key rows for `spec`: `spec show`'s `keys`, parsed by the CLI
+ * and in binding order (da-p3hxn) — every key the spec declares, not only
+ * its subfields — each with its subfield's type where it has one.
+ */
 export const keyRows = (spec: Spec): KeyRow[] =>
-	Object.entries(spec.subfields ?? {}).map(([name, key]) => ({
-		...key,
+	((spec.keys as SpecKey[] | undefined) ?? []).map(({ name, kind, value, in_slug }) => ({
 		name,
-		default: key.default == null ? '' : typeof key.default === 'string' ? key.default : JSON.stringify(key.default)
+		kind,
+		value: value ?? '',
+		value_type: spec.subfields?.[name]?.value_type ?? 'any',
+		in_slug
 	}));
 
 /** A typed default as it is stored: blank is none, a string key's is its text, any other's is JSON if it parses. */
-function storedDefault({ default: typed, value_type }: KeyRow): unknown {
+function storedDefault({ value: typed, value_type }: KeyRow): unknown {
 	if (typed.trim() === '') return null;
 	if (value_type === 'string') return typed;
 	try {
@@ -220,13 +238,42 @@ export const stateRows = (spec: Spec): StateRow[] =>
 		glyph: spec.state_glyphs?.[name] ?? ''
 	}));
 
-/** The data keys `spec` names — its subfields and its `-k` keys — which `glyph_by` may read. */
-export const specKeys = (spec: Spec): string[] => [
-	...new Set([
-		...Object.keys((spec.subfields as object | undefined) ?? {}),
-		...((spec.data_keys as string[] | undefined) ?? []).map((k) => k.split('=')[0])
-	])
-];
+/** The data keys `spec` declares (`keys`, parsed by the CLI), which `glyph_by` may read. */
+export const specKeys = (spec: Spec): string[] => keyRows(spec).map((k) => k.name);
+
+/**
+ * Where the key rows are saved — a key lives in ONE place (da-ulc0v): an
+ * assign in `assign`, `id_assign` in the slug; a key the spec declared as
+ * a `-k`/`-K` slot stays one, spelt `key`, `key=` or `key=default` in
+ * `data_keys`, `id_keys` in the slug, so its place in the binding order
+ * holds; any other key — a new one, one that was an assign — is a subfield,
+ * as `track --key` makes it. The maps are absent when empty, as `spec
+ * show` prints them.
+ */
+function placed(spec: Spec, rows: KeyRow[]): Partial<Spec> {
+	const slots = keyRows(spec).filter((k) => k.kind !== 'assign' && !spec.subfields?.[k.name]);
+	const named = rows.map((r) => ({ ...r, name: r.name.trim() })).filter((r) => r.name);
+	const slot = (r: KeyRow) => r.kind !== 'assign' && slots.some((k) => k.name === r.name);
+	const spell = ({ name, kind, value }: KeyRow) => (kind === 'required' ? name : `${name}=${kind === 'default' ? value : ''}`);
+	const listed = (slug: boolean) => named.filter((r) => slot(r) && r.in_slug === slug).map(spell);
+	const assigned = (slug: boolean) =>
+		Object.fromEntries(named.filter((r) => r.kind === 'assign' && r.in_slug === slug).map((r) => [r.name, r.value]));
+	const [assign, id_assign] = [assigned(false), assigned(true)];
+	return {
+		id_keys: listed(true),
+		data_keys: listed(false),
+		subfields: Object.fromEntries(
+			named
+				.filter((r) => r.kind !== 'assign' && !slot(r))
+				.map((r) => [
+					r.name,
+					{ required: r.kind === 'required', value_type: r.value_type, in_slug: r.in_slug, default: r.kind === 'default' ? storedDefault(r) : null }
+				])
+		),
+		...(Object.keys(assign).length ? { assign } : {}),
+		...(Object.keys(id_assign).length ? { id_assign } : {})
+	};
+}
 
 /**
  * `spec` with the modal's edits laid over it — everything it does not
@@ -288,7 +335,10 @@ export function editedSpec(
 	const glyph = edit.glyph ?? spec.glyph ?? '';
 	const glyph_by = edit.glyph_by === undefined ? spec.glyph_by : key ? { key, map } : undefined;
 	const icon = edit.icon === undefined ? spec.icon : edit.icon.trim();
-	const { state_descriptions: _d, glyph: _g, state_glyphs: _s, glyph_by: _b, icon: _i, ...rest } = spec;
+	// `keys` and `keys_by_state` are the CLI's reading of the spec, not the spec: never sent (da-p3hxn).
+	const { state_descriptions: _d, glyph: _g, state_glyphs: _s, glyph_by: _b, icon: _i, keys: _k, keys_by_state: _ks, ...rest } = spec;
+	// The key rows are the whole answer: every place a key can live is written from them.
+	if (edit.keys) for (const k of ['id_keys', 'data_keys', 'assign', 'id_assign']) delete rest[k];
 	// The placement is the Placement tab's whole answer: free drops the anchor, tied drops y/height.
 	if (edit.place) for (const k of PLACE_KEYS) delete rest[k];
 	return {
@@ -305,16 +355,7 @@ export function editedSpec(
 		...(Object.keys(state_glyphs).length ? { state_glyphs } : {}),
 		...(glyph_by ? { glyph_by } : {}),
 		...(icon ? { icon } : {}),
-		...(edit.keys && {
-			subfields: Object.fromEntries(
-				edit.keys
-					.filter((k) => k.name.trim())
-					.map((k) => {
-						const { name, ...key } = k;
-						return [name.trim(), { ...key, default: storedDefault(k) }];
-					})
-			)
-		}),
+		...(edit.keys && placed(spec, edit.keys)),
 		...(edit.autoalias !== undefined && { no_autoalias: !edit.autoalias }),
 		// Only a list datum does not make is the person's to send; the CLI
 		// rebuilds a made one on save whatever it is sent.

@@ -629,10 +629,14 @@ export function withFlag(line: string, command: string, flag: string): string {
  * `-L` is not waiting: its value only ever comes attached (`value_optional`),
  * so `stop -L` and a tap on coffee is `stop -L coffee` (da-69mzq).
  */
+/** The flags of `takes` whose value is the next word (`-t 1400`); none without a grammar. */
+export const valuedFlags = (takes: Takes | undefined): string[] =>
+	(takes?.flags ?? []).filter((f) => f.takes_value && !f.value_optional).flatMap((f) => [`--${f.long}`, f.short ? `-${f.short}` : '']).filter(Boolean);
+
 export function flagLine(words: string[], takes: Takes | undefined): string[] | null {
 	// No grammar: a value flag cannot be told from a switch, so only a bare verb.
 	if (!takes) return words.length > 1 ? null : words;
-	const valued = takes.flags.filter((f) => f.takes_value && !f.value_optional).flatMap((f) => [`--${f.long}`, f.short && `-${f.short}`]);
+	const valued = valuedFlags(takes);
 	for (let i = 1; i < words.length; i++) {
 		if (!words[i].startsWith('-')) return null;
 		if (valued.includes(words[i]) && ++i === words.length) return null;

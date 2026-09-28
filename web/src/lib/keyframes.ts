@@ -5,22 +5,27 @@
 // for optional keys».
 //
 // A frame is how a key's token on the line is DRAWN, never a second copy of
-// it: the line holds exactly what runs. So a frame writes the text a reader
-// would have typed, `key=` — the CLI binds no positional to a spec's keys
-// today, and da-9s98k is where that grammar is decided. If it becomes
-// `occur tea 3`, `writes` and `valueOf` are the two places that change.
+// it: the line holds exactly what runs. Since da-9s98k the CLI binds a
+// field's keys to positionals, so a frame holds the BARE value — `occur tea
+// 3 2` — and the line's other words bind to the keys still unwritten, in
+// order, as the CLI binds them. A key a positional cannot reach, because
+// one before it is left out, is written `key=`.
 
 import type { Key } from './fields.js';
-import { shellSpans, shellSplit } from './shellSplit.js';
+import { DATUM_SPACE, shellSpans } from './shellSplit.js';
 
 /**
- * The verbs a field's keys are typed after. Not `end` (da-o4jaa), vividn,
- * 09-27: «generally speaking I don't save any extra_data in this one, so I
- * think that should be the default. But allowing it might also be nice??»
- * — so `end <field>` draws no frames and Enter writes it no defaults, and
- * a `key=value` typed on it by hand still runs as typed.
+ * The verbs a field's keys are typed after — the ones the CLI gives them
+ * (`takes_spec_keys`). Not `end` (da-o4jaa), vividn, 09-27: «generally
+ * speaking I don't save any extra_data in this one, so I think that should
+ * be the default. But allowing it might also be nice??» — so `end <field>`
+ * draws no frames, and a `key=value` typed on it by hand still runs as
+ * typed.
  */
-const VERBS = ['occur', 'start'];
+const VERBS = ['occur', 'start', 'add', 'switch'];
+
+/** A field and the keys a log of it takes (`FieldButton`'s). */
+type Keyed = { field: string; keys: Key[]; stateKeys?: Record<string, Key[]> };
 
 /** One declared key, and where its token stands on the line if it is there. */
 export interface Frame extends Key {
@@ -31,69 +36,74 @@ export interface Frame extends Key {
 	value?: string;
 }
 
-/** The text a frame puts on the line, ready for its value. */
+/** The text a frame puts on the line when a positional cannot reach it. */
 export const writes = (key: Key): string => `${key.name}=`;
-
-/** The value of `key`'s token, or undefined when `token` is not that key's. */
-const valueOf = (key: Key, token: string): string | undefined =>
-	token.startsWith(writes(key)) ? token.slice(writes(key).length) : undefined;
 
 /**
  * The frames for a line — one per key the field declares, in its order —
- * or null when the line is not `occur|start <field>` for a field with
- * keys. A key is written when a token after the field carries it.
+ * or null when the line is not `occur|start|add <field>`, or `switch
+ * <field> <state>`, for a field with keys. A key is written when a token
+ * after the field names it (`key=value`), or when a bare word falls to it:
+ * the bare words fill the unnamed keys in order, as the CLI binds them.
+ * A switch's first bare word is its state, whose own keys it takes where
+ * it declares some (da-cej7q). A flag is no key's, and neither is the word
+ * after one of the `valued` flags (`-t 1400`, `valuedFlags`).
  */
-export function framesOf(line: string, fields: { field: string; keys: Key[] }[]): Frame[] | null {
+export function framesOf(line: string, fields: Keyed[], valued: string[] = []): Frame[] | null {
 	const [verb, field, ...rest] = shellSpans(line).tokens;
-	const keys = VERBS.includes(verb?.text) ? fields.find((b) => b.field === field?.text)?.keys : undefined;
+	const button = VERBS.includes(verb?.text) ? fields.find((b) => b.field === field?.text) : undefined;
+	const bare = rest.filter((t, i) => !t.text.includes('=') && !t.text.startsWith('-') && !valued.includes(rest[i - 1]?.text));
+	const state = verb?.text === 'switch' ? bare.shift()?.text : undefined;
+	const keys = state === undefined ? (verb?.text === 'switch' ? undefined : button?.keys) : (button?.stateKeys?.[state] ?? button?.keys);
 	if (!keys?.length) return null;
-	return keys.map((key) => {
-		const token = rest.find((t) => valueOf(key, t.text) !== undefined);
-		return token ? { ...key, from: token.from, to: token.to, value: valueOf(key, token.text) } : { ...key };
+	const frames: Frame[] = keys.map((key) => {
+		const token = rest.find((t) => t.text.startsWith(writes(key)));
+		return token ? { ...key, from: token.from, to: token.to, value: token.text.slice(writes(key).length) } : { ...key };
 	});
+	frames
+		.filter((f) => f.from === undefined)
+		.forEach((f, i) => bare[i] && Object.assign(f, { from: bare[i].from, to: bare[i].to, value: bare[i].text }));
+	return frames;
 }
 
 /**
  * The line after a SPACE typed at its end, or null when the space is only a
- * space: inside quotes, in a line with no frames, or with every key written.
+ * space — which it mostly is: the next bare word falls to the next key.
  *
- * Space advances: it writes the next unwritten key's `key=`. A space in a
- * frame still EMPTY skips it — its `key=` comes off and the one after it
- * goes on, round to the first again — so a reader can step past an
- * optional key, and a lone empty key stays put.
+ * A space in a frame still EMPTY skips it (vividn, 09-26: «space advances»):
+ * the key a bare word would fill next, when the line already ends in a
+ * space, or a `key=` with nothing in it, which comes off. The key after it
+ * is written `key=`, since a positional would fall to the one skipped —
+ * bare only when the skip came round to the first unwritten key again. A
+ * lone empty key stays put; inside quotes a space is literal.
  */
-export function advance(line: string, fields: { field: string; keys: Key[] }[]): string | null {
-	const frames = framesOf(line, fields);
-	const { tokens, quoted } = shellSpans(line);
-	if (!frames || quoted || tokens.length < 2) return null;
-	const empty = frames.findIndex((f) => f.value === '' && f.to === line.length);
-	const order = empty < 0 ? frames : [...frames.slice(empty + 1), ...frames.slice(0, empty)];
-	const next = order.find((f) => f.from === undefined);
+export function advance(line: string, fields: Keyed[], valued: string[] = []): string | null {
+	const frames = framesOf(line, fields, valued);
+	if (!frames || shellSpans(line).quoted) return null;
+	const unwritten = frames.filter((f) => f.from === undefined);
+	const skipped =
+		frames.find((f) => f.value === '' && f.to === line.length) ??
+		(DATUM_SPACE.test(line.slice(-1)) ? unwritten[0] : undefined);
+	if (!skipped) return null;
+	const open = frames.filter((f) => f === skipped || f.from === undefined);
+	const at = open.indexOf(skipped);
+	const next = [...open.slice(at + 1), ...open.slice(0, at)][0];
 	if (!next) return null;
-	const kept = empty < 0 ? line : line.slice(0, frames[empty].from);
-	return `${kept.replace(/\s*$/, '')} ${writes(next)}`;
+	const kept = skipped.from === undefined ? line : line.slice(0, skipped.from);
+	return `${kept.trimEnd()} ${next === open[0] ? '' : writes(next)}`;
 }
 
 /**
- * The line as it runs: every optional key left empty or unwritten that has
- * a default gets `key=default`, so what runs is what the line shows and the
- * default is stored (the CLI does not apply one itself — da-9s98k). Not
- * inside an open quote, where the defaults would become part of its value.
+ * The line as it runs: a `key=` left empty comes off, so the CLI fills a
+ * default and leaves an optional absent — it applies the defaults itself
+ * (da-9s98k), where an empty `key=` would clear one. Not inside an open
+ * quote, where the line runs as typed.
  */
-export function complete(line: string, fields: { field: string; keys: Key[] }[]): string {
-	const frames = framesOf(line, fields);
-	// An open quote would take the defaults into its value: the line runs as typed.
+export function complete(line: string, fields: Keyed[], valued: string[] = []): string {
+	const frames = framesOf(line, fields, valued);
 	if (!frames || shellSpans(line).quoted) return line;
-	let out = line;
+	const empty = frames.filter((f) => f.from !== undefined && line.slice(f.from, f.to) === writes(f));
 	// From the right, so each span is still where it was.
-	for (const f of [...frames].filter((f) => f.value === '' && f.default !== undefined).sort((a, b) => b.from! - a.from!))
-		out = out.slice(0, f.from) + writes(f) + quote(f.default!) + out.slice(f.to);
-	const missing = frames.filter((f) => f.from === undefined && f.default !== undefined);
-	return missing.length ? `${out.replace(/\s*$/, '')} ${missing.map((f) => writes(f) + quote(f.default!)).join(' ')}` : out;
-}
-
-/** A default as a token: quoted when it would split or unquote. */
-function quote(value: string): string {
-	const tokens = shellSplit(value);
-	return tokens.length === 1 && tokens[0] === value ? value : `'${value.replace(/'/g, `'\\''`)}'`;
+	const out = empty.sort((a, b) => b.from! - a.from!).reduce((l, f) => l.slice(0, f.from) + l.slice(f.to), line);
+	return empty.length ? out.trimEnd() : line;
 }

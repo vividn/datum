@@ -68,6 +68,8 @@ export interface FieldButton {
 	required: string[];
 	/** Every key its spec declares (`keysOf`): the input line's frames. */
 	keys: Key[];
+	/** A state's keys where it declares its own (`stateKeysOf`): a switch to it frames these. */
+	stateKeys: Record<string, Key[]>;
 }
 
 /**
@@ -111,33 +113,38 @@ export interface Key {
 }
 
 /**
- * The keys the spec declares, in the order it declares them (da-31d1d):
- * the `-K`/`-k` keys (`id_keys`, `data_keys`, `key` or `key=default`),
- * then the subfields. A `-K`/`-k` key with no default is required; a
- * subfield is when it says so and has none.
+ * A key as the CLI parsed it (da-p3hxn): `spec show`'s and `fields
+ * --json`'s `keys` — `FieldSpec::declared_keys`, in binding order. The web
+ * never splits a spelling: `brand` of kind assign is how it learns of an
+ * assign, which no spelling carries.
  */
-export function keysOf(spec: FieldSpec | null | undefined): Key[] {
-	const flags = [...((spec?.id_keys as string[] | undefined) ?? []), ...((spec?.data_keys as string[] | undefined) ?? [])];
-	const subfields = Object.entries((spec?.subfields as Record<string, { required?: boolean; default?: unknown }> | undefined) ?? {});
-	const keys: Key[] = [
-		...flags.map((k) => {
-			const [name, ...rest] = k.split('=');
-			return rest.length ? { name, default: rest.join('='), required: false } : { name, required: true };
-		}),
-		...subfields.map(([name, s]) =>
-			s.default == null
-				? { name, required: !!s.required }
-				: { name, default: typeof s.default === 'string' ? s.default : JSON.stringify(s.default), required: false }
-		)
-	];
-	return keys.filter((k, i) => keys.findIndex((o) => o.name === k.name) === i);
+export interface SpecKey {
+	name: string;
+	kind: 'required' | 'optional' | 'default' | 'assign';
+	/** A default's or an assign's value. */
+	value?: string;
+	in_slug: boolean;
 }
 
+/** The keys a reader types: an assigned one is fixed, and gets no frame. */
+const typed = (keys: SpecKey[] | undefined): Key[] =>
+	(keys ?? [])
+		.filter((k) => k.kind !== 'assign')
+		.map(({ name, kind, value }) => (kind === 'default' ? { name, default: value, required: false } : { name, required: kind === 'required' }));
+
+/** The keys the spec declares, in the order a log binds them (`keys`). */
+export const keysOf = (spec: FieldSpec | null | undefined): Key[] => typed(spec?.keys as SpecKey[] | undefined);
+
+/** The keys an entry in each state that declares its own takes (`keys_by_state`, da-cej7q). */
+export const stateKeysOf = (spec: FieldSpec | null | undefined): Record<string, Key[]> =>
+	Object.fromEntries(
+		Object.entries((spec?.keys_by_state as Record<string, SpecKey[]> | undefined) ?? {}).map(([s, keys]) => [s, typed(keys)])
+	);
+
 /**
- * The keys a log of the field cannot do without (da-lxqqz): an `-K`/`-k`
- * key the spec declares without `=default` (`id_keys`, `data_keys`), and a
- * `required` subfield with no default. A key with a default is filled from
- * it, so it asks nothing of the person.
+ * The keys a log of the field cannot do without (da-lxqqz): the ones of
+ * kind required. A key with a default is filled from it, so it asks
+ * nothing of the person.
  */
 export const requiredKeys = (spec: FieldSpec | null | undefined): string[] =>
 	keysOf(spec)
@@ -195,7 +202,8 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 				current: state === true || (typeof state === 'string' && state !== '') ? state : undefined,
 				y,
 				required: requiredKeys(spec),
-				keys: keysOf(spec)
+				keys: keysOf(spec),
+				stateKeys: stateKeysOf(spec)
 			};
 		});
 }

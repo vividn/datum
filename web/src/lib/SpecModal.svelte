@@ -19,16 +19,19 @@
 	Segmented: Basics · States · Keys · Aliases · Placement. Track is this
 	modal opened on Basics, and that is all it needs — name, pictogram,
 	Done, the same taps it always took. The keys a field's entries carry
-	are on Basics too, name, default and required (da-h119q): they are the
-	first thing a person adds to a field, and `track` carries them. The
+	are on Basics too (da-h119q): a name and a KIND — required, optional,
+	default or assign, each with its value where it has one (da-p3hxn),
+	the four ways a log line names a key — the first thing a person adds
+	to a field, and `track` carries them. The rows are `spec show`'s own
+	`keys`, parsed by the CLI, so what is saved is what it reads back. The
 	Keys tab has the rest of a key — its type, whether it is in the slug —
 	and it, Aliases and Placement are a spec's alone (da-cap5m, da-btyvj),
 	so a field being declared has them shut. Placement is a fifth tab
 	because it is a drag surface, not a row of inputs — cheap to move under
 	Basics.
 
-	Keys are grouped required over optional, so which is which reads at a
-	glance and not only off each row's toggle, and each row says whether
+	Keys are grouped required over the rest, so which is which reads at a
+	glance and not only off each row's kind, and each row says whether
 	the key is IN THE SLUG — whether it identifies an entry or merely
 	annotates it. Aliases are made by datum from the verb and the states
 	until that is switched off (`no_autoalias`); from then on the list is
@@ -59,6 +62,7 @@
 	import {
 		editedSpec,
 		keyRows,
+		KEY_KINDS,
 		KEY_TYPES,
 		placeOf,
 		specArgv,
@@ -154,7 +158,10 @@
 	}
 
 	const addKey = () =>
-		(keys = [...keys, { name: '', required: false, value_type: 'any', in_slug: false, default: '' }]);
+		(keys = [...keys, { name: '', kind: 'optional', value: '', value_type: 'any', in_slug: false }]);
+
+	/** Whether a key's kind carries a value: a default's, an assign's. */
+	const valued = (key: KeyRow) => key.kind === 'default' || key.kind === 'assign';
 
 	/** `list` with its `from`th item moved to `to`. */
 	function moved<T>(list: T[], from: number, to: number): T[] {
@@ -257,13 +264,16 @@
 								spellcheck="false"
 								autocapitalize="none"
 							/>
+							<select class="kind" bind:value={key.kind} aria-label="the kind of {key.name || 'this key'}">
+								{#each KEY_KINDS as kind (kind)}<option>{kind}</option>{/each}
+							</select>
 							<input
-								class="default"
-								bind:value={key.default}
-								placeholder="default"
-								aria-label="the default of {key.name || 'this key'}"
+								class="kind-value"
+								bind:value={key.value}
+								placeholder={key.kind}
+								disabled={!valued(key)}
+								aria-label="the {key.kind} of {key.name || 'this key'}"
 							/>
-							<label><input type="checkbox" class="required" bind:checked={key.required} /> required</label>
 							<button
 								type="button"
 								class="remove"
@@ -416,10 +426,10 @@
 				>
 			{:else if tab === 'keys'}
 				{#each [true, false] as required (required)}
-					{#if keys.some((k) => k.required === required)}
+					{#if keys.some((k) => (k.kind === 'required') === required)}
 						<ul class="keys" data-group={required ? 'required' : 'optional'}>
 							<li class="group">{required ? 'required' : 'optional'}</li>
-							{#each keys.filter((k) => k.required === required) as key (key)}
+							{#each keys.filter((k) => (k.kind === 'required') === required) as key (key)}
 								<li class="key">
 									<input
 										class="name"
@@ -436,7 +446,9 @@
 										on:click={() => (keys = keys.filter((k) => k !== key))}>✕</button
 									>
 									<div class="flags">
-										<label><input type="checkbox" class="required" bind:checked={key.required} /> required</label>
+										<select class="kind" bind:value={key.kind} aria-label="the kind of {key.name || 'this key'}">
+											{#each KEY_KINDS as kind (kind)}<option>{kind}</option>{/each}
+										</select>
 										<label title="a key in the slug identifies an entry; one outside it annotates it"
 											><input type="checkbox" class="in-slug" bind:checked={key.in_slug} /> in slug</label
 										>
@@ -445,10 +457,11 @@
 										</select>
 									</div>
 									<input
-										class="default"
-										bind:value={key.default}
-										placeholder="default"
-										aria-label="the default of {key.name || 'this key'}"
+										class="kind-value"
+										bind:value={key.value}
+										placeholder={key.kind}
+										disabled={!valued(key)}
+										aria-label="the {key.kind} of {key.name || 'this key'}"
 									/>
 								</li>
 							{/each}
@@ -838,21 +851,13 @@
 
 	.basic-keys li {
 		display: grid;
-		grid-template-columns: 1fr 1fr auto auto;
+		grid-template-columns: 1fr auto 1fr auto;
 		align-items: center;
 		gap: 0.3rem;
 	}
 
-	.basic-keys input:not([type='checkbox']) {
+	.basic-keys input {
 		min-inline-size: 0;
-	}
-
-	.basic-keys label {
-		display: flex;
-		align-items: center;
-		gap: 0.2rem;
-		color: var(--muted);
-		font-size: 0.75rem;
 	}
 
 	/* A group's name heads its rows: which keys are required reads at a
@@ -884,7 +889,7 @@
 	}
 
 	.flags,
-	.key .default {
+	.key .kind-value {
 		grid-column: 1 / -1;
 	}
 
@@ -896,7 +901,7 @@
 		font-size: 0.75rem;
 	}
 
-	.flags select {
+	.flags select.type {
 		margin-inline-start: auto;
 		background: #1a1a30;
 		border: 1px solid var(--rule);

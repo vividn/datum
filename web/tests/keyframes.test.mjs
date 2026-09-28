@@ -1,6 +1,6 @@
 // The input line's key frames (da-31d1d), in a browser: a reader typing
-// `occur tea` for a field with one required key and one optional, and
-// what the bar draws and runs. The rules are `keyframes-pure.test.mjs`.
+// `occur tea` for a field with a key of each kind (da-p3hxn), and what the
+// bar draws and runs. The rules are `keyframes-pure.test.mjs`.
 //
 // vividn, 09-26: «a small frame with the name of the key, space advances
 // (unless there are quotes), show the default value in ghost text for
@@ -16,7 +16,7 @@ after(stopApp);
 
 const shared = sharedApp({ viewport: { width: 1280, height: 800 } });
 
-const TEA = 'spec set tea --verb occur --data-key amount --data-key cups=1';
+const TEA = 'spec set tea --verb occur --data-key amount --data-key size= --data-key cups=1 --assign brand=acme';
 const WORK = 'spec set work --verb start --data-key project --data-key n=1';
 
 /** The bar's line, and the keys it frames: written ones over the text, waiting ones after it. */
@@ -38,8 +38,16 @@ async function type(page, keys) {
 	await page.keyboard.type(keys);
 }
 
+/** Enter, and the line gone: what ran is the last echo. */
+async function enter(app) {
+	await app.page.keyboard.press('Enter');
+	await app.page.waitForFunction(() => document.querySelector('.prompt-bar input').value === '');
+	await app.idle();
+}
+
 describe('key frames', () => {
-	test('two frames in order, required solid and optional dashed with its default ghosted; space fills them in turn', async () => {
+	// da-p3hxn: the CLI binds a spec's keys to positionals, so a frame holds a bare value.
+	test('frames in order, required solid and the rest dashed, an assign none; `3 space 2` runs `occur tea 3 2`', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await seedLines(app, [TEA]);
@@ -47,36 +55,37 @@ describe('key frames', () => {
 			await type(page, 'occur tea');
 			let now = await drawn(page);
 			assert.deepEqual(now.written, []);
-			assert.deepEqual(now.waiting.map((k) => [k.key, k.label, k.border]), [['amount', 'amount', 'solid'], ['cups', 'cups1', 'dashed']]);
+			assert.deepEqual(now.waiting.map((k) => [k.key, k.label, k.border]), [
+				['amount', 'amount', 'solid'],
+				['size', 'size', 'dashed'],
+				['cups', 'cups1', 'dashed']
+			], 'brand is assigned: fixed, and not typed');
 
-			await type(page, ' ');
+			await type(page, ' 3 2');
 			now = await drawn(page);
-			assert.equal(now.text, 'occur tea amount=');
-			assert.deepEqual(now.written.map((f) => [f.key, f.outline]), [['amount', 'solid']]);
+			assert.equal(now.text, 'occur tea 3 2', 'a space is only a space');
+			assert.deepEqual(now.written.map((f) => [f.key, f.outline]), [['amount', 'solid'], ['size', 'dashed']]);
 			assert.deepEqual(now.waiting.map((k) => k.key), ['cups']);
-
-			await type(page, '3 ');
-			now = await drawn(page);
-			assert.equal(now.text, 'occur tea amount=3 cups=');
-			assert.deepEqual(now.written.map((f) => [f.key, f.outline]), [['amount', 'solid'], ['cups', 'dashed']]);
-			assert.deepEqual(now.ghost, ['1'], 'the empty optional ghosts its default');
-			assert.deepEqual(now.waiting, []);
 
 			// Each frame stands where its token does in the box: measured on
 			// the mirror, which is the box's text in the box's font.
 			const drift = await page.evaluate(() => {
 				const bar = document.querySelector('.prompt-bar');
 				const text = bar.querySelector('.mirror').firstChild;
-				const value = bar.querySelector('input').value;
-				return [...bar.querySelectorAll('.frame')].map((frame) => {
+				return [...bar.querySelectorAll('.frame')].map((frame, i) => {
 					const range = document.createRange();
-					const from = value.indexOf(`${frame.dataset.key}=`);
+					const from = 'occur tea '.length + 2 * i;
 					range.setStart(text, from);
 					range.setEnd(text, from + 1);
 					return Math.abs(range.getBoundingClientRect().left - frame.getBoundingClientRect().left);
 				});
 			});
-			assert.ok(drift.every((px) => px < 1), `frames off their tokens by ${drift} px`);
+			assert.ok(drift.length === 2 && drift.every((px) => px < 1), `frames off their tokens by ${drift} px`);
+
+			await enter(app);
+			assert.equal((await app.echoes()).at(-1), 'occur tea 3 2');
+			assert.deepEqual((await app.entries(1))[0].data, { amount: 3, size: 2, cups: 1, brand: 'acme' });
+			assert.deepEqual(app.errors, []);
 		});
 	});
 
@@ -85,20 +94,40 @@ describe('key frames', () => {
 			const { page } = app;
 			await seedLines(app, [TEA]);
 			await type(page, 'occur tea "a b" ');
-			assert.equal((await drawn(page)).text, 'occur tea amount="a b" cups=');
+			const now = await drawn(page);
+			assert.equal(now.text, 'occur tea "a b" ');
+			assert.deepEqual(now.written.map((f) => f.key), ['amount']);
 		});
 	});
 
-	test('Enter writes an empty optional key its default, and runs what the line says', async () => {
+	test('a space in an empty frame skips it; Enter leaves an empty optional absent and the default to the CLI', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await seedLines(app, [TEA]);
-			await type(page, 'occur tea 3 ');
-			await page.keyboard.press('Enter');
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === '');
-			await app.idle();
-			assert.equal((await app.echoes()).at(-1), 'occur tea amount=3 cups=1');
-			assert.deepEqual((await app.entries(1))[0].data, { amount: 3, cups: 1 });
+			await type(page, 'occur tea 3  ');
+			const now = await drawn(page);
+			assert.equal(now.text, 'occur tea 3 cups=', 'size skipped: cups is named, as no bare word reaches it');
+			assert.deepEqual(now.ghost, ['1'], 'the empty default ghosts its value');
+			await enter(app);
+			assert.equal((await app.echoes()).at(-1), 'occur tea 3', 'the default is not written onto the line');
+			assert.deepEqual((await app.entries(1))[0].data, { amount: 3, cups: 1, brand: 'acme' });
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// da-cej7q: a state may declare keys of its own.
+	test("a switch frames its state's own keys: sad asks for reason, happy for nothing", async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await seedLines(app, ['spec set mood --verb switch --state happy --state sad --state-key sad=reason']);
+			await type(page, 'switch mood happy');
+			assert.deepEqual((await drawn(page)).waiting, []);
+			await page.locator('.prompt-bar input').fill('');
+			await type(page, 'switch mood sad');
+			assert.deepEqual((await drawn(page)).waiting.map((k) => [k.key, k.border]), [['reason', 'solid']]);
+			await type(page, ' tired');
+			await enter(app);
+			assert.deepEqual((await app.entries(1))[0].data, { reason: 'tired' });
 			assert.deepEqual(app.errors, []);
 		});
 	});

@@ -600,17 +600,18 @@ describe('a verb under a field pill', () => {
 			assert.equal(await verb(page, 'occur').getAttribute('data-act'), 'fill');
 
 			await verb(page, 'occur').click();
-			// Straight into the first key's frame (da-31d1d).
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur tea amount=');
-			assert.deepEqual(await line(page), { text: 'occur tea amount=', focused: true });
+			// Straight into the first key's frame (da-31d1d), which a bare word fills (da-p3hxn).
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur tea ');
+			assert.deepEqual(await line(page), { text: 'occur tea ', focused: true });
 			assert.notEqual(await page.locator('.prompt-bar input').getAttribute('inputmode'), 'none', 'the keyboard stayed shut');
 			// The pill is on the line now, so it is spent rather than appended a second time.
 			await fieldPill(page).waitFor({ state: 'detached' });
 			await app.idle();
 			assert.equal((await app.allEntries()).length, before, 'the tap logged something');
 
-			await echoed(app, () => app.submit('occur tea amount=2'));
-			assert.equal((await app.echoes()).at(-1), 'occur tea amount=2');
+			await echoed(app, () => app.submit('occur tea 2'));
+			assert.equal((await app.echoes()).at(-1), 'occur tea 2');
+			assert.deepEqual((await app.entries(1))[0].data, { amount: 2 });
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -623,7 +624,7 @@ describe('a verb under a field pill', () => {
 			await seedLines(app, ['spec set "my coffee" --verb occur --data-key amount', 'spec set "iced tea" --verb occur']);
 			await pillOf(page, 'my coffee');
 			await verb(page, 'occur').click();
-			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur "my coffee" amount=');
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur "my coffee" ');
 			await fieldPill(page).waitFor({ state: 'detached' });
 			const filled = (await line(page)).text;
 			await echoed(app, () => app.submit(`${filled}2`));

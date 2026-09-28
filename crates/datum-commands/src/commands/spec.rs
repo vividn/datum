@@ -9,6 +9,7 @@ use datum_core::{
     time::DatumTime,
 };
 use serde_json::Value as JsonValue;
+use std::collections::BTreeMap;
 use unicode_width::UnicodeWidthChar;
 
 use crate::args::{SpecCommand, SpecSetArgs};
@@ -22,7 +23,7 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
     match sub {
         SpecCommand::Show { field, text } => match db.load_spec(&field)? {
             Some(spec) if text => render_spec_text(&spec),
-            Some(spec) => println!("{}", serde_json::to_string_pretty(&spec)?),
+            Some(spec) => println!("{}", serde_json::to_string_pretty(&spec_json(&spec))?),
             None => println!("No spec defined for field '{field}'"),
         },
         SpecCommand::AddState {
@@ -329,11 +330,7 @@ fn set_state_keys(spec: &mut FieldSpec, state: &str, flags: &[&str]) {
 
 /// Merge `--assign`-style `KEY=VALUE` flags into an assigned-key map
 /// (da-ulc0v), by [`set_pairs`]' convention: an empty VALUE removes KEY.
-fn set_assign(
-    map: &mut std::collections::BTreeMap<String, String>,
-    pairs: &[String],
-    flag: &str,
-) -> Result<()> {
+fn set_assign(map: &mut BTreeMap<String, String>, pairs: &[String], flag: &str) -> Result<()> {
     let mut pairs_map = std::mem::take(map).into_iter().collect();
     set_pairs(&mut pairs_map, pairs, flag, "KEY=VALUE", |_, _| Ok(()))?;
     *map = pairs_map.into_iter().collect();
@@ -638,6 +635,48 @@ fn print_state_keys(spec: &FieldSpec, state: &str) {
     }
 }
 
+/// A spec as `spec show` and `fields --json` print it (da-p3hxn): the
+/// stored spec, plus every key it declares ALREADY PARSED, so no reader
+/// splits a spelling — `keys`, [`FieldSpec::declared_keys`] in binding
+/// order as `{name, kind, value?, in_slug}`, and `keys_by_state`, the same
+/// list for an entry in each state that declares keys of its own. Neither
+/// is stored: `spec set --from-json` ignores both.
+#[derive(serde::Serialize)]
+pub struct SpecJson<'a> {
+    #[serde(flatten)]
+    spec: &'a FieldSpec,
+    keys: Vec<JsonValue>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    keys_by_state: BTreeMap<&'a str, Vec<JsonValue>>,
+}
+
+pub fn spec_json(spec: &FieldSpec) -> SpecJson<'_> {
+    let keys = |state: Option<&str>| -> Vec<JsonValue> {
+        spec.declared_keys(state)
+            .into_iter()
+            .map(|k| {
+                let (kind, value) = match k.kind {
+                    KeyKind::Required => ("required", None),
+                    KeyKind::Optional => ("optional", None),
+                    KeyKind::Default(v) => ("default", Some(v)),
+                    KeyKind::Assign(v) => ("assign", Some(v)),
+                };
+                let mut key = serde_json::json!({"name": k.name, "kind": kind, "in_slug": k.id});
+                if let Some(v) = value {
+                    key["value"] = v.into();
+                }
+                key
+            })
+            .collect()
+    };
+    let states = spec.state_keys.keys().chain(spec.state_assign.keys());
+    SpecJson {
+        spec,
+        keys: keys(None),
+        keys_by_state: states.map(|s| (s.as_str(), keys(Some(s)))).collect(),
+    }
+}
+
 /// Human-readable summary of a FieldSpec — `datum spec show <FIELD> --text`.
 ///
 /// JSON output (`spec show <FIELD>` without `--text`) is precise and good
@@ -752,6 +791,7 @@ fn render_spec_text(spec: &FieldSpec) {
 mod tests {
     use super::*;
     use datum_core::db::Db;
+    use serde_json::json;
 
     #[test]
     fn cmd_spec_set_flag_flow_creates_derived_aliases() {
@@ -999,5 +1039,36 @@ mod tests {
         let spec = db.load_spec("mood").unwrap().unwrap();
         assert!(!spec.state_colors.contains_key("happy"));
         assert!(!spec.state_descriptions.contains_key("happy"));
+    }
+
+    /// `spec show` hands a reader every key already parsed (da-p3hxn), so
+    /// the web never splits a spelling: an assign, which no list spells,
+    /// is `brand` of kind assign; a state's own key is in its state's list
+    /// alone.
+    #[test]
+    fn spec_json_carries_the_keys_parsed() {
+        let mut spec = FieldSpec::new("mood", datum_core::action::Action::Switch);
+        spec.id_keys = vec!["day".into()];
+        spec.data_keys = vec!["size=".into(), "temp=hot".into()];
+        spec.assign.insert("brand".into(), "acme".into());
+        spec.state_keys.insert("sad".into(), vec!["reason".into()]);
+        let shown = serde_json::to_value(spec_json(&spec)).unwrap();
+        let key =
+            |name: &str, kind: &str, id: bool| json!({"name": name, "kind": kind, "in_slug": id});
+        let mut temp = key("temp", "default", false);
+        temp["value"] = "hot".into();
+        let mut brand = key("brand", "assign", false);
+        brand["value"] = "acme".into();
+        let field = vec![
+            key("day", "required", true),
+            key("size", "optional", false),
+            temp,
+            brand,
+        ];
+        assert_eq!(shown["keys"], JsonValue::from(field.clone()));
+        let mut sad = field;
+        sad.insert(3, key("reason", "required", false));
+        assert_eq!(shown["keys_by_state"], json!({"sad": sad}));
+        assert_eq!(shown["data_keys"], json!(["size=", "temp=hot"]));
     }
 }
