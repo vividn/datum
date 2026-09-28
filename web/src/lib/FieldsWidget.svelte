@@ -312,7 +312,7 @@
 	 */
 	function titleOf(button: FieldButton): string {
 		const press =
-			button.shape.kind === 'record' ? `add ${button.field} … — fills the prompt` : 'press to log';
+			button.shape.kind === 'record' ? `${shellJoin(['add', button.field])} … — fills the prompt` : 'press to log';
 		return [
 			...(button.ignored ? ['ignored'] : []),
 			press,
@@ -582,7 +582,7 @@
 						style={vars({ fill: null, line: color, text: color, label: 'end' })}
 						{disabled}
 						data-state="false"
-						title="end {chosen.field}"
+						title={shellJoin(['end', chosen.field])}
 						on:click={() => emit(['end', chosen.field])}
 					>
 						end
