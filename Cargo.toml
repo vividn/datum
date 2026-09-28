@@ -6,6 +6,7 @@ members = [
     "crates/datum-layout",
     "crates/datum-parity",
     "crates/datum-parse",
+    "crates/datum-sync",
     "crates/datum-test-util",
     "xtask",
 ]

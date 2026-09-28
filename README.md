@@ -212,7 +212,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `stats` — Count, total duration, and per-state ratio over a time slice
 - `ids` — List entry ids (newest-first by default)
 - `fields` — List every field: its spec and the states it was logged with
-- `sync` — Exchange signed ops with another copy, over a pipe
+- `sync` — Sync with other copies: peer to peer, or over a pipe
 - `conflicts` — Triage sync conflicts (see `datum check` for integrity findings)
 - `view` — Execute a named SELECT view and render the rows
 
@@ -306,10 +306,22 @@ Call-site time flags compose with the alias-bound ones: `-y` / `-q` / `-d` shift
 
 ## Sync
 
-Every change to an entry is an op signed by this copy's endpoint key, and
-two copies that hold the same ops hold the same entries. Ops move as JSON
-lines, so two databases sync through a pipe (the network transport comes
-next):
+Two copies of a database sync peer to peer over [iroh](https://iroh.computer).
+Pair them once with a one-time invite, then sync:
+
+```bash,no_run
+datum sync add-client          # on the first copy: prints `datum sync connect <TICKET>`
+datum sync connect <TICKET>    # on the second: both record the other as a peer, and sync
+datum sync now                 # sync with every peer once
+datum sync run                 # stay up: serve peers, push new entries as they are written
+datum sync peers               # list them; `datum sync forget <PEER>` drops one
+```
+
+Only peers are served, and the first command after a peer is added warns
+about it once. Every change to an entry is an op signed by this copy's
+endpoint key (which is also its iroh identity), and two copies that hold
+the same ops hold the same entries. Ops also move as JSON lines, so two
+databases sync through a pipe:
 
 ```bash,no_run
 datum --db a sync ops --since "$(datum --db b sync vector)" | datum --db b sync apply

@@ -129,6 +129,15 @@ const CONFLICTS_SUBCOMMANDS: &[SubcommandSpec] = &[
     ),
 ];
 const SYNC_SUBCOMMANDS: &[SubcommandSpec] = &[
+    sub(
+        "add-client",
+        &["datum sync add-client [--qr] [--expires <DUR>]"],
+    ),
+    sub("connect", &["datum sync connect [<TICKET>]"]),
+    sub("now", &["datum sync now"]),
+    sub("run", &["datum sync run"]),
+    sub("peers", &["datum sync peers"]),
+    sub("forget", &["datum sync forget <PEER>"]),
     sub("vector", &["datum sync vector"]),
     sub("ops", &["datum sync ops [--since <VECTOR>]"]),
     sub("apply", &["datum sync apply"]),
@@ -996,7 +1005,7 @@ const DB_BODY: &str = "USAGE:\n  datum db setup\n  datum db purge [--yes | -y]\n
 
 const CONFIG_BODY: &str = "USAGE:\n  datum config show\n";
 
-const SYNC_BODY: &str = "USAGE:\n  datum sync vector\n  datum sync ops [--since <VECTOR>]\n  datum sync apply\n  datum sync verify [--verbose]\n\nEvery change to an entry is an op, signed by this copy's endpoint key.\nOps move as JSON lines, so two copies sync through a pipe:\n\n  datum --db a sync ops --since \"$(datum --db b sync vector)\" | datum --db b sync apply\n\n  vector   This copy's version vector: per endpoint, the highest op held.\n  ops      Every op the vector lacks (all of them with no --since), one\n           per line. An entry no op covers yet is sent as a baseline op.\n  apply    Apply op lines read from stdin. A bad signature is refused and\n           named; an op whose predecessor has not arrived is held until it\n           does. Prints applied / already had / held / conflicts.\n  verify   The state hash over every entry row. Two copies that hold the\n           same ops print the same hash. --verbose adds one per column.\n\nPer key the op with the later hybrid logical clock wins. Two copies that\nset one key without seeing each other's op file a sync_conflict (see\n`datum check` and `datum conflicts`); so does a delete against a\nconcurrent edit, and the delete stands.\n";
+const SYNC_BODY: &str = "USAGE:\n  datum sync add-client [--qr] [--expires <DUR>]\n  datum sync connect [<TICKET>]\n  datum sync now\n  datum sync run\n  datum sync peers\n  datum sync forget <PEER>\n  datum sync vector\n  datum sync ops [--since <VECTOR>]\n  datum sync apply\n  datum sync verify [--verbose]\n\nTwo copies of a database sync over iroh, peer to peer. Pair them once:\n\n  add-client  Make a one-time invite (default --expires 10m) and wait for\n              it: prints `datum sync connect <TICKET>` to run on the other\n              copy, and a QR code of it with --qr.\n  connect     Redeem an invite (the ticket from stdin if not given). Each\n              copy records the other as a peer, and a first sync runs.\n  now         Sync with every peer once: one line each, sent / got /\n              conflicts / whether the two copies' verify hashes agree.\n  run         Stay up: serve peers, and push new ops to them as they are\n              written. Ctrl-C to stop.\n  peers       List the peers. forget removes one, by label or id prefix.\n\nOnly peers are served. The first command after a peer is added warns about\nit once, on stderr.\n\nEvery change to an entry is an op, signed by this copy's endpoint key.\nOps also move as JSON lines, so two copies sync through a pipe:\n\n  datum --db a sync ops --since \"$(datum --db b sync vector)\" | datum --db b sync apply\n\n  vector   This copy's version vector: per endpoint, the highest op held.\n  ops      Every op the vector lacks (all of them with no --since), one\n           per line. An entry no op covers yet is sent as a baseline op.\n  apply    Apply op lines read from stdin. A bad signature is refused and\n           named; an op whose predecessor has not arrived is held until it\n           does. Prints applied / already had / held / conflicts.\n  verify   The state hash over every entry row. Two copies that hold the\n           same ops print the same hash. --verbose adds one per column.\n\nPer key the op with the later hybrid logical clock wins. Two copies that\nset one key without seeing each other's op file a sync_conflict (see\n`datum check` and `datum conflicts`); so does a delete against a\nconcurrent edit, and the delete stands.\n";
 
 const CONFLICTS_BODY: &str = "USAGE:\n  datum conflicts [list] [--all]\n  datum conflicts resolve <HID> (--take-local | --take-remote | --keep-both)\n\nOPTIONS:\n  -a, --all        Include already-resolved conflicts (default: pending only).\n  --take-local     Restore this device's version of the entry.\n  --take-remote    Accept the other device's version.\n  --keep-both      Leave both rows as they are; record the decision.\n\nSync conflicts are the two things a pull can file when two devices claim\none identity: `lww_overwrite` (a newer remote edit replaced a local one)\nand `identity_collision` (two distinct entries claimed one slug, or one\n(field, occur_time)). The losing version survives only in the conflict\nrow, so someone has to say which side wins — `list` prints both.\n\nEverything else the integrity queue holds — double opens, orphan ends,\noverlaps, repeated states — is reported by `datum check` and resolved by\nfixing the data with `datum edit` / `datum delete`, not from here.\n";
 
@@ -1943,9 +1952,15 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "sync",
         aliases: &[],
         category: Category::ViewsSync,
-        summary: "exchange signed ops with another copy, over a pipe",
+        summary: "sync with other copies: peer to peer, or over a pipe",
         long_description: None,
         usage: &[
+            "datum sync add-client [--qr] [--expires <DUR>]",
+            "datum sync connect [<TICKET>]",
+            "datum sync now",
+            "datum sync run",
+            "datum sync peers",
+            "datum sync forget <PEER>",
             "datum sync vector",
             "datum sync ops [--since <VECTOR>]",
             "datum sync apply",

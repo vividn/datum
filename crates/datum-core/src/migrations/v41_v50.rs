@@ -48,6 +48,37 @@ pub(super) fn down_42_to_41_sync_ops(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Easy Sync over iroh (da-rugg8): `sync_peers`, the copies this one syncs
+/// with, and `sync_invites`, the one-time invites it has handed out. See
+/// `schema.sql`.
+pub(super) fn m42_to_43_sync_peers(conn: &Connection) -> Result<()> {
+    conn.execute_batch(SYNC_PEERS_SQL)?;
+    Ok(())
+}
+
+/// Reverse v42→v43: forget the peers and the invites. Both are local.
+pub(super) fn down_43_to_42_sync_peers(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DROP TABLE IF EXISTS sync_peers; DROP TABLE IF EXISTS sync_invites;")?;
+    Ok(())
+}
+
+/// The v43 tables exactly as `schema.sql` creates them.
+const SYNC_PEERS_SQL: &str = "
+CREATE TABLE IF NOT EXISTS sync_peers (
+    endpoint_id TEXT NOT NULL PRIMARY KEY,
+    label       TEXT NOT NULL,
+    addrs       TEXT NOT NULL,
+    added_at    TEXT NOT NULL,
+    last_seen   TEXT,
+    announced   INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS sync_invites (
+    secret_hash TEXT NOT NULL PRIMARY KEY,
+    expires_at  TEXT NOT NULL,
+    used_at     TEXT
+);
+";
+
 /// The v42 tables exactly as `schema.sql` creates them.
 const SYNC_OPS_SQL: &str = "
 CREATE TABLE IF NOT EXISTS ops (

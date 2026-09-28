@@ -1,6 +1,7 @@
-//! `datum sync` — Easy Sync's core (da-k329q). Ops travel as JSON lines on
+//! `datum sync` — Easy Sync. The core (da-k329q) moves ops as JSON lines on
 //! stdin/stdout, so two copies sync through a pipe:
-//! `datum --db b sync ops --since "$(datum --db a sync vector)" | datum --db a sync apply`.
+//! `datum --db b sync ops --since "$(datum --db a sync vector)" | datum --db a sync apply`;
+//! the rest pairs copies and syncs them over iroh (da-rugg8).
 
 use super::core::*;
 use crate::cli::*;
@@ -15,6 +16,41 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
     let cmd = match sub {
         "vector" => SyncCommand::Vector,
         "apply" => SyncCommand::Apply,
+        "now" => SyncCommand::Now,
+        "run" => SyncCommand::Run,
+        "peers" => SyncCommand::Peers,
+        "forget" => SyncCommand::Forget {
+            peer: rest
+                .next()
+                .ok_or_else(|| ParseError::InvalidArg("forget needs a peer".into()))?
+                .to_string(),
+        },
+        "connect" => SyncCommand::Connect {
+            ticket: rest.next().map(|t| t.to_string()),
+        },
+        "add-client" => {
+            let (mut qr, mut expires_secs) = (false, 600);
+            while let Some(t) = rest.next() {
+                let value = match split_flag(t) {
+                    FlagSplit::Long("qr") => {
+                        qr = true;
+                        continue;
+                    }
+                    FlagSplit::LongAttached("expires", v) => v,
+                    FlagSplit::Long("expires") => rest.next().ok_or_else(|| {
+                        ParseError::InvalidArg("--expires needs a duration".into())
+                    })?,
+                    f => return Err(unknown_flag(f)),
+                };
+                expires_secs = crate::time::parse_duration(value)?.num_seconds();
+                if expires_secs <= 0 {
+                    return Err(ParseError::InvalidArg(format!(
+                        "--expires must be a positive duration: {value}"
+                    )));
+                }
+            }
+            SyncCommand::AddClient { qr, expires_secs }
+        }
         "verify" => {
             let verbose = match rest.next().map(|t| split_flag(t)) {
                 Some(FlagSplit::Long("verbose") | FlagSplit::Short('v')) => true,
@@ -40,7 +76,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         }
         other => {
             return Err(ParseError::InvalidArg(format!(
-                "unknown sync subcommand: '{other}' (expected vector|ops|apply|verify)"
+                "unknown sync subcommand: '{other}' (expected add-client|connect|now|run|peers|forget|vector|ops|apply|verify)"
             )))
         }
     };
@@ -74,6 +110,31 @@ mod tests {
                 since: Some("{\"a\":1}".into())
             }
         );
+        assert_eq!(
+            parse_sync_cmd(&["add-client", "--qr", "--expires", "1h"]).unwrap(),
+            SyncCommand::AddClient {
+                qr: true,
+                expires_secs: 3600
+            }
+        );
+        assert_eq!(
+            parse_sync_cmd(&["add-client", "--expires=30s"]).unwrap(),
+            SyncCommand::AddClient {
+                qr: false,
+                expires_secs: 30
+            }
+        );
+        assert_eq!(
+            parse_sync_cmd(&["connect"]).unwrap(),
+            SyncCommand::Connect { ticket: None }
+        );
+        assert_eq!(
+            parse_sync_cmd(&["forget", "abc"]).unwrap(),
+            SyncCommand::Forget { peer: "abc".into() }
+        );
+        assert!(parse_sync_cmd(&["forget"]).is_err());
+        assert!(parse_sync_cmd(&["add-client", "--expires", "0s"]).is_err());
+        assert!(parse_sync_cmd(&["now", "extra"]).is_err());
         assert!(parse_sync_cmd(&[]).is_err());
         assert!(parse_sync_cmd(&["vector", "extra"]).is_err());
     }

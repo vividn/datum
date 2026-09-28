@@ -216,6 +216,7 @@ fn normalize_shared_occur_time(
 pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
     // An op is signed by this device's endpoint; the id is read only if one is.
     datum_core::db::set_device_source(|| crate::config::device_id().ok());
+    crate::commands::sync::warn_new_peers(db);
     // The `--show json` echo is one document per run, not per entry, so the
     // outermost scope is the one that prints (da-yc9w). Both dispatch entry
     // points open a scope — `datum-cli` reaches `dispatch` directly, while

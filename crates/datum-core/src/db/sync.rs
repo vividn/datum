@@ -772,6 +772,13 @@ fn apply_one(conn: &Connection, x: &Op) -> Result<usize> {
 }
 
 impl Db {
+    /// This copy's endpoint secret, minted on first need. It is also the
+    /// iroh endpoint's key, so the iroh endpoint id IS the ops' `endpoint`
+    /// (da-rugg8).
+    pub fn sync_endpoint_secret(&self) -> Result<[u8; 32]> {
+        Ok(endpoint(&self.conn)?.key.to_bytes())
+    }
+
     /// This copy's version vector: per endpoint, the highest seq applied.
     /// Ops apply only in seq order, so that seq is also the highest
     /// contiguous one.

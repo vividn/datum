@@ -16,6 +16,7 @@ crates/
   datum-cli/          # `datum` binary: clap CLI, commands, output formatting
   datum-commands/     # Command-layer crate: typed + string APIs, dispatched by datum-cli
   datum-layout/       # Pure: dayview/nowview geometry + SVG render
+  datum-sync/         # Easy Sync transport: iroh endpoint, invites, sync session (native only)
 web/            # SvelteKit PWA: static, the real CLI as WASI on OPFS, offline-capable
                 # its conventions — the seam, the beat, the panes, the tests: docs/web-conventions.md
 ```
@@ -109,7 +110,13 @@ entry change emits a signed op beside its `history::record` (endpoint key in
 `sync_local`, HLC, the change's own `raw` line, its key-level `effect`), and
 an entry's row is the FOLD of its ops in HLC order, so the same ops in any
 order give the same row. `datum sync vector / ops / apply / verify` move ops
-as JSON lines over a pipe. The transport (iroh) and membership come next.
+as JSON lines over a pipe. The transport is iroh (da-rugg8, `crates/datum-sync`,
+behind datum-commands' `net` feature, so the wasm build has no iroh): the iroh
+endpoint key IS the db's endpoint key, copies pair with one-time invites
+(`add-client` / `connect`) into a local `sync_peers` table, only peers are
+served, and `sync now` / `sync run` swap vectors and ops until neither moves.
+`DATUM_SYNC_BIND=<ip:port>` binds one address with no relay or discovery (the
+tests). Signed membership comes next.
 
 ## Web app (PWA)
 

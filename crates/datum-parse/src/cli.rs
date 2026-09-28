@@ -102,8 +102,8 @@ pub enum Command {
 
     Config(ConfigCommand),
 
-    /// `datum sync <vector|ops|apply|verify>` — Easy Sync's core (da-k329q):
-    /// ops as JSON lines on stdin/stdout, so two copies sync through a pipe.
+    /// `datum sync <…>` — Easy Sync: pairing and syncing over iroh
+    /// (da-rugg8), and the core's pipe (da-k329q).
     Sync(SyncCommand),
 
     /// `dm reparse` — replay each entry's stored `raw_input` through the
@@ -721,6 +721,20 @@ pub enum SyncCommand {
     Apply,
     /// `datum sync verify [--verbose]` — the state hash; per column too.
     Verify { verbose: bool },
+    /// `datum sync add-client [--qr] [--expires <DUR>]` — a one-time invite
+    /// (da-rugg8), served until it is redeemed or expires.
+    AddClient { qr: bool, expires_secs: i64 },
+    /// `datum sync connect [<TICKET>]` — redeem an invite (the ticket from
+    /// stdin when not given) and sync.
+    Connect { ticket: Option<String> },
+    /// `datum sync now` — sync with every peer once.
+    Now,
+    /// `datum sync run` — stay up: serve peers and push new ops to them.
+    Run,
+    /// `datum sync peers` — list this copy's peers.
+    Peers,
+    /// `datum sync forget <PEER>` — drop a peer, by label or id prefix.
+    Forget { peer: String },
 }
 
 // ─── Conflicts (da-ttsm) ──────────────────────────────────────────────────

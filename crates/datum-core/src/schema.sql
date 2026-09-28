@@ -313,6 +313,27 @@ CREATE TABLE IF NOT EXISTS sync_local (
     device_id       TEXT NOT NULL
 );
 
+-- The copies this one syncs with (da-rugg8): whoever redeemed an invite
+-- from it, or whose invite it redeemed. LOCAL, never synced. `addrs` is the
+-- iroh address the peer last gave (JSON), to dial it without discovery;
+-- `announced` is 0 until a command has printed the new-peer warning.
+CREATE TABLE IF NOT EXISTS sync_peers (
+    endpoint_id TEXT NOT NULL PRIMARY KEY,
+    label       TEXT NOT NULL,
+    addrs       TEXT NOT NULL,
+    added_at    TEXT NOT NULL,
+    last_seen   TEXT,
+    announced   INTEGER NOT NULL DEFAULT 0
+);
+
+-- One-time invites (`datum sync add-client`): the SHA-256 of each secret,
+-- never the secret, with its expiry and when it was redeemed. LOCAL.
+CREATE TABLE IF NOT EXISTS sync_invites (
+    secret_hash TEXT NOT NULL PRIMARY KEY,
+    expires_at  TEXT NOT NULL,
+    used_at     TEXT
+);
+
 -- Data-integrity warnings: overlap / double-open / orphan-end / same-state
 -- bookkeeping. Rows are created by the local validator (D5) on insert and
 -- by sync-pull reconciliation (C4e); the `detected_by` column distinguishes

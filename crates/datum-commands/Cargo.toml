@@ -17,7 +17,11 @@ default = ["native"]
 # Native builds are unchanged; this feature is on by default. The
 # wasm32-wasip1 CLI (da-1vat) turns it off: it has a clock (WASI's
 # `clock_time_get`, and `TZ` from its caller) but no terminal.
-native = ["dep:crossterm", "dep:tempfile"]
+native = ["dep:crossterm", "dep:tempfile", "net"]
+# Easy Sync over iroh (da-rugg8): `sync add-client / connect / now / run /
+# peers / forget`. WASI has no sockets, so the wasm build leaves it off and
+# those subcommands say so.
+net = ["dep:datum-sync"]
 # Shared test fixtures (TestPrompter, etc.) — also consumed by datum-cli tests.
 test-util = []
 # Marker for the full E2E case cohort (da-1wat). Cases tagged
@@ -36,6 +40,7 @@ png = ["dep:resvg"]
 datum-core = { path = "../datum-core" }
 datum-layout = { path = "../datum-layout" }
 datum-parse = { path = "../datum-parse" }
+datum-sync = { path = "../datum-sync", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
