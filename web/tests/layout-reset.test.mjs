@@ -164,7 +164,7 @@ describe('Reset widget', () => {
 			// panes, not a widget of its own. (`main` is choosable in a pane
 			// only once the root tab is called something else.)
 			page.once('dialog', (dialog) => dialog.accept('mine'));
-			await chooseRoot(page, 'Save layout as…');
+			await chooseRoot(page, 'Save layout as');
 			await page.locator('.root-bar [role="tab"]', { hasText: 'mine' }).waitFor();
 			await addTab(page, 'tail', 'main');
 			await pane(page, 'tail').locator('[role="tab"]', { hasText: 'main' }).waitFor();

@@ -33,7 +33,7 @@
 	  sits OUTSIDE the ellipsizing box, so a cut name and the arrow never
 	  compete for the same pixels.
 	- it OPENS the pool: every database this device has ($lib/databases.ts),
-	  the page's own marked, and `new database…` under them. `_internal` is
+	  the page's own marked, and `new database` under them. `_internal` is
 	  not offered — it is the app's own furniture, and `?db` refuses it
 	  anyway ($lib/database.ts).
 	- it is DRAWN IN the database's colour, which is the whole page's accent
@@ -92,7 +92,7 @@
 				run: () => open(name)
 			})
 		),
-		{ label: 'new database…', glyph: ' ', run: () => void create() }
+		{ label: 'new database', glyph: ' ', act: 'open' as const, run: () => void create() }
 	] satisfies Item[];
 
 	/** This page, on `name`. A load, not a `goto` — see the note above. */

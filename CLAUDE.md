@@ -121,7 +121,7 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   or renderer in TypeScript — every pane, the widget bar (`fields --json`),
   the tail table (`tail --json`'s `columns` and, for its state cell alone,
   that row's three state values — da-fknn8), /now (`now --bare`) and the
-  gear's «Backups…» (`db backup -`, and plans' `db backup --to` into a
+  gear's «Backups» (`db backup -`, and plans' `db backup --to` into a
   process's `/data/stage`, whose files a `run` hands in and gets back —
   da-9ow8m) are CLI commands through `run(argv)`. What TypeScript does
   hold is the transport: carrying those files to an S3-compatible bucket
@@ -222,7 +222,7 @@ Stored in the DB. Resolved in the CLI pre-pass before clap sees argv.
   (da-bzhq, da-efr4i): the NAME opens what the pane IS and what it is
   saved as (Reset widget, the widget's OWN OPTIONS one item each, the
   layout's acts), the `▾` beside the `+` what is DONE to it (Change
-  Widget, Rename tab…, Split, Break out, Bar, Close), the `×` after them
+  Widget, Rename tab, Split, Break out, Bar, Close), the `×` after them
   closes what the title names — the menu's own Close, promoted to the row
   — and a lock hides all three. One builder, `menu.ts`, one order, two
   filters — `named` and `managed`. A HOLD on the title — the app's one

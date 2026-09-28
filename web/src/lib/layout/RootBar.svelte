@@ -30,7 +30,7 @@
 	(da-a642). What it has that a pane's has not is `Keep tab`, on a
 	preview (below).
 
-	The layout's own acts — save, restore, save as… — are in the menu too,
+	The layout's own acts — save, restore, save as — are in the menu too,
 	where the orange dot is (vividn: "Inside the menu there could be a lock,
 	save, and save as options. That seems more consistent. Maybe highlight
 	Restore and Save so that it is obvious that that is what the orange dot
@@ -73,11 +73,11 @@
 	bottom bar's until da-wjob and this bar's until da-pp1a; it is out of
 	the way for good, and still one press from anyone looking for it.
 
-	First in it is «Backups…» (da-9ow8m), the sheet of backup plans and
+	First in it is «Backups» (da-9ow8m), the sheet of backup plans and
 	backup files ($lib/BackupsSheet.svelte). It took the place of the root
 	tab menu's `export backup…`, so a backup has one home.
 
-	The other is «Reset default layouts…» (da-jbcv). It held an act of that
+	The other is «Reset default layouts» (da-jbcv). It held an act of that
 	shape once — «Reset all layouts…», which deleted every saved layout, on
 	every device once `_internal` synced, and cleared this device's drafts
 	and locks — and it went (da-luwe) for doing more than its name said.
@@ -110,6 +110,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import Beta from '$lib/Beta.svelte';
+	import { act } from '$lib/act.js';
 	import { openBackups } from '$lib/backups.js';
 	import { confirm } from '$lib/confirm.js';
 	import { choose, fillTab } from './chooser.js';
@@ -166,10 +167,10 @@
 	 */
 	async function add(): Promise<void> {
 		const picked = await choose();
-		if (picked) await act(() => open('layout' in picked ? picked.layout : titleOf(picked.kind)));
+		if (picked) await attempt(() => open('layout' in picked ? picked.layout : titleOf(picked.kind)));
 	}
 
-	async function act(job: () => Promise<unknown>): Promise<void> {
+	async function attempt(job: () => Promise<unknown>): Promise<void> {
 		busy = true;
 		error = '';
 		try {
@@ -181,27 +182,27 @@
 		}
 	}
 
-	const doSave = () => act(async () => id !== undefined && save(id));
+	const doSave = () => attempt(async () => id !== undefined && save(id));
 
 	/** Modified: back to the last save. Clean: the versions, to pick one. */
 	const doRestore = () =>
-		act(async () => {
+		attempt(async () => {
 			if (name === undefined || id === undefined) return;
 			if (dirty) return restore(id);
 			trail = trail ? null : await versions(name).catch(() => []);
 		});
 
 	const pick = (version?: number) =>
-		act(async () => {
+		attempt(async () => {
 			if (id !== undefined) await restore(id, version);
 			trail = null;
 		});
 
 	/** Back to the tree that shipped: the draft alone, so Restore is the way back (da-luwe). */
-	const doReset = () => act(async () => id !== undefined && resetLayout(id));
+	const doReset = () => attempt(async () => id !== undefined && resetLayout(id));
 
 	const doSaveAs = () =>
-		act(async () => {
+		attempt(async () => {
 			if (id === undefined) return;
 			const to = prompt('Save this layout as:', '')?.trim();
 			if (!to) return;
@@ -266,7 +267,7 @@
 				// `Keep tab` (da-xamd), next to the Close that is the other
 				// answer to a preview: only a preview has it, because only a
 				// preview is not kept already.
-				extra: preview ? [{ label: 'Keep tab', run: () => void act(async () => id !== undefined && keepTab(id)) }] : []
+				extra: preview ? [{ label: 'Keep tab', run: () => void attempt(async () => id !== undefined && keepTab(id)) }] : []
 			});
 
 	/**
@@ -291,7 +292,7 @@
 	 * every device — was withdrawn for being wider than its name (da-luwe).
 	 */
 	const doResetDefaults = () =>
-		act(async () => {
+		attempt(async () => {
 			const yes = await confirm(
 				'Every layout that ships with datum goes back to the way it came, and the tabs at the top of the page go back to just “day”.\n\n' +
 					'Layouts you saved yourself, and layouts a kit installed, are not touched — they stay in the +.',
@@ -309,8 +310,8 @@
 	 * the whole of what makes this menu the page's and not a tab's.
 	 */
 	const settings = [
-		{ label: 'Backups…', run: () => void openBackups() },
-		{ label: 'Reset default layouts…', run: doResetDefaults },
+		{ label: 'Backups', act: 'open' as const, run: () => void openBackups() },
+		{ label: 'Reset default layouts', act: 'open' as const, run: doResetDefaults },
 		{ label: `${__DATUM_VERSION__} · ${__DATUM_COMMIT__}`, disabled: true }
 	];
 
@@ -372,7 +373,7 @@
 			{/if}
 		{/each}
 	</div>
-	<button type="button" class="control badge add" aria-label="open a layout" title="open a layout" on:click={add}>+</button>
+	<button type="button" class="control badge add" use:act={'open'} aria-label="open a layout" title="open a layout" on:click={add}>+</button>
 	<!-- The `▾` beside the `+` (da-bzhq): what is done to the page —
 	     `Split`, which at the root is a side of the whole layout, and
 	     `Close tab`. Drawn only when it has something in it, which is what

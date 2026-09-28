@@ -243,7 +243,7 @@ describe('the logo', () => {
 			const all = await items();
 			assert.deepEqual(
 				all.map((i) => i.label),
-				['datum', 'other', 'new database…'],
+				['datum', 'other', 'new database'],
 				'the menu is not the pool plus the one way to grow it'
 			);
 			assert.deepEqual(
@@ -319,7 +319,7 @@ describe('the logo', () => {
 		});
 	});
 
-	test('`new database…` asks in the app’s own dialog, and a name that has never existed opens and keeps its first row', async () => {
+	test('`new database` asks in the app’s own dialog, and a name that has never existed opens and keeps its first row', async () => {
 		// vremya on #22: the first command on a database nobody has named
 		// before is the case the worker persists lazily, so this is the one
 		// that has to be read back after a reload.

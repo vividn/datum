@@ -138,7 +138,7 @@ describe('on a phone-sized screen', () => {
 	});
 
 	// The gear (da-pp1a) is the root bar's right end: the global settings
-	// menu, holding «Backups…» (da-9ow8m), «Reset default layouts…»
+	// menu, holding «Backups» (da-9ow8m), «Reset default layouts»
 	// (da-jbcv) and the build stamp. The bar is one row that never wraps, so the thing that can
 	// push the gear off is a crowded strip of tabs on a narrow screen —
 	// and its menu, which opens from the right edge, has to land on the

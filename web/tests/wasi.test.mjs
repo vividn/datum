@@ -80,15 +80,15 @@ describe('the wasi CLI', () => {
 
 	// Insurance before sync (vividn, 2026-09-10): the one copy of the data that
 	// is not in this browser. One command, handed over as a file — from the
-	// gear's «Backups…» since da-9ow8m, and as a download where the browser
+	// gear's «Backups» since da-9ow8m, and as a download where the browser
 	// has no SAVE picker (which this one is made not to have).
-	test('«Save a backup file…» hands over `db backup -` as a file `db restore` reads', async () => {
+	test('«Save a backup file» hands over `db backup -` as a file `db restore` reads', async () => {
 		await shared.solo(async (app) => {
 			assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, 0);
 			// An own property over the prototype's, taken away again below.
 			await app.page.evaluate(() => (window.showSaveFilePicker = undefined));
 			await app.page.locator('.root-bar button.gear').click();
-			await app.page.getByRole('menuitem', { name: 'Backups…', exact: true }).click();
+			await app.page.getByRole('menuitem', { name: 'Backups', exact: true }).click();
 			const [download] = await Promise.all([
 				app.page.waitForEvent('download'),
 				app.page.locator('dialog.sheet button[data-backup="save"]').click()

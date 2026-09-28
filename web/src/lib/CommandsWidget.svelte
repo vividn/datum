@@ -46,7 +46,7 @@
 	- a command with SUBCOMMANDS (`db`, `spec`, `sync`, …) opens them
 	  instead (da-803mk): the bar is `< Back` and the subcommands, and a
 	  tap on one fills `db setup `. `< Back` and Escape return to the list.
-	  `db backup` and `db restore` open the «Backups…» sheet instead
+	  `db backup` and `db restore` open the «Backups» sheet instead
 	  (da-9ow8m, $lib/backups.ts) — drawn, as Help is, in a SINGLE outline
 	  of the accent: they open something, and run nothing.
 	- HOLDING a command with flags (da-st2xl, `$lib/hold.ts`) fills it as a
@@ -104,7 +104,7 @@
 	export let redoable = false;
 
 	/** The presses whose kind is theirs whatever is loaded. */
-	const FIXED: Partial<Record<Press, ActKind>> = { run: 'run', help: 'arm', back: 'open', flag: 'fill', sheet: 'open' };
+	const FIXED: Partial<Record<Press, ActKind>> = { run: 'run', help: 'arm', back: 'show', flag: 'fill', sheet: 'open' };
 
 	const dispatch = createEventDispatcher<{
 		run: string[];
@@ -125,7 +125,7 @@
 	$: kindOf = (command: CommandButton): ActKind =>
 		FIXED[command.press] ??
 		(!open && drills(grammar, command.name, pills)
-			? 'open'
+			? 'show'
 			: fires(grammar?.get(command.name), pills) || fieldVerb(command.name, pills, fields)?.runs
 				? 'run'
 				: 'fill');
@@ -153,7 +153,7 @@
 		if (command.press === 'back') back();
 		else if (command.press === 'sheet') void openBackups(command.name === 'db restore' ? 'restore' : 'plans');
 		else if (command.press === 'flag') dispatch('flag', { command: flagged!, flag: command.name, keyboard: command.next === 'type' });
-		else if (kindOf(command) === 'open') open = command.name;
+		else if (kindOf(command) === 'show') open = command.name;
 		else if (kindOf(command) === 'run') dispatch('run', [command.name]);
 		else {
 			// Words TYPED next go after the field and hid pills, so those are
@@ -227,7 +227,7 @@
 			{#if $helping}<span class="label armed">? on what<small>(tap: all)</small></span>{/if}
 		</button>
 	{:else if command.press === 'back'}
-		<button class="command" use:act={'open'} {disabled} data-back title="back to every command" on:click={() => press(command)}>
+		<button class="command" use:act={'show'} {disabled} data-back title="back to every command" on:click={() => press(command)}>
 			{command.label}
 		</button>
 	{:else if command.press === 'flag'}
@@ -250,7 +250,7 @@
 			{disabled}
 			data-command={command.name}
 			data-holds={!open && hasFlags(grammar, command.name) ? '' : undefined}
-			title={kindOf(command) === 'run' ? `run ${command.name}` : command.press === 'sheet' ? 'open Backups…' : `${command.name} …`}
+			title={kindOf(command) === 'run' ? `run ${command.name}` : command.press === 'sheet' ? 'open Backups' : `${command.name} …`}
 			on:click={() => press(command)}
 		>
 			{command.label}

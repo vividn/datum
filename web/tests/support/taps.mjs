@@ -19,6 +19,12 @@
 // if the tap wrote, which is then seeded again. Twice over: the page idle,
 // and with `occur ` on the line — which is what draws Send, the ×, and
 // the fields under a pending verb.
+//
+// And the one other mark (da-vteda): a trailing chevron `›` ⇔ the tap
+// opened a modal — a `<dialog>`, a sheet, a confirm, or the browser's own
+// (`prompt`, a file picker). The chevron is `[data-act='open']`'s alone
+// (app.css), so a button that wears one says `open`, and one that opens a
+// modal without saying so is named here.
 
 import { before, after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -75,8 +81,9 @@ const survey = (page, { within, mark, layer } = {}) =>
 				const key = n === 1 ? base : `${base} #${n}`;
 				const double =
 					style.borderTopStyle === 'double' || (style.borderTopStyle === 'dashed' && style.outlineStyle === 'dashed');
+				const chevron = getComputedStyle(b, '::after').content.includes('›');
 				if (key === mark) b.dataset.tap = '';
-				out.push({ key, double, kind: b.dataset.act ?? null });
+				out.push({ key, double, chevron, kind: b.dataset.act ?? null });
 			}
 			return out;
 		},
@@ -151,6 +158,49 @@ async function reset(app, line) {
 	await app.idle();
 }
 
+/**
+ * Watch for the modal a tap may open — a `<dialog>`, or the browser's own
+ * (`prompt`, a file picker), which no survey of the page can see — and
+ * return what says, once the tap has settled, whether one opened. The save
+ * picker is the one Playwright does not report, so a stand-in takes its
+ * place: it says it opened, and is cancelled, as a reader may.
+ */
+async function watchModals(page) {
+	await page.evaluate(() => {
+		document.querySelectorAll('dialog[open]').forEach((d) => (d.seen = true));
+		window.savePicked = false;
+		window.showSaveFilePicker = async () => {
+			window.savePicked = true;
+			throw new DOMException('cancelled', 'AbortError');
+		};
+	});
+	let native = false;
+	const dialog = (d) => ((native = true), void d.dismiss());
+	const chooser = () => (native = true);
+	page.on('dialog', dialog).on('filechooser', chooser);
+	return async () => {
+		page.off('dialog', dialog).off('filechooser', chooser);
+		return (
+			native ||
+			(await page.evaluate(() => window.savePicked || [...document.querySelectorAll('dialog[open]')].some((d) => !d.seen)))
+		);
+	};
+}
+
+/**
+ * Where a tap's chevron disagrees with its kind or with what it opened:
+ * `null` where all three agree. The kind on its own too, so a `›` some
+ * stray rule drew on a button that opens nothing is named as well.
+ */
+const chevronWrong = (t) =>
+	t.chevron !== (t.kind === 'open')
+		? `${t.chevron ? 'wears a ›' : 'wears no ›'} as ${t.kind ?? 'no kind'}`
+		: t.chevron === t.modal
+			? null
+			: t.modal
+				? `opened a modal, and wears no › (${t.kind ?? 'no kind'})`
+				: `wears a › (${t.kind ?? 'no kind'}), and opened no modal`;
+
 /** Tap `key` on a freshly reset page and say what the tap did. */
 async function tap(app, key, line, within) {
 	const { page } = app;
@@ -160,14 +210,16 @@ async function tap(app, key, line, within) {
 	// A second on, so a tap that logs does not collide with the seed's own `now`.
 	await app.clock.forward(1000);
 	await page.evaluate(() => (window.__lastRun = window.datum.bar.last()));
+	const opened = await watchModals(page);
 	await page.locator('[data-tap]').click();
 	// A press dispatches, and the run starts a frame or two behind it.
 	await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 	await app.idle();
+	const modal = await opened();
 	const ran = await page.evaluate(() => window.datum.bar.last() !== window.__lastRun);
 	// `reset` left the counter at `seeded`.
 	const wrote = (await writes(app)) !== app.seeded;
-	return { ...found, acted: ran || wrote, ran, wrote };
+	return { ...found, modal, acted: ran || wrote, ran, wrote };
 }
 
 /** Every button, tapped; the ones whose look and whose deed disagree, by label. */
@@ -181,6 +233,7 @@ async function tapAll(app, line, within) {
 		if (t.acted) acted.push(key);
 		if (t.double !== t.acted)
 			wrong.push(`${key} (${t.kind ?? 'no kind'}): ${t.double ? 'double, and did nothing' : `single, and ${t.wrote ? 'wrote' : 'ran'}`}`);
+		if (chevronWrong(t)) wrong.push(`${key}: ${chevronWrong(t)}`);
 	}
 	return { keys, acted, wrong };
 }
@@ -196,7 +249,7 @@ export function everyButton(screen, options, must) {
 	describe(`every button at the ${screen} size`, () => {
 		const shared = sharedApp(options);
 
-		test('idle: a double outline is exactly a tap that wrote or ran', async () => {
+		test('idle: a double outline is exactly a tap that wrote or ran, a › one that opened a modal', async () => {
 			const { keys, acted, wrong } = await tapAll(await shared());
 			assert.deepEqual(wrong, []);
 			for (const key of must) {
@@ -238,9 +291,12 @@ const LAYERS = 'dialog[open], [role="dialog"], [role="menu"]';
 /**
  * A backup plan, so the Backups sheet has one to delete — on `memory`, the
  * tab's own bucket, which needs no network (`backups.ts`). Put back by
- * `reset` whenever `_internal` moves.
+ * `reset` whenever `_internal` moves. It backs up no database: one that it
+ * did would be overdue, and the page's minute check (`backups.ts`) backed
+ * it up whenever a walk ran past a minute — a `Restore` button, and its
+ * confirm, turning up in the sheet halfway through.
  */
-const PLAN = { name: 'taps', kind: 'memory', config: { bucket: 'taps' }, dbs: ['datum'], every: 3600, slots: null };
+const PLAN = { name: 'taps', kind: 'memory', config: { bucket: 'taps' }, dbs: [], every: 3600, slots: null };
 const INTERNAL = [
 	['--db', '_internal', 'delete', 'backup_plan:taps'],
 	['--db', '_internal', 'occur', 'backup_plan', '--id', '%name', '-k', 'name="taps"', '-k', `plan=${JSON.stringify(PLAN)}`]
@@ -252,10 +308,10 @@ const INTERNAL = [
  * Each must be met, so the list cannot outlive its buttons.
  */
 const SKIP = {
-	'page: settings › page: Backups… › page: Back up now': "writes the plan's destination, the tab's memory bucket, which no counter reads",
-	'page: settings › page: Backups… › page: Test connection': "needs the network, an S3 endpoint (s3.test.mjs stubs it)",
-	'page: settings › page: Backups… › page: Add plan': 'acts on a filled form only, which backups.test.mjs fills',
-	'page: settings › page: Reset default layouts… › page: reset':
+	'page: settings › page: Backups › page: Back up now': "writes the plan's destination, the tab's memory bucket, which no counter reads",
+	'page: settings › page: Backups › page: Test connection': "needs the network, an S3 endpoint (s3.test.mjs stubs it)",
+	'page: settings › page: Backups › page: Add plan': 'acts on a filled form only, which backups.test.mjs fills',
+	'page: settings › page: Reset default layouts › page: reset':
 		'writes over a saved layout of a name datum ships, and the seeded page has saved none'
 };
 
@@ -278,9 +334,11 @@ async function press(app, key, inLayer) {
 	await page.evaluate((sel) => document.querySelectorAll(sel).forEach((l) => (l.dataset.under = '')), LAYERS);
 	const found = (await survey(page, { mark: key, layer: inLayer })).find((b) => b.key === key);
 	assert.ok(found, `${key}: not there after a reset`);
+	const modal = await watchModals(page);
 	await page.locator('[data-tap]').click();
 	await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 	await app.idle();
+	found.modal = await modal();
 	const opened = await page.evaluate((sel) => {
 		const fresh = [...document.querySelectorAll(sel)].filter((l) => !('under' in l.dataset));
 		if (fresh.length === 0) return false;
@@ -355,6 +413,7 @@ async function walk(app, share, depth = 3) {
 				wrong.push(
 					`${named} (${t.kind ?? 'no kind'}): ${t.double ? 'double, and did nothing' : `single, and ${t.wrote ? 'wrote' : 'ran'}`}`
 				);
+			if (chevronWrong(t)) wrong.push(`${named}: ${chevronWrong(t)}`);
 			const kind = t.opened?.join('\n');
 			if (kind !== undefined && ELSEWHERE[named]) skipped.push(named);
 			else if (kind !== undefined && !t.acted && path.length < depth && !seen.has(kind)) {
@@ -380,7 +439,7 @@ export function everyLayer(screen, options, share, must) {
 	describe(`every button in a layer at the ${screen} size, ${share} openers`, () => {
 		const shared = sharedApp(options);
 
-		test('a double outline is exactly a tap that wrote or ran, in every sheet, dialog and menu', async () => {
+		test('a double outline is exactly a tap that wrote or ran, a › one that opened a modal, in every sheet, dialog and menu', async () => {
 			const app = await shared();
 			app.internal = -1;
 			const { layers, wrong, skipped } = await walk(app, SHARES[share]);

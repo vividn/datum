@@ -155,7 +155,7 @@ describe('extending the dashboard from its edges', () => {
 					'Restore layout',
 					// `main` ships with datum, so it can be reset (da-luwe).
 					'Reset layout',
-					'Save layout as…'
+					'Save layout as'
 				]);
 				await page.keyboard.press('Escape');
 			},

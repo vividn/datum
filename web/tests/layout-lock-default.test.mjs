@@ -106,7 +106,7 @@ describe('a layout that shipped', () => {
 			await toggleRootLock(page);
 			await until(() => locked(page), (l) => l === false);
 			await page.locator('.root-bar button.gear').click();
-			await page.getByRole('menuitem', { name: 'Reset default layouts…', exact: true }).click();
+			await page.getByRole('menuitem', { name: 'Reset default layouts', exact: true }).click();
 			const dialog = page.locator('dialog.confirm');
 			await dialog.getByRole('button', { name: 'reset', exact: true }).click();
 			await dialog.waitFor({ state: 'detached' });
@@ -118,12 +118,12 @@ describe('a layout that shipped', () => {
 });
 
 describe('a layout a person made', () => {
-	test('`Save layout as…` opens unlocked, even from a locked built-in', async () => {
+	test('`Save layout as` opens unlocked, even from a locked built-in', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await until(() => locked(page), (l) => l === true);
 			page.once('dialog', (dialog) => dialog.accept('mine'));
-			await chooseRoot(page, 'Save layout as…');
+			await chooseRoot(page, 'Save layout as');
 			await rootMenuButton(page).filter({ hasText: 'mine' }).waitFor();
 			await until(() => locked(page), (l) => l === false);
 			assert.ok((await controls(page)) > 0);

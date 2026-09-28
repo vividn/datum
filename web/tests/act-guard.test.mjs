@@ -46,6 +46,22 @@ describe('the double outline is the action’s alone', () => {
 		);
 	});
 
+	// Its sibling mark (da-vteda): a tap that opens a modal wears a `›`.
+	test('a chevron is drawn only on [data-act=open]', () => {
+		const chevrons = files.flatMap((file) =>
+			rules(styleOf(file))
+				.filter((r) => /content:[^;]*›/.test(r.body))
+				.map((r) => ({ f: file.f, ...r }))
+		);
+		assert.ok(chevrons.length >= 1, 'found no chevron rule');
+		const stray = chevrons.filter((r) => !r.selector.split(',').every((s) => s.includes("[data-act='open']")));
+		assert.deepEqual(
+			stray.map((r) => `${r.f}: ${r.selector}`),
+			[],
+			"draw a chevron only under [data-act='open'] and give the button use:act={'open'}"
+		);
+	});
+
 	test('no component writes data-act, or the old act class, by hand', () => {
 		const hand = files.flatMap((file) => {
 			const markup = markupOf(file);

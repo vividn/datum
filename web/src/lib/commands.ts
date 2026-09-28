@@ -39,7 +39,7 @@ export type Press =
 	| 'back'
 	/** Append the flag to the line (da-st2xl). */
 	| 'flag'
-	/** Open the «Backups…» sheet ($lib/backups.ts, da-9ow8m): `db backup`, and `db restore` at its list. */
+	/** Open the «Backups» sheet ($lib/backups.ts, da-9ow8m): `db backup`, and `db restore` at its list. */
 	| 'sheet';
 
 export interface CommandButton {
@@ -224,7 +224,7 @@ export function verbPress(verb: Verb, button: FieldButton): string[] | null {
 
 /**
  * What a tap on a field button DOES (da-z8z40): `run` — something is
- * logged at once — `fill` — a line is left in the prompt — or `open` —
+ * logged at once — `fill` — a line is left in the prompt — or `show` —
  * the field's states take the bar over.
  *
  * The fields widget's press is decided here and its outline is drawn from
@@ -234,11 +234,11 @@ export function verbPress(verb: Verb, button: FieldButton): string[] | null {
  * multi-state field opens (vividn's «except for switch») and the rest run —
  * but a run that has keys to type fills instead (`typesKeys`).
  */
-export type PressKind = 'run' | 'fill' | 'open';
+export type PressKind = 'run' | 'fill' | 'show';
 export function pressKind(button: FieldButton, verb: Verb | null): PressKind {
 	if (verb !== null && verbPress(verb, button)) return typesKeys(verb, button) ? 'fill' : 'run';
 	if (button.shape.kind === 'record') return 'fill';
-	if (button.shape.kind === 'states') return 'open';
+	if (button.shape.kind === 'states') return 'show';
 	// A bare tap logs `occur` or `start`, or ends a running block (`pressArgv`).
 	return typesKeys(button.current ? 'end' : 'occur', button) ? 'fill' : 'run';
 }
@@ -522,7 +522,7 @@ export function fieldVerb(name: string, all: Pill[], fields: FieldButton[]): { f
 // what a tap leaves on the line. A command that also runs bare (`sync`)
 // is offered among its subcommands as itself.
 
-/** The subcommands whose press opens the «Backups…» sheet. */
+/** The subcommands whose press opens the «Backups» sheet. */
 const SHEETS = ['db backup', 'db restore'];
 
 /**
@@ -539,7 +539,7 @@ export const drills = (grammar: Grammar | null, name: string, pills: Pill[]): bo
  * without, so a subcommand can be explained), `name` itself if it runs
  * bare, then its subcommands.
  *
- * `db backup` and `db restore` OPEN the «Backups…» sheet rather than fill
+ * `db backup` and `db restore` OPEN the «Backups» sheet rather than fill
  * the line (da-9ow8m): vividn, «the "backup" command in the commands widget
  * … should that open this backups menu directly? It could». A typed `db
  * backup …` keeps the CLI's meaning.

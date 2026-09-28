@@ -285,8 +285,10 @@ describe('the now region re-orders by height alone, on a phone', () => {
 				// A pointer comes to rest ON the bar, and a second press
 				// elsewhere would re-order it. No button moves out from under
 				// it: the bar keeps the order it is being read in.
+				// `hover` scrolls it in first: its centre can lie past the
+				// bar's edge, off the bar (da-vteda's wider `Track +`).
+				await page.locator(`${BAR} [data-field="mood"]`).hover();
 				const box = await page.locator(`${BAR} [data-field="mood"]`).boundingBox();
-				await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 				await page.touchscreen.tap(sleep.x, sleep.y);
 				await until(
 					() => marked(page),

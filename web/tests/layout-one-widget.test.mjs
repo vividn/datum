@@ -59,7 +59,7 @@ const RESET_LAYOUT = 'Reset layout';
 const PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true } };
 
 /** The layout acts, in the order `layoutActs` builds them for a shipped layout. */
-const ACTS = ['Save layout', 'Restore layout', RESET_LAYOUT, 'Save layout as…'];
+const ACTS = ['Save layout', 'Restore layout', RESET_LAYOUT, 'Save layout as'];
 
 /** Open the root menu, read its lines, close it again. */
 const rootLines = (page) => linesFrom(page, () => rootMenuButton(page).click());
@@ -225,7 +225,7 @@ describe('a root tab whose layout is one widget', () => {
 			await openPage(app, 'repl');
 			await toggleRootLock(page);
 			page.once('dialog', (dialog) => dialog.accept('mine'));
-			await chooseRoot(page, 'Save layout as…');
+			await chooseRoot(page, 'Save layout as');
 			await rootMenuButton(page).filter({ hasText: 'mine' }).waitFor();
 
 			const lines = await rootLines(page);

@@ -82,7 +82,7 @@ describe('a field with a required key', () => {
 			assert.equal((await app.echoes()).at(-1), 'end shift');
 
 			// The ring still opens; the state chosen in it is the line, unrun.
-			assert.equal(await chip(page, 'mood').getAttribute('data-act'), 'open');
+			assert.equal(await chip(page, 'mood').getAttribute('data-act'), 'show');
 			await chip(page, 'mood').click();
 			const good = page.locator('.bar button[data-state="good"]');
 			assert.equal(await good.getAttribute('data-act'), 'fill');

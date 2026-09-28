@@ -409,7 +409,7 @@
 		const argv = (verb && verbPress(verb, button)) || pressArgv(button);
 		// A multi-state field can't be logged without saying which, so a
 		// plain press asks — the bar fills with its states.
-		if (kind === 'open') pick(button, el);
+		if (kind === 'show') pick(button, el);
 		// A record, or a field with keys to type: the line goes to the prompt.
 		else if (kind === 'fill') fill(argv);
 		else emit(argv);
@@ -567,7 +567,7 @@
 		{@const states = statesOf(chosen.shape)}
 		<div class="ring" use:around={tap}>
 			<div class="spot" data-role="back">
-				<button class="nav back" use:act={'open'} data-back {disabled} title="back to the fields" on:click={back}>
+				<button class="nav back" use:act={'show'} data-back {disabled} title="back to the fields" on:click={back}>
 					&lt; Back
 				</button>
 			</div>
@@ -623,7 +623,7 @@
 				{:else}
 					<button
 						class="nav add-state"
-						use:act={'open'}
+						use:act={'show'}
 						data-add-state
 						{disabled}
 						title="add a state to {chosen.field}"

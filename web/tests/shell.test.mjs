@@ -143,7 +143,7 @@ async function choose(page, title, label) {
 
 /**
  * The same, for the `▾` beside a titled pane's `+` (da-bzhq): Split,
- * Break out, Bar, Rename tab…, Close. By TITLE, like `choose` above,
+ * Break out, Bar, Rename tab, Close. By TITLE, like `choose` above,
  * because a room's pane ids are re-minted and its titles are not.
  */
 async function manage(page, title, label) {
@@ -170,7 +170,7 @@ async function front(page, label) {
  * The acts, as the root menu names them (da-wjob). The LOCK is not among
  * them: it is a button beside the gear now (da-bzhq, `toggleRootLock`).
  */
-const ACT = { save: 'Save layout', restore: 'Restore layout', 'save-as': 'Save layout as…' };
+const ACT = { save: 'Save layout', restore: 'Restore layout', 'save-as': 'Save layout as' };
 
 /** Run one of the layout's acts from the root menu. */
 const act = (page, name) => chooseRoot(page, ACT[name]);
@@ -263,14 +263,14 @@ describe('the shell', () => {
 			// draws it any more.
 			assert.equal(await bar.locator('.build').count(), 0, 'the build stamp is still on the bottom bar');
 			assert.equal(await page.locator('.root-bar .build').count(), 0, 'the build stamp is still on the root bar');
-			// Above it, the gear's acts: «Backups…» (da-9ow8m), and «Reset
-			// default layouts…» (da-jbcv), which is the narrow half of the
+			// Above it, the gear's acts: «Backups» (da-9ow8m), and «Reset
+			// default layouts» (da-jbcv), which is the narrow half of the
 			// «Reset all layouts…» that deleted every saved layout on every
 			// device and went for it (da-luwe).
 			const gear = await gearItems(page);
 			assert.deepEqual(gear.map((i) => i.label.replace(/^\S+ · \S+$/, 'the build stamp')), [
-				'Backups…',
-				'Reset default layouts…',
+				'Backups',
+				'Reset default layouts',
 				'the build stamp'
 			]);
 			assert.deepEqual(gear.map((i) => i.disabled), [false, false, true]);
@@ -284,7 +284,7 @@ describe('the shell', () => {
 			// (da-luwe); no lock, which is the button beside the gear.
 			assert.deepEqual(
 				(await rootItems(page)).map((i) => i.label),
-				['Save layout', 'Restore layout', 'Reset layout', 'Save layout as…']
+				['Save layout', 'Restore layout', 'Reset layout', 'Save layout as']
 			);
 			// The `▾`'s: what is DONE to the page, Close last and wearing
 			// its × (da-ygc9). The arrows read in vim order (da-bzhq).
@@ -729,7 +729,7 @@ describe('the acts', () => {
 			// da-crp5): nothing to split or close, so no `▾` at all.
 			assert.deepEqual(
 				(await rootItems(page)).map((i) => i.label),
-				['Save layout', 'Restore layout', 'Reset layout', 'Save layout as…']
+				['Save layout', 'Restore layout', 'Reset layout', 'Save layout as']
 			);
 			assert.equal(await rootManageButton(page).count(), 0, 'a locked layout still offers the ▾');
 			// And the way out is still one press away, where it now lives.

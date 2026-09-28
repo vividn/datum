@@ -383,9 +383,18 @@ rule is decided but not yet everywhere, it names the bead.
     dashes and doubles them (da-nmna0). A button says its kind through one door, `use:act`
     (`$lib/act.ts`, held by `act-guard.test.mjs`); a menu item says it as its `Item`'s `act`
     (`menu.ts`), so «Save layout», which writes at once, is double and «Reset default
-    layouts…», which opens a confirm, is not (da-kk0vr). Tap-everything tests hold double ⇔ the
+    layouts», which opens a confirm, is not (da-kk0vr). Tap-everything tests hold double ⇔ the
     tap wrote or ran: on the page (`act-taps-desktop`, `act-taps-phone`, da-y0ocz) and in every
     sheet, dialog and menu a tap opens from it (`act-taps-dialogs*`, da-juku7).
+    And a tap that OPENS a modal, a sheet or a confirm — or the browser's own prompt or file
+    picker — wears a trailing chevron `›`, and nothing else does (da-vteda; vividn: «yes I like
+    the chevron much better» than the `…` such a label ended in, which is gone). It is the kind
+    `open`, drawn once in `app.css`; a list or a form that takes a widget's place, or `< Back`,
+    is `show` and wears none. The same tap-everything tests hold chevron ⇔ a modal opened.
+    «Save a backup file» keeps its `›` where a browser has no save picker and downloads
+    instead: the chevron says the tap hands the reader to the browser to put the file
+    somewhere, which the download does too (its prompt or its panel), and the page cannot
+    know which a browser will show.
 23. **Tap acts, hold refines.** A hold is `hold.ts`'s `holds` (`HOLD_MS`), never a timer of a
     component's own. A field held becomes a field pill, and a command held shows its flags
     (da-st2xl).

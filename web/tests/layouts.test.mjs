@@ -102,7 +102,7 @@ after(stopApp);
 // support/app.mjs): `solo` deletes every layout the reader saved and puts
 // `main` back. The rest open their own: they reload, open a second tab,
 // refuse storage, hold the clock, or leave the root without `main` (Save
-// layout as…), which `solo` cannot undo.
+// layout as), which `solo` cannot undo.
 const shared = sharedApp();
 
 describe('the store', () => {
@@ -371,7 +371,7 @@ describe('the controls', () => {
 			await controlsReady(app);
 
 			app.page.once('dialog', (dialog) => dialog.accept('phone'));
-			await chooseRoot(app.page, 'Save layout as…');
+			await chooseRoot(app.page, 'Save layout as');
 			await until(() => isModified(app), (m) => m === false);
 			assert.deepEqual(await layouts(app, 'loadLayout', 'phone'), { ...edited, name: 'phone' });
 			assert.deepEqual(
@@ -518,12 +518,12 @@ describe('Reset layout', () => {
 			// `mine`, which the reader just made, has nothing that shipped to
 			// go back to — so it has the other four acts and not this one.
 			page.once('dialog', (dialog) => dialog.accept('mine'));
-			await chooseRoot(page, 'Save layout as…');
+			await chooseRoot(page, 'Save layout as');
 			await page.locator('.root-bar [role="tab"]', { hasText: 'mine' }).waitFor();
 			await rootMenuButton(page).click();
 			const lines = await menuLines(page);
 			assert.ok(!lines.includes('Reset layout'), lines.join(' | '));
-			for (const act of ['Save layout', 'Restore layout', 'Save layout as…'])
+			for (const act of ['Save layout', 'Restore layout', 'Save layout as'])
 				assert.ok(lines.includes(act), `${act} is missing: ${lines.join(' | ')}`);
 			// The lock is the button beside the gear now (da-bzhq), and a
 			// layout the reader saved opens unlocked (da-gshh).

@@ -1,10 +1,10 @@
 <!--
-	«Backups…» (da-9ow8m): the gear's sheet, and the commands widget's
+	«Backups» (da-9ow8m): the gear's sheet, and the commands widget's
 	`db backup` / `db restore`. Mounted once by `openBackups` and opened
 	again after.
 
 	Top to bottom: a file on this device (the SAVE picker, and «Restore
-	from a file…», which replaced the root tab menu's «export backup…»);
+	from a file», which replaced the root tab menu's «export backup…»);
 	what a plan is and what it is not (encrypted, or running while the
 	browser is closed); each plan, with its backups by database, newest
 	first, each restorable; and a new plan. Every number is the CLI's —
@@ -201,8 +201,8 @@
 		<section class="local">
 			<h3>A file on this device</h3>
 			<div class="row">
-				<button type="button" use:act={'open'} data-backup="save" on:click={saveLocal}>Save a backup file…</button>
-				<button type="button" use:act={'open'} data-backup="restore-file" on:click={restoreLocal}>Restore from a file…</button>
+				<button type="button" use:act={'open'} data-backup="save" on:click={saveLocal}>Save a backup file</button>
+				<button type="button" use:act={'open'} data-backup="restore-file" on:click={restoreLocal}>Restore from a file</button>
 			</div>
 		</section>
 
@@ -255,7 +255,7 @@
 								<li data-slot={backup.slot}>
 									<span class="age">{ago(ageOf(s, backup))} ago</span>
 									<span class="quiet">slot {backup.slot} · {backup.entry_count} entries · {bytes(backup.size)}</span>
-									<button type="button" use:act={'open'} on:click={() => restoreSlot(plan, db, backup)}>Restore…</button>
+									<button type="button" use:act={'open'} on:click={() => restoreSlot(plan, db, backup)}>Restore</button>
 								</li>
 							{/each}
 						</ul>
@@ -346,7 +346,7 @@
 					{#if KINDS[fresh.kind]?.test}
 						<button type="button" use:act={'run'} data-backup="test" on:click={testIt}>Test connection</button>
 					{/if}
-					<button type="button" use:act={'open'} on:click={look}>Look for backups there</button>
+					<button type="button" use:act={'show'} on:click={look}>Look for backups there</button>
 					<button type="button" use:act={'run'} data-backup="add" on:click={add}>Add plan</button>
 				</div>
 			</section>
@@ -487,7 +487,8 @@
 		color: var(--ink-bright);
 	}
 
-	button:global([data-act='open']) {
+	button:global([data-act='open']),
+	button:global([data-act='show']) {
 		border-color: var(--accent);
 	}
 

@@ -555,6 +555,13 @@
 		color: var(--muted);
 	}
 
+	/* The chevron (app.css) stands where a submenu's ▸ does, at the row's end. */
+	.menu button:global([data-act='open'])::after {
+		margin-inline-start: auto;
+		padding-inline-start: 0.75rem;
+		color: var(--muted);
+	}
+
 	/* Whether a switch is ON, and which of a set of words is in force
 	   (da-vhwq): the same tick at the end of the row either way — the roles
 	   differ, `menuitemcheckbox` and `menuitemradio`, and the eye should

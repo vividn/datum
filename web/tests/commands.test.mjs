@@ -233,7 +233,7 @@ describe('a command with subcommands drills into them', () => {
 	// the sheet, and `db restore` opens it at the backups to restore from;
 	// neither writes the line, and both are drawn once-outlined.
 	for (const sub of ['backup', 'restore']) {
-		test(`db ${sub} opens «Backups…», and writes nothing on the line`, async () => {
+		test(`db ${sub} opens «Backups», and writes nothing on the line`, async () => {
 			await onPage(async ({ page }) => {
 				await commands(page).locator('button[data-command="db"]').click();
 				const button = commands(page).locator(`button[data-command="db ${sub}"]`);

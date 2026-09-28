@@ -556,7 +556,7 @@ async function fillRoot(state: RootState): Promise<void> {
  * There is no kit file to install, so the app writes the row itself the
  * first time it opens a database of that name without one.
  *
- * WHO CREATES THE DATABASE is the reader: the logo menu's `new database…`
+ * WHO CREATES THE DATABASE is the reader: the logo menu's `new database`
  * already does it, and `?db=DEBUG` on its own is enough. Nothing new.
  *
  * A failure is not fatal and is not retried in a loop: the write is
@@ -882,7 +882,7 @@ export async function restore(tabId: NodeId, version?: number): Promise<void> {
  * This copy's tree under a new name, and this copy pointed at it; the
  * original keeps its save. A tab holding no layout — a split made by
  * splitting a tab (da-6ji5) — is saved the same way and becomes a copy of
- * the new layout, as a tab that holds one is: `Save as layout…`.
+ * the new layout, as a tab that holds one is: `Save as layout`.
  */
 export async function saveAs(tabId: NodeId, newName: string): Promise<void> {
 	const tab = findTab(get(layout), tabId);

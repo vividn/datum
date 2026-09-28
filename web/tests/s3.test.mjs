@@ -1,4 +1,4 @@
-// «Backups…» to an S3-compatible bucket (da-pstzw, $lib/s3.ts), against a
+// «Backups» to an S3-compatible bucket (da-pstzw, $lib/s3.ts), against a
 // fake S3 on another origin (support/s3.mjs) that does real CORS and checks
 // every signature. SigV4 itself is held to AWS's vectors in s3-pure.
 
@@ -22,7 +22,7 @@ after(async () => {
 
 async function openSheet(page) {
 	await page.locator('.root-bar button.gear').click();
-	await page.getByRole('menuitem', { name: 'Backups…', exact: true }).click();
+	await page.getByRole('menuitem', { name: 'Backups', exact: true }).click();
 	const sheet = page.locator('dialog.sheet', { hasText: 'Backups' });
 	await sheet.waitFor();
 	return sheet;

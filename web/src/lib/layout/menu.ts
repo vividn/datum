@@ -32,7 +32,7 @@
 //   either menu, as ever.
 // - `Keep tab` (da-xamd) is the root's alone: only a root tab can be a
 //   PREVIEW, and only a preview has a keeping left to do. (`export
-//   backup…` rode here once; it is the gear's «Backups…» now, da-9ow8m.)
+//   backup…` rode here once; it is the gear's «Backups» now, da-9ow8m.)
 //
 // Close is the LAST item of the list, whatever else the caller hands in,
 // and wears an `×` (da-ygc9): the one destructive act, at the far end of
@@ -80,9 +80,10 @@ export type Item = {
 	disabled?: boolean;
 	marked?: boolean;
 	/**
-	 * What its tap does, for the outline (`$lib/act.ts`): `run` where it
-	 * WRITES at once, which draws the double (da-kk0vr, rule 22). Absent
-	 * everywhere else — an item that opens a confirm stays single.
+	 * What its tap does, for the outline (`$lib/act.ts`, rule 22): `run`
+	 * where it WRITES at once, which draws the double (da-kk0vr); `open`
+	 * where it opens a modal, a sheet or a confirm, which wears the `›`
+	 * (da-vteda). Absent everywhere else.
 	 */
 	act?: ActKind;
 	/**
@@ -160,7 +161,7 @@ export type Acts = {
  * orange dot is referring to") — the dot's meaning, in the same place as
  * the acts that answer it.
  *
- * `Reset layout` sits between them and `Save layout as…`: the two ways
+ * `Reset layout` sits between them and `Save layout as`: the two ways
  * BACK together (da-luwe), Restore to the save and Reset to what shipped.
  * It is the only one that is not always there — a layout the reader made
  * themselves has no shipped tree to go back to, so its menu has four
@@ -170,7 +171,7 @@ export const layoutActs = (a: Acts): Item[] => [
 	{ label: 'Save layout', marked: a.dirty, act: 'run' as const, run: a.save },
 	{ label: 'Restore layout', marked: a.dirty, run: a.restore },
 	...(a.reset ? [{ label: 'Reset layout', run: a.reset }] : []),
-	{ label: 'Save layout as…', run: a.saveAs },
+	{ label: 'Save layout as', act: 'open' as const, run: a.saveAs },
 	...(a.toggleLock ? [{ label: a.locked ? 'Unlock layout' : 'Lock layout', run: a.toggleLock }] : [])
 ];
 
@@ -225,8 +226,8 @@ export function menuItems(spec: {
 	 * where the tab holds no layout — a layout tab wears its layout's name.
 	 *
 	 * The caller names it, the way it names `close`, because the same act
-	 * is called after the same thing: `Rename tab…` in a strip, `Rename
-	 * pane…` where the pane's one tab IS the pane and its name is the one
+	 * is called after the same thing: `Rename tab` in a strip, `Rename
+	 * pane` where the pane's one tab IS the pane and its name is the one
 	 * on the frame.
 	 */
 	rename?: { label: string; run: () => void };
@@ -235,23 +236,23 @@ export function menuItems(spec: {
 	close: { label: string; disabled?: boolean; run: () => void };
 	bar?: Item;
 	acts?: Acts;
-	/** `Save as layout…` (da-6ji5): a tab holding a split that is nobody's layout yet. */
+	/** `Save as layout` (da-6ji5): a tab holding a split that is nobody's layout yet. */
 	saveAs?: () => void;
 	/** The root's own, appended: `Keep tab`. */
 	extra?: Item[];
 }): Item[] {
 	return [
-		{ label: CHANGE, run: spec.choose, manage: true as const },
+		{ label: CHANGE, act: 'open' as const, run: spec.choose, manage: true as const },
 		...(spec.reset ? [{ label: 'Reset widget', run: spec.reset }] : []),
 		...(spec.options ?? []),
-		...(spec.rename ? [{ label: spec.rename.label, run: spec.rename.run, manage: true as const }] : []),
+		...(spec.rename ? [{ label: spec.rename.label, act: 'open' as const, run: spec.rename.run, manage: true as const }] : []),
 		...(spec.split ? [{ label: 'Split', row: aimed(spec.split.what, spec.split.run), manage: true as const }] : []),
 		...(spec.breakOut
 			? [{ label: 'Break out', row: aimed(spec.breakOut.what, spec.breakOut.run), manage: true as const }]
 			: []),
 		...(spec.bar ? [{ ...spec.bar, manage: true as const }] : []),
 		...(spec.acts ? layoutActs(spec.acts) : []),
-		...(spec.saveAs ? [{ label: 'Save as layout…', run: spec.saveAs }] : []),
+		...(spec.saveAs ? [{ label: 'Save as layout', act: 'open' as const, run: spec.saveAs }] : []),
 		...(spec.extra ?? []),
 		{ label: spec.close.label, glyph: CLOSE, disabled: spec.close.disabled, run: spec.close.run, manage: true as const }
 	];

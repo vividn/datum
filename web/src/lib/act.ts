@@ -13,13 +13,19 @@
 // writes a dynamic `class=` wholesale and would wipe a class put there
 // behind its back. `act-guard.test.mjs` holds the source to it and
 // `act-taps-*.test.mjs` hold the look to what a tap did.
+//
+// The same door draws the one other mark (da-vteda): a tap that OPENS a
+// modal, a sheet or a confirm wears a trailing chevron `›`, drawn on
+// `[data-act='open']` in `app.css` and nowhere else. vividn: «yes I like the
+// chevron much better» — than the `…` such a label used to end in.
 
 /**
  * `run` — something is written or run at once; `fill` — a line is left in
- * the prompt; `arm` — the next tap means something else; `open` — a list,
- * a form or a menu takes over, or gives way again.
+ * the prompt; `arm` — the next tap means something else; `show` — a list or
+ * a form takes the widget's place, or gives way again; `open` — a modal, a
+ * sheet or a confirm opens over the page, and the button wears a `›`.
  */
-export type ActKind = 'run' | 'fill' | 'arm' | 'open';
+export type ActKind = 'run' | 'fill' | 'arm' | 'show' | 'open';
 
 /** No kind is display: the attribute is taken off, as a menu's plain item has none. */
 export function act(node: HTMLElement, kind?: ActKind) {

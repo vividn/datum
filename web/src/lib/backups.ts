@@ -418,7 +418,7 @@ export function bytes(n: number): string {
 let sheet: { $set(props: Record<string, unknown>): void } | undefined;
 
 /**
- * Open «Backups…» ($lib/BackupsSheet.svelte) — `restore` at the backups to
+ * Open «Backups» ($lib/BackupsSheet.svelte) — `restore` at the backups to
  * restore from. One sheet, mounted the first time and opened again after;
  * imported on first use, as nothing needs it before.
  */

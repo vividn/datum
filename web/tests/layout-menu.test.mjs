@@ -49,7 +49,7 @@ after(stopApp);
 // ROW, so what a test leaves behind is layout alone, which `solo` puts back
 // to `main` before the next one — its lock too, and a `ONE_PANE` draft is
 // `solo`'s to open (da-6b3dj). What still opens an app of its own leaves
-// the root WITHOUT `main` (Save layout as…, Change Widget at the root) or
+// the root WITHOUT `main` (Save layout as, Change Widget at the root) or
 // starts on a fresh phone, neither of which `solo` can undo.
 const shared = sharedApp(DESKTOP);
 const phone = sharedApp(PHONE);
@@ -66,7 +66,7 @@ describe('the menu the title opens', () => {
 	 * the tests below that need one now use — and which since da-z8klv has
 	 * NO name menu at all, nothing being left in that slice. The `▾` slice
 	 * is untouched by da-hkjp — it is about the PANE, not the widget in it
-	 * — and `Rename pane…` is second in it since da-s7sdm, which is the
+	 * — and `Rename pane` is second in it since da-s7sdm, which is the
 	 * same distinction from the other side: renaming is done TO the pane.
 	 * `Change Widget` leads it since da-z8klv: WHICH widget sits in the
 	 * pane is done to the pane too (vividn: "change widget belongs in the
@@ -77,7 +77,7 @@ describe('the menu the title opens', () => {
 	 * row that names the setting.
 	 */
 	const TAIL_MENU = ['Reset widget', 'type'];
-	const TAIL_MANAGE = ['Change Widget', 'Rename pane…', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close pane'];
+	const TAIL_MANAGE = ['Change Widget', 'Rename pane', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close pane'];
 
 	test('the title is the button, the `▾` beside the `+` holds the acts on the pane', async () => {
 		await shared.solo(async ({ page }) => {
@@ -124,11 +124,11 @@ describe('the menu the title opens', () => {
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 
 			// The NAME's menu ends on the layout's acts — `export backup…`
-			// was its last item until it became the gear's «Backups…»
+			// was its last item until it became the gear's «Backups»
 			// (da-9ow8m) — and Close is the last of the `▾`, which is where
 			// the acts on the page are (da-bzhq).
 			await rootMenuButton(page).click();
-			assert.equal((await menuLines(page)).at(-1), 'Save layout as…');
+			assert.equal((await menuLines(page)).at(-1), 'Save layout as');
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 			await rootManageButton(page).click();
@@ -303,7 +303,7 @@ describe('the menu the title opens', () => {
 			await until(labels, (l) => l[0] === 'tail | aliases');
 
 			// Renamed: the dialog starts at the name, and the name survives a reload and a further split.
-			await manage(page, 'side', 'Rename tab…');
+			await manage(page, 'side', 'Rename tab');
 			const field = page.locator('dialog.ask input');
 			assert.equal(await field.inputValue(), 'tail | aliases');
 			await field.fill('pair');
@@ -315,14 +315,14 @@ describe('the menu the title opens', () => {
 			await until(() => titledPane(page, 'empty').count(), (n) => n === 1);
 			assert.deepEqual(await labels(), ['pair', 'nowview', 'custom']);
 			// Emptied, the tab wears the name it is given again.
-			await manage(page, 'side', 'Rename tab…');
+			await manage(page, 'side', 'Rename tab');
 			await page.locator('dialog.ask input').fill('');
 			await page.locator('dialog.ask').getByRole('button', { name: 'rename' }).click();
 			await until(labels, (l) => l[0] === '(tail | aliases) / empty');
 			assert.deepEqual(await names(), namesBefore, 'renaming saved a layout');
 
-			// Save as layout…, asked for: listed, and the tab wears it.
-			await choose(page, 'side', 'Save as layout…');
+			// Save as layout, asked for: listed, and the tab wears it.
+			await choose(page, 'side', 'Save as layout');
 			await page.locator('dialog.ask input').fill('mine');
 			await page.locator('dialog.ask').getByRole('button', { name: 'save' }).click();
 			await until(labels, (l) => l[0] === 'mine');
@@ -336,7 +336,7 @@ describe('the menu the title opens', () => {
 	// pane, so the name on the frame is that tab's `title` — which
 	// `nameOf` already preferred over the kind's name. The act is in the
 	// `▾`, with the rest of what is DONE to a pane, so a lock hides it.
-	test('Rename pane… names a lone pane everywhere; emptied, the key goes with the name', async () => {
+	test('Rename pane names a lone pane everywhere; emptied, the key goes with the name', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			const tabOf = () =>
@@ -350,7 +350,7 @@ describe('the menu the title opens', () => {
 
 			// The field starts at the name it wears now — the kind's.
 			await manageButton(page, 'tail').click();
-			await page.getByRole('menuitem', { name: 'Rename pane…', exact: true }).click();
+			await page.getByRole('menuitem', { name: 'Rename pane', exact: true }).click();
 			const field = page.locator('dialog.ask input');
 			assert.equal(await field.inputValue(), 'tail');
 			await field.fill('sleep tail');
@@ -375,7 +375,7 @@ describe('the menu the title opens', () => {
 			// the pattern `setLocked` uses): a pane never named and one
 			// named and cleared are the same pane.
 			await manageButton(page, 'tail').click();
-			await page.getByRole('menuitem', { name: 'Rename pane…', exact: true }).click();
+			await page.getByRole('menuitem', { name: 'Rename pane', exact: true }).click();
 			await page.locator('dialog.ask input').fill('');
 			await page.locator('dialog.ask').getByRole('button', { name: 'rename' }).click();
 			await titledPane(page, 'tail').waitFor();
@@ -464,7 +464,7 @@ describe('the menu the title opens', () => {
 			// With tabs it is the TAB that closes, and Break out gives the
 			// tab in front a pane of its own — both under the `▾` (da-bzhq).
 			await manageButton(page, 'tail').click();
-			assert.deepEqual(await menuLines(page), ['Change Widget', 'Rename tab…', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close tab']);
+			assert.deepEqual(await menuLines(page), ['Change Widget', 'Rename tab', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close tab']);
 			await page.getByRole('menuitem', { name: 'break out: this widget below', exact: true }).click();
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 			// The tab that left is a pane of its own, under the pane it left;
@@ -532,7 +532,7 @@ describe("the root bar's menu", () => {
 	/** The root's differences from a pane's, and only these. */
 	const NO_BREAK = 'Break out ← ↓ ↑ →'; // a tab leaves its STRIP, and the root has none (da-a642)
 	const NO_BAR = 'Bar'; //                the root draws no bar of its own — this one is the shell's
-	const ROOT_ONLY = []; //                 `export backup…` was, until it became the gear's «Backups…» (da-9ow8m)
+	const ROOT_ONLY = []; //                 `export backup…` was, until it became the gear's «Backups» (da-9ow8m)
 	const NO_LOCK = 'Lock layout'; //       a button beside the gear at the root (da-bzhq)
 	const CLOSE = '× Close tab'; //        last in the `▾` of both (da-ygc9)
 
@@ -587,7 +587,7 @@ describe("the root bar's menu", () => {
 			// active tab holding a LAYOUT (so the four acts are on it too,
 			// da-crp5). `main` is only choosable once the root tab is `mine`.
 			page.once('dialog', (dialog) => dialog.accept('mine'));
-			await chooseRoot(page, 'Save layout as…');
+			await chooseRoot(page, 'Save layout as');
 			await page.locator('.root-bar [role="tab"]', { hasText: 'mine' }).waitFor();
 			await addTab(page, 'tail', 'main');
 			// The chooser closes before the layout is inlined; the tab wears
@@ -601,7 +601,7 @@ describe("the root bar's menu", () => {
 				'Restore layout',
 				// This tab holds `main`, which ships with datum (da-luwe).
 				'Reset layout',
-				'Save layout as…',
+				'Save layout as',
 				NO_LOCK
 			]);
 			// And the `▾`'s: what is done to the pane and its tabs (da-bzhq),
@@ -685,7 +685,7 @@ describe('the Bar submenu', () => {
 		await shared.solo(async ({ page }) => {
 			await manageButton(page, 'tail').click();
 			const items = page.locator('[role="menu"] button');
-			assert.deepEqual(await menuLines(page), ['Change Widget', 'Rename pane…', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close pane']);
+			assert.deepEqual(await menuLines(page), ['Change Widget', 'Rename pane', 'Split ← ↓ ↑ →', 'Break out ← ↓ ↑ →', 'Bar', '× Close pane']);
 			assert.equal(await items.filter({ hasText: /Bar:|Align:/ }).count(), 0);
 			await items.filter({ hasText: exactly('Bar') }).click();
 			const cells = await row(page);
@@ -865,13 +865,13 @@ describe('the pane menu by pointer', () => {
 				page.evaluate(() => document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent.trim());
 			// The `▾` beside the `+` is where Split is now (da-bzhq). The
 			// menu opens on its first item, which is `Change Widget`
-			// (da-z8klv), then `Rename pane…` (da-s7sdm); the Split row is
+			// (da-z8klv), then `Rename pane` (da-s7sdm); the Split row is
 			// the next one down.
 			await manageButton(page, 'tail').focus();
 			await page.keyboard.press('Enter');
 			assert.equal(await focused(), 'Change Widget');
 			await page.keyboard.press('ArrowDown');
-			assert.equal(await focused(), 'Rename pane…');
+			assert.equal(await focused(), 'Rename pane');
 			await page.keyboard.press('ArrowDown');
 			assert.equal(await focused(), 'split: a new pane to the left');
 			// Vim order, and the walk follows the eye: ← ↓ ↑ →.

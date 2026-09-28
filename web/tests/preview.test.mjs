@@ -205,7 +205,7 @@ describe('a preview tab', () => {
 		await a.room('t-9');
 
 		page.once('dialog', (dialog) => dialog.accept('mine'));
-		await chooseRoot(page, 'Save layout as…');
+		await chooseRoot(page, 'Save layout as');
 		await until(() => rootTabs(page), (t) => t.includes('mine'));
 		// The copy moved to the new name, and it is real: italic nowhere, and
 		// in this device's open list.
@@ -311,7 +311,7 @@ describe('Keep tab', () => {
 		// The two answers are one press apart either way; what they are no
 		// longer is adjacent.
 		assert.equal(menu.indexOf('Keep tab'), menu.length - 1, `Keep tab is not last: ${menu}`);
-		assert.equal(menu.at(-2), 'Save layout as…');
+		assert.equal(menu.at(-2), 'Save layout as');
 		assert.match((await manage()).at(-1), /Close tab$/);
 		await a.solo();
 	});

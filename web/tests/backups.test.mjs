@@ -1,4 +1,4 @@
-// «Backups…» (da-9ow8m, $lib/backups.ts, $lib/BackupsSheet.svelte): the
+// «Backups» (da-9ow8m, $lib/backups.ts, $lib/BackupsSheet.svelte): the
 // gear's sheet of Tower of Hanoi plans, driven here against `memory` — a
 // bucket in the tab, offered on the DEBUG database alone (vremya on #217),
 // which is why the plan tests open `?db=DEBUG`. The S3 destination is
@@ -19,7 +19,7 @@ const DEBUG = { query: '?db=DEBUG' };
 
 async function openSheet(page) {
 	await page.locator('.root-bar button.gear').click();
-	await page.getByRole('menuitem', { name: 'Backups…', exact: true }).click();
+	await page.getByRole('menuitem', { name: 'Backups', exact: true }).click();
 	const sheet = page.locator('dialog.sheet', { hasText: 'Backups' });
 	await sheet.waitFor();
 	return sheet;
@@ -43,7 +43,7 @@ async function addPlan(sheet, name, bucket) {
 /** What the sheet says about slot `n` of a plan: its age. */
 const ageOf = (plan, n) => plan.locator(`li[data-slot="${n}"] .age`).innerText();
 
-describe('«Backups…»', () => {
+describe('«Backups»', () => {
 	test('is the gear’s, and the root tab menu has no export backup… any more', async () => {
 		await withApp(async ({ page }) => {
 			const sheet = await openSheet(page);
@@ -148,7 +148,7 @@ describe('«Backups…»', () => {
 			assert.equal((await app.run(['occur', 'coffee'])).code, 0);
 			assert.equal((await app.allEntries(500)).length, backedUp.length + 1);
 
-			await plan.locator('li[data-slot="0"] button', { hasText: 'Restore…' }).click();
+			await plan.locator('li[data-slot="0"] button', { hasText: 'Restore' }).click();
 			const confirm = page.locator('dialog.confirm');
 			await confirm.waitFor();
 			assert.match(await confirm.innerText(), /: 1 deleted, 0 added, 0 changed\./);

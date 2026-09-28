@@ -16,8 +16,8 @@ import { DESKTOP } from './support/layout.mjs';
 // whose «Save layout» writes and so is double (da-kk0vr).
 everyLayer('desktop', { ...DESKTOP, desk: null }, 'rest', [
 	'page: main',
-	'page: settings › page: Backups…',
-	'page: settings › page: Backups… › page: Delete plan',
+	'page: settings › page: Backups',
+	'page: settings › page: Backups › page: Delete plan',
 	'nowview: menu of the nowview pane › page: history',
 	'fields: Track +'
 ]);

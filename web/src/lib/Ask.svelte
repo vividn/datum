@@ -1,7 +1,7 @@
 <!--
 	The app's own question with a typed answer (da-y992) — what the browser's
 	`prompt()` was for, drawn by the app. vividn on PR #25: "lets use our own
-	dialog" for `new database…`.
+	dialog" for `new database`.
 
 	A sibling of Confirm.svelte rather than a mode of it: Confirm is the
 	dialog for an act that DESTROYS or trusts (its border and its button are
@@ -15,7 +15,7 @@
 	empty field. An empty answer is refused QUIETLY: the button that would
 	take it is disabled, so Enter on an empty field does nothing at all —
 	unless the question is `optional`, where an empty field is an answer of
-	its own (`Rename tab…` / `Rename pane…`: back to the name the tab is
+	its own (`Rename tab` / `Rename pane`: back to the name the tab is
 	given, da-6ji5, da-s7sdm).
 	`value` is what the field starts with.
 -->

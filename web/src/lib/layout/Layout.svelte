@@ -51,6 +51,7 @@
 -->
 <script lang="ts">
 	import Pane from '$lib/Pane.svelte';
+	import { act } from '$lib/act.js';
 	import PaneFrame, { ROW } from './PaneFrame.svelte';
 	import TabBody from './TabBody.svelte';
 	import { fillTab } from './chooser.js';
@@ -372,7 +373,7 @@
 				{@const tabId = tab.id}
 				<Pane title="empty">
 					<div class="choose">
-						<button type="button" class="control" on:click={() => void fillTab(tabId)}
+						<button type="button" class="control" use:act={'open'} on:click={() => void fillTab(tabId)}
 							>{CHANGE}</button
 						>
 					</div>

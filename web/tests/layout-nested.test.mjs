@@ -417,7 +417,7 @@ describe('a widget chosen for a tab that holds a layout', () => {
 			// CLOSED, since what shipped opens locked (da-gshh, da-bzhq).
 			await rootMenuButton(page).click();
 			const lines = await menuLines(page);
-			for (const act of ['Save layout', 'Restore layout', 'Save layout as…'])
+			for (const act of ['Save layout', 'Restore layout', 'Save layout as'])
 				assert.ok(lines.includes(act), `${act} is missing: ${lines.join(' | ')}`);
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });

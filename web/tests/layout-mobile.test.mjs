@@ -356,7 +356,7 @@ describe('who gets it', () => {
 				await page.evaluate(() => window.datum.shell.close(0));
 				assert.deepEqual(await rootNames(page), ['tail']);
 				await page.locator('.root-bar button.gear').click();
-				await page.getByRole('menuitem', { name: 'Reset default layouts…', exact: true }).click();
+				await page.getByRole('menuitem', { name: 'Reset default layouts', exact: true }).click();
 				const dialog = page.locator('dialog.confirm');
 				await dialog.getByRole('button', { name: 'reset', exact: true }).click();
 				await dialog.waitFor({ state: 'detached' });

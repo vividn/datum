@@ -120,8 +120,11 @@ export const boxes = (locator, selector) =>
 	);
 
 /**
- * Scroll the bar to its right end: is its last `selector` button then wholly
- * in it? Within a pixel on the right: `scrollWidth` and `scrollLeft` are
+ * Scroll the bar to its right end: is its furthest `selector` button then
+ * wholly in it? The furthest and not the last: the rows pack on their own,
+ * so the last button ends a row that may be shorter than another — as a
+ * `Track +` that wears its chevron makes the first (da-vteda). Within a
+ * pixel on the right: `scrollWidth` and `scrollLeft` are
  * whole pixels, so up to one of a fractional content width is never
  * scrolled to (measured 0.62px with `note` on the bar, da-8ru0m).
  */
@@ -130,7 +133,9 @@ export const lastReached = (locator, selector) =>
 		(bar, selector) => {
 			bar.scrollLeft = bar.scrollWidth;
 			const outer = bar.getBoundingClientRect();
-			const last = [...bar.querySelectorAll(selector)].at(-1).getBoundingClientRect();
+			const last = [...bar.querySelectorAll(selector)]
+				.map((b) => b.getBoundingClientRect())
+				.reduce((a, b) => (b.right > a.right ? b : a));
 			const reached = last.left >= outer.left - 0.5 && last.right <= outer.right + 1;
 			bar.scrollLeft = 0;
 			return reached;

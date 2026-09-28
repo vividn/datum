@@ -161,6 +161,7 @@
 
 <script lang="ts">
 	import { setContext, tick } from 'svelte';
+	import { act } from '$lib/act.js';
 	import { ask } from '$lib/confirm.js';
 	import { holds } from '$lib/hold.js';
 	import { writable } from 'svelte/store';
@@ -393,7 +394,7 @@
 				// strip: with one tab the tab IS the pane, and the name on the
 				// frame is that tab's. Named after whichever it is, as `close`
 				// is. A tab holding a LAYOUT is still named by that layout.
-				rename: active.layout === undefined ? { label: `Rename ${thing}…`, run: rename(active) } : undefined,
+				rename: active.layout === undefined ? { label: `Rename ${thing}`, run: rename(active) } : undefined,
 				// In a strip, Split splits the TAB in front (da-6ji5). A lone
 				// holder's children split themselves; its own split is a tab's.
 				split: many
@@ -441,7 +442,7 @@
 	$: manage = managed(items);
 
 	/**
-	 * `Rename tab…` / `Rename pane…` (da-6ji5, da-s7sdm): the answer is the
+	 * `Rename tab` / `Rename pane` (da-6ji5, da-s7sdm): the answer is the
 	 * tab's `title`. The field starts at the name it wears now; emptied,
 	 * the title goes — the key with it, as `setLocked` drops `locked` — and
 	 * the thing wears the name it is given again (`nameOf`). A user title
@@ -455,7 +456,7 @@
 			if (to !== null && to !== labelOf(tab)) apply((l) => setTitle(l, tab.id, to || undefined));
 		});
 
-	/** `Save as layout…` (da-6ji5): only when asked — a split is never saved by splitting. */
+	/** `Save as layout` (da-6ji5): only when asked — a split is never saved by splitting. */
 	const saveAsLayout = (tabId: string) => () =>
 		void ask('Save this tab as the layout:', 'save').then((to) => {
 			if (to) attempt(saveAs(tabId, to));
@@ -802,6 +803,7 @@
 				<button
 					type="button"
 					class="control badge add"
+					use:act={'open'}
 					aria-label="add a tab to the {title} pane"
 					title="add a tab"
 					on:click={() => void addChosen()}>+</button

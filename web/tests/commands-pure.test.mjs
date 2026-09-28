@@ -276,8 +276,8 @@ describe('what a field tap does', () => {
 		assert.equal(pressKind(point, null), 'run');
 		assert.equal(pressKind(offBlock, null), 'run');
 		assert.equal(pressKind(onBlock, null), 'run');
-		assert.equal(pressKind(onSwitch, null), 'open');
-		assert.equal(pressKind(boolSwitch, null), 'open');
+		assert.equal(pressKind(onSwitch, null), 'show');
+		assert.equal(pressKind(boolSwitch, null), 'show');
 		assert.equal(pressKind(record, null), 'fill');
 	});
 
@@ -286,10 +286,10 @@ describe('what a field tap does', () => {
 			for (const button of fieldsUnder(ALL, verb))
 				assert.equal(
 					pressKind(button, verb),
-					verbPress(verb, button) ? 'run' : button.shape.kind === 'record' ? 'fill' : 'open',
+					verbPress(verb, button) ? 'run' : button.shape.kind === 'record' ? 'fill' : 'show',
 					`${verb} ${button.field}`
 				);
-		assert.equal(pressKind(onSwitch, 'switch'), 'open');
+		assert.equal(pressKind(onSwitch, 'switch'), 'show');
 		assert.equal(pressKind(record, 'add'), 'fill');
 		assert.equal(pressKind(boolSwitch, 'start'), 'run');
 	});
@@ -306,7 +306,7 @@ describe('what a field tap does', () => {
 		assert.equal(pressKind(shift, 'start'), 'fill');
 		assert.equal(pressKind(on, null), 'run', 'a tap on a running block ends it');
 		assert.equal(pressKind(on, 'end'), 'run');
-		assert.equal(pressKind({ ...onSwitch, required: ['why'] }, null), 'open', 'the ring still opens');
+		assert.equal(pressKind({ ...onSwitch, required: ['why'] }, null), 'show', 'the ring still opens');
 		assert.equal(typesKeys('switch', { ...onSwitch, required: ['why'] }), true, 'and its state fills');
 		assert.equal(typesKeys('switch', onSwitch), false);
 	});
@@ -391,7 +391,7 @@ describe('subcommands', () => {
 			['back', '< Back', 'back'],
 			['help', 'Help', 'help'],
 			['db setup', 'setup', 'fill'],
-			// da-9ow8m: it opens «Backups…» rather than fill the line.
+			// da-9ow8m: it opens «Backups» rather than fill the line.
 			['db backup', 'backup', 'sheet']
 		]);
 		assert.deepEqual(bar('sync').slice(2), [

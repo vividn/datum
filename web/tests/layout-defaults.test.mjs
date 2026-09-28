@@ -25,7 +25,7 @@ before(startApp);
 after(stopApp);
 
 /** The item, as it reads in the gear's menu. */
-const RESET = 'Reset default layouts…';
+const RESET = 'Reset default layouts';
 
 /** `window.datum.layouts[fn](...args)` — the store itself. */
 const layouts = (page, fn, ...args) =>
@@ -167,7 +167,7 @@ async function stage(app) {
 
 	// And, saved off it under a name nothing ships, the reader's own layout.
 	page.once('dialog', (dialog) => dialog.accept('mine'));
-	await chooseRoot(page, 'Save layout as…');
+	await chooseRoot(page, 'Save layout as');
 	await until(() => rootNames(page), (names) => names.join() === 'main,mine');
 
 	return { shipped, fallback, grown, mine: JSON.stringify(await layouts(page, 'loadLayout', 'mine')) };
