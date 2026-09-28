@@ -5,7 +5,7 @@
 //! Rust test maps 1-to-1 to a TS case; doc headers identify the source item.
 //!
 //! Divergences from datum:
-//!   * daydumb has no `-F`/fieldless mode — entries always carry a field. The
+//!   * daydumb has no fieldless mode — entries always carry a field. The
 //!     TS cases that exercise fieldless docs, custom base data (`-b`), or
 //!     datum's "required keys" positional semantics are ported as structural
 //!     skips that document the divergence. Skip headers call out exactly
@@ -118,7 +118,7 @@ fn required_keys_positional_absorption_skipped_no_analog() {
 
 // ─── TS #5: "can skip the field with -F" ──────────────────────────────────────
 
-/// Skipped: daydumb has no `-F`/fieldless mode. Every entry carries a field.
+/// Skipped: daydumb has no fieldless mode. Every entry carries a field.
 /// The TS case has no translation.
 #[test]
 fn fieldless_mode_skipped_no_analog() {

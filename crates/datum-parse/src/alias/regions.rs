@@ -57,6 +57,8 @@ const VALUE_FLAGS: &[&str] = &[
     "--key",
     "-K",
     "--slug-key",
+    "-F",
+    "--field-key",
     "-R",
     "--remainder",
     "-c",
@@ -389,8 +391,10 @@ fn side_slots(side_idx: usize, side: &[String]) -> Vec<Slot> {
             }
             if is_value_flag(tok) || tok == "-SR" {
                 if let Some(v) = side.get(i + 1) {
-                    if (tok == "-k" || tok == "--key" || tok == "-K" || tok == "--slug-key")
-                        && !v.is_empty()
+                    if matches!(
+                        tok.as_str(),
+                        "-k" | "--key" | "-K" | "--slug-key" | "-F" | "--field-key"
+                    ) && !v.is_empty()
                     {
                         keys.push(v.clone());
                     }

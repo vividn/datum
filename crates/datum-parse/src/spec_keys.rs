@@ -112,7 +112,12 @@ pub fn typed_state(line: &LogArgs) -> Option<String> {
 /// one also as its slot, which the value fills. A key the line already
 /// names, as a slot or a `key=value`, is left to the line.
 pub fn spec_key_words(line: &LogArgs, declared: &[DeclaredKey]) -> SpecKeyWords {
-    let slots = line.keys.iter().chain(&line.slug_keys).map(String::as_str);
+    let slots = line
+        .keys
+        .iter()
+        .chain(&line.slug_keys)
+        .chain(&line.field_keys)
+        .map(String::as_str);
     let set = line
         .rest
         .iter()

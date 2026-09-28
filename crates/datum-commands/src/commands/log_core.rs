@@ -210,7 +210,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // `reserved.field`; `block` keeps `field_or_verb`. `id` is untouched
     // here — it stays on the insert-only slug-promotion path in
     // `parse_log_args` so it can defer to an explicit `-K` slug slot.
-    let field = reserved.field.take().unwrap_or(field);
+    let field = compound_field(reserved.field.take().unwrap_or(field), &args.field_keys)?;
 
     // da-5ns.3 strict positional gate (the timeless Add/Note family): the
     // v=20 model has no implicit `value` column, so a bare unkeyed positional
@@ -951,7 +951,7 @@ pub(crate) fn parse_log_args(
     // data queue, never consume a positional) silently dropped positionals
     // into the primary-value remainder, which then leaked into `state`
     // for non-state-bearing verbs like `occur`.
-    for spec in &args.keys {
+    for spec in args.field_keys.iter().chain(&args.keys) {
         let (name, _) = spec
             .split_once('=')
             .map(|(n, v)| (n, Some(v)))
@@ -1022,7 +1022,6 @@ pub(crate) fn parse_log_args(
                 switch_state_positional.take(),
                 "state=true",
                 false,
-                false,
             );
         } else {
             data_args.keys.insert(0, "state=true".to_string());
@@ -1040,7 +1039,6 @@ pub(crate) fn parse_log_args(
             &mut data_args,
             Some(args.field_or_verb.clone()),
             "field",
-            false,
             false,
         );
     }
@@ -1313,6 +1311,26 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// da-0csuh: each `-F key` appends `__%key%` to the field — `%?key%` for an
+/// optional `key=`, so an absent value leaves the field as it was. The
+/// result is an ordinary field template: the key stays in the data, and
+/// `update` re-derives field and slug from it.
+fn compound_field(field: String, field_keys: &[String]) -> Result<String> {
+    if field_keys.is_empty() {
+        return Ok(field);
+    }
+    if field.is_empty() {
+        anyhow::bail!("-F appends to a field: name one (e.g. `issue -F issue_id`)");
+    }
+    Ok(field_keys
+        .iter()
+        .fold(field, |acc, spec| match spec.split_once('=') {
+            Some((name, "")) => format!("{acc}__%?{name}%"),
+            Some((name, _)) => format!("{acc}__%{name}%"),
+            None => format!("{acc}__%{spec}%"),
+        }))
 }
 
 /// da-9s98k: a field's declared keys join the line as its slots — the

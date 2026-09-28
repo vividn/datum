@@ -392,9 +392,10 @@ fn alias_help_documents_k_trichotomy() {
 fn alias_help_documents_f_trichotomy() {
     let s = command_help("alias");
     assert!(s.contains("FIELD SLOT FORMS (-F)"));
-    assert!(s.contains("-F field       required"));
-    assert!(s.contains("-F field=      optional"));
-    assert!(s.contains("-F field=val   defaulted"));
+    assert!(s.contains("-F key         required"));
+    assert!(s.contains("-F key=        optional"));
+    assert!(s.contains("-F key=val     defaulted"));
+    assert!(s.contains("appended to the field with `__`"));
 }
 
 #[test]

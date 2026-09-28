@@ -239,9 +239,13 @@ positional and sets `dur = null`.
 
 Positional `field` + `-F/--fieldless` (suppresses the positional).
 
-- **Daydumb today:** `LogArgs::field: Option<String>` and a `fieldless`
-  bool per command. The swap pre-pass makes `<field> <verb>` work.
-- **Target (step 2/N):** `datum_parse::input::field_args::FieldArgs`.
+- **Not ported (da-0csuh).** Every entry has a field — «all data should
+  have a field» (vividn, 09-27) — so `--fieldless` and the `FieldArgs`
+  port that carried it are gone, and `flexible_positional` lost the
+  `skipKey` it served. The positional `field` is `LogArgs::field_or_verb`;
+  the swap pre-pass makes `<field> <verb>` work.
+- **`-F` is reused** as the compound-field slot, `-F/--field-key KEY`:
+  a `-k` slot whose value is also appended to the field, `__`-joined.
 
 ### `outputArgs.ts` (37 LOC)
 

@@ -39,6 +39,10 @@ pub(crate) fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
         p.slug_keys.push(v.to_string());
         Ok(())
     }));
+    r.push(local_value(Some('F'), Some("field-key"), |p, v| {
+        p.field_keys.push(v.to_string());
+        Ok(())
+    }));
     r.push(local_value(Some('c'), Some("comment"), |p, v| {
         p.comment.push(v.to_string());
         Ok(())

@@ -17,9 +17,10 @@ pub trait FlexibleTarget {
     fn keys(&mut self) -> &mut Vec<String>;
 }
 
-/// If `value.is_some()`, prepend it onto `target.data()` and — unless
-/// `skip_key` is true — add `key_spec` to `target.keys()` (prepended by
-/// default, appended when `after_other_args` is true).
+/// If `value.is_some()`, prepend it onto `target.data()` and add
+/// `key_spec` to `target.keys()` (prepended by default, appended when
+/// `after_other_args` is true). The TS `skipKey` parameter served only
+/// `--fieldless`, which is gone: all data has a field (vividn, 09-27).
 ///
 /// Mirrors the TS semantics exactly: "call in reverse order" is still
 /// the caller's responsibility, because each invocation stacks on top of
@@ -28,7 +29,6 @@ pub fn flexible_positional<T: FlexibleTarget>(
     target: &mut T,
     value: Option<String>,
     key_spec: &str,
-    skip_key: bool,
     after_other_args: bool,
 ) {
     let value = match value {
@@ -36,12 +36,10 @@ pub fn flexible_positional<T: FlexibleTarget>(
         None => return,
     };
 
-    if !skip_key {
-        if after_other_args {
-            target.keys().push(key_spec.to_string());
-        } else {
-            target.keys().insert(0, key_spec.to_string());
-        }
+    if after_other_args {
+        target.keys().push(key_spec.to_string());
+    } else {
+        target.keys().insert(0, key_spec.to_string());
     }
 
     target.data().insert(0, value);
@@ -80,13 +78,7 @@ mod tests {
         // spec "extraKey=default", then "field" injected with spec "field".
         let mut a = args(&["arg1", "arg2"], &["key1", "key2"]);
 
-        flexible_positional(
-            &mut a,
-            Some("extraArg".into()),
-            "extraKey=default",
-            false,
-            false,
-        );
+        flexible_positional(&mut a, Some("extraArg".into()), "extraKey=default", false);
         assert_eq!(
             a,
             args(
@@ -95,7 +87,7 @@ mod tests {
             )
         );
 
-        flexible_positional(&mut a, Some("fieldArg".into()), "field", false, false);
+        flexible_positional(&mut a, Some("fieldArg".into()), "field", false);
         assert_eq!(
             a,
             args(
@@ -106,27 +98,16 @@ mod tests {
     }
 
     #[test]
-    fn skip_key_only_moves_value_into_data() {
-        // --fieldless path: positional still captured but not bound to a key.
-        let mut a = args(&["arg2", "arg3"], &["key1", "key2", "key3"]);
-        flexible_positional(&mut a, Some("arg1".into()), "field", true, false);
-        assert_eq!(
-            a,
-            args(&["arg1", "arg2", "arg3"], &["key1", "key2", "key3"])
-        );
-    }
-
-    #[test]
     fn undefined_value_is_a_noop() {
         let mut a = args(&["arg1", "arg2"], &["key1", "key2"]);
-        flexible_positional(&mut a, None, "field", false, false);
+        flexible_positional(&mut a, None, "field", false);
         assert_eq!(a, args(&["arg1", "arg2"], &["key1", "key2"]));
     }
 
     #[test]
     fn after_other_args_appends_key_at_end() {
         let mut a = args(&["arg1", "arg2"], &["key1", "key2"]);
-        flexible_positional(&mut a, Some("fieldArg".into()), "field", false, true);
+        flexible_positional(&mut a, Some("fieldArg".into()), "field", true);
         assert_eq!(
             a,
             args(&["fieldArg", "arg1", "arg2"], &["key1", "key2", "field"],)
@@ -136,7 +117,7 @@ mod tests {
     #[test]
     fn empty_target_accepts_injection() {
         let mut a = TestArgs::default();
-        flexible_positional(&mut a, Some("v".into()), "k", false, false);
+        flexible_positional(&mut a, Some("v".into()), "k", false);
         assert_eq!(a.data, vec!["v"]);
         assert_eq!(a.keys, vec!["k"]);
     }

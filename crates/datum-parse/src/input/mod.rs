@@ -10,7 +10,6 @@
 //! | `dataArgs.ts`           | [`data_args`]                     | ported |
 //! | `timeArgs.ts`           | [`time_args`]                     | ported |
 //! | `durationArgs.ts`       | [`duration_args`]                 | ported |
-//! | `fieldArgs.ts`          | [`field_args`]                    | ported |
 //! | `outputArgs.ts`         | [`output_args`]                   | ported |
 //! | `quickIdArg.ts`         | [`quick_id_arg`]                  | ported |
 //! | —                       | [`flag_registry`]                 | Rust-only |
@@ -21,7 +20,6 @@
 pub mod consolidate_keys;
 pub mod data_args;
 pub mod duration_args;
-pub mod field_args;
 pub mod flag_registry;
 pub mod flexible_positional;
 pub mod matcher;
@@ -32,7 +30,6 @@ pub mod time_args;
 pub use consolidate_keys::consolidate_keys;
 pub use data_args::{handle_data_args, infer_type, DataArgs, DatumData};
 pub use duration_args::{DurationArgs, DurationIntent};
-pub use field_args::FieldArgs;
 pub use flag_registry::{
     lift, local_optional, local_switch, local_value, FlagAction, FlagSpec, LiftedSpec, ValueMode,
 };
