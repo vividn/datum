@@ -149,6 +149,8 @@
 	gesture is in hand (`peek`).
 -->
 <script lang="ts" context="module">
+	import { readable } from 'svelte/store';
+
 	/**
 	 * The bar's row, in pixels: the title's words (0.75rem at a line of
 	 * 14px) and its 1px outline. The frame's `--row` and Layout.svelte's
@@ -157,6 +159,21 @@
 	 * (Layout.svelte's `BORDER`).
 	 */
 	export const ROW = 16;
+
+	/**
+	 * The badge's box, in pixels — the frame's `--badge`: the row where the
+	 * pointer is fine, a finger's 24px where it is coarse. Layout.svelte's
+	 * chrome reads it too, so a tabbed holder's floor counts the strip a
+	 * finger is given and not the one a mouse is (da-kpjn).
+	 */
+	export const badge = readable(ROW, (set) => {
+		if (typeof matchMedia !== 'function') return;
+		const coarse = matchMedia('(pointer: coarse)');
+		const read = () => set(coarse.matches ? 24 : ROW);
+		read();
+		coarse.addEventListener('change', read);
+		return () => coarse.removeEventListener('change', read);
+	});
 </script>
 
 <script lang="ts">
@@ -695,6 +712,7 @@
 	data-pane={pane.id}
 	data-title={title}
 	style:--row="{ROW}px"
+	style:--badge="{$badge}px"
 >
 	{#if !bare}
 	<div class="titlebar">
@@ -880,7 +898,9 @@
 
 		   `--badge` is the box a POINTER lands on, and only that: the row's
 		   height where the pointer is fine, a finger's 24px where it is
-		   coarse (reachable.test.mjs). Nobody sees it.
+		   coarse (reachable.test.mjs). Nobody sees it. It is set on the
+		   section from `badge` above, the one number Layout.svelte's floors
+		   read as well (da-kpjn).
 
 		   `--mark` is the box that is DRAWN — the title's ground and
 		   outline, the maximize's box and glyph, the `+` and the `▾`. One
@@ -893,13 +913,7 @@
 		   They were ONE token until da-wyofs, so every ask that tuned the
 		   drawing moved the hit area, and every ask that tuned the hit area
 		   moved the drawing on the pointer nobody was looking at. */
-		--badge: var(--row);
 		--mark: var(--row);
-	}
-	@media (pointer: coarse) {
-		section {
-			--badge: 24px;
-		}
 	}
 
 	.pane {

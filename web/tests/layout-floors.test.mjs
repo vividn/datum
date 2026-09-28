@@ -302,3 +302,49 @@ describe('a widget pane shrinks to its frame', () => {
 		}
 	}
 });
+
+// da-kpjn: a tabbed holder's strip is as tall as its badges, which are a
+// finger's 24px under a coarse pointer, and the room kept under it for its
+// children's titles is half that. Its floor counts the same, so a holder
+// dragged down to it leaves its panes their frames and cuts none — under
+// either pointer, and a fine one's floor where it always was.
+describe('a tabbed holder shrinks to its strip and its panes\' frames', () => {
+	const tabbed = {
+		id: 'tabbed',
+		tabs: [
+			{
+				id: 'tabbed-split',
+				content: { id: 'inner', direction: 'row', ratios: [0.5, 0.5], children: [widgetPane('x', 'tail'), widgetPane('y', 'repl')] }
+			},
+			{ id: 'tabbed-aliases', content: { id: 'tabbed-aliases-widget', kind: 'aliases', settings: {} } }
+		],
+		active: 0,
+		bar: { edge: 'top', align: 'start' }
+	};
+	for (const [pointer, strip, options] of [
+		['fine', 16, DESKTOP],
+		['coarse', 24, { viewport: { width: 390, height: 844 }, device: { hasTouch: true, isMobile: true } }]
+	]) {
+		test(`under a ${pointer} pointer: a ${strip}px strip, ${strip / 2}px under it, and a pane's frame`, async () => {
+			await withApp(async (app) => {
+				const { page } = await app.solo(JSON.stringify(along('column', tabbed, widgetPane('b', 'repl'))));
+				const at = await grab(page, page.locator('.split.column > [role="separator"]').first());
+				for (let i = 1; i <= 20; i++) await page.mouse.move(at.x, at.y - i * 60);
+				await page.mouse.up();
+				await settled(page);
+				const seen = await pane(page, 'tabbed').evaluate((section) => ({
+					holder: section.getBoundingClientRect().height,
+					strip: section.querySelector(':scope > .titlebar').getBoundingClientRect().height,
+					under: parseFloat(getComputedStyle(section.querySelector(':scope > .content')).paddingTop),
+					inner: document.querySelector('section[data-pane="x"]').getBoundingClientRect().height
+				}));
+				assert.deepEqual(
+					{ strip: seen.strip, under: seen.under, inner: Math.round(seen.inner) },
+					{ strip, under: strip / 2, inner: CHROME.height },
+					`what is drawn: ${JSON.stringify(seen)}`
+				);
+				assert.ok(Math.abs(seen.holder - (strip + strip / 2 + CHROME.height)) <= 1, `the holder's floor is ${seen.holder}px: ${JSON.stringify(seen)}`);
+			}, options);
+		});
+	}
+});

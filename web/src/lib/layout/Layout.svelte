@@ -52,7 +52,7 @@
 <script lang="ts">
 	import Pane from '$lib/Pane.svelte';
 	import { act } from '$lib/act.js';
-	import PaneFrame, { ROW } from './PaneFrame.svelte';
+	import PaneFrame, { ROW, badge } from './PaneFrame.svelte';
 	import TabBody from './TabBody.svelte';
 	import { fillTab } from './chooser.js';
 	import { CHANGE } from './menu.js';
@@ -121,7 +121,7 @@
 	 * half-row already lies. The root's chrome cancels itself in
 	 * `rootFloorOf`, so neither test need except it.
 	 */
-	const chromeOf = (p: PaneNode) => {
+	$: chromeOf = (p: PaneNode) => {
 		const tab = p.tabs[p.active];
 		const nested = isSplit(tab.content) && tab.layout !== undefined;
 		const widget = !isSplit(tab.content);
@@ -129,8 +129,9 @@
 		// The inset already holds the title's half-row: only a widget pane's
 		// title lies over its content. A tabbed holder's strip is a row, and
 		// the half-row its children's titles hang above them is kept clear
-		// under it (da-cesj).
-		const bar = widget ? ROW / 2 : nested ? ROW + BORDER : p.tabs.length > 1 ? ROW + ROW / 2 : 0;
+		// under it (da-cesj). Both are the badge's box, which is a finger's
+		// under a coarse pointer and the row under a fine one (da-kpjn).
+		const bar = widget ? ROW / 2 : nested ? ROW + BORDER : p.tabs.length > 1 ? $badge + $badge / 2 : 0;
 		const across = nested ? 2 * BORDER : 0;
 		return p.bar.edge === 'left' || p.bar.edge === 'right'
 			? { width: outline + bar, height: outline + across }
@@ -160,9 +161,9 @@
 
 	// One function, two callers, two `minOf`s — keep them apart: the drag's
 	// floor is the frame alone, the root's is every pane legible.
-	const floor = (child: PaneNode) => floorOf(child, () => NONE, BORDER, chromeOf);
+	$: floor = (child: PaneNode) => floorOf(child, () => NONE, BORDER, chromeOf);
 	/** The root split's least box: its panes' legible boxes, laid out as the tree lays them. */
-	const legible = (root: PaneNode) =>
+	$: legible = (root: PaneNode) =>
 		rootFloorOf(
 			root,
 			(tab) => (isSplit(tab.content) ? NONE : legibleOfKind(tab.content.kind, shownOf(tab))),
