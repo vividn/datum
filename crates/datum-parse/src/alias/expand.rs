@@ -276,16 +276,35 @@ pub fn try_expand_alias(
         // or no alias at all. A state alias (`sad` → `switch mood sad`)
         // is no field, so `sad why` binds `why` to its slots rather than
         // turning into `why sad`.
+        //
+        // da-71pkp: an abbreviation (`m` → `switch mood`) names a field and
+        // adds nothing, so it reads field-first as THAT field: `m tail` is
+        // `mood tail`, which the swap turns into `tail mood`.
         let name = argv[name_idx].clone();
         let alias = resolver.lookup(&name);
         if argv
             .get(name_idx + 1)
             .is_some_and(|t| KNOWN_SUBCOMMANDS.contains(&t.as_str()))
-            && alias
-                .as_ref()
-                .is_none_or(|a| a.tokens.get(1) == Some(&name))
         {
-            return Ok((argv, chain));
+            match alias.as_ref().map(|a| a.tokens.as_slice()) {
+                None => return Ok((argv, chain)),
+                Some([_, field, ..]) if *field == name => return Ok((argv, chain)),
+                Some([verb, field])
+                    if matches!(
+                        verb.as_str(),
+                        "occur" | "start" | "stop" | "end" | "switch" | "add" | "note"
+                    ) && !field.starts_with('-')
+                        && !field.contains('$') =>
+                {
+                    chain.push(AliasStep {
+                        name,
+                        expansion: field.clone(),
+                    });
+                    argv[name_idx] = field.clone();
+                    return Ok((argv, chain));
+                }
+                _ => {}
+            }
         }
         if visited.iter().any(|v| v == &name) {
             let mut path = visited;
@@ -1521,6 +1540,26 @@ mod tests {
         ResolvedAlias {
             expands_to: expands_to.to_string(),
             tokens: shell_split(expands_to),
+        }
+    }
+
+    /// An abbreviation (`m` → `switch mood`) reads field-first as the field
+    /// it names: `m tail` tails mood rather than logging a state `tail`
+    /// (da-71pkp).
+    #[test]
+    fn an_abbreviation_reads_field_first_as_its_field() {
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("m".to_string(), alias("switch mood"));
+        aliases.insert("mood".to_string(), alias("switch mood"));
+        for (call, want) in [
+            (&["m", "tail"][..], &["tail", "mood"][..]),
+            (&["m", "check"], &["check", "mood"]),
+            (&["m", "why", "-t", "-1"], &["why", "mood", "-t", "-1"]),
+            (&["m", "switch", "sad"], &["switch", "mood", "sad"]),
+        ] {
+            let argv = [&["datum"], call].concat();
+            let (out, _) = expand_argv(v(&argv), &MapResolver(&aliases)).unwrap();
+            assert_eq!(out, v(&[&["datum"], want].concat()), "{call:?}");
         }
     }
 
