@@ -76,24 +76,35 @@ pub fn takes_spec_keys(verb: &str, line: &LogArgs) -> bool {
     match verb {
         "occur" | "start" | "add" => true,
         "switch" => {
-            let named = line
-                .rest
-                .iter()
-                .rev()
-                .find_map(|t| t.strip_prefix("state="));
-            let state = named.or_else(|| {
-                (!line.string_state)
-                    .then(|| line.rest.iter().find(|t| !t.contains('=')))
-                    .flatten()
-                    .map(String::as_str)
-            });
-            !matches!(
-                state,
-                Some("false" | "null" | IGNORED_STATE_VALUE | TRACKED_STATE_VALUE)
-            )
+            // Under `-I` with no `state=`, the joined words are a named
+            // state whatever they spell — `-I false` is the string "false".
+            let literal = line.string_state && !line.rest.iter().any(|t| t.starts_with("state="));
+            literal
+                || !matches!(
+                    typed_state(line).as_deref(),
+                    Some("false" | "null" | IGNORED_STATE_VALUE | TRACKED_STATE_VALUE)
+                )
         }
         _ => false,
     }
+}
+
+/// The state a switch line names, as typed: the last `state=`, else the
+/// first bare word — under `-I` the bare words joined, which are the state
+/// whatever they spell. Whose keys join the field's (da-cej7q).
+pub fn typed_state(line: &LogArgs) -> Option<String> {
+    let named = line
+        .rest
+        .iter()
+        .rev()
+        .find_map(|t| t.strip_prefix("state="));
+    let mut bare = line.rest.iter().filter(|t| !t.contains('='));
+    let state = match named {
+        Some(s) => s.to_string(),
+        None if line.string_state => bare.map(String::as_str).collect::<Vec<_>>().join(" "),
+        None => bare.next()?.clone(),
+    };
+    Some(state).filter(|s| !s.is_empty())
 }
 
 /// The slots `declared` adds to `line`: a required, optional or default

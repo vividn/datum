@@ -249,7 +249,7 @@ fn a_key_declared_twice_is_one_key() {
     run_cli(&["track", "juice", "--key", "cups=5"], &db).unwrap();
     let spec = db.load_spec("juice").unwrap().unwrap();
     let cups: Vec<_> = spec
-        .declared_keys()
+        .declared_keys(None)
         .into_iter()
         .filter(|k| k.name == "cups")
         .collect();
@@ -361,7 +361,7 @@ fn the_kind_round_trips() {
         key("n", KeyKind::Required, false),
         key("origin", KeyKind::Assign("farm".into()), false),
     ];
-    assert_eq!(spec.declared_keys(), want);
+    assert_eq!(spec.declared_keys(None), want);
 
     let shown = serde_json::to_string(&spec).unwrap();
     let from_json = fresh_db();
@@ -371,7 +371,7 @@ fn the_kind_round_trips() {
             .load_spec("juice")
             .unwrap()
             .unwrap()
-            .declared_keys(),
+            .declared_keys(None),
         want
     );
 
@@ -388,7 +388,11 @@ fn the_kind_round_trips() {
     let again = fresh_db();
     run_cli(&["kit", "install", &out.to_string_lossy()], &again).unwrap();
     assert_eq!(
-        again.load_spec("juice").unwrap().unwrap().declared_keys(),
+        again
+            .load_spec("juice")
+            .unwrap()
+            .unwrap()
+            .declared_keys(None),
         want
     );
 }

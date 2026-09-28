@@ -628,6 +628,9 @@ pub enum SpecCommand {
         description: Option<String>,
         /// The state's occur-dot glyph (da-gzowt).
         glyph: Option<String>,
+        /// `--key KEY`, repeated: the state's whole key list (da-cej7q).
+        /// An empty `--key=` clears the ones before it.
+        keys: Vec<String>,
     },
     Set(Box<SpecSetArgs>),
     List {
@@ -656,6 +659,10 @@ pub struct SpecSetArgs {
     /// Per-state descriptions in `STATE=TEXT` form (da-zwqk). Mirrors
     /// `state_colors`, including empty-TEXT-clears. Empty by default.
     pub state_descriptions: Vec<String>,
+    /// Per-state keys in `STATE=KEY` form (da-cej7q): the flags naming a
+    /// state give its whole key list, as `--data-key` gives the field's;
+    /// `STATE=` clears the ones before it.
+    pub state_keys: Vec<String>,
     pub id_template: Option<String>,
     pub description: Option<String>,
     pub track: bool,

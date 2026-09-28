@@ -31,12 +31,14 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
             color,
             description,
             glyph,
+            keys,
         } => spec_add_state(
             &field,
             &name,
             color.as_deref(),
             description.as_deref(),
             glyph.as_deref(),
+            &keys,
             db,
         )?,
         SpecCommand::Set(args) => spec_set(*args, db)?,
@@ -131,6 +133,18 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         "STATE=TEXT",
         any,
     )?;
+    // da-cej7q: the `--state-key` flags naming a state give its whole key
+    // list, as `--data-key` gives the field's; `STATE=` clears it.
+    let mut given: std::collections::HashMap<&str, Vec<&str>> = Default::default();
+    for pair in &args.state_keys {
+        let (state, key) = pair.split_once('=').with_context(|| {
+            format!("Invalid --state-key format: expected STATE=KEY, got '{pair}'")
+        })?;
+        given.entry(state).or_default().push(key);
+    }
+    for (state, keys) in given {
+        set_state_keys(&mut spec, state, &keys);
+    }
     // da-gzowt: occur-dot glyphs, in `color` / `state_colors`' shape. An
     // empty value clears, as it does for every STATE=VALUE flag.
     if let Some(g) = &args.glyph {
@@ -269,6 +283,23 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
 /// steps it back like any doc's edit.
 fn remember(db: &Db, hid: datum_core::ids::Hid) {
     let _ = datum_core::last_docs::set_last_docs(db, &[hid]);
+}
+
+/// Give `state` the keys its flags name, in order (da-cej7q): an empty one
+/// clears those before it, and none left removes the entry.
+fn set_state_keys(spec: &mut FieldSpec, state: &str, flags: &[&str]) {
+    let keys = flags.iter().fold(Vec::new(), |mut keys, k| {
+        match *k {
+            "" => keys.clear(),
+            k => keys.push(k.to_string()),
+        }
+        keys
+    });
+    if keys.is_empty() {
+        spec.state_keys.remove(state);
+    } else {
+        spec.state_keys.insert(state.to_string(), keys);
+    }
 }
 
 /// Apply `KEY=VALUE` flags to a map — the clear convention shared by every
@@ -487,6 +518,7 @@ fn spec_add_state(
     color: Option<&str>,
     description: Option<&str>,
     glyph: Option<&str>,
+    keys: &[String],
     db: &Db,
 ) -> Result<()> {
     if let Some(g) = glyph {
@@ -516,6 +548,10 @@ fn spec_add_state(
             .state_glyphs
             .insert(name.to_string(), g.to_string());
     }
+    if !keys.is_empty() {
+        let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
+        set_state_keys(&mut spec, name, &keys);
+    }
 
     spec.validate_verb().map_err(|e| anyhow::anyhow!(e))?;
     spec.regenerate_derived_aliases();
@@ -526,6 +562,14 @@ fn spec_add_state(
     println!("✓ State '{name}' {verb} on '{field}'");
     warn_alias_conflicts(&report);
     Ok(())
+}
+
+/// A state's own keys with their kinds, under the state's line (da-cej7q).
+fn print_state_keys(keys: Option<&Vec<String>>) {
+    for key in keys.into_iter().flatten() {
+        let (name, kind) = datum_parse::spec_keys::parse_key_decl(key);
+        println!("      {name:<14} {kind}");
+    }
 }
 
 /// Human-readable summary of a FieldSpec — `datum spec show <FIELD> --text`.
@@ -580,6 +624,8 @@ fn render_spec_text(spec: &FieldSpec) {
             } else {
                 println!("    {state:<16} {color}  — {desc}");
             }
+            // da-cej7q: the state's own keys, under it.
+            print_state_keys(spec.state_keys.get(state));
         }
     } else if !spec.state_descriptions.is_empty() {
         // Descriptions without an allowed_states list — list them anyway.
@@ -593,12 +639,27 @@ fn render_spec_text(spec: &FieldSpec) {
     }
     // da-9s98k: every key the spec declares — `id_keys`, `data_keys` and
     // subfields alike — with its kind, `(id)` marking a slug key.
-    let keys = spec.declared_keys();
+    let keys = spec.declared_keys(None);
     if !keys.is_empty() {
         println!("  keys:");
         for k in keys {
             let id = if k.id { "  (id)" } else { "" };
             println!("    {:<16} {}{id}", k.name, k.kind);
+        }
+    }
+    // A state holding keys the `states` list does not name — list it anyway.
+    let listed = spec.allowed_states.as_deref().unwrap_or_default();
+    let mut unlisted: Vec<&String> = spec
+        .state_keys
+        .keys()
+        .filter(|s| !listed.contains(s))
+        .collect();
+    unlisted.sort();
+    if !unlisted.is_empty() {
+        println!("  state keys:");
+        for state in unlisted {
+            println!("    {state}");
+            print_state_keys(spec.state_keys.get(state));
         }
     }
     if !spec.tags.is_empty() {
@@ -746,7 +807,7 @@ mod tests {
         .unwrap();
 
         // Add one state with color + description — the others must survive.
-        spec_add_state("mood", "meh", Some("yellow"), Some("so-so"), None, &db).unwrap();
+        spec_add_state("mood", "meh", Some("yellow"), Some("so-so"), None, &[], &db).unwrap();
 
         let spec = db.load_spec("mood").unwrap().unwrap();
         let states = spec.allowed_states.as_ref().unwrap();
@@ -774,7 +835,16 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
 
         // No spec yet — add-state creates an Occur-default spec.
-        spec_add_state("energy", "high", Some("green"), Some("wired"), None, &db).unwrap();
+        spec_add_state(
+            "energy",
+            "high",
+            Some("green"),
+            Some("wired"),
+            None,
+            &[],
+            &db,
+        )
+        .unwrap();
         let spec = db.load_spec("energy").unwrap().unwrap();
         assert_eq!(
             spec.allowed_states.as_deref(),
@@ -783,7 +853,7 @@ mod tests {
 
         // Re-adding refreshes the color but does not duplicate the state or
         // clobber a description that wasn't re-supplied.
-        spec_add_state("energy", "high", Some("lime"), None, None, &db).unwrap();
+        spec_add_state("energy", "high", Some("lime"), None, None, &[], &db).unwrap();
         let spec = db.load_spec("energy").unwrap().unwrap();
         assert_eq!(
             spec.allowed_states.as_deref(),

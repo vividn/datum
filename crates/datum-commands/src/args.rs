@@ -503,9 +503,13 @@ impl<'a> Resolver for DbAliasResolver<'a> {
         Some(palias::ResolvedAlias { expands_to, tokens })
     }
 
-    fn spec_keys(&self, field: &str) -> Vec<datum_parse::spec_keys::DeclaredKey> {
+    fn spec_keys(
+        &self,
+        field: &str,
+        state: Option<&str>,
+    ) -> Vec<datum_parse::spec_keys::DeclaredKey> {
         let spec = self.db.load_spec(field).ok().flatten();
-        spec.map(|s| s.declared_keys()).unwrap_or_default()
+        spec.map(|s| s.declared_keys(state)).unwrap_or_default()
     }
 }
 

@@ -48,9 +48,10 @@ pub struct ResolvedAlias {
 pub trait Resolver {
     fn lookup(&self, name: &str) -> Option<ResolvedAlias>;
 
-    /// The keys `field`'s spec declares (da-9s98k), which an alias's log
-    /// line on that field takes as its slots. None by default.
-    fn spec_keys(&self, _field: &str) -> Vec<crate::spec_keys::DeclaredKey> {
+    /// The keys `field`'s spec declares (da-9s98k), with `state`'s own
+    /// after them (da-cej7q), which an alias's log line on that field takes
+    /// as its slots. None by default.
+    fn spec_keys(&self, _field: &str, _state: Option<&str>) -> Vec<crate::spec_keys::DeclaredKey> {
         Vec::new()
     }
 }
@@ -380,7 +381,7 @@ pub fn try_expand_alias(
 /// log path still adds the keys then, though the call site's positionals
 /// do not bind to them. True when anything was added.
 fn add_spec_keys(body: &mut Vec<String>, trailing: &[String], resolver: &dyn Resolver) -> bool {
-    use crate::spec_keys::{spec_key_words, takes_spec_keys};
+    use crate::spec_keys::{spec_key_words, takes_spec_keys, typed_state};
     let grouped = |t: &String| {
         t == super::regions::BOUNDARY
             || t == super::regions::GROUP_CLOSE
@@ -411,7 +412,9 @@ fn add_spec_keys(body: &mut Vec<String>, trailing: &[String], resolver: &dyn Res
             continue;
         };
         if takes_spec_keys(verb, &line) {
-            let words = spec_key_words(&line, &resolver.spec_keys(&line.field_or_verb));
+            let state = (verb == "switch").then(|| typed_state(&line)).flatten();
+            let declared = resolver.spec_keys(&line.field_or_verb, state.as_deref());
+            let words = spec_key_words(&line, &declared);
             let words = words.into_argv();
             added |= !words.is_empty();
             out.extend(words);

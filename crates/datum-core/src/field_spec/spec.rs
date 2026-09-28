@@ -104,6 +104,12 @@ pub struct FieldSpec {
     /// rather than only in prose.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub state_descriptions: HashMap<String, String>,
+    /// Per-state keys (da-cej7q): a state's own declarations, in the
+    /// `data_keys` spellings, which join the field's keys when an entry is
+    /// in that state — a name the field declares too takes the state's
+    /// kind. Absent in JSON when empty.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub state_keys: HashMap<String, Vec<String>>,
     /// Auto-derived aliases (bare-field, terminal-end, and per-state).
     /// Rebuilt on save via [`FieldSpec::regenerate_derived_aliases`].
     #[serde(default)]
@@ -186,6 +192,7 @@ impl FieldSpec {
             allowed_states: None,
             state_colors: HashMap::new(),
             state_descriptions: HashMap::new(),
+            state_keys: HashMap::new(),
             derived_aliases: Vec::new(),
             id_keys: Vec::new(),
             data_keys: Vec::new(),
@@ -242,8 +249,9 @@ impl FieldSpec {
     /// a positional ahead of the `data_keys`. A name declared twice (`spec
     /// set --data-key` and `track --key` write different lists) is one key,
     /// as repeated `-k` are: the first place, the last kind, in the slug if
-    /// either is.
-    pub fn declared_keys(&self) -> Vec<DeclaredKey> {
+    /// either is. An entry in `state` takes that state's keys last
+    /// (da-cej7q), so they override the field's by name.
+    pub fn declared_keys(&self, state: Option<&str>) -> Vec<DeclaredKey> {
         let listed = |keys: &[String], id: bool| -> Vec<DeclaredKey> {
             keys.iter()
                 .map(|k| {
@@ -271,7 +279,13 @@ impl FieldSpec {
         });
         let mut out: Vec<DeclaredKey> = Vec::new();
         let all = listed(&self.id_keys, true).into_iter();
-        for key in all.chain(listed(&self.data_keys, false)).chain(subs) {
+        let own = state.and_then(|s| self.state_keys.get(s));
+        let own = listed(own.map_or(&[], Vec::as_slice), false);
+        for key in all
+            .chain(listed(&self.data_keys, false))
+            .chain(subs)
+            .chain(own)
+        {
             match out.iter_mut().find(|k| k.name == key.name) {
                 Some(k) => {
                     *k = DeclaredKey {

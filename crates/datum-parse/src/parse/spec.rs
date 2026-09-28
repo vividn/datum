@@ -50,15 +50,30 @@ pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
     }
 }
 
-/// `spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION] [GLYPH]` — up to
-/// five positionals, no flags. The last three are optional; a lone dash
-/// (`-`) in a slot leaves it unset while still supplying the ones after it
-/// (`add-state mood meh - "so-so"`, `add-state mood meh - - ▼`).
+/// `spec add-state <FIELD> <NAME> [COLOR] [DESCRIPTION] [GLYPH] [--key
+/// KEY]...` — up to five positionals. The last three are optional; a lone
+/// dash (`-`) in a slot leaves it unset while still supplying the ones
+/// after it (`add-state mood meh - "so-so"`, `add-state mood meh - - ▼`).
+/// `--key` gives the state's own keys (da-cej7q).
 pub(crate) fn parse_spec_add_state(tail: &[&str]) -> Result<SpecCommand> {
     let mut pos: Vec<&str> = Vec::new();
-    for arg in tail {
-        match split_flag(arg) {
-            FlagSplit::Positional(p) => pos.push(p),
+    let mut keys: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < tail.len() {
+        match split_flag(tail[i]) {
+            FlagSplit::Positional(p) => {
+                pos.push(p);
+                i += 1;
+            }
+            FlagSplit::Long("key") => {
+                let (v, ni) = take_value(tail, i, None, "--key")?;
+                keys.push(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("key", v) => {
+                keys.push(v.to_string());
+                i += 1;
+            }
             other => return Err(unknown_flag(other)),
         }
     }
@@ -87,6 +102,7 @@ pub(crate) fn parse_spec_add_state(tail: &[&str]) -> Result<SpecCommand> {
         color,
         description,
         glyph,
+        keys,
     })
 }
 
@@ -178,6 +194,15 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
             }
             FlagSplit::LongAttached("state-description", v) => {
                 out.state_descriptions.push(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("state-key") => {
+                let (v, ni) = take_value(tail, i, None, "--state-key")?;
+                out.state_keys.push(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("state-key", v) => {
+                out.state_keys.push(v.to_string());
                 i += 1;
             }
             FlagSplit::Long("id-template") => {

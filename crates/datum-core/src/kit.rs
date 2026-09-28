@@ -368,6 +368,10 @@ pub struct StateSpec {
     /// What the state means — the spec's `--state-description`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// The state's own keys, in `data_keys`' spellings — the spec's
+    /// `--state-key` (da-cej7q).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keys: Vec<String>,
 }
 
 impl KitToml {
@@ -554,6 +558,9 @@ impl FieldEntry {
                 if let Some(d) = &s.description {
                     spec.state_descriptions.insert(name.clone(), d.clone());
                 }
+                if !s.keys.is_empty() {
+                    spec.state_keys.insert(name.clone(), s.keys.clone());
+                }
             }
             spec.allowed_states = Some(allowed);
         }
@@ -582,6 +589,7 @@ impl FieldEntry {
                             color: spec.state_colors.get(name).cloned(),
                             glyph: spec.presentation.state_glyphs.get(name).cloned(),
                             description: spec.state_descriptions.get(name).cloned(),
+                            keys: spec.state_keys.get(name).cloned().unwrap_or_default(),
                         },
                     )
                 })

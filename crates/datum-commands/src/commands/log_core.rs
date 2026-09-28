@@ -1318,16 +1318,19 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
 /// da-9s98k: a field's declared keys join the line as its slots — the
 /// same words an alias of the field gets at expansion
 /// ([`datum_parse::spec_keys`]); a key the alias already added is named by
-/// then, and left alone.
+/// then, and left alone. A switch takes its state's keys too (da-cej7q).
 fn apply_spec_keys(action: Action, args: &mut LogArgs, db: &Db) -> Result<()> {
-    use datum_parse::spec_keys::{spec_key_words, takes_spec_keys};
+    use datum_parse::spec_keys::{spec_key_words, takes_spec_keys, typed_state};
     if !takes_spec_keys(&action.to_string(), args) {
         return Ok(());
     }
     let Some(spec) = db.load_spec(&args.field_or_verb)? else {
         return Ok(());
     };
-    let words = spec_key_words(args, &spec.declared_keys());
+    let state = matches!(action, Action::Switch)
+        .then(|| typed_state(args))
+        .flatten();
+    let words = spec_key_words(args, &spec.declared_keys(state.as_deref()));
     args.slug_keys.extend(words.slug_keys);
     args.keys.extend(words.keys);
     args.rest.splice(0..0, words.assigned);
