@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS entries (
     -- the row mapper normalises legacy empty-string rows to NULL too so
     -- "no raw_input" has one canonical representation (polecat §5 #11).
     raw_input       TEXT,
-    alias_chain     TEXT,                        -- JSON array of alias expansions, nullable
+    alias_chain     TEXT,                        -- JSON array of alias-expansion and spec_keys steps, nullable
     parser_version  INTEGER NOT NULL DEFAULT 1,
 
     -- S6: when the user passed `-L/--last-state=<v>`, the normalized assertion

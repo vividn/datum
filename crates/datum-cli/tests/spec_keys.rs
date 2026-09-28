@@ -554,3 +554,21 @@ fn a_key_lives_in_one_place_and_the_latest_declaration_wins() {
     assert!(spec.state_keys.is_empty(), "{:?}", spec.state_keys);
     assert_eq!(spec.state_assign["sad"]["why"], "y");
 }
+
+/// `reparse` replays the keys the line bound, not the spec as it stands
+/// now (da-zv2jr): a spec edited since the log leaves the row alone.
+#[test]
+fn reparse_replays_the_keys_the_line_bound() {
+    for head in [&["occur", "juice"][..], &["juice"][..]] {
+        let db = juice_db();
+        run_cli(&[head, &["2", "large"]].concat(), &db).unwrap();
+        let logged = logged_entries(&db, "juice")[0].clone();
+        run_cli(&["spec", "set", "juice", "--data-key", "size"], &db).unwrap();
+        let now = db.load_spec("juice").unwrap().unwrap().declared_keys(None);
+        assert_eq!(now[0].name, "size", "{now:?}");
+        run_cli(&["reparse", &logged.hid.0, "--fix"], &db).unwrap();
+        let after = db.get_entry(&logged.hid.0).unwrap();
+        assert_eq!(after.data, logged.data, "{head:?}");
+        assert_eq!(after.parser_version, logged.parser_version, "{head:?}");
+    }
+}

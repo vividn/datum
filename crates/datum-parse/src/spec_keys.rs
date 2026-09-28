@@ -54,7 +54,7 @@ pub struct DeclaredKey {
 }
 
 /// What a field's declared keys add to a log line.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SpecKeyWords {
     /// `-K` slots.
     pub slug_keys: Vec<String>,

@@ -306,3 +306,19 @@ fn text_view_lists_state_keys() {
         "{text}"
     );
 }
+
+/// `reparse` replays the state's keys as the line bound them, not the spec
+/// as it stands now (da-zv2jr).
+#[test]
+fn reparse_replays_the_state_keys_the_line_bound() {
+    for head in HEADS {
+        let db = mood_db();
+        run_cli(&[head, &["sad", "2", "because"]].concat(), &db).unwrap();
+        let logged = logged_entries(&db, "mood")[0].clone();
+        run_cli(&["spec", "set", "mood", "--state-key", "sad=cause"], &db).unwrap();
+        run_cli(&["reparse", &logged.hid.0, "--fix"], &db).unwrap();
+        let after = db.get_entry(&logged.hid.0).unwrap();
+        assert_eq!(after.data, logged.data, "{head:?}");
+        assert_eq!(after.parser_version, logged.parser_version, "{head:?}");
+    }
+}

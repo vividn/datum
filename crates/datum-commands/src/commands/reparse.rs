@@ -7,7 +7,11 @@
 //! command consumes them so a parser-bug fix can retroactively repair
 //! already-stored rows. Replay is hermetic to the alias state at write
 //! time — `alias_chain` is rehydrated as the resolver, never the live
-//! aliases.
+//! aliases — and to the spec: the keys a field's spec bound ride in the
+//! chain as a `spec_keys` step (da-zv2jr), never the live spec. A row
+//! logged before da-zv2jr carries no such step, so a line whose
+//! positionals bound to spec keys cannot replay: reparse reports drift
+//! there rather than reconstruct the binding.
 //!
 //! Per da-bkak: reparse operates ONLY on entries the user explicitly
 //! names by hid (or quickId / slug — anything `resolve_quickid_single`
@@ -36,8 +40,8 @@ use serde_json::Value as JsonValue;
 use crate::args::{Command, ReparseArgs};
 use crate::commands::helpers::build_resolver_from_chain;
 use crate::commands::log_core::{
-    build_time_from_flags, expand_array_states, extract_reserved_columns, lift_time_keys,
-    parse_log_args, prepare_log_args, validate_switch_state_token, LiftedTimes,
+    bind_spec_words, build_time_from_flags, expand_array_states, extract_reserved_columns,
+    lift_time_keys, parse_log_args, prepare_log_args, validate_switch_state_token, LiftedTimes,
 };
 
 /// Parser-derivable Entry shape — what the parser alone determines from
@@ -88,6 +92,13 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
         // to compare against.
         _ => return Ok(None),
     };
+
+    // The keys the field's spec bound at log time, as the entry recorded
+    // them (da-zv2jr) — never the spec as it stands now.
+    let bound = entry.alias_chain.as_ref().and_then(JsonValue::as_array);
+    if let Some(words) = bound.and_then(|steps| steps.iter().find_map(|s| s.get("spec_keys"))) {
+        bind_spec_words(&mut log_args, serde_json::from_value(words.clone())?);
+    }
 
     // Mirror the per-action pre-pass from `log_entry` so the parsed
     // bundle matches what the insert path would have produced (da-ooe2:

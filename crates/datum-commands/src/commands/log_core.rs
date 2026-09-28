@@ -18,7 +18,8 @@ use datum_core::{
     },
 };
 use datum_parse::input::TimeArgs;
-use serde_json::Value as JsonValue;
+use datum_parse::spec_keys::SpecKeyWords;
+use serde_json::{json, Value as JsonValue};
 
 use crate::{
     args::{LogArgs, LogArgsExt},
@@ -64,7 +65,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
 
     // da-9s98k: the field's declared keys join the line as its slots,
     // before the `dur=` slot `prepare_log_args` declares last.
-    apply_spec_keys(action, &mut args, db)?;
+    let spec_words = apply_spec_keys(action, &mut args, db)?;
 
     // da-ooe2: restore v2's flexiblePositional duration model. The verb-
     // specific trailing-duration peelers are gone; `prepare_log_args`
@@ -592,6 +593,15 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             Some(ctx.raw_input.clone())
         };
         entry.alias_chain = ctx.alias_chain_json();
+        // da-zv2jr: the keys the spec bound ride with the chain, so
+        // `reparse` replays them without reading the spec as it is now.
+        if let Some(words) = spec_words {
+            let step = json!({ "spec_keys": words });
+            match &mut entry.alias_chain {
+                Some(JsonValue::Array(steps)) => steps.push(step),
+                _ => entry.alias_chain = Some(JsonValue::Array(vec![step])),
+            }
+        }
     }
 
     // da-qjrc: field templates. If the field arg carries `%key%`
@@ -1342,22 +1352,32 @@ fn compound_field(field: String, field_keys: &[String]) -> Result<String> {
 /// same words an alias of the field gets at expansion
 /// ([`datum_parse::spec_keys`]); a key the alias already added is named by
 /// then, and left alone. A switch takes its state's keys too (da-cej7q).
-fn apply_spec_keys(action: Action, args: &mut LogArgs, db: &Db) -> Result<()> {
+/// Returns the words it added, if any.
+fn apply_spec_keys(action: Action, args: &mut LogArgs, db: &Db) -> Result<Option<SpecKeyWords>> {
     use datum_parse::spec_keys::{spec_key_words, takes_spec_keys, typed_state};
     if !takes_spec_keys(&action.to_string(), args) {
-        return Ok(());
+        return Ok(None);
     }
     let Some(spec) = db.load_spec(&args.field_or_verb)? else {
-        return Ok(());
+        return Ok(None);
     };
     let state = matches!(action, Action::Switch)
         .then(|| typed_state(args))
         .flatten();
     let words = spec_key_words(args, &spec.declared_keys(state.as_deref()));
+    if words == SpecKeyWords::default() {
+        return Ok(None);
+    }
+    bind_spec_words(args, words.clone());
+    Ok(Some(words))
+}
+
+/// Join a field's key words to the line, as its slots and ahead of its
+/// own `key=value`s.
+pub(crate) fn bind_spec_words(args: &mut LogArgs, words: SpecKeyWords) {
     args.slug_keys.extend(words.slug_keys);
     args.keys.extend(words.keys);
     args.rest.splice(0..0, words.assigned);
-    Ok(())
 }
 
 /// da-ooe2: shared verb pre-pass run before `parse_log_args` on both the
