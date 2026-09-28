@@ -306,6 +306,8 @@ impl AliasEntry {
 /// - `sort`: column to sort by (ascending; descending sort is forward-compat).
 /// - `flags`: pass-through verbs supported by this command (e.g. `watch`).
 /// - `color_rules`: list of `{ when, color }` painters; first match wins.
+/// - `empty`: text printed instead of the table when the view returns no
+///   rows (da-x3369).
 ///
 /// Level 3 (forward-compat):
 /// - `script`: reserved; the renderer errors with "scripted commands not
@@ -331,6 +333,8 @@ pub struct CommandEntry {
     pub flags: Vec<String>,
     #[serde(default)]
     pub color_rules: Vec<ColorRuleEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub empty: Option<String>,
     /// Level 3 placeholder. Round-trips but install rejects it with
     /// "scripted commands not yet supported (Level 3 deferred)".
     #[serde(default)]
@@ -1523,6 +1527,7 @@ name = "chorelist"
 view = "chores_due"
 columns = ["field", "next_due_raw"]
 sort = "next_due_raw"
+empty = "all done"
 
 [[command.color_rules]]
 when = "next_due_raw < now"
@@ -1536,6 +1541,7 @@ color = "red"
         assert_eq!(back.commands[0].sort.as_deref(), Some("next_due_raw"));
         assert_eq!(back.commands[0].color_rules.len(), 1);
         assert_eq!(back.commands[0].color_rules[0].when, "next_due_raw < now");
+        assert_eq!(back.commands[0].empty.as_deref(), Some("all done"));
     }
 
     #[test]

@@ -583,6 +583,7 @@ pub(super) fn m39_to_40_definitions_are_entries(conn: &Connection) -> Result<()>
                     sort: row.get(8)?,
                     flags: json(row.get(9)?),
                     color_rules: json(row.get(10)?),
+                    empty: None,
                     script: row.get(11)?,
                 };
                 Ok((command, row.get::<_, Option<String>>(1)?))

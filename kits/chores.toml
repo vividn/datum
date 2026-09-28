@@ -183,6 +183,8 @@ columns = ["field", "iti_days", "due", "last_occur", "status"]
 labels = { field = "Field", iti_days = "ITI", due = "Due", last_occur = "Last Occur", status = "" }
 formats = { due = "smart_date", last_occur = "smart_date" }
 flags = ["watch"]
+# v2's own words when nothing is due or done today.
+empty = "🧹😄 COMPLETED! GOOD WORK! 😄🪣"
 
 [[command.color_rules]]
 when = "status = 'done'"

@@ -119,6 +119,12 @@ fn render(cmd: &InstalledKitCommand, mut view: ViewResult, color: bool) -> Resul
         })
         .collect();
     let projected = project(&cmd.name, &view, &cmd.columns)?;
+    // A view with no rows prints the command's `empty` text, if it has
+    // one, instead of an empty table (da-x3369) — after every column the
+    // command names has been checked, so a typo still shows.
+    if let (true, Some(text)) = (projected.rows.is_empty(), &cmd.empty) {
+        return Ok(format!("{text}\n"));
+    }
     let headers = header_labels(&projected.columns, &cmd.labels);
     let formatted = format_cells(&projected, &cmd.formats);
     Ok(render_pretty(&headers, &formatted, &colors))
@@ -373,6 +379,7 @@ mod tests {
                     color: color.to_string(),
                 })
                 .collect(),
+            empty: None,
             script_text: None,
         }
     }
@@ -444,6 +451,28 @@ mod tests {
             err.to_string(),
             "kit command 'k': its view has no column 'nope' (named by sort)"
         );
+    }
+
+    /// da-x3369: `empty` stands in for the table only when no row comes back.
+    #[test]
+    fn empty_text_replaces_an_empty_table_only() {
+        let none = ViewResult {
+            columns: mk_view().columns,
+            rows: vec![],
+        };
+        let mut cmd = mk_cmd(&["field"], None, &[]);
+        let bare = render(&cmd, none.clone(), false).unwrap();
+        assert_eq!(bare, "field\n-----\n(0 rows)\n");
+        cmd.empty = Some("COMPLETED!".into());
+        assert_eq!(render(&cmd, none.clone(), false).unwrap(), "COMPLETED!\n");
+        let full = render(&cmd, mk_view(), false).unwrap();
+        assert!(
+            full.contains("coffee") && !full.contains("COMPLETED"),
+            "{full}"
+        );
+        // A column the view lacks is still refused when it is empty.
+        cmd.columns = vec!["bogus".into()];
+        assert!(render(&cmd, none, false).is_err());
     }
 
     #[test]

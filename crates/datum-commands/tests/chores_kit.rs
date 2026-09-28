@@ -99,6 +99,8 @@ fn the_kit_ships_its_index_views_and_commands() {
     }
     let cmds: Vec<_> = kit.commands.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(cmds, ["chorelist", "chorelist-all"]);
+    let empty: Vec<_> = kit.commands.iter().map(|c| c.empty.as_deref()).collect();
+    assert_eq!(empty, [Some("🧹😄 COMPLETED! GOOD WORK! 😄🪣"), None]);
 }
 
 #[test]

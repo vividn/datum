@@ -35,6 +35,7 @@ pub struct InstalledKitCommand {
     pub sort_col: Option<String>,
     pub flags: Vec<String>,
     pub color_rules: Vec<ColorRuleEntry>,
+    pub empty: Option<String>,
     pub script_text: Option<String>,
 }
 
@@ -99,9 +100,10 @@ pub fn validate_command(c: &CommandEntry) -> Result<()> {
             || !c.formats.is_empty()
             || c.sort.is_some()
             || !c.color_rules.is_empty()
+            || c.empty.is_some()
         {
             return Err(DatumError::Other(format!(
-                "kit command '{}': Level 1 alias commands cannot set columns/labels/formats/sort/color_rules",
+                "kit command '{}': Level 1 alias commands cannot set columns/labels/formats/sort/color_rules/empty",
                 c.name
             )));
         }
@@ -221,6 +223,7 @@ fn installed_command(data: JsonValue) -> Result<InstalledKitCommand> {
         sort_col: c.sort,
         flags: c.flags,
         color_rules: c.color_rules,
+        empty: c.empty,
         script_text: c.script,
     })
 }
@@ -251,5 +254,23 @@ mod tests {
             "columns = [\"field\", \"_n2\"]\nsort = \"iti\"\nlabels = { iti = \"freq\" }",
         ))
         .unwrap();
+    }
+
+    /// da-x3369: `empty` is a Level 2 key — stored and read back on install,
+    /// refused on an alias-style command.
+    #[test]
+    fn empty_installs_on_level2_only() {
+        let db = crate::test_util::fresh_db();
+        let c = level2("empty = \"all done\"");
+        db.install_kit_commands("t", std::slice::from_ref(&c), false)
+            .unwrap();
+        let got = db.get_kit_command("k").unwrap().unwrap();
+        assert_eq!(got.empty.as_deref(), Some("all done"));
+        let back = db.load_commands_by_kit("t").unwrap();
+        assert_eq!(back[0].empty.as_deref(), Some("all done"));
+        let l1: CommandEntry =
+            toml::from_str("name = \"k\"\nexpands_to = \"occur x\"\nempty = \"x\"").unwrap();
+        let err = validate_command(&l1).unwrap_err().to_string();
+        assert!(err.contains("color_rules/empty"), "{err}");
     }
 }
