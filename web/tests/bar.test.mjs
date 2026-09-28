@@ -28,6 +28,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { devices } from 'playwright';
 import { atEachScreen, sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { fold as foldBar, unfold as openBar } from './support/bar.mjs';
 
@@ -509,9 +510,19 @@ describe('the anatomy: INPUT over OUTPUT', () => {
 				const p = await parts(page);
 				// vividn: "On mobile too please show seconds on the clock."
 				assert.match(p.reads, /^\d\d:\d\d:\d\d$/, `the clock reads ${p.reads} at ${viewport.width}px`);
+				// A phone stacks the mark over the clock (da-ovdtt): one column,
+				// then the `❯`.
+				const stacked = viewport.width <= 480;
+				const head = {
+					left: Math.min(p.mark.left, p.clock.left),
+					right: Math.max(p.mark.right, p.clock.right),
+					top: Math.min(p.mark.top, p.clock.top),
+					bottom: Math.max(p.mark.bottom, p.clock.bottom)
+				};
+				if (stacked)
+					assert.ok(p.mark.bottom <= p.clock.top + 1, `the mark ends at ${p.mark.bottom}, the clock starts at ${p.clock.top}`);
 				const order = [
-					['the mark', p.mark],
-					['the clock', p.clock],
+					...(stacked ? [['the mark over the clock', head]] : [['the mark', p.mark], ['the clock', p.clock]]),
 					['the ❯', p.caret],
 					['the box', p.field]
 				];
@@ -1513,6 +1524,66 @@ describe('two pills on a phone', () => {
 			}, { viewport: { width, height: 720 }, device: { isMobile: true, hasTouch: true }, query: 'repl' });
 		});
 	}
+});
+
+describe('a phone stacks the mark over the clock (da-ovdtt)', () => {
+	// vividn, 2026-09-28, from vremya's walk on a Pixel 7: side by side, the
+	// mark and the clock took about 40% of the bar, and with `occur tea
+	// amount=3 cups=1` composed only `[mount=3] [cups=1]` showed. So on a
+	// phone they share one column, the mark over the clock — and the mark
+	// stays, because it is the database switcher.
+	const PIXEL = { device: devices['Pixel 7'], query: 'repl' };
+
+	/**
+	 * The mark, the clock and where the box starts — and where the box
+	 * started when the two stood side by side, which is the same page with
+	 * the column taken back out of the row (`display: contents`, as a wide
+	 * screen has it).
+	 */
+	const measure = (page) =>
+		page.evaluate(async () => {
+			const box = (s) => document.querySelector(s).getBoundingClientRect();
+			const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+			const now = { mark: box('.prompt-bar .brand'), clock: box('.prompt-bar .section.input .stamp'), input: box('.prompt-bar .section.input'), field: box('.prompt-bar input').left };
+			const head = document.querySelector('.prompt-bar .head');
+			head.style.display = 'contents';
+			await frame();
+			const before = box('.prompt-bar input').left;
+			head.style.display = '';
+			await frame();
+			return { ...now, before };
+		});
+
+	test('at a Pixel 7 the clock sits under the mark, and the box starts further left', async () => {
+		await withApp(async (app) => {
+			const { mark, clock, input, field, before } = await measure(app.page);
+			assert.ok(Math.abs(mark.left - clock.left) <= 1, `the mark starts at ${mark.left}, the clock at ${clock.left}`);
+			assert.ok(clock.top >= mark.bottom - 1, `the clock starts at ${clock.top}, above the mark's foot at ${mark.bottom}`);
+			for (const [what, b] of [['the mark', mark], ['the clock', clock]])
+				assert.ok(b.top >= input.top - 1 && b.bottom <= input.bottom + 1, `${what} is ${b.top}–${b.bottom}, the input row ${input.top}–${input.bottom}`);
+			assert.ok(field < before - 40, `the box starts at ${field}, side by side it started at ${before}`);
+			assert.deepEqual(app.errors, []);
+		}, PIXEL);
+	});
+
+	test('at a Pixel 7 a tap on the mark still opens the databases', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await page.locator(`${BAR} .brand`).tap();
+			await page.locator('[role="menu"][aria-label="databases"]').waitFor();
+			assert.deepEqual(app.errors, []);
+		}, PIXEL);
+	});
+
+	// The control: a wide screen was side by side and still is.
+	test('a desktop is unchanged: the box starts where it did', async () => {
+		await desktop(async (app) => {
+			const { mark, clock, field, before } = await measure(app.page);
+			assert.ok(clock.left >= mark.right - 1, `the clock starts at ${clock.left}, inside the mark ending at ${mark.right}`);
+			assert.equal(field, before);
+			assert.deepEqual(app.errors, []);
+		});
+	});
 });
 
 describe('the clock', () => {

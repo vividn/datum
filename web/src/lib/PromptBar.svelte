@@ -177,24 +177,30 @@
 	use:grip
 >
 	<div class="section input">
-		<!-- A size container: the database's name, whatever its length, does
-		     not widen this block and so never takes room from the box. -->
-		<div class="brand-block">
-			<Brand />
-		</div>
-		<!-- Live, not restored: a command's stamp is history, this one is the
-		     clock. Seconds at every width (vividn, on the phone). The whole
-		     label is ONE flex item: a `:SS` that were an item of its own
-		     would be a block box beside a block box, and `innerText` — and a
-		     reader copying the clock — would find a line break in the middle
-		     of a time. -->
-		<span class="stamp"
-			><span class="clock"
-				>{clockSecondsLabel($now).slice(0, 5)}<span class="seconds"
-					>{clockSecondsLabel($now).slice(5)}</span
+		<!-- The mark and the clock, as ONE item of the row. On a wide screen it
+		     is not a box at all (`display: contents`) and they stand side by
+		     side; on a phone it is a column, the mark over the clock, so the
+		     line has their shared width back (da-ovdtt). -->
+		<div class="head">
+			<!-- A size container: the database's name, whatever its length, does
+			     not widen this block and so never takes room from the box. -->
+			<div class="brand-block">
+				<Brand />
+			</div>
+			<!-- Live, not restored: a command's stamp is history, this one is the
+			     clock. Seconds at every width (vividn, on the phone). The whole
+			     label is ONE flex item: a `:SS` that were an item of its own
+			     would be a block box beside a block box, and `innerText` — and a
+			     reader copying the clock — would find a line break in the middle
+			     of a time. -->
+			<span class="stamp"
+				><span class="clock"
+					>{clockSecondsLabel($now).slice(0, 5)}<span class="seconds"
+						>{clockSecondsLabel($now).slice(5)}</span
+					></span
 				></span
-			></span
-		>
+			>
+		</div>
 		<!-- The ACTION strip lives INSIDE this block, so it begins exactly at
 		     the `❯` — vividn, 2026-09-18: "put them still in bottom part like
 		     this, but over by the >. Over on the right side they are hidden."
@@ -472,6 +478,10 @@
 		container-type: inline-size;
 	}
 
+	.head {
+		display: contents;
+	}
+
 	.stamp {
 		display: flex;
 		align-items: center;
@@ -678,11 +688,23 @@
 			   left padding is that margin, and the mark now sits against it. */
 			padding-inline: 0.25rem 0.4rem;
 		}
+		/* vividn, 2026-09-28: side by side, the mark and the clock took about
+		   40% of a phone's bar, and `occur tea amount=3 cups=1` showed only
+		   its pills. So they share one column, the mark over the clock, and
+		   the column is as wide as the clock — a name never widens it. */
+		.head {
+			display: flex;
+			flex-direction: column;
+			align-items: flex-start;
+			flex: none;
+		}
 		.brand-block {
-			flex-basis: 4rem;
+			flex: none;
+			width: 4rem;
 		}
 		.stamp {
 			font-size: 0.9rem;
+			line-height: 1.1;
 		}
 		.prompt :global(.line) {
 			gap: 0.3rem;
