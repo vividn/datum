@@ -54,10 +54,12 @@ pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
 /// KEY]...` — up to five positionals. The last three are optional; a lone
 /// dash (`-`) in a slot leaves it unset while still supplying the ones
 /// after it (`add-state mood meh - "so-so"`, `add-state mood meh - - ▼`).
-/// `--key` gives the state's own keys (da-cej7q).
+/// `--key` gives the state's own keys (da-cej7q), `--assign KEY=VALUE` its
+/// assigned ones (da-ulc0v).
 pub(crate) fn parse_spec_add_state(tail: &[&str]) -> Result<SpecCommand> {
     let mut pos: Vec<&str> = Vec::new();
     let mut keys: Vec<String> = Vec::new();
+    let mut assign: Vec<String> = Vec::new();
     let mut i = 0;
     while i < tail.len() {
         match split_flag(tail[i]) {
@@ -72,6 +74,15 @@ pub(crate) fn parse_spec_add_state(tail: &[&str]) -> Result<SpecCommand> {
             }
             FlagSplit::LongAttached("key", v) => {
                 keys.push(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("assign") => {
+                let (v, ni) = take_value(tail, i, None, "--assign")?;
+                assign.push(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("assign", v) => {
+                assign.push(v.to_string());
                 i += 1;
             }
             other => return Err(unknown_flag(other)),
@@ -103,6 +114,7 @@ pub(crate) fn parse_spec_add_state(tail: &[&str]) -> Result<SpecCommand> {
         description,
         glyph,
         keys,
+        assign,
     })
 }
 
@@ -247,6 +259,33 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
             }
             FlagSplit::LongAttached("data-key", v) => {
                 out.data_keys.push(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("assign") => {
+                let (v, ni) = take_value(tail, i, None, "--assign")?;
+                out.assign.push(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("assign", v) => {
+                out.assign.push(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("id-assign") => {
+                let (v, ni) = take_value(tail, i, None, "--id-assign")?;
+                out.id_assign.push(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("id-assign", v) => {
+                out.id_assign.push(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("state-assign") => {
+                let (v, ni) = take_value(tail, i, None, "--state-assign")?;
+                out.state_assign.push(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("state-assign", v) => {
+                out.state_assign.push(v.to_string());
                 i += 1;
             }
             FlagSplit::Long("no-autoalias") => {

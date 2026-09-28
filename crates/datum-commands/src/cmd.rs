@@ -517,6 +517,9 @@ mod tests {
             tags: vec![],
             keys: vec![],
             required_keys: vec![],
+            data_keys: vec![],
+            id_keys: vec![],
+            assign: vec![],
         };
         crate::commands::track::track(track_args, &db).unwrap();
 
@@ -562,6 +565,9 @@ mod tests {
                 tags: vec![],
                 keys: vec![],
                 required_keys: vec![],
+                data_keys: vec![],
+                id_keys: vec![],
+                assign: vec![],
             },
             &db,
         )

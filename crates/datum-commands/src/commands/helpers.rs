@@ -626,7 +626,6 @@ mod tests {
                 value_type: SubfieldType::Number,
                 in_slug: false,
                 default: None,
-                assign: false,
             },
         );
         let mut spec = FieldSpec::new("mood", Action::Switch);

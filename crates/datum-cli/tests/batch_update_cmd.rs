@@ -289,7 +289,6 @@ fn strict_spec_blocks_update_introducing_undeclared_key() {
             value_type: datum_core::field_spec::SubfieldType::Number,
             in_slug: false,
             default: None,
-            assign: false,
         },
     );
     spec.subfields = subfields;
@@ -329,7 +328,6 @@ fn strict_spec_blocks_rekey_into_undeclared_name() {
             value_type: datum_core::field_spec::SubfieldType::Number,
             in_slug: false,
             default: None,
-            assign: false,
         },
     );
     spec.subfields = subfields;

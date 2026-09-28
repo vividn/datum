@@ -635,6 +635,9 @@ pub enum SpecCommand {
         /// `--key KEY`, repeated: the state's whole key list (da-cej7q).
         /// An empty `--key=` clears the ones before it.
         keys: Vec<String>,
+        /// `--assign KEY=VALUE`, repeated: the state's assigned keys
+        /// (da-ulc0v); an empty VALUE removes one.
+        assign: Vec<String>,
     },
     Set(Box<SpecSetArgs>),
     List {
@@ -667,12 +670,19 @@ pub struct SpecSetArgs {
     /// state give its whole key list, as `--data-key` gives the field's;
     /// `STATE=` clears the ones before it.
     pub state_keys: Vec<String>,
+    /// Per-state assigned keys in `STATE=KEY=VALUE` form (da-ulc0v); an
+    /// empty VALUE removes the key.
+    pub state_assign: Vec<String>,
     pub id_template: Option<String>,
     pub description: Option<String>,
     pub track: bool,
     pub ignore: bool,
     pub id_keys: Vec<String>,
     pub data_keys: Vec<String>,
+    /// `--assign KEY=VALUE` / `--id-assign KEY=VALUE` (da-ulc0v): an
+    /// assigned key, merged into the spec's map; an empty VALUE removes it.
+    pub assign: Vec<String>,
+    pub id_assign: Vec<String>,
     pub no_autoalias: bool,
     /// Vertical position of the field on the dayview/nowview, fraction
     /// `[0.0, 1.0]`. `None` here means "leave as-is in the existing spec";
@@ -866,6 +876,12 @@ pub struct TrackArgs {
     pub keys: Vec<String>,
     /// Repeatable `--required-key NAME[=DEFAULT]`: the same, marked required.
     pub required_keys: Vec<String>,
+    /// The alias-style tail (da-ulc0v): `-k` / `-K` declare the field's
+    /// data / id slots in order, the kind by spelling (`K`, `K=`, `K=D`).
+    pub data_keys: Vec<String>,
+    pub id_keys: Vec<String>,
+    /// ...and a bare `KEY=VALUE` declares an assigned key.
+    pub assign: Vec<String>,
 }
 
 #[derive(Debug)]

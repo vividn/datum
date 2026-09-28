@@ -858,7 +858,6 @@ fn strict_spec_rejects_undeclared_extra_data_key_at_insert() {
             value_type: datum_core::field_spec::SubfieldType::Number,
             in_slug: false,
             default: None,
-            assign: false,
         },
     );
     spec.subfields = subfields;
@@ -892,7 +891,6 @@ fn strict_spec_accepts_declared_extra_data_key_at_insert() {
             value_type: datum_core::field_spec::SubfieldType::Number,
             in_slug: false,
             default: None,
-            assign: false,
         },
     );
     spec.subfields = subfields;
@@ -921,7 +919,6 @@ fn nonstrict_spec_silently_accepts_undeclared_extra_data_key_at_insert() {
             value_type: datum_core::field_spec::SubfieldType::Number,
             in_slug: false,
             default: None,
-            assign: false,
         },
     );
     spec.subfields = subfields;

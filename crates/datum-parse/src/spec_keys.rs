@@ -32,17 +32,15 @@ impl std::fmt::Display for KeyKind {
     }
 }
 
-/// Parse a key declaration as `id_keys`, `data_keys` and `track --key`
-/// write it: `key` (required), `key=` (optional), `key=default`, or
-/// `key:=value` (assign).
+/// Parse a positional key declaration as `id_keys`, `data_keys` and
+/// `track --key` write it: `key` (required), `key=` (optional) or
+/// `key=default`. An assigned key has no position, so it is not spelled
+/// here: it lives in the spec's `assign` maps (da-ulc0v).
 pub fn parse_key_decl(s: &str) -> (&str, KeyKind) {
     match s.split_once('=') {
         None => (s, KeyKind::Required),
-        Some((name, v)) => match name.strip_suffix(':') {
-            Some(name) => (name, KeyKind::Assign(v.to_string())),
-            None if v.is_empty() => (name, KeyKind::Optional),
-            None => (name, KeyKind::Default(v.to_string())),
-        },
+        Some((name, "")) => (name, KeyKind::Optional),
+        Some((name, v)) => (name, KeyKind::Default(v.to_string())),
     }
 }
 

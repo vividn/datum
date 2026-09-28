@@ -11,7 +11,7 @@ use common::run_cli;
 use datum_core::db::Db;
 use datum_core::field_spec::{DeclaredKey, KeyKind};
 use datum_core::kit::KitToml;
-use datum_core::test_util::{fresh_db, logged_entries};
+use datum_core::test_util::{advance_time, fresh_db, logged_entries, set_time};
 use serde_json::{json, Value};
 
 /// `juice` declares the alias's four keys, one of each kind.
@@ -30,8 +30,8 @@ fn juice_db() -> Db {
             "size=",
             "--data-key",
             "temp=cold",
-            "--data-key",
-            "brand:=acme",
+            "--assign",
+            "brand=acme",
         ],
         &db,
     )
@@ -108,7 +108,15 @@ fn id_keys_are_slug_slots() {
     let db = fresh_db();
     run_cli(
         &[
-            "spec", "set", "word", "--verb", "occur", "--id-key", "w", "--id-key", "lang:=pt",
+            "spec",
+            "set",
+            "word",
+            "--verb",
+            "occur",
+            "--id-key",
+            "w",
+            "--id-assign",
+            "lang=pt",
         ],
         &db,
     )
@@ -133,8 +141,8 @@ fn an_add_binds_its_keys() {
             "title",
             "--data-key",
             "author=",
-            "--data-key",
-            "shelf:=home",
+            "--assign",
+            "shelf=home",
         ],
         &db,
     )
@@ -330,22 +338,15 @@ fn inactive_entries_ignore_the_specs_keys() {
     }
 }
 
-/// Every route keeps the kind: `spec set` and `track --key` write it, the
+/// Every route keeps the kind: `spec set` and `track` write it, the
 /// stored spec (what `spec show` prints) carries it, `--from-json` reads it
 /// back, and a kit exports and installs it.
 #[test]
 fn the_kind_round_trips() {
     let db = juice_db();
-    run_cli(&["spec", "set", "juice", "--id-key", "lang:=pt"], &db).unwrap();
+    run_cli(&["spec", "set", "juice", "--id-assign", "lang=pt"], &db).unwrap();
     run_cli(
-        &[
-            "track",
-            "juice",
-            "--key",
-            "origin:=farm",
-            "--required-key",
-            "n",
-        ],
+        &["track", "juice", "origin=farm", "--required-key", "n"],
         &db,
     )
     .unwrap();
@@ -356,13 +357,13 @@ fn the_kind_round_trips() {
         id,
     };
     let want = vec![
-        key("lang", KeyKind::Assign("pt".into()), true),
         key("cups", KeyKind::Required, false),
         key("size", KeyKind::Optional, false),
         key("temp", KeyKind::Default("cold".into()), false),
-        key("brand", KeyKind::Assign("acme".into()), false),
         key("n", KeyKind::Required, false),
+        key("brand", KeyKind::Assign("acme".into()), false),
         key("origin", KeyKind::Assign("farm".into()), false),
+        key("lang", KeyKind::Assign("pt".into()), true),
     ];
     assert_eq!(spec.declared_keys(None), want);
 
@@ -398,4 +399,167 @@ fn the_kind_round_trips() {
             .declared_keys(None),
         want
     );
+}
+
+/// `track`'s alias-style tail (da-ulc0v): `-k` declares a slot, a bare
+/// `KEY=VALUE` an assign. The control is the same field tracked without the
+/// tail, which logs neither.
+#[test]
+fn track_takes_an_alias_style_tail() {
+    // Every `track` writes a row at now: step the clock between commands so
+    // no two rows share a millisecond's slug.
+    let _clock = set_time("2026-01-15T12:00:00Z");
+    let run = |args: &[&str], db: &Db| {
+        advance_time("1s");
+        run_cli(args, db).unwrap_or_else(|e| panic!("{args:?}: {e:#}"));
+    };
+    let db = fresh_db();
+    run(&["track", "plain", "--verb", "occur"], &db);
+    run(
+        &[
+            "track",
+            "vacuum",
+            "--verb",
+            "occur",
+            "-k",
+            "next_date=+4",
+            "proj=household",
+        ],
+        &db,
+    );
+    run(&["occur", "vacuum", "-d", "2026-03-01"], &db);
+    run(&["occur", "plain"], &db);
+    let spec = db.load_spec("vacuum").unwrap().unwrap();
+    assert_eq!(spec.data_keys, ["next_date=+4"]);
+    assert_eq!(spec.assign["proj"], "household");
+    let data = logged_entries(&db, "vacuum")[0].data.clone().unwrap();
+    assert_eq!(data["proj"], json!("household"));
+    assert!(
+        data["next_date"].as_str().is_some_and(|d| d.len() == 10),
+        "{data}"
+    );
+    assert_eq!(logged_entries(&db, "plain")[0].data, None);
+
+    // `-K` is an id slot, and a slot named again takes its new kind in place.
+    run(&["track", "vacuum", "-K", "room", "-k", "next_date="], &db);
+    let spec = db.load_spec("vacuum").unwrap().unwrap();
+    assert_eq!(spec.id_keys, ["room"]);
+    assert_eq!(spec.data_keys, ["next_date="]);
+}
+
+/// `spec set --assign` round-trips through `spec show` (text and JSON), a
+/// kit's export and install, and `--assign KEY=` removes it. The control:
+/// `brand:=acme` is no spelling of an assign any more — `:=` is gone.
+#[test]
+fn assign_round_trips_through_show_and_kits() {
+    let db = fresh_db();
+    run_cli(
+        &[
+            "spec",
+            "set",
+            "f",
+            "--verb",
+            "occur",
+            "--assign",
+            "brand=acme",
+        ],
+        &db,
+    )
+    .unwrap();
+    let spec = db.load_spec("f").unwrap().unwrap();
+    let shown = serde_json::to_value(&spec).unwrap();
+    assert_eq!(shown["assign"], json!({"brand": "acme"}));
+    assert_eq!(shown["data_keys"], json!([]));
+
+    let dir = tempfile::tempdir().unwrap();
+    let kit = dir.path().join("k.toml");
+    let toml = KitToml::from_field_specs("k", None, std::slice::from_ref(&spec), &[])
+        .to_toml()
+        .unwrap();
+    assert!(toml.contains("brand = \"acme\""), "{toml}");
+    std::fs::write(&kit, toml).unwrap();
+    let installed = fresh_db();
+    run_cli(&["kit", "install", &kit.to_string_lossy()], &installed).unwrap();
+    let out = dir.path().join("out.toml");
+    run_cli(&["kit", "export", "k", &out.to_string_lossy()], &installed).unwrap();
+    let again = fresh_db();
+    run_cli(&["kit", "install", &out.to_string_lossy()], &again).unwrap();
+    run_cli(&["f"], &again).unwrap();
+    assert_eq!(
+        logged_entries(&again, "f")[0].data,
+        Some(json!({"brand": "acme"}))
+    );
+
+    run_cli(&["spec", "set", "f", "--assign", "brand="], &db).unwrap();
+    assert!(db.load_spec("f").unwrap().unwrap().assign.is_empty());
+
+    run_cli(&["spec", "set", "f", "--data-key", "brand:=acme"], &db).unwrap();
+    let kinds = db.load_spec("f").unwrap().unwrap().declared_keys(None);
+    assert!(
+        kinds.iter().all(|k| !matches!(k.kind, KeyKind::Assign(_))),
+        "{kinds:?}"
+    );
+}
+
+/// A key lives in one place, and the latest declaration wins (da-ulc0v,
+/// review 12132): a slot declared after an assign of the same name takes
+/// the positional, and an assign declared after a slot drops it — through
+/// `track`, `spec set` and a state's keys alike.
+#[test]
+fn a_key_lives_in_one_place_and_the_latest_declaration_wins() {
+    // Every `track` writes a row at now: step the clock between commands so
+    // no two rows share a millisecond's slug.
+    let _clock = set_time("2026-01-15T12:00:00Z");
+    let run = |args: &[&str], db: &Db| {
+        advance_time("1s");
+        run_cli(args, db).unwrap_or_else(|e| panic!("{args:?}: {e:#}"));
+    };
+    let db = fresh_db();
+    run(&["track", "x2", "--verb", "occur", "proj=household"], &db);
+    run(&["track", "x2", "-k", "proj="], &db);
+    let spec = db.load_spec("x2").unwrap().unwrap();
+    assert_eq!(spec.data_keys, ["proj="]);
+    assert!(spec.assign.is_empty(), "{:?}", spec.assign);
+    run(&["occur", "x2", "5"], &db);
+    assert_eq!(logged_entries(&db, "x2")[0].data, Some(json!({"proj": 5})));
+
+    // The reverse order ends with the assign only.
+    run(&["track", "x2", "proj=household"], &db);
+    let spec = db.load_spec("x2").unwrap().unwrap();
+    assert!(spec.data_keys.is_empty(), "{:?}", spec.data_keys);
+    assert_eq!(spec.assign["proj"], "household");
+
+    // A bare `KEY=` removes an assign and leaves a slot alone, as `spec set
+    // --assign KEY=` does.
+    run(&["track", "y", "--verb", "occur", "-k", "proj="], &db);
+    run(&["track", "y", "proj="], &db);
+    assert_eq!(db.load_spec("y").unwrap().unwrap().data_keys, ["proj="]);
+
+    // `spec set` and `track --key` follow the same rule.
+    run(&["spec", "set", "x2", "--data-key", "proj"], &db);
+    assert!(db.load_spec("x2").unwrap().unwrap().assign.is_empty());
+    run(&["spec", "set", "x2", "--id-assign", "proj=a"], &db);
+    let spec = db.load_spec("x2").unwrap().unwrap();
+    assert!(spec.data_keys.is_empty(), "{:?}", spec.data_keys);
+    run(&["track", "x2", "--key", "proj="], &db);
+    assert!(db.load_spec("x2").unwrap().unwrap().id_assign.is_empty());
+
+    // A state's keys too.
+    let db = fresh_db();
+    run(
+        &["spec", "set", "mood", "--verb", "switch", "--state", "sad"],
+        &db,
+    );
+    run(
+        &["spec", "add-state", "mood", "sad", "--assign", "why=x"],
+        &db,
+    );
+    run(&["spec", "add-state", "mood", "sad", "--key", "why="], &db);
+    let spec = db.load_spec("mood").unwrap().unwrap();
+    assert_eq!(spec.state_keys["sad"], ["why="]);
+    assert!(spec.state_assign.is_empty(), "{:?}", spec.state_assign);
+    run(&["spec", "set", "mood", "--state-assign", "sad=why=y"], &db);
+    let spec = db.load_spec("mood").unwrap().unwrap();
+    assert!(spec.state_keys.is_empty(), "{:?}", spec.state_keys);
+    assert_eq!(spec.state_assign["sad"]["why"], "y");
 }

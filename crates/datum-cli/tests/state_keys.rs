@@ -148,15 +148,17 @@ fn state_keys_round_trip() {
             "calm",
             "--key",
             "why=",
-            "--key",
-            "tea:=green",
+            "--assign",
+            "tea=green",
         ],
         &db,
     )
     .unwrap();
     let spec = db.load_spec("mood").unwrap().unwrap();
-    let want = json!({"sad": ["reason"], "calm": ["why=", "tea:=green"]});
+    let want = json!({"sad": ["reason"], "calm": ["why="]});
     assert_eq!(serde_json::to_value(&spec).unwrap()["state_keys"], want);
+    let assign = json!({"calm": {"tea": "green"}});
+    assert_eq!(serde_json::to_value(&spec).unwrap()["state_assign"], assign);
     run_cli(&["calm", "2"], &db).unwrap();
     assert_eq!(logged(&db), json!({"level": 2, "tea": "green"}));
 
@@ -165,6 +167,7 @@ fn state_keys_round_trip() {
     run_cli(&["spec", "set", "mood", "--from-json", &shown], &from_json).unwrap();
     let back = from_json.load_spec("mood").unwrap().unwrap();
     assert_eq!(back.state_keys, spec.state_keys);
+    assert_eq!(back.state_assign, spec.state_assign);
 
     let dir = tempfile::tempdir().unwrap();
     let kit = dir.path().join("k.toml");
@@ -178,10 +181,9 @@ fn state_keys_round_trip() {
     run_cli(&["kit", "export", "k", &out.to_string_lossy()], &installed).unwrap();
     let again = fresh_db();
     run_cli(&["kit", "install", &out.to_string_lossy()], &again).unwrap();
-    assert_eq!(
-        again.load_spec("mood").unwrap().unwrap().state_keys,
-        spec.state_keys
-    );
+    let again = again.load_spec("mood").unwrap().unwrap();
+    assert_eq!(again.state_keys, spec.state_keys);
+    assert_eq!(again.state_assign, spec.state_assign);
 
     // An empty flag clears the keys before it, in order.
     let keys = |db: &Db| {
@@ -218,8 +220,8 @@ fn state_keys_round_trip() {
             "calm",
             "--key",
             "why=",
-            "--key",
-            "tea:=green",
+            "--assign",
+            "tea=green",
         ],
         &db,
     )
@@ -240,8 +242,27 @@ fn state_keys_round_trip() {
     let cleared = db.load_spec("mood").unwrap().unwrap();
     assert_eq!(
         serde_json::to_value(&cleared).unwrap()["state_keys"],
-        json!({"calm": ["why=", "tea:=green"]})
+        json!({"calm": ["why="]})
     );
+    // `--state-assign S=K=V` merges into the state's map, `S=K=` removes.
+    run_cli(&["spec", "set", "mood", "--state-assign", "calm=tea="], &db).unwrap();
+    assert!(db
+        .load_spec("mood")
+        .unwrap()
+        .unwrap()
+        .state_assign
+        .is_empty());
+    run_cli(
+        &["spec", "set", "mood", "--state-assign", "sad=tea=black"],
+        &db,
+    )
+    .unwrap();
+    run_cli(&["sad", "-t", "-1", "why"], &db).unwrap();
+    let teas: Vec<Value> = logged_entries(&db, "mood")
+        .into_iter()
+        .filter_map(|e| e.data?.get("tea").cloned())
+        .collect();
+    assert_eq!(teas, [json!("green"), json!("black")]);
 }
 
 /// `spec show --text` lists a state's keys under it, and those of a state

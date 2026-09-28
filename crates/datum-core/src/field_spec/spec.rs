@@ -13,7 +13,7 @@
 use datum_parse::alias::shell_join;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::action::Action;
 pub use datum_parse::spec_keys::{parse_key_decl, DeclaredKey, KeyKind};
@@ -35,11 +35,6 @@ pub struct SubfieldSpec {
     pub in_slug: bool,
     /// Default value if not supplied.
     pub default: Option<serde_json::Value>,
-    /// If true, `default` is ASSIGNED — written onto every entry as a
-    /// `key=value` would be — rather than offered as a slot a positional
-    /// can fill (da-9s98k).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub assign: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,20 +105,30 @@ pub struct FieldSpec {
     /// kind. Absent in JSON when empty.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub state_keys: HashMap<String, Vec<String>>,
+    /// Per-state assigned keys (da-ulc0v), as `assign` is the field's.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub state_assign: HashMap<String, BTreeMap<String, String>>,
     /// Auto-derived aliases (bare-field, terminal-end, and per-state).
     /// Rebuilt on save via [`FieldSpec::regenerate_derived_aliases`].
     #[serde(default)]
     pub derived_aliases: Vec<DerivedAlias>,
 
-    /// Spec-level declaration of the `-K` identity keys (slug-bearing).
-    /// Each entry may be `"key"` or `"key=default"`; parser semantics match
-    /// the `-K` flag surface.
+    /// Spec-level declaration of the `-K` identity keys (slug-bearing), in
+    /// positional order: `"key"`, `"key="` or `"key=default"`, as the `-K`
+    /// flag spells them.
     #[serde(default)]
     pub id_keys: Vec<String>,
-    /// Spec-level declaration of the `-k` data keys (extra_data only). Each
-    /// entry may be `"key"` or `"key=default"`.
+    /// Spec-level declaration of the `-k` data keys, as `id_keys`.
     #[serde(default)]
     pub data_keys: Vec<String>,
+    /// Assigned keys (da-ulc0v): written onto every active entry as a
+    /// `key=value` would be. They take no positional, so they live apart
+    /// from the ordered lists. Absent in JSON when empty.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub assign: BTreeMap<String, String>,
+    /// Assigned keys whose value goes into the slug.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub id_assign: BTreeMap<String, String>,
     /// When true, no auto-aliases are emitted for this field (the user takes
     /// over): `derived_aliases` is then the user's list, kept as written
     /// rather than rebuilt on save (da-cap5m).
@@ -193,9 +198,12 @@ impl FieldSpec {
             state_colors: HashMap::new(),
             state_descriptions: HashMap::new(),
             state_keys: HashMap::new(),
+            state_assign: HashMap::new(),
             derived_aliases: Vec::new(),
             id_keys: Vec::new(),
             data_keys: Vec::new(),
+            assign: BTreeMap::new(),
+            id_assign: BTreeMap::new(),
             no_autoalias: false,
             strict: false,
             tags: Vec::new(),
@@ -243,25 +251,59 @@ impl FieldSpec {
         }
     }
 
-    /// Every key the spec declares: the `id_keys`, the `data_keys`, then
-    /// the subfields by name (da-9s98k). As on any line, the `-K` slots
-    /// among them bind before the `-k` ones, so an `in_slug` subfield takes
-    /// a positional ahead of the `data_keys`. A name declared twice (`spec
+    /// Take `name` out of the slot lists and the assign maps, so the
+    /// declaration about to be written is its only one: a key lives in one
+    /// place, and the latest declaration wins (da-ulc0v).
+    pub fn forget_key(&mut self, name: &str) {
+        let other = |k: &String| parse_key_decl(k).0 != name;
+        self.id_keys.retain(other);
+        self.data_keys.retain(other);
+        self.assign.remove(name);
+        self.id_assign.remove(name);
+    }
+
+    /// [`FieldSpec::forget_key`] for `state`'s own keys.
+    pub fn forget_state_key(&mut self, state: &str, name: &str) {
+        if let Some(keys) = self.state_keys.get_mut(state) {
+            keys.retain(|k| parse_key_decl(k).0 != name);
+            if keys.is_empty() {
+                self.state_keys.remove(state);
+            }
+        }
+        if let Some(map) = self.state_assign.get_mut(state) {
+            map.remove(name);
+            if map.is_empty() {
+                self.state_assign.remove(state);
+            }
+        }
+    }
+
+    /// Every key the spec declares: the positional slots — the `id_keys`,
+    /// the `data_keys`, then the subfields by name (da-9s98k) — then the
+    /// assigned keys (da-ulc0v). As on any line, the `-K` slots among them
+    /// bind before the `-k` ones, so an `in_slug` subfield takes a
+    /// positional ahead of the `data_keys`. A name declared twice (`spec
     /// set --data-key` and `track --key` write different lists) is one key,
     /// as repeated `-k` are: the first place, the last kind, in the slug if
     /// either is. An entry in `state` takes that state's keys last
     /// (da-cej7q), so they override the field's by name.
     pub fn declared_keys(&self, state: Option<&str>) -> Vec<DeclaredKey> {
+        let key = |name: &str, kind, id| DeclaredKey {
+            name: name.to_string(),
+            kind,
+            id,
+        };
         let listed = |keys: &[String], id: bool| -> Vec<DeclaredKey> {
             keys.iter()
                 .map(|k| {
                     let (name, kind) = parse_key_decl(k);
-                    DeclaredKey {
-                        name: name.to_string(),
-                        kind,
-                        id,
-                    }
+                    key(name, kind, id)
                 })
+                .collect()
+        };
+        let assigned = |map: &BTreeMap<String, String>, id: bool| -> Vec<DeclaredKey> {
+            map.iter()
+                .map(|(name, v)| key(name, KeyKind::Assign(v.clone()), id))
                 .collect()
         };
         let mut subs: Vec<_> = self.subfields.iter().collect();
@@ -269,22 +311,24 @@ impl FieldSpec {
         let text = |v: &JsonValue| v.as_str().map_or_else(|| v.to_string(), str::to_string);
         let subs = subs.into_iter().map(|(name, s)| DeclaredKey {
             name: name.clone(),
-            kind: match (&s.default, s.assign) {
-                (Some(v), true) => KeyKind::Assign(text(v)),
-                (Some(v), false) => KeyKind::Default(text(v)),
-                (None, _) if s.required => KeyKind::Required,
-                (None, _) => KeyKind::Optional,
+            kind: match &s.default {
+                Some(v) => KeyKind::Default(text(v)),
+                None if s.required => KeyKind::Required,
+                None => KeyKind::Optional,
             },
             id: s.in_slug,
         });
+        let own_keys = state.and_then(|s| self.state_keys.get(s));
+        let own_assign = state.and_then(|s| self.state_assign.get(s));
         let mut out: Vec<DeclaredKey> = Vec::new();
-        let all = listed(&self.id_keys, true).into_iter();
-        let own = state.and_then(|s| self.state_keys.get(s));
-        let own = listed(own.map_or(&[], Vec::as_slice), false);
-        for key in all
+        for key in listed(&self.id_keys, true)
+            .into_iter()
             .chain(listed(&self.data_keys, false))
             .chain(subs)
-            .chain(own)
+            .chain(assigned(&self.assign, false))
+            .chain(assigned(&self.id_assign, true))
+            .chain(listed(own_keys.map_or(&[], Vec::as_slice), false))
+            .chain(own_assign.map(|m| assigned(m, false)).unwrap_or_default())
         {
             match out.iter_mut().find(|k| k.name == key.name) {
                 Some(k) => {
@@ -296,6 +340,8 @@ impl FieldSpec {
                 None => out.push(key),
             }
         }
+        // The slots in order, then the assigns (a stable sort).
+        out.sort_by_key(|k| matches!(k.kind, KeyKind::Assign(_)));
         out
     }
 

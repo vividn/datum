@@ -148,6 +148,13 @@ pub struct FieldEntry {
     /// Data-keys declaration (`-k` flag surface).
     #[serde(default)]
     pub data_keys: Vec<String>,
+    /// Assigned keys, `assign = { proj = "household" }` — the spec's
+    /// `--assign` (da-ulc0v).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub assign: BTreeMap<String, String>,
+    /// Assigned keys whose value goes into the slug — `--id-assign`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub id_assign: BTreeMap<String, String>,
     /// Allowed states with per-state overrides, keyed by state name, in
     /// the order the kit wrote them: that order is the states' rank, which
     /// the states ring places them by (da-dtmlv).
@@ -383,6 +390,10 @@ pub struct StateSpec {
     /// `--state-key` (da-cej7q).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub keys: Vec<String>,
+    /// The state's own assigned keys — the spec's `--state-assign`
+    /// (da-ulc0v).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub assign: BTreeMap<String, String>,
 }
 
 impl KitToml {
@@ -538,6 +549,8 @@ impl FieldEntry {
         spec.presentation.z_index = self.z_index;
         spec.id_keys = self.id_keys;
         spec.data_keys = self.data_keys;
+        spec.assign = self.assign;
+        spec.id_assign = self.id_assign;
 
         // When `relative_to` is set, `pos`/`size` are reinterpreted as ratios
         // against the anchor. The field's own `y`/`height` stay None — the
@@ -572,6 +585,9 @@ impl FieldEntry {
                 if !s.keys.is_empty() {
                     spec.state_keys.insert(name.clone(), s.keys.clone());
                 }
+                if !s.assign.is_empty() {
+                    spec.state_assign.insert(name.clone(), s.assign.clone());
+                }
             }
             spec.allowed_states = Some(allowed);
         }
@@ -601,6 +617,7 @@ impl FieldEntry {
                             glyph: spec.presentation.state_glyphs.get(name).cloned(),
                             description: spec.state_descriptions.get(name).cloned(),
                             keys: spec.state_keys.get(name).cloned().unwrap_or_default(),
+                            assign: spec.state_assign.get(name).cloned().unwrap_or_default(),
                         },
                     )
                 })
@@ -644,6 +661,8 @@ impl FieldEntry {
             relative_to,
             id_keys: spec.id_keys.clone(),
             data_keys: spec.data_keys.clone(),
+            assign: spec.assign.clone(),
+            id_assign: spec.id_assign.clone(),
             states,
             tags: spec.tags.clone(),
             render: spec.presentation.render.clone(),

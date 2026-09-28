@@ -81,17 +81,17 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
     // default is JSON when it parses and text when it does not, as the
     // web's key editor stores an `any` key's. Naming a key the spec already
     // has sets its kind and keeps the rest — its type, and whether it is in
-    // the slug, which is what an entry IS. da-9s98k: `NAME:=VALUE` assigns.
+    // the slug, which is what an entry IS.
     let keys = args.keys.iter().map(|k| (k, false));
     for (key, required) in keys.chain(args.required_keys.iter().map(|k| (k, true))) {
         let (name, kind) = parse_key_decl(key);
         let json = |d: &str| serde_json::from_str(d).unwrap_or_else(|_| d.into());
-        let (default, assign) = match &kind {
-            KeyKind::Default(d) => (Some(json(d)), false),
-            KeyKind::Assign(v) => (Some(json(v)), true),
-            KeyKind::Required | KeyKind::Optional => (None, false),
+        let default = match &kind {
+            KeyKind::Default(d) => Some(json(d)),
+            _ => None,
         };
         anyhow::ensure!(!name.trim().is_empty(), "--key needs a name: '{key}'");
+        spec.forget_key(name);
         let sub = spec
             .subfields
             .entry(name.to_string())
@@ -100,11 +100,36 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
                 value_type: SubfieldType::Any,
                 in_slug: false,
                 default: None,
-                assign: false,
             });
         sub.required = required;
         sub.default = default;
-        sub.assign = assign;
+    }
+    // da-ulc0v: the alias-style tail. `-k` / `-K` add a slot to the ordered
+    // lists (a name already in that list takes the new kind in its place),
+    // and a bare `KEY=VALUE` assigns (`KEY=` removes one, as `spec set
+    // --assign`). A key lives in one place: each declaration takes its name
+    // out of the others.
+    for (keys, id) in [(&args.data_keys, false), (&args.id_keys, true)] {
+        for key in keys {
+            let name = parse_key_decl(key).0;
+            let list = if id { &spec.id_keys } else { &spec.data_keys };
+            let at = list.iter().position(|k| parse_key_decl(k).0 == name);
+            spec.forget_key(name);
+            let list = if id {
+                &mut spec.id_keys
+            } else {
+                &mut spec.data_keys
+            };
+            list.insert(at.unwrap_or(list.len()), key.clone());
+        }
+    }
+    for (k, v) in args.assign.iter().filter_map(|kv| kv.split_once('=')) {
+        if v.is_empty() {
+            spec.assign.remove(k);
+        } else {
+            spec.forget_key(k);
+            spec.assign.insert(k.to_string(), v.to_string());
+        }
     }
     spec.regenerate_derived_aliases();
     let device = device_id()?;

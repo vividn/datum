@@ -12,6 +12,8 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
         tags: Vec<String>,
         keys: Vec<String>,
         required_keys: Vec<String>,
+        data_keys: Vec<String>,
+        id_keys: Vec<String>,
     }
     let registry: Vec<LiftedSpec<TrackParsing>> = vec![
         local_value(None, Some("verb"), |p, v| {
@@ -38,9 +40,18 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
             p.required_keys.push(v.to_string());
             Ok(())
         }),
+        local_value(Some('k'), None, |p, v| {
+            p.data_keys.push(v.to_string());
+            Ok(())
+        }),
+        local_value(Some('K'), None, |p, v| {
+            p.id_keys.push(v.to_string());
+            Ok(())
+        }),
     ];
     let mut composed = TrackParsing::default();
     let mut pos: Vec<&str> = Vec::new();
+    let mut assign: Vec<String> = Vec::new();
     let mut i = 0;
     while i < tail.len() {
         if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
@@ -48,6 +59,11 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
             continue;
         }
         match split_flag(tail[i]) {
+            // After the field, a `KEY=VALUE` assigns, as on an alias line.
+            FlagSplit::Positional(s) if !pos.is_empty() && s.contains('=') => {
+                assign.push(s.to_string());
+                i += 1;
+            }
             FlagSplit::Positional(s) => {
                 pos.push(s);
                 i += 1;
@@ -66,6 +82,9 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
         tags: composed.tags,
         keys: composed.keys,
         required_keys: composed.required_keys,
+        data_keys: composed.data_keys,
+        id_keys: composed.id_keys,
+        assign,
     })
 }
 

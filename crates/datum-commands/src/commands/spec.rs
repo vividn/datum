@@ -5,7 +5,7 @@ use datum_core::{
     action::Action,
     db::{Db, IGNORED_STATE_VALUE},
     entry::{Entry, Verb},
-    field_spec::{FieldSpec, GlyphBy},
+    field_spec::{parse_key_decl, FieldSpec, GlyphBy, KeyKind},
     time::DatumTime,
 };
 use serde_json::Value as JsonValue;
@@ -32,13 +32,14 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
             description,
             glyph,
             keys,
+            assign,
         } => spec_add_state(
             &field,
             &name,
             color.as_deref(),
             description.as_deref(),
             glyph.as_deref(),
-            &keys,
+            (&keys, &assign),
             db,
         )?,
         SpecCommand::Set(args) => spec_set(*args, db)?,
@@ -145,6 +146,14 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     for (state, keys) in given {
         set_state_keys(&mut spec, state, &keys);
     }
+    // da-ulc0v: `--state-assign STATE=KEY=VALUE` merges into the state's
+    // assigned keys; an empty VALUE removes one.
+    for pair in &args.state_assign {
+        let (state, kv) = pair.split_once('=').with_context(|| {
+            format!("Invalid --state-assign format: expected STATE=KEY=VALUE, got '{pair}'")
+        })?;
+        set_state_assign(&mut spec, state, std::slice::from_ref(&kv.to_string()))?;
+    }
     // da-gzowt: occur-dot glyphs, in `color` / `state_colors`' shape. An
     // empty value clears, as it does for every STATE=VALUE flag.
     if let Some(g) = &args.glyph {
@@ -236,12 +245,22 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         );
         db.insert_entry(&entry)?;
     }
+    // da-ulc0v: a key lives in one place — each declaration takes its name
+    // out of the others first.
+    for key in args.id_keys.iter().chain(&args.data_keys) {
+        spec.forget_key(parse_key_decl(key).0);
+    }
+    for (k, _) in assigned(args.assign.iter().chain(&args.id_assign)) {
+        spec.forget_key(k);
+    }
     if !args.id_keys.is_empty() {
         spec.id_keys = args.id_keys.clone();
     }
     if !args.data_keys.is_empty() {
         spec.data_keys = args.data_keys.clone();
     }
+    set_assign(&mut spec.assign, &args.assign, "--assign")?;
+    set_assign(&mut spec.id_assign, &args.id_assign, "--id-assign")?;
     // Turning the auto-aliases off drops them; once off, the list is the
     // user's own (da-cap5m) and a repeat of the flag leaves it alone.
     if args.no_autoalias && !spec.no_autoalias {
@@ -295,11 +314,50 @@ fn set_state_keys(spec: &mut FieldSpec, state: &str, flags: &[&str]) {
         }
         keys
     });
+    for key in &keys {
+        spec.forget_state_key(state, parse_key_decl(key).0);
+    }
     if keys.is_empty() {
         spec.state_keys.remove(state);
     } else {
         spec.state_keys.insert(state.to_string(), keys);
     }
+}
+
+/// Merge `--assign`-style `KEY=VALUE` flags into an assigned-key map
+/// (da-ulc0v), by [`set_pairs`]' convention: an empty VALUE removes KEY.
+fn set_assign(
+    map: &mut std::collections::BTreeMap<String, String>,
+    pairs: &[String],
+    flag: &str,
+) -> Result<()> {
+    let mut pairs_map = std::mem::take(map).into_iter().collect();
+    set_pairs(&mut pairs_map, pairs, flag, "KEY=VALUE", |_, _| Ok(()))?;
+    *map = pairs_map.into_iter().collect();
+    Ok(())
+}
+
+/// The `KEY=VALUE` pairs that assign — an empty VALUE removes instead.
+fn assigned<'a>(
+    pairs: impl IntoIterator<Item = &'a String>,
+) -> impl Iterator<Item = (&'a str, &'a str)> {
+    pairs
+        .into_iter()
+        .filter_map(|p| p.split_once('='))
+        .filter(|(_, v)| !v.is_empty())
+}
+
+/// Merge `pairs` into `state`'s assigned keys; none left removes the entry.
+fn set_state_assign(spec: &mut FieldSpec, state: &str, pairs: &[String]) -> Result<()> {
+    for (k, _) in assigned(pairs) {
+        spec.forget_state_key(state, k);
+    }
+    let mut map = spec.state_assign.remove(state).unwrap_or_default();
+    set_assign(&mut map, pairs, "--state-assign")?;
+    if !map.is_empty() {
+        spec.state_assign.insert(state.to_string(), map);
+    }
+    Ok(())
 }
 
 /// Apply `KEY=VALUE` flags to a map — the clear convention shared by every
@@ -518,7 +576,7 @@ fn spec_add_state(
     color: Option<&str>,
     description: Option<&str>,
     glyph: Option<&str>,
-    keys: &[String],
+    (keys, assign): (&[String], &[String]),
     db: &Db,
 ) -> Result<()> {
     if let Some(g) = glyph {
@@ -552,6 +610,7 @@ fn spec_add_state(
         let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
         set_state_keys(&mut spec, name, &keys);
     }
+    set_state_assign(&mut spec, name, assign)?;
 
     spec.validate_verb().map_err(|e| anyhow::anyhow!(e))?;
     spec.regenerate_derived_aliases();
@@ -564,11 +623,15 @@ fn spec_add_state(
     Ok(())
 }
 
-/// A state's own keys with their kinds, under the state's line (da-cej7q).
-fn print_state_keys(keys: Option<&Vec<String>>) {
-    for key in keys.into_iter().flatten() {
+/// A state's own keys with their kinds, under the state's line (da-cej7q),
+/// its assigned ones after them (da-ulc0v).
+fn print_state_keys(spec: &FieldSpec, state: &str) {
+    for key in spec.state_keys.get(state).into_iter().flatten() {
         let (name, kind) = datum_parse::spec_keys::parse_key_decl(key);
         println!("      {name:<14} {kind}");
+    }
+    for (name, v) in spec.state_assign.get(state).into_iter().flatten() {
+        println!("      {name:<14} assign {v}");
     }
 }
 
@@ -625,7 +688,7 @@ fn render_spec_text(spec: &FieldSpec) {
                 println!("    {state:<16} {color}  — {desc}");
             }
             // da-cej7q: the state's own keys, under it.
-            print_state_keys(spec.state_keys.get(state));
+            print_state_keys(spec, state);
         }
     } else if !spec.state_descriptions.is_empty() {
         // Descriptions without an allowed_states list — list them anyway.
@@ -638,13 +701,23 @@ fn render_spec_text(spec: &FieldSpec) {
         }
     }
     // da-9s98k: every key the spec declares — `id_keys`, `data_keys` and
-    // subfields alike — with its kind, `(id)` marking a slug key.
-    let keys = spec.declared_keys(None);
-    if !keys.is_empty() {
-        println!("  keys:");
+    // subfields alike — with its kind, `(id)` marking a slug key; the
+    // assigned ones as a group of their own (da-ulc0v).
+    let (assigned, slots): (Vec<_>, Vec<_>) = spec
+        .declared_keys(None)
+        .into_iter()
+        .partition(|k| matches!(k.kind, KeyKind::Assign(_)));
+    for (head, keys) in [("keys", slots), ("assign", assigned)] {
+        if !keys.is_empty() {
+            println!("  {head}:");
+        }
         for k in keys {
             let id = if k.id { "  (id)" } else { "" };
-            println!("    {:<16} {}{id}", k.name, k.kind);
+            let kind = match k.kind {
+                KeyKind::Assign(v) => v,
+                kind => kind.to_string(),
+            };
+            println!("    {:<16} {kind}{id}", k.name);
         }
     }
     // A state holding keys the `states` list does not name — list it anyway.
@@ -652,14 +725,16 @@ fn render_spec_text(spec: &FieldSpec) {
     let mut unlisted: Vec<&String> = spec
         .state_keys
         .keys()
+        .chain(spec.state_assign.keys())
         .filter(|s| !listed.contains(s))
         .collect();
     unlisted.sort();
+    unlisted.dedup();
     if !unlisted.is_empty() {
         println!("  state keys:");
         for state in unlisted {
             println!("    {state}");
-            print_state_keys(spec.state_keys.get(state));
+            print_state_keys(spec, state);
         }
     }
     if !spec.tags.is_empty() {
@@ -807,7 +882,16 @@ mod tests {
         .unwrap();
 
         // Add one state with color + description — the others must survive.
-        spec_add_state("mood", "meh", Some("yellow"), Some("so-so"), None, &[], &db).unwrap();
+        spec_add_state(
+            "mood",
+            "meh",
+            Some("yellow"),
+            Some("so-so"),
+            None,
+            (&[], &[]),
+            &db,
+        )
+        .unwrap();
 
         let spec = db.load_spec("mood").unwrap().unwrap();
         let states = spec.allowed_states.as_ref().unwrap();
@@ -841,7 +925,7 @@ mod tests {
             Some("green"),
             Some("wired"),
             None,
-            &[],
+            (&[], &[]),
             &db,
         )
         .unwrap();
@@ -853,7 +937,7 @@ mod tests {
 
         // Re-adding refreshes the color but does not duplicate the state or
         // clobber a description that wasn't re-supplied.
-        spec_add_state("energy", "high", Some("lime"), None, None, &[], &db).unwrap();
+        spec_add_state("energy", "high", Some("lime"), None, None, (&[], &[]), &db).unwrap();
         let spec = db.load_spec("energy").unwrap().unwrap();
         assert_eq!(
             spec.allowed_states.as_deref(),
