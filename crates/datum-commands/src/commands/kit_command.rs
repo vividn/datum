@@ -19,12 +19,12 @@
 //! `Db::execute_view`, which flips `PRAGMA query_only = 1`.
 
 use anyhow::{Context, Result};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use datum_core::db::{Db, InstalledKitCommand, ViewResult};
 use datum_core::kit_color_rule::{self, ColorRule, RowLookup};
 use datum_parse::input::{handle_data_args, DataArgs, Show};
 use datum_parse::spec_keys::parse_key_decl;
-use datum_parse::time::{format_human_duration, DurationPrecision};
+use datum_parse::time::{format_human_duration, DatumTime, DurationPrecision};
 use serde_json::{Map, Value as JsonValue};
 use std::collections::HashMap;
 
@@ -231,7 +231,7 @@ fn render(
             }
         });
     }
-    let now = Utc::now();
+    let now = DatumTime::now().utc;
     let colors: Vec<Option<&str>> = view
         .rows
         .iter()
@@ -259,7 +259,7 @@ fn render(
         return Ok(format!("{text}\n"));
     }
     let headers = header_labels(&projected.columns, &cmd.labels);
-    let formatted = format_cells(&projected, &cmd.formats);
+    let formatted = format_cells(&projected, &cmd.formats, now);
     Ok(render_pretty(&headers, &formatted, &colors))
 }
 
@@ -328,6 +328,7 @@ fn header_labels(
 fn format_cells(
     view: &ViewResult,
     formats: &std::collections::BTreeMap<String, String>,
+    now: DateTime<Utc>,
 ) -> Vec<Vec<String>> {
     view.rows
         .iter()
@@ -338,7 +339,7 @@ fn format_cells(
                 .map(|(i, col)| {
                     let raw = &row[i];
                     match formats.get(col).map(|s| s.as_str()) {
-                        Some("smart_date") => format_smart_date(raw),
+                        Some("smart_date") => format_smart_date(raw, now),
                         Some("duration") => format_duration(raw),
                         Some(other) => format!("?{other}({})", json_to_plain(raw)),
                         None => json_to_plain(raw),
@@ -357,22 +358,27 @@ fn json_to_plain(v: &JsonValue) -> String {
     }
 }
 
-fn format_smart_date(v: &JsonValue) -> String {
+/// Under a minute either way is «just now», as `format_ago` reads it: a
+/// row logged a moment ago is a fraction of a second behind `now`, and
+/// `num_seconds` truncating that to 0 read it as «in 0s» (da-0xnka).
+fn format_smart_date(v: &JsonValue, now: DateTime<Utc>) -> String {
     let Some(s) = v.as_str() else {
         return json_to_plain(v);
     };
     let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) else {
         return s.to_string();
     };
-    let now = Utc::now();
-    let delta = dt.with_timezone(&Utc).signed_duration_since(now);
-    let secs = delta.num_seconds();
+    let secs = dt
+        .with_timezone(&Utc)
+        .signed_duration_since(now)
+        .num_seconds();
     let abs = secs.abs();
+    if abs < 60 {
+        return "just now".to_string();
+    }
     let prefix = if secs < 0 { "" } else { "in " };
     let suffix = if secs < 0 { " ago" } else { "" };
-    let body = if abs < 60 {
-        format!("{abs}s")
-    } else if abs < 3600 {
+    let body = if abs < 3600 {
         format!("{}m", abs / 60)
     } else if abs < 86_400 {
         format!("{}h", abs / 3600)
@@ -639,6 +645,34 @@ mod tests {
         labels.insert("iti".into(), "freq".into());
         let h = header_labels(&cols, &labels);
         assert_eq!(h, vec!["due".to_string(), "freq".to_string()]);
+    }
+
+    /// da-0xnka: a row logged at now reads «just now», never «in 0s»,
+    /// under the same frozen clock the rows were stamped by.
+    #[test]
+    fn smart_date_reads_the_present_as_just_now() {
+        let _g = datum_core::test_util::set_time("2026-09-28T23:30:00Z");
+        let mut cmd = mk_cmd(&["t"], None, &[]);
+        cmd.formats.insert("t".into(), "smart_date".into());
+        let view = ViewResult {
+            columns: vec!["t".into()],
+            rows: [
+                "2026-09-28T23:29:59.600Z",
+                "2026-09-28T23:30:00Z",
+                "2026-09-28T23:30:59Z",
+                "2026-09-28T22:30:00Z",
+                "2026-09-30T23:30:00Z",
+            ]
+            .map(|t| vec![json!(t)])
+            .into(),
+        };
+        let out = render(&cmd, &Call::default(), view, false).unwrap();
+        let cells: Vec<&str> = out.lines().skip(2).take(5).map(str::trim_end).collect();
+        assert_eq!(
+            cells,
+            ["just now", "just now", "just now", "1h ago", "in 2d"],
+            "{out}"
+        );
     }
 
     #[test]
