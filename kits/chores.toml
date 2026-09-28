@@ -1,7 +1,7 @@
 [kit]
 name = "chores"
-version = "0.3"
-description = "Chores as datum v2 kept them: a chore is any entry whose data says when it is next due (next_date / next_time, or v2's nextDate / nextTime). Log it done with `datum occur <chore> next_date=+7`; shirk it — move the date without claiming it — with `-T`. `datum chorelist` shows what is due or was done today; `datum chorelist-all` shows every chore."
+version = "0.4"
+description = "Chores as datum v2 kept them: a chore is any entry whose data says when it is next due (next_date / next_time, or v2's nextDate / nextTime). Log it done with `datum occur <chore> next_date=+7`; shirk it — move the date without claiming it — with `-T`. `datum chorelist` shows what is due or was done today, `datum chorelist <chore>` one chore, and `datum chorelist --all` every chore; `--sort due` (or `-due`) sorts by a shown column."
 
 # Every chore query scans only the entries that say when they are next due.
 # This partial index's WHERE is exactly the chore CTE's, so SQLite can use it:
@@ -99,51 +99,36 @@ ORDER BY iti IS NULL, iti
 """
 
 # What `chorelist` shows, as v2's did without `--show all`: what is due,
-# and what was done today (a finished chore stays in view, green).
+# and what was done today (a finished chore stays in view, green). Its
+# arguments narrow it to one chore (`:field`) or widen it to every one
+# (`--all`, v2's `--show all`, binds `:all` to 1); left unbound, both are
+# NULL.
 [[view]]
 name = "chores_due"
 uses = ["chores"]
 sql = """
-SELECT * FROM chores WHERE is_due = 1 OR done_today = 1 ORDER BY iti IS NULL, iti
+SELECT * FROM chores
+WHERE (:field IS NULL OR field = :field)
+  AND (:all OR is_due = 1 OR done_today = 1)
+ORDER BY iti IS NULL, iti
 """
 
 # `datum chorelist` is v2's table: most frequent chores first (the views sort
 # by iti), done today in green, overdue by more than its iti in red, by more
-# than half of it in yellow. Kit commands take no arguments beyond --watch,
-# so v2's `--show all` is its own command, and its sort choices aren't
-# offered.
+# than half of it in yellow. v2's forms: `chorelist`, `chorelist vacuum`,
+# and `chorelist --all --sort due` for `chorelist due --show all`.
 [[command]]
 name = "chorelist"
 view = "chores_due"
-help = "Chores due now or done today, most frequent first (v2's chorelist)"
+help = "Chores due now or done today, most frequent first (v2's chorelist); --all shows every chore"
+args = ["field="]
+switches = ["all"]
 columns = ["field", "iti_days", "due", "last_occur", "status"]
 labels = { field = "Field", iti_days = "ITI", due = "Due", last_occur = "Last Occur", status = "" }
 formats = { due = "smart_date", last_occur = "smart_date" }
 flags = ["watch"]
 # v2's own words when nothing is due or done today.
 empty = "🧹😄 COMPLETED! GOOD WORK! 😄🪣"
-
-[[command.color_rules]]
-when = "status = 'done'"
-color = "green"
-
-[[command.color_rules]]
-when = "status = 'overdue'"
-color = "red"
-
-[[command.color_rules]]
-when = "status = 'late'"
-color = "yellow"
-
-# `datum chorelist-all`: every chore, as v2's `chorelist --show all`.
-[[command]]
-name = "chorelist-all"
-view = "chores"
-help = "Every chore, due or not, most frequent first"
-columns = ["field", "iti_days", "due", "last_occur", "status"]
-labels = { field = "Field", iti_days = "ITI", due = "Due", last_occur = "Last Occur", status = "" }
-formats = { due = "smart_date", last_occur = "smart_date" }
-flags = ["watch"]
 
 [[command.color_rules]]
 when = "status = 'done'"

@@ -36,6 +36,10 @@ pub struct InstalledKitCommand {
     pub flags: Vec<String>,
     pub color_rules: Vec<ColorRuleEntry>,
     pub empty: Option<String>,
+    /// Its arguments, as declared (da-7ramf): `key`, `key=`, `key=default`.
+    pub args: Vec<String>,
+    /// Its on/off flags: `--name` binds `:name` to 1, and 0 when absent.
+    pub switches: Vec<String>,
     pub script_text: Option<String>,
 }
 
@@ -101,14 +105,47 @@ pub fn validate_command(c: &CommandEntry) -> Result<()> {
             || c.sort.is_some()
             || !c.color_rules.is_empty()
             || c.empty.is_some()
+            || !c.args.is_empty()
+            || !c.switches.is_empty()
         {
             return Err(DatumError::Other(format!(
-                "kit command '{}': Level 1 alias commands cannot set columns/labels/formats/sort/color_rules/empty",
+                "kit command '{}': Level 1 alias commands cannot set columns/labels/formats/sort/color_rules/empty/args/switches",
                 c.name
             )));
         }
     } else {
-        // Level 2: every column name must be well formed; whether the view
+        // Level 2: an argument is the named parameter `:key`, so its name is
+        // a column name too (da-7ramf); and `key:=value` is refused, as an
+        // argument the caller cannot fill is no argument.
+        if let Some(bad) = c.args.iter().find(|a| {
+            let (name, kind) = datum_parse::spec_keys::parse_key_decl(a);
+            !crate::kit_color_rule::is_column_name(name)
+                || matches!(kind, datum_parse::spec_keys::KeyKind::Assign(_))
+        }) {
+            return Err(DatumError::Other(format!(
+                "kit command '{}': argument `{bad}` is not `key`, `key=` or `key=default` with a name of letters, digits and `_`",
+                c.name
+            )));
+        }
+        // A switch is the flag `--name` and the parameter `:name`, so it is a
+        // name, and neither an argument's nor one of the flags every command
+        // already reads.
+        let arg_names: Vec<&str> = c
+            .args
+            .iter()
+            .map(|a| datum_parse::spec_keys::parse_key_decl(a).0)
+            .collect();
+        if let Some(bad) = c.switches.iter().find(|n| {
+            !crate::kit_color_rule::is_column_name(n)
+                || arg_names.contains(&n.as_str())
+                || ["watch", "sort", "show"].contains(&n.as_str())
+        }) {
+            return Err(DatumError::Other(format!(
+                "kit command '{}': switch `{bad}` is not a name, or is already an argument or one of --watch, --sort, --show",
+                c.name
+            )));
+        }
+        // Every column name must be well formed; whether the view
         // has it is known only when the command runs (da-ggzv1).
         if let Some(bad) = c
             .columns
@@ -224,6 +261,8 @@ fn installed_command(data: JsonValue) -> Result<InstalledKitCommand> {
         flags: c.flags,
         color_rules: c.color_rules,
         empty: c.empty,
+        args: c.args,
+        switches: c.switches,
         script_text: c.script,
     })
 }
@@ -254,6 +293,41 @@ mod tests {
             "columns = [\"field\", \"_n2\"]\nsort = \"iti\"\nlabels = { iti = \"freq\" }",
         ))
         .unwrap();
+    }
+
+    /// da-7ramf: an argument is a named parameter, so its name is a column
+    /// name — which refuses `key:=value` — and an alias-style command has none.
+    #[test]
+    fn install_checks_argument_names() {
+        validate_command(&level2("args = [\"field=\", \"all=false\", \"n\"]")).unwrap();
+        for (toml, bad) in [("args = [\"x:=1\"]", "x:=1"), ("args = [\"a b=\"]", "a b=")] {
+            let err = validate_command(&level2(toml)).unwrap_err().to_string();
+            assert!(
+                err.contains(&format!("argument `{bad}` is not `key`")),
+                "{err}"
+            );
+        }
+        let l1: CommandEntry =
+            toml::from_str("name = \"k\"\nexpands_to = \"occur x\"\nargs = [\"a\"]").unwrap();
+        let err = validate_command(&l1).unwrap_err().to_string();
+        assert!(err.contains("empty/args"), "{err}");
+    }
+
+    /// A switch is a name no argument or built-in flag already has.
+    #[test]
+    fn install_checks_switch_names() {
+        validate_command(&level2("args = [\"field=\"]\nswitches = [\"all\"]")).unwrap();
+        for toml in [
+            "args = [\"all=\"]\nswitches = [\"all\"]",
+            "switches = [\"sort\"]",
+            "switches = [\"a-b\"]",
+        ] {
+            let err = validate_command(&level2(toml)).unwrap_err().to_string();
+            assert!(
+                err.contains("is not a name, or is already"),
+                "{toml}: {err}"
+            );
+        }
     }
 
     /// da-x3369: `empty` is a Level 2 key — stored and read back on install,

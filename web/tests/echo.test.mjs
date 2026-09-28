@@ -15,9 +15,13 @@
 //    the real CLI here and made to prove it belongs, and every verb that
 //    does echo is made to prove it still does.
 //
+// 3. A reader NO_ECHO cannot name — a kit command, which the database
+//    installs — is asked again without the flag (`runEchoed`, da-5x6x0).
+//
 // The commands run through the app's own seam, which is the real CLI
 // compiled to wasm: this is datum answering, not a table written down.
 
+import { readFileSync } from 'node:fs';
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
@@ -271,6 +275,36 @@ describe('the list says what the CLI does', () => {
 				// instant `start work` began would close a block of nothing.
 				await app.clock.forward(1000);
 			}
+		});
+	});
+});
+
+/**
+ * A kit command is a reader the list cannot hold (da-5x6x0): its name is
+ * the database's. Given `--show json` it prints its rows as JSON (da-7ramf),
+ * so the page asks it again without the flag, and the bar shows its table.
+ */
+describe('a kit command answers with its table', () => {
+	const chores = readFileSync(new URL('../../kits/chores.toml', import.meta.url), 'utf8');
+
+	test('chorelist in the bar prints the table, not its JSON', async () => {
+		await shared.solo(async (app) => {
+			const installed = await app.run(['kit', 'install', '--yes', '-'], chores);
+			assert.equal(installed.code, 0, installed.stderr);
+			await app.run(['occur', 'laundry', '-d', '-3', 'next_date=+1']);
+			// Control: the flag the page appends does get the rows as JSON.
+			const asked = await app.run(echoArgv(['chorelist']));
+			assert.match(asked.stdout, /^\[\{.*"field":"laundry"/, asked.stdout || asked.stderr);
+
+			await app.submit('chorelist');
+			const shown = (await app.stdouts()).at(-1);
+			assert.match(shown, /Field\s+ITI\s+Due/, shown);
+			assert.match(shown, /laundry/, shown);
+			assert.doesNotMatch(shown, /^\[/, shown);
+
+			// Again: the page has learned the word, and it is still the table.
+			await app.submit('chorelist');
+			assert.match((await app.stdouts()).at(-1), /Field\s+ITI\s+Due/);
 		});
 	});
 });

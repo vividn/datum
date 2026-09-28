@@ -19,6 +19,8 @@
 // scrollback echoes the argv the caller asked for, not the one the runner
 // received (Repl.svelte, engine.press).
 
+import type { CommandRunner, RunResult } from './run.js';
+
 /**
  * One run of the info line, as the CLI painted it (da-yu9s).
  *
@@ -178,7 +180,7 @@ export function echoArgv(argv: string[]): string[] {
 	let side: string[] = [];
 	const flush = (): void => {
 		const command = commandOf(side);
-		if (command !== undefined && !hasShow(side) && !NO_ECHO.has(command)) {
+		if (command !== undefined && !hasShow(side) && !NO_ECHO.has(command) && !readers.has(command)) {
 			side = [...side, SHOW, JSON_SHOW];
 		}
 		out.push(...side);
@@ -194,6 +196,34 @@ export function echoArgv(argv: string[]): string[] {
 	}
 	flush();
 	return out;
+}
+
+/** The command words that answered `--show json` as readers, this session. */
+const readers = new Set<string>();
+
+/**
+ * Run `argv` with its echo asked for, and when what answered was a reader
+ * after all, run it again as it was asked (da-5x6x0).
+ *
+ * A kit command (`chorelist`) is a reader NO_ECHO cannot name, because the
+ * database installs it. Given `--show json` it prints its rows as a JSON
+ * ARRAY, where a writer's echo is a `{"docs": …}` object, so an array is
+ * the tell. Its view runs read-only, so asking twice changes nothing, and
+ * the second answer is the table the person asked for. The word is then
+ * remembered for the session, so it is asked twice once and not every
+ * time; a word remembered wrongly only goes without its echo.
+ */
+export async function runEchoed(
+	run: CommandRunner,
+	argv: string[],
+	stdin?: string
+): Promise<RunResult> {
+	const asked = echoArgv(argv);
+	const result = await run(asked, stdin);
+	const reader = asked.length > argv.length && result.code === 0 && result.stdout.startsWith('[');
+	if (!reader) return result;
+	readers.add(commandOf(argv) ?? '');
+	return run(argv, stdin);
 }
 
 /**

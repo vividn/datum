@@ -591,6 +591,8 @@ pub(super) fn m39_to_40_definitions_are_entries(conn: &Connection) -> Result<()>
                     flags: json(row.get(9)?),
                     color_rules: json(row.get(10)?),
                     empty: None,
+                    args: Vec::new(),
+                    switches: Vec::new(),
                     script: row.get(11)?,
                 };
                 Ok((command, row.get::<_, Option<String>>(1)?))

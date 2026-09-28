@@ -21,7 +21,7 @@ import { withPills } from '$lib/selection.js';
 import { shellJoin } from '$lib/shellSplit.js';
 import { initDb } from '$lib/db.js';
 import { fileCommand } from '$lib/dbio.js';
-import { echoArgv, parseEcho } from '$lib/echo.js';
+import { parseEcho, runEchoed } from '$lib/echo.js';
 import { record } from '$lib/replStore.js';
 import { run, type RunResult } from '$lib/run.js';
 import { verbAsked } from '$lib/track.js';
@@ -223,7 +223,7 @@ const ignoredFields = (): string[] =>
 /** With no REPL mounted: run it, record it, and bump the epoch here. */
 async function alone(argv: string[], line?: string, stdin?: string): Promise<RunResult> {
 	const ranAt = Date.now();
-	const result = await ((stdin === undefined ? fileCommand(argv) : null) ?? run(echoArgv(argv), stdin));
+	const result = await ((stdin === undefined ? fileCommand(argv) : null) ?? runEchoed(run, argv, stdin));
 	record(line ?? shellJoin(argv), ranAt, result);
 	await ran();
 	return result;

@@ -6,7 +6,15 @@
 //! module — they're handled by the alias-expansion pre-pass.
 //!
 //! Output goes through the same `render_pretty` style as `datum view`,
-//! plus optional ANSI colour applied per row when `color_rules` matches.
+//! plus optional ANSI colour applied per row when `color_rules` matches,
+//! or is the shown rows as JSON under `--show json`.
+//!
+//! The words after the name fill the command's declared `args` the way an
+//! alias's slots are filled (da-7ramf) — positionals in order, `.` skips
+//! one, `key=value` by name — and reach the view as SQLite named
+//! parameters; a declared switch `--name` binds `:name` to 1, and 0 when
+//! absent. `--sort [-]<column>` sorts by a shown column instead of the
+//! kit's `sort`.
 //! The renderer is read-only: it can only execute the named view via
 //! `Db::execute_view`, which flips `PRAGMA query_only = 1`.
 
@@ -14,16 +22,119 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use datum_core::db::{Db, InstalledKitCommand, ViewResult};
 use datum_core::kit_color_rule::{self, ColorRule, RowLookup};
+use datum_parse::input::{handle_data_args, DataArgs, Show};
+use datum_parse::spec_keys::parse_key_decl;
 use datum_parse::time::{format_human_duration, DurationPrecision};
-use serde_json::Value as JsonValue;
+use serde_json::{Map, Value as JsonValue};
 use std::collections::HashMap;
 
 use crate::render::visible_width;
 
-/// Run a Level 2 command by name. `extra_args` carries any tokens after
-/// the command name on the original argv (e.g. `--watch`); for slice 6
-/// the only flag we honour is `--watch`, gated by `flags = ["watch"]`.
+/// Run a Level 2 command by name. `extra_args` carries the tokens after
+/// the command name on the original argv: its arguments, `--sort`,
+/// `--show`, and `--watch`, gated by `flags = ["watch"]`.
 pub fn run(name: &str, extra_args: &[String], db: &Db) -> Result<()> {
+    let (cmd, call) = prepare(name, extra_args, db)?;
+    if call.watch {
+        loop {
+            print!("\x1b[2J\x1b[H");
+            // Flush so the clear is visible even if the render errors
+            // before printing anything.
+            let _ = std::io::Write::flush(&mut std::io::stdout());
+            // A watch must be the most resilient surface, not the least
+            // (da-sd25): show errors in place (transient SQLITE_BUSY, a
+            // momentarily-broken view, even a deleted view the user may
+            // recreate) and retry on the next tick rather than dying.
+            match render_once(&cmd, &call, db) {
+                Ok(out) => print!("{out}"),
+                Err(e) => eprintln!("watch '{}': {e:#}", cmd.name),
+            }
+            std::thread::sleep(std::time::Duration::from_secs(2));
+        }
+    }
+    print!("{}", render_once(&cmd, &call, db)?);
+    Ok(())
+}
+
+/// What `datum <name> <extra_args…>` prints, bar `--watch`'s repeats.
+pub fn output(name: &str, extra_args: &[String], db: &Db) -> Result<String> {
+    let (cmd, call) = prepare(name, extra_args, db)?;
+    render_once(&cmd, &call, db)
+}
+
+/// One call's words, read.
+#[derive(Default)]
+struct Call {
+    watch: bool,
+    /// `--sort`: a shown column, `-` first to reverse it.
+    sort: Option<String>,
+    json: bool,
+    /// The arguments, bound as `:key` in the view.
+    params: Map<String, JsonValue>,
+}
+
+impl Call {
+    fn parse(cmd: &InstalledKitCommand, words: &[String]) -> Result<Call> {
+        let mut call = Call::default();
+        let mut data = Vec::new();
+        let mut on = Vec::new();
+        let mut words = words.iter();
+        while let Some(w) = words.next() {
+            let (flag, inline) = match w.split_once('=') {
+                Some((f, v)) if f.starts_with("--") => (f, Some(v.to_string())),
+                _ => (w.as_str(), None),
+            };
+            match flag {
+                "--watch" => call.watch = true,
+                "--sort" | "--show" => {
+                    let v = inline
+                        .or_else(|| words.next().cloned())
+                        .ok_or_else(|| anyhow::anyhow!("{flag} needs a value"))?;
+                    if flag == "--sort" {
+                        call.sort = Some(v);
+                    } else {
+                        call.json = v.parse::<Show>().map_err(anyhow::Error::msg)? == Show::Json;
+                    }
+                }
+                _ if inline.is_none()
+                    && cmd
+                        .switches
+                        .iter()
+                        .any(|s| flag.strip_prefix("--") == Some(s)) =>
+                {
+                    on.push(&flag[2..]);
+                }
+                // A dash word that is no number is a flag this command lacks.
+                _ if w.starts_with('-') && w.parse::<f64>().is_err() => {
+                    anyhow::bail!("kit command '{}': unknown flag {w}", cmd.name)
+                }
+                _ => data.push(w.clone()),
+            }
+        }
+        let args = DataArgs {
+            data,
+            keys: cmd.args.clone(),
+            ..Default::default()
+        };
+        call.params =
+            handle_data_args(&args).with_context(|| format!("kit command '{}'", cmd.name))?;
+        let names: Vec<&str> = cmd.args.iter().map(|a| parse_key_decl(a).0).collect();
+        if let Some(k) = call.params.keys().find(|k| !names.contains(&k.as_str())) {
+            anyhow::bail!(
+                "kit command '{}' takes no argument '{k}' (it takes: {})",
+                cmd.name,
+                names.join(", ")
+            );
+        }
+        for s in &cmd.switches {
+            call.params
+                .insert(s.clone(), i64::from(on.contains(&s.as_str())).into());
+        }
+        Ok(call)
+    }
+}
+
+fn prepare(name: &str, extra_args: &[String], db: &Db) -> Result<(InstalledKitCommand, Call)> {
     let cmd = db
         .get_kit_command(name)
         .with_context(|| format!("look up kit command '{name}'"))?
@@ -45,40 +156,21 @@ pub fn run(name: &str, extra_args: &[String], db: &Db) -> Result<()> {
         );
     }
 
-    let view_name = cmd.view_name.as_deref().ok_or_else(|| {
-        anyhow::anyhow!("kit command '{}' has neither expands_to nor view", cmd.name)
-    })?;
-
-    let watch_flag_allowed = cmd.flags.iter().any(|f| f == "watch");
-    let want_watch = extra_args.iter().any(|a| a == "--watch");
-    if want_watch && !watch_flag_allowed {
+    if cmd.view_name.is_none() {
+        anyhow::bail!("kit command '{}' has neither expands_to nor view", cmd.name);
+    }
+    let call = Call::parse(&cmd, extra_args)?;
+    if call.watch && !cmd.flags.iter().any(|f| f == "watch") {
         anyhow::bail!(
             "kit command '{}': --watch is not enabled (declare flags = [\"watch\"])",
             cmd.name
         );
     }
-
-    if want_watch {
-        loop {
-            print!("\x1b[2J\x1b[H");
-            // Flush so the clear is visible even if the render errors
-            // before printing anything.
-            let _ = std::io::Write::flush(&mut std::io::stdout());
-            // A watch must be the most resilient surface, not the least
-            // (da-sd25): show errors in place (transient SQLITE_BUSY, a
-            // momentarily-broken view, even a deleted view the user may
-            // recreate) and retry on the next tick rather than dying.
-            if let Err(e) = render_once(&cmd, view_name, db) {
-                eprintln!("watch '{}': {e:#}", cmd.name);
-            }
-            std::thread::sleep(std::time::Duration::from_secs(2));
-        }
-    } else {
-        render_once(&cmd, view_name, db)
-    }
+    Ok((cmd, call))
 }
 
-fn render_once(cmd: &InstalledKitCommand, view_name: &str, db: &Db) -> Result<()> {
+fn render_once(cmd: &InstalledKitCommand, call: &Call, db: &Db) -> Result<String> {
+    let view_name = cmd.view_name.as_deref().unwrap_or_default();
     let view_row = db
         .get_view(view_name)
         .with_context(|| format!("look up view '{view_name}'"))?
@@ -89,24 +181,55 @@ fn render_once(cmd: &InstalledKitCommand, view_name: &str, db: &Db) -> Result<()
             )
         })?;
     let result = db
-        .run_view(&view_row)
+        .run_view(&view_row, &call.params)
         .with_context(|| format!("execute view '{view_name}'"))?;
     let tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
-    print!("{}", render(cmd, result, tty)?);
-    Ok(())
+    render(cmd, call, result, tty)
 }
 
 /// Sort and colour read the FULL view row; `columns` decides only what is
 /// shown (da-ggzv1). A sort column or rule identifier the view lacks is
-/// refused, naming it, rather than silently ignored.
-fn render(cmd: &InstalledKitCommand, mut view: ViewResult, color: bool) -> Result<String> {
+/// refused, naming it, rather than silently ignored. The caller's `--sort`
+/// is one of the SHOWN columns, and overrides the kit's.
+fn render(
+    cmd: &InstalledKitCommand,
+    call: &Call,
+    mut view: ViewResult,
+    color: bool,
+) -> Result<String> {
     let rules = parse_rules(&cmd.color_rules)?;
     for id in rules.iter().flat_map(|r| r.when.idents()) {
         col_index(&cmd.name, &view.columns, id, "a color rule")?;
     }
-    if let Some(col) = cmd.sort_col.as_deref() {
+    let sort = match call.sort.as_deref() {
+        Some(s) => {
+            let (col, desc) = s.strip_prefix('-').map_or((s, false), |c| (c, true));
+            let shown = if cmd.columns.is_empty() {
+                &view.columns
+            } else {
+                &cmd.columns
+            };
+            if !shown.iter().any(|c| c == col) {
+                anyhow::bail!(
+                    "kit command '{}': --sort takes a shown column ({}), not '{col}'",
+                    cmd.name,
+                    shown.join(", ")
+                );
+            }
+            Some((col, desc))
+        }
+        None => cmd.sort_col.as_deref().map(|c| (c, false)),
+    };
+    if let Some((col, desc)) = sort {
         let idx = col_index(&cmd.name, &view.columns, col, "sort")?;
-        view.rows.sort_by(|a, b| compare_cells(&a[idx], &b[idx]));
+        view.rows.sort_by(|a, b| {
+            let o = compare_cells(&a[idx], &b[idx]);
+            if desc {
+                o.reverse()
+            } else {
+                o
+            }
+        });
     }
     let now = Utc::now();
     let colors: Vec<Option<&str>> = view
@@ -119,6 +242,16 @@ fn render(cmd: &InstalledKitCommand, mut view: ViewResult, color: bool) -> Resul
         })
         .collect();
     let projected = project(&cmd.name, &view, &cmd.columns)?;
+    // JSON is the shown rows, unformatted, keyed by column — `[]` for none:
+    // `empty` is words for a person.
+    if call.json {
+        let rows: Vec<Map<String, JsonValue>> = projected
+            .rows
+            .into_iter()
+            .map(|row| projected.columns.iter().cloned().zip(row).collect())
+            .collect();
+        return Ok(format!("{}\n", serde_json::to_string(&rows)?));
+    }
     // A view with no rows prints the command's `empty` text, if it has
     // one, instead of an empty table (da-x3369) — after every column the
     // command names has been checked, so a typo still shows.
@@ -380,6 +513,8 @@ mod tests {
                 })
                 .collect(),
             empty: None,
+            args: vec![],
+            switches: vec![],
             script_text: None,
         }
     }
@@ -412,7 +547,13 @@ mod tests {
 
     #[test]
     fn sort_by_column_orders_rows() {
-        let out = render(&mk_cmd(&[], Some("n"), &[]), mk_view(), false).unwrap();
+        let out = render(
+            &mk_cmd(&[], Some("n"), &[]),
+            &Call::default(),
+            mk_view(),
+            false,
+        )
+        .unwrap();
         assert!(
             out.find("mood").unwrap() < out.find("coffee").unwrap(),
             "{out}"
@@ -421,7 +562,13 @@ mod tests {
 
     #[test]
     fn sort_on_hidden_column_orders_rows() {
-        let out = render(&mk_cmd(&["field"], Some("n"), &[]), mk_view(), false).unwrap();
+        let out = render(
+            &mk_cmd(&["field"], Some("n"), &[]),
+            &Call::default(),
+            mk_view(),
+            false,
+        )
+        .unwrap();
         assert!(!out.contains('7'), "n stays hidden: {out}");
         assert!(
             out.find("mood").unwrap() < out.find("coffee").unwrap(),
@@ -432,7 +579,7 @@ mod tests {
     #[test]
     fn rule_on_hidden_column_paints_its_row() {
         let cmd = mk_cmd(&["field"], None, &[("extra = 'b'", "red")]);
-        let out = render(&cmd, mk_view(), true).unwrap();
+        let out = render(&cmd, &Call::default(), mk_view(), true).unwrap();
         let lines: Vec<&str> = out.lines().collect();
         assert_eq!(lines[2], "coffee", "{out}");
         assert_eq!(lines[3], "\x1b[31mmood  \x1b[0m", "{out}");
@@ -441,12 +588,18 @@ mod tests {
     #[test]
     fn a_name_the_view_lacks_is_refused() {
         let cmd = mk_cmd(&["field"], None, &[("n > 1 && bogus = 1", "red")]);
-        let err = render(&cmd, mk_view(), false).unwrap_err();
+        let err = render(&cmd, &Call::default(), mk_view(), false).unwrap_err();
         assert_eq!(
             err.to_string(),
             "kit command 'k': its view has no column 'bogus' (named by a color rule)"
         );
-        let err = render(&mk_cmd(&["field"], Some("nope"), &[]), mk_view(), false).unwrap_err();
+        let err = render(
+            &mk_cmd(&["field"], Some("nope"), &[]),
+            &Call::default(),
+            mk_view(),
+            false,
+        )
+        .unwrap_err();
         assert_eq!(
             err.to_string(),
             "kit command 'k': its view has no column 'nope' (named by sort)"
@@ -461,18 +614,21 @@ mod tests {
             rows: vec![],
         };
         let mut cmd = mk_cmd(&["field"], None, &[]);
-        let bare = render(&cmd, none.clone(), false).unwrap();
+        let bare = render(&cmd, &Call::default(), none.clone(), false).unwrap();
         assert_eq!(bare, "field\n-----\n(0 rows)\n");
         cmd.empty = Some("COMPLETED!".into());
-        assert_eq!(render(&cmd, none.clone(), false).unwrap(), "COMPLETED!\n");
-        let full = render(&cmd, mk_view(), false).unwrap();
+        assert_eq!(
+            render(&cmd, &Call::default(), none.clone(), false).unwrap(),
+            "COMPLETED!\n"
+        );
+        let full = render(&cmd, &Call::default(), mk_view(), false).unwrap();
         assert!(
             full.contains("coffee") && !full.contains("COMPLETED"),
             "{full}"
         );
         // A column the view lacks is still refused when it is empty.
         cmd.columns = vec!["bogus".into()];
-        assert!(render(&cmd, none, false).is_err());
+        assert!(render(&cmd, &Call::default(), none, false).is_err());
     }
 
     #[test]

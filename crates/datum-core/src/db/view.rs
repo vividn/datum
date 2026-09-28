@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use rusqlite::functions::FunctionFlags;
 use rusqlite::types::ValueRef;
-use serde_json::{Number, Value as JsonValue};
+use serde_json::{Map, Number, Value as JsonValue};
 
 use crate::error::{DatumError, Result};
 use crate::kit::ViewEntry;
@@ -186,12 +186,20 @@ impl Db {
     /// Run an installed view, every view it `uses` inlined ahead of its SQL
     /// as a CTE (da-3mzyu) — still one SELECT, so [`Db::execute_view`]'s
     /// fence holds. Every runner of a named view comes through here.
-    pub fn run_view(&self, view: &InstalledView) -> Result<ViewResult> {
+    ///
+    /// `params` are bound as SQLite named parameters (`:key`), never spliced
+    /// into the text (da-7ramf): one the SQL does not name is ignored, and a
+    /// parameter it names that `params` lacks is NULL.
+    pub fn run_view(
+        &self,
+        view: &InstalledView,
+        params: &Map<String, JsonValue>,
+    ) -> Result<ViewResult> {
         let lookup = |n: &str| Ok(self.get_view(n)?.map(|v| (v.sql_text, v.uses)));
         let sql = inline_uses(&view.name, &view.sql_text, &view.uses, &lookup, &|n| {
             self.is_table(n)
         })?;
-        self.execute_view(&sql)
+        self.execute_view_with_budget(&sql, params, VIEW_TIME_BUDGET)
     }
 
     /// Whether `name` is a table or SQLite view a CTE of that name would
@@ -228,13 +236,18 @@ impl Db {
     /// swallowed — a wedged read-only connection would otherwise make
     /// every later `datum <log>` fail far from the cause.
     pub fn execute_view(&self, sql: &str) -> Result<ViewResult> {
-        self.execute_view_with_budget(sql, VIEW_TIME_BUDGET)
+        self.execute_view_with_budget(sql, &Map::new(), VIEW_TIME_BUDGET)
     }
 
     /// [`Db::execute_view`] with an explicit time budget, split out so
     /// tests can exercise the interrupt path without waiting out the
     /// production budget.
-    fn execute_view_with_budget(&self, sql: &str, budget: Duration) -> Result<ViewResult> {
+    fn execute_view_with_budget(
+        &self,
+        sql: &str,
+        params: &Map<String, JsonValue>,
+        budget: Duration,
+    ) -> Result<ViewResult> {
         // Empty / whitespace-only queries would prepare into a no-op
         // statement that returns no columns; reject explicitly so the
         // caller can give the user a clear error.
@@ -267,7 +280,7 @@ impl Db {
                 }),
             );
         }
-        let result = run_view_query(&self.conn, sql);
+        let result = run_view_query(&self.conn, sql, params);
         // Remove the handler so the shared connection's normal work (the
         // logging hot path) doesn't keep paying the per-callback cost.
         self.conn.progress_handler(0, None::<fn() -> bool>);
@@ -416,7 +429,11 @@ fn installed_view(data: JsonValue) -> Result<InstalledView> {
 
 /// The actual prepare + iterate. Split out so the caller can wrap the
 /// PRAGMA toggle around it.
-fn run_view_query(conn: &rusqlite::Connection, sql: &str) -> Result<ViewResult> {
+fn run_view_query(
+    conn: &rusqlite::Connection,
+    sql: &str,
+    params: &Map<String, JsonValue>,
+) -> Result<ViewResult> {
     // rusqlite's plain `prepare` silently keeps any trailing statements
     // (`SELECT 1; DELETE …` prepares the SELECT and drops the rest), so
     // go through `Batch`, which exposes sqlite's own tail parsing, and
@@ -441,7 +458,12 @@ fn run_view_query(conn: &rusqlite::Connection, sql: &str) -> Result<ViewResult> 
     let col_count = columns.len();
     let mut out_rows: Vec<Vec<JsonValue>> = Vec::new();
 
-    let mut rows = stmt.query([]).map_err(DatumError::Db)?;
+    for (name, value) in params {
+        if let Some(i) = stmt.parameter_index(&format!(":{name}"))? {
+            stmt.raw_bind_parameter(i, json_to_sql(value))?;
+        }
+    }
+    let mut rows = stmt.raw_query();
     while let Some(row) = rows.next().map_err(DatumError::Db)? {
         let mut cells: Vec<JsonValue> = Vec::with_capacity(col_count);
         for i in 0..col_count {
@@ -455,6 +477,22 @@ fn run_view_query(conn: &rusqlite::Connection, sql: &str) -> Result<ViewResult> 
         columns,
         rows: out_rows,
     })
+}
+
+/// A bound argument as SQLite holds it: a boolean is 0 or 1, as SQLite's
+/// own `true`/`false` are, and an array or object its JSON text.
+fn json_to_sql(v: &JsonValue) -> rusqlite::types::Value {
+    use rusqlite::types::Value;
+    match v {
+        JsonValue::Null => Value::Null,
+        JsonValue::Bool(b) => Value::Integer(i64::from(*b)),
+        JsonValue::Number(n) => match n.as_i64() {
+            Some(i) => Value::Integer(i),
+            None => Value::Real(n.as_f64().unwrap_or(f64::NAN)),
+        },
+        JsonValue::String(s) => Value::Text(s.clone()),
+        other => Value::Text(other.to_string()),
+    }
 }
 
 fn value_ref_to_json(v: ValueRef<'_>) -> JsonValue {
@@ -657,6 +695,7 @@ mod tests {
             .execute_view_with_budget(
                 "WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM r) \
                  SELECT n FROM r",
+                &Map::new(),
                 Duration::from_millis(20),
             )
             .unwrap_err()
@@ -678,7 +717,11 @@ mod tests {
         // be misreported as a timeout.
         let db = db();
         let err = db
-            .execute_view_with_budget("SELECT no_such_column FROM entries", VIEW_TIME_BUDGET)
+            .execute_view_with_budget(
+                "SELECT no_such_column FROM entries",
+                &Map::new(),
+                VIEW_TIME_BUDGET,
+            )
             .unwrap_err()
             .to_string();
         assert!(!err.contains("execution budget"), "unexpected error: {err}");
@@ -693,7 +736,7 @@ mod tests {
     }
 
     fn run(db: &Db, name: &str) -> Result<ViewResult> {
-        db.run_view(&db.get_view(name).unwrap().unwrap())
+        db.run_view(&db.get_view(name).unwrap().unwrap(), &Map::new())
     }
 
     fn ints(r: &ViewResult) -> Vec<i64> {

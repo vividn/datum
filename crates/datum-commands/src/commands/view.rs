@@ -71,7 +71,7 @@ fn render_once(args: &ViewArgs, db: &Db) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("no view named '{}'", args.name))?;
 
     let result = db
-        .run_view(&row)
+        .run_view(&row, &Default::default())
         .with_context(|| format!("execute view '{}'", args.name))?;
 
     let format = resolve_format(args.format);

@@ -60,6 +60,7 @@ mod import_progress;
 mod info_setup_cmd;
 mod inline_alias;
 mod integrity_cmd;
+mod kit_command_args;
 mod kit_install;
 mod kit_layouts;
 mod last_state_and_moment;

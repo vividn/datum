@@ -55,7 +55,18 @@ fn index_exists(db: &Db, on_disk_name: &str) -> bool {
 
 fn view(db: &Db, name: &str) -> ViewResult {
     let view = db.get_view(name).unwrap().expect("view installed");
-    db.run_view(&view).unwrap()
+    db.run_view(&view, &Default::default()).unwrap()
+}
+
+/// The chores `chorelist <args…>` lists, in order.
+fn chorelist(db: &Db, args: &[&str]) -> Vec<String> {
+    let mut argv: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    argv.extend(["--show".into(), "json".into()]);
+    let out = datum_commands::commands::kit_command::output("chorelist", &argv, db).unwrap();
+    let rows: Vec<JsonValue> = serde_json::from_str(&out).unwrap();
+    rows.iter()
+        .map(|r| r["field"].as_str().unwrap().to_string())
+        .collect()
 }
 
 /// `field`'s cell in column `col`.
@@ -98,9 +109,13 @@ fn the_kit_ships_its_index_views_and_commands() {
         assert!(cmd.columns.iter().any(|c| c == "status"), "{}", cmd.name);
     }
     let cmds: Vec<_> = kit.commands.iter().map(|c| c.name.as_str()).collect();
-    assert_eq!(cmds, ["chorelist", "chorelist-all"]);
-    let empty: Vec<_> = kit.commands.iter().map(|c| c.empty.as_deref()).collect();
-    assert_eq!(empty, [Some("🧹😄 COMPLETED! GOOD WORK! 😄🪣"), None]);
+    assert_eq!(cmds, ["chorelist"], "one chorelist, as v2 had (da-7ramf)");
+    assert_eq!(kit.commands[0].args, ["field="]);
+    assert_eq!(kit.commands[0].switches, ["all"]);
+    assert_eq!(
+        kit.commands[0].empty.as_deref(),
+        Some("🧹😄 COMPLETED! GOOD WORK! 😄🪣")
+    );
 }
 
 #[test]
@@ -123,7 +138,7 @@ fn install_creates_the_index_and_uninstall_drops_everything() {
     run(&db, &["kit", "uninstall", "chores"]);
     assert!(!index_exists(&db, "kit_chores__chore_rows"));
     assert!(db.get_view("chores").unwrap().is_none());
-    assert!(db.get_kit_command("chorelist-all").unwrap().is_none());
+    assert!(db.get_kit_command("chorelist").unwrap().is_none());
     assert!(db.list_kits().unwrap().is_empty());
 }
 
@@ -256,6 +271,24 @@ fn status_follows_v2s_colours_and_chores_due_filters() {
 
     let due = fields(&view(&db, "chores_due"));
     assert_eq!(due, ["dishes", "bins", "mop", "vacuum"], "sorted by iti");
+
+    // v2's forms, through the one command (da-7ramf).
+    assert_eq!(chorelist(&db, &[]), due);
+    assert_eq!(chorelist(&db, &["vacuum"]), ["vacuum"]);
+    assert_eq!(chorelist(&db, &["field=bins"]), ["bins"]);
+    assert!(chorelist(&db, &["windows"]).is_empty(), "not due");
+    assert_eq!(chorelist(&db, &["windows", "--all"]), ["windows"]);
+    assert_eq!(chorelist(&db, &["--all"]).len(), 5, "every chore");
+    assert_eq!(
+        chorelist(&db, &["--all", "--sort", "due"]),
+        ["dishes", "bins", "mop", "vacuum", "windows"]
+    );
+    // dishes and bins are both due two days ago: a tie keeps the view's
+    // order, most frequent first, either way round.
+    assert_eq!(
+        chorelist(&db, &["--all", "--sort", "-due"]),
+        ["windows", "vacuum", "mop", "dishes", "bins"]
+    );
 }
 
 /// v2import keeps v2's spellings: `nextDate`, and `nextTime` as a
@@ -298,12 +331,16 @@ fn entries_without_a_next_due_key_are_not_chores() {
 }
 
 #[test]
-fn both_commands_render() {
+fn chorelist_renders_its_table_and_its_empty_words() {
     let db = fresh_db();
     install_chores(&db);
-    run(&db, &["occur", "laundry", "next_date=+7"]);
-    datum_commands::commands::kit_command::run("chorelist", &[], &db).unwrap();
-    datum_commands::commands::kit_command::run("chorelist-all", &[], &db).unwrap();
+    run(&db, &["occur", "laundry", "-d", "-1", "next_date=+7"]);
+    let out = |args: &[&str]| {
+        let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        datum_commands::commands::kit_command::output("chorelist", &args, &db).unwrap()
+    };
+    assert_eq!(out(&[]), "🧹😄 COMPLETED! GOOD WORK! 😄🪣\n");
+    assert!(out(&["--all"]).contains("laundry"));
 }
 
 /// A row that lost a sync merge (`superseded_by` set) is not live: it moves

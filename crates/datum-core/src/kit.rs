@@ -312,6 +312,13 @@ impl AliasEntry {
 /// - `color_rules`: list of `{ when, color }` painters; first match wins.
 /// - `empty`: text printed instead of the table when the view returns no
 ///   rows (da-x3369).
+/// - `args`: the arguments the command takes, in #263's key kinds — `key`
+///   (required), `key=` (optional), `key=default` — filled at the call
+///   site as an alias's slots are, and bound into the view's SQL as the
+///   named parameters `:key` (da-7ramf).
+/// - `switches`: its on/off arguments, each a flag `--name` that binds
+///   `:name` to 1 when given and 0 when not (vividn, 09-28: «all=true seems
+///   kind of bizarre»).
 ///
 /// Level 3 (forward-compat):
 /// - `script`: reserved; the renderer errors with "scripted commands not
@@ -339,6 +346,10 @@ pub struct CommandEntry {
     pub color_rules: Vec<ColorRuleEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub empty: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub switches: Vec<String>,
     /// Level 3 placeholder. Round-trips but install rejects it with
     /// "scripted commands not yet supported (Level 3 deferred)".
     #[serde(default)]
