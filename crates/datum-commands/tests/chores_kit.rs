@@ -111,6 +111,8 @@ fn the_kit_ships_its_index_views_and_commands() {
     let cmds: Vec<_> = kit.commands.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(cmds, ["chorelist"], "one chorelist, as v2 had (da-7ramf)");
     assert_eq!(kit.commands[0].args, ["field="]);
+    let aliases: Vec<_> = kit.aliases.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(aliases, ["newchore"]);
     assert_eq!(kit.commands[0].switches, ["all"]);
     assert_eq!(
         kit.commands[0].empty.as_deref(),
@@ -208,10 +210,11 @@ fn a_shirk_moves_due_but_not_last_occur() {
     assert_eq!(cell(&all, "sweep", "is_due"), 0);
 }
 
-/// v2's inter-time interval: a date's days plus the fraction of the day it
-/// was done at, in the entry's own local day (18:00 is three quarters of it).
+/// An unspecced chore's interval is v2's, from its latest occurrence: a
+/// date's whole days, whatever hour it was done at (vividn, 09-28: the
+/// partial sort went).
 #[test]
-fn iti_counts_days_plus_the_hour_it_was_done() {
+fn iti_counts_whole_days_whatever_the_hour() {
     let db = fresh_db();
     install_chores(&db);
     run(
@@ -229,7 +232,7 @@ fn iti_counts_days_plus_the_hour_it_was_done() {
     let iti = cell(&view(&db, "chores"), "dishes", "iti")
         .as_f64()
         .unwrap();
-    assert!((iti - 1.75).abs() < 1e-6, "{iti}");
+    assert_eq!(iti, 1.0);
 }
 
 /// The four states `chorelist` colours, all against the moment the test
@@ -448,4 +451,82 @@ fn a_typed_null_next_date_retires_the_chore() {
     assert_eq!(fields(&view(&db, "chores")), ["dishes", "vacuum"]);
     run(&db, &["occur", "vacuum", "next_date=null"]);
     assert_eq!(fields(&view(&db, "chores")), ["dishes"]);
+}
+
+/// A chore that declares its interval (`next_date=+10` in its spec) takes
+/// ITI from the spec, not from how far apart its history happens to be.
+#[test]
+fn a_declared_interval_is_the_iti() {
+    let db = fresh_db();
+    install_chores(&db);
+    run(
+        &db,
+        &["track", "gutters", "--verb", "occur", "-k", "next_date=+10"],
+    );
+    run(
+        &db,
+        &[
+            "occur",
+            "gutters",
+            "-d",
+            "2020-01-01",
+            "next_date=2020-01-04",
+        ],
+    );
+    assert_eq!(cell(&view(&db, "chores"), "gutters", "iti"), 10.0);
+}
+
+/// An unspecced chore keeps its history's interval, beside a specced one.
+#[test]
+fn an_unspecced_chore_keeps_its_history_iti() {
+    let db = fresh_db();
+    install_chores(&db);
+    run(
+        &db,
+        &["track", "mop", "--verb", "occur", "-k", "next_date=+9"],
+    );
+    run(
+        &db,
+        &["occur", "oven", "-d", "2020-01-01", "next_date=2020-01-04"],
+    );
+    assert_eq!(cell(&view(&db, "chores"), "oven", "iti"), 3.0);
+}
+
+/// Equal intervals list alphabetically, whatever hour each was done at:
+/// the old fraction-of-the-day sort would put windows (08:00) first.
+#[test]
+fn equal_itis_sort_by_name() {
+    let db = fresh_db();
+    install_chores(&db);
+    for (chore, hour) in [("windows", "08:00"), ("dishes", "12:00"), ("bins", "20:00")] {
+        run(
+            &db,
+            &[
+                "occur",
+                chore,
+                "-d",
+                "2020-01-01",
+                "-t",
+                hour,
+                "next_date=+7",
+            ],
+        );
+    }
+    assert_eq!(fields(&view(&db, "chores")), ["bins", "dishes", "windows"]);
+}
+
+/// `newchore x 5` declares the chore: a bare `x` then logs it due five days
+/// on (from the day it was done), and `chorelist` shows ITI 5.
+#[test]
+fn newchore_declares_the_interval() {
+    let db = fresh_db();
+    install_chores(&db);
+    run(&db, &["newchore", "x", "5"]);
+    run(&db, &["x", "-d", "2020-01-01"]);
+    assert_eq!(cell(&view(&db, "chores"), "x", "due"), "2020-01-06");
+
+    let argv = ["--all", "--show", "json"].map(String::from);
+    let out = datum_commands::commands::kit_command::output("chorelist", &argv, &db).unwrap();
+    let rows: Vec<JsonValue> = serde_json::from_str(&out).unwrap();
+    assert_eq!(rows[0]["iti_days"], 5);
 }

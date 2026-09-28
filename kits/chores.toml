@@ -1,7 +1,7 @@
 [kit]
 name = "chores"
-version = "0.4"
-description = "Chores as datum v2 kept them: a chore is any entry whose data says when it is next due (next_date / next_time, or v2's nextDate / nextTime). Log it done with `datum occur <chore> next_date=+7`; shirk it — move the date without claiming it — with `-T`. `datum chorelist` shows what is due or was done today, `datum chorelist <chore>` one chore, and `datum chorelist --all` every chore; `--sort due` (or `-due`) sorts by a shown column."
+version = "0.5"
+description = "Chores as datum v2 kept them: a chore is any entry whose data says when it is next due (next_date / next_time, or v2's nextDate / nextTime). Log it done with `datum occur <chore> next_date=+7`; shirk it — move the date without claiming it — with `-T`. `datum newchore vacuum 4` declares a chore done every 4 days, so every `datum vacuum` then logs it due four days on; a first due date other than that is a shirk, `datum occur vacuum -T next_date=<date>`. `datum chorelist` shows what is due or was done today, `datum chorelist <chore>` one chore, and `datum chorelist --all` every chore; `--sort due` (or `-due`) sorts by a shown column."
 
 # Every chore query scans only the entries that say when they are next due.
 # This partial index's WHERE is exactly the chore CTE's, so SQLite can use it:
@@ -19,10 +19,12 @@ where = "deleted_at IS NULL AND superseded_by IS NULL AND (json_type(data, '$.ne
 #                  A JSON null next (v2's cleared nextDate, as v2import
 #                  keeps it, or `next_date=null`) hides the chore.
 #   · last_occur — the latest occurrence; a shirk never counts as done.
-#   · iti        — v2's inter-time interval in days, from the latest
-#                  occurrence: a date's days plus the fraction of the local
-#                  day it was done at (later in the day sorts after), or a
-#                  datetime's exact days.
+#   · iti        — the interval in days: the chore's declared one, a
+#                  `next_date=+N` default in its spec (`newchore`), or
+#                  `next_time=+Nh` as N/24. A chore with no spec (v2's)
+#                  takes v2's inter-time interval from its latest
+#                  occurrence: a date's whole days, or a datetime's exact
+#                  days. Equal intervals sort by name.
 #   · status     — done (today) · overdue (by more than its iti) · late (by
 #                  more than half) · due · '' — v2's colours as a column,
 #                  because a command's colour rules and sort see only the
@@ -49,6 +51,19 @@ WITH chore AS (
       OR json_type(data, '$.next_date') IS NOT NULL
       OR json_type(data, '$.nextDate') IS NOT NULL)
 ),
+spec AS (
+  SELECT json_extract(s.data, '$.field')                         AS field,
+         MIN(CASE
+           WHEN k.value GLOB 'next_date=+*' OR k.value GLOB 'nextDate=+*'
+             THEN CAST(substr(k.value, instr(k.value, '=+') + 2) AS REAL)
+           WHEN k.value GLOB 'next_time=+*h' OR k.value GLOB 'nextTime=+*h'
+             THEN CAST(substr(k.value, instr(k.value, '=+') + 2) AS REAL) / 24
+         END)                                                    AS iti
+  FROM entries s, json_each(s.data, '$.data_keys') k
+  WHERE s.field = 'spec' AND s.deleted_at IS NULL AND s.superseded_by IS NULL
+    AND s.slug = 'spec:' || json_extract(s.data, '$.field')
+  GROUP BY 1
+),
 latest AS (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY field ORDER BY t DESC) AS rn
   FROM chore
@@ -62,18 +77,17 @@ row AS (
          l.next                                                    AS due,
          l.full_day                                                AS full_day,
          o.occur_time                                              AS last_occur,
-         CASE
+         COALESCE(sp.iti, CASE
            WHEN o.next IS NULL THEN NULL
            WHEN o.full_day = 1 THEN
              julianday(o.next) - julianday(local_day(o.occur_time, o.occur_time_offset))
-             + (julianday(datetime(o.occur_time, printf('%+d minutes', COALESCE(o.occur_time_offset, 0))))
-                - julianday(date(datetime(o.occur_time, printf('%+d minutes', COALESCE(o.occur_time_offset, 0))))))
            ELSE julianday(o.next) - julianday(o.occur_time)
-         END                                                       AS iti,
+         END)                                                      AS iti,
          CASE WHEN o.occur_time IS NOT NULL
                AND local_day(o.occur_time, o.occur_time_offset) = date('now', 'localtime')
               THEN 1 ELSE 0 END                                    AS done_today
   FROM latest l LEFT JOIN occ o ON o.field = l.field AND o.rn = 1
+                 LEFT JOIN spec sp ON sp.field = l.field
   WHERE l.rn = 1 AND l.next IS NOT NULL
 )
 SELECT field, due, last_occur, iti,
@@ -93,7 +107,7 @@ FROM (
               AS INTEGER)                                      AS days_overdue
   FROM row
 )
-ORDER BY iti IS NULL, iti
+ORDER BY iti IS NULL, iti, field
 """
 
 # What `chorelist` shows, as v2's did without `--show all`: what is due,
@@ -108,11 +122,11 @@ sql = """
 SELECT * FROM chores
 WHERE (:field IS NULL OR field = :field)
   AND (:all OR is_due = 1 OR done_today = 1)
-ORDER BY iti IS NULL, iti
+ORDER BY iti IS NULL, iti, field
 """
 
 # `datum chorelist` is v2's table: most frequent chores first (the views sort
-# by iti), done today in green, overdue by more than its iti in red, by more
+# by iti, then name), done today in green, overdue by more than its iti in red, by more
 # than half of it in yellow. v2's forms: `chorelist`, `chorelist vacuum`,
 # and `chorelist --all --sort due` for `chorelist due --show all`.
 [[command]]
@@ -139,3 +153,11 @@ color = "red"
 [[command.color_rules]]
 when = "status = 'late'"
 color = "yellow"
+
+# `datum newchore vacuum 4`: track vacuum as a chore done every 4 days. Its
+# spec's `next_date=+4` default is what every `datum vacuum` logs, and the
+# interval the `chores` view reads.
+[[alias]]
+name = "newchore"
+expands_to = "track $1 --verb occur -k next_date=+$2"
+description = "track a new chore: newchore NAME DAYS"
