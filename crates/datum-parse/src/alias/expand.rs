@@ -270,19 +270,29 @@ pub fn try_expand_alias(
         // mood`), so without this the field-first form would expand into
         // `switch mood switch sad` for every field that has ever been
         // logged. The swap below turns it into `switch mood sad`.
+        //
+        // da-y40jf: only a head that IS a field reads field-first — an
+        // alias whose body logs the head itself (`mood` → `switch mood`),
+        // or no alias at all. A state alias (`sad` → `switch mood sad`)
+        // is no field, so `sad why` binds `why` to its slots rather than
+        // turning into `why sad`.
+        let name = argv[name_idx].clone();
+        let alias = resolver.lookup(&name);
         if argv
             .get(name_idx + 1)
             .is_some_and(|t| KNOWN_SUBCOMMANDS.contains(&t.as_str()))
+            && alias
+                .as_ref()
+                .is_none_or(|a| a.tokens.get(1) == Some(&name))
         {
             return Ok((argv, chain));
         }
-        let name = argv[name_idx].clone();
         if visited.iter().any(|v| v == &name) {
             let mut path = visited;
             path.push(name);
             return Err(crate::error::ParseError::AliasCycle(path));
         }
-        match resolver.lookup(&name) {
+        match alias {
             Some(alias) => {
                 let trailing = &argv[name_idx + 1..];
                 let max_n = max_placeholder(&alias.tokens);

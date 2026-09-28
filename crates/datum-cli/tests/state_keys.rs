@@ -322,3 +322,32 @@ fn reparse_replays_the_state_keys_the_line_bound() {
         assert_eq!(after.parser_version, logged.parser_version, "{head:?}");
     }
 }
+
+/// A state alias is no field, so a subcommand's name after it is a value
+/// for its slots, not the field-first form: `sad why -t -1` read as
+/// `why sad -t -1` and was refused with «unexpected flag: -t» (da-y40jf).
+#[test]
+fn a_subcommand_word_after_a_state_alias_is_a_value() {
+    for word in ["why", "tail", "check"] {
+        for head in HEADS {
+            let db = fresh_db();
+            run_cli(
+                &[
+                    "spec",
+                    "set",
+                    "mood",
+                    "--verb",
+                    "switch",
+                    "--state",
+                    "sad",
+                    "--state-key",
+                    "sad=reason",
+                ],
+                &db,
+            )
+            .unwrap();
+            run_cli(&[head, &["sad", word, "-t", "-1"]].concat(), &db).unwrap();
+            assert_eq!(logged(&db), json!({"reason": word}), "{head:?} {word}");
+        }
+    }
+}
