@@ -129,12 +129,182 @@ fn a_bad_output_flag_is_refused() {
     assert!(stderr.contains("--show format requires -o"), "{stderr}");
 }
 
-/// Only the first `::` splits, so a data key holding one stays reachable.
+/// da-pimix: `::` after a name is a hop, so a data key holding one is no
+/// longer read whole — the first piece is the name.
 #[test]
-fn a_name_may_contain_double_colon() {
+fn a_further_double_colon_is_a_hop_not_part_of_a_key() {
     let env = Env::new();
-    env.ok(&["occur", "coffee", "a::b=1"]);
-    assert_eq!(env.ok(&["get", "_::a::b"]), "1\n");
+    env.ok(&["occur", "coffee", "a::b=1", "a=2"]);
+    let stderr = env.err(&["get", "_::a::b"]);
+    assert!(
+        stderr.contains("_::a is 2, which refers to nothing"),
+        "{stderr}"
+    );
+}
+
+/// An `issue` spec whose bare states refer through `issue_state`, one
+/// document `issue_state:queued` and an issue in it; return the issue's hid.
+fn tracker() -> (Env, String) {
+    let env = Env::new();
+    env.ok(&[
+        "spec",
+        "set",
+        "issue",
+        "--verb",
+        "switch",
+        "--state-lookup-field",
+        "issue_state",
+    ]);
+    env.ok(&["add", "issue_state", "id=queued", "class=waiting"]);
+    env.ok(&["switch", "issue", "queued"]);
+    let hid = env.ok(&["get", "issue:_::hid"]).trim_end().to_string();
+    (env, hid)
+}
+
+#[test]
+fn state_hops_into_the_doc_a_bare_state_names_through_the_lookup_field() {
+    let (env, hid) = tracker();
+    let id = &hid[..5];
+    assert_eq!(
+        env.ok(&["get", &format!("{id}::state::class")]),
+        "waiting
+"
+    );
+    // Every name reads by the same order on the far side: a column…
+    assert_eq!(
+        env.ok(&["get", &format!("{id}::state::slug")]),
+        "issue_state:queued
+"
+    );
+    // Control: no further hop prints the state itself, not the doc.
+    assert_eq!(
+        env.ok(&["get", &format!("{id}::state")]),
+        "queued
+"
+    );
+    assert_eq!(
+        env.ok(&["get", &format!("{id}::field")]),
+        "issue
+"
+    );
+}
+
+#[test]
+fn a_full_slug_state_hops_and_hops_chain() {
+    let (env, _) = tracker();
+    env.ok(&["add", "book", "id=dune", "title=Dune"]);
+    env.ok(&["switch", "media", "book:dune"]);
+    // One hop through a `field:id` state, on a field with no lookup field.
+    assert_eq!(
+        env.ok(&["get", "media:_::state::title"]),
+        "Dune
+"
+    );
+    // Two: media → book:dune → the issue, named by its real slug (a state
+    // is a slug; the `issue:_` shorthand is an id, not a reference).
+    let issue = env.ok(&["get", "issue:_::slug"]).trim_end().to_string();
+    env.ok(&["update", "book:dune", &format!("state={issue}")]);
+    assert_eq!(
+        env.ok(&["get", "media:_::state::state::state::class"]),
+        "waiting
+"
+    );
+}
+
+#[test]
+fn a_dangling_reference_names_the_missing_slug() {
+    let (env, hid) = tracker();
+    env.ok(&["switch", "issue", "shipped"]);
+    let stderr = env.err(&["get", "issue:_::state::class"]);
+    assert!(
+        stderr.contains("issue:_::state refers to issue_state:shipped, which does not exist"),
+        "{stderr}"
+    );
+    // Control: the entry that exists still reads.
+    assert_eq!(
+        env.ok(&["get", &format!("{}::state::class", &hid[..5])]),
+        "waiting
+"
+    );
+    // A missing value on the far side is still "has no".
+    let stderr = env.err(&["get", &format!("{}::state::nope", &hid[..5])]);
+    assert!(stderr.contains("::state has no nope"), "{stderr}");
+}
+
+#[test]
+fn a_value_that_refers_to_nothing_refuses_a_further_hop() {
+    let env = Env::new();
+    env.ok(&["switch", "mood", "open", "note=x"]);
+    let stderr = env.err(&["get", "mood:_::state::class"]);
+    assert!(
+        stderr.contains(r#"mood:_::state is "open", which refers to nothing"#),
+        "{stderr}"
+    );
+    // A data value is no state: `book:x` in data is not followed.
+    env.ok(&["occur", "read", "what=book:x"]);
+    let stderr = env.err(&["get", "read:_::what::title"]);
+    assert!(stderr.contains("which refers to nothing"), "{stderr}");
+    // Control: without the hop both read.
+    assert_eq!(
+        env.ok(&["get", "mood:_::state"]),
+        "open
+"
+    );
+    assert_eq!(
+        env.ok(&["get", "mood:_::note"]),
+        "x
+"
+    );
+}
+
+#[test]
+fn an_array_state_asks_for_an_element() {
+    let env = Env::new();
+    env.ok(&["add", "book", "id=a"]);
+    env.ok(&["switch", "media", r#"["book:a","book:a"]"#]);
+    let stderr = env.err(&["get", "media:_::state::slug"]);
+    assert!(stderr.contains("is an array"), "{stderr}");
+    assert!(stderr.contains("get an element's own slug"), "{stderr}");
+}
+
+#[test]
+fn a_cycle_errors_with_the_chain() {
+    let env = Env::new();
+    env.ok(&["add", "a", "id=1", "state=b:1"]);
+    env.ok(&["add", "b", "id=1", "state=a:1"]);
+    // Control: one hop each way reads.
+    assert_eq!(
+        env.ok(&["get", "a:1::state::slug"]),
+        "b:1
+"
+    );
+    let stderr = env.err(&["get", "a:1::state::state::slug"]);
+    assert!(
+        stderr.contains("a:1::state::state loops back to a:1: a:1 → b:1 → a:1"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn a_ninth_hop_errors_with_the_chain() {
+    let env = Env::new();
+    for i in 0..10 {
+        env.ok(&[
+            "add",
+            &format!("n{i}"),
+            "id=x",
+            &format!("state=n{}:x", i + 1),
+        ]);
+    }
+    let path = |hops: usize| format!("n0:x{}::slug", "::state".repeat(hops));
+    // Control: eight hops is the bound, and reads.
+    assert_eq!(env.ok(&["get", &path(8)]), "n8:x\n");
+    let stderr = env.err(&["get", &path(9)]);
+    assert!(stderr.contains("goes past 8 hops"), "{stderr}");
+    assert!(
+        stderr.contains("n0:x → n1:x → n2:x → n3:x → n4:x → n5:x → n6:x → n7:x → n8:x → n9:x"),
+        "{stderr}"
+    );
 }
 
 /// The pair a script must tell apart: absent fails, empty succeeds.
@@ -192,4 +362,8 @@ fn get_help_documents_the_syntax_and_the_precedence() {
     let help = Env::new().ok(&["get", "--help"]);
     assert!(help.contains("<ID_OR_SLUG>::<NAME>"), "{help}");
     assert!(help.contains("always means the column"), "{help}");
+    assert!(
+        help.contains("datum get <ID_OR_SLUG>::state[::state]...::<NAME>"),
+        "{help}"
+    );
 }

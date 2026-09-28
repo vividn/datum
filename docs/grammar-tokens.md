@@ -605,8 +605,11 @@ quietly act on something you logged this morning.
 
 `datum get <id>::<name>` prints one value of the entry alone on stdout: a
 column (`hid`, `state`, …), `.x.y` into the state, anything else into
-`data`. An id cannot contain `::`, so the first one splits and a name may
-hold more. `::name` alone reads the last entry.
+`data`. `::name` alone reads the last entry. A further `::` is a hop:
+`<id>::state::<name>` follows the state to the entry it refers to (a `:`
+state is that slug, a bare one goes through the spec's state lookup field)
+and reads `<name>` there, up to 8 hops. A value that refers to nothing, an
+array, a missing entry or a loop is an error naming it.
 
 ```bash
 datum switch media book

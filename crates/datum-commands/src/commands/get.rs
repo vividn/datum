@@ -95,14 +95,21 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
+/// A chain of `::state` hops stops after this many (da-pimix).
+const MAX_HOPS: usize = 8;
+
 /// da-u7mgc: print `<name>` of the entry `<id>` names, alone on stdout —
-/// a string bare, anything structured as compact JSON. A column name (any
-/// key of the serialized [`datum_core::entry::Entry`]) means the column,
-/// `.x.y` walks the state, and anything else walks `data`. A null or absent
+/// a string bare, anything structured as compact JSON. A null or absent
 /// value is an error, so a script can tell "missing" from an empty string.
 /// An empty `<id>` (`::hid`) is `_LAST`. The pointer is not stamped.
+///
+/// da-pimix: the name splits on `::` into hops. Each hop but the last must
+/// read a state or following state that refers to one entry
+/// ([`state_refs`](datum_core::doc_ref::state_refs)), and the next name is
+/// read from that entry — `x::state::class`. A value that refers to
+/// nothing, an array, a missing entry, a revisit or a ninth hop is an error.
 fn project(piece: &str, db: &Db) -> Result<()> {
-    let (id, name) = piece.split_once("::").ok_or_else(|| {
+    let (id, names) = piece.split_once("::").ok_or_else(|| {
         anyhow::anyhow!("'{piece}' is not <id>::<name>, and a list of values takes no plain id")
     })?;
     let id = if id.is_empty() {
@@ -110,8 +117,61 @@ fn project(piece: &str, db: &Db) -> Result<()> {
     } else {
         id
     };
-    let entry = datum_core::ids::resolve_quickid_single(db, id)?;
-    let mut row = serde_json::to_value(&entry)?;
+    let names: Vec<&str> = names.split("::").collect();
+    let (last, hops) = names.split_last().expect("split yields one piece");
+    let mut entry = datum_core::ids::resolve_quickid_single(db, id)?;
+    let registry = (!hops.is_empty())
+        .then(|| crate::commands::helpers::load_registry_opt(db))
+        .flatten();
+    let mut at = id.to_string();
+    let mut chain = vec![entry.slug.to_string()];
+    let mut seen = vec![entry.hid.clone()];
+    for &name in hops {
+        let value = read(&entry, name, &at)?;
+        at = format!("{at}::{name}");
+        if value.is_array() {
+            anyhow::bail!(
+                "{at} is an array, {value}; :: follows one reference, so get an element's own slug"
+            );
+        }
+        let spec = registry.as_ref().and_then(|r| r.field_spec(&entry.field));
+        let refs = match name {
+            "state" | "following_state" => datum_core::doc_ref::state_refs(spec, &value),
+            _ => vec![],
+        };
+        let [slug] = refs.as_slice() else {
+            anyhow::bail!("{at} is {value}, which refers to nothing");
+        };
+        if chain.len() > MAX_HOPS {
+            anyhow::bail!(
+                "{at} goes past {MAX_HOPS} hops: {} → {slug}",
+                chain.join(" → ")
+            );
+        }
+        entry = match db.get_entry(slug) {
+            Err(datum_core::error::DatumError::NotFound(_)) => {
+                anyhow::bail!("{at} refers to {slug}, which does not exist")
+            }
+            found => found?,
+        };
+        chain.push(entry.slug.to_string());
+        if seen.contains(&entry.hid) {
+            anyhow::bail!("{at} loops back to {slug}: {}", chain.join(" → "));
+        }
+        seen.push(entry.hid.clone());
+    }
+    match read(&entry, last, &at)? {
+        serde_json::Value::String(s) => println!("{s}"),
+        other => println!("{other}"),
+    }
+    Ok(())
+}
+
+/// One value of `entry`: a column name (any key of the serialized
+/// [`datum_core::entry::Entry`]) means the column, `.x.y` walks the state,
+/// and anything else walks `data`. Null or absent is "`at` has no `name`".
+fn read(entry: &datum_core::entry::Entry, name: &str, at: &str) -> Result<serde_json::Value> {
+    let mut row = serde_json::to_value(entry)?;
     row["raw_input"] = serde_json::json!(entry.raw_input);
     if let Some(t) = &entry.occur_time {
         row["occur_time"] = serde_json::json!(t.utc);
@@ -121,18 +181,13 @@ fn project(piece: &str, db: &Db) -> Result<()> {
         None if row.get(name).is_some() => (row.get(name), None),
         None => (entry.data.as_ref(), Some(name)),
     };
-    let value = path
-        .map_or(root, |p| {
-            p.split('.')
-                .try_fold(root?, |v, seg| v.as_object()?.get(seg))
-        })
-        .filter(|v| !v.is_null())
-        .ok_or_else(|| anyhow::anyhow!("{id} has no {name}"))?;
-    match value {
-        serde_json::Value::String(s) => println!("{s}"),
-        other => println!("{other}"),
-    }
-    Ok(())
+    path.map_or(root, |p| {
+        p.split('.')
+            .try_fold(root?, |v, seg| v.as_object()?.get(seg))
+    })
+    .filter(|v| !v.is_null())
+    .cloned()
+    .ok_or_else(|| anyhow::anyhow!("{at} has no {name}"))
 }
 
 /// da-yhh1: load every live entry on `field`, filter by `args.matchers`
