@@ -18,7 +18,10 @@
 	`spec` with a FIELD pill loaded opens the spec modal on that field at
 	once (da-ybai9, vividn: «no need for sub commands or pressing enter. It
 	should just work»): the pill named the subject, so it is spent at the
-	tap, like any command's. Without one, `spec ` goes on the line as ever.
+	TAP — not on success, as a press spends its pills — because the bead
+	asked that it not sit in the bar once the modal is open; a dismissed
+	modal leaves it spent too. There is only ever one field pill
+	(`setFieldPill`). Without one, `spec ` goes on the line as ever.
 
 	`occur`/`start`/`end` under a FIELD pill run it (da-lxqqz); when the
 	field wants keys typed, the tap writes `occur <field> ` instead — never

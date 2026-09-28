@@ -824,8 +824,16 @@ describe('`spec` under the pill', () => {
 			await specButton(page).click();
 			await page.locator(`${MODAL}[aria-label="track a field"]`).waitFor();
 			assert.equal(await page.locator(`${MODAL} input.field`).inputValue(), 'tea');
-			assert.equal(await page.locator(`${MODAL} [role="radio"][aria-checked="true"]`).count(), 0);
+			assert.equal(await page.locator(`${MODAL} [data-verb][aria-checked="true"]`).count(), 0);
 			assert.equal(await fieldPill(page).count(), 0, 'the pill outlived the tap');
+
+			// Dismissed, it runs nothing, and the pill stays spent: it was spent
+			// at the tap, which is the choice (review 3754).
+			await page.locator(`${MODAL} button.close`).click();
+			await page.locator(MODAL).waitFor({ state: 'detached' });
+			await app.idle();
+			assert.equal(await fieldPill(page).count(), 0, 'a dismiss put the pill back');
+			assert.match((await app.run(['spec', 'show', 'tea'])).stdout, /No spec defined/, 'a dismiss declared tea');
 			assert.deepEqual(app.errors, []);
 		});
 	});
