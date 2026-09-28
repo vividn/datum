@@ -197,30 +197,22 @@ fn switch_with_last_state_still_anchors_time() {
 
 /// TS #6: "can do a state of null".
 ///
-/// The literal string `"null"` is stored verbatim on the entry, and
-/// `normalize_state` collapses both `Null` and `"null"` to `Value::Null`.
-/// At query time, the active state is `null`.
+/// A null state is IGNORED, which is what it meant in v2 (da-revva): the
+/// entry stores the sentinel and the active state is IGNORED.
 #[test]
-fn switch_state_null_normalizes_to_null_at_query_time() {
+fn switch_state_null_is_ignored() {
     let db = fresh_db();
 
     run_cli(&["switch", "vacuum", "null"], &db).expect("switch vacuum null");
-    run_cli(&["switch", "luft", "null"], &db).expect("switch luft null");
 
     let vacuum = &datum_core::test_util::logged_entries(&db, "vacuum")[0];
-    let luft = &datum_core::test_util::logged_entries(&db, "luft")[0];
-
-    // Stored form: string "null"; the normalization lives in state compile.
-    assert_entry_matches!(vacuum, verb: "switch", state: "null");
-    assert_entry_matches!(luft, verb: "switch", state: "null");
+    assert_entry_matches!(vacuum, verb: "switch", state: "IGNORED");
 
     let vacuum_ts = vacuum.occur_time.as_ref().unwrap().utc;
-    let luft_ts = luft.occur_time.as_ref().unwrap().utc;
     assert_eq!(
         db.get_active_state("vacuum", vacuum_ts).unwrap(),
-        json!(null)
+        json!("IGNORED")
     );
-    assert_eq!(db.get_active_state("luft", luft_ts).unwrap(), json!(null));
 }
 
 /// TS #7: "assumes a state of true by default".

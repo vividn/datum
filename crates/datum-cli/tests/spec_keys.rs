@@ -319,6 +319,9 @@ fn inactive_entries_ignore_the_specs_keys() {
         let t = format!("-{}", 20 - i);
         let timed = [line, &["-t", &t]].concat();
         let line = if line[0] == "ignore" || line[0] == "track" {
+            // Both write at now, with no `-t`: in the same millisecond
+            // they share a slug and the second is a duplicate.
+            std::thread::sleep(std::time::Duration::from_millis(2));
             line
         } else {
             &timed

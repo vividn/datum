@@ -411,8 +411,7 @@ fn a_never_done_chore_sorts_last() {
 }
 
 /// v2 cleared a chore with a null `nextDate`, and a v2-imported null hides
-/// it: the latest entry decides, and it says «no next». (v3 cannot write a
-/// JSON null yet, so this is the only clear there is — #267.)
+/// it: the latest entry decides, and it says «no next».
 #[test]
 fn a_v2_imported_null_next_date_hides_the_chore() {
     let db = fresh_db();
@@ -436,4 +435,17 @@ fn a_v2_imported_null_next_date_hides_the_chore() {
         fields(&view(&db, "chores")).is_empty(),
         "the cleared chore is hidden"
     );
+}
+
+/// A typed `next_date=null` is a JSON null too (da-revva), so it retires a
+/// chore the same way; the dated chore beside it stays.
+#[test]
+fn a_typed_null_next_date_retires_the_chore() {
+    let db = fresh_db();
+    install_chores(&db);
+    run(&db, &["occur", "vacuum", "-d", "-2", "next_date=+7"]);
+    run(&db, &["occur", "dishes", "-d", "-2", "next_date=+1"]);
+    assert_eq!(fields(&view(&db, "chores")), ["dishes", "vacuum"]);
+    run(&db, &["occur", "vacuum", "next_date=null"]);
+    assert_eq!(fields(&view(&db, "chores")), ["dishes"]);
 }

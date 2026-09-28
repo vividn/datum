@@ -233,6 +233,7 @@ CREATE 19zx6 activity:2026-09-24T14:47:29.927Z
 | `true` `{"a":1}`     | anything strict JSON parses keeps its JSON shape    |
 | `75.2kg` `4th`       | a string, exactly as typed — no unit is inferred    |
 | `'"42"'`             | JSON quotes force a string                          |
+| `null` `undefined`   | a JSON null; no key (`'"null"'` is the string)      |
 | `=2`                 | an empty key is no key — the whole token is data    |
 
 ### `.key` and `a.b` — paths
@@ -312,24 +313,25 @@ CREATE l84lc cleared:2026-09-22T15:59:04.114Z
 Each element is inferred on its own, so an array carries JSON shapes
 too — `tags=,null,1,` stores `[null,1]`.
 
-### `null` and `undefined` are words, not tokens
+### `null` is JSON null, `undefined` is no key
 
-They look like tokens and they are not: on a logging command the literal
-strings survive as strings, because a switch state of `"null"` is a
-thing people log and eager coercion would lose it.
+As in v2 (da-revva): `null` stores a JSON null, and `undefined`, like an
+empty value, leaves the key out. The string `"null"` is reachable through
+the JSON-quote escape below.
 
 ```bash
-datum occur n k=null j=undefined
+datum occur n k=null j=undefined s='"null"'
 ```
 
 ```
-CREATE qh7oc n:2026-09-22T16:05:59.731Z
-18:05:59+2  n ∅●
-  j: "undefined", k: "null"
+CREATE zlpeh n:2026-09-28T13:22:34.918Z
+15:22:34+2  n ∅●
+  k: null, s: "null"
 ```
 
-Inside an array (above) they do coerce, because each element goes
-through the plain inference path.
+A null is how a chore is retired: `next_date=null` overrides the date
+before it. A `null` switch STATE is IGNORED, which is what it meant in
+v2 — `datum switch mood null` is `datum ignore mood`.
 
 ### JSON shapes, and the two escapes around them
 

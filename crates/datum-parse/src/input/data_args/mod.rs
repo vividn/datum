@@ -172,15 +172,6 @@ pub struct DataArgs {
     /// command layer when a string-join remainder (`-I`/`-S`/`-C`) is
     /// active on a duration-bearing verb — never by a flag directly.
     pub peek_trailing_dur: bool,
-    /// Daydumb compat flag — keeps the strings `"null"` / `"undefined"`
-    /// as `String` values rather than coercing them to `Value::Null` /
-    /// stripped (datum's TS behaviour). daydumb stores literal `"null"`
-    /// switch states verbatim and lets state compilation normalise on
-    /// read; eager null coercion at parse-time would lose that signal.
-    /// `dur=null` still resolves to point shape downstream because
-    /// `extract_add_temporal_keys` already accepts the `"null"` string
-    /// alongside `Value::Null`.
-    pub preserve_null_strings: bool,
     /// Local-time anchor used to resolve relative-offset values on
     /// `*_time` / `*_date` keys (`wake_time=+30`, `nextDate=+3`,
     /// `bedTime=-1h`). When `None`, relative offsets fall through as
@@ -213,8 +204,6 @@ impl DataArgs {
 /// caller's [`DataArgs`].
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Compat {
-    /// See [`DataArgs::preserve_null_strings`].
-    pub(crate) preserve_null_strings: bool,
     /// See [`DataArgs::base_local`].
     pub(crate) base_local: Option<NaiveDateTime>,
 }
@@ -226,7 +215,6 @@ pub(crate) struct Compat {
 /// command-change escape) never surface.
 pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
     let compat = Compat {
-        preserve_null_strings: args.preserve_null_strings,
         base_local: args.base_local,
     };
 
@@ -1320,7 +1308,6 @@ mod tests {
         // old `flat_paths=true` daydumb-compat branch is gone (pre-v1
         // hard cut).
         let mut a = args();
-        a.preserve_null_strings = true;
         a.data = vec![".subtask=mop".into(), "wake_time=8am".into()];
         let out = run(a);
         assert_eq!(out["state"]["subtask"], json!("mop"));
@@ -1508,15 +1495,15 @@ mod tests {
     }
 
     #[test]
-    fn preserve_null_strings_keeps_literal_null() {
-        // Daydumb compat: `null` / `undefined` stay as strings on the
-        // primary-value path so the switch verb can store the literal.
+    fn null_is_json_null_and_quoted_null_is_the_string() {
+        // da-revva: `null` is a JSON null (v2 parity), `undefined` drops
+        // the key, and the string is reachable through the JSON quotes.
         let mut a = args();
-        a.preserve_null_strings = true;
-        a.remainder = Some("__primary_value".into());
-        a.data = vec!["null".into()];
+        a.data = vec!["k=null".into(), "u=undefined".into(), "s=\"null\"".into()];
         let out = run(a);
-        assert_eq!(out["__primary_value"], json!("null"));
+        assert_eq!(out["k"], Value::Null);
+        assert!(out.get("u").is_none());
+        assert_eq!(out["s"], json!("null"));
     }
 
     #[test]

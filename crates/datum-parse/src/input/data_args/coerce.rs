@@ -3,8 +3,6 @@
 //!
 //! Layered, in evaluation order:
 //! - empty / `undefined` → `None` (or `Err` when the slot is required)
-//! - daydumb's `preserve_null_strings` keeps `"null"` / `"undefined"` as
-//!   string values (switch verb compat)
 //! - literal `null` → `Value::Null`
 //! - path-suffix coercions (`*time`, `*date`, `*dur`/`*duration`) when
 //!   classification flagged a temporal slot
@@ -32,16 +30,6 @@ pub(super) fn infer_typed_value(
     is_required: bool,
     compat: Compat,
 ) -> Result<Option<Value>> {
-    // Daydumb compat: keep the literal strings `"null"` / `"undefined"` as
-    // string values regardless of path. Path-suffix coercion (below) is
-    // bypassed too — daydumb's `extract_add_temporal_keys` already accepts
-    // a string `"null"` for `dur=null`, so no signal is lost.
-    if compat.preserve_null_strings
-        && (value.eq_ignore_ascii_case("null") || value.eq_ignore_ascii_case("undefined"))
-    {
-        return Ok(Some(Value::String(value.to_string())));
-    }
-
     // `undefined` / empty → undefined; error if required.
     if value.is_empty() || value.eq_ignore_ascii_case("undefined") {
         if is_required {
@@ -50,7 +38,8 @@ pub(super) fn infer_typed_value(
         return Ok(None);
     }
 
-    // Literal null pass-through.
+    // Literal null pass-through: a JSON null, as in v2 (da-revva). The
+    // string is `'"null"'`, the JSON-quote escape.
     if value.eq_ignore_ascii_case("null") {
         return Ok(Some(Value::Null));
     }

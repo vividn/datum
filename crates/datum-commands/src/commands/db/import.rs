@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use datum_core::{
-    db::{ConflictStrategy, Db, InsertOutcome},
+    db::{ConflictStrategy, Db, InsertOutcome, IGNORED_STATE_VALUE},
     derive_verb,
     entry::{Entry, Verb},
     ids::Hid,
@@ -84,15 +84,13 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
 
         // ─── state ──────────────────────────────────────────────────
         // `data.state` undefined → state column NULL.
-        // `data.state == null` → state column NULL (legacy datum can't
-        //   distinguish missing from explicit null on read; collapse them
-        //   here so the canonical state goes through derive_verb's
-        //   null→true promotion below).
+        // `data.state == null` → IGNORED, which is what it meant in v2
+        //   (da-revva) and what `switch f null` writes today.
         // anything else → Some(value), preserved verbatim.
         let raw_state = data.get("state");
         let state_in: Option<JsonValue> = match raw_state {
             None => None,
-            Some(v) if v.is_null() => None,
+            Some(v) if v.is_null() => Some(JsonValue::String(IGNORED_STATE_VALUE.to_string())),
             Some(v) => Some(v.clone()),
         };
 

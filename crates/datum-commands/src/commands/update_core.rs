@@ -6,7 +6,11 @@
 //! function rather than reimplementing per-strategy code.
 
 use anyhow::Result;
-use datum_core::{db::Db, entry::Entry, time::DatumTime};
+use datum_core::{
+    db::{Db, IGNORED_STATE_VALUE},
+    entry::Entry,
+    time::DatumTime,
+};
 use serde_json::Value as JsonValue;
 
 use crate::{
@@ -417,7 +421,14 @@ fn apply_mutation(
         updated.state = Some(v);
     }
     if let Some(s) = reserved.state {
-        updated.state = Some(s);
+        // da-revva: nulling the state of an entry that has one is IGNORED,
+        // as `switch f null` writes it; a stateless entry keeps the null.
+        let ignores = s.is_null() && updated.state.as_ref().is_some_and(|v| !v.is_null());
+        updated.state = Some(if ignores {
+            JsonValue::String(IGNORED_STATE_VALUE.to_string())
+        } else {
+            s
+        });
     }
     if let Some(d) = reserved.dur {
         updated.dur = Some(d);
@@ -647,7 +658,6 @@ pub(crate) fn parse_update_payload(args: &UpdateArgs) -> Result<UpdatePayload> {
     // `flat_paths` compat shim is gone (da-ju71.4); leading-dot keys
     // now fold into `state.*`.
     let mut data_args = DataArgs {
-        preserve_null_strings: true,
         ..DataArgs::default()
     };
     let mut injected_immediates: Vec<String> = Vec::new();

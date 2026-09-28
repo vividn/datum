@@ -71,6 +71,7 @@ mod no_timestamp;
 mod note_comment_remainder;
 mod now_cmd;
 mod nowview_cmd;
+mod null_token;
 mod occur_cmd;
 mod output_parity;
 mod parity;

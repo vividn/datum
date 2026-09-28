@@ -9,7 +9,7 @@
 use anyhow::Result;
 use datum_core::{
     action::Action,
-    db::{Db, InsertOutcome},
+    db::{Db, InsertOutcome, IGNORED_STATE_VALUE},
     dur::DurSpan,
     entry::{Entry, Verb},
     field_spec::{self, InterpolationContext},
@@ -926,7 +926,6 @@ pub(crate) fn parse_log_args(
     // `.x=<v>` keys fold into `state.x`. The bare positional state for
     // state-bearing verbs is handled below.
     let mut data_args = DataArgs {
-        preserve_null_strings: true,
         base_local,
         ..DataArgs::default()
     };
@@ -1100,6 +1099,12 @@ pub(crate) fn parse_log_args(
     // for slug timing and the boundary collapse agree.
     if let Some(slot) = datum_data.get_mut("state") {
         *slot = normalize_state(std::mem::replace(slot, JsonValue::Null));
+        // da-revva: a null switch state is IGNORED, as it meant in v2 —
+        // `switch mood null` is `ignore mood`. A quoted `'"null"'` is the
+        // string, stored as typed.
+        if slot.is_null() && matches!(action, Action::Switch) {
+            *slot = JsonValue::String(IGNORED_STATE_VALUE.to_string());
+        }
     }
 
     // Value extraction: pull from the PRIMARY_VALUE_KEY remainder bucket.

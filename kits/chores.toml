@@ -17,9 +17,7 @@ where = "deleted_at IS NULL AND superseded_by IS NULL AND (json_type(data, '$.ne
 #   · due        — `next` from the LATEST entry by time, where time is
 #                  occur_time, or create_time for a shirk (no occur_time).
 #                  A JSON null next (v2's cleared nextDate, as v2import
-#                  keeps it) hides the chore. v3 cannot write one yet:
-#                  `next_date=` omits the key and `next_date=null` stores
-#                  the text "null", so a v3 chore has no clear (#267).
+#                  keeps it, or `next_date=null`) hides the chore.
 #   · last_occur — the latest occurrence; a shirk never counts as done.
 #   · iti        — v2's inter-time interval in days, from the latest
 #                  occurrence: a date's days plus the fraction of the local
