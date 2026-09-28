@@ -6,6 +6,10 @@
 # and the chore does not count as done. Name chores to rescue only those.
 # It prints the plan and asks before writing anything.
 #
+# Days are dates: a chore due at a time (`next_time`) counts on its date
+# (UTC, as the kit stores it), and a rescue moves it to a date, so it is a
+# date chore until it is next done.
+#
 # Needs the chores kit and jq. `source kits/chores-rescue.zsh` from zsh;
 # CHORE_DATUM overrides the command, e.g. CHORE_DATUM='datum --db home'.
 chorerescue() {
@@ -18,12 +22,12 @@ chorerescue() {
 	plan=$(jq -r --argjson n $n --arg today "$(date +%F)" '
 		def day($d): $today + "T00:00:00Z" | fromdateiso8601 + $d * 86400 | strftime("%Y-%m-%d");
 		($ARGS.positional) as $pick
-		| [.[] | select(.due != null)] as $all
+		| [.[] | select(.due != null) | .day = .due[:10]] as $all
 		| def picked: ($pick | length) == 0 or (.field | IN($pick[]));
-		[$all[] | select(.due <= $today and picked)] | sort_by(.due) as $due
+		[$all[] | select(.day <= $today and picked)] | sort_by(.due) as $due
 		# A chore left where it is holds its day: today if it is due, else its date.
-		| (reduce ($all[] | select(picked and .due <= $today | not)
-			| [.due, $today] | max) as $d ({}; .[$d] += 1)) as $held
+		| (reduce ($all[] | select(picked and .day <= $today | not)
+			| [.day, $today] | max) as $d ({}; .[$d] += 1)) as $held
 		| reduce $due[] as $c ({d: 0, used: 0, out: []};
 			until($n - ($held[day(.d)] // 0) - .used > 0; .d += 1 | .used = 0)
 			| .out += [[$c.field, .d, $c.due]] | .used += 1)
