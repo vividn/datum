@@ -118,6 +118,7 @@
 	import { fieldPill, setFieldPill } from './bar.js';
 	import { rowsUnder, type Near } from './lanes.js';
 	import { openTrack } from './specModal.js';
+	import { shellJoin } from './shellSplit.js';
 	import {
 		declaredVerb,
 		fieldsUnder,
@@ -599,7 +600,7 @@
 						style={vars(look)}
 						{disabled}
 						data-state={state}
-						title={pressArgv(chosen, state).join(' ')}
+						title={shellJoin(pressArgv(chosen, state))}
 						on:click={() => log(pressArgv(chosen, state), chosen)}
 					>
 						{state}

@@ -5,18 +5,18 @@
 // form's declaration goes through that parser like everything else. This
 // module exists so the form can say *before* the press what the parser
 // would say after it, and offer the nearest name that works: a first-time
-// user typing "my coffee" should not have to read an error to learn that a
-// field name is one token.
+// user typing "cups=2" should not have to read an error to learn what a
+// field name may be.
 //
 // Because it is a second copy of a rule, it is held to the fixture the way
 // `shellSplit` is: `tests/fixtures/field-name.json` is the case list both
 // this module's tests and `crates/datum-parse/tests/field_name_fixture.rs`
 // read. Add a case there, not here.
 //
-// datum's whitespace class is `DATUM_SPACE` in `./shellSplit.js` — the same
-// list the tokenizer splits on, stated once. A name that contains one of
-// those characters is more than one argv token when typed, which is exactly
-// why it cannot be a field.
+// A space inside a name is fine (da-7h73h): every typed line that carries a
+// field quotes it with `shellJoin`. One at either end is not — ` coffee`
+// reads as `coffee` and is another field. datum's whitespace class is
+// `DATUM_SPACE` in `./shellSplit.js`, stated once.
 
 import { DATUM_SPACE } from './shellSplit.js';
 
@@ -28,33 +28,32 @@ const FORBIDDEN = /[=,:]/;
 
 /** The rule, as a sentence — `field_name::RULE` in Rust. */
 const RULE =
-	'a field name is one word: no spaces, equals, commas or colons, and it cannot start with a dash';
+	'a field name has no equals, commas or colons, and cannot start with a dash or start or end with a space';
+
+const space = (c: string | undefined): boolean => c !== undefined && DATUM_SPACE.test(c);
 
 /** Is `name` a field name that can be logged to? */
 export function fieldNameOk(name: string): boolean {
-	if (name === '') return false;
-	if (name.startsWith('-')) return false;
-	return ![...name].some((c) => DATUM_SPACE.test(c) || FORBIDDEN.test(c));
+	const chars = [...name];
+	return name !== '' && !name.startsWith('-') && !space(chars[0]) && !space(chars.at(-1)) && !FORBIDDEN.test(name);
 }
 
 /**
  * The nearest usable name, or null when nothing usable is left.
  *
- * Every run of forbidden characters becomes a single `_`, and leading
- * `-`/`_` and trailing `_` are dropped: `my coffee` → `my_coffee`,
- * `cups=2` → `cups_2`, `-weird` → `weird`.
+ * Every run of forbidden characters becomes a single `_`, and spaces and
+ * `_` at either end and a leading `-` are dropped: `cups=2` → `cups_2`,
+ * `-weird` → `weird`, ` my coffee ` → `my coffee`.
  */
 export function suggestFieldName(name: string): string | null {
-	let out = '';
+	const chars: string[] = [];
 	for (const c of name) {
-		if (DATUM_SPACE.test(c) || FORBIDDEN.test(c)) {
-			if (!out.endsWith('_')) out += '_';
-		} else {
-			out += c;
-		}
+		if (!FORBIDDEN.test(c)) chars.push(c);
+		else if (chars.at(-1) !== '_') chars.push('_');
 	}
-	const fixed = out.replace(/_+$/, '').replace(/^[-_]+/, '');
-	return fixed === '' ? null : fixed;
+	while (chars.length && (space(chars[0]) || chars[0] === '-' || chars[0] === '_')) chars.shift();
+	while (chars.length && (space(chars.at(-1)) || chars.at(-1) === '_')) chars.pop();
+	return chars.length ? chars.join('') : null;
 }
 
 /**

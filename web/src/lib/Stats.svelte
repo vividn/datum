@@ -55,6 +55,7 @@
 	import { inkOver } from './fields.js';
 	import CliOutput from './CliOutput.svelte';
 	import { run, type RunResult } from './run.js';
+	import { shellJoin } from './shellSplit.js';
 	import { currentDb } from './database.js';
 	import {
 		DEFAULT_STATS,
@@ -176,7 +177,7 @@
 		{/if}
 		<span class="source">
 			{#if all}<span class="scope">{currentDb()} · {windowLabel(settings.range)}</span>{/if}
-			<code class="argv">{argv.join(' ')}</code>
+			<code class="argv">{shellJoin(argv)}</code>
 		</span>
 	</div>
 

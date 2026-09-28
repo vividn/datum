@@ -18,6 +18,7 @@
 	import TailTable from './TailTable.svelte';
 	import { record } from './replStore.js';
 	import { run, type RunResult } from './run.js';
+	import { shellJoin } from './shellSplit.js';
 	import { minute } from './clock.js';
 	import { dependsOnNow, paneArgv, wantsBox, type PaneBox, type PaneSpec } from './panes.js';
 	import { settle } from './layout/resizing.js';
@@ -164,7 +165,7 @@
 		const ranAt = Date.now();
 		result = await run(argv);
 		shown = JSON.stringify(argv);
-		record(argv.join(' '), ranAt, result);
+		record(shellJoin(argv), ranAt, result);
 	}
 </script>
 

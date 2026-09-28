@@ -54,6 +54,7 @@
 	import { defaultColor } from './fields.js';
 	import Glyph from './Glyph.svelte';
 	import Placement from './Placement.svelte';
+	import { shellJoin } from './shellSplit.js';
 	import Swatch from './Swatch.svelte';
 	import {
 		editedSpec,
@@ -514,7 +515,7 @@
 			<button class="commit" use:act={'run'} type="submit" disabled={!ready}>Done</button>
 		</div>
 		{#if verb !== null && !spec}
-			<code class="preview">{argv.join(' ')}</code>
+			<code class="preview">{shellJoin(argv)}</code>
 		{/if}
 
 		{#if ignored.length > 0}

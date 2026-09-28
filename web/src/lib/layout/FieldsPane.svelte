@@ -36,7 +36,7 @@
 	import { advance } from '$lib/keyframes.js';
 	import type { SwitchLabel } from '$lib/fields.js';
 	import { lanes } from '$lib/lanes.js';
-	import { shellSplit } from '$lib/shellSplit.js';
+	import { shellJoin, shellSplit } from '$lib/shellSplit.js';
 	import { fields, grammar, pressWithPills, ready, standings } from './engine.js';
 
 	export let switchLabel: SwitchLabel = 'field';
@@ -69,7 +69,7 @@
 	 * well: the frames read the field as the second word.
 	 */
 	function fill(argv: string[]) {
-		const line = [...argv, ...(pendingFlags(argv)?.slice(1) ?? [])].join(' ');
+		const line = shellJoin([...argv, ...(pendingFlags(argv)?.slice(1) ?? [])]);
 		prefill.set({ line: advance(line, $fields) ?? `${line} `, keyboard: true });
 	}
 </script>

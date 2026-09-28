@@ -117,3 +117,16 @@ fn the_colon_refusal_is_unchanged() {
     let err = refusal(&["occur", "x:y"], &db);
     assert!(err.contains("field name cannot contain ':'"), "{err}");
 }
+
+/// A spaced field's derived aliases are reached by their name as one
+/// quoted token — `datum "tea time"`, `datum "tea timee"` — and log to the
+/// field, not to `tea` (da-7h73h).
+#[test]
+fn a_spaced_fields_derived_aliases_log_to_it() {
+    let db = fresh_db();
+    run_cli(&["spec", "set", "tea time", "--verb", "start"], &db).unwrap();
+    run_cli(&["tea time"], &db).unwrap();
+    run_cli(&["tea timee"], &db).unwrap();
+    assert_eq!(logged_entries(&db, "tea time").len(), 2);
+    assert!(logged_entries(&db, "tea").is_empty());
+}

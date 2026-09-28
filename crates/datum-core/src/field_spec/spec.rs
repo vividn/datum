@@ -10,6 +10,7 @@
 //! Tracking state (tracked / ignored) is NOT stored on the spec — it's
 //! derived from the entry log via [`Db::state_at`](crate::db::Db::state_at).
 
+use datum_parse::alias::shell_join;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -237,6 +238,9 @@ impl FieldSpec {
     /// 3. One `<state>` → `switch <field> <state>` per allowed state
     ///    (kind=State).
     ///
+    /// Each expansion is `shell_join`ed, so a spaced field (da-7h73h) or
+    /// state splits back into the one token it is.
+    ///
     /// Idempotent. When `no_autoalias` is set, the list is the user's and is
     /// left as it stands (da-cap5m).
     /// Cross-field state collisions are resolved at save time (see
@@ -250,7 +254,7 @@ impl FieldSpec {
         // 1. Bare-field alias: `<field>` → `<verb> <field>`.
         out.push(DerivedAlias {
             name: self.field.clone(),
-            expands_to: format!("{} {}", self.verb, self.field),
+            expands_to: shell_join(&[self.verb.to_string(), self.field.clone()]),
             kind: DerivedAliasKind::BareField,
         });
 
@@ -258,7 +262,7 @@ impl FieldSpec {
         if matches!(self.verb, Action::Start | Action::Switch) {
             out.push(DerivedAlias {
                 name: format!("{}e", self.field),
-                expands_to: format!("end {}", self.field),
+                expands_to: shell_join(&["end".into(), self.field.clone()]),
                 kind: DerivedAliasKind::TerminalEnd,
             });
         }
@@ -268,7 +272,7 @@ impl FieldSpec {
             for s in states {
                 out.push(DerivedAlias {
                     name: s.clone(),
-                    expands_to: format!("switch {} {}", self.field, s),
+                    expands_to: shell_join(&["switch".into(), self.field.clone(), s.clone()]),
                     kind: DerivedAliasKind::State,
                 });
             }
@@ -313,6 +317,28 @@ mod tests {
             .unwrap();
         assert_eq!(happy.expands_to, "switch mood happy");
         assert_eq!(happy.kind, DerivedAliasKind::State);
+    }
+
+    /// A spaced field (da-7h73h) or state must split back into one token,
+    /// or `my coffee` expands to a log on a field called `my`.
+    #[test]
+    fn derived_aliases_quote_a_spaced_field_and_state() {
+        let mut spec = FieldSpec::new("tea time", Action::Switch);
+        spec.allowed_states = Some(vec!["very hot".into()]);
+        spec.regenerate_derived_aliases();
+        let split: Vec<Vec<String>> = spec
+            .derived_aliases
+            .iter()
+            .map(|a| datum_parse::shell_split(&a.expands_to))
+            .collect();
+        assert_eq!(
+            split,
+            [
+                vec!["switch", "tea time"],
+                vec!["end", "tea time"],
+                vec!["switch", "tea time", "very hot"]
+            ]
+        );
     }
 
     #[test]

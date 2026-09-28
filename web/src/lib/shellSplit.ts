@@ -99,3 +99,18 @@ export function shellSpans(line: string): { tokens: Span[]; quoted: boolean } {
 	if (hasTok) tokens.push({ text: cur, from, to: line.length });
 	return { tokens, quoted: inSingle || inDouble };
 }
+
+/**
+ * The inverse of `shellSplit` — `shell_join` in expand.rs, the same quoting
+ * character for character: a token holding a space, a quote or a shell
+ * metacharacter is double-quoted with `"` and `\` escaped, the rest are
+ * bare. What writes a field into a typed line goes through this, so a
+ * spaced field (`my coffee`, da-7h73h) stays one token.
+ */
+export const shellJoin = (tokens: string[]): string => tokens.map(shellQuote).join(' ');
+
+function shellQuote(token: string): string {
+	if (token === '') return '""';
+	if (![...token].some((c) => DATUM_SPACE.test(c) || `'"\\$\`*?#|&;<>()`.includes(c))) return token;
+	return `"${token.replace(/["\\]/g, '\\$&')}"`;
+}

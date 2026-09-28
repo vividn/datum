@@ -94,4 +94,32 @@ describe('a field with a required key', () => {
 			assert.deepEqual(app.errors, []);
 		});
 	});
+
+	// da-7h73h: a field name may hold a space, so every line the web writes
+	// with a field in it quotes the field (`shellJoin`), or `my coffee`
+	// splits and the line logs to a field called `my`. Under its PILL is
+	// `commands.test.mjs`'s.
+	test('a spaced field: its fill quotes it, from the chip and under a pending verb, and Enter logs to it', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await type(page, 'track "my coffee" --verb occur --required-key amount');
+			// The clock is held: a log at the declaration's instant would share its slug.
+			await app.clock.forward(1000);
+			await app.idle();
+			await chip(page, 'my coffee').click();
+			await lineIs(page, 'occur "my coffee" amount=');
+			await page.keyboard.type('3');
+			await page.keyboard.press('Enter');
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === '');
+			await app.idle();
+			const [entry] = await app.entries(1);
+			assert.deepEqual([entry.field, entry.data], ['my coffee', { amount: 3 }]);
+
+			await page.locator('.prompt-bar input').fill('occur -q ');
+			await page.waitForFunction(() => document.querySelector('.bar [data-field="my coffee"]')?.dataset.act === 'fill');
+			await chip(page, 'my coffee').click();
+			await lineIs(page, 'occur "my coffee" -q amount=');
+			assert.deepEqual(app.errors, []);
+		});
+	});
 });

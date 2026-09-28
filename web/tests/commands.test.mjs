@@ -615,6 +615,31 @@ describe('a verb under a field pill', () => {
 		});
 	});
 
+	// da-7h73h: a field name may hold a space. The fill quotes it, and so
+	// does the echo a press records, which Up recalls as a typed line.
+	test('a spaced field under its pill: the fill and the echo quote it, and both log to it', async () => {
+		await onPage(async (app) => {
+			const { page } = app;
+			await seedLines(app, ['spec set "my coffee" --verb occur --data-key amount', 'spec set "iced tea" --verb occur']);
+			await pillOf(page, 'my coffee');
+			await verb(page, 'occur').click();
+			await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur "my coffee" amount=');
+			await fieldPill(page).waitFor({ state: 'detached' });
+			const filled = (await line(page)).text;
+			await echoed(app, () => app.submit(`${filled}2`));
+			await app.idle();
+			assert.deepEqual((await app.entries(1)).map((e) => [e.field, e.data]), [['my coffee', { amount: 2 }]]);
+
+			await app.clock.forward(60_000);
+			await pillOf(page, 'iced tea');
+			await echoed(app, () => verb(page, 'occur').click());
+			assert.equal((await app.echoes()).at(-1), 'occur "iced tea"');
+			await app.idle();
+			assert.equal((await app.entries(1))[0].field, 'iced tea');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
 	// «With the default» is the CLI's to fill, and it does not yet (da-9s98k):
 	// the claim here is the web's half, that a default asks nothing of the tap.
 	test('only optional keys: it logs at once, nothing typed', async () => {

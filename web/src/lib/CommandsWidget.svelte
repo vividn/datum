@@ -93,6 +93,7 @@
 	import { arm, helping } from './help.js';
 	import { holds } from './hold.js';
 	import { withPills } from './selection.js';
+	import { shellJoin } from './shellSplit.js';
 
 	export let disabled = false;
 	export let grammar: Grammar | null = null;
@@ -163,7 +164,8 @@
 			const keyed = fieldVerb(command.name, pills, fields);
 			const slotted = command.next === 'type' || keyed ? pills.filter((p) => p.kind === 'field' || p.kind === 'hid') : [];
 			const { argv, used } = withPills(grammar, [command.name], slotted);
-			const line = argv.join(' ');
+			// The command's own words stay bare (`db setup` is two); what follows is quoted.
+			const line = [argv[0], shellJoin(argv.slice(1))].join(' ').trimEnd();
 			// Straight into the first key's frame, as a space after the field would (da-31d1d).
 			if (keyed) dispatch('line', { name: command.name, line: advance(line, fields) ?? `${line} `, keyboard: true, spend: used });
 			else dispatch('line', { name: command.name, line: `${line} `, keyboard: command.next !== 'tap', spend: used });

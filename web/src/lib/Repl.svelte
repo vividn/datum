@@ -43,6 +43,7 @@
 	import { fitArgv } from './panes.js';
 	import { GAP, columnsIn, rowsOf } from './scrollback.js';
 	import { run, type RunResult } from './run.js';
+	import { shellJoin } from './shellSplit.js';
 
 	/** Newest entry first, the view pinned to the top. */
 	export let reversed = false;
@@ -144,7 +145,7 @@
 			(stdin === undefined ? fileCommand(argv) : null) ??
 			run(echoArgv(fitArgv(argv, width)), stdin)
 		);
-		await land(line ?? argv.join(' '), result, ranAt);
+		await land(line ?? shellJoin(argv), result, ranAt);
 		return result;
 	}
 

@@ -30,7 +30,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
-
 const { cases } = JSON.parse(
 	readFileSync(
 		fileURLToPath(new URL('../../tests/fixtures/field-name.json', import.meta.url)),
@@ -38,13 +37,19 @@ const { cases } = JSON.parse(
 	)
 );
 
-/** The three names the bead was filed about, each failing its own way. */
-const THE_BEAD = ['my coffee', 'cups=2', '-weird'];
+/** The names the bead was filed about, each failing its own way. */
+const THE_BEAD = ['cups=2', '-weird'];
+
+/** What the rule's sentence says, `field_name::RULE`. */
+const THE_RULE = /field name has no equals, commas or colons/;
 
 const acceptable = cases.filter((c) => c.ok);
 // The empty name is not a state the form can be typed into — it is what the
-// modal starts as, and Track + has always refused to submit it.
+// modal starts as, and Track + has always refused to submit it. Nor is a
+// space at either end: the form trims what is typed, so ` coffee` declares
+// `coffee` there, and only `spec set` sees the name untrimmed.
 const refused = cases.filter((c) => !c.ok && c.field !== '');
+const formRefused = refused.filter((c) => c.field.trim() === c.field);
 
 before(startApp);
 after(stopApp);
@@ -117,11 +122,11 @@ async function pressChip(app, field) {
 describe('a field name the (+) form accepts', () => {
 	test('the form refuses the names nothing can log to, and names the rule', async () => {
 		await shared.solo(async ({ page }) => {
-			for (const testCase of refused) {
+			for (const testCase of formRefused) {
 				const { submittable, hint } = await typeIntoTheForm(page, testCase.field);
 				assert.equal(submittable, false, `${testCase.name}: (+) still offered to create it`);
 				assert.ok(hint, `${testCase.name}: refused with no explanation`);
-				assert.match(hint, /field name is one word/, testCase.name);
+				assert.match(hint, THE_RULE, testCase.name);
 				if (testCase.suggest !== null) {
 					assert.ok(
 						hint.includes(testCase.suggest),
@@ -144,15 +149,15 @@ describe('a field name the (+) form accepts', () => {
 
 	test('one press of the offered name gets you a usable one', async () => {
 		await shared.solo(async (app) => {
-			await typeIntoTheForm(app.page, 'my coffee');
+			await typeIntoTheForm(app.page, 'cups=2');
 			await app.page.locator('dialog.spec p.hint button.fix').click();
-			assert.equal(await app.page.locator('dialog.spec input.field').inputValue(), 'my_coffee');
+			assert.equal(await app.page.locator('dialog.spec input.field').inputValue(), 'cups_2');
 
-			await trackIt(app, 'my_coffee');
-			await pressChip(app, 'my_coffee');
+			await trackIt(app, 'cups_2');
+			await pressChip(app, 'cups_2');
 			const stored = await app.entries();
 			assert.equal(stored.length, 1, 'the chip stored nothing');
-			assert.equal(stored[0].field, 'my_coffee');
+			assert.equal(stored[0].field, 'cups_2');
 		});
 	});
 
@@ -164,14 +169,14 @@ describe('a field name the (+) form accepts', () => {
 				// A lone comma never reaches `spec set` as a name: the CLI
 				// splits its entry chain on it first, and what is left has
 				// no name at all. Refused all the same, in the CLI's words.
-				const rule = testCase.field === ',' ? /missing required positional/ : /field name is one word/;
+				const rule = testCase.field === ',' ? /missing required positional/ : THE_RULE;
 				assert.match(result.stderr, rule, testCase.name);
 			}
 			// And through the REPL as a person reaches it, quoted so the line
 			// is one token: the refusal has to be on the screen, not only in
 			// the value the seam returned.
-			await submit('spec set "my coffee"');
-			assert.match((await outputs()).at(-1), /field name is one word/);
+			await submit('spec set " coffee"');
+			assert.match((await outputs()).at(-1), THE_RULE);
 		});
 	});
 
@@ -192,9 +197,10 @@ describe('a field name the (+) form accepts', () => {
 				await pressChip(app, testCase.field);
 				assert.deepEqual(await stored(testCase.field), { total: 2 * i + 1, mine: 1 }, `${testCase.name}: the chip`);
 
-				// Surface two: the same name typed. Five minutes back, because
-				// the slug is UNIQUE per field per minute.
-				await app.submit(`occur ${testCase.field} -t -5`);
+				// Surface two: the same name typed, quoted as the web writes it
+				// (da-7h73h). Five minutes back, because the slug is UNIQUE
+				// per field per minute.
+				await app.submit(`occur "${testCase.field}" -t -5`);
 				assert.deepEqual(await stored(testCase.field), { total: 2 * i + 2, mine: 2 }, `${testCase.name}: typing`);
 			}
 		});
@@ -207,5 +213,6 @@ describe('a field name the (+) form accepts', () => {
 				`no case refuses ${JSON.stringify(field)}`
 			);
 		}
+		assert.ok(cases.some((c) => c.field === 'my coffee' && c.ok), 'no case accepts a spaced name (da-7h73h)');
 	});
 });

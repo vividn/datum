@@ -18,6 +18,7 @@ import { get, writable } from 'svelte/store';
 import { clearUnlockedPills, dropHids, pills, showGhost } from '$lib/bar.js';
 import { grammarOf, type Grammar, type GrammarEntry } from '$lib/commands.js';
 import { withPills } from '$lib/selection.js';
+import { shellJoin } from '$lib/shellSplit.js';
 import { initDb } from '$lib/db.js';
 import { fileCommand } from '$lib/dbio.js';
 import { echoArgv, parseEcho } from '$lib/echo.js';
@@ -190,7 +191,7 @@ export async function press(
 	// a slow command's ghost is gone before its result is; vividn chose that:
 	// «the output section shows the command that was run again, so it is
 	// okay for it to fade before then».
-	if (!typed) showGhost(echo ?? line ?? argv.join(' '));
+	if (!typed) showGhost(echo ?? line ?? shellJoin(argv));
 	const result = await (repl ? repl.runArgv(argv, line, stdin) : alone(argv, line, stdin));
 	return (await answerVerb(argv, result)) ?? result;
 }
@@ -223,7 +224,7 @@ const ignoredFields = (): string[] =>
 async function alone(argv: string[], line?: string, stdin?: string): Promise<RunResult> {
 	const ranAt = Date.now();
 	const result = await ((stdin === undefined ? fileCommand(argv) : null) ?? run(echoArgv(argv), stdin));
-	record(line ?? argv.join(' '), ranAt, result);
+	record(line ?? shellJoin(argv), ranAt, result);
 	await ran();
 	return result;
 }
@@ -252,7 +253,7 @@ export const pressWithPills = async (argv: string[], line?: string): Promise<Run
 		line === undefined ? undefined : echoed(line, used),
 		undefined,
 		line !== undefined,
-		line ?? argv.join(' ')
+		line ?? shellJoin(argv)
 	);
 	if (result.code === 0) {
 		// A press nobody typed ghosted when it was pressed, and its pills
@@ -263,10 +264,14 @@ export const pressWithPills = async (argv: string[], line?: string): Promise<Run
 	return result;
 };
 
-/** A typed line with its pills where `withPills` put them: the hids after the first word. */
+/**
+ * A typed line with its pills where `withPills` put them: the hids after the first word.
+ * The line is as typed, quotes and all; a field pill is ONE token and is quoted, the
+ * others are words as the bar holds them (`-t 14:30`), which quoting would join.
+ */
 function echoed(line: string, used: { kind: string; text: string }[]): string {
 	const hid = used.find((p) => p.kind === 'hid');
 	const [, word, rest] = /^\s*(\S*)(.*)$/.exec(line) ?? ['', line, ''];
 	const head = hid ? `${word} ${hid.text}${rest}` : line;
-	return [head, ...used.filter((p) => p !== hid).map((p) => p.text)].join(' ');
+	return [head, ...used.filter((p) => p !== hid).map((p) => (p.kind === 'field' ? shellJoin([p.text]) : p.text))].join(' ');
 }
