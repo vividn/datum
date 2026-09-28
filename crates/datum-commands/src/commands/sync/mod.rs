@@ -60,7 +60,9 @@ pub fn dispatch(args: SyncArgs, cli_db: Option<&str>, db: &Db) -> Result<()> {
             SyncKeyCommand::ShowFingerprint { server } => key::show_fingerprint(server, cli_db),
         },
         Some(SyncCommand::Status(a)) => status::run(a, cli_db),
-        Some(SyncCommand::InstallDaemon(a)) => install_daemon::run(a.show, a.uninstall),
+        Some(SyncCommand::InstallDaemon(a)) => {
+            install_daemon::run(a.show, a.uninstall, &install_daemon::UserDirs::from_env())
+        }
         // The daemon runtime lives in `datum-sync-agent`, which depends on
         // THIS crate — so the `datum` binary intercepts `sync agent` before
         // dispatch rather than calling down from here (see datum-cli). What

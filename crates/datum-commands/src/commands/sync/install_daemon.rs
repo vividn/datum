@@ -110,21 +110,36 @@ fn render_launchd(binary: &Path) -> String {
     )
 }
 
+/// The directories a unit path is resolved against. The CLI reads them
+/// from the environment; a test passes a tempdir instead of setting `HOME`,
+/// which every other test in the process would see (da-25oa).
+pub struct UserDirs {
+    pub home: Option<PathBuf>,
+    pub xdg_config_home: Option<PathBuf>,
+}
+
+impl UserDirs {
+    pub fn from_env() -> Self {
+        UserDirs {
+            home: std::env::var_os("HOME").map(PathBuf::from),
+            xdg_config_home: std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
+        }
+    }
+}
+
 /// Where the unit lives on disk for `platform`.
-pub fn unit_path(platform: Platform) -> Result<PathBuf> {
+pub fn unit_path(platform: Platform, dirs: &UserDirs) -> Result<PathBuf> {
+    let home = || dirs.home.clone().context("HOME not set");
     match platform {
         Platform::SystemdUser => {
-            let base = if let Ok(v) = std::env::var("XDG_CONFIG_HOME") {
-                PathBuf::from(v)
-            } else {
-                let home = std::env::var("HOME").context("HOME not set")?;
-                PathBuf::from(home).join(".config")
+            let base = match &dirs.xdg_config_home {
+                Some(v) => v.clone(),
+                None => home()?.join(".config"),
             };
             Ok(base.join("systemd/user/datum-sync-agent.service"))
         }
         Platform::LaunchdUser => {
-            let home = std::env::var("HOME").context("HOME not set")?;
-            Ok(PathBuf::from(home).join("Library/LaunchAgents/com.datum.sync-agent.plist"))
+            Ok(home()?.join("Library/LaunchAgents/com.datum.sync-agent.plist"))
         }
     }
 }
@@ -163,12 +178,12 @@ fn validate_agent_binary(binary: &Path) -> Result<()> {
 }
 
 /// CLI entry point for `datum sync install-daemon`.
-pub fn run(show: bool, uninstall: bool) -> Result<()> {
+pub fn run(show: bool, uninstall: bool, dirs: &UserDirs) -> Result<()> {
     let platform = Platform::detect()?;
     let binary = resolve_agent_binary();
 
     if uninstall {
-        let path = do_uninstall(platform)?;
+        let path = do_uninstall(platform, dirs)?;
         println!("✓ Uninstalled {}", path.display());
         return Ok(());
     }
@@ -177,14 +192,14 @@ pub fn run(show: bool, uninstall: bool) -> Result<()> {
         println!(
             "# {} — {}",
             path_label(platform),
-            unit_path(platform)?.display()
+            unit_path(platform, dirs)?.display()
         );
         print!("{}", render_unit(platform, &binary));
         return Ok(());
     }
 
     validate_agent_binary(&binary)?;
-    let path = do_install(platform, &binary)?;
+    let path = do_install(platform, &binary, dirs)?;
     println!("✓ Installed unit at {}", path.display());
     println!(
         "✓ Daemon enabled; the agent will auto-start next login. Run \
@@ -200,8 +215,8 @@ fn path_label(platform: Platform) -> &'static str {
     }
 }
 
-fn do_install(platform: Platform, binary: &Path) -> Result<PathBuf> {
-    let path = unit_path(platform)?;
+fn do_install(platform: Platform, binary: &Path, dirs: &UserDirs) -> Result<PathBuf> {
+    let path = unit_path(platform, dirs)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("create unit dir {parent:?}"))?;
     }
@@ -210,12 +225,12 @@ fn do_install(platform: Platform, binary: &Path) -> Result<PathBuf> {
     let tmp = path.with_extension("tmp");
     fs::write(&tmp, body).with_context(|| format!("write unit {tmp:?}"))?;
     fs::rename(&tmp, &path).with_context(|| format!("install unit {path:?}"))?;
-    enable_unit(platform)?;
+    enable_unit(platform, &path)?;
     Ok(path)
 }
 
-fn do_uninstall(platform: Platform) -> Result<PathBuf> {
-    let path = unit_path(platform)?;
+fn do_uninstall(platform: Platform, dirs: &UserDirs) -> Result<PathBuf> {
+    let path = unit_path(platform, dirs)?;
     let _ = disable_unit(platform);
     if path.exists() {
         fs::remove_file(&path).with_context(|| format!("remove unit {path:?}"))?;
@@ -223,7 +238,7 @@ fn do_uninstall(platform: Platform) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn enable_unit(platform: Platform) -> Result<()> {
+fn enable_unit(platform: Platform, path: &Path) -> Result<()> {
     match platform {
         Platform::SystemdUser => {
             run_cmd("systemctl", &["--user", "daemon-reload"])?;
@@ -235,13 +250,15 @@ fn enable_unit(platform: Platform) -> Result<()> {
         Platform::LaunchdUser => {
             // Modern spelling — `load -w` is deprecated. enable clears any
             // persisted disabled flag (what `-w` did), bootstrap loads now.
-            let p = unit_path(platform)?;
             let domain = launchd_domain();
             let label = format!("{domain}/com.datum.sync-agent");
             // Re-install: bootstrap fails on an already-loaded service.
             let _ = run_cmd("launchctl", &["bootout", &label]);
             run_cmd("launchctl", &["enable", &label])?;
-            run_cmd("launchctl", &["bootstrap", &domain, &p.to_string_lossy()])?;
+            run_cmd(
+                "launchctl",
+                &["bootstrap", &domain, &path.to_string_lossy()],
+            )?;
         }
     }
     Ok(())
@@ -290,8 +307,7 @@ fn run_cmd(cmd: &str, args: &[&str]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    // Tests that mutate process env vars (XDG_CONFIG_HOME, HOME,
-    // DATUM_BIN) serialize on the shared `env_lock` — plain
+    // Tests that mutate process env vars (DATUM_BIN) serialize on the shared `env_lock` — plain
     // `cargo test` runs tests as threads in one process. nextest isolates
     // per-process, so this is belt-and-braces.
     use datum_test_util::{env_lock, ScopedEnv};
@@ -377,10 +393,12 @@ mod tests {
         // failure doesn't leak a deleted tempdir path into sibling tests
         // (plain `cargo test` shares the process).
         let _bin = ScopedEnv::set("DATUM_BIN", "/nonexistent/datum");
-        let _xdg = ScopedEnv::set("XDG_CONFIG_HOME", tmp.path());
-        let _home = ScopedEnv::set("HOME", tmp.path());
+        let dirs = UserDirs {
+            home: Some(tmp.path().to_path_buf()),
+            xdg_config_home: Some(tmp.path().to_path_buf()),
+        };
 
-        let err = run(false, false).unwrap_err();
+        let err = run(false, false, &dirs).unwrap_err();
 
         let unit = tmp.path().join("systemd/user/datum-sync-agent.service");
         let plist = tmp
@@ -397,9 +415,11 @@ mod tests {
 
     #[test]
     fn systemd_unit_path_honors_xdg_config_home() {
-        let _guard = env_lock();
-        let _xdg = ScopedEnv::set("XDG_CONFIG_HOME", "/tmp/xdg-cfg-install-test");
-        let p = unit_path(Platform::SystemdUser).unwrap();
+        let dirs = UserDirs {
+            home: Some(PathBuf::from("/home/someone")),
+            xdg_config_home: Some(PathBuf::from("/tmp/xdg-cfg-install-test")),
+        };
+        let p = unit_path(Platform::SystemdUser, &dirs).unwrap();
         assert_eq!(
             p,
             PathBuf::from("/tmp/xdg-cfg-install-test/systemd/user/datum-sync-agent.service")

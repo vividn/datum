@@ -463,14 +463,17 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let e = seed_entry(&db, "coffee", Verb::Point, Some(serde_json::json!(1)), None);
         let toml = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(toml.path(), "editor = \"true\"\n").unwrap();
-
-        // Config::load resolves db_path and device_id through data_dir(),
-        // which creates it and writes a device_id file: keep it in a tempdir.
-        let home = tempfile::tempdir().unwrap();
+        // Without db_path and device_id, Config::load would resolve them
+        // through data_dir() and write a device_id file there. Pinning them
+        // here keeps the test off DATUM_HOME, a process-wide setting every
+        // other test's device_id() would follow (da-25oa).
+        std::fs::write(
+            toml.path(),
+            "editor = \"true\"\ndb_path = \"/nonexistent/datum.db\"\ndevice_id = \"edit-test\"\n",
+        )
+        .unwrap();
 
         let _guard = env_lock();
-        let _home = ScopedEnv::set("DATUM_HOME", home.path());
         let _config = ScopedEnv::set("DATUM_CONFIG", toml.path());
         let _datum_editor = ScopedEnv::remove("DATUM_EDITOR");
         let _visual = ScopedEnv::set("VISUAL", "false");
