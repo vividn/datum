@@ -1351,16 +1351,16 @@ fn apply_spec_keys(action: Action, args: &mut LogArgs, db: &Db) -> Result<()> {
 /// infers its shape from temporal hints. Both still accept an explicit
 /// `dur=<v>` through the reserved-column path.
 ///
-/// For start/stop the leading `.` / `\.` skip sentinel has no state slot to
-/// land on (state is hard-set by action canonicalization), so it is
-/// stripped here; switch absorbs `.` into its `state=true` slot inside
+/// A `.` skips the next open slot, as on every verb (da-ryjnc): on
+/// start/stop, which have no state slot, that is a `-k` key or the `dur=`
+/// slot; switch absorbs a first `.` into its `state=true` slot inside
 /// `parse_log_args`.
 ///
 /// String-join mode (da-vo0y F2): with `-I`/`-S`/`-C` active the `dur=`
 /// slot is suppressed — it would front-eat the first joined token — and
 /// the trailing-dur PEEK in `handle_data_args` claims the duration from
-/// the join window's tail instead. The start/stop `.`-strip is likewise
-/// bypassed there: the `.` is the peek's explicit skip-dur sentinel.
+/// the join window's tail instead, where a trailing `.` is its explicit
+/// skip-dur sentinel.
 pub(crate) fn prepare_log_args(action: Action, args: &mut LogArgs) -> Result<()> {
     // da-a2o8: peel a standalone-comma "then" chain (`switch f vertical 5 ,
     // sit`) into `following_state=…` before the dur slot is declared. The
@@ -1379,13 +1379,10 @@ pub(crate) fn prepare_log_args(action: Action, args: &mut LogArgs) -> Result<()>
         // as a duration (`start movie -SR title terminator 90` must not try
         // `terminator` as a dur). Suppress the slot and let the trailing-dur
         // PEEK in `handle_data_args` claim the duration from the join
-        // window's tail instead (set via `peek_trailing_dur` below). The
-        // start/stop `.`-strip is likewise skipped in peek mode — the `.`
-        // is the peek's explicit skip-dur sentinel there.
+        // window's tail instead (set via `peek_trailing_dur` below). A `.`
+        // is left in place: it skips the next open slot, as on every verb
+        // (da-ryjnc), and in peek mode it is the explicit skip-dur sentinel.
         let string_join = args.string_state || args.string_remainder || args.comment_remainder;
-        if matches!(action, Action::Start | Action::Stop) && !string_join {
-            args.rest.retain(|t| t != "." && t != r"\.");
-        }
         if !string_join {
             args.keys.push("dur=".to_string());
         }

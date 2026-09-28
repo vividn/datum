@@ -597,6 +597,11 @@ enum Fill {
         sides: Vec<usize>,
         value: String,
     },
+    /// A `.` that skipped a key: the side's parser sees the key's slot
+    /// open too, so it gets the `.` back to skip it there (da-ryjnc).
+    SkipKey {
+        sides: Vec<usize>,
+    },
     Window {
         sides: Vec<usize>,
         tokens: Vec<String>,
@@ -643,7 +648,8 @@ fn walk_region(positionals: Vec<String>, slots: &mut [Slot]) -> Result<Vec<Fill>
             let open = slot.open_sides();
             slot.mark_all_satisfied();
             if value == "." {
-                continue; // explicit skip
+                push_skip(&mut fills, &slot.kind, open); // explicit skip
+                continue;
             }
             push_fill(&mut fills, &slot.kind, open, unesc(&value));
         }
@@ -685,11 +691,19 @@ fn walk_region(positionals: Vec<String>, slots: &mut [Slot]) -> Result<Vec<Fill>
                     .to_string(),
             ));
         }
-        // Apply reservations (they were peeled in reverse slot order).
+        // Apply reservations (they were peeled in reverse slot order). A
+        // dur goes back on the window's tail — `.` included — where the
+        // side's trailing-dur peek reads it (da-ryjnc).
+        let mut tail: Vec<String> = Vec::new();
         for (si, value) in reserved.into_iter().rev() {
             let open = slots[si].open_sides();
             slots[si].mark_all_satisfied();
+            if matches!(slots[si].kind, SlotKind::Dur) {
+                tail.push(value);
+                continue;
+            }
             if value == "." {
+                push_skip(&mut fills, &slots[si].kind, open);
                 continue;
             }
             let v = unesc(&value);
@@ -701,7 +715,7 @@ fn walk_region(positionals: Vec<String>, slots: &mut [Slot]) -> Result<Vec<Fill>
         slots[g].mark_all_satisfied();
         fills.push(Fill::Window {
             sides: open,
-            tokens: rest.iter().map(|t| unesc(t)).collect(),
+            tokens: rest.iter().map(|t| unesc(t)).chain(tail).collect(),
         });
         return Ok(fills);
     }
@@ -720,6 +734,7 @@ fn walk_region(positionals: Vec<String>, slots: &mut [Slot]) -> Result<Vec<Fill>
         let open = slot.open_sides();
         slot.mark_all_satisfied();
         if value == "." {
+            push_skip(&mut fills, &slot.kind, open);
             continue;
         }
         push_fill(&mut fills, &slot.kind, open, unesc(&value));
@@ -728,6 +743,17 @@ fn walk_region(positionals: Vec<String>, slots: &mut [Slot]) -> Result<Vec<Fill>
         return Err(ParseError::ExtraData(queue[qi..].to_vec()));
     }
     Ok(fills)
+}
+
+/// A `.` skip is passed on for a state or key slot, which the side's
+/// parser opens again; a filled dur slot it never does, so that `.` goes
+/// (a dur reserved behind a join rides the window instead).
+fn push_skip(fills: &mut Vec<Fill>, kind: &SlotKind, open_sides: Vec<usize>) {
+    match kind {
+        SlotKind::State => push_fill(fills, kind, open_sides, ".".to_string()),
+        SlotKind::Key { .. } => fills.push(Fill::SkipKey { sides: open_sides }),
+        _ => {}
+    }
 }
 
 fn push_fill(fills: &mut Vec<Fill>, kind: &SlotKind, open_sides: Vec<usize>, value: String) {
@@ -777,6 +803,7 @@ pub(super) fn apply_regions(sides: Vec<Vec<String>>) -> Result<Vec<Vec<String>>>
     let mut blanket_kv: Vec<Vec<String>> = vec![Vec::new(); n];
     let mut key_fills: Vec<Vec<String>> = vec![Vec::new(); n];
     let mut state_fills: Vec<Vec<String>> = vec![Vec::new(); n];
+    let mut key_skips: Vec<Vec<String>> = vec![Vec::new(); n];
     let mut dur_fills: Vec<Vec<String>> = vec![Vec::new(); n];
     let mut window_fills: Vec<Vec<String>> = vec![Vec::new(); n];
 
@@ -832,6 +859,11 @@ pub(super) fn apply_regions(sides: Vec<Vec<String>>) -> Result<Vec<Vec<String>>>
                         dur_fills[s].push(value.clone());
                     }
                 }
+                Fill::SkipKey { sides } => {
+                    for s in sides {
+                        key_skips[s].push(".".to_string());
+                    }
+                }
                 Fill::Window { sides, tokens } => {
                     for s in sides {
                         window_fills[s].extend(tokens.iter().cloned());
@@ -878,6 +910,7 @@ pub(super) fn apply_regions(sides: Vec<Vec<String>>) -> Result<Vec<Vec<String>>>
             side.push("--".to_string());
         }
         side.extend(state_fills[i].iter().cloned());
+        side.extend(key_skips[i].iter().cloned());
         side.extend(dur_fills[i].iter().cloned());
         side.extend(window_fills[i].iter().cloned());
         out.push(side);
@@ -1068,17 +1101,18 @@ mod tests {
     fn dur_peels_when_last_token_parses() {
         let out = apply(&[&["switch", "f", "-I", ",,", "deep", "conversation", "30m"]]).unwrap();
         let side = &out[0];
-        assert!(has_seq(side, &["deep", "conversation"]));
-        assert!(side.iter().any(|t| t == "30m"));
-        assert!(!has_seq(side, &["conversation", "30m"]));
+        // The dur rides the window's tail, where the side's own peek
+        // reads it; ahead of the window it joined the state (da-ryjnc).
+        assert_eq!(side.last().map(String::as_str), Some("30m"));
+        assert!(has_seq(side, &["deep", "conversation", "30m"]));
     }
 
     #[test]
     fn dot_skips_dur_reservation() {
         let out = apply(&[&["switch", "f", "-I", ",,", "waiting", "room", "."]]).unwrap();
         let side = &out[0];
-        assert!(has_seq(side, &["waiting", "room"]));
-        assert!(!side.iter().any(|t| t == "."));
+        // The `.` is handed on as the side's peek sentinel (da-ryjnc).
+        assert!(has_seq(side, &["waiting", "room", "."]));
     }
 
     #[test]
