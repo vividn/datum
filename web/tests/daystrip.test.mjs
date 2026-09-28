@@ -1748,10 +1748,18 @@ async function pinch(page, box, from, to, midway) {
 async function doubleTap(page, box) {
 	const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 	const cdp = await page.context().newCDPSession(page);
+	// The taps carry their own clock: an event every 60ms, so the two
+	// presses land 120ms apart however loaded the runner is. Left to the
+	// round trips it was the runner's: on a loaded CI box the second press
+	// came more than DOUBLE_MS (350) after the first, and the double tap
+	// was two single taps (da-bwvuu).
+	const t0 = Date.now() / 1000;
+	const at = (type, touchPoints, i) =>
+		cdp.send('Input.dispatchTouchEvent', { type, touchPoints, timestamp: t0 + i * 0.06 });
 	try {
-		for (const _ of [1, 2]) {
-			await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
-			await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+		for (const i of [0, 2]) {
+			await at('touchStart', [point], i);
+			await at('touchEnd', [], i + 1);
 		}
 	} finally {
 		await cdp.detach();
