@@ -217,6 +217,15 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
                 out.state_keys.push(v.to_string());
                 i += 1;
             }
+            FlagSplit::Long("state-lookup-field") => {
+                let (v, ni) = take_value(tail, i, None, "--state-lookup-field")?;
+                out.state_lookup_field = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("state-lookup-field", v) => {
+                out.state_lookup_field = Some(v.to_string());
+                i += 1;
+            }
             FlagSplit::Long("id-template") => {
                 let (v, ni) = take_value(tail, i, None, "--id-template")?;
                 out.id_template = Some(v.to_string());

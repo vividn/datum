@@ -601,6 +601,66 @@ with both rows listed.
 more than fifteen minutes old — the guard for commands that should not
 quietly act on something you logged this morning.
 
+### `::` — one value of an entry
+
+`datum get <id>::<name>` prints one value of the entry alone on stdout: a
+column (`hid`, `state`, …), `.x.y` into the state, anything else into
+`data`. An id cannot contain `::`, so the first one splits and a name may
+hold more. `::name` alone reads the last entry.
+
+```bash
+datum switch media book
+datum get _::hid
+datum get ::state
+```
+
+```
+t91w30mlcq32
+book
+```
+
+### `:` inside a state — a reference
+
+A state holding `:` is ALWAYS a full slug `field:id`, whatever field it
+is logged on: `:` inside a state value is reserved to mean "reference",
+as `::` is reserved in an id. It is a rule of the grammar, not a guess
+from the string's shape — `12:30` is a reference too, and one that names
+nothing.
+
+A state without `:` refers to an entry only when its field's spec names a
+lookup field: `spec set issue --state-lookup-field issue_state` makes the
+state `queued` refer to `issue_state:queued`. Anything else is a plain
+state. An array state takes the rule per element; `false`, `true`, a
+number, and the TRACKED and IGNORED sentinels never refer.
+
+Nothing is refused at write — the entry named may yet arrive by sync —
+and `datum check refs` names each reference that finds no live entry, one
+line per field and slug:
+
+```bash
+datum add book id=great_gatsby
+datum switch media book:great_gatsby
+datum spec set issue --verb switch --state-lookup-field issue_state
+datum switch issue queued
+datum switch clock 12:30
+datum check refs
+```
+
+```
+[WARN ] dangling_state_ref (x1): 1 clock entry refers to 12:30, which is no live entry
+    example: z90mo
+    example field: clock
+    hids: z90mo
+[WARN ] dangling_state_ref (x1): 1 issue entry refers to issue_state:queued, which is no live entry
+    example: emfed
+    example field: issue
+    hids: emfed
+
+Summary: 0 errors, 2 warnings.
+```
+
+`media`'s reference is not listed: `book:great_gatsby` exists.
+
 ## 5. Inside a template
 
 `--id` takes the part of the slug after `<field>:`; `-o` /
@@ -688,4 +748,5 @@ word:word:pt:verb word
 | `±` and the direction marker  | `crates/datum-parse/src/time/uncertainty.rs`         |
 | compact dates                 | `crates/datum-parse/src/time/date.rs`                |
 | quick-ids                     | `crates/datum-core/src/ids/resolve.rs`               |
+| `:` inside a state            | `crates/datum-core/src/doc_ref.rs` (`state_refs`)    |
 | `%…%` templates               | `crates/datum-core/src/field_spec/interpolation.rs`  |

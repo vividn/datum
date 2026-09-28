@@ -94,6 +94,10 @@ pub struct FieldEntry {
     pub subfields: BTreeMap<String, SubfieldSpec>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id_template: Option<String>,
+    /// The field a bare state names a document of — the spec's
+    /// `--state-lookup-field` (da-f9jyv).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_lookup_field: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub strict: bool,
     /// No aliases are derived for the field: `[[alias]]` entries are its own.
@@ -538,6 +542,7 @@ impl FieldEntry {
         spec.description = self.description;
         spec.subfields = self.subfields.into_iter().collect();
         spec.id_template = self.id_template;
+        spec.state_lookup_field = self.state_lookup_field;
         spec.strict = self.strict;
         spec.no_autoalias = self.no_autoalias;
         spec.color = color_resolved;
@@ -646,6 +651,7 @@ impl FieldEntry {
             description: spec.description.clone(),
             subfields: spec.subfields.clone().into_iter().collect(),
             id_template: spec.id_template.clone(),
+            state_lookup_field: spec.state_lookup_field.clone(),
             strict: spec.strict,
             no_autoalias: spec.no_autoalias,
             pos,

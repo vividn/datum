@@ -673,6 +673,9 @@ pub struct SpecSetArgs {
     /// Per-state assigned keys in `STATE=KEY=VALUE` form (da-ulc0v); an
     /// empty VALUE removes the key.
     pub state_assign: Vec<String>,
+    /// `--state-lookup-field <F>` — the field a bare state names a
+    /// document of (da-f9jyv). An empty value clears it.
+    pub state_lookup_field: Option<String>,
     pub id_template: Option<String>,
     pub description: Option<String>,
     pub track: bool,
@@ -1138,7 +1141,15 @@ pub struct CheckArgs {
 /// Checker names accepted as `dm check <NAME>...` positionals. Kept in the
 /// parse crate so both the parser (typo validation) and the command
 /// dispatcher (which-categories-to-run) read from the same source.
-pub const KNOWN_CHECKERS: &[&str] = &["verbs", "aliases", "slugs", "integrity", "flags", "tz"];
+pub const KNOWN_CHECKERS: &[&str] = &[
+    "verbs",
+    "aliases",
+    "slugs",
+    "integrity",
+    "flags",
+    "tz",
+    "refs",
+];
 
 /// Render orientation for `datum dayview` and `datum nowview`, named by
 /// time-axis direction.

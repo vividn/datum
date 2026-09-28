@@ -92,6 +92,7 @@ mod spec_keys;
 mod stale_last_gate_removed;
 mod start_cmd;
 mod state_keys;
+mod state_refs;
 mod stateless_same_instant;
 mod stop_cmd;
 mod stored_spec_compat;

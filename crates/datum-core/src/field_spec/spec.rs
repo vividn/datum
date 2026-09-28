@@ -108,6 +108,12 @@ pub struct FieldSpec {
     /// Per-state assigned keys (da-ulc0v), as `assign` is the field's.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub state_assign: HashMap<String, BTreeMap<String, String>>,
+    /// The field a bare state names a document of (da-f9jyv): with
+    /// `issue_state`, a state `queued` refers to `issue_state:queued`. One
+    /// field name, never a template. A state holding `:` is a full slug
+    /// whatever this says — see [`crate::doc_ref::state_refs`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_lookup_field: Option<String>,
     /// Auto-derived aliases (bare-field, terminal-end, and per-state).
     /// Rebuilt on save via [`FieldSpec::regenerate_derived_aliases`].
     #[serde(default)]
@@ -199,6 +205,7 @@ impl FieldSpec {
             state_descriptions: HashMap::new(),
             state_keys: HashMap::new(),
             state_assign: HashMap::new(),
+            state_lookup_field: None,
             derived_aliases: Vec::new(),
             id_keys: Vec::new(),
             data_keys: Vec::new(),

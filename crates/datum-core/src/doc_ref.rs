@@ -12,6 +12,14 @@
 //! split. Callers are responsible for confirming the referenced entry exists
 //! (a missing target is legal — the reference is just unresolved until the
 //! document is created or synced in).
+//!
+//! A STATE is the stricter case: [`state_refs`] reads `:` inside it as a
+//! reserved token, so there it is never a guess.
+
+use serde_json::Value as JsonValue;
+
+use crate::field_spec::FieldSpec;
+use crate::shape::{IGNORED_STATE_VALUE, TRACKED_STATE_VALUE};
 
 /// Split `s` on the first `:` and return `(field, id)` when both sides are
 /// non-empty and the field portion is a plausible identifier.
@@ -38,6 +46,38 @@ pub fn parse_ref(s: &str) -> Option<(&str, &str)> {
         return None;
     }
     Some((field, id))
+}
+
+/// The slugs a state refers to (da-f9jyv). `:` inside a state is a
+/// reserved token, not a shape to guess at:
+///
+/// 1. a string holding `:` is a full slug `field:id`, whatever field logged
+///    it — `switch media book:great_gatsby` names `book:great_gatsby`, and
+///    `switch clock 12:30` names `12:30`, which dangles;
+/// 2. a string without one, on a field whose spec has a
+///    [`state_lookup_field`](FieldSpec::state_lookup_field) `F`, names
+///    `F:<state>`;
+/// 3. anything else is a plain state and names nothing.
+///
+/// An array state takes the rule per element. A non-string (`false`, a
+/// number) and the TRACKED / IGNORED sentinels never refer. Unlike
+/// [`parse_ref`] this is a grammar rule, not a guess; nothing here says
+/// whether the slug exists.
+pub fn state_refs(spec: Option<&FieldSpec>, state: &JsonValue) -> Vec<String> {
+    match state {
+        JsonValue::Array(items) => items.iter().flat_map(|s| state_refs(spec, s)).collect(),
+        JsonValue::String(s) if s.contains(':') => vec![s.clone()],
+        JsonValue::String(s)
+            if s.is_empty() || s == TRACKED_STATE_VALUE || s == IGNORED_STATE_VALUE =>
+        {
+            vec![]
+        }
+        JsonValue::String(s) => spec
+            .and_then(|sp| sp.state_lookup_field.as_deref())
+            .map(|f| vec![format!("{f}:{s}")])
+            .unwrap_or_default(),
+        _ => vec![],
+    }
 }
 
 /// Plausible field identifier: starts with `[A-Za-z_]`, continues with
@@ -111,6 +151,50 @@ mod tests {
     #[test]
     fn field_with_space_rejected() {
         assert_eq!(parse_ref("my book:goldmund"), None);
+    }
+
+    #[test]
+    fn state_refs_follow_the_three_rules() {
+        use crate::action::Action;
+        use serde_json::json;
+        let plain = FieldSpec::new("media", Action::Switch);
+        let mut looked = FieldSpec::new("issue", Action::Switch);
+        looked.state_lookup_field = Some("issue_state".into());
+        // 1. `:` is a full slug, on any field, lookup or not.
+        assert_eq!(
+            state_refs(Some(&plain), &json!("book:gatsby")),
+            ["book:gatsby"]
+        );
+        assert_eq!(
+            state_refs(Some(&looked), &json!("book:gatsby")),
+            ["book:gatsby"]
+        );
+        assert_eq!(state_refs(None, &json!("12:30")), ["12:30"]);
+        // 2. a bare state through the lookup field.
+        assert_eq!(
+            state_refs(Some(&looked), &json!("queued")),
+            ["issue_state:queued"]
+        );
+        // 3. control: a bare state without one names nothing.
+        assert!(state_refs(Some(&plain), &json!("queued")).is_empty());
+        assert!(state_refs(None, &json!("queued")).is_empty());
+        // per element
+        assert_eq!(
+            state_refs(Some(&looked), &json!(["a:b", "c", true])),
+            ["a:b", "issue_state:c"]
+        );
+        // never a reference
+        for s in [
+            json!(false),
+            json!(true),
+            json!(3),
+            json!(null),
+            json!("TRACKED"),
+            json!("IGNORED"),
+            json!(""),
+        ] {
+            assert!(state_refs(Some(&looked), &s).is_empty(), "{s}");
+        }
     }
 
     #[test]

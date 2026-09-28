@@ -107,6 +107,9 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     if run_tz {
         issues.extend(collect_tz_drift(db)?);
     }
+    if args.checkers.is_empty() || args.checkers.iter().any(|c| c == "refs") {
+        issues.extend(collect_dangling_refs(db)?);
+    }
     let report = Report {
         issues,
         summary: Summary {
@@ -828,6 +831,63 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
         issues.push(issue);
     }
     Ok(issues)
+}
+
+/// da-f9jyv: state references that name no live entry — a `field:id`
+/// state, and a bare state whose `F:<state>` document is missing (the
+/// rules are [`state_refs`]'s). A tombstoned document is missing. One
+/// warning per (field, slug) with a count and sample hids, since a tracker
+/// has thousands of rows in one state. Never an error: the document may
+/// yet arrive by sync.
+pub fn collect_dangling_refs(db: &Db) -> Result<Vec<Issue>> {
+    use datum_core::doc_ref::state_refs;
+    let registry = db.load_registry()?;
+    let entries = db.list_including_deleted()?;
+    let live: Vec<&Entry> = entries
+        .iter()
+        .filter(|e| e.deleted_at.is_none() && e.superseded_by.is_none())
+        .collect();
+    let slugs: std::collections::HashSet<&str> = live.iter().map(|e| e.slug.as_str()).collect();
+    let mut missing: std::collections::BTreeMap<(&str, String), Vec<String>> = Default::default();
+    for e in &live {
+        let spec = registry.field_spec(&e.field);
+        let mut refs: Vec<String> = [&e.state, &e.following_state]
+            .into_iter()
+            .flatten()
+            .flat_map(|s| state_refs(spec, s))
+            .collect();
+        refs.sort();
+        refs.dedup();
+        for slug in refs.into_iter().filter(|r| !slugs.contains(r.as_str())) {
+            missing
+                .entry((&e.field, slug))
+                .or_default()
+                .push(e.short_uid());
+        }
+    }
+    Ok(missing
+        .into_iter()
+        .map(|((field, slug), hids)| {
+            let count = hids.len();
+            let more = if count > 3 { ", …" } else { "" };
+            Issue {
+                severity: Severity::Warning,
+                category: "dangling_state_ref",
+                message: format!(
+                    "{count} {field} entr{y} to {slug}, which is no live entry",
+                    y = if count == 1 { "y refers" } else { "ies refer" },
+                ),
+                count,
+                example: Some(IssueExample {
+                    id: Some(hids[0].clone()),
+                    field: Some(field.to_string()),
+                    detail: Some(format!("hids: {}{more}", hids[..count.min(3)].join(", "))),
+                }),
+                entries: Vec::new(),
+                rendered_block: String::new(),
+            }
+        })
+        .collect())
 }
 
 /// Live counterpart of the stored integrity-warning surface for the

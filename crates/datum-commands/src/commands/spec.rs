@@ -118,6 +118,9 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     if let Some(d) = &args.description {
         spec.description = Some(d.clone());
     }
+    if let Some(f) = &args.state_lookup_field {
+        spec.state_lookup_field = Some(f.clone()).filter(|f| !f.is_empty());
+    }
     let any = |_: &str, _: &str| Ok(());
     set_pairs(
         &mut spec.state_colors,
@@ -665,6 +668,9 @@ fn render_spec_text(spec: &FieldSpec) {
     }
     if let Some(n) = spec.presentation.glyph_aspect {
         println!("  glyph aspect: {n}");
+    }
+    if let Some(f) = &spec.state_lookup_field {
+        println!("  state lookup field: {f}");
     }
     if let Some(states) = &spec.allowed_states {
         println!("  states:");
