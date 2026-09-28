@@ -1426,7 +1426,11 @@ fn extract_column(entry: &Entry, col: &str) -> String {
         .data
         .as_ref()
         .and_then(|v| v.get(col))
-        .map(|v| render_extra_value(datum_core::entry::shown_data_value(col, v)))
+        .map(|v| {
+            render_extra_value(&datum_core::doc_ref::shown(
+                datum_core::entry::shown_data_value(col, v),
+            ))
+        })
         .unwrap_or_default()
 }
 
@@ -1482,7 +1486,11 @@ fn resolve_template_key(key: &str, entry: &Entry) -> String {
             .data
             .as_ref()
             .and_then(|v| v.get(other))
-            .map(|v| render_extra_value(datum_core::entry::shown_data_value(other, v)))
+            .map(|v| {
+                render_extra_value(&datum_core::doc_ref::shown(
+                    datum_core::entry::shown_data_value(other, v),
+                ))
+            })
             .unwrap_or_default(),
     }
 }

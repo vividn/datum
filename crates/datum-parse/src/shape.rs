@@ -60,6 +60,14 @@ pub const IGNORED_STATE_VALUE: &str = "IGNORED";
 /// `false` — see [`is_off_state`].
 pub const TRACKED_STATE_VALUE: &str = "TRACKED";
 
+/// A stored string beginning `ref://` IS a reference to the slug after it
+/// (da-s5k2s) — the prefix is reserved, as `:` is in a state.
+pub const REF_MARK: &str = "ref://";
+
+/// How a literal string beginning `ref://` is stored: `str://ref://…`,
+/// shown without the `str://` (da-s5k2s).
+pub const STR_MARK: &str = "str://";
+
 /// True for the states that mean the field is tracked but off: `false`
 /// and the TRACKED sentinel.
 pub fn is_off_state(v: &JsonValue) -> bool {

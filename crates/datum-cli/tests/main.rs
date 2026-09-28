@@ -32,6 +32,7 @@ mod count_cmd;
 mod d2_parser;
 mod d3_verb_alias;
 mod data_args_coercion;
+mod data_refs;
 mod date_vocabulary;
 mod dayview_cmd;
 mod db_cmd;

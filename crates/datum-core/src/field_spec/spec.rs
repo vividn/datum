@@ -45,6 +45,9 @@ pub enum SubfieldType {
     Bool,
     Array,
     Any,
+    /// A bare slug is a reference to that entry (da-s5k2s,
+    /// [`data_refs`](crate::doc_ref::data_refs)).
+    Ref,
 }
 
 /// Full specification for a tracked field.

@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use crate::error::{ParseError, Result};
 use crate::input::data_args::Compat;
+use crate::shape::{REF_MARK, STR_MARK};
 use crate::time::{
     format_iso_duration, parse_date, parse_duration, parse_time, DateArg, DefaultDirection, TimeCtx,
 };
@@ -195,9 +196,13 @@ pub fn infer_type(value: &str) -> Option<Value> {
         return Some(Value::String("-Infinity".to_string()));
     }
 
-    // Strict JSON — numbers, arrays, objects, quoted strings.
+    // Strict JSON — numbers, arrays, objects, quoted strings. A quoted
+    // `"ref://…"` is a literal, which stores as `str://ref://…` (da-s5k2s).
     if let Ok(v) = serde_json::from_str::<Value>(value) {
-        return Some(v);
+        return Some(match v {
+            Value::String(s) if s.starts_with(REF_MARK) => Value::String(format!("{STR_MARK}{s}")),
+            v => v,
+        });
     }
 
     Some(Value::String(value.to_string()))
@@ -282,6 +287,23 @@ mod tests {
     #[test]
     fn infer_type_falls_back_to_string() {
         assert_eq!(infer_type("hello"), Some(Value::String("hello".into())));
+    }
+
+    /// da-s5k2s: `ref://x` is stored as typed; both literal spellings store
+    /// `str://ref://x`; a quoted plain string is untouched.
+    #[test]
+    fn infer_type_ref_marker_and_its_literal() {
+        assert_eq!(infer_type("ref://a:b"), Some(json!("ref://a:b")));
+        assert_eq!(
+            infer_type("str://ref://a:b"),
+            Some(json!("str://ref://a:b"))
+        );
+        assert_eq!(infer_type(r#""ref://a:b""#), Some(json!("str://ref://a:b")));
+        assert_eq!(infer_type(r#""a:b""#), Some(json!("a:b")));
+        assert_eq!(
+            infer_type(r#",ref://a:b,"ref://c:d","#),
+            Some(json!(["ref://a:b", "str://ref://c:d"]))
+        );
     }
 
     #[test]

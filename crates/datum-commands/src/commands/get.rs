@@ -105,9 +105,12 @@ const MAX_HOPS: usize = 8;
 ///
 /// da-pimix: the name splits on `::` into hops. Each hop but the last must
 /// read a state or following state that refers to one entry
-/// ([`state_refs`](datum_core::doc_ref::state_refs)), and the next name is
-/// read from that entry — `x::state::class`. A value that refers to
-/// nothing, an array, a missing entry, a revisit or a ninth hop is an error.
+/// ([`state_refs`](datum_core::doc_ref::state_refs)), or a data value that
+/// does ([`data_refs`](datum_core::doc_ref::data_refs), da-s5k2s), and the
+/// next name is read from that entry — `x::state::class`,
+/// `x::needs::title`. A value that refers to nothing, an array, a missing
+/// entry, a revisit or a ninth hop is an error. A `str://ref://…` literal
+/// prints without its `str://`.
 fn project(piece: &str, db: &Db) -> Result<()> {
     let (id, names) = piece.split_once("::").ok_or_else(|| {
         anyhow::anyhow!("'{piece}' is not <id>::<name>, and a list of values takes no plain id")
@@ -137,7 +140,7 @@ fn project(piece: &str, db: &Db) -> Result<()> {
         let spec = registry.as_ref().and_then(|r| r.field_spec(&entry.field));
         let refs = match name {
             "state" | "following_state" => datum_core::doc_ref::state_refs(spec, &value),
-            _ => vec![],
+            key => datum_core::doc_ref::data_refs(spec, key, &value),
         };
         let [slug] = refs.as_slice() else {
             anyhow::bail!("{at} is {value}, which refers to nothing");
@@ -160,7 +163,7 @@ fn project(piece: &str, db: &Db) -> Result<()> {
         }
         seen.push(entry.hid.clone());
     }
-    match read(&entry, last, &at)? {
+    match datum_core::doc_ref::shown(&read(&entry, last, &at)?).into_owned() {
         serde_json::Value::String(s) => println!("{s}"),
         other => println!("{other}"),
     }

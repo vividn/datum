@@ -240,7 +240,8 @@ fn a_value_that_refers_to_nothing_refuses_a_further_hop() {
         stderr.contains(r#"mood:_::state is "open", which refers to nothing"#),
         "{stderr}"
     );
-    // A data value is no state: `book:x` in data is not followed.
+    // A data value refers only by `ref://` or a ref-typed key (da-s5k2s):
+    // a bare `book:x` in data is not followed.
     env.ok(&["occur", "read", "what=book:x"]);
     let stderr = env.err(&["get", "read:_::what::title"]);
     assert!(stderr.contains("which refers to nothing"), "{stderr}");
@@ -307,6 +308,90 @@ fn a_ninth_hop_errors_with_the_chain() {
     );
 }
 
+/// da-s5k2s: a data key hops when its value is a reference — `ref://<slug>`
+/// on any key — through the same reader as a state, and the two chain.
+#[test]
+fn a_data_ref_hops_and_chains_with_state_hops() {
+    let env = Env::new();
+    env.ok(&["add", "book", "id=dune", "title=Dune"]);
+    env.ok(&["add", "shelf", "id=top", "holds=ref://book:dune"]);
+    env.ok(&["occur", "read", "what=ref://book:dune"]);
+    assert_eq!(env.ok(&["get", "read:_::what::title"]), "Dune\n");
+    // Control: no hop prints the reference as stored.
+    assert_eq!(env.ok(&["get", "read:_::what"]), "ref://book:dune\n");
+    // Two data hops, and a state hop into a data hop.
+    env.ok(&["occur", "visit", "where=ref://shelf:top"]);
+    assert_eq!(env.ok(&["get", "visit:_::where::holds::title"]), "Dune\n");
+    env.ok(&["switch", "media", "shelf:top"]);
+    assert_eq!(env.ok(&["get", "media:_::state::holds::title"]), "Dune\n");
+}
+
+#[test]
+fn a_bare_slug_hops_only_on_a_key_the_spec_types_ref() {
+    let env = Env::new();
+    env.ok(&[
+        "spec",
+        "set",
+        "task",
+        "--from-json",
+        r#"{"field":"task","verb":"occur","subfields":{"blocker":{"value_type":"ref"}}}"#,
+    ]);
+    env.ok(&["add", "issue", "id=k7f2a", "title=Fix it"]);
+    env.ok(&["occur", "task", "blocker=issue:k7f2a"]);
+    assert_eq!(env.ok(&["get", "task:_::blocker::title"]), "Fix it\n");
+    // Control: the same value on a field without the spec type.
+    env.ok(&["occur", "chore", "blocker=issue:k7f2a"]);
+    let stderr = env.err(&["get", "chore:_::blocker::title"]);
+    assert!(
+        stderr.contains(r#"chore:_::blocker is "issue:k7f2a", which refers to nothing"#),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn a_dangling_or_looping_data_ref_errors() {
+    let env = Env::new();
+    env.ok(&["occur", "read", "what=ref://book:nope"]);
+    let stderr = env.err(&["get", "read:_::what::title"]);
+    assert!(
+        stderr.contains("read:_::what refers to book:nope, which does not exist"),
+        "{stderr}"
+    );
+    env.ok(&["add", "a", "id=1", "next=ref://b:1"]);
+    env.ok(&["add", "b", "id=1", "next=ref://a:1"]);
+    assert_eq!(env.ok(&["get", "a:1::next::slug"]), "b:1\n");
+    let stderr = env.err(&["get", "a:1::next::next::slug"]);
+    assert!(
+        stderr.contains("a:1::next::next loops back to a:1: a:1 → b:1 → a:1"),
+        "{stderr}"
+    );
+}
+
+/// A literal `ref://` string — typed `str://ref://…` or JSON-quoted — is
+/// stored `str://ref://…`, reads without the `str://`, and is no reference.
+#[test]
+fn a_literal_ref_string_reads_bare_and_does_not_hop() {
+    let env = Env::new();
+    env.ok(&["add", "book", "id=dune", "title=Dune"]);
+    let echo = env.ok(&[
+        "occur",
+        "q",
+        r#"a="ref://book:dune""#,
+        "b=str://ref://book:dune",
+    ]);
+    assert!(echo.contains(r#"  a: "ref://book:dune""#), "{echo}");
+    assert!(echo.contains(r#"  b: "ref://book:dune""#), "{echo}");
+    assert!(!echo.contains("str://"), "{echo}");
+    assert_eq!(env.ok(&["get", "q:_::a"]), "ref://book:dune\n");
+    assert_eq!(
+        env.ok(&["get", "q:_::data"]),
+        r#"{"a":"str://ref://book:dune","b":"str://ref://book:dune"}"#.to_string() + "\n",
+        "stored with the mark"
+    );
+    let stderr = env.err(&["get", "q:_::a::title"]);
+    assert!(stderr.contains("which refers to nothing"), "{stderr}");
+}
+
 /// The pair a script must tell apart: absent fails, empty succeeds.
 #[test]
 fn missing_key_fails_but_empty_string_prints_an_empty_line() {
@@ -363,7 +448,7 @@ fn get_help_documents_the_syntax_and_the_precedence() {
     assert!(help.contains("<ID_OR_SLUG>::<NAME>"), "{help}");
     assert!(help.contains("always means the column"), "{help}");
     assert!(
-        help.contains("datum get <ID_OR_SLUG>::state[::state]...::<NAME>"),
+        help.contains("datum get <ID_OR_SLUG>::<REF>[::<REF>]...::<NAME>"),
         "{help}"
     );
 }

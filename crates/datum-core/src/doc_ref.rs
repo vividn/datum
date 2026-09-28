@@ -14,12 +14,16 @@
 //! document is created or synced in).
 //!
 //! A STATE is the stricter case: [`state_refs`] reads `:` inside it as a
-//! reserved token, so there it is never a guess.
+//! reserved token, so there it is never a guess. A DATA value refers only
+//! through [`data_refs`]: the reserved `ref://` prefix, or a key the spec
+//! types `ref`.
+
+use std::borrow::Cow;
 
 use serde_json::Value as JsonValue;
 
-use crate::field_spec::FieldSpec;
-use crate::shape::{IGNORED_STATE_VALUE, TRACKED_STATE_VALUE};
+use crate::field_spec::{FieldSpec, SubfieldType};
+use crate::shape::{IGNORED_STATE_VALUE, REF_MARK, STR_MARK, TRACKED_STATE_VALUE};
 
 /// Split `s` on the first `:` and return `(field, id)` when both sides are
 /// non-empty and the field portion is a plausible identifier.
@@ -78,6 +82,59 @@ pub fn state_refs(spec: Option<&FieldSpec>, state: &JsonValue) -> Vec<String> {
             .unwrap_or_default(),
         _ => vec![],
     }
+}
+
+/// The slugs the data value under `key` refers to (da-s5k2s):
+///
+/// 1. a string beginning `ref://` refers to the slug after it, on any key —
+///    the prefix is reserved, so a literal one is stored `str://ref://…`;
+/// 2. any other string, on a key the spec types [`SubfieldType::Ref`], is
+///    itself a slug — except that literal;
+/// 3. anything else refers to nothing.
+///
+/// An array takes the rule per element, and an object per member under
+/// `key.member`, the dotted path a subfield is named by. Nothing here says
+/// whether the slug exists.
+pub fn data_refs(spec: Option<&FieldSpec>, key: &str, value: &JsonValue) -> Vec<String> {
+    match value {
+        JsonValue::Array(items) => items.iter().flat_map(|v| data_refs(spec, key, v)).collect(),
+        JsonValue::Object(map) => map
+            .iter()
+            .flat_map(|(k, v)| data_refs(spec, &format!("{key}.{k}"), v))
+            .collect(),
+        JsonValue::String(s) => match s.strip_prefix(REF_MARK) {
+            Some(slug) if !slug.is_empty() => vec![slug.to_string()],
+            Some(_) => vec![],
+            None if s.is_empty() || literal(s).is_some() => vec![],
+            None => spec
+                .and_then(|sp| sp.subfields.get(key))
+                .filter(|sf| matches!(sf.value_type, SubfieldType::Ref))
+                .map(|_| vec![s.clone()])
+                .unwrap_or_default(),
+        },
+        _ => vec![],
+    }
+}
+
+/// A value as it reads: a `str://ref://…` literal without its `str://`
+/// (da-s5k2s), per element in an array. Everything else is itself.
+pub fn shown(value: &JsonValue) -> Cow<'_, JsonValue> {
+    match value {
+        JsonValue::String(s) => match literal(s) {
+            Some(lit) => Cow::Owned(lit.into()),
+            None => Cow::Borrowed(value),
+        },
+        JsonValue::Array(a) if a.iter().any(|v| matches!(shown(v), Cow::Owned(_))) => {
+            Cow::Owned(a.iter().map(|v| shown(v).into_owned()).collect())
+        }
+        _ => Cow::Borrowed(value),
+    }
+}
+
+/// `ref://…` when `s` is its stored literal `str://ref://…`. `str://`
+/// before anything else is not (yet) a mark: the string as it is.
+fn literal(s: &str) -> Option<&str> {
+    s.strip_prefix(STR_MARK).filter(|l| l.starts_with(REF_MARK))
 }
 
 /// Plausible field identifier: starts with `[A-Za-z_]`, continues with
@@ -194,6 +251,70 @@ mod tests {
             json!(""),
         ] {
             assert!(state_refs(Some(&looked), &s).is_empty(), "{s}");
+        }
+    }
+
+    #[test]
+    fn data_refs_marker_and_ref_typed_key() {
+        use crate::action::Action;
+        use crate::field_spec::SubfieldSpec;
+        use serde_json::json;
+        let mut typed = FieldSpec::new("x", Action::Occur);
+        for k in ["needs", "a.b"] {
+            typed.subfields.insert(
+                k.into(),
+                SubfieldSpec {
+                    required: false,
+                    value_type: SubfieldType::Ref,
+                    in_slug: false,
+                    default: None,
+                },
+            );
+        }
+        // 1. the marker, on any key, spec or not.
+        assert_eq!(data_refs(None, "k", &json!("ref://i:doc")), ["i:doc"]);
+        assert_eq!(
+            data_refs(Some(&typed), "needs", &json!("ref://i:doc")),
+            ["i:doc"]
+        );
+        // 2. a bare slug on a ref-typed key; control: the same key untyped.
+        assert_eq!(data_refs(Some(&typed), "needs", &json!("i:doc")), ["i:doc"]);
+        assert!(data_refs(None, "needs", &json!("i:doc")).is_empty());
+        assert!(data_refs(Some(&typed), "other", &json!("i:doc")).is_empty());
+        // a literal never refers, typed key or not.
+        assert!(data_refs(None, "k", &json!("str://ref://i:doc")).is_empty());
+        assert!(data_refs(Some(&typed), "needs", &json!("str://ref://i:doc")).is_empty());
+        // per element, and per member under its dotted path.
+        assert_eq!(
+            data_refs(None, "k", &json!(["ref://a:1", "plain", "ref://b:2"])),
+            ["a:1", "b:2"]
+        );
+        assert_eq!(
+            data_refs(Some(&typed), "a", &json!({"b": "c:3", "z": "d:4"})),
+            ["c:3"]
+        );
+        for v in [
+            json!(3),
+            json!(true),
+            json!(null),
+            json!(""),
+            json!("ref://"),
+        ] {
+            assert!(data_refs(Some(&typed), "needs", &v).is_empty(), "{v}");
+        }
+    }
+
+    #[test]
+    fn a_literal_reads_without_its_str_mark() {
+        use serde_json::json;
+        assert_eq!(*shown(&json!("str://ref://x")), json!("ref://x"));
+        assert_eq!(
+            *shown(&json!(["str://ref://x", "y"])),
+            json!(["ref://x", "y"])
+        );
+        // controls: `str://` before anything else, a reference, a plain value.
+        for v in [json!("str://other"), json!("ref://x"), json!("y"), json!(1)] {
+            assert!(matches!(shown(&v), Cow::Borrowed(_)), "{v}");
         }
     }
 

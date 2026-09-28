@@ -209,7 +209,7 @@ fn data_pairs(entry: &Entry) -> Option<Vec<(String, String)>> {
         map.iter()
             .map(|(k, v)| {
                 let v = datum_core::entry::shown_data_value(k, v);
-                (k.clone(), render_value_body(v))
+                (k.clone(), render_value_body(&datum_core::doc_ref::shown(v)))
             })
             .collect(),
     )

@@ -235,6 +235,8 @@ CREATE 19zx6 activity:2026-09-24T14:47:29.927Z
 | `'"42"'`             | JSON quotes force a string                          |
 | `null` `undefined`   | a JSON null; no key (`'"null"'` is the string)      |
 | `=2`                 | an empty key is no key — the whole token is data    |
+| `ref://<slug>`       | a reference to the entry `<slug>`                   |
+| `str://ref://…`      | a literal `ref://…` string, shown without `str://`  |
 
 ### `.key` and `a.b` — paths
 
@@ -408,6 +410,71 @@ DELETE dtgnq coffee:2026-09-24T14:54:52.113Z
 16:54:52+2  coffee ●
   comment: ["decaf","second cup","deleted: wrong day"]
 ```
+
+### `ref://` — a reference, and `str://ref://` — a literal one
+
+A stored string beginning `ref://` IS a reference to the entry whose slug
+follows, on any key: the prefix is reserved, as `:` is in a state. It is
+stored as typed, so every reader, replay and sync carries it unchanged.
+Since the prefix is reserved, a literal string beginning `ref://` cannot
+be stored bare: both `str://ref://…` and the JSON-quoted `'"ref://…"'`
+store `str://ref://…`, which is shown without its `str://` and refers to
+nothing. `str://` means this only in front of `ref://`. An array takes
+the rule per element.
+
+On a key whose subfield `value_type` is `ref` — set with `spec set
+--from-json` or in a kit's field spec — a bare slug is a reference too,
+stored as typed; a marker there is accepted and reads alike.
+
+`get <id>::<key>::<name>` follows a reference as it follows a state (§4
+`::`), and `datum check refs` names each one that finds no live entry, one
+line per field, key and slug. Nothing is refused at write.
+
+```bash
+datum add book id=dune title=Dune
+datum occur read what=ref://book:dune
+datum occur quote said='"ref://book:dune"'
+datum get read:_::what::title
+datum get quote:_::said
+datum spec set task --from-json '{"field":"task","verb":"occur","subfields":{"blocker":{"value_type":"ref"}}}'
+datum occur task blocker=issue:k7f2a
+datum occur plan needs=,ref://book:dune,ref://book:emma,
+datum check refs
+```
+
+```
+CREATE rp2sb book:dune
+c21:40:09+2  book ¢
+  title: "Dune"
+CREATE 54ii3 read:2026-09-28T19:40:09.998Z
+21:40:09+2  read ∅●
+  what: "ref://book:dune"
+CREATE p41in quote:2026-09-28T19:40:10.013Z
+21:40:10+2  quote ∅●
+  said: "ref://book:dune"
+Dune
+ref://book:dune
+✓ Spec saved for 'task'
+CREATE bdd2a task:2026-09-28T19:40:10.066Z
+21:40:10+2  task ∅●
+  blocker: "issue:k7f2a"
+CREATE j285u plan:2026-09-28T19:40:10.083Z
+21:40:10+2  plan ∅●
+  needs: ["ref://book:dune","ref://book:emma"]
+[WARN ] dangling_data_ref (x1): 1 plan entry refers to book:emma, which is no live entry (key needs)
+    example: j285u
+    example field: plan
+    hids: j285u
+[WARN ] dangling_data_ref (x1): 1 task entry refers to issue:k7f2a, which is no live entry (key blocker)
+    example: bdd2a
+    example field: task
+    hids: bdd2a
+
+Summary: 0 errors, 2 warnings.
+```
+
+`said` stores `str://ref://book:dune`, so `quote` is not listed: a literal
+is no reference.
 
 ## 3. Inside a time
 
@@ -608,7 +675,8 @@ column (`hid`, `state`, …), `.x.y` into the state, anything else into
 `data`. `::name` alone reads the last entry. A further `::` is a hop:
 `<id>::state::<name>` follows the state to the entry it refers to (a `:`
 state is that slug, a bare one goes through the spec's state lookup field)
-and reads `<name>` there, up to 8 hops. A value that refers to nothing, an
+and reads `<name>` there, up to 8 hops. A data key hops the same way when
+its value is a reference (§2 `ref://`): `<id>::needs::<name>`. A value that refers to nothing, an
 array, a missing entry or a loop is an error naming it.
 
 ```bash
@@ -752,4 +820,5 @@ word:word:pt:verb word
 | compact dates                 | `crates/datum-parse/src/time/date.rs`                |
 | quick-ids                     | `crates/datum-core/src/ids/resolve.rs`               |
 | `:` inside a state            | `crates/datum-core/src/doc_ref.rs` (`state_refs`)    |
+| `ref://` in a data value      | `crates/datum-core/src/doc_ref.rs` (`data_refs`)     |
 | `%…%` templates               | `crates/datum-core/src/field_spec/interpolation.rs`  |
