@@ -21,6 +21,7 @@ use serde_json::Value as JsonValue;
 
 use crate::{
     args::{DbImportArgs, DbImportArgsExt},
+    commands::log_core::normalize_state,
     config::device_id,
     progress::Progress,
 };
@@ -48,6 +49,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
     let mut points = 0usize;
     let mut blocks = 0usize;
     let mut dur_parse_warnings = 0usize;
+    let mut states_normalized = 0usize;
     let mut entries: Vec<Entry> = Vec::with_capacity(docs.len());
     // Parallel to `entries`: the source `_id` for each entry, so we can
     // attribute `Ignored` (dedup) outcomes back to their original IDs.
@@ -86,12 +88,18 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         // `data.state` undefined → state column NULL.
         // `data.state == null` → IGNORED, which is what it meant in v2
         //   (da-revva) and what `switch f null` writes today.
-        // anything else → Some(value), preserved verbatim.
+        // anything else → Some(value), through `normalize_state` (da-lvyt0):
+        //   `{id: x}` → `x`, per element of an array; a structured state
+        //   with more keys is kept as it is.
         let raw_state = data.get("state");
         let state_in: Option<JsonValue> = match raw_state {
             None => None,
             Some(v) if v.is_null() => Some(JsonValue::String(IGNORED_STATE_VALUE.to_string())),
-            Some(v) => Some(v.clone()),
+            Some(v) => {
+                let n = normalize_state(v.clone());
+                states_normalized += usize::from(&n != v);
+                Some(n)
+            }
         };
 
         let occur_uncertainty = parse_datum_uncertainty(&data["occurTime"]);
@@ -400,6 +408,9 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             // but give the user a one-liner manual fallback.
             println!("(run `datum conflicts list` to verify nothing slipped through.)");
         }
+    }
+    if states_normalized > 0 {
+        println!("states normalized: {states_normalized} ({{id: x}} collapsed to x)");
     }
     if dur_parse_warnings > 0 {
         println!("({dur_parse_warnings} dur values could not be parsed; literals preserved in extra_data.)");

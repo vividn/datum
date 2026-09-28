@@ -1660,19 +1660,21 @@ pub(crate) struct ReservedColumns {
 /// trivial single-key `{id: x}` Object back to the scalar `x` so a bare
 /// `state=v` round-trips to `entry.state = v` instead of the gratuitously
 /// nested `{id: v}`. Structured state (dot-prefixed `state.*` siblings) has
-/// more than one key and is left intact. Idempotent on scalars and arrays,
-/// so callers may pre-normalize (e.g. for slug derivation) without the
-/// shared boundary double-collapsing.
+/// more than one key and is left intact.
+///
+/// da-lvyt0: the collapse runs to a fixed point, because the parser files
+/// `state=X` under `state.id`, so a typed `state={"id":"z"}` arrives as
+/// `{id: {id: z}}`; and an array (v2's `["a", {"id": "b"}]`) collapses per
+/// element. So it is idempotent: callers may pre-normalize (e.g. for slug
+/// derivation) and the shared boundary agrees.
 pub(crate) fn normalize_state(state: JsonValue) -> JsonValue {
-    if let JsonValue::Object(mut obj) = state {
-        if obj.len() == 1 {
-            if let Some(id) = obj.remove("id") {
-                return id;
-            }
+    match state {
+        JsonValue::Object(mut obj) if obj.len() == 1 && obj.contains_key("id") => {
+            normalize_state(obj.remove("id").unwrap_or_default())
         }
-        return JsonValue::Object(obj);
+        JsonValue::Array(a) => JsonValue::Array(a.into_iter().map(normalize_state).collect()),
+        s => s,
     }
-    state
 }
 
 pub(crate) fn extract_reserved_columns(
@@ -1724,7 +1726,8 @@ pub(crate) fn extract_reserved_columns(
         }
     }
     if let Some(v) = obj.remove("following_state") {
-        out.following_state = Some(v);
+        // da-lvyt0: a trailing-edge state takes the same `{id: x}` rule.
+        out.following_state = Some(normalize_state(v));
     }
     if let Some(v) = obj.remove("occur_time") {
         out.occur_time = Some(v);
@@ -2301,6 +2304,14 @@ mod tests {
             normalize_state(serde_json::json!({"id": 5})),
             serde_json::json!(5)
         );
+        // da-lvyt0: `state={"id":"z"}` parses to `{id: {id: z}}`; one pass
+        // reaches the fixed point, so a second changes nothing.
+        let once = normalize_state(serde_json::json!({"id": {"id": "z"}}));
+        assert_eq!(once, serde_json::json!("z"));
+        assert_eq!(normalize_state(once.clone()), once);
+        let arr = normalize_state(serde_json::json!(["a", {"id": "b"}, {"id": "c", "n": 1}]));
+        assert_eq!(arr, serde_json::json!(["a", "b", {"id": "c", "n": 1}]));
+        assert_eq!(normalize_state(arr.clone()), arr);
     }
 
     /// da-rori parity: `switch mood happy` produces a scalar `entry.state`.

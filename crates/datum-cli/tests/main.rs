@@ -91,6 +91,7 @@ mod spec_entries;
 mod spec_keys;
 mod stale_last_gate_removed;
 mod start_cmd;
+mod state_id_normalize;
 mod state_keys;
 mod state_refs;
 mod stateless_same_instant;
