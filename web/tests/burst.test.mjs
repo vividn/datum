@@ -4,7 +4,9 @@
 // DURING the burst, which is the box's speed and not the page's: under load
 // none does and the burst costs two; on an idle box one returns mid-burst
 // and a third is rightly asked for (da-w2oj). So the bound is counted
-// against the returns the page really saw. And the worker's queue drops a keyed job that has not
+// against the returns the page really saw — and a paint against the return
+// before it: one that came back with a newer click already made is never
+// drawn (da-ehaa). And the worker's queue drops a keyed job that has not
 // started when a newer one with the same key arrives; a keyless one never.
 //
 // Delta-blind on purpose: runs are counted at the seam, paints off the DOM,
@@ -52,18 +54,31 @@ describe('a burst of changes', () => {
 				const burst = await page.evaluate(
 					async ([band, scope]) => {
 						const ran = [];
-						const nowview = { out: 0, most: 0, back: 0, bursting: true };
+						// `clicks` counts the requests made: the pane asks for a
+						// nowview on each, in the microtasks after it (`run` hands
+						// the runner its argv synchronously). A run that comes back
+						// with more clicks made than when it started came back
+						// behind a newer request — STALE — and the paint that
+						// follows a return is that return's.
+						const nowview = { out: 0, most: 0, back: 0, bursting: true, clicks: 0, stale: 0, lastStale: false };
 						const previous = window.datum.setRunner(async (argv, ...rest) => {
 							const mine = argv[0] === 'nowview';
+							const asked = nowview.clicks;
 							if (mine) nowview.most = Math.max(nowview.most, ++nowview.out);
 							const result = await previous(argv, ...rest);
 							if (mine) nowview.out--;
 							if (mine && nowview.bursting) nowview.back++;
+							if (mine) {
+								nowview.lastStale = nowview.clicks > asked;
+								nowview.stale += nowview.lastStale;
+							}
 							if (!result.superseded) ran.push(argv);
 							return result;
 						});
 						window.__ran = ran;
+						window.__nowview = nowview;
 						window.__paints = 0;
+						window.__stalePaints = 0;
 						// A PICTURE, not any `<svg>`: `CliOutput` classes the one it
 						// draws `svg.svg`, and the pane holds other svgs that are
 						// nobody's picture — a margin pill's lock glyph
@@ -72,7 +87,10 @@ describe('a burst of changes', () => {
 						new MutationObserver((records) => {
 							for (const r of records)
 								for (const n of r.addedNodes)
-									if (n.nodeName.toLowerCase() === 'svg' && n.classList?.contains('svg')) window.__paints++;
+									if (n.nodeName.toLowerCase() === 'svg' && n.classList?.contains('svg')) {
+										window.__paints++;
+										window.__stalePaints += nowview.lastStale;
+									}
 						}).observe(document.querySelector(scope), { childList: true, subtree: true });
 						window.__datumSeen.length = 0;
 
@@ -85,6 +103,7 @@ describe('a burst of changes', () => {
 							const target = document.elementFromPoint(x, y);
 							target.dispatchEvent(new PointerEvent('pointerdown', init));
 							target.dispatchEvent(new MouseEvent('click', init));
+							nowview.clicks++;
 							// A macrotask: the page reacts to each change on its own.
 							await new Promise((r) => setTimeout(r, 0));
 							dimmed ||= !!document.querySelector(`${scope} .picture.behind`);
@@ -96,10 +115,12 @@ describe('a burst of changes', () => {
 				);
 				await app.idle();
 
-				const { requested, ran, paints, behind } = await page.evaluate((scope) => ({
+				const { requested, ran, paints, stale, stalePaints, behind } = await page.evaluate((scope) => ({
 					requested: window.__datumSeen.filter((a) => a[0] === 'nowview'),
 					ran: window.__ran.filter((a) => a[0] === 'nowview'),
 					paints: window.__paints,
+					stale: window.__nowview.stale,
+					stalePaints: window.__stalePaints,
 					behind: document.querySelectorAll(`${scope} .behind`).length
 				}), NOWVIEW);
 				assert.ok(requested.length >= 2, `a burst of ${requested.length} requests is no burst`);
@@ -112,7 +133,11 @@ describe('a burst of changes', () => {
 				);
 				// A return with nothing newer behind it is the newest picture
 				// of its moment; one with a newer request waiting is never drawn.
-				assert.ok(paints >= 1 && paints <= burst.back + 1, `an intermediate picture was painted: ${paints} paints, ${burst.back} returns during the burst`);
+				// Held per return, not as a count: on an idle box a count cannot
+				// tell the one from the other (da-ehaa).
+				assert.ok(stale >= 1, 'no run came back behind a newer click: the burst tested nothing');
+				assert.equal(stalePaints, 0, `${stalePaints} of ${paints} paints followed a run that came back behind a newer request`);
+				assert.ok(paints >= 1, 'nothing was painted');
 				assert.deepEqual(ran.at(-1), requested.at(-1), 'the last run is not the last request');
 				assert.ok(burst.dimmed, 'the old picture was not dimmed while the new one was on its way');
 				assert.equal(behind, 0, 'the final picture is still dimmed');
