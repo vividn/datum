@@ -226,14 +226,19 @@ writing it down.
     when a second place wants it, not before), a shadow, the beta mark's amber, a colour handed
     to an SVG attribute or parsed as hex from TypeScript — `var()` reaches neither —
     and `ansi.ts`'s sixteen, which are a terminal's slots and not this app's looks.
-12. **A control a finger can hit is 24px** (`reachable.test.mjs` holds every button that opens a
+12. **A control a finger can hit is at least 24px** (`reachable.test.mjs` holds every button that opens a
     menu — a pane's title and the root bar's active tab (da-9vtw, da-wjob) — every badge beside
     one (the `+`, the maximize, and the `×` that closes what the title names — da-efr4i),
     every submenu icon and every root-bar button to it). `.control` in `app.css` is the rule set that
     makes one — the box, the 6px radius, the pane ground, the 1px rule, the muted ink — and
     `.control.badge` the square of them, sized by `--badge` (a pane's title row, a fingertip's
     24px under a coarse pointer, which is what the box round a pane's title is sized by too).
-    THE BOX AND
+    24 is a FLOOR, not a value (da-kc5cr): the day strip's grip and freeze are 26 on either
+    pointer, because a strip control floats inside a drawn picture with no neighbour to reach
+    over. A pane badge cannot follow it: it is centred on its pane's outline and hangs half its
+    box into the 8px gap between panes (`BORDER`), so on a mouse it is `--row`'s 16, the largest
+    that reaches the neighbour by nothing, and grows to 24 only where a finger needs it — the
+    4px it then reaches over is a box nobody sees. THE BOX AND
     THE DRAWING ARE TWO TOKENS (da-wyofs): `--badge` is the box a pointer lands on and nothing
     else, and a pane frame's `--mark` is what is DRAWN inside it — one value under either
     pointer, because the app should not look like two apps. They were one token, so every ask
