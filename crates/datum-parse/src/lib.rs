@@ -57,6 +57,7 @@ pub mod help;
 pub mod input;
 pub mod parse;
 pub mod shape;
+pub mod spec_keys;
 pub mod time;
 pub mod verb;
 

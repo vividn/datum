@@ -41,7 +41,7 @@ mod get_delete;
 mod history;
 mod info_db;
 mod kit;
-mod log;
+pub(crate) mod log;
 mod meta;
 mod migrate_io;
 mod now;

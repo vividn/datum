@@ -62,6 +62,10 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         args.comment_remainder = true;
     }
 
+    // da-9s98k: the field's declared keys join the line as its slots,
+    // before the `dur=` slot `prepare_log_args` declares last.
+    apply_spec_keys(action, &mut args, db)?;
+
     // da-ooe2: restore v2's flexiblePositional duration model. The verb-
     // specific trailing-duration peelers are gone; `prepare_log_args`
     // declares an optional `dur=` slot last for the duration-bearing verbs
@@ -1308,6 +1312,25 @@ pub(crate) fn extract_switch_then_chain(args: &mut LogArgs) -> Result<()> {
             args.duration.duration = Some(dur_token);
         }
     }
+    Ok(())
+}
+
+/// da-9s98k: a field's declared keys join the line as its slots — the
+/// same words an alias of the field gets at expansion
+/// ([`datum_parse::spec_keys`]); a key the alias already added is named by
+/// then, and left alone.
+fn apply_spec_keys(action: Action, args: &mut LogArgs, db: &Db) -> Result<()> {
+    use datum_parse::spec_keys::{spec_key_words, takes_spec_keys};
+    if !takes_spec_keys(&action.to_string(), args) {
+        return Ok(());
+    }
+    let Some(spec) = db.load_spec(&args.field_or_verb)? else {
+        return Ok(());
+    };
+    let words = spec_key_words(args, &spec.declared_keys());
+    args.slug_keys.extend(words.slug_keys);
+    args.keys.extend(words.keys);
+    args.rest.splice(0..0, words.assigned);
     Ok(())
 }
 

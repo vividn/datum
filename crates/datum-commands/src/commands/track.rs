@@ -5,7 +5,9 @@ use anyhow::Result;
 use datum_core::{
     action::Action,
     db::Db,
-    field_spec::{FieldSpec, SubfieldSpec, SubfieldType, VERB_CHOICES_TEXT},
+    field_spec::{
+        parse_key_decl, FieldSpec, KeyKind, SubfieldSpec, SubfieldType, VERB_CHOICES_TEXT,
+    },
     time::DatumTime,
     track::track_entry,
 };
@@ -78,17 +80,16 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
     // declared with the keys a person cares about in the one command. A
     // default is JSON when it parses and text when it does not, as the
     // web's key editor stores an `any` key's. Naming a key the spec already
-    // has sets its required and default and keeps the rest — its type, and
-    // whether it is in the slug, which is what an entry IS.
+    // has sets its kind and keeps the rest — its type, and whether it is in
+    // the slug, which is what an entry IS. da-9s98k: `NAME:=VALUE` assigns.
     let keys = args.keys.iter().map(|k| (k, false));
     for (key, required) in keys.chain(args.required_keys.iter().map(|k| (k, true))) {
-        let (name, default) = match key.split_once('=') {
-            Some((name, d)) if !d.is_empty() => (
-                name,
-                Some(serde_json::from_str(d).unwrap_or_else(|_| d.into())),
-            ),
-            Some((name, _)) => (name, None),
-            None => (key.as_str(), None),
+        let (name, kind) = parse_key_decl(key);
+        let json = |d: &str| serde_json::from_str(d).unwrap_or_else(|_| d.into());
+        let (default, assign) = match &kind {
+            KeyKind::Default(d) => (Some(json(d)), false),
+            KeyKind::Assign(v) => (Some(json(v)), true),
+            KeyKind::Required | KeyKind::Optional => (None, false),
         };
         anyhow::ensure!(!name.trim().is_empty(), "--key needs a name: '{key}'");
         let sub = spec
@@ -99,9 +100,11 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
                 value_type: SubfieldType::Any,
                 in_slug: false,
                 default: None,
+                assign: false,
             });
         sub.required = required;
         sub.default = default;
+        sub.assign = assign;
     }
     spec.regenerate_derived_aliases();
     let device = device_id()?;

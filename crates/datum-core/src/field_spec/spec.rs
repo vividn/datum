@@ -16,6 +16,7 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
 use crate::action::Action;
+pub use datum_parse::spec_keys::{parse_key_decl, DeclaredKey, KeyKind};
 
 use super::presentation::PresentationSpec;
 use super::DerivedAlias;
@@ -34,6 +35,11 @@ pub struct SubfieldSpec {
     pub in_slug: bool,
     /// Default value if not supplied.
     pub default: Option<serde_json::Value>,
+    /// If true, `default` is ASSIGNED — written onto every entry as a
+    /// `key=value` would be — rather than offered as a slot a positional
+    /// can fill (da-9s98k).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub assign: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -228,6 +234,55 @@ impl FieldSpec {
                 self.verb
             ))
         }
+    }
+
+    /// Every key the spec declares: the `id_keys`, the `data_keys`, then
+    /// the subfields by name (da-9s98k). As on any line, the `-K` slots
+    /// among them bind before the `-k` ones, so an `in_slug` subfield takes
+    /// a positional ahead of the `data_keys`. A name declared twice (`spec
+    /// set --data-key` and `track --key` write different lists) is one key,
+    /// as repeated `-k` are: the first place, the last kind, in the slug if
+    /// either is.
+    pub fn declared_keys(&self) -> Vec<DeclaredKey> {
+        let listed = |keys: &[String], id: bool| -> Vec<DeclaredKey> {
+            keys.iter()
+                .map(|k| {
+                    let (name, kind) = parse_key_decl(k);
+                    DeclaredKey {
+                        name: name.to_string(),
+                        kind,
+                        id,
+                    }
+                })
+                .collect()
+        };
+        let mut subs: Vec<_> = self.subfields.iter().collect();
+        subs.sort_by_key(|(name, _)| name.as_str());
+        let text = |v: &JsonValue| v.as_str().map_or_else(|| v.to_string(), str::to_string);
+        let subs = subs.into_iter().map(|(name, s)| DeclaredKey {
+            name: name.clone(),
+            kind: match (&s.default, s.assign) {
+                (Some(v), true) => KeyKind::Assign(text(v)),
+                (Some(v), false) => KeyKind::Default(text(v)),
+                (None, _) if s.required => KeyKind::Required,
+                (None, _) => KeyKind::Optional,
+            },
+            id: s.in_slug,
+        });
+        let mut out: Vec<DeclaredKey> = Vec::new();
+        let all = listed(&self.id_keys, true).into_iter();
+        for key in all.chain(listed(&self.data_keys, false)).chain(subs) {
+            match out.iter_mut().find(|k| k.name == key.name) {
+                Some(k) => {
+                    *k = DeclaredKey {
+                        id: k.id || key.id,
+                        ..key
+                    }
+                }
+                None => out.push(key),
+            }
+        }
+        out
     }
 
     /// Regenerate `derived_aliases` from the current spec. Produces:

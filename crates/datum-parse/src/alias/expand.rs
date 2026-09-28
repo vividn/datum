@@ -47,6 +47,12 @@ pub struct ResolvedAlias {
 /// swallowed (treated as "no alias") to match the pre-R2 behaviour.
 pub trait Resolver {
     fn lookup(&self, name: &str) -> Option<ResolvedAlias>;
+
+    /// The keys `field`'s spec declares (da-9s98k), which an alias's log
+    /// line on that field takes as its slots. None by default.
+    fn spec_keys(&self, _field: &str) -> Vec<crate::spec_keys::DeclaredKey> {
+        Vec::new()
+    }
 }
 
 /// Always returns `None` — used by callers that want to skip alias
@@ -287,12 +293,23 @@ pub fn try_expand_alias(
                 }
                 let consumed: Vec<String> = trailing[..max_n].to_vec();
                 let remaining: Vec<String> = trailing[max_n..].to_vec();
-                let substituted: Vec<String> = alias
+                let mut substituted: Vec<String> = alias
                     .tokens
                     .iter()
                     .map(|t| substitute_placeholders(t, &consumed))
                     .collect();
-                let expansion = if max_n == 0 {
+                let split = remaining
+                    .iter()
+                    .position(|t| {
+                        t == MULTI_COMMA
+                            || t == super::regions::BOUNDARY
+                            || t == super::regions::GROUP_CLOSE
+                            || t == super::regions::GROUP_OPEN
+                    })
+                    .unwrap_or(remaining.len());
+                let (own_trailing, rest) = remaining.split_at(split);
+                let injected = add_spec_keys(&mut substituted, own_trailing, resolver);
+                let expansion = if max_n == 0 && !injected {
                     alias.expands_to.clone()
                 } else {
                     shell_join(&substituted)
@@ -319,16 +336,6 @@ pub fn try_expand_alias(
                 // end-of-flags (rule 4), scoped by the downstream
                 // parser; escaped parens (`\(`/`\)`) are plain tokens
                 // here and unescape later in parse_structure.
-                let split = remaining
-                    .iter()
-                    .position(|t| {
-                        t == MULTI_COMMA
-                            || t == super::regions::BOUNDARY
-                            || t == super::regions::GROUP_CLOSE
-                            || t == super::regions::GROUP_OPEN
-                    })
-                    .unwrap_or(remaining.len());
-                let (own_trailing, rest) = remaining.split_at(split);
                 let mut result = Vec::with_capacity(argv.len() + substituted.len() + lead + 4);
                 result.push(argv[0].clone());
                 result.extend(argv[1..name_idx].iter().cloned()); // re-emit lead parens
@@ -362,6 +369,56 @@ pub fn try_expand_alias(
         }
     }
     Ok((argv, chain))
+}
+
+/// da-9s98k: give each side of an alias body that is a log line —
+/// `verb field …` — its field's keys, at the end of that side, so the
+/// region walk binds the call site's positionals to them after the alias's
+/// own, as the log path binds a typed line's. Across sides they unify by
+/// name like any `-k` slot (docs/trailing-and-slots.md rule 6). A grouped
+/// body, or a side that does not parse as a log line, gets none here; the
+/// log path still adds the keys then, though the call site's positionals
+/// do not bind to them. True when anything was added.
+fn add_spec_keys(body: &mut Vec<String>, trailing: &[String], resolver: &dyn Resolver) -> bool {
+    use crate::spec_keys::{spec_key_words, takes_spec_keys};
+    let grouped = |t: &String| {
+        t == super::regions::BOUNDARY
+            || t == super::regions::GROUP_CLOSE
+            || t == super::regions::GROUP_OPEN
+    };
+    if body.iter().any(grouped) {
+        return false;
+    }
+    let mut out: Vec<String> = Vec::with_capacity(body.len());
+    let mut added = false;
+    for (i, side) in body.split(|t| t == MULTI_COMMA).enumerate() {
+        if i > 0 {
+            out.push(MULTI_COMMA.to_string());
+        }
+        out.extend(side.iter().cloned());
+        let Some(verb) = side
+            .first()
+            .filter(|v| matches!(v.as_str(), "occur" | "start" | "switch" | "add"))
+        else {
+            continue;
+        };
+        let tail: Vec<&str> = side[1..]
+            .iter()
+            .chain(trailing)
+            .map(String::as_str)
+            .collect();
+        let Ok(line) = crate::parse::log::parse_log_args(&tail) else {
+            continue;
+        };
+        if takes_spec_keys(verb, &line) {
+            let words = spec_key_words(&line, &resolver.spec_keys(&line.field_or_verb));
+            let words = words.into_argv();
+            added |= !words.is_empty();
+            out.extend(words);
+        }
+    }
+    *body = out;
+    added
 }
 
 /// Highest `$N` (or `${N}`) placeholder index referenced across the

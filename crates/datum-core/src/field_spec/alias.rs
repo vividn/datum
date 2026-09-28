@@ -371,6 +371,7 @@ mod tests {
                 value_type: SubfieldType::String,
                 in_slug: true,
                 default: None,
+                assign: false,
             },
         );
         subfields.insert(
@@ -380,6 +381,7 @@ mod tests {
                 value_type: SubfieldType::String,
                 in_slug: false,
                 default: None,
+                assign: false,
             },
         );
         subfields.insert(
@@ -389,6 +391,7 @@ mod tests {
                 value_type: SubfieldType::Array,
                 in_slug: false,
                 default: None,
+                assign: false,
             },
         );
         let mut spec = FieldSpec::new("word", Action::Add);

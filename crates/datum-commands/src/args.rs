@@ -502,6 +502,11 @@ impl<'a> Resolver for DbAliasResolver<'a> {
         let tokens = palias::shell_split(&expands_to);
         Some(palias::ResolvedAlias { expands_to, tokens })
     }
+
+    fn spec_keys(&self, field: &str) -> Vec<datum_parse::spec_keys::DeclaredKey> {
+        let spec = self.db.load_spec(field).ok().flatten();
+        spec.map(|s| s.declared_keys()).unwrap_or_default()
+    }
 }
 
 // ─── Extension traits: attach convenience methods to intent structs ──────

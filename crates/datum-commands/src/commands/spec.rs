@@ -591,11 +591,15 @@ fn render_spec_text(spec: &FieldSpec) {
             println!("    {name:<16} {desc}");
         }
     }
-    if !spec.id_keys.is_empty() {
-        println!("  id_keys: {:?}", spec.id_keys);
-    }
-    if !spec.data_keys.is_empty() {
-        println!("  data_keys: {:?}", spec.data_keys);
+    // da-9s98k: every key the spec declares — `id_keys`, `data_keys` and
+    // subfields alike — with its kind, `(id)` marking a slug key.
+    let keys = spec.declared_keys();
+    if !keys.is_empty() {
+        println!("  keys:");
+        for k in keys {
+            let id = if k.id { "  (id)" } else { "" };
+            println!("    {:<16} {}{id}", k.name, k.kind);
+        }
     }
     if !spec.tags.is_empty() {
         println!("  tags: {:?}", spec.tags);
