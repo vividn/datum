@@ -747,61 +747,88 @@ pub struct KitUninstallArgs {
     pub name: String,
 }
 
-// ─── Sync (da-k329q) ──────────────────────────────────────────────────────
+// ─── Sync (da-k329q, regrouped da-aam46) ───────────────────────────────────
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SyncCommand {
-    /// `datum sync vector` — this copy's version vector as JSON.
-    Vector,
-    /// `datum sync ops [--since <VECTOR>]` — every op the vector lacks
-    /// (all of them without one), one JSON line each. Hidden `--no-overlap`
-    /// leaves out the one op a pipe adds to catch a shared key: what a
-    /// session sends, for datum.day's transport (da-6kpj5).
-    Ops {
-        since: Option<String>,
-        overlap: bool,
-    },
-    /// `datum sync apply [--json]` — apply op lines read from stdin.
-    Apply { show: Show },
-    /// `datum sync verify [--verbose]` — the state hash; per column too.
-    Verify { verbose: bool },
-    /// `datum sync connect [<TICKET>]` — redeem an invite (the ticket from
-    /// stdin when not given) and sync.
-    Connect { ticket: Option<String> },
-    /// `datum sync now` — sync with every member once.
+    /// `datum sync` — sync with every member once, then one line of status.
     Now,
-    /// `datum sync run` — stay up: serve members and push new ops to them.
-    Run,
-    /// `datum sync rekey` — a new endpoint key for this copy (da-p79vq).
-    Rekey,
-    /// `datum sync invite [--qr] [--expires <DUR>] [--admin-key <FILE>]` —
-    /// an invite any member can admit, served until redeemed; on a copy in
-    /// no chain, it starts an open one (da-6177s).
+    /// `datum sync status [--json]` — per member, how this copy stands
+    /// with it (da-rcb5m).
+    Status {
+        show: Show,
+    },
+    /// `datum sync pause | resume` — not built yet (da-wlbyx).
+    Pause,
+    Resume,
+    /// `datum sync chain invite [--qr] [--expires <DUR>] [--admin-key
+    /// <FILE>]` — an invite any member can admit, served until redeemed; on
+    /// a copy in no chain, it starts an open one (da-6177s).
     Invite {
         qr: bool,
         expires_secs: u64,
         admin_key: Option<String>,
     },
-    /// `datum sync <revoke|add-admin|remove-admin> <WHO>
-    /// [--label <L>] [--admin-key <FILE>]` — an admin act on the chain.
-    Admin {
-        act: SyncAdminAct,
-        who: String,
-        label: Option<String>,
-        admin_key: Option<String>,
+    /// `datum sync chain connect [<TICKET>]` — redeem an invite (the ticket
+    /// from stdin when not given) and sync.
+    Connect {
+        ticket: Option<String>,
     },
-    /// `datum sync members [--json]` — the chain's admins and endpoints.
-    Members { show: Show },
-    /// `datum sync rename [<WHO>] <LABEL> [--admin-key <FILE>]` — relabel
-    /// this copy (no admin needed), or another member (an admin act).
+    /// `datum sync chain list [--json]` — the chain's admins and endpoints.
+    Members {
+        show: Show,
+    },
+    /// `datum sync chain rename [<WHO>] <LABEL> [--admin-key <FILE>]` —
+    /// relabel this copy (no admin needed), or another member (an admin
+    /// act in a locked chain).
     Rename {
         who: Option<String>,
         label: String,
         admin_key: Option<String>,
     },
-    /// `datum sync status [--json]` — per member, how this copy stands
-    /// with it (da-rcb5m).
-    Status { show: Show },
+    /// `datum sync chain ack <WHO>` — acknowledge a notice: a new endpoint
+    /// or admin, or (`unlock`) the chain's unlocking.
+    Ack {
+        who: String,
+    },
+    /// `datum sync chain rekey` — a new endpoint key for this copy (da-p79vq).
+    Rekey,
+    /// `datum sync chain revoke <WHO>`, `datum sync admin add <KEY>
+    /// [--label <L>]`, `datum sync admin remove <WHO> [--allow-unlock]`,
+    /// each `[--admin-key <FILE>]` — a signed act on the chain.
+    Admin {
+        act: SyncAdminAct,
+        who: String,
+        label: Option<String>,
+        admin_key: Option<String>,
+        /// `admin remove` of the last admin opens the chain again.
+        allow_unlock: bool,
+    },
+    /// `datum sync admin list [--json]` — the chain's admins.
+    AdminList {
+        show: Show,
+    },
+    /// Hidden: `datum sync pipe vector` — this copy's version vector as JSON.
+    Vector,
+    /// Hidden: `datum sync pipe ops [--since <VECTOR>]` — every op the
+    /// vector lacks (all of them without one), one JSON line each.
+    /// `--no-overlap` leaves out the one op a pipe adds to catch a shared
+    /// key: what a session sends, for datum.day's transport (da-6kpj5).
+    Ops {
+        since: Option<String>,
+        overlap: bool,
+    },
+    /// Hidden: `datum sync pipe apply [--json]` — apply op lines from stdin.
+    Apply {
+        show: Show,
+    },
+    /// Hidden: `datum sync pipe verify [--verbose]` — the state hash; per
+    /// column too.
+    Verify {
+        verbose: bool,
+    },
+    /// Hidden: `datum sync run` — stay up: serve members and push new ops.
+    Run,
     /// Hidden: `datum sync endpoint-key` — this copy's endpoint secret,
     /// for datum.day's network worker.
     EndpointKey,
@@ -834,8 +861,6 @@ pub enum SyncCommand {
         expires_secs: u64,
         admin_key: Option<String>,
     },
-    /// `datum sync ack <WHO>` — acknowledge a new endpoint or admin.
-    Ack { who: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

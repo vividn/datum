@@ -3,7 +3,7 @@
 // Every copy here is real: the browser's is the wire crate in the sync
 // worker with the CLI as its store, a native one is `datum` itself, and the
 // relay is iroh's. What a test asserts is what the copies HOLD — their
-// `sync verify` hashes and their entries — never what the page says it did.
+// `sync pipe verify` hashes and their entries — never what the page says it did.
 // The several-tabs cases are sync-tabs.test.mjs.
 
 import test, { after, before, describe } from 'node:test';
@@ -56,7 +56,7 @@ describe('datum.day and a native copy', () => {
 					await app.page.close();
 					// Nobody answers for the page's key now: a dial fails. (Before
 					// `sync run`, which would be a second endpoint on the native key.)
-					const now = await native.run(['sync', 'now'], '', { DATUM_SYNC_TIMEOUT_S: '3' });
+					const now = await native.run(['sync'], '', { DATUM_SYNC_TIMEOUT_S: '3' });
 					assert.notEqual(now.code, 0, now.stdout);
 					assert.match(now.stdout, /could not reach/);
 
@@ -87,14 +87,14 @@ describe('a sync chain started in the page', () => {
 				// The first invite starts an open chain: no admin, no key.
 				const invite = await app.run(['sync', 'new-invite']);
 				assert.equal(invite.code, 0, invite.stderr);
-				assert.deepEqual(JSON.parse((await app.run(['sync', 'members', '--json'])).stdout).admins, []);
+				assert.deepEqual(JSON.parse((await app.run(['sync', 'chain', 'list', '--json'])).stdout).admins, []);
 				const device = await app.page.evaluate(() => localStorage.getItem('datum-device-id'));
-				const members = JSON.parse((await app.run(['sync', 'members', '--json'])).stdout).members;
+				const members = JSON.parse((await app.run(['sync', 'chain', 'list', '--json'])).stdout).members;
 				assert.deepEqual(
 					members.map((m) => [m.device, m.client, m.this]),
 					[[device, 'web', true]]
 				);
-				assert.equal((await app.run(['sync', 'rename', 'kitchen'])).code, 0);
+				assert.equal((await app.run(['sync', 'chain', 'rename', 'kitchen'])).code, 0);
 				// A `sync` command that wrote: the leader reads the setup again.
 				assert.match(await until(() => endpointOf(app), Boolean), /^[0-9a-f]{64}$/);
 			},

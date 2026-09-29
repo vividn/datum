@@ -4,7 +4,7 @@
 // is in no chain. Their states are set without a network: members are
 // admitted as a session would admit them (`sync new-invite`, which starts an
 // open chain, then `sync handshake --invite`), a native copy's `describe`
-// (its device and client) comes over the pipe transport (`sync ops` | `sync
+// (its device and client) comes over the pipe transport (`sync pipe ops` | `sync pipe
 // apply`), and `sync record-session` says how each member's last session went. No tab
 // leads `home` or `work`, so the only reachability is what a test
 // broadcasts on the sync worker's own channel.
@@ -73,9 +73,9 @@ async function chain(app, db, lap) {
 	const id = JSON.parse(await lap.run(['sync', 'status', '--json'])).this.endpoint;
 	await admit(inPage(app, db), id, 'laptop');
 	await cli(app, ['--db', db, 'occur', 'coffee']);
-	await lap.run(['sync', 'apply'], await cli(app, ['--db', db, 'sync', 'ops']));
-	await lap.run(['sync', 'rename', 'laptop']);
-	await cli(app, ['--db', db, 'sync', 'apply'], await lap.run(['sync', 'ops']));
+	await lap.run(['sync', 'pipe', 'apply'], await cli(app, ['--db', db, 'sync', 'pipe', 'ops']));
+	await lap.run(['sync', 'chain', 'rename', 'laptop']);
+	await cli(app, ['--db', db, 'sync', 'pipe', 'apply'], await lap.run(['sync', 'pipe', 'ops']));
 	return id;
 }
 
@@ -97,8 +97,8 @@ async function fixture(app) {
 		// Admitted by the laptop, so this copy has never met it: `never`.
 		ids.watch = endpointId();
 		await admit(a.run, ids.watch, 'watch');
-		await cli(app, ['--db', 'home', 'sync', 'apply'], await a.run(['sync', 'ops']));
-		const vector = (await cli(app, ['--db', 'home', 'sync', 'vector'])).trim();
+		await cli(app, ['--db', 'home', 'sync', 'pipe', 'apply'], await a.run(['sync', 'pipe', 'ops']));
+		const vector = (await cli(app, ['--db', 'home', 'sync', 'pipe', 'vector'])).trim();
 		await session(app, 'home', ids.laptop, '--vector', vector, '--verify', 'match');
 		await session(app, 'home', ids.phone, '--vector', '{}');
 		await session(app, 'home', ids.tablet, '--error', REFUSED);

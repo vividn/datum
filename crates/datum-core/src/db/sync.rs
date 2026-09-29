@@ -158,7 +158,7 @@ thread_local! {
 /// it came from: two copies with one key would number their ops from one
 /// seq. A file MOVED keeps its key, and so its membership. A copy put back
 /// over the original's own path is the case this cannot see; `sync_apply`
-/// refuses the fork it makes, and `datum sync rekey` mints a new key.
+/// refuses the fork it makes, and `datum sync chain rekey` mints a new key.
 fn endpoint(conn: &Connection) -> Result<Endpoint> {
     let device = device_id();
     let path = conn.path().unwrap_or_default().to_string();
@@ -204,7 +204,7 @@ fn endpoint(conn: &Connection) -> Result<Endpoint> {
 
 /// Said wherever two copies are found signing with one key (da-p79vq).
 const SHARED_KEY: &str = "these are two copies of one database sharing an endpoint key; \
-     run `datum sync rekey` on one of them";
+     run `datum sync chain rekey` on one of them";
 
 /// This copy's endpoint id, and the highest seq it has signed.
 fn own_head(conn: &Connection) -> Result<(String, i64)> {
@@ -638,7 +638,7 @@ pub(super) fn emit(
 
 // ─── Apply ──────────────────────────────────────────────────────────────────
 
-/// What one `sync apply` did.
+/// What one `sync pipe apply` did.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ApplySummary {
     pub applied: usize,
@@ -914,7 +914,7 @@ fn waiting_ops(conn: &Connection) -> Result<Vec<Op>> {
 /// Refuse an op the chain does not allow: it is kept, applied = 2, so it is
 /// not asked for again, and a membership that later allows it lets it wait
 /// again ([`reconsider`]). The first refused of an endpoint files a
-/// `sync_unauthorised` warning, which `datum sync ack` settles.
+/// `sync_unauthorised` warning, which `datum sync chain ack` settles.
 fn refuse(conn: &Connection, op: &Op, why: &str, s: &mut ApplySummary) -> Result<()> {
     conn.execute(
         "UPDATE ops SET applied = 2 WHERE endpoint = ?1 AND seq = ?2",

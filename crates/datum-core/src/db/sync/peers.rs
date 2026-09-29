@@ -29,7 +29,7 @@ pub struct Peer {
 
 /// Also the reason a copy signing with this one's own key is refused.
 pub const COPY: &str =
-    "this peer is a copy of this database (same endpoint key); run `datum sync rekey` on one of them";
+    "this peer is a copy of this database (same endpoint key); run `datum sync chain rekey` on one of them";
 
 fn now() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)

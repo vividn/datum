@@ -20,7 +20,7 @@
 //!
 //! - **Multi-`USAGE` / subcommand trees** (`spec`, `db`, `conflicts`,
 //!   `alias`): several calling shapes and prose sections.
-//! - **`sync`**: Easy Sync's core — ops over a pipe (da-k329q).
+//! - **`sync`**: Easy Sync's tree of groups (da-aam46).
 //! - **Narrative bodies with no OPTIONS table** (`now`, `get`, `undo`,
 //!   `delete`, `grep`, `why`, `edit`, `history`, `info`, `config`,
 //!   `track`, `ignore`): nothing to generate.
@@ -152,37 +152,29 @@ const CONFLICTS_SUBCOMMANDS: &[SubcommandSpec] = &[
     ),
 ];
 const SYNC_SUBCOMMANDS: &[SubcommandSpec] = &[
-    sub(
-        "invite",
-        &["datum sync invite [--qr] [--expires <DUR>] [--admin-key <FILE>]"],
-    ),
-    sub("members", &["datum sync members [--json]"]),
     sub("status", &["datum sync status [--json]"]),
+    sub("pause", &["datum sync pause"]),
+    sub("resume", &["datum sync resume"]),
     sub(
-        "rename",
-        &["datum sync rename [<WHO>] <LABEL> [--admin-key <FILE>]"],
+        "chain",
+        &[
+            "datum sync chain invite [--qr] [--expires <DUR>] [--admin-key <FILE>]",
+            "datum sync chain connect [<TICKET>]",
+            "datum sync chain list [--json]",
+            "datum sync chain rename [<WHO>] <LABEL> [--admin-key <FILE>]",
+            "datum sync chain revoke <WHO> [--admin-key <FILE>]",
+            "datum sync chain ack <WHO|unlock>",
+            "datum sync chain rekey",
+        ],
     ),
-    sub("ack", &["datum sync ack <WHO>"]),
     sub(
-        "revoke",
-        &["datum sync revoke <ENDPOINT> [--admin-key <FILE>]"],
+        "admin",
+        &[
+            "datum sync admin list [--json]",
+            "datum sync admin add <KEYFILE|PASSKEY-JSON> [--label <L>] [--admin-key <FILE>]",
+            "datum sync admin remove <KEY|LABEL> [--allow-unlock] [--admin-key <FILE>]",
+        ],
     ),
-    sub(
-        "add-admin",
-        &["datum sync add-admin <KEYFILE|PASSKEY-JSON> [--label <L>] [--admin-key <FILE>]"],
-    ),
-    sub(
-        "remove-admin",
-        &["datum sync remove-admin <KEY|LABEL> [--admin-key <FILE>]"],
-    ),
-    sub("connect", &["datum sync connect [<TICKET>]"]),
-    sub("now", &["datum sync now"]),
-    sub("run", &["datum sync run"]),
-    sub("rekey", &["datum sync rekey"]),
-    sub("vector", &["datum sync vector"]),
-    sub("ops", &["datum sync ops [--since <VECTOR>]"]),
-    sub("apply", &["datum sync apply"]),
-    sub("verify", &["datum sync verify [--verbose]"]),
 ];
 const META_SUBCOMMANDS: &[SubcommandSpec] = &[sub("show", &["datum meta show <FIELD>"])];
 const KIT_SUBCOMMANDS: &[SubcommandSpec] = &[
@@ -973,7 +965,7 @@ const CONFIG_BODY: &str = "USAGE:\n  datum config show\n";
 
 const COMPLETIONS_BODY: &str = "USAGE:\n  datum completions <zsh|bash|fish>\n  datum completions install [--shell zsh|bash|fish]\n  datum completions uninstall [--shell zsh|bash|fish]\n\nTab completion for commands, subcommands, flags, fields, states, keys and\nrecent entries. `scripts/install.sh` installs it with datum.\n\n  install     Write the script where the shell loads it by itself, and say\n              where (default shell: $SHELL). No rc file is edited:\n                fish  ~/.config/fish/completions/datum.fish\n                bash  $XDG_DATA_HOME/bash-completion/completions/datum\n                      (loaded by the bash-completion package)\n                zsh   _datum in the first writable directory on $fpath,\n                      else ~/.local/share/zsh/site-functions, with the one\n                      line to add to ~/.zshrc before compinit\n              Running it again overwrites, and it warns when no datum is\n              on PATH or the one there is not this one. When a new shell\n              already completes datum it says so in one line; else start\n              a new shell after.\n  uninstall   Remove that file.\n  <shell>     Print the script, to source (`source <(datum completions zsh)`)\n              or for a packager to place.\n\nThe script only asks datum for its answers, so it never goes stale:\nupgrading datum changes them without reinstalling. It asks the datum the\nshell would run, an alias of that name included.\n\nTAB still offers only files? Delete zsh's completion cache and start a new\nshell.\n";
 
-const SYNC_BODY: &str = "USAGE:\n  datum sync invite [--qr] [--expires <DUR>] [--admin-key <FILE>]\n  datum sync connect [<TICKET>]\n  datum sync members [--json]\n  datum sync status [--json]\n  datum sync rename [<WHO>] <LABEL> [--admin-key <FILE>]\n  datum sync ack <WHO>\n  datum sync revoke <ENDPOINT> [--admin-key <FILE>]\n  datum sync add-admin <KEYFILE|PASSKEY-JSON> [--label <L>] [--admin-key <FILE>]\n  datum sync remove-admin <KEY|LABEL> [--admin-key <FILE>]\n  datum sync now\n  datum sync run\n  datum sync rekey\n  datum sync vector\n  datum sync ops [--since <VECTOR>]\n  datum sync apply\n  datum sync verify [--verbose]\n\nCopies of a database sync over iroh, peer to peer, as members of a sync\nchain: a signed membership log every copy checks. Ops from an endpoint\nthat is not a member, or made after its revoke, are refused (`datum check`\nlists them).\n\nA chain with no admin is open: any member may invite, revoke or rename\nanother. The first add-admin locks it, and from then on those acts take\nan admin key: a passkey, or (headless) a key file.\n\n  invite      A one-time invite (default --expires 10m): any member it\n              reaches admits the redeemer, so this copy need not be up.\n              Serves until redeemed, printing `datum sync connect\n              <TICKET>` (and a QR code with --qr). A copy in no chain\n              starts an open one first, itself its first member.\n  connect     Redeem an invite (the ticket from stdin if not given): this\n              copy joins the chain, and a first sync runs.\n  members     The chain's admins and endpoints: each endpoint's label,\n              and the device it runs on (one per data directory, so one\n              machine's databases share it). --json for a program.\n  status      Per member, how this copy stands with it: synced (the last\n              session verified and nothing is waiting), pending (ops to\n              send), error (the last session failed; why), never (no\n              session yet); what is waiting, and since when.\n  rename      Relabel this copy, or with <WHO> (a label or an id prefix)\n              another member, which is an admin act.\n  ack         Acknowledge a new endpoint or admin: each is announced once\n              on stderr, and stays in `datum check` until acknowledged.\n  revoke, add-admin, remove-admin\n              Admin acts. In a locked chain, without --admin-key they print\n              a datum.day link to approve with the passkey, and read the\n              approval code it shows from stdin. add-admin with a key file\n              that does not exist writes a new key there. The last admin\n              cannot be removed.\n  now         Sync with every member once: one line each, sent / got /\n              conflicts / whether the two copies' verify hashes agree.\n  run         Stay up: serve members, and push new ops to them as they\n              are written. Ctrl-C to stop.\n  rekey       A new endpoint key for this copy, when two copies of one file\n              are found sharing one. It must join the chain again.\n\nEvery change to an entry is an op, signed by this copy's endpoint key.\nOps also move as JSON lines, so two copies sync through a pipe:\n\n  datum --db a sync ops --since \"$(datum --db b sync vector)\" | datum --db b sync apply\n\n  vector   This copy's version vector: per endpoint, the highest op held.\n  ops      Every op the vector lacks (all of them with no --since), one\n           per line, and this copy's own op at the vector's seq for it,\n           which shows a copy sharing its key. An entry no op covers yet\n           is sent as a baseline op.\n  apply    Apply op lines read from stdin. A bad signature is refused and\n           named; an op whose predecessor has not arrived is held until it\n           does. Prints applied / already had / held / conflicts.\n  verify   The state hash over every entry row. Two copies that hold the\n           same ops print the same hash. --verbose adds one per column.\n\nPer key the op with the later hybrid logical clock wins. Two copies that\nset one key without seeing each other's op file a sync_conflict (see\n`datum check` and `datum conflicts`); so does a delete against a\nconcurrent edit, and the delete stands.\n";
+const SYNC_BODY: &str = "USAGE:\n  datum sync\n  datum sync status [--json]\n  datum sync pause\n  datum sync resume\n  datum sync chain invite [--qr] [--expires <DUR>] [--admin-key <FILE>]\n  datum sync chain connect [<TICKET>]\n  datum sync chain list [--json]\n  datum sync chain rename [<WHO>] <LABEL> [--admin-key <FILE>]\n  datum sync chain revoke <WHO> [--admin-key <FILE>]\n  datum sync chain ack <WHO|unlock>\n  datum sync chain rekey\n  datum sync admin list [--json]\n  datum sync admin add <KEYFILE|PASSKEY-JSON> [--label <L>] [--admin-key <FILE>]\n  datum sync admin remove <KEY|LABEL> [--allow-unlock] [--admin-key <FILE>]\n\nCopies of a database sync peer to peer, as members of a sync chain: a\nsigned membership log every copy checks, so ops from anyone else are\nrefused. `datum sync chain invite` starts a chain and invites a device;\n`chain connect <TICKET>` joins it. A chain with no admin is open: any\nmember may add, revoke or rename devices. `admin add` locks it.\n\n  (bare)      Sync with every member once: one line each, sent / got /\n              conflicts / whether the two copies' verify hashes agree;\n              then one line of status. In no chain, how to join one.\n  status      Per member, how this copy stands with it: synced (the last\n              session verified and nothing is waiting), pending (ops to\n              send), error (the last session failed; why), never (no\n              session yet); what is waiting, and since when. An open\n              chain says so, and an unlocked one until acknowledged.\n  pause, resume\n              Not built yet.\n\nchain — its devices:\n  invite      A one-time invite (default --expires 10m): any member it\n              reaches admits the redeemer, so this copy need not be up.\n              Serves until redeemed, printing `datum sync chain connect\n              <TICKET>` (and a QR code with --qr). A copy in no chain\n              starts an open one first, itself its first member.\n  connect     Redeem an invite (the ticket from stdin if not given): this\n              copy joins the chain, and a first sync runs.\n  list        The chain's admins and endpoints: each endpoint's label,\n              and the device it runs on (one per data directory, so one\n              machine's databases share it). --json for a program.\n  rename      Relabel this copy, or with <WHO> (a label or an id prefix)\n              another member.\n  revoke      Remove a member: its ops from then on are refused.\n  ack         Acknowledge a new endpoint or admin, or (`unlock`) the\n              chain's unlocking: each is announced once on stderr, and\n              stays in `datum check` until acknowledged.\n  rekey       A new endpoint key for this copy, when two copies of one file\n              are found sharing one. It must join the chain again.\n\nadmin — the keys that lock the chain:\n  list        The chain's admins.\n  add         Add an admin: a key file (one that does not exist is written\n              there) or a datum.day passkey. The first locks the chain.\n  remove      Remove an admin. The last one only with --allow-unlock,\n              which opens the chain again; every copy announces it.\n\nIn a locked chain, revoke, rename of another member, invite and the admin\nacts take an admin: without --admin-key they print a datum.day link to\napprove with the passkey, and read the approval code it shows from stdin.\n\nPer key the op with the later hybrid logical clock wins. Two copies that\nset one key without seeing each other's op file a sync_conflict (see\n`datum check` and `datum conflicts`); so does a delete against a\nconcurrent edit, and the delete stands.\n";
 
 const CONFLICTS_BODY: &str = "USAGE:\n  datum conflicts [list] [--all]\n  datum conflicts resolve <HID> (--take-local | --take-remote | --keep-both)\n\nOPTIONS:\n  -a, --all        Include already-resolved conflicts (default: pending only).\n  --take-local     Restore this device's version of the entry.\n  --take-remote    Accept the other device's version.\n  --keep-both      Leave both rows as they are; record the decision.\n\nSync conflicts are the two things a pull can file when two devices claim\none identity: `lww_overwrite` (a newer remote edit replaced a local one)\nand `identity_collision` (two distinct entries claimed one slug, or one\n(field, occur_time)). The losing version survives only in the conflict\nrow, so someone has to say which side wins — `list` prints both.\n\nEverything else the integrity queue holds — double opens, orphan ends,\noverlaps, repeated states — is reported by `datum check` and resolved by\nfixing the data with `datum edit` / `datum delete`, not from here.\n";
 
@@ -2231,25 +2223,23 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "sync",
         aliases: &[],
         category: Category::ViewsSync,
-        summary: "sync with other copies: peer to peer, or over a pipe",
+        summary: "sync with the other copies in this database's sync chain",
         long_description: None,
         usage: &[
-            "datum sync invite [--qr] [--expires <DUR>] [--admin-key <FILE>]",
-            "datum sync members [--json]",
+            "datum sync",
             "datum sync status [--json]",
-            "datum sync rename [<WHO>] <LABEL> [--admin-key <FILE>]",
-            "datum sync ack <WHO>",
-            "datum sync revoke <ENDPOINT> [--admin-key <FILE>]",
-            "datum sync add-admin <KEYFILE|PASSKEY-JSON> [--label <L>] [--admin-key <FILE>]",
-            "datum sync remove-admin <KEY|LABEL> [--admin-key <FILE>]",
-            "datum sync connect [<TICKET>]",
-            "datum sync now",
-            "datum sync run",
-            "datum sync rekey",
-            "datum sync vector",
-            "datum sync ops [--since <VECTOR>]",
-            "datum sync apply",
-            "datum sync verify [--verbose]",
+            "datum sync pause",
+            "datum sync resume",
+            "datum sync chain invite [--qr] [--expires <DUR>] [--admin-key <FILE>]",
+            "datum sync chain connect [<TICKET>]",
+            "datum sync chain list [--json]",
+            "datum sync chain rename [<WHO>] <LABEL> [--admin-key <FILE>]",
+            "datum sync chain revoke <WHO> [--admin-key <FILE>]",
+            "datum sync chain ack <WHO|unlock>",
+            "datum sync chain rekey",
+            "datum sync admin list [--json]",
+            "datum sync admin add <KEYFILE|PASSKEY-JSON> [--label <L>] [--admin-key <FILE>]",
+            "datum sync admin remove <KEY|LABEL> [--allow-unlock] [--admin-key <FILE>]",
         ],
         args: NO_ARGS,
         flags: NO_FLAGS,

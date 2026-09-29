@@ -788,7 +788,7 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
                     .collect();
                 format!(
                     "ops from {count} endpoint{s} outside the sync chain were refused; \
-                     `datum sync ack <endpoint>` once you know why:\n{}",
+                     `datum sync chain ack <endpoint>` once you know why:\n{}",
                     lines.join("\n"),
                     s = if count == 1 { "" } else { "s" },
                 )

@@ -71,7 +71,7 @@ impl Store for Cli {
             return Ok(None);
         };
         let all: serde_json::Value =
-            serde_json::from_str(&self.run(&["sync", "members", "--json"], None).await?)?;
+            serde_json::from_str(&self.run(&["sync", "chain", "list", "--json"], None).await?)?;
         let members = all["members"]
             .as_array()
             .map_or(0, |m| m.iter().filter(|m| m["revoked"].is_null()).count());
@@ -80,14 +80,17 @@ impl Store for Cli {
 
     async fn vector(&self) -> Result<Vector> {
         Ok(serde_json::from_str(
-            &self.run(&["sync", "vector"], None).await?,
+            &self.run(&["sync", "pipe", "vector"], None).await?,
         )?)
     }
 
     async fn ops_since(&self, since: &Vector) -> Result<Vec<String>> {
         let since = serde_json::to_string(since)?;
         let out = self
-            .run(&["sync", "ops", "--since", &since, "--no-overlap"], None)
+            .run(
+                &["sync", "pipe", "ops", "--since", &since, "--no-overlap"],
+                None,
+            )
             .await?;
         Ok(out
             .lines()
@@ -98,7 +101,7 @@ impl Store for Cli {
 
     async fn apply(&self, ops: &[String]) -> Result<Applied> {
         let out = self
-            .run(&["sync", "apply", "--json"], Some(&ops.join("\n")))
+            .run(&["sync", "pipe", "apply", "--json"], Some(&ops.join("\n")))
             .await?;
         let s: Summary = serde_json::from_str(&out)?;
         Ok(Applied {
@@ -110,7 +113,7 @@ impl Store for Cli {
 
     async fn verify(&self) -> Result<String> {
         Ok(self
-            .run(&["sync", "verify"], None)
+            .run(&["sync", "pipe", "verify"], None)
             .await?
             .trim()
             .to_string())
@@ -227,7 +230,7 @@ impl Node {
         report(dial(&self.cli, &self.ep, addr, None).await)
     }
 
-    /// `datum sync connect`: redeem `ticket` and sync.
+    /// `datum sync chain connect`: redeem `ticket` and sync.
     pub async fn connect(&self, ticket: String) -> Result<String, JsError> {
         let ticket = Ticket::decode(&ticket).map_err(js)?;
         report(redeem(&self.cli, &self.ep, &ticket).await)

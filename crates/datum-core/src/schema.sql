@@ -342,8 +342,9 @@ CREATE TABLE IF NOT EXISTS sync_peers (
 
 -- The sync chain's members and admins this copy has heard of (da-odwc7):
 -- `announced` once the next command has printed «new sync endpoint», and
--- `acked` once `datum sync ack` took it off `datum check`. `subject` is an
--- endpoint id or an admin key. LOCAL, never synced; the chain is in `ops`.
+-- `acked` once `datum sync chain ack` took it off `datum check`. `subject` is an
+-- endpoint id, an admin key, or `unlock:<hlc>` (da-aam46). LOCAL, never
+-- synced; the chain is in `ops`.
 CREATE TABLE IF NOT EXISTS sync_notices (
     subject   TEXT NOT NULL PRIMARY KEY,
     kind      TEXT NOT NULL,

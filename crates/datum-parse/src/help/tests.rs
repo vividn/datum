@@ -69,7 +69,7 @@ VIEWS / SYNC:
   stats      Count, total duration, and per-state ratio over a time slice
   ids        List entry ids (newest-first by default)
   fields     List every field: its spec and the states it was logged with
-  sync       Sync with other copies: peer to peer, or over a pipe
+  sync       Sync with the other copies in this database's sync chain
   conflicts  Triage sync conflicts (see `datum check` for integrity findings)
   view       Execute a named SELECT view and render the rows
 
@@ -313,7 +313,9 @@ OUTPUT:
 #[test]
 fn snapshot_sync_help_starts_with_header() {
     let s = command_help("sync");
-    assert!(s.starts_with("datum sync — sync with other copies: peer to peer, or over a pipe\n"));
+    assert!(
+        s.starts_with("datum sync — sync with the other copies in this database's sync chain\n")
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -768,7 +770,7 @@ fn help_json_lists_db_subcommands() {
     );
     assert_eq!(db["subcommands"][2]["usage"].as_array().unwrap().len(), 4);
     assert_eq!(db["bare"], false);
-    assert_eq!(entry("sync")["bare"], false);
+    assert_eq!(entry("sync")["bare"], true);
     assert_eq!(entry("conflicts")["bare"], true);
     assert_eq!(entry("occur")["subcommands"], serde_json::json!([]));
 }

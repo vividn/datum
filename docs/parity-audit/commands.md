@@ -410,10 +410,10 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 
 - **Original datum:** custom protocol for CouchDB → CouchDB replication.
 - **Daydumb today:** Easy Sync's core (da-k329q). Every entry change is a
-  signed op; `datum sync vector / ops / apply / verify` move ops as JSON
-  lines, so two copies sync through a pipe; `invite / connect / now / run`
-  join copies to a signed sync chain with one-time invites and sync them
-  over iroh (da-rugg8, da-odwc7). A chain is open until its first admin
+  signed op; the hidden `datum sync pipe vector / ops / apply / verify` move
+  ops as JSON lines, so two copies sync through a pipe; `sync chain invite
+  / connect` join copies to a signed sync chain with one-time invites, and
+  bare `sync` syncs them over iroh (da-rugg8, da-odwc7, da-aam46). A chain is open until its first admin
   (da-6177s).
 
 ### spec (daydumb only)

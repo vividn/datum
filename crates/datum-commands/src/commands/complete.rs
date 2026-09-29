@@ -179,6 +179,20 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
     }
 
     let given = positionals(&rest, &all_flags);
+    // A group of its own (`sync chain`): the word after it in its usage.
+    if let Some(s) = sub.filter(|_| given.is_empty()) {
+        let mut words: Vec<String> = s
+            .usage
+            .iter()
+            .filter_map(|l| group_tokens(l).into_iter().nth(3))
+            .filter(|w| w.starts_with(|c: char| c.is_ascii_lowercase()))
+            .filter(|w| w.chars().all(|c| c.is_ascii_lowercase() || c == '-'))
+            .collect();
+        words.dedup();
+        if !words.is_empty() {
+            return words;
+        }
+    }
     let usage = sub.map_or(spec.usage, |s| s.usage);
     let slots = slots(usage, 2 + sub.is_some() as usize);
     let slot = |n: usize| slots.get(n).or(slots.last().filter(|s| s.1)).map(|s| s.0);

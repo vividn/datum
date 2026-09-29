@@ -64,21 +64,21 @@ impl Copy {
 
     /// The ops this copy has that `other` lacks.
     fn ops_for(&self, other: &Copy) -> String {
-        let vector = other.ok(&["sync", "vector"]);
-        self.ok(&["sync", "ops", "--since", vector.trim()])
+        let vector = other.ok(&["sync", "pipe", "vector"]);
+        self.ok(&["sync", "pipe", "ops", "--since", vector.trim()])
     }
 
     /// Send `other` what it lacks; the apply summary.
     fn send(&self, other: &Copy) -> String {
-        other.ok_in(&["sync", "apply"], &self.ops_for(other))
+        other.ok_in(&["sync", "pipe", "apply"], &self.ops_for(other))
     }
 
     fn hash(&self) -> String {
-        self.ok(&["sync", "verify"]).trim().to_string()
+        self.ok(&["sync", "pipe", "verify"]).trim().to_string()
     }
 
     fn ops(&self) -> Vec<Value> {
-        self.ok(&["sync", "ops"])
+        self.ok(&["sync", "pipe", "ops"])
             .lines()
             .map(|l| serde_json::from_str(l).unwrap())
             .collect()
@@ -166,7 +166,10 @@ fn two_copies_converge_over_a_pipe() {
     a.ok(&["occur", "tea"]);
     b.ok(&["switch", "mood", "calm"]);
     converged(&a, &b);
-    assert_eq!(b.ok(&["sync", "vector"]), a.ok(&["sync", "vector"]));
+    assert_eq!(
+        b.ok(&["sync", "pipe", "vector"]),
+        a.ok(&["sync", "pipe", "vector"])
+    );
 }
 
 #[test]
@@ -348,18 +351,18 @@ fn the_same_ops_twice_or_in_any_order_give_the_same_state() {
     a.ok(&["update", &hid, "cups=3"]);
     a.ok(&["switch", "mood", "happy"]);
     a.ok(&["delete", &hid]);
-    let ops = a.ok(&["sync", "ops"]);
+    let ops = a.ok(&["sync", "pipe", "ops"]);
 
     let twice = Copy::new();
-    twice.ok_in(&["sync", "apply"], &ops);
-    let again = twice.ok_in(&["sync", "apply"], &ops);
+    twice.ok_in(&["sync", "pipe", "apply"], &ops);
+    let again = twice.ok_in(&["sync", "pipe", "apply"], &ops);
     // Seven: the delete of `coffee`'s only entry takes its spec (da-elv6d).
     assert!(again.starts_with("applied 0 · already had 7 "), "{again}");
     assert_eq!(twice.hash(), a.hash());
 
     let reversed: String = ops.lines().rev().map(|l| format!("{l}\n")).collect();
     let shuffled = Copy::new();
-    let summary = shuffled.ok_in(&["sync", "apply"], &reversed);
+    let summary = shuffled.ok_in(&["sync", "pipe", "apply"], &reversed);
     assert!(
         summary.starts_with("applied 7 · already had 0 · held 0 "),
         "{summary}"
@@ -371,28 +374,31 @@ fn the_same_ops_twice_or_in_any_order_give_the_same_state() {
 fn a_tampered_op_is_refused_and_a_gap_is_held_until_filled() {
     let a = Copy::new();
     a.ok(&["occur", "coffee", "cups=2"]);
-    let ops = a.ok(&["sync", "ops"]);
+    let ops = a.ok(&["sync", "pipe", "ops"]);
     let lines: Vec<&str> = ops.lines().collect();
     assert_eq!(lines.len(), 2);
 
     let b = Copy::new();
     let tampered = lines[0].replace("\"cups\":2", "\"cups\":9");
     assert_ne!(tampered, lines[0]);
-    let out = b.run(&["sync", "apply"], &tampered);
+    let out = b.run(&["sync", "pipe", "apply"], &tampered);
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
         err.contains("refused") && err.contains("bad signature"),
         "{err}"
     );
-    assert!(b.ok(&["sync", "ops"]).is_empty(), "nothing of it was kept");
+    assert!(
+        b.ok(&["sync", "pipe", "ops"]).is_empty(),
+        "nothing of it was kept"
+    );
 
-    let held = b.ok_in(&["sync", "apply"], lines[1]);
+    let held = b.ok_in(&["sync", "pipe", "apply"], lines[1]);
     assert!(
         held.starts_with("applied 0 · already had 0 · held 1 "),
         "{held}"
     );
-    let filled = b.ok_in(&["sync", "apply"], lines[0]);
+    let filled = b.ok_in(&["sync", "pipe", "apply"], lines[0]);
     assert!(
         filled.starts_with("applied 2 · already had 0 · held 0 "),
         "{filled}"
@@ -454,7 +460,7 @@ fn ops_since_a_vector_sends_only_what_it_lacks() {
     // would show a copy sharing a's key.
     let overlap = a.ops_for(&b);
     assert_eq!(overlap.lines().count(), 1, "{overlap}");
-    let had = b.ok_in(&["sync", "apply"], &overlap);
+    let had = b.ok_in(&["sync", "pipe", "apply"], &overlap);
     assert!(had.starts_with("applied 0 · already had 1 "), "{had}");
     a.ok(&["occur", "coffee", "cups=2"]);
     let lacked = a.ops_for(&b);
@@ -474,7 +480,7 @@ fn a_baseline_signed_later_does_not_undo_an_edit() {
     let hid = a.hid("coffee");
     a.ok(&["update", &hid, "cups=3"]);
     // b signs its baselines only now, after a's edit.
-    b.ok(&["sync", "ops"]);
+    b.ok(&["sync", "pipe", "ops"]);
     converged(&a, &b);
     assert_eq!(
         b.data(&hid)["cups"],
@@ -492,7 +498,7 @@ fn an_edit_waits_for_the_create_it_depends_on_from_another_copy() {
     let hid = a.hid("coffee");
     b.ok(&["update", &hid, "cups=3"]);
     let b_only: String = b
-        .ok(&["sync", "ops"])
+        .ok(&["sync", "pipe", "ops"])
         .lines()
         .filter(|l| l.contains("\"kind\":\"update\""))
         .map(|l| format!("{l}\n"))
@@ -502,12 +508,12 @@ fn an_edit_waits_for_the_create_it_depends_on_from_another_copy() {
     // c has nothing of a's: b's edit is b's seq 1, so no seq gap holds it —
     // its deps on a's create do.
     let c = Copy::new();
-    let held = c.ok_in(&["sync", "apply"], &b_only);
+    let held = c.ok_in(&["sync", "pipe", "apply"], &b_only);
     assert!(
         held.starts_with("applied 0 · already had 0 · held 1 "),
         "{held}"
     );
-    let filled = c.ok_in(&["sync", "apply"], &a.ok(&["sync", "ops"]));
+    let filled = c.ok_in(&["sync", "pipe", "apply"], &a.ok(&["sync", "pipe", "ops"]));
     assert!(filled.contains(" held 0 "), "{filled}");
     assert_eq!(c.data(&hid)["cups"], 3, "the edit landed on the create");
     assert_eq!(c.hash(), b.hash());
@@ -563,8 +569,8 @@ fn copies_that_diverged_before_ops_keep_the_delete() {
     }
     // The live baseline is signed last, and its row written last: neither
     // may decide it.
-    b.ok(&["sync", "ops"]);
-    a.ok(&["sync", "ops"]);
+    b.ok(&["sync", "pipe", "ops"]);
+    a.ok(&["sync", "pipe", "ops"]);
     converged(&a, &b);
     for c in [&a, &b] {
         assert!(c.deleted(&hid), "the tombstone stands");
@@ -629,19 +635,19 @@ fn copies_sharing_a_key_are_refused_loudly_and_rekey_parts_them() {
     assert_eq!(endpoint(&a), endpoint(&copy));
 
     // copy has not signed a's tea, so a's vector holds more of "its" ops.
-    let vector = a.ok(&["sync", "vector"]);
-    let out = copy.run(&["sync", "ops", "--since", vector.trim()], "");
+    let vector = a.ok(&["sync", "pipe", "vector"]);
+    let out = copy.run(&["sync", "pipe", "ops", "--since", vector.trim()], "");
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains(SHARED));
-    let out = copy.run(&["sync", "apply"], &a.ok(&["sync", "ops"]));
+    let out = copy.run(&["sync", "pipe", "apply"], &a.ok(&["sync", "pipe", "ops"]));
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
-        err.contains(SHARED) && err.contains("datum sync rekey"),
+        err.contains(SHARED) && err.contains("datum sync chain rekey"),
         "{err}"
     );
 
-    let rekeyed = copy.ok(&["sync", "rekey"]);
+    let rekeyed = copy.ok(&["sync", "chain", "rekey"]);
     assert!(rekeyed.starts_with("new endpoint key "), "{rekeyed}");
     converged(&a, &copy);
     copy.ok(&["occur", "juice"]);
@@ -660,7 +666,7 @@ fn a_fork_of_one_endpoint_is_refused_not_merged() {
     // Both signed the same seq, so the vectors agree: the op at that seq,
     // which `ops --since` sends along, is what shows it.
     for (from, to) in [(&a, &copy), (&copy, &a)] {
-        let out = to.run(&["sync", "apply"], &from.ops_for(to));
+        let out = to.run(&["sync", "pipe", "apply"], &from.ops_for(to));
         assert!(!out.status.success());
         assert!(String::from_utf8_lossy(&out.stderr).contains(SHARED));
     }

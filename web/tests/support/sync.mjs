@@ -94,7 +94,7 @@ function datumBinary() {
 /**
  * A native copy of a database, on `relay`. `run(argv, stdin, env)` resolves
  * to its `{ code, stdout, stderr }`; `spawn(argv)` starts a long-running one
- * (`sync run`, `sync invite`) and collects what it prints; `count(field)`
+ * (`sync run`, `sync chain invite`) and collects what it prints; `count(field)`
  * is how many entries of `field` it holds; `close` stops every process and
  * removes the copy.
  */
@@ -130,7 +130,7 @@ export async function nativeCopy(relay) {
 			return out;
 		},
 		count: async (field) => Number((await self.run(['count', field])).stdout),
-		verify: async () => (await self.run(['sync', 'verify'])).stdout,
+		verify: async () => (await self.run(['sync', 'pipe', 'verify'])).stdout,
 		async close() {
 			for (const child of running) child.kill();
 			await rm(home, { recursive: true, force: true });
@@ -141,18 +141,18 @@ export async function nativeCopy(relay) {
 
 /**
  * Pair the browser tab `app` with `native` through a sync chain, as `datum
- * sync invite` and `connect` do — the native copy inviting, which starts an
+ * sync chain invite` and `connect` do — the native copy inviting, which starts an
  * open chain, the page redeeming — and return the page's report of that
  * first sync.
  */
 export async function pairWith(app, native) {
-	const serving = native.spawn(['sync', 'invite']);
-	const said = await until(() => /datum sync connect (\S+)/.exec(serving.stdout), Boolean);
+	const serving = native.spawn(['sync', 'chain', 'invite']);
+	const said = await until(() => /datum sync chain connect (\S+)/.exec(serving.stdout), Boolean);
 	return app.page.evaluate((t) => window.datum.sync.connect('datum', t), said[1]);
 }
 
-/** A tab's `sync verify`. */
-export const verifyOf = async (app) => (await app.run(['sync', 'verify'])).stdout;
+/** A tab's `sync pipe verify`. */
+export const verifyOf = async (app) => (await app.run(['sync', 'pipe', 'verify'])).stdout;
 
 /** How many entries of `field` a tab's database holds. */
 export const countOf = async (app, field) => Number((await app.run(['count', field])).stdout);

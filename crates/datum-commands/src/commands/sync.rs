@@ -1,6 +1,6 @@
 //! `datum sync` — Easy Sync. The merge is `datum_core::db::sync` (da-k329q),
-//! and here is the pipe it runs over: ops as JSON lines on stdout (`ops`)
-//! and stdin (`apply`). Pairing and syncing over iroh is `datum_sync`
+//! and here is the pipe it runs over: ops as JSON lines on stdout (`pipe
+//! ops`) and stdin (`pipe apply`). Pairing and syncing over iroh is `datum_sync`
 //! (da-rugg8), behind the `net` feature. The sync chain's admin acts
 //! (da-odwc7) are signed here, with a key file or by a passkey on datum.day
 //! — once the chain has an admin; an open one's are the members' own
@@ -10,17 +10,38 @@ use std::collections::BTreeMap;
 use std::io::Read;
 
 use anyhow::{bail, ensure, Context, Result};
-use datum_core::db::chain::{self, Chain};
+use datum_core::db::chain::{self, Chain, Notice};
 use datum_core::db::Db;
 use serde_json::{json, Value};
 
 use crate::args::{ShowFlag, SyncAdminAct, SyncCommand};
 use crate::commands::check::{Issue, Severity};
 
-const NO_CHAIN: &str = "this copy is in no sync chain: `datum sync invite` starts one";
+const NO_CHAIN: &str = "this copy is in no sync chain: `datum sync chain invite` on this device starts one, or `datum sync chain connect <TICKET>` joins one with a ticket from another";
+
+/// What an open chain says beside its members.
+const OPEN: &str =
+    "no admin: any device can add devices — `datum sync admin add` to protect the chain";
 
 pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
     match cmd {
+        SyncCommand::Now => {
+            if !db.sync_chain()?.exists() {
+                println!("{NO_CHAIN}");
+                return Ok(());
+            }
+            #[cfg(feature = "net")]
+            let synced = datum_sync::now_all(db);
+            #[cfg(not(feature = "net"))]
+            let synced: Result<()> = Err(anyhow::anyhow!(NO_NET));
+            if let Some(line) = summary(db)? {
+                println!("{line}");
+            }
+            synced?
+        }
+        SyncCommand::Pause | SyncCommand::Resume => {
+            bail!("`datum sync pause` and `resume` are not built yet (da-wlbyx)")
+        }
         SyncCommand::Vector => {
             println!("{}", serde_json::to_string(&db.sync_vector()?)?);
         }
@@ -79,6 +100,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             who,
             label,
             admin_key,
+            allow_unlock,
         } => {
             let chain = db.sync_chain()?;
             ensure!(chain.exists(), NO_CHAIN);
@@ -111,8 +133,17 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                     let [a] = hits.as_slice() else {
                         bail!("{who} names {} admins of this chain", hits.len());
                     };
-                    let r = json!({"type": "remove_admin", "key": a.key});
-                    (r, format!("removed admin {}", a.label))
+                    let mut r = json!({"type": "remove_admin", "key": a.key});
+                    if chain.admins.len() > 1 {
+                        (r, format!("removed admin {}", a.label))
+                    } else {
+                        ensure!(
+                            allow_unlock,
+                            "this is the last admin: removing it UNLOCKS the chain, so any device can add, revoke or rename devices. Pass --allow-unlock to do it"
+                        );
+                        r["unlock"] = true.into();
+                        (r, format!("removed admin {}: the chain is unlocked, so any device can add, revoke or rename devices", a.label))
+                    }
                 }
             };
             record["chain"] = chain.id.clone().into();
@@ -121,6 +152,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             println!("{said}");
         }
         SyncCommand::Members { show } => members(db, show == ShowFlag::Json)?,
+        SyncCommand::AdminList { show } => admins(db, show == ShowFlag::Json)?,
         SyncCommand::Rename {
             who,
             label,
@@ -218,13 +250,32 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             datum_sync::connect(db, &ticket)?
         }
         #[cfg(feature = "net")]
-        SyncCommand::Now => datum_sync::now_all(db)?,
-        #[cfg(feature = "net")]
         SyncCommand::Run => datum_sync::run(db)?,
         #[cfg(not(feature = "net"))]
-        _ => anyhow::bail!("peer-to-peer sync is not in this build (no networking)"),
+        _ => bail!(NO_NET),
     }
     Ok(())
+}
+
+#[cfg(not(feature = "net"))]
+const NO_NET: &str = "peer-to-peer sync is not in this build (no networking)";
+
+/// Bare `datum sync`'s one line: how the members stand after it (none
+/// when there are none: the sync has said so).
+fn summary(db: &Db) -> Result<Option<String>> {
+    let peers: Vec<_> = db
+        .sync_status()?
+        .into_iter()
+        .filter(|p| !p.revoked)
+        .collect();
+    let states: Vec<String> = ["synced", "pending", "error", "never"]
+        .iter()
+        .map(|s| (s, peers.iter().filter(|p| p.state == *s).count()))
+        .filter(|(_, n)| *n > 0)
+        .map(|(s, n)| format!("{n} {s}"))
+        .collect();
+    Ok((!states.is_empty())
+        .then(|| format!("{} · `datum sync status` for more", states.join(" · "))))
 }
 
 /// Write an invite any member admits the redeemer of, starting an open
@@ -244,7 +295,7 @@ fn invite(
         db.sync_chain_write(genesis, true)?;
         // The chain stands without it: a failure here is no reason to fail.
         if let Err(e) = db.sync_describe_self(&copy_label(), client()) {
-            eprintln!("⚠ this copy could not describe itself ({e}); `datum sync rename <LABEL>` tries again");
+            eprintln!("⚠ this copy could not describe itself ({e}); `datum sync chain rename <LABEL>` tries again");
         }
         chain = db.sync_chain()?;
         eprintln!(
@@ -365,17 +416,55 @@ fn sign(mut record: Value, chain: &Chain, admin_key: Option<&str>) -> Result<Val
     Ok(record)
 }
 
-/// `datum sync members`.
+/// The chain's admins, as `chain list --json` and `admin list --json` have
+/// them.
+fn admins_json(chain: &Chain) -> Vec<Value> {
+    chain
+        .admins
+        .iter()
+        .map(|a| json!({"key": a.key, "label": a.label, "added": chain::hlc_time(&a.added)}))
+        .collect()
+}
+
+/// The chain's admins, one line each, or what an open chain says.
+fn print_admins(chain: &Chain) {
+    if chain.is_open() {
+        println!("  {OPEN}");
+    }
+    for a in &chain.admins {
+        let kind = a.key.split(':').next().unwrap_or_default();
+        let key: String = a.key.chars().take(24).collect();
+        println!(
+            "  {}  {kind}  {key}…  added {}",
+            a.label,
+            chain::hlc_time(&a.added)
+        );
+    }
+}
+
+/// `datum sync admin list`.
+fn admins(db: &Db, json: bool) -> Result<()> {
+    let chain = db.sync_chain()?;
+    ensure!(chain.exists(), NO_CHAIN);
+    if json {
+        println!(
+            "{}",
+            json!({"chain": chain.id, "admins": admins_json(&chain)})
+        );
+        return Ok(());
+    }
+    println!("sync chain {}\nadmins:", chain.id);
+    print_admins(&chain);
+    Ok(())
+}
+
+/// `datum sync chain list`.
 fn members(db: &Db, json: bool) -> Result<()> {
     let chain = db.sync_chain()?;
     ensure!(chain.exists(), NO_CHAIN);
     let mine = db.sync_endpoint_id()?;
     if json {
-        let admins: Vec<Value> = chain
-            .admins
-            .iter()
-            .map(|a| json!({"key": a.key, "label": a.label, "added": chain::hlc_time(&a.added)}))
-            .collect();
+        let admins = admins_json(&chain);
         let members: Vec<Value> = chain
             .members
             .iter()
@@ -393,15 +482,7 @@ fn members(db: &Db, json: bool) -> Result<()> {
         return Ok(());
     }
     println!("sync chain {}\nadmins:", chain.id);
-    for a in &chain.admins {
-        let kind = a.key.split(':').next().unwrap_or_default();
-        let key: String = a.key.chars().take(24).collect();
-        println!(
-            "  {}  {kind}  {key}…  added {}",
-            a.label,
-            chain::hlc_time(&a.added)
-        );
-    }
+    print_admins(&chain);
     println!("endpoints:");
     for m in &chain.members {
         let revoked = m.revoked.as_deref().map(chain::hlc_time);
@@ -436,6 +517,11 @@ fn status(db: &Db, json: bool) -> Result<()> {
         .member(&mine)
         .map_or_else(copy_label, |m| m.label.clone());
     let peers = db.sync_status()?;
+    let unlocks: Vec<_> = db
+        .sync_notices_unacked()?
+        .into_iter()
+        .filter(|n| n.kind == "unlock")
+        .collect();
     if json {
         let path = db.conn().path().unwrap_or_default();
         let name = std::path::Path::new(path)
@@ -453,8 +539,13 @@ fn status(db: &Db, json: bool) -> Result<()> {
                 })
             })
             .collect();
+        let unlocked: Vec<Value> = unlocks
+            .iter()
+            .map(|n| json!({"by": n.label, "at": n.at}))
+            .collect();
         let out = json!({
             "db": name, "chain": chain.exists().then_some(&chain.id),
+            "open": chain.exists() && chain.is_open(), "unlocked": unlocked,
             "this": {"endpoint": mine, "device": db.sync_device_id()?, "label": label},
             "members": members,
         });
@@ -470,6 +561,12 @@ fn status(db: &Db, json: bool) -> Result<()> {
         chain.id,
         &mine[..10]
     );
+    if chain.is_open() {
+        println!("{OPEN}");
+    }
+    for n in &unlocks {
+        println!("⚠ {n} — {UNLOCK_HINT}");
+    }
     let width = peers
         .iter()
         .map(|p| p.label.chars().count())
@@ -504,33 +601,58 @@ fn status(db: &Db, json: bool) -> Result<()> {
 
 /// The warnings (da-odwc7): once, on the first command after the chain
 /// admits an endpoint or an admin, since each can read and write
-/// everything. Each also stays in `datum check` until `datum sync ack`.
+/// everything, or is unlocked. Each also stays in `datum check` until
+/// `datum sync chain ack`.
 pub fn warn_new_members(db: &Db) {
     for n in db.sync_notices_unannounced().unwrap_or_default() {
-        eprintln!("⚠ {n} — datum sync members to review, datum sync ack to acknowledge");
+        match n.kind.as_str() {
+            "unlock" => eprintln!("⚠ {n} — {UNLOCK_HINT}"),
+            _ => eprintln!(
+                "⚠ {n} — `datum sync chain list` to review, `datum sync chain ack` to acknowledge"
+            ),
+        }
     }
 }
 
-/// The sync chain's new endpoints and admins (da-odwc7), until `datum sync
-/// ack` says they are known.
+/// What an unlock notice asks of the person reading it.
+const UNLOCK_HINT: &str =
+    "other devices may have relied on the lock; `datum sync chain ack unlock` to acknowledge";
+
+/// The sync chain's new endpoints and admins (da-odwc7), and its unlocks
+/// (da-aam46), until `datum sync chain ack` says they are known.
 pub fn notice_issues(db: &Db) -> Result<Vec<Issue>> {
-    let notices = db.sync_notices_unacked()?;
-    if notices.is_empty() {
-        return Ok(Vec::new());
-    }
-    let lines: Vec<String> = notices.iter().map(|n| format!("  ⚠ {n}")).collect();
-    Ok(vec![Issue {
+    let (unlocks, new): (Vec<_>, Vec<_>) = db
+        .sync_notices_unacked()?
+        .into_iter()
+        .partition(|n| n.kind == "unlock");
+    let issue = |category, head: String, notices: &[Notice]| Issue {
         severity: Severity::Warning,
-        category: "sync_new_member",
+        category,
         message: format!(
-            "{} new to the sync chain; `datum sync ack <id>` once you know {}:\n{}",
-            notices.len(),
-            if notices.len() == 1 { "it" } else { "them" },
-            lines.join("\n"),
+            "{head}:\n{}",
+            notices
+                .iter()
+                .map(|n| format!("  ⚠ {n}"))
+                .collect::<Vec<_>>()
+                .join("\n")
         ),
         count: notices.len(),
         example: None,
         entries: Vec::new(),
         rendered_block: String::new(),
-    }])
+    };
+    let mut out = Vec::new();
+    if !new.is_empty() {
+        let head = format!(
+            "{} new to the sync chain; `datum sync chain ack <id>` once you know {}",
+            new.len(),
+            if new.len() == 1 { "it" } else { "them" },
+        );
+        out.push(issue("sync_new_member", head, &new));
+    }
+    if !unlocks.is_empty() {
+        let head = format!("the sync chain was unlocked: {UNLOCK_HINT}");
+        out.push(issue("sync_unlocked", head, &unlocks));
+    }
+    Ok(out)
 }

@@ -37,7 +37,10 @@
 //!     an open invite. Once the admit folds, the invite is used and the
 //!     secret admits no one.
 //!   - `revoke {endpoint}`, `add_admin {key, label}`, `remove_admin {key}`
-//!     — never the last, so a locked chain stays locked.
+//!     — the last only when the record says `unlock: true` (da-aam46),
+//!     which opens the chain again. Every act is judged at its own HLC, so
+//!     a member's act refused while the chain was locked stays refused, and
+//!     only its acts after the unlock count.
 //!   - `describe {endpoint, device, label, client}` (da-rcb5m): what a
 //!     member is — the device it runs on (one per data directory, shared by
 //!     every db there, so one laptop's copies group as one device), its
@@ -339,6 +342,9 @@ pub struct Chain {
     seen: BTreeSet<[u8; 32]>,
     /// The records that did nothing, by `(endpoint, seq)`, and why.
     pub rejected: BTreeMap<(String, i64), String>,
+    /// Each removal of the last admin (da-aam46): the admin's label, and
+    /// the HLC it was removed at.
+    pub unlocks: Vec<(String, String)>,
 }
 
 /// The wall time of an HLC, as RFC 3339.
@@ -535,7 +541,11 @@ impl Chain {
                     .position(|a| a.key == s("key"))
                     .ok_or("not an admin")?;
                 if self.admins.len() == 1 {
-                    return Err("the last admin cannot be removed".into());
+                    if r["unlock"] != Value::Bool(true) {
+                        return Err("the last admin is removed only by an unlock".into());
+                    }
+                    self.unlocks
+                        .push((self.admins[at].label.clone(), op.hlc.clone()));
                 }
                 self.admins.remove(at);
                 Ok(())
@@ -613,6 +623,15 @@ pub(super) fn note(conn: &Connection, chain: &Chain, quiet: bool) -> Result<()> 
             quiet
         ])?;
     }
+    // An unlock stays until acknowledged on the copy that did it too: every
+    // copy may have relied on the lock (da-aam46).
+    for (label, hlc) in &chain.unlocks {
+        conn.execute(
+            "INSERT OR IGNORE INTO sync_notices (subject, kind, label, at, via, announced, acked)
+             VALUES (?1, 'unlock', ?2, ?3, 'unlock', ?4, 0)",
+            params![format!("unlock:{hlc}"), label, hlc_time(hlc), quiet],
+        )?;
+    }
     Ok(())
 }
 
@@ -620,7 +639,7 @@ pub(super) fn note(conn: &Connection, chain: &Chain, quiet: bool) -> Result<()> 
 #[derive(Debug, Clone)]
 pub struct Notice {
     pub subject: String,
-    /// `endpoint` or `admin`.
+    /// `endpoint`, `admin` or `unlock`.
     pub kind: String,
     pub label: String,
     pub at: String,
@@ -632,6 +651,7 @@ impl std::fmt::Display for Notice {
         let id = &self.subject[..self.subject.len().min(18)];
         match self.kind.as_str() {
             "admin" => write!(f, "new sync admin {} ({id}) added {}", self.label, self.at),
+            "unlock" => write!(f, "sync chain unlocked by {} at {}", self.label, self.at),
             _ => write!(
                 f,
                 "new sync endpoint {} ({id}) admitted {} via {}",
@@ -754,24 +774,32 @@ impl Db {
         Ok(rows)
     }
 
-    /// `datum sync ack <who>`: acknowledge the notices of an endpoint or an
-    /// admin key — by label, or by at least [`MIN_PREFIX`] characters of its
-    /// id (`ed25519:ab…` or `ab…`), naming one subject — and settle the
+    /// `datum sync chain ack <who>`: acknowledge the notices of an endpoint
+    /// or an admin key — by label, or by at least [`MIN_PREFIX`] characters
+    /// of its id (`ed25519:ab…` or `ab…`), naming one subject — or every
+    /// unlock (`unlock`), and settle the
     /// `sync_unauthorised` warnings of that endpoint (a refused endpoint has
     /// no notice: name it by its whole id). How many rows it settled.
     pub fn sync_ack(&self, who: &str) -> Result<usize> {
         let prefix = |id: &str| who.len() >= MIN_PREFIX && id.starts_with(who);
+        // `unlock` is a word of its own: it never names a member or admin
+        // that happens to carry that label.
+        let named = |n: &Notice| match who {
+            "unlock" => n.kind == "unlock",
+            _ => n.label == who,
+        };
         let hits: Vec<Notice> = self
             .sync_notices_unacked()?
             .into_iter()
             .filter(|n| {
-                n.label == who
-                    || prefix(&n.subject)
-                    || n.subject.split_once(':').is_some_and(|(_, k)| prefix(k))
+                named(n)
+                    || who != "unlock"
+                        && (prefix(&n.subject)
+                            || n.subject.split_once(':').is_some_and(|(_, k)| prefix(k)))
             })
             .collect();
         let mut subjects: BTreeSet<&str> = hits.iter().map(|n| n.subject.as_str()).collect();
-        if subjects.len() > 1 && hits.iter().any(|n| n.label != who) {
+        if subjects.len() > 1 && !hits.iter().all(named) {
             return Err(DatumError::Other(format!(
                 "{who} names {} subjects; give more of the id",
                 subjects.len()
@@ -800,6 +828,74 @@ impl Db {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The chain `records` fold to, each written by one member at its HLC
+    /// (`t` seconds), signed by `admin` when given: what each did.
+    fn fold(
+        records: &[(u32, Value, Option<&[u8; 32]>)],
+    ) -> (Chain, Vec<std::result::Result<(), String>>) {
+        let mut chain = Chain::default();
+        let done = records
+            .iter()
+            .enumerate()
+            .map(|(seq, (t, r, admin))| {
+                let mut r = r.clone();
+                if let Some(secret) = admin {
+                    r["sig"] = sign_ed25519(&r, secret).into();
+                }
+                let op = json!({
+                    "endpoint": "ab".repeat(32), "seq": seq + 1, "hlc": format!("2026-09-29T00:00:{t:02}.000Z/0000"),
+                    "hid": CHAIN_HID, "slug": CHAIN_HID, "kind": "chain", "effect": r, "sig": "",
+                });
+                chain.step(&Op::parse(&op.to_string()).unwrap())
+            })
+            .collect();
+        (chain, done)
+    }
+
+    /// The last admin goes only with `unlock` (da-aam46), and the chain is
+    /// open from then on — not before: a member's act made while it was
+    /// locked stays refused.
+    #[test]
+    fn the_last_admin_is_removed_only_by_an_unlock() {
+        let secret = [3u8; 32];
+        let key = ed25519_admin_key(&secret);
+        let c = |r: Value| {
+            let mut r = r;
+            r["chain"] = "c1".into();
+            r
+        };
+        let genesis =
+            c(json!({"type": "genesis", "admins": [{"key": key, "label": "k"}], "label": "a"}));
+        let remove = c(json!({"type": "remove_admin", "key": key}));
+        let mut unlock = remove.clone();
+        unlock["unlock"] = true.into();
+        let invite = |id: &str| {
+            c(
+                json!({"type": "invite", "invite_id": id, "secret_hash": "h", "expires": "2099-01-01T00:00:00Z", "caps": {}}),
+            )
+        };
+        let (chain, done) = fold(&[
+            (1, genesis, Some(&secret)),
+            (2, invite("locked"), None),
+            (3, remove, Some(&secret)),
+            (4, unlock, Some(&secret)),
+            (5, invite("open"), None),
+        ]);
+        assert!(done[1]
+            .as_ref()
+            .unwrap_err()
+            .contains("not signed by an admin"));
+        assert_eq!(
+            done[2],
+            Err("the last admin is removed only by an unlock".into())
+        );
+        assert_eq!(done[3], Ok(()));
+        assert_eq!(done[4], Ok(()));
+        assert!(chain.is_open());
+        assert_eq!(chain.unlocks.len(), 1);
+        assert_eq!(chain.unlocks[0].0, "k");
+    }
 
     /// A software authenticator: a fixed P-256 key signing as a passkey would.
     fn authenticator() -> (p256::ecdsa::SigningKey, String) {

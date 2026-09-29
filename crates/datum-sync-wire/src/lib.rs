@@ -49,7 +49,7 @@ const MAX_ROUNDS: usize = 16;
 const CHUNK: usize = 64;
 /// datum-core's `peers::COPY`, which this crate cannot see.
 const COPY: &str =
-    "this peer is a copy of this database (same endpoint key); run `datum sync rekey` on one of them";
+    "this peer is a copy of this database (same endpoint key); run `datum sync chain rekey` on one of them";
 
 pub type Vector = BTreeMap<String, i64>;
 

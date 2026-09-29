@@ -142,7 +142,7 @@ pub enum IntegrityKind {
     /// sync chain, or made it after its revoke (da-odwc7). Filed once per
     /// endpoint while pending: `local_entry` is the entry as the op would
     /// have left it, its `extra_metadata.sync_op` naming the op and why.
-    /// `datum sync ack <endpoint>` settles it. Only ever `sync_pull`.
+    /// `datum sync chain ack <endpoint>` settles it. Only ever `sync_pull`.
     SyncUnauthorised,
 }
 

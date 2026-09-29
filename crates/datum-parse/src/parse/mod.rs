@@ -357,6 +357,7 @@ fn apply_show(command: &mut Command, show: Show) {
         Command::Alias(AliasCommand::List { show: s }) => *s = show,
         Command::Sync(
             SyncCommand::Members { show: s }
+            | SyncCommand::AdminList { show: s }
             | SyncCommand::Status { show: s }
             | SyncCommand::Apply { show: s },
         ) => *s = show,

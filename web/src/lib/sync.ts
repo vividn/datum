@@ -148,12 +148,12 @@ class Leader {
 
 	/**
 	 * Read whether the database syncs, and start an endpoint if it does.
-	 * `sync members` fails, writing nothing, in a database in no chain;
+	 * `sync chain list` fails, writing nothing, in a database in no chain;
 	 * `sync status` would mint an endpoint key there, on every fresh
 	 * device's first boot, so only a member is asked it.
 	 */
 	async refresh(): Promise<void> {
-		const members = await cli(['--db', this.db, 'sync', 'members', '--json']);
+		const members = await cli(['--db', this.db, 'sync', 'chain', 'list', '--json']);
 		this.chain = members.code === 0;
 		this.peers = [];
 		if (this.chain) {
@@ -184,7 +184,7 @@ class Leader {
 		try {
 			do {
 				this.pushAgain = false;
-				const vector = all ? '' : (await must(['--db', this.db, 'sync', 'vector'])).trim();
+				const vector = all ? '' : (await must(['--db', this.db, 'sync', 'pipe', 'vector'])).trim();
 				for (const p of this.peers) if (all || this.inStep.get(p.endpoint) !== vector) void this.dial(p);
 				all = false;
 			} while (this.pushAgain);
@@ -227,9 +227,9 @@ class Leader {
 			await this.start();
 			const report = await ask<SyncReport>(this.db, { op: 'connect', ticket: c.ticket });
 			this.done(report.id, report);
-			// Admitted to a chain, it says what it is (`datum sync connect`).
+			// Admitted to a chain, it says what it is (`datum sync chain connect`).
 			await this.refresh();
-			if (this.chain) await cli(['--db', this.db, 'sync', 'rename', this.label]);
+			if (this.chain) await cli(['--db', this.db, 'sync', 'chain', 'rename', this.label]);
 			return report;
 		}
 		const { secret } = JSON.parse(await must(['--db', this.db, 'sync', 'new-invite']));
@@ -330,14 +330,14 @@ async function call<T>(db: string, c: Call): Promise<T> {
 }
 
 /**
- * A ticket for another copy to redeem (`datum sync invite`): a new chain
+ * A ticket for another copy to redeem (`datum sync chain invite`): a new chain
  * invite, starting an open chain when the database is in none.
  */
 export function syncOffer(db: string): Promise<string> {
 	return call(db, { op: 'offer' });
 }
 
-/** Redeem `ticket` and sync (`datum sync connect`). */
+/** Redeem `ticket` and sync (`datum sync chain connect`). */
 export function syncConnect(db: string, ticket: string): Promise<SyncReport> {
 	return call(db, { op: 'connect', ticket });
 }

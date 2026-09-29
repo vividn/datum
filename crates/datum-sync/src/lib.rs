@@ -157,7 +157,7 @@ fn paired_unfinished(e: &anyhow::Error) -> bool {
     match e.downcast_ref::<Lost>() {
         Some(Lost(rep, _)) if rep.redeemed => {
             println!(
-                "paired with {}; the first sync did not finish: run `datum sync now`",
+                "paired with {}; the first sync did not finish: run `datum sync`",
                 rep.label
             );
             true
@@ -190,7 +190,7 @@ fn print_added(rep: &Report) {
 // ─── Commands ───────────────────────────────────────────────────────────────
 
 /// Print how to redeem the invite whose secret is `secret`, and serve until
-/// it is redeemed (or expires). `datum sync invite` has written the invite
+/// it is redeemed (or expires). `datum sync chain invite` has written the invite
 /// into the chain, so any member can admit its redeemer: the ticket lists
 /// them all.
 pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: bool) -> Result<()> {
@@ -202,7 +202,7 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
         addrs.extend(synced_peers(db)?.iter().filter_map(|p| addr(p).ok()));
         let ticket = Ticket { addrs, secret }.encode()?;
         println!("One-time invite, until {expires_at}. On the other copy run:\n");
-        println!("  datum sync connect {ticket}\n");
+        println!("  datum sync chain connect {ticket}\n");
         if qr {
             let code = qrcode::QrCode::new(ticket.as_bytes())?;
             println!(
@@ -235,7 +235,7 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
     })
 }
 
-/// `datum sync connect <ticket>`: redeem an invite and sync, with the first
+/// `datum sync chain connect <ticket>`: redeem an invite and sync, with the first
 /// of the ticket's addresses that admits it.
 pub fn connect(db: &Db, ticket: &str) -> Result<()> {
     let t = Ticket::decode(ticket)?;
@@ -255,11 +255,11 @@ pub fn connect(db: &Db, ticket: &str) -> Result<()> {
     })
 }
 
-/// `datum sync now`: sync with every member once.
+/// `datum sync`: sync with every member once.
 pub fn now_all(db: &Db) -> Result<()> {
     let peers = synced_peers(db)?;
     if peers.is_empty() {
-        println!("no sync peers: `datum sync invite` makes an invite");
+        println!("no sync peers: `datum sync chain invite` makes an invite");
         return Ok(());
     }
     runtime()?.block_on(async {

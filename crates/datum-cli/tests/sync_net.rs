@@ -101,11 +101,11 @@ impl Copy {
         Serving { child, out }
     }
 
-    /// `sync invite` serving, and its ticket.
+    /// `sync chain invite` serving, and its ticket.
     fn invite(&self, args: &[&str]) -> (Serving, String) {
-        let mut s = self.serve(&[&["sync", "invite"], args].concat());
+        let mut s = self.serve(&[&["sync", "chain", "invite"], args].concat());
         let ticket = s
-            .lines_until("datum sync connect ")
+            .lines_until("datum sync chain connect ")
             .rsplit(' ')
             .next()
             .unwrap()
@@ -115,7 +115,7 @@ impl Copy {
     }
 
     fn hash(&self) -> String {
-        self.ok(&["sync", "verify"]).trim().to_string()
+        self.ok(&["sync", "pipe", "verify"]).trim().to_string()
     }
 
     fn id(&self) -> String {
@@ -181,7 +181,7 @@ impl Drop for Serving {
 fn paired() -> (Copy, Copy) {
     let (a, b) = (Copy::new(), Copy::new());
     let (mut inviting, ticket) = a.invite(&[]);
-    b.ok(&["sync", "connect", &ticket]);
+    b.ok(&["sync", "chain", "connect", &ticket]);
     assert!(inviting.finish().0);
     (a, b)
 }
@@ -203,7 +203,7 @@ fn an_invite_pairs_two_copies_and_their_data_converges() {
     a.ok(&["occur", "coffee", "cups=2"]);
     b.ok(&["occur", "tea"]);
     let (mut inviting, ticket) = a.invite(&["--expires", "5m"]);
-    let joined = b.ok(&["sync", "connect", &ticket]);
+    let joined = b.ok(&["sync", "chain", "connect", &ticket]);
     assert!(joined.contains("added sync peer"), "{joined}");
     assert!(joined.contains("verify ok"), "{joined}");
     let (ok, served) = inviting.finish();
@@ -212,8 +212,8 @@ fn an_invite_pairs_two_copies_and_their_data_converges() {
 
     assert_eq!(a.hash(), b.hash());
     assert!(a.has("tea") && b.has("coffee"));
-    assert!(a.ok(&["sync", "members"]).contains(&b.id()[..10]));
-    assert!(b.ok(&["sync", "members"]).contains(&a.id()[..10]));
+    assert!(a.ok(&["sync", "chain", "list"]).contains(&b.id()[..10]));
+    assert!(b.ok(&["sync", "chain", "list"]).contains(&a.id()[..10]));
 }
 
 #[test]
@@ -221,7 +221,7 @@ fn an_invite_is_one_time_and_expires() {
     let (a, b) = (Copy::new(), Copy::new());
     let (mut inviting, ticket) = a.invite(&[]);
     // The ticket from stdin works as well as the argument.
-    b.run_in(&["sync", "connect"], &ticket);
+    b.run_in(&["sync", "chain", "connect"], &ticket);
     assert!(inviting.finish().0);
 
     let (mut expiring, stale) = a.invite(&["--expires", "1s"]);
@@ -230,14 +230,14 @@ fn an_invite_is_one_time_and_expires() {
 
     let _serving = a.serve(&["sync", "run"]);
     let c = Copy::new();
-    let used = c.fails(&["sync", "connect", &ticket], "");
+    let used = c.fails(&["sync", "chain", "connect", &ticket], "");
     assert!(used.contains("invite already used"), "{used}");
     // A member presenting it is refused before it dials: it is in a chain.
-    let again = b.fails(&["sync", "connect", &ticket], "");
+    let again = b.fails(&["sync", "chain", "connect", &ticket], "");
     assert!(again.contains("a copy belongs to one chain"), "{again}");
-    let expired = c.fails(&["sync", "connect", &stale], "");
+    let expired = c.fails(&["sync", "chain", "connect", &stale], "");
     assert!(expired.contains("invite expired"), "{expired}");
-    assert!(!a.ok(&["sync", "members"]).contains(&c.id()[..10]));
+    assert!(!a.ok(&["sync", "chain", "list"]).contains(&c.id()[..10]));
 }
 
 /// A stranger that dials without an invite is refused by the store's
@@ -249,7 +249,7 @@ fn an_invite_is_one_time_and_expires() {
 fn a_copy_of_this_key_is_refused() {
     let (a, _b) = paired();
     let (_inviting, ticket) = a.invite(&[]);
-    let mut own = a.cmd(&["sync", "connect", &ticket]);
+    let mut own = a.cmd(&["sync", "chain", "connect", &ticket]);
     own.env("DATUM_SYNC_BIND", format!("127.0.0.1:{}", Copy::new().port));
     let out = own.output().unwrap();
     let text = String::from_utf8_lossy(&out.stderr);
@@ -267,7 +267,7 @@ fn a_copy_in_a_chain_is_refused_another_chains_invite() {
     let c = Copy::new();
     let (_inviting, ticket) = c.invite(&[]);
     let ops = a.query("SELECT COUNT(*) FROM ops");
-    let refused = a.fails(&["sync", "connect", &ticket], "");
+    let refused = a.fails(&["sync", "chain", "connect", &ticket], "");
     let chain = a
         .query("SELECT json_extract(body, '$.effect.chain') FROM ops WHERE hid = '~chain' LIMIT 1");
     assert!(
@@ -279,7 +279,7 @@ fn a_copy_in_a_chain_is_refused_another_chains_invite() {
     );
     assert_eq!(a.query("SELECT COUNT(*) FROM ops"), ops);
     assert!(!c.has("secret"));
-    assert!(!c.ok(&["sync", "members"]).contains(&a.id()[..10]));
+    assert!(!c.ok(&["sync", "chain", "list"]).contains(&a.id()[..10]));
 }
 
 #[test]
@@ -287,7 +287,7 @@ fn run_serves_members_and_pushes_new_ops() {
     let (a, b) = paired();
     let _a_runs = a.serve(&["sync", "run"]);
     b.ok(&["occur", "walk"]);
-    let now = b.ok(&["sync", "now"]);
+    let now = b.ok(&["sync"]);
     // The walk, the spec its first log declares, and the describe b wrote
     // of itself once admitted.
     assert!(
@@ -307,14 +307,14 @@ fn concurrent_edits_across_the_link_file_a_conflict_on_both_sides() {
     let (a, b) = paired();
     a.ok(&["occur", "coffee", "cups=2"]);
     let _a_runs = a.serve(&["sync", "run"]);
-    b.ok(&["sync", "now"]);
+    b.ok(&["sync"]);
     let hid = b.query("SELECT hid FROM entries WHERE field = 'coffee'");
     drop(_a_runs);
     a.ok(&["update", &hid, "cups=4"]);
     b.ok(&["update", &hid, "cups=5"]);
 
     let _a_runs = a.serve(&["sync", "run"]);
-    let now = b.ok(&["sync", "now"]);
+    let now = b.ok(&["sync"]);
     assert!(now.contains("conflicts 1, verify ok"), "{now}");
     assert_eq!(a.hash(), b.hash());
     for copy in [&a, &b] {
@@ -329,7 +329,10 @@ fn a_new_member_is_announced_once() {
     for copy in [&a, &b] {
         let first = String::from_utf8(copy.run(&["tail"]).stderr).unwrap();
         assert!(first.contains("⚠ new sync endpoint"), "{first}");
-        assert!(first.contains("datum sync members to review"), "{first}");
+        assert!(
+            first.contains("`datum sync chain list` to review"),
+            "{first}"
+        );
         let second = String::from_utf8(copy.run(&["tail"]).stderr).unwrap();
         assert!(!second.contains("new sync"), "{second}");
     }
@@ -355,7 +358,7 @@ fn slow_first_sync(keepalive: bool) -> (Copy, Copy, Output, (bool, String)) {
         ];
     }
     let (mut inviting, ticket) = a.invite(&[]);
-    let joined = b.run(&["sync", "connect", &ticket]);
+    let joined = b.run(&["sync", "chain", "connect", &ticket]);
     let served = inviting.finish();
     (a, b, joined, served)
 }
@@ -388,7 +391,7 @@ fn without_keepalives_it_fails_says_what_landed_and_the_invite_still_exits() {
     // The admission held although the session failed: the invite exits 0.
     assert!(ok, "{served}");
     assert!(
-        served.contains("paired with") && served.contains("datum sync now"),
+        served.contains("paired with") && served.contains("run `datum sync`"),
         "{served}"
     );
 
@@ -397,7 +400,7 @@ fn without_keepalives_it_fails_says_what_landed_and_the_invite_still_exits() {
     a.env.clear();
     b.env.clear();
     let _a_runs = a.serve(&["sync", "run"]);
-    let now = b.ok(&["sync", "now"]);
+    let now = b.ok(&["sync"]);
     assert!(now.contains("verify ok"), "{now}");
     assert_eq!(a.hash(), b.hash());
 }
@@ -410,17 +413,17 @@ fn a_member_admits_an_invites_redeemer_while_the_inviter_is_offline() {
     a.ok(&["occur", "from-a"]);
     let (inviting, ticket) = a.invite(&[]);
     // b fetches the invite, then a goes away.
-    b.ok(&["sync", "now"]);
+    b.ok(&["sync"]);
     drop(inviting);
     let _b_runs = b.serve(&["sync", "run"]);
 
     let mut c = Copy::new();
     c.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
     c.ok(&["occur", "from-c"]);
-    let joined = c.ok(&["sync", "connect", &ticket]);
+    let joined = c.ok(&["sync", "chain", "connect", &ticket]);
     assert!(joined.contains("verify ok"), "{joined}");
     assert!(c.has("from-a") && b.has("from-c"));
-    let members = b.ok(&["sync", "members"]);
+    let members = b.ok(&["sync", "chain", "list"]);
     assert!(members.matches("via invite").count() == 2, "{members}");
     assert!(members.contains(&c.id()[..10]), "{members}");
 }
@@ -432,26 +435,31 @@ fn a_member_that_has_not_seen_the_invite_passes_the_redeemer_on() {
     std::thread::sleep(Duration::from_millis(1100));
     let d = Copy::new();
     let (mut inviting, ticket) = a.invite(&[]);
-    d.ok(&["sync", "connect", &ticket]);
+    d.ok(&["sync", "chain", "connect", &ticket]);
     assert!(inviting.finish().0);
 
     // Only d fetches the next invite before a goes away; b is behind.
     let (inviting, ticket) = a.invite(&[]);
-    d.ok(&["sync", "now"]);
+    d.ok(&["sync"]);
     drop(inviting);
     let (_b_runs, _d_runs) = (b.serve(&["sync", "run"]), d.serve(&["sync", "run"]));
     let mut c = Copy::new();
     c.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
-    let joined = c.ok(&["sync", "connect", &ticket]);
+    let joined = c.ok(&["sync", "chain", "connect", &ticket]);
     assert!(joined.contains("verify ok"), "{joined}");
-    assert!(d.ok(&["sync", "members"]).contains(&c.id()[..10]));
+    assert!(d.ok(&["sync", "chain", "list"]).contains(&c.id()[..10]));
 }
 
 // ─── A device's identity, and each session recorded (da-rcb5m) ──────────────
 
-/// `of`'s entry in `copy`'s `sync <what> --json`.
+/// `of`'s entry in `copy`'s `sync <what> --json` (`what` may be two words).
 fn entry_of(copy: &Copy, what: &str, of: &Copy) -> serde_json::Value {
-    let all: serde_json::Value = serde_json::from_str(&copy.ok(&["sync", what, "--json"])).unwrap();
+    let argv: Vec<&str> = ["sync"]
+        .into_iter()
+        .chain(what.split(' '))
+        .chain(["--json"])
+        .collect();
+    let all: serde_json::Value = serde_json::from_str(&copy.ok(&argv)).unwrap();
     let id = of.id();
     let hit = all["members"]
         .as_array()
@@ -473,12 +481,12 @@ fn a_redeemer_describes_itself_and_every_session_is_recorded_for_status() {
         (Some("pending"), Some(1)),
         "{behind}"
     );
-    assert!(entry_of(&a, "members", &b)["device"].is_null());
+    assert!(entry_of(&a, "chain list", &b)["device"].is_null());
 
     // a serves (an invite being offered serves members too), b dials.
     let (serving, _) = a.invite(&[]);
-    b.ok(&["sync", "now"]);
-    let described = entry_of(&a, "members", &b);
+    b.ok(&["sync"]);
+    let described = entry_of(&a, "chain list", &b);
     assert_eq!(
         described["device"],
         b.query("SELECT device_id FROM sync_local").as_str(),
@@ -495,10 +503,10 @@ fn a_redeemer_describes_itself_and_every_session_is_recorded_for_status() {
         assert!(row["last_verify"]["at"].is_string(), "{row}");
     }
 
-    // a gone, b's session fails, and says why in the words `sync now` printed.
+    // a gone, b's session fails, and says why in the words bare `sync` printed.
     drop(serving);
     b.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
-    let failed = b.fails(&["sync", "now"], "");
+    let failed = b.fails(&["sync"], "");
     let row = entry_of(&b, "status", &a);
     assert_eq!(row["state"], "error", "{row}");
     let why = row["error"].as_str().unwrap();

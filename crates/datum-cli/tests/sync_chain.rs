@@ -78,13 +78,13 @@ impl Copy {
 
     /// What `other` lacks of this copy's ops.
     fn ops_for(&self, other: &Copy) -> String {
-        let vector = other.ok(&["sync", "vector"]);
-        self.ok(&["sync", "ops", "--since", vector.trim()])
+        let vector = other.ok(&["sync", "pipe", "vector"]);
+        self.ok(&["sync", "pipe", "ops", "--since", vector.trim()])
     }
 
     /// Send `other` what it lacks: whether it applied cleanly, and its output.
     fn send(&self, other: &Copy) -> (bool, String) {
-        let out = other.run(&["sync", "apply"], &self.ops_for(other));
+        let out = other.run(&["sync", "pipe", "apply"], &self.ops_for(other));
         let text = format!(
             "{}{}",
             String::from_utf8_lossy(&out.stdout),
@@ -94,7 +94,7 @@ impl Copy {
     }
 
     fn id(&self) -> String {
-        self.ok(&["sync", "ops"]); // mints the key
+        self.ok(&["sync", "pipe", "ops"]); // mints the key
         self.query("SELECT endpoint_id FROM sync_local")
     }
 
@@ -103,7 +103,7 @@ impl Copy {
     }
 
     fn hash(&self) -> String {
-        self.ok(&["sync", "verify"]).trim().to_string()
+        self.ok(&["sync", "pipe", "verify"]).trim().to_string()
     }
 
     fn has(&self, field: &str) -> bool {
@@ -168,13 +168,13 @@ fn admit(member: &Copy, copy: &Copy, label: &str, admin_key: Option<&str>) {
 #[test]
 fn a_redeemer_in_another_chain_or_not_saying_is_refused() {
     let (a, b) = chained();
-    let theirs = json(&a.ok(&["sync", "members", "--json"]))["chain"]
+    let theirs = json(&a.ok(&["sync", "chain", "list", "--json"]))["chain"]
         .as_str()
         .unwrap()
         .to_string();
     let other = Copy::new();
     other.ok(&["sync", "new-invite"]);
-    let other_chain = json(&other.ok(&["sync", "members", "--json"]))["chain"]
+    let other_chain = json(&other.ok(&["sync", "chain", "list", "--json"]))["chain"]
         .as_str()
         .unwrap()
         .to_string();
@@ -196,7 +196,7 @@ fn a_redeemer_in_another_chain_or_not_saying_is_refused() {
         text.contains("old does not say which sync chain it is in"),
         "{text}"
     );
-    let members = json(&other.ok(&["sync", "members", "--json"]))["members"].clone();
+    let members = json(&other.ok(&["sync", "chain", "list", "--json"]))["members"].clone();
     assert_eq!(members.as_array().unwrap().len(), 1, "{members}");
 
     // In no chain, it is admitted.
@@ -211,11 +211,11 @@ fn chained() -> (Copy, Copy) {
 }
 
 /// `chained`, locked by `a` with the admin key file it returns, which
-/// `add-admin` writes; `b` holds the lock.
+/// `admin add` writes; `b` holds the lock.
 fn locked() -> (Copy, Copy, String) {
     let (a, b) = chained();
     let admin = a.key("admin.key");
-    a.ok(&["sync", "add-admin", &admin]);
+    a.ok(&["sync", "admin", "add", &admin]);
     assert!(a.send(&b).0);
     (a, b, admin)
 }
@@ -226,7 +226,7 @@ fn two_copies_with_no_admin_join_by_invite_and_connect() {
     a.ok(&["occur", "tea"]);
     admit(&a, &b, "b", None);
     assert!(b.has("tea"));
-    let members = json(&b.ok(&["sync", "members", "--json"]));
+    let members = json(&b.ok(&["sync", "chain", "list", "--json"]));
     assert_eq!(members["admins"], serde_json::json!([]), "{members}");
     let via: Vec<_> = members["members"]
         .as_array()
@@ -266,7 +266,7 @@ fn a_non_members_ops_are_refused_until_it_is_admitted() {
     // Admitted, what it had sent applies without being sent again.
     admit(&a, &stranger, "s", None);
     assert!(a.has("intrusion"));
-    a.ok(&["sync", "ack", &stranger.id()]);
+    a.ok(&["sync", "chain", "ack", &stranger.id()]);
     assert!(!a.ok(&["check"]).contains("outside the sync chain"));
 }
 
@@ -277,7 +277,7 @@ fn a_non_members_act_is_refused_open_chain_or_not() {
     for lock in [false, true] {
         let (a, b) = chained();
         if lock {
-            a.ok(&["sync", "add-admin", &a.key("admin.key")]);
+            a.ok(&["sync", "admin", "add", &a.key("admin.key")]);
         }
         let stranger = Copy::new();
         let chain_id = a.query(
@@ -287,7 +287,7 @@ fn a_non_members_act_is_refused_open_chain_or_not() {
             "type": "revoke", "chain": chain_id, "endpoint": b.id(),
             "created": "2026-09-29T00:00:00Z",
         });
-        let out = a.run(&["sync", "apply"], &forged(&stranger, &a, revoke));
+        let out = a.run(&["sync", "pipe", "apply"], &forged(&stranger, &a, revoke));
         let text = String::from_utf8_lossy(&out.stderr);
         assert!(!out.status.success(), "{text}");
         assert!(
@@ -332,7 +332,9 @@ fn in_an_open_chain_a_member_invites_a_third_copy_and_revokes_one() {
         .unwrap()
         .starts_with("invite "));
     // c revokes a: no admin, no key, no prompt.
-    assert!(c.ok(&["sync", "revoke", &a.id()[..10]]).contains("revoked"));
+    assert!(c
+        .ok(&["sync", "chain", "revoke", &a.id()[..10]])
+        .contains("revoked"));
     assert!(c.send(&b).0);
     assert!(member_of(&b, &a.id())["revoked"].is_string());
     a.ok(&["occur", "after"]);
@@ -348,21 +350,21 @@ fn the_first_admin_add_locks_the_chain() {
     let (a, b) = chained();
     // Any member may lock it: b, which did not start the chain.
     let admin = b.key("admin.key");
-    b.ok(&["sync", "add-admin", &admin]);
+    b.ok(&["sync", "admin", "add", &admin]);
     assert!(b.send(&a).0);
 
     let out = a.fails(&["sync", "new-invite"], "not-a-signature\n");
     assert!(out.contains("https://datum.day/sync/approve#"), "{out}");
     assert!(out.contains("not signed by an admin"), "{out}");
-    let out = a.fails(&["sync", "revoke", "b"], "");
+    let out = a.fails(&["sync", "chain", "revoke", "b"], "");
     assert!(out.contains("no approval code"), "{out}");
     // A second key needs the first: first come, first served.
-    let out = a.fails(&["sync", "add-admin", &a.key("mine.key")], "\n");
+    let out = a.fails(&["sync", "admin", "add", &a.key("mine.key")], "\n");
     assert!(out.contains("no approval code"), "{out}");
 
     a.ok(&["sync", "new-invite", "--admin-key", &admin]);
-    a.ok(&["sync", "revoke", "b", "--admin-key", &admin]);
-    let members = json(&a.ok(&["sync", "members", "--json"]));
+    a.ok(&["sync", "chain", "revoke", "b", "--admin-key", &admin]);
+    let members = json(&a.ok(&["sync", "chain", "list", "--json"]));
     assert_eq!(members["admins"].as_array().unwrap().len(), 1, "{members}");
 }
 
@@ -376,9 +378,12 @@ fn a_revoke_refuses_what_the_endpoint_made_after_it_on_every_copy() {
 
     // Three characters of an id name nothing: too easy to hit by accident.
     let b_id = b.id();
-    let short = a.fails(&["sync", "revoke", &b_id[..3], "--admin-key", &admin], "");
+    let short = a.fails(
+        &["sync", "chain", "revoke", &b_id[..3], "--admin-key", &admin],
+        "",
+    );
     assert!(short.contains("names 0 members"), "{short}");
-    a.ok(&["sync", "revoke", "b", "--admin-key", &admin]);
+    a.ok(&["sync", "chain", "revoke", "b", "--admin-key", &admin]);
     b.ok(&["occur", "after"]);
     // c takes b's op before it hears of the revoke…
     assert!(b.send(&c).0);
@@ -398,18 +403,19 @@ fn a_revoke_refuses_what_the_endpoint_made_after_it_on_every_copy() {
     );
     assert!(!a.has("after") && a.has("before"));
     assert_eq!(a.hash(), c.hash());
-    let members = a.ok(&["sync", "members"]);
+    let members = a.ok(&["sync", "chain", "list"]);
     assert!(members.contains("REVOKED"), "{members}");
 }
 
 #[test]
-fn an_added_admin_works_and_a_removed_one_is_refused_but_never_the_last() {
+fn an_added_admin_works_and_a_removed_one_is_refused_and_the_last_needs_a_flag() {
     let (a, _b, first) = locked();
     let second = a.key("second.key");
     std::fs::write(&second, "11".repeat(32)).unwrap();
     a.ok(&[
         "sync",
-        "add-admin",
+        "admin",
+        "add",
         &second,
         "--label",
         "second",
@@ -417,22 +423,33 @@ fn an_added_admin_works_and_a_removed_one_is_refused_but_never_the_last() {
         &first,
     ]);
     // A key file's label is its name: its path would sync to every member.
-    let before = a.ok(&["sync", "members"]);
+    let before = a.ok(&["sync", "chain", "list"]);
     assert!(
         before.contains("admin.key") && !before.contains(&first),
         "{before}"
     );
-    a.ok(&["sync", "remove-admin", "admin.key", "--admin-key", &second]);
+    a.ok(&[
+        "sync",
+        "admin",
+        "remove",
+        "admin.key",
+        "--admin-key",
+        &second,
+    ]);
 
     let old = a.fails(&["sync", "new-invite", "--admin-key", &first], "");
     assert!(old.contains("not signed by an admin"), "{old}");
     a.ok(&["sync", "new-invite", "--admin-key", &second]);
     let last = a.fails(
-        &["sync", "remove-admin", "second", "--admin-key", &second],
+        &["sync", "admin", "remove", "second", "--admin-key", &second],
         "",
     );
-    assert!(last.contains("the last admin cannot be removed"), "{last}");
-    let members = a.ok(&["sync", "members"]);
+    assert!(
+        last.contains("this is the last admin: removing it UNLOCKS the chain")
+            && last.contains("Pass --allow-unlock"),
+        "{last}"
+    );
+    let members = a.ok(&["sync", "chain", "list"]);
     assert!(
         members.contains("second") && !members.contains("admin.key"),
         "{members}"
@@ -449,7 +466,7 @@ fn a_new_endpoint_is_announced_once_and_stays_in_check_until_acked() {
         admitted.contains("⚠ new sync endpoint b") && !admitted.contains("new sync admin"),
         "{admitted}"
     );
-    a.ok(&["sync", "ack", "b"]);
+    a.ok(&["sync", "chain", "ack", "b"]);
     assert!(!a.ok(&["check"]).contains("new to the sync chain"));
 
     // b heard of a, then of the lock: each announced once, on the first
@@ -464,17 +481,17 @@ fn a_new_endpoint_is_announced_once_and_stays_in_check_until_acked() {
         check.contains("⚠ new sync endpoint") && check.contains("via genesis"),
         "{check}"
     );
-    b.ok(&["sync", "ack", &a.id()[..10]]);
-    b.ok(&["sync", "ack", "ed25519:"]);
+    b.ok(&["sync", "chain", "ack", &a.id()[..10]]);
+    b.ok(&["sync", "chain", "ack", "ed25519:"]);
     assert!(!b.ok(&["check"]).contains("new to the sync chain"));
-    let none = b.fails(&["sync", "ack", "nobody"], "");
+    let none = b.fails(&["sync", "chain", "ack", "nobody"], "");
     assert!(none.contains("nothing to acknowledge"), "{none}");
 }
 
 #[test]
 fn an_admin_act_without_a_valid_signature_is_refused_by_name() {
     let (a, b, _) = locked();
-    let out = a.fails(&["sync", "revoke", "b"], "not-a-signature\n");
+    let out = a.fails(&["sync", "chain", "revoke", "b"], "not-a-signature\n");
     assert!(out.contains("https://datum.day/sync/approve#"), "{out}");
     assert!(out.contains("not signed by an admin"), "{out}");
     assert!(member_of(&a, &b.id())["revoked"].is_null());
@@ -538,7 +555,7 @@ fn a_passkey_admin_approves_by_link_and_pasted_code() {
     let a = Copy::new();
     a.ok(&["sync", "new-invite"]);
     // Adding the first admin to an open chain asks for no approval.
-    a.ok(&["sync", "add-admin", &passkey_json()]);
+    a.ok(&["sync", "admin", "add", &passkey_json()]);
     let out = approve(&a, &["sync", "new-invite"]);
     assert!(
         out.status.success(),
@@ -563,7 +580,7 @@ fn a_passkey_admin_approves_by_link_and_pasted_code() {
         "--chain",
         "",
     ]);
-    let members = a.ok(&["sync", "members"]);
+    let members = a.ok(&["sync", "chain", "list"]);
     assert!(
         members.contains("phone  es256") && members.contains("x  "),
         "{members}"
@@ -576,9 +593,9 @@ fn json(text: &str) -> serde_json::Value {
     serde_json::from_str(text).unwrap_or_else(|e| panic!("{e}: {text}"))
 }
 
-/// `id`'s entry in `copy`'s `sync members --json`.
+/// `id`'s entry in `copy`'s `sync chain list --json`.
 fn member_of(copy: &Copy, id: &str) -> serde_json::Value {
-    let all = json(&copy.ok(&["sync", "members", "--json"]));
+    let all = json(&copy.ok(&["sync", "chain", "list", "--json"]));
     let hit = all["members"]
         .as_array()
         .unwrap()
@@ -603,13 +620,13 @@ fn a_copy_describes_itself_at_its_first_invite_and_renames_itself_without_an_adm
     // b was admitted at a handshake: it names itself, no key needed.
     assert!(member_of(&b, &b.id())["device"].is_null());
     assert!(b
-        .ok(&["sync", "rename", "phone"])
+        .ok(&["sync", "chain", "rename", "phone"])
         .contains("renamed b to phone"));
     assert!(b.send(&a).0);
     let seen = member_of(&a, &b.id());
     assert_eq!(seen["label"], "phone", "{seen}");
     assert_eq!(seen["device"], device_of(&b).as_str(), "{seen}");
-    assert!(a.ok(&["sync", "members"]).contains("phone"));
+    assert!(a.ok(&["sync", "chain", "list"]).contains("phone"));
 }
 
 /// datum.day's device is `DATUM_DEVICE_ID`, `web-` and eight more
@@ -629,13 +646,13 @@ fn a_device_named_by_the_environment_starts_a_chain_and_renames() {
     };
     // Every command under the one device: another would be another endpoint.
     let me = || {
-        let all = json(&run(&["sync", "members", "--json"]));
+        let all = json(&run(&["sync", "chain", "list", "--json"]));
         all["members"][0].clone()
     };
     run(&["sync", "new-invite"]);
     assert_eq!(me()["device"], "web-abc12345", "{}", me());
     assert_eq!(me()["this"], true, "{}", me());
-    run(&["sync", "rename", "kitchen"]);
+    run(&["sync", "chain", "rename", "kitchen"]);
     assert_eq!(me()["label"], "kitchen", "{}", me());
     assert_eq!(me()["device"], "web-abc12345", "{}", me());
     let status = json(&run(&["sync", "status", "--json"]));
@@ -645,9 +662,17 @@ fn a_device_named_by_the_environment_starts_a_chain_and_renames() {
 #[test]
 fn another_member_is_renamed_by_an_admin_and_by_no_one_else() {
     let (a, b, admin) = locked();
-    b.ok(&["sync", "rename", "phone"]);
+    b.ok(&["sync", "chain", "rename", "phone"]);
     assert!(b.send(&a).0);
-    a.ok(&["sync", "rename", "phone", "tablet", "--admin-key", &admin]);
+    a.ok(&[
+        "sync",
+        "chain",
+        "rename",
+        "phone",
+        "tablet",
+        "--admin-key",
+        &admin,
+    ]);
     let renamed = member_of(&a, &b.id());
     assert_eq!(renamed["label"], "tablet");
     assert_eq!(
@@ -665,7 +690,7 @@ fn another_member_is_renamed_by_an_admin_and_by_no_one_else() {
         .unwrap()
         .to_string();
     let out = b.fails(
-        &["sync", "rename", &a.id()[..10], "evil"],
+        &["sync", "chain", "rename", &a.id()[..10], "evil"],
         "not-a-signature\n",
     );
     assert!(out.contains("https://datum.day/sync/approve#"), "{out}");
@@ -728,7 +753,7 @@ fn session(a: &Copy, b: &Copy) {
     } else {
         "mismatch"
     };
-    let vector = b.ok(&["sync", "vector"]);
+    let vector = b.ok(&["sync", "pipe", "vector"]);
     a.ok(&[
         "sync",
         "record-session",
@@ -770,8 +795,8 @@ fn status_says_never_then_synced_then_pending_then_error_each_with_its_time() {
     let row = status_of(&a, &b);
     // What a holds past what b last had: the entry, and its field's spec.
     let (mine, theirs) = (
-        json(&a.ok(&["sync", "vector"])),
-        json(&b.ok(&["sync", "vector"])),
+        json(&a.ok(&["sync", "pipe", "vector"])),
+        json(&b.ok(&["sync", "pipe", "vector"])),
     );
     let waiting = mine[a.id()].as_i64().unwrap() - theirs[a.id()].as_i64().unwrap();
     assert!(waiting > 0);
@@ -796,7 +821,7 @@ fn status_says_never_then_synced_then_pending_then_error_each_with_its_time() {
     assert_eq!(status_of(&a, &b)["state"], "synced");
 
     // b revoked, what it makes is refused, and the transport says so.
-    a.ok(&["sync", "revoke", "b"]);
+    a.ok(&["sync", "chain", "revoke", "b"]);
     b.ok(&["occur", "after"]);
     let (ok, why) = b.send(&a);
     assert!(!ok, "{why}");
@@ -852,18 +877,31 @@ fn the_network_workers_commands_are_hidden_and_endpoint_key_is_the_secret() {
     );
     let help = format!("{}{}", a.ok(&["sync", "--help"]), a.ok(&["help", "sync"]));
     assert!(help.contains("rename") && help.contains("status"), "{help}");
-    for hidden in ["endpoint-key", "record-session", "handshake", "new-invite"] {
+    for hidden in [
+        "endpoint-key",
+        "record-session",
+        "handshake",
+        "new-invite",
+        "sync pipe",
+        "datum sync run",
+    ] {
         assert!(!help.contains(hidden), "{hidden} in help");
     }
     let found = a.ok(&["__complete", "2", "--", "datum", "sync", ""]);
     assert!(
-        found.contains("status") && found.contains("rename"),
+        found.contains("status") && found.contains("chain"),
         "{found}"
     );
-    assert!(
-        !found.contains("endpoint-key") && !found.contains("record-session"),
-        "{found}"
-    );
+    for hidden in [
+        "endpoint-key",
+        "record-session",
+        "handshake",
+        "new-invite",
+        "pipe",
+        "run",
+    ] {
+        assert!(!found.contains(hidden), "{hidden}: {found}");
+    }
 }
 
 /// A chain op `copy` never wrote but signed with its key, next after what
@@ -937,42 +975,166 @@ fn a_label_with_a_control_character_is_refused_by_the_fold_and_the_command() {
             "a describe's device is not a device id",
         ),
     ] {
-        let out = a.run(&["sync", "apply"], &forged(&b, &a, record));
+        let out = a.run(&["sync", "pipe", "apply"], &forged(&b, &a, record));
         let text = String::from_utf8_lossy(&out.stderr);
         assert!(!out.status.success() && text.contains(why), "{why}: {text}");
         assert_eq!(member_of(&a, &b.id())["label"], "b");
     }
     // The forgery itself is sound: a well-formed one applies.
     let ok = describe("phone", "web", &device.to_lowercase());
-    a.ok_in(&["sync", "apply"], &forged(&b, &a, ok));
+    a.ok_in(&["sync", "pipe", "apply"], &forged(&b, &a, ok));
     assert_eq!(member_of(&a, &b.id())["client"], "web");
 
     // The command refuses first, naming the character; nothing is written.
-    let out = b.fails(&["sync", "rename", "\u{1b}[2Jevil"], "");
+    let out = b.fails(&["sync", "chain", "rename", "\u{1b}[2Jevil"], "");
     assert!(
         out.contains("a label cannot contain a control character (U+001B)"),
         "{out}"
     );
-    let out = b.fails(&["sync", "rename", &"x".repeat(65)], "");
+    let out = b.fails(&["sync", "chain", "rename", &"x".repeat(65)], "");
     assert!(out.contains("at most 64 characters"), "{out}");
     assert_eq!(member_of(&b, &b.id())["label"], "b");
 }
 
-/// Device-to-device pairing, `init` and `add-endpoint` are gone (da-6177s):
-/// from help, from completion, and as commands.
+/// The tree regrouped (da-aam46), after device-to-device pairing, `init`
+/// and `add-endpoint` went (da-6177s): every old spelling is gone from
+/// help, from completion, and as a command; the groups complete, and the
+/// hidden commands do not.
 #[test]
-fn the_removed_commands_are_gone() {
+fn the_old_spellings_are_gone_and_the_groups_complete() {
     let a = Copy::new();
     let help = format!("{}{}", a.ok(&["sync", "--help"]), a.ok(&["help", "sync"]));
-    let found = a.ok(&["__complete", "2", "--", "datum", "sync", ""]);
-    let words: Vec<&str> = found.split_whitespace().collect();
-    for gone in ["init", "add-endpoint", "add-client", "peers", "forget"] {
+    let complete = |words: &[&str]| {
+        let at = (words.len() + 2).to_string();
+        let argv = [
+            &["__complete", &at, "--", "datum", "sync"][..],
+            words,
+            &[""],
+        ]
+        .concat();
+        let found = a.ok(&argv);
+        found
+            .split_whitespace()
+            .map(String::from)
+            .collect::<Vec<_>>()
+    };
+    let top = complete(&[]);
+    for gone in [
+        "init",
+        "add-endpoint",
+        "add-client",
+        "peers",
+        "forget",
+        "now",
+        "invite",
+        "connect",
+        "members",
+        "rename",
+        "ack",
+        "revoke",
+        "add-admin",
+        "remove-admin",
+        "rekey",
+        "vector",
+        "ops",
+        "apply",
+        "verify",
+    ] {
         assert!(!help.contains(&format!("sync {gone}")), "{gone} in help");
-        assert!(!words.contains(&gone), "{gone} completes: {found}");
         let out = a.fails(&["sync", gone, "x"], "");
         assert!(out.contains("unknown sync subcommand"), "{gone}: {out}");
     }
-    for kept in ["invite", "connect", "revoke", "add-admin"] {
-        assert!(words.contains(&kept), "{kept} missing: {found}");
+    assert_eq!(top, ["status", "pause", "resume", "chain", "admin"]);
+    assert_eq!(
+        complete(&["chain"]),
+        ["invite", "connect", "list", "rename", "revoke", "ack", "rekey"]
+    );
+    assert_eq!(complete(&["admin"]), ["list", "add", "remove"]);
+    // `datum sync help` is the page.
+    assert_eq!(a.ok(&["sync", "help"]), a.ok(&["help", "sync"]));
+}
+
+/// Bare `sync` in no chain says how to join one, and is no failure.
+#[test]
+fn bare_sync_in_no_chain_says_how_to_start_one() {
+    let out = Copy::new().ok(&["sync"]);
+    assert!(
+        out.contains("`datum sync chain invite` on this device")
+            && out.contains("`datum sync chain connect <TICKET>`"),
+        "{out}"
+    );
+}
+
+/// An open chain says so beside its members, quietly; a locked one does not.
+#[test]
+fn status_says_a_chain_is_open() {
+    let (a, b) = chained();
+    let open = "no admin: any device can add devices — `datum sync admin add` to protect the chain";
+    assert!(a.ok(&["sync", "status"]).contains(open));
+    assert_eq!(json(&a.ok(&["sync", "status", "--json"]))["open"], true);
+    a.ok(&["sync", "admin", "add", &a.key("admin.key")]);
+    assert!(a.send(&b).0);
+    for copy in [&a, &b] {
+        assert!(!copy.ok(&["sync", "status"]).contains(open));
+        assert_eq!(json(&copy.ok(&["sync", "status", "--json"]))["open"], false);
     }
+}
+
+/// Removing the last admin reopens the chain, but only on purpose (vividn,
+/// da-aam46): without `--allow-unlock` it is refused and names the flag;
+/// with it the chain is open, a member's invite goes through, and every
+/// copy says so until it is acknowledged.
+#[test]
+fn removing_the_last_admin_unlocks_the_chain_only_on_purpose() {
+    let (a, b, admin) = locked();
+    let remove = [
+        "sync",
+        "admin",
+        "remove",
+        "admin.key",
+        "--admin-key",
+        &admin,
+    ];
+    let refused = a.fails(&remove, "");
+    assert!(refused.contains("Pass --allow-unlock"), "{refused}");
+    // Locked: b's invite asks for an admin's approval.
+    assert!(b
+        .fails(&["sync", "new-invite"], "\n")
+        .contains("no approval code"));
+
+    let said = a.ok(&[&remove[..], &["--allow-unlock"]].concat());
+    assert!(said.contains("the chain is unlocked"), "{said}");
+    assert!(a.send(&b).0);
+    let unlocked = "sync chain unlocked by admin.key at ";
+    let announced = b.stderr_of(&["tail"]);
+    assert!(
+        announced.contains(unlocked) && announced.contains("`datum sync chain ack unlock`"),
+        "{announced}"
+    );
+    assert!(!b.stderr_of(&["tail"]).contains(unlocked), "announced once");
+    assert!(json(&a.ok(&["sync", "admin", "list", "--json"]))["admins"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    b.ok(&["sync", "new-invite"]);
+    // `ack unlock` names the unlocks alone, never a device labelled `unlock`.
+    admit(&a, &Copy::new(), "unlock", None);
+
+    for copy in [&a, &b] {
+        let status = copy.ok(&["sync", "status"]);
+        assert!(status.contains(unlocked), "{status}");
+        let all = json(&copy.ok(&["sync", "status", "--json"]));
+        assert_eq!(all["open"], true);
+        assert_eq!(all["unlocked"][0]["by"], "admin.key");
+        let check = copy.ok(&["check"]);
+        let head = "the sync chain was unlocked: other devices may have relied on the lock; `datum sync chain ack unlock` to acknowledge:\n  ⚠ sync chain unlocked by admin.key";
+        assert!(check.contains(head), "{check}");
+        copy.ok(&["sync", "chain", "ack", "unlock"]);
+        assert!(!copy.ok(&["sync", "status"]).contains(unlocked));
+    }
+    let check = a.ok(&["check"]);
+    assert!(
+        check.contains("⚠ new sync endpoint unlock") && !check.contains(unlocked),
+        "{check}"
+    );
 }

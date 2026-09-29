@@ -2,7 +2,7 @@
 // the widget reads goes through here, so a renamed command (da-aam46's
 // `members` → `chain list`) changes this file and no other.
 //
-// `sync members` goes first: in a database in no chain it fails, writing
+// `sync chain list` goes first: in a database in no chain it fails, writing
 // nothing, where `sync status` would mint an endpoint key (as $lib/sync.ts
 // says of its own read). So only a member, which has its key, is asked it.
 //
@@ -38,7 +38,7 @@ export interface DbSync {
 export function readSync(dbs: string[]): Promise<DbSync[]> {
 	return Promise.all(
 		dbs.map(async (db): Promise<DbSync> => {
-			const members = await run(['--db', db, 'sync', 'members', '--json']);
+			const members = await run(['--db', db, 'sync', 'chain', 'list', '--json']);
 			if (members.code !== 0) return { db, chain: null, members: [] };
 			const status = await run(['--db', db, 'sync', 'status', '--json']);
 			if (status.code !== 0) return { db, chain: null, members: [] };
