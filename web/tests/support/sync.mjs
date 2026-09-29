@@ -10,7 +10,7 @@
 
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -36,8 +36,17 @@ async function relayBinary() {
 	const tarball = Buffer.from(await res.arrayBuffer());
 	const actual = createHash('sha256').update(tarball).digest('hex');
 	if (actual !== RELAY.sha256) throw new Error(`${RELAY.url}: sha256 ${actual}, pinned ${RELAY.sha256}`);
-	writeFileSync(`${bin}.tar.gz`, tarball);
-	execFileSync('tar', ['-xzf', `${bin}.tar.gz`, '-C', home]);
+	// Unpacked into a directory of this process's own and renamed into place:
+	// files run side by side, and one spawning `bin` while another was still
+	// writing it failed ETXTBSY (da-7yx6c). A rename is atomic, so `bin`
+	// exists only once whole.
+	const tmp = mkdtempSync(join(home, '.extract-'));
+	try {
+		execFileSync('tar', ['-xzf', '-', '-C', tmp], { input: tarball });
+		renameSync(join(tmp, 'iroh-relay'), bin);
+	} finally {
+		rmSync(tmp, { recursive: true, force: true });
+	}
 	return bin;
 }
 
