@@ -661,7 +661,7 @@ describe('the day strip', () => {
 				// Every picture is one day, drawn bands-only: no date column,
 				// no ruler, no outer margin — the web draws all three.
 				for (const argv of pictures) {
-					assert.equal(flag(argv, '--n-days'), '1', `not one day: ${argv.join(' ')}`);
+					assert.equal(flag(argv, '--days'), '1', `not one day: ${argv.join(' ')}`);
 					assert.equal(flag(argv, '--label-width'), '0', `a date column: ${argv.join(' ')}`);
 					assert.equal(flag(argv, '--time-axis-height'), '0', `a ruler: ${argv.join(' ')}`);
 					assert.equal(flag(argv, '--margin'), '0', `an outer margin: ${argv.join(' ')}`);
@@ -716,7 +716,7 @@ describe('the day strip', () => {
 					'dayview', '--width', String(width),
 					'--day-height', grip.getAttribute('aria-valuenow'),
 					'--margin', '0', '--label-width', '0', '--time-axis-height', '0',
-					'--n-days', '1', '--show', 'json'
+					'--days', '1', '--show', 'json'
 				]);
 				return JSON.parse(result.stdout).hours;
 			});
@@ -919,7 +919,7 @@ describe('the day strip', () => {
 				const flag = (argv, name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : null);
 				const views = (await seen())
 					.filter((argv) => argv[0] === 'dayview')
-					.map((argv) => [flag(argv, '--n-days'), flag(argv, '--end-date')]);
+					.map((argv) => [flag(argv, '--days'), flag(argv, '--end-date')]);
 				assert.deepEqual(views, [['1', '-16']]);
 			}
 		);

@@ -1229,7 +1229,7 @@ pub struct DayviewArgs {
     pub start_date: Option<String>,
     /// `--end-date`/`-d` — inclusive end. Default: today.
     pub end_date: Option<String>,
-    /// `--n-days`/`-n` — number of days. Default: 1 (when no other dates
+    /// `--days`/`-n` — number of days. Default: 1 (when no other dates
     /// are given).
     pub n_days: Option<u32>,
     /// `--width` — total SVG width in pixels. Default: 2000 (horizontal) or

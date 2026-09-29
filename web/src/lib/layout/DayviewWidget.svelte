@@ -12,7 +12,7 @@
 
 	const VERTICAL: PaneSpec = {
 		title: 'dayview',
-		argv: ['dayview', '--orientation', 'vertical', '--n-days', '7']
+		argv: ['dayview', '--orientation', 'vertical', '--days', '7']
 	};
 </script>
 

@@ -157,7 +157,7 @@ describe('the wasi CLI', () => {
 	test("the dayview's today is the zone's date", async () => {
 		await withApp(
 			async (app) => {
-				const view = await app.run(['dayview', '--n-days', '1']);
+				const view = await app.run(['dayview', '--days', '1']);
 				assert.equal(view.code, 0, view.stderr);
 				assert.match(view.stdout, /data-from="2026-09-11T22:00:00\.000Z"/);
 			},

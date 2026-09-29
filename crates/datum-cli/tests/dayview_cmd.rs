@@ -121,16 +121,34 @@ fn dayview_n_days_stacks_multiple_rows() {
             .insert(&db);
     }
 
+    // `--n-days` is the old spelling, still read for the argv saved layouts hold.
+    for flag in [
+        &["--days", "3"][..],
+        &["-n", "3"],
+        &["--days=3"],
+        &["--n-days", "3"],
+    ] {
+        let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let mut argv = vec!["dayview", "--json", "-o", &path];
+        argv.extend_from_slice(flag);
+        run_cli(&argv, &db).unwrap_or_else(|e| panic!("dayview {flag:?}: {e}"));
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            json["days"].as_array().expect("days array").len(),
+            3,
+            "{flag:?}"
+        );
+    }
+
     let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
     let path = tmp.path().to_str().unwrap().to_string();
-
-    run_cli(&["dayview", "--json", "--n-days", "3", "-o", &path], &db)
-        .expect("dayview --n-days dispatch");
-
+    run_cli(&["dayview", "--json", "--days", "3", "-o", &path], &db)
+        .expect("dayview --days dispatch");
     let raw = std::fs::read_to_string(&path).unwrap();
     let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
     let days = json["days"].as_array().expect("days array");
-    assert_eq!(days.len(), 3);
 
     // Only the most recent day (today) should have the now-line.
     assert!(
@@ -696,7 +714,7 @@ fn switch_at(db: &datum_core::db::Db, field: &str, state: serde_json::Value, day
         .insert(db);
 }
 
-/// The fields each day of `dayview --n-days <n>` ending yesterday draws.
+/// The fields each day of `dayview --days <n>` ending yesterday draws.
 fn fields_per_day(db: &datum_core::db::Db, n: u32) -> Vec<Vec<String>> {
     let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
     let path = tmp.path().to_str().unwrap().to_string();
@@ -706,7 +724,7 @@ fn fields_per_day(db: &datum_core::db::Db, n: u32) -> Vec<Vec<String>> {
             "dayview",
             "--end-date",
             &yesterday(),
-            "--n-days",
+            "--days",
             &n,
             "--json",
             "-o",

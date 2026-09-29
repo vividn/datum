@@ -537,11 +537,11 @@ describe('the visual views', () => {
 	test('the arguments are the CLI’s, and so are the refusals', async () => {
 		await onSeam(async ({ run }) => {
 			assert.equal((await run(['occur', 'coffee', '-t', '0700'])).code, OK);
-			for (const argv of [['tail', '-n', '5'], ['dayview', '--n-days', '3']]) {
+			for (const argv of [['tail', '-n', '5'], ['dayview', '--days', '3']]) {
 				const result = await run(argv);
 				assert.equal(result.code, OK, `${argv.join(' ')}: ${result.stderr}`);
 			}
-			assert.match((await run(['dayview', '--n-days', '3'])).stdout, /^<svg[\s>]/);
+			assert.match((await run(['dayview', '--days', '3'])).stdout, /^<svg[\s>]/);
 			// A flag no command has is refused by name, as the CLI refuses it.
 			const refused = await run(['tail', '--oneline']);
 			assert.equal(refused.code, ERROR);

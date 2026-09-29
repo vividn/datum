@@ -77,8 +77,8 @@ fn resolved_end_date(args: &DayviewArgs, today: NaiveDate) -> Result<NaiveDate> 
 }
 
 /// True when the visible date window includes `today`. For the default
-/// `--n-days=1` case the window is just `end_date`; with `--start-date`
-/// it spans `[start, end]`; with only `--n-days` it spans `[end - n + 1,
+/// `--days=1` case the window is just `end_date`; with `--start-date`
+/// it spans `[start, end]`; with only `--days` it spans `[end - n + 1,
 /// end]`. `--end-date` defaults to today, so the common case is `true`.
 fn window_contains_today(
     args: &DayviewArgs,
@@ -137,7 +137,7 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
         None => today,
     };
 
-    // Resolve n_days from --start-date / --end-date / --n-days interaction
+    // Resolve n_days from --start-date / --end-date / --days interaction
     // (mirrors dayview.ts lines 19–37).
     let n_days: u32 = match (args.start_date.as_deref(), args.n_days) {
         (Some(start_str), explicit_n) => {
@@ -151,7 +151,7 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
             if let Some(n) = explicit_n {
                 if n != derived {
                     anyhow::bail!(
-                        "--n-days {n} does not match the difference between --start-date \
+                        "--days {n} does not match the difference between --start-date \
                          and --end-date ({derived})"
                     );
                 }

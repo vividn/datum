@@ -156,6 +156,20 @@ fn a_dash_offers_the_commands_flags() {
 }
 
 #[test]
+fn dayview_help_names_days_and_neither_offers_the_old_spelling() {
+    let env = Env::new();
+    let help = env.ok(&["help", "dayview"]);
+    assert!(help.contains("--days <N>, -n"), "{help}");
+    assert!(!help.contains("n-days"), "{help}");
+    // dayview's own flags are not in completion at all (its spec has none,
+    // only a help body), so this pins only that nothing offers `--n-days`;
+    // `--db` shows the answer is a real one, not an empty list.
+    let found = env.complete("dayview -");
+    assert!(has(&found, "--db"), "{found:?}");
+    assert!(!found.iter().any(|w| w.contains("n-days")), "{found:?}");
+}
+
+#[test]
 fn db_offers_the_known_databases() {
     let env = Env::new();
     env.ok(&["--db", "other", "occur", "x"]);

@@ -36,13 +36,14 @@ pub(crate) fn parse_dayview_args(tail: &[&str]) -> Result<DayviewArgs> {
                 out.end_date = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("n-days") => {
-                let (v, ni) = take_value(tail, i, None, "--n-days")?;
-                out.n_days = Some(parse_u32(v, "--n-days")?);
+            // `--n-days` is the old spelling, kept unlisted: saved layouts store argv.
+            FlagSplit::Long("days" | "n-days") => {
+                let (v, ni) = take_value(tail, i, None, "--days")?;
+                out.n_days = Some(parse_u32(v, "--days")?);
                 i = ni;
             }
-            FlagSplit::LongAttached("n-days", v) => {
-                out.n_days = Some(parse_u32(v, "--n-days")?);
+            FlagSplit::LongAttached("days" | "n-days", v) => {
+                out.n_days = Some(parse_u32(v, "--days")?);
                 i += 1;
             }
             FlagSplit::Short('n') => {

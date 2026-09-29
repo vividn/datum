@@ -381,7 +381,7 @@ export function bandArgv(width: number, dayHeight: number, end = 0): string[] {
 		'0',
 		'--time-axis-height',
 		'0',
-		'--n-days',
+		'--days',
 		'1'
 	];
 	return end === 0 ? argv : [...argv, '--end-date', String(-end)];
