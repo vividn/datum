@@ -1,6 +1,8 @@
+ignoredBuiltDependencies:
+  - sharp
 allowBuilds:
   leveldown: true
-  sharp: true
+  sharp: false
 overrides:
   whatwg-url: "14.x"
   tough-cookie: "5.x"
