@@ -13,18 +13,18 @@
 //! The db is opened READ-ONLY with no migration ([`Db::open_read_only`]) and
 //! never created: completion is a reader, and a TAB must not reshape the
 //! file. With no db, only the grammar answers. Nothing is printed but the
-//! candidates, one `value<TAB>description` per line, and every failure is
-//! an empty answer — the caller always exits 0.
+//! candidates, one value per line with no description (da-8bkh5: they made
+//! the list long, and a field's latest state confused it), and every
+//! failure is an empty answer — the caller always exits 0.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use datum_core::db::{is_meta_field, Db};
-use datum_core::shape::{is_ignored_state, TRACKED_STATE_VALUE};
+use datum_core::shape::is_ignored_state;
 use datum_core::track::NOT_A_DECLARATION_SQL;
 use datum_parse::alias::{self as palias, expand_argv};
 use datum_parse::help::{find_command, CommandSpec, FlagSpec, COMMANDS, GLOBAL_FLAGS};
-use datum_parse::spec_keys::KeyKind;
 
 use crate::args::DbAliasResolver;
 use crate::config;
@@ -32,7 +32,7 @@ use crate::config;
 /// How many recently modified entries an entry position offers.
 const RECENT_ENTRIES: usize = 50;
 
-type Candidates = Vec<(String, String)>;
+type Candidates = Vec<String>;
 
 /// Run `__complete` on the words after it: `[--raw] <cword> -- <words…>`,
 /// and print the candidates. `--raw` leaves values unquoted, for a shell
@@ -48,19 +48,15 @@ pub fn run(args: &[String]) {
         _ => &args[1..],
     };
     let mut out = String::new();
-    for (value, desc) in complete(cword, words) {
-        // One candidate per line, the value ended by a tab: a value holding
-        // a control character (a field may hold a tab) cannot cross that,
-        // nor be typed at a prompt, so it is not offered.
+    for value in complete(cword, words) {
+        // One candidate per line: a value holding a control character (a
+        // field may hold a newline) cannot cross that, nor be typed at a
+        // prompt, so it is not offered.
         if value.chars().any(char::is_control) {
             continue;
         }
         let value = if raw { value } else { shell_quote(&value) };
         out.push_str(&value);
-        if !desc.is_empty() {
-            out.push('\t');
-            out.extend(desc.chars().map(|c| if c.is_control() { ' ' } else { c }));
-        }
         out.push('\n');
     }
     use std::io::Write;
@@ -105,7 +101,7 @@ pub fn complete(cword: usize, words: &[String]) -> Candidates {
         let found = if cur.starts_with('-') {
             flags(GLOBAL_FLAGS)
         } else {
-            first_words(db)
+            first_words(db, cur)
         };
         return filtered(found, cur);
     }
@@ -142,7 +138,7 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
         rest.drain(..=at);
     }
     if rest.is_empty() {
-        return first_words(db);
+        return first_words(db, cur);
     }
     let name = rest.remove(0);
     let Some((spec, _)) = find_command(&name) else {
@@ -175,11 +171,11 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
         return flags(all_flags.iter().copied());
     }
     if sub.is_none() && !spec.subcommands.is_empty() && positionals(&rest, &all_flags).is_empty() {
-        let subs = spec
+        return spec
             .subcommands
             .iter()
-            .map(|s| (s.name.to_string(), String::new()));
-        return subs.collect();
+            .map(|s| s.name.to_string())
+            .collect();
     }
 
     let given = positionals(&rest, &all_flags);
@@ -218,7 +214,7 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
                 .unwrap_or_default();
             found.extend(
                 keys.into_iter()
-                    .filter(|(k, _)| !on_line.contains(k.trim_end_matches('='))),
+                    .filter(|k| !on_line.contains(k.trim_end_matches('='))),
             );
             found
         }
@@ -335,10 +331,10 @@ fn flags<'a>(flags: impl IntoIterator<Item = &'a FlagSpec>) -> Candidates {
     let mut out = Vec::new();
     for f in flags {
         if !f.long.is_empty() {
-            out.push((format!("--{}", f.long), f.summary.to_string()));
+            out.push(format!("--{}", f.long));
         }
         if let Some(c) = f.short {
-            out.push((format!("-{c}"), f.summary.to_string()));
+            out.push(format!("-{c}"));
         }
     }
     out
@@ -370,10 +366,7 @@ fn value_of(flag: &str) -> Candidates {
             }
         }
     }
-    names
-        .into_iter()
-        .map(|n| (n, String::from("database")))
-        .collect()
+    names.into_iter().collect()
 }
 
 fn open_db(name: Option<&str>) -> Option<Db> {
@@ -384,27 +377,36 @@ fn open_db(name: Option<&str>) -> Option<Db> {
     Db::open_read_only(path.to_str()?).ok()
 }
 
-/// The first word: the commands, then the db's aliases, kit commands and
-/// fields.
-fn first_words(db: Option<&Db>) -> Candidates {
-    let mut out = Vec::new();
-    for c in COMMANDS {
-        for name in std::iter::once(&c.name).chain(c.aliases) {
-            out.push((name.to_string(), c.summary.to_string()));
-        }
+/// The first word: with nothing typed, the commands' own names alone
+/// (da-8bkh5); once a prefix is typed, their aliases too, and the db's
+/// fields, aliases and kit commands.
+fn first_words(db: Option<&Db>, cur: &str) -> Candidates {
+    let mut out: Candidates = COMMANDS.iter().map(|c| c.name.to_string()).collect();
+    if cur.is_empty() {
+        return out;
     }
+    out.extend(
+        COMMANDS
+            .iter()
+            .flat_map(|c| c.aliases)
+            .map(|a| a.to_string()),
+    );
     let Some(db) = db else {
         return out;
     };
     out.extend(fields(db));
-    for a in db.list_user_aliases().unwrap_or_default() {
-        let desc = a.description.unwrap_or(a.expands_to);
-        out.push((a.name, desc));
-    }
-    for k in db.list_kit_commands().unwrap_or_default() {
-        let desc = k.help.or(k.expands_to).unwrap_or_default();
-        out.push((k.name, desc));
-    }
+    out.extend(
+        db.list_user_aliases()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|a| a.name),
+    );
+    out.extend(
+        db.list_kit_commands()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|k| k.name),
+    );
     out
 }
 
@@ -413,7 +415,7 @@ fn field_first_commands() -> Candidates {
     COMMANDS
         .iter()
         .filter(|c| takes_field_first(c))
-        .map(|c| (c.name.to_string(), c.summary.to_string()))
+        .map(|c| c.name.to_string())
         .collect()
 }
 
@@ -424,55 +426,26 @@ fn takes_field_first(c: &CommandSpec) -> bool {
             .is_some_and(|s| s.0 == Slot::Field)
 }
 
-/// Every field — logged or declared — described by its verb and its
-/// latest state.
+/// Every field, logged or declared.
 fn fields(db: &Db) -> Candidates {
     let mut names: BTreeSet<String> = db
         .distinct_fields()
         .unwrap_or_default()
         .into_iter()
         .collect();
-    let registry = db.load_registry().ok();
-    if let Some(r) = &registry {
-        names.extend(r.fields.keys().filter(|f| !is_meta_field(f)).cloned());
+    if let Ok(r) = db.load_registry() {
+        names.extend(r.fields.into_keys().filter(|f| !is_meta_field(f)));
     }
-    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-    let latest = db
-        .batch_state_at(&refs, chrono::Utc::now())
-        .unwrap_or_default();
-    names
-        .into_iter()
-        .map(|f| {
-            let verb = registry
-                .as_ref()
-                .and_then(|r| r.fields.get(&f))
-                .map(|s| s.verb.to_string());
-            let state = latest
-                .get(&f)
-                .filter(|s| **s != TRACKED_STATE_VALUE && !is_ignored_state(s))
-                .map(label);
-            let desc = [verb, state]
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>()
-                .join(" ");
-            (f, desc)
-        })
-        .collect()
+    names.into_iter().collect()
 }
 
 /// A field's states: its spec's, then the ones logged.
 fn states(db: &Db, field: &str) -> Candidates {
     let spec = db.load_spec(field).ok().flatten();
-    let mut out: Candidates = Vec::new();
-    for s in spec.iter().flat_map(|s| s.allowed_states.iter().flatten()) {
-        let desc = spec
-            .as_ref()
-            .and_then(|sp| sp.state_descriptions.get(s).cloned())
-            .unwrap_or_else(|| String::from("state"));
-        out.push((s.clone(), desc));
-    }
-    let seen: BTreeSet<String> = out.iter().map(|(s, _)| s.clone()).collect();
+    let mut out: Candidates = spec
+        .into_iter()
+        .flat_map(|s| s.allowed_states.into_iter().flatten())
+        .collect();
     let logged: Vec<String> = db
         .conn()
         .prepare(&format!(
@@ -482,33 +455,21 @@ fn states(db: &Db, field: &str) -> Candidates {
         .and_then(|mut stmt| stmt.query_map([field], |r| r.get(0))?.collect())
         .unwrap_or_default();
     for s in logged.iter().filter_map(|s| serde_json::from_str(s).ok()) {
-        if is_ignored_state(&s) {
-            continue;
-        }
-        let s = label(&s);
-        if !seen.contains(&s) {
-            out.push((s, String::from("logged")));
+        if !is_ignored_state(&s) {
+            out.push(label(&s));
         }
     }
     out
 }
 
-/// A field's declared keys as `key=`, described by their kind.
+/// A field's declared keys as `key=`.
 fn keys(db: &Db, field: &str, state: Option<&str>) -> Candidates {
     let Some(spec) = db.load_spec(field).ok().flatten() else {
         return Vec::new();
     };
     spec.declared_keys(state)
         .into_iter()
-        .map(|k| {
-            let kind = match k.kind {
-                KeyKind::Required => String::from("required"),
-                KeyKind::Optional => String::from("optional"),
-                KeyKind::Default(v) => format!("default {v}"),
-                KeyKind::Assign(v) => format!("assign {v}"),
-            };
-            (format!("{}=", k.name), kind)
-        })
+        .map(|k| format!("{}=", k.name))
         .collect()
 }
 
@@ -516,19 +477,13 @@ fn keys(db: &Db, field: &str, state: Option<&str>) -> Candidates {
 /// (narrowed to the typed prefix), and — once an `_` is typed — the quick
 /// ids a listing prints.
 fn entries(db: &Db, cur: &str) -> Candidates {
-    let mut out = vec![(
-        String::from("_LAST"),
-        String::from("the last entry touched"),
-    )];
+    let mut out = vec![String::from("_LAST")];
     if cur.starts_with('_') {
         let ordinals = datum_core::ids::resolve::quick_ordinals(db).unwrap_or_default();
         let mut by_n: Vec<_> = ordinals.into_iter().map(|(h, n)| (n, h)).collect();
         by_n.sort_by_key(|(n, _)| *n);
-        let hids: Vec<String> = by_n.iter().map(|(_, h)| h.to_string()).collect();
-        let described = describe(db, &hids);
-        for ((n, _), (_, desc)) in by_n.iter().zip(described) {
-            out.push((format!("_{n}"), desc));
-        }
+        let by_n = by_n.into_iter().filter(|(_, h)| visible(db, h.as_ref()));
+        out.extend(by_n.map(|(n, _)| format!("_{n}")));
         return out;
     }
     let like = format!("{}%", cur.replace(['%', '_'], ""));
@@ -541,7 +496,8 @@ fn entries(db: &Db, cur: &str) -> Candidates {
         ))
         .and_then(|mut stmt| stmt.query_map([like], |r| r.get(0))?.collect())
         .unwrap_or_default();
-    out.extend(describe(db, &hids).into_iter().take(RECENT_ENTRIES));
+    let hids = hids.into_iter().filter(|h| visible(db, h));
+    out.extend(hids.take(RECENT_ENTRIES));
     out
 }
 
@@ -560,58 +516,31 @@ fn projections(db: &Db, cur: &str) -> Candidates {
         return Vec::new();
     }
     let spec = db.load_spec(&entry.field).ok().flatten();
-    let at = |name: &str, desc: &str| (format!("{id}::{name}"), desc.to_string());
+    let at = |name: &str| format!("{id}::{name}");
     let mut out = Vec::new();
     if let Ok(serde_json::Value::Object(row)) = serde_json::to_value(&entry) {
-        out.extend(
-            row.iter()
-                .filter(|(_, v)| !v.is_null())
-                .map(|(k, _)| at(k, "column")),
-        );
+        out.extend(row.iter().filter(|(_, v)| !v.is_null()).map(|(k, _)| at(k)));
     }
     if let Some(state) = &entry.state {
         if state_refs(spec.as_ref(), state).len() == 1 {
-            out.push(at("state::", "reference"));
+            out.push(at("state::"));
         }
     }
     for (k, v) in entry.data.iter().filter_map(|d| d.as_object()).flatten() {
-        out.push(at(k, "data"));
+        out.push(at(k));
         if data_refs(spec.as_ref(), k, v).len() == 1 {
-            out.push(at(&format!("{k}::"), "reference"));
+            out.push(at(&format!("{k}::")));
         }
     }
     out
 }
 
-/// `(hid, "<field> <state> <time>")` for each hid, in order, meta fields'
-/// entries left out.
-fn describe(db: &Db, hids: &[String]) -> Candidates {
-    let mut stmt = match db
-        .conn()
-        .prepare("SELECT field, state, occur_time FROM entries WHERE hid = ?1")
-    {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
-    };
-    hids.iter()
-        .filter_map(|h| {
-            let (field, state, time): (String, Option<String>, Option<String>) = stmt
-                .query_row([h], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-                .ok()?;
-            if is_meta_field(&field) {
-                return None;
-            }
-            let state = state
-                .and_then(|s| serde_json::from_str(&s).ok())
-                .map(|v| label(&v));
-            let time = time.map(|t| t.chars().take(16).collect::<String>());
-            let desc = [Some(field), state, time]
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>();
-            Some((h.clone(), desc.join(" ")))
-        })
-        .collect()
+/// Whether an entry is offered: meta fields' entries are left out.
+fn visible(db: &Db, hid: &str) -> bool {
+    db.conn()
+        .prepare_cached("SELECT field FROM entries WHERE hid = ?1")
+        .and_then(|mut stmt| stmt.query_row([hid], |r| r.get::<_, String>(0)))
+        .is_ok_and(|f| !is_meta_field(&f))
 }
 
 fn label(v: &serde_json::Value) -> String {
@@ -622,7 +551,7 @@ fn filtered(found: Candidates, cur: &str) -> Candidates {
     let mut seen = BTreeSet::new();
     found
         .into_iter()
-        .filter(|(v, _)| v.starts_with(cur) && seen.insert(v.clone()))
+        .filter(|v| v.starts_with(cur) && seen.insert(v.clone()))
         .collect()
 }
 

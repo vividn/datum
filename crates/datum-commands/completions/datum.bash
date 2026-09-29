@@ -10,7 +10,7 @@ _datum() {
     words=("${COMP_WORDS[@]}") cword=$COMP_CWORD cur=${COMP_WORDS[COMP_CWORD]}
   fi
   local IFS=$'\n'
-  COMPREPLY=($(datum __complete "$cword" -- "${words[@]}" 2>/dev/null | cut -f1))
+  COMPREPLY=($(datum __complete "$cword" -- "${words[@]}" 2>/dev/null))
   [[ ${#COMPREPLY[@]} -eq 1 && ${COMPREPLY[0]} == *= ]] && compopt -o nospace 2>/dev/null
   declare -F __ltrim_colon_completions >/dev/null && __ltrim_colon_completions "$cur"
   return 0

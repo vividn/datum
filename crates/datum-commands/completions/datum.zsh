@@ -4,7 +4,7 @@
 # (`datum completions install`) or with `source <(datum completions zsh)`.
 _datum() {
   local -a vals keys cmd
-  local line v d out rc
+  local line out rc
   # Completion runs with aliases off (compinit's NO_aliases), so a `datum`
   # that is only an alias is expanded here, as the prompt would.
   eval "cmd=(${aliases[datum]:-datum})" 2>/dev/null || cmd=(datum)
@@ -19,12 +19,10 @@ _datum() {
   fi
   for line in "${(@f)out}"; do
     [[ -n $line ]] || continue
-    v=${line%%$'\t'*} d=
-    [[ $line == *$'\t'* ]] && d=${line#*$'\t'}
-    if [[ $v == *= ]]; then keys+=("${v//:/\\:}:$d"); else vals+=("${v//:/\\:}:$d"); fi
+    if [[ $line == *= ]]; then keys+=("$line"); else vals+=("$line"); fi
   done
-  (( $#vals )) && _describe -t values datum vals
-  (( $#keys )) && _describe -t keys key keys -S ''
+  (( $#vals )) && compadd -a vals
+  (( $#keys )) && compadd -S '' -a keys
   return 0
 }
 if [[ $zsh_eval_context[-1] == loadautofunc ]]; then

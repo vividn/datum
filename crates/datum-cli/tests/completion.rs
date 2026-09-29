@@ -58,7 +58,7 @@ impl Env {
     fn complete(&self, line: &str) -> Vec<String> {
         complete_with(self.cmd(), line)
             .lines()
-            .map(|l| l.split('\t').next().unwrap().to_string())
+            .map(str::to_string)
             .collect()
     }
 }
@@ -90,15 +90,56 @@ fn has(found: &[String], want: &str) -> bool {
     found.iter().any(|f| f == want)
 }
 
+/// `datum <TAB>` is the commands' own names and nothing else; a typed
+/// prefix also reaches a command's alias, a field, a user alias and a kit
+/// command (da-8bkh5).
 #[test]
-fn the_first_word_offers_commands_aliases_and_fields() {
+fn the_first_word_offers_the_commands_then_whatever_the_prefix_matches() {
     let env = Env::new();
-    let found = env.complete("");
-    for want in ["occur", "end", "mood", "tea", "vbp", "completions"] {
+    let kit = env.tmp.path().join("k.toml");
+    std::fs::write(
+        &kit,
+        "[kit]\nname = \"k\"\n[[view]]\nname = \"v\"\nsql = \"SELECT 1 AS n\"\n\
+         [[command]]\nname = \"kitcmd\"\nview = \"v\"\n",
+    )
+    .unwrap();
+    env.ok(&["kit", "install", "--yes", kit.to_str().unwrap()]);
+    let names: Vec<String> = datum_parse::help::COMMANDS
+        .iter()
+        .map(|c| c.name.to_string())
+        .collect();
+    assert_eq!(env.complete(""), names);
+    assert!(!has(&names, "__complete"), "the reader is hidden");
+    for (prefix, want) in [
+        ("en", "end"),
+        ("mo", "mood"),
+        ("vb", "vbp"),
+        ("kit", "kitcmd"),
+    ] {
+        let found = env.complete(prefix);
         assert!(has(&found, want), "{want} missing from {found:?}");
     }
-    assert!(!has(&found, "__complete"), "the reader is hidden");
     assert_eq!(env.complete("occ"), ["occur"], "narrowed to the prefix");
+}
+
+/// No candidate carries a description: the shells show bare values
+/// (da-8bkh5).
+#[test]
+fn no_candidate_carries_a_description() {
+    let env = Env::new();
+    for line in [
+        "",
+        "m",
+        "occur -",
+        "switch mood ",
+        "occur tea ",
+        "get ",
+        "--db ",
+    ] {
+        let out = complete_with(env.cmd(), line);
+        assert!(!out.is_empty() || line == "--db ", "{line:?}");
+        assert!(!out.contains('\t'), "{line:?}: {out:?}");
+    }
 }
 
 #[test]
@@ -226,8 +267,13 @@ fn with_no_db_it_offers_the_grammar_and_creates_nothing() {
     let mut cmd = env.cmd();
     cmd.env("DATUM_DB", &missing);
     let found = complete_with(cmd, "");
-    assert!(found.lines().any(|l| l.starts_with("occur\t")), "{found}");
-    assert!(!found.lines().any(|l| l.starts_with("mood\t")), "{found}");
+    assert!(found.lines().any(|l| l == "occur"), "{found}");
+    let mut cmd = env.cmd();
+    cmd.env("DATUM_DB", &missing);
+    assert!(
+        !complete_with(cmd, "m").lines().any(|l| l == "mood"),
+        "{found}"
+    );
     assert!(!missing.exists());
 }
 
@@ -323,11 +369,11 @@ fn an_alias_only_datum_completes() {
     std::fs::write(fpath.join("_datum"), env.ok(&["completions", "zsh"])).unwrap();
     // Several words, so a script that ran only the first would run `env`.
     let alias = format!("'env DATUM_COLOR=0 {bin}'");
-    // compsys's `_describe` and `_message` need a live completion widget:
+    // compsys's `compadd` and `_message` need a live completion widget:
     // these print what they are handed.
     let zsh = format!(
         "fpath=({} $fpath); autoload -Uz compinit _datum; compinit -u -D\n\
-         _describe() {{ print -rl -- ${{(P)4}} }}; _message() {{ print -r -- \"message: ${{@[-1]}}\" }}\n\
+         compadd() {{ print -rl -- ${{(P)${{@[-1]}}}} }}; _message() {{ print -r -- \"message: ${{@[-1]}}\" }}\n\
          setopt $_comp_options; words=(datum switch mood ''); CURRENT=4\n\
          alias datum={alias}; _datum; unalias datum; _datum\n\
          alias datum='env /missing/datum'; _datum",
