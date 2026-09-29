@@ -62,6 +62,7 @@ import { REACH_PX } from '$lib/lanes.js';
 import { DEBUG_DB } from './defaults.js';
 import { DEFAULT_STATS, type StatsRange } from '$lib/stats.js';
 import AliasesWidget from './AliasesWidget.svelte';
+import BackupsWidget from './BackupsWidget.svelte';
 import DayviewWidget from './DayviewWidget.svelte';
 import FieldsPane from './FieldsPane.svelte';
 import HelpWidget from './HelpWidget.svelte';
@@ -447,6 +448,19 @@ export const KINDS: Record<string, WidgetKind> = {
 			'Press Help, then tap a command, a widget or a pill; Help again for general help.'
 		].join('\n'),
 		legible: { width: 200, height: 72 }
+	},
+	// «Backups» (da-9ow8m), a place (da-ea5q2): the gear's Backups and the
+	// commands widget's `db backup` / `db restore` open it (`openPlace`). Legible
+	// at its heading over the two file buttons, stacked (88px measured; the
+	// wider is 193px), plus padding: side by side they want 388px.
+	backups: {
+		meta: meta('backups', 'backups'),
+		component: BackupsWidget,
+		help: [
+			'Backups: a file on this device, saved or restored, and plans that back up to a bucket while a tab is open.',
+			'Each plan lists its backups by database, newest first, each with Restore.'
+		].join('\n'),
+		legible: { width: 206, height: 99 }
 	},
 	// The input widget (da-0dhc, back as da-3zon): the bottom bar's command
 	// line drawn in a pane — the same buffer, the same pills, the same

@@ -46,9 +46,9 @@
 	- a command with SUBCOMMANDS (`db`, `spec`, …) opens them
 	  instead (da-803mk): the bar is `< Back` and the subcommands, and a
 	  tap on one fills `db setup `. `< Back` and Escape return to the list.
-	  `db backup` and `db restore` open the «Backups» sheet instead
-	  (da-9ow8m, $lib/backups.ts) — drawn, as Help is, in a SINGLE outline
-	  of the accent: they open something, and run nothing.
+	  `db backup` and `db restore` open the «Backups» place instead
+	  (da-9ow8m, da-ea5q2, $lib/backups.ts) — drawn, as Help is, in a
+	  SINGLE outline of the accent: they open something, and run nothing.
 	- `Sync` opens the sync PLACE (da-6du3o, `openPlace`): a modal on a
 	  desktop, a tab beside this one on a phone (da-jozgv), rather than drilling into its nineteen subcommands,
 	  which live in that widget's Advanced section. Outlined once, too.
@@ -108,7 +108,7 @@
 	export let redoable = false;
 
 	/** The presses whose kind is theirs whatever is loaded. */
-	const FIXED: Partial<Record<Press, ActKind>> = { run: 'run', help: 'arm', back: 'show', flag: 'fill', sheet: 'open', place: 'open' };
+	const FIXED: Partial<Record<Press, ActKind>> = { run: 'run', help: 'arm', back: 'show', flag: 'fill', backups: 'open', place: 'open' };
 
 	const dispatch = createEventDispatcher<{
 		run: string[];
@@ -155,7 +155,7 @@
 
 	function press(command: CommandButton): void {
 		if (command.press === 'back') back();
-		else if (command.press === 'sheet') void openBackups(command.name === 'db restore' ? 'restore' : 'plans');
+		else if (command.press === 'backups') void openBackups(command.name === 'db restore' ? 'restore' : 'plans');
 		else if (command.press === 'place') void openPlace(command.name);
 		else if (command.press === 'flag') dispatch('flag', { command: flagged!, flag: command.name, keyboard: command.next === 'type' });
 		else if (kindOf(command) === 'show') open = command.name;
@@ -251,11 +251,11 @@
 		<button
 			class="command"
 			use:act={kindOf(command)}
-			class:opens={command.press === 'sheet' || command.press === 'place'}
+			class:opens={command.press === 'backups' || command.press === 'place'}
 			{disabled}
 			data-command={command.name}
 			data-holds={!open && hasFlags(grammar, command.name) ? '' : undefined}
-			title={kindOf(command) === 'run' ? `run ${command.name}` : command.press === 'sheet' ? 'open Backups' : command.press === 'place' ? `open ${command.label}` : `${command.name} …`}
+			title={kindOf(command) === 'run' ? `run ${command.name}` : command.press === 'backups' ? 'open Backups' : command.press === 'place' ? `open ${command.label}` : `${command.name} …`}
 			on:click={() => press(command)}
 		>
 			{command.label}
@@ -292,7 +292,7 @@
 		color: var(--ink-bright);
 	}
 
-	/* Opens a sheet: once outlined, as Help is (below). */
+	/* Opens a place: once outlined, as Help is (below). */
 	.command.opens {
 		border-color: var(--accent);
 		color: var(--ink-bright);

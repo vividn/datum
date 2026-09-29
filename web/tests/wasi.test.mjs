@@ -91,9 +91,8 @@ describe('the wasi CLI', () => {
 			await app.page.getByRole('menuitem', { name: 'Backups', exact: true }).click();
 			const [download] = await Promise.all([
 				app.page.waitForEvent('download'),
-				app.page.locator('dialog.sheet button[data-backup="save"]').click()
+				app.page.locator('section.pane[data-title="backups"] button[data-backup="save"]').click()
 			]);
-			await app.page.keyboard.press('Escape');
 			await app.page.evaluate(() => delete window.showSaveFilePicker);
 			assert.match(download.suggestedFilename(), /^datum-\d{4}-\d\d-\d\d\.jsonl$/);
 			const text = await readFile(await download.path(), 'utf8');

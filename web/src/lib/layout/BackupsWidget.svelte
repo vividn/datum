@@ -1,7 +1,9 @@
 <!--
-	«Backups» (da-9ow8m): the gear's sheet, and the commands widget's
-	`db backup` / `db restore`. Mounted once by `openBackups` and opened
-	again after.
+	«Backups» (da-9ow8m): the gear's Backups, and the commands widget's
+	`db backup` / `db restore`. It is a PLACE (da-ea5q2): each of those
+	opens it through `openBackups` ($lib/backups.ts) — a modal on a
+	desktop, a tab on a phone — and dropped into a pane it is just this
+	widget.
 
 	Top to bottom: a file on this device (the SAVE picker, and «Restore
 	from a file», which replaced the root tab menu's «export backup…»);
@@ -14,14 +16,14 @@
 	now», «Back up all now»), SINGLE opens something (a picker, a confirm).
 -->
 <script lang="ts">
-	import { tick } from 'svelte';
-	import Sheet from './Sheet.svelte';
-	import { act } from './act.js';
-	import { confirm } from './confirm.js';
-	import { currentDb, INTERNAL_DB } from './database.js';
-	import { listDatabases } from './databases.js';
-	import { restore as restoreFile, saveBackup } from './dbio.js';
-	import { ran } from './layout/engine.js';
+	import { onDestroy, onMount, tick } from 'svelte';
+	import Pane from '$lib/Pane.svelte';
+	import { act } from '$lib/act.js';
+	import { confirm } from '$lib/confirm.js';
+	import { currentDb, INTERNAL_DB } from '$lib/database.js';
+	import { listDatabases } from '$lib/databases.js';
+	import { restore as restoreFile, saveBackup } from '$lib/dbio.js';
+	import { ran } from './engine.js';
 	import {
 		ago,
 		ageOf,
@@ -45,15 +47,12 @@
 		restoreFrom,
 		savePlan,
 		status,
+		toRestore,
 		type Backup,
 		type Plan,
 		type Reach
-	} from './backups.js';
-	import type { StepResult } from './s3.js';
-
-	export let open = false;
-	/** `restore` scrolls to the first plan's backups, as `db restore` asks. */
-	export let view: 'plans' | 'restore' = 'plans';
+	} from '$lib/backups.js';
+	import type { StepResult } from '$lib/s3.js';
 
 	let body: HTMLElement | undefined;
 	let note = '';
@@ -77,7 +76,20 @@
 		[24 * HOUR, 'daily']
 	];
 
-	$: if (open) void opened();
+	let ready = false;
+	onMount(() => void opened().then(() => (ready = true)));
+	// `db restore` scrolls to the first plan's backups, however the place was
+	// reached. `scrollToRestore` clears the request, so this fires once per
+	// request; a widget gone before it was ready clears it too, or the next
+	// Backups to mount would scroll unasked.
+	$: if (ready && $toRestore) void scrollToRestore();
+	onDestroy(() => toRestore.set(false));
+
+	async function scrollToRestore(): Promise<void> {
+		toRestore.set(false);
+		await tick();
+		body?.querySelector('[data-restore]')?.scrollIntoView({ block: 'nearest' });
+	}
 
 	async function opened(): Promise<void> {
 		// Never `_internal`: it holds every plan's keys, to this bucket and others.
@@ -85,10 +97,6 @@
 		if (!dbs.includes(currentDb())) dbs = [currentDb(), ...dbs];
 		for (const plan of await loadPlans()) void refresh(plan).then(() => explain(plan));
 		if (fresh.kind) void explain(fresh, '');
-		if (view === 'restore') {
-			await tick();
-			body?.querySelector('[data-restore]')?.scrollIntoView({ block: 'nearest' });
-		}
 	}
 
 	async function explain(plan: Plan, key = plan.name): Promise<void> {
@@ -196,7 +204,7 @@
 	const toggleDb = (db: string) => setFresh({ dbs: fresh.dbs.includes(db) ? fresh.dbs.filter((d) => d !== db) : [...fresh.dbs, db] });
 </script>
 
-<Sheet title="Backups" bind:open>
+<Pane title="backups">
 	<div class="backups" bind:this={body}>
 		<section class="local">
 			<h3>A file on this device</h3>
@@ -352,7 +360,7 @@
 			</section>
 		{/if}
 	</div>
-</Sheet>
+</Pane>
 
 <style>
 	.backups {

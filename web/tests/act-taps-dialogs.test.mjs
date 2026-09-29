@@ -17,7 +17,7 @@ import { DESKTOP } from './support/layout.mjs';
 everyLayer('desktop', { ...DESKTOP, desk: null }, 'rest', [
 	'page: main',
 	'page: settings › page: Backups',
-	'page: settings › page: Backups › page: Delete plan',
+	'page: settings › page: Backups › backups: Delete plan',
 	'nowview: menu of the nowview pane › page: history',
 	'fields: Track +'
 ]);

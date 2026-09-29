@@ -39,8 +39,8 @@ export type Press =
 	| 'back'
 	/** Append the flag to the line (da-st2xl). */
 	| 'flag'
-	/** Open the «Backups» sheet ($lib/backups.ts, da-9ow8m): `db backup`, and `db restore` at its list. */
-	| 'sheet'
+	/** Open the «Backups» place ($lib/backups.ts, da-9ow8m, da-ea5q2): `db backup`, and `db restore` at its list. */
+	| 'backups'
 	/** Open the command's PLACE, a modal on a desktop and a tab on a phone (`openPlace`, da-6du3o, da-jozgv): `sync`. */
 	| 'place';
 
@@ -527,8 +527,8 @@ export function fieldVerb(name: string, all: Pill[], fields: FieldButton[]): { f
 // what a tap leaves on the line. A command that also runs bare (`conflicts`)
 // is offered among its subcommands as itself.
 
-/** The subcommands whose press opens the «Backups» sheet. */
-const SHEETS = ['db backup', 'db restore'];
+/** The subcommands whose press opens the «Backups» place. */
+const BACKUPS = ['db backup', 'db restore'];
 
 /**
  * Does a tap on `name` drill into its subcommands? `spec` under a field pill
@@ -544,7 +544,7 @@ export const drills = (grammar: Grammar | null, name: string, pills: Pill[]): bo
  * without, so a subcommand can be explained), `name` itself if it runs
  * bare, then its subcommands.
  *
- * `db backup` and `db restore` OPEN the «Backups» sheet rather than fill
+ * `db backup` and `db restore` OPEN the «Backups» place rather than fill
  * the line (da-9ow8m): vividn, «the "backup" command in the commands widget
  * … should that open this backups menu directly? It could». A typed `db
  * backup …` keeps the CLI's meaning.
@@ -557,8 +557,8 @@ export function subcommandsOf(grammar: Grammar | null, name: string): CommandBut
 		...(takes?.bare ? [{ name, label: name, press: 'fill' as const, next: 'type' as const }] : []),
 		...(takes?.subcommands ?? []).map(
 			(sub): CommandButton =>
-				SHEETS.includes(`${name} ${sub}`)
-					? { name: `${name} ${sub}`, label: sub, press: 'sheet' }
+				BACKUPS.includes(`${name} ${sub}`)
+					? { name: `${name} ${sub}`, label: sub, press: 'backups' }
 					: { name: `${name} ${sub}`, label: sub, press: 'fill', next: 'type' }
 		)
 	];

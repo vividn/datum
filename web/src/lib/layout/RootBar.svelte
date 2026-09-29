@@ -73,9 +73,11 @@
 	bottom bar's until da-wjob and this bar's until da-pp1a; it is out of
 	the way for good, and still one press from anyone looking for it.
 
-	First in it is «Backups» (da-9ow8m), the sheet of backup plans and
-	backup files ($lib/BackupsSheet.svelte). It took the place of the root
-	tab menu's `export backup…`, so a backup has one home.
+	First in it is «Backups» (da-9ow8m), the place of backup plans and
+	backup files (layout/BackupsWidget.svelte), which it opens by
+	`openPlace` (da-ea5q2): a modal on a desktop, a tab on a phone. It
+	took the place of the root tab menu's `export backup…`, so a backup
+	has one home.
 
 	The other is «Reset default layouts» (da-jbcv). It held an act of that
 	shape once — «Reset all layouts…», which deleted every saved layout, on

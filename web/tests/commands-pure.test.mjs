@@ -397,7 +397,7 @@ describe('subcommands', () => {
 			['help', 'Help', 'help'],
 			['db setup', 'setup', 'fill'],
 			// da-9ow8m: it opens «Backups» rather than fill the line.
-			['db backup', 'backup', 'sheet']
+			['db backup', 'backup', 'backups']
 		]);
 		assert.deepEqual(bar('conflicts').slice(2), [
 			['conflicts', 'conflicts', 'fill'],

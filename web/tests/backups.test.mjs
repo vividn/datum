@@ -1,27 +1,34 @@
-// «Backups» (da-9ow8m, $lib/backups.ts, $lib/BackupsSheet.svelte): the
-// gear's sheet of Tower of Hanoi plans, driven here against `memory` — a
+// «Backups» (da-9ow8m, $lib/backups.ts, layout/BackupsWidget.svelte): the
+// gear's place of Tower of Hanoi plans (da-ea5q2), driven here against `memory` — a
 // bucket in the tab, offered on the DEBUG database alone (vremya on #217),
 // which is why the plan tests open `?db=DEBUG`. The S3 destination is
-// s3.test.mjs's. Every number the sheet shows is the CLI's, so what is asserted
-// is what the sheet SAYS and what the database HOLDS, never slot arithmetic.
+// s3.test.mjs's. Every number the widget shows is the CLI's, so what is asserted
+// is what it SAYS and what the database HOLDS, never slot arithmetic.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
+import { DESKTOP, PHONE } from './support/layout.mjs';
+import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
 
 const HOUR = 3_600_000;
 
+// On a phone, where a place is a tab whatever da-jozgv makes it on a desktop.
 /** The one database the in-memory destination is offered on. */
-const DEBUG = { query: '?db=DEBUG' };
+const DEBUG = { ...PHONE, query: '?db=DEBUG' };
 
+const rootTabs = (page) =>
+	page.locator('.root-bar [role="tab"]').evaluateAll((all) => all.map((b) => b.textContent.replace('•', '').trim()));
+
+/** The gear's «Backups»: its place, as a tab. */
 async function openSheet(page) {
 	await page.locator('.root-bar button.gear').click();
 	await page.getByRole('menuitem', { name: 'Backups', exact: true }).click();
-	const sheet = page.locator('dialog.sheet', { hasText: 'Backups' });
-	await sheet.waitFor();
+	const sheet = page.locator('section.pane[data-title="backups"]');
+	await sheet.locator('.backups').waitFor();
 	return sheet;
 }
 
@@ -44,18 +51,38 @@ async function addPlan(sheet, name, bucket) {
 const ageOf = (plan, n) => plan.locator(`li[data-slot="${n}"] .age`).innerText();
 
 describe('«Backups»', () => {
-	test('is the gear’s, and the root tab menu has no export backup… any more', async () => {
-		await withApp(async ({ page }) => {
+	test('is the gear’s, a place: a tab beside this one, which back closes; the root tab menu has no export backup…', async () => {
+		await withApp(async ({ page, errors }) => {
+			const [first, ...rest] = await rootTabs(page);
 			const sheet = await openSheet(page);
 			assert.match(await sheet.innerText(), /not encrypted/);
 			assert.match(await sheet.innerText(), /closed browser takes no backups/);
-			await page.keyboard.press('Escape');
+			assert.deepEqual(await rootTabs(page), [first, 'backups', ...rest]);
+			assert.equal(await page.locator('dialog.sheet').count(), 0, 'a modal opened as well');
+			await page.goBack();
+			await until(() => rootTabs(page), (t) => t.join() === [first, ...rest].join());
 			await sheet.waitFor({ state: 'detached' });
 			await page.locator('.root-bar [role="tab"][aria-selected="true"]').click();
 			const items = await page.locator('[role="menu"] button').allInnerTexts();
 			assert.ok(items.length > 0);
 			assert.ok(!items.some((t) => /export backup/.test(t)), `the root menu reads ${items.join(' | ')}`);
-		});
+			assert.deepEqual(errors, []);
+		}, PHONE);
+	});
+
+	test('in a pane, it is just the widget', async () => {
+		await withApp(
+			async ({ page, errors }) => {
+				const tab = await page.evaluate(() => window.datum.layout.current().root.tabs[0].content.children[0].tabs[0].id);
+				await page.evaluate((tab) => window.datum.shell.widgetInto(tab, 'backups'), tab);
+				const pane = page.locator('section.pane[data-title="backups"]');
+				await pane.locator('.add fieldset label', { hasText: 'datum' }).waitFor();
+				assert.equal(await pane.locator('button[data-backup="save"]').count(), 1);
+				assert.deepEqual(await rootTabs(page), ['main']);
+				assert.deepEqual(errors, []);
+			},
+			{ ...DESKTOP, desk: null }
+		);
 	});
 
 	// Off the DEBUG database the tab's memory is not offered: a tab's bucket
@@ -67,7 +94,7 @@ describe('«Backups»', () => {
 			assert.equal(await sheet.locator('option', { hasText: 'memory' }).count(), 0);
 			assert.equal(await sheet.locator('button[data-backup="save"]').count(), 1);
 			assert.equal(await sheet.locator('button[data-backup="restore-file"]').count(), 1);
-		});
+		}, PHONE);
 	});
 
 	// `_internal` holds every plan's keys, to this bucket and to others: a
@@ -76,14 +103,15 @@ describe('«Backups»', () => {
 		await withApp(async ({ page }) => {
 			// The first open reads the plans from `_internal`, so by the second it is in the pool.
 			await openSheet(page);
-			await page.keyboard.press('Escape');
+			await page.goBack();
+			await until(() => rootTabs(page), (t) => !t.includes('backups'));
 			const sheet = await openSheet(page);
 			const offered = sheet.locator('.add fieldset label');
 			await offered.first().waitFor();
 			const names = await offered.allInnerTexts();
 			assert.ok(names.includes('datum'), `offered: ${names.join(', ')}`);
 			assert.ok(!names.includes('_internal'), `offered: ${names.join(', ')}`);
-		});
+		}, PHONE);
 	});
 
 	test('a plan writes slot 0, then the next period’s slot, and shows both with their ages', async () => {
@@ -160,8 +188,8 @@ describe('«Backups»', () => {
 	});
 
 	// da-4gfdi: «Delete plan» deleted at once from a button drawn as display.
-	// It opens a confirm now, so it is SINGLE; and act-taps' survey skips
-	// dialogs, so the sheet's kinds are checked here, on the opened sheet.
+	// It opens a confirm now, so it is SINGLE. act-taps-dialogs walks the
+	// place as the desktop's modal; its kinds are checked here on a phone's tab too.
 	test('«Delete plan» opens a confirm naming the plan: cancel keeps it, delete removes it', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
@@ -173,7 +201,7 @@ describe('«Backups»', () => {
 				.locator('.backups button')
 				.evaluateAll((bs) => bs.map((b) => `${b.textContent.trim()}: ${b.dataset.act ?? 'no kind'}`));
 			assert.ok(kinds.length >= 7, `found only ${kinds.length} buttons`);
-			assert.deepEqual(kinds.filter((k) => k.endsWith('no kind')), [], 'give every button in the sheet use:act');
+			assert.deepEqual(kinds.filter((k) => k.endsWith('no kind')), [], 'give every button in Backups use:act');
 			assert.ok(kinds.includes('Delete plan: open'), kinds.join(' | '));
 
 			const remove = plan.locator('button[data-backup="delete"]');
@@ -191,4 +219,45 @@ describe('«Backups»', () => {
 			assert.deepEqual(app.errors, []);
 		}, DEBUG);
 	});
+
+	// canary-qwen-3-8-2-4t on #354: `db restore` opens it scrolled to the
+	// backups to restore from (`toRestore`), and `db backup` does not — on a
+	// box short enough that they start below the fold, which the `db backup`
+	// arm is what proves.
+	for (const [sub, shown] of [
+		['backup', false],
+		['restore', true]
+	]) {
+		test(`db ${sub} opens it ${shown ? 'scrolled to' : 'above'} the backups to restore from`, async () => {
+			await withApp(
+				async (app) => {
+					const plan = { name: 'r', kind: 'memory', config: { bucket: 'r' }, dbs: ['DEBUG'], every: 3600, slots: null };
+					const argv = ['--db', '_internal', 'occur', 'backup_plan', '--id', '%name', '-k', 'name="r"', '-k', `plan=${JSON.stringify(plan)}`];
+					assert.equal((await app.run(argv)).code, 0);
+					const { page } = app;
+					const tab = await page.evaluate(() => window.datum.layout.current().root.tabs[0].content.children[0].tabs[0].id);
+					await page.evaluate((tab) => window.datum.shell.widgetInto(tab, 'command'), tab);
+					await page.locator('.bar.commands button[data-command="db"]').click();
+					await page.locator(`.bar.commands button[data-command="db ${sub}"]`).click();
+					const restore = page.locator('section.pane[data-title="backups"] [data-restore="DEBUG"]');
+					await restore.waitFor();
+					const inView = () =>
+						restore.evaluate((el) => {
+							let box = el.parentElement;
+							while (box && getComputedStyle(box).overflowY !== 'auto' && getComputedStyle(box).overflowY !== 'scroll') box = box.parentElement;
+							const r = el.getBoundingClientRect();
+							const b = box.getBoundingClientRect();
+							return r.top >= b.top && r.top < b.bottom;
+						});
+					if (shown) await until(inView, (v) => v);
+					else {
+						await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+						assert.equal(await inView(), false, 'the backups start in view: the box is too tall to tell');
+					}
+					assert.deepEqual(app.errors, []);
+				},
+				{ viewport: { width: 1280, height: 420 }, query: '?db=DEBUG' }
+			);
+		});
+	}
 });

@@ -23,8 +23,8 @@ after(async () => {
 async function openSheet(page) {
 	await page.locator('.root-bar button.gear').click();
 	await page.getByRole('menuitem', { name: 'Backups', exact: true }).click();
-	const sheet = page.locator('dialog.sheet', { hasText: 'Backups' });
-	await sheet.waitFor();
+	const sheet = page.locator('section.pane[data-title="backups"]');
+	await sheet.locator('.backups').waitFor();
 	return sheet;
 }
 

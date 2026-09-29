@@ -230,8 +230,8 @@ describe('a command with subcommands drills into them', () => {
 
 	// da-9ow8m: vividn, «the "backup" command in the commands widget … should
 	// that open this backups menu directly? It could». So `db backup` opens
-	// the sheet, and `db restore` opens it at the backups to restore from;
-	// neither writes the line, and both are drawn once-outlined.
+	// the Backups place (da-ea5q2), and `db restore` opens it at the backups
+	// to restore from; neither writes the line, and both are drawn once-outlined.
 	for (const sub of ['backup', 'restore']) {
 		test(`db ${sub} opens «Backups», and writes nothing on the line`, async () => {
 			await onPage(async ({ page }) => {
@@ -239,15 +239,9 @@ describe('a command with subcommands drills into them', () => {
 				const button = commands(page).locator(`button[data-command="db ${sub}"]`);
 				assert.match(await button.getAttribute('class'), /\bopens\b/);
 				await button.click();
-				const sheet = page.locator('dialog.sheet', { hasText: 'Backups' });
-				await sheet.waitFor();
-				assert.equal(
-					await page.evaluate(() => document.querySelector('dialog.sheet .sheet-head span')?.textContent),
-					'Backups'
-				);
+				// A tab or a modal, as the screen has it (da-jozgv): backups.test.mjs holds the tab.
+				await page.locator('section.pane[data-title="backups"] .backups').waitFor();
 				assert.equal((await line(page)).text, '', `db ${sub} wrote the line`);
-				await page.keyboard.press('Escape');
-				await sheet.waitFor({ state: 'detached' });
 			});
 		});
 	}

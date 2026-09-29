@@ -389,11 +389,11 @@ rule is decided but not yet everywhere, it names the bead.
     layouts», which opens a confirm, is not (da-kk0vr). Tap-everything tests hold double ⇔ the
     tap wrote or ran: on the page (`act-taps-desktop`, `act-taps-phone`, da-y0ocz) and in every
     sheet, dialog and menu a tap opens from it (`act-taps-dialogs*`, da-juku7).
-    And a tap that OPENS a modal, a sheet or a confirm — or the browser's own prompt or file
-    picker — wears a trailing chevron `›`, and nothing else does (da-vteda; vividn: «yes I like
-    the chevron much better» than the `…` such a label ended in, which is gone). It is the kind
-    `open`, drawn once in `app.css`; a list or a form that takes a widget's place, or `< Back`,
-    is `show` and wears none. The same tap-everything tests hold chevron ⇔ a modal opened.
+    And a tap that OPENS a modal, a sheet, a confirm or a place (rule 31) — or the browser's own
+    prompt or file picker — wears a trailing chevron `›`, and nothing else does (da-vteda; vividn:
+    «yes I like the chevron much better» than the `…` such a label ended in, which is gone). It
+    is the kind `open`, drawn once in `app.css`; a list or a form that takes a widget's place, or
+    `< Back`, is `show` and wears none. The same tap-everything tests hold chevron ⇔ a modal opened.
     «Save a backup file» keeps its `›` where a browser has no save picker and downloads
     instead: the chevron says the tap hands the reader to the browser to put the file
     somewhere, which the download does too (its prompt or its panel), and the page cannot
@@ -435,8 +435,8 @@ rule is decided but not yet everywhere, it names the bead.
 31. **A modal asks; a place is a widget** (da-6du3o; vividn, 2026-09-29: «Every modal is also a
     widget that can be put into a layout or as its own tab»). A QUESTION — `Confirm`, `Ask`, the
     passkey prompt — blocks until it is answered, and nobody pins one in a layout, so it stays a
-    modal. A PLACE — Sync and Help (da-z955f) today; Backups and the field editor to follow, one
-    bead each — is a widget kind in `layout/registry.ts`, and `openPlace(kind)` (`layout/shell.ts`) is the one way
+    modal. A PLACE — Sync, Help (da-z955f) and Backups (da-ea5q2) today; the field editor to
+    follow — is a widget kind in `layout/registry.ts`, and `openPlace(kind)` (`layout/shell.ts`) is the one way
     to reach it. It brings forward the root tab already holding that kind. Failing that, the host
     is the screen's (da-jozgv; vividn: «I think this is good on mobile, but the experience on
     desktop is not great … I would still have it be a modal on desktop»). On a DESKTOP the widget

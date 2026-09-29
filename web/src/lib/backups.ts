@@ -5,7 +5,7 @@
 // automated tower of hanoi backups … configure frequency of backups (maybe
 // every hour as a default?) and max slots (set to none …)». The rotation is
 // the CLI's own (`db backup --to DIR --every D [--slots N]`, da-d5cmj),
-// and so is every number the sheet shows: the ages (`--list`), the reach
+// and so is every number the widget shows: the ages (`--list`), the reach
 // (`--plan`), the size of one backup, what a restore would do (`db restore
 // --dry-run`). Nothing here knows which slot a period lands in.
 //
@@ -22,7 +22,7 @@
 // tab, is offered on the DEBUG database alone (vremya on #217): a plan
 // survives a reload and a tab's bucket does not, so offered anywhere else
 // it would look like protection and hold nothing. NOT ENCRYPTED in v1
-// (vividn, 12:03): the sheet says so.
+// (vividn, 12:03): the widget says so.
 //
 // TWO WRITERS, ONE INDEX. `index.json` is read, rotated and written back,
 // so two devices backing up to one bucket could each write an index that
@@ -49,7 +49,7 @@ export interface Destination {
 	remove(file: string): Promise<void>;
 }
 
-/** One setting of a destination, as the sheet asks for it. */
+/** One setting of a destination, as the widget asks for it. */
 export interface Field {
 	key: string;
 	label: string;
@@ -61,12 +61,12 @@ export interface Field {
 	note?: string;
 }
 
-/** A kind of destination: what the sheet calls it, and how a plan's config opens one. */
+/** A kind of destination: what the widget calls it, and how a plan's config opens one. */
 export interface DestinationKind {
 	label: string;
-	/** The config's fields, in the order the sheet asks for them. */
+	/** The config's fields, in the order the widget asks for them. */
 	fields: Field[];
-	/** Offered on the DEBUG database only: a fake, for trying the sheet and for tests. */
+	/** Offered on the DEBUG database only: a fake, for trying the widget and for tests. */
 	debug?: boolean;
 	open(config: Record<string, string>): Destination;
 	/** Write, list, read and delete a probe, naming the step that fails. */
@@ -135,7 +135,7 @@ export const HOUR = 3600;
 export const defaults = (kind: string): Record<string, string> =>
 	Object.fromEntries((KINDS[kind]?.fields ?? []).flatMap((f) => (f.value ? [[f.key, f.value]] : [])));
 
-/** A new plan as the sheet first offers it: the first kind on offer, hourly, no cap, this page's database. */
+/** A new plan as the widget first offers it: the first kind on offer, hourly, no cap, this page's database. */
 export function draft(db: string): Plan {
 	const kind = offered(db)[0] ?? '';
 	return { name: '', kind, config: defaults(kind), dbs: [db], every: HOUR, slots: null };
@@ -152,7 +152,7 @@ export interface Backup {
 	age_secs: number;
 }
 
-/** What the sheet knows about a plan: its backups, newest first, when they were listed, and what it is doing. */
+/** What the widget knows about a plan: its backups, newest first, when they were listed, and what it is doing. */
 export interface PlanStatus {
 	backups: Backup[];
 	/** When `backups` was listed (epoch ms): their ages are as of then. */
@@ -413,17 +413,19 @@ export function bytes(n: number): string {
 	return `${i ? n.toFixed(1) : n} ${units[i]}`;
 }
 
-// ---- the sheet ---------------------------------------------------------------
+// ---- the place ---------------------------------------------------------------
 
-let sheet: { $set(props: Record<string, unknown>): void } | undefined;
+/** Asked by `db restore`: the Backups widget scrolls to the backups to restore from, and clears it. */
+export const toRestore = writable(false);
 
 /**
- * Open «Backups» ($lib/BackupsSheet.svelte) — `restore` at the backups to
- * restore from. One sheet, mounted the first time and opened again after;
- * imported on first use, as nothing needs it before.
+ * Open «Backups» ($lib/layout/BackupsWidget.svelte), a PLACE (da-ea5q2):
+ * a modal on a desktop, a tab on a phone, by `openPlace` — `restore` at the backups
+ * to restore from. The shell is imported on use: through the registry, it
+ * imports this module.
  */
 export async function openBackups(view: 'plans' | 'restore' = 'plans'): Promise<void> {
-	const { default: BackupsSheet } = await import('./BackupsSheet.svelte');
-	sheet ??= new BackupsSheet({ target: document.body });
-	sheet.$set({ view, open: true });
+	toRestore.set(view === 'restore');
+	const { openPlace } = await import('./layout/shell.js');
+	await openPlace('backups');
 }
