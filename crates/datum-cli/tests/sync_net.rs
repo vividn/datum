@@ -232,9 +232,9 @@ fn an_invite_is_one_time_and_expires() {
     let c = Copy::new();
     let used = c.fails(&["sync", "connect", &ticket], "");
     assert!(used.contains("invite already used"), "{used}");
-    // A member presenting a used invite is refused too: one use is one use.
+    // A member presenting it is refused before it dials: it is in a chain.
     let again = b.fails(&["sync", "connect", &ticket], "");
-    assert!(again.contains("invite already used"), "{again}");
+    assert!(again.contains("a copy belongs to one chain"), "{again}");
     let expired = c.fails(&["sync", "connect", &stale], "");
     assert!(expired.contains("invite expired"), "{expired}");
     assert!(!a.ok(&["sync", "members"]).contains(&c.id()[..10]));
@@ -242,16 +242,44 @@ fn an_invite_is_one_time_and_expires() {
 
 /// A stranger that dials without an invite is refused by the store's
 /// handshake (`sync_chain`'s `a_non_members_act_is_refused_open_chain_or_not`);
-/// here, the copy of this key is refused by name.
+/// here, the copy of this key. It is in the inviter's chain, so it is refused
+/// before it dials (da-mepav); the handshake's own refusal of the key is
+/// `sync_chain`'s, where a hello can be forced.
 #[test]
-fn a_copy_of_this_key_is_refused_at_the_handshake() {
+fn a_copy_of_this_key_is_refused() {
     let (a, _b) = paired();
     let (_inviting, ticket) = a.invite(&[]);
     let mut own = a.cmd(&["sync", "connect", &ticket]);
     own.env("DATUM_SYNC_BIND", format!("127.0.0.1:{}", Copy::new().port));
     let out = own.output().unwrap();
     let text = String::from_utf8_lossy(&out.stderr);
-    assert!(text.contains("is a copy of this database"), "{text}");
+    assert!(text.contains("a copy belongs to one chain"), "{text}");
+}
+
+/// A copy belongs to one chain (da-mepav): one already in a chain that tries
+/// another chain's ticket is refused by name before anything is written or
+/// sent — no admit in that chain, none of its ops there, no record of its
+/// own. A copy in no chain still joins (`paired`).
+#[test]
+fn a_copy_in_a_chain_is_refused_another_chains_invite() {
+    let (a, _b) = paired();
+    a.ok(&["occur", "secret"]);
+    let c = Copy::new();
+    let (_inviting, ticket) = c.invite(&[]);
+    let ops = a.query("SELECT COUNT(*) FROM ops");
+    let refused = a.fails(&["sync", "connect", &ticket], "");
+    let chain = a
+        .query("SELECT json_extract(body, '$.effect.chain') FROM ops WHERE hid = '~chain' LIMIT 1");
+    assert!(
+        refused.contains(&format!(
+            "this copy is in sync chain {chain} (2 members); a copy belongs to one chain. \
+             To join another, use a copy that isn't in one"
+        )),
+        "{refused}"
+    );
+    assert_eq!(a.query("SELECT COUNT(*) FROM ops"), ops);
+    assert!(!c.has("secret"));
+    assert!(!c.ok(&["sync", "members"]).contains(&a.id()[..10]));
 }
 
 #[test]

@@ -86,7 +86,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         }
         // Hidden (da-6kpj5): datum.day's transport, as for `record-session`.
         "handshake" => {
-            let mut o = opts(&mut rest, &["label", "addr", "invite"], &["dialed"], 1..=1)?;
+            let mut o = opts(&mut rest, &["label", "addr", "invite", "chain"], &["dialed"], 1..=1)?;
             let need = |name: &str| {
                 o.get(name)
                     .ok_or_else(|| ParseError::InvalidArg(format!("handshake needs --{name}")))
@@ -95,6 +95,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 label: need("label")?,
                 addr: need("addr")?,
                 invite: o.get("invite"),
+                chain: o.get("chain"),
                 dialed: o.on("dialed"),
                 endpoint: o.positional.remove(0),
             }
@@ -255,6 +256,7 @@ mod tests {
                 label: "l".into(),
                 addr: "{}".into(),
                 invite: None,
+                chain: None,
                 dialed: true
             }
         );

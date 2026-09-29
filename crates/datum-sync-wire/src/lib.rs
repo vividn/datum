@@ -68,6 +68,9 @@ pub struct Applied {
 pub trait Store {
     /// How this copy names itself to a peer.
     fn label(&self) -> String;
+    /// The sync chain this copy is in, and its unrevoked members; none
+    /// when it is in no chain.
+    async fn chain(&self) -> Result<Option<(String, usize)>>;
     async fn vector(&self) -> Result<Vector>;
     /// Every op `since` lacks, as JSON lines.
     async fn ops_since(&self, since: &Vector) -> Result<Vec<String>>;
@@ -76,13 +79,15 @@ pub trait Store {
     async fn verify(&self) -> Result<String>;
     /// `peer` introduced itself as `label` at `addr`: record it, and when
     /// it `dialed` this copy, admit it (as a peer, or by `invite`) or fail
-    /// saying why not. Whether it is new to this copy comes back.
+    /// saying why not; a redeemer names its own `chain`. Whether it is new
+    /// to this copy comes back.
     async fn handshake(
         &self,
         peer: &str,
         label: &str,
         addr: &EndpointAddr,
         invite: Option<&str>,
+        chain: Option<&str>,
         dialed: bool,
     ) -> Result<bool>;
     async fn record_session(
@@ -143,6 +148,8 @@ struct Hello {
     label: String,
     addr: EndpointAddr,
     invite: Option<String>,
+    /// A redeemer's own chain, empty for none (da-mepav).
+    chain: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -376,15 +383,20 @@ async fn session(
         .await
         .map_err(|e| anyhow!("could not reach {}: {e}", short(&id)))?;
     let (mut s, mut r) = conn.open_bi().await?;
+    let chain = match invite {
+        Some(_) => Some(store.chain().await?.map(|c| c.0).unwrap_or_default()),
+        None => None,
+    };
     let hello = Hello {
         label: store.label(),
         addr: ep.addr(),
         invite: invite.map(str::to_string),
+        chain,
     };
     put_json(&mut s, &hello).await?;
     let (label, added) = match get_json(&mut r, MAX_HELLO).await? {
         Reply::Welcome { label, addr } => {
-            match store.handshake(&id, &label, &addr, None, true).await {
+            match store.handshake(&id, &label, &addr, None, None, true).await {
                 Ok(added) => (label, added),
                 Err(e) => {
                     conn.close(0u32.into(), b"refused");
@@ -420,6 +432,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
                 &hello.label,
                 &hello.addr,
                 hello.invite.as_deref(),
+                hello.chain.as_deref(),
                 false,
             )
             .await
@@ -451,8 +464,15 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
 }
 
 /// Redeem `ticket`'s invite and sync, with the first of its addresses that
-/// admits it.
+/// admits it. A copy already in a chain is refused before anything is sent:
+/// its ops would flow one way into the other chain (da-mepav).
 pub async fn redeem(store: &impl Store, ep: &Endpoint, ticket: &Ticket) -> Result<Report> {
+    if let Some((id, n)) = store.chain().await? {
+        bail!(
+            "this copy is in sync chain {id} ({n} members); a copy belongs to one chain. \
+             To join another, use a copy that isn't in one"
+        );
+    }
     let mut rep = Err(anyhow!("the ticket names no address"));
     for addr in &ticket.addrs {
         rep = dial(store, ep, addr.clone(), Some(&ticket.secret)).await;

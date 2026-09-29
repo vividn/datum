@@ -64,6 +64,20 @@ impl Store for Cli {
         self.label.clone()
     }
 
+    async fn chain(&self) -> Result<Option<(String, usize)>> {
+        let status: serde_json::Value =
+            serde_json::from_str(&self.run(&["sync", "status", "--json"], None).await?)?;
+        let Some(id) = status["chain"].as_str() else {
+            return Ok(None);
+        };
+        let all: serde_json::Value =
+            serde_json::from_str(&self.run(&["sync", "members", "--json"], None).await?)?;
+        let members = all["members"]
+            .as_array()
+            .map_or(0, |m| m.iter().filter(|m| m["revoked"].is_null()).count());
+        Ok(Some((id.to_string(), members)))
+    }
+
     async fn vector(&self) -> Result<Vector> {
         Ok(serde_json::from_str(
             &self.run(&["sync", "vector"], None).await?,
@@ -108,12 +122,17 @@ impl Store for Cli {
         label: &str,
         addr: &EndpointAddr,
         invite: Option<&str>,
+        chain: Option<&str>,
         dialed: bool,
     ) -> Result<bool> {
         let addr = serde_json::to_string(addr)?;
         let mut argv = vec!["sync", "handshake", peer, "--label", label, "--addr", &addr];
         if let Some(secret) = invite {
             argv.extend(["--invite", secret]);
+        }
+        if let Some(chain) = chain {
+            argv.push("--chain");
+            argv.push(chain);
         }
         if dialed {
             argv.push("--dialed");

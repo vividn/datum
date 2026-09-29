@@ -131,18 +131,76 @@ impl Copy {
     }
 }
 
-/// `copy` admitted to `member`'s chain as `label`, as a served handshake
-/// admits the redeemer of an invite — `new-invite` starting an open chain
-/// when `member` is in none — and sent the chain.
-fn admit(member: &Copy, copy: &Copy, label: &str, admin_key: Option<&str>) {
+/// `copy`'s hello redeeming a new invite of `member`'s — `new-invite`
+/// starting an open chain when `member` is in none — plus `extra`, as a
+/// served handshake takes it.
+fn redeem(
+    member: &Copy,
+    copy: &Copy,
+    label: &str,
+    admin_key: Option<&str>,
+    extra: &[&str],
+) -> Output {
     let mut args = vec!["sync", "new-invite"];
     args.extend(admin_key.map(|k| ["--admin-key", k]).into_iter().flatten());
     let invite = json(&member.ok(&args));
     let secret = invite["secret"].as_str().unwrap();
     let id = copy.id();
     let hello = ["sync", "handshake", &id, "--label", label, "--addr", "{}"];
-    member.ok(&[&hello[..], &["--invite", secret]].concat());
+    member.run(&[&hello[..], &["--invite", secret], extra].concat(), "")
+}
+
+/// `copy`, in no chain, admitted to `member`'s chain as `label`, and sent
+/// the chain.
+fn admit(member: &Copy, copy: &Copy, label: &str, admin_key: Option<&str>) {
+    let out = redeem(member, copy, label, admin_key, &["--chain", ""]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert!(member.send(copy).0);
+}
+
+/// A copy belongs to one chain (da-mepav): a redeemer in another chain, or
+/// one that does not say, is refused at the admitting member's handshake,
+/// and nothing of it is admitted.
+#[test]
+fn a_redeemer_in_another_chain_or_not_saying_is_refused() {
+    let (a, b) = chained();
+    let theirs = json(&a.ok(&["sync", "members", "--json"]))["chain"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let other = Copy::new();
+    other.ok(&["sync", "new-invite"]);
+    let other_chain = json(&other.ok(&["sync", "members", "--json"]))["chain"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_ne!(theirs, other_chain);
+
+    let refused = redeem(&other, &b, "b", None, &["--chain", &theirs]);
+    let text = String::from_utf8_lossy(&refused.stderr);
+    assert!(!refused.status.success(), "{text}");
+    assert!(
+        text.contains(&format!(
+            "b is in another sync chain ({theirs}); a copy belongs to one chain"
+        )),
+        "{text}"
+    );
+    let silent = redeem(&other, &Copy::new(), "old", None, &[]);
+    let text = String::from_utf8_lossy(&silent.stderr);
+    assert!(!silent.status.success(), "{text}");
+    assert!(
+        text.contains("old does not say which sync chain it is in"),
+        "{text}"
+    );
+    let members = json(&other.ok(&["sync", "members", "--json"]))["members"].clone();
+    assert_eq!(members.as_array().unwrap().len(), 1, "{members}");
+
+    // In no chain, it is admitted.
+    admit(&other, &Copy::new(), "fresh", None);
 }
 
 /// `a`, holding an open chain, and `b`, invited into it.
@@ -251,6 +309,11 @@ fn a_non_members_act_is_refused_open_chain_or_not() {
             "",
         );
         assert!(hello.contains("not a member of this sync chain"), "{hello}");
+        let own = a.fails(
+            &["sync", "handshake", &a.id(), "--label", "a", "--addr", "{}"],
+            "",
+        );
+        assert!(own.contains("is a copy of this database"), "{own}");
         assert!(b
             .ok(&["sync", "handshake", &a.id(), "--label", "a", "--addr", "{}"])
             .contains("known"));
@@ -497,6 +560,8 @@ fn a_passkey_admin_approves_by_link_and_pasted_code() {
         "{}",
         "--invite",
         &secret,
+        "--chain",
+        "",
     ]);
     let members = a.ok(&["sync", "members"]);
     assert!(

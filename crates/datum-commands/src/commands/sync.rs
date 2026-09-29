@@ -176,9 +176,11 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             label,
             addr,
             invite,
+            chain,
             dialed,
         } => {
-            let added = db.sync_handshake(&endpoint, &label, &addr, invite.as_deref(), dialed)?;
+            let (invite, chain) = (invite.as_deref(), chain.as_deref());
+            let added = db.sync_handshake(&endpoint, &label, &addr, invite, chain, dialed)?;
             println!("{}", if added { "added" } else { "known" });
         }
         SyncCommand::NewInvite {

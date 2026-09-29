@@ -815,14 +815,16 @@ pub enum SyncCommand {
         error: Option<String>,
     },
     /// Hidden: `datum sync handshake <ENDPOINT> --label <L> --addr <JSON>
-    /// [--invite <SECRET>] [--dialed]` — a session's handshake as it bears
-    /// on this copy, for datum.day's transport (da-6kpj5): `added`, `known`,
-    /// or the refusal as the error.
+    /// [--invite <SECRET> --chain <ID>] [--dialed]` — a session's handshake
+    /// as it bears on this copy, for datum.day's transport (da-6kpj5):
+    /// `added`, `known`, or the refusal as the error. `--chain` is the
+    /// redeemer's own chain, empty for none (da-mepav).
     Handshake {
         endpoint: String,
         label: String,
         addr: String,
         invite: Option<String>,
+        chain: Option<String>,
         dialed: bool,
     },
     /// Hidden: `datum sync new-invite [--expires <DUR>] [--admin-key

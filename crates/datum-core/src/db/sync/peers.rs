@@ -96,13 +96,17 @@ impl Db {
     /// recorded. Served (it dialed this copy): admitted — a member, or the
     /// redeemer of `invite` — and recorded; anyone else is refused, and the
     /// error says why. An invite presented is redeemed or refused, even by a
-    /// member: one use. Whether `id` is new to this copy comes back.
+    /// member: one use. A redeemer says which `chain` it is in (empty: none);
+    /// one in another chain is refused, as is one that does not say, since a
+    /// copy belongs to one chain (da-mepav). Whether `id` is new to this copy
+    /// comes back.
     pub fn sync_handshake(
         &self,
         id: &str,
         label: &str,
         addrs: &str,
         invite: Option<&str>,
+        chain: Option<&str>,
         dialed: bool,
     ) -> Result<bool> {
         let refuse = |why: String| Err(DatumError::Other(why));
@@ -115,7 +119,19 @@ impl Db {
         let known = self.sync_is_peer(id)?;
         if !dialed {
             match invite {
-                Some(secret) => self.sync_admit(id, label, secret)?,
+                Some(secret) => match chain {
+                    None => {
+                        return refuse(format!(
+                        "{label} does not say which sync chain it is in: update its datum to join"
+                    ))
+                    }
+                    Some(c) if !c.is_empty() && c != self.sync_chain()?.id => {
+                        return refuse(format!(
+                            "{label} is in another sync chain ({c}); a copy belongs to one chain"
+                        ))
+                    }
+                    Some(_) => self.sync_admit(id, label, secret)?,
+                },
                 None if known => {}
                 None => return refuse("not a member of this sync chain".into()),
             }

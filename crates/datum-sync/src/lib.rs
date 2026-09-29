@@ -79,6 +79,12 @@ impl Store for DbStore<'_> {
         label()
     }
 
+    async fn chain(&self) -> Result<Option<(String, usize)>> {
+        let c = self.0.sync_chain()?;
+        let members = c.members.iter().filter(|m| m.revoked.is_none()).count();
+        Ok(c.exists().then_some((c.id, members)))
+    }
+
     async fn vector(&self) -> Result<Vector> {
         Ok(self.0.sync_vector()?)
     }
@@ -111,10 +117,13 @@ impl Store for DbStore<'_> {
         label: &str,
         addr: &EndpointAddr,
         invite: Option<&str>,
+        chain: Option<&str>,
         dialed: bool,
     ) -> Result<bool> {
         let addr = serde_json::to_string(addr)?;
-        Ok(self.0.sync_handshake(peer, label, &addr, invite, dialed)?)
+        Ok(self
+            .0
+            .sync_handshake(peer, label, &addr, invite, chain, dialed)?)
     }
 
     async fn record_session(
@@ -234,13 +243,12 @@ pub fn connect(db: &Db, ticket: &str) -> Result<()> {
         let ep = bind(db).await?;
         let rep = redeem(&DbStore(db), &ep, &t).await;
         ep.close().await;
-        // Admitted, it says what it is; its peers hear on the next sync.
+        // Admitted, it says what it is; its peers hear on the next sync. A
+        // copy refused (one already in a chain) writes nothing.
+        let admitted = rep.as_ref().map_or_else(paired_unfinished, |_| true);
         let me = db.sync_endpoint_id()?;
-        if db.sync_chain()?.member(&me).is_some() {
+        if admitted && db.sync_chain()?.member(&me).is_some() {
             db.sync_describe_self(&label(), "cli")?;
-        }
-        if let Err(e) = &rep {
-            paired_unfinished(e);
         }
         print_added(&rep?);
         Ok(())
