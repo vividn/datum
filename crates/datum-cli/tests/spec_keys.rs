@@ -572,3 +572,56 @@ fn reparse_replays_the_keys_the_line_bound() {
         assert_eq!(after.parser_version, logged.parser_version, "{head:?}");
     }
 }
+
+/// The argv of the backticked example on `datum spec --help` that starts
+/// with `head`, `datum` dropped. A `head` ending in a backtick matches
+/// the whole example: "datum sad`" is `datum sad`, not `datum sad because`.
+fn spec_help_example(head: &str) -> Vec<String> {
+    let page = datum_parse::help::command_help("spec");
+    let at = page
+        .find(&format!("`{head}"))
+        .unwrap_or_else(|| panic!("no `{head}…` on spec --help"));
+    let span = page[at + 1..].split('`').next().unwrap();
+    span.split_whitespace()
+        .skip_while(|w| *w == "datum")
+        .map(String::from)
+        .collect()
+}
+
+fn run_example(head: &str, db: &Db) -> anyhow::Result<()> {
+    let argv = spec_help_example(head);
+    run_cli(&argv.iter().map(String::as_str).collect::<Vec<_>>(), db)
+}
+
+/// The KEYS section's examples, run as the page spells them on a fresh
+/// db, so they cannot drift from the CLI (da-cirrs: both lacked the
+/// `--verb` a new field asks for).
+#[test]
+fn the_spec_help_keys_examples_run() {
+    let db = fresh_db();
+    run_example("spec set juice", &db).unwrap();
+    run_example("datum juice 2", &db).unwrap();
+    assert_eq!(
+        logged_entries(&db, "juice")[0].data,
+        Some(json!({"cups": 2, "temp": "cold"}))
+    );
+
+    let db = fresh_db();
+    // two writes to one field must not share a millisecond (07d92a0)
+    let _clock = set_time("2026-01-15T12:00:00Z");
+    run_example("spec set mood", &db).unwrap();
+    let err = run_example("datum sad`", &db).unwrap_err();
+    assert!(
+        format!("{err:#}").contains("Missing required key: reason"),
+        "{err:#}"
+    );
+    run_example("datum sad because", &db).unwrap();
+    advance_time("1s");
+    run_example("datum happy", &db).unwrap();
+    let data: Vec<_> = logged_entries(&db, "mood")
+        .into_iter()
+        .map(|e| e.data)
+        .collect();
+    // newest first: happy, then sad
+    assert_eq!(data, [None, Some(json!({"reason": "because"}))]);
+}
