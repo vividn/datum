@@ -15,7 +15,7 @@ them back as lists, current state, or visual timelines. `datum --help` and
 ```bash
 datum occur coffee                  # a point-in-time event (no duration)
 datum switch mood happy             # a field's new state (persists until changed)
-datum switch weight 75.2kg          # state + structured data (units parse to {"v":75.2,"u":"kg"})
+datum switch weight 75.2kg          # state stored exactly as typed: "75.2kg"
 datum start work project=writing    # begin a duration-tracked activity
 datum stop work                     # end the open one (alias: end)
 datum note idea spark=svg-timeline  # timeless jot, auto-id'd on create_time
@@ -23,8 +23,25 @@ datum add person -K name name=Ada   # timeless keyed record (needs an explicit i
 ```
 
 `track` / `ignore` control whether a field appears in `datum now`; `flag` marks a
-field to come back to. Structured data is `key=value`; a trailing unit on a number
-is parsed automatically.
+field to come back to. Structured data is `key=value`, and values are stored as
+typed: `75.2kg` stays the string `"75.2kg"`, with no unit parsing.
+
+### Declared keys: positional values fill a field's slots
+
+A field's spec can declare keys, and bare values after the field then fill them in
+order, so a log line needs no `key=`:
+
+```bash
+datum spec set juice --verb occur --data-key cups --data-key temp=cold
+datum juice 2              # cups=2, temp=cold (the default)
+datum juice 3 temp=warm    # a key=value still overrides
+datum juice                # Error: Missing required key: cups
+```
+
+`--data-key K` is required, `K=` optional, and `K=D` has a default. `--id-key K` puts
+the value in the entry's id (like `-K`), and `--assign K=V` writes a fixed value on
+every log. A new field needs `--verb` (occur | start | switch | add) so its bare
+name knows what a press means. `datum spec show <field>` prints what is declared.
 
 ### note vs add — timeless data, split by identity (when vs what)
 
@@ -82,8 +99,27 @@ datum now                           # current state of tracked fields + a termin
 datum get <id-or-slug>[,<id>...]    # entries by id or slug
 datum grep <regex>                  # regex search over entry JSON
 datum count --group-by field        # counts, optionally grouped / --since-bounded
-datum dayview                       # render a day as an SVG timeline ("data as art")
+datum dayview -o day.svg --days 3   # render days as a timeline (.svg / .png / .html / .json; SVG to stdout by default)
 ```
+
+## For agents
+
+- **Read machine-readably:** reads take `--json` (short for `--show json`), e.g.
+  `datum tail mood -n 5 --json`, instead of parsing the table.
+- **Preview a write:** `--dry-run` on a logging verb prints the entry it *would*
+  write and writes nothing.
+- **`_LAST` is what you last touched, and bare commands act on it.** Every write
+  sets it, and so does `get`, by design: query an entry, then `update`, `delete`
+  or `undo` it with no id. `undo` reverts that entry to its previous version,
+  which deletes an entry that had only one. So after a `get`, a bare `undo`
+  targets the entry you fetched. To undo your last *write* after reading
+  something else, name it: `datum undo <hid>`. A command that wrote a set of
+  entries (a restore, an import, a kit install, a comma-list delete) leaves the
+  whole set in `_LAST`, and one bare `undo` reverts all of it. `redo` re-applies.
+- **Check after bulk work:** `datum check` reports consistency problems, such as a
+  state repeated with no change between.
+- **Time formats:** `datum help time` lists every form `-t`, `-d`, `-y`/`-q` and
+  durations take, with examples.
 
 ## The data model (essentials)
 
@@ -108,4 +144,4 @@ selection. Use a throwaway db while experimenting: `datum --db /tmp/scratch.db o
 - A whitespace-bounded `,` token logs **multiple entries atomically** with one shared
   timestamp: `datum switch body vertical , occur caffeine`.
 - `datum --man <command>` prints a man page to stdout; `datum spec set <field> …`
-  constrains a field's schema (allowed states, colors, id template).
+  shapes a field: its keys (above), allowed states, colours, glyphs and id template.
