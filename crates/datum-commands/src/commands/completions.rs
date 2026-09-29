@@ -159,12 +159,13 @@ fn pick(shell: Option<Shell>, env: &ShellEnv) -> Result<Shell> {
 pub fn install(shell: Shell, env: &ShellEnv) -> Result<String> {
     let mut last_err = None;
     for path in env.candidates(shell) {
+        let before = std::fs::read_to_string(&path).ok();
         let written = path
             .parent()
             .map_or(Ok(()), std::fs::create_dir_all)
             .and_then(|()| std::fs::write(&path, script(shell)));
         match written {
-            Ok(()) => return Ok(installed_message(shell, env, &path)),
+            Ok(()) => return Ok(installed_message(shell, env, &path, before)),
             Err(e) => last_err = Some((path, e)),
         }
     }
@@ -172,8 +173,67 @@ pub fn install(shell: Shell, env: &ShellEnv) -> Result<String> {
     Err(e).with_context(|| format!("writing {}", path.display()))
 }
 
-fn installed_message(shell: Shell, env: &ShellEnv, path: &Path) -> String {
-    let mut msg = format!("wrote {} completion to {}\n", shell.name(), path.display());
+/// How long [`completes`] waits for a shell's rc files.
+const PROBE_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// Whether a new interactive `shell` completes `datum` with our `_datum`,
+/// asked of one that reads the user's own rc files (da-ei1vj). An rc file
+/// can print, prompt or hang, so its output goes nowhere and the wait is
+/// bounded; `+m` turns job control off in zsh and bash alike, so the shell
+/// never takes the terminal, which a killed one would never give back; yes
+/// is exit 7, so an rc file that exits or execs another shell is no. Fish
+/// loads its completions directory by itself.
+fn completes(shell: Shell, env: &ShellEnv) -> bool {
+    use std::process::{Command, Stdio};
+    let test = match shell {
+        Shell::Fish => return true,
+        Shell::Zsh => "[[ $_comps[datum] == _datum ]] && exit 7",
+        // bash-completion loads a script on the first TAB: load it now.
+        Shell::Bash => "complete -p datum || _completion_loader datum; [[ $(complete -p datum) == *\" _datum \"* ]] && exit 7",
+    };
+    let mut cmd = Command::new(shell.name());
+    cmd.args(["+m", "-ic", test])
+        .env("HOME", &env.home)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if let Some(d) = &env.xdg_data_home {
+        cmd.env("XDG_DATA_HOME", d);
+    }
+    let Ok(mut child) = cmd.spawn() else {
+        return false;
+    };
+    let deadline = std::time::Instant::now() + PROBE_WAIT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.code() == Some(7),
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(20))
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
+}
+
+fn installed_message(shell: Shell, env: &ShellEnv, path: &Path, before: Option<String>) -> String {
+    let wrote = format!("wrote {} completion to {}\n", shell.name(), path.display());
+    if completes(shell, env) {
+        let said = match before {
+            None => wrote,
+            Some(b) if b != script(shell) => format!("updated {}\n", path.display()),
+            Some(_) => String::new(),
+        };
+        return format!(
+            "{said}{}tab completion: already set up ({})\n",
+            path_warning(env),
+            shell.name()
+        );
+    }
+    let mut msg = wrote;
     msg.push_str(&path_warning(env));
     let dir = path.parent().unwrap_or(path);
     if shell == Shell::Zsh && !env.fpath.iter().any(|d| d == dir) {
@@ -182,12 +242,6 @@ fn installed_message(shell: Shell, env: &ShellEnv, path: &Path) -> String {
              with oh-my-zsh, put it before `source $ZSH/oh-my-zsh.sh` (that line runs compinit)\n",
             dir.display()
         ));
-    }
-    if shell == Shell::Zsh {
-        msg.push_str(
-            "if it still offers only files: delete zsh's completion dump — ~/.zcompdump*, or the \
-             file your compinit names with -d (compinit -C trusts it until it is gone)\n",
-        );
     }
     if shell == Shell::Bash {
         msg.push_str("(the bash-completion package loads it on the first TAB)\n");
@@ -333,7 +387,104 @@ mod tests {
         let said = install(Shell::Zsh, &env(tmp.path(), Shell::Zsh, vec![])).unwrap();
         assert!(said.contains("fpath=("), "{said}");
         assert!(said.contains("oh-my-zsh.sh"), "{said}");
-        assert!(said.contains("zcompdump") && said.contains("-d"), "{said}");
+        assert!(!said.contains("zcompdump"), "{said}");
+    }
+
+    /// `env` with an rc file in its home, and the fpath dir install writes to.
+    fn with_rc(tmp: &Path, shell: Shell, rc: &str, body: &str) -> ShellEnv {
+        let dir = tmp.join("fn");
+        std::fs::create_dir_all(tmp.join("home")).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(tmp.join("home").join(rc), body).unwrap();
+        env(tmp, shell, vec![dir])
+    }
+
+    fn has(shell: &str) -> bool {
+        let found = std::process::Command::new(shell)
+            .args(["-c", "true"])
+            .status()
+            .is_ok();
+        if !found {
+            eprintln!("skipped: no {shell}");
+        }
+        found
+    }
+
+    #[test]
+    fn zsh_that_already_completes_gets_one_line_and_no_advice() {
+        if !has("zsh") {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let t = tmp.path();
+        let rc = format!(
+            "fpath=({} $fpath)\nautoload -Uz compinit && compinit -u\n",
+            t.join("fn").display()
+        );
+        let env = with_rc(t, Shell::Zsh, ".zshrc", &rc);
+        let path = t.join("fn/_datum");
+        let first = install(Shell::Zsh, &env).unwrap();
+        assert!(first.contains("already set up (zsh)"), "{first}");
+        assert!(!first.contains("fpath=("), "{first}");
+        assert!(!first.contains("new shell"), "{first}");
+
+        let again = install(Shell::Zsh, &env).unwrap();
+        assert!(!again.contains("_datum"), "unchanged: {again}");
+        assert!(again.contains("already set up (zsh)"), "{again}");
+
+        std::fs::write(&path, "#compdef datum\n").unwrap();
+        let updated = install(Shell::Zsh, &env).unwrap();
+        assert!(
+            updated.contains(&format!("updated {}", path.display())),
+            "{updated}"
+        );
+
+        // Another completion registered for `datum` is not ours.
+        std::fs::write(t.join("home/.zshrc"), format!("{rc}compdef _files datum\n")).unwrap();
+        let other = install(Shell::Zsh, &env).unwrap();
+        assert!(!other.contains("already set up"), "{other}");
+
+        // The same zsh without the fpath line: the advice.
+        std::fs::write(
+            t.join("home/.zshrc"),
+            "autoload -Uz compinit && compinit -u\n",
+        )
+        .unwrap();
+        let env = ShellEnv {
+            fpath: vec![],
+            ..env
+        };
+        let advised = install(Shell::Zsh, &env).unwrap();
+        assert!(advised.contains("fpath=("), "{advised}");
+        assert!(!advised.contains("already set up"), "{advised}");
+    }
+
+    #[test]
+    fn bash_that_already_completes_gets_one_line() {
+        let tmp = tempfile::tempdir().unwrap();
+        let t = tmp.path();
+        let file = t.join("data/bash-completion/completions/datum");
+        let env = with_rc(t, Shell::Bash, ".bashrc", "complete -F _other datum\n");
+        let advised = install(Shell::Bash, &env).unwrap();
+        assert!(advised.contains("new shell"), "not ours: {advised}");
+        std::fs::write(
+            t.join("home/.bashrc"),
+            format!("source {}\n", file.display()),
+        )
+        .unwrap();
+        let said = install(Shell::Bash, &env).unwrap();
+        assert!(said.contains("already set up (bash)"), "{said}");
+        assert!(!said.contains("new shell"), "{said}");
+    }
+
+    #[test]
+    fn an_rc_file_that_hangs_costs_the_timeout_and_gets_the_advice() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env = with_rc(tmp.path(), Shell::Bash, ".bashrc", "sleep 30\n");
+        let start = std::time::Instant::now();
+        let said = install(Shell::Bash, &env).unwrap();
+        assert!(start.elapsed() < PROBE_WAIT * 2, "{:?}", start.elapsed());
+        assert!(said.contains("new shell"), "{said}");
     }
 
     #[test]
