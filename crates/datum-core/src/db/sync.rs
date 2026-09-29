@@ -846,8 +846,14 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
     let mut vector = vector_where(conn, None)?;
     let waiting = loop {
         let mut waiting = waiting_ops(conn)?;
-        // Records first: membership decides which of the rest apply.
-        waiting.sort_by(|a, b| (!a.is_chain(), a.order()).cmp(&(!b.is_chain(), b.order())));
+        // Records first: membership decides which of the rest apply. Then
+        // HLC order, which is causal — an op's clock passes every op its
+        // copy held — so one pass applies what is ready. Fold order is
+        // `ops_of`'s; `Op::order` here put tombstone baselines after live
+        // ones, one pass per run of each: quadratic (da-kg95e).
+        waiting.sort_by(|a, b| {
+            (!a.is_chain(), &a.hlc, &a.endpoint).cmp(&(!b.is_chain(), &b.hlc, &b.endpoint))
+        });
         let mut progressed = false;
         for op in &waiting {
             let have = |e: &str| vector.get(e).copied().unwrap_or(0);

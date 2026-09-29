@@ -99,6 +99,12 @@ crossterm = "0.28"
 [profile.dev]
 debug = "line-tables-only"
 
+# Unoptimised, checking an op's signature costs ~12 ms, so a debug build
+# took four minutes to verify a first sync's 20k ops (da-kg95e). The curve
+# math alone is built optimised; `test` inherits it.
+[profile.dev.package.curve25519-dalek]
+opt-level = 3
+
 [profile.test]
 debug = "line-tables-only"
 
