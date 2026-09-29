@@ -68,6 +68,7 @@ import InputWidget from './InputWidget.svelte';
 import Notice from './Notice.svelte';
 import NowviewWidget from './NowviewWidget.svelte';
 import ReplWidget from './ReplWidget.svelte';
+import SyncWidget from './SyncWidget.svelte';
 
 export interface WidgetKind {
 	meta: WidgetKindMeta;
@@ -420,6 +421,19 @@ export const KINDS: Record<string, WidgetKind> = {
 			'An alias is a word that expands into a command: `datum help alias`.'
 		].join('\n'),
 		legible: { width: 160, height: 72 }
+	},
+	// The sync widget, read-only (da-x4t0a): devices × databases. Legible
+	// at its compact form: a dot, five characters of name and two cells,
+	// three rows (21.6px each) and the legend's line, plus padding.
+	sync: {
+		meta: meta('sync', 'sync'),
+		component: SyncWidget,
+		help: [
+			'Every device syncing your databases: a row per device, this one first, a column per database.',
+			'✓ synced, ↻ syncing, ◔ pending, ! error (tap it for why), — not in that database’s chain.',
+			'A device not reachable now is drawn grey, as it was when last seen, with the time.'
+		].join('\n'),
+		legible: { width: 140, height: 100 }
 	},
 	// The input widget (da-0dhc, back as da-3zon): the bottom bar's command
 	// line drawn in a pane — the same buffer, the same pills, the same

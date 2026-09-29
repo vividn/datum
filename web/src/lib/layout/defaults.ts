@@ -292,6 +292,7 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	stats: () => only('stats', 'stats'),
 	fields: () => only('fields', 'widgetbar'),
 	aliases: () => only('aliases', 'aliases'),
+	sync: () => only('sync', 'sync'),
 	input: () => only('input', 'input')
 };
 
