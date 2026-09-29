@@ -61,7 +61,8 @@ async function laptop() {
  */
 async function admit(run, id, label) {
 	const { secret } = JSON.parse(await run(['sync', 'new-invite', '--expires', '1d']));
-	await run(['sync', 'handshake', id, '--label', label, '--addr', '{}', '--invite', secret]);
+	// `--chain ''`: the redeemer is in no chain yet (da-mepav).
+	await run(['sync', 'handshake', id, '--label', label, '--addr', '{}', '--invite', secret, '--chain', '']);
 }
 
 /** `datum --db <db> <argv>` in the page. */
