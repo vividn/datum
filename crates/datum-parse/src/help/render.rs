@@ -64,6 +64,14 @@ fn render_topic(topic: &TopicSpec) -> String {
     s.push_str(topic.intro);
     s.push('\n');
     s.push_str(&render_options_block(topic.flags, topic.summary_col));
+    for group in topic.forms {
+        s.push_str(&format!("\n{}:\n", group.heading));
+        for f in group.forms {
+            let row = format!("  {:<26}  {}", f.example, f.meaning);
+            s.push_str(row.trim_end());
+            s.push('\n');
+        }
+    }
     s.push_str(topic.outro);
     s
 }

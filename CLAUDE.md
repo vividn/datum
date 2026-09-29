@@ -78,6 +78,10 @@ because it has no other instant to store.
   direction, and applies to `apr29`-style dates too)
 - `-t` accepts anything `-d` does — day words, weekdays, `2024-03-16` —
   so a caller holding "either a time or a date" needs only one flag
+- `-t` also takes any date it accepts, then any time of day it accepts,
+  joined by a space or `T` (`'2026-09-28 10:00'`, `'yesterday 10am'`,
+  `2026-09-28T10`), and ISO with an offset (`…T10:00+02:00`, da-6yqu9).
+  `datum help time` lists every form, and a test parses each example on it
 - a duration is a trailing positional (`datum end work 30m`) or `dur=30m`
   (`1:30`, `2h`, ISO `PT30M` all work). It says how long the thing LASTED,
   so the block ENDS at the entry's time and the span precedes it —

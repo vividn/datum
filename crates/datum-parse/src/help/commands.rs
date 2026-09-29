@@ -51,8 +51,8 @@
 //! keeping whatever is particular to it. See `LOG_SHARED_FLAGS` below.
 
 use super::spec::{
-    ArgSpec, Category, CommandSpec, EnvVarSpec, ExampleSpec, FlagSpec, SharedFlags, SubcommandSpec,
-    TopicSpec,
+    ArgSpec, Category, CommandSpec, EnvVarSpec, ExampleSpec, FlagSpec, FormGroup, FormSpec,
+    SharedFlags, SubcommandSpec, TopicSpec,
 };
 
 const NO_ARGS: &[ArgSpec] = &[];
@@ -197,70 +197,106 @@ const KIT_SUBCOMMANDS: &[SubcommandSpec] = &[
 ];
 
 // ---------------------------------------------------------------------------
+// The time arguments (da-6yqu9): one FlagSpec per flag of
+// `time_args::FLAG_SPECS`, which every table below and `datum help time`
+// render from. A command that reads a value its own way (`tail`'s `-t` is
+// an upper bound) keeps the flag and rewords only its summary.
+// `time_page_flags_are_the_parsers` holds the set to the parser.
+// ---------------------------------------------------------------------------
+
+const YESTERDAY: FlagSpec = FlagSpec {
+    short: Some('y'),
+    long: "yesterday",
+    takes_value: false,
+    value_hint: None,
+    value_optional: false,
+    summary: "Go back 1 day (stackable: -yy=2 days, ...)",
+    long_description: None,
+    left_override: None,
+};
+const QUICK: FlagSpec = FlagSpec {
+    short: Some('q'),
+    long: "quick",
+    takes_value: false,
+    value_hint: None,
+    value_optional: false,
+    summary: "Go back 5 min (stackable: -qq=10 min, ...)",
+    long_description: None,
+    left_override: None,
+};
+const DATE: FlagSpec = FlagSpec {
+    short: Some('d'),
+    long: "date",
+    takes_value: true,
+    value_hint: Some("VAL"),
+    value_optional: false,
+    summary: "Date override (offset, YYYY-MM-DD, sunday, apr29)",
+    long_description: None,
+    left_override: None,
+};
+const TIME: FlagSpec = FlagSpec {
+    short: Some('t'),
+    long: "time",
+    takes_value: true,
+    value_hint: Some("VAL"),
+    value_optional: false,
+    summary: "Time override (offset, HH:MM, 9:15am, a date, or both)",
+    long_description: None,
+    left_override: None,
+};
+const TIMEZONE: FlagSpec = FlagSpec {
+    short: Some('z'),
+    long: "timezone",
+    takes_value: true,
+    value_hint: Some("TZ"),
+    value_optional: false,
+    summary: "Timezone (IANA or UTC offset)",
+    long_description: None,
+    left_override: None,
+};
+const FULL_DAY: FlagSpec = FlagSpec {
+    short: Some('D'),
+    long: "full-day",
+    takes_value: false,
+    value_hint: None,
+    value_optional: false,
+    summary: "Date-only entry (no clock time)",
+    long_description: None,
+    left_override: None,
+};
+const NO_TIMESTAMP: FlagSpec = FlagSpec {
+    short: Some('T'),
+    long: "no-timestamp",
+    takes_value: false,
+    value_hint: None,
+    value_optional: false,
+    summary: "Timeless note-data (create_time id, no occurrence)",
+    long_description: None,
+    left_override: None,
+};
+
+/// The whole time-argument group, as `datum help time` lists it.
+const TIME_FLAGS: &[FlagSpec] = &[
+    YESTERDAY,
+    QUICK,
+    DATE,
+    TIME,
+    TIMEZONE,
+    FULL_DAY,
+    NO_TIMESTAMP,
+];
+
+// ---------------------------------------------------------------------------
 // Logging verbs — they share one flag table and one usage shape.
 // ---------------------------------------------------------------------------
 
 const LOG_FLAGS: &[FlagSpec] = &[
-    FlagSpec {
-        short: Some('y'),
-        long: "yesterday",
-        takes_value: false,
-        value_hint: None,
-        value_optional: false,
-        summary: "Go back 1 day (stackable: -yy=2 days, ...)",
-        long_description: None,
-        left_override: None,
-    },
-    FlagSpec {
-        short: Some('q'),
-        long: "quick",
-        takes_value: false,
-        value_hint: None,
-        value_optional: false,
-        summary: "Go back 5 min (stackable: -qq=10 min, ...)",
-        long_description: None,
-        left_override: None,
-    },
-    FlagSpec {
-        short: Some('d'),
-        long: "date",
-        takes_value: true,
-        value_hint: Some("VAL"),
-        value_optional: false,
-        summary: "Date override (offset, YYYY-MM-DD, sunday, apr29)",
-        long_description: None,
-        left_override: None,
-    },
-    FlagSpec {
-        short: Some('t'),
-        long: "time",
-        takes_value: true,
-        value_hint: Some("VAL"),
-        value_optional: false,
-        summary: "Time override (offset, HH:MM, 9:15am, or a date)",
-        long_description: None,
-        left_override: None,
-    },
-    FlagSpec {
-        short: Some('z'),
-        long: "timezone",
-        takes_value: true,
-        value_hint: Some("TZ"),
-        value_optional: false,
-        summary: "Timezone (IANA or UTC offset)",
-        long_description: None,
-        left_override: None,
-    },
-    FlagSpec {
-        short: Some('D'),
-        long: "full-day",
-        takes_value: false,
-        value_hint: None,
-        value_optional: false,
-        summary: "Date-only entry (no clock time)",
-        long_description: None,
-        left_override: None,
-    },
+    YESTERDAY,
+    QUICK,
+    DATE,
+    TIME,
+    TIMEZONE,
+    FULL_DAY,
     FlagSpec {
         short: Some('u'),
         long: "undo",
@@ -433,16 +469,7 @@ const LOG_FLAGS: &[FlagSpec] = &[
         long_description: None,
         left_override: None,
     },
-    FlagSpec {
-        short: Some('T'),
-        long: "no-timestamp",
-        takes_value: false,
-        value_hint: None,
-        value_optional: false,
-        summary: "Timeless note-data (create_time id, no occurrence)",
-        long_description: None,
-        left_override: None,
-    },
+    NO_TIMESTAMP,
     FlagSpec {
         short: None,
         long: "alias",
@@ -507,54 +534,18 @@ const LOG_FLAGS: &[FlagSpec] = &[
 /// which offers nowview under a `-t` pill. The text is `NOWVIEW_BODY`'s.
 const NOWVIEW_FLAGS: &[FlagSpec] = &[
     FlagSpec {
-        short: Some('t'),
-        long: "time",
-        takes_value: true,
-        value_hint: Some("TIME"),
-        value_optional: false,
         summary: "Centre the window on this instant",
-        long_description: None,
-        left_override: None,
+        ..TIME
     },
     FlagSpec {
-        short: Some('d'),
-        long: "date",
-        takes_value: true,
-        value_hint: Some("DATE"),
-        value_optional: false,
         summary: "Date of the instant",
-        long_description: None,
-        left_override: None,
+        ..DATE
     },
+    QUICK,
+    YESTERDAY,
     FlagSpec {
-        short: Some('q'),
-        long: "quick",
-        takes_value: false,
-        value_hint: None,
-        value_optional: false,
-        summary: "5 min back (stackable)",
-        long_description: None,
-        left_override: None,
-    },
-    FlagSpec {
-        short: Some('y'),
-        long: "yesterday",
-        takes_value: false,
-        value_hint: None,
-        value_optional: false,
-        summary: "A day back (stackable)",
-        long_description: None,
-        left_override: None,
-    },
-    FlagSpec {
-        short: Some('z'),
-        long: "timezone",
-        takes_value: true,
-        value_hint: Some("TZ"),
-        value_optional: false,
         summary: "Zone -t and -d are read in",
-        long_description: None,
-        left_override: None,
+        ..TIMEZONE
     },
 ];
 
@@ -599,46 +590,13 @@ const TAIL_FLAGS: &[FlagSpec] = &[
         long_description: None,
         left_override: None,
     },
+    DATE,
     FlagSpec {
-        short: Some('d'),
-        long: "date",
-        takes_value: true,
-        value_hint: Some("VAL"),
-        value_optional: false,
-        summary: "Date override",
-        long_description: None,
-        left_override: None,
-    },
-    FlagSpec {
-        short: Some('t'),
-        long: "time",
-        takes_value: true,
-        value_hint: Some("VAL"),
-        value_optional: false,
         summary: "Upper-bound time",
-        long_description: None,
-        left_override: None,
+        ..TIME
     },
-    FlagSpec {
-        short: Some('y'),
-        long: "yesterday",
-        takes_value: false,
-        value_hint: None,
-        value_optional: false,
-        summary: "Go back 1 day (stackable)",
-        long_description: None,
-        left_override: None,
-    },
-    FlagSpec {
-        short: Some('q'),
-        long: "quick",
-        takes_value: false,
-        value_hint: None,
-        value_optional: false,
-        summary: "Go back 5 min (stackable)",
-        long_description: None,
-        left_override: None,
-    },
+    YESTERDAY,
+    QUICK,
     FlagSpec {
         short: Some('w'),
         long: "watch",
@@ -860,55 +818,22 @@ const STATS_FLAGS: &[FlagSpec] = &[
         left_override: None,
     },
     FlagSpec {
-        short: Some('d'),
-        long: "date",
-        takes_value: true,
-        value_hint: Some("VAL"),
-        value_optional: false,
         summary: "A date names that whole day (unless --until)",
-        long_description: None,
-        left_override: None,
+        ..DATE
     },
     FlagSpec {
-        short: Some('t'),
-        long: "time",
-        takes_value: true,
-        value_hint: Some("VAL"),
-        value_optional: false,
         summary: "A time is a lower bound, like --since",
-        long_description: None,
-        left_override: None,
+        ..TIME
     },
     FlagSpec {
-        short: Some('z'),
-        long: "timezone",
-        takes_value: true,
-        value_hint: Some("TZ"),
-        value_optional: false,
         summary: "Zone the period boundaries are read in",
-        long_description: None,
-        left_override: None,
+        ..TIMEZONE
     },
     FlagSpec {
-        short: Some('y'),
-        long: "yesterday",
-        takes_value: false,
-        value_hint: None,
-        value_optional: false,
         summary: "Go back 1 day (stackable); a whole day",
-        long_description: None,
-        left_override: None,
+        ..YESTERDAY
     },
-    FlagSpec {
-        short: Some('q'),
-        long: "quick",
-        takes_value: false,
-        value_hint: None,
-        value_optional: false,
-        summary: "Go back 5 min (stackable)",
-        long_description: None,
-        left_override: None,
-    },
+    QUICK,
     FlagSpec {
         short: None,
         long: "include-false",
@@ -1245,17 +1170,304 @@ const ADD_SHARED_FLAGS: SharedFlags = SharedFlags {
 };
 
 /// `datum help <NAME>` pages that are not commands.
-pub const TOPICS: &[TopicSpec] = &[TopicSpec {
-    name: "logging",
-    summary: "the options every logging verb takes",
-    intro: "These are read by `add`, `note`, `occur`, `start`, `stop` and `switch`.\n\
-            Each verb's own page lists only what is particular to it.\n",
-    flags: LOG_FLAGS,
-    summary_col: 24,
-    outro: "\n`note` is the exception: it has no -C/--comment-remainder, because it\n\
-            always behaves as if -C had been given — every un-keyed word after\n\
-            the field joins extra_data.comment.\n",
-}];
+pub const TOPICS: &[TopicSpec] = &[
+    TopicSpec {
+        name: "logging",
+        summary: "the options every logging verb takes",
+        intro: "These are read by `add`, `note`, `occur`, `start`, `stop` and `switch`.\n\
+                Each verb's own page lists only what is particular to it.\n",
+        flags: LOG_FLAGS,
+        summary_col: 24,
+        forms: &[],
+        outro: "\n`note` is the exception: it has no -C/--comment-remainder, because it\n\
+                always behaves as if -C had been given — every un-keyed word after\n\
+                the field joins extra_data.comment.\n\
+                \n\
+                Every form -t, -d and a duration take: `datum help time`.\n",
+    },
+    TopicSpec {
+        name: "time",
+        summary: "every form a time, a date or a duration takes",
+        intro: "These say when an entry happened. Every command that takes a time reads\n\
+                them the same way, and its own page lists which of them it takes.\n",
+        flags: TIME_FLAGS,
+        summary_col: 24,
+        forms: TIME_FORMS,
+        outro: "\nNot taken: slash dates (9/28 is month-first or day-first depending on\n\
+                who types it), and words beyond the ones above (\"3 days ago at 10\").\n",
+    },
+];
+
+/// The examples on `datum help time` (da-6yqu9).
+/// `every_time_page_example_parses` runs each through the real parser.
+const TIME_FORMS: &[FormGroup] = &[
+    FormGroup {
+        heading: "TIME OF DAY (today)",
+        durations: false,
+        forms: &[
+            FormSpec {
+                example: "-t 15:13",
+                meaning: "15:13",
+            },
+            FormSpec {
+                example: "-t 1513",
+                meaning: "15:13: three or four digits are H:MM",
+            },
+            FormSpec {
+                example: "-t 9",
+                meaning: "09:00: one or two digits are an hour",
+            },
+            FormSpec {
+                example: "-t 15:13:45",
+                meaning: "with seconds",
+            },
+            FormSpec {
+                example: "-t 153045",
+                meaning: "15:30:45: five or six digits add seconds",
+            },
+            FormSpec {
+                example: "-t 9:15am",
+                meaning: "09:15",
+            },
+            FormSpec {
+                example: "-t 9:15a",
+                meaning: "09:15",
+            },
+            FormSpec {
+                example: "-t '9:15 am'",
+                meaning: "09:15",
+            },
+            FormSpec {
+                example: "-t 5pm",
+                meaning: "17:00",
+            },
+            FormSpec {
+                example: "-t now",
+                meaning: "this moment",
+            },
+        ],
+    },
+    FormGroup {
+        heading: "RELATIVE (from now: minutes, unless a unit is given)",
+        durations: false,
+        forms: &[
+            FormSpec {
+                example: "-t -8",
+                meaning: "8 minutes ago",
+            },
+            FormSpec {
+                example: "-t +5",
+                meaning: "5 minutes ahead",
+            },
+            FormSpec {
+                example: "-t -1.5h",
+                meaning: "an hour and a half ago",
+            },
+            FormSpec {
+                example: "-t -90s",
+                meaning: "units: s, m, h, d",
+            },
+            FormSpec {
+                example: "-t 10:00 -t +5",
+                meaning: "10:05: a relative -t stacks, as -q does",
+            },
+            FormSpec {
+                example: "-qqq",
+                meaning: "15 minutes ago: each q is 5",
+            },
+        ],
+    },
+    FormGroup {
+        heading: "DATES (at the current time of day; -t takes them too)",
+        durations: false,
+        forms: &[
+            FormSpec {
+                example: "-d -1",
+                meaning: "yesterday: -d counts days, -t minutes",
+            },
+            FormSpec {
+                example: "-d +1",
+                meaning: "tomorrow",
+            },
+            FormSpec {
+                example: "-d yesterday",
+                meaning: "also today, tomorrow",
+            },
+            FormSpec {
+                example: "-yy",
+                meaning: "two days ago: each y is a day",
+            },
+            FormSpec {
+                example: "-d sunday",
+                meaning: "the most recent Sunday, today included",
+            },
+            FormSpec {
+                example: "-d sun",
+                meaning: "the same",
+            },
+            FormSpec {
+                example: "-d 2026-09-28",
+                meaning: "",
+            },
+            FormSpec {
+                example: "-d sep28",
+                meaning: "the most recent September 28",
+            },
+            FormSpec {
+                example: "-d sep28-2025",
+                meaning: "September 28, 2025",
+            },
+            FormSpec {
+                example: "-d sep28@2025",
+                meaning: "the same",
+            },
+            FormSpec {
+                example: "-d sep28,2025",
+                meaning: "the same",
+            },
+            FormSpec {
+                example: "-t sunday",
+                meaning: "any of these but a number, which -t reads as a time",
+            },
+        ],
+    },
+    FormGroup {
+        heading: "A DATE AND A TIME (-t)",
+        durations: false,
+        forms: &[
+            FormSpec {
+                example: "-t '2026-09-28 10:00'",
+                meaning: "any date -t takes, a space, any time of day",
+            },
+            FormSpec {
+                example: "-t 'yesterday 10am'",
+                meaning: "",
+            },
+            FormSpec {
+                example: "-t 'sep28 22:30'",
+                meaning: "",
+            },
+            FormSpec {
+                example: "-t 2026-09-28T10",
+                meaning: "a T joins them as well",
+            },
+            FormSpec {
+                example: "-t 2026-09-28T10:00:00Z",
+                meaning: "ISO 8601 in UTC",
+            },
+            FormSpec {
+                example: "-t 2026-09-28T10:00+02:00",
+                meaning: "ISO 8601 with an offset",
+            },
+            FormSpec {
+                example: "-t 2026-09-28T10:00+0200",
+                meaning: "the same",
+            },
+            FormSpec {
+                example: "-d yesterday -t 10:00",
+                meaning: "10:00 yesterday: -d and -y move -t's day",
+            },
+            FormSpec {
+                example: "-y -t 9",
+                meaning: "09:00 yesterday",
+            },
+        ],
+    },
+    FormGroup {
+        heading: "MARKS (a suffix on -t or -d)",
+        durations: false,
+        forms: &[
+            FormSpec {
+                example: "-t 10:00+-5m",
+                meaning: "give or take 5 minutes",
+            },
+            FormSpec {
+                example: "-t 10:00±5m",
+                meaning: "the same",
+            },
+            FormSpec {
+                example: "-t 3+",
+                meaning: "the next 03:00, not today's if it has passed",
+            },
+            FormSpec {
+                example: "-t 18-",
+                meaning: "the last 18:00",
+            },
+            FormSpec {
+                example: "-d sunday+",
+                meaning: "the coming Sunday",
+            },
+        ],
+    },
+    FormGroup {
+        heading: "ZONE (what -t and -d are read in)",
+        durations: false,
+        forms: &[
+            FormSpec {
+                example: "-z America/Chicago -t 9",
+                meaning: "09:00 in Chicago",
+            },
+            FormSpec {
+                example: "-z UTC",
+                meaning: "",
+            },
+            FormSpec {
+                example: "-z +4",
+                meaning: "UTC+4, in hours",
+            },
+            FormSpec {
+                example: "-z UTC-7",
+                meaning: "",
+            },
+        ],
+    },
+    FormGroup {
+        heading: "DURATIONS (a trailing argument, or dur=: how long it LASTED, ending at -t)",
+        durations: true,
+        forms: &[
+            FormSpec {
+                example: "30",
+                meaning: "30 minutes: a bare number is minutes",
+            },
+            FormSpec {
+                example: "30m",
+                meaning: "also min, minute(s)",
+            },
+            FormSpec {
+                example: "90s",
+                meaning: "also sec, second(s)",
+            },
+            FormSpec {
+                example: "2h",
+                meaning: "also hr, hour(s)",
+            },
+            FormSpec {
+                example: "1d",
+                meaning: "also day(s)",
+            },
+            FormSpec {
+                example: "1.5h",
+                meaning: "an hour and a half",
+            },
+            FormSpec {
+                example: "1h30m",
+                meaning: "the same",
+            },
+            FormSpec {
+                example: "1:30",
+                meaning: "the same: H:MM",
+            },
+            FormSpec {
+                example: "1:15:30",
+                meaning: "H:MM:SS",
+            },
+            FormSpec {
+                example: "PT30M",
+                meaning: "ISO 8601",
+            },
+        ],
+    },
+];
 
 /// Look up a [`TopicSpec`] by name.
 pub fn find_topic(query: &str) -> Option<&'static TopicSpec> {

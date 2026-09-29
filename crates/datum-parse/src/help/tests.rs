@@ -111,10 +111,10 @@ OPTIONS:
   -m, --metric <M>      hybrid|occur|create|modify
   -r, --reverse         Invert ordering
       --column <NAME>   Extra extra_data column (repeatable)
-  -d, --date <VAL>      Date override
+  -d, --date <VAL>      Date override (offset, YYYY-MM-DD, sunday, apr29)
   -t, --time <VAL>      Upper-bound time
-  -y, --yesterday       Go back 1 day (stackable)
-  -q, --quick           Go back 5 min (stackable)
+  -y, --yesterday       Go back 1 day (stackable: -yy=2 days, ...)
+  -q, --quick           Go back 5 min (stackable: -qq=10 min, ...)
   -w, --watch [INT]     Live scrollable view; stream entries (poll 1s)
       --table           Legacy columnar view (default: info-line)
       --show-meta       (alias: --show-all-metadata)  Include flag/meta and spec/layout/alias/view/command/index entries (hidden by default)
@@ -799,7 +799,7 @@ fn help_json_flags_carry_help_and_takes_value() {
     assert_eq!(flag("t")["takes_value"], true);
     assert_eq!(
         flag("t")["help"],
-        "Time override (offset, HH:MM, 9:15am, or a date)"
+        "Time override (offset, HH:MM, 9:15am, a date, or both)"
     );
     assert_eq!(flag("q")["takes_value"], false);
     assert_eq!(flag("t")["value_optional"], false);
@@ -853,4 +853,72 @@ fn help_json_subcommands_are_the_parsers() {
         named, 6,
         "db, spec, alias, kit, config and completions name their set"
     );
+}
+
+// ---------------------------------------------------------------------------
+// `datum help time`, held to the parser (da-6yqu9).
+// ---------------------------------------------------------------------------
+
+/// The page's flag table is the time parser's flag set, in both directions:
+/// a flag the parser gains without a line here fails, and so does a line
+/// for a flag it no longer has.
+#[test]
+fn time_page_flags_are_the_parsers() {
+    let topic = super::commands::find_topic("time").expect("`datum help time`");
+    let mut page: Vec<_> = topic.flags.iter().map(|f| (f.short, f.long)).collect();
+    let mut parser: Vec<_> = crate::input::time_args::FLAG_SPECS
+        .iter()
+        .map(|f| (f.short, f.long.unwrap_or("")))
+        .collect();
+    page.sort();
+    parser.sort();
+    assert_eq!(page, parser);
+}
+
+/// The time args of `datum occur ping <argv>`, built against a fixed now.
+fn build_time_args(argv: &str) -> crate::Result<crate::input::time_args::TimeFromArgs> {
+    let crate::Cli {
+        command: crate::Command::Occur(args),
+        ..
+    } = crate::parse_argv_string(&format!("occur ping {argv}"))?
+    else {
+        panic!("`occur ping {argv}` is not an occur");
+    };
+    // A word the time flags left over (an unquoted `-t 9:15 am`) would
+    // parse as the entry's state, not as time.
+    assert!(args.rest.is_empty(), "`{argv}` leaves {:?} over", args.rest);
+    let now = crate::DatumTime::from_utc_and_tz(
+        "2020-05-10T15:25:30Z".parse().unwrap(),
+        "America/Chicago",
+    )?;
+    args.time.build(&now)
+}
+
+/// Every example on the page goes through the real parser, so the page
+/// cannot promise a form the parser does not take. A few non-forms are
+/// held to failing, so the check is not vacuous.
+#[test]
+fn every_time_page_example_parses() {
+    let topic = super::commands::find_topic("time").expect("`datum help time`");
+    let mut n = 0;
+    for group in topic.forms {
+        for f in group.forms {
+            let parsed = if group.durations {
+                crate::time::parse_duration(f.example).map(drop)
+            } else {
+                build_time_args(f.example).map(drop)
+            };
+            assert!(
+                parsed.is_ok(),
+                "`{}` on `datum help time`: {parsed:?}",
+                f.example
+            );
+            n += 1;
+        }
+    }
+    assert!(n > 40, "only {n} examples on the page");
+    for bad in ["-t 9/28", "-d 9/28", "-t '3 days ago at 10'", "-t 25:00"] {
+        assert!(build_time_args(bad).is_err(), "`{bad}` parsed");
+    }
+    assert!(crate::time::parse_duration("an hour").is_err());
 }

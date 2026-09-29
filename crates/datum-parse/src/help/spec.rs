@@ -182,6 +182,9 @@ pub struct TopicSpec {
     pub flags: &'static [FlagSpec],
     /// Column at which the flag summaries align, as [`CommandSpec::summary_col`].
     pub summary_col: usize,
+    /// Examples of the values those flags take, in groups after the
+    /// table. `datum help time` has them (da-6yqu9); empty for none.
+    pub forms: &'static [FormGroup],
     /// Prose after the option table, for the exceptions a shared set
     /// always has. Rendered verbatim; empty for none.
     pub outro: &'static str,
@@ -197,4 +200,20 @@ pub struct TopicSpec {
 pub struct EnvVarSpec {
     pub name: &'static str,
     pub summary: &'static str,
+}
+
+/// A group of accepted forms on a [`TopicSpec`] page, each shown by example.
+pub struct FormGroup {
+    pub heading: &'static str,
+    /// `true` when the examples are durations, which parse on their own;
+    /// otherwise each is argv as typed after a logging verb's field.
+    pub durations: bool,
+    pub forms: &'static [FormSpec],
+}
+
+/// One accepted form: an example exactly as typed, and what it means.
+/// A test runs every example through the real parser.
+pub struct FormSpec {
+    pub example: &'static str,
+    pub meaning: &'static str,
 }

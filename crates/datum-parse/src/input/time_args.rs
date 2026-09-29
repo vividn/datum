@@ -396,7 +396,7 @@ fn apply_time_arg(
     }
 
     Err(ParseError::InvalidTime(format!(
-        "Cannot parse time (NL-parsing not ported — see parity audit): '{s}'"
+        "cannot parse time '{s}' — see `datum help time`"
     )))
 }
 
@@ -424,7 +424,7 @@ fn apply_date_arg(
     }
 
     Err(ParseError::InvalidTime(format!(
-        "Cannot parse date (NL-parsing not ported — see parity audit): '{s}'"
+        "cannot parse date '{s}' — see `datum help time`"
     )))
 }
 
@@ -1188,5 +1188,83 @@ mod tests {
         let got = build(a);
         let u = got.uncertainty.unwrap();
         assert_eq!(u.seconds, 300);
+    }
+
+    // ── `<date> <time>` and ISO offsets (da-6yqu9) ─────────────────────
+    //
+    // Read in America/Chicago, where the reference is Sunday 2020-05-10
+    // 10:25:30 CDT (UTC-5), so a wall clock that were read as UTC would be
+    // five hours off.
+
+    fn time_in_chicago(t: &str) -> Result<TimeFromArgs> {
+        let a = TimeArgs {
+            time: Some(t.into()),
+            timezone: Some("America/Chicago".into()),
+            ..TimeArgs::default()
+        };
+        a.build(&reference_now())
+    }
+
+    #[test]
+    fn a_date_then_a_time_parses_in_the_local_zone() {
+        for (t, want) in [
+            // What failed before, each at the instant it names.
+            ("2026-09-28 10:00", "2026-09-28T15:00:00Z"),
+            ("2026-09-28 10:00:00", "2026-09-28T15:00:00Z"),
+            ("2026-09-28 10am", "2026-09-28T15:00:00Z"),
+            ("2026-09-28T10", "2026-09-28T15:00:00Z"),
+            ("sep28 10:00", "2019-09-28T15:00:00Z"),
+            ("sep28 22:30", "2019-09-29T03:30:00Z"),
+            ("sep28+ 22:30", "2020-09-29T03:30:00Z"),
+            ("yesterday 10:00", "2020-05-09T15:00:00Z"),
+            ("yesterday 10am", "2020-05-09T15:00:00Z"),
+            ("sunday 9:15 am", "2020-05-10T14:15:00Z"),
+            ("2026-09-28T10:00+02:00", "2026-09-28T08:00:00Z"),
+            ("2026-09-28T10:00+0200", "2026-09-28T08:00:00Z"),
+            ("2026-09-28 10:00+02:00", "2026-09-28T08:00:00Z"),
+            ("2026-09-28 10:00-0200", "2026-09-28T12:00:00Z"),
+            ("2026-09-28T10:00:30+02:00", "2026-09-28T08:00:30Z"),
+            ("2026-09-28T10:00:30+0200", "2026-09-28T08:00:30Z"),
+            // What parsed before, unchanged.
+            ("2026-09-28T10:00", "2026-09-28T15:00:00Z"),
+            ("2026-09-28T10:00:00", "2026-09-28T15:00:00Z"),
+            ("2026-09-28T10:00:00Z", "2026-09-28T10:00:00Z"),
+            ("2026-09-28", "2026-09-28T15:25:30Z"),
+            ("sep28", "2019-09-28T15:25:30Z"),
+            ("yesterday", "2020-05-09T15:25:30Z"),
+            ("10:00", "2020-05-10T15:00:00Z"),
+            ("10am", "2020-05-10T15:00:00Z"),
+            ("-3d", "2020-05-07T15:25:30Z"),
+        ] {
+            let got = time_in_chicago(t).unwrap_or_else(|e| panic!("{t:?}: {e}"));
+            let want: DateTime<Utc> = want.parse().unwrap();
+            assert_eq!(got.time.unwrap().utc, want, "-t {t:?}");
+        }
+    }
+
+    #[test]
+    fn a_date_then_a_time_keeps_a_trailing_uncertainty() {
+        let got = time_in_chicago("yesterday 10:00+-5m").unwrap();
+        assert_eq!(got.uncertainty.unwrap().seconds, 300);
+    }
+
+    #[test]
+    fn a_failure_points_at_the_time_help_page() {
+        // `09-28` is no date `-t` takes (it has no month-day form without
+        // a year), so its join does not parse either.
+        for t in [
+            "sep31 10:00",
+            "2026-09-28 25:00",
+            "09-28 10:00",
+            "10:00 sep28",
+        ] {
+            let err = time_in_chicago(t)
+                .err()
+                .unwrap_or_else(|| panic!("{t:?} parsed"));
+            assert_eq!(
+                err.to_string(),
+                format!("Invalid time: cannot parse time '{t}' — see `datum help time`"),
+            );
+        }
     }
 }

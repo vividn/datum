@@ -68,7 +68,43 @@ pub fn count_stacked_flag(s: &str, ch: char) -> Option<usize> {
 /// offsets require an explicit leading sign (`+2500` / `-2500`). That
 /// rejection is final: it must not reach the date fallback, where `2500`
 /// would read as a 2500-day offset.
+///
+/// What does not parse whole is tried as `<date> <time>` — see
+/// [`parse_date_then_time`].
 pub fn parse_time(s: &str, ctx: TimeCtx) -> Result<TimeArg> {
+    parse_whole(s, ctx).or_else(|e| parse_date_then_time(s, ctx).ok_or(e))
+}
+
+/// `<date> <time>` (da-6yqu9): any date `-t` accepts, then any time of day
+/// it accepts, joined by a space or a `T` — `2026-09-28 10:00`,
+/// `sep28 22:30`, `yesterday 10am`, `2026-09-28T10`. Both halves go through
+/// [`parse_whole`], so it adds no formats of its own and every form either
+/// half learns joins without more work. It runs only on what does not parse
+/// whole, so nothing that parsed before reads differently. A trailing
+/// uncertainty belongs to the time half (`yesterday 10:00±5m`).
+fn parse_date_then_time(s: &str, ctx: TimeCtx) -> Option<TimeArg> {
+    s.char_indices()
+        .filter(|&(_, c)| matches!(c, ' ' | 'T' | 't'))
+        .find_map(|(i, _)| {
+            let date = parse_whole(&s[..i], ctx).ok()?.date?;
+            let time = parse_whole(&s[i + 1..], ctx).ok()?;
+            let day = match date.absolute {
+                Some(d) => d,
+                None => ctx.reference?.date() + Duration::days(date.days_offset),
+            };
+            Some(TimeArg {
+                offset: None,
+                absolute: None,
+                iso_instant: None,
+                iso_naive: Some(day.and_time(time.absolute?)),
+                date: None,
+                uncertainty: time.uncertainty,
+                direction: time.direction,
+            })
+        })
+}
+
+fn parse_whole(s: &str, ctx: TimeCtx) -> Result<TimeArg> {
     // Direction suffix (`+` / `-`) sits at the very tail, after any
     // uncertainty marker. Strip it first so `3±5m+` and `3+` both work.
     let (s_no_dir, direction) = split_direction_suffix(s)?;
@@ -88,11 +124,17 @@ pub fn parse_time(s: &str, ctx: TimeCtx) -> Result<TimeArg> {
         });
     }
 
-    // ISO-8601 datetime: `YYYY-MM-DDTHH:MM[:SS[.frac]][Z|±HH:MM]`. We detect
-    // the `T` separator (or space) preceded by a date prefix before trying
+    // ISO-8601 datetime: `YYYY-MM-DDTHH:MM[:SS[.frac]][Z|±HH:MM|±HHMM]`,
+    // a space standing for the `T`. We detect the date prefix before trying
     // the time-only branches, so the date portion isn't misread as a number.
+    // What none of these formats takes (`2026-09-28T10`) falls through to
+    // `<date> <time>`.
     if looks_like_iso_datetime(primary) {
-        if let Ok(dt) = DateTime::parse_from_rfc3339(primary) {
+        let iso = format!("{}T{}", &primary[..10], &primary[11..]);
+        let with_offset = DateTime::parse_from_rfc3339(&iso)
+            .or_else(|_| DateTime::parse_from_str(&iso, "%Y-%m-%dT%H:%M:%S%.f%z"))
+            .or_else(|_| DateTime::parse_from_str(&iso, "%Y-%m-%dT%H:%M%z"));
+        if let Ok(dt) = with_offset {
             return Ok(TimeArg {
                 offset: None,
                 absolute: None,
@@ -108,7 +150,7 @@ pub fn parse_time(s: &str, ctx: TimeCtx) -> Result<TimeArg> {
             "%Y-%m-%dT%H:%M:%S",
             "%Y-%m-%dT%H:%M",
         ] {
-            if let Ok(naive) = NaiveDateTime::parse_from_str(primary, fmt) {
+            if let Ok(naive) = NaiveDateTime::parse_from_str(&iso, fmt) {
                 return Ok(TimeArg {
                     offset: None,
                     absolute: None,
@@ -120,9 +162,6 @@ pub fn parse_time(s: &str, ctx: TimeCtx) -> Result<TimeArg> {
                 });
             }
         }
-        return Err(ParseError::InvalidTime(format!(
-            "Cannot parse ISO-8601 datetime: '{s}'"
-        )));
     }
 
     // Relative offset: an explicit leading sign opts in. The magnitude is
@@ -236,7 +275,9 @@ pub fn parse_time(s: &str, ctx: TimeCtx) -> Result<TimeArg> {
         });
     }
 
-    Err(ParseError::InvalidTime(format!("Cannot parse time: '{s}'")))
+    Err(ParseError::InvalidTime(format!(
+        "cannot parse time '{s}' — see `datum help time`"
+    )))
 }
 
 /// Cheap heuristic for ISO-8601 datetime: at least 11 chars, dashes at

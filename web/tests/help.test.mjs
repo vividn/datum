@@ -126,7 +126,7 @@ describe('the Help button', () => {
 			await t.waitFor();
 			const { title, lines } = await explain(page, t);
 			assert.equal(title, 'datum occur -t');
-			assert.deepEqual(lines, ['Time override (offset, HH:MM, 9:15am, or a date)']);
+			assert.deepEqual(lines, ['Time override (offset, HH:MM, 9:15am, a date, or both)']);
 			assert.equal(await page.locator('.prompt-bar input').inputValue(), 'occur ', '-t was appended');
 			await dismiss(page);
 			assert.equal(await page.locator('.bar.commands button[data-back]').count(), 1, 'Escape left the flags too');

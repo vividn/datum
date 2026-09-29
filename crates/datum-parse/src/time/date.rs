@@ -114,7 +114,9 @@ pub fn parse_date(s: &str, ctx: TimeCtx) -> Result<DateArg> {
         });
     }
 
-    Err(ParseError::InvalidTime(format!("Cannot parse date: '{s}'")))
+    Err(ParseError::InvalidTime(format!(
+        "cannot parse date '{s}' — see `datum help time`"
+    )))
 }
 
 /// Match `<mmm><1-2 digit day>` with an optional `-YYYY` or `@YYYY` tail.
