@@ -48,11 +48,27 @@ pub fn validate_field_name(field: &str) -> Result<()> {
 /// written for a field that has none (`track`, `spec add-state`, a kit's
 /// `[[field]]`) — not in
 /// [`validate_field_name`], which a restore writes through too, so a row
-/// that already holds one stays restorable. Whitespace stays allowed.
+/// that already holds one stays restorable. Spaces stay allowed; an ASCII
+/// control character (`\n`, `\t`, the C0 range, DEL) is refused the same
+/// way, since every line- and tab-separated surface — `tail`, `fields`, the
+/// shell completion's `value<TAB>description` — breaks on it (da-fi2vu).
+/// The C1 range is not: `tests/fixtures/field-name.json` accepts U+0085.
 pub fn validate_new_field_name(field: &str) -> Result<()> {
     if field.contains(',') {
         return Err(DatumError::InvalidFieldSpec(format!(
             "field name cannot contain ',' (got {field:?})"
+        )));
+    }
+    if let Some(c) = field.chars().find(char::is_ascii_control) {
+        let name = match c {
+            '\n' => "a newline",
+            '\r' => "a carriage return",
+            '\t' => "a tab",
+            _ => "a control character",
+        };
+        return Err(DatumError::InvalidFieldSpec(format!(
+            "field name cannot contain {name} (U+{:04X}): {field:?}",
+            c as u32
         )));
     }
     Ok(())

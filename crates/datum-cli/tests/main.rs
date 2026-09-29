@@ -48,6 +48,7 @@ mod e2e_subprocess;
 mod env_table_coverage;
 mod field_key_slot;
 mod field_name_commas;
+mod field_name_controls;
 mod fields_cmd;
 mod float_roundtrip;
 mod get_cmd;
