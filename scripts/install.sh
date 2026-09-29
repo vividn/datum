@@ -2,12 +2,15 @@
 #
 # Install (or upgrade) the `datum` CLI from this checkout.
 #
-# `datum` is pre-release and not on crates.io, so the workspace version
-# stays fixed across builds. `cargo install` skips overwriting a binary
-# of the same version, so a plain install silently no-ops once datum is
-# already on your PATH. `--force` is the right idiom for a from-source
-# pre-release tool: it always overwrites, so this doubles as the upgrade
-# command.
+# A `--path` install always builds and installs, replacing the `datum`
+# cargo installed before, whatever its version or source (another path,
+# `--git`), so this doubles as the upgrade: `git pull && scripts/install.sh`.
+# `datum --version` names the commit it was built from. No `--force`: the
+# only case it changes is a `datum` in the install root that cargo did not
+# put there (copied by hand, or another package's), which cargo refuses to
+# overwrite rather than clobber — remove that file and run this again.
+# `--locked` builds exactly the versions in `Cargo.lock`, the ones CI
+# tested, and fails if the lockfile is out of date instead of re-resolving.
 #
 # Then it installs tab completion for your shell (`datum completions
 # install`), which `cargo install` has no hook for. `--no-completions`
@@ -24,7 +27,7 @@ for arg in "$@"; do
   esac
 done
 
-cargo install --path "$repo_root/crates/datum-cli" --force
+cargo install --path "$repo_root/crates/datum-cli" --locked
 
 if [ "$completions" = 1 ]; then
   datum="${CARGO_INSTALL_ROOT:-${CARGO_HOME:-$HOME/.cargo}}/bin/datum"

@@ -21,7 +21,7 @@ Use it on a database you can afford to throw away.
 There are no published binaries yet. From a checkout:
 
 ```bash,no_run
-cargo install --path crates/datum-cli --force
+cargo install --path crates/datum-cli --locked
 ```
 
 Or run the equivalent helper, which is also the one-command upgrade:
@@ -37,10 +37,17 @@ into the directory your shell loads completions from). Skip that with
 uninstall`. The installed script only asks `datum` for its answers, so an
 upgrade never needs a reinstall.
 
-The `--force` flag is required: `datum` is pre-release and not on
-crates.io, so the workspace version stays fixed across builds. Without
-`--force`, `cargo install` sees the same version already installed and
-silently does nothing — your binary would never update.
+To upgrade, `git pull && scripts/install.sh`. A `--path` install always
+builds and installs, replacing the `datum` cargo installed before even
+at the same version, and `datum --version` shows the commit it was built
+from — `3.beta.<height> (<sha7>)` — to confirm it. `--locked` builds
+exactly the dependency versions in `Cargo.lock`, the ones CI tested.
+
+If cargo says ``binary `datum` already exists in destination``, that
+file is not one cargo installed from `datum-cli` (it was copied there by
+hand, say); remove it and install again. And an alias or another `datum`
+earlier on your `PATH` — `alias datum=target/release/datum`, for one —
+shadows the installed binary: `type datum` says which one runs.
 
 ## Quickstart
 
