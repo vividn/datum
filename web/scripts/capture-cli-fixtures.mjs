@@ -27,7 +27,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { comparable, fromBackupRow } from '../tests/support/semantics.mjs';
 import { masker } from '../tests/support/stdout.mjs';
@@ -38,8 +38,9 @@ const repo = fileURLToPath(new URL('../..', import.meta.url));
 
 function datumBinary() {
 	if (process.env.DATUM_BIN) return process.env.DATUM_BIN;
+	const target = resolve(repo, process.env.CARGO_TARGET_DIR || 'target');
 	for (const profile of ['release', 'debug']) {
-		const candidate = join(repo, 'target', profile, 'datum');
+		const candidate = join(target, profile, 'datum');
 		try {
 			execFileSync(candidate, ['--version'], { stdio: 'ignore' });
 			return candidate;

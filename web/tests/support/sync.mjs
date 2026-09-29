@@ -14,7 +14,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { until } from './until.mjs';
 
@@ -81,8 +81,11 @@ export const relayed = (relay) => (context) =>
  */
 function datumBinary() {
 	if (process.env.DATUM_BIN) return process.env.DATUM_BIN;
+	// Where `cargo build` put it: CARGO_TARGET_DIR, relative to the repo root
+	// when relative, as mq-check runs cargo there (da-0cdib).
+	const target = resolve(repo, process.env.CARGO_TARGET_DIR || 'target');
 	for (const profile of ['debug', 'release']) {
-		const candidate = join(repo, 'target', profile, 'datum');
+		const candidate = join(target, profile, 'datum');
 		if (existsSync(candidate)) return candidate;
 	}
 	throw new Error('no `datum` binary found — run `cargo build -p datum-cli` or set DATUM_BIN');
