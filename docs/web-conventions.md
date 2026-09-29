@@ -159,24 +159,22 @@ writing it down.
    not its name on a list but whether the function a test wants reaches the DOM or the seam:
    `fileargv.ts` states the predicate about itself — *“Pure and import-free, so node tests it as
    it is”* — and it is the sentence to write at the top of the next one.
-   Seventeen modules are imported into node by the suite today (2026-09-22): `commands.ts`,
-   `detent.ts`, `echo.ts`, `fields.ts`, `fileargv.ts`, `inspect.ts`, `lanes.ts`, `nowpoint.ts`,
-   `scrollback.ts`, `selection.ts`, `stats.ts`, `track.ts`, `wasiFs.ts` and `layout/`'s
-   `defaults.ts`, `draft.ts`, `registry.ts`, `tree.ts`. A module reaching a `.svelte` import is
-   no obstacle:
-   `tests/support/libhook.mjs` stubs those out and rewrites `$lib/x.js` to the source's `x.ts`,
-   which is how `registry.ts` is node-testable at all.
-   ⚠ *Being named here and being callable are two different claims, and this line was wrong in
-   both directions. Of its nine names only three — `fields.ts`, `commands.ts`, `fileargv.ts` —
-   are node-tested; thirteen that are do not appear. `panes.ts` imports cleanly but no node
-   test calls it — `stats.ts` was the same until `tests/stats-pure.test.mjs` (da-vpuxg). And
-   `tail.ts`, `bar.ts`, `cursor.ts` and `dbio.ts` cannot be imported into node at all as the
-   suite stands: each reaches `$app/environment` through
-   `run.ts` / `database.ts` / `changes.ts`, which node cannot resolve and `libhook.mjs` does not
-   stub. Stubbing `$app` would let the first three in — that, and an inventory test that simply
-   RUNS this predicate instead of listing its members, is da-mgxdt.*
-   `dbio.ts` is the one a stub would not save, and that is the module doing its job rather than
-   breaking the rule: *“the browser's file dialog IS the command's stdin and a download IS its
+   Which modules the suite imports into node is whatever a node-side test imports from
+   `../src/lib/`; this section keeps no roster of them, because its last one was wrong in both
+   directions and its next was stale within a week.
+   A module reaching a `.svelte` import or `$app/environment` is no obstacle:
+   `tests/support/libhook.mjs` stubs the first out, gives the second `browser = false` — the
+   honest value in node — and rewrites `$lib/x.js` to the source's `x.ts`, which is how
+   `registry.ts` is node-testable at all, and how `cursor.ts`, `tail.ts` and `bar.ts` became so
+   (da-mgxdt; `tests/cursor-pure.test.mjs`).
+   ⚠ *Importing is not the predicate.* With `$app` stubbed, 63 of the 66 tracked `.ts` under
+   `src/lib/` load in node (2026-09-28; the three that do not are `cli.ts` and `db.worker.ts`, which
+   instantiate the wasm, and `sample.ts`, which imports a `.toml`) — `run.ts` and `dbio.ts`
+   among them. Loading says nothing about whether the function a test wants reaches the DOM or
+   the seam, which is why da-mgxdt did not add a snapshot of which modules load: it would record
+   nearly everything and certify nothing.
+   `dbio.ts` is the one that loads and is still not callable, and that is the module doing its
+   job rather than breaking the rule: *“the browser's file dialog IS the command's stdin and a download IS its
    stdout”*. The dependence is isolated to `pick()`, a NON-exported helper that builds an
    `<input type="file">` — with `$app` stubbed, `fileCommand(['tail'])` returns `null` with no DOM
    at all, while `fileCommand(['db','restore','-'])` throws `document is not defined`. So the
