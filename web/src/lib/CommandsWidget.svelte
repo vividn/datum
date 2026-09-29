@@ -49,6 +49,9 @@
 	  `db backup` and `db restore` open the «Backups» sheet instead
 	  (da-9ow8m, $lib/backups.ts) — drawn, as Help is, in a SINGLE outline
 	  of the accent: they open something, and run nothing.
+	- `Sync` opens the sync PLACE, a tab beside this one (da-6du3o,
+	  `openPlace`), rather than drilling into its nineteen subcommands,
+	  which live in that widget's Advanced section. Outlined once, too.
 	- HOLDING a command with flags (da-st2xl, `$lib/hold.ts`) fills it as a
 	  tap does, and the bar becomes `< Back`, Help and its flags
 	  (`flagsOf`). A flag's tap appends it to the line; one that takes a
@@ -90,6 +93,7 @@
 	} from './commands.js';
 	import { act, type ActKind } from './act.js';
 	import { openBackups } from './backups.js';
+	import { openPlace } from './layout/shell.js';
 	import { arm, helping } from './help.js';
 	import { holds } from './hold.js';
 	import { withPills } from './selection.js';
@@ -104,7 +108,7 @@
 	export let redoable = false;
 
 	/** The presses whose kind is theirs whatever is loaded. */
-	const FIXED: Partial<Record<Press, ActKind>> = { run: 'run', help: 'arm', back: 'show', flag: 'fill', sheet: 'open' };
+	const FIXED: Partial<Record<Press, ActKind>> = { run: 'run', help: 'arm', back: 'show', flag: 'fill', sheet: 'open', place: 'show' };
 
 	const dispatch = createEventDispatcher<{
 		run: string[];
@@ -152,6 +156,7 @@
 	function press(command: CommandButton): void {
 		if (command.press === 'back') back();
 		else if (command.press === 'sheet') void openBackups(command.name === 'db restore' ? 'restore' : 'plans');
+		else if (command.press === 'place') void openPlace(command.name);
 		else if (command.press === 'flag') dispatch('flag', { command: flagged!, flag: command.name, keyboard: command.next === 'type' });
 		else if (kindOf(command) === 'show') open = command.name;
 		else if (kindOf(command) === 'run') dispatch('run', [command.name]);
@@ -246,11 +251,11 @@
 		<button
 			class="command"
 			use:act={kindOf(command)}
-			class:opens={command.press === 'sheet'}
+			class:opens={command.press === 'sheet' || command.press === 'place'}
 			{disabled}
 			data-command={command.name}
 			data-holds={!open && hasFlags(grammar, command.name) ? '' : undefined}
-			title={kindOf(command) === 'run' ? `run ${command.name}` : command.press === 'sheet' ? 'open Backups' : `${command.name} …`}
+			title={kindOf(command) === 'run' ? `run ${command.name}` : command.press === 'sheet' ? 'open Backups' : command.press === 'place' ? `open ${command.label}` : `${command.name} …`}
 			on:click={() => press(command)}
 		>
 			{command.label}

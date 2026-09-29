@@ -429,3 +429,17 @@ rule is decided but not yet everywhere, it names the bead.
 30. **Logging the current state again is a record, not a duplicate.** A tap on the state a
     field is already in logs it again: that's someone confirming it after a forgotten record
     (vividn, 2026-09-25: «it happens all the time»). Never suppress it.
+
+## Places and questions
+
+31. **A modal asks; a place is a tab** (da-6du3o; vividn, 2026-09-29: «Every modal is also a
+    widget that can be put into a layout or as its own tab»). A QUESTION — `Confirm`, `Ask`, the
+    passkey prompt — blocks until it is answered, and nobody pins one in a layout, so it stays a
+    modal. A PLACE — Sync today; Backups, the field editor and Help to follow, one bead each — is
+    a widget kind in `layout/registry.ts`, and `openPlace(kind)` (`layout/shell.ts`) is the one way
+    to reach it: it brings forward the root tab already holding that kind, or opens a TRANSIENT
+    one immediately right of the tab you are on and slides onto it (a fade under
+    `prefers-reduced-motion`). A transient tab is italic and written nowhere, like a preview;
+    leaving it by any road — a swipe back, the browser's back, a tap on another tab — closes it,
+    and `Keep tab` keeps it in this device's open list. So there is one way to reach a place and
+    one host to test it in, and the same place dropped into a pane is just the widget.

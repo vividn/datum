@@ -247,8 +247,16 @@
 	 */
 	const doToggleLock = () => id !== undefined && toggleLock(id);
 
+	/**
+	 * `Keep tab` (da-xamd), next to the Close that is the other answer to a
+	 * preview: only a preview has it, because only a preview is not kept
+	 * already. A PLACE (da-6du3o) is one, and opens locked, being shipped —
+	 * so a lock does not take it away: keeping writes nothing into the tree.
+	 */
+	$: keep = preview ? [{ label: 'Keep tab', run: () => void attempt(async () => id !== undefined && keepTab(id)) }] : [];
+
 	$: all = locked
-		? [...options, ...(acts ? layoutActs(acts) : [])]
+		? [...options, ...(acts ? layoutActs(acts) : []), ...keep]
 		: menuItems({
 				choose: () => id !== undefined && void fillTab(id),
 				// The same rule a pane's frame reads, and it is about SHAPE: a
@@ -264,10 +272,7 @@
 				split: { what: 'split: a new pane', run: (t) => apply((l) => addEdge(l, SIDE[t])) },
 				close: { label: 'Close tab', disabled: tabs.length < 2, run: () => close($layout.root.active) },
 				acts,
-				// `Keep tab` (da-xamd), next to the Close that is the other
-				// answer to a preview: only a preview has it, because only a
-				// preview is not kept already.
-				extra: preview ? [{ label: 'Keep tab', run: () => void attempt(async () => id !== undefined && keepTab(id)) }] : []
+				extra: keep
 			});
 
 	/**

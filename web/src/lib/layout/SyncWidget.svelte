@@ -9,6 +9,10 @@
 
 	Every CLI read is $lib/syncView.ts's. The actions (da-bjxts) go in the
 	two empty `.actions` slots: a database's header, and a device's row.
+
+	It is a PLACE (da-6du3o): the commands widget's one `Sync` button opens
+	it as a tab, so the raw `sync` subcommands the widget stood in for are
+	here, under Advanced, each filling `sync <sub> ` on the line.
 -->
 <script lang="ts">
 	import { browser } from '$app/environment';
@@ -19,6 +23,9 @@
 	import { listDatabases } from '$lib/databases.js';
 	import { syncStates } from '$lib/sync.js';
 	import { readSync, table, type DbSync, type Mark } from '$lib/syncView.js';
+	import { act } from '$lib/act.js';
+	import { prefill } from '$lib/bar.js';
+	import { grammar } from './engine.js';
 
 	export let epoch = 0;
 
@@ -119,6 +126,18 @@
 			<span class="coming" title="partial sync: coming">⛛{#if full}&nbsp;partial (coming){/if}</span>
 			<span class="coming" title="read-only: coming">🔒︎{#if full}&nbsp;read-only (coming){/if}</span>
 		</p>
+		<details class="advanced">
+			<summary>Advanced</summary>
+			{#each $grammar?.get('sync')?.subcommands ?? [] as sub (sub)}
+				<button
+					type="button"
+					class="control"
+					use:act={'fill'}
+					data-command="sync {sub}"
+					on:click={() => prefill.set({ line: `sync ${sub} `, keyboard: true })}>{sub}</button
+				>
+			{/each}
+		</details>
 	</div>
 </Pane>
 
@@ -209,6 +228,19 @@
 		white-space: normal;
 		color: var(--ink);
 		text-align: left;
+	}
+	.advanced {
+		margin-top: 0.5rem;
+		font-size: 0.85em;
+	}
+	.advanced summary {
+		color: var(--muted);
+		cursor: pointer;
+	}
+	.advanced button {
+		margin: 0.3rem 0.3rem 0 0;
+		padding: 0.1rem 0.5rem;
+		min-height: 24px;
 	}
 	.legend {
 		display: flex;

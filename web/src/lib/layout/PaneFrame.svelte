@@ -186,7 +186,7 @@
 	import { isSplit } from './types.js';
 	import { apply, layout } from './current.js';
 	import { choose, fillTab, put } from './chooser.js';
-	import { ancestorsOf, modified, resetLayout, resetWidget, restore, save, saveAs, shippedTree, toggleLock } from './shell.js';
+	import { ancestorsOf, modified, resetLayout, resetWidget, restore, save, saveAs, shippedTree, sliding, toggleLock } from './shell.js';
 	import { addTab, breakOut, canBreakOut, closeTab, newTab, setActive, setBar, setTitle, splitPane, splitTab } from './tree.js';
 	import { inForce, toggleMaximize } from './maximize.js';
 	import { labelOf, titleOf } from './registry.js';
@@ -677,6 +677,46 @@
 		peek = -1;
 	}
 
+	/** A slide the shell asked for is under way: the strip stands a box apart before it moves. */
+	let arriving = false;
+	/** The crossfade that stands in for a slide under reduced motion. */
+	let fading = false;
+	/** The tab asked for while a slide was under way: slid to when it lands. */
+	let queued: string | null = null;
+
+	/**
+	 * A slide the SHELL asks for (`sliding`, da-6du3o) — a place coming in
+	 * from the right, or going back to the tab it opened beside — is a
+	 * swipe's release without the finger: the neighbour is set a box away
+	 * first, so the glide starts from there. Under reduced motion, a fade.
+	 * One at a time: a request during a slide waits for it, and is found by
+	 * its id once the slide's own close has moved the indices.
+	 */
+	$: if (root && $sliding !== null) void goTo($sliding);
+
+	async function goTo(id: string) {
+		sliding.set(null);
+		if (arriving) return void (queued = id);
+		const index = pane.tabs.findIndex((t) => t.id === id);
+		if (!inRange(index) || index === pane.active) return;
+		if (still()) {
+			fading = true;
+			return activate(index);
+		}
+		peek = index;
+		arriving = true;
+		await tick();
+		// The strip's resting place is computed before the transition goes on.
+		void contentEl?.offsetWidth;
+		await slide(index, index > pane.active ? -1 : 1);
+		arriving = false;
+		// After the tick that closes a place left behind, so the id is found where it now is.
+		await tick();
+		const next = queued;
+		queued = null;
+		if (next !== null) void goTo(next);
+	}
+
 	/** Move the content to `to` with the transition on, and wait it out. */
 	async function glide(to: number): Promise<void> {
 		if (offset === to) return;
@@ -866,7 +906,9 @@
 	<div
 		class="content"
 		class:gliding
-		class:moving={offset !== 0 || gliding}
+		class:moving={offset !== 0 || gliding || arriving}
+		class:fading
+		on:animationend={() => (fading = false)}
 		bind:this={contentEl}
 		style:--front="translate{vertical ? 'Y' : 'X'}({offset}px)"
 		style:--beside="translate{vertical ? 'Y' : 'X'}(calc({offset}px + {peek > pane.active ? 100 : -100}%))"
@@ -1447,6 +1489,15 @@
 	}
 	.content.gliding > :global(.tab-body:is(:not(.behind), .beside)) {
 		transition: transform var(--slide) ease-out;
+	}
+	/* Under reduced motion a place arrives or leaves by a fade (da-6du3o). */
+	.content.fading {
+		animation: fade var(--slide) ease-out;
+	}
+	@keyframes fade {
+		from {
+			opacity: 0;
+		}
 	}
 	/* A pane dragged down to its frame (da-zh2o) shows nothing of its
 	   widget outside it — the body's own padding included. A widget with

@@ -172,7 +172,7 @@ describe('the bar of commands', () => {
 				'add'
 			]);
 			assert.equal(buttons[8], 'note', 'note is on the bar, after the verbs (da-8ru0m)');
-			assert.ok(buttons.includes('sync'), 'the tail of the list is drawn too');
+			assert.ok(buttons.includes('Sync'), 'the tail of the list is drawn too');
 		});
 	});
 

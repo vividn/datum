@@ -40,7 +40,9 @@ export type Press =
 	/** Append the flag to the line (da-st2xl). */
 	| 'flag'
 	/** Open the «Backups» sheet ($lib/backups.ts, da-9ow8m): `db backup`, and `db restore` at its list. */
-	| 'sheet';
+	| 'sheet'
+	/** Open the command's PLACE, a top-level tab (`openPlace`, da-6du3o): `sync`. */
+	| 'place';
 
 export interface CommandButton {
 	/** The CLI word — what runs, and what goes on the line. */
@@ -123,7 +125,10 @@ export const COMMANDS: CommandButton[] = [
 		'dayview',
 		'nowview'
 	]),
-	...fills('db', ['sync', 'db', 'conflicts'])
+	// One button for sync, which opens its place (da-6du3o): its nineteen
+	// subcommands are in that widget's Advanced section.
+	{ name: 'sync', label: 'Sync', press: 'place', section: 'db' },
+	...fills('db', ['db', 'conflicts'])
 ];
 
 /**

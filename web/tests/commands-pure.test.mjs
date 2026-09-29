@@ -84,7 +84,12 @@ describe('the commands, in order', () => {
 		assert.equal(pressOf('undo'), 'run');
 		assert.equal(pressOf('help'), 'help');
 		for (const verb of VERBS) assert.equal(pressOf(verb), 'verb', verb);
-		for (const name of ['tail', 'db', 'sync']) assert.equal(pressOf(name), 'fill', name);
+		for (const name of ['tail', 'db']) assert.equal(pressOf(name), 'fill', name);
+	});
+
+	// da-6du3o: one button, Sync, opening its place rather than drilling into nineteen.
+	test('sync is one button that opens its place', () => {
+		assert.deepEqual(COMMANDS.find((c) => c.name === 'sync'), { name: 'sync', label: 'Sync', press: 'place', section: 'db' });
 	});
 });
 

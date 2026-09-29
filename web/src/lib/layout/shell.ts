@@ -64,6 +64,13 @@
 // exclusion can be honest: every change to the tree comes back through
 // there. `Keep tab` is the door out, and it is a save under the name.
 //
+// A PLACE (da-6du3o) is a preview of a name that already means something:
+// `openPlace` puts a widget kind's built-in layout beside the tab you were
+// on, and it closes itself when you leave it. `Keep tab` keeps it, and
+// that is no save — the name is the built-in's already — only the tab
+// joining this device's open list. «A modal asks; a place is a tab»
+// (docs/web-conventions.md).
+//
 // A nested tab takes the id `inline` gives it — the saved root pane's,
 // re-minted where it is taken — rather than the id the outer tree had for
 // it, because `extract` rebuilds the root pane from the tab's own id, and
@@ -78,7 +85,7 @@ import { onExternalChange } from '$lib/changes.js';
 import { currentDb } from '$lib/database.js';
 import { initDb } from '$lib/db.js';
 import type { Layout, NodeId, Pane, Split, Tab, Widget } from './types.js';
-import { LAYOUT_VERSION, isSplit } from './types.js';
+import { LAYOUT_VERSION, isSplit, isWidget } from './types.js';
 import { apply, layout, loaded } from './current.js';
 import {
 	ALIASES,
@@ -434,12 +441,18 @@ export const previews = writable<Set<string>>(new Set());
 /** Whether `name` is open as a preview: what the italics and `Keep tab` read. */
 export const isPreview = (name: string): boolean => get(previews).has(name);
 
-const forget = (name: string) =>
+/** The previews that are PLACES (`openPlace`): closed when left, kept without a save. */
+const places = new Set<string>();
+
+const forget = (name: string) => {
+	places.delete(name);
+	if (pushedFor === name) pushedFor = null;
 	previews.update((open) => {
 		const rest = new Set(open);
 		rest.delete(name);
 		return rest;
 	});
+};
 
 export const rootTabs = (l: Layout): Tab[] => l.root.tabs;
 
@@ -610,6 +623,7 @@ export function boot(): Promise<void> {
 		// so a phone turned or widened later does not reopen as a desktop.
 		if (!stored) settle();
 		loaded.set(true);
+		addEventListener('popstate', onPopState);
 		onExternalChange(followSaves, '_internal');
 		// A kit installed in another tab — into the data db — changes what
 		// the names mean here too. This page's data db (da-vk1x): under
@@ -638,6 +652,7 @@ function settle(): void {
 	// real layout that later took it a preview: italic, kept out of the open
 	// list, and passed over by `followSaves`.
 	const carried = new Set(layoutTabs($layout).map((t) => t.layout as string));
+	for (const name of places) if (!carried.has(name)) places.delete(name);
 	if ([...shown].some((name) => !carried.has(name))) {
 		// That write runs this again, with the set it leaves behind.
 		previews.set(new Set([...shown].filter((name) => carried.has(name))));
@@ -811,14 +826,112 @@ export async function openPreview(name: string, from: string): Promise<string | 
  * preview: one act under two names, because what the reader is doing is
  * keeping the tab and what the shell is doing is writing the layout.
  */
-export const keepTab = save;
+export async function keepTab(tabId: NodeId): Promise<void> {
+	const name = copyOf(tabId)?.layout;
+	// A place's name means its built-in already: keeping it is joining the open list.
+	if (name !== undefined && places.has(name)) forget(name);
+	else await save(tabId);
+}
 
+/**
+ * Bring root tab `index` to the front. From a PLACE (da-6du3o) it is not
+ * immediate: the root frame slides there, as a swipe back does, and the
+ * place closes when the slide lands.
+ */
 export const activate = (index: number) => {
 	// «coming back should unmaximize the pane» (vividn, da-00am): leaving the
 	// layout drops the maximize, so the tab returned to is drawn whole.
 	unmaximize();
-	apply((l) => setActive(l, l.root.id, index));
+	// Leaving a place slides, as a swipe back does.
+	if (inPlace()) sliding.set(get(layout).root.tabs[index]?.id ?? null);
+	else apply((l) => setActive(l, l.root.id, index));
 };
+
+// ---- places (da-6du3o) ------------------------------------------------
+
+/**
+ * The root tab, BY ID, the root frame is asked to SLIDE to
+ * (PaneFrame.svelte): in from the right when a place opens, back to the
+ * left when it is left. Under `prefers-reduced-motion` the frame
+ * crossfades instead. An id and not an index, because a request made
+ * while another slide is landing is queued behind it, and that slide's
+ * close moves every index right of the place.
+ */
+export const sliding = writable<NodeId | null>(null);
+
+/** Whether the root tab in front is an open place. */
+const inPlace = (): boolean => {
+	const l = get(layout);
+	const name = l.root.tabs[l.root.active]?.layout;
+	return name !== undefined && places.has(name);
+};
+
+/**
+ * The place whose history entry is the one the browser is on, if any: the
+ * entry `openPlace` pushed. Named, not a flag, so that leaving one place for
+ * another — or keeping it — never pops an entry that is not its own.
+ */
+let pushedFor: string | null = null;
+
+/**
+ * Open the place `kind` is: its root tab brought to the front if one holds
+ * it, else a TRANSIENT tab — its built-in layout, italic, written nowhere —
+ * put immediately right of the tab you are on, and slid onto. Leaving it
+ * closes it (below); `Keep tab` keeps it. The browser's back is the way
+ * back too, so the tab pushes a history entry.
+ */
+export async function openPlace(kind: string): Promise<void> {
+	await boot();
+	unmaximize();
+	const name = canonicalName(kind);
+	const tabs = rootTabs(get(layout));
+	const at = tabs.findIndex((t) => t.layout === name || (isWidget(t.content) && t.content.kind === kind));
+	if (at >= 0) return activate(at);
+	const tab = await openTab(name, new Set(allIds(get(layout))));
+	if (!tab) return;
+	const { pushState } = await import('$app/navigation');
+	const from = get(layout).root.active;
+	// The name and its tab land together, as `openPreview`'s do.
+	quiet(() => {
+		places.add(name);
+		previews.update((shown) => new Set(shown).add(name));
+		apply((l) => {
+			const tabs = [...l.root.tabs.slice(0, from + 1), tab, ...l.root.tabs.slice(from + 1)];
+			return normalize({ ...l, root: { ...l.root, tabs } });
+		});
+	});
+	settle();
+	// The entry is this place's BEFORE the tab switches: under reduced motion
+	// the switch is at once, and the closer of the place it leaves must not
+	// take this entry for its own (vremya on #349).
+	pushState('', { place: name });
+	pushedFor = name;
+	sliding.set(tab.id);
+}
+
+// A place closes when it is left, however: a swipe, a tap on another tab,
+// the browser's back. The history entry it pushed goes with it.
+let front: NodeId | undefined;
+layout.subscribe(($layout) => {
+	const was = front;
+	front = $layout.root.tabs[$layout.root.active]?.id;
+	if (was === undefined || was === front) return;
+	const left = $layout.root.tabs.findIndex((t) => t.id === was);
+	const name = $layout.root.tabs[left]?.layout;
+	if (name === undefined || !places.has(name)) return;
+	apply((l) => closeTab(l, l.root.id, left));
+	if (pushedFor === name) {
+		pushedFor = null;
+		history.back();
+	}
+});
+
+/** The browser's back, from a place: back to the tab it opened beside. */
+function onPopState(): void {
+	pushedFor = null;
+	const { tabs, active } = get(layout).root;
+	if (inPlace()) sliding.set(tabs[Math.max(0, active - 1)].id);
+}
 
 /**
  * Close a root tab; the last one stays (tree.ts). Its draft, if any, is kept
