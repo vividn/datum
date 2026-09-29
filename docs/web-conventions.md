@@ -435,8 +435,8 @@ rule is decided but not yet everywhere, it names the bead.
 31. **A modal asks; a place is a widget** (da-6du3o; vividn, 2026-09-29: «Every modal is also a
     widget that can be put into a layout or as its own tab»). A QUESTION — `Confirm`, `Ask`, the
     passkey prompt — blocks until it is answered, and nobody pins one in a layout, so it stays a
-    modal. A PLACE — Sync today; Backups, the field editor and Help to follow, one bead each — is
-    a widget kind in `layout/registry.ts`, and `openPlace(kind)` (`layout/shell.ts`) is the one way
+    modal. A PLACE — Sync and Help (da-z955f) today; Backups and the field editor to follow, one
+    bead each — is a widget kind in `layout/registry.ts`, and `openPlace(kind)` (`layout/shell.ts`) is the one way
     to reach it. It brings forward the root tab already holding that kind. Failing that, the host
     is the screen's (da-jozgv; vividn: «I think this is good on mobile, but the experience on
     desktop is not great … I would still have it be a modal on desktop»). On a DESKTOP the widget

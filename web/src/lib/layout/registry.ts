@@ -64,6 +64,7 @@ import { DEFAULT_STATS, type StatsRange } from '$lib/stats.js';
 import AliasesWidget from './AliasesWidget.svelte';
 import DayviewWidget from './DayviewWidget.svelte';
 import FieldsPane from './FieldsPane.svelte';
+import HelpWidget from './HelpWidget.svelte';
 import InputWidget from './InputWidget.svelte';
 import Notice from './Notice.svelte';
 import NowviewWidget from './NowviewWidget.svelte';
@@ -434,6 +435,18 @@ export const KINDS: Record<string, WidgetKind> = {
 			'A device not reachable now is drawn grey, as it was when last seen, with the time.'
 		].join('\n'),
 		legible: { width: 140, height: 100 }
+	},
+	// The Help place (da-z955f): the Help button's last answer ($lib/help.ts).
+	// Legible at the title line and two lines of the explanation (18.4px
+	// each) plus padding; the rest scrolls.
+	help: {
+		meta: meta('help', 'help'),
+		component: HelpWidget,
+		help: [
+			'What the Help button was last asked about, explained.',
+			'Press Help, then tap a command, a widget or a pill; Help again for general help.'
+		].join('\n'),
+		legible: { width: 200, height: 72 }
 	},
 	// The input widget (da-0dhc, back as da-3zon): the bottom bar's command
 	// line drawn in a pane — the same buffer, the same pills, the same

@@ -11,10 +11,13 @@
 // widget sees it — so nothing runs, fills, pends or starts a hold — and
 // explained; then the page disarms (one-shot). Escape disarms too.
 //
-// What it says opens in a modal, $lib/HelpSheet.svelte (da-35f23) — not
-// the bar's output section, which is where a newcomer, the one asking, is
-// least likely to look (vividn, 2026-09-25: «the output is really quite
-// buried and no one will see it»). It is not recorded in the REPL:
+// What it says lands in the Help PLACE (da-z955f, layout/HelpWidget.svelte):
+// a Help pane, if the page shows one, else wherever `openPlace` hosts the
+// place — a tab beside this one on a phone, a modal on a desktop (da-jozgv)
+// — and not a sheet of its own (it was one, da-35f23), nor the bar's
+// output section, which is where a newcomer, the one asking, is least
+// likely to look (vividn, 2026-09-25: «the output is really quite buried and
+// no one will see it»). It is not recorded in the REPL:
 //
 // - a command: the CLI's own `datum help <command>`, run through the seam.
 //   No help copy for commands lives here.
@@ -29,8 +32,8 @@
 
 import { get, writable } from 'svelte/store';
 import { pills, spent, type Pill } from './bar.js';
-import HelpSheet from './HelpSheet.svelte';
 import { KINDS, titleOf } from './layout/registry.js';
+import { openPlace } from './layout/shell.js';
 import { run } from './run.js';
 
 export const helping = writable(false);
@@ -51,12 +54,18 @@ const PILL_COMMON =
 export const pillHelp = (pill: Pill): string =>
 	`${(PILL_HELP[pill.kind] ?? ((t: string) => `${t}: a pill, added to the next command.`))(pill.text)}\n${PILL_COMMON}`;
 
-let sheet: HelpSheet | undefined;
+/** The last explanation asked for, titled with what it explains: what the Help place shows. */
+export const explained = writable<{ title: string; text: string } | null>(null);
 
-/** Open the explanation, titled with what it explains. One sheet, mounted the first time and opened again after. */
+/**
+ * Land the explanation in the Help place: a Help pane in view, if there is
+ * one, else the place `openPlace` opens. A pane's tabs behind the front one stay
+ * mounted, hidden (TabBody.svelte), so a Help widget in one is not in view.
+ */
 function show(title: string, text: string): void {
-	sheet ??= new HelpSheet({ target: document.body });
-	sheet.$set({ title, text, open: true });
+	explained.set({ title, text });
+	const hosts = [...document.querySelectorAll('.host[data-widget="help"]')];
+	if (!hosts.some((host) => !host.closest('.tab-body.behind'))) void openPlace('help');
 }
 
 async function explain(target: Element | null): Promise<void> {

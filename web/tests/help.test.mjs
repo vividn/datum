@@ -1,12 +1,16 @@
 // The Help button (da-vjwid): press it, then a command, a widget or a pill,
-// and that thing is explained in a modal instead of acted on (da-35f23);
-// press it again for general help. `$lib/help.ts`.
+// and that thing is explained instead of acted on; press it again for
+// general help. The answer lands in the Help PLACE (da-z955f): a Help pane
+// in view, else the place `openPlace` hosts — a transient tab beside this
+// one on a phone, which back closes, a modal on a desktop (da-jozgv).
+// `$lib/help.ts`, `layout/HelpWidget.svelte`.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, seedLines } from './support/app.mjs';
-import { DESKTOP, along, widgetPane } from './support/layout.mjs';
+import { DESKTOP, PHONE, along, atRest, widgetPane } from './support/layout.mjs';
 import { listed } from './support/rows.mjs';
+import { until } from './support/until.mjs';
 
 before(startApp);
 after(stopApp);
@@ -15,39 +19,62 @@ const PAGE = JSON.stringify(
 	along('column', widgetPane('repl', 'repl'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar'))
 );
 
-const shared = sharedApp({ ...DESKTOP });
+// On a phone, where a place is a tab; the desktop's modal is the last test.
+const shared = sharedApp({ ...PHONE });
+const desktop = sharedApp({ ...DESKTOP });
 
-const onPage = (fn) =>
+const onPage = (fn, page = PAGE) =>
 	shared.solo(async (app) => {
 		// A test that failed armed must not leave the next one armed.
 		await app.page.keyboard.press('Escape');
 		return fn(app);
-	}, PAGE);
+	}, page);
 
 const help = (page) => page.locator('.bar.commands button[data-command="help"]');
 
-/** The help modal, while it is open. */
-const sheet = (page) => page.locator('dialog.sheet[open]:has(pre.help)');
+const rootTabs = (page) =>
+	page.locator('.root-bar [role="tab"]').evaluateAll((all) => all.map((b) => b.textContent.replace('•', '').trim()));
+const shown = (page) =>
+	page.locator('.root-bar [role="tab"][aria-selected="true"]').evaluate((b) => b.textContent.replace('•', '').trim());
 
-/** Press Help, then `target`, and wait for the modal: its title and its lines. */
-async function explain(page, target) {
-	const output = () => page.locator('.prompt-bar .roll').allInnerTexts();
-	const [echoes, shown] = [await page.locator('.repl .echo').count(), await output()];
-	await help(page).click();
-	await target.click();
-	await sheet(page).waitFor();
-	const title = (await sheet(page).locator('.sheet-head span').innerText()).trim();
-	const lines = (await sheet(page).locator('pre.help').innerText()).split('\n');
-	// Not in the bar's output section, and not in the REPL.
-	assert.deepEqual(await output(), shown, 'the explanation went to the output');
-	assert.equal(await page.locator('.repl .echo').count(), echoes, 'the explanation was recorded');
-	return { title, lines };
+/** The Help widget, wherever it is. */
+const place = (page) => page.locator('.host[data-widget="help"]');
+
+/** What the Help widget shows: its title and its lines, once it shows `title`. */
+async function read(page, title) {
+	await until(() => place(page).locator('h3.asked').innerText().catch(() => ''), (t) => t.trim() === title);
+	return (await place(page).locator('pre.help').innerText()).split('\n');
 }
 
-/** Close the modal with Escape, for the next test. */
-async function dismiss(page) {
-	await page.keyboard.press('Escape');
-	await sheet(page).waitFor({ state: 'detached' });
+/**
+ * Press Help, then `target`: the answer in the Help place, a transient tab
+ * right of this one and in front. Back (the browser's, or a tap on the tab it
+ * left) returns and closes it; then, nothing was run, echoed or output.
+ */
+async function explain(page, target, title, back = () => page.goBack()) {
+	const output = () => page.locator('.prompt-bar .roll').allInnerTexts();
+	const [echoes, said, tabs, from] = [
+		await page.locator('.repl .echo').count(),
+		await output(),
+		await rootTabs(page),
+		await shown(page)
+	];
+	await help(page).click();
+	await target.click();
+	await until(() => shown(page), (t) => t === 'help');
+	const at = tabs.indexOf(from) + 1;
+	assert.deepEqual(await rootTabs(page), [...tabs.slice(0, at), 'help', ...tabs.slice(at)]);
+	const style = await page.locator('.root-bar [role="tab"][aria-selected="true"]').evaluate((b) => getComputedStyle(b).fontStyle);
+	assert.equal(style, 'italic', 'the place is not transient');
+	const lines = await read(page, title);
+	await atRest(page.locator('section.root > .content'));
+	await back();
+	await until(() => rootTabs(page), (t) => t.join() === tabs.join());
+	assert.equal(await shown(page), from);
+	// Not in the bar's output section, and not in the REPL.
+	assert.deepEqual(await output(), said, 'the explanation went to the output');
+	assert.equal(await page.locator('.repl .echo').count(), echoes, 'the explanation was recorded');
+	return lines;
 }
 
 const label = async (page) => (await help(page).locator('.label:not(.hidden)').innerText()).trim();
@@ -85,15 +112,13 @@ describe('the Help button', () => {
 		});
 	});
 
-	test('then a command: the CLI\'s own help for it in a modal, and the command does not run', async () => {
+	test('then a command: the CLI\'s own help for it in the Help place, and the command does not run', async () => {
 		await onPage(async ({ page }) => {
 			const occur = page.locator('.bar.commands button[data-command="occur"]');
-			const { title, lines } = await explain(page, occur);
-			assert.equal(title, 'datum help occur');
+			const lines = await explain(page, occur, 'datum help occur');
 			assert.match(lines[0], /^datum occur — record a point-in-time event/);
 			assert.equal(await page.locator('.prompt-bar input').inputValue(), '', 'occur filled the line');
 			assert.equal(await label(page), 'Help', 'one-shot: it disarms');
-			await dismiss(page);
 
 			// The next tap acts as it always did.
 			await occur.click();
@@ -101,19 +126,15 @@ describe('the Help button', () => {
 		});
 	});
 
-	// da-803mk: a subcommand is explained by the CLI's help for it, and the
-	// Escape that closes the modal leaves the subcommands open.
-	test('then a subcommand: `datum help db backup`, and the bar stays in db', async () => {
+	// da-803mk: a subcommand is explained by the CLI's help for it.
+	test('then a subcommand: `datum help db backup`', async () => {
 		await onPage(async ({ page }) => {
 			await page.locator('.bar.commands button[data-command="db"]').click();
 			const backup = page.locator('.bar.commands button[data-command="db backup"]');
-			const { title, lines } = await explain(page, backup);
-			assert.equal(title, 'datum help db backup');
+			const lines = await explain(page, backup, 'datum help db backup');
 			assert.match(lines[0], /^datum db — /);
 			assert.ok(lines.some((l) => l.includes('datum db backup <PATH | ->')), lines.join('\n'));
 			assert.equal(await page.locator('.prompt-bar input').inputValue(), '', 'backup filled the line');
-			await dismiss(page);
-			assert.equal(await page.locator('.bar.commands button[data-back]').count(), 1, 'Escape left db too');
 		});
 	});
 
@@ -124,12 +145,9 @@ describe('the Help button', () => {
 			await page.locator('.bar.commands button[data-command="occur"]').click({ button: 'right' });
 			const t = page.locator('.bar.commands button[data-flag="occur -t"]');
 			await t.waitFor();
-			const { title, lines } = await explain(page, t);
-			assert.equal(title, 'datum occur -t');
+			const lines = await explain(page, t, 'datum occur -t');
 			assert.deepEqual(lines, ['Time override (offset, HH:MM, 9:15am, a date, or both)']);
 			assert.equal(await page.locator('.prompt-bar input').inputValue(), 'occur ', '-t was appended');
-			await dismiss(page);
-			assert.equal(await page.locator('.bar.commands button[data-back]').count(), 1, 'Escape left the flags too');
 		});
 	});
 
@@ -138,11 +156,9 @@ describe('the Help button', () => {
 			const { page } = app;
 			await seedLines(app, ['spec set coffee --verb occur']);
 			const coffee = page.locator('section[data-pane="bar"] .bar button.widget', { hasText: 'coffee' }).first();
-			const { title, lines } = await explain(page, coffee);
-			assert.equal(title, 'fields');
+			const lines = await explain(page, coffee, 'fields');
 			assert.match(lines[0], /^Every field you log/);
 			assert.equal((await app.entries(5)).length, 0, 'the press logged coffee');
-			await dismiss(page);
 		});
 	});
 
@@ -150,33 +166,78 @@ describe('the Help button', () => {
 		await onPage(async ({ page }) => {
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 't', kind: 'time', text: '-t 14:30' }]));
 			const pill = page.locator('.prompt-bar [data-pill="t"]');
-			const { title, lines } = await explain(page, pill);
-			assert.equal(title, '-t 14:30');
+			const lines = await explain(page, pill, '-t 14:30');
 			assert.match(lines[0], /^-t 14:30: the time cursor/);
 			assert.equal(await pill.count(), 1, 'the tap removed the pill');
-			await dismiss(page);
 		});
 	});
 
-	test('then Help again: general help, `datum help`; the modal closes by ✕, Escape and a tap outside', async () => {
+	test('then Help again: general help, `datum help`; a tap back on the tab it left closes it too', async () => {
 		await onPage(async ({ page }) => {
-			const closes = {
-				'✕': () => sheet(page).locator('button.close').click(),
-				Escape: () => page.keyboard.press('Escape'),
-				// The backdrop is the dialog's own box outside its content: a corner of the page.
-				outside: () => page.mouse.click(4, 4)
-			};
-			for (const [how, close] of Object.entries(closes)) {
-				const { title, lines } = await explain(page, help(page));
-				assert.equal(title, 'datum help');
-				assert.match(lines[0], /^datum — personal data tracker/);
-				assert.equal(await label(page), 'Help');
-				// A tap inside it closes nothing.
-				await sheet(page).locator('pre.help').click();
-				assert.equal(await sheet(page).count(), 1, `a tap inside closed it (before ${how})`);
-				await close();
-				await sheet(page).waitFor({ state: 'detached' });
-			}
+			const from = await shown(page);
+			const tap = () => page.locator('.root-bar [role="tab"]', { hasText: from }).click();
+			const lines = await explain(page, help(page), 'datum help', tap);
+			assert.match(lines[0], /^datum — personal data tracker/);
+			assert.equal(await label(page), 'Help');
 		});
+	});
+
+	// vividn, 2026-09-29: «Every modal is also a widget that can be put into a
+	// layout». A Help pane in view takes the answer, and no tab opens.
+	test('with a Help pane in the layout, the answer lands there', async () => {
+		const withPane = JSON.stringify(
+			along('column', widgetPane('cmd', 'command'), widgetPane('help', 'help'), widgetPane('bar', 'widgetbar'))
+		);
+		await onPage(async ({ page }) => {
+			await page.locator('section.pane[data-title="help"]').waitFor();
+			const tabs = await rootTabs(page);
+			await help(page).click();
+			await page.locator('.bar.commands button[data-command="occur"]').click();
+			const lines = await read(page, 'datum help occur');
+			assert.match(lines[0], /^datum occur — record a point-in-time event/);
+			// The pane shows it at once; a tab `openPlace` opened would land a
+			// layout load later, so the tabs are watched for a while.
+			for (let i = 0; i < 10; i++, await page.waitForTimeout(100)) {
+				assert.deepEqual(await rootTabs(page), tabs, 'a tab opened beside the pane');
+			}
+		}, withPane);
+	});
+	// canary-kimi-k3 on #355: a pane's tabs behind the front one stay mounted
+	// (da-rjmg), hidden, so a Help pane in one is no Help pane in view.
+	test('with a Help pane only in a tab behind, the answer opens the place', async () => {
+		const pane = (id, kind) => ({ id, content: { id: `${id}-w`, kind, settings: {} } });
+		const behind = JSON.stringify(
+			along('column', widgetPane('cmd', 'command'), {
+				id: 'x',
+				tabs: [
+					pane('x-repl', 'repl'),
+					{
+						id: 'x-inner',
+						content: { id: 'x-split', direction: 'row', ratios: [0.5, 0.5], children: [widgetPane('h', 'help'), widgetPane('r', 'repl')] }
+					}
+				],
+				active: 0,
+				bar: { edge: 'top', align: 'start' }
+			})
+		);
+		await onPage(async ({ page }) => {
+			await page.locator('.tab-body.behind .host[data-widget="help"]').waitFor({ state: 'attached' });
+			const occur = page.locator('.bar.commands button[data-command="occur"]');
+			const lines = await explain(page, occur, 'datum help occur');
+			assert.match(lines[0], /^datum occur — record a point-in-time event/);
+		}, behind);
+	});
+	test('on a desktop, the answer opens the Help place in a modal, and Escape closes it', async () => {
+		await desktop.solo(async ({ page }) => {
+			const modal = page.locator('dialog.sheet[open][data-place="help"]');
+			const tabs = await rootTabs(page);
+			await help(page).click();
+			await page.locator('.bar.commands button[data-command="occur"]').click();
+			await until(() => modal.locator('h3.asked').innerText().catch(() => ''), (t) => t.trim() === 'datum help occur');
+			assert.match(await modal.locator('pre.help').innerText(), /^datum occur — record a point-in-time event/);
+			assert.deepEqual(await rootTabs(page), tabs, 'a tab opened');
+			await page.keyboard.press('Escape');
+			await modal.waitFor({ state: 'detached' });
+		}, PAGE);
 	});
 });
