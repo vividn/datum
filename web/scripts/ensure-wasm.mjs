@@ -6,9 +6,10 @@
 // (.forgejo/workflows/wasm.yml), one commit per main commit, holding
 // the modules and `SOURCE` — the main sha they are for. Beside the local
 // copy, src/lib/wasm/SOURCE names a commit whose crate inputs it was built
-// from. Wired as predev, prebuild and precheck, so `pnpm dev`, `pnpm run
-// build`, `pnpm test` and `pnpm run check` never run against a module another
-// tree built, or against none (da-jyktx). In order:
+// from. Wired as predev, prebuild, precheck and precheck:watch, so `pnpm
+// dev`, `pnpm run build`, `pnpm test`, `pnpm run check` and `pnpm run
+// check:watch` never run against a module another tree built, or against
+// none (da-jyktx, da-nr4jd). In order:
 //
 //   keep   — SOURCE's crate inputs are this tree's: nothing to do;
 //   fetch  — this tree's crate inputs are those of its merge-base with
