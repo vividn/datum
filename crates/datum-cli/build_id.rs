@@ -1,8 +1,9 @@
-//! Which build this is: the commit height and the commit (da-5172a).
+//! Which build this is: the commit height and the commit (da-5172a), and
+//! the version they make, `3.0.<height>-beta (<sha7>)` (da-cv118).
 //!
 //! Shared by `build.rs`, which hands it to the binary as `DATUM_BUILD`, and
 //! by `tests/version.rs`, which runs it against repos of a known shape.
-//! `web/vite.config.ts` computes the same two things for the page.
+//! `web/scripts/build-id.mjs` computes the same for the page.
 
 use std::path::Path;
 use std::process::Command;
@@ -61,5 +62,20 @@ pub fn build_id(dir: &Path, ci_sha: Option<&str>) -> (String, String) {
     (
         height.unwrap_or_else(unknown),
         commit.unwrap_or_else(unknown),
+    )
+}
+
+/// `{MAJOR}.{MINOR}.{height}[-{PRE}] ({commit})` from Cargo's version: valid
+/// semver, the patch the commit height, so versions order as commits do. A
+/// height git cannot give is `0`, since semver needs a number there.
+/// `web/scripts/build-id.mjs` spells the same.
+pub fn version(height: &str, commit: &str) -> String {
+    let patch = if height == "unknown" { "0" } else { height };
+    let pre = env!("CARGO_PKG_VERSION_PRE");
+    format!(
+        "{}.{}.{patch}{}{pre} ({commit})",
+        env!("CARGO_PKG_VERSION_MAJOR"),
+        env!("CARGO_PKG_VERSION_MINOR"),
+        if pre.is_empty() { "" } else { "-" },
     )
 }

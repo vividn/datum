@@ -23,24 +23,24 @@ function repo(n) {
 
 test('the height is every commit reachable, and a dirty tree says so', () => {
 	const { dir, head } = repo(5);
-	assert.deepEqual(buildId(dir, undefined), { version: '3.beta.5', commit: head.slice(0, 7) });
+	assert.deepEqual(buildId(dir, undefined), { version: '3.0.5-beta', commit: head.slice(0, 7) });
 	writeFileSync(join(dir, 'new'), '');
 	assert.equal(buildId(dir, undefined).commit, `${head.slice(0, 7)}+`);
 	// CI names its commit, and a checkout it made is not dirty for us.
 	const first = git(dir, 'rev-list', '--max-parents=0', 'HEAD');
-	assert.deepEqual(buildId(dir, first), { version: '3.beta.1', commit: first.slice(0, 7) });
+	assert.deepEqual(buildId(dir, first), { version: '3.0.1-beta', commit: first.slice(0, 7) });
 });
 
-test('a shallow clone says unknown unless it holds the root', () => {
+test('a shallow clone is patch 0 unless it holds the root', () => {
 	const { dir: src, head } = repo(3);
-	for (const [depth, height] of [['1', 'unknown'], ['2', 'unknown'], ['3', '3']]) {
+	for (const [depth, height] of [['1', '0'], ['2', '0'], ['3', '3']]) {
 		const dir = mkdtempSync(join(tmpdir(), 'build-id-'));
 		git(dir, 'clone', '-q', '--depth', depth, `file://${src}`, 'c');
-		assert.deepEqual(buildId(join(dir, 'c'), undefined), { version: `3.beta.${height}`, commit: head.slice(0, 7) }, `--depth ${depth}`);
+		assert.deepEqual(buildId(join(dir, 'c'), undefined), { version: `3.0.${height}-beta`, commit: head.slice(0, 7) }, `--depth ${depth}`);
 	}
 });
 
-test('no git says unknown', () => {
+test('no git is patch 0 and commit unknown', () => {
 	const dir = mkdtempSync(join(tmpdir(), 'build-id-'));
-	assert.deepEqual(buildId(dir, undefined), { version: '3.beta.unknown', commit: 'unknown' });
+	assert.deepEqual(buildId(dir, undefined), { version: '3.0.0-beta', commit: 'unknown' });
 });

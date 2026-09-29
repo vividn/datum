@@ -22,8 +22,8 @@ use datum_parse::{help, ParseError};
 
 use crate::args::{Cli, Command, DbCommand, InfoArgs, Invocation};
 
-/// `datum 3.beta.<height> (<sha7>)`, from git at build time (da-5172a,
-/// `build.rs`).
+/// `datum 3.0.<height>-beta (<sha7>)`, from git at build time (da-5172a,
+/// da-cv118, `build.rs`).
 pub const VERSION_BANNER: &str = concat!("datum ", env!("DATUM_BUILD"));
 
 /// If `e` is one of the "clean stdout print" parse errors

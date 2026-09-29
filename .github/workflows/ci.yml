@@ -81,6 +81,14 @@ jobs:
             exit 1
           fi
 
+      # The CLI's build.rs and the web's build-id.mjs spell one version: the two
+      # must name this checkout alike (da-cv118).
+      - name: The CLI and datum.day give the same version for this checkout
+        run: |
+          cli=$(target/debug/datum --version); web=$(node web/scripts/build-id.mjs)
+          echo "cli: $cli"; echo "web: $web"
+          [ "$cli" = "$web" ] || { echo "::error::datum --version and web/scripts/build-id.mjs disagree"; exit 1; }
+
   e2e-full:
     name: E2E full cohort (da-1wat)
     runs-on: ubuntu-latest

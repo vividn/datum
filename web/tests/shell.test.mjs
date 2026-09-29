@@ -274,9 +274,9 @@ describe('the shell', () => {
 				'the build stamp'
 			]);
 			assert.deepEqual(gear.map((i) => i.disabled), [false, false, true]);
-			// The stamp is the web's build, `3.beta.<height> · <sha7>`, and
-			// `unknown` where a shallow CI checkout cannot count (da-5172a).
-			assert.match(gear[2].label, /^3\.beta\.(\d+|unknown) · ([0-9a-f]{7}\+?|unknown)$/);
+			// The stamp is the web's build, `3.0.<height>-beta · <sha7>`, and
+			// patch 0 where a shallow CI checkout cannot count (da-5172a, da-cv118).
+			assert.match(gear[2].label, /^3\.0\.\d+-beta · ([0-9a-f]{7}\+?|unknown)$/);
 			// The acts are in the active tab's own menu, no icon row.
 			assert.equal(await page.locator('.root-bar .act').count(), 0, 'the icon row is still there');
 			// The NAME's slice (da-bzhq): what the tab shows and what it is

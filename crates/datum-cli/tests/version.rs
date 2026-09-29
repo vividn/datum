@@ -1,6 +1,6 @@
-//! `datum --version` is `datum 3.beta.<height> (<sha7>)`, the height and the
-//! commit read from git at build time, and `unknown` wherever git cannot say
-//! for certain (da-5172a).
+//! `datum --version` is `datum 3.0.<height>-beta (<sha7>)`, valid semver
+//! whose patch is the commit height, read from git at build time; a height
+//! git cannot say for certain is `0`, a commit `unknown` (da-5172a, da-cv118).
 
 use std::path::Path;
 use std::process::Command;
@@ -41,17 +41,20 @@ fn repo(n: usize) -> (tempfile::TempDir, String) {
 }
 
 #[test]
-fn the_binary_prints_3_beta_height_and_sha7() {
+fn the_binary_prints_semver_whose_patch_is_the_height_and_the_sha7() {
     let out = Command::new(env!("CARGO_BIN_EXE_datum"))
         .arg("--version")
         .output()
         .unwrap();
     assert!(out.status.success(), "{out:?}");
     let line = String::from_utf8(out.stdout).unwrap();
-    let rest = line.strip_prefix("datum 3.beta.").expect(&line);
-    let (height, commit) = rest.trim_end().split_once(' ').expect(&line);
+    let rest = line.strip_prefix("datum ").expect(&line);
+    let (semver, commit) = rest.trim_end().split_once(' ').expect(&line);
+    let (core, pre) = semver.split_once('-').expect(&line);
+    assert_eq!(pre, env!("CARGO_PKG_VERSION_PRE"), "{line:?}");
+    let parts: Vec<&str> = core.split('.').collect();
     assert!(
-        height == "unknown" || height.parse::<u32>().is_ok(),
+        parts.len() == 3 && parts.iter().all(|p| p.parse::<u32>().is_ok()),
         "{line:?}"
     );
     let sha = commit
@@ -62,6 +65,26 @@ fn the_binary_prints_3_beta_height_and_sha7() {
     assert!(
         sha.len() == 7 && sha.bytes().all(|b| b.is_ascii_hexdigit()),
         "{line:?}"
+    );
+    // The patch is this checkout's `git rev-list --count`, or 0 where the
+    // history is cut short. Dirtiness may have moved since the build.
+    let ci_sha = std::env::var("GITHUB_SHA").ok().filter(|s| !s.is_empty());
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let (height, commit) = build_id::build_id(dir, ci_sha.as_deref());
+    let want = build_id::version(&height, commit.trim_end_matches('+'));
+    assert_eq!(line.trim_end().replace("+)", ")"), format!("datum {want}"));
+}
+
+#[test]
+fn the_version_is_cargos_with_the_height_for_patch() {
+    assert_eq!(
+        build_id::version("1263", "cdb0266"),
+        "3.0.1263-beta (cdb0266)"
+    );
+    // Semver needs a number: no whole history is patch 0.
+    assert_eq!(
+        build_id::version("unknown", "cdb0266"),
+        "3.0.0-beta (cdb0266)"
     );
 }
 

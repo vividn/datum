@@ -40,7 +40,7 @@ upgrade never needs a reinstall.
 To upgrade, `git pull && scripts/install.sh`. A `--path` install always
 builds and installs, replacing the `datum` cargo installed before even
 at the same version, and `datum --version` shows the commit it was built
-from — `3.beta.<height> (<sha7>)` — to confirm it. `--locked` builds
+from — `3.0.<height>-beta (<sha7>)` — to confirm it. `--locked` builds
 exactly the dependency versions in `Cargo.lock`, the ones CI tested.
 
 If cargo says ``binary `datum` already exists in destination``, that

@@ -58,8 +58,8 @@ jobs:
       # Full history: ensure-wasm.mjs compares this commit's crates against
       # the SOURCE of each `wasm` commit, and needs origin/main and origin/wasm,
       # which a full-depth checkout fetches along with every other branch.
-      # And the gear's `3.beta.<height>` counts every commit, which a shallow
-      # checkout would cut short (it says `unknown` there, da-5172a).
+      # And the gear's `3.0.<height>-beta` counts every commit, which a shallow
+      # checkout would cut short (it says `3.0.0-beta` there, da-5172a).
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0

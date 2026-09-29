@@ -1,6 +1,6 @@
 {
 	"comment": ["What the real datum CLI stores for a given argv — the other half of tests/parity.test.mjs.", "Regenerate with `npm run test:fixtures` (needs a built `datum` binary); the `argv`", "and `time` fields are authored by hand and survive a regeneration."],
-	"capturedWith": "datum 3.beta",
+	"capturedWith": "datum 3.0.x-beta",
 	"cases": [
 		{
 			"argv": ["occur", "coffee", "-t", "0915"],

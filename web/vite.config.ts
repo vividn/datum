@@ -11,13 +11,14 @@ import {
 import { buildId } from './scripts/build-id.mjs';
 
 /**
- * What is actually running, injected at build time: `3.beta.<height>` and the
- * commit (da-5172a, `scripts/build-id.mjs`). A deployed static bundle is
+ * What is actually running, injected at build time: `3.0.<height>-beta` and
+ * the commit (da-5172a, da-cv118, `scripts/build-id.mjs`). A deployed static bundle is
  * otherwise anonymous — the only way to tell which commit is live would be to
  * compare hashed asset names against a local build.
  */
 const build = buildId(fileURLToPath(new URL('.', import.meta.url)), process.env.GITHUB_SHA || undefined);
-if (build.version.endsWith('.unknown')) {
+// A patch of 0 is no count at all: every history has a commit.
+if (/^\d+\.\d+\.0\b/.test(build.version)) {
 	console.warn(`vite: no whole git history (a shallow clone, or no .git): the version says ${build.version}`);
 }
 

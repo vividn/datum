@@ -122,10 +122,12 @@ try {
 				? { code, entry: comparable(fromBackupRow(onlyEntry(db, dir)), testCase.time) }
 				: { code, entry: null };
 	});
-	// `datum 3.beta`: the height and the commit that follow it change with
+	// `datum 3.0.x-beta`: the height (the patch) and the commit change with
 	// every commit, and a fixture that did would never compare equal (da-5172a).
 	fixture.capturedWith =
-		cli(join(dir, 'version.db'), ['--version']).stdout.trim().replace(/\.(\d+|unknown) \(.*\)$/, '') || null;
+		cli(join(dir, 'version.db'), ['--version'])
+			.stdout.trim()
+			.replace(/^(datum \d+\.\d+)\.\d+(\S*) \(.*\)$/, '$1.x$2') || null;
 	writeFileSync(FIXTURE, format(fixture));
 	console.log(`captured ${fixture.cases.length} cases → ${FIXTURE}`);
 

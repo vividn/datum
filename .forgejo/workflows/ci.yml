@@ -231,6 +231,14 @@ jobs:
             exit 1
           fi
 
+      # The CLI's build.rs and the web's build-id.mjs spell one version: the two
+      # must name this checkout alike (da-cv118).
+      - name: The CLI and datum.day give the same version for this checkout
+        run: |
+          cli=$(target/debug/datum --version); web=$(node web/scripts/build-id.mjs)
+          echo "cli: $cli"; echo "web: $web"
+          [ "$cli" = "$web" ] || { echo "::error::datum --version and web/scripts/build-id.mjs disagree"; exit 1; }
+
       # ── wasm ──────────────────────────────────────────────────────────────
       # The module is not committed (da-0qa4x), so there is nothing to compare
       # with: ensure-wasm.mjs builds it from this tree's crates — the pinned
