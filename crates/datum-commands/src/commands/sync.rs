@@ -22,7 +22,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                     .with_context(|| format!("--since is not a version vector: {v}"))?,
                 None => BTreeMap::new(),
             };
-            for line in db.sync_ops_since(&since)? {
+            for line in db.sync_ops_since(&since, true)? {
                 println!("{line}");
             }
         }
@@ -40,6 +40,10 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             if !s.refused.is_empty() {
                 anyhow::bail!("{} op(s) refused", s.refused.len());
             }
+        }
+        SyncCommand::Rekey => {
+            println!("new endpoint key {}", db.sync_rekey()?);
+            println!("peers paired with the old key must pair with this copy again");
         }
         SyncCommand::Verify { verbose } => {
             let (hash, per_column) = db.sync_state_hash()?;

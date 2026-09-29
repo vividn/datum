@@ -19,6 +19,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         "now" => SyncCommand::Now,
         "run" => SyncCommand::Run,
         "peers" => SyncCommand::Peers,
+        "rekey" => SyncCommand::Rekey,
         "forget" => SyncCommand::Forget {
             peer: rest
                 .next()
@@ -78,7 +79,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         }
         other => {
             return Err(ParseError::InvalidArg(format!(
-                "unknown sync subcommand: '{other}' (expected add-client|connect|now|run|peers|forget|vector|ops|apply|verify)"
+                "unknown sync subcommand: '{other}' (expected add-client|connect|now|run|peers|forget|rekey|vector|ops|apply|verify)"
             )))
         }
     };
@@ -134,6 +135,8 @@ mod tests {
             parse_sync_cmd(&["forget", "abc"]).unwrap(),
             SyncCommand::Forget { peer: "abc".into() }
         );
+        assert_eq!(parse_sync_cmd(&["rekey"]).unwrap(), SyncCommand::Rekey);
+        assert!(parse_sync_cmd(&["rekey", "extra"]).is_err());
         assert!(parse_sync_cmd(&["forget"]).is_err());
         assert!(parse_sync_cmd(&["add-client", "--expires", "0s"]).is_err());
         assert!(parse_sync_cmd(&["now", "extra"]).is_err());

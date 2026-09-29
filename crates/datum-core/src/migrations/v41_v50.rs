@@ -62,6 +62,21 @@ pub(super) fn down_43_to_42_sync_peers(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// da-p79vq: `sync_local.path`, the file the endpoint key was minted at, so
+/// a copy at another path mints its own. An existing key gets `''`, which
+/// the next write takes to mean this path: no key is re-minted, and no
+/// pairing lost.
+pub(super) fn m43_to_44_sync_local_path(conn: &Connection) -> Result<()> {
+    conn.execute_batch("ALTER TABLE sync_local ADD COLUMN path TEXT NOT NULL DEFAULT '';")?;
+    Ok(())
+}
+
+/// Reverse v43→v44.
+pub(super) fn down_44_to_43_sync_local_path(conn: &Connection) -> Result<()> {
+    conn.execute_batch("ALTER TABLE sync_local DROP COLUMN path;")?;
+    Ok(())
+}
+
 /// The v43 tables exactly as `schema.sql` creates them.
 const SYNC_PEERS_SQL: &str = "
 CREATE TABLE IF NOT EXISTS sync_peers (

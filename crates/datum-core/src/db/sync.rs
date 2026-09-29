@@ -147,17 +147,27 @@ thread_local! {
 }
 
 /// This copy's endpoint, minted on first need. The key is stored with the
-/// device it was minted on, and a file that opens on another device (copied,
-/// restored) mints its own rather than sign as the copy it came from. Two
-/// copies of one file on ONE device share the device id, and so the key —
-/// a known limit: their ops would collide on `(endpoint, seq)`.
+/// device and the file path it was minted at, and a file that opens on
+/// another device, or at another path while the original is still there
+/// (copied, restored beside it), mints its own rather than sign as the copy
+/// it came from: two copies with one key would number their ops from one
+/// seq. A file MOVED keeps its key, and so its pairings. A copy put back
+/// over the original's own path is the case this cannot see; `sync_apply`
+/// refuses the fork it makes, and `datum sync rekey` mints a new key.
 fn endpoint(conn: &Connection) -> Result<Endpoint> {
     let device = device_id();
-    let held: Option<(String, String)> = conn
-        .prepare_cached("SELECT endpoint_secret, device_id FROM sync_local WHERE id = 1")?
-        .query_row([], |r| Ok((r.get(0)?, r.get(1)?)))
+    let path = conn.path().unwrap_or_default().to_string();
+    let held: Option<(String, String, String)> = conn
+        .prepare_cached("SELECT endpoint_secret, device_id, path FROM sync_local WHERE id = 1")?
+        .query_row([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()?;
-    if let Some((secret, _)) = held.filter(|(_, d)| *d == device) {
+    let held = held.filter(|(_, d, p)| {
+        *d == device && (*p == path || p.is_empty() || !std::path::Path::new(p).exists())
+    });
+    if held.as_ref().is_some_and(|(_, _, p)| *p != path) {
+        conn.execute("UPDATE sync_local SET path = ?1", params![path])?;
+    }
+    if let Some((secret, _, _)) = held {
         let cached = ENDPOINT.with(|c| {
             c.borrow()
                 .as_ref()
@@ -180,11 +190,24 @@ fn endpoint(conn: &Connection) -> Result<Endpoint> {
     let key = SigningKey::generate(&mut rand::rngs::OsRng);
     let id = hex(key.verifying_key().as_bytes());
     conn.execute(
-        "INSERT OR REPLACE INTO sync_local (id, endpoint_secret, endpoint_id, device_id)
-         VALUES (1, ?1, ?2, ?3)",
-        params![hex(&key.to_bytes()), id, device],
+        "INSERT OR REPLACE INTO sync_local (id, endpoint_secret, endpoint_id, device_id, path)
+         VALUES (1, ?1, ?2, ?3, ?4)",
+        params![hex(&key.to_bytes()), id, device, path],
     )?;
     Ok(Endpoint { key, id })
+}
+
+/// Said wherever two copies are found signing with one key (da-p79vq).
+const SHARED_KEY: &str = "these are two copies of one database sharing an endpoint key; \
+     run `datum sync rekey` on one of them";
+
+/// This copy's endpoint id, and the highest seq it has signed.
+fn own_head(conn: &Connection) -> Result<(String, i64)> {
+    let id = endpoint(conn)?.id;
+    let seq = conn
+        .prepare_cached("SELECT COALESCE(MAX(seq), 0) FROM ops WHERE endpoint = ?1")?
+        .query_row(params![id], |r| r.get(0))?;
+    Ok((id, seq))
 }
 
 // ─── HLC ────────────────────────────────────────────────────────────────────
@@ -210,14 +233,23 @@ fn next_hlc(conn: &Connection) -> Result<String> {
     let last: Option<String> = conn
         .prepare_cached("SELECT MAX(hlc) FROM ops")?
         .query_row([], |r| r.get(0))?;
-    let now = Utc::now().timestamp_millis();
-    let (ms, counter) = match last.as_deref().and_then(parse_hlc) {
+    let (ms, counter) = advance(
+        last.as_deref().and_then(parse_hlc),
+        Utc::now().timestamp_millis(),
+    );
+    Ok(format_hlc(ms, counter))
+}
+
+/// The HLC after `last` at wall time `now`. A counter that would outgrow its
+/// four digits moves the wall on a millisecond instead, so it stays fixed
+/// width and still orders as a string.
+fn advance(last: Option<(i64, u32)>, now: i64) -> (i64, u32) {
+    match last {
         Some((ms, _)) if now > ms => (now, 0),
         Some((ms, c)) if c < HLC_COUNTER_MAX => (ms, c + 1),
         Some((ms, _)) => (ms + 1, 0),
         None => (now, 0),
-    };
-    Ok(format_hlc(ms, counter))
+    }
 }
 
 // ─── Rows and effects ───────────────────────────────────────────────────────
@@ -249,6 +281,8 @@ fn diff(pre: &Entry, post: &Entry) -> Value {
         None => unset.push(Value::String(k)),
     };
     let keys: BTreeSet<&String> = a.keys().chain(b.keys()).collect();
+    // `data` is diffed key by key so that two copies setting different keys
+    // of it both land, rather than one whole object replacing the other.
     for k in keys.into_iter().filter(|k| *k != "hid") {
         let (x, y) = (present(&a, k), present(&b, k));
         if x == y {
@@ -327,20 +361,19 @@ fn fold_into(row: &mut Option<Map<String, Value>>, effect: &Value) {
 /// row flattened the way [`diff`] names keys, so two ops compare key by key.
 fn values(op: &Op) -> BTreeMap<String, Value> {
     let mut out = BTreeMap::new();
-    if let Some(Value::Object(c)) = op.effect.get("create") {
-        for (k, v) in c.iter().filter(|(k, _)| *k != "hid") {
-            match (k.as_str(), v) {
-                ("data", Value::Object(d)) => {
-                    out.extend(d.iter().map(|(dk, v)| (format!("data.{dk}"), v.clone())))
-                }
-                _ => {
-                    out.insert(k.clone(), v.clone());
-                }
+    // A whole `data` object — a create's, or an edit that gave data to an
+    // entry that had none — is its keys, as `diff` names them.
+    let set = op.effect.get("create").or_else(|| op.effect.get("set"));
+    for (k, v) in set.and_then(Value::as_object).into_iter().flatten() {
+        match (k.as_str(), v) {
+            ("hid", _) => {}
+            ("data", Value::Object(d)) => {
+                out.extend(d.iter().map(|(dk, v)| (format!("data.{dk}"), v.clone())))
+            }
+            _ => {
+                out.insert(k.clone(), v.clone());
             }
         }
-    }
-    if let Some(Value::Object(set)) = op.effect.get("set") {
-        out.extend(set.iter().map(|(k, v)| (k.clone(), v.clone())));
     }
     for k in op.effect["unset"]
         .as_array()
@@ -387,9 +420,13 @@ impl Op {
 
     /// Fold order: baselines first, then `(hlc, endpoint)`. A baseline is
     /// an entry as it stood before it had ops, so it goes under every edit
-    /// even when a copy signed it later than another copy's edits.
-    fn order(&self) -> (bool, &str, &str) {
-        (!self.is_baseline(), &self.hlc, &self.endpoint)
+    /// even when a copy signed it later than another copy's edits. Of two
+    /// baselines of one entry — copies that diverged before either had ops —
+    /// a tombstone goes last and so stands, as a delete stands against a
+    /// concurrent edit (da-p79vq).
+    fn order(&self) -> (bool, bool, &str, &str) {
+        let tombstone = self.is_baseline() && !self.effect["create"]["deleted_at"].is_null();
+        (!self.is_baseline(), tombstone, &self.hlc, &self.endpoint)
     }
 
     fn is_baseline(&self) -> bool {
@@ -673,12 +710,14 @@ fn file_conflicts(conn: &Connection, x: &Op, ops: &[Op], merged: &Entry) -> Resu
 /// which a superseded row is outside (ported from the relay sync's apply).
 fn blockers(conn: &Connection, e: &Entry) -> Result<Vec<Entry>> {
     let mut found: Vec<Entry> = conn
-        .prepare("SELECT * FROM entries WHERE slug = ?1 AND hid != ?2 AND superseded_by IS NULL")?
+        .prepare_cached(
+            "SELECT * FROM entries WHERE slug = ?1 AND hid != ?2 AND superseded_by IS NULL",
+        )?
         .query_map(params![e.slug, e.hid], row_to_entry)?
         .collect::<rusqlite::Result<_>>()?;
     if let (None, true, Some(occur)) = (e.deleted_at, e.asserts_state(), e.occur_time.as_ref()) {
         let rows: Vec<Entry> = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT * FROM entries WHERE field = ?1 AND occur_time = ?2
                    AND deleted_at IS NULL AND superseded_by IS NULL
                    AND state IS NOT NULL AND hid != ?3",
@@ -731,14 +770,17 @@ fn write_merged(conn: &Connection, pre: Option<&Entry>, mut next: Entry) -> Resu
     }
     match pre {
         Some(pre) => {
-            if row(pre) == row(&next) && pre.superseded_by == next.superseded_by {
+            if pre.superseded_by != next.superseded_by {
+                conn.execute(
+                    "UPDATE entries SET superseded_by = ?2 WHERE hid = ?1",
+                    params![next.hid, next.superseded_by],
+                )?;
+            }
+            // Bookkeeping alone is no change of content, and no history.
+            if row(pre) == row(&next) {
                 return Ok(());
             }
             history::record(conn, pre, ChangeKind::SyncMerge)?;
-            conn.execute(
-                "UPDATE entries SET superseded_by = ?2 WHERE hid = ?1",
-                params![next.hid, next.superseded_by],
-            )?;
             apply_entry_state(conn, &next)
         }
         None => {
@@ -782,6 +824,15 @@ impl Db {
         Ok(endpoint(&self.conn)?.key.to_bytes())
     }
 
+    /// Mint a new endpoint key for this copy — one of two copies found
+    /// sharing a key (da-p79vq). Its ops so far stay signed by the old key;
+    /// new ones use the new, which is also a new iroh endpoint id, so peers
+    /// paired before must pair again. Returns the new id.
+    pub fn sync_rekey(&self) -> Result<String> {
+        self.conn.execute("DELETE FROM sync_local", [])?;
+        Ok(endpoint(&self.conn)?.id)
+    }
+
     /// This copy's version vector: per endpoint, the highest seq applied.
     /// Ops apply only in seq order, so that seq is also the highest
     /// contiguous one.
@@ -792,9 +843,22 @@ impl Db {
     /// Every applied op `since` lacks, as canonical JSON lines in
     /// `(endpoint, seq)` order. First signs a `baseline` create for every
     /// entry no op covers — one older than its ops, or bulk-imported — so a
-    /// copy syncing from empty receives every entry.
-    pub fn sync_ops_since(&self, since: &BTreeMap<String, i64>) -> Result<Vec<String>> {
+    /// copy syncing from empty receives every entry. With `overlap`, this
+    /// copy's own op AT `since`'s seq for it comes too — the one line that
+    /// shows a copy sharing this key, whose vector agrees with this one's,
+    /// a different op there (the pipe; iroh refuses such a peer by id).
+    pub fn sync_ops_since(
+        &self,
+        since: &BTreeMap<String, i64>,
+        overlap: bool,
+    ) -> Result<Vec<String>> {
         let tx = self.conn.unchecked_transaction()?;
+        // A vector holding more of this copy's ops than it signed was made
+        // by another copy signing with this key.
+        let (mine, signed) = own_head(&tx)?;
+        if since.get(&mine).is_some_and(|s| *s > signed) {
+            return Err(DatumError::Other(SHARED_KEY.into()));
+        }
         let uncovered: Vec<Entry> = tx
             .prepare("SELECT * FROM entries WHERE hid NOT IN (SELECT hid FROM ops) ORDER BY hid")?
             .query_map([], row_to_entry)?
@@ -813,7 +877,12 @@ impl Db {
                 Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get(2)?))
             })?
             .filter_map(|r| match r {
-                Ok((e, s, body)) if s > since.get(&e).copied().unwrap_or(0) => Some(Ok(body)),
+                Ok((e, s, body))
+                    if s > since.get(&e).copied().unwrap_or(0)
+                        || overlap && e == mine && since.get(&e) == Some(&s) =>
+                {
+                    Some(Ok(body))
+                }
                 Ok(_) => None,
                 Err(e) => Some(Err(e)),
             })
@@ -831,6 +900,7 @@ impl Db {
     /// op.
     pub fn sync_apply(&self, lines: &str) -> Result<ApplySummary> {
         let tx = self.conn.unchecked_transaction()?;
+        let (mine, signed) = own_head(&tx)?;
         let mut s = ApplySummary::default();
         for line in lines.lines().map(str::trim).filter(|l| !l.is_empty()) {
             let op = match Op::parse(line) {
@@ -844,15 +914,20 @@ impl Db {
                 s.refused.push(format!("{}/{}: {why}", op.endpoint, op.seq));
                 continue;
             }
-            let held: bool = tx.query_row(
-                "SELECT EXISTS (SELECT 1 FROM ops WHERE endpoint = ?1 AND seq = ?2)",
-                params![op.endpoint, op.seq],
-                |r| r.get(0),
-            )?;
-            if held {
-                s.already_had += 1;
-            } else {
-                store(&tx, &op, false)?;
+            let held: Option<String> = tx
+                .prepare_cached("SELECT body FROM ops WHERE endpoint = ?1 AND seq = ?2")?
+                .query_row(params![op.endpoint, op.seq], |r| r.get(0))
+                .optional()?;
+            // Two copies signing with one key each number their ops from the
+            // same seq: another op at a seq held, or an op of this copy's own
+            // that it never signed. Say so rather than take one for the other.
+            let forked = op.endpoint == mine && op.seq > signed;
+            match held {
+                None if !forked => store(&tx, &op, false)?,
+                Some(body) if body == op.body => s.already_had += 1,
+                _ => s
+                    .refused
+                    .push(format!("{}/{}: {SHARED_KEY}", op.endpoint, op.seq)),
             }
         }
         let mut vector = vector_where(&tx, None)?;
@@ -942,5 +1017,19 @@ mod tests {
         assert!(format_hlc(1_790_000_000_123, 10) > a);
         assert!(format_hlc(1_790_000_000_124, 0) > format_hlc(1_790_000_000_123, 9999));
         assert_eq!(parse_hlc("2026-09-21T14:13:20.123Z/3"), None);
+    }
+
+    #[test]
+    fn hlc_never_runs_behind_and_a_full_counter_moves_the_wall() {
+        assert_eq!(advance(None, 50), (50, 0));
+        assert_eq!(advance(Some((40, 7)), 50), (50, 0));
+        assert_eq!(
+            advance(Some((60, 7)), 50),
+            (60, 8),
+            "a clock behind the last op"
+        );
+        let full = advance(Some((60, HLC_COUNTER_MAX)), 50);
+        assert_eq!(full, (61, 0));
+        assert!(format_hlc(full.0, full.1) > format_hlc(60, HLC_COUNTER_MAX));
     }
 }

@@ -303,14 +303,19 @@ CREATE INDEX IF NOT EXISTS ops_slug ON ops(slug);
 CREATE INDEX IF NOT EXISTS ops_hlc ON ops(hlc);
 
 -- This copy's endpoint: its Ed25519 key, which signs its ops. LOCAL, never
--- synced, one row. `device_id` is the device the key was minted on: a file
--- that turns up on another device mints a new key rather than sign as the
--- copy it was copied from.
+-- synced, one row. `device_id` and `path` are the device and the file the
+-- key was minted on: a file that turns up on another device, or at another
+-- path while the original is still there, mints a new key rather than sign
+-- as the copy it was copied from (da-p79vq). '' is a key from before v44,
+-- whose path is learned on its next use.
+-- The secret is stored as it is: the key vouches for this copy's ops on the
+-- wire, and anyone who can read the file can sign as it.
 CREATE TABLE IF NOT EXISTS sync_local (
     id              INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
     endpoint_secret TEXT NOT NULL,
     endpoint_id     TEXT NOT NULL,
-    device_id       TEXT NOT NULL
+    device_id       TEXT NOT NULL,
+    path            TEXT NOT NULL DEFAULT ''
 );
 
 -- The copies this one syncs with (da-rugg8): whoever redeemed an invite

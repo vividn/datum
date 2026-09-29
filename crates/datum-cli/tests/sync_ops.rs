@@ -250,8 +250,26 @@ fn concurrent_edits_of_one_key_go_to_the_later_and_file_a_conflict() {
     a.ok(&["update", &hid, "cups=4"]);
     b.ok(&["update", &hid, "cups=5"]);
     converged(&a, &b);
-    // b wrote second, so its HLC is the later one.
-    assert_eq!(a.data(&hid)["cups"], 5);
+    // The later HLC wins; read which that is rather than assume it.
+    let last = |c: &Copy| {
+        c.ops()
+            .into_iter()
+            .filter(|o| o["kind"] == "update")
+            .max_by_key(|o| {
+                (
+                    o["hlc"].as_str().unwrap().to_string(),
+                    o["endpoint"].as_str().unwrap().to_string(),
+                )
+            })
+    };
+    let winner = last(&a).unwrap();
+    assert_eq!(winner["endpoint"], last(&b).unwrap()["endpoint"]);
+    let won = if winner["raw"].as_str().unwrap().ends_with("cups=5") {
+        5
+    } else {
+        4
+    };
+    assert_eq!(a.data(&hid)["cups"], won);
     for copy in [&a, &b] {
         let check = copy.run(&["check"], "");
         let out = String::from_utf8_lossy(&check.stdout);
@@ -428,10 +446,16 @@ fn ops_since_a_vector_sends_only_what_it_lacks() {
     let (a, b) = (Copy::new(), Copy::new());
     a.ok(&["occur", "coffee"]);
     a.send(&b);
-    assert_eq!(a.ops_for(&b), "");
+    // Only a's own op at b's seq for a, which b holds: the one line that
+    // would show a copy sharing a's key.
+    let overlap = a.ops_for(&b);
+    assert_eq!(overlap.lines().count(), 1, "{overlap}");
+    let had = b.ok_in(&["sync", "apply"], &overlap);
+    assert!(had.starts_with("applied 0 · already had 1 "), "{had}");
     a.ok(&["occur", "coffee", "cups=2"]);
     let lacked = a.ops_for(&b);
-    assert_eq!(lacked.lines().count(), 1, "{lacked}");
+    assert_eq!(lacked.lines().count(), 2, "{lacked}");
+    assert!(lacked.starts_with(&overlap));
     assert!(lacked.contains("\"raw\":\"occur coffee cups=2\""));
 }
 
@@ -454,4 +478,166 @@ fn a_baseline_signed_later_does_not_undo_an_edit() {
         "the edit stands on the copy it never touched"
     );
     assert!(!a.ok(&["conflicts"]).contains("sync_conflict"));
+}
+
+#[test]
+fn an_edit_waits_for_the_create_it_depends_on_from_another_copy() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "cups=2"]);
+    a.send(&b);
+    let hid = a.hid("coffee");
+    b.ok(&["update", &hid, "cups=3"]);
+    let b_only: String = b
+        .ok(&["sync", "ops"])
+        .lines()
+        .filter(|l| l.contains("\"kind\":\"update\""))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    assert_eq!(b_only.lines().count(), 1);
+
+    // c has nothing of a's: b's edit is b's seq 1, so no seq gap holds it —
+    // its deps on a's create do.
+    let c = Copy::new();
+    let held = c.ok_in(&["sync", "apply"], &b_only);
+    assert!(
+        held.starts_with("applied 0 · already had 0 · held 1 "),
+        "{held}"
+    );
+    let filled = c.ok_in(&["sync", "apply"], &a.ok(&["sync", "ops"]));
+    assert!(filled.contains(" held 0 "), "{filled}");
+    assert_eq!(c.data(&hid)["cups"], 3, "the edit landed on the create");
+    assert_eq!(c.hash(), b.hash());
+}
+
+#[test]
+fn the_op_line_is_the_command_without_its_db() {
+    let a = Copy::new();
+    let db = a.db();
+    a.ok(&["--db", db.to_str().unwrap(), "occur", "tea"]);
+    let op = a
+        .ops()
+        .into_iter()
+        .find(|o| o["slug"].as_str().unwrap().starts_with("tea:"))
+        .unwrap();
+    assert_eq!(op["raw"], "occur tea");
+}
+
+/// A copy of `a`'s file on `a`'s own device: the same device id, another path.
+fn twin(a: &Copy) -> Copy {
+    let copy = Copy::new();
+    std::fs::create_dir_all(copy.tmp.path().join("home")).unwrap();
+    let device = |c: &Copy| c.tmp.path().join("home/device_id");
+    std::fs::copy(device(a), device(&copy)).unwrap();
+    std::fs::copy(a.db(), copy.db()).unwrap();
+    copy
+}
+
+/// The endpoint of the newest op `c` signed.
+fn endpoint(c: &Copy) -> String {
+    c.query(
+        "SELECT endpoint FROM ops WHERE hid != ?1 ORDER BY hlc DESC LIMIT 1",
+        "",
+    )
+}
+
+const SHARED: &str = "two copies of one database sharing an endpoint key";
+
+#[test]
+fn copies_that_diverged_before_ops_keep_the_delete() {
+    let a = Copy::new();
+    a.ok(&["occur", "coffee", "cups=2"]);
+    a.sql("DELETE FROM ops; DELETE FROM sync_local;");
+    let b = Copy::new();
+    std::fs::copy(a.db(), b.db()).unwrap();
+    let hid = a.hid("coffee");
+    // b deletes it, a edits it after, and both forget the ops, as if all of
+    // it were from before them.
+    b.ok(&["delete", &hid]);
+    a.ok(&["update", &hid, "cups=3"]);
+    for c in [&a, &b] {
+        c.sql("DELETE FROM ops; DELETE FROM sync_local;");
+    }
+    // The live baseline is signed last, and its row written last: neither
+    // may decide it.
+    b.ok(&["sync", "ops"]);
+    a.ok(&["sync", "ops"]);
+    converged(&a, &b);
+    for c in [&a, &b] {
+        assert!(c.deleted(&hid), "the tombstone stands");
+        assert!(c.ok(&["conflicts"]).contains("sync_conflict"));
+    }
+}
+
+#[test]
+fn a_copy_at_another_path_on_one_device_mints_its_own_endpoint() {
+    let a = Copy::new();
+    a.ok(&["occur", "coffee"]);
+    let copy = twin(&a);
+    a.ok(&["occur", "tea"]);
+    copy.ok(&["occur", "juice"]);
+    assert_ne!(endpoint(&a), endpoint(&copy));
+    converged(&a, &copy);
+}
+
+#[test]
+fn a_moved_file_keeps_its_endpoint() {
+    let a = Copy::new();
+    a.ok(&["occur", "coffee"]);
+    let moved = twin(&a);
+    std::fs::remove_file(a.db()).unwrap();
+    moved.ok(&["occur", "tea"]);
+    let endpoints: std::collections::BTreeSet<String> = moved
+        .ops()
+        .iter()
+        .map(|o| o["endpoint"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(endpoints.len(), 1, "{endpoints:?}");
+}
+
+#[test]
+fn copies_sharing_a_key_are_refused_loudly_and_rekey_parts_them() {
+    let a = Copy::new();
+    a.ok(&["occur", "coffee"]);
+    // Copied before v44 learned the path: both copies take the key.
+    a.sql("UPDATE sync_local SET path = ''");
+    let copy = twin(&a);
+    a.ok(&["occur", "tea"]);
+    assert_eq!(endpoint(&a), endpoint(&copy));
+
+    // copy has not signed a's tea, so a's vector holds more of "its" ops.
+    let vector = a.ok(&["sync", "vector"]);
+    let out = copy.run(&["sync", "ops", "--since", vector.trim()], "");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains(SHARED));
+    let out = copy.run(&["sync", "apply"], &a.ok(&["sync", "ops"]));
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains(SHARED) && err.contains("datum sync rekey"),
+        "{err}"
+    );
+
+    let rekeyed = copy.ok(&["sync", "rekey"]);
+    assert!(rekeyed.starts_with("new endpoint key "), "{rekeyed}");
+    converged(&a, &copy);
+    copy.ok(&["occur", "juice"]);
+    assert_ne!(endpoint(&a), endpoint(&copy));
+    converged(&a, &copy);
+}
+
+#[test]
+fn a_fork_of_one_endpoint_is_refused_not_merged() {
+    let a = Copy::new();
+    a.ok(&["occur", "coffee"]);
+    a.sql("UPDATE sync_local SET path = ''");
+    let copy = twin(&a);
+    a.ok(&["occur", "tea"]);
+    copy.ok(&["occur", "juice"]);
+    // Both signed the same seq, so the vectors agree: the op at that seq,
+    // which `ops --since` sends along, is what shows it.
+    for (from, to) in [(&a, &copy), (&copy, &a)] {
+        let out = to.run(&["sync", "apply"], &from.ops_for(to));
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains(SHARED));
+    }
 }

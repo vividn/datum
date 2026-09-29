@@ -338,6 +338,11 @@ Per key the op with the later hybrid logical clock wins; concurrent edits
 of one key, or a delete against a concurrent edit, file a `sync_conflict`
 that `datum check` and `datum conflicts` show.
 
+A copy of the file at another path mints its own key the first time it
+signs, so `cp a.db b.db` gives two copies that sync. Two copies found
+signing with one key are refused by name; `datum sync rekey` gives one of
+them a new key (and its peers pair with it again).
+
 ## Configuration
 
 `datum` is configured through (in order of precedence):

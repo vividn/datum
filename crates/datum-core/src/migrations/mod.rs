@@ -55,7 +55,7 @@ use v41_v50::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 43;
+pub const CURRENT_SCHEMA_VERSION: u32 = 44;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -374,5 +374,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "sync_peers + sync_invites: the copies this one syncs with over iroh, and its one-time invites (da-rugg8)",
         apply: m42_to_43_sync_peers,
         down: down_43_to_42_sync_peers,
+    },
+    Migration {
+        from: 43,
+        to: 44,
+        summary: "sync_local.path: a copy of the file at another path mints its own endpoint key (da-p79vq)",
+        apply: m43_to_44_sync_local_path,
+        down: down_44_to_43_sync_local_path,
     },
 ];

@@ -365,7 +365,7 @@ async fn exchange(
         if last.as_ref() == Some(&round) {
             break;
         }
-        let ops = db.sync_ops_since(&round.1)?;
+        let ops = db.sync_ops_since(&round.1, false)?;
         let send = async {
             for op in &ops {
                 put(s, op.as_bytes()).await?;

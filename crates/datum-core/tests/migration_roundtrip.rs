@@ -169,6 +169,7 @@ fn every_pair_has_a_roundtrip_test() {
         (40, 41),
         (41, 42),
         (42, 43),
+        (43, 44),
     ];
     assert_eq!(
         covered.len(),
@@ -2609,6 +2610,27 @@ fn roundtrip_v42_to_v43_sync_peers() {
     apply_one_down(conn, 43);
     assert!(!table_exists(conn, "sync_peers"));
     assert!(!table_exists(conn, "sync_invites"));
+}
+
+#[test]
+fn roundtrip_v43_to_v44_sync_local_path() {
+    let db = fresh_at(43);
+    let conn = db.conn();
+    conn.execute(
+        "INSERT INTO sync_local VALUES (1, 'secret', 'id', 'dev')",
+        [],
+    )
+    .unwrap();
+
+    apply_one_up(conn, 43);
+    let path: String = conn
+        .query_row("SELECT path FROM sync_local", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(path, "", "the key is kept, its path learned on next use");
+
+    apply_one_down(conn, 44);
+    assert!(!column_exists(conn, "sync_local", "path"));
+    assert!(table_exists(conn, "sync_local"));
 }
 
 fn field_occurtime_sql(conn: &Connection) -> String {

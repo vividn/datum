@@ -774,6 +774,8 @@ pub enum SyncCommand {
     Peers,
     /// `datum sync forget <PEER>` — drop a peer, by label or id prefix.
     Forget { peer: String },
+    /// `datum sync rekey` — a new endpoint key for this copy (da-p79vq).
+    Rekey,
 }
 
 // ─── Conflicts (da-ttsm) ──────────────────────────────────────────────────

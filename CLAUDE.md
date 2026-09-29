@@ -116,7 +116,9 @@ endpoint key IS the db's endpoint key, copies pair with one-time invites
 (`add-client` / `connect`) into a local `sync_peers` table, only peers are
 served, and `sync now` / `sync run` swap vectors and ops until neither moves.
 `DATUM_SYNC_BIND=<ip:port>` binds one address with no relay or discovery (the
-tests). Signed membership comes next.
+tests). A copy of the file at another path mints its own key (`sync_local.path`,
+v44); two copies found signing with one key are refused by name, and
+`sync rekey` gives one a new key (da-p79vq). Signed membership comes next.
 
 ## Web app (PWA)
 
