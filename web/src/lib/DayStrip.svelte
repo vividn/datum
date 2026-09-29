@@ -69,6 +69,14 @@
 	within the gesture. So the stack holds a FORTNIGHT at least, however
 	short the box, and that past is what the reader scrolls back through.
 
+	And it GROWS (da-vw4ow). Within a box's height of the oldest band the
+	strip adds another fortnight above it — before the top, so the reader
+	never hits it — and stops at the database's first entry, where a quiet
+	«first entry · <date>» says there is nothing older. An added day is a
+	placeholder at its final height and costs no run until it is scrolled
+	into view (`refreshVisible`); the place on screen is held by the
+	distance from the BOTTOM, which adding days above cannot change.
+
 	A BAND IS A PLACE YOU POINT INTO TOO (da-ku7y). The nowview's
 	recogniser is reused whole (`$lib/nowpoint.ts`) rather than written a
 	second time, and this is the table it runs here — a band lies over a
@@ -221,9 +229,7 @@
 	};
 	const dispatch = createEventDispatcher<{ change: Setting }>();
 
-	/** How far back the strip will reach, however tall its box grows. */
-	const MAX_DEPTH = 60;
-	/** The least past the stack holds, so there is somewhere to scroll to. */
+	/** The least past the stack holds, so there is somewhere to scroll to — and what it grows by. */
 	const FORTNIGHT = 14;
 	/** What one press of an arrow key moves the handle, on either axis. */
 	const STEP = 5;
@@ -335,15 +341,22 @@
 	 * box shows when it shows more (da-bewc). Zero is a box with no room
 	 * above today at all, which has nothing to scroll either way.
 	 */
-	$: depth = slots > 0 ? Math.min(MAX_DEPTH, Math.max(FORTNIGHT, fits)) : 0;
+	$: base = slots > 0 ? Math.max(FORTNIGHT, fits) : 0;
+	/** The days the reader has scrolled the stack into, above `base` (`reachBack`). */
+	let extra = 0;
+	$: depth = base > 0 ? base + extra : 0;
 
 	/** The days in the scroller, oldest first — today among them when it is not frozen. */
 	$: rows = [
 		...Array.from({ length: depth }, (_, i) => depth - i),
 		...(freezeToday ? [] : [0])
 	];
-	/** Every day that needs a picture: today first, it being the one in front. */
-	$: ends = [0, ...rows.filter((end) => end !== 0)];
+	/**
+	 * Every day that is drawn without being seen: today first, it being the
+	 * one in front, then the base stack. A day grown above it is drawn only
+	 * once it is on screen (`refreshVisible`).
+	 */
+	$: ends = Array.from({ length: base + 1 }, (_, i) => i);
 
 	/** The sizes a drag is previewing, or the committed ones at rest. */
 	$: shownDayHeight = sizing ? sizing.height : day;
@@ -481,7 +494,10 @@
 	// The pictures are asked for at the WINDOW's width, not the band's:
 	// the band is what they are shown through (`pictureBox`).
 	$: request = { width: pictureBox, dayHeight: day, epoch, midnights };
-	$: if (browser && request.width > 0) draw(request, ends);
+	$: if (browser && request.width > 0) {
+		draw(request, ends);
+		refreshVisible();
+	}
 
 	// The minute turned (da-r61i, `$lib/clock.ts`): today's band is the one
 	// picture in the stack with a now in it, so the tick asks for that one
@@ -601,6 +617,78 @@
 		seenTop = stackEl?.scrollTop ?? 0;
 		atBottom = !stackEl || stackEl.scrollTop + stackEl.clientHeight >= stackEl.scrollHeight - 1;
 		refreshVisible();
+		void reachBack();
+	}
+
+	// ── growing the past (da-vw4ow) ────────────────────────────────────
+
+	/**
+	 * The database's first entry, as of the epoch it was asked at: how many
+	 * days before today it is, and its date — none, and no way back, in a
+	 * database with nothing timed. Asked once an epoch, and only while the
+	 * reader is near the top: a command costs this run only then.
+	 */
+	let first: { epoch: number; back: number; date: string | null } | null = null;
+	let reaching = false;
+	/** The stack reaches the first entry: nothing older to add. */
+	$: ended = first !== null && depth >= first.back;
+
+	/** Is the reader within a box's height of the oldest band? */
+	const nearTop = () => !!stackEl && stackEl.scrollTop < stackEl.clientHeight;
+
+	// A command may have moved the first entry, or wiped the database: ask
+	// again if the reader is up there, and otherwise forget the answer — out
+	// of their sight, so the marker's room goes without moving them.
+	$: if (first && first.epoch !== epoch) void (nearTop() ? reachBack() : keepPlace(() => (first = null)));
+
+	/** Within a box's height of the oldest band, add a fortnight above it. */
+	async function reachBack(): Promise<void> {
+		const today = geometry?.today;
+		if (reaching || !today || !nearTop() || (first?.epoch === epoch && ended)) return;
+		reaching = true;
+		const asked = epoch;
+		const known =
+			first?.epoch === asked ? first : { back: 0, date: null, ...(await firstEntry(today)), epoch: asked };
+		await keepPlace(() => {
+			first = known;
+			if (depth < known.back) extra += Math.min(FORTNIGHT, known.back - depth);
+		});
+		reaching = false;
+		refreshVisible();
+	}
+
+	/**
+	 * The oldest TIMED entry (`--metric occur`: a timeless one sorts first
+	 * and has no day), counted back from the CLI's `today`. A block's day is
+	 * where it BEGINS, and its time is its end (da-zwct).
+	 */
+	async function firstEntry(today: string): Promise<{ back: number; date: string } | null> {
+		try {
+			const { rows } = JSON.parse(
+				(await run(['head', '-n', '1', '--metric', 'occur', '--json'])).stdout
+			);
+			const row = rows?.[0];
+			if (!row?.time) return null;
+			const at = new Date(Date.parse(row.time) - (row.dur_seconds ?? 0) * 1000);
+			const [y, m, d] = today.split('-').map(Number);
+			const back = Math.round(
+				(Date.UTC(y, m - 1, d) - Date.UTC(at.getFullYear(), at.getMonth(), at.getDate())) / 86_400_000
+			);
+			const pad = (n: number) => String(n).padStart(2, '0');
+			return { back, date: `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}` };
+		} catch {
+			return null;
+		}
+	}
+
+	/** Change what is above the reader without moving what they are looking at. */
+	async function keepPlace(change: () => void): Promise<void> {
+		const below = stackEl ? stackEl.scrollHeight - stackEl.scrollTop : 0;
+		change();
+		await tick();
+		if (!stackEl) return;
+		stackEl.scrollTop = stackEl.scrollHeight - below;
+		seenTop = stackEl.scrollTop;
 	}
 
 	/** The frame a pending refresh is waiting for; a scroll is many events. */
@@ -616,7 +704,8 @@
 	 * logged for ten days ago showed a band drawn before it existed. Here
 	 * the scroll itself is the beat, and it asks for the stale bands that
 	 * came into view and for nothing else: days already at this epoch were
-	 * re-drawn when it turned.
+	 * re-drawn when it turned. A day grown above the base has never been
+	 * asked at all, and this is where it is (da-vw4ow).
 	 */
 	function refreshVisible(): void {
 		if (refreshing || !browser) return;
@@ -626,7 +715,7 @@
 			if (at.width <= 0) return;
 			const id = (end: number) => bandArgv(at.width, at.dayHeight, end).join(' ');
 			const stale = (visibleDays() ?? []).filter(
-				(end) => (cache.runs.get(id(end))?.epoch ?? at.epoch) < at.epoch
+				(end) => (cache.runs.get(id(end))?.epoch ?? -1) < at.epoch
 			);
 			if (!stale.length) return;
 			for (const end of stale) cache.runs.delete(id(end));
@@ -1244,6 +1333,7 @@
 	>
 		{#if rows.length > 0}
 			<div class="stack" bind:this={stackEl} on:scroll={onScroll}>
+				{#if ended && first?.date}<p class="quiet first">first entry · {first.date}</p>{/if}
 				{#each rows as end (end)}
 					<div class="row" class:now={end === 0}>
 						<div class="stamp" style:font-size="{stampFont}px">
@@ -1529,8 +1619,14 @@
 	   the oldest row takes the slack above it. An auto margin rather than
 	   `justify-content: flex-end`, which in a scroll box puts the overflow
 	   past the start edge where no scroll reaches it. */
-	.stack .row:first-child {
+	.stack > :first-child {
 		margin-top: auto;
+	}
+	/* Above the oldest band once it is the first entry's: nothing older. */
+	.first {
+		flex: none;
+		padding: 6px 0 4px var(--label);
+		font-size: 11px;
 	}
 
 	/* One day: its stamp in the strip's own column, its picture beside it.

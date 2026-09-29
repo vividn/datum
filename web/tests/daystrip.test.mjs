@@ -290,8 +290,6 @@ const owed = async (app) => owedAt(await metrics(app));
 
 /** The scrollback the stack holds below what the box shows — DayStrip's FORTNIGHT. */
 const FORTNIGHT = 14;
-/** How far back the strip reaches however tall its box — DayStrip's MAX_DEPTH. */
-const DEEPEST = 60;
 
 /**
  * How many days the stack HOLDS when the box shows `shown` of them.
@@ -302,7 +300,7 @@ const DEEPEST = 60;
  * fortnight of past above the box to scroll back through, and a box that
  * shows more than a fortnight holds what it shows.
  */
-const heldFor = (shown) => (shown > 0 ? Math.min(DEEPEST, Math.max(FORTNIGHT, shown)) : 0);
+const heldFor = (shown) => (shown > 0 ? Math.max(FORTNIGHT, shown) : 0);
 const heldAt = (m) => heldFor(owedAt(m));
 
 /**
@@ -989,6 +987,109 @@ describe('the day strip', () => {
 			assert.ok(moved.top < rest.top, `the wheel moved the stack ${rest.top - moved.top}px`);
 
 			assert.deepEqual(await viewsOf(seen), []);
+		});
+	});
+
+	// da-vw4ow. vividn: «when reaching the top of the scrollable dayview, more
+	// days should be added automatically (perhaps even before to avoid
+	// jarring? or at least placeholders that are quickly filled in with
+	// data)». So: a fortnight more within a box of the top, as placeholders
+	// no run is spent on until they are seen, and not a pixel of movement
+	// under the reader — down to the first entry, and no further.
+	test('nearing the top adds older days, drawn only once seen, and stops at the first entry', async () => {
+		await settledRoom(clocked, 'grow', async (app) => {
+			await sizeWhole(app, 2);
+			await app.submit('occur coffee -d -40');
+			await app.idle();
+			await waitForDays(app, FORTNIGHT);
+			const m = await metrics(app);
+			const pastRows = () => app.page.locator('.stack .row').count();
+			const topOf = (back) =>
+				app.page.locator(`.band[data-days-ago="${back}"]`).evaluate((el) => el.getBoundingClientRect().top);
+			/** The past days with any pixel in the stack's box — what the strip draws. */
+			const inBox = () =>
+				app.page.locator('.stack').evaluate((stack) => {
+					const box = stack.getBoundingClientRect();
+					return [...stack.querySelectorAll('.band')]
+						.filter((band) => {
+							const at = band.getBoundingClientRect();
+							return at.bottom > box.top && at.top < box.bottom;
+						})
+						.map((band) => Number(band.dataset.daysAgo));
+				});
+
+			// Half a box from the top: the oldest band is on screen and the
+			// top is not reached yet. Where it lands is read in the same beat,
+			// before the scroll event that grows the stack.
+			const seen = await app.spyOnRunner();
+			const at = await app.page.locator('.stack').evaluate((stack) => {
+				stack.scrollTop = stack.clientHeight / 2;
+				return stack.querySelector('.band[data-days-ago="14"]').getBoundingClientRect().top;
+			});
+			await app.page.waitForFunction((n) => document.querySelectorAll('.stack .row').length > n, FORTNIGHT);
+			await app.idle();
+			assert.equal(await pastRows(), 2 * FORTNIGHT, 'a fortnight more was not added');
+			const scroll = await stackScroll(app);
+			assert.equal(scroll.total, pastHeight(m, 2 * FORTNIGHT), 'the placeholders are not full days');
+			// Added ABOVE, with the place kept: the old top band is where the
+			// reader left it, and there is room over it to scroll into.
+			assert.ok(
+				scroll.top >= pastHeight(m, FORTNIGHT),
+				`the stack was not re-anchored: ${JSON.stringify(scroll)}`
+			);
+			assert.ok(Math.abs((await topOf(FORTNIGHT)) - at) <= 1, 'the band in view moved');
+
+			// No day that was added has been drawn: none is on screen.
+			const ran = await seen();
+			assert.ok(
+				!(await viewsOf(async () => ran)).some((back) => back > FORTNIGHT),
+				'an added day ran off screen'
+			);
+			assert.equal(ran.filter((argv) => argv[0] === 'head').length, 1, 'the first entry was not asked once');
+			assert.equal(await app.page.locator('.band[data-days-ago="20"] svg.svg').count(), 0);
+
+			// Scrolled to, it is drawn — once.
+			const later = await app.spyOnRunner();
+			// Half a band past day 20's top, so which days are in the box is
+			// no question of a pixel: the bottom of 20, 19, the top of 18.
+			await app.page.locator('.stack').evaluate((stack, half) => {
+				const row = stack.querySelector('.band[data-days-ago="20"]').closest('.row');
+				stack.scrollTop += row.getBoundingClientRect().top - stack.getBoundingClientRect().top + half;
+			}, m.pitch / 2);
+			await app.page.locator('.band[data-days-ago="20"] svg.svg').waitFor();
+			await app.idle();
+			const drawn = await viewsOf(later);
+			assert.equal(drawn.filter((back) => back === 20).length, 1, `day 20 ran ${drawn}`);
+			const visible = await inBox();
+			assert.ok(
+				drawn.every((back) => visible.includes(back)),
+				`off-screen days ran: ${drawn} with ${visible} on screen`
+			);
+
+			// And to the top, again and again: the stack ends at the first
+			// entry's day, 40 back, and says so.
+			await app.page.waitForFunction(
+				() => {
+					const stack = document.querySelector('.stack');
+					if (stack.querySelector('.first')) return true;
+					stack.scrollTop = 0;
+				},
+				null,
+				{ polling: 100 }
+			);
+			await app.idle();
+			assert.equal(await pastRows(), 40, 'the stack does not end at the first entry');
+			assert.deepEqual(
+				(await later()).filter((argv) => argv[0] === 'head'),
+				[],
+				'the first entry was asked again at the same epoch'
+			);
+			const first = await app.page.evaluate(() => {
+				const at = new Date(Date.now() - 40 * 86_400_000);
+				const pad = (n) => String(n).padStart(2, '0');
+				return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+			});
+			assert.equal((await app.page.locator('.stack .first').innerText()).trim(), `first entry · ${first}`);
 		});
 	});
 
