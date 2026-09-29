@@ -8,6 +8,7 @@
     "prebuild": "node scripts/ensure-wasm.mjs",
     "build": "vite build",
     "preview": "vite preview",
+    "precheck": "node scripts/ensure-wasm.mjs",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "pretest": "pnpm run build",

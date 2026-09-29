@@ -398,8 +398,8 @@ preopened `/data`. The module is NOT committed (da-0qa4x): a binary cannot
 merge, and every CLI merge conflicted every other open CLI PR on it. Each
 push to main builds one onto the `wasm` branch (`.forgejo/workflows/wasm.yml`)
 — `datum-cli.wasm` plus `SOURCE`, the main sha it is for, one commit per
-main commit — and `web/scripts/ensure-wasm.mjs`, the `predev` and
-`prebuild` of `web/`, puts one in `web/src/lib/wasm/` like a build product
+main commit — and `web/scripts/ensure-wasm.mjs`, the `predev`,
+`prebuild` and `precheck` of `web/`, puts one in `web/src/lib/wasm/` like a build product
 in `target/`: it keeps the one there if its crates are this tree's, fetches
 the `wasm` branch's if this tree's crates are the merge-base's with
 `origin/main`, and builds otherwise, printing which and why. Deploy runs on
