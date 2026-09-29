@@ -226,8 +226,27 @@ pub fn registry_path() -> Result<PathBuf> {
         .join("dbs.toml"))
 }
 
-/// Return (or create) the device ID stored in the data directory.
+/// This device's id: `DATUM_DEVICE_ID`, then the toml `device_id` key, then
+/// the data directory's file. The one resolver — entries, sync and `config
+/// show` all read it, so an entry's `device_id` is its op's (da-mmkre). A
+/// toml that does not parse is `config show`'s to report, not a log's.
 pub fn device_id() -> Result<String> {
+    let toml = load_raw_config_or_default().ok().and_then(|r| r.device_id);
+    Ok(resolve_device_id(toml)?.value)
+}
+
+fn resolve_device_id(toml: Option<String>) -> Result<SourcedValue<String>> {
+    Ok(if let Some(v) = read_env("DATUM_DEVICE_ID") {
+        SourcedValue::new(v, Source::Env)
+    } else if let Some(v) = toml {
+        SourcedValue::new(v, Source::Toml)
+    } else {
+        SourcedValue::new(file_device_id()?, Source::Default)
+    })
+}
+
+/// Return (or create) the device ID stored in the data directory.
+fn file_device_id() -> Result<String> {
     let path = data_dir()?.join("device_id");
     if path.exists() {
         let id = std::fs::read_to_string(&path)
@@ -491,13 +510,7 @@ impl Config {
             SourcedValue::new(default_path.to_string_lossy().into_owned(), Source::Default)
         };
 
-        let device_id = if let Some(v) = read_env("DATUM_DEVICE_ID") {
-            SourcedValue::new(v, Source::Env)
-        } else if let Some(v) = raw.device_id.clone() {
-            SourcedValue::new(v, Source::Toml)
-        } else {
-            SourcedValue::new(device_id()?, Source::Default)
-        };
+        let device_id = resolve_device_id(raw.device_id.clone())?;
 
         let default_field = if let Some(v) = read_env("DATUM_DEFAULT_FIELD") {
             SourcedValue::new(Some(v), Source::Env)

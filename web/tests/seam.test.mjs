@@ -114,6 +114,16 @@ describe('logging verbs', () => {
 		});
 	});
 
+	test("every command's entry carries this browser's device id (da-mmkre)", async () => {
+		await onSeam(async ({ run, entries, page }) => {
+			assert.equal((await run(['occur', 'coffee', '-t', '0700'])).code, OK);
+			assert.equal((await run(['occur', 'tea', '-t', '0701'])).code, OK);
+			const device = await page.evaluate(() => localStorage.getItem('datum-device-id'));
+			assert.match(device, /^web-/);
+			assert.deepEqual((await entries()).map((e) => e.device_id), [device, device]);
+		});
+	});
+
 	test('a state logged twice at the same minute is a duplicate, not a second entry', async () => {
 		await onSeam(async ({ run, entries }) => {
 			assert.equal((await run(['switch', 'mood', 'happy', '-t', '0915'])).code, OK);

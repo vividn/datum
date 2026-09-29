@@ -659,6 +659,53 @@ fn a_device_named_by_the_environment_starts_a_chain_and_renames() {
     assert_eq!(status["this"]["device"], "web-abc12345", "{status}");
 }
 
+/// An entry, its copy's endpoint, the chain and `config show` name one
+/// device, resolved one way: `DATUM_DEVICE_ID`, then the toml, then the file
+/// (da-mmkre — entries read the file alone while sync read the env).
+#[test]
+fn an_entry_the_chain_and_config_show_name_one_device() {
+    for (env, toml) in [
+        (Some("web-abc12345"), None),
+        (None, Some("toml-dev")),
+        (None, None),
+    ] {
+        let a = Copy::new();
+        if let Some(t) = toml {
+            std::fs::create_dir_all(a.tmp.path().join("config")).unwrap();
+            let body = format!("device_id = \"{t}\"\n");
+            std::fs::write(a.tmp.path().join("config/datumrc.toml"), body).unwrap();
+        }
+        let run = |args: &[&str]| {
+            let mut c = a.cmd(args);
+            match env {
+                Some(d) => c.env("DATUM_DEVICE_ID", d),
+                None => c.env_remove("DATUM_DEVICE_ID"),
+            };
+            let out = c.output().unwrap();
+            let err = String::from_utf8_lossy(&out.stderr);
+            assert!(out.status.success(), "`datum {}`: {err}", args.join(" "));
+            String::from_utf8(out.stdout).unwrap()
+        };
+        run(&["sync", "new-invite"]);
+        run(&["occur", "coffee"]);
+        let want = env.or(toml).map(String::from).unwrap_or_else(|| {
+            let file = std::fs::read_to_string(a.tmp.path().join("home/device_id"));
+            file.unwrap().trim().to_string()
+        });
+        assert_eq!(a.query("SELECT device_id FROM entries"), want);
+        assert_eq!(a.query("SELECT device_id FROM sync_local"), want);
+        let status = json(&run(&["sync", "status", "--json"]));
+        assert_eq!(status["this"]["device"], want.as_str(), "{status}");
+        let show = run(&["config", "show"]);
+        let line = show.lines().find(|l| l.starts_with("device_id")).unwrap();
+        assert_eq!(
+            line.split_whitespace().nth(1),
+            Some(want.as_str()),
+            "{show}"
+        );
+    }
+}
+
 #[test]
 fn another_member_is_renamed_by_an_admin_and_by_no_one_else() {
     let (a, b, admin) = locked();
