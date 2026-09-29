@@ -49,6 +49,12 @@ pub fn render_parse_special(e: &ParseError) -> Option<Result<()>> {
 /// Does **not** route through the REPL — callers handle the empty-argv
 /// case themselves.
 pub fn run(argv: Vec<String>) -> Result<()> {
+    // Shell completion's hidden reader (da-bu09u): before any parse or db
+    // open, and it never fails — a TAB must not print an error.
+    if argv.get(1).is_some_and(|a| a == "__complete") {
+        commands::complete::run(&argv[2..]);
+        return Ok(());
+    }
     // Clear the dedup-no-op flag so it reflects only this invocation
     // (da-9sfm). `main` reads it after a clean run to choose exit code 11.
     args::reset_duplicate_noop();
@@ -87,9 +93,9 @@ fn dispatch_single(cli: Cli) -> Result<()> {
         anyhow::bail!("repl is unavailable in this build");
     }
 
-    // `datum config show` runs against an in-memory placeholder: it does
-    // not read the entry db.
-    if matches!(&cli.command, Command::Config(_)) {
+    // `datum config show` and `datum completions` run against an in-memory
+    // placeholder: they do not read the entry db.
+    if matches!(&cli.command, Command::Config(_) | Command::Completions(_)) {
         let placeholder = datum_core::db::Db::open_in_memory()?;
         return cmd::dispatch(cli, &placeholder);
     }

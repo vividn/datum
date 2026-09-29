@@ -110,6 +110,45 @@ pub enum Command {
     /// current parser, reporting (or fixing with `--fix`) drift between
     /// what the parser produces today vs. the persisted columns.
     Reparse(ReparseArgs),
+
+    /// `datum completions <shell | install | uninstall>` — shell tab
+    /// completion (da-bu09u).
+    Completions(CompletionsCommand),
+}
+
+// ─── Completions ──────────────────────────────────────────────────────────
+
+/// A shell `datum completions` has a script for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shell {
+    Zsh,
+    Bash,
+    Fish,
+}
+
+impl Shell {
+    pub const ALL: [Shell; 3] = [Shell::Zsh, Shell::Bash, Shell::Fish];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Shell::Zsh => "zsh",
+            Shell::Bash => "bash",
+            Shell::Fish => "fish",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Shell> {
+        Shell::ALL.into_iter().find(|s| s.name() == name)
+    }
+}
+
+#[derive(Debug)]
+pub enum CompletionsCommand {
+    /// Print the script for a shell.
+    Script(Shell),
+    /// Write it where the shell autoloads it; `None` detects the shell.
+    Install(Option<Shell>),
+    Uninstall(Option<Shell>),
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────

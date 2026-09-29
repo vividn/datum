@@ -1098,6 +1098,8 @@ fn on_a_terminal(cmd: &str) -> Vec<String> {
         .env("DATUM_DB", dir.path().join("t.db"))
         .env("HOME", dir.path())
         .env("DATUM_COLOR", "0")
+        // A terminal is where the one-time completion tip prints (da-bu09u).
+        .env("DATUM_NO_TIPS", "1")
         .env(
             "PATH",
             format!("{}:/usr/bin:/bin", bin.rsplit_once('/').unwrap().0),

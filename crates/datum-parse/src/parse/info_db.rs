@@ -79,6 +79,37 @@ pub(crate) fn parse_db_purge_args(tail: &[&str]) -> Result<DbPurgeArgs> {
     Ok(DbPurgeArgs { yes })
 }
 
+pub(crate) fn parse_completions_cmd(tail: &[&str]) -> Result<CompletionsCommand> {
+    let shells = "zsh|bash|fish";
+    let shell = |name: &str| {
+        Shell::from_name(name)
+            .ok_or_else(|| ParseError::InvalidArg(format!("unknown shell '{name}' ({shells})")))
+    };
+    let Some(sub) = tail.first() else {
+        return Err(ParseError::InvalidArg(format!(
+            "missing completions subcommand ({shells}|install|uninstall)"
+        )));
+    };
+    let chosen = match &tail[1..] {
+        [] => None,
+        ["--shell", name] => Some(shell(name)?),
+        [flag] if flag.starts_with("--shell=") => Some(shell(&flag["--shell=".len()..])?),
+        [tok, ..] => return Err(unknown_flag(split_flag(tok))),
+    };
+    match *sub {
+        "install" => Ok(CompletionsCommand::Install(chosen)),
+        "uninstall" => Ok(CompletionsCommand::Uninstall(chosen)),
+        name if chosen.is_none() && tail.len() == 1 => {
+            Ok(CompletionsCommand::Script(shell(name).map_err(|_| {
+                ParseError::InvalidArg(format!(
+                    "unknown completions subcommand: '{name}' ({shells}|install|uninstall)"
+                ))
+            })?))
+        }
+        _ => Err(unknown_flag(split_flag(tail[1]))),
+    }
+}
+
 pub(crate) fn parse_config_cmd(tail: &[&str]) -> Result<ConfigCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(

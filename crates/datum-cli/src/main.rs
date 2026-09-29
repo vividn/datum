@@ -34,7 +34,11 @@ fn main() {
         }
         report(info)
     }));
-    match datum_cli::run(std::env::args().collect()) {
+    let argv: Vec<String> = std::env::args().collect();
+    let result = datum_cli::run(argv.clone());
+    #[cfg(not(target_family = "wasm"))]
+    completion_tip(&argv);
+    match result {
         Ok(()) => {
             if datum_cli::args::took_duplicate_noop() {
                 std::process::exit(EXIT_DUPLICATE);
@@ -62,5 +66,22 @@ fn exit_code(e: &anyhow::Error) -> i32 {
         EXIT_DUPLICATE
     } else {
         1
+    }
+}
+
+/// The one-time «tab completion is available» tip (da-bu09u).
+#[cfg(not(target_family = "wasm"))]
+fn completion_tip(argv: &[String]) {
+    use datum_commands::commands::completions::{tip, tip_wanted, ShellEnv};
+    use std::io::IsTerminal;
+    let no_tips = std::env::var("DATUM_NO_TIPS").is_ok_and(|v| v == "1");
+    if !tip_wanted(argv, no_tips, std::io::stderr().is_terminal()) {
+        return;
+    }
+    let marker = datum_commands::config::data_dir_path().map(|d| d.join("completion-tip-shown"));
+    if let (Some(env), Some(marker)) = (ShellEnv::from_process(), marker) {
+        if let Some(tip) = tip(env, &marker) {
+            eprintln!("{tip}");
+        }
     }
 }

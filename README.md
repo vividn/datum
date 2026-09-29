@@ -30,7 +30,12 @@ Or run the equivalent helper, which is also the one-command upgrade:
 scripts/install.sh
 ```
 
-This produces a `datum` binary on your `PATH`.
+This produces a `datum` binary on your `PATH`, and `scripts/install.sh`
+also installs tab completion for your shell (`datum completions install`,
+into the directory your shell loads completions from). Skip that with
+`scripts/install.sh --no-completions`; undo it with `datum completions
+uninstall`. The installed script only asks `datum` for its answers, so an
+upgrade never needs a reinstall.
 
 The `--force` flag is required: `datum` is pre-release and not on
 crates.io, so the workspace version stays fixed across builds. Without
@@ -202,6 +207,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `db` — DB-lifecycle (setup, purge, backup, restore, migrate, v2import)
 - `info` — Show health/metadata for DB(s)
 - `config` — Show or manage user configuration
+- `completions` — Shell tab completion: print, install or remove the script
 - `meta` — Attach or list protocol-change notes on a field
 - `kit` — Install / export / list field-spec kits (TOML bundles)
 - `reparse` — Replay an entry's stored raw_input through the current parser
@@ -356,6 +362,7 @@ from the table the binary itself carries:
 | `DATUM_ID_DELIMITER`  | Delimiter that collapses empty `%key%` segments in a slug template (default `:`). |
 | `DATUM_WEEK_START`    | Weekday a week opens on (`monday`…`sunday`, or `1`-`7`; default Monday).          |
 | `DATUM_COLOR`         | `0` disables colour; otherwise auto-detect from the TTY.                          |
+| `DATUM_NO_TIPS`       | Set to `1` to never print the one-time tab-completion tip.                        |
 <!-- END AUTOGEN: ENV -->
 
 `week_start` (env `DATUM_WEEK_START`, toml `week_start = "monday"`) says

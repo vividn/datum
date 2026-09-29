@@ -116,6 +116,7 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "sync",
     "conflicts",
     "reparse",
+    "completions",
 ];
 
 /// Terminal verb tokens the override pre-pass recognises. `end`/`stop`

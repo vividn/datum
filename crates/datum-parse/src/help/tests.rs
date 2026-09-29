@@ -53,15 +53,16 @@ RENDER:
   now      Show the current state of tracked fields + terminal nowview band
 
 ADMIN:
-  spec     Manage field specs (schemas)
-  alias    Manage aliases
-  check    Run database consistency checks
-  db       DB-lifecycle (setup, purge, backup, restore, migrate, v2import)
-  info     Show health/metadata for DB(s)
-  config   Show or manage user configuration
-  meta     Attach or list protocol-change notes on a field
-  kit      Install / export / list field-spec kits (TOML bundles)
-  reparse  Replay an entry's stored raw_input through the current parser
+  spec         Manage field specs (schemas)
+  alias        Manage aliases
+  check        Run database consistency checks
+  db           DB-lifecycle (setup, purge, backup, restore, migrate, v2import)
+  info         Show health/metadata for DB(s)
+  config       Show or manage user configuration
+  completions  Shell tab completion: print, install or remove the script
+  meta         Attach or list protocol-change notes on a field
+  kit          Install / export / list field-spec kits (TOML bundles)
+  reparse      Replay an entry's stored raw_input through the current parser
 
 VIEWS / SYNC:
   count      Count entries (optionally filtered/grouped/since-bounded)
@@ -848,5 +849,8 @@ fn help_json_subcommands_are_the_parsers() {
             named += 1;
         }
     }
-    assert_eq!(named, 5, "db, spec, alias, kit and config name their set");
+    assert_eq!(
+        named, 6,
+        "db, spec, alias, kit, config and completions name their set"
+    );
 }

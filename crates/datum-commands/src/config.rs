@@ -50,64 +50,47 @@ pub struct Registry {
 ///   `<data_dir>/datum/<name>.db` if unknown. Unknown names are auto-added
 ///   to the registry after the caller confirms the path was created.
 pub fn resolve_db(cli_db: Option<&str>) -> Result<ResolvedDb> {
-    let (value, source): (Option<String>, &str) = match cli_db {
-        Some(v) => (Some(v.to_string()), "flag"),
-        None => match std::env::var("DATUM_DB") {
-            Ok(v) if !v.is_empty() => (Some(v), "env"),
-            _ => (None, "default"),
-        },
-    };
-
-    let Some(value) = value else {
-        // Default: <data_dir>/datum/datum.db
-        let path = data_dir()?.join("datum.db");
-        let created_new = !path.exists();
-        if let Some(parent) = path.parent() {
+    let (name, path) = locate(cli_db)?;
+    let created_new = !path.exists();
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("Creating directory {parent:?}"))?;
         }
-        return Ok(ResolvedDb {
-            name: None,
-            path,
-            created_new,
-        });
-    };
-
-    let _ = source;
-
-    if looks_like_path(&value) {
-        let path = PathBuf::from(&value);
-        let created_new = !path.exists();
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)
-                    .with_context(|| format!("Creating directory for DB path: {parent:?}"))?;
-            }
-        }
-        return Ok(ResolvedDb {
-            name: None,
-            path,
-            created_new,
-        });
-    }
-
-    // Treat as name: registry first, then default dir.
-    let registry = load_registry().unwrap_or_default();
-    let path = if let Some(entry) = registry.db.get(&value) {
-        PathBuf::from(&entry.path)
-    } else {
-        data_dir()?.join(format!("{value}.db"))
-    };
-    let created_new = !path.exists();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("Creating directory {parent:?}"))?;
     }
     Ok(ResolvedDb {
-        name: Some(value),
+        name,
         path,
         created_new,
     })
+}
+
+/// Where [`resolve_db`] would put the database, creating nothing — for a
+/// reader that must leave no trace, such as shell completion (da-bu09u).
+pub fn locate_db(cli_db: Option<&str>) -> Option<PathBuf> {
+    locate(cli_db).ok().map(|(_, path)| path)
+}
+
+/// The db's registry name (`None` for a path) and its path, touching nothing.
+fn locate(cli_db: Option<&str>) -> Result<(Option<String>, PathBuf)> {
+    let value = match cli_db {
+        Some(v) => Some(v.to_string()),
+        None => std::env::var("DATUM_DB").ok().filter(|v| !v.is_empty()),
+    };
+    let dir = || data_dir_path().context("Cannot determine data directory");
+    let Some(value) = value else {
+        return Ok((None, dir()?.join("datum.db")));
+    };
+    if looks_like_path(&value) {
+        return Ok((None, PathBuf::from(&value)));
+    }
+    // Treat as name: registry first, then default dir.
+    let registry = load_registry().unwrap_or_default();
+    let path = match registry.db.get(&value) {
+        Some(entry) => PathBuf::from(&entry.path),
+        None => dir()?.join(format!("{value}.db")),
+    };
+    Ok((Some(value), path))
 }
 
 /// Return true if `s` should be treated as a path (not a name).
@@ -236,8 +219,11 @@ pub fn ensure_registered(resolved: &ResolvedDb) -> Result<()> {
 }
 
 /// Location of the DB registry file.
+/// Reading it creates nothing; [`save_registry`] makes the directory.
 pub fn registry_path() -> Result<PathBuf> {
-    Ok(config_dir()?.join("dbs.toml"))
+    Ok(config_dir_path()
+        .context("Cannot determine config directory")?
+        .join("dbs.toml"))
 }
 
 /// Return (or create) the device ID stored in the data directory.
@@ -266,29 +252,31 @@ fn xdg_config_dir() -> Option<PathBuf> {
 }
 
 pub fn data_dir() -> Result<PathBuf> {
-    if let Ok(home) = std::env::var("DATUM_HOME") {
-        let dir = PathBuf::from(home);
-        std::fs::create_dir_all(&dir)
-            .with_context(|| format!("Creating DATUM_HOME directory {dir:?}"))?;
-        return Ok(dir);
-    }
-    let base = xdg_data_dir().context("Cannot determine data directory")?;
-    let dir = base.join("datum");
+    let dir = data_dir_path().context("Cannot determine data directory")?;
     std::fs::create_dir_all(&dir).with_context(|| format!("Creating data directory {dir:?}"))?;
     Ok(dir)
 }
 
-pub fn config_dir() -> Result<PathBuf> {
-    if let Ok(home) = std::env::var("DATUM_CONFIG_HOME") {
-        let dir = PathBuf::from(home);
-        std::fs::create_dir_all(&dir)
-            .with_context(|| format!("Creating DATUM_CONFIG_HOME directory {dir:?}"))?;
-        return Ok(dir);
+/// [`data_dir`] without creating it.
+pub fn data_dir_path() -> Option<PathBuf> {
+    match std::env::var("DATUM_HOME") {
+        Ok(home) => Some(PathBuf::from(home)),
+        Err(_) => Some(xdg_data_dir()?.join("datum")),
     }
-    let base = xdg_config_dir().context("Cannot determine config directory")?;
-    let dir = base.join("datum");
+}
+
+pub fn config_dir() -> Result<PathBuf> {
+    let dir = config_dir_path().context("Cannot determine config directory")?;
     std::fs::create_dir_all(&dir).with_context(|| format!("Creating config directory {dir:?}"))?;
     Ok(dir)
+}
+
+/// [`config_dir`] without creating it.
+pub fn config_dir_path() -> Option<PathBuf> {
+    match std::env::var("DATUM_CONFIG_HOME") {
+        Ok(home) => Some(PathBuf::from(home)),
+        Err(_) => Some(xdg_config_dir()?.join("datum")),
+    }
 }
 
 /// Scan the default data directory for `*.db` files. Used by `info --all`.

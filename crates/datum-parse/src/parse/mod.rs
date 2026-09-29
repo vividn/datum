@@ -277,6 +277,8 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
 
         "reparse" => Command::Reparse(parse_reparse_args(rest)?),
 
+        "completions" => Command::Completions(parse_completions_cmd(rest)?),
+
         "help" => {
             // `datum help --json` → the command table itself (da-r13j).
             if show == Some(Show::Json) {

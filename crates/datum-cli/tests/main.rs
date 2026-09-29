@@ -24,6 +24,7 @@ mod batch_update_cmd;
 mod cli_harness;
 mod comma_slugs;
 mod comment_appends;
+mod completion;
 mod concurrent_states_cmd;
 mod concurrent_writers;
 mod conflicts_cmd;

@@ -193,6 +193,41 @@ impl Db {
         })
     }
 
+    /// Open an existing database for reading only: no migration, no
+    /// schema, no pragma that writes, and SQLite refuses every write on the
+    /// handle. For readers that must not touch what they read, such as
+    /// shell completion (`datum __complete`, da-bu09u). A missing file is an
+    /// error, never a new database.
+    ///
+    /// A read-only open of a WAL database still creates its `-wal` and
+    /// `-shm` files when they are absent. Absent, there is nothing
+    /// uncheckpointed to read, so the file is opened `immutable` and
+    /// nothing is created beside it.
+    pub fn open_read_only(path: &str) -> Result<Self> {
+        use rusqlite::OpenFlags;
+        let checkpointed = !std::path::Path::new(&format!("{path}-wal")).exists();
+        let escaped = path
+            .replace('%', "%25")
+            .replace('?', "%3f")
+            .replace('#', "%23");
+        let uri = format!(
+            "file:{escaped}?mode=ro{}",
+            if checkpointed { "&immutable=1" } else { "" }
+        );
+        let conn = Connection::open_with_flags(
+            uri,
+            OpenFlags::SQLITE_OPEN_READ_ONLY
+                | OpenFlags::SQLITE_OPEN_NO_MUTEX
+                | OpenFlags::SQLITE_OPEN_URI,
+        )?;
+        Ok(Db {
+            conn,
+            spec_alias_cache: RefCell::new(None),
+            device_id: OnceCell::new(),
+            last_migration: None,
+        })
+    }
+
     /// Open an in-memory database (for tests).
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
