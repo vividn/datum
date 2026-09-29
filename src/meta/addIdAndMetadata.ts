@@ -19,12 +19,12 @@ import { compileField } from "../field/compileField";
 
 export function addIdAndMetadata<T>(
   data: DatumData<T>,
-  args: Pick<AddCmdArgs, "noMetadata" | "idParts" | "idDelimiter">,
+  args: Pick<AddCmdArgs, "noMetadata" | "idParts" | "idDelimiter" | "hid">,
 ): EitherIdPayload<T> {
   let meta: DatumMetadata | undefined = undefined;
   if (!args.noMetadata) {
     meta = {
-      humanId: newHumanId(),
+      humanId: args.hid ?? newHumanId(),
     };
 
     // these will be overwritten later by addDoc, but useful to have them here

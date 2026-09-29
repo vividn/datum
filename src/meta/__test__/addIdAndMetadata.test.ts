@@ -30,8 +30,8 @@ describe("addIdAndMetadata", () => {
     expect(
       addIdAndMetadata(
         { abc: "ghi", occurTime: { utc: "2023-09-05T11:20:00.000Z" } },
-        {},
-      ),
+        {}
+      )
     ).toEqual({
       _id: "2023-09-05T11:20:00.000Z",
       data: {
@@ -56,8 +56,8 @@ describe("addIdAndMetadata", () => {
           abc: "ghi",
           occurTime: { utc: "2023-09-05T11:20:00.000Z", o: 0, tz: "UTC" },
         },
-        { noMetadata: true },
-      ),
+        { noMetadata: true }
+      )
     ).toEqual({
       _id: "2023-09-05T11:20:00.000Z",
       abc: "ghi",
@@ -72,8 +72,8 @@ describe("addIdAndMetadata", () => {
           abc: "ghi",
           occurTime: { utc: "2023-09-05T11:20:00.000Z" },
         },
-        { idParts: ["%abc"] },
-      ),
+        { idParts: ["%abc"] }
+      )
     ).toEqual({
       _id: "ghi",
       data: {
@@ -99,8 +99,8 @@ describe("addIdAndMetadata", () => {
           field: "field",
           occurTime: { utc: "2023-09-05T11:20:00.000Z" },
         },
-        {},
-      ),
+        {}
+      )
     ).toEqual({
       _id: "field:2023-09-05T11:20:00.000Z",
       data: {
@@ -128,7 +128,7 @@ describe("addIdAndMetadata", () => {
       },
       {
         idParts: ["%?humanId"],
-      },
+      }
     ) as DatumPayload;
     expect(payload).toMatchObject({
       data: {
@@ -155,7 +155,7 @@ describe("addIdAndMetadata", () => {
       {
         idParts: ["%occurTime", "%?humanId"],
         idDelimiter: "!!!",
-      },
+      }
     ) as DatumPayload;
     expect(payload).toMatchObject({
       data: {
@@ -177,14 +177,14 @@ describe("addIdAndMetadata", () => {
   it("throws an error if the derived id is blank", () => {
     expect(() => addIdAndMetadata({}, { noMetadata: true })).toThrow(IdError);
     expect(() => addIdAndMetadata({ foo: "bar" }, { idParts: [""] })).toThrow(
-      IdError,
+      IdError
     );
   });
 
   it("throws an error if field contains a colon", () => {
     // Testing direct field error
     expect(() => addIdAndMetadata({ field: "invalid:field" }, {})).toThrow(
-      FieldError,
+      FieldError
     );
 
     // Note: The error for composite fields with colons would be caught in compileField
@@ -200,7 +200,7 @@ describe("addIdAndMetadata", () => {
         field: "%prefix%_%state%",
         occurTime: { utc: "2023-09-05T11:20:00.000Z" },
       },
-      {},
+      {}
     ) as DatumPayload;
 
     // Check field is interpolated and fieldStructure is stored
@@ -214,5 +214,17 @@ describe("addIdAndMetadata", () => {
     expect(payload.meta).toHaveProperty("fieldStructure", "%prefix%_%state%");
     expect(payload._id).toEqual("test_active:2023-09-05T11:20:00.000Z");
     expect(payload.meta.idStructure).toEqual("%occurTime%");
+  });
+
+  it("can add a manually specified humanId", () => {
+    const payload = addIdAndMetadata(
+      {
+        foo: "bar",
+        occurTime: { utc: "2023-09-05T11:20:00.000Z" },
+      },
+      { hid: "customHid" }
+    ) as DatumPayload;
+
+    expect(payload.meta.humanId).toBe("customHid");
   });
 });

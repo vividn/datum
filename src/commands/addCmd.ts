@@ -37,6 +37,10 @@ newDocArgs.add_argument("--id-part", "--id", {
 newDocArgs.add_argument("--id-delimiter", {
   help: "spacer between fields in the id",
 });
+newDocArgs.add_argument("--hid", {
+  help: "specify the human id to use for the created document. If not specified, a human id will be generated.",
+  action: "store",
+});
 newDocArgs.add_argument("--undo", "-u", {
   help: "undoes the last datum entry",
   action: "store_true",
@@ -77,6 +81,7 @@ export type AddCmdArgs = MainDatumArgs &
     noMetadata?: boolean;
     idParts?: string[];
     idDelimiter?: string;
+    hid?: string;
     undo?: boolean;
     forceUndo?: boolean;
     merge?: boolean;
@@ -85,7 +90,7 @@ export type AddCmdArgs = MainDatumArgs &
 
 export async function addCmd(
   args: AddCmdArgs | string | string[],
-  preparsed?: Partial<AddCmdArgs>,
+  preparsed?: Partial<AddCmdArgs>
 ): Promise<EitherDocument> {
   args = parseIfNeeded(addCmdArgs, args, preparsed);
   const db = connectDb(args);
