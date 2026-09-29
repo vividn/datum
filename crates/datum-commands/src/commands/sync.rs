@@ -22,20 +22,30 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
         SyncCommand::Vector => {
             println!("{}", serde_json::to_string(&db.sync_vector()?)?);
         }
-        SyncCommand::Ops { since } => {
+        SyncCommand::Ops { since, overlap } => {
             let since: BTreeMap<String, i64> = match since {
                 Some(v) => serde_json::from_str(&v)
                     .with_context(|| format!("--since is not a version vector: {v}"))?,
                 None => BTreeMap::new(),
             };
-            for line in db.sync_ops_since(&since, true)? {
+            for line in db.sync_ops_since(&since, overlap)? {
                 println!("{line}");
             }
         }
-        SyncCommand::Apply => {
+        SyncCommand::Apply { show } => {
             let mut input = String::new();
             std::io::stdin().read_to_string(&mut input)?;
             let s = db.sync_apply(&input)?;
+            // A session's apply (datum.day's transport): the refusals are
+            // the summary's, as the native session reports them, not a failure.
+            if show == ShowFlag::Json {
+                let out = json!({
+                    "applied": s.applied, "already_had": s.already_had, "held": s.held,
+                    "conflicts": s.conflicts, "refused": s.refused,
+                });
+                println!("{out}");
+                return Ok(());
+            }
             for why in &s.refused {
                 eprintln!("refused: {why}");
             }
@@ -82,7 +92,11 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                 "label": copy_label(), "created": chrono::Utc::now().to_rfc3339(),
             });
             db.sync_chain_write(sign(genesis, admin_key.as_deref())?, true)?;
-            db.sync_describe_self(&copy_label(), client())?;
+            // The chain stands without it: a failure here is no reason to say
+            // the init failed and leave its genesis behind.
+            if let Err(e) = db.sync_describe_self(&copy_label(), client()) {
+                eprintln!("⚠ this copy could not describe itself ({e}); `datum sync rename <LABEL>` tries again");
+            }
             println!("started sync chain {id}; this copy is its first member");
         }
         SyncCommand::Admin {
@@ -187,6 +201,57 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                 .context("--vector is not a version vector")?;
             db.sync_record_session(&endpoint, vector.as_ref(), verify, error.as_deref())?;
         }
+        SyncCommand::Handshake {
+            endpoint,
+            label,
+            addr,
+            invite,
+            dialed,
+        } => {
+            let added = db.sync_handshake(&endpoint, &label, &addr, invite.as_deref(), dialed)?;
+            println!("{}", if added { "added" } else { "known" });
+        }
+        SyncCommand::NewInvite { expires_secs } => {
+            ensure!(
+                !db.sync_chain()?.exists(),
+                "this copy is in a sync chain: `datum sync invite` makes an invite"
+            );
+            let expires = std::time::Duration::from_secs(expires_secs);
+            let (secret, expires_at) = db.sync_new_invite(expires)?;
+            println!("{}", json!({"secret": secret, "expires": expires_at}));
+        }
+        SyncCommand::Peers { show } => {
+            let peers = db.sync_peers()?;
+            if show == ShowFlag::Json {
+                let peers: Vec<Value> = peers
+                    .iter()
+                    .map(|p| {
+                        json!({
+                            "endpoint": p.id, "label": p.label, "addr": p.addrs,
+                            "added_at": p.added_at, "last_seen": p.last_seen, "synced": p.synced,
+                        })
+                    })
+                    .collect();
+                println!("{}", Value::from(peers));
+                return Ok(());
+            }
+            if peers.is_empty() {
+                println!("no sync peers");
+            }
+            for p in peers {
+                println!(
+                    "{}  {}  added {}  last seen {}",
+                    p.label,
+                    &p.id[..p.id.len().min(10)],
+                    p.added_at,
+                    p.last_seen.as_deref().unwrap_or("never")
+                );
+            }
+        }
+        SyncCommand::Forget { peer } => {
+            let (label, id) = db.sync_forget(&peer)?;
+            println!("forgot sync peer {label} ({})", &id[..id.len().min(10)]);
+        }
         SyncCommand::Ack { who } => {
             ensure!(db.sync_ack(&who)? > 0, "nothing to acknowledge for {who}");
             println!("acknowledged {who}");
@@ -200,7 +265,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             let chain = db.sync_chain()?;
             ensure!(chain.exists(), NO_CHAIN);
             let expires = std::time::Duration::from_secs(expires_secs);
-            let (secret, expires_at) = datum_sync::new_invite(expires);
+            let (secret, expires_at) = datum_core::db::peers::invite_secret(expires);
             let invite = json!({
                 "type": "invite", "chain": chain.id,
                 "invite_id": ulid::Ulid::new().to_string().to_lowercase(),
@@ -230,10 +295,6 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
         SyncCommand::Now => datum_sync::now_all(db)?,
         #[cfg(feature = "net")]
         SyncCommand::Run => datum_sync::run(db)?,
-        #[cfg(feature = "net")]
-        SyncCommand::Peers => datum_sync::list(db)?,
-        #[cfg(feature = "net")]
-        SyncCommand::Forget { peer } => datum_sync::forget(db, &peer)?,
         #[cfg(not(feature = "net"))]
         _ => anyhow::bail!("peer-to-peer sync is not in this build (no networking)"),
     }

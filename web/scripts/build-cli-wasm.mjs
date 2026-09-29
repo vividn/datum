@@ -17,6 +17,12 @@
 // one the `wasm` branch holds for this tree's crates, and runs this when
 // there is none. The bytes are reproducible, so either is the same module.
 //
+// It builds the sync worker's module too (da-6kpj5): `datum-sync-wire` for
+// wasm32-unknown-unknown, its JavaScript face by wasm-bindgen (a third pinned
+// tool, whose version must be Cargo.lock's `wasm-bindgen`), shrunk the same
+// way. ring's C compiles with the same pinned clang, so those bytes are
+// reproducible for the same reason the CLI's are.
+//
 // Usage:  pnpm run build:cli-wasm
 
 import { execFileSync } from 'node:child_process';
@@ -44,6 +50,12 @@ const TOOLS = {
 	}
 };
 
+TOOLS.wasmBindgen = {
+	url: 'https://github.com/wasm-bindgen/wasm-bindgen/releases/download/0.2.118/wasm-bindgen-0.2.118-x86_64-unknown-linux-musl.tar.gz',
+	sha256: '00b519c9fc2d6e087265da1a00f29160bfcc6a823993482bc2e691910287427b',
+	dir: 'wasm-bindgen-0.2.118-x86_64-unknown-linux-musl'
+};
+
 const toolchains = resolve(repoRoot, 'target', 'toolchains');
 const out = resolve(repoRoot, 'web', 'src', 'lib', 'wasm', 'datum-cli.wasm');
 
@@ -67,6 +79,7 @@ async function tool({ url, sha256, dir }) {
 
 const sdk = await tool(TOOLS.wasiSdk);
 const binaryen = await tool(TOOLS.binaryen);
+const wasmBindgen = await tool(TOOLS.wasmBindgen);
 
 execFileSync(
 	'cargo',
@@ -100,29 +113,74 @@ mkdirSync(resolve(out, '..'), { recursive: true });
 // ensure-wasm.mjs's record of what the module was built from; it writes it
 // again after a build it ran, and a build by hand is from nobody knows what.
 rmSync(resolve(out, '..', 'SOURCE'), { force: true });
-execFileSync(
-	`${binaryen}/bin/wasm-opt`,
-	[
-		resolve(repoRoot, 'target/wasm32-wasip1/wasm-release/datum.wasm'),
-		'-Oz',
-		// What rustc's generic wasm CPU emits. The profile's `strip` drops
-		// the target_features section wasm-opt would otherwise read them
-		// from, and without it wasm-opt validates against the 2017 MVP.
-		'--enable-bulk-memory',
-		'--enable-bulk-memory-opt',
-		'--enable-nontrapping-float-to-int',
-		'--enable-sign-ext',
-		'--enable-mutable-globals',
-		'--enable-multivalue',
-		'--enable-reference-types',
-		'--strip-debug',
-		'--strip-producers',
-		'-o',
-		out
-	],
-	{ stdio: 'inherit' }
-);
-chmodSync(out, 0o644);
+/** `wasm-opt -Oz` `from` into `to`. */
+function shrink(from, to) {
+	execFileSync(
+		`${binaryen}/bin/wasm-opt`,
+		[
+			from,
+			'-Oz',
+			// What rustc's generic wasm CPU emits. The profile's `strip` drops
+			// the target_features section wasm-opt would otherwise read them
+			// from, and without it wasm-opt validates against the 2017 MVP.
+			'--enable-bulk-memory',
+			'--enable-bulk-memory-opt',
+			'--enable-nontrapping-float-to-int',
+			'--enable-sign-ext',
+			'--enable-mutable-globals',
+			'--enable-multivalue',
+			'--enable-reference-types',
+			'--strip-debug',
+			'--strip-producers',
+			'-o',
+			to
+		],
+		{ stdio: 'inherit' }
+	);
+	chmodSync(to, 0o644);
+}
+
+shrink(resolve(repoRoot, 'target/wasm32-wasip1/wasm-release/datum.wasm'), out);
+
 const bytes = statSync(out).size;
 const gz = gzipSync(readFileSync(out)).length;
 console.log(`wrote ${out} (${bytes} bytes, ${gz} gzipped)`);
+
+// The sync worker's module: the wire crate and its wasm-bindgen glue, named
+// `datum-sync.js` (typed by `datum-sync.d.ts`) and `datum-sync_bg.wasm`
+// beside the CLI's.
+execFileSync(
+	'cargo',
+	['build', '-p', 'datum-sync-wire', '--lib', '--target', 'wasm32-unknown-unknown', '--profile', 'wasm-release'],
+	{
+		cwd: repoRoot,
+		env: {
+			...env,
+			CC_wasm32_unknown_unknown: `${sdk}/bin/clang`,
+			AR_wasm32_unknown_unknown: `${sdk}/bin/ar`,
+			CFLAGS_wasm32_unknown_unknown: `-ffile-prefix-map=${cargoHome}=/cargo`
+		},
+		stdio: 'inherit'
+	}
+);
+const wasmDir = resolve(out, '..');
+execFileSync(
+	`${wasmBindgen}/wasm-bindgen`,
+	[
+		resolve(repoRoot, 'target/wasm32-unknown-unknown/wasm-release/datum_sync_wire.wasm'),
+		'--target',
+		'web',
+		'--out-name',
+		'datum-sync',
+		'--out-dir',
+		wasmDir
+	],
+	{ stdio: 'inherit' }
+);
+const sync = resolve(wasmDir, 'datum-sync_bg.wasm');
+shrink(sync, sync);
+// Its .d.ts types it; the glue itself is generated and not the checker's.
+const glue = resolve(wasmDir, 'datum-sync.js');
+writeFileSync(glue, `// @ts-nocheck\n${readFileSync(glue, 'utf8')}`);
+rmSync(resolve(wasmDir, 'datum-sync_bg.wasm.d.ts'), { force: true });
+console.log(`wrote ${sync} (${statSync(sync).size} bytes, ${gzipSync(readFileSync(sync)).length} gzipped)`);

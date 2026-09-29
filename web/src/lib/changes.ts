@@ -21,6 +21,10 @@ const CHANNEL = 'datum-db-changes';
 let channel: BroadcastChannel | null = null;
 /** A tab's own id, so it can ignore the echo of its own write. */
 let self_ = '';
+/** This tab's own hearers: of its own writes (`onAnyChange`), and of a
+ * sync's (`announceHere`). The channel never delivers to its sender. */
+const own = new Set<(dbs?: string[]) => void>();
+const here = new Set<(dbs?: string[]) => void>();
 
 function open(): BroadcastChannel | null {
 	if (channel) return channel;
@@ -44,6 +48,35 @@ function open(): BroadcastChannel | null {
  */
 export function announceChange(dbs?: string[]): void {
 	open()?.postMessage({ from: self_, dbs });
+	for (const hear of own) hear(dbs);
+}
+
+/**
+ * Tell THIS tab's readers of `dbs` that it changed under them — ops a sync
+ * peer sent, which no command on this page wrote (da-6kpj5). The other tabs
+ * heard already: the process that applied them announced its write.
+ */
+export function announceHere(dbs: string[]): void {
+	for (const hear of here) hear(dbs);
+}
+
+/**
+ * Run `handler` on EVERY write to `db`, this tab's own and every other
+ * tab's: what the syncing tab pushes on (da-6kpj5). Not coalesced — the
+ * handler owns its own economy. Returns an unsubscribe.
+ */
+export function onAnyChange(handler: () => void, db: string): () => void {
+	const hear = (dbs?: string[]) => {
+		if (!dbs || dbs.includes(db)) handler();
+	};
+	own.add(hear);
+	const listener = (e: MessageEvent) => hear(e.data?.dbs);
+	const c = open();
+	c?.addEventListener('message', listener);
+	return () => {
+		own.delete(hear);
+		c?.removeEventListener('message', listener);
+	};
 }
 
 /**
@@ -94,6 +127,13 @@ export function onExternalChange(handler: () => unknown, db = 'datum'): () => vo
 	const listener = (e: MessageEvent) => {
 		if (e.data?.from !== self_ && (!e.data?.dbs || e.data.dbs.includes(db))) void refresh();
 	};
+	const synced = (dbs?: string[]) => {
+		if (!dbs || dbs.includes(db)) void refresh();
+	};
 	c.addEventListener('message', listener);
-	return () => c.removeEventListener('message', listener);
+	here.add(synced);
+	return () => {
+		c.removeEventListener('message', listener);
+		here.delete(synced);
+	};
 }

@@ -16,10 +16,15 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
     let mut rest = rest.iter();
     let cmd = match sub {
         "vector" => SyncCommand::Vector,
-        "apply" => SyncCommand::Apply,
+        // `--json` is the swept `--show json`, set by `apply_show`.
+        "apply" => SyncCommand::Apply {
+            show: Show::Default,
+        },
         "now" => SyncCommand::Now,
         "run" => SyncCommand::Run,
-        "peers" => SyncCommand::Peers,
+        "peers" => SyncCommand::Peers {
+            show: Show::Default,
+        },
         "rekey" => SyncCommand::Rekey,
         "forget" => SyncCommand::Forget {
             peer: rest
@@ -109,6 +114,24 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 error: o.get("error"),
             }
         }
+        // Hidden (da-6kpj5): datum.day's transport, as for `record-session`.
+        "handshake" => {
+            let mut o = opts(&mut rest, &["label", "addr", "invite"], &["dialed"], 1..=1)?;
+            let need = |name: &str| {
+                o.get(name)
+                    .ok_or_else(|| ParseError::InvalidArg(format!("handshake needs --{name}")))
+            };
+            SyncCommand::Handshake {
+                label: need("label")?,
+                addr: need("addr")?,
+                invite: o.get("invite"),
+                dialed: o.on("dialed"),
+                endpoint: o.positional.remove(0),
+            }
+        }
+        "new-invite" => SyncCommand::NewInvite {
+            expires_secs: opts(&mut rest, &["expires"], &[], 0..=0)?.expires()?,
+        },
         "ack" => SyncCommand::Ack {
             who: rest
                 .next()
@@ -124,19 +147,11 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             SyncCommand::Verify { verbose }
         }
         "ops" => {
-            let since = match rest.next().map(|t| split_flag(t)) {
-                Some(FlagSplit::LongAttached("since", v)) => Some(v.to_string()),
-                Some(FlagSplit::Long("since")) => Some(
-                    rest.next()
-                        .ok_or_else(|| {
-                            ParseError::InvalidArg("--since needs a version vector".into())
-                        })?
-                        .to_string(),
-                ),
-                Some(f) => return Err(unknown_flag(f)),
-                None => None,
-            };
-            SyncCommand::Ops { since }
+            let o = opts(&mut rest, &["since"], &["no-overlap"], 0..=0)?;
+            SyncCommand::Ops {
+                since: o.get("since"),
+                overlap: !o.on("no-overlap"),
+            }
         }
         other => {
             return Err(ParseError::InvalidArg(format!(
@@ -228,7 +243,12 @@ mod tests {
     #[test]
     fn parses_each_subcommand() {
         assert_eq!(parse_sync_cmd(&["vector"]).unwrap(), SyncCommand::Vector);
-        assert_eq!(parse_sync_cmd(&["apply"]).unwrap(), SyncCommand::Apply);
+        assert_eq!(
+            parse_sync_cmd(&["apply"]).unwrap(),
+            SyncCommand::Apply {
+                show: Show::Default
+            }
+        );
         assert_eq!(
             parse_sync_cmd(&["verify", "--verbose"]).unwrap(),
             SyncCommand::Verify { verbose: true }
@@ -236,14 +256,38 @@ mod tests {
         assert_eq!(
             parse_sync_cmd(&["ops", "--since", "{}"]).unwrap(),
             SyncCommand::Ops {
-                since: Some("{}".into())
+                since: Some("{}".into()),
+                overlap: true
             }
         );
         assert_eq!(
             parse_sync_cmd(&["ops", "--since={\"a\":1}"]).unwrap(),
             SyncCommand::Ops {
-                since: Some("{\"a\":1}".into())
+                since: Some("{\"a\":1}".into()),
+                overlap: true
             }
+        );
+        assert_eq!(
+            parse_sync_cmd(&["ops", "--since", "{}", "--no-overlap"]).unwrap(),
+            SyncCommand::Ops {
+                since: Some("{}".into()),
+                overlap: false
+            }
+        );
+        assert_eq!(
+            parse_sync_cmd(&["handshake", "ab", "--label", "l", "--addr={}", "--dialed"]).unwrap(),
+            SyncCommand::Handshake {
+                endpoint: "ab".into(),
+                label: "l".into(),
+                addr: "{}".into(),
+                invite: None,
+                dialed: true
+            }
+        );
+        assert!(parse_sync_cmd(&["handshake", "ab", "--label", "l"]).is_err());
+        assert_eq!(
+            parse_sync_cmd(&["new-invite", "--expires", "1m"]).unwrap(),
+            SyncCommand::NewInvite { expires_secs: 60 }
         );
         assert_eq!(
             parse_sync_cmd(&["add-client", "--qr", "--expires", "1h"]).unwrap(),

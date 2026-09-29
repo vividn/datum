@@ -1,0 +1,34 @@
+// The messages between $lib/sync.ts (the page) and $lib/sync.worker.ts.
+
+/** How one session went, as the wire crate reports it (`Report`). */
+export interface SyncReport {
+	label: string;
+	id: string;
+	added: boolean;
+	redeemed: boolean;
+	sent: number;
+	got: number;
+	conflicts: number;
+	verified: boolean;
+	vector: Record<string, number>;
+}
+
+export type SyncRequest =
+	| ({ id: number; db: string } & (
+			| { op: 'start'; key: string; relay?: string; label: string }
+			| { op: 'dial'; addr: string }
+			| { op: 'connect'; ticket: string }
+			| { op: 'ticket'; secret: string; also?: string }
+	  ))
+	/** A CLI process the worker asked for (`run`), and how it went. */
+	| { ran: number; result: { code: number; stdout: string; stderr: string } };
+
+export type SyncEvent =
+	/** The answer to request `id`. */
+	| { id: number; ok: true; value: unknown }
+	| { id: number; ok: false; error: string }
+	/** Run `datum <argv>` for a session's store, and answer `{ ran }`. */
+	| { run: number; argv: string[]; stdin?: string }
+	/** A session a peer dialed, which this endpoint served. */
+	| { served: string; report: SyncReport }
+	| { served: string; error: string };

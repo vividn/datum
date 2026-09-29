@@ -3,21 +3,18 @@ name = "datum-sync"
 version.workspace = true
 edition.workspace = true
 
-# Easy Sync's transport (da-rugg8): the iroh endpoint and the sync session.
-# Native only — datum-commands pulls it in behind its `net` feature, which the
-# wasm32-wasip1 build (no sockets) leaves off.
+# Easy Sync's transport, natively (da-rugg8): datum-sync-wire's session over
+# `Db`, and the native-only parts — `sync run`, the QR, signals. Native only —
+# datum-commands pulls it in behind its `net` feature, which the wasm32-wasip1
+# build (no sockets) leaves off; datum.day runs the wire crate itself (da-6kpj5).
 [dependencies]
 datum-core = { path = "../datum-core" }
+datum-sync-wire = { path = "../datum-sync-wire" }
 iroh = "1.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signal"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
-data-encoding = { workspace = true }
 qrcode = { version = "0.14", default-features = false }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 libc = { workspace = true }
-rand = { workspace = true }
-rusqlite = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
-sha2 = { workspace = true }

@@ -143,7 +143,12 @@ export async function run(
 	const against = dbArgv(argv);
 	try {
 		runner ??= (await import('./runners/wasi.js')).wasiRun;
-		return await runner(against, stdin, onStderr, key, stage);
+		const result = await runner(against, stdin, onStderr, key, stage);
+		// `sync init`, `forget`, a revoke…: its leader reads the setup again (da-6kpj5).
+		if (argv.includes('sync') && result.changed?.length) {
+			void import('./sync.js').then(({ syncTouched }) => syncTouched(dbOf(argv)));
+		}
+		return result;
 	} catch (e) {
 		// A runner that throws is a bug in the runner, not in the caller: the
 		// seam still owes the UI a result it can render.

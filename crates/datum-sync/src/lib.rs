@@ -1,31 +1,20 @@
-//! Easy Sync over iroh (da-rugg8): two copies of a database sync over a QUIC
-//! connection. The merge is datum-core's (`sync_vector`, `sync_ops_since`,
-//! `sync_apply`, `sync_state_hash`); this crate moves the ops, and pairs
-//! copies with one-time invites.
+//! Easy Sync over iroh, natively (da-rugg8): `datum-sync-wire`'s session
+//! over a [`Store`] on `Db`, and what only a native copy does — serve an
+//! invite, `sync run`'s daemon, the QR, the host's name. The protocol, the
+//! endpoint and the pairing rules are the wire crate's and datum-core's, so
+//! datum.day's copy runs the same ones (da-6kpj5).
 //!
-//! - **Endpoint.** The iroh endpoint's key IS the db's endpoint key, so the
-//!   iroh endpoint id is the `endpoint` every op of this copy carries. ALPN
-//!   `datum/sync/2`, n0's relays and discovery. `DATUM_SYNC_BIND=<ip:port>`
-//!   binds that one address with no relay and no discovery (a LAN, the tests).
+//! - **Net.** n0's relays and discovery; `DATUM_SYNC_RELAY=<url>` one relay
+//!   and nothing else (a private relay, the tests' local one);
+//!   `DATUM_SYNC_BIND=<ip:port>` that one address with no relay and no
+//!   discovery (a LAN, the tests).
 //! - **Peers.** With no sync chain, trust is pairwise: a peer is whoever
 //!   redeemed an invite from this copy, or whose invite it redeemed. In a
 //!   chain (da-odwc7) a peer is a member, and `sync_peers` only remembers
 //!   where members were last seen: any member admits the redeemer of an
-//!   admin-signed invite, and only unrevoked members are served or dialed.
-//!   Anyone else is refused at the handshake, and so is this copy's own key.
-//! - **Wire.** One bidirectional stream of frames, each a big-endian u32
-//!   length and its bytes. The dialer sends a [`Hello`], the acceptor a
-//!   [`Reply`]. Then rounds: each side sends its version vector, then the ops
-//!   the other lacks, one frame each, and an empty frame, and applies what
-//!   came — until a round in which neither vector moved. Last the verify
-//!   hashes, the dialer's first, and the dialer closes.
-//! - **Record.** Every session this copy dials, and every one it serves past
-//!   the handshake, is recorded as it ends — the peer's vector, the verify,
-//!   or the error it failed with — for `datum sync status` (da-rcb5m).
-//! - **Progress.** A session fails only when no frame has moved either way
-//!   for [`idle`] (da-039jx). A long apply is chunked, and between chunks
-//!   the side applying sends a [`BUSY`] frame, which a reader skips: a
-//!   first sync of 32k ops takes minutes and is not a dead peer.
+//!   admin-signed invite, and only unrevoked members are served or dialed
+//!   (`Db::sync_handshake`). Anyone else is refused at the handshake, and so
+//!   is this copy's own key.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -33,39 +22,17 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, ensure, Context, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use chrono::{SecondsFormat, Utc};
-use data_encoding::BASE32_NOPAD;
+use datum_core::db::peers::Peer;
 use datum_core::db::{chain, Db};
+use datum_sync_wire::{
+    dial, redeem, serve, Applied, Endpoint, EndpointAddr, Lost, Net, Report, Store, Ticket, Vector,
+};
 use futures_util::stream::{FuturesUnordered, StreamExt};
-use iroh::endpoint::{presets, Incoming, RecvStream, SendStream};
-use iroh::{Endpoint, EndpointAddr, RelayMode, SecretKey};
-use rusqlite::{params, OptionalExtension};
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-
-pub const ALPN: &[u8] = b"datum/sync/2";
-const MAX_FRAME: usize = 64 << 20;
-const MAX_HELLO: usize = 64 << 10;
-/// A session in which both sides keep writing still ends.
-const MAX_ROUNDS: usize = 16;
-/// Ops per `sync_apply`: about a second at 13 ms an op (da-kg95e).
-const CHUNK: usize = 64;
-const COPY: &str = "this peer is a copy of this database (same endpoint key); run `datum sync rekey` on one of them";
-
-// ─── Small things ───────────────────────────────────────────────────────────
 
 fn now() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-fn sha256_hex(s: &str) -> String {
-    hex(&Sha256::digest(s.as_bytes()))
 }
 
 fn short(id: &str) -> &str {
@@ -95,19 +62,6 @@ fn env<T: std::str::FromStr>(name: &str) -> Option<T> {
     std::env::var(name).ok()?.parse().ok()
 }
 
-/// How long a session may go with no frame moving either way
-/// (`DATUM_SYNC_TIMEOUT_S`, for the tests).
-fn idle() -> Duration {
-    Duration::from_secs(env("DATUM_SYNC_TIMEOUT_S").unwrap_or(60))
-}
-
-async fn within<T>(f: impl Future<Output = Result<T>>) -> Result<T> {
-    let limit = idle();
-    tokio::time::timeout(limit, f)
-        .await
-        .map_err(|_| anyhow!("timed out: nothing moved for {}s", limit.as_secs()))?
-}
-
 /// The session runs on the calling thread, and blocks it while it applies;
 /// iroh's own tasks run on a worker, so frames still go out meanwhile.
 fn runtime() -> Result<tokio::runtime::Runtime> {
@@ -117,231 +71,78 @@ fn runtime() -> Result<tokio::runtime::Runtime> {
         .build()?)
 }
 
-// ─── Peers and invites (local tables, never synced) ─────────────────────────
+// ─── The store ──────────────────────────────────────────────────────────────
 
-pub struct Peer {
-    pub id: String,
-    pub label: String,
-    addrs: String,
-    pub added_at: String,
-    pub last_seen: Option<String>,
+/// A session's store: this copy's `Db`, on the session's own thread.
+struct DbStore<'a>(&'a Db);
+
+impl Store for DbStore<'_> {
+    fn label(&self) -> String {
+        label()
+    }
+
+    async fn vector(&self) -> Result<Vector> {
+        Ok(self.0.sync_vector()?)
+    }
+
+    async fn ops_since(&self, since: &Vector) -> Result<Vec<String>> {
+        Ok(self.0.sync_ops_since(since, false)?)
+    }
+
+    async fn apply(&self, ops: &[String]) -> Result<Applied> {
+        // Test knob: a slow apply. The delay BLOCKS the thread, as a slow
+        // `sync_apply` does: an async sleep would yield, and the test would
+        // pass on the runtime da-039jx replaced.
+        let delay = Duration::from_millis(env("DATUM_SYNC_TEST_APPLY_DELAY_MS").unwrap_or(0));
+        std::thread::sleep(delay * ops.len() as u32);
+        let s = self.0.sync_apply(&ops.join("\n"))?;
+        Ok(Applied {
+            applied: s.applied,
+            conflicts: s.conflicts,
+            refused: s.refused,
+        })
+    }
+
+    async fn verify(&self) -> Result<String> {
+        Ok(self.0.sync_state_hash()?.0)
+    }
+
+    async fn handshake(
+        &self,
+        peer: &str,
+        label: &str,
+        addr: &EndpointAddr,
+        invite: Option<&str>,
+        dialed: bool,
+    ) -> Result<bool> {
+        let addr = serde_json::to_string(addr)?;
+        Ok(self.0.sync_handshake(peer, label, &addr, invite, dialed)?)
+    }
+
+    async fn record_session(
+        &self,
+        peer: &str,
+        vector: Option<&Vector>,
+        verify: Option<bool>,
+        error: Option<&str>,
+    ) -> Result<()> {
+        Ok(self.0.sync_record_session(peer, vector, verify, error)?)
+    }
 }
 
-impl Peer {
-    fn addr(&self) -> Result<EndpointAddr> {
-        Ok(serde_json::from_str(&self.addrs)?)
-    }
+fn addr(p: &Peer) -> Result<EndpointAddr> {
+    Ok(serde_json::from_str(&p.addrs)?)
 }
 
 /// The peers to sync with: in a chain, those still members, and whose
 /// address this copy knows.
 fn synced_peers(db: &Db) -> Result<Vec<Peer>> {
-    let mut out = Vec::new();
-    for p in peers(db)? {
-        if is_peer(db, &p.id)? && p.addr().is_ok() {
-            out.push(p);
-        }
-    }
-    Ok(out)
-}
-
-pub fn peers(db: &Db) -> Result<Vec<Peer>> {
-    let mut stmt = db.conn().prepare(
-        "SELECT endpoint_id, label, addrs, added_at, last_seen FROM sync_peers ORDER BY added_at",
-    )?;
-    let rows = stmt.query_map([], |r| {
-        Ok(Peer {
-            id: r.get(0)?,
-            label: r.get(1)?,
-            addrs: r.get(2)?,
-            added_at: r.get(3)?,
-            last_seen: r.get(4)?,
-        })
-    })?;
-    Ok(rows.collect::<rusqlite::Result<_>>()?)
-}
-
-/// A copy this one syncs with: in a chain, an unrevoked member; else a peer.
-fn is_peer(db: &Db, id: &str) -> Result<bool> {
-    let chain = db.sync_chain()?;
-    if chain.exists() {
-        return Ok(chain.member(id).is_some_and(|m| m.revoked.is_none()));
-    }
     Ok(db
-        .conn()
-        .query_row(
-            "SELECT 1 FROM sync_peers WHERE endpoint_id = ?1",
-            [id],
-            |_| Ok(()),
-        )
-        .optional()?
-        .is_some())
+        .sync_peers()?
+        .into_iter()
+        .filter(|p| p.synced && addr(p).is_ok())
+        .collect())
 }
-
-/// Record `id` as a peer, or refresh its label, address and last seen.
-fn record_peer(db: &Db, id: &str, label: &str, addr: &EndpointAddr) -> Result<()> {
-    db.conn().execute(
-        "INSERT INTO sync_peers (endpoint_id, label, addrs, added_at, last_seen)
-         VALUES (?1, ?2, ?3, ?4, ?4)
-         ON CONFLICT (endpoint_id) DO UPDATE SET
-           label = excluded.label, addrs = excluded.addrs, last_seen = excluded.last_seen",
-        params![id, label, serde_json::to_string(addr)?, now()],
-    )?;
-    Ok(())
-}
-
-/// Mark the invite whose secret is `secret` used, if it is unused and
-/// unexpired; otherwise say why not.
-fn redeem(db: &Db, secret: &str) -> Result<(), String> {
-    let hash = sha256_hex(secret);
-    let row: Option<(String, Option<String>)> = db
-        .conn()
-        .query_row(
-            "SELECT expires_at, used_at FROM sync_invites WHERE secret_hash = ?1",
-            [&hash],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .optional()
-        .map_err(|e| e.to_string())?;
-    match row {
-        None => Err("unknown invite".into()),
-        Some((_, Some(used))) => Err(format!("invite already used ({used})")),
-        Some((expires, None)) if expires <= now() => Err(format!("invite expired ({expires})")),
-        Some(_) => db
-            .conn()
-            .execute(
-                "UPDATE sync_invites SET used_at = ?2 WHERE secret_hash = ?1",
-                params![hash, now()],
-            )
-            .map(drop)
-            .map_err(|e| e.to_string()),
-    }
-}
-
-// ─── Wire ───────────────────────────────────────────────────────────────────
-
-/// A one-time invite: where to dial — the inviter first, then the peers it
-/// knows, any of which can admit the redeemer in a chain — and the secret.
-#[derive(Serialize, Deserialize)]
-struct Ticket {
-    addrs: Vec<EndpointAddr>,
-    secret: String,
-}
-
-impl Ticket {
-    fn encode(&self) -> Result<String> {
-        Ok(BASE32_NOPAD.encode(&serde_json::to_vec(self)?))
-    }
-
-    fn decode(s: &str) -> Result<Self> {
-        let bytes = BASE32_NOPAD
-            .decode(s.trim().to_uppercase().as_bytes())
-            .context("not a datum sync ticket")?;
-        serde_json::from_slice(&bytes).context("not a datum sync ticket")
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-struct Hello {
-    label: String,
-    addr: EndpointAddr,
-    invite: Option<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-enum Reply {
-    Welcome { label: String, addr: EndpointAddr },
-    Refused(String),
-}
-
-/// Sent between the chunks of a long apply; progress, and otherwise ignored.
-/// No JSON frame and no op line is a NUL byte, and it is not the empty frame.
-const BUSY: &[u8] = &[0];
-
-async fn put(s: &mut SendStream, b: &[u8]) -> Result<()> {
-    within(async {
-        s.write_all(&(b.len() as u32).to_be_bytes()).await?;
-        s.write_all(b).await?;
-        Ok(())
-    })
-    .await
-}
-
-async fn get(r: &mut RecvStream, max: usize) -> Result<Vec<u8>> {
-    within(async {
-        let mut n = [0u8; 4];
-        r.read_exact(&mut n).await?;
-        let n = u32::from_be_bytes(n) as usize;
-        ensure!(n <= max, "frame of {n} bytes is over the limit");
-        let mut b = vec![0u8; n];
-        r.read_exact(&mut b).await?;
-        Ok(b)
-    })
-    .await
-}
-
-async fn put_json(s: &mut SendStream, v: &impl Serialize) -> Result<()> {
-    put(s, &serde_json::to_vec(v)?).await
-}
-
-/// The next frame that is not a [`BUSY`].
-async fn get_json<T: DeserializeOwned>(r: &mut RecvStream, max: usize) -> Result<T> {
-    loop {
-        let f = get(r, max).await?;
-        if f != BUSY {
-            return Ok(serde_json::from_slice(&f)?);
-        }
-    }
-}
-
-// ─── The session ────────────────────────────────────────────────────────────
-
-/// One sync with one peer.
-#[derive(Debug)]
-pub struct Report {
-    pub label: String,
-    pub id: String,
-    /// The peer was added by this session.
-    pub added: bool,
-    /// The session redeemed an invite.
-    pub redeemed: bool,
-    pub sent: usize,
-    pub got: usize,
-    pub conflicts: usize,
-    pub verified: bool,
-    /// The peer's version vector, as it last sent it.
-    pub vector: BTreeMap<String, i64>,
-}
-
-impl std::fmt::Display for Report {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}: sent {}, got {}, conflicts {}, verify {}",
-            self.label,
-            self.sent,
-            self.got,
-            self.conflicts,
-            if self.verified { "ok" } else { "MISMATCH" }
-        )
-    }
-}
-
-/// A session that failed after the handshake, and what it had moved by then.
-#[derive(Debug)]
-struct Lost(Report, anyhow::Error);
-
-impl std::fmt::Display for Lost {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Lost(rep, e) = self;
-        if rep.got + rep.sent > 0 {
-            write!(f, "applied {} op(s) and sent {}, then: ", rep.got, rep.sent)?;
-        }
-        write!(f, "{e:#}")
-    }
-}
-
-impl std::error::Error for Lost {}
 
 /// Say so if `e` is a session that redeemed an invite and then failed: the
 /// two copies are paired, and only the first sync is unfinished.
@@ -358,235 +159,18 @@ fn paired_unfinished(e: &anyhow::Error) -> bool {
     }
 }
 
-/// Apply `ops` a [`CHUNK`] at a time, and between chunks send a [`BUSY`].
-async fn apply(db: &Db, s: &mut SendStream, ops: &[String], rep: &mut Report) -> Result<()> {
-    // Test knobs: a slow apply, and the keepalives off (the mutation control).
-    // The delay BLOCKS the thread, as a slow `sync_apply` does: an async sleep
-    // would yield, and the test would pass on the runtime this fix replaced.
-    let delay = Duration::from_millis(env("DATUM_SYNC_TEST_APPLY_DELAY_MS").unwrap_or(0));
-    let keepalive = env::<u8>("DATUM_SYNC_TEST_KEEPALIVE") != Some(0);
-    for (i, chunk) in ops.chunks(CHUNK).enumerate() {
-        if i > 0 && keepalive {
-            put(s, BUSY).await?;
-        }
-        std::thread::sleep(delay * chunk.len() as u32);
-        let applied = db.sync_apply(&chunk.join("\n"))?;
-        for why in &applied.refused {
-            eprintln!("refused from {}: {why}", rep.label);
-        }
-        rep.got += applied.applied;
-        rep.conflicts += applied.conflicts;
-    }
-    Ok(())
-}
-
-/// Swap ops until neither side's vector moves, then compare state hashes.
-async fn exchange(
-    db: &Db,
-    s: &mut SendStream,
-    r: &mut RecvStream,
-    dialer: bool,
-    rep: &mut Report,
-) -> Result<()> {
-    let mut last = None;
-    for _ in 0..MAX_ROUNDS {
-        let mine = db.sync_vector()?;
-        put_json(s, &mine).await?;
-        let theirs: BTreeMap<String, i64> = get_json(r, MAX_FRAME).await?;
-        rep.vector = theirs.clone();
-        let round = (mine, theirs);
-        if last.as_ref() == Some(&round) {
-            break;
-        }
-        let ops = db.sync_ops_since(&round.1, false)?;
-        let send = async {
-            for op in &ops {
-                put(s, op.as_bytes()).await?;
-            }
-            put(s, b"").await
-        };
-        let recv = async {
-            let mut lines = Vec::new();
-            loop {
-                let f = get(r, MAX_FRAME).await?;
-                if f.is_empty() {
-                    return Ok::<_, anyhow::Error>(lines);
-                }
-                lines.push(String::from_utf8(f)?);
-            }
-        };
-        let ((), lines) = tokio::try_join!(send, recv)?;
-        rep.sent += ops.len();
-        apply(db, s, &lines, rep).await?;
-        last = Some(round);
-    }
-    let hash = db.sync_state_hash()?.0;
-    // The acceptor answers only after it has read the dialer's hash, so
-    // the dialer's close can never cut a frame still in flight.
-    let theirs: String = if dialer {
-        put_json(s, &hash).await?;
-        get_json(r, MAX_HELLO).await?
-    } else {
-        let h = get_json(r, MAX_HELLO).await?;
-        put_json(s, &hash).await?;
-        h
-    };
-    rep.verified = theirs == hash;
-    Ok(())
-}
-
-/// Record how a session with `id` ended. A peer that is neither a member
-/// nor paired (a refused redemption) has no row to record it in.
-fn record(db: &Db, id: &str, rep: &Result<Report>) {
-    let (vector, verify, error) = match rep {
-        Ok(r) => (Some(&r.vector), Some(r.verified), None),
-        Err(e) => (
-            e.downcast_ref::<Lost>().map(|Lost(r, _)| &r.vector),
-            None,
-            Some(format!("{e:#}")),
-        ),
-    };
-    let _ = db.sync_record_session(id, vector, verify, error.as_deref());
-}
-
-/// Dial a peer, presenting `invite` if this is its redemption, sync, and
-/// record how it went.
-async fn dial(db: &Db, ep: &Endpoint, addr: EndpointAddr, invite: Option<&str>) -> Result<Report> {
-    let id = addr.id.to_string();
-    let rep = session(db, ep, addr, invite).await;
-    record(db, &id, &rep);
-    rep
-}
-
-async fn session(
-    db: &Db,
-    ep: &Endpoint,
-    addr: EndpointAddr,
-    invite: Option<&str>,
-) -> Result<Report> {
-    ensure!(addr.id != ep.id(), COPY);
-    let id = addr.id.to_string();
-    let conn = within(async { Ok(ep.connect(addr, ALPN).await?) })
-        .await
-        .map_err(|e| anyhow!("could not reach {}: {e}", short(&id)))?;
-    let (mut s, mut r) = conn.open_bi().await?;
-    let hello = Hello {
-        label: label(),
-        addr: ep.addr(),
-        invite: invite.map(str::to_string),
-    };
-    put_json(&mut s, &hello).await?;
-    let (label, addr) = match get_json(&mut r, MAX_HELLO).await? {
-        Reply::Welcome { label, .. } if chain::label_problem(&label).is_some() => {
-            conn.close(0u32.into(), b"refused");
-            bail!("{}", chain::label_problem(&label).unwrap_or_default());
-        }
-        Reply::Welcome { label, addr } => (label, addr),
-        Reply::Refused(why) => {
-            conn.close(0u32.into(), b"refused");
-            bail!("refused: {why}");
-        }
-    };
-    let added = !is_peer(db, &id)?;
-    record_peer(db, &id, &label, &addr)?;
-    let mut rep = Report {
-        label,
-        id,
-        added,
-        redeemed: invite.is_some(),
-        sent: 0,
-        got: 0,
-        conflicts: 0,
-        verified: false,
-        vector: BTreeMap::new(),
-    };
-    let done = exchange(db, &mut s, &mut r, true, &mut rep).await;
-    conn.close(0u32.into(), b"done");
-    match done {
-        Ok(()) => Ok(rep),
-        Err(e) => Err(Lost(rep, e).into()),
-    }
-}
-
-/// Answer one incoming connection: a peer, or the redemption of an invite.
-async fn serve(db: &Db, ep: &Endpoint, incoming: Incoming) -> Result<Report> {
-    let conn = incoming.await?;
-    let id = conn.remote_id().to_string();
-    let (mut s, mut r) = within(async { Ok(conn.accept_bi().await?) }).await?;
-    let hello: Hello = get_json(&mut r, MAX_HELLO).await?;
-    // An invite presented is redeemed or refused, even by a peer: one use.
-    let known = is_peer(db, &id)?;
-    let chained = db.sync_chain()?.exists();
-    let bad_label = chain::label_problem(&hello.label);
-    let verdict = match &hello.invite {
-        _ if conn.remote_id() == ep.id() => Err(COPY.to_string()),
-        _ if bad_label.is_some() => Err(bad_label.unwrap_or_default()),
-        Some(secret) if chained => db
-            .sync_admit(&id, &hello.label, secret)
-            .map_err(|e| e.to_string()),
-        Some(secret) => redeem(db, secret),
-        None if known => Ok(()),
-        None if chained => Err("not a member of this sync chain".into()),
-        None => Err("not a peer of this copy: redeem an invite from it first".into()),
-    };
-    if let Err(why) = verdict {
-        put_json(&mut s, &Reply::Refused(why.clone())).await?;
-        let _ = tokio::time::timeout(Duration::from_secs(5), conn.closed()).await;
-        bail!("refused {} ({}): {why}", hello.label, short(&id));
-    }
-    record_peer(db, &id, &hello.label, &hello.addr)?;
-    put_json(
-        &mut s,
-        &Reply::Welcome {
-            label: label(),
-            addr: ep.addr(),
-        },
-    )
-    .await?;
-    let mut rep = Report {
-        label: hello.label,
-        id: id.clone(),
-        added: !known,
-        redeemed: hello.invite.is_some(),
-        sent: 0,
-        got: 0,
-        conflicts: 0,
-        verified: false,
-        vector: BTreeMap::new(),
-    };
-    let done = match exchange(db, &mut s, &mut r, false, &mut rep).await {
-        Ok(()) => {
-            let _ = tokio::time::timeout(Duration::from_secs(5), conn.closed()).await;
-            Ok(rep)
-        }
-        Err(e) => Err(Lost(rep, e).into()),
-    };
-    record(db, &id, &done);
-    done
-}
-
 // ─── The endpoint ───────────────────────────────────────────────────────────
 
 async fn bind(db: &Db) -> Result<Endpoint> {
-    let key = SecretKey::from_bytes(&db.sync_endpoint_secret()?);
-    let local = std::env::var("DATUM_SYNC_BIND").ok();
-    let builder = match &local {
-        Some(addr) => Endpoint::builder(presets::Minimal)
-            .relay_mode(RelayMode::Disabled)
-            .clear_ip_transports()
-            .bind_addr(addr.parse::<SocketAddr>().context("DATUM_SYNC_BIND")?)?,
-        None => Endpoint::builder(presets::N0),
+    let net = match (
+        std::env::var("DATUM_SYNC_BIND"),
+        std::env::var("DATUM_SYNC_RELAY"),
+    ) {
+        (Ok(addr), _) => Net::Local(addr.parse::<SocketAddr>().context("DATUM_SYNC_BIND")?),
+        (_, Ok(url)) => Net::Relay(url),
+        _ => Net::N0,
     };
-    let ep = builder
-        .secret_key(key)
-        .alpns(vec![ALPN.to_vec()])
-        .bind()
-        .await?;
-    if local.is_none() {
-        // The address a ticket or a peer is handed should name the relay.
-        let _ = tokio::time::timeout(Duration::from_secs(10), ep.online()).await;
-    }
-    Ok(ep)
+    datum_sync_wire::bind(db.sync_endpoint_secret()?, &net).await
 }
 
 fn print_added(rep: &Report) {
@@ -598,12 +182,6 @@ fn print_added(rep: &Report) {
 
 // ─── Commands ───────────────────────────────────────────────────────────────
 
-/// A new invite secret, and when an invite made now for `expires` ends.
-pub fn new_invite(expires: Duration) -> (String, String) {
-    let expires_at = (Utc::now() + expires).to_rfc3339_opts(SecondsFormat::Secs, true);
-    (hex(&rand::random::<[u8; 32]>()), expires_at)
-}
-
 /// `datum sync add-client`: mint a one-time invite, print how to redeem it,
 /// and serve until it is redeemed (or expires).
 pub fn add_client(db: &Db, expires: Duration, qr: bool) -> Result<()> {
@@ -611,11 +189,7 @@ pub fn add_client(db: &Db, expires: Duration, qr: bool) -> Result<()> {
         !db.sync_chain()?.exists(),
         "this copy is in a sync chain: `datum sync invite` makes an invite"
     );
-    let (secret, expires_at) = new_invite(expires);
-    db.conn().execute(
-        "INSERT INTO sync_invites (secret_hash, expires_at) VALUES (?1, ?2)",
-        params![sha256_hex(&secret), expires_at],
-    )?;
+    let (secret, expires_at) = db.sync_new_invite(expires)?;
     offer(db, &secret, expires, &expires_at, qr)
 }
 
@@ -626,10 +200,11 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
     let secret = secret.to_string();
     runtime()?.block_on(async {
         let ep = bind(db).await?;
+        let store = DbStore(db);
         let mut addrs = vec![ep.addr()];
         // Only a chain's members can admit the redeemer of its invite.
         if db.sync_chain()?.exists() {
-            addrs.extend(synced_peers(db)?.iter().filter_map(|p| p.addr().ok()));
+            addrs.extend(synced_peers(db)?.iter().filter_map(|p| addr(p).ok()));
         }
         let ticket = Ticket { addrs, secret }.encode()?;
         println!("One-time invite, until {expires_at}. On the other copy run:\n");
@@ -648,7 +223,7 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
                 _ = &mut deadline => break Err(anyhow!("the invite expired unredeemed")),
                 incoming = ep.accept() => {
                     let Some(incoming) = incoming else { break Ok(()) };
-                    match serve(db, &ep, incoming).await {
+                    match serve(&store, &ep, incoming).await {
                         Ok(rep) => {
                             print_added(&rep);
                             if rep.redeemed { break Ok(()) }
@@ -672,19 +247,7 @@ pub fn connect(db: &Db, ticket: &str) -> Result<()> {
     let t = Ticket::decode(ticket)?;
     runtime()?.block_on(async {
         let ep = bind(db).await?;
-        let mut rep = Err(anyhow!("the ticket names no address"));
-        for addr in t.addrs {
-            rep = dial(db, &ep, addr, Some(&t.secret)).await;
-            // Unreachable, or a member not yet holding the invite: the next
-            // address may admit.
-            let next = rep.as_ref().is_err_and(|e| {
-                let e = e.to_string();
-                e.starts_with("could not reach") || e.ends_with(chain::UNKNOWN_INVITE)
-            });
-            if !next {
-                break;
-            }
-        }
+        let rep = redeem(&DbStore(db), &ep, &t).await;
         ep.close().await;
         // Admitted, it says what it is; its peers hear on the next sync.
         let me = db.sync_endpoint_id()?;
@@ -708,9 +271,10 @@ pub fn now_all(db: &Db) -> Result<()> {
     }
     runtime()?.block_on(async {
         let ep = bind(db).await?;
+        let store = DbStore(db);
         let dials = peers
             .iter()
-            .map(|p| async { dial(db, &ep, p.addr()?, None).await });
+            .map(|p| async { dial(&store, &ep, addr(p)?, None).await });
         let mut failed = 0;
         for (p, rep) in peers
             .iter()
@@ -744,6 +308,7 @@ const RETRY: Duration = Duration::from_secs(30);
 pub fn run(db: &Db) -> Result<()> {
     runtime()?.block_on(async {
         let ep = bind(db).await?;
+        let store = &DbStore(db);
         eprintln!("datum sync run: {} is up; Ctrl-C to stop", short(&ep.id().to_string()));
         let mut sessions: FuturesUnordered<Session> = FuturesUnordered::new();
         // Per peer, the vector last pushed to it, and when to retry a failed push.
@@ -758,7 +323,7 @@ pub fn run(db: &Db) -> Result<()> {
                 Some(incoming) = ep.accept() => {
                     let ep = &ep;
                     sessions.push(Box::pin(async move {
-                        (None, serve(db, ep, incoming).await)
+                        (None, serve(store, ep, incoming).await)
                     }));
                 }
                 Some((peer, rep)) = sessions.next() => {
@@ -786,7 +351,7 @@ pub fn run(db: &Db) -> Result<()> {
                         pushed.insert(p.id.clone(), vector.clone());
                         let ep = &ep;
                         sessions.push(Box::pin(async move {
-                            let rep = async { dial(db, ep, p.addr()?, None).await };
+                            let rep = async { dial(store, ep, addr(&p)?, None).await };
                             (Some((p.id.clone(), p.label.clone())), rep.await)
                         }));
                     }
@@ -796,40 +361,4 @@ pub fn run(db: &Db) -> Result<()> {
         ep.close().await;
         Ok(())
     })
-}
-
-/// `datum sync peers`.
-pub fn list(db: &Db) -> Result<()> {
-    let peers = peers(db)?;
-    if peers.is_empty() {
-        println!("no sync peers");
-    }
-    for p in peers {
-        println!(
-            "{}  {}  added {}  last seen {}",
-            p.label,
-            short(&p.id),
-            p.added_at,
-            p.last_seen.as_deref().unwrap_or("never")
-        );
-    }
-    Ok(())
-}
-
-/// `datum sync forget <peer>`: by label, or by a prefix of its id.
-pub fn forget(db: &Db, who: &str) -> Result<()> {
-    let hits: Vec<Peer> = peers(db)?
-        .into_iter()
-        .filter(|p| p.label == who || p.id.starts_with(who))
-        .collect();
-    match hits.as_slice() {
-        [p] => {
-            db.conn()
-                .execute("DELETE FROM sync_peers WHERE endpoint_id = ?1", [&p.id])?;
-            println!("forgot sync peer {} ({})", p.label, short(&p.id));
-            Ok(())
-        }
-        [] => bail!("no sync peer {who}"),
-        _ => bail!("{who} names {} sync peers; give more of the id", hits.len()),
-    }
 }

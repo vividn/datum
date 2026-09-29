@@ -754,10 +754,15 @@ pub enum SyncCommand {
     /// `datum sync vector` — this copy's version vector as JSON.
     Vector,
     /// `datum sync ops [--since <VECTOR>]` — every op the vector lacks
-    /// (all of them without one), one JSON line each.
-    Ops { since: Option<String> },
-    /// `datum sync apply` — apply op lines read from stdin.
-    Apply,
+    /// (all of them without one), one JSON line each. Hidden `--no-overlap`
+    /// leaves out the one op a pipe adds to catch a shared key: what a
+    /// session sends, for datum.day's transport (da-6kpj5).
+    Ops {
+        since: Option<String>,
+        overlap: bool,
+    },
+    /// `datum sync apply [--json]` — apply op lines read from stdin.
+    Apply { show: Show },
     /// `datum sync verify [--verbose]` — the state hash; per column too.
     Verify { verbose: bool },
     /// `datum sync add-client [--qr] [--expires <DUR>]` — a one-time invite
@@ -770,8 +775,8 @@ pub enum SyncCommand {
     Now,
     /// `datum sync run` — stay up: serve peers and push new ops to them.
     Run,
-    /// `datum sync peers` — list this copy's peers.
-    Peers,
+    /// `datum sync peers [--json]` — list this copy's peers.
+    Peers { show: Show },
     /// `datum sync forget <PEER>` — drop a peer, by label or id prefix.
     Forget { peer: String },
     /// `datum sync rekey` — a new endpoint key for this copy (da-p79vq).
@@ -821,6 +826,20 @@ pub enum SyncCommand {
         verify: Option<bool>,
         error: Option<String>,
     },
+    /// Hidden: `datum sync handshake <ENDPOINT> --label <L> --addr <JSON>
+    /// [--invite <SECRET>] [--dialed]` — a session's handshake as it bears
+    /// on this copy, for datum.day's transport (da-6kpj5): `added`, `known`,
+    /// or the refusal as the error.
+    Handshake {
+        endpoint: String,
+        label: String,
+        addr: String,
+        invite: Option<String>,
+        dialed: bool,
+    },
+    /// Hidden: `datum sync new-invite [--expires <DUR>]` — mint a pairwise
+    /// invite and print its secret, for datum.day's transport to serve.
+    NewInvite { expires_secs: u64 },
     /// `datum sync ack <WHO>` — acknowledge a new endpoint or admin.
     Ack { who: String },
 }

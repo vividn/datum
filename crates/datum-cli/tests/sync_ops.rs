@@ -598,6 +598,26 @@ fn a_moved_file_keeps_its_endpoint() {
     assert_eq!(endpoints.len(), 1, "{endpoints:?}");
 }
 
+/// datum.day's case (da-6kpj5): the device is `DATUM_DEVICE_ID`, and the
+/// `device_id` file dies with each process. The copy keeps one endpoint.
+#[test]
+fn a_device_named_by_the_environment_keeps_its_endpoint() {
+    let a = Copy::new();
+    let key = || {
+        let out = Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env("DATUM_DB", a.db())
+            .env("DATUM_HOME", a.tmp.path().join("home"))
+            .env("DATUM_CONFIG_HOME", a.tmp.path().join("config"))
+            .env("DATUM_DEVICE_ID", "web-browser")
+            .args(["sync", "endpoint-key"])
+            .output()
+            .unwrap();
+        let _ = std::fs::remove_file(a.tmp.path().join("home/device_id"));
+        String::from_utf8(out.stdout).unwrap()
+    };
+    assert_eq!(key(), key());
+}
+
 #[test]
 fn copies_sharing_a_key_are_refused_loudly_and_rekey_parts_them() {
     let a = Copy::new();

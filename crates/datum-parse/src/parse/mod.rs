@@ -355,9 +355,12 @@ fn apply_show(command: &mut Command, show: Show) {
         Command::Check(a) => a.show = show,
         Command::Config(ConfigCommand::Show(a)) => a.show = show,
         Command::Alias(AliasCommand::List { show: s }) => *s = show,
-        Command::Sync(SyncCommand::Members { show: s } | SyncCommand::Status { show: s }) => {
-            *s = show
-        }
+        Command::Sync(
+            SyncCommand::Members { show: s }
+            | SyncCommand::Status { show: s }
+            | SyncCommand::Peers { show: s }
+            | SyncCommand::Apply { show: s },
+        ) => *s = show,
         Command::Db(DbCommand::Restore(a)) => a.show = show,
         Command::Db(DbCommand::BackupRotation(a)) => a.show = show,
 

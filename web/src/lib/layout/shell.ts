@@ -615,6 +615,8 @@ export function boot(): Promise<void> {
 		// the names mean here too. This page's data db (da-vk1x): under
 		// `?db=other` the kit layouts are `other`'s.
 		onExternalChange(refreshKitLayouts, currentDb());
+		// Every tab takes part; one per database leads it (da-6kpj5).
+		void import('$lib/sync.js').then(({ startSync }) => startSync(currentDb()));
 	})());
 }
 

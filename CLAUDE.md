@@ -16,7 +16,8 @@ crates/
   datum-cli/          # `datum` binary: clap CLI, commands, output formatting
   datum-commands/     # Command-layer crate: typed + string APIs, dispatched by datum-cli
   datum-layout/       # Pure: dayview/nowview geometry + SVG render
-  datum-sync/         # Easy Sync transport: iroh endpoint, invites, sync session (native only)
+  datum-sync/         # Easy Sync natively: the wire crate over `Db`, `sync run`, the QR
+  datum-sync-wire/    # Easy Sync's session protocol and iroh endpoint over a `Store` trait; also wasm32-unknown-unknown (datum.day's sync worker)
 web/            # SvelteKit PWA: static, the real CLI as WASI on OPFS, offline-capable
                 # its conventions — the seam, the beat, the panes, the tests: docs/web-conventions.md
 ```
@@ -111,14 +112,23 @@ entry change emits a signed op beside its `history::record` (endpoint key in
 an entry's row is the FOLD of its ops in HLC order, so the same ops in any
 order give the same row. `datum sync vector / ops / apply / verify` move ops
 as JSON lines over a pipe. The transport is iroh (da-rugg8, `crates/datum-sync`,
-behind datum-commands' `net` feature, so the wasm build has no iroh): the iroh
+behind datum-commands' `net` feature, so the CLI's wasm build has no iroh): the iroh
 endpoint key IS the db's endpoint key, copies pair with one-time invites
 (`add-client` / `connect`) into a local `sync_peers` table, only peers are
 served, and `sync now` / `sync run` swap vectors and ops until neither moves.
 `DATUM_SYNC_BIND=<ip:port>` binds one address with no relay or discovery (the
-tests). A copy of the file at another path mints its own key (`sync_local.path`,
+tests), `DATUM_SYNC_RELAY=<url>` one relay and nothing else. A copy of the file at another path mints its own key (`sync_local.path`,
 v44); two copies found signing with one key are refused by name, and
 `sync rekey` gives one a new key (da-p79vq). Signed membership comes next.
+
+The session itself is `crates/datum-sync-wire`, generic over a `Store`
+(da-6kpj5), and the handshake's storage side — peers, invites, admission — is
+datum-core's, so datum.day syncs too: `web/src/lib/sync.worker.ts` runs the
+wire crate built for wasm32-unknown-unknown (relay-only iroh) with the CLI as
+its store (hidden `sync handshake` / `new-invite` / `endpoint-key` /
+`record-session`), and `$lib/sync.ts` elects ONE tab per database to run the
+endpoint by a Web Lock (`datum-sync:<db>`), which pushes on every tab's writes
+(`onAnyChange`). `web/tests/sync*.test.mjs` run on a pinned local `iroh-relay`.
 
 ## Web app (PWA)
 

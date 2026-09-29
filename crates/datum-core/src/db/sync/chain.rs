@@ -91,11 +91,12 @@ pub fn label_problem(label: &str) -> Option<String> {
     (n > MAX_LABEL).then(|| format!("a label is at most {MAX_LABEL} characters, not {n}"))
 }
 
-/// A device id as `device_id()` mints it: a ULID.
+/// A device id every member can print (`<client> on <device>`): not blank,
+/// and within a label's rules. `device_id()` mints a ULID, but
+/// `DATUM_DEVICE_ID` names any — datum.day's is `web-` and eight more
+/// (da-6kpj5).
 fn is_device_id(s: &str) -> bool {
-    s.len() == 26
-        && s.chars()
-            .all(|c| "0123456789ABCDEFGHJKMNPQRSTVWXYZ".contains(c.to_ascii_uppercase()))
+    !s.trim().is_empty() && label_problem(s).is_none()
 }
 
 /// The hid every chain op is filed under.

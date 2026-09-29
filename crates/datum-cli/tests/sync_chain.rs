@@ -418,6 +418,36 @@ fn a_copy_describes_itself_at_init_and_renames_itself_without_an_admin() {
     assert!(a.ok(&["sync", "members"]).contains("phone"));
 }
 
+/// datum.day's device is `DATUM_DEVICE_ID`, `web-` and eight more
+/// (da-6kpj5): the copy inits, is shown under it, and renames itself.
+#[test]
+fn a_device_named_by_the_environment_inits_and_renames() {
+    let a = Copy::new();
+    let run = |args: &[&str]| {
+        let out = a
+            .cmd(args)
+            .env("DATUM_DEVICE_ID", "web-abc12345")
+            .output()
+            .unwrap();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "`datum {}`: {err}", args.join(" "));
+        String::from_utf8(out.stdout).unwrap()
+    };
+    // Every command under the one device: another would be another endpoint.
+    let me = || {
+        let all = json(&run(&["sync", "members", "--json"]));
+        all["members"][0].clone()
+    };
+    run(&["sync", "init", "--admin-key", &a.key("admin")]);
+    assert_eq!(me()["device"], "web-abc12345", "{}", me());
+    assert_eq!(me()["this"], true, "{}", me());
+    run(&["sync", "rename", "kitchen"]);
+    assert_eq!(me()["label"], "kitchen", "{}", me());
+    assert_eq!(me()["device"], "web-abc12345", "{}", me());
+    let status = json(&run(&["sync", "status", "--json"]));
+    assert_eq!(status["this"]["device"], "web-abc12345", "{status}");
+}
+
 #[test]
 fn another_member_is_renamed_by_an_admin_and_by_no_one_else() {
     let (a, b, admin) = chained();
@@ -712,7 +742,11 @@ fn a_label_with_a_control_character_is_refused_by_the_fold_and_the_command() {
             "a describe's client is cli or web",
         ),
         (
-            describe("phone", "cli", "not-a-ulid"),
+            describe("phone", "cli", "web-\u{1b}[2J"),
+            "a describe's device is not a device id",
+        ),
+        (
+            describe("phone", "cli", &"d".repeat(65)),
             "a describe's device is not a device id",
         ),
     ] {

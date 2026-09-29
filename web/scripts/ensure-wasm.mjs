@@ -1,9 +1,10 @@
-// Put a datum-cli.wasm that matches this tree's Rust in src/lib/wasm/.
+// Put a datum-cli.wasm, and the sync worker's module (datum-sync.js, .d.ts
+// and _bg.wasm, da-6kpj5), that match this tree's Rust in src/lib/wasm/.
 //
 // The module is a build product like target/, not a committed file
 // (da-0qa4x): every push to main builds one onto the `wasm` branch
 // (.forgejo/workflows/wasm.yml), one commit per main commit, holding
-// `datum-cli.wasm` and `SOURCE` — the main sha it is for. Beside the local
+// the modules and `SOURCE` — the main sha they are for. Beside the local
 // copy, src/lib/wasm/SOURCE names a commit whose crate inputs it was built
 // from. Wired as predev and prebuild, so `pnpm dev`, `pnpm run build` and
 // `pnpm test` never run against a module another tree built. In order:
@@ -26,7 +27,9 @@ import { resolve } from 'node:path';
 
 const repoRoot = resolve(import.meta.dirname, '..', '..');
 const dir = resolve(repoRoot, 'web', 'src', 'lib', 'wasm');
-const wasm = resolve(dir, 'datum-cli.wasm');
+/** What a build puts in `dir`, and a `wasm` commit holds beside SOURCE. */
+const FILES = ['datum-cli.wasm', 'datum-sync.js', 'datum-sync.d.ts', 'datum-sync_bg.wasm'];
+const built = () => FILES.every((f) => existsSync(resolve(dir, f)));
 const stamp = resolve(dir, 'SOURCE');
 
 // What the module is built from. Wider than it strictly needs to be (a crate's
@@ -72,7 +75,7 @@ function done(how, source) {
 	process.exit(0);
 }
 
-const have = existsSync(wasm) && existsSync(stamp) ? sha(readFileSync(stamp, 'utf8').trim()) : null;
+const have = built() && existsSync(stamp) ? sha(readFileSync(stamp, 'utf8').trim()) : null;
 if (have && tree(have)) done(`kept, built from ${have.slice(0, 10)}'s crates`, have);
 
 const base = sha('origin/main') && git(['merge-base', 'HEAD', 'origin/main'])?.trim();
@@ -83,10 +86,14 @@ if (base && tree(base)) {
 	for (const c of (git(['rev-list', '-n', '200', 'refs/remotes/origin/wasm']) ?? '').split('\n').filter(Boolean)) {
 		const source = git(['show', `${c}:SOURCE`])?.trim();
 		if (!source || git(['diff', '--quiet', source, base, '--', ...INPUTS]) === null) continue;
-		const bytes = git(['show', `${c}:datum-cli.wasm`], 'buffer');
-		if (!bytes) continue;
+		// A commit from before the sync module holds only the CLI's.
+		const bytes = FILES.map((f) => git(['show', `${c}:${f}`], 'buffer'));
+		if (bytes.some((b) => !b)) continue;
 		mkdirSync(dir, { recursive: true });
-		if (!existsSync(wasm) || !readFileSync(wasm).equals(bytes)) writeFileSync(wasm, bytes);
+		FILES.forEach((f, i) => {
+			const path = resolve(dir, f);
+			if (!existsSync(path) || !readFileSync(path).equals(bytes[i])) writeFileSync(path, bytes[i]);
+		});
 		done(`fetched ${c.slice(0, 10)} (wasm for ${source.slice(0, 10)}): the crates are ${base.slice(0, 10)}'s`, base);
 	}
 }

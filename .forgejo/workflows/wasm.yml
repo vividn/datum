@@ -4,8 +4,11 @@
 # 2026-09-24. This is the gh-pages pattern: an artifact branch with linear
 # history, one commit per main commit, `wasm for <sha>`, holding
 #
-#   datum-cli.wasm  the module
-#   SOURCE          the full main sha it is for
+#   datum-cli.wasm      the module
+#   datum-sync.js       the sync worker's module, its glue and types (da-6kpj5)
+#   datum-sync.d.ts
+#   datum-sync_bg.wasm
+#   SOURCE              the full main sha they are for
 #
 # `web/scripts/ensure-wasm.mjs` is what reads the branch: locally, in CI, in
 # GitHub's deploy, and here — where a main commit whose crate inputs an
@@ -59,7 +62,7 @@ jobs:
           )
           node web/scripts/ensure-wasm.mjs
 
-      # Plumbing, so the checkout is never touched: a tree of two blobs,
+      # Plumbing, so the checkout is never touched: a tree of five blobs,
       # parented on the branch's tip as fetched just now.
       - name: Commit it to `wasm`
         env:
@@ -73,7 +76,9 @@ jobs:
           export GIT_INDEX_FILE=$(mktemp -u)
           git read-tree --empty
           add() { git update-index --add --cacheinfo "100644,$1,$2"; }
-          add "$(git hash-object -w web/src/lib/wasm/datum-cli.wasm)" datum-cli.wasm
+          for f in datum-cli.wasm datum-sync.js datum-sync.d.ts datum-sync_bg.wasm; do
+            add "$(git hash-object -w "web/src/lib/wasm/$f")" "$f"
+          done
           add "$(echo "$sha" | git hash-object -w --stdin)" SOURCE
           tree=$(git write-tree)
           git fetch -q origin +refs/heads/wasm:refs/remotes/origin/wasm || true

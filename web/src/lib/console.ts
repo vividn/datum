@@ -36,6 +36,8 @@ import { findTab } from './layout/tree.js';
 import { isWidget } from './layout/types.js';
 import type { Layout, WidgetKindMeta } from './layout/types.js';
 import { KINDS } from './layout/registry.js';
+import { syncConnect, syncLeads, syncOffer, syncStates, type SyncState } from './sync.js';
+import type { SyncReport } from './syncProtocol.js';
 
 export interface DatumConsole {
 	/** Run one command as the page does — echoed, receipted, panes refreshed. Argv without the program name. */
@@ -54,6 +56,18 @@ export interface DatumConsole {
 	tailRows(): Promise<{ rows: TailRow[]; columns: TailColumn[] }>;
 	/** The layout store: the person's own in `_internal` and a kit's in the data db (da-gg0v). */
 	layouts: typeof layouts;
+	/**
+	 * Easy Sync (da-6kpj5): each database's state as its leading tab posts
+	 * it, and the doors the Sync widget pairs through — a ticket to hand
+	 * another copy, and a ticket from one to redeem.
+	 */
+	sync: {
+		states(): Record<string, SyncState>;
+		/** The databases whose sync THIS tab leads. */
+		leads(): string[];
+		offer(db: string, secret?: string): Promise<string>;
+		connect(db: string, ticket: string): Promise<SyncReport>;
+	};
 	/**
 	 * The live tree (da-jdop): what is on screen, and the one way to change
 	 * it — plus what THIS SESSION has set over it (da-vhwq), key by key, so
@@ -130,6 +144,7 @@ export function installConsole(target: Record<string, unknown>): void {
 			}
 		},
 		shell,
+		sync: { states: () => get(syncStates), leads: syncLeads, offer: syncOffer, connect: syncConnect },
 		bar: { pills: () => get(pills), setPills, removePill, last: () => get(last) },
 		cursor: { at: () => get(cursor)?.at ?? null, set: setCursor, of: () => get(cursor), point: pointAt },
 		track: async (options) => {
