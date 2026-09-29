@@ -246,13 +246,15 @@ fn nonsense_is_an_empty_answer_never_an_error() {
 }
 
 /// A value the one-candidate-per-line answer cannot carry — a field may
-/// hold a tab — is left out rather than split in two.
+/// hold a tab — is left out rather than split in two. A state carries it
+/// in: a new field name may not (da-fi2vu).
 #[test]
 fn a_value_with_a_control_character_is_not_offered() {
     let env = Env::new();
-    env.ok(&["occur", "a\tb"]);
-    // Only that field starts with `a`.
-    assert_eq!(complete_with(env.cmd(), "occur a"), "");
+    env.ok(&["switch", "f", "a\tb"]);
+    env.ok(&["switch", "f", "az"]);
+    // Split at the tab it would read as `a`.
+    assert_eq!(env.complete("switch f a"), ["az"]);
 }
 
 /// The scripts complete a line in the shell itself, wherever the shell is
