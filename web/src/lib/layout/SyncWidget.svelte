@@ -11,7 +11,7 @@
 	two empty `.actions` slots: a database's header, and a device's row.
 
 	It is a PLACE (da-6du3o): the commands widget's one `Sync` button opens
-	it as a tab, so the raw `sync` subcommands the widget stood in for are
+	it (a modal on a desktop, a tab on a phone — da-jozgv), so the raw `sync` subcommands the widget stood in for are
 	here, under Advanced, each filling `sync <sub> ` on the line.
 -->
 <script lang="ts">

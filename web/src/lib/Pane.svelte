@@ -122,6 +122,7 @@
 <svelte:element
 	this={frame ? 'div' : 'section'}
 	class:pane={!frame}
+	data-title={frame ? undefined : title}
 	class:bare={!frame && bare}
 	class:framed={!!frame}
 	class:alarm={!frame && !bare && alarm}

@@ -166,6 +166,8 @@ async function reset(app, line) {
  * place: it says it opened, and is cancelled, as a reader may.
  */
 async function watchModals(page) {
+	const front = () => page.evaluate(() => window.datum.layout.current().root.tabs.at(window.datum.layout.current().root.active)?.id);
+	const was = await front();
 	await page.evaluate(() => {
 		document.querySelectorAll('dialog[open]').forEach((d) => (d.seen = true));
 		window.savePicked = false;
@@ -180,8 +182,16 @@ async function watchModals(page) {
 	page.on('dialog', dialog).on('filechooser', chooser);
 	return async () => {
 		page.off('dialog', dialog).off('filechooser', chooser);
+		// A PLACE (`openPlace`, da-6du3o) opens as a modal or as a transient
+		// tab by the screen (da-jozgv); either way the tap opened it.
+		const place = await page.evaluate((was) => {
+			const { root } = window.datum.layout.current();
+			const tab = root.tabs[root.active];
+			return tab?.id !== was && tab?.layout !== undefined && window.datum.shell.isPreview(tab.layout);
+		}, was);
 		return (
 			native ||
+			place ||
 			(await page.evaluate(() => window.savePicked || [...document.querySelectorAll('dialog[open]')].some((d) => !d.seen)))
 		);
 	};

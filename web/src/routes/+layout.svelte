@@ -29,6 +29,7 @@
 	import { attach, logHeight, rolled, shown } from '$lib/log.js';
 	import PromptBar from '$lib/PromptBar.svelte';
 	import RootBar from '$lib/layout/RootBar.svelte';
+	import PlaceModal from '$lib/layout/PlaceModal.svelte';
 	import { boot as bootEngine } from '$lib/layout/engine.js';
 	import { boot as bootShell } from '$lib/layout/shell.js';
 	import { currentDb, DEFAULT_DB, hueOf, INTERNAL_DB, refusedDb } from '$lib/database.js';
@@ -172,6 +173,7 @@
 		<PromptBar />
 		<BarLog />
 	</div>
+	<PlaceModal />
 </div>
 
 <style>

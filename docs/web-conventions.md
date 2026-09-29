@@ -432,14 +432,30 @@ rule is decided but not yet everywhere, it names the bead.
 
 ## Places and questions
 
-31. **A modal asks; a place is a tab** (da-6du3o; vividn, 2026-09-29: «Every modal is also a
+31. **A modal asks; a place is a widget** (da-6du3o; vividn, 2026-09-29: «Every modal is also a
     widget that can be put into a layout or as its own tab»). A QUESTION — `Confirm`, `Ask`, the
     passkey prompt — blocks until it is answered, and nobody pins one in a layout, so it stays a
     modal. A PLACE — Sync today; Backups, the field editor and Help to follow, one bead each — is
     a widget kind in `layout/registry.ts`, and `openPlace(kind)` (`layout/shell.ts`) is the one way
-    to reach it: it brings forward the root tab already holding that kind, or opens a TRANSIENT
-    one immediately right of the tab you are on and slides onto it (a fade under
-    `prefers-reduced-motion`). A transient tab is italic and written nowhere, like a preview;
-    leaving it by any road — a swipe back, the browser's back, a tap on another tab — closes it,
-    and `Keep tab` keeps it in this device's open list. So there is one way to reach a place and
-    one host to test it in, and the same place dropped into a pane is just the widget.
+    to reach it. It brings forward the root tab already holding that kind. Failing that, the host
+    is the screen's (da-jozgv; vividn: «I think this is good on mobile, but the experience on
+    desktop is not great … I would still have it be a modal on desktop»). On a DESKTOP the widget
+    opens in `layout/PlaceModal.svelte`, a `$lib/Sheet.svelte` sized for a widget, whose head
+    carries `Open as tab` beside the ×. On a PHONE (`max-width: PHONE_WIDTH`, what picks `mobile`)
+    and after `Open as tab`, it is a TRANSIENT tab immediately right of the tab you are on, slid
+    onto (a fade under `prefers-reduced-motion`). A transient tab is italic and written nowhere,
+    like a preview; leaving it by any road — a swipe back, the browser's back, a tap on another
+    tab — closes it, and `Keep tab` keeps it in this device's open list. Either host pushes one
+    history entry, so the browser's back closes the modal as it closes the tab, and `Open as tab`
+    hands the modal's entry on rather than pushing a second. The body is the kind's own
+    component in both, so there is one widget and one set of tests, and the same place dropped
+    into a pane is just the widget. A place's tab tests run on a phone viewport.
+
+    Every control that opens a place, a sheet or a modal wears rule 22's `›` (da-jozgv). The
+    sweep of 2026-09-29 found three without it: the commands widget's `Sync` (it was `show`), and
+    the documents' `+N` chips in the bar and the REPL (`Docs.svelte`, `Doc.svelte`). The menus,
+    the gear and the pane badges already said `open`, which the tap walks hold. The walks cannot
+    reach a chip that appears only under an answer, so `act-guard.test.mjs` also holds, from the
+    source, every button whose tap calls `openPlace(` or opens a Sheet (`open = true`) to
+    `use:act={'open'}`. A control that ACTS and then asks (a delete's Confirm) is not an opener
+    and wears none.

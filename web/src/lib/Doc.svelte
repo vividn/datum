@@ -54,6 +54,7 @@
 	until it is tapped again.
 -->
 <script lang="ts">
+	import { act } from '$lib/act.js';
 	import type { EchoDoc, InfoSegment } from '$lib/echo.js';
 	import Sheet from '$lib/Sheet.svelte';
 	import { select, selected } from '$lib/bar.js';
@@ -139,7 +140,7 @@
 				</div>
 			{/if}
 			{#if hidden > 0}
-				<button type="button" class="more" title="{hidden} more" on:click={() => (open = true)}
+				<button type="button" class="more" use:act={'open'} title="{hidden} more" on:click={() => (open = true)}
 					>+{hidden}</button
 				>
 			{/if}

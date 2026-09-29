@@ -83,4 +83,24 @@ describe('the double outline is the action’s alone', () => {
 		assert.deepEqual(writers, []);
 		assert.ok(/dataset\.act\b/.test(files.find((file) => file.f === 'lib/act.ts').text));
 	});
+
+	// da-jozgv: every control that opens a place or a sheet wears the `›`.
+	// The walks (act-taps-*) hold the controls they can reach to it; this
+	// holds the ones they cannot — the documents' `+N` chips appear only
+	// under an answer — by what the tap calls: `openPlace(`, or a Sheet's
+	// `open = true`. Handlers named elsewhere are the walks' to catch.
+	test('a button whose tap opens a place or a sheet says open', () => {
+		const opens = /openPlace\(|\(open = true\)/;
+		const openers = files.flatMap((file) =>
+			[...markupOf(file).matchAll(/<button\b([^>]*?\bon:click=\{[^}]*\})[^>]*>/gs)]
+				.filter((m) => opens.test(m[1]))
+				.map((m) => ({ f: file.f, tag: m[0] }))
+		);
+		assert.ok(openers.length >= 3, `found only ${openers.length} openers`);
+		assert.deepEqual(
+			openers.filter((o) => !o.tag.includes("use:act={'open'}")).map((o) => `${o.f}: ${o.tag.replace(/\s+/g, ' ')}`),
+			[],
+			"a tap that opens a place or a sheet wears use:act={'open'}"
+		);
+	});
 });

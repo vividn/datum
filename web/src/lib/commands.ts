@@ -41,7 +41,7 @@ export type Press =
 	| 'flag'
 	/** Open the «Backups» sheet ($lib/backups.ts, da-9ow8m): `db backup`, and `db restore` at its list. */
 	| 'sheet'
-	/** Open the command's PLACE, a top-level tab (`openPlace`, da-6du3o): `sync`. */
+	/** Open the command's PLACE, a modal on a desktop and a tab on a phone (`openPlace`, da-6du3o, da-jozgv): `sync`. */
 	| 'place';
 
 export interface CommandButton {

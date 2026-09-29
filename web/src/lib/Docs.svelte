@@ -26,6 +26,7 @@
 	narrower one draws the brace as the key count alone.
 -->
 <script lang="ts">
+	import { act } from '$lib/act.js';
 	import Doc from '$lib/Doc.svelte';
 	import type { EchoDoc } from '$lib/echo.js';
 	import Sheet from '$lib/Sheet.svelte';
@@ -73,6 +74,7 @@
 		<button
 			type="button"
 			class="more"
+			use:act={'open'}
 			title="{docs.length - shown} more"
 			on:click={() => (open = true)}>+{docs.length - shown}</button
 		>

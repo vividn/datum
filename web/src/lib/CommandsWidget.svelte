@@ -49,8 +49,8 @@
 	  `db backup` and `db restore` open the «Backups» sheet instead
 	  (da-9ow8m, $lib/backups.ts) — drawn, as Help is, in a SINGLE outline
 	  of the accent: they open something, and run nothing.
-	- `Sync` opens the sync PLACE, a tab beside this one (da-6du3o,
-	  `openPlace`), rather than drilling into its nineteen subcommands,
+	- `Sync` opens the sync PLACE (da-6du3o, `openPlace`): a modal on a
+	  desktop, a tab beside this one on a phone (da-jozgv), rather than drilling into its nineteen subcommands,
 	  which live in that widget's Advanced section. Outlined once, too.
 	- HOLDING a command with flags (da-st2xl, `$lib/hold.ts`) fills it as a
 	  tap does, and the bar becomes `< Back`, Help and its flags
@@ -108,7 +108,7 @@
 	export let redoable = false;
 
 	/** The presses whose kind is theirs whatever is loaded. */
-	const FIXED: Partial<Record<Press, ActKind>> = { run: 'run', help: 'arm', back: 'show', flag: 'fill', sheet: 'open', place: 'show' };
+	const FIXED: Partial<Record<Press, ActKind>> = { run: 'run', help: 'arm', back: 'show', flag: 'fill', sheet: 'open', place: 'open' };
 
 	const dispatch = createEventDispatcher<{
 		run: string[];

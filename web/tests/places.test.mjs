@@ -1,4 +1,4 @@
-// A modal asks; a place is a tab (da-6du3o).
+// A modal asks; a place is a widget (da-6du3o, da-jozgv).
 //
 // vividn, 2026-09-29: «always open the new tab directly next to the current
 // one, so that the user can quickly return to the previously open tab
@@ -9,6 +9,12 @@
 // are on and slides onto it; leaving it by any road closes it, and `Keep
 // tab` keeps it. Sync is its first user: the commands widget's one `Sync`
 // button, and `/sync/approve#…`.
+//
+// That is a PHONE's (da-jozgv). vividn, 2026-09-29: «I think this is good on
+// mobile, but the experience on desktop is not great … I would still have
+// it be a modal on desktop». So on a desktop the same `openPlace` draws the
+// widget in a modal (layout/PlaceModal.svelte), whose `Open as tab` hands
+// it to the tab a phone gets.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -36,6 +42,12 @@ const italic = (page) =>
 const openList = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('datum.layout.root.v1') ?? 'null'));
 
 const rootContent = (page) => page.locator('section.root > .content');
+
+/** The modal a place opens on a desktop. */
+const modal = (page, kind = 'sync') => page.locator(`dialog.sheet[open][data-place="${kind}"]`);
+
+/** Whether the history entry the browser is on is a place's. */
+const onPlaceEntry = (page) => page.evaluate(() => JSON.stringify(history.state ?? null).includes('"place"'));
 
 /** Open the place `kind` and wait for it to have slid in: a tap during the slide is a tap on the tab it left. */
 async function openPlace(page, kind) {
@@ -65,17 +77,156 @@ const opened = (...names) => ({
 });
 
 const desktop = sharedApp({ ...DESKTOP, desk: null });
+const phone = sharedApp(PHONE);
 
-describe('a place', () => {
-	test('the Sync button opens it beside the tab you were on, sliding in; a second open focuses it', async () => {
+describe('a place on a desktop', () => {
+	test('the Sync button opens it in a modal, not a tab, and the browser’s back closes it', async () => {
 		await desktop.solo(async ({ page, errors }) => {
 			const sync = page.locator('.bar.commands [data-command="sync"]');
 			assert.equal((await sync.innerText()).trim(), 'Sync');
-			assert.equal(await sync.getAttribute('data-act'), 'show');
-			await watch(page);
+			assert.equal(await sync.getAttribute('data-act'), 'open');
 			await sync.click();
+			await modal(page).locator('table').waitFor();
+			assert.equal((await modal(page).locator('.sheet-head > span').innerText()).trim(), 'sync');
+			// Found as a pane is, by its title, and named once: the head says it, not the widget too.
+			const pane = modal(page).locator('section.pane[data-title="sync"]');
+			assert.equal(await pane.count(), 1);
+			assert.equal(await pane.locator('h2').isVisible(), false);
+			assert.deepEqual(await rootTabs(page), ['main']);
+			assert.ok(await onPlaceEntry(page), 'opening it pushed no history entry');
+			await page.goBack();
+			await modal(page).waitFor({ state: 'detached' });
+			assert.deepEqual(await rootTabs(page), ['main']);
+			assert.deepEqual(errors, []);
+		});
+	});
+
+	for (const [how, close] of [
+		['Escape', (page) => page.keyboard.press('Escape')],
+		['the backdrop', (page) => page.mouse.click(4, 4)],
+		['×', (page) => modal(page).locator('.sheet-head .close').click()]
+	]) {
+		test(`${how} closes it, and takes its history entry with it`, async () => {
+			await desktop.solo(async ({ page }) => {
+				await page.evaluate(() => window.datum.shell.openPlace('sync'));
+				await modal(page).locator('table').waitFor();
+				await close(page);
+				await modal(page).waitFor({ state: 'detached' });
+				await until(() => onPlaceEntry(page), (on) => !on);
+				assert.deepEqual(await rootTabs(page), ['main']);
+			});
+		});
+	}
+
+	test('Open as tab puts it in a transient tab beside the current one, which the back closes', async () => {
+		await withApp(
+			async ({ page }) => {
+				await page.evaluate(() => window.datum.shell.openPlace('sync'));
+				const asTab = modal(page).locator('.as-tab');
+				assert.equal(await asTab.getAttribute('data-act'), 'open');
+				await asTab.click();
+				await modal(page).waitFor({ state: 'detached' });
+				await until(() => shown(page), (t) => t === 'sync');
+				await atRest(rootContent(page));
+				assert.deepEqual(await rootTabs(page), ['main', 'sync', 'tail']);
+				assert.deepEqual(await italic(page), ['sync'], 'the place is transient');
+				await page.locator('.host[data-widget="sync"] table').waitFor();
+				// The modal's entry was handed on, not a second one pushed: one back is the way home.
+				await page.goBack();
+				await until(() => rootTabs(page), (t) => t.join() === 'main,tail');
+				assert.equal(await onPlaceEntry(page), false);
+			},
+			{ ...DESKTOP, ...opened('main', 'tail') }
+		);
+	});
+
+	// vremya on #356: a place is a NAME, which the tab resolves through its
+	// layout; the modal has to draw what that name resolves to, not a kind of
+	// the same spelling. `dayview` is `only('dayview', 'daystrip', …)`.
+	test('a place whose name is not its kind opens the widget its layout holds', async () => {
+		await desktop.solo(async ({ page }) => {
+			await page.evaluate(() => window.datum.shell.openPlace('dayview'));
+			const dayview = modal(page, 'dayview');
+			await dayview.locator('button.freeze').waitFor();
+			assert.equal((await dayview.locator('.sheet-head > span').innerText()).trim(), 'dayview');
+			assert.equal(await dayview.locator('button.freeze').getAttribute('aria-checked'), 'true');
+			await dayview.locator('.sheet-head .close').click();
+			await dayview.waitFor({ state: 'detached' });
+			await until(() => onPlaceEntry(page), (on) => !on);
+		});
+	});
+
+	// canary-deepseek-v4-pro on #356: the tab migrates what it resolves
+	// (`inline` → `migrated`), and so must the modal. A save of `dayview`
+	// carrying the retired `dayHeight: 85` (da-r0ydu) draws a day that
+	// follows its box in the tab; in the modal it has to as well.
+	test('a place’s save is migrated in the modal as it is in the tab', async () => {
+		await desktop.solo(async ({ page }) => {
+			const settings = { dayHeight: 85, freezeToday: true };
+			await page.evaluate(
+				(settings) =>
+					window.datum.layouts.saveLayout({
+						version: 1,
+						name: 'dayview',
+						root: {
+							id: 'dv',
+							active: 0,
+							bar: { edge: 'top', align: 'start' },
+							tabs: [{ id: 'dv-tab', content: { id: 'dv-w', kind: 'daystrip', settings } }]
+						}
+					}),
+				settings
+			);
+			await page.evaluate(() => window.datum.shell.openPlace('dayview'));
+			const grip = modal(page, 'dayview').locator('button.day-grip');
+			await grip.waitFor();
+			await until(() => grip.getAttribute('aria-valuenow').then(Number), (n) => n !== 85);
+		});
+	});
+
+	test('a root tab holding it is brought forward, and no modal opens', async () => {
+		await desktop.solo(async (app) => {
+			const { page } = app;
+			await page.evaluate(() => window.datum.shell.openPlace('sync', true));
 			await until(() => shown(page), (t) => t === 'sync');
-			await atRest(rootContent(page));
+			await chooseRoot(page, 'Keep tab');
+			await page.locator('.root-bar [role="tab"]', { hasText: 'main' }).click();
+			await until(() => shown(page), (t) => t === 'main');
+			await page.locator('.bar.commands [data-command="sync"]').click();
+			await until(() => shown(page), (t) => t === 'sync');
+			assert.equal(await modal(page).count(), 0);
+			assert.deepEqual(await rootTabs(page), ['main', 'sync']);
+		});
+	});
+
+	test('in a pane, it is just the widget', async () => {
+		await desktop.solo(async ({ page }) => {
+			const tab = await page.evaluate(() => {
+				const [first] = window.datum.layout.current().root.tabs[0].content.children;
+				return first.tabs[0].id;
+			});
+			await page.evaluate((tab) => window.datum.shell.widgetInto(tab, 'sync'), tab);
+			await page.locator('section.pane[data-title="sync"] table').waitFor();
+			// A root tab holding the kind is what `openPlace` looks for, not a pane.
+			await page.evaluate(() => window.datum.shell.openPlace('sync'));
+			await modal(page).locator('table').waitFor();
+			assert.deepEqual(await rootTabs(page), ['main']);
+		});
+	});
+
+	test('/sync/approve#… opens the Sync place', async () => {
+		await desktop.solo(async (app) => {
+			await app.goto('/sync/approve#eyJ9');
+			await modal(app.page).locator('table').waitFor();
+		});
+	});
+});
+
+describe('a place on a phone', () => {
+	test('it opens beside the tab you were on, sliding in; a second open focuses it', async () => {
+		await phone.solo(async ({ page, errors }) => {
+			await watch(page);
+			await openPlace(page, 'sync');
 			assert.deepEqual(await rootTabs(page), ['main', 'sync']);
 			assert.deepEqual(await italic(page), ['sync'], 'the place is transient');
 			assert.ok(
@@ -83,6 +234,7 @@ describe('a place', () => {
 				`the view did not slide right onto it: ${JSON.stringify(await strip(page))}`
 			);
 			await page.locator('.host[data-widget="sync"] table').waitFor();
+			assert.equal(await modal(page).count(), 0);
 			// Written nowhere: a reload would not know it.
 			assert.deepEqual(await openList(page), { names: ['main'], active: 0 });
 
@@ -93,14 +245,13 @@ describe('a place', () => {
 			assert.deepEqual(errors, []);
 		});
 	});
-
 	test('the raw subcommands are under Advanced, and fill the line', async () => {
-		await desktop.solo(async ({ page }) => {
+		await phone.solo(async ({ page }) => {
 			await openPlace(page, 'sync');
 			const advanced = page.locator('.host[data-widget="sync"] details.advanced');
 			await advanced.locator('summary').click();
 			const subs = await advanced.locator('button').evaluateAll((all) => all.map((b) => b.textContent.trim()));
-			assert.ok(subs.includes('status') && subs.includes('invite'), subs.join(' '));
+			assert.ok(subs.includes('status') && subs.includes('chain'), subs.join(' '));
 			await advanced.locator('button', { hasText: /^status$/ }).click();
 			assert.equal(await page.locator('.prompt-bar input').inputValue(), 'sync status ');
 		});
@@ -129,7 +280,7 @@ describe('a place', () => {
 				assert.equal(await shown(page), 'repl');
 				assert.deepEqual(errors, []);
 			},
-			{ ...DESKTOP, ...opened('main', 'tail', 'repl') }
+			{ ...PHONE, ...opened('main', 'tail', 'repl') }
 		);
 	});
 
@@ -153,12 +304,12 @@ describe('a place', () => {
 				assert.deepEqual(await rootTabs(page), ['main', 'tail', 'repl']);
 				assert.equal(await shown(page), 'repl');
 			},
-			{ ...DESKTOP, ...opened('main', 'tail', 'repl') }
+			{ ...PHONE, ...opened('main', 'tail', 'repl') }
 		);
 	});
 
 	test('the browser’s back returns to the tab it opened beside, and closes it', async () => {
-		await desktop.solo(async ({ page }) => {
+		await phone.solo(async ({ page }) => {
 			await openPlace(page, 'sync');
 			await page.goBack();
 			await until(() => rootTabs(page), (t) => t.join() === 'main');
@@ -170,7 +321,7 @@ describe('a place', () => {
 	// the first pop the second's history entry, and the pop slide the second
 	// closed too.
 	test('a place opened from a place replaces it, and the back leaves the second alone until pressed', async () => {
-		await desktop.solo(async ({ page }) => {
+		await phone.solo(async ({ page }) => {
 			await openPlace(page, 'sync');
 			await openPlace(page, 'aliases');
 			await until(() => rootTabs(page), (t) => t.join() === 'main,aliases');
@@ -182,7 +333,7 @@ describe('a place', () => {
 	});
 
 	test('Keep tab keeps it, across a reload', async () => {
-		await desktop.solo(async (app) => {
+		await phone.solo(async (app) => {
 			const { page } = app;
 			await openPlace(page, 'sync');
 			await chooseRoot(page, 'Keep tab');
@@ -198,7 +349,7 @@ describe('a place', () => {
 	});
 
 	test('in a pane, it is just the widget', async () => {
-		await desktop.solo(async ({ page }) => {
+		await phone.solo(async ({ page }) => {
 			const tab = await page.evaluate(() => {
 				const [first] = window.datum.layout.current().root.tabs[0].content.children;
 				return first.tabs[0].id;
@@ -212,15 +363,13 @@ describe('a place', () => {
 	});
 
 	test('/sync/approve#… opens the Sync place', async () => {
-		await desktop.solo(async (app) => {
+		await phone.solo(async (app) => {
 			await app.goto('/sync/approve#eyJ9');
 			await until(() => shown(app.page), (t) => t === 'sync');
 			assert.deepEqual(await rootTabs(app.page), ['main', 'sync']);
 		});
 	});
-});
 
-describe('a place on a phone', () => {
 	test('a swipe back returns to the tab it opened beside, and closes it', async () => {
 		await withApp(
 			async ({ page }) => {

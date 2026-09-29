@@ -65,10 +65,11 @@
 // there. `Keep tab` is the door out, and it is a save under the name.
 //
 // A PLACE (da-6du3o) is a preview of a name that already means something:
+// on a phone, and from a desktop's modal by `Open as tab` (da-jozgv),
 // `openPlace` puts a widget kind's built-in layout beside the tab you were
 // on, and it closes itself when you leave it. `Keep tab` keeps it, and
 // that is no save — the name is the built-in's already — only the tab
-// joining this device's open list. «A modal asks; a place is a tab»
+// joining this device's open list. «A modal asks; a place is a widget»
 // (docs/web-conventions.md).
 //
 // A nested tab takes the id `inline` gives it — the saved root pane's,
@@ -123,7 +124,7 @@ import {
 } from './store.js';
 import { EMPTY_KIND, allIds, closeTab, findTab, newId, newWidget, normalize, setActive, setLocked, setWidget, shedLayout } from './tree.js';
 import { unmaximize } from './maximize.js';
-import { defaultsOfKind } from './registry.js';
+import { KINDS, defaultsOfKind } from './registry.js';
 import { clearSession, keyOf } from './session.js';
 
 export { versions };
@@ -874,22 +875,51 @@ const inPlace = (): boolean => {
 let pushedFor: string | null = null;
 
 /**
- * Open the place `kind` is: its root tab brought to the front if one holds
- * it, else a TRANSIENT tab — its built-in layout, italic, written nowhere —
- * put immediately right of the tab you are on, and slid onto. Leaving it
- * closes it (below); `Keep tab` keeps it. The browser's back is the way
- * back too, so the tab pushes a history entry.
+ * The place open as a MODAL (da-jozgv), or null. vividn, 2026-09-29: «I think
+ * this is good on mobile, but the experience on desktop is not great … I
+ * would still have it be a modal on desktop». So on a desktop `openPlace`
+ * sets this and `PlaceModal.svelte` draws it over the page; on a phone it
+ * stays a tab. It carries the place's NAME, which is what `pushedFor` and
+ * the tab path mean by it, and the one widget that name resolves to — a
+ * place need not be named after its kind (`dayview` is a `daystrip`).
  */
-export async function openPlace(kind: string): Promise<void> {
+export const modalPlace = writable<{ name: string; widget: Widget } | null>(null);
+
+/**
+ * Open the place `kind` is: its root tab brought to the front if one holds
+ * it; else, on a desktop, the widget in a modal (`modalPlace`); else, or
+ * with `asTab`, a TRANSIENT tab — its built-in layout, italic, written
+ * nowhere — put immediately right of the tab you are on, and slid onto.
+ * Leaving it closes it (below); `Keep tab` keeps it. The browser's back is
+ * the way back from either, so each pushes a history entry — the modal's
+ * handed on to the tab its `Open as tab` opens.
+ */
+export async function openPlace(kind: string, asTab = false): Promise<void> {
 	await boot();
 	unmaximize();
 	const name = canonicalName(kind);
 	const tabs = rootTabs(get(layout));
 	const at = tabs.findIndex((t) => t.layout === name || (isWidget(t.content) && t.content.kind === kind));
-	if (at >= 0) return activate(at);
+	if (at >= 0) {
+		closeModalPlace();
+		return activate(at);
+	}
+	// The widget the tab would hold, resolved as the tab resolves it; a place
+	// that is more than one widget is a tab on a desktop too.
+	const widget = asTab || phone() ? null : soleWidget(loadDraft(name) ?? (await meaning(name)).layout);
+	const { pushState, replaceState } = await import('$app/navigation');
+	// A modal open already has the entry; what opens next takes it over.
+	const handed = get(modalPlace)?.name === pushedFor && pushedFor !== null;
+	const enter = (place: string) => (handed ? replaceState : pushState)('', { place });
+	modalPlace.set(null);
+	if (widget) {
+		enter(name);
+		pushedFor = name;
+		modalPlace.set({ name, widget });
+		return;
+	}
 	const tab = await openTab(name, new Set(allIds(get(layout))));
 	if (!tab) return;
-	const { pushState } = await import('$app/navigation');
 	const from = get(layout).root.active;
 	// The name and its tab land together, as `openPreview`'s do.
 	quiet(() => {
@@ -904,9 +934,33 @@ export async function openPlace(kind: string): Promise<void> {
 	// The entry is this place's BEFORE the tab switches: under reduced motion
 	// the switch is at once, and the closer of the place it leaves must not
 	// take this entry for its own (vremya on #349).
-	pushState('', { place: name });
+	enter(name);
 	pushedFor = name;
 	sliding.set(tab.id);
+}
+
+/**
+ * The modal place closed — ×, Escape, the backdrop. Its history entry goes
+ * with it, and the pop that follows is what clears `modalPlace`, so that
+ * pop is never read as a back out of a place tab underneath.
+ */
+export function closeModalPlace(): void {
+	const open = get(modalPlace);
+	if (open === null) return;
+	if (pushedFor !== open.name) return modalPlace.set(null);
+	pushedFor = null;
+	history.back();
+}
+
+/**
+ * The one widget a layout is, if it is one and this build draws its kind —
+ * `migrated` as `inline` migrates the tab's, so a save carrying a retired
+ * kind or setting draws in the modal as it would in the tab.
+ */
+function soleWidget(l: Layout | null): Widget | null {
+	const tabs = l?.root.tabs ?? [];
+	const content = tabs.length === 1 ? migrated(tabs[0]).content : null;
+	return content && isWidget(content) && KINDS[content.kind] ? content : null;
 }
 
 // A place closes when it is left, however: a swipe, a tap on another tab,
@@ -929,6 +983,7 @@ layout.subscribe(($layout) => {
 /** The browser's back, from a place: back to the tab it opened beside. */
 function onPopState(): void {
 	pushedFor = null;
+	if (get(modalPlace) !== null) return modalPlace.set(null);
 	const { tabs, active } = get(layout).root;
 	if (inPlace()) sliding.set(tabs[Math.max(0, active - 1)].id);
 }
