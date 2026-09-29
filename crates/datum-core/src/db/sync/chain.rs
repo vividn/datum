@@ -1,12 +1,19 @@
 //! The sync chain (da-odwc7): signed membership. A copy in a chain accepts
-//! ops only from the endpoints the chain's admins admitted.
+//! ops only from the endpoints the chain admitted.
+//!
+//! - **Open or locked (da-6177s).** A chain whose admin set is empty is
+//!   OPEN: every live member may write what an admin writes, signed by its
+//!   own endpoint key like any op of its. The first `add_admin` — any
+//!   member's, first-come by design — LOCKS it: from then on those acts take
+//!   an admin's signature. Every sync is between members of a chain.
 //!
 //! - **Records.** Chain records are ops of their own kind (`chain`, under the
 //!   hid [`CHAIN_HID`], so an op's `deps` are the records its writer had
 //!   seen), synced like any op but folded into membership, not entries. The
 //!   op's `effect` is the record: a `type`, the `chain` id, `created`, and
 //!   the type's own keys.
-//! - **Admin signature.** Every record but `admit` carries `sig`, an admin
+//! - **Admin signature.** In a locked chain every record but `admit` and a
+//!   member's describe of itself carries `sig`, an admin
 //!   key's signature over [`record_digest`] (SHA-256 of the canonical record
 //!   without `sig`). An admin key is `ed25519:<hex>` — a raw key held in a
 //!   file, for tests and headless setups — or a passkey, `es256:<SEC1
@@ -18,7 +25,8 @@
 //!   it. It reads only the SET of records, so every copy holding them
 //!   agrees; a record that fails its check stays held and does nothing.
 //!   - `genesis {admins, label}`: the first admin keys, signed by one of
-//!     them; its writer becomes the first member. One per chain.
+//!     them, or none (an open chain); its writer becomes the first member.
+//!     One per chain.
 //!   - `invite {invite_id, secret_hash, expires, caps}`: pre-authorised, so
 //!     any member admits its redeemer; one-time, until `expires`.
 //!   - `admit {endpoint, label, via, secret}`: unsigned, written by the
@@ -28,14 +36,13 @@
 //!     hash, and without the secret any of them could admit anyone through
 //!     an open invite. Once the admit folds, the invite is used and the
 //!     secret admits no one.
-//!   - `add_endpoint {endpoint, label}`, `revoke {endpoint}`,
-//!     `add_admin {key, label}`, `remove_admin {key}` — never the last.
+//!   - `revoke {endpoint}`, `add_admin {key, label}`, `remove_admin {key}`
+//!     — never the last, so a locked chain stays locked.
 //!   - `describe {endpoint, device, label, client}` (da-rcb5m): what a
 //!     member is — the device it runs on (one per data directory, shared by
 //!     every db there, so one laptop's copies group as one device), its
 //!     label, `cli` or `web`. The latest per endpoint wins. Unsigned when an
-//!     endpoint describes ITSELF; about another member, admin-signed like
-//!     every admin act, so no member can relabel another.
+//!     endpoint describes ITSELF; about another member, an admin act.
 //!
 //!   Every record but a genesis must be written by a member, and the same
 //!   record twice does nothing the second time. Every label a record
@@ -305,7 +312,7 @@ pub struct Member {
     pub endpoint: String,
     pub label: String,
     pub admitted: String,
-    /// `genesis`, `admin`, or `invite <id>`.
+    /// `genesis` or `invite <id>`.
     pub via: String,
     /// From its latest `describe`: its device id and `cli` / `web`.
     pub device: Option<String>,
@@ -342,6 +349,11 @@ pub fn hlc_time(hlc: &str) -> &str {
 impl Chain {
     pub fn exists(&self) -> bool {
         !self.id.is_empty()
+    }
+
+    /// No admin: every member may write the admin acts.
+    pub fn is_open(&self) -> bool {
+        self.admins.is_empty()
     }
 
     pub fn member(&self, endpoint: &str) -> Option<&Member> {
@@ -408,10 +420,12 @@ impl Chain {
                     added: op.hlc.clone(),
                 })
                 .collect();
-            if s("chain").is_empty() || admins.is_empty() {
-                return Err("a genesis names a chain id and an admin".into());
+            if s("chain").is_empty() {
+                return Err("a genesis names a chain id".into());
             }
-            admin_signed(&admins, &d, &s("sig"))?;
+            if !admins.is_empty() {
+                admin_signed(&admins, &d, &s("sig"))?;
+            }
             self.id = s("chain");
             self.admins = admins;
             return self.admit(&op.endpoint, &s("label"), &op.hlc, "genesis");
@@ -448,8 +462,9 @@ impl Chain {
                 &format!("invite {via}"),
             );
         }
-        // An endpoint describes itself unsigned; anything else takes an admin.
-        if kind != "describe" || op.endpoint != s("endpoint") {
+        // An endpoint describes itself unsigned; anything else takes an
+        // admin, once there is one: its writer is a live member already.
+        if !self.is_open() && (kind != "describe" || op.endpoint != s("endpoint")) {
             admin_signed(&self.admins, &d, &s("sig"))?;
         }
         match kind.as_str() {
@@ -491,7 +506,6 @@ impl Chain {
                 );
                 Ok(())
             }
-            "add_endpoint" => self.admit(&s("endpoint"), &s("label"), &op.hlc, "admin"),
             "revoke" => {
                 let m = self
                     .members

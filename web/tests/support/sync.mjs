@@ -91,7 +91,7 @@ function datumBinary() {
 /**
  * A native copy of a database, on `relay`. `run(argv, stdin, env)` resolves
  * to its `{ code, stdout, stderr }`; `spawn(argv)` starts a long-running one
- * (`sync run`, `sync add-client`) and collects what it prints; `count(field)`
+ * (`sync run`, `sync invite`) and collects what it prints; `count(field)`
  * is how many entries of `field` it holds; `close` stops every process and
  * removes the copy.
  */
@@ -137,12 +137,13 @@ export async function nativeCopy(relay) {
 }
 
 /**
- * Pair the browser tab `app` with `native` as `datum sync add-client` and
- * `connect` do — the native copy inviting, the page redeeming — and return
- * the page's report of that first sync.
+ * Pair the browser tab `app` with `native` through a sync chain, as `datum
+ * sync invite` and `connect` do — the native copy inviting, which starts an
+ * open chain, the page redeeming — and return the page's report of that
+ * first sync.
  */
 export async function pairWith(app, native) {
-	const serving = native.spawn(['sync', 'add-client']);
+	const serving = native.spawn(['sync', 'invite']);
 	const said = await until(() => /datum sync connect (\S+)/.exec(serving.stdout), Boolean);
 	return app.page.evaluate((t) => window.datum.sync.connect('datum', t), said[1]);
 }

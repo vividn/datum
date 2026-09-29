@@ -1,14 +1,15 @@
-//! The copies this one syncs with, and its one-time invites (da-rugg8): the
-//! local tables a sync session reads and writes as it opens. Here rather than
+//! Where this copy last saw the members of its chain (da-rugg8), and the
+//! handshake a sync session opens with. Every sync is between members of a
+//! chain (da-6177s): `sync_peers` is an address book, and grants nothing.
+//! Here rather than
 //! in the transport so that every build runs them — the native one's iroh
 //! session, and datum.day's, whose transport is in the page and reaches these
 //! through the CLI (`datum sync handshake`, da-6kpj5).
 
 use chrono::{SecondsFormat, Utc};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 
 use super::chain;
-use super::sha256_hex;
 use crate::db::Db;
 use crate::error::{DatumError, Result};
 
@@ -22,7 +23,7 @@ pub struct Peer {
     pub addrs: String,
     pub added_at: String,
     pub last_seen: Option<String>,
-    /// Synced with: in a chain, an unrevoked member; else a peer.
+    /// Synced with: an unrevoked member of this copy's chain.
     pub synced: bool,
 }
 
@@ -72,21 +73,10 @@ impl Db {
             .collect()
     }
 
-    /// A copy this one syncs with: in a chain, an unrevoked member; else a peer.
+    /// A copy this one syncs with: an unrevoked member of its chain.
     pub fn sync_is_peer(&self, id: &str) -> Result<bool> {
         let chain = self.sync_chain()?;
-        if chain.exists() {
-            return Ok(chain.member(id).is_some_and(|m| m.revoked.is_none()));
-        }
-        Ok(self
-            .conn
-            .query_row(
-                "SELECT 1 FROM sync_peers WHERE endpoint_id = ?1",
-                [id],
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some())
+        Ok(chain.member(id).is_some_and(|m| m.revoked.is_none()))
     }
 
     /// Record `id` as a peer, or refresh its label, address and last seen.
@@ -101,51 +91,12 @@ impl Db {
         Ok(())
     }
 
-    /// A new pairwise invite (`datum sync add-client`): its secret, which
-    /// only the ticket carries, and when it expires.
-    pub fn sync_new_invite(&self, expires: std::time::Duration) -> Result<(String, String)> {
-        let (secret, expires_at) = invite_secret(expires);
-        self.conn.execute(
-            "INSERT INTO sync_invites (secret_hash, expires_at) VALUES (?1, ?2)",
-            params![sha256_hex(&secret), expires_at],
-        )?;
-        Ok((secret, expires_at))
-    }
-
-    /// Mark the invite whose secret is `secret` used, if it is unused and
-    /// unexpired; otherwise say why not.
-    fn sync_redeem(&self, secret: &str) -> Result<()> {
-        let hash = sha256_hex(secret);
-        let row: Option<(String, Option<String>)> = self
-            .conn
-            .query_row(
-                "SELECT expires_at, used_at FROM sync_invites WHERE secret_hash = ?1",
-                [&hash],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()?;
-        let why = match row {
-            None => "unknown invite".to_string(),
-            Some((_, Some(used))) => format!("invite already used ({used})"),
-            Some((expires, None)) if expires <= now() => format!("invite expired ({expires})"),
-            Some(_) => {
-                self.conn.execute(
-                    "UPDATE sync_invites SET used_at = ?2 WHERE secret_hash = ?1",
-                    params![hash, now()],
-                )?;
-                return Ok(());
-            }
-        };
-        Err(DatumError::Other(why))
-    }
-
     /// A session's handshake, as it bears on this copy: `id` introduced
     /// itself as `label` at `addrs`. Dialed (it answered this copy's dial):
-    /// recorded. Served (it dialed this copy): admitted — a peer, the
-    /// redeemer of `invite`, or in a chain a member or the redeemer of an
-    /// admin-signed invite — and recorded; anyone else is refused, and the
+    /// recorded. Served (it dialed this copy): admitted — a member, or the
+    /// redeemer of `invite` — and recorded; anyone else is refused, and the
     /// error says why. An invite presented is redeemed or refused, even by a
-    /// peer: one use. Whether `id` is new to this copy comes back.
+    /// member: one use. Whether `id` is new to this copy comes back.
     pub fn sync_handshake(
         &self,
         id: &str,
@@ -163,40 +114,13 @@ impl Db {
         }
         let known = self.sync_is_peer(id)?;
         if !dialed {
-            let chained = self.sync_chain()?.exists();
             match invite {
-                Some(secret) if chained => self.sync_admit(id, label, secret)?,
-                Some(secret) => self.sync_redeem(secret)?,
+                Some(secret) => self.sync_admit(id, label, secret)?,
                 None if known => {}
-                None if chained => return refuse("not a member of this sync chain".into()),
-                None => {
-                    return refuse("not a peer of this copy: redeem an invite from it first".into())
-                }
+                None => return refuse("not a member of this sync chain".into()),
             }
         }
         self.sync_record_peer(id, label, addrs)?;
         Ok(!known)
-    }
-
-    /// Drop the peer `who` names, by label or a prefix of its id; its label
-    /// and id come back.
-    pub fn sync_forget(&self, who: &str) -> Result<(String, String)> {
-        let hits: Vec<Peer> = self
-            .sync_peers()?
-            .into_iter()
-            .filter(|p| p.label == who || p.id.starts_with(who))
-            .collect();
-        match hits.as_slice() {
-            [p] => {
-                self.conn
-                    .execute("DELETE FROM sync_peers WHERE endpoint_id = ?1", [&p.id])?;
-                Ok((p.label.clone(), p.id.clone()))
-            }
-            [] => Err(DatumError::Other(format!("no sync peer {who}"))),
-            _ => Err(DatumError::Other(format!(
-                "{who} names {} sync peers; give more of the id",
-                hits.len()
-            ))),
-        }
     }
 }

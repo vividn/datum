@@ -318,10 +318,10 @@ CREATE TABLE IF NOT EXISTS sync_local (
     path            TEXT NOT NULL DEFAULT ''
 );
 
--- The copies this one syncs with (da-rugg8): whoever redeemed an invite
--- from it, or whose invite it redeemed. LOCAL, never synced. `addrs` is the
--- iroh address the peer last gave (JSON), to dial it without discovery;
--- `announced` is 0 until a command has printed the new-peer warning.
+-- Where this copy last saw the members of its sync chain (da-rugg8): an
+-- address book, granting nothing — only members are synced with (da-6177s).
+-- LOCAL, never synced. `addrs` is the iroh address the peer last gave
+-- (JSON), to dial it without discovery; `announced` is unused since.
 -- The last session with it (da-rcb5m, `datum sync status`): the peer's
 -- version vector as it ended (JSON), its verify, and the error it failed
 -- with (NULL once one succeeds), each with its time. `addrs` is '' for a
@@ -352,14 +352,6 @@ CREATE TABLE IF NOT EXISTS sync_notices (
     via       TEXT NOT NULL,
     announced INTEGER NOT NULL DEFAULT 0,
     acked     INTEGER NOT NULL DEFAULT 0
-);
-
--- One-time invites (`datum sync add-client`): the SHA-256 of each secret,
--- never the secret, with its expiry and when it was redeemed. LOCAL.
-CREATE TABLE IF NOT EXISTS sync_invites (
-    secret_hash TEXT NOT NULL PRIMARY KEY,
-    expires_at  TEXT NOT NULL,
-    used_at     TEXT
 );
 
 -- Data-integrity warnings: overlap / double-open / orphan-end / same-state

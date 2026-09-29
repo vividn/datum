@@ -144,7 +144,7 @@ export async function run(
 	try {
 		runner ??= (await import('./runners/wasi.js')).wasiRun;
 		const result = await runner(against, stdin, onStderr, key, stage);
-		// `sync init`, `forget`, a revoke…: its leader reads the setup again (da-6kpj5).
+		// `sync new-invite`, a revoke, an admin…: its leader reads the setup again (da-6kpj5).
 		if (argv.includes('sync') && result.changed?.length) {
 			void import('./sync.js').then(({ syncTouched }) => syncTouched(dbOf(argv)));
 		}

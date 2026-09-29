@@ -1,7 +1,7 @@
 //! `datum sync` — Easy Sync. The core (da-k329q) moves ops as JSON lines on
 //! stdin/stdout, so two copies sync through a pipe:
 //! `datum --db b sync ops --since "$(datum --db a sync vector)" | datum --db a sync apply`;
-//! the rest pairs copies and syncs them over iroh (da-rugg8).
+//! the rest syncs the members of a sync chain over iroh (da-rugg8, da-6177s).
 
 use super::core::*;
 use crate::cli::*;
@@ -22,26 +22,10 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         },
         "now" => SyncCommand::Now,
         "run" => SyncCommand::Run,
-        "peers" => SyncCommand::Peers {
-            show: Show::Default,
-        },
         "rekey" => SyncCommand::Rekey,
-        "forget" => SyncCommand::Forget {
-            peer: rest
-                .next()
-                .ok_or_else(|| ParseError::InvalidArg("forget needs a peer".into()))?
-                .to_string(),
-        },
         "connect" => SyncCommand::Connect {
             ticket: rest.next().map(|t| t.to_string()),
         },
-        "add-client" => {
-            let o = opts(&mut rest, &["expires"], &["qr"], 0..=0)?;
-            SyncCommand::AddClient {
-                qr: o.on("qr"),
-                expires_secs: o.expires()?,
-            }
-        }
         "invite" => {
             let o = opts(&mut rest, &["expires", "admin-key"], &["qr"], 0..=0)?;
             SyncCommand::Invite {
@@ -50,25 +34,11 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 admin_key: o.get("admin-key"),
             }
         }
-        "init" => {
-            let o = opts(&mut rest, &["admin-key", "admin-passkey"], &[], 0..=0)?;
-            let (admin_key, admin_passkey) = (o.get("admin-key"), o.get("admin-passkey"));
-            if admin_key.is_some() == admin_passkey.is_some() {
-                return Err(ParseError::InvalidArg(
-                    "sync init needs one of --admin-key <FILE> or --admin-passkey <JSON>".into(),
-                ));
-            }
-            SyncCommand::Init {
-                admin_key,
-                admin_passkey,
-            }
-        }
-        "revoke" | "add-endpoint" | "add-admin" | "remove-admin" => {
+        "revoke" | "add-admin" | "remove-admin" => {
             let mut o = opts(&mut rest, &["admin-key", "label"], &[], 1..=1)?;
             SyncCommand::Admin {
                 act: match sub {
                     "revoke" => SyncAdminAct::Revoke,
-                    "add-endpoint" => SyncAdminAct::AddEndpoint,
                     "add-admin" => SyncAdminAct::AddAdmin,
                     _ => SyncAdminAct::RemoveAdmin,
                 },
@@ -129,9 +99,13 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 endpoint: o.positional.remove(0),
             }
         }
-        "new-invite" => SyncCommand::NewInvite {
-            expires_secs: opts(&mut rest, &["expires"], &[], 0..=0)?.expires()?,
-        },
+        "new-invite" => {
+            let o = opts(&mut rest, &["expires", "admin-key"], &[], 0..=0)?;
+            SyncCommand::NewInvite {
+                expires_secs: o.expires()?,
+                admin_key: o.get("admin-key"),
+            }
+        }
         "ack" => SyncCommand::Ack {
             who: rest
                 .next()
@@ -155,7 +129,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         }
         other => {
             return Err(ParseError::InvalidArg(format!(
-                "unknown sync subcommand: '{other}' (expected init|invite|connect|members|status|rename|ack|revoke|add-endpoint|add-admin|remove-admin|add-client|now|run|peers|forget|rekey|vector|ops|apply|verify)"
+                "unknown sync subcommand: '{other}' (expected invite|connect|members|status|rename|ack|revoke|add-admin|remove-admin|now|run|rekey|vector|ops|apply|verify)"
             )))
         }
     };
@@ -287,39 +261,24 @@ mod tests {
         assert!(parse_sync_cmd(&["handshake", "ab", "--label", "l"]).is_err());
         assert_eq!(
             parse_sync_cmd(&["new-invite", "--expires", "1m"]).unwrap(),
-            SyncCommand::NewInvite { expires_secs: 60 }
-        );
-        assert_eq!(
-            parse_sync_cmd(&["add-client", "--qr", "--expires", "1h"]).unwrap(),
-            SyncCommand::AddClient {
-                qr: true,
-                expires_secs: 3600
+            SyncCommand::NewInvite {
+                expires_secs: 60,
+                admin_key: None
             }
         );
         assert_eq!(
-            parse_sync_cmd(&["add-client", "--expires=30s"]).unwrap(),
-            SyncCommand::AddClient {
-                qr: false,
-                expires_secs: 30
+            parse_sync_cmd(&["invite", "--qr", "--expires", "1h"]).unwrap(),
+            SyncCommand::Invite {
+                qr: true,
+                expires_secs: 3600,
+                admin_key: None
             }
         );
         assert_eq!(
             parse_sync_cmd(&["connect"]).unwrap(),
             SyncCommand::Connect { ticket: None }
         );
-        assert_eq!(
-            parse_sync_cmd(&["forget", "abc"]).unwrap(),
-            SyncCommand::Forget { peer: "abc".into() }
-        );
         assert_eq!(parse_sync_cmd(&["rekey"]).unwrap(), SyncCommand::Rekey);
-        assert_eq!(
-            parse_sync_cmd(&["init", "--admin-key", "k"]).unwrap(),
-            SyncCommand::Init {
-                admin_key: Some("k".into()),
-                admin_passkey: None
-            }
-        );
-        assert!(parse_sync_cmd(&["init"]).is_err());
         assert_eq!(
             parse_sync_cmd(&["invite", "--admin-key=k", "--qr"]).unwrap(),
             SyncCommand::Invite {
@@ -329,14 +288,17 @@ mod tests {
             }
         );
         assert_eq!(
-            parse_sync_cmd(&["add-endpoint", "abc", "--label", "phone"]).unwrap(),
+            parse_sync_cmd(&["add-admin", "k", "--label", "desk"]).unwrap(),
             SyncCommand::Admin {
-                act: SyncAdminAct::AddEndpoint,
-                who: "abc".into(),
-                label: Some("phone".into()),
+                act: SyncAdminAct::AddAdmin,
+                who: "k".into(),
+                label: Some("desk".into()),
                 admin_key: None
             }
         );
+        for gone in ["init", "add-endpoint", "add-client", "peers", "forget"] {
+            assert!(parse_sync_cmd(&[gone]).is_err(), "{gone}");
+        }
         assert!(parse_sync_cmd(&["revoke"]).is_err());
         assert!(parse_sync_cmd(&["revoke", "a", "b"]).is_err());
         assert_eq!(
@@ -378,8 +340,7 @@ mod tests {
             }
         );
         assert!(parse_sync_cmd(&["record-session", "ab", "--verify", "maybe"]).is_err());
-        assert!(parse_sync_cmd(&["forget"]).is_err());
-        assert!(parse_sync_cmd(&["add-client", "--expires", "0s"]).is_err());
+        assert!(parse_sync_cmd(&["invite", "--expires", "0s"]).is_err());
         assert!(parse_sync_cmd(&["now", "extra"]).is_err());
         assert!(parse_sync_cmd(&[]).is_err());
         assert!(parse_sync_cmd(&["vector", "extra"]).is_err());

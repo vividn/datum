@@ -156,7 +156,7 @@ thread_local! {
 /// another device, or at another path while the original is still there
 /// (copied, restored beside it), mints its own rather than sign as the copy
 /// it came from: two copies with one key would number their ops from one
-/// seq. A file MOVED keeps its key, and so its pairings. A copy put back
+/// seq. A file MOVED keeps its key, and so its membership. A copy put back
 /// over the original's own path is the case this cannot see; `sync_apply`
 /// refuses the fork it makes, and `datum sync rekey` mints a new key.
 fn endpoint(conn: &Connection) -> Result<Endpoint> {
@@ -999,8 +999,8 @@ impl Db {
 
     /// Mint a new endpoint key for this copy — one of two copies found
     /// sharing a key (da-p79vq). Its ops so far stay signed by the old key;
-    /// new ones use the new, which is also a new iroh endpoint id, so peers
-    /// paired before must pair again. Returns the new id.
+    /// new ones use the new, which is also a new iroh endpoint id and no
+    /// member of the chain: the copy joins it again. Returns the new id.
     pub fn sync_rekey(&self) -> Result<String> {
         self.conn.execute("DELETE FROM sync_local", [])?;
         Ok(endpoint(&self.conn)?.id)

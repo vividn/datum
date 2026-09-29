@@ -84,10 +84,10 @@ describe('a sync chain started in the page', () => {
 	test('holds this browser as its first member, under its own device, and the tab starts an endpoint', async () => {
 		await withApp(
 			async (app) => {
-				// The key file lives in the process's own memory: the admin is gone
-				// with it, which is no matter to a chain of one.
-				const init = await app.run(['sync', 'init', '--admin-key', '/data/admin.key']);
-				assert.equal(init.code, 0, init.stderr);
+				// The first invite starts an open chain: no admin, no key.
+				const invite = await app.run(['sync', 'new-invite']);
+				assert.equal(invite.code, 0, invite.stderr);
+				assert.deepEqual(JSON.parse((await app.run(['sync', 'members', '--json'])).stdout).admins, []);
 				const device = await app.page.evaluate(() => localStorage.getItem('datum-device-id'));
 				const members = JSON.parse((await app.run(['sync', 'members', '--json'])).stdout).members;
 				assert.deepEqual(

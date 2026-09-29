@@ -7,14 +7,14 @@
 // next tab in the lock's queue takes over by itself.
 //
 // The elected tab — the LEADER — starts $lib/sync.worker.ts, and binds an
-// endpoint there if the database syncs: it is in a sync chain, or has a
-// peer. Its store is the CLI: the worker asks for `datum sync …` commands
+// endpoint there if the database syncs: it is in a sync chain. Its store is
+// the CLI: the worker asks for `datum sync …` commands
 // and they run here, in the database worker, like every other command.
 //
 // - PUSH on every write to the database, this tab's or any other's
-//   (`onAnyChange`): a peer whose vector is behind ours is dialed, one
-//   session per peer at a time, a write during a session making one more.
-// - PULL from every peer every `PULL_MS`, which is also what keeps
+//   (`onAnyChange`): a member whose vector is behind ours is dialed, one
+//   session per member at a time, a write during a session making one more.
+// - PULL from every member every `PULL_MS`, which is also what keeps
 //   reachability fresh.
 // - Ops that ARRIVE are announced to this tab (`announceHere`); the other
 //   tabs heard already, from the process that applied them.
@@ -23,6 +23,8 @@
 //   else `offline` with when it was last seen. The leader posts it, with the
 //   endpoint's id, on the `datum-sync` channel, so every tab shows the same.
 // - A tab that is not the leader forwards `offer` and `connect` to it.
+//   Pairing is the chain's (da-6177s): `offer` writes a chain invite —
+//   starting an open chain when there is none — and `connect` redeems one.
 //
 // A relay other than n0's is named in `localStorage` (`datum.syncRelay`),
 // as `DATUM_SYNC_RELAY` names one for the CLI: the tests' local relay.
@@ -55,14 +57,15 @@ export interface SyncState {
 	peers: Record<string, PeerState>;
 }
 
+/** A member, from `sync status --json`: `addr` is where it was last seen. */
 interface Peer {
 	endpoint: string;
 	label: string;
 	addr: string;
-	synced: boolean;
+	revoked: boolean;
 }
 
-type Call = { op: 'offer'; secret?: string } | { op: 'connect'; ticket: string };
+type Call = { op: 'offer' } | { op: 'connect'; ticket: string };
 
 const states = writable<Record<string, SyncState>>({});
 /** Every database's sync state this tab has heard, from its leader. */
@@ -145,20 +148,20 @@ class Leader {
 
 	/**
 	 * Read whether the database syncs, and start an endpoint if it does.
-	 * Neither read writes: `sync status` would mint an endpoint key in a
-	 * database that has none, on every fresh device's first boot.
+	 * `sync members` fails, writing nothing, in a database in no chain;
+	 * `sync status` would mint an endpoint key there, on every fresh
+	 * device's first boot, so only a member is asked it.
 	 */
 	async refresh(): Promise<void> {
 		const members = await cli(['--db', this.db, 'sync', 'members', '--json']);
 		this.chain = members.code === 0;
+		this.peers = [];
 		if (this.chain) {
-			const me = JSON.parse(members.stdout).members.find((m: { this: boolean }) => m.this);
-			this.label = me?.label ?? this.label;
+			const status = JSON.parse(await must(['--db', this.db, 'sync', 'status', '--json']));
+			this.label = status.this.label;
+			this.peers = (status.members as Peer[]).filter((p) => !p.revoked && p.addr);
+			await this.start();
 		}
-		this.peers = (JSON.parse(await must(['--db', this.db, 'sync', 'peers', '--json'])) as Peer[]).filter(
-			(p) => p.synced && p.addr
-		);
-		if (this.chain || this.peers.length) await this.start();
 		this.post();
 	}
 
@@ -229,10 +232,11 @@ class Leader {
 			if (this.chain) await cli(['--db', this.db, 'sync', 'rename', this.label]);
 			return report;
 		}
-		await this.start();
-		const secret = c.secret ?? JSON.parse(await must(['--db', this.db, 'sync', 'new-invite'])).secret;
-		// In a chain, any member can admit the redeemer.
-		const also = this.chain ? JSON.stringify(this.peers.map((p) => JSON.parse(p.addr))) : undefined;
+		const { secret } = JSON.parse(await must(['--db', this.db, 'sync', 'new-invite']));
+		// The first invite starts the chain, and with it the endpoint.
+		await this.refresh();
+		// Any member can admit the redeemer.
+		const also = JSON.stringify(this.peers.map((p) => JSON.parse(p.addr)));
 		return ask<string>(this.db, { op: 'ticket', secret, also });
 	}
 
@@ -326,11 +330,11 @@ async function call<T>(db: string, c: Call): Promise<T> {
 }
 
 /**
- * A ticket for another copy to redeem (`datum sync add-client`): a new
- * pairwise invite, or the chain invite whose `secret` the caller minted.
+ * A ticket for another copy to redeem (`datum sync invite`): a new chain
+ * invite, starting an open chain when the database is in none.
  */
-export function syncOffer(db: string, secret?: string): Promise<string> {
-	return call(db, { op: 'offer', secret });
+export function syncOffer(db: string): Promise<string> {
+	return call(db, { op: 'offer' });
 }
 
 /** Redeem `ticket` and sync (`datum sync connect`). */
@@ -343,7 +347,7 @@ export function syncLeads(): string[] {
 	return [...led.keys()];
 }
 
-/** Say that `db`'s sync setup changed (a chain, a peer): its leader reads it again. */
+/** Say that `db`'s sync setup changed (its chain): its leader reads it again. */
 export function syncTouched(db: string): void {
 	const leader = led.get(db);
 	if (leader) void leader.refresh().catch(() => {});

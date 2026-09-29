@@ -113,16 +113,21 @@ an entry's row is the FOLD of its ops in HLC order, so the same ops in any
 order give the same row. `datum sync vector / ops / apply / verify` move ops
 as JSON lines over a pipe. The transport is iroh (da-rugg8, `crates/datum-sync`,
 behind datum-commands' `net` feature, so the CLI's wasm build has no iroh): the iroh
-endpoint key IS the db's endpoint key, copies pair with one-time invites
-(`add-client` / `connect`) into a local `sync_peers` table, only peers are
-served, and `sync now` / `sync run` swap vectors and ops until neither moves.
+endpoint key IS the db's endpoint key, copies join a sync chain with
+one-time invites (`invite` / `connect`), only members are served
+(`sync_peers` is just where they were last seen), and `sync now` / `sync
+run` swap vectors and ops until neither moves.
 `DATUM_SYNC_BIND=<ip:port>` binds one address with no relay or discovery (the
 tests), `DATUM_SYNC_RELAY=<url>` one relay and nothing else. A copy of the file at another path mints its own key (`sync_local.path`,
 v44); two copies found signing with one key are refused by name, and
-`sync rekey` gives one a new key (da-p79vq). Signed membership comes next.
+`sync rekey` gives one a new key (da-p79vq). Membership is the signed chain
+(da-odwc7, `db/sync/chain.rs`), and there is one mechanism (da-6177s): a
+chain with no admin is OPEN — any member invites, revokes or renames, and
+`invite` on a copy in no chain starts one — and the first `add-admin`
+LOCKS it, after which those acts take an admin key (passkey or key file).
 
 The session itself is `crates/datum-sync-wire`, generic over a `Store`
-(da-6kpj5), and the handshake's storage side — peers, invites, admission — is
+(da-6kpj5), and the handshake's storage side — members, invites, admission — is
 datum-core's, so datum.day syncs too: `web/src/lib/sync.worker.ts` runs the
 wire crate built for wasm32-unknown-unknown (relay-only iroh) with the CLI as
 its store (hidden `sync handshake` / `new-invite` / `endpoint-key` /

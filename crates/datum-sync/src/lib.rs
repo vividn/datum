@@ -8,13 +8,11 @@
 //!   and nothing else (a private relay, the tests' local one);
 //!   `DATUM_SYNC_BIND=<ip:port>` that one address with no relay and no
 //!   discovery (a LAN, the tests).
-//! - **Peers.** With no sync chain, trust is pairwise: a peer is whoever
-//!   redeemed an invite from this copy, or whose invite it redeemed. In a
-//!   chain (da-odwc7) a peer is a member, and `sync_peers` only remembers
-//!   where members were last seen: any member admits the redeemer of an
-//!   admin-signed invite, and only unrevoked members are served or dialed
-//!   (`Db::sync_handshake`). Anyone else is refused at the handshake, and so
-//!   is this copy's own key.
+//! - **Peers.** A peer is a member of this copy's sync chain (da-odwc7,
+//!   da-6177s), and `sync_peers` only remembers where members were last
+//!   seen: any member admits the redeemer of the chain's invite, and only
+//!   unrevoked members are served or dialed (`Db::sync_handshake`). Anyone
+//!   else is refused at the handshake, and so is this copy's own key.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -182,30 +180,17 @@ fn print_added(rep: &Report) {
 
 // ─── Commands ───────────────────────────────────────────────────────────────
 
-/// `datum sync add-client`: mint a one-time invite, print how to redeem it,
-/// and serve until it is redeemed (or expires).
-pub fn add_client(db: &Db, expires: Duration, qr: bool) -> Result<()> {
-    ensure!(
-        !db.sync_chain()?.exists(),
-        "this copy is in a sync chain: `datum sync invite` makes an invite"
-    );
-    let (secret, expires_at) = db.sync_new_invite(expires)?;
-    offer(db, &secret, expires, &expires_at, qr)
-}
-
 /// Print how to redeem the invite whose secret is `secret`, and serve until
-/// it is redeemed (or expires). In a chain, `datum sync invite` has written
-/// the invite; any member can admit its redeemer.
+/// it is redeemed (or expires). `datum sync invite` has written the invite
+/// into the chain, so any member can admit its redeemer: the ticket lists
+/// them all.
 pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: bool) -> Result<()> {
     let secret = secret.to_string();
     runtime()?.block_on(async {
         let ep = bind(db).await?;
         let store = DbStore(db);
         let mut addrs = vec![ep.addr()];
-        // Only a chain's members can admit the redeemer of its invite.
-        if db.sync_chain()?.exists() {
-            addrs.extend(synced_peers(db)?.iter().filter_map(|p| addr(p).ok()));
-        }
+        addrs.extend(synced_peers(db)?.iter().filter_map(|p| addr(p).ok()));
         let ticket = Ticket { addrs, secret }.encode()?;
         println!("One-time invite, until {expires_at}. On the other copy run:\n");
         println!("  datum sync connect {ticket}\n");
@@ -262,11 +247,11 @@ pub fn connect(db: &Db, ticket: &str) -> Result<()> {
     })
 }
 
-/// `datum sync now`: sync with every peer once.
+/// `datum sync now`: sync with every member once.
 pub fn now_all(db: &Db) -> Result<()> {
     let peers = synced_peers(db)?;
     if peers.is_empty() {
-        println!("no sync peers: `datum sync add-client` makes an invite");
+        println!("no sync peers: `datum sync invite` makes an invite");
         return Ok(());
     }
     runtime()?.block_on(async {

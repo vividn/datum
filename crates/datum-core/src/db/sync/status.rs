@@ -28,6 +28,8 @@ pub struct PeerStatus {
     pub last_verify: Option<(String, bool)>,
     pub error: Option<String>,
     pub error_at: Option<String>,
+    /// Where it was last seen (the transport's address, as JSON), if ever.
+    pub addr: Option<String>,
 }
 
 type Session = (
@@ -35,6 +37,7 @@ type Session = (
     Option<String>,
     Option<String>,
     Option<bool>,
+    Option<String>,
     Option<String>,
     Option<String>,
 );
@@ -46,8 +49,7 @@ impl Db {
     /// session's vector is the peer's as its last round began, before that
     /// round's ops reached it, so `to_send` may count more than is waiting,
     /// never less. A chain
-    /// member gets a row if it has none; anyone else must be a peer already,
-    /// since a row there makes a pairwise peer.
+    /// member gets a row if it has none; anyone else has none to update.
     pub fn sync_record_session(
         &self,
         endpoint: &str,
@@ -80,7 +82,7 @@ impl Db {
         )?;
         if n == 0 {
             return Err(DatumError::Other(format!(
-                "{endpoint} is not a member of this copy's sync chain, nor a peer"
+                "{endpoint} is not a member of this copy's sync chain"
             )));
         }
         Ok(())
@@ -103,7 +105,7 @@ impl Db {
                 .conn
                 .query_row(
                     "SELECT last_seen, last_vector, last_verify_at, last_verify_match,
-                            last_error, last_error_at
+                            last_error, last_error_at, NULLIF(addrs, '')
                      FROM sync_peers WHERE endpoint_id = ?1",
                     [&m.endpoint],
                     |r| {
@@ -114,12 +116,13 @@ impl Db {
                             r.get(3)?,
                             r.get(4)?,
                             r.get(5)?,
+                            r.get(6)?,
                         ))
                     },
                 )
                 .optional()?;
             let had_session = row.is_some();
-            let (last_seen, vector, verify_at, verify_match, mut error, mut error_at) =
+            let (last_seen, vector, verify_at, verify_match, mut error, mut error_at, addr) =
                 row.unwrap_or_default();
             let theirs: BTreeMap<String, i64> = vector
                 .and_then(|v| serde_json::from_str(&v).ok())
@@ -157,6 +160,7 @@ impl Db {
                 last_verify,
                 error,
                 error_at,
+                addr,
             });
         }
         Ok(out)

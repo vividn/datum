@@ -2,7 +2,9 @@
 //! and here is the pipe it runs over: ops as JSON lines on stdout (`ops`)
 //! and stdin (`apply`). Pairing and syncing over iroh is `datum_sync`
 //! (da-rugg8), behind the `net` feature. The sync chain's admin acts
-//! (da-odwc7) are signed here, with a key file or by a passkey on datum.day.
+//! (da-odwc7) are signed here, with a key file or by a passkey on datum.day
+//! — once the chain has an admin; an open one's are the members' own
+//! (da-6177s).
 
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -15,7 +17,7 @@ use serde_json::{json, Value};
 use crate::args::{ShowFlag, SyncAdminAct, SyncCommand};
 use crate::commands::check::{Issue, Severity};
 
-const NO_CHAIN: &str = "this copy is in no sync chain: `datum sync init` starts one";
+const NO_CHAIN: &str = "this copy is in no sync chain: `datum sync invite` starts one";
 
 pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
     match cmd {
@@ -59,7 +61,9 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
         }
         SyncCommand::Rekey => {
             println!("new endpoint key {}", db.sync_rekey()?);
-            println!("peers paired with the old key must pair with this copy again");
+            println!(
+                "the new key is no member of this copy's sync chain: join it again with an invite"
+            );
         }
         SyncCommand::Verify { verbose } => {
             let (hash, per_column) = db.sync_state_hash()?;
@@ -69,35 +73,6 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                     println!("  {column:<24} {hash}");
                 }
             }
-        }
-        SyncCommand::Init {
-            admin_key,
-            admin_passkey,
-        } => {
-            ensure!(
-                !db.sync_chain()?.exists(),
-                "this copy is in a sync chain already"
-            );
-            let (key, label) = match (&admin_key, &admin_passkey) {
-                (Some(path), _) => (
-                    chain::ed25519_admin_key(&key_file(path, true)?),
-                    checked(file_label(path))?,
-                ),
-                (_, Some(json)) => passkey(json)?,
-                _ => bail!("sync init needs --admin-key or --admin-passkey"),
-            };
-            let id = ulid::Ulid::new().to_string().to_lowercase();
-            let genesis = json!({
-                "type": "genesis", "chain": id, "admins": [{"key": key, "label": label}],
-                "label": copy_label(), "created": chrono::Utc::now().to_rfc3339(),
-            });
-            db.sync_chain_write(sign(genesis, admin_key.as_deref())?, true)?;
-            // The chain stands without it: a failure here is no reason to say
-            // the init failed and leave its genesis behind.
-            if let Err(e) = db.sync_describe_self(&copy_label(), client()) {
-                eprintln!("⚠ this copy could not describe itself ({e}); `datum sync rename <LABEL>` tries again");
-            }
-            println!("started sync chain {id}; this copy is its first member");
         }
         SyncCommand::Admin {
             act,
@@ -115,16 +90,11 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                         format!("revoked {who}"),
                     )
                 }
-                SyncAdminAct::AddEndpoint => {
-                    let label = checked(label.unwrap_or_else(|| who.chars().take(10).collect()))?;
-                    let r = json!({"type": "add_endpoint", "endpoint": who, "label": label});
-                    (r, format!("admitted {label}"))
-                }
                 SyncAdminAct::AddAdmin => {
                     let (key, l) = match who.trim_start().starts_with('{') {
                         true => passkey(&who)?,
                         false => (
-                            chain::ed25519_admin_key(&key_file(&who, false)?),
+                            chain::ed25519_admin_key(&key_file(&who, true)?),
                             file_label(&who),
                         ),
                     };
@@ -147,7 +117,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             };
             record["chain"] = chain.id.clone().into();
             record["created"] = chrono::Utc::now().to_rfc3339().into();
-            db.sync_chain_write(sign(record, admin_key.as_deref())?, true)?;
+            db.sync_chain_write(sign(record, &chain, admin_key.as_deref())?, true)?;
             println!("{said}");
         }
         SyncCommand::Members { show } => members(db, show == ShowFlag::Json)?,
@@ -173,7 +143,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                     "device": m.device, "label": label, "client": m.client,
                     "created": chrono::Utc::now().to_rfc3339(),
                 });
-                db.sync_chain_write(sign(record, admin_key.as_deref())?, true)?;
+                db.sync_chain_write(sign(record, &chain, admin_key.as_deref())?, true)?;
             }
             println!("renamed {} to {label}", m.label);
         }
@@ -211,46 +181,13 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             let added = db.sync_handshake(&endpoint, &label, &addr, invite.as_deref(), dialed)?;
             println!("{}", if added { "added" } else { "known" });
         }
-        SyncCommand::NewInvite { expires_secs } => {
-            ensure!(
-                !db.sync_chain()?.exists(),
-                "this copy is in a sync chain: `datum sync invite` makes an invite"
-            );
+        SyncCommand::NewInvite {
+            expires_secs,
+            admin_key,
+        } => {
             let expires = std::time::Duration::from_secs(expires_secs);
-            let (secret, expires_at) = db.sync_new_invite(expires)?;
+            let (secret, expires_at) = invite(db, expires, admin_key.as_deref())?;
             println!("{}", json!({"secret": secret, "expires": expires_at}));
-        }
-        SyncCommand::Peers { show } => {
-            let peers = db.sync_peers()?;
-            if show == ShowFlag::Json {
-                let peers: Vec<Value> = peers
-                    .iter()
-                    .map(|p| {
-                        json!({
-                            "endpoint": p.id, "label": p.label, "addr": p.addrs,
-                            "added_at": p.added_at, "last_seen": p.last_seen, "synced": p.synced,
-                        })
-                    })
-                    .collect();
-                println!("{}", Value::from(peers));
-                return Ok(());
-            }
-            if peers.is_empty() {
-                println!("no sync peers");
-            }
-            for p in peers {
-                println!(
-                    "{}  {}  added {}  last seen {}",
-                    p.label,
-                    &p.id[..p.id.len().min(10)],
-                    p.added_at,
-                    p.last_seen.as_deref().unwrap_or("never")
-                );
-            }
-        }
-        SyncCommand::Forget { peer } => {
-            let (label, id) = db.sync_forget(&peer)?;
-            println!("forgot sync peer {label} ({})", &id[..id.len().min(10)]);
         }
         SyncCommand::Ack { who } => {
             ensure!(db.sync_ack(&who)? > 0, "nothing to acknowledge for {who}");
@@ -262,22 +199,9 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             expires_secs,
             admin_key,
         } => {
-            let chain = db.sync_chain()?;
-            ensure!(chain.exists(), NO_CHAIN);
             let expires = std::time::Duration::from_secs(expires_secs);
-            let (secret, expires_at) = datum_core::db::peers::invite_secret(expires);
-            let invite = json!({
-                "type": "invite", "chain": chain.id,
-                "invite_id": ulid::Ulid::new().to_string().to_lowercase(),
-                "secret_hash": chain::secret_hash(&secret), "expires": expires_at, "caps": {},
-                "created": chrono::Utc::now().to_rfc3339(),
-            });
-            db.sync_chain_write(sign(invite, admin_key.as_deref())?, true)?;
+            let (secret, expires_at) = invite(db, expires, admin_key.as_deref())?;
             datum_sync::offer(db, &secret, expires, &expires_at, qr)?
-        }
-        #[cfg(feature = "net")]
-        SyncCommand::AddClient { qr, expires_secs } => {
-            datum_sync::add_client(db, std::time::Duration::from_secs(expires_secs), qr)?
         }
         #[cfg(feature = "net")]
         SyncCommand::Connect { ticket } => {
@@ -299,6 +223,42 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
         _ => anyhow::bail!("peer-to-peer sync is not in this build (no networking)"),
     }
     Ok(())
+}
+
+/// Write an invite any member admits the redeemer of, starting an open
+/// chain with this copy its first member when it is in none: its secret,
+/// which only the ticket carries, and when it expires.
+fn invite(
+    db: &Db,
+    expires: std::time::Duration,
+    admin_key: Option<&str>,
+) -> Result<(String, String)> {
+    let mut chain = db.sync_chain()?;
+    if !chain.exists() {
+        let genesis = json!({
+            "type": "genesis", "chain": ulid::Ulid::new().to_string().to_lowercase(),
+            "admins": [], "label": copy_label(), "created": chrono::Utc::now().to_rfc3339(),
+        });
+        db.sync_chain_write(genesis, true)?;
+        // The chain stands without it: a failure here is no reason to fail.
+        if let Err(e) = db.sync_describe_self(&copy_label(), client()) {
+            eprintln!("⚠ this copy could not describe itself ({e}); `datum sync rename <LABEL>` tries again");
+        }
+        chain = db.sync_chain()?;
+        eprintln!(
+            "started sync chain {}; this copy is its first member",
+            chain.id
+        );
+    }
+    let (secret, expires_at) = datum_core::db::peers::invite_secret(expires);
+    let record = json!({
+        "type": "invite", "chain": chain.id,
+        "invite_id": ulid::Ulid::new().to_string().to_lowercase(),
+        "secret_hash": chain::secret_hash(&secret), "expires": expires_at, "caps": {},
+        "created": chrono::Utc::now().to_rfc3339(),
+    });
+    db.sync_chain_write(sign(record, &chain, admin_key)?, true)?;
+    Ok((secret, expires_at))
 }
 
 /// How this copy names itself in the chain.
@@ -378,8 +338,14 @@ fn key_file(path: &str, create: bool) -> Result<[u8; 32]> {
 }
 
 /// Sign a chain record: with the key file, or by sending it to datum.day to
-/// be approved with a passkey and reading the approval code back.
-fn sign(mut record: Value, admin_key: Option<&str>) -> Result<Value> {
+/// be approved with a passkey and reading the approval code back. An open
+/// chain's record goes unsigned: the fold asks no `sig` of it while the
+/// chain has no admin (`Chain::step`), and this copy's endpoint key signs
+/// its op like any other.
+fn sign(mut record: Value, chain: &Chain, admin_key: Option<&str>) -> Result<Value> {
+    if chain.is_open() {
+        return Ok(record);
+    }
     let sig = match admin_key {
         Some(path) => chain::sign_ed25519(&record, &key_file(path, false)?),
         None => {
@@ -481,7 +447,7 @@ fn status(db: &Db, json: bool) -> Result<()> {
                     "client": p.client, "revoked": p.revoked, "state": p.state,
                     "to_send": p.to_send, "last_seen": p.last_seen,
                     "last_verify": p.last_verify.as_ref().map(|(at, m)| json!({"at": at, "match": m})),
-                    "error": p.error, "error_at": p.error_at,
+                    "error": p.error, "error_at": p.error_at, "addr": p.addr,
                 })
             })
             .collect();
@@ -534,42 +500,12 @@ fn status(db: &Db, json: bool) -> Result<()> {
     Ok(())
 }
 
-/// The warnings (da-rugg8, da-odwc7): once, on the first command after a
-/// peer is added or the chain admits an endpoint or an admin, since each can
-/// read and write everything. A chain's line also stays in `datum check`
-/// until `datum sync ack`.
-pub fn warn_new_peers(db: &Db) {
+/// The warnings (da-odwc7): once, on the first command after the chain
+/// admits an endpoint or an admin, since each can read and write
+/// everything. Each also stays in `datum check` until `datum sync ack`.
+pub fn warn_new_members(db: &Db) {
     for n in db.sync_notices_unannounced().unwrap_or_default() {
         eprintln!("⚠ {n} — datum sync members to review, datum sync ack to acknowledge");
-    }
-    let Ok(mut stmt) = db.conn().prepare(
-        "SELECT label, endpoint_id, added_at FROM sync_peers
-         WHERE announced = 0 AND endpoint_id NOT IN (SELECT subject FROM sync_notices)",
-    ) else {
-        return;
-    };
-    let Ok(rows) = stmt.query_map([], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, String>(2)?,
-        ))
-    }) else {
-        return;
-    };
-    let mut any = false;
-    for (label, id, added) in rows.flatten() {
-        any = true;
-        eprintln!(
-            "⚠ new sync peer {label} ({}) added {added} — datum sync peers to review",
-            &id[..id.len().min(10)]
-        );
-    }
-    if any {
-        let _ = db.conn().execute(
-            "UPDATE sync_peers SET announced = 1 WHERE announced = 0",
-            [],
-        );
     }
 }
 

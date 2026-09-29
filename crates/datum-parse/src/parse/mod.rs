@@ -358,7 +358,6 @@ fn apply_show(command: &mut Command, show: Show) {
         Command::Sync(
             SyncCommand::Members { show: s }
             | SyncCommand::Status { show: s }
-            | SyncCommand::Peers { show: s }
             | SyncCommand::Apply { show: s },
         ) => *s = show,
         Command::Db(DbCommand::Restore(a)) => a.show = show,

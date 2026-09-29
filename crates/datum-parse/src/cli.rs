@@ -765,36 +765,24 @@ pub enum SyncCommand {
     Apply { show: Show },
     /// `datum sync verify [--verbose]` — the state hash; per column too.
     Verify { verbose: bool },
-    /// `datum sync add-client [--qr] [--expires <DUR>]` — a one-time invite
-    /// (da-rugg8), served until it is redeemed or expires.
-    AddClient { qr: bool, expires_secs: u64 },
     /// `datum sync connect [<TICKET>]` — redeem an invite (the ticket from
     /// stdin when not given) and sync.
     Connect { ticket: Option<String> },
-    /// `datum sync now` — sync with every peer once.
+    /// `datum sync now` — sync with every member once.
     Now,
-    /// `datum sync run` — stay up: serve peers and push new ops to them.
+    /// `datum sync run` — stay up: serve members and push new ops to them.
     Run,
-    /// `datum sync peers [--json]` — list this copy's peers.
-    Peers { show: Show },
-    /// `datum sync forget <PEER>` — drop a peer, by label or id prefix.
-    Forget { peer: String },
     /// `datum sync rekey` — a new endpoint key for this copy (da-p79vq).
     Rekey,
-    /// `datum sync init (--admin-key <FILE> | --admin-passkey <JSON>)` —
-    /// start a sync chain (da-odwc7) with that admin key.
-    Init {
-        admin_key: Option<String>,
-        admin_passkey: Option<String>,
-    },
     /// `datum sync invite [--qr] [--expires <DUR>] [--admin-key <FILE>]` —
-    /// an admin-signed invite any member can admit, served until redeemed.
+    /// an invite any member can admit, served until redeemed; on a copy in
+    /// no chain, it starts an open one (da-6177s).
     Invite {
         qr: bool,
         expires_secs: u64,
         admin_key: Option<String>,
     },
-    /// `datum sync <revoke|add-endpoint|add-admin|remove-admin> <WHO>
+    /// `datum sync <revoke|add-admin|remove-admin> <WHO>
     /// [--label <L>] [--admin-key <FILE>]` — an admin act on the chain.
     Admin {
         act: SyncAdminAct,
@@ -837,9 +825,13 @@ pub enum SyncCommand {
         invite: Option<String>,
         dialed: bool,
     },
-    /// Hidden: `datum sync new-invite [--expires <DUR>]` — mint a pairwise
-    /// invite and print its secret, for datum.day's transport to serve.
-    NewInvite { expires_secs: u64 },
+    /// Hidden: `datum sync new-invite [--expires <DUR>] [--admin-key
+    /// <FILE>]` — write `invite`'s record and print its secret, for
+    /// datum.day's transport to serve.
+    NewInvite {
+        expires_secs: u64,
+        admin_key: Option<String>,
+    },
     /// `datum sync ack <WHO>` — acknowledge a new endpoint or admin.
     Ack { who: String },
 }
@@ -847,7 +839,6 @@ pub enum SyncCommand {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncAdminAct {
     Revoke,
-    AddEndpoint,
     AddAdmin,
     RemoveAdmin,
 }

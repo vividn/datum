@@ -1,5 +1,6 @@
 //! The sync chain (da-odwc7): signed membership, checked by every copy — the
-//! real binary, ops piped between copies as in `sync_ops`. The admin key is
+//! real binary, ops piped between copies as in `sync_ops`. A chain starts
+//! open, every member an admin (da-6177s); the first admin key locks it —
 //! an Ed25519 key file, and in one test a software passkey.
 
 use std::io::{BufRead, BufReader, Write};
@@ -130,31 +131,62 @@ impl Copy {
     }
 }
 
-/// `a`, holding a chain with the admin key file `admin`, and `b`, admitted
-/// by `add-endpoint` and holding the chain.
-fn chained() -> (Copy, Copy, String) {
+/// `copy` admitted to `member`'s chain as `label`, as a served handshake
+/// admits the redeemer of an invite — `new-invite` starting an open chain
+/// when `member` is in none — and sent the chain.
+fn admit(member: &Copy, copy: &Copy, label: &str, admin_key: Option<&str>) {
+    let mut args = vec!["sync", "new-invite"];
+    args.extend(admin_key.map(|k| ["--admin-key", k]).into_iter().flatten());
+    let invite = json(&member.ok(&args));
+    let secret = invite["secret"].as_str().unwrap();
+    let id = copy.id();
+    let hello = ["sync", "handshake", &id, "--label", label, "--addr", "{}"];
+    member.ok(&[&hello[..], &["--invite", secret]].concat());
+    assert!(member.send(copy).0);
+}
+
+/// `a`, holding an open chain, and `b`, invited into it.
+fn chained() -> (Copy, Copy) {
     let (a, b) = (Copy::new(), Copy::new());
+    admit(&a, &b, "b", None);
+    (a, b)
+}
+
+/// `chained`, locked by `a` with the admin key file it returns, which
+/// `add-admin` writes; `b` holds the lock.
+fn locked() -> (Copy, Copy, String) {
+    let (a, b) = chained();
     let admin = a.key("admin.key");
-    a.ok(&["sync", "init", "--admin-key", &admin]);
-    let b_id = b.id();
-    a.ok(&[
-        "sync",
-        "add-endpoint",
-        &b_id,
-        "--label",
-        "b",
-        "--admin-key",
-        &admin,
-    ]);
+    a.ok(&["sync", "add-admin", &admin]);
     assert!(a.send(&b).0);
     (a, b, admin)
 }
 
 #[test]
+fn two_copies_with_no_admin_join_by_invite_and_connect() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "tea"]);
+    admit(&a, &b, "b", None);
+    assert!(b.has("tea"));
+    let members = json(&b.ok(&["sync", "members", "--json"]));
+    assert_eq!(members["admins"], serde_json::json!([]), "{members}");
+    let via: Vec<_> = members["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["via"].as_str().unwrap().split(' ').next().unwrap())
+        .collect();
+    assert_eq!(via, ["genesis", "invite"], "{members}");
+    b.ok(&["occur", "coffee"]);
+    assert!(b.send(&a).0);
+    assert!(a.has("coffee"));
+    assert_eq!(a.hash(), b.hash());
+}
+
+#[test]
 fn a_non_members_ops_are_refused_until_it_is_admitted() {
-    let (a, admin) = (Copy::new(), "admin.key");
-    let admin = a.key(admin);
-    a.ok(&["sync", "init", "--admin-key", &admin]);
+    let a = Copy::new();
+    a.ok(&["sync", "new-invite"]);
     let stranger = Copy::new();
     stranger.ok(&["occur", "intrusion"]);
 
@@ -174,27 +206,108 @@ fn a_non_members_ops_are_refused_until_it_is_admitted() {
     );
 
     // Admitted, what it had sent applies without being sent again.
-    let id = stranger.id();
-    a.ok(&["sync", "add-endpoint", &id, "--admin-key", &admin]);
+    admit(&a, &stranger, "s", None);
     assert!(a.has("intrusion"));
-    a.ok(&["sync", "ack", &id]);
+    a.ok(&["sync", "ack", &stranger.id()]);
     assert!(!a.ok(&["check"]).contains("outside the sync chain"));
+}
+
+/// A non-member's chain act is refused, open chain or locked, and so is its
+/// handshake without an invite.
+#[test]
+fn a_non_members_act_is_refused_open_chain_or_not() {
+    for lock in [false, true] {
+        let (a, b) = chained();
+        if lock {
+            a.ok(&["sync", "add-admin", &a.key("admin.key")]);
+        }
+        let stranger = Copy::new();
+        let chain_id = a.query(
+            "SELECT json_extract(body, '$.effect.chain') FROM ops WHERE hid = '~chain' LIMIT 1",
+        );
+        let revoke = serde_json::json!({
+            "type": "revoke", "chain": chain_id, "endpoint": b.id(),
+            "created": "2026-09-29T00:00:00Z",
+        });
+        let out = a.run(&["sync", "apply"], &forged(&stranger, &a, revoke));
+        let text = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success(), "{text}");
+        assert!(
+            text.contains("its writer is not a member of the sync chain"),
+            "{text}"
+        );
+        assert!(member_of(&a, &b.id())["revoked"].is_null());
+
+        let hello = a.fails(
+            &[
+                "sync",
+                "handshake",
+                &stranger.id(),
+                "--label",
+                "s",
+                "--addr",
+                "{}",
+            ],
+            "",
+        );
+        assert!(hello.contains("not a member of this sync chain"), "{hello}");
+        assert!(b
+            .ok(&["sync", "handshake", &a.id(), "--label", "a", "--addr", "{}"])
+            .contains("known"));
+    }
+}
+
+#[test]
+fn in_an_open_chain_a_member_invites_a_third_copy_and_revokes_one() {
+    let (a, b) = chained();
+    let c = Copy::new();
+    // b, which did not start the chain, invites c; a hears of it from b.
+    admit(&b, &c, "c", None);
+    assert!(b.send(&a).0);
+    assert!(member_of(&a, &c.id())["via"]
+        .as_str()
+        .unwrap()
+        .starts_with("invite "));
+    // c revokes a: no admin, no key, no prompt.
+    assert!(c.ok(&["sync", "revoke", &a.id()[..10]]).contains("revoked"));
+    assert!(c.send(&b).0);
+    assert!(member_of(&b, &a.id())["revoked"].is_string());
+    a.ok(&["occur", "after"]);
+    let (ok, text) = a.send(&b);
+    assert!(
+        !ok && text.contains("made after its endpoint was revoked"),
+        "{text}"
+    );
+}
+
+#[test]
+fn the_first_admin_add_locks_the_chain() {
+    let (a, b) = chained();
+    // Any member may lock it: b, which did not start the chain.
+    let admin = b.key("admin.key");
+    b.ok(&["sync", "add-admin", &admin]);
+    assert!(b.send(&a).0);
+
+    let out = a.fails(&["sync", "new-invite"], "not-a-signature\n");
+    assert!(out.contains("https://datum.day/sync/approve#"), "{out}");
+    assert!(out.contains("not signed by an admin"), "{out}");
+    let out = a.fails(&["sync", "revoke", "b"], "");
+    assert!(out.contains("no approval code"), "{out}");
+    // A second key needs the first: first come, first served.
+    let out = a.fails(&["sync", "add-admin", &a.key("mine.key")], "\n");
+    assert!(out.contains("no approval code"), "{out}");
+
+    a.ok(&["sync", "new-invite", "--admin-key", &admin]);
+    a.ok(&["sync", "revoke", "b", "--admin-key", &admin]);
+    let members = json(&a.ok(&["sync", "members", "--json"]));
+    assert_eq!(members["admins"].as_array().unwrap().len(), 1, "{members}");
 }
 
 #[test]
 fn a_revoke_refuses_what_the_endpoint_made_after_it_on_every_copy() {
-    let (a, b, admin) = chained();
+    let (a, b, admin) = locked();
     let c = Copy::new();
-    a.ok(&[
-        "sync",
-        "add-endpoint",
-        &c.id(),
-        "--label",
-        "c",
-        "--admin-key",
-        &admin,
-    ]);
-    assert!(a.send(&c).0);
+    admit(&a, &c, "c", Some(&admin));
     b.ok(&["occur", "before"]);
     assert!(b.send(&a).0 && b.send(&c).0);
 
@@ -228,7 +341,7 @@ fn a_revoke_refuses_what_the_endpoint_made_after_it_on_every_copy() {
 
 #[test]
 fn an_added_admin_works_and_a_removed_one_is_refused_but_never_the_last() {
-    let (a, _b, first) = chained();
+    let (a, _b, first) = locked();
     let second = a.key("second.key");
     std::fs::write(&second, "11".repeat(32)).unwrap();
     a.ok(&[
@@ -248,10 +361,9 @@ fn an_added_admin_works_and_a_removed_one_is_refused_but_never_the_last() {
     );
     a.ok(&["sync", "remove-admin", "admin.key", "--admin-key", &second]);
 
-    let x = Copy::new().id();
-    let old = a.fails(&["sync", "add-endpoint", &x, "--admin-key", &first], "");
+    let old = a.fails(&["sync", "new-invite", "--admin-key", &first], "");
     assert!(old.contains("not signed by an admin"), "{old}");
-    a.ok(&["sync", "add-endpoint", &x, "--admin-key", &second]);
+    a.ok(&["sync", "new-invite", "--admin-key", &second]);
     let last = a.fails(
         &["sync", "remove-admin", "second", "--admin-key", &second],
         "",
@@ -266,22 +378,29 @@ fn an_added_admin_works_and_a_removed_one_is_refused_but_never_the_last() {
 
 #[test]
 fn a_new_endpoint_is_announced_once_and_stays_in_check_until_acked() {
-    let (a, b, _) = chained();
-    // a admitted b itself: nothing to announce there.
-    assert!(!a.stderr_of(&["tail"]).contains("new sync"));
+    let (a, b, _) = locked();
+    // a admitted b at a handshake, as any member admits a redeemer: loud,
+    // since the invite may have been anyone's. Its own admin key is quiet.
+    let admitted = a.ok(&["check"]);
+    assert!(
+        admitted.contains("⚠ new sync endpoint b") && !admitted.contains("new sync admin"),
+        "{admitted}"
+    );
+    a.ok(&["sync", "ack", "b"]);
     assert!(!a.ok(&["check"]).contains("new to the sync chain"));
 
+    // b heard of a, then of the lock: each announced once, on the first
+    // command after it arrived.
     let first = b.stderr_of(&["tail"]);
-    assert!(first.contains("⚠ new sync endpoint"), "{first}");
-    assert!(
-        first.contains("admitted") && first.contains("via genesis"),
-        "{first}"
-    );
     assert!(first.contains("⚠ new sync admin"), "{first}");
     assert!(!b.stderr_of(&["tail"]).contains("new sync"));
 
     let check = b.ok(&["check"]);
     assert!(check.contains("new to the sync chain"), "{check}");
+    assert!(
+        check.contains("⚠ new sync endpoint") && check.contains("via genesis"),
+        "{check}"
+    );
     b.ok(&["sync", "ack", &a.id()[..10]]);
     b.ok(&["sync", "ack", "ed25519:"]);
     assert!(!b.ok(&["check"]).contains("new to the sync chain"));
@@ -291,12 +410,11 @@ fn a_new_endpoint_is_announced_once_and_stays_in_check_until_acked() {
 
 #[test]
 fn an_admin_act_without_a_valid_signature_is_refused_by_name() {
-    let (a, _b, _) = chained();
-    let x = Copy::new().id();
-    let out = a.fails(&["sync", "add-endpoint", &x], "not-a-signature\n");
+    let (a, b, _) = locked();
+    let out = a.fails(&["sync", "revoke", "b"], "not-a-signature\n");
     assert!(out.contains("https://datum.day/sync/approve#"), "{out}");
     assert!(out.contains("not signed by an admin"), "{out}");
-    assert!(!a.ok(&["sync", "members"]).contains(&x[..10]));
+    assert!(member_of(&a, &b.id())["revoked"].is_null());
 }
 
 /// A software passkey: a fixed P-256 key answering `navigator.credentials.get`
@@ -355,20 +473,31 @@ fn approve(copy: &Copy, args: &[&str]) -> Output {
 #[test]
 fn a_passkey_admin_approves_by_link_and_pasted_code() {
     let a = Copy::new();
-    let json = passkey_json();
-    let out = approve(&a, &["sync", "init", "--admin-passkey", &json]);
+    a.ok(&["sync", "new-invite"]);
+    // Adding the first admin to an open chain asks for no approval.
+    a.ok(&["sync", "add-admin", &passkey_json()]);
+    let out = approve(&a, &["sync", "new-invite"]);
     assert!(
         out.status.success(),
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
+    let secret = json(&String::from_utf8_lossy(&out.stdout))["secret"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let x = Copy::new().id();
-    let out = approve(&a, &["sync", "add-endpoint", &x, "--label", "x"]);
-    assert!(
-        out.status.success(),
+    a.ok(&[
+        "sync",
+        "handshake",
+        &x,
+        "--label",
+        "x",
+        "--addr",
         "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+        "--invite",
+        &secret,
+    ]);
     let members = a.ok(&["sync", "members"]);
     assert!(
         members.contains("phone  es256") && members.contains("x  "),
@@ -398,15 +527,15 @@ fn device_of(copy: &Copy) -> String {
 }
 
 #[test]
-fn a_copy_describes_itself_at_init_and_renames_itself_without_an_admin() {
-    let (a, b, _) = chained();
+fn a_copy_describes_itself_at_its_first_invite_and_renames_itself_without_an_admin() {
+    let (a, b, _) = locked();
     let me = member_of(&a, &a.id());
     assert_eq!(me["device"], device_of(&a).as_str(), "{me}");
     assert_eq!(me["client"], "cli", "{me}");
     assert!(me["label"].as_str().unwrap().ends_with(" (cli)"), "{me}");
     assert_eq!(me["this"], true);
 
-    // b was admitted by an admin act: it names itself, no key needed.
+    // b was admitted at a handshake: it names itself, no key needed.
     assert!(member_of(&b, &b.id())["device"].is_null());
     assert!(b
         .ok(&["sync", "rename", "phone"])
@@ -419,9 +548,9 @@ fn a_copy_describes_itself_at_init_and_renames_itself_without_an_admin() {
 }
 
 /// datum.day's device is `DATUM_DEVICE_ID`, `web-` and eight more
-/// (da-6kpj5): the copy inits, is shown under it, and renames itself.
+/// (da-6kpj5): the copy starts a chain, is shown under it, and renames itself.
 #[test]
-fn a_device_named_by_the_environment_inits_and_renames() {
+fn a_device_named_by_the_environment_starts_a_chain_and_renames() {
     let a = Copy::new();
     let run = |args: &[&str]| {
         let out = a
@@ -438,7 +567,7 @@ fn a_device_named_by_the_environment_inits_and_renames() {
         let all = json(&run(&["sync", "members", "--json"]));
         all["members"][0].clone()
     };
-    run(&["sync", "init", "--admin-key", &a.key("admin")]);
+    run(&["sync", "new-invite"]);
     assert_eq!(me()["device"], "web-abc12345", "{}", me());
     assert_eq!(me()["this"], true, "{}", me());
     run(&["sync", "rename", "kitchen"]);
@@ -450,7 +579,7 @@ fn a_device_named_by_the_environment_inits_and_renames() {
 
 #[test]
 fn another_member_is_renamed_by_an_admin_and_by_no_one_else() {
-    let (a, b, admin) = chained();
+    let (a, b, admin) = locked();
     b.ok(&["sync", "rename", "phone"]);
     assert!(b.send(&a).0);
     a.ok(&["sync", "rename", "phone", "tablet", "--admin-key", &admin]);
@@ -488,15 +617,8 @@ fn another_member_is_renamed_by_an_admin_and_by_no_one_else() {
 fn two_databases_in_one_data_directory_are_one_device() {
     let a = Copy::new();
     let other = a.key("other.db");
-    a.ok(&["sync", "init", "--admin-key", &a.key("one.key")]);
-    a.ok(&[
-        "--db",
-        &other,
-        "sync",
-        "init",
-        "--admin-key",
-        &a.key("two.key"),
-    ]);
+    a.ok(&["sync", "new-invite"]);
+    a.ok(&["--db", &other, "sync", "new-invite"]);
     let one = json(&a.ok(&["sync", "status", "--json"]));
     let two = json(&a.ok(&["--db", &other, "sync", "status", "--json"]));
     assert_ne!(one["this"]["endpoint"], two["this"]["endpoint"]);
@@ -555,8 +677,9 @@ fn session(a: &Copy, b: &Copy) {
 
 #[test]
 fn status_says_never_then_synced_then_pending_then_error_each_with_its_time() {
-    let (a, b, admin) = chained();
-    let row = status_of(&a, &b);
+    let (a, b) = chained();
+    // b heard of a over the pipe, never in a session.
+    let row = status_of(&b, &a);
     assert_eq!(row["state"], "never", "{row}");
     assert!(row["last_seen"].is_null() && row["last_verify"].is_null());
     let all = json(&a.ok(&["sync", "status", "--json"]));
@@ -608,7 +731,7 @@ fn status_says_never_then_synced_then_pending_then_error_each_with_its_time() {
     assert_eq!(status_of(&a, &b)["state"], "synced");
 
     // b revoked, what it makes is refused, and the transport says so.
-    a.ok(&["sync", "revoke", "b", "--admin-key", &admin]);
+    a.ok(&["sync", "revoke", "b"]);
     b.ok(&["occur", "after"]);
     let (ok, why) = b.send(&a);
     assert!(!ok, "{why}");
@@ -642,15 +765,14 @@ fn status_of_a_copy_in_no_chain_is_empty() {
     assert_eq!(all["members"], serde_json::json!([]));
     assert_eq!(all["this"]["endpoint"], a.id().as_str());
     assert!(a.ok(&["sync", "status"]).contains("no sync chain"));
-    // A session with a copy that is neither a member nor a peer has nowhere
-    // to go: a row there would make it a peer.
+    // A session with a copy that is no member has nowhere to go.
     let stranger = Copy::new().id();
     let out = a.fails(
         &["sync", "record-session", &stranger, "--verify", "match"],
         "",
     );
     assert!(
-        out.contains("not a member of this copy's sync chain, nor a peer"),
+        out.contains("not a member of this copy's sync chain"),
         "{out}"
     );
 }
@@ -665,7 +787,7 @@ fn the_network_workers_commands_are_hidden_and_endpoint_key_is_the_secret() {
     );
     let help = format!("{}{}", a.ok(&["sync", "--help"]), a.ok(&["help", "sync"]));
     assert!(help.contains("rename") && help.contains("status"), "{help}");
-    for hidden in ["endpoint-key", "record-session"] {
+    for hidden in ["endpoint-key", "record-session", "handshake", "new-invite"] {
         assert!(!help.contains(hidden), "{hidden} in help");
     }
     let found = a.ok(&["__complete", "2", "--", "datum", "sync", ""]);
@@ -713,7 +835,7 @@ fn forged(copy: &Copy, to: &Copy, record: serde_json::Value) -> String {
 
 #[test]
 fn a_label_with_a_control_character_is_refused_by_the_fold_and_the_command() {
-    let (a, b, _) = chained();
+    let (a, b) = chained();
     assert!(b.send(&a).0);
     let chain_id = a
         .query("SELECT json_extract(body, '$.effect.chain') FROM ops WHERE hid = '~chain' LIMIT 1");
@@ -769,4 +891,23 @@ fn a_label_with_a_control_character_is_refused_by_the_fold_and_the_command() {
     let out = b.fails(&["sync", "rename", &"x".repeat(65)], "");
     assert!(out.contains("at most 64 characters"), "{out}");
     assert_eq!(member_of(&b, &b.id())["label"], "b");
+}
+
+/// Device-to-device pairing, `init` and `add-endpoint` are gone (da-6177s):
+/// from help, from completion, and as commands.
+#[test]
+fn the_removed_commands_are_gone() {
+    let a = Copy::new();
+    let help = format!("{}{}", a.ok(&["sync", "--help"]), a.ok(&["help", "sync"]));
+    let found = a.ok(&["__complete", "2", "--", "datum", "sync", ""]);
+    let words: Vec<&str> = found.split_whitespace().collect();
+    for gone in ["init", "add-endpoint", "add-client", "peers", "forget"] {
+        assert!(!help.contains(&format!("sync {gone}")), "{gone} in help");
+        assert!(!words.contains(&gone), "{gone} completes: {found}");
+        let out = a.fails(&["sync", gone, "x"], "");
+        assert!(out.contains("unknown sync subcommand"), "{gone}: {out}");
+    }
+    for kept in ["invite", "connect", "revoke", "add-admin"] {
+        assert!(words.contains(&kept), "{kept} missing: {found}");
+    }
 }

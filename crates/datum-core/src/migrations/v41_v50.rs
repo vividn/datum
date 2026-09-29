@@ -115,6 +115,26 @@ pub(super) fn down_46_to_45_sync_peer_sessions(conn: &Connection) -> Result<()> 
     Ok(())
 }
 
+/// da-6177s: every sync is between members of a chain, whose invites are
+/// chain records; the pairwise invites' table goes. Local, and nothing
+/// read it in production.
+pub(super) fn m46_to_47_drop_sync_invites(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DROP TABLE IF EXISTS sync_invites;")?;
+    Ok(())
+}
+
+/// Reverse v46→v47: the table back, empty.
+pub(super) fn down_47_to_46_drop_sync_invites(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS sync_invites (
+            secret_hash TEXT NOT NULL PRIMARY KEY,
+            expires_at  TEXT NOT NULL,
+            used_at     TEXT
+        );",
+    )?;
+    Ok(())
+}
+
 /// The v45 table exactly as `schema.sql` creates it.
 const SYNC_NOTICES_SQL: &str = "
 CREATE TABLE IF NOT EXISTS sync_notices (

@@ -172,6 +172,7 @@ fn every_pair_has_a_roundtrip_test() {
         (43, 44),
         (44, 45),
         (45, 46),
+        (46, 47),
     ];
     assert_eq!(
         covered.len(),
@@ -2675,6 +2676,19 @@ fn roundtrip_v45_to_v46_sync_peer_sessions() {
         .query_row("SELECT label FROM sync_peers", [], |r| r.get(0))
         .unwrap();
     assert_eq!(label, "l", "the peer stays");
+}
+
+#[test]
+fn roundtrip_v46_to_v47_drop_sync_invites() {
+    let db = fresh_at(46);
+    let conn = db.conn();
+    assert!(table_exists(conn, "sync_invites"));
+
+    apply_one_up(conn, 46);
+    assert!(!table_exists(conn, "sync_invites"));
+
+    apply_one_down(conn, 47);
+    assert!(table_exists(conn, "sync_invites"));
 }
 
 fn field_occurtime_sql(conn: &Connection) -> String {

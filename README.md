@@ -319,19 +319,21 @@ Call-site time flags compose with the alias-bound ones: `-y` / `-q` / `-d` shift
 
 ## Sync
 
-Two copies of a database sync peer to peer over [iroh](https://iroh.computer).
-Pair them once with a one-time invite, then sync:
+Copies of a database sync peer to peer over [iroh](https://iroh.computer),
+as members of a sync chain. Join one with a one-time invite, then sync:
 
 ```bash,no_run
-datum sync add-client          # on the first copy: prints `datum sync connect <TICKET>`
-datum sync connect <TICKET>    # on the second: both record the other as a peer, and sync
-datum sync now                 # sync with every peer once
-datum sync run                 # stay up: serve peers, push new entries as they are written
-datum sync peers               # list them; `datum sync forget <PEER>` drops one
+datum sync invite              # on the first copy: starts a chain, prints `datum sync connect <TICKET>`
+datum sync connect <TICKET>    # on the second: it joins the chain, and they sync
+datum sync now                 # sync with every member once
+datum sync run                 # stay up: serve members, push new entries as they are written
+datum sync members             # list them; `datum sync revoke <WHO>` removes one
 ```
 
-Only peers are served, and the first command after a peer is added warns
-about it once. Every change to an entry is an op signed by this copy's
+A chain with no admin is open: any member may invite or revoke another.
+`datum sync add-admin <KEYFILE>` (or a datum.day passkey) locks it, and
+from then on those acts take the admin key. Only members are served, and
+the first command after a member is added warns about it once. Every change to an entry is an op signed by this copy's
 endpoint key (which is also its iroh identity), and two copies that hold
 the same ops hold the same entries. Ops also move as JSON lines, so two
 databases sync through a pipe:

@@ -1,5 +1,6 @@
 //! Easy Sync over iroh (da-rugg8): two copies of a database, each with its own
-//! device, pair with a one-time invite and sync over QUIC — the real binary,
+//! device, join one sync chain with a one-time invite (da-6177s) and sync over
+//! QUIC — the real binary,
 //! hermetic: `DATUM_SYNC_BIND` gives each copy a fixed localhost address, no
 //! relay and no discovery.
 
@@ -93,21 +94,16 @@ impl Copy {
         text
     }
 
-    /// A long-running `datum` (add-client, run), killed when dropped.
+    /// A long-running `datum` (invite, run), killed when dropped.
     fn serve(&self, args: &[&str]) -> Serving {
         let mut child = self.cmd(args).spawn().expect("spawn datum");
         let out = BufReader::new(child.stdout.take().unwrap());
         Serving { child, out }
     }
 
-    /// `add-client` running, and its ticket.
+    /// `sync invite` serving, and its ticket.
     fn invite(&self, args: &[&str]) -> (Serving, String) {
-        self.offer(&[&["sync", "add-client"], args].concat())
-    }
-
-    /// An invite being served (`add-client` or `invite`), and its ticket.
-    fn offer(&self, args: &[&str]) -> (Serving, String) {
-        let mut s = self.serve(args);
+        let mut s = self.serve(&[&["sync", "invite"], args].concat());
         let ticket = s
             .lines_until("datum sync connect ")
             .rsplit(' ')
@@ -181,7 +177,7 @@ impl Drop for Serving {
     }
 }
 
-/// `a` and `b`, paired through an invite from `a`.
+/// `a` and `b`, in the open chain `a`'s invite started.
 fn paired() -> (Copy, Copy) {
     let (a, b) = (Copy::new(), Copy::new());
     let (mut inviting, ticket) = a.invite(&[]);
@@ -211,13 +207,13 @@ fn an_invite_pairs_two_copies_and_their_data_converges() {
     assert!(joined.contains("added sync peer"), "{joined}");
     assert!(joined.contains("verify ok"), "{joined}");
     let (ok, served) = inviting.finish();
-    assert!(ok, "add-client exits once redeemed: {served}");
+    assert!(ok, "invite exits once redeemed: {served}");
     assert!(served.contains("verify ok"), "{served}");
 
     assert_eq!(a.hash(), b.hash());
     assert!(a.has("tea") && b.has("coffee"));
-    assert!(a.ok(&["sync", "peers"]).contains(&b.id()[..10]));
-    assert!(b.ok(&["sync", "peers"]).contains(&a.id()[..10]));
+    assert!(a.ok(&["sync", "members"]).contains(&b.id()[..10]));
+    assert!(b.ok(&["sync", "members"]).contains(&a.id()[..10]));
 }
 
 #[test]
@@ -230,51 +226,26 @@ fn an_invite_is_one_time_and_expires() {
 
     let (mut expiring, stale) = a.invite(&["--expires", "1s"]);
     let (ok, _) = expiring.finish();
-    assert!(!ok, "add-client fails when its invite expires unredeemed");
+    assert!(!ok, "an invite unredeemed when it expires fails");
 
     let _serving = a.serve(&["sync", "run"]);
     let c = Copy::new();
     let used = c.fails(&["sync", "connect", &ticket], "");
     assert!(used.contains("invite already used"), "{used}");
-    // A peer presenting a used invite is refused too: one use is one use.
+    // A member presenting a used invite is refused too: one use is one use.
     let again = b.fails(&["sync", "connect", &ticket], "");
     assert!(again.contains("invite already used"), "{again}");
     let expired = c.fails(&["sync", "connect", &stale], "");
     assert!(expired.contains("invite expired"), "{expired}");
-    assert_eq!(c.ok(&["sync", "peers"]).trim(), "no sync peers");
+    assert!(!a.ok(&["sync", "members"]).contains(&c.id()[..10]));
 }
 
+/// A stranger that dials without an invite is refused by the store's
+/// handshake (`sync_chain`'s `a_non_members_act_is_refused_open_chain_or_not`);
+/// here, the copy of this key is refused by name.
 #[test]
-fn a_stranger_and_a_copy_of_this_key_are_refused_at_the_handshake() {
-    let (a, b) = paired();
-    a.ok(&["occur", "secret"]);
-    let serving = a.serve(&["sync", "run"]);
-
-    // c was never paired: it knows a's address (b's peer row), not an invite.
-    let c = Copy::new();
-    c.ok(&["occur", "intrusion"]);
-    let row: [String; 4] = rusqlite::Connection::open(b.db())
-        .unwrap()
-        .query_row(
-            "SELECT endpoint_id, label, addrs, added_at FROM sync_peers",
-            [],
-            |r| Ok([r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?]),
-        )
-        .unwrap();
-    rusqlite::Connection::open(c.db())
-        .unwrap()
-        .execute(
-            "INSERT INTO sync_peers (endpoint_id, label, addrs, added_at, announced)
-             VALUES (?1, ?2, ?3, ?4, 1)",
-            row,
-        )
-        .unwrap();
-    let refused = c.fails(&["sync", "now"], "");
-    assert!(refused.contains("not a peer of this copy"), "{refused}");
-    assert!(!c.has("secret") && !a.has("intrusion"));
-
-    // a dialing its own endpoint (a copy of this db) is refused by name.
-    drop(serving);
+fn a_copy_of_this_key_is_refused_at_the_handshake() {
+    let (a, _b) = paired();
     let (_inviting, ticket) = a.invite(&[]);
     let mut own = a.cmd(&["sync", "connect", &ticket]);
     own.env("DATUM_SYNC_BIND", format!("127.0.0.1:{}", Copy::new().port));
@@ -284,14 +255,15 @@ fn a_stranger_and_a_copy_of_this_key_are_refused_at_the_handshake() {
 }
 
 #[test]
-fn run_serves_peers_and_pushes_new_ops() {
+fn run_serves_members_and_pushes_new_ops() {
     let (a, b) = paired();
     let _a_runs = a.serve(&["sync", "run"]);
     b.ok(&["occur", "walk"]);
     let now = b.ok(&["sync", "now"]);
-    // The walk and the spec its first log declares.
+    // The walk, the spec its first log declares, and the describe b wrote
+    // of itself once admitted.
     assert!(
-        now.contains("sent 2, got 0, conflicts 0, verify ok"),
+        now.contains("sent 3, got 0, conflicts 0, verify ok"),
         "{now}"
     );
     assert!(a.has("walk"));
@@ -324,45 +296,21 @@ fn concurrent_edits_across_the_link_file_a_conflict_on_both_sides() {
 }
 
 #[test]
-fn a_new_peer_is_announced_once() {
+fn a_new_member_is_announced_once() {
     let (a, b) = paired();
     for copy in [&a, &b] {
         let first = String::from_utf8(copy.run(&["tail"]).stderr).unwrap();
-        assert!(first.contains("⚠ new sync peer"), "{first}");
-        assert!(first.contains("datum sync peers to review"), "{first}");
+        assert!(first.contains("⚠ new sync endpoint"), "{first}");
+        assert!(first.contains("datum sync members to review"), "{first}");
         let second = String::from_utf8(copy.run(&["tail"]).stderr).unwrap();
-        assert!(!second.contains("new sync peer"), "{second}");
+        assert!(!second.contains("new sync"), "{second}");
     }
-}
-
-#[test]
-fn forget_takes_a_label_or_an_id_prefix_and_refuses_an_ambiguous_one() {
-    let c = Copy::new();
-    assert_eq!(c.ok(&["sync", "peers"]).trim(), "no sync peers");
-    let conn = rusqlite::Connection::open(c.db()).unwrap();
-    for id in ["aaaa1111", "bbbb2222"] {
-        conn.execute(
-            "INSERT INTO sync_peers (endpoint_id, label, addrs, added_at, announced)
-             VALUES (?1, 'laptop (cli)', '{}', '2026-09-29T00:00:00Z', 1)",
-            [id],
-        )
-        .unwrap();
-    }
-    let both = c.fails(&["sync", "forget", "laptop (cli)"], "");
-    assert!(both.contains("names 2 sync peers"), "{both}");
-    assert!(c
-        .ok(&["sync", "forget", "bbbb"])
-        .contains("forgot sync peer laptop (cli) (bbbb2222)"));
-    assert!(c
-        .ok(&["sync", "forget", "laptop (cli)"])
-        .contains("(aaaa1111)"));
-    assert_eq!(c.ok(&["sync", "peers"]).trim(), "no sync peers");
 }
 
 /// A first sync whose apply outlasts the progress timeout (da-039jx): b applies
 /// a's 300-odd ops at 20ms each, 6s, on a 3s timeout, sending a `BUSY` every
 /// 64 ops (1.3s) unless `keepalive` is off. The connect's output, and whether
-/// add-client exited 0 and what it printed.
+/// the invite exited 0 and what it printed.
 fn slow_first_sync(keepalive: bool) -> (Copy, Copy, Output, (bool, String)) {
     let (mut a, mut b) = (Copy::new(), Copy::new());
     for i in 0..300 {
@@ -399,7 +347,7 @@ fn a_first_sync_longer_than_the_timeout_completes_on_keepalives() {
 }
 
 #[test]
-fn without_keepalives_it_fails_says_what_landed_and_add_client_still_exits() {
+fn without_keepalives_it_fails_says_what_landed_and_the_invite_still_exits() {
     let (a, b, joined, (ok, served)) = slow_first_sync(false);
     let text = format!(
         "{}{}",
@@ -409,7 +357,7 @@ fn without_keepalives_it_fails_says_what_landed_and_add_client_still_exits() {
     assert!(!joined.status.success(), "{text}");
     assert!(text.contains("applied 30"), "{text}");
     assert!(text.contains("paired with"), "{text}");
-    // The pairing held although the session failed: add-client exits 0.
+    // The admission held although the session failed: the invite exits 0.
     assert!(ok, "{served}");
     assert!(
         served.contains("paired with") && served.contains("datum sync now"),
@@ -428,23 +376,11 @@ fn without_keepalives_it_fails_says_what_landed_and_add_client_still_exits() {
 
 // ─── The sync chain (da-odwc7) ──────────────────────────────────────────────
 
-/// `a` holds a chain whose admin key is the file it returns, and `b` joined
-/// it with an invite.
-fn chain() -> (Copy, Copy, String) {
-    let (a, b) = (Copy::new(), Copy::new());
-    let admin = a.tmp.path().join("admin.key").display().to_string();
-    a.ok(&["sync", "init", "--admin-key", &admin]);
-    let (mut inviting, ticket) = a.offer(&["sync", "invite", "--admin-key", &admin]);
-    b.ok(&["sync", "connect", &ticket]);
-    assert!(inviting.finish().0);
-    (a, b, admin)
-}
-
 #[test]
 fn a_member_admits_an_invites_redeemer_while_the_inviter_is_offline() {
-    let (a, b, admin) = chain();
+    let (a, b) = paired();
     a.ok(&["occur", "from-a"]);
-    let (inviting, ticket) = a.offer(&["sync", "invite", "--admin-key", &admin]);
+    let (inviting, ticket) = a.invite(&[]);
     // b fetches the invite, then a goes away.
     b.ok(&["sync", "now"]);
     drop(inviting);
@@ -463,16 +399,16 @@ fn a_member_admits_an_invites_redeemer_while_the_inviter_is_offline() {
 
 #[test]
 fn a_member_that_has_not_seen_the_invite_passes_the_redeemer_on() {
-    let (a, b, admin) = chain();
+    let (a, b) = paired();
     // d joins a second later, so a's ticket lists b before d.
     std::thread::sleep(Duration::from_millis(1100));
     let d = Copy::new();
-    let (mut inviting, ticket) = a.offer(&["sync", "invite", "--admin-key", &admin]);
+    let (mut inviting, ticket) = a.invite(&[]);
     d.ok(&["sync", "connect", &ticket]);
     assert!(inviting.finish().0);
 
     // Only d fetches the next invite before a goes away; b is behind.
-    let (inviting, ticket) = a.offer(&["sync", "invite", "--admin-key", &admin]);
+    let (inviting, ticket) = a.invite(&[]);
     d.ok(&["sync", "now"]);
     drop(inviting);
     let (_b_runs, _d_runs) = (b.serve(&["sync", "run"]), d.serve(&["sync", "run"]));
@@ -481,31 +417,6 @@ fn a_member_that_has_not_seen_the_invite_passes_the_redeemer_on() {
     let joined = c.ok(&["sync", "connect", &ticket]);
     assert!(joined.contains("verify ok"), "{joined}");
     assert!(d.ok(&["sync", "members"]).contains(&c.id()[..10]));
-}
-
-#[test]
-fn a_chains_invite_is_one_time_and_expires_and_add_client_is_refused() {
-    let (a, _b, admin) = chain();
-    let refused = a.fails(&["sync", "add-client"], "");
-    assert!(refused.contains("`datum sync invite`"), "{refused}");
-
-    let (mut expiring, stale) =
-        a.offer(&["sync", "invite", "--admin-key", &admin, "--expires", "1s"]);
-    assert!(
-        !expiring.finish().0,
-        "an invite unredeemed when it expires fails"
-    );
-    let (mut inviting, once) = a.offer(&["sync", "invite", "--admin-key", &admin]);
-    Copy::new().ok(&["sync", "connect", &once]);
-    assert!(inviting.finish().0);
-
-    let _a_runs = a.serve(&["sync", "run"]);
-    let d = Copy::new();
-    let expired = d.fails(&["sync", "connect", &stale], "");
-    assert!(expired.contains("invite expired"), "{expired}");
-    let used = d.fails(&["sync", "connect", &once], "");
-    assert!(used.contains("invite already used"), "{used}");
-    assert!(!a.ok(&["sync", "members"]).contains(&d.id()[..10]));
 }
 
 // ─── A device's identity, and each session recorded (da-rcb5m) ──────────────
@@ -524,7 +435,7 @@ fn entry_of(copy: &Copy, what: &str, of: &Copy) -> serde_json::Value {
 
 #[test]
 fn a_redeemer_describes_itself_and_every_session_is_recorded_for_status() {
-    let (a, mut b, admin) = chain();
+    let (a, mut b) = paired();
     // The redemption was a session on both sides; b then described itself,
     // which a has not had yet.
     assert_eq!(entry_of(&a, "status", &b)["state"], "synced");
@@ -537,7 +448,7 @@ fn a_redeemer_describes_itself_and_every_session_is_recorded_for_status() {
     assert!(entry_of(&a, "members", &b)["device"].is_null());
 
     // a serves (an invite being offered serves members too), b dials.
-    let (serving, _) = a.offer(&["sync", "invite", "--admin-key", &admin]);
+    let (serving, _) = a.invite(&[]);
     b.ok(&["sync", "now"]);
     let described = entry_of(&a, "members", &b);
     assert_eq!(

@@ -223,7 +223,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
             .ok()
             .map(|c| c.device_id.value)
     });
-    crate::commands::sync::warn_new_peers(db);
+    crate::commands::sync::warn_new_members(db);
     // The `--show json` echo is one document per run, not per entry, so the
     // outermost scope is the one that prints (da-yc9w). Both dispatch entry
     // points open a scope — `datum-cli` reaches `dispatch` directly, while

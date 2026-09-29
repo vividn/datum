@@ -104,9 +104,11 @@ describe('one endpoint per database', () => {
 			const base = await countOf(first, 'burst');
 			for (const [i, tab] of tabs.entries()) await tab.run(['occur', 'burst', '-t', `100${i}`]);
 			await until(() => native.count('burst'), (n) => n === base + 3);
-			const peers = (await native.run(['sync', 'peers'])).stdout.split('\n');
-			assert.equal(peers.length, 1, peers.join('\n'));
-			assert.match(peers[0], new RegExp(endpoint.slice(0, 10)));
+			const { members } = JSON.parse((await native.run(['sync', 'status', '--json'])).stdout);
+			assert.deepEqual(
+				members.map((m) => m.endpoint),
+				[endpoint]
+			);
 		});
 	});
 
