@@ -72,6 +72,7 @@ after(stopApp);
 // (da-d0tfm). What still opens an app of its own has a screen no other test
 // shares, or a `prepare`.
 const shared = sharedApp();
+const NOWVIEW = 'section.pane[data-title="nowview"]';
 const clocked = sharedApp({ clock: todayAt(12) });
 const NARROW = { viewport: { width: 360, height: 640 } };
 const narrow = sharedApp(NARROW);
@@ -1434,6 +1435,36 @@ describe('the day strip', () => {
 		await shared.solo(async (app) => {
 			assert.equal(await app.page.locator('.strip button.reset').count(), 0);
 			assert.equal(await app.page.locator('section.pane[data-title="dayview"] button.reset').count(), 0);
+		});
+	});
+
+	// da-mu5op: «dot symbols in dayview and nowview should not be
+	// selectable (as text). Right now long pressing or double tapping on a
+	// symbol often directly selects the text». A headless browser does no
+	// touch selection and a mouse never lands on a glyph (it has
+	// `pointer-events="none"`), so what is read is what those gestures
+	// would take: a selection over each picture — the strip, and nowview,
+	// whose pane has only the SVG's own root style — takes no text at all.
+	test("a picture's text is not selectable: a dot's symbol, the ruler, nowview", async () => {
+		await shared.solo(async (app) => {
+			await app.run(['spec', 'set', 'coffee', '--verb', 'occur', '--glyph', '▲']);
+			await app.submit('occur coffee -t -30');
+			const glyph = app.page.locator('.band[data-days-ago="0"] text.point-fg', { hasText: '▲' });
+			const nowGlyph = app.page.locator(`${NOWVIEW} text.point-fg`, { hasText: '▲' });
+			await glyph.waitFor();
+			await nowGlyph.waitFor();
+			for (const text of [glyph, nowGlyph, app.page.locator('.ruler .tick-label').first()])
+				assert.equal(await text.evaluate((t) => getComputedStyle(t).userSelect), 'none');
+			/** What selecting everything in `el` takes. */
+			const taken = (el) =>
+				el.evaluate((el) => {
+					getSelection().selectAllChildren(el);
+					const text = getSelection().toString();
+					getSelection().removeAllRanges();
+					return text;
+				});
+			assert.equal(await taken(app.page.locator('.strip')), '', 'the strip');
+			assert.equal(await taken(app.page.locator(`${NOWVIEW} svg:has(> g.plot)`)), '', 'nowview');
 		});
 	});
 

@@ -477,8 +477,10 @@ mod tests {
     fn renders_dayview_envelope_with_current_time() {
         let layout = nowview_layout();
         let svg = render_nowview_svg(&layout, "15:30", &[], false);
-        // Dayview envelope intact.
+        // Dayview envelope intact, its text not selectable (da-mu5op).
         assert!(svg.starts_with("<svg "));
+        let root = &svg[..svg.find('>').unwrap()];
+        assert!(root.contains(&format!(r#"style="{}""#, crate::dayview_svg::NO_SELECT)));
         assert!(svg.ends_with("</svg>"));
         // Field bands rendered by dayview path.
         assert!(svg.contains(r#"data-field="mood""#));

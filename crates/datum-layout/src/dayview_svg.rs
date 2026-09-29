@@ -136,6 +136,10 @@ fn to_xy(layout: &DayviewLayout, geom: &PlotGeom, time: f64, cross: f64) -> (f64
     }
 }
 
+/// The root's style: the picture's text is not selectable (da-mu5op).
+pub(crate) const NO_SELECT: &str =
+    "user-select:none;-webkit-user-select:none;-webkit-touch-callout:none";
+
 /// Render `layout` to an SVG document string.
 pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
     render_dayview_svg_with(layout, DayviewSvgOpts::default())
@@ -149,9 +153,13 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
     let mut icons: HashSet<&str> = HashSet::new();
     let geom = PlotGeom::new(layout);
 
+    // The picture is pressed and tapped, not copied: none of its text — a
+    // point's symbol least of all — is selectable, and a long press raises
+    // no iOS callout (da-mu5op). An attribute and not a `<style>`, which
+    // datum.day strips from an inlined SVG as page-wide.
     let _ = write!(
         &mut out,
-        r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{w}" height="{h}" viewBox="0 0 {w} {h}">"#,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{w}" height="{h}" viewBox="0 0 {w} {h}" style="{NO_SELECT}">"#,
         w = layout.width,
         h = layout.height,
     );
@@ -1023,6 +1031,9 @@ mod tests {
         assert!(svg.ends_with("</svg>"));
         assert!(svg.contains(r#"width="800""#));
         assert!(svg.contains(r#"fill="black""#));
+        // A point's symbol is drawn, and nothing in the picture selects.
+        assert!(svg.contains("point-fg"));
+        assert!(svg[..svg.find('>').unwrap()].contains(&format!(r#"style="{NO_SELECT}""#)));
     }
 
     #[test]

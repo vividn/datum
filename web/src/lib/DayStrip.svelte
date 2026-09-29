@@ -1501,6 +1501,12 @@
 		/* One finger still scrolls the stack back through the days; two are
 		   the window's, not the browser's page zoom (da-ukcf). */
 		touch-action: pan-y;
+		/* The strip is all picture — bands, stamps, ruler — pressed and
+		   tapped, never copied: nothing selects, and a long press raises no
+		   iOS callout (da-mu5op). */
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
 	}
 
 	/* The room above the divider, whatever is left of the box once the
@@ -1567,8 +1573,6 @@
 		color: var(--ink-bright);
 		line-height: 1.15;
 		white-space: nowrap;
-		/* The stamp is a label on the picture, not a control. */
-		user-select: none;
 	}
 
 	.band {
