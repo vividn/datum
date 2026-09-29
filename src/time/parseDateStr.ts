@@ -10,7 +10,7 @@ export type ParseDateStrType = {
 export function parseDateStr({
   dateStr,
   referenceTime,
-}: ParseDateStrType): DateTime {
+}: ParseDateStrType): DateTime<true> {
   referenceTime = referenceTime ?? now();
 
   // Relative dates, e.g. can use -1 to mean yesterday or +1 to mean tomorrow
@@ -18,7 +18,7 @@ export function parseDateStr({
   if (relDateMatches) {
     return referenceTime.plus(
       Duration.fromObject({ days: parseInt(relDateMatches[0], 10) }),
-    );
+    ) as DateTime<true>;
   }
 
   // DateTime can parse some extra ISO type strings
@@ -26,7 +26,7 @@ export function parseDateStr({
   if (dateTimeParsed.isValid) {
     // Only want to change the date on the relative time
     const { year, month, day } = dateTimeParsed.toObject();
-    return referenceTime.set({ year, month, day });
+    return referenceTime.set({ year, month, day }) as DateTime<true>;
   }
 
   // Finally, use chrono to parse the time if all else fails
@@ -40,7 +40,7 @@ export function parseDateStr({
     const { year, month, day } = DateTime.fromJSDate(chronoParsed, {
       zone: "utc",
     }).toObject();
-    return referenceTime.set({ year, month, day });
+    return referenceTime.set({ year, month, day }) as DateTime<true>;
   }
 
   throw new BadDateError(dateStr);

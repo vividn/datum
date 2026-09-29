@@ -1,3 +1,8 @@
 allowBuilds:
   leveldown: true
   sharp: true
+overrides:
+  whatwg-url: "14.x"
+  tough-cookie: "5.x"
+patchedDependencies:
+  argparse@2.0.1: patches/argparse@2.0.1.patch

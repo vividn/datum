@@ -10,18 +10,10 @@ export type ViewRow<KeyType, ValueType, DocumentType = EitherDocument> = {
 };
 
 export type JsonType =
-  | number
-  | string
-  | boolean
-  | null
-  | JsonType[]
-  | { [key: string]: JsonType };
+  number | string | boolean | null | JsonType[] | { [key: string]: JsonType };
 
 export type GenericType =
-  | JsonType
-  | undefined
-  | GenericType[]
-  | { [key: string]: GenericType };
+  JsonType | undefined | GenericType[] | { [key: string]: GenericType };
 
 export type JsonObject = { [key: string]: JsonType };
 

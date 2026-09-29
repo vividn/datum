@@ -45,10 +45,7 @@ function payloadMatchesDbData(
 }
 
 export type ConflictStrategyNames =
-  | UpdateStrategyNames
-  | "overwrite"
-  | "delete"
-  | "fail";
+  UpdateStrategyNames | "overwrite" | "delete" | "fail";
 
 const conflictRecord: Record<ConflictStrategyNames, ""> = {
   merge: "",

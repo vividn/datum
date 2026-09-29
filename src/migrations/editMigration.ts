@@ -67,11 +67,9 @@ export async function editMigration({
       const designDoc = await viewDb.get(migrationId);
       mapFnStr = designDoc.views[viewName]?.map;
     } catch (error) {
-      if (
-        !(
-          isCouchDbError(error) && ["missing", "deleted"].includes(error.reason)
-        )
-      ) {
+      if (!(
+        isCouchDbError(error) && ["missing", "deleted"].includes(error.reason)
+      )) {
         throw error;
       }
     }
