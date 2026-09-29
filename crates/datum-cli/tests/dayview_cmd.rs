@@ -679,3 +679,74 @@ fn a_false_dur_block_is_a_hole_cut_out_of_the_enclosing_block() {
         "the hole runs [occur − dur, occur] and both halves keep the region's label"
     );
 }
+
+/// Local 10:00, `days` days before yesterday, as UTC.
+fn ten_am_days_before_yesterday(days: i64) -> chrono::DateTime<Utc> {
+    let date = Local::now().date_naive() - chrono::Duration::days(1 + days);
+    Zone::host()
+        .resolve(date.and_hms_opt(10, 0, 0).unwrap())
+        .for_boundary()
+}
+
+fn switch_at(db: &datum_core::db::Db, field: &str, state: serde_json::Value, days: i64) {
+    entry_builder(field)
+        .verb(Verb::Switch)
+        .state(state)
+        .time_start_utc(ten_am_days_before_yesterday(days))
+        .insert(db);
+}
+
+/// The fields each day of `dayview --n-days <n>` ending yesterday draws.
+fn fields_per_day(db: &datum_core::db::Db, n: u32) -> Vec<Vec<String>> {
+    let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
+    let n = n.to_string();
+    run_cli(
+        &[
+            "dayview",
+            "--end-date",
+            &yesterday(),
+            "--n-days",
+            &n,
+            "--json",
+            "-o",
+            &path,
+        ],
+        db,
+    )
+    .expect("dayview --json dispatch");
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    json["days"]
+        .as_array()
+        .expect("days array")
+        .iter()
+        .map(|d| {
+            d["fields"]
+                .as_array()
+                .expect("fields array")
+                .iter()
+                .map(|f| f["field"].as_str().unwrap().to_string())
+                .collect()
+        })
+        .collect()
+}
+
+/// da-w17jo: a state switched on long before the day — past the fetch's
+/// two-day buffer, with nothing logged since — is still in effect and
+/// draws, as nowview draws it. One switched off since, or carried in as
+/// null or IGNORED, does not.
+#[test]
+fn a_state_switched_on_before_the_fetch_buffer_is_carried_into_the_day() {
+    let db = fresh_db();
+    switch_at(&db, "mood5", serde_json::json!("happy"), 5);
+    switch_at(&db, "mood30", serde_json::json!("calm"), 30);
+    switch_at(&db, "gone", serde_json::json!("on"), 5);
+    switch_at(&db, "gone", serde_json::json!(false), 4);
+    switch_at(&db, "nothing", serde_json::Value::Null, 5);
+    switch_at(&db, "ignored", serde_json::json!("IGNORED"), 5);
+
+    assert_eq!(fields_per_day(&db, 1), [["mood30", "mood5"]]);
+    // Every day of a multi-day view carries it, the first included.
+    assert_eq!(fields_per_day(&db, 3), vec![vec!["mood30", "mood5"]; 3]);
+}

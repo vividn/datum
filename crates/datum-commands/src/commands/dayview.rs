@@ -31,8 +31,10 @@ use datum_parse::time::{parse_date, DateArg, TimeCtx};
 
 use crate::args::{DayviewArgs, ShowFlag};
 use crate::commands::field_visuals::{
-    leading_edge_ms, occur_time_ms, render_field_visuals, switch_region_end_ms, title_marks,
+    leading_edge_ms, occur_time_ms, push_switch_region, render_field_visuals, switch_region_end_ms,
+    title_marks,
 };
+use crate::commands::nowview::leading_state_region;
 
 /// Datum default per-day band height (matches dayview.ts:50).
 const DEFAULT_DAY_HEIGHT: f64 = 100.0;
@@ -441,11 +443,11 @@ fn build_day_fields(
         .context("day_end_ms out of range")?;
 
     // Pull every entry whose hybrid time intersects this day. We include
-    // a leading buffer so a still-open block that started before the day
-    // starts can render, and a trailing one because a block's stored
-    // instant is its END (da-zwct): one that began today and ends after
-    // midnight is kept by its leading edge (da-tyggo). The layout clips
-    // to the visible window.
+    // a leading buffer so a block that started before the day can render,
+    // and a trailing one because a block's stored instant is its END
+    // (da-zwct): one that began today and ends after midnight is kept by
+    // its leading edge (da-tyggo). A state older than the buffer is
+    // carried in below. The layout clips to the visible window.
     let buffer = chrono::Duration::days(2);
     let entries = db.list_entries(&super::render_helpers::live_window_params(
         day_start_utc - buffer,
@@ -462,12 +464,22 @@ fn build_day_fields(
     }) {
         by_field.entry(e.field.clone()).or_default().push(e);
     }
+    // da-w17jo: the buffer bounds what is FETCHED, not which states are
+    // drawn. A state switched on before it, however long ago, is still in
+    // effect, so every field is asked for its state at the fetch start —
+    // the same carry-in nowview makes (da-ncoa) — including a field with
+    // no entry in the window at all.
+    for field in db.distinct_fields()? {
+        by_field.entry(field).or_default();
+    }
 
     // da-vmjh: one spec query for every field in the day, not one per
     // field.
     let field_names: Vec<&str> = by_field.keys().map(String::as_str).collect();
     let specs = db.batch_load_specs(&field_names)?;
     let positions = super::render_helpers::field_positions(db, &specs, &field_names)?;
+    let fetch_start = day_start_utc - buffer;
+    let leading_states = db.batch_governing_at(&field_names, fetch_start)?;
     drop(field_names);
 
     let mut out: Vec<DayviewFieldInput> = Vec::with_capacity(by_field.len());
@@ -491,7 +503,26 @@ fn build_day_fields(
         let fallback_end_ms = day_end_ms.min(now_ms);
         let switch_region_ends = switch_region_end_ms(&entries_for_field, fallback_end_ms);
 
-        let (mut blocks, mut points) = render_field_visuals(
+        let mut blocks = Vec::new();
+        if let Some((start_ms, end_ms, state, id)) = leading_state_region(
+            leading_states.get(&field),
+            &entries_for_field,
+            fetch_start,
+            fallback_end_ms,
+        ) {
+            push_switch_region(
+                &mut blocks,
+                Some(&state),
+                id.as_deref(),
+                start_ms,
+                end_ms,
+                &field,
+                spec.as_ref(),
+                day_start_ms,
+                day_end_ms,
+            );
+        }
+        let (entry_blocks, mut points) = render_field_visuals(
             &entries_for_field,
             &field,
             spec.as_ref(),
@@ -499,11 +530,12 @@ fn build_day_fields(
             day_end_ms,
             &switch_region_ends,
         );
+        blocks.extend(entry_blocks);
         title_marks(
             &field,
             &mut blocks,
             &mut points,
-            ((day_start_utc - buffer).timestamp_millis(), fallback_end_ms),
+            (fetch_start.timestamp_millis(), fallback_end_ms),
         );
 
         // Per the bead spec: "Empty fields (zero entries in window) are

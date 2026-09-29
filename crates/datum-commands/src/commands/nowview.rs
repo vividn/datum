@@ -783,7 +783,7 @@ fn build_current_states(
 /// `window_start` or the field has no prior state-bearing entry. A state
 /// that doesn't render (null / false / IGNORED) is still returned — the
 /// push helpers' existing [`is_unrendered_switch_value`] gate drops it.
-fn leading_state_region(
+pub(super) fn leading_state_region(
     state_at_window_start: Option<&(JsonValue, Option<String>)>,
     entries: &[Entry],
     window_start: DateTime<Utc>,
