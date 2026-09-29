@@ -305,6 +305,73 @@ fn the_scripts_complete_a_line() {
     }
 }
 
+/// With `datum` only an alias and nothing of that name on PATH the scripts
+/// still complete (da-1f3z5): zsh under compsys's own options, which turn
+/// aliases off, and interactive bash, which expands one at the TAB. With no
+/// `datum` at all, zsh says so rather than offering nothing.
+#[test]
+fn an_alias_only_datum_completes() {
+    let env = Env::new();
+    let bin = env!("CARGO_BIN_EXE_datum");
+    let inherited = std::env::var_os("PATH").unwrap_or_default();
+    let path = std::env::join_paths(
+        std::env::split_paths(&inherited).filter(|d| !d.join("datum").exists()),
+    )
+    .unwrap();
+    let fpath = env.tmp.path().join("fpath");
+    std::fs::create_dir_all(&fpath).unwrap();
+    std::fs::write(fpath.join("_datum"), env.ok(&["completions", "zsh"])).unwrap();
+    // Several words, so a script that ran only the first would run `env`.
+    let alias = format!("'env DATUM_COLOR=0 {bin}'");
+    // compsys's `_describe` and `_message` need a live completion widget:
+    // these print what they are handed.
+    let zsh = format!(
+        "fpath=({} $fpath); autoload -Uz compinit _datum; compinit -u -D\n\
+         _describe() {{ print -rl -- ${{(P)4}} }}; _message() {{ print -r -- \"message: ${{@[-1]}}\" }}\n\
+         setopt $_comp_options; words=(datum switch mood ''); CURRENT=4\n\
+         alias datum={alias}; _datum; unalias datum; _datum\n\
+         alias datum='env /missing/datum'; _datum",
+        fpath.display()
+    );
+    let bash = format!(
+        "alias datum={alias}\nsource <({bin} completions bash)\n\
+         COMP_WORDS=(datum switch mood ''); COMP_CWORD=3\n\
+         _datum; printf '%s\\n' \"${{COMPREPLY[@]}}\""
+    );
+    for (shell, args) in [
+        ("zsh", ["-f", "-c", &zsh]),
+        ("bash", ["--norc", "-ic", &bash]),
+    ] {
+        let cmd = env.cmd();
+        let out = Command::new(shell)
+            .args(args)
+            .envs(cmd.get_envs().filter_map(|(k, v)| Some((k, v?))))
+            .env("PATH", &path)
+            .output();
+        let Ok(out) = out else {
+            eprintln!("{shell} not installed: skipped");
+            continue;
+        };
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            text.lines().any(|l| l.starts_with("happy")),
+            "{shell}: {text:?} {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        if shell == "zsh" {
+            assert!(
+                text.contains("message: datum completion: `datum` not found on PATH"),
+                "{text:?}"
+            );
+            // `env` exits 127 for its missing target: the whole alias is named.
+            assert!(
+                text.contains("`env /missing/datum` not found (alias datum)"),
+                "{text:?}"
+            );
+        }
+    }
+}
+
 #[test]
 fn each_script_parses() {
     let env = Env::new();

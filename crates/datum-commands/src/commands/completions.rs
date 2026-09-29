@@ -6,6 +6,7 @@
 //! [`ShellEnv::from_process`]: the paths come in as a [`ShellEnv`], so a
 //! test names its own home rather than setting one on the process (#303).
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -37,6 +38,11 @@ pub struct ShellEnv {
     /// [`Self::from_process`]: asking costs a zsh, so only the zsh paths ask
     /// ([`Self::with_fpath`]).
     pub fpath: Vec<PathBuf>,
+    /// `$PATH`, where the scripts find the `datum` they ask, and the
+    /// binary running, which that one should be. `None` from
+    /// [`Self::from_process`]: only install asks ([`Self::with_exe`]).
+    pub path: Option<OsString>,
+    pub exe: Option<PathBuf>,
 }
 
 impl ShellEnv {
@@ -55,6 +61,8 @@ impl ShellEnv {
             xdg_data_home: var("XDG_DATA_HOME"),
             xdg_config_home: var("XDG_CONFIG_HOME"),
             fpath: Vec::new(),
+            path: None,
+            exe: None,
         })
     }
 
@@ -80,6 +88,12 @@ impl ShellEnv {
             .filter(|d| !d.is_empty())
             .map(PathBuf::from)
             .collect();
+        self
+    }
+
+    fn with_exe(mut self) -> ShellEnv {
+        self.path = std::env::var_os("PATH");
+        self.exe = std::env::current_exe().ok();
         self
     }
 
@@ -123,7 +137,7 @@ pub fn run(cmd: &CompletionsCommand) -> Result<()> {
         CompletionsCommand::Install(shell) => {
             let env = env()?;
             let shell = pick(shell, &env)?;
-            print!("{}", install(shell, &env.with_fpath())?);
+            print!("{}", install(shell, &env.with_fpath().with_exe())?);
         }
         CompletionsCommand::Uninstall(shell) => {
             let env = env()?;
@@ -160,18 +174,53 @@ pub fn install(shell: Shell, env: &ShellEnv) -> Result<String> {
 
 fn installed_message(shell: Shell, env: &ShellEnv, path: &Path) -> String {
     let mut msg = format!("wrote {} completion to {}\n", shell.name(), path.display());
+    msg.push_str(&path_warning(env));
     let dir = path.parent().unwrap_or(path);
     if shell == Shell::Zsh && !env.fpath.iter().any(|d| d == dir) {
         msg.push_str(&format!(
-            "add this line to ~/.zshrc, before compinit:\n  fpath=({} $fpath)\n",
+            "add this line to ~/.zshrc, before compinit:\n  fpath=({} $fpath)\n\
+             with oh-my-zsh, put it before `source $ZSH/oh-my-zsh.sh` (that line runs compinit)\n",
             dir.display()
         ));
+    }
+    if shell == Shell::Zsh {
+        msg.push_str(
+            "if it still offers only files: delete zsh's completion dump — ~/.zcompdump*, or the \
+             file your compinit names with -d (compinit -C trusts it until it is gone)\n",
+        );
     }
     if shell == Shell::Bash {
         msg.push_str("(the bash-completion package loads it on the first TAB)\n");
     }
     msg.push_str("start a new shell to use it\n");
     msg
+}
+
+/// The scripts run `datum` (or the alias of that name): warn when no
+/// `datum` is on `$PATH`, or when the one there is not the binary running.
+/// Existence only: a `datum` without its exec bit reads as present.
+fn path_warning(env: &ShellEnv) -> String {
+    let name = format!("datum{}", std::env::consts::EXE_SUFFIX);
+    let found = env.path.as_ref().and_then(|p| {
+        std::env::split_paths(p)
+            .map(|d| d.join(&name))
+            .find(|f| f.is_file())
+    });
+    let exe = env.exe.as_ref();
+    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    match (found, exe) {
+        (None, Some(exe)) => format!(
+            "warning: no `datum` on PATH: completion runs `datum`, so put {} on PATH or alias datum to it\n",
+            exe.display()
+        ),
+        (None, None) => "warning: no `datum` on PATH: completion runs `datum`\n".into(),
+        (Some(f), Some(exe)) if real(&f) != real(exe) => format!(
+            "warning: the `datum` on PATH is {}, not {} (this one); completion asks your `datum` alias if there is one, else that\n",
+            f.display(),
+            exe.display()
+        ),
+        _ => String::new(),
+    }
 }
 
 /// Remove the script `install` wrote, and say which.
@@ -239,6 +288,8 @@ mod tests {
             xdg_data_home: Some(tmp.join("data")),
             xdg_config_home: None,
             fpath,
+            path: None,
+            exe: None,
         }
     }
 
@@ -281,6 +332,36 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let said = install(Shell::Zsh, &env(tmp.path(), Shell::Zsh, vec![])).unwrap();
         assert!(said.contains("fpath=("), "{said}");
+        assert!(said.contains("oh-my-zsh.sh"), "{said}");
+        assert!(said.contains("zcompdump") && said.contains("-d"), "{said}");
+    }
+
+    #[test]
+    fn install_warns_when_path_has_no_datum_or_another_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let t = tmp.path();
+        let exe = t.join("build/datum");
+        let other = t.join("bin/datum");
+        for f in [&exe, &other] {
+            std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+            std::fs::write(f, "").unwrap();
+        }
+        let said = |path: &str| {
+            let env = ShellEnv {
+                path: Some(path.into()),
+                exe: Some(exe.clone()),
+                ..env(t, Shell::Bash, vec![])
+            };
+            install(Shell::Bash, &env).unwrap()
+        };
+        let none = said(&t.join("empty").display().to_string());
+        assert!(none.contains("warning: no `datum` on PATH"), "{none}");
+        assert!(none.contains(&exe.display().to_string()), "{none}");
+        let another = said(&t.join("bin").display().to_string());
+        assert!(another.contains(&other.display().to_string()), "{another}");
+        assert!(another.contains(&exe.display().to_string()), "{another}");
+        let this_one = said(&t.join("build").display().to_string());
+        assert!(!this_one.contains("warning"), "{this_one}");
     }
 
     #[test]
