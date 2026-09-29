@@ -507,3 +507,64 @@ fn a_chains_invite_is_one_time_and_expires_and_add_client_is_refused() {
     assert!(used.contains("invite already used"), "{used}");
     assert!(!a.ok(&["sync", "members"]).contains(&d.id()[..10]));
 }
+
+// ─── A device's identity, and each session recorded (da-rcb5m) ──────────────
+
+/// `of`'s entry in `copy`'s `sync <what> --json`.
+fn entry_of(copy: &Copy, what: &str, of: &Copy) -> serde_json::Value {
+    let all: serde_json::Value = serde_json::from_str(&copy.ok(&["sync", what, "--json"])).unwrap();
+    let id = of.id();
+    let hit = all["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["endpoint"] == id.as_str());
+    hit.cloned().unwrap_or_else(|| panic!("{id} not in {all}"))
+}
+
+#[test]
+fn a_redeemer_describes_itself_and_every_session_is_recorded_for_status() {
+    let (a, mut b, admin) = chain();
+    // The redemption was a session on both sides; b then described itself,
+    // which a has not had yet.
+    assert_eq!(entry_of(&a, "status", &b)["state"], "synced");
+    let behind = entry_of(&b, "status", &a);
+    assert_eq!(
+        (behind["state"].as_str(), behind["to_send"].as_i64()),
+        (Some("pending"), Some(1)),
+        "{behind}"
+    );
+    assert!(entry_of(&a, "members", &b)["device"].is_null());
+
+    // a serves (an invite being offered serves members too), b dials.
+    let (serving, _) = a.offer(&["sync", "invite", "--admin-key", &admin]);
+    b.ok(&["sync", "now"]);
+    let described = entry_of(&a, "members", &b);
+    assert_eq!(
+        described["device"],
+        b.query("SELECT device_id FROM sync_local").as_str(),
+        "{described}"
+    );
+    assert_eq!(described["client"], "cli");
+    for (x, y) in [(&a, &b), (&b, &a)] {
+        let row = entry_of(x, "status", y);
+        assert_eq!(
+            (row["state"].as_str(), row["to_send"].as_i64()),
+            (Some("synced"), Some(0)),
+            "{row}"
+        );
+        assert!(row["last_verify"]["at"].is_string(), "{row}");
+    }
+
+    // a gone, b's session fails, and says why in the words `sync now` printed.
+    drop(serving);
+    b.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
+    let failed = b.fails(&["sync", "now"], "");
+    let row = entry_of(&b, "status", &a);
+    assert_eq!(row["state"], "error", "{row}");
+    let why = row["error"].as_str().unwrap();
+    assert!(
+        failed.contains(why) && row["error_at"].is_string(),
+        "{why} / {failed}"
+    );
+}

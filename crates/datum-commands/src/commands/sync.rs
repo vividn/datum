@@ -12,7 +12,7 @@ use datum_core::db::chain::{self, Chain};
 use datum_core::db::Db;
 use serde_json::{json, Value};
 
-use crate::args::{SyncAdminAct, SyncCommand};
+use crate::args::{ShowFlag, SyncAdminAct, SyncCommand};
 use crate::commands::check::{Issue, Severity};
 
 const NO_CHAIN: &str = "this copy is in no sync chain: `datum sync init` starts one";
@@ -71,7 +71,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             let (key, label) = match (&admin_key, &admin_passkey) {
                 (Some(path), _) => (
                     chain::ed25519_admin_key(&key_file(path, true)?),
-                    file_label(path),
+                    checked(file_label(path))?,
                 ),
                 (_, Some(json)) => passkey(json)?,
                 _ => bail!("sync init needs --admin-key or --admin-passkey"),
@@ -82,6 +82,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                 "label": copy_label(), "created": chrono::Utc::now().to_rfc3339(),
             });
             db.sync_chain_write(sign(genesis, admin_key.as_deref())?, true)?;
+            db.sync_describe_self(&copy_label(), client())?;
             println!("started sync chain {id}; this copy is its first member");
         }
         SyncCommand::Admin {
@@ -101,7 +102,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                     )
                 }
                 SyncAdminAct::AddEndpoint => {
-                    let label = label.unwrap_or_else(|| who.chars().take(10).collect());
+                    let label = checked(label.unwrap_or_else(|| who.chars().take(10).collect()))?;
                     let r = json!({"type": "add_endpoint", "endpoint": who, "label": label});
                     (r, format!("admitted {label}"))
                 }
@@ -113,7 +114,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                             file_label(&who),
                         ),
                     };
-                    let label = label.unwrap_or(l);
+                    let label = checked(label.unwrap_or(l))?;
                     let r = json!({"type": "add_admin", "key": key, "label": label});
                     (r, format!("added admin {label}"))
                 }
@@ -135,7 +136,57 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             db.sync_chain_write(sign(record, admin_key.as_deref())?, true)?;
             println!("{said}");
         }
-        SyncCommand::Members => members(db)?,
+        SyncCommand::Members { show } => members(db, show == ShowFlag::Json)?,
+        SyncCommand::Rename {
+            who,
+            label,
+            admin_key,
+        } => {
+            let label = checked(label)?;
+            let chain = db.sync_chain()?;
+            ensure!(chain.exists(), NO_CHAIN);
+            let mine = db.sync_endpoint_id()?;
+            let target = match &who {
+                Some(who) => member(&chain, who)?,
+                None => mine.clone(),
+            };
+            let m = chain.member(&target).context("this copy is not a member")?;
+            if target == mine {
+                db.sync_describe_self(&label, m.client.as_deref().unwrap_or(client()))?;
+            } else {
+                let record = json!({
+                    "type": "describe", "chain": chain.id, "endpoint": target,
+                    "device": m.device, "label": label, "client": m.client,
+                    "created": chrono::Utc::now().to_rfc3339(),
+                });
+                db.sync_chain_write(sign(record, admin_key.as_deref())?, true)?;
+            }
+            println!("renamed {} to {label}", m.label);
+        }
+        SyncCommand::Status { show } => status(db, show == ShowFlag::Json)?,
+        // The page's network worker runs the transport outside the CLI, and
+        // the iroh key IS this secret. Handing it over widens nothing: the
+        // page can already read the whole db file, `sync_local` included
+        // (vividn, 2026-09-29, da-rcb5m). Hidden from help and completions.
+        SyncCommand::EndpointKey => {
+            let key = db.sync_endpoint_secret()?;
+            println!(
+                "{}",
+                key.iter().map(|b| format!("{b:02x}")).collect::<String>()
+            );
+        }
+        SyncCommand::RecordSession {
+            endpoint,
+            vector,
+            verify,
+            error,
+        } => {
+            let vector: Option<BTreeMap<String, i64>> = vector
+                .map(|v| serde_json::from_str(&v))
+                .transpose()
+                .context("--vector is not a version vector")?;
+            db.sync_record_session(&endpoint, vector.as_ref(), verify, error.as_deref())?;
+        }
         SyncCommand::Ack { who } => {
             ensure!(db.sync_ack(&who)? > 0, "nothing to acknowledge for {who}");
             println!("acknowledged {who}");
@@ -197,6 +248,25 @@ fn copy_label() -> String {
     "datum.day".into()
 }
 
+/// `label`, or why no member or admin may carry it — before anything is
+/// signed; the chain refuses it too.
+fn checked(label: String) -> Result<String> {
+    match chain::label_problem(&label) {
+        Some(why) => bail!(why),
+        None => Ok(label),
+    }
+}
+
+/// What this build is to its peers: the native CLI, or datum.day's, whose
+/// wasm build has no `net` feature.
+fn client() -> &'static str {
+    if cfg!(feature = "net") {
+        "cli"
+    } else {
+        "web"
+    }
+}
+
 /// `who` names `id`: as its label, or as at least [`chain::MIN_PREFIX`]
 /// characters of it.
 fn names(who: &str, label: &str, id: &str) -> bool {
@@ -220,7 +290,8 @@ fn member(chain: &Chain, who: &str) -> Result<String> {
 fn passkey(json: &str) -> Result<(String, String)> {
     let v: Value = serde_json::from_str(json).context("the passkey is not JSON")?;
     let key = chain::passkey_admin_key(&v).map_err(anyhow::Error::msg)?;
-    Ok((key, v["label"].as_str().unwrap_or("passkey").to_string()))
+    let label = checked(v["label"].as_str().unwrap_or("passkey").to_string())?;
+    Ok((key, label))
 }
 
 /// A key file's admin label: its name, not its path, which every member
@@ -266,10 +337,32 @@ fn sign(mut record: Value, admin_key: Option<&str>) -> Result<Value> {
 }
 
 /// `datum sync members`.
-fn members(db: &Db) -> Result<()> {
+fn members(db: &Db, json: bool) -> Result<()> {
     let chain = db.sync_chain()?;
     ensure!(chain.exists(), NO_CHAIN);
     let mine = db.sync_endpoint_id()?;
+    if json {
+        let admins: Vec<Value> = chain
+            .admins
+            .iter()
+            .map(|a| json!({"key": a.key, "label": a.label, "added": chain::hlc_time(&a.added)}))
+            .collect();
+        let members: Vec<Value> = chain
+            .members
+            .iter()
+            .map(|m| {
+                json!({
+                    "endpoint": m.endpoint, "label": m.label, "device": m.device,
+                    "client": m.client, "admitted": chain::hlc_time(&m.admitted), "via": m.via,
+                    "revoked": m.revoked.as_deref().map(chain::hlc_time),
+                    "this": m.endpoint == mine,
+                })
+            })
+            .collect();
+        let out = json!({"chain": chain.id, "admins": admins, "members": members});
+        println!("{out}");
+        return Ok(());
+    }
     println!("sync chain {}\nadmins:", chain.id);
     for a in &chain.admins {
         let kind = a.key.split(':').next().unwrap_or_default();
@@ -284,9 +377,13 @@ fn members(db: &Db) -> Result<()> {
     for m in &chain.members {
         let revoked = m.revoked.as_deref().map(chain::hlc_time);
         println!(
-            "  {}  {}  admitted {} via {}{}{}",
+            "  {}  {}{}  admitted {} via {}{}{}",
             m.label,
             &m.endpoint[..10],
+            m.device
+                .as_deref()
+                .map(|d| format!("  {} on {d}", m.client.as_deref().unwrap_or("?")))
+                .unwrap_or_default(),
             chain::hlc_time(&m.admitted),
             m.via,
             revoked
@@ -297,6 +394,80 @@ fn members(db: &Db) -> Result<()> {
             } else {
                 ""
             },
+        );
+    }
+    Ok(())
+}
+
+/// `datum sync status`: per member, how this copy stands with it.
+fn status(db: &Db, json: bool) -> Result<()> {
+    let chain = db.sync_chain()?;
+    let mine = db.sync_endpoint_id()?;
+    let label = chain
+        .member(&mine)
+        .map_or_else(copy_label, |m| m.label.clone());
+    let peers = db.sync_status()?;
+    if json {
+        let path = db.conn().path().unwrap_or_default();
+        let name = std::path::Path::new(path)
+            .file_stem()
+            .map(|s| s.to_string_lossy());
+        let members: Vec<Value> = peers
+            .iter()
+            .map(|p| {
+                json!({
+                    "endpoint": p.endpoint, "device": p.device, "label": p.label,
+                    "client": p.client, "revoked": p.revoked, "state": p.state,
+                    "to_send": p.to_send, "last_seen": p.last_seen,
+                    "last_verify": p.last_verify.as_ref().map(|(at, m)| json!({"at": at, "match": m})),
+                    "error": p.error, "error_at": p.error_at,
+                })
+            })
+            .collect();
+        let out = json!({
+            "db": name, "chain": chain.exists().then_some(&chain.id),
+            "this": {"endpoint": mine, "device": db.sync_device_id()?, "label": label},
+            "members": members,
+        });
+        println!("{out}");
+        return Ok(());
+    }
+    if !chain.exists() {
+        println!("{NO_CHAIN}");
+        return Ok(());
+    }
+    println!(
+        "sync chain {} · this copy {label} ({})",
+        chain.id,
+        &mine[..10]
+    );
+    let width = peers
+        .iter()
+        .map(|p| p.label.chars().count())
+        .max()
+        .unwrap_or(0);
+    for p in &peers {
+        let when = match p.state {
+            "error" => p.error_at.clone(),
+            "never" => None,
+            _ => p
+                .last_verify
+                .as_ref()
+                .map(|(at, _)| at.clone())
+                .or(p.last_seen.clone()),
+        };
+        println!(
+            "  {:<width$}  {}  {:<7}  to send {:<5}  {}{}{}",
+            p.label,
+            &p.endpoint[..10],
+            p.state,
+            p.to_send,
+            when.as_deref().unwrap_or("-"),
+            if p.revoked { "  REVOKED" } else { "" },
+            p.error
+                .as_deref()
+                .map(|e| format!("  {e}"))
+                .unwrap_or_default(),
         );
     }
     Ok(())

@@ -90,6 +90,31 @@ pub(super) fn down_45_to_44_sync_notices(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// da-rcb5m: `sync_peers` remembers each peer's last session — its vector,
+/// verify and error, each with its time — for `datum sync status`.
+pub(super) fn m45_to_46_sync_peer_sessions(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "ALTER TABLE sync_peers ADD COLUMN last_vector TEXT;
+         ALTER TABLE sync_peers ADD COLUMN last_verify_at TEXT;
+         ALTER TABLE sync_peers ADD COLUMN last_verify_match INTEGER;
+         ALTER TABLE sync_peers ADD COLUMN last_error TEXT;
+         ALTER TABLE sync_peers ADD COLUMN last_error_at TEXT;",
+    )?;
+    Ok(())
+}
+
+/// Reverse v45→v46. Local: the session results are gone, the peers stay.
+pub(super) fn down_46_to_45_sync_peer_sessions(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "ALTER TABLE sync_peers DROP COLUMN last_vector;
+         ALTER TABLE sync_peers DROP COLUMN last_verify_at;
+         ALTER TABLE sync_peers DROP COLUMN last_verify_match;
+         ALTER TABLE sync_peers DROP COLUMN last_error;
+         ALTER TABLE sync_peers DROP COLUMN last_error_at;",
+    )?;
+    Ok(())
+}
+
 /// The v45 table exactly as `schema.sql` creates it.
 const SYNC_NOTICES_SQL: &str = "
 CREATE TABLE IF NOT EXISTS sync_notices (

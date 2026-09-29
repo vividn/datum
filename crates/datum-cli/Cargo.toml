@@ -74,5 +74,7 @@ tempfile = "3"
 md-5 = { workspace = true }
 # A software passkey for the sync chain tests (da-odwc7).
 p256 = { workspace = true }
+# Signs a forged chain op as a member would (da-rcb5m).
+ed25519-dalek = { workspace = true }
 sha2 = { workspace = true }
 data-encoding = { workspace = true }

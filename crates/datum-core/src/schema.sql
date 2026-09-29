@@ -322,13 +322,22 @@ CREATE TABLE IF NOT EXISTS sync_local (
 -- from it, or whose invite it redeemed. LOCAL, never synced. `addrs` is the
 -- iroh address the peer last gave (JSON), to dial it without discovery;
 -- `announced` is 0 until a command has printed the new-peer warning.
+-- The last session with it (da-rcb5m, `datum sync status`): the peer's
+-- version vector as it ended (JSON), its verify, and the error it failed
+-- with (NULL once one succeeds), each with its time. `addrs` is '' for a
+-- peer only `sync record-session` has named (the browser's transport).
 CREATE TABLE IF NOT EXISTS sync_peers (
-    endpoint_id TEXT NOT NULL PRIMARY KEY,
-    label       TEXT NOT NULL,
-    addrs       TEXT NOT NULL,
-    added_at    TEXT NOT NULL,
-    last_seen   TEXT,
-    announced   INTEGER NOT NULL DEFAULT 0
+    endpoint_id       TEXT NOT NULL PRIMARY KEY,
+    label             TEXT NOT NULL,
+    addrs             TEXT NOT NULL,
+    added_at          TEXT NOT NULL,
+    last_seen         TEXT,
+    announced         INTEGER NOT NULL DEFAULT 0,
+    last_vector       TEXT,
+    last_verify_at    TEXT,
+    last_verify_match INTEGER,
+    last_error        TEXT,
+    last_error_at     TEXT
 );
 
 -- The sync chain's members and admins this copy has heard of (da-odwc7):

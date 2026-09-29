@@ -19,6 +19,9 @@
 //!   the other lacks, one frame each, and an empty frame, and applies what
 //!   came — until a round in which neither vector moved. Last the verify
 //!   hashes, the dialer's first, and the dialer closes.
+//! - **Record.** Every session this copy dials, and every one it serves past
+//!   the handshake, is recorded as it ends — the peer's vector, the verify,
+//!   or the error it failed with — for `datum sync status` (da-rcb5m).
 //! - **Progress.** A session fails only when no frame has moved either way
 //!   for [`idle`] (da-039jx). A long apply is chunked, and between chunks
 //!   the side applying sends a [`BUSY`] frame, which a reader skips: a
@@ -79,6 +82,12 @@ pub fn label() -> String {
     } else {
         "unknown".into()
     };
+    // Within the chain's label rules, whatever the host is called.
+    let host: String = host
+        .chars()
+        .filter(|c| chain::label_problem(&c.to_string()).is_none())
+        .take(chain::MAX_LABEL - " (cli)".len())
+        .collect();
     format!("{host} (cli)")
 }
 
@@ -124,11 +133,12 @@ impl Peer {
     }
 }
 
-/// The peers to sync with: in a chain, those still members.
+/// The peers to sync with: in a chain, those still members, and whose
+/// address this copy knows.
 fn synced_peers(db: &Db) -> Result<Vec<Peer>> {
     let mut out = Vec::new();
     for p in peers(db)? {
-        if is_peer(db, &p.id)? {
+        if is_peer(db, &p.id)? && p.addr().is_ok() {
             out.push(p);
         }
     }
@@ -299,6 +309,8 @@ pub struct Report {
     pub got: usize,
     pub conflicts: usize,
     pub verified: bool,
+    /// The peer's version vector, as it last sent it.
+    pub vector: BTreeMap<String, i64>,
 }
 
 impl std::fmt::Display for Report {
@@ -381,6 +393,7 @@ async fn exchange(
         let mine = db.sync_vector()?;
         put_json(s, &mine).await?;
         let theirs: BTreeMap<String, i64> = get_json(r, MAX_FRAME).await?;
+        rep.vector = theirs.clone();
         let round = (mine, theirs);
         if last.as_ref() == Some(&round) {
             break;
@@ -422,8 +435,35 @@ async fn exchange(
     Ok(())
 }
 
-/// Dial a peer, presenting `invite` if this is its redemption, and sync.
+/// Record how a session with `id` ended. A peer that is neither a member
+/// nor paired (a refused redemption) has no row to record it in.
+fn record(db: &Db, id: &str, rep: &Result<Report>) {
+    let (vector, verify, error) = match rep {
+        Ok(r) => (Some(&r.vector), Some(r.verified), None),
+        Err(e) => (
+            e.downcast_ref::<Lost>().map(|Lost(r, _)| &r.vector),
+            None,
+            Some(format!("{e:#}")),
+        ),
+    };
+    let _ = db.sync_record_session(id, vector, verify, error.as_deref());
+}
+
+/// Dial a peer, presenting `invite` if this is its redemption, sync, and
+/// record how it went.
 async fn dial(db: &Db, ep: &Endpoint, addr: EndpointAddr, invite: Option<&str>) -> Result<Report> {
+    let id = addr.id.to_string();
+    let rep = session(db, ep, addr, invite).await;
+    record(db, &id, &rep);
+    rep
+}
+
+async fn session(
+    db: &Db,
+    ep: &Endpoint,
+    addr: EndpointAddr,
+    invite: Option<&str>,
+) -> Result<Report> {
     ensure!(addr.id != ep.id(), COPY);
     let id = addr.id.to_string();
     let conn = within(async { Ok(ep.connect(addr, ALPN).await?) })
@@ -437,6 +477,10 @@ async fn dial(db: &Db, ep: &Endpoint, addr: EndpointAddr, invite: Option<&str>) 
     };
     put_json(&mut s, &hello).await?;
     let (label, addr) = match get_json(&mut r, MAX_HELLO).await? {
+        Reply::Welcome { label, .. } if chain::label_problem(&label).is_some() => {
+            conn.close(0u32.into(), b"refused");
+            bail!("{}", chain::label_problem(&label).unwrap_or_default());
+        }
         Reply::Welcome { label, addr } => (label, addr),
         Reply::Refused(why) => {
             conn.close(0u32.into(), b"refused");
@@ -454,6 +498,7 @@ async fn dial(db: &Db, ep: &Endpoint, addr: EndpointAddr, invite: Option<&str>) 
         got: 0,
         conflicts: 0,
         verified: false,
+        vector: BTreeMap::new(),
     };
     let done = exchange(db, &mut s, &mut r, true, &mut rep).await;
     conn.close(0u32.into(), b"done");
@@ -472,8 +517,10 @@ async fn serve(db: &Db, ep: &Endpoint, incoming: Incoming) -> Result<Report> {
     // An invite presented is redeemed or refused, even by a peer: one use.
     let known = is_peer(db, &id)?;
     let chained = db.sync_chain()?.exists();
+    let bad_label = chain::label_problem(&hello.label);
     let verdict = match &hello.invite {
         _ if conn.remote_id() == ep.id() => Err(COPY.to_string()),
+        _ if bad_label.is_some() => Err(bad_label.unwrap_or_default()),
         Some(secret) if chained => db
             .sync_admit(&id, &hello.label, secret)
             .map_err(|e| e.to_string()),
@@ -498,19 +545,24 @@ async fn serve(db: &Db, ep: &Endpoint, incoming: Incoming) -> Result<Report> {
     .await?;
     let mut rep = Report {
         label: hello.label,
-        id,
+        id: id.clone(),
         added: !known,
         redeemed: hello.invite.is_some(),
         sent: 0,
         got: 0,
         conflicts: 0,
         verified: false,
+        vector: BTreeMap::new(),
     };
-    if let Err(e) = exchange(db, &mut s, &mut r, false, &mut rep).await {
-        return Err(Lost(rep, e).into());
-    }
-    let _ = tokio::time::timeout(Duration::from_secs(5), conn.closed()).await;
-    Ok(rep)
+    let done = match exchange(db, &mut s, &mut r, false, &mut rep).await {
+        Ok(()) => {
+            let _ = tokio::time::timeout(Duration::from_secs(5), conn.closed()).await;
+            Ok(rep)
+        }
+        Err(e) => Err(Lost(rep, e).into()),
+    };
+    record(db, &id, &done);
+    done
 }
 
 // ─── The endpoint ───────────────────────────────────────────────────────────
@@ -634,6 +686,11 @@ pub fn connect(db: &Db, ticket: &str) -> Result<()> {
             }
         }
         ep.close().await;
+        // Admitted, it says what it is; its peers hear on the next sync.
+        let me = db.sync_endpoint_id()?;
+        if db.sync_chain()?.member(&me).is_some() {
+            db.sync_describe_self(&label(), "cli")?;
+        }
         if let Err(e) = &rep {
             paired_unfinished(e);
         }

@@ -797,8 +797,30 @@ pub enum SyncCommand {
         label: Option<String>,
         admin_key: Option<String>,
     },
-    /// `datum sync members` — the chain's admins and endpoints.
-    Members,
+    /// `datum sync members [--json]` — the chain's admins and endpoints.
+    Members { show: Show },
+    /// `datum sync rename [<WHO>] <LABEL> [--admin-key <FILE>]` — relabel
+    /// this copy (no admin needed), or another member (an admin act).
+    Rename {
+        who: Option<String>,
+        label: String,
+        admin_key: Option<String>,
+    },
+    /// `datum sync status [--json]` — per member, how this copy stands
+    /// with it (da-rcb5m).
+    Status { show: Show },
+    /// Hidden: `datum sync endpoint-key` — this copy's endpoint secret,
+    /// for datum.day's network worker.
+    EndpointKey,
+    /// Hidden: `datum sync record-session <ENDPOINT> [--vector <JSON>]
+    /// [--verify match|mismatch] [--error <TEXT>]` — how a session the
+    /// browser's transport ran ended.
+    RecordSession {
+        endpoint: String,
+        vector: Option<String>,
+        verify: Option<bool>,
+        error: Option<String>,
+    },
     /// `datum sync ack <WHO>` — acknowledge a new endpoint or admin.
     Ack { who: String },
 }

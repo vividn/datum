@@ -6,6 +6,7 @@
 use super::core::*;
 use crate::cli::*;
 use crate::error::{ParseError, Result};
+use crate::input::Show;
 
 pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
     let (sub, rest) = match tail.split_first() {
@@ -30,14 +31,14 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             ticket: rest.next().map(|t| t.to_string()),
         },
         "add-client" => {
-            let o = opts(&mut rest, &["expires"], &["qr"], 0)?;
+            let o = opts(&mut rest, &["expires"], &["qr"], 0..=0)?;
             SyncCommand::AddClient {
                 qr: o.on("qr"),
                 expires_secs: o.expires()?,
             }
         }
         "invite" => {
-            let o = opts(&mut rest, &["expires", "admin-key"], &["qr"], 0)?;
+            let o = opts(&mut rest, &["expires", "admin-key"], &["qr"], 0..=0)?;
             SyncCommand::Invite {
                 qr: o.on("qr"),
                 expires_secs: o.expires()?,
@@ -45,7 +46,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             }
         }
         "init" => {
-            let o = opts(&mut rest, &["admin-key", "admin-passkey"], &[], 0)?;
+            let o = opts(&mut rest, &["admin-key", "admin-passkey"], &[], 0..=0)?;
             let (admin_key, admin_passkey) = (o.get("admin-key"), o.get("admin-passkey"));
             if admin_key.is_some() == admin_passkey.is_some() {
                 return Err(ParseError::InvalidArg(
@@ -58,7 +59,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             }
         }
         "revoke" | "add-endpoint" | "add-admin" | "remove-admin" => {
-            let mut o = opts(&mut rest, &["admin-key", "label"], &[], 1)?;
+            let mut o = opts(&mut rest, &["admin-key", "label"], &[], 1..=1)?;
             SyncCommand::Admin {
                 act: match sub {
                     "revoke" => SyncAdminAct::Revoke,
@@ -71,7 +72,43 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 admin_key: o.get("admin-key"),
             }
         }
-        "members" => SyncCommand::Members,
+        // `--json` is the swept `--show json`, set by `apply_show`.
+        "members" => SyncCommand::Members {
+            show: Show::Default,
+        },
+        "status" => SyncCommand::Status {
+            show: Show::Default,
+        },
+        "rename" => {
+            let mut o = opts(&mut rest, &["admin-key"], &[], 1..=2)?;
+            let label = o.positional.pop().unwrap_or_default();
+            SyncCommand::Rename {
+                who: o.positional.pop(),
+                label,
+                admin_key: o.get("admin-key"),
+            }
+        }
+        // Hidden (da-rcb5m): datum.day's network worker, not a person.
+        "endpoint-key" => SyncCommand::EndpointKey,
+        "record-session" => {
+            let mut o = opts(&mut rest, &["vector", "verify", "error"], &[], 1..=1)?;
+            let verify = match o.get("verify").as_deref() {
+                None => None,
+                Some("match") => Some(true),
+                Some("mismatch") => Some(false),
+                Some(v) => {
+                    return Err(ParseError::InvalidArg(format!(
+                        "--verify is match or mismatch, not {v}"
+                    )))
+                }
+            };
+            SyncCommand::RecordSession {
+                endpoint: o.positional.remove(0),
+                vector: o.get("vector"),
+                verify,
+                error: o.get("error"),
+            }
+        }
         "ack" => SyncCommand::Ack {
             who: rest
                 .next()
@@ -103,7 +140,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         }
         other => {
             return Err(ParseError::InvalidArg(format!(
-                "unknown sync subcommand: '{other}' (expected init|invite|connect|members|ack|revoke|add-endpoint|add-admin|remove-admin|add-client|now|run|peers|forget|rekey|vector|ops|apply|verify)"
+                "unknown sync subcommand: '{other}' (expected init|invite|connect|members|status|rename|ack|revoke|add-endpoint|add-admin|remove-admin|add-client|now|run|peers|forget|rekey|vector|ops|apply|verify)"
             )))
         }
     };
@@ -114,7 +151,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
 }
 
 /// A subcommand's flags: `values` take one (`--x V` or `--x=V`), `switches`
-/// none, and exactly `positionals` bare words are taken.
+/// none, and as many bare words as `positionals` allows.
 struct Opts {
     values: std::collections::BTreeMap<String, String>,
     switches: Vec<String>,
@@ -148,7 +185,7 @@ fn opts<'a>(
     rest: &mut std::slice::Iter<'a, &'a str>,
     values: &[&str],
     switches: &[&str],
-    positionals: usize,
+    positionals: std::ops::RangeInclusive<usize>,
 ) -> Result<Opts> {
     let mut o = Opts {
         values: Default::default(),
@@ -168,7 +205,7 @@ fn opts<'a>(
                     .next()
                     .ok_or_else(|| ParseError::InvalidArg(format!("--{n} needs a value")))?,
             ),
-            _ if !t.starts_with('-') && o.positional.len() < positionals => {
+            _ if !t.starts_with('-') && o.positional.len() < *positionals.end() => {
                 o.positional.push(t.to_string());
                 continue;
             }
@@ -176,7 +213,7 @@ fn opts<'a>(
         };
         o.values.insert(name.to_string(), value.to_string());
     }
-    if o.positional.len() < positionals {
+    if o.positional.len() < *positionals.start() {
         return Err(ParseError::InvalidArg(
             "this sync subcommand needs an argument".into(),
         ));
@@ -263,6 +300,40 @@ mod tests {
             SyncCommand::Ack { who: "abc".into() }
         );
         assert!(parse_sync_cmd(&["rekey", "extra"]).is_err());
+        assert_eq!(
+            parse_sync_cmd(&["rename", "desk"]).unwrap(),
+            SyncCommand::Rename {
+                who: None,
+                label: "desk".into(),
+                admin_key: None
+            }
+        );
+        assert_eq!(
+            parse_sync_cmd(&["rename", "abcd", "phone", "--admin-key", "k"]).unwrap(),
+            SyncCommand::Rename {
+                who: Some("abcd".into()),
+                label: "phone".into(),
+                admin_key: Some("k".into())
+            }
+        );
+        assert!(parse_sync_cmd(&["rename"]).is_err());
+        assert!(parse_sync_cmd(&["rename", "a", "b", "c"]).is_err());
+        assert_eq!(
+            parse_sync_cmd(&["members"]).unwrap(),
+            SyncCommand::Members {
+                show: Show::Default
+            }
+        );
+        assert_eq!(
+            parse_sync_cmd(&["record-session", "ab", "--vector", "{}", "--verify=match"]).unwrap(),
+            SyncCommand::RecordSession {
+                endpoint: "ab".into(),
+                vector: Some("{}".into()),
+                verify: Some(true),
+                error: None
+            }
+        );
+        assert!(parse_sync_cmd(&["record-session", "ab", "--verify", "maybe"]).is_err());
         assert!(parse_sync_cmd(&["forget"]).is_err());
         assert!(parse_sync_cmd(&["add-client", "--expires", "0s"]).is_err());
         assert!(parse_sync_cmd(&["now", "extra"]).is_err());

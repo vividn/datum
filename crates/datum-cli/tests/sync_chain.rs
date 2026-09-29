@@ -375,3 +375,364 @@ fn a_passkey_admin_approves_by_link_and_pasted_code() {
         "{members}"
     );
 }
+
+// ─── A device across chains, and sync status (da-rcb5m) ────────────────────
+
+fn json(text: &str) -> serde_json::Value {
+    serde_json::from_str(text).unwrap_or_else(|e| panic!("{e}: {text}"))
+}
+
+/// `id`'s entry in `copy`'s `sync members --json`.
+fn member_of(copy: &Copy, id: &str) -> serde_json::Value {
+    let all = json(&copy.ok(&["sync", "members", "--json"]));
+    let hit = all["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["endpoint"] == id);
+    hit.cloned().unwrap_or_else(|| panic!("{id} not in {all}"))
+}
+
+fn device_of(copy: &Copy) -> String {
+    copy.query("SELECT device_id FROM sync_local")
+}
+
+#[test]
+fn a_copy_describes_itself_at_init_and_renames_itself_without_an_admin() {
+    let (a, b, _) = chained();
+    let me = member_of(&a, &a.id());
+    assert_eq!(me["device"], device_of(&a).as_str(), "{me}");
+    assert_eq!(me["client"], "cli", "{me}");
+    assert!(me["label"].as_str().unwrap().ends_with(" (cli)"), "{me}");
+    assert_eq!(me["this"], true);
+
+    // b was admitted by an admin act: it names itself, no key needed.
+    assert!(member_of(&b, &b.id())["device"].is_null());
+    assert!(b
+        .ok(&["sync", "rename", "phone"])
+        .contains("renamed b to phone"));
+    assert!(b.send(&a).0);
+    let seen = member_of(&a, &b.id());
+    assert_eq!(seen["label"], "phone", "{seen}");
+    assert_eq!(seen["device"], device_of(&b).as_str(), "{seen}");
+    assert!(a.ok(&["sync", "members"]).contains("phone"));
+}
+
+#[test]
+fn another_member_is_renamed_by_an_admin_and_by_no_one_else() {
+    let (a, b, admin) = chained();
+    b.ok(&["sync", "rename", "phone"]);
+    assert!(b.send(&a).0);
+    a.ok(&["sync", "rename", "phone", "tablet", "--admin-key", &admin]);
+    let renamed = member_of(&a, &b.id());
+    assert_eq!(renamed["label"], "tablet");
+    assert_eq!(
+        renamed["device"],
+        device_of(&b).as_str(),
+        "the device is kept"
+    );
+    assert!(a.send(&b).0);
+    assert_eq!(member_of(&b, &b.id())["label"], "tablet");
+
+    // b is no admin: its describe of a is refused by the fold, and nothing
+    // of it is kept.
+    let a_label = member_of(&b, &a.id())["label"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let out = b.fails(
+        &["sync", "rename", &a.id()[..10], "evil"],
+        "not-a-signature\n",
+    );
+    assert!(out.contains("https://datum.day/sync/approve#"), "{out}");
+    assert!(
+        out.contains("the sync chain refuses it: not signed by an admin"),
+        "{out}"
+    );
+    assert_eq!(member_of(&b, &a.id())["label"], a_label.as_str());
+    assert!(b.send(&a).0);
+    assert_eq!(member_of(&a, &a.id())["label"], a_label.as_str());
+}
+
+#[test]
+fn two_databases_in_one_data_directory_are_one_device() {
+    let a = Copy::new();
+    let other = a.key("other.db");
+    a.ok(&["sync", "init", "--admin-key", &a.key("one.key")]);
+    a.ok(&[
+        "--db",
+        &other,
+        "sync",
+        "init",
+        "--admin-key",
+        &a.key("two.key"),
+    ]);
+    let one = json(&a.ok(&["sync", "status", "--json"]));
+    let two = json(&a.ok(&["--db", &other, "sync", "status", "--json"]));
+    assert_ne!(one["this"]["endpoint"], two["this"]["endpoint"]);
+    assert_eq!(one["this"]["device"], two["this"]["device"]);
+    assert_eq!(
+        (one["db"].as_str(), two["db"].as_str()),
+        (Some("data"), Some("other"))
+    );
+    let first = member_of(&a, &a.id());
+    assert_eq!(first["device"], one["this"]["device"], "{first}");
+}
+
+/// `b`'s entry in `a`'s `sync status --json`, having checked no state comes
+/// without its time.
+fn status_of(a: &Copy, b: &Copy) -> serde_json::Value {
+    let all = json(&a.ok(&["sync", "status", "--json"]));
+    let b_id = b.id();
+    let row = all["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["endpoint"] == b_id.as_str());
+    let row = row
+        .cloned()
+        .unwrap_or_else(|| panic!("{b_id} not in {all}"));
+    let when = match row["state"].as_str().unwrap() {
+        "synced" => row["last_verify"]["at"].clone(),
+        "error" => row["error_at"].clone(),
+        "pending" => row["last_seen"].clone(),
+        _ => serde_json::Value::String("never".into()),
+    };
+    assert!(when.is_string(), "a state without its time: {row}");
+    row
+}
+
+/// Play the transport over the pipe: each copy sends the other what it
+/// lacks, and `a` records the session as a transport would.
+fn session(a: &Copy, b: &Copy) {
+    assert!(a.send(b).0 && b.send(a).0);
+    let verify = if a.hash() == b.hash() {
+        "match"
+    } else {
+        "mismatch"
+    };
+    let vector = b.ok(&["sync", "vector"]);
+    a.ok(&[
+        "sync",
+        "record-session",
+        &b.id(),
+        "--vector",
+        vector.trim(),
+        "--verify",
+        verify,
+    ]);
+}
+
+#[test]
+fn status_says_never_then_synced_then_pending_then_error_each_with_its_time() {
+    let (a, b, admin) = chained();
+    let row = status_of(&a, &b);
+    assert_eq!(row["state"], "never", "{row}");
+    assert!(row["last_seen"].is_null() && row["last_verify"].is_null());
+    let all = json(&a.ok(&["sync", "status", "--json"]));
+    assert_eq!(all["this"]["endpoint"], a.id().as_str());
+    assert_eq!(all["this"]["device"], device_of(&a).as_str());
+    assert!(all["chain"].is_string(), "{all}");
+
+    session(&a, &b);
+    let row = status_of(&a, &b);
+    assert_eq!(
+        (row["state"].as_str(), row["to_send"].as_i64()),
+        (Some("synced"), Some(0)),
+        "{row}"
+    );
+    assert_eq!(row["last_verify"]["match"], true);
+    assert_eq!(
+        row["client"],
+        serde_json::Value::Null,
+        "b never described itself"
+    );
+
+    a.ok(&["occur", "later"]);
+    let row = status_of(&a, &b);
+    // What a holds past what b last had: the entry, and its field's spec.
+    let (mine, theirs) = (
+        json(&a.ok(&["sync", "vector"])),
+        json(&b.ok(&["sync", "vector"])),
+    );
+    let waiting = mine[a.id()].as_i64().unwrap() - theirs[a.id()].as_i64().unwrap();
+    assert!(waiting > 0);
+    assert_eq!(
+        (row["state"].as_str(), row["to_send"].as_i64()),
+        (Some("pending"), Some(waiting)),
+        "{row}"
+    );
+    session(&a, &b);
+    assert_eq!(status_of(&a, &b)["state"], "synced");
+
+    // A mismatch stands through a write made since; a session clears it.
+    a.ok(&["sync", "record-session", &b.id(), "--verify", "mismatch"]);
+    a.ok(&["occur", "since"]);
+    let row = status_of(&a, &b);
+    assert_eq!(
+        (row["state"].as_str(), row["error"].as_str()),
+        (Some("error"), Some("verify MISMATCH")),
+        "{row}"
+    );
+    session(&a, &b);
+    assert_eq!(status_of(&a, &b)["state"], "synced");
+
+    // b revoked, what it makes is refused, and the transport says so.
+    a.ok(&["sync", "revoke", "b", "--admin-key", &admin]);
+    b.ok(&["occur", "after"]);
+    let (ok, why) = b.send(&a);
+    assert!(!ok, "{why}");
+    let why = why.lines().find(|l| l.starts_with("refused:")).unwrap();
+    a.ok(&["sync", "record-session", &b.id(), "--error", why]);
+    let row = status_of(&a, &b);
+    assert_eq!(
+        (row["state"].as_str(), row["revoked"].as_bool()),
+        (Some("error"), Some(true)),
+        "{row}"
+    );
+    assert!(
+        row["error"]
+            .as_str()
+            .unwrap()
+            .contains("made after its endpoint was revoked"),
+        "{row}"
+    );
+    let table = a.ok(&["sync", "status"]);
+    assert!(
+        table.contains("error") && table.contains("REVOKED"),
+        "{table}"
+    );
+}
+
+#[test]
+fn status_of_a_copy_in_no_chain_is_empty() {
+    let a = Copy::new();
+    let all = json(&a.ok(&["sync", "status", "--json"]));
+    assert!(all["chain"].is_null(), "{all}");
+    assert_eq!(all["members"], serde_json::json!([]));
+    assert_eq!(all["this"]["endpoint"], a.id().as_str());
+    assert!(a.ok(&["sync", "status"]).contains("no sync chain"));
+    // A session with a copy that is neither a member nor a peer has nowhere
+    // to go: a row there would make it a peer.
+    let stranger = Copy::new().id();
+    let out = a.fails(
+        &["sync", "record-session", &stranger, "--verify", "match"],
+        "",
+    );
+    assert!(
+        out.contains("not a member of this copy's sync chain, nor a peer"),
+        "{out}"
+    );
+}
+
+#[test]
+fn the_network_workers_commands_are_hidden_and_endpoint_key_is_the_secret() {
+    let a = Copy::new();
+    let key = a.ok(&["sync", "endpoint-key"]);
+    assert_eq!(
+        key.trim(),
+        a.query("SELECT endpoint_secret FROM sync_local")
+    );
+    let help = format!("{}{}", a.ok(&["sync", "--help"]), a.ok(&["help", "sync"]));
+    assert!(help.contains("rename") && help.contains("status"), "{help}");
+    for hidden in ["endpoint-key", "record-session"] {
+        assert!(!help.contains(hidden), "{hidden} in help");
+    }
+    let found = a.ok(&["__complete", "2", "--", "datum", "sync", ""]);
+    assert!(
+        found.contains("status") && found.contains("rename"),
+        "{found}"
+    );
+    assert!(
+        !found.contains("endpoint-key") && !found.contains("record-session"),
+        "{found}"
+    );
+}
+
+/// A chain op `copy` never wrote but signed with its key, next after what
+/// `to` holds of it: what a member running other code could send.
+fn forged(copy: &Copy, to: &Copy, record: serde_json::Value) -> String {
+    use ed25519_dalek::Signer;
+    let id = copy.id();
+    let seq: i64 = to
+        .query(&format!(
+            "SELECT COALESCE(MAX(seq), 0) FROM ops WHERE endpoint = '{id}'"
+        ))
+        .parse()
+        .unwrap();
+    let hlc = chrono::Utc::now()
+        .format("%Y-%m-%dT%H:%M:%S%.3fZ/0000")
+        .to_string();
+    let mut op = serde_json::json!({
+        "endpoint": id, "seq": seq + 1, "hlc": hlc, "slug": "~chain", "hid": "~chain",
+        "kind": "chain", "raw": null, "alias_chain": null, "effect": record, "deps": {},
+    });
+    let secret = data_encoding::HEXLOWER
+        .decode(
+            copy.query("SELECT endpoint_secret FROM sync_local")
+                .as_bytes(),
+        )
+        .unwrap();
+    let key = ed25519_dalek::SigningKey::from_bytes(&secret.try_into().unwrap());
+    let digest = Sha256::digest(datum_core::db::canonical_json(&op).as_bytes());
+    op["sig"] = data_encoding::HEXLOWER
+        .encode(&key.sign(&digest).to_bytes())
+        .into();
+    datum_core::db::canonical_json(&op)
+}
+
+#[test]
+fn a_label_with_a_control_character_is_refused_by_the_fold_and_the_command() {
+    let (a, b, _) = chained();
+    assert!(b.send(&a).0);
+    let chain_id = a
+        .query("SELECT json_extract(body, '$.effect.chain') FROM ops WHERE hid = '~chain' LIMIT 1");
+    let describe = |label: &str, client: &str, device: &str| {
+        serde_json::json!({
+            "type": "describe", "chain": chain_id, "endpoint": b.id(), "device": device,
+            "label": label, "client": client, "created": "2026-09-29T00:00:00Z",
+        })
+    };
+    let device = device_of(&b);
+    for (record, why) in [
+        (
+            describe("\u{1b}[2Jevil", "cli", &device),
+            "a label cannot contain a control character (U+001B)",
+        ),
+        (
+            describe("adm\u{202E}nimda", "cli", &device),
+            "a label cannot contain a bidi control (U+202E)",
+        ),
+        (
+            describe(&"x".repeat(65), "cli", &device),
+            "a label is at most 64 characters, not 65",
+        ),
+        (
+            describe("phone", "tv", &device),
+            "a describe's client is cli or web",
+        ),
+        (
+            describe("phone", "cli", "not-a-ulid"),
+            "a describe's device is not a device id",
+        ),
+    ] {
+        let out = a.run(&["sync", "apply"], &forged(&b, &a, record));
+        let text = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success() && text.contains(why), "{why}: {text}");
+        assert_eq!(member_of(&a, &b.id())["label"], "b");
+    }
+    // The forgery itself is sound: a well-formed one applies.
+    let ok = describe("phone", "web", &device.to_lowercase());
+    a.ok_in(&["sync", "apply"], &forged(&b, &a, ok));
+    assert_eq!(member_of(&a, &b.id())["client"], "web");
+
+    // The command refuses first, naming the character; nothing is written.
+    let out = b.fails(&["sync", "rename", "\u{1b}[2Jevil"], "");
+    assert!(
+        out.contains("a label cannot contain a control character (U+001B)"),
+        "{out}"
+    );
+    let out = b.fails(&["sync", "rename", &"x".repeat(65)], "");
+    assert!(out.contains("at most 64 characters"), "{out}");
+    assert_eq!(member_of(&b, &b.id())["label"], "b");
+}

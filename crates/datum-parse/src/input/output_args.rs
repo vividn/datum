@@ -197,6 +197,8 @@ pub fn shows_for(command: &str) -> &'static [Show] {
         "spec" => &[Show::Default, Show::Json],
         // `help --json` is the command table itself (da-r13j).
         "help" => &[Show::Default, Show::Json],
+        // A group: `sync members` and `sync status` render the document.
+        "sync" => &[Show::Default, Show::Json],
         // Everything else prints one thing, one way.
         _ => &[Show::Default],
     }

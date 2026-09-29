@@ -49,6 +49,7 @@ use super::row_mapper::row_to_entry;
 use super::Db;
 
 pub mod chain;
+pub mod status;
 use chain::{Chain, CHAIN_HID};
 
 // ─── The invocation ─────────────────────────────────────────────────────────

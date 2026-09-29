@@ -171,6 +171,7 @@ fn every_pair_has_a_roundtrip_test() {
         (42, 43),
         (43, 44),
         (44, 45),
+        (45, 46),
     ];
     assert_eq!(
         covered.len(),
@@ -2645,6 +2646,35 @@ fn roundtrip_v44_to_v45_sync_notices() {
 
     apply_one_down(conn, 45);
     assert!(!table_exists(conn, "sync_notices"));
+}
+
+#[test]
+fn roundtrip_v45_to_v46_sync_peer_sessions() {
+    let db = fresh_at(45);
+    let conn = db.conn();
+    conn.execute(
+        "INSERT INTO sync_peers (endpoint_id, label, addrs, added_at) VALUES ('e', 'l', '', 't')",
+        [],
+    )
+    .unwrap();
+
+    apply_one_up(conn, 45);
+    for c in [
+        "last_vector",
+        "last_verify_at",
+        "last_verify_match",
+        "last_error",
+        "last_error_at",
+    ] {
+        assert!(column_exists(conn, "sync_peers", c), "{c}");
+    }
+
+    apply_one_down(conn, 46);
+    assert!(!column_exists(conn, "sync_peers", "last_vector"));
+    let label: String = conn
+        .query_row("SELECT label FROM sync_peers", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(label, "l", "the peer stays");
 }
 
 fn field_occurtime_sql(conn: &Connection) -> String {

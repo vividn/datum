@@ -30,9 +30,16 @@
 //!     secret admits no one.
 //!   - `add_endpoint {endpoint, label}`, `revoke {endpoint}`,
 //!     `add_admin {key, label}`, `remove_admin {key}` — never the last.
+//!   - `describe {endpoint, device, label, client}` (da-rcb5m): what a
+//!     member is — the device it runs on (one per data directory, shared by
+//!     every db there, so one laptop's copies group as one device), its
+//!     label, `cli` or `web`. The latest per endpoint wins. Unsigned when an
+//!     endpoint describes ITSELF; about another member, admin-signed like
+//!     every admin act, so no member can relabel another.
 //!
 //!   Every record but a genesis must be written by a member, and the same
-//!   record twice does nothing the second time.
+//!   record twice does nothing the second time. Every label a record
+//!   carries must pass [`label_problem`]: each is printed on every member.
 //! - **Enforcement.** An entry op is allowed when its endpoint is a member
 //!   and, if revoked, was made before the revoke ([`Chain::allows`]):
 //!   admitting an endpoint vouches for the data it brings. A copy with no
@@ -60,6 +67,36 @@ pub const MIN_PREFIX: usize = 4;
 /// What a member not yet holding an invite says to its redeemer, which
 /// `connect` takes as a cue to try the ticket's next address.
 pub const UNKNOWN_INVITE: &str = "unknown invite";
+
+/// The longest label a member or an admin may carry, in characters.
+pub const MAX_LABEL: usize = 64;
+
+/// Why `label` may not name a member or an admin, if it may not. A label is
+/// printed on every member's terminal, so a control character (Unicode Cc:
+/// C0, DEL, C1) is refused — an escape there clears or retitles the screen —
+/// and so is a bidi control, which lets one label display as another's.
+pub fn label_problem(label: &str) -> Option<String> {
+    let bidi = |c: char| matches!(c, '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}');
+    if let Some(c) = label.chars().find(|c| c.is_control() || bidi(*c)) {
+        let what = match c.is_control() {
+            true => "a control character",
+            false => "a bidi control",
+        };
+        return Some(format!(
+            "a label cannot contain {what} (U+{:04X}): {label:?}",
+            c as u32
+        ));
+    }
+    let n = label.chars().count();
+    (n > MAX_LABEL).then(|| format!("a label is at most {MAX_LABEL} characters, not {n}"))
+}
+
+/// A device id as `device_id()` mints it: a ULID.
+fn is_device_id(s: &str) -> bool {
+    s.len() == 26
+        && s.chars()
+            .all(|c| "0123456789ABCDEFGHJKMNPQRSTVWXYZ".contains(c.to_ascii_uppercase()))
+}
 
 /// The hid every chain op is filed under.
 pub const CHAIN_HID: &str = "~chain";
@@ -269,6 +306,9 @@ pub struct Member {
     pub admitted: String,
     /// `genesis`, `admin`, or `invite <id>`.
     pub via: String,
+    /// From its latest `describe`: its device id and `cli` / `web`.
+    pub device: Option<String>,
+    pub client: Option<String>,
     /// The HLC of the revoke: its ops from then on are refused.
     pub revoked: Option<String>,
 }
@@ -347,6 +387,12 @@ impl Chain {
         if !self.seen.insert(d) {
             return Err("a record already in the chain".into());
         }
+        let admins = r["admins"].as_array().into_iter().flatten();
+        for label in admins.map(|a| &a["label"]).chain([&r["label"]]) {
+            if let Some(why) = label.as_str().and_then(label_problem) {
+                return Err(why);
+            }
+        }
         if kind == "genesis" {
             if self.exists() {
                 return Err("a second genesis".into());
@@ -401,8 +447,38 @@ impl Chain {
                 &format!("invite {via}"),
             );
         }
-        admin_signed(&self.admins, &d, &s("sig"))?;
+        // An endpoint describes itself unsigned; anything else takes an admin.
+        if kind != "describe" || op.endpoint != s("endpoint") {
+            admin_signed(&self.admins, &d, &s("sig"))?;
+        }
         match kind.as_str() {
+            "describe" => {
+                let client_ok = match &r["client"] {
+                    Value::Null => true,
+                    Value::String(c) => c == "cli" || c == "web",
+                    _ => false,
+                };
+                let device_ok = match &r["device"] {
+                    Value::Null => true,
+                    Value::String(d) => is_device_id(d),
+                    _ => false,
+                };
+                if !client_ok {
+                    return Err("a describe's client is cli or web".into());
+                }
+                if !device_ok {
+                    return Err("a describe's device is not a device id".into());
+                }
+                let m = self
+                    .members
+                    .iter_mut()
+                    .find(|m| m.endpoint == s("endpoint"))
+                    .ok_or("not a member")?;
+                m.label = s("label");
+                m.device = r["device"].as_str().map(Into::into);
+                m.client = r["client"].as_str().map(Into::into);
+                Ok(())
+            }
             "invite" => {
                 self.invites.insert(
                     s("invite_id"),
@@ -472,6 +548,8 @@ impl Chain {
             admitted: hlc.into(),
             via: via.into(),
             revoked: None,
+            device: None,
+            client: None,
         });
         Ok(())
     }
@@ -579,6 +657,25 @@ impl Db {
         note(&tx, &chain, quiet)?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// This copy's device id: one per data directory, shared by its dbs.
+    pub fn sync_device_id(&self) -> Result<String> {
+        endpoint(&self.conn)?;
+        Ok(self
+            .conn
+            .query_row("SELECT device_id FROM sync_local", [], |r| r.get(0))?)
+    }
+
+    /// Write this copy's own `describe`: unsigned, as only an endpoint
+    /// describing itself may be.
+    pub fn sync_describe_self(&self, label: &str, client: &str) -> Result<()> {
+        let record = json!({
+            "type": "describe", "chain": self.sync_chain()?.id,
+            "endpoint": self.sync_endpoint_id()?, "device": self.sync_device_id()?,
+            "label": label, "client": client, "created": Utc::now().to_rfc3339(),
+        });
+        self.sync_chain_write(record, true)
     }
 
     /// Redeem an invite for `endpoint`: write its `admit`, or say why not.
