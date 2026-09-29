@@ -102,7 +102,12 @@ impl Copy {
 
     /// `add-client` running, and its ticket.
     fn invite(&self, args: &[&str]) -> (Serving, String) {
-        let mut s = self.serve(&[&["sync", "add-client"], args].concat());
+        self.offer(&[&["sync", "add-client"], args].concat())
+    }
+
+    /// An invite being served (`add-client` or `invite`), and its ticket.
+    fn offer(&self, args: &[&str]) -> (Serving, String) {
+        let mut s = self.serve(args);
         let ticket = s
             .lines_until("datum sync connect ")
             .rsplit(' ')
@@ -419,4 +424,86 @@ fn without_keepalives_it_fails_says_what_landed_and_add_client_still_exits() {
     let now = b.ok(&["sync", "now"]);
     assert!(now.contains("verify ok"), "{now}");
     assert_eq!(a.hash(), b.hash());
+}
+
+// ─── The sync chain (da-odwc7) ──────────────────────────────────────────────
+
+/// `a` holds a chain whose admin key is the file it returns, and `b` joined
+/// it with an invite.
+fn chain() -> (Copy, Copy, String) {
+    let (a, b) = (Copy::new(), Copy::new());
+    let admin = a.tmp.path().join("admin.key").display().to_string();
+    a.ok(&["sync", "init", "--admin-key", &admin]);
+    let (mut inviting, ticket) = a.offer(&["sync", "invite", "--admin-key", &admin]);
+    b.ok(&["sync", "connect", &ticket]);
+    assert!(inviting.finish().0);
+    (a, b, admin)
+}
+
+#[test]
+fn a_member_admits_an_invites_redeemer_while_the_inviter_is_offline() {
+    let (a, b, admin) = chain();
+    a.ok(&["occur", "from-a"]);
+    let (inviting, ticket) = a.offer(&["sync", "invite", "--admin-key", &admin]);
+    // b fetches the invite, then a goes away.
+    b.ok(&["sync", "now"]);
+    drop(inviting);
+    let _b_runs = b.serve(&["sync", "run"]);
+
+    let mut c = Copy::new();
+    c.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
+    c.ok(&["occur", "from-c"]);
+    let joined = c.ok(&["sync", "connect", &ticket]);
+    assert!(joined.contains("verify ok"), "{joined}");
+    assert!(c.has("from-a") && b.has("from-c"));
+    let members = b.ok(&["sync", "members"]);
+    assert!(members.matches("via invite").count() == 2, "{members}");
+    assert!(members.contains(&c.id()[..10]), "{members}");
+}
+
+#[test]
+fn a_member_that_has_not_seen_the_invite_passes_the_redeemer_on() {
+    let (a, b, admin) = chain();
+    // d joins a second later, so a's ticket lists b before d.
+    std::thread::sleep(Duration::from_millis(1100));
+    let d = Copy::new();
+    let (mut inviting, ticket) = a.offer(&["sync", "invite", "--admin-key", &admin]);
+    d.ok(&["sync", "connect", &ticket]);
+    assert!(inviting.finish().0);
+
+    // Only d fetches the next invite before a goes away; b is behind.
+    let (inviting, ticket) = a.offer(&["sync", "invite", "--admin-key", &admin]);
+    d.ok(&["sync", "now"]);
+    drop(inviting);
+    let (_b_runs, _d_runs) = (b.serve(&["sync", "run"]), d.serve(&["sync", "run"]));
+    let mut c = Copy::new();
+    c.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
+    let joined = c.ok(&["sync", "connect", &ticket]);
+    assert!(joined.contains("verify ok"), "{joined}");
+    assert!(d.ok(&["sync", "members"]).contains(&c.id()[..10]));
+}
+
+#[test]
+fn a_chains_invite_is_one_time_and_expires_and_add_client_is_refused() {
+    let (a, _b, admin) = chain();
+    let refused = a.fails(&["sync", "add-client"], "");
+    assert!(refused.contains("`datum sync invite`"), "{refused}");
+
+    let (mut expiring, stale) =
+        a.offer(&["sync", "invite", "--admin-key", &admin, "--expires", "1s"]);
+    assert!(
+        !expiring.finish().0,
+        "an invite unredeemed when it expires fails"
+    );
+    let (mut inviting, once) = a.offer(&["sync", "invite", "--admin-key", &admin]);
+    Copy::new().ok(&["sync", "connect", &once]);
+    assert!(inviting.finish().0);
+
+    let _a_runs = a.serve(&["sync", "run"]);
+    let d = Copy::new();
+    let expired = d.fails(&["sync", "connect", &stale], "");
+    assert!(expired.contains("invite expired"), "{expired}");
+    let used = d.fails(&["sync", "connect", &once], "");
+    assert!(used.contains("invite already used"), "{used}");
+    assert!(!a.ok(&["sync", "members"]).contains(&d.id()[..10]));
 }

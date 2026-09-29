@@ -11,7 +11,7 @@ datum-core = { path = "../datum-core" }
 iroh = "1.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signal"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
-data-encoding = "2"
+data-encoding = { workspace = true }
 qrcode = { version = "0.14", default-features = false }
 anyhow = { workspace = true }
 chrono = { workspace = true }

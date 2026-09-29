@@ -138,6 +138,12 @@ pub enum IntegrityKind {
     /// side's `extra_metadata.sync_op` holds its op (`endpoint/seq`, `hlc`)
     /// and the command line that made it. Only ever `detected_by = sync_pull`.
     SyncConflict,
+    /// An op refused because its endpoint is not an admitted member of the
+    /// sync chain, or made it after its revoke (da-odwc7). Filed once per
+    /// endpoint while pending: `local_entry` is the entry as the op would
+    /// have left it, its `extra_metadata.sync_op` naming the op and why.
+    /// `datum sync ack <endpoint>` settles it. Only ever `sync_pull`.
+    SyncUnauthorised,
 }
 
 impl IntegrityKind {
@@ -151,6 +157,7 @@ impl IntegrityKind {
             IntegrityKind::LwwOverwrite => "lww_overwrite",
             IntegrityKind::IdentityCollision => "identity_collision",
             IntegrityKind::SyncConflict => "sync_conflict",
+            IntegrityKind::SyncUnauthorised => "sync_unauthorised",
         }
     }
 }
@@ -173,6 +180,7 @@ impl std::str::FromStr for IntegrityKind {
             "lww_overwrite" => Ok(IntegrityKind::LwwOverwrite),
             "identity_collision" => Ok(IntegrityKind::IdentityCollision),
             "sync_conflict" => Ok(IntegrityKind::SyncConflict),
+            "sync_unauthorised" => Ok(IntegrityKind::SyncUnauthorised),
             other => Err(format!("unknown kind: '{other}'")),
         }
     }
@@ -763,6 +771,18 @@ pub fn file_sync_conflict(
         Some(winner),
         DetectedBy::SyncPull,
         IntegrityKind::SyncConflict,
+    )
+}
+
+/// File an [`IntegrityKind::SyncUnauthorised`] warning for `refused`, the
+/// entry as a refused op would have left it.
+pub fn file_sync_unauthorised(conn: &Connection, refused: &Entry) -> Result<IntegrityWarning> {
+    file_warning(
+        conn,
+        refused,
+        None,
+        DetectedBy::SyncPull,
+        IntegrityKind::SyncUnauthorised,
     )
 }
 

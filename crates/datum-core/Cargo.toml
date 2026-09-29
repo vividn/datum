@@ -28,3 +28,5 @@ toml = { workspace = true }
 serde_ignored = { workspace = true }
 indexmap = { workspace = true }
 ed25519-dalek = { workspace = true }
+p256 = { workspace = true }
+data-encoding = { workspace = true }

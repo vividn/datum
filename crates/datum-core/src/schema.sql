@@ -331,6 +331,20 @@ CREATE TABLE IF NOT EXISTS sync_peers (
     announced   INTEGER NOT NULL DEFAULT 0
 );
 
+-- The sync chain's members and admins this copy has heard of (da-odwc7):
+-- `announced` once the next command has printed «new sync endpoint», and
+-- `acked` once `datum sync ack` took it off `datum check`. `subject` is an
+-- endpoint id or an admin key. LOCAL, never synced; the chain is in `ops`.
+CREATE TABLE IF NOT EXISTS sync_notices (
+    subject   TEXT NOT NULL PRIMARY KEY,
+    kind      TEXT NOT NULL,
+    label     TEXT NOT NULL,
+    at        TEXT NOT NULL,
+    via       TEXT NOT NULL,
+    announced INTEGER NOT NULL DEFAULT 0,
+    acked     INTEGER NOT NULL DEFAULT 0
+);
+
 -- One-time invites (`datum sync add-client`): the SHA-256 of each secret,
 -- never the secret, with its expiry and when it was redeemed. LOCAL.
 CREATE TABLE IF NOT EXISTS sync_invites (

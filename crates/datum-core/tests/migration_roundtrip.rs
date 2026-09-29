@@ -170,6 +170,7 @@ fn every_pair_has_a_roundtrip_test() {
         (41, 42),
         (42, 43),
         (43, 44),
+        (44, 45),
     ];
     assert_eq!(
         covered.len(),
@@ -2631,6 +2632,19 @@ fn roundtrip_v43_to_v44_sync_local_path() {
     apply_one_down(conn, 44);
     assert!(!column_exists(conn, "sync_local", "path"));
     assert!(table_exists(conn, "sync_local"));
+}
+
+#[test]
+fn roundtrip_v44_to_v45_sync_notices() {
+    let db = fresh_at(44);
+    let conn = db.conn();
+    assert!(!table_exists(conn, "sync_notices"));
+
+    apply_one_up(conn, 44);
+    assert!(table_exists(conn, "sync_notices"));
+
+    apply_one_down(conn, 45);
+    assert!(!table_exists(conn, "sync_notices"));
 }
 
 fn field_occurtime_sql(conn: &Connection) -> String {

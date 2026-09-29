@@ -100,6 +100,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     }
     if run_integrity {
         issues.extend(collect_integrity_warnings(db)?);
+        issues.extend(crate::commands::sync::notice_issues(db)?);
     }
     if run_flags {
         issues.extend(collect_pending_flags(db)?);
@@ -773,6 +774,25 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
                     s = if count == 1 { "" } else { "s" },
                 )
             }
+            IntegrityKind::SyncUnauthorised => {
+                let lines: Vec<String> = group
+                    .iter()
+                    .map(|w| {
+                        let op = &w.local_entry.extra_metadata.as_ref().unwrap_or(&JsonValue::Null)["sync_op"];
+                        format!(
+                            "  {}: {}",
+                            op["op"].as_str().unwrap_or("?"),
+                            op["refused"].as_str().unwrap_or("?")
+                        )
+                    })
+                    .collect();
+                format!(
+                    "ops from {count} endpoint{s} outside the sync chain were refused; \
+                     `datum sync ack <endpoint>` once you know why:\n{}",
+                    lines.join("\n"),
+                    s = if count == 1 { "" } else { "s" },
+                )
+            }
         };
         let category: &'static str = match kind {
             IntegrityKind::SameStateRepeat => "repeated_state",
@@ -783,6 +803,7 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
             IntegrityKind::LwwOverwrite => "integrity_lww_overwrite",
             IntegrityKind::IdentityCollision => "integrity_identity_collision",
             IntegrityKind::SyncConflict => "integrity_sync_conflict",
+            IntegrityKind::SyncUnauthorised => "integrity_sync_unauthorised",
         };
         // da-mkes: collect one FlaggedEntry per warning. The state column
         // gets a leading `!` for `repeated_state` rows so the human render

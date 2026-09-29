@@ -48,6 +48,9 @@ use super::insert::{apply_entry_state, try_insert};
 use super::row_mapper::row_to_entry;
 use super::Db;
 
+pub mod chain;
+use chain::{Chain, CHAIN_HID};
+
 // ─── The invocation ─────────────────────────────────────────────────────────
 
 #[derive(Default)]
@@ -429,6 +432,10 @@ impl Op {
         (!self.is_baseline(), tombstone, &self.hlc, &self.endpoint)
     }
 
+    fn is_chain(&self) -> bool {
+        self.kind == "chain"
+    }
+
     fn is_baseline(&self) -> bool {
         self.kind == "baseline"
     }
@@ -510,8 +517,15 @@ fn vector_where(conn: &Connection, hid: Option<&str>) -> Result<BTreeMap<String,
     rows.map_err(DatumError::Db)
 }
 
-/// Sign and store a new op of this copy's.
-fn push(conn: &Connection, ep: &Endpoint, e: &Entry, kind: &str, effect: Value) -> Result<()> {
+/// Sign and store a new op of this copy's; its seq.
+fn push(
+    conn: &Connection,
+    ep: &Endpoint,
+    hid: &str,
+    slug: &str,
+    kind: &str,
+    effect: Value,
+) -> Result<i64> {
     let seq: i64 = conn
         .prepare_cached("SELECT COALESCE(MAX(seq), 0) + 1 FROM ops WHERE endpoint = ?1")?
         .query_row(params![ep.id], |r| r.get(0))?;
@@ -522,13 +536,13 @@ fn push(conn: &Connection, ep: &Endpoint, e: &Entry, kind: &str, effect: Value) 
         "endpoint": ep.id,
         "seq": seq,
         "hlc": hlc,
-        "slug": e.slug,
-        "hid": e.hid,
+        "slug": slug,
+        "hid": hid,
         "kind": kind,
         "raw": raw,
         "alias_chain": alias_chain,
         "effect": effect,
-        "deps": vector_where(conn, Some(e.hid.as_str()))?,
+        "deps": vector_where(conn, Some(hid))?,
     });
     let sig = hex(&ep.key.sign(&digest(&v)).to_bytes());
     v["sig"] = sig.clone().into();
@@ -536,8 +550,8 @@ fn push(conn: &Connection, ep: &Endpoint, e: &Entry, kind: &str, effect: Value) 
         endpoint: ep.id.clone(),
         seq,
         hlc,
-        hid: e.hid.0.clone(),
-        slug: e.slug.0.clone(),
+        hid: hid.into(),
+        slug: slug.into(),
         kind: kind.into(),
         raw: None,
         // `store` reads the head and the body; the effect is in the body.
@@ -546,7 +560,19 @@ fn push(conn: &Connection, ep: &Endpoint, e: &Entry, kind: &str, effect: Value) 
         sig,
         body: canonical_json(&v),
     };
-    store(conn, &op, true)
+    store(conn, &op, true)?;
+    Ok(seq)
+}
+
+/// Sign and store an op of an entry's.
+fn push_entry(
+    conn: &Connection,
+    ep: &Endpoint,
+    e: &Entry,
+    kind: &str,
+    effect: Value,
+) -> Result<()> {
+    push(conn, ep, e.hid.as_str(), &e.slug.0, kind, effect).map(drop)
 }
 
 fn create_effect(e: &Entry) -> Value {
@@ -596,7 +622,7 @@ pub(super) fn emit(
     let ep = endpoint(conn)?;
     if let Some(pre) = pre {
         if !has_ops(conn, hid)? {
-            push(conn, &ep, pre, "baseline", create_effect(pre))?;
+            push_entry(conn, &ep, pre, "baseline", create_effect(pre))?;
         }
     }
     let kind = match (change, effect.get("deleted").and_then(Value::as_bool)) {
@@ -605,7 +631,7 @@ pub(super) fn emit(
         (ChangeKind::UserEdit, None) => "update",
         (k, _) => k.as_str(),
     };
-    push(conn, &ep, &post, kind, effect)
+    push_entry(conn, &ep, &post, kind, effect)
 }
 
 // ─── Apply ──────────────────────────────────────────────────────────────────
@@ -813,6 +839,145 @@ fn apply_one(conn: &Connection, x: &Op) -> Result<usize> {
     Ok(filed)
 }
 
+/// Apply every held op that is ready, records first, until none is; then
+/// refuse what still waits from an endpoint the chain does not allow.
+fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
+    let mut chain = Chain::load(conn)?;
+    let mut vector = vector_where(conn, None)?;
+    let waiting = loop {
+        let mut waiting = waiting_ops(conn)?;
+        // Records first: membership decides which of the rest apply.
+        waiting.sort_by(|a, b| (!a.is_chain(), a.order()).cmp(&(!b.is_chain(), b.order())));
+        let mut progressed = false;
+        for op in &waiting {
+            let have = |e: &str| vector.get(e).copied().unwrap_or(0);
+            let ready =
+                op.seq == have(&op.endpoint) + 1 && op.deps.iter().all(|(e, n)| have(e) >= *n);
+            if !ready || !op.is_chain() && chain.allows(&op.endpoint, &op.hlc).is_err() {
+                continue;
+            }
+            progressed = true;
+            if !op.is_chain() {
+                s.conflicts += apply_one(conn, op)?;
+                vector.insert(op.endpoint.clone(), op.seq);
+                s.applied += 1;
+                continue;
+            }
+            conn.execute(
+                "UPDATE ops SET applied = 1 WHERE endpoint = ?1 AND seq = ?2",
+                params![op.endpoint, op.seq],
+            )?;
+            // The chain is refolded whole per record: chains hold a handful
+            // of records, and the fold is what every copy must agree on.
+            chain = Chain::load(conn)?;
+            match chain.rejected.get(&(op.endpoint.clone(), op.seq)) {
+                Some(why) => s.refused.push(format!("{}/{}: {why}", op.endpoint, op.seq)),
+                None => s.applied += 1,
+            }
+            reconsider(conn, &chain, s)?;
+            chain::note(conn, &chain, false)?;
+            vector = vector_where(conn, None)?;
+            // What waits has changed with the membership.
+            break;
+        }
+        if !progressed {
+            break waiting;
+        }
+    };
+    // What still waits from an endpoint the chain refuses is refused.
+    let mut held = 0;
+    for op in &waiting {
+        match chain.allows(&op.endpoint, &op.hlc) {
+            Err(why) if !op.is_chain() => refuse(conn, op, &why, s)?,
+            _ => held += 1,
+        }
+    }
+    s.held = held;
+    Ok(())
+}
+
+fn waiting_ops(conn: &Connection) -> Result<Vec<Op>> {
+    conn.prepare_cached("SELECT body FROM ops WHERE applied = 0")?
+        .query_map([], |r| r.get::<_, String>(0))?
+        .map(|b| Op::parse(&b?))
+        .collect()
+}
+
+/// Refuse an op the chain does not allow: it is kept, applied = 2, so it is
+/// not asked for again, and a membership that later allows it lets it wait
+/// again ([`reconsider`]). The first refused of an endpoint files a
+/// `sync_unauthorised` warning, which `datum sync ack` settles.
+fn refuse(conn: &Connection, op: &Op, why: &str, s: &mut ApplySummary) -> Result<()> {
+    conn.execute(
+        "UPDATE ops SET applied = 2 WHERE endpoint = ?1 AND seq = ?2",
+        params![op.endpoint, op.seq],
+    )?;
+    s.refused.push(format!("{}/{}: {why}", op.endpoint, op.seq));
+    let tag = format!("\"op\":\"{}/", op.endpoint);
+    let warned = conn
+        .prepare_cached(
+            "SELECT 1 FROM integrity_warnings WHERE kind = 'sync_unauthorised'
+               AND resolution IS NULL AND instr(local_entry, ?1) > 0",
+        )?
+        .exists(params![tag])?;
+    let mut r = fetch_by_hid(conn, &op.hid)?.map(|e| row(&e));
+    fold_into(&mut r, &op.effect);
+    if let (false, Some(r)) = (warned, r) {
+        let mut side = conflict_side(&entry_from(r)?, op, false)?;
+        if let Some(m) = side.extra_metadata.as_mut() {
+            m["sync_op"]["refused"] = why.into();
+        }
+        crate::integrity::file_sync_unauthorised(conn, &side)?;
+    }
+    Ok(())
+}
+
+/// The membership moved: refused ops it now allows wait again, and applied
+/// ops it no longer allows — a revoked endpoint's, made after the revoke —
+/// are refused and their entries refolded without them.
+fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<()> {
+    let bodies = |sql: &str, p: &[&dyn rusqlite::ToSql]| -> Result<Vec<Op>> {
+        conn.prepare_cached(sql)?
+            .query_map(p, |r| r.get::<_, String>(0))?
+            .map(|b| Op::parse(&b?))
+            .collect()
+    };
+    for op in bodies("SELECT body FROM ops WHERE applied = 2", &[])? {
+        if chain.allows(&op.endpoint, &op.hlc).is_ok() {
+            conn.execute(
+                "UPDATE ops SET applied = 0 WHERE endpoint = ?1 AND seq = ?2",
+                params![op.endpoint, op.seq],
+            )?;
+        }
+    }
+    // A revoked endpoint's applied ops from its revoke on: its own, by key.
+    let mut hids = BTreeSet::new();
+    for m in &chain.members {
+        let Some(revoked) = &m.revoked else { continue };
+        let sql = "SELECT body FROM ops
+                   WHERE endpoint = ?1 AND applied = 1 AND hlc >= ?2 AND hid != ?3";
+        for op in bodies(sql, &[&m.endpoint, revoked, &CHAIN_HID])? {
+            if let Err(why) = chain.allows(&op.endpoint, &op.hlc) {
+                refuse(conn, &op, &why, s)?;
+                hids.insert(op.hid);
+            }
+        }
+    }
+    for hid in hids {
+        let pre = fetch_by_hid(conn, &hid)?;
+        match fold(&ops_of(conn, &hid)?, None) {
+            Some(r) => write_merged(conn, pre.as_ref(), entry_from(r)?)?,
+            None => {
+                if let Some(pre) = pre {
+                    history::record(conn, &pre, ChangeKind::SyncMerge)?;
+                    conn.execute("DELETE FROM entries WHERE hid = ?1", params![hid])?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 impl Db {
     /// This copy's endpoint secret, minted on first need. It is also the
     /// iroh endpoint's key, so the iroh endpoint id IS the ops' `endpoint`
@@ -866,7 +1031,7 @@ impl Db {
         if !uncovered.is_empty() {
             let ep = endpoint(&tx)?;
             for e in &uncovered {
-                push(&tx, &ep, e, "baseline", create_effect(e))?;
+                push_entry(&tx, &ep, e, "baseline", create_effect(e))?;
             }
         }
         let mut stmt = tx.prepare(
@@ -930,31 +1095,7 @@ impl Db {
                     .push(format!("{}/{}: {SHARED_KEY}", op.endpoint, op.seq)),
             }
         }
-        let mut vector = vector_where(&tx, None)?;
-        loop {
-            let mut waiting: Vec<Op> = tx
-                .prepare("SELECT body FROM ops WHERE applied = 0")?
-                .query_map([], |r| r.get::<_, String>(0))?
-                .collect::<rusqlite::Result<Vec<_>>>()?
-                .iter()
-                .map(|b| Op::parse(b))
-                .collect::<Result<_>>()?;
-            waiting.sort_by(|a, b| a.order().cmp(&b.order()));
-            let mut progressed = false;
-            for op in &waiting {
-                let have = |e: &str| vector.get(e).copied().unwrap_or(0);
-                if op.seq == have(&op.endpoint) + 1 && op.deps.iter().all(|(e, n)| have(e) >= *n) {
-                    s.conflicts += apply_one(&tx, op)?;
-                    vector.insert(op.endpoint.clone(), op.seq);
-                    s.applied += 1;
-                    progressed = true;
-                }
-            }
-            if !progressed {
-                s.held = waiting.len();
-                break;
-            }
-        }
+        settle(&tx, &mut s)?;
         tx.commit()?;
         Ok(s)
     }

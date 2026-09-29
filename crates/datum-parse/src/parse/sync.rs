@@ -30,30 +30,54 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             ticket: rest.next().map(|t| t.to_string()),
         },
         "add-client" => {
-            let (mut qr, mut expires_secs) = (false, 600);
-            while let Some(t) = rest.next() {
-                let value = match split_flag(t) {
-                    FlagSplit::Long("qr") => {
-                        qr = true;
-                        continue;
-                    }
-                    FlagSplit::LongAttached("expires", v) => v,
-                    FlagSplit::Long("expires") => rest.next().ok_or_else(|| {
-                        ParseError::InvalidArg("--expires needs a duration".into())
-                    })?,
-                    f => return Err(unknown_flag(f)),
-                };
-                expires_secs = u64::try_from(crate::time::parse_duration(value)?.num_seconds())
-                    .ok()
-                    .filter(|s| *s > 0)
-                    .ok_or_else(|| {
-                        ParseError::InvalidArg(format!(
-                            "--expires must be a positive duration: {value}"
-                        ))
-                    })?;
+            let o = opts(&mut rest, &["expires"], &["qr"], 0)?;
+            SyncCommand::AddClient {
+                qr: o.on("qr"),
+                expires_secs: o.expires()?,
             }
-            SyncCommand::AddClient { qr, expires_secs }
         }
+        "invite" => {
+            let o = opts(&mut rest, &["expires", "admin-key"], &["qr"], 0)?;
+            SyncCommand::Invite {
+                qr: o.on("qr"),
+                expires_secs: o.expires()?,
+                admin_key: o.get("admin-key"),
+            }
+        }
+        "init" => {
+            let o = opts(&mut rest, &["admin-key", "admin-passkey"], &[], 0)?;
+            let (admin_key, admin_passkey) = (o.get("admin-key"), o.get("admin-passkey"));
+            if admin_key.is_some() == admin_passkey.is_some() {
+                return Err(ParseError::InvalidArg(
+                    "sync init needs one of --admin-key <FILE> or --admin-passkey <JSON>".into(),
+                ));
+            }
+            SyncCommand::Init {
+                admin_key,
+                admin_passkey,
+            }
+        }
+        "revoke" | "add-endpoint" | "add-admin" | "remove-admin" => {
+            let mut o = opts(&mut rest, &["admin-key", "label"], &[], 1)?;
+            SyncCommand::Admin {
+                act: match sub {
+                    "revoke" => SyncAdminAct::Revoke,
+                    "add-endpoint" => SyncAdminAct::AddEndpoint,
+                    "add-admin" => SyncAdminAct::AddAdmin,
+                    _ => SyncAdminAct::RemoveAdmin,
+                },
+                who: o.positional.remove(0),
+                label: o.get("label"),
+                admin_key: o.get("admin-key"),
+            }
+        }
+        "members" => SyncCommand::Members,
+        "ack" => SyncCommand::Ack {
+            who: rest
+                .next()
+                .ok_or_else(|| ParseError::InvalidArg("ack needs an endpoint or admin".into()))?
+                .to_string(),
+        },
         "verify" => {
             let verbose = match rest.next().map(|t| split_flag(t)) {
                 Some(FlagSplit::Long("verbose") | FlagSplit::Short('v')) => true,
@@ -79,7 +103,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         }
         other => {
             return Err(ParseError::InvalidArg(format!(
-                "unknown sync subcommand: '{other}' (expected add-client|connect|now|run|peers|forget|rekey|vector|ops|apply|verify)"
+                "unknown sync subcommand: '{other}' (expected init|invite|connect|members|ack|revoke|add-endpoint|add-admin|remove-admin|add-client|now|run|peers|forget|rekey|vector|ops|apply|verify)"
             )))
         }
     };
@@ -87,6 +111,77 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         Some(t) => Err(unknown_flag(split_flag(t))),
         None => Ok(cmd),
     }
+}
+
+/// A subcommand's flags: `values` take one (`--x V` or `--x=V`), `switches`
+/// none, and exactly `positionals` bare words are taken.
+struct Opts {
+    values: std::collections::BTreeMap<String, String>,
+    switches: Vec<String>,
+    positional: Vec<String>,
+}
+
+impl Opts {
+    fn get(&self, name: &str) -> Option<String> {
+        self.values.get(name).cloned()
+    }
+
+    fn on(&self, name: &str) -> bool {
+        self.switches.iter().any(|s| s == name)
+    }
+
+    /// `--expires`, 10 minutes by default.
+    fn expires(&self) -> Result<u64> {
+        let Some(value) = self.values.get("expires") else {
+            return Ok(600);
+        };
+        u64::try_from(crate::time::parse_duration(value)?.num_seconds())
+            .ok()
+            .filter(|s| *s > 0)
+            .ok_or_else(|| {
+                ParseError::InvalidArg(format!("--expires must be a positive duration: {value}"))
+            })
+    }
+}
+
+fn opts<'a>(
+    rest: &mut std::slice::Iter<'a, &'a str>,
+    values: &[&str],
+    switches: &[&str],
+    positionals: usize,
+) -> Result<Opts> {
+    let mut o = Opts {
+        values: Default::default(),
+        switches: Vec::new(),
+        positional: Vec::new(),
+    };
+    while let Some(t) = rest.next() {
+        let (name, value) = match split_flag(t) {
+            FlagSplit::Long(n) if switches.contains(&n) => {
+                o.switches.push(n.to_string());
+                continue;
+            }
+            FlagSplit::LongAttached(n, v) if values.contains(&n) => (n, v),
+            FlagSplit::Long(n) if values.contains(&n) => (
+                n,
+                *rest
+                    .next()
+                    .ok_or_else(|| ParseError::InvalidArg(format!("--{n} needs a value")))?,
+            ),
+            _ if !t.starts_with('-') && o.positional.len() < positionals => {
+                o.positional.push(t.to_string());
+                continue;
+            }
+            f => return Err(unknown_flag(f)),
+        };
+        o.values.insert(name.to_string(), value.to_string());
+    }
+    if o.positional.len() < positionals {
+        return Err(ParseError::InvalidArg(
+            "this sync subcommand needs an argument".into(),
+        ));
+    }
+    Ok(o)
 }
 
 #[cfg(test)]
@@ -136,6 +231,37 @@ mod tests {
             SyncCommand::Forget { peer: "abc".into() }
         );
         assert_eq!(parse_sync_cmd(&["rekey"]).unwrap(), SyncCommand::Rekey);
+        assert_eq!(
+            parse_sync_cmd(&["init", "--admin-key", "k"]).unwrap(),
+            SyncCommand::Init {
+                admin_key: Some("k".into()),
+                admin_passkey: None
+            }
+        );
+        assert!(parse_sync_cmd(&["init"]).is_err());
+        assert_eq!(
+            parse_sync_cmd(&["invite", "--admin-key=k", "--qr"]).unwrap(),
+            SyncCommand::Invite {
+                qr: true,
+                expires_secs: 600,
+                admin_key: Some("k".into())
+            }
+        );
+        assert_eq!(
+            parse_sync_cmd(&["add-endpoint", "abc", "--label", "phone"]).unwrap(),
+            SyncCommand::Admin {
+                act: SyncAdminAct::AddEndpoint,
+                who: "abc".into(),
+                label: Some("phone".into()),
+                admin_key: None
+            }
+        );
+        assert!(parse_sync_cmd(&["revoke"]).is_err());
+        assert!(parse_sync_cmd(&["revoke", "a", "b"]).is_err());
+        assert_eq!(
+            parse_sync_cmd(&["ack", "abc"]).unwrap(),
+            SyncCommand::Ack { who: "abc".into() }
+        );
         assert!(parse_sync_cmd(&["rekey", "extra"]).is_err());
         assert!(parse_sync_cmd(&["forget"]).is_err());
         assert!(parse_sync_cmd(&["add-client", "--expires", "0s"]).is_err());

@@ -7,9 +7,12 @@
 //!   iroh endpoint id is the `endpoint` every op of this copy carries. ALPN
 //!   `datum/sync/2`, n0's relays and discovery. `DATUM_SYNC_BIND=<ip:port>`
 //!   binds that one address with no relay and no discovery (a LAN, the tests).
-//! - **Peers.** Until signed membership, trust is pairwise: a peer is whoever
-//!   redeemed an invite from this copy, or whose invite it redeemed. Anyone
-//!   else is refused at the handshake, and so is this copy's own key.
+//! - **Peers.** With no sync chain, trust is pairwise: a peer is whoever
+//!   redeemed an invite from this copy, or whose invite it redeemed. In a
+//!   chain (da-odwc7) a peer is a member, and `sync_peers` only remembers
+//!   where members were last seen: any member admits the redeemer of an
+//!   admin-signed invite, and only unrevoked members are served or dialed.
+//!   Anyone else is refused at the handshake, and so is this copy's own key.
 //! - **Wire.** One bidirectional stream of frames, each a big-endian u32
 //!   length and its bytes. The dialer sends a [`Hello`], the acceptor a
 //!   [`Reply`]. Then rounds: each side sends its version vector, then the ops
@@ -30,7 +33,7 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use data_encoding::BASE32_NOPAD;
-use datum_core::db::Db;
+use datum_core::db::{chain, Db};
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use iroh::endpoint::{presets, Incoming, RecvStream, SendStream};
 use iroh::{Endpoint, EndpointAddr, RelayMode, SecretKey};
@@ -67,7 +70,7 @@ fn short(id: &str) -> &str {
 }
 
 /// How this copy names itself to a peer: the host and the client type.
-fn label() -> String {
+pub fn label() -> String {
     let mut buf = [0u8; 256];
     // SAFETY: gethostname writes at most `buf.len()` bytes into `buf`.
     let host = if unsafe { libc::gethostname(buf.as_mut_ptr().cast(), buf.len()) } == 0 {
@@ -121,6 +124,17 @@ impl Peer {
     }
 }
 
+/// The peers to sync with: in a chain, those still members.
+fn synced_peers(db: &Db) -> Result<Vec<Peer>> {
+    let mut out = Vec::new();
+    for p in peers(db)? {
+        if is_peer(db, &p.id)? {
+            out.push(p);
+        }
+    }
+    Ok(out)
+}
+
 pub fn peers(db: &Db) -> Result<Vec<Peer>> {
     let mut stmt = db.conn().prepare(
         "SELECT endpoint_id, label, addrs, added_at, last_seen FROM sync_peers ORDER BY added_at",
@@ -137,7 +151,12 @@ pub fn peers(db: &Db) -> Result<Vec<Peer>> {
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
+/// A copy this one syncs with: in a chain, an unrevoked member; else a peer.
 fn is_peer(db: &Db, id: &str) -> Result<bool> {
+    let chain = db.sync_chain()?;
+    if chain.exists() {
+        return Ok(chain.member(id).is_some_and(|m| m.revoked.is_none()));
+    }
     Ok(db
         .conn()
         .query_row(
@@ -191,10 +210,11 @@ fn redeem(db: &Db, secret: &str) -> Result<(), String> {
 
 // ─── Wire ───────────────────────────────────────────────────────────────────
 
-/// A one-time invite: where to dial, and the secret to present.
+/// A one-time invite: where to dial — the inviter first, then the peers it
+/// knows, any of which can admit the redeemer in a chain — and the secret.
 #[derive(Serialize, Deserialize)]
 struct Ticket {
-    addr: EndpointAddr,
+    addrs: Vec<EndpointAddr>,
     secret: String,
 }
 
@@ -406,8 +426,7 @@ async fn exchange(
 async fn dial(db: &Db, ep: &Endpoint, addr: EndpointAddr, invite: Option<&str>) -> Result<Report> {
     ensure!(addr.id != ep.id(), COPY);
     let id = addr.id.to_string();
-    let conn = ep
-        .connect(addr, ALPN)
+    let conn = within(async { Ok(ep.connect(addr, ALPN).await?) })
         .await
         .map_err(|e| anyhow!("could not reach {}: {e}", short(&id)))?;
     let (mut s, mut r) = conn.open_bi().await?;
@@ -452,10 +471,15 @@ async fn serve(db: &Db, ep: &Endpoint, incoming: Incoming) -> Result<Report> {
     let hello: Hello = get_json(&mut r, MAX_HELLO).await?;
     // An invite presented is redeemed or refused, even by a peer: one use.
     let known = is_peer(db, &id)?;
+    let chained = db.sync_chain()?.exists();
     let verdict = match &hello.invite {
         _ if conn.remote_id() == ep.id() => Err(COPY.to_string()),
+        Some(secret) if chained => db
+            .sync_admit(&id, &hello.label, secret)
+            .map_err(|e| e.to_string()),
         Some(secret) => redeem(db, secret),
         None if known => Ok(()),
+        None if chained => Err("not a member of this sync chain".into()),
         None => Err("not a peer of this copy: redeem an invite from it first".into()),
     };
     if let Err(why) = verdict {
@@ -522,22 +546,40 @@ fn print_added(rep: &Report) {
 
 // ─── Commands ───────────────────────────────────────────────────────────────
 
+/// A new invite secret, and when an invite made now for `expires` ends.
+pub fn new_invite(expires: Duration) -> (String, String) {
+    let expires_at = (Utc::now() + expires).to_rfc3339_opts(SecondsFormat::Secs, true);
+    (hex(&rand::random::<[u8; 32]>()), expires_at)
+}
+
 /// `datum sync add-client`: mint a one-time invite, print how to redeem it,
 /// and serve until it is redeemed (or expires).
 pub fn add_client(db: &Db, expires: Duration, qr: bool) -> Result<()> {
-    let secret = hex(&rand::random::<[u8; 32]>());
-    let expires_at = (Utc::now() + expires).to_rfc3339_opts(SecondsFormat::Secs, true);
+    ensure!(
+        !db.sync_chain()?.exists(),
+        "this copy is in a sync chain: `datum sync invite` makes an invite"
+    );
+    let (secret, expires_at) = new_invite(expires);
     db.conn().execute(
         "INSERT INTO sync_invites (secret_hash, expires_at) VALUES (?1, ?2)",
         params![sha256_hex(&secret), expires_at],
     )?;
+    offer(db, &secret, expires, &expires_at, qr)
+}
+
+/// Print how to redeem the invite whose secret is `secret`, and serve until
+/// it is redeemed (or expires). In a chain, `datum sync invite` has written
+/// the invite; any member can admit its redeemer.
+pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: bool) -> Result<()> {
+    let secret = secret.to_string();
     runtime()?.block_on(async {
         let ep = bind(db).await?;
-        let ticket = Ticket {
-            addr: ep.addr(),
-            secret,
+        let mut addrs = vec![ep.addr()];
+        // Only a chain's members can admit the redeemer of its invite.
+        if db.sync_chain()?.exists() {
+            addrs.extend(synced_peers(db)?.iter().filter_map(|p| p.addr().ok()));
         }
-        .encode()?;
+        let ticket = Ticket { addrs, secret }.encode()?;
         println!("One-time invite, until {expires_at}. On the other copy run:\n");
         println!("  datum sync connect {ticket}\n");
         if qr {
@@ -572,12 +614,25 @@ pub fn add_client(db: &Db, expires: Duration, qr: bool) -> Result<()> {
     })
 }
 
-/// `datum sync connect <ticket>`: redeem an invite and sync.
+/// `datum sync connect <ticket>`: redeem an invite and sync, with the first
+/// of the ticket's addresses that admits it.
 pub fn connect(db: &Db, ticket: &str) -> Result<()> {
     let t = Ticket::decode(ticket)?;
     runtime()?.block_on(async {
         let ep = bind(db).await?;
-        let rep = dial(db, &ep, t.addr, Some(&t.secret)).await;
+        let mut rep = Err(anyhow!("the ticket names no address"));
+        for addr in t.addrs {
+            rep = dial(db, &ep, addr, Some(&t.secret)).await;
+            // Unreachable, or a member not yet holding the invite: the next
+            // address may admit.
+            let next = rep.as_ref().is_err_and(|e| {
+                let e = e.to_string();
+                e.starts_with("could not reach") || e.ends_with(chain::UNKNOWN_INVITE)
+            });
+            if !next {
+                break;
+            }
+        }
         ep.close().await;
         if let Err(e) = &rep {
             paired_unfinished(e);
@@ -589,7 +644,7 @@ pub fn connect(db: &Db, ticket: &str) -> Result<()> {
 
 /// `datum sync now`: sync with every peer once.
 pub fn now_all(db: &Db) -> Result<()> {
-    let peers = peers(db)?;
+    let peers = synced_peers(db)?;
     if peers.is_empty() {
         println!("no sync peers: `datum sync add-client` makes an invite");
         return Ok(());
@@ -666,7 +721,7 @@ pub fn run(db: &Db) -> Result<()> {
                 }
                 _ = tick.tick() => {
                     let vector = db.sync_vector()?;
-                    for p in peers(db)? {
+                    for p in synced_peers(db)? {
                         let waiting = retry.get(&p.id).is_some_and(|t| *t > tokio::time::Instant::now());
                         if waiting || pushed.get(&p.id) == Some(&vector) {
                             continue;

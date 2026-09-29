@@ -776,6 +776,39 @@ pub enum SyncCommand {
     Forget { peer: String },
     /// `datum sync rekey` — a new endpoint key for this copy (da-p79vq).
     Rekey,
+    /// `datum sync init (--admin-key <FILE> | --admin-passkey <JSON>)` —
+    /// start a sync chain (da-odwc7) with that admin key.
+    Init {
+        admin_key: Option<String>,
+        admin_passkey: Option<String>,
+    },
+    /// `datum sync invite [--qr] [--expires <DUR>] [--admin-key <FILE>]` —
+    /// an admin-signed invite any member can admit, served until redeemed.
+    Invite {
+        qr: bool,
+        expires_secs: u64,
+        admin_key: Option<String>,
+    },
+    /// `datum sync <revoke|add-endpoint|add-admin|remove-admin> <WHO>
+    /// [--label <L>] [--admin-key <FILE>]` — an admin act on the chain.
+    Admin {
+        act: SyncAdminAct,
+        who: String,
+        label: Option<String>,
+        admin_key: Option<String>,
+    },
+    /// `datum sync members` — the chain's admins and endpoints.
+    Members,
+    /// `datum sync ack <WHO>` — acknowledge a new endpoint or admin.
+    Ack { who: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncAdminAct {
+    Revoke,
+    AddEndpoint,
+    AddAdmin,
+    RemoveAdmin,
 }
 
 // ─── Conflicts (da-ttsm) ──────────────────────────────────────────────────

@@ -77,6 +77,32 @@ pub(super) fn down_44_to_43_sync_local_path(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// The sync chain (da-odwc7): `sync_notices`, the loud warning's memory of
+/// which members and admins this copy has announced and had acknowledged.
+pub(super) fn m44_to_45_sync_notices(conn: &Connection) -> Result<()> {
+    conn.execute_batch(SYNC_NOTICES_SQL)?;
+    Ok(())
+}
+
+/// Reverse v44→v45. Local: the notices are gone, the chain's ops stay.
+pub(super) fn down_45_to_44_sync_notices(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DROP TABLE IF EXISTS sync_notices;")?;
+    Ok(())
+}
+
+/// The v45 table exactly as `schema.sql` creates it.
+const SYNC_NOTICES_SQL: &str = "
+CREATE TABLE IF NOT EXISTS sync_notices (
+    subject   TEXT NOT NULL PRIMARY KEY,
+    kind      TEXT NOT NULL,
+    label     TEXT NOT NULL,
+    at        TEXT NOT NULL,
+    via       TEXT NOT NULL,
+    announced INTEGER NOT NULL DEFAULT 0,
+    acked     INTEGER NOT NULL DEFAULT 0
+);
+";
+
 /// The v43 tables exactly as `schema.sql` creates them.
 const SYNC_PEERS_SQL: &str = "
 CREATE TABLE IF NOT EXISTS sync_peers (

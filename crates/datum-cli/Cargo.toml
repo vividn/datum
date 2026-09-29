@@ -72,3 +72,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = "3"
 md-5 = { workspace = true }
+# A software passkey for the sync chain tests (da-odwc7).
+p256 = { workspace = true }
+sha2 = { workspace = true }
+data-encoding = { workspace = true }

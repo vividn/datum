@@ -55,6 +55,10 @@ rand = "0.8"
 # Easy Sync: each database copy signs its ops with an Ed25519 endpoint key —
 # the curve iroh uses, so the same key becomes the iroh endpoint (da-k329q).
 ed25519-dalek = { version = "2", default-features = false, features = ["std", "fast", "rand_core", "zeroize"] }
+# The sync chain's admin keys are passkeys: a WebAuthn assertion is ES256
+# (P-256 ECDSA), verified by every peer offline (da-odwc7).
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
+data-encoding = "2"
 
 # Text
 regex-lite = "0.1"
