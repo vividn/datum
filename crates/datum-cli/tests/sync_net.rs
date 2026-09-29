@@ -14,6 +14,8 @@ use tempfile::TempDir;
 struct Copy {
     tmp: TempDir,
     port: u16,
+    /// Set on every `datum` this copy runs.
+    env: Vec<(&'static str, &'static str)>,
 }
 
 impl Copy {
@@ -25,6 +27,7 @@ impl Copy {
         Self {
             tmp: tempfile::tempdir().expect("create tmpdir"),
             port,
+            env: Vec::new(),
         }
     }
 
@@ -39,6 +42,7 @@ impl Copy {
             .env("DATUM_CONFIG_HOME", self.tmp.path().join("config"))
             .env("DATUM_COLOR", "0")
             .env("DATUM_SYNC_BIND", format!("127.0.0.1:{}", self.port))
+            .envs(self.env.iter().copied())
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -324,4 +328,95 @@ fn a_new_peer_is_announced_once() {
         let second = String::from_utf8(copy.run(&["tail"]).stderr).unwrap();
         assert!(!second.contains("new sync peer"), "{second}");
     }
+}
+
+#[test]
+fn forget_takes_a_label_or_an_id_prefix_and_refuses_an_ambiguous_one() {
+    let c = Copy::new();
+    assert_eq!(c.ok(&["sync", "peers"]).trim(), "no sync peers");
+    let conn = rusqlite::Connection::open(c.db()).unwrap();
+    for id in ["aaaa1111", "bbbb2222"] {
+        conn.execute(
+            "INSERT INTO sync_peers (endpoint_id, label, addrs, added_at, announced)
+             VALUES (?1, 'laptop (cli)', '{}', '2026-09-29T00:00:00Z', 1)",
+            [id],
+        )
+        .unwrap();
+    }
+    let both = c.fails(&["sync", "forget", "laptop (cli)"], "");
+    assert!(both.contains("names 2 sync peers"), "{both}");
+    assert!(c
+        .ok(&["sync", "forget", "bbbb"])
+        .contains("forgot sync peer laptop (cli) (bbbb2222)"));
+    assert!(c
+        .ok(&["sync", "forget", "laptop (cli)"])
+        .contains("(aaaa1111)"));
+    assert_eq!(c.ok(&["sync", "peers"]).trim(), "no sync peers");
+}
+
+/// A first sync whose apply outlasts the progress timeout (da-039jx): b applies
+/// a's 300-odd ops at 20ms each, 6s, on a 3s timeout, sending a `BUSY` every
+/// 64 ops (1.3s) unless `keepalive` is off. The connect's output, and whether
+/// add-client exited 0 and what it printed.
+fn slow_first_sync(keepalive: bool) -> (Copy, Copy, Output, (bool, String)) {
+    let (mut a, mut b) = (Copy::new(), Copy::new());
+    for i in 0..300 {
+        a.ok(&["occur", "step", &format!("n={i}")]);
+    }
+    for c in [&mut a, &mut b] {
+        c.env = vec![
+            ("DATUM_SYNC_TIMEOUT_S", "3"),
+            ("DATUM_SYNC_TEST_APPLY_DELAY_MS", "20"),
+            (
+                "DATUM_SYNC_TEST_KEEPALIVE",
+                if keepalive { "1" } else { "0" },
+            ),
+        ];
+    }
+    let (mut inviting, ticket) = a.invite(&[]);
+    let joined = b.run(&["sync", "connect", &ticket]);
+    let served = inviting.finish();
+    (a, b, joined, served)
+}
+
+#[test]
+fn a_first_sync_longer_than_the_timeout_completes_on_keepalives() {
+    let (a, b, joined, (ok, served)) = slow_first_sync(true);
+    let text = String::from_utf8_lossy(&joined.stdout);
+    assert!(
+        joined.status.success(),
+        "{text}{}",
+        String::from_utf8_lossy(&joined.stderr)
+    );
+    assert!(text.contains("verify ok"), "{text}");
+    assert!(ok && served.contains("verify ok"), "{served}");
+    assert_eq!(a.hash(), b.hash());
+}
+
+#[test]
+fn without_keepalives_it_fails_says_what_landed_and_add_client_still_exits() {
+    let (a, b, joined, (ok, served)) = slow_first_sync(false);
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&joined.stdout),
+        String::from_utf8_lossy(&joined.stderr)
+    );
+    assert!(!joined.status.success(), "{text}");
+    assert!(text.contains("applied 30"), "{text}");
+    assert!(text.contains("paired with"), "{text}");
+    // The pairing held although the session failed: add-client exits 0.
+    assert!(ok, "{served}");
+    assert!(
+        served.contains("paired with") && served.contains("datum sync now"),
+        "{served}"
+    );
+
+    // And it is a pairing: the next sync finishes what the first began.
+    let (mut a, mut b) = (a, b);
+    a.env.clear();
+    b.env.clear();
+    let _a_runs = a.serve(&["sync", "run"]);
+    let now = b.ok(&["sync", "now"]);
+    assert!(now.contains("verify ok"), "{now}");
+    assert_eq!(a.hash(), b.hash());
 }

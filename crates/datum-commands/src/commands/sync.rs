@@ -51,11 +51,9 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             }
         }
         #[cfg(feature = "net")]
-        SyncCommand::AddClient { qr, expires_secs } => datum_sync::add_client(
-            db,
-            std::time::Duration::from_secs(expires_secs.unsigned_abs()),
-            qr,
-        )?,
+        SyncCommand::AddClient { qr, expires_secs } => {
+            datum_sync::add_client(db, std::time::Duration::from_secs(expires_secs), qr)?
+        }
         #[cfg(feature = "net")]
         SyncCommand::Connect { ticket } => {
             let ticket = match ticket {

@@ -42,12 +42,14 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                     })?,
                     f => return Err(unknown_flag(f)),
                 };
-                expires_secs = crate::time::parse_duration(value)?.num_seconds();
-                if expires_secs <= 0 {
-                    return Err(ParseError::InvalidArg(format!(
-                        "--expires must be a positive duration: {value}"
-                    )));
-                }
+                expires_secs = u64::try_from(crate::time::parse_duration(value)?.num_seconds())
+                    .ok()
+                    .filter(|s| *s > 0)
+                    .ok_or_else(|| {
+                        ParseError::InvalidArg(format!(
+                            "--expires must be a positive duration: {value}"
+                        ))
+                    })?;
             }
             SyncCommand::AddClient { qr, expires_secs }
         }

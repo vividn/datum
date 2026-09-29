@@ -775,6 +775,9 @@ impl Db {
     /// This copy's endpoint secret, minted on first need. It is also the
     /// iroh endpoint's key, so the iroh endpoint id IS the ops' `endpoint`
     /// (da-rugg8).
+    /// Stored in the clear in `sync_local`, like the rest of the file: who
+    /// can read the database can sign as this copy and, since da-rugg8,
+    /// answer to its endpoint id on the network.
     pub fn sync_endpoint_secret(&self) -> Result<[u8; 32]> {
         Ok(endpoint(&self.conn)?.key.to_bytes())
     }

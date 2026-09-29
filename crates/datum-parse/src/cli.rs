@@ -723,7 +723,7 @@ pub enum SyncCommand {
     Verify { verbose: bool },
     /// `datum sync add-client [--qr] [--expires <DUR>]` — a one-time invite
     /// (da-rugg8), served until it is redeemed or expires.
-    AddClient { qr: bool, expires_secs: i64 },
+    AddClient { qr: bool, expires_secs: u64 },
     /// `datum sync connect [<TICKET>]` — redeem an invite (the ticket from
     /// stdin when not given) and sync.
     Connect { ticket: Option<String> },

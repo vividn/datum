@@ -9,7 +9,7 @@ edition.workspace = true
 [dependencies]
 datum-core = { path = "../datum-core" }
 iroh = "1.3"
-tokio = { version = "1", features = ["rt", "macros", "time", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signal"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 data-encoding = "2"
 qrcode = { version = "0.14", default-features = false }

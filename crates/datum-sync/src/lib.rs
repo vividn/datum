@@ -5,7 +5,7 @@
 //!
 //! - **Endpoint.** The iroh endpoint's key IS the db's endpoint key, so the
 //!   iroh endpoint id is the `endpoint` every op of this copy carries. ALPN
-//!   `datum/sync/1`, n0's relays and discovery. `DATUM_SYNC_BIND=<ip:port>`
+//!   `datum/sync/2`, n0's relays and discovery. `DATUM_SYNC_BIND=<ip:port>`
 //!   binds that one address with no relay and no discovery (a LAN, the tests).
 //! - **Peers.** Until signed membership, trust is pairwise: a peer is whoever
 //!   redeemed an invite from this copy, or whose invite it redeemed. Anyone
@@ -16,6 +16,10 @@
 //!   the other lacks, one frame each, and an empty frame, and applies what
 //!   came — until a round in which neither vector moved. Last the verify
 //!   hashes, the dialer's first, and the dialer closes.
+//! - **Progress.** A session fails only when no frame has moved either way
+//!   for [`idle`] (da-039jx). A long apply is chunked, and between chunks
+//!   the side applying sends a [`BUSY`] frame, which a reader skips: a
+//!   first sync of 32k ops takes minutes and is not a dead peer.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -35,12 +39,13 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-pub const ALPN: &[u8] = b"datum/sync/1";
+pub const ALPN: &[u8] = b"datum/sync/2";
 const MAX_FRAME: usize = 64 << 20;
 const MAX_HELLO: usize = 64 << 10;
 /// A session in which both sides keep writing still ends.
 const MAX_ROUNDS: usize = 16;
-const SESSION_TIMEOUT: Duration = Duration::from_secs(300);
+/// Ops per `sync_apply`: about a second at 13 ms an op (da-kg95e).
+const CHUNK: usize = 64;
 const COPY: &str = "this peer is a copy of this database (same endpoint key); run `datum sync rekey` on one of them";
 
 // ─── Small things ───────────────────────────────────────────────────────────
@@ -74,14 +79,28 @@ fn label() -> String {
     format!("{host} (cli)")
 }
 
-async fn within<T>(limit: Duration, f: impl Future<Output = Result<T>>) -> Result<T> {
-    tokio::time::timeout(limit, f)
-        .await
-        .map_err(|_| anyhow!("timed out after {}s", limit.as_secs()))?
+fn env<T: std::str::FromStr>(name: &str) -> Option<T> {
+    std::env::var(name).ok()?.parse().ok()
 }
 
+/// How long a session may go with no frame moving either way
+/// (`DATUM_SYNC_TIMEOUT_S`, for the tests).
+fn idle() -> Duration {
+    Duration::from_secs(env("DATUM_SYNC_TIMEOUT_S").unwrap_or(60))
+}
+
+async fn within<T>(f: impl Future<Output = Result<T>>) -> Result<T> {
+    let limit = idle();
+    tokio::time::timeout(limit, f)
+        .await
+        .map_err(|_| anyhow!("timed out: nothing moved for {}s", limit.as_secs()))?
+}
+
+/// The session runs on the calling thread, and blocks it while it applies;
+/// iroh's own tasks run on a worker, so frames still go out meanwhile.
 fn runtime() -> Result<tokio::runtime::Runtime> {
-    Ok(tokio::runtime::Builder::new_current_thread()
+    Ok(tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
         .enable_all()
         .build()?)
 }
@@ -205,38 +224,57 @@ enum Reply {
     Refused(String),
 }
 
+/// Sent between the chunks of a long apply; progress, and otherwise ignored.
+/// No JSON frame and no op line is a NUL byte, and it is not the empty frame.
+const BUSY: &[u8] = &[0];
+
 async fn put(s: &mut SendStream, b: &[u8]) -> Result<()> {
-    s.write_all(&(b.len() as u32).to_be_bytes()).await?;
-    s.write_all(b).await?;
-    Ok(())
+    within(async {
+        s.write_all(&(b.len() as u32).to_be_bytes()).await?;
+        s.write_all(b).await?;
+        Ok(())
+    })
+    .await
 }
 
 async fn get(r: &mut RecvStream, max: usize) -> Result<Vec<u8>> {
-    let mut n = [0u8; 4];
-    r.read_exact(&mut n).await?;
-    let n = u32::from_be_bytes(n) as usize;
-    ensure!(n <= max, "frame of {n} bytes is over the limit");
-    let mut b = vec![0u8; n];
-    r.read_exact(&mut b).await?;
-    Ok(b)
+    within(async {
+        let mut n = [0u8; 4];
+        r.read_exact(&mut n).await?;
+        let n = u32::from_be_bytes(n) as usize;
+        ensure!(n <= max, "frame of {n} bytes is over the limit");
+        let mut b = vec![0u8; n];
+        r.read_exact(&mut b).await?;
+        Ok(b)
+    })
+    .await
 }
 
 async fn put_json(s: &mut SendStream, v: &impl Serialize) -> Result<()> {
     put(s, &serde_json::to_vec(v)?).await
 }
 
+/// The next frame that is not a [`BUSY`].
 async fn get_json<T: DeserializeOwned>(r: &mut RecvStream, max: usize) -> Result<T> {
-    Ok(serde_json::from_slice(&get(r, max).await?)?)
+    loop {
+        let f = get(r, max).await?;
+        if f != BUSY {
+            return Ok(serde_json::from_slice(&f)?);
+        }
+    }
 }
 
 // ─── The session ────────────────────────────────────────────────────────────
 
 /// One sync with one peer.
+#[derive(Debug)]
 pub struct Report {
     pub label: String,
     pub id: String,
     /// The peer was added by this session.
     pub added: bool,
+    /// The session redeemed an invite.
+    pub redeemed: bool,
     pub sent: usize,
     pub got: usize,
     pub conflicts: usize,
@@ -255,6 +293,59 @@ impl std::fmt::Display for Report {
             if self.verified { "ok" } else { "MISMATCH" }
         )
     }
+}
+
+/// A session that failed after the handshake, and what it had moved by then.
+#[derive(Debug)]
+struct Lost(Report, anyhow::Error);
+
+impl std::fmt::Display for Lost {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Lost(rep, e) = self;
+        if rep.got + rep.sent > 0 {
+            write!(f, "applied {} op(s) and sent {}, then: ", rep.got, rep.sent)?;
+        }
+        write!(f, "{e:#}")
+    }
+}
+
+impl std::error::Error for Lost {}
+
+/// Say so if `e` is a session that redeemed an invite and then failed: the
+/// two copies are paired, and only the first sync is unfinished.
+fn paired_unfinished(e: &anyhow::Error) -> bool {
+    match e.downcast_ref::<Lost>() {
+        Some(Lost(rep, _)) if rep.redeemed => {
+            println!(
+                "paired with {}; the first sync did not finish: run `datum sync now`",
+                rep.label
+            );
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Apply `ops` a [`CHUNK`] at a time, and between chunks send a [`BUSY`].
+async fn apply(db: &Db, s: &mut SendStream, ops: &[String], rep: &mut Report) -> Result<()> {
+    // Test knobs: a slow apply, and the keepalives off (the mutation control).
+    // The delay BLOCKS the thread, as a slow `sync_apply` does: an async sleep
+    // would yield, and the test would pass on the runtime this fix replaced.
+    let delay = Duration::from_millis(env("DATUM_SYNC_TEST_APPLY_DELAY_MS").unwrap_or(0));
+    let keepalive = env::<u8>("DATUM_SYNC_TEST_KEEPALIVE") != Some(0);
+    for (i, chunk) in ops.chunks(CHUNK).enumerate() {
+        if i > 0 && keepalive {
+            put(s, BUSY).await?;
+        }
+        std::thread::sleep(delay * chunk.len() as u32);
+        let applied = db.sync_apply(&chunk.join("\n"))?;
+        for why in &applied.refused {
+            eprintln!("refused from {}: {why}", rep.label);
+        }
+        rep.got += applied.applied;
+        rep.conflicts += applied.conflicts;
+    }
+    Ok(())
 }
 
 /// Swap ops until neither side's vector moves, then compare state hashes.
@@ -282,24 +373,18 @@ async fn exchange(
             put(s, b"").await
         };
         let recv = async {
-            let mut lines = String::new();
+            let mut lines = Vec::new();
             loop {
                 let f = get(r, MAX_FRAME).await?;
                 if f.is_empty() {
                     return Ok::<_, anyhow::Error>(lines);
                 }
-                lines.push_str(std::str::from_utf8(&f)?);
-                lines.push('\n');
+                lines.push(String::from_utf8(f)?);
             }
         };
         let ((), lines) = tokio::try_join!(send, recv)?;
-        let applied = db.sync_apply(&lines)?;
-        for why in &applied.refused {
-            eprintln!("refused from {}: {why}", rep.label);
-        }
         rep.sent += ops.len();
-        rep.got += applied.applied;
-        rep.conflicts += applied.conflicts;
+        apply(db, s, &lines, rep).await?;
         last = Some(round);
     }
     let hash = db.sync_state_hash()?.0;
@@ -345,6 +430,7 @@ async fn dial(db: &Db, ep: &Endpoint, addr: EndpointAddr, invite: Option<&str>) 
         label,
         id,
         added,
+        redeemed: invite.is_some(),
         sent: 0,
         got: 0,
         conflicts: 0,
@@ -352,14 +438,17 @@ async fn dial(db: &Db, ep: &Endpoint, addr: EndpointAddr, invite: Option<&str>) 
     };
     let done = exchange(db, &mut s, &mut r, true, &mut rep).await;
     conn.close(0u32.into(), b"done");
-    done.map(|()| rep)
+    match done {
+        Ok(()) => Ok(rep),
+        Err(e) => Err(Lost(rep, e).into()),
+    }
 }
 
 /// Answer one incoming connection: a peer, or the redemption of an invite.
 async fn serve(db: &Db, ep: &Endpoint, incoming: Incoming) -> Result<Report> {
     let conn = incoming.await?;
     let id = conn.remote_id().to_string();
-    let (mut s, mut r) = conn.accept_bi().await?;
+    let (mut s, mut r) = within(async { Ok(conn.accept_bi().await?) }).await?;
     let hello: Hello = get_json(&mut r, MAX_HELLO).await?;
     // An invite presented is redeemed or refused, even by a peer: one use.
     let known = is_peer(db, &id)?;
@@ -387,12 +476,15 @@ async fn serve(db: &Db, ep: &Endpoint, incoming: Incoming) -> Result<Report> {
         label: hello.label,
         id,
         added: !known,
+        redeemed: hello.invite.is_some(),
         sent: 0,
         got: 0,
         conflicts: 0,
         verified: false,
     };
-    exchange(db, &mut s, &mut r, false, &mut rep).await?;
+    if let Err(e) = exchange(db, &mut s, &mut r, false, &mut rep).await {
+        return Err(Lost(rep, e).into());
+    }
     let _ = tokio::time::timeout(Duration::from_secs(5), conn.closed()).await;
     Ok(rep)
 }
@@ -462,10 +554,15 @@ pub fn add_client(db: &Db, expires: Duration, qr: bool) -> Result<()> {
                 _ = &mut deadline => break Err(anyhow!("the invite expired unredeemed")),
                 incoming = ep.accept() => {
                     let Some(incoming) = incoming else { break Ok(()) };
-                    match within(SESSION_TIMEOUT, serve(db, &ep, incoming)).await {
-                        Ok(rep) if rep.added => { print_added(&rep); break Ok(()) }
-                        Ok(rep) => println!("{rep}"),
-                        Err(e) => eprintln!("{e:#}"),
+                    match serve(db, &ep, incoming).await {
+                        Ok(rep) => {
+                            print_added(&rep);
+                            if rep.redeemed { break Ok(()) }
+                        }
+                        Err(e) => {
+                            eprintln!("{e:#}");
+                            if paired_unfinished(&e) { break Ok(()) }
+                        }
                     }
                 }
             }
@@ -480,8 +577,11 @@ pub fn connect(db: &Db, ticket: &str) -> Result<()> {
     let t = Ticket::decode(ticket)?;
     runtime()?.block_on(async {
         let ep = bind(db).await?;
-        let rep = within(SESSION_TIMEOUT, dial(db, &ep, t.addr, Some(&t.secret))).await;
+        let rep = dial(db, &ep, t.addr, Some(&t.secret)).await;
         ep.close().await;
+        if let Err(e) = &rep {
+            paired_unfinished(e);
+        }
         print_added(&rep?);
         Ok(())
     })
@@ -498,7 +598,7 @@ pub fn now_all(db: &Db) -> Result<()> {
         let ep = bind(db).await?;
         let dials = peers
             .iter()
-            .map(|p| async { within(SESSION_TIMEOUT, dial(db, &ep, p.addr()?, None)).await });
+            .map(|p| async { dial(db, &ep, p.addr()?, None).await });
         let mut failed = 0;
         for (p, rep) in peers
             .iter()
@@ -518,19 +618,25 @@ pub fn now_all(db: &Db) -> Result<()> {
     })
 }
 
-type Session<'a> = Pin<Box<dyn Future<Output = (Option<String>, Result<Report>)> + 'a>>;
+/// A session and, for a push, the peer's id and label.
+type Session<'a> = Pin<Box<dyn Future<Output = (Option<(String, String)>, Result<Report>)> + 'a>>;
+
+/// How long a peer a push failed to reach is left before the next try.
+const RETRY: Duration = Duration::from_secs(30);
 
 /// `datum sync run`: stay up — serve peers, and push to every peer each
 /// time this copy's vector moves (a write here, or ops from another peer).
 /// A push does not wait for an earlier one to the same peer: a dial to a
-/// peer that is down takes 30s to fail.
+/// peer that is down takes 30s to fail. A failed push is tried again after
+/// [`RETRY`], whether or not anything new was written.
 pub fn run(db: &Db) -> Result<()> {
     runtime()?.block_on(async {
         let ep = bind(db).await?;
         eprintln!("datum sync run: {} is up; Ctrl-C to stop", short(&ep.id().to_string()));
         let mut sessions: FuturesUnordered<Session> = FuturesUnordered::new();
-        // Per peer, the vector last pushed to it.
+        // Per peer, the vector last pushed to it, and when to retry a failed push.
         let mut pushed: BTreeMap<String, BTreeMap<String, i64>> = BTreeMap::new();
+        let mut retry: BTreeMap<String, tokio::time::Instant> = BTreeMap::new();
         let mut tick = tokio::time::interval(Duration::from_millis(500));
         let ctrl_c = tokio::signal::ctrl_c();
         tokio::pin!(ctrl_c);
@@ -540,26 +646,36 @@ pub fn run(db: &Db) -> Result<()> {
                 Some(incoming) = ep.accept() => {
                     let ep = &ep;
                     sessions.push(Box::pin(async move {
-                        (None, within(SESSION_TIMEOUT, serve(db, ep, incoming)).await)
+                        (None, serve(db, ep, incoming).await)
                     }));
                 }
                 Some((peer, rep)) = sessions.next() => {
-                    match rep {
-                        Ok(rep) => println!("{} {rep}", now()),
-                        Err(e) => eprintln!("{} {}: {e:#}", now(), peer.as_deref().unwrap_or("incoming")),
+                    match (rep, peer) {
+                        (Ok(rep), _) => {
+                            // A peer that reached us, or we it, is up again.
+                            retry.remove(&rep.id);
+                            println!("{} {rep}", now());
+                        }
+                        (Err(e), None) => eprintln!("{} incoming: {e:#}", now()),
+                        (Err(e), Some((id, label))) => {
+                            eprintln!("{} {label}: {e:#}", now());
+                            pushed.remove(&id);
+                            retry.insert(id, tokio::time::Instant::now() + RETRY);
+                        }
                     }
                 }
                 _ = tick.tick() => {
                     let vector = db.sync_vector()?;
                     for p in peers(db)? {
-                        if pushed.get(&p.id) == Some(&vector) {
+                        let waiting = retry.get(&p.id).is_some_and(|t| *t > tokio::time::Instant::now());
+                        if waiting || pushed.get(&p.id) == Some(&vector) {
                             continue;
                         }
                         pushed.insert(p.id.clone(), vector.clone());
                         let ep = &ep;
                         sessions.push(Box::pin(async move {
-                            let rep = async { within(SESSION_TIMEOUT, dial(db, ep, p.addr()?, None)).await };
-                            (Some(p.label.clone()), rep.await)
+                            let rep = async { dial(db, ep, p.addr()?, None).await };
+                            (Some((p.id.clone(), p.label.clone())), rep.await)
                         }));
                     }
                 }
