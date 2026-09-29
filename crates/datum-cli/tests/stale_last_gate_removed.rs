@@ -116,6 +116,9 @@ fn an_old_tombstone_is_reachable_without_a_flag() {
     let db = fresh_db();
     run_cli(&["occur", "coffee"], &db).expect("create");
     let hid = datum_core::test_util::logged_all(&db)[0].hid.to_string();
+    // A second entry keeps the spec: deleting the field's only one would
+    // take it too (da-elv6d), and the spec would be the newest tombstone.
+    run_cli(&["occur", "coffee", "-t", "1000"], &db).expect("create");
     run_cli(&["delete", &hid], &db).expect("delete");
 
     // Age the tombstone AND clear the pointer, so the fallback is the only

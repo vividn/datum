@@ -50,6 +50,7 @@ mod field_key_slot;
 mod field_name_commas;
 mod field_name_controls;
 mod fields_cmd;
+mod first_log_spec;
 mod float_roundtrip;
 mod get_cmd;
 mod get_projection;

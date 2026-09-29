@@ -82,7 +82,8 @@ impl Env {
         self.ok(&["occur", "water"], b"");
         self.ok(&["occur", "juice"], b"");
         self.ok(&["del", "juice"], b"");
-        assert_eq!(self.count(TOMBSTONES), 1);
+        // `juice` and the spec its only entry took with it (da-elv6d).
+        assert_eq!(self.count(TOMBSTONES), 2);
         backup
     }
 }
@@ -175,7 +176,7 @@ fn hard_dry_run_counts_and_writes_nothing() {
     );
 
     assert!(
-        out.contains("Would drop:") && out.contains("1 tombstoned or superseded"),
+        out.contains("Would drop:") && out.contains("2 tombstoned or superseded"),
         "{out}"
     );
     assert_eq!((env.rows(), env.count(HISTORY)), before);

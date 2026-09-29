@@ -26,7 +26,8 @@ use datum_core::{
 use crate::{
     args::{OutputFlagsExt, RedoArgs, UndoArgs},
     commands::helpers::{
-        for_each_id, is_id_list, load_registry_opt, resolve_prefix_or_tombstone, warn_if_stale,
+        drop_orphaned_bare_specs, for_each_id, is_id_list, load_registry_opt,
+        resolve_prefix_or_tombstone, warn_if_stale,
     },
     render::{show_create, show_delete, show_update, OutputArgs},
 };
@@ -81,7 +82,8 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
                         ChangeKind::Undo,
                         registry.as_ref(),
                         &output,
-                    ),
+                    )
+                    .map(drop),
                     _ => {
                         db.undelete(&entry.slug)?;
                         let restored = db.get_entry(&entry.slug).unwrap_or_else(|_| entry.clone());
@@ -118,10 +120,10 @@ fn undo_one(
             if v < 1 || v > latest_n {
                 anyhow::bail!("version {v} doesn't exist; entry has {latest_n} version(s)");
             }
-            step_to(db, &current, v, ChangeKind::Undo, registry, output)
+            step_to(db, &current, v, ChangeKind::Undo, registry, output).map(drop)
         }
         (None, Some(n)) if n >= 2 => {
-            step_to(db, &current, n - 1, ChangeKind::Undo, registry, output)
+            step_to(db, &current, n - 1, ChangeKind::Undo, registry, output).map(drop)
         }
         _ => {
             // No prior version to revert to — fall back to legacy undelete
@@ -168,6 +170,7 @@ pub fn redo(args: RedoArgs, db: &Db) -> Result<()> {
     };
 
     let mut moved: Vec<Hid> = Vec::new();
+    let mut tombstoned: Vec<Entry> = Vec::new();
     for hid in &targets {
         let current = match resolve_prefix_or_tombstone(db, hid) {
             Ok(e) => e,
@@ -181,7 +184,7 @@ pub fn redo(args: RedoArgs, db: &Db) -> Result<()> {
             // one row that would is the answer: exit 0, nothing written.
             Some(_) if args.dry_run => return resolved,
             Some(version) => {
-                step_to(
+                let after = step_to(
                     db,
                     &current,
                     version,
@@ -190,6 +193,9 @@ pub fn redo(args: RedoArgs, db: &Db) -> Result<()> {
                     &output,
                 )?;
                 moved.push(current.hid.clone());
+                if current.deleted_at.is_none() && after.deleted_at.is_some() {
+                    tombstoned.push(after);
+                }
             }
             None => continue,
         }
@@ -199,10 +205,45 @@ pub fn redo(args: RedoArgs, db: &Db) -> Result<()> {
         resolved?;
         anyhow::bail!("Nothing to redo — the last change here was not an undo");
     }
+    let (specs, dropped) = drop_orphaned_bare_specs(
+        db,
+        &tombstoned,
+        ChangeKind::Redo,
+        registry.as_ref(),
+        &output,
+    );
+    moved.extend(specs);
     // `_LAST` follows the entries that moved, the way undo's does, so a
     // second `undo` after a `redo` lands on the same rows.
-    let _ = last_docs::set_last_docs(db, &moved);
+    let _ = last_docs::set_last_docs(db, &pointer_after_step(db, moved));
+    dropped?;
     resolved
+}
+
+/// What `_LAST` names after an `undo` or `redo`: the rows it moved, less a
+/// spec live again beside a live entry of its field (da-elv6d). While the
+/// pair is tombstoned the spec rides in `_LAST`, so the next step brings it
+/// back with the entry; live, it would make a bare `get` ambiguous and a
+/// bare `update` write to it.
+fn pointer_after_step(db: &Db, hids: Vec<Hid>) -> Vec<Hid> {
+    let rows: Vec<Entry> = hids
+        .iter()
+        .filter_map(|hid| db.get_entry_including_deleted(hid).ok())
+        .collect();
+    let live = |e: &&Entry| e.deleted_at.is_none();
+    let fields: Vec<&str> = rows.iter().filter(live).map(|e| e.field.as_str()).collect();
+    let beside_its_entry = |e: &&Entry| {
+        live(e)
+            && e.field == "spec"
+            && e.slug
+                .0
+                .strip_prefix("spec:")
+                .is_some_and(|f| fields.contains(&f))
+    };
+    rows.iter()
+        .filter(|e| !beside_its_entry(e))
+        .map(|e| e.hid.clone())
+        .collect()
 }
 
 /// The version `redo` must revert to, or `None` when nothing lies ahead.
@@ -232,10 +273,10 @@ fn step_to(
     kind: ChangeKind,
     registry: Option<&SpecRegistry>,
     output: &OutputArgs,
-) -> Result<()> {
+) -> Result<Entry> {
     let restored = db.revert_entry_to_as(&current.hid, version, kind)?;
     show_step(current, &restored, registry, output);
-    Ok(())
+    Ok(restored)
 }
 
 /// The echo for one step names the action the step PERFORMS, not the command
@@ -277,6 +318,7 @@ fn undo_via_last_docs(
         anyhow::bail!("Last-docs pointer is empty — nothing to undo");
     }
     let mut restored_hids: Vec<Hid> = Vec::new();
+    let mut tombstoned: Vec<Entry> = Vec::new();
     let mut first_err: Option<anyhow::Error> = None;
     for hid in hids {
         let current = match resolve_prefix_or_tombstone(db, hid) {
@@ -313,6 +355,9 @@ fn undo_via_last_docs(
             Ok(entry) => {
                 restored_hids.push(entry.hid.clone());
                 show_step(&current, &entry, registry.as_ref(), output);
+                if current.deleted_at.is_none() && entry.deleted_at.is_some() {
+                    tombstoned.push(entry);
+                }
             }
             Err(e) => {
                 eprintln!("undo {hid}: {e}");
@@ -320,9 +365,14 @@ fn undo_via_last_docs(
             }
         }
     }
+    // Undoing a first log takes the spec it wrote with it (da-elv6d).
+    let (specs, dropped) =
+        drop_orphaned_bare_specs(db, &tombstoned, ChangeKind::Undo, registry.as_ref(), output);
+    restored_hids.extend(specs);
     if !restored_hids.is_empty() {
-        let _ = last_docs::set_last_docs(db, &restored_hids);
+        let _ = last_docs::set_last_docs(db, &pointer_after_step(db, restored_hids.clone()));
     }
+    dropped?;
     match first_err {
         Some(e) if restored_hids.is_empty() => Err(e),
         _ => Ok(()),

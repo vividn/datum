@@ -453,6 +453,39 @@ impl Db {
         Ok(Some(row.hid))
     }
 
+    /// Delete `field`'s spec when nothing live is logged against the field
+    /// and the spec is still the bare one its first log wrote (da-elv6d):
+    /// a delete of a field's last entry takes the field with it. A spec
+    /// someone shaped ([`FieldSpec::is_bare`] false) or a kit declared
+    /// stays, a field with no entries. `kind` is the step's own, so an
+    /// `undo`'s spec delete is one `redo` steps forward again. Returns the
+    /// tombstoned spec row.
+    pub fn delete_spec_if_orphaned_bare(
+        &self,
+        field: &str,
+        kind: crate::history::ChangeKind,
+    ) -> Result<Option<Entry>> {
+        let live: bool = self.conn.query_row(
+            &format!("SELECT EXISTS(SELECT 1 FROM entries WHERE field = ?1 AND {LIVE_SQL})"),
+            params![field],
+            |row| row.get(0),
+        )?;
+        if live || is_meta_field(field) {
+            return Ok(None);
+        }
+        let Some(row) = self.spec_entry(field)? else {
+            return Ok(None);
+        };
+        let Some(data) = row.data.as_ref().filter(|d| d.get(SPEC_KIT_KEY).is_none()) else {
+            return Ok(None);
+        };
+        if !self.parse_spec(&data.to_string())?.is_bare() {
+            return Ok(None);
+        }
+        self.soft_delete_entry_as(&row.hid, kind)?;
+        Ok(Some(self.get_entry_including_deleted(&row.hid)?))
+    }
+
     /// Return field specs whose `tags` array contains `tag`, by field.
     /// Membership, not substring: `chore` does not match `chores`.
     pub fn list_specs_by_tag(&self, tag: &str) -> Result<Vec<FieldSpec>> {

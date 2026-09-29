@@ -261,9 +261,9 @@ fn a_field_declared_by_its_first_log_is_not_active() {
     }
 }
 
-/// `_LAST` is the one row, and `undo` takes it back. The pair da-c8mh
-/// had to keep together is now a single write, so there is nothing left
-/// to half-undo.
+/// `_LAST` is the one row, and `undo` takes it back — with the spec it
+/// wrote, which a field left with no entry does not keep while it is still
+/// bare (da-elv6d). One `undo`, the whole first log.
 #[test]
 fn the_first_log_undoes_in_one() {
     let env = Env::new();
@@ -276,8 +276,12 @@ fn the_first_log_undoes_in_one() {
     let undone = env.run(&["undo"]);
     assert_eq!(
         undone.lines().filter(|l| l.starts_with("DELETE ")).count(),
-        1,
-        "one `undo`, one row: {undone:?}"
+        2,
+        "one `undo`, the entry and its spec: {undone:?}"
+    );
+    assert!(
+        !env.run(&["fields"]).contains("coffee"),
+        "the field is gone"
     );
     assert!(
         env.run(&["tail"]).contains("[No data]"),

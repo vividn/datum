@@ -1,7 +1,7 @@
 //! `datum del <id_or_slug>` — mark an entry deleted (tombstone, sync-safe).
 
 use anyhow::Result;
-use datum_core::{db::Db, ids::Hid, time::DatumTime};
+use datum_core::{db::Db, entry::Entry, ids::Hid, time::DatumTime};
 
 use crate::{
     args::{DeleteArgs, OutputFlagsExt},
@@ -76,12 +76,12 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
 
     let why = args.comment.as_ref().map(|c| format!("deleted: {c}"));
     let mut first_err: Option<anyhow::Error> = None;
-    let mut deleted_hids: Vec<Hid> = Vec::new();
+    let mut deleted: Vec<Entry> = Vec::new();
     for entry in &entries {
         match db.soft_delete_entry_with_comment(&entry.slug, why.as_deref()) {
             Ok(dead) => {
                 show_delete(&dead, registry.as_ref(), &output);
-                deleted_hids.push(entry.hid.clone());
+                deleted.push(dead);
             }
             Err(e) => {
                 let msg = format!("{}: {}", entry.slug, e);
@@ -100,11 +100,23 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
         first_err.get_or_insert_with(|| anyhow::anyhow!(msg));
     }
 
-    // Pointer keeps the deleted hids so `undo` (with no arg) can
-    // restore them. Skipped if nothing actually got deleted.
+    // A field left with no live entry takes its bare spec with it, into
+    // the same `_LAST` (da-elv6d). The pointer keeps the deleted hids so
+    // `undo` (with no arg) can restore them. Skipped if nothing actually
+    // got deleted.
+    let mut deleted_hids: Vec<Hid> = deleted.iter().map(|e| e.hid.clone()).collect();
+    let (specs, dropped) = crate::commands::helpers::drop_orphaned_bare_specs(
+        db,
+        &deleted,
+        datum_core::history::ChangeKind::UserEdit,
+        registry.as_ref(),
+        &output,
+    );
+    deleted_hids.extend(specs);
     if !deleted_hids.is_empty() {
         let _ = datum_core::last_docs::set_last_docs(db, &deleted_hids);
     }
+    dropped?;
 
     match first_err {
         Some(e) => Err(e),

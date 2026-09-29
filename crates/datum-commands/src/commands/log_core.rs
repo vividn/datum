@@ -299,8 +299,16 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         }
         db.soft_delete_entry(&target.slug)?;
         show_delete(&target, registry.as_ref(), &output);
-        let _ = datum_core::last_docs::set_last_docs(db, std::slice::from_ref(&target.hid));
-        return Ok(());
+        let (specs, dropped) = crate::commands::helpers::drop_orphaned_bare_specs(
+            db,
+            std::slice::from_ref(&target),
+            datum_core::history::ChangeKind::UserEdit,
+            registry.as_ref(),
+            &output,
+        );
+        let hids: Vec<_> = std::iter::once(target.hid.clone()).chain(specs).collect();
+        let _ = datum_core::last_docs::set_last_docs(db, &hids);
+        return dropped;
     }
 
     let device = device_id()?;

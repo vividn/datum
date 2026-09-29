@@ -182,6 +182,9 @@ fn every_change_is_one_op_with_its_own_line() {
     assert_eq!(first["kind"], "create");
     assert_eq!(first["raw"], "occur coffee cups=2");
     assert_eq!(first["effect"]["create"]["data"]["cups"], 2);
+    // A second entry, so the delete below does not empty the field and take
+    // its spec too, in a second op (da-elv6d).
+    a.ok(&["occur", "coffee", "-t", "1000"]);
 
     let op = one_op(&a, &["update", &hid, "cups=3"]);
     assert_eq!(op["kind"], "update");
@@ -350,14 +353,15 @@ fn the_same_ops_twice_or_in_any_order_give_the_same_state() {
     let twice = Copy::new();
     twice.ok_in(&["sync", "apply"], &ops);
     let again = twice.ok_in(&["sync", "apply"], &ops);
-    assert!(again.starts_with("applied 0 · already had 6 "), "{again}");
+    // Seven: the delete of `coffee`'s only entry takes its spec (da-elv6d).
+    assert!(again.starts_with("applied 0 · already had 7 "), "{again}");
     assert_eq!(twice.hash(), a.hash());
 
     let reversed: String = ops.lines().rev().map(|l| format!("{l}\n")).collect();
     let shuffled = Copy::new();
     let summary = shuffled.ok_in(&["sync", "apply"], &reversed);
     assert!(
-        summary.starts_with("applied 6 · already had 0 · held 0 "),
+        summary.starts_with("applied 7 · already had 0 · held 0 "),
         "{summary}"
     );
     assert_eq!(shuffled.hash(), a.hash());
