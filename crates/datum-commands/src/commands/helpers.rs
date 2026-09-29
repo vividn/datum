@@ -553,32 +553,28 @@ pub fn save_track_spec(
 }
 
 /// Delete the bare spec of every field `deleted` left with no live entry
-/// ([`Db::delete_spec_if_orphaned_bare`], da-elv6d), showing each as a
-/// delete, recorded as `kind`. Returns their hids, for the caller's `_LAST`
-/// beside the entries', so one `undo` brings back both — and, apart, the
-/// first error, so a caller still points `_LAST` at what it did delete.
+/// ([`Db::delete_spec_if_orphaned_bare`], da-elv6d), recorded as `kind`.
+/// Returns the specs, for the caller's `_LAST` beside the entries' — so one
+/// `undo` brings back both — and to show as deletes once it is stamped
+/// (da-ki5j3); apart, the first error, so a caller still points `_LAST` at
+/// what it did delete.
 pub fn drop_orphaned_bare_specs(
     db: &Db,
     deleted: &[datum_core::entry::Entry],
     kind: datum_core::history::ChangeKind,
-    registry: Option<&datum_core::field_spec::SpecRegistry>,
-    output: &crate::render::OutputArgs,
-) -> (Vec<datum_core::ids::Hid>, anyhow::Result<()>) {
+) -> (Vec<datum_core::entry::Entry>, anyhow::Result<()>) {
     let mut fields: Vec<&str> = deleted.iter().map(|e| e.field.as_str()).collect();
     fields.sort_unstable();
     fields.dedup();
-    let mut hids = Vec::new();
+    let mut specs = Vec::new();
     for field in fields {
         match db.delete_spec_if_orphaned_bare(field, kind) {
-            Ok(Some(spec)) => {
-                crate::render::show_delete(&spec, registry, output);
-                hids.push(spec.hid);
-            }
+            Ok(Some(spec)) => specs.push(spec),
             Ok(None) => {}
-            Err(e) => return (hids, Err(e.into())),
+            Err(e) => return (specs, Err(e.into())),
         }
     }
-    (hids, Ok(()))
+    (specs, Ok(()))
 }
 
 /// The spec [`save_track_spec`] would write, or `None` when the field has

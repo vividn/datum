@@ -327,6 +327,7 @@ fn install_toml(
     // them beside the person's own layouts in `_internal`.
     let layout_report =
         db.install_kit_layouts(&kit.kit.name, &kit.layouts, &device_id()?, args.force)?;
+    crate::cmd::stamp_batch(db);
 
     let installed: Vec<&str> = report.installed().collect();
     let skipped: Vec<&str> = report.skipped().collect();
@@ -594,6 +595,7 @@ fn uninstall(args: KitUninstallArgs, db: &Db) -> Result<()> {
     // A layout is an entry, so its removal is a SOFT delete — the deletion
     // has to reach the other devices of this database (da-gg0v).
     let removed_layouts = db.uninstall_kit_layouts(&args.name)?;
+    crate::cmd::stamp_batch(db);
     if removed.is_empty()
         && removed_views.is_empty()
         && removed_aliases.is_empty()

@@ -306,16 +306,17 @@ fn diff_shape(shape: &ReparsedShape, entry: &Entry) -> Vec<Delta> {
     out
 }
 
-fn print_drift(entry: &Entry, deltas: &[Delta]) {
-    println!(
+fn drift(entry: &Entry, deltas: &[Delta]) -> String {
+    let mut out = format!(
         "{}  ({} delta{})",
         entry.slug,
         deltas.len(),
         if deltas.len() == 1 { "" } else { "s" }
     );
     for d in deltas {
-        println!("  {}: {} → {}", d.field_name, d.old, d.new);
+        out += &format!("\n  {}: {} → {}", d.field_name, d.old, d.new);
     }
+    out
 }
 
 fn apply_fix(entry: &Entry, shape: &ReparsedShape, db: &Db) -> Result<()> {
@@ -360,34 +361,46 @@ pub fn reparse(args: ReparseArgs, db: &Db) -> Result<()> {
         .iter()
         .flat_map(|raw| crate::commands::helpers::id_list(db, raw));
 
-    for token in tokens {
-        let entry = resolve_quickid_single(db, token)?;
+    // Every fix, `_LAST` included, lands before anything prints: a reader
+    // closing the pipe ends the process at the print (da-ki5j3).
+    let mut lines: Vec<String> = Vec::new();
+    let walk = || -> Result<()> {
+        for token in tokens {
+            let entry = resolve_quickid_single(db, token)?;
 
-        scanned += 1;
+            scanned += 1;
 
-        let shape = match replay_shape(&entry)? {
-            Some(s) => s,
-            // Non-log verb or no provenance — nothing to compare.
-            None => {
-                println!("{}: no replayable raw_input — skipped", entry.slug);
+            let shape = match replay_shape(&entry)? {
+                Some(s) => s,
+                // Non-log verb or no provenance — nothing to compare.
+                None => {
+                    lines.push(format!("{}: no replayable raw_input — skipped", entry.slug));
+                    continue;
+                }
+            };
+
+            let deltas = diff_shape(&shape, &entry);
+            if deltas.is_empty() {
+                lines.push(format!("{}: clean", entry.slug));
                 continue;
             }
-        };
 
-        let deltas = diff_shape(&shape, &entry);
-        if deltas.is_empty() {
-            println!("{}: clean", entry.slug);
-            continue;
+            drifted += 1;
+            lines.push(drift(&entry, &deltas));
+
+            if args.fix {
+                apply_fix(&entry, &shape, db)?;
+                fixed += 1;
+            }
         }
-
-        drifted += 1;
-        print_drift(&entry, &deltas);
-
-        if args.fix {
-            apply_fix(&entry, &shape, db)?;
-            fixed += 1;
-        }
+        Ok(())
+    };
+    let walked = walk();
+    crate::cmd::stamp_batch(db);
+    for line in &lines {
+        println!("{line}");
     }
+    walked?;
 
     if args.fix {
         println!("\nreparse: {scanned} scanned, {drifted} drifted, {fixed} fixed.");

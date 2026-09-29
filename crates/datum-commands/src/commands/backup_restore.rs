@@ -382,6 +382,7 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
         confirm_deletions(&preview, &mut std::io::stdin().lock())?;
     }
     let report = restore_path(&args.path, db, mode)?;
+    crate::cmd::stamp_batch(db);
 
     if silent {
         return Ok(());

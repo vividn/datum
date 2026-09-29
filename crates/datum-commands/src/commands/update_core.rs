@@ -273,8 +273,15 @@ pub fn update_batch_from_args(
         }
     }
 
+    // Every write, `_LAST` included, lands before anything prints: a reader
+    // closing the pipe ends the process at the print (da-ki5j3).
     let mut first_err: Option<anyhow::Error> = None;
-    let mut touched_hids: Vec<datum_core::ids::Hid> = Vec::new();
+    let mut outcomes: Vec<UpdateOutcome> = Vec::new();
+    let render_all = |outcomes: &[UpdateOutcome]| {
+        for outcome in outcomes {
+            render_outcome(outcome, &output, db);
+        }
+    };
     for existing in entries {
         if existing.deleted_at.is_some() {
             let msg = format!(
@@ -283,6 +290,7 @@ pub fn update_batch_from_args(
                 existing.slug,
             );
             if args.strict {
+                render_all(&outcomes);
                 return Err(anyhow::anyhow!(msg));
             }
             eprintln!("{msg}");
@@ -302,12 +310,10 @@ pub fn update_batch_from_args(
         );
 
         match result {
-            Ok(outcome) => {
-                touched_hids.push(outcome.entry.hid.clone());
-                render_outcome(&outcome, &output, db);
-            }
+            Ok(outcome) => outcomes.push(outcome),
             Err(e) => {
                 if args.strict {
+                    render_all(&outcomes);
                     return Err(e);
                 }
                 eprintln!("{e}");
@@ -316,14 +322,16 @@ pub fn update_batch_from_args(
         }
     }
 
+    if !outcomes.is_empty() {
+        let touched_hids: Vec<_> = outcomes.iter().map(|o| o.entry.hid.clone()).collect();
+        let _ = datum_core::last_docs::set_last_docs(db, &touched_hids);
+    }
+    render_all(&outcomes);
+
     for (tok, err) in token_errors {
         let msg = format!("{tok}: {err}");
         eprintln!("{msg}");
         first_err.get_or_insert_with(|| anyhow::anyhow!(msg));
-    }
-
-    if !touched_hids.is_empty() {
-        let _ = datum_core::last_docs::set_last_docs(db, &touched_hids);
     }
 
     match first_err {

@@ -227,11 +227,26 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
     let mark = writes_a_batch(&cli.command)
         .then(|| datum_core::last_docs::history_mark(db).ok())
         .flatten();
+    let outer = BATCH_MARK.replace(mark);
     let result = crate::render::json_echo::scope(|| dispatch_inner(cli, db));
-    if let Some(mark) = mark {
+    stamp_batch(db);
+    BATCH_MARK.set(outer);
+    result
+}
+
+thread_local! {
+    /// Where `entry_history` stood when a batch command began, while it runs.
+    static BATCH_MARK: std::cell::Cell<Option<i64>> = const { std::cell::Cell::new(None) };
+}
+
+/// Point `_LAST` at everything the running batch command has written. Each
+/// calls it once its writes land and before it prints, as a reader closing
+/// the pipe ends the process at the print (da-ki5j3); [`dispatch`] calls it
+/// again when the command returns. Outside a batch command it does nothing.
+pub(crate) fn stamp_batch(db: &Db) {
+    if let Some(mark) = BATCH_MARK.get() {
         let _ = datum_core::last_docs::set_last_to_batch(db, mark, &[]);
     }
-    result
 }
 
 /// The commands that write a SET of entries in one invocation, whose whole

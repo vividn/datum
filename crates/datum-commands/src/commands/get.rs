@@ -62,6 +62,16 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
 
     let registry = crate::commands::helpers::load_registry_opt(db);
     let output = args.output()?;
+    // Stamp the pointer at the resolved hids BEFORE printing, so a reader
+    // closing the pipe cannot cut the record short (da-ki5j3). A follow-up
+    // bare command sees the same set; read-only browsing commands (tail,
+    // head, grep) do NOT touch the pointer. A set with a missing token is
+    // not stamped, so a partial set never sticks.
+    if token_errors.is_empty() {
+        let hids: Vec<datum_core::ids::Hid> = entries.iter().map(|e| e.hid.clone()).collect();
+        let _ = datum_core::last_docs::set_last_docs(db, &hids);
+    }
+
     let ctxs = crate::commands::render_helpers::build_render_contexts(&entries, db);
     for (i, entry) in entries.iter().enumerate() {
         if args.pretty {
@@ -77,8 +87,7 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
         }
     }
 
-    // Named on stderr after the documents; the pointer is not stamped, so
-    // a partial set never sticks.
+    // Named on stderr after the documents.
     if !token_errors.is_empty() {
         for (tok, err) in &token_errors {
             eprintln!("{tok}: {err}");
@@ -86,12 +95,6 @@ pub fn get(args: GetArgs, db: &Db) -> Result<()> {
         let toks: Vec<&str> = token_errors.iter().map(|(t, _)| t.as_str()).collect();
         anyhow::bail!("not found: {}", toks.join(","));
     }
-
-    // Stamp the pointer at the resolved hids so a follow-up bare command
-    // sees the same set. Read-only browsing commands (tail, head, grep)
-    // do NOT touch the pointer.
-    let hids: Vec<datum_core::ids::Hid> = entries.iter().map(|e| e.hid.clone()).collect();
-    let _ = datum_core::last_docs::set_last_docs(db, &hids);
     Ok(())
 }
 
@@ -217,6 +220,10 @@ fn search(field: &str, args: GetArgs, db: &Db) -> Result<()> {
 
     let registry = crate::commands::helpers::load_registry_opt(db);
     let output = args.output()?;
+    // Stamped before printing (da-ki5j3).
+    let hids: Vec<datum_core::ids::Hid> = entries.iter().map(|e| e.hid.clone()).collect();
+    let _ = datum_core::last_docs::set_last_docs(db, &hids);
+
     let ctxs = crate::commands::render_helpers::build_render_contexts(&entries, db);
     for (i, entry) in entries.iter().enumerate() {
         if args.pretty {
@@ -231,9 +238,6 @@ fn search(field: &str, args: GetArgs, db: &Db) -> Result<()> {
             );
         }
     }
-
-    let hids: Vec<datum_core::ids::Hid> = entries.iter().map(|e| e.hid.clone()).collect();
-    let _ = datum_core::last_docs::set_last_docs(db, &hids);
     Ok(())
 }
 

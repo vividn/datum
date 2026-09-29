@@ -298,16 +298,19 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             return Ok(());
         }
         db.soft_delete_entry(&target.slug)?;
-        show_delete(&target, registry.as_ref(), &output);
         let (specs, dropped) = crate::commands::helpers::drop_orphaned_bare_specs(
             db,
             std::slice::from_ref(&target),
             datum_core::history::ChangeKind::UserEdit,
-            registry.as_ref(),
-            &output,
         );
-        let hids: Vec<_> = std::iter::once(target.hid.clone()).chain(specs).collect();
+        let hids: Vec<_> = std::iter::once(&target)
+            .chain(&specs)
+            .map(|e| e.hid.clone())
+            .collect();
         let _ = datum_core::last_docs::set_last_docs(db, &hids);
+        for e in std::iter::once(&target).chain(&specs) {
+            show_delete(e, registry.as_ref(), &output);
+        }
         return dropped;
     }
 
@@ -704,10 +707,12 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             if Some(&state) == entry.state.as_ref() {
                 let last = db.get_entry(&hid)?;
                 let registry = crate::commands::helpers::load_registry_opt(db);
-                show_islast(&last, registry.as_ref(), &args.output()?);
+                let output = args.output()?;
                 if !args.dry_run {
-                    let _ = datum_core::last_docs::set_last_docs(db, &[last.hid]);
+                    let _ =
+                        datum_core::last_docs::set_last_docs(db, std::slice::from_ref(&last.hid));
                 }
+                show_islast(&last, registry.as_ref(), &output);
                 return Ok(());
             }
         }
@@ -829,6 +834,22 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         false => None,
     };
     let outcome = db.insert_entry_declaring(&entry, strategy, declare.as_ref())?;
+    // Stamp the last-accessed pointer at the affected entry's hid so a
+    // follow-up bare `get` / `delete` / `update` can target it — before
+    // anything prints, since a closed pipe ends the process at the print
+    // (da-ki5j3). Failure to write the pointer must not fail the insert.
+    if let Some(slug) = match &outcome {
+        InsertOutcome::Inserted { slug, .. }
+        | InsertOutcome::Updated { slug }
+        | InsertOutcome::Merged { slug }
+        | InsertOutcome::Ignored { slug } => Some(slug.as_str()),
+        InsertOutcome::Rekeyed { new_slug, .. } => Some(new_slug.as_str()),
+    } {
+        if let Ok(fresh) = db.get_entry(slug) {
+            let _ = datum_core::last_docs::set_last_docs(db, &[fresh.hid]);
+        }
+    }
+
     let registry = crate::commands::helpers::load_registry_opt(db);
     let output = args.output()?;
     // Per da-9p2u: all four context fields (lead/trail/ongoing/first) are
@@ -868,21 +889,6 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             // (datum v2 parity, da-9sfm). Not an error — the EXISTS render
             // above is the user-facing result.
             crate::args::mark_duplicate_noop();
-        }
-    }
-
-    // Stamp the last-accessed pointer at the affected entry's hid so a
-    // follow-up bare `get` / `delete` / `update` can target it. Failure
-    // to write the pointer must not fail the user-visible insert.
-    if let Some(slug) = match &outcome {
-        InsertOutcome::Inserted { slug, .. }
-        | InsertOutcome::Updated { slug }
-        | InsertOutcome::Merged { slug }
-        | InsertOutcome::Ignored { slug } => Some(slug.as_str()),
-        InsertOutcome::Rekeyed { new_slug, .. } => Some(new_slug.as_str()),
-    } {
-        if let Ok(fresh) = db.get_entry(slug) {
-            let _ = datum_core::last_docs::set_last_docs(db, &[fresh.hid]);
         }
     }
 

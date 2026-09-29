@@ -169,8 +169,7 @@ pub fn redo(args: RedoArgs, db: &Db) -> Result<()> {
         }
     };
 
-    let mut moved: Vec<Hid> = Vec::new();
-    let mut tombstoned: Vec<Entry> = Vec::new();
+    let mut steps: Vec<(Entry, Entry)> = Vec::new();
     for hid in &targets {
         let current = match resolve_prefix_or_tombstone(db, hid) {
             Ok(e) => e,
@@ -184,38 +183,22 @@ pub fn redo(args: RedoArgs, db: &Db) -> Result<()> {
             // one row that would is the answer: exit 0, nothing written.
             Some(_) if args.dry_run => return resolved,
             Some(version) => {
-                let after = step_to(
-                    db,
-                    &current,
-                    version,
-                    ChangeKind::Redo,
-                    registry.as_ref(),
-                    &output,
-                )?;
-                moved.push(current.hid.clone());
-                if current.deleted_at.is_none() && after.deleted_at.is_some() {
-                    tombstoned.push(after);
-                }
+                let after = db.revert_entry_to_as(&current.hid, version, ChangeKind::Redo)?;
+                steps.push((current, after));
             }
             None => continue,
         }
     }
 
-    if moved.is_empty() {
+    if steps.is_empty() {
         resolved?;
         anyhow::bail!("Nothing to redo — the last change here was not an undo");
     }
-    let (specs, dropped) = drop_orphaned_bare_specs(
-        db,
-        &tombstoned,
-        ChangeKind::Redo,
-        registry.as_ref(),
-        &output,
-    );
-    moved.extend(specs);
+    let (specs, dropped) = drop_orphaned_bare_specs(db, &tombstoned_by(&steps), ChangeKind::Redo);
     // `_LAST` follows the entries that moved, the way undo's does, so a
     // second `undo` after a `redo` lands on the same rows.
-    let _ = last_docs::set_last_docs(db, &pointer_after_step(db, moved));
+    let _ = last_docs::set_last_docs(db, &pointer_after_step(db, moved_hids(&steps, &specs)));
+    show_steps(&steps, &specs, registry.as_ref(), &output);
     dropped?;
     resolved
 }
@@ -317,8 +300,7 @@ fn undo_via_last_docs(
     if hids.is_empty() {
         anyhow::bail!("Last-docs pointer is empty — nothing to undo");
     }
-    let mut restored_hids: Vec<Hid> = Vec::new();
-    let mut tombstoned: Vec<Entry> = Vec::new();
+    let mut steps: Vec<(Entry, Entry)> = Vec::new();
     let mut first_err: Option<anyhow::Error> = None;
     for hid in hids {
         let current = match resolve_prefix_or_tombstone(db, hid) {
@@ -352,13 +334,7 @@ fn undo_via_last_docs(
             }
         };
         match restored {
-            Ok(entry) => {
-                restored_hids.push(entry.hid.clone());
-                show_step(&current, &entry, registry.as_ref(), output);
-                if current.deleted_at.is_none() && entry.deleted_at.is_some() {
-                    tombstoned.push(entry);
-                }
-            }
+            Ok(entry) => steps.push((current, entry)),
             Err(e) => {
                 eprintln!("undo {hid}: {e}");
                 first_err.get_or_insert(e);
@@ -366,15 +342,50 @@ fn undo_via_last_docs(
         }
     }
     // Undoing a first log takes the spec it wrote with it (da-elv6d).
-    let (specs, dropped) =
-        drop_orphaned_bare_specs(db, &tombstoned, ChangeKind::Undo, registry.as_ref(), output);
-    restored_hids.extend(specs);
+    let (specs, dropped) = drop_orphaned_bare_specs(db, &tombstoned_by(&steps), ChangeKind::Undo);
+    let restored_hids = moved_hids(&steps, &specs);
     if !restored_hids.is_empty() {
         let _ = last_docs::set_last_docs(db, &pointer_after_step(db, restored_hids.clone()));
     }
+    show_steps(&steps, &specs, registry.as_ref(), output);
     dropped?;
     match first_err {
         Some(e) if restored_hids.is_empty() => Err(e),
         _ => Ok(()),
+    }
+}
+
+/// The entries a batch of steps tombstoned, for their fields' bare specs.
+fn tombstoned_by(steps: &[(Entry, Entry)]) -> Vec<Entry> {
+    steps
+        .iter()
+        .filter(|(before, after)| before.deleted_at.is_none() && after.deleted_at.is_some())
+        .map(|(_, after)| after.clone())
+        .collect()
+}
+
+/// The hids a batch of steps moved, the specs it dropped after them.
+fn moved_hids(steps: &[(Entry, Entry)], specs: &[Entry]) -> Vec<Hid> {
+    steps
+        .iter()
+        .map(|(_, after)| &after.hid)
+        .chain(specs.iter().map(|s| &s.hid))
+        .cloned()
+        .collect()
+}
+
+/// Echo a batch of steps once every write, `_LAST` included, has landed:
+/// a reader closing the pipe ends the process at the print (da-ki5j3).
+fn show_steps(
+    steps: &[(Entry, Entry)],
+    specs: &[Entry],
+    registry: Option<&SpecRegistry>,
+    output: &OutputArgs,
+) {
+    for (before, after) in steps {
+        show_step(before, after, registry, output);
+    }
+    for spec in specs {
+        show_delete(spec, registry, output);
     }
 }

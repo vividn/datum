@@ -74,18 +74,20 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
         crate::commands::helpers::warn_if_stale_default_last("deleting an entry", db);
     }
 
+    // Every write, `_LAST` included, lands before anything prints: a reader
+    // closing the pipe ends the process at the print (da-ki5j3).
     let why = args.comment.as_ref().map(|c| format!("deleted: {c}"));
     let mut first_err: Option<anyhow::Error> = None;
     let mut deleted: Vec<Entry> = Vec::new();
     for entry in &entries {
         match db.soft_delete_entry_with_comment(&entry.slug, why.as_deref()) {
-            Ok(dead) => {
-                show_delete(&dead, registry.as_ref(), &output);
-                deleted.push(dead);
-            }
+            Ok(dead) => deleted.push(dead),
             Err(e) => {
                 let msg = format!("{}: {}", entry.slug, e);
                 if args.strict {
+                    for dead in &deleted {
+                        show_delete(dead, registry.as_ref(), &output);
+                    }
                     return Err(anyhow::anyhow!(msg));
                 }
                 eprintln!("{msg}");
@@ -94,27 +96,28 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
         }
     }
 
-    for (tok, err) in token_errors {
-        let msg = format!("{tok}: {err}");
-        eprintln!("{msg}");
-        first_err.get_or_insert_with(|| anyhow::anyhow!(msg));
-    }
-
     // A field left with no live entry takes its bare spec with it, into
     // the same `_LAST` (da-elv6d). The pointer keeps the deleted hids so
     // `undo` (with no arg) can restore them. Skipped if nothing actually
     // got deleted.
-    let mut deleted_hids: Vec<Hid> = deleted.iter().map(|e| e.hid.clone()).collect();
     let (specs, dropped) = crate::commands::helpers::drop_orphaned_bare_specs(
         db,
         &deleted,
         datum_core::history::ChangeKind::UserEdit,
-        registry.as_ref(),
-        &output,
     );
-    deleted_hids.extend(specs);
+    deleted.extend(specs);
+    let deleted_hids: Vec<Hid> = deleted.iter().map(|e| e.hid.clone()).collect();
     if !deleted_hids.is_empty() {
         let _ = datum_core::last_docs::set_last_docs(db, &deleted_hids);
+    }
+    for dead in &deleted {
+        show_delete(dead, registry.as_ref(), &output);
+    }
+
+    for (tok, err) in token_errors {
+        let msg = format!("{tok}: {err}");
+        eprintln!("{msg}");
+        first_err.get_or_insert_with(|| anyhow::anyhow!(msg));
     }
     dropped?;
 

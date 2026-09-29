@@ -178,6 +178,7 @@ fn report(db: &Db, moved: &[datum_core::db::Retimed]) -> Result<()> {
     if moved.is_empty() {
         anyhow::bail!("no entries retimed");
     }
+    crate::cmd::stamp_batch(db);
     let registry = load_registry_opt(db);
     let output = OutputArgs::default();
     for r in moved {
