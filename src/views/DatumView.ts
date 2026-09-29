@@ -42,8 +42,7 @@ export type NamedReduceFunctions<
   NamedReduceValues extends Record<string, any> | undefined,
 > = {
   [T in keyof NamedReduceValues]:
-    | ReduceFunction<MapKey, MapValue, NamedReduceValues[T]>
-    | BuiltInReduce;
+    ReduceFunction<MapKey, MapValue, NamedReduceValues[T]> | BuiltInReduce;
 };
 
 type FirstReduceArgs<MapKey, MapValue, _ReduceValue> = [

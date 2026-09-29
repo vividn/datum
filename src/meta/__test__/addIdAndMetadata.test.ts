@@ -215,4 +215,16 @@ describe("addIdAndMetadata", () => {
     expect(payload._id).toEqual("test_active:2023-09-05T11:20:00.000Z");
     expect(payload.meta.idStructure).toEqual("%occurTime%");
   });
+
+  it("can add a manually specified humanId", () => {
+    const payload = addIdAndMetadata(
+      {
+        foo: "bar",
+        occurTime: { utc: "2023-09-05T11:20:00.000Z" },
+      },
+      { hid: "customHid" },
+    ) as DatumPayload;
+
+    expect(payload.meta.humanId).toBe("customHid");
+  });
 });

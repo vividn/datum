@@ -62,11 +62,9 @@ export type DataOnlyDocument<T = unknown> = DataOnlyPayload<T> & {
 
 export type EitherPayload<T = unknown> = DatumPayload<T> | DataOnlyPayload<T>;
 export type EitherIdPayload<T = unknown> =
-  | DatumIdPayload<T>
-  | DataOnlyIdPayload<T>;
+  DatumIdPayload<T> | DataOnlyIdPayload<T>;
 export type EitherDocument<T = unknown> =
-  | DatumDocument<T>
-  | DataOnlyDocument<T>;
+  DatumDocument<T> | DataOnlyDocument<T>;
 
 export function isDatumDocument(
   doc: DatumDocument | DataOnlyDocument,
