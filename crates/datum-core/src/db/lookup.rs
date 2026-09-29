@@ -162,35 +162,10 @@ impl Db {
     }
 
     /// Return the active state of `field` at time `at`, or `Value::Null` if
-    /// the field has no state-affecting entries at or before `at`.
-    ///
-    /// Reconstructs the state-change timeline from the canonically
-    /// participating rows ([`STATE_PARTICIPATION_SQL`]) for `field` (see
-    /// `state::compile_state` for the event rules) and returns the most
-    /// recent event's value.
-    ///
-    /// SQL fetches just the candidate rows (field match, canonical
-    /// participation, `occur_time` ≤ at) plus the blocks still running at
-    /// `at` — da-zwct: a block stores its END, so the row covering `at`
-    /// can sit in its future ([`Db::blocks_spanning`]). Compilation runs
-    /// in Rust and sorts the events, so the two sets just concatenate.
+    /// the field holds none there. [`Db::state_at`] with the absence
+    /// folded into `Null` — the one oracle, not a second one (da-u5l1o).
     pub fn get_active_state(&self, field: &str, at: DateTime<Utc>) -> Result<JsonValue> {
-        let at_str = at.to_rfc3339();
-        let sql = format!(
-            "SELECT * FROM entries
-             WHERE field = ?1
-               AND {STATE_PARTICIPATION_SQL}
-               AND {expr} <= ?2
-             ORDER BY {STATE_ORDER_OLDEST_FIRST}",
-            expr = time_expr_endbound(),
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(params![field, at_str], row_to_entry)?;
-        let mut entries: Vec<Entry> = rows
-            .map(|r| r.map_err(DatumError::Db))
-            .collect::<Result<Vec<_>>>()?;
-        entries.extend(self.blocks_spanning(field, at)?);
-        Ok(crate::state::compile_state(&entries, at))
+        Ok(self.state_at(field, at)?.unwrap_or(JsonValue::Null))
     }
 
     /// Find the most recent "open block" for `field` at time `at`: the latest
@@ -274,31 +249,59 @@ impl Db {
         snapshot_time: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<Option<Entry>> {
         Ok(self
-            .entries_for_now(field, snapshot_time, 1)?
+            .entries_for_now(field, snapshot_time, 1, false)?
             .into_iter()
             .next())
+    }
+
+    /// The oldest occur dot ([`crate::state::StateRow::is_occur_dot`]) of
+    /// `field` stored after `after` and at or before `at` — the one that
+    /// turns an IGNORED field TRACKED. The state reads leave dots out and
+    /// ask for this one on its own.
+    pub(crate) fn first_dot_after(
+        &self,
+        field: &str,
+        after: Option<chrono::DateTime<chrono::Utc>>,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Option<Entry>> {
+        let after = after.map(|t| t.to_rfc3339()).unwrap_or_default();
+        self.conn
+            .query_row(
+                &first_dot_sql("*"),
+                params![field, after, at.to_rfc3339()],
+                row_to_entry,
+            )
+            .optional()
+            .map_err(DatumError::Db)
     }
 
     /// The newest `limit` state-participating entries for a field, newest
     /// first — [`Db::latest_entry_for_now`] with room to look further
     /// back. `now` reads one row in the common case and asks for more
     /// only when that row is a block that has already handed the field
-    /// back and the resumed state lies behind it (da-phoe).
+    /// back and the resumed state lies behind it (da-phoe). `skip_dots`
+    /// leaves occur dots out, as the depth-limited state reads do.
     pub fn entries_for_now(
         &self,
         field: &str,
         snapshot_time: Option<chrono::DateTime<chrono::Utc>>,
         limit: usize,
+        skip_dots: bool,
     ) -> Result<Vec<Entry>> {
         let expr = time_expr_endbound();
         let (bound, cutoff) = match snapshot_time {
             None => (String::new(), None),
             Some(t) => (format!("AND {expr} <= ?2"), Some(t.to_rfc3339())),
         };
+        let dots = if skip_dots {
+            format!("AND NOT {}", crate::state::OCCUR_DOT_SQL)
+        } else {
+            String::new()
+        };
         let sql = format!(
             "SELECT * FROM entries
              WHERE field = ?1 AND {STATE_PARTICIPATION_SQL}
-               {bound}
+               {bound} {dots}
              ORDER BY {STATE_ORDER_NEWEST_FIRST}
              LIMIT {limit}",
         );
@@ -320,7 +323,7 @@ impl Db {
     /// da-zwct: a block's `occur_time` is its END, so the row that holds
     /// the field at `t` can sit in `t`'s future — the bounded readers
     /// would miss it entirely. Only the nearest
-    /// [`super::now::SPAN_LOOKAHEAD`] forward blocks are considered; the
+    /// [`crate::state::SPAN_LOOKAHEAD`] forward blocks are considered; the
     /// leading edge is re-derived in Rust because `dur` is an ISO-8601
     /// string SQL cannot subtract from a time.
     fn blocks_spanning(&self, field: &str, t: chrono::DateTime<chrono::Utc>) -> Result<Vec<Entry>> {
@@ -331,7 +334,7 @@ impl Db {
                AND dur IS NOT NULL AND {expr} > ?2
              ORDER BY {expr} ASC
              LIMIT {}",
-            super::now::SPAN_LOOKAHEAD,
+            crate::state::SPAN_LOOKAHEAD,
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![field, t.to_rfc3339()], row_to_entry)?;
@@ -359,4 +362,18 @@ pub(crate) fn fetch_entry_any(conn: &Connection, slug_or_hid: &str) -> Result<En
         rusqlite::Error::QueryReturnedNoRows => DatumError::NotFound(slug_or_hid.to_string()),
         other => DatumError::Db(other),
     })
+}
+
+/// The oldest occur dot of `?1` stored after `?2` and at or before `?3`,
+/// selecting `columns` ([`Db::first_dot_after`]).
+pub(super) fn first_dot_sql(columns: &str) -> String {
+    format!(
+        "SELECT {columns} FROM entries
+         WHERE field = ?1 AND {STATE_PARTICIPATION_SQL}
+           AND {dot}
+           AND occur_time > ?2 AND occur_time <= ?3
+         ORDER BY {STATE_ORDER_OLDEST_FIRST}
+         LIMIT 1",
+        dot = crate::state::OCCUR_DOT_SQL,
+    )
 }

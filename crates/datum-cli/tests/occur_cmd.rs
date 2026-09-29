@@ -241,12 +241,18 @@ fn iana_timezone_flag_applies() {
 /// Datum writes `lastState` onto the occur document to capture the prior
 /// state; daydumb does not duplicate that onto the entry (it reconstructs
 /// state from the verb timeline). The portable invariant: before any entry,
-/// `get_active_state` returns `null`; after one occur, it compiles to
-/// `false` (see `state::compile_state` for the Occur rule) — matching the
-/// datum test's observation that "even 1 occur document is enough to switch
-/// active state to false from null".
+/// `get_active_state` returns `null`; after one occur the field is
+/// TRACKED — v3's tracked-but-off, v2's `false` — matching the datum test's
+/// observation that "even 1 occur document is enough to switch active
+/// state to false from null". That is about a field with NO state becoming
+/// tracked, not about an occur ending a running state: an occur leaves a
+/// state alone unless it is IGNORED or absent (vividn, 2026-09-29: «if the
+/// state is IGNORED (or nothing because no data exists which is
+/// functionally equivalent), then it goes to TRACKED on an occur»; v2 did
+/// the same). How the field came to exist — `spec set` here — changes
+/// nothing.
 #[test]
-fn occur_flips_state_from_null_to_false() {
+fn occur_flips_state_from_null_to_tracked() {
     let db = fresh_db();
 
     let before_any = db.get_active_state("event", Utc::now()).unwrap();
@@ -267,8 +273,8 @@ fn occur_flips_state_from_null_to_false() {
     let after_one = db.get_active_state("event", Utc::now()).unwrap();
     assert_eq!(
         after_one,
-        json!(false),
-        "occur compiles to state=false at time_start",
+        json!("TRACKED"),
+        "an occur tracks a field with no state"
     );
 
     run_cli(&["occur", "event", "-t=-1"], &db).expect("second occur");

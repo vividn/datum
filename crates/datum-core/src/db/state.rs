@@ -29,7 +29,8 @@ impl Db {
     /// `t`. Row participation and ordering follow the canonical rule
     /// ([`super::types::STATE_PARTICIPATION_SQL`]): live, occur_time-bearing
     /// rows, newest `occur_time` first with a slug tiebreak. Delegates to
-    /// [`Db::batch_state_at`] so the two oracles cannot diverge (da-ylet).
+    /// [`Db::batch_state_at`], and through it to the one oracle
+    /// ([`crate::state::resolve_effective`], da-u5l1o).
     ///
     /// da-2i8g: when the winning row is a block-switch / point-switch
     /// whose trailing edge (`occur_time + dur`) is at or before `t`, the
@@ -40,8 +41,8 @@ impl Db {
     /// trailing edge, it has HANDED THE FIELD BACK — `following_state IS
     /// NULL` means "resume whatever preceded me" — so the read walks
     /// behind it to the row that actually decides the state. Both rules
-    /// live in [`super::now::resolve_effective`], which `now` reads
-    /// through too, so the two oracles cannot diverge.
+    /// live in [`crate::state::resolve_effective`], which `now` and the
+    /// per-field cache [`crate::state::FieldStateRows`] read through too.
     ///
     /// `Ok(None)` means the field has no qualifying entries at or before
     /// `t` — nothing has said to ignore it, so callers read it as TRACKED
@@ -79,7 +80,7 @@ impl Db {
     /// back, and nothing preceded them.
     ///
     /// This is the walk; [`Db::batch_state_at`] is this with the id
-    /// dropped, so the two oracles cannot disagree about which row won.
+    /// dropped, so the two cannot disagree about which row won.
     pub fn batch_governing_at(
         &self,
         fields: &[&str],
@@ -100,21 +101,59 @@ impl Db {
             })
             .collect();
         if !deep.is_empty() {
-            rows.extend(self.state_rows_at(&deep, t, super::now::RESUME_LOOKBACK)?);
+            rows.extend(self.state_rows_at(&deep, t, crate::state::RESUME_LOOKBACK)?);
         }
-        Ok(rows
-            .into_iter()
-            .map(|(field, rows)| {
-                let eff = super::now::resolve_effective(&rows, t);
-                let id = eff.governing.map(|i| rows[i].id.clone());
-                (field, (eff.state, id))
-            })
-            .collect())
+        // The reads leave occur dots out; a field an occur moves (IGNORED,
+        // or no state at all — a field of nothing but dots included) needs
+        // the first one after that took effect, which turns it TRACKED.
+        let mut out = std::collections::HashMap::with_capacity(rows.len());
+        for field in dedup_fields(fields) {
+            let mut rows = rows.remove(field).unwrap_or_default();
+            let mut eff = crate::state::resolve_effective(&rows, t);
+            if eff.an_occur_tracks() {
+                if let Some(dot) = self.first_dot_row_after(field, eff.since, t)? {
+                    rows.push(dot);
+                    eff = crate::state::resolve_effective(&rows, t);
+                }
+            }
+            if rows.is_empty() {
+                continue;
+            }
+            let id = eff.governing.map(|i| rows[i].id.clone());
+            out.insert(field.to_string(), (eff.state, id));
+        }
+        Ok(out)
+    }
+
+    /// [`Db::first_dot_after`] in the state columns alone, as the other
+    /// state reads select them.
+    fn first_dot_row_after(
+        &self,
+        field: &str,
+        after: Option<DateTime<Utc>>,
+        at: DateTime<Utc>,
+    ) -> Result<Option<crate::state::StateRow>> {
+        use rusqlite::OptionalExtension;
+        let after = after.map(|t| t.to_rfc3339()).unwrap_or_default();
+        let columns = self
+            .conn
+            .query_row(
+                &super::lookup::first_dot_sql(
+                    "field, state, verb, occur_time, dur, following_state, hid",
+                ),
+                rusqlite::params![field, after, at.to_rfc3339()],
+                read_state_columns,
+            )
+            .optional()?;
+        Ok(match columns {
+            Some(cols) => Some(decode_state_row(cols)?.1),
+            None => None,
+        })
     }
 
     /// The newest `depth` state-participating rows for every field in
     /// `fields`, evaluated at `t`, newest first — the column-level input
-    /// [`super::now::resolve_effective`] reads. Fields with no
+    /// [`crate::state::resolve_effective`] reads. Fields with no
     /// qualifying entry are absent from the map.
     ///
     /// da-vmjh: one index-bounded `ORDER BY … LIMIT depth` PER FIELD,
@@ -134,8 +173,8 @@ impl Db {
         fields: &[&str],
         t: DateTime<Utc>,
         depth: usize,
-    ) -> Result<std::collections::HashMap<String, Vec<super::now::StateRow>>> {
-        let mut out: std::collections::HashMap<String, Vec<super::now::StateRow>> =
+    ) -> Result<std::collections::HashMap<String, Vec<crate::state::StateRow>>> {
+        let mut out: std::collections::HashMap<String, Vec<crate::state::StateRow>> =
             std::collections::HashMap::with_capacity(fields.len());
         if fields.is_empty() {
             return Ok(out);
@@ -159,7 +198,7 @@ impl Db {
     /// `occur_time <= t` window above would never see it. Mirrors
     /// [`Db::blocks_spanning`] for the column-level reader; the leading
     /// edge is re-derived in Rust because `dur` is an ISO-8601 string
-    /// SQL cannot subtract from a time. [`super::now::resolve_effective`]
+    /// SQL cannot subtract from a time. [`crate::state::resolve_effective`]
     /// re-orders the merged rows on that edge.
     ///
     /// da-vmjh: same per-field `ORDER BY … LIMIT` shape as
@@ -169,12 +208,12 @@ impl Db {
         &self,
         fields: &[&str],
         t: DateTime<Utc>,
-        out: &mut std::collections::HashMap<String, Vec<super::now::StateRow>>,
+        out: &mut std::collections::HashMap<String, Vec<crate::state::StateRow>>,
     ) -> Result<()> {
         let cutoff = t.to_rfc3339();
         let mut stmt = self
             .conn
-            .prepare(&spanning_blocks_sql(super::now::SPAN_LOOKAHEAD))?;
+            .prepare(&spanning_blocks_sql(crate::state::SPAN_LOOKAHEAD))?;
         for field in dedup_fields(fields) {
             let rows = stmt.query_map(rusqlite::params![field, cutoff], read_state_columns)?;
             for r in rows {
@@ -198,28 +237,23 @@ impl Db {
     /// - `[A, B, A, C, A]` → `resolve_state_back(2)` → `B`
     /// - `[A, B, A, C, A]` → `resolve_state_back(3)` → `None`
     ///
-    /// The walk samples the canonical transition timeline — the same
-    /// event stream `now` / `state_at` compile
-    /// ([`crate::state::entry_transition_events`], da-a0n3): every
-    /// deliberate state change emits a transition at its `occur_time`,
-    /// and a compound switch (block-switch / point-switch) additionally
-    /// emits its `following_state` at the trailing edge
-    /// `occur_time + dur` (da-2i8g). Consequences:
-    /// - the "current" anchor is the effective state at `at` — a compound
-    ///   switch past its trailing edge anchors on its `following_state`,
+    /// The walk reads the field's state TIMELINE — the one oracle,
+    /// [`crate::state::resolve_effective`], read at every row's edges
+    /// ([`crate::state::FieldStateRows::changes`], da-u5l1o). Consequences:
+    /// - the "current" anchor is the state at `at` — a compound switch
+    ///   past its trailing edge anchors on its `following_state`, and a
+    ///   block that has ended anchors on the state it handed back to,
     ///   exactly like `now`;
     /// - a `following_state` is an ordinal candidate in its own right;
-    /// - events after `at` (e.g. the trailing edge of a still-running
-    ///   block-switch) are invisible.
+    /// - changes after `at` (e.g. the trailing edge of a still-running
+    ///   block-switch) are invisible;
+    /// - what an occur-shaped row sets ([`crate::state::StateRow::is_annotation`]:
+    ///   a dot, a stateless block) is not somewhere to go back to, and is
+    ///   skipped; an explicit JSON `null` state is a state like any other;
+    /// - a zero-span compound switch holds its primary state for no time
+    ///   at all, so only its `following_state` is ever held.
     ///
-    /// Row participation falls out of the canonical compiler, not a
-    /// local predicate: occur-shaped annotations (`Verb::Point` with no
-    /// state or the literal `true` legacy occur wrote), stateless
-    /// blocks, and timeless rows (`occur_time IS NULL`) never emit transitions, while
-    /// `switch x --moment` (Point with a real state) emits a genuine
-    /// zero-length transition. An explicit JSON `null` state is a real,
-    /// storable state value and participates like any other. States
-    /// compare in normalized form ([`crate::state::normalize_state`]).
+    /// States compare in normalized form ([`crate::state::normalize_state`]).
     ///
     /// Array states are ONE OPAQUE entity by design — `switch body a,b`
     /// participates as the single value `["a","b"]`, never element-wise.
@@ -237,23 +271,19 @@ impl Db {
         // 256 entries gives plenty of headroom for a heavily-toggled field;
         // the SQL is field-scoped and indexed, so the cost is negligible.
         let entries = self.entries_for_field(field, Some(256))?;
-        // (event_time, create_time, state), sorted ascending the same way
-        // [`crate::state::FieldStateEvents`] sorts — the stable sort keeps
-        // a point-switch's trailing event after its primary, so reversed
-        // walks anchor on the `following_state`.
-        let mut events: Vec<(DateTime<Utc>, DateTime<Utc>, JsonValue)> = Vec::new();
-        for e in &entries {
-            for (t, state) in crate::state::entry_transition_events(e) {
-                events.push((t, e.create_time, state));
-            }
-        }
-        events.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
-        let mut walk = events.iter().rev().filter(|(t, _, _)| *t <= at);
-        let Some((_, _, current)) = walk.next() else {
+        let rows = crate::state::FieldStateRows::from_entries(&entries);
+        let held: Vec<JsonValue> = rows
+            .changes()
+            .into_iter()
+            .filter(|c| c.at <= at && !c.row.is_annotation())
+            .map(|c| crate::state::normalize_state(&c.state).to_json())
+            .collect();
+        let mut walk = held.iter().rev();
+        let Some(current) = walk.next() else {
             return Ok(None);
         };
         let mut alternatives: Vec<JsonValue> = Vec::new();
-        for (_, _, s) in walk {
+        for s in walk {
             if s == current || alternatives.iter().any(|x| x == s) {
                 continue;
             }
@@ -390,7 +420,7 @@ impl Db {
 /// The `fields` list with repeats removed, order preserved. The
 /// predecessor's `field IN (…)` deduped for free; the per-field loop that
 /// replaced it would otherwise read a repeated name twice and hand
-/// [`super::now::resolve_effective`] a doubled row list.
+/// [`crate::state::resolve_effective`] a doubled row list.
 fn dedup_fields<'a>(fields: &[&'a str]) -> Vec<&'a str> {
     let mut seen = std::collections::HashSet::with_capacity(fields.len());
     fields.iter().copied().filter(|f| seen.insert(*f)).collect()
@@ -408,6 +438,7 @@ fn dedup_fields<'a>(fields: &[&'a str]) -> Vec<&'a str> {
 /// scan terminate early. A plan that SCANs a subquery instead has read
 /// the whole history.
 pub(super) fn state_rows_sql(depth: usize) -> String {
+    use crate::state::OCCUR_DOT_SQL;
     // da-2i8g: each row's verb / occur_time / dur / following_state come
     // along so the trailing-edge rules can be applied in Rust — `dur` is
     // an ISO-8601 string, which SQL cannot add to a time.
@@ -417,6 +448,7 @@ pub(super) fn state_rows_sql(depth: usize) -> String {
            FROM entries
           WHERE field = ?1
             AND {STATE_PARTICIPATION_SQL}
+            AND NOT {OCCUR_DOT_SQL}
             AND {endbound} <= ?2
           ORDER BY {STATE_ORDER_NEWEST_FIRST}
           LIMIT {depth}"
@@ -427,12 +459,14 @@ pub(super) fn state_rows_sql(depth: usize) -> String {
 /// dur-bearing rows stored after `?2`, oldest first. Same index and same
 /// early exit as [`state_rows_sql`], walked the other way.
 pub(super) fn spanning_blocks_sql(limit: usize) -> String {
+    use crate::state::OCCUR_DOT_SQL;
     let endbound = time_expr_endbound();
     format!(
         "SELECT field, state, verb, occur_time, dur, following_state, hid
            FROM entries
           WHERE field = ?1
             AND {STATE_PARTICIPATION_SQL}
+            AND NOT {OCCUR_DOT_SQL}
             AND dur IS NOT NULL
             AND {endbound} > ?2
           ORDER BY {STATE_ORDER_OLDEST_FIRST}
@@ -444,7 +478,7 @@ pub(super) fn spanning_blocks_sql(limit: usize) -> String {
 /// rusqlite alone can take them. The JSON columns stay as strings here so
 /// a parse failure surfaces as a [`DatumError`] rather than being flattened
 /// into a rusqlite error — [`decode_state_row`] finishes the job.
-type StateColumns = (
+pub(crate) type StateColumns = (
     String,
     Option<String>,
     crate::entry::Verb,
@@ -454,7 +488,7 @@ type StateColumns = (
     String,
 );
 
-fn read_state_columns(row: &rusqlite::Row) -> rusqlite::Result<StateColumns> {
+pub(crate) fn read_state_columns(row: &rusqlite::Row) -> rusqlite::Result<StateColumns> {
     let field: String = row.get(0)?;
     let value: Option<String> = row.get(1)?;
     let verb: crate::entry::Verb = row.get::<_, String>(2)?.parse().map_err(|e: String| {
@@ -472,7 +506,7 @@ fn read_state_columns(row: &rusqlite::Row) -> rusqlite::Result<StateColumns> {
     Ok((field, value, verb, occur_utc, dur, following, id))
 }
 
-fn decode_state_row(cols: StateColumns) -> Result<(String, super::now::StateRow)> {
+pub(crate) fn decode_state_row(cols: StateColumns) -> Result<(String, crate::state::StateRow)> {
     let (field, value, verb, occur, dur, following, id) = cols;
     let state: Option<JsonValue> = match value {
         None => None,
@@ -484,7 +518,7 @@ fn decode_state_row(cols: StateColumns) -> Result<(String, super::now::StateRow)
     };
     Ok((
         field,
-        super::now::StateRow {
+        crate::state::StateRow {
             id,
             verb,
             state,
@@ -606,11 +640,11 @@ mod tests {
             ("state_rows_sql", state_rows_sql(1)),
             (
                 "state_rows_sql deep",
-                state_rows_sql(super::super::now::RESUME_LOOKBACK),
+                state_rows_sql(crate::state::RESUME_LOOKBACK),
             ),
             (
                 "spanning_blocks_sql",
-                spanning_blocks_sql(super::super::now::SPAN_LOOKAHEAD),
+                spanning_blocks_sql(crate::state::SPAN_LOOKAHEAD),
             ),
         ] {
             let plan = plan_of(&db, &sql);
@@ -812,28 +846,162 @@ mod tests {
             .unwrap();
         assert_eq!(bounded.state, Some(json!("happy")));
 
-        // get_active_state (compile-based door)
+        // get_active_state
         assert_eq!(db.get_active_state("mood", probe).unwrap(), json!("happy"));
         assert_eq!(db.get_active_state("solo", probe).unwrap(), JsonValue::Null);
 
-        // last_state_at (integrity/render door)
+        // the per-field cache (integrity/render door)
+        let rows = |f| crate::state::FieldStateRows::load(&db.conn, f).unwrap();
+        assert_eq!(rows("mood").at(probe, None), Some(json!("happy")));
+        assert_eq!(rows("solo").at(probe, None), None);
+    }
+
+    /// da-u5l1o: the two ways of fetching a field's rows — the windowed
+    /// SQL read behind `state_at`, and the per-field cache the render,
+    /// integrity and restore probe — both hand them to the one oracle, so
+    /// they agree at every edge of every history and a microsecond either
+    /// side of it. A future reader of a field's state joins this table.
+    #[test]
+    fn the_sql_window_and_the_row_cache_agree_everywhere() {
+        type Row = (Verb, Option<JsonValue>, i64, Option<i64>, Option<JsonValue>);
+        let sw = |s: &str, at: i64| -> Row { (Verb::Switch, Some(json!(s)), at, None, None) };
+        let block = |s: JsonValue, end: i64, secs: i64| -> Row {
+            (Verb::Block, Some(s), end, Some(secs), None)
+        };
+        let compound = |s: &str, end: i64, secs: i64, f: &str| -> Row {
+            let verb = if secs == 0 {
+                Verb::PointSwitch
+            } else {
+                Verb::BlockSwitch
+            };
+            (verb, Some(json!(s)), end, Some(secs), Some(json!(f)))
+        };
+        let histories: Vec<(&str, Vec<Row>)> = vec![
+            ("switch", vec![sw("a", 100), sw("b", 200), sw("a", 300)]),
+            // vividn's: a timed switch with no following_state, then its state again.
+            (
+                "timed",
+                vec![sw("s1", 100), block(json!("s2"), 400, 100), sw("s2", 460)],
+            ),
+            (
+                "timed-following",
+                vec![sw("s1", 100), compound("sit", 400, 100, "vertical")],
+            ),
+            (
+                "nested",
+                vec![
+                    sw("s1", 100),
+                    block(json!("out"), 600, 400),
+                    block(json!("in"), 400, 100),
+                ],
+            ),
+            (
+                "back-to-back",
+                vec![
+                    sw("s1", 100),
+                    block(json!("x"), 300, 100),
+                    block(json!("y"), 400, 100),
+                ],
+            ),
+            (
+                "point-switch",
+                vec![sw("s1", 100), compound("startled", 200, 0, "calm")],
+            ),
+            (
+                "switch-inside-compound",
+                vec![compound("sit", 400, 200, "vertical"), sw("stand", 300)],
+            ),
+            (
+                "start-stop",
+                vec![
+                    (Verb::Switch, Some(json!(true)), 100, None, None),
+                    (Verb::Switch, Some(json!(false)), 200, None, None),
+                    block(json!(true), 400, 100),
+                ],
+            ),
+            (
+                "occur",
+                vec![sw("on", 100), (Verb::Point, None, 200, None, None)],
+            ),
+            (
+                "occur-after-ignored",
+                vec![
+                    sw("IGNORED", 100),
+                    (Verb::Point, None, 200, None, None),
+                    sw("x", 300),
+                ],
+            ),
+            (
+                "occur-only",
+                vec![
+                    (Verb::Point, None, 100, None, None),
+                    (Verb::Point, None, 200, None, None),
+                ],
+            ),
+            // More dots than a state read looks back through: they never
+            // decide a state, so they must not push the switch out of reach.
+            (
+                "many-occurs",
+                std::iter::once(sw("drinking", 100))
+                    .chain((1..=70).map(|i| (Verb::Point, None, 100 + i * 10, None, None)))
+                    .collect(),
+            ),
+        ];
+        let db = Db::open_in_memory().unwrap();
+        for (field, rows) in &histories {
+            let mut edges = Vec::new();
+            for (verb, state, end, secs, following) in rows {
+                let mut e = Entry::new(
+                    *field,
+                    *verb,
+                    state.clone(),
+                    None,
+                    Some(at(*end)),
+                    secs.map(|s| crate::dur::Dur::of(chrono::Duration::seconds(s))),
+                    "d1",
+                );
+                e.following_state = following.clone();
+                db.insert_entry(&e).unwrap();
+                edges.extend([at(*end).utc, at(end - secs.unwrap_or(0)).utc]);
+            }
+            let cache = crate::state::FieldStateRows::load(&db.conn, field).unwrap();
+            for edge in edges {
+                for probe in [-1, 0, 1].map(|us| edge + chrono::Duration::microseconds(us)) {
+                    let sql = db.state_at(field, probe).unwrap().filter(|v| !v.is_null());
+                    assert_eq!(cache.at(probe, None), sql, "{field} at {probe}");
+                }
+            }
+        }
+        // And the answers are the right ones where the oracles used to split.
+        let state = |f: &str, secs: i64| db.state_at(f, at(secs).utc).unwrap();
         assert_eq!(
-            crate::state::last_state_at(&db.conn, "mood", probe, None).unwrap(),
-            Some(json!("happy"))
+            state("timed", 450),
+            Some(json!("s1")),
+            "the block handed back"
         );
         assert_eq!(
-            crate::state::last_state_at(&db.conn, "solo", probe, None).unwrap(),
-            None
+            state("switch-inside-compound", 450),
+            Some(json!("vertical"))
         );
+        assert_eq!(state("nested", 450), Some(json!("out")));
+        assert_eq!(
+            state("occur", 250),
+            Some(json!("on")),
+            "an occur leaves a state alone"
+        );
+        assert_eq!(state("occur-after-ignored", 150), Some(json!("IGNORED")));
+        assert_eq!(state("occur-after-ignored", 250), Some(json!("TRACKED")));
+        assert_eq!(state("occur-only", 150), Some(json!("TRACKED")));
+        assert_eq!(state("many-occurs", 900), Some(json!("drinking")));
     }
 
     /// da-ylet axis 3: same-instant ties resolve deterministically to the
-    /// slug-DESC winner in BOTH oracles. Live same-instant rows are
+    /// slug-DESC winner in every reader. Live same-instant rows are
     /// schema-impossible on one device (da-ga8b's partial UNIQUE on
     /// `(field, occur_time)`), so drop the index to simulate rows that
     /// bypassed it (raw inserts, sync merges).
     #[test]
-    fn same_instant_tie_resolves_to_slug_desc_winner_in_both_oracles() {
+    fn same_instant_tie_resolves_to_slug_desc_winner_in_every_reader() {
         let db = Db::open_in_memory().unwrap();
         db.conn
             .execute("DROP INDEX entries_field_occurtime", [])
@@ -874,6 +1042,13 @@ mod tests {
             db.batch_state_at(&["mood"], probe).unwrap().get("mood"),
             Some(&json!("zzz")),
             "batch_state_at must pick the same winner"
+        );
+        assert_eq!(
+            crate::state::FieldStateRows::load(&db.conn, "mood")
+                .unwrap()
+                .at(probe, None),
+            Some(json!("zzz")),
+            "the per-field cache must pick the same winner"
         );
         let latest = db.latest_entry_for_now("mood", None).unwrap().unwrap();
         assert_eq!(
@@ -1215,17 +1390,18 @@ mod tests {
     }
 
     #[test]
-    fn state_back_point_switch_anchors_on_following_state_at_occur() {
-        // Zero-span compound switch: both events land at the same
-        // instant, but the trailing one is newer — the anchor is the
-        // following_state and the primary becomes `_` (same tie rule as
-        // FieldStateEvents' stable sort).
+    fn state_back_point_switch_skips_its_instant_primary() {
+        // Zero-span compound switch: the primary and the following state
+        // share one instant, and at that instant the field holds the
+        // following state (da-u5l1o: the oracle is read at the edge). The
+        // primary is held for no time, so it is nowhere `_` can go back to.
         let db = Db::open_in_memory().unwrap();
+        push_switch(&db, "mood", json!("bored"), 50);
         push_compound_switch(&db, "mood", json!("startled"), 0, json!("calm"), 100);
         assert_eq!(
             db.resolve_state_back("mood", 1, probe()).unwrap(),
-            Some(json!("startled")),
-            "current = calm (the following_state), so _ = the primary"
+            Some(json!("bored")),
+            "current = calm (the following_state); _ skips the instant primary"
         );
         assert_eq!(db.resolve_state_back("mood", 2, probe()).unwrap(), None);
     }

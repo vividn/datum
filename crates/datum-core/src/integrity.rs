@@ -303,17 +303,17 @@ pub fn detect_for_entries(
 /// no block snapshot, and a field nobody triggers on is never read.
 #[derive(Default)]
 struct FieldSnapshots {
-    /// State-transition events per field — the cheap form of the
-    /// `last_state_at` question (fewer columns, no `Entry` materialisation).
-    states: std::collections::HashMap<String, crate::state::FieldStateEvents>,
+    /// Each field's state rows, read once — the oracle's input
+    /// ([`crate::state::FieldStateRows`]).
+    states: std::collections::HashMap<String, crate::state::FieldStateRows>,
     /// Live Block / BlockSwitch rows per field, in canonical oldest-first
     /// order, for the overlap scan.
     blocks: std::collections::HashMap<String, Vec<Entry>>,
 }
 
 impl FieldSnapshots {
-    /// Compiled state of `field` at `probe`, ignoring `exclude_hid` —
-    /// the snapshot-backed equivalent of [`crate::state::last_state_at`].
+    /// State of `field` at `probe`, as though `exclude_hid` had never
+    /// been written.
     fn state_at(
         &mut self,
         conn: &Connection,
@@ -324,9 +324,8 @@ impl FieldSnapshots {
         if !self.states.contains_key(field) {
             // Transitions only: a TRACK document declares a field, it does
             // not open or close it (da-c8mh).
-            let events =
-                crate::state::FieldStateEvents::load_transitions_for_field(conn, field, None)?;
-            self.states.insert(field.to_string(), events);
+            let rows = crate::state::FieldStateRows::load_transitions(conn, field)?;
+            self.states.insert(field.to_string(), rows);
         }
         Ok(self.states[field].at(probe, Some(exclude_hid)))
     }
@@ -446,11 +445,16 @@ fn detect_one(
     Ok(())
 }
 
-/// da-acft: walk live state-bearing entries in `occur_time` order per
-/// field and return each one whose normalized state *equals* its
-/// predecessor on the same field. Excludes the open/open case — that's
-/// [`IntegrityKind::DoubleOpen`], still filed at insert because the
-/// auto-resolver acts on it.
+/// da-acft: every live state-bearing row whose normalized state *equals*
+/// the state its field was in just before it — the same question the
+/// render's `!` asks ([`crate::state::FieldStateRows::at`] at the row's
+/// leading edge minus a microsecond, the row itself left out), over the
+/// same rows (TRANSITIONS: a TRACK declaration is not one, da-c8mh), so
+/// the warning and the mark cannot disagree (da-u5l1o). A block that has
+/// ended hands its field back, so a switch after it is compared with
+/// the state that resumed, not with the block. Excludes the open/open
+/// case — that's [`IntegrityKind::DoubleOpen`], still filed at insert
+/// because the auto-resolver acts on it.
 ///
 /// This is a live computation: nothing is stored, and a user who
 /// fixes the underlying data (backfill missing transition, delete
@@ -459,59 +463,53 @@ fn detect_one(
 /// warnings sitting in `integrity_warnings` long after the data was
 /// repaired, because there was no auto-resolution rule for the kind.
 ///
-/// Walks `entries_live_field_occur` (partial index on `(field,
-/// occur_time) WHERE deleted_at IS NULL`) via SQLite's window
-/// function. Per-row state JSON is parsed back into Rust so we can
-/// apply [`states_equal_set_aware`], which is what the kind actually
-/// means: a repeat is a state *equal* to the one before it, with
-/// `Parallel` values compared as order-insensitive multisets. da-g1b8:
-/// this used to test set intersection (`states_share_element`), so
-/// `"vertical"` → `["vertical","sit"]` — adding a concurrent element,
-/// an ordinary transition — reported as a repeat. Intersection stays
-/// where it belongs, on [`IntegrityKind::DoubleOpen`].
+/// A repeat is a state *equal* to the one before it
+/// ([`states_equal_set_aware`]), with `Parallel` values compared as
+/// order-insensitive multisets. da-g1b8: this used to test set
+/// intersection (`states_share_element`), so `"vertical"` →
+/// `["vertical","sit"]` — adding a concurrent element, an ordinary
+/// transition — reported as a repeat. Intersection stays where it
+/// belongs, on [`IntegrityKind::DoubleOpen`].
 pub fn list_repeated_states(conn: &Connection) -> Result<Vec<Entry>> {
     let sql = format!(
-        "WITH state_runs AS (
-             SELECT entries.*,
-                    LAG(state) OVER (
-                        PARTITION BY field
-                        ORDER BY {order}
-                    ) AS prior_state
-             FROM entries
-             WHERE deleted_at IS NULL AND superseded_by IS NULL
-               AND state IS NOT NULL
-               AND occur_time IS NOT NULL
-         )
-         SELECT * FROM state_runs
-         WHERE prior_state IS NOT NULL
-         ORDER BY {order}",
+        "SELECT * FROM entries
+         WHERE {participation}
+           AND {transitions}
+         ORDER BY field, {order}",
+        participation = crate::db::STATE_PARTICIPATION_SQL,
+        transitions = crate::track::NOT_A_DECLARATION_SQL,
         order = crate::db::STATE_ORDER_OLDEST_FIRST,
     );
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map([], |row| {
-        let entry = crate::db::row_to_entry_public(row)?;
-        let prior_state: String = row.get("prior_state")?;
-        Ok((entry, prior_state))
-    })?;
+    let entries = stmt
+        .query_map([], crate::db::row_to_entry_public)?
+        .collect::<rusqlite::Result<Vec<Entry>>>()
+        .map_err(DatumError::Db)?;
     let mut hits = Vec::new();
-    for row in rows {
-        let (entry, prior_state_json) = row.map_err(DatumError::Db)?;
-        let Some(new_state) = entry.state.as_ref() else {
-            continue;
-        };
-        let Ok(prior_state) = serde_json::from_str::<serde_json::Value>(&prior_state_json) else {
-            continue;
-        };
-        let new_norm = crate::state::normalize_state(new_state).to_json();
-        let prior_norm = crate::state::normalize_state(&prior_state).to_json();
-        if !states_equal_set_aware(&new_norm, &prior_norm) {
-            continue;
+    for field in entries.chunk_by(|a, b| a.field == b.field) {
+        let rows = crate::state::FieldStateRows::from_entries(field);
+        for entry in field {
+            let (Some(new_state), Some(edge)) = (entry.state.as_ref(), entry.leading_edge_utc())
+            else {
+                continue;
+            };
+            let probe = edge - chrono::Duration::microseconds(1);
+            let Some(prior) = rows.at(probe, Some(entry.hid.as_str())) else {
+                continue;
+            };
+            let new_norm = crate::state::normalize_state(new_state).to_json();
+            let prior_norm = crate::state::normalize_state(&prior).to_json();
+            if !states_equal_set_aware(&new_norm, &prior_norm) {
+                continue;
+            }
+            if is_open_state(&new_norm) && is_open_state(&prior_norm) {
+                continue;
+            }
+            hits.push(entry.clone());
         }
-        if is_open_state(&new_norm) && is_open_state(&prior_norm) {
-            continue;
-        }
-        hits.push(entry);
     }
+    // Across fields, in the canonical oldest-first order.
+    hits.sort_by_cached_key(|e| (e.occur_time.as_ref().map(|t| t.utc), e.slug.to_string()));
     Ok(hits)
 }
 

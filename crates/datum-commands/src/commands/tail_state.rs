@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 use datum_core::{
     db::Db,
     entry::Entry,
-    state::{entry_state_events, normalize_state, StateValue},
+    state::{normalize_state, FieldStateRows, StateValue},
     time::DatumTime,
 };
 use serde_json::Value as JsonValue;
@@ -85,24 +85,25 @@ pub fn select_blocks(blocks: &[StateBlock], n: usize, oldest_first: bool) -> Vec
 /// when the field's most recent state equals the filter — that's the
 /// "ongoing" case the renderer needs to display.
 pub fn compute_blocks(entries: &[Entry], filter: &JsonValue) -> Vec<StateBlock> {
-    // The canonical event extractor (`state::entry_state_events`, da-eybr)
-    // emits BOTH the primary event at occur_time and — for block-switch /
-    // point-switch — the trailing `following_state` event at occur_time +
-    // dur. A trailing event's originating entry is the block-switch row
-    // itself: it both closes the primary block and opens the follower, so
-    // opener/closer refs point at that row.
-    let mut events: Vec<(DateTime<Utc>, &Entry, JsonValue)> = entries
-        .iter()
-        .flat_map(|e| {
-            entry_state_events(e)
-                .into_iter()
-                .map(move |(ts, state)| (ts, e, state))
+    // The field's state changes as the one oracle reads them
+    // ([`FieldStateRows::changes`], da-u5l1o), each tied to the row whose
+    // edge it is: a block-switch's trailing edge both closes the primary
+    // block and opens the follower, and a block's trailing edge hands the
+    // field back, so opener/closer refs point at that row.
+    let by_hid: std::collections::HashMap<&str, &Entry> =
+        entries.iter().map(|e| (e.hid.as_str(), e)).collect();
+    let rows = FieldStateRows::from_entries(entries);
+    let events: Vec<(DateTime<Utc>, &Entry, JsonValue)> = rows
+        .changes()
+        .into_iter()
+        .map(|c| {
+            (
+                c.at,
+                by_hid[c.row.id.as_str()],
+                normalize_state(&c.state).to_json(),
+            )
         })
         .collect();
-    // Stable secondary sort by create_time so same-instant events fold
-    // into a deterministic order (matches FieldStateEvents). Stability
-    // also keeps a point-switch's trailing event after its primary.
-    events.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.create_time.cmp(&b.1.create_time)));
 
     let mut blocks: Vec<StateBlock> = Vec::new();
     let mut current: Option<StateBlock> = None;
@@ -150,11 +151,11 @@ pub fn compute_blocks(entries: &[Entry], filter: &JsonValue) -> Vec<StateBlock> 
     blocks
 }
 
-/// Lift an event timestamp back into the originating entry's timezone.
-/// Primary events land exactly on `occur_time`; trailing
-/// `following_state` events land at occur_time + dur, so re-derive the
-/// offset at that instant (DST-safe), keeping the entry's offset if the
-/// timezone name fails to parse.
+/// Lift a change's timestamp back into the originating entry's timezone.
+/// A trailing edge (and anything that spans nothing) lands exactly on
+/// `occur_time`; a block's leading edge lands at `occur_time - dur`
+/// (da-zwct), so re-derive the offset at that instant (DST-safe), keeping
+/// the entry's offset if the timezone name fails to parse.
 fn event_time(entry: &Entry, ts: DateTime<Utc>) -> DatumTime {
     let occ = entry
         .occur_time

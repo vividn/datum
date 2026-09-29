@@ -98,9 +98,10 @@ fn stop_last_state_captures_prior_switch_state() {
 /// block is `[occur - dur, occur]`. da-azqq had already made the three
 /// spellings agree with each other (`end work 12m -t 14:00`,
 /// `end work dur=12m -t 14:00`, and the retired `--dur`); they now agree
-/// with vividn/datum's `durationBlocks` view as well. State compilation
-/// stays simple: `Verb::Block` with state=false governs the span, so
-/// daydumb does NOT restore the prior state after it.
+/// with vividn/datum's `durationBlocks` view as well. `Verb::Block` with
+/// state=false governs the span and then HANDS THE FIELD BACK (da-611d):
+/// the stop is a five-minute hole, and past it the prior state resumes —
+/// what `now` has always said, and now every reader (da-u5l1o).
 #[test]
 fn stop_dur_produces_closed_block_ending_at_occur() {
     let db = fresh_db();
@@ -135,9 +136,13 @@ fn stop_dur_produces_closed_block_ending_at_occur() {
     );
     assert_eq!(stop.duration_seconds(), Some(5 * 60));
 
-    // State at time_end is false (the stop event fires here).
+    // Inside the hole the field is off; at its end the `start` resumes.
+    let inside = db
+        .get_active_state("dance", te - chrono::Duration::seconds(1))
+        .unwrap();
+    assert_eq!(inside, json!(false));
     let at_end = db.get_active_state("dance", te).unwrap();
-    assert_eq!(at_end, json!(false));
+    assert_eq!(at_end, json!(true));
     // Strictly before the stop block started, the anchoring `start` still
     // governs → state=true.
     let before_hole = db

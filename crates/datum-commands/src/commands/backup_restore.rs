@@ -2003,12 +2003,12 @@ mod tests {
     /// (~97s per 10k); single-tx batch 1.4s per 10k — ~70x.
     ///
     /// Entries are state-less Points on purpose: a state-bearing entry is
-    /// classified `switch` by `derive_verb` and pays `last_state_at`'s
-    /// full-field scan in `detect_for_entry` on every insert — O(n²) across
-    /// the batch, which swamps the journal-sync cost this bench pins
-    /// (~685s for 10k switch rows vs ~1s for 10k points). That scan is a
-    /// separate pre-existing cost, tracked in its own bead; it dominates
-    /// regardless of per-row vs single-tx commit.
+    /// classified `switch` by `derive_verb` and pays a full-field state
+    /// read in `detect_for_entry` on every insert — O(n²) across the
+    /// batch, which swamps the journal-sync cost this bench pins (~685s
+    /// for 10k switch rows vs ~1s for 10k points). That scan is a separate
+    /// pre-existing cost, tracked in its own bead; it dominates regardless
+    /// of per-row vs single-tx commit.
     #[test]
     #[ignore]
     fn restore_bench_10k() {
@@ -2024,7 +2024,7 @@ mod tests {
                     uncertainty: None,
                 };
                 // state=None → Verb::Point: skips the per-insert
-                // `last_state_at` scan (see doc comment above).
+                // state scan (see doc comment above).
                 Entry::new(
                     "bench",
                     Verb::Point,

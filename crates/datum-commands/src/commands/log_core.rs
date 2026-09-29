@@ -833,9 +833,9 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     let output = args.output()?;
     // Per da-9p2u: all four context fields (lead/trail/ongoing/first) are
     // derived from a single Action-surface probe so write-path and table-path
-    // renders agree on transition history. The `last_state_at` helpers used
-    // inside `for_entry` exclude this row by hid, so calling post-insert is
-    // safe even though the row is now in the DB.
+    // renders agree on transition history. The state probes inside
+    // `for_entry` exclude this row by hid, so calling post-insert is safe
+    // even though the row is now in the DB.
     let ctx = RenderContext::for_entry(db, &entry, Surface::Action, None)?;
     match &outcome {
         InsertOutcome::Inserted { slug, .. } => {

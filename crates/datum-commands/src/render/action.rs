@@ -19,7 +19,7 @@
 
 use chrono::{FixedOffset, Timelike, Utc};
 use datum_core::db::Db;
-use datum_core::state::FieldStateEvents;
+use datum_core::state::FieldStateRows;
 use datum_core::{
     entry::{Entry, EntryShape},
     field_spec::{FieldSpec, SpecRegistry},
@@ -79,12 +79,12 @@ pub(crate) fn now_local() -> DatumTime {
 
 /// Caller-supplied rendering context — slot bg-colour inputs + first-time hint.
 ///
-/// * `lead_state` — raw output of `state::last_state_at(field, start - ε,
-///   exclude=row)`. Drives the LEAD slot's bg colour. `None` = no prior
+/// * `lead_state` — the field's state at `start - ε` with the row left
+///   out ([`FieldStateRows::at`]). Drives the LEAD slot's bg colour. `None` = no prior
 ///   history; the slot falls back to grey-`∅`.
 /// * `trail_state` — the state continuing forward from this row. For a
-///   `Block` shape, this is `state::last_state_at(field, end_time,
-///   exclude=row)` — what resumes after the block closes. For `Point`/
+///   `Block` shape, this is the field's state at `end_time` with the row
+///   left out — what resumes after the block closes. For `Point`/
 ///   `Ongoing`, it's the row's own emitted state (the new switch value,
 ///   `Bool(true)` for start, `Bool(false)` for stop). Drives the TRAIL
 ///   slot's bg colour, with the same grey-`∅` fallback.
@@ -151,8 +151,8 @@ impl RenderContext {
     /// callers don't have to retrofit when an arm starts using it.
     ///
     /// Batched callers (table renderer, `datum tail`) load the field's
-    /// state-event history once per field and call
-    /// [`RenderContext::from_events`] directly, which shares the same
+    /// state rows once per field and call
+    /// [`RenderContext::from_rows`] directly, which shares the same
     /// per-row logic as the `Action`/`Table` arms here.
     pub fn for_entry(
         db: &Db,
@@ -163,27 +163,26 @@ impl RenderContext {
         Ok(match surface {
             Surface::InfoLine | Surface::NowView => RenderContext::default(),
             Surface::Action | Surface::Table => {
-                let events =
-                    FieldStateEvents::load_transitions_for_field(db.conn(), &entry.field, None)
-                        .unwrap_or_default();
-                Self::from_events(Some(&events), entry)
+                let rows =
+                    FieldStateRows::load_transitions(db.conn(), &entry.field).unwrap_or_default();
+                Self::from_rows(Some(&rows), entry)
             }
         })
     }
 
     /// Cached variant of [`RenderContext::for_entry`] for batched render
     /// paths, and the whole of the context for callers without a database:
-    /// everything here is derived from the field's state-event history and
-    /// the row. Reuses a pre-loaded per-field events vector so a `tail` over
-    /// N rows of the same field issues one state probe instead of N.
+    /// everything here is derived from the field's state rows and the row.
+    /// Reuses the field's rows, read once, so a `tail` over N rows of the
+    /// same field issues one state read instead of N.
     ///
-    /// Pass `None` for `events` when the entry's verb doesn't need a
+    /// Pass `None` for `rows` when the entry's verb doesn't need a
     /// state-history probe (`Add`/`Note`); the helpers degrade to a
     /// default-context build.
-    pub fn from_events(events: Option<&FieldStateEvents>, entry: &Entry) -> RenderContext {
-        let lead_state = compute_lead_state(events, entry);
-        let trail_state = compute_trail_state(events, entry);
-        let ongoing_state = compute_ongoing_state(events, entry);
+    pub fn from_rows(rows: Option<&FieldStateRows>, entry: &Entry) -> RenderContext {
+        let lead_state = compute_lead_state(rows, entry);
+        let trail_state = compute_trail_state(rows, entry);
+        let ongoing_state = compute_ongoing_state(rows, entry);
         // The `∅` slot follows one rule on every surface: the field's compiled
         // state just before this row is absent or IGNORED. The state-bearing
         // verbs read that off `lead_state` in their LEAD slot; the bare dot
@@ -311,7 +310,7 @@ pub(crate) fn compute_is_state_repeat(prior: Option<&JsonValue>, row: &Entry) ->
     datum_core::state::states_equal_set_aware(&row_norm, &prior_norm)
 }
 
-fn compute_lead_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
+fn compute_lead_state(rows: Option<&FieldStateRows>, entry: &Entry) -> Option<JsonValue> {
     // The LEAD/TRAIL slots exist only on the state-badge group, so the
     // gate is exactly `has_state_badge` — shape.rs owns the verb set.
     if !has_state_badge(entry.verb, entry.dur.as_ref()) {
@@ -322,10 +321,10 @@ fn compute_lead_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Optio
     // is `occur` for every shape that spans nothing.
     let at = entry.leading_edge_utc()?;
     let probe = at - chrono::Duration::microseconds(1);
-    events?.at(probe, Some(&entry.hid))
+    rows?.at(probe, Some(&entry.hid))
 }
 
-fn compute_trail_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
+fn compute_trail_state(rows: Option<&FieldStateRows>, entry: &Entry) -> Option<JsonValue> {
     if !has_state_badge(entry.verb, entry.dur.as_ref()) {
         return None;
     }
@@ -337,7 +336,7 @@ fn compute_trail_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Opti
         // the duration ran up to it — so the trail probe needs no
         // arithmetic and no zone table at all.
         let end = entry.occur_time.as_ref()?.utc;
-        return events?.at(end, Some(&entry.hid));
+        return rows?.at(end, Some(&entry.hid));
     }
     entry_self_trail_state(entry)
 }
@@ -354,14 +353,14 @@ fn switched_to(entry: &Entry) -> Option<JsonValue> {
         .filter(|_| !hands_field_back(entry.verb))
 }
 
-fn compute_ongoing_state(events: Option<&FieldStateEvents>, entry: &Entry) -> Option<JsonValue> {
+fn compute_ongoing_state(rows: Option<&FieldStateRows>, entry: &Entry) -> Option<JsonValue> {
     // Ongoing-state probes apply only to the badge-less verb (the bare
     // dot reads ambient state) — exactly the complement of the badge set.
     if has_state_badge(entry.verb, entry.dur.as_ref()) {
         return None;
     }
     let at = entry.occur_time.as_ref()?.utc;
-    events?.at(at, Some(&entry.hid))
+    rows?.at(at, Some(&entry.hid))
 }
 
 // ─── State-transition group (§6 / §7) ────────────────────────────────────────

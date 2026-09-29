@@ -65,45 +65,32 @@ pub(crate) fn live_window_params(fetch_start: DateTime<Utc>, end: DateTime<Utc>)
     }
 }
 
-/// Vector form of `RenderContext::from_events` — one context per entry, in
+/// Vector form of `RenderContext::from_rows` — one context per entry, in
 /// the same order. Used by the table path so the canonical state-cell
 /// renderer can emit transition arrows for tail rows.
 ///
-/// Per da-uuu: builds a per-field [`FieldStateEvents`] cache up front so the
-/// lead / trail / ongoing state probes run in memory instead of issuing one
-/// (multi-row, all-columns) `last_state_at` query per entry. The previous
-/// implementation re-fetched the same field's state history once per output
-/// row, which dominated `dm tail` wall-clock — especially with `-yt`/`-d`
-/// filters where the probe time is far enough from `now` to defeat the OS
-/// page cache. The cache is scoped to this batch.
+/// Per da-uuu: reads each field's state rows once up front
+/// ([`FieldStateRows`](datum_core::state::FieldStateRows)) so the lead /
+/// trail / ongoing state probes run in memory instead of issuing one query
+/// per entry. The whole field is read, not a prefix bounded by the batch's
+/// latest probe: a block stored after that probe can still span it
+/// (da-zwct), and the probe window must be the one `state_at` reads
+/// (da-u5l1o). The cache is scoped to this batch.
 pub(crate) fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderContext> {
     use std::collections::HashMap;
-    // Bound the per-field load by the latest probe time we'll issue. Block
-    // trail probes go to `end_time`; everything else to `start_time` (or
-    // `create_time` for the rare state-affecting row that lacks a start).
-    // Events strictly later than this max never affect any probe, so passing
-    // it to the loader prunes the WHERE clause and skips work for histories
-    // that extend far past this batch (`tail -yt 15` on a DB written to all
-    // morning will skip every today-event).
-    let max_probe: Option<chrono::DateTime<Utc>> =
-        entries.iter().filter_map(probe_upper_bound).max();
-    let mut cache: HashMap<String, datum_core::state::FieldStateEvents> = HashMap::new();
+    let mut cache: HashMap<String, datum_core::state::FieldStateRows> = HashMap::new();
     for e in entries {
         if !cache.contains_key(&e.field) {
             // Transitions only: a TRACK document declares the field, it
             // does not move it (da-c8mh).
-            let events = datum_core::state::FieldStateEvents::load_transitions_for_field(
-                db.conn(),
-                &e.field,
-                max_probe,
-            )
-            .unwrap_or_default();
-            cache.insert(e.field.clone(), events);
+            let rows = datum_core::state::FieldStateRows::load_transitions(db.conn(), &e.field)
+                .unwrap_or_default();
+            cache.insert(e.field.clone(), rows);
         }
     }
     entries
         .iter()
-        .map(|e| RenderContext::from_events(cache.get(&e.field), e))
+        .map(|e| RenderContext::from_rows(cache.get(&e.field), e))
         .collect()
 }
 
@@ -131,19 +118,6 @@ pub(crate) fn build_table_contexts(entries: &[Entry], db: &Db) -> Vec<RenderCont
         ctx.has_supersedees = conflicted.contains(&e.hid);
     }
     ctxs
-}
-
-/// The latest probe time the batch will issue for this entry:
-/// `occur_time`, falling back to `create_time` for state-affecting rows
-/// that lack one. da-zwct: a block's duration precedes `occur_time`, so
-/// the stored instant is already the block's END and no shape needs a
-/// probe later than it.
-fn probe_upper_bound(entry: &Entry) -> Option<chrono::DateTime<Utc>> {
-    entry
-        .occur_time
-        .as_ref()
-        .map(|t| t.utc)
-        .or(Some(entry.create_time))
 }
 
 #[cfg(test)]

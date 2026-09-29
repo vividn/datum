@@ -1,19 +1,11 @@
 //! `state_change` — one row per state transition `(field, time)` → `{from, to}`.
 //!
-//! SQL-backed scan. Ported from datum's `stateChangeView`, which walks one
-//! doc at a time and leans on explicit `lastState` / `dur` fields. We derive
-//! the same info from our entry model:
-//!
-//! * Fetch live entries per field from SQL (indexed via `entries_field_start`
-//!   when the caller pushes a field filter down, otherwise a live-only scan).
-//! * For entries whose verb changes state (`switch`, `start`, `stop`, `occur`,
-//!   `block`), emit a transition at `time_start` from the rolling prior state
-//!   to the new state; when `time_end` is set, emit a closing transition back
-//!   to "off" (`false`) — mirroring `state::collect_events`.
-//! * `add` entries are skipped.
+//! Ported from datum's `stateChangeView`. The transitions are the field's
+//! state as the one oracle reads it ([`crate::state::FieldStateRows::changes`],
+//! da-u5l1o) — a block's end hands its field back, a compound switch's
+//! end switches it to its `following_state` — with each row's `id` the
+//! slug of the entry whose edge it is.
 
-use chrono::{DateTime, Utc};
-use rusqlite::params_from_iter;
 use serde_json::{json, Value as JsonValue};
 
 use super::{
@@ -21,8 +13,9 @@ use super::{
     ViewRow,
 };
 use crate::db::Db;
-use crate::entry::Verb;
+use crate::entry::Entry;
 use crate::error::{DatumError, Result};
+use crate::state::{normalize_state, FieldStateRows};
 
 pub struct StateChangeView;
 
@@ -33,70 +26,45 @@ impl View for StateChangeView {
 
     fn query(&self, db: &Db, params: &ViewParams) -> Result<Vec<ViewRow>> {
         let field_filter = field_filter_from_params(params);
-
-        // Only verbs that can mutate state surface here.
-        let mut sql = String::from(
-            "SELECT slug, field, verb, state, occur_time, dur, create_time
-             FROM entries
-             WHERE deleted_at IS NULL AND superseded_by IS NULL
-               AND verb IN ('switch','block','point','block-switch','point-switch')",
+        let mut sql = format!(
+            "SELECT * FROM entries WHERE {}",
+            crate::db::STATE_PARTICIPATION_SQL
         );
-        let mut args: Vec<String> = Vec::new();
-        if let Some(f) = &field_filter {
+        if field_filter.is_some() {
             sql.push_str(" AND field = ?1");
-            args.push(f.clone());
         }
-        sql.push_str(" ORDER BY field ASC, occur_time ASC, create_time ASC");
-
-        // Bucket candidate events per field so rolling-prior-state is isolated
-        // per field. SQL orders within a field but we fan out to multiple
-        // events per entry (start + optional end), so we sort again below.
-        let mut by_field: std::collections::BTreeMap<String, Vec<PendingEvent>> =
-            std::collections::BTreeMap::new();
+        sql.push_str(&format!(
+            " ORDER BY field, {}",
+            crate::db::STATE_ORDER_OLDEST_FIRST
+        ));
         let mut stmt = db.conn().prepare(&sql)?;
-        let mapped = stmt.query_map(
-            params_from_iter(args.iter()),
-            |row| -> rusqlite::Result<CandidateRow> {
-                let occur: Option<String> = row.get("occur_time")?;
-                let dur: Option<String> = row.get("dur")?;
-                let end = match (occur.as_deref(), dur.as_deref()) {
-                    (Some(o), Some(d)) => crate::entry::compat_dur_secs(d).and_then(|secs| {
-                        o.parse::<DateTime<Utc>>()
-                            .ok()
-                            .map(|t| (t + chrono::Duration::seconds(secs)).to_rfc3339())
-                    }),
-                    _ => None,
-                };
-                Ok(CandidateRow {
-                    slug: row.get("slug")?,
-                    field: row.get("field")?,
-                    verb: row.get("verb")?,
-                    value: row.get::<_, Option<String>>("state")?,
-                    start_time: occur,
-                    end_time: end,
-                    create_time: row.get("create_time")?,
-                })
-            },
-        )?;
-        for r in mapped {
-            let row = r.map_err(DatumError::Db)?;
-            let field = row.field.clone();
-            for ev in events_for_row(&row)? {
-                by_field.entry(field.clone()).or_default().push(ev);
-            }
-        }
+        let entries = stmt
+            .query_map(
+                rusqlite::params_from_iter(field_filter.iter()),
+                crate::db::row_to_entry_public,
+            )?
+            .collect::<rusqlite::Result<Vec<Entry>>>()
+            .map_err(DatumError::Db)?;
 
         let mut rows = Vec::new();
-        for (field, mut events) in by_field {
-            events.sort_by(|a, b| a.time.cmp(&b.time).then(a.created_at.cmp(&b.created_at)));
+        for entries in entries.chunk_by(|a, b| a.field == b.field) {
+            let field = &entries[0].field;
+            let slugs: std::collections::HashMap<&str, String> = entries
+                .iter()
+                .map(|e| (e.hid.as_str(), e.slug.to_string()))
+                .collect();
             let mut prior = JsonValue::Null;
-            for ev in events {
+            for change in FieldStateRows::from_entries(entries).changes() {
+                let to = normalize_state(&change.state).to_json();
+                if to == prior {
+                    continue;
+                }
                 rows.push(ViewRow {
-                    key: json!([field.clone(), ev.time.to_rfc3339()]),
-                    value: json!({"from": prior.clone(), "to": ev.new_state.clone()}),
-                    id: Some(ev.entry_id.clone()),
+                    key: json!([field, change.at.to_rfc3339()]),
+                    value: json!({"from": prior, "to": to}),
+                    id: Some(slugs[change.row.id.as_str()].clone()),
                 });
-                prior = ev.new_state;
+                prior = to;
             }
         }
 
@@ -108,137 +76,6 @@ impl View for StateChangeView {
         }
         Ok(apply_limit(rows, params))
     }
-}
-
-struct CandidateRow {
-    slug: String,
-    field: String,
-    verb: String,
-    value: Option<String>,
-    start_time: Option<String>,
-    end_time: Option<String>,
-    create_time: String,
-}
-
-struct PendingEvent {
-    time: DateTime<Utc>,
-    created_at: DateTime<Utc>,
-    new_state: JsonValue,
-    entry_id: String,
-}
-
-fn parse_utc(s: &str) -> Result<DateTime<Utc>> {
-    s.parse::<DateTime<Utc>>()
-        .map_err(|e| DatumError::Other(format!("bad timestamp in entries row: {e}")))
-}
-
-fn parse_verb(s: &str) -> Result<Verb> {
-    s.parse::<Verb>()
-        .map_err(|e| DatumError::Other(format!("unknown verb '{s}' in entries row: {e}")))
-}
-
-fn parse_value(v: &Option<String>) -> Option<JsonValue> {
-    v.as_deref().and_then(|s| serde_json::from_str(s).ok())
-}
-
-fn events_for_row(row: &CandidateRow) -> Result<Vec<PendingEvent>> {
-    let mut out = Vec::new();
-    let verb = parse_verb(&row.verb)?;
-    let created_at = parse_utc(&row.create_time)?;
-    let start = match &row.start_time {
-        Some(s) => Some(parse_utc(s)?),
-        None => None,
-    };
-    let end = match &row.end_time {
-        Some(s) => Some(parse_utc(s)?),
-        None => None,
-    };
-    let value = parse_value(&row.value);
-
-    // Exhaustive on purpose (no wildcard): a new verb compile-breaks here
-    // so its view-event emission is a deliberate decision (storage-side
-    // counterpart of shape.rs, like state::collect_raw_events).
-    match verb {
-        Verb::Point => {
-            if let Some(ts) = start {
-                let state = value
-                    .as_ref()
-                    .map(|v| crate::state::normalize_state(v).to_json())
-                    .unwrap_or(JsonValue::Null);
-                out.push(PendingEvent {
-                    time: ts,
-                    created_at,
-                    new_state: state,
-                    entry_id: row.slug.clone(),
-                });
-            }
-        }
-        Verb::BlockSwitch | Verb::PointSwitch => {
-            // Sub-bead 5 expands this with the trailing `following_state`
-            // event; for now treat like Switch.
-            if let Some(ts) = start {
-                let state = value
-                    .as_ref()
-                    .map(|v| crate::state::normalize_state(v).to_json())
-                    .unwrap_or(JsonValue::Null);
-                out.push(PendingEvent {
-                    time: ts,
-                    created_at,
-                    new_state: state,
-                    entry_id: row.slug.clone(),
-                });
-            }
-        }
-        Verb::Switch => {
-            if let Some(ts) = start {
-                let state = value
-                    .as_ref()
-                    .map(|v| crate::state::normalize_state(v).to_json())
-                    .unwrap_or(JsonValue::Null);
-                out.push(PendingEvent {
-                    time: ts,
-                    created_at,
-                    new_state: state,
-                    entry_id: row.slug.clone(),
-                });
-                if let Some(te) = end {
-                    if te > ts {
-                        out.push(PendingEvent {
-                            time: te,
-                            created_at,
-                            new_state: JsonValue::Bool(false),
-                            entry_id: row.slug.clone(),
-                        });
-                    }
-                }
-            }
-        }
-        Verb::Block => {
-            if let Some(ts) = start {
-                let state = value
-                    .as_ref()
-                    .map(|v| crate::state::normalize_state(v).to_json())
-                    .unwrap_or(JsonValue::Bool(true));
-                out.push(PendingEvent {
-                    time: ts,
-                    created_at,
-                    new_state: state,
-                    entry_id: row.slug.clone(),
-                });
-                if let Some(te) = end {
-                    if te > ts {
-                        out.push(PendingEvent {
-                            time: te,
-                            created_at,
-                            new_state: JsonValue::Bool(false),
-                            entry_id: row.slug.clone(),
-                        });
-                    }
-                }
-            }
-        }
-    }
-    Ok(out)
 }
 
 fn reduce_count(rows: Vec<ViewRow>, params: &ViewParams) -> Vec<ViewRow> {
@@ -264,8 +101,9 @@ fn reduce_count(rows: Vec<ViewRow>, params: &ViewParams) -> Vec<ViewRow> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entry::Verb;
     use crate::test_util::{entry_builder, fresh_db};
-    use chrono::{Duration, TimeZone};
+    use chrono::{Duration, TimeZone, Utc};
 
     #[test]
     fn state_change_view_emits_transitions() {
@@ -293,8 +131,10 @@ mod tests {
             .time_start_utc(t3)
             .insert(&db);
 
-        // Block-shaped workout entry: occur_time + dur → open + close events.
+        // A block: open at its leading edge, and at its end the field is
+        // handed back — to no state, as nothing preceded it.
         entry_builder("workout")
+            .state(json!(true))
             .time_start_utc(t1)
             .time_end_utc(t1 + Duration::minutes(45))
             .insert(&db);
@@ -318,7 +158,33 @@ mod tests {
             .collect();
         assert_eq!(workout.len(), 2);
         assert_eq!(workout[0].value, json!({"from": null, "to": true}));
-        assert_eq!(workout[1].value, json!({"from": true, "to": false}));
+        assert_eq!(workout[1].value, json!({"from": true, "to": null}));
+        // The builder stores `time_start` as the block's END (occur_time).
+        assert_eq!(workout[1].key[1], json!(t1.to_rfc3339()));
+    }
+
+    /// A row per TRANSITION: a switch to the state the field already
+    /// holds changes nothing, so it adds no row (and no reduce count).
+    #[test]
+    fn state_change_view_emits_no_row_for_a_repeat() {
+        let db = fresh_db();
+        let t0 = Utc.with_ymd_and_hms(2026, 4, 20, 9, 0, 0).unwrap();
+        for (mins, state) in [(0, "happy"), (10, "happy"), (20, "sad")] {
+            entry_builder("mood")
+                .verb(Verb::Switch)
+                .state(json!(state))
+                .time_start_utc(t0 + Duration::minutes(mins))
+                .insert(&db);
+        }
+        let rows = StateChangeView.query(&db, &ViewParams::default()).unwrap();
+        let values: Vec<_> = rows.iter().map(|r| r.value.clone()).collect();
+        assert_eq!(
+            values,
+            vec![
+                json!({"from": null, "to": "happy"}),
+                json!({"from": "happy", "to": "sad"}),
+            ]
+        );
     }
 
     #[test]
@@ -347,6 +213,7 @@ mod tests {
             .time_start_utc(t0)
             .insert(&db);
         entry_builder("workout")
+            .state(json!(true))
             .time_start_utc(t0)
             .time_end_utc(t0 + Duration::minutes(30))
             .insert(&db);

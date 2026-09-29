@@ -284,482 +284,461 @@ fn normalize_object(obj: &Map<String, Value>) -> Value {
     }
 }
 
-/// Compile the active state at time `at` from a set of entries for a single field.
-///
-/// State-change events are derived from each entry:
-/// - `switch`: emits (time_start, value). If time_end is set (e.g. a duration), also
-///   emits (time_end, false) — the block ends, state reverts to "off".
-/// - `start`: emits (time_start, true). time_end analogous to switch.
-/// - `stop`: emits (time_end or time_start, false).
-/// - `occur`: emits (time_start, false) — datum treats occurrences as
-///   instantaneous events that end the active block.
-/// - `note`: no state effect.
-///
-/// The active state is the most recent event with time <= at, or `Null` if
-/// none. Ties on time are broken by created_at descending so the latest write
-/// wins — this mirrors datum's LWW semantics for same-instant events.
-pub fn compile_state(entries: &[Entry], at: DateTime<Utc>) -> ActiveState {
-    let mut events: Vec<(DateTime<Utc>, DateTime<Utc>, Value)> = Vec::new();
-    for entry in entries {
-        collect_events(entry, &mut events);
-    }
-    // Sort by event time, then created_at, both ascending. We want the last
-    // event at or before `at`, with LWW tie-break on created_at.
-    events.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+// ─── The state oracle (da-u5l1o) ─────────────────────────────────────────
+//
+// ONE function decides what state a field holds at an instant:
+// [`resolve_effective`]. Every reader hands it rows — the windowed SQL
+// read behind [`crate::db::Db::state_at`], or the per-field cache
+// [`FieldStateRows`] for callers that probe many times — and nothing
+// else computes a state from rows.
 
-    events
-        .into_iter()
-        .rev()
-        .find(|(t, _, _)| *t <= at)
-        .map(|(_, _, v)| v)
-        .unwrap_or(Value::Null)
+/// How many dur-bearing rows stored AFTER the probe instant a state read
+/// pulls in so a block still running at that instant is seen. da-zwct: a
+/// block's stored `occur` is its END, so the row that covers `at` can sit
+/// in `at`'s future; the nearest few forward blocks are the only ones
+/// whose span can reach back over it (overlapping blocks are an integrity
+/// warning, not a shape the reader has to unravel).
+pub const SPAN_LOOKAHEAD: usize = 8;
+
+/// How many rows a state read may walk back through to find the state a
+/// block handed the field back to. Each completed block immediately
+/// preceding the read consumes one; a real ledger never stacks anywhere
+/// near this many back to back, and past the limit the read reports "no
+/// state" rather than inventing one.
+pub const RESUME_LOOKBACK: usize = 64;
+
+/// SQL for [`StateRow::is_occur_dot`]. The depth-limited state reads leave
+/// dots out, since an occur never decides a state and a field logged by
+/// occurs would otherwise fill the whole lookback with them. They fetch
+/// the one dot that matters, the first after an IGNORED, on its own.
+pub(crate) const OCCUR_DOT_SQL: &str = "(verb = 'point' AND (state IS NULL OR state = 'true'))";
+
+/// One state-bearing row, in as much of it as the oracle reads. The
+/// input of [`resolve_effective`], so `now` (which holds whole
+/// [`Entry`]s), [`crate::db::Db::batch_state_at`] (which selects seven
+/// columns) and [`FieldStateRows`] resolve through the SAME code.
+#[derive(Debug, Clone)]
+pub struct StateRow {
+    /// The row's whole hid, so a caller that wants the ENTRY behind a
+    /// resolved state can name it (da-6hg6v).
+    pub id: String,
+    pub verb: Verb,
+    pub state: Option<Value>,
+    pub occur: Option<DateTime<Utc>>,
+    pub dur: Option<Dur>,
+    pub following_state: Option<Value>,
 }
 
-/// Compute the active state of `field` strictly before (or at) `time`,
-/// ignoring an entry identified by `exclude_hid` (so detection run on a
-/// just-inserted row can see "the state as it was without this entry").
-///
-/// Returns `None` when the field has no state-affecting history at all
-/// at-or-before `time` (state compiles to `Null`); otherwise the concrete
-/// value — including `Bool(false)` for an explicit stop.
-pub fn last_state_at(
-    conn: &Connection,
-    field: &str,
-    time: DateTime<Utc>,
-    exclude_hid: Option<&str>,
-) -> Result<Option<Value>> {
-    let at_str = time.to_rfc3339();
-    let exclude = exclude_hid.unwrap_or("");
-    let sql = format!(
-        "SELECT * FROM entries
-         WHERE field = ?1
-           AND {participation}
-           AND hid != ?3
-           AND occur_time <= ?2
-         ORDER BY {order}",
-        participation = crate::db::STATE_PARTICIPATION_SQL,
-        order = crate::db::STATE_ORDER_OLDEST_FIRST,
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(
-        params![field, at_str, exclude],
-        crate::db::row_to_entry_public,
-    )?;
-    let entries: Vec<Entry> = rows
-        .map(|r| r.map_err(DatumError::Db))
-        .collect::<Result<Vec<_>>>()?;
-    let compiled = compile_state(&entries, time);
-    if compiled.is_null() {
-        Ok(None)
-    } else {
-        Ok(Some(compiled))
-    }
-}
-
-/// Pre-derived state events for a single field, loaded once per render
-/// batch so `tail` / `head` answer many lead/trail/ongoing state probes
-/// without re-issuing one (multi-row, all-columns) `last_state_at` query
-/// per output row. The events are the same ones [`compile_state`] would
-/// derive, tagged with the originating `hid` so probes can honour
-/// `exclude_hid` (matching `last_state_at`'s contract).
-#[derive(Default, Debug, Clone)]
-pub struct FieldStateEvents {
-    /// `(event_time, create_time, value, origin_hid)`, sorted ascending by
-    /// `event_time` then `create_time`. Probes scan from the tail and stop
-    /// at the first event ≤ probe time.
-    events: Vec<(DateTime<Utc>, DateTime<Utc>, Value, String)>,
-}
-
-impl FieldStateEvents {
-    /// The same events the loaders derive, from rows already in hand — the
-    /// browser's door, which has the field's entries and no connection. Pass
-    /// the field's live rows in any order; the row being rendered may be among
-    /// them, since every probe excludes it by hid. Same collector, same stable
-    /// sort as [`Self::load_for_field_up_to`], so a probe answers the same
-    /// here as against the database.
-    pub fn from_entries<'a>(entries: impl IntoIterator<Item = &'a Entry>) -> Self {
-        let mut events: Vec<(DateTime<Utc>, DateTime<Utc>, Value, String)> = Vec::new();
-        let mut rows: Vec<&Entry> = entries.into_iter().collect();
-        // The loaders read oldest-first from SQL and rely on the sort being
-        // stable on top of that; give the same baseline order here.
-        rows.sort_by_key(|e| (e.occur_time.as_ref().map(|t| t.utc), e.create_time));
-        for e in rows {
-            collect_raw_events(
-                &e.hid.0,
-                e.verb,
-                e.state.as_ref(),
-                e.occur_time.as_ref().map(|t| t.utc),
-                None,
-                e.create_time,
-                e.dur.as_ref(),
-                e.following_state.as_ref(),
-                &mut events,
-            );
+impl StateRow {
+    pub fn from_entry(e: &Entry) -> Self {
+        StateRow {
+            id: e.hid.to_string(),
+            verb: e.verb,
+            state: e.state.clone(),
+            occur: e.occur_time.as_ref().map(|t| t.utc),
+            dur: e.dur.clone(),
+            following_state: e.following_state.clone(),
         }
-        events.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
-        FieldStateEvents { events }
     }
 
-    /// Load every state-affecting event for `field`. See
-    /// [`Self::load_for_field_up_to`] for the bounded variant.
-    pub fn load_for_field(conn: &Connection, field: &str) -> Result<Self> {
-        Self::load_for_field_up_to(conn, field, None)
+    /// Where a row that carries a duration ends — its `occur`, which IS
+    /// the block's trailing edge (da-zwct: the duration precedes it). A
+    /// MOMENT is a span of zero, so it ends where it stands: that is where
+    /// a first log's point-switch hands over to the `following_state` it
+    /// declares (da-gvcen). `None` for no `dur` or an unknown one.
+    fn trailing_edge(&self) -> Option<DateTime<Utc>> {
+        let occur = self.occur?;
+        let dur = self.dur.as_ref()?;
+        (dur.is_moment() || dur.as_seconds().is_some()).then_some(occur)
     }
 
-    /// [`FieldStateEvents::load_for_field_up_to`] over the field's
-    /// TRANSITIONS only: the TRACK document that declares a field is not
-    /// one (da-c8mh), so a reader asking "what was this field doing just
-    /// before this row" is not answered with "it exists".
-    pub fn load_transitions_for_field(
-        conn: &Connection,
-        field: &str,
-        max_probe: Option<DateTime<Utc>>,
-    ) -> Result<Self> {
-        Self::load_events(conn, field, max_probe, true)
+    /// Where this row's influence begins: `occur - dur` for a block,
+    /// `occur` for a point or an open block.
+    pub fn leading_edge(&self) -> Option<DateTime<Utc>> {
+        let occur = self.occur?;
+        let secs = self.dur.as_ref().and_then(|d| d.as_seconds()).unwrap_or(0);
+        Some(occur - chrono::Duration::seconds(secs))
     }
 
-    /// Load state-affecting events for `field`, optionally pruned to entries
-    /// that could contribute an event ≤ `max_probe`. Reads only the columns
-    /// [`compile_state`] needs.
+    /// Does this row hand the field back once its trailing edge is past?
     ///
-    /// `max_probe` is an upper bound on every probe time the caller will
-    /// issue (e.g. `tail -yt 15` → max probe is yesterday-15:00). Events
-    /// strictly later than that never affect the answer, so the WHERE clause
-    /// matches `last_state_at`'s `(start_time <= ?) OR (end_time <= ?)`
-    /// predicate. Pass `None` for an unbounded load (used when probes can be
-    /// `now` and bounding wouldn't prune anything).
-    pub fn load_for_field_up_to(
-        conn: &Connection,
-        field: &str,
-        max_probe: Option<DateTime<Utc>>,
-    ) -> Result<Self> {
-        Self::load_events(conn, field, max_probe, false)
+    /// da-611d: a block is an INTERRUPTION, not a switch. `end work 12`
+    /// writes `following_state IS NULL`, and NULL there is a *specified
+    /// default* meaning "resume whatever state preceded this block" —
+    /// the common case, because the state to come back to is simply the
+    /// prior one and does not need restating. So past its trailing edge
+    /// this row is no longer the one that decides the state: the row
+    /// before it is.
+    ///
+    /// [`Verb::BlockSwitch`] / [`Verb::PointSwitch`] carry a real
+    /// `following_state` and switch to it instead ([`effective_state`]),
+    /// so they never hand back — [`crate::shape::hands_field_back`] owns
+    /// that verb split, shared with `stats` (da-mkqo).
+    ///
+    /// da-zwct: the trailing edge is `occur` itself, so a completed block
+    /// has already handed the field back by the instant it stores.
+    pub fn hands_field_back(&self, at: DateTime<Utc>) -> bool {
+        if !crate::shape::hands_field_back(self.verb) || self.following_state.is_some() {
+            return false;
+        }
+        match (self.occur, self.dur.as_ref().and_then(|d| d.as_seconds())) {
+            // A zero-span row occupies no time, so it interrupts nothing.
+            (Some(occur), Some(secs)) if secs > 0 => at >= occur,
+            _ => false,
+        }
     }
 
-    fn load_events(
-        conn: &Connection,
-        field: &str,
-        max_probe: Option<DateTime<Utc>>,
-        transitions_only: bool,
-    ) -> Result<Self> {
-        let mut events: Vec<(DateTime<Utc>, DateTime<Utc>, Value, String)> = Vec::new();
-        let push = |row: &rusqlite::Row<'_>,
-                    out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Value, String)>|
-         -> rusqlite::Result<()> {
-            let hid: String = row.get("hid")?;
-            let verb_str: String = row.get("verb")?;
-            let verb: Verb = verb_str.parse().map_err(|e: String| {
-                rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
-            })?;
-            let state: Option<Value> = row
-                .get::<_, Option<String>>("state")?
-                .and_then(|s| serde_json::from_str(&s).ok());
-            let occur_time: Option<DateTime<Utc>> = row
-                .get::<_, Option<String>>("occur_time")?
-                .and_then(|s| s.parse().ok());
-            let create_time: DateTime<Utc> =
-                row.get::<_, String>("create_time")?
-                    .parse()
-                    .map_err(|e: chrono::ParseError| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            0,
-                            rusqlite::types::Type::Text,
-                            e.into(),
-                        )
-                    })?;
-            // da-2i8g sub-bead 5: block-switch / point-switch emit a
-            // trailing event at `occur_time` carrying the
-            // `following_state`, and open at `occur_time - dur`
-            // (da-zwct). Pull the columns so collect_raw_events can
-            // decide.
-            let dur: Option<Dur> = row
-                .get::<_, Option<String>>("dur")?
-                .as_deref()
-                .and_then(Dur::parse);
-            let following_state: Option<Value> = row
-                .get::<_, Option<String>>("following_state")?
-                .and_then(|s| serde_json::from_str(&s).ok());
-            collect_raw_events(
-                &hid,
-                verb,
-                state.as_ref(),
-                occur_time,
-                None,
-                create_time,
-                dur.as_ref(),
-                following_state.as_ref(),
-                out,
-            );
-            Ok(())
-        };
+    /// An occur dot: a point with no state, or the literal `true` legacy
+    /// occur wrote. vividn, 2026-09-29: «an occur should not modify the
+    /// state (except in the case that state is IGNORED, in which case it
+    /// transitions to TRACKED)» — [`resolve_effective`] passes over it.
+    pub fn is_occur_dot(&self) -> bool {
+        self.verb == Verb::Point && matches!(self.state, None | Some(Value::Bool(true)))
+    }
 
-        let participation = crate::db::STATE_PARTICIPATION_SQL;
+    /// An occur-shaped row: an occur dot, or a row with no state at all.
+    /// It moves the field's state like any row, but it is not a state
+    /// anyone switched TO, so the `_` ordinals
+    /// ([`crate::db::Db::resolve_state_back`], da-a0n3) pass over what it
+    /// sets. A compound switch is never one: its `following_state` is a
+    /// deliberate state.
+    pub fn is_annotation(&self) -> bool {
+        match self.verb {
+            Verb::Point => self.is_occur_dot(),
+            Verb::Switch | Verb::Block => self.state.is_none(),
+            Verb::BlockSwitch | Verb::PointSwitch => false,
+        }
+    }
+
+    /// When this row's effective state at `at` took effect: its trailing
+    /// edge once a compound switch has crossed it, otherwise its leading
+    /// edge — `occur - dur` for a block, `occur` for anything else.
+    fn effective_since(&self, at: DateTime<Utc>) -> Option<DateTime<Utc>> {
+        if crate::shape::opens_secondary_switch_region(self.verb) && self.following_state.is_some()
+        {
+            if let Some(trailing) = self.trailing_edge() {
+                if at >= trailing {
+                    return Some(trailing);
+                }
+            }
+        }
+        self.leading_edge()
+    }
+}
+
+/// What a field's rows say it holds at one instant.
+pub struct Effective {
+    pub state: Value,
+    /// When the field entered `state` — the resume boundary when a block
+    /// handed it back, otherwise the governing row's own event time.
+    pub since: Option<DateTime<Utc>>,
+    /// Index into the input rows of the row that established `state`.
+    /// `None` when every row handed the field back and nothing preceded
+    /// them: the field holds no state at all.
+    pub governing: Option<usize>,
+}
+
+/// THE rule: the state a field holds at `at`, from its rows at or before
+/// `at` plus any block spanning it, NEWEST FIRST (the order
+/// [`crate::db::STATE_ORDER_NEWEST_FIRST`] reads them in).
+///
+/// Walks back past every block that has already handed the field back
+/// ([`StateRow::hands_field_back`]), and every occur dot
+/// ([`StateRow::is_occur_dot`]), to the row that actually decides the
+/// state, then reads that row with [`effective_state`]. An occur does not
+/// modify the state, except IGNORED or no state at all: then the first dot
+/// after that took effect makes the field TRACKED from that dot on (vividn,
+/// 2026-09-29: «if the state is IGNORED (or nothing because no data exists
+/// which is functionally equivalent), then it goes to TRACKED on an
+/// occur» — v2's behaviour too).
+///
+/// "Newest" is when a row's state at `at` TOOK EFFECT
+/// ([`StateRow::effective_since`]), not its stored instant: a block's
+/// duration precedes `occur` (da-zwct), so a block still running at `at`
+/// stores an instant in `at`'s future while its influence began before
+/// it; and a compound switch past its trailing edge said its last word
+/// there, so a switch logged inside its span does not outrank it. The
+/// walk re-orders on that instant (stably, so equal instants keep the
+/// query's own newest-first tiebreak). Keyed this way, the newest stored
+/// row at or before `at` always outranks every older one, which is what
+/// lets a reader fetch one row and look deeper only when it hands back.
+/// `governing` still indexes `rows` as given.
+pub fn resolve_effective<R: std::borrow::Borrow<StateRow>>(
+    rows: &[R],
+    at: DateTime<Utc>,
+) -> Effective {
+    let row = |i: usize| rows[i].borrow();
+    let mut order: Vec<usize> = (0..rows.len()).collect();
+    order.sort_by(|a, b| {
+        row(*b)
+            .effective_since(at)
+            .cmp(&row(*a).effective_since(at))
+            .then(a.cmp(b))
+    });
+    // The NEWEST completed block fixes when the resumed span began;
+    // older ones ended before it and are already covered.
+    let mut resumed_at: Option<DateTime<Utc>> = None;
+    let mut dots: Vec<usize> = Vec::new();
+    for i in order {
+        let r = row(i);
+        if r.is_occur_dot() {
+            dots.push(i);
+            continue;
+        }
+        if r.hands_field_back(at) {
+            resumed_at = resumed_at.or_else(|| r.trailing_edge());
+            continue;
+        }
+        let eff = Effective {
+            state: effective_state(r, at),
+            since: resumed_at.max(r.effective_since(at)),
+            governing: Some(i),
+        };
+        return eff.tracked_by(&dots, row);
+    }
+    // Nothing preceded the block(s): there is no state to resume to.
+    // `Null` is "tracked, no current state" — the honest answer, and the
+    // one a timeline resolver derives for the same rows.
+    Effective {
+        state: Value::Null,
+        since: resumed_at,
+        governing: None,
+    }
+    .tracked_by(&dots, row)
+}
+
+impl Effective {
+    /// Is this a state an occur dot moves — IGNORED, or no state at all
+    /// (nothing decided it)? A reader that leaves dots out fetches the
+    /// first one after [`Effective::since`] when it is.
+    pub fn an_occur_tracks(&self) -> bool {
+        self.governing.is_none() || crate::shape::is_ignored_state(&self.state)
+    }
+
+    /// TRACKED from the first of `dots` after `since`, when an occur moves
+    /// this state ([`Effective::an_occur_tracks`]); otherwise unchanged.
+    fn tracked_by<'a>(self, dots: &[usize], row: impl Fn(usize) -> &'a StateRow) -> Effective {
+        if !self.an_occur_tracks() {
+            return self;
+        }
+        let first = dots
+            .iter()
+            .copied()
+            .filter(|d| row(*d).occur > self.since)
+            .min_by_key(|d| row(*d).occur);
+        match first {
+            Some(d) => Effective {
+                state: Value::String(crate::shape::TRACKED_STATE_VALUE.into()),
+                since: row(d).occur,
+                governing: Some(d),
+            },
+            None => self,
+        }
+    }
+}
+
+/// Read ONE row's state at `at`, honouring `following_state` for
+/// block-switch / point-switch once the moment has crossed the trailing
+/// edge (da-2i8g). Otherwise the row's own `state` is the state.
+fn effective_state(row: &StateRow, at: DateTime<Utc>) -> Value {
+    // `following_state` takes over past the trailing edge for exactly the
+    // verbs that open a secondary switch region — shape.rs owns the set.
+    if crate::shape::opens_secondary_switch_region(row.verb) {
+        if let (Some(trailing), Some(fs)) = (row.trailing_edge(), row.following_state.as_ref()) {
+            // da-zwct: the trailing edge is the stored `occur` — the
+            // block's duration runs backward from it, not forward.
+            if at >= trailing {
+                return fs.clone();
+            }
+        }
+    }
+    row.state.clone().unwrap_or(Value::Null)
+}
+
+/// One field's state-bearing rows, loaded once so a caller that probes
+/// many instants — the tail and log render, integrity detection, backup
+/// restore, `tail field:state`, the `_` ordinals — pays one read instead
+/// of one per probe. It decides nothing: every probe hands
+/// [`resolve_effective`] the SAME window of rows the SQL read behind
+/// [`crate::db::Db::state_at`] selects (the newest row at or before the
+/// probe, [`RESUME_LOOKBACK`] of them when that one hands the field back,
+/// and the [`SPAN_LOOKAHEAD`] oldest blocks stored after it, occur dots
+/// aside; then, if that says IGNORED, the first dot after it), so the two
+/// fetches cannot answer differently.
+#[derive(Default, Debug, Clone)]
+pub struct FieldStateRows {
+    /// Newest first: `occur` descending, slug descending on a tie —
+    /// [`crate::db::STATE_ORDER_NEWEST_FIRST`]. Every row has an `occur`,
+    /// and none is an occur dot.
+    rows: Vec<StateRow>,
+    /// The occur dots ([`StateRow::is_occur_dot`]), oldest first.
+    dots: Vec<StateRow>,
+}
+
+/// One change in a field's state, as [`FieldStateRows::changes`] lists it.
+pub struct StateChange<'a> {
+    /// When the new state took effect.
+    pub at: DateTime<Utc>,
+    /// The state from `at` on — [`resolve_effective`]'s answer there.
+    pub state: Value,
+    /// The row whose edge this is: the one that set the state, or the
+    /// block that handed the field back.
+    pub row: &'a StateRow,
+}
+
+impl FieldStateRows {
+    /// The field's rows from entries already in hand — the browser's
+    /// door, which has the field's entries and no connection. Pass the
+    /// field's live rows in any order; timeless rows are skipped, as the
+    /// SQL loaders skip them.
+    pub fn from_entries<'a>(entries: impl IntoIterator<Item = &'a Entry>) -> Self {
+        let mut timed: Vec<&Entry> = entries
+            .into_iter()
+            .filter(|e| e.occur_time.is_some())
+            .collect();
+        timed.sort_by_cached_key(|e| {
+            std::cmp::Reverse((e.occur_time.as_ref().map(|t| t.utc), e.slug.to_string()))
+        });
+        Self::new(timed.into_iter().map(StateRow::from_entry).collect())
+    }
+
+    /// From rows newest first: the occur dots set aside, oldest first.
+    fn new(newest_first: Vec<StateRow>) -> Self {
+        let (mut dots, rows): (Vec<_>, Vec<_>) =
+            newest_first.into_iter().partition(StateRow::is_occur_dot);
+        dots.reverse();
+        FieldStateRows { rows, dots }
+    }
+
+    /// Every state-participating row of `field`.
+    pub fn load(conn: &Connection, field: &str) -> Result<Self> {
+        Self::load_rows(conn, field, false)
+    }
+
+    /// [`FieldStateRows::load`] over the field's TRANSITIONS only: the
+    /// TRACK document that declares a field is not one (da-c8mh), so a
+    /// reader asking "what was this field doing just before this row" is
+    /// not answered with "it exists".
+    pub fn load_transitions(conn: &Connection, field: &str) -> Result<Self> {
+        Self::load_rows(conn, field, true)
+    }
+
+    fn load_rows(conn: &Connection, field: &str, transitions_only: bool) -> Result<Self> {
         let declarations = if transitions_only {
             format!("AND {}", crate::track::NOT_A_DECLARATION_SQL)
         } else {
             String::new()
         };
-        match max_probe {
-            Some(t) => {
-                let sql = format!(
-                    "SELECT hid, verb, state, occur_time, create_time, dur, following_state
-                     FROM entries
-                     WHERE field = ?1
-                       AND {participation}
-                       {declarations}
-                       AND occur_time <= ?2
-                     ORDER BY {order}",
-                    order = crate::db::STATE_ORDER_OLDEST_FIRST,
-                );
-                let mut stmt = conn.prepare(&sql)?;
-                let mut rows = stmt.query(params![field, t.to_rfc3339()])?;
-                while let Some(row) = rows.next()? {
-                    push(row, &mut events)?;
-                }
-            }
-            None => {
-                let sql = format!(
-                    "SELECT hid, verb, state, occur_time, create_time, dur, following_state
-                     FROM entries
-                     WHERE field = ?1
-                       AND {participation}
-                       {declarations}
-                     ORDER BY {order}",
-                    order = crate::db::STATE_ORDER_OLDEST_FIRST,
-                );
-                let mut stmt = conn.prepare(&sql)?;
-                let mut rows = stmt.query(params![field])?;
-                while let Some(row) = rows.next()? {
-                    push(row, &mut events)?;
-                }
-            }
-        }
-
-        // Stable sort: rows tied on (event_time, create_time) keep the SQL
-        // order, which is why both arms above ask for the canonical
-        // oldest-first ordering. Same-instant live rows are schema-impossible
-        // on one device but arrive routinely from a sync merge (da-ylet), and
-        // this is the door integrity detection reads through (da-j8cu) — it
-        // must resolve such a tie to the same row `last_state_at` picks.
-        events.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
-        Ok(FieldStateEvents { events })
+        let sql = format!(
+            "SELECT field, state, verb, occur_time, dur, following_state, hid
+               FROM entries
+              WHERE field = ?1
+                AND {participation}
+                {declarations}
+              ORDER BY {order}",
+            participation = crate::db::STATE_PARTICIPATION_SQL,
+            order = crate::db::STATE_ORDER_NEWEST_FIRST,
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map(params![field], crate::db::read_state_columns)?
+            .map(|r| {
+                let (_, row) = crate::db::decode_state_row(r.map_err(DatumError::Db)?)?;
+                Ok(row)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self::new(rows))
     }
 
-    /// Compile the active state at `time`, optionally ignoring events that
-    /// originated on `exclude_hid`. Mirrors [`last_state_at`]: a `Null`
-    /// result collapses to `None`.
-    pub fn at(&self, time: DateTime<Utc>, exclude_hid: Option<&str>) -> Option<Value> {
-        let exclude = exclude_hid.unwrap_or("");
-        for (t, _, value, hid) in self.events.iter().rev() {
-            if *t > time {
+    /// The window [`resolve_effective`] reads at `at`, with `exclude`
+    /// left out as though it were not in the table. Mirrors
+    /// [`crate::db::Db::batch_governing_at`]'s two SQL reads row for row;
+    /// [`Self::resolve`] adds the dot an IGNORED needs.
+    fn window(&self, at: DateTime<Utc>, exclude: Option<&str>) -> Vec<&StateRow> {
+        let kept = |r: &&StateRow| exclude != Some(r.id.as_str());
+        let split = self.rows.partition_point(|r| r.occur > Some(at));
+        let past = self.rows[split..].iter().filter(kept);
+        let deep = past.clone().next().is_some_and(|r| r.hands_field_back(at));
+        let mut out: Vec<&StateRow> = past.take(if deep { RESUME_LOOKBACK } else { 1 }).collect();
+        out.extend(
+            self.rows[..split]
+                .iter()
+                .rev()
+                .filter(kept)
+                .filter(|r| r.dur.is_some())
+                .take(SPAN_LOOKAHEAD)
+                .filter(|r| r.leading_edge().is_some_and(|edge| edge <= at)),
+        );
+        out
+    }
+
+    /// The field's state at `at`, as though `exclude` had never been
+    /// written (so detection run on a just-inserted row sees the state as
+    /// it was without it). `None` when the field holds no state there —
+    /// no row yet, or the rows say `Null`.
+    pub fn at(&self, at: DateTime<Utc>, exclude: Option<&str>) -> Option<Value> {
+        Some(self.resolve(at, exclude).1.state).filter(|s| !s.is_null())
+    }
+
+    /// [`resolve_effective`] over [`Self::window`], and over it plus the
+    /// first occur dot after the answer took effect when an occur moves
+    /// that answer ([`Effective::an_occur_tracks`]). `governing` indexes
+    /// the returned rows.
+    fn resolve(&self, at: DateTime<Utc>, exclude: Option<&str>) -> (Vec<&StateRow>, Effective) {
+        let mut window = self.window(at, exclude);
+        let eff = resolve_effective(&window, at);
+        if !eff.an_occur_tracks() {
+            return (window, eff);
+        }
+        let after = self.dots.partition_point(|d| d.occur <= eff.since);
+        let dot = self.dots[after..]
+            .iter()
+            .take_while(|d| d.occur <= Some(at))
+            .find(|d| exclude != Some(d.id.as_str()));
+        match dot {
+            Some(dot) => {
+                window.push(dot);
+                let eff = resolve_effective(&window, at);
+                (window, eff)
+            }
+            None => (window, eff),
+        }
+    }
+
+    /// Every change in the field's state, oldest first: the oracle read at
+    /// each row's edges (a leading edge, and a block's trailing edge),
+    /// kept where the answer differs from the one before it.
+    pub fn changes(&self) -> Vec<StateChange<'_>> {
+        let mut edges: Vec<(DateTime<Utc>, &StateRow)> = Vec::new();
+        for r in self.rows.iter().rev().chain(&self.dots) {
+            edges.extend(r.leading_edge().map(|t| (t, r)));
+            edges.extend(
+                r.trailing_edge()
+                    .filter(|t| Some(*t) != r.leading_edge())
+                    .map(|t| (t, r)),
+            );
+        }
+        edges.sort_by_key(|(t, _)| *t);
+        let mut out: Vec<StateChange<'_>> = Vec::new();
+        for group in edges.chunk_by(|a, b| a.0 == b.0) {
+            let at = group[0].0;
+            let (window, eff) = self.resolve(at, None);
+            if out.last().is_some_and(|c| c.state == eff.state) {
                 continue;
             }
-            if !exclude.is_empty() && hid == exclude {
-                continue;
-            }
-            return if value.is_null() {
-                None
-            } else {
-                Some(value.clone())
-            };
+            let governing = eff.governing.map(|i| window[i]);
+            let row = group
+                .iter()
+                .map(|(_, r)| *r)
+                .find(|r| governing.is_some_and(|g| std::ptr::eq(*r, g)))
+                .unwrap_or(group[group.len() - 1].1);
+            out.push(StateChange {
+                at,
+                state: eff.state,
+                row,
+            });
         }
-        None
-    }
-}
-
-/// Whether an emitted state event is a genuine state transition or an
-/// occur-shaped annotation. Both kinds participate in state compilation
-/// (`state_at` / `now` probes); only [`EventKind::Transition`] events are
-/// eligible as `_` ordinal candidates ([`crate::db::Db::resolve_state_back`]).
-/// da-a0n3: this classification lives in the canonical compiler so the
-/// ordinal walk needs no local row predicate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EventKind {
-    /// A deliberate state change — counts in the distinct-ordinals walk.
-    Transition,
-    /// Occur-shaped noise (a bare `occur` dot, a stateless block): affects
-    /// compiled state but is invisible to `_` ordinals.
-    Annotation,
-}
-
-/// THE verb → state-events match, shared by [`entry_state_events`],
-/// [`entry_transition_events`] and [`collect_raw_events`] so the three
-/// doors cannot drift (da-a0n3).
-///
-/// da-5ns sub-bead 1: each state-affecting verb emits an event at its
-/// LEADING edge — `occur - dur` for a block (whose stored `occur` is its
-/// END, da-zwct), `occur` for everything else. da-2i8g sub-bead 5:
-/// block-switch and point-switch ALSO emit a trailing event AT `occur`
-/// carrying the `following_state` value. That trailing event is what
-/// makes a post-block probe see the next state (e.g. a `sit 30 →
-/// vertical` block logged at 09:00 held `sit` from 08:30, and `now` at
-/// 09:01 reports `vertical`, not `sit`).
-fn verb_state_events(
-    verb: Verb,
-    state: Option<&Value>,
-    occur: Option<DateTime<Utc>>,
-    dur: Option<&Dur>,
-    following_state: Option<&Value>,
-    out: &mut Vec<(DateTime<Utc>, Value, EventKind)>,
-) {
-    // Legacy `add` rows (state=null, no time) wrote nothing — they
-    // classify as Point, but the missing occur_time short-circuits here.
-    let Some(ts) = occur else { return };
-    // Exhaustive on purpose (no wildcard): the state compiler is the
-    // storage-side counterpart of shape.rs — a new verb must decide its
-    // event emission here, enforced at compile time.
-    match verb {
-        Verb::Switch => {
-            // A SQL-NULL state carries no state at all (legacy rows only —
-            // derive_verb never mints a stateless Switch): the compiled
-            // `Null` means "untracked", not a state the user switched to.
-            let (v, kind) = match state {
-                Some(v) => (normalize_state(v).to_json(), EventKind::Transition),
-                None => (Value::Null, EventKind::Annotation),
-            };
-            out.push((ts, v, kind));
-        }
-        Verb::BlockSwitch | Verb::PointSwitch => {
-            let (primary, kind) = match state {
-                Some(v) => (normalize_state(v).to_json(), EventKind::Transition),
-                None => (Value::Null, EventKind::Annotation),
-            };
-            // da-zwct: `occur` is the block's END and the duration is the
-            // span before it, so the primary state takes effect at
-            // `occur - dur` and the `following_state` takes over AT
-            // `occur` — the stored instant, no arithmetic.
-            let delta = dur.and_then(|d| d.as_seconds()).unwrap_or(0);
-            let leading_ts = ts - chrono::Duration::seconds(delta);
-            out.push((leading_ts, primary, kind));
-            if let (Some(_), Some(fs)) = (dur, following_state) {
-                // PointSwitch: dur is a zero span; the trailing event
-                // lands at the same occur instant. The stable sort
-                // preserves the push order so the trailing event still
-                // wins on a `<= t` probe.
-                let trailing = normalize_state(fs).to_json();
-                out.push((ts, trailing, EventKind::Transition));
-            }
-        }
-        Verb::Point => {
-            // Occur-shaped rows (state absent, or the literal `true` that
-            // legacy occur wrote): the dot ends any active block —
-            // state=false annotation. Point with any OTHER state is
-            // `switch --moment`: a genuine zero-length transition that
-            // carries (and prevails with) its real state, matching the
-            // SQL oracle ([`crate::db::Db::state_at`]).
-            match state {
-                None | Some(Value::Bool(true)) => {
-                    out.push((ts, Value::Bool(false), EventKind::Annotation));
-                }
-                Some(v) => {
-                    out.push((ts, normalize_state(v).to_json(), EventKind::Transition));
-                }
-            }
-        }
-        Verb::Block => {
-            // A stateless block (`occur … dur=`, legacy start/stop spans)
-            // means "active": state=true, but it isn't a state the user
-            // named — annotation for ordinal purposes.
-            let (v, kind) = match state {
-                Some(v) => (normalize_state(v).to_json(), EventKind::Transition),
-                None => (Value::Bool(true), EventKind::Annotation),
-            };
-            // da-zwct: the block ran for `dur` UP TO `occur`, so it opens
-            // at `occur - dur`. An open block (no `dur`) opens at `occur`.
-            let delta = dur.and_then(|d| d.as_seconds()).unwrap_or(0);
-            out.push((ts - chrono::Duration::seconds(delta), v, kind));
-        }
-    }
-}
-
-/// Variant of [`collect_events`] that operates on already-extracted columns,
-/// tagging each emitted event with its origin `hid` so [`FieldStateEvents`]
-/// can honour `exclude_hid` probes. Delegates to [`verb_state_events`].
-#[allow(clippy::too_many_arguments)]
-fn collect_raw_events(
-    hid: &str,
-    verb: Verb,
-    value: Option<&Value>,
-    start_time: Option<DateTime<Utc>>,
-    end_time: Option<DateTime<Utc>>,
-    create_time: DateTime<Utc>,
-    dur: Option<&Dur>,
-    following_state: Option<&Value>,
-    out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Value, String)>,
-) {
-    let _ = end_time;
-    let mut events = Vec::new();
-    verb_state_events(verb, value, start_time, dur, following_state, &mut events);
-    for (ts, state, _) in events {
-        out.push((ts, create_time, state, hid.to_string()));
-    }
-}
-
-/// State-transition events asserted by a single entry, in emission order:
-/// `(event_time, state)` pairs.
-///
-/// da-5ns sub-bead 1: each state-affecting verb emits an event at its
-/// LEADING edge — `occur_time` for a point or an open block,
-/// `occur_time - dur` for a block, whose stored instant is its end
-/// (da-zwct). da-2i8g sub-bead 5: block-switch / point-switch
-/// additionally emit a trailing `following_state` event AT
-/// `occur_time`, so a `state_at(t)` probe past the block sees
-/// the next state, not the block's primary.
-///
-/// Timeless rows (bare `add`/`note`, or `-T`/`--no-timestamp`): the
-/// `occur_time` column is NULL, which marks the row as deliberately
-/// timeless (its slug is `field:c<create_time>`). State compilation
-/// skips these — they shouldn't emit on the timeline.
-///
-/// This is the per-`Entry` form of the compiler's event extraction.
-/// Callers that must attribute each transition to its originating row
-/// (e.g. tail's block mode, da-eybr) consume this instead of
-/// re-mirroring the verb match.
-pub fn entry_state_events(entry: &Entry) -> Vec<(DateTime<Utc>, Value)> {
-    entry_events_kinded(entry)
-        .into_iter()
-        .map(|(ts, state, _)| (ts, state))
-        .collect()
-}
-
-/// The ordinal-eligible subset of [`entry_state_events`]: only genuine
-/// state transitions (deliberate switches, including the trailing
-/// `following_state` event of a compound switch), with occur-shaped
-/// annotations filtered out. This is the stream the `_` / `__` / `_n`
-/// distinct-state walk samples ([`crate::db::Db::resolve_state_back`],
-/// da-a0n3) — the transition/annotation distinction falls out of the
-/// canonical compiler ([`verb_state_events`]), not a caller-side row
-/// predicate.
-pub fn entry_transition_events(entry: &Entry) -> Vec<(DateTime<Utc>, Value)> {
-    entry_events_kinded(entry)
-        .into_iter()
-        .filter(|(_, _, kind)| *kind == EventKind::Transition)
-        .map(|(ts, state, _)| (ts, state))
-        .collect()
-}
-
-fn entry_events_kinded(entry: &Entry) -> Vec<(DateTime<Utc>, Value, EventKind)> {
-    let mut out = Vec::new();
-    // da-r17h: a deliberately timeless row carries `occur_time IS NULL`
-    // (its slug is now `field:c<create_time>`, no longer the `:unset`
-    // sentinel). It has no place on the timeline, so emit no events.
-    if entry.occur_time.is_none() {
-        return out;
-    }
-    verb_state_events(
-        entry.verb,
-        entry.state.as_ref(),
-        entry.occur_time.as_ref().map(|t| t.utc),
-        entry.dur.as_ref(),
-        entry.following_state.as_ref(),
-        &mut out,
-    );
-    out
-}
-
-fn collect_events(entry: &Entry, out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Value)>) {
-    for (ts, state) in entry_state_events(entry) {
-        out.push((ts, entry.create_time, state));
+        out
     }
 }
 
@@ -1074,213 +1053,231 @@ mod tests {
         assert_ne!(drive_car, ride_car);
     }
 
-    // ─── da-2i8g: following_state-aware events ──────────────────────
+    // ─── The oracle and its row cache (da-u5l1o) ─────────────────────
 
-    fn block_switch_entry(
-        occur: DateTime<Utc>,
-        primary: &str,
-        dur_secs: i64,
-        following: &str,
+    fn row(
+        field: &str,
+        verb: Verb,
+        state: Option<Value>,
+        occur: &str,
+        dur_mins: Option<i64>,
+        following: Option<Value>,
     ) -> Entry {
-        use crate::dur::Dur;
-        use crate::entry::Verb;
         use crate::time::DatumTime;
         let mut e = Entry::new(
-            "body",
-            Verb::BlockSwitch,
-            Some(json!(primary)),
-            None,
-            Some(DatumTime {
-                utc: occur,
-                offset_minutes: 0,
-                timezone: Some("UTC".into()),
-                uncertainty: None,
-            }),
-            Some(Dur::of(chrono::Duration::seconds(dur_secs))),
-            "dev",
-        );
-        e.following_state = Some(json!(following));
-        e
-    }
-
-    /// da-zwct: `switch body sit 30 , vertical` logged at 09:00 means
-    /// the body was SITTING for the half hour BEFORE 09:00 and went
-    /// vertical AT 09:00. So the primary opens at `occur - dur` and the
-    /// follower opens at the stored `occur` itself.
-    #[test]
-    fn collect_events_emits_following_state_at_end_of_block_switch() {
-        let occur: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
-        let entry = block_switch_entry(occur, "sit", 30 * 60, "vertical");
-
-        let mut events: Vec<(DateTime<Utc>, DateTime<Utc>, Value)> = Vec::new();
-        collect_events(&entry, &mut events);
-
-        assert_eq!(events.len(), 2, "block-switch emits primary + trailing");
-        assert_eq!(
-            events[0].0,
-            occur - chrono::Duration::seconds(30 * 60),
-            "the block opens a duration BEFORE occur_time"
-        );
-        assert_eq!(events[0].2, json!("sit"));
-        assert_eq!(
-            events[1].0, occur,
-            "trailing event at occur_time — the block's end IS the stored instant"
-        );
-        assert_eq!(events[1].2, json!("vertical"));
-    }
-
-    #[test]
-    fn collect_events_point_switch_emits_both_at_same_instant() {
-        use crate::dur::Dur;
-        use crate::entry::Verb;
-        use crate::time::DatumTime;
-        let occur: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
-        let mut e = Entry::new(
-            "mood",
-            Verb::PointSwitch,
-            Some(json!("happy")),
-            None,
-            Some(DatumTime {
-                utc: occur,
-                offset_minutes: 0,
-                timezone: Some("UTC".into()),
-                uncertainty: None,
-            }),
-            Some(Dur::of(chrono::Duration::zero())),
-            "dev",
-        );
-        e.following_state = Some(json!("sad"));
-
-        let mut events: Vec<(DateTime<Utc>, DateTime<Utc>, Value)> = Vec::new();
-        collect_events(&e, &mut events);
-
-        assert_eq!(events.len(), 2, "point-switch emits primary + trailing");
-        assert_eq!(events[0].0, occur);
-        assert_eq!(events[1].0, occur, "point-switch trailing at same instant");
-        assert_eq!(events[0].2, json!("happy"));
-        assert_eq!(events[1].2, json!("sad"));
-    }
-
-    #[test]
-    fn collect_events_block_switch_without_following_state_emits_only_primary() {
-        use crate::dur::Dur;
-        use crate::entry::Verb;
-        use crate::time::DatumTime;
-        let occur: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
-        // Verb-derivation rejects this shape today (block-switch requires
-        // following_state), but the row-level defensive guard means a
-        // hand-rolled or migrated row without following_state still
-        // emits the primary cleanly instead of panicking.
-        let mut e = Entry::new(
-            "body",
-            Verb::BlockSwitch,
-            Some(json!("sit")),
-            None,
-            Some(DatumTime {
-                utc: occur,
-                offset_minutes: 0,
-                timezone: Some("UTC".into()),
-                uncertainty: None,
-            }),
-            Some(Dur::of(chrono::Duration::seconds(30 * 60))),
-            "dev",
-        );
-        e.following_state = None;
-
-        let mut events: Vec<(DateTime<Utc>, DateTime<Utc>, Value)> = Vec::new();
-        collect_events(&e, &mut events);
-
-        assert_eq!(events.len(), 1, "no trailing emitted when fs missing");
-        assert_eq!(events[0].2, json!("sit"));
-    }
-
-    // ─── da-a0n3: transition stream for `_` ordinals ─────────────────
-
-    fn point_entry(occur: DateTime<Utc>, state: Option<Value>) -> Entry {
-        use crate::dur::Dur;
-        use crate::entry::Verb;
-        use crate::time::DatumTime;
-        Entry::new(
-            "mood",
-            Verb::Point,
+            field,
+            verb,
             state,
             None,
             Some(DatumTime {
-                utc: occur,
+                utc: occur.parse().unwrap(),
                 offset_minutes: 0,
                 timezone: Some("UTC".into()),
                 uncertainty: None,
             }),
-            Some(Dur::moment()),
+            dur_mins.map(|m| Dur::of(chrono::Duration::minutes(m))),
             "dev",
-        )
+        );
+        e.following_state = following;
+        e
     }
 
-    #[test]
-    fn occur_points_are_annotations_not_transitions() {
-        // Occur-shaped rows (Point + no state, or the literal `true`
-        // legacy occur wrote) emit a state=false compile event but are
-        // invisible to the transition stream `_` ordinals sample.
-        let occur: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
-        for state in [None, Some(json!(true))] {
-            let e = point_entry(occur, state);
-            assert_eq!(entry_state_events(&e), vec![(occur, json!(false))]);
-            assert!(entry_transition_events(&e).is_empty());
-        }
+    fn t(s: &str) -> DateTime<Utc> {
+        s.parse().unwrap()
     }
 
+    /// da-zwct: `switch body sit 30 , vertical` logged at 09:00 held `sit`
+    /// from 08:30 and went `vertical` AT 09:00.
     #[test]
-    fn moment_switch_emits_its_real_state_as_a_transition() {
-        // `switch mood happy --moment` derives Point with a real state:
-        // a genuine zero-length transition. The compile event carries the
-        // state itself (not `false`), matching the SQL oracle's answer
-        // for the same row.
-        let occur: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
-        let e = point_entry(occur, Some(json!("happy")));
-        assert_eq!(entry_state_events(&e), vec![(occur, json!("happy"))]);
-        assert_eq!(entry_transition_events(&e), vec![(occur, json!("happy"))]);
-    }
-
-    /// da-zwct: the block's half hour PRECEDES its stored 09:00, so the
-    /// primary is a candidate from 08:30 and the follower from 09:00.
-    #[test]
-    fn compound_switch_trailing_event_is_a_transition() {
-        let occur: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
-        let entry = block_switch_entry(occur, "sit", 30 * 60, "vertical");
+    fn block_switch_holds_its_state_then_its_following_state() {
+        let e = row(
+            "body",
+            Verb::BlockSwitch,
+            Some(json!("sit")),
+            "2026-04-01T09:00:00Z",
+            Some(30),
+            Some(json!("vertical")),
+        );
+        let rows = FieldStateRows::from_entries([&e]);
+        assert_eq!(rows.at(t("2026-04-01T08:29:00Z"), None), None);
+        assert_eq!(rows.at(t("2026-04-01T08:45:00Z"), None), Some(json!("sit")));
         assert_eq!(
-            entry_transition_events(&entry),
-            vec![
-                (occur - chrono::Duration::seconds(30 * 60), json!("sit")),
-                (occur, json!("vertical")),
-            ],
-            "primary AND following_state are both ordinal candidates"
+            rows.at(t("2026-04-01T09:00:00Z"), None),
+            Some(json!("vertical"))
         );
     }
 
+    /// vividn's report: a timed switch with no `following_state` ends, and
+    /// the field goes back to the state it interrupted — it does not stay
+    /// in the block's state forever.
     #[test]
-    fn state_at_after_block_switch_returns_following_state() {
-        // End-to-end through FieldStateEvents::at: a probe inside the
-        // block sees the primary; a probe after the block sees the
-        // trailing. da-zwct: the block is [08:30, 09:00), so "inside" is
-        // before the stored instant and "after" is at or past it.
-        let occur: DateTime<Utc> = "2026-04-01T09:00:00Z".parse().unwrap();
-        let mid = occur - chrono::Duration::minutes(15);
-        let after = occur + chrono::Duration::minutes(1);
-        let entry = block_switch_entry(occur, "sit", 30 * 60, "vertical");
+    fn a_finished_block_hands_the_field_back() {
+        let before = row(
+            "f",
+            Verb::Switch,
+            Some(json!("state1")),
+            "2026-04-01T09:00:00Z",
+            None,
+            None,
+        );
+        let block = row(
+            "f",
+            Verb::Block,
+            Some(json!("state2")),
+            "2026-04-01T09:10:00Z",
+            Some(5),
+            None,
+        );
+        let rows = FieldStateRows::from_entries([&before, &block]);
+        assert_eq!(
+            rows.at(t("2026-04-01T09:07:00Z"), None),
+            Some(json!("state2"))
+        );
+        assert_eq!(
+            rows.at(t("2026-04-01T09:10:00Z"), None),
+            Some(json!("state1"))
+        );
+        let changes: Vec<_> = rows
+            .changes()
+            .into_iter()
+            .map(|c| (c.at, c.state, c.row.id.clone()))
+            .collect();
+        assert_eq!(
+            changes,
+            vec![
+                (
+                    t("2026-04-01T09:00:00Z"),
+                    json!("state1"),
+                    before.hid.to_string()
+                ),
+                (
+                    t("2026-04-01T09:05:00Z"),
+                    json!("state2"),
+                    block.hid.to_string()
+                ),
+                (
+                    t("2026-04-01T09:10:00Z"),
+                    json!("state1"),
+                    block.hid.to_string()
+                ),
+            ],
+            "the block's end is a change, and it is the block's"
+        );
+    }
 
-        let mut events = Vec::new();
-        collect_events(&entry, &mut events);
-        // Mirror what FieldStateEvents::at does: scan from the tail and
-        // pick the latest event at or before the probe.
-        let pick = |t: DateTime<Utc>| -> Option<&Value> {
-            events
-                .iter()
-                .rev()
-                .find(|(et, _, _)| *et <= t)
-                .map(|(_, _, v)| v)
-        };
+    /// A compound switch past its trailing edge said its last word there,
+    /// so a switch logged inside its span does not outrank it — however
+    /// many rows the reader happened to fetch.
+    #[test]
+    fn a_switch_inside_a_finished_block_switch_does_not_outrank_its_following_state() {
+        let outer = row(
+            "body",
+            Verb::BlockSwitch,
+            Some(json!("sit")),
+            "2026-04-01T10:00:00Z",
+            Some(60),
+            Some(json!("vertical")),
+        );
+        let inner = row(
+            "body",
+            Verb::Switch,
+            Some(json!("stand")),
+            "2026-04-01T09:30:00Z",
+            None,
+            None,
+        );
+        let rows = FieldStateRows::from_entries([&outer, &inner]);
+        assert_eq!(
+            rows.at(t("2026-04-01T09:45:00Z"), None),
+            Some(json!("stand"))
+        );
+        let at = t("2026-04-01T10:30:00Z");
+        assert_eq!(rows.at(at, None), Some(json!("vertical")));
+        let both = [StateRow::from_entry(&inner), StateRow::from_entry(&outer)];
+        assert_eq!(
+            resolve_effective(&both, at).state,
+            json!("vertical"),
+            "every window agrees"
+        );
+    }
 
-        assert_eq!(pick(mid), Some(&json!("sit")));
-        assert_eq!(pick(after), Some(&json!("vertical")));
+    /// da-gvcen: a first log is a point-switch with a MOMENT dur that
+    /// declares its field in `following_state`; the declaration holds from
+    /// that instant on, as it did when the render compiled its own events.
+    #[test]
+    fn a_moment_point_switch_hands_over_to_its_following_state() {
+        let mut e = row(
+            "coffee",
+            Verb::PointSwitch,
+            None,
+            "2026-04-01T09:00:00Z",
+            None,
+            Some(json!("TRACKED")),
+        );
+        e.dur = Some(Dur::moment());
+        let rows = FieldStateRows::from_entries([&e]);
+        assert_eq!(rows.at(t("2026-04-01T08:59:00Z"), None), None);
+        assert_eq!(
+            rows.at(t("2026-04-01T09:00:00Z"), None),
+            Some(json!("TRACKED"))
+        );
+    }
+
+    /// vividn, 2026-09-29: an occur leaves a state alone, unless it is
+    /// IGNORED or there is none — then the field is TRACKED from the dot.
+    #[test]
+    fn an_occur_moves_only_an_ignored_or_absent_state() {
+        let dot = |at: &str| row("f", Verb::Point, None, at, None, None);
+        let sw = |s: &str, at: &str| row("f", Verb::Switch, Some(json!(s)), at, None, None);
+        let (d1, d2) = (dot("2026-04-01T09:10:00Z"), dot("2026-04-01T09:20:00Z"));
+
+        let on = sw("drinking", "2026-04-01T09:00:00Z");
+        let rows = FieldStateRows::from_entries([&on, &d1, &d2]);
+        assert_eq!(
+            rows.at(t("2026-04-01T09:10:00Z"), None),
+            Some(json!("drinking"))
+        );
+        assert_eq!(
+            rows.at(t("2026-04-01T09:30:00Z"), None),
+            Some(json!("drinking"))
+        );
+
+        let ignored = sw("IGNORED", "2026-04-01T09:00:00Z");
+        let rows = FieldStateRows::from_entries([&ignored, &d1, &d2]);
+        assert_eq!(
+            rows.at(t("2026-04-01T09:05:00Z"), None),
+            Some(json!("IGNORED"))
+        );
+        assert_eq!(
+            rows.at(t("2026-04-01T09:10:00Z"), None),
+            Some(json!("TRACKED"))
+        );
+        assert_eq!(
+            rows.at(t("2026-04-01T09:10:00Z"), Some(d1.hid.as_str())),
+            Some(json!("IGNORED")),
+            "excluding a row reads the field as though it were never written"
+        );
+        let changes: Vec<_> = rows
+            .changes()
+            .into_iter()
+            .map(|c| (c.at, c.state, c.row.id.clone()))
+            .collect();
+        assert_eq!(
+            changes[1],
+            (
+                t("2026-04-01T09:10:00Z"),
+                json!("TRACKED"),
+                d1.hid.to_string()
+            ),
+            "TRACKED from the FIRST dot after the IGNORED, and the change is that dot's"
+        );
+
+        let rows = FieldStateRows::from_entries([&d1, &d2]);
+        assert_eq!(rows.at(t("2026-04-01T09:05:00Z"), None), None);
+        assert_eq!(
+            rows.at(t("2026-04-01T09:15:00Z"), None),
+            Some(json!("TRACKED")),
+            "no state at all"
+        );
     }
 }

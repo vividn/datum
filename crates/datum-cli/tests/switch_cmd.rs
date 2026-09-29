@@ -239,7 +239,7 @@ fn switch_without_state_promotes_to_true() {
     assert_eq!(
         db.get_active_state("eat", ts).unwrap(),
         json!(true),
-        "promoted state is observable at compile_state",
+        "promoted state is observable at its time",
     );
 }
 
@@ -273,13 +273,11 @@ fn switch_dur_creates_block_ending_at_occur() {
         db.get_active_state("project", mid).unwrap(),
         json!("household")
     );
-    // Under v3 Block has no implicit trailing-edge event — the state at
-    // time_end remains "household". A trailing transition requires
-    // BlockSwitch (state + dur + following_state).
-    assert_eq!(
-        db.get_active_state("project", te).unwrap(),
-        json!("household")
-    );
+    // At time_end the block hands the field back (da-611d, da-u5l1o):
+    // nothing preceded it, so the field holds no state. Switching TO a
+    // state past the block takes a BlockSwitch (state + dur +
+    // following_state).
+    assert_eq!(db.get_active_state("project", te).unwrap(), json!(null));
 }
 
 /// TS #9: "records a hole of time in the state when given a negative duration".

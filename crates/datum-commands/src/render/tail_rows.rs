@@ -277,7 +277,7 @@ mod tests {
     use chrono::{DateTime, Utc};
     use datum_core::dur::Dur;
     use datum_core::entry::Verb;
-    use datum_core::state::FieldStateEvents;
+    use datum_core::state::FieldStateRows;
     use datum_core::time::DatumTime;
     use serde_json::json;
 
@@ -639,8 +639,8 @@ mod tests {
                 )
             },
         ] {
-            let events = FieldStateEvents::from_entries([&writing, &e]);
-            let ctx = RenderContext::from_events(Some(&events), &e);
+            let events = FieldStateRows::from_entries([&writing, &e]);
+            let ctx = RenderContext::from_rows(Some(&events), &e);
             let what = format!("{} with {:?}", e.verb, e.dur);
             assert_eq!(
                 StateTransition::of(&ctx, &e).following,
@@ -671,7 +671,7 @@ mod tests {
         use crate::render::action::format_state_group;
         let _g = datum_test_util::no_color_scope();
         let e = compound(None, json!("TRACKED"), Dur::moment());
-        let ctx = RenderContext::from_events(None, &e);
+        let ctx = RenderContext::from_rows(None, &e);
         let rows = tail_rows(
             std::slice::from_ref(&e),
             Some(std::slice::from_ref(&ctx)),
