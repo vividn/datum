@@ -685,15 +685,19 @@ fn walk_region(positionals: Vec<String>, slots: &mut [Slot]) -> Result<Vec<Fill>
         }
         // Window emptiness: a walk that leaves a string JOIN nothing is
         // an error (rule 7) — but a sink with nothing to absorb is just
-        // a sink at rest (it stays open for later regions).
+        // a sink at rest (it stays open for later regions), and a `-C`
+        // join is an optional note, as typed directly (da-nufr8).
         if rest.is_empty() {
-            if matches!(&slots[g].kind, SlotKind::Greedy(GreedyTarget::Sink(_))) {
-                return Ok(fills);
+            match &slots[g].kind {
+                SlotKind::Greedy(GreedyTarget::Sink(_)) => return Ok(fills),
+                SlotKind::Greedy(GreedyTarget::Comment) => {}
+                _ => {
+                    return Err(ParseError::InvalidArg(
+                        "nothing left for the string join after reserving for the remaining slots"
+                            .to_string(),
+                    ))
+                }
             }
-            return Err(ParseError::InvalidArg(
-                "nothing left for the string join after reserving for the remaining slots"
-                    .to_string(),
-            ));
         }
         // Apply reservations (they were peeled in reverse slot order). A
         // dur goes back on the window's tail — `.` included — where the
@@ -718,11 +722,15 @@ fn walk_region(positionals: Vec<String>, slots: &mut [Slot]) -> Result<Vec<Fill>
         // `\.` goes on as typed: the side unescapes it where the direct
         // command does, and a `.` here would read as its skip-dur
         // sentinel (da-gn23l).
+        let tokens: Vec<String> = rest.into_iter().chain(tail).collect();
+        if tokens.is_empty() {
+            return Ok(fills); // a `-C` at rest, open for later regions
+        }
         let open = slots[g].open_sides();
         slots[g].mark_all_satisfied();
         fills.push(Fill::Window {
             sides: open,
-            tokens: rest.into_iter().chain(tail).collect(),
+            tokens,
         });
         return Ok(fills);
     }
@@ -1135,6 +1143,22 @@ mod tests {
         let err = apply(&[&["switch", "f", "-I", "-k", "key1", ",,", "val1"]]).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("nothing left"), "got: {msg}");
+        let err = apply(&[&["occur", "f", "-S", "-k", "key1", ",,", "val1"]]).unwrap_err();
+        assert!(format!("{err}").contains("nothing left"), "got: {err}");
+    }
+
+    #[test]
+    fn c_join_with_nothing_left_logs_no_comment() {
+        // `-C` is an optional note: an empty join is no comment, as typed
+        // directly (da-nufr8). A reserved dur still reaches the side.
+        let out = apply(&[&[
+            "occur", "spend", "-k", "amount", "-k", "cat=", "-C", ",,", "3.20", "coffee",
+        ]])
+        .unwrap();
+        assert!(has_seq(&out[0], &["amount=3.20"]) && has_seq(&out[0], &["cat=coffee"]));
+        let out = apply(&[&["start", "f", "-k", "a", "-C", ",,", "1", "30m"]]).unwrap();
+        assert!(has_seq(&out[0], &["a=1"]));
+        assert_eq!(out[0].last().map(String::as_str), Some("30m"));
     }
 
     #[test]
