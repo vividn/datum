@@ -1146,12 +1146,16 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
         let out = a.fails(&["sync", gone, "x"], "");
         assert!(out.contains("unknown sync subcommand"), "{gone}: {out}");
     }
-    assert_eq!(top, ["status", "pause", "resume", "chain", "admin"]);
+    assert_eq!(
+        top,
+        ["status", "pause", "resume", "chain", "admin", "daemon"]
+    );
     assert_eq!(
         complete(&["chain"]),
         ["invite", "connect", "list", "rename", "revoke", "role", "ack", "rekey"]
     );
     assert_eq!(complete(&["admin"]), ["list", "add", "remove"]);
+    assert_eq!(complete(&["daemon"]), ["install", "uninstall", "status"]);
     // `datum sync help` is the page.
     assert_eq!(a.ok(&["sync", "help"]), a.ok(&["help", "sync"]));
 }

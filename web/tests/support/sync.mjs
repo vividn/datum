@@ -116,6 +116,7 @@ export async function nativeCopy(relay) {
 		DATUM_HOME: home,
 		DATUM_DB: join(home, 'datum.db'),
 		DATUM_SYNC_RELAY: relay.url,
+		DATUM_SYNC_NO_DAEMON: '1',
 		DATUM_SYNC_TIMEOUT_S: '20',
 		TZ: 'UTC',
 		NO_COLOR: '1'

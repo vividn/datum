@@ -260,7 +260,11 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             admin_key,
         } => {
             let expires = std::time::Duration::from_secs(expires_secs);
+            let starts = !db.sync_chain()?.exists();
             let (secret, expires_at) = invite(db, expires, admin_key.as_deref(), reader)?;
+            if starts {
+                super::sync_daemon::auto_install();
+            }
             datum_sync::offer(db, &secret, expires, &expires_at, qr)?
         }
         #[cfg(feature = "net")]
@@ -273,10 +277,16 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                     t
                 }
             };
-            datum_sync::connect(db, &ticket)?
+            let joins = !db.sync_chain()?.exists();
+            datum_sync::connect(db, &ticket)?;
+            if joins && db.sync_chain()?.exists() {
+                super::sync_daemon::auto_install();
+            }
         }
         #[cfg(feature = "net")]
         SyncCommand::Run => datum_sync::run(db)?,
+        #[cfg(feature = "net")]
+        SyncCommand::Daemon(act) => super::sync_daemon::daemon(act)?,
         #[cfg(not(feature = "net"))]
         _ => bail!(NO_NET),
     }

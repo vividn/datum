@@ -43,6 +43,8 @@ impl Copy {
             .env("DATUM_CONFIG_HOME", self.tmp.path().join("config"))
             .env("DATUM_COLOR", "0")
             .env("DATUM_SYNC_BIND", format!("127.0.0.1:{}", self.port))
+            // Never a service in the real home (da-vd2sn).
+            .env("DATUM_SYNC_NO_DAEMON", "1")
             .envs(self.env.iter().copied())
             .args(args)
             .stdin(Stdio::piped())
@@ -96,9 +98,7 @@ impl Copy {
 
     /// A long-running `datum` (invite, run), killed when dropped.
     fn serve(&self, args: &[&str]) -> Serving {
-        let mut child = self.cmd(args).spawn().expect("spawn datum");
-        let out = BufReader::new(child.stdout.take().unwrap());
-        Serving { child, out }
+        Serving::of(&mut self.cmd(args))
     }
 
     /// `sync chain invite` serving, and its ticket.
@@ -149,6 +149,12 @@ struct Serving {
 }
 
 impl Serving {
+    fn of(cmd: &mut Command) -> Self {
+        let mut child = cmd.spawn().expect("spawn datum");
+        let out = BufReader::new(child.stdout.take().unwrap());
+        Serving { child, out }
+    }
+
     /// Read stdout up to the line containing `needle`; that line.
     fn lines_until(&mut self, needle: &str) -> String {
         let mut line = String::new();
@@ -300,6 +306,23 @@ fn run_serves_members_and_pushes_new_ops() {
     a.ok(&["occur", "swim"]);
     eventually("a's write reaching b", || b.has("swim"));
     eventually("equal hashes", || a.hash() == b.hash());
+}
+
+/// `sync daemon run` (da-vd2sn) finds a chained database datum knows of —
+/// here by the registry — and serves it as `sync run` does.
+#[test]
+fn daemon_run_serves_every_chained_database() {
+    let (a, b) = paired();
+    let config = b.tmp.path().join("config");
+    std::fs::create_dir_all(&config).unwrap();
+    let registry = format!("[db.data]\npath = {:?}\n", b.db().display().to_string());
+    std::fs::write(config.join("dbs.toml"), registry).unwrap();
+    let mut daemon = b.cmd(&["sync", "daemon", "run"]);
+    let _b_runs = Serving::of(daemon.stderr(Stdio::inherit()));
+    a.ok(&["occur", "swim"]);
+    eventually("a's sync reaching b's daemon", || {
+        a.run(&["sync"]).status.success() && b.has("swim")
+    });
 }
 
 #[test]

@@ -122,7 +122,11 @@ one-time invites (`sync chain invite` / `connect`), only members are served
 (`sync_peers` is just where they were last seen), and bare `sync` / the
 hidden `sync run` swap vectors and ops until neither moves. The tree
 (da-aam46): `sync`, `status`, `pause | resume`, `chain invite | connect |
-list | rename | revoke | ack | rekey`, `admin list | add | remove`.
+list | rename | revoke | ack | rekey`, `admin list | add | remove`, `daemon
+install | uninstall | status` (da-vd2sn: a systemd user unit / launchd agent
+running the hidden `sync daemon run`, which is `sync run` for every chained
+db; a copy's first `chain invite` / `connect` installs it unless
+`DATUM_SYNC_NO_DAEMON=1`, and `scripts/install.sh` restarts it).
 `DATUM_SYNC_BIND=<ip:port>` binds one address with no relay or discovery (the
 tests), `DATUM_SYNC_RELAY=<url>` one relay and nothing else. A copy of the file at another path mints its own key (`sync_local.path`,
 v44); two copies found signing with one key are refused by name, and

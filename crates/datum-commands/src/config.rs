@@ -271,7 +271,7 @@ fn xdg_data_dir() -> Option<PathBuf> {
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local").join("share")))
 }
 
-fn xdg_config_dir() -> Option<PathBuf> {
+pub(crate) fn xdg_config_dir() -> Option<PathBuf> {
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
@@ -305,7 +305,22 @@ pub fn config_dir_path() -> Option<PathBuf> {
     }
 }
 
-/// Scan the default data directory for `*.db` files. Used by `info --all`.
+/// Every database datum knows of: the registry's names, and every `*.db`
+/// in the data directory, the registry's path winning a name collision.
+pub fn known_dbs() -> BTreeMap<String, PathBuf> {
+    let mut seen: BTreeMap<String, PathBuf> = load_registry()
+        .unwrap_or_default()
+        .db
+        .into_iter()
+        .map(|(name, entry)| (name, PathBuf::from(entry.path)))
+        .collect();
+    for (name, path) in discovered_dbs().unwrap_or_default() {
+        seen.entry(name).or_insert(path);
+    }
+    seen
+}
+
+/// Scan the default data directory for `*.db` files.
 pub fn discovered_dbs() -> Result<Vec<(String, PathBuf)>> {
     let dir = data_dir()?;
     let mut out = Vec::new();

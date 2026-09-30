@@ -15,6 +15,7 @@
 # Then it installs tab completion for your shell (`datum completions
 # install`), which `cargo install` has no hook for. `--no-completions`
 # skips that, and a failure there only warns: the binary is what matters.
+# A sync daemon already installed is restarted onto the new binary.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -28,6 +29,16 @@ for arg in "$@"; do
 done
 
 cargo install --path "$repo_root/crates/datum-cli" --locked
+
+# An installed sync daemon (`datum sync daemon install`) still runs the old
+# binary: restart it on the new one.
+if [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/datum-sync.service" ]; then
+  systemctl --user restart datum-sync.service ||
+    echo "warning: the sync daemon was not restarted; retry with: systemctl --user restart datum-sync" >&2
+elif [ -f "$HOME/Library/LaunchAgents/day.datum.sync.plist" ]; then
+  launchctl kickstart -k "gui/$(id -u)/day.datum.sync" ||
+    echo "warning: the sync daemon was not restarted; retry with: launchctl kickstart -k gui/$(id -u)/day.datum.sync" >&2
+fi
 
 if [ "$completions" = 1 ]; then
   datum="${CARGO_INSTALL_ROOT:-${CARGO_HOME:-$HOME/.cargo}}/bin/datum"

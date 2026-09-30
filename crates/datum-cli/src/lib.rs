@@ -20,7 +20,7 @@ use anyhow::Result;
 use datum_commands::commands;
 use datum_parse::{help, ParseError};
 
-use crate::args::{Cli, Command, DbCommand, InfoArgs, Invocation};
+use crate::args::{Cli, Command, DbCommand, InfoArgs, Invocation, SyncCommand};
 
 /// `datum 3.0.<height>-beta (<sha7>)`, from git at build time (da-5172a,
 /// da-cv118, `build.rs`).
@@ -93,9 +93,13 @@ fn dispatch_single(cli: Cli) -> Result<()> {
         anyhow::bail!("repl is unavailable in this build");
     }
 
-    // `datum config show` and `datum completions` run against an in-memory
-    // placeholder: they do not read the entry db.
-    if matches!(&cli.command, Command::Config(_) | Command::Completions(_)) {
+    // `datum config show`, `datum completions` and `datum sync daemon` run
+    // against an in-memory placeholder: they do not read the entry db (the
+    // daemon opens each chained db itself, and must not create the default).
+    if matches!(
+        &cli.command,
+        Command::Config(_) | Command::Completions(_) | Command::Sync(SyncCommand::Daemon(_))
+    ) {
         let placeholder = datum_core::db::Db::open_in_memory()?;
         return cmd::dispatch(cli, &placeholder);
     }

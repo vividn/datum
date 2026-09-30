@@ -832,6 +832,10 @@ pub enum SyncCommand {
     },
     /// Hidden: `datum sync run` — stay up: serve members and push new ops.
     Run,
+    /// `datum sync daemon install | uninstall | status` (da-vd2sn): the
+    /// background service that runs `sync daemon run` (hidden) — `sync run`
+    /// for every chained database in the data directory.
+    Daemon(SyncDaemonAct),
     /// Hidden: `datum sync endpoint-key` — this copy's endpoint secret,
     /// for datum.day's network worker.
     EndpointKey,
@@ -865,6 +869,14 @@ pub enum SyncCommand {
         expires_secs: u64,
         admin_key: Option<String>,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncDaemonAct {
+    Install,
+    Uninstall,
+    Status,
+    Run,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -31,16 +31,7 @@ pub fn info(args: InfoArgs, cli_db: Option<&str>, active_db: &Db) -> Result<()> 
 
 /// Returns how many lines, over every block, could not be read.
 fn print_info_all() -> Result<usize> {
-    let registry = config::load_registry().unwrap_or_default();
-    let discovered = config::discovered_dbs().unwrap_or_default();
-    use std::collections::BTreeMap;
-    let mut seen: BTreeMap<String, std::path::PathBuf> = BTreeMap::new();
-    for (name, entry) in &registry.db {
-        seen.insert(name.clone(), std::path::PathBuf::from(&entry.path));
-    }
-    for (name, path) in &discovered {
-        seen.entry(name.clone()).or_insert_with(|| path.clone());
-    }
+    let seen = config::known_dbs();
     if seen.is_empty() {
         println!("no databases registered or found in default directory");
         return Ok(0);

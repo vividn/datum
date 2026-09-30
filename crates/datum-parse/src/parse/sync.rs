@@ -26,6 +26,15 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         "help" => return Err(ParseError::HelpRequested(Some("sync".into()))),
         "chain" => parse_chain(&mut rest)?,
         "admin" => parse_admin(&mut rest)?,
+        "daemon" => SyncCommand::Daemon(match rest.next().copied() {
+            Some("install") => SyncDaemonAct::Install,
+            Some("uninstall") => SyncDaemonAct::Uninstall,
+            Some("status") => SyncDaemonAct::Status,
+            // Hidden: what the service runs.
+            Some("run") => SyncDaemonAct::Run,
+            Some(other) => return Err(unknown("sync daemon", other, DAEMON)),
+            None => return Err(missing("sync daemon", DAEMON)),
+        }),
         // Hidden: the pipe transport, the daemon, and datum.day's store.
         "pipe" => parse_pipe(&mut rest)?,
         "run" => SyncCommand::Run,
@@ -83,7 +92,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             return Err(unknown(
                 "sync",
                 other,
-                "status|chain|admin|pause|resume|help",
+                "status|chain|admin|daemon|pause|resume|help",
             ))
         }
     };
@@ -92,6 +101,8 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         None => Ok(cmd),
     }
 }
+
+const DAEMON: &str = "install|uninstall|status";
 
 type Rest<'a> = std::slice::Iter<'a, &'a str>;
 
@@ -367,6 +378,15 @@ mod tests {
             }
         );
         assert_eq!(p(&["run"]), SyncCommand::Run);
+        for (word, act) in [
+            ("install", SyncDaemonAct::Install),
+            ("uninstall", SyncDaemonAct::Uninstall),
+            ("status", SyncDaemonAct::Status),
+            ("run", SyncDaemonAct::Run),
+        ] {
+            assert_eq!(p(&["daemon", word]), SyncCommand::Daemon(act));
+        }
+        assert!(parse_sync_cmd(&["daemon", "install", "extra"]).is_err());
         assert_eq!(
             p(&["chain", "invite", "--admin-key=k", "--qr", "--reader"]),
             SyncCommand::Invite {
@@ -450,7 +470,7 @@ mod tests {
         // The flags are each act's own.
         assert!(parse_sync_cmd(&["admin", "add", "k", "--allow-unlock"]).is_err());
         assert!(parse_sync_cmd(&["chain", "revoke", "k", "--label", "x"]).is_err());
-        for group in ["chain", "admin", "pipe"] {
+        for group in ["chain", "admin", "daemon", "pipe"] {
             let err = parse_sync_cmd(&[group]).unwrap_err().to_string();
             assert!(
                 err.contains(&format!("missing sync {group} subcommand")),

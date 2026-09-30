@@ -105,6 +105,7 @@ mod stop_cmd;
 mod stored_spec_compat;
 mod switch_cmd;
 mod sync_chain;
+mod sync_daemon;
 mod sync_net;
 mod sync_ops;
 mod tail_cmd;
