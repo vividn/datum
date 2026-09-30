@@ -161,23 +161,40 @@ describe('a burst of changes', () => {
 		await withApp(
 			async ({ page }) => {
 				const outcomes = await page.evaluate(async () => {
-					await window.datum.runQuiet(['--version']);
+					const keys = [undefined, 'k', 'k', undefined, 'other', 'k', undefined];
+					// Every `--version` the worker has been handed, the warm-ups' included.
+					const seen = [];
+					const channel = new BroadcastChannel('datum-test-arrived');
+					channel.onmessage = (e) => seen.push(e.data);
+					const heard = (n, ms) =>
+						new Promise((resolve) => {
+							const at = performance.now();
+							const poll = () =>
+								seen.includes(n) ? resolve(true) : performance.now() - at > ms ? resolve(false) : setTimeout(poll, 10);
+							poll();
+						});
+					// A new channel hears nothing until the browser has connected it,
+					// and a count sent before then is lost: all seven of them were,
+					// 5 runs in 80 under load, the worker having counted every one
+					// (da-oh6f1). Hearing a warm-up's own count proves it connected.
+					let warm = 0;
+					do await window.datum.runQuiet(['--version']);
+					while (!(await heard(++warm, 1000)) && warm < 10);
 					const runner = window.datum.setRunner(null);
 					window.datum.setRunner(runner);
-					const keys = [undefined, 'k', 'k', undefined, 'other', 'k', undefined];
-					// Every `--version` the worker has been handed, the warm-up's included.
-					const arrived = new Promise((resolve) => {
-						const channel = new BroadcastChannel('datum-test-arrived');
-						channel.onmessage = (e) => e.data === keys.length + 1 && (channel.close(), resolve());
-					});
 					// The queue is HELD, not hoped to be slow (da-nixla): under the
 					// worker's own lock nothing behind the first job can start, and
 					// the lock goes back only once the last request is in the worker.
+					// Arriving is a message hop, not a process: a count not heard in
+					// seconds will never come, and throwing gives the lock back.
 					let jobs;
 					await navigator.locks.request('datum-cli-files', async () => {
 						jobs = keys.map((key) => runner(['--version'], undefined, undefined, key));
-						await arrived;
+						if (await heard(warm + keys.length, 20000)) return;
+						const locks = JSON.stringify(await navigator.locks.query());
+						throw new Error(`arrivals ${JSON.stringify(seen)}, awaiting ${warm + keys.length}; locks ${locks}`);
 					});
+					channel.close();
 					return (await Promise.all(jobs)).map((r) => (r.superseded ? 'dropped' : r.stdout ? 'ran' : r.stderr));
 				});
 				assert.deepEqual(outcomes, ['ran', 'dropped', 'dropped', 'ran', 'ran', 'ran', 'ran']);
