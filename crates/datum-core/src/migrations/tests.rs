@@ -410,7 +410,7 @@ fn migrated_entry_history_raw_input_is_nullable() {
     // schema_version leaves the old constraint live on the connection.
     conn.execute(
         "INSERT INTO entry_history
-           (entry_hid, version, snapshot, modify_time, raw_input, device_id, change_kind)
+           (entry_hid, version, snapshot, modify_time, raw_input, client_id, change_kind)
          VALUES ('h1', 1, '{}', '2026-01-01T00:00:00Z', NULL, 'dev', 'create')",
         [],
     )
@@ -783,7 +783,7 @@ fn entries_pre_v34(db: &Db) -> Vec<crate::entry::Entry> {
     let mut stmt = conn
         .prepare(
             "SELECT *, occur_time_precision AS occur_time_uncertainty, \
-             dur_precision AS dur_uncertainty FROM entries",
+             dur_precision AS dur_uncertainty, device_id AS client_id FROM entries",
         )
         .unwrap();
     let rows = stmt.query_map([], crate::db::row_to_entry_public).unwrap();

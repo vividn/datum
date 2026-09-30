@@ -2,11 +2,11 @@
 //
 // One WASI process per command in the database worker ($lib/cli.ts). What
 // the native CLI reads from its host, the page supplies: the zone (WASI has
-// no zone database of the host's), this browser's device id, and colour,
+// no zone database of the host's), this browser's client id, and colour,
 // since there is no tty to detect.
 
 import { runCli } from '../db.js';
-import { deviceId } from '../deviceId.js';
+import { clientId } from '../clientId.js';
 import type { Stage } from '../dbProtocol.js';
 import type { RunResult } from '../run.js';
 
@@ -20,7 +20,7 @@ export async function wasiRun(
 ): Promise<RunResult> {
 	const env = [
 		`TZ=${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
-		`DATUM_DEVICE_ID=${deviceId()}`,
+		`DATUM_CLIENT_ID=${clientId()}`,
 		'DATUM_COLOR=1'
 	];
 	// The whole process record — its timings and storage ride along for

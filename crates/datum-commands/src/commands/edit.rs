@@ -2,7 +2,7 @@
 //!
 //! da-4lov: only fields the user is allowed to mutate appear in the editor
 //! tempfile. System-only state — `extra_metadata`, `hid`, `slug`,
-//! `content_hash`, `create_time`, `modify_time`, `device_id`, `parser_version`,
+//! `content_hash`, `create_time`, `modify_time`, `client_id`, `parser_version`,
 //! `raw_input`, `alias_chain`, `user_asserted_last_state`, `deleted_at` —
 //! is never written to the buffer.
 //!
@@ -41,7 +41,7 @@ const SYSTEM_OWNED_KEYS: &[&str] = &[
     "content_hash",
     "create_time",
     "modify_time",
-    "device_id",
+    "client_id",
     "parser_version",
     "raw_input",
     "alias_chain",
@@ -114,7 +114,7 @@ impl UserEditableEntry {
 
     /// Merge the user-edited fields back into the existing entry. Every
     /// field on `Entry` that isn't on this struct keeps its original value —
-    /// extra_metadata, hid, slug, content_hash, create_time, device_id,
+    /// extra_metadata, hid, slug, content_hash, create_time, client_id,
     /// parser_version, raw_input, alias_chain, user_asserted_last_state,
     /// deleted_at, etc.
     #[cfg(feature = "native")]
@@ -463,13 +463,13 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let e = seed_entry(&db, "coffee", Verb::Point, Some(serde_json::json!(1)), None);
         let toml = tempfile::NamedTempFile::new().unwrap();
-        // Without db_path and device_id, Config::load would resolve them
-        // through data_dir() and write a device_id file there. Pinning them
+        // Without db_path and client_id, Config::load would resolve them
+        // through data_dir() and write a client_id file there. Pinning them
         // here keeps the test off DATUM_HOME, a process-wide setting every
-        // other test's device_id() would follow (da-25oa).
+        // other test's client_id() would follow (da-25oa).
         std::fs::write(
             toml.path(),
-            "editor = \"true\"\ndb_path = \"/nonexistent/datum.db\"\ndevice_id = \"edit-test\"\n",
+            "editor = \"true\"\ndb_path = \"/nonexistent/datum.db\"\nclient_id = \"edit-test\"\n",
         )
         .unwrap();
 
@@ -598,7 +598,7 @@ mod tests {
             ("content_hash", serde_json::json!("deadbeef")),
             ("create_time", serde_json::json!("1970-01-01T00:00:00Z")),
             ("modify_time", serde_json::json!("1970-01-01T00:00:00Z")),
-            ("device_id", serde_json::json!("attacker-device")),
+            ("client_id", serde_json::json!("attacker-device")),
             ("parser_version", serde_json::json!(999)),
             ("raw_input", serde_json::json!("rm -rf /")),
             ("alias_chain", serde_json::json!(["evil"])),

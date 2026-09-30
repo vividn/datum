@@ -142,7 +142,7 @@ pub struct Entry {
     // --- Bookkeeping ---
     pub create_time: DateTime<Utc>,
     pub modify_time: DateTime<Utc>,
-    pub device_id: String,
+    pub client_id: String,
 
     // --- Template metadata (mirrors datum's meta.idStructure / meta.fieldStructure) ---
     /// Template used to produce `slug`, e.g. `"%field%:%uid%"`.
@@ -233,10 +233,10 @@ impl Entry {
         data: Option<JsonValue>,
         occur_time: Option<DatumTime>,
         dur: Option<Dur>,
-        device_id: impl Into<String>,
+        client_id: impl Into<String>,
     ) -> Self {
         let field = field.into();
-        let device_id = device_id.into();
+        let client_id = client_id.into();
         let now = Utc::now();
 
         let hid = new_hid();
@@ -280,7 +280,7 @@ impl Entry {
             location: None,
             create_time: now,
             modify_time: now,
-            device_id,
+            client_id,
             id_structure: None,
             field_structure: None,
             deleted_at: None,
@@ -311,7 +311,7 @@ impl Entry {
         data: Option<JsonValue>,
         start_time: Option<DatumTime>,
         end_time: Option<DatumTime>,
-        device_id: impl Into<String>,
+        client_id: impl Into<String>,
     ) -> Self {
         let dur = match (start_time.as_ref(), end_time.as_ref()) {
             (Some(s), Some(e)) => {
@@ -321,7 +321,7 @@ impl Entry {
             _ => None,
         };
         let occur_time = end_time.or(start_time);
-        Self::new(field, verb, value, data, occur_time, dur, device_id)
+        Self::new(field, verb, value, data, occur_time, dur, client_id)
     }
 
     /// How precisely `occur_time` is known, as an ISO-8601 ± radius.

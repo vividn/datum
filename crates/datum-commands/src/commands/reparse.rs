@@ -46,7 +46,7 @@ use crate::commands::log_core::{
 
 /// Parser-derivable Entry shape — what the parser alone determines from
 /// `raw_input` + `alias_chain`. Fields that depend on time / device /
-/// DB lookups (`occur_time`, `device_id`, slug derivation against the
+/// DB lookups (`occur_time`, `client_id`, slug derivation against the
 /// spec table, etc.) are deliberately out of scope: they aren't
 /// parser-state and shouldn't drift from a parser-version bump.
 #[derive(Debug, Clone)]

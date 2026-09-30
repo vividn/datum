@@ -168,11 +168,11 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             };
             let m = chain.member(&target).context("this copy is not a member")?;
             if target == mine {
-                db.sync_describe_self(&label, m.client.as_deref().unwrap_or(client()))?;
+                db.sync_describe_self(&label, m.kind.as_deref().unwrap_or(kind()))?;
             } else {
                 let record = json!({
                     "type": "describe", "chain": chain.id, "endpoint": target,
-                    "device": m.device, "label": label, "client": m.client,
+                    "client": m.client, "label": label, "kind": m.kind,
                     "created": chrono::Utc::now().to_rfc3339(),
                 });
                 db.sync_chain_write(sign(record, &chain, admin_key.as_deref())?, true)?;
@@ -294,7 +294,7 @@ fn invite(
         });
         db.sync_chain_write(genesis, true)?;
         // The chain stands without it: a failure here is no reason to fail.
-        if let Err(e) = db.sync_describe_self(&copy_label(), client()) {
+        if let Err(e) = db.sync_describe_self(&copy_label(), kind()) {
             eprintln!("⚠ this copy could not describe itself ({e}); `datum sync chain rename <LABEL>` tries again");
         }
         chain = db.sync_chain()?;
@@ -333,7 +333,7 @@ fn checked(label: String) -> Result<String> {
 
 /// What this build is to its peers: the native CLI, or datum.day's, whose
 /// wasm build has no `net` feature.
-fn client() -> &'static str {
+fn kind() -> &'static str {
     if cfg!(feature = "net") {
         "cli"
     } else {
@@ -470,8 +470,8 @@ fn members(db: &Db, json: bool) -> Result<()> {
             .iter()
             .map(|m| {
                 json!({
-                    "endpoint": m.endpoint, "label": m.label, "device": m.device,
-                    "client": m.client, "admitted": chain::hlc_time(&m.admitted), "via": m.via,
+                    "endpoint": m.endpoint, "label": m.label, "client": m.client,
+                    "kind": m.kind, "admitted": chain::hlc_time(&m.admitted), "via": m.via,
                     "revoked": m.revoked.as_deref().map(chain::hlc_time),
                     "this": m.endpoint == mine,
                 })
@@ -490,9 +490,9 @@ fn members(db: &Db, json: bool) -> Result<()> {
             "  {}  {}{}  admitted {} via {}{}{}",
             m.label,
             &m.endpoint[..10],
-            m.device
+            m.client
                 .as_deref()
-                .map(|d| format!("  {} on {d}", m.client.as_deref().unwrap_or("?")))
+                .map(|c| format!("  {} on {c}", m.kind.as_deref().unwrap_or("?")))
                 .unwrap_or_default(),
             chain::hlc_time(&m.admitted),
             m.via,
@@ -531,8 +531,8 @@ fn status(db: &Db, json: bool) -> Result<()> {
             .iter()
             .map(|p| {
                 json!({
-                    "endpoint": p.endpoint, "device": p.device, "label": p.label,
-                    "client": p.client, "revoked": p.revoked, "state": p.state,
+                    "endpoint": p.endpoint, "client": p.client, "label": p.label,
+                    "kind": p.kind, "revoked": p.revoked, "state": p.state,
                     "to_send": p.to_send, "last_seen": p.last_seen,
                     "last_verify": p.last_verify.as_ref().map(|(at, m)| json!({"at": at, "match": m})),
                     "error": p.error, "error_at": p.error_at, "addr": p.addr,
@@ -546,7 +546,7 @@ fn status(db: &Db, json: bool) -> Result<()> {
         let out = json!({
             "db": name, "chain": chain.exists().then_some(&chain.id),
             "open": chain.exists() && chain.is_open(), "unlocked": unlocked,
-            "this": {"endpoint": mine, "device": db.sync_device_id()?, "label": label},
+            "this": {"endpoint": mine, "client": db.sync_client_id()?, "label": label},
             "members": members,
         });
         println!("{out}");

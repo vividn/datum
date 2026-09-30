@@ -7,7 +7,7 @@
 // says of its own read). So only a member, which has its key, is asked it.
 //
 // `table` is the rest, and pure: the CLI's rows and the sync worker's
-// broadcast reachability ($lib/sync.ts `syncStates`) into devices × databases.
+// broadcast reachability ($lib/sync.ts `syncStates`) into clients × databases.
 
 import { run } from './run.js';
 import type { Reach, SyncState } from './sync.js';
@@ -15,9 +15,9 @@ import type { Reach, SyncState } from './sync.js';
 /** One member of a chain as `sync status --json` has it: this copy left out. */
 export interface Member {
 	endpoint: string;
-	device?: string | null;
-	label: string;
 	client?: string | null;
+	label: string;
+	kind?: string | null;
 	revoked: boolean;
 	state: 'synced' | 'pending' | 'never' | 'error';
 	to_send: number;
@@ -30,7 +30,7 @@ export interface Member {
 export interface DbSync {
 	db: string;
 	chain: string | null;
-	this?: { endpoint: string; device: string; label: string };
+	this?: { endpoint: string; client: string; label: string };
 	members: Member[];
 }
 
@@ -52,7 +52,7 @@ export type Mark = 'synced' | 'syncing' | 'pending' | 'error' | 'none';
 
 export interface Cell {
 	mark: Mark;
-	/** Last known, of a device not reachable now: drawn grey, with `at`. */
+	/** Last known, of a client not reachable now: drawn grey, with `at`. */
 	stale: boolean;
 	/** When the state was last true, ms since the epoch. */
 	at?: number;
@@ -64,8 +64,9 @@ export interface Cell {
 export interface Row {
 	key: string;
 	label: string;
-	client?: string;
-	/** This device: first, and always online. */
+	/** `cli` or `web` in words: what the client is. */
+	kind?: string;
+	/** This client: first, and always online. */
 	here: boolean;
 	reach: Reach;
 	lastSeen?: number;
@@ -74,7 +75,7 @@ export interface Row {
 
 const RANK: Record<Reach, number> = { offline: 0, reachable: 1, online: 2 };
 const WORST: Mark[] = ['error', 'syncing', 'pending', 'synced'];
-const CLIENT: Record<string, string> = { cli: 'CLI', web: 'datum.day' };
+const KIND: Record<string, string> = { cli: 'CLI', web: 'datum.day' };
 const WORDS: Record<Mark, string> = {
 	synced: 'synced',
 	syncing: 'syncing now',
@@ -86,19 +87,19 @@ const WORDS: Record<Mark, string> = {
 const ms = (t?: string | null): number | undefined => (t ? Date.parse(t) : undefined);
 const later = (a?: number, b?: number) => (a === undefined ? b : b === undefined ? a : Math.max(a, b));
 
-/** Devices × databases: this device first, a device's copies grouped by its `device`. */
+/** Clients × databases: this client first, a client's copies grouped by its `client`. */
 export function table(dbs: DbSync[], states: Record<string, SyncState>): Row[] {
-	const here: Row = { key: 'this', label: 'this device', client: 'datum.day', here: true, reach: 'online', cells: {} };
+	const here: Row = { key: 'this', label: 'this client', kind: 'datum.day', here: true, reach: 'online', cells: {} };
 	const rows = new Map<string, Row>();
-	const mine = new Set(dbs.flatMap((d) => (d.this ? [d.this.device] : [])));
+	const mine = new Set(dbs.flatMap((d) => (d.this ? [d.this.client] : [])));
 	for (const d of dbs) {
-		if (d.this && here.label === 'this device') here.label = d.this.label;
+		if (d.this && here.label === 'this client') here.label = d.this.label;
 		for (const m of d.members) {
-			if (m.revoked || (m.device && mine.has(m.device))) continue;
-			const key = m.device ?? m.endpoint;
+			if (m.revoked || (m.client && mine.has(m.client))) continue;
+			const key = m.client ?? m.endpoint;
 			const row = rows.get(key) ?? { key, label: m.label, here: false, reach: 'offline' as Reach, cells: {} };
 			rows.set(key, row);
-			row.client ??= CLIENT[m.client ?? ''];
+			row.kind ??= KIND[m.kind ?? ''];
 			const peer = states[d.db]?.peers[m.endpoint];
 			if (peer && RANK[peer.reach] > RANK[row.reach]) row.reach = peer.reach;
 			row.lastSeen = later(row.lastSeen, later(peer?.lastSeen, ms(m.last_seen)));
@@ -115,7 +116,7 @@ export function table(dbs: DbSync[], states: Record<string, SyncState>): Row[] {
 			};
 		}
 		if (d.this) {
-			const marks = d.members.filter((m) => !m.revoked).map((m) => rows.get(m.device ?? m.endpoint)?.cells[d.db]?.mark);
+			const marks = d.members.filter((m) => !m.revoked).map((m) => rows.get(m.client ?? m.endpoint)?.cells[d.db]?.mark);
 			const mark = WORST.find((w) => marks.includes(w)) ?? 'synced';
 			here.cells[d.db] = { mark, stale: false, title: `this copy: ${WORDS[mark]}` };
 		}

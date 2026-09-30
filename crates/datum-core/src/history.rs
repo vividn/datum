@@ -89,7 +89,7 @@ pub struct HistoryVersion {
     pub modify_time: DateTime<Utc>,
     pub raw_input: Option<String>,
     pub alias_chain: Option<JsonValue>,
-    pub device_id: String,
+    pub client_id: String,
     pub change_kind: ChangeKind,
 }
 
@@ -131,7 +131,7 @@ pub fn record(executor: &Connection, snapshot: &Entry, change_kind: ChangeKind) 
     executor.execute(
         r#"INSERT INTO entry_history (
             entry_hid, version, snapshot, modify_time,
-            raw_input, alias_chain, device_id, change_kind
+            raw_input, alias_chain, client_id, change_kind
         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"#,
         params![
             snapshot.hid,
@@ -143,7 +143,7 @@ pub fn record(executor: &Connection, snapshot: &Entry, change_kind: ChangeKind) 
             // compatibility against historical NOT NULL versions.
             snapshot.raw_input.as_deref().unwrap_or(""),
             alias_chain_json,
-            snapshot.device_id,
+            snapshot.client_id,
             change_kind.as_str(),
         ],
     )?;
@@ -156,13 +156,13 @@ pub fn record(executor: &Connection, snapshot: &Entry, change_kind: ChangeKind) 
 pub fn list(conn: &Connection, entry_hid: &str, newest_first: bool) -> Result<Vec<HistoryVersion>> {
     let sql = if newest_first {
         "SELECT entry_hid, version, snapshot, modify_time, raw_input,
-                alias_chain, device_id, change_kind
+                alias_chain, client_id, change_kind
          FROM entry_history
          WHERE entry_hid = ?1
          ORDER BY version DESC"
     } else {
         "SELECT entry_hid, version, snapshot, modify_time, raw_input,
-                alias_chain, device_id, change_kind
+                alias_chain, client_id, change_kind
          FROM entry_history
          WHERE entry_hid = ?1
          ORDER BY version ASC"
@@ -176,7 +176,7 @@ pub fn list(conn: &Connection, entry_hid: &str, newest_first: bool) -> Result<Ve
 pub fn get(conn: &Connection, entry_hid: &str, version: u32) -> Result<Option<HistoryVersion>> {
     conn.query_row(
         "SELECT entry_hid, version, snapshot, modify_time, raw_input,
-                alias_chain, device_id, change_kind
+                alias_chain, client_id, change_kind
          FROM entry_history
          WHERE entry_hid = ?1 AND version = ?2",
         params![entry_hid, version],
@@ -257,7 +257,7 @@ fn row_to_version(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistoryVersion> {
             .get::<_, Option<String>>("raw_input")?
             .filter(|s| !s.is_empty()),
         alias_chain,
-        device_id: row.get("device_id")?,
+        client_id: row.get("client_id")?,
         change_kind,
     })
 }

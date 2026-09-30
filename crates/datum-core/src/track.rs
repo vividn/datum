@@ -90,7 +90,7 @@ pub fn declared_state(verb: Action) -> JsonValue {
 }
 
 /// The TRACK document for `field` declared with `verb`, at `at`.
-pub fn track_entry(field: &str, verb: Action, at: DatumTime, device_id: &str) -> Entry {
+pub fn track_entry(field: &str, verb: Action, at: DatumTime, client_id: &str) -> Entry {
     let state = declared_state(verb);
     let mut entry = Entry::new_legacy(
         field,
@@ -99,7 +99,7 @@ pub fn track_entry(field: &str, verb: Action, at: DatumTime, device_id: &str) ->
         None,
         Some(at),
         None,
-        device_id,
+        client_id,
     );
     entry.extra_metadata = Some(json!({ TRACK_META_KEY: verb.to_string() }));
     entry

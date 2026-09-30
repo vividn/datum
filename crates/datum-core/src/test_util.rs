@@ -73,7 +73,7 @@ pub struct EntryBuilder {
     data: Option<JsonValue>,
     start_time: Option<DatumTime>,
     end_time: Option<DatumTime>,
-    device_id: String,
+    client_id: String,
 }
 
 impl EntryBuilder {
@@ -85,7 +85,7 @@ impl EntryBuilder {
             data: None,
             start_time: Some(next_default_time()),
             end_time: None,
-            device_id: "test-device".to_string(),
+            client_id: "test-device".to_string(),
         }
     }
 
@@ -141,8 +141,8 @@ impl EntryBuilder {
         self
     }
 
-    pub fn device_id(mut self, d: impl Into<String>) -> Self {
-        self.device_id = d.into();
+    pub fn client_id(mut self, d: impl Into<String>) -> Self {
+        self.client_id = d.into();
         self
     }
 
@@ -165,7 +165,7 @@ impl EntryBuilder {
             self.data,
             self.start_time,
             dur,
-            self.device_id,
+            self.client_id,
         )
     }
 
@@ -291,7 +291,7 @@ pub fn alias_builder(name: impl Into<String>, expansion: impl Into<String>) -> A
 
 /// Assert that entry fields match given key-value pairs.
 ///
-/// Supported fields: `field`, `verb`, `state`, `device_id`.
+/// Supported fields: `field`, `verb`, `state`, `client_id`.
 ///
 /// ```ignore
 /// assert_entry_matches!(entry, field: "mood", state: "happy");
@@ -366,7 +366,7 @@ pub fn _assert_entry_field(entry: &Entry, field_name: &str, expected: &JsonValue
         "field" => serde_json::json!(entry.field),
         "verb" => serde_json::json!(entry.verb.to_string()),
         "state" => entry.state.clone().unwrap_or(JsonValue::Null),
-        "device_id" => serde_json::json!(entry.device_id),
+        "client_id" => serde_json::json!(entry.client_id),
         other => panic!("assert_entry_matches!: unknown field `{other}`"),
     };
     assert_eq!(
@@ -506,7 +506,7 @@ mod tests {
             field: "coffee",
             verb: "switch",
             state: 2,
-            device_id: "test-device",
+            client_id: "test-device",
         );
         crate::assert_count!(db, "coffee", 1);
     }

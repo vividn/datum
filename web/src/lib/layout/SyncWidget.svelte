@@ -1,14 +1,15 @@
 <!--
-	The Sync widget, read-only half (da-x4t0a): devices × databases. A row
-	is a device — this one first — with its status dot from the sync
-	worker's broadcast (`syncStates`); a column is a database on this
-	datum.day; a cell is how that device's copy stands, a shape AND a
-	colour. A device not reachable now shows its last-known state grey,
-	with its time: never a green ✓ for it. Compact (symbols and dots) at
-	the legible floor, full (names, clients, times) above `FULL_PX`.
+	The Sync widget, read-only half (da-x4t0a): clients × databases. A row
+	is a client — an installation: a CLI data directory or a browser
+	profile, so one laptop may be two (da-lfsei) — this one first, with its
+	status dot from the sync worker's broadcast (`syncStates`); a column is
+	a database on this datum.day; a cell is how that client's copy stands,
+	a shape AND a colour. A client not reachable now shows its last-known
+	state grey, with its time: never a green ✓ for it. Compact (symbols and
+	dots) at the legible floor, full (names, kinds, times) above `FULL_PX`.
 
 	Every CLI read is $lib/syncView.ts's. The actions (da-bjxts) go in the
-	two empty `.actions` slots: a database's header, and a device's row.
+	two empty `.actions` slots: a database's header, and a client's row.
 
 	It is a PLACE (da-6du3o): the commands widget's one `Sync` button opens
 	it (a modal on a desktop, a tab on a phone — da-jozgv), so the raw `sync` subcommands the widget stood in for are
@@ -85,7 +86,7 @@
 		<table>
 			<thead>
 				<tr>
-					<th class="device" scope="col">{full ? 'device' : ''}</th>
+					<th class="client" scope="col">{full ? 'client' : ''}</th>
 					{#each dbs as d (d.db)}
 						<th scope="col" data-db={d.db} title={d.db}><span class="name">{d.db}</span><span class="actions"></span></th>
 					{/each}
@@ -93,13 +94,13 @@
 			</thead>
 			<tbody>
 				{#each rows as row (row.key)}
-					<tr data-device={row.key} data-reach={row.reach} class:here={row.here}>
-						<th class="device" scope="row" title="{row.label}{row.client ? ` · ${row.client}` : ''} · {seen(row.reach, row.lastSeen)}">
+					<tr data-client={row.key} data-reach={row.reach} class:here={row.here}>
+						<th class="client" scope="row" title="{row.label}{row.kind ? ` · ${row.kind}` : ''} · {seen(row.reach, row.lastSeen)}">
 							<span class="dot {row.reach}" aria-label={seen(row.reach, row.lastSeen)}>{DOT[row.reach]}</span>
 							<span class="name">{row.label}</span>
 							{#if full}
-								{#if row.client && row.client !== row.label}<span class="client">{row.client}</span>{/if}
-								<span class="seen">{row.here ? 'this device' : seen(row.reach, row.lastSeen)}</span>
+								{#if row.kind && row.kind !== row.label}<span class="kind">{row.kind}</span>{/if}
+								<span class="seen">{row.here ? 'this client' : seen(row.reach, row.lastSeen)}</span>
 							{/if}
 							<span class="actions"></span>
 						</th>
@@ -160,21 +161,21 @@
 	thead th {
 		color: var(--muted);
 	}
-	.device {
+	.client {
 		position: sticky;
 		left: 0;
 		z-index: 1;
 		text-align: left;
 		background: var(--ground);
 	}
-	.sync:not(.full) .device .name {
+	.sync:not(.full) .client .name {
 		display: inline-block;
 		max-width: 5ch;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		vertical-align: bottom;
 	}
-	.client,
+	.kind,
 	.seen,
 	.at {
 		margin-left: 0.4rem;

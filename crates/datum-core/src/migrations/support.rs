@@ -554,3 +554,22 @@ pub(super) fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
         .unwrap_or(0);
     Ok(n > 0)
 }
+
+/// Run `f`, a step that reads or writes `entries` through the live row
+/// mapper or `db::try_insert`, against the client column's live name. Before
+/// v48 it was `device_id` (da-lfsei), so it is renamed for the step and back
+/// after; a failure rolls both back with the step's transaction.
+pub(super) fn with_live_client_column<T>(
+    conn: &Connection,
+    f: impl FnOnce() -> Result<T>,
+) -> Result<T> {
+    let old = has_column(conn, "entries", "device_id")?;
+    if old {
+        conn.execute_batch("ALTER TABLE entries RENAME COLUMN device_id TO client_id;")?;
+    }
+    let out = f()?;
+    if old {
+        conn.execute_batch("ALTER TABLE entries RENAME COLUMN client_id TO device_id;")?;
+    }
+    Ok(out)
+}

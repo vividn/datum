@@ -127,7 +127,7 @@ try {
 						occur_time: { utc: at, offset_minutes: 0, timezone: 'UTC' },
 						create_time: at,
 						modify_time: at,
-						device_id: '01M281T64122KN04Z1VN626W9J',
+						client_id: '01M281T64122KN04Z1VN626W9J',
 						id_structure: '%occur_time%',
 						raw_input: `occur ${field}`,
 						parser_version: 2

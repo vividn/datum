@@ -129,6 +129,7 @@ fn rehash_all_entries(
     for (old, new) in [
         ("occur_time_precision", "occur_time_uncertainty"),
         ("dur_precision", "dur_uncertainty"),
+        ("device_id", "client_id"),
     ] {
         if !has_column(conn, "entries", new)? && has_column(conn, "entries", old)? {
             select.push_str(&format!(", {old} AS {new}"));
@@ -287,7 +288,7 @@ pub(super) fn m34_to_35_superseded_by(conn: &Connection) -> Result<()> {
              ON entries (superseded_by)
              WHERE superseded_by IS NOT NULL;",
     )?;
-    unpark_rows(conn)?;
+    with_live_client_column(conn, || unpark_rows(conn))?;
     Ok(())
 }
 
@@ -444,14 +445,17 @@ pub(super) fn m37_to_38_specs_are_entries(conn: &Connection) -> Result<()> {
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     drop(stmt);
-    for (field, spec_json, kit_id) in rows {
-        let mut data: serde_json::Value = serde_json::from_str(&spec_json)?;
-        if let (Some(kit), Some(obj)) = (kit_id, data.as_object_mut()) {
-            obj.insert("kit_id".into(), kit.into());
+    with_live_client_column(conn, || {
+        for (field, spec_json, kit_id) in rows {
+            let mut data: serde_json::Value = serde_json::from_str(&spec_json)?;
+            if let (Some(kit), Some(obj)) = (kit_id, data.as_object_mut()) {
+                obj.insert("kit_id".into(), kit.into());
+            }
+            let row = new_spec_entry(&field, data, "migration-v38");
+            crate::db::try_insert(conn, &row.slug, &row.hid, &row)?;
         }
-        let row = new_spec_entry(&field, data, "migration-v38");
-        crate::db::try_insert(conn, &row.slug, &row.hid, &row)?;
-    }
+        Ok(())
+    })?;
     conn.execute_batch("DROP TABLE field_specs;")?;
     Ok(())
 }
@@ -493,17 +497,20 @@ pub(super) fn m38_to_39_aliases_are_entries(conn: &Connection) -> Result<()> {
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     drop(stmt);
-    for (name, alias_json, kit_id) in rows {
-        let mut alias: crate::field_spec::Alias = serde_json::from_str(&alias_json)?;
-        // The row's key is the name the alias answered to.
-        alias.name = name;
-        let mut data = serde_json::to_value(alias)?;
-        if let (Some(kit), Some(obj)) = (kit_id, data.as_object_mut()) {
-            obj.insert("kit_id".into(), kit.into());
+    with_live_client_column(conn, || {
+        for (name, alias_json, kit_id) in rows {
+            let mut alias: crate::field_spec::Alias = serde_json::from_str(&alias_json)?;
+            // The row's key is the name the alias answered to.
+            alias.name = name;
+            let mut data = serde_json::to_value(alias)?;
+            if let (Some(kit), Some(obj)) = (kit_id, data.as_object_mut()) {
+                obj.insert("kit_id".into(), kit.into());
+            }
+            let row = new_alias_entry(data, "migration-v39");
+            crate::db::try_insert(conn, &row.slug, &row.hid, &row)?;
         }
-        let row = new_alias_entry(data, "migration-v39");
-        crate::db::try_insert(conn, &row.slug, &row.hid, &row)?;
-    }
+        Ok(())
+    })?;
     conn.execute_batch("DROP TABLE aliases;")?;
     Ok(())
 }
@@ -625,25 +632,28 @@ pub(super) fn m39_to_40_definitions_are_entries(conn: &Connection) -> Result<()>
             defs.push((INDEX_FIELD, definition_data(&entry, Some(&kit))?));
         }
     }
-    for (field, data) in defs {
-        let row = new_definition_entry(field, data, "migration-v40");
-        // A deleted log is out of the way, unless it holds this very slug —
-        // as the slug's UNIQUE sees it, which a superseded row is not in.
-        let held: bool = conn.query_row(
-            "SELECT EXISTS (SELECT 1 FROM entries WHERE slug = ?1 AND superseded_by IS NULL)",
-            [row.slug.as_str()],
-            |r| r.get(0),
-        )?;
-        if held {
-            return Err(DatumError::Other(format!(
-                "cannot move views, kit commands and kit indices into entries: an \
-                 entry already holds `{}`, which the {field} needs. Move it to another \
-                 slug with an older datum first; nothing was changed.",
-                row.slug.as_str()
-            )));
+    with_live_client_column(conn, || {
+        for (field, data) in defs {
+            let row = new_definition_entry(field, data, "migration-v40");
+            // A deleted log is out of the way, unless it holds this very slug —
+            // as the slug's UNIQUE sees it, which a superseded row is not in.
+            let held: bool = conn.query_row(
+                "SELECT EXISTS (SELECT 1 FROM entries WHERE slug = ?1 AND superseded_by IS NULL)",
+                [row.slug.as_str()],
+                |r| r.get(0),
+            )?;
+            if held {
+                return Err(DatumError::Other(format!(
+                    "cannot move views, kit commands and kit indices into entries: an \
+                     entry already holds `{}`, which the {field} needs. Move it to another \
+                     slug with an older datum first; nothing was changed.",
+                    row.slug.as_str()
+                )));
+            }
+            crate::db::try_insert(conn, &row.slug, &row.hid, &row)?;
         }
-        crate::db::try_insert(conn, &row.slug, &row.hid, &row)?;
-    }
+        Ok(())
+    })?;
     conn.execute_batch(
         "DROP TABLE IF EXISTS views;
          DROP TABLE IF EXISTS kit_commands;

@@ -546,7 +546,7 @@ pub fn save_track_spec(
     action: datum_core::action::Action,
 ) -> anyhow::Result<()> {
     if let Some(spec) = track_spec(db, field, action)? {
-        db.set_device_id(&crate::config::device_id()?);
+        db.set_client_id(&crate::config::client_id()?);
         db.save_field_spec(&spec)?;
     }
     Ok(())
@@ -631,7 +631,7 @@ mod tests {
                 .unwrap(),
             raw_input: None,
             alias_chain: None,
-            device_id: "dev".to_string(),
+            client_id: "dev".to_string(),
             change_kind: datum_core::history::ChangeKind::UserEdit,
         };
         // Same minute, different seconds. Seconds survive any whole-minute

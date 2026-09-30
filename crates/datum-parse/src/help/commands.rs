@@ -457,7 +457,7 @@ const LOG_FLAGS: &[FlagSpec] = &[
         takes_value: false,
         value_hint: None,
         value_optional: false,
-        summary: "Zero created_at/modified_at, clear device_id",
+        summary: "Zero created_at/modified_at, clear client_id",
         long_description: None,
         left_override: None,
     },
@@ -1498,8 +1498,8 @@ pub const ENV_VARS: &[EnvVarSpec] = &[
         summary: "Field used when one is omitted from the argv.",
     },
     EnvVarSpec {
-        name: "DATUM_DEVICE_ID",
-        summary: "Override the per-device id stamped on entries.",
+        name: "DATUM_CLIENT_ID",
+        summary: "Override the per-installation client id stamped on entries.",
     },
     EnvVarSpec {
         name: "DATUM_EDITOR",

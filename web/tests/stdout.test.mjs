@@ -51,9 +51,9 @@ describe('the web prints what the CLI prints', () => {
 				// so an unpinned hour puts the runner's clock into a
 				// byte-for-byte comparison (da-ldct).
 				clock: todayAt(15),
-				// The device id the native half ran under.
+				// The client id the native half ran under.
 				prepare: (context) =>
-					context.addInitScript(() => localStorage.setItem('datum-device-id', 'web-parity'))
+					context.addInitScript(() => localStorage.setItem('datum-client-id', 'web-parity'))
 			}
 		);
 	});

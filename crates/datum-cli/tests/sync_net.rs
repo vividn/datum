@@ -481,18 +481,18 @@ fn a_redeemer_describes_itself_and_every_session_is_recorded_for_status() {
         (Some("pending"), Some(1)),
         "{behind}"
     );
-    assert!(entry_of(&a, "chain list", &b)["device"].is_null());
+    assert!(entry_of(&a, "chain list", &b)["client"].is_null());
 
     // a serves (an invite being offered serves members too), b dials.
     let (serving, _) = a.invite(&[]);
     b.ok(&["sync"]);
     let described = entry_of(&a, "chain list", &b);
     assert_eq!(
-        described["device"],
-        b.query("SELECT device_id FROM sync_local").as_str(),
+        described["client"],
+        b.query("SELECT client_id FROM sync_local").as_str(),
         "{described}"
     );
-    assert_eq!(described["client"], "cli");
+    assert_eq!(described["kind"], "cli");
     for (x, y) in [(&a, &b), (&b, &a)] {
         let row = entry_of(x, "status", y);
         assert_eq!(

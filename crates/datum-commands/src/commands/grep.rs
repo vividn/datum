@@ -3,7 +3,7 @@
 //! da-lzrh: the haystack is the user-editable projection — the same
 //! boundary `datum edit` exposes ([`UserEditableEntry`], da-4lov) — plus
 //! the slug, which is user-addressable. System fields (`content_hash`,
-//! `hid`, `device_id`, `parser_version`, `raw_input`, …) never enter it,
+//! `hid`, `client_id`, `parser_version`, `raw_input`, …) never enter it,
 //! so a pattern can only match text the user can actually see.
 
 use anyhow::{Context, Result};

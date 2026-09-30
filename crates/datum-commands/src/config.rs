@@ -1,4 +1,4 @@
-//! Configuration: locate the database file, device ID, and DB registry.
+//! Configuration: locate the database file, client ID, and DB registry.
 //!
 //! The DB registry lives at `$XDG_CONFIG_HOME/datum/dbs.toml` and maps names
 //! to absolute paths. Names that aren't registered resolve to
@@ -226,35 +226,42 @@ pub fn registry_path() -> Result<PathBuf> {
         .join("dbs.toml"))
 }
 
-/// This device's id: `DATUM_DEVICE_ID`, then the toml `device_id` key, then
+/// This client's id — one per installation, a data directory or a browser
+/// profile, not per machine (da-lfsei): `DATUM_CLIENT_ID`, then the toml `client_id` key, then
 /// the data directory's file. The one resolver — entries, sync and `config
-/// show` all read it, so an entry's `device_id` is its op's (da-mmkre). A
+/// show` all read it, so an entry's `client_id` is its op's (da-mmkre). A
 /// toml that does not parse is `config show`'s to report, not a log's.
-pub fn device_id() -> Result<String> {
-    let toml = load_raw_config_or_default().ok().and_then(|r| r.device_id);
-    Ok(resolve_device_id(toml)?.value)
+pub fn client_id() -> Result<String> {
+    let toml = load_raw_config_or_default().ok().and_then(|r| r.client_id);
+    Ok(resolve_client_id(toml)?.value)
 }
 
-fn resolve_device_id(toml: Option<String>) -> Result<SourcedValue<String>> {
-    Ok(if let Some(v) = read_env("DATUM_DEVICE_ID") {
+fn resolve_client_id(toml: Option<String>) -> Result<SourcedValue<String>> {
+    Ok(if let Some(v) = read_env("DATUM_CLIENT_ID") {
         SourcedValue::new(v, Source::Env)
     } else if let Some(v) = toml {
         SourcedValue::new(v, Source::Toml)
     } else {
-        SourcedValue::new(file_device_id()?, Source::Default)
+        SourcedValue::new(file_client_id()?, Source::Default)
     })
 }
 
-/// Return (or create) the device ID stored in the data directory.
-fn file_device_id() -> Result<String> {
-    let path = data_dir()?.join("device_id");
+/// Return (or create) the client ID stored in the data directory. An
+/// install from before da-lfsei has it under `device_id`, moved here once.
+fn file_client_id() -> Result<String> {
+    let dir = data_dir()?;
+    let path = dir.join("client_id");
+    let old = dir.join("device_id");
+    if !path.exists() && old.exists() {
+        std::fs::rename(&old, &path).with_context(|| format!("Moving {old:?} to {path:?}"))?;
+    }
     if path.exists() {
         let id = std::fs::read_to_string(&path)
-            .with_context(|| format!("Reading device_id from {path:?}"))?;
+            .with_context(|| format!("Reading client_id from {path:?}"))?;
         return Ok(id.trim().to_string());
     }
     let id = ulid::Ulid::new().to_string();
-    std::fs::write(&path, &id).with_context(|| format!("Writing device_id to {path:?}"))?;
+    std::fs::write(&path, &id).with_context(|| format!("Writing client_id to {path:?}"))?;
     Ok(id)
 }
 
@@ -379,7 +386,7 @@ pub struct RawConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub db_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub device_id: Option<String>,
+    pub client_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_field: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -401,7 +408,7 @@ pub struct RawConfig {
 #[derive(Debug, Clone)]
 pub struct Config {
     pub db_path: SourcedValue<String>,
-    pub device_id: SourcedValue<String>,
+    pub client_id: SourcedValue<String>,
     pub default_field: SourcedValue<Option<String>>,
     pub editor: SourcedValue<String>,
     pub id_delimiter: SourcedValue<String>,
@@ -475,7 +482,7 @@ fn resolve_editor(toml: Option<String>) -> SourcedValue<String> {
 }
 
 /// [`resolve_editor`] without the rest of [`Config::load`], which would also
-/// resolve the database and write a `device_id` file.
+/// resolve the database and write a `client_id` file.
 pub fn editor() -> Result<String> {
     Ok(resolve_editor(load_raw_config_or_default()?.editor).value)
 }
@@ -510,7 +517,7 @@ impl Config {
             SourcedValue::new(default_path.to_string_lossy().into_owned(), Source::Default)
         };
 
-        let device_id = resolve_device_id(raw.device_id.clone())?;
+        let client_id = resolve_client_id(raw.client_id.clone())?;
 
         let default_field = if let Some(v) = read_env("DATUM_DEFAULT_FIELD") {
             SourcedValue::new(Some(v), Source::Env)
@@ -540,7 +547,7 @@ impl Config {
 
         Ok(Config {
             db_path,
-            device_id,
+            client_id,
             default_field,
             editor,
             id_delimiter,
@@ -560,9 +567,9 @@ impl Config {
         vec![
             ("db_path", self.db_path.value.clone(), self.db_path.source),
             (
-                "device_id",
-                self.device_id.value.clone(),
-                self.device_id.source,
+                "client_id",
+                self.client_id.value.clone(),
+                self.client_id.source,
             ),
             (
                 "default_field",
@@ -623,7 +630,7 @@ pub fn parse_week_start(s: &str) -> Result<Weekday> {
 /// Resolve the effective week start for a single invocation, layering
 /// `DATUM_WEEK_START` env > `datumrc.toml` > Monday. Standalone for the
 /// same reason as [`resolve_id_delimiter`]: materializing a full
-/// [`Config`] would lazily generate a device id as a side effect.
+/// [`Config`] would lazily generate a client id as a side effect.
 pub fn resolve_week_start() -> Result<Weekday> {
     if let Some(v) = read_env("DATUM_WEEK_START") {
         return parse_week_start(&v);
@@ -640,7 +647,7 @@ pub fn resolve_week_start() -> Result<Weekday> {
 /// layering CLI flag > `DATUM_ID_DELIMITER` env > `datumrc.toml` >
 /// built-in default. Standalone helper so per-entry slug-interpolation
 /// sites don't have to materialize a full [`Config`] (which would also
-/// trigger `device_id()` lazy generation as a side effect).
+/// trigger `client_id()` lazy generation as a side effect).
 pub fn resolve_id_delimiter(cli_value: Option<&str>) -> String {
     if let Some(v) = cli_value {
         return v.to_string();

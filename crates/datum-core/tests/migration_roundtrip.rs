@@ -77,6 +77,27 @@ fn column_not_null(conn: &Connection, table: &str, column: &str) -> bool {
     .unwrap_or(false)
 }
 
+/// Run `f`, which goes through the live `Db` API, against the client
+/// columns' live name: before v48 it was `device_id` (da-lfsei).
+fn with_live_client_column<T>(conn: &Connection, f: impl FnOnce() -> T) -> T {
+    let tables = ["entries", "entry_history"];
+    let old = column_exists(conn, "entries", "device_id");
+    let rename = |from: &str, to: &str| {
+        for t in tables {
+            conn.execute_batch(&format!("ALTER TABLE {t} RENAME COLUMN {from} TO {to}"))
+                .unwrap()
+        }
+    };
+    if old {
+        rename("device_id", "client_id");
+    }
+    let out = f();
+    if old {
+        rename("client_id", "device_id");
+    }
+    out
+}
+
 /// Apply one up step from `version`, return summary line.
 fn apply_one_up(conn: &Connection, version: u32) -> String {
     let s = step(version);
@@ -173,6 +194,7 @@ fn every_pair_has_a_roundtrip_test() {
         (44, 45),
         (45, 46),
         (46, 47),
+        (47, 48),
     ];
     assert_eq!(
         covered.len(),
@@ -1760,7 +1782,7 @@ fn entries_at_v33(conn: &Connection) -> Vec<datum_core::entry::Entry> {
     let mut stmt = conn
         .prepare(
             "SELECT *, occur_time_precision AS occur_time_uncertainty, \
-             dur_precision AS dur_uncertainty FROM entries",
+             dur_precision AS dur_uncertainty, device_id AS client_id FROM entries",
         )
         .unwrap();
     let rows = stmt
@@ -2225,7 +2247,7 @@ fn v38_with_aliases() -> Db {
     let mut spec =
         datum_core::field_spec::FieldSpec::new("mood", datum_core::action::Action::Switch);
     spec.regenerate_derived_aliases();
-    db.save_field_spec(&spec).unwrap();
+    with_live_client_column(db.conn(), || db.save_field_spec(&spec).unwrap());
     db.conn()
         .execute_batch(
             r#"INSERT INTO aliases (name, alias_json, kit_id) VALUES
@@ -2456,32 +2478,34 @@ fn roundtrip_v39_to_v40_definitions_are_entries() {
     );
     assert!(rows.iter().all(|r| r.1 == "1970-01-01T00:00:00+00:00"));
 
-    let view = db.get_view("moods").unwrap().unwrap();
-    assert_eq!(view.kit_id.as_deref(), Some("moods"));
-    assert_eq!(run(&view.sql_text), seen);
-    assert_eq!(db.get_view("mine").unwrap().unwrap().kit_id, None);
-    let cmd = db.get_kit_command("moodlist").unwrap().unwrap();
-    assert_eq!(
-        (
-            cmd.view_name.as_deref(),
-            cmd.columns,
-            cmd.flags,
-            cmd.color_rules.len()
-        ),
-        (
-            Some("moods"),
-            vec!["state".to_string()],
-            vec!["watch".to_string()],
-            1
-        )
-    );
-    assert_eq!(cmd.labels.get("state").map(String::as_str), Some("Mood"));
-    let ix = db.load_indices_by_kit("moods").unwrap();
-    assert_eq!(ix.len(), 1);
-    assert_eq!(ix[0].entry, v39_index());
-    assert!(index_exists(conn, "kit_moods__by_mood"));
-    assert!(db.derive_kit_indices().unwrap().is_empty());
-    assert!(index_exists(conn, "kit_moods__by_mood"));
+    with_live_client_column(conn, || {
+        let view = db.get_view("moods").unwrap().unwrap();
+        assert_eq!(view.kit_id.as_deref(), Some("moods"));
+        assert_eq!(run(&view.sql_text), seen);
+        assert_eq!(db.get_view("mine").unwrap().unwrap().kit_id, None);
+        let cmd = db.get_kit_command("moodlist").unwrap().unwrap();
+        assert_eq!(
+            (
+                cmd.view_name.as_deref(),
+                cmd.columns,
+                cmd.flags,
+                cmd.color_rules.len()
+            ),
+            (
+                Some("moods"),
+                vec!["state".to_string()],
+                vec!["watch".to_string()],
+                1
+            )
+        );
+        assert_eq!(cmd.labels.get("state").map(String::as_str), Some("Mood"));
+        let ix = db.load_indices_by_kit("moods").unwrap();
+        assert_eq!(ix.len(), 1);
+        assert_eq!(ix[0].entry, v39_index());
+        assert!(index_exists(conn, "kit_moods__by_mood"));
+        assert!(db.derive_kit_indices().unwrap().is_empty());
+        assert!(index_exists(conn, "kit_moods__by_mood"));
+    });
 
     apply_one_down(conn, 40);
     assert_eq!(tables(conn), before);
@@ -2548,15 +2572,16 @@ fn v39_to_v40_passes_a_deleted_log_unless_it_holds_a_definitions_slug() {
         (moved.map_err(|e| e.to_string()), db)
     };
     let deleted = |slug: &str| set_aside(slug, "deleted_at = '2026-09-02T00:00:00Z'");
+    let view = |db: &Db| with_live_client_column(db.conn(), || db.get_view("moods").unwrap());
     let (moved, db) = deleted("view:h1");
     moved.unwrap();
-    assert!(db.get_view("moods").unwrap().is_some());
+    assert!(view(&db).is_some());
     let (moved, db) = set_aside(
         "view:moods",
         "deleted_at = '2026-09-02T00:00:00Z', superseded_by = 'm1'",
     );
     moved.unwrap();
-    assert!(db.get_view("moods").unwrap().is_some());
+    assert!(view(&db).is_some());
 
     let (moved, db) = deleted("view:moods");
     let err = moved.unwrap_err();
@@ -2689,6 +2714,48 @@ fn roundtrip_v46_to_v47_drop_sync_invites() {
 
     apply_one_down(conn, 47);
     assert!(table_exists(conn, "sync_invites"));
+}
+
+/// da-lfsei: every `device_id` value lands in `client_id` untouched — the
+/// columns and the history snapshots' key — and comes back on the way down.
+#[test]
+fn roundtrip_v47_to_v48_client_id() {
+    let db = fresh_at(47);
+    let conn = db.conn();
+    insert_tx(conn, "h1", "coffee:2026-09-01T00:00Z", None).unwrap();
+    conn.execute_batch(
+        "INSERT INTO entry_history
+            (entry_hid, version, snapshot, modify_time, device_id, change_kind)
+         VALUES ('h1', 1, '{\"hid\":\"h1\",\"device_id\":\"dev-a\"}',
+                 '2026-09-01T00:00:00Z', 'dev-a', 'create');
+         INSERT INTO sync_local (id, endpoint_secret, endpoint_id, device_id)
+         VALUES (1, 's', 'e', 'dev-a');",
+    )
+    .unwrap();
+    let read = |column: &str| -> Vec<String> {
+        [
+            format!("SELECT {column} FROM entries"),
+            format!("SELECT {column} FROM entry_history"),
+            format!("SELECT json_extract(snapshot, '$.{column}') FROM entry_history"),
+            format!("SELECT {column} FROM sync_local"),
+        ]
+        .iter()
+        .map(|q| conn.query_row(q, [], |r| r.get(0)).unwrap())
+        .collect()
+    };
+
+    apply_one_up(conn, 47);
+    for table in ["entries", "entry_history", "sync_local"] {
+        assert!(!column_exists(conn, table, "device_id"), "{table}");
+    }
+    assert_eq!(read("client_id"), ["dev-a"; 4]);
+    let snapshot: String = conn
+        .query_row("SELECT snapshot FROM entry_history", [], |r| r.get(0))
+        .unwrap();
+    assert!(!snapshot.contains("device_id"), "{snapshot}");
+
+    apply_one_down(conn, 48);
+    assert_eq!(read("device_id"), ["dev-a"; 4]);
 }
 
 fn field_occurtime_sql(conn: &Connection) -> String {

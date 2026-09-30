@@ -87,7 +87,7 @@ fn history_of(
                     "change_kind": v.change_kind.as_str(),
                     "raw_input": v.raw_input,
                     "alias_chain": v.alias_chain,
-                    "device_id": v.device_id,
+                    "client_id": v.client_id,
                 })
             })
             .collect();

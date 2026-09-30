@@ -55,7 +55,7 @@ use v41_v50::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 47;
+pub const CURRENT_SCHEMA_VERSION: u32 = 48;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -402,5 +402,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "sync_invites is dropped: copies no longer pair two at a time, and a chain's invites are its own records (da-6177s)",
         apply: m46_to_47_drop_sync_invites,
         down: down_47_to_46_drop_sync_invites,
+    },
+    Migration {
+        from: 47,
+        to: 48,
+        summary: "device_id -> client_id on entries, entry_history (and its snapshots) and sync_local: it names an installation, not a machine (da-lfsei)",
+        apply: m47_to_48_client_id,
+        down: down_48_to_47_client_id,
     },
 ];

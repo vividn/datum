@@ -44,7 +44,7 @@ writing it down.
    The keys, as examples (driven 2026-09-22 — ten files mention `localStorage`, seven really call
    it): the layout draft, this device's open root tabs and its per-layout locks
    (`layout/draft.ts`, da-wpgy, da-0a5o, da-gshh); the custom pane's command line
-   (`CustomPane.svelte`); the REPL scrollback (`replStore.ts`); the device id (`deviceId.ts`);
+   (`CustomPane.svelte`); the REPL scrollback (`replStore.ts`); the client id (`clientId.ts`);
    how far the output bar is open (`OUTPUT_KEY`, `log.ts`); the bar's feel — TAU and DETENT,
    which only a real thumb on a real phone can judge (`TUNING_KEY`, `tuning.ts`, da-o2wm8); and
    the bar's LOCKED pills (`PILLS_KEY`, `bar.ts`, da-1py00), which say the sentence too — a lock
@@ -149,7 +149,7 @@ writing it down.
 
 8. **Every module opens with a sentence saying what it is, and why it is the way it is.**
    **28 of 28 `.svelte` files and 40 of 40 `.ts` files do** — re-counted 2026-09-12 11:2x, and
-   the three this line used to name as the gap (`changes.ts`, `deviceId.ts`, `types.ts`) have
+   the three this line used to name as the gap (`changes.ts`, `clientId.ts`, `types.ts`) have
    all been filled since. ⚠ *Count it accepting every comment syntax these files use: a `.svelte`
    module's purpose sentence usually sits inside its `<script>` as a `/* */`, not as an `<!-- -->`
    before it. A first pass looking only for `<!--` reported a file short and named `AnsiText.svelte`,

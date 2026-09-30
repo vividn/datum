@@ -21,7 +21,7 @@ use datum_core::{
 };
 use serde_json::Value as JsonValue;
 
-use crate::config::device_id;
+use crate::config::client_id;
 use datum_parse::cli::FlagArgs;
 
 pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
@@ -75,7 +75,7 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
         None,
         Some(occur_time.clone()),
         Some(Dur::moment()),
-        device_id()?,
+        client_id()?,
     );
     entry.extra_metadata = Some(JsonValue::Object(meta_obj));
 

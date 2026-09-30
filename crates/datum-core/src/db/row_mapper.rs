@@ -97,7 +97,7 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         location: row.get("location")?,
         create_time,
         modify_time,
-        device_id: row.get("device_id")?,
+        client_id: row.get("client_id")?,
         deleted_at,
         // Tolerant `get` for the same reason `dur_uncertainty` above is:
         // the migration runner materializes rows through this mapper

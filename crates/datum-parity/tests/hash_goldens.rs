@@ -1,6 +1,6 @@
 //! Byte-level `content_hash` goldens (da-yira).
 //!
-//! The sync merge order is `(modify_time, content_hash, device_id, hid)`.
+//! The sync merge order is `(modify_time, content_hash, client_id, hid)`.
 //! It is only deterministic across implementations if every implementation
 //! derives the *same bytes* for `content_hash` — and the preimage embeds
 //! arbitrary JSON, whose serialization is a choice, not a given.

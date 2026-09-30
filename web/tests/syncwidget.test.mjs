@@ -1,17 +1,17 @@
-// The Sync widget, read-only half (da-x4t0a): devices × databases.
+// The Sync widget, read-only half (da-x4t0a): clients × databases.
 //
 // The fixture is two chained databases beside the page's own `datum`, which
 // is in no chain. Their states are set without a network: members are
 // admitted as a session would admit them (`sync new-invite`, which starts an
 // open chain, then `sync handshake --invite`), a native copy's `describe`
-// (its device and client) comes over the pipe transport (`sync pipe ops` | `sync pipe
+// (its client and kind) comes over the pipe transport (`sync pipe ops` | `sync pipe
 // apply`), and `sync record-session` says how each member's last session went. No tab
 // leads `home` or `work`, so the only reachability is what a test
 // broadcasts on the sync worker's own channel.
 //
 //            datum   home        work
 //   this     —       !           ◔
-//   laptop   —       ✓           ◔      (one device, two native copies)
+//   laptop   —       ✓           ◔      (one client, two native copies)
 //   phone    —       ◔ to send   —
 //   tablet   —       ! refused   —
 //   watch    —       ◔ never     —
@@ -42,11 +42,11 @@ async function cli(app, argv, stdin) {
 	return r.stdout;
 }
 
-/** A native copy on the laptop's device: its `run`, which must succeed. */
+/** A native copy under the laptop's client: its `run`, which must succeed. */
 async function laptop() {
 	const copy = await nativeCopy(NO_RELAY);
 	const run = async (argv, stdin) => {
-		const r = await copy.run(argv, stdin, { DATUM_DEVICE_ID: LAPTOP });
+		const r = await copy.run(argv, stdin, { DATUM_CLIENT_ID: LAPTOP });
 		assert.equal(r.code, 0, `native ${argv.join(' ')}: ${r.stderr}`);
 		return r.stdout;
 	};
@@ -123,10 +123,10 @@ const marks = (page) =>
 		])
 	);
 
-const cell = (page, device, db) => page.locator(`${WIDGET} tr[data-device="${device}"] td[data-db="${db}"]`);
+const cell = (page, client, db) => page.locator(`${WIDGET} tr[data-client="${client}"] td[data-db="${db}"]`);
 
 describe('the sync widget', () => {
-	test('draws a symbol per device and database, this device first, and greys what is not reachable', async () => {
+	test('draws a symbol per client and database, this client first, and greys what is not reachable', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -137,7 +137,7 @@ describe('the sync widget', () => {
 				await rows.dispose();
 
 				const none = { datum: 'none' };
-				// This device first; the rest in the chain's own order, which is not this test's.
+				// This client first; the rest in the chain's own order, which is not this test's.
 				const [first, ...rest] = await marks(page);
 				assert.deepEqual(first, ['datum.day', { home: 'error', work: 'pending', ...none }]);
 				assert.deepEqual(rest.sort(([a], [b]) => a.localeCompare(b)), [
@@ -148,22 +148,22 @@ describe('the sync widget', () => {
 				]);
 				// Shape, not colour alone.
 				assert.deepEqual(
-					await page.locator(`${WIDGET} tr[data-device="${LAPTOP}"] .symbol`).allInnerTexts(),
+					await page.locator(`${WIDGET} tr[data-client="${LAPTOP}"] .symbol`).allInnerTexts(),
 					['—', '✓', '◔']
 				);
 				assert.match(await cell(page, ids.phone, 'home').getAttribute('title'), /pending, \d+ to send/);
 				assert.match(await cell(page, ids.watch, 'home').getAttribute('title'), /never synced/);
-				// The laptop is one device with two copies, and a CLI.
-				assert.match(await page.locator(`${WIDGET} tr[data-device="${LAPTOP}"] .client`).innerText(), /CLI/);
+				// The laptop is one client with two copies, and a CLI.
+				assert.match(await page.locator(`${WIDGET} tr[data-client="${LAPTOP}"] .kind`).innerText(), /CLI/);
 
 				// An error's reason, verbatim, on a tap.
 				await cell(page, ids.tablet, 'home').locator('button').click();
 				assert.equal(await cell(page, ids.tablet, 'home').locator('.reason').innerText(), REFUSED);
 
-				// Nobody leads `home`: every other device is offline, its state
+				// Nobody leads `home`: every other client is offline, its state
 				// last known, grey, with its time — never a green ✓.
 				const synced = cell(page, LAPTOP, 'home');
-				assert.equal(await page.locator(`${WIDGET} tr[data-device="${LAPTOP}"]`).getAttribute('data-reach'), 'offline');
+				assert.equal(await page.locator(`${WIDGET} tr[data-client="${LAPTOP}"]`).getAttribute('data-reach'), 'offline');
 				assert.match(await synced.getAttribute('class'), /\bstale\b/);
 				assert.match(await synced.locator('.at').innerText(), /\d\d:\d\d/);
 				const color = (l) => l.evaluate((e) => getComputedStyle(e).color);
@@ -179,12 +179,12 @@ describe('the sync widget', () => {
 				const { page } = app;
 				const ids = await fixture(app);
 				await app.goto('/sync');
-				const row = page.locator(`${WIDGET} tr[data-device="${LAPTOP}"]`);
+				const row = page.locator(`${WIDGET} tr[data-client="${LAPTOP}"]`);
 				await row.waitFor();
 				const reach = async (want) => {
 					const h = await page.waitForFunction(
 						([sel, want]) => document.querySelector(sel)?.dataset.reach === want,
-						[`${WIDGET} tr[data-device="${LAPTOP}"]`, want]
+						[`${WIDGET} tr[data-client="${LAPTOP}"]`, want]
 					);
 					await h.dispose();
 				};
@@ -216,7 +216,7 @@ describe('the sync widget', () => {
 			await fixture(app);
 			await app.goto('/sync');
 			const widget = page.locator(`${WIDGET} .sync`);
-			await page.locator(`${WIDGET} tr[data-device="${LAPTOP}"]`).waitFor();
+			await page.locator(`${WIDGET} tr[data-client="${LAPTOP}"]`).waitFor();
 
 			assert.match(await widget.getAttribute('class'), /\bfull\b/);
 			assert.ok(await widget.locator('.seen').count());
@@ -229,11 +229,11 @@ describe('the sync widget', () => {
 			await widget.evaluate((e, w) => (e.style.width = `${w}px`), floor);
 			const h = await page.waitForFunction((sel) => !document.querySelector(sel).classList.contains('full'), `${WIDGET} .sync`);
 			await h.dispose();
-			assert.equal(await widget.locator('.seen, .client, .at').count(), 0);
+			assert.equal(await widget.locator('.seen, .kind, .at').count(), 0);
 			assert.doesNotMatch(await widget.locator('.legend').innerText(), /synced/);
 			// Symbols and dots still: every cell keeps its shape.
 			assert.deepEqual(
-				await page.locator(`${WIDGET} tr[data-device="${LAPTOP}"] .symbol`).allInnerTexts(),
+				await page.locator(`${WIDGET} tr[data-client="${LAPTOP}"] .symbol`).allInnerTexts(),
 				['—', '✓', '◔']
 			);
 		});

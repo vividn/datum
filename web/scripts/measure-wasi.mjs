@@ -237,7 +237,7 @@ async function parity() {
 					PATH: process.env.PATH,
 					HOME: home,
 					DATUM_DB: join(home, 'datum.db'),
-					DATUM_DEVICE_ID: 'web-parity',
+					DATUM_CLIENT_ID: 'web-parity',
 					DATUM_COLOR: '1',
 					TZ: 'UTC'
 				},
@@ -254,7 +254,7 @@ async function parity() {
 	const b = await browser();
 	let browserSide;
 	try {
-		const page = await b.tab('', () => localStorage.setItem('datum-device-id', 'web-parity'));
+		const page = await b.tab('', () => localStorage.setItem('datum-client-id', 'web-parity'));
 		browserSide = [];
 		for (const argv of argvs) browserSide.push(await run(page, argv));
 	} finally {

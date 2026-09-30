@@ -602,19 +602,18 @@ fn read_header_line<R: std::io::BufRead>(
 }
 
 /// Apply per-entry JSON migrations to bring an older-schema backup entry up
-/// to the current Entry shape. For the schema range currently supported
-/// (v1–v7) the entries table was rewritten wholesale at v2→v3 with no real
-/// production data, so no intermediate JSON transforms are needed — the
-/// function is an identity pass. Future schema bumps that change Entry
-/// serialization should add a match arm here (keyed by `from`).
-fn migrate_entry_json(_raw: &mut serde_json::Value, from: u32, to: u32) -> Result<()> {
-    if from == to {
-        return Ok(());
+/// to the current Entry shape, one arm per destructive Entry-shape change,
+/// keyed by `from`. Additive bumps need none: the Entry deserializer's own
+/// `#[serde(default)]` fields absorb them.
+fn migrate_entry_json(raw: &mut serde_json::Value, from: u32, _to: u32) -> Result<()> {
+    // v48 (da-lfsei): `device_id` became `client_id`.
+    if from < 48 {
+        if let Some(e) = raw.as_object_mut() {
+            if let Some(id) = e.remove("device_id") {
+                e.insert("client_id".into(), id);
+            }
+        }
     }
-    // No transforms registered yet. The Entry deserializer's own
-    // `#[serde(default)]` fields already absorb additive schema bumps
-    // (v3→v7 were all additive or index-only). A destructive Entry-shape
-    // change in a future version should branch on `from` here.
     Ok(())
 }
 
@@ -1121,7 +1120,7 @@ mod tests {
         .unwrap();
 
         // Pre-populate dst with the SAME logical row from a different device.
-        // Same content_hash, different device_id.
+        // Same content_hash, different client_id.
         let dst = Db::open_in_memory().unwrap();
         let base: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
         let t = DatumTime {
@@ -1142,7 +1141,7 @@ mod tests {
         dst.insert_entry(&dup).unwrap();
         let old_modified = dst.get_entry(&dup.slug).unwrap().modify_time;
 
-        // --force → ConflictStrategy::Update overwrites device_id from "d1" in backup.
+        // --force → ConflictStrategy::Update overwrites client_id from "d1" in backup.
         cmd_restore(
             RestoreArgs {
                 path: path.to_string_lossy().into_owned(),
@@ -1160,14 +1159,58 @@ mod tests {
 
         let overwritten = dst.get_entry(&dup.slug).unwrap();
         assert_eq!(
-            overwritten.device_id, "d1",
-            "force must overwrite device_id"
+            overwritten.client_id, "d1",
+            "force must overwrite client_id"
         );
         assert!(
             overwritten.modify_time >= old_modified,
             "force must bump modified_at"
         );
 
+        std::fs::remove_file(&path).ok();
+    }
+
+    /// A backup from before v48 names the client `device_id` (da-lfsei);
+    /// it restores under `client_id`.
+    #[test]
+    fn restore_reads_a_pre_v48_backups_device_id_as_the_client_id() {
+        use datum_core::db::Db;
+        let src = Db::open_in_memory().unwrap();
+        let e = make_entry("mood", 100, serde_json::json!("happy"), None);
+        src.insert_entry(&e).unwrap();
+        let path = unique_tmp_path(".jsonl");
+        let args = BackupArgs {
+            path: path.to_string_lossy().into_owned(),
+            overwrite: false,
+        };
+        cmd_backup(args, None, &src).unwrap();
+        let old: Vec<String> = std::fs::read_to_string(&path)
+            .unwrap()
+            .lines()
+            .map(|l| {
+                let mut v: serde_json::Value = serde_json::from_str(l).unwrap();
+                let o = v.as_object_mut().unwrap();
+                match o.remove("client_id") {
+                    Some(id) => o.insert("device_id".into(), id),
+                    None => o.insert("schema_version".into(), 47.into()),
+                };
+                v.to_string()
+            })
+            .collect();
+        std::fs::write(&path, old.join("\n")).unwrap();
+
+        let dst = Db::open_in_memory().unwrap();
+        let args = RestoreArgs {
+            path: path.to_string_lossy().into_owned(),
+            force: false,
+            dry_run: false,
+            merge: true,
+            hard: false,
+            yes: false,
+            show: ShowFlag::Default,
+        };
+        cmd_restore(args, None, &dst).unwrap();
+        assert_eq!(dst.get_entry(&e.slug).unwrap().client_id, "d1");
         std::fs::remove_file(&path).ok();
     }
 

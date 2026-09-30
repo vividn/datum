@@ -91,7 +91,7 @@ fn data_of(entry: &LayoutEntry, root: JsonValue, kit_id: &str) -> JsonValue {
 }
 
 impl Db {
-    /// Install a kit's layouts. `kit_id` marks every row; `device_id` is
+    /// Install a kit's layouts. `kit_id` marks every row; `client_id` is
     /// stamped on the entries as any write stamps one.
     ///
     /// Conflict policy mirrors [`Db::install_kit_views`]: an existing entry
@@ -103,7 +103,7 @@ impl Db {
         &self,
         kit_id: &str,
         layouts: &[LayoutEntry],
-        device_id: &str,
+        client_id: &str,
         force: bool,
     ) -> Result<InstallLayoutsReport> {
         // Screen every block before any row lands, as the view path does:
@@ -152,7 +152,7 @@ impl Db {
                         Some(data),
                         Some(DatumTime::now()),
                         Some(Dur::moment()),
-                        device_id,
+                        client_id,
                     );
                     // The slug is the NAME's, not the instant's, so a
                     // reinstall finds the same row and the web's

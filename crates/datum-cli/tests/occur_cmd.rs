@@ -118,10 +118,10 @@ fn date_and_time_flags_set_absolute_time() {
 /// TS #3: "stores the occurTime in DataOnly docs"
 ///
 /// Datum's `-M` produced a DataOnly document (no `meta.*` block). Daydumb's
-/// Entry always carries `created_at`/`modified_at`/`device_id` columns
+/// Entry always carries `created_at`/`modified_at`/`client_id` columns
 /// (NOT NULL in the schema), so the equivalent behavior is to zero the
 /// bookkeeping fields instead of omitting them: `created_at` and
-/// `modified_at` collapse to the UNIX epoch and `device_id` goes empty.
+/// `modified_at` collapse to the UNIX epoch and `client_id` goes empty.
 /// The row's domain data (field/time_start/…) is still populated normally.
 #[test]
 fn no_metadata_zeros_bookkeeping_fields() {
@@ -130,7 +130,7 @@ fn no_metadata_zeros_bookkeeping_fields() {
     // With `--no-metadata`: timestamps and device cleared.
     run_cli(&["occur", "event", "--no-metadata"], &db).expect("occur --no-metadata");
     let entry = &datum_core::test_util::logged_entries(&db, "event")[0];
-    assert_eq!(entry.device_id, "", "device_id must be cleared");
+    assert_eq!(entry.client_id, "", "client_id must be cleared");
     assert_eq!(
         entry.create_time,
         chrono::DateTime::UNIX_EPOCH,
@@ -149,7 +149,7 @@ fn no_metadata_zeros_bookkeeping_fields() {
     // inverse invariant.
     run_cli(&["occur", "other"], &db).expect("occur other");
     let other = &datum_core::test_util::logged_entries(&db, "other")[0];
-    assert!(!other.device_id.is_empty(), "device_id must be populated");
+    assert!(!other.client_id.is_empty(), "client_id must be populated");
     assert!(
         (Utc::now() - other.create_time).num_seconds().abs() < 5,
         "created_at must be set to ~now",

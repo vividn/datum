@@ -10,7 +10,7 @@ use serde_json::Value;
 use tempfile::TempDir;
 
 /// One copy of a database: its own file and its own `DATUM_HOME`, so its own
-/// device id and endpoint.
+/// client id and endpoint.
 struct Copy {
     tmp: TempDir,
 }
@@ -532,12 +532,12 @@ fn the_op_line_is_the_command_without_its_db() {
     assert_eq!(op["raw"], "occur tea");
 }
 
-/// A copy of `a`'s file on `a`'s own device: the same device id, another path.
+/// A copy of `a`'s file under `a`'s own client: the same client id, another path.
 fn twin(a: &Copy) -> Copy {
     let copy = Copy::new();
     std::fs::create_dir_all(copy.tmp.path().join("home")).unwrap();
-    let device = |c: &Copy| c.tmp.path().join("home/device_id");
-    std::fs::copy(device(a), device(&copy)).unwrap();
+    let client = |c: &Copy| c.tmp.path().join("home/client_id");
+    std::fs::copy(client(a), client(&copy)).unwrap();
     std::fs::copy(a.db(), copy.db()).unwrap();
     copy
 }
@@ -604,21 +604,21 @@ fn a_moved_file_keeps_its_endpoint() {
     assert_eq!(endpoints.len(), 1, "{endpoints:?}");
 }
 
-/// datum.day's case (da-6kpj5): the device is `DATUM_DEVICE_ID`, and the
-/// `device_id` file dies with each process. The copy keeps one endpoint.
+/// datum.day's case (da-6kpj5): the client is `DATUM_CLIENT_ID`, and the
+/// `client_id` file dies with each process. The copy keeps one endpoint.
 #[test]
-fn a_device_named_by_the_environment_keeps_its_endpoint() {
+fn a_client_named_by_the_environment_keeps_its_endpoint() {
     let a = Copy::new();
     let key = || {
         let out = Command::new(env!("CARGO_BIN_EXE_datum"))
             .env("DATUM_DB", a.db())
             .env("DATUM_HOME", a.tmp.path().join("home"))
             .env("DATUM_CONFIG_HOME", a.tmp.path().join("config"))
-            .env("DATUM_DEVICE_ID", "web-browser")
+            .env("DATUM_CLIENT_ID", "web-browser")
             .args(["sync", "endpoint-key"])
             .output()
             .unwrap();
-        let _ = std::fs::remove_file(a.tmp.path().join("home/device_id"));
+        let _ = std::fs::remove_file(a.tmp.path().join("home/client_id"));
         String::from_utf8(out.stdout).unwrap()
     };
     assert_eq!(key(), key());

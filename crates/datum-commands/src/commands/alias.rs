@@ -53,7 +53,7 @@ pub fn alias(sub: AliasCommand, db: &Db) -> Result<()> {
 
 /// Write `alias` as this device's entry.
 fn save(db: &Db, alias: &datum_core::field_spec::Alias) -> Result<datum_core::ids::Hid> {
-    db.set_device_id(&crate::config::device_id()?);
+    db.set_client_id(&crate::config::client_id()?);
     Ok(db.save_alias(alias)?)
 }
 

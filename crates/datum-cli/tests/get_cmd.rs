@@ -152,7 +152,7 @@ fn get_show_all_dumps_full_metadata() {
         "parser_version",
         "create_time",
         "modify_time",
-        "device_id",
+        "client_id",
     ] {
         assert!(
             stdout.contains(col),

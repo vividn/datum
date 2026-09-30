@@ -13,12 +13,12 @@ use std::collections::BTreeMap;
 use unicode_width::UnicodeWidthChar;
 
 use crate::args::{SpecCommand, SpecSetArgs};
-use crate::config::device_id;
+use crate::config::client_id;
 
 pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
-    // A spec is an entry (da-lc26c): a write is stamped with this device.
+    // A spec is an entry (da-lc26c): a write is stamped with this client.
     if matches!(sub, SpecCommand::Set(_) | SpecCommand::AddState { .. }) {
-        db.set_device_id(&device_id()?);
+        db.set_client_id(&client_id()?);
     }
     match sub {
         SpecCommand::Show { field, text } => match db.load_spec(&field)? {
@@ -224,7 +224,7 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     // than mutating the spec. The flags are kept on the parser surface for
     // backwards compatibility; they no longer touch the spec.
     if args.track {
-        let device = device_id()?;
+        let client = client_id()?;
         let entry = Entry::new_legacy(
             &args.field,
             Verb::Switch,
@@ -232,12 +232,12 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             None,
             Some(DatumTime::now()),
             None,
-            device,
+            client,
         );
         db.insert_entry(&entry)?;
     }
     if args.ignore {
-        let device = device_id()?;
+        let client = client_id()?;
         let entry = Entry::new_legacy(
             &args.field,
             Verb::Switch,
@@ -245,7 +245,7 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             None,
             Some(DatumTime::now()),
             None,
-            device,
+            client,
         );
         db.insert_entry(&entry)?;
     }

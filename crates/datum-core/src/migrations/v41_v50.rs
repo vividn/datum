@@ -5,6 +5,8 @@
 
 use rusqlite::Connection;
 
+use super::support::{has_column, table_exists};
+
 use crate::error::Result;
 
 /// da-i7hig: the relay sync is deleted, and `sync_state` held only its
@@ -132,6 +134,42 @@ pub(super) fn down_47_to_46_drop_sync_invites(conn: &Connection) -> Result<()> {
             used_at     TEXT
         );",
     )?;
+    Ok(())
+}
+
+/// da-lfsei: `device_id` names an installation — a CLI data directory, a
+/// browser profile — not a machine, so it becomes `client_id` on `entries`,
+/// `entry_history` and `sync_local`, and in every history snapshot. Op
+/// bodies keep the old key: they are signed, so the fold renames it as it
+/// reads them (`sync.rs`).
+pub(super) fn m47_to_48_client_id(conn: &Connection) -> Result<()> {
+    rename_client_id(conn, "device_id", "client_id")
+}
+
+/// Reverse v47→v48.
+pub(super) fn down_48_to_47_client_id(conn: &Connection) -> Result<()> {
+    rename_client_id(conn, "client_id", "device_id")
+}
+
+fn rename_client_id(conn: &Connection, from: &str, to: &str) -> Result<()> {
+    for table in ["entries", "entry_history", "sync_local"] {
+        if has_column(conn, table, from)? {
+            conn.execute_batch(&format!(
+                "ALTER TABLE {table} RENAME COLUMN {from} TO {to};"
+            ))?;
+        }
+    }
+    if table_exists(conn, "entry_history")? {
+        conn.execute(
+            &format!(
+                "UPDATE entry_history
+                    SET snapshot = json_set(json_remove(snapshot, '$.{from}'),
+                                            '$.{to}', json_extract(snapshot, '$.{from}'))
+                  WHERE json_type(snapshot, '$.{from}') IS NOT NULL"
+            ),
+            [],
+        )?;
+    }
     Ok(())
 }
 

@@ -64,7 +64,7 @@ pub use now::{
 };
 pub use row_mapper::row_to_entry_public;
 pub use spec::{is_meta_field, META_FIELDS, SPEC_FIELD};
-pub use sync::{canonical_json, chain, peers, set_device_source, set_invocation, ApplySummary};
+pub use sync::{canonical_json, chain, peers, set_client_source, set_invocation, ApplySummary};
 pub use types::{
     AliasConflict, AliasConflictReason, ConflictStrategy, GroupColumn, HardReplaceCounts,
     InsertOutcome, ListParams, ReplaceCounts, RetimeFilter, Retimed, SaveSpecReport,
@@ -98,9 +98,9 @@ pub struct Db {
     /// makes it stale, so it is never a second copy of the spec entries
     /// that can drift from them (da-lc26c).
     spec_alias_cache: RefCell<Option<(u64, SpecAliasIndex)>>,
-    /// The device a spec entry this handle writes is stamped with
-    /// ([`Db::set_device_id`]); unset, the write says `local`.
-    device_id: OnceCell<String>,
+    /// The client a spec entry this handle writes is stamped with
+    /// ([`Db::set_client_id`]); unset, the write says `local`.
+    client_id: OnceCell<String>,
     /// What this open did to the schema, if anything. `None` when the DB
     /// was already current. datum-core never prints; the CLI reads this
     /// and tells the user (da-ksao).
@@ -173,7 +173,7 @@ impl Db {
         let mut db = Db {
             conn,
             spec_alias_cache: RefCell::new(None),
-            device_id: OnceCell::new(),
+            client_id: OnceCell::new(),
             last_migration: None,
         };
         db.last_migration = db.migrate(Some(std::path::Path::new(path)))?;
@@ -191,7 +191,7 @@ impl Db {
         Ok(Db {
             conn,
             spec_alias_cache: RefCell::new(None),
-            device_id: OnceCell::new(),
+            client_id: OnceCell::new(),
             last_migration: None,
         })
     }
@@ -226,7 +226,7 @@ impl Db {
         Ok(Db {
             conn,
             spec_alias_cache: RefCell::new(None),
-            device_id: OnceCell::new(),
+            client_id: OnceCell::new(),
             last_migration: None,
         })
     }
@@ -237,7 +237,7 @@ impl Db {
         let mut db = Db {
             conn,
             spec_alias_cache: RefCell::new(None),
-            device_id: OnceCell::new(),
+            client_id: OnceCell::new(),
             last_migration: None,
         };
         db.last_migration = db.migrate(None)?;

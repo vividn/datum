@@ -12,7 +12,7 @@ use std::path::Path;
 const KEYS_TO_CLEAR: &[&str] = &[
     "DATUM_DB",
     "DATUM_CONFIG",
-    "DATUM_DEVICE_ID",
+    "DATUM_CLIENT_ID",
     "DATUM_DEFAULT_FIELD",
     "DATUM_EDITOR",
     "DATUM_ID_DELIMITER",
@@ -62,9 +62,9 @@ editor = "nvim"
     assert_eq!(cfg.default_field.source, Source::Toml);
     assert_eq!(cfg.editor.value, "nvim");
     assert_eq!(cfg.editor.source, Source::Toml);
-    // device_id wasn't set in toml → default layer (auto-generated/persisted)
-    assert_eq!(cfg.device_id.source, Source::Default);
-    assert!(!cfg.device_id.value.is_empty());
+    // client_id wasn't set in toml → default layer (auto-generated/persisted)
+    assert_eq!(cfg.client_id.source, Source::Default);
+    assert!(!cfg.client_id.value.is_empty());
     assert!(cfg.toml_loaded);
 }
 
@@ -79,14 +79,14 @@ fn env_var_overrides_toml() {
 db_path = "/toml/path.db"
 default_field = "toml_field"
 editor = "nano"
-device_id = "toml-device"
+client_id = "toml-device"
 "#,
     );
 
     std::env::set_var("DATUM_DB", "/env/path.db");
     std::env::set_var("DATUM_DEFAULT_FIELD", "env_field");
     std::env::set_var("DATUM_EDITOR", "emacs");
-    std::env::set_var("DATUM_DEVICE_ID", "env-device");
+    std::env::set_var("DATUM_CLIENT_ID", "env-device");
 
     let cfg = Config::load(None).unwrap();
 
@@ -96,8 +96,8 @@ device_id = "toml-device"
     assert_eq!(cfg.default_field.source, Source::Env);
     assert_eq!(cfg.editor.value, "emacs");
     assert_eq!(cfg.editor.source, Source::Env);
-    assert_eq!(cfg.device_id.value, "env-device");
-    assert_eq!(cfg.device_id.source, Source::Env);
+    assert_eq!(cfg.client_id.value, "env-device");
+    assert_eq!(cfg.client_id.source, Source::Env);
 }
 
 #[test]
@@ -144,8 +144,8 @@ editor = "nvim"
     assert_eq!(by_key["editor"].1, Source::Toml);
     assert_eq!(by_key["editor"].0, "nvim");
 
-    // device_id wasn't set anywhere → default layer
-    assert_eq!(by_key["device_id"].1, Source::Default);
+    // client_id wasn't set anywhere → default layer
+    assert_eq!(by_key["client_id"].1, Source::Default);
 }
 
 #[test]

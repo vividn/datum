@@ -9,13 +9,13 @@ use datum_core::{
 use serde_json::Value as JsonValue;
 
 use crate::args::IgnoreArgs;
-use crate::config::device_id;
+use crate::config::client_id;
 
 pub fn ignore(args: IgnoreArgs, db: &Db) -> Result<()> {
     // da-2sr: writing a switch entry with the IGNORED sentinel is the only
     // way to mark a field ignored. No spec writes — the spec keeps its
     // schema-only role.
-    let device = device_id()?;
+    let client = client_id()?;
     let entry = Entry::new_legacy(
         &args.field,
         Verb::Switch,
@@ -23,7 +23,7 @@ pub fn ignore(args: IgnoreArgs, db: &Db) -> Result<()> {
         None,
         Some(DatumTime::now()),
         None,
-        device,
+        client,
     );
     db.insert_entry(&entry)?;
     println!("✓ Ignoring '{}'", args.field);

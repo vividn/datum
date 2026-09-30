@@ -1,6 +1,6 @@
 // What "the same entry" means when two implementations are compared.
 //
-// Deliberately not the whole row. `hid`, `content_hash`, `device_id` and
+// Deliberately not the whole row. `hid`, `content_hash`, `client_id` and
 // the timestamps of the write itself are per-write facts that could not
 // match across two implementations and should not have to. What is left is
 // what the user actually asked for — the field, its verb, its value, its

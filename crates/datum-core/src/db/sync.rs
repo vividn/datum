@@ -59,8 +59,8 @@ use chain::{Chain, CHAIN_HID};
 struct Invocation {
     raw: Option<String>,
     alias_chain: Option<Value>,
-    device_source: Option<fn() -> Option<String>>,
-    device: Option<String>,
+    client_source: Option<fn() -> Option<String>>,
+    client: Option<String>,
 }
 
 thread_local! {
@@ -78,19 +78,19 @@ pub fn set_invocation(raw: Option<String>, alias_chain: Option<Value>) {
     });
 }
 
-/// How to learn this device's id, asked the first time an op is signed.
+/// How to learn this client's id, asked the first time an op is signed.
 /// Lazy, so a command that writes nothing reads nothing for it.
-pub fn set_device_source(source: fn() -> Option<String>) {
-    INVOCATION.with(|i| i.borrow_mut().device_source = Some(source));
+pub fn set_client_source(source: fn() -> Option<String>) {
+    INVOCATION.with(|i| i.borrow_mut().client_source = Some(source));
 }
 
-fn device_id() -> String {
+fn client_id() -> String {
     INVOCATION.with(|i| {
         let mut i = i.borrow_mut();
-        if i.device.is_none() {
-            i.device = Some(i.device_source.and_then(|f| f()).unwrap_or_default());
+        if i.client.is_none() {
+            i.client = Some(i.client_source.and_then(|f| f()).unwrap_or_default());
         }
-        i.device.clone().unwrap_or_default()
+        i.client.clone().unwrap_or_default()
     })
 }
 
@@ -152,22 +152,22 @@ thread_local! {
 }
 
 /// This copy's endpoint, minted on first need. The key is stored with the
-/// device and the file path it was minted at, and a file that opens on
-/// another device, or at another path while the original is still there
+/// client and the file path it was minted at, and a file that opens under
+/// another client, or at another path while the original is still there
 /// (copied, restored beside it), mints its own rather than sign as the copy
 /// it came from: two copies with one key would number their ops from one
 /// seq. A file MOVED keeps its key, and so its membership. A copy put back
 /// over the original's own path is the case this cannot see; `sync_apply`
 /// refuses the fork it makes, and `datum sync chain rekey` mints a new key.
 fn endpoint(conn: &Connection) -> Result<Endpoint> {
-    let device = device_id();
+    let client = client_id();
     let path = conn.path().unwrap_or_default().to_string();
     let held: Option<(String, String, String)> = conn
-        .prepare_cached("SELECT endpoint_secret, device_id, path FROM sync_local WHERE id = 1")?
+        .prepare_cached("SELECT endpoint_secret, client_id, path FROM sync_local WHERE id = 1")?
         .query_row([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()?;
-    let held = held.filter(|(_, d, p)| {
-        *d == device && (*p == path || p.is_empty() || !std::path::Path::new(p).exists())
+    let held = held.filter(|(_, c, p)| {
+        *c == client && (*p == path || p.is_empty() || !std::path::Path::new(p).exists())
     });
     if held.as_ref().is_some_and(|(_, _, p)| *p != path) {
         conn.execute("UPDATE sync_local SET path = ?1", params![path])?;
@@ -195,9 +195,9 @@ fn endpoint(conn: &Connection) -> Result<Endpoint> {
     let key = SigningKey::generate(&mut rand::rngs::OsRng);
     let id = hex(key.verifying_key().as_bytes());
     conn.execute(
-        "INSERT OR REPLACE INTO sync_local (id, endpoint_secret, endpoint_id, device_id, path)
+        "INSERT OR REPLACE INTO sync_local (id, endpoint_secret, endpoint_id, client_id, path)
          VALUES (1, ?1, ?2, ?3, ?4)",
-        params![hex(&key.to_bytes()), id, device, path],
+        params![hex(&key.to_bytes()), id, client, path],
     )?;
     Ok(Endpoint { key, id })
 }
@@ -393,7 +393,7 @@ fn values(op: &Op) -> BTreeMap<String, Value> {
 
 /// Keys every edit moves, or that follow from other keys: two ops setting
 /// them differently is not two intents.
-const NOT_A_CONFLICT: &[&str] = &["modify_time", "content_hash", "verb", "slug", "device_id"];
+const NOT_A_CONFLICT: &[&str] = &["modify_time", "content_hash", "verb", "slug", "client_id"];
 
 // ─── The op ─────────────────────────────────────────────────────────────────
 
@@ -420,6 +420,15 @@ impl Op {
         let v: Value = serde_json::from_str(body)?;
         let mut op: Op = serde_json::from_value(v.clone())?;
         op.body = canonical_json(&v);
+        // An op signed before v48 names the client `device_id` (da-lfsei):
+        // its body stays as signed, and its effect reads as today's.
+        for k in ["create", "set"] {
+            if let Some(Value::Object(m)) = op.effect.get_mut(k) {
+                if let Some(id) = m.remove("device_id") {
+                    m.insert("client_id".into(), id);
+                }
+            }
+        }
         Ok(op)
     }
 
@@ -1148,6 +1157,29 @@ impl Db {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An op signed before v48 folds as today's (da-lfsei): its effect's
+    /// `device_id` reads as `client_id`, and its body, which is signed,
+    /// is kept as it came.
+    #[test]
+    fn an_op_from_before_v48_folds_its_device_id_as_the_client_id() {
+        let old = |effect: Value| {
+            json!({"endpoint": "e", "seq": 1, "hlc": "h", "hid": "x", "slug": "s",
+                   "kind": "entry", "effect": effect, "sig": "g"})
+            .to_string()
+        };
+        let create = Op::parse(&old(json!({"create": {"device_id": "d1"}}))).unwrap();
+        let set = Op::parse(&old(json!({"set": {"device_id": "d2"}}))).unwrap();
+        assert!(create.body.contains("device_id"));
+        let mut row = None;
+        fold_into(&mut row, &create.effect);
+        assert_eq!(row.as_ref().unwrap()["client_id"], "d1");
+        fold_into(&mut row, &set.effect);
+        assert_eq!(
+            row,
+            Some(json!({"client_id": "d2"}).as_object().unwrap().clone())
+        );
+    }
 
     #[test]
     fn canonical_json_sorts_keys_at_every_depth() {

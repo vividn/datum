@@ -463,7 +463,7 @@ fn it_is_fast_on_a_lived_in_db() {
     conn.execute_batch(
         "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 30000)
          INSERT INTO entries (hid, slug, content_hash, field, state, verb, occur_time,
-                              create_time, modify_time, device_id)
+                              create_time, modify_time, client_id)
          SELECT printf('gen%09d', i), printf('f%d:%d', i % 40, i), 'h', printf('f%d', i % 40),
                 '\"on\"', 'switch', strftime('%Y-%m-%dT%H:%M:%SZ', 1600000000 + i * 600, 'unixepoch'),
                 '2024-01-01T00:00:00Z', strftime('%Y-%m-%dT%H:%M:%SZ', 1600000000 + i * 600, 'unixepoch'),

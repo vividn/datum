@@ -22,7 +22,7 @@ use serde_json::Value as JsonValue;
 use crate::{
     args::{DbImportArgs, DbImportArgsExt},
     commands::log_core::normalize_state,
-    config::device_id,
+    config::client_id,
     progress::Progress,
 };
 
@@ -45,7 +45,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         .as_array()
         .context("Backup JSON missing 'docs' array")?;
 
-    let device = device_id()?;
+    let client = client_id()?;
     let mut points = 0usize;
     let mut blocks = 0usize;
     let mut dur_parse_warnings = 0usize;
@@ -238,7 +238,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             data_blob,
             occur_time,
             dur_in.clone(),
-            device.clone(),
+            client.clone(),
         );
         entry.create_time = created_at;
         entry.modify_time = modified_at;
@@ -574,8 +574,8 @@ fn write_track_documents(db: &Db, entries: &[datum_core::entry::Entry]) -> Resul
         let mut at = first.unwrap_or_else(DatumTime::now);
         at.utc -= chrono::Duration::milliseconds(1);
         at.uncertainty = None;
-        let device = crate::config::device_id()?;
-        db.insert_entry(&datum_core::track::track_entry(field, verb, at, &device))?;
+        let client = crate::config::client_id()?;
+        db.insert_entry(&datum_core::track::track_entry(field, verb, at, &client))?;
         crate::commands::helpers::save_track_spec(db, field, verb)?;
     }
     Ok(())

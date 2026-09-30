@@ -17,7 +17,7 @@ use datum_core::{
 };
 use serde_json::Value as JsonValue;
 
-use crate::config::device_id;
+use crate::config::client_id;
 use datum_parse::cli::MetaCommand;
 
 pub fn meta(cmd: MetaCommand, db: &Db) -> Result<()> {
@@ -44,7 +44,7 @@ fn add_note(field: &str, text: &str, db: &Db) -> Result<()> {
         None,
         Some(DatumTime::now()),
         Some(Dur::moment()),
-        device_id()?,
+        client_id()?,
     );
     let mut meta_obj = serde_json::Map::new();
     meta_obj.insert("meta".to_string(), JsonValue::Bool(true));

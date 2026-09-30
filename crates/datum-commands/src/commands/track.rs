@@ -13,7 +13,7 @@ use datum_core::{
 };
 
 use crate::args::TrackArgs;
-use crate::config::device_id;
+use crate::config::client_id;
 
 /// The verb `field` should be declared with, given an explicit `--verb`
 /// and whatever the database already knows.
@@ -132,11 +132,11 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
         }
     }
     spec.regenerate_derived_aliases();
-    let device = device_id()?;
-    db.set_device_id(&device);
+    let client = client_id()?;
+    db.set_client_id(&client);
     db.save_field_spec(&spec)?;
 
-    let entry = track_entry(&args.field, verb, DatumTime::now(), &device);
+    let entry = track_entry(&args.field, verb, DatumTime::now(), &client);
     db.insert_entry(&entry)?;
     let _ = datum_core::last_docs::set_last_docs(db, std::slice::from_ref(&entry.hid));
     println!("✓ Tracking '{}' ({verb})", args.field);

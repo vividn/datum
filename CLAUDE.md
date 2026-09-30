@@ -49,7 +49,7 @@ a top-level `migrations/` folder.)
   The only planned form is a typed value (`u://`/`unit://`), not built.
 - `occur_time` + `dur`: the one instant and the span it covers — see the time model below. There are no `time_start` / `time_end` columns.
 - the zone travels with the time (`occur_time_tz`): an IANA name, e.g. "America/Chicago"
-- `create_time` / `modify_time` / `device_id`
+- `create_time` / `modify_time` / `client_id`
 
 ### Time model
 All four combinations are valid as INPUT:
@@ -400,7 +400,7 @@ pnpm run test:fixtures                 # recapture the CLI-parity fixtures
 The browser runs `datum-cli` itself, compiled to wasm32-wasip1 by
 `pnpm run build:cli-wasm` (pinned wasi-sdk and binaryen, fetched into
 `target/toolchains/`) and loaded through `@bjorn3/browser_wasi_shim`. What
-the page supplies is what a shell would: argv, stdin, `TZ`, a device id,
+the page supplies is what a shell would: argv, stdin, `TZ`, a client id,
 `DATUM_COLOR=1` (there is no tty), and `HOME`/`DATUM_DB` inside the
 preopened `/data`. The module is NOT committed (da-0qa4x): a binary cannot
 merge, and every CLI merge conflicted every other open CLI PR on it. Each

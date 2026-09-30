@@ -204,7 +204,7 @@ fn blank_fieldless_with_metadata_skipped_no_analog() {
     let db = fresh_db();
     run_cli(&["note", "field"], &db).expect("note field");
     let e = &datum_core::test_util::logged_entries(&db, "field")[0];
-    assert!(!e.device_id.is_empty(), "device_id populated by default");
+    assert!(!e.client_id.is_empty(), "client_id populated by default");
     assert_ne!(
         e.create_time,
         chrono::DateTime::UNIX_EPOCH,
@@ -254,7 +254,7 @@ fn internal_insert_spy_skipped_structural_only() {
 
 /// The headline P1 test: `--no-metadata` / `-M` suppresses bookkeeping.
 /// Per the daydumb divergence (NOT NULL columns), suppression zeroes the
-/// stamps and clears `device_id`.
+/// stamps and clears `client_id`.
 #[test]
 fn no_metadata_suppresses_timestamps() {
     let db = fresh_db();
@@ -263,7 +263,7 @@ fn no_metadata_suppresses_timestamps() {
         .expect("note hasMetadata --id hasMetadata");
     // da-ivld: slug is now `<field>:<body>`.
     let has = db.get_entry("hasMetadata:hasMetadata").unwrap();
-    assert!(!has.device_id.is_empty(), "default path keeps device_id");
+    assert!(!has.client_id.is_empty(), "default path keeps client_id");
     assert_ne!(
         has.create_time,
         chrono::DateTime::UNIX_EPOCH,
@@ -272,7 +272,7 @@ fn no_metadata_suppresses_timestamps() {
 
     run_cli(&["add", "noMetadata", "--id", "noMetadata", "-M"], &db).expect("note noMetadata -M");
     let none = db.get_entry("noMetadata:noMetadata").unwrap();
-    assert_eq!(none.device_id, "", "-M clears device_id");
+    assert_eq!(none.client_id, "", "-M clears client_id");
     assert_eq!(
         none.create_time,
         chrono::DateTime::UNIX_EPOCH,
@@ -291,7 +291,7 @@ fn no_metadata_suppresses_timestamps() {
     )
     .expect("note --no-metadata");
     let long = db.get_entry("noMetaLong:noMetaLong").unwrap();
-    assert_eq!(long.device_id, "");
+    assert_eq!(long.client_id, "");
     assert_eq!(long.create_time, chrono::DateTime::UNIX_EPOCH);
 }
 

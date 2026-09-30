@@ -98,7 +98,7 @@ fn get_pretty_emits_indented_json() {
 #[test]
 fn log_with_update_flag_routes_to_update_strategy() {
     // Seed a row, then re-log with `--update`: the existing row must mutate
-    // in place (modified_at bumped, new device_id visible), not produce a
+    // in place (modified_at bumped, new client_id visible), not produce a
     // second row and not be silently ignored. This is the A4 acceptance test
     // for the CLI → db strategy plumbing.
     let db = fresh_db();

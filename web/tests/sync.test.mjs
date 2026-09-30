@@ -81,18 +81,18 @@ describe('datum.day and a native copy', () => {
 });
 
 describe('a sync chain started in the page', () => {
-	test('holds this browser as its first member, under its own device, and the tab starts an endpoint', async () => {
+	test('holds this browser as its first member, under its own client, and the tab starts an endpoint', async () => {
 		await withApp(
 			async (app) => {
 				// The first invite starts an open chain: no admin, no key.
 				const invite = await app.run(['sync', 'new-invite']);
 				assert.equal(invite.code, 0, invite.stderr);
 				assert.deepEqual(JSON.parse((await app.run(['sync', 'chain', 'list', '--json'])).stdout).admins, []);
-				const device = await app.page.evaluate(() => localStorage.getItem('datum-device-id'));
+				const client = await app.page.evaluate(() => localStorage.getItem('datum-client-id'));
 				const members = JSON.parse((await app.run(['sync', 'chain', 'list', '--json'])).stdout).members;
 				assert.deepEqual(
-					members.map((m) => [m.device, m.client, m.this]),
-					[[device, 'web', true]]
+					members.map((m) => [m.client, m.kind, m.this]),
+					[[client, 'web', true]]
 				);
 				assert.equal((await app.run(['sync', 'chain', 'rename', 'kitchen'])).code, 0);
 				// A `sync` command that wrote: the leader reads the setup again.

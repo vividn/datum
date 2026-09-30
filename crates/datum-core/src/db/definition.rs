@@ -90,7 +90,7 @@ pub(crate) fn definition_data<T: serde::Serialize>(
 }
 
 /// A new `field` entry for `data`, at the slug its data names.
-pub(crate) fn new_definition_entry(field: &str, data: JsonValue, device_id: &str) -> Entry {
+pub(crate) fn new_definition_entry(field: &str, data: JsonValue, client_id: &str) -> Entry {
     let slug = definition_slug(field, &data);
     let mut row = Entry::new(
         field,
@@ -99,7 +99,7 @@ pub(crate) fn new_definition_entry(field: &str, data: JsonValue, device_id: &str
         Some(data),
         Some(super::spec::meta_occur_time()),
         Some(Dur::moment()),
-        device_id,
+        client_id,
     );
     row.slug = Slug::new(slug);
     // As an alias's: the slug follows the data's name through every edit.
@@ -190,8 +190,8 @@ impl Db {
                 Ok(row.hid)
             }
             None => {
-                let device = self.device_id.get().map_or("local", String::as_str);
-                let row = new_definition_entry(field, data, device);
+                let client = self.client_id.get().map_or("local", String::as_str);
+                let row = new_definition_entry(field, data, client);
                 self.insert_entry(&row)?;
                 Ok(self.get_entry(&row.slug)?.hid)
             }

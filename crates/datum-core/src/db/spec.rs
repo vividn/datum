@@ -89,7 +89,7 @@ pub(crate) fn meta_occur_time() -> DatumTime {
 }
 
 /// A new spec entry for `data` (the spec's JSON, with its kit mark).
-pub(crate) fn new_spec_entry(field: &str, data: JsonValue, device_id: &str) -> Entry {
+pub(crate) fn new_spec_entry(field: &str, data: JsonValue, client_id: &str) -> Entry {
     let mut row = Entry::new(
         SPEC_FIELD,
         Verb::Point,
@@ -97,7 +97,7 @@ pub(crate) fn new_spec_entry(field: &str, data: JsonValue, device_id: &str) -> E
         Some(data),
         Some(meta_occur_time()),
         Some(Dur::moment()),
-        device_id,
+        client_id,
     );
     row.slug = Slug::new(spec_slug(field));
     // A literal template: the slug stays `spec:<field>` through every edit.
@@ -334,10 +334,10 @@ impl Db {
         Ok(())
     }
 
-    /// Stamp the spec entries this handle writes with `device_id`. The
+    /// Stamp the spec entries this handle writes with `client_id`. The
     /// first call wins; unset, they say `local`.
-    pub fn set_device_id(&self, device_id: &str) {
-        let _ = self.device_id.set(device_id.to_string());
+    pub fn set_client_id(&self, client_id: &str) {
+        let _ = self.client_id.set(client_id.to_string());
     }
 
     /// Write `spec` as its entry: an update of the live one (a new version
@@ -380,8 +380,8 @@ impl Db {
                 self.get_entry(&row.slug)
             }
             None => {
-                let device = self.device_id.get().map_or("local", String::as_str);
-                let row = new_spec_entry(&spec.field, data, device);
+                let client = self.client_id.get().map_or("local", String::as_str);
+                let row = new_spec_entry(&spec.field, data, client);
                 self.insert_entry(&row)?;
                 self.get_entry(&row.slug)
             }
@@ -613,7 +613,7 @@ mod tag_tests {
         db.conn()
             .execute(
                 "INSERT INTO entries (hid, slug, content_hash, field, occur_time, create_time,
-                                      modify_time, device_id)
+                                      modify_time, client_id)
                  VALUES (?1, ?2, ?1, 'spec', '2026-09-01T00:00:00+00:00',
                          '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z', 'peer')",
                 rusqlite::params![plain.hid, plain.slug],

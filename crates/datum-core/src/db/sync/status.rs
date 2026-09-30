@@ -16,9 +16,9 @@ use crate::error::{DatumError, Result};
 #[derive(Debug, Clone)]
 pub struct PeerStatus {
     pub endpoint: String,
-    pub device: Option<String>,
-    pub label: String,
     pub client: Option<String>,
+    pub label: String,
+    pub kind: Option<String>,
     pub revoked: bool,
     /// `synced`, `pending`, `error` or `never`.
     pub state: &'static str,
@@ -150,9 +150,9 @@ impl Db {
             };
             out.push(PeerStatus {
                 endpoint: m.endpoint.clone(),
-                device: m.device.clone(),
-                label: m.label.clone(),
                 client: m.client.clone(),
+                label: m.label.clone(),
+                kind: m.kind.clone(),
                 revoked: m.revoked.is_some(),
                 state,
                 to_send,

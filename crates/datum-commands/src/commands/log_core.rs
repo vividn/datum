@@ -23,7 +23,7 @@ use serde_json::{json, Value as JsonValue};
 
 use crate::{
     args::{LogArgs, LogArgsExt},
-    config::device_id,
+    config::client_id,
     render::{
         show_create_with_context, show_delete, show_exists, show_islast, show_rename,
         show_update_with_context, RenderContext, Surface,
@@ -314,7 +314,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         return dropped;
     }
 
-    let device = device_id()?;
+    let client = client_id()?;
 
     // `start foo -m` / `switch foo -m` is a momentary dot, not an open block:
     // stamp dur=MOMENT via the occur model — `(time_start, None)` + `Dur::moment()`
@@ -474,7 +474,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         extra_data,
         time_start,
         time_end,
-        device,
+        client,
     );
 
     // da-5ns.3: stamp the reserved columns extracted upstream onto the
@@ -589,7 +589,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     if args.no_metadata {
         entry.create_time = chrono::DateTime::UNIX_EPOCH;
         entry.modify_time = chrono::DateTime::UNIX_EPOCH;
-        entry.device_id.clear();
+        entry.client_id.clear();
     }
 
     // Stamp provenance from the CLI pre-pass. `take_` clears the slot so the

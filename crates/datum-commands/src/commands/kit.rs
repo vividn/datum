@@ -36,7 +36,7 @@ use datum_core::kit::{validate_layout_entry, FieldEntry, IndexEntry, KitToml};
 use datum_core::kit_color::resolve_color;
 
 use crate::args::{KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs};
-use crate::config::device_id;
+use crate::config::client_id;
 
 pub fn kit(cmd: KitCommand, db: &Db) -> Result<()> {
     match cmd {
@@ -311,7 +311,7 @@ fn install_toml(
         return Ok(());
     }
 
-    db.set_device_id(&device_id()?);
+    db.set_client_id(&client_id()?);
     let report = db.install_kit(&kit.kit.name, &specs, &kit.indices, args.force)?;
     // Views are independent of fields; installed in the same kit-install
     // pass so a TOML containing both lands atomically (per slice 4 bead).
@@ -326,7 +326,7 @@ fn install_toml(
     // table of their own — so they sync with the data, and the web reads
     // them beside the person's own layouts in `_internal`.
     let layout_report =
-        db.install_kit_layouts(&kit.kit.name, &kit.layouts, &device_id()?, args.force)?;
+        db.install_kit_layouts(&kit.kit.name, &kit.layouts, &client_id()?, args.force)?;
     crate::cmd::stamp_batch(db);
 
     let installed: Vec<&str> = report.installed().collect();

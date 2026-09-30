@@ -1,6 +1,6 @@
 # Byte-level `content_hash` fixtures (da-yira).
 #
-# The merge order `(modify_time, content_hash, device_id, hid)` is only
+# The merge order `(modify_time, content_hash, client_id, hid)` is only
 # deterministic across implementations if every implementation derives the
 # same `content_hash` bytes. These fixtures pin the preimage so a second
 # implementation can check itself instead of reverse-engineering the

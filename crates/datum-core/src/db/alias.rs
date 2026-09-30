@@ -46,7 +46,7 @@ fn alias_slug(name: &str) -> String {
 }
 
 /// A new alias entry for `data` (the alias's JSON, with its kit mark).
-pub(crate) fn new_alias_entry(data: JsonValue, device_id: &str) -> Entry {
+pub(crate) fn new_alias_entry(data: JsonValue, client_id: &str) -> Entry {
     let name = data["name"].as_str().unwrap_or_default().to_string();
     let mut row = Entry::new(
         ALIAS_FIELD,
@@ -55,7 +55,7 @@ pub(crate) fn new_alias_entry(data: JsonValue, device_id: &str) -> Entry {
         Some(data),
         Some(super::spec::meta_occur_time()),
         Some(Dur::moment()),
-        device_id,
+        client_id,
     );
     row.slug = Slug::new(alias_slug(&name));
     // As a layout's: the slug follows the data's name through every edit.
@@ -176,8 +176,8 @@ impl Db {
                 Ok(row.hid)
             }
             None => {
-                let device = self.device_id.get().map_or("local", String::as_str);
-                let row = new_alias_entry(data, device);
+                let client = self.client_id.get().map_or("local", String::as_str);
+                let row = new_alias_entry(data, client);
                 self.insert_entry(&row)?;
                 Ok(self.get_entry(&row.slug)?.hid)
             }

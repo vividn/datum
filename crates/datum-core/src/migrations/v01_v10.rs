@@ -261,7 +261,9 @@ pub(super) fn m8_to_9_track_ignore_unification(conn: &Connection) -> Result<()> 
             None,
             "migration-v9",
         );
-        crate::db::try_insert(conn, &entry.slug, &entry.hid, &entry)?;
+        with_live_client_column(conn, || {
+            crate::db::try_insert(conn, &entry.slug, &entry.hid, &entry)
+        })?;
     }
     Ok(())
 }

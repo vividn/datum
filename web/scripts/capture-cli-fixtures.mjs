@@ -58,7 +58,7 @@ function cli(db, argv) {
 	return cliWith({ ...process.env, DATUM_DB: db, TZ: 'UTC', NO_COLOR: '1' }, argv);
 }
 
-/** The device id the stdout script's browser half runs under too. */
+/** The client id the stdout script's browser half runs under too. */
 const STDOUT_DEVICE = 'web-parity';
 
 /** Run the CLI with exactly `env`, plus PATH. */
@@ -134,7 +134,7 @@ try {
 
 	// The stdout script: one database and one HOME for the whole run, the
 	// environment the browser's runner gives every process — the zone, a
-	// device id, colour on — and each answer masked where a write mints
+	// client id, colour on — and each answer masked where a write mints
 	// something no two runs share (tests/support/stdout.mjs).
 	const script = JSON.parse(readFileSync(STDOUT_FIXTURE, 'utf8'));
 	if (!Array.isArray(script.script) || script.script.length === 0)
@@ -143,7 +143,7 @@ try {
 	const mask = masker();
 	script.cases = script.script.map((argv) => {
 		const { code, stdout } = cliWith(
-			{ HOME: home, DATUM_DB: join(home, 'datum.db'), DATUM_DEVICE_ID: STDOUT_DEVICE, DATUM_COLOR: '1', TZ: 'UTC' },
+			{ HOME: home, DATUM_DB: join(home, 'datum.db'), DATUM_CLIENT_ID: STDOUT_DEVICE, DATUM_COLOR: '1', TZ: 'UTC' },
 			argv
 		);
 		return { argv, code, stdout: mask(stdout) };

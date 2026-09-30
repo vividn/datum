@@ -39,7 +39,7 @@ const WHERE_COLS: &[&str] = &["lat", "lon", "location"];
 const BOOK_COLS: &[&str] = &[
     "create_time",
     "modify_time",
-    "device_id",
+    "client_id",
     "deleted_at",
     "superseded_by",
 ];
@@ -160,7 +160,7 @@ fn render_column(col: &str, e: &Entry) -> String {
         "location" => render_str_opt(e.location.as_deref()),
         "create_time" => e.create_time.to_rfc3339(),
         "modify_time" => e.modify_time.to_rfc3339(),
-        "device_id" => e.device_id.clone(),
+        "client_id" => e.client_id.clone(),
         "deleted_at" => match e.deleted_at {
             Some(t) => t.to_rfc3339(),
             None => null_marker(),
@@ -237,7 +237,7 @@ mod tests {
             modify_time: chrono::DateTime::parse_from_rfc3339("2026-05-13T09:16:00Z")
                 .unwrap()
                 .with_timezone(&chrono::Utc),
-            device_id: "dev-1".to_string(),
+            client_id: "dev-1".to_string(),
             id_structure: None,
             field_structure: None,
             deleted_at: None,

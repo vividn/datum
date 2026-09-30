@@ -41,10 +41,10 @@
 //!     which opens the chain again. Every act is judged at its own HLC, so
 //!     a member's act refused while the chain was locked stays refused, and
 //!     only its acts after the unlock count.
-//!   - `describe {endpoint, device, label, client}` (da-rcb5m): what a
-//!     member is — the device it runs on (one per data directory, shared by
-//!     every db there, so one laptop's copies group as one device), its
-//!     label, `cli` or `web`. The latest per endpoint wins. Unsigned when an
+//!   - `describe {endpoint, client, label, kind}` (da-rcb5m): what a
+//!     member is — the client it runs in (one per CLI data directory or
+//!     browser profile, shared by every db there, so one installation's
+//!     copies group as one client — da-lfsei), its label, `cli` or `web`. The latest per endpoint wins. Unsigned when an
 //!     endpoint describes ITSELF; about another member, an admin act.
 //!
 //!   Every record but a genesis must be written by a member, and the same
@@ -101,11 +101,11 @@ pub fn label_problem(label: &str) -> Option<String> {
     (n > MAX_LABEL).then(|| format!("a label is at most {MAX_LABEL} characters, not {n}"))
 }
 
-/// A device id every member can print (`<client> on <device>`): not blank,
-/// and within a label's rules. `device_id()` mints a ULID, but
-/// `DATUM_DEVICE_ID` names any — datum.day's is `web-` and eight more
+/// A client id every member can print (`<kind> on <client>`): not blank,
+/// and within a label's rules. `client_id()` mints a ULID, but
+/// `DATUM_CLIENT_ID` names any — datum.day's is `web-` and eight more
 /// (da-6kpj5).
-fn is_device_id(s: &str) -> bool {
+fn is_client_id(s: &str) -> bool {
     !s.trim().is_empty() && label_problem(s).is_none()
 }
 
@@ -317,9 +317,9 @@ pub struct Member {
     pub admitted: String,
     /// `genesis` or `invite <id>`.
     pub via: String,
-    /// From its latest `describe`: its device id and `cli` / `web`.
-    pub device: Option<String>,
+    /// From its latest `describe`: its client id and `cli` / `web`.
     pub client: Option<String>,
+    pub kind: Option<String>,
     /// The HLC of the revoke: its ops from then on are refused.
     pub revoked: Option<String>,
 }
@@ -475,21 +475,27 @@ impl Chain {
         }
         match kind.as_str() {
             "describe" => {
-                let client_ok = match &r["client"] {
+                // A describe written before da-lfsei is `{device: <id>,
+                // client: cli|web}`, and a chain record is permanent.
+                let (client, kind) = match r.get("device") {
+                    Some(device) => (device, &r["client"]),
+                    None => (&r["client"], &r["kind"]),
+                };
+                let kind_ok = match kind {
                     Value::Null => true,
-                    Value::String(c) => c == "cli" || c == "web",
+                    Value::String(k) => k == "cli" || k == "web",
                     _ => false,
                 };
-                let device_ok = match &r["device"] {
+                let client_ok = match client {
                     Value::Null => true,
-                    Value::String(d) => is_device_id(d),
+                    Value::String(c) => is_client_id(c),
                     _ => false,
                 };
-                if !client_ok {
-                    return Err("a describe's client is cli or web".into());
+                if !kind_ok {
+                    return Err("a describe's kind is cli or web".into());
                 }
-                if !device_ok {
-                    return Err("a describe's device is not a device id".into());
+                if !client_ok {
+                    return Err("a describe's client is not a client id".into());
                 }
                 let m = self
                     .members
@@ -497,8 +503,8 @@ impl Chain {
                     .find(|m| m.endpoint == s("endpoint"))
                     .ok_or("not a member")?;
                 m.label = s("label");
-                m.device = r["device"].as_str().map(Into::into);
-                m.client = r["client"].as_str().map(Into::into);
+                m.client = client.as_str().map(Into::into);
+                m.kind = kind.as_str().map(Into::into);
                 Ok(())
             }
             "invite" => {
@@ -573,8 +579,8 @@ impl Chain {
             admitted: hlc.into(),
             via: via.into(),
             revoked: None,
-            device: None,
             client: None,
+            kind: None,
         });
         Ok(())
     }
@@ -694,21 +700,21 @@ impl Db {
         Ok(())
     }
 
-    /// This copy's device id: one per data directory, shared by its dbs.
-    pub fn sync_device_id(&self) -> Result<String> {
+    /// This copy's client id: one per data directory, shared by its dbs.
+    pub fn sync_client_id(&self) -> Result<String> {
         endpoint(&self.conn)?;
         Ok(self
             .conn
-            .query_row("SELECT device_id FROM sync_local", [], |r| r.get(0))?)
+            .query_row("SELECT client_id FROM sync_local", [], |r| r.get(0))?)
     }
 
     /// Write this copy's own `describe`: unsigned, as only an endpoint
     /// describing itself may be.
-    pub fn sync_describe_self(&self, label: &str, client: &str) -> Result<()> {
+    pub fn sync_describe_self(&self, label: &str, kind: &str) -> Result<()> {
         let record = json!({
             "type": "describe", "chain": self.sync_chain()?.id,
-            "endpoint": self.sync_endpoint_id()?, "device": self.sync_device_id()?,
-            "label": label, "client": client, "created": Utc::now().to_rfc3339(),
+            "endpoint": self.sync_endpoint_id()?, "client": self.sync_client_id()?,
+            "label": label, "kind": kind, "created": Utc::now().to_rfc3339(),
         });
         self.sync_chain_write(record, true)
     }

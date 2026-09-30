@@ -214,11 +214,11 @@ fn normalize_shared_occur_time(
 }
 
 pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
-    // An op is signed by this device's endpoint; the id is read only if one is.
-    // The entries' own resolver — `DATUM_DEVICE_ID` first: in the browser the
-    // `device_id` file lives and dies with each process, and a new device per
+    // An op is signed by this client's endpoint; the id is read only if one is.
+    // The entries' own resolver — `DATUM_CLIENT_ID` first: in the browser the
+    // `client_id` file lives and dies with each process, and a new client per
     // process was a new endpoint key per process (da-6kpj5, da-mmkre).
-    datum_core::db::set_device_source(|| crate::config::device_id().ok());
+    datum_core::db::set_client_source(|| crate::config::client_id().ok());
     crate::commands::sync::warn_new_members(db);
     // The `--show json` echo is one document per run, not per entry, so the
     // outermost scope is the one that prints (da-yc9w). Both dispatch entry

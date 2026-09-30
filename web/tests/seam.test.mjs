@@ -114,13 +114,13 @@ describe('logging verbs', () => {
 		});
 	});
 
-	test("every command's entry carries this browser's device id (da-mmkre)", async () => {
+	test("every command's entry carries this browser's client id (da-mmkre)", async () => {
 		await onSeam(async ({ run, entries, page }) => {
 			assert.equal((await run(['occur', 'coffee', '-t', '0700'])).code, OK);
 			assert.equal((await run(['occur', 'tea', '-t', '0701'])).code, OK);
-			const device = await page.evaluate(() => localStorage.getItem('datum-device-id'));
-			assert.match(device, /^web-/);
-			assert.deepEqual((await entries()).map((e) => e.device_id), [device, device]);
+			const client = await page.evaluate(() => localStorage.getItem('datum-client-id'));
+			assert.match(client, /^web-/);
+			assert.deepEqual((await entries()).map((e) => e.client_id), [client, client]);
 		});
 	});
 

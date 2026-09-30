@@ -271,7 +271,7 @@ impl Db {
             let row = super::spec::new_spec_entry(
                 &spec.field,
                 serde_json::to_value(spec)?,
-                &entry.device_id,
+                &entry.client_id,
             );
             insert_entry_in_tx(&tx, &row, ConflictStrategy::Ignore)?;
         }
@@ -1235,7 +1235,7 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
                     occur_time, occur_time_offset, occur_time_tz, occur_time_uncertainty,
                     dur_uncertainty,
                     lat, lon, location,
-                    create_time, modify_time, device_id,
+                    create_time, modify_time, client_id,
                     deleted_at, id_structure, field_structure,
                     raw_input, alias_chain, parser_version,
                     user_asserted_last_state, extra_metadata",
@@ -1281,7 +1281,7 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
         entry.location.as_deref(),
         entry.create_time.to_rfc3339(),
         entry.modify_time.to_rfc3339(),
-        entry.device_id,
+        entry.client_id,
         entry.deleted_at.map(|t| t.to_rfc3339()),
         entry.id_structure.as_deref(),
         entry.field_structure.as_deref(),
@@ -1382,7 +1382,7 @@ fn raw_overwrite_mutables(
             lon = ?15,
             location = ?16,
             modify_time = ?17,
-            device_id = ?18,
+            client_id = ?18,
             raw_input = ?19,
             alias_chain = ?20,
             parser_version = ?21,
@@ -1408,7 +1408,7 @@ fn raw_overwrite_mutables(
             entry.lon,
             entry.location.as_deref(),
             now,
-            entry.device_id,
+            entry.client_id,
             // §5 #11: nullable in the type, written as empty-string when None
             // so the bind round-trips against historical NOT NULL versions of
             // the column during a migration walk (m31→m32 relaxes the
@@ -1471,7 +1471,7 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
             lon = ?16,
             location = ?17,
             modify_time = ?18,
-            device_id = ?19,
+            client_id = ?19,
             id_structure = ?20,
             field_structure = ?21,
             raw_input = ?22,
@@ -1499,7 +1499,7 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
         entry.lon,
         entry.location.as_deref(),
         now,
-        entry.device_id,
+        entry.client_id,
         entry.id_structure.as_deref(),
         entry.field_structure.as_deref(),
         // §5 #11: nullable in the type, written as empty-string when None
@@ -1563,7 +1563,7 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
             lon = ?15,
             location = ?16,
             modify_time = ?17,
-            device_id = ?18,
+            client_id = ?18,
             deleted_at = ?19,
             id_structure = ?20,
             field_structure = ?21,
@@ -1592,7 +1592,7 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
             entry.lon,
             entry.location.as_deref(),
             entry.modify_time.to_rfc3339(),
-            entry.device_id,
+            entry.client_id,
             entry.deleted_at.map(|t| t.to_rfc3339()),
             entry.id_structure.as_deref(),
             entry.field_structure.as_deref(),

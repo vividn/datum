@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS entries (
     -- Bookkeeping
     create_time     TEXT NOT NULL,
     modify_time     TEXT NOT NULL,
-    device_id       TEXT NOT NULL,
+    client_id       TEXT NOT NULL,
 
     -- Soft-delete tombstone. NULL = not deleted.
     deleted_at      TEXT,
@@ -270,7 +270,7 @@ CREATE TABLE IF NOT EXISTS entry_history (
     modify_time       TEXT NOT NULL,
     raw_input         TEXT,                      -- nullable, mirrors `entries.raw_input` (§5 #11)
     alias_chain       TEXT,
-    device_id         TEXT NOT NULL,
+    client_id         TEXT NOT NULL,
     change_kind       TEXT NOT NULL,
     PRIMARY KEY (entry_hid, version)
 );
@@ -303,8 +303,8 @@ CREATE INDEX IF NOT EXISTS ops_slug ON ops(slug);
 CREATE INDEX IF NOT EXISTS ops_hlc ON ops(hlc);
 
 -- This copy's endpoint: its Ed25519 key, which signs its ops. LOCAL, never
--- synced, one row. `device_id` and `path` are the device and the file the
--- key was minted on: a file that turns up on another device, or at another
+-- synced, one row. `client_id` and `path` are the client and the file the
+-- key was minted on: a file that turns up under another client, or at another
 -- path while the original is still there, mints a new key rather than sign
 -- as the copy it was copied from (da-p79vq). '' is a key from before v44,
 -- whose path is learned on its next use.
@@ -314,7 +314,7 @@ CREATE TABLE IF NOT EXISTS sync_local (
     id              INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
     endpoint_secret TEXT NOT NULL,
     endpoint_id     TEXT NOT NULL,
-    device_id       TEXT NOT NULL,
+    client_id       TEXT NOT NULL,
     path            TEXT NOT NULL DEFAULT ''
 );
 

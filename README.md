@@ -367,7 +367,7 @@ from the table the binary itself carries:
 | `DATUM_CONFIG`        | Path to a specific `datumrc.toml`.                                                |
 | `DATUM_CONFIG_HOME`   | Override the directory `datumrc.toml` lives in.                                   |
 | `DATUM_DEFAULT_FIELD` | Field used when one is omitted from the argv.                                     |
-| `DATUM_DEVICE_ID`     | Override the per-device id stamped on entries.                                    |
+| `DATUM_CLIENT_ID`     | Override the per-installation client id stamped on entries.                       |
 | `DATUM_EDITOR`        | Editor for `datum edit`. Read FIRST, before toml `editor`, `$VISUAL`, `$EDITOR`.  |
 | `DATUM_ID_DELIMITER`  | Delimiter that collapses empty `%key%` segments in a slug template (default `:`). |
 | `DATUM_WEEK_START`    | Weekday a week opens on (`monday`…`sunday`, or `1`-`7`; default Monday).          |
