@@ -457,29 +457,22 @@ fn state_spans(
             .unwrap_or_default()
             .into(),
     };
-    if let Some(from) = from {
-        // The last span runs to the next change, or to `now` when there
-        // is none: past `now`, the next change can be any later one.
-        let until = match until > DatumTime::now().utc {
-            true => DateTime::<Utc>::from_timestamp(253_402_300_799, 0).expect("9999-12-31"),
-            false => until,
-        };
-        let window = FieldStateRows::load_transitions_between(db.conn(), field, from, until)?;
-        let changes = window.changes_between(from, until);
-        // A Null at `from` that a row may decide is the one state the
-        // window cannot label: the whole history's walk keeps a Null run
-        // as one change whether a row decides it or none does, so the
-        // run's label is set where it began, which the window need not
-        // reach.
-        let null = changes
-            .first()
-            .is_none_or(|c| c.at != from || c.state.is_null());
-        if !(null && window.says_null()) {
-            return Ok(changes.into_iter().map(span).collect());
-        }
-    }
-    let history = FieldStateRows::load_transitions(db.conn(), field)?;
-    Ok(history.changes().into_iter().map(span).collect())
+    let Some(from) = from else {
+        let history = FieldStateRows::load_transitions(db.conn(), field)?;
+        return Ok(history.changes().into_iter().map(span).collect());
+    };
+    // The last span runs to the next change, or to `now` when there is
+    // none: past `now`, the next change can be any later one.
+    let until = match until > DatumTime::now().utc {
+        true => DateTime::<Utc>::from_timestamp(253_402_300_799, 0).expect("9999-12-31"),
+        false => until,
+    };
+    let window = FieldStateRows::load_transitions_between(db.conn(), field, from, until)?;
+    Ok(window
+        .changes_between(from, until)
+        .into_iter()
+        .map(span)
+        .collect())
 }
 
 /// The rollup of an already-loaded timeline over `[start, end)`.
@@ -1833,17 +1826,20 @@ mod tests {
                 }
             }
         }
+        let args = StatsArgs::default();
+        // da-3k9k1: the gap after a stateless block is a Null no row
+        // decides, so the whole history leaves it unattributed too.
+        let whole = load_timeline("stateless-blocks", &db, None, base).unwrap();
+        let spans: Vec<_> = whole
+            .spans
+            .iter()
+            .map(|s| (s.from, s.state.as_deref()))
+            .collect();
+        assert!(spans.contains(&(at(200).utc, None)), "{spans:?}");
         // PR #369 review: a window inside a Null decided BEFORE it, with no
         // row of its own. The deciding row is still read (the look-back),
         // so the whole history answers there.
         let (from, until) = (at(450).utc, at(480).utc);
-        let window =
-            FieldStateRows::load_transitions_between(db.conn(), "null-switch", from, until);
-        assert!(
-            window.unwrap().says_null(),
-            "the null switch before the window is read"
-        );
-        let args = StatsArgs::default();
         let roll = |from| {
             let t = load_timeline("null-switch", &db, from, until).unwrap();
             rollup("null-switch", None, &args, &t, Some(at(450).utc), until)

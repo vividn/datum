@@ -820,19 +820,10 @@ impl FieldStateRows {
         }
     }
 
-    /// Does a row say Null — no state, or `null`? Only such a row can
-    /// DECIDE a Null ([`effective_state`]); without one, every Null these
-    /// rows resolve to is one no row decides (an occur dot never does).
-    pub fn says_null(&self) -> bool {
-        let null = |v: &Option<Value>| v.as_ref().is_none_or(Value::is_null);
-        self.rows
-            .iter()
-            .any(|r| null(&r.state) || r.following_state.as_ref().is_some_and(Value::is_null))
-    }
-
     /// Every change in the field's state, oldest first: the oracle read at
     /// each row's edges (a leading edge, and a block's trailing edge),
-    /// kept where the answer differs from the one before it.
+    /// kept where the answer differs from the one before it — in state, or
+    /// in whether a row decides it.
     pub fn changes(&self) -> Vec<StateChange<'_>> {
         self.changes_within(None, None)
     }
@@ -881,7 +872,11 @@ impl FieldStateRows {
         for group in edges.chunk_by(|a, b| a.0 == b.0) {
             let at = group[0].0;
             let (window, eff) = self.resolve(at, None);
-            if out.last().is_some_and(|c| c.state == eff.state) {
+            // A Null a row decides and one none does are two changes
+            // (da-3k9k1): a reader keyed on governance tells them apart.
+            if out.last().is_some_and(|c| {
+                c.state == eff.state && c.governing.is_some() == eff.governing.is_some()
+            }) {
                 continue;
             }
             let governing = eff.governing.map(|i| window[i]);
