@@ -32,8 +32,11 @@ on:
   push:
     # `ci/**` is for bisecting a red main (da-2f1vp): push the midpoint commit
     # as `ci/<sha8>`, read its verdict, delete the branch. Such a run is never
-    # dropped as superseded — that step is main's alone.
-    branches: [main, 'ci/**']
+    # dropped as superseded — that step is main's and staging's alone.
+    # `staging` is the merge train's (ct-yesk): approved PRs land there, and
+    # main only fast-forwards to a staging commit whose run is green, so a
+    # push to staging runs exactly as a push to main does.
+    branches: [main, staging, 'ci/**']
     # `hero/**` used to be here so a hero's branch reached the runner through
     # the mirror before the cutover, when the forge had no PRs. Since
     # 2026-09-16 17:0x branches are pushed to the forge itself and their PRs
@@ -43,19 +46,21 @@ on:
 # One run per ref at a time. On a PR ref a newer push cancels the run of the
 # head it replaced instead of queueing behind it: four runs sat «waiting» at
 # 17:09 behind one another, each for a head that no longer mattered. NOT on
-# main (da-rwbq9): a main run already RUNNING is never cancelled — a merge
-# does not supersede an answer being worked out — so main's runs queue.
+# main or staging (da-rwbq9): a run already RUNNING there is never cancelled —
+# a merge does not supersede an answer being worked out — so their runs queue.
+# Staging is main's twin because the train promotes only a green staging
+# commit (ct-yesk): its verdict is the one main waits on.
 #
-# But main verifies its NEWEST commit only (vividn, 2026-09-24, da-2f1vp). At
-# 40–60 min a run, a day of merges queued eleven runs behind one that had
-# waited three hours to start, and a verdict that late tells nobody anything.
-# So a queued main run that starts for a commit main has moved past cancels
-# itself (the first step below) and ends CANCELLED, never green; only the
-# tip is verified. An older commit is verified on demand, when main goes red,
-# by bisecting through `ci/**` branches (see `on.push`).
+# But main and staging verify their NEWEST commit only (vividn, 2026-09-24,
+# da-2f1vp). At 40–60 min a run, a day of merges queued eleven runs behind
+# one that had waited three hours to start, and a verdict that late tells
+# nobody anything. So a queued run that starts for a commit its branch has
+# moved past cancels itself (the first step below) and ends CANCELLED, never
+# green; only the tip is verified. An older commit is verified on demand,
+# when main goes red, by bisecting through `ci/**` branches (see `on.push`).
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/staging' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -74,15 +79,15 @@ jobs:
     # on 3 cores the bead expects 45–75 min. The runner's own cap is 3 h.
     timeout-minutes: 150
     steps:
-      # A main run for a commit main has moved past cancels its own run with
-      # the job's token (write on its own repo: Forgejo 16.0.5's
-      # routers/api/v1/permissions/repo_access.go) and then waits for the
-      # runner to kill it, so no step after this one runs. The forge maps a
+      # A main or staging run for a commit its branch has moved past cancels
+      # its own run with the job's token (write on its own repo: Forgejo
+      # 16.0.5's routers/api/v1/permissions/repo_access.go) and then waits for
+      # the runner to kill it, so no step after this one runs. The forge maps a
       # cancelled job to a `failure` commit status — never `success`. If the
       # tip cannot be read or the cancel is refused, the run goes on in full:
       # a real verdict, as before this step existed.
-      - name: Cancel this run if main has moved past its commit
-        if: github.ref == 'refs/heads/main'
+      - name: Cancel this run if its branch has moved past its commit
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'
         env:
           TOKEN: ${{ github.token }}
           SERVER: ${{ github.server_url }}
@@ -90,9 +95,9 @@ jobs:
           set -uo pipefail
           api="${SERVER%/}/api/v1/repos/${{ github.repository }}"
           call() { printf 'header = "Authorization: token %s"\n' "$TOKEN" | curl -sSf -K - "$@"; }
-          tip=$(call "$api/branches/main" | node -p 'JSON.parse(require("fs").readFileSync(0)).commit.id' 2>/dev/null) || tip=
-          if [ -z "$tip" ]; then echo "::warning::could not read main's tip; verifying ${{ github.sha }} in full"; exit 0; fi
-          if [ "$tip" = "${{ github.sha }}" ]; then echo "${{ github.sha }} is main's tip"; exit 0; fi
+          tip=$(call "$api/branches/${{ github.ref_name }}" | node -p 'JSON.parse(require("fs").readFileSync(0)).commit.id' 2>/dev/null) || tip=
+          if [ -z "$tip" ]; then echo "::warning::could not read ${{ github.ref_name }}'s tip; verifying ${{ github.sha }} in full"; exit 0; fi
+          if [ "$tip" = "${{ github.sha }}" ]; then echo "${{ github.sha }} is ${{ github.ref_name }}'s tip"; exit 0; fi
           echo "superseded by $tip"
           call -X POST "$api/actions/runs/${{ github.run_id }}/cancel" || { echo "::warning::cancel refused; verifying ${{ github.sha }} in full"; exit 0; }
           sleep 600
@@ -108,9 +113,11 @@ jobs:
       # it), web/, Cargo.*, .forgejo/, and the rest of crates/*/tests/ —
       # web/tests/dbio.test.mjs reads crates/datum-cli/tests/fixtures/. Markdown
       # under web/ or crates/*/src/ runs too (web/static/ is served), and so
-      # does an empty diff. Every push to main runs everything. WEB is always
-      # set and the web steps test `== '1'`: an expression compares loosely,
-      # so an UNSET env.WEB equals '0' and `!= '0'` would skip them on main.
+      # does an empty diff. Every push runs everything — to main, and to
+      # staging, whose green commit is what main is promoted to (ct-yesk). WEB
+      # is always set and the web steps test `== '1'`: an expression compares
+      # loosely, so an UNSET env.WEB equals '0' and `!= '0'` would skip them on
+      # a push.
       - name: Can this change reach the web?
         env:
           EVENT: ${{ github.event_name }}
