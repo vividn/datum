@@ -72,7 +72,7 @@ interface Peer {
 	revoked: boolean;
 }
 
-type Call = { op: 'offer' } | { op: 'connect'; ticket: string };
+type Call = { op: 'offer'; secret?: string } | { op: 'connect'; ticket: string };
 
 const states = writable<Record<string, SyncState>>({});
 /** Every database's sync state this tab has heard, from its leader. */
@@ -242,7 +242,9 @@ class Leader {
 			if (this.chain) await cli(['--db', this.db, 'sync', 'chain', 'rename', this.label]);
 			return report;
 		}
-		const { secret } = JSON.parse(await must(['--db', this.db, 'sync', 'new-invite']));
+		// An invite the page wrote already (the Sync widget, approved with a
+		// passkey in the tab tapped — da-bjxts), or a new one.
+		const secret = c.secret ?? JSON.parse(await must(['--db', this.db, 'sync', 'new-invite'])).secret;
 		// The first invite starts the chain, and with it the endpoint.
 		await this.refresh();
 		// Any member can admit the redeemer.
@@ -351,11 +353,12 @@ async function call<T>(db: string, c: Call): Promise<T> {
 }
 
 /**
- * A ticket for another copy to redeem (`datum sync chain invite`): a new chain
- * invite, starting an open chain when the database is in none.
+ * A ticket for another copy to redeem (`datum sync chain invite`): for the
+ * invite whose `secret` is given, or a new one, starting an open chain when
+ * the database is in none.
  */
-export function syncOffer(db: string): Promise<string> {
-	return call(db, { op: 'offer' });
+export function syncOffer(db: string, secret?: string): Promise<string> {
+	return call(db, { op: 'offer', secret });
 }
 
 /** Redeem `ticket` and sync (`datum sync chain connect`). */

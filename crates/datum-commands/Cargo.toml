@@ -52,6 +52,8 @@ regex-lite = { workspace = true }
 unicode-width = { workspace = true }
 # Vets a field's custom SVG icon (da-45wgz) before it is stored.
 roxmltree = "0.21"
+# `sync qr`: the invite ticket datum.day shows as a QR (da-bjxts).
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 tempfile = { version = "3", optional = true }
 flate2 = { workspace = true }
 tar = { workspace = true }

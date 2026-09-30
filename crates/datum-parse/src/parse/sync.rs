@@ -88,6 +88,12 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 admin_key: o.get("admin-key"),
             }
         }
+        "approve" => SyncCommand::Approve {
+            link: opts(&mut rest, &[], &[], 1..=1)?.positional.remove(0),
+        },
+        "qr" => SyncCommand::Qr {
+            text: opts(&mut rest, &[], &[], 1..=1)?.positional.remove(0),
+        },
         other => {
             return Err(unknown(
                 "sync",

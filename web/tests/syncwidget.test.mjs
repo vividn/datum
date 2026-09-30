@@ -242,6 +242,8 @@ describe('the sync widget', () => {
 			assert.match(await widget.getAttribute('class'), /\bfull\b/);
 			assert.ok(await widget.locator('.seen').count());
 			assert.match(await widget.locator('.legend').innerText(), /synced/);
+			// The actions (da-bjxts) are the full form's.
+			assert.ok(await widget.locator('.actions button, .chain').count());
 
 			// registry.ts reaches Svelte components node cannot load: the hook stubs them.
 			resolveLibAsSource(import.meta.url);
@@ -250,7 +252,7 @@ describe('the sync widget', () => {
 			await widget.evaluate((e, w) => (e.style.width = `${w}px`), floor);
 			const h = await page.waitForFunction((sel) => !document.querySelector(sel).classList.contains('full'), `${WIDGET} .sync`);
 			await h.dispose();
-			assert.equal(await widget.locator('.seen, .kind, .at').count(), 0);
+			assert.equal(await widget.locator('.seen, .kind, .at, .actions, .add, .chain').count(), 0);
 			assert.doesNotMatch(await widget.locator('.legend').innerText(), /synced/);
 			// Symbols and dots still: every cell keeps its shape.
 			assert.deepEqual(

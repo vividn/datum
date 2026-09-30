@@ -10,8 +10,18 @@
 	Compact (symbols and dots) at the legible floor, full (names, kinds,
 	times) above `FULL_PX`.
 
-	Every CLI read is $lib/syncView.ts's. The actions (da-bjxts) go in the
-	two empty `.actions` slots: a database's header, and a client's row.
+	Every CLI read and act is $lib/syncView.ts's. The actions (da-bjxts),
+	drawn full-size only: a database's header turns sync on or adds a
+	device (the ticket as a QR and as text); a client's row renames or
+	revokes it; under the table each chain says whether it is open or which
+	passkeys lock it. An act in a locked chain is approved with a passkey
+	in this page, and `/sync/approve#<record>` draws the approval card on
+	top, which names what the passkey signs — the device, the database, the
+	key, and whether this browser made it — before it offers the passkey,
+	since a link is anyone's to send: approved, the record is written into this browser's copy of that
+	chain's database when it holds one, and sync takes it to the device that
+	asked — else the card shows the code to paste. Notices of new members
+	and unlocks stay above the table until acknowledged.
 
 	It is a PLACE (da-6du3o): the commands widget's one `Sync` button opens
 	it (a modal on a desktop, a tab on a phone — da-jozgv), so the raw `sync` subcommands the widget stood in for are
@@ -25,7 +35,27 @@
 	import { currentDb, INTERNAL_DB } from '$lib/database.js';
 	import { listDatabases } from '$lib/databases.js';
 	import { syncStates } from '$lib/sync.js';
-	import { readSync, table, type DbSync, type Mark } from '$lib/syncView.js';
+	import { syncOffer } from '$lib/sync.js';
+	import {
+		approvalWords,
+		approveInto,
+		approving,
+		markOwn,
+		newInvite,
+		ownKeys,
+		qr,
+		readSync,
+		syncAct,
+		table,
+		type Admin,
+		type DbSync,
+		type Mark,
+		type Notice,
+		type Row
+	} from '$lib/syncView.js';
+	import { approve, approveRecord, createPasskey } from '$lib/passkey.js';
+	import { ask, confirm } from '$lib/confirm.js';
+	import type { RunResult } from '$lib/run.js';
 	import { act } from '$lib/act.js';
 	import { prefill } from '$lib/bar.js';
 	import { grammar } from './engine.js';
@@ -45,10 +75,30 @@
 	let again = false;
 	let stops: (() => void)[] = [];
 	let opened: string | null = null;
+	/** An act under way, and how the last one failed. */
+	let busy = false;
+	let failure = '';
+	/** The ticket of the last device invited, and its QR. */
+	let offer: { db: string; ticket: string; svg: string } | null = null;
+	/** The approval card's outcome: written here, or the code to paste. */
+	let approval: { done?: string; code?: string } = {};
+	/**
+	 * The card's record resolved against the held copy of its chain, before
+	 * the passkey is offered: which database (none held: the code), and what
+	 * approving it does, in words.
+	 */
+	let card: { link: string; db?: string; words: string[] } | null = null;
+
+	$: if (browser) void resolve($approving);
 
 	$: if (browser) void read(epoch);
 	$: rows = table(dbs, $syncStates);
 	$: full = width >= FULL_PX;
+
+	async function databases(): Promise<string[]> {
+		const names = (await listDatabases()).filter((n) => n !== INTERNAL_DB);
+		return names.length ? names : [currentDb()];
+	}
 
 	async function read(_epoch?: number): Promise<void> {
 		if (reading) return void (again = true);
@@ -56,8 +106,7 @@
 		try {
 			do {
 				again = false;
-				const names = (await listDatabases()).filter((n) => n !== INTERNAL_DB);
-				const listed = names.length ? names : [currentDb()];
+				const listed = await databases();
 				if (listed.join() !== dbs.map((d) => d.db).join()) {
 					stops.forEach((stop) => stop());
 					stops = listed.map((db) => onAnyChange(() => void read(), db));
@@ -71,6 +120,94 @@
 	}
 
 	onDestroy(() => stops.forEach((stop) => stop()));
+
+	async function resolve(link: string | null): Promise<void> {
+		// A new link is a new card: the last one's outcome goes with it.
+		card = null;
+		approval = {};
+		const record = link && approveRecord(link);
+		if (!link || !record) return;
+		const d = (await readSync(await databases())).find((d) => d.chain && d.chain === record.chain);
+		if (link === $approving) card = { link, db: d?.db, words: approvalWords(record, d, ownKeys()) };
+	}
+
+	async function doing(what: () => Promise<unknown>): Promise<void> {
+		busy = true;
+		failure = '';
+		try {
+			await what();
+		} catch (e) {
+			failure = (e as Error).message;
+		} finally {
+			busy = false;
+			void read();
+		}
+	}
+
+	function ok(r: RunResult): RunResult {
+		if (r.code !== 0) throw new Error(r.stderr.replace(/^error: /, '').trim());
+		return r;
+	}
+
+	const addDevice = (db: string) =>
+		doing(async () => {
+			const ticket = await syncOffer(db, await newInvite(db));
+			offer = { db, ticket, svg: await qr(ticket) };
+		});
+
+	const rename = (row: Row) =>
+		doing(async () => {
+			const label = await ask(`Rename ${row.label} to`, 'rename', row.label);
+			if (!label || label === row.label) return;
+			for (const [db, endpoint] of Object.entries(row.endpoints))
+				ok(await syncAct(db, ['chain', 'rename', ...(row.here ? [] : [endpoint]), label]));
+		});
+
+	const revoke = (row: Row) =>
+		doing(async () => {
+			const dbs = Object.keys(row.endpoints);
+			if (!(await confirm(`Revoke ${row.label}? It can no longer sync ${dbs.join(', ')}.`, 'revoke'))) return;
+			for (const db of dbs) ok(await syncAct(db, ['chain', 'revoke', row.endpoints[db]]));
+		});
+
+	const addAdmin = (d: DbSync) =>
+		doing(async () => {
+			const label = await ask('Name the passkey', 'add', 'passkey');
+			if (!label) return;
+			ok(await syncAct(d.db, ['admin', 'add', await createPasskey(label)]));
+			// Remembered, so an approval card can say a key is this browser's.
+			const before = new Set((d.admins ?? []).map((a) => a.key));
+			const { admins } = JSON.parse(ok(await syncAct(d.db, ['admin', 'list', '--json'])).stdout) as { admins: Admin[] };
+			markOwn(admins.map((a) => a.key).filter((k) => !before.has(k)));
+		});
+
+	const removeAdmin = (d: DbSync, a: Admin) =>
+		doing(async () => {
+			const last = d.admins?.length === 1;
+			const unlock = 'This unlocks the chain: any device can add, revoke or rename devices.';
+			if (last && !(await confirm(unlock, 'unlock'))) return;
+			ok(await syncAct(d.db, ['admin', 'remove', a.key, ...(last ? ['--allow-unlock'] : [])]));
+		});
+
+	const ack = (db: string, n: Notice) =>
+		doing(async () => ok(await syncAct(db, ['chain', 'ack', n.kind === 'unlock' ? 'unlock' : n.subject])));
+
+	const pause = (d: DbSync) => doing(async () => ok(await syncAct(d.db, [d.paused ? 'resume' : 'pause'])));
+
+	const approveHere = (c: { link: string; db?: string }) =>
+		doing(async () => {
+			const code = await approve(c.link);
+			if (!c.db) return void (approval = { code });
+			ok(await approveInto(c.db, c.link, code));
+			approval = {
+				done: `Approved in ${c.db}. It reaches the device that asked when it next syncs: press Enter at its prompt — nothing to paste.`
+			};
+		});
+
+	function dismiss(): void {
+		approving.set(null);
+		approval = {};
+	}
 
 	function time(at?: number): string {
 		if (at === undefined || Number.isNaN(at)) return '';
@@ -87,26 +224,81 @@
 
 <Pane title="sync">
 	<div class="sync" class:full bind:clientWidth={width}>
+		{#if $approving}
+			<section class="card approve">
+				<p>
+					Approve with your passkey?
+					<button type="button" class="close" aria-label="dismiss" on:click={dismiss}>×</button>
+				</p>
+				{#if card}
+					<ul class="what">
+						{#each card.words as line}<li>{line}</li>{/each}
+					</ul>
+				{:else if !approveRecord($approving)}
+					<p class="failure">Not an approve link: it carries no record.</p>
+				{/if}
+				{#if approval.done}
+					<p class="done">{approval.done}</p>
+				{:else if approval.code}
+					<p>This browser holds no copy of that chain’s database. Paste this at the prompt that asked:</p>
+					<code class="code">{approval.code}</code>
+				{:else}
+					<button type="button" use:act={'run'} disabled={busy || !card} on:click={() => card && approveHere(card)}>approve with passkey</button>
+				{/if}
+			</section>
+		{/if}
+		{#each dbs as d (d.db)}
+			{#each d.notices ?? [] as n (n.subject + n.kind)}
+				<p class="notice" data-db={d.db}>
+					⚠ {d.db}: {n.text}
+					<button type="button" use:act={'run'} disabled={busy} on:click={() => ack(d.db, n)}>ok</button>
+				</p>
+			{/each}
+		{/each}
+		{#if offer}
+			<section class="card offer" data-db={offer.db}>
+				<p>
+					Add a device to {offer.db}, within 10 minutes — scan, or on the device run:
+					<button type="button" class="close" aria-label="dismiss" on:click={() => (offer = null)}>×</button>
+				</p>
+				<div class="qr">{@html offer.svg}</div>
+				<code class="code ticket">datum sync chain connect {offer.ticket}</code>
+				<button type="button" use:act={'run'} on:click={() => navigator.clipboard?.writeText(`datum sync chain connect ${offer?.ticket}`)}>copy</button>
+			</section>
+		{/if}
+		{#if failure}<p class="failure" role="alert">{failure}</p>{/if}
 		<table>
 			<thead>
 				<tr>
 					<th class="client" scope="col">{full ? 'client' : ''}</th>
 					{#each dbs as d (d.db)}
-						<th scope="col" data-db={d.db} title={d.db}><span class="name">{d.db}</span><span class="actions"></span></th>
+						<th scope="col" data-db={d.db} title={d.db}
+							><span class="name">{d.db}</span
+							>{#if full}<span class="actions"
+									><button type="button" use:act={'run'} disabled={busy} on:click={() => addDevice(d.db)}
+										>{d.chain ? '+ device' : 'turn on sync'}</button
+									></span
+								>{/if}</th
+						>
 					{/each}
 				</tr>
 			</thead>
 			<tbody>
 				{#each rows as row (row.key)}
-					<tr data-client={row.key} data-reach={row.reach} class:here={row.here}>
+					<tr data-client={row.key} data-reach={row.reach} class:here={row.here} class:revoked={row.revoked}>
 						<th class="client" scope="row" title="{row.label}{row.kind ? ` · ${row.kind}` : ''} · {seen(row.reach, row.lastSeen)}">
 							<span class="dot {row.reach}" aria-label={seen(row.reach, row.lastSeen)}>{DOT[row.reach]}</span>
 							<span class="name">{row.label}</span>
 							{#if full}
 								{#if row.kind && row.kind !== row.label}<span class="kind">{row.kind}</span>{/if}
-								<span class="seen">{row.here ? 'this client' : seen(row.reach, row.lastSeen)}</span>
+								<span class="seen">{row.here ? 'this client' : row.revoked ? 'revoked' : seen(row.reach, row.lastSeen)}</span>
+								{#if Object.keys(row.endpoints).length}
+									<span class="actions">
+										<button type="button" use:act={'open'} disabled={busy} on:click={() => rename(row)}>rename</button>
+										{#if !row.here}<button type="button" use:act={'open'} disabled={busy} on:click={() => revoke(row)}>revoke</button>{/if}
+									</span>
+								{/if}
 							{/if}
-							<span class="actions"></span>
 						</th>
 						{#each dbs as d (d.db)}
 							{@const cell = row.cells[d.db]}
@@ -118,6 +310,7 @@
 								{/if}
 								{#if cell.reader}<span class="reader" aria-hidden="true">{READER}</span>{/if}
 								{#if full && cell.stale && time(cell.at)}<span class="at">{time(cell.at)}</span>{/if}
+								{#if full && cell.mark === 'none' && !row.revoked}<button type="button" class="add" use:act={'run'} disabled={busy} aria-label="add to {d.db}" on:click={() => addDevice(d.db)}>+</button>{/if}
 								{#if opened === `${row.key} ${d.db}`}<p class="reason">{cell.error}</p>{/if}
 							</td>
 						{/each}
@@ -132,8 +325,30 @@
 			<span class="coming" title="partial sync: coming">⛛{#if full}&nbsp;partial (coming){/if}</span>
 			<span class="reader" title="read-only">{READER}{#if full}&nbsp;read-only{/if}</span>
 		</p>
+		{#if full}
+			{#each dbs.filter((d) => d.chain) as d (d.db)}
+				<p class="chain" data-db={d.db}>
+					{d.db}:
+					{#if d.admins?.length}
+						locked by
+						{#each d.admins as a (a.key)}
+							<span class="admin">{a.label}<button type="button" class="close" disabled={busy} aria-label="remove {a.label}" on:click={() => removeAdmin(d, a)}>×</button></span>
+						{/each}
+						<button type="button" use:act={'open'} disabled={busy} on:click={() => addAdmin(d)}>+ passkey</button>
+					{:else}
+						<span class="quiet">no admin: any device can add devices</span>
+						<button type="button" use:act={'open'} disabled={busy} on:click={() => addAdmin(d)}>add admin</button>
+					{/if}
+				</p>
+			{/each}
+		{/if}
 		<details class="advanced">
 			<summary>Advanced</summary>
+			{#each dbs.filter((d) => d.chain) as d (d.db)}
+				<button type="button" class="pause" use:act={'run'} disabled={busy} data-db={d.db} on:click={() => pause(d)}
+					>{d.paused ? `resume ${d.db}` : `pause ${d.db}`}</button
+				>
+			{/each}
 			{#each $grammar?.get('sync')?.subcommands ?? [] as sub (sub)}
 				<button
 					type="button"
@@ -247,6 +462,74 @@
 		margin: 0.3rem 0.3rem 0 0;
 		padding: 0.1rem 0.5rem;
 		min-height: 24px;
+	}
+	.actions button,
+	.add,
+	.card button,
+	.chain button,
+	.notice button {
+		margin-left: 0.3rem;
+		padding: 0 0.4rem;
+		font: inherit;
+		font-size: 0.85em;
+	}
+	/* The design language ($lib/act.ts): a DOUBLE outline acts at once, a
+	   SINGLE one of the accent opens something. */
+	button:global([data-act='run']) {
+		border: 3px double var(--accent);
+		color: var(--ink-bright);
+	}
+	button:global([data-act='open']) {
+		border: 1px solid var(--accent);
+	}
+	.close {
+		background: none;
+		border: 0;
+		color: var(--muted);
+		cursor: pointer;
+	}
+	.card,
+	.notice,
+	.failure {
+		margin: 0 0 0.5rem;
+		padding: 0.4rem;
+		border: 1px solid var(--rule);
+		white-space: normal;
+	}
+	.notice {
+		color: var(--warn);
+	}
+	.failure {
+		color: var(--error);
+	}
+	.qr :global(svg) {
+		display: block;
+		width: 12rem;
+		height: 12rem;
+		margin: 0.4rem 0;
+	}
+	.code {
+		display: block;
+		overflow-wrap: anywhere;
+		user-select: all;
+		font-size: 0.8em;
+	}
+	.revoked .name {
+		text-decoration: line-through;
+		color: var(--quiet);
+	}
+	.chain {
+		margin: 0.4rem 0 0;
+		font-size: 0.85em;
+		color: var(--muted);
+	}
+	.what {
+		margin: 0.3rem 0;
+		padding-left: 1.2rem;
+		color: var(--ink-bright);
+	}
+	.quiet {
+		color: var(--quiet);
 	}
 	.legend {
 		display: flex;

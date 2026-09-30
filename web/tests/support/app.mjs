@@ -368,9 +368,13 @@ async function openApp({
 	reducedMotion,
 	home = 'main',
 	desk = DESK,
-	timezone = TIMEZONE
+	timezone = TIMEZONE,
+	origin
 } = {}) {
 	const options = {
+		// An origin of the test's own is served by a route, which a service
+		// worker would go around.
+		...(origin ? { serviceWorkers: 'block' } : {}),
 		...device,
 		timezoneId: timezone,
 		locale,
@@ -402,9 +406,10 @@ async function openApp({
 					if (localStorage.getItem(lock) === null) localStorage.setItem(lock, '0');
 				} catch {}
 			}, home);
+		if (origin) await serveAt(context, origin);
 		await prepare?.(context);
 		const page = await context.newPage();
-		const app = await open(page, query);
+		const app = await open(page, query, origin);
 		if (clock !== null) app.clock = clockOf(page, clock, holdTimers);
 		return { app, close };
 	} catch (e) {
@@ -509,11 +514,25 @@ export function sharedApp(options) {
 	return open;
 }
 
+/**
+ * The app at `origin` as well as the preview server's own: `https://datum.day`
+ * for a passkey, whose assertion the CLI takes from that origin alone
+ * (da-bjxts). Every request there is the preview server's answer, headers
+ * and all — the cross-origin isolation the database worker needs included.
+ */
+function serveAt(context, origin) {
+	return context.route(`${origin}/**`, async (route) => {
+		const url = new URL(route.request().url());
+		const response = await route.fetch({ url: baseUrl() + url.pathname + url.search });
+		await route.fulfill({ response });
+	});
+}
+
 /** Navigate to the day frame and wait until the database is open. */
-async function open(page, query) {
+async function open(page, query, origin = baseUrl()) {
 	const errors = [];
 	page.on('pageerror', (e) => errors.push(String(e)));
-	await page.goto(baseUrl() + '/' + query);
+	await page.goto(origin + '/' + query);
 	await ready(page);
 	await countRuns(page);
 	// What the database's change counter reads as it opened — empty, on a
@@ -1177,7 +1196,7 @@ function app(page, errors, query, clean, locks, internal) {
 		 * is waited for, so the tab is open by the time this returns.
 		 */
 		async goto(path) {
-			await page.goto(baseUrl() + path);
+			await page.goto(new URL(path, page.url()).href);
 			await ready(page);
 			await page.waitForFunction(() => location.pathname === '/' || !!document.querySelector('main .notice'));
 			// A new document: `idle` counts through the runner installed here.

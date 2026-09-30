@@ -172,7 +172,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             };
             record["chain"] = chain.id.clone().into();
             record["created"] = chrono::Utc::now().to_rfc3339().into();
-            db.sync_chain_write(sign(record, &chain, admin_key.as_deref())?, true)?;
+            sign(db, record, &chain, admin_key.as_deref())?;
             println!("{said}");
         }
         SyncCommand::Members { show } => members(db, show == ShowFlag::Json)?,
@@ -199,7 +199,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                     "client": m.client, "label": label, "kind": m.kind,
                     "created": chrono::Utc::now().to_rfc3339(),
                 });
-                db.sync_chain_write(sign(record, &chain, admin_key.as_deref())?, true)?;
+                sign(db, record, &chain, admin_key.as_deref())?;
             }
             println!("renamed {} to {label}", m.label);
         }
@@ -245,8 +245,24 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             admin_key,
         } => {
             let expires = std::time::Duration::from_secs(expires_secs);
-            let (secret, expires_at) = invite(db, expires, admin_key.as_deref(), reader)?;
-            println!("{}", json!({"secret": secret, "expires": expires_at}));
+            invite(db, expires, admin_key.as_deref(), reader, true)?;
+        }
+        SyncCommand::Approve { link } => {
+            let chain = db.sync_chain()?;
+            ensure!(chain.exists(), NO_CHAIN);
+            let mut record = chain::approve_record(&link)
+                .context("not an approve link: https://datum.day/sync/approve#<record>")?;
+            let mut code = String::new();
+            std::io::stdin().read_line(&mut code)?;
+            ensure!(!code.trim().is_empty(), "no approval code");
+            record["sig"] = code.trim().into();
+            let what = record["type"].as_str().unwrap_or("record").to_string();
+            db.sync_chain_write(record, true)?;
+            println!("approved: {what}");
+        }
+        SyncCommand::Qr { text } => {
+            let code = qrcode::QrCode::new(text.as_bytes())?;
+            println!("{}", code.render::<qrcode::render::svg::Color>().build());
         }
         SyncCommand::Ack { who } => {
             ensure!(db.sync_ack(&who)? > 0, "nothing to acknowledge for {who}");
@@ -261,7 +277,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
         } => {
             let expires = std::time::Duration::from_secs(expires_secs);
             let starts = !db.sync_chain()?.exists();
-            let (secret, expires_at) = invite(db, expires, admin_key.as_deref(), reader)?;
+            let (secret, expires_at) = invite(db, expires, admin_key.as_deref(), reader, false)?;
             if starts {
                 super::sync_daemon::auto_install();
             }
@@ -317,12 +333,15 @@ fn summary(db: &Db) -> Result<Option<String>> {
 /// Write an invite any member admits the redeemer of, starting an open
 /// chain with this copy its first member when it is in none: its secret,
 /// which only the ticket carries, and when it expires. `reader`: the
-/// redeemer is admitted a reader (da-9yvb6).
+/// redeemer is admitted a reader (da-9yvb6). `print`: say the secret on
+/// stdout before the record is signed, so a run that stops at an approve
+/// link has handed it over (datum.day signs with `sync approve`, da-bjxts).
 fn invite(
     db: &Db,
     expires: std::time::Duration,
     admin_key: Option<&str>,
     reader: bool,
+    print: bool,
 ) -> Result<(String, String)> {
     let mut chain = db.sync_chain()?;
     if !chain.exists() {
@@ -342,6 +361,9 @@ fn invite(
         );
     }
     let (secret, expires_at) = datum_core::db::peers::invite_secret(expires);
+    if print {
+        println!("{}", json!({"secret": secret, "expires": expires_at}));
+    }
     let record = json!({
         "type": "invite", "chain": chain.id,
         "invite_id": ulid::Ulid::new().to_string().to_lowercase(),
@@ -349,7 +371,7 @@ fn invite(
         "caps": if reader { json!({"role": "reader"}) } else { json!({}) },
         "created": chrono::Utc::now().to_rfc3339(),
     });
-    db.sync_chain_write(sign(record, &chain, admin_key)?, true)?;
+    sign(db, record, &chain, admin_key)?;
     Ok((secret, expires_at))
 }
 
@@ -456,30 +478,40 @@ fn key_file(path: &str, create: bool) -> Result<[u8; 32]> {
     chain::read_admin_secret(&text).with_context(|| format!("{path} is not an admin key"))
 }
 
-/// Sign a chain record: with the key file, or by sending it to datum.day to
-/// be approved with a passkey and reading the approval code back. An open
+/// Sign a chain record and write it: with the key file, or by sending it
+/// to datum.day to be approved with a passkey and reading the approval code
+/// back — or, at a terminal, an empty line once datum.day has written it
+/// into a copy of this database: a sync brings it here (da-bjxts). An open
 /// chain's record goes unsigned: the fold asks no `sig` of it while the
 /// chain has no admin (`Chain::step`), and this copy's endpoint key signs
 /// its op like any other.
-fn sign(mut record: Value, chain: &Chain, admin_key: Option<&str>) -> Result<Value> {
-    if chain.is_open() {
-        return Ok(record);
+fn sign(db: &Db, mut record: Value, chain: &Chain, admin_key: Option<&str>) -> Result<()> {
+    if !chain.is_open() {
+        let sig = match admin_key {
+            Some(path) => chain::sign_ed25519(&record, &key_file(path, false)?),
+            None => {
+                eprintln!(
+                    "Approve this with your passkey:\n\n  {}\n\nthen paste the approval code here, or press Enter once a browser holding this database has approved it:",
+                    chain::approve_link(&record)
+                );
+                let mut code = String::new();
+                std::io::stdin().read_line(&mut code)?;
+                if code.trim().is_empty() && std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+                    #[cfg(feature = "net")]
+                    datum_sync::now_all(db)?;
+                    ensure!(
+                        db.sync_chain()?.holds(&record),
+                        "not approved yet: no approval code, and no sync brought it"
+                    );
+                    return Ok(());
+                }
+                ensure!(!code.trim().is_empty(), "no approval code");
+                code.trim().to_string()
+            }
+        };
+        record["sig"] = sig.into();
     }
-    let sig = match admin_key {
-        Some(path) => chain::sign_ed25519(&record, &key_file(path, false)?),
-        None => {
-            eprintln!(
-                "Approve this with your passkey:\n\n  {}\n\nthen paste the approval code here:",
-                chain::approve_link(&record)
-            );
-            let mut code = String::new();
-            std::io::stdin().read_line(&mut code)?;
-            ensure!(!code.trim().is_empty(), "no approval code");
-            code.trim().to_string()
-        }
-    };
-    record["sig"] = sig.into();
-    Ok(record)
+    Ok(db.sync_chain_write(record, true)?)
 }
 
 /// The chain's admins, as `chain list --json` and `admin list --json` have
@@ -585,11 +617,8 @@ fn status(db: &Db, json: bool) -> Result<()> {
         .map_or_else(copy_label, |m| m.label.clone());
     let peers = db.sync_status()?;
     let paused = db.sync_paused()?;
-    let unlocks: Vec<_> = db
-        .sync_notices_unacked()?
-        .into_iter()
-        .filter(|n| n.kind == "unlock")
-        .collect();
+    let notices = db.sync_notices_unacked()?;
+    let unlocks: Vec<_> = notices.iter().filter(|n| n.kind == "unlock").collect();
     if json {
         let path = db.conn().path().unwrap_or_default();
         let name = std::path::Path::new(path)
@@ -619,6 +648,9 @@ fn status(db: &Db, json: bool) -> Result<()> {
                 "reader": chain.member(&mine).is_some_and(|m| m.role() == chain::Role::Reader),
             },
             "members": members,
+            "notices": notices.iter().map(|n| json!({
+                "subject": n.subject, "kind": n.kind, "label": n.label, "at": n.at, "text": n.to_string(),
+            })).collect::<Vec<_>>(),
         });
         println!("{out}");
         return Ok(());

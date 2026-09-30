@@ -1,0 +1,225 @@
+// The Sync widget's actions (da-bjxts): turn sync on, add a device, lock a
+// chain with a passkey, revoke with it, and approve a record from its link.
+//
+// A passkey is Chrome's virtual authenticator (CDP `WebAuthn`), and the app
+// is served at https://datum.day, the one origin the CLI takes an assertion
+// from (`chain::verify_assertion`). What a test asserts is what the CLI then
+// holds — `sync chain list --json` — as well as what the widget draws.
+
+import test, { after, before, describe } from 'node:test';
+import assert from 'node:assert/strict';
+import { generateKeyPairSync } from 'node:crypto';
+import { startApp, stopApp, withApp } from './support/app.mjs';
+import { nativeCopy, relayed, startRelay } from './support/sync.mjs';
+import { until } from './support/until.mjs';
+
+let relay;
+before(async () => {
+	await startApp();
+	relay = await startRelay();
+});
+after(async () => {
+	await relay?.stop();
+	await stopApp();
+});
+
+const WIDGET = 'section.pane[data-title="sync"]';
+const DESKTOP = { width: 1280, height: 800 };
+const AT_DATUM_DAY = { origin: 'https://datum.day', viewport: DESKTOP };
+
+const endpointId = () =>
+	generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).subarray(-32).toString('hex');
+
+/** `datum <argv>` in the page, whatever it exits with. */
+const runIn = (app, argv, stdin = '') => app.page.evaluate(([a, s]) => window.datum.runQuiet(a, s), [argv, stdin]);
+
+async function cli(app, argv, stdin) {
+	const r = await runIn(app, argv, stdin);
+	assert.equal(r.code, 0, `${argv.join(' ')}: ${r.stderr}`);
+	return r.stdout;
+}
+
+/** A passkey the page can make and use, with the user verified. */
+async function authenticator(page) {
+	const cdp = await page.context().newCDPSession(page);
+	await cdp.send('WebAuthn.enable');
+	await cdp.send('WebAuthn.addVirtualAuthenticator', {
+		options: {
+			protocol: 'ctap2',
+			transport: 'internal',
+			hasResidentKey: true,
+			hasUserVerification: true,
+			isUserVerified: true,
+			automaticPresenceSimulation: true
+		}
+	});
+}
+
+/** `home` in an open chain with a member `phone` beside this copy; the phone's endpoint. */
+async function openChain(app) {
+	const { secret } = JSON.parse(await cli(app, ['--db', 'home', 'sync', 'new-invite', '--expires', '1d']));
+	const phone = endpointId();
+	await cli(app, ['--db', 'home', 'sync', 'handshake', phone, '--label', 'phone', '--addr', '{}', '--invite', secret, '--chain', '']);
+	return phone;
+}
+
+/** Lock `home`'s chain with a new passkey, through the widget. */
+async function addAdmin(page) {
+	await page.locator(`${WIDGET} .chain[data-db="home"]`).getByRole('button', { name: 'add admin' }).click();
+	await page.locator('dialog.ask input').fill('my phone');
+	await page.locator('dialog.ask').getByRole('button', { name: 'add' }).click();
+	await page.locator(`${WIDGET} .chain[data-db="home"] .admin`).waitFor();
+}
+
+const members = async (app) => JSON.parse(await cli(app, ['--db', 'home', 'sync', 'chain', 'list', '--json']));
+const revokedOf = async (app, id) => (await members(app)).members.find((m) => m.endpoint === id).revoked;
+
+/** A passkey's public half as `sync admin add` takes it: a key this browser never made. */
+const foreignPasskey = (label) =>
+	JSON.stringify({
+		alg: -7,
+		publicKey: generateKeyPairSync('ec', { namedCurve: 'P-256' }).publicKey.export({ format: 'der', type: 'spki' }).toString('base64url'),
+		label
+	});
+
+describe('the sync widget’s actions', () => {
+	test('turn on sync, then add a device: the ticket as a QR and a command, which a native copy redeems', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			await withApp(
+				async (app) => {
+					const { page } = app;
+					await app.goto('/sync');
+					const header = page.locator(`${WIDGET} th[data-db="datum"]`);
+					await header.getByRole('button', { name: 'turn on sync' }).click();
+					const offer = page.locator(`${WIDGET} .offer[data-db="datum"]`);
+					await offer.locator('.qr svg').waitFor();
+					const ticket = /datum sync chain connect (\S+)/.exec(await offer.locator('.ticket').innerText())[1];
+					// This browser is the chain's first member, and the chain is open.
+					const chain = JSON.parse(await cli(app, ['sync', 'chain', 'list', '--json']));
+					assert.equal(chain.members.length, 1);
+					assert.deepEqual(chain.admins, []);
+
+					const joined = await native.run(['sync', 'chain', 'connect', ticket]);
+					assert.equal(joined.code, 0, joined.stderr);
+					await until(async () => (await page.locator(`${WIDGET} tbody tr`).count()) === 2, Boolean);
+					assert.equal(await header.locator('.actions button').innerText(), '+ device');
+					assert.match(await page.locator(`${WIDGET} .chain[data-db="datum"]`).innerText(), /no admin: any device can add devices/);
+				},
+				{ prepare: relayed(relay), viewport: DESKTOP }
+			);
+		} finally {
+			await native.close();
+		}
+	});
+
+	test('a passkey locks the chain; a revoke is approved with it and the row says revoked', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await authenticator(page);
+			const phone = await openChain(app);
+			await app.goto('/sync');
+			await addAdmin(page);
+			const chain = await members(app);
+			assert.equal(chain.admins.length, 1);
+			assert.match(chain.admins[0].key, /^(es256|eddsa):/);
+			assert.equal(chain.admins[0].label, 'my phone');
+
+			// Locked: the revoke stops at an approve link, which the passkey signs.
+			const row = page.locator(`${WIDGET} tr[data-client="${phone}"]`);
+			await row.getByRole('button', { name: 'revoke' }).click();
+			await page.locator('dialog.confirm').getByRole('button', { name: 'revoke' }).click();
+			await page.locator(`${WIDGET} tr.revoked[data-client="${phone}"]`).waitFor();
+			assert.equal(await row.locator('.seen').innerText(), 'revoked');
+			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
+			assert.ok(await revokedOf(app, phone));
+		}, AT_DATUM_DAY);
+	});
+
+	test('removing the last admin asks first, and only a yes unlocks the chain', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await authenticator(page);
+			await openChain(app);
+			await app.goto('/sync');
+			await addAdmin(page);
+			const remove = page.locator(`${WIDGET} .chain[data-db="home"]`).getByRole('button', { name: 'remove my phone' });
+
+			await remove.click();
+			const dialog = page.locator('dialog.confirm');
+			assert.match(await dialog.innerText(), /This unlocks the chain: any device can add, revoke or rename devices/);
+			await dialog.getByRole('button', { name: 'cancel' }).click();
+			assert.equal((await members(app)).admins.length, 1);
+
+			await remove.click();
+			await dialog.getByRole('button', { name: 'unlock' }).click();
+			await page.getByText('no admin: any device can add devices').waitFor();
+			assert.deepEqual((await members(app)).admins, []);
+			// Every copy keeps the notice until it is acknowledged.
+			const notice = page.locator(`${WIDGET} .notice[data-db="home"]`, { hasText: 'unlocked' });
+			await notice.waitFor();
+			await notice.getByRole('button', { name: 'ok' }).click();
+			await until(async () => (await notice.count()) === 0, Boolean);
+		}, AT_DATUM_DAY);
+	});
+
+	test('the approve link writes the record into a copy of its chain, with no code to paste; another chain’s shows the code', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await authenticator(page);
+			const phone = await openChain(app);
+			await app.goto('/sync');
+			await addAdmin(page);
+			// What a CLI in the chain prints when it wants a passkey.
+			const asked = await runIn(app, ['--db', 'home', 'sync', 'chain', 'revoke', phone]);
+			const link = /https:\/\/datum\.day\/sync\/approve#\S+/.exec(asked.stderr)[0];
+
+			await app.goto(`/sync/approve#${link.split('#')[1]}`);
+			const card = page.locator(`${WIDGET} .approve`);
+			// The card names what the passkey signs: a link is anyone's to send.
+			await card.locator('.what').waitFor();
+			assert.equal(await card.locator('.what').innerText(), `Revoke phone (${phone.slice(0, 10)}) in home`);
+			await card.getByRole('button', { name: 'approve with passkey' }).click();
+			await page.locator(`${WIDGET} .approve .done, ${WIDGET} .failure`).first().waitFor();
+			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0, await page.locator(`${WIDGET}`).innerText());
+			assert.match(await card.innerText(), /Approved in home\. .*nothing to paste/);
+			assert.equal(await card.locator('.code').count(), 0);
+			assert.ok(await revokedOf(app, phone));
+
+			// The same act in a chain this browser holds no copy of.
+			const record = JSON.parse(Buffer.from(link.split('#')[1], 'base64url').toString());
+			record.chain = 'elsewhere';
+			await card.getByRole('button', { name: 'dismiss' }).click();
+			await app.goto(`/sync/approve#${Buffer.from(JSON.stringify(record)).toString('base64url')}`);
+			assert.equal(
+				await card.locator('.what').innerText(),
+				`Revoke an unknown device (${phone.slice(0, 10)}) in a chain this browser holds no copy of`
+			);
+			await card.getByRole('button', { name: 'approve with passkey' }).click();
+			await card.locator('.code').waitFor();
+			assert.match(await card.locator('.code').innerText(), /^[A-Za-z0-9_-]{100,}$/);
+		}, AT_DATUM_DAY);
+	});
+
+	test('a link adding an admin says whose key it is: its label, its fingerprint, and that this browser did not make it', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await authenticator(page);
+			await openChain(app);
+			await app.goto('/sync');
+			await addAdmin(page);
+			// «Please approve my new phone», carrying the sender's own key.
+			const asked = await runIn(app, ['--db', 'home', 'sync', 'admin', 'add', foreignPasskey('my new phone')]);
+			const link = /https:\/\/datum\.day\/sync\/approve#\S+/.exec(asked.stderr)[0];
+			const { key } = JSON.parse(Buffer.from(link.split('#')[1], 'base64url').toString());
+
+			await app.goto(`/sync/approve#${link.split('#')[1]}`);
+			const what = page.locator(`${WIDGET} .approve .what`);
+			await what.waitFor();
+			assert.deepEqual(await what.locator('li').allInnerTexts(), [
+				`Add admin «my new phone» (es256 ${key.slice(6, 18)}…) in home`,
+				'Not a passkey made in this browser: approve only if you know whose it is.'
+			]);
+		}, AT_DATUM_DAY);
+	});
+});

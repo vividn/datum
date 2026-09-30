@@ -595,6 +595,46 @@ fn a_passkey_admin_approves_by_link_and_pasted_code() {
     );
 }
 
+/// datum.day's way (da-bjxts): the act stops at the approve link, having
+/// said an invite's secret already, and `sync approve <link>` writes the
+/// record signed with the code — which the chain checks, refusing a bad one.
+#[test]
+fn sync_approve_writes_the_record_of_a_run_that_stopped_at_its_link() {
+    let a = Copy::new();
+    a.ok(&["sync", "new-invite"]);
+    a.ok(&["sync", "admin", "add", &passkey_json()]);
+    let out = a.run(&["sync", "new-invite"], "");
+    assert!(!out.status.success());
+    let secret = json(&String::from_utf8_lossy(&out.stdout))["secret"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let err = String::from_utf8_lossy(&out.stderr);
+    let link = err
+        .split_whitespace()
+        .find(|w| w.contains("/sync/approve#"))
+        .unwrap();
+    let record = BASE64URL_NOPAD
+        .decode(link.rsplit('#').next().unwrap().as_bytes())
+        .unwrap();
+    let wrong = approval_code(&Sha256::digest(b"another record"));
+    let out = a.fails(&["sync", "approve", link], &wrong);
+    assert!(out.contains("the sync chain refuses it"), "{out}");
+    let said = a.ok_in(
+        &["sync", "approve", link],
+        &approval_code(&Sha256::digest(&record)),
+    );
+    assert_eq!(said.trim(), "approved: invite");
+    let x = Copy::new().id();
+    let invite = ["--invite", &secret, "--chain", ""];
+    a.ok(&[
+        &["sync", "handshake", &x, "--label", "x", "--addr", "{}"][..],
+        &invite,
+    ]
+    .concat());
+    assert!(a.ok(&["sync", "chain", "list"]).contains("x  "));
+}
+
 // ─── A device across chains, and sync status (da-rcb5m) ────────────────────
 
 fn json(text: &str) -> serde_json::Value {

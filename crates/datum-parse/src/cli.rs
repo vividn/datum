@@ -869,6 +869,17 @@ pub enum SyncCommand {
         expires_secs: u64,
         admin_key: Option<String>,
     },
+    /// Hidden: `datum sync approve <LINK>` — write the chain record an
+    /// approve link carries, signed with the approval code on stdin: how
+    /// datum.day signs an act with a passkey (da-bjxts).
+    Approve {
+        link: String,
+    },
+    /// Hidden: `datum sync qr <TEXT>` — `TEXT` as a QR code, SVG: the
+    /// ticket datum.day shows to add a device (da-bjxts).
+    Qr {
+        text: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

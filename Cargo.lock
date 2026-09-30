@@ -643,6 +643,7 @@ dependencies = [
  "flate2",
  "libc",
  "md-5",
+ "qrcode",
  "regex-lite",
  "resvg",
  "roxmltree 0.21.1",

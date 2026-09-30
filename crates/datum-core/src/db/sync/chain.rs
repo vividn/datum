@@ -175,6 +175,12 @@ pub fn approve_link(record: &Value) -> String {
     )
 }
 
+/// The record an approve link carries (or its fragment alone).
+pub fn approve_record(link: &str) -> Option<Value> {
+    let fragment = link.rsplit('#').next()?.trim();
+    serde_json::from_slice(&BASE64URL_NOPAD.decode(fragment.as_bytes()).ok()?).ok()
+}
+
 /// The admin key of a passkey, from what the browser hands over at creation:
 /// `{"alg": -7 | -8, "publicKey": <base64url SPKI DER>}` (`getPublicKey()`).
 pub fn passkey_admin_key(json: &Value) -> std::result::Result<String, String> {
@@ -404,6 +410,8 @@ pub struct Chain {
     pub members: Vec<Member>,
     invites: BTreeMap<String, Invite>,
     seen: BTreeSet<[u8; 32]>,
+    /// The digests of the records the fold took.
+    taken: BTreeSet<[u8; 32]>,
     /// The records that did nothing, by `(endpoint, seq)`, and why.
     pub rejected: BTreeMap<(String, i64), String>,
     /// Each removal of the last admin (da-aam46): the admin's label, and
@@ -424,6 +432,11 @@ impl Chain {
     /// No admin: every member may write the admin acts.
     pub fn is_open(&self) -> bool {
         self.admins.is_empty()
+    }
+
+    /// The fold took `record`, whatever its `sig`: the same act, signed.
+    pub fn holds(&self, record: &Value) -> bool {
+        self.taken.contains(&record_digest(record))
     }
 
     pub fn member(&self, endpoint: &str) -> Option<&Member> {
@@ -471,7 +484,14 @@ impl Chain {
         Ok(chain)
     }
 
+    /// Fold one op in, noting its record as taken when it is.
     fn step(&mut self, op: &Op) -> std::result::Result<(), String> {
+        self.check(op)?;
+        self.taken.insert(record_digest(&op.effect));
+        Ok(())
+    }
+
+    fn check(&mut self, op: &Op) -> std::result::Result<(), String> {
         let r = &op.effect;
         let s = |k: &str| r[k].as_str().unwrap_or_default().to_string();
         let kind = s("type");
@@ -995,6 +1015,29 @@ mod tests {
         assert!(chain.is_open());
         assert_eq!(chain.unlocks.len(), 1);
         assert_eq!(chain.unlocks[0].0, "k");
+    }
+
+    /// `holds` (da-bjxts) knows a record the fold took by its unsigned
+    /// form, which is what a CLI waiting at the passkey prompt holds, and
+    /// not one it refused.
+    #[test]
+    fn holds_is_the_taken_record_signed_or_not() {
+        let secret = [4u8; 32];
+        let key = ed25519_admin_key(&secret);
+        let genesis = json!({"type": "genesis", "chain": "c1", "admins": [{"key": key, "label": "k"}], "label": "a"});
+        let revoke = json!({"type": "revoke", "chain": "c1", "endpoint": "ab".repeat(32)});
+        let refused = json!({"type": "revoke", "chain": "c1", "endpoint": "cd".repeat(32)});
+        let (chain, done) = fold(&[
+            (1, genesis, Some(&secret)),
+            (2, revoke.clone(), Some(&secret)),
+            (3, refused.clone(), None),
+        ]);
+        assert_eq!(done[1], Ok(()));
+        assert!(done[2].is_err());
+        let mut signed = revoke.clone();
+        signed["sig"] = sign_ed25519(&revoke, &secret).into();
+        assert!(chain.holds(&revoke) && chain.holds(&signed));
+        assert!(!chain.holds(&refused));
     }
 
     /// A reader (da-9yvb6): admitted by a reader invite, it describes
