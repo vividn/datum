@@ -63,7 +63,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         "handshake" => {
             let mut o = opts(
                 &mut rest,
-                &["label", "addr", "invite", "chain"],
+                &["label", "addr", "invite", "chain", "holds"],
                 &["dialed"],
                 1..=1,
             )?;
@@ -76,6 +76,12 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 addr: need("addr")?,
                 invite: o.get("invite"),
                 chain: o.get("chain"),
+                holds: match o.get("holds") {
+                    Some(n) => n.parse().map_err(|_| {
+                        ParseError::InvalidArg(format!("--holds is a count, not {n}"))
+                    })?,
+                    None => 0,
+                },
                 dialed: o.on("dialed"),
                 endpoint: o.positional.remove(0),
             }
@@ -420,10 +426,34 @@ mod tests {
                 addr: "{}".into(),
                 invite: None,
                 chain: None,
+                holds: 0,
                 dialed: true
             }
         );
+        assert_eq!(
+            p(&[
+                "handshake",
+                "ab",
+                "--label=l",
+                "--addr={}",
+                "--invite=s",
+                "--holds",
+                "42"
+            ]),
+            SyncCommand::Handshake {
+                endpoint: "ab".into(),
+                label: "l".into(),
+                addr: "{}".into(),
+                invite: Some("s".into()),
+                chain: None,
+                holds: 42,
+                dialed: false
+            }
+        );
         assert!(parse_sync_cmd(&["handshake", "ab", "--label", "l"]).is_err());
+        assert!(
+            parse_sync_cmd(&["handshake", "ab", "--label=l", "--addr={}", "--holds=x"]).is_err()
+        );
         assert_eq!(
             p(&["new-invite", "--expires", "1m"]),
             SyncCommand::NewInvite {

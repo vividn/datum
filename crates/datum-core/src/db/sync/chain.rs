@@ -917,8 +917,11 @@ impl Db {
         self.sync_chain_write(record, true)
     }
 
-    /// Redeem an invite for `endpoint`: write its `admit`, or say why not.
-    pub fn sync_admit(&self, endpoint: &str, label: &str, secret: &str) -> Result<()> {
+    /// Redeem an invite for `endpoint`, which `holds` that many entries:
+    /// write its `admit`, or say why not. A reader invite refuses a redeemer
+    /// with entries of its own, which as a reader it could never send and
+    /// its fold would hide (da-tti3w).
+    pub fn sync_admit(&self, endpoint: &str, label: &str, secret: &str, holds: u64) -> Result<()> {
         let chain = self.sync_chain()?;
         let hash = sha256_hex(secret);
         let (id, invite) = chain
@@ -933,6 +936,14 @@ impl Db {
             return Err(DatumError::Other(format!(
                 "invite expired ({})",
                 invite.expires
+            )));
+        }
+        if invite.role == Role::Reader && holds > 0 {
+            let entries = if holds == 1 { "entry" } else { "entries" };
+            return Err(DatumError::Other(format!(
+                "{label} holds {holds} {entries} of its own; a reader writes nothing, so joining \
+                 as one would hide them. Connect from a fresh database (`--db`), or ask for a \
+                 member invite"
             )));
         }
         let record = json!({

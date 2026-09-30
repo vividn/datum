@@ -46,6 +46,33 @@ describe('datum.day and a native copy', () => {
 		}
 	});
 
+	test('a page holding entries is refused a reader invite, by count, and joins nothing (da-tti3w)', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			await withApp(
+				async (app) => {
+					await app.run(['occur', 'coffee', '-t', '0900']);
+					await app.run(['occur', 'coffee', '-t', '1000']);
+					const serving = native.spawn(['sync', 'chain', 'invite', '--reader']);
+					const said = await until(() => /datum sync chain connect (\S+)/.exec(serving.stdout), Boolean);
+					const refused = await app.page.evaluate(
+						(t) => window.datum.sync.connect('datum', t).then(
+							() => 'joined',
+							(e) => String(e?.message ?? e)
+						),
+						said[1]
+					);
+					assert.match(refused, /holds 2 entries of its own; a reader writes nothing/);
+					assert.equal(JSON.parse((await app.run(['sync', 'status', '--json'])).stdout).chain, null);
+					assert.equal(await countOf(app, 'coffee'), 2);
+				},
+				{ prepare: relayed(relay) }
+			);
+		} finally {
+			await native.close();
+		}
+	});
+
 	test('closing the tab stops its endpoint; reopened, it resumes and takes what was written meanwhile', async () => {
 		const native = await nativeCopy(relay);
 		try {

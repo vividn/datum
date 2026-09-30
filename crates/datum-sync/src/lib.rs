@@ -118,12 +118,17 @@ impl Store for DbStore<'_> {
         addr: &EndpointAddr,
         invite: Option<&str>,
         chain: Option<&str>,
+        holds: u64,
         dialed: bool,
     ) -> Result<bool> {
         let addr = serde_json::to_string(addr)?;
         Ok(self
             .0
-            .sync_handshake(peer, label, &addr, invite, chain, dialed)?)
+            .sync_handshake(peer, label, &addr, invite, chain, holds, dialed)?)
+    }
+
+    async fn holds(&self) -> Result<u64> {
+        Ok(self.0.count_entries_filtered(None, None)? as u64)
     }
 
     async fn record_session(

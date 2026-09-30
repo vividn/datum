@@ -1604,6 +1604,46 @@ fn admit_filtered(member: &Copy, copy: &Copy, fields: &str) {
     assert!(ok, "{text}");
 }
 
+/// A reader invite, filtered or not, refuses a redeemer that holds entries
+/// of its own, saying how many, and admits nothing (da-tti3w): the invite is
+/// unused after, so the same redeemer holding none is admitted. A member
+/// invite admits a redeemer that holds some.
+#[test]
+fn a_reader_invite_refuses_a_redeemer_holding_entries() {
+    let (a, _b) = chained();
+    for caps in [&["--reader"][..], &["--fields", "coffee"]] {
+        let invite = json(&a.ok(&[&["sync", "new-invite"], caps].concat()));
+        let secret = invite["secret"].as_str().unwrap();
+        let r = Copy::new();
+        let id = r.id();
+        let hello = ["sync", "handshake", &id, "--label", "r", "--addr", "{}"];
+        let redeem = [&hello[..], &["--invite", secret, "--chain", ""]].concat();
+        let refused = a.fails(&[&redeem[..], &["--holds", "42"]].concat(), "");
+        assert!(
+            refused.contains(
+                "r holds 42 entries of its own; a reader writes nothing, so joining as one \
+                 would hide them. Connect from a fresh database (`--db`), or ask for a member invite"
+            ),
+            "{refused}"
+        );
+        let list = a.ok(&["sync", "chain", "list", "--json"]);
+        assert!(!list.contains(&id), "refused, admitted nothing: {list}");
+        a.ok(&redeem);
+        assert_eq!(member_of(&a, &id)["role"], "reader");
+    }
+    let invite = json(&a.ok(&["sync", "new-invite"]));
+    let r = Copy::new();
+    let id = r.id();
+    let hello = ["sync", "handshake", &id, "--label", "m", "--addr", "{}"];
+    let secret = invite["secret"].as_str().unwrap();
+    a.ok(&[
+        &hello[..],
+        &["--invite", secret, "--chain", "", "--holds", "42"],
+    ]
+    .concat());
+    assert_eq!(member_of(&a, &id)["role"], "member");
+}
+
 /// Every row `copy` holds of `field`, tombstones and history included, and
 /// its ops: none, for a field it must not hold. By field and slug, not by
 /// text: a random id may spell the field (`LIKE` ignores case).

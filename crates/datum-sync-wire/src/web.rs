@@ -135,10 +135,13 @@ impl Store for Cli {
         addr: &EndpointAddr,
         invite: Option<&str>,
         chain: Option<&str>,
+        holds: u64,
         dialed: bool,
     ) -> Result<bool> {
         let addr = serde_json::to_string(addr)?;
+        let holds = holds.to_string();
         let mut argv = vec!["sync", "handshake", peer, "--label", label, "--addr", &addr];
+        argv.extend(["--holds", &holds]);
         if let Some(secret) = invite {
             argv.extend(["--invite", secret]);
         }
@@ -150,6 +153,14 @@ impl Store for Cli {
             argv.push("--dialed");
         }
         Ok(self.run(&argv, None).await?.trim() == "added")
+    }
+
+    async fn holds(&self) -> Result<u64> {
+        let n: serde_json::Value =
+            serde_json::from_str(&self.run(&["count", "--json"], None).await?)?;
+        n["count"]
+            .as_u64()
+            .context("`count --json` printed no count")
     }
 
     async fn record_session(

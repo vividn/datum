@@ -539,6 +539,40 @@ fn a_redeemer_describes_itself_and_every_session_is_recorded_for_status() {
     );
 }
 
+/// A reader writes nothing, so a copy holding entries of its own is refused
+/// a reader invite, filtered or not, by count (da-tti3w): it is in no chain
+/// after and its entries are as they were, and the invite, unused, admits a
+/// fresh copy. A copy holding entries takes a member invite as before
+/// (`an_invite_pairs_two_copies_and_their_data_converges`).
+#[test]
+fn a_copy_holding_entries_is_refused_a_reader_invite() {
+    let a = Copy::new();
+    a.ok(&["occur", "coffee"]);
+    for caps in [&["--reader"][..], &["--fields", "coffee"]] {
+        let r = Copy::new();
+        r.ok(&["occur", "tea"]);
+        r.ok(&["occur", "tea", "-t", "-5"]);
+        let (mut inviting, ticket) = a.invite(caps);
+        let refused = r.fails(&["sync", "chain", "connect", &ticket], "");
+        assert!(
+            refused.contains("holds 2 entries of its own; a reader writes nothing"),
+            "{refused}"
+        );
+        assert_eq!(
+            r.query("SELECT COUNT(*) FROM ops WHERE hid = '~chain'"),
+            "0"
+        );
+        assert_eq!(r.ok(&["count"]).trim(), "2");
+        assert!(!r.has("coffee"));
+
+        let fresh = Copy::new();
+        let joined = fresh.ok(&["sync", "chain", "connect", &ticket]);
+        assert!(joined.contains("verify ok"), "{joined}");
+        assert!(fresh.has("coffee"));
+        assert!(inviting.finish().0);
+    }
+}
+
 /// A filtered reader over iroh (da-u81u1): the member serving it knows who
 /// it is and sends its fields alone — more than one apply chunk of them —
 /// the verify over that set agrees, and a widened filter brings the rest

@@ -98,8 +98,11 @@ impl Db {
     /// error says why. An invite presented is redeemed or refused, even by a
     /// member: one use. A redeemer says which `chain` it is in (empty: none);
     /// one in another chain is refused, as is one that does not say, since a
-    /// copy belongs to one chain (da-mepav). Whether `id` is new to this copy
-    /// comes back. A paused copy refuses every session (da-wlbyx).
+    /// copy belongs to one chain (da-mepav). It says how many entries it
+    /// `holds` too, which a reader invite refuses (da-tti3w). Whether `id` is
+    /// new to this copy comes back. A paused copy refuses every session
+    /// (da-wlbyx).
+    #[allow(clippy::too_many_arguments)]
     pub fn sync_handshake(
         &self,
         id: &str,
@@ -107,6 +110,7 @@ impl Db {
         addrs: &str,
         invite: Option<&str>,
         chain: Option<&str>,
+        holds: u64,
         dialed: bool,
     ) -> Result<bool> {
         super::pause::refuse_paused(&self.conn)?;
@@ -131,7 +135,7 @@ impl Db {
                             "{label} is in another sync chain ({c}); a copy belongs to one chain"
                         ))
                     }
-                    Some(_) => self.sync_admit(id, label, secret)?,
+                    Some(_) => self.sync_admit(id, label, secret, holds)?,
                 },
                 None if known => {}
                 None => return refuse("not a member of this sync chain".into()),

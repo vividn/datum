@@ -80,8 +80,9 @@ pub trait Store {
     async fn verify(&self, peer: &str) -> Result<String>;
     /// `peer` introduced itself as `label` at `addr`: record it, and when
     /// it `dialed` this copy, admit it (as a peer, or by `invite`) or fail
-    /// saying why not; a redeemer names its own `chain`. Whether it is new
-    /// to this copy comes back.
+    /// saying why not; a redeemer names its own `chain`, and how many
+    /// entries it `holds`. Whether it is new to this copy comes back.
+    #[allow(clippy::too_many_arguments)]
     async fn handshake(
         &self,
         peer: &str,
@@ -89,8 +90,13 @@ pub trait Store {
         addr: &EndpointAddr,
         invite: Option<&str>,
         chain: Option<&str>,
+        holds: u64,
         dialed: bool,
     ) -> Result<bool>;
+    /// How many entries this copy holds, as `datum count` counts them (life
+    /// data: no spec, layout or alias): a reader invite refuses a redeemer
+    /// holding any, which a reader's fold would hide (da-tti3w).
+    async fn holds(&self) -> Result<u64>;
     async fn record_session(
         &self,
         peer: &str,
@@ -151,6 +157,9 @@ struct Hello {
     invite: Option<String>,
     /// A redeemer's own chain, empty for none (da-mepav).
     chain: Option<String>,
+    /// A redeemer's entries, as `datum count` counts them (da-tti3w).
+    #[serde(default)]
+    holds: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -384,20 +393,27 @@ async fn session(
         .await
         .map_err(|e| anyhow!("could not reach {}: {e}", short(&id)))?;
     let (mut s, mut r) = conn.open_bi().await?;
-    let chain = match invite {
-        Some(_) => Some(store.chain().await?.map(|c| c.0).unwrap_or_default()),
-        None => None,
+    let (chain, holds) = match invite {
+        Some(_) => (
+            Some(store.chain().await?.map(|c| c.0).unwrap_or_default()),
+            store.holds().await?,
+        ),
+        None => (None, 0),
     };
     let hello = Hello {
         label: store.label(),
         addr: ep.addr(),
         invite: invite.map(str::to_string),
         chain,
+        holds,
     };
     put_json(&mut s, &hello).await?;
     let (label, added) = match get_json(&mut r, MAX_HELLO).await? {
         Reply::Welcome { label, addr } => {
-            match store.handshake(&id, &label, &addr, None, None, true).await {
+            match store
+                .handshake(&id, &label, &addr, None, None, 0, true)
+                .await
+            {
                 Ok(added) => (label, added),
                 Err(e) => {
                     conn.close(0u32.into(), b"refused");
@@ -434,6 +450,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
                 &hello.addr,
                 hello.invite.as_deref(),
                 hello.chain.as_deref(),
+                hello.holds,
                 false,
             )
             .await
