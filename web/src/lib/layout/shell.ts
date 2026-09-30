@@ -980,6 +980,16 @@ layout.subscribe(($layout) => {
 	}
 });
 
+/**
+ * Leave the place in front (da-hbrfg: the spec widget's Done and Cancel):
+ * the modal, closed as its × closes it, or else a place tab, for the tab it
+ * opened beside, as a tap on that tab would. Anywhere else, nothing.
+ */
+export function leavePlace(): void {
+	if (get(modalPlace) !== null) closeModalPlace();
+	else if (inPlace()) activate(Math.max(0, get(layout).root.active - 1));
+}
+
 /** The browser's back, from a place: back to the tab it opened beside. */
 function onPopState(): void {
 	pushedFor = null;

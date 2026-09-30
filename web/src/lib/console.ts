@@ -110,8 +110,9 @@ export interface DatumConsole {
 	 */
 	track(options?: TrackOptions): Promise<RunResult | null>;
 	/**
-	 * Open the same modal on `field`'s spec (da-ci85o) and run the one
-	 * `spec set` it answers with. Null if it was dismissed.
+	 * Open `field`'s spec as its place (da-hbrfg), resolving when it is
+	 * left: with the one `spec set` its Done ran, or null. A field with no
+	 * spec is declared instead, as `track` above.
 	 */
 	spec(field: string): Promise<RunResult | null>;
 }
@@ -151,10 +152,7 @@ export function installConsole(target: Record<string, unknown>): void {
 			const argv = await openTrack(options);
 			return argv && (await press(argv));
 		},
-		spec: async (field) => {
-			const argv = await openSpec(field);
-			return argv && (await press(argv));
-		}
+		spec: openSpec
 	};
 	target.datum = handle;
 }

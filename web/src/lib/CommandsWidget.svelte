@@ -82,6 +82,7 @@
 	import {
 		commandsUnder,
 		drills,
+		opensSpec,
 		fieldVerb,
 		fires,
 		flagsOf,
@@ -128,11 +129,13 @@
 	/** What a tap on `command` does: the press below and the outline are both this. */
 	$: kindOf = (command: CommandButton): ActKind =>
 		FIXED[command.press] ??
-		(!open && drills(grammar, command.name, pills)
-			? 'show'
-			: fires(grammar?.get(command.name), pills) || fieldVerb(command.name, pills, fields)?.runs
-				? 'run'
-				: 'fill');
+		(opensSpec(command.name, pills)
+			? 'open'
+			: !open && drills(grammar, command.name, pills)
+				? 'show'
+				: fires(grammar?.get(command.name), pills) || fieldVerb(command.name, pills, fields)?.runs
+					? 'run'
+					: 'fill');
 
 	/**
 	 * A hold fills the bare command and opens its flags — even where a tap
@@ -251,7 +254,7 @@
 		<button
 			class="command"
 			use:act={kindOf(command)}
-			class:opens={command.press === 'backups' || command.press === 'place'}
+			class:opens={kindOf(command) === 'open'}
 			{disabled}
 			data-command={command.name}
 			data-holds={!open && hasFlags(grammar, command.name) ? '' : undefined}

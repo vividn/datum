@@ -46,6 +46,13 @@
 		display: none;
 	}
 
+	/* The widget fills the body, as a pane fills its frame: a box that
+	   followed its content would move the spec form's Done from tab to tab
+	   (da-laxpn, da-hbrfg). */
+	:global(dialog.sheet[data-place] .sheet-body > section.pane) {
+		flex: 1;
+	}
+
 	.as-tab {
 		background: none;
 		border: 1px solid var(--rule);

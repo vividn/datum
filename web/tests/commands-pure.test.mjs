@@ -20,6 +20,7 @@ import {
 	pendingVerb,
 	declaredVerb,
 	drills,
+	opensSpec,
 	fieldVerb,
 	flagLine,
 	flagsOf,
@@ -388,6 +389,8 @@ describe('subcommands', () => {
 		assert.deepEqual(['db', 'conflicts', 'spec', 'add', 'tail'].map((n) => drills(TREE, n, [])), [true, true, true, false, false]);
 		assert.equal(drills(TREE, 'spec', [field]), false, 'da-ybai9: the modal, not the subcommands');
 		assert.equal(drills(TREE, 'db', [field]), true);
+		// da-hbrfg: the spec is a place, so that tap OPENS, and draws the `›`.
+		assert.deepEqual([opensSpec('spec', [field]), opensSpec('spec', []), opensSpec('db', [field])], [true, false, false]);
 	});
 
 	test('< Back and Help lead; a command that runs bare is offered as itself; each subcommand fills its whole line', () => {

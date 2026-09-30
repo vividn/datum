@@ -44,7 +44,7 @@
 	import { openSpec } from '$lib/specModal.js';
 	import { run } from '$lib/run.js';
 	import { withPills } from '$lib/selection.js';
-	import { fields, grammar, press, pressWithPills, ready } from './engine.js';
+	import { fields, grammar, pressWithPills, ready } from './engine.js';
 
 	export let epoch = 0;
 
@@ -72,7 +72,8 @@
 		const field = argumentsOf($pills).find((p) => p.kind === 'field');
 		if (name === 'spec' && field) {
 			clearUnlockedPills([field]);
-			void openSpec(field.text).then((argv) => argv && press(argv));
+			// The place runs its own save; what it answers is the console's.
+			void openSpec(field.text);
 		} else {
 			if (spend) clearUnlockedPills(spend);
 			prefill.set({ line, keyboard });

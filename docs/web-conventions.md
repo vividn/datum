@@ -435,8 +435,8 @@ rule is decided but not yet everywhere, it names the bead.
 31. **A modal asks; a place is a widget** (da-6du3o; vividn, 2026-09-29: «Every modal is also a
     widget that can be put into a layout or as its own tab»). A QUESTION — `Confirm`, `Ask`, the
     passkey prompt — blocks until it is answered, and nobody pins one in a layout, so it stays a
-    modal. A PLACE — Sync, Help (da-z955f) and Backups (da-ea5q2) today; the field editor to
-    follow — is a widget kind in `layout/registry.ts`, and `openPlace(kind)` (`layout/shell.ts`) is the one way
+    modal. A PLACE — Sync, Help (da-z955f), Backups (da-ea5q2) and the field editor (da-hbrfg) —
+    is a widget kind in `layout/registry.ts`, and `openPlace(kind)` (`layout/shell.ts`) is the one way
     to reach it. It brings forward the root tab already holding that kind. Failing that, the host
     is the screen's (da-jozgv; vividn: «I think this is good on mobile, but the experience on
     desktop is not great … I would still have it be a modal on desktop»). On a DESKTOP the widget
@@ -450,6 +450,10 @@ rule is decided but not yet everywhere, it names the bead.
     hands the modal's entry on rather than pushing a second. The body is the kind's own
     component in both, so there is one widget and one set of tests, and the same place dropped
     into a pane is just the widget. A place's tab tests run on a phone viewport.
+    A place that takes a parameter is named with it: the field editor (da-hbrfg) is the `spec`
+    widget taking a field, and its place is `spec:<field>` (`specPlace`, `layout/defaults.ts`),
+    so each field has one modal or tab. Declaring a field stays the Track dialog — «which verb?»
+    is a question.
 
     Every control that opens a place, a sheet or a modal wears rule 22's `›` (da-jozgv). The
     sweep of 2026-09-29 found three without it: the commands widget's `Sync` (it was `show`), and

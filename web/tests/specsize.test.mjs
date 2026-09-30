@@ -5,13 +5,17 @@
 // every tab press, so the tabs jumped. The field here has a spec AND
 // states, so no tab is disabled; each tab is measured once its own content
 // is in the box, polled from node (da-1grm7).
+//
+// It is a place now (da-hbrfg): a tab on a phone, the place modal on a
+// desktop (da-jozgv), and the box is the host's rather than the dialog's
+// 38rem. A tab taller than the box scrolls in its panel, and the header,
+// the tabs and Done stay where they are, so Done in view is what is held.
 
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { atEachScreen, sharedApp, startApp, stopApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
-
-const MODAL = 'dialog.spec';
+import { SPEC as MODAL, cancelSpec, openSpec } from './support/spec.mjs';
 const TABS = ['basics', 'states', 'keys', 'aliases', 'placement'];
 
 describe('the spec modal', () => {
@@ -33,7 +37,7 @@ describe('the spec modal', () => {
 			assert.equal(r.code, 0, r.stderr);
 
 			await atEachScreen(t, page, [{ width: 390, height: 844 }, { width: 1280, height: 900 }], async () => {
-				const closed = page.evaluate(() => window.datum.spec('mood'));
+				const { saved: closed } = await openSpec(page, 'mood');
 				await page.locator(MODAL).waitFor();
 				const sizes = {};
 				for (const tab of TABS) {
@@ -43,7 +47,7 @@ describe('the spec modal', () => {
 							const panel = d.querySelector('.panel');
 							const box = d.getBoundingClientRect();
 							return panel.dataset.panel === tab && panel.childElementCount > 0
-								? { width: box.width, height: box.height, overflow: panel.scrollHeight - panel.clientHeight }
+								? { width: box.width, height: box.height, done: d.querySelector('button.commit').getBoundingClientRect().bottom - box.bottom }
 								: null;
 						}, tab),
 						(seen) => seen !== null
@@ -52,15 +56,14 @@ describe('the spec modal', () => {
 					assert.equal(await page.locator(MODAL).getByRole('tabpanel', { name: tab, exact: true }).count(), 1, `no tabpanel named ${tab}`);
 					assert.equal(await page.locator(MODAL).getByRole('tab', { name: tab, exact: true }).getAttribute('aria-controls'), 'spec-panel');
 				}
-				// The height is the tallest tab at rest (Basics with the two keys,
-				// 593px at 390px wide): if it now scrolls, measure again and raise the 38rem.
-				assert.ok(sizes.basics.overflow <= 1, `basics overflows its panel by ${sizes.basics.overflow}px`);
+				// Done is in the box on every tab, however much of the panel scrolls.
+				for (const tab of TABS) assert.ok(sizes[tab].done <= 1, `${tab}: Done is ${sizes[tab].done}px below the box`);
 				const [first, ...rest] = TABS.map((tab) => sizes[tab]);
 				for (const [i, size] of rest.entries()) {
 					assert.ok(Math.abs(size.width - first.width) <= 1, `${TABS[i + 1]} width ${size.width} vs ${first.width}`);
 					assert.ok(Math.abs(size.height - first.height) <= 1, `${TABS[i + 1]} height ${size.height} vs ${first.height}`);
 				}
-				await page.keyboard.press('Escape');
+				await cancelSpec(page);
 				assert.equal(await closed, null);
 			});
 		});

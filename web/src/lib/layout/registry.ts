@@ -70,6 +70,7 @@ import InputWidget from './InputWidget.svelte';
 import Notice from './Notice.svelte';
 import NowviewWidget from './NowviewWidget.svelte';
 import ReplWidget from './ReplWidget.svelte';
+import SpecWidget from './SpecWidget.svelte';
 import SyncWidget from './SyncWidget.svelte';
 
 export interface WidgetKind {
@@ -461,6 +462,23 @@ export const KINDS: Record<string, WidgetKind> = {
 			'Each plan lists its backups by database, newest first, each with Restore.'
 		].join('\n'),
 		legible: { width: 206, height: 99 }
+	},
+	// The spec widget (da-hbrfg): one field's spec, the form the Track
+	// dialog asks with, in a pane — a field's `spec:<field>` place. The field
+	// is its one setting, and with none it offers the fields to pick from.
+	// Legible at the form's header, its row of tabs and its Done row, with
+	// their gaps and padding — about 140px, estimated from the 28px controls
+	// rather than measured; a pane shorter scrolls the panel between.
+	spec: {
+		meta: meta('spec', 'spec'),
+		component: SpecWidget,
+		help: [
+			"One field's spec: its verb, states, keys, aliases and placement.",
+			'Done saves it in one `spec set`; Cancel leaves it as it was.'
+		].join('\n'),
+		props: ({ field }) => ({ field: typeof field === 'string' ? field : '' }),
+		onChange: (settings, field) => ({ ...settings, field }),
+		legible: { width: 240, height: 140 }
 	},
 	// The input widget (da-0dhc, back as da-3zon): the bottom bar's command
 	// line drawn in a pane — the same buffer, the same pills, the same

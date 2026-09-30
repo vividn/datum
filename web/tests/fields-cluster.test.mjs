@@ -16,6 +16,7 @@ import { ringOf } from '../src/lib/fields.ts';
 import { startApp, stopApp, withApp, seedLines, todayAt } from './support/app.mjs';
 import { along, draft, widgetPane } from './support/layout.mjs';
 import { atRows } from './support/rows.mjs';
+import { SPEC, openSpec } from './support/spec.mjs';
 
 const H = 30;
 const GAP = 6;
@@ -283,10 +284,10 @@ describe('a switch field’s states around the tap', () => {
 				const logged = await tapAt(page, 0.5);
 				assert.deepEqual(logged.buttons.map((b) => b.name), RING, 'logging reordered the states');
 
-				const saved = page.evaluate(() => window.datum.spec('mood'));
-				await page.locator('dialog.spec [data-tab="states"]').click();
-				for (let i = 0; i < 3; i++) await page.locator('dialog.spec [aria-label="move d up"]').click();
-				await page.locator('dialog.spec .commit').click();
+				const { saved: saved } = await openSpec(page, 'mood');
+				await page.locator(`${SPEC} [data-tab="states"]`).click();
+				for (let i = 0; i < 3; i++) await page.locator(`${SPEC} [aria-label="move d up"]`).click();
+				await page.locator(`${SPEC} .commit`).click();
 				await saved;
 				assert.deepEqual(JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout).allowed_states, ['false', 'd', 'a', 'b', 'c']);
 

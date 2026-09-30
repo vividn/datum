@@ -24,6 +24,7 @@ import assert from 'node:assert/strict';
 import { changeCounter, seedLines, sharedApp, startApp, stopApp, withApp as withAnyApp } from './support/app.mjs';
 import { DESKTOP, along, draft, pane, widgetPane } from './support/layout.mjs';
 import { listed } from './support/rows.mjs';
+import { SPEC } from './support/spec.mjs';
 
 before(startApp);
 after(stopApp);
@@ -784,7 +785,7 @@ describe('what survives a reload', () => {
 // gestures with a settle between them: the long press MOUNTS the pill, and
 // the tap is only driven once the pill is drawn.
 describe('`spec` under the pill', () => {
-	const MODAL = 'dialog.spec';
+	const MODAL = SPEC;
 	const specButton = (page) => pane(page, 'cmd').locator('[data-command="spec"]');
 	const line = (page) => page.locator('.prompt-bar input').first();
 
@@ -794,6 +795,8 @@ describe('`spec` under the pill', () => {
 			await longPress(page, 'mood');
 			await fieldPill(page).waitFor();
 
+			// It opens a place (da-hbrfg), so it wears the `›`.
+			assert.equal(await specButton(page).getAttribute('data-act'), 'open');
 			await specButton(page).click();
 			await page.locator(`${MODAL}[aria-label="the spec of mood"]`).waitFor();
 			assert.equal(await page.locator(`${MODAL} h2`).innerText(), 'mood');

@@ -10,8 +10,8 @@ import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { editedSpec, placeOf } from '../src/lib/track.ts';
+import { SPEC as MODAL, cancelSpec, openSpec } from './support/spec.mjs';
 
-const MODAL = 'dialog.spec';
 const LANE = `${MODAL} .placement .lane`;
 /** The band's day height in pixels (`H` in Placement.svelte): 32px is 0.2 of a day. */
 const H = 160;
@@ -63,7 +63,7 @@ describe('the Placement tab', () => {
 
 	/** Open `field`'s spec on Placement; resolves to `{ saved }`, the pending save — boxed, or awaiting this would await the save. */
 	async function openPlacement(page, field) {
-		const saved = page.evaluate((f) => window.datum.spec(f), field);
+		const { saved } = await openSpec(page, field);
 		await page.locator(`${MODAL} [data-tab="placement"]`).click();
 		await page.locator(`${MODAL} .placement .band svg`).waitFor();
 		return { saved };
@@ -158,7 +158,7 @@ describe('the Placement tab', () => {
 			const { saved: dismissed } = await openPlacement(page, 'coffee');
 			assert.equal(await page.locator(`${MODAL} .placement select`).inputValue(), 'nobody');
 			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /tied to nobody, which has no spec/);
-			await page.keyboard.press('Escape');
+			await cancelSpec(page);
 			assert.equal(await dismissed, null);
 		});
 	});
@@ -212,7 +212,7 @@ describe('the Placement tab', () => {
 			const drawn = await dot.boundingBox();
 			near(drawn.width, narrow.width, 'drawn width');
 			near(drawn.height, narrow.height, 'drawn height');
-			await page.keyboard.press('Escape');
+			await cancelSpec(page);
 			assert.equal(await saved, null);
 		});
 	});
@@ -222,7 +222,7 @@ describe('the Placement tab', () => {
 			await app.run(['track', 'work', '--verb', 'start']);
 			const { saved } = await openPlacement(app.page, 'work');
 			assert.equal(await app.page.locator(`${MODAL} .size`).count(), 0);
-			await app.page.keyboard.press('Escape');
+			await cancelSpec(app.page);
 			assert.equal(await saved, null);
 		});
 	});

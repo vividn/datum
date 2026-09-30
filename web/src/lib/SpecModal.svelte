@@ -49,6 +49,11 @@
 	typed. The `<dialog>` pattern is Confirm's and Chooser's — `showModal`
 	puts focus inside, Escape and a click on the backdrop close it and run
 	nothing.
+
+	Editing a spec is a PLACE, not a question (da-hbrfg): «a modal asks; a
+	place is a tab». `inline` draws the same form without the dialog, in
+	the `spec` widget ($lib/layout/SpecWidget.svelte), which is what a
+	field's `spec:<field>` tab holds. Declaring stays the dialog.
 -->
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
@@ -86,11 +91,13 @@
 	export let ignored: string[] = [];
 	/** The spec to edit (`spec show`); null declares a new field instead. */
 	export let spec: Spec | null = null;
+	/** Drawn in a pane rather than as a dialog: the `spec` widget's body. */
+	export let inline = false;
 
 	const dispatch = createEventDispatcher<{ close: string[] | null }>();
 	const TABS = ['basics', 'states', 'keys', 'aliases', 'placement'] as const;
 
-	let dialog: HTMLDialogElement;
+	let dialog: HTMLElement;
 	let tab: (typeof TABS)[number] = 'basics';
 	let color = spec?.color ?? '';
 	let description = spec?.description ?? '';
@@ -112,7 +119,9 @@
 	/** The argv to run, set by whatever was pressed; null closes and runs nothing. */
 	let chosen: string[] | null = null;
 
-	onMount(() => dialog.showModal());
+	onMount(() => {
+		if (!inline) (dialog as HTMLDialogElement).showModal();
+	});
 
 	// What the name would do if it were submitted, before the press rather
 	// than after it: `my coffee` is what a person naturally types and the
@@ -170,23 +179,33 @@
 		return next;
 	}
 
-	function run(next: string[]) {
+	/** Close with `next` to run, or null to run nothing. */
+	function finish(next: string[] | null) {
 		chosen = next;
-		dialog.close();
+		if (inline) dispatch('close', next);
+		else (dialog as HTMLDialogElement).close();
+	}
+
+	/** A click on the dialog's own box is on its backdrop: close, running nothing. */
+	function backdrop(e: MouseEvent) {
+		if (!inline && e.target === dialog) finish(null);
 	}
 </script>
 
 <!-- The backdrop is the dialog's own box outside its content, so a click on
      it lands on the dialog: Chooser's rule, and the pointer's Escape. -->
 <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-noninteractive-element-interactions -->
-<dialog
+<svelte:element
+	this={inline ? 'div' : 'dialog'}
 	class="spec"
+	class:inline
+	role={inline ? 'region' : undefined}
 	aria-label={spec ? `the spec of ${field}` : 'track a field'}
 	bind:this={dialog}
 	on:close={() => dispatch('close', chosen)}
-	on:click={(e) => e.target === dialog && dialog.close()}
+	on:click={backdrop}
 >
-	<form method="dialog" on:submit|preventDefault={() => ready && run(argv)}>
+	<form method="dialog" on:submit|preventDefault={() => ready && finish(argv)}>
 		<header>
 			{#if spec}
 				<h2>{field}</h2>
@@ -203,7 +222,7 @@
 					autofocus
 				/>
 			{/if}
-			<button type="button" class="close" aria-label="close" on:click={() => dialog.close()}>✕</button>
+			<button type="button" class="close" aria-label="close" on:click={() => finish(null)}>✕</button>
 		</header>
 		{#if hint}
 			<p class="hint">
@@ -524,7 +543,7 @@
 		</div>
 
 		<div class="buttons">
-			<button type="button" class="cancel" on:click={() => dialog.close()}>Cancel</button>
+			<button type="button" class="cancel" on:click={() => finish(null)}>Cancel</button>
 			<button class="commit" use:act={'run'} type="submit" disabled={!ready}>Done</button>
 		</div>
 		{#if verb !== null && !spec}
@@ -536,14 +555,14 @@
 			<div class="ignored">
 				<span class="label">ignored</span>
 				{#each ignored as name (name)}
-					<button type="button" use:act={'run'} data-ignored={name} title={shellJoin(['track', name])} on:click={() => run(['track', name])}
+					<button type="button" use:act={'run'} data-ignored={name} title={shellJoin(['track', name])} on:click={() => finish(['track', name])}
 						>{name}</button
 					>
 				{/each}
 			</div>
 		{/if}
 	</form>
-</dialog>
+</svelte:element>
 
 <style>
 	/* Narrow enough for a 320px phone with the backdrop showing either
@@ -562,6 +581,14 @@
 		border-radius: 6px;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		font-size: 0.85rem;
+	}
+
+	/* In a pane, the pane's box: its frame is the border. */
+	.spec.inline {
+		inline-size: auto;
+		block-size: 100%;
+		border: 0;
+		padding: 0.5rem 0.6rem;
 	}
 
 	.spec::backdrop {
