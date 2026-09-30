@@ -159,3 +159,43 @@ fn a_cut_off_kit_install_is_what_a_bare_undo_reverts() {
     assert_eq!(env.live(), ["tea=null"]);
     assert!(coffee().contains("No spec defined"), "{}", coffee());
 }
+
+// `undo <hid>` takes the step a bare `undo` takes (da-ksxkx): a create is
+// deleted, spec and all, and the next `undo` brings it back.
+#[test]
+fn a_named_undo_of_a_create_deletes_it() {
+    let env = Env::new();
+    let tea = env.occur("tea", "0900");
+    env.ok(&["undo", &tea]);
+    assert_eq!(env.live(), Vec::<String>::new());
+    let spec = || String::from_utf8(env.ok(&["spec", "show", "tea"]).stdout).unwrap();
+    assert!(spec().contains("No spec defined"), "{}", spec());
+    env.ok(&["undo", &tea]);
+    assert_eq!(env.live(), ["tea=null"]);
+    let coffee = env.occur("coffee", "0910");
+    let water = env.occur("water", "0920");
+    env.ok(&["undo", &format!("{coffee},{water}")]);
+    assert_eq!(env.live(), ["tea=null"]);
+}
+
+#[test]
+fn a_named_undo_steps_an_edit_back_and_a_delete_back() {
+    let env = Env::new();
+    let tea = env.occur("tea", "0900");
+    let coffee = env.occur("coffee", "0910");
+    env.ok(&["update", &tea, "state=green"]);
+    env.ok(&["delete", &coffee]);
+    env.ok(&["undo", &format!("{tea},{coffee}")]);
+    assert_eq!(env.live(), ["tea=null", "coffee=null"]);
+}
+
+// A list records every step before it echoes any (da-ki5j3).
+#[test]
+fn a_cut_off_named_undo_list_undoes_every_entry() {
+    let env = Env::new();
+    let tea = env.occur("tea", "0900");
+    let coffee = env.occur("coffee", "0910");
+    env.ok(&["update", &format!("{tea},{coffee}"), "state=green"]);
+    env.cut_off(&["undo", &format!("{tea},{coffee}")]);
+    assert_eq!(env.live(), ["tea=null", "coffee=null"]);
+}

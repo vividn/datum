@@ -48,9 +48,24 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
                 "--to-version names a version of ONE entry's history; give one id, not the list '{list}'"
             );
         }
-        for_each_id(db, list, |id| {
-            undo_one(db, id, args.to_version, registry.as_ref(), &output)
-        })
+        // Every step lands before any echo: a reader closing the pipe ends
+        // the process at the print (da-ki5j3).
+        let mut steps: Vec<(Entry, Entry)> = Vec::new();
+        let resolved = for_each_id(db, list, |id| {
+            let current = resolve_prefix_or_tombstone(db, id)?;
+            let after = match args.to_version {
+                Some(v) => undo_to_version(db, &current, v)?,
+                None => step_back(db, &current)?,
+            };
+            steps.push((current, after));
+            Ok(())
+        });
+        // Undoing a first log takes the spec it wrote with it (da-elv6d).
+        let (specs, dropped) =
+            drop_orphaned_bare_specs(db, &tombstoned_by(&steps), ChangeKind::Undo);
+        show_steps(&steps, &specs, registry.as_ref(), &output);
+        dropped?;
+        resolved
     } else {
         if args.to_version.is_some() {
             anyhow::bail!("--to-version requires an <id_or_slug> to target");
@@ -72,68 +87,46 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
                     "undoing a change",
                     entry.deleted_at.unwrap_or_else(Utc::now),
                 );
-                // Prefer the history-based revert so the undo shows up in the
-                // entry's trail; fall back to undelete for legacy tombstones.
-                match history::latest_version(db.conn(), &entry.hid)? {
-                    Some(n) if n >= 2 => step_to(
-                        db,
-                        &entry,
-                        n - 1,
-                        ChangeKind::Undo,
-                        registry.as_ref(),
-                        &output,
-                    )
-                    .map(drop),
-                    _ => {
-                        db.undelete(&entry.slug)?;
-                        let restored = db.get_entry(&entry.slug).unwrap_or_else(|_| entry.clone());
-                        show_step(&entry, &restored, registry.as_ref(), &output);
-                        Ok(())
-                    }
-                }
+                let restored = step_back(db, &entry)?;
+                show_step(&entry, &restored, registry.as_ref(), &output);
+                Ok(())
             }
             None => anyhow::bail!("Nothing to undo — no soft-deleted entries found"),
         }
     }
 }
 
-/// Undo one named entry: back to `to_version`, or one step back.
-fn undo_one(
-    db: &Db,
-    id_or_slug: &str,
-    to_version: Option<u32>,
-    registry: Option<&SpecRegistry>,
-    output: &OutputArgs,
-) -> Result<()> {
-    let current = resolve_prefix_or_tombstone(db, id_or_slug)?;
-    let latest = history::latest_version(db.conn(), &current.hid)?;
+/// Move a named entry back to `version` of its own trail.
+fn undo_to_version(db: &Db, current: &Entry, version: u32) -> Result<Entry> {
+    // Bounds-check against the entry's version range [1, latest].
+    // `state_at_version` is version-agnostic by design and misbehaves
+    // silently at the edges (v=0 reverts to create-state; v>latest
+    // no-ops), so the clarity check belongs here where `latest` is
+    // known. An out-of-range version must point at the problem, not
+    // quietly do the wrong thing (da-96yy).
+    let latest = history::latest_version(db.conn(), &current.hid)?.unwrap_or(0);
+    if version < 1 || version > latest {
+        anyhow::bail!("version {version} doesn't exist; entry has {latest} version(s)");
+    }
+    Ok(db.revert_entry_to_as(&current.hid, version, ChangeKind::Undo)?)
+}
 
-    match (to_version, latest) {
-        (Some(v), _) => {
-            // Bounds-check against the entry's version range [1, latest].
-            // `state_at_version` is version-agnostic by design and misbehaves
-            // silently at the edges (v=0 reverts to create-state; v>latest
-            // no-ops), so the clarity check belongs here where `latest` is
-            // known. An out-of-range version must point at the problem, not
-            // quietly do the wrong thing (da-96yy).
-            let latest_n = latest.unwrap_or(0);
-            if v < 1 || v > latest_n {
-                anyhow::bail!("version {v} doesn't exist; entry has {latest_n} version(s)");
-            }
-            step_to(db, &current, v, ChangeKind::Undo, registry, output).map(drop)
-        }
-        (None, Some(n)) if n >= 2 => {
-            step_to(db, &current, n - 1, ChangeKind::Undo, registry, output).map(drop)
+/// One step back along one entry's trail — the one rule every undo path
+/// takes (da-ksxkx), returning what the entry became. With a prior version
+/// it reverts to it; with none, a tombstone comes back (a legacy one, say,
+/// imported without history) and a live entry that is only its create is
+/// deleted — tagged `Undo`, so `redo` brings it back under the same hid and
+/// a second `undo` restores it through the revert.
+fn step_back(db: &Db, current: &Entry) -> Result<Entry> {
+    match history::latest_version(db.conn(), &current.hid)? {
+        Some(n) if n >= 2 => Ok(db.revert_entry_to_as(&current.hid, n - 1, ChangeKind::Undo)?),
+        _ if current.deleted_at.is_some() => {
+            db.undelete(&current.slug)?;
+            Ok(db.get_entry(&current.slug)?)
         }
         _ => {
-            // No prior version to revert to — fall back to legacy undelete
-            // so tombstoned entries without history still come back. Use
-            // the resolved full slug/hid so prefixes keep working here too.
-            db.undelete(&current.slug)?;
-            if let Ok(entry) = db.get_entry(&current.slug) {
-                show_step(&current, &entry, registry, output);
-            }
-            Ok(())
+            db.soft_delete_entry_as(&current.slug, ChangeKind::Undo)?;
+            Ok(db.get_entry_including_deleted(&current.slug)?)
         }
     }
 }
@@ -248,20 +241,6 @@ fn redo_target_version(db: &Db, hid: &str) -> Result<Option<u32>> {
     })
 }
 
-/// Move `current` to the state it held at `version` and echo the step.
-fn step_to(
-    db: &Db,
-    current: &Entry,
-    version: u32,
-    kind: ChangeKind,
-    registry: Option<&SpecRegistry>,
-    output: &OutputArgs,
-) -> Result<Entry> {
-    let restored = db.revert_entry_to_as(&current.hid, version, kind)?;
-    show_step(current, &restored, registry, output);
-    Ok(restored)
-}
-
 /// The echo for one step names the action the step PERFORMS, not the command
 /// that asked for it: bringing a tombstone back is a CREATE, tombstoning is a
 /// DELETE, and anything else is an UPDATE. The same three words the write
@@ -311,29 +290,7 @@ fn undo_via_last_docs(
                 continue;
             }
         };
-        let latest = history::latest_version(db.conn(), &current.hid)?;
-        let restored: Result<Entry> = match latest {
-            Some(n) if n >= 2 => db
-                .revert_entry_to_as(&current.hid, n - 1, ChangeKind::Undo)
-                .map_err(anyhow::Error::from),
-            _ => {
-                if current.deleted_at.is_some() {
-                    db.undelete(&current.slug)?;
-                    db.get_entry(&current.slug).map_err(anyhow::Error::from)
-                } else {
-                    // Undoing a just-created entry = deleting it. The history
-                    // table has only version 1 (the create); no prior version
-                    // exists to revert to. Soft-delete instead, which tombstones
-                    // the entry — tagged as an Undo so `redo` can bring it back
-                    // under the same hid, and so a second `undo` on the same hid
-                    // restores it via the revert branch above.
-                    db.soft_delete_entry_as(&current.slug, ChangeKind::Undo)?;
-                    db.get_entry_including_deleted(&current.slug)
-                        .map_err(anyhow::Error::from)
-                }
-            }
-        };
-        match restored {
+        match step_back(db, &current) {
             Ok(entry) => steps.push((current, entry)),
             Err(e) => {
                 eprintln!("undo {hid}: {e}");
