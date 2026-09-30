@@ -300,7 +300,7 @@ mod tests {
     /// A UNIQUE index over duplicates will not build: the install fails, and
     /// the kit's indices are left as they were — none on a first install,
     /// the working one on a re-install — so nothing is retried on every
-    /// open. The specs it installed stay installed (`kit.rs`'s contract).
+    /// open. Indices go first, so no spec has been written (da-45amw).
     #[test]
     fn an_index_that_will_not_build_fails_the_install() {
         let db = Db::open_in_memory().unwrap();
@@ -316,7 +316,7 @@ mod tests {
         assert!(err.contains("UNIQUE"), "{err}");
         assert!(db.load_indices_by_kit("k").unwrap().is_empty());
         assert!(!built(&db, "kit_k__one"));
-        assert!(db.load_spec("a").unwrap().is_some());
+        assert!(db.load_spec("a").unwrap().is_none());
 
         let working = index("one", "field", false);
         db.install_kit("k", &[], std::slice::from_ref(&working), false)
@@ -329,6 +329,6 @@ mod tests {
             [&working]
         );
         assert!(built(&db, "kit_k__one"));
-        assert!(db.load_spec("b").unwrap().is_some());
+        assert!(db.load_spec("b").unwrap().is_none());
     }
 }

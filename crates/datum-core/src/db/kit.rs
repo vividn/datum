@@ -147,35 +147,10 @@ impl Db {
     ) -> Result<InstallReport> {
         let mut report = InstallReport::default();
 
-        // Each spec is its own entry write, as a kit's layouts are.
-        for spec in specs {
-            let existing_kit: Option<Option<String>> = self
-                .spec_entry(&spec.field)?
-                .map(|e| e.data.as_ref().and_then(spec_kit).map(str::to_string));
-
-            // The bare spec a field's first log wrote is no one's choice,
-            // so it does not stand in a kit's way (da-1mkej).
-            let bare = existing_kit == Some(None)
-                && self.load_spec(&spec.field)?.is_some_and(|s| s.is_bare());
-            if let Some(existing) = existing_kit.filter(|_| !bare) {
-                if !force {
-                    report.outcomes.push((
-                        spec.field.clone(),
-                        KitFieldOutcome::SkippedExisting {
-                            existing_kit: existing,
-                        },
-                    ));
-                    continue;
-                }
-            }
-            self.write_spec_entry(spec, Some(kit_id))?;
-            report
-                .outcomes
-                .push((spec.field.clone(), KitFieldOutcome::Installed));
-        }
-
         // Indices: this kit's definitions become exactly the TOML's, and
-        // the device's physical indices follow them (da-fwwtn).
+        // the device's physical indices follow them (da-fwwtn). They go
+        // first, as the one part that can still fail and undo itself, so
+        // a failed install has written no spec (da-45amw).
         let before = self.load_indices_by_kit(kit_id)?;
         let mut wanted = Vec::with_capacity(indices.len());
         for entry in indices {
@@ -212,6 +187,33 @@ impl Db {
             }
             self.derive_kit_indices()?;
             return Err(DatumError::Other(format!("kit '{kit_id}': index: {err}")));
+        }
+
+        // Each spec is its own entry write, as a kit's layouts are.
+        for spec in specs {
+            let existing_kit: Option<Option<String>> = self
+                .spec_entry(&spec.field)?
+                .map(|e| e.data.as_ref().and_then(spec_kit).map(str::to_string));
+
+            // The bare spec a field's first log wrote is no one's choice,
+            // so it does not stand in a kit's way (da-1mkej).
+            let bare = existing_kit == Some(None)
+                && self.load_spec(&spec.field)?.is_some_and(|s| s.is_bare());
+            if let Some(existing) = existing_kit.filter(|_| !bare) {
+                if !force {
+                    report.outcomes.push((
+                        spec.field.clone(),
+                        KitFieldOutcome::SkippedExisting {
+                            existing_kit: existing,
+                        },
+                    ));
+                    continue;
+                }
+            }
+            self.write_spec_entry(spec, Some(kit_id))?;
+            report
+                .outcomes
+                .push((spec.field.clone(), KitFieldOutcome::Installed));
         }
         Ok(report)
     }

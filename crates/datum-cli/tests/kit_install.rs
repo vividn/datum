@@ -381,3 +381,69 @@ fn kit_show_refuses_an_unknown_kit_by_name() {
     let err = format!("{:#}", run_cli(&["kit", "show", "nope"], &db).unwrap_err());
     assert!(err.contains("no installed kit named 'nope'"), "{err}");
 }
+
+/// A field, an alias and a view that are fine, and a command whose colour
+/// rule the rule language refuses — vremya's meds kit (da-45amw).
+const HALF_GOOD: &str = r#"[kit]
+name = "meds"
+
+[[field]]
+name = "dose"
+verb = "occur"
+
+[[alias]]
+name = "ibu"
+expands_to = "occur dose drug=ibuprofen mg=400"
+
+[[view]]
+name = "doses"
+sql = "SELECT json_extract(data, '$.drug') AS drug FROM entries WHERE field = 'dose'"
+
+[[command]]
+name = "meds"
+view = "doses"
+
+[[command.color_rules]]
+when = "drug = 'ibuprofen' AND mg > 1200"
+color = "red"
+"#;
+
+/// Nothing of the kit is in the database: no kit, spec, alias or view.
+fn nothing_of_meds(db: &Db) {
+    assert!(db.list_kits().unwrap().is_empty(), "no kit is listed");
+    assert!(db.load_spec("dose").unwrap().is_none(), "no spec");
+    assert!(db.lookup_alias("ibu").unwrap().is_none(), "no alias");
+    assert!(db.get_view("doses").unwrap().is_none(), "no view");
+}
+
+/// A kit that fails to install writes nothing, and `--dry-run` fails on
+/// what the install fails on, rather than reporting what it would install
+/// (da-45amw). A bad view is refused the same way.
+#[test]
+fn a_kit_that_fails_installs_nothing_and_a_dry_run_says_so() {
+    let bad_view = HALF_GOOD
+        .replace("drug = 'ibuprofen' AND mg > 1200", "drug = 'ibuprofen'")
+        .replace("sql = \"SELECT", "sql = \"PRAGMA");
+    for (kit, why) in [(HALF_GOOD, "bad color rule"), (&bad_view, "single SELECT")] {
+        for extra in [&["--yes"][..], &["--yes", "--dry-run"]] {
+            let db = fresh_db();
+            let err = format!("{:#}", install(&db, kit, extra).unwrap_err());
+            assert!(err.contains(why), "{extra:?}: {err}");
+            nothing_of_meds(&db);
+        }
+    }
+}
+
+/// An index that will not build on this data fails the install before any
+/// spec is written, as it undoes its own definitions (da-45amw).
+#[test]
+fn an_index_that_will_not_build_leaves_no_spec() {
+    let db = fresh_db();
+    run_cli(&["occur", "dose"], &db).unwrap();
+    run_cli(&["occur", "dose", "-q"], &db).unwrap();
+    let kit = "[kit]\nname = \"meds\"\n\n[[field]]\nname = \"dose\"\nverb = \"occur\"\ncolor = \"#abcdef\"\n\n[[index]]\nname = \"one_dose\"\non = \"entries\"\nexpression = \"field\"\nwhere = \"field = 'dose'\"\nunique = true\n";
+    let err = format!("{:#}", install(&db, kit, &["--yes"]).unwrap_err());
+    assert!(err.contains("index"), "{err}");
+    assert_eq!(db.load_spec("dose").unwrap().unwrap().color, None);
+    assert!(db.list_kits().unwrap().is_empty(), "no kit is listed");
+}

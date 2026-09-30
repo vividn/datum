@@ -6,8 +6,10 @@
 //!   (from stdin when the path is `-`) and upsert each `[[field]]` as a
 //!   `spec` entry whose data carries `kit_id = <kit name>`. Existing specs
 //!   for the same field win unless `--force` is passed. If the kit declares `[[index]]`
-//!   blocks, the user is prompted for trust unless `--yes`. `--dry-run`
-//!   prints what the kit brings and writes nothing. URLs are blocked until
+//!   blocks, the user is prompted for trust unless `--yes`. Every section
+//!   is screened before the first write, so a refused kit writes nothing;
+//!   `--dry-run` runs the same screens, prints what the kit brings and
+//!   writes nothing. URLs are blocked until
 //!   the signed-registry hook lands.
 //! - `export <name> [<path>]` — round-trip the rows installed by this kit
 //!   back to TOML. None path → stdout.
@@ -30,7 +32,7 @@ use std::path::Path;
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
-use datum_core::db::Db;
+use datum_core::db::{validate_command, Db};
 use datum_core::field_spec::{detect_anchor_cycles, format_cycle};
 use datum_core::kit::{validate_layout_entry, FieldEntry, IndexEntry, KitToml};
 use datum_core::kit_color::resolve_color;
@@ -227,6 +229,13 @@ fn install_toml(
     for layout in &kit.layouts {
         let _ = validate_layout_entry(layout)?;
     }
+    // Views and commands too: each installer screens its own, but only
+    // after the sections before it have written, which left a kit with a
+    // bad colour rule half-installed and a dry run blind to it (da-45amw).
+    db.check_kit_views(&kit.views)?;
+    for c in &kit.commands {
+        validate_command(c)?;
+    }
     if !kit.indices.is_empty() && !args.dry_run {
         let is_reinstall = !db.load_indices_by_kit(&kit.kit.name)?.is_empty();
         let approved =
@@ -311,16 +320,16 @@ fn install_toml(
         return Ok(());
     }
 
+    // Everything below was screened above; what can still fail is an index
+    // that will not build on this data, which install_kit tries first and
+    // undoes, and the database itself (da-45amw).
     db.set_client_id(&client_id()?);
     let report = db.install_kit(&kit.kit.name, &specs, &kit.indices, args.force)?;
-    // Views are independent of fields; installed in the same kit-install
-    // pass so a TOML containing both lands atomically (per slice 4 bead).
     let view_report = db.install_kit_views(&kit.kit.name, &kit.views, args.force)?;
     // Aliases (slice 3): same pattern. Tagged with the kit's id so
     // uninstall removes only what this kit owns.
     let alias_report = db.install_kit_aliases(&kit.kit.name, &kit.aliases, args.force)?;
-    // Slice 6: kit-defined commands. Validation runs first so a bad rule
-    // surfaces before any partial-install of fields/views.
+    // Slice 6: kit-defined commands.
     let cmd_report = db.install_kit_commands(&kit.kit.name, &kit.commands, args.force)?;
     // Layouts (da-gg0v) land as ENTRIES in this very database, not in a
     // table of their own — so they sync with the data, and the web reads

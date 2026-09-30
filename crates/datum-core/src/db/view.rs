@@ -106,24 +106,11 @@ impl Db {
         views: &[ViewEntry],
         force: bool,
     ) -> Result<InstallViewsReport> {
-        // Install-time screen (da-w3xg): reject before any view persists.
-        // execute_view re-checks every run, so a synced view is held too.
-        let mut defs = Vec::with_capacity(views.len());
-        for v in views {
-            crate::kit::validate_view_entry(v)?;
-            defs.push((v.name.clone(), definition_data(v, None)?));
-        }
-        // What each uses must resolve — to this kit's views first, then the
-        // installed ones — without a cycle or shadowing a table (da-3mzyu).
-        let lookup = |n: &str| -> Result<Option<(String, Vec<String>)>> {
-            match views.iter().find(|v| v.name == n) {
-                Some(v) => Ok(Some((v.sql.clone(), v.uses.clone()))),
-                None => Ok(self.get_view(n)?.map(|v| (v.sql_text, v.uses))),
-            }
-        };
-        for v in views {
-            inline_uses(&v.name, &v.sql, &v.uses, &lookup, &|n| self.is_table(n))?;
-        }
+        self.check_kit_views(views)?;
+        let defs = views
+            .iter()
+            .map(|v| Ok((v.name.clone(), definition_data(v, None)?)))
+            .collect::<Result<Vec<_>>>()?;
         let outcomes = self.install_definitions(VIEW_FIELD, kit_id, defs, force)?;
         Ok(InstallViewsReport {
             outcomes: outcomes
@@ -137,6 +124,28 @@ impl Db {
                 })
                 .collect(),
         })
+    }
+
+    /// Install-time screen of a kit's views (da-w3xg), writing nothing, so
+    /// `kit install` runs it before its first write and `--dry-run` runs it
+    /// at all (da-45amw). execute_view re-checks every run, so a synced
+    /// view is held too.
+    pub fn check_kit_views(&self, views: &[ViewEntry]) -> Result<()> {
+        for v in views {
+            crate::kit::validate_view_entry(v)?;
+        }
+        // What each uses must resolve — to this kit's views first, then the
+        // installed ones — without a cycle or shadowing a table (da-3mzyu).
+        let lookup = |n: &str| -> Result<Option<(String, Vec<String>)>> {
+            match views.iter().find(|v| v.name == n) {
+                Some(v) => Ok(Some((v.sql.clone(), v.uses.clone()))),
+                None => Ok(self.get_view(n)?.map(|v| (v.sql_text, v.uses))),
+            }
+        };
+        for v in views {
+            inline_uses(&v.name, &v.sql, &v.uses, &lookup, &|n| self.is_table(n))?;
+        }
+        Ok(())
     }
 
     /// Delete (softly) every view marked with this `kit_id`. The person's
