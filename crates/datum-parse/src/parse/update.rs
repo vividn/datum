@@ -21,7 +21,11 @@ pub(crate) fn update_args_registry() -> Vec<LiftedSpec<UpdateParsing>> {
         r.push(lift(|p: &mut UpdateParsing| &mut p.output, spec));
     }
     r.push(local_value(None, Some("strategy"), |p, v| {
-        p.strategy = Some(parse_conflict_strategy(v)?);
+        p.strategy = Some(parse_conflict_strategy(
+            "strategy",
+            &["update", "merge", "rekey"],
+            v,
+        )?);
         Ok(())
     }));
     r.push(local_value(None, Some("id"), |p, v| {

@@ -204,14 +204,26 @@ pub(crate) fn fold_args_with_pre<'a, P: 'static>(
     Ok(pos)
 }
 
-pub(crate) fn parse_conflict_strategy(s: &str) -> Result<ConflictStrategyArg> {
-    match s.to_ascii_lowercase().as_str() {
-        "update" => Ok(ConflictStrategyArg::Update),
-        "merge" => Ok(ConflictStrategyArg::Merge),
-        "rekey" => Ok(ConflictStrategyArg::Rekey),
-        "ignore" => Ok(ConflictStrategyArg::Ignore),
-        other => Err(ParseError::InvalidArg(format!(
-            "invalid --conflict value: '{other}' (expected update|merge|rekey|ignore)"
+/// Parse the value of `--<flag>`, which accepts only `accepted` — so the
+/// error names the flag the user typed and what THAT flag takes (da-nhnip).
+pub(crate) fn parse_conflict_strategy(
+    flag: &str,
+    accepted: &[&str],
+    s: &str,
+) -> Result<ConflictStrategyArg> {
+    let v = s.to_ascii_lowercase();
+    let arg = match v.as_str() {
+        "update" => Some(ConflictStrategyArg::Update),
+        "merge" => Some(ConflictStrategyArg::Merge),
+        "rekey" => Some(ConflictStrategyArg::Rekey),
+        "ignore" => Some(ConflictStrategyArg::Ignore),
+        _ => None,
+    };
+    match arg {
+        Some(a) if accepted.contains(&v.as_str()) => Ok(a),
+        _ => Err(ParseError::InvalidArg(format!(
+            "invalid --{flag} value: '{v}' (expected {})",
+            accepted.join("|")
         ))),
     }
 }
