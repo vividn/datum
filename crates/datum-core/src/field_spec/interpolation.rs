@@ -182,21 +182,44 @@ fn split_raw_and_fields(template: &str) -> Vec<String> {
     buf.split('\x00').map(String::from).collect()
 }
 
-fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
+/// The name a placeholder's key resolves by: the optional `?` stripped,
+/// and a legacy camelCase time name mapped to its snake_case form.
+fn canonical_key(key: &str) -> &str {
     let key = key.strip_prefix('?').unwrap_or(key);
     // da-k2xv: legacy camelCase time metadata names (occurTime / createTime
     // / modifyTime) resolve to their snake_case counterparts so id-templates
     // ported verbatim from the original datum (which used camelCase) keep
     // working. Other camelCase keys fall through to lookup_extra_data
     // unchanged.
-    let key = match key {
+    match key {
         "occurTime" => "occur_time",
         "createTime" => "create_time",
         "modifyTime" => "modify_time",
         // following_state and dur have no legacy camelCase form (they're
         // post-v3 additions); pass through unchanged.
         other => other,
-    };
+    }
+}
+
+/// True iff `template` has a placeholder for one of the entry's times
+/// (`occur_time` / `create_time` / `modify_time`, in any spelling
+/// [`lookup_field`] resolves). A template without one is a KEY: two
+/// entries it renders alike are one record, not two events (da-b5k87).
+pub fn names_time(template: &str) -> bool {
+    split_raw_and_fields(template)
+        .iter()
+        .skip(1)
+        .step_by(2)
+        .any(|k| {
+            matches!(
+                canonical_key(k),
+                "occur_time" | "create_time" | "modify_time"
+            )
+        })
+}
+
+fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
+    let key = canonical_key(key);
     match key {
         "" => String::new(),
         "field" => ctx.field.to_string(),
@@ -772,5 +795,29 @@ mod tests {
         let ctx = ctx_with_times(Some(&t), None);
         let got = interpolate("%?createTime%", &ctx, "__");
         assert_eq!(got, "c2026-05-13T15:00:00.000Z");
+    }
+
+    /// da-b5k87: `names_time` reads placeholders as `interpolate` splits
+    /// them, so an optional or camelCase time counts and a near-miss key, an
+    /// escaped literal or a time name in raw text does not.
+    #[test]
+    fn names_time_walks_placeholders_like_interpolate() {
+        for t in [
+            "%occur_time%",
+            "%?occur_time%",
+            "%?createTime%",
+            "x__%modify_time%",
+        ] {
+            assert!(names_time(t), "{t}");
+        }
+        for t in [
+            "%uid%",
+            "%occur_time_extra%",
+            r"\%occur_time\%",
+            "a%b%occur_time",
+            "fixed",
+        ] {
+            assert!(!names_time(t), "{t}");
+        }
     }
 }

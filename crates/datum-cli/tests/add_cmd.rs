@@ -390,6 +390,19 @@ fn keyed_record_relogs_in_place_under_update() {
     assert!(format!("{err:#}").contains("id template"), "{err:#}");
 }
 
+/// da-b5k87: an OPTIONAL time placeholder still names the time, so its
+/// collision is two events at one instant, not a keyed record.
+#[test]
+fn optional_time_placeholder_is_not_a_key() {
+    let db = fresh_db();
+    let argv = |a: &'static str| ["occur", "tx", "-t", "09:00", "--id", "%?occur_time%", a];
+    run_cli(&argv("a=1"), &db).expect("tx");
+    let err = run_cli(&argv("a=2"), &db).expect_err("same instant");
+    let msg = format!("{err:#}");
+    assert!(msg.contains("id template"), "{msg}");
+    assert!(!msg.contains("--update or --merge"), "{msg}");
+}
+
 // ─── TS #15: "inserts id structure into the metadata" ────────────────────────
 
 /// Daydumb's `--id` only takes a single template (`Option<String>`).

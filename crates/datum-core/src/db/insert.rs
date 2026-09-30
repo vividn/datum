@@ -1176,16 +1176,7 @@ pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(Slug, Hid)
                         // this collision on purpose — the way out is a
                         // conflict flag, not another template.
                         let tmpl = entry.id_structure.as_deref().unwrap_or("%occur_time%");
-                        let keyed = ![
-                            "occur_time",
-                            "occurTime",
-                            "create_time",
-                            "createTime",
-                            "modify_time",
-                            "modifyTime",
-                        ]
-                        .iter()
-                        .any(|t| tmpl.contains(&format!("%{t}")));
+                        let keyed = !crate::field_spec::names_time(tmpl);
                         let hint = if keyed {
                             "; pass --update or --merge to change that entry"
                         } else if entry.asserts_state() {
