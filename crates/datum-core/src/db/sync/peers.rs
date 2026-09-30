@@ -99,7 +99,7 @@ impl Db {
     /// member: one use. A redeemer says which `chain` it is in (empty: none);
     /// one in another chain is refused, as is one that does not say, since a
     /// copy belongs to one chain (da-mepav). Whether `id` is new to this copy
-    /// comes back.
+    /// comes back. A paused copy refuses every session (da-wlbyx).
     pub fn sync_handshake(
         &self,
         id: &str,
@@ -109,6 +109,7 @@ impl Db {
         chain: Option<&str>,
         dialed: bool,
     ) -> Result<bool> {
+        super::pause::refuse_paused(&self.conn)?;
         let refuse = |why: String| Err(DatumError::Other(why));
         if let Some(why) = chain::label_problem(label) {
             return refuse(why);

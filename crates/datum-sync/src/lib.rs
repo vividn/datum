@@ -335,8 +335,14 @@ pub fn run(db: &Db) -> Result<()> {
                     }
                 }
                 _ = tick.tick() => {
+                    // Paused (da-wlbyx), it idles: an incoming session's
+                    // handshake refuses, and nothing is pushed.
+                    let peers = match db.sync_paused()? {
+                        Some(_) => Vec::new(),
+                        None => synced_peers(db)?,
+                    };
                     let vector = db.sync_vector()?;
-                    for p in synced_peers(db)? {
+                    for p in peers {
                         let waiting = retry.get(&p.id).is_some_and(|t| *t > tokio::time::Instant::now());
                         if waiting || pushed.get(&p.id) == Some(&vector) {
                             continue;

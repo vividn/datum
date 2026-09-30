@@ -310,12 +310,16 @@ CREATE INDEX IF NOT EXISTS ops_hlc ON ops(hlc);
 -- whose path is learned on its next use.
 -- The secret is stored as it is: the key vouches for this copy's ops on the
 -- wire, and anyone who can read the file can sign as it.
+-- `paused_at`: `datum sync pause`, this copy's alone; `warned_at`: the last
+-- once-a-day warning that it has not synced (da-wlbyx).
 CREATE TABLE IF NOT EXISTS sync_local (
     id              INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
     endpoint_secret TEXT NOT NULL,
     endpoint_id     TEXT NOT NULL,
     client_id       TEXT NOT NULL,
-    path            TEXT NOT NULL DEFAULT ''
+    path            TEXT NOT NULL DEFAULT '',
+    paused_at       TEXT,
+    warned_at       TEXT
 );
 
 -- Where this copy last saw the members of its sync chain (da-rugg8): an

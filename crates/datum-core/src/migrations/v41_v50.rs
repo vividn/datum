@@ -173,6 +173,24 @@ fn rename_client_id(conn: &Connection, from: &str, to: &str) -> Result<()> {
     Ok(())
 }
 
+/// da-wlbyx: `sync_local.paused_at` and `warned_at`.
+pub(super) fn m48_to_49_sync_pause(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "ALTER TABLE sync_local ADD COLUMN paused_at TEXT;
+         ALTER TABLE sync_local ADD COLUMN warned_at TEXT;",
+    )?;
+    Ok(())
+}
+
+/// Reverse v48→v49.
+pub(super) fn down_49_to_48_sync_pause(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "ALTER TABLE sync_local DROP COLUMN warned_at;
+         ALTER TABLE sync_local DROP COLUMN paused_at;",
+    )?;
+    Ok(())
+}
+
 /// The v45 table exactly as `schema.sql` creates it.
 const SYNC_NOTICES_SQL: &str = "
 CREATE TABLE IF NOT EXISTS sync_notices (

@@ -111,6 +111,9 @@
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { currentDb } from '$lib/database.js';
+	import { run } from '$lib/run.js';
+	import { syncStates } from '$lib/sync.js';
 	import Beta from '$lib/Beta.svelte';
 	import { act } from '$lib/act.js';
 	import { openBackups } from '$lib/backups.js';
@@ -148,6 +151,8 @@
 	 */
 	$: preview = name !== undefined && $previews.has(name);
 	$: locked = !!active?.locked;
+	/** When this database's sync was paused, while it is (da-wlbyx). */
+	$: paused = $syncStates[currentDb()]?.paused;
 
 	/**
 	 * The widget's own options, inline (da-vhwq), for a root tab that SHOWS
@@ -396,6 +401,13 @@
 		>
 	{/if}
 	{#if error}<span class="error" role="alert">{error}</span>{/if}
+	<!-- Sync paused (da-wlbyx) is loud: vividn calls it risky. Every tab hears
+	     it from the database's sync leader, and a tap resumes. -->
+	{#if paused}
+		<button type="button" class="control paused" title="sync paused since {paused} — tap to resume" on:click={() => run(['sync', 'resume'])}
+			>sync paused</button
+		>
+	{/if}
 	<span class="end"><Beta /></span>
 	<!-- The lock, ON THE GEAR'S OTHER SIDE — vividn, 2026-09-21 (da-fphjw):
 	     "Move the lock button to the other side of the gear". It was at
@@ -645,6 +657,15 @@
 
 	.versions button:hover {
 		color: var(--accent-bright);
+	}
+
+	.paused {
+		padding: 0 0.5rem;
+		color: var(--page);
+		background: var(--error);
+		border-color: var(--error);
+		font-weight: 600;
+		white-space: nowrap;
 	}
 
 	.error {

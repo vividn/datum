@@ -30,6 +30,9 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                 println!("{NO_CHAIN}");
                 return Ok(());
             }
+            if let Some(at) = db.sync_paused()? {
+                bail!("sync is paused on this copy since {at}: `datum sync resume` to sync again");
+            }
             #[cfg(feature = "net")]
             let synced = datum_sync::now_all(db);
             #[cfg(not(feature = "net"))]
@@ -39,9 +42,19 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             }
             synced?
         }
-        SyncCommand::Pause | SyncCommand::Resume => {
-            bail!("`datum sync pause` and `resume` are not built yet (da-wlbyx)")
+        SyncCommand::Pause => {
+            ensure!(db.sync_chain()?.exists(), NO_CHAIN);
+            match db.sync_set_paused(true)? {
+                Some(at) => println!("sync was already paused, since {at}"),
+                None => println!(
+                    "sync paused: this copy neither sends nor receives until `datum sync resume`"
+                ),
+            }
         }
+        SyncCommand::Resume => match db.sync_set_paused(false)? {
+            Some(at) => println!("sync resumed (paused since {at})"),
+            None => println!("sync was not paused"),
+        },
         SyncCommand::Vector => {
             println!("{}", serde_json::to_string(&db.sync_vector()?)?);
         }
@@ -517,6 +530,7 @@ fn status(db: &Db, json: bool) -> Result<()> {
         .member(&mine)
         .map_or_else(copy_label, |m| m.label.clone());
     let peers = db.sync_status()?;
+    let paused = db.sync_paused()?;
     let unlocks: Vec<_> = db
         .sync_notices_unacked()?
         .into_iter()
@@ -544,7 +558,7 @@ fn status(db: &Db, json: bool) -> Result<()> {
             .map(|n| json!({"by": n.label, "at": n.at}))
             .collect();
         let out = json!({
-            "db": name, "chain": chain.exists().then_some(&chain.id),
+            "db": name, "chain": chain.exists().then_some(&chain.id), "paused": paused,
             "open": chain.exists() && chain.is_open(), "unlocked": unlocked,
             "this": {"endpoint": mine, "client": db.sync_client_id()?, "label": label},
             "members": members,
@@ -555,6 +569,9 @@ fn status(db: &Db, json: bool) -> Result<()> {
     if !chain.exists() {
         println!("{NO_CHAIN}");
         return Ok(());
+    }
+    if let Some(at) = &paused {
+        println!("⚠ paused since {at}: this copy neither sends nor receives — `datum sync resume`");
     }
     println!(
         "sync chain {} · this copy {label} ({})",

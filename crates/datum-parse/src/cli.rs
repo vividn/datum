@@ -758,7 +758,7 @@ pub enum SyncCommand {
     Status {
         show: Show,
     },
-    /// `datum sync pause | resume` — not built yet (da-wlbyx).
+    /// `datum sync pause | resume` (da-wlbyx): this copy's, never synced.
     Pause,
     Resume,
     /// `datum sync chain invite [--qr] [--expires <DUR>] [--admin-key

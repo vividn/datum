@@ -55,7 +55,7 @@ use v41_v50::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 48;
+pub const CURRENT_SCHEMA_VERSION: u32 = 49;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -409,5 +409,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "device_id -> client_id on entries, entry_history (and its snapshots) and sync_local: it names an installation, not a machine (da-lfsei)",
         apply: m47_to_48_client_id,
         down: down_48_to_47_client_id,
+    },
+    Migration {
+        from: 48,
+        to: 49,
+        summary: "sync_local.paused_at + warned_at: `datum sync pause`, and the once-a-day warning that a copy has not synced (da-wlbyx)",
+        apply: m48_to_49_sync_pause,
+        down: down_49_to_48_sync_pause,
     },
 ];

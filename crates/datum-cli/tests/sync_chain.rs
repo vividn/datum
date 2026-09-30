@@ -126,6 +126,13 @@ impl Copy {
             .unwrap()
     }
 
+    fn exec(&self, sql: &str) {
+        rusqlite::Connection::open(self.tmp.path().join("data.db"))
+            .unwrap()
+            .execute_batch(sql)
+            .unwrap();
+    }
+
     fn stderr_of(&self, args: &[&str]) -> String {
         String::from_utf8(self.run(args, "").stderr).unwrap()
     }
@@ -1231,4 +1238,101 @@ fn removing_the_last_admin_unlocks_the_chain_only_on_purpose() {
         check.contains("⚠ new sync endpoint unlock") && !check.contains(unlocked),
         "{check}"
     );
+}
+
+/// `datum sync pause` (da-wlbyx): the copy neither sends nor receives — its
+/// pipe and its handshake refuse, and bare `sync` names when and the fix —
+/// `status` leads with it, and only this copy is paused. `resume` lets the
+/// same ops through.
+#[test]
+fn pause_stops_the_pipe_and_resume_lets_it_through() {
+    let (a, b) = chained();
+    let b_id = b.id();
+    a.ok(&["occur", "tea"]);
+    assert!(a.ok(&["sync", "pause"]).contains("sync paused"));
+    let at = a.query("SELECT paused_at FROM sync_local");
+    let refusal = format!("sync is paused on this copy since {at}");
+    for why in [
+        a.fails(&["sync", "pipe", "ops"], ""),
+        b.send(&a).1,
+        a.fails(
+            &["sync", "handshake", &b_id, "--label", "b", "--addr", "{}"],
+            "",
+        ),
+        a.fails(&["sync"], ""),
+    ] {
+        assert!(
+            why.contains(&refusal) && why.contains("`datum sync resume`"),
+            "{why}"
+        );
+    }
+    let status = a.ok(&["sync", "status"]);
+    assert!(
+        status.starts_with(&format!("⚠ paused since {at}")),
+        "{status}"
+    );
+    assert_eq!(
+        json(&a.ok(&["sync", "status", "--json"]))["paused"],
+        at.as_str()
+    );
+    assert!(json(&b.ok(&["sync", "status", "--json"]))["paused"].is_null());
+    assert!(a
+        .ok(&["sync", "pause"])
+        .contains(&format!("already paused, since {at}")));
+
+    assert!(a.ok(&["sync", "resume"]).contains("sync resumed"));
+    assert!(a.send(&b).0);
+    assert!(b.has("tea"));
+    assert!(!a.ok(&["sync", "status"]).contains("paused"));
+}
+
+/// A write on a copy with another member that has synced with none for a
+/// day warns once a day, naming the pause when it knows it (da-wlbyx). A
+/// read does not, nor does a lone member ever.
+#[test]
+fn a_write_warns_once_a_day_when_not_synced_for_a_day() {
+    let (a, b) = chained();
+    session(&a, &b);
+    let stale = "not synced for";
+    assert!(!a.stderr_of(&["occur", "fresh"]).contains(stale));
+
+    a.exec("UPDATE sync_peers SET last_seen = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-3 days')");
+    assert!(!a.stderr_of(&["tail"]).contains(stale), "a read is quiet");
+    let warned = a.stderr_of(&["occur", "tea"]);
+    assert!(
+        warned.contains("⚠ not synced for 3 days — `datum sync status`"),
+        "{warned}"
+    );
+    assert!(
+        !a.stderr_of(&["occur", "coffee"]).contains(stale),
+        "once a day"
+    );
+
+    // A day later it warns again, and names the pause.
+    a.ok(&["sync", "pause"]);
+    a.exec("UPDATE sync_local SET warned_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-25 hours')");
+    let at = a.query("SELECT paused_at FROM sync_local");
+    let warned = a.stderr_of(&["occur", "juice"]);
+    assert!(
+        warned.contains(&format!("not synced for 3 days (paused since {at})")),
+        "{warned}"
+    );
+
+    // With b revoked, a is its chain's lone member: never a warning.
+    a.ok(&["sync", "resume"]);
+    a.ok(&["sync", "chain", "revoke", "b"]);
+    a.exec("UPDATE sync_local SET warned_at = NULL");
+    assert!(!a.stderr_of(&["occur", "alone"]).contains(stale));
+}
+
+/// A multi-side write commits after every side has run, and warns as a
+/// single write does (da-wlbyx).
+#[test]
+fn a_multi_side_write_warns_too() {
+    let (a, b) = chained();
+    session(&a, &b);
+    a.exec("UPDATE sync_peers SET last_seen = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-3 days')");
+    let warned = a.stderr_of(&["occur", "tea", ",", "occur", "coffee"]);
+    assert!(a.has("tea") && a.has("coffee"));
+    assert!(warned.contains("⚠ not synced for 3 days"), "{warned}");
 }

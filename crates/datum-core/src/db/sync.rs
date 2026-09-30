@@ -49,6 +49,7 @@ use super::row_mapper::row_to_entry;
 use super::Db;
 
 pub mod chain;
+mod pause;
 pub mod peers;
 pub mod status;
 use chain::{Chain, CHAIN_HID};
@@ -195,8 +196,10 @@ fn endpoint(conn: &Connection) -> Result<Endpoint> {
     let key = SigningKey::generate(&mut rand::rngs::OsRng);
     let id = hex(key.verifying_key().as_bytes());
     conn.execute(
-        "INSERT OR REPLACE INTO sync_local (id, endpoint_secret, endpoint_id, client_id, path)
-         VALUES (1, ?1, ?2, ?3, ?4)",
+        "INSERT INTO sync_local (id, endpoint_secret, endpoint_id, client_id, path)
+         VALUES (1, ?1, ?2, ?3, ?4)
+         ON CONFLICT (id) DO UPDATE SET endpoint_secret = excluded.endpoint_secret,
+           endpoint_id = excluded.endpoint_id, client_id = excluded.client_id, path = excluded.path",
         params![hex(&key.to_bytes()), id, client, path],
     )?;
     Ok(Endpoint { key, id })
@@ -1011,7 +1014,9 @@ impl Db {
     /// new ones use the new, which is also a new iroh endpoint id and no
     /// member of the chain: the copy joins it again. Returns the new id.
     pub fn sync_rekey(&self) -> Result<String> {
-        self.conn.execute("DELETE FROM sync_local", [])?;
+        // Blanked, not deleted: the pause is this copy's, whatever its key.
+        self.conn
+            .execute("UPDATE sync_local SET endpoint_secret = ''", [])?;
         Ok(endpoint(&self.conn)?.id)
     }
 
@@ -1034,6 +1039,7 @@ impl Db {
         since: &BTreeMap<String, i64>,
         overlap: bool,
     ) -> Result<Vec<String>> {
+        pause::refuse_paused(&self.conn)?;
         let tx = self.conn.unchecked_transaction()?;
         // A vector holding more of this copy's ops than it signed was made
         // by another copy signing with this key.
@@ -1081,6 +1087,7 @@ impl Db {
     /// `entry_history` (`sync_merge`) and emits no op of its own: it is that
     /// op.
     pub fn sync_apply(&self, lines: &str) -> Result<ApplySummary> {
+        pause::refuse_paused(&self.conn)?;
         let tx = self.conn.unchecked_transaction()?;
         let (mine, signed) = own_head(&tx)?;
         let mut s = ApplySummary::default();

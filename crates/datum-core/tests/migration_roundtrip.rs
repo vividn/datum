@@ -195,6 +195,7 @@ fn every_pair_has_a_roundtrip_test() {
         (45, 46),
         (46, 47),
         (47, 48),
+        (48, 49),
     ];
     assert_eq!(
         covered.len(),
@@ -2756,6 +2757,30 @@ fn roundtrip_v47_to_v48_client_id() {
 
     apply_one_down(conn, 48);
     assert_eq!(read("device_id"), ["dev-a"; 4]);
+}
+
+#[test]
+fn roundtrip_v48_to_v49_sync_pause() {
+    let db = fresh_at(48);
+    let conn = db.conn();
+    conn.execute(
+        "INSERT INTO sync_local (id, endpoint_secret, endpoint_id, client_id) VALUES (1, 's', 'e', 'd')",
+        [],
+    )
+    .unwrap();
+
+    apply_one_up(conn, 48);
+    for c in ["paused_at", "warned_at"] {
+        assert!(column_exists(conn, "sync_local", c), "{c}");
+    }
+
+    apply_one_down(conn, 49);
+    assert!(!column_exists(conn, "sync_local", "paused_at"));
+    assert!(!column_exists(conn, "sync_local", "warned_at"));
+    let key: String = conn
+        .query_row("SELECT endpoint_secret FROM sync_local", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(key, "s", "the key stays");
 }
 
 fn field_occurtime_sql(conn: &Connection) -> String {

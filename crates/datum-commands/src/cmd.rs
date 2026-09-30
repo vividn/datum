@@ -89,6 +89,8 @@ fn dispatch_multi_sides(sides: Vec<Cli>, db: &Db) -> Result<()> {
     // 1:1, so we can pair them up directly when rendering.
     let group_outputs = leftmost_output_per_group(&normalized, &outputs);
 
+    // The sides only buffered: this commit is the write (da-wlbyx).
+    let before = db.conn().total_changes();
     let hids = db.insert_entries_atomic(normalized)?;
     if !hids.is_empty() {
         let _ = datum_core::last_docs::set_last_docs(db, &hids);
@@ -107,6 +109,7 @@ fn dispatch_multi_sides(sides: Vec<Cli>, db: &Db) -> Result<()> {
     // silence as expected. `build_render_contexts` batches the
     // state-history probes across rows.
     render_multi_inserted(db, &hids, &group_outputs);
+    warn_if_stale(db, Some(before));
 
     Ok(())
 }
@@ -228,10 +231,24 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         .then(|| datum_core::last_docs::history_mark(db).ok())
         .flatten();
     let outer = BATCH_MARK.replace(mark);
+    // A write reminds a copy that has not synced for a day (da-wlbyx); a
+    // sync command is itself about syncing, and `sync status` says the rest.
+    let watch = (!matches!(cli.command, Command::Sync(_))).then(|| db.conn().total_changes());
     let result = crate::render::json_echo::scope(|| dispatch_inner(cli, db));
     stamp_batch(db);
     BATCH_MARK.set(outer);
+    warn_if_stale(db, watch);
     result
+}
+
+/// After a command that changed the database since `before`, the warning
+/// that this copy has not synced for a day (da-wlbyx).
+fn warn_if_stale(db: &Db, before: Option<u64>) {
+    if before.is_some_and(|n| db.conn().total_changes() > n) {
+        if let Ok(Some(warning)) = db.sync_stale_warning() {
+            eprintln!("{warning}");
+        }
+    }
 }
 
 thread_local! {

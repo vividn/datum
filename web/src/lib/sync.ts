@@ -22,6 +22,9 @@
 //   with the peer is open, `reachable` if it answered within `REACHABLE_MS`,
 //   else `offline` with when it was last seen. The leader posts it, with the
 //   endpoint's id, on the `datum-sync` channel, so every tab shows the same.
+// - PAUSED (`datum sync pause`, da-wlbyx), it pushes nothing, and a session
+//   that reaches it is refused at the handshake. The state carries when, and
+//   the root bar says so in every tab.
 // - A tab that is not the leader forwards `offer` and `connect` to it.
 //   Pairing is the chain's (da-6177s): `offer` writes a chain invite —
 //   starting an open chain when there is none — and `connect` redeems one.
@@ -54,6 +57,8 @@ export interface SyncState {
 	db: string;
 	/** This copy's endpoint id, while an endpoint runs. */
 	endpoint?: string;
+	/** When its sync was paused, while it is. */
+	paused?: string;
 	peers: Record<string, PeerState>;
 }
 
@@ -133,6 +138,7 @@ class Leader {
 	endpoint?: string;
 	peers: Peer[] = [];
 	chain = false;
+	paused?: string;
 	label = 'datum.day';
 	/** Per peer: its vector when last in step, a session in flight, one more asked for. */
 	inStep = new Map<string, string>();
@@ -156,9 +162,11 @@ class Leader {
 		const members = await cli(['--db', this.db, 'sync', 'chain', 'list', '--json']);
 		this.chain = members.code === 0;
 		this.peers = [];
+		this.paused = undefined;
 		if (this.chain) {
 			const status = JSON.parse(await must(['--db', this.db, 'sync', 'status', '--json']));
 			this.label = status.this.label;
+			this.paused = status.paused ?? undefined;
 			this.peers = (status.members as Peer[]).filter((p) => !p.revoked && p.addr);
 			await this.start();
 		}
@@ -178,7 +186,7 @@ class Leader {
 	 * not once per write.
 	 */
 	async push(all = false): Promise<void> {
-		if (!this.endpoint || !this.peers.length) return;
+		if (!this.endpoint || !this.peers.length || this.paused) return;
 		if (this.pushing) return void (this.pushAgain = true);
 		this.pushing = true;
 		try {
@@ -252,7 +260,7 @@ class Leader {
 					: 'offline';
 			peers[p.endpoint] = { label: p.label, reach, lastSeen, error: this.errors.get(p.endpoint) };
 		}
-		return { db: this.db, endpoint: this.endpoint, peers };
+		return { db: this.db, endpoint: this.endpoint, paused: this.paused, peers };
 	}
 
 	post(): void {

@@ -133,6 +133,11 @@ chain with no admin is OPEN — any member invites, revokes or renames, and
 LOCKS it, after which those acts take an admin key (passkey or key file).
 Removing the last admin takes `--allow-unlock` and reopens it; every copy
 keeps a notice of the unlock until `sync chain ack unlock`.
+`sync pause` is this copy's alone (`sync_local.paused_at`, da-wlbyx): its
+handshake and pipe refuse, `sync run` and the page's leader push nothing, and
+datum.day's root bar says «sync paused» in every tab until a tap resumes it.
+A write on a copy with another member that has not synced for a day warns
+once a day on stderr (`sync_local.warned_at`).
 
 The session itself is `crates/datum-sync-wire`, generic over a `Store`
 (da-6kpj5), and the handshake's storage side — members, invites, admission — is
