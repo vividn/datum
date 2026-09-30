@@ -146,6 +146,23 @@ describe('one endpoint per database', () => {
 			await arrives(native, other, base + 1);
 		});
 	});
+
+	test('a new leader whose reads of its setup fail backs off, and pushes once one succeeds', async () => {
+		await withTabs(async (first, second, native) => {
+			await until(async () => [...(await leadsOf(first)), ...(await leadsOf(second))], (l) => l.length === 1);
+			const [leader, other] = (await leadsOf(first)).length ? [first, second] : [second, first];
+			// Its first three fail: waits of 2, 4 and 8 s, where a flat 2 s is 6 (da-olsuv).
+			await other.page.evaluate(() => localStorage.setItem('datum.syncFailRefresh', '3'));
+			const closed = Date.now();
+			await leader.page.close();
+			await until(() => leadsOf(other), (l) => l.includes('datum'));
+			const base = await countOf(other, 'burst');
+			assert.equal((await other.run(['occur', 'burst', '-t', '1000'])).code, 0);
+			await arrives(native, other, base + 1);
+			assert.equal(await other.page.evaluate(() => localStorage.getItem('datum.syncFailRefresh')), '0');
+			assert.ok(Date.now() - closed >= 14_000, `arrived ${Date.now() - closed} ms after the hand-off`);
+		});
+	});
 });
 
 describe("a peer's write", () => {

@@ -38,8 +38,11 @@ import type { SyncEvent, SyncReport, SyncRequest } from './syncProtocol.js';
 import type { RunResult } from './run.js';
 
 const PULL_MS = 30_000;
-/** How soon a leader that could not read its setup reads it again. */
+/** How soon a leader that could not read its setup first reads it again,
+ * doubling each time up to `PULL_MS` (da-olsuv). */
 const RETRY_MS = 2_000;
+/** How many of a leader's next reads of its setup fail: a test's lever. */
+const FAIL_KEY = 'datum.syncFailRefresh';
 const REACHABLE_MS = 60_000;
 const CHANNEL = 'datum-sync';
 
@@ -127,6 +130,18 @@ function ask<T>(db: string, op: Op): Promise<T> {
 	});
 }
 
+/** Throws while `FAIL_KEY` counts down (da-zyox0's injection, da-olsuv). */
+function failInjected(): void {
+	let n = 0;
+	try {
+		n = Number(localStorage.getItem(FAIL_KEY));
+		if (n > 0) localStorage.setItem(FAIL_KEY, String(n - 1));
+	} catch {
+		return;
+	}
+	if (n > 0) throw new Error(`${FAIL_KEY}: failed on purpose`);
+}
+
 function relay(): string | undefined {
 	try {
 		return localStorage.getItem('datum.syncRelay') ?? undefined;
@@ -164,6 +179,7 @@ class Leader {
 	 * first left a failed one pushing to nobody until the next refresh.
 	 */
 	async refresh(): Promise<void> {
+		failInjected();
 		const members = await cli(['--db', this.db, 'sync', 'chain', 'list', '--json']);
 		const chain = members.code === 0;
 		const status = chain ? JSON.parse(await must(['--db', this.db, 'sync', 'status', '--json'])) : undefined;
@@ -280,14 +296,15 @@ async function lead(db: string): Promise<void> {
 	led.set(db, leader);
 	// Until the first read of its setup succeeds, a leader has no endpoint and
 	// pushes nothing, so one that failed once — taking over from a closed tab,
-	// say — never synced again, every tab's writes with it (da-zyox0).
-	for (;;) {
+	// say — never synced again, every tab's writes with it (da-zyox0). It backs
+	// off, so one that never succeeds costs a process per pull, not per 2 s.
+	for (let wait = RETRY_MS; ; wait = Math.min(wait * 2, PULL_MS)) {
 		try {
 			await leader.refresh();
 			break;
 		} catch (e) {
 			console.warn(`sync ${db}:`, e);
-			await new Promise((r) => setTimeout(r, RETRY_MS));
+			await new Promise((r) => setTimeout(r, wait));
 		}
 	}
 	onAnyChange(() => void leader.push().catch(() => {}), db);
