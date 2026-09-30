@@ -197,6 +197,7 @@ fn every_pair_has_a_roundtrip_test() {
         (47, 48),
         (48, 49),
         (49, 50),
+        (50, 51),
     ];
     assert_eq!(
         covered.len(),
@@ -2589,6 +2590,67 @@ fn v39_to_v40_passes_a_deleted_log_unless_it_holds_a_definitions_slug() {
     let err = moved.unwrap_err();
     assert!(err.contains("an entry already holds `view:moods`"), "{err}");
     assert_eq!(read_schema_version(db.conn()).unwrap(), Some(39));
+}
+
+/// da-xnzc7: `kit` becomes reserved for kits' `[kit]` tables. Nothing
+/// moves either way.
+#[test]
+fn roundtrip_v50_to_v51_kit_is_reserved() {
+    let db = fresh_at(50);
+    apply_one_up(db.conn(), 50);
+    apply_one_down(db.conn(), 51);
+}
+
+/// Life data logged under `kit` stops v51 before it is hidden; a deleted
+/// log is not in the way.
+#[test]
+fn v50_to_v51_refuses_a_field_already_named_kit() {
+    let db = fresh_at(50);
+    let conn = db.conn();
+    conn.execute(
+        "INSERT INTO entries
+            (hid, slug, content_hash, field, occur_time, create_time, modify_time, client_id)
+         VALUES ('h1', 'kit:h1', 'h1', 'kit', '2026-09-01T00:00:00+00:00',
+                 '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z', 'dev-a')",
+        [],
+    )
+    .unwrap();
+    let err = apply_migrations(conn, MIGRATIONS, 50, 51)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("1 entry") && err.contains("`kit`"), "{err}");
+    assert_eq!(read_schema_version(conn).unwrap(), Some(50));
+    conn.execute("UPDATE entries SET deleted_at = '2026-09-02T00:00:00Z'", [])
+        .unwrap();
+    apply_migrations(conn, MIGRATIONS, 50, 51).unwrap();
+}
+
+/// A kit's own table is no clash: one a v51 peer synced to a v50 copy, or
+/// one the down kept, goes up again.
+#[test]
+fn v50_to_v51_passes_a_kits_table() {
+    let insert_table = |conn: &Connection| {
+        conn.execute(
+            "INSERT INTO entries
+                (hid, slug, content_hash, field, data, occur_time, create_time,
+                 modify_time, client_id)
+             VALUES ('k1', 'kit:sample', 'k1', 'kit',
+                     '{\"name\":\"sample\",\"version\":\"0.1\",\"kit_id\":\"sample\"}',
+                     '2026-09-01T00:00:00+00:00', '2026-09-01T00:00:00Z',
+                     '2026-09-01T00:00:00Z', 'dev-a')",
+            [],
+        )
+        .unwrap();
+    };
+    let synced = fresh_at(50);
+    insert_table(synced.conn());
+    apply_one_up(synced.conn(), 50);
+
+    let kept = fresh_at(50);
+    apply_one_up(kept.conn(), 50);
+    insert_table(kept.conn());
+    apply_one_down(kept.conn(), 51);
+    apply_one_up(kept.conn(), 50);
 }
 
 /// da-i7hig: the relay sync is deleted and its table with it; the down

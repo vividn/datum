@@ -296,7 +296,7 @@ for (const engine of [chromium, webkit]) {
 					await answer(page, 'install');
 					assert.match((await app.outputs()).at(-1), /^Installed kit 'rest': 2 field\(s\)/);
 					await app.submit('kit list');
-					assert.match((await app.outputs()).at(-1), /^rest\s+2\s+1\s+1\s+0\s+1\s+0$/m);
+					assert.match((await app.outputs()).at(-1), /^rest\s+-\s+2\s+1\s+1\s+0\s+1\s+0$/m);
 					// The fields widget follows without a reload.
 					for (const field of ['nap', 'sleep']) {
 						await page.locator(`.bar [data-field="${field}"]`).waitFor();

@@ -24,9 +24,9 @@ use serde_json::Value as JsonValue;
 use crate::action::Action;
 use crate::error::{DatumError, Result};
 use crate::field_spec::FieldSpec;
-use crate::kit::IndexEntry;
+use crate::kit::{IndexEntry, KitMeta};
 
-use super::definition::{definition_data, INDEX_FIELD, KIT_KEY};
+use super::definition::{definition_data, INDEX_FIELD, KIT_FIELD, KIT_KEY};
 use super::spec::{SPEC_DISPLACED_KEY, SPEC_KIT_KEY};
 use super::types::LIVE_SQL;
 use super::Db;
@@ -101,6 +101,8 @@ impl InstallReport {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct InstalledKit {
     pub kit_id: String,
+    /// The `[kit]` table's version, as the install stored it (da-xnzc7).
+    pub version: Option<String>,
     pub field_count: usize,
     pub view_count: usize,
     pub alias_count: usize,
@@ -270,19 +272,48 @@ impl Db {
         // Index drops are unconditional — the underlying data is fine, and
         // the design explicitly declines to gate uninstall on a trust prompt.
         self.uninstall_definitions(INDEX_FIELD, kit_id)?;
+        self.uninstall_definitions(KIT_FIELD, kit_id)?;
         self.derive_kit_indices()?;
         Ok(fields)
     }
 
+    /// Store a kit's `[kit]` table as the entry `kit:<name>` (da-xnzc7), so
+    /// it syncs with the kit's rows. An installed one is kept unless `force`,
+    /// as the kit's other rows are.
+    pub fn install_kit_meta(&self, meta: &KitMeta, force: bool) -> Result<()> {
+        let data = definition_data(meta, None)?;
+        self.install_definitions(
+            KIT_FIELD,
+            &meta.name,
+            vec![(meta.name.clone(), data)],
+            force,
+        )?;
+        Ok(())
+    }
+
+    /// The `[kit]` table stored for `kit_id`, if its install stored one.
+    pub fn load_kit_meta(&self, kit_id: &str) -> Result<Option<KitMeta>> {
+        match self
+            .definitions(KIT_FIELD, Some(kit_id))?
+            .into_iter()
+            .next()
+        {
+            Some(data) => Ok(Some(serde_json::from_value(data)?)),
+            None => Ok(None),
+        }
+    }
+
     /// List installed kits with a count of each kind of thing they own. A
-    /// kit's specs, views, aliases, indices, commands and layouts are all
-    /// entries whose data names it (da-lc26c, da-b3752, da-gg0v,
-    /// da-fwwtn); the person's own carry no mark and are no kit's.
+    /// kit's specs, views, aliases, indices, commands, layouts and its
+    /// `[kit]` table are all entries whose data names it (da-lc26c,
+    /// da-b3752, da-gg0v, da-fwwtn, da-xnzc7); the person's own carry no
+    /// mark and are no kit's.
     pub fn list_kits(&self) -> Result<Vec<InstalledKit>> {
         let mut stmt = self.conn.prepare(&format!(
-            "SELECT json_extract(data, '$.kit_id') AS kit, field, COUNT(*)
+            "SELECT json_extract(data, '$.kit_id') AS kit, field, COUNT(*),
+                    MAX(json_extract(data, '$.version'))
              FROM entries
-             WHERE field IN ('spec', 'view', 'alias', 'index', 'command', 'layout')
+             WHERE field IN ('spec', 'view', 'alias', 'index', 'command', 'layout', 'kit')
                AND {LIVE_SQL} AND kit IS NOT NULL
              GROUP BY kit, field
              ORDER BY kit"
@@ -300,6 +331,10 @@ impl Db {
                 });
             }
             let kit = out.last_mut().expect("pushed above");
+            if field == KIT_FIELD {
+                kit.version = row.get(3)?;
+                continue;
+            }
             *match field.as_str() {
                 "spec" => &mut kit.field_count,
                 "view" => &mut kit.view_count,

@@ -51,7 +51,7 @@ use crate::error::{DatumError, Result};
 pub use crate::migrations::{MigrationReport, MAX_PRE_MIGRATION_BACKUPS};
 
 pub use alias::{InstallAliasesReport, KitAliasOutcome, ALIAS_FIELD};
-pub use definition::{COMMAND_FIELD, INDEX_FIELD, VIEW_FIELD};
+pub use definition::{COMMAND_FIELD, INDEX_FIELD, KIT_FIELD, VIEW_FIELD};
 pub use kit::{InstallReport, InstalledKit, InstalledKitIndex, KitFieldOutcome};
 pub use kit_command::{
     validate_command, InstallCommandsReport, InstalledKitCommand, KitCommandOutcome,

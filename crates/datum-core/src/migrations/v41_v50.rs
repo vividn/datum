@@ -1,7 +1,6 @@
-//! Migration bodies for schema versions 40 → 50 — the current era.
+//! Migration bodies for schema versions 40 → 50.
 //!
-//! New migrations land here. When `CURRENT_SCHEMA_VERSION` crosses 50,
-//! start `v51_v60.rs` rather than growing this file.
+//! Closed: v51 on lives in `v51_v60.rs`.
 
 use rusqlite::Connection;
 

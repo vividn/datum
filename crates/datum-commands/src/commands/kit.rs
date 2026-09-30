@@ -13,8 +13,8 @@
 //!   the signed-registry hook lands.
 //! - `export <name> [<path>]` — round-trip the rows installed by this kit
 //!   back to TOML. None path → stdout.
-//! - `list` — installed kits with per-kit field/index counts.
-//! - `show <name>` — one kit's installed contents, for reading (export is
+//! - `list` — installed kits with their version and per-kit counts.
+//! - `show <name>` — one kit's version, description and installed contents, for reading (export is
 //!   the TOML round-trip), with each index that fails to build here and why.
 //!
 //! A kit may also carry `[[layout]]` blocks (da-gg0v). Those do not go to
@@ -34,7 +34,7 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 use datum_core::db::{validate_command, Db};
 use datum_core::field_spec::{detect_anchor_cycles, format_cycle};
-use datum_core::kit::{validate_layout_entry, FieldEntry, IndexEntry, KitToml};
+use datum_core::kit::{validate_layout_entry, FieldEntry, IndexEntry, KitMeta, KitToml};
 use datum_core::kit_color::resolve_color;
 
 use crate::args::{KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs};
@@ -336,6 +336,18 @@ fn install_toml(
     // them beside the person's own layouts in `_internal`.
     let layout_report =
         db.install_kit_layouts(&kit.kit.name, &kit.layouts, &client_id()?, args.force)?;
+    // The `[kit]` table itself, so export writes it back and list names the
+    // version installed (da-xnzc7) — once the kit owns a row: a kit whose
+    // every row was skipped installed nothing.
+    if report.installed().next().is_some()
+        || !report.indices_installed.is_empty()
+        || view_report.installed().next().is_some()
+        || alias_report.installed().next().is_some()
+        || cmd_report.installed().next().is_some()
+        || layout_report.installed().next().is_some()
+    {
+        db.install_kit_meta(&kit.kit, args.force)?;
+    }
     crate::cmd::stamp_batch(db);
 
     let installed: Vec<&str> = report.installed().collect();
@@ -461,7 +473,9 @@ fn export(args: KitExportArgs, db: &Db) -> Result<()> {
     let installed_indices = db.load_indices_by_kit(&args.name)?;
     let commands = db.load_commands_by_kit(&args.name)?;
     let layouts = db.load_layouts_by_kit(&args.name)?;
-    if specs.is_empty()
+    let meta = db.load_kit_meta(&args.name)?;
+    if meta.is_none()
+        && specs.is_empty()
         && views.is_empty()
         && aliases.is_empty()
         && installed_indices.is_empty()
@@ -476,9 +490,12 @@ fn export(args: KitExportArgs, db: &Db) -> Result<()> {
     let layout_count = layouts.len();
     let index_count = installed_indices.len();
     let indices: Vec<IndexEntry> = installed_indices.into_iter().map(|row| row.entry).collect();
-    let kit = KitToml::from_kit_rows_full(
-        &args.name, None, &specs, views, &aliases, &indices, commands, layouts,
-    );
+    // A kit installed before da-xnzc7 has no stored table: its name alone.
+    let meta = meta.unwrap_or_else(|| KitMeta {
+        name: args.name.clone(),
+        ..KitMeta::default()
+    });
+    let kit = KitToml::from_kit_rows(meta, &specs, views, &aliases, &indices, commands, layouts);
     let toml = kit.to_toml()?;
 
     match args.path.as_deref() {
@@ -507,13 +524,14 @@ fn list(db: &Db) -> Result<()> {
         return Ok(());
     }
     println!(
-        "{:<24} {:>6}  {:>5}  {:>7}  {:>7}  {:>5}  {:>7}",
-        "kit", "fields", "views", "aliases", "indices", "cmds", "layouts"
+        "{:<24} {:<8} {:>6}  {:>5}  {:>7}  {:>7}  {:>5}  {:>7}",
+        "kit", "version", "fields", "views", "aliases", "indices", "cmds", "layouts"
     );
     for k in kits {
         println!(
-            "{:<24} {:>6}  {:>5}  {:>7}  {:>7}  {:>5}  {:>7}",
+            "{:<24} {:<8} {:>6}  {:>5}  {:>7}  {:>7}  {:>5}  {:>7}",
             k.kit_id,
+            k.version.as_deref().unwrap_or("-"),
             k.field_count,
             k.view_count,
             k.alias_count,
@@ -532,7 +550,9 @@ fn show(name: &str, db: &Db) -> Result<()> {
     let commands = db.load_commands_by_kit(name)?;
     let layouts = db.load_layouts_by_kit(name)?;
     let indices = db.kit_index_status(name)?;
-    if specs.is_empty()
+    let meta = db.load_kit_meta(name)?;
+    if meta.is_none()
+        && specs.is_empty()
         && aliases.is_empty()
         && views.is_empty()
         && commands.is_empty()
@@ -544,6 +564,14 @@ fn show(name: &str, db: &Db) -> Result<()> {
     // The DDL of each index that validates, for the line that names it.
     let built = db.load_indices_by_kit(name)?;
     println!("kit '{name}'");
+    if let Some(meta) = meta {
+        if let Some(v) = meta.version {
+            println!("version {v}");
+        }
+        if let Some(d) = meta.description {
+            println!("{d}");
+        }
+    }
     section(
         "fields",
         specs.iter().map(|s| {

@@ -25,7 +25,7 @@ use crate::time::DatumTime;
 use crate::verb::Verb;
 
 use super::alias::ALIAS_FIELD;
-use super::definition::{COMMAND_FIELD, INDEX_FIELD, VIEW_FIELD};
+use super::definition::{COMMAND_FIELD, INDEX_FIELD, KIT_FIELD, VIEW_FIELD};
 use super::kit_layout::LAYOUT_FIELD;
 use super::types::{AliasConflict, AliasConflictReason, SaveSpecReport, LIVE_SQL};
 use super::Db;
@@ -41,8 +41,8 @@ pub(crate) const SPEC_KIT_KEY: &str = "kit_id";
 pub(crate) const SPEC_DISPLACED_KEY: &str = "displaced";
 
 /// Fields whose entries describe the database rather than the life it
-/// records — specs, layouts, aliases (da-b3752), views, kit commands and
-/// kit index definitions (da-fwwtn). One rule keeps them all off the
+/// records — specs, layouts, aliases (da-b3752), views, kit commands,
+/// kit index definitions (da-fwwtn) and kits' `[kit]` tables (da-xnzc7). One rule keeps them all off the
 /// life-data surfaces — tail, now, dayview, nowview, stats, fields —
 /// unless asked for by name (`tail spec`) or with `--show-meta` / `-A`.
 pub const META_FIELDS: &[&str] = &[
@@ -52,11 +52,12 @@ pub const META_FIELDS: &[&str] = &[
     VIEW_FIELD,
     COMMAND_FIELD,
     INDEX_FIELD,
+    KIT_FIELD,
 ];
 
 /// [`META_FIELDS`] as a SQL predicate on `entries.field`.
 pub(crate) const NOT_META_FIELD_SQL: &str =
-    "field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index')";
+    "field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')";
 
 pub fn is_meta_field(field: &str) -> bool {
     META_FIELDS.contains(&field)
@@ -108,7 +109,7 @@ pub(crate) fn new_spec_entry(field: &str, data: JsonValue, client_id: &str) -> E
 
 /// Refuse a write under a field the database reserves: a spec
 /// ([`check_spec_entry`]), an alias ([`super::alias::check_alias_entry`]),
-/// or a view, command or index ([`super::definition::check_definition_entry`]).
+/// or a view, command, index or kit ([`super::definition::check_definition_entry`]).
 /// Every row writer in `insert.rs` calls this.
 pub(crate) fn check_meta_entry(slug: &str, entry: &Entry, data: Option<&JsonValue>) -> Result<()> {
     check_spec_entry(slug, entry, data)?;
@@ -294,7 +295,7 @@ impl Db {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT json_extract(data, '$.field') AS f FROM entries
              WHERE {SPEC_DOC_SQL}
-               AND f NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index')
+               AND f NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')
              ORDER BY f"
         ))?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;

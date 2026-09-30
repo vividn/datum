@@ -31,7 +31,7 @@ use crate::field_spec::{Alias, FieldSpec, GlyphBy, Render, SubfieldSpec, DEFAULT
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KitToml {
     pub kit: KitMeta,
-    #[serde(default, rename = "field")]
+    #[serde(default, rename = "field", skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<FieldEntry>,
     /// `[[view]]` declarations. Each is a named read-only SELECT installed
     /// as the entry `view:<name>` marked with the kit's id (da-fwwtn). Powers
@@ -51,14 +51,14 @@ pub struct KitToml {
     /// `[[index]]` declarations. Each becomes a `CREATE INDEX` against
     /// `entries`, its definition the entry `index:<kit>/<name>`. Trust-gated at install time;
     /// see slice 5 (da-d4t.5).
-    #[serde(default, rename = "index")]
+    #[serde(default, rename = "index", skip_serializing_if = "Vec::is_empty")]
     pub indices: Vec<IndexEntry>,
     /// `[[command]]` declarations. Two flavours:
     /// - Level 1 (`expands_to`): alias-style splice before the parser runs.
     /// - Level 2 (`view` + `columns`/...): dispatch to a structured renderer.
     ///   Level 3 (`script`) is parsed and reserved for forward-compat but the
     ///   renderer errors at execution time. Slice 6 (da-d4t.6).
-    #[serde(default, rename = "command")]
+    #[serde(default, rename = "command", skip_serializing_if = "Vec::is_empty")]
     pub commands: Vec<CommandEntry>,
 }
 
@@ -453,32 +453,15 @@ impl KitToml {
         }
     }
 
-    /// Build a [`KitToml`] from stored field specs, view rows, and alias
-    /// rows. Used by `datum kit export <name>` to round-trip the full kit
-    /// shape introduced through slices 1/3/4.
-    pub fn from_kit_rows(
-        name: &str,
-        version: Option<&str>,
-        specs: &[FieldSpec],
-        views: Vec<ViewEntry>,
-        aliases: &[Alias],
-    ) -> Self {
-        let mut kit = Self::from_field_specs(name, version, specs, &[]);
-        kit.views = views;
-        kit.aliases = aliases.iter().map(AliasEntry::from_alias).collect();
-        kit
-    }
-
-    /// Build a [`KitToml`] from field specs, view rows, alias rows, indices,
-    /// command rows and layouts. Used by `datum kit export <name>` with
-    /// slices 1/3/4/5/6 and da-gg0v all wired in.
+    /// Build a [`KitToml`] from the kit's stored `[kit]` table, field specs,
+    /// view rows, alias rows, indices, command rows and layouts — `datum kit
+    /// export`'s round trip.
     // One parameter per kind of row a kit can carry, which is the point of
     // the function: a builder would only move the same list to the call
     // site, where the one caller writes it out once.
     #[allow(clippy::too_many_arguments)]
-    pub fn from_kit_rows_full(
-        name: &str,
-        version: Option<&str>,
+    pub fn from_kit_rows(
+        meta: KitMeta,
         specs: &[FieldSpec],
         views: Vec<ViewEntry>,
         aliases: &[Alias],
@@ -486,7 +469,8 @@ impl KitToml {
         commands: Vec<CommandEntry>,
         layouts: Vec<LayoutEntry>,
     ) -> Self {
-        let mut kit = Self::from_field_specs(name, version, specs, indices);
+        let mut kit = Self::from_field_specs(&meta.name, None, specs, indices);
+        kit.kit = meta;
         kit.views = views;
         kit.aliases = aliases.iter().map(AliasEntry::from_alias).collect();
         kit.commands = commands;

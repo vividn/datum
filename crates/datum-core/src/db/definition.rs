@@ -1,4 +1,5 @@
-//! Views, kit commands and kit index definitions are ENTRIES (da-fwwtn),
+//! Views, kit commands, kit index definitions and a kit's own `[kit]` table
+//! are ENTRIES (da-fwwtn, da-xnzc7),
 //! following specs (da-lc26c) and aliases (da-b3752): each is the live entry
 //! of its field at the slug its own data names, its data the definition's
 //! JSON plus the `kit_id` of the kit that shipped it. So they back up, sync
@@ -9,6 +10,7 @@
 //! | `view`    | `view:<name>`          | [`ViewEntry`] (+ `kit_id`)    |
 //! | `command` | `command:<name>`       | [`CommandEntry`] (+ `kit_id`) |
 //! | `index`   | `index:<kit_id>/<name>`| [`IndexEntry`] + `kit_id`     |
+//! | `kit`     | `kit:<name>`           | [`KitMeta`] + `kit_id`        |
 //!
 //! Only an index's DEFINITION travels: the SQLite index it describes is this
 //! device's, derived from the definitions by [`Db::derive_kit_indices`].
@@ -25,7 +27,7 @@ use crate::dur::Dur;
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
 use crate::ids::{Hid, Slug};
-use crate::kit::{CommandEntry, IndexEntry, ViewEntry};
+use crate::kit::{CommandEntry, IndexEntry, KitMeta, ViewEntry};
 use crate::verb::Verb;
 
 use super::types::LIVE_SQL;
@@ -37,6 +39,10 @@ pub const VIEW_FIELD: &str = "view";
 pub const COMMAND_FIELD: &str = "command";
 /// The field every kit index definition is logged under.
 pub const INDEX_FIELD: &str = "index";
+/// The field a kit's `[kit]` table — its version and description — is
+/// logged under, so `kit export` can write it back and `kit list` name the
+/// version installed (da-xnzc7).
+pub const KIT_FIELD: &str = "kit";
 
 /// The data key naming the kit that shipped a definition, as for specs.
 pub(crate) const KIT_KEY: &str = "kit_id";
@@ -109,7 +115,7 @@ pub(crate) fn new_definition_entry(field: &str, data: JsonValue, client_id: &str
 }
 
 /// Refuse a write that would store something other than a definition under
-/// `view`, `command` or `index` — a malformed one, one at a slug its data
+/// `view`, `command`, `index` or `kit` — a malformed one, one at a slug its data
 /// does not name, or a plain log like `occur view`. Tombstones pass.
 pub(crate) fn check_definition_entry(
     slug: &str,
@@ -117,19 +123,27 @@ pub(crate) fn check_definition_entry(
     data: Option<&JsonValue>,
 ) -> Result<()> {
     let field = entry.field.as_str();
-    if ![VIEW_FIELD, COMMAND_FIELD, INDEX_FIELD].contains(&field) || entry.deleted_at.is_some() {
+    if ![VIEW_FIELD, COMMAND_FIELD, INDEX_FIELD, KIT_FIELD].contains(&field)
+        || entry.deleted_at.is_some()
+    {
         return Ok(());
     }
     let refuse = |why: String| Err(DatumError::Other(format!("`{slug}`: {why}")));
     let Some(data) = data.filter(|d| d.is_object()) else {
+        let what = if field == KIT_FIELD {
+            "kits' `[kit]` tables".to_string()
+        } else {
+            format!("kit {field}s")
+        };
         return refuse(format!(
-            "`{field}` is reserved for kit {field}s, and this entry carries none \
+            "`{field}` is reserved for {what}, and this entry carries none \
              (see `datum kit install`)"
         ));
     };
     let parsed = match field {
         VIEW_FIELD => serde_json::from_value::<ViewEntry>(data.clone()).map(|v| v.name),
         COMMAND_FIELD => serde_json::from_value::<CommandEntry>(data.clone()).map(|c| c.name),
+        KIT_FIELD => serde_json::from_value::<KitMeta>(data.clone()).map(|k| k.name),
         _ => serde_json::from_value::<IndexEntry>(data.clone()).map(|i| i.name),
     };
     let name = match parsed {

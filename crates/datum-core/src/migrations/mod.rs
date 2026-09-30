@@ -19,8 +19,8 @@
 //!   change when a migration is added;
 //! * [`support`] holds the introspection and table-rebuild helpers used
 //!   by more than one era;
-//! * `v01_v10`, `v11_v20`, `v21_v30`, `v31_v40`, `v41_v50` hold the migration
-//!   **bodies**, one module per decade of schema versions.
+//! * `v01_v10`, `v11_v20`, `v21_v30`, `v31_v40`, `v41_v50`, `v51_v60`
+//!   hold the migration **bodies**, one module per decade of schema versions.
 //!
 //! Adding a migration therefore appends one entry here and one function
 //! to the current era module — and when the version crosses the next
@@ -37,6 +37,7 @@ mod v11_v20;
 mod v21_v30;
 mod v31_v40;
 mod v41_v50;
+mod v51_v60;
 
 #[cfg(test)]
 mod tests;
@@ -48,6 +49,7 @@ use v11_v20::*;
 use v21_v30::*;
 use v31_v40::*;
 use v41_v50::*;
+use v51_v60::*;
 
 /// The schema version this binary writes.
 ///
@@ -55,7 +57,7 @@ use v41_v50::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 50;
+pub const CURRENT_SCHEMA_VERSION: u32 = 51;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -423,5 +425,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "sync_caught_up: a filtered reader's «caught up to #N» marks, its version vector (da-u81u1)",
         apply: m49_to_50_sync_caught_up,
         down: down_50_to_49_sync_caught_up,
+    },
+    Migration {
+        from: 50,
+        to: 51,
+        summary: "`kit` is reserved: a kit's `[kit]` table is the entry `kit:<name>` (da-xnzc7)",
+        apply: m50_to_51_kit_is_reserved,
+        down: down_51_to_50_kit_is_reserved,
     },
 ];

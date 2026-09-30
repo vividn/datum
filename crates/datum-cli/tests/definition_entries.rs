@@ -183,6 +183,59 @@ fn kit_show_reads_out_the_sample_kit() {
     );
 }
 
+/// A kit's `[kit]` table is the entry `kit:<name>` (da-xnzc7): export
+/// writes back the version and description it was installed with, with
+/// nothing above `[kit]`; `kit list` and `kit show` name them; a reinstall
+/// keeps it unless `--force`, as the kit's other rows are kept.
+#[test]
+fn a_kits_version_and_description_round_trip() {
+    let env = Env::new();
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../kits/sample.toml");
+    let sample = std::fs::read_to_string(path).unwrap();
+    let meta = datum_core::kit::KitToml::from_str(&sample).unwrap().kit;
+    assert!(
+        meta.description.is_some(),
+        "the sample kit describes itself"
+    );
+    env.ok(&["kit", "install", "--yes", path]);
+
+    let exported = env.ok(&["kit", "export", "sample"]);
+    assert!(exported.starts_with("[kit]\n"), "{exported}");
+    let back = datum_core::kit::KitToml::from_str(&exported).unwrap().kit;
+    assert_eq!(back.version.as_deref(), Some("0.1"));
+    assert_eq!(back.description, meta.description);
+
+    let shown = env.ok(&["kit", "show", "sample"]);
+    assert!(shown.lines().any(|l| l == "version 0.1"), "{shown}");
+    assert!(
+        shown.contains(meta.description.as_deref().unwrap()),
+        "{shown}"
+    );
+
+    let version = || {
+        let listed = env.ok(&["kit", "list"]);
+        let row = listed.lines().find(|l| l.starts_with("sample "));
+        row.and_then(|l| l.split_whitespace().nth(1))
+            .unwrap_or_else(|| panic!("no `sample` row in:\n{listed}"))
+            .to_string()
+    };
+    assert_eq!(version(), "0.1");
+    let newer = env.tmp.path().join("sample.toml");
+    std::fs::write(
+        &newer,
+        sample.replace("version = \"0.1\"", "version = \"0.2\""),
+    )
+    .unwrap();
+    let newer = newer.to_str().unwrap();
+    env.ok(&["kit", "install", "--yes", newer]);
+    assert_eq!(version(), "0.1", "kept without --force");
+    env.ok(&["kit", "install", "--yes", "--force", newer]);
+    assert_eq!(version(), "0.2");
+
+    env.ok(&["kit", "uninstall", "sample"]);
+    assert_eq!(env.ok(&["kit", "list"]), "No kits installed.\n");
+}
+
 /// A UNIQUE index definition that arrives over this device's duplicates —
 /// here by a merging restore, as it would by sync — does not build, and
 /// `kit show` names it with the reason; the kit's other index is built.
