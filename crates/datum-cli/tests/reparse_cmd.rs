@@ -260,6 +260,23 @@ fn reparse_fix_lifts_start_time_and_end_time() {
     }
 }
 
+/// da-98u27: a lifted `start_time=` is a clock time on replay as on the
+/// insert, so `-y` with it is not date-only and its duration keeps its
+/// slot rather than failing as extra data.
+#[test]
+fn reparse_keeps_the_duration_of_a_yesterday_start_time() {
+    let db = fresh_db();
+    run_cli(&["start", "bike", "-y", "start_time=10:00", "30m"], &db).unwrap();
+
+    let before = datum_core::test_util::logged_entries(&db, "bike")[0].clone();
+    let hid = before.hid.to_string();
+    run_cli(&["reparse", &hid, "--fix"], &db).expect("replay parses");
+    assert_eq!(
+        db.get_entry(&hid).unwrap().content_hash,
+        before.content_hash
+    );
+}
+
 /// da-pdk6q: `end -L` records the closed block's state as
 /// `data.last_state`, which `log_entry` looks up and the line never
 /// spells — nor does `switch … end_time=E`, which runs as one (da-mjwq).

@@ -974,6 +974,12 @@ pub(crate) fn parse_log_args(
     // data queue, never consume a positional) silently dropped positionals
     // into the primary-value remainder, which then leaked into `state`
     // for non-state-bearing verbs like `occur`.
+    //
+    // da-98u27: a date-only time (`-y`, `-d`, `-D`) drops the `dur` slot,
+    // as v2 did (c7d7a69d): `start walk -y 13:00` is a mistyped `-t`, and
+    // its `13:00` must fail as extra data, not log a 13h full day. Only the
+    // slot goes; an explicit `dur=<v>` is still a duration.
+    let date_only = dur_bearing(action) && args.time.only_date();
     for spec in args.field_keys.iter().chain(&args.keys) {
         let (name, _) = spec
             .split_once('=')
@@ -981,6 +987,9 @@ pub(crate) fn parse_log_args(
             .unwrap_or((spec.as_str(), None));
         if name.is_empty() {
             anyhow::bail!("empty id-key name in spec '{spec}'");
+        }
+        if date_only && name == "dur" {
+            continue;
         }
         data_args.keys.push(spec.clone());
     }
@@ -1101,10 +1110,8 @@ pub(crate) fn parse_log_args(
     // in `prepare_log_args`; the peek replaces the slot there).
     data_args.peek_trailing_dur =
         (args.string_state || args.string_remainder || args.comment_remainder)
-            && matches!(
-                action,
-                Action::Switch | Action::Start | Action::Stop | Action::Block
-            );
+            && dur_bearing(action)
+            && !date_only;
 
     let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
 
@@ -1394,6 +1401,14 @@ pub(crate) fn bind_spec_words(args: &mut LogArgs, words: SpecKeyWords) {
     args.rest.splice(0..0, words.assigned);
 }
 
+/// The verbs whose trailing positional can be a duration.
+fn dur_bearing(action: Action) -> bool {
+    matches!(
+        action,
+        Action::Switch | Action::Start | Action::Stop | Action::Block
+    )
+}
+
 /// da-ooe2: shared verb pre-pass run before `parse_log_args` on both the
 /// insert (`log_entry`) and reparse paths.
 ///
@@ -1427,10 +1442,7 @@ pub(crate) fn prepare_log_args(action: Action, args: &mut LogArgs) -> Result<()>
         extract_switch_then_chain(args)?;
     }
 
-    if matches!(
-        action,
-        Action::Switch | Action::Start | Action::Stop | Action::Block
-    ) {
+    if dur_bearing(action) {
         // da-vo0y F2: with a string-join remainder active (`-I`/`-S`/`-C`),
         // the front-eating `dur=` slot would swallow the first joined token
         // as a duration (`start movie -SR title terminator 90` must not try
@@ -1590,7 +1602,7 @@ impl LiftedTimes {
     /// The key that names the entry's time and its raw value: `end_time=`
     /// when given (a block's occur_time is its END, da-zwct), else
     /// `start_time=`. `None` when neither key was on the line.
-    fn anchor(&self) -> Option<(&'static str, &str)> {
+    pub(crate) fn anchor(&self) -> Option<(&'static str, &str)> {
         match (&self.start, &self.end) {
             (_, Some(e)) => Some(("end_time", e)),
             (Some(s), None) => Some(("start_time", s)),

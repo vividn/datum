@@ -332,56 +332,76 @@ fn dur_plus_extra_still_marks_verb_start() {
 
 /// TS #10: "fails when using a full day and a duration".
 ///
-/// Per da-l3f3, daydumb restored original-datum positional duration on
-/// `start`/`stop`: a trailing bare positional that parses as a duration
-/// is consumed as the duration, not as state. So `start field -y 315`
-/// anchors to yesterday with `dur = 315 minutes` and the default
-/// `state = true` (Start canonicalization).
-///
-/// Per da-aaa1, `-y` alone is a date-only event: `time_start` lands at
-/// 00:00:00 of yesterday in the entry's timezone (not "wall-clock minus
-/// one day"). The duration assertion is what this test actually exists
-/// for; the time-anchor assertion exists to catch regressions in the day
-/// shift, which is now expressed as "yesterday's midnight."
+/// da-98u27: v2 (c7d7a69d) drops the positional `dur` slot when the time
+/// is date-only, so a mistyped `-y` for `-t` fails as extra data instead
+/// of logging a 315-minute full day.
 #[test]
-fn yesterday_flag_consumes_trailing_numeric_as_duration() {
+fn full_day_with_positional_duration_fails() {
     let db = fresh_db();
 
-    // da-gvcen: declare the field first — a FIRST log declares its own
-    // field in a `following_state`, which makes it a compound verb. What
-    // is under test here is the `-y` flag, not the declaration.
-    run_cli(&["spec", "set", "field", "--verb", "start"], &db).expect("declare field");
-
-    run_cli(&["start", "field", "-y", "315"], &db).expect("start -y 315");
-
-    let entry = &datum_core::test_util::logged_entries(&db, "field")[0];
-    assert_entry_matches!(entry, field: "field", verb: "block");
-    assert_eq!(
-        entry.duration_seconds(),
-        Some(315 * 60),
-        "`315` parses as a 315-minute duration",
+    let err = run_cli(&["start", "field", "-y", "315"], &db).expect_err("-y 315 is extra data");
+    assert!(
+        format!("{err:#}").contains("Extra data with no matching key: [\"315\"]"),
+        "{err:#}"
     );
-    assert_eq!(entry.state.as_ref(), Some(&json!(true)));
+    assert_count!(db, "field", 0);
+}
 
-    let occur = entry.occur_time.as_ref().unwrap();
-    let tz: chrono_tz::Tz = occur
-        .timezone
-        .as_deref()
-        .expect("a CLI-logged entry must carry a timezone")
-        .parse()
-        .expect("entry must carry a valid IANA timezone");
-    let local = occur.utc.with_timezone(&tz);
-    assert_eq!(
-        local.time(),
-        chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-        "yesterday-alone strips to midnight (got {local})",
-    );
-    let today_local = chrono::Utc::now().with_timezone(&tz).date_naive();
-    assert_eq!(
-        local.date_naive(),
-        today_local - chrono::Duration::days(1),
-        "occur_time must be yesterday's date in the entry's tz",
-    );
+/// da-98u27: every date-only time (`-y`, `-d`, `-D`) drops the slot on
+/// start, switch and end alike, and writes nothing.
+#[test]
+fn date_only_time_takes_no_positional_duration() {
+    let db = fresh_db();
+
+    for argv in [
+        &["start", "walk", "-y", "13:00"][..],
+        &["switch", "mood", "happy", "-y", "13:00"],
+        &["end", "walk", "-y", "13:00"],
+        &["start", "walk", "-d", "yesterday", "30m"],
+        &["start", "walk", "-D", "30m"],
+    ] {
+        let err = run_cli(argv, &db).expect_err("the stray word is extra data");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("Extra data with no matching key"),
+            "{argv:?}: {msg}"
+        );
+    }
+    assert_count!(db, "walk", 0);
+    assert_count!(db, "mood", 0);
+}
+
+/// da-98u27: only the positional slot goes. A bare `-y` still logs a
+/// full-day start, a clock time keeps its duration, and so does an
+/// explicit `dur=` (v2 removed only the positional key).
+#[test]
+fn date_only_keeps_a_named_duration_and_a_clock_time_keeps_its_slot() {
+    let db = fresh_db();
+
+    run_cli(&["start", "walk", "-y"], &db).expect("full-day start");
+    run_cli(&["start", "run", "-t", "13:00", "30m"], &db).expect("clock time keeps dur");
+    run_cli(&["start", "swim", "-y", "dur=30m"], &db).expect("named dur is kept");
+    run_cli(&["start", "bike", "-y", "start_time=10:00", "30m"], &db)
+        .expect("a lifted start_time= is a clock time");
+
+    let dur = |f| datum_core::test_util::logged_entries(&db, f)[0].duration_seconds();
+    assert_eq!(dur("walk"), None);
+    assert_eq!(dur("run"), Some(30 * 60));
+    assert_eq!(dur("swim"), Some(30 * 60));
+    assert_eq!(dur("bike"), Some(30 * 60));
+}
+
+/// da-98u27: under a string join the trailing-duration peek stands down
+/// too, so the word joins the state rather than becoming a duration.
+#[test]
+fn date_only_string_state_joins_the_trailing_word() {
+    let db = fresh_db();
+
+    run_cli(&["switch", "mood", "-y", "-I", "very", "happy", "30m"], &db).expect("-I join");
+
+    let entry = &datum_core::test_util::logged_entries(&db, "mood")[0];
+    assert_eq!(entry.duration_seconds(), None);
+    assert_eq!(entry.state.as_ref(), Some(&json!("very happy 30m")));
 }
 
 // ─── da-l3f3: positional duration on start/stop ──────────────────────────

@@ -76,6 +76,17 @@ impl TimeArgs {
         self.time.iter().chain(&self.time_offsets)
     }
 
+    /// Whether these flags resolve to a date-only moment — `-D`, or a
+    /// `-d` / `-y*` without any clock-level input — as
+    /// [`TimeFromArgs::only_date`] will say, known before building.
+    pub fn only_date(&self) -> bool {
+        !self.omit_timestamp
+            && (self.full_day
+                || ((self.date.is_some() || self.yesterday > 0)
+                    && self.time.is_none()
+                    && self.quick == 0))
+    }
+
     /// Build a `TimeFromArgs` relative to `reference` — the caller-
     /// supplied "now". The reference carries the effective timezone:
     /// if [`TimeArgs::timezone`] overrides it, we re-anchor to that
@@ -134,10 +145,7 @@ impl TimeArgs {
             unmodified = false;
         }
 
-        let only_date = self.full_day
-            || ((self.date.is_some() || self.yesterday > 0)
-                && self.time.is_none()
-                && self.quick == 0);
+        let only_date = self.only_date();
 
         // Refresh `offset_minutes` in case a date shift crossed a DST
         // boundary — `cur.utc` is authoritative; the offset must re-derive

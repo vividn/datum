@@ -122,6 +122,11 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
     } else {
         LiftedTimes::default()
     };
+    // The lifted anchor is the line's `-t`, as on the insert, so a `-y`
+    // beside it is a clock time and not a date-only one (da-98u27).
+    if let Some((_, raw)) = lifted.anchor() {
+        log_args.time.time = Some(raw.to_string());
+    }
 
     // Relative `*_time` / `*_date` keys (`next_date=+7`) anchor where the
     // insert anchored them (da-jbzmb): the row's own local time, or for a
