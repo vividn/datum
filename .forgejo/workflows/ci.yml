@@ -287,22 +287,30 @@ jobs:
         working-directory: web
         run: pnpm exec playwright install --with-deps --only-shell chromium
 
-      # Last, so the browser peak never overlaps the link peak. TWO files at a
-      # time (vividn 2026-09-24 17:35: «drop to 2, but also harden the timing
-      # sensitive tests»). Measured the same day: at 1, run 800's pnpm test
-      # was 46:47, green, 67% of one core. At 3, runs 832 and 838 were 34:35
-      # and 35:47 (~1.2 cores), both RED on timing: 832 on «TAU decides how
-      # far the same throw carries» and a cut tests/shell.test.mjs (that run
-      # changed only ci.yml), 838 on four reachable.test.mjs phone-size tests
-      # that pass alone. Every lane shares one 12-core box, whose load read
-      # 13.2 and 25.2. Three was ~25% faster and about half red, so a green
-      # verdict cost more than serial. Raise this again only after the
-      # timing-sensitive tests are hardened, reading which files a run cuts
-      # BY NAME. `availableParallelism()` in the job reports the host's 12
-      # cores, not the lane's 3, so the scaler cannot pick this.
+      # Last, so the browser peak never overlaps the link peak. THREE files at
+      # a time. History: at 1, run 800's pnpm test was 46:47, green. At 3,
+      # runs 832 and 838 (2026-09-24) were ~35 min and both RED on timing, not
+      # code — a TAU throw, a cut tests/shell.test.mjs, four reachable.test.mjs
+      # phone sizes — so it went to 2 (vividn 2026-09-24 17:35: «drop to 2, but
+      # also harden the timing sensitive tests»). The hardening landed as
+      # da-31464 (#157). Back at 3 (da-3u2m4), three runs at one head were
+      # green with nothing cut: 1523, 1531, 1536. They took 41:01, 34:51 and
+      # 25:04. A run's wall swings ~3x in a day at a fixed setting (at 2:
+      # 18:13 to 56:19), so compare runs on the box at the same time. There,
+      # 3 took 2461 s against 3186-3379 s for the runs at 2 beside it, at the
+      # same CPU per run (~6200-6500 s): a run at 2 used ~2 cores
+      # (187-198%), a run at 3 2.65-3.6. The box's cores are split evenly
+      # across its lanes, ~3 each (the mayor, 2026-09-30), so at 2 the suite
+      # left part of its own share idle, and at 3 it takes about its share.
+      # It is not more throughput for the box. On a quiet box no gain showed,
+      # and the one run at 3 cost more CPU (5380 s, against 3161-4724 s at 2).
+      # The mayor's condition: a timing flake at 3 means back to 2 at once.
+      # Read which files a run cuts BY NAME. `availableParallelism()` in the
+      # job reports the host's 12 cores and its load the host's, so the
+      # scaler cannot pick this.
       - name: pnpm test
         if: ${{ steps.browser.outcome == 'success' }}
         working-directory: web
         run: /usr/bin/time -v pnpm test
         env:
-          DATUM_TEST_CONCURRENCY: 2
+          DATUM_TEST_CONCURRENCY: 3
