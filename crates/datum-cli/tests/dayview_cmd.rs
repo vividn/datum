@@ -9,12 +9,12 @@ use datum_core::entry::Verb;
 use datum_core::test_util::{entry_builder, freeze_time, fresh_db};
 use datum_core::time::Zone;
 
-/// A UTC timestamp at local noon today — guaranteed to land in the same
-/// civic day under any timezone CI runs in.
-fn local_noon_today_utc() -> chrono::DateTime<Utc> {
-    let today = Local::now().date_naive();
+/// A UTC timestamp at local noon `days_back` days ago — guaranteed to land
+/// in that civic day under any timezone CI runs in.
+fn local_noon_utc(days_back: u64) -> chrono::DateTime<Utc> {
+    let day = Local::now().date_naive() - chrono::Days::new(days_back);
     Zone::host()
-        .resolve(today.and_hms_opt(12, 0, 0).unwrap())
+        .resolve(day.and_hms_opt(12, 0, 0).unwrap())
         .for_boundary()
 }
 
@@ -22,7 +22,7 @@ fn local_noon_today_utc() -> chrono::DateTime<Utc> {
 fn dayview_writes_svg_to_output() {
     let db = fresh_db();
 
-    let noon = local_noon_today_utc();
+    let noon = local_noon_utc(0);
     entry_builder("workout")
         .verb(Verb::Switch)
         .time_start_utc(noon)
@@ -65,7 +65,11 @@ fn dayview_writes_svg_to_output() {
 fn dayview_json_dumps_layout() {
     let db = fresh_db();
 
-    let noon = local_noon_today_utc();
+    // Yesterday, drawn with `-d -1`: a state is drawn up to the now-line
+    // (da-zxs), so coffee — a Point with a state, which is stored as a
+    // switch — logged at today's noon has nothing to draw before noon
+    // (da-qicfn).
+    let noon = local_noon_utc(1);
     entry_builder("coffee")
         .verb(Verb::Point)
         .state(serde_json::json!(1))
@@ -80,7 +84,7 @@ fn dayview_json_dumps_layout() {
     let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
     let path = tmp.path().to_str().unwrap().to_string();
 
-    run_cli(&["dayview", "--json", "-o", &path], &db).expect("dayview --json dispatch");
+    run_cli(&["dayview", "--json", "-d", "-1", "-o", &path], &db).expect("dayview --json dispatch");
 
     let raw = std::fs::read_to_string(&path).unwrap();
     let json: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
@@ -110,7 +114,7 @@ fn dayview_json_dumps_layout() {
 fn dayview_n_days_stacks_multiple_rows() {
     let db = fresh_db();
 
-    let noon = local_noon_today_utc();
+    let noon = local_noon_utc(0);
     // Three entries, three different days.
     for day_offset in 0..3 {
         let t = noon - chrono::Duration::days(day_offset);
@@ -163,7 +167,7 @@ fn dayview_n_days_stacks_multiple_rows() {
 fn dayview_horizontal_orientation_round_trips_to_layout() {
     let db = fresh_db();
 
-    let noon = local_noon_today_utc();
+    let noon = local_noon_utc(0);
     entry_builder("workout")
         .verb(Verb::Switch)
         .time_start_utc(noon)
@@ -251,7 +255,7 @@ fn dayview_skips_empty_fields() {
 #[test]
 fn dayview_html_output_wraps_svg() {
     let db = fresh_db();
-    let noon = local_noon_today_utc();
+    let noon = local_noon_utc(0);
     entry_builder("workout")
         .verb(Verb::Switch)
         .time_start_utc(noon)
@@ -488,7 +492,7 @@ fn dayview_label_width_zero_drops_the_date_labels() {
     let db = fresh_db();
     entry_builder("workout")
         .verb(Verb::Switch)
-        .time_start_utc(local_noon_today_utc())
+        .time_start_utc(local_noon_utc(0))
         .insert(&db);
 
     let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
@@ -530,7 +534,7 @@ fn dayview_label_width_sets_the_date_column() {
     let db = fresh_db();
     entry_builder("workout")
         .verb(Verb::Switch)
-        .time_start_utc(local_noon_today_utc())
+        .time_start_utc(local_noon_utc(0))
         .insert(&db);
 
     let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
@@ -566,7 +570,7 @@ fn dayview_json_carries_the_label_geometry() {
     let db = fresh_db();
     entry_builder("workout")
         .verb(Verb::Switch)
-        .time_start_utc(local_noon_today_utc())
+        .time_start_utc(local_noon_utc(0))
         .insert(&db);
 
     let svg_file = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
