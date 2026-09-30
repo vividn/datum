@@ -540,6 +540,12 @@ fn rollup(
     let timed = r.tracked_duration_seconds > 0;
     let span = earliest.map(|first| (end.min(now) - first.to_utc()).num_seconds());
     r.frequency = span.filter(|_| !timed).map(|s| Frequency::new(count, s));
+    // How often, so a state no entry logged has no row, in the text or the
+    // JSON: an occur's TRACKED (da-795cy) holds time and nothing else
+    // (da-x1er9). A selected state keeps its row, count 0 or not.
+    if r.frequency.is_some() && r.selected_state.is_none() {
+        r.states.retain(|s| s.count > 0);
+    }
     r.rate = span.map(|s| match timed {
         true => Rate::new(secs as f64, s, true),
         false => Rate::new(count as f64, s, false),
@@ -931,9 +937,7 @@ fn render_text(r: &StatsResult) -> String {
             let w = r.states.iter().map(|s| s.count.to_string().len()).max();
             let w = w.unwrap_or(0);
             out.push('\n');
-            // How often, so a state no entry logged has no line: an
-            // occur's TRACKED (da-795cy) holds time and nothing else.
-            for s in r.states.iter().filter(|s| s.count > 0) {
+            for s in &r.states {
                 out.push_str(&format!("  {:>w$}×  {}\n", s.count, s.state));
             }
         }

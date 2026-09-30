@@ -1112,6 +1112,16 @@ fn an_occur_field_shows_how_often_and_no_time() {
         serde_json::from_str(&datum(tmp.path(), &[&["stats"][..], &until].concat())).unwrap();
     assert_eq!(all["fields"][0]["frequency"], one["frequency"]);
     assert_eq!(one["frequency"]["span_seconds"], 151 * 86_400);
+    // da-x1er9: the JSON lists what the text does — the logged states,
+    // not the TRACKED the first occur opened — so datum.day's states cell
+    // counts the same states it did before da-795cy.
+    let states = one["states"].as_array().unwrap();
+    assert!(!states.is_empty(), "{one}");
+    assert!(
+        states.iter().all(|s| s["count"].as_u64() > Some(0)),
+        "{one}"
+    );
+    assert!(states.iter().all(|s| s["state"] != "TRACKED"), "{one}");
 }
 
 #[test]
