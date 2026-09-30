@@ -236,9 +236,10 @@ impl Db {
     }
 
     /// Insert an entry and dispatch on [`ConflictStrategy`] when the incoming
-    /// `content_hash` already matches a live row. Tombstoned rows are ignored
-    /// for collision detection — re-inserting a deleted-then-identical payload
-    /// behaves like a fresh insert.
+    /// `content_hash` already matches a live row — or, for Update / Merge,
+    /// its slug does (da-2mn3k). Tombstoned rows are ignored for collision
+    /// detection — re-inserting a deleted-then-identical payload behaves
+    /// like a fresh insert.
     ///
     /// Both the entries mutation and the companion `entry_history` row land in
     /// the same transaction: `Create` is recorded for new inserts and Rekey,
@@ -939,6 +940,21 @@ fn write_entry_in_tx(
             |row| Ok((row.get::<_, Slug>(0)?, row.get::<_, Option<String>>(1)?)),
         )
         .optional()?;
+    // da-2mn3k: Update / Merge also resolve a SLUG collision, applying the
+    // strategy to the live row that holds the slug — the original datum's
+    // addDoc did so on `_id`, which v3's slug is. That is how a keyed
+    // record (`--id %client_id%`) is re-logged in place.
+    let existing = match existing {
+        None if matches!(strategy, ConflictStrategy::Update | ConflictStrategy::Merge) => conn
+            .query_row(
+                "SELECT slug, data FROM entries
+                 WHERE slug = ?1 AND deleted_at IS NULL AND superseded_by IS NULL",
+                params![entry.slug],
+                |row| Ok((row.get::<_, Slug>(0)?, row.get::<_, Option<String>>(1)?)),
+            )
+            .optional()?,
+        found => found,
+    };
 
     let written = match (existing, strategy) {
         (None, _) => {
@@ -1156,7 +1172,23 @@ pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(Slug, Hid)
                         // transactions dated to one day both resolve to; an
                         // id template is how the user says they differ, as
                         // it was in datum v2.
-                        let hint = if entry.asserts_state() {
+                        // da-2mn3k: an id template with no time in it made
+                        // this collision on purpose — the way out is a
+                        // conflict flag, not another template.
+                        let tmpl = entry.id_structure.as_deref().unwrap_or("%occur_time%");
+                        let keyed = ![
+                            "occur_time",
+                            "occurTime",
+                            "create_time",
+                            "createTime",
+                            "modify_time",
+                            "modifyTime",
+                        ]
+                        .iter()
+                        .any(|t| tmpl.contains(&format!("%{t}")));
+                        let hint = if keyed {
+                            "; pass --update or --merge to change that entry"
+                        } else if entry.asserts_state() {
                             ""
                         } else {
                             "; give the field an id template \

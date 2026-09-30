@@ -243,7 +243,8 @@ pub struct TimeOrderIssue {
     pub end_time: String,
 }
 
-/// Strategy for handling content_hash collisions on insert.
+/// Strategy for handling content_hash collisions on insert; Update and
+/// Merge also resolve a slug collision (da-2mn3k).
 ///
 /// Rows are mutable: `Update` / `Merge` / `Rekey` all bump `modify_time`.
 /// CRDT/sync reconciliation is deferred.

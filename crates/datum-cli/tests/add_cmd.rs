@@ -10,11 +10,12 @@
 //!     datum's "required keys" positional semantics are ported as structural
 //!     skips that document the divergence. Skip headers call out exactly
 //!     which datum behavior has no daydumb analog.
-//!   * daydumb dedups on `content_hash = SHA-256(field + time_start +
-//!     time_end + value + extra_data)`, not on `_id`. Two rows sharing a
-//!     `--id` but differing in extra_data produce distinct content hashes
-//!     and both insert. The `--merge` / `--update` tests are adapted to
-//!     content-hash collisions (the daydumb conflict surface).
+//!   * datum's `_id` is daydumb's slug. A conflict strategy (`--merge`,
+//!     `--update`, `--conflict`) resolves a slug collision as datum's did
+//!     on `_id` (da-2mn3k), and also a content_hash collision; with no
+//!     strategy a second row at a taken slug errors (TS #14). `--merge`
+//!     deep-merges with the incoming value winning a key, where datum
+//!     collected both values into an array.
 //!   * daydumb always stores `id_structure` whenever `--id TEMPLATE` is set,
 //!     even for templates with no `%placeholder%`; datum only stored it when
 //!     the template had key references. The TS case is ported with the
@@ -349,6 +350,46 @@ fn same_id_different_data_errors_on_second() {
     assert_eq!(entries[0].id_structure.as_deref(), Some("doug"));
 }
 
+/// da-2mn3k: a keyed record re-logged under `--update` changes in place;
+/// without a strategy the collision's hint names the flags, not another
+/// id template (one produced it).
+#[test]
+fn keyed_record_relogs_in_place_under_update() {
+    let db = fresh_db();
+    run_cli(&["occur", "battery", "level=80", "--id", "fixed"], &db).expect("first");
+    let err = run_cli(&["occur", "battery", "level=70", "--id", "fixed"], &db)
+        .expect_err("no strategy: the slug is taken");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("--update or --merge"),
+        "hint names the flags: {msg}"
+    );
+    assert!(!msg.contains("id template"), "not another template: {msg}");
+
+    run_cli(
+        &["occur", "battery", "level=70", "--id", "fixed", "--update"],
+        &db,
+    )
+    .expect("--update resolves the slug collision");
+    assert_count!(db, "battery", 1);
+    let e = db.get_entry("battery:fixed").unwrap();
+    assert_eq!(e.data, Some(json!({ "level": 70 })));
+
+    // A template carrying the time (here by its camelCase alias) is not a
+    // key: its collision is two events at one instant, as before.
+    run_cli(
+        &["occur", "tx", "-t", "09:00", "--id", "%occurTime%", "a=1"],
+        &db,
+    )
+    .expect("tx");
+    let err = run_cli(
+        &["occur", "tx", "-t", "09:00", "--id", "%occurTime%", "a=2"],
+        &db,
+    )
+    .expect_err("same instant");
+    assert!(format!("{err:#}").contains("id template"), "{err:#}");
+}
+
 // ─── TS #15: "inserts id structure into the metadata" ────────────────────────
 
 /// Daydumb's `--id` only takes a single template (`Option<String>`).
@@ -482,70 +523,51 @@ fn show_all_flag_wired_through() {
 
 // ─── TS #22: "can merge into an existing document with --merge" ──────────────
 
-/// `--merge` maps to `ConflictStrategy::Merge` and fires on content_hash
-/// collisions. Daydumb divergence: the datum case mutates `foo` within the
-/// extra_data of a shared id; daydumb's merge runs only when *everything*
-/// already matches (field/time/value/extra) — so the observable effect is
-/// that `--merge` dispatches to the Merge branch and the row count stays
-/// at 1. The A4 A/B/C strategy suite covers deeper merge semantics.
+/// `--merge` merges into the entry holding the slug the id template gives
+/// (da-2mn3k), in place: one row, the same hid, both keys.
 #[test]
-fn merge_flag_routes_to_merge_strategy() {
+fn merge_flag_merges_into_the_entry_at_the_id() {
     let db = fresh_db();
-    run_cli(&["add", "field", "-t", "09:00", "-k", "foo=abc"], &db).expect("seed note");
-    assert_count!(db, "field", 1);
-    let before = datum_core::test_util::logged_entries(&db, "field")[0].clone();
+    run_cli(&["add", "field", "--id", "doc-id", "foo=abc"], &db).expect("seed");
+    let before = db.get_entry("field:doc-id").unwrap();
 
-    std::thread::sleep(std::time::Duration::from_millis(5));
-
-    // Same content → same content_hash. `--merge` dispatches to Merge
-    // strategy, which bumps modified_at but leaves the row count at 1.
     run_cli(
-        &["add", "field", "-t", "09:00", "-k", "foo=abc", "--merge"],
+        &["add", "field", "--id", "doc-id", "bar=def", "--merge"],
         &db,
     )
-    .expect("merge dispatch");
+    .expect("merge");
     assert_count!(db, "field", 1);
-    let after = datum_core::test_util::logged_entries(&db, "field")[0].clone();
-    assert_eq!(after.slug, before.slug, "merged in place, not rekeyed");
-    assert!(
-        after.modify_time > before.modify_time,
-        "Merge strategy bumps modified_at",
-    );
+    let after = db.get_entry("field:doc-id").unwrap();
+    assert_eq!(after.hid, before.hid, "merged in place");
+    assert_eq!(after.data, Some(json!({ "foo": "abc", "bar": "def" })));
 }
 
 // ─── TS #23: "can update and existing document with --conflict" ──────────────
 
-/// `--conflict update` maps to `ConflictStrategy::Update`. Lock-in matches
-/// the existing `log_with_update_flag_routes_to_update_strategy` harness
-/// test but via the full `--conflict` enum flag rather than the `--update`
-/// shorthand.
+/// `--conflict update` overwrites the entry holding the slug (da-2mn3k).
 #[test]
-fn conflict_update_flag_routes_to_update_strategy() {
+fn conflict_update_overwrites_the_entry_at_the_id() {
     let db = fresh_db();
-    run_cli(&["add", "field", "-t", "09:00", "-k", "foo=abc"], &db).expect("seed note");
-    assert_count!(db, "field", 1);
-    let before = datum_core::test_util::logged_entries(&db, "field")[0].clone();
-
-    std::thread::sleep(std::time::Duration::from_millis(5));
+    run_cli(&["add", "field", "--id", "doc-id", "foo=abc"], &db).expect("seed");
+    let before = db.get_entry("field:doc-id").unwrap();
 
     run_cli(
         &[
-            "note",
+            "add",
             "field",
-            "-t",
-            "09:00",
-            "-k",
-            "foo=abc",
+            "--id",
+            "doc-id",
+            "foo=def",
             "--conflict",
             "update",
         ],
         &db,
     )
-    .expect("--conflict update dispatch");
+    .expect("--conflict update");
     assert_count!(db, "field", 1);
-    let after = datum_core::test_util::logged_entries(&db, "field")[0].clone();
-    assert_eq!(after.slug, before.slug);
-    assert!(after.modify_time > before.modify_time);
+    let after = db.get_entry("field:doc-id").unwrap();
+    assert_eq!(after.hid, before.hid, "updated in place");
+    assert_eq!(after.data, Some(json!({ "foo": "def" })));
 }
 
 // ─── TS #24: "correctly displays interpolated field values in output" ────────
