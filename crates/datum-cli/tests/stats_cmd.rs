@@ -422,6 +422,38 @@ fn stats_excludes_closed_state_from_the_denominator() {
     );
 }
 
+/// A label two values share is tracked if any row of the field reads it
+/// so, the rows outside the window too (da-vq29c): the string "false"
+/// logged before `--since` keeps the in-window `false` in the field's
+/// tracked time, as it did when stats read the whole history. (`stats
+/// <field>` reads its periods too, a year back, so it is the table's
+/// window this reaches.)
+#[test]
+fn stats_classifies_a_label_by_rows_outside_the_window() {
+    let _g = freeze_time("2026-06-15T12:00:00Z");
+    let db = fresh_db();
+    for (t, state) in [
+        ("2026-06-15T08:00:00Z", json!("false")),
+        ("2026-06-15T08:30:00Z", json!("coding")),
+        ("2026-06-15T10:00:00Z", json!(false)),
+        ("2026-06-15T11:00:00Z", json!("coding")),
+    ] {
+        entry_builder("activity")
+            .verb(Verb::Switch)
+            .state(state)
+            .time_start_utc(at(t))
+            .insert(&db);
+    }
+
+    let args = StatsArgs {
+        since: Some("2026-06-15T09:00:00Z".to_string()),
+        ..StatsArgs::default()
+    };
+    let r = compute_all_fields(&args, &db).unwrap();
+
+    assert_eq!(r.fields[0].duration_seconds, 3 * 3600, "false is counted");
+}
+
 #[test]
 fn stats_include_false_restores_the_wall_clock_denominator() {
     let _g = freeze_time("2026-06-15T12:00:00Z");

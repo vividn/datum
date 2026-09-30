@@ -280,6 +280,10 @@ pub fn compute_by_client(args: &StatsArgs, db: &Db) -> Result<AllFieldsStats> {
                     ..s.clone()
                 })
                 .collect(),
+            seen: (timeline.seen.iter())
+                .filter(|(_, _, c)| c == client)
+                .cloned()
+                .collect(),
         };
         let r = rollup(field, None, args, &own, start, end);
         (label(client), Some(client.to_string()), color.clone(), r)
@@ -397,13 +401,19 @@ fn field_stats(
 
 /// The field's timeline for rollups within `[from, until)`: its whole
 /// history when `from` is unbounded, otherwise only the rows that decide
-/// the spans there (da-307e0).
+/// the spans there (da-307e0), and the rows counted there and those whose
+/// edges begin its spans (da-vq29c).
 fn load_timeline(
     field: &str,
     db: &Db,
     from: Option<DateTime<Utc>>,
     until: DateTime<Utc>,
 ) -> Result<Timeline> {
+    let edges = state_spans(field, db, from, until)?;
+    let bounds = from.map(|from| {
+        (edges.iter().filter_map(|(_, _, at)| *at))
+            .fold((from, until), |(lo, hi), at| (lo.min(at), hi.max(at)))
+    });
     // Oldest→newest, time-bearing state rows only. `TimeMetric::Occur` drops
     // TRACK documents too (da-c8mh): declaring a field is not an
     // observation of it.
@@ -413,18 +423,18 @@ fn load_timeline(
     let params = ListParams {
         fields: vec![field.to_string()],
         metric: TimeMetric::Occur,
+        start_utc: bounds.map(|(lo, _)| lo),
+        end_utc: bounds.map(|(_, hi)| hi),
         ..Default::default()
     };
     let entries = db.list_entries(&params)?;
-    let client_of: std::collections::HashMap<&str, &str> = (entries.iter())
-        .map(|e| (e.hid.as_str(), e.client_id.as_str()))
-        .collect();
+    let label = |v: Option<&JsonValue>| state_label(v).unwrap_or_else(|| "(none)".to_string());
     let rows = entries
         .iter()
         .filter(|e| datum_core::track::track_verb(e).is_none())
         .filter_map(|e| {
             Some(TimelineRow {
-                state: state_label(e.state.as_ref()).unwrap_or_else(|| "(none)".to_string()),
+                state: label(e.state.as_ref()),
                 class: classify(e.state.as_ref()),
                 occur: e.occur_time.as_ref()?.utc,
                 local: e.occur_time.as_ref()?.local_time(),
@@ -432,30 +442,46 @@ fn load_timeline(
             })
         })
         .collect();
-    let spans = state_spans(field, db, from, until, &client_of)?;
-    Ok(Timeline { rows, spans })
+    let seen = (db.distinct_states_outside(&params)?.into_iter())
+        .map(|(v, client)| (label(v.as_ref()), classify(v.as_ref()), client))
+        .collect();
+    let client_of: std::collections::HashMap<&str, &str> = (entries.iter())
+        .map(|e| (e.hid.as_str(), e.client_id.as_str()))
+        .collect();
+    let spans = (edges.into_iter())
+        .map(|(span, hid, _)| StateSpan {
+            client: client_of
+                .get(hid.as_str())
+                .copied()
+                .unwrap_or_default()
+                .into(),
+            ..span
+        })
+        .collect();
+    Ok(Timeline { rows, spans, seen })
 }
 
-/// The field's state spans for rollups within `[from, until)`, each with
-/// the client of the row whose edge it is (`client_of`: hid → client).
+/// A state span, with no client yet, and the hid and time of the row
+/// whose edge it is.
+type Edge = (StateSpan, String, Option<DateTime<Utc>>);
+
+/// The field's state spans for rollups within `[from, until)`.
 fn state_spans(
     field: &str,
     db: &Db,
     from: Option<DateTime<Utc>>,
     until: DateTime<Utc>,
-    client_of: &std::collections::HashMap<&str, &str>,
-) -> Result<Vec<StateSpan>> {
-    let span = |c: StateChange| StateSpan {
-        // A block that interrupted nothing hands back no state: the
-        // stretch after it is left unattributed (da-phoe).
-        state: c.governing.and(state_label(Some(&c.state))),
-        class: classify(Some(&c.state)),
-        from: c.at,
-        client: client_of
-            .get(c.row.id.as_str())
-            .copied()
-            .unwrap_or_default()
-            .into(),
+) -> Result<Vec<Edge>> {
+    let span = |c: StateChange| {
+        let span = StateSpan {
+            // A block that interrupted nothing hands back no state: the
+            // stretch after it is left unattributed (da-phoe).
+            state: c.governing.and(state_label(Some(&c.state))),
+            class: classify(Some(&c.state)),
+            from: c.at,
+            client: String::new(),
+        };
+        (span, c.row.id.clone(), c.row.occur)
     };
     let Some(from) = from else {
         let history = FieldStateRows::load_transitions(db.conn(), field)?;
@@ -500,6 +526,9 @@ fn rollup(
         note_class(&mut class_by_state, state, span.class);
     }
 
+    for (state, class, _) in &timeline.seen {
+        note_class(&mut class_by_state, state, *class);
+    }
     for row in &timeline.rows {
         note_class(&mut class_by_state, &row.state, row.class);
         // Count the entry itself when its occur instant lands in-window.
@@ -909,6 +938,9 @@ fn midnight(zones: &ZoneTimeline, date: NaiveDate) -> DateTime<Utc> {
 struct Timeline {
     rows: Vec<TimelineRow>,
     spans: Vec<StateSpan>,
+    /// The state, class and client of each kind of row outside `rows`:
+    /// not counted, only classified (da-vq29c).
+    seen: Vec<(String, StateClass, String)>,
 }
 
 #[derive(Clone)]

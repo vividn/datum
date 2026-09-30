@@ -3,6 +3,7 @@
 
 use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
+use serde_json::Value as JsonValue;
 
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
@@ -63,6 +64,40 @@ impl Db {
             results.reverse();
         }
         Ok(results)
+    }
+
+    /// The distinct `(state, client_id)` of the rows [`Self::list_entries`]
+    /// filters in but its time bounds leave out, declarations aside
+    /// ([`crate::track::track_verb`]): what a reader of the window needs of
+    /// the rest of the history without reading its rows (da-vq29c). Empty
+    /// when `params` is unbounded.
+    pub fn distinct_states_outside(
+        &self,
+        params: &ListParams,
+    ) -> Result<Vec<(Option<JsonValue>, String)>> {
+        let Some((window, window_bindings)) = list_window_sql(params) else {
+            return Ok(Vec::new());
+        };
+        let (filter, mut bindings) = list_filter_sql(params);
+        bindings.extend(window_bindings);
+        let sql = format!(
+            "SELECT DISTINCT state, client_id, json_extract(extra_metadata, '$.{}')
+             FROM entries WHERE {filter} AND NOT ({window})",
+            crate::track::TRACK_META_KEY
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(bindings.iter()), |row| {
+            let track = match row.get::<_, rusqlite::types::Value>(2)? {
+                rusqlite::types::Value::Text(t) => t.parse::<crate::action::Action>().ok(),
+                _ => None,
+            };
+            let state =
+                (row.get::<_, Option<String>>(0)?).and_then(|s| serde_json::from_str(&s).ok());
+            let client: String = row.get(1)?;
+            Ok(track.is_none().then_some((state, client)))
+        })?;
+        rows.filter_map(|r| r.map_err(DatumError::Db).transpose())
+            .collect()
     }
 
     /// Live entries whose `create_time` is strictly greater than `since`,
@@ -163,8 +198,31 @@ impl Db {
 /// the window and never sorts.
 pub(super) fn list_entries_sql(params: &ListParams) -> (String, Vec<String>) {
     let metric_expr: &str = time_expr(params.metric);
+    let (filter, mut bindings) = list_filter_sql(params);
+    let mut sql = format!("SELECT * FROM entries WHERE {filter}");
+    if let Some((window, b)) = list_window_sql(params) {
+        sql.push_str(&format!(" AND {window}"));
+        bindings.extend(b);
+    }
 
-    let mut sql = format!("SELECT * FROM entries WHERE {LIVE_SQL}");
+    // For tail we want the LAST N by metric, so sort DESC + LIMIT then
+    // reverse; for head we want FIRST N, so sort ASC + LIMIT. Secondary
+    // sort by `slug` keeps tied metric timestamps in a deterministic
+    // order — slugs embed the timestamp so same-metric rows sort stably.
+    let order_dir = if params.head { "ASC" } else { "DESC" };
+    sql.push_str(&format!(
+        " ORDER BY {metric_expr} {order_dir}, slug {order_dir}"
+    ));
+    if let Some(n) = params.limit {
+        sql.push_str(&format!(" LIMIT {n}"));
+    }
+
+    (sql, bindings)
+}
+
+/// [`list_entries_sql`]'s WHERE clause but for its time bounds.
+fn list_filter_sql(params: &ListParams) -> (String, Vec<String>) {
+    let mut sql = LIVE_SQL.to_string();
     let mut bindings: Vec<String> = Vec::new();
 
     // da-5ns / da-r17h: a timeless row (bare `add`/`note`, or any
@@ -204,28 +262,17 @@ pub(super) fn list_entries_sql(params: &ListParams) -> (String, Vec<String>) {
         }
         bindings.extend(params.fields.iter().cloned());
     }
-    if let Some(start) = &params.start_utc {
-        sql.push_str(&format!(" AND {metric_expr} >= ?"));
-        bindings.push(start.to_rfc3339());
-    }
-    if let Some(end) = &params.end_utc {
-        sql.push_str(&format!(" AND {metric_expr} <= ?"));
-        bindings.push(end.to_rfc3339());
-    }
-
-    // For tail we want the LAST N by metric, so sort DESC + LIMIT then
-    // reverse; for head we want FIRST N, so sort ASC + LIMIT. Secondary
-    // sort by `slug` keeps tied metric timestamps in a deterministic
-    // order — slugs embed the timestamp so same-metric rows sort stably.
-    let order_dir = if params.head { "ASC" } else { "DESC" };
-    sql.push_str(&format!(
-        " ORDER BY {metric_expr} {order_dir}, slug {order_dir}"
-    ));
-    if let Some(n) = params.limit {
-        sql.push_str(&format!(" LIMIT {n}"));
-    }
-
     (sql, bindings)
+}
+
+/// [`list_entries_sql`]'s time bounds, `None` when it has none.
+fn list_window_sql(params: &ListParams) -> Option<(String, Vec<String>)> {
+    let metric_expr: &str = time_expr(params.metric);
+    let bounds = [(">=", params.start_utc), ("<=", params.end_utc)];
+    let (sql, bindings): (Vec<String>, Vec<String>) = (bounds.into_iter())
+        .filter_map(|(op, t)| Some((format!("{metric_expr} {op} ?"), t?.to_rfc3339())))
+        .unzip();
+    (!sql.is_empty()).then(|| (sql.join(" AND "), bindings))
 }
 
 #[cfg(test)]
