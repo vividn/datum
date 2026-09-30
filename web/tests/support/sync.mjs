@@ -127,6 +127,10 @@ export async function nativeCopy(relay) {
 				const child = execFile(bin, argv, { env: { ...env, ...more }, encoding: 'utf8' }, (e, stdout, stderr) =>
 					resolve({ code: e ? (e.code ?? 1) : 0, stdout: stdout.trim(), stderr: stderr.trim() })
 				);
+				// A command that exits before reading its stdin (most do: `count`,
+				// `status`) closes the pipe under this write. Its exit code is the
+				// answer, so the EPIPE is not an error, and unheard it would throw.
+				child.stdin.on('error', () => {});
 				child.stdin.end(stdin ?? '');
 			}),
 		spawn(argv) {
