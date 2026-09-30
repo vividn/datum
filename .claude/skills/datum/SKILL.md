@@ -120,6 +120,11 @@ datum dayview -o day.svg --days 3   # render days as a timeline (.svg / .png / .
   state repeated with no change between.
 - **Time formats:** `datum help time` lists every form `-t`, `-d`, `-y`/`-q` and
   durations take, with examples.
+- **Trying sync? Set `DATUM_SYNC_NO_DAEMON=1` first.** A copy's first
+  `sync chain invite` or `connect` installs a background sync service for your
+  user (a systemd user unit or launchd agent), even on a throwaway db. If one
+  slipped in, `datum sync daemon status` shows it and `datum sync daemon uninstall`
+  removes it.
 
 ## The data model (essentials)
 
