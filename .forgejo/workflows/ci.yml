@@ -34,8 +34,9 @@ on:
     # as `ci/<sha8>`, read its verdict, delete the branch. Such a run is never
     # dropped as superseded — that step is main's and staging's alone.
     # `staging` is the merge train's (ct-yesk): approved PRs land there, and
-    # main only fast-forwards to a staging commit whose run is green, so a
-    # push to staging runs exactly as a push to main does.
+    # each reaches main (the same PR merge as before) only once a staging
+    # commit holding it runs green, main's tree then checked equal to that
+    # commit's. So a push to staging runs exactly as a push to main does.
     branches: [main, staging, 'ci/**']
     # `hero/**` used to be here so a hero's branch reached the runner through
     # the mirror before the cutover, when the forge had no PRs. Since
