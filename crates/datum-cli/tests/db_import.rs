@@ -906,9 +906,13 @@ fn import_preserves_source_humanid_as_hid() {
         "entry.hid must mirror source meta.humanId",
     );
     // Quick-id lookup by full and prefix forms resolves the imported row.
+    // Six characters, not three: the auto-created `spec:coffee` has a random
+    // hid, which shares a 3-char prefix about 1 run in 47k (da-grlpj).
     let by_full = db.get_entry("abc123def456").expect("get by full humanId");
     assert_eq!(by_full.slug, e.slug);
-    let by_prefix = db.resolve_prefix("abc").expect("resolve by humanId prefix");
+    let by_prefix = db
+        .resolve_prefix("abc123")
+        .expect("resolve by humanId prefix");
     assert_eq!(by_prefix.slug, e.slug);
 }
 
