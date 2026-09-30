@@ -38,6 +38,8 @@ import type { SyncEvent, SyncReport, SyncRequest } from './syncProtocol.js';
 import type { RunResult } from './run.js';
 
 const PULL_MS = 30_000;
+/** How soon a leader that could not read its setup reads it again. */
+const RETRY_MS = 2_000;
 const REACHABLE_MS = 60_000;
 const CHANNEL = 'datum-sync';
 
@@ -157,19 +159,19 @@ class Leader {
 	 * `sync chain list` fails, writing nothing, in a database in no chain;
 	 * `sync status` would mint an endpoint key there, on every fresh
 	 * device's first boot, so only a member is asked it.
+	 *
+	 * A read that fails changes nothing (da-zyox0): emptying the peers
+	 * first left a failed one pushing to nobody until the next refresh.
 	 */
 	async refresh(): Promise<void> {
 		const members = await cli(['--db', this.db, 'sync', 'chain', 'list', '--json']);
-		this.chain = members.code === 0;
-		this.peers = [];
-		this.paused = undefined;
-		if (this.chain) {
-			const status = JSON.parse(await must(['--db', this.db, 'sync', 'status', '--json']));
-			this.label = status.this.label;
-			this.paused = status.paused ?? undefined;
-			this.peers = (status.members as Peer[]).filter((p) => !p.revoked && p.addr);
-			await this.start();
-		}
+		const chain = members.code === 0;
+		const status = chain ? JSON.parse(await must(['--db', this.db, 'sync', 'status', '--json'])) : undefined;
+		this.chain = chain;
+		this.label = status?.this.label ?? this.label;
+		this.paused = status?.paused ?? undefined;
+		this.peers = ((status?.members ?? []) as Peer[]).filter((p) => !p.revoked && p.addr);
+		if (chain) await this.start();
 		this.post();
 	}
 
@@ -274,7 +276,18 @@ class Leader {
 async function lead(db: string): Promise<void> {
 	const leader = new Leader(db);
 	led.set(db, leader);
-	await leader.refresh().catch((e) => console.warn(`sync ${db}:`, e));
+	// Until the first read of its setup succeeds, a leader has no endpoint and
+	// pushes nothing, so one that failed once — taking over from a closed tab,
+	// say — never synced again, every tab's writes with it (da-zyox0).
+	for (;;) {
+		try {
+			await leader.refresh();
+			break;
+		} catch (e) {
+			console.warn(`sync ${db}:`, e);
+			await new Promise((r) => setTimeout(r, RETRY_MS));
+		}
+	}
 	onAnyChange(() => void leader.push().catch(() => {}), db);
 	// A database that does not sync has nothing to pull, nor any reach to age.
 	setInterval(() => {

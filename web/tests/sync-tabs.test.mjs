@@ -65,6 +65,28 @@ async function bothBurst(first, second) {
 	);
 }
 
+/**
+ * `native` comes to hold `n` bursts. A miss keeps watching past a pull and a
+ * hung dial's 60 s, and fails saying whether the write came late or never,
+ * and what `leader`'s sync saw — the question da-zyox0 could not settle from
+ * one CI red that no local run reproduced.
+ */
+async function arrives(native, leader, n) {
+	const start = Date.now();
+	try {
+		await until(() => native.count('burst'), (c) => c === n);
+	} catch (e) {
+		const came = await until(() => native.count('burst'), (c) => c === n, 70_000).then(
+			() => `came late, at ${Math.round((Date.now() - start) / 1000)} s`,
+			() => 'never came'
+		);
+		// Heard, not read: a leader that never posted still shows the last
+		// one's state, endpoint and all.
+		const heard = await leader.page.evaluate(() => window.datum.sync.states().datum);
+		throw new Error(`${e.message}; the write ${came}; the last sync state its tab heard: ${JSON.stringify(heard)}`);
+	}
+}
+
 describe('two tabs writing at once', () => {
 	test('lose nothing, with no peer', async () => {
 		await withTabs(
@@ -119,8 +141,9 @@ describe('one endpoint per database', () => {
 			await leader.page.close();
 			await until(() => leadsOf(other), (l) => l.includes('datum'));
 			const base = await countOf(other, 'burst');
-			await other.run(['occur', 'burst', '-t', '1000']);
-			await until(() => native.count('burst'), (n) => n === base + 1);
+			const wrote = await other.run(['occur', 'burst', '-t', '1000']);
+			assert.equal(wrote.code, 0, wrote.stderr);
+			await arrives(native, other, base + 1);
 		});
 	});
 });
