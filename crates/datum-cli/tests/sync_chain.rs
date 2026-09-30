@@ -262,9 +262,10 @@ fn a_non_members_ops_are_refused_until_it_is_admitted() {
     let check = a.ok(&["check"]);
     assert!(check.contains("outside the sync chain"), "{check}");
 
-    // Offered again, they are held already: no second warning.
+    // Held, they count as received: not asked for again (the pipe's one
+    // overlap op aside), and no second warning.
     let (_, again) = stranger.send(&a);
-    assert!(again.contains("already had 2"), "{again}");
+    assert!(again.contains("applied 0 · already had 1"), "{again}");
     assert_eq!(
         a.query("SELECT COUNT(*) FROM integrity_warnings WHERE kind = 'sync_unauthorised'"),
         "1"
@@ -1148,7 +1149,7 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
     assert_eq!(top, ["status", "pause", "resume", "chain", "admin"]);
     assert_eq!(
         complete(&["chain"]),
-        ["invite", "connect", "list", "rename", "revoke", "ack", "rekey"]
+        ["invite", "connect", "list", "rename", "revoke", "role", "ack", "rekey"]
     );
     assert_eq!(complete(&["admin"]), ["list", "add", "remove"]);
     // `datum sync help` is the page.
@@ -1335,4 +1336,184 @@ fn a_multi_side_write_warns_too() {
     let warned = a.stderr_of(&["occur", "tea", ",", "occur", "coffee"]);
     assert!(a.has("tea") && a.has("coffee"));
     assert!(warned.contains("⚠ not synced for 3 days"), "{warned}");
+}
+
+/// `copy` redeeming a reader's invite of `member`'s (da-9yvb6), and sent the
+/// chain: whether that applied cleanly, and what it said.
+fn admit_reader(
+    member: &Copy,
+    copy: &Copy,
+    label: &str,
+    admin_key: Option<&str>,
+) -> (bool, String) {
+    let mut args = vec!["sync", "new-invite", "--reader"];
+    args.extend(admin_key.map(|k| ["--admin-key", k]).into_iter().flatten());
+    let invite = json(&member.ok(&args));
+    let secret = invite["secret"].as_str().unwrap();
+    let id = copy.id();
+    let hello = ["sync", "handshake", &id, "--label", label, "--addr", "{}"];
+    member.ok(&[&hello[..], &["--invite", secret, "--chain", ""]].concat());
+    member.send(copy)
+}
+
+const READ_ONLY: &str = "this copy is a reader in its sync chain: it receives, and can't write";
+
+/// A reader receives every write; its copy refuses its own, and its chain
+/// acts but a describe of itself; it serves its own ops alone, so nothing
+/// reaches another member through it; `chain list` and `status` say so.
+#[test]
+fn a_reader_receives_every_write_writes_nothing_and_relays_nothing() {
+    let (a, b) = chained();
+    let r = Copy::new();
+    a.ok(&["occur", "tea"]);
+    assert!(admit_reader(&a, &r, "r", None).0);
+    assert!(r.has("tea"));
+    let out = r.fails(&["occur", "coffee"], "");
+    assert!(out.contains(READ_ONLY), "{out}");
+    assert!(!r.has("coffee"));
+    let out = r.fails(&["sync", "new-invite"], "");
+    assert!(
+        out.contains("its writer is a reader in the sync chain"),
+        "{out}"
+    );
+    b.ok(&["occur", "juice"]);
+    assert!(b.send(&a).0 && a.send(&r).0);
+    assert!(r.has("juice"));
+    assert_eq!(a.hash(), r.hash());
+
+    // It describes itself, and serves that alone: b, which has not heard
+    // of r from a, holds r's describe until a's records reach it.
+    r.ok(&["sync", "chain", "rename", "phone"]);
+    let served = r.ok(&["sync", "pipe", "ops"]);
+    assert!(!served.is_empty());
+    assert!(
+        served.lines().all(|l| json(l)["endpoint"] == r.id()),
+        "{served}"
+    );
+    let (ok, text) = r.send(&b);
+    assert!(ok && text.contains("held 1"), "{text}");
+    assert!(a.send(&b).0);
+    assert_eq!(member_of(&b, &r.id())["label"], "phone");
+
+    assert_eq!(member_of(&b, &r.id())["role"], "reader");
+    assert_eq!(member_of(&b, &a.id())["role"], "member");
+    assert!(b.ok(&["sync", "chain", "list"]).contains("phone  reader"));
+    assert_eq!(
+        json(&r.ok(&["sync", "status", "--json"]))["this"]["reader"],
+        true
+    );
+    let status = json(&a.ok(&["sync", "status", "--json"]));
+    let of = |id: &str| {
+        status["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["endpoint"] == id)
+            .unwrap()["reader"]
+            .clone()
+    };
+    assert_eq!((of(&r.id()), of(&b.id())), (true.into(), false.into()));
+}
+
+/// A reader's entry op, and a forged invite or revoke, are refused by the
+/// fold on every copy, open chain or locked.
+#[test]
+fn a_readers_entry_op_and_forged_acts_are_refused_open_chain_or_locked() {
+    for lock in [false, true] {
+        let (a, b) = chained();
+        let admin = a.key("admin.key");
+        if lock {
+            a.ok(&["sync", "admin", "add", &admin]);
+        }
+        let key = lock.then_some(admin.as_str());
+        let chain_id = a.query(
+            "SELECT json_extract(body, '$.effect.chain') FROM ops WHERE hid = '~chain' LIMIT 1",
+        );
+        let r = Copy::new();
+        assert!(admit_reader(&a, &r, "r", key).0);
+        for record in [
+            serde_json::json!({"type": "revoke", "endpoint": b.id()}),
+            serde_json::json!({"type": "invite", "invite_id": "x", "secret_hash": "h",
+                "expires": "2099-01-01T00:00:00Z", "caps": {}}),
+        ] {
+            let mut record = record;
+            record["chain"] = chain_id.clone().into();
+            record["created"] = "2026-09-29T00:00:00Z".into();
+            let out = a.run(&["sync", "pipe", "apply"], &forged(&r, &a, record));
+            let text = String::from_utf8_lossy(&out.stderr);
+            assert!(!out.status.success(), "{text}");
+            assert!(
+                text.contains("its writer is a reader in the sync chain"),
+                "{text}"
+            );
+        }
+        assert!(member_of(&a, &b.id())["revoked"].is_null());
+
+        // An entry op, made before it joined: refused on every copy, its
+        // own included, which still serves it for each copy to refuse.
+        let r = Copy::new();
+        r.ok(&["occur", "before"]);
+        let (ok, text) = admit_reader(&a, &r, "r2", key);
+        assert!(!ok && text.contains("a reader in the sync chain"), "{text}");
+        assert!(!r.has("before"));
+        let (ok, text) = r.send(&a);
+        assert!(!ok && text.contains("a reader in the sync chain"), "{text}");
+        assert!(!a.has("before"));
+    }
+}
+
+/// Roles change at a record's HLC, either way: a reader made a member
+/// writes; a member made a reader keeps what it wrote before, and what it
+/// wrote after is refused everywhere, its own copy included once it hears.
+#[test]
+fn a_reader_made_a_member_writes_and_a_member_made_a_reader_does_not() {
+    let (a, b) = chained();
+    let r = Copy::new();
+    assert!(admit_reader(&a, &r, "r", None).0);
+    assert!(a
+        .ok(&["sync", "chain", "role", "r", "member"])
+        .contains("r is a member"));
+    assert!(a.send(&r).0);
+    r.ok(&["occur", "promoted"]);
+    assert!(r.send(&a).0 && a.has("promoted"));
+
+    b.ok(&["occur", "before"]);
+    assert!(b.send(&a).0);
+    a.ok(&["sync", "chain", "role", "b", "reader"]);
+    let again = a.fails(&["sync", "chain", "role", "b", "reader"], "");
+    assert!(again.contains("b is already a reader"), "{again}");
+    b.ok(&["occur", "after"]);
+    let (ok, text) = b.send(&a);
+    assert!(!ok && text.contains("a reader in the sync chain"), "{text}");
+    assert!(a.has("before") && !a.has("after"));
+    let (ok, text) = a.send(&b);
+    assert!(!ok && text.contains("a reader in the sync chain"), "{text}");
+    assert!(b.has("before") && !b.has("after"));
+    let out = b.fails(&["occur", "more"], "");
+    assert!(out.contains(READ_ONLY), "{out}");
+    assert_eq!(a.hash(), b.hash());
+}
+
+/// Demoted and promoted back: what it wrote while a reader stays refused,
+/// and what it writes after applies on every copy, a third that never met
+/// it included — its refused op does not hold back the ones after it.
+#[test]
+fn a_member_made_a_reader_and_a_member_again_writes_on_every_copy() {
+    let (a, b) = chained();
+    let c = Copy::new();
+    admit(&a, &c, "c", None);
+    a.ok(&["sync", "chain", "role", "b", "reader"]);
+    b.ok(&["occur", "after"]);
+    let (ok, text) = b.send(&a);
+    assert!(!ok && text.contains("a reader in the sync chain"), "{text}");
+    a.ok(&["sync", "chain", "role", "b", "member"]);
+    let _ = a.send(&b);
+    b.ok(&["occur", "again"]);
+    let (ok, text) = b.send(&a);
+    assert!(ok, "{text}");
+    assert!(a.has("again") && !a.has("after"));
+    let _ = a.send(&c);
+    assert!(c.has("again") && !c.has("after"));
+    assert_eq!(a.hash(), b.hash());
+    assert_eq!(a.hash(), c.hash());
 }

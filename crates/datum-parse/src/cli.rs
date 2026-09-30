@@ -761,10 +761,12 @@ pub enum SyncCommand {
     /// `datum sync pause | resume` (da-wlbyx): this copy's, never synced.
     Pause,
     Resume,
-    /// `datum sync chain invite [--qr] [--expires <DUR>] [--admin-key
-    /// <FILE>]` — an invite any member can admit, served until redeemed; on
-    /// a copy in no chain, it starts an open one (da-6177s).
+    /// `datum sync chain invite [--reader] [--qr] [--expires <DUR>]
+    /// [--admin-key <FILE>]` — an invite any member can admit, served until
+    /// redeemed; on a copy in no chain, it starts an open one (da-6177s).
+    /// `--reader` admits a reader (da-9yvb6).
     Invite {
+        reader: bool,
         qr: bool,
         expires_secs: u64,
         admin_key: Option<String>,
@@ -793,7 +795,8 @@ pub enum SyncCommand {
     },
     /// `datum sync chain rekey` — a new endpoint key for this copy (da-p79vq).
     Rekey,
-    /// `datum sync chain revoke <WHO>`, `datum sync admin add <KEY>
+    /// `datum sync chain revoke <WHO>`, `datum sync chain role <WHO>
+    /// member|reader`, `datum sync admin add <KEY>
     /// [--label <L>]`, `datum sync admin remove <WHO> [--allow-unlock]`,
     /// each `[--admin-key <FILE>]` — a signed act on the chain.
     Admin {
@@ -854,10 +857,11 @@ pub enum SyncCommand {
         chain: Option<String>,
         dialed: bool,
     },
-    /// Hidden: `datum sync new-invite [--expires <DUR>] [--admin-key
-    /// <FILE>]` — write `invite`'s record and print its secret, for
-    /// datum.day's transport to serve.
+    /// Hidden: `datum sync new-invite [--reader] [--expires <DUR>]
+    /// [--admin-key <FILE>]` — write `invite`'s record and print its
+    /// secret, for datum.day's transport to serve.
     NewInvite {
+        reader: bool,
         expires_secs: u64,
         admin_key: Option<String>,
     },
@@ -866,6 +870,7 @@ pub enum SyncCommand {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncAdminAct {
     Revoke,
+    Role { reader: bool },
     AddAdmin,
     RemoveAdmin,
 }

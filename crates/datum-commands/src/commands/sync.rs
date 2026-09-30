@@ -125,6 +125,17 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                         format!("revoked {who}"),
                     )
                 }
+                SyncAdminAct::Role { reader } => {
+                    let m = member(&chain, &who)?;
+                    let role = if reader { "reader" } else { "member" };
+                    // Nothing to sign: in a locked chain, a passkey tap for nothing.
+                    let now = chain.member(&m).map(|m| m.role().as_str());
+                    ensure!(now != Some(role), "{who} is already a {role}");
+                    (
+                        json!({"type": "role", "endpoint": m, "role": role}),
+                        format!("{who} is a {role}"),
+                    )
+                }
                 SyncAdminAct::AddAdmin => {
                     let (key, l) = match who.trim_start().starts_with('{') {
                         true => passkey(&who)?,
@@ -229,11 +240,12 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             println!("{}", if added { "added" } else { "known" });
         }
         SyncCommand::NewInvite {
+            reader,
             expires_secs,
             admin_key,
         } => {
             let expires = std::time::Duration::from_secs(expires_secs);
-            let (secret, expires_at) = invite(db, expires, admin_key.as_deref())?;
+            let (secret, expires_at) = invite(db, expires, admin_key.as_deref(), reader)?;
             println!("{}", json!({"secret": secret, "expires": expires_at}));
         }
         SyncCommand::Ack { who } => {
@@ -242,12 +254,13 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
         }
         #[cfg(feature = "net")]
         SyncCommand::Invite {
+            reader,
             qr,
             expires_secs,
             admin_key,
         } => {
             let expires = std::time::Duration::from_secs(expires_secs);
-            let (secret, expires_at) = invite(db, expires, admin_key.as_deref())?;
+            let (secret, expires_at) = invite(db, expires, admin_key.as_deref(), reader)?;
             datum_sync::offer(db, &secret, expires, &expires_at, qr)?
         }
         #[cfg(feature = "net")]
@@ -293,11 +306,13 @@ fn summary(db: &Db) -> Result<Option<String>> {
 
 /// Write an invite any member admits the redeemer of, starting an open
 /// chain with this copy its first member when it is in none: its secret,
-/// which only the ticket carries, and when it expires.
+/// which only the ticket carries, and when it expires. `reader`: the
+/// redeemer is admitted a reader (da-9yvb6).
 fn invite(
     db: &Db,
     expires: std::time::Duration,
     admin_key: Option<&str>,
+    reader: bool,
 ) -> Result<(String, String)> {
     let mut chain = db.sync_chain()?;
     if !chain.exists() {
@@ -320,7 +335,8 @@ fn invite(
     let record = json!({
         "type": "invite", "chain": chain.id,
         "invite_id": ulid::Ulid::new().to_string().to_lowercase(),
-        "secret_hash": chain::secret_hash(&secret), "expires": expires_at, "caps": {},
+        "secret_hash": chain::secret_hash(&secret), "expires": expires_at,
+        "caps": if reader { json!({"role": "reader"}) } else { json!({}) },
         "created": chrono::Utc::now().to_rfc3339(),
     });
     db.sync_chain_write(sign(record, &chain, admin_key)?, true)?;
@@ -513,7 +529,7 @@ fn members(db: &Db, json: bool) -> Result<()> {
                     "endpoint": m.endpoint, "label": m.label, "client": m.client,
                     "kind": m.kind, "admitted": chain::hlc_time(&m.admitted), "via": m.via,
                     "revoked": m.revoked.as_deref().map(chain::hlc_time),
-                    "this": m.endpoint == mine,
+                    "role": m.role().as_str(), "this": m.endpoint == mine,
                 })
             })
             .collect();
@@ -527,8 +543,9 @@ fn members(db: &Db, json: bool) -> Result<()> {
     for m in &chain.members {
         let revoked = m.revoked.as_deref().map(chain::hlc_time);
         println!(
-            "  {}  {}{}  admitted {} via {}{}{}",
+            "  {}  {}  {}{}  admitted {} via {}{}{}",
             m.label,
+            m.role().as_str(),
             &m.endpoint[..10],
             m.client
                 .as_deref()
@@ -573,7 +590,7 @@ fn status(db: &Db, json: bool) -> Result<()> {
             .map(|p| {
                 json!({
                     "endpoint": p.endpoint, "client": p.client, "label": p.label,
-                    "kind": p.kind, "revoked": p.revoked, "state": p.state,
+                    "kind": p.kind, "revoked": p.revoked, "reader": p.reader, "state": p.state,
                     "to_send": p.to_send, "last_seen": p.last_seen,
                     "last_verify": p.last_verify.as_ref().map(|(at, m)| json!({"at": at, "match": m})),
                     "error": p.error, "error_at": p.error_at, "addr": p.addr,
@@ -587,7 +604,10 @@ fn status(db: &Db, json: bool) -> Result<()> {
         let out = json!({
             "db": name, "chain": chain.exists().then_some(&chain.id), "paused": paused,
             "open": chain.exists() && chain.is_open(), "unlocked": unlocked,
-            "this": {"endpoint": mine, "client": db.sync_client_id()?, "label": label},
+            "this": {
+                "endpoint": mine, "client": db.sync_client_id()?, "label": label,
+                "reader": chain.member(&mine).is_some_and(|m| m.role() == chain::Role::Reader),
+            },
             "members": members,
         });
         println!("{out}");
@@ -627,13 +647,14 @@ fn status(db: &Db, json: bool) -> Result<()> {
                 .or(p.last_seen.clone()),
         };
         println!(
-            "  {:<width$}  {}  {:<7}  to send {:<5}  {}{}{}",
+            "  {:<width$}  {}  {:<7}  to send {:<5}  {}{}{}{}",
             p.label,
             &p.endpoint[..10],
             p.state,
             p.to_send,
             when.as_deref().unwrap_or("-"),
             if p.revoked { "  REVOKED" } else { "" },
+            if p.reader { "  reader" } else { "" },
             p.error
                 .as_deref()
                 .map(|e| format!("  {e}"))

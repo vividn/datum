@@ -19,6 +19,8 @@ export interface Member {
 	label: string;
 	kind?: string | null;
 	revoked: boolean;
+	/** A reader (da-9yvb6): it receives, and writes nothing. */
+	reader?: boolean;
 	state: 'synced' | 'pending' | 'never' | 'error';
 	to_send: number;
 	last_seen?: string | null;
@@ -30,7 +32,7 @@ export interface Member {
 export interface DbSync {
 	db: string;
 	chain: string | null;
-	this?: { endpoint: string; client: string; label: string };
+	this?: { endpoint: string; client: string; label: string; reader?: boolean };
 	members: Member[];
 }
 
@@ -59,6 +61,8 @@ export interface Cell {
 	/** What the tooltip says: the state in words, `to_send`, the error verbatim. */
 	title: string;
 	error?: string;
+	/** That copy is a reader: drawn with the lock. */
+	reader?: boolean;
 }
 
 export interface Row {
@@ -107,18 +111,21 @@ export function table(dbs: DbSync[], states: Record<string, SyncState>): Row[] {
 				peer?.reach === 'online' ? 'syncing' : m.state === 'never' ? 'pending' : m.state;
 			const words =
 				mark !== 'pending' ? WORDS[mark] : m.state === 'never' ? 'never synced' : `pending, ${m.to_send} to send`;
+			const title = m.error ? `${words}: ${m.error}` : words;
 			row.cells[d.db] = {
 				mark,
 				stale: false,
 				at: mark === 'error' ? ms(m.error_at) : ms(m.last_seen),
-				title: m.error ? `${words}: ${m.error}` : words,
-				error: m.error ?? undefined
+				title: m.reader ? `${title}, read-only` : title,
+				error: m.error ?? undefined,
+				reader: m.reader
 			};
 		}
 		if (d.this) {
 			const marks = d.members.filter((m) => !m.revoked).map((m) => rows.get(m.client ?? m.endpoint)?.cells[d.db]?.mark);
 			const mark = WORST.find((w) => marks.includes(w)) ?? 'synced';
-			here.cells[d.db] = { mark, stale: false, title: `this copy: ${WORDS[mark]}` };
+			const title = `this copy: ${WORDS[mark]}${d.this.reader ? ', read-only' : ''}`;
+			here.cells[d.db] = { mark, stale: false, title, reader: d.this.reader };
 		}
 	}
 	const all = [here, ...rows.values()];

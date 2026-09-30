@@ -20,6 +20,8 @@ pub struct PeerStatus {
     pub label: String,
     pub kind: Option<String>,
     pub revoked: bool,
+    /// A reader (da-9yvb6): it receives, and writes nothing.
+    pub reader: bool,
     /// `synced`, `pending`, `error` or `never`.
     pub state: &'static str,
     pub to_send: i64,
@@ -154,6 +156,7 @@ impl Db {
                 label: m.label.clone(),
                 kind: m.kind.clone(),
                 revoked: m.revoked.is_some(),
+                reader: m.role() == super::chain::Role::Reader,
                 state,
                 to_send,
                 last_seen,

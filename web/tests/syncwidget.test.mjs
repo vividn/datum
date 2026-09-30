@@ -210,6 +210,27 @@ describe('the sync widget', () => {
 		);
 	});
 
+	test('a reader carries the lock beside its state, and the legend names it', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const run = inPage(app, 'home');
+				const id = endpointId();
+				const { secret } = JSON.parse(await run(['sync', 'new-invite', '--reader', '--expires', '1d']));
+				await run(['sync', 'handshake', id, '--label', 'kindle', '--addr', '{}', '--invite', secret, '--chain', '']);
+				await app.goto('/sync');
+				const reader = cell(page, id, 'home');
+				await reader.waitFor();
+				assert.equal(await reader.locator('.reader').innerText(), '🔒︎');
+				assert.match(await reader.getAttribute('title'), /, read-only\b/);
+				// This copy is a member: no lock.
+				assert.equal(await cell(page, 'this', 'home').locator('.reader').count(), 0);
+				assert.match(await page.locator(`${WIDGET} .legend .reader`).innerText(), /^🔒︎\s*read-only$/);
+			},
+			{ viewport: { width: 1280, height: 800 } }
+		);
+	});
+
 	test('is compact at its legible floor and full above it', async () => {
 		await withApp(async (app) => {
 			const { page } = app;

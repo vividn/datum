@@ -5,8 +5,10 @@
 	status dot from the sync worker's broadcast (`syncStates`); a column is
 	a database on this datum.day; a cell is how that client's copy stands,
 	a shape AND a colour. A client not reachable now shows its last-known
-	state grey, with its time: never a green ✓ for it. Compact (symbols and
-	dots) at the legible floor, full (names, kinds, times) above `FULL_PX`.
+	state grey, with its time: never a green ✓ for it. A copy that is a
+	reader in its chain (da-9yvb6) carries the lock beside its state.
+	Compact (symbols and dots) at the legible floor, full (names, kinds,
+	times) above `FULL_PX`.
 
 	Every CLI read is $lib/syncView.ts's. The actions (da-bjxts) go in the
 	two empty `.actions` slots: a database's header, and a client's row.
@@ -34,6 +36,8 @@
 	const FULL_PX = 320;
 	const SYMBOL: Record<Mark, string> = { synced: '✓', syncing: '↻', pending: '◔', error: '!', none: '—' };
 	const DOT = { online: '●', reachable: '◐', offline: '○' };
+	/** Beside the state of a copy that is a reader in its chain (da-9yvb6). */
+	const READER = '🔒︎';
 
 	let dbs: DbSync[] = [];
 	let width = 0;
@@ -112,6 +116,7 @@
 								{:else}
 									<span class="symbol" aria-label={cell.title}>{SYMBOL[cell.mark]}</span>
 								{/if}
+								{#if cell.reader}<span class="reader" aria-hidden="true">{READER}</span>{/if}
 								{#if full && cell.stale && time(cell.at)}<span class="at">{time(cell.at)}</span>{/if}
 								{#if opened === `${row.key} ${d.db}`}<p class="reason">{cell.error}</p>{/if}
 							</td>
@@ -125,7 +130,7 @@
 				<span class={mark} title={mark}>{symbol}{#if full}&nbsp;{mark === 'none' ? 'not in chain' : mark}{/if}</span>
 			{/each}
 			<span class="coming" title="partial sync: coming">⛛{#if full}&nbsp;partial (coming){/if}</span>
-			<span class="coming" title="read-only: coming">🔒︎{#if full}&nbsp;read-only (coming){/if}</span>
+			<span class="reader" title="read-only">{READER}{#if full}&nbsp;read-only{/if}</span>
 		</p>
 		<details class="advanced">
 			<summary>Advanced</summary>

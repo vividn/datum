@@ -72,8 +72,9 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             }
         }
         "new-invite" => {
-            let o = opts(&mut rest, &["expires", "admin-key"], &[], 0..=0)?;
+            let o = opts(&mut rest, &["expires", "admin-key"], &["reader"], 0..=0)?;
             SyncCommand::NewInvite {
+                reader: o.on("reader"),
                 expires_secs: o.expires()?,
                 admin_key: o.get("admin-key"),
             }
@@ -96,11 +97,12 @@ type Rest<'a> = std::slice::Iter<'a, &'a str>;
 
 /// `datum sync chain …`: the chain's membership.
 fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "invite|connect|list|rename|revoke|ack|rekey";
+    const SET: &str = "invite|connect|list|rename|revoke|role|ack|rekey";
     Ok(match rest.next().copied() {
         Some("invite") => {
-            let o = opts(rest, &["expires", "admin-key"], &["qr"], 0..=0)?;
+            let o = opts(rest, &["expires", "admin-key"], &["qr", "reader"], 0..=0)?;
             SyncCommand::Invite {
+                reader: o.on("reader"),
                 qr: o.on("qr"),
                 expires_secs: o.expires()?,
                 admin_key: o.get("admin-key"),
@@ -122,6 +124,26 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
             }
         }
         Some("revoke") => act(rest, SyncAdminAct::Revoke, &[], &[])?,
+        Some("role") => {
+            let mut o = opts(rest, &["admin-key"], &[], 2..=2)?;
+            let reader = match o.positional.pop().as_deref() {
+                Some("reader") => true,
+                Some("member") => false,
+                r => {
+                    return Err(ParseError::InvalidArg(format!(
+                        "a role is member or reader, not {}",
+                        r.unwrap_or_default()
+                    )))
+                }
+            };
+            SyncCommand::Admin {
+                act: SyncAdminAct::Role { reader },
+                who: o.positional.remove(0),
+                label: None,
+                admin_key: o.get("admin-key"),
+                allow_unlock: false,
+            }
+        }
         Some("ack") => SyncCommand::Ack {
             who: rest
                 .next()
@@ -339,14 +361,16 @@ mod tests {
         assert_eq!(
             p(&["new-invite", "--expires", "1m"]),
             SyncCommand::NewInvite {
+                reader: false,
                 expires_secs: 60,
                 admin_key: None
             }
         );
         assert_eq!(p(&["run"]), SyncCommand::Run);
         assert_eq!(
-            p(&["chain", "invite", "--admin-key=k", "--qr"]),
+            p(&["chain", "invite", "--admin-key=k", "--qr", "--reader"]),
             SyncCommand::Invite {
+                reader: true,
                 qr: true,
                 expires_secs: 600,
                 admin_key: Some("k".into())
@@ -380,6 +404,18 @@ mod tests {
                 allow_unlock: false
             }
         );
+        assert_eq!(
+            p(&["chain", "role", "b", "reader", "--admin-key", "k"]),
+            SyncCommand::Admin {
+                act: SyncAdminAct::Role { reader: true },
+                who: "b".into(),
+                label: None,
+                admin_key: Some("k".into()),
+                allow_unlock: false
+            }
+        );
+        assert!(parse_sync_cmd(&["chain", "role", "b", "admin"]).is_err());
+        assert!(parse_sync_cmd(&["chain", "role", "b"]).is_err());
         assert_eq!(
             p(&["chain", "ack", "abc"]),
             SyncCommand::Ack { who: "abc".into() }

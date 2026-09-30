@@ -28,7 +28,8 @@
 //!     them, or none (an open chain); its writer becomes the first member.
 //!     One per chain.
 //!   - `invite {invite_id, secret_hash, expires, caps}`: pre-authorised, so
-//!     any member admits its redeemer; one-time, until `expires`.
+//!     any member admits its redeemer; one-time, until `expires`. `caps`
+//!     holds the role it grants: `{"role": "reader"}`, or `{}` for a member.
 //!   - `admit {endpoint, label, via, secret}`: unsigned, written by the
 //!     member that redeemed invite `via`, valid while the invite is unused
 //!     and unexpired and `secret` hashes to it. The secret is carried so
@@ -41,19 +42,25 @@
 //!     which opens the chain again. Every act is judged at its own HLC, so
 //!     a member's act refused while the chain was locked stays refused, and
 //!     only its acts after the unlock count.
+//!   - `role {endpoint, role}` (da-9yvb6): `member` or `reader` from its
+//!     HLC on, an admin act like a revoke.
 //!   - `describe {endpoint, client, label, kind}` (da-rcb5m): what a
 //!     member is — the client it runs in (one per CLI data directory or
 //!     browser profile, shared by every db there, so one installation's
 //!     copies group as one client — da-lfsei), its label, `cli` or `web`. The latest per endpoint wins. Unsigned when an
 //!     endpoint describes ITSELF; about another member, an admin act.
 //!
-//!   Every record but a genesis must be written by a member, and the same
+//!   Every record but a genesis must be written by a member — a member
+//!   that is no reader, but for a describe of itself — and the same
 //!   record twice does nothing the second time. Every label a record
 //!   carries must pass [`label_problem`]: each is printed on every member.
-//! - **Enforcement.** An entry op is allowed when its endpoint is a member
-//!   and, if revoked, was made before the revoke ([`Chain::allows`]):
-//!   admitting an endpoint vouches for the data it brings. A copy with no
-//!   chain allows every op.
+//! - **Enforcement.** An entry op is allowed when its endpoint is a member,
+//!   was no reader when it made it, and, if revoked, made it before the
+//!   revoke ([`Chain::allows`]): admitting an endpoint vouches for the data
+//!   it brings, and a reader's is refused whenever it was made. A copy with
+//!   no chain allows every op.
+//! - **Readers (da-9yvb6)** are served everything and serve only their own
+//!   ops: they never relay. A reader's copy refuses a write locally.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -108,6 +115,9 @@ pub fn label_problem(label: &str) -> Option<String> {
 fn is_client_id(s: &str) -> bool {
     !s.trim().is_empty() && label_problem(s).is_none()
 }
+
+/// Why a reader's op is refused.
+const READER: &str = "a reader in the sync chain: it receives, and can't write";
 
 /// The hid every chain op is filed under.
 pub const CHAIN_HID: &str = "~chain";
@@ -322,6 +332,59 @@ pub struct Member {
     pub kind: Option<String>,
     /// The HLC of the revoke: its ops from then on are refused.
     pub revoked: Option<String>,
+    /// Its role from each HLC on, oldest first: its admission's, then each
+    /// `role` record's.
+    pub roles: Vec<(String, Role)>,
+}
+
+/// What a member may write: a reader writes nothing but its own describe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    Member,
+    Reader,
+}
+
+impl Role {
+    /// A record's role: none is a member.
+    fn parse(v: &Value) -> std::result::Result<Role, String> {
+        match v.as_str() {
+            None if v.is_null() => Ok(Role::Member),
+            Some("member") => Ok(Role::Member),
+            Some("reader") => Ok(Role::Reader),
+            _ => Err(format!("a role is member or reader, not {v}")),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Role::Member => "member",
+            Role::Reader => "reader",
+        }
+    }
+}
+
+impl Member {
+    /// Its role now.
+    pub fn role(&self) -> Role {
+        self.roles.last().map_or(Role::Member, |r| r.1)
+    }
+
+    /// Its role at `hlc`: the latest role it took at or before `hlc`. An op
+    /// made before its admission is judged by the role it was admitted
+    /// with, so admitting a member vouches for what it brings, and
+    /// admitting a reader vouches for nothing.
+    fn role_at(&self, hlc: &str) -> Role {
+        let at = self.roles.iter().rev().find(|(t, _)| t.as_str() <= hlc);
+        at.or(self.roles.first()).map_or(Role::Member, |r| r.1)
+    }
+
+    /// The HLC from which some of its ops are refused, if any are: its
+    /// revoke, or when it first was a reader (all of them, admitted as one).
+    pub(super) fn refused_from(&self) -> Option<&str> {
+        let reader = self.roles.iter().position(|r| r.1 == Role::Reader);
+        let reader = reader.map(|i| if i == 0 { "" } else { self.roles[i].0.as_str() });
+        reader.into_iter().chain(self.revoked.as_deref()).min()
+    }
 }
 
 #[derive(Debug)]
@@ -329,6 +392,7 @@ struct Invite {
     secret_hash: String,
     expires: String,
     used: bool,
+    role: Role,
 }
 
 /// Membership: the fold of the chain's records.
@@ -368,6 +432,15 @@ impl Chain {
 
     /// Why an op of `endpoint` at `hlc` is refused, if it is.
     pub fn allows(&self, endpoint: &str, hlc: &str) -> std::result::Result<(), String> {
+        self.live(endpoint, hlc)?;
+        match self.member(endpoint) {
+            Some(m) if m.role_at(hlc) == Role::Reader => Err(READER.into()),
+            _ => Ok(()),
+        }
+    }
+
+    /// Why `endpoint` could not write at `hlc`, reader or not.
+    fn live(&self, endpoint: &str, hlc: &str) -> std::result::Result<(), String> {
         match self.member(endpoint) {
             _ if !self.exists() => Ok(()),
             None => Err("not a member of the sync chain".into()),
@@ -434,7 +507,7 @@ impl Chain {
             }
             self.id = s("chain");
             self.admins = admins;
-            return self.admit(&op.endpoint, &s("label"), &op.hlc, "genesis");
+            return self.admit(&op.endpoint, &s("label"), &op.hlc, "genesis", Role::Member);
         }
         if !self.exists() {
             return Err("no genesis before it".into());
@@ -442,8 +515,13 @@ impl Chain {
         if s("chain") != self.id {
             return Err("a record of another chain".into());
         }
-        self.allows(&op.endpoint, &op.hlc)
-            .map_err(|why| format!("its writer is {why}"))?;
+        // A reader describes itself, and writes nothing else.
+        let own_describe = kind == "describe" && op.endpoint == s("endpoint");
+        match own_describe {
+            true => self.live(&op.endpoint, &op.hlc),
+            false => self.allows(&op.endpoint, &op.hlc),
+        }
+        .map_err(|why| format!("its writer is {why}"))?;
         if kind == "admit" {
             let via = s("via");
             let invite = self.invites.get_mut(&via).ok_or(UNKNOWN_INVITE)?;
@@ -461,16 +539,18 @@ impl Chain {
                 return Err(format!("invite expired ({})", invite.expires));
             }
             invite.used = true;
+            let role = invite.role;
             return self.admit(
                 &s("endpoint"),
                 &s("label"),
                 &op.hlc,
                 &format!("invite {via}"),
+                role,
             );
         }
         // An endpoint describes itself unsigned; anything else takes an
         // admin, once there is one: its writer is a live member already.
-        if !self.is_open() && (kind != "describe" || op.endpoint != s("endpoint")) {
+        if !self.is_open() && !own_describe {
             admin_signed(&self.admins, &d, &s("sig"))?;
         }
         match kind.as_str() {
@@ -508,14 +588,26 @@ impl Chain {
                 Ok(())
             }
             "invite" => {
+                let role = Role::parse(&r["caps"]["role"])?;
                 self.invites.insert(
                     s("invite_id"),
                     Invite {
                         secret_hash: s("secret_hash"),
                         expires: s("expires"),
                         used: false,
+                        role,
                     },
                 );
+                Ok(())
+            }
+            "role" => {
+                let role = Role::parse(&r["role"])?;
+                let m = self
+                    .members
+                    .iter_mut()
+                    .find(|m| m.endpoint == s("endpoint"))
+                    .ok_or("not a member")?;
+                m.roles.push((op.hlc.clone(), role));
                 Ok(())
             }
             "revoke" => {
@@ -566,6 +658,7 @@ impl Chain {
         label: &str,
         hlc: &str,
         via: &str,
+        role: Role,
     ) -> std::result::Result<(), String> {
         if unhex::<32>(endpoint).is_none() {
             return Err("not an endpoint id".into());
@@ -581,6 +674,7 @@ impl Chain {
             revoked: None,
             client: None,
             kind: None,
+            roles: vec![(hlc.into(), role)],
         });
         Ok(())
     }
@@ -901,6 +995,86 @@ mod tests {
         assert!(chain.is_open());
         assert_eq!(chain.unlocks.len(), 1);
         assert_eq!(chain.unlocks[0].0, "k");
+    }
+
+    /// A reader (da-9yvb6): admitted by a reader invite, it describes
+    /// itself and writes nothing else — no invite, revoke, role or describe
+    /// of another, and no entry op — in an open chain as in a locked one,
+    /// even signed by an admin key. Its role changes at a `role` record's
+    /// HLC, either way.
+    #[test]
+    fn a_readers_acts_are_refused_and_its_role_changes_at_a_records_hlc() {
+        let (a, r) = ("ab".repeat(32), "cd".repeat(32));
+        let at = |t: u32| format!("2026-09-29T00:00:{t:02}.000Z/0000");
+        for locked in [false, true] {
+            let secret = [5u8; 32];
+            let admins = match locked {
+                true => json!([{"key": ed25519_admin_key(&secret), "label": "k"}]),
+                false => json!([]),
+            };
+            let mut chain = Chain::default();
+            let step = |chain: &mut Chain, t: u32, by: &str, mut rec: Value| {
+                rec["chain"] = "c1".into();
+                rec["created"] = at(t).into();
+                if locked && rec["type"] != "admit" {
+                    rec["sig"] = sign_ed25519(&rec, &secret).into();
+                }
+                let op = json!({
+                    "endpoint": by, "seq": t, "hlc": at(t), "hid": CHAIN_HID,
+                    "slug": CHAIN_HID, "kind": "chain", "effect": rec, "sig": "",
+                });
+                let done = chain.step(&Op::parse(&op.to_string()).unwrap());
+                (done, chain.allows(&r, &at(t)).is_ok())
+            };
+            let describe = |who: &str| json!({"type": "describe", "endpoint": who, "label": "x"});
+            let role =
+                |who: &str, role: &str| json!({"type": "role", "endpoint": who, "role": role});
+            let invite = json!({"type": "invite", "invite_id": "i1", "secret_hash": sha256_hex("s"),
+                "expires": "2099-01-01T00:00:00Z", "caps": {"role": "reader"}});
+            assert_eq!(
+                step(
+                    &mut chain,
+                    1,
+                    &a,
+                    json!({"type": "genesis", "admins": admins, "label": "a"})
+                )
+                .0,
+                Ok(())
+            );
+            assert_eq!(step(&mut chain, 2, &a, invite).0, Ok(()));
+            let admit =
+                json!({"type": "admit", "endpoint": r, "label": "r", "via": "i1", "secret": "s"});
+            assert_eq!(step(&mut chain, 3, &a, admit), (Ok(()), false));
+            assert_eq!(chain.member(&r).unwrap().role(), Role::Reader);
+            assert_eq!(step(&mut chain, 4, &r, describe(&r)), (Ok(()), false));
+            let invite = json!({"type": "invite", "invite_id": "i2", "secret_hash": "h",
+                "expires": "2099-01-01T00:00:00Z", "caps": {}});
+            for (t, rec) in [
+                (5, invite),
+                (6, json!({"type": "revoke", "endpoint": a})),
+                (7, role(&r, "member")),
+                (8, describe(&a)),
+            ] {
+                let (done, allowed) = step(&mut chain, t, &r, rec);
+                assert_eq!(done, Err(format!("its writer is {READER}")), "{t}");
+                assert!(!allowed);
+            }
+            // Promoted at 10: allowed from then on, and not before.
+            assert_eq!(step(&mut chain, 10, &a, role(&r, "member")), (Ok(()), true));
+            assert!(chain.allows(&r, &at(9)).is_err());
+            // A member demoted at 12: allowed before it, refused after.
+            assert_eq!(step(&mut chain, 12, &a, role(&a, "reader")).0, Ok(()));
+            assert!(chain.allows(&a, &at(11)).is_ok());
+            assert_eq!(chain.allows(&a, &at(13)), Err(READER.into()));
+            assert_eq!(
+                step(&mut chain, 14, &a, role(&r, "admin")).0.unwrap_err(),
+                format!("its writer is {READER}")
+            );
+            assert_eq!(
+                step(&mut chain, 15, &r, role(&r, "admin")).0.unwrap_err(),
+                "a role is member or reader, not \"admin\""
+            );
+        }
     }
 
     /// A software authenticator: a fixed P-256 key signing as a passkey would.

@@ -52,7 +52,7 @@ pub mod chain;
 mod pause;
 pub mod peers;
 pub mod status;
-use chain::{Chain, CHAIN_HID};
+use chain::{Chain, Role, CHAIN_HID};
 
 // ─── The invocation ─────────────────────────────────────────────────────────
 
@@ -203,6 +203,39 @@ fn endpoint(conn: &Connection) -> Result<Endpoint> {
         params![hex(&key.to_bytes()), id, client, path],
     )?;
     Ok(Endpoint { key, id })
+}
+
+/// What decides whether this copy is a reader: its endpoint, and the count
+/// and latest HLC of the chain records held.
+type ReaderKey = (String, i64, Option<String>);
+
+thread_local! {
+    /// Whether this copy is a reader, by its [`ReaderKey`]. Every write
+    /// asks, and a batch signs thousands of ops: the fold is dearer than
+    /// the look.
+    static READER: RefCell<Option<(ReaderKey, bool)>> = const { RefCell::new(None) };
+}
+
+/// Said when a reader's copy is asked to write (da-9yvb6).
+const READ_ONLY: &str = "this copy is a reader in its sync chain: it receives, and can't write";
+
+/// Whether this copy is a reader in its chain now.
+fn is_reader(conn: &Connection, ep: &Endpoint) -> Result<bool> {
+    let key: ReaderKey = conn
+        .prepare_cached("SELECT ?1, COUNT(*), MAX(hlc) FROM ops WHERE hid = ?2 AND applied = 1")?
+        .query_row(params![ep.id, CHAIN_HID], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?;
+    let cached = READER.with(|c| c.borrow().as_ref().filter(|(k, _)| *k == key).map(|r| r.1));
+    if let Some(reader) = cached {
+        return Ok(reader);
+    }
+    let chain = Chain::load(conn)?;
+    let reader = chain
+        .member(&ep.id)
+        .is_some_and(|m| m.role() == Role::Reader);
+    READER.with(|c| *c.borrow_mut() = Some((key, reader)));
+    Ok(reader)
 }
 
 /// Said wherever two copies are found signing with one key (da-p79vq).
@@ -512,6 +545,9 @@ fn store(conn: &Connection, op: &Op, applied: bool) -> Result<()> {
     Ok(())
 }
 
+/// Per endpoint, the highest seq held: applied, or refused — a refused op
+/// counts as received, so the ops after it never wait on it (da-9yvb6: a
+/// member made a reader and a member again writes on).
 fn vector_where(conn: &Connection, hid: Option<&str>) -> Result<BTreeMap<String, i64>> {
     // Two statements, not `?1 IS NULL OR hid = ?1`: the OR keeps SQLite off
     // `ops_hid`, and every op signed would scan every op held.
@@ -519,12 +555,12 @@ fn vector_where(conn: &Connection, hid: Option<&str>) -> Result<BTreeMap<String,
     let rows = match hid {
         Some(h) => conn
             .prepare_cached(
-                "SELECT endpoint, MAX(seq) FROM ops WHERE hid = ?1 AND applied = 1 GROUP BY endpoint",
+                "SELECT endpoint, MAX(seq) FROM ops WHERE hid = ?1 AND applied > 0 GROUP BY endpoint",
             )?
             .query_map(params![h], pair)?
             .collect::<rusqlite::Result<_>>(),
         None => conn
-            .prepare_cached("SELECT endpoint, MAX(seq) FROM ops WHERE applied = 1 GROUP BY endpoint")?
+            .prepare_cached("SELECT endpoint, MAX(seq) FROM ops WHERE applied > 0 GROUP BY endpoint")?
             .query_map([], pair)?
             .collect::<rusqlite::Result<_>>(),
     };
@@ -634,6 +670,9 @@ pub(super) fn emit(
         return Ok(());
     }
     let ep = endpoint(conn)?;
+    if is_reader(conn, &ep)? {
+        return Err(DatumError::Other(READ_ONLY.into()));
+    }
     if let Some(pre) = pre {
         if !has_ops(conn, hid)? {
             push_entry(conn, &ep, pre, "baseline", create_effect(pre))?;
@@ -853,8 +892,10 @@ fn apply_one(conn: &Connection, x: &Op) -> Result<usize> {
     Ok(filed)
 }
 
-/// Apply every held op that is ready, records first, until none is; then
-/// refuse what still waits from an endpoint the chain does not allow.
+/// Apply every held op that is ready, records first, until none is; an
+/// entry op the chain does not allow is refused when it is ready, so the
+/// refused are as contiguous as the applied, and what waits for an op
+/// before it stays held.
 fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
     let mut chain = Chain::load(conn)?;
     let mut vector = vector_where(conn, None)?;
@@ -871,16 +912,23 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
         let mut progressed = false;
         for op in &waiting {
             let have = |e: &str| vector.get(e).copied().unwrap_or(0);
+            // At or below `have`: a refused op the membership now allows.
             let ready =
-                op.seq == have(&op.endpoint) + 1 && op.deps.iter().all(|(e, n)| have(e) >= *n);
-            if !ready || !op.is_chain() && chain.allows(&op.endpoint, &op.hlc).is_err() {
+                op.seq <= have(&op.endpoint) + 1 && op.deps.iter().all(|(e, n)| have(e) >= *n);
+            if !ready {
                 continue;
             }
             progressed = true;
             if !op.is_chain() {
-                s.conflicts += apply_one(conn, op)?;
-                vector.insert(op.endpoint.clone(), op.seq);
-                s.applied += 1;
+                match chain.allows(&op.endpoint, &op.hlc) {
+                    Ok(()) => {
+                        s.conflicts += apply_one(conn, op)?;
+                        s.applied += 1;
+                    }
+                    Err(why) => refuse(conn, op, &why, s)?,
+                }
+                let head = vector.entry(op.endpoint.clone()).or_default();
+                *head = (*head).max(op.seq);
                 continue;
             }
             conn.execute(
@@ -904,15 +952,7 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
             break waiting;
         }
     };
-    // What still waits from an endpoint the chain refuses is refused.
-    let mut held = 0;
-    for op in &waiting {
-        match chain.allows(&op.endpoint, &op.hlc) {
-            Err(why) if !op.is_chain() => refuse(conn, op, &why, s)?,
-            _ => held += 1,
-        }
-    }
-    s.held = held;
+    s.held = waiting.len();
     Ok(())
 }
 
@@ -970,13 +1010,16 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
             )?;
         }
     }
-    // A revoked endpoint's applied ops from its revoke on: its own, by key.
+    // A revoked endpoint's applied ops from its revoke on, and a reader's
+    // from when it became one: its own, by key.
     let mut hids = BTreeSet::new();
     for m in &chain.members {
-        let Some(revoked) = &m.revoked else { continue };
+        let Some(from) = m.refused_from() else {
+            continue;
+        };
         let sql = "SELECT body FROM ops
                    WHERE endpoint = ?1 AND applied = 1 AND hlc >= ?2 AND hid != ?3";
-        for op in bodies(sql, &[&m.endpoint, revoked, &CHAIN_HID])? {
+        for op in bodies(sql, &[&m.endpoint, &from, &CHAIN_HID])? {
             if let Err(why) = chain.allows(&op.endpoint, &op.hlc) {
                 refuse(conn, &op, &why, s)?;
                 hids.insert(op.hid);
@@ -1047,25 +1090,39 @@ impl Db {
         if since.get(&mine).is_some_and(|s| *s > signed) {
             return Err(DatumError::Other(SHARED_KEY.into()));
         }
+        // A reader never relays: it serves its own ops alone, and signs no
+        // baselines, which its chain would refuse.
+        let reader = is_reader(&tx, &endpoint(&tx)?)?;
+        let chain = Chain::load(&tx)?;
         let uncovered: Vec<Entry> = tx
             .prepare("SELECT * FROM entries WHERE hid NOT IN (SELECT hid FROM ops) ORDER BY hid")?
             .query_map([], row_to_entry)?
             .collect::<rusqlite::Result<_>>()?;
-        if !uncovered.is_empty() {
+        if !uncovered.is_empty() && !reader {
             let ep = endpoint(&tx)?;
             for e in &uncovered {
                 push_entry(&tx, &ep, e, "baseline", create_effect(e))?;
             }
         }
         let mut stmt = tx.prepare(
-            "SELECT endpoint, seq, body FROM ops WHERE applied = 1 ORDER BY endpoint, seq",
+            "SELECT endpoint, seq, body, applied FROM ops WHERE applied > 0 ORDER BY endpoint, seq",
         )?;
         let lines = stmt
             .query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get(2)?))
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get(2)?,
+                    r.get::<_, i64>(3)?,
+                ))
             })?
             .filter_map(|r| match r {
-                Ok((e, s, body))
+                Ok((e, ..)) if reader && e != mine => None,
+                // A member's refused op goes too, for every copy to refuse
+                // itself: the ops after it are counted past it. A
+                // non-member's stays here.
+                Ok((e, _, _, 2)) if chain.member(&e).is_none() => None,
+                Ok((e, s, body, _))
                     if s > since.get(&e).copied().unwrap_or(0)
                         || overlap && e == mine && since.get(&e) == Some(&s) =>
                 {
