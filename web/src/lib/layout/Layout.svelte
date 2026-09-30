@@ -406,6 +406,7 @@
 					this={kind.component}
 					{...kind.props ? kind.props(settings) : { settings }}
 					{epoch}
+					{key}
 					on:change={(e) => fold && setSession(key, widget.settings, fold(settings, e.detail))}
 				/>
 			{:else}

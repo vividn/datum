@@ -87,11 +87,25 @@ export function setSession(key: string, base: Settings, next: Settings): void {
 	);
 }
 
+/**
+ * What a widget is in the middle of, by the same key: not a setting, so
+ * never saved with a layout, but kept for as long as the setting would be
+ * — the commands bar's drilled and held command outlives a remount
+ * (da-ria1a), and goes with the tab or the widget as the overlay does.
+ */
+export const inProgress = new Map<string, Record<string, unknown>>();
+
 /** Forget everything this session set against `key`: `Reset widget`'s half of the act. */
-export const clearSession = (key: string): void => store.update(({ [key]: _dropped, ...rest }) => rest);
+export function clearSession(key: string): void {
+	inProgress.delete(key);
+	store.update(({ [key]: _dropped, ...rest }) => rest);
+}
 
 /** Forget everything this session set, as a reload does: a test's way back to the layout (da-juku7). */
-export const forgetSession = (): void => store.set({});
+export function forgetSession(): void {
+	inProgress.clear();
+	store.set({});
+}
 
 /**
  * A widget's settings with this session's over them — the one merge, so a
@@ -111,12 +125,11 @@ export const withSession = (settings: Settings, over: Settings | undefined): Set
  * freshly chosen widget inherits it.
  */
 export function pruneSession(layout: Layout): void {
+	const live = new Set([...scopes(layout)].map(([tabId, { scope, content }]) => sessionKey(scope, tabId, content)));
+	for (const key of inProgress.keys()) if (!live.has(key)) inProgress.delete(key);
 	store.update((all) => {
 		const keys = Object.keys(all);
 		if (keys.length === 0) return all;
-		const live = new Set(
-			[...scopes(layout)].map(([tabId, { scope, content }]) => sessionKey(scope, tabId, content))
-		);
 		const kept = keys.filter((key) => live.has(key));
 		return kept.length === keys.length ? all : Object.fromEntries(kept.map((key) => [key, all[key]]));
 	});

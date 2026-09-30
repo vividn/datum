@@ -1067,6 +1067,10 @@ function app(page, errors, query, clean, locks, internal) {
 			// pointer on the page: closed as a reader closes one, with Escape.
 			for (let i = 0; i < 3 && (await page.locator('dialog[open]').count()) > 0; i++) await page.keyboard.press('Escape');
 			await page.waitForFunction(() => !document.querySelector('dialog[open]'));
+			// No commands bar left drilled or held: it outlives its widget now,
+			// as the line does (da-ria1a), so it is backed out as a reader would.
+			const back = page.locator('.bar.commands button[data-back]');
+			while ((await back.count()) > 0) await back.first().click();
 			// And the bar's line empty: what a test left typed there filters
 			// the fields widget for the next one ($lib/bar.ts's `text`).
 			const line = page.locator('.prompt-bar input');

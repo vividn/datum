@@ -72,7 +72,16 @@
 	section the pills empty is not drawn at all. A drilled bar is drawn
 	without them — its Help carries a section — so it is the one run it
 	always was.
+
+	What the bar is SHOWING — the command drilled into, the one held for its
+	flags — outlives the widget (da-ria1a): on a phone a place opens as a
+	root tab and unmounts the tab it left, and coming back must find the bar
+	where the reader left it. So it is kept by `key`, the widget's own, in
+	the session's `inProgress` ($lib/layout/session.ts), which goes with the
+	tab or the widget as a session setting does; Back, Escape and pills that
+	hide the command clear it as they always did, and a reload starts afresh.
 -->
+
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
 	import type { Pill } from './bar.js';
@@ -97,6 +106,7 @@
 	import { openPlace } from './layout/shell.js';
 	import { arm, helping } from './help.js';
 	import { holds } from './hold.js';
+	import { inProgress } from './layout/session.js';
 	import { withPills } from './selection.js';
 	import { shellJoin } from './shellSplit.js';
 
@@ -107,6 +117,8 @@
 	export let fields: FieldButton[] = [];
 	/** Would `redo` move anything? The CLI's own answer, from the pane. */
 	export let redoable = false;
+	/** Whose bar this is: what it was showing is kept under it across a remount. */
+	export let key = '';
 
 	/** The presses whose kind is theirs whatever is loaded. */
 	const FIXED: Partial<Record<Press, ActKind>> = { run: 'run', help: 'arm', back: 'show', flag: 'fill', backups: 'open', place: 'open' };
@@ -118,9 +130,10 @@
 	}>();
 
 	/** The command whose subcommands the bar shows, if any. Gone with the command, if its pills hide it. */
-	let open: string | null = null;
+	let open = (inProgress.get(key)?.open as string | undefined) ?? null;
 	/** The command whose flags the bar shows, if any (da-st2xl). The same. */
-	let flagged: string | null = null;
+	let flagged = (inProgress.get(key)?.flagged as string | undefined) ?? null;
+	$: inProgress.set(key, { open, flagged });
 	let bar: HTMLElement | undefined;
 	$: listed = commandsUnder(grammar, pills, fields);
 	$: if (open && !listed.some((command) => command.name === open)) open = null;

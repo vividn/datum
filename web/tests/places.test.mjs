@@ -370,6 +370,86 @@ describe('a place on a phone', () => {
 		});
 	});
 
+	// da-ria1a: the place unmounts the tab it left, and with it the commands
+	// widget; what its bar was showing is kept, and so is its clearing.
+	const commands = (page) => page.locator('.bar.commands');
+	const back = (page) => commands(page).locator('button[data-back]');
+	/** To the place and back to `mobile`, by a tap on its tab, the bar remounted. */
+	async function roundTrip(page) {
+		const bar = await commands(page).elementHandle();
+		await openPlace(page, 'sync');
+		await page.locator('.root-bar [role="tab"]', { hasText: 'mobile' }).click();
+		await until(() => rootTabs(page), (t) => t.join() === 'mobile');
+		await commands(page).waitFor();
+		assert.equal(await bar.evaluate((el) => el.isConnected), false, 'the place did not unmount the bar');
+	}
+
+	test('the commands widget is still inside `db` when you come back; Back there is kept too', async () => {
+		await withApp(
+			async ({ page, errors }) => {
+				await commands(page).locator('button[data-command="db"]').click();
+				await back(page).waitFor();
+				await roundTrip(page);
+				assert.equal(await back(page).count(), 1, 'the bar came back at the top');
+				assert.equal(await commands(page).locator('button[data-command="db setup"]').count(), 1);
+
+				await back(page).click();
+				await back(page).waitFor({ state: 'detached' });
+				await roundTrip(page);
+				assert.equal(await back(page).count(), 0, 'Back was undone by the round trip');
+				assert.equal(await commands(page).locator('button[data-command="db"]').count(), 1);
+				assert.deepEqual(errors, []);
+			},
+			{ ...PHONE, reducedMotion: 'reduce', ...opened('mobile') }
+		);
+	});
+
+	// canary-kimi-k3 on #357: kept as a session setting is, so it goes with
+	// the tab — a built-in layout reopened mints the same ids, and must not
+	// come back drilled.
+	test('closing the tab and reopening its layout starts the bar at the top', async () => {
+		await withApp(
+			async ({ page, errors }) => {
+				await commands(page).locator('button[data-command="db"]').click();
+				await back(page).waitFor();
+				const id = await page.evaluate(() => window.datum.layout.current().root.tabs[0].id);
+				await page.evaluate(() => window.datum.shell.close(0));
+				await until(() => rootTabs(page), (t) => t.join() === 'tail');
+				await page.evaluate(() => window.datum.shell.open('mobile'));
+				await until(() => shown(page), (t) => t === 'mobile');
+				await commands(page).waitFor();
+				assert.equal(await page.evaluate(() => window.datum.layout.current().root.tabs.find((t) => t.layout === 'mobile').id), id, 'a new id: this proves nothing');
+				assert.equal(await back(page).count(), 0, 'the reopened tab came back drilled');
+				assert.deepEqual(errors, []);
+			},
+			{ ...PHONE, reducedMotion: 'reduce', ...opened('mobile', 'tail') }
+		);
+	});
+
+	test('a held command comes back with its flags, and the line with the ones tapped', async () => {
+		await withApp(
+			async ({ page, errors }) => {
+				const box = await commands(page).locator('button[data-command="occur"]').boundingBox();
+				await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+				await page.mouse.down();
+				await page.waitForTimeout(600);
+				await page.mouse.up();
+				await commands(page).locator('button[data-flag="occur -q"]').click();
+				await page.waitForFunction(() => document.querySelector('.prompt-bar input').value === 'occur -q ');
+				await roundTrip(page);
+				assert.equal(await commands(page).locator('button[data-flag="occur -t"]').count(), 1, 'the flags are gone');
+				assert.equal(await page.locator('.prompt-bar input').inputValue(), 'occur -q ');
+
+				await page.keyboard.press('Escape');
+				await back(page).waitFor({ state: 'detached' });
+				await roundTrip(page);
+				assert.equal(await back(page).count(), 0, 'Escape was undone by the round trip');
+				assert.deepEqual(errors, []);
+			},
+			{ ...PHONE, reducedMotion: 'reduce', ...opened('mobile') }
+		);
+	});
+
 	test('a swipe back returns to the tab it opened beside, and closes it', async () => {
 		await withApp(
 			async ({ page }) => {

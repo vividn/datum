@@ -47,6 +47,8 @@
 	import { fields, grammar, pressWithPills, ready } from './engine.js';
 
 	export let epoch = 0;
+	/** This widget's session key, which its bar keeps what it shows under (da-ria1a). */
+	export let key = '';
 
 	let redoable = false;
 	let asked = 0;
@@ -88,6 +90,7 @@
 		pills={$pills}
 		fields={$fields}
 		{redoable}
+		{key}
 		on:run={(e) => runNow(e.detail)}
 		on:line={(e) => fill(e.detail)}
 		on:flag={(e) => prefill.set({ line: withFlag($text, e.detail.command, e.detail.flag), keyboard: e.detail.keyboard })}
