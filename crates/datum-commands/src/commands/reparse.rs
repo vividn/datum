@@ -102,7 +102,8 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
 
     // Mirror the per-action pre-pass from `log_entry` so the parsed
     // bundle matches what the insert path would have produced (da-ooe2:
-    // declares the trailing `dur=` slot and peels the switch `,`-chain).
+    // declares the trailing `dur=` slot and peels the switch `,`-chain;
+    // a note's bare words are its comment, da-fohr0).
     prepare_log_args(action, &mut log_args)?;
     if matches!(action, Action::Switch) {
         for tok in &log_args.rest {

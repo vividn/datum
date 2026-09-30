@@ -54,15 +54,6 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         anyhow::bail!("`--if-changed` is only valid with `switch`, `start` and `end`");
     }
 
-    // da-py5w: `note` is the one verb whose bare words are prose, not a
-    // state or a typo — it behaves as if `-C` were given, so
-    // `note coffee too strong today` ≡ `note coffee -C too strong today`.
-    // `-R <bucket>` names where the remainder goes, so an explicit one
-    // still wins (and keeps its own array shape).
-    if matches!(action, Action::Note) && args.remainder.is_none() {
-        args.comment_remainder = true;
-    }
-
     // da-9s98k: the field's declared keys join the line as its slots,
     // before the `dur=` slot `prepare_log_args` declares last.
     let spec_words = apply_spec_keys(action, &mut args, db)?;
@@ -1434,6 +1425,16 @@ fn dur_bearing(action: Action) -> bool {
 /// the join window's tail instead, where a trailing `.` is its explicit
 /// skip-dur sentinel.
 pub(crate) fn prepare_log_args(action: Action, args: &mut LogArgs) -> Result<()> {
+    // da-py5w: `note` is the one verb whose bare words are prose, not a
+    // state or a typo — it behaves as if `-C` were given, so
+    // `note coffee too strong today` ≡ `note coffee -C too strong today`.
+    // `-R <bucket>` names where the remainder goes, so an explicit one
+    // still wins (and keeps its own array shape). Here, not in
+    // `log_entry`, so `reparse` replays a note as it was logged (da-fohr0).
+    if matches!(action, Action::Note) && args.remainder.is_none() {
+        args.comment_remainder = true;
+    }
+
     // da-a2o8: peel a standalone-comma "then" chain (`switch f vertical 5 ,
     // sit`) into `following_state=…` before the dur slot is declared. The
     // alias layer's `maybe_collapse_switch_chain` already ensured the

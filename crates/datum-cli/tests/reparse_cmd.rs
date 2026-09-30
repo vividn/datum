@@ -362,3 +362,68 @@ fn reparse_replays_quoted_tokens_as_typed() {
     let q3 = &datum_core::test_util::logged_entries(&db, "q3")[0];
     assert_eq!(q3.data, Some(serde_json::json!({"text": r#"say "hi""#})));
 }
+
+/// da-fohr0: a note's bare words are its comment, a default the insert
+/// applied and replay did not, so every plain note replayed its text as
+/// a state and `--fix` moved it there.
+#[test]
+fn reparse_replays_a_plain_note_as_its_comment() {
+    let db = fresh_db();
+    run_cli(&["note", "town", "hello", "world"], &db).unwrap();
+    let before = datum_core::test_util::logged_entries(&db, "town")[0].clone();
+    let hid = before.hid.to_string();
+    run_cli(&["reparse", &hid, "--fix"], &db).unwrap();
+    let after = db.get_entry(&hid).unwrap();
+    assert_eq!(after.state, None);
+    assert_eq!(
+        after.data,
+        Some(serde_json::json!({"comment": ["hello world"]}))
+    );
+    assert_eq!(after.content_hash, before.content_hash);
+}
+
+/// da-fohr0: one canonical line per log verb and flag, each replayed with
+/// `--fix`, must come back unchanged — the insert and the replay are two
+/// callers of one parser, and this is where they would drift apart.
+#[test]
+fn reparse_round_trips_every_log_verb() {
+    let db = fresh_db();
+    let lines: [&[&str]; 17] = [
+        &["occur", "r1"],
+        &["occur", "r2", "occur_time=12:00"],
+        &["start", "r3", "-y"],
+        &["start", "r4", "start_time=-60", "30m"],
+        &["end", "r5", "20"],
+        &["switch", "r6", "happy", "5"],
+        &["switch", "r7", "-I", "very", "happy"],
+        &["switch", "r8", "sit", "5", ",", "stand"],
+        &["add", "r9", "-K", "x", "x=1"],
+        &["add", "r10", "--id", "b", "start_time=-60", "end_time=-30"],
+        &["note", "r11", "hello", "world"],
+        &["note", "r12", "-R", "topic", "hi", "there"],
+        &["note", "r13", "-S", "hi", "there"],
+        &["note", "r14", "-C", "hi", "there"],
+        &["switch", "r15", "coding", "-C", "deep", "work"],
+        &["start", "r16", "-S", "a", "title", "90"],
+        &["note", "r17", "end_time=-5", "why", "not"],
+    ];
+    for line in lines {
+        run_cli(line, &db).unwrap_or_else(|e| panic!("{line:?}: {e:?}"));
+    }
+
+    for (i, line) in lines.iter().enumerate() {
+        let field = format!("r{}", i + 1);
+        let before = datum_core::test_util::logged_entries(&db, &field)
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("{line:?} logged nothing"));
+        let hid = before.hid.to_string();
+        run_cli(&["reparse", &hid, "--fix"], &db).unwrap_or_else(|e| panic!("{line:?}: {e:?}"));
+        let after = db.get_entry(&hid).unwrap();
+        assert_eq!(
+            (after.state, after.data, after.content_hash),
+            (before.state, before.data, before.content_hash),
+            "{line:?}"
+        );
+    }
+}
