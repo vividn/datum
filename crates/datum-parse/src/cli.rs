@@ -1119,6 +1119,9 @@ pub struct StatsArgs {
     /// `IGNORED` sentinel) in the ratio denominator. Off by default, same
     /// reason as [`StatsArgs::include_false`].
     pub include_untracked: bool,
+    /// `--group-by client`: the field's rollup split by the client that
+    /// wrote it, the key `count --group-by` takes (da-z99wr).
+    pub group_by: Option<String>,
     /// The output level the shared layer swept out of argv (da-qt6z).
     /// `--json` is the value `json`; `Show::None` prints nothing.
     pub show: Show,

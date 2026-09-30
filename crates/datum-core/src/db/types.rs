@@ -66,19 +66,35 @@ pub enum GroupColumn {
     Verb,
     /// The `field` column.
     Field,
+    /// The `client_id` column: the client that wrote the entry (da-z99wr).
+    /// Output names it, never the stored id alone, at display time.
+    Client,
 }
 
 impl GroupColumn {
     /// Every accepted group-by key. The single source of truth the CLI
     /// help is asserted against (da-3z0f), so docs can't drift from behavior.
-    pub const ALL: &'static [GroupColumn] =
-        &[GroupColumn::State, GroupColumn::Verb, GroupColumn::Field];
+    pub const ALL: &'static [GroupColumn] = &[
+        GroupColumn::State,
+        GroupColumn::Verb,
+        GroupColumn::Field,
+        GroupColumn::Client,
+    ];
+
+    /// The key `--group-by` takes.
+    pub fn name(self) -> &'static str {
+        match self {
+            GroupColumn::Client => "client",
+            other => other.as_sql(),
+        }
+    }
 
     pub fn as_sql(self) -> &'static str {
         match self {
             GroupColumn::State => "state",
             GroupColumn::Verb => "verb",
             GroupColumn::Field => "field",
+            GroupColumn::Client => "client_id",
         }
     }
 }
@@ -86,14 +102,17 @@ impl GroupColumn {
 impl std::str::FromStr for GroupColumn {
     type Err = String;
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s {
-            "state" => Ok(GroupColumn::State),
-            "verb" => Ok(GroupColumn::Verb),
-            "field" => Ok(GroupColumn::Field),
-            other => Err(format!(
-                "unsupported group-by key '{other}' (supported: state, verb, field)"
-            )),
-        }
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|c| c.name() == s)
+            .ok_or_else(|| {
+                let names: Vec<&str> = Self::ALL.iter().map(|c| c.name()).collect();
+                format!(
+                    "unsupported group-by key '{s}' (supported: {})",
+                    names.join(", ")
+                )
+            })
     }
 }
 

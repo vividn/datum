@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, Utc, Weekday};
-use datum_core::db::{Db, ListParams, TimeMetric};
+use datum_core::db::{Db, GroupColumn, ListParams, TimeMetric};
 use datum_core::shape::{is_inactive_state, is_off_state};
 use datum_core::state::{FieldStateRows, StateChange};
 use datum_core::time::DatumTime;
@@ -192,7 +192,10 @@ impl Frequency {
 /// one level up).
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldStat {
+    /// The field, or on a `--group-by client` row the client's label.
     pub field: String,
+    /// The client's id, on a `--group-by client` row (da-z99wr).
+    pub client: Option<String>,
     /// The field's RESOLVED colour (`#rrggbb`) — spec override, else
     /// `md5(field)`, exactly as `datum fields --json` gives it (da-yiyj).
     /// The table paints the name with it, so a reader picks a field out of
@@ -217,6 +220,9 @@ pub struct FieldStat {
 /// of wall-clock — it is what the ratio column is a share of.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AllFieldsStats {
+    /// `Some` for `stats <field> --group-by client`: the rows are that
+    /// field's clients.
+    pub field: Option<String>,
     /// Longest-tracked first; ties broken by field name.
     pub fields: Vec<FieldStat>,
     pub total_count: usize,
@@ -236,18 +242,69 @@ pub struct AllFieldsStats {
 pub fn compute_all_fields(args: &StatsArgs, db: &Db) -> Result<AllFieldsStats> {
     let (start, end, _) = resolve_window(args, db)?;
     let registry = db.load_registry()?;
+    let mut rows = Vec::new();
+    for field in db.distinct_fields()? {
+        let color = field_hex(&field, registry.fields.get(&field));
+        let r = field_stats(&field, None, args, db, start, end)?;
+        rows.push((field, None, color, r));
+    }
+    Ok(ranked(None, rows))
+}
+
+/// `stats <field> --group-by client` (da-z99wr): the field's rollup, one
+/// row per client that wrote it, in the all-fields table's shape. A span is
+/// the client's whose entry began it and ends at the next change, whoever
+/// made that, so the rows add up to the field's own totals.
+pub fn compute_by_client(args: &StatsArgs, db: &Db) -> Result<AllFieldsStats> {
+    let field = args.selector.as_deref().unwrap_or_default();
+    if field.contains(':') {
+        bail!("stats --group-by client takes a field, not a field:state");
+    }
+    let (start, end, _) = resolve_window(args, db)?;
+    let color = field_hex(field, db.load_registry()?.fields.get(field));
+    let label = crate::commands::sync::client_labeller(db)?;
+    let timeline = load_timeline(field, db, start, end)?;
+    let clients: std::collections::BTreeSet<&str> = (timeline.rows.iter().map(|r| &r.client))
+        .chain(timeline.spans.iter().map(|s| &s.client))
+        .map(String::as_str)
+        .collect();
+    let rows = clients.into_iter().map(|client| {
+        let own = Timeline {
+            rows: (timeline.rows.iter())
+                .filter(|r| r.client == client)
+                .cloned()
+                .collect(),
+            spans: (timeline.spans.iter())
+                .map(|s| StateSpan {
+                    state: s.state.clone().filter(|_| s.client == client),
+                    ..s.clone()
+                })
+                .collect(),
+        };
+        let r = rollup(field, None, args, &own, start, end);
+        (label(client), Some(client.to_string()), color.clone(), r)
+    });
+    Ok(ranked(Some(field.to_string()), rows.collect()))
+}
+
+/// The rows of a ranked table, a rollup each with its name, client and
+/// colour: longest-tracked first, empty ones left out.
+fn ranked(
+    field: Option<String>,
+    rows: Vec<(String, Option<String>, String, StatsResult)>,
+) -> AllFieldsStats {
     let mut fields: Vec<FieldStat> = Vec::new();
     let (mut earliest, mut latest) = (None, None);
-    for field in db.distinct_fields()? {
-        let r = field_stats(&field, None, args, db, start, end)?;
+    for (name, client, color, r) in rows {
         earliest = earliest.into_iter().chain(r.earliest).min();
         latest = latest.into_iter().chain(r.latest).max();
         if r.total_count == 0 && r.tracked_duration_seconds == 0 {
             continue;
         }
         fields.push(FieldStat {
-            color: field_hex(&r.field, registry.fields.get(&r.field)),
-            field: r.field,
+            field: name,
+            client,
+            color,
             count: r.total_count,
             duration_seconds: r.tracked_duration_seconds,
             ratio: None,
@@ -268,13 +325,14 @@ pub fn compute_all_fields(args: &StatsArgs, db: &Db) -> Result<AllFieldsStats> {
             .then_with(|| a.field.cmp(&b.field))
     });
 
-    Ok(AllFieldsStats {
+    AllFieldsStats {
+        field,
         fields,
         total_count,
         tracked_duration_seconds,
         earliest,
         latest,
-    })
+    }
 }
 
 pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
@@ -358,6 +416,9 @@ fn load_timeline(
         ..Default::default()
     };
     let entries = db.list_entries(&params)?;
+    let client_of: std::collections::HashMap<&str, &str> = (entries.iter())
+        .map(|e| (e.hid.as_str(), e.client_id.as_str()))
+        .collect();
     let rows = entries
         .iter()
         .filter(|e| datum_core::track::track_verb(e).is_none())
@@ -367,19 +428,22 @@ fn load_timeline(
                 class: classify(e.state.as_ref()),
                 occur: e.occur_time.as_ref()?.utc,
                 local: e.occur_time.as_ref()?.local_time(),
+                client: e.client_id.clone(),
             })
         })
         .collect();
-    let spans = state_spans(field, db, from, until)?;
+    let spans = state_spans(field, db, from, until, &client_of)?;
     Ok(Timeline { rows, spans })
 }
 
-/// The field's state spans for rollups within `[from, until)`.
+/// The field's state spans for rollups within `[from, until)`, each with
+/// the client of the row whose edge it is (`client_of`: hid → client).
 fn state_spans(
     field: &str,
     db: &Db,
     from: Option<DateTime<Utc>>,
     until: DateTime<Utc>,
+    client_of: &std::collections::HashMap<&str, &str>,
 ) -> Result<Vec<StateSpan>> {
     let span = |c: StateChange| StateSpan {
         // A block that interrupted nothing hands back no state: the
@@ -387,6 +451,11 @@ fn state_spans(
         state: c.governing.and(state_label(Some(&c.state))),
         class: classify(Some(&c.state)),
         from: c.at,
+        client: client_of
+            .get(c.row.id.as_str())
+            .copied()
+            .unwrap_or_default()
+            .into(),
     };
     if let Some(from) = from {
         // The last span runs to the next change, or to `now` when there
@@ -557,8 +626,15 @@ pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
     // No selector: every field, ranked (da-ptuwr). Bare `stats` was an
     // error until now, which is what the web widget's own default settings
     // already called the model (`DEFAULT_STATS`, web/src/lib/stats.ts).
-    if args.selector.is_none() {
-        let all = compute_all_fields(&args, db)?;
+    if args.selector.is_none() || args.group_by.is_some() {
+        let all = match &args.group_by {
+            None => compute_all_fields(&args, db)?,
+            Some(key) => match key.parse::<GroupColumn>().map_err(anyhow::Error::msg)? {
+                GroupColumn::Client if args.selector.is_some() => compute_by_client(&args, db)?,
+                GroupColumn::Client => bail!("stats --group-by client needs a field"),
+                other => bail!("stats groups by client, not {}", other.name()),
+            },
+        };
         match args.show {
             ShowFlag::None => {}
             ShowFlag::Json => print!("{}", render_all_json(&all)),
@@ -842,20 +918,26 @@ struct Timeline {
     spans: Vec<StateSpan>,
 }
 
+#[derive(Clone)]
 struct TimelineRow {
     state: String,
     class: StateClass,
     occur: DateTime<Utc>,
     /// `occur` in the zone the entry was logged in.
     local: DateTime<FixedOffset>,
+    /// The client that wrote it.
+    client: String,
 }
 
 /// One state change: `state` from `from` until the next one — `None`
 /// when no row decides it.
+#[derive(Clone)]
 struct StateSpan {
     state: Option<String>,
     class: StateClass,
     from: DateTime<Utc>,
+    /// The client whose entry began it.
+    client: String,
 }
 
 /// How a state value participates in the ratio denominator.
@@ -1032,8 +1114,12 @@ fn render_all_text(r: &AllFieldsStats) -> String {
 
     // "tracked", not a bare total: fields run in parallel, so this is a sum
     // of their tracked time and not a span of clock.
+    let heading = match &r.field {
+        Some(field) => format!("{field} by client"),
+        None => "all fields".to_string(),
+    };
     let mut out = format!(
-        "all fields  ·  {} tracked over {} entries\n\n",
+        "{heading}  ·  {} tracked over {} entries\n\n",
         format_dur(r.tracked_duration_seconds),
         r.total_count,
     );
@@ -1061,27 +1147,38 @@ fn render_all_json(r: &AllFieldsStats) -> String {
         .fields
         .iter()
         .map(|f| {
-            serde_json::json!({
-                "field": f.field,
+            let mut row = serde_json::json!({
                 "color": f.color,
                 "count": f.count,
                 "duration_seconds": f.duration_seconds,
                 "ratio": f.ratio,
                 "frequency": f.frequency.as_ref().map(frequency_json),
                 "rate": f.rate.as_ref().map(rate_json),
-            })
+            });
+            match &f.client {
+                Some(client) => {
+                    row["client"] = client.as_str().into();
+                    row["label"] = f.field.as_str().into();
+                }
+                None => row["field"] = f.field.as_str().into(),
+            }
+            row
         })
         .collect();
-    format!(
-        "{}\n",
-        serde_json::json!({
-            "fields": fields,
-            "total_count": r.total_count,
-            "tracked_duration_seconds": r.tracked_duration_seconds,
-            "earliest": r.earliest.map(|t| t.to_rfc3339()),
-            "latest": r.latest.map(|t| t.to_rfc3339()),
-        })
-    )
+    let mut out = serde_json::json!({
+        "total_count": r.total_count,
+        "tracked_duration_seconds": r.tracked_duration_seconds,
+        "earliest": r.earliest.map(|t| t.to_rfc3339()),
+        "latest": r.latest.map(|t| t.to_rfc3339()),
+    });
+    match &r.field {
+        Some(field) => {
+            out["field"] = field.as_str().into();
+            out["clients"] = fields.into();
+        }
+        None => out["fields"] = fields.into(),
+    }
+    format!("{out}\n")
 }
 
 /// The ratio column. A state outside the denominator has no meaningful
@@ -1567,6 +1664,7 @@ mod tests {
         assert_eq!(json["latest"], "2026-06-15T04:00:00-05:00");
 
         let none = AllFieldsStats {
+            field: None,
             fields: vec![],
             total_count: 0,
             tracked_duration_seconds: 0,

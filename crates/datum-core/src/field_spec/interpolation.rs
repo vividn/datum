@@ -1,9 +1,9 @@
 //! Template interpolation for entry slugs / id templates.
 //!
-//! Templates use `%key%` placeholders. `%field%`, `%hid%`, `%uid%`, and the
-//! column-bound state/dur/following_state/occur_time keys come from the
-//! [`InterpolationContext`]; everything else falls through to a dot-path
-//! lookup against `extra_data`. `\%` is a literal `%`.
+//! Templates use `%key%` placeholders. `%field%`, `%hid%`, `%uid%`,
+//! `%client_id%`, and the column-bound state/dur/following_state/occur_time
+//! keys come from the [`InterpolationContext`]; everything else falls through
+//! to a dot-path lookup against `extra_data`. `\%` is a literal `%`.
 //!
 //! `%hid%` is the entry's full hid, `%uid%` its first [`SHORT_HID_LEN`]
 //! characters, and `%hid:N%` its first N (N ≥ [`SHORT_HID_LEN`]) — five
@@ -70,6 +70,11 @@ pub struct InterpolationContext<'a> {
     pub create_time: Option<&'a DateTime<Utc>>,
     /// da-xbjy / da-r17h: `%modify_time%` renders this and auto-prepends `'m'`.
     pub modify_time: Option<&'a DateTime<Utc>>,
+    /// da-z99wr: the writing client's id, the entry's `client_id`.
+    /// `%client_id%` keys one record, or one field, per client. There is no
+    /// name placeholder: a name can change, and a template is expanded when
+    /// the entry is written, so a rename would split the history.
+    pub client_id: &'a str,
 }
 
 impl<'a> InterpolationContext<'a> {
@@ -86,6 +91,7 @@ impl<'a> InterpolationContext<'a> {
             occur_time_precision: entry.occur_uncertainty(),
             create_time: Some(&entry.create_time),
             modify_time: Some(&entry.modify_time),
+            client_id: &entry.client_id,
         }
     }
 }
@@ -196,6 +202,7 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
         "field" => ctx.field.to_string(),
         "hid" => ctx.hid.to_string(),
         "uid" => ctx.hid.chars().take(SHORT_HID_LEN).collect(),
+        "client_id" => ctx.client_id.to_string(),
         "state" => {
             // da-5ns.4: column-bound state wins. The column is canonical
             // post-pivot; the data-blob path is kept as a fallback for
@@ -356,6 +363,7 @@ mod tests {
             occur_time_precision: None,
             create_time: None,
             modify_time: None,
+            client_id: "",
         }
     }
 
@@ -458,6 +466,7 @@ mod tests {
             occur_time_precision: None,
             create_time: None,
             modify_time: None,
+            client_id: "",
         };
         let got = interpolate("%field%:%state%", &switch_ctx, DEFAULT_ID_DELIMITER);
         assert_eq!(got, "mood:focused");
@@ -498,6 +507,7 @@ mod tests {
             occur_time_precision: None,
             create_time: None,
             modify_time: None,
+            client_id: "",
         };
         let got = interpolate("%field%:%srcLang%:%pos%", &ctx, DEFAULT_ID_DELIMITER);
         assert_eq!(got, "word:pt:verb");
@@ -534,6 +544,7 @@ mod tests {
             occur_time_precision: None,
             create_time: create,
             modify_time: modify,
+            client_id: "",
         }
     }
 
@@ -568,6 +579,7 @@ mod tests {
             occur_time_precision: None,
             create_time: None,
             modify_time: None,
+            client_id: "",
         };
         let got = interpolate("%occur_time%", &ctx, "__");
         assert_eq!(got, "2026-05-13T15:00:00.000Z");
@@ -621,6 +633,7 @@ mod tests {
             occur_time_precision: None,
             create_time: Some(&t),
             modify_time: None,
+            client_id: "",
         };
         let got = interpolate("%a%__%create_time%", &ctx, "__");
         assert_eq!(got, "x__c2026-05-13T15:00:00.000Z");
@@ -744,6 +757,7 @@ mod tests {
             occur_time_precision: None,
             create_time: None,
             modify_time: None,
+            client_id: "",
         };
         let got = interpolate("%occurTime%", &ctx, "__");
         assert_eq!(got, "2026-05-13T15:00:00.000Z");

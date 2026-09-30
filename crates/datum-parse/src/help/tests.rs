@@ -679,7 +679,7 @@ USAGE:
   datum count [FIELD] [--group-by KEY] [--since TIME]
 
 OPTIONS:
-      --group-by <KEY>  state|verb|field
+      --group-by <KEY>  state|verb|field|client
       --since <TIME>    Duration ago (1d, 30m, 1:30), YYYY-MM-DD, or any -t time
 
 OUTPUT:

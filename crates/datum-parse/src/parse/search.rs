@@ -141,6 +141,14 @@ fn stats_args_registry() -> Vec<LiftedSpec<StatsArgs>> {
         p.until = Some(v.to_string());
         Ok(())
     }));
+    r.push(local_value(
+        None,
+        Some("group-by"),
+        |p: &mut StatsArgs, v| {
+            p.group_by = Some(v.to_string());
+            Ok(())
+        },
+    ));
     r.push(local_switch(
         None,
         Some("include-false"),

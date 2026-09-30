@@ -142,7 +142,7 @@ fn count_help_group_by_keys_match_accepted_keys() {
     }
 
     // Every accepted key must be advertised (accepted ⊆ advertised).
-    let mut accepted: Vec<&str> = GroupColumn::ALL.iter().map(|c| c.as_sql()).collect();
+    let mut accepted: Vec<&str> = GroupColumn::ALL.iter().map(|c| c.name()).collect();
     accepted.sort_unstable();
 
     assert_eq!(

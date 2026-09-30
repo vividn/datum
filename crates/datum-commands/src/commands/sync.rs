@@ -344,6 +344,33 @@ fn checked(label: String) -> Result<String> {
     }
 }
 
+/// How output names a client (da-z99wr): the label of the chain member it
+/// runs as, read now so a rename relabels every row it wrote, else `<kind>
+/// <short id>`, whose kind this copy knows for its own client alone. An
+/// entry written with `-M` has no client, and says so.
+pub(crate) fn client_labeller(db: &Db) -> Result<impl Fn(&str) -> String> {
+    let chain = db.sync_chain()?;
+    let mine = crate::config::client_id().ok();
+    Ok(move |id: &str| {
+        if id.is_empty() {
+            return "no client".to_string();
+        }
+        let member = chain
+            .members
+            .iter()
+            .rev()
+            .find(|m| m.client.as_deref() == Some(id));
+        member.map(|m| m.label.clone()).unwrap_or_else(|| {
+            let kind = if mine.as_deref() == Some(id) {
+                kind()
+            } else {
+                "client"
+            };
+            format!("{kind} {}", id.chars().take(8).collect::<String>())
+        })
+    })
+}
+
 /// What this build is to its peers: the native CLI, or datum.day's, whose
 /// wasm build has no `net` feature.
 fn kind() -> &'static str {
