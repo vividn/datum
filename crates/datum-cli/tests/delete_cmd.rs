@@ -459,3 +459,54 @@ fn run_binary(db: &PathBuf, args: &[&str]) -> (String, String) {
     );
     (stdout, stderr)
 }
+
+/// `--strict` that fails on a later row after deleting an earlier one still
+/// stamps `_LAST` at what it deleted, so a bare `undo` restores that row
+/// rather than acting on the command before (da-5leng). Resolution drops
+/// tombstones and duplicates, so the mid-batch failure is a trigger on coffee.
+#[test]
+fn strict_delete_failing_mid_batch_stamps_last_at_what_it_deleted() {
+    let db = fresh_db();
+    let last = |db: &datum_core::db::Db| {
+        datum_core::last_docs::get_last_docs(db)
+            .unwrap()
+            .unwrap()
+            .hids[0]
+            .to_string()
+    };
+    run_cli(&["occur", "tea"], &db).unwrap();
+    let tea = last(&db);
+    run_cli(&["occur", "coffee"], &db).unwrap();
+    let coffee = last(&db);
+
+    db.conn()
+        .execute_batch(&format!(
+            "CREATE TRIGGER fail_coffee BEFORE UPDATE OF deleted_at ON entries
+             WHEN NEW.hid = '{coffee}' BEGIN SELECT RAISE(ABORT, 'boom'); END;"
+        ))
+        .unwrap();
+    let batch = format!("{tea},{coffee}");
+    run_cli(&["delete", &batch, "--strict"], &db).expect_err("coffee's delete must fail");
+    db.conn().execute_batch("DROP TRIGGER fail_coffee").unwrap();
+    assert!(db
+        .get_entry_including_deleted(&tea)
+        .unwrap()
+        .deleted_at
+        .is_some());
+
+    run_cli(&["undo"], &db).unwrap();
+    assert!(
+        db.get_entry_including_deleted(&tea)
+            .unwrap()
+            .deleted_at
+            .is_none(),
+        "undo must restore tea",
+    );
+    assert!(
+        db.get_entry_including_deleted(&coffee)
+            .unwrap()
+            .deleted_at
+            .is_none(),
+        "undo must not delete coffee, the command before",
+    );
+}

@@ -277,11 +277,10 @@ pub fn update_batch_from_args(
     // closing the pipe ends the process at the print (da-ki5j3).
     let mut first_err: Option<anyhow::Error> = None;
     let mut outcomes: Vec<UpdateOutcome> = Vec::new();
-    let render_all = |outcomes: &[UpdateOutcome]| {
-        for outcome in outcomes {
-            render_outcome(outcome, &output, db);
-        }
-    };
+    // Strict stops at the first row that fails to write (resolution and
+    // tombstone errors were refused above, before any write), but what it
+    // already wrote is still stamped into `_LAST` below, so a bare `undo`
+    // reverts it (da-5leng).
     for existing in entries {
         if existing.deleted_at.is_some() {
             let msg = format!(
@@ -290,8 +289,8 @@ pub fn update_batch_from_args(
                 existing.slug,
             );
             if args.strict {
-                render_all(&outcomes);
-                return Err(anyhow::anyhow!(msg));
+                first_err = Some(anyhow::anyhow!(msg));
+                break;
             }
             eprintln!("{msg}");
             first_err.get_or_insert_with(|| anyhow::anyhow!(msg));
@@ -313,8 +312,8 @@ pub fn update_batch_from_args(
             Ok(outcome) => outcomes.push(outcome),
             Err(e) => {
                 if args.strict {
-                    render_all(&outcomes);
-                    return Err(e);
+                    first_err = Some(e);
+                    break;
                 }
                 eprintln!("{e}");
                 first_err.get_or_insert(e);
@@ -326,7 +325,9 @@ pub fn update_batch_from_args(
         let touched_hids: Vec<_> = outcomes.iter().map(|o| o.entry.hid.clone()).collect();
         let _ = datum_core::last_docs::set_last_docs(db, &touched_hids);
     }
-    render_all(&outcomes);
+    for outcome in &outcomes {
+        render_outcome(outcome, &output, db);
+    }
 
     for (tok, err) in token_errors {
         let msg = format!("{tok}: {err}");

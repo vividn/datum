@@ -348,3 +348,52 @@ fn strict_spec_blocks_rekey_into_undeclared_name() {
     assert_eq!(data["intensity"], json!(7));
     assert!(data.get("vibe").is_none());
 }
+
+/// `--strict` that fails on a later row after writing an earlier one still
+/// stamps `_LAST` at what it wrote, so a bare `undo` reverts that row rather
+/// than the command before it (da-5leng). Tombstones are pre-scanned under
+/// `--strict`, so the mid-batch failure here is a strict spec on coffee.
+#[test]
+fn strict_update_failing_mid_batch_stamps_last_at_what_it_wrote() {
+    let db = fresh_db();
+    let last = |db: &datum_core::db::Db| {
+        datum_core::last_docs::get_last_docs(db)
+            .unwrap()
+            .unwrap()
+            .hids[0]
+            .to_string()
+    };
+    run_cli(&["occur", "tea"], &db).unwrap();
+    let tea = last(&db);
+    run_cli(&["occur", "coffee"], &db).unwrap();
+    let coffee = last(&db);
+
+    let mut spec =
+        datum_core::field_spec::FieldSpec::new("coffee", datum_core::action::Action::Occur);
+    spec.strict = true;
+    db.save_field_spec(&spec).unwrap();
+
+    let batch = format!("{tea},{coffee}");
+    run_cli(&["update", &batch, "weather=sunny", "--strict"], &db)
+        .expect_err("coffee's strict spec must fail the batch");
+    assert_eq!(
+        db.get_entry(&tea).unwrap().data.unwrap()["weather"],
+        json!("sunny")
+    );
+
+    run_cli(&["undo"], &db).unwrap();
+    let tea_row = db.get_entry(&tea).unwrap();
+    assert!(
+        tea_row
+            .data
+            .as_ref()
+            .and_then(|d| d.get("weather"))
+            .is_none(),
+        "undo must revert tea's update: {:?}",
+        tea_row.data,
+    );
+    assert!(
+        db.get_entry(&coffee).unwrap().deleted_at.is_none(),
+        "undo must not delete coffee, the command before",
+    );
+}

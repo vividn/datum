@@ -84,11 +84,12 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
             Ok(dead) => deleted.push(dead),
             Err(e) => {
                 let msg = format!("{}: {}", entry.slug, e);
+                // Strict stops here, but what it already deleted is still
+                // stamped into `_LAST` below, so a bare `undo` reverts it
+                // (da-5leng).
                 if args.strict {
-                    for dead in &deleted {
-                        show_delete(dead, registry.as_ref(), &output);
-                    }
-                    return Err(anyhow::anyhow!(msg));
+                    first_err = Some(anyhow::anyhow!(msg));
+                    break;
                 }
                 eprintln!("{msg}");
                 first_err.get_or_insert_with(|| anyhow::anyhow!(msg));
