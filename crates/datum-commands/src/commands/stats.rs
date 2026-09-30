@@ -4,17 +4,14 @@
 //! the time it was tracked (da-ptuwr).
 //!
 //! The core life-review statistic: `count` answers "how often", `stats`
-//! answers "how much time, and split how". Durations are reconstructed from
-//! the entry log — `dur` is not stored for switch-blocks (it is derived), so
-//! each entry's block runs from its `occur_time` to the next entry's
-//! `occur_time` (switch continuity), with the still-open trailing block
-//! running to `now`. An entry that *does* carry a stored `dur` (a discrete
-//! block, e.g. `run 30m`) is measured by that span instead of the
-//! gap-to-next, and the remainder up to the next entry goes to its
-//! `following_state` — or, when it has none, back to the state the block
-//! interrupted, because a plain block is an interruption and NULL there
-//! means "resume what I was" (da-611d, da-mkqo). Ref algorithm:
-//! crew/vremya/scripts/timespent.py.
+//! answers "how much time, and split how". Durations are the field's state
+//! spans as the one state oracle reads them ([`FieldStateRows::changes`],
+//! da-795cy): each change holds until the next, the last until `now`. So a
+//! discrete block (`run 30m`) owns its own span, what follows it is its
+//! `following_state` — or, when it has none, the state it interrupted,
+//! because a plain block is an interruption and NULL there means "resume
+//! what I was" (da-611d, da-mkqo) — and the rule is `now`'s and the tail's,
+//! not a second copy of it. Ref algorithm: crew/vremya/scripts/timespent.py.
 //!
 //! The ratio is a share of *tracked* time, not of wall-clock: the closed
 //! state (`false` — every gap between blocks) and the untracked states
@@ -29,6 +26,7 @@ use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, Utc, Weekday};
 use datum_core::db::{Db, ListParams, TimeMetric};
 use datum_core::shape::{is_inactive_state, is_off_state};
+use datum_core::state::FieldStateRows;
 use datum_core::time::DatumTime;
 use datum_parse::input::TimeArgs;
 use datum_parse::time::{resolve_timezone, Zone, ZoneTimeline};
@@ -332,7 +330,7 @@ fn field_stats(
     Ok(rollup(field, selected_state, args, &timeline, start, end))
 }
 
-fn load_timeline(field: &str, db: &Db) -> Result<Vec<TimelineRow>> {
+fn load_timeline(field: &str, db: &Db) -> Result<Timeline> {
     // Oldest→newest, time-bearing state rows only. `TimeMetric::Occur` drops
     // TRACK documents too (da-c8mh): declaring a field is not an
     // observation of it.
@@ -345,7 +343,7 @@ fn load_timeline(field: &str, db: &Db) -> Result<Vec<TimelineRow>> {
         ..Default::default()
     };
     let entries = db.list_entries(&params)?;
-    Ok(entries
+    let rows = entries
         .iter()
         .filter(|e| datum_core::track::track_verb(e).is_none())
         .filter_map(|e| {
@@ -354,13 +352,21 @@ fn load_timeline(field: &str, db: &Db) -> Result<Vec<TimelineRow>> {
                 class: classify(e.state.as_ref()),
                 occur: e.occur_time.as_ref()?.utc,
                 local: e.occur_time.as_ref()?.local_time(),
-                dur: e.duration_seconds(),
-                following: state_label(e.following_state.as_ref()),
-                following_class: classify(e.following_state.as_ref()),
-                hands_back: datum_parse::shape::hands_field_back(e.verb),
             })
         })
-        .collect())
+        .collect();
+    let spans = FieldStateRows::load_transitions(db.conn(), field)?
+        .changes()
+        .into_iter()
+        .map(|c| StateSpan {
+            // A block that interrupted nothing hands back no state: the
+            // stretch after it is left unattributed (da-phoe).
+            state: c.governing.and(state_label(Some(&c.state))),
+            class: classify(Some(&c.state)),
+            from: c.at,
+        })
+        .collect();
+    Ok(Timeline { rows, spans })
 }
 
 /// The rollup of an already-loaded timeline over `[start, end)`.
@@ -368,7 +374,7 @@ fn rollup(
     field: &str,
     selected_state: Option<String>,
     args: &StatsArgs,
-    timeline: &[TimelineRow],
+    timeline: &Timeline,
     start: Option<DateTime<Utc>>,
     end: DateTime<Utc>,
 ) -> StatsResult {
@@ -380,77 +386,16 @@ fn rollup(
     let mut class_by_state: BTreeMap<String, StateClass> = BTreeMap::new();
     let (mut earliest, mut latest) = (None, None);
 
-    // The state the field returns to when a block hands it back: the one
-    // that governed just before the block opened. A block is an
-    // interruption, so it never becomes that state itself — `None` until
-    // some row has actually set a state (a block that interrupted nothing
-    // resumes nothing, the answer `now` gives for the same rows).
-    let mut governing: Option<(&str, StateClass)> = None;
+    // Each state holds until the next change, the last until `now`.
+    for (i, span) in timeline.spans.iter().enumerate() {
+        let Some(state) = &span.state else { continue };
+        let to = timeline.spans.get(i + 1).map_or(now, |next| next.from);
+        add_overlap(&mut dur_by_state, state, span.from, to, start, end);
+        note_class(&mut class_by_state, state, span.class);
+    }
 
-    // Where a row's influence begins: `occur - dur` for a block, whose
-    // stored instant is its END (da-zwct), and `occur` for everything
-    // else. This — not the stored instant — is where the row before it
-    // stops speaking.
-    let leading = |r: &TimelineRow| r.occur - Duration::seconds(r.dur.unwrap_or(0));
-
-    for (i, row) in timeline.iter().enumerate() {
-        let next = timeline.get(i + 1).map(&leading).unwrap_or(now);
-        let prev = i.checked_sub(1).map(|j| timeline[j].occur);
-        // Block A — the row's own state. da-zwct: a stored `dur` is how
-        // long the state LASTED up to `row.occur`, so a discrete block is
-        // `[occur - dur, occur]` and never reaches past its own instant;
-        // clamped at the previous entry's trailing edge so a block logged
-        // longer than the gap before it does not claim time another row
-        // already spoke for. Without a `dur` the row runs from its
-        // instant to where the next entry starts speaking (switch
-        // continuity), or to `now` for the still-open trailing block.
-        let (block_a_start, block_a_end) = match row.dur {
-            Some(d) => {
-                let mut from = row.occur - Duration::seconds(d);
-                if let Some(prev) = prev {
-                    from = from.max(prev);
-                }
-                (from, row.occur)
-            }
-            None => (row.occur, next),
-        };
-        add_overlap(
-            &mut dur_by_state,
-            &row.state,
-            block_a_start,
-            block_a_end,
-            start,
-            end,
-        );
+    for row in &timeline.rows {
         note_class(&mut class_by_state, &row.state, row.class);
-
-        // Block B — what holds from the block's trailing edge (`occur`
-        // itself, da-zwct) until the next entry opens. An explicit
-        // `following_state` says so outright; a plain
-        // block says it by omission — `following_state IS NULL` means
-        // "resume what I interrupted" (da-611d), so the remainder belongs to
-        // the interrupted state and not to nothing (da-mkqo).
-        if row.dur.is_some() {
-            if let Some(fs) = &row.following {
-                add_overlap(&mut dur_by_state, fs, block_a_end, next, start, end);
-                note_class(&mut class_by_state, fs, row.following_class);
-            } else if row.hands_back {
-                if let Some((resumed, class)) = governing {
-                    add_overlap(&mut dur_by_state, resumed, block_a_end, next, start, end);
-                    note_class(&mut class_by_state, resumed, class);
-                }
-            }
-        }
-
-        // What the NEXT block will resume to. A hand-back row leaves it
-        // untouched, so back-to-back blocks all resume the same state.
-        if !row.hands_back {
-            governing = match &row.following {
-                Some(fs) => Some((fs, row.following_class)),
-                None => Some((&row.state, row.class)),
-            };
-        }
-
         // Count the entry itself when its occur instant lands in-window.
         // The timeline runs oldest→newest, so the first counted row is the
         // earliest and the last the latest.
@@ -840,18 +785,27 @@ fn midnight(zones: &ZoneTimeline, date: NaiveDate) -> DateTime<Utc> {
 
 // ─── Block math ─────────────────────────────────────────────────────────────
 
+/// A field's entries, which are counted, and its state spans, which are
+/// timed.
+struct Timeline {
+    rows: Vec<TimelineRow>,
+    spans: Vec<StateSpan>,
+}
+
 struct TimelineRow {
     state: String,
     class: StateClass,
     occur: DateTime<Utc>,
     /// `occur` in the zone the entry was logged in.
     local: DateTime<FixedOffset>,
-    dur: Option<i64>,
-    following: Option<String>,
-    following_class: StateClass,
-    /// Whether this row's trailing edge hands the field back to whatever
-    /// it interrupted, rather than deciding the state past that edge.
-    hands_back: bool,
+}
+
+/// One state change: `state` from `from` until the next one — `None`
+/// when no row decides it.
+struct StateSpan {
+    state: Option<String>,
+    class: StateClass,
+    from: DateTime<Utc>,
 }
 
 /// How a state value participates in the ratio denominator.
@@ -933,7 +887,9 @@ fn render_text(r: &StatsResult) -> String {
             let w = r.states.iter().map(|s| s.count.to_string().len()).max();
             let w = w.unwrap_or(0);
             out.push('\n');
-            for s in &r.states {
+            // How often, so a state no entry logged has no line: an
+            // occur's TRACKED (da-795cy) holds time and nothing else.
+            for s in r.states.iter().filter(|s| s.count > 0) {
                 out.push_str(&format!("  {:>w$}×  {}\n", s.count, s.state));
             }
         }

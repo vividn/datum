@@ -9,23 +9,23 @@
 //! - the verb-driven walk [`render_field_visuals`] emitting the
 //!   [`DayviewBlock`]/[`DayviewPoint`] shapes consumed by the dayview SVG
 //!   pipeline (dayview proper, and nowview's SVG path per da-6jy),
-//! - the switch-region chaining ([`switch_region_end_ms`]) and emit helpers
-//!   ([`push_block_window`], [`push_switch_region`]),
+//! - the switch regions, read off the state oracle ([`switch_regions`]),
+//!   and the emit helpers ([`push_block_window`], [`push_switch_region`]),
 //! - small entry/color utilities shared by both surfaces.
 //!
 //! nowview's *terminal*-shape walk (`render_field_visuals_terminal` and its
 //! push helpers, emitting `NowviewBlock`/`NowviewPoint`) is NOT duplicated —
 //! it exists once in `commands/nowview.rs` and stays there.
 
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use datum_core::db::IGNORED_STATE_VALUE;
 use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
 use datum_core::shape::is_off_state;
 use datum_core::shape::{
-    dot_fg_uses_state, is_block_verb, is_switching_verb, is_unrendered_switch_value,
-    opens_secondary_switch_region, render_shape, RenderShape,
+    dot_fg_uses_state, is_block_verb, is_unrendered_switch_value, render_shape, RenderShape,
 };
+use datum_core::state::FieldStateRows;
 use datum_core::time::Zone;
 use datum_layout::dayview::{BlockFill, DayviewBlock, DayviewPoint};
 use serde_json::Value as JsonValue;
@@ -71,25 +71,61 @@ pub(crate) fn is_ignored_or_false(v: &JsonValue) -> bool {
     is_off_state(v) || matches!(v, JsonValue::String(s) if s == IGNORED_STATE_VALUE)
 }
 
-/// For each entry, the UTC-ms end-time of its switch region (the occur_time
-/// of the next switching event on the same field, or `fallback_end_ms` if
-/// it's the last). Non-switching entries get `fallback_end_ms` (callers only
-/// read the switching positions). Input must be sorted by occur_time
-/// ascending.
-///
-/// A "switching event" is any entry that changes the field's prevailing
-/// state at its `occur_time`: Switch (state), BlockSwitch (following_state),
-/// or PointSwitch (following_state). Block / Point / Add / Occur do not
-/// switch the prevailing state.
-pub(crate) fn switch_region_end_ms(entries: &[Entry], fallback_end_ms: i64) -> Vec<i64> {
-    let mut out = vec![fallback_end_ms; entries.len()];
-    let mut next_occur_ms: Option<i64> = None;
-    for (i, entry) in entries.iter().enumerate().rev() {
-        if is_switching_verb(canonical_verb(entry)) {
-            out[i] = next_occur_ms.unwrap_or(fallback_end_ms);
-            if let Some(ms) = occur_time_ms_opt(entry) {
-                next_occur_ms = Some(ms);
+/// A span of one state as the timelines draw it, named by the row that
+/// decided it.
+pub(crate) struct SwitchRegion {
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub state: JsonValue,
+    pub id: Option<String>,
+}
+
+/// The field's switch regions from `from` until `open_end_ms`: its state
+/// changes in `[from, until]` as the one oracle reads them
+/// ([`FieldStateRows::changes_between`], da-795cy), one region per run of
+/// one state, the last left open. Only the geometry is decided here. A
+/// block's own span is the block's to draw ([`render_field_visuals`]), so
+/// the region it interrupted runs on under it up to its trailing edge, and
+/// what holds past that edge (a resumed state continuing the same region)
+/// is drawn from there.
+pub(crate) fn switch_regions(
+    rows: &FieldStateRows,
+    (from, until): (DateTime<Utc>, DateTime<Utc>),
+    open_end_ms: i64,
+) -> Vec<SwitchRegion> {
+    let changes = rows.changes_between(from, until);
+    let mut out: Vec<SwitchRegion> = Vec::new();
+    for (i, c) in changes.iter().enumerate() {
+        let mut start_ms = c.at.timestamp_millis();
+        if start_ms > open_end_ms {
+            break;
+        }
+        let next_ms = changes.get(i + 1).map(|next| next.at.timestamp_millis());
+        let end_ms = next_ms.unwrap_or(open_end_ms);
+        if let Some(trailing) = c
+            .row
+            .occur
+            .filter(|t| is_block_verb(c.row.verb) && c.at < *t)
+        {
+            let trailing = trailing.timestamp_millis();
+            if let Some(under) = out.last_mut().filter(|r| r.end_ms == start_ms) {
+                under.end_ms = end_ms.min(trailing);
             }
+            start_ms = trailing;
+        }
+        // Empty, except the state left open: switched to at the open end
+        // itself, it still holds (a held clock renders at that instant).
+        if start_ms > open_end_ms || (start_ms >= end_ms && next_ms.is_some()) {
+            continue;
+        }
+        match out.last_mut() {
+            Some(last) if last.end_ms == start_ms && last.state == c.state => last.end_ms = end_ms,
+            _ => out.push(SwitchRegion {
+                start_ms,
+                end_ms,
+                state: c.state.clone(),
+                id: c.governing.map(|g| g.id.clone()),
+            }),
         }
     }
     out
@@ -141,32 +177,40 @@ pub(crate) fn leading_edge_ms(entry: &Entry, occur_ms: i64) -> i64 {
 ///   HOLE (da-6gvw): nothing is painted there and whatever block
 ///   encloses it is cut in two, each side keeping its own label and
 ///   colour. It is the same rule a switch to `false` already obeys.
-/// - **Block-switch**: same block, AND open a new switch region at
-///   `occur` — where the block ends — colored `following_state` until
-///   the next switching event.
-/// - **Point-switch**: a dot at `occur` coloured by `state`, AND open a new switch region at `occur` colored `following_state`.
+/// - **Point-switch**: a dot at `occur` coloured by `state`.
 /// - **Point**: a dot at `occur` in the field's color.
-/// - **Switch**: a colored region from `occur` to the next switching
-///   event, fill = `state`.
-///
-/// `switch_region_ends[idx]` is the UTC-ms end-time of the switch region
-/// opened by entry `idx` (or `fallback_end_ms` if it doesn't open one).
+/// - **Switch**, and what a block-switch or point-switch switches to:
+///   `regions` ([`switch_regions`]), drawn first so a block paints over
+///   the region it interrupts.
 pub(crate) fn render_field_visuals(
     entries: &[Entry],
+    regions: &[SwitchRegion],
     field: &str,
     spec: Option<&FieldSpec>,
     day_start_ms: i64,
     day_end_ms: i64,
-    switch_region_ends: &[i64],
 ) -> (Vec<DayviewBlock>, Vec<DayviewPoint>) {
     let mut blocks: Vec<DayviewBlock> = Vec::new();
+    for r in regions {
+        push_switch_region(
+            &mut blocks,
+            Some(&r.state),
+            r.id.as_deref(),
+            r.start_ms,
+            r.end_ms,
+            field,
+            spec,
+            day_start_ms,
+            day_end_ms,
+        );
+    }
     let mut points: Vec<DayviewPoint> = Vec::new();
     // Spans the field was explicitly OFF for (da-6gvw). Collected as the
     // walk goes and subtracted from everything it drew, because a hole may
     // sit inside a region the walk has not reached yet.
     let mut holes: Vec<(i64, i64)> = Vec::new();
 
-    for (idx, entry) in entries.iter().enumerate() {
+    for entry in entries {
         let Some(occur_dt) = entry.occur_time.as_ref() else {
             continue;
         };
@@ -200,20 +244,8 @@ pub(crate) fn render_field_visuals(
                     );
                 }
             }
-            RenderShape::Region => {
-                // Primary switch region (Verb::Switch).
-                push_switch_region(
-                    &mut blocks,
-                    entry.state.as_ref(),
-                    Some(entry.hid.as_str()),
-                    occur_ms,
-                    switch_region_ends[idx],
-                    field,
-                    spec,
-                    day_start_ms,
-                    day_end_ms,
-                );
-            }
+            // A switch's region is one of `regions`.
+            RenderShape::Region => {}
             RenderShape::Dot => {
                 if occur_ms >= day_start_ms && occur_ms <= day_end_ms {
                     let fg = if dot_fg_uses_state(verb) {
@@ -239,30 +271,6 @@ pub(crate) fn render_field_visuals(
                         }),
                     });
                 }
-            }
-        }
-        // Secondary trailing switch region for compound switching verbs
-        // (BlockSwitch, PointSwitch): a band from the row's trailing
-        // edge, colored by `following_state`. da-zwct: that edge is
-        // `occur_ms` itself for both — a block-switch's following state
-        // begins where its block ends, which is the stored instant, and
-        // a point-switch has no span to cross. A row logged at or past
-        // the next switching event leaves the band no room — emit
-        // nothing rather than an inverted span.
-        if opens_secondary_switch_region(verb) {
-            let band_start_ms = occur_ms;
-            if band_start_ms < switch_region_ends[idx] {
-                push_switch_region(
-                    &mut blocks,
-                    entry.following_state.as_ref(),
-                    Some(entry.hid.as_str()),
-                    band_start_ms,
-                    switch_region_ends[idx],
-                    field,
-                    spec,
-                    day_start_ms,
-                    day_end_ms,
-                );
             }
         }
     }
@@ -516,6 +524,18 @@ pub(crate) fn stub_entry(
     e
 }
 
+/// Test helper: the regions stub entries draw, from before their first
+/// row. Shared with the nowview tests.
+#[cfg(test)]
+pub(crate) fn stub_regions(entries: &[Entry], open_end_ms: i64) -> Vec<SwitchRegion> {
+    let rows = FieldStateRows::from_entries(entries);
+    switch_regions(
+        &rows,
+        (DateTime::UNIX_EPOCH, DateTime::<Utc>::MAX_UTC),
+        open_end_ms,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -585,90 +605,93 @@ mod tests {
         }
     }
 
-    #[test]
-    fn switch_region_end_ms_chains_consecutive_switches() {
-        use datum_core::time::DatumTime;
-
-        let mk = |hour: u32, value: &str| {
-            let utc = Utc.with_ymd_and_hms(2026, 4, 27, hour, 0, 0).unwrap();
-            let dt = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
-            Entry::new(
-                "mood",
-                Verb::Switch,
-                Some(JsonValue::String(value.into())),
-                None,
-                Some(dt),
-                None,
-                "test",
-            )
-        };
-        let entries = vec![mk(8, "happy"), mk(12, "calm"), mk(16, "focus")];
-        let day_end = Utc
-            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
-            .unwrap()
-            .timestamp_millis();
-        let ends = switch_region_end_ms(&entries, day_end);
-        assert_eq!(ends.len(), 3);
-        // First switch ends at second switch's start.
-        assert_eq!(
-            ends[0],
-            Utc.with_ymd_and_hms(2026, 4, 27, 12, 0, 0)
-                .unwrap()
-                .timestamp_millis()
-        );
-        // Second switch ends at third switch's start.
-        assert_eq!(
-            ends[1],
-            Utc.with_ymd_and_hms(2026, 4, 27, 16, 0, 0)
-                .unwrap()
-                .timestamp_millis()
-        );
-        // Last switch falls back to day_end.
-        assert_eq!(ends[2], day_end);
+    fn spans(regions: &[SwitchRegion]) -> Vec<(i64, i64, String)> {
+        regions
+            .iter()
+            .map(|r| (r.start_ms, r.end_ms, r.state.to_string()))
+            .collect()
     }
 
-    /// `switch_region_end_ms` chains across all three switching verbs
-    /// (Switch / BlockSwitch / PointSwitch). Each one terminates the prior
-    /// switching event's region.
+    /// da-795cy: every switching verb opens a region that the next change
+    /// ends — Switch its `state`, BlockSwitch and PointSwitch their
+    /// `following_state` from the trailing edge, the block itself being
+    /// the block's to draw — and the last runs to the open end.
     #[test]
-    fn switch_region_end_ms_chains_across_all_switching_verbs() {
-        let t1 = Utc.with_ymd_and_hms(2026, 4, 27, 8, 0, 0).unwrap();
-        let t2 = Utc.with_ymd_and_hms(2026, 4, 27, 12, 0, 0).unwrap();
-        let t3 = Utc.with_ymd_and_hms(2026, 4, 27, 16, 0, 0).unwrap();
+    fn switch_regions_chain_across_all_switching_verbs() {
+        let t = |h: u32| Utc.with_ymd_and_hms(2026, 4, 27, h, 0, 0).unwrap();
+        let ms = |h: u32| t(h).timestamp_millis();
+        let s = |v: &str| Some(JsonValue::String(v.into()));
         let entries = vec![
-            stub_entry(
-                "f",
-                Verb::Switch,
-                t1,
-                None,
-                Some(JsonValue::String("a".into())),
-                None,
-            ),
+            stub_entry("f", Verb::Switch, t(8), None, s("a"), None),
             stub_entry(
                 "f",
                 Verb::BlockSwitch,
-                t2,
-                Some("PT5M"),
-                Some(JsonValue::String("via".into())),
-                Some(JsonValue::String("b".into())),
+                t(12),
+                Some("PT1H"),
+                s("via"),
+                s("b"),
             ),
             stub_entry(
                 "f",
                 Verb::PointSwitch,
-                t3,
+                t(16),
                 Some("PT0S"),
-                Some(JsonValue::String("via".into())),
-                Some(JsonValue::String("c".into())),
+                s("via"),
+                s("c"),
             ),
         ];
-        let fallback = Utc
-            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
-            .unwrap()
-            .timestamp_millis();
-        let ends = switch_region_end_ms(&entries, fallback);
-        assert_eq!(ends[0], t2.timestamp_millis());
-        assert_eq!(ends[1], t3.timestamp_millis());
-        assert_eq!(ends[2], fallback);
+        let end = ms(23);
+        assert_eq!(
+            spans(&stub_regions(&entries, end)),
+            vec![
+                (ms(8), ms(12), "\"a\"".into()),
+                (ms(12), ms(16), "\"b\"".into()),
+                (ms(16), end, "\"c\"".into()),
+            ]
+        );
+    }
+
+    /// A switch at the open end itself still draws its region, empty as it
+    /// is — the field holds that state from now on (the page's held clock
+    /// renders at the instant it logged).
+    #[test]
+    fn a_switch_at_the_open_end_still_draws() {
+        let t = Utc.with_ymd_and_hms(2026, 4, 27, 9, 0, 0).unwrap();
+        let s = Some(JsonValue::String("happy".into()));
+        let entries = vec![stub_entry("mood", Verb::Switch, t, None, s, None)];
+        let now = t.timestamp_millis();
+        assert_eq!(
+            spans(&stub_regions(&entries, now)),
+            vec![(now, now, "\"happy\"".into())]
+        );
+    }
+
+    /// A block interrupts the region under it and hands the field back:
+    /// the oracle's state before and after it is one state, so it is one
+    /// region, running on under the block (which paints over it). A
+    /// block-switch with no `following_state` keeps its own state past
+    /// its trailing edge, and a region begins there.
+    #[test]
+    fn a_block_continues_the_region_it_interrupts() {
+        let t = |h: u32| Utc.with_ymd_and_hms(2026, 4, 27, h, 0, 0).unwrap();
+        let ms = |h: u32| t(h).timestamp_millis();
+        let s = |v: &str| Some(JsonValue::String(v.into()));
+        let entries = vec![
+            stub_entry("f", Verb::Switch, t(8), None, s("a"), None),
+            stub_entry("f", Verb::Block, t(10), Some("PT1H"), s("x"), None),
+            stub_entry("f", Verb::BlockSwitch, t(14), Some("PT1H"), s("y"), None),
+        ];
+        let end = ms(23);
+        let got = stub_regions(&entries, end);
+        assert_eq!(
+            spans(&got),
+            vec![
+                (ms(8), ms(14), "\"a\"".into()),
+                (ms(14), end, "\"y\"".into())
+            ]
+        );
+        assert_eq!(got[0].id, Some(entries[0].hid.to_string()));
+        assert_eq!(got[1].id, Some(entries[2].hid.to_string()));
     }
 
     // ─── da-5ns.5: verb-driven render tests ────────────────────────────
@@ -697,9 +720,9 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let ends = switch_region_end_ms(&entries, day_end);
+        let regions = stub_regions(&entries, day_end);
         let (blocks, points) =
-            render_field_visuals(&entries, "lunch", None, day_start, day_end, &ends);
+            render_field_visuals(&entries, &regions, "lunch", None, day_start, day_end);
         assert!(points.is_empty());
         assert_eq!(blocks.len(), 1);
         assert_eq!(
@@ -735,9 +758,9 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 29, 0, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let ends = switch_region_end_ms(&entries, day_end);
+        let regions = stub_regions(&entries, day_end);
         let (blocks, _points) =
-            render_field_visuals(&entries, "sleep", None, day_start, day_end, &ends);
+            render_field_visuals(&entries, &regions, "sleep", None, day_start, day_end);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
             blocks[0].start_ms,
@@ -771,23 +794,24 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let ends = switch_region_end_ms(&entries, day_end);
+        let regions = stub_regions(&entries, day_end);
         let (blocks, points) =
-            render_field_visuals(&entries, "mood", None, day_start, day_end, &ends);
+            render_field_visuals(&entries, &regions, "mood", None, day_start, day_end);
         assert!(points.is_empty());
+        // The region is drawn first, so the block paints over it.
         assert_eq!(blocks.len(), 2);
         // Block: [occur − 1h, occur] colored "groggy".
         assert_eq!(
-            blocks[0].start_ms,
+            blocks[1].start_ms,
             occur.timestamp_millis() - 60 * 60 * 1000
         );
-        assert_eq!(blocks[0].end_ms, occur.timestamp_millis());
-        assert_eq!(blocks[0].state_label.as_deref(), Some("groggy"));
+        assert_eq!(blocks[1].end_ms, occur.timestamp_millis());
+        assert_eq!(blocks[1].state_label.as_deref(), Some("groggy"));
         // Following region opens where the block ends, not where it starts
         // — da-zwct: that is `occur` itself. [occur, day_end] "focused".
-        assert_eq!(blocks[1].start_ms, occur.timestamp_millis());
-        assert_eq!(blocks[1].end_ms, day_end);
-        assert_eq!(blocks[1].state_label.as_deref(), Some("focused"));
+        assert_eq!(blocks[0].start_ms, occur.timestamp_millis());
+        assert_eq!(blocks[0].end_ms, day_end);
+        assert_eq!(blocks[0].state_label.as_deref(), Some("focused"));
         // Distinct colors: state ("groggy") and following_state ("focused")
         // hash to different RGBs via md5_rgb.
         match (&blocks[0].fill, &blocks[1].fill) {
@@ -817,9 +841,9 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let ends = switch_region_end_ms(&entries, day_end);
+        let regions = stub_regions(&entries, day_end);
         let (blocks, points) =
-            render_field_visuals(&entries, "task", None, day_start, day_end, &ends);
+            render_field_visuals(&entries, &regions, "task", None, day_start, day_end);
         assert_eq!(points.len(), 1);
         assert_eq!(points[0].time_ms, occur.timestamp_millis());
         assert_eq!(points[0].state_label.as_deref(), Some("commit"));
@@ -861,9 +885,9 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let ends = switch_region_end_ms(&entries, day_end);
+        let regions = stub_regions(&entries, day_end);
         let (blocks, _points) =
-            render_field_visuals(&entries, "mood", None, day_start, day_end, &ends);
+            render_field_visuals(&entries, &regions, "mood", None, day_start, day_end);
         // 3 blocks expected: the "groggy" block 8:30→9:00, the "focused"
         // region from its trailing edge 9:00→14:00, and the "tired" switch
         // region from 14:00→day_end.
@@ -907,9 +931,9 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 27, 22, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let ends = switch_region_end_ms(&entries, window_end);
+        let regions = stub_regions(&entries, window_end);
         let (blocks, _points) =
-            render_field_visuals(&entries, "mood", None, day_start, window_end, &ends);
+            render_field_visuals(&entries, &regions, "mood", None, day_start, window_end);
         // The "groggy" block alone — no "focused" band at all.
         assert_eq!(blocks.len(), 1);
         assert!(
@@ -966,9 +990,9 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let ends = switch_region_end_ms(entries, day_end);
+        let regions = stub_regions(entries, day_end);
         let (blocks, points) =
-            render_field_visuals(entries, "work", None, day_start, day_end, &ends);
+            render_field_visuals(entries, &regions, "work", None, day_start, day_end);
         assert!(points.is_empty());
         blocks
     }
@@ -1095,9 +1119,9 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let ends = switch_region_end_ms(&entries, day_end);
+        let regions = stub_regions(&entries, day_end);
         let (blocks, points) =
-            render_field_visuals(&entries, "mood", None, day_start, day_end, &ends);
+            render_field_visuals(&entries, &regions, "mood", None, day_start, day_end);
         assert!(points.is_empty());
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].state_label.as_deref(), Some("hungry"));

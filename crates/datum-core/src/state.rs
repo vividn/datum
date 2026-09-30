@@ -584,6 +584,10 @@ pub struct StateChange<'a> {
     /// The row whose edge this is: the one that set the state, or the
     /// block that handed the field back.
     pub row: &'a StateRow,
+    /// The row that decided `state`: `row` itself, except where a block
+    /// handed the field back — then the row it resumed, `None` when
+    /// nothing preceded the block.
+    pub governing: Option<&'a StateRow>,
 }
 
 impl FieldStateRows {
@@ -629,25 +633,110 @@ impl FieldStateRows {
         } else {
             String::new()
         };
-        let sql = format!(
+        let mut stmt = conn.prepare(&Self::select(
+            &declarations,
+            crate::db::STATE_ORDER_NEWEST_FIRST,
+        ))?;
+        let rows = stmt
+            .query_map(params![field], crate::db::read_state_columns)?
+            .map(Self::decode)
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self::new(rows))
+    }
+
+    /// [`Self::load`] for a reader that asks about `[from, until]` and
+    /// nothing else ([`Self::changes_between`]): the rows stored in it;
+    /// after it, the [`SPAN_LOOKAHEAD`] oldest blocks; before it, the
+    /// newest row that is not an occur dot ([`RESUME_LOOKBACK`] of them
+    /// when a block among the rows can hand the field back), the dots
+    /// after the earliest instant any of those rows can have taken effect,
+    /// and — when that is all its history — the field's first dot. That
+    /// is every row [`Self::resolve`] reaches in the window, so the
+    /// answers there are [`Self::load`]'s, at the cost of the window
+    /// instead of the field's whole history.
+    pub fn load_between(
+        conn: &Connection,
+        field: &str,
+        from: DateTime<Utc>,
+        until: DateTime<Utc>,
+    ) -> Result<Self> {
+        let read = |and: &str, order: &str, bounds: &[&str]| -> Result<Vec<StateRow>> {
+            let mut stmt = conn.prepare_cached(&Self::select(and, order))?;
+            let params = std::iter::once(field).chain(bounds.iter().copied());
+            let rows = stmt
+                .query_map(
+                    rusqlite::params_from_iter(params),
+                    crate::db::read_state_columns,
+                )?
+                .map(Self::decode)
+                .collect();
+            rows
+        };
+        let newest = crate::db::STATE_ORDER_NEWEST_FIRST;
+        let first = |n: usize| format!("{} LIMIT {n}", crate::db::STATE_ORDER_OLDEST_FIRST);
+        let last = |n: usize| format!("{newest} LIMIT {n}");
+        let (lo, hi) = (from.to_rfc3339(), until.to_rfc3339());
+
+        // Blocks, as `window` reads them: an occur's MOMENT is not one.
+        let after = format!("AND occur_time > ?2 AND dur IS NOT NULL AND NOT {OCCUR_DOT_SQL}");
+        let mut rows = read(&after, &first(SPAN_LOOKAHEAD), &[&hi])?;
+        rows.reverse();
+        let within = "AND occur_time >= ?2 AND occur_time <= ?3";
+        rows.extend(read(within, newest, &[&lo, &hi])?);
+        // As deep as the SQL read goes: one row, or RESUME_LOOKBACK when
+        // the row a probe lands on can be a block handing the field back.
+        let before = format!("AND occur_time < ?2 AND NOT {OCCUR_DOT_SQL}");
+        let mut depth = 1;
+        let mut older = read(&before, &last(depth), &[&lo])?;
+        let deep = |r: &StateRow| r.hands_field_back(DateTime::<Utc>::MAX_UTC);
+        if rows.iter().chain(&older).any(deep) {
+            depth = RESUME_LOOKBACK;
+            older = read(&before, &last(depth), &[&lo])?;
+        }
+        // Fewer: the field's history before `from` is all here, and so is
+        // the "no state yet" its first dot moves.
+        let whole = older.len() < depth;
+        rows.extend(older);
+        // An occur dot moves only a state it comes after: IGNORED, or none
+        // at all, which a hand-back can leave (a short history's is the
+        // first dot's, below).
+        let ignored = |v: &Option<Value>| v.as_ref().is_some_and(crate::shape::is_ignored_state);
+        let dotted = depth > 1
+            || rows
+                .iter()
+                .any(|r| ignored(&r.state) || ignored(&r.following_state));
+        let earliest = rows
+            .iter()
+            .filter_map(StateRow::leading_edge)
+            .fold(from, DateTime::min)
+            .to_rfc3339();
+        if dotted {
+            let dots = format!("AND occur_time < ?2 AND occur_time >= ?3 AND {OCCUR_DOT_SQL}");
+            rows.extend(read(&dots, newest, &[&lo, &earliest])?);
+        }
+        if whole {
+            let first_dot = format!("AND occur_time < ?2 AND {OCCUR_DOT_SQL}");
+            rows.extend(read(&first_dot, &first(1), &[&earliest])?);
+        }
+        Ok(Self::new(rows))
+    }
+
+    /// A field's state-participating rows, narrowed by `and`, in `order`.
+    fn select(and: &str, order: &str) -> String {
+        format!(
             "SELECT field, state, verb, occur_time, dur, following_state, hid
                FROM entries
               WHERE field = ?1
                 AND {participation}
-                {declarations}
+                {and}
               ORDER BY {order}",
             participation = crate::db::STATE_PARTICIPATION_SQL,
-            order = crate::db::STATE_ORDER_NEWEST_FIRST,
-        );
-        let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt
-            .query_map(params![field], crate::db::read_state_columns)?
-            .map(|r| {
-                let (_, row) = crate::db::decode_state_row(r.map_err(DatumError::Db)?)?;
-                Ok(row)
-            })
-            .collect::<Result<Vec<_>>>()?;
-        Ok(Self::new(rows))
+        )
+    }
+
+    fn decode(cols: rusqlite::Result<crate::db::StateColumns>) -> Result<StateRow> {
+        let (_, row) = crate::db::decode_state_row(cols.map_err(DatumError::Db)?)?;
+        Ok(row)
     }
 
     /// The window [`resolve_effective`] reads at `at`, with `exclude`
@@ -709,6 +798,39 @@ impl FieldStateRows {
     /// each row's edges (a leading edge, and a block's trailing edge),
     /// kept where the answer differs from the one before it.
     pub fn changes(&self) -> Vec<StateChange<'_>> {
+        self.changes_within(None, None)
+    }
+
+    /// [`Self::changes`] in `[from, until]`, for a reader drawing a window
+    /// that need not read the field's history around it
+    /// ([`Self::load_between`]): the state in effect at `from`, as a
+    /// change AT `from` (none when no row decides one), then every change
+    /// after it up to `until`.
+    pub fn changes_between(
+        &self,
+        from: DateTime<Utc>,
+        until: DateTime<Utc>,
+    ) -> Vec<StateChange<'_>> {
+        self.changes_within(Some(from), Some(until))
+    }
+
+    fn changes_within(
+        &self,
+        from: Option<DateTime<Utc>>,
+        until: Option<DateTime<Utc>>,
+    ) -> Vec<StateChange<'_>> {
+        let mut out: Vec<StateChange<'_>> = Vec::new();
+        if let Some(from) = from {
+            let (window, eff) = self.resolve(from, None);
+            if let Some(row) = eff.governing.map(|i| window[i]) {
+                out.push(StateChange {
+                    at: from,
+                    state: eff.state,
+                    row,
+                    governing: Some(row),
+                });
+            }
+        }
         let mut edges: Vec<(DateTime<Utc>, &StateRow)> = Vec::new();
         for r in self.rows.iter().rev().chain(&self.dots) {
             edges.extend(r.leading_edge().map(|t| (t, r)));
@@ -718,8 +840,8 @@ impl FieldStateRows {
                     .map(|t| (t, r)),
             );
         }
+        edges.retain(|(t, _)| from.is_none_or(|f| *t > f) && until.is_none_or(|u| *t <= u));
         edges.sort_by_key(|(t, _)| *t);
-        let mut out: Vec<StateChange<'_>> = Vec::new();
         for group in edges.chunk_by(|a, b| a.0 == b.0) {
             let at = group[0].0;
             let (window, eff) = self.resolve(at, None);
@@ -736,6 +858,7 @@ impl FieldStateRows {
                 at,
                 state: eff.state,
                 row,
+                governing,
             });
         }
         out

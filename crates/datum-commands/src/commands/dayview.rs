@@ -31,10 +31,9 @@ use datum_parse::time::{parse_date, DateArg, TimeCtx};
 
 use crate::args::{DayviewArgs, ShowFlag};
 use crate::commands::field_visuals::{
-    leading_edge_ms, occur_time_ms, push_switch_region, render_field_visuals, switch_region_end_ms,
-    title_marks,
+    leading_edge_ms, occur_time_ms, render_field_visuals, switch_regions, title_marks,
 };
-use crate::commands::nowview::leading_state_region;
+use datum_core::state::FieldStateRows;
 
 /// Datum default per-day band height (matches dayview.ts:50).
 const DEFAULT_DAY_HEIGHT: f64 = 100.0;
@@ -479,7 +478,6 @@ fn build_day_fields(
     let specs = db.batch_load_specs(&field_names)?;
     let positions = super::render_helpers::field_positions(db, &specs, &field_names)?;
     let fetch_start = day_start_utc - buffer;
-    let leading_states = db.batch_governing_at(&field_names, fetch_start)?;
     drop(field_names);
 
     let mut out: Vec<DayviewFieldInput> = Vec::with_capacity(by_field.len());
@@ -497,40 +495,22 @@ fn build_day_fields(
                 continue;
             }
         }
-        // Sort field entries by occur_time so the next-switch lookup can
-        // walk the list in order.
         entries_for_field.sort_by_key(occur_time_ms);
         let fallback_end_ms = day_end_ms.min(now_ms);
-        let switch_region_ends = switch_region_end_ms(&entries_for_field, fallback_end_ms);
-
-        let mut blocks = Vec::new();
-        if let Some((start_ms, end_ms, state, id)) = leading_state_region(
-            leading_states.get(&field),
-            &entries_for_field,
-            fetch_start,
+        let window = (fetch_start, day_end_utc + buffer);
+        let regions = switch_regions(
+            &FieldStateRows::load_between(db.conn(), &field, window.0, window.1)?,
+            window,
             fallback_end_ms,
-        ) {
-            push_switch_region(
-                &mut blocks,
-                Some(&state),
-                id.as_deref(),
-                start_ms,
-                end_ms,
-                &field,
-                spec.as_ref(),
-                day_start_ms,
-                day_end_ms,
-            );
-        }
-        let (entry_blocks, mut points) = render_field_visuals(
+        );
+        let (mut blocks, mut points) = render_field_visuals(
             &entries_for_field,
+            &regions,
             &field,
             spec.as_ref(),
             day_start_ms,
             day_end_ms,
-            &switch_region_ends,
         );
-        blocks.extend(entry_blocks);
         title_marks(
             &field,
             &mut blocks,
@@ -1073,6 +1053,48 @@ mod tests {
             fields.iter().all(|f| f.field != "stretch_routine"),
             "render.dayview=false must drop the band",
         );
+    }
+
+    /// da-795cy: a block already running at the fetch start was carried in
+    /// as a switch region to the end of the day — `coding` painted over a
+    /// day it ended two days before. The regions are the oracle's now, and
+    /// the oracle hands the field back where the block ends.
+    #[test]
+    fn a_block_spanning_the_fetch_start_is_not_carried_in_as_a_region() {
+        use chrono::TimeZone;
+        use datum_core::entry::Verb;
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        let at = |d: u32, h: u32, m: u32| {
+            let utc = Utc.with_ymd_and_hms(2026, 4, d, h, m, 0).unwrap();
+            Some(DatumTime::from_utc_and_tz(utc, "UTC").unwrap())
+        };
+        let state = |s: &str| Some(serde_json::json!(s));
+        for (verb, value, when, dur) in [
+            (Verb::Switch, state("idle"), at(24, 12, 0), None),
+            // 23:30 on the 24th to 00:30 on the 25th: across the fetch
+            // start, two days before the day drawn.
+            (Verb::Block, state("coding"), at(25, 0, 30), Some("PT1H")),
+        ] {
+            let dur = dur.and_then(datum_core::dur::Dur::parse);
+            db.insert_entry(&Entry::new("work", verb, value, None, when, dur, "test"))
+                .unwrap();
+        }
+        let day = |d: u32| {
+            Utc.with_ymd_and_hms(2026, 4, d, 0, 0, 0)
+                .unwrap()
+                .timestamp_millis()
+        };
+        let fields = build_day_fields(&db, day(27), day(28), day(28)).unwrap();
+        let work = fields.iter().find(|f| f.field == "work").unwrap();
+        let states: Vec<_> = work
+            .blocks
+            .iter()
+            .filter(|b| b.end_ms > day(27))
+            .map(|b| b.state_label.as_deref())
+            .collect();
+        assert_eq!(states, [Some("idle")], "the day is idle, as `now` says");
     }
 
     /// da-c05v1 review: a spec saved without `spec set`'s checks (sync, a

@@ -938,6 +938,33 @@ mod tests {
                     (Verb::Point, None, 200, None, None),
                 ],
             ),
+            // da-795cy: a block that interrupted nothing leaves no state,
+            // which the next occur makes TRACKED.
+            (
+                "occur-after-a-block",
+                vec![
+                    block(json!("x"), 200, 100),
+                    (Verb::Point, None, 300, None, None),
+                ],
+            ),
+            // ...and past more blocks than a state read looks back through.
+            (
+                "occur-after-many-blocks",
+                (1..=70)
+                    .map(|i| block(json!("x"), 100 + i * 10, 5))
+                    .chain(std::iter::once((Verb::Point, None, 805, None, None)))
+                    .collect(),
+            ),
+            // da-795cy review: occur dots stored after a window (with the
+            // MOMENT every occur carries) are not blocks, so they must not
+            // fill the look-ahead and push out the block spanning it.
+            (
+                "dots-before-a-spanning-block",
+                std::iter::once(sw("a", 100))
+                    .chain(std::iter::once(block(json!("x"), 600, 450)))
+                    .chain((1..=12).map(|i| (Verb::Point, None, 300 + i * 10, Some(0), None)))
+                    .collect(),
+            ),
             // More dots than a state read looks back through: they never
             // decide a state, so they must not push the switch out of reach.
             (
@@ -957,7 +984,11 @@ mod tests {
                     state.clone(),
                     None,
                     Some(at(*end)),
-                    secs.map(|s| crate::dur::Dur::of(chrono::Duration::seconds(s))),
+                    secs.map(|s| match (verb, s) {
+                        // What `occur` stores: a point is a MOMENT.
+                        (Verb::Point, 0) => crate::dur::Dur::moment(),
+                        _ => crate::dur::Dur::of(chrono::Duration::seconds(s)),
+                    }),
                     "d1",
                 );
                 e.following_state = following.clone();
@@ -969,6 +1000,22 @@ mod tests {
                 for probe in [-1, 0, 1].map(|us| edge + chrono::Duration::microseconds(us)) {
                     let sql = db.state_at(field, probe).unwrap().filter(|v| !v.is_null());
                     assert_eq!(cache.at(probe, None), sql, "{field} at {probe}");
+                    // da-795cy: the timelines load only their window, and
+                    // read the same changes from it.
+                    let window = crate::state::FieldStateRows::load_between(
+                        &db.conn,
+                        field,
+                        probe,
+                        probe + chrono::Duration::seconds(150),
+                    )
+                    .unwrap();
+                    let changes = |rows: &crate::state::FieldStateRows| {
+                        rows.changes_between(probe, probe + chrono::Duration::seconds(150))
+                            .iter()
+                            .map(|c| (c.at, c.state.clone(), c.row.id.clone()))
+                            .collect::<Vec<_>>()
+                    };
+                    assert_eq!(changes(&window), changes(&cache), "{field} from {probe}");
                 }
             }
         }

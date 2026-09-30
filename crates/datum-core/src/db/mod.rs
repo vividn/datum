@@ -82,7 +82,7 @@ pub(crate) use insert::try_insert;
 pub(crate) use spec::{new_spec_entry, NOT_META_FIELD_SQL};
 // The state-row column reader, shared by the SQL window behind `state_at`
 // and the per-field cache in `crate::state` (da-u5l1o).
-pub(crate) use state::{decode_state_row, read_state_columns};
+pub(crate) use state::{decode_state_row, read_state_columns, StateColumns};
 
 // Canonical state-participation predicate + ordering (da-ylet), shared by
 // every state oracle inside and outside the db module (`crate::state`,

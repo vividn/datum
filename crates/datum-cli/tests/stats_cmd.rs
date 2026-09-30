@@ -286,6 +286,36 @@ fn stats_resumes_to_nothing_when_a_block_interrupted_nothing() {
     assert_eq!(r.total_duration_seconds, 12 * 60, "just the block");
 }
 
+/// da-795cy: stats times the state the one oracle reads, so a switch
+/// logged inside a block-switch's span holds from its own instant to the
+/// block's trailing edge, where `following_state` takes over — `now`'s
+/// answer. The rollup's own walk ordered rows by their stored instant and
+/// gave the switch no time at all.
+#[test]
+fn stats_times_a_switch_inside_a_block_switch_as_now_reads_it() {
+    let _g = freeze_time("2026-06-15T11:00:00Z");
+    let db = fresh_db();
+    let mut sit = entry_builder("posture")
+        .verb(Verb::BlockSwitch)
+        .state(json!("sit"))
+        .time_start_utc(at("2026-06-15T10:40:00Z"))
+        .build();
+    // Twenty minutes of sitting up to 10:40 (da-zwct), then vertical.
+    sit.dur = Some(datum_core::dur::Dur::of(chrono::Duration::minutes(20)));
+    sit.following_state = Some(json!("vertical"));
+    db.insert_entry(&sit).unwrap();
+    entry_builder("posture")
+        .verb(Verb::Switch)
+        .state(json!("stand"))
+        .time_start_utc(at("2026-06-15T10:30:00Z"))
+        .insert(&db);
+
+    let r = compute_stats(&selector("posture"), &db).unwrap();
+    assert_eq!(dur(&r, "sit"), 10 * 60, "10:20 until the stand");
+    assert_eq!(dur(&r, "stand"), 10 * 60, "10:30 until the trailing edge");
+    assert_eq!(dur(&r, "vertical"), 20 * 60, "10:40 until now");
+}
+
 #[test]
 fn stats_stored_dur_block_does_not_gap_fill() {
     // A discrete block with a stored `dur` is measured by that span; the gap
@@ -1057,6 +1087,9 @@ fn an_occur_field_shows_how_often_and_no_time() {
     );
     // No time anywhere: not the gaps between the coffees, not a share.
     assert!(!text.contains('%') && !text.contains("tracked"), "{text}");
+    // da-795cy: the first occur makes the field TRACKED, which holds time
+    // and no entry; a how-often listing names only what was logged.
+    assert!(!text.contains("TRACKED"), "{text}");
     assert!(
         !text.split_whitespace().any(|w| w.ends_with(['h', 'm', 's'])
             && w.chars().all(|c| c.is_ascii_digit() || "hms".contains(c))),

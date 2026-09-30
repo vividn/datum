@@ -23,11 +23,11 @@ use datum_core::db::Db;
 use datum_core::entry::Entry;
 use datum_core::field_spec::FieldSpec;
 use datum_core::shape::{
-    dot_fg_uses_state, is_block_verb, is_switching_verb, is_unrendered_switch_value,
-    opens_secondary_switch_region, render_shape, RenderShape,
+    dot_fg_uses_state, is_block_verb, is_unrendered_switch_value, render_shape, RenderShape,
 };
+use datum_core::state::FieldStateRows;
 use datum_core::time::Zone;
-use datum_layout::dayview::{compute_dayview, DayviewBlock, DayviewFieldInput, Orientation};
+use datum_layout::dayview::{compute_dayview, DayviewFieldInput, Orientation};
 use datum_layout::nowview::{
     nowview_config, NowviewBlock, NowviewCurrentState, NowviewField, NowviewGeometry, NowviewPoint,
 };
@@ -42,8 +42,8 @@ use serde_json::Value as JsonValue;
 use crate::args::{NowviewArgs, ShowFlag};
 use crate::commands::field_visuals::{
     block_span, canonical_verb, dot_glyph, dur_seconds, is_hole_state, leading_edge_ms,
-    occur_time_ms, occur_time_ms_opt, punch_holes, push_switch_region, render_field_visuals,
-    rgb_to_hex, state_label, switch_region_end_ms, title_marks,
+    occur_time_ms, punch_holes, render_field_visuals, rgb_to_hex, state_label, switch_regions,
+    title_marks, SwitchRegion,
 };
 use crate::render::colors::{field_rgb, md5_rgb, state_value_colors, state_value_rgb};
 use crate::render::term_layout;
@@ -495,16 +495,12 @@ pub(crate) fn build_dayview_fields(
         by_field.entry(field).or_default();
     }
 
-    // da-vmjh: one spec read and one state read for every field, not one
-    // per field. `leading_state_region` asks for the state at the SAME
-    // instant for all of them, so the batch answers every call.
+    // da-vmjh: one spec read for every field, not one per field. Each
+    // field's states are read over the window alone
+    // ([`FieldStateRows::load_between`]).
     let field_names: Vec<&str> = by_field.keys().map(String::as_str).collect();
     let specs = db.batch_load_specs(&field_names)?;
     let positions = super::render_helpers::field_positions(db, &specs, &field_names)?;
-    // da-6hg6v: the governing ROW, not just its state — the synthesized
-    // leading region is the open block of an entry BEFORE the window, and
-    // it names that entry like every other mark.
-    let leading_states = db.batch_governing_at(&field_names, fetch_start)?;
     drop(field_names);
 
     let mut out: Vec<DayviewFieldInput> = Vec::with_capacity(by_field.len());
@@ -519,40 +515,21 @@ pub(crate) fn build_dayview_fields(
             }
         }
         entries_for_field.sort_by_key(occur_time_ms);
-        let switch_region_ends = switch_region_end_ms(&entries_for_field, open_end_ms);
-
-        // da-ncoa: synthesize the leading region for a state set before
-        // the fetch window — no in-window entry opens it, so without this
-        // the band falls back to the field-default color.
-        let mut blocks: Vec<DayviewBlock> = Vec::new();
-        if let Some((start_ms, end_ms, state, id)) = leading_state_region(
-            leading_states.get(&field),
-            &entries_for_field,
-            fetch_start,
+        // da-ncoa: a state set before the fetch window is carried in from
+        // `fetch_start`, so the band does not fall back to the field color.
+        let regions = switch_regions(
+            &FieldStateRows::load_between(db.conn(), &field, fetch_start, end)?,
+            (fetch_start, end),
             open_end_ms,
-        ) {
-            push_switch_region(
-                &mut blocks,
-                Some(&state),
-                id.as_deref(),
-                start_ms,
-                end_ms,
-                &field,
-                spec.as_ref(),
-                day_start_ms,
-                day_end_ms,
-            );
-        }
-
-        let (entry_blocks, mut points) = render_field_visuals(
+        );
+        let (mut blocks, mut points) = render_field_visuals(
             &entries_for_field,
+            &regions,
             &field,
             spec.as_ref(),
             day_start_ms,
             day_end_ms,
-            &switch_region_ends,
         );
-        blocks.extend(entry_blocks);
         title_marks(
             &field,
             &mut blocks,
@@ -617,8 +594,8 @@ pub(crate) fn build_fields(
         by_field.entry(e.field.clone()).or_default().push(e);
     }
 
-    // da-vmjh: the names alone, and one spec + state read for all of
-    // them — see `build_dayview_fields`.
+    // da-vmjh: the names alone, and one spec read for all of them — see
+    // `build_dayview_fields`.
     let mut all_fields: Vec<String> = by_field.keys().cloned().collect();
     for field in db.distinct_fields()? {
         if !all_fields.iter().any(|f| f == &field) {
@@ -628,7 +605,6 @@ pub(crate) fn build_fields(
     let field_names: Vec<&str> = all_fields.iter().map(String::as_str).collect();
     let specs = db.batch_load_specs(&field_names)?;
     let positions = super::render_helpers::field_positions(db, &specs, &field_names)?;
-    let leading_states = db.batch_governing_at(&field_names, window_start)?;
 
     let mut out: Vec<NowviewField> = Vec::with_capacity(all_fields.len());
     for field in &all_fields {
@@ -650,39 +626,18 @@ pub(crate) fn build_fields(
         // apart, so an open region's end lands one millisecond past the
         // window: invisible in the drawing at any width, decisive there.
         let open_end_ms = day_end_ms + 1;
-        let switch_region_ends = switch_region_end_ms(&entries_for_field, open_end_ms);
-
-        // da-ncoa: synthesize the leading region for a state set before
-        // the fetch window. Without it the renderer paints the field-
-        // default color across the band, or — for `datum now`'s
-        // include_empty=false path — omits the field entirely while the
-        // state list above still shows it.
-        let mut blocks: Vec<NowviewBlock> = Vec::new();
-        // The terminal band draws no identity, so the governing entry
-        // the oracle names goes unused here.
-        if let Some((start_ms, end_ms, state, _)) = leading_state_region(
-            leading_states.get(field),
-            &entries_for_field,
-            window_start,
+        // da-ncoa: a state set before the fetch window is carried in from
+        // `window_start`. Without it the renderer paints the field-default
+        // color across the band, or — for `datum now`'s include_empty=false
+        // path — omits the field entirely while the state list above
+        // still shows it.
+        let regions = switch_regions(
+            &FieldStateRows::load_between(db.conn(), field, window_start, end)?,
+            (window_start, end),
             open_end_ms,
-        ) {
-            push_switch_region_terminal(
-                &mut blocks,
-                Some(&state),
-                start_ms,
-                end_ms,
-                field,
-                spec.as_ref(),
-            );
-        }
-
-        let (entry_blocks, points) = render_field_visuals_terminal(
-            &entries_for_field,
-            field,
-            spec.as_ref(),
-            &switch_region_ends,
         );
-        blocks.extend(entry_blocks);
+        let (blocks, points) =
+            render_field_visuals_terminal(&entries_for_field, &regions, field, spec.as_ref());
 
         if !include_empty && blocks.is_empty() && points.is_empty() {
             continue;
@@ -769,56 +724,33 @@ fn build_current_states(
     out
 }
 
-/// Leading-state synthesis (da-ncoa): the entry fetch only reaches back to
-/// `window_start`, so a state set BEFORE that instant has no in-window
-/// switching entry to open its region. The caller passes the state and
-/// the entry that set it, as [`Db::batch_governing_at`] resolved them at
-/// `window_start` — the same oracle that drives the SVG state panel —
-/// and this returns the region the missing entry would have opened:
-/// `[window_start, first in-window switching entry or fallback_end_ms]`,
-/// named with that entry's hid (da-6hg6v). `entries` must be sorted by
-/// occur_time ascending.
-///
-/// Returns `None` when an in-window switching entry already covers
-/// `window_start` or the field has no prior state-bearing entry. A state
-/// that doesn't render (null / false / IGNORED) is still returned — the
-/// push helpers' existing [`is_unrendered_switch_value`] gate drops it.
-pub(super) fn leading_state_region(
-    state_at_window_start: Option<&(JsonValue, Option<String>)>,
-    entries: &[Entry],
-    window_start: DateTime<Utc>,
-    fallback_end_ms: i64,
-) -> Option<(i64, i64, JsonValue, Option<String>)> {
-    let window_start_ms = window_start.timestamp_millis();
-    let lead_end_ms = entries
-        .iter()
-        .filter(|e| is_switching_verb(canonical_verb(e)))
-        .find_map(occur_time_ms_opt)
-        .unwrap_or(fallback_end_ms);
-    if lead_end_ms <= window_start_ms {
-        return None;
-    }
-    state_at_window_start
-        .map(|(state, id)| (window_start_ms, lead_end_ms, state.clone(), id.clone()))
-}
-
 /// Verb-driven render targeting the terminal-band [`NowviewField`] shape
 /// (used by `datum now`). Color resolution mirrors the dayview path; the
 /// shape is simpler because the terminal renderer doesn't carry block
 /// fills as patterns.
 fn render_field_visuals_terminal(
     entries: &[Entry],
+    regions: &[SwitchRegion],
     field: &str,
     spec: Option<&FieldSpec>,
-    switch_region_ends: &[i64],
 ) -> (Vec<NowviewBlock>, Vec<NowviewPoint>) {
     let mut blocks: Vec<NowviewBlock> = Vec::new();
+    for r in regions {
+        push_switch_region_terminal(
+            &mut blocks,
+            Some(&r.state),
+            r.start_ms,
+            r.end_ms,
+            field,
+            spec,
+        );
+    }
     let mut points: Vec<NowviewPoint> = Vec::new();
     // da-6gvw: the spans the field was explicitly OFF for, subtracted at
     // the end — the same holes the dayview walk punches.
     let mut holes: Vec<(i64, i64)> = Vec::new();
 
-    for (idx, entry) in entries.iter().enumerate() {
+    for entry in entries {
         let Some(occur_dt) = entry.occur_time.as_ref() else {
             continue;
         };
@@ -840,16 +772,8 @@ fn render_field_visuals_terminal(
                     push_block_terminal(&mut blocks, entry, occur_ms, field, spec);
                 }
             }
-            RenderShape::Region => {
-                push_switch_region_terminal(
-                    &mut blocks,
-                    entry.state.as_ref(),
-                    occur_ms,
-                    switch_region_ends[idx],
-                    field,
-                    spec,
-                );
-            }
+            // A switch's region is one of `regions`.
+            RenderShape::Region => {}
             RenderShape::Dot => {
                 let fg = if dot_fg_uses_state(verb) {
                     entry
@@ -872,19 +796,6 @@ fn render_field_visuals_terminal(
                     glyph: dot_glyph(entry, spec),
                 });
             }
-        }
-        if opens_secondary_switch_region(verb) {
-            // da-zwct: the row's trailing edge IS `occur_ms` — a block's
-            // duration runs up to its stored instant, and a point-switch
-            // spans nothing.
-            push_switch_region_terminal(
-                &mut blocks,
-                entry.following_state.as_ref(),
-                occur_ms,
-                switch_region_ends[idx],
-                field,
-                spec,
-            );
         }
     }
     (
@@ -978,7 +889,7 @@ pub(crate) fn format_local_hh_mm(t: DateTime<Utc>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::field_visuals::stub_entry;
+    use crate::commands::field_visuals::{stub_entry, stub_regions};
     use datum_core::action::Action;
     use datum_core::entry::Verb;
 
@@ -1236,8 +1147,8 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 27, 13, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let ends = switch_region_end_ms(&entries, now_ms);
-        let (blocks, points) = render_field_visuals_terminal(&entries, "lunch", None, &ends);
+        let regions = stub_regions(&entries, now_ms);
+        let (blocks, points) = render_field_visuals_terminal(&entries, &regions, "lunch", None);
         assert!(points.is_empty());
         assert_eq!(blocks.len(), 1);
         assert_eq!(
@@ -1290,10 +1201,11 @@ mod tests {
                 None,
             ),
         ];
-        let ends = switch_region_end_ms(&entries, day_end);
-        let (terminal, points) = render_field_visuals_terminal(&entries, "work", None, &ends);
+        let regions = stub_regions(&entries, day_end);
+        let (terminal, points) = render_field_visuals_terminal(&entries, &regions, "work", None);
         assert!(points.is_empty());
-        let (dayview, _) = render_field_visuals(&entries, "work", None, day_start, day_end, &ends);
+        let (dayview, _) =
+            render_field_visuals(&entries, &regions, "work", None, day_start, day_end);
 
         let terminal_spans: Vec<(i64, i64)> =
             terminal.iter().map(|b| (b.start_ms, b.end_ms)).collect();
@@ -1329,8 +1241,8 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 27, 12, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let ends = switch_region_end_ms(&entries, now_ms);
-        let (blocks, points) = render_field_visuals_terminal(&entries, "task", None, &ends);
+        let regions = stub_regions(&entries, now_ms);
+        let (blocks, points) = render_field_visuals_terminal(&entries, &regions, "task", None);
         assert_eq!(points.len(), 1);
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].start_ms, occur.timestamp_millis());
