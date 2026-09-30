@@ -660,8 +660,34 @@ impl FieldStateRows {
         from: DateTime<Utc>,
         until: DateTime<Utc>,
     ) -> Result<Self> {
+        Self::load_rows_between(conn, field, from, until, false)
+    }
+
+    /// [`Self::load_between`] over the field's TRANSITIONS only, as
+    /// [`Self::load_transitions`] is [`Self::load`]'s.
+    pub fn load_transitions_between(
+        conn: &Connection,
+        field: &str,
+        from: DateTime<Utc>,
+        until: DateTime<Utc>,
+    ) -> Result<Self> {
+        Self::load_rows_between(conn, field, from, until, true)
+    }
+
+    fn load_rows_between(
+        conn: &Connection,
+        field: &str,
+        from: DateTime<Utc>,
+        until: DateTime<Utc>,
+        transitions_only: bool,
+    ) -> Result<Self> {
+        let declarations = match transitions_only {
+            true => format!("AND {}", crate::track::NOT_A_DECLARATION_SQL),
+            false => String::new(),
+        };
         let read = |and: &str, order: &str, bounds: &[&str]| -> Result<Vec<StateRow>> {
-            let mut stmt = conn.prepare_cached(&Self::select(and, order))?;
+            let and = format!("{declarations} {and}");
+            let mut stmt = conn.prepare_cached(&Self::select(&and, order))?;
             let params = std::iter::once(field).chain(bounds.iter().copied());
             let rows = stmt
                 .query_map(
@@ -792,6 +818,16 @@ impl FieldStateRows {
             }
             None => (window, eff),
         }
+    }
+
+    /// Does a row say Null — no state, or `null`? Only such a row can
+    /// DECIDE a Null ([`effective_state`]); without one, every Null these
+    /// rows resolve to is one no row decides (an occur dot never does).
+    pub fn says_null(&self) -> bool {
+        let null = |v: &Option<Value>| v.as_ref().is_none_or(Value::is_null);
+        self.rows
+            .iter()
+            .any(|r| null(&r.state) || r.following_state.as_ref().is_some_and(Value::is_null))
     }
 
     /// Every change in the field's state, oldest first: the oracle read at

@@ -26,7 +26,7 @@ use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, Utc, Weekday};
 use datum_core::db::{Db, ListParams, TimeMetric};
 use datum_core::shape::{is_inactive_state, is_off_state};
-use datum_core::state::FieldStateRows;
+use datum_core::state::{FieldStateRows, StateChange};
 use datum_core::time::DatumTime;
 use datum_parse::input::TimeArgs;
 use datum_parse::time::{resolve_timezone, Zone, ZoneTimeline};
@@ -289,11 +289,18 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
     };
 
     let (start, end, zones) = resolve_window(args, db)?;
-    let timeline = load_timeline(&field, db)?;
-    let mut r = rollup(&field, selected_state.clone(), args, &timeline, start, end);
     // Every period is read as of the window's end, in the window's zones.
     let anchor = end.min(DatumTime::now().utc);
-    for (name, (s, e)) in named_periods(anchor, resolve_week_start()?, &zones)? {
+    let periods = named_periods(anchor, resolve_week_start()?, &zones)?;
+    // One read covers the window and every period.
+    let from = start.map(|s| periods.iter().map(|(_, (p, _))| *p).fold(s, DateTime::min));
+    let until = periods
+        .iter()
+        .map(|(_, (_, e))| *e)
+        .fold(end, DateTime::max);
+    let timeline = load_timeline(&field, db, from, until)?;
+    let mut r = rollup(&field, selected_state.clone(), args, &timeline, start, end);
+    for (name, (s, e)) in periods {
         let p = rollup(&field, selected_state.clone(), args, &timeline, Some(s), e);
         let (count, duration_seconds) = p.subject();
         r.periods.push(Period {
@@ -326,11 +333,19 @@ fn field_stats(
     start: Option<DateTime<Utc>>,
     end: DateTime<Utc>,
 ) -> Result<StatsResult> {
-    let timeline = load_timeline(field, db)?;
+    let timeline = load_timeline(field, db, start, end)?;
     Ok(rollup(field, selected_state, args, &timeline, start, end))
 }
 
-fn load_timeline(field: &str, db: &Db) -> Result<Timeline> {
+/// The field's timeline for rollups within `[from, until)`: its whole
+/// history when `from` is unbounded, otherwise only the rows that decide
+/// the spans there (da-307e0).
+fn load_timeline(
+    field: &str,
+    db: &Db,
+    from: Option<DateTime<Utc>>,
+    until: DateTime<Utc>,
+) -> Result<Timeline> {
     // Oldest→newest, time-bearing state rows only. `TimeMetric::Occur` drops
     // TRACK documents too (da-c8mh): declaring a field is not an
     // observation of it.
@@ -355,18 +370,47 @@ fn load_timeline(field: &str, db: &Db) -> Result<Timeline> {
             })
         })
         .collect();
-    let spans = FieldStateRows::load_transitions(db.conn(), field)?
-        .changes()
-        .into_iter()
-        .map(|c| StateSpan {
-            // A block that interrupted nothing hands back no state: the
-            // stretch after it is left unattributed (da-phoe).
-            state: c.governing.and(state_label(Some(&c.state))),
-            class: classify(Some(&c.state)),
-            from: c.at,
-        })
-        .collect();
+    let spans = state_spans(field, db, from, until)?;
     Ok(Timeline { rows, spans })
+}
+
+/// The field's state spans for rollups within `[from, until)`.
+fn state_spans(
+    field: &str,
+    db: &Db,
+    from: Option<DateTime<Utc>>,
+    until: DateTime<Utc>,
+) -> Result<Vec<StateSpan>> {
+    let span = |c: StateChange| StateSpan {
+        // A block that interrupted nothing hands back no state: the
+        // stretch after it is left unattributed (da-phoe).
+        state: c.governing.and(state_label(Some(&c.state))),
+        class: classify(Some(&c.state)),
+        from: c.at,
+    };
+    if let Some(from) = from {
+        // The last span runs to the next change, or to `now` when there
+        // is none: past `now`, the next change can be any later one.
+        let until = match until > DatumTime::now().utc {
+            true => DateTime::<Utc>::from_timestamp(253_402_300_799, 0).expect("9999-12-31"),
+            false => until,
+        };
+        let window = FieldStateRows::load_transitions_between(db.conn(), field, from, until)?;
+        let changes = window.changes_between(from, until);
+        // A Null at `from` that a row may decide is the one state the
+        // window cannot label: the whole history's walk keeps a Null run
+        // as one change whether a row decides it or none does, so the
+        // run's label is set where it began, which the window need not
+        // reach.
+        let null = changes
+            .first()
+            .is_none_or(|c| c.at != from || c.state.is_null());
+        if !(null && window.says_null()) {
+            return Ok(changes.into_iter().map(span).collect());
+        }
+    }
+    let history = FieldStateRows::load_transitions(db.conn(), field)?;
+    Ok(history.changes().into_iter().map(span).collect())
 }
 
 /// The rollup of an already-loaded timeline over `[start, end)`.
@@ -1529,5 +1573,180 @@ mod tests {
         // null, not left out: the widget reads the key either way.
         assert_eq!(json.get("earliest"), Some(&JsonValue::Null));
         assert_eq!(json.get("latest"), Some(&JsonValue::Null));
+    }
+
+    /// da-307e0: a bounded window reads only the rows that decide its
+    /// spans, and every rollup inside it is the whole history's, at every
+    /// edge of every history and a second either side of it — with the
+    /// window ending before `now` and after it, and a row in the future.
+    #[test]
+    fn a_windowed_timeline_rolls_up_as_the_whole_history_does() {
+        use datum_core::action::Action;
+        use datum_core::dur::Dur;
+        use datum_core::entry::{Entry, Verb};
+        use datum_parse::time::clock::{install, uninstall, MockClock};
+        use serde_json::json;
+        use std::sync::Arc;
+
+        let base = utc("2026-01-01T00:00:00Z");
+        let at = |min: i64| DatumTime {
+            utc: base + Duration::minutes(min),
+            offset_minutes: 0,
+            timezone: Some("UTC".into()),
+            uncertainty: None,
+        };
+        let now = 1000;
+        install(Arc::new(MockClock::new(at(now))));
+        // (verb, state, occur minute, dur minutes, following_state)
+        type Row = (Verb, Option<JsonValue>, i64, Option<i64>, Option<JsonValue>);
+        let sw = |s: JsonValue, t: i64| -> Row { (Verb::Switch, Some(s), t, None, None) };
+        let block =
+            |s: Option<JsonValue>, t: i64, d: i64| -> Row { (Verb::Block, s, t, Some(d), None) };
+        let dot = |t: i64| -> Row { (Verb::Point, None, t, None, None) };
+        let histories: Vec<(&str, Vec<Row>)> = vec![
+            (
+                "switch",
+                vec![
+                    sw(json!("a"), 100),
+                    sw(json!("b"), 400),
+                    sw(json!("a"), 700),
+                ],
+            ),
+            (
+                "start-stop",
+                vec![
+                    sw(json!(true), 100),
+                    sw(json!(false), 300),
+                    block(Some(json!(true)), 600, 60),
+                ],
+            ),
+            (
+                "interrupted",
+                vec![
+                    sw(json!("s1"), 100),
+                    block(Some(json!("x")), 500, 100),
+                    sw(json!("s2"), 800),
+                ],
+            ),
+            (
+                "compound",
+                vec![
+                    sw(json!("s1"), 100),
+                    (
+                        Verb::BlockSwitch,
+                        Some(json!("sit")),
+                        500,
+                        Some(100),
+                        Some(json!("up")),
+                    ),
+                ],
+            ),
+            (
+                "blocks-only",
+                vec![
+                    block(Some(json!("x")), 200, 30),
+                    block(Some(json!("x")), 500, 30),
+                    block(Some(json!("y")), 900, 30),
+                ],
+            ),
+            (
+                "stateless-blocks",
+                vec![block(None, 200, 30), block(None, 500, 30), dot(700)],
+            ),
+            (
+                "null-switch",
+                vec![
+                    block(Some(json!("x")), 200, 30),
+                    sw(JsonValue::Null, 400),
+                    sw(json!("a"), 600),
+                ],
+            ),
+            (
+                "ignored",
+                vec![
+                    sw(json!("IGNORED"), 100),
+                    dot(300),
+                    sw(json!("x"), 500),
+                    dot(600),
+                ],
+            ),
+            ("dots", vec![dot(100), dot(300), dot(900)]),
+            ("future", vec![sw(json!("a"), 100), sw(json!("b"), 1300)]),
+            (
+                "declared",
+                vec![
+                    block(Some(json!("x")), 200, 30),
+                    block(Some(json!("x")), 500, 30),
+                ],
+            ),
+            (
+                "deep",
+                (1..=80)
+                    .map(|i| block(Some(json!("x")), 100 + i * 10, 5))
+                    .chain([sw(json!("z"), 950)])
+                    .collect(),
+            ),
+        ];
+        let db = Db::open_in_memory().unwrap();
+        // A declaration is not a transition, so it must not decide a span.
+        let declared = datum_core::track::track_entry("declared", Action::Start, at(50), "d1");
+        db.insert_entry(&declared).unwrap();
+        for (field, rows) in &histories {
+            let mut edges = vec![now];
+            for (verb, state, t, d, following) in rows {
+                let dur = d.map(|d| Dur::of(Duration::minutes(d)));
+                let mut e = Entry::new(*field, *verb, state.clone(), None, Some(at(*t)), dur, "d1");
+                e.following_state = following.clone();
+                db.insert_entry(&e).unwrap();
+                edges.extend([*t, t - d.unwrap_or(0)]);
+            }
+            let whole = load_timeline(field, &db, None, base).unwrap();
+            let args = StatsArgs::default();
+            let secs = |min: i64| Duration::minutes(min);
+            edges.sort();
+            edges.dedup();
+            // Every edge of a short history; a sample of the long one's.
+            for edge in edges.iter().step_by(edges.len() / 24 + 1) {
+                for from in [-1, 0, 1].map(|s| base + secs(*edge) + Duration::seconds(s)) {
+                    for until in [
+                        from + secs(30),
+                        from + secs(400),
+                        at(now).utc,
+                        at(now + 1440).utc,
+                    ] {
+                        if until <= from {
+                            continue;
+                        }
+                        let window = load_timeline(field, &db, Some(from), until).unwrap();
+                        for start in [from, from + (until - from) / 2] {
+                            let roll =
+                                |t: &Timeline| rollup(field, None, &args, t, Some(start), until);
+                            assert_eq!(
+                                roll(&window),
+                                roll(&whole),
+                                "{field} over [{start}, {until})"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        // PR #369 review: a window inside a Null decided BEFORE it, with no
+        // row of its own. The deciding row is still read (the look-back),
+        // so the whole history answers there.
+        let (from, until) = (at(450).utc, at(480).utc);
+        let window =
+            FieldStateRows::load_transitions_between(db.conn(), "null-switch", from, until);
+        assert!(
+            window.unwrap().says_null(),
+            "the null switch before the window is read"
+        );
+        let args = StatsArgs::default();
+        let roll = |from| {
+            let t = load_timeline("null-switch", &db, from, until).unwrap();
+            rollup("null-switch", None, &args, &t, Some(at(450).utc), until)
+        };
+        assert_eq!(roll(Some(from)), roll(None), "null-switch inside its null");
+        uninstall();
     }
 }
