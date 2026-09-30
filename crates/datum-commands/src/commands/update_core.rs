@@ -18,7 +18,7 @@ use crate::{
     // da-5t94 rider: the remainder-bucket sentinel is shared with the log
     // path rather than re-declared here.
     commands::log_core::PRIMARY_VALUE_KEY,
-    render::{show_create, show_rename, show_update, OutputArgs},
+    render::{show_create, show_nodiff, show_rename, show_update, OutputArgs},
 };
 
 /// Command-level mutation strategy for `update` / `merge` / `rekey`.
@@ -61,6 +61,8 @@ impl UpdateStrategy {
 pub struct UpdateOutcome {
     pub entry: Entry,
     pub old_slug: Option<datum_core::ids::Slug>,
+    /// False when the mutation changed nothing: no write, and `NODIFF`.
+    pub changed: bool,
 }
 
 /// Inputs to [`update_with_strategy`]. Constructed by the verb wrappers
@@ -350,8 +352,11 @@ pub fn render_outcome(outcome: &UpdateOutcome, output: &OutputArgs, db: &Db) {
             show_rename(old, &outcome.entry.slug, output);
             show_create(&outcome.entry, registry.as_ref(), output);
         }
-        None => {
+        None if outcome.changed => {
             show_update(&outcome.entry, registry.as_ref(), output);
+        }
+        None => {
+            show_nodiff(&outcome.entry, registry.as_ref(), output);
         }
     }
 }
@@ -520,10 +525,37 @@ fn persist_with_auto_reinterp(
     // da-rcoi: strict-spec enforcement also runs on the update / merge /
     // rekey paths — a key renamed into an undeclared slot or merged in
     // from a payload would otherwise slip past the log-time check.
+    // A mutation that changes nothing writes nothing — no version, no op —
+    // and says NODIFF, as datum's updateDoc.ts did (`isEqual(oldData,
+    // updatedData)`, da-vf3c2). Compared field by field, not serialized:
+    // a stateless row's `None` and a null state both serialize as `null`.
+    let columns = |e: &Entry| {
+        (
+            e.field.clone(),
+            e.state.clone(),
+            e.dur.clone(),
+            e.following_state.clone(),
+            e.data.clone(),
+            e.occur_time.clone(),
+            e.id_structure.clone(),
+            e.field_structure.clone(),
+        )
+    };
+    if columns(&existing) == columns(&updated) {
+        return Ok(UpdateOutcome {
+            entry: existing,
+            old_slug: None,
+            changed: false,
+        });
+    }
     crate::commands::helpers::enforce_strict_extra_data(&updated, db)?;
     let (entry, old_slug) =
         db.save_existing_entry_with_auto_reinterp(&existing.slug, updated, slug_delimiter)?;
-    Ok(UpdateOutcome { entry, old_slug })
+    Ok(UpdateOutcome {
+        entry,
+        old_slug,
+        changed: true,
+    })
 }
 
 fn combine_extra(
@@ -717,8 +749,12 @@ pub(crate) fn parse_update_payload(args: &UpdateArgs) -> Result<UpdatePayload> {
         .chain(args.keys.iter())
     {
         if let Some((k, v)) = token.split_once('=') {
+            // A key still in the payload was given a value after all — a
+            // positional filling a `-k KEY=` slot, or a later `KEY=v`.
             if v.is_empty() && !k.is_empty() {
-                datum_data.insert(k.to_string(), JsonValue::String(String::new()));
+                datum_data
+                    .entry(k.to_string())
+                    .or_insert_with(|| JsonValue::String(String::new()));
             }
         }
     }

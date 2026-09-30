@@ -116,6 +116,7 @@ mod track_cmd;
 mod track_declaration;
 mod unit_removed;
 mod untimed_field_is_tracked;
+mod update_cmd;
 mod update_refield_cmd;
 mod version;
 mod view_cmd;

@@ -218,7 +218,15 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
     let (entry, old_slug) =
         db.save_existing_entry_with_auto_reinterp(&existing.slug, updated, &delim)?;
 
-    render_outcome(&UpdateOutcome { entry, old_slug }, &args.output()?, db);
+    render_outcome(
+        &UpdateOutcome {
+            entry,
+            old_slug,
+            changed: true,
+        },
+        &args.output()?,
+        db,
+    );
     Ok(())
 }
 
