@@ -191,6 +191,25 @@ pub(super) fn down_49_to_48_sync_pause(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// da-u81u1: `sync_caught_up`, as `schema.sql` creates it.
+pub(super) fn m49_to_50_sync_caught_up(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS sync_caught_up (
+             endpoint TEXT NOT NULL,
+             fields   TEXT NOT NULL,
+             seq      INTEGER NOT NULL,
+             PRIMARY KEY (endpoint, fields)
+         );",
+    )?;
+    Ok(())
+}
+
+/// Reverse v49→v50.
+pub(super) fn down_50_to_49_sync_caught_up(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DROP TABLE IF EXISTS sync_caught_up;")?;
+    Ok(())
+}
+
 /// The v45 table exactly as `schema.sql` creates it.
 const SYNC_NOTICES_SQL: &str = "
 CREATE TABLE IF NOT EXISTS sync_notices (

@@ -538,3 +538,40 @@ fn a_redeemer_describes_itself_and_every_session_is_recorded_for_status() {
         "{why} / {failed}"
     );
 }
+
+/// A filtered reader over iroh (da-u81u1): the member serving it knows who
+/// it is and sends its fields alone — more than one apply chunk of them —
+/// the verify over that set agrees, and a widened filter brings the rest
+/// on the next session, in step again.
+#[test]
+fn a_filtered_reader_over_the_link_gets_its_fields_and_verifies() {
+    let (a, r) = (Copy::new(), Copy::new());
+    for m in 1..=70 {
+        a.ok(&["occur", "coffee", "-t", &format!("-{m}")]);
+    }
+    a.ok(&["occur", "tea", "-t", "-100"]);
+    let (mut inviting, ticket) = a.invite(&["--fields", "coffee"]);
+    let joined = r.ok(&["sync", "chain", "connect", &ticket]);
+    assert!(joined.contains("verify ok"), "{joined}");
+    assert!(inviting.finish().0);
+    assert_eq!(
+        r.query("SELECT COUNT(*) FROM entries WHERE field = 'coffee'"),
+        "70"
+    );
+    assert!(!r.has("tea"));
+
+    let who = r.id()[..10].to_string();
+    a.ok(&[
+        "sync",
+        "chain",
+        "role",
+        &who,
+        "reader",
+        "--fields",
+        "coffee,tea",
+    ]);
+    let _a_runs = a.serve(&["sync", "run"]);
+    let now = r.ok(&["sync"]);
+    assert!(now.contains("verify ok"), "{now}");
+    assert!(r.has("tea"));
+}

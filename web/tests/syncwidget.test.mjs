@@ -231,6 +231,29 @@ describe('the sync widget', () => {
 		);
 	});
 
+	test('a filtered reader carries the filter too, its title says how many fields, and the legend names it', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				const run = inPage(app, 'home');
+				const id = endpointId();
+				await run(['occur', 'tea']);
+				const invite = ['sync', 'new-invite', '--fields', 'coffee', '--expires', '1d'];
+				const { secret } = JSON.parse(await run(invite));
+				await run(['sync', 'handshake', id, '--label', 'kindle', '--addr', '{}', '--invite', secret, '--chain', '']);
+				await app.goto('/sync');
+				const reader = cell(page, id, 'home');
+				await reader.waitFor();
+				assert.equal(await reader.locator('.reader').innerText(), '🔒︎');
+				assert.equal(await reader.locator('.filter').innerText(), '⛛');
+				assert.match(await reader.getAttribute('title'), /, read-only, filtered: 1 of 2 fields\b/);
+				assert.equal(await cell(page, 'this', 'home').locator('.filter').count(), 0);
+				assert.match(await page.locator(`${WIDGET} .legend .filter`).innerText(), /^⛛\s*partial$/);
+			},
+			{ viewport: { width: 1280, height: 800 } }
+		);
+	});
+
 	test('is compact at its legible floor and full above it', async () => {
 		await withApp(async (app) => {
 			const { page } = app;

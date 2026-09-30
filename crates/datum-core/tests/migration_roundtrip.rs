@@ -196,6 +196,7 @@ fn every_pair_has_a_roundtrip_test() {
         (46, 47),
         (47, 48),
         (48, 49),
+        (49, 50),
     ];
     assert_eq!(
         covered.len(),
@@ -2781,6 +2782,27 @@ fn roundtrip_v48_to_v49_sync_pause() {
         .query_row("SELECT endpoint_secret FROM sync_local", [], |r| r.get(0))
         .unwrap();
     assert_eq!(key, "s", "the key stays");
+}
+
+#[test]
+fn roundtrip_v49_to_v50_sync_caught_up() {
+    let db = fresh_at(49);
+    let conn = db.conn();
+    apply_one_up(conn, 49);
+    conn.execute(
+        "INSERT INTO sync_caught_up (endpoint, fields, seq) VALUES ('e', '[\"coffee\"]', 3)",
+        [],
+    )
+    .unwrap();
+    apply_one_down(conn, 50);
+    let left: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name = 'sync_caught_up'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(left, 0);
 }
 
 fn field_occurtime_sql(conn: &Connection) -> String {

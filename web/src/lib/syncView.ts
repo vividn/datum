@@ -28,12 +28,22 @@ export interface Member {
 	revoked: boolean;
 	/** A reader (da-9yvb6): it receives, and writes nothing. */
 	reader?: boolean;
+	/** A filtered reader's fields, and how many the database had (da-u81u1). */
+	filter?: Filter | null;
 	state: 'synced' | 'pending' | 'never' | 'error';
 	to_send: number;
 	last_seen?: string | null;
 	error?: string | null;
 	error_at?: string | null;
 }
+
+export interface Filter {
+	fields: string[];
+	of: number;
+}
+
+/** «filtered: 5 of 23 fields», as the CLI says it. */
+export const filtered = (f: Filter): string => `filtered: ${f.fields.length} of ${f.of} fields`;
 
 export interface Admin {
 	key: string;
@@ -52,7 +62,7 @@ export interface Notice {
 export interface DbSync {
 	db: string;
 	chain: string | null;
-	this?: { endpoint: string; client: string; label: string; reader?: boolean };
+	this?: { endpoint: string; client: string; label: string; reader?: boolean; filter?: Filter | null };
 	members: Member[];
 	admins?: Admin[];
 	/** When this copy's sync was paused, while it is. */
@@ -91,6 +101,8 @@ export interface Cell {
 	error?: string;
 	/** That copy is a reader: drawn with the lock. */
 	reader?: boolean;
+	/** A filtered reader: drawn with the filter, so an empty field reads as «not shared». */
+	filter?: Filter;
 }
 
 export interface Row {
@@ -155,16 +167,18 @@ export function table(dbs: DbSync[], states: Record<string, SyncState>): Row[] {
 				mark,
 				stale: false,
 				at: mark === 'error' ? ms(m.error_at) : ms(m.last_seen),
-				title: m.reader ? `${title}, read-only` : title,
+				title: `${title}${m.reader ? ', read-only' : ''}${m.filter ? `, ${filtered(m.filter)}` : ''}`,
 				error: m.error ?? undefined,
-				reader: m.reader
+				reader: m.reader,
+				filter: m.filter ?? undefined
 			};
 		}
 		if (d.this) {
 			const marks = d.members.filter((m) => !m.revoked).map((m) => rows.get(m.client ?? m.endpoint)?.cells[d.db]?.mark);
 			const mark = WORST.find((w) => marks.includes(w)) ?? 'synced';
-			const title = `this copy: ${WORDS[mark]}${d.this.reader ? ', read-only' : ''}`;
-			here.cells[d.db] = { mark, stale: false, title, reader: d.this.reader };
+			const f = d.this.filter ?? undefined;
+			const title = `this copy: ${WORDS[mark]}${d.this.reader ? ', read-only' : ''}${f ? `, ${filtered(f)}` : ''}`;
+			here.cells[d.db] = { mark, stale: false, title, reader: d.this.reader, filter: f };
 		}
 	}
 	const all = [here, ...rows.values()];

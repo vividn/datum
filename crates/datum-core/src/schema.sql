@@ -344,6 +344,17 @@ CREATE TABLE IF NOT EXISTS sync_peers (
     last_error_at     TEXT
 );
 
+-- A filtered reader's marks (da-u81u1): a member that served it sent every
+-- op of `endpoint` up to `seq` that passes `fields` (a sorted JSON array).
+-- LOCAL, never synced. Its version vector is, per endpoint, the highest mark
+-- whose fields cover its filter now, so a widened filter is sent again.
+CREATE TABLE IF NOT EXISTS sync_caught_up (
+    endpoint TEXT NOT NULL,
+    fields   TEXT NOT NULL,
+    seq      INTEGER NOT NULL,
+    PRIMARY KEY (endpoint, fields)
+);
+
 -- The sync chain's members and admins this copy has heard of (da-odwc7):
 -- `announced` once the next command has printed «new sync endpoint», and
 -- `acked` once `datum sync chain ack` took it off `datum check`. `subject` is an

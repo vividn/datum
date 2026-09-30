@@ -14,7 +14,7 @@ use datum_core::db::chain::{self, Chain, Notice};
 use datum_core::db::Db;
 use serde_json::{json, Value};
 
-use crate::args::{ShowFlag, SyncAdminAct, SyncCommand};
+use crate::args::{ShowFlag, SyncAdminAct, SyncCommand, SyncFilter};
 use crate::commands::check::{Issue, Severity};
 
 const NO_CHAIN: &str = "this copy is in no sync chain: `datum sync chain invite` on this device starts one, or `datum sync chain connect <TICKET>` joins one with a ticket from another";
@@ -58,13 +58,17 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
         SyncCommand::Vector => {
             println!("{}", serde_json::to_string(&db.sync_vector()?)?);
         }
-        SyncCommand::Ops { since, overlap } => {
+        SyncCommand::Ops {
+            since,
+            overlap,
+            peer,
+        } => {
             let since: BTreeMap<String, i64> = match since {
                 Some(v) => serde_json::from_str(&v)
                     .with_context(|| format!("--since is not a version vector: {v}"))?,
                 None => BTreeMap::new(),
             };
-            for line in db.sync_ops_since(&since, overlap)? {
+            for line in db.sync_ops_since(&since, overlap, peer.as_deref())? {
                 println!("{line}");
             }
         }
@@ -99,8 +103,8 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                 "the new key is no member of this copy's sync chain: join it again with an invite"
             );
         }
-        SyncCommand::Verify { verbose } => {
-            let (hash, per_column) = db.sync_state_hash()?;
+        SyncCommand::Verify { verbose, peer } => {
+            let (hash, per_column) = db.sync_state_hash(peer.as_deref())?;
             println!("{hash}");
             if verbose {
                 for (column, hash) in per_column {
@@ -125,16 +129,36 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                         format!("revoked {who}"),
                     )
                 }
-                SyncAdminAct::Role { reader } => {
+                SyncAdminAct::Role { reader, filter } => {
                     let m = member(&chain, &who)?;
                     let role = if reader { "reader" } else { "member" };
+                    let filter = resolve(db, filter)?;
                     // Nothing to sign: in a locked chain, a passkey tap for nothing.
-                    let now = chain.member(&m).map(|m| m.role().as_str());
-                    ensure!(now != Some(role), "{who} is already a {role}");
-                    (
-                        json!({"type": "role", "endpoint": m, "role": role}),
-                        format!("{who} is a {role}"),
-                    )
+                    let now = chain
+                        .member(&m)
+                        .map(|m| (m.role().as_str(), m.filter.clone()));
+                    let was =
+                        |f: &chain::Filter| filter.as_ref().is_some_and(|g| g.fields == f.fields);
+                    ensure!(
+                        !now.as_ref().is_some_and(
+                            |(r, f)| *r == role && f.as_ref().map_or(filter.is_none(), was)
+                        ),
+                        "{who} is already a {role}{}",
+                        filter
+                            .as_ref()
+                            .map(|f| format!(" of those fields ({})", f.describe()))
+                            .unwrap_or_default()
+                    );
+                    let mut r = json!({"type": "role", "endpoint": m, "role": role});
+                    let said = match &filter {
+                        Some(f) => {
+                            r["fields"] = json!(f.fields);
+                            r["of"] = f.of.into();
+                            format!("{who} is a reader, {}", f.describe())
+                        }
+                        None => format!("{who} is a {role}"),
+                    };
+                    (r, said)
                 }
                 SyncAdminAct::AddAdmin => {
                     let (key, l) = match who.trim_start().starts_with('{') {
@@ -241,11 +265,13 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
         }
         SyncCommand::NewInvite {
             reader,
+            filter,
             expires_secs,
             admin_key,
         } => {
             let expires = std::time::Duration::from_secs(expires_secs);
-            invite(db, expires, admin_key.as_deref(), reader, true)?;
+            let caps = caps(db, reader, filter)?;
+            invite(db, expires, admin_key.as_deref(), caps, true)?;
         }
         SyncCommand::Approve { link } => {
             let chain = db.sync_chain()?;
@@ -271,13 +297,18 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
         #[cfg(feature = "net")]
         SyncCommand::Invite {
             reader,
+            filter,
             qr,
             expires_secs,
             admin_key,
         } => {
             let expires = std::time::Duration::from_secs(expires_secs);
             let starts = !db.sync_chain()?.exists();
-            let (secret, expires_at) = invite(db, expires, admin_key.as_deref(), reader, false)?;
+            let caps = caps(db, reader, filter)?;
+            if let Some(f) = caps.get("fields") {
+                eprintln!("the redeemer is a reader sent only {f}, each with its spec");
+            }
+            let (secret, expires_at) = invite(db, expires, admin_key.as_deref(), caps, false)?;
             if starts {
                 super::sync_daemon::auto_install();
             }
@@ -330,17 +361,53 @@ fn summary(db: &Db) -> Result<Option<String>> {
         .then(|| format!("{} · `datum sync status` for more", states.join(" · "))))
 }
 
+/// A reader's filter as the chain records it (da-u81u1): its fields — a
+/// kit's, those it holds specs for here — and how many fields the database
+/// has, those named included.
+fn resolve(db: &Db, filter: Option<SyncFilter>) -> Result<Option<chain::Filter>> {
+    let fields: std::collections::BTreeSet<String> = match filter {
+        None => return Ok(None),
+        Some(SyncFilter::Fields(f)) => f.into_iter().collect(),
+        Some(SyncFilter::Kit(k)) => {
+            let specs = db.load_specs_by_kit(&k)?;
+            ensure!(!specs.is_empty(), "kit {k} has no fields in this database");
+            specs.into_iter().map(|s| s.field).collect()
+        }
+    };
+    let mut all: std::collections::BTreeSet<String> = db.distinct_fields()?.into_iter().collect();
+    all.extend(fields.iter().cloned());
+    Ok(Some(chain::Filter {
+        fields,
+        of: all.len() as i64,
+    }))
+}
+
+/// An invite's `caps`: a member's `{}`, a reader's role, and its filter.
+fn caps(db: &Db, reader: bool, filter: Option<SyncFilter>) -> Result<Value> {
+    let mut caps = if reader {
+        json!({"role": "reader"})
+    } else {
+        json!({})
+    };
+    if let Some(f) = resolve(db, filter)? {
+        caps["fields"] = json!(f.fields);
+        caps["of"] = f.of.into();
+    }
+    Ok(caps)
+}
+
 /// Write an invite any member admits the redeemer of, starting an open
 /// chain with this copy its first member when it is in none: its secret,
-/// which only the ticket carries, and when it expires. `reader`: the
-/// redeemer is admitted a reader (da-9yvb6). `print`: say the secret on
+/// which only the ticket carries, and when it expires. `caps`: what the
+/// redeemer is admitted as — a reader (da-9yvb6), filtered (da-u81u1) or
+/// not. `print`: say the secret on
 /// stdout before the record is signed, so a run that stops at an approve
 /// link has handed it over (datum.day signs with `sync approve`, da-bjxts).
 fn invite(
     db: &Db,
     expires: std::time::Duration,
     admin_key: Option<&str>,
-    reader: bool,
+    caps: Value,
     print: bool,
 ) -> Result<(String, String)> {
     let mut chain = db.sync_chain()?;
@@ -368,7 +435,7 @@ fn invite(
         "type": "invite", "chain": chain.id,
         "invite_id": ulid::Ulid::new().to_string().to_lowercase(),
         "secret_hash": chain::secret_hash(&secret), "expires": expires_at,
-        "caps": if reader { json!({"role": "reader"}) } else { json!({}) },
+        "caps": caps,
         "created": chrono::Utc::now().to_rfc3339(),
     });
     sign(db, record, &chain, admin_key)?;
@@ -556,6 +623,11 @@ fn admins(db: &Db, json: bool) -> Result<()> {
     Ok(())
 }
 
+/// A filter as `--json` has it: `{fields, of}`, or null.
+fn filter_json(f: Option<&chain::Filter>) -> Value {
+    f.map_or(Value::Null, |f| json!({"fields": f.fields, "of": f.of}))
+}
+
 /// `datum sync chain list`.
 fn members(db: &Db, json: bool) -> Result<()> {
     let chain = db.sync_chain()?;
@@ -572,6 +644,7 @@ fn members(db: &Db, json: bool) -> Result<()> {
                     "kind": m.kind, "admitted": chain::hlc_time(&m.admitted), "via": m.via,
                     "revoked": m.revoked.as_deref().map(chain::hlc_time),
                     "role": m.role().as_str(), "this": m.endpoint == mine,
+                    "filter": filter_json(chain.filter(&m.endpoint)),
                 })
             })
             .collect();
@@ -585,9 +658,13 @@ fn members(db: &Db, json: bool) -> Result<()> {
     for m in &chain.members {
         let revoked = m.revoked.as_deref().map(chain::hlc_time);
         println!(
-            "  {}  {}  {}{}  admitted {} via {}{}{}",
+            "  {}  {}{}  {}{}  admitted {} via {}{}{}",
             m.label,
             m.role().as_str(),
+            chain
+                .filter(&m.endpoint)
+                .map(|f| format!(" ({})", f.describe()))
+                .unwrap_or_default(),
             &m.endpoint[..10],
             m.client
                 .as_deref()
@@ -629,7 +706,8 @@ fn status(db: &Db, json: bool) -> Result<()> {
             .map(|p| {
                 json!({
                     "endpoint": p.endpoint, "client": p.client, "label": p.label,
-                    "kind": p.kind, "revoked": p.revoked, "reader": p.reader, "state": p.state,
+                    "kind": p.kind, "revoked": p.revoked, "reader": p.reader,
+                    "filter": filter_json(p.filter.as_ref()), "state": p.state,
                     "to_send": p.to_send, "last_seen": p.last_seen,
                     "last_verify": p.last_verify.as_ref().map(|(at, m)| json!({"at": at, "match": m})),
                     "error": p.error, "error_at": p.error_at, "addr": p.addr,
@@ -646,6 +724,7 @@ fn status(db: &Db, json: bool) -> Result<()> {
             "this": {
                 "endpoint": mine, "client": db.sync_client_id()?, "label": label,
                 "reader": chain.member(&mine).is_some_and(|m| m.role() == chain::Role::Reader),
+                "filter": filter_json(chain.filter(&mine)),
             },
             "members": members,
             "notices": notices.iter().map(|n| json!({
@@ -667,6 +746,11 @@ fn status(db: &Db, json: bool) -> Result<()> {
         chain.id,
         &mine[..10]
     );
+    // An empty field here reads as «not shared», not «nothing logged».
+    if let Some(f) = chain.filter(&mine) {
+        let fields: Vec<&str> = f.fields.iter().map(String::as_str).collect();
+        println!("a reader, {}: {}", f.describe(), fields.join(", "));
+    }
     if chain.is_open() {
         println!("{OPEN}");
     }
@@ -689,7 +773,7 @@ fn status(db: &Db, json: bool) -> Result<()> {
                 .or(p.last_seen.clone()),
         };
         println!(
-            "  {:<width$}  {}  {:<7}  to send {:<5}  {}{}{}{}",
+            "  {:<width$}  {}  {:<7}  to send {:<5}  {}{}{}{}{}",
             p.label,
             &p.endpoint[..10],
             p.state,
@@ -697,6 +781,10 @@ fn status(db: &Db, json: bool) -> Result<()> {
             when.as_deref().unwrap_or("-"),
             if p.revoked { "  REVOKED" } else { "" },
             if p.reader { "  reader" } else { "" },
+            p.filter
+                .as_ref()
+                .map(|f| format!(" ({})", f.describe()))
+                .unwrap_or_default(),
             p.error
                 .as_deref()
                 .map(|e| format!("  {e}"))

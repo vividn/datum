@@ -27,7 +27,20 @@
 //!
 //! Seq, HLC and the version vector are all read off the `ops` table rather
 //! than kept as counters beside it, so there is no second copy of them to
-//! drift.
+//! drift — but for a filtered reader's (da-u81u1), below.
+//!
+//! - **Filtered readers (da-u81u1).** A reader whose membership carries a
+//!   [`Filter`] is sent only the entries that belong to its fields (an
+//!   entry op's `field`: the entry's field, or for a spec the field it
+//!   specifies), each entry's ops on ONE line (a JSON array) so no apply
+//!   chunk splits it, an entry that moved into the filter whole, a
+//!   `{"remove": hid}` for one that moved out, and last `{"caught_up":
+//!   vector, "fields": […], "since": …}`: everything up to those seqs that
+//!   passes those fields was sent, as an answer to that `since`. Such a
+//!   copy applies what it receives without waiting for gaps, drops what
+//!   falls outside its filter, and its vector is the marks made under a
+//!   filter covering its own (`sync_caught_up`), so a widened filter is sent
+//!   in full again.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -52,7 +65,7 @@ pub mod chain;
 mod pause;
 pub mod peers;
 pub mod status;
-use chain::{Chain, Role, CHAIN_HID};
+use chain::{Chain, Filter, Role, CHAIN_HID};
 
 // ─── The invocation ─────────────────────────────────────────────────────────
 
@@ -441,6 +454,10 @@ struct Op {
     hid: String,
     slug: String,
     kind: String,
+    /// The field its entry belongs to after it (da-u81u1); none on a chain
+    /// record and on an op signed before filters.
+    #[serde(default)]
+    field: Option<String>,
     #[serde(default)]
     raw: Option<String>,
     effect: Value,
@@ -571,8 +588,7 @@ fn vector_where(conn: &Connection, hid: Option<&str>) -> Result<BTreeMap<String,
 fn push(
     conn: &Connection,
     ep: &Endpoint,
-    hid: &str,
-    slug: &str,
+    (hid, slug, field): (&str, &str, Option<String>),
     kind: &str,
     effect: Value,
 ) -> Result<i64> {
@@ -594,6 +610,9 @@ fn push(
         "effect": effect,
         "deps": vector_where(conn, Some(hid))?,
     });
+    if let Some(f) = &field {
+        v["field"] = f.as_str().into();
+    }
     let sig = hex(&ep.key.sign(&digest(&v)).to_bytes());
     v["sig"] = sig.clone().into();
     let op = Op {
@@ -603,6 +622,7 @@ fn push(
         hid: hid.into(),
         slug: slug.into(),
         kind: kind.into(),
+        field,
         raw: None,
         // `store` reads the head and the body; the effect is in the body.
         effect: Value::Null,
@@ -622,7 +642,27 @@ fn push_entry(
     kind: &str,
     effect: Value,
 ) -> Result<()> {
-    push(conn, ep, e.hid.as_str(), &e.slug.0, kind, effect).map(drop)
+    let field = belongs_to(&row(e));
+    push(conn, ep, (e.hid.as_str(), &e.slug.0, field), kind, effect).map(drop)
+}
+
+/// The field an entry row belongs to: its own, or for a spec the field it
+/// specifies — what a reader's filter is matched against (da-u81u1).
+fn belongs_to(r: &Map<String, Value>) -> Option<String> {
+    let field = r.get("field").and_then(Value::as_str)?;
+    match field == super::SPEC_FIELD {
+        true => r.get("data")?.get("field")?.as_str().map(Into::into),
+        false => Some(field.into()),
+    }
+}
+
+/// The field an entry belongs to after `ops` (fold order): the last op's
+/// `field`, or, for an op signed before it had one, the fold's.
+fn belongs_after(ops: &[Op]) -> Option<String> {
+    match ops.last()?.field.clone() {
+        Some(f) => Some(f),
+        None => belongs_to(&fold(ops, None)?),
+    }
 }
 
 fn create_effect(e: &Entry) -> Value {
@@ -899,6 +939,13 @@ fn apply_one(conn: &Connection, x: &Op) -> Result<usize> {
 fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
     let mut chain = Chain::load(conn)?;
     let mut vector = vector_where(conn, None)?;
+    // A filtered reader is never sent what its filter leaves out, so it
+    // waits on no gap and no dep — the fold reads only the set of an
+    // entry's ops, so order is no matter — and what it holds is ready;
+    // `settle_filter` refuses what falls outside its filter (da-u81u1).
+    let filtered = Chain::load_with_waiting(conn)?
+        .filter(&endpoint(conn)?.id)
+        .is_some();
     let waiting = loop {
         let mut waiting = waiting_ops(conn)?;
         // Records first: membership decides which of the rest apply. Then
@@ -913,8 +960,8 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
         for op in &waiting {
             let have = |e: &str| vector.get(e).copied().unwrap_or(0);
             // At or below `have`: a refused op the membership now allows.
-            let ready =
-                op.seq <= have(&op.endpoint) + 1 && op.deps.iter().all(|(e, n)| have(e) >= *n);
+            let ready = filtered
+                || op.seq <= have(&op.endpoint) + 1 && op.deps.iter().all(|(e, n)| have(e) >= *n);
             if !ready {
                 continue;
             }
@@ -1041,6 +1088,262 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
     Ok(())
 }
 
+// ─── Filtered readers (da-u81u1) ────────────────────────────────────────────
+
+/// The ops of `hid` held, applied or refused, in fold order, each with
+/// whether it is refused: what a sender and a filtered reader both judge an
+/// entry's field by.
+fn held_ops(conn: &Connection, hid: &str) -> Result<Vec<(Op, bool)>> {
+    let mut stmt =
+        conn.prepare_cached("SELECT body, applied FROM ops WHERE hid = ?1 AND applied > 0")?;
+    let rows = stmt
+        .query_map(params![hid], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut ops = rows
+        .iter()
+        .map(|(b, applied)| Ok((Op::parse(b)?, *applied == 2)))
+        .collect::<Result<Vec<_>>>()?;
+    ops.sort_by(|a, b| a.0.order().cmp(&b.0.order()));
+    Ok(ops)
+}
+
+/// What a filtered reader is sent after `since`, and how many ops that is:
+/// the chain's records, then per entry with new ops one line of them — all
+/// of its ops if it moved into the filter since — or a removal if it moved
+/// out, and last the mark — always, with nothing else too: it is what moves
+/// the reader past ops outside its filter. `only`: this copy is a reader,
+/// and serves its own ops alone.
+fn filtered_lines(
+    conn: &Connection,
+    since: &BTreeMap<String, i64>,
+    filter: &Filter,
+    chain: &Chain,
+    only: Option<&str>,
+) -> Result<(Vec<String>, usize)> {
+    let after = |e: &str| since.get(e).copied().unwrap_or(0);
+    // As `sync_ops_since` serves: a non-member's refused op stays here.
+    let served = |e: &str, refused: bool| {
+        only.is_none_or(|m| m == e) && (!refused || chain.member(e).is_some())
+    };
+    let mut lines = Vec::new();
+    let mut touched = BTreeSet::new();
+    let mut stmt = conn.prepare(
+        "SELECT endpoint, seq, hid, applied, CASE WHEN hid = ?1 THEN body END
+         FROM ops WHERE applied > 0 ORDER BY endpoint, seq",
+    )?;
+    let rows = stmt.query_map(params![CHAIN_HID], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, i64>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, i64>(3)? == 2,
+            r.get::<_, Option<String>>(4)?,
+        ))
+    })?;
+    for row in rows {
+        let (e, seq, hid, refused, body) = row?;
+        if seq <= after(&e) || !served(&e, refused) {
+            continue;
+        }
+        // Chain records go to every reader, and first: its filter may be
+        // among them.
+        match body {
+            Some(b) => lines.push(b),
+            None => {
+                touched.insert(hid);
+            }
+        }
+    }
+    drop(stmt);
+    let mut n = lines.len();
+    for hid in touched {
+        let ops: Vec<Op> = held_ops(conn, &hid)?
+            .into_iter()
+            .filter(|(o, refused)| served(&o.endpoint, *refused))
+            .map(|(o, _)| o)
+            .collect();
+        let then: Vec<Op> = ops
+            .iter()
+            .filter(|o| o.seq <= after(&o.endpoint))
+            .cloned()
+            .collect();
+        let now_in = filter.admits(belongs_after(&ops).as_deref());
+        let then_in = !then.is_empty() && filter.admits(belongs_after(&then).as_deref());
+        let send: Vec<&str> = match (now_in, then_in) {
+            (true, true) => ops
+                .iter()
+                .filter(|o| o.seq > after(&o.endpoint))
+                .map(|o| o.body.as_str())
+                .collect(),
+            (true, false) => ops.iter().map(|o| o.body.as_str()).collect(),
+            (false, true) => {
+                lines.push(json!({ "remove": hid }).to_string());
+                continue;
+            }
+            (false, false) => continue,
+        };
+        n += send.len();
+        lines.push(format!("[{}]", send.join(",")));
+    }
+    let caught_up = match only {
+        Some(_) => BTreeMap::from([own_head(conn)?]),
+        None => held_vector(conn)?,
+    };
+    let mark = json!({ "caught_up": caught_up, "fields": filter.fields, "since": since });
+    lines.push(mark.to_string());
+    Ok((lines, n))
+}
+
+/// A filtered reader's vector: per endpoint, the highest mark made under
+/// fields covering `filter`, and its own head.
+fn caught_up(
+    conn: &Connection,
+    filter: &Filter,
+    (mine, signed): (&str, i64),
+) -> Result<BTreeMap<String, i64>> {
+    let mut v = BTreeMap::new();
+    let mut stmt = conn.prepare_cached("SELECT endpoint, fields, seq FROM sync_caught_up")?;
+    let marks = stmt.query_map([], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get(2)?))
+    })?;
+    for mark in marks {
+        let (e, fields, seq): (String, String, i64) = mark?;
+        let fields: BTreeSet<String> = serde_json::from_str(&fields).unwrap_or_default();
+        if fields.is_superset(&filter.fields) {
+            let head = v.entry(e).or_insert(seq);
+            *head = seq.max(*head);
+        }
+    }
+    if signed > 0 {
+        v.insert(mine.to_string(), signed);
+    }
+    Ok(v)
+}
+
+/// [`Db::sync_vector`]: what this copy holds, as a vector it can stand by.
+fn held_vector(conn: &Connection) -> Result<BTreeMap<String, i64>> {
+    let chain = Chain::load(conn)?;
+    if !chain.exists() {
+        return vector_where(conn, None);
+    }
+    let (mine, signed) = own_head(conn)?;
+    if let Some(filter) = chain.filter(&mine) {
+        return caught_up(conn, filter, (&mine, signed));
+    }
+    match marked(conn)? {
+        true => contiguous(conn),
+        false => vector_where(conn, None),
+    }
+}
+
+fn marked(conn: &Connection) -> Result<bool> {
+    Ok(conn
+        .prepare_cached("SELECT 1 FROM sync_caught_up LIMIT 1")?
+        .exists([])?)
+}
+
+/// Per endpoint, the highest seq held with every seq below it held too.
+fn contiguous(conn: &Connection) -> Result<BTreeMap<String, i64>> {
+    Ok(conn
+        .prepare(
+            "SELECT o.endpoint, MIN(o.seq) FROM (
+                 SELECT endpoint, seq FROM ops WHERE applied > 0
+                 UNION ALL SELECT DISTINCT endpoint, 0 FROM ops WHERE applied > 0
+             ) o
+             WHERE NOT EXISTS (SELECT 1 FROM ops p WHERE p.endpoint = o.endpoint
+                                 AND p.seq = o.seq + 1 AND p.applied > 0)
+             GROUP BY o.endpoint HAVING MIN(o.seq) > 0",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?)
+}
+
+/// Remove an entry from a filtered reader's copy: its row, its ops and its
+/// history. The reader's own software does it; nothing is synced.
+fn drop_entry(conn: &Connection, hid: &str) -> Result<()> {
+    conn.execute("DELETE FROM ops WHERE hid = ?1", params![hid])?;
+    conn.execute("DELETE FROM entries WHERE hid = ?1", params![hid])?;
+    conn.execute(
+        "DELETE FROM entry_history WHERE entry_hid = ?1",
+        params![hid],
+    )?;
+    Ok(())
+}
+
+/// After a filtered reader applies: drop what the call brought that falls
+/// outside its filter — every entry received, when the filter itself moved
+/// (`before`) — act on the sender's removals, and keep its marks.
+fn settle_filter(
+    conn: &Connection,
+    mine: &str,
+    before: Option<&Filter>,
+    got: &[(String, i64, String)],
+    words: &[Value],
+    s: &mut ApplySummary,
+) -> Result<()> {
+    let chain = Chain::load(conn)?;
+    let Some(filter) = chain.filter(mine) else {
+        // Unfiltered now, with its gaps filled: the marks have nothing
+        // left to say. Here, on a write, not in a read of the vector. The
+        // whole vector, not per endpoint: while any marks stand the vector
+        // is `contiguous` for every endpoint, so they go when that and the
+        // highest held agree everywhere, and meanwhile cost only the
+        // slower, still true, vector.
+        if marked(conn)? && contiguous(conn)? == vector_where(conn, None)? {
+            conn.execute("DELETE FROM sync_caught_up", [])?;
+        }
+        return Ok(());
+    };
+    let hids: BTreeSet<String> = match before == Some(filter) {
+        true => got.iter().map(|g| g.2.clone()).collect(),
+        false => conn
+            .prepare("SELECT DISTINCT hid FROM ops WHERE endpoint != ?1 AND hid != ?2")?
+            .query_map(params![mine, CHAIN_HID], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?,
+    };
+    for hid in hids.iter().filter(|h| *h != CHAIN_HID) {
+        let ops: Vec<Op> = held_ops(conn, hid)?.into_iter().map(|o| o.0).collect();
+        if filter.admits(belongs_after(&ops).as_deref()) {
+            continue;
+        }
+        for (e, seq, _) in got.iter().filter(|g| g.2 == *hid) {
+            s.refused
+                .push(format!("{e}/{seq}: outside this reader's filter"));
+        }
+        drop_entry(conn, hid)?;
+    }
+    // A mark answers the vector the sender was given: it holds only if this
+    // copy is caught up that far under its filter now. A filter widened
+    // since — by a record in this very stream — lowered that vector, and
+    // the next round asks again (da-u81u1).
+    let signed = own_head(conn)?.1;
+    let now = caught_up(conn, filter, (mine, signed))?;
+    for w in words {
+        if let Some(hid) = w["remove"].as_str() {
+            drop_entry(conn, hid)?;
+        }
+        let answered = w["since"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .all(|(e, n)| n.as_i64().unwrap_or(0) <= now.get(e).copied().unwrap_or(0));
+        if !answered {
+            continue;
+        }
+        let fields = w["fields"].to_string();
+        for (e, seq) in w["caught_up"].as_object().into_iter().flatten() {
+            conn.execute(
+                "INSERT INTO sync_caught_up (endpoint, fields, seq) VALUES (?1, ?2, ?3)
+                 ON CONFLICT (endpoint, fields) DO UPDATE SET seq = MAX(seq, excluded.seq)",
+                params![e, fields, seq.as_i64().unwrap_or(0)],
+            )?;
+        }
+    }
+    Ok(())
+}
+
 impl Db {
     /// This copy's endpoint secret, minted on first need. It is also the
     /// iroh endpoint's key, so the iroh endpoint id IS the ops' `endpoint`
@@ -1065,9 +1368,13 @@ impl Db {
 
     /// This copy's version vector: per endpoint, the highest seq applied.
     /// Ops apply only in seq order, so that seq is also the highest
-    /// contiguous one.
+    /// contiguous one. A filtered reader's holds gaps, so its vector is its
+    /// marks instead (da-u81u1): per endpoint, the highest a sender marked
+    /// under fields covering its filter now, and its own head. One whose
+    /// filter is lifted still holds its gaps until they are sent: its vector
+    /// is the highest contiguous seq, and its marks go once it has none.
     pub fn sync_vector(&self) -> Result<BTreeMap<String, i64>> {
-        vector_where(&self.conn, None)
+        held_vector(&self.conn)
     }
 
     /// Every applied op `since` lacks, as canonical JSON lines in
@@ -1077,10 +1384,13 @@ impl Db {
     /// copy's own op AT `since`'s seq for it comes too — the one line that
     /// shows a copy sharing this key, whose vector agrees with this one's,
     /// a different op there (the pipe; iroh refuses such a peer by id).
+    /// For `peer`, a filtered reader, only what its filter lets through
+    /// ([`filtered_lines`], da-u81u1).
     pub fn sync_ops_since(
         &self,
         since: &BTreeMap<String, i64>,
         overlap: bool,
+        peer: Option<&str>,
     ) -> Result<Vec<String>> {
         pause::refuse_paused(&self.conn)?;
         let tx = self.conn.unchecked_transaction()?;
@@ -1103,6 +1413,11 @@ impl Db {
             for e in &uncovered {
                 push_entry(&tx, &ep, e, "baseline", create_effect(e))?;
             }
+        }
+        if let Some(filter) = peer.and_then(|p| chain.filter(p)) {
+            let (lines, _) = filtered_lines(&tx, since, filter, &chain, reader.then_some(&mine))?;
+            tx.commit()?;
+            return Ok(lines);
         }
         let mut stmt = tx.prepare(
             "SELECT endpoint, seq, body, applied FROM ops WHERE applied > 0 ORDER BY endpoint, seq",
@@ -1142,13 +1457,34 @@ impl Db {
     /// its endpoint — or any op it depends on — is missing is held until it
     /// arrives. The rest apply in HLC order. An applied op writes
     /// `entry_history` (`sync_merge`) and emits no op of its own: it is that
-    /// op.
+    /// op. A line may also be one entry's ops as an array, or a filtered
+    /// sender's removal or mark, which only a filtered reader acts on.
     pub fn sync_apply(&self, lines: &str) -> Result<ApplySummary> {
         pause::refuse_paused(&self.conn)?;
         let tx = self.conn.unchecked_transaction()?;
         let (mine, signed) = own_head(&tx)?;
+        let before = Chain::load(&tx)?.filter(&mine).cloned();
         let mut s = ApplySummary::default();
+        let (mut got, mut words) = (Vec::new(), Vec::new());
+        let mut each = Vec::new();
         for line in lines.lines().map(str::trim).filter(|l| !l.is_empty()) {
+            // Canonical JSON: an op's first key is `alias_chain`.
+            if line.starts_with("{\"caught_up\"") || line.starts_with("{\"remove\"") {
+                match serde_json::from_str::<Value>(line) {
+                    Ok(w) => words.push(w),
+                    Err(e) => s.refused.push(format!("unreadable line: {e}")),
+                }
+                continue;
+            }
+            match line.starts_with('[') {
+                true => match serde_json::from_str::<Vec<Value>>(line) {
+                    Ok(ops) => each.extend(ops.iter().map(Value::to_string)),
+                    Err(e) => s.refused.push(format!("unreadable ops: {e}")),
+                },
+                false => each.push(line.to_string()),
+            }
+        }
+        for line in each.iter().map(String::as_str) {
             let op = match Op::parse(line) {
                 Ok(op) => op,
                 Err(e) => {
@@ -1169,7 +1505,10 @@ impl Db {
             // that it never signed. Say so rather than take one for the other.
             let forked = op.endpoint == mine && op.seq > signed;
             match held {
-                None if !forked => store(&tx, &op, false)?,
+                None if !forked => {
+                    store(&tx, &op, false)?;
+                    got.push((op.endpoint, op.seq, op.hid));
+                }
                 Some(body) if body == op.body => s.already_had += 1,
                 _ => s
                     .refused
@@ -1177,6 +1516,7 @@ impl Db {
             }
         }
         settle(&tx, &mut s)?;
+        settle_filter(&tx, &mine, before.as_ref(), &got, &words, &mut s)?;
         tx.commit()?;
         Ok(s)
     }
@@ -1185,8 +1525,23 @@ impl Db {
     /// live and tombstoned, in `(slug, hid)` order, each with its
     /// `superseded_by` — so two copies agree only if they hold exactly the
     /// same data, bookkeeping included. The map is the same hash per column,
-    /// to narrow a mismatch down.
-    pub fn sync_state_hash(&self) -> Result<(String, BTreeMap<String, String>)> {
+    /// to narrow a mismatch down. With a filtered reader on either side —
+    /// this copy, or `peer` — only the entries that pass both filters count
+    /// (da-u81u1), which both sides compute alike.
+    pub fn sync_state_hash(
+        &self,
+        peer: Option<&str>,
+    ) -> Result<(String, BTreeMap<String, String>)> {
+        let chain = Chain::load(&self.conn)?;
+        let mine = match chain.exists() {
+            true => Some(endpoint(&self.conn)?.id),
+            false => None,
+        };
+        let filters: Vec<&Filter> = [mine.as_deref(), peer]
+            .into_iter()
+            .flatten()
+            .filter_map(|e| chain.filter(e))
+            .collect();
         let rows: Vec<Map<String, Value>> = self
             .conn
             .prepare("SELECT * FROM entries ORDER BY slug, hid")?
@@ -1196,6 +1551,12 @@ impl Db {
                     let mut r = row(&e);
                     r.insert("superseded_by".into(), json!(e.superseded_by));
                     r
+                })
+            })
+            .filter(|r| {
+                r.as_ref().map_or(true, |r| {
+                    let belongs = belongs_to(r);
+                    filters.iter().all(|f| f.admits(belongs.as_deref()))
                 })
             })
             .collect::<rusqlite::Result<_>>()?;

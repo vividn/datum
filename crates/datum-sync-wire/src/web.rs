@@ -84,11 +84,20 @@ impl Store for Cli {
         )?)
     }
 
-    async fn ops_since(&self, since: &Vector) -> Result<Vec<String>> {
+    async fn ops_since(&self, peer: &str, since: &Vector) -> Result<Vec<String>> {
         let since = serde_json::to_string(since)?;
         let out = self
             .run(
-                &["sync", "pipe", "ops", "--since", &since, "--no-overlap"],
+                &[
+                    "sync",
+                    "pipe",
+                    "ops",
+                    "--since",
+                    &since,
+                    "--no-overlap",
+                    "--peer",
+                    peer,
+                ],
                 None,
             )
             .await?;
@@ -111,9 +120,9 @@ impl Store for Cli {
         })
     }
 
-    async fn verify(&self) -> Result<String> {
+    async fn verify(&self, peer: &str) -> Result<String> {
         Ok(self
-            .run(&["sync", "pipe", "verify"], None)
+            .run(&["sync", "pipe", "verify", "--peer", peer], None)
             .await?
             .trim()
             .to_string())

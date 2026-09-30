@@ -6,7 +6,9 @@
 	a database on this datum.day; a cell is how that client's copy stands,
 	a shape AND a colour. A client not reachable now shows its last-known
 	state grey, with its time: never a green ✓ for it. A copy that is a
-	reader in its chain (da-9yvb6) carries the lock beside its state.
+	reader in its chain (da-9yvb6) carries the lock beside its state, and
+	one sent only some fields (da-u81u1) the filter too, its title saying
+	«filtered: n of m fields».
 	Compact (symbols and dots) at the legible floor, full (names, kinds,
 	times) above `FULL_PX`.
 
@@ -68,6 +70,8 @@
 	const DOT = { online: '●', reachable: '◐', offline: '○' };
 	/** Beside the state of a copy that is a reader in its chain (da-9yvb6). */
 	const READER = '🔒︎';
+	/** Beside it too when the reader is sent only some fields (da-u81u1). */
+	const FILTER = '⛛';
 
 	let dbs: DbSync[] = [];
 	let width = 0;
@@ -309,6 +313,7 @@
 									<span class="symbol" aria-label={cell.title}>{SYMBOL[cell.mark]}</span>
 								{/if}
 								{#if cell.reader}<span class="reader" aria-hidden="true">{READER}</span>{/if}
+								{#if cell.filter}<span class="filter" aria-hidden="true">{FILTER}</span>{/if}
 								{#if full && cell.stale && time(cell.at)}<span class="at">{time(cell.at)}</span>{/if}
 								{#if full && cell.mark === 'none' && !row.revoked}<button type="button" class="add" use:act={'run'} disabled={busy} aria-label="add to {d.db}" on:click={() => addDevice(d.db)}>+</button>{/if}
 								{#if opened === `${row.key} ${d.db}`}<p class="reason">{cell.error}</p>{/if}
@@ -322,7 +327,7 @@
 			{#each Object.entries(SYMBOL) as [mark, symbol] (mark)}
 				<span class={mark} title={mark}>{symbol}{#if full}&nbsp;{mark === 'none' ? 'not in chain' : mark}{/if}</span>
 			{/each}
-			<span class="coming" title="partial sync: coming">⛛{#if full}&nbsp;partial (coming){/if}</span>
+			<span class="filter" title="partial: a reader sent only some fields">{FILTER}{#if full}&nbsp;partial{/if}</span>
 			<span class="reader" title="read-only">{READER}{#if full}&nbsp;read-only{/if}</span>
 		</p>
 		{#if full}
@@ -440,7 +445,6 @@
 		color: var(--error);
 	}
 	.none,
-	.coming,
 	.stale {
 		color: var(--quiet);
 	}

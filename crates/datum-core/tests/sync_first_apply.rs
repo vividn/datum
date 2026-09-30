@@ -58,7 +58,7 @@ fn a_first_sync_of_20k_lived_in_entries_applies_in_one_pass() {
     populate(&a, 20_000);
 
     let t = Instant::now();
-    let lines = a.sync_ops_since(&BTreeMap::new(), false).unwrap();
+    let lines = a.sync_ops_since(&BTreeMap::new(), false, None).unwrap();
     let signed = t.elapsed();
     let t = Instant::now();
     let s = b.sync_apply(&lines.join("\n")).unwrap();
@@ -67,8 +67,8 @@ fn a_first_sync_of_20k_lived_in_entries_applies_in_one_pass() {
 
     assert_eq!((s.applied, s.held, s.refused.len()), (lines.len(), 0, 0));
     assert_eq!(
-        a.sync_state_hash().unwrap().0,
-        b.sync_state_hash().unwrap().0
+        a.sync_state_hash(None).unwrap().0,
+        b.sync_state_hash(None).unwrap().0
     );
     // Measured unloaded: 6 s release, 26 s debug; one pass per run of live
     // or tombstone baselines took 632 s release. Generous for a loaded

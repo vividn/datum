@@ -81,9 +81,16 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             }
         }
         "new-invite" => {
-            let o = opts(&mut rest, &["expires", "admin-key"], &["reader"], 0..=0)?;
+            let o = opts(
+                &mut rest,
+                &["expires", "admin-key", "fields", "kit"],
+                &["reader"],
+                0..=0,
+            )?;
+            let filter = o.filter()?;
             SyncCommand::NewInvite {
-                reader: o.on("reader"),
+                reader: o.on("reader") || filter.is_some(),
+                filter,
                 expires_secs: o.expires()?,
                 admin_key: o.get("admin-key"),
             }
@@ -117,9 +124,12 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
     const SET: &str = "invite|connect|list|rename|revoke|role|ack|rekey";
     Ok(match rest.next().copied() {
         Some("invite") => {
-            let o = opts(rest, &["expires", "admin-key"], &["qr", "reader"], 0..=0)?;
+            let values = ["expires", "admin-key", "fields", "kit"];
+            let o = opts(rest, &values, &["qr", "reader"], 0..=0)?;
+            let filter = o.filter()?;
             SyncCommand::Invite {
-                reader: o.on("reader"),
+                reader: o.on("reader") || filter.is_some(),
+                filter,
                 qr: o.on("qr"),
                 expires_secs: o.expires()?,
                 admin_key: o.get("admin-key"),
@@ -142,7 +152,8 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
         }
         Some("revoke") => act(rest, SyncAdminAct::Revoke, &[], &[])?,
         Some("role") => {
-            let mut o = opts(rest, &["admin-key"], &[], 2..=2)?;
+            let mut o = opts(rest, &["admin-key", "fields", "kit"], &[], 2..=2)?;
+            let filter = o.filter()?;
             let reader = match o.positional.pop().as_deref() {
                 Some("reader") => true,
                 Some("member") => false,
@@ -153,8 +164,13 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                     )))
                 }
             };
+            if filter.is_some() && !reader {
+                return Err(ParseError::InvalidArg(
+                    "only a reader is filtered: `role <WHO> reader --fields …`".into(),
+                ));
+            }
             SyncCommand::Admin {
-                act: SyncAdminAct::Role { reader },
+                act: SyncAdminAct::Role { reader, filter },
                 who: o.positional.remove(0),
                 label: None,
                 admin_key: o.get("admin-key"),
@@ -215,18 +231,18 @@ fn parse_pipe(rest: &mut Rest) -> Result<SyncCommand> {
             show: Show::Default,
         },
         Some("verify") => {
-            let verbose = match rest.next().map(|t| split_flag(t)) {
-                Some(FlagSplit::Long("verbose") | FlagSplit::Short('v')) => true,
-                Some(f) => return Err(unknown_flag(f)),
-                None => false,
-            };
-            SyncCommand::Verify { verbose }
+            let o = opts(rest, &["peer"], &["verbose"], 0..=0)?;
+            SyncCommand::Verify {
+                verbose: o.on("verbose"),
+                peer: o.get("peer"),
+            }
         }
         Some("ops") => {
-            let o = opts(rest, &["since"], &["no-overlap"], 0..=0)?;
+            let o = opts(rest, &["since", "peer"], &["no-overlap"], 0..=0)?;
             SyncCommand::Ops {
                 since: o.get("since"),
                 overlap: !o.on("no-overlap"),
+                peer: o.get("peer"),
             }
         }
         Some(other) => return Err(unknown("sync pipe", other, SET)),
@@ -259,6 +275,27 @@ impl Opts {
 
     fn on(&self, name: &str) -> bool {
         self.switches.iter().any(|s| s == name)
+    }
+
+    /// A reader's filter (da-u81u1): `--fields a,b` or `--kit <KIT>`.
+    fn filter(&self) -> Result<Option<SyncFilter>> {
+        match (self.get("fields"), self.get("kit")) {
+            (Some(_), Some(_)) => Err(ParseError::InvalidArg("--fields or --kit, not both".into())),
+            (Some(f), None) => {
+                let fields: Vec<String> = f
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|f| !f.is_empty())
+                    .map(Into::into)
+                    .collect();
+                match fields.is_empty() {
+                    true => Err(ParseError::InvalidArg("--fields names no field".into())),
+                    false => Ok(Some(SyncFilter::Fields(fields))),
+                }
+            }
+            (None, Some(k)) => Ok(Some(SyncFilter::Kit(k))),
+            (None, None) => Ok(None),
+        }
     }
 
     /// `--expires`, 10 minutes by default.
@@ -347,20 +384,32 @@ mod tests {
         );
         assert_eq!(
             p(&["pipe", "verify", "--verbose"]),
-            SyncCommand::Verify { verbose: true }
+            SyncCommand::Verify {
+                verbose: true,
+                peer: None
+            }
+        );
+        assert_eq!(
+            p(&["pipe", "verify", "--peer", "ab"]),
+            SyncCommand::Verify {
+                verbose: false,
+                peer: Some("ab".into())
+            }
         );
         assert_eq!(
             p(&["pipe", "ops", "--since={\"a\":1}"]),
             SyncCommand::Ops {
                 since: Some("{\"a\":1}".into()),
-                overlap: true
+                overlap: true,
+                peer: None
             }
         );
         assert_eq!(
-            p(&["pipe", "ops", "--since", "{}", "--no-overlap"]),
+            p(&["pipe", "ops", "--since", "{}", "--no-overlap", "--peer=ab"]),
             SyncCommand::Ops {
                 since: Some("{}".into()),
-                overlap: false
+                overlap: false,
+                peer: Some("ab".into())
             }
         );
         assert_eq!(
@@ -379,6 +428,7 @@ mod tests {
             p(&["new-invite", "--expires", "1m"]),
             SyncCommand::NewInvite {
                 reader: false,
+                filter: None,
                 expires_secs: 60,
                 admin_key: None
             }
@@ -397,6 +447,7 @@ mod tests {
             p(&["chain", "invite", "--admin-key=k", "--qr", "--reader"]),
             SyncCommand::Invite {
                 reader: true,
+                filter: None,
                 qr: true,
                 expires_secs: 600,
                 admin_key: Some("k".into())
@@ -433,7 +484,10 @@ mod tests {
         assert_eq!(
             p(&["chain", "role", "b", "reader", "--admin-key", "k"]),
             SyncCommand::Admin {
-                act: SyncAdminAct::Role { reader: true },
+                act: SyncAdminAct::Role {
+                    reader: true,
+                    filter: None
+                },
                 who: "b".into(),
                 label: None,
                 admin_key: Some("k".into()),
@@ -441,6 +495,34 @@ mod tests {
             }
         );
         assert!(parse_sync_cmd(&["chain", "role", "b", "admin"]).is_err());
+        // A filter (da-u81u1): a reader's alone, fields or a kit, and a
+        // filtered invite is a reader's.
+        assert_eq!(
+            p(&["chain", "role", "b", "reader", "--fields", "coffee, tea"]),
+            SyncCommand::Admin {
+                act: SyncAdminAct::Role {
+                    reader: true,
+                    filter: Some(SyncFilter::Fields(vec!["coffee".into(), "tea".into()]))
+                },
+                who: "b".into(),
+                label: None,
+                admin_key: None,
+                allow_unlock: false
+            }
+        );
+        assert!(parse_sync_cmd(&["chain", "role", "b", "member", "--kit", "k"]).is_err());
+        assert!(parse_sync_cmd(&["chain", "invite", "--fields=a", "--kit=k"]).is_err());
+        assert!(parse_sync_cmd(&["chain", "invite", "--fields=,"]).is_err());
+        assert_eq!(
+            p(&["chain", "invite", "--kit", "health"]),
+            SyncCommand::Invite {
+                reader: true,
+                filter: Some(SyncFilter::Kit("health".into())),
+                qr: false,
+                expires_secs: 600,
+                admin_key: None
+            }
+        );
         assert!(parse_sync_cmd(&["chain", "role", "b"]).is_err());
         assert_eq!(
             p(&["chain", "ack", "abc"]),

@@ -761,12 +761,14 @@ pub enum SyncCommand {
     /// `datum sync pause | resume` (da-wlbyx): this copy's, never synced.
     Pause,
     Resume,
-    /// `datum sync chain invite [--reader] [--qr] [--expires <DUR>]
-    /// [--admin-key <FILE>]` — an invite any member can admit, served until
-    /// redeemed; on a copy in no chain, it starts an open one (da-6177s).
-    /// `--reader` admits a reader (da-9yvb6).
+    /// `datum sync chain invite [--reader] [--fields <F,…> | --kit <KIT>]
+    /// [--qr] [--expires <DUR>] [--admin-key <FILE>]` — an invite any
+    /// member can admit, served until redeemed; on a copy in no chain, it
+    /// starts an open one (da-6177s). `--reader` admits a reader
+    /// (da-9yvb6), and a filter a reader sent only those fields (da-u81u1).
     Invite {
         reader: bool,
+        filter: Option<SyncFilter>,
         qr: bool,
         expires_secs: u64,
         admin_key: Option<String>,
@@ -796,7 +798,7 @@ pub enum SyncCommand {
     /// `datum sync chain rekey` — a new endpoint key for this copy (da-p79vq).
     Rekey,
     /// `datum sync chain revoke <WHO>`, `datum sync chain role <WHO>
-    /// member|reader`, `datum sync admin add <KEY>
+    /// member|reader [--fields <F,…> | --kit <KIT>]`, `datum sync admin add <KEY>
     /// [--label <L>]`, `datum sync admin remove <WHO> [--allow-unlock]`,
     /// each `[--admin-key <FILE>]` — a signed act on the chain.
     Admin {
@@ -817,18 +819,23 @@ pub enum SyncCommand {
     /// vector lacks (all of them without one), one JSON line each.
     /// `--no-overlap` leaves out the one op a pipe adds to catch a shared
     /// key: what a session sends, for datum.day's transport (da-6kpj5).
+    /// `--peer <ENDPOINT>`: what a session with that member is sent — a
+    /// filtered reader, only its fields (da-u81u1).
     Ops {
         since: Option<String>,
         overlap: bool,
+        peer: Option<String>,
     },
     /// Hidden: `datum sync pipe apply [--json]` — apply op lines from stdin.
     Apply {
         show: Show,
     },
-    /// Hidden: `datum sync pipe verify [--verbose]` — the state hash; per
-    /// column too.
+    /// Hidden: `datum sync pipe verify [--verbose] [--peer <ENDPOINT>]` —
+    /// the state hash, per column too; over what this copy shares with a
+    /// peer, when either is a filtered reader (da-u81u1).
     Verify {
         verbose: bool,
+        peer: Option<String>,
     },
     /// Hidden: `datum sync run` — stay up: serve members and push new ops.
     Run,
@@ -866,6 +873,7 @@ pub enum SyncCommand {
     /// secret, for datum.day's transport to serve.
     NewInvite {
         reader: bool,
+        filter: Option<SyncFilter>,
         expires_secs: u64,
         admin_key: Option<String>,
     },
@@ -890,10 +898,21 @@ pub enum SyncDaemonAct {
     Run,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A filtered reader's fields (da-u81u1): named, or a kit's, resolved
+/// against the database when the record is written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SyncFilter {
+    Fields(Vec<String>),
+    Kit(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SyncAdminAct {
     Revoke,
-    Role { reader: bool },
+    Role {
+        reader: bool,
+        filter: Option<SyncFilter>,
+    },
     AddAdmin,
     RemoveAdmin,
 }

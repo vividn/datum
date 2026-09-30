@@ -43,7 +43,10 @@
 //!     a member's act refused while the chain was locked stays refused, and
 //!     only its acts after the unlock count.
 //!   - `role {endpoint, role}` (da-9yvb6): `member` or `reader` from its
-//!     HLC on, an admin act like a revoke.
+//!     HLC on, an admin act like a revoke. A reader's `role` or invite
+//!     `caps` may carry a filter (da-u81u1): `fields`, the fields it is
+//!     sent, and `of`, how many the database had when it was written. The
+//!     latest record's filter stands; one without `fields` clears it.
 //!   - `describe {endpoint, client, label, kind}` (da-rcb5m): what a
 //!     member is — the client it runs in (one per CLI data directory or
 //!     browser profile, shared by every db there, so one installation's
@@ -60,7 +63,9 @@
 //!   it brings, and a reader's is refused whenever it was made. A copy with
 //!   no chain allows every op.
 //! - **Readers (da-9yvb6)** are served everything and serve only their own
-//!   ops: they never relay. A reader's copy refuses a write locally.
+//!   ops: they never relay. A reader's copy refuses a write locally. A
+//!   filtered reader (da-u81u1) is served only its fields' entries, each
+//!   with its spec, and every chain record (`sync.rs`).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -341,6 +346,52 @@ pub struct Member {
     /// Its role from each HLC on, oldest first: its admission's, then each
     /// `role` record's.
     pub roles: Vec<(String, Role)>,
+    /// A reader's filter, from its latest role (da-u81u1): none, sent all.
+    pub filter: Option<Filter>,
+}
+
+/// The fields a filtered reader is sent (da-u81u1), each with its spec, and
+/// how many fields the database had when the filter was written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Filter {
+    pub fields: BTreeSet<String>,
+    pub of: i64,
+}
+
+impl Filter {
+    /// A record's filter — `fields` and `of` beside a `role` — or why it
+    /// has none it may carry: only a reader is filtered.
+    fn parse(r: &Value, role: Role) -> std::result::Result<Option<Filter>, String> {
+        let Some(fields) = r.get("fields").filter(|f| !f.is_null()) else {
+            return Ok(None);
+        };
+        if role != Role::Reader {
+            return Err("only a reader is filtered".into());
+        }
+        let fields: BTreeSet<String> = fields
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|f| f.as_str().filter(|f| !f.is_empty()).map(Into::into))
+            .collect();
+        if fields.is_empty() || fields.len() != r["fields"].as_array().map_or(0, Vec::len) {
+            return Err("a filter's fields are a list of field names".into());
+        }
+        match r["of"].as_i64() {
+            Some(of) if of >= fields.len() as i64 => Ok(Some(Filter { fields, of })),
+            _ => Err("a filter's `of` counts the database's fields, its own among them".into()),
+        }
+    }
+
+    /// Whether an entry that belongs to `field` passes it.
+    pub fn admits(&self, field: Option<&str>) -> bool {
+        field.is_some_and(|f| self.fields.contains(f))
+    }
+
+    /// «filtered: 5 of 23 fields»
+    pub fn describe(&self) -> String {
+        format!("filtered: {} of {} fields", self.fields.len(), self.of)
+    }
 }
 
 /// What a member may write: a reader writes nothing but its own describe.
@@ -399,6 +450,7 @@ struct Invite {
     expires: String,
     used: bool,
     role: Role,
+    filter: Option<Filter>,
 }
 
 /// Membership: the fold of the chain's records.
@@ -467,10 +519,28 @@ impl Chain {
         }
     }
 
+    /// A reader's filter, if `endpoint` is a filtered reader now.
+    pub fn filter(&self, endpoint: &str) -> Option<&Filter> {
+        let m = self.member(endpoint)?;
+        m.filter.as_ref().filter(|_| m.role() == Role::Reader)
+    }
+
     /// The chain the ops held make.
     pub(super) fn load(conn: &Connection) -> Result<Chain> {
+        Self::load_where(conn, "applied = 1")
+    }
+
+    /// The chain the records held make once those still waiting apply too:
+    /// what tells a copy it is a filtered reader before the records before
+    /// its admit — some filtered out — could ever arrive (da-u81u1).
+    pub(super) fn load_with_waiting(conn: &Connection) -> Result<Chain> {
+        Self::load_where(conn, "applied IN (0, 1)")
+    }
+
+    fn load_where(conn: &Connection, applied: &str) -> Result<Chain> {
+        let sql = format!("SELECT body FROM ops WHERE hid = ?1 AND {applied}");
         let mut ops = conn
-            .prepare_cached("SELECT body FROM ops WHERE hid = ?1 AND applied = 1")?
+            .prepare_cached(&sql)?
             .query_map(params![CHAIN_HID], |r| r.get::<_, String>(0))?
             .map(|b| Op::parse(&b?))
             .collect::<Result<Vec<Op>>>()?;
@@ -527,7 +597,14 @@ impl Chain {
             }
             self.id = s("chain");
             self.admins = admins;
-            return self.admit(&op.endpoint, &s("label"), &op.hlc, "genesis", Role::Member);
+            return self.admit(
+                &op.endpoint,
+                &s("label"),
+                &op.hlc,
+                "genesis",
+                Role::Member,
+                None,
+            );
         }
         if !self.exists() {
             return Err("no genesis before it".into());
@@ -559,13 +636,14 @@ impl Chain {
                 return Err(format!("invite expired ({})", invite.expires));
             }
             invite.used = true;
-            let role = invite.role;
+            let (role, filter) = (invite.role, invite.filter.clone());
             return self.admit(
                 &s("endpoint"),
                 &s("label"),
                 &op.hlc,
                 &format!("invite {via}"),
                 role,
+                filter,
             );
         }
         // An endpoint describes itself unsigned; anything else takes an
@@ -609,6 +687,7 @@ impl Chain {
             }
             "invite" => {
                 let role = Role::parse(&r["caps"]["role"])?;
+                let filter = Filter::parse(&r["caps"], role)?;
                 self.invites.insert(
                     s("invite_id"),
                     Invite {
@@ -616,18 +695,21 @@ impl Chain {
                         expires: s("expires"),
                         used: false,
                         role,
+                        filter,
                     },
                 );
                 Ok(())
             }
             "role" => {
                 let role = Role::parse(&r["role"])?;
+                let filter = Filter::parse(r, role)?;
                 let m = self
                     .members
                     .iter_mut()
                     .find(|m| m.endpoint == s("endpoint"))
                     .ok_or("not a member")?;
                 m.roles.push((op.hlc.clone(), role));
+                m.filter = filter;
                 Ok(())
             }
             "revoke" => {
@@ -679,6 +761,7 @@ impl Chain {
         hlc: &str,
         via: &str,
         role: Role,
+        filter: Option<Filter>,
     ) -> std::result::Result<(), String> {
         if unhex::<32>(endpoint).is_none() {
             return Err("not an endpoint id".into());
@@ -695,6 +778,7 @@ impl Chain {
             client: None,
             kind: None,
             roles: vec![(hlc.into(), role)],
+            filter,
         });
         Ok(())
     }
@@ -799,7 +883,7 @@ impl Db {
     pub fn sync_chain_write(&self, record: Value, quiet: bool) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
         let ep = endpoint(&tx)?;
-        let seq = push(&tx, &ep, CHAIN_HID, CHAIN_HID, "chain", record)?;
+        let seq = push(&tx, &ep, (CHAIN_HID, CHAIN_HID, None), "chain", record)?;
         let chain = Chain::load(&tx)?;
         if let Some(why) = chain.rejected.get(&(ep.id, seq)) {
             return Err(DatumError::Other(format!(
@@ -1118,6 +1202,25 @@ mod tests {
                 "a role is member or reader, not \"admin\""
             );
         }
+    }
+
+    /// A filter (da-u81u1) is a reader's, names its fields, and its `of`
+    /// counts them among the database's: a record saying less is refused.
+    #[test]
+    fn a_filter_is_a_readers_and_its_of_counts_its_own_fields() {
+        let f = |v: Value, role| Filter::parse(&v, role);
+        let ok = f(json!({"fields": ["a"], "of": 3}), Role::Reader);
+        assert_eq!(ok.unwrap().unwrap().of, 3);
+        assert_eq!(f(json!({}), Role::Reader), Ok(None));
+        for bad in [
+            json!({"fields": ["a", "b"], "of": 1}),
+            json!({"fields": ["a"]}),
+            json!({"fields": [], "of": 1}),
+            json!({"fields": ["a", 2], "of": 2}),
+        ] {
+            assert!(f(bad.clone(), Role::Reader).is_err(), "{bad}");
+        }
+        assert!(f(json!({"fields": ["a"], "of": 3}), Role::Member).is_err());
     }
 
     /// A software authenticator: a fixed P-256 key signing as a passkey would.

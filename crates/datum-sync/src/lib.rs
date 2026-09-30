@@ -89,8 +89,8 @@ impl Store for DbStore<'_> {
         Ok(self.0.sync_vector()?)
     }
 
-    async fn ops_since(&self, since: &Vector) -> Result<Vec<String>> {
-        Ok(self.0.sync_ops_since(since, false)?)
+    async fn ops_since(&self, peer: &str, since: &Vector) -> Result<Vec<String>> {
+        Ok(self.0.sync_ops_since(since, false, Some(peer))?)
     }
 
     async fn apply(&self, ops: &[String]) -> Result<Applied> {
@@ -107,8 +107,8 @@ impl Store for DbStore<'_> {
         })
     }
 
-    async fn verify(&self) -> Result<String> {
-        Ok(self.0.sync_state_hash()?.0)
+    async fn verify(&self, peer: &str) -> Result<String> {
+        Ok(self.0.sync_state_hash(Some(peer))?.0)
     }
 
     async fn handshake(

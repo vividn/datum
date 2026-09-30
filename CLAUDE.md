@@ -137,6 +137,14 @@ chain with no admin is OPEN — any member invites, revokes or renames, and
 LOCKS it, after which those acts take an admin key (passkey or key file).
 Removing the last admin takes `--allow-unlock` and reopens it; every copy
 keeps a notice of the unlock until `sync chain ack unlock`.
+A reader may be FILTERED (da-u81u1): its invite's `caps` or a `role` record
+carries `fields` (`--fields a,b`, or `--kit K` resolved to that kit's fields)
+and `of`. Every member serving it sends only the entries that belong to those
+fields — an op's `field`, a spec's being the field it specifies — one line per
+entry, an entry that moved in whole, `{"remove": hid}` for one that moved out,
+and a `caught_up` mark that answers the `since` it was given; the reader
+applies with no gap wait, drops what falls outside, and its vector is its
+marks (`sync_caught_up`, v50). `verify` hashes the filtered set on both sides.
 `sync pause` is this copy's alone (`sync_local.paused_at`, da-wlbyx): its
 handshake and pipe refuse, `sync run` and the page's leader push nothing, and
 datum.day's root bar says «sync paused» in every tab until a tap resumes it.

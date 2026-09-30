@@ -45,6 +45,7 @@ fn fresh_db_matches_schema_sql_shape() {
         "integrity_warnings",
         "last_docs",
         "ops",
+        "sync_caught_up",
         "sync_local",
         "sync_notices",
         "sync_peers",

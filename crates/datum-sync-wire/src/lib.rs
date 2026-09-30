@@ -72,11 +72,12 @@ pub trait Store {
     /// when it is in no chain.
     async fn chain(&self) -> Result<Option<(String, usize)>>;
     async fn vector(&self) -> Result<Vector>;
-    /// Every op `since` lacks, as JSON lines.
-    async fn ops_since(&self, since: &Vector) -> Result<Vec<String>>;
+    /// Every op `since` lacks, as JSON lines — for `peer`, whose filter, if
+    /// it is a filtered reader, the lines pass (da-u81u1).
+    async fn ops_since(&self, peer: &str, since: &Vector) -> Result<Vec<String>>;
     async fn apply(&self, ops: &[String]) -> Result<Applied>;
-    /// The state hash.
-    async fn verify(&self) -> Result<String>;
+    /// The state hash, over what a session with `peer` shares.
+    async fn verify(&self, peer: &str) -> Result<String>;
     /// `peer` introduced itself as `label` at `addr`: record it, and when
     /// it `dialed` this copy, admit it (as a peer, or by `invite`) or fail
     /// saying why not; a redeemer names its own `chain`. Whether it is new
@@ -304,7 +305,7 @@ async fn exchange(
         if last.as_ref() == Some(&round) {
             break;
         }
-        let ops = store.ops_since(&round.1).await?;
+        let ops = store.ops_since(&rep.id, &round.1).await?;
         let send = async {
             for op in &ops {
                 put(s, op.as_bytes()).await?;
@@ -326,7 +327,7 @@ async fn exchange(
         apply(store, s, &lines, rep).await?;
         last = Some(round);
     }
-    let hash = store.verify().await?;
+    let hash = store.verify(&rep.id).await?;
     // The acceptor answers only after it has read the dialer's hash, so
     // the dialer's close can never cut a frame still in flight.
     let theirs: String = if dialer {

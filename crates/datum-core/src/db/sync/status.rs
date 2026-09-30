@@ -8,7 +8,8 @@ use std::collections::BTreeMap;
 use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
 
-use super::unhex;
+use super::chain::Filter;
+use super::{belongs_to, filtered_lines, row, row_to_entry, unhex};
 use crate::db::Db;
 use crate::error::{DatumError, Result};
 
@@ -22,6 +23,8 @@ pub struct PeerStatus {
     pub revoked: bool,
     /// A reader (da-9yvb6): it receives, and writes nothing.
     pub reader: bool,
+    /// A filtered reader's filter (da-u81u1).
+    pub filter: Option<Filter>,
     /// `synced`, `pending`, `error` or `never`.
     pub state: &'static str,
     pub to_send: i64,
@@ -95,12 +98,15 @@ impl Db {
         let chain = self.sync_chain()?;
         let mine = self.sync_endpoint_id()?;
         let held = self.sync_vector()?;
-        // Entries no op covers yet go as baselines on the next session.
-        let uncovered: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM entries WHERE hid NOT IN (SELECT hid FROM ops)",
-            [],
-            |r| r.get(0),
-        )?;
+        // Entries no op covers yet go as baselines on the next session: to a
+        // filtered reader, those of its fields alone. By the field each
+        // belongs to.
+        let uncovered: Vec<Option<String>> = self
+            .conn
+            .prepare("SELECT * FROM entries WHERE hid NOT IN (SELECT hid FROM ops)")?
+            .query_map([], row_to_entry)?
+            .map(|e| e.map(|e| belongs_to(&row(&e))))
+            .collect::<rusqlite::Result<_>>()?;
         let mut out = Vec::new();
         for m in chain.members.iter().filter(|m| m.endpoint != mine) {
             let row: Option<Session> = self
@@ -129,11 +135,25 @@ impl Db {
             let theirs: BTreeMap<String, i64> = vector
                 .and_then(|v| serde_json::from_str(&v).ok())
                 .unwrap_or_default();
-            let to_send = uncovered
-                + held
-                    .iter()
-                    .map(|(e, s)| (s - theirs.get(e).copied().unwrap_or(0)).max(0))
-                    .sum::<i64>();
+            // A filtered reader is sent only what passes its filter, so what
+            // it lacks past a gap it will never be sent is not waiting.
+            let filter = chain.filter(&m.endpoint);
+            let to_send = match filter {
+                Some(f) => {
+                    let reader = chain.member(&mine).map(|m| m.role());
+                    let only =
+                        (reader == Some(super::chain::Role::Reader)).then_some(mine.as_str());
+                    let baselines = uncovered.iter().filter(|b| f.admits(b.as_deref())).count();
+                    (baselines + filtered_lines(&self.conn, &theirs, f, &chain, only)?.1) as i64
+                }
+                None => {
+                    uncovered.len() as i64
+                        + held
+                            .iter()
+                            .map(|(e, s)| (s - theirs.get(e).copied().unwrap_or(0)).max(0))
+                            .sum::<i64>()
+                }
+            };
             let last_verify = verify_at.zip(verify_match);
             let state = match (&error, last_verify.as_ref()) {
                 (Some(_), _) => "error",
@@ -157,6 +177,7 @@ impl Db {
                 kind: m.kind.clone(),
                 revoked: m.revoked.is_some(),
                 reader: m.role() == super::chain::Role::Reader,
+                filter: filter.cloned(),
                 state,
                 to_send,
                 last_seen,
