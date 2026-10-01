@@ -35,6 +35,7 @@
 		aria-label="about datum.day"
 		aria-expanded={open}
 		title="about datum.day"
+		data-help="datum.day is early software. Tap the ⓘ for where this page keeps your data, and how safe it is there."
 		on:click={() => (open = !open)}>ⓘ</button
 	>
 	{#if open}

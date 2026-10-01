@@ -361,6 +361,7 @@
 					look="tab"
 					label="menu of the {labelOf(tab)} layout"
 					title="layout menu"
+					data-help="The layout in front, and what it is saved as: save it, restore an earlier save, save it under another name, reset it to how it shipped, and, on a tab of one widget, set that widget's options."
 					role="tab"
 					aria-selected="true"
 					tabindex="0"
@@ -385,7 +386,10 @@
 			{/if}
 		{/each}
 	</div>
-	<button type="button" class="control badge add" use:act={'open'} aria-label="open a layout" title="open a layout" on:click={add}>+</button>
+	<button type="button" class="control badge add" use:act={'open'} aria-label="open a layout" title="open a layout"
+		data-help="A layout is a page of panes, each holding a widget. Opens one as a new tab — a saved layout, or a single widget on its own; the tabs switch between them."
+		on:click={add}>+</button
+	>
 	<!-- The `▾` beside the `+` (da-bzhq): what is done to the page —
 	     `Split`, which at the root is a side of the whole layout, and
 	     `Close tab`. Drawn only when it has something in it, which is what
@@ -428,6 +432,7 @@
 			aria-pressed={locked}
 			aria-label="{locked ? 'unlock' : 'lock'} the {name} layout on this device"
 			title="{locked ? 'unlock' : 'lock'} this layout on this device"
+			data-help="Locked, this layout's panes lose their +, ▾ and ×, and nothing you do changes the layout. The lock is this device's alone. Tap the padlock again to unlock it."
 			on:click={doToggleLock}
 		>
 			<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
@@ -449,6 +454,7 @@
 		look="badge"
 		label="settings"
 		title="settings"
+		data-help="Settings for this whole page: Backups, where backups are planned, made and restored; Reset default layouts, which puts back the layouts datum ships with; and the version this is."
 		class="gear"
 		aria-label="settings"
 		><svg class="cog" viewBox="-12 -12 24 24" width="20" height="20" aria-hidden="true">

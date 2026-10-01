@@ -182,6 +182,27 @@ describe('the Help button', () => {
 		});
 	});
 
+	// da-ftj39: the top bar's controls carry their own `data-help`, read
+	// before the general help a tap on anything unknown gets.
+	test('then a top bar control: its own help, not `datum help`', async () => {
+		await onPage(async ({ page }) => {
+			const bar = page.locator('.root-bar');
+			for (const control of [
+				bar.locator('button.lock'),
+				bar.locator('[role="tab"][aria-selected="true"]'),
+				bar.locator('button.add'),
+				bar.locator('button.gear'),
+				bar.locator('button.hint-button')
+			]) {
+				const title = await control.getAttribute('title');
+				const lines = await explain(page, control, title);
+				assert.doesNotMatch(lines[0], /^datum — personal data tracker/, title);
+				assert.equal(lines.join('\n'), await control.getAttribute('data-help'));
+			}
+			assert.equal(await page.locator('.beta-hint').count(), 0, 'the ⓘ opened');
+		});
+	});
+
 	// vividn, 2026-09-29: «Every modal is also a widget that can be put into a
 	// layout». A Help pane in view takes the answer, and no tab opens.
 	test('with a Help pane in the layout, the answer lands there', async () => {

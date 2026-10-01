@@ -26,6 +26,8 @@
 // - a pill: what its KIND is and does, with its own value in it (below).
 // - a flag of a held command (da-st2xl): its line of the CLI's own flag
 //   table, carried on the button from `datum help --json`.
+// - any other control carrying a `data-help` (da-ftj39): its `title`, and
+//   that text — the top bar's lock, layout menu, `+`, gear and ⓘ.
 //
 // Anything else is general help too: the tap asked for help, so it gets
 // some.
@@ -74,9 +76,11 @@ async function explain(target: Element | null): Promise<void> {
 	const kind = target?.closest<HTMLElement>('[data-widget]')?.dataset.widget;
 	const pill = pillId && [...get(pills), ...get(spent)].find((p) => p.id === pillId);
 	const flag = target?.closest<HTMLElement>('[data-flag]');
+	const helped = target?.closest<HTMLElement>('[data-help]');
 	if (pill) return show(pill.text, pillHelp(pill));
 	if (flag) return show(`datum ${flag.dataset.flag}`, flag.dataset.help ?? '');
 	if (!command && kind && KINDS[kind]) return show(titleOf(kind), KINDS[kind].help);
+	if (!command && helped) return show(helped.title, helped.dataset.help ?? '');
 	const argv = command && command !== 'help' ? ['help', ...command.split(' ')] : ['help'];
 	const { stdout, stderr } = await run(argv);
 	show(`datum ${argv.join(' ')}`, stdout || stderr);
