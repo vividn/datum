@@ -14,7 +14,7 @@ use serde_json::json;
 
 /// The (detail-free) findings as `field → slug xcount`, sorted.
 fn dangling(db: &Db) -> Vec<String> {
-    collect_dangling_refs(db)
+    collect_dangling_refs(db, &db.list_including_deleted().unwrap())
         .unwrap()
         .iter()
         .map(|i| {

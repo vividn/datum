@@ -15,7 +15,7 @@ use serde_json::json;
 
 /// The data-ref findings as `field.key → slug xcount`, sorted.
 fn dangling(db: &Db) -> Vec<String> {
-    collect_dangling_refs(db)
+    collect_dangling_refs(db, &db.list_including_deleted().unwrap())
         .unwrap()
         .iter()
         .filter(|i| i.category == "dangling_data_ref")
@@ -111,10 +111,12 @@ fn check_flags_a_missing_target_until_it_exists() {
         "one finding per (field, key, slug), with its count"
     );
     // A data ref does not show as a state ref.
-    assert!(collect_dangling_refs(&db)
-        .unwrap()
-        .iter()
-        .all(|i| i.category == "dangling_data_ref"));
+    assert!(
+        collect_dangling_refs(&db, &db.list_including_deleted().unwrap())
+            .unwrap()
+            .iter()
+            .all(|i| i.category == "dangling_data_ref")
+    );
 
     run_cli(&["add", "issue", "id=k7f2a"], &db).unwrap();
     run_cli(&["add", "a", "id=1"], &db).unwrap();

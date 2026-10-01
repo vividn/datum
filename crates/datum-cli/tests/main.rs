@@ -21,6 +21,7 @@ mod alias_list_json;
 mod alias_time_compose;
 mod batch_undo;
 mod batch_update_cmd;
+mod check_examined;
 mod cli_harness;
 mod client_templates;
 mod closed_pipe_last;

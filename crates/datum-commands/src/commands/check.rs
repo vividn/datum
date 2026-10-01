@@ -10,7 +10,6 @@ use datum_core::entry::Entry;
 use datum_core::field_spec::{self, InterpolationContext};
 use datum_core::ids::Slug;
 use datum_core::time::DatumTime;
-use datum_parse::alias::{shell_split, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS};
 use datum_parse::cli::KNOWN_CHECKERS;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -19,6 +18,9 @@ use crate::args::{CheckArgs, ShowFlag};
 use crate::commands::helpers::load_registry_opt;
 use crate::commands::render_helpers::build_render_contexts;
 use crate::render::{format_table_with, OutputArgs, TableArgs, TimeMetricCol};
+
+mod aliases;
+use aliases::collect_alias_drift;
 
 /// Typed API for `datum check`. Exits the process with status 1 when the
 /// report contains any [`Severity::Error`] items.
@@ -56,12 +58,29 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     let run_integrity = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "integrity");
     let run_flags = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "flags");
     let run_tz = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "tz");
+    let run_refs = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "refs");
     let run_default_battery = args.checkers.is_empty();
 
+    // One walk of the entries, shared by every checker that reads them, so
+    // the count the all-clear names is the set that was checked (da-qd9ao).
+    // A `--fix` pass re-reads it, as each checker used to read its own.
+    let walks_entries = run_default_battery || run_verbs || run_slugs || run_tz || run_refs;
+    let load = || -> Result<Vec<Entry>> {
+        Ok(if walks_entries {
+            db.list_including_deleted()?
+        } else {
+            Vec::new()
+        })
+    };
+    let mut entries = load()?;
+    let mut examined = Examined::default();
     let mut issues: Vec<Issue> = Vec::new();
     let mut fix_reports: Vec<FixReport> = Vec::new();
     if run_default_battery {
-        issues.extend(collect_issues(db)?.issues);
+        let base = collect_issues(db, &entries)?;
+        examined.specs = base.examined.specs;
+        examined.checkers.push("base");
+        issues.extend(base.issues);
         // da-adyj: legacy rows from before da-r569 carry a content_hash
         // that disagrees with `Entry::expected_content_hash()`. The
         // default battery already surfaces these as
@@ -77,40 +96,54 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
         // pretending success.
         if args.fix {
             fix_reports.push(apply_content_hash_fixes(db)?);
+            entries = load()?;
         }
     }
     if run_verbs {
-        let verb_report = collect_verb_drift(db)?;
+        examined.checkers.push("verbs");
+        let verb_report = collect_verb_drift(&entries)?;
         if args.fix {
             fix_reports.push(apply_verb_fixes(db, &verb_report.fixes)?);
+            entries = load()?;
         }
         issues.extend(verb_report.issues);
     }
     if run_aliases {
+        examined.checkers.push("aliases");
         let alias_report = collect_alias_drift(db, args.fix)?;
+        examined.aliases = alias_report.aliases;
         issues.extend(alias_report.issues);
     }
     if run_slugs {
+        examined.checkers.push("slugs");
         let delim = crate::config::resolve_id_delimiter(None);
-        let slug_report = collect_slug_drift(db, &delim)?;
+        let slug_report = collect_slug_drift(&entries, &delim)?;
         if args.fix {
             fix_reports.push(apply_slug_fixes(db, &slug_report.fixes, &delim)?);
+            entries = load()?;
         }
         issues.extend(slug_report.issues);
     }
     if run_integrity {
+        examined.checkers.push("integrity");
         issues.extend(collect_integrity_warnings(db)?);
         issues.extend(crate::commands::sync::notice_issues(db)?);
     }
     if run_flags {
+        examined.checkers.push("flags");
         issues.extend(collect_pending_flags(db)?);
     }
     if run_tz {
-        issues.extend(collect_tz_drift(db)?);
+        examined.checkers.push("tz");
+        issues.extend(collect_tz_drift(db, &entries)?);
     }
-    if args.checkers.is_empty() || args.checkers.iter().any(|c| c == "refs") {
-        issues.extend(collect_dangling_refs(db)?);
+    if run_refs {
+        examined.checkers.push("refs");
+        issues.extend(collect_dangling_refs(db, &entries)?);
     }
+    // Counted from the slice the last checkers walked, after any `--fix`
+    // re-read, and without its tombstones.
+    examined.entries = entries.iter().filter(|e| e.deleted_at.is_none()).count();
     let report = Report {
         issues,
         summary: Summary {
@@ -118,6 +151,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
             warnings: 0,
             clean: false,
         },
+        examined,
     }
     .with_recomputed_summary();
 
@@ -340,10 +374,28 @@ pub struct Summary {
     pub clean: bool,
 }
 
+/// What a run looked at, so an all-clear over nothing reads differently
+/// from one over a populated db (da-qd9ao). Each count is the set the
+/// checkers walked, never a separate `COUNT(*)`.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Examined {
+    /// Live rows in the walk every entry checker shares: tombstones left
+    /// out, spec and alias rows included, since they are entries and are
+    /// walked too.
+    pub entries: usize,
+    /// Field specs the base battery checked entries against.
+    pub specs: usize,
+    /// User/kit aliases the `aliases` checker walked.
+    pub aliases: usize,
+    /// The checkers that ran; `base` is the default battery.
+    pub checkers: Vec<&'static str>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Report {
     pub issues: Vec<Issue>,
     pub summary: Summary,
+    pub examined: Examined,
 }
 
 impl Report {
@@ -401,16 +453,14 @@ struct VerbReport {
 /// Drifted rows are accumulated into `fixes` so `--fix` can rewrite
 /// them in a single pass. Corruption-shape rows are *not* fixed —
 /// there is no derivable verb to write.
-fn collect_verb_drift(db: &Db) -> Result<VerbReport> {
-    let entries = db.list_including_deleted()?;
-
+fn collect_verb_drift(entries: &[Entry]) -> Result<VerbReport> {
     let mut drift_count: usize = 0;
     let mut drift_example: Option<IssueExample> = None;
     let mut corrupt_count: usize = 0;
     let mut corrupt_example: Option<IssueExample> = None;
     let mut fixes: Vec<VerbFix> = Vec::new();
 
-    for e in &entries {
+    for e in entries {
         // Skip tombstones — they are historical rows, not live data;
         // reviving one through restore re-runs the insert path and
         // re-derives the verb.
@@ -501,7 +551,7 @@ fn apply_verb_fixes(db: &Db, fixes: &[VerbFix]) -> Result<FixReport> {
             Ok(())
         },
         || {
-            Ok(collect_verb_drift(db)?
+            Ok(collect_verb_drift(&db.list_including_deleted()?)?
                 .fixes
                 .into_iter()
                 .map(|f| (f.slug, f.stored_verb, f.expected_verb))
@@ -549,14 +599,12 @@ struct SlugReport {
 /// parking mechanism needed every re-deriver (`retime`, `datum edit`, this
 /// scan and its `--fix`) taught about a shape it could not recompute
 /// (da-l4uz).
-fn collect_slug_drift(db: &Db, delim: &str) -> Result<SlugReport> {
-    let entries = db.list_including_deleted()?;
-
+fn collect_slug_drift(entries: &[Entry], delim: &str) -> Result<SlugReport> {
     let mut drift_count: usize = 0;
     let mut drift_example: Option<IssueExample> = None;
     let mut fixes: Vec<SlugFix> = Vec::new();
 
-    for e in &entries {
+    for e in entries {
         if e.deleted_at.is_some() {
             continue;
         }
@@ -661,7 +709,7 @@ fn apply_slug_fixes(db: &Db, fixes: &[SlugFix], delim: &str) -> Result<FixReport
             Ok(())
         },
         || {
-            Ok(collect_slug_drift(db, delim)?
+            Ok(collect_slug_drift(&db.list_including_deleted()?, delim)?
                 .fixes
                 .into_iter()
                 .map(|f| (f.existing.to_string(), f.existing.to_string(), f.expected))
@@ -883,10 +931,9 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
 /// warning per (field, key, slug) with a count and sample hids, since a
 /// tracker has thousands of rows in one state. Never an error: the
 /// document may yet arrive by sync.
-pub fn collect_dangling_refs(db: &Db) -> Result<Vec<Issue>> {
+pub fn collect_dangling_refs(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>> {
     use datum_core::doc_ref::{data_refs, state_refs};
     let registry = db.load_registry()?;
-    let entries = db.list_including_deleted()?;
     let live: Vec<&Entry> = entries
         .iter()
         .filter(|e| e.deleted_at.is_none() && e.superseded_by.is_none())
@@ -1117,12 +1164,10 @@ fn collect_pending_flags(db: &Db) -> Result<Vec<Issue>> {
 /// Report-only: the "which field is authoritative — tz or offset?" call
 /// deserves a human, so there is deliberately no `--fix` re-derivation yet
 /// (a future `--fix` would trust `timezone` and re-run `refresh_offset`).
-fn collect_tz_drift(db: &Db) -> Result<Vec<Issue>> {
-    let entries = db.list_including_deleted()?;
-
+fn collect_tz_drift(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>> {
     let mut flagged: Vec<Entry> = Vec::new();
     let mut example: Option<IssueExample> = None;
-    for e in &entries {
+    for e in entries {
         if e.deleted_at.is_some() {
             continue;
         }
@@ -1229,253 +1274,8 @@ fn render_state_for_flag(v: &JsonValue) -> String {
     }
 }
 
-#[derive(Debug, Default)]
-struct AliasReport {
-    issues: Vec<Issue>,
-}
-
-/// Walk every field spec and every user/kit alias to surface three
-/// divergence classes:
-///
-/// * `alias_state_collision` — two specs declare the same state name as a
-///   derived `State` alias. The [`SpecAliasIndex`] resolves these
-///   deterministically by the spec entry's rowid (an edit keeps it, so
-///   "first-saved wins"); the loser's derived alias is shadowed and is
-///   reachable only via its owning spec's bare-field expansion. Pre-v21
-///   the loser's row was silently overwritten in the materialized aliases
-///   table, hence "first-saved-wins" was a silent collision (Appendix C
-///   jade + garnet retros).
-/// * `alias_orphan` — a user/kit alias's expansion chain ends in a name
-///   that is neither a known subcommand nor any other resolvable alias.
-///   Typical cause: a downstream alias's owning spec was deleted.
-/// * `alias_cycle` — expanding a user/kit alias revisits a name in the
-///   chain. The `expand_argv` pre-pass would bail at
-///   [`MAX_ALIAS_HOPS`], but the cycle would otherwise go undetected.
-///
-/// `--fix` (`fix_collisions = true`) annotates state-collision examples
-/// with the explicit first-saved-wins resolution. There is no DB
-/// mutation: the precedence is already deterministic and forcing a
-/// rebuild of the index would produce the same outcome. Orphans and
-/// cycles need user judgment per the bead direction and are report-only.
-fn collect_alias_drift(db: &Db, fix_collisions: bool) -> Result<AliasReport> {
-    let mut issues: Vec<Issue> = Vec::new();
-
-    // 1. Cross-spec state-name collisions (already tracked by the index).
-    let collisions: Vec<_> = {
-        let index = db.spec_alias_index()?;
-        index.collisions.clone()
-    };
-    if !collisions.is_empty() {
-        let first = &collisions[0];
-        let detail = if fix_collisions {
-            format!(
-                "alias '{name}' kept by '{winner}' (first-saved-wins); displaced from '{loser}'",
-                name = first.name,
-                winner = first.winner,
-                loser = first.loser,
-            )
-        } else {
-            format!(
-                "alias '{name}' owned by '{winner}'; '{loser}' displaced",
-                name = first.name,
-                winner = first.winner,
-                loser = first.loser,
-            )
-        };
-        issues.push(Issue {
-            severity: Severity::Warning,
-            category: "alias_state_collision",
-            message: format!(
-                "{n} cross-spec state-name collision{s} (first-saved precedence applied)",
-                n = collisions.len(),
-                s = if collisions.len() == 1 { "" } else { "s" },
-            ),
-            count: collisions.len(),
-            example: Some(IssueExample {
-                id: None,
-                field: Some(first.loser.clone()),
-                detail: Some(detail),
-            }),
-            entries: Vec::new(),
-            rendered_block: String::new(),
-        });
-    }
-
-    // 1b. Spec-v2 migration (docs/trailing-and-slots.md): a literal `--`
-    // in a stored alias body used to mean promote-to-all; it now means
-    // unix end-of-flags. Flag any body still carrying one so the user
-    // can decide whether it wants a `,,` rewrite.
-    {
-        let legacy: Vec<datum_core::field_spec::Alias> = db
-            .list_user_aliases()?
-            .into_iter()
-            .filter(|a| {
-                datum_parse::alias::shell_split(&a.expands_to)
-                    .iter()
-                    .any(|t| t == "--")
-            })
-            .collect();
-        if !legacy.is_empty() {
-            let first = &legacy[0];
-            issues.push(Issue {
-                severity: Severity::Warning,
-                category: "alias_legacy_double_dash",
-                message: format!(
-                    "{n} alias bod{ies} contain{s} `--`, which is now unix \
-                     end-of-flags (spec v2); rewrite with `,,` if shared \
-                     trailing was intended",
-                    n = legacy.len(),
-                    ies = if legacy.len() == 1 { "y" } else { "ies" },
-                    s = if legacy.len() == 1 { "s" } else { "" },
-                ),
-                count: legacy.len(),
-                example: Some(IssueExample {
-                    id: None,
-                    field: None,
-                    detail: Some(format!(
-                        "alias '{}' → datum {}",
-                        first.name, first.expands_to
-                    )),
-                }),
-                entries: Vec::new(),
-                rendered_block: String::new(),
-            });
-        }
-    }
-
-    // 2 + 3. Orphans and cycles in user/kit alias chains. Spec-derived
-    // aliases never need this walk — their `expands_to` always begins with
-    // a KNOWN_SUBCOMMAND.
-    let user_aliases = db.list_user_aliases()?;
-    let mut orphan_count: usize = 0;
-    let mut orphan_example: Option<IssueExample> = None;
-    let mut cycle_count: usize = 0;
-    let mut cycle_example: Option<IssueExample> = None;
-
-    for alias in &user_aliases {
-        match analyze_chain(db, &alias.name)? {
-            ChainOutcome::Resolved => {}
-            ChainOutcome::Orphan { broken_at, chain } => {
-                orphan_count += 1;
-                if orphan_example.is_none() {
-                    orphan_example = Some(IssueExample {
-                        id: None,
-                        field: Some(alias.name.clone()),
-                        detail: Some(format!(
-                            "{path} → '{broken_at}' (no known alias or subcommand)",
-                            path = chain.join(" → "),
-                        )),
-                    });
-                }
-            }
-            ChainOutcome::Cycle(path) => {
-                cycle_count += 1;
-                if cycle_example.is_none() {
-                    cycle_example = Some(IssueExample {
-                        id: None,
-                        field: Some(alias.name.clone()),
-                        detail: Some(format!("cycle: {}", path.join(" → "))),
-                    });
-                }
-            }
-        }
-    }
-
-    if orphan_count > 0 {
-        issues.push(Issue {
-            severity: Severity::Warning,
-            category: "alias_orphan",
-            message: format!(
-                "{n} user/kit alias{s} reference an unknown name (likely a deleted spec)",
-                n = orphan_count,
-                s = if orphan_count == 1 { "" } else { "es" },
-            ),
-            count: orphan_count,
-            example: orphan_example,
-            entries: Vec::new(),
-            rendered_block: String::new(),
-        });
-    }
-    if cycle_count > 0 {
-        issues.push(Issue {
-            severity: Severity::Warning,
-            category: "alias_cycle",
-            message: format!(
-                "{n} user/kit alias chain{s} form a cycle",
-                n = cycle_count,
-                s = if cycle_count == 1 { "" } else { "s" },
-            ),
-            count: cycle_count,
-            example: cycle_example,
-            entries: Vec::new(),
-            rendered_block: String::new(),
-        });
-    }
-
-    Ok(AliasReport { issues })
-}
-
-/// Outcome of walking a single alias's expansion chain.
-#[derive(Debug, Clone)]
-enum ChainOutcome {
-    /// Chain reaches a known subcommand or a positional placeholder.
-    Resolved,
-    /// Chain terminates at an unresolvable name partway through.
-    Orphan {
-        broken_at: String,
-        chain: Vec<String>,
-    },
-    /// Chain re-visits a name. `path` is the visited list with the
-    /// repeated name appended at the end.
-    Cycle(Vec<String>),
-}
-
-/// Walk an alias's chain by repeatedly looking up the head of each
-/// expansion. Stops on a known subcommand, a positional placeholder, an
-/// unresolved name, a revisited name, or after [`MAX_ALIAS_HOPS`] hops
-/// (which we treat as a cycle — a chain that long is unreachable in
-/// practice).
-fn analyze_chain(db: &Db, start: &str) -> Result<ChainOutcome> {
-    let mut visited: Vec<String> = vec![start.to_string()];
-    let mut current = start.to_string();
-    for _ in 0..MAX_ALIAS_HOPS {
-        let alias = match db.lookup_alias(&current)? {
-            Some(a) => a,
-            None => {
-                // The starting alias is guaranteed resolvable by its
-                // caller (we just enumerated it), so a None here means
-                // we hit an unresolved hop mid-walk.
-                return Ok(ChainOutcome::Orphan {
-                    broken_at: current,
-                    chain: visited,
-                });
-            }
-        };
-        let tokens = shell_split(&alias.expands_to);
-        let Some(head) = tokens.first() else {
-            return Ok(ChainOutcome::Resolved);
-        };
-        if KNOWN_SUBCOMMANDS.contains(&head.as_str()) {
-            return Ok(ChainOutcome::Resolved);
-        }
-        if head.starts_with('$') {
-            // Positional placeholder; substitution happens at expansion
-            // time, the chain is well-formed.
-            return Ok(ChainOutcome::Resolved);
-        }
-        if visited.iter().any(|v| v == head) {
-            visited.push(head.clone());
-            return Ok(ChainOutcome::Cycle(visited));
-        }
-        visited.push(head.clone());
-        current = head.clone();
-    }
-    // Hit the hop budget without resolving — treat as cycle.
-    Ok(ChainOutcome::Cycle(visited))
-}
-
 /// Run every consistency check and return a structured report.
-pub fn collect_issues(db: &Db) -> Result<Report> {
+pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
     let mut issues: Vec<Issue> = Vec::new();
 
     // 1. time_end < time_start (ERROR)
@@ -1505,9 +1305,8 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
     }
 
     // 2. content_hash mismatches (ERROR)
-    let entries = db.list_including_deleted()?;
     let mut mismatches: Vec<(String, String, String, String)> = Vec::new();
-    for e in &entries {
+    for e in entries {
         let expected = e.expected_content_hash();
         if expected != e.content_hash {
             mismatches.push((
@@ -1582,7 +1381,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
     // spec once the shape stabilizes.
     let mut orphan_detail: Option<(String, String, String)> = None; // (id, field, key)
     let mut orphan_count = 0usize;
-    for e in &entries {
+    for e in entries {
         let Some(spec) = registry.field_spec(&e.field) else {
             continue;
         };
@@ -1639,13 +1438,27 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
             warnings,
             clean: errors == 0 && warnings == 0,
         },
+        examined: Examined {
+            specs: registry.fields.len(),
+            ..Examined::default()
+        },
     })
 }
 
 /// Human-readable report, grouped by category with per-row count and example.
 pub fn render_human(report: &Report) -> String {
     if report.issues.is_empty() {
-        return "✓ No consistency issues found.\n".to_string();
+        let ex = &report.examined;
+        let n = |count: usize, one: &str, many: &str| {
+            format!("{count} {}", if count == 1 { one } else { many })
+        };
+        return format!(
+            "✓ No consistency issues found: {}, {}, {} examined (checkers: {}).\n",
+            n(ex.entries, "entry", "entries"),
+            n(ex.specs, "field spec", "field specs"),
+            n(ex.aliases, "alias", "aliases"),
+            ex.checkers.join(", "),
+        );
     }
     let mut out = String::new();
     for issue in &report.issues {
@@ -1713,6 +1526,11 @@ mod tests {
     use datum_core::time::DatumTime;
     use std::collections::HashMap;
 
+    /// The walk `check` hands its checkers.
+    fn all(db: &Db) -> Vec<Entry> {
+        db.list_including_deleted().unwrap()
+    }
+
     fn t_at(iso: &str) -> DatumTime {
         let utc: chrono::DateTime<chrono::Utc> = iso.parse().unwrap();
         DatumTime {
@@ -1726,7 +1544,7 @@ mod tests {
     #[test]
     fn check_clean_db_exits_zero() {
         let db = Db::open_in_memory().unwrap();
-        let report = collect_issues(&db).unwrap();
+        let report = collect_issues(&db, &all(&db)).unwrap();
         assert!(!report.has_errors(), "empty db must have no errors");
         assert!(report.issues.is_empty(), "empty db must produce no issues");
         assert!(report.summary.clean);
@@ -1756,7 +1574,7 @@ mod tests {
             )
             .unwrap();
 
-        let issues = collect_tz_drift(&db).unwrap();
+        let issues = collect_tz_drift(&db, &all(&db)).unwrap();
         assert_eq!(issues.len(), 1, "exactly one tz issue");
         let issue = &issues[0];
         assert_eq!(issue.category, "tz_offset_mismatch");
@@ -1783,7 +1601,7 @@ mod tests {
                 .unwrap();
         let entry = Entry::new_legacy("work", Verb::Switch, None, None, Some(occur), None, "d1");
         db.insert_entry(&entry).unwrap();
-        assert!(collect_tz_drift(&db).unwrap().is_empty());
+        assert!(collect_tz_drift(&db, &all(&db)).unwrap().is_empty());
     }
 
     /// An unparseable stored `occur_time_tz` can't be reconciled against the
@@ -1808,7 +1626,7 @@ mod tests {
                 [],
             )
             .unwrap();
-        let issues = collect_tz_drift(&db).unwrap();
+        let issues = collect_tz_drift(&db, &all(&db)).unwrap();
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].category, "tz_offset_mismatch");
     }
@@ -1841,7 +1659,7 @@ mod tests {
             .unwrap();
         assert_eq!(stored, None, "an absent zone stays NULL in the column");
         assert!(
-            collect_tz_drift(&db).unwrap().is_empty(),
+            collect_tz_drift(&db, &all(&db)).unwrap().is_empty(),
             "offset without a zone name is not a mismatch",
         );
     }
@@ -1864,7 +1682,7 @@ mod tests {
             )
             .unwrap();
         assert!(
-            collect_tz_drift(&db).unwrap().is_empty(),
+            collect_tz_drift(&db, &all(&db)).unwrap().is_empty(),
             "desynced tombstone must not be flagged",
         );
     }
@@ -1892,7 +1710,7 @@ mod tests {
         );
         db.insert_entry(&entry).unwrap();
 
-        let report = collect_issues(&db).unwrap();
+        let report = collect_issues(&db, &all(&db)).unwrap();
         assert!(
             report
                 .issues
@@ -1917,7 +1735,7 @@ mod tests {
         );
         db.insert_entry(&entry).unwrap();
 
-        let report = collect_issues(&db).unwrap();
+        let report = collect_issues(&db, &all(&db)).unwrap();
         assert!(
             !report.has_errors(),
             "unknown fields are warnings, not errors"
@@ -1970,7 +1788,7 @@ mod tests {
         );
         db.insert_entry(&unknown).unwrap();
 
-        let report = collect_issues(&db).unwrap();
+        let report = collect_issues(&db, &all(&db)).unwrap();
         let json = render_json(&report).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
@@ -2036,7 +1854,7 @@ mod tests {
         );
         db.insert_entry(&entry).unwrap();
 
-        let report = collect_issues(&db).unwrap();
+        let report = collect_issues(&db, &all(&db)).unwrap();
         assert!(
             !report.has_errors(),
             "orphaned keys are warnings, not errors"
@@ -2081,7 +1899,7 @@ mod tests {
         );
         db.insert_entry(&entry).unwrap();
 
-        let report = collect_issues(&db).unwrap();
+        let report = collect_issues(&db, &all(&db)).unwrap();
         assert!(
             !report
                 .issues
@@ -2118,7 +1936,7 @@ mod tests {
         // sub-bead 3 status.
         db.set_entry_verb(&slug, "block").unwrap();
 
-        let report = collect_verb_drift(&db).unwrap();
+        let report = collect_verb_drift(&all(&db)).unwrap();
         let issue = report
             .issues
             .iter()
@@ -2156,7 +1974,7 @@ mod tests {
         db.set_entry_verb(&slug, "switch").unwrap();
 
         // Pre-fix: drift detected.
-        let report = collect_verb_drift(&db).unwrap();
+        let report = collect_verb_drift(&all(&db)).unwrap();
         let drift = report
             .issues
             .iter()
@@ -2171,7 +1989,7 @@ mod tests {
         apply_verb_fixes(&db, &report.fixes).unwrap();
 
         // Post-fix: no drift, and the row's stored verb is now `block`.
-        let report2 = collect_verb_drift(&db).unwrap();
+        let report2 = collect_verb_drift(&all(&db)).unwrap();
         assert!(
             !report2.issues.iter().any(|i| i.category == "verb_drift"),
             "post-fix drift must be zero, got issues: {:?}",
@@ -2200,7 +2018,7 @@ mod tests {
         db.insert_entry(&entry).unwrap();
         db.set_entry_verb(&slug, "point").unwrap(); // force drift
 
-        let report = collect_verb_drift(&db).unwrap();
+        let report = collect_verb_drift(&all(&db)).unwrap();
         // Only verb-related categories should appear.
         for issue in &report.issues {
             assert!(
@@ -2234,7 +2052,7 @@ mod tests {
         db.set_entry_verb(&slug, "block").unwrap(); // drift
         db.soft_delete_entry(&slug).unwrap();
 
-        let report = collect_verb_drift(&db).unwrap();
+        let report = collect_verb_drift(&all(&db)).unwrap();
         assert!(
             !report.issues.iter().any(|i| i.category == "verb_drift"),
             "tombstoned rows must not contribute to drift count, got: {:?}",
@@ -2526,7 +2344,7 @@ mod tests {
         // matter.)
         db.insert_entry(&entry).unwrap();
 
-        let report = collect_slug_drift(&db, ":").unwrap();
+        let report = collect_slug_drift(&all(&db), ":").unwrap();
         let issue = report
             .issues
             .iter()
@@ -2565,7 +2383,7 @@ mod tests {
         db.insert_entry(&entry).unwrap();
 
         // Pre-fix: drift detected.
-        let report = collect_slug_drift(&db, ":").unwrap();
+        let report = collect_slug_drift(&all(&db), ":").unwrap();
         assert_eq!(report.fixes.len(), 1, "pre-fix run must queue one fix");
 
         // Apply the fix.
@@ -2573,7 +2391,7 @@ mod tests {
 
         // Post-fix: no drift, row's hid preserved, slug matches the
         // template-derived value.
-        let report2 = collect_slug_drift(&db, ":").unwrap();
+        let report2 = collect_slug_drift(&all(&db), ":").unwrap();
         assert!(
             !report2.issues.iter().any(|i| i.category == "slug_drift"),
             "post-fix drift must be zero, got issues: {:?}",
@@ -2606,7 +2424,7 @@ mod tests {
         entry.slug = Slug(format!("ghost:{}", entry.short_uid()));
         db.insert_entry(&entry).unwrap();
 
-        let report = collect_slug_drift(&db, ":").unwrap();
+        let report = collect_slug_drift(&all(&db), ":").unwrap();
         for issue in &report.issues {
             assert_eq!(
                 issue.category, "slug_drift",
@@ -2640,7 +2458,7 @@ mod tests {
         db.insert_entry(&entry).unwrap();
         db.soft_delete_entry(&slug).unwrap();
 
-        let report = collect_slug_drift(&db, ":").unwrap();
+        let report = collect_slug_drift(&all(&db), ":").unwrap();
         assert!(
             !report.issues.iter().any(|i| i.category == "slug_drift"),
             "tombstoned rows must not contribute to drift count, got: {:?}",
@@ -2703,7 +2521,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let (_, superseded) = seed_superseded_pair(&db);
 
-        let report = collect_slug_drift(&db, ":").unwrap();
+        let report = collect_slug_drift(&all(&db), ":").unwrap();
         assert!(
             !report.issues.iter().any(|i| i.category == "slug_drift"),
             "a superseded row derives its own slug, so it cannot drift, got: {:?}",
@@ -2739,7 +2557,7 @@ mod tests {
         );
         db.insert_entry(&entry).unwrap();
 
-        let report = collect_slug_drift(&db, ":").unwrap();
+        let report = collect_slug_drift(&all(&db), ":").unwrap();
         assert!(
             report.issues.is_empty(),
             "rows without templates must produce no drift, got: {:?}",
@@ -2770,7 +2588,7 @@ mod tests {
         entry.slug = Slug(format!("mood:{body}"));
         db.insert_entry(&entry).unwrap();
 
-        let report = collect_slug_drift(&db, ":").unwrap();
+        let report = collect_slug_drift(&all(&db), ":").unwrap();
         assert!(
             report.issues.is_empty(),
             "clean db must yield no slug-drift issues, got: {:?}",
@@ -3416,7 +3234,7 @@ mod tests {
         let slug_a = mk("alpha", 10);
         let slug_b = mk("beta", 11);
 
-        let mut fixes = collect_verb_drift(&db).unwrap().fixes;
+        let mut fixes = collect_verb_drift(&all(&db)).unwrap().fixes;
         assert_eq!(fixes.len(), 2, "fixture: both rows drifted");
         // Sabotage row A's fix: point it at a slug that doesn't exist so
         // its apply fails with NotFound mid-batch.
@@ -3467,7 +3285,7 @@ mod tests {
         let slug_a = mk("alpha", "2024-01-01T10:00:00+00:00");
         let slug_b = mk("beta", "2024-01-01T11:00:00+00:00");
 
-        let mut fixes = collect_slug_drift(&db, ":").unwrap().fixes;
+        let mut fixes = collect_slug_drift(&all(&db), ":").unwrap().fixes;
         assert_eq!(fixes.len(), 2, "fixture: both rows drifted");
         // Simulate the cascade: row A's pre-scan slug has been
         // invalidated by the time its fix runs (get_entry → NotFound).
@@ -3488,7 +3306,7 @@ mod tests {
         assert_eq!(report.leftover_samples[0].0, slug_a.to_string());
 
         // Row B is actually rekeyed: only row A remains drifted.
-        let remaining = collect_slug_drift(&db, ":").unwrap().fixes;
+        let remaining = collect_slug_drift(&all(&db), ":").unwrap().fixes;
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].existing.as_str(), slug_a.as_str());
         assert!(

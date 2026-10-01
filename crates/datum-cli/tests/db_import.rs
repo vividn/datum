@@ -1117,7 +1117,9 @@ fn import_offset_without_tz_leaves_the_zone_unset() {
     assert_eq!(occur.local_time().to_rfc3339(), "2025-01-08T08:00:00+01:00");
 
     // ...and the pair no longer contradicts itself, so `check tz` is clean.
-    let report = datum_commands::commands::check::collect_issues(&db).unwrap();
+    let report =
+        datum_commands::commands::check::collect_issues(&db, &db.list_including_deleted().unwrap())
+            .unwrap();
     assert!(
         !report
             .issues
