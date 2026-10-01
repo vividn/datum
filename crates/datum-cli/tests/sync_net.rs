@@ -4,30 +4,50 @@
 //! hermetic: `DATUM_SYNC_BIND` gives each copy a fixed localhost address, no
 //! relay and no discovery.
 
+use std::collections::hash_map::RandomState;
+use std::hash::BuildHasher;
 use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{TcpListener, UdpSocket};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdout, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
 
+/// A copy's UDP port, and the claim that holds it for as long as the copy
+/// lives (da-nuxm6). A port read off a probe bound to `:0` is free the moment
+/// the probe drops, and any bind on the box to `:0` — another test's probe, a
+/// DNS lookup — could be given it before the copy's `datum` binds it, which
+/// then dies with «Address already in use». So the port is below Linux's
+/// ephemeral range (32768–), where no `:0` bind lands, and a TCP listener on
+/// the same number keeps it from the other copies: `datum` binds UDP.
+pub fn claim_port() -> (u16, TcpListener) {
+    loop {
+        let port = 20_000 + (RandomState::new().hash_one(0) % 12_768) as u16;
+        if let Ok(claim) = TcpListener::bind(("127.0.0.1", port)) {
+            if UdpSocket::bind(("127.0.0.1", port)).is_ok() {
+                return (port, claim);
+            }
+        }
+    }
+}
+
 /// One copy: its own file, `DATUM_HOME` (so device and endpoint key) and port.
 struct Copy {
     tmp: TempDir,
     port: u16,
+    _claim: TcpListener,
     /// Set on every `datum` this copy runs.
     env: Vec<(&'static str, &'static str)>,
 }
 
 impl Copy {
     fn new() -> Self {
-        let port = std::net::UdpSocket::bind("127.0.0.1:0")
-            .and_then(|s| s.local_addr())
-            .expect("a free port")
-            .port();
+        let (port, _claim) = claim_port();
         Self {
             tmp: tempfile::tempdir().expect("create tmpdir"),
             port,
+            _claim,
             env: Vec::new(),
         }
     }
@@ -160,8 +180,15 @@ impl Serving {
         let mut line = String::new();
         loop {
             line.clear();
-            let n = self.out.read_line(&mut line).unwrap();
-            assert!(n > 0, "stdout ended before {needle:?}");
+            if self.out.read_line(&mut line).unwrap() == 0 {
+                // Its stderr is the reason it exited (da-nuxm6).
+                let mut err = String::new();
+                if let Some(mut e) = self.child.stderr.take() {
+                    let _ = e.read_to_string(&mut err);
+                }
+                let status = self.child.wait().unwrap();
+                panic!("stdout ended before {needle:?} ({status}): {err}");
+            }
             if line.contains(needle) {
                 return line;
             }
@@ -256,7 +283,8 @@ fn a_copy_of_this_key_is_refused() {
     let (a, _b) = paired();
     let (_inviting, ticket) = a.invite(&[]);
     let mut own = a.cmd(&["sync", "chain", "connect", &ticket]);
-    own.env("DATUM_SYNC_BIND", format!("127.0.0.1:{}", Copy::new().port));
+    let (port, _claim) = claim_port();
+    own.env("DATUM_SYNC_BIND", format!("127.0.0.1:{port}"));
     let out = own.output().unwrap();
     let text = String::from_utf8_lossy(&out.stderr);
     assert!(text.contains("a copy belongs to one chain"), "{text}");

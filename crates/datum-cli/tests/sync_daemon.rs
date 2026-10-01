@@ -9,9 +9,12 @@ use std::process::{Command, Output};
 
 use tempfile::TempDir;
 
+use crate::sync_net::claim_port;
+
 struct Home {
     tmp: TempDir,
     port: u16,
+    _claim: std::net::TcpListener,
 }
 
 impl Home {
@@ -32,11 +35,8 @@ impl Home {
             std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
-        let port = std::net::UdpSocket::bind("127.0.0.1:0")
-            .and_then(|s| s.local_addr())
-            .unwrap()
-            .port();
-        Self { tmp, port }
+        let (port, _claim) = claim_port();
+        Self { tmp, port, _claim }
     }
 
     fn path(&self, p: &str) -> PathBuf {
