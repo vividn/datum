@@ -33,6 +33,11 @@ rust="$(printf '%s\n' "$changed" | grep -E '^(crates/|xtask/|Cargo\.(toml|lock)$
 web="$(printf '%s\n' "$changed" | grep -E '^web/' || true)"
 
 if [ -n "$rust" ]; then
+  # CI's honesty gates (ci.yml, `cargo xtask check lint`): neither
+  # check-changed.sh nor check.sh runs them, so #402 passed this gate and
+  # failed CI on max-file-size (da-yl0oa). In-process scans, seconds.
+  echo "mq-check: Rust changed — running cargo xtask check lint"
+  cargo run -q -p xtask -- check lint
   echo "mq-check: Rust changed — running scripts/check-changed.sh --base $merge_base"
   bash scripts/check-changed.sh --base "$merge_base"
 fi
