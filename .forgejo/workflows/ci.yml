@@ -305,7 +305,11 @@ jobs:
       # left part of its own share idle, and at 3 it takes about its share.
       # It is not more throughput for the box. On a quiet box no gain showed,
       # and the one run at 3 cost more CPU (5380 s, against 3161-4724 s at 2).
-      # The mayor's condition: a timing flake at 3 means back to 2 at once.
+      # The mayor's condition, amended 2026-10-01: a timing cut at 3 ON THE CI
+      # BOX means back to 2 at once. By host: the 12-core CI box ran 3 files
+      # green 4 of 4 times (1546, 1552, 1553, 1556); the only misses were on
+      # the 3-core forge lane: 1548 at 3 files (daystrip cut at 300 s) and 1561
+      # at 2 (a bar.test wall-clock miss). The host failed, not the file count.
       # Read which files a run cuts BY NAME. `availableParallelism()` in the
       # job reports the host's 12 cores and its load the host's, so the
       # scaler cannot pick this.
