@@ -25,6 +25,48 @@ after(async () => {
 /** The endpoint `app`'s tab says its database's sync runs on. */
 const endpointOf = (app) => app.page.evaluate(() => window.datum.sync.states().datum?.endpoint);
 
+/**
+ * An init script: count the leader's pushes — the `sync pipe vector` reads
+ * the sync worker's session did not ask for — and its dials, at the workers'
+ * doors, with the pull's 30-s tick taken away so that only writes push.
+ */
+function countPushes() {
+	window.__pushes = { push: 0, dial: 0 };
+	const vector = (argv) => argv.slice(-3).join(' ') === 'sync pipe vector';
+	const post = Worker.prototype.postMessage;
+	Worker.prototype.postMessage = function (m, ...rest) {
+		if (m?.op === 'dial') window.__pushes.dial++;
+		if (m?.op === 'cli' && vector(m.argv)) window.__pushes.push++;
+		return post.call(this, m, ...rest);
+	};
+	window.Worker = class extends Worker {
+		constructor(...args) {
+			super(...args);
+			this.addEventListener('message', (e) => e.data?.run && vector(e.data.argv) && window.__pushes.push--);
+		}
+	};
+	// 30000 is `PULL_MS` in src/lib/sync.ts: a tick this misses dials with no
+	// write, which is what `dial` would count.
+	const every = window.setInterval;
+	window.setInterval = (f, ms, ...a) => (ms === 30000 ? 0 : every(f, ms, ...a));
+}
+
+/** `app`'s push counts once they and its peers' sessions have stood still for a second. */
+async function settled(app) {
+	const read = () =>
+		app.page.evaluate(() =>
+			JSON.stringify([window.__pushes, Object.values(window.datum.sync.states().datum?.peers ?? {}).map((p) => p.reach)])
+		);
+	let last = await read();
+	for (let i = 0; i < 30; i++) {
+		await new Promise((r) => setTimeout(r, 1000));
+		const now = await read();
+		if (now === last && !now.includes('"online"')) return JSON.parse(now)[0];
+		last = now;
+	}
+	throw new Error(`never settled; last saw: ${last}`);
+}
+
 describe('datum.day and a native copy', () => {
 	test('pair through the relay and converge', async () => {
 		const native = await nativeCopy(relay);
@@ -67,6 +109,29 @@ describe('datum.day and a native copy', () => {
 					assert.equal(await countOf(app, 'coffee'), 2);
 				},
 				{ prepare: relayed(relay) }
+			);
+		} finally {
+			await native.close();
+		}
+	});
+
+	test('one write is one push: what a session itself writes pushes nothing (da-df6cb)', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			await withApp(
+				async (app) => {
+					await pairWith(app, native);
+					native.spawn(['sync', 'run']);
+					const before = await settled(app);
+					await app.run(['occur', 'once', '-t', '1000']);
+					await until(() => native.count('once'), (n) => n === 1);
+					const after = await settled(app);
+					// The write's push dials the peer once. The session's own writes —
+					// its handshake, the `record-session` at its end — were heard as
+					// writes too, each a push, while the dial was still open.
+					assert.deepEqual({ push: after.push - before.push, dial: after.dial - before.dial }, { push: 1, dial: 1 });
+				},
+				{ prepare: async (context) => (await relayed(relay)(context), context.addInitScript(countPushes)) }
 			);
 		} finally {
 			await native.close();

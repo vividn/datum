@@ -14,6 +14,10 @@
 // - PUSH on every write to the database, this tab's or any other's
 //   (`onAnyChange`): a member whose vector is behind ours is dialed, one
 //   session per member at a time, a write during a session making one more.
+//   What a session writes itself — the handshake, the ops it applies, how it
+//   ended (`record-session`) — is not a write to push on: that dialed again
+//   a peer whose dial was still open (da-df6cb). Ops that arrived are pushed
+//   on by the session that got them, for the members it did not reach.
 // - PULL from every member every `PULL_MS`, which is also what keeps
 //   reachability fresh.
 // - Ops that ARRIVE are announced to this tab (`announceHere`); the other
@@ -89,10 +93,11 @@ let worker: Worker | null = null;
 let nextId = 0;
 const pending = new Map<number, (e: SyncEvent) => void>();
 
-/** `datum <argv>` (with `--db` in it) in the database worker, bypassing the seam's spies. */
-async function cli(argv: string[], stdin?: string): Promise<RunResult> {
+/** `datum <argv>` (with `--db` in it) in the database worker, bypassing the seam's spies;
+ * `session`: a run the sync worker's session asked for. */
+async function cli(argv: string[], stdin?: string, session?: boolean): Promise<RunResult> {
 	const { wasiRun } = await import('./runners/wasi.js');
-	return wasiRun(argv, stdin);
+	return wasiRun(argv, stdin, undefined, undefined, undefined, session);
 }
 
 async function must(argv: string[], stdin?: string): Promise<string> {
@@ -106,7 +111,7 @@ function syncWorker(): Worker {
 	worker = new Worker(new URL('./sync.worker.ts', import.meta.url), { type: 'module' });
 	worker.onmessage = ({ data }: MessageEvent<SyncEvent>) => {
 		if ('run' in data) {
-			void cli(data.argv, data.stdin).then((r) =>
+			void cli(data.argv, data.stdin, true).then((r) =>
 				worker?.postMessage({ ran: data.run, result: { code: r.code, stdout: r.stdout, stderr: r.stderr } })
 			);
 		} else if ('served' in data) {
@@ -239,7 +244,10 @@ class Leader {
 		this.seen.set(id, Date.now());
 		this.errors.delete(id);
 		this.inStep.set(id, JSON.stringify(report.vector));
-		if (report.got) announceHere([this.db]);
+		if (report.got) {
+			announceHere([this.db]);
+			void this.push().catch(() => {});
+		}
 		if (report.added) void this.refresh();
 	}
 
@@ -307,7 +315,7 @@ async function lead(db: string): Promise<void> {
 			await new Promise((r) => setTimeout(r, wait));
 		}
 	}
-	onAnyChange(() => void leader.push().catch(() => {}), db);
+	onAnyChange((session) => session || void leader.push().catch(() => {}), db);
 	// A database that does not sync has nothing to pull, nor any reach to age.
 	setInterval(() => {
 		if (leader.endpoint) void leader.push(true).catch(() => {});

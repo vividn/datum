@@ -16,7 +16,8 @@ export async function wasiRun(
 	stdin?: string,
 	onStderr?: (text: string) => void,
 	key?: string,
-	stage?: Stage
+	stage?: Stage,
+	session?: boolean
 ): Promise<RunResult> {
 	const env = [
 		`TZ=${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
@@ -25,6 +26,6 @@ export async function wasiRun(
 	];
 	// The whole process record — its timings and storage ride along for
 	// scripts/measure-wasi.mjs, unread by the app.
-	const cli = await runCli(argv, env, stdin, onStderr, key, stage);
+	const cli = await runCli(argv, env, stdin, onStderr, key, stage, session);
 	return cli ?? { argv, code: 0, stdout: '', stderr: '', superseded: true };
 }

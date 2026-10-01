@@ -23,7 +23,7 @@ let channel: BroadcastChannel | null = null;
 let self_ = '';
 /** This tab's own hearers: of its own writes (`onAnyChange`), and of a
  * sync's (`announceHere`). The channel never delivers to its sender. */
-const own = new Set<(dbs?: string[]) => void>();
+const own = new Set<(dbs?: string[], session?: boolean) => void>();
 const here = new Set<(dbs?: string[]) => void>();
 
 function open(): BroadcastChannel | null {
@@ -43,12 +43,13 @@ function open(): BroadcastChannel | null {
 
 /**
  * Say that this tab wrote to `dbs` (by name: `datum`, `_internal`, or
- * whatever `?db=` named), or to all of them when unsaid. Safe to call when
- * nobody is listening.
+ * whatever `?db=` named), or to all of them when unsaid. `session`: it was
+ * a sync session's own run, which this tab's leader started (da-df6cb).
+ * Safe to call when nobody is listening.
  */
-export function announceChange(dbs?: string[]): void {
+export function announceChange(dbs?: string[], session = false): void {
 	open()?.postMessage({ from: self_, dbs });
-	for (const hear of own) hear(dbs);
+	for (const hear of own) hear(dbs, session);
 }
 
 /**
@@ -63,11 +64,12 @@ export function announceHere(dbs: string[]): void {
 /**
  * Run `handler` on EVERY write to `db`, this tab's own and every other
  * tab's: what the syncing tab pushes on (da-6kpj5). Not coalesced — the
- * handler owns its own economy. Returns an unsubscribe.
+ * handler owns its own economy. It is told whether the write was a sync
+ * session's own (`announceChange`). Returns an unsubscribe.
  */
-export function onAnyChange(handler: () => void, db: string): () => void {
-	const hear = (dbs?: string[]) => {
-		if (!dbs || dbs.includes(db)) handler();
+export function onAnyChange(handler: (session: boolean) => void, db: string): () => void {
+	const hear = (dbs?: string[], session = false) => {
+		if (!dbs || dbs.includes(db)) handler(session);
 	};
 	own.add(hear);
 	const listener = (e: MessageEvent) => hear(e.data?.dbs);

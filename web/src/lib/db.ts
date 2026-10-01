@@ -129,6 +129,7 @@ export function initDb(): Promise<void> {
  * A process that wrote is news: for every other tab, which re-runs its panes
  * on it, and — when the write is durable — for the persistence request.
  * `null` when a newer command with the same `key` superseded it unrun.
+ * `session`: a sync session's own run, announced as one (`announceChange`).
  */
 export async function runCli(
 	argv: string[],
@@ -136,12 +137,13 @@ export async function runCli(
 	stdin?: string,
 	onStderr?: (text: string) => void,
 	key?: string,
-	stage?: Stage
+	stage?: Stage,
+	session?: boolean
 ): Promise<CliResult | null> {
 	const cli = (await request({ op: 'cli', argv, env, stdin, key, stage }, onStderr)).cli;
 	if (!cli) return null;
 	if (cli.changed.length) {
-		announceChange(cli.changed);
+		announceChange(cli.changed, session);
 		if (cli.storage === 'opfs') {
 			// Each watcher on its own: the command has already run, and a hook
 			// that throws (the persistence prompt, or any later one) must not
