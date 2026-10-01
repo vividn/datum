@@ -313,6 +313,9 @@ jobs:
       # Read which files a run cuts BY NAME. `availableParallelism()` in the
       # job reports the host's 12 cores and its load the host's, so the
       # scaler cannot pick this.
+      # The override is capped by the host's cores (da-dwq7g), so a job placed
+      # on the 3-core forge lane runs 1 file, and that lane is safe to turn
+      # back on; a timing cut at 3 ON THE CI BOX still means back to 2.
       - name: pnpm test
         if: ${{ steps.browser.outcome == 'success' }}
         working-directory: web

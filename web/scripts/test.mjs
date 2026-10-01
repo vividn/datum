@@ -9,9 +9,10 @@
 // the smaller of six and what the machine has AND what the machine's current
 // load leaves — see `filesAtOnce`.
 //
-// `DATUM_TEST_CONCURRENCY` overrides the number exactly, load and cores and
-// all: the merge queue's `scripts/mq-check.sh` sets it, because the refinery's
-// verdict is the one run that must not yield to the cans'.
+// `DATUM_TEST_CONCURRENCY` overrides the load, but not the cores: it is capped
+// at what the cores allow an idle box (da-dwq7g). The merge queue's
+// `scripts/mq-check.sh` sets it, because the refinery's verdict is the one run
+// that must not yield to the cans'.
 //
 // `--shard N/M` (or `DATUM_TEST_SHARD=N/M`, so a workflow can choose it
 // without touching the command line) runs a quarter — or a third, or an
@@ -100,7 +101,7 @@ const load = loadavg()[0];
 const override = process.env.DATUM_TEST_CONCURRENCY ? Number(process.env.DATUM_TEST_CONCURRENCY) : undefined;
 const concurrency = filesAtOnce(cores, load, 6, override);
 console.log(
-	`test: ${cores} cores${lane ? ` (cgroup cpu.max ${lane})` : ''}, load ${load.toFixed(1)} → ${concurrency} file${concurrency === 1 ? '' : 's'} at once${override ? ' (override)' : ''}`
+	`test: ${cores} cores${lane ? ` (cgroup cpu.max ${lane})` : ''}, load ${load.toFixed(1)} → ${concurrency} file${concurrency === 1 ? '' : 's'} at once${override ? ` (override ${override}${concurrency < Math.floor(override) ? ', capped by cores' : ''})` : ''}`
 );
 
 // The same set the old `tests/**/*.test.mjs` glob matched, listed here so the
