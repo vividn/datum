@@ -142,8 +142,11 @@ pub struct AliasStep {
 /// Apply the full pre-pass pipeline:
 /// 1. Terminal-verb override: `<field> end|stop` → `end|stop <field>`.
 /// 2. Alias expansion (DB-backed via [`Resolver`]).
-/// 3. Field/verb swap: `<field> <verb>` → `<verb> <field>`.
-/// 4. Stacked short-flag expansion: `-yy` → `-y -y`.
+/// 3. Trailing regions: split at `,` and consume `,,` (spec v2.1, see
+///    `regions::apply_regions`).
+/// 4. Field/verb swap: `<field> <verb>` → `<verb> <field>`.
+/// 5. Switch promote: `switch <field> end|stop|start` → `end|stop|start <field>`.
+/// 6. Stacked short-flag expansion: `-yy` → `-y -y`.
 ///
 /// Returns the expanded argv plus the list of alias steps that were
 /// applied (for provenance stamping onto the entry). Returns
@@ -175,14 +178,6 @@ pub fn expand_argv(
     let argv = apply_switch_promote_override(argv);
     let argv = expand_stacked_flags(argv);
     Ok((argv, chain))
-}
-
-/// Like [`expand_argv`] but skips alias resolution (no resolver required).
-pub fn expand_argv_no_alias(argv: Vec<String>) -> Vec<String> {
-    let argv = apply_terminal_verb_override(argv);
-    let argv = maybe_swap_field_verb(argv);
-    let argv = apply_switch_promote_override(argv);
-    expand_stacked_flags(argv)
 }
 
 /// Rewrite `datum <field> end [args...]` → `datum end <field> [args...]`.

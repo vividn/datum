@@ -17,10 +17,10 @@ pub mod regions;
 pub mod scope;
 
 pub use expand::{
-    apply_terminal_verb_override, expand_argv, expand_argv_no_alias, expand_stacked_flags,
-    maybe_collapse_switch_chain, maybe_swap_field_verb, shell_join, shell_split,
-    split_argv_at_commas, try_expand_alias, AliasStep, MapResolver, NoResolver, ResolvedAlias,
-    Resolver, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS, MULTI_COMMA, TERMINAL_VERBS,
+    apply_terminal_verb_override, expand_argv, expand_stacked_flags, maybe_collapse_switch_chain,
+    maybe_swap_field_verb, shell_join, shell_split, split_argv_at_commas, try_expand_alias,
+    AliasStep, MapResolver, NoResolver, ResolvedAlias, Resolver, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS,
+    MULTI_COMMA, TERMINAL_VERBS,
 };
 pub use scope::{
     expand_into_sides, expand_wrapped, verb_is_time_relevant, ExpandedSides, TimeFlags,
