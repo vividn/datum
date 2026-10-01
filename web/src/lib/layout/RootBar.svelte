@@ -401,6 +401,7 @@
 			label="manage the layout"
 			title="manage this layout"
 			class="manage"
+			data-help="What is done to the whole page: Split, which opens a new pane down one whole side of the layout, and Close tab, which closes the layout in front."
 			aria-label="manage the layout">▾</PaneMenu
 		>
 	{/if}

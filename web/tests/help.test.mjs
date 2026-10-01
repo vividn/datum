@@ -8,7 +8,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, seedLines } from './support/app.mjs';
-import { DESKTOP, PHONE, along, atRest, widgetPane } from './support/layout.mjs';
+import { DESKTOP, PHONE, along, atRest, unlockRoot, widgetPane } from './support/layout.mjs';
 import { listed } from './support/rows.mjs';
 import { until } from './support/until.mjs';
 
@@ -187,10 +187,13 @@ describe('the Help button', () => {
 	test('then a top bar control: its own help, not `datum help`', async () => {
 		await onPage(async ({ page }) => {
 			const bar = page.locator('.root-bar');
+			// The `▾` is drawn only while the layout is unlocked (da-ukofl).
+			await unlockRoot(page);
 			for (const control of [
 				bar.locator('button.lock'),
 				bar.locator('[role="tab"][aria-selected="true"]'),
 				bar.locator('button.add'),
+				bar.locator('button.manage'),
 				bar.locator('button.gear'),
 				bar.locator('button.hint-button')
 			]) {
