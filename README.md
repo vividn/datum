@@ -235,7 +235,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `--show <MODE>` — default|none|minimal|standard|format|all|json
 - `--json` — Shorthand for --show json
 - `-A, --show-all` — Shorthand for --show all
-- `-o, --format-string` — %field%-templated output string
+- `-o, --format-string <FMT>` — %field%-templated output string
 - `-h, --help` — Show this help
 - `-V, --version` — Show version
 <!-- END AUTOGEN: COMMANDS -->

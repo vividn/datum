@@ -1046,8 +1046,8 @@ pub const GLOBAL_FLAGS: &[FlagSpec] = &[
     FlagSpec {
         short: Some('o'),
         long: "format-string",
-        takes_value: false,
-        value_hint: None,
+        takes_value: true,
+        value_hint: Some("FMT"),
         value_optional: false,
         summary: "%field%-templated output string",
         long_description: None,
@@ -1076,7 +1076,7 @@ pub const GLOBAL_FLAGS: &[FlagSpec] = &[
 ];
 
 /// Column at which global-flag summaries align in `datum --help`.
-pub const GLOBAL_FLAGS_COL: usize = 24;
+pub const GLOBAL_FLAGS_COL: usize = 29;
 
 /// Top-level USAGE line (single line under `USAGE:`).
 pub const TOP_LEVEL_USAGE: &str = "datum [--db NAME_OR_PATH] <command> [args]";

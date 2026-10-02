@@ -74,13 +74,13 @@ VIEWS / SYNC:
   view       Execute a named SELECT view and render the rows
 
 GLOBAL OPTIONS:
-  --db <NAME_OR_PATH>   Override the active DB
-  --show <MODE>         default|none|minimal|standard|format|all|json
-  --json                Shorthand for --show json
-  -A, --show-all        Shorthand for --show all
-  -o, --format-string   %field%-templated output string
-  -h, --help            Show this help
-  -V, --version         Show version
+  --db <NAME_OR_PATH>        Override the active DB
+  --show <MODE>              default|none|minimal|standard|format|all|json
+  --json                     Shorthand for --show json
+  -A, --show-all             Shorthand for --show all
+  -o, --format-string <FMT>  %field%-templated output string
+  -h, --help                 Show this help
+  -V, --version              Show version
 
 Run `datum <command> --help` for per-command flag detail.
 With no subcommand, `datum` drops into an interactive REPL (inherits `--db`).
@@ -278,6 +278,46 @@ fn log_help_matches_parser_registry() {
             parser_keys.contains(&key),
             "LOG_FLAGS documents `{key}` but the parser registry has no such flag"
         );
+    }
+}
+
+// The global flags have no registry to compare against: `--db`, `--show`,
+// `--json`, `-h` and `-V` are read by hand in `parse_tail` and the `--show`
+// sweep, `-A` and `-o` by the output family. So the parser is asked: each
+// spelling, bare, in front of a subcommand and at the end of a writer's
+// line. Where it is recognised at all, a flag that takes a value fails
+// naming the missing value. The alias walk reads `takes_value` from this
+// table (da-tckse), so a wrong row there is a wrong walk (da-pkt4r).
+#[test]
+fn global_flags_take_a_value_as_the_parser_does() {
+    use crate::help::GLOBAL_FLAGS;
+    use crate::parse::parse_argv;
+
+    for f in GLOBAL_FLAGS {
+        let long = format!("--{}", f.long);
+        let short = f.short.map(|c| format!("-{c}"));
+        for flag in std::iter::once(&long).chain(short.as_ref()) {
+            let outcomes: Vec<String> = [vec!["datum", flag], vec!["datum", "occur", "x", flag]]
+                .iter()
+                .map(|argv| {
+                    let argv: Vec<String> = argv.iter().map(|s| s.to_string()).collect();
+                    parse_argv(&argv).map_or_else(|e| e.to_string(), |_| "parsed".into())
+                })
+                .filter(|e| !e.contains("unexpected flag"))
+                .collect();
+            assert!(
+                !outcomes.is_empty(),
+                "GLOBAL_FLAGS documents `{flag}` but the parser takes it nowhere"
+            );
+            let takes_value = outcomes
+                .iter()
+                .any(|e| e.contains("requires a value") || e.contains("missing value"));
+            assert_eq!(
+                f.takes_value, takes_value,
+                "`{flag}`: GLOBAL_FLAGS says takes_value={} but the parser says {outcomes:?}",
+                f.takes_value
+            );
+        }
     }
 }
 
