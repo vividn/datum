@@ -50,6 +50,22 @@ async function relayBinary() {
 	return bin;
 }
 
+// A child started here dies with this process (da-sfe2t). The relay and a
+// long-running `datum` are stopped by an `after()`, and a run killed before it
+// — a timeout, a cancelled job, a retired can — left them running under PID 1.
+// Linux's parent-death signal does it, set by util-linux's `setpriv`, which
+// then execs the command, so the pid is still the command's own. Where there
+// is no `setpriv` there is no such signal, and `tied` is false.
+export const tied = (() => {
+	try {
+		execFileSync('setpriv', ['--pdeathsig', 'KILL', '--', 'true'], { stdio: 'ignore' });
+		return true;
+	} catch {
+		return false;
+	}
+})();
+const tie = (bin, argv) => (tied ? ['setpriv', ['--pdeathsig', 'KILL', '--', bin, ...argv]] : [bin, argv]);
+
 function freePort() {
 	return new Promise((resolve, reject) => {
 		const s = createServer().listen(0, '127.0.0.1', () => {
@@ -60,18 +76,19 @@ function freePort() {
 	});
 }
 
-/** A relay of this file's own: `{ url, stop }`. */
+/** A relay of this file's own: `{ url, pid, stop }`. */
 export async function startRelay() {
 	const bin = await relayBinary();
 	const dir = await mkdtemp(join(tmpdir(), 'datum-relay-'));
 	const port = await freePort();
 	const config = join(dir, 'relay.toml');
 	writeFileSync(config, `http_bind_addr = "127.0.0.1:${port}"\nenable_metrics = false\n`);
-	const proc = spawn(bin, ['--dev', '--config-path', config], { stdio: 'ignore' });
+	const proc = spawn(...tie(bin, ['--dev', '--config-path', config]), { stdio: 'ignore' });
 	const url = `http://127.0.0.1:${port}`;
 	await until(() => fetch(url).then(() => true, () => false), Boolean);
 	return {
 		url,
+		pid: proc.pid,
 		async stop() {
 			proc.kill();
 			await rm(dir, { recursive: true, force: true });
@@ -125,7 +142,7 @@ export async function nativeCopy(relay) {
 	const self = {
 		run: (argv, stdin, more = {}) =>
 			new Promise((resolve) => {
-				const child = execFile(bin, argv, { env: { ...env, ...more }, encoding: 'utf8' }, (e, stdout, stderr) =>
+				const child = execFile(...tie(bin, argv), { env: { ...env, ...more }, encoding: 'utf8' }, (e, stdout, stderr) =>
 					resolve({ code: e ? (e.code ?? 1) : 0, stdout: stdout.trim(), stderr: stderr.trim() })
 				);
 				// A command that exits before reading its stdin (most do: `count`,
@@ -135,7 +152,7 @@ export async function nativeCopy(relay) {
 				child.stdin.end(stdin ?? '');
 			}),
 		spawn(argv) {
-			const child = spawn(bin, argv, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+			const child = spawn(...tie(bin, argv), { env, stdio: ['ignore', 'pipe', 'pipe'] });
 			const out = { stdout: '', stderr: '', child };
 			child.stdout.on('data', (d) => (out.stdout += d));
 			child.stderr.on('data', (d) => (out.stderr += d));
