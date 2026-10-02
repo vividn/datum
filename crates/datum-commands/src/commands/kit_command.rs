@@ -183,8 +183,9 @@ fn render_once(cmd: &InstalledKitCommand, call: &Call, db: &Db) -> Result<String
     let result = db
         .run_view(&view_row, &call.params)
         .with_context(|| format!("execute view '{view_name}'"))?;
-    let tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
-    render(cmd, call, result, tty)
+    // da-cjh89: the canonical gate (DATUM_COLOR → NO_COLOR → TTY), so the
+    // page's DATUM_COLOR=1 colours a rule's row and NO_COLOR shuts it off.
+    render(cmd, call, result, crate::render::colors::color_enabled())
 }
 
 /// Sort and colour read the FULL view row; `columns` decides only what is

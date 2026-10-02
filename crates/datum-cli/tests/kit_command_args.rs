@@ -30,6 +30,10 @@ view = "nums"
 switches = ["none"]
 columns = ["n"]
 empty = "nothing"
+
+[[command.color_rules]]
+when = "n = 2"
+color = "yellow"
 "#;
 
 struct Env(TempDir);
@@ -49,11 +53,17 @@ impl Env {
     }
 
     fn run(&self, args: &[&str]) -> Output {
+        self.run_with(args, &[("DATUM_COLOR", "0")])
+    }
+
+    fn run_with(&self, args: &[&str], vars: &[(&str, &str)]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_datum"))
             .env("DATUM_DB", self.0.path().join("data.db"))
             .env("DATUM_HOME", self.0.path().join("home"))
             .env("DATUM_CONFIG_HOME", self.0.path().join("config"))
-            .env("DATUM_COLOR", "0")
+            .env_remove("NO_COLOR")
+            .env_remove("DATUM_COLOR")
+            .envs(vars.iter().copied())
             .args(args)
             .output()
             .unwrap()
@@ -185,4 +195,25 @@ fn a_switch_binds_one_when_given_and_zero_when_not() {
     assert!(env
         .err(&["nums", "--none=1"])
         .contains("unknown flag --none=1"));
+}
+
+/// A colour rule goes through the canonical gate (da-cjh89): piped with
+/// `DATUM_COLOR=1` — how datum.day runs the CLI — the matching row is
+/// painted, and `DATUM_COLOR=0` or `NO_COLOR` keeps it plain.
+#[test]
+fn a_color_rule_follows_the_color_gate() {
+    let env = Env::new();
+    let nums = |vars: &[(&str, &str)]| {
+        let out = env.run_with(&["nums"], vars);
+        assert!(out.status.success());
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let yellow = nums(&[("DATUM_COLOR", "1")]);
+    let row = yellow.lines().find(|l| l.contains('2')).unwrap();
+    assert!(row.starts_with("\x1b[33m"), "{yellow:?}");
+    assert_eq!(yellow.matches("\x1b[33m").count(), 1, "{yellow:?}");
+    for vars in [&[("DATUM_COLOR", "0")][..], &[("NO_COLOR", "1")], &[]] {
+        let plain = nums(vars);
+        assert!(!plain.contains('\x1b'), "{vars:?}: {plain:?}");
+    }
 }
