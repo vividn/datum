@@ -121,17 +121,26 @@
 	 *
 	 * Guarded three ways, because a reload is the one thing this page must
 	 * never do twice or at the wrong moment: a session flag so it happens at
-	 * most once per tab; only while the prompt is still empty, so nothing
-	 * typed is lost; and never when already isolated, which is every load on
-	 * a deployment whose host sends the headers itself.
+	 * most once per tab; only until the visitor first types, taps or clicks,
+	 * so nothing they did or were told is lost; and never when already
+	 * isolated, which is every load on a deployment whose host sends the
+	 * headers itself.
+	 *
+	 * The visitor and not the prompt (da-6ud02): the prompt is empty again
+	 * the moment a command is submitted, and on a real network the worker
+	 * takes control after a first command more often than not — so a reload
+	 * guarded by the prompt took that command's ERROR with it, or the
+	 * command itself while it ran. A tab they have touched waits for the
+	 * next load, which is isolated from its first byte.
 	 */
 	function reloadOnceForIsolation() {
 		if (crossOriginIsolated || !('serviceWorker' in navigator)) return;
 		const KEY = 'datum-reloaded-for-isolation';
+		let touched = false;
+		for (const type of ['pointerdown', 'keydown', 'input'])
+			addEventListener(type, () => (touched = true), { capture: true, once: true });
 		const reload = () => {
-			if (sessionStorage.getItem(KEY) === '1') return;
-			const prompt = document.querySelector<HTMLInputElement>('input');
-			if (prompt?.value) return;
+			if (touched || sessionStorage.getItem(KEY) === '1') return;
 			sessionStorage.setItem(KEY, '1');
 			location.reload();
 		};

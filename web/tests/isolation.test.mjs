@@ -35,9 +35,12 @@ const TYPES = {
 
 let server;
 let url;
+/** While set, the worker's script is not served until it settles — see the last test. */
+let held = null;
 
 before(async () => {
-	server = http.createServer((req, res) => {
+	server = http.createServer(async (req, res) => {
+		if (held && req.url.startsWith('/service-worker.js')) await held;
 		let file = path.join(build, decodeURIComponent(new URL(req.url, 'http://x').pathname));
 		if (!file.startsWith(build)) {
 			res.writeHead(403);
@@ -97,6 +100,46 @@ describe('cross-origin isolation from the service worker, on a host sending no h
 			await mounted(page);
 			assert.equal(loads(), before + 1, 'no reload the second time');
 		} finally {
+			await context.close();
+		}
+	});
+
+	// da-6ud02. On datum.day — a host that sends no isolation headers — the
+	// worker takes control of a first visit while the wasm is still being
+	// precached, which on a real network is seconds: after the visitor's
+	// first command, more often than not. The reload used to fire then,
+	// because the box it guarded was already empty again, and took the
+	// command's ERROR with it — the visitor mistyped their first line and
+	// was told nothing. Here the worker is HELD until the command has
+	// answered, so the order is the live one every time, not a race.
+	test("a reload never takes away what the visitor's first command said", async () => {
+		let release;
+		held = new Promise((resolve) => (release = resolve));
+		const { context, page, loads } = await visit({
+			viewport: { width: 390, height: 844 },
+			isMobile: true,
+			hasTouch: true
+		});
+		try {
+			await page.locator('.prompt-bar input:not([disabled])').waitFor();
+			const input = page.locator('.prompt-bar input');
+			await input.fill('start walk -y 13:00');
+			await input.press('Enter');
+			// Folded, a failure is a red ERROR by the `❯` for a minute.
+			await page.locator('.prompt-bar button.failed').waitFor();
+
+			release();
+			held = null;
+			await page.waitForFunction(() => !!navigator.serviceWorker.controller);
+			// A reload asked for in `controllerchange` would be on its way by
+			// now; give it the time a navigation takes to land.
+			await page.waitForTimeout(1500);
+			await page.waitForLoadState('load');
+			assert.equal(loads(), 1, 'the page reloaded under the command');
+			assert.equal(await page.locator('.prompt-bar button.failed').count(), 1, 'the ERROR is gone');
+		} finally {
+			release();
+			held = null;
 			await context.close();
 		}
 	});
