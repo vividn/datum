@@ -180,7 +180,7 @@ export function echoArgv(argv: string[]): string[] {
 	let side: string[] = [];
 	const flush = (): void => {
 		const command = commandOf(side);
-		if (command !== undefined && !hasShow(side) && !NO_ECHO.has(command) && !readers.has(command)) {
+		if (command !== undefined && !hasShow(side) && !NO_ECHO.has(command) && !learnedNoEcho.has(command)) {
 			side = [...side, SHOW, JSON_SHOW];
 		}
 		out.push(...side);
@@ -198,20 +198,27 @@ export function echoArgv(argv: string[]): string[] {
 	return out;
 }
 
-/** The command words that answered `--show json` as readers, this session. */
-const readers = new Set<string>();
+/** The command words learned this session to go without an echo. */
+const learnedNoEcho = new Set<string>();
 
 /**
- * Run `argv` with its echo asked for, and when what answered was a reader
- * after all, run it again as it was asked (da-5x6x0).
+ * Run `argv` with its echo asked for, and when what answered has no echo
+ * after all, run it again as it was asked.
  *
  * A kit command (`chorelist`) is a reader NO_ECHO cannot name, because the
- * database installs it. Given `--show json` it prints its rows as a JSON
- * ARRAY, where a writer's echo is a `{"docs": …}` object, so an array is
- * the tell. Its view runs read-only, so asking twice changes nothing, and
- * the second answer is the table the person asked for. The word is then
- * remembered for the session, so it is asked twice once and not every
- * time; a word remembered wrongly only goes without its echo.
+ * database installs it (da-5x6x0). Given `--show json` it prints its rows
+ * as a JSON ARRAY, where a writer's echo is a `{"docs": …}` object, so an
+ * array is the tell. Its view runs read-only, so asking twice changes
+ * nothing, and the second answer is the table the person asked for.
+ *
+ * An alias is named by the database too, and one that expands to a writer
+ * with no echo (the chores kit's `newchore`, a `track`) REFUSES the flag
+ * (da-tckse). The refusal is the parser's, before anything is written, so
+ * asking again writes once.
+ *
+ * Either way a one-side line's word is then remembered for the session,
+ * so it is asked twice once and not every time; a word remembered wrongly
+ * only goes without its echo.
  */
 export async function runEchoed(
 	run: CommandRunner,
@@ -220,9 +227,12 @@ export async function runEchoed(
 ): Promise<RunResult> {
 	const asked = echoArgv(argv);
 	const result = await run(asked, stdin);
-	const reader = asked.length > argv.length && result.code === 0 && result.stdout.startsWith('[');
-	if (!reader) return result;
-	readers.add(commandOf(argv) ?? '');
+	const reader = result.code === 0 && result.stdout.startsWith('[');
+	const refused = result.code !== 0 && result.stderr.includes(`${SHOW} ${JSON_SHOW} is not a rendering`);
+	if (asked.length === argv.length || !(reader || refused)) return result;
+	// A line of several sides does not say which side answered, so it is
+	// asked again without being learned from.
+	if (!argv.includes(',')) learnedNoEcho.add(commandOf(argv) ?? '');
 	return run(argv, stdin);
 }
 

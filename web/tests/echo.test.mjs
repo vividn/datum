@@ -308,3 +308,46 @@ describe('a kit command answers with its table', () => {
 		});
 	});
 });
+
+/**
+ * A kit's alias logs in the bar as it does in the CLI (da-tckse). Typed
+ * into the bar, so the argv is the one the page sends: the alias's name,
+ * its words, and the `--show json` the page appends. Two ways that broke:
+ * the alias walk took `json` for a positional, so `feel 3` stored
+ * `feel=3` under `--show`; and an alias expanding to `track` (the chores
+ * kit's `newchore`) refused the flag outright.
+ */
+describe('a kit alias logs in the bar', () => {
+	const chores = readFileSync(new URL('../../kits/chores.toml', import.meta.url), 'utf8');
+
+	test('feel, spent and newchore log, and the slots get their words', async () => {
+		await shared.solo(async (app) => {
+			const installed = await app.run(['kit', 'install', '--yes', '-'], chores);
+			assert.equal(installed.code, 0, installed.stderr);
+			await app.run(['alias', 'set', 'feel', 'occur mood -k feel -k energy= -C']);
+			await app.run(['alias', 'set', 'spent', 'occur spent -k amount -k category -C']);
+
+			const last = async (field) =>
+				parseEcho((await app.run(['get', field, '--show', 'json'])).stdout)?.at(-1);
+
+			await app.submit('feel 3');
+			assert.equal((await last('mood'))?.data_inline, 'feel: 3');
+
+			await app.submit('spent 12.50 food');
+			assert.equal((await last('spent'))?.data_inline, 'amount: 12.5, category: "food"');
+
+			const tracked = async () =>
+				(await app.run(['grep', '-f', 'vacuum', 'TRACKED'])).stdout.match(/TRACKED/g)?.length ?? 0;
+			await app.submit('newchore vacuum 4');
+			assert.match((await app.stdouts()).at(-1) ?? '', /Tracking 'vacuum'/);
+			assert.equal(await tracked(), 1);
+			const spec = await app.run(['spec', 'show', 'vacuum']);
+			assert.match(spec.stdout, /next_date=\+4/, spec.stdout || spec.stderr);
+
+			// Again, now the page has learned the word: one TRACK row more.
+			await app.clock.forward(1000);
+			await app.submit('newchore vacuum 4');
+			assert.equal(await tracked(), 2);
+		});
+	});
+});

@@ -30,7 +30,12 @@
 //!   exists — same-named `-R` buckets all absorb, differing buckets feed
 //!   the first.
 
+use std::sync::OnceLock;
+
 use crate::error::{ParseError, Result};
+use crate::help::commands::GLOBAL_FLAGS;
+use crate::input::flag_registry::ValueMode;
+use crate::parse::log::log_args_registry;
 use crate::time::dur::parse_duration;
 
 /// The boundary / trailing-region token. Typeable user grammar, but
@@ -48,42 +53,41 @@ pub const BOUNDARY: &str = ",,";
 pub const GROUP_OPEN: &str = "(";
 pub const GROUP_CLOSE: &str = ")";
 
-/// Flags (at the token level) that consume the next token as a value.
-/// Used to keep flag values out of the positional walk. Mirrors the
-/// log-command surface; unknown `--long=value` forms are self-contained
-/// and unknown bare flags are treated as switches.
-const VALUE_FLAGS: &[&str] = &[
-    "-k",
-    "--key",
-    "-K",
-    "--slug-key",
-    "-F",
-    "--field-key",
-    "-R",
-    "--remainder",
-    "-c",
-    "--comment",
-    "-d",
-    "--date",
-    "-t",
-    "--time",
-    "-z",
-    "--timezone",
-    "--id",
-    "--id-delimiter",
-    "--alias",
-    "--conflict",
-    "-o",
-    "--output",
-];
-
 /// Duration-bearing verbs — these get a trailing `dur=` slot at the
 /// command layer (da-ooe2), so the allocator reserves a dur position
 /// for them.
 const DUR_VERBS: &[&str] = &["switch", "start", "stop", "end"];
 
+/// Flags (at the token level) that consume the next token as a value,
+/// kept out of the positional walk: every value-taking flag of the log
+/// verbs' parser registry, plus the global flags help says take one
+/// (`--db`, `--show`). Derived rather than listed — a hand list here
+/// lacked `--show`, so `feel 3 --show json` walked `json` as a positional
+/// (da-tckse). Unknown `--long=value` forms are self-contained and
+/// unknown bare flags are treated as switches.
 fn is_value_flag(tok: &str) -> bool {
-    VALUE_FLAGS.contains(&tok)
+    static FLAGS: OnceLock<Vec<String>> = OnceLock::new();
+    FLAGS
+        .get_or_init(|| {
+            let registry = log_args_registry()
+                .into_iter()
+                .filter(|s| s.value_mode == ValueMode::Required);
+            let registry = registry.flat_map(|s| {
+                [
+                    s.short.map(|c| format!("-{c}")),
+                    s.long.map(|l| format!("--{l}")),
+                ]
+            });
+            let globals = GLOBAL_FLAGS.iter().filter(|f| f.takes_value).flat_map(|f| {
+                [
+                    f.short.map(|c| format!("-{c}")),
+                    Some(format!("--{}", f.long)),
+                ]
+            });
+            registry.chain(globals).flatten().collect()
+        })
+        .iter()
+        .any(|f| f == tok)
 }
 
 fn is_flag(tok: &str) -> bool {
