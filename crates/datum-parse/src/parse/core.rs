@@ -288,6 +288,26 @@ pub(crate) fn optional_pos(pos: &[&str]) -> Result<Option<String>> {
     Ok(pos.first().map(|s| s.to_string()))
 }
 
+/// A command's words when it takes no flags: any flag is refused by name
+/// rather than taken as a positional (da-dnvgk): `alias remove --force tea`
+/// took `--force` as the name and refused `tea`, the one right word. After
+/// `--` every word is a positional, so a name that starts with a dash is
+/// still reachable: `alias remove -- --force`.
+pub(crate) fn positionals<'a>(tail: &[&'a str]) -> Result<Vec<&'a str>> {
+    let mut pos = Vec::new();
+    for (i, tok) in tail.iter().enumerate() {
+        match split_flag(tok) {
+            FlagSplit::Positional("--") => {
+                pos.extend_from_slice(&tail[i + 1..]);
+                break;
+            }
+            FlagSplit::Positional(s) => pos.push(s),
+            f => return Err(unknown_flag(f)),
+        }
+    }
+    Ok(pos)
+}
+
 pub(crate) fn require_pos(pos: &[&str], label: &str) -> Result<String> {
     optional_pos(pos)?
         .ok_or_else(|| ParseError::InvalidArg(format!("missing required positional: {label}")))

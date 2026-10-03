@@ -12,7 +12,7 @@ pub(crate) fn parse_alias_cmd(tail: &[&str]) -> Result<AliasCommand> {
     let rest: &[&str] = &tail[1..];
     match *sub {
         "show" => {
-            let name = require_pos(rest, "<NAME>")?;
+            let name = require_pos(&positionals(rest)?, "<NAME>")?;
             Ok(AliasCommand::Show { name })
         }
         "set" => {
@@ -35,7 +35,7 @@ pub(crate) fn parse_alias_cmd(tail: &[&str]) -> Result<AliasCommand> {
             })
         }
         "remove" => {
-            let name = require_pos(rest, "<NAME>")?;
+            let name = require_pos(&positionals(rest)?, "<NAME>")?;
             Ok(AliasCommand::Remove { name })
         }
         other => Err(ParseError::InvalidArg(format!(

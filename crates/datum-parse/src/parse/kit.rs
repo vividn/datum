@@ -49,11 +49,11 @@ pub(crate) fn parse_kit_cmd(tail: &[&str]) -> Result<KitCommand> {
         }
         "list" => Ok(KitCommand::List),
         "uninstall" => {
-            let name = require_pos(rest, "<NAME>")?;
+            let name = require_pos(&positionals(rest)?, "<NAME>")?;
             Ok(KitCommand::Uninstall(KitUninstallArgs { name }))
         }
         "show" => {
-            let name = require_pos(rest, "<NAME>")?;
+            let name = require_pos(&positionals(rest)?, "<NAME>")?;
             Ok(KitCommand::Show { name })
         }
         other => Err(ParseError::InvalidArg(format!(

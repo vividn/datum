@@ -41,7 +41,7 @@ pub(crate) fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
             tag: parse_spec_list_tag(rest)?,
         }),
         "remove" => {
-            let field = require_pos(rest, "<FIELD>")?;
+            let field = require_pos(&positionals(rest)?, "<FIELD>")?;
             Ok(SpecCommand::Remove { field })
         }
         other => Err(ParseError::InvalidArg(format!(

@@ -105,6 +105,7 @@ mod state_refs;
 mod stateless_same_instant;
 mod stop_cmd;
 mod stored_spec_compat;
+mod subcommand_flag_as_name;
 mod switch_cmd;
 mod sync_chain;
 mod sync_daemon;
