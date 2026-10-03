@@ -23,6 +23,7 @@
 	import { currentDb, INTERNAL_DB } from '$lib/database.js';
 	import { listDatabases } from '$lib/databases.js';
 	import { restore as restoreFile, saveBackup } from '$lib/dbio.js';
+	import type { RunResult } from '$lib/run.js';
 	import { ran } from './engine.js';
 	import {
 		ago,
@@ -142,10 +143,13 @@
 			note = r.code === 0 ? r.stdout.split('\n').at(-1) ?? '' : r.stderr;
 		});
 
+	/** The `⚠` lines a restore printed, which go beside its success sentence (da-vceux). */
+	const warnings = (r: RunResult) => r.stderr.split('\n').filter((l) => l.startsWith('⚠'));
+
 	const restoreLocal = () =>
 		perform(async () => {
 			const r = await restoreFile(['db', 'restore', '-']);
-			note = r.code === 0 ? r.stdout.split('\n').at(-1) || 'restored' : r.stderr;
+			note = r.code === 0 ? [r.stdout.split('\n').at(-1) || 'restored', ...warnings(r)].join(' ') : r.stderr;
 			// The panes of this tab re-run on it, as after a typed command.
 			await ran();
 		});
@@ -159,8 +163,9 @@
 	const restoreSlot = (plan: Plan, db: string, backup: Backup) =>
 		perform(async () => {
 			const r = await restoreFrom(plan, db, backup);
-			if (r) note = r.code === 0 ? `${db} restored to its slot ${backup.slot} backup` : r.stderr;
-			if (r) await ran();
+			if (!r) return;
+			note = r.code === 0 ? [`${db} restored to its slot ${backup.slot} backup`, ...warnings(r)].join(' ') : r.stderr;
+			await ran();
 		});
 
 	function setFresh(next: Partial<Plan>): void {

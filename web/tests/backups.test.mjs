@@ -187,6 +187,76 @@ describe('«Backups»', () => {
 		}, DEBUG);
 	});
 
+	// da-vceux: the dry run's `warnings` and the real run's `⚠` lines were
+	// dropped, so a backup whose header disagrees with its lines was
+	// confirmed and reported as if it were whole.
+	test('restore names the backup’s warnings, in the confirm and in the note after it', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			assert.equal((await app.run(['occur', 'coffee'])).code, 0);
+			// The backup the destination is given declares one entry more than it holds.
+			await page.evaluate(() => {
+				const lines = (bytes) => new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+				const previous = window.datum.setRunner(async (...args) => {
+					const result = await previous(...args);
+					if (!args[0].includes('--to')) return result;
+					for (const [file, bytes] of Object.entries(result.stage ?? {})) {
+						if (file === 'index.json') continue;
+						const [head, ...rest] = (await new Response(lines(bytes)).text()).split('\n');
+						const header = JSON.parse(head);
+						header.entry_count += 1;
+						const text = [JSON.stringify(header), ...rest].join('\n');
+						const gz = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'));
+						result.stage[file] = new Uint8Array(await new Response(gz).arrayBuffer());
+					}
+					return result;
+				});
+			});
+			const sheet = await openSheet(page);
+			const plan = await addPlan(sheet, 'hourly', 'b4');
+			await plan.locator('li[data-slot="0"]').waitFor();
+
+			await plan.locator('li[data-slot="0"] button', { hasText: 'Restore' }).click();
+			const confirm = page.locator('dialog.confirm');
+			await confirm.waitFor();
+			const mismatch = /⚠ Entry-count mismatch: header declared (\d+), restored (\d+)/;
+			const asked = await confirm.innerText();
+			assert.match(asked, mismatch);
+			const [, declared, restored] = asked.match(mismatch);
+			assert.equal(Number(declared), Number(restored) + 1, asked);
+			await confirm.getByRole('button', { name: 'restore', exact: true }).click();
+			const note = sheet.locator('[role="status"]', { hasText: 'DEBUG restored' });
+			await note.waitFor();
+			assert.match(await note.innerText(), mismatch);
+			assert.deepEqual(app.errors, []);
+		}, DEBUG);
+	});
+
+	// da-00nmm: «Restore from a file» showed stdout's last line alone.
+	test('restore from a file names the backup’s warnings in the note after it', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			assert.equal((await app.run(['occur', 'coffee'])).code, 0);
+			const backup = await app.run(['db', 'backup', '-']);
+			assert.equal(backup.code, 0, backup.stderr);
+			const [head, ...rest] = backup.stdout.split('\n');
+			const header = JSON.parse(head);
+			header.entry_count += 1;
+			const buffer = Buffer.from([JSON.stringify(header), ...rest].join('\n'));
+
+			const sheet = await openSheet(page);
+			const [chooser] = await Promise.all([
+				page.waitForEvent('filechooser'),
+				sheet.locator('button[data-backup="restore-file"]').click()
+			]);
+			await chooser.setFiles({ name: 'backup.jsonl', mimeType: 'application/jsonl', buffer });
+			const note = sheet.locator('[role="status"]', { hasText: 'Restore:' });
+			await note.waitFor();
+			assert.match(await note.innerText(), /⚠ Entry-count mismatch: header declared (\d+), restored (\d+)/);
+			assert.deepEqual(app.errors, []);
+		}, DEBUG);
+	});
+
 	// da-4gfdi: «Delete plan» deleted at once from a button drawn as display.
 	// It opens a confirm now, so it is SINGLE. act-taps-dialogs walks the
 	// place as the desktop's modal; its kinds are checked here on a phone's tab too.

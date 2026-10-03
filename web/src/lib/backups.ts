@@ -331,11 +331,16 @@ export async function restoreFrom(plan: Plan, db: string, backup: Backup): Promi
 	if (!bytes) throw new Error(`${backup.file} is not at the destination any more`);
 	const stage = { [backup.file]: bytes };
 	const argv = ['--db', db, 'db', 'restore', `/data/stage/${backup.file}`];
-	const seen = await json<{ would_delete: number; would_insert: number; would_update: number }>([...argv, '--dry-run', '--json'], stage);
+	const seen = await json<{ would_delete: number; would_insert: number; would_update: number; warnings: string[] }>(
+		[...argv, '--dry-run', '--json'],
+		stage
+	);
+	// Its warnings too (da-vceux): a header that disagrees with the lines is known before the yes.
 	const text =
 		`Restore ${db} to the backup of ${new Date(backup.backup_time).toLocaleString()} (${backup.entry_count} entries): ` +
 		`${seen.would_delete} deleted, ${seen.would_insert} added, ${seen.would_update} changed. ` +
-		'Undo reverts the whole restore.';
+		'Undo reverts the whole restore.' +
+		seen.warnings.map((w) => ` ⚠ ${w}.`).join('');
 	if (!(await confirm(text, 'restore'))) return null;
 	return run([...argv, '--yes'], undefined, undefined, undefined, stage);
 }
