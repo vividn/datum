@@ -178,7 +178,9 @@ pub(crate) fn id_list<'a>(db: &Db, list: &'a str) -> Vec<&'a str> {
 /// one entry at a time (`history`, `why`, `undo`, `redo`). A single id is
 /// passed through untouched, so its error reads as it always has. In a list
 /// a failing id does not stop the rest: it is named on stderr and the
-/// command exits non-zero, `delete`'s precedent for a partly-bad list.
+/// command exits non-zero, `delete`'s precedent for a partly-bad list. The
+/// closing error names each failed id WITH its reason (da-b45wn), since a
+/// reader that keeps only the last line — datum.day's bar — sees nothing else.
 /// The list is read by [`id_list`], like `delete`/`update`.
 pub(crate) fn for_each_id(
     db: &Db,
@@ -196,13 +198,15 @@ pub(crate) fn for_each_id(
     for id in ids {
         if let Err(e) = each(id) {
             eprintln!("{id}: {e}");
-            failed.push(id);
+            let e = e.to_string();
+            let why = e.strip_suffix(&format!(": {id}")).unwrap_or(&e);
+            failed.push(format!("{id} ({why})"));
         }
     }
     if failed.is_empty() {
         Ok(())
     } else {
-        anyhow::bail!("failed for {}", failed.join(","))
+        anyhow::bail!("failed for {}", failed.join(", "))
     }
 }
 

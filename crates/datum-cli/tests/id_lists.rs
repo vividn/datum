@@ -184,6 +184,26 @@ fn undo_and_redo_step_every_entry_of_a_list() {
     assert_eq!(notes(&env), 2, "a refused undo writes nothing");
 }
 
+/// The LAST stderr line of a partly-bad list carries each failed id's reason
+/// (da-b45wn): datum.day's bar shows only that line, and «failed for X»
+/// alone said which id failed and not why.
+#[test]
+fn a_partly_bad_list_ends_on_each_failed_id_with_its_reason() {
+    let env = Env::new();
+    let a = env.entry("mood", "happy");
+    // CI sets RUST_BACKTRACE, which puts a stack trace under the error line.
+    let out = env
+        .cmd(&["undo", &format!("{a},{BAD_ID}")])
+        .env_remove("RUST_BACKTRACE")
+        .env_remove("RUST_LIB_BACKTRACE")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    let err = stderr(&out);
+    let last = err.lines().last().unwrap_or_default();
+    assert!(last.contains(BAD_ID) && last.contains("not found"), "{err}");
+}
+
 #[test]
 fn help_json_declares_which_verbs_take_a_list() {
     let env = Env::new();
