@@ -131,14 +131,20 @@ fn stats_by_client_splits_a_fields_time() {
     );
     c.ok("bbbb", &["switch", "room", "desk", "-t", "yesterday 10:20"]);
     c.ok("aaaa", &["switch", "room", "sofa", "-t", "yesterday 10:50"]);
-    let r = c.json("aaaa", &["stats", "room", "--group-by", "client"]);
+    // sofa is still open: both runs close it at the same instant, not at now,
+    // or two processes either side of a second boundary differ by one (da-jv2jx).
+    let until = ["--until", "yesterday 11:00"];
+    let r = c.json(
+        "aaaa",
+        &[&["stats", "room", "--group-by", "client"], &until[..]].concat(),
+    );
     let secs = |client: &str| {
         let rows = r["clients"].as_array().unwrap();
         let row = rows.iter().find(|f| f["client"] == client).unwrap();
         row["duration_seconds"].as_i64().unwrap()
     };
-    assert_eq!(secs("bbbb"), 30 * 60, "{r}");
-    let whole = c.json("aaaa", &["stats", "room"]);
+    assert_eq!((secs("aaaa"), secs("bbbb")), (30 * 60, 30 * 60), "{r}");
+    let whole = c.json("aaaa", &[&["stats", "room"], &until[..]].concat());
     let field = whole["tracked_duration_seconds"].as_i64().unwrap();
     assert_eq!(secs("aaaa") + secs("bbbb"), field, "{r}");
 
