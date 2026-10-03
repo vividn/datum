@@ -512,3 +512,35 @@ test('a replacing restore confirms its deletions first; one that deletes nothing
 		}
 	);
 });
+
+// da-i4rqd: the confirm was built from the dry run's counts alone, so a
+// backup whose header disagrees with its lines was confirmed as if whole.
+test('a replacing restore names the dry run’s warnings in its confirm', async () => {
+	await desk.solo(
+		async (app) => {
+			const { page } = app;
+			await app.declare('coffee');
+			await app.submit('occur coffee');
+			const [download] = await Promise.all([page.waitForEvent('download'), app.submit('db backup')]);
+			// The header declares one entry more than the file holds.
+			const [head, ...rest] = (await readFile(await download.path(), 'utf8')).split('\n');
+			const header = JSON.parse(head);
+			header.entry_count += 1;
+			const cut = join(await mkdtemp(join(tmpdir(), 'datum-')), 'cut.jsonl');
+			await writeFile(cut, [JSON.stringify(header), ...rest].join('\n'));
+			await app.clock.forward(1000);
+			await app.submit('occur coffee');
+
+			const [chooser] = await Promise.all([page.waitForEvent('filechooser'), type(page, 'db restore')]);
+			await chooser.setFiles(cut);
+			const dialog = page.locator('dialog.confirm');
+			await dialog.waitFor();
+			const asked = await dialog.locator('p').innerText();
+			const [, declared, restored] =
+				asked.match(/ ⚠ Entry-count mismatch: header declared (\d+), restored (\d+)\.$/) ?? assert.fail(asked);
+			assert.equal(Number(declared), Number(restored) + 1, asked);
+			await answer(page, 'cancel');
+			assert.deepEqual(app.errors, []);
+		}
+	);
+});

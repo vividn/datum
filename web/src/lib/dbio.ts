@@ -107,11 +107,13 @@ export function restore(argv: string[]): Promise<RunResult> {
 		const backup = await file.text();
 		const seen = await feed([...argv, '--dry-run', '--json'], backup);
 		if (seen.code !== 0) return seen;
-		const { would_delete, would_insert, would_update } = JSON.parse(seen.stdout);
+		const { would_delete, would_insert, would_update, warnings } = JSON.parse(seen.stdout);
 		if (!would_delete) return feed(argv, backup);
 		const text =
 			`Restore replaces ${dbOf(argv)}: ${would_delete} entries will be deleted, ` +
-			`${would_insert} added, ${would_update} changed. Undo reverts the whole restore.`;
+			`${would_insert} added, ${would_update} changed. Undo reverts the whole restore.` +
+			// Its warnings too (da-i4rqd): a header that disagrees with the lines is known before the yes.
+			warnings.map((w: string) => ` ⚠ ${w}.`).join('');
 		if (!(await confirm(text, 'restore'))) {
 			// The CLI's own words for a no at its prompt.
 			return { argv, code: 1, stdout: '', stderr: 'db restore: aborted (nothing changed; --merge deletes nothing)' };
