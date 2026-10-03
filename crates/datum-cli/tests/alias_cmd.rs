@@ -115,3 +115,44 @@ fn alias_cycle_is_refused_naming_the_loop() {
     let err = run_cli(&["loop"], &db).expect_err("a cycle must be refused");
     assert_eq!(err.to_string(), "Alias cycle: loop → knot → loop");
 }
+
+/// A flag in the NAME slot is refused, not saved as an alias named
+/// `--force` that swallows the next word as its expansion (da-m99fr).
+#[test]
+fn alias_set_refuses_a_flag_as_its_name() {
+    let db = fresh_db();
+
+    let err = run_cli(&["alias", "set", "--force", "tea", "occur coffee"], &db)
+        .expect_err("a flag is not an alias name");
+    assert!(
+        format!("{err:#}").contains("unexpected flag: --force"),
+        "unexpected error: {err:#}"
+    );
+    assert!(db.lookup_alias("--force").unwrap().is_none());
+    assert!(db.lookup_alias("tea").unwrap().is_none());
+}
+
+/// A third word is refused by name instead of dropped (da-m99fr).
+#[test]
+fn alias_set_refuses_a_third_word() {
+    let db = fresh_db();
+
+    let err = run_cli(&["alias", "set", "tea", "occur tea", "nope9"], &db)
+        .expect_err("a third positional must be refused");
+    assert!(
+        format!("{err:#}").contains("unexpected argument: 'nope9'"),
+        "unexpected error: {err:#}"
+    );
+    assert!(db.lookup_alias("tea").unwrap().is_none());
+}
+
+/// The EXPANSION may start with a dash: only the NAME is checked.
+#[test]
+fn alias_set_expansion_may_start_with_a_flag() {
+    let db = fresh_db();
+
+    run_cli(&["alias", "set", "yc", "-y occur coffee"], &db).expect("saves");
+
+    let alias = db.lookup_alias("yc").unwrap().expect("alias saved");
+    assert_eq!(alias.expands_to, "-y occur coffee");
+}

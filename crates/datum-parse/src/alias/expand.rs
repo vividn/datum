@@ -626,7 +626,10 @@ pub fn expand_stacked_flags(argv: Vec<String>) -> Vec<String> {
 }
 
 fn expand_stacked(s: &str) -> Option<Vec<String>> {
-    if !s.starts_with('-') || s.starts_with("--") || s.len() < 3 {
+    // A word with whitespace in it was quoted, so it is a value — `alias
+    // set yc "-y occur coffee"` — and never a bundle of flags (da-m99fr).
+    if !s.starts_with('-') || s.starts_with("--") || s.len() < 3 || s.contains(char::is_whitespace)
+    {
         return None;
     }
     let inner = &s[1..];

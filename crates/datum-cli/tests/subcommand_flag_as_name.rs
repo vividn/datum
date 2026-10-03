@@ -43,15 +43,22 @@ fn a_leading_flag_is_named_and_nothing_is_removed() {
     assert!(!shown(&db).contains("tea → "), "a bare name still removes");
 }
 
-/// A name that starts with a dash — `alias set` makes one — is reached
-/// after `--`, which ends the flags.
+/// A name that starts with a dash is reached after `--`, which ends the
+/// flags. It is seeded through the db, not `alias set`, which refuses a
+/// flag as the NAME since da-m99fr: a database written before that, or
+/// synced from an older client, can still hold one.
 #[test]
 fn a_dash_name_is_removed_after_double_dash() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("t.db");
-    assert!(run(&db, &["alias", "set", "--force", "occur coffee"])
-        .status
-        .success());
+    datum_core::db::Db::open(db.to_str().unwrap())
+        .unwrap()
+        .save_alias(&datum_core::field_spec::Alias {
+            name: "--force".into(),
+            expands_to: "occur coffee".into(),
+            description: None,
+        })
+        .unwrap();
     let shown = |db| {
         String::from_utf8_lossy(&run(db, &["alias", "show", "--", "--force"]).stdout).into_owned()
     };

@@ -16,14 +16,17 @@ pub(crate) fn parse_alias_cmd(tail: &[&str]) -> Result<AliasCommand> {
             Ok(AliasCommand::Show { name })
         }
         "set" => {
+            // Only the NAME may not be a flag: an EXPANSION may start with
+            // one (`alias set yc "-y occur coffee"`). A third word is
+            // refused, not dropped (da-m99fr).
             let name = rest
                 .first()
-                .ok_or_else(|| ParseError::InvalidArg("alias set requires <NAME>".into()))?
-                .to_string();
-            let expansion = rest
-                .get(1)
-                .ok_or_else(|| ParseError::InvalidArg("alias set requires <EXPANSION>".into()))?
-                .to_string();
+                .ok_or_else(|| ParseError::InvalidArg("alias set requires <NAME>".into()))?;
+            if looks_like_flag(name) {
+                return Err(unknown_flag(split_flag(name)));
+            }
+            let expansion = require_pos(&rest[1..], "<EXPANSION>")?;
+            let name = name.to_string();
             Ok(AliasCommand::Set { name, expansion })
         }
         "list" => {
