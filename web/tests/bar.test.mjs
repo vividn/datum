@@ -392,6 +392,45 @@ describe('a command with no echo', () => {
 		});
 	});
 
+	test('a run that wrote and then failed shows its documents AND its error, and drops the pill of the hid it deleted (da-rrttb)', async () => {
+		await desktop(async (app) => {
+			const { page } = app;
+			await app.declare('tea');
+			const { hid } = await cliDoc(app, ['occur', 'tea']);
+			const height = await barHeight(page);
+			// The hid pill holding a good hid and a bad one: `del <good>,<bad>`
+			// deletes the good one, echoes its DELETE and exits 1 (da-0uvyr).
+			await page.evaluate((text) => window.datum.bar.setPills([{ id: 'hid', kind: 'hid', text }]), `${hid},nope9`);
+			await page.locator(`${BAR} .pill.hid`).waitFor();
+			await app.submit('del');
+			await page.locator(`${BAR} .raw.error`).waitFor();
+
+			// What the run itself said: exit 1, and the error's last line.
+			const { result } = await page.evaluate(() => window.datum.bar.last());
+			assert.equal(result.code, 1);
+			const said = result.stderr.replace(ESC, '').trim().split('\n').at(-1);
+			assert.match(said, /nope9: Entry not found/);
+			assert.deepEqual(await page.locator(`${BAR} .doc .action`).allInnerTexts(), ['DELETE']);
+			assert.equal((await section(page)).hid, hid);
+			assert.deepEqual(await page.locator(`${BAR} .raw.error p`).allInnerTexts(), [said]);
+			// Inside the output section, and the bar did not grow to hold it.
+			// The row is exactly the section's height and sits under its 1px
+			// top rule, so its last pixel is the one the rule displaced.
+			const fit = await page.locator(`${BAR} .section.output`).evaluate((out) => {
+				const box = out.getBoundingClientRect();
+				const rule = parseFloat(getComputedStyle(out).borderTopWidth);
+				const [head, line] = ['.head', '.raw.error p'].map((s) => out.querySelector(s).getBoundingClientRect());
+				return { head: head.top - box.top, line: box.bottom + rule - line.bottom };
+			});
+			assert.ok(fit.head >= 0 && fit.line >= -0.5, `the entry is cut out of the output section: ${JSON.stringify(fit)}`);
+			assert.equal(await barHeight(page), height);
+
+			// The deleted hid left the pill; the one that was never there stays.
+			await page.waitForFunction(() => window.datum.bar.pills().find((p) => p.kind === 'hid')?.text === 'nope9');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
 	test('with no document in the stdout, the raw lines still show', async () => {
 		await withApp(async (app) => { // its own: it installs a runner
 			const { page } = app;

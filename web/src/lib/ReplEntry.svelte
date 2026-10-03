@@ -60,6 +60,7 @@
 	// reports progress — stderr is all the CLI said, so it is what is shown.
 	// Both are datum's; neither is rewritten.
 	$: raw = entry.result.stdout.trim() ? entry.result.stdout : entry.result.stderr;
+	$: failed = entry.result.code !== 0 && !!entry.result.stderr.trim();
 </script>
 
 <div class="head" class:capped={!!cap} class:all>
@@ -75,6 +76,13 @@
 	     needs there is the last thing said. -->
 	{#if docs}
 		<Docs {docs} {all} />
+		<!-- A run that wrote and then failed echoes its writes AND exits
+		     non-zero (da-0uvyr): `del <good>,<bad>` deleted one entry. The
+		     documents alone would read as a success, so the error's last
+		     line goes under them. -->
+		{#if failed}
+			<RawLines text={entry.result.stderr} lines={1} error />
+		{/if}
 	{:else}
 		<RawLines text={raw} lines={cap} error={entry.result.code !== 0} />
 	{/if}

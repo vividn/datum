@@ -162,6 +162,27 @@ describe('the widget and the bar are two views of one command line', () => {
 		}, DESKTOP);
 	});
 
+	test('a run that wrote and then failed: the widget draws its document AND its error, as the bar does (da-rrttb)', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await app.goto('/input');
+			await page.locator(WIDGET).waitFor();
+			await app.declare('tea');
+			const made = await app.run(['occur', 'tea', '--show', 'json']);
+			const { hid } = JSON.parse(made.stdout.trim().split('\n').at(-1)).docs.at(-1);
+			await page.locator(WIDGET).fill(`del ${hid},nope9`);
+			await page.locator(WIDGET).press('Enter');
+			const line = page.locator('.input-widget .result .raw.error p');
+			await line.waitFor();
+			assert.deepEqual(await page.locator('.input-widget .result .doc .action').allInnerTexts(), ['DELETE']);
+			assert.equal(await line.innerText(), await page.locator('.prompt-bar .raw.error p').innerText());
+			assert.match(await line.innerText(), /nope9: Entry not found/);
+			const [inside, box] = await Promise.all([line.boundingBox(), page.locator('.input-widget > .receipt').boundingBox()]);
+			assert.ok(inside.y >= box.y && inside.y + inside.height <= box.y + box.height + 0.5, 'the error is cut out of the receipt');
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
 	test('a pill is in both, and removing it in one removes it in the other', async () => {
 		await withApp(async (app) => {
 			const { page } = app;

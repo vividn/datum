@@ -240,7 +240,7 @@ async function alone(argv: string[], line?: string, stdin?: string): Promise<Run
  * A SUCCEEDING press clears the unlocked pills it spent, so the bar is
  * ready for the next line; a failure leaves them, so a retry keeps its
  * time. A pill the command did not take stays loaded. An entry the press
- * DELETED leaves the selection, locked or not.
+ * DELETED leaves the selection, locked or not, even when the run failed.
  *
  * The GHOST is the argv alone: the pills that went with it are drawn as
  * pills beside it and fade with it (da-xfa4, `spent` in $lib/bar.ts).
@@ -259,8 +259,10 @@ export const pressWithPills = async (argv: string[], line?: string): Promise<Run
 		// A press nobody typed ghosted when it was pressed, and its pills
 		// fade on that ghost's clock; a typed line has no ghost to keep time.
 		clearUnlockedPills(used, line === undefined ? pressed : Date.now());
-		dropHids((parseEcho(result.stdout) ?? []).filter((d) => d.action === 'DELETE').map((d) => d.hid));
 	}
+	// Whatever the exit: a run that wrote and then failed still echoes its
+	// writes (da-0uvyr), and `del <good>,<bad>` has deleted the good one.
+	dropHids((parseEcho(result.stdout) ?? []).filter((d) => d.action === 'DELETE').map((d) => d.hid));
 	return result;
 };
 

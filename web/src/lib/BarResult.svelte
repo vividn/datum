@@ -45,7 +45,14 @@
 
 <div class="result" class:error role="status">
 	{#if docs}
-		<Docs {docs} />
+		<div class="stack">
+			<Docs {docs} />
+			<!-- A run that wrote and then failed (da-0uvyr): its documents AND
+			     the last line of its error, or it reads as a success. -->
+			{#if error && result?.stderr.trim()}
+				<RawLines text={result.stderr} {error} lines={1} />
+			{/if}
+		</div>
 	{:else if result}
 		<RawLines text={raw} {error} lines={LINES} />
 	{/if}
@@ -61,4 +68,15 @@
 		overflow: hidden;
 	}
 
+	.stack {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.stack > :global(.docs) {
+		flex: 1;
+		min-height: 0;
+	}
 </style>
