@@ -80,10 +80,12 @@ pub(super) fn push(lines: &ActionLines) {
 }
 
 /// Run `f` as a dispatch scope, printing the collected document when the
-/// OUTERMOST scope returns `Ok`. Nested scopes just keep collecting.
+/// OUTERMOST scope returns. Nested scopes just keep collecting.
 ///
-/// An error prints nothing: `--show json` is about the echo, not about
-/// error reporting, which stays on stderr with its own exit code.
+/// It prints on an error too: a batch command that wrote and then failed
+/// on a later token (`del <good>,<bad>`) echoed writes that happened, and
+/// the default output prints them before the error (da-0uvyr). The error
+/// itself stays on stderr with its own exit code.
 pub fn scope<T>(f: impl FnOnce() -> anyhow::Result<T>) -> anyhow::Result<T> {
     let outermost = ECHO.with(|slot| {
         let mut s = slot.borrow_mut();
@@ -108,7 +110,7 @@ pub fn scope<T>(f: impl FnOnce() -> anyhow::Result<T>) -> anyhow::Result<T> {
         }
     });
 
-    if result.is_ok() && !docs.is_empty() {
+    if !docs.is_empty() {
         println!("{}", json!({ "docs": docs }));
     }
     result

@@ -6,7 +6,7 @@
 //! which an un-stripped escape would leak into the JSON.
 
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Output};
 
 use datum_cli::output::strip_ansi;
 use serde_json::Value;
@@ -35,35 +35,53 @@ impl Env {
         }
     }
 
-    /// stdout of `datum <args...>`, with colour on (what the web passes).
-    fn run(&self, args: &[&str]) -> String {
-        let out = Command::new(env!("CARGO_BIN_EXE_datum"))
+    /// `datum <args...>`, with colour on (what the web passes).
+    fn output(&self, args: &[&str]) -> Output {
+        Command::new(env!("CARGO_BIN_EXE_datum"))
             .env("DATUM_DB", &self.db)
             .env("DATUM_HOME", &self.home)
             .env("DATUM_CONFIG_HOME", &self.config_home)
             .env("DATUM_COLOR", "1")
             .args(args)
             .output()
-            .expect("spawn datum");
-        String::from_utf8(out.stdout).expect("utf-8 stdout")
+            .expect("spawn datum")
+    }
+
+    /// stdout of `datum <args...>`.
+    fn run(&self, args: &[&str]) -> String {
+        String::from_utf8(self.output(args).stdout).expect("utf-8 stdout")
     }
 
     /// The `docs` array of the one JSON document `args` printed.
     fn docs(&self, args: &[&str]) -> Vec<Value> {
-        let stdout = self.run(args);
-        assert!(
-            !stdout.contains('\u{1b}'),
-            "`--show json` must carry text, not escapes: {stdout:?}"
-        );
-        assert_eq!(
-            stdout.lines().count(),
-            1,
-            "one JSON document on stdout and nothing else, got: {stdout:?}"
-        );
-        let doc: Value = serde_json::from_str(stdout.trim_end())
-            .unwrap_or_else(|e| panic!("stdout is not JSON ({e}): {stdout:?}"));
-        doc["docs"].as_array().cloned().expect("docs array")
+        parse_docs(&self.run(args))
     }
+
+    /// Run `args`, which must FAIL on the token `bad`, and return the docs
+    /// it printed regardless.
+    fn failing_docs(&self, args: &[&str], bad: &str) -> Vec<Value> {
+        let out = self.output(args);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success(), "{args:?} must still fail");
+        assert!(stderr.contains(bad), "the error names {bad}: {stderr}");
+        parse_docs(&String::from_utf8(out.stdout).expect("utf-8 stdout"))
+    }
+}
+
+/// The `docs` array of the one JSON document in `stdout`.
+fn parse_docs(stdout: &str) -> Vec<Value> {
+    assert!(
+        !stdout.contains('\u{1b}'),
+        "`--show json` must carry text, not escapes: {stdout:?}"
+    );
+    assert_eq!(
+        stdout.lines().count(),
+        1,
+        "one JSON document on stdout and nothing else, got: {stdout:?}"
+    );
+    let doc: Value = serde_json::from_str(stdout.trim_end())
+        .unwrap_or_else(|e| panic!("stdout is not JSON ({e}): {stdout:?}"));
+    doc["docs"].as_array().cloned().expect("docs array")
 }
 
 /// The bare shape: one doc per entry the echo printed, the three
@@ -221,4 +239,44 @@ fn an_unknown_show_value_still_errors() {
         datum_cli::output::Show::from_str("json").unwrap(),
         datum_cli::output::Show::Json
     );
+}
+
+/// A batch that writes and then fails on a later token still echoes the
+/// writes it made (da-0uvyr): the default output prints them before the
+/// error, and datum.day, which runs everything under `--show json`, must
+/// not be told only «failed» about a command that deleted an entry.
+#[test]
+fn a_partial_del_echoes_the_delete_it_made() {
+    let env = Env::new();
+    env.run(&["occur", "coffee"]);
+    let tea = env.docs(&["occur", "tea", "--show", "json"]);
+    let hid = tea[0]["hid"].as_str().unwrap();
+
+    let docs = env.failing_docs(&["del", &format!("{hid},nope9"), "--show", "json"], "nope9");
+    let deleted: Vec<_> = docs.iter().filter(|d| d["action"] == "DELETE").collect();
+    assert!(
+        deleted.iter().any(|d| d["hid"] == hid),
+        "tea's DELETE is echoed: {docs:?}"
+    );
+    assert!(
+        !env.run(&["tail"]).contains("tea"),
+        "and tea really is gone"
+    );
+}
+
+/// The same flush covers `update`: the good token's UPDATE is echoed.
+#[test]
+fn a_partial_update_echoes_the_update_it_made() {
+    let env = Env::new();
+    let tea = env.docs(&["occur", "tea", "--show", "json"]);
+    let hid = tea[0]["hid"].as_str().unwrap();
+
+    let docs = env.failing_docs(
+        &["update", &format!("{hid},nope9"), "n=1", "--show", "json"],
+        "nope9",
+    );
+    assert_eq!(docs.len(), 1, "{docs:?}");
+    assert_eq!(docs[0]["action"], "UPDATE");
+    assert_eq!(docs[0]["hid"], hid);
+    assert_eq!(docs[0]["data"], serde_json::json!(["n: 1"]));
 }
