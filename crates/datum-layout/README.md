@@ -8,7 +8,10 @@ are drawn by an SVG/Canvas renderer that consumes that struct.
 The split exists so the same layout math runs unchanged in:
 
 - the CLI (`datum dayview`, `datum nowview`) writing SVG to stdout,
-- the SvelteKit PWA via WASM rendering with D3,
+- datum.day, which runs that same CLI as `datum-cli.wasm` (one WASI
+  process per command): it draws `dayview`'s SVG as it comes, and the
+  day strip takes its gridline positions from `--show json`'s `hours[]`
+  rather than computing them — there is no D3 and no direct binding,
 - the future Flutter mobile app calling into the WASM build.
 
 No I/O. No `datum-core`. No SQLite. No allocator-specific code.
@@ -34,7 +37,7 @@ A renderer consumes a [`dayview::DayviewLayout`] and never re-does math:
 
 If you find yourself recomputing time-to-pixel mappings inside a
 renderer, add the helper here instead — that is the rule that keeps
-the SVG/D3/Flutter views consistent.
+the CLI's SVG, datum.day and the Flutter views consistent.
 
 ## WASM constraints
 

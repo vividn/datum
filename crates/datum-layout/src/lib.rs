@@ -6,8 +6,9 @@
 //! [`dayview::DayviewConfig`] and computes a [`dayview::DayviewLayout`]:
 //! pixel-positioned blocks, points, and axis ticks. No I/O, no datum-core.
 //!
-//! Renderers (SVG today, D3/Svelte tomorrow via WASM) consume the
-//! layout struct without re-doing math.
+//! Renderers (the CLI's SVG and terminal output) consume the
+//! layout struct without re-doing math; datum.day runs that same
+//! CLI as WASI, draws its SVG, and reads `--show json`.
 
 pub mod dayview;
 pub mod dayview_svg;
