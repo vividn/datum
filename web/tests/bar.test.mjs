@@ -1001,6 +1001,40 @@ describe('folded, a command still answers', () => {
 			assert.deepEqual(app.errors, []);
 		}, held(AT));
 	});
+
+	test('a re-log exits 11, «not an error», and says EXISTS in its colour — a collision still says ERROR (da-97w7z)', async () => {
+		const AT = todayAt(12, 0);
+		await withApp(async (app) => {
+			const { page } = app;
+			await page.clock.runFor(200);
+			await app.idle();
+
+			/** What the folded bar says once `line` has answered: ERROR, or its words. */
+			const said = async (line) => {
+				await app.submit(line);
+				await app.idle();
+				return page.evaluate(() => {
+					const failed = document.querySelector('.prompt-bar .failed');
+					if (failed) return { failed: failed.innerText.trim() };
+					return [...document.querySelectorAll('.prompt-bar .marks .action')].map((el) => ({
+						text: el.innerText,
+						color: getComputedStyle(el).color
+					}));
+				});
+			};
+
+			await said('occur coffee');
+			assert.equal((await app.run(['occur', 'coffee'])).code, 11, 'the second log is not a re-log');
+			const relog = await said('occur coffee');
+			// The colour is the one the same run's scrollback document drew.
+			const drawn = page.locator('.repl .doc .action', { hasText: 'EXISTS' }).first();
+			assert.deepEqual(relog, [{ text: 'EXISTS', color: await drawn.evaluate((el) => getComputedStyle(el).color) }]);
+
+			// The same exit with nothing echoed is a slug collision: a failure.
+			assert.deepEqual(await said('occur coffee n=2'), { failed: 'ERROR' });
+			assert.deepEqual(app.errors, []);
+		}, held(AT));
+	});
 });
 
 /**

@@ -588,13 +588,13 @@ let fading: ReturnType<typeof setTimeout> | undefined;
 
 function mark(result: RunResult): void {
 	clearTimeout(fading);
-	const failed = result.code !== 0;
-	const words = failed
-		? []
-		: (parseEcho(result.stdout) ?? []).map((doc) => ({
-				text: doc.action,
-				color: doc.action_color
-			}));
+	const words = (parseEcho(result.stdout) ?? []).map((doc) => ({
+		text: doc.action,
+		color: doc.action_color
+	}));
+	// Exit 11 with an echoed document is datum's benign re-log, `EXISTS`
+	// (da-9sfm, da-97w7z); exit 11 echoing nothing is a slug collision.
+	const failed = result.code !== 0 && !(result.code === 11 && words.length);
 	if (!failed && !words.length) return marks.set(null);
 	// A fresh object every run, identical words or not, so a second command
 	// restarts the fade instead of riding out the first one's.
