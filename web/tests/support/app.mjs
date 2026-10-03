@@ -251,6 +251,16 @@ export async function startApp() {
 		logLevel: 'warn',
 		preview: { host: '127.0.0.1', port: 0, strictPort: false }
 	});
+	// A refused goto reads the same whether the server never listened, closed
+	// early or errored; these lines tell the three apart (da-hncoq).
+	const say = (what) => process.stderr.write(`${new Date().toISOString()} preview server ${what}\n`);
+	say(`listening on ${server.resolvedUrls?.local?.[0]}`);
+	server.httpServer.on('close', () => say('close'));
+	// Rethrown: with no listener, `emit('error')` throws, and still must.
+	server.httpServer.on('error', (e) => {
+		say(`error: ${e?.stack ?? e}`);
+		throw e;
+	});
 	browser = await chromium.launch();
 }
 
