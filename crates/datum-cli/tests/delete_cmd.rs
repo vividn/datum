@@ -510,3 +510,43 @@ fn strict_delete_failing_mid_batch_stamps_last_at_what_it_deleted() {
         "undo must not delete coffee, the command before",
     );
 }
+
+/// A second word after the one target is refused, not dropped (da-6eefa).
+/// On datum.day a tapped row's hid sits in the pill, so `del nope9` runs as
+/// `del <hid> nope9` — it used to delete the row, exit 0 and say nothing of
+/// `nope9`. The same parse served `undo`, `redo`, `history`, `info`, `count`
+/// and `ids`.
+#[test]
+fn an_extra_word_is_refused_by_name_and_nothing_is_deleted() {
+    let path = tmp_db_path();
+    let db = datum_core::db::Db::open(path.to_str().unwrap()).unwrap();
+    let entry = entry_builder("coffee").state(json!(1)).insert(&db);
+    let (hid, file) = (&entry.hid.to_string(), path.to_str().unwrap());
+    for args in [
+        ["del", hid, "nope9", "--force"].as_slice(),
+        &["undo", hid, "nope9"],
+        &["redo", hid, "nope9"],
+        &["history", hid, "nope9"],
+        &["info", file, "nope9"],
+        &["count", "coffee", "nope9"],
+        &["ids", "coffee", "nope9"],
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env("DATUM_DB", &path)
+            .env("DATUM_COLOR", "0")
+            .args(args)
+            .output()
+            .expect("run datum");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success(), "{args:?} must fail");
+        assert!(
+            stderr.contains("'nope9'"),
+            "{args:?} must name the word: {stderr}"
+        );
+    }
+    assert!(
+        db.get_entry(&entry.hid).is_ok(),
+        "the entry must still be live"
+    );
+    let _ = std::fs::remove_file(&path);
+}

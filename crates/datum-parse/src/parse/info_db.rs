@@ -14,7 +14,7 @@ pub(crate) fn parse_info_args(tail: &[&str]) -> Result<InfoArgs> {
         }
     }
     Ok(InfoArgs {
-        target: pos.first().map(|s| s.to_string()),
+        target: optional_pos(&pos)?,
         all,
     })
 }

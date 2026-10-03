@@ -96,7 +96,7 @@ pub(crate) fn parse_delete_args(tail: &[&str]) -> Result<DeleteArgs> {
     let mut composed = DeleteParsing::default();
     let pos = fold_args(tail, &mut composed, &registry)?;
     Ok(DeleteArgs {
-        id_or_slug: pos.first().map(|s| s.to_string()),
+        id_or_slug: optional_pos(&pos)?,
         force: composed.force,
         dry_run: composed.dry_run,
         strict: composed.strict,
@@ -151,7 +151,7 @@ pub(crate) fn parse_undo_args(tail: &[&str]) -> Result<UndoArgs> {
     let mut composed = UndoParsing::default();
     let pos = fold_args(tail, &mut composed, &registry)?;
     Ok(UndoArgs {
-        id_or_slug: pos.first().map(|s| s.to_string()),
+        id_or_slug: optional_pos(&pos)?,
         to_version: composed.to_version,
         output: composed.output,
     })
@@ -181,7 +181,7 @@ pub(crate) fn parse_redo_args(tail: &[&str]) -> Result<RedoArgs> {
     let mut composed = RedoParsing::default();
     let pos = fold_args(tail, &mut composed, &registry)?;
     Ok(RedoArgs {
-        id_or_slug: pos.first().map(|s| s.to_string()),
+        id_or_slug: optional_pos(&pos)?,
         dry_run: composed.dry_run,
         output: composed.output,
     })

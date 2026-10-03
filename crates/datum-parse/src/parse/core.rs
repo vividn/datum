@@ -276,8 +276,19 @@ pub(crate) fn parse_f64(s: &str, label: &str) -> Result<f64> {
         .map_err(|_| ParseError::InvalidArg(format!("invalid number for {label}: '{s}'")))
 }
 
+/// The one positional a command takes, if given. A second is refused by
+/// name rather than dropped (da-6eefa): `del <hid> nope9` deleted `<hid>`,
+/// exited 0 and said nothing of `nope9`.
+pub(crate) fn optional_pos(pos: &[&str]) -> Result<Option<String>> {
+    if let Some(extra) = pos.get(1) {
+        return Err(ParseError::InvalidArg(format!(
+            "unexpected argument: '{extra}'"
+        )));
+    }
+    Ok(pos.first().map(|s| s.to_string()))
+}
+
 pub(crate) fn require_pos(pos: &[&str], label: &str) -> Result<String> {
-    pos.first()
-        .map(|s| s.to_string())
+    optional_pos(pos)?
         .ok_or_else(|| ParseError::InvalidArg(format!("missing required positional: {label}")))
 }

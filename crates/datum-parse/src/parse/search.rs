@@ -99,9 +99,7 @@ pub(crate) fn parse_count_args(tail: &[&str]) -> Result<CountArgs> {
             f => return Err(unknown_flag(f)),
         }
     }
-    if let Some(f) = pos.first() {
-        out.field = Some(f.to_string());
-    }
+    out.field = optional_pos(&pos)?;
     Ok(out)
 }
 
@@ -292,8 +290,6 @@ pub(crate) fn parse_ids_args(tail: &[&str]) -> Result<IdsArgs> {
             f => return Err(unknown_flag(f)),
         }
     }
-    if let Some(f) = pos.first() {
-        out.field = Some(f.to_string());
-    }
+    out.field = optional_pos(&pos)?;
     Ok(out)
 }

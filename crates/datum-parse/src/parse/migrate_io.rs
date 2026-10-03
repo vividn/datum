@@ -55,9 +55,7 @@ pub(crate) fn parse_db_import(tail: &[&str]) -> Result<DbImportArgs> {
             f => return Err(unknown_flag(f)),
         }
     }
-    if let Some(p) = pos.first() {
-        out.backup_file_positional = Some(p.to_string());
-    }
+    out.backup_file_positional = optional_pos(&pos)?;
     Ok(out)
 }
 

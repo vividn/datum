@@ -117,9 +117,9 @@ pub(crate) fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
     //   carry commas (`field:s1,s2`) for parallel-state shapes.
     // The presence of `:` flips the comma's meaning from field-separator
     // to state-element-separator, so the two forms can't be combined.
-    let (fields, state_filter) = match pos.first() {
+    let (fields, state_filter) = match optional_pos(&pos)? {
         None => (Vec::new(), None),
-        Some(s) => split_field_state(s),
+        Some(s) => split_field_state(&s),
     };
     Ok(TailArgs {
         fields,
