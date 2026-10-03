@@ -19,15 +19,22 @@ PNPM_MAJOR="11"
 
 # Resolve workspace root from this script's location:
 # crates/datum-parity/scripts/setup_datum.sh → workspace root is ../../..
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+# Physical paths (`pwd -P`): the repository test below compares against
+# git's own `--show-toplevel`, which resolves symlinks.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd -P)"
 CACHE_DIR="$WORKSPACE_ROOT/target/parity-cache"
 DATUM_DIR="$CACHE_DIR/datum"
 
 mkdir -p "$CACHE_DIR"
 
-if [ ! -d "$DATUM_DIR/.git" ]; then
+# Test that $DATUM_DIR IS a repository, not that it has a `.git` (da-3p8xi).
+# A `.git` git does not recognise (rust-cache restored one with no HEAD) makes
+# `git -C` walk up to the enclosing workspace, so every command below ran
+# against daydumb's own repo.
+if [ "$(git -C "$DATUM_DIR" rev-parse --show-toplevel 2>/dev/null)" != "$DATUM_DIR" ]; then
     echo "[setup_datum] cloning $REPO_URL → $DATUM_DIR"
+    rm -rf "$DATUM_DIR"
     git clone "$REPO_URL" "$DATUM_DIR"
 fi
 
@@ -38,6 +45,11 @@ CURRENT_SHA="$(git -C "$DATUM_DIR" rev-parse HEAD)"
 if [ "$CURRENT_SHA" != "$PINNED_SHA" ]; then
     echo "[setup_datum] checking out pinned SHA $PINNED_SHA (was $CURRENT_SHA)"
     git -C "$DATUM_DIR" checkout --quiet "$PINNED_SHA"
+fi
+CURRENT_SHA="$(git -C "$DATUM_DIR" rev-parse HEAD)"
+if [ "$CURRENT_SHA" != "$PINNED_SHA" ]; then
+    echo "[setup_datum] ERROR: $DATUM_DIR is at $CURRENT_SHA after checkout, not $PINNED_SHA" >&2
+    exit 1
 fi
 
 if ! command -v pnpm >/dev/null 2>&1; then
