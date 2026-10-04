@@ -583,6 +583,10 @@ An existing slug that holds a comma — `tx:[electricity,paid]`, from an
 `--id` slot holding a list — is ONE target: the whole argument is tried as
 a slug before the list splits.
 
+A wildcard, like `_N`, skips the meta entries (specs, aliases, views, kit
+commands) unless it names their field: `c*` is your coffee and never a
+kit's `command:hydration`, while `command:*` is every kit command.
+
 `datum tail` prints the ordinals in its `_n` column, so the number you
 read is the one you type.
 

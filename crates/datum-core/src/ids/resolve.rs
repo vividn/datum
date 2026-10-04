@@ -41,7 +41,7 @@ use std::collections::HashMap;
 use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
 
-use crate::db::{row_to_entry_public, Db, NOT_META_FIELD_SQL};
+use crate::db::{is_meta_field, row_to_entry_public, Db, NOT_META_FIELD_SQL};
 use crate::entry::Entry;
 use crate::error::{DatumError, PrefixCandidate, Result};
 use crate::ids::{Hid, QUICK_ORDINAL_CAP};
@@ -341,16 +341,24 @@ fn glob_to_like(pattern: &str) -> String {
     out
 }
 
+/// Skips the meta fields' entries (da-lc26c) unless the pattern names one
+/// before its `:` (`spec:*`, `alias:w*`) — so `del 'c*'` for coffee never
+/// reaches a kit's `command:` (da-wh6t9).
 fn wildcard_match(db: &Db, pattern: &str) -> Result<Vec<Entry>> {
     let like = glob_to_like(pattern);
-    let mut stmt = db.conn().prepare(
+    let not_meta = match pattern.split_once(':') {
+        Some((field, _)) if is_meta_field(field) => String::new(),
+        _ => format!("AND {NOT_META_FIELD_SQL}"),
+    };
+    let mut stmt = db.conn().prepare(&format!(
         "SELECT * FROM entries
          WHERE (slug LIKE ?1 ESCAPE '\\' OR hid LIKE ?1 ESCAPE '\\')
            AND deleted_at IS NULL
            AND (superseded_by IS NULL OR hid LIKE ?1 ESCAPE '\\')
+           {not_meta}
          ORDER BY occur_time ASC,
-                  slug ASC",
-    )?;
+                  slug ASC"
+    ))?;
     let rows = stmt.query_map(params![like], row_to_entry_public)?;
     rows.map(|r| r.map_err(DatumError::Db)).collect()
 }

@@ -294,6 +294,45 @@ fn compound_delete_expands_wildcards() {
     );
 }
 
+/// A wildcard skips the meta entries — specs, aliases, kits' commands —
+/// unless it names their field, so `del 'c*'` aimed at coffee leaves a
+/// kit's `command:hydration` alone (da-wh6t9). An exact slug still reaches one.
+#[test]
+fn a_wildcard_skips_meta_entries_unless_it_names_their_field() {
+    use datum_core::ids::resolve_quickid_all;
+    let db = fresh_db();
+    let dir = tempfile::tempdir().unwrap();
+    let kit = dir.path().join("water.toml");
+    std::fs::write(
+        &kit,
+        "[kit]\nname = \"water\"\n\n[[field]]\nname = \"fluid\"\nverb = \"occur\"\n\n\
+         [[view]]\nname = \"hydration\"\nsql = \"SELECT 1 AS n\"\n\n\
+         [[command]]\nname = \"hydration\"\nview = \"hydration\"\n",
+    )
+    .unwrap();
+    run_cli(&["kit", "install", "--yes", &kit.to_string_lossy()], &db).unwrap();
+    run_cli(&["occur", "coffee"], &db).unwrap();
+    let slugs = |pattern: &str| -> Vec<String> {
+        let found = resolve_quickid_all(&db, pattern).unwrap();
+        found.into_iter().map(|e| e.slug.to_string()).collect()
+    };
+
+    let coffee = slugs("coffee:*");
+    assert_eq!(coffee.len(), 1);
+    assert_eq!(slugs("c*"), coffee);
+    assert_eq!(slugs("*"), coffee);
+    assert_eq!(slugs("command:*"), ["command:hydration"]);
+    assert_eq!(slugs("spec:fluid"), ["spec:fluid"]);
+
+    run_cli(&["delete", "c*", "--force"], &db).unwrap();
+    assert_count!(db, "coffee", 0);
+    assert_eq!(
+        slugs("command:*"),
+        ["command:hydration"],
+        "the kit's command survives"
+    );
+}
+
 /// A comma-separated list mixing an exact slug, a hid prefix, and a wildcard
 /// all resolve through the same pipeline.
 ///
