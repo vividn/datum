@@ -715,6 +715,58 @@ fn subprocess_unwritable_backup_refuses_to_migrate() {
     assert_eq!(rows, 1, "the user's row must survive a refused migration");
 }
 
+/// da-wd5ip: help is a page of text, and asking for one must not open
+/// the database: the open migrates it, and snapshots it first. Against a
+/// file whose migration fails, every help call left one more snapshot.
+#[test]
+fn subprocess_help_does_not_open_the_db() {
+    let env = Env::new();
+    assert_ok(&env.run(&["occur", "coffee"]), "seed row");
+    {
+        let conn = Connection::open(&env.db).expect("open db");
+        datum_core::migrations::migrate_down_to(&conn, 48).expect("walk schema back");
+        // Half-migrated: v48→v49's column is already there, so it fails.
+        conn.execute_batch("ALTER TABLE sync_local ADD COLUMN paused_at TEXT")
+            .expect("add column");
+    }
+    let backups = || {
+        std::fs::read_dir(env.db.parent().unwrap())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".bak"))
+            .count()
+    };
+
+    for args in [
+        &["sync", "--help"][..],
+        &["del", "-h"],
+        &["tail", "-qh"],
+        &["--help"],
+        &["help", "tail"],
+        &["help", "time"],
+        &["--man", "tail"],
+        &["--version"],
+    ] {
+        assert_ok(&env.run(args), &format!("datum {args:?}"));
+        assert_eq!(backups(), 0, "`datum {args:?}` opened the db");
+    }
+
+    // A topic's name in command position may be an alias, and still
+    // takes the database: the alias pass opens it, the migration fails
+    // and leaves a snapshot, and the page is the topic's all the same.
+    assert_ok(&env.run(&["time", "--help"]), "datum time --help");
+    assert_eq!(backups(), 1, "`datum time --help` must look for an alias");
+
+    // A command does open it: the migration fails, and fails again, and
+    // the file keeps one snapshot.
+    for _ in 0..2 {
+        let out = env.run(&["tail"]);
+        assert_eq!(out.status.code(), Some(1));
+        assert!(String::from_utf8_lossy(&out.stderr).contains("duplicate column name"));
+    }
+    assert_eq!(backups(), 1);
+}
+
 /// da-c7uw: the whole point of `tail --json` is what a *script* reads off
 /// stdout, so the assertion has to happen on the other side of the process
 /// boundary — the in-process harness never sees the printed document.

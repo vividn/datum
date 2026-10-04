@@ -344,7 +344,8 @@ pub struct MigrationReport {
 /// failed migration can never cost you a backup.
 pub const MAX_PRE_MIGRATION_BACKUPS: usize = 5;
 
-/// Snapshot the database file before migrating it. Returns the path written.
+/// Snapshot the database file before migrating it. Returns the snapshot's
+/// path: the one written, or an identical one already beside the file.
 ///
 /// `VACUUM INTO`, not a filesystem copy: connections run in WAL mode, so
 /// the `.db` file on its own is not the whole database, and a copy taken
@@ -373,6 +374,34 @@ pub fn backup_before_migration(
                 dest.display()
             ))
         })?;
+    // A migration that fails leaves the file as it was, so the next open
+    // snapshots the same bytes again, and retention never runs (da-wd5ip).
+    // Keep the newest snapshot of this `from` when it holds exactly these
+    // bytes: every distinct state still has one, and nothing is deleted
+    // that is not a copy of what stays.
+    let prefix = format!(
+        "{}.pre-v{from}-to-",
+        db_path.file_name().unwrap_or_default().to_string_lossy()
+    );
+    let newest = std::fs::read_dir(dest.parent().unwrap_or(std::path::Path::new(".")))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            n.starts_with(&prefix) && n.ends_with(".bak") && e.path() != dest
+        })
+        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
+        .max();
+    if let Some((_, prev)) = newest {
+        let same = matches!(
+            (std::fs::read(&prev), std::fs::read(&dest)),
+            (Ok(a), Ok(b)) if a == b
+        );
+        if same && std::fs::remove_file(&dest).is_ok() {
+            return Ok(prev);
+        }
+    }
     Ok(dest)
 }
 

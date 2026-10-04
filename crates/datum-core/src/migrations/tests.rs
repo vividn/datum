@@ -1015,6 +1015,37 @@ fn a_failed_backup_aborts_the_migration() {
     assert!(backups_beside(&path).is_empty());
 }
 
+/// da-wd5ip: a migration that fails leaves the file as it was, and every
+/// open tries it again. One snapshot of each state the file was in is
+/// enough; a snapshot per open grew to 153 copies of one database.
+#[test]
+fn a_migration_that_keeps_failing_keeps_one_snapshot_per_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("datum.db");
+    legacy_file_db(&path, 48);
+    // The half-migrated file found in the wild: v48→v49's column is there.
+    let raw = Connection::open(&path).unwrap();
+    raw.execute_batch("ALTER TABLE sync_local ADD COLUMN paused_at TEXT")
+        .unwrap();
+    let fail = || match Db::open(path.to_str().unwrap()) {
+        Err(e) => assert!(e.to_string().contains("duplicate column name"), "{e}"),
+        Ok(_) => panic!("the migration must fail"),
+    };
+
+    fail();
+    fail();
+    let kept = backups_beside(&path);
+    assert_eq!(kept.len(), 1, "two failing opens, one snapshot: {kept:?}");
+    assert_eq!(version_of(&kept[0]), 48);
+
+    // A file that changed between opens is a new state, and gets its own.
+    raw.execute_batch("CREATE TABLE scratch (x)").unwrap();
+    fail();
+    fail();
+    assert_eq!(backups_beside(&path).len(), 2);
+    assert!(backups_beside(&path).contains(&kept[0]));
+}
+
 /// Retention keeps the newest [`MAX_PRE_MIGRATION_BACKUPS`] snapshots
 /// and reports what it removed, so the accumulation is neither
 /// unbounded nor silent.

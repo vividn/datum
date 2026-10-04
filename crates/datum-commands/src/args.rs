@@ -315,6 +315,40 @@ impl CliExt for Cli {
 /// skips the comma-split — the multi-row feature can't be bypassed
 /// at the binary level.
 pub fn parse_invocation(argv: Vec<String>) -> anyhow::Result<Invocation> {
+    // A help, version or man page for a command datum knows is answered
+    // without the database (da-wd5ip): opening it may migrate it, and
+    // snapshot it first, for a page of text. One naming no known command
+    // (`datum vbp --help`) may be an alias, which takes the database; so
+    // may a topic's name (`datum time --help`), except after `help`,
+    // where no alias fires. A short cluster is read whole (`tail -qh`).
+    let asks_for_text = argv.iter().skip(1).any(|a| {
+        a == "help"
+            || ["--help", "--version", "--man"]
+                .iter()
+                .any(|f| a.starts_with(f))
+            || (a.starts_with('-') && !a.starts_with("--") && a.contains(['h', 'V']))
+    });
+    if asks_for_text {
+        if let Err(e) = parse_invocation_inner(argv.clone(), &palias::NoResolver) {
+            let answered = match e.downcast_ref::<ParseError>() {
+                Some(ParseError::VersionRequested | ParseError::GrammarRequested) => true,
+                Some(ParseError::HelpRequested(c) | ParseError::ManRequested(c)) => {
+                    let after_help = crate::config::split_off_global_db_flag(argv.clone())
+                        .0
+                        .get(1)
+                        .is_some_and(|a| a == "help");
+                    c.as_deref().is_none_or(|c| {
+                        datum_parse::help::find_command(c).is_some()
+                            || after_help && datum_parse::help::find_topic(c).is_some()
+                    })
+                }
+                _ => false,
+            };
+            if answered {
+                return Err(e);
+            }
+        }
+    }
     // da-hfi3: honour the global `--db <value>` / `--db=<value>` flag
     // when picking which DB to open for alias resolution. The bug this
     // fixes: a user with `--db /tmp/x.db` who'd defined `vbp` only in
