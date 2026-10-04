@@ -22,6 +22,46 @@ import { chromium, webkit } from 'playwright';
 import { fileArgv } from '../src/lib/fileargv.ts';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 
+// The probe is the file's one top-level await, and it comes before any
+// hook or test is registered (da-h9vv0): node:test runs the root `after`
+// (stopApp) as soon as the tests registered SO FAR have finished — it does
+// not wait for tests registered after a top-level await — so with
+// `fileArgv` above the await, a probe slower than `fileArgv` closed the
+// server and the browser before the browser legs ran. It takes a TEST
+// registered before the await: hooks alone are safe (viewport.test.mjs,
+// measured with a 3 s probe — `after` still ran last).
+//
+// CI installs chromium's headless shell only (`playwright install
+// --with-deps --only-shell chromium`, .github/workflows/ci.yml): a leg
+// whose browser cannot be launched here is SKIPPED with the reason on
+// record, not failed — the webkit leg runs where webkit is (this machine,
+// the merge gate) and CI stays green without pretending it ran it.
+// 2026-09-11: two webkit legs failed CI on "Executable doesn't exist" and
+// main was red and deployed for forty minutes. The probe is a LAUNCH, not
+// `executablePath()`: with the headless shell installed the full browser's
+// path is absent while the browser launches fine.
+async function launchable(engine) {
+	try {
+		const browser = await engine.launch();
+		await browser.close();
+		return true;
+	} catch {
+		return false;
+	}
+}
+const available = new Map(
+	await Promise.all([chromium, webkit].map(async (engine) => [engine, await launchable(engine)]))
+);
+const missing = (engine) =>
+	available.get(engine) ? false : `${engine.name()} cannot be launched here (playwright install ${engine.name()})`;
+
+// A file whose every leg is skipped would pass having examined nothing;
+// at least one browser must launch, or the file fails and says so.
+assert.ok(
+	[...available.values()].some(Boolean),
+	'no browser can be launched here — nothing examined (playwright install chromium)'
+);
+
 before(startApp);
 after(stopApp);
 
@@ -155,37 +195,6 @@ const tailShows = (page, n) =>
 		(n) => document.querySelectorAll('section.pane[data-title="tail"] tbody tr').length === n,
 		n
 	);
-
-// CI installs chromium's headless shell only (`playwright install
-// --with-deps --only-shell chromium`, .github/workflows/ci.yml): a leg
-// whose browser cannot be launched here is SKIPPED with the reason on
-// record, not failed — the webkit leg runs where webkit is (this machine,
-// the merge gate) and CI stays green without pretending it ran it.
-// 2026-09-11: two webkit legs failed CI on "Executable doesn't exist" and
-// main was red and deployed for forty minutes. The probe is a LAUNCH, not
-// `executablePath()`: with the headless shell installed the full browser's
-// path is absent while the browser launches fine.
-async function launchable(engine) {
-	try {
-		const browser = await engine.launch();
-		await browser.close();
-		return true;
-	} catch {
-		return false;
-	}
-}
-const available = new Map(
-	await Promise.all([chromium, webkit].map(async (engine) => [engine, await launchable(engine)]))
-);
-const missing = (engine) =>
-	available.get(engine) ? false : `${engine.name()} cannot be launched here (playwright install ${engine.name()})`;
-
-// A file whose every leg is skipped would pass having examined nothing;
-// at least one browser must launch, or the file fails and says so.
-assert.ok(
-	[...available.values()].some(Boolean),
-	'no browser can be launched here — nothing examined (playwright install chromium)'
-);
 
 for (const engine of [chromium, webkit]) {
 	describe(engine.name(), { skip: missing(engine) }, () => {
