@@ -151,7 +151,7 @@
 			const r = await restoreFile(['db', 'restore', '-']);
 			note = r.code === 0 ? [r.stdout.split('\n').at(-1) || 'restored', ...warnings(r)].join(' ') : r.stderr;
 			// The panes of this tab re-run on it, as after a typed command.
-			await ran();
+			await ran(r);
 		});
 
 	const removePlan = (plan: Plan) =>
@@ -165,7 +165,7 @@
 			const r = await restoreFrom(plan, db, backup);
 			if (!r) return;
 			note = r.code === 0 ? [`${db} restored to its slot ${backup.slot} backup`, ...warnings(r)].join(' ') : r.stderr;
-			await ran();
+			await ran(r);
 		});
 
 	function setFresh(next: Partial<Plan>): void {

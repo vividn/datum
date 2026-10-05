@@ -20,4 +20,4 @@
 	onDestroy(() => unregister?.());
 </script>
 
-<Repl bind:this={repl} {reversed} on:ran={() => void ran()} />
+<Repl bind:this={repl} {reversed} on:ran={(e) => void ran(e.detail)} />

@@ -1,11 +1,12 @@
-// What one command costs the panes (da-t6k2a): the command, then ONE
-// refresh — each pane's argv once, and the same refresh whether the command
-// read or wrote.
+// What one command costs the panes (da-t6k2a, da-fprk0): a write, then ONE
+// refresh — each pane's argv once; a read, nothing past itself. The gate is
+// the worker's change counters (`RunResult.changed`), so a read typed at the
+// bar re-runs no pane and leaves the widget bar alone.
 //
 // Counted at the seam with argv whole. A counter that kept three words of
 // each saw the strip's two `dayview`s — its geometry (`--show json`) and
 // today's picture — as one run made twice, and a minute tick (the strip's
-// `tock` and nowview's `$minute`, tests/tick.test.mjs) landing inside an
+// `tock` and nowview's `$tenSeconds`, tests/tick.test.mjs) landing inside an
 // `occur`'s window as a second refresh after the write. The clock is held
 // here, so no tick lands in the window.
 
@@ -30,17 +31,21 @@ async function runsAfter(app, line) {
 	return { typed, refresh };
 }
 
-test('a command runs each pane once, and a write the same refresh as a read', async () => {
+test('a write runs each pane once, and a read runs nothing past itself', async () => {
 	await withApp(async (app) => {
 		await app.idle();
-		const read = await runsAfter(app, 'tail');
 		const write = await runsAfter(app, 'occur coffee');
-		assert.equal(read.typed, 'tail');
 		assert.match(write.typed, /^occur coffee/);
 		for (const pane of ['fields --json', 'dayview', 'nowview', 'tail --json'])
-			assert.ok(read.refresh.some((argv) => argv.startsWith(pane)), `${pane} refreshed: ${read.refresh.join(' | ')}`);
-		for (const { refresh } of [read, write])
-			assert.deepEqual(refresh.filter((argv, i) => refresh.indexOf(argv) !== i), [], refresh.join(' | '));
-		assert.deepEqual([...write.refresh].sort(), [...read.refresh].sort());
+			assert.ok(write.refresh.some((argv) => argv.startsWith(pane)), `${pane} refreshed: ${write.refresh.join(' | ')}`);
+		assert.deepEqual(write.refresh.filter((argv, i) => write.refresh.indexOf(argv) !== i), [], write.refresh.join(' | '));
+
+		for (const line of ['tail', 'stats']) {
+			const read = await runsAfter(app, line);
+			// Its echo asked for, or asked again without (`runEchoed`): itself either way.
+			const itself = [line, `${line} --show json`];
+			assert.ok(itself.includes(read.typed), read.typed);
+			assert.deepEqual(read.refresh.filter((argv) => !itself.includes(argv)), [], `${line} re-ran panes`);
+		}
 	}, DESKTOP);
 });

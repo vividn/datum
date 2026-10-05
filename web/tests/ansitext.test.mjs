@@ -17,7 +17,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp, todayAt } from './support/app.mjs';
+import { seedLines, sharedApp, startApp, stopApp, todayAt } from './support/app.mjs';
 import { stripAnsi } from './support/tail.mjs';
 
 before(startApp);
@@ -105,9 +105,8 @@ const AFTERNOON = todayAt(15);
 const shared = sharedApp({ clock: AFTERNOON });
 
 async function twoSurfaces(app) {
-	assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, OK);
-	assert.equal((await app.run(['switch', 'mood', 'happy', '-t', '0800'])).code, OK);
-	assert.equal((await app.run(['switch', 'mood', 'happy', '-t', '+30'])).code, OK);
+	// The last write typed: a write refreshes the tail pane, a read does not (da-fprk0).
+	await seedLines(app, ['occur coffee -t 0700', 'switch mood happy -t 0800', 'switch mood happy -t +30']);
 	const listed = await app.run(['tail']);
 	assert.equal(listed.code, OK, listed.stderr);
 	await app.submit('tail');

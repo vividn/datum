@@ -13,7 +13,7 @@
 
 	Every widget still talks to datum through `run(argv)` in $lib/run.ts
 	and nothing else. What this page owns is the one refresh beat: the
-	engine's epoch, bumped after every command here and after every write
+	engine's epoch, bumped after every command here that wrote and every write
 	another tab makes, flows down the tree as a prop to every pane.
 -->
 <script lang="ts">

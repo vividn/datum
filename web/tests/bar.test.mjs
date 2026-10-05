@@ -29,7 +29,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { devices } from 'playwright';
-import { atEachScreen, sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
+import { atEachScreen, sharedApp, startApp, stopApp, todayAt, withApp, seedLines } from './support/app.mjs';
 import { fold as foldBar, unfold as openBar } from './support/bar.mjs';
 
 before(startApp);
@@ -1030,6 +1030,8 @@ describe('folded, a command still answers', () => {
 			assert.equal(await page.locator(`${BAR} .section.output`).count(), 0);
 
 			await failed.click();
+			// The opening is a settle on animation frames, which run on the held clock.
+			await page.clock.runFor(1_000);
 			await page.locator(`${BAR} .section.output`).waitFor();
 			const shown = (await page.locator(`${BAR} .raw`).innerText()).replace(ESC, '');
 			const printed = (await app.run(['occur', 'nope', '--nonsense'])).stderr.replace(ESC, '');
@@ -1112,9 +1114,8 @@ const pillAt = (page) =>
 
 /** Track `coffee` and get its button onto the widget bar, as ghost.test.mjs does. */
 async function withCoffee(app) {
-	assert.equal((await app.run(['spec', 'set', 'coffee', '--verb', 'occur'])).code, 0);
-	await app.submit('tail');
-	await app.idle();
+	// Typed, not quiet: a write is what refreshes the bar, a read does not (da-fprk0).
+	await seedLines(app, ['spec set coffee --verb occur']);
 	await app.page.locator('.bar [data-field="coffee"]').waitFor();
 }
 

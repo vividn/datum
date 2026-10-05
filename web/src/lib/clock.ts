@@ -101,48 +101,45 @@ export function stampLabel(date: Date, now: Date): string {
 }
 
 /**
- * The minute, counted — one tick on each wall-clock minute boundary.
+ * Ten seconds, counted — one tick on each wall-clock ten-second boundary.
  *
- * What a view of NOW hangs off (da-r61i). `datum now` and `datum dayview`
- * read the clock inside the wasm process and draw it: elapsed durations,
- * and the now-line. Run once by their pane, they show the minute they
- * were run in and stand still until something else — a write, a change
- * next door, a resize — happens to re-run them. So the panes whose
- * picture is of now subscribe to this and re-run on it.
+ * What nowview hangs off (da-fprk0), and the one timer under `minute`.
+ * vividn wanted to «watch time pass smoothly in the nowview without needing
+ * to enter in more data», and its default 30 minutes across a pane is a
+ * pixel every couple of seconds, so a minute's step is a jump. A run of
+ * it is cheap — 52 ms native on 36k entries — so it is re-run rather than
+ * moved by hand, and the picture stays the CLI's.
  *
  * ONE timer for the app, not one per pane: a `readable`'s body runs on
- * the first subscriber and stops with the last, so every pane that reads
- * `$minute` shares this one. The value is a COUNT rather than a Date —
- * two subscribers wanting different things of the same instant would be
- * asking the browser what time it is, which is the CLI's question, not
- * the web's (see the note at the head of this file). The web only
- * decides when to ask again.
+ * the first subscriber and stops with the last. The value is a COUNT
+ * rather than a Date — two subscribers wanting different things of the
+ * same instant would be asking the browser what time it is, which is the
+ * CLI's question, not the web's (see the note at the head of this file).
+ * The web only decides when to ask again.
  *
- * Aligned to :00 seconds, not 60 s from whenever the page loaded: the
- * minute the reader sees turn on the clock in the bottom bar is the
- * minute nowview's duration grows by. The timer is re-armed to the next
- * boundary after every tick, so a browser that fires it a millisecond
- * early neither counts that minute twice (the minute it lands in is
- * compared, not assumed) nor drifts.
+ * Aligned to the wall clock, not 10 s from whenever the page loaded, and
+ * re-armed to the next boundary after every tick, so a browser that fires
+ * it a millisecond early neither counts a period twice (the period it
+ * lands in is compared, not assumed) nor drifts.
  *
  * Paused while the document is hidden: a backgrounded tab that wakes the
- * CPU once a minute to redraw a picture nobody can see is a tab that
- * costs a phone its battery. Coming back visible ticks once if the minute
- * turned while away — one run, however long the tab was gone.
+ * CPU to redraw a picture nobody can see is a tab that costs a phone its
+ * battery. Coming back visible ticks once if a boundary passed while away
+ * — one run, however long the tab was gone.
  */
-export const minute = readable(0, (set) => {
+export const tenSeconds = readable(0, (set) => {
 	let ticks = 0;
-	let at = Math.floor(Date.now() / 60_000);
+	let at = Math.floor(Date.now() / 10_000);
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const stop = () => clearTimeout(timer);
 	const arm = () => {
 		// Cleared first: two `visible` events in a row would otherwise leave
 		// two timers running, and the tick would double from then on.
 		stop();
-		timer = setTimeout(tick, 60_000 - (Date.now() % 60_000));
+		timer = setTimeout(tick, 10_000 - (Date.now() % 10_000));
 	};
 	function tick(): void {
-		const now = Math.floor(Date.now() / 60_000);
+		const now = Math.floor(Date.now() / 10_000);
 		if (now !== at) {
 			at = now;
 			set(++ticks);
@@ -156,4 +153,32 @@ export const minute = readable(0, (set) => {
 		stop();
 		document.removeEventListener('visibilitychange', visibility);
 	};
+});
+
+/**
+ * The minute, counted — one tick on each wall-clock minute boundary.
+ *
+ * What a view of NOW hangs off (da-r61i). `datum now` and `datum dayview`
+ * read the clock inside the wasm process and draw it: elapsed durations,
+ * and the now-line. Run once by their pane, they show the minute they
+ * were run in and stand still until something else — a write, a change
+ * next door, a resize — happens to re-run them. So the panes whose
+ * picture is of now subscribe to this and re-run on it.
+ *
+ * Counted off `tenSeconds`, not a timer of its own, so it pauses with it
+ * and a minute boundary is ONE timer callback that moves both: what a
+ * minute re-draws lands in the same flush as nowview's beat and costs it
+ * one run, where two timers firing a moment apart cost it two (da-fprk0,
+ * tests/tick.test.mjs's write-and-tick bound, 12 of 16 under load).
+ */
+export const minute = readable(0, (set) => {
+	let ticks = 0;
+	let at = Math.floor(Date.now() / 60_000);
+	return tenSeconds.subscribe(() => {
+		const now = Math.floor(Date.now() / 60_000);
+		if (now !== at) {
+			at = now;
+			set(++ticks);
+		}
+	});
 });

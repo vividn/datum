@@ -1,4 +1,5 @@
-// The minute tick (da-r61i): nowview and dayview are pictures of NOW.
+// The minute tick (da-r61i), and nowview's ten-second one (da-fprk0): nowview
+// and dayview are pictures of NOW.
 //
 // Both read the clock inside the wasm process and draw what it says — the
 // elapsed duration of an open block, the now-line — so run once by their
@@ -26,6 +27,7 @@ after(stopApp);
  */
 const AT = todayAt(15);
 const MINUTE = 60_000;
+const TEN_SECONDS = 10_000;
 /** Long enough for a box to settle ($lib/layout/resizing.ts), short of a minute. */
 const SETTLE = 200;
 const NOWVIEW = 'section.pane[data-title="nowview"]';
@@ -147,6 +149,35 @@ describe('the minute tick', () => {
 					Math.abs(after - before - step) < 0.5,
 					`the now-line moved ${after - before}px, a minute is ${step}px`
 				);
+				assert.deepEqual(app.errors, []);
+			},
+			HELD
+		);
+	});
+
+	test("nowview's open block grows every ten seconds, with nothing written (da-fprk0)", async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				assert.equal((await app.run(['start', 'work', '-t', '14:50'])).code, 0);
+				await app.reload();
+				const block = page.locator(`${NOWVIEW} svg.svg rect.block[data-field="work"]`);
+				await block.waitFor();
+				await page.clock.runFor(SETTLE);
+				await app.idle();
+				const seen = await app.spyOnRunner();
+				const [, to] = await span0(block);
+
+				await app.clock.forward(TEN_SECONDS);
+				const [, later] = await until(
+					() => span0(block),
+					([, t]) => Date.parse(t) !== Date.parse(to)
+				);
+				await app.idle();
+				assert.equal(Date.parse(later) - Date.parse(to), TEN_SECONDS, 'the open block did not grow by ten seconds');
+				assert.equal((await ranOf(seen, 'nowview')).length, 1, 'nowview did not run exactly once');
+				// The minute has not turned: the strip keeps its picture.
+				assert.equal((await ranOf(seen, 'dayview')).length, 0, 'the strip re-drew on the beat');
 				assert.deepEqual(app.errors, []);
 			},
 			HELD

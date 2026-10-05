@@ -140,12 +140,16 @@ function activeOf(now: RunResult): NowActive[] {
 }
 
 /**
- * A command ran, here or in another tab. After *every* command, not only
- * the ones that mutate: re-running three read-only commands against a
- * local database costs nothing, and a list of which verbs write would
- * drift out of step with the CLI and leave a pane showing stale data.
+ * A command ran, here or in another tab: the panes and the fields bar read
+ * again when it CHANGED a database (da-fprk0). By effect — the worker's
+ * change counters, `result.changed` — never by verb, so no list of which
+ * verbs write can drift out of step with the CLI, and a failed write that
+ * still moved a row counts. A read moves nothing: on the deployed layout
+ * one cost nine pane runs, most of a keystroke. Without a result (another
+ * tab's write, a seed) something is known to have changed.
  */
-export async function ran(): Promise<void> {
+export async function ran(result?: RunResult): Promise<void> {
+	if (result && !result.changed?.length) return;
 	epoch.update((n) => n + 1);
 	await refresh();
 }
@@ -225,7 +229,7 @@ async function alone(argv: string[], line?: string, stdin?: string): Promise<Run
 	const ranAt = Date.now();
 	const result = await ((stdin === undefined ? fileCommand(argv) : null) ?? runEchoed(run, argv, stdin));
 	record(line ?? shellJoin(argv), ranAt, result);
-	await ran();
+	await ran(result);
 	return result;
 }
 

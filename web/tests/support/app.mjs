@@ -402,7 +402,14 @@ async function openApp({
 	try {
 		if (clock !== null) {
 			await holdDate(context, clock, !holdTimers);
-			if (holdTimers) await context.clock.install({ time: new Date(clock) });
+			// Paused, not only installed: an installed clock still runs at the
+			// wall's pace, so a test slow to reach its `forward` had the page's
+			// timers fire on their own — nowview's ten-second beat landed inside
+			// tick.test.mjs's write-and-tick window under load (da-fprk0).
+			if (holdTimers) {
+				await context.clock.install({ time: new Date(clock) });
+				await context.clock.pauseAt(new Date(clock));
+			}
 		}
 		if (desk) await context.addInitScript((tree) => (window.__datumDesktopLayout = tree), desk);
 		if (home)

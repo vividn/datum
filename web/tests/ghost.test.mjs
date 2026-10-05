@@ -19,7 +19,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, withApp, seedLines } from './support/app.mjs';
 
 before(startApp);
 after(stopApp);
@@ -53,9 +53,8 @@ async function slowRunner(page, ms) {
 
 /** Track `coffee` and get its button onto the widget bar. */
 async function withCoffee(app) {
-	assert.equal((await app.run(['spec', 'set', 'coffee', '--verb', 'occur'])).code, 0);
-	await app.submit('tail');
-	await app.idle();
+	// Typed, not quiet: a write is what refreshes the bar, a read does not (da-fprk0).
+	await seedLines(app, ['spec set coffee --verb occur']);
 	await app.page.locator('.bar [data-field="coffee"]').waitFor();
 }
 

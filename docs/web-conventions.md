@@ -57,13 +57,14 @@ writing it down.
    “the widget picker's last choice” was never real: no key for it exists today, and none existed
    at `4719c3a4` — the commit that wrote this line — either. An omission reads as a violation and
    an invention reads as a rule; neither end announces itself.*
-3. **One beat.** After any command, `engine.ran()` bumps `epoch` and rebuilds the fields widget;
-   every pane takes `export let epoch` and re-reads. A write in another tab arrives through
+3. **One beat.** After a command that CHANGED a database, `engine.ran(result)` bumps `epoch` and
+   rebuilds the fields widget; every pane takes `export let epoch` and re-reads. Changed is the
+   worker's change counters (`result.changed`), so a read costs no pane a run (da-fprk0). A write in another tab arrives through
    `changes.ts` and joins the same beat — COALESCED (da-s3pt): while one such refresh is
    outstanding, a burst next door marks one more after it rather than one each, so the handler
    passed to `onExternalChange` must be the whole refresh and must be awaitable. Do not invent a
-   second refresh path, and do not try to decide which verbs write — the CLI's list would drift
-   from ours.
+   second refresh path, and do not try to decide which verbs write — `changed` is by effect, and a
+   list of verbs would drift from the CLI's.
    The one beat BESIDE it is the minute clock (da-r61i, `minute` in `$lib/clock.ts`): nowview and
    dayview are pictures of NOW — an open block's elapsed duration, the now-line — and a pane runs
    its command once, so they stood still between writes. One timer for the app (a `readable`,
@@ -72,9 +73,10 @@ writing it down.
    epoch: a pane folds the tick into its own request only when `dependsOnNow(argv)`
    (`$lib/panes.ts`) says the command reads the clock — `now`, `nowview`, `dayview`, unless pinned
    with an absolute `-t` or `--end-date` — and the day strip re-draws today's band and the geometry beside
-   it. The tail is not re-run and the fields widget is not rebuilt. A test that counts a drawn
+   it. nowview alone runs on `tenSeconds` instead, the same timer at ten seconds, so its now-line
+   can be watched moving (da-fprk0). The tail is not re-run and the fields widget is not rebuilt. A test that counts a drawn
    pane's runs over a stretch of real time therefore pins the clock (`clock:` in `withApp`): a
-   fixed `Date.now()` never turns a minute.
+   fixed `Date.now()` never turns a minute, or ten seconds.
 4. **The argv that runs is the argv that is echoed.** A widget composes an argv and dispatches it;
    the prompt shows THAT argv. Nothing rebuilds a display string from a press — a
    reconstruction can drift from the command, and the echo is how a person learns the CLI.
@@ -361,7 +363,7 @@ writing it down.
     - **`atEachScreen(t, page, screens, body)`** (`tests/support/app.mjs`) for a size matrix: a
       subtest per screen — so the report still names the size that failed — against ONE app,
       resized, two animation frames apart so the ResizeObservers have run.
-    - **`seedLines(app, lines)`** (same file) for seeding: every `submit` bumps the frame's
+    - **`seedLines(app, lines)`** (same file) for seeding: every writing `submit` bumps the frame's
       epoch and re-runs every pane, so N lines through the REPL bought N whole redraws when
       only the last one is ever looked at. `seedLines` sends all but the last through the quiet
       door and the last through the bar.
