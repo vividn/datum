@@ -32,7 +32,9 @@ on:
   push:
     # `ci/**` is for bisecting a red main (da-2f1vp): push the midpoint commit
     # as `ci/<sha8>`, read its verdict, delete the branch. Such a run is never
-    # dropped as superseded — that step is main's and staging's alone.
+    # dropped as superseded — that step is main's and staging's alone. A red
+    # main whose tree a green staging run passed is a FLAKE, not a bisect
+    # trigger: the train already tested that exact tree (da-kc0k7).
     # `staging` is the merge train's (ct-yesk): approved PRs land there, and
     # each reaches main (the same PR merge as before) only once a staging
     # commit holding it runs green, main's tree then checked equal to that
@@ -58,7 +60,8 @@ on:
 # nobody anything. So a queued run that starts for a commit its branch has
 # moved past cancels itself (the first step below) and ends CANCELLED, never
 # green; only the tip is verified. An older commit is verified on demand,
-# when main goes red, by bisecting through `ci/**` branches (see `on.push`).
+# when main goes red, by bisecting through `ci/**` branches (see `on.push`) —
+# unless staging passed its tree, which makes the red a flake (da-kc0k7).
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/staging' }}
@@ -80,6 +83,37 @@ jobs:
     # on 3 cores the bead expects 45–75 min. The runner's own cap is 3 h.
     timeout-minutes: 150
     steps:
+      # A push to main whose tree a green staging run already tested ends GREEN
+      # here, without testing it again (da-kc0k7): 10 of 10 main runs on 10-01
+      # were such re-tests, 5h14m of runner. The alchemiter, once it has
+      # checked main's tree equal to the green staging commit's, posts a
+      # `ci/train` success on main's commit (cantown ct-gvou) — AFTER the merge
+      # push, so this polls for ~30 s. Only cantown-bot's counts: anyone with
+      # write can post a status. Found, TRAIN=1 skips every later step (each
+      # tests `env.TRAIN != '1'`, which an unset TRAIN passes; the web chain
+      # needs WEB, set only by a gated step), so the job ends green — never a
+      # cancel, which the forge maps to failure. Absent or unreadable — a
+      # direct merge carries none — the run goes on in full.
+      - name: Inherit the merge train's verdict for this tree
+        if: github.ref == 'refs/heads/main'
+        env:
+          TOKEN: ${{ github.token }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          set -uo pipefail
+          url="${SERVER%/}/api/v1/repos/${{ github.repository }}/statuses/${{ github.sha }}?limit=50"
+          for i in 1 2 3 4 5 6 7; do
+            found=$(printf 'header = "Authorization: token %s"\n' "$TOKEN" | curl -sSf -K - "$url" 2>/dev/null |
+              node -e 'const s = JSON.parse(require("fs").readFileSync(0)).find(s => s.context === "ci/train" && s.status === "success" && s.creator?.login === "cantown-bot"); if (s) console.log(s.description, s.target_url)' 2>/dev/null)
+            if [ -n "$found" ]; then
+              echo "TRAIN=1" >> "$GITHUB_ENV"
+              echo "inherited, every later step skipped: $found"
+              exit 0
+            fi
+            [ "$i" = 7 ] || sleep 5
+          done
+          echo "no ci/train success from cantown-bot on ${{ github.sha }}; verifying it in full"
+
       # A main or staging run for a commit its branch has moved past cancels
       # its own run with the job's token (write on its own repo: Forgejo
       # 16.0.5's routers/api/v1/permissions/repo_access.go) and then waits for
@@ -88,7 +122,7 @@ jobs:
       # tip cannot be read or the cancel is refused, the run goes on in full:
       # a real verdict, as before this step existed.
       - name: Cancel this run if its branch has moved past its commit
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging') && env.TRAIN != '1'
         env:
           TOKEN: ${{ github.token }}
           SERVER: ${{ github.server_url }}
@@ -106,6 +140,7 @@ jobs:
           exit 1
 
       - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: env.TRAIN != '1'
 
       # A PR whose every changed file is Rust test SOURCE (crates/*/tests/*.rs),
       # docs, markdown or scripts/mq-check.sh cannot change what the web runs,
@@ -120,6 +155,7 @@ jobs:
       # loosely, so an UNSET env.WEB equals '0' and `!= '0'` would skip them on
       # a push.
       - name: Can this change reach the web?
+        if: env.TRAIN != '1'
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.base_ref }}
@@ -139,6 +175,7 @@ jobs:
           echo "$files"
 
       - name: System tools the image lacks (time, for max RSS per step)
+        if: env.TRAIN != '1'
         run: apt-get update -qq && apt-get install -y -qq --no-install-recommends time >/dev/null && /usr/bin/time --version 2>&1 | head -1
 
       # rust-toolchain.toml is the ONE place the version lives (channel,
@@ -154,6 +191,7 @@ jobs:
       # installer only when rustup does not run, and `toolchain install` is a
       # no-op once rust-toolchain.toml's toolchain is there.
       - name: Install rustup and the pinned toolchain
+        if: env.TRAIN != '1'
         run: |
           set -euo pipefail
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
@@ -172,6 +210,7 @@ jobs:
       # inode, so none sees `Text file busy` (job 1100). The temp dir is under
       # ~/.cargo so the `mv` is a rename on one filesystem.
       - name: Install cargo-nextest (prebuilt)
+        if: env.TRAIN != '1'
         run: |
           set -euo pipefail
           v=0.9.146
@@ -185,24 +224,31 @@ jobs:
 
       # ── the Rust battery, in scripts/check.sh's order ─────────────────────
       - name: cargo fmt --all -- --check
+        if: env.TRAIN != '1'
         run: cargo fmt --all -- --check
 
       - name: cargo clippy --workspace --all-targets -- -D warnings
+        if: env.TRAIN != '1'
         run: /usr/bin/time -v cargo clippy --workspace --all-targets -- -D warnings
 
       - name: cargo build --workspace --all-targets
+        if: env.TRAIN != '1'
         run: /usr/bin/time -v cargo build --workspace --all-targets
 
       - name: cargo nextest run --workspace
+        if: env.TRAIN != '1'
         run: /usr/bin/time -v cargo nextest run --workspace --no-fail-fast --test-threads 3
 
       - name: cargo test --workspace --doc
+        if: env.TRAIN != '1'
         run: /usr/bin/time -v cargo test --workspace --doc
 
       - name: cargo nextest run --features e2e-full (the full cohort, da-1wat)
+        if: env.TRAIN != '1'
         run: /usr/bin/time -v cargo nextest run -p datum-commands --test e2e --features e2e-full --no-fail-fast --test-threads 3
 
       - name: cargo xtask check lint (the honesty gates, da-8y2q.7)
+        if: env.TRAIN != '1'
         run: cargo run -q -p xtask -- check lint
 
       # A red step above SKIPS the web suite (da-9qm64). Until then the web
@@ -223,12 +269,14 @@ jobs:
       # `cache:` — a cache that fails must not fail the gate.
       - uses: https://github.com/actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         id: node
+        if: env.TRAIN != '1'
         with:
           node-version: 22
 
       # Same gate as GitHub's build-and-test: the committed CLI-parity
       # fixtures are re-captured from target/debug/datum and must not move.
       - name: Re-capture the CLI-parity fixtures and compare with the committed copy
+        if: env.TRAIN != '1'
         run: |
           set -euo pipefail
           git ls-files --error-unmatch web/tests/fixtures/cli-parity.json >/dev/null
@@ -242,6 +290,7 @@ jobs:
       # The CLI's build.rs and the web's build-id.mjs spell one version: the two
       # must name this checkout alike (da-cv118).
       - name: The CLI and datum.day give the same version for this checkout
+        if: env.TRAIN != '1'
         run: |
           cli=$(target/debug/datum --version); web=$(node web/scripts/build-id.mjs)
           echo "cli: $cli"; echo "web: $web"
