@@ -932,6 +932,43 @@ mod tests {
     }
 
     #[test]
+    fn retime_unsigned_number_before_a_slug_is_the_slug() {
+        // A short hid is the hid's first five characters, and about one in
+        // three hundred is all digits (da-q1k4p): `retime 15437 -t 0930`
+        // names entry 15437; it must not move `_LAST` by 15437 minutes.
+        for args in [&["retime", "15437", "-t", "0930"][..], &["retime", "15437"]] {
+            match parse_argv(&argv(args)).unwrap().command {
+                Command::Retime(a) => {
+                    assert_eq!(a.slug.as_deref(), Some("15437"), "{args:?}");
+                    assert_eq!(a.bare_offset_min, None, "{args:?}");
+                }
+                _ => panic!("expected Retime"),
+            }
+        }
+        match parse_argv(&argv(&["retime", "15437", "30"]))
+            .unwrap()
+            .command
+        {
+            Command::Retime(a) => {
+                assert_eq!(a.slug.as_deref(), Some("15437"));
+                assert_eq!(a.bare_offset_min, Some(30));
+            }
+            _ => panic!("expected Retime"),
+        }
+    }
+
+    #[test]
+    fn retime_signed_number_alone_is_an_offset() {
+        match parse_argv(&argv(&["retime", "+30"])).unwrap().command {
+            Command::Retime(a) => {
+                assert!(a.slug.is_none());
+                assert_eq!(a.bare_offset_min, Some(30));
+            }
+            _ => panic!("expected Retime"),
+        }
+    }
+
+    #[test]
     fn retime_r_flag_sets_relative_bit() {
         let cli = parse_argv(&argv(&["retime", "coffee:abc", "-r", "-t", "-5"])).unwrap();
         match cli.command {

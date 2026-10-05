@@ -49,14 +49,16 @@ pub(crate) fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
     let mut composed = RetimeParsing::default();
     let pos = fold_args(tail, &mut composed, &registry)?;
 
-    // da-rorg: positionals split into a slug (any non-numeric token)
-    // and at most one bare numeric (minutes-offset shorthand for
-    // `-r -t <N>`). Slug-or-hid forms are never bare integers, so the
-    // split is unambiguous in retime's argv shape.
+    // da-rorg: positionals split into a slug and at most one bare
+    // numeric (minutes-offset shorthand for `-r -t <N>`). A short hid can
+    // be all digits (da-q1k4p), so a number is the offset only when it is
+    // signed or follows the slug: `retime 15437` names entry 15437, and
+    // `retime +30` / `retime -5` / `retime <id> 30` shift.
     let mut slug: Option<String> = None;
     let mut bare_offset_min: Option<i64> = None;
     for p in &pos {
-        if let Ok(n) = p.parse::<i64>() {
+        let signed = p.starts_with(['-', '+']);
+        if let Some(n) = p.parse::<i64>().ok().filter(|_| signed || slug.is_some()) {
             if bare_offset_min.is_some() {
                 return Err(ParseError::InvalidArg(
                     "retime accepts at most one bare numeric positional (minutes offset)".into(),
