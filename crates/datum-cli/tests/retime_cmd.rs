@@ -127,3 +127,49 @@ fn retime_bulk_filter_matching_nothing_errors() {
         "unexpected error: {err:?}"
     );
 }
+
+/// da-496ai: since da-q1k4p a lone unsigned number is an id, so `retime 30`
+/// meant as the old shift of `_LAST` names no entry. The error says how to
+/// write the shift; a non-numeric miss, or a number beside a time arg (the
+/// shift it suggests would be refused there) or a shift of its own, gets
+/// no such hint.
+#[test]
+fn retime_lone_unsigned_number_not_found_hints_signed_shift() {
+    let db = fresh_db();
+    entry_builder("coffee")
+        .time_start_utc(utc("2024-01-01T08:00:00Z"))
+        .state(json!(1))
+        .insert(&db);
+
+    let msg = run_cli(&["retime", "30"], &db).unwrap_err().to_string();
+    assert!(msg.contains("Entry not found: 30"), "{msg}");
+    assert!(
+        msg.contains("to shift _LAST by 30 minutes, write `retime +30`"),
+        "{msg}"
+    );
+
+    // The message alone: under RUST_BACKTRACE a `{:?}` carries a backtrace.
+    let msg = run_cli(&["retime", "zzzzzzzz"], &db)
+        .unwrap_err()
+        .to_string();
+    assert!(msg.contains("Entry not found: zzzzzzzz"), "{msg}");
+    assert!(!msg.contains("to shift _LAST"), "{msg}");
+
+    // Past i64::MAX the suggested `retime +N` could not parse as an offset.
+    let msg = run_cli(&["retime", "9999999999999999999"], &db)
+        .unwrap_err()
+        .to_string();
+    assert!(!msg.contains("to shift _LAST"), "{msg}");
+
+    for beside in [
+        &["-t", "0930"][..],
+        &["--offset", "1h"],
+        &["-r", "-t", "+5"],
+        &["5"],
+    ] {
+        let argv = [&["retime", "30"][..], beside].concat();
+        let msg = run_cli(&argv, &db).unwrap_err().to_string();
+        assert!(msg.contains("Entry not found: 30"), "{argv:?}: {msg}");
+        assert!(!msg.contains("to shift _LAST"), "{argv:?}: {msg}");
+    }
+}

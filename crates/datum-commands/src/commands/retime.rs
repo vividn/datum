@@ -60,6 +60,20 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
         // verbatim also keeps a single-token NotFound / AmbiguousPrefix
         // reading exactly as it did before da-obes.
         if let Some((_, err)) = token_errors.into_iter().next() {
+            // da-496ai: a lone unsigned number is an id since da-q1k4p,
+            // so `retime 30` meant as the old shift lands here. With a
+            // time arg or a shift of its own beside it, the person was
+            // naming an entry, not asking for a shift.
+            let hint = matches!(
+                err.downcast_ref::<datum_core::error::DatumError>(),
+                Some(datum_core::error::DatumError::NotFound(_))
+            ) && args.time == Default::default()
+                && args.offset.is_none()
+                && args.bare_offset_min.is_none()
+                && !args.relative;
+            if let Some(n) = pattern.parse::<i64>().ok().filter(|n| hint && *n >= 0) {
+                anyhow::bail!("{err}\nhint: to shift _LAST by {n} minutes, write `retime +{n}`");
+            }
             return Err(err);
         }
         if entries.is_empty() {

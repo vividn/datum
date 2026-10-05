@@ -30,7 +30,7 @@ use crate::input::flag_registry::{FlagAction, FlagSpec};
 use crate::time::{parse_date, parse_time, DatumTime, Direction, TimeCtx, Uncertainty, Zone};
 
 /// Parsed shape of the timing flag group.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct TimeArgs {
     /// `-d` / `--date`: relative day offset (`+1`, `-1`) or ISO date.
     pub date: Option<String>,

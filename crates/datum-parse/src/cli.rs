@@ -489,7 +489,8 @@ pub struct RetimeArgs {
     /// `-r`/`--relative`: interpret `time` as a shift relative to the
     /// entry's current occur_time rather than absolute from now.
     pub relative: bool,
-    /// Bare numeric positional after the slug (e.g. `retime <id> -5`)
+    /// Bare numeric positional: a signed number alone (`retime +30`,
+    /// `retime -5`) or any number after the slug (`retime <id> 30`)
     /// → minutes-offset shorthand for `-r -t <N>`. Mutually exclusive
     /// with `offset`.
     pub bare_offset_min: Option<i64>,
