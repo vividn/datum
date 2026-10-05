@@ -260,8 +260,8 @@ describe('several documents', () => {
 			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .doc').length === 2);
 
 			const [first, second] = [await section(page, 0), await section(page, 1)];
-			// Each side echoed its own document: the web appends `--show json`
-			// to EVERY side, not only the last.
+			// Each side echoed its own document: `DATUM_SHOW` reaches EVERY
+			// side, not only the last.
 			assert.match(first.receipt, /^CREATE /);
 			assert.match(second.receipt, /^CREATE /);
 			assert.notEqual(first.hid, second.hid);
@@ -434,18 +434,13 @@ describe('a command with no echo', () => {
 	test('with no document in the stdout, the raw lines still show', async () => {
 		await withApp(async (app) => { // its own: it installs a runner
 			const { page } = app;
-			// An older module: one that does not know `--show json` and prints
+			// An older module: one that does not know `DATUM_SHOW` and prints
 			// the two lines the default show prints. The web must fall back to
 			// them rather than show nothing (the bead's trap 1).
 			await page.evaluate(() => {
-				const previous = window.datum.setRunner((argv, ...rest) => {
-					const bare = [];
-					for (let i = 0; i < argv.length; i += 1) {
-						if (argv[i] === '--show') i += 1;
-						else bare.push(argv[i]);
-					}
-					return previous(bare, ...rest);
-				});
+				const previous = window.datum.setRunner((argv, stdin, onStderr, key, stage) =>
+					previous(argv, stdin, onStderr, key, stage)
+				);
 			});
 
 			await app.declare('water');

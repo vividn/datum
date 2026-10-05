@@ -42,13 +42,15 @@ export interface RunResult {
  * `onStderr` hears the process's stderr as it is written, before the result.
  * `key` names who is asking (a pane): a newer command with the same key drops
  * this one if it has not started yet. Without a key a command always runs.
+ * `env` is added to the process's environment (`DATUM_SHOW`, $lib/echo.ts).
  */
 export type CommandRunner = (
 	argv: string[],
 	stdin?: string,
 	onStderr?: (text: string) => void,
 	key?: string,
-	stage?: Stage
+	stage?: Stage,
+	env?: string[]
 ) => Promise<RunResult>;
 
 /** Generic failure, as `datum-cli`'s `main` reports one. */
@@ -137,13 +139,14 @@ export async function run(
 	stdin?: string,
 	onStderr?: (text: string) => void,
 	key?: string,
-	stage?: Stage
+	stage?: Stage,
+	env?: string[]
 ): Promise<RunResult> {
 	if (argv.length === 0) return { argv, code: 0, stdout: '', stderr: '' };
 	const against = dbArgv(argv);
 	try {
 		runner ??= (await import('./runners/wasi.js')).wasiRun;
-		const result = await runner(against, stdin, onStderr, key, stage);
+		const result = await runner(against, stdin, onStderr, key, stage, env);
 		// `sync new-invite`, a revoke, an admin…: its leader reads the setup again (da-6kpj5).
 		if (argv.includes('sync') && result.changed?.length) {
 			void import('./sync.js').then(({ syncTouched }) => syncTouched(dbOf(argv)));

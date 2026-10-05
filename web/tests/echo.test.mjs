@@ -2,16 +2,17 @@
 //
 // Two claims, and the second is the one that rots if nobody watches it.
 //
-// 1. `echoArgv` appends `--show json` to the commands that have an echo,
-//    to EACH SIDE of a multi-side run, and to nothing that already names a
-//    `--show`.
+// 1. `echoEnv` asks for `--show json` in the env (`DATUM_SHOW=json`) for
+//    the commands that have an echo, and only when EVERY side of a
+//    multi-side run has one — and the entry records what was typed, not
+//    the page's flag (da-vx31e).
 // 2. `NO_ECHO` — the commands it leaves alone — says what the CLI does.
 //    That list is a DENYLIST because an argv whose first word is not a
 //    command (`mood switch happy` field-first, an alias) is a write under
-//    another name and must get the flag; the cost of a denylist is that a
-//    command added to the CLI and not added here would have the flag
-//    appended to it, and most of the CLI's readers do not merely ignore
-//    `--show`, they exit 1 on it. So every word in the list is run through
+//    another name and must be asked; the cost of a denylist is that a
+//    command added to the CLI and not added here would be asked, and a
+//    reader that draws JSON would then answer with it instead of its
+//    table. So every word in the list is run through
 //    the real CLI here and made to prove it belongs, and every verb that
 //    does echo is made to prove it still does.
 //
@@ -25,7 +26,7 @@ import { readFileSync } from 'node:fs';
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
-import { echoArgv, parseEcho } from '../src/lib/echo.ts';
+import { echoEnv, parseEcho } from '../src/lib/echo.ts';
 
 before(startApp);
 after(stopApp);
@@ -35,61 +36,57 @@ after(stopApp);
 // the NEWEST document, so the scrollback of the tests before is not in it.
 const shared = sharedApp();
 
-describe('echoArgv', () => {
+const ASKED = ['DATUM_SHOW=json'];
+
+describe('echoEnv', () => {
 	test('a write verb is asked for its echo', () => {
-		assert.deepEqual(echoArgv(['occur', 'coffee']), ['occur', 'coffee', '--show', 'json']);
+		assert.deepEqual(echoEnv(['occur', 'coffee']), ASKED);
 	});
 
 	test('a command not in the CLI — field-first, an alias — is asked too', () => {
 		// `mood switch happy` and `vbp correr` are both write commands the
 		// CLI resolves in its own pre-pass; the web cannot tell them from a
 		// verb and must not treat an unknown word as a reader.
-		assert.deepEqual(echoArgv(['mood', 'switch', 'happy']).slice(-2), ['--show', 'json']);
-		assert.deepEqual(echoArgv(['vbp', 'correr']).slice(-2), ['--show', 'json']);
+		assert.deepEqual(echoEnv(['mood', 'switch', 'happy']), ASKED);
+		assert.deepEqual(echoEnv(['vbp', 'correr']), ASKED);
 	});
 
 	test('a reader is left alone', () => {
 		for (const argv of [['tail'], ['dayview'], ['fields', '--json'], ['db', 'backup', '-']]) {
-			assert.deepEqual(echoArgv(argv), argv, argv.join(' '));
+			assert.deepEqual(echoEnv(argv), [], argv.join(' '));
 		}
-	});
-
-	test('an argv with no command word is left alone', () => {
-		// `--version` and `--help` are read before the parser looks for a
-		// subcommand, so a trailing `--show json` is not a flag on a command
-		// but a stray word, and the CLI exits 1 on it (da-1hdg). An unknown
-		// WORD is still a write under another name; the absence of a word is
-		// not.
-		for (const argv of [['--version'], ['--help'], ['-h'], ['--db', 'x']]) {
-			assert.deepEqual(echoArgv(argv), argv, argv.join(' '));
-		}
-	});
-
-	test('a `--show` the reader named wins, in either spelling', () => {
-		assert.deepEqual(echoArgv(['occur', 'x', '--show', 'all']), ['occur', 'x', '--show', 'all']);
-		assert.deepEqual(echoArgv(['occur', 'x', '--show=none']), ['occur', 'x', '--show=none']);
 	});
 
 	test('a global flag in front does not hide the command', () => {
-		assert.deepEqual(echoArgv(['--db', '_internal', 'tail']), ['--db', '_internal', 'tail']);
-		assert.deepEqual(echoArgv(['--db', '_internal', 'occur', 'x']).slice(-2), ['--show', 'json']);
+		assert.deepEqual(echoEnv(['--db', '_internal', 'tail']), []);
+		assert.deepEqual(echoEnv(['--db', '_internal', 'occur', 'x']), ASKED);
 	});
 
-	test('EVERY side of a multi-side run is asked, not only the last', () => {
-		// `--show` is a per-side flag: one at the end reaches only the last
-		// side, which would leave the first printing its lines and the bar
-		// with half a result.
-		assert.deepEqual(echoArgv(['occur', 'a', ',', 'occur', 'b']), [
-			'occur',
-			'a',
-			'--show',
-			'json',
-			',',
-			'occur',
-			'b',
-			'--show',
-			'json'
-		]);
+	test('a multi-side run is asked only when every side echoes', () => {
+		// The env reaches every side, and a reader would answer with JSON.
+		assert.deepEqual(echoEnv(['occur', 'a', ',', 'occur', 'b']), ASKED);
+		assert.deepEqual(echoEnv(['occur', 'a', ',', 'tail']), []);
+	});
+});
+
+describe('the record is what was typed (da-vx31e)', () => {
+	test('`why` quotes the line, not the page’s --show', async () => {
+		await shared.solo(async (app) => {
+			await app.submit('occur coffee');
+			const why = await app.run(['why', '_LAST']);
+			assert.match(why.stdout, /raw_input:\s+occur coffee$/m, why.stdout || why.stderr);
+			// …and the REPL drew its echo as a document, so it WAS asked for.
+			const hid = why.stdout.match(/hid: (\w+)/)?.[1] ?? '';
+			const drawn = await app.page.locator('.repl .doc[data-hid]').evaluateAll((all) => all.map((d) => d.dataset.hid));
+			assert.ok(drawn.some((h) => h && hid.startsWith(h)), `${hid} not among ${drawn}`);
+		});
+	});
+
+	test('a --show the reader typed wins', async () => {
+		await shared.solo(async (app) => {
+			await app.submit('occur coffee --show minimal');
+			assert.match((await app.stdouts()).at(-1) ?? '', /^CREATE /);
+		});
 	});
 });
 
@@ -191,7 +188,7 @@ describe('the echo is painted in datum’s colours', () => {
 });
 
 /**
- * The argvs `echoArgv` leaves alone, with arguments that make each one a
+ * The argvs `echoEnv` leaves alone, with arguments that make each one a
  * command the CLI will actually try to run.
  *
  * `db`, `spec`, `alias`, `config`, `sync` and `kit` are groups: the flag
@@ -251,7 +248,7 @@ describe('the list says what the CLI does', () => {
 		await shared.solo(async (app) => {
 			await app.run(['occur', 'coffee']);
 			for (const argv of READERS) {
-				assert.deepEqual(echoArgv(argv), argv, `${argv.join(' ')} is not on the list`);
+				assert.deepEqual(echoEnv(argv), [], `${argv.join(' ')} is not on the list`);
 				const asked = await app.run([...argv, '--show', 'json']);
 				const refused = asked.stderr.includes('unexpected flag: --show');
 				assert.ok(
@@ -265,8 +262,8 @@ describe('the list says what the CLI does', () => {
 	test('every echoing verb still answers with a document', async () => {
 		await shared.solo(async (app) => {
 			for (const argv of WRITERS) {
-				const result = await app.run(echoArgv(argv));
-				assert.notDeepEqual(echoArgv(argv), argv, `${argv.join(' ')} is on the list by mistake`);
+				const result = await app.run([...argv, '--show', 'json']);
+				assert.deepEqual(echoEnv(argv), ASKED, `${argv.join(' ')} is on the list by mistake`);
 				assert.ok(
 					parseEcho(result.stdout),
 					`${argv.join(' ')} → ${result.code} ${result.stdout || result.stderr}`
@@ -293,7 +290,7 @@ describe('a kit command answers with its table', () => {
 			assert.equal(installed.code, 0, installed.stderr);
 			await app.run(['occur', 'laundry', '-d', '-3', 'next_date=+1']);
 			// Control: the flag the page appends does get the rows as JSON.
-			const asked = await app.run(echoArgv(['chorelist']));
+			const asked = await app.run(['chorelist', '--show', 'json']);
 			assert.match(asked.stdout, /^\[\{.*"field":"laundry"/, asked.stdout || asked.stderr);
 
 			await app.submit('chorelist');
@@ -311,8 +308,9 @@ describe('a kit command answers with its table', () => {
 
 /**
  * A kit's alias logs in the bar as it does in the CLI (da-tckse). Typed
- * into the bar, so the argv is the one the page sends: the alias's name,
- * its words, and the `--show json` the page appends. Two ways that broke:
+ * into the bar, so the argv is the one the page sends: the alias's name
+ * and its words, with `DATUM_SHOW=json` (da-vx31e; until then a `--show
+ * json` appended to argv). Two ways that broke:
  * the alias walk took `json` for a positional, so `feel 3` stored
  * `feel=3` under `--show`; and an alias expanding to `track` (the chores
  * kit's `newchore`) refused the flag outright.

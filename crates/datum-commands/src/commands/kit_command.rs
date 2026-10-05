@@ -75,7 +75,11 @@ struct Call {
 
 impl Call {
     fn parse(cmd: &InstalledKitCommand, words: &[String]) -> Result<Call> {
-        let mut call = Call::default();
+        // `DATUM_SHOW` is read as a `--show` here too; a typed one wins.
+        let mut call = Call {
+            json: crate::config::env_show()? == Some(Show::Json),
+            ..Call::default()
+        };
         let mut data = Vec::new();
         let mut on = Vec::new();
         let mut words = words.iter();

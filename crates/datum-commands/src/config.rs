@@ -93,6 +93,19 @@ fn locate(cli_db: Option<&str>) -> Result<(Option<String>, PathBuf)> {
     Ok((Some(value), path))
 }
 
+/// `DATUM_SHOW`: a `--show` asked for from outside argv (da-vx31e), so a
+/// caller that wants the echo as data — datum.day — leaves `raw_input` the
+/// line that was typed. Unset or empty is none; a value `--show` would
+/// refuse is an error, as the flag's is.
+pub fn env_show() -> Result<Option<datum_parse::input::Show>> {
+    match std::env::var("DATUM_SHOW") {
+        Ok(v) if !v.is_empty() => Ok(Some(
+            v.parse().map_err(|e| anyhow::anyhow!("DATUM_SHOW: {e}"))?,
+        )),
+        _ => Ok(None),
+    }
+}
+
 /// Return true if `s` should be treated as a path (not a name).
 /// Rule: contains `/`, starts with `.`, or ends with `.db`.
 pub fn looks_like_path(s: &str) -> bool {

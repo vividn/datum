@@ -186,9 +186,8 @@ export async function press(
 	echo?: string
 ): Promise<RunResult> {
 	// The argv the CALLER asked for, never the one the runner received: the
-	// web appends flags of its own on the way through (`--show json`,
-	// `--width`), and those are the web's, not a command anyone should be
-	// taught to type (da-xfa4).
+	// web adds flags of its own on the way through (`--width`), and those
+	// are the web's, not a command anyone should be taught to type (da-xfa4).
 	//
 	// At the PRESS, not when the command lands (da-jrozq): the ghost is the
 	// feedback that something was pressed, and it waited out the whole

@@ -17,12 +17,14 @@ export async function wasiRun(
 	onStderr?: (text: string) => void,
 	key?: string,
 	stage?: Stage,
+	extra: string[] = [],
 	session?: boolean
 ): Promise<RunResult> {
 	const env = [
 		`TZ=${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
 		`DATUM_CLIENT_ID=${clientId()}`,
-		'DATUM_COLOR=1'
+		'DATUM_COLOR=1',
+		...extra
 	];
 	// The whole process record — its timings and storage ride along for
 	// scripts/measure-wasi.mjs, unread by the app.

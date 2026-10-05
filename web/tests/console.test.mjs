@@ -102,9 +102,8 @@ describe('window.datum.run — the loud door', () => {
 			const scrolled = (await app.echoes()).length;
 			const result = await app.page.evaluate((l) => window.datum.runLine(l), line);
 			assert.equal(result.code, 0, result.stderr);
-			// The words the app split, in front of the `--show json` the web
-			// appends to every command it runs (da-xfa4): `result.argv` is
-			// what the runner received, plumbing included.
+			// The words the app split: `result.argv` is what the runner
+			// received, plumbing included.
 			assert.deepEqual(result.argv.slice(0, 3), ['switch', 'mood', 'quite happy']);
 			assert.deepEqual((await app.echoes()).slice(scrolled), [line]);
 			await tailShows(app.page, 'quite happy');

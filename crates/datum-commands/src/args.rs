@@ -400,6 +400,7 @@ fn parse_invocation_inner(
     let raw_argv: Vec<String> = argv.iter().skip(1).cloned().collect();
     let raw_input = palias::shell_join(&raw_argv);
     let argv0 = argv.first().cloned().unwrap_or_default();
+    let show = crate::config::env_show()?;
 
     // da-hfi3: strip the global `--db <value>` / `--db=<value>` flag
     // before alias expansion. The alias resolver looks at argv[1] for
@@ -427,7 +428,7 @@ fn parse_invocation_inner(
         let mut side_argv = Vec::with_capacity(1 + db_flag_tokens.len());
         side_argv.push(argv0);
         side_argv.extend(db_flag_tokens);
-        let cli = datum_parse::parse_argv(&side_argv).map_err(anyhow::Error::from)?;
+        let cli = datum_parse::parse_argv_showing(&side_argv, show).map_err(anyhow::Error::from)?;
         return Ok(Invocation::Single(cli));
     }
 
@@ -460,7 +461,7 @@ fn parse_invocation_inner(
         // parser still sees it at its canonical post-argv0 position.
         side_argv.extend(db_flag_tokens.iter().cloned());
         side_argv.extend(sides.into_iter().next().unwrap());
-        let cli = datum_parse::parse_argv(&side_argv).map_err(anyhow::Error::from)?;
+        let cli = datum_parse::parse_argv_showing(&side_argv, show).map_err(anyhow::Error::from)?;
         return Ok(Invocation::Single(cli));
     }
 
@@ -472,7 +473,7 @@ fn parse_invocation_inner(
         // da-hfi3: same re-prepend as the single-side branch above.
         side_argv.extend(db_flag_tokens.iter().cloned());
         side_argv.extend(side);
-        let cli = datum_parse::parse_argv(&side_argv).map_err(anyhow::Error::from)?;
+        let cli = datum_parse::parse_argv_showing(&side_argv, show).map_err(anyhow::Error::from)?;
         clis.push(cli);
         side_argvs.push(side_argv);
     }

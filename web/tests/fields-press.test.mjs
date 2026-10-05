@@ -115,15 +115,12 @@ describe('a press', () => {
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 'when', text: '-t 09:00', kind: 'time' }]));
 			await page.locator('.bar [data-field="coffee"]').click();
 			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'occur'));
-			// `--show json` after the pills is the web's own (da-xfa4): every
-			// command a reader runs is asked for its echo as data.
+			// No `--show json`: the echo is asked for in the env (da-vx31e).
 			assert.deepEqual((await seen()).find((a) => a[0] === 'occur'), [
 				'occur',
 				'coffee',
 				'-t',
-				'09:00',
-				'--show',
-				'json'
+				'09:00'
 			]);
 		});
 	});
@@ -160,9 +157,7 @@ describe('a press', () => {
 				'work',
 				'-t',
 				'09:00',
-				'dur=30m',
-				'--show',
-				'json'
+				'dur=30m'
 			]);
 
 			// And it LANDED as that block: 09:00 is the end, the half hour

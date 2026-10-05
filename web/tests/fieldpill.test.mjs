@@ -445,9 +445,7 @@ describe('the gesture, and the pill it mints', () => {
 			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'occur'));
 			assert.deepEqual((await seen()).find((a) => a[0] === 'occur'), [
 				'occur',
-				'coffee',
-				'--show',
-				'json'
+				'coffee'
 			]);
 			await app.idle();
 			const logged = (await app.entries()).at(0);

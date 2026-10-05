@@ -66,6 +66,6 @@ pub use cli::{Cli, Command};
 pub use dur::{Dur, DurSpan};
 pub use error::{ParseError, Result};
 pub use input::{consolidate_keys, flexible_positional, FlexibleTarget};
-pub use parse::{parse_argv, parse_argv_string};
+pub use parse::{parse_argv, parse_argv_showing, parse_argv_string};
 pub use time::{DateArg, DatumTime, TimeArg, TimeBuilder, Uncertainty, UncertaintyUnit};
 pub use verb::{derive_verb, Verb};

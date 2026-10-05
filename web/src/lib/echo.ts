@@ -7,17 +7,19 @@
 // twice over: a second formatter, and a web that rebuilds a string datum
 // already owns. So the web asks datum for those strings instead.
 //
-// `--show json` is appended the way `fitArgv` appends `--width`
-// (panes.ts): at the ONE seam a reader's command passes through — the
-// REPL's `runArgv`, and `engine.alone` when no REPL is mounted. vividn:
+// `--show json` is asked for at the ONE seam a reader's command passes
+// through — the REPL's `runArgv`, and `engine.alone` when no REPL is
+// mounted — and asked for in the ENV, `DATUM_SHOW=json`, never in argv
+// (da-vx31e): the CLI records argv as the entry's `raw_input`, so a flag
+// appended there was quoted by `why` as part of a line nobody typed. vividn:
 // "The whole web interface can take use json as the default show and then
 // render on it's own terms which is nice separation." So the REPL's
 // scrollback carries the same documents the bar does, and a
 // multi-document result gets the same treatment in both.
 //
-// The web's own flags are NOT part of what a press teaches: the
-// scrollback echoes the argv the caller asked for, not the one the runner
-// received (Repl.svelte, engine.press).
+// The web's own flags (`--width`, $lib/panes.ts `fitArgv`) are NOT part of
+// what a press teaches: the scrollback echoes the argv the caller asked
+// for, not the one the runner received (Repl.svelte, engine.press).
 
 import type { CommandRunner, RunResult } from './run.js';
 
@@ -78,16 +80,13 @@ export interface EchoDoc {
 /**
  * The commands that carry no action echo, so there is nothing to ask for.
  *
- * Measured against the built CLI rather than reasoned about. It used to be
- * that most of these REJECTED `--show` outright; da-qt6z made the output
- * family one flag read for every command, so the cost of appending it
- * moved rather than went away: a reader that now ACCEPTS `--show json`
- * answers with its own JSON document instead of the table or picture the
- * pane asked for, and one that draws neither still exits 1. Either way
- * the flag must not be appended, so the set stays a denylist and not an
- * allowlist: an argv whose first word is NOT a command — `mood switch
- * happy` field-first, or an alias the CLI expands in its own pre-pass —
- * is a write command under another name, and must get the flag.
+ * Measured against the built CLI rather than reasoned about. A reader that
+ * ACCEPTS `--show json` answers with its own JSON document instead of the
+ * table or picture the pane asked for; one that draws no JSON ignores
+ * `DATUM_SHOW` (it would exit 1 on the flag). The set stays a denylist and
+ * not an allowlist: an argv whose first word is NOT a command — `mood
+ * switch happy` field-first, or an alias the CLI expands in its own
+ * pre-pass — is a write command under another name, and must be asked.
  *
  * `tests/echo.test.mjs` runs every word here and every echoing verb
  * through the real CLI and holds this list to what the CLI does, so it
@@ -135,9 +134,8 @@ const NO_ECHO = new Set([
 	'repl'
 ]);
 
-/** The value form, as the CLI's `Show` reads it. */
-const SHOW = '--show';
-const JSON_SHOW = 'json';
+/** What asks the CLI for its echo as data — `--show json`, outside argv. */
+const SHOW_JSON = 'DATUM_SHOW=json';
 
 /**
  * The command word an argv runs, past the global flags in front of it.
@@ -155,47 +153,31 @@ function commandOf(argv: string[]): string | undefined {
 	return undefined;
 }
 
-/** Whether `argv` already names a `--show`, in either spelling. */
-const hasShow = (argv: string[]): boolean =>
-	argv.some((word) => word === SHOW || word.startsWith(`${SHOW}=`));
-
 /**
- * Ask a reader's command for its echo as data.
+ * The env that asks `argv` for its echo as data: `DATUM_SHOW=json`, or
+ * nothing.
  *
- * Left alone: a command with no echo (above), one that names its own
- * `--show` — someone who asks for `--show all` gets `--show all`, as
- * someone who names a `--width` gets that width — and an argv with no
- * command word at all (`--version`, `--help`, a bare `--db x`), which is
- * not a command under another name but a flag the parser reads before it
- * looks for one, and errors on a trailing `--show` (da-1hdg).
+ * Nothing for a command with no echo (above), nor for an argv with no
+ * command word (`--version`, `--help`), which has no echo either. The CLI
+ * does the rest: a `--show` the reader typed wins over the env — someone
+ * who asks for `--show all` gets `--show all`.
  *
- * `--show` is a per-SIDE flag: `switch a x , switch b y` is two commands,
- * and one flag at the end reaches only the second, which would leave the
- * first printing its lines and the bar with half a result. So each side
- * is asked separately, which is also what makes a multi-side run the
+ * The env reaches EVERY side of a multi-side `a , b` run, so it is asked
+ * for only when every side has an echo: a reader on one side would answer
+ * with its JSON instead of its table. When all do, the run is the
  * several-document case the bar draws a section each for.
  */
-export function echoArgv(argv: string[]): string[] {
-	const out: string[] = [];
-	let side: string[] = [];
-	const flush = (): void => {
-		const command = commandOf(side);
-		if (command !== undefined && !hasShow(side) && !NO_ECHO.has(command) && !learnedNoEcho.has(command)) {
-			side = [...side, SHOW, JSON_SHOW];
-		}
-		out.push(...side);
-		side = [];
-	};
+export function echoEnv(argv: string[]): string[] {
+	const sides: string[][] = [[]];
 	for (const word of argv) {
-		if (word === ',') {
-			flush();
-			out.push(word);
-		} else {
-			side.push(word);
-		}
+		if (word === ',') sides.push([]);
+		else sides[sides.length - 1].push(word);
 	}
-	flush();
-	return out;
+	const echoes = sides.every((side) => {
+		const command = commandOf(side);
+		return command !== undefined && !NO_ECHO.has(command) && !learnedNoEcho.has(command);
+	});
+	return echoes ? [SHOW_JSON] : [];
 }
 
 /** The command words learned this session to go without an echo. */
@@ -203,7 +185,7 @@ const learnedNoEcho = new Set<string>();
 
 /**
  * Run `argv` with its echo asked for, and when what answered has no echo
- * after all, run it again as it was asked.
+ * after all, run it again without asking.
  *
  * A kit command (`chorelist`) is a reader NO_ECHO cannot name, because the
  * database installs it (da-5x6x0). Given `--show json` it prints its rows
@@ -211,12 +193,11 @@ const learnedNoEcho = new Set<string>();
  * array is the tell. Its view runs read-only, so asking twice changes
  * nothing, and the second answer is the table the person asked for.
  *
- * An alias is named by the database too, and one that expands to a writer
- * with no echo (the chores kit's `newchore`, a `track`) REFUSES the flag
- * (da-tckse). The refusal is the parser's, before anything is written, so
- * asking again writes once.
+ * (An alias is named by the database too, and one that expands to a writer
+ * with no echo — the chores kit's `newchore`, a `track` — refused the flag
+ * (da-tckse). It ignores the env, so there is nothing to ask again.)
  *
- * Either way a one-side line's word is then remembered for the session,
+ * A one-side line's word is then remembered for the session,
  * so it is asked twice once and not every time; a word remembered wrongly
  * only goes without its echo.
  */
@@ -225,11 +206,10 @@ export async function runEchoed(
 	argv: string[],
 	stdin?: string
 ): Promise<RunResult> {
-	const asked = echoArgv(argv);
-	const result = await run(asked, stdin);
+	const env = echoEnv(argv);
+	const result = await run(argv, stdin, undefined, undefined, undefined, env);
 	const reader = result.code === 0 && result.stdout.startsWith('[');
-	const refused = result.code !== 0 && result.stderr.includes(`${SHOW} ${JSON_SHOW} is not a rendering`);
-	if (asked.length === argv.length || !(reader || refused)) return result;
+	if (env.length === 0 || !reader) return result;
 	// A line of several sides does not say which side answered, so it is
 	// asked again without being learned from.
 	if (!argv.includes(',')) learnedNoEcho.add(commandOf(argv) ?? '');

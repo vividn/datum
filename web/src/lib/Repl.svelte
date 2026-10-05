@@ -133,7 +133,7 @@
 	 * teaches exactly the command it asked for. A prettier string rebuilt
 	 * from the press could drift from it; this cannot. What it must NOT
 	 * echo is the argv the runner received — the web appends flags of its
-	 * own on the way through (`--width`, and `--show json` since da-xfa4),
+	 * own on the way through (`--width`; `--show json` goes in the env),
 	 * and those are the web's plumbing, not a command to teach.
 	 *
 	 * A file command ($lib/dbio.ts) goes the browser's way, before any

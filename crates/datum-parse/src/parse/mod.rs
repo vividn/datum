@@ -81,8 +81,18 @@ use self::views::*;
 /// Entry point: parse an argv (including argv[0]) into a [`Cli`].
 pub fn parse_argv(argv: &[String]) -> Result<Cli> {
     // Strip argv[0] ("datum" or whatever binary name the caller passed).
+    parse_argv_showing(argv, None)
+}
+
+/// [`parse_argv`], with a `--show` asked for from outside argv —
+/// `DATUM_SHOW`, which the caller reads (da-vx31e). It is the value a
+/// command takes when argv names none: a typed `--show` wins, and a command
+/// with no rendering for it ignores it rather than failing, so `help` under
+/// `DATUM_SHOW=json` is still the help.
+pub fn parse_argv_showing(argv: &[String], fallback: Option<Show>) -> Result<Cli> {
+    // Strip argv[0] ("datum" or whatever binary name the caller passed).
     let tail: Vec<&str> = argv.iter().skip(1).map(|s| s.as_str()).collect();
-    parse_tail(&tail)
+    parse_tail(&tail, fallback)
 }
 
 /// String-API variant: shell-tokenize, then parse.
@@ -92,10 +102,10 @@ pub fn parse_argv(argv: &[String]) -> Result<Cli> {
 pub fn parse_argv_string(s: &str) -> Result<Cli> {
     let argv = shell_split(s);
     let tail: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
-    parse_tail(&tail)
+    parse_tail(&tail, None)
 }
 
-fn parse_tail(tail: &[&str]) -> Result<Cli> {
+fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
     // Consume global flags before the subcommand.
     //
     // `--db NAME_OR_PATH` is the only pre-subcommand global. We walk
@@ -305,6 +315,7 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
     };
 
     let mut command = command;
+    let show = show.or(fallback.filter(|s| input::shows_for(sub).contains(s)));
     if let Some(show) = show {
         // Only now that the subcommand is known to be real: a typo'd verb
         // deserves the typo guard's message, not a lecture about the

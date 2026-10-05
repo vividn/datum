@@ -1538,6 +1538,10 @@ pub const ENV_VARS: &[EnvVarSpec] = &[
         summary: "`0` disables colour; otherwise auto-detect from the TTY.",
     },
     EnvVarSpec {
+        name: "DATUM_SHOW",
+        summary: "`--show` for a command that has the rendering, kept out of `raw_input` (a typed `--show` wins).",
+    },
+    EnvVarSpec {
         name: "DATUM_NO_TIPS",
         summary: "Set to `1` to never print the one-time tab-completion tip.",
     },

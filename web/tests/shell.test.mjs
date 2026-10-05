@@ -967,11 +967,8 @@ describe('the bottom bar', () => {
 			await input.press('Enter');
 			// After, not before: the CLI takes no flag before its verb (da-c7u8).
 			await until(seen, (argvs) => argvs.some((a) => a[0] === 'occur'));
-			// `--show json` at the end is the web's own (da-xfa4).
 			assert.ok(
-				(await seen()).some(
-					(a) => JSON.stringify(a) === JSON.stringify(['occur', 'tea', '-t', '0700', '--show', 'json'])
-				),
+				(await seen()).some((a) => JSON.stringify(a) === JSON.stringify(['occur', 'tea', '-t', '0700'])),
 				JSON.stringify(await seen())
 			);
 			await page.waitForFunction(() => document.querySelectorAll('.prompt-bar .pill').length === 0);
@@ -1002,8 +999,8 @@ describe('the bottom bar', () => {
 			assert.deepEqual(
 				(await seen()).filter((a) => a[0] === 'occur'),
 				[
-					['occur', 'tea', '-t', '0700', '--show', 'json'],
-					['occur', 'tea', '-t', '0700', '--show', 'json']
+					['occur', 'tea', '-t', '0700'],
+					['occur', 'tea', '-t', '0700']
 				]
 			);
 			assert.equal(await page.locator('.prompt-bar .pill').count(), 1, 'the locked pill survives');

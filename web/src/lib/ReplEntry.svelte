@@ -89,7 +89,7 @@
 {:else}
 	{#if docs}
 		<!-- The same sections both surfaces draw, one per document (da-xfa4):
-		     the web appends `--show json` to every command it runs, so a
+		     the web asks every command it runs for `--show json`, so a
 		     multi-document result is side by side in each.
 
 		     `--show json` carries the CLI's strings with its ANSI stripped,

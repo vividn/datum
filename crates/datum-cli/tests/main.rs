@@ -91,6 +91,7 @@ mod render_state_group;
 mod reparse_cmd;
 mod restore_hard;
 mod retime_cmd;
+mod show_env;
 mod show_flag_family;
 mod show_json;
 mod spec_cmd;
