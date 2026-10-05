@@ -73,9 +73,10 @@ export class Node {
     serve(pending: Pending): Promise<string>;
     /**
      * The ticket for an invite whose secret is `secret` — this endpoint's
-     * address, then `also`'s (a JSON list of addresses, a chain's members).
+     * address, then `also`'s (a JSON list of addresses, a chain's members),
+     * and `about` (JSON, [`About`]).
      */
-    ticket(secret: string, also?: string | null): string;
+    ticket(secret: string, also?: string | null, about?: string | null): string;
 }
 
 /**
@@ -87,12 +88,19 @@ export class Pending {
     [Symbol.dispose](): void;
 }
 
+/**
+ * What a ticket or join link says of itself ([`About`], as JSON): what a
+ * page asks before it redeems one (da-l9kdr). Never the secret.
+ */
+export function about(ticket: string): string;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_node_free: (a: number, b: number) => void;
     readonly __wbg_pending_free: (a: number, b: number) => void;
+    readonly about: (a: number, b: number, c: number) => void;
     readonly node_accept: (a: number) => number;
     readonly node_addr: (a: number, b: number) => void;
     readonly node_bind: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
@@ -101,7 +109,7 @@ export interface InitOutput {
     readonly node_dial: (a: number, b: number, c: number) => number;
     readonly node_id: (a: number, b: number) => void;
     readonly node_serve: (a: number, b: number) => number;
-    readonly node_ticket: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly node_ticket: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
     readonly __wbg_intounderlyingbytesource_free: (a: number, b: number) => void;
     readonly __wbg_intounderlyingsink_free: (a: number, b: number) => void;
     readonly __wbg_intounderlyingsource_free: (a: number, b: number) => void;
@@ -116,15 +124,15 @@ export interface InitOutput {
     readonly intounderlyingsource_cancel: (a: number) => void;
     readonly intounderlyingsource_pull: (a: number, b: number) => number;
     readonly ring_core_0_17_14__bn_mul_mont: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-    readonly __wasm_bindgen_func_elem_14394: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_14396: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_5711: (a: number, b: number, c: number) => void;
-    readonly __wasm_bindgen_func_elem_3207: (a: number, b: number, c: number) => void;
-    readonly __wasm_bindgen_func_elem_7419: (a: number, b: number, c: number) => void;
-    readonly __wasm_bindgen_func_elem_5509: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_6618: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_6682: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_14252: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_14484: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_14486: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_5801: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_3297: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_7509: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_5599: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_6708: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_6772: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_14342: (a: number, b: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;
