@@ -549,12 +549,19 @@ export function sharedApp(options) {
  * for a passkey, whose assertion the CLI takes from that origin alone
  * (da-bjxts). Every request there is the preview server's answer, headers
  * and all — the cross-origin isolation the database worker needs included.
+ *
+ * A fetch the preview server resets is asked again (da-93wj1): under CI
+ * load one did (`read ECONNRESET`), the handler threw, the request was
+ * never answered, and the page waited for its module until `ready` timed out.
  */
 function serveAt(context, origin) {
 	return context.route(`${origin}/**`, async (route) => {
 		const url = new URL(route.request().url());
-		const response = await route.fetch({ url: baseUrl() + url.pathname + url.search });
-		await route.fulfill({ response });
+		const fetch = (tries) =>
+			route
+				.fetch({ url: baseUrl() + url.pathname + url.search })
+				.catch((e) => (tries > 1 && /ECONNRESET|socket hang up/.test(e.message) ? fetch(tries - 1) : Promise.reject(e)));
+		await route.fulfill({ response: await fetch(3) });
 	});
 }
 
