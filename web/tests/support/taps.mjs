@@ -388,19 +388,23 @@ async function tapIn(app, path, key) {
 }
 
 /**
- * The page's openers, in three shares that together are all of them, one
+ * The page's openers, in four shares that together are all of them, one
  * file each: node's budget is per FILE, and the whole walk took 147 s on an
  * idle box — more than 300 on CI's lane. What costs is the menus that
  * reshape the layout, since every split, tab or layout they make is a `solo`
  * to put back: the root bar's (`layout`) and a pane's (`pane`) are a share
- * each, and every other layer is `rest`.
+ * each. A widget's own options menu (`menu`) is a share too, since the rest
+ * alone reached the cap on a loaded lane (da-4j2hw), and every other layer
+ * is `rest`.
  */
 const ROOT_LAYOUT = /^page: (open a layout|manage the layout)$/;
 const PANE_LAYOUT = /: (add a tab to|manage) the .* pane$/;
+const PANE_MENU = /: menu of the .* pane$/;
 export const SHARES = {
 	layout: (key) => ROOT_LAYOUT.test(key),
 	pane: (key) => PANE_LAYOUT.test(key),
-	rest: (key) => !ROOT_LAYOUT.test(key) && !PANE_LAYOUT.test(key)
+	menu: (key) => PANE_MENU.test(key),
+	rest: (key) => !ROOT_LAYOUT.test(key) && !PANE_LAYOUT.test(key) && !PANE_MENU.test(key)
 };
 
 /**
