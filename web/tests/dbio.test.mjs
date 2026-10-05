@@ -446,8 +446,8 @@ test('an option keeps its value, and only the source is the chosen file (da-1vz2
 // A replace restore tombstones what the backup lacks, and the CLI asks
 // first only on a TTY, which the browser has not got (da-jrbwc): the page
 // asks, with the counts of the CLI's own dry run on the same bytes, and
-// only when something would be deleted.
-test('a replacing restore confirms its deletions first; one that deletes nothing, or --merge, never asks', async () => {
+// only when something would be deleted or the dry run warns (da-fnjku).
+test('a replacing restore confirms its deletions first; one that deletes nothing and warns of nothing, or --merge, never asks', async () => {
 	await desk.solo(
 		async (app) => {
 			const { page } = app;
@@ -549,6 +549,76 @@ test('a replacing restore names the dry run’s warnings in its confirm', async 
 				asked.match(/ ⚠ Entry-count mismatch: header declared (\d+), restored (\d+)\.$/) ?? assert.fail(asked);
 			assert.equal(Number(declared), Number(restored) + 1, asked);
 			await answer(page, 'cancel');
+			assert.deepEqual(app.errors, []);
+		}
+	);
+});
+
+// da-fnjku: the confirm came only when something would be deleted, so a
+// truncated backup restored into an empty db warned in its dry run and
+// then ran with no word before it. A warning asks too; a clean restore
+// that deletes nothing still runs at once.
+test('a restore whose dry run warns asks first, even when nothing would be deleted', async () => {
+	await desk.solo(
+		async (app) => {
+			const { page } = app;
+			await page.evaluate(() => {
+				window.__restores = [];
+				const previous = window.datum.setRunner((argv, stdin) => {
+					if (argv[0] === 'db') window.__restores.push(argv);
+					return previous(argv, stdin);
+				});
+				window.__unhook = () => window.datum.setRunner(previous);
+			});
+			const asked = () => page.evaluate(() => window.__restores.splice(0));
+			await app.declare('coffee');
+			await app.submit('occur coffee');
+			const [download] = await Promise.all([page.waitForEvent('download'), app.submit('db backup')]);
+			const clean = await download.path();
+			// The header declares one entry more than the file holds.
+			const [head, ...rest] = (await readFile(clean, 'utf8')).split('\n');
+			const header = JSON.parse(head);
+			header.entry_count += 1;
+			const cut = join(await mkdtemp(join(tmpdir(), 'datum-')), 'cut.jsonl');
+			await writeFile(cut, [JSON.stringify(header), ...rest].join('\n'));
+			await app.empty();
+			assert.equal(await count(app), 0);
+			await asked();
+
+			// Truncated into an empty db: nothing to delete, but it asks, and says what it does.
+			const dialog = page.locator('dialog.confirm');
+			const restoreCut = async () => {
+				const [chooser] = await Promise.all([page.waitForEvent('filechooser'), type(page, 'db restore')]);
+				await chooser.setFiles(cut);
+				await dialog.waitFor();
+				return dialog.locator('p').innerText();
+			};
+			const text = await restoreCut();
+			assert.match(text, /^Restore adds \d+ entries and changes 0\. ⚠ Entry-count mismatch: header declared \d+, restored \d+\.$/);
+			await answer(page, 'cancel');
+			assert.equal((await app.outputs()).at(-1), 'db restore: aborted (nothing changed; --merge deletes nothing)');
+			assert.deepEqual(await asked(), [['db', 'restore', '-', '--dry-run', '--json']]);
+			assert.equal(await count(app), 0);
+
+			await restoreCut();
+			await answer(page, 'restore');
+			assert.deepEqual(await asked(), [
+				['db', 'restore', '-', '--dry-run', '--json'],
+				['db', 'restore', '-', '--yes']
+			]);
+			assert.equal(await count(app), 2);
+
+			// A clean backup into an empty db runs at once.
+			await app.empty();
+			await asked();
+			await choose(page, 'db restore', clean);
+			assert.equal(await dialog.count(), 0);
+			assert.deepEqual(await asked(), [
+				['db', 'restore', '-', '--dry-run', '--json'],
+				['db', 'restore', '-']
+			]);
+			assert.equal(await count(app), 2);
+			await page.evaluate(() => window.__unhook());
 			assert.deepEqual(app.errors, []);
 		}
 	);

@@ -97,8 +97,8 @@ function feed(argv: string[], stdin: string): Promise<RunResult> {
  * what the backup lacks, and the CLI asks first only on a TTY (da-5fooh),
  * which the browser has not got: so the page asks, with the counts of the
  * CLI's own `--dry-run` on the same bytes, and runs it `--yes` on yes
- * (da-jrbwc). One that deletes nothing, `--merge`, `--dry-run` and a typed
- * `--yes` run as asked.
+ * (da-jrbwc). One that deletes nothing and warns of nothing, `--merge`,
+ * `--dry-run` and a typed `--yes` run as asked.
  */
 export function restore(argv: string[]): Promise<RunResult> {
 	if (['--merge', '--dry-run', '--yes', '-y'].some((a) => argv.includes(a))) return upload(argv);
@@ -108,10 +108,13 @@ export function restore(argv: string[]): Promise<RunResult> {
 		const seen = await feed([...argv, '--dry-run', '--json'], backup);
 		if (seen.code !== 0) return seen;
 		const { would_delete, would_insert, would_update, warnings } = JSON.parse(seen.stdout);
-		if (!would_delete) return feed(argv, backup);
+		// A warning asks too, deleting or not (da-fnjku): a truncated backup into an empty db deletes nothing.
+		if (!would_delete && !warnings.length) return feed(argv, backup);
 		const text =
-			`Restore replaces ${dbOf(argv)}: ${would_delete} entries will be deleted, ` +
-			`${would_insert} added, ${would_update} changed. Undo reverts the whole restore.` +
+			(would_delete
+				? `Restore replaces ${dbOf(argv)}: ${would_delete} entries will be deleted, ` +
+					`${would_insert} added, ${would_update} changed. Undo reverts the whole restore.`
+				: `Restore adds ${would_insert} entries and changes ${would_update}.`) +
 			// Its warnings too (da-i4rqd): a header that disagrees with the lines is known before the yes.
 			warnings.map((w: string) => ` ⚠ ${w}.`).join('');
 		if (!(await confirm(text, 'restore'))) {

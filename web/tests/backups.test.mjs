@@ -250,9 +250,15 @@ describe('«Backups»', () => {
 				sheet.locator('button[data-backup="restore-file"]').click()
 			]);
 			await chooser.setFiles({ name: 'backup.jsonl', mimeType: 'application/jsonl', buffer });
+			// It deletes nothing, but its warning asks first (da-fnjku).
+			const mismatch = /⚠ Entry-count mismatch: header declared (\d+), restored (\d+)/;
+			const confirm = page.locator('dialog.confirm');
+			await confirm.waitFor();
+			assert.match(await confirm.innerText(), mismatch);
+			await confirm.getByRole('button', { name: 'restore', exact: true }).click();
 			const note = sheet.locator('[role="status"]', { hasText: 'Restore:' });
 			await note.waitFor();
-			assert.match(await note.innerText(), /⚠ Entry-count mismatch: header declared (\d+), restored (\d+)/);
+			assert.match(await note.innerText(), mismatch);
 			assert.deepEqual(app.errors, []);
 		}, DEBUG);
 	});
