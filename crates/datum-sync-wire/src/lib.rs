@@ -129,12 +129,39 @@ async fn within<T>(f: impl Future<Output = Result<T>>) -> Result<T> {
 
 // ─── Wire ───────────────────────────────────────────────────────────────────
 
+/// Where datum.day redeems a ticket (da-l9kdr): the ticket rides in the
+/// fragment, which a browser never sends to a server.
+pub const JOIN: &str = "https://datum.day/sync/join#";
+
 /// A one-time invite: where to dial — the inviter first, then the peers it
 /// knows, any of which can admit the redeemer in a chain — and the secret.
 #[derive(Serialize, Deserialize)]
 pub struct Ticket {
     pub addrs: Vec<EndpointAddr>,
     pub secret: String,
+    #[serde(flatten)]
+    pub about: About,
+}
+
+/// What a ticket says of itself, for a redeemer to ask before it joins
+/// (da-l9kdr): the inviting copy, its chain, and when the invite expires
+/// (unix seconds). A ticket made before these were carried has none.
+#[derive(Serialize, Deserialize, Default)]
+pub struct About {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chain: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires: Option<u64>,
+}
+
+/// Seconds since the epoch, in a browser too.
+pub fn unix_now() -> u64 {
+    use n0_future::time::SystemTime;
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 impl Ticket {
@@ -142,7 +169,14 @@ impl Ticket {
         Ok(BASE32_NOPAD.encode(&serde_json::to_vec(self)?))
     }
 
+    /// The join link a browser opens, and `connect` takes as well.
+    pub fn link(&self) -> Result<String> {
+        Ok(format!("{JOIN}{}", self.encode()?))
+    }
+
+    /// A ticket, or a join link holding one (whatever precedes its `#`).
     pub fn decode(s: &str) -> Result<Self> {
+        let s = s.rsplit('#').next().unwrap_or(s);
         let bytes = BASE32_NOPAD
             .decode(s.trim().to_uppercase().as_bytes())
             .context("not a datum sync ticket")?;
@@ -503,6 +537,17 @@ pub async fn redeem(store: &impl Store, ep: &Endpoint, ticket: &Ticket) -> Resul
         if !next {
             break;
         }
+    }
+    // An inviter stops serving its invite once it expires, so a late
+    // ticket reaches no one; this clock says why. Only then: a clock that
+    // is wrong must not refuse an invite still served (da-l9kdr).
+    let late = ticket.about.expires.is_some_and(|at| at <= unix_now());
+    if late
+        && rep
+            .as_ref()
+            .is_err_and(|e| e.to_string().starts_with("could not reach"))
+    {
+        return rep.context("invite expired: ask the inviting device for a new one");
     }
     rep
 }

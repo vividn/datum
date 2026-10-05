@@ -16,6 +16,7 @@ import { get, writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import type { RunResult } from './run.js';
 import { noteRun } from './bar.js';
+import { maskTicket } from './sync.js';
 
 export type Command = { line: string; ranAt: number; result: RunResult };
 
@@ -69,6 +70,9 @@ function restore(): ReplState {
  * it was run, and into the recall history unless it repeats the last one.
  */
 export function record(line: string, ranAt: number, result: RunResult): void {
+	// A sync ticket is one-time, but no secret belongs in a store kept on
+	// disk and recalled with Up (da-l9kdr).
+	line = maskTicket(line);
 	// Capped here, not only on the way to disk: a tab that stays open all
 	// day would otherwise keep every command in memory and in the DOM while
 	// the store on disk held the last KEEP (review threads on #156, #166).

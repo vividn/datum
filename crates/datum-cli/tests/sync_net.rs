@@ -249,6 +249,27 @@ fn an_invite_pairs_two_copies_and_their_data_converges() {
     assert!(b.ok(&["sync", "chain", "list"]).contains(&a.id()[..10]));
 }
 
+/// An invite prints a datum.day join link (da-l9kdr), which `connect`
+/// takes whole, as it takes the bare ticket the link's fragment holds.
+#[test]
+fn connect_takes_the_join_link_or_its_bare_ticket() {
+    let (a, b, c) = (Copy::new(), Copy::new(), Copy::new());
+    let (mut inviting, link) = a.invite(&[]);
+    assert!(link.starts_with("https://datum.day/sync/join#"), "{link}");
+    assert!(b
+        .ok(&["sync", "chain", "connect", &link])
+        .contains("verify ok"));
+    assert!(inviting.finish().0);
+
+    let (mut inviting, link) = a.invite(&[]);
+    let bare = link.rsplit('#').next().unwrap();
+    assert!(c
+        .ok(&["sync", "chain", "connect", bare])
+        .contains("verify ok"));
+    assert!(inviting.finish().0);
+    assert_eq!(a.hash(), c.hash());
+}
+
 #[test]
 fn an_invite_is_one_time_and_expires() {
     let (a, b) = (Copy::new(), Copy::new());

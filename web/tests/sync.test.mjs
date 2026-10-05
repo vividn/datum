@@ -195,6 +195,67 @@ describe('a sync chain started in the page', () => {
 	});
 });
 
+/** Two browser profiles, `a` and `b`, each syncing through the relay. */
+const twoBrowsers = (body) =>
+	withApp((a) => withApp((b) => body(a, b), { prepare: relayed(relay) }), { prepare: relayed(relay) });
+
+/** A join link for a new invite on `a`'s `datum` (da-l9kdr), as its Sync widget shows one. */
+const linkFrom = (a) => a.page.evaluate(async () => `${location.origin}/sync/join#${await window.datum.sync.offer('datum')}`);
+
+/** `left` written on `a` and `right` on `b` are on both, the copies agree, and a write on `a` after reaches `b` by itself. */
+async function converged(a, b) {
+	assert.equal(await verifyOf(a), await verifyOf(b));
+	assert.equal(await countOf(b, 'left'), 1);
+	assert.equal(await countOf(a, 'right'), 1);
+	await a.run(['occur', 'later', '-t', '1000']);
+	await until(() => countOf(b, 'later'), (n) => n === 1);
+}
+
+describe('a browser joins a chain (da-l9kdr)', () => {
+	test('through the join link: the card names the inviter, its chain and the database, and joins on a tap', async () => {
+		await twoBrowsers(async (a, b) => {
+			await a.run(['occur', 'left', '-t', '0800']);
+			await b.run(['occur', 'right', '-t', '0900']);
+			const link = await linkFrom(a);
+			const chain = JSON.parse((await a.run(['sync', 'status', '--json'])).stdout).chain;
+			await b.goto(link);
+			// The ticket left the address bar with the `goto` to `/`.
+			assert.equal(new URL(b.page.url()).hash, '');
+			const card = b.page.locator('.card.join');
+			const join = card.getByRole('button', { name: 'join', exact: true });
+			await join.waitFor();
+			const words = await card.locator('.what').innerText();
+			assert.match(words, /Join the sync chain of «datum\.day» \(chain (\w{10})\) with this browser’s database «datum»/);
+			assert.equal(/\(chain (\w{10})\)/.exec(words)[1], chain.slice(0, 10));
+			assert.match(words, /The link works once, until \d\d:\d\d\./);
+			await join.click();
+			await card.locator('.done').waitFor();
+			await converged(a, b);
+
+			// Opened again, the link says there is nothing to join.
+			await b.goto(link);
+			await until(() => card.locator('.failure').innerText(), (t) => /«datum» is in this chain already/.test(t));
+			assert.equal(await join.count(), 0);
+		});
+	});
+
+	test('through the prompt bar: `sync chain connect <link>` joins, and no history keeps the ticket', async () => {
+		await twoBrowsers(async (a, b) => {
+			await a.run(['occur', 'left', '-t', '0800']);
+			await b.run(['occur', 'right', '-t', '0900']);
+			const link = await linkFrom(a);
+			const ticket = link.split('#')[1];
+			await b.submit(`sync chain connect ${link}`);
+			assert.match((await b.stdouts()).at(-1), /verify ok/);
+			assert.equal((await b.echoes()).at(-1), 'sync chain connect <ticket>');
+			await converged(a, b);
+			const kept = await b.page.evaluate(() => localStorage.getItem('datum.repl.v1'));
+			assert.ok(kept.includes('sync chain connect <ticket>'), kept);
+			assert.ok(!kept.includes(ticket), 'the ticket is in the stored scrollback or history');
+		});
+	});
+});
+
 describe('two browsers', () => {
 	test('pair through the relay, converge, and a write in one appears in the other untouched', async () => {
 		await withApp(

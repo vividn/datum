@@ -13,12 +13,24 @@ export interface SyncReport {
 	vector: Record<string, number>;
 }
 
+/** What a ticket says of itself (the wire crate's `About`, da-l9kdr): never its secret. */
+export interface TicketAbout {
+	/** The inviting device's label. */
+	from?: string;
+	/** Its sync chain's id. */
+	chain?: string;
+	/** When the invite expires, unix seconds. */
+	expires?: number;
+}
+
 export type SyncRequest =
 	| ({ id: number; db: string } & (
 			| { op: 'start'; key: string; relay?: string; label: string }
 			| { op: 'dial'; addr: string }
 			| { op: 'connect'; ticket: string }
-			| { op: 'ticket'; secret: string; also?: string }
+			| { op: 'ticket'; secret: string; also?: string; about?: string }
+			/** What a ticket or join link says of itself (`TicketAbout`); needs no endpoint. */
+			| { op: 'about'; ticket: string }
 	  ))
 	/** A CLI process the worker asked for (`run`), and how it went. */
 	| { ran: number; result: { code: number; stdout: string; stderr: string } };

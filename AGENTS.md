@@ -119,7 +119,10 @@ order give the same row. The hidden `datum sync pipe vector / ops / apply /
 verify` move ops as JSON lines over a pipe. The transport is iroh (`crates/datum-sync`,
 behind datum-commands' `net` feature, so the CLI's wasm build has no iroh): the iroh
 endpoint key IS the db's endpoint key, copies join a sync chain with
-one-time invites (`sync chain invite` / `connect`), only members are served
+one-time invites (`sync chain invite` / `connect`; the invite is a datum.day
+join link, `/sync/join#<ticket>`, which `connect`, a browser and the page's
+prompt bar all redeem, so a browser can join a chain as well as start one),
+only members are served
 (`sync_peers` is just where they were last seen), and bare `sync` / the
 hidden `sync run` swap vectors and ops until neither moves. The tree:
 `sync`, `status`, `pause | resume`, `chain invite | connect |

@@ -200,6 +200,13 @@ fn report(rep: Result<Report>) -> Result<String, JsError> {
     serde_json::to_string(&rep.map_err(|e| js(format!("{e:#}")))?).map_err(js)
 }
 
+/// What a ticket or join link says of itself ([`About`], as JSON): what a
+/// page asks before it redeems one (da-l9kdr). Never the secret.
+#[wasm_bindgen]
+pub fn about(ticket: String) -> Result<String, JsError> {
+    serde_json::to_string(&Ticket::decode(&ticket).map_err(js)?.about).map_err(js)
+}
+
 #[wasm_bindgen]
 impl Node {
     /// Bind the endpoint whose key is `key` (hex, `datum sync
@@ -257,13 +264,30 @@ impl Node {
     }
 
     /// The ticket for an invite whose secret is `secret` — this endpoint's
-    /// address, then `also`'s (a JSON list of addresses, a chain's members).
-    pub fn ticket(&self, secret: String, also: Option<String>) -> Result<String, JsError> {
+    /// address, then `also`'s (a JSON list of addresses, a chain's members),
+    /// and `about` (JSON, [`About`]).
+    pub fn ticket(
+        &self,
+        secret: String,
+        also: Option<String>,
+        about: Option<String>,
+    ) -> Result<String, JsError> {
         let mut addrs = vec![self.ep.addr()];
         if let Some(also) = also {
             addrs.extend(serde_json::from_str::<Vec<EndpointAddr>>(&also).map_err(js)?);
         }
-        Ticket { addrs, secret }.encode().map_err(js)
+        let about = about
+            .map(|a| serde_json::from_str(&a))
+            .transpose()
+            .map_err(js)?
+            .unwrap_or_default();
+        Ticket {
+            addrs,
+            secret,
+            about,
+        }
+        .encode()
+        .map_err(js)
     }
 
     pub async fn close(&self) {

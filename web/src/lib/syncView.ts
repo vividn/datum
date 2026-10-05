@@ -17,7 +17,8 @@
 import { writable } from 'svelte/store';
 import { run, type RunResult } from './run.js';
 import { approve, approveLink } from './passkey.js';
-import type { Reach, SyncState } from './sync.js';
+import type { Invite, Reach, SyncState } from './sync.js';
+import type { TicketAbout } from './syncProtocol.js';
 
 /** One member of a chain as `sync status --json` has it: this copy left out. */
 export interface Member {
@@ -72,6 +73,31 @@ export interface DbSync {
 
 /** The approve link datum.day was opened on (`/sync/approve#<record>`), until it is dealt with. */
 export const approving = writable<string | null>(null);
+
+/** The ticket of the join link datum.day was opened on (`/sync/join#<ticket>`, da-l9kdr), until it is dealt with. */
+export const joining = writable<string | null>(null);
+
+/**
+ * What joining with a ticket that says `a` of itself does, in words, for
+ * `db`, the page's database, whose chain `d` reads (da-l9kdr) — and, when it
+ * cannot, why not: the link expired, or the database is in a chain already
+ * (a copy belongs to one).
+ */
+export function joinWords(a: TicketAbout, db: string, d: DbSync | undefined, now: number): { words: string[]; refused?: string } {
+	const from = a.from ? `«${a.from}»` : 'another device';
+	const chain = a.chain ? ` (chain ${a.chain.slice(0, 10)})` : '';
+	const words = [`Join the sync chain of ${from}${chain} with this browser’s database «${db}»: what each holds, both will.`];
+	const until = a.expires && new Date(a.expires * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+	if (a.expires && a.expires * 1000 <= now) return { words, refused: `This link expired at ${until}: ask ${from} for a new one.` };
+	if (d?.chain && d.chain === a.chain) return { words, refused: `«${db}» is in this chain already: there is nothing to join.` };
+	if (d?.chain)
+		return {
+			words,
+			refused: `«${db}» is in another sync chain, and a database belongs to one. To join with another database, open the link with ?db=<name> before its # (…/sync/join?db=<name>#…).`
+		};
+	if (until) words.push(`The link works once, until ${until}.`);
+	return { words };
+}
 
 /** Every database's chain, read through the CLI. */
 export function readSync(dbs: string[]): Promise<DbSync[]> {
@@ -210,11 +236,11 @@ export async function syncAct(db: string, argv: string[]): Promise<RunResult> {
 export const approveInto = (db: string, link: string, code: string): Promise<RunResult> =>
 	run(['--db', db, 'sync', 'approve', link], code);
 
-/** A new invite on `db` (starting an open chain on a db in none): its secret. */
-export async function newInvite(db: string): Promise<string> {
+/** A new invite on `db` (starting an open chain on a db in none): its secret, and when it expires. */
+export async function newInvite(db: string): Promise<Invite> {
 	const r = await syncAct(db, ['new-invite']);
 	if (r.code !== 0) throw new Error(r.stderr.replace(/^error: /, ''));
-	return JSON.parse(r.stdout.split('\n')[0]).secret;
+	return JSON.parse(r.stdout.split('\n')[0]);
 }
 
 /** `text` as a QR code, SVG, drawn by the CLI. */

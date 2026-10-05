@@ -25,7 +25,8 @@ use chrono::{SecondsFormat, Utc};
 use datum_core::db::peers::Peer;
 use datum_core::db::{chain, Db};
 use datum_sync_wire::{
-    dial, redeem, serve, Applied, Endpoint, EndpointAddr, Lost, Net, Report, Store, Ticket, Vector,
+    dial, redeem, serve, unix_now, About, Applied, Endpoint, EndpointAddr, Lost, Net, Report,
+    Store, Ticket, Vector,
 };
 use futures_util::stream::{FuturesUnordered, StreamExt};
 
@@ -205,11 +206,26 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
         let store = DbStore(db);
         let mut addrs = vec![ep.addr()];
         addrs.extend(synced_peers(db)?.iter().filter_map(|p| addr(p).ok()));
-        let ticket = Ticket { addrs, secret }.encode()?;
+        let chain = db.sync_chain()?;
+        let from = chain
+            .member(&db.sync_endpoint_id()?)
+            .map(|m| m.label.clone());
+        let about = About {
+            from,
+            chain: Some(chain.id),
+            expires: Some(unix_now() + expires.as_secs()),
+        };
+        let link = Ticket {
+            addrs,
+            secret,
+            about,
+        }
+        .link()?;
         println!("One-time invite, until {expires_at}. On the other copy run:\n");
-        println!("  datum sync chain connect {ticket}\n");
+        println!("  datum sync chain connect {link}\n");
+        println!("or open the link in a browser.\n");
         if qr {
-            let code = qrcode::QrCode::new(ticket.as_bytes())?;
+            let code = qrcode::QrCode::new(link.as_bytes())?;
             println!(
                 "{}",
                 code.render::<qrcode::render::unicode::Dense1x2>().build()

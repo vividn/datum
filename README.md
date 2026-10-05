@@ -323,8 +323,8 @@ Copies of a database sync peer to peer over [iroh](https://iroh.computer),
 as members of a sync chain. Join one with a one-time invite, then sync:
 
 ```bash,no_run
-datum sync chain invite            # on the first copy: starts a chain, prints `datum sync chain connect <TICKET>`
-datum sync chain connect <TICKET>  # on the second: it joins the chain, and they sync
+datum sync chain invite            # on the first copy: starts a chain, prints `datum sync chain connect <LINK>`
+datum sync chain connect <LINK>    # on the second: it joins the chain, and they sync
 datum sync                         # sync with every member once
 datum sync status                  # how this copy stands with each member
 datum sync chain list              # list them; `datum sync chain revoke <WHO>` removes one
@@ -333,7 +333,9 @@ datum sync chain list              # list them; `datum sync chain revoke <WHO>` 
 A chain with no admin is open: any member may invite, revoke or rename
 another. `datum sync admin add <KEYFILE>` (or a datum.day passkey) locks
 it, and from then on those acts take the admin key; removing the last
-admin takes `--allow-unlock`, and opens it again. Only members are served,
+admin takes `--allow-unlock`, and opens it again. The link is a datum.day
+join link (`https://datum.day/sync/join#<ticket>`): opened in a browser, it
+joins that browser's copy instead. Only members are served,
 and the first command after a member is added warns about it once. Every
 change to an entry is an op signed by this copy's endpoint key (which is
 also its iroh identity), and two copies that hold the same ops hold the

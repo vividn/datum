@@ -44,6 +44,7 @@
 	import { GAP, columnsIn, rowsOf } from './scrollback.js';
 	import { run, type RunResult } from './run.js';
 	import { shellJoin } from './shellSplit.js';
+	import { syncCommand } from './sync.js';
 
 	/** Newest entry first, the view pinned to the top. */
 	export let reversed = false;
@@ -137,12 +138,13 @@
 	 *
 	 * A file command ($lib/dbio.ts) goes the browser's way, before any
 	 * await: its dialog needs the keypress — unless the caller brought
-	 * `stdin` itself, which is a file already chosen (`engine.press`).
+	 * `stdin` itself, which is a file already chosen (`engine.press`). So
+	 * does `sync chain connect`, to the sync worker ($lib/sync.ts).
 	 */
 	export async function runArgv(argv: string[], line?: string, stdin?: string): Promise<RunResult> {
 		const ranAt = Date.now();
 		const result = await (
-			(stdin === undefined ? fileCommand(argv) : null) ??
+			(stdin === undefined ? (fileCommand(argv) ?? syncCommand(argv)) : null) ??
 			runEchoed(run, fitArgv(argv, width), stdin)
 		);
 		await land(line ?? shellJoin(argv), result, ranAt);

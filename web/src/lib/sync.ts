@@ -32,14 +32,18 @@
 // - A tab that is not the leader forwards `offer` and `connect` to it.
 //   Pairing is the chain's (da-6177s): `offer` writes a chain invite —
 //   starting an open chain when there is none — and `connect` redeems one.
+// - A ticket travels as a JOIN LINK (da-l9kdr), `/sync/join#<ticket>`, which
+//   the CLI's `connect` takes too, and `sync chain connect` typed on the page
+//   comes here (`syncCommand`) rather than to the CLI, which has no network.
 //
 // A relay other than n0's is named in `localStorage` (`datum.syncRelay`),
 // as `DATUM_SYNC_RELAY` names one for the CLI: the tests' local relay.
 
 import { writable, type Readable } from 'svelte/store';
 import { announceHere, onAnyChange } from './changes.js';
-import type { SyncEvent, SyncReport, SyncRequest } from './syncProtocol.js';
-import type { RunResult } from './run.js';
+import type { SyncEvent, SyncReport, SyncRequest, TicketAbout } from './syncProtocol.js';
+import { dbOf, type RunResult } from './run.js';
+import { shellSplit } from './shellSplit.js';
 
 const PULL_MS = 30_000;
 /** How soon a leader that could not read its setup first reads it again,
@@ -79,7 +83,14 @@ interface Peer {
 	revoked: boolean;
 }
 
-type Call = { op: 'offer'; secret?: string } | { op: 'connect'; ticket: string };
+/** An invite as `sync new-invite` prints it. */
+export interface Invite {
+	secret: string;
+	/** RFC 3339. */
+	expires: string;
+}
+
+type Call = { op: 'offer'; invite?: Invite } | { op: 'connect'; ticket: string };
 
 const states = writable<Record<string, SyncState>>({});
 /** Every database's sync state this tab has heard, from its leader. */
@@ -160,6 +171,8 @@ class Leader {
 	endpoint?: string;
 	peers: Peer[] = [];
 	chain = false;
+	/** The chain's id, while there is one. */
+	chainId?: string;
 	paused?: string;
 	label = 'datum.day';
 	/** Per peer: its vector when last in step, a session in flight, one more asked for. */
@@ -172,7 +185,12 @@ class Leader {
 	pushing = false;
 	pushAgain = false;
 
-	constructor(readonly db: string) {}
+	// Not a parameter property: node's type stripping, which the pure tests
+	// import this through (engine.ts → `syncCommand`), refuses one.
+	readonly db: string;
+	constructor(db: string) {
+		this.db = db;
+	}
 
 	/**
 	 * Read whether the database syncs, and start an endpoint if it does.
@@ -189,6 +207,7 @@ class Leader {
 		const chain = members.code === 0;
 		const status = chain ? JSON.parse(await must(['--db', this.db, 'sync', 'status', '--json'])) : undefined;
 		this.chain = chain;
+		this.chainId = status?.chain ?? undefined;
 		this.label = status?.this.label ?? this.label;
 		this.paused = status?.paused ?? undefined;
 		this.peers = ((status?.members ?? []) as Peer[]).filter((p) => !p.revoked && p.addr);
@@ -268,12 +287,15 @@ class Leader {
 		}
 		// An invite the page wrote already (the Sync widget, approved with a
 		// passkey in the tab tapped — da-bjxts), or a new one.
-		const secret = c.secret ?? JSON.parse(await must(['--db', this.db, 'sync', 'new-invite'])).secret;
+		const invite: Invite = c.invite ?? JSON.parse(await must(['--db', this.db, 'sync', 'new-invite']));
 		// The first invite starts the chain, and with it the endpoint.
 		await this.refresh();
 		// Any member can admit the redeemer.
 		const also = JSON.stringify(this.peers.map((p) => JSON.parse(p.addr)));
-		return ask<string>(this.db, { op: 'ticket', secret, also });
+		// What the redeemer is asked before it joins (da-l9kdr).
+		const expires = Math.floor(Date.parse(invite.expires) / 1000);
+		const about = JSON.stringify({ from: this.label, chain: this.chainId, expires } satisfies TicketAbout);
+		return ask<string>(this.db, { op: 'ticket', secret: invite.secret, also, about });
 	}
 
 	state(): SyncState {
@@ -382,8 +404,44 @@ async function call<T>(db: string, c: Call): Promise<T> {
  * invite whose `secret` is given, or a new one, starting an open chain when
  * the database is in none.
  */
-export function syncOffer(db: string, secret?: string): Promise<string> {
-	return call(db, { op: 'offer', secret });
+export function syncOffer(db: string, invite?: Invite): Promise<string> {
+	return call(db, { op: 'offer', invite });
+}
+
+/** The link a browser opens to redeem `ticket` (da-l9kdr): the ticket in the fragment, which no server sees. */
+export function joinLink(ticket: string): string {
+	return new URL(`/sync/join#${ticket}`, location.origin).href;
+}
+
+/** What a ticket or join link says of itself — who made it, its chain, when it expires; never its secret. */
+export function ticketAbout(ticket: string): Promise<TicketAbout> {
+	return ask('', { op: 'about', ticket });
+}
+
+/**
+ * `sync chain connect <TICKET|LINK>` typed on the page (da-l9kdr): the page's
+ * CLI has no network, so the ticket goes to the sync worker (`syncConnect`),
+ * and the result says what native `connect` says. The argv it echoes holds
+ * no ticket. Null for anything else — `--help` too — which runs as typed.
+ */
+export function syncCommand(argv: string[]): Promise<RunResult> | null {
+	const [ticket, ...rest] = connectArgs(argv) ?? [];
+	if (!ticket || ticket.startsWith('-') || rest.length) return null;
+	const shown = argv.map((w) => (w === ticket ? '<ticket>' : w));
+	return syncConnect(dbOf(argv), ticket).then(
+		(r) => ({
+			argv: shown,
+			code: 0,
+			stdout: [
+				r.added ? `added sync peer ${r.label} (${r.id.slice(0, 10)})` : '',
+				`${r.label}: sent ${r.sent}, got ${r.got}, conflicts ${r.conflicts}, verify ${r.verified ? 'ok' : 'MISMATCH'}`
+			]
+				.filter(Boolean)
+				.join('\n'),
+			stderr: ''
+		}),
+		(e) => ({ argv: shown, code: 1, stdout: '', stderr: `error: ${(e as Error).message}` })
+	);
 }
 
 /** Redeem `ticket` and sync (`datum sync chain connect`). */
@@ -401,4 +459,30 @@ export function syncTouched(db: string): void {
 	const leader = led.get(db);
 	if (leader) void leader.refresh().catch(() => {});
 	else listen().postMessage({ db, touched: true });
+}
+
+/** The words after `sync chain connect` in `argv`, `--db` and its name left out wherever they stand; null for any other command. */
+function connectArgs(argv: string[]): string[] | null {
+	const words: string[] = [];
+	for (let i = 0; i < argv.length; i++) {
+		if (argv[i] === '--db') i++;
+		else if (!argv[i].startsWith('--db=')) words.push(argv[i]);
+	}
+	const [sync, chain, connect, ...rest] = words;
+	return sync === 'sync' && chain === 'chain' && connect === 'connect' ? rest : null;
+}
+
+/**
+ * `line` with every word a `sync chain connect` could take as its ticket
+ * written `<ticket>` — split as `syncCommand` reads it, so a `--db` anywhere
+ * hides none — for the scrollback and the recall history, which keep no
+ * secret.
+ */
+export function maskTicket(line: string): string {
+	for (const word of connectArgs(shellSplit(line)) ?? []) {
+		if (word.startsWith('-')) continue;
+		const esc = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		line = line.replace(new RegExp(`(^|[\\s'"])${esc}(?=$|[\\s'"])`, 'g'), '$1<ticket>');
+	}
+	return line;
 }

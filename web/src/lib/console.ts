@@ -36,7 +36,7 @@ import { findTab } from './layout/tree.js';
 import { isWidget } from './layout/types.js';
 import type { Layout, WidgetKindMeta } from './layout/types.js';
 import { KINDS } from './layout/registry.js';
-import { syncConnect, syncLeads, syncOffer, syncStates, type SyncState } from './sync.js';
+import { syncConnect, syncLeads, syncOffer, syncStates, type Invite, type SyncState } from './sync.js';
 import type { SyncReport } from './syncProtocol.js';
 
 export interface DatumConsole {
@@ -65,7 +65,7 @@ export interface DatumConsole {
 		states(): Record<string, SyncState>;
 		/** The databases whose sync THIS tab leads. */
 		leads(): string[];
-		offer(db: string, secret?: string): Promise<string>;
+		offer(db: string, invite?: Invite): Promise<string>;
 		connect(db: string, ticket: string): Promise<SyncReport>;
 	};
 	/**

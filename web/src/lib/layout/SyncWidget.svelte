@@ -14,7 +14,7 @@
 
 	Every CLI read and act is $lib/syncView.ts's. The actions (da-bjxts),
 	drawn full-size only: a database's header turns sync on or adds a
-	device (the ticket as a QR and as text); a client's row renames or
+	device (its join link as a QR and as text, da-l9kdr); a client's row renames or
 	revokes it; under the table each chain says whether it is open or which
 	passkeys lock it. An act in a locked chain is approved with a passkey
 	in this page, and `/sync/approve#<record>` draws the approval card on
@@ -22,8 +22,12 @@
 	key, and whether this browser made it — before it offers the passkey,
 	since a link is anyone's to send: approved, the record is written into this browser's copy of that
 	chain's database when it holds one, and sync takes it to the device that
-	asked — else the card shows the code to paste. Notices of new members
-	and unlocks stay above the table until acknowledged.
+	asked — else the card shows the code to paste. `/sync/join#<ticket>`
+	draws the join card the same way (da-l9kdr): it names the inviting
+	device, its chain and the page's database before it offers to join, and
+	says instead why it cannot — the link expired, the database is in a
+	chain already. Notices of new members and unlocks stay above the table
+	until acknowledged.
 
 	It is a PLACE (da-6du3o): the commands widget's one `Sync` button opens
 	it (a modal on a desktop, a tab on a phone — da-jozgv), so the raw `sync` subcommands the widget stood in for are
@@ -36,12 +40,13 @@
 	import { onAnyChange } from '$lib/changes.js';
 	import { currentDb, INTERNAL_DB } from '$lib/database.js';
 	import { listDatabases } from '$lib/databases.js';
-	import { syncStates } from '$lib/sync.js';
-	import { syncOffer } from '$lib/sync.js';
+	import { joinLink, syncConnect, syncOffer, syncStates, ticketAbout } from '$lib/sync.js';
 	import {
 		approvalWords,
 		approveInto,
 		approving,
+		joining,
+		joinWords,
 		markOwn,
 		newInvite,
 		ownKeys,
@@ -82,8 +87,8 @@
 	/** An act under way, and how the last one failed. */
 	let busy = false;
 	let failure = '';
-	/** The ticket of the last device invited, and its QR. */
-	let offer: { db: string; ticket: string; svg: string } | null = null;
+	/** The join link of the last device invited, and its QR. */
+	let offer: { db: string; link: string; svg: string } | null = null;
 	/** The approval card's outcome: written here, or the code to paste. */
 	let approval: { done?: string; code?: string } = {};
 	/**
@@ -93,7 +98,15 @@
 	 */
 	let card: { link: string; db?: string; words: string[] } | null = null;
 
+	/**
+	 * The join card (da-l9kdr): the ticket of the link the page was opened
+	 * on, the page's database it joins, and what joining does — or why it
+	 * cannot — in words, before anything is dialed.
+	 */
+	let join: { ticket: string; db: string; words: string[]; refused?: string; done?: string } | null = null;
+
 	$: if (browser) void resolve($approving);
+	$: if (browser) void resolveJoin($joining);
 
 	$: if (browser) void read(epoch);
 	$: rows = table(dbs, $syncStates);
@@ -135,6 +148,23 @@
 		if (link === $approving) card = { link, db: d?.db, words: approvalWords(record, d, ownKeys()) };
 	}
 
+	async function resolveJoin(ticket: string | null): Promise<void> {
+		join = null;
+		if (!ticket) return;
+		const db = currentDb();
+		const said = await ticketAbout(ticket).then(
+			async (about) => joinWords(about, db, (await readSync([db]))[0], Date.now()),
+			() => ({ words: [], refused: 'Not a join link: it carries no ticket.' })
+		);
+		if (ticket === $joining) join = { ticket, db, ...said };
+	}
+
+	const joinHere = (j: NonNullable<typeof join>) =>
+		doing(async () => {
+			const r = await syncConnect(j.db, j.ticket);
+			join = { ...j, done: `Joined: ${r.got} op(s) came in from ${r.label}, ${r.sent} went to it.` };
+		});
+
 	async function doing(what: () => Promise<unknown>): Promise<void> {
 		busy = true;
 		failure = '';
@@ -155,8 +185,8 @@
 
 	const addDevice = (db: string) =>
 		doing(async () => {
-			const ticket = await syncOffer(db, await newInvite(db));
-			offer = { db, ticket, svg: await qr(ticket) };
+			const link = joinLink(await syncOffer(db, await newInvite(db)));
+			offer = { db, link, svg: await qr(link) };
 		});
 
 	const rename = (row: Row) =>
@@ -259,15 +289,35 @@
 				</p>
 			{/each}
 		{/each}
+		{#if $joining}
+			<section class="card join" data-db={join?.db}>
+				<p>
+					Join a sync chain?
+					<button type="button" class="close" aria-label="dismiss" on:click={() => joining.set(null)}>×</button>
+				</p>
+				{#if join}
+					<ul class="what">
+						{#each join.words as line}<li>{line}</li>{/each}
+					</ul>
+					{#if join.done}
+						<p class="done">{join.done}</p>
+					{:else if join.refused}
+						<p class="failure">{join.refused}</p>
+					{:else}
+						<button type="button" use:act={'run'} disabled={busy} on:click={() => join && joinHere(join)}>join</button>
+					{/if}
+				{/if}
+			</section>
+		{/if}
 		{#if offer}
 			<section class="card offer" data-db={offer.db}>
 				<p>
-					Add a device to {offer.db}, within 10 minutes — scan, or on the device run:
+					Add a device to {offer.db}, within 10 minutes — scan, open the link in its browser, or on the device run:
 					<button type="button" class="close" aria-label="dismiss" on:click={() => (offer = null)}>×</button>
 				</p>
 				<div class="qr">{@html offer.svg}</div>
-				<code class="code ticket">datum sync chain connect {offer.ticket}</code>
-				<button type="button" use:act={'run'} on:click={() => navigator.clipboard?.writeText(`datum sync chain connect ${offer?.ticket}`)}>copy</button>
+				<code class="code ticket">datum sync chain connect {offer.link}</code>
+				<button type="button" use:act={'run'} on:click={() => navigator.clipboard?.writeText(`datum sync chain connect ${offer?.link}`)}>copy</button>
 			</section>
 		{/if}
 		{#if failure}<p class="failure" role="alert">{failure}</p>{/if}
