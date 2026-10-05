@@ -14,7 +14,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { focusTop, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
 	PHONE,
@@ -485,7 +485,7 @@ describe('the lock', () => {
 				await page.mouse.up();
 				await settled(page);
 				assert.deepEqual(await cellWidths(page), was, 'a drag across a locked border moved it');
-				await page.evaluate(() => document.body.focus());
+				await focusTop(page);
 				await page.keyboard.press('ArrowRight');
 				await settled(page);
 				assert.deepEqual(await cellWidths(page), was, 'an arrow moved a locked border');

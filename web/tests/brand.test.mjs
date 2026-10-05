@@ -20,7 +20,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { focusTop, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -177,7 +177,7 @@ describe('the logo', () => {
 			// The keyboard's hover. Focus from a click would not be
 			// `:focus-visible`, so the focus comes by Tab from the prompt's
 			// neighbour — the page body — until it lands on the mark.
-			await page.evaluate(() => document.body.focus());
+			await focusTop(page);
 			for (let i = 0; i < 80; i++) {
 				await page.keyboard.press('Tab');
 				if (await page.locator(BRAND).evaluate((el) => el === document.activeElement)) break;

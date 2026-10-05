@@ -33,7 +33,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { atEachScreen, seedLines, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { atEachScreen, focusTop, seedLines, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { fold, unfold } from './support/bar.mjs';
 import { chooser, inRoom } from './support/layout.mjs';
 import { until } from './support/until.mjs';
@@ -451,7 +451,7 @@ describe('by keyboard', () => {
 describe('the layout engine, by keyboard', () => {
 	/** Tab from the top until nothing new is reached; the elements landed on. */
 	async function tabWalk(page) {
-		await page.evaluate(() => document.body.focus());
+		await focusTop(page);
 		const seen = new Set();
 		for (let i = 0; i < 80; i++) {
 			await page.keyboard.press('Tab');
@@ -784,7 +784,7 @@ describe('the input widget at /input', () => {
 		await plain.solo(async (app) => {
 			await app.goto('/input');
 			await app.page.locator('.input-widget input').waitFor();
-			await app.page.evaluate(() => document.body.focus());
+			await focusTop(app.page);
 			const reached = new Set();
 			for (let i = 0; i < 40; i++) {
 				await app.page.keyboard.press('Tab');

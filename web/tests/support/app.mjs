@@ -294,6 +294,19 @@ function baseUrl() {
 }
 
 /**
+ * Start the next Tab walk at the top of the page. `body.focus()` alone does
+ * nothing while an input has the focus, and a blur leaves Chromium walking
+ * on from the element that lost it — the prompt, focused on load (da-wnjkf).
+ */
+export const focusTop = (page) =>
+	page.evaluate(() => {
+		const body = document.body;
+		body.tabIndex = -1;
+		body.focus();
+		body.removeAttribute('tabindex');
+	});
+
+/**
  * Run `fn` against a freshly opened app in its own browser context.
  *
  * A context per test is a database per test: OPFS is partitioned by

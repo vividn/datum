@@ -15,7 +15,7 @@
 // nowhere to put, and comes back the moment a REPL is added.
 
 import { get, writable } from 'svelte/store';
-import { clearUnlockedPills, dropHids, pills, showGhost } from '$lib/bar.js';
+import { clearUnlockedPills, dropHids, focusLine, pills, showGhost } from '$lib/bar.js';
 import { grammarOf, type Grammar, type GrammarEntry } from '$lib/commands.js';
 import { withPills } from '$lib/selection.js';
 import { shellJoin } from '$lib/shellSplit.js';
@@ -105,6 +105,12 @@ export async function boot(): Promise<void> {
 		// No grammar: every command stays active.
 	}
 	ready.set(true);
+	// The line takes the typing once it can (da-wnjkf): after the flush that
+	// enables it, once, and only where nothing has the focus yet and the
+	// pointer is fine — on a phone a focused box is a keyboard over the page.
+	setTimeout(() => {
+		if (matchMedia('(pointer: fine)').matches && document.activeElement === document.body) focusLine();
+	});
 	await Promise.all([refresh(), resort()]);
 	document.addEventListener('visibilitychange', () => {
 		if (!document.hidden) void resort();

@@ -215,3 +215,30 @@ describe('a command tap focuses the line without the keyboard', () => {
 		}, { ...DESKTOP, prepare: (context) => context.addInitScript(draft, page_()) });
 	});
 });
+
+// The line takes the typing on load (da-wnjkf). vividn, 2026-10-05: «On
+// desktop, the prompt doesn't take typing on load … focus it once ready.»
+// Not on a touch screen, where a focused box is a keyboard over the page.
+describe('the line is focused once the database is ready, where the pointer is fine', () => {
+	/** A timer's turn after the app is up: the one the focus waits for. */
+	const settle = (page) => page.evaluate(() => new Promise((r) => setTimeout(r, 50)));
+
+	test('desktop: focused on load, and `occur coffee⏎` logs it with no click', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await page.waitForFunction((s) => document.activeElement === document.querySelector(s), BAR);
+			await page.keyboard.type('occur coffee');
+			await page.keyboard.press('Enter');
+			await page.waitForFunction((s) => document.querySelector(s).value === '', BAR);
+			await app.idle();
+			assert.equal((await app.entries(1))[0].field, 'coffee');
+		}, DESKTOP);
+	});
+
+	test('phone: the focus stays off the line, so no keyboard opens', async () => {
+		await withApp(async (app) => {
+			await settle(app.page);
+			assert.equal((await state(app.page)).focused, false);
+		}, PHONE);
+	});
+});
