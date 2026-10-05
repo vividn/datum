@@ -418,13 +418,22 @@ fn nothing_of_meds(db: &Db) {
 
 /// A kit that fails to install writes nothing, and `--dry-run` fails on
 /// what the install fails on, rather than reporting what it would install
-/// (da-45amw). A bad view is refused the same way.
+/// (da-45amw). A bad view is refused the same way, and so is a `unique`
+/// index, named with the reason (da-9lo90).
 #[test]
 fn a_kit_that_fails_installs_nothing_and_a_dry_run_says_so() {
-    let bad_view = HALF_GOOD
-        .replace("drug = 'ibuprofen' AND mg > 1200", "drug = 'ibuprofen'")
-        .replace("sql = \"SELECT", "sql = \"PRAGMA");
-    for (kit, why) in [(HALF_GOOD, "bad color rule"), (&bad_view, "single SELECT")] {
+    let good = HALF_GOOD.replace("drug = 'ibuprofen' AND mg > 1200", "drug = 'ibuprofen'");
+    let bad_view = good.replace("sql = \"SELECT", "sql = \"PRAGMA");
+    let unique = format!(
+        "{good}\n[[index]]\nname = \"one_dose\"\non = \"entries\"\nexpression = \"field\"\nunique = true\n"
+    );
+    let unique_why = "kit index 'one_dose': `unique = true` is not allowed: copies that write \
+                      offline can each hold a row the other's index forbids";
+    for (kit, why) in [
+        (HALF_GOOD, "bad color rule"),
+        (&bad_view, "single SELECT"),
+        (&unique, unique_why),
+    ] {
         for extra in [&["--yes"][..], &["--yes", "--dry-run"]] {
             let db = fresh_db();
             let err = format!("{:#}", install(&db, kit, extra).unwrap_err());
@@ -434,16 +443,14 @@ fn a_kit_that_fails_installs_nothing_and_a_dry_run_says_so() {
     }
 }
 
-/// An index that will not build on this data fails the install before any
+/// An index that will not build (an expression naming no column) fails the install before any
 /// spec is written, as it undoes its own definitions (da-45amw).
 #[test]
 fn an_index_that_will_not_build_leaves_no_spec() {
     let db = fresh_db();
-    run_cli(&["occur", "dose"], &db).unwrap();
-    run_cli(&["occur", "dose", "-q"], &db).unwrap();
-    let kit = "[kit]\nname = \"meds\"\n\n[[field]]\nname = \"dose\"\nverb = \"occur\"\ncolor = \"#abcdef\"\n\n[[index]]\nname = \"one_dose\"\non = \"entries\"\nexpression = \"field\"\nwhere = \"field = 'dose'\"\nunique = true\n";
+    let kit = "[kit]\nname = \"meds\"\n\n[[field]]\nname = \"dose\"\nverb = \"occur\"\ncolor = \"#abcdef\"\n\n[[index]]\nname = \"one_dose\"\non = \"entries\"\nexpression = \"no_such_column\"\n";
     let err = format!("{:#}", install(&db, kit, &["--yes"]).unwrap_err());
-    assert!(err.contains("index"), "{err}");
-    assert_eq!(db.load_spec("dose").unwrap().unwrap().color, None);
+    assert!(err.contains("no_such_column"), "{err}");
+    assert!(db.load_spec("dose").unwrap().is_none(), "no spec");
     assert!(db.list_kits().unwrap().is_empty(), "no kit is listed");
 }

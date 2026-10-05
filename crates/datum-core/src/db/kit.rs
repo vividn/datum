@@ -170,8 +170,8 @@ impl Db {
             self.soft_delete_entry(&index_slug(kit_id, &old.index_name))?;
             report.indices_dropped.push(old.on_disk_name.clone());
         }
-        // An index that will not build on this data (a UNIQUE one over
-        // duplicates) fails the install, and the kit's indices go back to
+        // An index that will not build here (an expression naming no
+        // column) fails the install, and the kit's indices go back to
         // what they were — as the one transaction this replaced left them.
         let failed: Vec<_> = self
             .derive_kit_indices()?
@@ -357,9 +357,11 @@ impl Db {
     /// Each index's DDL is rebuilt from its definition by
     /// [`IndexEntry::build_ddl`], whose validation is the one a kit install
     /// runs, so a definition that arrived by sync is held to the same rule.
-    /// One that fails that, or fails to build on this data (a UNIQUE index
-    /// over duplicates), is returned as `(sqlite name, error)` rather than
+    /// One that fails that — a `unique` one, which no kit may declare
+    /// (da-9lo90), so every copy leaves it unbuilt alike — or fails to
+    /// build here, is returned as `(sqlite name, error)` rather than
     /// failing the rest — an index is this device's, not the data's.
+    /// `datum kit show` and `datum check` name each.
     ///
     /// A failed one is tried again on the next open, and that is kept on
     /// purpose (da-4mu1a): whether it builds is a property of this device's

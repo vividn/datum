@@ -236,11 +236,12 @@ fn a_kits_version_and_description_round_trip() {
     assert_eq!(env.ok(&["kit", "list"]), "No kits installed.\n");
 }
 
-/// A UNIQUE index definition that arrives over this device's duplicates —
-/// here by a merging restore, as it would by sync — does not build, and
-/// `kit show` names it with the reason; the kit's other index is built.
+/// A `unique` index definition from a copy that installed it before kits
+/// were refused one (da-9lo90) — here by a merging restore, as it would by
+/// sync — is built on no copy, so none refuses a row another accepted:
+/// `kit show` and `check` name it, and the kit's other index is built.
 #[test]
-fn kit_show_names_an_index_that_would_not_build_here() {
+fn a_unique_index_definition_is_never_built_and_is_named() {
     let env = Env::new();
     let toml = r#"[kit]
 name = "k"
@@ -250,7 +251,6 @@ name = "one_coffee"
 on = "entries"
 expression = "field"
 where = "field = 'coffee'"
-unique = true
 
 [[index]]
 name = "by_field"
@@ -261,22 +261,34 @@ expression = "field"
     std::fs::write(&path, toml).unwrap();
     env.ok(&["kit", "install", "--yes", path.to_str().unwrap()]);
     let backup = env.ok(&["db", "backup", "-"]);
+    let unique = backup.replace(
+        r#""name":"one_coffee","on":"entries","unique":false"#,
+        r#""name":"one_coffee","on":"entries","unique":true"#,
+    );
+    assert_ne!(unique, backup, "the definition carries `unique`");
 
     let here = env.db("here.db");
     env.run_on(&here, &["occur", "coffee", "-t", "900"], b"");
-    env.run_on(&here, &["occur", "coffee", "-t", "1000"], b"");
-    env.run_on(&here, &["db", "restore", "-", "--merge"], backup.as_bytes());
+    env.run_on(&here, &["db", "restore", "-", "--merge"], unique.as_bytes());
     assert_eq!(kit_indices(&here), ["kit_k__by_field"]);
+    env.run_on(&here, &["occur", "coffee", "-t", "1000"], b"");
 
     let shown = env.run_on(&here, &["kit", "show", "k"], b"");
     let lines: Vec<&str> = shown.lines().collect();
     let at = lines
         .iter()
-        .position(|l| l.starts_with("  ✗ UNIQUE one_coffee ON entries(field)"))
+        .position(|l| l.starts_with("  ✗ one_coffee"))
         .unwrap_or_else(|| panic!("no failed one_coffee in:\n{shown}"));
     assert!(
-        lines[at + 1].contains("not built on this device") && lines[at + 1].contains("UNIQUE"),
+        lines[at + 1].contains("not built on this device")
+            && lines[at + 1].contains("`unique = true` is not allowed"),
         "{shown}"
     );
     assert!(lines.contains(&"  ✓ by_field ON entries(field)"), "{shown}");
+
+    let checked = env.run_on(&here, &["check"], b"");
+    assert!(
+        checked.contains("kit_index_unbuilt (x1)") && checked.contains("index:k/one_coffee"),
+        "{checked}"
+    );
 }

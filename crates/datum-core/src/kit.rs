@@ -691,7 +691,10 @@ pub struct IndexEntry {
     /// Optional partial-index predicate. Same fragment validation.
     #[serde(default, rename = "where")]
     pub where_clause: Option<String>,
-    /// Whether to emit `CREATE UNIQUE INDEX`.
+    /// Refused by [`validate_index_entry`] (da-9lo90): copies that write
+    /// offline can each hold a row the other's index forbids, so no
+    /// device could keep the promise. Kept so a kit or a definition that
+    /// declares it is refused by name rather than as an unknown key.
     #[serde(default)]
     pub unique: bool,
 }
@@ -710,9 +713,8 @@ impl IndexEntry {
     /// index from (`Db::derive_kit_indices`).
     pub fn build_ddl(&self, kit_id: &str) -> Result<String> {
         validate_index_entry(self)?;
-        let unique = if self.unique { "UNIQUE " } else { "" };
         let stmt = format!(
-            "CREATE {unique}INDEX IF NOT EXISTS \"{name}\" ON {table}({expr}){where_part}",
+            "CREATE INDEX IF NOT EXISTS \"{name}\" ON {table}({expr}){where_part}",
             name = self.sqlite_name(kit_id),
             table = self.on,
             expr = self.expression.trim(),
@@ -782,6 +784,7 @@ const FORBIDDEN_DDL_KEYWORDS: &[&str] = &[
 /// - `on` is in [`ALLOWED_INDEX_TABLES`]
 /// - `expression` is non-empty and passes [`validate_sql_fragment`]
 /// - `where_clause`, if present, also passes the fragment check
+/// - `unique` is not set
 pub fn validate_index_entry(entry: &IndexEntry) -> Result<()> {
     if !is_safe_identifier(&entry.name) {
         return Err(DatumError::Other(format!(
@@ -807,6 +810,14 @@ pub fn validate_index_entry(entry: &IndexEntry) -> Result<()> {
     )?;
     if let Some(w) = &entry.where_clause {
         validate_sql_fragment(&format!("kit index '{}' where", entry.name), w)?;
+    }
+    if entry.unique {
+        return Err(DatumError::Other(format!(
+            "kit index '{}': `unique = true` is not allowed: copies that write \
+             offline can each hold a row the other's index forbids, so sync \
+             cannot keep it unique",
+            entry.name
+        )));
     }
     Ok(())
 }
@@ -1352,7 +1363,7 @@ where = "field IN (SELECT name FROM field_specs WHERE kit_id = 'chores')"
     }
 
     #[test]
-    fn build_ddl_emits_unique_when_requested() {
+    fn rejects_a_unique_index() {
         let entry = IndexEntry {
             name: "uniq_slug".into(),
             on: "entries".into(),
@@ -1360,8 +1371,11 @@ where = "field IN (SELECT name FROM field_specs WHERE kit_id = 'chores')"
             where_clause: None,
             unique: true,
         };
-        let ddl = entry.build_ddl("k").unwrap();
-        assert!(ddl.contains("CREATE UNIQUE INDEX IF NOT EXISTS"));
+        let err = entry.build_ddl("k").unwrap_err().to_string();
+        assert!(
+            err.contains("'uniq_slug'") && err.contains("`unique = true` is not allowed"),
+            "{err}"
+        );
     }
 
     #[test]

@@ -827,6 +827,8 @@ fn file_conflicts(conn: &Connection, x: &Op, ops: &[Op], merged: &Entry) -> Resu
 /// Rows other than `e` holding an identity `e` needs: its slug, or its live
 /// state-bearing `(field, occur_time)` — the two UNIQUE indexes, both of
 /// which a superseded row is outside (ported from the relay sync's apply).
+/// A kit's index is never a third: a kit may not declare one `unique`
+/// (da-9lo90).
 fn blockers(conn: &Connection, e: &Entry) -> Result<Vec<Entry>> {
     let mut found: Vec<Entry> = conn
         .prepare_cached(

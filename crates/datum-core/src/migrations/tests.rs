@@ -1102,7 +1102,18 @@ fn v40_reads_an_index_back_out_of_its_ddl() {
             false,
         ),
     ] {
-        let ddl = ix.build_ddl("k").unwrap();
+        // A `unique` one an older install wrote (da-9lo90 refuses it now).
+        let plain = IndexEntry {
+            unique: false,
+            ..ix.clone()
+        }
+        .build_ddl("k")
+        .unwrap();
+        let ddl = if ix.unique {
+            plain.replacen("CREATE ", "CREATE UNIQUE ", 1)
+        } else {
+            plain
+        };
         assert_eq!(index_entry_from_ddl("ix", "k", &ddl), Some(ix), "{ddl}");
     }
     // Not DDL a kit install writes: refused, never guessed at.

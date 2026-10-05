@@ -281,21 +281,27 @@ mod tests {
     /// A definition that arrives past the install screen — by sync, by an
     /// edit — is built only through the install's own validation: one that
     /// fails it is reported and never built, the rest still are, and a
-    /// definition deleted takes its index with it.
+    /// definition deleted takes its index with it. A `unique` one, from a
+    /// copy that installed it before kits were refused one, is never built
+    /// on any copy, so none can refuse a row another accepted (da-9lo90).
     #[test]
     fn an_index_definition_is_built_only_through_its_validation() {
         let db = Db::open_in_memory().unwrap();
         let evil = index("evil", "field); DROP TABLE entries; --", false);
-        for ix in [&evil, &index("ok", "field", false)] {
+        for ix in [
+            &evil,
+            &index("ok", "field", false),
+            &index("one", "field", true),
+        ] {
             db.write_definition(INDEX_FIELD, definition_data(ix, Some("k")).unwrap())
                 .unwrap();
         }
         let failed = db.derive_kit_indices().unwrap();
         assert_eq!(
             failed.iter().map(|f| f.0.as_str()).collect::<Vec<_>>(),
-            ["index:k/evil"]
+            ["index:k/evil", "index:k/one"]
         );
-        assert!(built(&db, "kit_k__ok") && !built(&db, "kit_k__evil"));
+        assert!(built(&db, "kit_k__ok") && !built(&db, "kit_k__evil") && !built(&db, "kit_k__one"));
         // Nor does the bad one stop the kit being read or uninstalled.
         let listed = db.load_indices_by_kit("k").unwrap();
         assert_eq!(
@@ -311,23 +317,21 @@ mod tests {
         assert!(db.definitions(INDEX_FIELD, None).unwrap().is_empty());
     }
 
-    /// A UNIQUE index over duplicates will not build: the install fails, and
-    /// the kit's indices are left as they were — none on a first install,
-    /// the working one on a re-install — so nothing is retried on every
-    /// open. Indices go first, so no spec has been written (da-45amw).
+    /// An index that will not build (an expression naming no column): the
+    /// install fails, and the kit's indices are left as they were — none on
+    /// a first install, the working one on a re-install — so nothing is
+    /// retried on every open. Indices go first, so no spec has been written
+    /// (da-45amw).
     #[test]
     fn an_index_that_will_not_build_fails_the_install() {
         let db = Db::open_in_memory().unwrap();
-        for _ in 0..2 {
-            crate::test_util::entry_builder("x").insert(&db);
-        }
         let spec = |f: &str| crate::test_util::spec_builder(f).build();
-        let unique = index("one", "field", true);
+        let broken = index("one", "no_such_column", false);
         let err = db
-            .install_kit("k", &[spec("a")], std::slice::from_ref(&unique), false)
+            .install_kit("k", &[spec("a")], std::slice::from_ref(&broken), false)
             .unwrap_err()
             .to_string();
-        assert!(err.contains("UNIQUE"), "{err}");
+        assert!(err.contains("no_such_column"), "{err}");
         assert!(db.load_indices_by_kit("k").unwrap().is_empty());
         assert!(!built(&db, "kit_k__one"));
         assert!(db.load_spec("a").unwrap().is_none());
@@ -335,7 +339,7 @@ mod tests {
         let working = index("one", "field", false);
         db.install_kit("k", &[], std::slice::from_ref(&working), false)
             .unwrap();
-        db.install_kit("k", &[spec("b")], &[unique], false)
+        db.install_kit("k", &[spec("b")], &[broken], false)
             .unwrap_err();
         let kept = db.load_indices_by_kit("k").unwrap();
         assert_eq!(

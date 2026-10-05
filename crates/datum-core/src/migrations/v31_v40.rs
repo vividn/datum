@@ -705,7 +705,21 @@ pub(super) fn index_entry_from_ddl(name: &str, kit_id: &str, sql_text: &str) -> 
         where_clause,
         unique,
     };
-    (entry.build_ddl(kit_id).ok()? == sql_text).then_some(entry)
+    // `build_ddl` refuses a `unique` one now (da-9lo90), so it is checked
+    // as the plain one with the UNIQUE an older install wrote: it moves
+    // across as a definition that is never built, and `check` names it.
+    let plain = IndexEntry {
+        unique: false,
+        ..entry.clone()
+    }
+    .build_ddl(kit_id)
+    .ok()?;
+    let ddl = if unique {
+        plain.replacen("CREATE ", "CREATE UNIQUE ", 1)
+    } else {
+        plain
+    };
+    (ddl == sql_text).then_some(entry)
 }
 
 // ─── Down migrations ─────────────────────────────────────────────────

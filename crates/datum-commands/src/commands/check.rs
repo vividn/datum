@@ -1434,6 +1434,30 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
         });
     }
 
+    // 5. kit indices declared but not built on this device (WARNING) — a
+    //    `unique` one no kit may declare any more (da-9lo90), or one whose
+    //    DDL will not build here. `datum kit show <kit>` says which.
+    let unbuilt = db.derive_kit_indices()?;
+    if let Some((name, err)) = unbuilt.first() {
+        issues.push(Issue {
+            severity: Severity::Warning,
+            category: "kit_index_unbuilt",
+            message: format!(
+                "{} kit ind{} declared but not built",
+                unbuilt.len(),
+                if unbuilt.len() == 1 { "ex" } else { "ices" },
+            ),
+            count: unbuilt.len(),
+            example: Some(IssueExample {
+                id: Some(name.clone()),
+                field: None,
+                detail: Some(err.to_string()),
+            }),
+            entries: Vec::new(),
+            rendered_block: String::new(),
+        });
+    }
+
     let errors = issues
         .iter()
         .filter(|i| i.severity == Severity::Error)
