@@ -1,0 +1,13 @@
+# The keys whose signed commits may change goldens/APPROVED (da-iuyyw).
+# Read by scripts/check_approvals_signed.sh as git's gpg.ssh.allowedSignersFile,
+# from the PR's BASE, so a PR cannot add its own key and sign with it.
+#
+# EMPTY UNTIL VIVIDN ADDS HIS KEY — nothing here was invented for him. Until
+# then every commit touching APPROVED fails the check. To add it:
+#
+#   1. a line below:  <email> namespaces="git" ssh-ed25519 AAAA...
+#   2. git config user.signingkey ~/.ssh/<key>.pub && git config gpg.format ssh
+#   3. sign the commits that touch APPROVED: git commit -S
+#
+# The commit adding the first key is itself checked against the empty file
+# on main, so it fails; it lands by vividn's own merge.

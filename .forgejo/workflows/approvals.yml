@@ -1,0 +1,42 @@
+# Only vividn changes the goldens' approvals (da-iuyyw).
+#
+# Every commit of a PR that touches crates/datum-parity/goldens/APPROVED (or
+# the keys, or this check) must be signed by a key in goldens/allowed_signers;
+# scripts/check_approvals_signed.sh says why each one passes or fails.
+#
+# `pull_request_target`, not `pull_request`: this workflow, the script and
+# allowed_signers are then read from the PR's BASE. Under `pull_request` a PR
+# would run its own copy of them, and could add its own key or empty the
+# script in the same commits it is being checked for. Nothing from the PR is
+# executed here; its commits are only read by git.
+#
+# It runs on the PR's commits because the train squash-merges through the
+# forge's API: the commit on main is the forge's, and carries no signature.
+name: Approvals
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+jobs:
+  signed:
+    name: APPROVED changes are signed by vividn
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the PR's own commits
+        env:
+          NUMBER: ${{ github.event.pull_request.number }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "+refs/pull/$NUMBER/head:refs/remotes/pr/head"
+          test "$(git rev-parse pr/head)" = "$HEAD"
+          bash crates/datum-parity/scripts/check_approvals_signed.sh \
+            "$PWD/crates/datum-parity/goldens/allowed_signers" "$BASE" "$HEAD"

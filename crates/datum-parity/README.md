@@ -85,7 +85,29 @@ PARITY_REGEN=1 cargo test --features parity-runtime -p datum-parity \
 ```
 
 Audit the diff in `goldens/text/expected/*.txt` and commit the changes
-together with the SHA bump.
+together with the SHA bump. A regenerated golden that vividn had approved
+then fails the normal suite until he approves the new bytes (below).
+
+### vividn's approval (da-iuyyw)
+
+«a golden test is only golden with some amount of approval from me»
+(vividn, 2026-10-05). `goldens/APPROVED` holds one line per approved
+golden — `<path under goldens/> <sha256> <date>` — and
+`tests/approvals.rs` (no features) checks every file under `goldens/`
+against it, except the lock, its keys and `text/fixtures.toml`:
+
+* **approved and changed** (or deleted): fails, naming the file;
+* **not in `APPROVED`**: pending — listed with the line to paste
+  (`-- --nocapture`), not failed.
+
+Only vividn changes `APPROVED`. `.forgejo/workflows/approvals.yml` runs
+`scripts/check_approvals_signed.sh` on every PR's own commits (the train
+squash-merges, so no signature reaches main): each commit touching the
+lock, `goldens/allowed_signers`, the script, the test or the workflow must
+be SSH-signed by a key in `goldens/allowed_signers` *as on the PR's
+base*. An author name counts for nothing. The file ships with no key;
+vividn adds his own (the file says how), and until then every change to
+`APPROVED` is red. The check must also be a required status on `main`.
 
 ## Pinned SHA
 
@@ -124,6 +146,8 @@ crates/datum-parity/
 ├── Cargo.toml          # workspace member, feature `parity-runtime`
 ├── README.md           # this file
 ├── goldens/
+│   ├── APPROVED        # vividn's sha256 per golden (da-iuyyw)
+│   ├── allowed_signers # the keys that may change APPROVED
 │   ├── colors/
 │   │   └── colors.tsv  # field/state name → expected hex (md5-derived)
 │   ├── hash/
@@ -132,13 +156,15 @@ crates/datum-parity/
 │       ├── fixtures.toml          # 23 fixtures across all 4 surfaces
 │       └── expected/<name>.txt    # captured stdout/SVG, one per fixture
 ├── scripts/
-│   └── setup_datum.sh  # clone + install pinned datum
+│   ├── setup_datum.sh  # clone + install pinned datum
+│   └── check_approvals_signed.sh  # APPROVED changes signed by vividn
 ├── src/
 │   ├── lib.rs          # re-exports + DATUM_PINNED_SHA + datum_clone_path
 │   ├── colors.rs       # md5_color, contrast_text_color, state_color (algorithm port)
 │   ├── myspec.rs       # FIELD_SPECS port + emit_kit_toml
 │   └── runtime.rs      # DatumRuntime (gated)
 └── tests/
+    ├── approvals.rs        # goldens vs APPROVED; the signature check
     ├── colors.rs           # color goldens TSV → algorithm assertion
     ├── fuzz_color.rs       # proptest harness over the color algebra
     ├── hash_goldens.rs     # content_hash preimage goldens (da-yira)

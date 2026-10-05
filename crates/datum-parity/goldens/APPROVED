@@ -1,0 +1,8 @@
+# vividn's approval of each golden (da-iuyyw): one line per golden,
+#
+#   <path under goldens/>  <sha256 of its bytes>  <date approved>
+#
+# tests/approvals.rs fails when an approved golden's bytes no longer match,
+# and lists a golden missing from here as pending. Only commits signed by a
+# key in allowed_signers may change this file (scripts/check_approvals_signed.sh).
+# The pending list prints each line ready to paste.
