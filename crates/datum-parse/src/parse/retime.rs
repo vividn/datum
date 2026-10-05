@@ -79,10 +79,24 @@ pub(crate) fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
             "--offset and a bare numeric positional are mutually exclusive".into(),
         ));
     }
-    if composed.offset.is_some() && (composed.time.time.is_some() || composed.relative) {
-        return Err(ParseError::InvalidArg(
-            "--offset is mutually exclusive with time-arg flags".into(),
-        ));
+    // Either shift form returns before the time args are read, so beside
+    // them it would silently drop them (da-k5oa5).
+    let t = &composed.time;
+    let time_args = t.time.is_some()
+        || t.yesterday > 0
+        || t.quick > 0
+        || t.date.is_some()
+        || t.full_day
+        || t.omit_timestamp
+        || t.timezone.is_some();
+    if time_args || composed.relative {
+        let shift = (composed.offset.as_ref().map(|_| "--offset".to_string()))
+            .or(bare_offset_min.map(|n| format!("a bare minutes offset ({n})")));
+        if let Some(shift) = shift {
+            return Err(ParseError::InvalidArg(format!(
+                "{shift} is mutually exclusive with time-arg flags"
+            )));
+        }
     }
 
     Ok(RetimeArgs {

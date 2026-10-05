@@ -1000,6 +1000,31 @@ mod tests {
         assert!(msg.contains("--offset"), "got: {msg}");
     }
 
+    /// da-k5oa5: a bare minutes offset returns before the time args are
+    /// read, so beside them it is refused like `--offset`, not ignored.
+    #[test]
+    fn retime_bare_numeric_conflicts_with_time_args() {
+        for extra in [
+            &["-t", "0930"][..],
+            &["-r"],
+            &["-y"],
+            &["-q"],
+            &["-d", "-1"],
+            &["-D"],
+            &["-T"],
+            &["-z", "+4"],
+        ] {
+            let mut args = vec!["retime", "coffee:abc", "-5"];
+            args.extend_from_slice(extra);
+            let err = parse_argv(&argv(&args)).unwrap_err();
+            let msg = format!("{err}");
+            assert!(
+                msg.contains("bare minutes offset (-5)") && msg.contains("time-arg"),
+                "{extra:?} got: {msg}"
+            );
+        }
+    }
+
     #[test]
     fn retime_two_bare_numerics_errors() {
         let err = parse_argv(&argv(&["retime", "coffee:abc", "5", "10"])).unwrap_err();
