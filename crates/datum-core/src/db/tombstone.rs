@@ -41,9 +41,9 @@ impl Db {
         live.deleted_at = None;
         tx.execute(
             "UPDATE entries SET deleted_at = NULL, modify_time = ?2, content_hash = ?3
-             WHERE slug = ?1",
+             WHERE hid = ?1",
             params![
-                pre.slug,
+                pre.hid,
                 Utc::now().to_rfc3339(),
                 live.expected_content_hash()
             ],
@@ -167,7 +167,7 @@ impl Db {
         apply_entry_state(&tx, &target_state)?;
         super::sync::emit(&tx, Some(&current), &current.hid, kind)?;
 
-        let restored = fetch_entry_any(&tx, &target_state.slug)?;
+        let restored = fetch_entry_any(&tx, &target_state.hid)?;
         tx.commit()?;
         Ok(restored)
     }
@@ -220,10 +220,10 @@ pub(super) fn soft_delete_in_tx(
     }
     conn.execute(
         "UPDATE entries SET deleted_at = ?1, modify_time = ?1, content_hash = ?3, data = ?4
-         WHERE slug = ?2",
+         WHERE hid = ?2",
         params![
             now.to_rfc3339(),
-            pre.slug,
+            pre.hid,
             dead.expected_content_hash(),
             dead.data.as_ref().map(|v| v.to_string())
         ],

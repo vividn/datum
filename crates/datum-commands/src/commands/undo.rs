@@ -116,17 +116,18 @@ fn undo_to_version(db: &Db, current: &Entry, version: u32) -> Result<Entry> {
 /// it reverts to it; with none, a tombstone comes back (a legacy one, say,
 /// imported without history) and a live entry that is only its create is
 /// deleted — tagged `Undo`, so `redo` brings it back under the same hid and
-/// a second `undo` restores it through the revert.
+/// a second `undo` restores it through the revert. Every step addresses the
+/// row by hid: a keep-both leaves two rows on one slug (da-4ptyy).
 fn step_back(db: &Db, current: &Entry) -> Result<Entry> {
     match history::latest_version(db.conn(), &current.hid)? {
         Some(n) if n >= 2 => Ok(db.revert_entry_to_as(&current.hid, n - 1, ChangeKind::Undo)?),
         _ if current.deleted_at.is_some() => {
-            db.undelete(&current.slug)?;
-            Ok(db.get_entry(&current.slug)?)
+            db.undelete(&current.hid)?;
+            Ok(db.get_entry(&current.hid)?)
         }
         _ => {
-            db.soft_delete_entry_as(&current.slug, ChangeKind::Undo)?;
-            Ok(db.get_entry_including_deleted(&current.slug)?)
+            db.soft_delete_entry_as(&current.hid, ChangeKind::Undo)?;
+            Ok(db.get_entry_including_deleted(&current.hid)?)
         }
     }
 }
