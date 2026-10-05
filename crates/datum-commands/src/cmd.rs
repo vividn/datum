@@ -35,7 +35,9 @@ pub fn dispatch_argv(argv: Vec<String>, db: &Db) -> Result<()> {
 pub fn dispatch_invocation(invocation: crate::args::Invocation, db: &Db) -> Result<()> {
     crate::render::json_echo::scope(|| match invocation {
         crate::args::Invocation::Single(cli) => dispatch(cli, db),
-        crate::args::Invocation::Multi { sides, .. } => dispatch_multi_sides(sides, db),
+        crate::args::Invocation::Multi { sides, .. } => {
+            datum_core::undo_log::scope(|| dispatch_multi_sides(sides, db))
+        }
     })
 }
 
@@ -234,7 +236,18 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
     // A write reminds a copy that has not synced for a day (da-wlbyx); a
     // sync command is itself about syncing, and `sync status` says the rest.
     let watch = (!matches!(cli.command, Command::Sync(_))).then(|| db.conn().total_changes());
-    let result = crate::render::json_echo::scope(|| dispatch_inner(cli, db));
+    // A command is one action on the undo stack (da-z0zh3), save the ones
+    // that walk it and sync, whose writes are no command's own.
+    let action = !matches!(
+        cli.command,
+        Command::Undo(_) | Command::Redo(_) | Command::Sync(_)
+    );
+    let run = || crate::render::json_echo::scope(|| dispatch_inner(cli, db));
+    let result = if action {
+        datum_core::undo_log::scope(run)
+    } else {
+        run()
+    };
     stamp_batch(db);
     BATCH_MARK.set(outer);
     warn_if_stale(db, watch);
@@ -267,7 +280,7 @@ pub(crate) fn stamp_batch(db: &Db) {
 }
 
 /// The commands that write a SET of entries in one invocation, whose whole
-/// set becomes `_LAST` so one bare `undo` reverts it (da-yyjob). `delete`,
+/// set becomes `_LAST` (da-yyjob), as it is one action on the undo stack. `delete`,
 /// `update`, `rekey`, `merge` and a multi-side log stamp their own set; a log
 /// verb is left out because its field's auto-declared spec is not part of
 /// what `_LAST` should name. `v2import` stamps its own, as its bulk rows
@@ -1466,15 +1479,15 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
 
-        // Three entries; delete the middle one. Bare `undo` with no pointer
-        // must pick that one (the most recent tombstone) and bring it back.
+        // Three entries; delete the middle one, as one command (da-z0zh3).
+        // Bare `undo` must pick that one and bring it back.
         db.insert_entry(&make_entry_at("mood", 100, "d1")).unwrap();
         let doomed = make_entry_at("mood", 200, "d1");
         let doomed_id = doomed.slug.clone();
         db.insert_entry(&doomed).unwrap();
         db.insert_entry(&make_entry_at("mood", 300, "d1")).unwrap();
 
-        db.soft_delete_entry(&doomed_id).unwrap();
+        datum_core::undo_log::scope(|| db.soft_delete_entry(&doomed_id)).unwrap();
         assert_eq!(datum_core::test_util::logged_entries(&db, "mood").len(), 2);
 
         crate::commands::undo::undo(undo_args(None), &db).unwrap();
@@ -1494,7 +1507,7 @@ mod tests {
         let e = make_entry_at("mood", 100, "d1");
         let id = e.slug.clone();
         db.insert_entry(&e).unwrap();
-        db.soft_delete_entry(&id).unwrap();
+        datum_core::undo_log::scope(|| db.soft_delete_entry(&id)).unwrap();
         // Age the tombstone well past any window the old code would have had.
         db.conn()
             .execute(
@@ -1861,17 +1874,19 @@ mod tests {
         let original_hash = e.content_hash.clone();
         db.insert_entry(&e).unwrap();
 
-        crate::commands::del::del(
-            DeleteArgs {
-                id_or_slug: Some(id.to_string()),
-                force: true,
-                dry_run: false,
-                strict: false,
-                comment: None,
-                output: Default::default(),
-            },
-            &db,
-        )
+        datum_core::undo_log::scope(|| {
+            crate::commands::del::del(
+                DeleteArgs {
+                    id_or_slug: Some(id.to_string()),
+                    force: true,
+                    dry_run: false,
+                    strict: false,
+                    comment: None,
+                    output: Default::default(),
+                },
+                &db,
+            )
+        })
         .unwrap();
         crate::commands::undo::undo(undo_args(None), &db).unwrap();
 

@@ -230,6 +230,52 @@ fn every_change_is_one_op_with_its_own_line() {
     one_op(&a, &["rekey", &hid, "size=small"]);
 }
 
+/// da-z0zh3: a bare `undo` over an entry another copy has changed since
+/// refuses, naming it, and moves nothing — the undo stack is this copy's,
+/// and reverting would throw the other copy's change away.
+#[test]
+fn undo_refuses_a_command_whose_entry_a_sync_changed_since() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "cups=2"]);
+    a.send(&b);
+    let hid = a.hid("coffee");
+    b.ok(&["update", &hid, "cups=3"]);
+    b.send(&a);
+    assert_eq!(a.data(&hid)["cups"], 3);
+
+    let out = a.run(&["undo"], "");
+    assert!(!out.status.success(), "the undo must refuse");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains(&hid) && err.contains("coffee") && err.contains("sync"),
+        "the refusal names the entry and why: {err}"
+    );
+    assert_eq!(a.data(&hid)["cups"], 3, "nothing moved");
+    assert!(!a.deleted(&hid));
+}
+
+/// …and so does one over an IMPORTED row, whose whole trail comes after
+/// the import: a sync can be its first history row.
+#[test]
+fn undo_of_an_import_refuses_a_row_a_sync_changed_since() {
+    let (a, b) = (Copy::new(), Copy::new());
+    let fixture = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/datum_backup_3days.json"
+    );
+    a.ok(&["db", "v2import", "--from", fixture]);
+    a.send(&b);
+    b.ok(&["update", "syn0001", "n=7"]);
+    b.send(&a);
+    assert_eq!(a.data("syn0001")["n"], 7);
+
+    let out = a.run(&["undo"], "");
+    assert!(!out.status.success(), "the undo must refuse");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("syn0001") && err.contains("sync"), "{err}");
+    assert!(!a.deleted("syn0001"), "nothing moved");
+}
+
 #[test]
 fn concurrent_edits_of_different_keys_both_land() {
     let (a, b) = (Copy::new(), Copy::new());

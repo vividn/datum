@@ -66,7 +66,7 @@ pub fn history_mark(db: &Db) -> Result<i64> {
 
 /// Point `_LAST` at the whole batch: every entry written since `mark`, then
 /// `also` (writes that leave no history row, like `v2import`'s bulk path), so
-/// one bare `undo` reverts all of it (da-yyjob). Rows a sync applied are not
+/// `_LAST` names all of it (da-yyjob). Rows a sync applied are not
 /// this invocation's writes. A batch that wrote nothing leaves the pointer.
 pub fn set_last_to_batch(db: &Db, mark: i64, also: &[Hid]) -> Result<()> {
     let mut stmt = db.conn().prepare(

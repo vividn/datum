@@ -272,6 +272,7 @@ CREATE TABLE IF NOT EXISTS entry_history (
     alias_chain       TEXT,
     client_id         TEXT NOT NULL,
     change_kind       TEXT NOT NULL,
+    action_id         INTEGER,                   -- the `undo_actions` row that wrote it, if any (v52)
     PRIMARY KEY (entry_hid, version)
 );
 
@@ -280,6 +281,21 @@ CREATE INDEX IF NOT EXISTS entry_history_entry
 
 CREATE INDEX IF NOT EXISTS entry_history_change_kind
     ON entry_history(change_kind);
+
+CREATE INDEX IF NOT EXISTS entry_history_action
+    ON entry_history(action_id) WHERE action_id IS NOT NULL;
+
+-- The undo stack (da-z0zh3; `undo_log.rs`): one row per command that changed
+-- entries on THIS copy, its writes the `entry_history` rows naming it, plus
+-- `untracked`, a JSON array of hids it wrote with no history (v2import's bulk
+-- rows). The cursor is the newest row not `undone`; a new action drops every
+-- undone one. Local: nothing here syncs.
+CREATE TABLE IF NOT EXISTS undo_actions (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    time      TEXT NOT NULL,
+    undone    INTEGER NOT NULL DEFAULT 0,
+    untracked TEXT
+);
 
 -- Easy Sync (da-k329q). Every change to an entry is a signed op, made here
 -- or received from another copy. Append-only: an op is never edited. `body`

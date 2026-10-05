@@ -49,6 +49,7 @@ fn fresh_db_matches_schema_sql_shape() {
         "sync_local",
         "sync_notices",
         "sync_peers",
+        "undo_actions",
     ];
     assert_eq!(tables, expected_tables);
 
@@ -78,6 +79,7 @@ fn fresh_db_matches_schema_sql_shape() {
         "entries_slug_lookup",
         "entries_superseded_by",
         "entries_verb",
+        "entry_history_action",
         "entry_history_change_kind",
         "entry_history_entry",
         "integrity_warnings_hid",

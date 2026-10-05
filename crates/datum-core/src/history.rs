@@ -119,13 +119,34 @@ pub fn next_version(conn: &Connection, entry_hid: &str) -> Result<u32> {
 /// trail (bulk-imported by `v2import`, or written before history) has none,
 /// so its first edit seeds a `create` from the pre-edit state: `undo` then
 /// reverts that edit instead of reading it as a create and deleting the row,
-/// and `redo` has a step to come back along (da-yyjob, da-ult68).
+/// and `redo` has a step to come back along (da-yyjob, da-ult68). That seeded
+/// row is the entry as it was before, so it belongs to no action; the row
+/// itself belongs to the running command's (`undo_log`, da-z0zh3).
 pub fn record(executor: &Connection, snapshot: &Entry, change_kind: ChangeKind) -> Result<u32> {
-    let version = next_version(executor, &snapshot.hid)?;
+    let mut version = next_version(executor, &snapshot.hid)?;
     if version == 1 && !matches!(change_kind, ChangeKind::Create | ChangeKind::SyncMerge) {
-        record(executor, snapshot, ChangeKind::Create)?;
-        return record(executor, snapshot, change_kind);
+        insert(executor, snapshot, 1, ChangeKind::Create)?;
+        version = 2;
     }
+    // Asked first: making the action is itself an insert. Stamped apart, so
+    // a write outside any action reads as it always did, on any schema.
+    let action = crate::undo_log::current(executor, change_kind)?;
+    insert(executor, snapshot, version, change_kind)?;
+    if let Some(id) = action {
+        executor.execute(
+            "UPDATE entry_history SET action_id = ?1 WHERE rowid = last_insert_rowid()",
+            [id],
+        )?;
+    }
+    Ok(version)
+}
+
+fn insert(
+    executor: &Connection,
+    snapshot: &Entry,
+    version: u32,
+    change_kind: ChangeKind,
+) -> Result<()> {
     let snapshot_json = serde_json::to_string(snapshot)?;
     let alias_chain_json = snapshot.alias_chain.as_ref().map(|v| v.to_string());
     executor.execute(
@@ -147,7 +168,7 @@ pub fn record(executor: &Connection, snapshot: &Entry, change_kind: ChangeKind) 
             change_kind.as_str(),
         ],
     )?;
-    Ok(version)
+    Ok(())
 }
 
 /// List every history row for `entry_hid`. When `newest_first` is true the

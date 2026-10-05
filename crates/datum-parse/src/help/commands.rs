@@ -946,9 +946,9 @@ const GET_BODY: &str = "USAGE:\n  datum get <ID_OR_SLUG[,ID_OR_SLUG]...> [--pret
 
 const DELETE_BODY: &str = "USAGE:\n  datum delete [ID_OR_SLUG[,ID_OR_SLUG]...] [-c WHY] [--force] [--dry-run] [--strict]\n                [-A | -o FMT]\n\nARGS:\n  [ID_OR_SLUG]  QuickId(s) — hid prefix, slug, `_`/`_LAST`, `<field>:_`,\n                slug wildcard. Multiple targets may be comma-batched\n                (`<id>,<id>,...`); resolution is per-token.\n                Omitting the arg targets `_LAST`. Nothing refuses on\n                age: past ten minutes delete warns on stderr with\n                the pointer's age and proceeds (`datum undo` is the\n                way back).\n\nOPTIONS:\n  -c, --comment <WHY>\n                    Say why: appends `deleted: <WHY>` to each row's\n                    comments, in the write that deletes it.\n      --force       Accepted, but there is no longer a prompt to skip.\n      --dry-run     Print what would be deleted and exit; no DB writes.\n      --strict      With comma-batched tokens, abort up-front if ANY\n                    token failed to resolve (default: delete the\n                    resolved subset, skip-and-warn on the failures).\n  -A, --show-all    Show the full entry document for each deleted row.\n  -o, --format-string <FMT>\n                    Render each deleted row through datum's format-string DSL.\n\nEXAMPLES:\n  datum delete                    # delete _LAST (warns if > 10 min stale)\n  datum delete activity:_         # delete latest activity row\n  datum delete a1b2,c3d4          # batched\n  datum delete _ -c \"wrong time\"  # delete, saying why\n  datum delete a1b2,c3d4 --dry-run\n                                  # preview only — no DB writes\n";
 
-const UNDO_BODY: &str = "USAGE:\n  datum undo [ID_OR_SLUG[,ID_OR_SLUG]...] [--to-version N]\n\nReverts an entry to a prior version via its entry_history trail. By default,\nrestores the immediately-previous version; --to-version N picks an explicit\nversion. With no ID_OR_SLUG it acts on `_LAST`, falling back to the most\nrecent tombstone for legacy entries with no trail. A comma list steps each\nentry back along its own trail; --to-version with a list is refused.\n\nA command that writes a set of entries (db restore, db v2import, kit install\nor uninstall, retime --field, reparse --fix, a comma-list delete or update)\nleaves the whole set in `_LAST`, so one bare undo reverts all of it. A\n`db restore --hard` drops the history undo reads and cannot be undone.\n\nUndo never refuses on age. Past ten minutes it names the age on stderr and\nproceeds anyway: `datum redo` is the way forward again.\n";
+const UNDO_BODY: &str = "USAGE:\n  datum undo [ID_OR_SLUG[,ID_OR_SLUG]...] [--to-version N]\n\nWith no ID_OR_SLUG, undo reverts the last command that changed anything,\nevery entry it wrote at once (db restore, db v2import, kit install, retime\n--field, a comma-list delete or update are each one command), and the next\nundo the command before that: undo walks back, redo walks forward, and a new\ncommand drops whatever was undone, as in an editor. Reads never move it, so\n`get foo; undo` reverts the last write, not foo; `_UNDO` names the entries a\nbare undo reverts next. An entry another copy has changed since (a sync) is\nnot reverted: the undo refuses, names it, and changes nothing. The stack is\nthis copy's own and starts empty on a database from before it.\n\nWith ID_OR_SLUG (`_LAST` among them) it steps that entry back one version of\nits entry_history trail instead; --to-version N picks an explicit version. A\ncomma list steps each entry back along its own trail; --to-version with a\nlist is refused. A `db restore --hard` drops the history undo reads and\ncannot be undone.\n\nUndo never refuses on age. Past ten minutes it names the age on stderr and\nproceeds anyway: `datum redo` is the way forward again.\n";
 
-const REDO_BODY: &str = "USAGE:\n  datum redo [ID_OR_SLUG[,ID_OR_SLUG]...] [--dry-run]\n\nThe inverse of `datum undo`: re-applies the version the last undo stepped\nback from. Redo of an undone create re-creates the entry under the same hid;\nredo of an undone delete deletes it again. With no ID_OR_SLUG it acts on\n`_LAST`, and every row of a multi-entry `_LAST` steps together, as every entry\nof a comma list does.\n\nExits 1 with 'nothing to redo' when the entry's newest step is not an undo,\nso `undo; redo; redo` moves once, not twice. --dry-run moves nothing and\nprints nothing: it only exits as the redo would, 0 or 1.\n";
+const REDO_BODY: &str = "USAGE:\n  datum redo [ID_OR_SLUG[,ID_OR_SLUG]...] [--dry-run]\n\nThe inverse of `datum undo`. With no ID_OR_SLUG it re-applies the oldest\ncommand a bare undo took back, every entry of it, and the next redo the one\nafter; a command run since an undo drops what was undone, leaving nothing to\nredo. Redo of an undone create re-creates the entry under the same hid; redo\nof an undone delete deletes it again. With ID_OR_SLUG it re-applies the\nversion that entry's last undo stepped back from; every row of a named\n`_LAST` steps together, as every entry of a comma list does.\n\nExits 1 with 'nothing to redo' when nothing lies ahead, so\n`undo; redo; redo` moves once, not twice. --dry-run moves nothing and\nprints nothing: it only exits as the redo would, 0 or 1.\n";
 
 const HISTORY_BODY: &str = "USAGE:\n  datum history <ID_OR_SLUG[,ID_OR_SLUG]...> [--version N | --diff A B]\n\nA comma list prints each entry's trail in turn, each under its own `hid:` line\n(`--show json`: one array of `{hid, versions}`). `--version` and `--diff` number\nONE entry's versions, so with a list they are refused.\n";
 
@@ -1965,14 +1965,15 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "undo",
         aliases: &[],
         category: Category::Mutate,
-        summary: "undo the last change to an entry (revert via history)",
+        summary: "undo the last command, or one entry's last change",
         long_description: Some(
-            "Reverts an entry to a prior version using its entry_history trail. \
-             By default, undo restores the immediately-previous version; pass \
-             --to-version N to restore an explicit version number. \
-             For legacy entries without a history trail, undo falls back to the \
-             most recent tombstone. Undo never refuses on age: past ten minutes \
-             it warns and proceeds, and `datum redo` is the way forward again.",
+            "Bare, reverts the last command that changed anything, all of it, \
+             and walks back one command per undo; reads never move it. Named, \
+             steps an entry back along its entry_history trail, or to \
+             --to-version N. A change synced in from another copy since is \
+             refused, never reverted. Undo never refuses on age: past ten \
+             minutes it warns and proceeds, and `datum redo` is the way \
+             forward again.",
         ),
         usage: &["datum undo [ID_OR_SLUG[,ID_OR_SLUG]...] [--to-version N]"],
         args: NO_ARGS,
@@ -1990,10 +1991,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         category: Category::Mutate,
         summary: "redo the last undone change (the inverse of undo)",
         long_description: Some(
-            "Re-applies the version that the last undo on that entry stepped \
+            "Bare, re-applies the oldest command a bare undo took back, and \
+             walks forward one per redo; a command run since drops them. Named, \
+             re-applies the version that the last undo on that entry stepped \
              back from. Redo of an undone create re-creates it under the same \
-             hid; redo of an undone delete deletes it again. With no ID_OR_SLUG \
-             it acts on `_LAST`. Exits 1 when there is nothing ahead; \
+             hid; redo of an undone delete deletes it again. Exits 1 when there \
+             is nothing ahead; \
              --dry-run only exits as the redo would, moving nothing.",
         ),
         usage: &["datum redo [ID_OR_SLUG[,ID_OR_SLUG]...] [--dry-run]"],

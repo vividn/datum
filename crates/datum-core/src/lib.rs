@@ -17,6 +17,7 @@ pub mod migrations;
 pub mod slug;
 pub mod state;
 pub mod track;
+pub mod undo_log;
 pub mod views;
 
 pub use verb::derive_verb;

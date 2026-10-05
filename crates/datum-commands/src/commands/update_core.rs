@@ -281,8 +281,8 @@ pub fn update_batch_from_args(
     let mut outcomes: Vec<UpdateOutcome> = Vec::new();
     // Strict stops at the first row that fails to write (resolution and
     // tombstone errors were refused above, before any write), but what it
-    // already wrote is still stamped into `_LAST` below, so a bare `undo`
-    // reverts it (da-5leng).
+    // already wrote is still stamped into `_LAST` below and on the undo
+    // stack, so a bare `undo` reverts it (da-5leng).
     for existing in entries {
         if existing.deleted_at.is_some() {
             let msg = format!(

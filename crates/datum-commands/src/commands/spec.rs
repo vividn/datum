@@ -302,7 +302,7 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
-/// Point `_LAST` at the spec entry a command just wrote, so a bare `undo`
+/// Point `_LAST` at the spec entry a command just wrote, so `undo _LAST`
 /// steps it back like any doc's edit.
 fn remember(db: &Db, hid: datum_core::ids::Hid) {
     let _ = datum_core::last_docs::set_last_docs(db, &[hid]);

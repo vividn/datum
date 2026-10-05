@@ -252,18 +252,18 @@ fn subprocess_now_emits_output_without_rows() {
     }
 }
 
-/// da-s6no: a stale `_LAST` no longer stops bare `undo`. It used to prompt
+/// da-s6no: a stale change no longer stops bare `undo`. It used to prompt
 /// on a tty (and refuse without one) past fifteen minutes; now it proceeds,
 /// says how old the change was on stderr, and exits 0.
 ///
-/// The da-3vvk invariant it inherits: the entry it acts on is the one the
-/// POINTER names, never whichever tombstone happens to be newest. Needs the
-/// real binary so the pointer can be aged in the file the process reads.
+/// What it acts on is the last COMMAND (da-z0zh3), whatever `_LAST` says
+/// and whichever tombstone is newest. Needs the real binary so the command
+/// can be aged in the file the process reads.
 #[test]
-fn subprocess_undo_past_the_window_warns_and_acts_on_the_pointer() {
+fn subprocess_undo_past_the_window_warns_and_reverts_the_last_command() {
     let env = Env::new();
-    // Two entries, both tombstoned. The pointer will name X (coffee);
-    // Y (tea) is the newer tombstone a "most recent" fallback would pick.
+    // Two entries, both tombstoned: Y (tea) by the last command, though X
+    // (coffee) will be the newer tombstone and the one `_LAST` names.
     assert_ok(&env.run(&["occur", "coffee"]), "create X");
     assert_ok(&env.run(&["occur", "tea", "-t", "+1"]), "create Y");
 
@@ -285,13 +285,14 @@ fn subprocess_undo_past_the_window_warns_and_acts_on_the_pointer() {
     assert_ok(&env.run(&["del", &x_hid, "--force"]), "delete X");
     assert_ok(&env.run(&["del", &y_hid, "--force"]), "delete Y");
 
-    // Point `_LAST` at X and age it well past the ten-minute warning line.
-    conn.execute(
-        "UPDATE last_docs SET hids = ?1,
-             time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-23 minutes')",
-        [format!("[\"{x_hid}\"]")],
-    )
-    .expect("force-stale pointer at X");
+    // Point `_LAST` at X and age every command past the warning line.
+    conn.execute_batch(&format!(
+        "UPDATE last_docs SET hids = '[\"{x_hid}\"]';
+         UPDATE entries SET deleted_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '+1 minute')
+           WHERE hid = '{x_hid}';
+         UPDATE undo_actions SET time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-23 minutes');"
+    ))
+    .expect("age the stack, point _LAST at X, make X the newer tombstone");
 
     let out = env.run(&["undo"]);
     assert_ok(&out, "stale undo must proceed");
@@ -301,23 +302,22 @@ fn subprocess_undo_past_the_window_warns_and_acts_on_the_pointer() {
         "stale undo must name the age on stderr: {stderr:?}"
     );
 
-    // X is back; Y — the newer tombstone — is untouched.
-    assert_eq!(env.entry_count(), 1, "only the pointer's entry comes back");
-    let live_field: String = conn
-        .query_row(
-            "SELECT field FROM entries WHERE deleted_at IS NULL AND field NOT IN ('spec', 'alias')",
-            [],
-            |r| r.get(0),
-        )
-        .expect("the restored row");
+    let live: Vec<String> = conn
+        .prepare("SELECT field FROM entries WHERE deleted_at IS NULL AND field NOT IN ('spec', 'alias') ORDER BY field")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
     assert_eq!(
-        live_field, "coffee",
-        "undo followed the pointer, not the clock"
+        live,
+        ["tea"],
+        "undo reverted the last command, not the pointer or the clock"
     );
 }
 
 /// da-8uig: `undo --force` is a no-op flag, not a parse error — it exits 0
-/// and warns on the stale pointer exactly as the bare `undo` above does.
+/// and warns on a stale change exactly as the bare `undo` above does.
 /// Needs the real binary for both halves: the exit code and the stderr line.
 #[test]
 fn subprocess_undo_force_is_inert_and_still_warns() {
@@ -328,11 +328,11 @@ fn subprocess_undo_force_is_inert_and_still_warns() {
     Connection::open(&env.db)
         .expect("open db")
         .execute(
-            "UPDATE last_docs
+            "UPDATE undo_actions
                 SET time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-23 minutes')",
             [],
         )
-        .expect("force-stale pointer");
+        .expect("force-stale change");
 
     let out = env.run(&["undo", "--force"]);
     assert_ok(&out, "`--force` must be accepted, not a parse error");

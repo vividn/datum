@@ -109,13 +109,16 @@ datum dayview -o day.svg --days 3   # render days as a timeline (.svg / .png / .
 - **Preview a write:** `--dry-run` on a logging verb prints the entry it *would*
   write and writes nothing.
 - **`_LAST` is what you last touched, and bare commands act on it.** Every write
-  sets it, and so does `get`, by design: query an entry, then `update`, `delete`
-  or `undo` it with no id. `undo` reverts that entry to its previous version,
-  which deletes an entry that had only one. So after a `get`, a bare `undo`
-  targets the entry you fetched. To undo your last *write* after reading
-  something else, name it: `datum undo <hid>`. A command that wrote a set of
-  entries (a restore, an import, a kit install, a comma-list delete) leaves the
-  whole set in `_LAST`, and one bare `undo` reverts all of it. `redo` re-applies.
+  sets it, and so does `get`, by design: query an entry, then `update` or
+  `delete` it with no id.
+- **Bare `undo` is an editor's undo.** It reverts your last *command* that
+  wrote anything — every entry it wrote (a restore, an import, a kit install, a
+  comma-list delete is one command) — and the next `undo` the one before;
+  `redo` walks forward again, and a new command drops what was undone. Reads
+  never move it: after a `get`, a bare `undo` still reverts your last write;
+  `datum undo _LAST` (or `<hid>`) steps what you fetched back one version
+  instead. An entry another device changed since (a sync) is refused, not
+  reverted.
 - **Check after bulk work:** `datum check` reports consistency problems, such as a
   state repeated with no change between.
 - **Time formats:** `datum help time` lists every form `-t`, `-d`, `-y`/`-q` and

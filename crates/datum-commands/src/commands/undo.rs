@@ -7,20 +7,27 @@
 //! is offered only when the newest step was an `undo`, which is what makes
 //! `undo; redo; redo` move once instead of oscillating (da-s6no).
 //!
+//! Bare, they walk the UNDO STACK instead (da-z0zh3, `datum_core::undo_log`):
+//! `undo` reverts the newest command not yet undone, every entry it wrote at
+//! once, and the next `undo` the one before it; `redo` re-applies the oldest
+//! undone one. Neither is a command on the stack itself, which is what lets a
+//! second `undo` keep walking back instead of undoing the first. The stack
+//! moves only by writes, so `get foo; undo` reverts the last write, not foo.
+//!
 //! Neither command refuses on age. Undo used to guard bare `_LAST` behind a
 //! fifteen-minute window (a prompt on a tty, a refusal without one); with a
 //! way forward that guard cost more than it saved, so what is left of it is a
 //! warning past ten minutes naming how old the change is.
 
 use anyhow::{Context, Result};
-use chrono::Utc;
 use datum_core::{
     db::Db,
     entry::Entry,
+    error::DatumError,
     field_spec::SpecRegistry,
     history::{self, ChangeKind},
     ids::Hid,
-    last_docs,
+    last_docs, undo_log,
 };
 
 use crate::{
@@ -42,7 +49,14 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
     // a backup) so the command remains useful for those rows.
     // A list steps each entry back along its OWN trail (da-9p3o); a version
     // number belongs to one trail, so `--to-version` with a list is refused.
-    if let Some(list) = args.id_or_slug.as_deref() {
+    // `_UNDO` IS the bare undo, so it takes the stack; with `--to-version`
+    // it names entries like any other id.
+    let named = args
+        .id_or_slug
+        .as_deref()
+        .filter(|id| *id != datum_core::ids::resolve::UNDO_TOKEN || args.to_version.is_some());
+    if let Some(list) = named.map(|list| every_last(db, list)) {
+        let list = list.as_str();
         if args.to_version.is_some() && is_id_list(db, list) {
             anyhow::bail!(
                 "--to-version names a version of ONE entry's history; give one id, not the list '{list}'"
@@ -70,29 +84,134 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
         if args.to_version.is_some() {
             anyhow::bail!("--to-version requires an <id_or_slug> to target");
         }
+        undo_stack(db, &registry, &output)
+    }
+}
 
-        // Bare `undo` acts on `_LAST` (the broader mutating-command
-        // convention; da-uzxj) whenever the pointer names something that
-        // still exists. A pointer naming nothing restorable falls through
-        // to the most recent tombstone, which is all a pre-pointer database
-        // has to offer.
-        if let Some(reference) = pointer_with_live_targets(db) {
-            warn_if_stale("undoing a change", reference.time);
-            return undo_via_last_docs(db, &reference.hids, &registry, &output);
-        }
+/// Bare `undo`: put every entry the action at the cursor wrote back as it was
+/// before it, and move the cursor back one.
+fn undo_stack(db: &Db, registry: &Option<SpecRegistry>, output: &OutputArgs) -> Result<()> {
+    let action = undo_log::cursor(db.conn())?
+        .context("Nothing to undo — no command has changed anything here yet")?;
+    refuse_if_moved(db, &action, "undo")?;
+    warn_if_stale("undoing a change", action.time);
+    let mut steps: Vec<(Entry, Entry)> = Vec::new();
+    for member in &action.members {
+        let Some(current) = still_there(db, &member.hid)? else {
+            continue;
+        };
+        let after = if member.first > 1 {
+            db.revert_entry_to_as(&member.hid, member.first - 1, ChangeKind::Undo)?
+        } else if current.deleted_at.is_none() {
+            // The action created it: before it, there was nothing.
+            db.soft_delete_entry_as(&member.hid, ChangeKind::Undo)?;
+            db.get_entry_including_deleted(&member.hid)?
+        } else {
+            continue;
+        };
+        steps.push((current, after));
+    }
+    undo_log::set_undone(db.conn(), action.id, true)?;
+    finish_stack(db, &steps, "undo", registry, output)
+}
 
-        match db.most_recent_tombstone()? {
-            Some(entry) => {
-                warn_if_stale(
-                    "undoing a change",
-                    entry.deleted_at.unwrap_or_else(Utc::now),
-                );
-                let restored = step_back(db, &entry)?;
-                show_step(&entry, &restored, registry.as_ref(), &output);
-                Ok(())
+/// Bare `redo`: put every entry the oldest undone action wrote back as it
+/// left them, and move the cursor forward one.
+fn redo_stack(
+    db: &Db,
+    dry_run: bool,
+    registry: &Option<SpecRegistry>,
+    output: &OutputArgs,
+) -> Result<()> {
+    let action = undo_log::next_redo(db.conn())?
+        .context("Nothing to redo — the last change here was not an undo")?;
+    if dry_run {
+        return Ok(());
+    }
+    refuse_if_moved(db, &action, "redo")?;
+    warn_if_stale("redoing a change", action.time);
+    let mut steps: Vec<(Entry, Entry)> = Vec::new();
+    for member in &action.members {
+        let Some(current) = still_there(db, &member.hid)? else {
+            continue;
+        };
+        // An untracked member's state as the action left it is its version 1.
+        let after = db.revert_entry_to_as(&member.hid, member.last.max(1), ChangeKind::Redo)?;
+        steps.push((current, after));
+    }
+    undo_log::set_undone(db.conn(), action.id, false)?;
+    finish_stack(db, &steps, "redo", registry, output)
+}
+
+/// A member's entry as it is now, or `None` when it is gone since
+/// (forgotten, say), which leaves it nothing to move. Any other error stops
+/// the step: skipping it would report a partial undo as complete.
+fn still_there(db: &Db, hid: &Hid) -> Result<Option<Entry>> {
+    match db.get_entry_including_deleted(hid) {
+        Ok(entry) => Ok(Some(entry)),
+        Err(DatumError::NotFound(_)) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Refuse, before anything moves, an action one of whose entries has changed
+/// since in a way the stack does not hold — a sync from another copy, or a
+/// write outside any command. Reverting it would throw that change away.
+fn refuse_if_moved(db: &Db, action: &undo_log::Action, verb: &str) -> Result<()> {
+    for member in &action.members {
+        let Some((version, kind)) = undo_log::blocker(db.conn(), member)? else {
+            continue;
+        };
+        let hid = &member.hid;
+        let name = db
+            .get_entry_including_deleted(hid)
+            .map(|e| e.slug.to_string())
+            .unwrap_or_else(|_| hid.to_string());
+        let why = match kind {
+            ChangeKind::SyncMerge | ChangeKind::SyncConflictResolve => {
+                "a sync brought in a change to it from another copy"
             }
-            None => anyhow::bail!("Nothing to undo — no soft-deleted entries found"),
+            _ => "it was changed by a write that is not on the undo stack",
+        };
+        anyhow::bail!(
+            "Cannot {verb}: {name} ({hid}) has changed since — {why} (version {version}). \
+             Nothing was changed; `datum {verb} {hid}` steps that entry alone."
+        );
+    }
+    Ok(())
+}
+
+/// `_LAST` names what a stack step moved, as after any command, and then
+/// the steps are echoed. A step that moved nothing says so rather than
+/// passing in silence.
+fn finish_stack(
+    db: &Db,
+    steps: &[(Entry, Entry)],
+    verb: &str,
+    registry: &Option<SpecRegistry>,
+    output: &OutputArgs,
+) -> Result<()> {
+    let moved = moved_hids(steps, &[]);
+    if moved.is_empty() {
+        eprintln!(
+            "{verb}: nothing moved — that command's entries were already as it would leave them"
+        );
+    } else {
+        let _ = last_docs::set_last_docs(db, &pointer_after_step(db, moved));
+    }
+    show_steps(steps, &[], registry.as_ref(), output);
+    Ok(())
+}
+
+/// A named `_LAST` is every row the pointer holds, tombstones too, as a
+/// comma list: each steps along its own trail.
+fn every_last(db: &Db, list: &str) -> String {
+    match last_docs::get_last_docs(db) {
+        Ok(Some(last)) if list == datum_core::ids::resolve::LAST_TOKEN && !last.hids.is_empty() => {
+            let hids: Vec<&str> = last.hids.iter().map(|h| h.as_str()).collect();
+            hids.join(",")
         }
+        _ => list.to_string(),
     }
 }
 
@@ -144,24 +263,17 @@ pub fn redo(args: RedoArgs, db: &Db) -> Result<()> {
     let registry = load_registry_opt(db);
     let output = args.output()?;
 
+    let Some(list) = args.id_or_slug.as_deref().map(|list| every_last(db, list)) else {
+        return redo_stack(db, args.dry_run, &registry, &output);
+    };
+    let list = list.as_str();
     // A list's ids that do not resolve are named and make the command fail,
     // after the ones that do have moved — `delete`'s precedent (da-9p3o).
     let mut targets: Vec<Hid> = Vec::new();
-    let resolved = match args.id_or_slug.as_deref() {
-        Some(list) => for_each_id(db, list, |id| {
-            targets.push(resolve_prefix_or_tombstone(db, id)?.hid);
-            Ok(())
-        }),
-        None => {
-            let reference = pointer_with_live_targets(db)
-                .context("Nothing to redo — no entry has been touched yet")?;
-            if !args.dry_run {
-                warn_if_stale("redoing a change", reference.time);
-            }
-            targets = reference.hids;
-            Ok(())
-        }
-    };
+    let resolved = for_each_id(db, list, |id| {
+        targets.push(resolve_prefix_or_tombstone(db, id)?.hid);
+        Ok(())
+    });
 
     let mut steps: Vec<(Entry, Entry)> = Vec::new();
     for hid in &targets {
@@ -251,65 +363,6 @@ fn show_step(before: &Entry, after: &Entry, registry: Option<&SpecRegistry>, out
         (_, true) => show_delete(after, registry, output),
         (true, false) => show_create(after, registry, output),
         (false, false) => show_update(after, registry, output),
-    }
-}
-
-/// The last-docs pointer, but only when at least one hid it names still
-/// resolves to a row (live or tombstoned). A pointer into nothing is no
-/// better than no pointer at all.
-fn pointer_with_live_targets(db: &Db) -> Option<last_docs::LastDocsRef> {
-    let reference = last_docs::get_last_docs(db).ok().flatten()?;
-    reference
-        .hids
-        .iter()
-        .any(|hid| db.get_entry_including_deleted(hid).is_ok())
-        .then_some(reference)
-}
-
-/// Bare `undo` path: revert each hid named by the last-docs pointer.
-/// Tombstoned hids are restored (history-revert preferred, undelete as
-/// fallback); live hids fall back to history (undoing the most recent
-/// non-delete change). The pointer itself is rewritten to the restored
-/// hids so `_LAST` keeps tracking the user's "current" set.
-fn undo_via_last_docs(
-    db: &Db,
-    hids: &[Hid],
-    registry: &Option<SpecRegistry>,
-    output: &OutputArgs,
-) -> Result<()> {
-    if hids.is_empty() {
-        anyhow::bail!("Last-docs pointer is empty — nothing to undo");
-    }
-    let mut steps: Vec<(Entry, Entry)> = Vec::new();
-    let mut first_err: Option<anyhow::Error> = None;
-    for hid in hids {
-        let current = match resolve_prefix_or_tombstone(db, hid) {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("undo {hid}: {e}");
-                first_err.get_or_insert(e);
-                continue;
-            }
-        };
-        match step_back(db, &current) {
-            Ok(entry) => steps.push((current, entry)),
-            Err(e) => {
-                eprintln!("undo {hid}: {e}");
-                first_err.get_or_insert(e);
-            }
-        }
-    }
-    // Undoing a first log takes the spec it wrote with it (da-elv6d).
-    let (specs, dropped) = drop_orphaned_bare_specs(db, &tombstoned_by(&steps), ChangeKind::Undo);
-    let restored_hids = moved_hids(&steps, &specs);
-    if !restored_hids.is_empty() {
-        let _ = last_docs::set_last_docs(db, &pointer_after_step(db, restored_hids.clone()));
-    }
-    show_steps(&steps, &specs, registry.as_ref(), output);
-    dropped?;
-    match first_err {
-        Some(e) if restored_hids.is_empty() => Err(e),
-        _ => Ok(()),
     }
 }
 

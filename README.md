@@ -188,7 +188,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `rekey` — Copy an entry to a new id (old row stays)
 - `retime` — Move an entry's occur_time (alias: rt)
 - `delete` — Delete an entry (alias: del)
-- `undo` — Undo the last change to an entry (revert via history)
+- `undo` — Undo the last command, or one entry's last change
 - `redo` — Redo the last undone change (the inverse of undo)
 
 ## READ

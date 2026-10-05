@@ -386,9 +386,11 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             }
         }
         write_track_documents(db, &entries)?;
-        // The whole import is `_LAST`, so one `undo` reverts it (da-yyjob):
-        // the specs by their history, the bulk rows, which have none, by hid.
+        // The whole import is `_LAST` and one action, so one `undo` reverts it
+        // (da-yyjob, da-z0zh3): the specs by their history, the bulk rows,
+        // which have none, by hid.
         datum_core::last_docs::set_last_to_batch(db, mark, &inserted_hids)?;
+        datum_core::undo_log::add_untracked(db.conn(), &inserted_hids)?;
         inserted
     };
 

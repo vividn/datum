@@ -57,7 +57,7 @@ use v51_v60::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 51;
+pub const CURRENT_SCHEMA_VERSION: u32 = 52;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -432,5 +432,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "`kit` is reserved: a kit's `[kit]` table is the entry `kit:<name>` (da-xnzc7)",
         apply: m50_to_51_kit_is_reserved,
         down: down_51_to_50_kit_is_reserved,
+    },
+    Migration {
+        from: 51,
+        to: 52,
+        summary: "undo_actions + entry_history.action_id: undo/redo walk a stack of commands (da-z0zh3)",
+        apply: m51_to_52_undo_actions,
+        down: down_52_to_51_undo_actions,
     },
 ];

@@ -2,7 +2,7 @@
 //! `list_entries` query that backs `tail`/`head`.
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 use serde_json::Value as JsonValue;
 
 use crate::entry::Entry;
@@ -162,21 +162,6 @@ impl Db {
             .prepare("SELECT * FROM entries ORDER BY slug ASC")?;
         let rows = stmt.query_map([], row_to_entry)?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
-    }
-
-    /// Most recently tombstoned row, regardless of age. Bare `undo` uses this
-    /// when no last-docs pointer names a target; there is no age window, since
-    /// undo refuses nothing on age (da-s6no).
-    pub fn most_recent_tombstone(&self) -> Result<Option<Entry>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT * FROM entries
-             WHERE deleted_at IS NOT NULL
-             ORDER BY deleted_at DESC, slug DESC
-             LIMIT 1",
-        )?;
-        stmt.query_row([], row_to_entry)
-            .optional()
-            .map_err(DatumError::Db)
     }
 
     /// Slugs of rows with `deleted_at` set (tombstones).

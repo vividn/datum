@@ -53,6 +53,10 @@ pub const LAST_TOKEN: &str = "_LAST";
 /// `_LAST_WITH_PROTECTION` — same as `_LAST`, but refuses if the
 /// pointer is older than [`PROTECTION_WINDOW_MINUTES`].
 pub const LAST_WITH_PROTECTION_TOKEN: &str = "_LAST_WITH_PROTECTION";
+/// `_UNDO` — the entries of the command a bare `undo` reverts next, the
+/// undo stack's cursor (da-z0zh3). Moved only by writes, where `_LAST` moves
+/// with reads too, so the two differ exactly after a `get`.
+pub const UNDO_TOKEN: &str = "_UNDO";
 
 /// Maximum number of candidates surfaced on an ambiguous resolution.
 const AMBIGUOUS_CANDIDATE_CAP: usize = 16;
@@ -96,6 +100,17 @@ pub fn resolve_quickid(db: &Db, pattern: &str) -> Result<Vec<Entry>> {
         let mut out = Vec::with_capacity(reference.hids.len());
         for hid in &reference.hids {
             if let Some(entry) = exact_live_match(db, hid)? {
+                out.push(entry);
+            }
+        }
+        return Ok(out);
+    }
+
+    if pattern == UNDO_TOKEN {
+        let action = crate::undo_log::cursor(db.conn())?;
+        let mut out = Vec::new();
+        for member in action.iter().flat_map(|a| &a.members) {
+            if let Some(entry) = exact_live_match(db, &member.hid)? {
                 out.push(entry);
             }
         }

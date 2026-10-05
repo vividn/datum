@@ -85,7 +85,7 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
             Err(e) => {
                 let msg = format!("{}: {}", entry.slug, e);
                 // Strict stops here, but what it already deleted is still
-                // stamped into `_LAST` below, so a bare `undo` reverts it
+                // stamped into `_LAST` below and on the undo stack, so a bare `undo` reverts it
                 // (da-5leng).
                 if args.strict {
                     first_err = Some(anyhow::anyhow!(msg));

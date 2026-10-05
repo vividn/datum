@@ -9,7 +9,7 @@
 //! rows, ask, perform.
 //!
 //! An alias is an entry (da-b3752): a write is stamped with this device and
-//! leaves `_LAST` on it, so a bare `undo` steps it back like any doc.
+//! leaves `_LAST` on it, so `undo _LAST` steps it back like any doc.
 
 use anyhow::{bail, Result};
 use datum_core::{

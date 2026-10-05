@@ -122,22 +122,20 @@ fn bare_undo_of_just_created_entry_deletes_it() {
     // error with "no prior version recorded".
     let db = fresh_db();
 
-    // Create via the CLI so the last-docs pointer is set, exercising the
-    // bare-`undo` path (undo_via_last_docs). The fresh pointer is inside the
-    // 15-min protection window (da-uzxj), so undo acts silently — no prompt.
+    // Create via the CLI so the command is on the undo stack, exercising the
+    // bare-`undo` path (da-z0zh3).
     run_cli(&["occur", "testfield"], &db).expect("occur dispatch");
-    assert!(
-        db.most_recent_tombstone().unwrap().is_none(),
-        "no tombstone before undo"
-    );
+    let tombstone = |db: &datum_core::db::Db| {
+        datum_core::test_util::logged_all(db)
+            .into_iter()
+            .find(|e| e.deleted_at.is_some())
+    };
+    assert!(tombstone(&db).is_none(), "no tombstone before undo");
 
     // Bare `undo` must succeed and tombstone the just-created entry.
     run_cli(&["undo"], &db).expect("undo of just-created entry must not error");
 
-    let tomb = db
-        .most_recent_tombstone()
-        .unwrap()
-        .expect("entry is tombstoned after undo");
+    let tomb = tombstone(&db).expect("entry is tombstoned after undo");
 
     // Symmetry: a second `undo` on the same hid restores it.
     run_cli(&["undo", &tomb.hid], &db).expect("re-undo restores");

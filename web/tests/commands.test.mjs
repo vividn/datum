@@ -843,6 +843,22 @@ describe('Undo', () => {
 		});
 	});
 
+	// da-z0zh3: the CLI's undo is an editor's — a second press walks back
+	// past the first log instead of bringing the second one back.
+	test('pressed twice after two logs, it takes both back', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await seedLines(app, ['occur coffee', 'occur tea']);
+			assert.equal((await app.entries(2)).length, 2);
+			const undo = commands(page).locator('button[data-command="undo"]');
+			for (const left of [1, 0]) {
+				await undo.click();
+				await page.waitForFunction(() => window.__datumInflight === 0);
+				assert.equal((await app.entries(2)).length, left);
+			}
+		});
+	});
+
 	// da-zq91a (vividn: «make the undo button … have a little redo section
 	// … only enabled when there is an undo to redo»). Lit by the CLI's
 	// `redo --dry-run`, so the page holds no rule of its own — and an undo

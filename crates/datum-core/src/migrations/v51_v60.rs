@@ -44,3 +44,31 @@ pub(super) fn m50_to_51_kit_is_reserved(conn: &Connection) -> Result<()> {
 pub(super) fn down_51_to_50_kit_is_reserved(_conn: &Connection) -> Result<()> {
     Ok(())
 }
+
+/// da-z0zh3: the undo stack — `undo_actions`, and the action each
+/// `entry_history` row was written by. Older rows have none, and undo stops
+/// at them rather than guess how they grouped.
+pub(super) fn m51_to_52_undo_actions(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "ALTER TABLE entry_history ADD COLUMN action_id INTEGER;
+         CREATE INDEX IF NOT EXISTS entry_history_action
+             ON entry_history(action_id) WHERE action_id IS NOT NULL;
+         CREATE TABLE IF NOT EXISTS undo_actions (
+             id        INTEGER PRIMARY KEY AUTOINCREMENT,
+             time      TEXT NOT NULL,
+             undone    INTEGER NOT NULL DEFAULT 0,
+             untracked TEXT
+         );",
+    )?;
+    Ok(())
+}
+
+/// Reverse v51→v52. Local: the stack is forgotten, the history stays.
+pub(super) fn down_52_to_51_undo_actions(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS entry_history_action;
+         ALTER TABLE entry_history DROP COLUMN action_id;
+         DROP TABLE IF EXISTS undo_actions;",
+    )?;
+    Ok(())
+}

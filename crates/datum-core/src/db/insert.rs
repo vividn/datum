@@ -444,7 +444,7 @@ impl Db {
             history: count("SELECT COUNT(*) FROM entry_history")?,
         };
         tx.execute_batch(
-            "DELETE FROM entries; DELETE FROM entry_history;
+            "DELETE FROM entries; DELETE FROM entry_history; DELETE FROM undo_actions;
              DELETE FROM integrity_warnings; DELETE FROM last_docs;",
         )?;
         let mut written = Vec::with_capacity(entries.len());

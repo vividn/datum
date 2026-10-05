@@ -1,8 +1,10 @@
 //! A reader closing stdout ends a command at its first print (exit 141,
 //! da-9p3o), so everything the command records — the entry and the `_LAST`
 //! pointer — must land before it prints (da-ki5j3). Each test runs a command
-//! with its stdout on a pipe whose read end is already closed, then a bare
-//! `undo`, which acts on `_LAST`: it must revert what that command touched.
+//! with its stdout on a pipe whose read end is already closed, then an
+//! `undo`: it must revert what that command touched. A write is what a bare
+//! `undo` reverts; a `get` moves only `_LAST`, so after one it is
+//! `undo _LAST` (da-z0zh3).
 //! A closed read end is the strict form of `| head`: the first write fails.
 
 use std::path::PathBuf;
@@ -89,23 +91,23 @@ fn a_cut_off_log_is_what_a_bare_undo_reverts() {
 }
 
 #[test]
-fn a_cut_off_get_is_what_a_bare_undo_reverts() {
+fn a_cut_off_get_is_what_undo_last_reverts() {
     let env = Env::new();
     let tea = env.occur("tea", "0900");
     let coffee = env.occur("coffee", "0910");
     env.occur("water", "0920");
     env.cut_off(&["get", &format!("{tea},{coffee}")]);
-    env.ok(&["undo"]);
+    env.ok(&["undo", "_LAST"]);
     assert_eq!(env.live(), ["water=null"]);
 }
 
 #[test]
-fn a_cut_off_get_search_is_what_a_bare_undo_reverts() {
+fn a_cut_off_get_search_is_what_undo_last_reverts() {
     let env = Env::new();
     env.occur("tea", "0900");
     env.occur("water", "0920");
     env.cut_off(&["get", "tea", "field=tea"]);
-    env.ok(&["undo"]);
+    env.ok(&["undo", "_LAST"]);
     assert_eq!(env.live(), ["water=null"]);
 }
 

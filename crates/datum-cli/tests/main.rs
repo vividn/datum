@@ -119,6 +119,7 @@ mod timeless_state_note;
 mod track_cmd;
 mod track_declaration;
 mod undo_shared_slug;
+mod undo_stack;
 mod unit_removed;
 mod untimed_field_is_tracked;
 mod update_cmd;

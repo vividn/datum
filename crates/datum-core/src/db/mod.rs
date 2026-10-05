@@ -350,6 +350,7 @@ impl Db {
         let tables = [
             "entries",
             "entry_history",
+            "undo_actions",
             // Gone since v38 / v39 / v40 (specs, aliases, views, kit
             // commands and index definitions are entries — da-lc26c,
             // da-b3752, da-fwwtn) and v41 (`sync_state`, the deleted relay

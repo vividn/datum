@@ -1,6 +1,6 @@
-//! Every command that writes a SET of entries puts the whole set in `_LAST`,
-//! so one bare `undo` reverts the batch and one `redo` re-applies it
-//! (da-yyjob). Each test runs a batch command, then `undo`, and the live
+//! Every command that writes a SET of entries is one action on the undo
+//! stack, so one bare `undo` reverts the batch and one `redo` re-applies it
+//! (da-yyjob, da-z0zh3). Each test runs a batch command, then `undo`, and the live
 //! entries (specs and aliases among them) are the ones before the command;
 //! then `redo`, and they are the ones after. Tombstones may differ. The real
 //! binary; the database is read back with SQLite itself.
@@ -209,6 +209,24 @@ fn v2import() {
         "/tests/fixtures/datum_backup_3days.json"
     );
     env.round_trips(&["db", "v2import", "--from", fixture]);
+}
+
+/// da-z0zh3: an imported row gone since (forgotten, say — the row itself,
+/// not a tombstone) has nothing to move. The undo skips it and still takes
+/// the rest of the import back.
+#[test]
+fn undo_of_an_import_skips_a_row_gone_since() {
+    let env = Env::new();
+    env.ok(&["occur", "tea"]);
+    let before = env.live();
+    let fixture = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/datum_backup_3days.json"
+    );
+    env.ok(&["db", "v2import", "--from", fixture]);
+    env.sql("DELETE FROM entries WHERE hid = 'syn0001'");
+    env.ok(&["undo"]);
+    assert_eq!(env.live(), before);
 }
 
 /// An entry older than its trail — here bulk-imported, so it has none — is

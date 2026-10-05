@@ -198,6 +198,7 @@ fn every_pair_has_a_roundtrip_test() {
         (48, 49),
         (49, 50),
         (50, 51),
+        (51, 52),
     ];
     assert_eq!(
         covered.len(),
@@ -2599,6 +2600,19 @@ fn roundtrip_v50_to_v51_kit_is_reserved() {
     let db = fresh_at(50);
     apply_one_up(db.conn(), 50);
     apply_one_down(db.conn(), 51);
+}
+
+/// da-z0zh3: the undo stack's table and column come and go together.
+#[test]
+fn roundtrip_v51_to_v52_undo_actions() {
+    let db = fresh_at(51);
+    let conn = db.conn();
+    apply_one_up(conn, 51);
+    assert!(table_exists(conn, "undo_actions"));
+    assert!(column_exists(conn, "entry_history", "action_id"));
+    apply_one_down(conn, 52);
+    assert!(!table_exists(conn, "undo_actions"));
+    assert!(!column_exists(conn, "entry_history", "action_id"));
 }
 
 /// Life data logged under `kit` stops v51 before it is hidden; a deleted

@@ -182,12 +182,12 @@ fn redo_on_a_multi_entry_last_steps_every_row() {
     // Point `_LAST` at both, the way a TRACK pair would (da-c8mh).
     datum_core::last_docs::set_last_docs(&db, &[coffee.clone().into(), tea.clone()]).unwrap();
 
-    run_cli(&["undo"], &db).expect("undo the group");
+    run_cli(&["undo", "_LAST"], &db).expect("undo the group");
     for hid in [coffee.as_str(), tea.as_str()] {
         assert_eq!(db.get_entry(hid).unwrap().data.as_ref().unwrap()["cups"], 2);
     }
 
-    run_cli(&["redo"], &db).expect("redo the group");
+    run_cli(&["redo", "_LAST"], &db).expect("redo the group");
     for hid in [coffee.as_str(), tea.as_str()] {
         assert_eq!(db.get_entry(hid).unwrap().data.as_ref().unwrap()["cups"], 3);
     }
