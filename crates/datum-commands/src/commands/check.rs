@@ -740,7 +740,7 @@ fn apply_slug_fixes(db: &Db, fixes: &[SlugFix], delim: &str) -> Result<FixReport
 /// the warning vanishes on the next `datum check` — there's no
 /// stored row left behind.
 fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
-    use datum_core::integrity::{IntegrityKind, IntegrityWarning, ListFilter};
+    use datum_core::integrity::{DetectedBy, IntegrityKind, IntegrityWarning, ListFilter};
     let pending = db.list_integrity_warnings(&ListFilter {
         kind: None,
         pending: Some(true),
@@ -750,13 +750,20 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
     // group so per-entry render output matches the queue order. SameStateRepeat
     // is intentionally skipped — it's computed live below (da-acft); any rows
     // that slipped past the cleanup migration are ignored here.
-    let mut by_kind: std::collections::BTreeMap<&'static str, Vec<&IntegrityWarning>> =
-        std::collections::BTreeMap::new();
+    // Keyed by detector too: an `identity_collision` from a sync and one
+    // from `db restore --merge` read differently (da-vrqih).
+    let mut by_kind: std::collections::BTreeMap<
+        (&'static str, &'static str),
+        Vec<&IntegrityWarning>,
+    > = std::collections::BTreeMap::new();
     for w in &pending {
         if matches!(w.kind, IntegrityKind::SameStateRepeat) {
             continue;
         }
-        by_kind.entry(w.kind.as_str()).or_default().push(w);
+        by_kind
+            .entry((w.kind.as_str(), w.detected_by.as_str()))
+            .or_default()
+            .push(w);
     }
 
     let mut issues = Vec::new();
@@ -795,11 +802,15 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
                 were = if count == 1 { "was" } else { "were" },
             ),
             IntegrityKind::IdentityCollision => format!(
-                "{count} entr{y} from another device collided with a local entry on slug \
+                "{count} entr{y} {from} collided with a local entry on slug \
                  or on (field, occur_time). Both were kept — the loser's slug carries its \
                  hid, and it is tombstoned when the two could not both stay live. \
                  `datum conflicts` prints the pair and takes the choice.",
                 y = if count == 1 { "y" } else { "ies" },
+                from = match first.detected_by {
+                    DetectedBy::SyncPull => "from another device",
+                    DetectedBy::LocalValidator => "from a backup merged by `db restore --merge`",
+                },
             ),
             IntegrityKind::SyncConflict => {
                 let raw = |e: &datum_core::entry::Entry| {

@@ -240,3 +240,56 @@ fn auto_resolve_is_not_a_conflicts_subcommand() {
         "expected the subcommand guard, got:\n{out}"
     );
 }
+
+/// An `identity_collision` names the superseded row and the one that kept
+/// the identity, and `db restore --merge` files one too (`local_validator`):
+/// neither surface may call a restore's pair a device's, nor either side of
+/// any collision «local» or «remote» (da-vrqih).
+#[test]
+fn a_collision_speaks_of_its_own_detector() {
+    let env = Env::new();
+    let (synced, _) = env.seed_lww("mood");
+    let (restored, _) = env.seed_lww("habit");
+    // Retag the seeded rows: filing one directly takes a detector only
+    // since da-2t8mx.
+    let conn = env.db();
+    for (hid, by) in [(&synced, "sync_pull"), (&restored, "local_validator")] {
+        conn.conn()
+            .execute(
+                "UPDATE integrity_warnings SET kind = 'identity_collision', detected_by = ?2
+                 WHERE hid = ?1",
+                rusqlite::params![hid, by],
+            )
+            .expect("retag");
+    }
+
+    let (_, out) = env.run(&["check"]);
+    assert!(
+        out.contains("1 entry from another device collided"),
+        "{out}"
+    );
+    assert!(
+        out.contains("1 entry from a backup merged by `db restore --merge` collided"),
+        "{out}"
+    );
+
+    let (ok, out) = env.run(&["conflicts"]);
+    assert!(ok, "{out}");
+    assert!(
+        !out.contains("    local ") && !out.contains("    remote "),
+        "{out}"
+    );
+    assert_eq!(out.matches("    superseded ").count(), 2, "{out}");
+    assert_eq!(out.matches("    kept ").count(), 2, "{out}");
+    let header = |hid: &str| {
+        out.lines()
+            .find(|l| l.starts_with(hid))
+            .unwrap()
+            .to_string()
+    };
+    assert!(
+        header(&restored).contains("by `db restore --merge`"),
+        "{out}"
+    );
+    assert!(!header(&synced).contains("by `db restore"), "{out}");
+}

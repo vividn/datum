@@ -18,7 +18,7 @@
 use anyhow::Result;
 use datum_core::db::Db;
 use datum_core::entry::Entry;
-use datum_core::integrity::{IntegrityKind, IntegrityWarning, ListFilter, Resolution};
+use datum_core::integrity::{DetectedBy, IntegrityKind, IntegrityWarning, ListFilter, Resolution};
 use datum_core::time::Zone;
 
 use crate::args::{ConflictsCommand, ConflictsKeep, ConflictsListArgs, ConflictsResolveArgs};
@@ -64,7 +64,7 @@ fn side(label: &str, e: &Entry) -> String {
         _ => String::new(),
     };
     format!(
-        "    {label:<7} {slug}  state={state}  modified={modified}{by}",
+        "    {label:<10} {slug}  state={state}  modified={modified}{by}",
         slug = e.slug,
         modified = e.modify_time.format("%Y-%m-%d %H:%M"),
     )
@@ -81,20 +81,31 @@ fn list(args: ConflictsListArgs, db: &Db) -> Result<()> {
     }
 
     for w in &rows {
+        // An identity_collision's pair is the superseded row and the one
+        // that kept the identity, whichever side each came from — and a
+        // restore's came from no remote at all (da-vrqih).
+        let (first, second) = match w.kind {
+            IntegrityKind::IdentityCollision => ("superseded", "kept"),
+            _ => ("local", "remote"),
+        };
         println!(
-            "{hid}  {kind}  {field}  detected {detected}  {status}",
+            "{hid}  {kind}  {field}  detected {detected}{by}  {status}",
             hid = w.hid,
             kind = w.kind.as_str(),
             field = w.local_entry.field,
             detected = Zone::host()
                 .local_naive(w.detected_at)
                 .format("%Y-%m-%d %H:%M"),
+            by = match w.detected_by {
+                DetectedBy::LocalValidator => " by `db restore --merge`",
+                DetectedBy::SyncPull => "",
+            },
             status = w.resolution.as_deref().unwrap_or("pending"),
         );
-        println!("{}", side("local", &w.local_entry));
+        println!("{}", side(first, &w.local_entry));
         match w.remote_entry.as_ref() {
-            Some(remote) => println!("{}", side("remote", remote)),
-            None => println!("    remote  (not recorded)"),
+            Some(remote) => println!("{}", side(second, remote)),
+            None => println!("    {second:<10} (not recorded)"),
         }
     }
     if rows.iter().any(|w| w.is_pending()) {
