@@ -13,6 +13,12 @@
 # it depends on a network clone of a third-party repo and a node toolchain, so
 # making it gate every merge would trade one flaky dependency for the whole
 # queue. It runs weekly, on demand, and on changes to the parity crate itself.
+#
+# It ran on GitHub until da-16sxf (vividn, 2026-10-05: «I would get it off of
+# github»): nothing in the town read GitHub's result, and its runs from 09-16
+# to 09-30 were all red, unseen. Here its result is in the forge's run list.
+# `ubuntu-latest` is the CI box (the mayor, 2026-10-05), one 3-core lane of
+# it, as ci.yml; the job is set up as ci.yml's is.
 name: Parity
 
 on:
@@ -27,38 +33,47 @@ on:
     branches: [main]
     paths:
       - "crates/datum-parity/**"
-      - ".github/workflows/parity.yml"
+      - ".forgejo/workflows/parity.yml"
   push:
     branches: [main]
     paths:
       - "crates/datum-parity/**"
-      - ".github/workflows/parity.yml"
+      - ".forgejo/workflows/parity.yml"
+
+# A newer push to a PR cancels its superseded run instead of queueing another
+# lane-hour behind it; on main a run is never cancelled, as in ci.yml.
+concurrency:
+  group: parity-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
+  CARGO_BUILD_JOBS: 3
 
 jobs:
   parity-runtime:
     name: Cross-runtime goldens vs. vividn/datum
     runs-on: ubuntu-latest
-    # The forge mirror's runner executes .github/workflows too; this job clones
-    # and builds the reference for up to an hour on a shared 3-core box, for a
-    # result GitHub already produces. Skip there. Marker verified inside a live
-    # forge job on 2026-09-16: github.server_url is the instance URL, not
-    # https://github.com (see deploy.yml for the full note).
-    if: ${{ github.server_url == 'https://github.com' }}
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Install the pinned Rust toolchain
-        run: rustup toolchain install --no-self-update
+      # As ci.yml: rust-toolchain.toml is the version, and the shared
+      # /root/.cargo is written only under .ci-install.lock (da-nmf83).
+      - name: Install rustup and the pinned toolchain
+        run: |
+          set -euo pipefail
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          mkdir -p "$HOME/.cargo" && exec 9>"$HOME/.cargo/.ci-install.lock" && flock 9
+          RUSTUP_AUTO_INSTALL=0 rustup --version >/dev/null 2>&1 ||
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal --no-modify-path
+          rustup toolchain install --no-self-update
+          rustc --version && cargo --version
 
-      - name: Cache cargo registry + target
-        uses: Swatinem/rust-cache@v2
-
-      - uses: actions/setup-node@v4
+      - uses: https://github.com/actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
 

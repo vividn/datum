@@ -62,7 +62,8 @@ pnpm stopped reading `package.json`'s `pnpm` field, so
 `--frozen-lockfile` began refusing the pinned lockfile. The reference
 check didn't go red. It went silent, which looks the same as fine.
 
-`.github/workflows/parity.yml` is the alarm. It runs the gated suite
+`.forgejo/workflows/parity.yml` is the alarm (on GitHub until da-16sxf,
+where nobody read it). It runs the gated suite
 
 * weekly (Mondays 06:17 UTC),
 * on `workflow_dispatch`, and
