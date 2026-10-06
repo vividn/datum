@@ -8,7 +8,8 @@
 // stdout, and the CLI runs `-` exactly as it would in a pipe. `db purge`,
 // which wants a TTY to ask on, asks in a dialog instead, and so do
 // `kit install`'s trust (da-axrk), a replacing `db restore`'s
-// deletions (da-jrbwc) and a stale `_LAST`'s question (da-f5pg2, `asking`).
+// deletions (da-jrbwc), a `--hard` one's drops (da-qq7gb) and a stale
+// `_LAST`'s question (da-f5pg2, `asking`).
 //
 // Every line a person types consults it — the REPL's own runner and the
 // bottom bar's through `press` — and nothing else: `run` is the seam and
@@ -126,7 +127,8 @@ function feed(argv: string[], stdin: string): Promise<RunResult> {
  * which the browser has not got: so the page asks, with the counts of the
  * CLI's own `--dry-run` on the same bytes, and runs it `--yes` on yes
  * (da-jrbwc). One that deletes nothing and warns of nothing, `--merge`,
- * `--dry-run` and a typed `--yes` run as asked.
+ * `--dry-run` and a typed `--yes` run as asked — but a `--hard` that is
+ * not a dry run is `hard`'s, which asks whatever was typed.
  *
  * The run is pinned to the live entries the dry run counted (da-2zqad):
  * two tabs are two workers on one file, so another tab can write while the
@@ -135,6 +137,7 @@ function feed(argv: string[], stdin: string): Promise<RunResult> {
  * counts again and asks again, even when the first count asked nothing.
  */
 export function restore(argv: string[]): Promise<RunResult> {
+	if (argv.includes('--hard') && !argv.includes('--dry-run')) return hard(argv);
 	if (['--merge', '--dry-run', '--yes', '-y'].some((a) => argv.includes(a))) return upload(argv);
 	return pick().then(async (file) => {
 		if (!file) return nothing(argv, 'no file chosen — nothing ran');
@@ -162,6 +165,36 @@ export function restore(argv: string[]): Promise<RunResult> {
 			const ran = await feed([...argv, ...(asks ? ['--yes'] : []), ...pin], backup);
 			if (ran.code !== UNANSWERED) return ran;
 		}
+	});
+}
+
+/**
+ * `db restore --hard -` with the backup the reader picks, once they have
+ * read what the CLI's own `--dry-run` says it drops and typed the
+ * database's name (da-qq7gb): the CLI's TTY prompt, as `purge` gets. It
+ * cannot be undone, so a typed `--yes` is dropped, as `kit`'s is — the
+ * CLI's refusal on no TTY points at it, and the yes reached nobody.
+ */
+function hard(argv: string[]): Promise<RunResult> {
+	argv = argv.filter((a) => a !== '--yes' && a !== '-y');
+	return pick().then(async (file) => {
+		if (!file) return nothing(argv, 'no file chosen — nothing ran');
+		const backup = await file.text();
+		const seen = await feed([...argv, '--dry-run', '--json'], backup);
+		if (seen.code !== 0) return seen;
+		const { would_insert, dropped, warnings } = JSON.parse(seen.stdout);
+		const { entries = 0, tombstones = 0, history = 0 } = dropped ?? {};
+		const db = dbOf(argv);
+		const text =
+			`This replaces ALL data in ${db} with the backup (${would_insert} written); dropped: ` +
+			`${entries} live, ${tombstones} tombstoned or superseded, ${history} in history. ` +
+			'It cannot be undone: the history `undo` reads goes with it.' +
+			warnings.map((w: string) => ` ⚠ ${w}.`).join('');
+		if (!(await confirm(text, 'restore --hard', db))) {
+			// The CLI's own words for a mismatch at its prompt.
+			return { argv, code: 1, stdout: '', stderr: `db restore --hard: aborted (input did not match ${db})` };
+		}
+		return feed([...argv, '--yes'], backup);
 	});
 }
 

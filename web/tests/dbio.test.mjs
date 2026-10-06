@@ -782,3 +782,72 @@ test('a restore whose dry run warns asks first, even when nothing would be delet
 		}
 	);
 });
+
+// da-qq7gb: a typed `--hard` went through the replace confirm, which knew
+// nothing of it — clean, it asked nothing and the CLI refused on no TTY;
+// warned, it said «adds N entries» and its yes dropped everything; and a
+// typed `--yes`, which that refusal points at, asked nobody. Now `--hard`
+// asks in the CLI's own words, behind the database's name, every time.
+test('a hard restore asks with what it drops and the database’s name, even with a typed --yes', async () => {
+	await desk.solo(
+		async (app) => {
+			const { page } = app;
+			await page.evaluate(() => {
+				window.__restores = [];
+				const previous = window.datum.setRunner((argv, stdin, ...rest) => {
+					if (argv[0] === 'db') window.__restores.push(argv);
+					return previous(argv, stdin, ...rest);
+				});
+				window.__unhook = () => window.datum.setRunner(previous);
+			});
+			const asked = () => page.evaluate(() => window.__restores.splice(0));
+			await app.declare('coffee');
+			await app.submit('occur coffee');
+			const [download] = await Promise.all([page.waitForEvent('download'), app.submit('db backup')]);
+			const saved = await download.path();
+			await app.clock.forward(1000);
+			await app.submit('occur coffee');
+			assert.equal(await count(app), 3);
+			await asked();
+
+			const dialog = page.locator('dialog.confirm');
+			const restoreHard = async (line) => {
+				const [chooser] = await Promise.all([page.waitForEvent('filechooser'), type(page, line)]);
+				await chooser.setFiles(saved);
+				await dialog.waitFor();
+				return dialog.locator('p').innerText();
+			};
+			const text = await restoreHard('db restore --hard');
+			const [, written, live] =
+				text.match(
+					/^This replaces ALL data in datum with the backup \((\d+) written\); dropped: (\d+) live, \d+ tombstoned or superseded, \d+ in history\. It cannot be undone: the history `undo` reads goes with it\.$/
+				) ?? assert.fail(text);
+			// The coffee since the backup is the one more it drops.
+			assert.equal(Number(live), Number(written) + 1, text);
+			// The wrong name drops nothing.
+			const name = dialog.locator('input');
+			let before = await echoes(page);
+			await name.fill('datu');
+			await name.press('Enter');
+			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+			assert.equal((await app.outputs()).at(-1), 'db restore --hard: aborted (input did not match datum)');
+			assert.deepEqual(await asked(), [['db', 'restore', '--hard', '-', '--dry-run', '--json']]);
+			assert.equal(await count(app), 3);
+
+			// A typed `--yes` asks too, and the name runs it.
+			await restoreHard('db restore --hard --yes');
+			before = await echoes(page);
+			await name.fill('datum');
+			await name.press('Enter');
+			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
+			assert.match((await app.stdouts()).at(-1), /cannot be undone/);
+			assert.deepEqual(await asked(), [
+				['db', 'restore', '--hard', '-', '--dry-run', '--json'],
+				['db', 'restore', '--hard', '-', '--yes']
+			]);
+			assert.equal(await count(app), 2);
+			await page.evaluate(() => window.__unhook());
+			assert.deepEqual(app.errors, []);
+		}
+	);
+});
