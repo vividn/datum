@@ -216,11 +216,14 @@ jobs:
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@v2
 
-      # Runs the repo-hygiene gates — the four pre-v1 honesty gates:
+      # Runs the repo-hygiene gates — the four pre-v1 honesty gates and
+      # no-slug-keyed-writes (da-anmaz):
       #   - no-cfg-any      — no #[cfg(any())] dead-test trees
       #   - no-r2-stubs     — no `bail!("...stub — R2 extracts...")` shims
       #   - no-legacy-verbs — no Verb::{Occur,Start,Stop,Add} outside migrations
       #   - max-file-size   — no .rs file in crates/ above MAX_FILE_LOC
+      #   - no-slug-keyed-writes — no UPDATE/DELETE on entries keyed WHERE slug
+      #                     outside tests (a keep-both pair shares its slug)
       # and one anti-drift gate:
       #   - toolchain-pin   — every Dockerfile's `FROM rust:<tag>` agrees with
       #                       rust-toolchain.toml (a stale tag still builds,

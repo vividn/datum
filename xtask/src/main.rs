@@ -173,10 +173,11 @@ fn check(args: Vec<String>) -> Result<()> {
         "no-r2-stubs" => check_no_r2_stubs(),
         "no-legacy-verbs" => check_no_legacy_verbs(),
         "max-file-size" => check_max_file_size(),
+        "no-slug-keyed-writes" => check_no_slug_keyed_writes(),
         "toolchain-pin" => check_toolchain_pin(),
         "" => bail!(
             "check requires a subcommand: all | lint | no-cfg-any | no-r2-stubs | \
-             no-legacy-verbs | max-file-size | toolchain-pin"
+             no-legacy-verbs | max-file-size | no-slug-keyed-writes | toolchain-pin"
         ),
         other => bail!("unknown check: {other}"),
     }
@@ -222,13 +223,19 @@ impl Step {
 }
 
 /// The repo-hygiene gates — `check lint`, and the head of `check all`.
-/// The first four are the pre-v1 honesty gates (`da-8y2q.7`); the last
-/// keeps the Rust version single-sourced.
+/// The first four are the pre-v1 honesty gates (`da-8y2q.7`), then
+/// `no-slug-keyed-writes` (da-anmaz); the last keeps the Rust version
+/// single-sourced.
 const LINT_STEPS: &[Step] = &[
     Step::Gate("no-cfg-any", "crates/", check_no_cfg_any),
     Step::Gate("no-r2-stubs", "crates/", check_no_r2_stubs),
     Step::Gate("no-legacy-verbs", "crates/", check_no_legacy_verbs),
     Step::Gate("max-file-size", "crates/", check_max_file_size),
+    Step::Gate(
+        "no-slug-keyed-writes",
+        "crates/*/src outside tests and migrations",
+        check_no_slug_keyed_writes,
+    ),
     Step::Gate(
         "toolchain-pin",
         "rust-toolchain.toml + every Dockerfile",
@@ -486,6 +493,199 @@ fn check_max_file_size() -> Result<()> {
     );
 }
 
+/// Locks in da-anmaz: an `UPDATE entries` or `DELETE FROM entries` whose
+/// `WHERE` names `slug`. A keep-both pair shares its slug, so such a write
+/// lands on both rows — found and fixed one at a time in undo (#442),
+/// `raw_overwrite_mutables` (da-sy8ml) and `check --fix` (da-3qvnq). Test
+/// code may seed rows by slug, so test-gated items, `tests.rs` files and
+/// `migrations/` (which rewrite every row) are carved out.
+///
+/// The scan reads string literals: a `format!` fragment after `WHERE` is
+/// caught by its NAME (`{BY_SLUG_OR_HID_SQL}`), and SQL assembled any other
+/// way is out of its reach.
+fn check_no_slug_keyed_writes() -> Result<()> {
+    let hits = scan_rs_files_with_path(|path, content| {
+        let test_or_migration = path.iter().any(|c| c == "migrations")
+            || path.file_name().is_some_and(|n| n == "tests.rs");
+        if test_or_migration || !path.iter().any(|c| c == "src") {
+            return Vec::new();
+        }
+        let p = path.display().to_string();
+        match slug_keyed_writes(content) {
+            Ok(lines) => lines.into_iter().map(|l| (format!("{p}:{l}"), l)).collect(),
+            Err(l) => vec![(
+                format!("{p}:{l}: the test item opened here never closes, so the rest of the file went unread — fix the brace count in `xtask/src/main.rs`"),
+                l,
+            )],
+        }
+    })?;
+    if hits.is_empty() {
+        return Ok(());
+    }
+    let lines: Vec<String> = hits.iter().map(|(h, _)| format!("  {h}")).collect();
+    bail!(
+        "found {} UPDATE/DELETE on entries keyed on slug:\n{}\n\
+         a keep-both pair shares its slug, so the write lands on both rows; \
+         address the row by hid.",
+        hits.len(),
+        lines.join("\n")
+    );
+}
+
+/// The 1-based lines, outside test-gated items, where an `UPDATE entries`
+/// or `DELETE FROM entries` string literal names `slug` after its `WHERE`.
+/// The literal is read to its closing quote, so a statement split over
+/// lines with `\` is read whole, and its arguments are not. `Err(line)`
+/// when the test item opened at `line` never closes: a miscounted brace
+/// must not pass the rest of the file unread.
+fn slug_keyed_writes(content: &str) -> std::result::Result<Vec<usize>, usize> {
+    let mut out: Vec<usize> = Vec::new();
+    let mut depth = 0i32; // brace depth inside a test-gated item
+    let mut gated = None; // the line of a test cfg whose item is still open
+    let mut offset = 0usize;
+    let masked = code_only(content);
+    for (i, line) in content.split_inclusive('\n').enumerate() {
+        let start = offset;
+        offset += line.len();
+        let code = strip_line_comment(line);
+        // Attributes and braces read with literals and comments blanked: a
+        // `"{"` in a test must not keep its module open to the end of the file.
+        let bare = &masked[start..offset];
+        let t = bare.trim_start();
+        if depth == 0
+            && ["#[cfg(test)]", "#[cfg(all(test", "#[cfg(any(test"]
+                .iter()
+                .any(|g| t.starts_with(g))
+        {
+            gated = Some(i + 1);
+        }
+        if gated.is_some() {
+            for c in bare.chars() {
+                match c {
+                    '{' => depth += 1,
+                    '}' => depth -= 1,
+                    _ => {}
+                }
+                if depth <= 0 && (c == '}' || c == ';') {
+                    depth = 0;
+                    gated = None;
+                    break;
+                }
+            }
+            continue;
+        }
+        let upper = code.to_ascii_uppercase();
+        let found = ["UPDATE ENTRIES", "DELETE FROM ENTRIES"].iter().any(|n| {
+            upper.match_indices(n).any(|(at, _)| {
+                let end = at + n.len();
+                !upper[end..].starts_with(is_word)
+                    && where_names_slug(content, start + at, start + end)
+            })
+        });
+        if found {
+            out.push(i + 1);
+        }
+    }
+    match gated {
+        Some(line) => Err(line),
+        None => Ok(out),
+    }
+}
+
+/// `content` with the insides of every string and char literal, and every
+/// comment, blanked to spaces — the same length, newlines kept, so a byte
+/// offset means the same place in both.
+fn code_only(content: &str) -> String {
+    let b = content.as_bytes();
+    let mut out = b.to_vec();
+    let mut blank = |from: usize, to: usize| {
+        for c in &mut out[from..to.min(b.len())] {
+            if *c != b'\n' {
+                *c = b' ';
+            }
+        }
+    };
+    let find = |from: usize, pat: &str| content[from..].find(pat).map_or(b.len(), |k| from + k);
+    let mut i = 0;
+    while i < b.len() {
+        let end = match (b[i], b.get(i + 1)) {
+            (b'/', Some(b'/')) => find(i, "\n"),
+            (b'/', Some(b'*')) => find(i + 2, "*/") + 2,
+            (b'"', _) => {
+                let hashes = content[..i].len() - content[..i].trim_end_matches('#').len();
+                if content[..i - hashes].ends_with('r') {
+                    find(i + 1, &format!("\"{}", "#".repeat(hashes))) + 1 + hashes
+                } else {
+                    let mut j = i + 1;
+                    while j < b.len() && b[j] != b'"' {
+                        j += if b[j] == b'\\' { 2 } else { 1 };
+                    }
+                    j + 1
+                }
+            }
+            (b'\'', Some(b'\\')) => find(i + 3, "'") + 1,
+            (b'\'', _) => {
+                // `'x'` is a char; `'a` with no closing quote is a lifetime.
+                let len = content[i + 1..].chars().next().map_or(1, char::len_utf8);
+                if b.get(i + 1 + len) == Some(&b'\'') {
+                    i + 2 + len
+                } else {
+                    i + 1
+                }
+            }
+            _ => i + 1,
+        };
+        if end > i + 1 {
+            blank(i, end);
+        }
+        i = end.max(i + 1);
+    }
+    String::from_utf8(out).expect("only ASCII bytes and whole chars are replaced")
+}
+
+fn is_word(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// Whether the SQL from `from` to the end of the string literal that opens
+/// before `at` (or to its statement's `;`) names `slug` after a `WHERE`: as
+/// a column, or as the name of a `{…}` fragment a `format!` puts there.
+fn where_names_slug(content: &str, at: usize, from: usize) -> bool {
+    let rest = &content[from..];
+    // A raw string ends at `"` and its hashes, and has no escapes.
+    let open = content[..at].rfind('"').unwrap_or(0);
+    let hashes = content[..open].len() - content[..open].trim_end_matches('#').len();
+    let raw = content[..open - hashes].ends_with('r');
+    let close = format!("\"{}", "#".repeat(hashes));
+    let mut escaped = false;
+    let mut end = rest.len();
+    for (i, c) in rest.char_indices() {
+        if escaped {
+            escaped = false;
+        } else if c == '\\' && !raw {
+            escaped = true;
+        } else if c == ';' || (c == '"' && (!raw || rest[i..].starts_with(&close))) {
+            end = i;
+            break;
+        }
+    }
+    let sql = rest[..end].to_ascii_uppercase();
+    let Some(w) = sql
+        .match_indices("WHERE")
+        .map(|(i, _)| i)
+        .find(|&i| !sql[..i].ends_with(is_word) && !sql[i + 5..].starts_with(is_word))
+    else {
+        return false;
+    };
+    let clause = &sql[w..];
+    clause.split(|c: char| !is_word(c)).any(|t| t == "SLUG")
+        || clause.split('{').skip(1).any(|f| {
+            f.split('}')
+                .next()
+                .is_some_and(|name| name.contains("SLUG"))
+        })
+}
+
 /// Keeps the Rust version single-sourced. `rust-toolchain.toml` decides
 /// it; a Dockerfile's `FROM rust:<tag>` is only a cache hint, because
 /// rustup obeys the pin whatever the tag says. That is exactly what makes
@@ -728,6 +928,80 @@ fn workspace_root() -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The lines `slug_keyed_writes` refuses in `src`, as one would find them.
+    fn hits(src: &str) -> Vec<usize> {
+        slug_keyed_writes(src).expect("every test item closes")
+    }
+
+    #[test]
+    fn slug_keyed_writes_red_in_production_green_in_tests() {
+        // A planted write in a non-test function is refused, on its line.
+        let planted = "fn f(c: &Connection) {\n    \
+                       c.execute(\"UPDATE entries SET verb = ?2 WHERE slug = ?1\", p)?;\n}\n";
+        assert_eq!(hits(planted), vec![2]);
+        // A DELETE, `OR hid` beside it, and a WHERE on the literal's next line.
+        assert_eq!(
+            hits("x(\"DELETE FROM entries WHERE slug = ?1 OR hid = ?1\");\n"),
+            vec![1]
+        );
+        assert_eq!(
+            hits("x(\"UPDATE entries SET a = 1 \\\n   WHERE slug = ?1\");\n"),
+            vec![1]
+        );
+        // A `format!` fragment named for the slug (lookup.rs's set_metadata, deleted).
+        assert_eq!(
+            hits("x(&format!(\"UPDATE entries SET a = ?2 WHERE {BY_SLUG_OR_HID_SQL}\"));\n"),
+            vec![1]
+        );
+        // A raw string reads past a quoted identifier to its own end.
+        assert_eq!(
+            hits("x(r#\"UPDATE entries SET \"data\" = ?2 WHERE slug = ?1\"#);\n"),
+            vec![1]
+        );
+        // The same write in a test-gated module or fn is test code.
+        let in_tests = format!("#[cfg(test)]\nmod tests {{\n{planted}}}\n");
+        assert_eq!(hits(&in_tests), Vec::<usize>::new());
+        for cfg in [
+            "all(test, feature = \"native\")",
+            "any(test, feature = \"test-util\")",
+        ] {
+            assert_eq!(
+                hits(&format!("#[cfg({cfg})]\n{planted}")),
+                Vec::<usize>::new()
+            );
+        }
+        // ...and the test region ends with its item.
+        assert_eq!(hits(&format!("{in_tests}{planted}")), vec![8]);
+        assert_eq!(hits(&format!("#[cfg(test)]\nuse x;\n{planted}")), vec![4]);
+        // Braces in a test's literals and comments don't hold its module open.
+        let noisy = "#[cfg(test)]\nmod tests {\n    let s = (\"{\", '{', '\\'', r#\"\"{\"#); // {\n    /* { */ fn g<'a>() {}\n}\n";
+        assert_eq!(hits(&format!("{noisy}{planted}")), vec![7]);
+        // A test item whose braces never close is an error, not a pass.
+        assert_eq!(
+            slug_keyed_writes(&format!("#[cfg(test)]\nmod tests {{\n{planted}")),
+            Err(1)
+        );
+    }
+
+    #[test]
+    fn slug_keyed_writes_reads_only_the_where_of_the_literal() {
+        // Writing the slug, keyed by hid, is what the fixes do.
+        assert!(hits("x(\"UPDATE entries SET slug = ?2 WHERE hid = ?1\");\n").is_empty());
+        // The slug as an argument after the literal is not its key.
+        assert!(
+            hits("x(\"UPDATE entries SET a = ?1 WHERE hid = ?2\", params![slug, hid]);\n")
+                .is_empty()
+        );
+        // Another table, a column merely containing `slug`, a comment, and
+        // `where` inside a word before the real WHERE.
+        assert!(hits("x(\"DELETE FROM entries_fts WHERE slug = ?1\");\n").is_empty());
+        assert!(hits("x(\"UPDATE entries SET a = 1 WHERE old_slug = ?1\");\n").is_empty());
+        assert!(hits("// UPDATE entries SET a = 1 WHERE slug = ?1\n").is_empty());
+        assert!(
+            hits("x(\"UPDATE entries SET n = 'elsewhere slug' WHERE hid = ?1\");\n").is_empty()
+        );
+    }
 
     #[test]
     fn toolchain_channel_reads_only_the_pin() {

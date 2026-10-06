@@ -462,7 +462,7 @@ another command and reports green. (`scripts/check.sh` does fall back to
 
 The individual gates stay addressable by name for debugging a single
 regression: `cargo xtask check no-cfg-any`, `no-r2-stubs`,
-`no-legacy-verbs`, `max-file-size`. `scripts/check-honesty.sh` is the
+`no-legacy-verbs`, `max-file-size`, `no-slug-keyed-writes`. `scripts/check-honesty.sh` is the
 hygiene-only battery as a pre-commit hook.
 
 To run the same battery automatically on every `git push`, enable the

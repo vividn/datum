@@ -53,16 +53,16 @@ impl Db {
         Ok(())
     }
 
-    /// Hard-delete an entry by slug or hid. Returns Err(NotFound) if no rows
-    /// affected. Bypasses the soft-delete tombstone — used by tests and
-    /// admin paths that need the row physically gone.
-    pub fn delete_entry(&self, slug_or_hid: &str) -> Result<()> {
-        let affected = self.conn.execute(
-            "DELETE FROM entries WHERE slug = ?1 OR hid = ?1",
-            params![slug_or_hid],
-        )?;
+    /// Hard-delete an entry by hid — not slug, which a keep-both pair
+    /// shares. Returns Err(NotFound) if no rows affected. Bypasses the
+    /// soft-delete tombstone — used by tests and admin paths that need the
+    /// row physically gone.
+    pub fn delete_entry(&self, hid: &str) -> Result<()> {
+        let affected = self
+            .conn
+            .execute("DELETE FROM entries WHERE hid = ?1", params![hid])?;
         if affected == 0 {
-            Err(DatumError::NotFound(slug_or_hid.to_string()))
+            Err(DatumError::NotFound(hid.to_string()))
         } else {
             Ok(())
         }

@@ -10,6 +10,10 @@
 #                        references outside `migrations/` (which still
 #                        decodes them from persisted strings).
 #   * max-file-size    — gate further growth in monolithic source files.
+#   * no-slug-keyed-writes — locks in da-anmaz: no `UPDATE entries` /
+#                        `DELETE FROM entries` keyed `WHERE slug` outside
+#                        tests and `migrations/` (a keep-both pair shares
+#                        its slug, so both rows would be written).
 #   * toolchain-pin    — every Dockerfile's `FROM rust:<tag>` agrees with
 #                        rust-toolchain.toml, which is the single source for
 #                        the Rust version. A stale tag still builds (rustup

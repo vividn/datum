@@ -40,22 +40,6 @@ impl Db {
         Ok(raw.flatten().and_then(|s| serde_json::from_str(&s).ok()))
     }
 
-    /// Overwrite `extra_metadata` for a row. Pass `None` to clear it.
-    /// Errors [`DatumError::NotFound`] if no live row matches. Does NOT
-    /// touch `data`, `modify_time`, or `content_hash` — provenance is
-    /// orthogonal to identity and to user-edit semantics.
-    pub fn set_metadata(&self, slug_or_hid: &str, metadata: Option<&JsonValue>) -> Result<()> {
-        let stored = metadata.map(|v| v.to_string());
-        let affected = self.conn.execute(
-            &format!("UPDATE entries SET extra_metadata = ?2 WHERE {BY_SLUG_OR_HID_SQL}"),
-            params![slug_or_hid, stored],
-        )?;
-        if affected == 0 {
-            return Err(DatumError::NotFound(slug_or_hid.to_string()));
-        }
-        Ok(())
-    }
-
     /// Fetch a live entry by slug or hid. Tombstoned rows are hidden — use
     /// [`Db::list_including_deleted`] or [`Db::get_entry_including_deleted`]
     /// if you need to see them.

@@ -417,7 +417,7 @@ mod tests {
         assert_eq!(fetched.slug, slug);
 
         // delete
-        db.delete_entry(&slug).unwrap();
+        db.delete_entry(&entry.hid).unwrap();
         let err = db.get_entry(&slug);
         assert!(matches!(
             err,
