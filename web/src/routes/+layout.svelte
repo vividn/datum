@@ -31,7 +31,9 @@
 	import RootBar from '$lib/layout/RootBar.svelte';
 	import PlaceModal from '$lib/layout/PlaceModal.svelte';
 	import { boot as bootEngine } from '$lib/layout/engine.js';
-	import { boot as bootShell } from '$lib/layout/shell.js';
+	import { boot as bootShell, openPlace } from '$lib/layout/shell.js';
+	import { approving, joining } from '$lib/syncView.js';
+	import { get } from 'svelte/store';
 	import { currentDb, DEFAULT_DB, hueOf, INTERNAL_DB, refusedDb } from '$lib/database.js';
 	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
@@ -64,6 +66,10 @@
 		// Backup plans run while a tab is open (da-9ow8m, $lib/backups.ts).
 		schedule();
 		reloadOnceForIsolation();
+		// A join or approve link still waiting for its card (da-amhrv): the
+		// `/sync/…` route opens the place itself, but the isolation reload
+		// lands on `/` with the link held in the tab alone.
+		if (!location.pathname.startsWith('/sync/') && (get(joining) || get(approving))) void openPlace('sync');
 		return followViewport();
 	});
 

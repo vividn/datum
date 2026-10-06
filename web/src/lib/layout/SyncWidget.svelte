@@ -162,6 +162,7 @@
 	const joinHere = (j: NonNullable<typeof join>) =>
 		doing(async () => {
 			const r = await syncConnect(j.db, j.ticket);
+			joining.drop();
 			join = { ...j, done: `Joined: ${r.got} op(s) came in from ${r.label}, ${r.sent} went to it.` };
 		});
 
@@ -233,6 +234,7 @@
 			const code = await approve(c.link);
 			if (!c.db) return void (approval = { code });
 			ok(await approveInto(c.db, c.link, code));
+			approving.drop();
 			approval = {
 				done: `Approved in ${c.db}. It reaches the device that asked when it next syncs: press Enter at its prompt — nothing to paste.`
 			};

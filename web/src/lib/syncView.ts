@@ -71,11 +71,38 @@ export interface DbSync {
 	notices?: Notice[];
 }
 
+/**
+ * A link's `#` held in this tab's `sessionStorage` as well as in memory
+ * (da-amhrv): a first visit reloads once for isolation (+layout.svelte)
+ * after the route has already dropped the `#`, and the card must survive
+ * it. Never a query or a request — the tab's own storage. `drop` forgets
+ * the stored copy of a link that has been used, leaving the card shown.
+ */
+function heldInTab(key: string) {
+	let start: string | null = null;
+	try {
+		start = sessionStorage.getItem(key);
+	} catch {}
+	const store = writable(start);
+	const drop = () => {
+		try {
+			sessionStorage.removeItem(key);
+		} catch {}
+	};
+	store.subscribe((v) => {
+		try {
+			if (v === null) drop();
+			else sessionStorage.setItem(key, v);
+		} catch {}
+	});
+	return { ...store, drop };
+}
+
 /** The approve link datum.day was opened on (`/sync/approve#<record>`), until it is dealt with. */
-export const approving = writable<string | null>(null);
+export const approving = heldInTab('datum-sync-approving');
 
 /** The ticket of the join link datum.day was opened on (`/sync/join#<ticket>`, da-l9kdr), until it is dealt with. */
-export const joining = writable<string | null>(null);
+export const joining = heldInTab('datum-sync-joining');
 
 /**
  * What joining with a ticket that says `a` of itself does, in words, for

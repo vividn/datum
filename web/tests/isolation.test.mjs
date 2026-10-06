@@ -58,13 +58,13 @@ before(async () => {
 });
 after(() => new Promise((resolve) => server.close(resolve)));
 
-async function visit(options) {
+async function visit(options, where = '') {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'datum-coi-'));
 	const context = await chromium.launchPersistentContext(dir, options);
 	const page = context.pages()[0] ?? (await context.newPage());
 	let loads = 0;
 	page.on('load', () => loads++);
-	await page.goto(url, { waitUntil: 'load' });
+	await page.goto(url + where, { waitUntil: 'load' });
 	return { context, page, loads: () => loads };
 }
 
@@ -143,6 +143,46 @@ describe('cross-origin isolation from the service worker, on a host sending no h
 			await context.close();
 		}
 	});
+
+	// da-amhrv. A join or approve link opened on a browser's first visit:
+	// the route reads the `#` and drops it from the URL, and the isolation
+	// reload then wiped the in-memory ticket — no card, no error. A phone
+	// scanning the QR is almost always on its first visit. The worker is
+	// HELD until the `#` is gone, as on a real network: a worker taking
+	// control sooner reloads the link with its `#` and hides the bug.
+	const T = 'MFRGGZDFMZTWQ2LKNNWG23TPOBYXE43UOV3HO6DZPJQWEY3EMVTGO2DJNJVWY3LONZXXA4LSON2HK5TXPB4XU';
+	for (const [where, card] of [
+		[`sync/join#${T}`, '.card.join'],
+		['sync/approve#eyJ9', '.card.approve']
+	])
+		test(`/${where.split('#')[0]}#… on a first visit shows its card after the reload, until dismissed`, async () => {
+			let release;
+			held = new Promise((resolve) => (release = resolve));
+			const { context, page, loads } = await visit({}, where);
+			try {
+				await page.waitForFunction(() => location.pathname === '/' && !location.hash);
+				release();
+				held = null;
+				await page.waitForFunction(() => crossOriginIsolated);
+				await mounted(page);
+				assert.equal(loads(), 2, 'the isolation reload happened');
+				await page.locator(card).waitFor();
+
+				await page.locator(`${card} button.close`).click();
+				await page.reload({ waitUntil: 'load' });
+				await mounted(page);
+				await page.waitForTimeout(1000);
+				assert.equal(await page.locator(card).count(), 0, 'a dismissed card came back on a reload');
+
+				// Warm: an isolated page opening the link shows the card, as ever.
+				await page.goto(url + where, { waitUntil: 'load' });
+				await page.locator(card).waitFor();
+			} finally {
+				release();
+				held = null;
+				await context.close();
+			}
+		});
 
 	test('CONTROL: with service workers blocked, the page stays un-isolated', async () => {
 		const { context, page } = await visit({ serviceWorkers: 'block' });
