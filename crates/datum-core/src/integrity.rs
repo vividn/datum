@@ -737,8 +737,10 @@ pub fn file_lww_overwrite(
 /// `(field, occur_time)`, da-2fkr) during a sync apply. `superseded` is the deterministic loser as it now stands —
 /// same content, same derived slug, `superseded_by` pointing at the winner
 /// — and `kept` the row that holds the contested identity. Both rows
-/// survive; this row is what tells the user they need to decide between
-/// them (da-zlug; the merge policy itself is da-yiq9; da-uxgv replaced
+/// survive. Under one slug the entry shown is the two merged, and
+/// `superseded`'s `extra_metadata.merge` names each key they gave different
+/// values, with the value the merge took and the one it took it over
+/// (da-04glw); this row is what surfaces it (da-zlug; da-uxgv replaced
 /// parking with the pointer). Call from inside the apply transaction so the
 /// warning lands atomically with the supersession.
 pub fn file_identity_collision(

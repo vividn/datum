@@ -47,11 +47,14 @@ fn habits(db: &Path) -> Vec<Row> {
 fn undo_and_redo_of_the_winner_leave_the_loser_alone() {
     let tmp = tempfile::tempdir().unwrap();
     let db = tmp.path().join("data.db");
+    // The first log declares the field, so x and y differ in nothing y
+    // does not win: y already shows the two merged (da-04glw).
+    datum(&db, &["occur", "habit", "-t", "2026-10-03 09:00", "note=w"]);
     datum(&db, &["occur", "habit", "-t", "2026-10-04 09:00", "note=x"]);
     datum(&db, &["occur", "habit", "-t", "2026-10-04 10:00", "note=y"]);
     // The keep-both shape: y wins, x is set aside under the same slug. x is
     // the older row, so a lookup by slug finds it first.
-    let [x, y] = <[Row; 2]>::try_from(habits(&db)).unwrap();
+    let [w, x, y] = <[Row; 3]>::try_from(habits(&db)).unwrap();
     rusqlite::Connection::open(&db)
         .unwrap()
         .execute(
@@ -63,11 +66,11 @@ fn undo_and_redo_of_the_winner_leave_the_loser_alone() {
 
     datum(&db, &["undo"]);
     let after_undo = habits(&db);
-    assert_eq!(after_undo[0], x, "undo of y touched x");
-    assert_eq!(after_undo[1].0, y.0);
-    assert_eq!(after_undo[1].2, "y", "undo wrote another row's data onto y");
-    assert!(after_undo[1].3, "undo did not delete y");
+    assert_eq!(after_undo[1], x, "undo of y touched x");
+    assert_eq!(after_undo[2].0, y.0);
+    assert_eq!(after_undo[2].2, "y", "undo wrote another row's data onto y");
+    assert!(after_undo[2].3, "undo did not delete y");
 
     datum(&db, &["redo"]);
-    assert_eq!(habits(&db), vec![x, y], "redo after undo");
+    assert_eq!(habits(&db), vec![w, x, y], "redo after undo");
 }

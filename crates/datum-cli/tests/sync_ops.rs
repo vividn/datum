@@ -357,36 +357,221 @@ fn a_delete_stands_against_a_concurrent_edit() {
     }
 }
 
+/// The live entries of `field` on `copy`: what `tail` shows.
+fn live(copy: &Copy, field: &str) -> usize {
+    copy.query(
+        "SELECT COUNT(*) FROM entries WHERE field = ?1
+           AND superseded_by IS NULL AND deleted_at IS NULL",
+        field,
+    )
+    .parse()
+    .unwrap()
+}
+
+/// Two coffees with one id, logged apart on X then Y (da-04glw). Returns
+/// (X's hid, Y's hid).
+fn one_id_twice(x: &Copy, y: &Copy) -> (String, String) {
+    let at = "2026-10-04 08:00";
+    x.ok(&["occur", "coffee", "-t", at, "note=first", "a=1"]);
+    y.ok(&["occur", "coffee", "-t", at, "note=second", "b=2"]);
+    (x.hid("coffee"), y.hid("coffee"))
+}
+
 #[test]
-fn two_creates_of_one_slug_keep_both_and_supersede_one() {
-    let (a, b) = (Copy::new(), Copy::new());
-    a.ok(&[
+fn two_entries_with_one_id_merge_into_one_and_the_later_created_wins_a_clash() {
+    let (x, y) = (Copy::new(), Copy::new());
+    let (first, _) = one_id_twice(&x, &y);
+    converged(&x, &y);
+    for copy in [&x, &y] {
+        assert_eq!(live(copy, "coffee"), 1);
+        let data = copy.data(&first);
+        assert_eq!(data["a"], 1, "{data}");
+        assert_eq!(data["b"], 2, "{data}");
+        assert_eq!(data["note"], "second", "{data}");
+        let conflicts = copy.ok(&["conflicts", "list"]);
+        assert_eq!(
+            conflicts.matches("identity_collision").count(),
+            1,
+            "both copies declared `coffee`'s spec: one event twice, no warning\n{conflicts}"
+        );
+        assert!(
+            conflicts.contains(r#"data.note: "second" over "first""#),
+            "{conflicts}"
+        );
+    }
+    // The merge is settled: syncing again rewrites nothing.
+    let history = |c: &Copy| c.query("SELECT COUNT(*) FROM entry_history WHERE ?1 != ''", "x");
+    let before = (history(&x), history(&y));
+    converged(&x, &y);
+    assert_eq!((history(&x), history(&y)), before);
+}
+
+#[test]
+fn a_survivor_older_than_its_ops_names_the_clash_too() {
+    let (x, y) = (Copy::new(), Copy::new());
+    x.ok(&[
         "occur",
         "coffee",
-        "-d",
-        "2026-03-16",
         "-t",
-        "1200",
-        "cups=1",
+        "2026-10-04 08:00",
+        "note=first",
+        "a=1",
     ]);
-    b.ok(&[
+    // As a database written before ops: its coffee has none.
+    x.sql("DELETE FROM ops; DELETE FROM sync_local;");
+    y.ok(&[
         "occur",
         "coffee",
-        "-d",
-        "2026-03-16",
         "-t",
-        "1200",
-        "cups=2",
+        "2026-10-04 08:00",
+        "note=second",
+        "b=2",
     ]);
-    converged(&a, &b);
-    let conflicts = a.ok(&["conflicts"]);
-    assert!(conflicts.contains("identity_collision"), "{conflicts}");
-    // Both copies declared `coffee`'s spec: one event twice, no warning.
-    assert_eq!(
-        conflicts.matches("identity_collision").count(),
-        1,
-        "{conflicts}"
-    );
+    let first = x.hid("coffee");
+    y.send(&x);
+    converged(&x, &y);
+    for copy in [&x, &y] {
+        let data = copy.data(&first);
+        assert_eq!((&data["a"], &data["b"]), (&1.into(), &2.into()), "{data}");
+        assert_eq!(data["note"], "second", "{data}");
+        let conflicts = copy.ok(&["conflicts", "list"]);
+        assert!(
+            conflicts.contains(r#"data.note: "second" over "first""#),
+            "{conflicts}"
+        );
+    }
+}
+
+#[test]
+fn a_retimed_merged_entry_keeps_what_was_merged_into_it() {
+    let (x, y) = (Copy::new(), Copy::new());
+    let (first, _) = one_id_twice(&x, &y);
+    converged(&x, &y);
+    x.ok(&["retime", &first, "-t", "2026-10-04 09:00"]);
+    converged(&x, &y);
+    for copy in [&x, &y] {
+        assert_eq!(live(copy, "coffee"), 1);
+        let data = copy.data(&first);
+        assert_eq!((&data["a"], &data["b"]), (&1.into(), &2.into()), "{data}");
+    }
+}
+
+#[test]
+fn a_survivor_superseded_in_turn_hands_its_rows_to_the_new_one() {
+    let (x, y, z) = (Copy::new(), Copy::new(), Copy::new());
+    let at = "2026-10-04 08:00";
+    y.ok(&["occur", "coffee", "-t", at, "b=1"]);
+    x.ok(&["occur", "coffee", "-t", at, "a=1"]);
+    z.ok(&["occur", "coffee", "-t", at, "c=1"]);
+    let earliest = y.hid("coffee");
+    // x merges z's into its own, then meets y's, older than both; y meets
+    // them the other way round.
+    z.send(&x);
+    y.send(&x);
+    z.send(&y);
+    converged(&x, &y);
+    for copy in [&x, &y] {
+        assert_eq!(live(copy, "coffee"), 1);
+        let pointers = copy.query(
+            "SELECT COUNT(*) FROM entries WHERE field = 'coffee' AND superseded_by = ?1",
+            &earliest,
+        );
+        assert_eq!(pointers, "2");
+        let data = copy.data(&earliest);
+        assert_eq!(
+            (&data["a"], &data["b"], &data["c"]),
+            (&1.into(), &1.into(), &1.into())
+        );
+    }
+}
+
+#[test]
+fn an_edit_of_the_merged_in_row_shows_in_the_merged_entry() {
+    let (x, y) = (Copy::new(), Copy::new());
+    let (first, second) = one_id_twice(&x, &y);
+    y.send(&x);
+    // Y has not seen X's coffee: its own is the only one it knows.
+    y.ok(&["update", &second, "b=3"]);
+    converged(&x, &y);
+    converged(&x, &y);
+    for copy in [&x, &y] {
+        assert_eq!(live(copy, "coffee"), 1);
+        let data = copy.data(&first);
+        assert_eq!((&data["a"], &data["b"]), (&1.into(), &3.into()), "{data}");
+    }
+}
+
+#[test]
+fn an_edit_of_the_merged_entry_takes_a_key_from_the_merged_in_row() {
+    let (x, y) = (Copy::new(), Copy::new());
+    let (first, _) = one_id_twice(&x, &y);
+    converged(&x, &y);
+    x.ok(&["update", &first, "note=third", "b=4"]);
+    converged(&x, &y);
+    for copy in [&x, &y] {
+        let data = copy.data(&first);
+        assert_eq!(
+            (&data["note"], &data["b"]),
+            (&"third".into(), &4.into()),
+            "{data}"
+        );
+    }
+}
+
+#[test]
+fn deleting_the_merged_entry_leaves_nothing_to_come_back() {
+    let (x, y) = (Copy::new(), Copy::new());
+    let (first, _) = one_id_twice(&x, &y);
+    converged(&x, &y);
+    x.ok(&["delete", &first]);
+    converged(&x, &y);
+    converged(&x, &y);
+    for copy in [&x, &y] {
+        assert_eq!(live(copy, "coffee"), 0);
+        assert!(!copy.ok(&["tail"]).contains("coffee"));
+    }
+}
+
+#[test]
+fn one_event_logged_on_two_copies_is_one_entry_and_no_conflict() {
+    let (x, y) = (Copy::new(), Copy::new());
+    for copy in [&x, &y] {
+        copy.ok(&["occur", "coffee", "-t", "2026-10-04 08:00", "a=1"]);
+    }
+    converged(&x, &y);
+    for copy in [&x, &y] {
+        assert_eq!(live(copy, "coffee"), 1);
+        let conflicts = copy.ok(&["conflicts", "list"]);
+        assert!(!conflicts.contains("identity_collision"), "{conflicts}");
+    }
+}
+
+#[test]
+fn two_states_at_one_instant_under_two_ids_keep_the_earlier_and_merge_nothing() {
+    let (x, y) = (Copy::new(), Copy::new());
+    let at = "2026-10-04 08:00";
+    for (copy, state) in [(&x, "happy"), (&y, "sad")] {
+        copy.ok(&[
+            "switch",
+            "mood",
+            state,
+            "-t",
+            at,
+            "--id",
+            "%field%:%state%",
+            "n=1",
+        ]);
+    }
+    let earlier = x.hid("mood");
+    converged(&x, &y);
+    for copy in [&x, &y] {
+        assert_eq!(live(copy, "mood"), 1);
+        let state = copy.query("SELECT state FROM entries WHERE hid = ?1", &earlier);
+        assert_eq!(state, r#""happy""#);
+        let conflicts = copy.ok(&["conflicts", "list"]);
+        assert!(conflicts.contains("identity_collision"), "{conflicts}");
+        assert!(!conflicts.contains("    merged "), "{conflicts}");
+    }
 }
 
 #[test]

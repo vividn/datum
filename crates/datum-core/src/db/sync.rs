@@ -21,6 +21,9 @@
 //!   different keys both land, and because the fold reads only the SET of ops,
 //!   the same ops in any arrival order, applied any number of times, give the
 //!   same row. An op is applied from its `effect`, never by re-running `raw`.
+//!   Two entries with one slug are one entry ([`merge_rows`], da-04glw):
+//!   the earlier-created shows both, the later wins a key both have, and the
+//!   later stays superseded, the record of what was merged in.
 //! - **Conflict.** Two ops are concurrent when neither's `deps` covers the
 //!   other. Concurrent ops that give one key different values, or a delete
 //!   and a concurrent edit, file a `sync_conflict` for the loser.
@@ -724,7 +727,14 @@ pub(super) fn emit(
         (ChangeKind::UserEdit, None) => "update",
         (k, _) => k.as_str(),
     };
-    push_entry(conn, &ep, &post, kind, effect)
+    push_entry(conn, &ep, &post, kind, effect)?;
+    // An edit of a row merged into another moves the entry it shows, as the
+    // op does on every other copy. An edit of the entry shown needs nothing:
+    // its row was the merge, and is the merge with the edit.
+    match &post.superseded_by {
+        Some(s) => rederive(conn, s.as_str()),
+        None => Ok(()),
+    }
 }
 
 // ─── Apply ──────────────────────────────────────────────────────────────────
@@ -860,34 +870,194 @@ fn same_event(a: &Entry, b: &Entry) -> bool {
         && (a.lat, a.lon, &a.location) == (b.lat, b.lon, &b.location)
 }
 
-/// Write the row an entry's ops fold to. Two distinct entries claiming one
-/// identity are both kept and the later-created one is superseded
-/// (`superseded_by`) — the supersession `conflicts` already triages,
-/// decided from the rows alone so every copy reaches the same one. An
-/// `identity_collision` names the pair unless they are one event twice.
-fn write_merged(conn: &Connection, pre: Option<&Entry>, mut next: Entry) -> Result<()> {
-    next.superseded_by = pre.and_then(|p| p.superseded_by.clone());
-    if next.superseded_by.is_none() {
-        for b in blockers(conn, &next)? {
-            let (lost, kept) = if (&next.create_time, &next.hid.0) < (&b.create_time, &b.hid.0) {
-                history::record(conn, &b, ChangeKind::SyncMerge)?;
-                conn.execute(
-                    "UPDATE entries SET superseded_by = ?2 WHERE hid = ?1",
-                    params![b.hid, next.hid],
-                )?;
-                let mut lost = b.clone();
-                lost.superseded_by = Some(next.hid.clone());
-                (lost, next.clone())
-            } else if next.superseded_by.is_none() {
-                next.superseded_by = Some(b.hid.clone());
-                (next.clone(), b)
-            } else {
-                continue;
-            };
-            if !same_event(&lost, &kept) {
-                crate::integrity::file_identity_collision(conn, &lost, &kept)?;
+/// A row's content as [`diff`] names its keys, without its identity and the
+/// keys [`NOT_A_CONFLICT`] names: what two rows merged into one compare.
+fn content(r: &Map<String, Value>) -> Map<String, Value> {
+    let mut out = Map::new();
+    for (k, v) in r.iter().filter(|(_, v)| !v.is_null()) {
+        match (k.as_str(), v) {
+            ("hid" | "create_time", _) => {}
+            (k, _) if NOT_A_CONFLICT.contains(&k) => {}
+            ("data", Value::Object(d)) => {
+                out.extend(d.iter().map(|(dk, v)| (format!("data.{dk}"), v.clone())))
+            }
+            _ => {
+                out.insert(k.clone(), v.clone());
             }
         }
+    }
+    out
+}
+
+/// An entry's own row: the fold of its ops, or the row as it stands when it
+/// has none.
+fn own(conn: &Connection, e: &Entry) -> Result<Entry> {
+    let ops = ops_of(conn, e.hid.as_str())?;
+    let base = ops
+        .first()
+        .is_none_or(|o| o.effect.get("create").is_none())
+        .then_some(e);
+    let mut out = match fold(&ops, base) {
+        Some(r) => entry_from(r)?,
+        None => e.clone(),
+    };
+    out.superseded_by = e.superseded_by.clone();
+    Ok(out)
+}
+
+/// The rows merged into `s`: superseded by it, and holding or having held
+/// a slug `s` holds or held, so the merge follows a retime of either
+/// (da-yose2). A row superseded under another slug alone — one state at one
+/// instant, which an id template declared two events — is not merged.
+fn merged_into(conn: &Connection, s: &Entry) -> Result<Vec<Entry>> {
+    conn.prepare_cached(
+        "WITH held(slug) AS (SELECT ?2 UNION SELECT slug FROM ops WHERE hid = ?1 AND applied = 1)
+         SELECT * FROM entries e WHERE superseded_by = ?1
+           AND (slug IN (SELECT slug FROM held)
+             OR EXISTS (SELECT 1 FROM ops o WHERE o.hid = e.hid AND o.applied = 1
+                          AND o.slug IN (SELECT slug FROM held)))",
+    )?
+    .query_map(params![s.hid, s.slug], row_to_entry)?
+    .collect::<rusqlite::Result<_>>()
+    .map_err(DatumError::Db)
+}
+
+/// The row `s` shows with `members` merged into it (da-04glw): their
+/// creates in creation order, each over the one before — so of a key two
+/// have, the later-created row's value — then every edit of any of them in
+/// fold order, so an edit addressed to either lands. Identity stays `s`'s.
+/// It is derived from the ops alone, the same on every copy, and sent as
+/// none.
+fn merge_rows(conn: &Connection, s: &Entry, members: &[Entry]) -> Result<Entry> {
+    if members.is_empty() {
+        return Ok(s.clone());
+    }
+    let mut rows: Vec<&Entry> = std::iter::once(s).chain(members).collect();
+    rows.sort_by(|a, b| (&a.create_time, &a.hid.0).cmp(&(&b.create_time, &b.hid.0)));
+    // `s` is not always the first created (a `restore --merge` pair), so
+    // its own create is the base — the bookkeeping — and every create's
+    // content, its own included, goes over it in creation order.
+    let (mut base, mut creates, mut edits) = (None, Vec::new(), Vec::new());
+    for e in rows {
+        let ops = ops_of(conn, e.hid.as_str())?;
+        let n = ops
+            .iter()
+            .take_while(|o| o.effect.get("create").is_some())
+            .count();
+        creates.push(match n {
+            0 => row(e),
+            _ => fold(&ops[..n], None).unwrap_or_default(),
+        });
+        edits.extend(ops.into_iter().skip(n));
+        if e.hid == s.hid {
+            base = creates.last().cloned();
+        }
+    }
+    let mut shown = base;
+    for created in &creates {
+        fold_into(&mut shown, &json!({ "set": content(created) }));
+    }
+    edits.sort_by(|a, b| a.order().cmp(&b.order()));
+    for op in &edits {
+        fold_into(&mut shown, &op.effect);
+    }
+    let mut out = entry_from(shown.unwrap_or_default())?;
+    out.hid = s.hid.clone();
+    out.slug = s.slug.clone();
+    out.create_time = s.create_time;
+    out.superseded_by = None;
+    Ok(out)
+}
+
+/// Rewrite `hid`'s row to what it shows: its own fold when superseded, and
+/// otherwise with what is merged into it.
+fn rederive(conn: &Connection, hid: &str) -> Result<()> {
+    let Some(pre) = fetch_by_hid(conn, hid)? else {
+        return Ok(());
+    };
+    let own = own(conn, &pre)?;
+    let next = match pre.superseded_by {
+        Some(_) => own,
+        None => merge_rows(conn, &own, &merged_into(conn, &own)?)?,
+    };
+    if row(&pre) == row(&next) {
+        return Ok(());
+    }
+    history::record(conn, &pre, ChangeKind::SyncMerge)?;
+    apply_entry_state(conn, &next)
+}
+
+/// File the `identity_collision` for `lost`, newly superseded by `kept`,
+/// unless they are one event twice. A pair merged into one entry names, on
+/// the superseded side's `extra_metadata.merge`, each key the two gave
+/// different values: the value the merge took and the one it took it over.
+fn file_collision(conn: &Connection, lost: &str, kept: &str) -> Result<()> {
+    let (Some(l), Some(k)) = (fetch_by_hid(conn, lost)?, fetch_by_hid(conn, kept)?) else {
+        return Ok(());
+    };
+    let (mut lost, kept_own) = (own(conn, &l)?, own(conn, &k)?);
+    if same_event(&lost, &kept_own) {
+        return Ok(());
+    }
+    if lost.slug == k.slug {
+        let (a, b, shown) = (
+            content(&row(&kept_own)),
+            content(&row(&lost)),
+            content(&row(&k)),
+        );
+        let mut clash = Map::new();
+        for (key, x) in &a {
+            let Some(y) = b.get(key).filter(|y| *y != x) else {
+                continue;
+            };
+            let took = shown.get(key).cloned().unwrap_or(Value::Null);
+            let over = if &took == y { x } else { y };
+            clash.insert(key.clone(), json!({ "took": took, "over": over }));
+        }
+        if !clash.is_empty() {
+            let mut meta = lost.extra_metadata.take().unwrap_or_else(|| json!({}));
+            if let Some(m) = meta.as_object_mut() {
+                m.insert("merge".into(), Value::Object(clash));
+            }
+            lost.extra_metadata = Some(meta);
+        }
+    }
+    crate::integrity::file_identity_collision(conn, &lost, &kept_own).map(drop)
+}
+
+/// Write the row an entry's ops fold to. Two distinct entries claiming one
+/// identity decide it from the rows alone, so every copy reaches the same
+/// answer: the earlier-created keeps it and the other is superseded
+/// (`superseded_by`), with an `identity_collision` naming the pair unless
+/// they are one event twice. Under one slug the two are one entry
+/// ([`merge_rows`]); under one live state-bearing instant alone, two.
+fn write_merged(conn: &Connection, pre: Option<&Entry>, mut next: Entry) -> Result<()> {
+    next.superseded_by = pre.and_then(|p| p.superseded_by.clone());
+    let (mut pairs, mut demoted) = (Vec::new(), Vec::new());
+    if next.superseded_by.is_none() {
+        // What a row loses its identity with goes over to the row that
+        // took it, so a pair's rows point at one survivor on every copy.
+        let repoint = "UPDATE entries SET superseded_by = ?2 WHERE hid = ?1 OR superseded_by = ?1";
+        for b in blockers(conn, &next)? {
+            if (&next.create_time, &next.hid.0) < (&b.create_time, &b.hid.0) {
+                history::record(conn, &b, ChangeKind::SyncMerge)?;
+                conn.execute(repoint, params![b.hid, next.hid])?;
+                pairs.push((b.hid.0.clone(), next.hid.0.clone()));
+                demoted.push(b.hid.0);
+            } else if next.superseded_by.is_none() {
+                // A row older than its ops is signed as it stands before
+                // the merge is written over it, so its own row stays known.
+                if !has_ops(conn, &b.hid)? && !is_reader(conn, &endpoint(conn)?)? {
+                    push_entry(conn, &endpoint(conn)?, &b, "baseline", create_effect(&b))?;
+                }
+                conn.execute(repoint, params![next.hid, b.hid])?;
+                next.superseded_by = Some(b.hid.clone());
+                pairs.push((next.hid.0.clone(), b.hid.0));
+            }
+        }
+    }
+    if next.superseded_by.is_none() {
+        next = merge_rows(conn, &next, &merged_into(conn, &next)?)?;
     }
     match pre {
         Some(pre) => {
@@ -898,20 +1068,30 @@ fn write_merged(conn: &Connection, pre: Option<&Entry>, mut next: Entry) -> Resu
                 )?;
             }
             // Bookkeeping alone is no change of content, and no history.
-            if row(pre) == row(&next) {
-                return Ok(());
+            if row(pre) != row(&next) {
+                history::record(conn, pre, ChangeKind::SyncMerge)?;
+                apply_entry_state(conn, &next)?;
             }
-            history::record(conn, pre, ChangeKind::SyncMerge)?;
-            apply_entry_state(conn, &next)
         }
         None => {
             try_insert(conn, &next.slug, &next.hid, &next)?;
             if let Some(stored) = fetch_by_hid(conn, next.hid.as_str())? {
                 history::record(conn, &stored, ChangeKind::SyncMerge)?;
             }
-            Ok(())
         }
     }
+    // A demoted survivor goes back to its own row; the survivor of a row
+    // merged into it takes in what changed.
+    for hid in demoted
+        .iter()
+        .chain(next.superseded_by.as_ref().map(|h| &h.0))
+    {
+        rederive(conn, hid)?;
+    }
+    for (lost, kept) in pairs {
+        file_collision(conn, &lost, &kept)?;
+    }
+    Ok(())
 }
 
 /// Apply one op that is ready: refold its entry and write the result.

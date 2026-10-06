@@ -107,6 +107,18 @@ fn list(args: ConflictsListArgs, db: &Db) -> Result<()> {
             Some(remote) => println!("{}", side(second, remote)),
             None => println!("    {second:<10} (not recorded)"),
         }
+        // A pair merged into one entry: each key the two gave different
+        // values, and which the merge took (da-04glw).
+        if let Some(serde_json::Value::Object(clash)) =
+            w.local_entry.extra_metadata.as_ref().map(|m| &m["merge"])
+        {
+            for (key, c) in clash {
+                println!(
+                    "    {:<10} {key}: {} over {}",
+                    "merged", c["took"], c["over"]
+                );
+            }
+        }
     }
     if rows.iter().any(|w| w.is_pending()) {
         println!(

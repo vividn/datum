@@ -163,16 +163,18 @@ pub struct Entry {
     ///
     /// A superseded row is not deleted: it keeps its own naturally-derived
     /// slug, stays addressable by hid, and stays out of the live stream and
-    /// out of both UNIQUE indexes. Deleting the winner does **not** promote
-    /// it — promotion means clearing this, and is always deliberate.
+    /// out of both UNIQUE indexes. Under one slug it is merged into the
+    /// winner, which shows both rows' content (da-04glw). Deleting the
+    /// winner does **not** promote it — promotion means clearing this, and
+    /// is always deliberate.
     ///
     /// **Local, and deliberately not on the wire** (`serde(skip)`).
     /// Supersession is a pure function of the rows a device holds, so every
     /// device derives the same answer itself; shipping the pointer instead
     /// would hide a loser on a peer that has not yet received the winner it
-    /// names. It is advisory even locally: it points at the row that won at
-    /// the time, and a later merge can supersede *that* row without
-    /// repointing this one.
+    /// names. A sync that supersedes *that* row points this one at the new
+    /// winner too; elsewhere it is advisory, pointing at the row that won at
+    /// the time.
     #[serde(skip)]
     pub superseded_by: Option<Hid>,
 
