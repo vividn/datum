@@ -95,8 +95,9 @@ impl Env {
         // the binary that wrote the old shape would have.
         let db = datum_core::db::Db::open(self.db.to_str().unwrap()).unwrap();
         let slug = format!("spec:{field}");
-        let hash = db.get_entry(&slug).unwrap().expected_content_hash();
-        db.set_entry_content_hash(&slug, &hash).unwrap();
+        let spec = db.get_entry(&slug).unwrap();
+        db.set_entry_content_hash(spec.hid.as_str(), &spec.expected_content_hash())
+            .unwrap();
     }
 
     fn spec_verb(&self, field: &str) -> String {

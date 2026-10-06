@@ -198,39 +198,40 @@ impl Db {
         }
     }
 
-    /// Rewrite just the `verb` column of the row identified by `slug`.
+    /// Rewrite just the `verb` column of the row identified by `hid`.
     /// `dm check verbs --fix` (da-5ns sub-bead 7) uses this to repair
     /// drift between the stored verb and `derive_verb`. Touches no other
     /// columns and does not write a history row — verb is a derived
-    /// classifier, so a repair is not a user-visible edit. Errors
-    /// [`DatumError::NotFound`] when the slug doesn't match.
-    pub fn set_entry_verb(&self, slug: &str, verb: &str) -> Result<()> {
+    /// classifier, so a repair is not a user-visible edit. Keyed on hid,
+    /// not slug: a keep-both pair shares its slug (da-3qvnq). Errors
+    /// [`DatumError::NotFound`] when the hid doesn't match.
+    pub fn set_entry_verb(&self, hid: &str, verb: &str) -> Result<()> {
         let affected = self.conn.execute(
-            "UPDATE entries SET verb = ?2 WHERE slug = ?1",
-            params![slug, verb],
+            "UPDATE entries SET verb = ?2 WHERE hid = ?1",
+            params![hid, verb],
         )?;
         if affected == 0 {
-            return Err(DatumError::NotFound(slug.to_string()));
+            return Err(DatumError::NotFound(hid.to_string()));
         }
         Ok(())
     }
 
     /// Rewrite just the `content_hash` column of the row identified by
-    /// `slug`. `datum check --fix` (da-adyj) uses this to repair legacy
+    /// `hid`. `datum check --fix` (da-adyj) uses this to repair legacy
     /// rows whose stored hash diverges from `Entry::expected_content_hash`
     /// — typically because they were written before da-r569 fixed the
     /// canonicalization rule and never re-saved. Like [`set_entry_verb`],
     /// this is an integrity housekeeping rewrite and does not record a
     /// history row: `content_hash` is a derived dedup key, not user-
-    /// editable data. Errors [`DatumError::NotFound`] when the slug
+    /// editable data. Errors [`DatumError::NotFound`] when the hid
     /// doesn't match a row.
-    pub fn set_entry_content_hash(&self, slug: &str, content_hash: &str) -> Result<()> {
+    pub fn set_entry_content_hash(&self, hid: &str, content_hash: &str) -> Result<()> {
         let affected = self.conn.execute(
-            "UPDATE entries SET content_hash = ?2 WHERE slug = ?1",
-            params![slug, content_hash],
+            "UPDATE entries SET content_hash = ?2 WHERE hid = ?1",
+            params![hid, content_hash],
         )?;
         if affected == 0 {
-            return Err(DatumError::NotFound(slug.to_string()));
+            return Err(DatumError::NotFound(hid.to_string()));
         }
         Ok(())
     }

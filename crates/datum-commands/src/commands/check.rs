@@ -247,14 +247,22 @@ fn run_fix_pass<F>(
 /// Now we count remaining mismatches after the apply pass and print a
 /// loud diagnostic if any survived.
 fn apply_content_hash_fixes(db: &Db) -> Result<FixReport> {
-    let scan = |db: &Db| -> Result<Vec<(String, String, String)>> {
+    // (hid, slug, stored, expected): the rewrite keys on hid, since a
+    // keep-both pair shares its slug (da-3qvnq); the slug is for samples.
+    let scan = |db: &Db| -> Result<Vec<(String, String, String, String)>> {
         Ok(db
             .list_including_deleted()?
             .iter()
             .filter_map(|e| {
                 let expected = e.expected_content_hash();
-                (expected != e.content_hash)
-                    .then(|| (e.slug.to_string(), e.content_hash.clone(), expected))
+                (expected != e.content_hash).then(|| {
+                    (
+                        e.hid.to_string(),
+                        e.slug.to_string(),
+                        e.content_hash.clone(),
+                        expected,
+                    )
+                })
             })
             .collect())
     };
@@ -265,15 +273,15 @@ fn apply_content_hash_fixes(db: &Db) -> Result<FixReport> {
          expected_content_hash() may be returning different values on \
          successive reads of the same row.",
         &fixes,
-        |(slug, _, expected)| {
-            db.set_entry_content_hash(slug, expected)?;
+        |(hid, _, _, expected)| {
+            db.set_entry_content_hash(hid, expected)?;
             Ok(())
         },
         || {
             // Truncate the 64-char hashes for the sample lines.
             Ok(scan(db)?
                 .into_iter()
-                .map(|(slug, stored, expected)| {
+                .map(|(_, slug, stored, expected)| {
                     (
                         slug,
                         truncate_for_sample(&stored),
@@ -429,6 +437,7 @@ impl Report {
 /// carried only for the verify-pass sample lines (da-6xvh).
 #[derive(Debug, Clone)]
 struct VerbFix {
+    hid: String,
     slug: String,
     stored_verb: String,
     expected_verb: String,
@@ -481,6 +490,7 @@ fn collect_verb_drift(entries: &[Entry]) -> Result<VerbReport> {
                         });
                     }
                     fixes.push(VerbFix {
+                        hid: e.hid.to_string(),
                         slug: e.slug.to_string(),
                         stored_verb: stored,
                         expected_verb: expected_str,
@@ -547,7 +557,7 @@ fn apply_verb_fixes(db: &Db, fixes: &[VerbFix]) -> Result<FixReport> {
          values on successive reads of the same row.",
         fixes,
         |fix| {
-            db.set_entry_verb(&fix.slug, &fix.expected_verb)?;
+            db.set_entry_verb(&fix.hid, &fix.expected_verb)?;
             Ok(())
         },
         || {
@@ -1969,7 +1979,7 @@ mod tests {
         // wires derive_verb later); regardless, force the column to a value
         // that derive_verb would NOT produce so the test is independent of
         // sub-bead 3 status.
-        db.set_entry_verb(&slug, "block").unwrap();
+        db.set_entry_verb(entry.hid.as_str(), "block").unwrap();
 
         let report = collect_verb_drift(&all(&db)).unwrap();
         let issue = report
@@ -2006,7 +2016,7 @@ mod tests {
         let slug = entry.slug.to_string();
         db.insert_entry(&entry).unwrap();
         // Hand-corrupt: write a verb derive_verb would never produce here.
-        db.set_entry_verb(&slug, "switch").unwrap();
+        db.set_entry_verb(entry.hid.as_str(), "switch").unwrap();
 
         // Pre-fix: drift detected.
         let report = collect_verb_drift(&all(&db)).unwrap();
@@ -2049,9 +2059,8 @@ mod tests {
             None,
             "d1",
         );
-        let slug = entry.slug.to_string();
         db.insert_entry(&entry).unwrap();
-        db.set_entry_verb(&slug, "point").unwrap(); // force drift
+        db.set_entry_verb(entry.hid.as_str(), "point").unwrap(); // force drift
 
         let report = collect_verb_drift(&all(&db)).unwrap();
         // Only verb-related categories should appear.
@@ -2084,7 +2093,7 @@ mod tests {
         );
         let slug = entry.slug.to_string();
         db.insert_entry(&entry).unwrap();
-        db.set_entry_verb(&slug, "block").unwrap(); // drift
+        db.set_entry_verb(entry.hid.as_str(), "block").unwrap(); // drift
         db.soft_delete_entry(&slug).unwrap();
 
         let report = collect_verb_drift(&all(&db)).unwrap();
@@ -3243,7 +3252,7 @@ mod tests {
 
     // ─── da-6xvh: shared detect/apply/verify posture for verb + slug ─────
 
-    /// A failing per-row apply (NotFound on a stale slug) must not abort
+    /// A failing per-row apply (NotFound on a stale hid) must not abort
     /// the rest of the verb-fix batch: later rows still get repaired, and
     /// the verify re-scan counts the survivor with a sample line instead
     /// of bailing mid-repair (the pre-da-6xvh `?` posture).
@@ -3263,7 +3272,7 @@ mod tests {
             );
             let slug = entry.slug.to_string();
             db.insert_entry(&entry).unwrap();
-            db.set_entry_verb(&slug, "switch").unwrap(); // force drift
+            db.set_entry_verb(entry.hid.as_str(), "switch").unwrap(); // force drift
             slug
         };
         let slug_a = mk("alpha", 10);
@@ -3271,10 +3280,10 @@ mod tests {
 
         let mut fixes = collect_verb_drift(&all(&db)).unwrap().fixes;
         assert_eq!(fixes.len(), 2, "fixture: both rows drifted");
-        // Sabotage row A's fix: point it at a slug that doesn't exist so
+        // Sabotage row A's fix: point it at a hid that doesn't exist so
         // its apply fails with NotFound mid-batch.
         let a_fix = fixes.iter_mut().find(|f| f.slug == slug_a).unwrap();
-        a_fix.slug = "alpha:no-such-row".to_string();
+        a_fix.hid = "no-such-row".to_string();
 
         let report = apply_verb_fixes(&db, &fixes).unwrap();
         assert_eq!(report.detected, 2);
