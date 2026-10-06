@@ -158,14 +158,19 @@ pub fn set_undone(conn: &Connection, id: i64, undone: bool) -> Result<()> {
 pub fn blocker(conn: &Connection, member: &Member) -> Result<Option<(u32, ChangeKind)>> {
     let row: Option<(u32, String)> = conn
         .query_row(
-            "SELECT version, change_kind FROM entry_history
-             WHERE entry_hid = ?1 AND version > ?2
-               -- a v1 create above an untracked member (last = 0) is the
-               -- entry as the import left it, not a later change
-               AND NOT (version = 1 AND change_kind = 'create')
-               AND (change_kind IN ('sync_merge', 'sync_conflict_resolve')
-                    OR (action_id IS NULL AND change_kind NOT IN ('undo', 'redo')))
-             ORDER BY version LIMIT 1",
+            &format!(
+                "SELECT version, change_kind FROM entry_history
+                 WHERE entry_hid = ?1 AND version > ?2
+                   -- a v1 create above an untracked member (last = 0) is the
+                   -- entry as the import left it, not a later change
+                   AND NOT (version = 1 AND change_kind = '{create}')
+                   AND (change_kind IN {sync}
+                        OR (action_id IS NULL AND change_kind NOT IN {stack}))
+                 ORDER BY version LIMIT 1",
+                create = ChangeKind::Create.as_str(),
+                sync = ChangeKind::sql_list(ChangeKind::SYNC),
+                stack = ChangeKind::sql_list(ChangeKind::STACK),
+            ),
             params![member.hid.as_str(), member.last],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )

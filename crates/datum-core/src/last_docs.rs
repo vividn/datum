@@ -25,6 +25,7 @@ use rusqlite::{params, OptionalExtension};
 
 use crate::db::Db;
 use crate::error::{DatumError, Result};
+use crate::history::ChangeKind;
 use crate::ids::Hid;
 
 /// Singleton row id for the `last_docs` table.
@@ -69,11 +70,12 @@ pub fn history_mark(db: &Db) -> Result<i64> {
 /// `_LAST` names all of it (da-yyjob). Rows a sync applied are not
 /// this invocation's writes. A batch that wrote nothing leaves the pointer.
 pub fn set_last_to_batch(db: &Db, mark: i64, also: &[Hid]) -> Result<()> {
-    let mut stmt = db.conn().prepare(
+    let mut stmt = db.conn().prepare(&format!(
         "SELECT entry_hid FROM entry_history
-         WHERE rowid > ?1 AND change_kind NOT IN ('sync_merge', 'sync_conflict_resolve')
+         WHERE rowid > ?1 AND change_kind NOT IN {}
          GROUP BY entry_hid ORDER BY MIN(rowid)",
-    )?;
+        ChangeKind::sql_list(ChangeKind::SYNC)
+    ))?;
     let written = stmt
         .query_map(params![mark], |r| r.get::<_, String>(0))?
         .collect::<rusqlite::Result<Vec<_>>>()?;

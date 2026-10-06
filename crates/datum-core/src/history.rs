@@ -54,6 +54,18 @@ impl ChangeKind {
             ChangeKind::Redo => "redo",
         }
     }
+
+    /// The kinds a sync writes: rows another copy made, never a command here.
+    pub const SYNC: &[ChangeKind] = &[ChangeKind::SyncMerge, ChangeKind::SyncConflictResolve];
+    /// The kinds `undo` and `redo` write: the undo stack's own rows.
+    pub const STACK: &[ChangeKind] = &[ChangeKind::Undo, ChangeKind::Redo];
+
+    /// `kinds` as an SQL list, `('a', 'b')`, for `change_kind IN …`, so a
+    /// query names kinds through [`ChangeKind::as_str`] and never as literals.
+    pub fn sql_list(kinds: &[ChangeKind]) -> String {
+        let quoted: Vec<String> = kinds.iter().map(|k| format!("'{}'", k.as_str())).collect();
+        format!("({})", quoted.join(", "))
+    }
 }
 
 impl std::fmt::Display for ChangeKind {
@@ -281,4 +293,19 @@ fn row_to_version(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistoryVersion> {
         client_id: row.get("client_id")?,
         change_kind,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ChangeKind;
+
+    /// The lists the queries splice in, spelled the way the column stores them.
+    #[test]
+    fn sql_list_quotes_each_kind_as_stored() {
+        assert_eq!(
+            ChangeKind::sql_list(ChangeKind::SYNC),
+            "('sync_merge', 'sync_conflict_resolve')"
+        );
+        assert_eq!(ChangeKind::sql_list(ChangeKind::STACK), "('undo', 'redo')");
+    }
 }
