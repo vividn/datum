@@ -10,30 +10,38 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { sharedApp, startApp, stopApp, withApp, todayAt, TIMEZONE } from './support/app.mjs';
+import { sharedApp, startApp, stopApp, TIMEZONE } from './support/app.mjs';
 import { rowTexts, stripAnsi } from './support/tail.mjs';
-import { ONE_PANE } from './support/layout.mjs';
+import { DESKTOP, ONE_PANE } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
 
 /**
- * ONE app for the tests that never look at the page (da-6b3dj, sharedApp
- * in support/app.mjs).
+ * ONE app for the whole file (da-6b3dj, sharedApp in support/app.mjs; one
+ * boot where there were eight, da-6i7cn).
  *
  * Most of this file asks the seam a question and reads the answer back
  * through the seam, and the day frame around it is scenery that costs a
- * fortnight of `dayview` bands to draw (da-x6ea) — so `main` is opened as a
- * draft of ONE REPL pane, which is what the repl layout gave each of these
- * when it was a context each. `solo` empties the database between tests,
- * which is the isolation these need.
+ * fortnight of `dayview` bands to draw (da-x6ea) — so `onSeam` opens `main`
+ * as a draft of ONE REPL pane. The tests that DO read the page — the tail
+ * table, the two drawn panes, a widget press, the REPL — take `main` as it
+ * ships (`onPage`), and where they seeded through the quiet door they
+ * `redraw` rather than reload: a reload is a boot. `solo` empties the
+ * database between tests, which is the isolation these need; the REPL's
+ * scrollback it keeps, so a test reads its own command's entry (`answer`).
  *
- * The tests that DO read the page — the tail table, the two drawn panes, a
- * widget press — reload it, or read the REPL's scrollback from its start,
- * and keep `withApp` of their own.
+ * What the CLI computes from an argv is not asked here: the parity fixture
+ * runs the same argv against the native binary (parity.test.mjs), and the
+ * drawings' shapes are datum-cli's own tests (tests/nowview_cmd.rs).
  */
-const shared = sharedApp();
+const shared = sharedApp(DESKTOP);
 const onSeam = (fn) => shared.solo(fn, ONE_PANE);
+const onPage = (fn) => shared.solo(fn);
+
+/** The REPL entry a typed `line` made: its own output, not the scrollback's. */
+const answer = (page, line) =>
+	page.locator('.repl .entry').filter({ has: page.locator('.echo', { hasText: line }) }).first();
 
 /** Exit codes: success, the CLI's generic failure, and its duplicate. */
 const OK = 0;
@@ -42,7 +50,7 @@ const DUPLICATE = 11;
 
 describe('logging verbs', () => {
 	test('occur / start / stop / switch each land an entry the tail shows', async () => {
-		await withApp(async ({ run, entries, reload, paneTable }) => { // reloads
+		await onPage(async ({ run, entries, redraw, paneTable }) => {
 			// Distinct times, because a field's slug is its field and its
 			// occur time: `start work` and `stop work` at the same instant
 			// are one slug and the second is a duplicate.
@@ -82,10 +90,10 @@ describe('logging verbs', () => {
 			// And the tail pane is that same listing, laid out in a real
 			// table rather than in a terminal's padding — so what is
 			// compared is the cells, not the spaces between them. The
-			// panes re-run after a command the *page* ran, so reload to see
+			// panes re-run after a command the *page* ran, so redraw to see
 			// what a fresh visit shows. The pane shows the rows its height
-			// holds (da-qrc6), so the screen is tall enough for all four.
-			await reload();
+			// holds (da-qrc6), so the screen (DESKTOP) is tall enough for all four.
+			await redraw();
 			const table = await paneTable('tail');
 			// The pane shows the rows its box holds — the newest page of the
 			// listing. No table draws an `action` column at all any more
@@ -102,15 +110,6 @@ describe('logging verbs', () => {
 				[rows[0], ...rows.slice(-table.rows.length)].map(withoutAction),
 				'the pane and the REPL disagree about the same listing'
 			);
-		}, { viewport: { width: 1280, height: 900 } });
-	});
-
-	test('field-first argv means the same as verb-first', async () => {
-		await onSeam(async ({ run, entries }) => {
-			assert.equal((await run(['mood', 'switch', 'happy'])).code, OK);
-			const [stored] = await entries();
-			assert.equal(stored.field, 'mood');
-			assert.equal(stored.state, 'happy');
 		});
 	});
 
@@ -136,46 +135,11 @@ describe('logging verbs', () => {
 });
 
 describe('time and duration land on the entry', () => {
-	test('-t HHMM sets the entry to that clock time', async () => {
-		await onSeam(async ({ run, entries }) => {
-			assert.equal((await run(['occur', 'coffee', '-t', '0915'])).code, OK);
-			const [stored] = await entries();
-			// The browser context runs in UTC (see support/app.mjs), so the
-			// stored instant's UTC clock is the clock the user typed.
-			assert.match(stored.occur_time.utc, /T09:15:00/);
-		});
-	});
-
-	test('-t -N backdates by N minutes', async () => {
-		await onSeam(async ({ run, entries, clock }) => {
-			assert.equal((await run(['occur', 'coffee', '-t', '-30'])).code, OK);
-			const [stored] = await entries();
-			// Exactly: the clock is held, so NOW is a number (da-ydao).
-			assert.equal(Date.parse(stored.occur_time.utc), clock.at() - 30 * 60000);
-		});
-	});
-
-	test('a duration is stored as ISO-8601 and makes the entry a block', async () => {
+	test('no duration leaves a point entry', async () => {
 		await onSeam(async ({ run, entries }) => {
 			// Declared first: a FIRST log declares its field in its own
 			// `following_state` and is compound for that reason (da-gvcen).
-			// What is under test here is the DURATION.
-			assert.equal((await run(['spec', 'set', 'nap', '--verb', 'occur'])).code, OK);
-			assert.equal((await run(['spec', 'set', 'walk', '--verb', 'occur'])).code, OK);
-			assert.equal((await run(['occur', 'nap', 'dur=30m', '-t', '1000'])).code, OK);
-			assert.equal((await run(['occur', 'walk', 'dur=1:30', '-t', '1100'])).code, OK);
-			const stored = await entries();
-			const byField = Object.fromEntries(stored.map((e) => [e.field, e]));
-			assert.equal(byField.nap.dur, 'PT30M');
-			assert.equal(byField.walk.dur, 'PT1H30M');
-			assert.equal(byField.nap.verb, 'block');
-			assert.equal(byField.walk.verb, 'block');
-		});
-	});
-
-	test('no duration leaves a point entry', async () => {
-		await onSeam(async ({ run, entries }) => {
-			// Declared first, for the reason above: this is about MOMENT.
+			// What is under test here is MOMENT.
 			await run(['spec', 'set', 'coffee', '--verb', 'occur']);
 			await run(['occur', 'coffee', '-t', '0915']);
 			const [stored] = await entries();
@@ -239,11 +203,11 @@ describe('the teach-echo', () => {
 	});
 
 	test('a widget press echoes the argv it ran, not a reconstruction of it', async () => {
-		await withApp(async ({ run, reload, pressWidget, echoes, spyOnRunner }) => { // reloads
+		await onPage(async ({ run, redraw, pressWidget, echoes, spyOnRunner }) => {
 			// Give the bar a widget to press: a declared field gets one before
 			// its first entry.
 			assert.equal((await run(['spec', 'set', 'coffee', '--verb', 'occur'])).code, OK);
-			await reload();
+			await redraw();
 
 			const seen = await spyOnRunner();
 			await pressWidget('coffee');
@@ -252,9 +216,10 @@ describe('the teach-echo', () => {
 			assert.deepEqual(executed, ['occur', 'coffee']);
 			// The ECHO is the argv the widget asked for (da-xfa4).
 			assert.equal((await echoes()).at(-1), 'occur coffee');
-			// Pinned: the first run seen is the press only while no minute
-			// tick re-draws the strip inside the window (da-6ehq).
-		}, { clock: todayAt(12) });
+			// The first run seen is the press only while no minute tick
+			// re-draws the strip inside the window (da-6ehq): the shared
+			// app's clock is held (da-ydao), so none does.
+		});
 	});
 });
 
@@ -305,7 +270,7 @@ describe('the visual views', () => {
 		);
 
 	test('dayview draws the day as an SVG, and the pane shows it', async () => {
-		await withApp(async ({ page, run, reload, paneSvg }) => { // reloads
+		await onPage(async ({ page, run, redraw, paneSvg }) => {
 			const drawn = await run(['dayview']);
 			assert.equal(drawn.code, OK, drawn.stderr);
 			assert.equal(drawn.stderr, '');
@@ -332,7 +297,7 @@ describe('the visual views', () => {
 			// instant — and the strip asks for its bands with
 			// `--label-width 0` (da-iu9i), so the day's name is in the
 			// column the strip writes beside the picture, not in it.
-			await reload();
+			await redraw();
 			const shown = await paneSvg('dayview');
 			assert.match(shown, /^<svg[\s>]/);
 			assert.ok(!shown.includes('date-label'), 'the band still carries datum\'s date labels');
@@ -362,11 +327,11 @@ describe('the visual views', () => {
 		});
 	});
 
-	// Pinned mid-afternoon: the clock this draws is the app's own, and
-	// unpinned it is the runner's hour — so the assertion below about its
-	// SHAPE was an assertion about the machine (da-ldct).
+	// Held mid-afternoon (HELD_AT, the shared app's clock): the clock this
+	// draws is the app's own, and unpinned it is the runner's hour — so the
+	// assertion below about its SHAPE was one about the machine (da-ldct).
 	test('nowview carries the clock and the current state', async () => {
-		await withApp(async ({ run, reload, paneSvg }) => { // reloads
+		await onPage(async ({ run, redraw, paneSvg }) => {
 			assert.equal((await run(['switch', 'focus', 'deep', '-t', '-5'])).code, OK);
 
 			const drawn = await run(['nowview', '--context', '30m', '-o', '-']);
@@ -380,73 +345,8 @@ describe('the visual views', () => {
 			assert.equal(nowChunks(drawn.stdout).focus, colorOf('deep'));
 			assert.doesNotMatch(drawn.stdout, />focus: deep</, 'the state panel is back');
 
-			await reload();
+			await redraw();
 			assert.equal(nowChunks(await paneSvg('nowview')).focus, colorOf('deep'));
-		}, { clock: todayAt(15) });
-	});
-
-	// The shape of the picture, asserted in the browser the way
-	// `nowview_lanes_fill_edge_to_edge_and_carry_a_now_chunk` asserts it
-	// for the CLI: nothing is labelled but the axis, each lane tiles the
-	// history window with no gap, and a field in a state gets exactly one
-	// chunk past the now-line while an occur-only field gets none.
-	test('nowview fills each lane to the now-line and labels only the axis', async () => {
-		await onSeam(async ({ run }) => {
-			// The first switch is before the window opens, so the lane is
-			// filled from its left edge by the lead-in row alone.
-			assert.equal((await run(['switch', 'mood', 'calm', '-t', '-45'])).code, OK);
-			assert.equal((await run(['switch', 'mood', 'happy', '-t', '-20'])).code, OK);
-			assert.equal((await run(['switch', 'mood', 'sad', '-t', '-5'])).code, OK);
-			assert.equal((await run(['occur', 'coffee', '-t', '-8'])).code, OK);
-
-			const svg = (await run(['nowview', '--context', '30m', '-o', '-'])).stdout;
-
-			for (const cls of [...svg.matchAll(/<text class="([^"]*)"/g)].map((m) => m[1])) {
-				assert.ok(
-					cls === 'tick-label' || cls === 'current-time-text',
-					`nowview labelled a <text class="${cls}">: ${svg}`
-				);
-			}
-
-			const nowX = Number(/<line class="current-time-line" x1="([\d.]+)"/.exec(svg)[1]);
-			const lane = fieldRects(svg, 'mood', 'block');
-			assert.ok(lane.length >= 2, `mood switched inside the window: ${svg}`);
-			let x = 0;
-			for (const rect of lane) {
-				assert.ok(Math.abs(rect.x - x) < 1e-6, `gap before ${rect.x} (expected ${x}): ${svg}`);
-				x = rect.x + rect.w;
-			}
-			assert.ok(Math.abs(x - nowX) < 1e-6, `lane ends at ${x}, not the now-line ${nowX}`);
-
-			// One chunk, in the state it switched INTO — the lane left of
-			// the line still carries what it was.
-			const chunks = fieldRects(svg, 'mood', 'now-chunk');
-			assert.equal(chunks.length, 1);
-			assert.equal(chunks[0].fill, colorOf('sad'));
-			assert.equal(lane.at(-2).fill, colorOf('happy'));
-			// The occur-only field is in no state now, so it gets nothing.
-			assert.deepEqual(fieldRects(svg, 'coffee', 'now-chunk'), []);
-		});
-	});
-
-	// da-7q8r: the bare argv is the SNAPSHOT — each field's state as blocks,
-	// no time band — and it carries no labels. The webview asks for no
-	// `--labels`, so this is the picture every pane of it draws.
-	test('a bare nowview is the snapshot: blocks, no band, no labels', async () => {
-		await onSeam(async ({ run }) => {
-			assert.equal((await run(['switch', 'mood', 'happy', '-t', '-5'])).code, OK);
-
-			const svg = (await run(['nowview', '-o', '-'])).stdout;
-			// The state, as one chunk in its colour, and nothing of a band.
-			assert.equal(nowChunks(svg).mood, colorOf('happy'), svg);
-			for (const absent of ['class="axis"', 'class="tick"', 'tick-label', 'gridline', 'current-time-line']) {
-				assert.ok(!svg.includes(absent), `the snapshot carries ${absent}: ${svg}`);
-			}
-			assert.ok(!svg.includes('state-label'), `the snapshot carries a label: ${svg}`);
-			// `--context 0` is the same ask, spelled out.
-			const zero = (await run(['nowview', '--context', '0', '-o', '-'])).stdout;
-			assert.equal(nowChunks(zero).mood, colorOf('happy'), zero);
-			assert.ok(!zero.includes('gridline'), zero);
 		});
 	});
 
@@ -593,12 +493,12 @@ describe('spec', () => {
 		// The report this came from was of a blank REPL — so one case walks
 		// the whole way a reader does, and reads the answer back off the
 		// scrollback (da-e0m6's trap).
-		await withApp(async ({ submit, page }) => { // reads the whole scrollback
+		await onPage(async ({ submit, page }) => {
 			await submit('spec remove coffee');
-			// The rendered output blocks, not the whole pane: the echoed
+			// The rendered output blocks, not the whole entry: the echoed
 			// `❯ spec remove coffee` above them carries every word of the
-			// command, so a scrollback-wide match proves nothing.
-			const printed = (await page.locator('.repl pre').allInnerTexts()).join('\n');
+			// command, so an entry-wide match proves nothing.
+			const printed = (await answer(page, 'spec remove coffee').locator('pre').allInnerTexts()).join('\n');
 			assert.notEqual(printed.trim(), '', 'the prompt answered with nothing at all');
 			assert.match(printed, /remove/, `the answer does not name remove: ${printed}`);
 			assert.doesNotMatch(
@@ -657,17 +557,17 @@ describe('help and version', () => {
 	});
 
 	test('the REPL shows the help a user typed, not an error', async () => {
-		await withApp(async ({ page, runLine }) => { // reads the scrollback from its start
+		await onPage(async ({ page, submit, runLine }) => {
 			// Through the prompt itself: what the bead reported is what a
 			// person sees in the scrollback, and the scrollback paints
 			// stderr as an error.
-			await page.fill('.prompt-bar input', 'help');
-			await page.press('.prompt-bar input', 'Enter');
-			await page.locator('.repl pre').first().waitFor();
-			const shown = await page.locator('.repl pre').first().innerText();
+			await submit('help');
+			const entry = answer(page, 'help');
+			await entry.locator('pre').first().waitFor();
+			const shown = await entry.locator('pre').first().innerText();
 			assert.match(shown, /USAGE:/, `the REPL showed: ${shown}`);
 			assert.doesNotMatch(shown, /help requested/);
-			assert.equal(await page.locator('.repl pre.error').count(), 0);
+			assert.equal(await entry.locator('pre.error').count(), 0);
 
 			// And the seam agrees with what the pane rendered.
 			assert.equal((await runLine('help')).stdout.split('\n')[0], shown.split('\n')[0]);
@@ -681,7 +581,7 @@ describe('the tail is the CLI\'s tail', () => {
 	// only because the request says to (`RenderRequest::color`) — it has
 	// no environment and no terminal to ask.
 	test('paints the field badge, and the pane shows that colour', async () => {
-		await withApp(async ({ run, reload, paneCellColors, tailRows }) => { // reloads
+		await onPage(async ({ run, redraw, paneCellColors, tailRows }) => {
 			assert.equal((await run(['occur', 'coffee', '-t', '0700'])).code, OK);
 			assert.equal((await run(['switch', 'mood', 'happy', '-t', '0800'])).code, OK);
 			const listed = await run(['tail']);
@@ -695,7 +595,7 @@ describe('the tail is the CLI\'s tail', () => {
 			// And on screen: what the pane paints a cell is what datum painted
 			// it — read off `tail --json`'s own columns, not written down
 			// here, so the two cannot drift apart in either direction.
-			await reload();
+			await redraw();
 			const { rows, columns } = await tailRows();
 			// One row per log: each declared its own field (da-gvcen).
 			assert.deepEqual(
