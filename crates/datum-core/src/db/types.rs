@@ -330,6 +330,9 @@ pub struct ReplaceCounts {
     pub changed: usize,
     pub unchanged: usize,
     pub deleted: usize,
+    /// The live set the counts were taken from (hid, slug, content hash),
+    /// hashed: what `replace_entries`' `if_unchanged` pins.
+    pub fingerprint: u64,
 }
 
 /// What [`super::Db::hard_replace_entries`] did — or, rolled back for a

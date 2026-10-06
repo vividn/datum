@@ -72,6 +72,11 @@ pub enum DatumError {
     #[error("No previous documents to refer to — touch a document first")]
     NoLastDocsRef,
 
+    /// A replace pinned to the live set its counts were taken from
+    /// (`Db::replace_entries`' `if_unchanged`) found a different one.
+    #[error("the database changed since its fingerprint was taken")]
+    Changed,
+
     #[error("{0}")]
     Other(String),
 }

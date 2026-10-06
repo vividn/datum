@@ -18,6 +18,7 @@ use anyhow::{Context, Result};
 use datum_core::{
     db::{ConflictStrategy, Db, InsertOutcome},
     entry::{new_hid, Entry},
+    error::DatumError,
 };
 
 use crate::{
@@ -314,6 +315,9 @@ pub(crate) struct RestoreReport {
     /// run through `migrate_entry_json` before insert. Reported as `(from, to)`
     /// so dry-run output can surface the migration step that would run.
     pub migration: Option<(u32, u32)>,
+    /// A replace's fingerprint of the live set it counted (da-2zqad), for
+    /// `--if-unchanged`; `None` for a merge or a `--hard`.
+    pub fingerprint: Option<u64>,
 }
 
 impl RestoreReport {
@@ -328,7 +332,7 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
     let silent = args.show == ShowFlag::None;
     let json = args.show == ShowFlag::Json;
     let force = args.force;
-    let mode = Mode::of(&args);
+    let mut mode = Mode::of(&args);
     // A hard restore asks as `db purge` does: the database's name, typed
     // (da-rle8g).
     if mode.hard && !dry_run && !args.yes {
@@ -371,7 +375,7 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
         && args.path != STDIO_PATH
         && std::io::stdin().is_terminal()
     {
-        let preview = restore_path(
+        let preview = restore_pinned(
             &args.path,
             db,
             Mode {
@@ -380,8 +384,10 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
             },
         )?;
         confirm_deletions(&preview, &mut std::io::stdin().lock())?;
+        // The yes is to these counts: a write since refuses (da-2zqad).
+        mode.if_unchanged = preview.fingerprint;
     }
-    let report = restore_path(&args.path, db, mode)?;
+    let report = restore_pinned(&args.path, db, mode)?;
     crate::cmd::stamp_batch(db);
 
     if silent {
@@ -400,6 +406,7 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
             "updated": if report.dry_run { None } else { Some(report.updated) },
             "skipped": if report.dry_run { None } else { Some(report.skipped) },
             "deleted": if report.dry_run { None } else { Some(report.deleted) },
+            "fingerprint": report.fingerprint.map(|f| format!("{f:016x}")),
             "mode": if report.hard.is_some() { "hard" } else if report.replace { "replace" } else { "merge" },
             "dropped": report.hard.map(|h| serde_json::json!({
                 "entries": h.entries, "tombstones": h.tombstones, "history": h.history,
@@ -493,6 +500,7 @@ struct Mode {
     replace: bool,
     hard: bool,
     dry_run: bool,
+    if_unchanged: Option<u64>,
 }
 
 impl Mode {
@@ -506,6 +514,7 @@ impl Mode {
             replace: !args.merge,
             hard: args.hard,
             dry_run: args.dry_run,
+            if_unchanged: args.if_unchanged,
         }
     }
 }
@@ -513,6 +522,19 @@ impl Mode {
 #[cfg(test)]
 fn cmd_restore_with_report(args: RestoreArgs, db: &Db) -> Result<RestoreReport> {
     restore_path(&args.path, db, Mode::of(&args))
+}
+
+/// [`restore_path`], with a pin that no longer holds (`--if-unchanged`,
+/// da-2zqad) said in one line and made a question unanswered: it was asked
+/// about one database and handed another, and datum.day asks it again.
+fn restore_pinned(path: &str, db: &Db, mode: Mode) -> Result<RestoreReport> {
+    restore_path(path, db, mode).map_err(|e| match e.downcast_ref() {
+        Some(DatumError::Changed) => {
+            eprint!("db restore: the database changed since it was counted — nothing changed; count it again");
+            super::helpers::Unanswered.into()
+        }
+        _ => e,
+    })
 }
 
 fn restore_path(path: &str, db: &Db, mode: Mode) -> Result<RestoreReport> {
@@ -627,6 +649,7 @@ fn restore_from_reader<R: std::io::BufRead>(
         replace,
         hard,
         dry_run,
+        if_unchanged,
     } = mode;
     let mut report = RestoreReport {
         dry_run,
@@ -746,12 +769,15 @@ fn restore_from_reader<R: std::io::BufRead>(
         if header.is_some() || !pending.is_empty() {
             let mut inserting = Progress::new("restore: inserting", Some(pending.len()));
             let counts =
-                db.replace_entries(&pending, strategy, !dry_run, &mut |n| inserting.tick(n))?;
+                db.replace_entries(&pending, strategy, !dry_run, if_unchanged, &mut |n| {
+                    inserting.tick(n)
+                })?;
             inserting.finish(pending.len());
             report.inserted = counts.added;
             report.updated = counts.changed;
             report.skipped = counts.unchanged;
             report.deleted = counts.deleted;
+            report.fingerprint = Some(counts.fingerprint);
         }
     } else if !pending.is_empty() {
         // Same per-row semantics as insert_entry_with_strategy (history rows,
@@ -927,6 +953,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             None,
@@ -1018,6 +1045,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             None,
@@ -1058,6 +1086,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             None,
@@ -1081,6 +1110,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             None,
@@ -1150,6 +1180,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             None,
@@ -1207,6 +1238,7 @@ mod tests {
             merge: true,
             hard: false,
             yes: false,
+            if_unchanged: None,
             show: ShowFlag::Default,
         };
         cmd_restore(args, None, &dst).unwrap();
@@ -1308,6 +1340,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             &dst,
@@ -1362,6 +1395,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             &dst,
@@ -1407,6 +1441,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             &dst,
@@ -1443,6 +1478,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             &dst,
@@ -1492,6 +1528,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             &dst,
@@ -1542,6 +1579,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             &dst,
@@ -1590,6 +1628,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             None,
@@ -1611,6 +1650,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             &dst,
@@ -1661,6 +1701,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             None,
@@ -1677,6 +1718,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             &dst,
@@ -1721,6 +1763,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             &dst,
@@ -1771,6 +1814,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             &dst,
@@ -1829,6 +1873,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             &dst,
@@ -1855,6 +1900,7 @@ mod tests {
             merge: false,
             hard: false,
             yes: false,
+            if_unchanged: None,
             show: ShowFlag::Default,
         }
     }
@@ -1935,6 +1981,53 @@ mod tests {
         let real = cmd_restore_with_report(replace_args(&path, false), &db).unwrap();
         assert_eq!(counts(&dry), counts(&real));
         assert_eq!(counts(&dry), (1, 1, 1, 2));
+        std::fs::remove_file(&path).ok();
+    }
+
+    /// A yes to a dry run's counts acts on what they counted (da-2zqad):
+    /// a write between the count and the replace — another tab's — refuses
+    /// it whole, and the counts taken again, juice among them, go through.
+    #[test]
+    fn restore_if_unchanged_refuses_a_write_since_the_count() {
+        let (db, path, _, _) = diverged_from_backup();
+        let pinned = |fingerprint| RestoreArgs {
+            if_unchanged: fingerprint,
+            ..replace_args(&path, false)
+        };
+        let dry = cmd_restore_with_report(replace_args(&path, true), &db).unwrap();
+        db.insert_entry(&make_entry("juice", 600, serde_json::json!(1), None))
+            .unwrap();
+        let before = live_set(&all_entries_sorted(&db));
+        let err = cmd_restore_with_report(pinned(dry.fingerprint), &db).unwrap_err();
+        assert!(
+            matches!(err.downcast_ref(), Some(DatumError::Changed)),
+            "{err:?}"
+        );
+        assert_eq!(
+            live_set(&all_entries_sorted(&db)),
+            before,
+            "a refused replace wrote"
+        );
+        let again = cmd_restore_with_report(replace_args(&path, true), &db).unwrap();
+        assert_eq!(again.deleted, dry.deleted + 1);
+        let real = cmd_restore_with_report(pinned(again.fingerprint), &db).unwrap();
+        assert_eq!(counts(&real), counts(&again));
+        std::fs::remove_file(&path).ok();
+    }
+
+    /// A stale pin is a question unanswered (exit 12) on the TTY's preview,
+    /// a dry run, as on the run itself — not a bare error (PR #455).
+    #[test]
+    fn restore_pinned_answers_a_stale_pin_as_unanswered_dry_run_or_not() {
+        let (db, path, _, _) = diverged_from_backup();
+        for dry_run in [true, false] {
+            let mode = Mode {
+                if_unchanged: Some(0),
+                ..Mode::of(&replace_args(&path, dry_run))
+            };
+            let err = restore_pinned(path.to_str().unwrap(), &db, mode).unwrap_err();
+            assert!(err.is::<crate::commands::helpers::Unanswered>(), "{err:?}");
+        }
         std::fs::remove_file(&path).ok();
     }
 
@@ -2101,6 +2194,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             &dst,
@@ -2144,6 +2238,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: false,
+                if_unchanged: None,
                 show: ShowFlag::Default,
             },
             &dst,

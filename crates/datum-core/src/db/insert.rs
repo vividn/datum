@@ -330,25 +330,48 @@ impl Db {
     /// written as [`Self::insert_entries_batch`] writes it, `strategy` and
     /// all. With `commit` false the transaction is rolled back, so a dry
     /// run's counts are what the real run would do, by construction.
+    ///
+    /// The counts carry a fingerprint of the live set they were taken from.
+    /// With `if_unchanged` (da-2zqad) the replace goes ahead only on that
+    /// same live set, checked inside its own transaction, and is otherwise
+    /// [`DatumError::Changed`] with nothing written: a yes to a dry run's
+    /// counts acts on what they counted, never on a write since.
     pub fn replace_entries(
         &self,
         entries: &[Entry],
         strategy: ConflictStrategy,
         commit: bool,
+        if_unchanged: Option<u64>,
         on_row: &mut dyn FnMut(usize),
     ) -> Result<ReplaceCounts> {
+        use sha2::{Digest, Sha256};
         let tx = self.conn.unchecked_transaction()?;
         let keep: HashSet<&str> = entries.iter().map(|e| e.hid.0.as_str()).collect();
+        let mut hash = Sha256::new();
         let live: Vec<Hid> = tx
-            .prepare(&format!("SELECT hid FROM entries WHERE {LIVE_SQL}"))?
-            .query_map([], |row| row.get::<_, Hid>(0))?
+            .prepare(&format!(
+                "SELECT hid, slug, content_hash FROM entries WHERE {LIVE_SQL} ORDER BY hid"
+            ))?
+            .query_map([], |row| {
+                for i in 0..3 {
+                    hash.update(row.get::<_, String>(i)?);
+                    hash.update([0]);
+                }
+                row.get::<_, Hid>(0)
+            })?
             .collect::<rusqlite::Result<_>>()?;
+        let mut counts = ReplaceCounts {
+            fingerprint: u64::from_be_bytes(hash.finalize()[..8].try_into().unwrap()),
+            ..Default::default()
+        };
+        if if_unchanged.is_some_and(|f| f != counts.fingerprint) {
+            return Err(DatumError::Changed);
+        }
         let mut deleted = HashSet::new();
         for hid in live.into_iter().filter(|h| !keep.contains(h.0.as_str())) {
             soft_delete_in_tx(&tx, &hid.0, ChangeKind::UserEdit, None)?;
             deleted.insert(hid);
         }
-        let mut counts = ReplaceCounts::default();
         let mut written = Vec::new();
         for (n, entry) in entries.iter().enumerate() {
             let held = tx

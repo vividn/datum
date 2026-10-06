@@ -491,6 +491,7 @@ mod tests {
                 merge: true,
                 hard: false,
                 yes: true,
+                if_unchanged: None,
                 show: ShowFlag::None,
             };
             super::super::backup_restore::cmd_restore(args, None, &restored).unwrap();

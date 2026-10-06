@@ -127,29 +127,41 @@ function feed(argv: string[], stdin: string): Promise<RunResult> {
  * CLI's own `--dry-run` on the same bytes, and runs it `--yes` on yes
  * (da-jrbwc). One that deletes nothing and warns of nothing, `--merge`,
  * `--dry-run` and a typed `--yes` run as asked.
+ *
+ * The run is pinned to the live entries the dry run counted (da-2zqad):
+ * two tabs are two workers on one file, so another tab can write while the
+ * question is open, and an unpinned yes would delete that write uncounted.
+ * The CLI refuses a run whose database has changed since, and the page
+ * counts again and asks again, even when the first count asked nothing.
  */
 export function restore(argv: string[]): Promise<RunResult> {
 	if (['--merge', '--dry-run', '--yes', '-y'].some((a) => argv.includes(a))) return upload(argv);
 	return pick().then(async (file) => {
 		if (!file) return nothing(argv, 'no file chosen — nothing ran');
 		const backup = await file.text();
-		const seen = await feed([...argv, '--dry-run', '--json'], backup);
-		if (seen.code !== 0) return seen;
-		const { would_delete, would_insert, would_update, warnings } = JSON.parse(seen.stdout);
-		// A warning asks too, deleting or not (da-fnjku): a truncated backup into an empty db deletes nothing.
-		if (!would_delete && !warnings.length) return feed(argv, backup);
-		const text =
-			(would_delete
-				? `Restore replaces ${dbOf(argv)}: ${would_delete} entries will be deleted, ` +
-					`${would_insert} added, ${would_update} changed. Undo reverts the whole restore.`
-				: `Restore adds ${would_insert} entries and changes ${would_update}.`) +
-			// Its warnings too (da-i4rqd): a header that disagrees with the lines is known before the yes.
-			warnings.map((w: string) => ` ⚠ ${w}.`).join('');
-		if (!(await confirm(text, 'restore'))) {
-			// The CLI's own words for a no at its prompt.
-			return { argv, code: 1, stdout: '', stderr: 'db restore: aborted (nothing changed; --merge deletes nothing)' };
+		for (let moved = ''; ; moved = '⚠ The database changed since it was counted. ') {
+			const seen = await feed([...argv, '--dry-run', '--json'], backup);
+			if (seen.code !== 0) return seen;
+			const { would_delete, would_insert, would_update, warnings, fingerprint } = JSON.parse(seen.stdout);
+			const pin = fingerprint ? ['--if-unchanged', fingerprint] : [];
+			// A warning asks too, deleting or not (da-fnjku): a truncated backup into an empty db deletes nothing.
+			// So does a database that changed under a run, so a busy one never retries unattended.
+			const asks = moved || would_delete || warnings.length;
+			const text =
+				moved +
+				(would_delete
+					? `Restore replaces ${dbOf(argv)}: ${would_delete} entries will be deleted, ` +
+						`${would_insert} added, ${would_update} changed. Undo reverts the whole restore.`
+					: `Restore adds ${would_insert} entries and changes ${would_update}.`) +
+				// Its warnings too (da-i4rqd): a header that disagrees with the lines is known before the yes.
+				warnings.map((w: string) => ` ⚠ ${w}.`).join('');
+			if (asks && !(await confirm(text, 'restore'))) {
+				// The CLI's own words for a no at its prompt.
+				return { argv, code: 1, stdout: '', stderr: 'db restore: aborted (nothing changed; --merge deletes nothing)' };
+			}
+			const ran = await feed([...argv, ...(asks ? ['--yes'] : []), ...pin], backup);
+			if (ran.code !== UNANSWERED) return ran;
 		}
-		return feed([...argv, '--yes'], backup);
 	});
 }
 

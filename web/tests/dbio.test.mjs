@@ -157,6 +157,9 @@ async function choose(page, line, files) {
 	await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
 }
 
+/** Recorded argvs, a restore's pin (da-2zqad) read as `FP`: the fingerprint of the live entries it was counted on. */
+const pinned = (argvs) => argvs.map((argv) => argv.map((a, i) => (argv[i - 1] === '--if-unchanged' ? 'FP' : a)));
+
 /** `count`, typed into the REPL; the number it printed. */
 async function count(app) {
 	await app.submit('count');
@@ -461,7 +464,7 @@ test('a replacing restore confirms its deletions first; one that deletes nothing
 				});
 				window.__unhook = () => window.datum.setRunner(previous);
 			});
-			const asked = () => page.evaluate(() => window.__restores.splice(0));
+			const asked = () => page.evaluate(() => window.__restores.splice(0)).then(pinned);
 			const coffee = async (n) => {
 				for (let i = 0; i < n; i++) {
 					await app.submit('occur coffee');
@@ -497,7 +500,7 @@ test('a replacing restore confirms its deletions first; one that deletes nothing
 			await answer(page, 'restore');
 			assert.deepEqual(await asked(), [
 				['db', 'restore', '-', '--dry-run', '--json'],
-				['db', 'restore', '-', '--yes']
+				['db', 'restore', '-', '--yes', '--if-unchanged', 'FP']
 			]);
 			assert.equal(await count(app), 3);
 			await tailShows(page, 3);
@@ -507,7 +510,7 @@ test('a replacing restore confirms its deletions first; one that deletes nothing
 			assert.equal(await dialog.count(), 0);
 			assert.deepEqual(await asked(), [
 				['db', 'restore', '-', '--dry-run', '--json'],
-				['db', 'restore', '-']
+				['db', 'restore', '-', '--if-unchanged', 'FP']
 			]);
 
 			// `--merge` deletes nothing and never asks, not even a dry run.
@@ -600,6 +603,84 @@ test('an answer to the stale _LAST question acts on the entry it showed, or asks
 	});
 });
 
+// da-2zqad: the confirm counted one database and its yes acted on a later
+// one, so an entry another tab logged while the question was open was
+// deleted uncounted. The yes is now pinned to what was counted, and a
+// database that changed since is counted and asked about again.
+test('a restore’s yes deletes what its confirm counted; another tab’s write since is asked about again', async () => {
+	await desk.solo(async (app) => {
+		const { page } = app;
+		await app.declare('coffee');
+		await app.declare('tea');
+		await app.declare('juice');
+		await app.submit('occur coffee');
+		const [download] = await Promise.all([page.waitForEvent('download'), app.submit('db backup')]);
+		const saved = await download.path();
+		await app.submit('occur tea');
+
+		const [chooser] = await Promise.all([page.waitForEvent('filechooser'), type(page, 'db restore')]);
+		await chooser.setFiles(saved);
+		const dialog = page.locator('dialog.confirm');
+		await dialog.waitFor();
+		assert.match(await dialog.locator('p').innerText(), /^Restore replaces datum: 1 entries will be deleted, /);
+		const other = await app.newTab();
+		await other.submit('occur juice');
+
+		await dialog.getByRole('button', { name: 'restore', exact: true }).click();
+		await page.waitForFunction(() => /changed since/.test(document.querySelector('dialog.confirm[open] p')?.textContent ?? ''));
+		assert.match(
+			await dialog.locator('p').innerText(),
+			/^⚠ The database changed since it was counted\. Restore replaces datum: 2 entries will be deleted, /
+		);
+		assert.equal(await count(other), 6, 'the refused yes deleted nothing');
+
+		await answer(page, 'restore');
+		assert.match((await app.stdouts()).at(-1), /, 2 deleted$/);
+		assert.equal(await count(other), 4);
+		await other.page.close();
+		assert.deepEqual(app.errors, []);
+	});
+});
+
+// A refused run is always asked about (PR #455), even when its recount
+// deletes nothing and warns of nothing — else a database that keeps
+// changing under the run would be retried unattended, with no end.
+test('a restore refused by a write since its count asks, even when the recount deletes nothing', async () => {
+	await desk.solo(async (app) => {
+		const { page } = app;
+		await app.declare('coffee');
+		await app.submit('occur coffee');
+		const { hid } = JSON.parse((await app.run(['get', '_LAST', '--json'])).stdout).docs[0];
+		const [download] = await Promise.all([page.waitForEvent('download'), app.submit('db backup')]);
+		const saved = await download.path();
+		// Coffee is deleted inside the restore: after its count, before its first run.
+		await page.evaluate((hid) => {
+			const previous = window.datum.setRunner(async (argv, stdin, ...rest) => {
+				if (argv.includes('--if-unchanged') && !window.__wrote) {
+					window.__wrote = true;
+					await previous(['delete', hid]);
+				}
+				return previous(argv, stdin, ...rest);
+			});
+			window.__unhook = () => window.datum.setRunner(previous);
+		}, hid);
+
+		const [chooser] = await Promise.all([page.waitForEvent('filechooser'), type(page, 'db restore')]);
+		await chooser.setFiles(saved);
+		const dialog = page.locator('dialog.confirm');
+		await dialog.waitFor();
+		assert.equal(
+			await dialog.locator('p').innerText(),
+			'⚠ The database changed since it was counted. Restore adds 1 entries and changes 0.'
+		);
+		await answer(page, 'cancel');
+		assert.match((await app.outputs()).at(-1), /db restore: aborted/);
+		assert.equal(await count(app), 1, 'coffee stays deleted');
+		await page.evaluate(() => window.__unhook());
+		assert.deepEqual(app.errors, []);
+	});
+});
+
 // da-i4rqd: the confirm was built from the dry run's counts alone, so a
 // backup whose header disagrees with its lines was confirmed as if whole.
 test('a replacing restore names the dry run’s warnings in its confirm', async () => {
@@ -648,7 +729,7 @@ test('a restore whose dry run warns asks first, even when nothing would be delet
 				});
 				window.__unhook = () => window.datum.setRunner(previous);
 			});
-			const asked = () => page.evaluate(() => window.__restores.splice(0));
+			const asked = () => page.evaluate(() => window.__restores.splice(0)).then(pinned);
 			await app.declare('coffee');
 			await app.submit('occur coffee');
 			const [download] = await Promise.all([page.waitForEvent('download'), app.submit('db backup')]);
@@ -682,7 +763,7 @@ test('a restore whose dry run warns asks first, even when nothing would be delet
 			await answer(page, 'restore');
 			assert.deepEqual(await asked(), [
 				['db', 'restore', '-', '--dry-run', '--json'],
-				['db', 'restore', '-', '--yes']
+				['db', 'restore', '-', '--yes', '--if-unchanged', 'FP']
 			]);
 			assert.equal(await count(app), 2);
 
@@ -693,7 +774,7 @@ test('a restore whose dry run warns asks first, even when nothing would be delet
 			assert.equal(await dialog.count(), 0);
 			assert.deepEqual(await asked(), [
 				['db', 'restore', '-', '--dry-run', '--json'],
-				['db', 'restore', '-']
+				['db', 'restore', '-', '--if-unchanged', 'FP']
 			]);
 			assert.equal(await count(app), 2);
 			await page.evaluate(() => window.__unhook());

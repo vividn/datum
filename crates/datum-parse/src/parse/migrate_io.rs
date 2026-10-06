@@ -171,16 +171,36 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
     let mut merge = false;
     let mut hard = false;
     let mut yes = false;
-    for tok in tail {
-        match split_flag(tok) {
+    let mut if_unchanged = None;
+    let mut i = 0;
+    while i < tail.len() {
+        match split_flag(tail[i]) {
             FlagSplit::Positional(s) => pos.push(s),
             FlagSplit::Long("force") => force = true,
             FlagSplit::Long("dry-run") => dry_run = true,
             FlagSplit::Long("merge") => merge = true,
             FlagSplit::Long("hard") => hard = true,
             FlagSplit::Long("yes") | FlagSplit::Short('y') => yes = true,
+            FlagSplit::Long("if-unchanged") | FlagSplit::LongAttached("if-unchanged", _) => {
+                let attached = tail[i].split_once('=').map(|(_, v)| v);
+                let (v, ni) = take_value(tail, i, attached, "--if-unchanged")?;
+                if_unchanged = Some(u64::from_str_radix(v, 16).map_err(|_| {
+                    ParseError::InvalidArg(format!(
+                        "--if-unchanged takes the fingerprint `--dry-run --json` printed: {v}"
+                    ))
+                })?);
+                i = ni;
+                continue;
+            }
             f => return Err(unknown_flag(f)),
         }
+        i += 1;
+    }
+    if if_unchanged.is_some() && (merge || hard) {
+        return Err(ParseError::InvalidArg(
+            "--if-unchanged pins a replace; --merge deletes nothing and --hard drops everything"
+                .into(),
+        ));
     }
     if hard && (merge || force) {
         return Err(ParseError::InvalidArg(format!(
@@ -196,6 +216,7 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
         merge,
         hard,
         yes,
+        if_unchanged,
         show: Show::default(),
     })
 }
