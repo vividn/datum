@@ -316,7 +316,7 @@ pub(crate) struct RestoreReport {
     /// so dry-run output can surface the migration step that would run.
     pub migration: Option<(u32, u32)>,
     /// A replace's fingerprint of the live set it counted (da-2zqad), for
-    /// `--if-unchanged`; `None` for a merge or a `--hard`.
+    /// `--if-unchanged`, a `--hard`'s included (da-h3yb3); `None` for a merge.
     pub fingerprint: Option<u64>,
 }
 
@@ -344,7 +344,10 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
                 dry_run: true,
                 ..mode
             };
-            restore_path(&args.path, db, dry)?.hard.unwrap_or_default()
+            let preview = restore_pinned(&args.path, db, dry)?;
+            // The name typed is a yes to these counts too (da-h3yb3).
+            mode.if_unchanged = preview.fingerprint;
+            preview.hard.unwrap_or_default()
         } else {
             Default::default()
         };
@@ -757,9 +760,12 @@ fn restore_from_reader<R: std::io::BufRead>(
         // As a replace: a header over zero entries empties the database.
         if header.is_some() || !pending.is_empty() {
             let mut inserting = Progress::new("restore: inserting", Some(pending.len()));
-            let counts = db.hard_replace_entries(&pending, !dry_run, &mut |n| inserting.tick(n))?;
+            let counts = db.hard_replace_entries(&pending, !dry_run, if_unchanged, &mut |n| {
+                inserting.tick(n)
+            })?;
             inserting.finish(pending.len());
             report.inserted = counts.written;
+            report.fingerprint = Some(counts.fingerprint);
             report.hard = Some(counts);
         }
     } else if replace {

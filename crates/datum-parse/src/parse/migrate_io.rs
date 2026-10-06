@@ -196,10 +196,9 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
         }
         i += 1;
     }
-    if if_unchanged.is_some() && (merge || hard) {
+    if if_unchanged.is_some() && merge {
         return Err(ParseError::InvalidArg(
-            "--if-unchanged pins a replace; --merge deletes nothing and --hard drops everything"
-                .into(),
+            "--if-unchanged pins a replace; --merge deletes nothing".into(),
         ));
     }
     if hard && (merge || force) {

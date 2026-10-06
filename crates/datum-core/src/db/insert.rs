@@ -344,29 +344,13 @@ impl Db {
         if_unchanged: Option<u64>,
         on_row: &mut dyn FnMut(usize),
     ) -> Result<ReplaceCounts> {
-        use sha2::{Digest, Sha256};
         let tx = self.conn.unchecked_transaction()?;
         let keep: HashSet<&str> = entries.iter().map(|e| e.hid.0.as_str()).collect();
-        let mut hash = Sha256::new();
-        let live: Vec<Hid> = tx
-            .prepare(&format!(
-                "SELECT hid, slug, content_hash FROM entries WHERE {LIVE_SQL} ORDER BY hid"
-            ))?
-            .query_map([], |row| {
-                for i in 0..3 {
-                    hash.update(row.get::<_, String>(i)?);
-                    hash.update([0]);
-                }
-                row.get::<_, Hid>(0)
-            })?
-            .collect::<rusqlite::Result<_>>()?;
+        let (live, fingerprint) = live_fingerprint(&tx, if_unchanged)?;
         let mut counts = ReplaceCounts {
-            fingerprint: u64::from_be_bytes(hash.finalize()[..8].try_into().unwrap()),
+            fingerprint,
             ..Default::default()
         };
-        if if_unchanged.is_some_and(|f| f != counts.fingerprint) {
-            return Err(DatumError::Changed);
-        }
         let mut deleted = HashSet::new();
         for hid in live.into_iter().filter(|h| !keep.contains(h.0.as_str())) {
             soft_delete_in_tx(&tx, &hid.0, ChangeKind::UserEdit, None)?;
@@ -451,17 +435,21 @@ impl Db {
     /// from what was written, and the sync pull watermark goes back to 0,
     /// so the next pull brings what the other devices pushed back in on
     /// top. One transaction; with `commit` false it is rolled back, so a
-    /// dry run's counts are the real run's.
+    /// dry run's counts are the real run's. `if_unchanged` pins it to the
+    /// live set a dry run counted, as [`Self::replace_entries`]'s does.
     pub fn hard_replace_entries(
         &self,
         entries: &[Entry],
         commit: bool,
+        if_unchanged: Option<u64>,
         on_row: &mut dyn FnMut(usize),
     ) -> Result<HardReplaceCounts> {
         let tx = self.conn.unchecked_transaction()?;
+        let (live, fingerprint) = live_fingerprint(&tx, if_unchanged)?;
+        let live = live.len();
         let count = |sql: &str| tx.query_row(sql, [], |row| row.get::<_, usize>(0));
-        let live = count(&format!("SELECT COUNT(*) FROM entries WHERE {LIVE_SQL}"))?;
         let counts = HardReplaceCounts {
+            fingerprint,
             written: entries.len(),
             entries: live,
             tombstones: count("SELECT COUNT(*) FROM entries")? - live,
@@ -1660,6 +1648,31 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
         return Err(DatumError::NotFound(entry.hid.to_string()));
     }
     Ok(())
+}
+
+/// The live set's hids, and the set (hid, slug, content hash) hashed: the
+/// fingerprint a replace's counts carry. With `if_unchanged` a different
+/// one is [`DatumError::Changed`] (da-2zqad).
+fn live_fingerprint(conn: &Connection, if_unchanged: Option<u64>) -> Result<(Vec<Hid>, u64)> {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    let live: Vec<Hid> = conn
+        .prepare(&format!(
+            "SELECT hid, slug, content_hash FROM entries WHERE {LIVE_SQL} ORDER BY hid"
+        ))?
+        .query_map([], |row| {
+            for i in 0..3 {
+                hash.update(row.get::<_, String>(i)?);
+                hash.update([0]);
+            }
+            row.get::<_, Hid>(0)
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    let fingerprint = u64::from_be_bytes(hash.finalize()[..8].try_into().unwrap());
+    if if_unchanged.is_some_and(|f| f != fingerprint) {
+        return Err(DatumError::Changed);
+    }
+    Ok((live, fingerprint))
 }
 
 #[cfg(test)]

@@ -345,6 +345,8 @@ pub struct HardReplaceCounts {
     pub entries: usize,
     pub tombstones: usize,
     pub history: usize,
+    /// The live set it dropped, as [`ReplaceCounts::fingerprint`].
+    pub fingerprint: u64,
 }
 
 /// Report returned from [`super::Db::save_field_spec_with_report`] describing

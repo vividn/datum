@@ -783,6 +783,44 @@ test('a restore whose dry run warns asks first, even when nothing would be delet
 	);
 });
 
+// da-h3yb3: a hard restore's name was typed to its dry run's counts, but
+// its run was not pinned to them, so another tab's write while the dialog
+// was open was dropped uncounted. Now it is refused, counted and asked again.
+test('a hard restore’s name drops what its confirm counted; another tab’s write since is asked about again', async () => {
+	await desk.solo(async (app) => {
+		const { page } = app;
+		await app.declare('coffee');
+		await app.declare('juice');
+		await app.submit('occur coffee');
+		const [download] = await Promise.all([page.waitForEvent('download'), app.submit('db backup')]);
+		const saved = await download.path();
+
+		const [chooser] = await Promise.all([page.waitForEvent('filechooser'), type(page, 'db restore --hard')]);
+		await chooser.setFiles(saved);
+		const dialog = page.locator('dialog.confirm');
+		await dialog.waitFor();
+		const live = async () => Number((await dialog.locator('p').innerText()).match(/dropped: (\d+) live/)?.[1]);
+		const counted = await live();
+		const other = await app.newTab();
+		await other.submit('occur juice');
+		const name = dialog.locator('input');
+		await name.fill('datum');
+		await name.press('Enter');
+		await page.waitForFunction(() => /changed since/.test(document.querySelector('dialog.confirm[open] p')?.textContent ?? ''));
+		assert.match(await dialog.locator('p').innerText(), /^⚠ The database changed since it was counted\. This replaces ALL data in datum /);
+		assert.equal(await live(), counted + 1, 'the recount counts the juice');
+		assert.equal(await count(other), 4, 'the refused name dropped nothing');
+
+		await name.fill('datum');
+		await name.press('Enter');
+		await page.waitForFunction(() => !document.querySelector('dialog.confirm[open]'));
+		await page.waitForFunction(() => /cannot be undone/.test(document.querySelector('.repl')?.textContent ?? ''));
+		assert.equal(await count(other), 3);
+		await other.page.close();
+		assert.deepEqual(app.errors, []);
+	});
+});
+
 // da-qq7gb: a typed `--hard` went through the replace confirm, which knew
 // nothing of it — clean, it asked nothing and the CLI refused on no TTY;
 // warned, it said «adds N entries» and its yes dropped everything; and a
@@ -804,7 +842,7 @@ test('a hard restore asks with what it drops and the database’s name, even wit
 			await app.declare('coffee');
 			await app.submit('occur coffee');
 			const [download] = await Promise.all([page.waitForEvent('download'), app.submit('db backup')]);
-			const saved = await download.path();
+			let saved = await download.path();
 			await app.clock.forward(1000);
 			await app.submit('occur coffee');
 			assert.equal(await count(app), 3);
@@ -841,6 +879,20 @@ test('a hard restore asks with what it drops and the database’s name, even wit
 			await name.press('Enter');
 			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
 			assert.match((await app.stdouts()).at(-1), /cannot be undone/);
+			assert.deepEqual(pinned(await asked()), [
+				['db', 'restore', '--hard', '-', '--dry-run', '--json'],
+				['db', 'restore', '--hard', '-', '--yes', '--if-unchanged', 'FP']
+			]);
+			assert.equal(await count(app), 2);
+
+			// An empty file has no fingerprint to pin (kimi-k3 on #458): it runs, unpinned, as the no-op it is.
+			saved = join(await mkdtemp(join(tmpdir(), 'datum-')), 'empty.jsonl');
+			await writeFile(saved, '');
+			await restoreHard('db restore --hard');
+			before = await echoes(page);
+			await name.fill('datum');
+			await name.press('Enter');
+			await page.waitForFunction((n) => document.querySelectorAll('.repl .echo').length > n, before);
 			assert.deepEqual(await asked(), [
 				['db', 'restore', '--hard', '-', '--dry-run', '--json'],
 				['db', 'restore', '--hard', '-', '--yes']

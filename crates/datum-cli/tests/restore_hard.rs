@@ -205,3 +205,48 @@ fn hard_refuses_merge_and_force_by_name() {
         assert!(err.contains("--hard") && err.contains(flag), "{err}");
     }
 }
+
+/// A yes to a hard dry run's counts drops what they counted (da-h3yb3): a
+/// write since — another tab's — refuses the run whole (exit 12, nothing
+/// changed), and the fingerprint taken again goes through.
+#[test]
+fn hard_if_unchanged_refuses_a_write_since_the_count() {
+    let env = Env::new();
+    let backup = env.backed_up_then_changed();
+    let fingerprint = |env: &Env| {
+        let out = env.ok(
+            &["db", "restore", "--hard", "--dry-run", "--json", "-"],
+            backup.as_bytes(),
+        );
+        let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+        out["fingerprint"].as_str().unwrap().to_string()
+    };
+    let counted = fingerprint(&env);
+    env.ok(&["occur", "tea"], b"");
+    let before = (env.rows(), env.count(HISTORY));
+
+    let hard = |fp: &str| {
+        env.run(
+            &[
+                "db",
+                "restore",
+                "--hard",
+                "--yes",
+                "--if-unchanged",
+                fp,
+                "-",
+            ],
+            backup.as_bytes(),
+        )
+    };
+    let out = hard(&counted);
+    assert_eq!(out.status.code(), Some(12), "{out:?}");
+    assert_eq!(
+        (env.rows(), env.count(HISTORY)),
+        before,
+        "a refused run wrote"
+    );
+
+    assert!(hard(&fingerprint(&env)).status.success());
+    assert_eq!(env.rows(), backup_rows(&backup));
+}

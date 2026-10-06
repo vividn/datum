@@ -174,27 +174,37 @@ export function restore(argv: string[]): Promise<RunResult> {
  * database's name (da-qq7gb): the CLI's TTY prompt, as `purge` gets. It
  * cannot be undone, so a typed `--yes` is dropped, as `kit`'s is — the
  * CLI's refusal on no TTY points at it, and the yes reached nobody.
+ *
+ * The run is pinned to the live entries the dry run counted, as
+ * `restore`'s is (da-h3yb3): a write from another tab since refuses it,
+ * and the page counts again and asks again.
  */
 function hard(argv: string[]): Promise<RunResult> {
 	argv = argv.filter((a) => a !== '--yes' && a !== '-y');
 	return pick().then(async (file) => {
 		if (!file) return nothing(argv, 'no file chosen — nothing ran');
 		const backup = await file.text();
-		const seen = await feed([...argv, '--dry-run', '--json'], backup);
-		if (seen.code !== 0) return seen;
-		const { would_insert, dropped, warnings } = JSON.parse(seen.stdout);
-		const { entries = 0, tombstones = 0, history = 0 } = dropped ?? {};
 		const db = dbOf(argv);
-		const text =
-			`This replaces ALL data in ${db} with the backup (${would_insert} written); dropped: ` +
-			`${entries} live, ${tombstones} tombstoned or superseded, ${history} in history. ` +
-			'It cannot be undone: the history `undo` reads goes with it.' +
-			warnings.map((w: string) => ` ⚠ ${w}.`).join('');
-		if (!(await confirm(text, 'restore --hard', db))) {
-			// The CLI's own words for a mismatch at its prompt.
-			return { argv, code: 1, stdout: '', stderr: `db restore --hard: aborted (input did not match ${db})` };
+		for (let moved = ''; ; moved = '⚠ The database changed since it was counted. ') {
+			const seen = await feed([...argv, '--dry-run', '--json'], backup);
+			if (seen.code !== 0) return seen;
+			const { would_insert, dropped, warnings, fingerprint } = JSON.parse(seen.stdout);
+			// An empty file is a backup of nothing, and replaces nothing: no fingerprint.
+			const pin = fingerprint ? ['--if-unchanged', fingerprint] : [];
+			const { entries = 0, tombstones = 0, history = 0 } = dropped ?? {};
+			const text =
+				moved +
+				`This replaces ALL data in ${db} with the backup (${would_insert} written); dropped: ` +
+				`${entries} live, ${tombstones} tombstoned or superseded, ${history} in history. ` +
+				'It cannot be undone: the history `undo` reads goes with it.' +
+				warnings.map((w: string) => ` ⚠ ${w}.`).join('');
+			if (!(await confirm(text, 'restore --hard', db))) {
+				// The CLI's own words for a mismatch at its prompt.
+				return { argv, code: 1, stdout: '', stderr: `db restore --hard: aborted (input did not match ${db})` };
+			}
+			const ran = await feed([...argv, '--yes', ...pin], backup);
+			if (ran.code !== UNANSWERED) return ran;
 		}
-		return feed([...argv, '--yes'], backup);
 	});
 }
 

@@ -1245,7 +1245,8 @@ pub struct RestoreArgs {
     pub yes: bool,
     /// `--if-unchanged FP` (da-2zqad) — replace only if the live entries
     /// are still the ones a `--dry-run --json` fingerprinted as `FP`, so a
-    /// yes to its counts deletes what they counted and no more.
+    /// yes to its counts deletes what they counted and no more — a
+    /// `--hard`'s drops included (da-h3yb3).
     pub if_unchanged: Option<u64>,
     /// The output level the shared layer swept out of argv (da-qt6z).
     /// `--json` is the value `json`; `Show::None` prints nothing.
