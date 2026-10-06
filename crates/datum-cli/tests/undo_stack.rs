@@ -126,3 +126,44 @@ fn undo_last_after_a_get_reverts_what_it_showed() {
     run_cli(&["undo", "_LAST"], &db).unwrap();
     assert_eq!(live(&db), ["b"]);
 }
+
+/// da-pxsa8 — a stack step is one transaction. A member that fails part-way
+/// leaves every member, and the cursor, where they were: nothing half-moved,
+/// and the same `undo` / `redo` goes through once the failure is gone.
+#[test]
+fn a_step_that_fails_part_way_moves_nothing() {
+    let db = fresh_db();
+    run_cli(&["occur", "alpha", "-t", "10:00"], &db).unwrap();
+    run_cli(&["occur", "beta", "-t", "11:00"], &db).unwrap();
+    let (a, b) = (hid_of(&db, "alpha"), hid_of(&db, "beta"));
+    let time = |hid: &str| db.get_entry(hid).unwrap().occur_time.unwrap().utc;
+    let before = (time(&a), time(&b));
+    run_cli(&["retime", &format!("{a},{b}"), "-5"], &db).unwrap();
+    let after = (time(&a), time(&b));
+
+    // Whichever member the step reaches second refuses to be written.
+    let jam = |hid: &str| {
+        db.conn()
+            .execute_batch(&format!(
+                "CREATE TRIGGER jam BEFORE UPDATE ON entries WHEN OLD.hid = '{hid}'
+                 BEGIN SELECT RAISE(ABORT, 'jammed'); END;"
+            ))
+            .unwrap()
+    };
+    let unjam = || db.conn().execute_batch("DROP TRIGGER jam").unwrap();
+    for jammed in [&a, &b] {
+        for (verb, still, moved) in [("undo", after, before), ("redo", before, after)] {
+            jam(jammed);
+            let err = run_cli(&[verb], &db).unwrap_err();
+            assert!(format!("{err:#}").contains("jammed"), "{err:#}");
+            assert_eq!((time(&a), time(&b)), still, "a failed {verb} moves nothing");
+            unjam();
+            run_cli(&[verb], &db).unwrap();
+            assert_eq!(
+                (time(&a), time(&b)),
+                moved,
+                "and the cursor stayed: the same {verb} goes through"
+            );
+        }
+    }
+}

@@ -133,50 +133,63 @@ impl Db {
         kind: ChangeKind,
     ) -> Result<Entry> {
         let tx = self.conn.unchecked_transaction()?;
-
-        // Resolve the current row (live or tombstoned) to pin down the hid.
-        let current: Entry = tx
-            .query_row(
-                "SELECT * FROM entries WHERE slug = ?1 OR hid = ?1 LIMIT 1",
-                params![hid_or_slug],
-                row_to_entry,
-            )
-            .optional()?
-            .ok_or_else(|| DatumError::NotFound(hid_or_slug.to_string()))?;
-
-        // Resolve the target state. State at version 1 = v1.snapshot;
-        // state at version N>1 = v(N+1).snapshot if recorded, else the
-        // current live row when N is the latest version.
-        let target_state =
-            history::state_at_version(&tx, &current.hid, target_version, Some(&current))?
-                .ok_or_else(|| {
-                    DatumError::NotFound(format!(
-                        "version {target_version} for entry {}",
-                        current.hid
-                    ))
-                })?;
-
-        // Record the pre-revert state as the new history row, tagged with the
-        // step that is about to happen.
-        history::record(&tx, &current, kind)?;
-
-        // Apply the target state to the live entries row. This covers
-        // unchanged-slug updates as well as flipping `deleted_at` back and
-        // forth — the snapshot drives every mutable column, including the
-        // tombstone.
-        apply_entry_state(&tx, &target_state)?;
-        super::sync::emit(&tx, Some(&current), &current.hid, kind)?;
-
-        let restored = fetch_entry_any(&tx, &target_state.hid)?;
+        let restored = revert_in_tx(&tx, hid_or_slug, target_version, kind)?;
         tx.commit()?;
         Ok(restored)
     }
 }
 
+/// Transaction-free body of [`Db::revert_entry_to_as`]: reverts inside
+/// whatever transaction `conn` already has open, so a bare `undo` / `redo`
+/// moves every entry of one stack step in one commit (da-pxsa8).
+pub fn revert_in_tx(
+    conn: &Connection,
+    hid_or_slug: &str,
+    target_version: u32,
+    kind: ChangeKind,
+) -> Result<Entry> {
+    // Resolve the current row (live or tombstoned) to pin down the hid.
+    let current: Entry = conn
+        .query_row(
+            "SELECT * FROM entries WHERE slug = ?1 OR hid = ?1 LIMIT 1",
+            params![hid_or_slug],
+            row_to_entry,
+        )
+        .optional()?
+        .ok_or_else(|| DatumError::NotFound(hid_or_slug.to_string()))?;
+
+    // Resolve the target state. State at version 1 = v1.snapshot;
+    // state at version N>1 = v(N+1).snapshot if recorded, else the
+    // current live row when N is the latest version.
+    let target_state =
+        history::state_at_version(conn, &current.hid, target_version, Some(&current))?.ok_or_else(
+            || {
+                DatumError::NotFound(format!(
+                    "version {target_version} for entry {}",
+                    current.hid
+                ))
+            },
+        )?;
+
+    // Record the pre-revert state as the new history row, tagged with the
+    // step that is about to happen.
+    history::record(conn, &current, kind)?;
+
+    // Apply the target state to the live entries row. This covers
+    // unchanged-slug updates as well as flipping `deleted_at` back and
+    // forth — the snapshot drives every mutable column, including the
+    // tombstone.
+    apply_entry_state(conn, &target_state)?;
+    super::sync::emit(conn, Some(&current), &current.hid, kind)?;
+
+    fetch_entry_any(conn, &target_state.hid)
+}
+
 /// Transaction-free body of [`Db::soft_delete_entry_as`]: tombstones inside
 /// whatever transaction `conn` already has open, so a replace restore
-/// (`Db::replace_entries`) deletes in the same commit as it writes.
-pub(super) fn soft_delete_in_tx(
+/// (`Db::replace_entries`) deletes in the same commit as it writes, and a
+/// stack step in the same commit as the rest of the step.
+pub fn soft_delete_in_tx(
     conn: &Connection,
     slug_or_hid: &str,
     kind: ChangeKind,

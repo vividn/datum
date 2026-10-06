@@ -21,7 +21,7 @@
 
 use anyhow::{Context, Result};
 use datum_core::{
-    db::Db,
+    db::{revert_in_tx, soft_delete_in_tx, Db},
     entry::Entry,
     error::DatumError,
     field_spec::SpecRegistry,
@@ -93,6 +93,9 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
 fn undo_stack(db: &Db, registry: &Option<SpecRegistry>, output: &OutputArgs) -> Result<()> {
     let action = undo_log::cursor(db.conn())?
         .context("Nothing to undo — no command has changed anything here yet")?;
+    // One step, one transaction (da-pxsa8): every member moves and the
+    // cursor with them, or a failure part-way rolls all of it back.
+    let tx = db.conn().unchecked_transaction()?;
     refuse_if_moved(db, &action, "undo")?;
     warn_if_stale("undoing a change", action.time);
     let mut steps: Vec<(Entry, Entry)> = Vec::new();
@@ -101,17 +104,18 @@ fn undo_stack(db: &Db, registry: &Option<SpecRegistry>, output: &OutputArgs) -> 
             continue;
         };
         let after = if member.first > 1 {
-            db.revert_entry_to_as(&member.hid, member.first - 1, ChangeKind::Undo)?
+            revert_in_tx(&tx, &member.hid, member.first - 1, ChangeKind::Undo)?
         } else if current.deleted_at.is_none() {
             // The action created it: before it, there was nothing.
-            db.soft_delete_entry_as(&member.hid, ChangeKind::Undo)?;
+            soft_delete_in_tx(&tx, &member.hid, ChangeKind::Undo, None)?;
             db.get_entry_including_deleted(&member.hid)?
         } else {
             continue;
         };
         steps.push((current, after));
     }
-    undo_log::set_undone(db.conn(), action.id, true)?;
+    undo_log::set_undone(&tx, action.id, true)?;
+    tx.commit()?;
     finish_stack(db, &steps, "undo", registry, output)
 }
 
@@ -128,6 +132,9 @@ fn redo_stack(
     if dry_run {
         return Ok(());
     }
+    // One step, one transaction (da-pxsa8): every member moves and the
+    // cursor with them, or a failure part-way rolls all of it back.
+    let tx = db.conn().unchecked_transaction()?;
     refuse_if_moved(db, &action, "redo")?;
     warn_if_stale("redoing a change", action.time);
     let mut steps: Vec<(Entry, Entry)> = Vec::new();
@@ -136,10 +143,11 @@ fn redo_stack(
             continue;
         };
         // An untracked member's state as the action left it is its version 1.
-        let after = db.revert_entry_to_as(&member.hid, member.last.max(1), ChangeKind::Redo)?;
+        let after = revert_in_tx(&tx, &member.hid, member.last.max(1), ChangeKind::Redo)?;
         steps.push((current, after));
     }
-    undo_log::set_undone(db.conn(), action.id, false)?;
+    undo_log::set_undone(&tx, action.id, false)?;
+    tx.commit()?;
     finish_stack(db, &steps, "redo", registry, output)
 }
 
