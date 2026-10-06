@@ -522,6 +522,40 @@ test('a replacing restore confirms its deletions first; one that deletes nothing
 	);
 });
 
+// da-f5pg2: the page gave `retime` an empty stdin, which took the CLI's
+// yes-default — a 16-minute-old coffee retimed without a word. Now the
+// CLI's own question is a confirm, and only a yes retimes.
+test('a stale _LAST question is asked in a confirm, in the CLI’s words, and only a yes retimes', async () => {
+	await desk.solo(async (app) => {
+		const { page } = app;
+		await app.declare('coffee');
+		await app.submit('occur coffee');
+		const { hid } = JSON.parse((await app.run(['get', '_LAST', '--json'])).stdout).docs[0];
+		const id = async () => JSON.parse((await app.run(['get', hid, '--json'])).stdout).docs[0].id;
+		const before = await id();
+		await app.clock.forward(16 * 60 * 1000);
+
+		await type(page, 'retime -t +5');
+		const dialog = page.locator('dialog.confirm');
+		await dialog.waitFor();
+		assert.match(
+			await dialog.locator('p').innerText(),
+			/^⚠ default `_LAST` is older than 15 minutes — showing target:\n.*\n.*coffee.*\nRetime this entry\? \[Y\/n\]$/
+		);
+		await answer(page, 'cancel');
+		assert.match((await app.stdouts()).at(-1), /Aborted\.$/);
+		assert.equal(await id(), before, 'no leaves the entry where it was');
+
+		// `get` points `_LAST` at what it read, so it is fresh again.
+		await app.clock.forward(16 * 60 * 1000);
+		await type(page, 'retime -t +5');
+		await dialog.waitFor();
+		await answer(page, 'retime');
+		assert.notEqual(await id(), before, 'yes retimes it');
+		assert.deepEqual(app.errors, []);
+	});
+});
+
 // da-i4rqd: the confirm was built from the dry run's counts alone, so a
 // backup whose header disagrees with its lines was confirmed as if whole.
 test('a replacing restore names the dry run’s warnings in its confirm', async () => {

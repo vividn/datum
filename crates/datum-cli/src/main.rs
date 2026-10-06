@@ -20,6 +20,12 @@ const EXIT_DUPLICATE: i32 = 11;
 /// 128 + SIGPIPE, what a shell reports for any unix tool killed that way.
 const EXIT_BROKEN_PIPE: i32 = 141;
 
+/// Exit code when a question went unanswered (da-f5pg2): stdin ended under
+/// `DATUM_NO_DEFAULT_ANSWER=1`, so the default was not taken. The question is
+/// already on stderr; datum.day shows it and runs the line again with the
+/// answer on stdin.
+const EXIT_UNANSWERED: i32 = 12;
+
 fn main() {
     // Rust ignores SIGPIPE, so a closed stdout makes `println!` panic and the
     // process exits 101 with a panic message (da-9p3o). End quietly instead,
@@ -43,6 +49,13 @@ fn main() {
             if datum_cli::args::took_duplicate_noop() {
                 std::process::exit(EXIT_DUPLICATE);
             }
+        }
+        Err(e)
+            if e.chain()
+                .any(|c| c.is::<datum_commands::commands::helpers::Unanswered>()) =>
+        {
+            eprintln!();
+            std::process::exit(EXIT_UNANSWERED);
         }
         Err(e) => {
             // Mirror anyhow's default `main`: print the full error chain.

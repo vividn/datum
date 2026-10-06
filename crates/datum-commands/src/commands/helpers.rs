@@ -443,11 +443,32 @@ pub(crate) fn confirm_default_last_if_stale_with_io<R: std::io::BufRead>(
         let _ = stderr.flush();
     }
     let mut line = String::new();
-    let _ = stdin.read_line(&mut line);
+    // A stdin that ends before a line is no answer where the host says so
+    // (da-f5pg2): datum.day cannot answer on stdin, so it asks the person
+    // in a dialog and runs the line again with their answer.
+    if stdin.read_line(&mut line).unwrap_or(0) == 0
+        && std::env::var("DATUM_NO_DEFAULT_ANSWER").is_ok_and(|v| v == "1")
+    {
+        return Err(Unanswered.into());
+    }
     // Yes-default: empty input OR y/yes proceeds. Anything else aborts.
     let answer = line.trim().to_lowercase();
     Ok(answer.is_empty() || matches!(answer.as_str(), "y" | "yes"))
 }
+
+/// A question went unanswered: stdin ended under `DATUM_NO_DEFAULT_ANSWER=1`
+/// (da-f5pg2). The question is already on stderr; `datum` exits with its own
+/// code for this and says nothing more.
+#[derive(Debug)]
+pub struct Unanswered;
+
+impl std::fmt::Display for Unanswered {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("no answer on stdin")
+    }
+}
+
+impl std::error::Error for Unanswered {}
 
 // ─── Stored alias-chain replay (shared by `reparse` + `why`) ─────────────
 

@@ -61,10 +61,16 @@ impl Env {
     /// for interactive prompts ([Y/n]) the in-process harnesses cannot
     /// drive (a closed stdin reads as the yes-default, not a decline).
     fn run_with_stdin(&self, args: &[&str], input: &str) -> Output {
+        self.run_with_stdin_env(args, input, &[])
+    }
+
+    /// [`Env::run_with_stdin`] with extra environment variables.
+    fn run_with_stdin_env(&self, args: &[&str], input: &str, vars: &[(&str, &str)]) -> Output {
         use std::io::Write;
         use std::process::Stdio;
         let bin = env!("CARGO_BIN_EXE_datum");
         let mut child = Command::new(bin)
+            .envs(vars.iter().copied())
             .env("DATUM_DB", &self.db)
             .env("DATUM_HOME", &self.home)
             .env("DATUM_CONFIG_HOME", &self.config_home)
@@ -1224,4 +1230,56 @@ fn subprocess_backup_rotation_indexes_the_db_it_backed_up() {
         "--json",
     ]);
     assert_eq!(restored["inserted"], 2);
+}
+
+/// da-f5pg2: under `DATUM_NO_DEFAULT_ANSWER=1` a stale-`_LAST` question that
+/// meets the end of stdin is no answer — `retime` exits 12 with the question
+/// on stderr and changes nothing, where natively the same empty stdin takes
+/// the yes-default. An answer on stdin is still read either way.
+#[test]
+fn subprocess_unanswered_stale_retime_exits_without_retiming() {
+    let env = Env::new();
+    assert_ok(&env.run(&["occur", "coffee"]), "create");
+    let conn = Connection::open(&env.db).expect("open db");
+    let stale = || {
+        conn.execute(
+            "UPDATE last_docs SET time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-16 minutes')",
+            [],
+        )
+        .expect("force-stale pointer");
+    };
+    let occur = || -> String {
+        conn.query_row(
+            "SELECT occur_time FROM entries WHERE field = 'coffee'
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL",
+            [],
+            |r| r.get(0),
+        )
+        .expect("the coffee")
+    };
+    let page = [("DATUM_NO_DEFAULT_ANSWER", "1")];
+    let before = occur();
+
+    stale();
+    let out = env.run_with_stdin_env(&["retime", "-t", "+5"], "", &page);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(12), "stderr: {stderr}");
+    assert!(stderr.contains("Retime this entry? [Y/n]"), "{stderr:?}");
+    assert!(!stderr.contains("Error"), "the question alone: {stderr:?}");
+    assert_eq!(occur(), before, "unanswered: nothing retimed");
+
+    let out = env.run_with_stdin_env(&["retime", "-t", "+5"], "n\n", &page);
+    assert_ok(&out, "no");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Aborted."));
+    assert_eq!(occur(), before, "no: nothing retimed");
+
+    let out = env.run_with_stdin_env(&["retime", "-t", "+5"], "y\n", &page);
+    assert_ok(&out, "yes");
+    let after_yes = occur();
+    assert_ne!(after_yes, before, "yes: retimed");
+
+    // Natively an empty stdin is the yes-default, as before.
+    stale();
+    assert_ok(&env.run_with_stdin(&["retime", "-t", "+10"], ""), "native");
+    assert_ne!(occur(), after_yes, "native empty stdin: retimed");
 }

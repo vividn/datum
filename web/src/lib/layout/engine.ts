@@ -20,7 +20,7 @@ import { grammarOf, type Grammar, type GrammarEntry } from '$lib/commands.js';
 import { withPills } from '$lib/selection.js';
 import { shellJoin } from '$lib/shellSplit.js';
 import { initDb } from '$lib/db.js';
-import { fileCommand } from '$lib/dbio.js';
+import { asking, fileCommand } from '$lib/dbio.js';
 import { syncCommand } from '$lib/sync.js';
 import { parseEcho, runEchoed } from '$lib/echo.js';
 import { record } from '$lib/replStore.js';
@@ -233,7 +233,7 @@ const ignoredFields = (): string[] =>
 /** With no REPL mounted: run it, record it, and bump the epoch here. */
 async function alone(argv: string[], line?: string, stdin?: string): Promise<RunResult> {
 	const ranAt = Date.now();
-	const result = await ((stdin === undefined ? (fileCommand(argv) ?? syncCommand(argv)) : null) ?? runEchoed(run, argv, stdin));
+	const result = await ((stdin === undefined ? (fileCommand(argv) ?? syncCommand(argv)) : null) ?? runEchoed(asking(run), argv, stdin));
 	record(line ?? shellJoin(argv), ranAt, result);
 	await ran(result);
 	return result;

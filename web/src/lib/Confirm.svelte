@@ -1,13 +1,16 @@
 <!--
 	The web's answer to a CLI prompt that wants a TTY the browser has not
 	got: `db purge`'s database name (da-podv), `kit install`'s trust
-	(da-axrk). `close` says whether the `action` button was pressed — with
-	`name` typed exactly, when there is one to type. Escape, cancel or a
-	wrong name are all no.
+	(da-axrk), a stale `_LAST`'s question (da-f5pg2) — the CLI's own text,
+	painted and spaced as it printed it. `close` says whether the `action`
+	button was pressed — with `name` typed exactly, when there is one to
+	type. Escape, cancel or a wrong name are all no.
 -->
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { act } from './act.js';
+	import { ansiSpans } from './ansi.js';
+	import AnsiText from './AnsiText.svelte';
 
 	export let text: string;
 	export let action: string;
@@ -26,7 +29,7 @@
 	on:close={() => dispatch('close', dialog.returnValue === action && typed === name)}
 >
 	<form method="dialog">
-		<p>{text}</p>
+		<p><AnsiText spans={ansiSpans(text)} /></p>
 		{#if name}
 			<label>Type <code>{name}</code> to confirm {action}: <input bind:value={typed} spellcheck="false" autocapitalize="none" autocomplete="off" /></label>
 		{/if}
@@ -54,7 +57,7 @@
 
 	p {
 		margin: 0 0 0.75rem;
-		white-space: pre-line;
+		white-space: pre-wrap;
 	}
 
 	input {

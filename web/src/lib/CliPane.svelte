@@ -16,6 +16,7 @@
 	import { act } from './act.js';
 	import CliOutput from './CliOutput.svelte';
 	import TailTable from './TailTable.svelte';
+	import { asking, UNANSWERED } from './dbio.js';
 	import { record } from './replStore.js';
 	import { run, type RunResult } from './run.js';
 	import { shellJoin } from './shellSplit.js';
@@ -35,7 +36,9 @@
 	 * asked for, and a run the worker reports as `changed` puts the pane on
 	 * ▶ from then on. By effect, never by verb — the frame's own rule
 	 * (+page.svelte) — so `get`, which moves the last-docs pointer, is on ▶
-	 * too. A new `spec` is a new command, and runs once again.
+	 * too. A new `spec` is a new command, and runs once again. So is a run
+	 * the CLI stopped to ask about (da-f5pg2, a stale `_LAST` under `retime`):
+	 * ▶ asks it in a confirm, which a refresh must not do on every epoch.
 	 */
 	export let guard = false;
 	/**
@@ -147,7 +150,7 @@
 		const argv = request.argv!;
 		const next = await run(argv, undefined, undefined, guard ? undefined : key);
 		out = false;
-		if (guard && next.changed?.length) writer = of;
+		if (guard && (next.changed?.length || next.code === UNANSWERED)) writer = of;
 		if (waiting) {
 			waiting = false;
 			if (request.argv && !(guard && writer === spec)) return refresh();
@@ -164,7 +167,7 @@
 		const argv = request.argv;
 		if (!argv) return;
 		const ranAt = Date.now();
-		result = await run(argv);
+		result = await asking(run)(argv);
 		shown = JSON.stringify(argv);
 		record(shellJoin(argv), ranAt, result);
 	}

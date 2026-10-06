@@ -7,8 +7,8 @@
 // browser's file dialog IS the command's stdin and a download IS its
 // stdout, and the CLI runs `-` exactly as it would in a pipe. `db purge`,
 // which wants a TTY to ask on, asks in a dialog instead, and so do
-// `kit install`'s trust (da-axrk) and a replacing `db restore`'s
-// deletions (da-jrbwc).
+// `kit install`'s trust (da-axrk), a replacing `db restore`'s
+// deletions (da-jrbwc) and a stale `_LAST`'s question (da-f5pg2, `asking`).
 //
 // Every line a person types consults it — the REPL's own runner and the
 // bottom bar's through `press` — and nothing else: `run` is the seam and
@@ -23,7 +23,7 @@ import { writable } from 'svelte/store';
 import { saveFile } from './backup.js';
 import { confirm } from './confirm.js';
 import { fileArgv } from './fileargv.js';
-import { dbOf, run, type RunResult } from './run.js';
+import { dbOf, run, type CommandRunner, type RunResult } from './run.js';
 
 /**
  * `argv` run the browser's way if it is one of the file commands, else
@@ -55,6 +55,28 @@ export function fileCommand(argv: string[]): Promise<RunResult> | null {
 	const note = `not a file in the browser: ${file.paths.join(', ')}`;
 	return ran.then((r) => ({ ...r, stderr: [r.stderr, note].filter(Boolean).join('\n') }));
 }
+
+/** `datum`'s exit code for a question stdin did not answer (`EXIT_UNANSWERED`). */
+export const UNANSWERED = 12;
+
+/**
+ * `run`, but a question the CLI could not ask on stdin — a stale `_LAST`
+ * under `retime` / `update` (da-f5pg2) — is asked in a confirm, in the CLI's
+ * own words: what it said on stderr, the rows it printed, then its question.
+ * The line runs again with the answer on stdin, so a yes changes the entry
+ * and a no prints the CLI's own «Aborted.».
+ */
+export const asking =
+	(run: CommandRunner): CommandRunner =>
+	async (argv, stdin, ...rest) => {
+		const result = await run(argv, stdin, ...rest);
+		if (result.code !== UNANSWERED || stdin !== undefined) return result;
+		const said = result.stderr.trimEnd().split('\n');
+		const question = said.pop() ?? '';
+		const text = [...said, result.stdout.trimEnd(), question].filter(Boolean).join('\n');
+		const yes = await confirm(text, question.split(' ')[0].toLowerCase());
+		return run(argv, yes ? 'y\n' : 'n\n', ...rest);
+	};
 
 /** The file the reader picks in the browser's dialog, which opens before this returns. */
 function pick(): Promise<File | null> {

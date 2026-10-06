@@ -88,6 +88,29 @@ describe('the custom pane', () => {
 		});
 	});
 
+	// da-f5pg2: on a stale `_LAST` the pane's first run of `retime` stops at
+	// the CLI's question, which a refresh cannot answer — so the pane goes on
+	// ▶, and ▶ asks it in the page's confirm.
+	test('a command that stops to ask goes on ▶, and ▶ asks in a confirm', async () => {
+		await shared.solo(async (app) => {
+			await app.submit('occur coffee');
+			const coffee = async () => JSON.stringify((await app.entries(500)).filter((e) => e.field === 'coffee'));
+			const before = await coffee();
+			await app.clock.forward(16 * 60 * 1000);
+
+			await setCommand(app.page, 'retime -t +5');
+			await app.page.locator(`${PANE} button.play`).waitFor();
+			assert.equal(await coffee(), before, 'the unanswered run retimed nothing');
+
+			await app.page.locator(`${PANE} button.play`).click();
+			const dialog = app.page.locator('dialog.confirm');
+			await dialog.waitFor();
+			assert.match(await dialog.locator('p').innerText(), /Retime this entry\? \[Y\/n\]$/);
+			await dialog.getByRole('button', { name: 'retime', exact: true }).click();
+			await until(coffee, (now) => now !== before);
+		});
+	});
+
 	// The pane learns a command writes by running it (da-v36y). The command
 	// survives a reload, so the knowledge must too: a mount that learns it
 	// again writes once more. Counted in the database, since the pane's text

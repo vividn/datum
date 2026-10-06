@@ -38,7 +38,7 @@
 	import { createEventDispatcher, onMount, tick } from 'svelte';
 	import Pane from './Pane.svelte';
 	import ReplEntry from './ReplEntry.svelte';
-	import { fileCommand, progress } from './dbio.js';
+	import { asking, fileCommand, progress } from './dbio.js';
 	import { parseEcho, runEchoed } from './echo.js';
 	import { fitArgv } from './panes.js';
 	import { GAP, columnsIn, rowsOf } from './scrollback.js';
@@ -145,7 +145,7 @@
 		const ranAt = Date.now();
 		const result = await (
 			(stdin === undefined ? (fileCommand(argv) ?? syncCommand(argv)) : null) ??
-			runEchoed(run, fitArgv(argv, width), stdin)
+			runEchoed(asking(run), fitArgv(argv, width), stdin)
 		);
 		await land(line ?? shellJoin(argv), result, ranAt);
 		return result;
