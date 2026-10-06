@@ -587,7 +587,12 @@ test('an answer to the stale _LAST question acts on the entry it showed, or asks
 		);
 		assert.equal((await doc(other, tea.hid)).id, tea.id, 'the cancel moved nothing');
 
+		// The tea is fresh: the answered run says nothing again (da-e7739),
+		// least of all that `_LAST` is older than 15 minutes.
+		const said = page.locator('.repl pre[data-stream="stderr"]');
+		const saidBefore = await said.count();
 		await answer(page, 'retime');
+		assert.equal(await said.count(), saidBefore, (await said.allInnerTexts()).join('\n'));
 		assert.notEqual((await doc(other, tea.hid)).id, tea.id, 'yes retimes the entry it showed');
 		assert.equal((await doc(other, coffee.hid)).id, coffee.id, 'and only that one');
 		await other.page.close();

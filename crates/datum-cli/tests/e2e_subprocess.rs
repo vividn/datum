@@ -1283,3 +1283,42 @@ fn subprocess_unanswered_stale_retime_exits_without_retiming() {
     assert_ok(&env.run_with_stdin(&["retime", "-t", "+10"], ""), "native");
     assert_ne!(occur(), after_yes, "native empty stdin: retimed");
 }
+
+/// da-e7739: an answer is read with nothing said again. The answered run
+/// re-printed «older than 15 minutes» even when another tab's write had made
+/// `_LAST` fresh meanwhile, and datum.day keeps that stderr with the result.
+#[test]
+fn subprocess_answered_stale_retime_says_nothing_again() {
+    let env = Env::new();
+    assert_ok(&env.run(&["occur", "coffee"]), "create");
+    let conn = Connection::open(&env.db).expect("open db");
+    let set_age = |minutes: i64| {
+        conn.execute(
+            "UPDATE last_docs SET time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', ?1)",
+            [format!("-{minutes} minutes")],
+        )
+        .expect("set pointer age");
+    };
+    set_age(16);
+    let page = [("DATUM_NO_DEFAULT_ANSWER", "1")];
+    let asked = env.run_with_stdin_env(&["retime", "-t", "+5"], "", &page);
+    let asked = String::from_utf8_lossy(&asked.stderr);
+    let pin = asked.lines().last().expect("the pin").to_owned();
+    let shown = pin
+        .strip_prefix("DATUM_LAST_SHOWN=")
+        .unwrap_or_else(|| panic!("{asked:?}"));
+
+    // Fresh again, as another tab's write leaves it.
+    set_age(0);
+    let out = env.run_with_stdin_env(
+        &["retime", "-t", "+5"],
+        "y\n",
+        &[page[0], ("DATUM_LAST_SHOWN", shown)],
+    );
+    assert_ok(&out, "yes");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        "",
+        "nothing said again"
+    );
+}

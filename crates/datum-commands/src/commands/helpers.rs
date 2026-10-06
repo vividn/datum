@@ -427,10 +427,13 @@ pub(crate) fn confirm_default_last_if_stale_with_io<R: std::io::BufRead>(
     if shown.is_none() && within_protection_window(reference.time, chrono::Utc::now()) {
         return Ok(true);
     }
+    // Answered, it was asked already: nothing is said again (da-e7739) —
+    // least of all the age, which another tab's write may have made untrue.
+    let answered = shown == Some(hids.as_str());
 
     // Stale: render candidates (production only — tests skip) and
     // prompt with yes-default ([Y/n]).
-    if render_candidates {
+    if render_candidates && !answered {
         let registry = load_registry_opt(db);
         let now = datum_core::time::DatumTime::now();
         let ctxs = crate::commands::render_helpers::build_render_contexts(entries, db);
@@ -458,7 +461,7 @@ pub(crate) fn confirm_default_last_if_stale_with_io<R: std::io::BufRead>(
     } else {
         format!("{action_verb} these {} entries? [Y/n] ", entries.len())
     };
-    {
+    if !answered {
         let mut stderr = std::io::stderr().lock();
         let _ = write!(stderr, "{prompt}");
         let _ = stderr.flush();
