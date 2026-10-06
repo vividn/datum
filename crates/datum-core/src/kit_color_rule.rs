@@ -142,16 +142,57 @@ pub fn parse_expr(src: &str) -> Result<Expr> {
     let mut p = Parser { toks, pos: 0 };
     let expr = p.parse_expr()?;
     if p.pos < p.toks.len() {
-        return Err(DatumError::Other(format!(
+        let mut msg = format!(
             "color rule: trailing tokens after expression: {}",
             p.toks[p.pos..]
                 .iter()
                 .map(|t| t.text.clone())
                 .collect::<Vec<_>>()
                 .join(" ")
-        )));
+        );
+        if sql_bool_op(&p.toks, p.pos).is_some() {
+            // The SQL spelling: name the operators, and show the rule respelled.
+            let respelled = p
+                .toks
+                .iter()
+                .enumerate()
+                .map(|(i, t)| match t.kind {
+                    Tok::String if t.text.contains('\'') => format!("\"{}\"", t.text),
+                    Tok::String => format!("'{}'", t.text),
+                    Tok::Ident => sql_bool_op(&p.toks, i).unwrap_or(&t.text).to_string(),
+                    _ => t.text.clone(),
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            msg.push_str(&format!(
+                "\nhint: conditions join with && and || (not AND / OR): `{respelled}`"
+            ));
+        }
+        return Err(DatumError::Other(msg));
     }
     Ok(expr)
+}
+
+/// `&&` / `||` for the token at `i` if it is an `AND` / `OR` written the SQL
+/// way, in any case. A column so named stands beside its comparison, and is not.
+fn sql_bool_op(toks: &[Token], i: usize) -> Option<&'static str> {
+    let cmp = |j: Option<usize>| {
+        matches!(
+            j.and_then(|j| toks.get(j)).map(|t| t.kind),
+            Some(Tok::Cmp(_))
+        )
+    };
+    if toks[i].kind != Tok::Ident || cmp(i.checked_sub(1)) || cmp(Some(i + 1)) {
+        return None;
+    }
+    let word = &toks[i].text;
+    if word.eq_ignore_ascii_case("and") {
+        Some("&&")
+    } else if word.eq_ignore_ascii_case("or") {
+        Some("||")
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -623,7 +664,37 @@ mod tests {
 
     #[test]
     fn parse_rejects_trailing_garbage() {
-        assert!(parse_expr("a < 1 garbage").is_err());
+        let err = parse_expr("a < 1 garbage").unwrap_err().to_string();
+        assert!(
+            err.contains("trailing tokens after expression: garbage"),
+            "{err}"
+        );
+        assert!(!err.contains("hint"), "{err}");
+    }
+
+    #[test]
+    fn sql_and_or_is_refused_with_a_hint() {
+        let err = parse_expr("n > 1 AND day = 'x'").unwrap_err().to_string();
+        assert!(
+            err.contains("trailing tokens after expression: AND day = x"),
+            "{err}"
+        );
+        assert!(
+            err.contains(
+                "hint: conditions join with && and || (not AND / OR): `n > 1 && day = 'x'`"
+            ),
+            "{err}"
+        );
+        let err = parse_expr("a < 1 && b = \"it's\" or c > 2")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("`a < 1 && b = \"it's\" || c > 2`"), "{err}");
+        // A column named `or` stands beside its comparison: not respelled.
+        let err = parse_expr("or = 1 AND x = 2").unwrap_err().to_string();
+        assert!(err.contains("`or = 1 && x = 2`"), "{err}");
+        let err = parse_expr("x = or AND y = 2").unwrap_err().to_string();
+        assert!(err.contains("`x = or && y = 2`"), "{err}");
+        assert!(parse_expr("n > 1 && day = 'x'").is_ok());
     }
 
     #[test]
