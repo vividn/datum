@@ -39,11 +39,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
-/// The IANA zone the text goldens were captured in, forced into every
-/// spawned datum process. See the "Time pinning" section above: this is
-/// half of what makes the goldens reproducible, the other half being
-/// the `-d`/`-t` flags every fixture passes.
-pub const GOLDEN_TZ: &str = "Europe/Berlin";
+pub use crate::GOLDEN_TZ;
 
 /// Errors surfaced by the runtime.
 #[derive(Debug)]

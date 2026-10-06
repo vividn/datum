@@ -1,0 +1,170 @@
+# Where daydumb's output differs from v2's committed snapshot (da-ma5pr).
+#
+# `daydumb_matches_v2_snapshots` (tests/text_goldens.rs) runs every fixture
+# through daydumb and compares what it DRAWS with `expected/<name>.txt`:
+# text as characters and styles, SVG as shapes at their absolute position,
+# give or take a pixel. A fixture listed here passes only while its
+# difference is exactly `divergences/<name>.diff` (`-` v2, `+` daydumb).
+# Any other difference fails, and so does a listed one that went away.
+#
+# This list is for vividn's walk: each rule ends as a daydumb fix (its entries
+# and diffs deleted) or as a difference he accepts. `status` is `open` until
+# he says otherwise; `accepted` is his word, never a can's. A rule's `why`
+# says what the history records, and says so when it records nothing.
+#
+# Never edit a snapshot to match daydumb. They are v2's raw output, and
+# only `PARITY_REGEN=1` under `--features parity-runtime` writes them.
+
+# ─── text: get and tail ─────────────────────────────────────────────────────
+
+[[rule]]
+id = "grey-date"
+status = "open"
+what = "daydumb greys the date half of a timestamp (`2024-01-15` in fg 90); v2 prints it plain"
+why = "No recorded reason found."
+
+[[rule]]
+id = "get-field-gap"
+status = "open"
+what = "`get` puts two spaces between the timestamp and the field; v2 puts one"
+why = "No recorded reason found."
+
+[[rule]]
+id = "null-before-point"
+status = "open"
+what = "a point entry with no earlier state: v2 draws its `●` on the grey (#888888) no-state box; daydumb draws a grey `∅` and then the `●`, with no box"
+why = "No recorded reason found. (A point that follows another point of its field matches v2: no box, no `∅`.)"
+
+[[rule]]
+id = "null-lead-glyph"
+status = "open"
+what = "a state change with no earlier state: v2's leading edge is the grey box holding a dark-grey `∅`; daydumb's is the grey box, empty"
+why = "daydumb draws a change's two edges as one coloured character each, colour and no text (da-fknn8, #74). No record found of a decision to drop v2's `∅` from the box."
+
+[[rule]]
+id = "tail-n-column"
+status = "open"
+what = "`tail` leads every row with its `_n` shorthand (grey `_3`, `_2`, `_1`) under a `_n` header"
+why = "Deliberate: da-8sx8 shows the `_N` shorthand beside every row; da-431c (#44) made it the first column."
+
+[[rule]]
+id = "tail-offset-in-header"
+status = "open"
+what = "`tail` writes the UTC offset once, in the header (`time (+1)`), and not on the rows; v2 writes `+1` after every timestamp"
+why = "Deliberate: da-lkji (bfbd030e) moved the offset to the header; a row prints its own only when it differs."
+
+[[rule]]
+id = "tail-column-padding"
+status = "open"
+what = "`tail` pads the `hid` column differently: v2 leaves more blanks before it"
+why = "No recorded reason found; it follows from each runtime's column widths."
+
+[[rule]]
+id = "tail-trailing-blank-line"
+status = "open"
+what = "v2's `tail` ends with an empty line; daydumb's ends at the last row"
+why = "No recorded reason found."
+
+# ─── SVG: dayview ───────────────────────────────────────────────────────────
+
+[[rule]]
+id = "dayview-axis"
+status = "open"
+what = "the time axis: v2 draws 25 ticks (a closing `00` at the day's end), each 6px long, labels 4px lower and stroked as well as filled white, and the axis as a path with 6px end hooks; daydumb draws 24 ticks 4px long, unstroked labels, and a plain line"
+why = "No recorded reason found."
+
+[[rule]]
+id = "dayview-row-y"
+status = "open"
+what = "a field with no position in its spec sits 6px lower in daydumb (`coffee` 16 → 22, `work` 37 → 43, `mood` 82 → 88); `sleep`, placed by mySpec, matches"
+why = "No recorded reason found."
+
+[[rule]]
+id = "dayview-day-label-x"
+status = "open"
+what = "the day labels (`Mon`, `Jan 15`, the year) end at x=78 in daydumb and at x=72 in v2 (v2's `-0.5em` left of the data area)"
+why = "No recorded reason found."
+
+[[rule]]
+id = "snapshot-year-masked"
+status = "open"
+what = "v2's year label reads `<HID>`, daydumb's `2024`"
+why = "A defect of the snapshot, not of either runtime: the live test's `normalize` took the year (alone on its pretty-printed line) for a tail hid and masked it at capture. Fixing it means regenerating the six dayview snapshots, which is vividn's to approve."
+
+# ─── fixtures ───────────────────────────────────────────────────────────────
+
+[[fixture]]
+name = "get_occur_default"
+rules = ["grey-date", "get-field-gap", "null-before-point"]
+
+[[fixture]]
+name = "get_switch_state"
+rules = ["grey-date", "get-field-gap", "null-lead-glyph"]
+
+[[fixture]]
+name = "get_start_block"
+rules = ["grey-date", "get-field-gap", "null-lead-glyph"]
+
+[[fixture]]
+name = "get_with_extra_data"
+rules = ["grey-date", "get-field-gap", "null-before-point"]
+
+[[fixture]]
+name = "get_with_unit"
+rules = ["grey-date", "get-field-gap", "null-before-point"]
+
+[[fixture]]
+name = "get_specced_state"
+rules = ["grey-date", "get-field-gap", "null-lead-glyph"]
+
+[[fixture]]
+name = "tail_default_three_entries"
+rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-before-point", "null-lead-glyph"]
+
+[[fixture]]
+name = "tail_field_filter"
+rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-before-point"]
+
+[[fixture]]
+name = "tail_n_2"
+rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line"]
+
+[[fixture]]
+name = "tail_state_transitions"
+rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-lead-glyph"]
+
+[[fixture]]
+name = "tail_block_pair"
+rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-lead-glyph"]
+
+[[fixture]]
+name = "tail_mixed_fields"
+rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-before-point", "null-lead-glyph"]
+
+[[fixture]]
+name = "tail_spec_field_color"
+rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-padding", "tail-trailing-blank-line", "null-lead-glyph"]
+
+[[fixture]]
+name = "dayview_single_day_svg"
+rules = ["dayview-axis", "dayview-row-y", "dayview-day-label-x", "snapshot-year-masked"]
+
+[[fixture]]
+name = "dayview_state_chain_svg"
+rules = ["dayview-axis", "dayview-row-y", "dayview-day-label-x", "snapshot-year-masked"]
+
+[[fixture]]
+name = "dayview_spec_color_svg"
+rules = ["dayview-axis", "dayview-day-label-x", "snapshot-year-masked"]
+
+[[fixture]]
+name = "dayview_empty_day_svg"
+rules = ["dayview-axis", "dayview-day-label-x", "snapshot-year-masked"]
+
+[[fixture]]
+name = "dayview_duration_block_svg"
+rules = ["dayview-axis", "dayview-row-y", "dayview-day-label-x", "snapshot-year-masked"]
+
+[[fixture]]
+name = "dayview_false_block_is_a_hole_svg"
+rules = ["dayview-axis", "dayview-row-y", "dayview-day-label-x", "snapshot-year-masked"]

@@ -23,6 +23,11 @@
 # Adding a fixture: pick a new `name`, write its setup + query, run with
 # PARITY_REGEN=1 to capture, audit the diff in `expected/<name>.txt`,
 # commit both files together.
+#
+# The normal suite runs every fixture through daydumb and compares it to
+# that snapshot (`daydumb_matches_v2_snapshots`). Where daydumb differs,
+# record the difference in `divergences.toml` for vividn's walk; never edit
+# a snapshot to match daydumb.
 
 # ─── get: single-record reads ────────────────────────────────────────────────
 

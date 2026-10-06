@@ -61,6 +61,13 @@ pub mod runtime;
 /// `PARITY_REGEN=1 cargo test --features parity-runtime -p datum-parity`.
 pub const DATUM_PINNED_SHA: &str = "f5e7c1b82da18fb6f02d21efea67d40f9cf26f1d";
 
+/// The IANA zone the text goldens were captured in, forced into every
+/// process that renders one — v2 under `parity-runtime`, daydumb in the
+/// normal suite. This is half of what makes the goldens reproducible, the
+/// other half being the `-d`/`-t` flags every fixture passes (see
+/// `runtime`'s "Time pinning").
+pub const GOLDEN_TZ: &str = "Europe/Berlin";
+
 /// Resolve the absolute path of the datum clone managed by
 /// `scripts/setup_datum.sh`. Tests under `parity-runtime` use this to
 /// locate the TS toolchain; pure-algorithm tests don't need it.

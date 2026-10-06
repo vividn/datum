@@ -695,10 +695,12 @@ name = "datum-parity"
 version = "3.0.0-beta"
 dependencies = [
  "chrono",
+ "datum-cli",
  "datum-core",
  "md-5",
  "proptest",
  "regex-lite",
+ "roxmltree 0.21.1",
  "serde",
  "serde_json",
  "sha2 0.10.9",

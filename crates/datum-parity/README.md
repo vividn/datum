@@ -15,10 +15,10 @@ This crate exists to be that reference.
 |---|---|---|
 | md5 color algebra | `goldens/colors/colors.tsv` (19 rows) | no |
 | mySpec field/state map | `src/myspec.rs` (23 fields, 100+ states) | no |
-| `get` text output | `goldens/text/fixtures.toml` (6 fixtures) | yes |
-| `tail` text output | `goldens/text/fixtures.toml` (7 fixtures) | yes |
-| `nowview` SVG output | `goldens/text/fixtures.toml` (4 fixtures, all `uncapturable` — see da-t5f5) | yes |
-| `dayview` SVG output | `goldens/text/fixtures.toml` (6 fixtures) | yes |
+| `get` text output | `goldens/text/fixtures.toml` (6 fixtures) | daydumb against the snapshots: no; v2 against them: yes |
+| `tail` text output | `goldens/text/fixtures.toml` (7 fixtures) | daydumb against the snapshots: no; v2 against them: yes |
+| `nowview` SVG output | `goldens/text/fixtures.toml` (4 fixtures, all `uncapturable` — see da-t5f5) | skipped, with the reason |
+| `dayview` SVG output | `goldens/text/fixtures.toml` (6 fixtures) | daydumb against the snapshots: no; v2 against them: yes |
 | `content_hash` preimage | `goldens/hash/content_hash.toml` (6 fixtures) | no |
 | Bug regressions (da-438y, etc.) | `tests/regressions.rs` (5 tests + lock) | no |
 | Algorithm fuzz (proptest) | `tests/fuzz_color.rs` (10 props × 500 cases) | no |
@@ -31,8 +31,11 @@ This crate exists to be that reference.
 cargo test -p datum-parity
 ```
 
-This runs the algorithm and fixture-presence tests. It does not require
-node / pnpm or a clone of vividn/datum.
+This runs the algorithm and fixture-presence tests, and
+`daydumb_matches_v2_snapshots`: every text fixture through daydumb's own
+binary (`src/bin/daydumb.rs`), compared with v2's committed snapshot. It
+does not require node / pnpm or a clone of vividn/datum, and takes
+seconds — see [daydumb against the snapshots](#daydumb-against-the-snapshots).
 
 ### With the runtime
 
@@ -76,8 +79,8 @@ make noise within a week of the path breaking, not to be a gate.
 
 ### Updating goldens after a deliberate change
 
-If a fixture's expected output has drifted *intentionally* (a new datum
-SHA, a deliberate format change), regenerate by running:
+If v2's output for a fixture has drifted *intentionally* (a new datum
+SHA), and vividn has agreed to the new snapshot, regenerate by running:
 
 ```bash
 PARITY_REGEN=1 cargo test --features parity-runtime -p datum-parity \
@@ -87,6 +90,8 @@ PARITY_REGEN=1 cargo test --features parity-runtime -p datum-parity \
 Audit the diff in `goldens/text/expected/*.txt` and commit the changes
 together with the SHA bump. A regenerated golden that vividn had approved
 then fails the normal suite until he approves the new bytes (below).
+A change to daydumb's output is never a reason to regenerate: the
+snapshots are v2's.
 
 ### vividn's approval (da-iuyyw)
 
@@ -108,6 +113,37 @@ be SSH-signed by a key in `goldens/allowed_signers` *as on the PR's
 base*. An author name counts for nothing. The file ships with no key;
 vividn adds his own (the file says how), and until then every change to
 `APPROVED` is red. The check must also be a required status on `main`.
+
+## daydumb against the snapshots
+
+`expected/<name>.txt` is v2's raw output. `daydumb_matches_v2_snapshots`
+runs the same fixture through daydumb and compares what the two DRAW,
+not their bytes:
+
+* **text** (`get`, `tail`) becomes, per row, its characters with a
+  `⟨fg=… bg=…⟩` mark wherever the style changes. v2 resets a colour with
+  `\e[39m`/`\e[49m` and daydumb with `\e[0m`; on screen they are the same.
+  daydumb's hids are masked as v2's were at capture.
+* **SVG** (`dayview`) becomes one line per drawn shape — tag, absolute
+  position and size, field, paint — matched within a pixel. v2 nests
+  `<svg>`s and pretty-prints them; daydumb draws one flat tree. Scripts,
+  styles, tooltips and invisible hit areas are not compared, so a byte
+  of v2's indentation or its popover script can change without failing.
+
+Where daydumb differs, `goldens/text/divergences.toml` lists why — a
+handful of rules, each fixture naming the rules that explain it — and
+`goldens/text/divergences/<name>.diff` holds the exact difference
+(`-` v2, `+` daydumb). A listed fixture passes only while its difference
+is exactly that one. A new difference fails, and so does a recorded one
+that went away. On failure the test prints the diff it found.
+
+The list is vividn's to walk: each rule ends as a daydumb fix (its diffs
+deleted) or as a difference he accepts. Rules stay `open` until he
+decides. **Never edit a snapshot to match daydumb**; `PARITY_REGEN=1`
+rewrites them from v2, nothing else does, and a PR touching
+`goldens/text/expected/` says so in its title. The divergence files sit
+under `goldens/`, so `tests/approvals.rs` lists them as pending until
+vividn approves them.
 
 ## Pinned SHA
 
@@ -154,12 +190,15 @@ crates/datum-parity/
 │   │   └── content_hash.toml  # entry → canonical preimage → SHA-256
 │   └── text/
 │       ├── fixtures.toml          # 23 fixtures across all 4 surfaces
-│       └── expected/<name>.txt    # captured stdout/SVG, one per fixture
+│       ├── expected/<name>.txt    # v2's captured stdout/SVG, one per fixture
+│       ├── divergences.toml       # where daydumb differs, and why (for vividn's walk)
+│       └── divergences/<name>.diff  # each one's exact difference
 ├── scripts/
 │   ├── setup_datum.sh  # clone + install pinned datum
 │   └── check_approvals_signed.sh  # APPROVED changes signed by vividn
 ├── src/
-│   ├── lib.rs          # re-exports + DATUM_PINNED_SHA + datum_clone_path
+│   ├── bin/daydumb.rs  # daydumb's `datum`, for the text goldens to spawn
+│   ├── lib.rs          # re-exports + DATUM_PINNED_SHA + GOLDEN_TZ + datum_clone_path
 │   ├── colors.rs       # md5_color, contrast_text_color, state_color (algorithm port)
 │   ├── myspec.rs       # FIELD_SPECS port + emit_kit_toml
 │   └── runtime.rs      # DatumRuntime (gated)
@@ -169,12 +208,13 @@ crates/datum-parity/
     ├── fuzz_color.rs       # proptest harness over the color algebra
     ├── hash_goldens.rs     # content_hash preimage goldens (da-yira)
     ├── regressions.rs      # da-438y / da-ffp6 / da-luc8 / da-aw2o / da-jp0b locks
-    └── text_goldens.rs     # text + SVG fixture runner (gated for live mode)
+    └── text_goldens.rs     # text + SVG fixtures: daydumb vs. the snapshots; v2 vs. them (gated)
 ```
 
 ## Documented divergences
 
-Datum has features daydumb intentionally doesn't, and vice-versa. The
+The text and SVG output divergences are in `goldens/text/divergences.toml`
+(above). Datum has features daydumb intentionally doesn't, and vice-versa. The
 parity harness focuses on the surfaces both runtimes implement; the
 following are deliberate divergences and **not** regressions:
 
@@ -192,7 +232,8 @@ following are deliberate divergences and **not** regressions:
 * **Timezone display.** Datum displays the offset as `+1` (compressed);
   daydumb does the same. Both read the system TZ database, so the zone
   is pinned rather than assumed: `DatumRuntime::run` forces
-  `TZ=`[`GOLDEN_TZ`] (`Europe/Berlin`) into every spawned datum process.
+  `TZ=`[`GOLDEN_TZ`] (`Europe/Berlin`) into every spawned datum process,
+  and the daydumb comparison does the same.
   Without it the same fixture renders `+1` on the machine the goldens
   were captured on and `+0` on a CI runner in UTC — a failure that
   looks like a parity regression and isn't.
@@ -203,7 +244,7 @@ following are deliberate divergences and **not** regressions:
   instant they name, its yellow now-line drawn only where now falls
   inside it. With no time flag the two agree.
 
-[`GOLDEN_TZ`]: src/runtime.rs
+[`GOLDEN_TZ`]: src/lib.rs
 
 ## Adding fixtures
 
