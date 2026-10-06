@@ -9,7 +9,7 @@ use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
 
 use super::chain::Filter;
-use super::{belongs_to, filtered_lines, row, row_to_entry, unhex};
+use super::{belongs_to, clock_ahead, filtered_lines, now_ms, row, row_to_entry, unhex};
 use crate::db::Db;
 use crate::error::{DatumError, Result};
 
@@ -35,6 +35,42 @@ pub struct PeerStatus {
     pub error_at: Option<String>,
     /// Where it was last seen (the transport's address, as JSON), if ever.
     pub addr: Option<String>,
+}
+
+/// Ops from one device held because its clock runs ahead of this copy's
+/// (da-ns8dq): distinct from ops held for a missing earlier op.
+#[derive(Debug, Clone)]
+pub struct ClockWait {
+    pub endpoint: String,
+    pub label: String,
+    pub ops: usize,
+    /// How far ahead its latest held op is, in ms.
+    pub ahead_ms: i64,
+}
+
+impl std::fmt::Display for ClockWait {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let min = self.ahead_ms / 60_000;
+        let (n, unit) = [
+            (525_600, "year"),
+            (1_440, "day"),
+            (60, "hour"),
+            (1, "minute"),
+        ]
+        .into_iter()
+        .find(|(m, _)| min >= *m)
+        .map_or((0, "minute"), |(m, u)| ((min + m / 2) / m, u));
+        write!(
+            f,
+            "{} change{} from {} {} waiting: its clock is {n} {unit}{} ahead. \
+             Fix that device's clock; they apply once the time catches up.",
+            self.ops,
+            if self.ops == 1 { "" } else { "s" },
+            self.label,
+            if self.ops == 1 { "is" } else { "are" },
+            if n == 1 { "" } else { "s" },
+        )
+    }
 }
 
 type Session = (
@@ -91,6 +127,36 @@ impl Db {
             )));
         }
         Ok(())
+    }
+
+    /// The devices whose ops wait for this copy's clock to catch up with
+    /// theirs, each named as the chain names it.
+    pub fn sync_clock_waits(&self) -> Result<Vec<ClockWait>> {
+        let now = now_ms();
+        let mut by: BTreeMap<String, (usize, i64)> = BTreeMap::new();
+        let mut stmt = self
+            .conn
+            .prepare("SELECT endpoint, hlc FROM ops WHERE applied = 0")?;
+        for r in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
+            let (endpoint, hlc) = r?;
+            if let Some(ahead) = clock_ahead(&hlc, now) {
+                let w = by.entry(endpoint).or_default();
+                *w = (w.0 + 1, w.1.max(ahead));
+            }
+        }
+        let chain = self.sync_chain()?;
+        Ok(by
+            .into_iter()
+            .map(|(endpoint, (ops, ahead_ms))| ClockWait {
+                label: chain.member(&endpoint).map_or_else(
+                    || endpoint[..10.min(endpoint.len())].into(),
+                    |m| m.label.clone(),
+                ),
+                endpoint,
+                ops,
+                ahead_ms,
+            })
+            .collect())
     }
 
     /// Every member of the chain but this copy, and how it stands with it.

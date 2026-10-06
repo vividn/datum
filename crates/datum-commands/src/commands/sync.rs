@@ -698,6 +698,7 @@ fn status(db: &Db, json: bool) -> Result<()> {
     let paused = db.sync_paused()?;
     let notices = db.sync_notices_unacked()?;
     let unlocks: Vec<_> = notices.iter().filter(|n| n.kind == "unlock").collect();
+    let clock = db.sync_clock_waits()?;
     if json {
         let path = db.conn().path().unwrap_or_default();
         let name = std::path::Path::new(path)
@@ -732,9 +733,17 @@ fn status(db: &Db, json: bool) -> Result<()> {
             "notices": notices.iter().map(|n| json!({
                 "subject": n.subject, "kind": n.kind, "label": n.label, "at": n.at, "text": n.to_string(),
             })).collect::<Vec<_>>(),
+            "clock": clock.iter().map(|w| json!({
+                "endpoint": w.endpoint, "label": w.label, "ops": w.ops,
+                "ahead_ms": w.ahead_ms, "text": w.to_string(),
+            })).collect::<Vec<_>>(),
         });
         println!("{out}");
         return Ok(());
+    }
+    // Before the chain: the pipe syncs copies in none.
+    for w in &clock {
+        println!("⚠ {w}");
     }
     if !chain.exists() {
         println!("{NO_CHAIN}");

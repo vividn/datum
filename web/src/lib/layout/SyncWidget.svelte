@@ -290,6 +290,9 @@
 					<button type="button" use:act={'run'} disabled={busy} on:click={() => ack(d.db, n)}>ok</button>
 				</p>
 			{/each}
+			{#each d.clock ?? [] as c (c.endpoint)}
+				<p class="notice clock" data-db={d.db}>⚠ {d.db}: {c.text}</p>
+			{/each}
 		{/each}
 		{#if $joining}
 			<section class="card join" data-db={join?.db}>

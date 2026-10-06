@@ -9,8 +9,8 @@
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import { startApp, stopApp, withApp } from './support/app.mjs';
-import { nativeCopy, relayed, startRelay } from './support/sync.mjs';
+import { startApp, stopApp } from './support/app.mjs';
+import { nativeCopy, relayed, startRelay, withWallClock } from './support/sync.mjs';
 import { until } from './support/until.mjs';
 
 let relay;
@@ -86,7 +86,7 @@ describe('the sync widget’s actions', () => {
 	test('turn on sync, then add a device: the ticket as a QR and a command, which a native copy redeems', async () => {
 		const native = await nativeCopy(relay);
 		try {
-			await withApp(
+			await withWallClock(
 				async (app) => {
 					const { page } = app;
 					await app.goto('/sync');
@@ -114,7 +114,7 @@ describe('the sync widget’s actions', () => {
 	});
 
 	test('a passkey locks the chain; a revoke is approved with it and the row says revoked', async () => {
-		await withApp(async (app) => {
+		await withWallClock(async (app) => {
 			const { page } = app;
 			await authenticator(page);
 			const phone = await openChain(app);
@@ -137,7 +137,7 @@ describe('the sync widget’s actions', () => {
 	});
 
 	test('removing the last admin asks first, and only a yes unlocks the chain', async () => {
-		await withApp(async (app) => {
+		await withWallClock(async (app) => {
 			const { page } = app;
 			await authenticator(page);
 			await openChain(app);
@@ -164,7 +164,7 @@ describe('the sync widget’s actions', () => {
 	});
 
 	test('the approve link writes the record into a copy of its chain, with no code to paste; another chain’s shows the code', async () => {
-		await withApp(async (app) => {
+		await withWallClock(async (app) => {
 			const { page } = app;
 			await authenticator(page);
 			const phone = await openChain(app);
@@ -202,7 +202,7 @@ describe('the sync widget’s actions', () => {
 	});
 
 	test('a link adding an admin says whose key it is: its label, its fingerprint, and that this browser did not make it', async () => {
-		await withApp(async (app) => {
+		await withWallClock(async (app) => {
 			const { page } = app;
 			await authenticator(page);
 			await openChain(app);

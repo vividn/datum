@@ -19,8 +19,8 @@
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import { startApp, stopApp, withApp } from './support/app.mjs';
-import { nativeCopy } from './support/sync.mjs';
+import { startApp, stopApp } from './support/app.mjs';
+import { nativeCopy, withWallClock } from './support/sync.mjs';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
 before(startApp);
@@ -55,9 +55,7 @@ async function laptop() {
 
 /**
  * Admit endpoint `id` on the copy `run` runs in, as a session redeeming an
- * invite does. A day to redeem it in: the page's held clock is ahead of the
- * native copy's, and the laptop's chain clock follows the page's ops there,
- * so an invite it writes for ten minutes of real time is already past.
+ * invite does. A day to redeem it in.
  */
 async function admit(run, id, label) {
 	const { secret } = JSON.parse(await run(['sync', 'new-invite', '--expires', '1d']));
@@ -127,7 +125,7 @@ const cell = (page, client, db) => page.locator(`${WIDGET} tr[data-client="${cli
 
 describe('the sync widget', () => {
 	test('draws a symbol per client and database, this client first, and greys what is not reachable', async () => {
-		await withApp(
+		await withWallClock(
 			async (app) => {
 				const { page } = app;
 				const ids = await fixture(app);
@@ -174,7 +172,7 @@ describe('the sync widget', () => {
 	});
 
 	test('the reachability dot and the syncing mark follow the worker’s broadcast', async () => {
-		await withApp(
+		await withWallClock(
 			async (app) => {
 				const { page } = app;
 				const ids = await fixture(app);
@@ -211,7 +209,7 @@ describe('the sync widget', () => {
 	});
 
 	test('a reader carries the lock beside its state, and the legend names it', async () => {
-		await withApp(
+		await withWallClock(
 			async (app) => {
 				const { page } = app;
 				const run = inPage(app, 'home');
@@ -232,7 +230,7 @@ describe('the sync widget', () => {
 	});
 
 	test('a filtered reader carries the filter too, its title says how many fields, and the legend names it', async () => {
-		await withApp(
+		await withWallClock(
 			async (app) => {
 				const { page } = app;
 				const run = inPage(app, 'home');
@@ -255,7 +253,7 @@ describe('the sync widget', () => {
 	});
 
 	test('is compact at its legible floor and full above it', async () => {
-		await withApp(async (app) => {
+		await withWallClock(async (app) => {
 			const { page } = app;
 			await fixture(app);
 			await app.goto('/sync');
@@ -283,5 +281,28 @@ describe('the sync widget', () => {
 				['—', '✓', '◔']
 			);
 		});
+	});
+
+	test('names a device whose changes wait for this clock to catch up with its own (da-ns8dq)', async () => {
+		const lap = await laptop();
+		try {
+			// This page's clock an hour behind the laptop's: what the laptop
+			// signs is an hour ahead of it, and waits.
+			await withWallClock(
+				async (app) => {
+					await chain(app, 'home', lap);
+					await app.goto('/sync');
+					const notice = app.page.locator(`${WIDGET} .notice.clock[data-db="home"]`);
+					await notice.waitFor();
+					assert.match(
+						await notice.innerText(),
+						/^⚠ home: \d+ changes? from laptop (is|are) waiting: its clock is 1 hour ahead\. Fix that device's clock; they apply once the time catches up\.$/
+					);
+				},
+				{ clock: Date.now() - 3_600_000 }
+			);
+		} finally {
+			await lap.close();
+		}
 	});
 });

@@ -284,16 +284,43 @@ fn parse_hlc(s: &str) -> Option<(i64, u32)> {
     (format_hlc(ms, counter) == s).then_some((ms, counter))
 }
 
-/// The next HLC: past the wall clock and past every op this copy holds,
-/// its own and received alike.
+/// How far a received op's HLC may run ahead of this copy's clock (da-ns8dq).
+/// One further ahead is held until this clock catches up: applied, it
+/// would pin every op this copy signs to the fast device's time for good,
+/// as signed ops are never re-stamped. Held, never clamped or refused — a
+/// decision made from the local clock may only delay, never decide, or
+/// copies judging by their own clocks would fold apart.
+const MAX_CLOCK_AHEAD: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+#[cfg(test)]
+thread_local! {
+    /// How far the tests' clock runs from the real one, in ms.
+    static SKEW: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
+}
+
+/// This copy's wall clock, in ms.
+fn now_ms() -> i64 {
+    let now = Utc::now().timestamp_millis();
+    #[cfg(test)]
+    let now = now + SKEW.with(std::cell::Cell::get);
+    now
+}
+
+/// How far `hlc` runs ahead of `now`, when it is past [`MAX_CLOCK_AHEAD`].
+fn clock_ahead(hlc: &str, now: i64) -> Option<i64> {
+    parse_hlc(hlc)
+        .map(|(ms, _)| ms - now)
+        .filter(|ahead| *ahead > MAX_CLOCK_AHEAD.as_millis() as i64)
+}
+
+/// The next HLC: past the wall clock and past every op this copy has
+/// applied, its own and received alike — not one held or refused, which
+/// would set this clock by an op it never folded (da-ns8dq).
 fn next_hlc(conn: &Connection) -> Result<String> {
     let last: Option<String> = conn
-        .prepare_cached("SELECT MAX(hlc) FROM ops")?
+        .prepare_cached("SELECT MAX(hlc) FROM ops WHERE applied = 1")?
         .query_row([], |r| r.get(0))?;
-    let (ms, counter) = advance(
-        last.as_deref().and_then(parse_hlc),
-        Utc::now().timestamp_millis(),
-    );
+    let (ms, counter) = advance(last.as_deref().and_then(parse_hlc), now_ms());
     Ok(format_hlc(ms, counter))
 }
 
@@ -744,7 +771,8 @@ pub(super) fn emit(
 pub struct ApplySummary {
     pub applied: usize,
     pub already_had: usize,
-    /// Ops still waiting for an op before them — held, not dropped.
+    /// Ops still waiting for an op before them, or for this clock to catch
+    /// up with theirs ([`MAX_CLOCK_AHEAD`]) — held, not dropped.
     pub held: usize,
     pub conflicts: usize,
     /// Ops refused, each named with the reason.
@@ -1128,6 +1156,7 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
     let filtered = Chain::load_with_waiting(conn)?
         .filter(&endpoint(conn)?.id)
         .is_some();
+    let now = now_ms();
     let waiting = loop {
         let mut waiting = waiting_ops(conn)?;
         // Records first: membership decides which of the rest apply. Then
@@ -1142,8 +1171,10 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
         for op in &waiting {
             let have = |e: &str| vector.get(e).copied().unwrap_or(0);
             // At or below `have`: a refused op the membership now allows.
-            let ready = filtered
-                || op.seq <= have(&op.endpoint) + 1 && op.deps.iter().all(|(e, n)| have(e) >= *n);
+            // An op from a clock too far ahead waits for this one.
+            let ready = (filtered
+                || op.seq <= have(&op.endpoint) + 1 && op.deps.iter().all(|(e, n)| have(e) >= *n))
+                && clock_ahead(&op.hlc, now).is_none();
             if !ready {
                 continue;
             }
@@ -1819,5 +1850,101 @@ mod tests {
         let full = advance(Some((60, HLC_COUNTER_MAX)), 50);
         assert_eq!(full, (61, 0));
         assert!(format_hlc(full.0, full.1) > format_hlc(60, HLC_COUNTER_MAX));
+    }
+
+    // ─── A fast clock (da-ns8dq) ────────────────────────────────────────────
+
+    const YEAR: i64 = 365 * 24 * 3600 * 1000;
+
+    /// Log an entry on `db` with its clock `skew` ms fast; its ops as lines.
+    fn log_at(db: &Db, skew: i64, field: &str) -> Vec<String> {
+        SKEW.with(|s| s.set(skew));
+        let e = Entry::new(
+            field,
+            crate::entry::Verb::Point,
+            None,
+            None,
+            None,
+            None,
+            "t",
+        );
+        db.insert_entry(&e).unwrap();
+        SKEW.with(|s| s.set(0));
+        db.sync_ops_since(&BTreeMap::new(), false, None).unwrap()
+    }
+
+    fn apply_at(db: &Db, skew: i64, lines: &[String]) -> ApplySummary {
+        SKEW.with(|s| s.set(skew));
+        let s = db.sync_apply(&lines.join("\n")).unwrap();
+        SKEW.with(|c| c.set(0));
+        s
+    }
+
+    /// The HLC of the latest op `db` signed itself, as ms.
+    fn own_latest(db: &Db) -> i64 {
+        let (mine, _) = own_head(&db.conn).unwrap();
+        let hlc: String = db
+            .conn
+            .query_row(
+                "SELECT MAX(hlc) FROM ops WHERE endpoint = ?1",
+                [mine],
+                |r| r.get(0),
+            )
+            .unwrap();
+        parse_hlc(&hlc).unwrap().0
+    }
+
+    #[test]
+    fn an_op_from_a_clock_a_year_ahead_waits_and_does_not_pin_this_clock() {
+        let (a, b, c) = (
+            Db::open_in_memory().unwrap(),
+            Db::open_in_memory().unwrap(),
+            Db::open_in_memory().unwrap(),
+        );
+        let from_a = log_at(&a, YEAR, "coffee");
+        let s = apply_at(&b, 0, &from_a);
+        assert_eq!((s.applied, s.held), (0, from_a.len()));
+        let waits = b.sync_clock_waits().unwrap();
+        assert_eq!(waits.len(), 1);
+        assert_eq!(waits[0].endpoint, own_head(&a.conn).unwrap().0);
+        assert_eq!(waits[0].ops, from_a.len());
+        assert!(
+            waits[0].to_string().contains("1 change from")
+                && waits[0].to_string().contains("its clock is 365 days ahead")
+        );
+
+        let from_b = log_at(&b, 0, "tea");
+        assert!(own_latest(&b) <= now_ms(), "b's op is stamped at a's year");
+
+        // B's clock passes the op's HLC less the limit: the next apply
+        // applies it, and B folds as a copy that applied it at once.
+        let late = YEAR - MAX_CLOCK_AHEAD.as_millis() as i64 + 60_000;
+        let s = apply_at(&b, late, &[]);
+        assert_eq!((s.applied, s.held), (from_a.len(), 0));
+        assert!(b.sync_clock_waits().unwrap().is_empty());
+        apply_at(&c, late, &from_a);
+        apply_at(&c, late, &from_b);
+        assert_eq!(
+            b.sync_state_hash(None).unwrap().0,
+            c.sync_state_hash(None).unwrap().0
+        );
+    }
+
+    #[test]
+    fn an_op_a_minute_ahead_applies_at_once() {
+        let (a, b) = (Db::open_in_memory().unwrap(), Db::open_in_memory().unwrap());
+        let from_a = log_at(&a, 60_000, "coffee");
+        let s = apply_at(&b, 0, &from_a);
+        assert_eq!((s.applied, s.held), (from_a.len(), 0));
+        assert!(b.sync_clock_waits().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_refused_op_does_not_move_the_clock() {
+        let (a, b) = (Db::open_in_memory().unwrap(), Db::open_in_memory().unwrap());
+        apply_at(&b, 0, &log_at(&a, YEAR, "coffee"));
+        b.conn.execute("UPDATE ops SET applied = 2", []).unwrap();
+        log_at(&b, 0, "tea");
+        assert!(own_latest(&b) <= now_ms());
     }
 }

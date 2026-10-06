@@ -115,7 +115,9 @@ The relay sync is deleted; p2p «Easy Sync» replaced it. Its core is in
 entry change emits a signed op beside its `history::record` (endpoint key in
 `sync_local`, HLC, the change's own `raw` line, its key-level `effect`), and
 an entry's row is the FOLD of its ops in HLC order, so the same ops in any
-order give the same row. The hidden `datum sync pipe vector / ops / apply /
+order give the same row. A copy's HLC passes only the ops it has applied, and a received op
+more than five minutes ahead of its clock (`MAX_CLOCK_AHEAD`) is held until
+the clock catches up, its device named by `sync status`. The hidden `datum sync pipe vector / ops / apply /
 verify` move ops as JSON lines over a pipe. The transport is iroh (`crates/datum-sync`,
 behind datum-commands' `net` feature, so the CLI's wasm build has no iroh): the iroh
 endpoint key IS the db's endpoint key, copies join a sync chain with

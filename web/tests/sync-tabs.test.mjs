@@ -9,8 +9,8 @@
 
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
-import { countOf, leadsOf, nativeCopy, pairWith, relayed, startRelay, verifyOf } from './support/sync.mjs';
+import { startApp, stopApp } from './support/app.mjs';
+import { countOf, leadsOf, nativeCopy, pairWith, relayed, startRelay, verifyOf, withWallClock } from './support/sync.mjs';
 import { until } from './support/until.mjs';
 
 let relay;
@@ -27,7 +27,7 @@ after(async () => {
 async function withTabs(fn, { peer = true } = {}) {
 	const native = peer ? await nativeCopy(relay) : null;
 	try {
-		await withApp(
+		await withWallClock(
 			async (first) => {
 				await first.declare('burst');
 				if (native) {

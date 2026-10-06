@@ -69,6 +69,8 @@ export interface DbSync {
 	/** When this copy's sync was paused, while it is. */
 	paused?: string | null;
 	notices?: Notice[];
+	/** Devices whose changes wait for this copy's clock to catch up with theirs (da-ns8dq). */
+	clock?: { endpoint: string; text: string }[];
 }
 
 /**
@@ -136,7 +138,7 @@ export function readSync(dbs: string[]): Promise<DbSync[]> {
 			if (status.code !== 0) return { db, chain: null, members: [] };
 			const s = JSON.parse(status.stdout);
 			const { admins } = JSON.parse(members.stdout);
-			return { db, chain: s.chain, this: s.this, members: s.members, admins, paused: s.paused, notices: s.notices };
+			return { db, chain: s.chain, this: s.this, members: s.members, admins, paused: s.paused, notices: s.notices, clock: s.clock };
 		})
 	);
 }

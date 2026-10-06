@@ -16,6 +16,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { withApp } from './app.mjs';
 import { until } from './until.mjs';
 
 const repo = fileURLToPath(new URL('../../..', import.meta.url));
@@ -124,6 +125,15 @@ function datumBinary() {
  * is how many entries of `field` it holds; `close` stops every process and
  * removes the copy.
  */
+/**
+ * `withApp` on the wall clock, for a test that syncs with a native copy
+ * (da-ns8dq). A native copy runs on the real clock, and a copy holds an op
+ * more than five minutes ahead of its own until its clock catches up: an
+ * app held at `HELD_AT` would hold every op a native copy sent it, or the
+ * copy every op the app sent, but in the minutes around 15:00.
+ */
+export const withWallClock = (body, opts = {}) => withApp(body, { clock: null, ...opts });
+
 export async function nativeCopy(relay) {
 	const bin = datumBinary();
 	const home = await mkdtemp(join(tmpdir(), 'datum-native-'));

@@ -8,8 +8,8 @@
 
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
-import { countOf, leadsOf, nativeCopy, pairWith, relayed, startRelay, verifyOf } from './support/sync.mjs';
+import { startApp, stopApp } from './support/app.mjs';
+import { countOf, leadsOf, nativeCopy, pairWith, relayed, startRelay, verifyOf, withWallClock } from './support/sync.mjs';
 import { until } from './support/until.mjs';
 
 let relay;
@@ -72,7 +72,7 @@ describe('datum.day and a native copy', () => {
 		const native = await nativeCopy(relay);
 		try {
 			assert.equal((await native.run(['occur', 'tea', '-t', '0800'])).code, 0);
-			await withApp(
+			await withWallClock(
 				async (app) => {
 					await app.run(['occur', 'coffee', '-t', '0900']);
 					const report = await pairWith(app, native);
@@ -91,7 +91,7 @@ describe('datum.day and a native copy', () => {
 	test('a page holding entries is refused a reader invite, by count, and joins nothing (da-tti3w)', async () => {
 		const native = await nativeCopy(relay);
 		try {
-			await withApp(
+			await withWallClock(
 				async (app) => {
 					await app.run(['occur', 'coffee', '-t', '0900']);
 					await app.run(['occur', 'coffee', '-t', '1000']);
@@ -118,7 +118,7 @@ describe('datum.day and a native copy', () => {
 	test('one write is one push: what a session itself writes pushes nothing (da-df6cb)', async () => {
 		const native = await nativeCopy(relay);
 		try {
-			await withApp(
+			await withWallClock(
 				async (app) => {
 					await pairWith(app, native);
 					native.spawn(['sync', 'run']);
@@ -141,7 +141,7 @@ describe('datum.day and a native copy', () => {
 	test('closing the tab stops its endpoint; reopened, it resumes and takes what was written meanwhile', async () => {
 		const native = await nativeCopy(relay);
 		try {
-			await withApp(
+			await withWallClock(
 				async (app) => {
 					await pairWith(app, native);
 					const before = await endpointOf(app);
@@ -174,7 +174,7 @@ describe('datum.day and a native copy', () => {
 
 describe('a sync chain started in the page', () => {
 	test('holds this browser as its first member, under its own client, and the tab starts an endpoint', async () => {
-		await withApp(
+		await withWallClock(
 			async (app) => {
 				// The first invite starts an open chain: no admin, no key.
 				const invite = await app.run(['sync', 'new-invite']);
@@ -197,7 +197,7 @@ describe('a sync chain started in the page', () => {
 
 /** Two browser profiles, `a` and `b`, each syncing through the relay. */
 const twoBrowsers = (body) =>
-	withApp((a) => withApp((b) => body(a, b), { prepare: relayed(relay) }), { prepare: relayed(relay) });
+	withWallClock((a) => withWallClock((b) => body(a, b), { prepare: relayed(relay) }), { prepare: relayed(relay) });
 
 /** A join link for a new invite on `a`'s `datum` (da-l9kdr), as its Sync widget shows one. */
 const linkFrom = (a) => a.page.evaluate(async () => `${location.origin}/sync/join#${await window.datum.sync.offer('datum')}`);
@@ -258,9 +258,9 @@ describe('a browser joins a chain (da-l9kdr)', () => {
 
 describe('two browsers', () => {
 	test('pair through the relay, converge, and a write in one appears in the other untouched', async () => {
-		await withApp(
+		await withWallClock(
 			async (a) => {
-				await withApp(
+				await withWallClock(
 					async (b) => {
 						await a.run(['occur', 'left', '-t', '0800']);
 						await b.run(['occur', 'right', '-t', '0900']);
