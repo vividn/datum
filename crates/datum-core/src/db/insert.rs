@@ -378,9 +378,9 @@ impl Db {
                         )),
                         _ => DatumError::Db(e),
                     })?;
-                    raw_overwrite_mutables(&tx, &entry.slug, entry, None)?;
+                    raw_overwrite_mutables(&tx, &pre.hid, &entry.slug, entry, None)?;
                     super::sync::emit(&tx, Some(&pre), &pre.hid, ChangeKind::UserEdit)?;
-                    written.push(fetch_entry_any(&tx, &entry.slug)?);
+                    written.push(fetch_entry_any(&tx, &pre.hid.0)?);
                     if pre.deleted_at.is_none() {
                         counts.changed += 1
                     } else {
@@ -510,8 +510,9 @@ impl Db {
         Ok(outcomes)
     }
 
-    /// Persist a mutation to an existing entry, matched by `entry.slug`.
-    /// Errors [`DatumError::NotFound`] if the slug is unknown and
+    /// Persist a mutation to an existing entry, matched by `entry.hid` (a
+    /// keep-both pair shares its slug, so a slug cannot address one row).
+    /// Errors [`DatumError::NotFound`] if the hid is unknown and
     /// [`DatumError::Tombstoned`] if the row is soft-deleted. Refreshes
     /// `modify_time` and rewrites all mutable fields (including
     /// `content_hash`, `data`) from the incoming payload. Records a
@@ -640,15 +641,15 @@ impl Db {
                 &updated,
                 change_kind,
             )?;
-            let fresh = self.get_entry(&target)?;
+            let fresh = self.get_entry(&updated.hid.0)?;
             Ok((fresh, Some(existing_slug.clone())))
         } else {
             // updated.slug already equals existing_slug for the in-place
-            // path; save_existing_entry matches on entry.slug so make sure
-            // it isn't out of sync.
+            // path; the row is matched by hid, but the slug is what the
+            // meta-entry checks read, so make sure it isn't out of sync.
             updated.slug = existing_slug.clone();
             save_existing_entry_with_kind_in_tx(&self.conn, &updated, change_kind)?;
-            let fresh = self.get_entry(existing_slug)?;
+            let fresh = self.get_entry(&updated.hid.0)?;
             Ok((fresh, None))
         }
     }
@@ -659,10 +660,11 @@ impl Db {
     /// a templated field/slug re-derives to a different value after data
     /// changes (port of datum's `idStructure` / `fieldStructure` semantics).
     ///
-    /// Looks the row up by `old_slug`; uses `entry.hid` as the identity for
-    /// the actual UPDATE so the slug column can change in the same statement
-    /// without losing the row. Records a `user_edit` history row for the
-    /// pre-rekey state in the same transaction. Returns
+    /// Addresses the row by `entry.hid`, so the slug column can change in
+    /// the same statement without losing the row, and a keep-both pair's
+    /// other row on `old_slug` is never the one written. Records a
+    /// `user_edit` history row for the pre-rekey state in the same
+    /// transaction. Returns
     /// [`DatumError::Duplicate`] if the new slug collides with another live
     /// row.
     pub fn save_existing_entry_with_rekey(&self, old_slug: &Slug, entry: &Entry) -> Result<()> {
@@ -697,8 +699,8 @@ fn save_existing_entry_with_kind_in_tx(
 ) -> Result<()> {
     let state: Option<Option<String>> = conn
         .query_row(
-            "SELECT deleted_at FROM entries WHERE slug = ?1",
-            params![entry.slug],
+            "SELECT deleted_at FROM entries WHERE hid = ?1",
+            params![entry.hid],
             |row| row.get(0),
         )
         .optional()?;
@@ -706,9 +708,9 @@ fn save_existing_entry_with_kind_in_tx(
         None => Err(DatumError::NotFound(entry.slug.to_string())),
         Some(Some(_)) => Err(DatumError::Tombstoned(entry.slug.to_string())),
         Some(None) => {
-            let pre = fetch_entry_any(conn, &entry.slug)?;
+            let pre = fetch_entry_any(conn, &entry.hid.0)?;
             history::record(conn, &pre, change_kind)?;
-            raw_overwrite_mutables(conn, &entry.slug, entry, None)?;
+            raw_overwrite_mutables(conn, &pre.hid, &entry.slug, entry, None)?;
             super::sync::emit(conn, Some(&pre), &pre.hid, change_kind)
         }
     }
@@ -723,15 +725,9 @@ fn save_existing_entry_with_rekey_kind_in_tx(
     change_kind: ChangeKind,
 ) -> Result<()> {
     crate::slug::validate_slug(&entry.slug.0)?;
-    let pre = fetch_entry_any(conn, old_slug)?;
+    let pre = fetch_entry_any(conn, &entry.hid.0)?;
     if pre.deleted_at.is_some() {
         return Err(DatumError::Tombstoned(old_slug.to_string()));
-    }
-    if pre.hid != entry.hid {
-        return Err(DatumError::Other(format!(
-            "save_existing_entry_with_rekey: hid mismatch — pre={} new={}",
-            pre.hid, entry.hid,
-        )));
     }
     history::record(conn, &pre, change_kind)?;
     match raw_overwrite_full_by_hid(conn, entry) {
@@ -931,13 +927,13 @@ fn write_entry_in_tx(
         entry.data.as_ref(),
     );
 
-    let existing: Option<(Slug, Option<String>)> = conn
+    let existing: Option<(Slug, Hid, Option<String>)> = conn
         .query_row(
-            "SELECT slug, data FROM entries
+            "SELECT slug, hid, data FROM entries
              WHERE content_hash = ?1 AND deleted_at IS NULL AND superseded_by IS NULL
              LIMIT 1",
             params![dedup_hash],
-            |row| Ok((row.get::<_, Slug>(0)?, row.get::<_, Option<String>>(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?;
     // da-2mn3k: Update / Merge also resolve a SLUG collision, applying the
@@ -947,10 +943,10 @@ fn write_entry_in_tx(
     let existing = match existing {
         None if matches!(strategy, ConflictStrategy::Update | ConflictStrategy::Merge) => conn
             .query_row(
-                "SELECT slug, data FROM entries
+                "SELECT slug, hid, data FROM entries
                  WHERE slug = ?1 AND deleted_at IS NULL AND superseded_by IS NULL",
                 params![entry.slug],
-                |row| Ok((row.get::<_, Slug>(0)?, row.get::<_, Option<String>>(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()?,
         found => found,
@@ -971,15 +967,14 @@ fn write_entry_in_tx(
                 history::record(conn, &ghost, ChangeKind::UserEdit)?;
                 // Clear the tombstone first, keyed on the retained hid, then
                 // overwrite the now-live row's mutable columns with the new
-                // content (raw_overwrite_mutables matches on the slug, which
-                // is unique). The hid carries over so history/undo stay linked.
+                // content. The hid carries over so history/undo stay linked.
                 conn.execute(
                     "UPDATE entries SET deleted_at = NULL WHERE hid = ?1",
                     params![ghost.hid],
                 )?;
-                raw_overwrite_mutables(conn, &entry.slug, entry, None)?;
+                raw_overwrite_mutables(conn, &ghost.hid, &entry.slug, entry, None)?;
                 super::sync::emit(conn, Some(&ghost), &ghost.hid, ChangeKind::UserEdit)?;
-                let revived = fetch_entry_any(conn, &entry.slug)?;
+                let revived = fetch_entry_any(conn, &ghost.hid.0)?;
                 let outcome = InsertOutcome::Inserted {
                     slug: revived.slug.clone(),
                     hid: revived.hid.clone(),
@@ -1020,26 +1015,26 @@ fn write_entry_in_tx(
                 (outcome, Some(inserted))
             }
         }
-        (Some((slug, _)), ConflictStrategy::Ignore) => (InsertOutcome::Ignored { slug }, None),
-        (Some((slug, _)), ConflictStrategy::Update) => {
-            let pre = fetch_entry_any(conn, &slug)?;
+        (Some((slug, _, _)), ConflictStrategy::Ignore) => (InsertOutcome::Ignored { slug }, None),
+        (Some((slug, hid, _)), ConflictStrategy::Update) => {
+            let pre = fetch_entry_any(conn, &hid.0)?;
             history::record(conn, &pre, ChangeKind::UserEdit)?;
-            raw_overwrite_mutables(conn, &slug, entry, None)?;
+            raw_overwrite_mutables(conn, &hid, &slug, entry, None)?;
             super::sync::emit(conn, Some(&pre), &pre.hid, ChangeKind::UserEdit)?;
             (InsertOutcome::Updated { slug }, None)
         }
-        (Some((slug, existing_data_json)), ConflictStrategy::Merge) => {
-            let pre = fetch_entry_any(conn, &slug)?;
+        (Some((slug, hid, existing_data_json)), ConflictStrategy::Merge) => {
+            let pre = fetch_entry_any(conn, &hid.0)?;
             history::record(conn, &pre, ChangeKind::UserEdit)?;
             let existing_data: Option<JsonValue> = existing_data_json
                 .as_deref()
                 .and_then(|s| serde_json::from_str(s).ok());
             let merged = merge_extra_data(existing_data.as_ref(), entry.data.as_ref());
-            raw_overwrite_mutables(conn, &slug, entry, Some(merged))?;
+            raw_overwrite_mutables(conn, &hid, &slug, entry, Some(merged))?;
             super::sync::emit(conn, Some(&pre), &pre.hid, ChangeKind::UserEdit)?;
             (InsertOutcome::Merged { slug }, None)
         }
-        (Some((old_slug, _)), ConflictStrategy::Rekey) => {
+        (Some((old_slug, _, _)), ConflictStrategy::Rekey) => {
             // Rekey: insert the incoming row with its own slug. Both rows
             // share a content_hash — the content_hash column is not UNIQUE.
             // The new row gets its own `Create` history entry; the original
@@ -1327,8 +1322,8 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
     Ok(())
 }
 
-/// Rewrite the `entries` row matching `snapshot.slug` to match the
-/// supplied snapshot. Used by conflict resolution paths
+/// Rewrite the live, unsuperseded row at `snapshot.slug` (addressed by its
+/// hid) to match the supplied snapshot. Used by conflict resolution paths
 /// (`take_local`, `take_remote`, `edit`) to apply the user's chosen
 /// version. Records a `user_edit` history row before the overwrite.
 ///
@@ -1350,16 +1345,18 @@ pub(super) fn rewrite_entry_to_snapshot(conn: &Connection, snapshot: &Entry) -> 
         return Ok(());
     };
     history::record(conn, &pre, ChangeKind::UserEdit)?;
-    raw_overwrite_mutables(conn, &pre.slug, snapshot, None)?;
+    raw_overwrite_mutables(conn, &pre.hid, &pre.slug, snapshot, None)?;
     super::sync::emit(conn, Some(&pre), &pre.hid, ChangeKind::UserEdit)
 }
 
-/// Overwrite an existing row identified by `slug` with the mutable fields
-/// from `entry`. When `override_data` is `Some`, it replaces the stored
-/// `data`; otherwise the incoming `entry.data` wins. Refreshes `modify_time`
-/// to now. The slug is immutable — this never renames the row.
+/// Overwrite the row `hid` (whose slug is `slug`) with the mutable fields
+/// from `entry`. By hid, as a keep-both pair shares one slug. When
+/// `override_data` is `Some`, it replaces the stored `data`; otherwise the
+/// incoming `entry.data` wins. Refreshes `modify_time` to now. The slug is
+/// immutable — this never renames the row.
 fn raw_overwrite_mutables(
     conn: &Connection,
+    hid: &Hid,
     slug: &str,
     entry: &Entry,
     override_data: Option<Option<JsonValue>>,
@@ -1412,9 +1409,9 @@ fn raw_overwrite_mutables(
             user_asserted_last_state = ?22,
             id_structure = ?23,
             field_structure = ?24
-           WHERE slug = ?1"#,
+           WHERE hid = ?1"#,
         params![
-            slug,
+            hid,
             content_hash,
             entry.field,
             verb_str,

@@ -717,3 +717,53 @@ fn a_fork_of_one_endpoint_is_refused_not_merged() {
         assert!(String::from_utf8_lossy(&out.stderr).contains(SHARED));
     }
 }
+
+/// A keep-both pair on B: A's `habit` kept, B's own superseded under the
+/// same slug. Returns (kept, superseded) hids.
+fn keep_both_pair(a: &Copy, b: &Copy) -> (String, String) {
+    a.ok(&["occur", "habit", "-t", "2026-10-04 09:00", "note=from-a"]);
+    b.ok(&["occur", "habit", "-t", "2026-10-04 09:00", "note=from-b"]);
+    a.send(b);
+    let by = |sql: &str| b.query(sql, "habit");
+    let kept = by("SELECT hid FROM entries WHERE field = ?1 AND superseded_by IS NULL");
+    let gone = by("SELECT hid FROM entries WHERE field = ?1 AND superseded_by IS NOT NULL");
+    (kept, gone)
+}
+
+#[test]
+fn an_edit_of_a_keep_both_row_rewrites_that_row_alone_on_both_copies() {
+    let (a, b) = (Copy::new(), Copy::new());
+    let (kept, gone) = keep_both_pair(&a, &b);
+    let before = b.data(&gone);
+    b.ok(&["update", &kept, "note=edited"]);
+    converged(&a, &b);
+    converged(&a, &b);
+    for copy in [&a, &b] {
+        assert_eq!(copy.data(&kept)["note"], "edited");
+        assert_eq!(copy.data(&gone), before, "the superseded row was rewritten");
+    }
+}
+
+#[test]
+fn resolving_a_keep_both_pair_leaves_the_copies_converged() {
+    for side in ["--take-local", "--take-remote"] {
+        let (a, b) = (Copy::new(), Copy::new());
+        let (_, gone) = keep_both_pair(&a, &b);
+        converged(&a, &b);
+        let before = b.data(&gone);
+        let warning = b.query(
+            "SELECT id FROM integrity_warnings WHERE kind = ?1",
+            "identity_collision",
+        );
+        b.ok(&["conflicts", "resolve", &warning, side]);
+        converged(&a, &b);
+        converged(&a, &b);
+        for copy in [&a, &b] {
+            assert_eq!(
+                copy.data(&gone),
+                before,
+                "{side} rewrote the superseded row"
+            );
+        }
+    }
+}
