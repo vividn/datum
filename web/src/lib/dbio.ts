@@ -64,18 +64,24 @@ export const UNANSWERED = 12;
  * under `retime` / `update` (da-f5pg2) — is asked in a confirm, in the CLI's
  * own words: what it said on stderr, the rows it printed, then its question.
  * The line runs again with the answer on stdin, so a yes changes the entry
- * and a no prints the CLI's own «Aborted.».
+ * and a no prints the CLI's own «Aborted.». The answer carries the pin the
+ * CLI printed after the question (da-84h6a): if another tab moved `_LAST`
+ * meanwhile, the CLI reads no answer for an entry it never showed and asks
+ * again, about the entry `_LAST` is now.
  */
 export const asking =
 	(run: CommandRunner): CommandRunner =>
-	async (argv, stdin, ...rest) => {
-		const result = await run(argv, stdin, ...rest);
-		if (result.code !== UNANSWERED || stdin !== undefined) return result;
-		const said = result.stderr.trimEnd().split('\n');
-		const question = said.pop() ?? '';
-		const text = [...said, result.stdout.trimEnd(), question].filter(Boolean).join('\n');
-		const yes = await confirm(text, question.split(' ')[0].toLowerCase());
-		return run(argv, yes ? 'y\n' : 'n\n', ...rest);
+	async (argv, stdin, onStderr, key, stage, env = []) => {
+		let result = await run(argv, stdin, onStderr, key, stage, env);
+		while (result.code === UNANSWERED && stdin === undefined) {
+			const said = result.stderr.trimEnd().split('\n');
+			const pin = said.at(-1)?.startsWith('DATUM_LAST_SHOWN=') ? [said.pop()!] : [];
+			const question = said.pop()?.trimEnd() ?? '';
+			const text = [...said, result.stdout.trimEnd(), question].filter(Boolean).join('\n');
+			const yes = await confirm(text, question.split(' ')[0].toLowerCase());
+			result = await run(argv, yes ? 'y\n' : 'n\n', onStderr, key, stage, [...env, ...pin]);
+		}
+		return result;
 	};
 
 /** The file the reader picks in the browser's dialog, which opens before this returns. */

@@ -381,15 +381,18 @@ pub(crate) fn confirm_default_last_if_stale(
         action_verb,
         entries,
         &mut locked,
+        std::env::var("DATUM_LAST_SHOWN").ok().as_deref(),
         /*render_candidates=*/ true,
     )
 }
 
 /// Test seam for [`confirm_default_last_if_stale`]: takes the stdin
 /// reader as an argument so tests can drive the prompt with a scripted
-/// answer instead of blocking on the process's real stdin.
+/// answer instead of blocking on the process's real stdin, and `shown`
+/// the `DATUM_LAST_SHOWN` an answer's run carries (da-84h6a).
 /// `render_candidates = false` suppresses the candidate-row print
 /// (which uses stdout; tests don't try to capture it).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn confirm_default_last_if_stale_with_io<R: std::io::BufRead>(
     db: &Db,
     explicit_id: Option<&str>,
@@ -397,6 +400,7 @@ pub(crate) fn confirm_default_last_if_stale_with_io<R: std::io::BufRead>(
     action_verb: &str,
     entries: &[Entry],
     stdin: &mut R,
+    shown: Option<&str>,
     render_candidates: bool,
 ) -> Result<bool> {
     use datum_core::last_docs::{get_last_docs, within_protection_window};
@@ -410,7 +414,17 @@ pub(crate) fn confirm_default_last_if_stale_with_io<R: std::io::BufRead>(
         // NoLastDocsRef error; no prompt to make.
         return Ok(true);
     };
-    if within_protection_window(reference.time, chrono::Utc::now()) {
+    // An answer to an earlier asking names what it was shown (da-84h6a):
+    // the pin the unanswered run printed. It is read only while `_LAST` is
+    // still those entries; moved, the question is asked again, unanswered.
+    let hids = reference
+        .hids
+        .iter()
+        .map(datum_core::ids::Hid::as_str)
+        .collect::<Vec<_>>()
+        .join(",");
+    let moved = shown.is_some_and(|s| s != hids);
+    if shown.is_none() && within_protection_window(reference.time, chrono::Utc::now()) {
         return Ok(true);
     }
 
@@ -422,11 +436,18 @@ pub(crate) fn confirm_default_last_if_stale_with_io<R: std::io::BufRead>(
         let ctxs = crate::commands::render_helpers::build_render_contexts(entries, db);
         {
             let mut stderr = std::io::stderr().lock();
-            let _ = writeln!(
-                stderr,
-                "⚠ default `_LAST` is older than {} minutes — showing target:",
-                datum_core::last_docs::PROTECTION_WINDOW_MINUTES,
-            );
+            let _ = if moved {
+                writeln!(
+                    stderr,
+                    "⚠ default `_LAST` has moved since — showing target:"
+                )
+            } else {
+                writeln!(
+                    stderr,
+                    "⚠ default `_LAST` is older than {} minutes — showing target:",
+                    datum_core::last_docs::PROTECTION_WINDOW_MINUTES,
+                )
+            };
         }
         for (i, entry) in entries.iter().enumerate() {
             crate::render::print_entry(entry, ctxs.get(i), Some(&now), registry.as_ref());
@@ -446,9 +467,12 @@ pub(crate) fn confirm_default_last_if_stale_with_io<R: std::io::BufRead>(
     // A stdin that ends before a line is no answer where the host says so
     // (da-f5pg2): datum.day cannot answer on stdin, so it asks the person
     // in a dialog and runs the line again with their answer.
-    if stdin.read_line(&mut line).unwrap_or(0) == 0
-        && std::env::var("DATUM_NO_DEFAULT_ANSWER").is_ok_and(|v| v == "1")
+    // The pin goes after the question, for the answer to hand back.
+    if moved
+        || stdin.read_line(&mut line).unwrap_or(0) == 0
+            && std::env::var("DATUM_NO_DEFAULT_ANSWER").is_ok_and(|v| v == "1")
     {
+        eprint!("\nDATUM_LAST_SHOWN={hids}");
         return Err(Unanswered.into());
     }
     // Yes-default: empty input OR y/yes proceeds. Anything else aborts.
@@ -457,8 +481,9 @@ pub(crate) fn confirm_default_last_if_stale_with_io<R: std::io::BufRead>(
 }
 
 /// A question went unanswered: stdin ended under `DATUM_NO_DEFAULT_ANSWER=1`
-/// (da-f5pg2). The question is already on stderr; `datum` exits with its own
-/// code for this and says nothing more.
+/// (da-f5pg2), or answered for entries `_LAST` no longer is (da-84h6a). The
+/// question is already on stderr, then the `DATUM_LAST_SHOWN=` pin for the
+/// answer's run; `datum` exits with its own code for this and says nothing more.
 #[derive(Debug)]
 pub struct Unanswered;
 
@@ -790,6 +815,7 @@ mod tests {
             "Delete",
             &[],
             &mut stdin,
+            None,
             false,
         )
         .unwrap();
@@ -808,6 +834,7 @@ mod tests {
             "Delete",
             &[],
             &mut stdin,
+            None,
             false,
         )
         .unwrap();
@@ -827,6 +854,7 @@ mod tests {
             "Delete",
             &[],
             &mut stdin,
+            None,
             false,
         )
         .unwrap();
@@ -853,6 +881,7 @@ mod tests {
             "Delete",
             &[],
             &mut stdin,
+            None,
             false,
         )
         .unwrap();
@@ -887,6 +916,7 @@ mod tests {
             "Delete",
             &[],
             &mut stdin,
+            None,
             false,
         )
         .unwrap();
@@ -908,6 +938,7 @@ mod tests {
             "Delete",
             &[],
             &mut stdin,
+            None,
             false,
         )
         .unwrap();
@@ -928,10 +959,40 @@ mod tests {
             "Delete",
             &[],
             &mut stdin,
+            None,
             false,
         )
         .unwrap();
         assert!(!proceed, "explicit 'n' must abort");
+    }
+
+    /// da-84h6a: an answer pinned to what `_LAST` still is gets read — even
+    /// with the pointer fresh again — and one pinned to an entry `_LAST` has
+    /// moved off is never read: the question goes back unanswered.
+    #[test]
+    fn confirm_reads_an_answer_only_for_the_entries_it_was_shown() {
+        let db = Db::open_in_memory().unwrap();
+        let shown = seed_entry_with_hid(&db, "coffee");
+        set_last_docs(&db, std::slice::from_ref(&shown)).unwrap();
+        let ask = |stdin: &[u8]| {
+            confirm_default_last_if_stale_with_io(
+                &db,
+                None,
+                false,
+                "Retime",
+                &[],
+                &mut std::io::Cursor::new(stdin.to_vec()),
+                Some(shown.as_str()),
+                false,
+            )
+        };
+        assert!(!ask(b"n\n").unwrap(), "the shown entry's 'n' is read");
+        set_last_docs(&db, &[seed_entry_with_hid(&db, "tea")]).unwrap();
+        let moved = ask(b"y\n").unwrap_err();
+        assert!(
+            moved.is::<Unanswered>(),
+            "a moved _LAST takes no answer: {moved}"
+        );
     }
 
     /// da-g5su: `datum why` surfaces the assembled v2.1 wrapped

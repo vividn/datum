@@ -23,7 +23,7 @@ const EXIT_BROKEN_PIPE: i32 = 141;
 /// Exit code when a question went unanswered (da-f5pg2): stdin ended under
 /// `DATUM_NO_DEFAULT_ANSWER=1`, so the default was not taken. The question is
 /// already on stderr; datum.day shows it and runs the line again with the
-/// answer on stdin.
+/// answer on stdin and the pin printed after it in its env (da-84h6a).
 const EXIT_UNANSWERED: i32 = 12;
 
 fn main() {

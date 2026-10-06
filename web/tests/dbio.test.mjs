@@ -390,9 +390,9 @@ test('an option keeps its value, and only the source is the chosen file (da-1vz2
 			// What the CLI is asked — argv and stdin — through the seam's own hook.
 			await page.evaluate(() => {
 				window.__asked = [];
-				const previous = window.datum.setRunner((argv, stdin) => {
+				const previous = window.datum.setRunner((argv, stdin, ...rest) => {
 					if (argv[0] === 'db' || argv[0] === 'kit') window.__asked.push({ argv, stdin });
-					return previous(argv, stdin);
+					return previous(argv, stdin, ...rest);
 				});
 			});
 			const asked = () => page.evaluate(() => window.__asked.at(-1));
@@ -455,9 +455,9 @@ test('a replacing restore confirms its deletions first; one that deletes nothing
 			// put back at the end, as the app is shared.
 			await page.evaluate(() => {
 				window.__restores = [];
-				const previous = window.datum.setRunner((argv, stdin) => {
+				const previous = window.datum.setRunner((argv, stdin, ...rest) => {
 					if (argv[0] === 'db') window.__restores.push(argv);
-					return previous(argv, stdin);
+					return previous(argv, stdin, ...rest);
 				});
 				window.__unhook = () => window.datum.setRunner(previous);
 			});
@@ -556,6 +556,45 @@ test('a stale _LAST question is asked in a confirm, in the CLI’s words, and on
 	});
 });
 
+// da-84h6a: the answer re-ran the line, which resolved `_LAST` afresh — so
+// with another tab's write in between, a cancel retimed the new entry the
+// confirm never showed. The answer is now for the entry shown, and a moved
+// `_LAST` is asked about again.
+test('an answer to the stale _LAST question acts on the entry it showed, or asks again', async () => {
+	await desk.solo(async (app) => {
+		const { page } = app;
+		await app.declare('coffee');
+		await app.declare('tea');
+		await app.submit('occur coffee');
+		// A doc's `id` is its slug, which a retime rewrites; its hid stays.
+		const doc = async (tab, ref) => JSON.parse((await tab.run(['get', ref, '--json'])).stdout).docs[0];
+		const coffee = await doc(app, '_LAST');
+		await app.clock.forward(16 * 60 * 1000);
+
+		await type(page, 'retime -t +5');
+		const dialog = page.locator('dialog.confirm');
+		await dialog.waitFor();
+		assert.match(await dialog.locator('p').innerText(), /coffee/);
+		const other = await app.newTab();
+		await other.submit('occur tea');
+		const tea = await doc(other, '_LAST');
+
+		await dialog.getByRole('button', { name: 'cancel', exact: true }).click();
+		await page.waitForFunction(() => /tea/.test(document.querySelector('dialog.confirm[open] p')?.textContent ?? ''));
+		assert.match(
+			await dialog.locator('p').innerText(),
+			/^⚠ default `_LAST` has moved since — showing target:\n.*\n.*tea.*\nRetime this entry\? \[Y\/n\]$/
+		);
+		assert.equal((await doc(other, tea.hid)).id, tea.id, 'the cancel moved nothing');
+
+		await answer(page, 'retime');
+		assert.notEqual((await doc(other, tea.hid)).id, tea.id, 'yes retimes the entry it showed');
+		assert.equal((await doc(other, coffee.hid)).id, coffee.id, 'and only that one');
+		await other.page.close();
+		assert.deepEqual(app.errors, []);
+	});
+});
+
 // da-i4rqd: the confirm was built from the dry run's counts alone, so a
 // backup whose header disagrees with its lines was confirmed as if whole.
 test('a replacing restore names the dry run’s warnings in its confirm', async () => {
@@ -598,9 +637,9 @@ test('a restore whose dry run warns asks first, even when nothing would be delet
 			const { page } = app;
 			await page.evaluate(() => {
 				window.__restores = [];
-				const previous = window.datum.setRunner((argv, stdin) => {
+				const previous = window.datum.setRunner((argv, stdin, ...rest) => {
 					if (argv[0] === 'db') window.__restores.push(argv);
-					return previous(argv, stdin);
+					return previous(argv, stdin, ...rest);
 				});
 				window.__unhook = () => window.datum.setRunner(previous);
 			});
