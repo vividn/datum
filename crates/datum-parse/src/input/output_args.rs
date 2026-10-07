@@ -187,11 +187,12 @@ pub fn shows_for(command: &str) -> &'static [Show] {
         // `alias`, `config` and `db` are groups: only `alias list`,
         // `config show` and `db restore` render the document, and the
         // sibling subcommands ignore the flag.
-        "now" | "nowview" | "dayview" | "stats" | "count" | "ids" | "history" | "check"
-        | "alias" | "config" | "db" => &[Show::Default, Show::None, Show::Json],
+        "now" | "nowview" | "dayview" | "count" | "ids" | "history" | "check" | "alias"
+        | "config" | "db" => &[Show::Default, Show::None, Show::Json],
         // `fields` draws one more: `--show all` is the engineering
-        // spelling of its `--include-ignored` (da-1lnf).
-        "fields" => &[Show::Default, Show::None, Show::Json, Show::All],
+        // spelling of its `--include-ignored` (da-1lnf). `stats --show
+        // all` is its text and then its JSON line, from one run (da-cddng).
+        "fields" | "stats" => &[Show::Default, Show::None, Show::Json, Show::All],
         // `spec show` prints its document by default, so `--show json` is
         // the explicit form of that; it has no silent mode to offer.
         "spec" => &[Show::Default, Show::Json],

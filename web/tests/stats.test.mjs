@@ -144,6 +144,31 @@ describe('/stats', () => {
 		});
 	});
 
+	// da-cddng: the table and the head came from two runs, `stats` and then
+	// `stats --json`, and the page's one queue ran them back to back — the
+	// whole computation twice, 7.4 s per write on five years of data. One
+	// run now, and the widget still shows exactly what `stats` prints.
+	test('a write costs the widget ONE stats run, and it still shows the CLI text', async () => {
+		await shared.solo(async (app) => {
+			await seed(app);
+			await openStats(app);
+			await expectStats(app, ['stats']);
+			await app.idle();
+			const seen = await app.spyOnRunner();
+			// The loud door, as a pane's write is: /stats has no bar to type in.
+			const r = await app.page.evaluate(() => window.datum.run(['occur', 'coffee', '-t', '-5']));
+			assert.equal(r.code, 0, r.stderr);
+			await app.idle();
+			await app.page.waitForTimeout(500);
+			await app.idle();
+			const runs = (await seen()).filter((argv) => argv[0] === 'stats').map((argv) => argv.join(' '));
+			assert.deepEqual(runs, ['stats --show all']);
+			await expectStats(app, ['stats']);
+			const { total_count } = JSON.parse((await app.run(['stats', '--json'])).stdout);
+			assert.deepEqual((await tiles(app.page))[0], ['entries', String(total_count)]);
+		});
+	});
+
 	// A figure whose scope the reader has to guess at is worse than no
 	// figure, and `fields` is the one that invites the guess: a window
 	// leaves out a field with nothing in it. So the widget says which

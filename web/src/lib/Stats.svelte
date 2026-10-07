@@ -113,14 +113,23 @@
 		}
 	}
 
+	/**
+	 * ONE computation per refresh (da-cddng): `--show all` prints the table
+	 * and then the `--json` line under it, so the body is the CLI's own text
+	 * and the head is read off the last line. Two runs — the text, then
+	 * `--json` — cost the queue the whole computation twice.
+	 */
 	async function refresh(argv: string[], _epoch: number): Promise<void> {
 		const at = ++started;
-		const [text, json] = await Promise.all([run(argv), run([...argv, '--json'])]);
+		const r = await run([...argv, '--show', 'all']);
 		// Last started wins, not last to return (see CliPane.svelte).
 		if (at < shown) return;
 		shown = at;
-		result = text;
-		summary = json.code === 0 ? parsed(json.stdout) : null;
+		const body = r.stdout.replace(/\n$/, '');
+		const cut = body.lastIndexOf('\n') + 1;
+		const ok = r.code === 0;
+		result = ok ? { ...r, stdout: r.stdout.slice(0, cut) } : r;
+		summary = ok ? parsed(body.slice(cut)) : null;
 	}
 
 	function set(next: Partial<StatsSettings>): void {

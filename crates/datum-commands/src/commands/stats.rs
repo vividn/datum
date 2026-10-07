@@ -644,6 +644,9 @@ fn rollup(
     r
 }
 
+/// `--show all` is the text and then the `--json` line under it, from ONE
+/// computation: datum.day's stats pane shows the one and reads its head off
+/// the other, and two runs cost it the computation twice (da-cddng).
 pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
     // No selector: every field, ranked (da-ptuwr). Bare `stats` was an
     // error until now, which is what the web widget's own default settings
@@ -660,6 +663,7 @@ pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
         match args.show {
             ShowFlag::None => {}
             ShowFlag::Json => print!("{}", render_all_json(&all)),
+            ShowFlag::All => print!("{}{}", render_all_text(&all), render_all_json(&all)),
             _ => print!("{}", render_all_text(&all)),
         }
         return Ok(());
@@ -668,6 +672,7 @@ pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
     match args.show {
         ShowFlag::None => {}
         ShowFlag::Json => print!("{}", render_json(&result)),
+        ShowFlag::All => print!("{}{}", render_text(&result), render_json(&result)),
         _ => print!("{}", render_text(&result)),
     }
     Ok(())

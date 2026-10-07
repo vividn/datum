@@ -1430,3 +1430,37 @@ fn a_duration_field_has_its_periods_and_rate_in_time() {
         "{text}"
     );
 }
+
+/// `--show all` is the text and then the `--json` line, byte for byte, from
+/// one run: datum.day's stats pane reads both off it (da-cddng). A bounded
+/// window, so three runs a second apart measure the same span.
+#[test]
+fn show_all_is_the_text_then_the_json_line() {
+    let tmp = tempfile::tempdir().unwrap();
+    for (verb, field, t) in [
+        ("occur", "coffee", "08:00"),
+        ("start", "work", "09:00"),
+        ("end", "work", "11:30"),
+    ] {
+        datum(tmp.path(), &[verb, field, "-d", "2026-01-02", "-t", t]);
+    }
+    for sel in [&[][..], &["work"][..]] {
+        let argv = |extra: &[&'static str]| {
+            let mut a = vec!["stats"];
+            a.extend_from_slice(sel);
+            a.extend_from_slice(&["--until", "2026-02-01"]);
+            a.extend_from_slice(extra);
+            a
+        };
+        let (text, json) = (
+            datum(tmp.path(), &argv(&[])),
+            datum(tmp.path(), &argv(&["--json"])),
+        );
+        assert!(text.contains("work"), "{text}");
+        assert_eq!(
+            datum(tmp.path(), &argv(&["--show", "all"])),
+            text + &json,
+            "{sel:?}"
+        );
+    }
+}

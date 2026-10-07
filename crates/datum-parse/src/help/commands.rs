@@ -2210,6 +2210,7 @@ pub const COMMANDS: &[CommandSpec] = &[
             "datum stats <FIELD[:STATE]> [-d DATE | -y* | -t TIME | -q*] [--until TIME]",
             "datum stats <FIELD[:STATE]> [--include-false] [--include-untracked]",
             "datum stats <FIELD> --group-by client",
+            "datum stats [FIELD] --show all  (the table, then its --json line)",
         ],
         args: NO_ARGS,
         flags: STATS_FLAGS,
