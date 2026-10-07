@@ -6,11 +6,12 @@ import assert from 'node:assert/strict';
 
 export const GAP = 6.4;
 
-/** The most rows a bar draws (`MAX_ROWS` in $lib/commands.ts). */
-const MAX_ROWS = 3;
+/** The most rows a bar draws unless its widget lifts it (`MAX_ROWS` in $lib/commands.ts). */
+export const MAX_ROWS = 3;
 
 /**
- * Resize the page until the bar in pane `id` reports `want` rows.
+ * Resize the page until the bar in pane `id` reports `want` rows. `max`
+ * is that bar's cap: the fields bar has none (da-arms4).
  *
  * The bar says how many rows its box holds (`data-rows`), and the box is
  * a share of the page, so how much of a change in the page's height
@@ -18,7 +19,7 @@ const MAX_ROWS = 3;
  * The box aimed at is the middle of the band that holds `want` rows, so a
  * pixel of rounding cannot land on the edge of the next one.
  */
-export async function atRows(page, id, want) {
+export async function atRows(page, id, want, max = MAX_ROWS) {
 	/** The bar's rows, the rows its box holds, one row's height, and the box. */
 	const read = () =>
 		page.evaluate(
@@ -47,7 +48,7 @@ export async function atRows(page, id, want) {
 					counted: rows === Math.min(max, Math.max(1, Math.floor((box + gap) / (row + gap))))
 				};
 			},
-			{ id, gap: GAP, max: MAX_ROWS }
+			{ id, gap: GAP, max }
 		);
 	let last = null;
 	for (let i = 0; i < 14; i += 1) {
@@ -57,7 +58,11 @@ export async function atRows(page, id, want) {
 		const { width, height } = page.viewportSize();
 		const measured = last && last.height !== height ? (box - last.box) / (height - last.height) : 0;
 		const slope = measured > 0.05 ? measured : 1 / 3;
-		const target = (want + 0.5) * (row + GAP) - GAP;
+		// The middle of the boxes that hold `want` probe rows AND `want`
+		// rows at the tallest button's height: the probe band's own middle
+		// is short of the second at six rows (224px against 230, da-arms4).
+		const low = Math.max(want * (row + GAP) - GAP, want * tall + (want - 1) * GAP);
+		const target = (low + (want + 1) * (row + GAP) - GAP) / 2;
 		last = { height, box };
 		const next = Math.round(height + (target - box) / slope);
 		await page.setViewportSize({ width, height: Math.min(3000, Math.max(200, next)) });
@@ -68,7 +73,7 @@ export async function atRows(page, id, want) {
 			if (now.box !== box && now.counted) break;
 		}
 	}
-	assert.fail(`the bar in ${id} never reported ${want} rows`);
+	assert.fail(`the bar in ${id} never reported ${want} rows: last read ${JSON.stringify(await read())} at ${JSON.stringify(page.viewportSize())}`);
 }
 
 /**

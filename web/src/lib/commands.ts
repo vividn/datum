@@ -658,7 +658,9 @@ export function flagLine(words: string[], takes: Takes | undefined): string[] | 
 // widget, so when it is tall enough, do three rows that scroll
 // horizontally» — and the fields widget the same (da-vu7pi). So a bar is
 // always reached along ONE axis, and a taller box buys it more rows, up
-// to `MAX_ROWS`, never a wrap onto the other axis. The rows are counted
+// to `MAX_ROWS` unless the widget lifts it (`maxRows` on ButtonRows: the
+// fields widget takes every row its box fits, da-arms4), never a wrap
+// onto the other axis. The rows are counted
 // from the BOX the pane's layout gave the bar and the size of one button
 // — never from what the bar is drawing, which is the answer and would
 // make the question circular.
@@ -666,7 +668,7 @@ export function flagLine(words: string[], takes: Takes | undefined): string[] | 
 /** The gap between two buttons, and so between two rows (0.4rem). */
 export const ROW_GAP = 6.4;
 
-/** The most rows a bar draws, however much room it has. */
+/** The most rows a bar draws, however much room it has, unless its widget says otherwise. */
 export const MAX_ROWS = 3;
 
 /** Rows of `rowHeight` buttons that fit in a box `height` tall, at least one. */
@@ -699,7 +701,8 @@ export function lanesOf<T>(items: T[], rows: number): T[][] {
 export type Axis = 'x' | 'y';
 
 /**
- * Tell `onRows` how many lines fit, now and whenever the box changes.
+ * Tell `onRows` how many lines fit, now and whenever the box changes —
+ * all that fit: the cap is the widget's (`maxRows` on ButtonRows).
  *
  * `bar` is the box the LAYOUT gave the widget — a flex child with no
  * size of its own across `axis` — and `probe` one of the widget's own
@@ -716,12 +719,9 @@ export function watchRows(
 ): () => void {
 	const measure = () =>
 		onRows(
-			Math.min(
-				MAX_ROWS,
-				axis === 'x'
-					? rowsIn(bar.clientHeight, probe.offsetHeight)
-					: rowsIn(bar.clientWidth, probe.offsetWidth)
-			)
+			axis === 'x'
+				? rowsIn(bar.clientHeight, probe.offsetHeight)
+				: rowsIn(bar.clientWidth, probe.offsetWidth)
 		);
 	const observer = new ResizeObserver(measure);
 	observer.observe(bar);

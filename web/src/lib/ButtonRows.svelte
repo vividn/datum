@@ -5,7 +5,8 @@
 
 	THE SCROLL RULE (vividn, 2026-09-22): the bar is always reached along
 	one axis — `axis`, scrolled left and right today — and a taller box buys it more rows,
-	up to three, never a wrap onto the other axis. The rows are counted
+	up to `maxRows` (three, MAX_ROWS, unless the widget lifts it: the fields
+	widget takes all its box fits, da-arms4), never a wrap onto the other axis. The rows are counted
 	from the box the layout gave the bar and the size of the `probe` slot
 	— one of the widget's own buttons, drawn and hidden — so the bar's own
 	content never enters the question (`watchRows` in $lib/commands.ts).
@@ -31,7 +32,7 @@
 -->
 <script lang="ts" generics="T">
 	import { onMount } from 'svelte';
-	import { lanesOf, watchRows, type Axis } from './commands.js';
+	import { MAX_ROWS, lanesOf, watchRows, type Axis } from './commands.js';
 
 	export let items: T[];
 	export let key: (item: T) => unknown;
@@ -40,13 +41,17 @@
 	export let arrange: (items: T[], rows: number) => T[][] = lanesOf;
 	/** Which section an item is in; consecutive items of one section are drawn together. */
 	export let section: ((item: T) => unknown) | undefined = undefined;
+	/** The most rows drawn, whatever the box fits; `Infinity` for every row it fits. */
+	export let maxRows = MAX_ROWS;
 	/** The scroller itself, for a widget that has to put a scroll back. */
 	export let bar: HTMLElement | undefined = undefined;
 
 	let probe: HTMLElement;
-	let rows = 1;
+	/** The rows the box fits; the cap is applied after, so it can move on its own. */
+	let fit = 1;
+	$: rows = Math.min(maxRows, fit);
 
-	onMount(() => watchRows(bar!, probe, (n) => (rows = n), axis));
+	onMount(() => watchRows(bar!, probe, (n) => (fit = n), axis));
 
 	/** Consecutive items of one section, as runs; everything one run without `section`. */
 	const runsOf = (items: T[]): T[][] =>

@@ -16,7 +16,7 @@
 	a click prefills `add <field> ` in the bottom bar rather than running
 	anything. The pane keeps the height its layout gives it and the BAR is
 	the scroller (da-mbz2) — `ButtonRows`, every button bar's layout: as
-	many rows as fit, up to three, each packed on its own and all of them
+	many rows as fit, with no cap (da-arms4), each packed on its own and all of them
 	scrolled left and right (da-vu7pi). NOTHING HANGS OUT OF IT: the widget's only
 	floating surface was the `-t` / `dur` / `note` panel, and da-e78x6
 	removed it.
@@ -553,6 +553,7 @@
 <ButtonRows
 	items={entries}
 	{arrange}
+	maxRows={Infinity}
 	key={keyOf}
 	bind:bar
 	let:item

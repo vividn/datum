@@ -8,7 +8,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, seedLines, todayAt } from './support/app.mjs';
 import { along, draft, widgetPane } from './support/layout.mjs';
-import { atRows, axes, boxes, gaps, lastReached, packed } from './support/rows.mjs';
+import { MAX_ROWS, atRows, axes, boxes, gaps, lastReached, packed, rowsOf } from './support/rows.mjs';
 
 before(startApp);
 after(stopApp);
@@ -58,6 +58,56 @@ describe('the fields bar and the scroll rule', () => {
 				viewport: { width: 280, height: 500 },
 				clock: todayAt(15),
 				prepare: (context) => context.addInitScript(draft, PAGE)
+			}
+		);
+	});
+});
+
+// vividn, 2026-10-07: «the fields widget seems to only ever get 3 rows for
+// some reason? It should expand to have more rows as it gets taller.» The
+// fields bar has no cap (`maxRows` on ButtonRows, da-arms4); the commands
+// bar beside it, at the same height, keeps its three.
+describe('the fields bar takes every row its box fits', () => {
+	const SIDE = JSON.stringify(
+		along('column', widgetPane('repl', 'repl'), along('row', widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar')).root)
+	);
+	/** Eighteen fields, each its own `y`, so six rows of three and three of six are both equal counts. */
+	const FIELDS = Array.from({ length: 18 }, (_, i) => `f${String(i).padStart(2, '0')}`);
+	const at = (field, i) => `spec set ${field} --from-json '${JSON.stringify({ field, verb: 'occur', y: i / 18 })}'`;
+	/** The fields cut top to bottom into `n` bands of `y`, each read as a set. */
+	const banded = (n) =>
+		Array.from({ length: n }, (_, k) => FIELDS.slice((k * 18) / n, ((k + 1) * 18) / n));
+	const drawnRows = async (page) =>
+		(await rowsOf(bar(page), '[data-field]')).map((row) => [...row].sort());
+
+	test('six rows in a tall pane, three in a short one; the commands beside it stop at three', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				await seedLines(app, FIELDS.map(at));
+				await app.reload();
+				await page.locator('section[data-pane="bar"] [data-field="f17"]').waitFor();
+
+				await atRows(page, 'bar', 6, Infinity);
+				assert.equal((await axes(bar(page))).rows, 6, 'the fields bar draws six rows');
+				assert.deepEqual(await drawnRows(page), banded(6), 'six bands of y, three each');
+				const cmd = page.locator('section[data-pane="cmd"] .bar');
+				const fits = await cmd.evaluate((el) => {
+					const probe = el.closest('section').querySelector('.probe button').offsetHeight;
+					return Math.floor((el.clientHeight + 6.4) / (probe + 6.4));
+				});
+				assert.ok(fits > MAX_ROWS, `the commands box fits ${fits} rows, so its cap is what holds it`);
+				assert.equal(await cmd.getAttribute('data-rows'), String(MAX_ROWS), 'the commands bar is capped');
+				assert.equal((await axes(cmd)).rows, MAX_ROWS, 'the commands bar draws three rows');
+
+				await atRows(page, 'bar', 3, Infinity);
+				assert.equal((await axes(bar(page))).rows, 3, 'the fields bar draws three rows');
+				assert.deepEqual(await drawnRows(page), banded(3), 'three bands of y, six each');
+			},
+			{
+				viewport: { width: 1280, height: 900 },
+				clock: todayAt(15),
+				prepare: (context) => context.addInitScript(draft, SIDE)
 			}
 		);
 	});
