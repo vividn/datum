@@ -10,7 +10,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { sharedApp, startApp, stopApp, TIMEZONE } from './support/app.mjs';
+import { HELD_AT, sharedApp, startApp, stopApp, TIMEZONE } from './support/app.mjs';
 import { rowTexts, stripAnsi } from './support/tail.mjs';
 import { DESKTOP, ONE_PANE } from './support/layout.mjs';
 
@@ -284,11 +284,13 @@ describe('the visual views', () => {
 			// runs in, not node's: the browser context is pinned to
 			// TIMEZONE and the host is wherever the test happens to run, so
 			// an expectation off node's clock disagrees with the drawing for
-			// the hours the two zones straddle a midnight (da-2cgd).
+			// the hours the two zones straddle a midnight (da-2cgd). And the
+			// day is the one the page HOLDS, not node's: a run that crosses
+			// midnight before reaching here draws HELD_AT's (da-ne3oe).
 			const weekday = new Intl.DateTimeFormat('en-US', {
 				timeZone: TIMEZONE,
 				weekday: 'short'
-			}).format(new Date());
+			}).format(new Date(HELD_AT));
 			assert.match(drawn.stdout, new RegExp(`>${weekday}<`));
 
 			// And the pane is that command's output. Not byte-for-byte:

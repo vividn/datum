@@ -48,9 +48,17 @@ export const TIMEZONE = 'UTC';
  * date in the file to go stale.
  */
 export function todayAt(hour, minute = 0) {
-	const today = new Date();
-	return Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), hour, minute);
+	return Date.UTC(TODAY.getUTCFullYear(), TODAY.getUTCMonth(), TODAY.getUTCDate(), hour, minute);
 }
+
+/**
+ * The day `todayAt` means, read once when the file loads: a run that
+ * crosses midnight would otherwise hold its apps at one day and ask a
+ * later `todayAt` for the next (da-ne3oe). `DATUM_TEST_DAY=2026-10-06`
+ * stands the run on another day, which is how a test shows it reads the
+ * clock the page holds rather than node's.
+ */
+const TODAY = new Date(process.env.DATUM_TEST_DAY ?? Date.now());
 
 /**
  * Log `lines` and leave the frame showing every one of them.
