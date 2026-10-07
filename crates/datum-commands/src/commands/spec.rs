@@ -274,6 +274,9 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     if let Some(s) = args.strict {
         spec.strict = s;
     }
+    if let Some(n) = args.never_false {
+        spec.never_false = n;
+    }
     if args.y.is_some() {
         spec.presentation.y = args.y;
     }

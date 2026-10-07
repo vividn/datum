@@ -565,8 +565,12 @@ describe('in the app', () => {
 				page.locator(`${MODAL} input`).evaluateAll((els) => els.map((e) => [e.type, e.value, e.placeholder, e.className]));
 			const noHex = async (where) => {
 				for (const [type, value, placeholder, cls] of await inputs()) {
-					// The icon's picker (da-45wgz) takes a file, and no typing at all.
-					assert.ok(type === 'text' || (type === 'file' && cls.includes('icon')), `${where}: input.${cls} is a ${type}`);
+					// The icon's picker (da-45wgz) takes a file, and no typing at all;
+					// «never false» (da-cwieh) is a box to tick.
+					assert.ok(
+						type === 'text' || (type === 'file' && cls.includes('icon')) || (type === 'checkbox' && cls.includes('never-false')),
+						`${where}: input.${cls} is a ${type}`
+					);
 					assert.doesNotMatch(`${value} ${placeholder}`, /#|hex|rgb/i, `${where}: input.${cls} takes a colour`);
 				}
 			};

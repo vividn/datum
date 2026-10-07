@@ -45,6 +45,12 @@ export interface FieldButton {
 	/** The spec's `glyph`: what an occur of the field draws instead of `●` (da-h2io6). */
 	glyph?: string;
 	/**
+	 * The spec says the field is never off (`never_false`, da-cwieh), and
+	 * its `allowed_states` do not list `false`: its ring leaves a gap where
+	 * `end` would stand.
+	 */
+	neverFalse?: boolean;
+	/**
 	 * What the field is in now, by `datum now --json`: `true` for an open
 	 * block, the state's name for a switch; absent when it is off. Until
 	 * that answers after a write, by the write's own echo (`guess` in
@@ -200,6 +206,7 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 				color,
 				stateColors: state_colors,
 				glyph: spec?.glyph ?? undefined,
+				neverFalse: !!spec?.never_false && !spec.allowed_states?.includes('false'),
 				active: now.has(field),
 				current: state === true || (typeof state === 'string' && state !== '') ? state : undefined,
 				y,
@@ -408,7 +415,7 @@ export interface Spot {
 export interface Ring {
 	back: Spot;
 	add: Spot;
-	end: Spot | null;
+	end: Spot;
 	states: Spot[];
 }
 
@@ -427,14 +434,19 @@ export interface Room {
  * set in the States tab and never by use, so a state is always the same
  * place relative to the thumb, like a pie menu.
  *
- * The centre is the tapped field's own position: a `false` state — `end`
- * — takes it when the field lists one («to make it easier to turn the
- * state completely off»), else the first state. `< Back` and `+ Add state`
- * stand just left and right of it, on its line. Then each state in rank
- * order takes the nearest free spot — the least distance from the
- * centre, and among equals the first clockwise from twelve o'clock —
- * where it clears every button already placed by `gap`. Spots are every
- * 2px across and every half row up and down.
+ * The centre is the tapped field's own position, and it is `end`'s on
+ * every switch field (da-cwieh) — vividn: «the button that should be
+ * immediately under the cursor when it opens is "end"». A field whose
+ * spec says it is `never_false` leaves a GAP there instead, `end`'s own
+ * width, which is the widget's business: placed here as `end`, so every
+ * other button stands where it would beside a drawn one. `< Back` stands
+ * just left of the centre, on its line. Then each state in rank order
+ * takes the nearest free spot — the least distance from the centre, and
+ * among equals the first clockwise from twelve o'clock — where it clears
+ * every button already placed by `gap`. Spots are every 2px across and
+ * every half row up and down. `+ Add state` comes last, on the centre's
+ * line past the rightmost button — «to the far right of all the states,
+ * rather than taking up a premium spot close to the thumb».
  *
  * At the box's edges the ring is CAPPED, never shifted (da-8mk9p) — vividn:
  * «still radial, just capped on one side and spreading out further in the
@@ -442,18 +454,18 @@ export interface Room {
  * one whose button lies inside `room`, so the states spread along the
  * free sides. The centre moves only when it would itself run past the box
  * — as far as it must, the left edge winning in a box narrower than it,
- * which the box then scrolls. At a side edge `< Back` or `+ Add state`
- * that does not fit beside it takes the nearest free spot inside instead,
- * on its own side of the centre where one is, before any state (da-u9nfv)
- * — vividn: «yes shift those into another row if needed». A button no spot
- * inside `room` holds goes past its right edge, where the box scrolls,
- * rather than move anything.
+ * which the box then scrolls. At the left edge a `< Back` that does not
+ * fit beside it takes the nearest free spot inside instead, left of the
+ * centre where one is, before any state (da-u9nfv) — vividn: «yes shift
+ * those into another row if needed». A button no spot inside `room`
+ * holds, and a `+ Add state` past the right edge, go past it, where the
+ * box scrolls, rather than move anything.
  *
  * `w` is each button's width, `h` a button's height; every spot returned
  * is from the tap.
  */
 export function ringOf(
-	w: { back: number; add: number; end: number | null; states: number[] },
+	w: { back: number; add: number; end: number; states: number[] },
 	h: number,
 	room: Room,
 	gap: number
@@ -462,12 +474,10 @@ export function ringOf(
 	const placed: { x: number; y: number; w: number }[] = [];
 	const clear = (x: number, y: number, wide: number) =>
 		placed.every((p) => Math.abs(p.x - x) >= (p.w + wide) / 2 + gap || Math.abs(p.y - y) >= h + gap);
-	const centre = w.end ?? w.states[0];
-	const side = (centre ?? -gap) / 2 + gap;
-	const x0 = Math.max((centre ?? 0) / 2 - room.left, Math.min(0, room.right - (centre ?? 0) / 2));
+	const x0 = Math.max(w.end / 2 - room.left, Math.min(0, room.right - w.end / 2));
 	const y0 = Math.max(h / 2 - room.up, Math.min(0, room.down - h / 2));
-	if (centre !== undefined) placed.push({ x: x0, y: y0, w: centre });
-	const cols = Math.ceil([centre ?? 0, w.back, w.add, ...w.states].reduce((a, b) => a + b + gap, 0) / 2);
+	placed.push({ x: x0, y: y0, w: w.end });
+	const cols = Math.ceil([w.end, w.back, ...w.states].reduce((a, b) => a + b + gap, 0) / 2);
 	const turn = (p: Spot) => (Math.atan2(p.x - x0, y0 - p.y) + 2 * Math.PI) % (2 * Math.PI);
 	const far = (p: Spot) => Math.hypot(p.x - x0, p.y - y0);
 	const spots: Spot[] = [];
@@ -481,12 +491,10 @@ export function ringOf(
 		const fits = (p: Spot) => p.x - wide / 2 >= -room.left && clear(p.x, p.y, wide);
 		return put(spots.find((p) => fits(p) && inside(p, wide) && mine(p)) ?? spots.find((p) => fits(p) && inside(p, wide)) ?? spots.find(fits)!, wide);
 	};
-	// Both on the line first where they fit, so neither's search takes the other's spot.
-	const line = { back: { x: x0 - (side + w.back / 2), y: y0 }, add: { x: x0 + side + w.add / 2, y: y0 } };
-	const onBack = inside(line.back, w.back) && put(line.back, w.back);
-	const onAdd = inside(line.add, w.add) && put(line.add, w.add);
-	const back = onBack || take(w.back, (p) => p.x < x0);
-	const add = onAdd || take(w.add, (p) => p.x > x0);
-	const states = w.states.map((wide, i): Spot => (i === 0 && w.end === null ? { x: x0, y: y0 } : take(wide)));
-	return { back, add, end: w.end === null ? null : { x: x0, y: y0 }, states };
+	const line = { x: x0 - (w.end / 2 + gap + w.back / 2), y: y0 };
+	const back = (inside(line, w.back) && put(line, w.back)) || take(w.back, (p) => p.x < x0);
+	const states = w.states.map((wide) => take(wide));
+	const right = Math.max(...placed.map((p) => p.x + p.w / 2));
+	const add = { x: right + gap + w.add / 2, y: y0 };
+	return { back, add, end: { x: x0, y: y0 }, states };
 }

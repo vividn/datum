@@ -79,8 +79,10 @@
 	— RADIALLY AROUND THE TAP (da-7q3ka, `ringOf` in fields.ts): the
 	spec's order is a rank, the first nearest the thumb, so a state is
 	always the same place relative to where the field was, like a pie
-	menu. A `false` state, `end`, takes the field's own position, with
-	`< Back` left of it and `+ Add state` right; those three are hollow,
+	menu. `end` takes the field's own position on every switch field, or a
+	gap of its width on one whose spec says it is never off (da-cwieh),
+	with `< Back` left of it and `+ Add state` past the rightmost state on
+	its line; those three are hollow,
 	the other states a light tint, the one the field is in solid and bold.
 	Near an edge the ring is capped, not shifted: `end` stays on the tap
 	and the states spread along the free sides (da-8mk9p). Nothing floats: the ring is the
@@ -451,8 +453,8 @@
 	 * spots from their measured sizes and the room the box leaves on each
 	 * side of the tap — capped at an edge, never shifted, so `end` stays
 	 * under the thumb (da-8mk9p). The ring reaches two rows either way, and
-	 * a side the box caps gives what it lost to the other; at a side edge
-	 * `< Back` or `+ Add state` steps onto another row (da-u9nfv). When the
+	 * a side the box caps gives what it lost to the other; at the left edge
+	 * `< Back` steps onto another row (da-u9nfv). When the
 	 * centre itself cannot fit sideways, or a button runs past the right
 	 * edge, the box scrolls its centre under the tap as far as it can. Two
 	 * pixels short of the box, or a border on its edge is clipped. Measured
@@ -469,7 +471,7 @@
 		const place = () => {
 			const spots = [...box.children] as HTMLElement[];
 			const one = (role: string) => spots.find((s) => s.dataset.role === role);
-			const [back, add, end] = [one('back')!, one('add')!, one('end')];
+			const [back, add, end] = [one('back')!, one('add')!, one('end')!];
 			const states = spots.filter((s) => s.dataset.role === 'state');
 			const h = Math.max(...spots.map((s) => size(s).height));
 			const reach = 2 * (h + GAP) + h / 2;
@@ -478,7 +480,7 @@
 				{
 					back: size(back).width,
 					add: size(add).width,
-					end: end ? size(end).width : null,
+					end: size(end).width,
 					states: states.map((s) => size(s).width)
 				},
 				h,
@@ -493,14 +495,14 @@
 			const placed: [HTMLElement, Spot][] = [
 				[back, ring.back],
 				[add, ring.add],
-				...(end && ring.end ? [[end, ring.end] as [HTMLElement, Spot]] : []),
+				[end, ring.end],
 				...states.map((s, i): [HTMLElement, Spot] => [s, ring.states[i]])
 			];
 			for (const [el, p] of placed) {
 				el.style.left = `${at.x + p.x - size(el).width / 2}px`;
 				el.style.top = `${at.y + p.y - size(el).height / 2}px`;
 			}
-			box.scrollLeft = (ring.end ?? ring.states[0])?.x ?? 0;
+			box.scrollLeft = ring.end.x;
 		};
 		const observer = new ResizeObserver(place);
 		const watch = () => {
@@ -572,10 +574,21 @@
 					&lt; Back
 				</button>
 			</div>
-			{#if states.includes('false')}
+			{#if chosen.neverFalse}
+				<!-- A field that is never off (da-cwieh) leaves a GAP on the tap:
+				     `end` drawn and hidden, so it is `end`'s own width and every
+				     other button stands where it would beside it. -->
+				<div class="spot gap" data-role="end" aria-hidden="true">
+					<!-- A line colour, or `var(--line)` voids its border and the gap is narrower than `end`. -->
+					<button class="widget states end" use:act={'run'} style="--line: transparent" tabindex="-1" disabled
+						>end</button
+					>
+				</div>
+			{:else}
 				{@const color = chosen.stateColors.false ?? chosen.color}
-				<!-- `false` is off: `end`, on the tap itself, and hollow like the
-				     two ends — the one state a thumb reaches without moving. -->
+				<!-- `false` is off: `end`, on the tap itself on every switch field
+				     (da-cwieh), and hollow like the two ends — the one state a
+				     thumb reaches without moving. -->
 				<div class="spot" data-role="end">
 					<button
 						class="widget states end"
@@ -876,6 +889,10 @@
 		/* Near the box's right edge a spot would otherwise shrink to what
 		   is left of it, and `+ Add state` wrap. */
 		white-space: nowrap;
+	}
+
+	.spot.gap {
+		visibility: hidden;
 	}
 
 	/* The state the field is in now: solid, as the field's own chip draws

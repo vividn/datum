@@ -143,6 +143,12 @@ pub struct FieldSpec {
     /// rather than rebuilt on save (da-cap5m).
     #[serde(default)]
     pub no_autoalias: bool,
+    /// When true, the field is never off (da-cwieh) — vividn: «for example
+    /// environment is never false». datum.day's ring then leaves a gap
+    /// where `end` would stand, unless `allowed_states` lists `"false"`.
+    /// Nothing refuses a `false`: the setting is the ring's alone.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub never_false: bool,
 
     /// When true, `datum check` flags undeclared extra_data keys on entries
     /// for this field (the `orphaned_extra_data_key` warning). When false
@@ -215,6 +221,7 @@ impl FieldSpec {
             assign: BTreeMap::new(),
             id_assign: BTreeMap::new(),
             no_autoalias: false,
+            never_false: false,
             strict: false,
             tags: Vec::new(),
             presentation: PresentationSpec::default(),

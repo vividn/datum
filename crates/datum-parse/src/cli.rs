@@ -670,6 +670,9 @@ pub struct SpecSetArgs {
     /// `orphaned_extra_data_key` check fires for undeclared keys);
     /// `Some(false)` clears strictness; `None` leaves the existing value.
     pub strict: Option<bool>,
+    /// `--never-false` / `--allow-false` (da-cwieh): the spec's
+    /// `never_false`; `None` leaves the existing value.
+    pub never_false: Option<bool>,
     /// `--glyph <CHAR>` — what the field's occur dots draw instead of a
     /// circle (da-gzowt). An empty value clears it.
     pub glyph: Option<String>,

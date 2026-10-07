@@ -110,6 +110,7 @@
 	const keyNames = spec ? specKeys(spec) : [];
 	let keys: KeyRow[] = spec ? keyRows(spec) : [];
 	let autoalias = !spec?.no_autoalias;
+	let neverFalse = !!spec?.never_false;
 	let aliases: DerivedAlias[] = (spec?.derived_aliases ?? []).map((a) => ({ ...a }));
 	let place: Place = spec ? placeOf(spec) : {};
 	let icon = spec?.icon ?? '';
@@ -146,6 +147,7 @@
 					keys,
 					autoalias,
 					aliases,
+					neverFalse,
 					glyph,
 					glyph_by,
 					place,
@@ -443,6 +445,16 @@
 					on:click={() => (states = [...states, { name: '', color: '', description: '', glyph: '' }])}
 					>+ state</button
 				>
+				{#if spec && verb === 'switch'}
+					<!-- da-cwieh — vividn: «for example environment is never false». Only a switch has a ring,
+					     and a field that lists `false` as a state keeps its `end` whatever this says. -->
+					{@const listsFalse = states.some((s) => s.name.trim() === 'false')}
+					<label
+						class="auto"
+						title={listsFalse ? 'false is one of its states, so the ring keeps end' : 'the fields widget leaves a gap where end would stand'}
+						><input type="checkbox" class="never-false" bind:checked={neverFalse} disabled={listsFalse} /> never false: no end</label
+					>
+				{/if}
 			{:else if tab === 'keys'}
 				{#each [true, false] as required (required)}
 					{#if keys.some((k) => (k.kind === 'required') === required)}

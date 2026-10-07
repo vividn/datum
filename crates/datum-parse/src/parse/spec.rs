@@ -309,6 +309,14 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
                 out.strict = Some(false);
                 i += 1;
             }
+            FlagSplit::Long("never-false") => {
+                out.never_false = Some(true);
+                i += 1;
+            }
+            FlagSplit::Long("allow-false") => {
+                out.never_false = Some(false);
+                i += 1;
+            }
             FlagSplit::Long("y") => {
                 let (v, ni) = take_value(tail, i, None, "--y")?;
                 out.y = Some(parse_position_f64(v, "--y")?);

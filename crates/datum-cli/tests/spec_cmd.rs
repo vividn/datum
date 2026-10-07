@@ -259,3 +259,18 @@ fn spec_set_state_description_with_empty_text_clears_entry() {
         "STATE= form should clear the description",
     );
 }
+
+/// da-cwieh: `--never-false` marks a field that is never off, a later
+/// `spec set` without it keeps it, and `--allow-false` clears it.
+#[test]
+fn spec_set_never_false_sets_keeps_and_clears() {
+    let db = fresh_db();
+    let never = || db.load_spec("env").unwrap().unwrap().never_false;
+    let set = |args: &[&str]| run_cli(&[&["spec", "set", "env"], args].concat(), &db).unwrap();
+    set(&["--verb", "switch", "--state", "home", "--never-false"]);
+    assert!(never());
+    set(&["--state", "office"]);
+    assert!(never());
+    set(&["--allow-false"]);
+    assert!(!never());
+}

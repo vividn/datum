@@ -106,6 +106,8 @@ export interface Spec {
 	subfields?: Record<string, Subfield>;
 	derived_aliases?: DerivedAlias[];
 	no_autoalias?: boolean;
+	/** The field is never off (da-cwieh); left out of `spec show` when false. */
+	never_false?: boolean;
 	/** The field's `<svg>` icon for the dayview (da-45wgz); the band draws `glyph` in its place. */
 	icon?: string;
 	[key: string]: unknown;
@@ -306,6 +308,8 @@ export function editedSpec(
 		/** Whether datum makes the aliases (`!no_autoalias`); when not, `aliases` is the list. */
 		autoalias?: boolean;
 		aliases?: DerivedAlias[];
+		/** The field is never off (`never_false`, da-cwieh); left out, the spec's is kept. */
+		neverFalse?: boolean;
 		place?: Place;
 		icon?: string;
 	}
@@ -335,8 +339,9 @@ export function editedSpec(
 	const glyph = edit.glyph ?? spec.glyph ?? '';
 	const glyph_by = edit.glyph_by === undefined ? spec.glyph_by : key ? { key, map } : undefined;
 	const icon = edit.icon === undefined ? spec.icon : edit.icon.trim();
+	const never_false = edit.neverFalse ?? (spec.never_false === true);
 	// `keys` and `keys_by_state` are the CLI's reading of the spec, not the spec: never sent (da-p3hxn).
-	const { state_descriptions: _d, glyph: _g, state_glyphs: _s, glyph_by: _b, icon: _i, keys: _k, keys_by_state: _ks, ...rest } = spec;
+	const { state_descriptions: _d, glyph: _g, state_glyphs: _s, glyph_by: _b, icon: _i, keys: _k, keys_by_state: _ks, never_false: _n, ...rest } = spec;
 	// The key rows are the whole answer: every place a key can live is written from them.
 	if (edit.keys) for (const k of ['id_keys', 'data_keys', 'assign', 'id_assign']) delete rest[k];
 	// The placement is the Placement tab's whole answer: free drops the anchor, tied drops y/height.
@@ -355,6 +360,7 @@ export function editedSpec(
 		...(Object.keys(state_glyphs).length ? { state_glyphs } : {}),
 		...(glyph_by ? { glyph_by } : {}),
 		...(icon ? { icon } : {}),
+		...(never_false ? { never_false } : {}),
 		...(edit.keys && placed(spec, edit.keys)),
 		...(edit.autoalias !== undefined && { no_autoalias: !edit.autoalias }),
 		// Only a list datum does not make is the person's to send; the CLI

@@ -28,7 +28,7 @@ import { GREEN, MOOD, seed, untilFieldStyle } from './support/fields.mjs';
 
 // A state field asks WHICH, so its button reads `name:` and a press fills
 // the widget with that field's states in place of the fields — `< Back`
-// first, `+ Add state` last (da-g635), the states around the tap (da-7q3ka). Nothing floats: the list is the widget's own
+// first, then `end` (da-cwieh), `+ Add state` last (da-g635), the states around the tap (da-7q3ka). Nothing floats: the list is the widget's own
 // content, so these tests read it out of `.bar` exactly as they read the
 // fields, and the pane's box is unchanged either way.
 describe('a state field fills the widget with its states', () => {
@@ -56,7 +56,7 @@ describe('a state field fills the widget with its states', () => {
 
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-state="happy"]').waitFor();
-			assert.deepEqual(await bar(page), ['< Back', 'calm', 'happy', '+ Add state']);
+			assert.deepEqual(await bar(page), ['< Back', 'end', 'calm', 'happy', '+ Add state']);
 			assert.equal(await page.locator('.bar [data-field]').count(), 0, 'a field button is still drawn');
 
 			const before = (await app.echoes()).length;
@@ -122,7 +122,7 @@ describe('a state field fills the widget with its states', () => {
 			await app.idle();
 			await page.locator('.bar [data-field="mood"]').click();
 			await page.locator('.bar [data-state="sad"]').waitFor();
-			assert.deepEqual(await bar(page), ['< Back', 'calm', 'happy', 'sad', '+ Add state']);
+			assert.deepEqual(await bar(page), ['< Back', 'end', 'calm', 'happy', 'sad', '+ Add state']);
 		});
 	});
 
@@ -165,7 +165,9 @@ describe('a state field fills the widget with its states', () => {
 			// field's outline. `bad` is a light TINT of its own colour, a quarter
 			// of it, in its own outline and under the app's ink (da-7q3ka: the
 			// hollow `< Back`, `+ Add state` and `end` stand out against it).
+			// `end` first, hollow in the field's colour, on every switch field (da-cwieh).
 			assert.deepEqual(painted, [
+				{ state: 'false', bg: 'rgba(0, 0, 0, 0)', border: rgb('#800080'), color: rgb('#800080') },
 				{ state: 'good', bg: rgb('#008000'), border: rgb('#800080'), color: 'rgb(255, 255, 255)' },
 				{ state: 'bad', bg: 'color(srgb 1 0 0 / 0.25)', border: rgb('#ff0000'), color: await ink(page) }
 			]);
@@ -183,11 +185,11 @@ describe('a state field fills the widget with its states', () => {
 			const focused = () => page.evaluate(() => document.activeElement?.textContent.trim());
 			await page.locator('.bar [data-back]').focus();
 			const order = [await focused()];
-			for (let i = 0; i < 3; i++) {
+			for (let i = 0; i < 4; i++) {
 				await page.keyboard.press('Tab');
 				order.push(await focused());
 			}
-			assert.deepEqual(order, ['< Back', 'calm', 'happy', '+ Add state']);
+			assert.deepEqual(order, ['< Back', 'end', 'calm', 'happy', '+ Add state']);
 
 			await page.keyboard.press('Escape');
 			await page.locator('.bar [data-field="mood"]').waitFor();

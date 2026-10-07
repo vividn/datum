@@ -103,6 +103,9 @@ pub struct FieldEntry {
     /// No aliases are derived for the field: `[[alias]]` entries are its own.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub no_autoalias: bool,
+    /// The field is never off: the spec's `never_false` (da-cwieh).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub never_false: bool,
     /// Position perpendicular to the time axis, fraction `[0.0, 1.0]`.
     /// Maps to [`FieldSpec::y`] for the current axis-orientation.
     #[serde(default)]
@@ -529,6 +532,7 @@ impl FieldEntry {
         spec.state_lookup_field = self.state_lookup_field;
         spec.strict = self.strict;
         spec.no_autoalias = self.no_autoalias;
+        spec.never_false = self.never_false;
         spec.color = color_resolved;
         spec.presentation.glyph = self.glyph;
         spec.presentation.glyph_by = self.glyph_by;
@@ -638,6 +642,7 @@ impl FieldEntry {
             state_lookup_field: spec.state_lookup_field.clone(),
             strict: spec.strict,
             no_autoalias: spec.no_autoalias,
+            never_false: spec.never_false,
             pos,
             size,
             color: spec.color.clone(),

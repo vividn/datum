@@ -37,5 +37,7 @@ export interface FieldSpec {
 	state_colors?: Record<string, string>;
 	/** The character an occur of the field draws in place of the dot (da-gzowt). */
 	glyph?: string | null;
+	/** The field is never off (da-cwieh); absent when false. */
+	never_false?: boolean;
 	[key: string]: unknown;
 }
