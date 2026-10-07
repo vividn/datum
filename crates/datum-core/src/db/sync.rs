@@ -1915,7 +1915,9 @@ mod tests {
 
     // ─── A fast clock (da-ns8dq) ────────────────────────────────────────────
 
-    const YEAR: i64 = 365 * 24 * 3600 * 1000;
+    /// Past a year by a margin: at exactly 365 days the wait read «365 days»
+    /// only because a millisecond passed, and «1 year» when none did.
+    const YEAR: i64 = 400 * 24 * 3600 * 1000;
 
     /// Log an entry on `db` with its clock `skew` ms fast; its ops as lines.
     fn log_at(db: &Db, skew: i64, field: &str) -> Vec<String> {
@@ -1971,7 +1973,7 @@ mod tests {
         assert_eq!(waits[0].ops, from_a.len());
         assert!(
             waits[0].to_string().contains("1 change from")
-                && waits[0].to_string().contains("its clock is 365 days ahead")
+                && waits[0].to_string().contains("its clock is 1 year ahead")
         );
 
         let from_b = log_at(&b, 0, "tea");
