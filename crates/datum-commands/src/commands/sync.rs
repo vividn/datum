@@ -389,10 +389,13 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                 }
             };
             let joins = !db.sync_chain()?.exists();
-            datum_sync::connect(db, &ticket)?;
+            // Admitted, it is a member whose first sync may still have
+            // failed: unserved, every other copy times out on it (da-shfv4).
+            let done = datum_sync::connect(db, &ticket);
             if joins && db.sync_chain()?.exists() {
                 super::sync_daemon::auto_install();
             }
+            done?;
         }
         #[cfg(feature = "net")]
         SyncCommand::Run => datum_sync::run(db)?,

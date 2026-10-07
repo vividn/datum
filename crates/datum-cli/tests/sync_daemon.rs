@@ -203,3 +203,54 @@ fn install_sh_restarts_an_installed_daemon() {
         h.log()
     );
 }
+
+/// A join admitted whose first sync then fails is still a member, and a
+/// member the daemon does not serve is one the others time out on (da-shfv4).
+/// The first sync fails as in `sync_net`'s `slow_first_sync`: the joiner
+/// applies 300 ops at 20 ms each with no keepalives, on a 3 s timeout.
+#[test]
+fn a_join_whose_first_sync_fails_still_installs_it() {
+    use std::io::{BufRead, BufReader};
+    let (a, b) = (Home::new(), Home::new());
+    for i in 0..300 {
+        a.ok(&["occur", "step", &format!("n={i}")]);
+    }
+    let slow = [
+        ("DATUM_SYNC_TIMEOUT_S", "3"),
+        ("DATUM_SYNC_TEST_APPLY_DELAY_MS", "20"),
+        ("DATUM_SYNC_TEST_KEEPALIVE", "0"),
+    ];
+    let mut inviting = a
+        .command(env!("CARGO_BIN_EXE_datum"))
+        .args(["sync", "chain", "invite"])
+        .envs(slow)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let ticket = BufReader::new(inviting.stdout.take().unwrap())
+        .lines()
+        .map_while(Result::ok)
+        .find_map(|l| {
+            Some(
+                l.split("datum sync chain connect ")
+                    .nth(1)?
+                    .trim()
+                    .trim_matches('\'')
+                    .to_string(),
+            )
+        })
+        .unwrap();
+    let joined = b.datum(&["sync", "chain", "connect", &ticket], &slow);
+    let _ = inviting.kill();
+    let _ = inviting.wait();
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&joined.stdout),
+        String::from_utf8_lossy(&joined.stderr)
+    );
+    assert!(!joined.status.success(), "{said}");
+    assert!(said.contains("paired with"), "{said}");
+    assert!(said.contains("sync now runs in the background"), "{said}");
+    assert!(b.service().exists());
+}

@@ -305,6 +305,23 @@ fn the_printed_connect_line_pastes_into_a_shell() {
     }
 }
 
+/// A member that is not running is named, with what runs it (da-shfv4):
+/// «timed out» alone said neither which side nor what to do.
+#[test]
+fn a_member_not_running_is_named_with_what_runs_it() {
+    let (_a, mut b) = paired();
+    b.env = vec![("DATUM_SYNC_TIMEOUT_S", "2")];
+    let said = b.fails(&["sync"], "");
+    for words in [
+        "could not reach",
+        "is the other copy running?",
+        "`datum sync daemon status`",
+        "a tab is open on the database",
+    ] {
+        assert!(said.contains(words), "{words}: {said}");
+    }
+}
+
 #[test]
 fn an_invite_is_one_time_and_expires() {
     let (a, b) = (Copy::new(), Copy::new());

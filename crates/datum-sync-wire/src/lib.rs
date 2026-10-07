@@ -32,7 +32,7 @@ use anyhow::{anyhow, bail, ensure, Context, Result};
 use data_encoding::BASE32_NOPAD;
 use iroh::endpoint::{presets, Incoming, RecvStream, SendStream};
 pub use iroh::{Endpoint, EndpointAddr};
-use iroh::{RelayMode, SecretKey};
+use iroh::{RelayMode, SecretKey, Watcher};
 use n0_future::time::timeout;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -432,7 +432,7 @@ async fn session(
     let id = addr.id.to_string();
     let conn = within(async { Ok(ep.connect(addr, ALPN).await?) })
         .await
-        .map_err(|e| anyhow!("could not reach {}: {e}", short(&id)))?;
+        .map_err(|e| unreachable(ep, &id, e))?;
     let (mut s, mut r) = conn.open_bi().await?;
     // A redeemer still in a chain is one `redeem` found may leave it: it
     // says it is in none, and leaves once admitted (da-h7pnc).
@@ -489,6 +489,26 @@ async fn session(
         Ok(()) => Ok(rep),
         Err(e) => Err(Lost(rep, e).into()),
     }
+}
+
+/// Why a dial reached no one, and what to do about it (da-shfv4): this
+/// copy's own relay is down, or the other copy is not running. Either way it
+/// starts «could not reach», which `redeem` reads as «try the next address».
+fn unreachable(ep: &Endpoint, id: &str, e: anyhow::Error) -> anyhow::Error {
+    let relays = ep.home_relay_status().get();
+    if !relays.is_empty() && !relays.iter().any(|r| r.is_connected()) {
+        let url = relays[0].url();
+        return anyhow!(
+            "could not reach {}: this copy is not connected to its relay ({url}); is it online?",
+            short(id)
+        );
+    }
+    anyhow!(
+        "could not reach {}: {e}; is the other copy running? A terminal syncs while \
+         `datum sync run` or its daemon runs (`datum sync daemon status`), datum.day while \
+         a tab is open on the database",
+        short(id)
+    )
 }
 
 /// Answer one incoming connection: a peer, or the redemption of an invite.
