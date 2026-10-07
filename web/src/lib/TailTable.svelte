@@ -728,6 +728,11 @@
 		   which this is not. */
 		box-shadow: inset 0 -1px 0 #2a2a44;
 		padding-bottom: calc(0.15em + 1px);
+		/* One line, whatever the rows hold (da-1o33i): `.field`'s
+		   `overflow-wrap: anywhere` let a long state squeeze the column to a
+		   character and the header to three lines, its height following the
+		   rows as they paged in and out. */
+		white-space: nowrap;
 	}
 
 	th,

@@ -266,3 +266,67 @@ describe('a narrow tail gives up hid, then _n', () => {
 		});
 	}
 });
+
+// The header keeps its height (da-1o33i). vividn, 2026-10-06: «The header row
+// changes its height quite a bit as you are scrolling when it should remain
+// fixed (I notice "field" sometimes wraps to "fiel\nd")». One row with a long
+// state let the table squeeze `field` to a character a line, and the header
+// with it, so the header grew and shrank as such rows paged in and out.
+describe('the tail header keeps its height', () => {
+	/** The header's height, how many lines each `th` draws, and whether the pane scrolls sideways. */
+	const header = (page) =>
+		page.evaluate((sel) => {
+			const pane = document.querySelector(sel);
+			const body = pane.querySelector('.body');
+			const lines = (th) => {
+				const range = document.createRange();
+				range.selectNodeContents(th);
+				return new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+			};
+			return {
+				height: pane.querySelector('thead').getBoundingClientRect().height,
+				lines: Object.fromEntries([...pane.querySelectorAll('thead th')].map((th) => [th.dataset.key, lines(th)])),
+				sideways: body.scrollWidth > body.clientWidth + 1
+			};
+		}, TAIL);
+
+	// Each a minute of its own: the app's clock is held, and a second
+	// `switch work` at the same minute is refused.
+	const LONG = [
+		'switch work "deep in the long refactoring of the parser input module, then reviewing the rest" -t -3',
+		'occur medication_evening_dose -t -2',
+		`switch work ${'x'.repeat(90)} -t -1`
+	];
+
+	/** Store `lines`, each refused loudly, then redraw. */
+	async function store(app, lines) {
+		for (const line of lines) assert.equal((await app.runLine(line)).code, 0, `\`${line}\` refused`);
+		await app.redraw();
+	}
+
+	for (const [name, options] of [
+		['desktop 1280', { viewport: { width: 1280, height: 720 } }],
+		['phone 390', { viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true } }]
+	]) {
+		test(`${name}: a long state, a long field name, an unbroken state`, async () => {
+			await withApp(
+				async (app) => {
+					const { page } = app;
+					await store(app, ['switch work focus -t -5', 'occur coffee -t -4']);
+					await measured(page);
+					const short = await header(page);
+					for (const line of LONG) {
+						await store(app, [line]);
+						await measured(page);
+						const h = await header(page);
+						assert.ok(Object.values(h.lines).every((n) => n === 1), `after ${line}: a header wraps: ${JSON.stringify(h.lines)}`);
+						assert.ok(Math.abs(h.height - short.height) < 0.5, `after ${line}: header ${h.height}px, ${short.height}px with short rows`);
+						assert.ok(!h.sideways, `after ${line}: the pane scrolls sideways`);
+					}
+					assert.deepEqual(app.errors, []);
+				},
+				{ ...options, home: null, desk: null }
+			);
+		});
+	}
+});
