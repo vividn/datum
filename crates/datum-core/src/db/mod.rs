@@ -44,7 +44,7 @@ mod zone_timeline;
 
 use std::cell::{OnceCell, RefCell};
 
-use rusqlite::{params, Connection, TransactionBehavior};
+use rusqlite::{Connection, TransactionBehavior};
 
 use crate::error::{DatumError, Result};
 
@@ -344,43 +344,26 @@ impl Db {
         }
     }
 
-    /// Drop every datum table and rebuild the schema from scratch. Used by
-    /// `datum db purge`. Caller is responsible for warning about data loss
-    /// before invoking this.
+    /// Drop every table in the file and rebuild the schema from scratch.
+    /// Used by `datum db purge`. Caller is responsible for warning about
+    /// data loss before invoking this.
+    ///
+    /// Every table, read from the file rather than listed here: sync's
+    /// `ops` carry each change's effect and the chain, and `sync_local` the
+    /// endpoint key, so a purge that kept them kept the data and the
+    /// membership both (da-8v7ua). The purged copy mints a new key on its
+    /// next sync and is a new copy, in no chain.
     pub fn force_recreate_schema(&self) -> Result<Vec<String>> {
-        let tables = [
-            "entries",
-            "entry_history",
-            "undo_actions",
-            // Gone since v38 / v39 / v40 (specs, aliases, views, kit
-            // commands and index definitions are entries — da-lc26c,
-            // da-b3752, da-fwwtn) and v41 (`sync_state`, the deleted relay
-            // sync's — da-i7hig); dropped here so a purge of an older file
-            // leaves none behind.
-            "field_specs",
-            "aliases",
-            "kit_indices",
-            "sync_state",
-            "sync_conflicts",
-            "views",
-            "kit_commands",
-            "_meta",
-        ];
-        let mut dropped = Vec::new();
-        for t in tables {
-            let exists: bool = self
-                .conn
-                .query_row(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
-                    params![t],
-                    |row| row.get::<_, i64>(0).map(|n| n > 0),
-                )
-                .unwrap_or(false);
-            if exists {
-                self.conn
-                    .execute(&format!("DROP TABLE IF EXISTS {t}"), [])?;
-                dropped.push(t.to_string());
-            }
+        let tables: Vec<String> = self
+            .conn
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type = 'table' \
+                 AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' ORDER BY name",
+            )?
+            .query_map([], |row| row.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        for t in &tables {
+            self.conn.execute(&format!("DROP TABLE \"{t}\""), [])?;
         }
         self.conn.execute_batch(include_str!("../schema.sql"))?;
         // A kit index is this device's, derived from the definitions the
@@ -391,6 +374,6 @@ impl Db {
             &self.conn,
             crate::migrations::CURRENT_SCHEMA_VERSION,
         )?;
-        Ok(dropped)
+        Ok(tables)
     }
 }

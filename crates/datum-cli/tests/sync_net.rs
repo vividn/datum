@@ -449,6 +449,82 @@ fn a_chain_of_one_holding_a_revoked_members_data_is_refused() {
     assert!(!c.has("walk"));
 }
 
+/// `db purge` destroys sync too (da-8v7ua, vividn's reproduction): a copy
+/// that synced, revoked the other and was refused `chain leave` keeps
+/// nothing after a purge — no op, no chain, no key — and its next invite
+/// starts a new chain as a new endpoint.
+#[test]
+fn a_purge_drops_the_ops_the_chain_and_the_endpoint_key() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "tea"]);
+    b.ok(&["occur", "coffee"]);
+    let (mut inviting, ticket) = a.invite(&[]);
+    assert!(b
+        .ok(&["sync", "chain", "connect", &ticket])
+        .contains("verify ok"));
+    assert!(inviting.finish().0);
+    b.ok(&["sync", "chain", "revoke", &a.id()]);
+    let held = b.fails(&["sync", "chain", "leave"], "");
+    assert!(held.contains("holds other copies' data"), "{held}");
+    let (old_id, old_chain) = (b.id(), b.query(CHAIN));
+
+    let purged = b.ok(&["db", "purge", "-y"]);
+    for table in ["entries", "ops", "sync_local", "sync_peers", "sync_notices"] {
+        assert!(purged.contains(table), "{table} not dropped: {purged}");
+    }
+    assert_eq!(b.query("SELECT COUNT(*) FROM ops"), "0");
+    assert_eq!(b.query("SELECT COUNT(*) FROM sync_local"), "0");
+    let list = b.fails(&["sync", "chain", "list"], "");
+    assert!(list.contains("in no sync chain"), "{list}");
+
+    let (_inviting, _) = b.invite(&[]);
+    assert_ne!(b.id(), old_id);
+    assert_ne!(b.query(CHAIN), old_chain);
+}
+
+const CHAIN: &str =
+    "SELECT json_extract(body, '$.effect.chain') FROM ops WHERE hid = '~chain' LIMIT 1";
+
+/// A copy purged while `sync run` serves it (the daemon's loop) stops
+/// serving the old key, and a member of the old chain that dials it gets
+/// nothing and sends nothing (da-8v7ua).
+#[test]
+fn a_purged_copy_serves_the_old_chain_nothing() {
+    let (a, b) = paired();
+    let mut b_runs = b.serve(&["sync", "run"]);
+    a.ok(&["occur", "tea"]);
+    a.ok(&["sync"]);
+    assert!(b.has("tea"));
+
+    b.ok(&["db", "purge", "-y"]);
+    let start = Instant::now();
+    while b_runs.child.try_wait().unwrap().is_none() {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "run still serving the old key"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let (ok, _) = b_runs.finish();
+    let mut why = String::new();
+    b_runs
+        .child
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut why)
+        .unwrap();
+    assert!(!ok && why.contains("endpoint key changed"), "{why}");
+
+    let _b_runs = b.serve(&["sync", "run"]);
+    a.ok(&["occur", "walk"]);
+    let entries = a.query("SELECT COUNT(*) FROM entries");
+    assert!(!a.run(&["sync"]).status.success());
+    assert!(!b.has("tea") && !b.has("walk"));
+    assert_eq!(b.query("SELECT COUNT(*) FROM ops"), "0");
+    assert_eq!(a.query("SELECT COUNT(*) FROM entries"), entries);
+}
+
 #[test]
 fn run_serves_members_and_pushes_new_ops() {
     let (a, b) = paired();

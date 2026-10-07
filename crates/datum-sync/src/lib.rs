@@ -20,7 +20,7 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::time::Duration;
 
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use datum_core::db::peers::Peer;
 use datum_core::db::{chain, Db};
@@ -328,8 +328,13 @@ const RETRY: Duration = Duration::from_secs(30);
 /// A push does not wait for an earlier one to the same peer: a dial to a
 /// peer that is down takes 30s to fail. A failed push is tried again after
 /// [`RETRY`], whether or not anything new was written.
+///
+/// It stops, with an error, once the file's endpoint key is no longer the
+/// one it bound: a `db purge` or `sync chain rekey` made it another copy
+/// (da-8v7ua), and the daemon starts it again only if that copy is chained.
 pub fn run(db: &Db) -> Result<()> {
     runtime()?.block_on(async {
+        let key = db.sync_endpoint_secret()?;
         let ep = bind(db).await?;
         let store = &DbStore(db);
         eprintln!("datum sync run: {} is up; Ctrl-C to stop", short(&ep.id().to_string()));
@@ -365,6 +370,10 @@ pub fn run(db: &Db) -> Result<()> {
                     }
                 }
                 _ = tick.tick() => {
+                    if db.sync_endpoint_secret()? != key {
+                        ep.close().await;
+                        bail!("this copy's endpoint key changed (purged or rekeyed): stopped");
+                    }
                     // Paused (da-wlbyx), it idles: an incoming session's
                     // handshake refuses, and nothing is pushed.
                     let peers = match db.sync_paused()? {
