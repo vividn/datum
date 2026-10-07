@@ -128,7 +128,7 @@ only members are served
 (`sync_peers` is just where they were last seen), and bare `sync` / the
 hidden `sync run` swap vectors and ops until neither moves. The tree:
 `sync`, `status`, `pause | resume`, `chain invite | connect | leave |
-list | rename | revoke | purge | unpurge | ack | rekey`, `admin list | add | remove`, `daemon
+list | rename | revoke | ack | rekey`, `admin list | add | remove`, `daemon
 install | uninstall | status` (a systemd user unit / launchd agent
 running the hidden `sync daemon run`, which is `sync run` for every chained
 db; a copy's first `chain invite` / `connect` installs it unless
@@ -143,11 +143,6 @@ chain with no admin is OPEN — any member invites, revokes or renames, and
 LOCKS it, after which those acts take an admin key (passkey or key file).
 Removing the last admin takes `--allow-unlock` and reopens it; every copy
 keeps a notice of the unlock until `sync chain ack unlock`.
-`sync chain purge <WHO>` (da-ry11c) previews, and with `--yes` writes a
-`purge` record: every copy refuses every op that endpoint signed and folds
-its entries again without them — what it made goes, its edits and deletes
-are undone — and revokes it; `unpurge` folds them back in while the purge
-is the newest act about it.
 A copy belongs to one chain, but one holding nothing but its own data — no
 other live member, no other endpoint's op — may leave its chain: `chain
 leave`, or by redeeming another chain's invite, which leaves once admitted.

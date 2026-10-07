@@ -816,8 +816,7 @@ pub enum SyncCommand {
     },
     /// `datum sync chain rekey` — a new endpoint key for this copy (da-p79vq).
     Rekey,
-    /// `datum sync chain revoke <WHO>`, `datum sync chain purge <WHO>
-    /// [--yes]`, `datum sync chain unpurge <WHO>`, `datum sync chain role <WHO>
+    /// `datum sync chain revoke <WHO>`, `datum sync chain role <WHO>
     /// member|reader [--fields <F,…> | --kit <KIT>]`, `datum sync admin add <KEY>
     /// [--label <L>]`, `datum sync admin remove <WHO> [--allow-unlock]`,
     /// each `[--admin-key <FILE>]` — a signed act on the chain.
@@ -931,12 +930,6 @@ pub enum SyncFilter {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SyncAdminAct {
     Revoke,
-    /// `purge <WHO>` previews (`--json` for a program); `--yes` does it.
-    Purge {
-        yes: bool,
-        show: Show,
-    },
-    Unpurge,
     Role {
         reader: bool,
         filter: Option<SyncFilter>,

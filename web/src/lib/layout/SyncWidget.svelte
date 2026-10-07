@@ -51,7 +51,6 @@
 		markOwn,
 		newInvite,
 		ownKeys,
-		purgeWords,
 		qr,
 		readSync,
 		syncAct,
@@ -243,20 +242,6 @@
 		doing(async () => {
 			if (!(await confirm(`Revoke ${row.label}? It can no longer sync ${db}.`, 'revoke'))) return;
 			ok(await syncAct(db, ['chain', 'revoke', row.endpoints[db]]));
-		});
-
-	/** A purge previews first (da-ry11c): the confirm names the device and what goes. */
-	const purge = (label: string, endpoint: string) =>
-		doing(async () => {
-			const preview = JSON.parse(ok(await syncAct(db, ['chain', 'purge', endpoint, '--json'])).stdout);
-			if (!(await confirm(purgeWords(label, db, preview), 'purge', label))) return;
-			ok(await syncAct(db, ['chain', 'purge', endpoint, '--yes']));
-		});
-
-	const unpurge = (label: string, endpoint: string) =>
-		doing(async () => {
-			if (!(await confirm(`Unpurge ${label}? Its changes come back on every device; it stays revoked.`, 'unpurge'))) return;
-			ok(await syncAct(db, ['chain', 'unpurge', endpoint]));
 		});
 
 	const addAdmin = (d: DbSync) =>
@@ -474,17 +459,6 @@
 							<span class="name">{row.label}</span>
 							<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => rename(row)}>Rename</button>
 							<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => revoke(row)}>Revoke</button>
-							<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => purge(row.label, row.endpoints[db])}>Purge</button>
-						</div>
-					{/each}
-					{#each cur.members.filter((m) => m.revoked) as m (m.endpoint)}
-						<div class="actions device" data-endpoint={m.endpoint}>
-							<span class="name">{m.label} · {m.purged ? 'purged' : 'revoked'}</span>
-							{#if m.purged}
-								<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => unpurge(m.label, m.endpoint)}>Unpurge</button>
-							{:else}
-								<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => purge(m.label, m.endpoint)}>Purge</button>
-							{/if}
 						</div>
 					{/each}
 					<div class="actions chain" data-db={db}>

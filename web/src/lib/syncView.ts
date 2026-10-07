@@ -27,8 +27,6 @@ export interface Member {
 	label: string;
 	kind?: string | null;
 	revoked: boolean;
-	/** Every op it signed set aside (da-ry11c): revoked too. */
-	purged?: boolean;
 	/** A reader (da-9yvb6): it receives, and writes nothing. */
 	reader?: boolean;
 	/** A filtered reader's fields, and how many the database had (da-u81u1). */
@@ -264,24 +262,6 @@ export function table(dbs: DbSync[], states: Record<string, SyncState>): Row[] {
 	return all;
 }
 
-/** What `sync chain purge <who> --json` says a purge would set aside (da-ry11c). */
-export interface PurgePreview {
-	created: number;
-	edited: number;
-	deleted: number;
-	first?: string | null;
-	last?: string | null;
-}
-
-/** The purge's confirm, naming the device and what goes, before anything is done. */
-export function purgeWords(label: string, db: string, p: PurgePreview): string {
-	const day = (t?: string | null) => (t ?? '').slice(0, 10);
-	const what = p.first
-		? `Every change it made goes, on every device: ${p.created} ${p.created === 1 ? 'entry' : 'entries'} it created, ${p.edited} it edited and ${p.deleted} it deleted, ${day(p.first)} to ${day(p.last)}.`
-		: 'It made no change to an entry: this only revokes it.';
-	return `Purge ${label} from ${db}? ${what} It is revoked too; Unpurge brings its changes back.`;
-}
-
 /**
  * `datum --db <db> sync <argv>`, approved with a passkey when the chain is
  * locked: the stdout of both runs, `new-invite`'s secret being the first's.
@@ -350,10 +330,6 @@ export function approvalWords(r: Record<string, unknown>, d: DbSync | undefined,
 	switch (r.type) {
 		case 'revoke':
 			return [`Revoke ${who(r.endpoint)} ${where}`];
-		case 'purge':
-			return [`Purge ${who(r.endpoint)} ${where}: every change it made goes, on every device`];
-		case 'unpurge':
-			return [`Unpurge ${who(r.endpoint)} ${where}: its changes come back`];
 		case 'role':
 			return [`Make ${who(r.endpoint)} a ${r.role} ${where}`];
 		case 'describe':

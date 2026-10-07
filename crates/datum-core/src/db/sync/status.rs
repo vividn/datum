@@ -21,8 +21,6 @@ pub struct PeerStatus {
     pub label: String,
     pub kind: Option<String>,
     pub revoked: bool,
-    /// Every op of its set aside (da-ry11c).
-    pub purged: bool,
     /// A reader (da-9yvb6): it receives, and writes nothing.
     pub reader: bool,
     /// A filtered reader's filter (da-u81u1).
@@ -266,7 +264,6 @@ impl Db {
                 label: m.label.clone(),
                 kind: m.kind.clone(),
                 revoked: m.revoked.is_some(),
-                purged: m.purged.is_some(),
                 reader: m.role() == super::chain::Role::Reader,
                 filter: filter.cloned(),
                 state,

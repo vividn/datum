@@ -148,49 +148,6 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                         format!("revoked {who}"),
                     )
                 }
-                SyncAdminAct::Purge { yes, show } => {
-                    let m = member(&chain, &who)?;
-                    let purged = chain.member(&m).and_then(|m| m.purged.as_deref());
-                    let p = db.sync_purge_preview(&m)?;
-                    if show == ShowFlag::Json && !yes {
-                        let label = chain.member(&m).map(|m| m.label.as_str());
-                        let out = json!({
-                            "endpoint": m, "label": label, "created": p.created,
-                            "edited": p.edited, "deleted": p.deleted, "first": p.first,
-                            "last": p.last, "purged": purged.map(chain::hlc_time),
-                        });
-                        println!("{out}");
-                        return Ok(());
-                    }
-                    ensure!(
-                        purged.is_none(),
-                        "{who} is purged already: `datum sync chain unpurge {who}` folds its ops back in"
-                    );
-                    let what = purge_words(&who, &m, &p);
-                    if !yes {
-                        println!(
-                            "{what}\nnothing changed: `datum sync chain purge {who} --yes` does it"
-                        );
-                        return Ok(());
-                    }
-                    (
-                        json!({"type": "purge", "endpoint": m}),
-                        format!(
-                            "purged: {what}\n`datum sync chain unpurge {who}` folds them back in"
-                        ),
-                    )
-                }
-                SyncAdminAct::Unpurge => {
-                    let m = member(&chain, &who)?;
-                    // Nothing to sign: in a locked chain, a passkey tap for nothing.
-                    if let Some(why) = chain.member(&m).and_then(|m| m.unpurge_refused()) {
-                        bail!("{who} can't be unpurged: {why}");
-                    }
-                    (
-                        json!({"type": "unpurge", "endpoint": m}),
-                        format!("unpurged {who}: its ops are folded back in; it stays revoked"),
-                    )
-                }
                 SyncAdminAct::Role { reader, filter } => {
                     let m = member(&chain, &who)?;
                     let role = if reader { "reader" } else { "member" };
@@ -569,23 +526,6 @@ fn names(who: &str, label: &str, id: &str) -> bool {
     label == who || who.len() >= chain::MIN_PREFIX && id.starts_with(who)
 }
 
-/// What purging `who` sets aside, in words (da-ry11c).
-fn purge_words(who: &str, endpoint: &str, p: &chain::PurgePreview) -> String {
-    let minute = |t: &Option<String>| t.as_deref().map(|t| t.chars().take(16).collect::<String>());
-    let id = &endpoint[..10];
-    match (minute(&p.first), minute(&p.last)) {
-        (Some(first), Some(last)) => format!(
-            "{who} ({id}) — every op it signed, {first} to {last} UTC: {} entr{} it created \
-             go, {} it edited and {} it deleted go back to the state without it; it is revoked",
-            p.created,
-            if p.created == 1 { "y" } else { "ies" },
-            p.edited,
-            p.deleted,
-        ),
-        _ => format!("{who} ({id}) signed no change to an entry: purging it only revokes it"),
-    }
-}
-
 /// The chain member `who` names, by label or a prefix of its endpoint id.
 fn member(chain: &Chain, who: &str) -> Result<String> {
     let hits: Vec<_> = chain
@@ -745,7 +685,6 @@ fn members(db: &Db, json: bool) -> Result<()> {
                     "endpoint": m.endpoint, "label": m.label, "client": m.client,
                     "kind": m.kind, "admitted": chain::hlc_time(&m.admitted), "via": m.via,
                     "revoked": m.revoked.as_deref().map(chain::hlc_time),
-                    "purged": m.purged.as_deref().map(chain::hlc_time),
                     "role": m.role().as_str(), "this": m.endpoint == mine,
                     "filter": filter_json(chain.filter(&m.endpoint)),
                 })
@@ -775,12 +714,9 @@ fn members(db: &Db, json: bool) -> Result<()> {
                 .unwrap_or_default(),
             chain::hlc_time(&m.admitted),
             m.via,
-            match m.purged.as_deref().map(chain::hlc_time) {
-                Some(p) => format!("  PURGED {p}"),
-                None => revoked
-                    .map(|r| format!("  REVOKED {r}"))
-                    .unwrap_or_default(),
-            },
+            revoked
+                .map(|r| format!("  REVOKED {r}"))
+                .unwrap_or_default(),
             if m.endpoint == mine {
                 "  (this copy)"
             } else {
@@ -813,7 +749,7 @@ fn status(db: &Db, json: bool) -> Result<()> {
             .map(|p| {
                 json!({
                     "endpoint": p.endpoint, "client": p.client, "label": p.label,
-                    "kind": p.kind, "revoked": p.revoked, "purged": p.purged, "reader": p.reader,
+                    "kind": p.kind, "revoked": p.revoked, "reader": p.reader,
                     "filter": filter_json(p.filter.as_ref()), "state": p.state,
                     "to_send": p.to_send, "last_seen": p.last_seen,
                     "last_verify": p.last_verify.as_ref().map(|(at, m)| json!({"at": at, "match": m})),
@@ -899,11 +835,7 @@ fn status(db: &Db, json: bool) -> Result<()> {
             p.state,
             p.to_send,
             when.as_deref().unwrap_or("-"),
-            match (p.purged, p.revoked) {
-                (true, _) => "  PURGED",
-                (_, true) => "  REVOKED",
-                _ => "",
-            },
+            if p.revoked { "  REVOKED" } else { "" },
             if p.reader { "  reader" } else { "" },
             p.filter
                 .as_ref()
