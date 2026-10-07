@@ -9,7 +9,9 @@
 //! Restore REPLACES by default (da-5fooh): afterwards the live entries are
 //! exactly the backup's, and the rest are tombstoned — ordinary deletions,
 //! so they sync and can be seen. `--merge` only adds, content-hash
-//! idempotent; an entry edited since the backup keeps its live version. Either way it gates on the `schema_version` recorded in the
+//! idempotent; an entry edited since the backup keeps its live version, and
+//! one whose slug or state's instant a different live entry holds is merged
+//! into it as a sync merges two (da-0v1zt). Either way it gates on the `schema_version` recorded in the
 //! header and commits in a single transaction — any failure rolls back to
 //! "nothing restored". See `RestoreReport` for the projected/committed
 //! outcome contract.
@@ -288,8 +290,8 @@ fn backup_targz(path: &std::path::Path, db: &Db, header: &BackupHeader) -> Resul
 ///
 /// Field names describe the *committed* outcome. In dry-run mode
 /// (`dry_run == true`) they carry the **projected** outcome — i.e.
-/// "would be inserted / updated / skipped" — computed from read-only
-/// content_hash lookups without touching the DB.
+/// "would be inserted / updated / skipped" — from the real writes in a
+/// transaction that is rolled back.
 #[derive(Debug, Default)]
 pub(crate) struct RestoreReport {
     pub inserted: usize,
@@ -309,6 +311,11 @@ pub(crate) struct RestoreReport {
     pub header_source_db: Option<String>,
     pub header_entry_count: Option<usize>,
     pub warnings: Vec<String>,
+    /// Slugs of the live entries a `--merge` merged a backup entry into,
+    /// one holding its slug or its state's instant (da-0v1zt), as a sync
+    /// merges two; each pair is in `datum conflicts`. Always empty for a
+    /// replace.
+    pub merged: Vec<String>,
     /// True if the counts are projections from a dry-run, not committed writes.
     pub dry_run: bool,
     /// When the backup's schema version is below the binary's, every entry is
@@ -322,7 +329,7 @@ pub(crate) struct RestoreReport {
 
 impl RestoreReport {
     fn total_processed(&self) -> usize {
-        self.inserted + self.updated + self.skipped
+        self.inserted + self.updated + self.skipped + self.merged.len()
     }
 }
 
@@ -409,6 +416,7 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
             "updated": if report.dry_run { None } else { Some(report.updated) },
             "skipped": if report.dry_run { None } else { Some(report.skipped) },
             "deleted": if report.dry_run { None } else { Some(report.deleted) },
+            "merged": report.merged,
             "fingerprint": report.fingerprint.map(|f| format!("{f:016x}")),
             "mode": if report.hard.is_some() { "hard" } else if report.replace { "replace" } else { "merge" },
             "dropped": report.hard.map(|h| serde_json::json!({
@@ -447,6 +455,7 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
             println!("  Would delete: {}", report.deleted);
         } else {
             println!("  Would skip (already there): {}", report.skipped);
+            print_merged(&report.merged, "Would reconcile");
             if force {
                 println!("  Would update (--force): {}", report.updated);
             }
@@ -469,9 +478,25 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
             "✓ Restore: {} inserted, {} updated, {} skipped",
             report.inserted, report.updated, report.skipped
         );
+        print_merged(&report.merged, "Reconciled");
     }
 
     Ok(())
+}
+
+/// Name each live entry a merge reconciled a backup entry with (da-0v1zt):
+/// merged into it under one slug, kept over it under one state instant.
+fn print_merged(slugs: &[String], verb: &str) {
+    if slugs.is_empty() {
+        return;
+    }
+    println!(
+        "  {verb} with the live entry holding its id: {} — see `datum conflicts`",
+        slugs.len()
+    );
+    for slug in slugs {
+        println!("    {slug}");
+    }
 }
 
 /// Ask before a replace deletes anything; refuse on anything but yes.
@@ -736,22 +761,6 @@ fn restore_from_reader<R: std::io::BufRead>(
             report.skipped += 1;
             continue;
         }
-        if dry_run && !replace {
-            // Read-only: predict the outcome from a content_hash lookup
-            // without opening a write transaction.
-            let exists = db.has_entry_with_content_hash(&entry.content_hash)?;
-            match (exists, strategy) {
-                (false, _) => report.inserted += 1,
-                (true, ConflictStrategy::Ignore) => report.skipped += 1,
-                (true, ConflictStrategy::Update) | (true, ConflictStrategy::Merge) => {
-                    report.updated += 1
-                }
-                // Rekey would insert a second row sharing content_hash.
-                (true, ConflictStrategy::Rekey) => report.inserted += 1,
-            }
-            continue;
-        }
-
         pending.push(entry);
     }
     reading.finish(read);
@@ -787,18 +796,22 @@ fn restore_from_reader<R: std::io::BufRead>(
         }
     } else if !pending.is_empty() {
         // Same per-row semantics as insert_entry_with_strategy (history rows,
-        // conflict strategy dispatch), one commit for the whole batch.
-        // Tallies are recomputed from the committed outcomes, so the
-        // entry-count integrity check below reflects what actually landed.
+        // conflict strategy dispatch), one commit for the whole batch — or
+        // none, for a dry run — except an entry a different live one holds
+        // the identity of is merged into it (da-0v1zt). Tallies come from
+        // the outcomes, so the entry-count integrity check below reflects
+        // what actually landed.
         let mut inserting = Progress::new("restore: inserting", Some(pending.len()));
-        let outcomes = db.insert_entries_batch(&pending, strategy, &mut |n| inserting.tick(n))?;
+        let outcomes =
+            db.merge_entries(&pending, strategy, !dry_run, &mut |n| inserting.tick(n))?;
         inserting.finish(pending.len());
         for outcome in outcomes {
             match outcome {
                 InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. } => {
                     report.inserted += 1
                 }
-                InsertOutcome::Updated { .. } | InsertOutcome::Merged { .. } => report.updated += 1,
+                InsertOutcome::Updated { .. } => report.updated += 1,
+                InsertOutcome::Merged { slug } => report.merged.push(slug.0),
                 InsertOutcome::Ignored { .. } => report.skipped += 1,
             }
         }

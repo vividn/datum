@@ -115,18 +115,6 @@ impl Db {
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
-    /// Whether any live (non-tombstoned) row has this content_hash. Read-only
-    /// dedup check used by `restore --dry-run` to project the outcome of an
-    /// insert without opening a write transaction.
-    pub fn has_entry_with_content_hash(&self, content_hash: &str) -> Result<bool> {
-        let n: i64 = self.conn.query_row(
-            &format!("SELECT COUNT(*) FROM entries WHERE content_hash = ?1 AND {LIVE_SQL}"),
-            params![content_hash],
-            |row| row.get(0),
-        )?;
-        Ok(n > 0)
-    }
-
     /// Rows where both time bounds exist and `end_time` precedes `start_time`.
     ///
     /// da-5ns sub-bead 1 stub: post-pivot there is no separate

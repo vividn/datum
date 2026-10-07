@@ -242,7 +242,8 @@ fn auto_resolve_is_not_a_conflicts_subcommand() {
 }
 
 /// An `identity_collision` names the superseded row and the one that kept
-/// the identity, and `db restore --merge` files one too (`local_validator`):
+/// the identity — a restore's, the backup's entry and the live one — and
+/// `db restore --merge` files one too (`local_validator`):
 /// neither surface may call a restore's pair a device's, nor either side of
 /// any collision «local» or «remote» (da-vrqih).
 #[test]
@@ -279,8 +280,12 @@ fn a_collision_speaks_of_its_own_detector() {
         !out.contains("    local ") && !out.contains("    remote "),
         "{out}"
     );
-    assert_eq!(out.matches("    superseded ").count(), 2, "{out}");
-    assert_eq!(out.matches("    kept ").count(), 2, "{out}");
+    // A restore writes no second row: its pair is the backup's entry and
+    // the live one it was merged into (da-0v1zt).
+    assert_eq!(out.matches("    superseded ").count(), 1, "{out}");
+    assert_eq!(out.matches("    kept ").count(), 1, "{out}");
+    assert_eq!(out.matches("    backup ").count(), 1, "{out}");
+    assert_eq!(out.matches("    live ").count(), 1, "{out}");
     let header = |hid: &str| {
         out.lines()
             .find(|l| l.starts_with(hid))

@@ -91,6 +91,7 @@ mod redo_cmd;
 mod render_state_group;
 mod reparse_cmd;
 mod restore_hard;
+mod restore_merge_collision;
 mod retime_cmd;
 mod show_env;
 mod show_flag_family;

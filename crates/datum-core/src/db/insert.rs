@@ -304,11 +304,39 @@ impl Db {
         strategy: ConflictStrategy,
         on_row: &mut dyn FnMut(usize),
     ) -> Result<Vec<InsertOutcome>> {
+        self.write_batch(entries, strategy, false, true, on_row)
+    }
+
+    /// The write behind `db restore --merge` (da-0v1zt):
+    /// [`Self::insert_entries_batch`], except an entry whose slug or live
+    /// state-bearing `(field, occur_time)` a different live entry holds is
+    /// merged into that entry by the rule a sync merges two with
+    /// (`sync::merge_in`) — [`InsertOutcome::Merged`] — where the batch
+    /// would abort. With `commit` false the transaction is rolled back, so
+    /// a dry run's outcomes are the run's.
+    pub fn merge_entries(
+        &self,
+        entries: &[Entry],
+        strategy: ConflictStrategy,
+        commit: bool,
+        on_row: &mut dyn FnMut(usize),
+    ) -> Result<Vec<InsertOutcome>> {
+        self.write_batch(entries, strategy, true, commit, on_row)
+    }
+
+    fn write_batch(
+        &self,
+        entries: &[Entry],
+        strategy: ConflictStrategy,
+        merge: bool,
+        commit: bool,
+        on_row: &mut dyn FnMut(usize),
+    ) -> Result<Vec<InsertOutcome>> {
         let tx = self.conn.unchecked_transaction()?;
         let mut outcomes = Vec::with_capacity(entries.len());
         let mut written = Vec::new();
         for entry in entries {
-            let (outcome, row) = write_entry_in_tx(&tx, entry, strategy)?;
+            let (outcome, row) = write_entry_in_tx(&tx, entry, strategy, merge)?;
             outcomes.push(outcome);
             written.extend(row);
             on_row(outcomes.len());
@@ -318,7 +346,9 @@ impl Db {
             &written,
             crate::integrity::DetectedBy::LocalValidator,
         )?;
-        tx.commit()?;
+        if commit {
+            tx.commit()?;
+        }
         Ok(outcomes)
     }
 
@@ -396,7 +426,7 @@ impl Db {
                     }
                 }
                 None => {
-                    let (outcome, row) = write_entry_in_tx(&tx, entry, strategy)?;
+                    let (outcome, row) = write_entry_in_tx(&tx, entry, strategy, false)?;
                     written.extend(row);
                     match outcome {
                         // A tombstone at the slug revives in place, keeping
@@ -900,7 +930,7 @@ fn insert_entry_in_tx(
     entry: &Entry,
     strategy: ConflictStrategy,
 ) -> Result<InsertOutcome> {
-    let (outcome, written) = write_entry_in_tx(conn, entry, strategy)?;
+    let (outcome, written) = write_entry_in_tx(conn, entry, strategy, false)?;
     // D5: post-write conflict detection. Runs inside the same
     // transaction so the conflict row is atomic with the insert.
     if let Some(written) = written {
@@ -917,10 +947,13 @@ fn insert_entry_in_tx(
 /// created or revived, which the caller must hand to
 /// `integrity::detect_for_entry` / `detect_for_entries` once it is in the
 /// table (Update, Merge and Ignore create nothing and return `None`).
+/// `merge` merges an entry a different live one holds the identity of
+/// into it ([`Db::merge_entries`]) instead of failing.
 fn write_entry_in_tx(
     conn: &Connection,
     entry: &Entry,
     strategy: ConflictStrategy,
+    merge: bool,
 ) -> Result<(InsertOutcome, Option<Entry>)> {
     crate::slug::validate_field_name(&entry.field)?;
     crate::slug::validate_slug(&entry.slug.0)?;
@@ -1015,6 +1048,18 @@ fn write_entry_in_tx(
                         },
                         None,
                     ));
+                }
+                let live = match merge {
+                    true => super::sync::blockers(conn, entry)?.into_iter().next(),
+                    false => None,
+                };
+                if let Some(live) = live {
+                    let slug = live.slug.clone();
+                    let outcome = match super::sync::merge_in(conn, &live, entry)? {
+                        true => InsertOutcome::Merged { slug },
+                        false => InsertOutcome::Ignored { slug },
+                    };
+                    return Ok((outcome, None));
                 }
                 let (stored_slug, stored_hid) = raw_insert(conn, entry)?;
                 let inserted = fetch_entry_any(conn, &stored_slug)?;

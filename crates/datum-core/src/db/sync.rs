@@ -867,7 +867,7 @@ fn file_conflicts(conn: &Connection, x: &Op, ops: &[Op], merged: &Entry) -> Resu
 /// which a superseded row is outside (ported from the relay sync's apply).
 /// A kit's index is never a third: a kit may not declare one `unique`
 /// (da-9lo90).
-fn blockers(conn: &Connection, e: &Entry) -> Result<Vec<Entry>> {
+pub(super) fn blockers(conn: &Connection, e: &Entry) -> Result<Vec<Entry>> {
     let mut found: Vec<Entry> = conn
         .prepare_cached(
             "SELECT * FROM entries WHERE slug = ?1 AND hid != ?2 AND superseded_by IS NULL",
@@ -955,19 +955,29 @@ fn merged_into(conn: &Connection, s: &Entry) -> Result<Vec<Entry>> {
 /// have, the later-created row's value — then every edit of any of them in
 /// fold order, so an edit addressed to either lands. Identity stays `s`'s.
 /// It is derived from the ops alone, the same on every copy, and sent as
-/// none.
-fn merge_rows(conn: &Connection, s: &Entry, members: &[Entry]) -> Result<Entry> {
-    if members.is_empty() {
+/// none. `outside`, a row from no copy's ops — a backup's, which `db restore
+/// --merge` merges into the live entry (da-0v1zt) — goes in as a create
+/// whose ops are not read: its hid may be a tombstone's here.
+fn merge_rows(
+    conn: &Connection,
+    s: &Entry,
+    members: &[Entry],
+    outside: Option<&Entry>,
+) -> Result<Entry> {
+    if members.is_empty() && outside.is_none() {
         return Ok(s.clone());
     }
-    let mut rows: Vec<&Entry> = std::iter::once(s).chain(members).collect();
+    let mut rows: Vec<&Entry> = std::iter::once(s).chain(members).chain(outside).collect();
     rows.sort_by(|a, b| (&a.create_time, &a.hid.0).cmp(&(&b.create_time, &b.hid.0)));
-    // `s` is not always the first created (a `restore --merge` pair), so
-    // its own create is the base — the bookkeeping — and every create's
-    // content, its own included, goes over it in creation order.
+    // `s` is not always the first created, so its own create is the base —
+    // the bookkeeping — and every create's content, its own included, goes
+    // over it in creation order.
     let (mut base, mut creates, mut edits) = (None, Vec::new(), Vec::new());
     for e in rows {
-        let ops = ops_of(conn, e.hid.as_str())?;
+        let ops = match outside {
+            Some(o) if std::ptr::eq(e, o) => Vec::new(),
+            _ => ops_of(conn, e.hid.as_str())?,
+        };
         let n = ops
             .iter()
             .take_while(|o| o.effect.get("create").is_some())
@@ -1006,7 +1016,7 @@ fn rederive(conn: &Connection, hid: &str) -> Result<()> {
     let own = own(conn, &pre)?;
     let next = match pre.superseded_by {
         Some(_) => own,
-        None => merge_rows(conn, &own, &merged_into(conn, &own)?)?,
+        None => merge_rows(conn, &own, &merged_into(conn, &own)?, None)?,
     };
     if row(&pre) == row(&next) {
         return Ok(());
@@ -1015,23 +1025,36 @@ fn rederive(conn: &Connection, hid: &str) -> Result<()> {
     apply_entry_state(conn, &next)
 }
 
-/// File the `identity_collision` for `lost`, newly superseded by `kept`,
-/// unless they are one event twice. A pair merged into one entry names, on
-/// the superseded side's `extra_metadata.merge`, each key the two gave
-/// different values: the value the merge took and the one it took it over.
+/// File the `identity_collision` for `lost`, newly superseded by `kept`.
 fn file_collision(conn: &Connection, lost: &str, kept: &str) -> Result<()> {
     let (Some(l), Some(k)) = (fetch_by_hid(conn, lost)?, fetch_by_hid(conn, kept)?) else {
         return Ok(());
     };
-    let (mut lost, kept_own) = (own(conn, &l)?, own(conn, &k)?);
-    if same_event(&lost, &kept_own) {
-        return Ok(());
+    let by = crate::integrity::DetectedBy::SyncPull;
+    surface(conn, own(conn, &l)?, &own(conn, &k)?, &k, by).map(drop)
+}
+
+/// File the `identity_collision` for `lost` against `kept`, which holds its
+/// identity and now shows `shown`, unless they are one event twice; whether
+/// it did. A pair merged into one entry names, on the `lost` side's
+/// `extra_metadata.merge`, each key the two gave different values: the
+/// value the merge took and the one it took it over. `by` says who merged
+/// them: a sync, or a `db restore --merge` (da-0v1zt).
+fn surface(
+    conn: &Connection,
+    mut lost: Entry,
+    kept: &Entry,
+    shown: &Entry,
+    by: crate::integrity::DetectedBy,
+) -> Result<bool> {
+    if same_event(&lost, kept) {
+        return Ok(false);
     }
-    if lost.slug == k.slug {
+    if lost.slug == shown.slug {
         let (a, b, shown) = (
-            content(&row(&kept_own)),
+            content(&row(kept)),
             content(&row(&lost)),
-            content(&row(&k)),
+            content(&row(shown)),
         );
         let mut clash = Map::new();
         for (key, x) in &a {
@@ -1050,7 +1073,45 @@ fn file_collision(conn: &Connection, lost: &str, kept: &str) -> Result<()> {
             lost.extra_metadata = Some(meta);
         }
     }
-    crate::integrity::file_identity_collision(conn, &lost, &kept_own).map(drop)
+    crate::integrity::file_identity_collision(conn, &lost, kept, by)?;
+    Ok(true)
+}
+
+/// Merge `incoming`, a backup's entry, into `live`, the live entry holding
+/// its slug or its state's instant (`db restore --merge`, da-0v1zt), by
+/// the rule a sync merges two rows with: under one slug `live` shows
+/// [`merge_rows`] with `incoming` in it; under one instant alone `live` is
+/// the one kept. Either way `incoming` is not written. The change is the
+/// user's — a `user_edit`, so `undo` reverts it — and the pair is surfaced
+/// `local_validator`, unless an earlier restore already surfaced it,
+/// resolved or not: that is a second restore of one backup, which adds
+/// nothing. Whether anything was merged or surfaced.
+pub(super) fn merge_in(conn: &Connection, live: &Entry, incoming: &Entry) -> Result<bool> {
+    let mut shown = match live.slug == incoming.slug {
+        true => merge_rows(
+            conn,
+            &own(conn, live)?,
+            &merged_into(conn, live)?,
+            Some(incoming),
+        )?,
+        false => live.clone(),
+    };
+    let changed = content(&row(&shown)) != content(&row(live));
+    if changed {
+        shown.modify_time = Utc::now();
+        history::record(conn, live, ChangeKind::UserEdit)?;
+        apply_entry_state(conn, &shown)?;
+        emit(conn, Some(live), &live.hid, ChangeKind::UserEdit)?;
+    }
+    let surfaced: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM integrity_warnings
+           WHERE kind = 'identity_collision' AND json_extract(local_entry, '$.hid') = ?1
+             AND json_extract(remote_entry, '$.hid') = ?2)",
+        params![incoming.hid, live.hid],
+        |r| r.get(0),
+    )?;
+    let by = crate::integrity::DetectedBy::LocalValidator;
+    Ok((!surfaced && surface(conn, incoming.clone(), live, &shown, by)?) || changed)
 }
 
 /// Write the row an entry's ops fold to. Two distinct entries claiming one
@@ -1085,7 +1146,7 @@ fn write_merged(conn: &Connection, pre: Option<&Entry>, mut next: Entry) -> Resu
         }
     }
     if next.superseded_by.is_none() {
-        next = merge_rows(conn, &next, &merged_into(conn, &next)?)?;
+        next = merge_rows(conn, &next, &merged_into(conn, &next)?, None)?;
     }
     match pre {
         Some(pre) => {

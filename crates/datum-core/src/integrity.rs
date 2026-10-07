@@ -9,8 +9,9 @@
 //! Most rows here are *local* findings, but this is also where
 //! cross-device sync conflicts live — there is no separate table for
 //! them. `lww_overwrite` and `identity_collision` are filed by the sync
-//! apply with `detected_by = sync_pull` and triaged by `datum conflicts`;
-//! a merge that cannot give one identity to both rows keeps both and
+//! apply with `detected_by = sync_pull` and triaged by `datum conflicts`
+//! (an `identity_collision` by `db restore --merge` too, `local_validator`,
+//! da-0v1zt); a merge that cannot give one identity to both rows keeps both and
 //! marks the loser with `superseded_by` on `entries` (da-uxgv) instead of
 //! deleting it. `schema.sql` draws that column apart from `deleted_at`:
 //! `deleted_at` is *the user deleted this*, `superseded_by` is *a sync
@@ -127,8 +128,10 @@ pub enum IntegrityKind {
     /// of one — both are kept, the deterministic loser is *superseded*
     /// (`superseded_by` = the winner's hid, da-uxgv), and this row names the
     /// pair. `local_entry` is the superseded loser, `remote_entry` the row
-    /// that kept the identity. Only ever filed with
-    /// `detected_by = sync_pull`.
+    /// that kept the identity. Filed with `detected_by = sync_pull` by a
+    /// sync apply, and `local_validator` by a `db restore --merge`, which
+    /// merges the backup's entry into the live one and writes no second row
+    /// (da-0v1zt).
     IdentityCollision,
     /// Two ops from different copies set one key of one entry, neither
     /// having seen the other (Easy Sync, da-k329q). The op with the later
@@ -734,7 +737,8 @@ pub fn file_lww_overwrite(
 
 /// File an [`IntegrityKind::IdentityCollision`] warning: two distinct
 /// entries claimed one `slug` (or one live state-bearing
-/// `(field, occur_time)`, da-2fkr) during a sync apply. `superseded` is the deterministic loser as it now stands —
+/// `(field, occur_time)`, da-2fkr) during a sync apply or a `db restore
+/// --merge`, which `by` names (da-0v1zt). `superseded` is the deterministic loser as it now stands —
 /// same content, same derived slug, `superseded_by` pointing at the winner
 /// — and `kept` the row that holds the contested identity. Both rows
 /// survive. Under one slug the entry shown is the two merged, and
@@ -747,12 +751,13 @@ pub fn file_identity_collision(
     conn: &Connection,
     superseded: &Entry,
     kept: &Entry,
+    by: DetectedBy,
 ) -> Result<IntegrityWarning> {
     file_warning(
         conn,
         superseded,
         Some(kept),
-        DetectedBy::SyncPull,
+        by,
         IntegrityKind::IdentityCollision,
     )
 }

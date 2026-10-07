@@ -23,8 +23,9 @@ use datum_core::time::Zone;
 
 use crate::args::{ConflictsCommand, ConflictsKeep, ConflictsListArgs, ConflictsResolveArgs};
 
-/// The kinds this command owns. Both are only ever filed with
-/// `detected_by = sync_pull`; every other kind belongs to `datum check`.
+/// The kinds this command owns, filed by a sync apply (an
+/// `identity_collision` by `db restore --merge` too); every other kind
+/// belongs to `datum check`.
 const SYNC_KINDS: [IntegrityKind; 3] = [
     IntegrityKind::LwwOverwrite,
     IntegrityKind::IdentityCollision,
@@ -83,9 +84,11 @@ fn list(args: ConflictsListArgs, db: &Db) -> Result<()> {
     for w in &rows {
         // An identity_collision's pair is the superseded row and the one
         // that kept the identity, whichever side each came from — and a
-        // restore's came from no remote at all (da-vrqih).
-        let (first, second) = match w.kind {
-            IntegrityKind::IdentityCollision => ("superseded", "kept"),
+        // restore's came from no remote at all (da-vrqih): it is the
+        // backup's entry and the live one it was merged into (da-0v1zt).
+        let (first, second) = match (w.kind, w.detected_by) {
+            (IntegrityKind::IdentityCollision, DetectedBy::LocalValidator) => ("backup", "live"),
+            (IntegrityKind::IdentityCollision, _) => ("superseded", "kept"),
             _ => ("local", "remote"),
         };
         println!(
