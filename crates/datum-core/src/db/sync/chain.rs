@@ -953,6 +953,51 @@ impl Db {
         self.sync_chain_write(record, false)
     }
 
+    /// Leave this copy's chain, or with `dry_run` only say whether it may
+    /// (da-h7pnc). It may when it is the chain's one live member and holds no
+    /// op of another endpoint's, so nothing of anyone else's goes with it — a
+    /// chain whose other members were revoked still holds their data
+    /// (da-mepav). Its ops and the chain's local records (notices, a
+    /// filtered reader's marks) go; every entry stays, with its integrity
+    /// warnings, and the next sync signs it again as a baseline. What is the
+    /// copy's whatever its chain stays: its key and pause (`sync_local`), and
+    /// `sync_peers`, an address book that grants nothing — the redeemer of
+    /// another chain's invite has just recorded the member that admitted it.
+    pub fn sync_chain_leave(&self, dry_run: bool) -> Result<()> {
+        let chain = self.sync_chain()?;
+        let me = self.sync_endpoint_id()?;
+        let others = chain
+            .members
+            .iter()
+            .filter(|m| m.revoked.is_none() && m.endpoint != me)
+            .count();
+        let theirs = self
+            .conn
+            .prepare("SELECT 1 FROM ops WHERE endpoint != ?1")?
+            .exists(params![me])?;
+        let why = match (others, theirs) {
+            _ if !chain.exists() => Some("this copy is in no sync chain".to_string()),
+            (0, false) => None,
+            (0, true) => Some(format!(
+                "this copy holds other copies' data from sync chain {}",
+                chain.id
+            )),
+            (n, _) => Some(format!("sync chain {} has {n} other member(s)", chain.id)),
+        };
+        if let Some(why) = why {
+            return Err(DatumError::Other(format!(
+                "{why}; only a copy holding nothing but its own data can leave its chain"
+            )));
+        }
+        if dry_run {
+            return Ok(());
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute_batch("DELETE FROM ops; DELETE FROM sync_notices; DELETE FROM sync_caught_up;")?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Notices not yet printed, now marked printed.
     pub fn sync_notices_unannounced(&self) -> Result<Vec<Notice>> {
         let out = self.sync_notices("announced = 0")?;

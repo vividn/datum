@@ -433,6 +433,7 @@ export function syncCommand(argv: string[]): Promise<RunResult> | null {
 			argv: shown,
 			code: 0,
 			stdout: [
+				r.left ? `this copy's own sync chain ${r.left[0]} (just itself) is replaced by sync chain ${r.left[1]}` : '',
 				r.added ? `added sync peer ${r.label} (${r.id.slice(0, 10)})` : '',
 				`${r.label}: sent ${r.sent}, got ${r.got}, conflicts ${r.conflicts}, verify ${r.verified ? 'ok' : 'MISMATCH'}`
 			]

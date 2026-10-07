@@ -45,6 +45,7 @@
 		approvalWords,
 		approveInto,
 		approving,
+		canLeave,
 		joining,
 		joinWords,
 		markOwn,
@@ -153,7 +154,10 @@
 		if (!ticket) return;
 		const db = currentDb();
 		const said = await ticketAbout(ticket).then(
-			async (about) => joinWords(about, db, (await readSync([db]))[0], Date.now()),
+			async (about) => {
+				const d = (await readSync([db]))[0];
+				return joinWords(about, db, d, Date.now(), !!d?.chain && (await canLeave(db)));
+			},
 			() => ({ words: [], refused: 'Not a join link: it carries no ticket.' })
 		);
 		if (ticket === $joining) join = { ticket, db, ...said };

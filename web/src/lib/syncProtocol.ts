@@ -11,6 +11,8 @@ export interface SyncReport {
 	conflicts: number;
 	verified: boolean;
 	vector: Record<string, number>;
+	/** The chain of one this copy left to redeem the invite, and the chain it joined (da-h7pnc). */
+	left?: [string, string] | null;
 }
 
 /** What a ticket says of itself (the wire crate's `About`, da-l9kdr): never its secret. */

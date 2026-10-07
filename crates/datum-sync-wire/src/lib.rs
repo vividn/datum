@@ -71,6 +71,9 @@ pub trait Store {
     /// The sync chain this copy is in, and its unrevoked members; none
     /// when it is in no chain.
     async fn chain(&self) -> Result<Option<(String, usize)>>;
+    /// Leave this copy's chain, or with `dry_run` only say why it may not:
+    /// only a copy holding nothing but its own data may (da-h7pnc).
+    async fn leave(&self, dry_run: bool) -> Result<()>;
     async fn vector(&self) -> Result<Vector>;
     /// Every op `since` lacks, as JSON lines — for `peer`, whose filter, if
     /// it is a filtered reader, the lines pass (da-u81u1).
@@ -259,6 +262,9 @@ pub struct Report {
     pub verified: bool,
     /// The peer's version vector, as it last sent it.
     pub vector: Vector,
+    /// The chain of one this copy left to redeem the invite, and the chain
+    /// it joined (da-h7pnc).
+    pub left: Option<(String, String)>,
 }
 
 impl Report {
@@ -273,6 +279,7 @@ impl Report {
             conflicts: 0,
             verified: false,
             vector: BTreeMap::new(),
+            left: None,
         }
     }
 }
@@ -427,12 +434,16 @@ async fn session(
         .await
         .map_err(|e| anyhow!("could not reach {}: {e}", short(&id)))?;
     let (mut s, mut r) = conn.open_bi().await?;
-    let (chain, holds) = match invite {
-        Some(_) => (
-            Some(store.chain().await?.map(|c| c.0).unwrap_or_default()),
-            store.holds().await?,
-        ),
-        None => (None, 0),
+    // A redeemer still in a chain is one `redeem` found may leave it: it
+    // says it is in none, and leaves once admitted (da-h7pnc).
+    let left = match invite {
+        Some(_) => store.chain().await?.map(|c| c.0),
+        None => None,
+    };
+    let chain = invite.map(|_| String::new());
+    let holds = match invite {
+        Some(_) => store.holds().await?,
+        None => 0,
     };
     let hello = Hello {
         label: store.label(),
@@ -444,10 +455,18 @@ async fn session(
     put_json(&mut s, &hello).await?;
     let (label, added) = match get_json(&mut r, MAX_HELLO).await? {
         Reply::Welcome { label, addr } => {
-            match store
-                .handshake(&id, &label, &addr, None, None, 0, true)
-                .await
-            {
+            // Its own handshake may refuse too (a paused copy): only then
+            // does it leave.
+            let admitted = async {
+                let added = store
+                    .handshake(&id, &label, &addr, None, None, 0, true)
+                    .await?;
+                if left.is_some() {
+                    store.leave(false).await?;
+                }
+                Ok(added)
+            };
+            match admitted.await {
                 Ok(added) => (label, added),
                 Err(e) => {
                     conn.close(0u32.into(), b"refused");
@@ -462,6 +481,9 @@ async fn session(
     };
     let mut rep = Report::new(label, id, added, invite.is_some());
     let done = exchange(store, &mut s, &mut r, true, &mut rep).await;
+    if let (Some(old), Ok(Some((new, _)))) = (left, store.chain().await) {
+        rep.left = Some((old, new));
+    }
     conn.close(0u32.into(), b"done");
     match done {
         Ok(()) => Ok(rep),
@@ -517,13 +539,16 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
 
 /// Redeem `ticket`'s invite and sync, with the first of its addresses that
 /// admits it. A copy already in a chain is refused before anything is sent:
-/// its ops would flow one way into the other chain (da-mepav).
+/// its ops would flow one way into the other chain (da-mepav) — unless they
+/// are its own alone, when it leaves its chain once admitted (da-h7pnc).
 pub async fn redeem(store: &impl Store, ep: &Endpoint, ticket: &Ticket) -> Result<Report> {
     if let Some((id, n)) = store.chain().await? {
-        bail!(
-            "this copy is in sync chain {id} ({n} members); a copy belongs to one chain. \
-             To join another, use a copy that isn't in one"
-        );
+        if store.leave(true).await.is_err() {
+            bail!(
+                "this copy is in sync chain {id} ({n} members); a copy belongs to one chain. \
+                 To join another, use a copy that isn't in one"
+            );
+        }
     }
     let mut rep = Err(anyhow!("the ticket names no address"));
     for addr in &ticket.addrs {

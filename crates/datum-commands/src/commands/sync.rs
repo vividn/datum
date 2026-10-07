@@ -97,6 +97,17 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                 anyhow::bail!("{} op(s) refused", s.refused.len());
             }
         }
+        SyncCommand::Leave { dry_run } => {
+            let chain = db.sync_chain()?;
+            ensure!(chain.exists(), NO_CHAIN);
+            db.sync_chain_leave(dry_run)?;
+            if !dry_run {
+                println!(
+                    "left sync chain {}: this copy is in none, its entries kept",
+                    chain.id
+                );
+            }
+        }
         SyncCommand::Rekey => {
             println!("new endpoint key {}", db.sync_rekey()?);
             println!(

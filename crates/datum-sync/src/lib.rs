@@ -86,6 +86,10 @@ impl Store for DbStore<'_> {
         Ok(c.exists().then_some((c.id, members)))
     }
 
+    async fn leave(&self, dry_run: bool) -> Result<()> {
+        Ok(self.0.sync_chain_leave(dry_run)?)
+    }
+
     async fn vector(&self) -> Result<Vector> {
         Ok(self.0.sync_vector()?)
     }
@@ -187,6 +191,9 @@ async fn bind(db: &Db) -> Result<Endpoint> {
 }
 
 fn print_added(rep: &Report) {
+    if let Some((old, new)) = &rep.left {
+        println!("this copy's own sync chain {old} (just itself) is replaced by sync chain {new}");
+    }
     if rep.added {
         println!("added sync peer {} ({})", rep.label, short(&rep.id));
     }

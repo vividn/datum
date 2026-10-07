@@ -110,22 +110,35 @@ export const joining = heldInTab('datum-sync-joining');
  * What joining with a ticket that says `a` of itself does, in words, for
  * `db`, the page's database, whose chain `d` reads (da-l9kdr) — and, when it
  * cannot, why not: the link expired, or the database is in a chain already
- * (a copy belongs to one).
+ * (a copy belongs to one) that it cannot leave. One that holds nothing but
+ * its own data can (`alone`), and joining replaces its chain (da-h7pnc).
  */
-export function joinWords(a: TicketAbout, db: string, d: DbSync | undefined, now: number): { words: string[]; refused?: string } {
+export function joinWords(
+	a: TicketAbout,
+	db: string,
+	d: DbSync | undefined,
+	now: number,
+	alone = false
+): { words: string[]; refused?: string } {
 	const from = a.from ? `«${a.from}»` : 'another device';
 	const chain = a.chain ? ` (chain ${a.chain.slice(0, 10)})` : '';
 	const words = [`Join the sync chain of ${from}${chain} with this browser’s database «${db}»: what each holds, both will.`];
 	const until = a.expires && new Date(a.expires * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 	if (a.expires && a.expires * 1000 <= now) return { words, refused: `This link expired at ${until}: ask ${from} for a new one.` };
 	if (d?.chain && d.chain === a.chain) return { words, refused: `«${db}» is in this chain already: there is nothing to join.` };
-	if (d?.chain)
+	if (d?.chain && alone) words.push(`«${db}»’s own sync chain, just this browser, is replaced by this one.`);
+	else if (d?.chain)
 		return {
 			words,
 			refused: `«${db}» is in another sync chain, and a database belongs to one. To join with another database, open the link with ?db=<name> before its # (…/sync/join?db=<name>#…).`
 		};
 	if (until) words.push(`The link works once, until ${until}.`);
 	return { words };
+}
+
+/** Whether `db` may leave its chain to join another: it holds nothing but its own data (da-h7pnc). */
+export async function canLeave(db: string): Promise<boolean> {
+	return (await run(['--db', db, 'sync', 'chain', 'leave', '--dry-run'])).code === 0;
 }
 
 /** Every database's chain, read through the CLI. */

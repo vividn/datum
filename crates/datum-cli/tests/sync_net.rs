@@ -337,6 +337,83 @@ fn a_copy_in_a_chain_is_refused_another_chains_invite() {
     assert!(!c.ok(&["sync", "chain", "list"]).contains(&a.id()[..10]));
 }
 
+/// Two copies that each turned sync on — a chain of one apiece, each with an
+/// entry — join seamlessly (da-h7pnc): the redeemer leaves its own chain,
+/// and its entries come along into the other.
+#[test]
+fn a_chain_of_one_joins_another_chain_its_entries_with_it() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee"]);
+    b.ok(&["occur", "tea"]);
+    drop(b.invite(&[]));
+    let b_chain =
+        b.query("SELECT json_extract(body, '$.effect.chain') FROM ops WHERE hid = '~chain'");
+    let (mut inviting, ticket) = a.invite(&[]);
+    let joined = b.ok(&["sync", "chain", "connect", &ticket]);
+    let a_chain =
+        a.query("SELECT json_extract(body, '$.effect.chain') FROM ops WHERE hid = '~chain'");
+    assert!(
+        joined.contains(&format!(
+            "this copy's own sync chain {b_chain} (just itself) is replaced by sync chain {a_chain}"
+        )),
+        "{joined}"
+    );
+    assert!(joined.contains("verify ok"), "{joined}");
+    assert!(inviting.finish().0);
+    assert!(a.has("tea") && b.has("coffee"));
+    assert_eq!(a.hash(), b.hash());
+    let list = b.ok(&["sync", "chain", "list", "--json"]);
+    assert!(
+        list.contains(&a_chain) && !list.contains(&b_chain),
+        "{list}"
+    );
+    for copy in [&a, &b] {
+        let list = copy.ok(&["sync", "chain", "list"]);
+        assert!(
+            list.contains(&a.id()[..10]) && list.contains(&b.id()[..10]),
+            "{list}"
+        );
+    }
+}
+
+/// A chain of one leaves only once its own handshake admits the inviter too:
+/// paused, it refuses the session after the welcome, and keeps its chain.
+#[test]
+fn a_paused_chain_of_one_refused_at_its_own_handshake_keeps_its_chain() {
+    let (a, b) = (Copy::new(), Copy::new());
+    b.ok(&["occur", "tea"]);
+    drop(b.invite(&[]));
+    b.ok(&["sync", "pause"]);
+    let ops = b.query("SELECT COUNT(*) FROM ops");
+    let (_inviting, ticket) = a.invite(&[]);
+    let refused = b.fails(&["sync", "chain", "connect", &ticket], "");
+    assert!(refused.contains("paused"), "{refused}");
+    assert_eq!(b.query("SELECT COUNT(*) FROM ops"), ops);
+    assert!(!a.has("tea"));
+}
+
+/// A chain of one still holding a revoked member's data is refused another
+/// chain's invite, as a bigger chain is (da-mepav): that data is not its own.
+#[test]
+fn a_chain_of_one_holding_a_revoked_members_data_is_refused() {
+    let (a, b) = paired();
+    {
+        let _a_runs = a.serve(&["sync", "run"]);
+        b.ok(&["occur", "walk"]);
+        b.ok(&["sync"]);
+    }
+    assert!(a.has("walk"));
+    a.ok(&["sync", "chain", "revoke", &b.id()]);
+    let c = Copy::new();
+    let (_inviting, ticket) = c.invite(&[]);
+    let refused = a.fails(&["sync", "chain", "connect", &ticket], "");
+    assert!(
+        refused.contains("(1 members); a copy belongs to one chain"),
+        "{refused}"
+    );
+    assert!(!c.has("walk"));
+}
+
 #[test]
 fn run_serves_members_and_pushes_new_ops() {
     let (a, b) = paired();

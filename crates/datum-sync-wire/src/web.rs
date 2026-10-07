@@ -78,6 +78,14 @@ impl Store for Cli {
         Ok(Some((id.to_string(), members)))
     }
 
+    async fn leave(&self, dry_run: bool) -> Result<()> {
+        let argv: &[&str] = match dry_run {
+            true => &["sync", "chain", "leave", "--dry-run"],
+            false => &["sync", "chain", "leave"],
+        };
+        self.run(argv, None).await.map(drop)
+    }
+
     async fn vector(&self) -> Result<Vector> {
         Ok(serde_json::from_str(
             &self.run(&["sync", "pipe", "vector"], None).await?,

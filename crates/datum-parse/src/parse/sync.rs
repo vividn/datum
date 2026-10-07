@@ -127,7 +127,7 @@ type Rest<'a> = std::slice::Iter<'a, &'a str>;
 
 /// `datum sync chain …`: the chain's membership.
 fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "invite|connect|list|rename|revoke|role|ack|rekey";
+    const SET: &str = "invite|connect|leave|list|rename|revoke|role|ack|rekey";
     Ok(match rest.next().copied() {
         Some("invite") => {
             let values = ["expires", "admin-key", "fields", "kit"];
@@ -143,6 +143,9 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
         }
         Some("connect") => SyncCommand::Connect {
             ticket: rest.next().map(|t| t.to_string()),
+        },
+        Some("leave") => SyncCommand::Leave {
+            dry_run: opts(rest, &[], &["dry-run"], 0..=0)?.on("dry-run"),
         },
         Some("list") => SyncCommand::Members {
             show: Show::Default,
@@ -559,6 +562,10 @@ mod tests {
             SyncCommand::Ack { who: "abc".into() }
         );
         assert_eq!(p(&["chain", "rekey"]), SyncCommand::Rekey);
+        assert_eq!(
+            p(&["chain", "leave", "--dry-run"]),
+            SyncCommand::Leave { dry_run: true }
+        );
         assert_eq!(
             p(&["admin", "list"]),
             SyncCommand::AdminList {

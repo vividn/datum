@@ -210,6 +210,54 @@ fn a_redeemer_in_another_chain_or_not_saying_is_refused() {
     admit(&other, &Copy::new(), "fresh", None);
 }
 
+/// `sync chain leave` (da-h7pnc): a chain of one is left with every entry
+/// kept, and those entries go to the next copy it syncs with; a copy with
+/// another member, or holding a revoked one's data, refuses and says why.
+#[test]
+fn a_chain_of_one_is_left_with_its_entries_and_a_bigger_one_refuses() {
+    let a = Copy::new();
+    a.ok(&["occur", "tea"]);
+    a.ok(&["sync", "new-invite"]);
+    a.ok(&["sync", "chain", "leave", "--dry-run"]);
+    assert_ne!(a.query("SELECT COUNT(*) FROM ops"), "0");
+    let left = a.ok(&["sync", "chain", "leave"]);
+    assert!(
+        left.contains("this copy is in none, its entries kept"),
+        "{left}"
+    );
+    assert_eq!(a.query("SELECT COUNT(*) FROM ops"), "0");
+    assert!(a.has("tea"));
+    let status = json(&a.ok(&["sync", "status", "--json"]));
+    assert!(status["chain"].is_null(), "{status}");
+    assert!(a
+        .fails(&["sync", "chain", "leave"], "")
+        .contains("in no sync chain"));
+    // In no chain, it joins another, its entries with it.
+    let b = Copy::new();
+    b.ok(&["occur", "coffee"]);
+    admit(&b, &a, "a", None);
+    assert!(a.send(&b).0);
+    assert!(a.has("coffee") && b.has("tea"));
+    assert_eq!(a.hash(), b.hash());
+
+    // Another member: refused, by `--dry-run` too, and nothing goes.
+    let ops = a.query("SELECT COUNT(*) FROM ops");
+    for argv in [
+        &["sync", "chain", "leave", "--dry-run"][..],
+        &["sync", "chain", "leave"],
+    ] {
+        let refused = a.fails(argv, "");
+        assert!(refused.contains("has 1 other member(s)"), "{refused}");
+        assert!(refused.contains("only a copy holding nothing but its own data"));
+    }
+    assert_eq!(a.query("SELECT COUNT(*) FROM ops"), ops);
+    // Revoked, its data stays: still refused.
+    b.ok(&["sync", "chain", "revoke", "a"]);
+    let refused = b.fails(&["sync", "chain", "leave"], "");
+    assert!(refused.contains("holds other copies' data"), "{refused}");
+    assert!(b.has("tea"));
+}
+
 /// `a`, holding an open chain, and `b`, invited into it.
 fn chained() -> (Copy, Copy) {
     let (a, b) = (Copy::new(), Copy::new());
@@ -1192,7 +1240,7 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
     );
     assert_eq!(
         complete(&["chain"]),
-        ["invite", "connect", "list", "rename", "revoke", "role", "ack", "rekey"]
+        ["invite", "connect", "leave", "list", "rename", "revoke", "role", "ack", "rekey"]
     );
     assert_eq!(complete(&["admin"]), ["list", "add", "remove"]);
     assert_eq!(complete(&["daemon"]), ["install", "uninstall", "status"]);

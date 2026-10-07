@@ -127,7 +127,7 @@ prompt bar all redeem, so a browser can join a chain as well as start one),
 only members are served
 (`sync_peers` is just where they were last seen), and bare `sync` / the
 hidden `sync run` swap vectors and ops until neither moves. The tree:
-`sync`, `status`, `pause | resume`, `chain invite | connect |
+`sync`, `status`, `pause | resume`, `chain invite | connect | leave |
 list | rename | revoke | ack | rekey`, `admin list | add | remove`, `daemon
 install | uninstall | status` (a systemd user unit / launchd agent
 running the hidden `sync daemon run`, which is `sync run` for every chained
@@ -143,6 +143,10 @@ chain with no admin is OPEN — any member invites, revokes or renames, and
 LOCKS it, after which those acts take an admin key (passkey or key file).
 Removing the last admin takes `--allow-unlock` and reopens it; every copy
 keeps a notice of the unlock until `sync chain ack unlock`.
+A copy belongs to one chain, but one holding nothing but its own data — no
+other live member, no other endpoint's op — may leave its chain: `chain
+leave`, or by redeeming another chain's invite, which leaves once admitted.
+Its ops go and its entries stay, signed again as baselines on the next sync.
 A reader may be FILTERED: its invite's `caps` or a `role` record
 carries `fields` (`--fields a,b`, or `--kit K` resolved to that kit's fields)
 and `of`. Every member serving it sends only the entries that belong to those

@@ -239,6 +239,33 @@ describe('a browser joins a chain (da-l9kdr)', () => {
 		});
 	});
 
+	test('in a chain of its own, it joins: its chain is replaced, its entries come along (da-h7pnc)', async () => {
+		await twoBrowsers(async (a, b) => {
+			await a.run(['occur', 'left', '-t', '0800']);
+			await b.run(['occur', 'right', '-t', '0900']);
+			assert.equal((await b.run(['sync', 'new-invite'])).code, 0);
+			const link = await linkFrom(a);
+			const chain = JSON.parse((await a.run(['sync', 'status', '--json'])).stdout).chain;
+			await b.goto(link);
+			const card = b.page.locator('.card.join');
+			const join = card.getByRole('button', { name: 'join', exact: true });
+			await join.waitFor();
+			assert.match(await card.locator('.what').innerText(), /«datum»’s own sync chain, just this browser, is replaced by this one\./);
+			await join.click();
+			await card.locator('.done').waitFor();
+			await converged(a, b);
+			assert.equal(JSON.parse((await b.run(['sync', 'status', '--json'])).stdout).chain, chain);
+
+			// In a chain of two now, another invite is refused before it dials.
+			const ticket = (await linkFrom(a)).split('#')[1];
+			const again = await b.page.evaluate(
+				(t) => window.datum.sync.connect('datum', t).then(() => 'joined', (e) => e.message),
+				ticket
+			);
+			assert.match(again, /a copy belongs to one chain/);
+		});
+	});
+
 	test('through the prompt bar: `sync chain connect <link>` joins, and no history keeps the ticket', async () => {
 		await twoBrowsers(async (a, b) => {
 			await a.run(['occur', 'left', '-t', '0800']);
