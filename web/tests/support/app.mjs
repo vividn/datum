@@ -649,15 +649,19 @@ function removeDb(page, db) {
  * Database `db`'s file as bytes, kept in the page (`keep`), or those bytes
  * written back over it and its journal gone (`restore`) — under the
  * worker's own lock, as `removeDb`, so no handle is open there. A restore
- * with nothing kept — another database, or a page navigated since, which
- * took the window with it — writes nothing and says false.
+ * with nothing kept — another database, a page navigated since, which took
+ * the window with it, or a browser with no OPFS — writes nothing and says
+ * false.
  */
 function snapshotDb(page, db, restore) {
 	return page.evaluate(
 		async ([dir, db, restore]) =>
+			// A browser with no OPFS keeps the database in memory, and has no file to keep.
+			!!navigator.storage?.getDirectory &&
 			navigator.locks.request('datum-cli-files', async () => {
 				const files = await (await navigator.storage.getDirectory()).getDirectoryHandle(dir);
-				const file = await files.getFileHandle(`${db}.db`);
+				// Made anew if a tap took it: the bytes written back are the database.
+				const file = await files.getFileHandle(`${db}.db`, { create: true });
 				window.__datumKept ??= {};
 				if (!restore) return void (window.__datumKept[db] = await (await file.getFile()).arrayBuffer());
 				if (!window.__datumKept[db]) return false;
