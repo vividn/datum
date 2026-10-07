@@ -284,7 +284,10 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
     let fields = build_dayview_fields(db, window_end, history_minutes.max(1.0))?;
     let mut config = nowview_config(fields, anchor.timestamp_millis(), &geometry);
     // The yellow line is now, and only now: absent when now is outside.
-    config.now_ms = now.timestamp_millis();
+    // The snapshot has no axis to draw it on, and its chips — the panel
+    // the line gates — ARE its instant's states: at a selected time they
+    // are that time's, where they were none (da-rskp's line through them).
+    config.now_ms = if history_minutes > 0.0 { now } else { anchor }.timestamp_millis();
     let window = (config.days[0].start_ms, config.days[0].end_ms);
 
     let layout = compute_dayview(&config);

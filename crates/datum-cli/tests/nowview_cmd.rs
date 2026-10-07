@@ -113,6 +113,65 @@ fn nowview_with_history_renders_dayview_style_grid_and_now_line() {
     assert!(svg.contains(r#"class="now-chunk""#));
 }
 
+/// The snapshot at a selected time draws that time's states (da-o3sns).
+/// Its chips were drawn only when now fell in the window — an instant's
+/// window never holds now unless it IS now — so `-t` drew nothing, and the
+/// page's line through the chips (da-rskp) was erased by the very answer
+/// it asked for.
+#[test]
+fn nowview_snapshot_at_a_time_draws_that_times_states() {
+    let db = fresh_db();
+    let now = Utc::now();
+    let [focused, calm] = [("focused", 3), ("calm", 1)].map(|(state, ago)| {
+        entry_builder("mood")
+            .verb(Verb::Switch)
+            .state(serde_json::json!(state))
+            .time_start_utc(now - Duration::hours(ago))
+            .insert(&db)
+            .hid
+    });
+    let snapshot = |hours_ago: i64| {
+        let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let at = (now - Duration::hours(hours_ago)).to_rfc3339();
+        run_cli(
+            &[
+                "nowview",
+                "--history",
+                "0",
+                "-t",
+                &at,
+                "--output-file",
+                &path,
+            ],
+            &db,
+        )
+        .expect("nowview dispatch");
+        std::fs::read_to_string(&path).expect("read svg")
+    };
+
+    // The chip names the entry whose state it is (mark_titles.rs).
+    let chip = |svg: String| {
+        let rect = svg
+            .split(r#"<rect class="now-chunk""#)
+            .nth(1)?
+            .split("/>")
+            .next()?
+            .to_string();
+        [&focused, &calm]
+            .into_iter()
+            .find(|hid| rect.contains(&format!(r#"data-id="{hid}""#)))
+            .cloned()
+    };
+    assert_eq!(
+        chip(snapshot(2)),
+        Some(focused.clone()),
+        "two hours ago is focused"
+    );
+    assert_eq!(chip(snapshot(0)), Some(calm.clone()), "now is calm");
+    assert_eq!(chip(snapshot(4)), None, "a chip before any entry");
+}
+
 #[test]
 fn nowview_html_output_wraps_svg_in_document() {
     let db = fresh_db();

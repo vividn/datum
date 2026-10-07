@@ -212,6 +212,12 @@ describe('a burst of changes', () => {
 // would do the same. Held here by counting what the tab was TOLD against
 // what it then ran, so the bound is against the burst that really reached
 // it rather than a number written down.
+//
+// The reader's first refresh is held until the last write has landed. A
+// coalesced burst is then always two refreshes, and one each is twelve:
+// unheld, the count measured how long a refresh took against the gap
+// between writes, and once commands got fast (da-o3sns) a refresh no longer
+// outlasted the gap, and an economical burst counted 7-8 of 12.
 describe('a burst of writes in another tab', () => {
 	test('twelve writes next door cost the frame a couple of refreshes, not one each', async () => {
 		await withApp(async (first) => {
@@ -228,6 +234,15 @@ describe('a burst of writes in another tab', () => {
 				);
 			});
 			await second.idle();
+			// The widget bar's `fields` opens every refresh: the first waits
+			// for the burst to be over, so the rest of it arrives mid-refresh.
+			await second.page.evaluate(() => {
+				const over = new Promise((resolve) => (window.__burstOver = resolve));
+				const previous = window.datum.setRunner(async (argv, ...rest) => {
+					if (argv[0] === 'fields') await over;
+					return previous(argv, ...rest);
+				});
+			});
 
 			// Fired without awaiting each: the writes land while the second
 			// tab is still refreshing from the first of them, which is the
@@ -238,6 +253,7 @@ describe('a burst of writes in another tab', () => {
 				)
 			);
 			logged.forEach((r, i) => assert.equal(r.code, 0, `${i}: ${r.stderr}`));
+			await second.page.evaluate(() => window.__burstOver());
 
 			// The LAST write is on the second tab's screen: a coalesced burst
 			// still ends in a refresh, and that refresh is after the last of
@@ -254,10 +270,8 @@ describe('a burst of writes in another tab', () => {
 			// itself, so each one of them is one external refresh.
 			const refreshes = (await seen()).filter((argv) => argv[0] === 'fields').length;
 			assert.ok(told >= 10, `a burst of ${told} announcements is no burst`);
-			// Half the writes, not a count: the coalesced spread is 3-4 on an
-			// idle box and a loaded lane slows each refresh against the writes
-			// it stands in for, which reached 5 in CI (da-ef2tx). One each is
-			// still twice the bound.
+			// Two, held as above; half the writes is the bound, as it was
+			// before the hold (da-ef2tx), and one each is twice it.
 			assert.ok(
 				refreshes <= told / 2,
 				`${refreshes} refreshes for ${told} writes next door — one each is the bug`

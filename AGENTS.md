@@ -266,7 +266,11 @@ endpoint by a Web Lock (`datum-sync:<db>`), which pushes on every tab's writes
   owner. Back-to-back commands share one acquisition: the handles
   and the lock are kept while jobs wait in the worker's queue, and given
   back when it drains or once a burst has held them 250 ms, so a tab beside
-  it is never made to wait for the whole burst. The SQLite header's change
+  it is never made to wait for the whole burst. What a process reads of a
+  `.db` is kept for the next (`cached` in `wasiFs.ts`), across a release
+  too while the file's size and change counter are unchanged, and the CLI
+  holds SQLite's lock for a connection's life on wasm — a private window
+  pays ~1 ms an OPFS call, and a command made hundreds (da-o3sns). The SQLite header's change
   counter (offset 24) decides whether a process wrote, which is what
   `web/src/lib/changes.ts` tells the other tabs. A browser that refuses the
   handles gets a database in memory for the tab, which keeps going back for

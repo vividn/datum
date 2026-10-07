@@ -147,6 +147,15 @@ impl Db {
     /// SQLite's compile-time default (FILE), where a genuinely huge sort
     /// should spill to the disk that exists rather than eat the machine.
     ///
+    /// And a fifth, `locking_mode = EXCLUSIVE` (da-o3sns): the connection
+    /// takes its lock at the first read and keeps it until it closes. The
+    /// browser already gives one process the files at a time, so the lock
+    /// shuts nobody out — but released, SQLite took it again for every
+    /// statement and re-read the file's header and size to check its cache:
+    /// 100-250 times a command, each an OPFS call, ~3 ms of a command in a
+    /// real profile and 90-280 ms in a private window, where every call is
+    /// an IPC.
+    ///
     /// Every transaction opens IMMEDIATE (da-5pulr): it takes the write lock
     /// at `BEGIN`, where `busy_timeout` waits for it. A DEFERRED one takes it
     /// at its first write, and if it read first while another connection
@@ -163,7 +172,7 @@ impl Db {
              PRAGMA synchronous = NORMAL;",
         )?;
         #[cfg(target_family = "wasm")]
-        conn.execute_batch("PRAGMA temp_store = MEMORY;")?;
+        conn.execute_batch("PRAGMA temp_store = MEMORY;\nPRAGMA locking_mode = EXCLUSIVE;")?;
         Ok(())
     }
 

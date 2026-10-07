@@ -39,7 +39,7 @@
 
 import { File as MemFile, OpenFile, WASI, type Fd } from '@bjorn3/browser_wasi_shim';
 import cliWasm from './wasm/datum-cli.wasm?url';
-import { DATABASES, dbFiles, MemoryHandle, opfsDirectory, Sink, staged, type Handle } from './wasiFs.js';
+import { cached, DATABASES, dbFiles, forgetCached, MemoryHandle, opfsDirectory, Sink, staged, type Handle } from './wasiFs.js';
 import { OPFS_DIR } from './databases.js';
 import type { CliResult, Stage, StorageKind } from './dbProtocol.js';
 
@@ -275,7 +275,9 @@ async function open(): Promise<Map<string, Handle>> {
 			const file = await dir.getFileHandle(name, { create: true });
 			// Worker-only, so lib.dom does not declare it.
 			const sync = file as unknown as { createSyncAccessHandle(): Promise<Handle> };
-			handles.set(name, await sync.createSyncAccessHandle());
+			const handle = await sync.createSyncAccessHandle();
+			// The journal is read only to roll it back: there is nothing to keep.
+			handles.set(name, name.endsWith('.db') ? cached(name, handle) : handle);
 		}
 	} catch (e) {
 		for (const handle of handles.values()) handle.close();
@@ -470,6 +472,7 @@ async function exec(
 		// message reached stderr. 134 is what a shell reports for SIGABRT.
 		console.warn('datum trapped:', e);
 		code = 134;
+		forgetCached();
 	}
 	const ran = performance.now();
 	for (const handle of handles.values()) handle.flush();

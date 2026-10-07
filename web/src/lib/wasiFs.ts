@@ -152,6 +152,127 @@ function quotaAware(handle: Handle): Handle {
 	};
 }
 
+/** A database file's size and SQLite change counter (header offset 24), read from the file. */
+function stampOf(handle: Handle): string {
+	const counter = new Uint8Array(4);
+	handle.read(counter, { at: 24 });
+	return `${handle.getSize()}:${new DataView(counter.buffer).getUint32(0)}`;
+}
+
+/** The most a file's cache keeps before it starts again. */
+const CACHE_BYTES = 64 << 20;
+
+/** The cache's unit: SQLite's page, so a page read or written is one chunk. */
+const CHUNK = 4096;
+
+/**
+ * A database file's cache: its bytes as read, by aligned chunk (shorter at
+ * the end of the file), and the file's stamp when last let go.
+ */
+interface Cache {
+	stamp: string;
+	chunks: Map<number, Uint8Array>;
+	bytes: number;
+}
+
+const caches = new Map<string, Cache>();
+
+const empty = (cache: Cache) => {
+	cache.chunks.clear();
+	cache.bytes = 0;
+};
+
+/**
+ * `handle`, remembering what has been read from it (da-o3sns).
+ *
+ * Every process starts with an empty page cache, so every command read its
+ * pages again, and a sync access handle call costs ~0.01 ms in a real
+ * profile but ~1 ms in a private window, where it is an IPC: there,
+ * nowview's ~90 reads were most of its time. Read here, the bytes a burst
+ * has read once are a copy away for every command after it.
+ *
+ * Kept while the worker holds the file, since no one else can write it
+ * then and its own writes pass through here: a write drops the chunks it
+ * touches — and, growing the file, the old last one, which was short —
+ * and a truncate drops everything. Kept across a release too, but used
+ * again only if the file's size and change counter are what they were at
+ * the release — the check SQLite makes of its own cache, and every commit
+ * of another tab's moves the counter.
+ */
+export function cached(name: string, handle: Handle): Handle {
+	const kept = caches.get(name);
+	const cache = kept?.stamp === stampOf(handle) ? kept : { stamp: '', chunks: new Map<number, Uint8Array>(), bytes: 0 };
+	caches.set(name, cache);
+	const { chunks } = cache;
+	let size = handle.getSize();
+	const put = (i: number, chunk: Uint8Array) => {
+		cache.bytes += chunk.length - (chunks.get(i)?.length ?? 0);
+		chunks.set(i, chunk);
+	};
+	const drop = (from: number, to: number) => {
+		for (let i = Math.floor(from / CHUNK); i * CHUNK < to; i++) {
+			cache.bytes -= chunks.get(i)?.length ?? 0;
+			chunks.delete(i);
+		}
+	};
+	return {
+		getSize: () => size,
+		read(buffer, options) {
+			const at = options?.at ?? 0;
+			const view = ArrayBuffer.isView(buffer)
+				? new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength)
+				: new Uint8Array(buffer);
+			const first = Math.floor(at / CHUNK);
+			const last = Math.floor((at + view.length - 1) / CHUNK);
+			for (let i = first; i <= last; i++) {
+				if (chunks.has(i)) continue;
+				// One call for the whole span, as the read asked.
+				if (cache.bytes > CACHE_BYTES) empty(cache);
+				const span = new Uint8Array((last - first + 1) * CHUNK);
+				const n = handle.read(span, { at: first * CHUNK });
+				for (let j = first; j <= last; j++) {
+					const from = (j - first) * CHUNK;
+					put(j, span.slice(from, Math.max(from, Math.min(n, from + CHUNK))));
+				}
+				break;
+			}
+			let copied = 0;
+			for (let i = first; i <= last; i++) {
+				const chunk = chunks.get(i) as Uint8Array;
+				const part = chunk.subarray(i === first ? at - first * CHUNK : 0).subarray(0, view.length - copied);
+				view.set(part, copied);
+				copied += part.length;
+			}
+			return copied;
+		},
+		write(buffer, options) {
+			const at = options?.at ?? 0;
+			drop(Math.min(at, size), at + buffer.byteLength);
+			const n = handle.write(buffer, options);
+			size = Math.max(size, at + n);
+			return n;
+		},
+		truncate(to) {
+			empty(cache);
+			handle.truncate(to);
+			size = handle.getSize();
+		},
+		flush: () => handle.flush(),
+		close() {
+			cache.stamp = stampOf(handle);
+			handle.close();
+		}
+	};
+}
+
+/**
+ * Forget every cache, held or not: a process trapped mid-write, and a
+ * rollback by another tab could put back bytes without moving the stamp.
+ */
+export function forgetCached(): void {
+	for (const cache of caches.values()) empty(cache);
+}
+
 /** A sync access handle over memory, for a browser that will not give one. */
 export class MemoryHandle implements Handle {
 	private data = new Uint8Array(0);
