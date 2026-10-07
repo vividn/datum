@@ -143,7 +143,8 @@ chain with no admin is OPEN — any member invites, revokes or renames, and
 LOCKS it, after which those acts take an admin key (passkey or key file).
 Removing the last admin takes `--allow-unlock` and reopens it; every copy
 keeps a notice of the unlock until `sync chain ack unlock`.
-A copy belongs to one chain, but one holding nothing but its own data — no
+A copy belongs to one chain — its apply refuses another chain's records
+(da-d8ort) — but one holding nothing but its own data — no
 other live member, no other endpoint's op — may leave its chain: `chain
 leave`, or by redeeming another chain's invite, which leaves once admitted.
 Its ops go and its entries stay, signed again as baselines on the next sync.

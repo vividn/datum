@@ -1737,7 +1737,8 @@ impl Db {
         pause::refuse_paused(&self.conn)?;
         let tx = self.conn.unchecked_transaction()?;
         let (mine, signed) = own_head(&tx)?;
-        let before = Chain::load(&tx)?.filter(&mine).cloned();
+        let chain = Chain::load(&tx)?;
+        let before = chain.filter(&mine).cloned();
         let mut s = ApplySummary::default();
         let (mut got, mut words) = (Vec::new(), Vec::new());
         let mut each = Vec::new();
@@ -1768,6 +1769,17 @@ impl Db {
             };
             if let Err(why) = check_signature(line, &op) {
                 s.refused.push(format!("{}/{}: {why}", op.endpoint, op.seq));
+                continue;
+            }
+            // A copy in a chain takes no record of another (da-d8ort): the
+            // fold takes the earliest genesis it holds, so an older chain's
+            // would become this copy's, and its own be refused.
+            let theirs = op.effect["chain"].as_str().unwrap_or_default();
+            if op.is_chain() && chain.exists() && theirs != chain.id {
+                s.refused.push(format!(
+                    "{}/{}: a record of another sync chain ({theirs}); this copy is in {}",
+                    op.endpoint, op.seq, chain.id
+                ));
                 continue;
             }
             let held: Option<String> = tx

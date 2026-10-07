@@ -258,6 +258,34 @@ fn a_chain_of_one_is_left_with_its_entries_and_a_bigger_one_refuses() {
     assert!(b.has("tea"));
 }
 
+/// A copy in a chain refuses the records of another (da-d8ort): the fold
+/// takes the earliest genesis it holds, so an older chain's ops piped in
+/// would make that chain this copy's, and refuse its own.
+#[test]
+fn an_older_chains_records_piped_in_are_refused() {
+    let (a, _) = chained();
+    a.ok(&["occur", "tea"]);
+    let b = Copy::new();
+    b.ok(&["occur", "coffee"]);
+    b.ok(&["sync", "new-invite"]);
+    let list = |x: &Copy| json(&x.ok(&["sync", "chain", "list", "--json"]));
+    let (x, y) = (list(&a)["chain"].clone(), list(&b)["chain"].clone());
+    assert_ne!(x, y);
+
+    let (ok, out) = a.send(&b);
+    assert!(
+        !ok && out.contains(&format!(
+            "a record of another sync chain ({})",
+            x.as_str().unwrap()
+        )),
+        "{out}"
+    );
+    let after = list(&b);
+    assert_eq!(after["chain"], y, "{after}");
+    assert_eq!(after["members"].as_array().unwrap().len(), 1, "{after}");
+    assert!(b.has("coffee") && !b.has("tea"));
+}
+
 /// `a`, holding an open chain, and `b`, invited into it.
 fn chained() -> (Copy, Copy) {
     let (a, b) = (Copy::new(), Copy::new());
