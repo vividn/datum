@@ -222,7 +222,7 @@ describe('a browser joins a chain (da-l9kdr)', () => {
 			// The ticket left the address bar with the `goto` to `/`.
 			assert.equal(new URL(b.page.url()).hash, '');
 			const card = b.page.locator('.card.join');
-			const join = card.getByRole('button', { name: 'join', exact: true });
+			const join = card.getByRole('button', { name: 'Join', exact: true });
 			await join.waitFor();
 			const words = await card.locator('.what').innerText();
 			assert.match(words, /Join the sync chain of «datum\.day» \(chain (\w{10})\) with this browser’s database «datum»/);
@@ -248,7 +248,7 @@ describe('a browser joins a chain (da-l9kdr)', () => {
 			const chain = JSON.parse((await a.run(['sync', 'status', '--json'])).stdout).chain;
 			await b.goto(link);
 			const card = b.page.locator('.card.join');
-			const join = card.getByRole('button', { name: 'join', exact: true });
+			const join = card.getByRole('button', { name: 'Join', exact: true });
 			await join.waitFor();
 			assert.match(await card.locator('.what').innerText(), /«datum»’s own sync chain, just this browser, is replaced by this one\./);
 			await join.click();

@@ -1,46 +1,46 @@
 <!--
-	The Sync widget, read-only half (da-x4t0a): clients × databases. A row
-	is a client — an installation: a CLI data directory or a browser
-	profile, so one laptop may be two (da-lfsei) — this one first, with its
-	status dot from the sync worker's broadcast (`syncStates`); a column is
-	a database on this datum.day; a cell is how that client's copy stands,
-	a shape AND a colour. A client not reachable now shows its last-known
-	state grey, with its time: never a green ✓ for it. A copy that is a
-	reader in its chain (da-9yvb6) carries the lock beside its state, and
-	one sent only some fields (da-u81u1) the filter too, its title saying
-	«filtered: n of m fields».
-	Compact (symbols and dots) at the legible floor, full (names, kinds,
-	times) above `FULL_PX`.
+	The Sync widget (da-x4t0a), redone as a view with its actions under it
+	(da-yoef7). vividn: «you have a nice view, and then actions for changing
+	sync setup and stuff are on the lower side of the widget together.»
 
-	Every CLI read and act is $lib/syncView.ts's. The actions (da-bjxts),
-	drawn full-size only: a database's header turns sync on or adds a
-	device (its join link as a QR and as text, da-l9kdr); a client's row renames or
-	revokes it; under the table each chain says whether it is open or which
-	passkeys lock it. An act in a locked chain is approved with a passkey
-	in this page, and `/sync/approve#<record>` draws the approval card on
-	top, which names what the passkey signs — the device, the database, the
-	key, and whether this browser made it — before it offers the passkey,
-	since a link is anyone's to send: approved, the record is written into this browser's copy of that
-	chain's database when it holds one, and sync takes it to the device that
-	asked — else the card shows the code to paste. `/sync/join#<ticket>`
-	draws the join card the same way (da-l9kdr): it names the inviting
-	device, its chain and the page's database before it offers to join, and
-	says instead why it cannot — the link expired, the database is in a
-	chain already. Notices of new members and unlocks stay above the table
-	until acknowledged.
+	Top, the page's database: its name and how it stands overall, then ONE
+	LINE PER DEVICE in its chain, this one first — the reachability dot
+	from the sync worker's broadcast (`syncStates`), the state as a shape
+	AND a word, and when it was last seen. A device not reachable now shows
+	its last-known state grey: never a green ✓ for it. One in error says
+	why under its line. A reader (da-9yvb6) carries the lock beside its
+	state, a filtered one (da-u81u1) the filter too. A list, not a table: a
+	table of clients × databases was 459px on a 390px phone.
 
-	It is a PLACE (da-6du3o): the commands widget's one `Sync` button opens
-	it (a modal on a desktop, a tab on a phone — da-jozgv), so the raw `sync` subcommands the widget stood in for are
-	here, under Advanced, each filling `sync <sub> ` on the line.
+	Middle, every other database on one line: its state, and «same devices»
+	when it is in this one's chain. A tap switches to it as the logo does,
+	by a load (Brand.svelte says why).
+
+	Bottom, every act together: [Turn on sync] alone for a database in no
+	chain; else [Add device], [Rename this device] and [More], which holds
+	pause, the other devices' rename and revoke, the admins (da-bjxts) and
+	the raw `sync` subcommands, each filling `sync <sub> ` on the line
+	(da-6du3o). [Add device] opens one panel — the QR, until when it works,
+	and its own buttons at its bottom — with the ticket under a closed
+	«connect from a terminal». The cards a link opens — `/sync/approve#…`,
+	which names what the passkey signs before it offers the passkey, since
+	a link is anyone's to send, and `/sync/join#…` (da-l9kdr), which names
+	the inviting device, its chain and the page's database before it joins
+	or says why it cannot — are the same shape, on top. Notices of new
+	members and unlocks stand with the acts until acknowledged.
+
+	Every CLI read and act is $lib/syncView.ts's. Every button is the
+	commands widget's `button.command` (app.css): the browser's own grey
+	under the page's pale ink had been a contrast of 1.1.
 -->
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { onDestroy } from 'svelte';
 	import Pane from '$lib/Pane.svelte';
 	import { onAnyChange } from '$lib/changes.js';
-	import { currentDb, INTERNAL_DB } from '$lib/database.js';
+	import { currentDb, INTERNAL_DB, withDb } from '$lib/database.js';
 	import { listDatabases } from '$lib/databases.js';
-	import { joinLink, syncConnect, syncOffer, syncStates, ticketAbout } from '$lib/sync.js';
+	import { joinLink, syncConnect, syncOffer, syncStates, ticketAbout, type SyncState } from '$lib/sync.js';
 	import {
 		approvalWords,
 		approveInto,
@@ -70,26 +70,31 @@
 
 	export let epoch = 0;
 
-	/** Content-box width from which names, clients and times are drawn. */
-	const FULL_PX = 320;
 	const SYMBOL: Record<Mark, string> = { synced: '✓', syncing: '↻', pending: '◔', error: '!', none: '—' };
+	const WORD: Record<Mark, string> = { synced: 'synced', syncing: 'syncing', pending: 'pending', error: 'error', none: 'not syncing' };
 	const DOT = { online: '●', reachable: '◐', offline: '○' };
 	/** Beside the state of a copy that is a reader in its chain (da-9yvb6). */
 	const READER = '🔒︎';
 	/** Beside it too when the reader is sent only some fields (da-u81u1). */
 	const FILTER = '⛛';
+	/** The order a legend and a database's overall state are read in. */
+	const MARKS: Mark[] = ['synced', 'syncing', 'pending', 'error', 'none'];
+	const canShare = browser && typeof navigator.share === 'function';
 
+	/** The page's database: the one this widget is about. */
+	const db = browser ? currentDb() : '';
 	let dbs: DbSync[] = [];
-	let width = 0;
 	let reading = false;
 	let again = false;
 	let stops: (() => void)[] = [];
-	let opened: string | null = null;
 	/** An act under way, and how the last one failed. */
 	let busy = false;
 	let failure = '';
-	/** The join link of the last device invited, and its QR. */
-	let offer: { db: string; link: string; svg: string } | null = null;
+	/** More's acts shown, and the whole legend. */
+	let more = false;
+	let key = false;
+	/** The join link of the last device invited, its QR, and until when it works. */
+	let offer: { db: string; link: string; svg: string; until: string } | null = null;
 	/** The approval card's outcome: written here, or the code to paste. */
 	let approval: { done?: string; code?: string } = {};
 	/**
@@ -110,12 +115,32 @@
 	$: if (browser) void resolveJoin($joining);
 
 	$: if (browser) void read(epoch);
-	$: rows = table(dbs, $syncStates);
-	$: full = width >= FULL_PX;
+	$: cur = dbs.find((d) => d.db === db) ?? { db, chain: null, members: [] };
+	$: others = dbs.filter((d) => d.db !== db);
+	$: rows = cur.chain ? table([cur], $syncStates) : [];
+	$: overall = standing(cur, $syncStates);
+	// A revoked device's line says «revoked» in words: its `—` is not «not syncing».
+	$: shown = [...rows.filter((r) => !r.revoked).map((r) => r.cells[db]), ...others.map((d) => standing(d, $syncStates))];
+	$: used = MARKS.filter((m) => shown.some((c) => c.mark === m));
+
+	/** How `d` stands as a whole: the worst of its devices, which this copy's cell already is. */
+	function standing(d: DbSync, states: Record<string, SyncState>): { mark: Mark; reader?: boolean; filter?: unknown } {
+		if (!d.chain) return { mark: 'none' };
+		return table([d], states)[0].cells[d.db];
+	}
+
+	/** What another database's line says beside its state. */
+	function devices(d: DbSync): string {
+		if (!d.chain) return WORD.none;
+		const live = d.members.filter((m) => !m.revoked);
+		const failed = live.filter((m) => m.state === 'error').map((m) => `${m.label}: error`);
+		const who = d.chain === cur.chain ? 'same devices' : `${live.length + (d.this ? 1 : 0)} devices`;
+		return [who, ...failed].join(' · ');
+	}
 
 	async function databases(): Promise<string[]> {
 		const names = (await listDatabases()).filter((n) => n !== INTERNAL_DB);
-		return names.length ? names : [currentDb()];
+		return names.includes(db) ? names : [db, ...names];
 	}
 
 	async function read(_epoch?: number): Promise<void> {
@@ -129,7 +154,7 @@
 					stops.forEach((stop) => stop());
 					stops = listed.map((db) => onAnyChange(() => void read(), db));
 				}
-				// Not the JSON asked for (a process killed mid-write): the table stays as it was.
+				// Not the JSON asked for (a process killed mid-write): the view stays as it was.
 				dbs = await readSync(listed).catch(() => dbs);
 			} while (again);
 		} finally {
@@ -190,23 +215,33 @@
 
 	const addDevice = (db: string) =>
 		doing(async () => {
-			const link = joinLink(await syncOffer(db, await newInvite(db)));
-			offer = { db, link, svg: await qr(link) };
+			const invite = await newInvite(db);
+			const link = joinLink(await syncOffer(db, invite));
+			offer = { db, link, svg: await qr(link), until: hm(Date.parse(invite.expires)) };
+		});
+
+	const share = (link: string) => navigator.share({ title: 'Join a datum sync chain', url: link }).catch(() => {});
+
+	/** This device, in every database it syncs: a client is one name. */
+	const renameHere = () =>
+		doing(async () => {
+			const was = cur.this?.label ?? '';
+			const label = await ask('Rename this device to', 'rename', was);
+			if (!label || label === was) return;
+			for (const d of dbs) if (d.this) ok(await syncAct(d.db, ['chain', 'rename', label]));
 		});
 
 	const rename = (row: Row) =>
 		doing(async () => {
 			const label = await ask(`Rename ${row.label} to`, 'rename', row.label);
 			if (!label || label === row.label) return;
-			for (const [db, endpoint] of Object.entries(row.endpoints))
-				ok(await syncAct(db, ['chain', 'rename', ...(row.here ? [] : [endpoint]), label]));
+			ok(await syncAct(db, ['chain', 'rename', row.endpoints[db], label]));
 		});
 
 	const revoke = (row: Row) =>
 		doing(async () => {
-			const dbs = Object.keys(row.endpoints);
-			if (!(await confirm(`Revoke ${row.label}? It can no longer sync ${dbs.join(', ')}.`, 'revoke'))) return;
-			for (const db of dbs) ok(await syncAct(db, ['chain', 'revoke', row.endpoints[db]]));
+			if (!(await confirm(`Revoke ${row.label}? It can no longer sync ${db}.`, 'revoke'))) return;
+			ok(await syncAct(db, ['chain', 'revoke', row.endpoints[db]]));
 		});
 
 	const addAdmin = (d: DbSync) =>
@@ -249,27 +284,24 @@
 		approval = {};
 	}
 
-	function time(at?: number): string {
-		if (at === undefined || Number.isNaN(at)) return '';
-		const d = new Date(at);
-		const hm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-		return d.toDateString() === new Date().toDateString() ? hm : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${hm}`;
-	}
+	const hm = (at: number) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
-	function seen(reach: string, at?: number): string {
-		const t = time(at);
-		return reach === 'offline' ? `offline${t ? `, last seen ${t}` : ''}` : reach;
+	/** When a device was last seen, relative: «now», «2 min ago», «3 h ago», a date. */
+	function ago(at?: number): string {
+		if (at === undefined || Number.isNaN(at)) return 'never';
+		const s = Math.max(0, (Date.now() - at) / 1000);
+		if (s < 60) return 'now';
+		if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+		if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+		return new Date(at).toLocaleDateString([], { month: 'short', day: 'numeric' });
 	}
 </script>
 
 <Pane title="sync">
-	<div class="sync" class:full bind:clientWidth={width}>
+	<div class="sync">
 		{#if $approving}
 			<section class="card approve">
-				<p>
-					Approve with your passkey?
-					<button type="button" class="close" aria-label="dismiss" on:click={dismiss}>×</button>
-				</p>
+				<p class="head">Approve with your passkey?</p>
 				{#if card}
 					<ul class="what">
 						{#each card.words as line}<li>{line}</li>{/each}
@@ -282,28 +314,18 @@
 				{:else if approval.code}
 					<p>This browser holds no copy of that chain’s database. Paste this at the prompt that asked:</p>
 					<code class="code">{approval.code}</code>
-				{:else}
-					<button type="button" use:act={'run'} disabled={busy || !card} on:click={() => card && approveHere(card)}>approve with passkey</button>
 				{/if}
+				<div class="actions">
+					{#if !approval.done && !approval.code}
+						<button type="button" class="command" use:act={'run'} disabled={busy || !card} on:click={() => card && approveHere(card)}>Approve with passkey</button>
+					{/if}
+					<button type="button" class="command close" use:act={'show'} on:click={dismiss}>Dismiss</button>
+				</div>
 			</section>
 		{/if}
-		{#each dbs as d (d.db)}
-			{#each d.notices ?? [] as n (n.subject + n.kind)}
-				<p class="notice" data-db={d.db}>
-					⚠ {d.db}: {n.text}
-					<button type="button" use:act={'run'} disabled={busy} on:click={() => ack(d.db, n)}>ok</button>
-				</p>
-			{/each}
-			{#each d.clock ?? [] as c (c.endpoint)}
-				<p class="notice clock" data-db={d.db}>⚠ {d.db}: {c.text}</p>
-			{/each}
-		{/each}
 		{#if $joining}
 			<section class="card join" data-db={join?.db}>
-				<p>
-					Join a sync chain?
-					<button type="button" class="close" aria-label="dismiss" on:click={() => joining.set(null)}>×</button>
-				</p>
+				<p class="head">Join a sync chain?</p>
 				{#if join}
 					<ul class="what">
 						{#each join.words as line}<li>{line}</li>{/each}
@@ -312,117 +334,161 @@
 						<p class="done">{join.done}</p>
 					{:else if join.refused}
 						<p class="failure">{join.refused}</p>
-					{:else}
-						<button type="button" use:act={'run'} disabled={busy} on:click={() => join && joinHere(join)}>join</button>
 					{/if}
 				{/if}
+				<div class="actions">
+					{#if join && !join.done && !join.refused}
+						<button type="button" class="command" use:act={'run'} disabled={busy} on:click={() => join && joinHere(join)}>Join</button>
+					{/if}
+					<button type="button" class="command close" use:act={'show'} on:click={() => joining.set(null)}>Dismiss</button>
+				</div>
 			</section>
 		{/if}
+
+		<header data-db={db}>
+			<span class="title">Sync · {db}</span>
+			<span class="state {overall.mark}" data-mark={overall.mark}
+				>{SYMBOL[overall.mark]} {cur.chain && cur.paused ? 'paused' : overall.mark === 'synced' ? 'all synced' : WORD[overall.mark]}</span
+			>
+		</header>
+		{#if cur.chain}
+			<ul class="devices">
+				{#each rows as row (row.key)}
+					{@const cell = row.cells[db]}
+					<li
+						data-client={row.key}
+						data-reach={row.reach}
+						data-mark={cell.mark}
+						class:here={row.here}
+						class:revoked={row.revoked}
+						class:stale={cell.stale}
+						title={cell.title}
+					>
+						<span class="dot {row.reach}" aria-label={row.reach}>{DOT[row.reach]}</span>
+						<span class="who"
+							><span class="name">{row.label}</span
+							>{#if row.here}<span class="kind">this device</span>{:else if row.kind && row.kind !== row.label}<span class="kind">{row.kind}</span>{/if}</span
+						>
+						<span class="state {cell.stale ? 'stale' : cell.mark}"
+							><span class="symbol">{SYMBOL[cell.mark]}</span> {row.revoked ? 'revoked' : WORD[cell.mark]}{#if cell.reader}<span class="reader" aria-hidden="true">{READER}</span>{/if}{#if cell.filter}<span class="filter" aria-hidden="true">{FILTER}</span>{/if}</span
+						>
+						{#if !row.revoked}<span class="seen">{row.here ? 'now' : ago(row.lastSeen)}</span>{/if}
+						{#if cell.error}<p class="reason">{cell.error}</p>{/if}
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			<p class="quiet">On this device only: no other device has a copy.</p>
+		{/if}
+
+		{#if others.length}
+			<p class="label">Other databases</p>
+			<ul class="others">
+				{#each others as d (d.db)}
+					{@const s = standing(d, $syncStates)}
+					<li data-db={d.db} data-mark={s.mark}>
+						<a href={withDb(location.pathname, d.db)}
+							><span class="name">{d.db}</span><span class="state {s.mark}">{SYMBOL[s.mark]}</span><span class="seen">{devices(d)}</span></a
+						>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+
+		{#if used.length}
+			<p class="legend">
+				{#each used as mark (mark)}<span class={mark}>{SYMBOL[mark]} {WORD[mark]}</span>{/each}
+				{#if shown.some((c) => c.filter)}<span class="filter" title="a reader sent only some fields">{FILTER} partial</span>{/if}
+				{#if shown.some((c) => c.reader)}<span class="reader">{READER} read-only</span>{/if}
+				<button type="button" class="info" use:act={'show'} aria-label="what the marks mean" aria-expanded={key} on:click={() => (key = !key)}>ⓘ</button>
+			</p>
+		{/if}
+		{#if key}
+			<p class="key">
+				{#each MARKS as mark (mark)}<span class={mark}>{SYMBOL[mark]} {mark === 'none' ? 'not in a chain' : WORD[mark]}</span>{/each}
+				<span>{FILTER} partial: a reader sent only some fields</span>
+				<span>{READER} read-only</span>
+				<span>● online ◐ reachable ○ offline, its state as last seen</span>
+			</p>
+		{/if}
+
+		{#each dbs as d (d.db)}
+			{#each d.notices ?? [] as n (n.subject + n.kind)}
+				<p class="notice" data-db={d.db}>
+					⚠ {d.db}: {n.text}
+					<button type="button" class="command" use:act={'run'} disabled={busy} on:click={() => ack(d.db, n)}>OK</button>
+				</p>
+			{/each}
+			{#each d.clock ?? [] as c (c.endpoint)}
+				<p class="notice clock" data-db={d.db}>⚠ {d.db}: {c.text}</p>
+			{/each}
+		{/each}
+		{#if failure}<p class="failure" role="alert">{failure}</p>{/if}
+
 		{#if offer}
 			<section class="card offer" data-db={offer.db}>
-				<p>
-					Add a device to {offer.db}, within 10 minutes — scan, open the link in its browser, or on the device run:
-					<button type="button" class="close" aria-label="dismiss" on:click={() => (offer = null)}>×</button>
-				</p>
+				<p class="head">Add a device to {offer.db}: scan this with it, or open the link in its browser. It works once, until {offer.until}.</p>
 				<div class="qr">{@html offer.svg}</div>
-				<code class="code ticket">datum sync chain connect {offer.link}</code>
-				<button type="button" use:act={'run'} on:click={() => navigator.clipboard?.writeText(`datum sync chain connect ${offer?.link}`)}>copy</button>
+				<details class="terminal">
+					<summary>connect from a terminal</summary>
+					<code class="code ticket">datum sync chain connect {offer.link}</code>
+				</details>
+				<div class="actions">
+					<button type="button" class="command" use:act={'run'} on:click={() => navigator.clipboard?.writeText(offer?.link ?? '')}>Copy link</button>
+					{#if canShare}<button type="button" class="command" use:act={'open'} on:click={() => offer && share(offer.link)}>Share</button>{/if}
+					<button type="button" class="command" use:act={'show'} on:click={() => (offer = null)}>Done</button>
+				</div>
 			</section>
-		{/if}
-		{#if failure}<p class="failure" role="alert">{failure}</p>{/if}
-		<table>
-			<thead>
-				<tr>
-					<th class="client" scope="col">{full ? 'client' : ''}</th>
-					{#each dbs as d (d.db)}
-						<th scope="col" data-db={d.db} title={d.db}
-							><span class="name">{d.db}</span
-							>{#if full}<span class="actions"
-									><button type="button" use:act={'run'} disabled={busy} on:click={() => addDevice(d.db)}
-										>{d.chain ? '+ device' : 'turn on sync'}</button
-									></span
-								>{/if}</th
-						>
-					{/each}
-				</tr>
-			</thead>
-			<tbody>
-				{#each rows as row (row.key)}
-					<tr data-client={row.key} data-reach={row.reach} class:here={row.here} class:revoked={row.revoked}>
-						<th class="client" scope="row" title="{row.label}{row.kind ? ` · ${row.kind}` : ''} · {seen(row.reach, row.lastSeen)}">
-							<span class="dot {row.reach}" aria-label={seen(row.reach, row.lastSeen)}>{DOT[row.reach]}</span>
+		{:else}
+			<div class="actions" data-db={db}>
+				{#if !cur.chain}
+					<button type="button" class="command" use:act={'run'} disabled={busy} on:click={() => addDevice(db)}>Turn on sync</button>
+				{:else}
+					<button type="button" class="command" use:act={'run'} disabled={busy} on:click={() => addDevice(db)}>Add device</button>
+					<button type="button" class="command" use:act={'open'} disabled={busy} on:click={renameHere}>Rename this device</button>
+					<button type="button" class="command" use:act={'show'} aria-expanded={more} on:click={() => (more = !more)}>More <span aria-hidden="true">{more ? '▾' : '▸'}</span></button>
+				{/if}
+			</div>
+			{#if more && cur.chain}
+				<section class="more">
+					<div class="actions">
+						<button type="button" class="command" use:act={'run'} disabled={busy} on:click={() => pause(cur)}>{cur.paused ? 'Resume sync' : 'Pause sync'}</button>
+					</div>
+					{#each rows.filter((r) => !r.here && !r.revoked) as row (row.key)}
+						<div class="actions device" data-client={row.key}>
 							<span class="name">{row.label}</span>
-							{#if full}
-								{#if row.kind && row.kind !== row.label}<span class="kind">{row.kind}</span>{/if}
-								<span class="seen">{row.here ? 'this client' : row.revoked ? 'revoked' : seen(row.reach, row.lastSeen)}</span>
-								{#if Object.keys(row.endpoints).length}
-									<span class="actions">
-										<button type="button" use:act={'open'} disabled={busy} on:click={() => rename(row)}>rename</button>
-										{#if !row.here}<button type="button" use:act={'open'} disabled={busy} on:click={() => revoke(row)}>revoke</button>{/if}
-									</span>
-								{/if}
-							{/if}
-						</th>
-						{#each dbs as d (d.db)}
-							{@const cell = row.cells[d.db]}
-							<td data-db={d.db} data-mark={cell.mark} class="{cell.mark}" class:stale={cell.stale} title={cell.title}>
-								{#if cell.error}
-									<button type="button" class="symbol" aria-label={cell.title} on:click={() => (opened = opened === `${row.key} ${d.db}` ? null : `${row.key} ${d.db}`)}>{SYMBOL[cell.mark]}</button>
-								{:else}
-									<span class="symbol" aria-label={cell.title}>{SYMBOL[cell.mark]}</span>
-								{/if}
-								{#if cell.reader}<span class="reader" aria-hidden="true">{READER}</span>{/if}
-								{#if cell.filter}<span class="filter" aria-hidden="true">{FILTER}</span>{/if}
-								{#if full && cell.stale && time(cell.at)}<span class="at">{time(cell.at)}</span>{/if}
-								{#if full && cell.mark === 'none' && !row.revoked}<button type="button" class="add" use:act={'run'} disabled={busy} aria-label="add to {d.db}" on:click={() => addDevice(d.db)}>+</button>{/if}
-								{#if opened === `${row.key} ${d.db}`}<p class="reason">{cell.error}</p>{/if}
-							</td>
+							<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => rename(row)}>Rename</button>
+							<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => revoke(row)}>Revoke</button>
+						</div>
+					{/each}
+					<div class="actions chain" data-db={db}>
+						{#if cur.admins?.length}
+							<span>locked by</span>
+							{#each cur.admins as a (a.key)}
+								<button type="button" class="command admin" use:act={cur.admins.length === 1 ? 'open' : 'run'} disabled={busy} aria-label="remove {a.label}" on:click={() => removeAdmin(cur, a)}
+									>{a.label} ×</button
+								>
+							{/each}
+							<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => addAdmin(cur)}>Add passkey</button>
+						{:else}
+							<span>no admin: any device can add devices</span>
+							<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => addAdmin(cur)}>Add admin</button>
+						{/if}
+					</div>
+					<div class="actions advanced">
+						{#each $grammar?.get('sync')?.subcommands ?? [] as sub (sub)}
+							<button
+								type="button"
+								class="command"
+								use:act={'fill'}
+								data-command="sync {sub}"
+								on:click={() => prefill.set({ line: `sync ${sub} `, keyboard: true })}>sync {sub}</button
+							>
 						{/each}
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-		<p class="legend">
-			{#each Object.entries(SYMBOL) as [mark, symbol] (mark)}
-				<span class={mark} title={mark}>{symbol}{#if full}&nbsp;{mark === 'none' ? 'not in chain' : mark}{/if}</span>
-			{/each}
-			<span class="filter" title="partial: a reader sent only some fields">{FILTER}{#if full}&nbsp;partial{/if}</span>
-			<span class="reader" title="read-only">{READER}{#if full}&nbsp;read-only{/if}</span>
-		</p>
-		{#if full}
-			{#each dbs.filter((d) => d.chain) as d (d.db)}
-				<p class="chain" data-db={d.db}>
-					{d.db}:
-					{#if d.admins?.length}
-						locked by
-						{#each d.admins as a (a.key)}
-							<span class="admin">{a.label}<button type="button" class="close" disabled={busy} aria-label="remove {a.label}" on:click={() => removeAdmin(d, a)}>×</button></span>
-						{/each}
-						<button type="button" use:act={'open'} disabled={busy} on:click={() => addAdmin(d)}>+ passkey</button>
-					{:else}
-						<span class="quiet">no admin: any device can add devices</span>
-						<button type="button" use:act={'open'} disabled={busy} on:click={() => addAdmin(d)}>add admin</button>
-					{/if}
-				</p>
-			{/each}
+					</div>
+				</section>
+			{/if}
 		{/if}
-		<details class="advanced">
-			<summary>Advanced</summary>
-			{#each dbs.filter((d) => d.chain) as d (d.db)}
-				<button type="button" class="pause" use:act={'run'} disabled={busy} data-db={d.db} on:click={() => pause(d)}
-					>{d.paused ? `resume ${d.db}` : `pause ${d.db}`}</button
-				>
-			{/each}
-			{#each $grammar?.get('sync')?.subcommands ?? [] as sub (sub)}
-				<button
-					type="button"
-					class="control"
-					use:act={'fill'}
-					data-command="sync {sub}"
-					on:click={() => prefill.set({ line: `sync ${sub} `, keyboard: true })}>{sub}</button
-				>
-			{/each}
-		</details>
 	</div>
 </Pane>
 
@@ -430,45 +496,55 @@
 	.sync {
 		--synced: #6fcf97;
 		font-family: monospace;
+		overflow-wrap: anywhere;
 	}
-	table {
-		border-collapse: collapse;
-	}
-	th,
-	td {
-		padding: 0.15rem 0.4rem;
-		text-align: center;
-		white-space: nowrap;
-		font-weight: normal;
+	header,
+	.devices li,
+	.others a {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0 0.6rem;
+		padding: 0.3rem 0;
 		border-bottom: 1px solid var(--rule);
 	}
-	thead th {
-		color: var(--muted);
+	header .title {
+		flex: 1;
+		color: var(--ink-bright);
 	}
-	.client {
-		position: sticky;
-		left: 0;
-		z-index: 1;
-		text-align: left;
-		background: var(--ground);
+	ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
 	}
-	.sync:not(.full) .client .name {
-		display: inline-block;
-		max-width: 5ch;
+	.who {
+		flex: 1 1 8ch;
+		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		vertical-align: bottom;
+		white-space: nowrap;
+	}
+	.state,
+	.seen {
+		white-space: nowrap;
 	}
 	.kind,
 	.seen,
-	.at {
+	.label {
 		margin-left: 0.4rem;
 		font-size: 0.8em;
-		color: var(--quiet);
+		color: var(--muted);
 	}
-	.at {
-		display: block;
-		margin: 0;
+	.label {
+		margin: 0.6rem 0 0;
+	}
+	.others a {
+		color: inherit;
+		text-decoration: none;
+	}
+	.others .name {
+		flex: 1 1 8ch;
+		min-width: 0;
 	}
 	.dot.online {
 		color: var(--synced);
@@ -478,18 +554,6 @@
 	}
 	.dot.offline {
 		color: var(--quiet);
-	}
-	.symbol {
-		font: inherit;
-		color: inherit;
-		background: none;
-		border: 0;
-		padding: 0;
-		cursor: default;
-	}
-	button.symbol {
-		cursor: pointer;
-		text-decoration: underline dotted;
 	}
 	.synced {
 		color: var(--synced);
@@ -505,59 +569,56 @@
 	}
 	.none,
 	.stale {
-		color: var(--quiet);
+		color: var(--muted);
 	}
 	.reason {
-		margin: 0.2rem 0 0;
-		white-space: normal;
-		color: var(--ink);
-		text-align: left;
+		flex-basis: 100%;
+		margin: 0.2rem 0 0 1.4rem;
+		color: var(--error);
 	}
-	.advanced {
-		margin-top: 0.5rem;
-		font-size: 0.85em;
-	}
-	.advanced summary {
+	.revoked .name {
+		text-decoration: line-through;
 		color: var(--muted);
-		cursor: pointer;
 	}
-	.advanced button {
-		margin: 0.3rem 0.3rem 0 0;
-		padding: 0.1rem 0.5rem;
-		min-height: 24px;
-	}
-	.actions button,
-	.add,
-	.card button,
-	.chain button,
-	.notice button {
-		margin-left: 0.3rem;
-		padding: 0 0.4rem;
-		font: inherit;
-		font-size: 0.85em;
-	}
-	/* The design language ($lib/act.ts): a DOUBLE outline acts at once, a
-	   SINGLE one of the accent opens something. */
-	button:global([data-act='run']) {
-		border: 3px double var(--accent);
-		color: var(--ink-bright);
-	}
-	button:global([data-act='open']) {
-		border: 1px solid var(--accent);
-	}
-	.close {
-		background: none;
-		border: 0;
+	.quiet {
 		color: var(--muted);
-		cursor: pointer;
+	}
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.4rem;
+		margin-top: 0.6rem;
+	}
+	.chain span {
+		flex: 1 1 100%;
+		color: var(--muted);
+	}
+	.device .name {
+		flex: 0 0 10ch;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--muted);
+	}
+	.more {
+		margin-top: 0.4rem;
+		padding-top: 0.2rem;
+		border-top: 1px solid var(--rule);
 	}
 	.card,
 	.notice,
 	.failure {
 		margin: 0 0 0.5rem;
-		padding: 0.4rem;
+		padding: 0.5rem;
 		border: 1px solid var(--rule);
-		white-space: normal;
+	}
+	.card .actions {
+		margin-top: 0.5rem;
+	}
+	.head {
+		margin: 0;
+		color: var(--ink-bright);
 	}
 	.notice {
 		color: var(--warn);
@@ -567,38 +628,49 @@
 	}
 	.qr :global(svg) {
 		display: block;
-		width: 12rem;
-		height: 12rem;
-		margin: 0.4rem 0;
+		width: min(12rem, 100%);
+		height: auto;
+		aspect-ratio: 1;
+		margin: 0.5rem 0;
+	}
+	.terminal summary {
+		color: var(--muted);
+		cursor: pointer;
 	}
 	.code {
 		display: block;
-		overflow-wrap: anywhere;
+		margin-top: 0.3rem;
 		user-select: all;
 		font-size: 0.8em;
-	}
-	.revoked .name {
-		text-decoration: line-through;
-		color: var(--quiet);
-	}
-	.chain {
-		margin: 0.4rem 0 0;
-		font-size: 0.85em;
-		color: var(--muted);
 	}
 	.what {
 		margin: 0.3rem 0;
 		padding-left: 1.2rem;
+		list-style: disc;
 		color: var(--ink-bright);
 	}
-	.quiet {
-		color: var(--quiet);
-	}
-	.legend {
+	.legend,
+	.key {
 		display: flex;
 		flex-wrap: wrap;
+		align-items: center;
 		gap: 0.2rem 0.8rem;
 		margin: 0.5rem 0 0;
 		font-size: 0.85em;
+	}
+	.legend span,
+	.key span {
+		white-space: nowrap;
+	}
+	.info {
+		padding: 0 0.2rem;
+		font: inherit;
+		color: var(--ink);
+		background: none;
+		border: 0;
+		cursor: pointer;
+	}
+	.info:focus-visible {
+		outline: 1px solid var(--accent);
 	}
 </style>

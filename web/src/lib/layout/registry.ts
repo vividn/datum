@@ -425,16 +425,17 @@ export const KINDS: Record<string, WidgetKind> = {
 		].join('\n'),
 		legible: { width: 160, height: 72 }
 	},
-	// The sync widget, read-only (da-x4t0a): clients × databases. Legible
-	// at its compact form: a dot, five characters of name and two cells,
-	// three rows (21.6px each) and the legend's line, plus padding.
+	// The sync widget (da-x4t0a, da-yoef7): the page's database's devices,
+	// a line each, then the other databases, then the acts. Legible at a
+	// device's line wrapped once, two lines more and the acts' row, plus
+	// padding.
 	sync: {
 		meta: meta('sync', 'sync'),
 		component: SyncWidget,
 		help: [
-			'Every client syncing your databases — each CLI install and browser — a row per client, this one first, a column per database.',
-			'✓ synced, ↻ syncing, ◔ pending, ! error (tap it for why), — not in that database’s chain.',
-			'A client not reachable now is drawn grey, as it was when last seen, with the time.'
+			'Every device syncing this database — each CLI install and browser — a line each, this one first, with when it was last seen; then your other databases, a tap each to switch.',
+			'✓ synced, ↻ syncing, ◔ pending, ! error (its reason under it), — not syncing.',
+			'A device not reachable now is drawn grey, as it was when last seen.'
 		].join('\n'),
 		legible: { width: 140, height: 100 }
 	},

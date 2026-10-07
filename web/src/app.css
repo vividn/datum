@@ -209,3 +209,48 @@ body {
 	color: var(--accent-bright);
 	border-color: var(--accent);
 }
+
+/*
+	One button (da-yoef7): the commands widget's look, lifted here so the
+	Sync widget draws the same one — on a phone its buttons had been the
+	browser's own grey under the page's pale ink, a contrast of 1.1. On
+	`button` alone: the custom pane's line is an `input.command`.
+
+	A button that does something the moment it is pressed, where the rest
+	only write a line, is drawn in a DOUBLE outline of the accent (vividn,
+	09-22: «some sort of distinctive design feature, like a double
+	outline»). Inside the box, as a border, so the bar's scroll edge never
+	clips it and focus keeps the outline; the padding gives back the two
+	pixels the border takes, so a button does not grow when it arms.
+*/
+button.command {
+	background: var(--ground);
+	border: 1px solid var(--rule);
+	border-radius: 3px;
+	padding: 0.35rem 0.85rem;
+	color: var(--ink);
+	font: inherit;
+	font-size: 0.85rem;
+	min-height: 24px;
+	white-space: nowrap;
+	cursor: pointer;
+	user-select: none;
+	-webkit-user-select: none;
+	touch-action: manipulation;
+}
+button.command[data-act='run'] {
+	border: 3px double var(--accent);
+	padding: calc(0.35rem - 2px) calc(0.85rem - 2px);
+	color: var(--ink-bright);
+}
+/* Focused by the keyboard, as pointed at: the browser's own ring is drawn
+   near-black, which on this page is no ring at all. */
+button.command:hover:not(:disabled),
+button.command:focus-visible {
+	border-color: var(--accent);
+	color: var(--ink-bright);
+}
+button.command:disabled {
+	opacity: 0.4;
+	cursor: default;
+}

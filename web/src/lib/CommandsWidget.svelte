@@ -280,41 +280,11 @@
 </ButtonRows>
 
 <style>
-	.command {
-		background: var(--ground);
-		border: 1px solid var(--rule);
-		border-radius: 3px;
-		padding: 0.35rem 0.85rem;
-		color: var(--ink);
-		font: inherit;
-		font-size: 0.85rem;
-		min-height: 24px;
-		white-space: nowrap;
-		cursor: pointer;
-		user-select: none;
-		-webkit-user-select: none;
-		touch-action: manipulation;
-	}
-
-	/* A button that does something the moment it is pressed, where the
-	   rest only write a line, is drawn in a DOUBLE outline of the accent
-	   (vividn, 09-22: «some sort of distinctive design feature, like a double
-	   outline»). Inside the box, as a border, so the bar's scroll edge never
-	   clips it and focus keeps the outline; the padding gives back the two
-	   pixels the border takes, so a button does not grow when it arms. */
-	.command:global([data-act='run']) {
-		border: 3px double var(--accent);
-		padding: calc(0.35rem - 2px) calc(0.85rem - 2px);
-		color: var(--ink-bright);
-	}
+	/* The look itself is `button.command`, shared with the Sync widget
+	   (da-yoef7): app.css. What is the bar's own stays here. */
 
 	/* Opens a place: once outlined, as Help is (below). */
 	.command.opens {
-		border-color: var(--accent);
-		color: var(--ink-bright);
-	}
-
-	.command:hover:not(:disabled) {
 		border-color: var(--accent);
 		color: var(--ink-bright);
 	}
@@ -382,10 +352,5 @@
 		border-bottom-left-radius: 0;
 		padding-left: calc(0.45rem - 2px);
 		padding-right: calc(0.45rem - 2px);
-	}
-
-	.command:disabled {
-		opacity: 0.4;
-		cursor: default;
 	}
 </style>

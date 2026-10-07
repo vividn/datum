@@ -63,8 +63,12 @@ async function openChain(app) {
 	return phone;
 }
 
-/** Lock `home`'s chain with a new passkey, through the widget. */
+/** Open the widget's More. */
+const more = (page) => page.locator(`${WIDGET} .actions`).getByRole('button', { name: /^More/ }).click();
+
+/** Lock `home`'s chain with a new passkey, through the widget's More. */
 async function addAdmin(page) {
+	await more(page);
 	await page.locator(`${WIDGET} .chain[data-db="home"]`).getByRole('button', { name: 'add admin' }).click();
 	await page.locator('dialog.ask input').fill('my phone');
 	await page.locator('dialog.ask').getByRole('button', { name: 'add' }).click();
@@ -90,10 +94,11 @@ describe('the sync widget’s actions', () => {
 				async (app) => {
 					const { page } = app;
 					await app.goto('/sync');
-					const header = page.locator(`${WIDGET} th[data-db="datum"]`);
-					await header.getByRole('button', { name: 'turn on sync' }).click();
+					const actions = page.locator(`${WIDGET} .actions[data-db="datum"]`);
+					await actions.getByRole('button', { name: 'Turn on sync' }).click();
 					const offer = page.locator(`${WIDGET} .offer[data-db="datum"]`);
 					await offer.locator('.qr svg').waitFor();
+					await offer.locator('summary', { hasText: 'connect from a terminal' }).click();
 					const ticket = /datum sync chain connect (\S+)/.exec(await offer.locator('.ticket').innerText())[1];
 					// This browser is the chain's first member, and the chain is open.
 					const chain = JSON.parse(await cli(app, ['sync', 'chain', 'list', '--json']));
@@ -102,8 +107,10 @@ describe('the sync widget’s actions', () => {
 
 					const joined = await native.run(['sync', 'chain', 'connect', ticket]);
 					assert.equal(joined.code, 0, joined.stderr);
-					await until(async () => (await page.locator(`${WIDGET} tbody tr`).count()) === 2, Boolean);
-					assert.equal(await header.locator('.actions button').innerText(), '+ device');
+					await until(async () => (await page.locator(`${WIDGET} .devices li`).count()) === 2, Boolean);
+					await offer.getByRole('button', { name: 'Done' }).click();
+					assert.deepEqual(await actions.locator('button').allInnerTexts(), ['Add device', 'Rename this device', 'More ▸']);
+					await more(page);
 					assert.match(await page.locator(`${WIDGET} .chain[data-db="datum"]`).innerText(), /no admin: any device can add devices/);
 				},
 				{ prepare: relayed(relay), viewport: DESKTOP }
@@ -118,7 +125,7 @@ describe('the sync widget’s actions', () => {
 			const { page } = app;
 			await authenticator(page);
 			const phone = await openChain(app);
-			await app.goto('/sync');
+			await app.goto('/sync?db=home');
 			await addAdmin(page);
 			const chain = await members(app);
 			assert.equal(chain.admins.length, 1);
@@ -126,11 +133,11 @@ describe('the sync widget’s actions', () => {
 			assert.equal(chain.admins[0].label, 'my phone');
 
 			// Locked: the revoke stops at an approve link, which the passkey signs.
-			const row = page.locator(`${WIDGET} tr[data-client="${phone}"]`);
-			await row.getByRole('button', { name: 'revoke' }).click();
+			await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Revoke' }).click();
 			await page.locator('dialog.confirm').getByRole('button', { name: 'revoke' }).click();
-			await page.locator(`${WIDGET} tr.revoked[data-client="${phone}"]`).waitFor();
-			assert.equal(await row.locator('.seen').innerText(), 'revoked');
+			const row = page.locator(`${WIDGET} .devices li.revoked[data-client="${phone}"]`);
+			await row.waitFor();
+			assert.equal(await row.locator('.state').innerText(), '— revoked');
 			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
 			assert.ok(await revokedOf(app, phone));
 		}, AT_DATUM_DAY);
@@ -141,7 +148,7 @@ describe('the sync widget’s actions', () => {
 			const { page } = app;
 			await authenticator(page);
 			await openChain(app);
-			await app.goto('/sync');
+			await app.goto('/sync?db=home');
 			await addAdmin(page);
 			const remove = page.locator(`${WIDGET} .chain[data-db="home"]`).getByRole('button', { name: 'remove my phone' });
 
@@ -168,7 +175,7 @@ describe('the sync widget’s actions', () => {
 			const { page } = app;
 			await authenticator(page);
 			const phone = await openChain(app);
-			await app.goto('/sync');
+			await app.goto('/sync?db=home');
 			await addAdmin(page);
 			// What a CLI in the chain prints when it wants a passkey.
 			const asked = await runIn(app, ['--db', 'home', 'sync', 'chain', 'revoke', phone]);
@@ -206,7 +213,7 @@ describe('the sync widget’s actions', () => {
 			const { page } = app;
 			await authenticator(page);
 			await openChain(app);
-			await app.goto('/sync');
+			await app.goto('/sync?db=home');
 			await addAdmin(page);
 			// «Please approve my new phone», carrying the sender's own key.
 			const asked = await runIn(app, ['--db', 'home', 'sync', 'admin', 'add', foreignPasskey('my new phone')]);

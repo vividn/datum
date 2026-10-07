@@ -86,7 +86,7 @@ describe('a place on a desktop', () => {
 			assert.equal((await sync.innerText()).trim(), 'Sync');
 			assert.equal(await sync.getAttribute('data-act'), 'open');
 			await sync.click();
-			await modal(page).locator('table').waitFor();
+			await modal(page).locator('.sync header').waitFor();
 			assert.equal((await modal(page).locator('.sheet-head > span').innerText()).trim(), 'sync');
 			// Found as a pane is, by its title, and named once: the head says it, not the widget too.
 			const pane = modal(page).locator('section.pane[data-title="sync"]');
@@ -109,7 +109,7 @@ describe('a place on a desktop', () => {
 		test(`${how} closes it, and takes its history entry with it`, async () => {
 			await desktop.solo(async ({ page }) => {
 				await page.evaluate(() => window.datum.shell.openPlace('sync'));
-				await modal(page).locator('table').waitFor();
+				await modal(page).locator('.sync header').waitFor();
 				await close(page);
 				await modal(page).waitFor({ state: 'detached' });
 				await until(() => onPlaceEntry(page), (on) => !on);
@@ -130,7 +130,7 @@ describe('a place on a desktop', () => {
 				await atRest(rootContent(page));
 				assert.deepEqual(await rootTabs(page), ['main', 'sync', 'tail']);
 				assert.deepEqual(await italic(page), ['sync'], 'the place is transient');
-				await page.locator('.host[data-widget="sync"] table').waitFor();
+				await page.locator('.host[data-widget="sync"] .sync header').waitFor();
 				// The modal's entry was handed on, not a second one pushed: one back is the way home.
 				await page.goBack();
 				await until(() => rootTabs(page), (t) => t.join() === 'main,tail');
@@ -206,10 +206,10 @@ describe('a place on a desktop', () => {
 				return first.tabs[0].id;
 			});
 			await page.evaluate((tab) => window.datum.shell.widgetInto(tab, 'sync'), tab);
-			await page.locator('section.pane[data-title="sync"] table').waitFor();
+			await page.locator('section.pane[data-title="sync"] .sync header').waitFor();
 			// A root tab holding the kind is what `openPlace` looks for, not a pane.
 			await page.evaluate(() => window.datum.shell.openPlace('sync'));
-			await modal(page).locator('table').waitFor();
+			await modal(page).locator('.sync header').waitFor();
 			assert.deepEqual(await rootTabs(page), ['main']);
 		});
 	});
@@ -217,7 +217,7 @@ describe('a place on a desktop', () => {
 	test('/sync/approve#… opens the Sync place', async () => {
 		await desktop.solo(async (app) => {
 			await app.goto('/sync/approve#eyJ9');
-			await modal(app.page).locator('table').waitFor();
+			await modal(app.page).locator('.sync header').waitFor();
 		});
 	});
 });
@@ -233,7 +233,7 @@ describe('a place on a phone', () => {
 				(await strip(page)).moved.some((t) => /translateX\(-\d/.test(t)),
 				`the view did not slide right onto it: ${JSON.stringify(await strip(page))}`
 			);
-			await page.locator('.host[data-widget="sync"] table').waitFor();
+			await page.locator('.host[data-widget="sync"] .sync header').waitFor();
 			assert.equal(await modal(page).count(), 0);
 			// Written nowhere: a reload would not know it.
 			assert.deepEqual(await openList(page), { names: ['main'], active: 0 });
@@ -245,14 +245,17 @@ describe('a place on a phone', () => {
 			assert.deepEqual(errors, []);
 		});
 	});
-	test('the raw subcommands are under Advanced, and fill the line', async () => {
+	test('the raw subcommands are under More, and fill the line', async () => {
 		await phone.solo(async ({ page }) => {
+			// More is a chained database's: with sync off, turning it on is the one act.
+			assert.equal((await page.evaluate(() => window.datum.runQuiet(['sync', 'new-invite']))).code, 0);
 			await openPlace(page, 'sync');
-			const advanced = page.locator('.host[data-widget="sync"] details.advanced');
-			await advanced.locator('summary').click();
+			const widget = page.locator('.host[data-widget="sync"]');
+			await widget.getByRole('button', { name: /^More/ }).click();
+			const advanced = widget.locator('.more .advanced');
 			const subs = await advanced.locator('button').evaluateAll((all) => all.map((b) => b.textContent.trim()));
-			assert.ok(subs.includes('status') && subs.includes('chain'), subs.join(' '));
-			await advanced.locator('button', { hasText: /^status$/ }).click();
+			assert.ok(subs.includes('sync status') && subs.includes('sync chain'), subs.join(' '));
+			await advanced.locator('button', { hasText: /^sync status$/ }).click();
 			assert.equal(await page.locator('.prompt-bar input').inputValue(), 'sync status ');
 		});
 	});
@@ -355,7 +358,7 @@ describe('a place on a phone', () => {
 				return first.tabs[0].id;
 			});
 			await page.evaluate((tab) => window.datum.shell.widgetInto(tab, 'sync'), tab);
-			await page.locator('section.pane[data-title="sync"] table').waitFor();
+			await page.locator('section.pane[data-title="sync"] .sync header').waitFor();
 			// A root tab holding the kind is what `openPlace` looks for, not a pane.
 			await openPlace(page, 'sync');
 			assert.deepEqual(await rootTabs(page), ['main', 'sync']);

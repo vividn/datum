@@ -1,27 +1,28 @@
-// The Sync widget, read-only half (da-x4t0a): clients × databases.
+// The Sync widget (da-x4t0a, redone as a list in da-yoef7): the page's
+// database's devices, a line each, then the other databases a line each.
 //
-// The fixture is two chained databases beside the page's own `datum`, which
-// is in no chain. Their states are set without a network: members are
-// admitted as a session would admit them (`sync new-invite`, which starts an
-// open chain, then `sync handshake --invite`), a native copy's `describe`
-// (its client and kind) comes over the pipe transport (`sync pipe ops` | `sync pipe
-// apply`), and `sync record-session` says how each member's last session went. No tab
-// leads `home` or `work`, so the only reachability is what a test
-// broadcasts on the sync worker's own channel.
+// The fixture is two chained databases beside the default `datum`, which
+// is in no chain; the tests open the page on `home`. Their states are set
+// without a network: members are admitted as a session would admit them
+// (`sync new-invite`, which starts an open chain, then `sync handshake
+// --invite`), a native copy's `describe` (its client and kind) comes over
+// the pipe transport (`sync pipe ops` | `sync pipe apply`), and `sync
+// record-session` says how each member's last session went. No tab leads
+// `home` or `work`, so the only reachability is what a test broadcasts on
+// the sync worker's own channel.
 //
-//            datum   home        work
-//   this     —       !           ◔
-//   laptop   —       ✓           ◔      (one client, two native copies)
-//   phone    —       ◔ to send   —
-//   tablet   —       ! refused   —
-//   watch    —       ◔ never     —
+//            home        work
+//   this     !           ◔
+//   laptop   ✓           ◔      (one client, two native copies)
+//   phone    ◔ to send   —
+//   tablet   ! refused   —
+//   watch    ◔ never     —
 
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import { startApp, stopApp } from './support/app.mjs';
 import { nativeCopy, withWallClock } from './support/sync.mjs';
-import { resolveLibAsSource } from './support/libhook.mjs';
 
 before(startApp);
 after(stopApp);
@@ -112,175 +113,186 @@ async function fixture(app) {
 const broadcast = (app, db, peers) =>
 	app.page.evaluate(([db, peers]) => new BroadcastChannel('datum-sync').postMessage({ state: { db, peers } }), [db, peers]);
 
-/** Each row as `[label, {db: mark}]`, top to bottom. */
-const marks = (page) =>
-	page.locator(`${WIDGET} tbody tr`).evaluateAll((rows) =>
-		rows.map((r) => [
-			r.querySelector('.name').textContent,
-			Object.fromEntries([...r.querySelectorAll('td')].map((td) => [td.dataset.db, td.dataset.mark]))
-		])
-	);
+/** Each device's line as `[label, mark]`, top to bottom. */
+const lines = (page) =>
+	page.locator(`${WIDGET} .devices li`).evaluateAll((lis) => lis.map((li) => [li.querySelector('.name').textContent, li.dataset.mark]));
 
-const cell = (page, client, db) => page.locator(`${WIDGET} tr[data-client="${client}"] td[data-db="${db}"]`);
+const line = (page, client) => page.locator(`${WIDGET} .devices li[data-client="${client}"]`);
+
+/** The page on `home`, its five devices drawn. */
+async function onHome(app) {
+	await app.goto('/sync?db=home');
+	const h = await app.page.waitForFunction((sel) => document.querySelectorAll(sel).length === 5, `${WIDGET} .devices li`);
+	await h.dispose();
+}
+
+const DESKTOP = { viewport: { width: 1280, height: 800 } };
 
 describe('the sync widget', () => {
-	test('draws a symbol per client and database, this client first, and greys what is not reachable', async () => {
-		await withWallClock(
-			async (app) => {
-				const { page } = app;
-				const ids = await fixture(app);
-				await app.goto('/sync');
-				await page.locator(`${WIDGET} td[data-db="home"]`).first().waitFor();
-				const rows = await page.waitForFunction(() => document.querySelectorAll('section.pane[data-title="sync"] tbody tr').length === 5);
-				await rows.dispose();
+	test('a line per device, this one first, with its state as a shape and a word, and the other databases a line each', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			const ids = await fixture(app);
+			await onHome(app);
 
-				const none = { datum: 'none' };
-				// This client first; the rest in the chain's own order, which is not this test's.
-				const [first, ...rest] = await marks(page);
-				assert.deepEqual(first, ['datum.day', { home: 'error', work: 'pending', ...none }]);
-				assert.deepEqual(rest.sort(([a], [b]) => a.localeCompare(b)), [
-					['laptop', { home: 'synced', work: 'pending', ...none }],
-					['phone', { home: 'pending', work: 'none', ...none }],
-					['tablet', { home: 'error', work: 'none', ...none }],
-					['watch', { home: 'pending', work: 'none', ...none }]
-				]);
-				// Shape, not colour alone.
-				assert.deepEqual(
-					await page.locator(`${WIDGET} tr[data-client="${LAPTOP}"] .symbol`).allInnerTexts(),
-					['—', '✓', '◔']
-				);
-				assert.match(await cell(page, ids.phone, 'home').getAttribute('title'), /pending, \d+ to send/);
-				assert.match(await cell(page, ids.watch, 'home').getAttribute('title'), /never synced/);
-				// The laptop is one client with two copies, and a CLI.
-				assert.match(await page.locator(`${WIDGET} tr[data-client="${LAPTOP}"] .kind`).innerText(), /CLI/);
+			const [first, ...rest] = await lines(page);
+			assert.deepEqual(first, ['datum.day', 'error']);
+			assert.deepEqual(rest.sort(([a], [b]) => a.localeCompare(b)), [
+				['laptop', 'synced'],
+				['phone', 'pending'],
+				['tablet', 'error'],
+				['watch', 'pending']
+			]);
+			assert.equal(await line(page, 'this').locator('.kind').innerText(), 'this device');
+			assert.equal(await line(page, LAPTOP).locator('.state').innerText(), '✓ synced');
+			assert.match(await line(page, LAPTOP).locator('.kind').innerText(), /CLI/);
+			assert.match(await line(page, LAPTOP).locator('.seen').innerText(), /^(now|\d+ min ago|\d+ h ago)$/);
+			assert.match(await line(page, ids.phone).getAttribute('title'), /pending, \d+ to send/);
+			assert.match(await line(page, ids.watch).getAttribute('title'), /never synced/);
+			assert.equal(await line(page, ids.watch).locator('.seen').innerText(), 'never');
+			// An error's reason, verbatim, under its line: no tap needed.
+			assert.equal(await line(page, ids.tablet).locator('.reason').innerText(), REFUSED);
+			// The database as a whole is its worst device.
+			assert.equal(await page.locator(`${WIDGET} header .title`).innerText(), 'Sync · home');
+			assert.equal(await page.locator(`${WIDGET} header .state`).innerText(), '! error');
 
-				// An error's reason, verbatim, on a tap.
-				await cell(page, ids.tablet, 'home').locator('button').click();
-				assert.equal(await cell(page, ids.tablet, 'home').locator('.reason').innerText(), REFUSED);
+			// Nobody leads `home`: every other device is offline, its state
+			// last known, grey — never a green ✓.
+			assert.equal(await line(page, LAPTOP).getAttribute('data-reach'), 'offline');
+			assert.match(await line(page, LAPTOP).getAttribute('class'), /\bstale\b/);
+			const color = (l) => l.evaluate((e) => getComputedStyle(e).color);
+			assert.notEqual(await color(line(page, LAPTOP).locator('.state')), await color(page.locator(`${WIDGET} .legend .synced`)));
 
-				// Nobody leads `home`: every other client is offline, its state
-				// last known, grey, with its time — never a green ✓.
-				const synced = cell(page, LAPTOP, 'home');
-				assert.equal(await page.locator(`${WIDGET} tr[data-client="${LAPTOP}"]`).getAttribute('data-reach'), 'offline');
-				assert.match(await synced.getAttribute('class'), /\bstale\b/);
-				assert.match(await synced.locator('.at').innerText(), /\d\d:\d\d/);
-				const color = (l) => l.evaluate((e) => getComputedStyle(e).color);
-				assert.equal(await color(synced), await color(cell(page, LAPTOP, 'datum')));
-			},
-			{ viewport: { width: 1280, height: 800 } }
-		);
+			// The others, one line each: work in a chain of its own, datum in none.
+			const others = await page.locator(`${WIDGET} .others li`).evaluateAll((lis) =>
+				lis.map((li) => [li.dataset.db, li.dataset.mark, li.querySelector('.seen').textContent])
+			);
+			assert.deepEqual(others.sort(), [
+				['datum', 'none', 'not syncing'],
+				['work', 'pending', '2 devices']
+			]);
+			// The legend says only what is in use, and the whole of it is a tap away.
+			assert.deepEqual(await page.locator(`${WIDGET} .legend > span`).allInnerTexts(), [
+				'✓ synced',
+				'◔ pending',
+				'! error',
+				'— not syncing'
+			]);
+			await page.locator(`${WIDGET} .legend .info`).click();
+			assert.match(await page.locator(`${WIDGET} .key`).innerText(), /↻ syncing/);
+
+			// A tap on another database switches to it, as the logo does.
+			await page.locator(`${WIDGET} .others li[data-db="work"] a`).click();
+			await page.waitForURL(/[?&]db=work\b/);
+		}, DESKTOP);
 	});
 
 	test('the reachability dot and the syncing mark follow the worker’s broadcast', async () => {
-		await withWallClock(
-			async (app) => {
-				const { page } = app;
-				const ids = await fixture(app);
-				await app.goto('/sync');
-				const row = page.locator(`${WIDGET} tr[data-client="${LAPTOP}"]`);
-				await row.waitFor();
-				const reach = async (want) => {
-					const h = await page.waitForFunction(
-						([sel, want]) => document.querySelector(sel)?.dataset.reach === want,
-						[`${WIDGET} tr[data-client="${LAPTOP}"]`, want]
-					);
-					await h.dispose();
-				};
+		await withWallClock(async (app) => {
+			const { page } = app;
+			const ids = await fixture(app);
+			await onHome(app);
+			const row = line(page, LAPTOP);
+			const reach = async (want) => {
+				const h = await page.waitForFunction(
+					([sel, want]) => document.querySelector(sel)?.dataset.reach === want,
+					[`${WIDGET} .devices li[data-client="${LAPTOP}"]`, want]
+				);
+				await h.dispose();
+			};
 
-				await broadcast(app, 'home', { [ids.laptop]: { label: 'laptop', reach: 'reachable', lastSeen: Date.now() } });
-				await reach('reachable');
-				assert.equal(await row.locator('.dot').innerText(), '◐');
-				assert.doesNotMatch(await cell(page, LAPTOP, 'home').getAttribute('class'), /\bstale\b/);
-				assert.equal(await cell(page, LAPTOP, 'home').getAttribute('data-mark'), 'synced');
+			await broadcast(app, 'home', { [ids.laptop]: { label: 'laptop', reach: 'reachable', lastSeen: Date.now() } });
+			await reach('reachable');
+			assert.equal(await row.locator('.dot').innerText(), '◐');
+			assert.doesNotMatch(await row.getAttribute('class'), /\bstale\b/);
+			assert.equal(await row.getAttribute('data-mark'), 'synced');
 
-				await broadcast(app, 'home', { [ids.laptop]: { label: 'laptop', reach: 'online' } });
-				await reach('online');
-				assert.equal(await row.locator('.dot').innerText(), '●');
-				assert.equal(await cell(page, LAPTOP, 'home').getAttribute('data-mark'), 'syncing');
-				assert.equal(await cell(page, LAPTOP, 'home').locator('.symbol').innerText(), '↻');
+			await broadcast(app, 'home', { [ids.laptop]: { label: 'laptop', reach: 'online' } });
+			await reach('online');
+			assert.equal(await row.locator('.dot').innerText(), '●');
+			assert.equal(await row.getAttribute('data-mark'), 'syncing');
+			assert.equal(await row.locator('.symbol').innerText(), '↻');
 
-				await broadcast(app, 'home', { [ids.laptop]: { label: 'laptop', reach: 'offline' } });
-				await reach('offline');
-				assert.equal(await row.locator('.dot').innerText(), '○');
-				assert.match(await cell(page, LAPTOP, 'home').getAttribute('class'), /\bstale\b/);
-			},
-			{ viewport: { width: 1280, height: 800 } }
-		);
+			await broadcast(app, 'home', { [ids.laptop]: { label: 'laptop', reach: 'offline' } });
+			await reach('offline');
+			assert.equal(await row.locator('.dot').innerText(), '○');
+			assert.match(await row.getAttribute('class'), /\bstale\b/);
+		}, DESKTOP);
 	});
 
 	test('a reader carries the lock beside its state, and the legend names it', async () => {
-		await withWallClock(
-			async (app) => {
-				const { page } = app;
-				const run = inPage(app, 'home');
-				const id = endpointId();
-				const { secret } = JSON.parse(await run(['sync', 'new-invite', '--reader', '--expires', '1d']));
-				await run(['sync', 'handshake', id, '--label', 'kindle', '--addr', '{}', '--invite', secret, '--chain', '']);
-				await app.goto('/sync');
-				const reader = cell(page, id, 'home');
-				await reader.waitFor();
-				assert.equal(await reader.locator('.reader').innerText(), '🔒︎');
-				assert.match(await reader.getAttribute('title'), /, read-only\b/);
-				// This copy is a member: no lock.
-				assert.equal(await cell(page, 'this', 'home').locator('.reader').count(), 0);
-				assert.match(await page.locator(`${WIDGET} .legend .reader`).innerText(), /^🔒︎\s*read-only$/);
-			},
-			{ viewport: { width: 1280, height: 800 } }
-		);
+		await withWallClock(async (app) => {
+			const { page } = app;
+			const run = inPage(app, 'home');
+			const id = endpointId();
+			const { secret } = JSON.parse(await run(['sync', 'new-invite', '--reader', '--expires', '1d']));
+			await run(['sync', 'handshake', id, '--label', 'kindle', '--addr', '{}', '--invite', secret, '--chain', '']);
+			await app.goto('/sync?db=home');
+			const reader = line(page, id);
+			await reader.waitFor();
+			assert.equal(await reader.locator('.reader').innerText(), '🔒︎');
+			assert.match(await reader.getAttribute('title'), /, read-only\b/);
+			// This copy is a member: no lock.
+			assert.equal(await line(page, 'this').locator('.reader').count(), 0);
+			assert.match(await page.locator(`${WIDGET} .legend .reader`).innerText(), /^🔒︎\s*read-only$/);
+		}, DESKTOP);
 	});
 
 	test('a filtered reader carries the filter too, its title says how many fields, and the legend names it', async () => {
-		await withWallClock(
-			async (app) => {
-				const { page } = app;
-				const run = inPage(app, 'home');
-				const id = endpointId();
-				await run(['occur', 'tea']);
-				const invite = ['sync', 'new-invite', '--fields', 'coffee', '--expires', '1d'];
-				const { secret } = JSON.parse(await run(invite));
-				await run(['sync', 'handshake', id, '--label', 'kindle', '--addr', '{}', '--invite', secret, '--chain', '']);
-				await app.goto('/sync');
-				const reader = cell(page, id, 'home');
-				await reader.waitFor();
-				assert.equal(await reader.locator('.reader').innerText(), '🔒︎');
-				assert.equal(await reader.locator('.filter').innerText(), '⛛');
-				assert.match(await reader.getAttribute('title'), /, read-only, filtered: 1 of 2 fields\b/);
-				assert.equal(await cell(page, 'this', 'home').locator('.filter').count(), 0);
-				assert.match(await page.locator(`${WIDGET} .legend .filter`).innerText(), /^⛛\s*partial$/);
-			},
-			{ viewport: { width: 1280, height: 800 } }
-		);
-	});
-
-	test('is compact at its legible floor and full above it', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
-			await fixture(app);
-			await app.goto('/sync');
-			const widget = page.locator(`${WIDGET} .sync`);
-			await page.locator(`${WIDGET} tr[data-client="${LAPTOP}"]`).waitFor();
+			const run = inPage(app, 'home');
+			const id = endpointId();
+			await run(['occur', 'tea']);
+			const invite = ['sync', 'new-invite', '--fields', 'coffee', '--expires', '1d'];
+			const { secret } = JSON.parse(await run(invite));
+			await run(['sync', 'handshake', id, '--label', 'kindle', '--addr', '{}', '--invite', secret, '--chain', '']);
+			await app.goto('/sync?db=home');
+			const reader = line(page, id);
+			await reader.waitFor();
+			assert.equal(await reader.locator('.reader').innerText(), '🔒︎');
+			assert.equal(await reader.locator('.filter').innerText(), '⛛');
+			assert.match(await reader.getAttribute('title'), /, read-only, filtered: 1 of 2 fields\b/);
+			assert.equal(await line(page, 'this').locator('.filter').count(), 0);
+			assert.match(await page.locator(`${WIDGET} .legend .filter`).innerText(), /^⛛\s*partial$/);
+		}, DESKTOP);
+	});
 
-			assert.match(await widget.getAttribute('class'), /\bfull\b/);
-			assert.ok(await widget.locator('.seen').count());
-			assert.match(await widget.locator('.legend').innerText(), /synced/);
-			// The actions (da-bjxts) are the full form's.
-			assert.ok(await widget.locator('.actions button, .chain').count());
+	test('a revoked device says so on its line, and its — is not «not syncing» in the legend', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			const phone = await member(app, 'home', 'phone');
+			await cli(app, ['--db', 'home', 'sync', 'chain', 'revoke', phone]);
+			// Every other database chained too, so no «not syncing» comes from them.
+			await cli(app, ['sync', 'new-invite']);
+			await app.goto('/sync?db=home');
+			const revoked = page.locator(`${WIDGET} .devices li.revoked[data-client="${phone}"]`);
+			await revoked.waitFor();
+			assert.equal(await revoked.locator('.state').innerText(), '— revoked');
+			assert.deepEqual(await page.locator(`${WIDGET} .legend > span`).allInnerTexts(), ['✓ synced']);
+		}, DESKTOP);
+	});
 
-			// registry.ts reaches Svelte components node cannot load: the hook stubs them.
-			resolveLibAsSource(import.meta.url);
-			const { KINDS } = await import('../src/lib/layout/registry.ts');
-			const floor = KINDS.sync.legible.width;
-			await widget.evaluate((e, w) => (e.style.width = `${w}px`), floor);
-			const h = await page.waitForFunction((sel) => !document.querySelector(sel).classList.contains('full'), `${WIDGET} .sync`);
-			await h.dispose();
-			assert.equal(await widget.locator('.seen, .kind, .at, .actions, .add, .chain').count(), 0);
-			assert.doesNotMatch(await widget.locator('.legend').innerText(), /synced/);
-			// Symbols and dots still: every cell keeps its shape.
-			assert.deepEqual(
-				await page.locator(`${WIDGET} tr[data-client="${LAPTOP}"] .symbol`).allInnerTexts(),
-				['—', '✓', '◔']
-			);
-		});
+	test('two databases in one chain: the other is one line, «same devices»', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			const [home, work] = [inPage(app, 'home'), inPage(app, 'work')];
+			await work(['occur', 'tea']);
+			// `work` joins `home`'s chain as a session would: admitted there, then
+			// handed the chain's ops over the pipe.
+			const { secret } = JSON.parse(await home(['sync', 'new-invite', '--expires', '1d']));
+			const id = (await work(['sync', 'endpoint-key'])).trim().split('\n').at(-1);
+			await home(['sync', 'handshake', id, '--label', 'work', '--addr', '{}', '--invite', secret, '--chain', '']);
+			await work(['sync', 'pipe', 'apply'], await home(['sync', 'pipe', 'ops']));
+			assert.equal(JSON.parse(await work(['sync', 'status', '--json'])).chain, JSON.parse(await home(['sync', 'status', '--json'])).chain);
+
+			await app.goto('/sync?db=home');
+			const other = page.locator(`${WIDGET} .others li[data-db="work"]`);
+			await other.waitFor();
+			assert.equal(await other.locator('.seen').innerText(), 'same devices');
+			// And home's own list still draws, `work`'s copy one of its devices.
+			assert.deepEqual((await lines(page)).map(([label]) => label), ['datum.day', 'work']);
+		}, DESKTOP);
 	});
 
 	test('names a device whose changes wait for this clock to catch up with its own (da-ns8dq)', async () => {
