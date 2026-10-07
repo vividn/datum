@@ -96,11 +96,10 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     }
 
     // For switch, walk the bare positionals and reject interior `,,`
-    // empty segments before handle_data_args runs. Datum's `infer_type`
-    // turns a leading-comma string into an array (`,a,b` → `["a","b"]`)
-    // — that coercion is desired (da-lvvp / da-5z01) — but an interior
-    // `a,,b` inside an edge-comma token would silently become a `null`
-    // array element without this pre-check.
+    // empty segments before handle_data_args runs. `infer_type` turns a
+    // glued or leading comma into an array (`a,b`, `,a,b` → `["a","b"]`;
+    // da-lvvp / da-5z01 / da-fwsre) — but an interior `a,,b` would
+    // silently become a `null` array element without this pre-check.
     if matches!(action, Action::Switch) {
         for token in &args.rest {
             if token.contains('=') {
@@ -1482,12 +1481,14 @@ fn parse_switch_state_token(s: &str) -> Result<JsonValue> {
 }
 
 /// Reject interior empty segments (`a,,b`) in a switch state-list token.
-/// Leading/trailing edge commas are tolerated and stripped — matching
-/// `infer_type`'s edge-empty handling (da-lvvp). Surfaced separately
-/// from [`parse_switch_state_token`] because `log_entry` runs the same
+/// Leading/trailing edge commas are tolerated and stripped (da-lvvp /
+/// da-5z01) — unlike `infer_type`, which since da-fwsre drops a trailing
+/// comma only on a value that already splits (`Anna,` is text there).
+/// Surfaced separately from [`parse_switch_state_token`] because
+/// `log_entry` runs the same
 /// validation against raw `args.rest` tokens before [`handle_data_args`]
 /// has a chance to coerce them into arrays via `infer_type`; without
-/// this pre-check, an interior `,,` inside a leading-comma token would
+/// this pre-check, an interior `,,` inside a comma token would
 /// silently become a `null` array element.
 pub(crate) fn validate_switch_state_token(s: &str) -> Result<()> {
     if !s.contains(',') {

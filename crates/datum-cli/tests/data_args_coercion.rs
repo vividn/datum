@@ -325,3 +325,41 @@ fn relative_temporal_keys_anchor_at_an_occur_time_key() {
     assert_eq!(local("a2"), "2026-09-10 14:00:00");
     assert_eq!(entry("a2").data, Some(json!({"next_time": "14:30:00"})));
 }
+
+/// da-fwsre: a glued comma makes a list and drops one trailing comma, a
+/// comma before a space or ending a word is text, and `_` separates digits.
+#[test]
+fn glued_comma_lists_and_comma_space_text() {
+    let db = fresh_db();
+    run_cli(
+        &[
+            "occur",
+            "x",
+            "v=a,b",
+            "note=met Anna, Ben",
+            "w=Anna,",
+            "one=,Anna",
+            "l=a,b,",
+            "c=,,",
+            "-k",
+            "q",
+            r#"",,""#,
+            "n=1_000",
+        ],
+        &db,
+    )
+    .expect("occur x with comma values");
+
+    let entry = &datum_core::test_util::logged_entries(&db, "x")[0];
+    let extra = entry.data.as_ref().expect("extra_data populated");
+    assert_eq!(extra["v"], json!(["a", "b"]));
+    assert_eq!(extra["note"], json!("met Anna, Ben"));
+    assert_eq!(extra["w"], json!("Anna,"));
+    assert_eq!(extra["one"], json!(["Anna"]));
+    assert_eq!(extra["l"], json!(["a", "b"]));
+    // Nothing but commas is text; as a bare word `,,` is the sides token,
+    // so a positional one is JSON-quoted (vividn, 17:22).
+    assert_eq!(extra["c"], json!(",,"));
+    assert_eq!(extra["q"], json!(",,"));
+    assert_eq!(extra["n"], json!(1000));
+}

@@ -144,33 +144,6 @@ pub fn infer_type(value: &str) -> Option<Value> {
         return Some(Value::String(".".to_string()));
     }
 
-    // `","` alone → empty array.
-    if value == "," {
-        return Some(Value::Array(vec![]));
-    }
-
-    // Leading/trailing comma → array shorthand. Edge empties are tolerated
-    // (transitional compat with old datum aliases that wrote `,tag1,`,
-    // `,,`, etc.); interior empty splits keep their existing null behavior.
-    if value.starts_with(',') || value.ends_with(',') {
-        let parts: Vec<&str> = value.split(',').collect();
-        let start = parts
-            .iter()
-            .position(|s| !s.is_empty())
-            .unwrap_or(parts.len());
-        let end = parts
-            .iter()
-            .rposition(|s| !s.is_empty())
-            .map(|i| i + 1)
-            .unwrap_or(start);
-        return Some(Value::Array(
-            parts[start..end]
-                .iter()
-                .map(|v| infer_type(v).unwrap_or(Value::Null))
-                .collect(),
-        ));
-    }
-
     if value.eq_ignore_ascii_case("true") {
         return Some(Value::Bool(true));
     }
@@ -205,7 +178,60 @@ pub fn infer_type(value: &str) -> Option<Value> {
         });
     }
 
+    // A comma makes a list (vividn, 10-07): a leading one marks it
+    // (`,Anna` → `["Anna"]`), and one glued to what follows splits
+    // (`a,b` → `["a","b"]`, `a,b, c` → `["a","b, c"]`), and a list drops
+    // one trailing comma (`a,b,` → `["a","b"]`). A comma before whitespace
+    // or at the end of a value that does not split is text (`met Anna,
+    // Ben`, `Anna,`, `,`, `,,`); the bracket form, tried above, is the escape hatch.
+    if let Some(items) = comma_items(value) {
+        return Some(Value::Array(
+            items
+                .into_iter()
+                .map(|v| infer_type(v).unwrap_or(Value::Null))
+                .collect(),
+        ));
+    }
+
+    // `_` between digits separates them, as in JavaScript and Rust:
+    // `1_000` → 1000; `_1`, `1_` and `1__0` stay text.
+    let b = value.as_bytes();
+    let between_digits = |(i, _): (usize, &str)| {
+        i > 0 && b[i - 1].is_ascii_digit() && b.get(i + 1).is_some_and(u8::is_ascii_digit)
+    };
+    if value.contains('_') && value.match_indices('_').all(between_digits) {
+        if let Ok(n @ Value::Number(_)) = serde_json::from_str(&value.replace('_', "")) {
+            return Some(n);
+        }
+    }
+
     Some(Value::String(value.to_string()))
+}
+
+/// The items of a comma list, or `None` when `value` is not one: split
+/// after a leading comma and at every comma followed by something other
+/// than whitespace, then drop one trailing comma from the last item.
+fn comma_items(value: &str) -> Option<Vec<&str>> {
+    // Nothing but commas has nothing to list: `,` and `,,` are text.
+    if value.bytes().all(|b| b == b',') {
+        return None;
+    }
+    let marked = value.strip_prefix(',');
+    let rest = marked.unwrap_or(value);
+    let mut items = Vec::new();
+    let mut start = 0;
+    for (i, _) in rest.match_indices(',') {
+        if rest[i + 1..].starts_with(|c: char| !c.is_whitespace()) {
+            items.push(&rest[start..i]);
+            start = i + 1;
+        }
+    }
+    if items.is_empty() && marked.is_none() {
+        return None;
+    }
+    let last = &rest[start..];
+    items.push(last.strip_suffix(',').unwrap_or(last));
+    Some(items)
 }
 
 #[cfg(test)]
@@ -263,25 +289,59 @@ mod tests {
         assert_eq!(infer_type(r#"{"a":1}"#), Some(json!({"a": 1})));
     }
 
+    /// The comma rule (da-fwsre, vividn 10-07): a glued comma splits, a
+    /// leading one marks a list, comma + space and an edge or lone comma
+    /// at the end are text, and the bracket form is the escape hatch.
     #[test]
-    fn infer_type_comma_shorthands() {
-        assert_eq!(infer_type(","), Some(json!([])));
-        assert_eq!(infer_type(",a,b"), Some(json!(["a", "b"])));
-        assert_eq!(infer_type("a,b,"), Some(json!(["a", "b"])));
+    fn infer_type_comma_lists() {
+        for (typed, want) in [
+            ("a,b", json!(["a", "b"])),
+            ("3,5", json!([3, 5])),
+            ("a,1,true", json!(["a", 1, true])),
+            ("met Anna, Ben", json!("met Anna, Ben")),
+            (",Anna", json!(["Anna"])),
+            (",a,b", json!(["a", "b"])),
+            ("Anna,", json!("Anna,")),
+            (",", json!(",")),
+            ("[]", json!([])),
+            (r#"["a", " b"]"#, json!(["a", " b"])),
+            ("[3,5]", json!([3, 5])),
+            (r#""a,b""#, json!("a,b")),
+            // Only the glued comma splits; the item keeps its `, `.
+            ("a,b, c", json!(["a", "b, c"])),
+            // A list drops one trailing comma (vividn, 14:57); a word keeps it.
+            ("a,b,", json!(["a", "b"])),
+            ("3,5,", json!([3, 5])),
+            (",tag1,", json!(["tag1"])),
+            (",work,home,", json!(["work", "home"])),
+            // Nothing but commas is text (vividn, 17:22).
+            (",,", json!(",,")),
+            (",,,", json!(",,,")),
+            ("a,,", json!(["a", null])),
+            // An empty item between glued commas is a null, as before.
+            ("a,,b", json!(["a", null, "b"])),
+            ("1_000,2", json!([1000, 2])),
+        ] {
+            assert_eq!(infer_type(typed), Some(want), "{typed}");
+        }
     }
 
+    /// `_` separates digits, as in JavaScript and Rust, and only digits.
     #[test]
-    fn infer_type_comma_edge_tolerance() {
-        // Leading + trailing edges may both be empty (da-lvvp).
-        assert_eq!(infer_type(",tag1,tag2"), Some(json!(["tag1", "tag2"])));
-        assert_eq!(infer_type("tag1,tag2,"), Some(json!(["tag1", "tag2"])));
-        assert_eq!(infer_type(",tag1,"), Some(json!(["tag1"])));
-        assert_eq!(infer_type(",,"), Some(json!([])));
-        // Interior empty splits keep their existing null behavior.
-        assert_eq!(
-            infer_type(",tag1,,tag2,"),
-            Some(json!(["tag1", null, "tag2"]))
-        );
+    fn infer_type_digit_separators() {
+        for (typed, want) in [
+            ("1_000", json!(1000)),
+            ("1_000.5", json!(1000.5)),
+            ("-1_000_000", json!(-1_000_000)),
+            ("_1", json!("_1")),
+            ("1_", json!("1_")),
+            ("1__000", json!("1__000")),
+            ("1_.5", json!("1_.5")),
+            ("a_1", json!("a_1")),
+            ("1_a", json!("1_a")),
+        ] {
+            assert_eq!(infer_type(typed), Some(want), "{typed}");
+        }
     }
 
     #[test]

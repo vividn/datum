@@ -62,7 +62,7 @@ fn the_marker_is_stored_as_typed_and_both_literals_as_str() {
             "lit=str://ref://issue:k7f2a",
             r#"quoted="ref://issue:k7f2a""#,
             "plain=issue:k7f2a",
-            "many=,ref://a:1,ref://b:2,",
+            "many=ref://a:1,ref://b:2",
         ],
         &db,
     )
@@ -86,7 +86,7 @@ fn check_flags_a_missing_target_until_it_exists() {
     run_cli(&["occur", "x", "needs=ref://issue:k7f2a", "-t", "-50"], &db).expect("never refused");
     run_cli(&["occur", "x", "needs=ref://issue:k7f2a", "-t", "-40"], &db).unwrap();
     run_cli(
-        &["occur", "x", "many=,ref://a:1,ref://b:2,", "-t", "-30"],
+        &["occur", "x", "many=ref://a:1,ref://b:2", "-t", "-30"],
         &db,
     )
     .unwrap();

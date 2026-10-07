@@ -244,6 +244,15 @@ following are deliberate divergences and **not** regressions:
   instant they name, its yellow now-line drawn only where now falls
   inside it. With no time flag the two agree.
 
+* **Commas in a data value** (da-fwsre, vividn 10-07). Datum's `inferType`
+  (`src/utils/inferType.ts`) makes a list of a value with a
+  leading or trailing comma, and `,` alone is `[]`. Daydumb splits at a
+  leading comma and at every comma glued to what follows: `a,b` →
+  `["a","b"]`, `,Anna` → `["Anna"]`, and a list drops one trailing comma
+  (`a,b,` → `["a","b"]`), while `met Anna, Ben`, `Anna,`, `,` and `,,` stay text
+  and `[]` is the empty list. `_` between digits is a separator
+  (`1_000` → `1000`); datum keeps it as text.
+
 [`GOLDEN_TZ`]: src/lib.rs
 
 ## Adding fixtures

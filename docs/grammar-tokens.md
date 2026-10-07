@@ -226,8 +226,11 @@ CREATE 19zx6 activity:2026-09-24T14:47:29.927Z
 | `key=value`          | a data key; an empty key (`=2`) is raw data         |
 | `.key=`              | shorthand for `state.key=`                          |
 | `a.b=`               | a dotted path into nested data                      |
-| `,a,b,`              | leading or trailing comma → an array                |
-| `,`                  | alone → the empty array                             |
+| `a,b` `,a`           | a glued or leading comma → an array                 |
+| `a,b,`               | a list drops one trailing comma → `["a","b"]`       |
+| `a, b` `a,` `,` `,,` | a comma before a space, ending a word, or alone, is text |
+| `[]`                 | the empty array                                     |
+| `1_000`              | `_` between digits separates them → `1000`          |
 | `\.`                 | the one-character string `"."`                      |
 | `''` `""`            | the empty string                                    |
 | `true` `{"a":1}`     | anything strict JSON parses keeps its JSON shape    |
@@ -290,30 +293,47 @@ CREATE odafg run:2026-09-22T15:59:04.026Z
 
 ### `,` inside a value — arrays
 
-A comma *inside* a token never splits sides. A leading or trailing one
-makes the value an array; the empty splits at the edges are dropped, an
-interior one becomes `null`, and a bare `,` is the empty array.
+A comma *inside* a token never splits sides. A leading comma, or one
+glued to what follows, makes the value an array (da-fwsre); an empty item
+between two glued commas becomes `null`, and a list drops one trailing
+comma (`,work,home,` is `["work","home"]`). A comma followed by a space is
+text, so `met Anna, Ben` stays a sentence, and only the glued comma
+splits: `a,b, c` is `["a","b, c"]`. A trailing comma on a value that does
+not otherwise split, and a value of nothing but commas (`,`, `,,`), are
+text too: `Anna,` is `"Anna,"`. An
+item can't hold a glued comma — the bracket form can: `'["a,b", "c"]'`;
+`[]` is the empty array. This departs from v2, where a leading or trailing
+comma made the array — a trailing one alone, too — and `,` was `[]`.
 
 ```bash
-datum occur tagged tags=,work,home,
-datum occur gappy tags=,x,,y,
-datum occur cleared tags=,
+datum occur tagged tags=work,home
+datum occur one tags=,work
+datum occur gappy tags=x,,y
+datum occur prose 'note=met Anna, Ben' left=Anna,
+datum occur cleared 'tags=[]'
 ```
 
 ```
-CREATE 8h66i tagged:2026-09-22T15:59:04.091Z
-17:59:04+2  tagged ∅●
+CREATE dxtmj tagged:2026-10-07T12:13:40.762Z
+14:13:40+2  tagged ∅●
   tags: ["work","home"]
-CREATE 2ff37 gappy:2026-09-22T16:05:59.686Z
-18:05:59+2  gappy ∅●
+CREATE veslm one:2026-10-07T12:13:40.783Z
+14:13:40+2  one ∅●
+  tags: ["work"]
+CREATE t8ti1 gappy:2026-10-07T12:13:40.804Z
+14:13:40+2  gappy ∅●
   tags: ["x",null,"y"]
-CREATE l84lc cleared:2026-09-22T15:59:04.114Z
-17:59:04+2  cleared ∅●
+CREATE eehnx prose:2026-10-07T12:13:40.825Z
+14:13:40+2  prose ∅●
+  left: "Anna,", note: "met Anna, Ben"
+CREATE 0m1wk cleared:2026-10-07T12:13:40.843Z
+14:13:40+2  cleared ∅●
   tags: []
 ```
 
 Each element is inferred on its own, so an array carries JSON shapes
-too — `tags=,null,1,` stores `[null,1]`.
+too — `tags=null,1` stores `[null,1]`, and `n=1_000,2` stores `[1000,2]`:
+`_` between digits is a separator, as in JavaScript and Rust.
 
 ### `null` is JSON null, `undefined` is no key
 
@@ -438,7 +458,7 @@ datum get read:_::what::title
 datum get quote:_::said
 datum spec set task --from-json '{"field":"task","verb":"occur","subfields":{"blocker":{"value_type":"ref"}}}'
 datum occur task blocker=issue:k7f2a
-datum occur plan needs=,ref://book:dune,ref://book:emma,
+datum occur plan needs=ref://book:dune,ref://book:emma
 datum check refs
 ```
 
