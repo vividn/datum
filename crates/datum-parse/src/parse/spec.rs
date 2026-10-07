@@ -301,12 +301,29 @@ pub(crate) fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
                 out.no_autoalias = true;
                 i += 1;
             }
-            FlagSplit::Long("strict") => {
-                out.strict = Some(true);
+            FlagSplit::Long("only-listed-keys") => {
+                out.only_listed_keys = Some(true);
                 i += 1;
             }
-            FlagSplit::Long("no-strict") => {
-                out.strict = Some(false);
+            FlagSplit::Long("any-keys") => {
+                out.only_listed_keys = Some(false);
+                i += 1;
+            }
+            FlagSplit::Long("only-listed-states") => {
+                out.only_listed_states = Some(true);
+                i += 1;
+            }
+            FlagSplit::Long("any-states") => {
+                out.only_listed_states = Some(false);
+                i += 1;
+            }
+            FlagSplit::Long("remainder") => {
+                let (v, ni) = take_value(tail, i, None, "--remainder")?;
+                out.remainder = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("remainder", v) => {
+                out.remainder = Some(v.to_string());
                 i += 1;
             }
             FlagSplit::Long("never-false") => {

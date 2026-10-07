@@ -146,18 +146,26 @@ pub struct FieldSpec {
     /// When true, the field is never off (da-cwieh) — vividn: «for example
     /// environment is never false». datum.day's ring then leaves a gap
     /// where `end` would stand, unless `allowed_states` lists `"false"`.
-    /// Nothing refuses a `false`: the setting is the ring's alone.
+    /// With [`only_listed_states`](Self::only_listed_states) as well, an
+    /// `end` or a `switch … false` is refused (da-eqb30).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub never_false: bool,
 
-    /// When true, `datum check` flags undeclared extra_data keys on entries
-    /// for this field (the `orphaned_extra_data_key` warning). When false
-    /// (the default), undeclared keys are accepted silently — most fields
-    /// are freeform and their data shape evolves; flagging by default is
-    /// over-aggressive. Strict mode lets the user lock down a spec once
-    /// the shape stabilizes.
-    #[serde(default)]
-    pub strict: bool,
+    /// Only the keys the spec lists may be written to an entry's data
+    /// (da-rcoi; da-eqb30 renamed it from `strict`, which a stored spec
+    /// still says and is read as this). Refused at log time, flagged by
+    /// `datum check` as `orphaned_extra_data_key`.
+    #[serde(default, alias = "strict", skip_serializing_if = "std::ops::Not::not")]
+    pub only_listed_keys: bool,
+    /// Only a state `allowed_states` lists may be logged (da-eqb30). Off —
+    /// `false` — stays allowed unless the field is `never_false`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub only_listed_states: bool,
+    /// Where the words no slot takes go, as `-R <key>` would send them
+    /// (da-eqb30): `extra_data`, or any key. None — leftover words are an
+    /// error.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remainder: Option<String>,
 
     /// Free-form tags. Used by views and kit commands to group fields by a
     /// schema-level marker (e.g. `["chore"]`); `datum spec list --tag`
@@ -222,7 +230,9 @@ impl FieldSpec {
             id_assign: BTreeMap::new(),
             no_autoalias: false,
             never_false: false,
-            strict: false,
+            only_listed_keys: false,
+            only_listed_states: false,
+            remainder: None,
             tags: Vec::new(),
             presentation: PresentationSpec::default(),
         }
@@ -291,6 +301,73 @@ impl FieldSpec {
             map.remove(name);
             if map.is_empty() {
                 self.state_assign.remove(state);
+            }
+        }
+    }
+
+    /// The keys of `data` this spec does not list, sorted — what
+    /// [`only_listed_keys`](Self::only_listed_keys) refuses. Listed is
+    /// every key [`declared_keys`](Self::declared_keys) names for `state`,
+    /// and the [`remainder`](Self::remainder).
+    pub fn unlisted_keys<'a>(
+        &self,
+        data: &'a serde_json::Map<String, JsonValue>,
+        state: Option<&str>,
+    ) -> Vec<&'a str> {
+        let listed = self.declared_keys(state);
+        let mut out: Vec<&str> = data
+            .keys()
+            .map(String::as_str)
+            .filter(|k| {
+                !listed.iter().any(|d| d.name == *k) && self.remainder.as_deref() != Some(k)
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// Why this spec refuses `state` as an entry's state, or None
+    /// (da-eqb30). Only under [`only_listed_states`](Self::only_listed_states):
+    /// a state `allowed_states` does not list, each of a concurrent array's
+    /// states alike; `false` only on a [`never_false`](Self::never_false)
+    /// field that does not list `"false"`. The statuses and null are never
+    /// refused.
+    pub fn refuses_state(&self, state: &JsonValue) -> Option<String> {
+        use datum_parse::shape::{IGNORED_STATE_VALUE, TRACKED_STATE_VALUE};
+        if !self.only_listed_states {
+            return None;
+        }
+        let listed = self.allowed_states.as_deref().unwrap_or_default();
+        let field = &self.field;
+        match state {
+            JsonValue::Null => None,
+            JsonValue::Array(states) => states.iter().find_map(|s| self.refuses_state(s)),
+            JsonValue::Bool(false) if !self.never_false => None,
+            JsonValue::Bool(false) if listed.iter().any(|s| s == "false") => None,
+            JsonValue::Bool(false) => Some(format!(
+                "field '{field}' is never false and takes only its listed states \
+                 (never_false, only_listed_states): it cannot be ended — switch it \
+                 to another state, list `false` (`datum spec add-state {field} false`), \
+                 or `datum spec set {field} --allow-false`"
+            )),
+            JsonValue::String(s) if s == IGNORED_STATE_VALUE || s == TRACKED_STATE_VALUE => None,
+            JsonValue::Bool(true) => Some(format!(
+                "field '{field}' takes only its listed states (only_listed_states): \
+                 name one of [{}]",
+                listed.join(", ")
+            )),
+            other => {
+                let text = other
+                    .as_str()
+                    .map_or_else(|| other.to_string(), str::to_string);
+                (!listed.contains(&text)).then(|| {
+                    format!(
+                        "field '{field}' takes only its listed states (only_listed_states): \
+                         '{text}' is not one of [{}] — add it with `datum spec add-state \
+                         {field} {text}`, or `datum spec set {field} --any-states`",
+                        listed.join(", ")
+                    )
+                })
             }
         }
     }

@@ -401,7 +401,7 @@ fn compound_delete_collapses_duplicates() {
     );
 }
 
-/// Default (non-strict) continues on per-token failure: the valid token
+/// Default (best effort) continues on per-token failure: the valid token
 /// still tombstones its entry, and the overall invocation exits non-zero.
 #[test]
 fn compound_delete_continues_past_bad_token_by_default() {
@@ -430,24 +430,24 @@ fn compound_delete_continues_past_bad_token_by_default() {
     assert!(db.get_entry(&keep.slug).is_ok(), "sibling row untouched");
 }
 
-/// `--strict` aborts the batch on the first resolution error before touching
+/// `--all-or-nothing` aborts the batch on the first resolution error before touching
 /// anything — no partial mutation.
 #[test]
-fn strict_compound_delete_aborts_without_mutating() {
+fn all_or_nothing_compound_delete_aborts_without_mutating() {
     let db = fresh_db();
     let a = entry_builder("coffee").state(json!(1)).insert(&db);
     let b = entry_builder("coffee").state(json!(2)).insert(&db);
 
     let compound = format!("not-a-real-id,{},{}", a.slug, b.slug);
-    let err = run_cli(&["delete", &compound, "--force", "--strict"], &db)
-        .expect_err("strict must surface the resolution error");
+    let err = run_cli(&["delete", &compound, "--force", "--all-or-nothing"], &db)
+        .expect_err("all-or-nothing must surface the resolution error");
     let msg = format!("{err:#}");
     assert!(
         msg.contains("not-a-real-id"),
-        "strict error must name the bad token, got: {msg}",
+        "all-or-nothing error must name the bad token, got: {msg}",
     );
 
-    // Neither row was tombstoned — strict aborted before the mutation loop.
+    // Neither row was tombstoned — all-or-nothing aborted before the mutation loop.
     assert_count!(db, "coffee", 2);
 }
 
@@ -499,12 +499,12 @@ fn run_binary(db: &PathBuf, args: &[&str]) -> (String, String) {
     (stdout, stderr)
 }
 
-/// `--strict` that fails on a later row after deleting an earlier one still
+/// `--all-or-nothing` that fails on a later row after deleting an earlier one still
 /// stamps `_LAST` at what it deleted, so a bare `undo` restores that row
 /// rather than acting on the command before (da-5leng). Resolution drops
 /// tombstones and duplicates, so the mid-batch failure is a trigger on coffee.
 #[test]
-fn strict_delete_failing_mid_batch_stamps_last_at_what_it_deleted() {
+fn all_or_nothing_delete_failing_mid_batch_stamps_last_at_what_it_deleted() {
     let db = fresh_db();
     let last = |db: &datum_core::db::Db| {
         datum_core::last_docs::get_last_docs(db)
@@ -525,7 +525,7 @@ fn strict_delete_failing_mid_batch_stamps_last_at_what_it_deleted() {
         ))
         .unwrap();
     let batch = format!("{tea},{coffee}");
-    run_cli(&["delete", &batch, "--strict"], &db).expect_err("coffee's delete must fail");
+    run_cli(&["delete", &batch, "--all-or-nothing"], &db).expect_err("coffee's delete must fail");
     db.conn().execute_batch("DROP TRIGGER fail_coffee").unwrap();
     assert!(db
         .get_entry_including_deleted(&tea)

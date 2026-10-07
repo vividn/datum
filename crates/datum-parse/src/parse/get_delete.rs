@@ -63,7 +63,7 @@ pub(crate) struct DeleteParsing {
     output: OutputArgs,
     force: bool,
     dry_run: bool,
-    strict: bool,
+    all_or_nothing: bool,
     comment: Option<String>,
 }
 
@@ -80,8 +80,8 @@ pub(crate) fn delete_args_registry() -> Vec<LiftedSpec<DeleteParsing>> {
         p.dry_run = true;
         Ok(())
     }));
-    r.push(local_switch(None, Some("strict"), |p| {
-        p.strict = true;
+    r.push(local_switch(None, Some("all-or-nothing"), |p| {
+        p.all_or_nothing = true;
         Ok(())
     }));
     r.push(local_value(Some('c'), Some("comment"), |p, v| {
@@ -99,7 +99,7 @@ pub(crate) fn parse_delete_args(tail: &[&str]) -> Result<DeleteArgs> {
         id_or_slug: optional_pos(&pos)?,
         force: composed.force,
         dry_run: composed.dry_run,
-        strict: composed.strict,
+        all_or_nothing: composed.all_or_nothing,
         comment: composed.comment,
         output: composed.output,
     })

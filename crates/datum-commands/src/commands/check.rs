@@ -1393,34 +1393,29 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
         });
     }
 
-    // 4. orphaned extra_data keys — field has a spec but extra_data contains
-    //    keys that aren't declared in the spec's subfields (WARNING).
+    // 4. orphaned extra_data keys — field's spec is `only_listed_keys` but
+    //    extra_data contains keys the spec does not list (WARNING).
     //
-    // Only fires for specs explicitly marked `strict = true`. Most fields are
-    // freeform and their data shape evolves; flagging every undeclared key by
-    // default would be over-aggressive. Strict mode lets the user lock down a
-    // spec once the shape stabilizes.
+    // Only fires for specs that opt in. Most fields are freeform and their
+    // data shape evolves; flagging every undeclared key by default would be
+    // over-aggressive. The setting lets the user lock down a spec once the
+    // shape stabilizes.
     let mut orphan_detail: Option<(String, String, String)> = None; // (id, field, key)
     let mut orphan_count = 0usize;
     for e in entries {
         let Some(spec) = registry.field_spec(&e.field) else {
             continue;
         };
-        if !spec.strict {
+        if !spec.only_listed_keys {
             continue;
         }
-        let Some(extra) = e.data.as_ref() else {
+        let Some(JsonValue::Object(map)) = e.data.as_ref() else {
             continue;
         };
-        if let JsonValue::Object(map) = extra {
-            for key in map.keys() {
-                if !spec.subfields.contains_key(key) {
-                    orphan_count += 1;
-                    if orphan_detail.is_none() {
-                        orphan_detail = Some((e.slug.to_string(), e.field.clone(), key.clone()));
-                    }
-                }
-            }
+        let unlisted = spec.unlisted_keys(map, e.state.as_ref().and_then(JsonValue::as_str));
+        orphan_count += unlisted.len();
+        if let (None, Some(key)) = (&orphan_detail, unlisted.first()) {
+            orphan_detail = Some((e.slug.to_string(), e.field.clone(), key.to_string()));
         }
     }
     if orphan_count > 0 {
@@ -1883,8 +1878,8 @@ mod tests {
         );
         let mut spec = FieldSpec::new("mood", Action::Switch);
         spec.subfields = subfields;
-        // da-mkes: the orphan check only fires for strict specs.
-        spec.strict = true;
+        // da-mkes: the orphan check only fires for only_listed_keys specs.
+        spec.only_listed_keys = true;
         db.save_field_spec(&spec).unwrap();
 
         // Entry carries an *undeclared* extra_data key "weather".
@@ -1913,10 +1908,10 @@ mod tests {
         assert_eq!(issue.count, 1);
     }
 
-    /// da-mkes: non-strict specs (the default) silently accept undeclared
+    /// da-mkes: specs without only_listed_keys (the default) silently accept undeclared
     /// extra_data keys — no warning fires.
     #[test]
-    fn check_skips_orphaned_extra_data_key_when_spec_not_strict() {
+    fn check_skips_orphaned_extra_data_key_without_only_listed_keys() {
         let db = Db::open_in_memory().unwrap();
         let mut subfields = HashMap::new();
         subfields.insert(
@@ -1930,7 +1925,7 @@ mod tests {
         );
         let mut spec = FieldSpec::new("mood", Action::Switch);
         spec.subfields = subfields;
-        // strict defaults to false — flag should not fire.
+        // only_listed_keys defaults to false — flag should not fire.
         db.save_field_spec(&spec).unwrap();
 
         let entry = Entry::new_legacy(
@@ -1950,7 +1945,7 @@ mod tests {
                 .issues
                 .iter()
                 .any(|i| i.category == "orphaned_extra_data_key"),
-            "orphaned_extra_data_key must not fire for non-strict specs, got: {:?}",
+            "orphaned_extra_data_key must not fire without only_listed_keys, got: {:?}",
             report.issues,
         );
     }

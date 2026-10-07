@@ -187,7 +187,9 @@ name = "mood"
 verb = "switch"
 description = "how the day feels"
 id_template = "%field%:%state%"
-strict = true
+only_listed_keys = true
+only_listed_states = true
+remainder = "extra_data"
 no_autoalias = true
 color = "#123456"
 glyph = "●"
@@ -221,7 +223,9 @@ fn a_kit_field_installs_what_spec_set_stores() {
         "verb": "switch",
         "description": "how the day feels",
         "id_template": "%field%:%state%",
-        "strict": true,
+        "only_listed_keys": true,
+        "only_listed_states": true,
+        "remainder": "extra_data",
         "no_autoalias": true,
         "color": "#123456",
         "glyph": "●",
@@ -288,7 +292,9 @@ fn kit_export_round_trips_the_whole_field() {
     for key in [
         "description",
         "id_template",
-        "strict = true",
+        "only_listed_keys = true",
+        "only_listed_states = true",
+        "remainder = \"extra_data\"",
         "no_autoalias = true",
         "icon",
         "glyph_by",
@@ -453,4 +459,18 @@ fn an_index_that_will_not_build_leaves_no_spec() {
     assert!(err.contains("no_such_column"), "{err}");
     assert!(db.load_spec("dose").unwrap().is_none(), "no spec");
     assert!(db.list_kits().unwrap().is_empty(), "no kit is listed");
+}
+
+/// da-eqb30: a kit written with `strict` installs as `only_listed_keys`, as
+/// a stored spec saying `strict` reads.
+#[test]
+fn a_kits_strict_installs_as_only_listed_keys() {
+    let db = fresh_db();
+    install(
+        &db,
+        "[kit]\nname = \"k\"\n\n[[field]]\nname = \"tea\"\nverb = \"occur\"\nstrict = true\n",
+        &[],
+    )
+    .unwrap();
+    assert!(db.load_spec("tea").unwrap().unwrap().only_listed_keys);
 }

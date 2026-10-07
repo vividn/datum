@@ -279,8 +279,8 @@ pub struct LogArgs {
     pub remainder: Option<String>,
     /// `-S` / `--string-remainder`: join the remainder positionals into
     /// one space-separated string instead of an array. When supplied
-    /// without `-R`/`-C`/`-l`, infers lenient behavior — "the rest" lands
-    /// in the `extra_data` bucket rather than erroring.
+    /// without `-R`/`-C`, "the rest" lands in the `extra_data` bucket
+    /// rather than erroring.
     pub string_remainder: bool,
     /// `-C` / `--comment-remainder`: shorthand for `-SR comment` —
     /// remainder positionals join into a single string, appended to the
@@ -464,7 +464,9 @@ pub struct UpdateArgs {
     /// or more yield an array — see [`LogArgs::comment`].
     pub comment: Vec<String>,
     pub dry_run: bool,
-    pub strict: bool,
+    /// `--all-or-nothing`: with comma-batched ids, change nothing if any
+    /// one would fail (da-eqb30; was `--strict`).
+    pub all_or_nothing: bool,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
 }
@@ -515,7 +517,9 @@ pub struct DeleteArgs {
     /// for `undo --force`, which is accepted without even a field to land in.
     pub force: bool,
     pub dry_run: bool,
-    pub strict: bool,
+    /// `--all-or-nothing`: with comma-batched tokens, delete nothing if
+    /// any one fails to resolve (da-eqb30; was `--strict`).
+    pub all_or_nothing: bool,
     /// `-c` / `--comment`: why — appended to each row's `data.comment` as
     /// `deleted: <why>` in the transaction that tombstones it (da-ult68).
     pub comment: Option<String>,
@@ -666,10 +670,15 @@ pub struct SpecSetArgs {
     /// treated as "leave as-is" — to clear tags, pass
     /// `--from-json '...tags=[]'`.
     pub tags: Vec<String>,
-    /// `--strict` / `--no-strict`. `Some(true)` locks the spec down (the
-    /// `orphaned_extra_data_key` check fires for undeclared keys);
-    /// `Some(false)` clears strictness; `None` leaves the existing value.
-    pub strict: Option<bool>,
+    /// `--only-listed-keys` / `--any-keys` (da-eqb30): the spec's
+    /// `only_listed_keys`; `None` leaves the existing value.
+    pub only_listed_keys: Option<bool>,
+    /// `--only-listed-states` / `--any-states` (da-eqb30): the spec's
+    /// `only_listed_states`; `None` leaves the existing value.
+    pub only_listed_states: Option<bool>,
+    /// `--remainder <KEY>` (da-eqb30): where the field's leftover words
+    /// go, as `-R <KEY>` would send them. An empty value clears it.
+    pub remainder: Option<String>,
     /// `--never-false` / `--allow-false` (da-cwieh): the spec's
     /// `never_false`; `None` leaves the existing value.
     pub never_false: Option<bool>,

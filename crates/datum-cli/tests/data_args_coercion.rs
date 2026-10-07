@@ -142,16 +142,16 @@ fn dash_sr_bundle_joins_remainder_into_named_bucket() {
     assert_eq!(extra["notes"], json!("all the rest is one string"));
 }
 
-/// `-S` without `-R`/`-C`/`-l` (da-tcr8): "string the rest" — the user
-/// asked to stringify the remainder, so "the rest" defaults to the lenient
+/// `-S` without `-R`/`-C` (da-tcr8): "string the rest" — the user
+/// asked to stringify the remainder, so "the rest" defaults to the
 /// `extra_data` bucket (joined into one string) rather than erroring. This
-/// supersedes the da-k5o6 rejection: `-S` alone now infers lenient behavior.
+/// supersedes the da-k5o6 rejection.
 /// Explicit `-R <field>` / `-C` still override the destination.
 #[test]
-fn dash_s_alone_on_occur_infers_lenient_extra_data() {
+fn dash_s_alone_on_occur_infers_extra_data() {
     let db = fresh_db();
     run_cli(&["occur", "log", "-S", "a", "long", "phrase"], &db)
-        .expect("occur -S alone should infer lenient and land in extra_data");
+        .expect("occur -S alone should land in extra_data");
 
     let entry = &datum_core::test_util::logged_entries(&db, "log")[0];
     let extra = entry.data.as_ref().expect("extra_data populated");

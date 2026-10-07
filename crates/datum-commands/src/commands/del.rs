@@ -32,9 +32,9 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
         anyhow::bail!("no entries specified");
     }
 
-    // Strict: abort up-front on any resolution error so we don't half-apply
+    // All-or-nothing: abort up-front on any resolution error so we don't half-apply
     // against a partial resolution.
-    if args.strict {
+    if args.all_or_nothing {
         if let Some((_, err)) = token_errors.first() {
             return Err(anyhow::anyhow!("{err}"));
         }
@@ -84,10 +84,10 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
             Ok(dead) => deleted.push(dead),
             Err(e) => {
                 let msg = format!("{}: {}", entry.slug, e);
-                // Strict stops here, but what it already deleted is still
+                // All-or-nothing stops here, but what it already deleted is still
                 // stamped into `_LAST` below and on the undo stack, so a bare `undo` reverts it
                 // (da-5leng).
-                if args.strict {
+                if args.all_or_nothing {
                     first_err = Some(anyhow::anyhow!(msg));
                     break;
                 }

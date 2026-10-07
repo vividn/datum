@@ -835,19 +835,19 @@ fn switch_field_non_reserved_state_remains_literal() {
     assert_entry_matches!(e, field: "project", verb: "switch", state: "ai");
 }
 
-// ─── da-rcoi: strict-spec extra_data rejection at insert time ────────────
+// ─── da-rcoi: only_listed_keys extra_data rejection at insert time ────────────
 
-/// When a field's spec is `strict = true`, the log path must refuse a write
+/// When a field's spec is `only_listed_keys = true`, the log path must refuse a write
 /// that carries an extra_data key not declared in `spec.subfields`. The
 /// error message names the field and the offending key so the user can fix
 /// either the spec or the invocation.
 #[test]
-fn strict_spec_rejects_undeclared_extra_data_key_at_insert() {
+fn only_listed_keys_rejects_undeclared_extra_data_key_at_insert() {
     let db = fresh_db();
 
     spec_builder("mood").verb(Action::Switch).save(&db);
     let mut spec = db.load_spec("mood").unwrap().unwrap();
-    spec.strict = true;
+    spec.only_listed_keys = true;
     let mut subfields = std::collections::HashMap::new();
     subfields.insert(
         "intensity".to_string(),
@@ -862,9 +862,12 @@ fn strict_spec_rejects_undeclared_extra_data_key_at_insert() {
     db.save_field_spec(&spec).unwrap();
 
     let err = run_cli(&["switch", "mood", "happy", "-k", "weather=sunny"], &db)
-        .expect_err("undeclared key under strict spec must fail the write");
+        .expect_err("undeclared key under only_listed_keys must fail the write");
     let msg = err.to_string();
-    assert!(msg.contains("strict"), "error mentions strict mode: {msg}");
+    assert!(
+        msg.contains("only_listed_keys"),
+        "error names the setting: {msg}"
+    );
     assert!(msg.contains("'weather'"), "error names the bad key: {msg}");
     assert!(msg.contains("mood"), "error names the field: {msg}");
 
@@ -873,14 +876,14 @@ fn strict_spec_rejects_undeclared_extra_data_key_at_insert() {
 }
 
 /// Same setup as the rejection test, but the entry carries only the
-/// declared `intensity` key — strict mode accepts it.
+/// declared `intensity` key — only_listed_keys accepts it.
 #[test]
-fn strict_spec_accepts_declared_extra_data_key_at_insert() {
+fn only_listed_keys_accepts_declared_extra_data_key_at_insert() {
     let db = fresh_db();
 
     spec_builder("mood").verb(Action::Switch).save(&db);
     let mut spec = db.load_spec("mood").unwrap().unwrap();
-    spec.strict = true;
+    spec.only_listed_keys = true;
     let mut subfields = std::collections::HashMap::new();
     subfields.insert(
         "intensity".to_string(),
@@ -895,16 +898,16 @@ fn strict_spec_accepts_declared_extra_data_key_at_insert() {
     db.save_field_spec(&spec).unwrap();
 
     run_cli(&["switch", "mood", "happy", "-k", "intensity=7"], &db)
-        .expect("declared key passes strict-mode gate");
+        .expect("declared key passes the only_listed_keys gate");
 
     let entry = &datum_core::test_util::logged_entries(&db, "mood")[0];
     assert_eq!(entry.data.as_ref().unwrap()["intensity"], json!(7));
 }
 
-/// Default behaviour (no `strict` flag on the spec) must remain permissive —
+/// Default behaviour (no `only_listed_keys` on the spec) must remain permissive —
 /// undeclared keys keep landing silently so freeform fields evolve naturally.
 #[test]
-fn nonstrict_spec_silently_accepts_undeclared_extra_data_key_at_insert() {
+fn any_keys_spec_silently_accepts_undeclared_extra_data_key_at_insert() {
     let db = fresh_db();
 
     spec_builder("mood").verb(Action::Switch).save(&db);
@@ -923,7 +926,7 @@ fn nonstrict_spec_silently_accepts_undeclared_extra_data_key_at_insert() {
     db.save_field_spec(&spec).unwrap();
 
     run_cli(&["switch", "mood", "happy", "-k", "weather=sunny"], &db)
-        .expect("non-strict spec accepts any extra_data key");
+        .expect("a spec without only_listed_keys accepts any extra_data key");
 
     let entry = &datum_core::test_util::logged_entries(&db, "mood")[0];
     assert_eq!(entry.data.as_ref().unwrap()["weather"], json!("sunny"));

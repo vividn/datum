@@ -111,14 +111,6 @@ pub static FLAG_SPECS: &[FlagSpec<DataArgs>] = &[
         }),
     },
     FlagSpec {
-        short: Some('l'),
-        long: Some("lenient"),
-        action: FlagAction::Switch(|a| {
-            a.lenient = true;
-            Ok(())
-        }),
-    },
-    FlagSpec {
         short: Some('I'),
         long: Some("string-state"),
         action: FlagAction::Switch(|a| {
@@ -155,9 +147,6 @@ pub struct DataArgs {
     pub string_remainder: bool,
     /// `-C` / `--comment-remainder`: shorthand for `-SR comment`.
     pub comment_remainder: bool,
-    /// `-l` / `--lenient`: when no `-R` is supplied, default the
-    /// remainder bucket to `extra_data` instead of raising.
-    pub lenient: bool,
     /// `-I` / `--string-state`: join the remainder into the entry's
     /// `state` bucket as one space-separated string (the state-targeting
     /// analogue of `-S`, which targets a data key). Lets a switch take a
@@ -230,9 +219,9 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
             // state. `state` normalizes to `state.id` downstream (the
             // canonical state slot), so a switch can take a multi-word state.
             Some("state".to_string())
-        } else if args.lenient || args.string_remainder {
-            // `-S` without `-R`/`-C`/`-l` means "string the rest"; "the rest"
-            // defaults to the lenient extra-data bucket. Explicit `-R` overrides.
+        } else if args.string_remainder {
+            // `-S` without `-R`/`-C` means "string the rest"; "the rest"
+            // defaults to the extra-data bucket. Explicit `-R` overrides.
             Some("extra_data".to_string())
         } else {
             None
@@ -491,9 +480,9 @@ mod tests {
     }
 
     #[test]
-    fn lenient_collects_into_extra_data() {
+    fn extra_data_remainder_collects() {
         let mut a = args();
-        a.lenient = true;
+        a.remainder = Some("extra_data".into());
         a.data = vec!["keyless".into()];
         assert_eq!(
             run(a),
@@ -501,7 +490,7 @@ mod tests {
         );
 
         let mut a = args();
-        a.lenient = true;
+        a.remainder = Some("extra_data".into());
         a.data = vec![
             "extra=Data".into(),
             "can".into(),
@@ -556,9 +545,9 @@ mod tests {
         ));
 
         let mut a = args();
-        a.lenient = true;
+        a.remainder = Some("extra_data".into());
         a.keys = vec!["a".into(), "b".into()];
-        a.data = vec!["lenientDoesNotHelp".into()];
+        a.data = vec!["remainderDoesNotHelp".into()];
         assert!(matches!(
             handle_data_args(&a),
             Err(ParseError::MissingRequiredKey(_))
@@ -632,7 +621,7 @@ mod tests {
     #[test]
     fn explicit_assignment_replaces_default() {
         let mut a = args();
-        a.lenient = true;
+        a.remainder = Some("extra_data".into());
         a.keys = vec!["abc=".into()];
         a.data = vec!["abc=cde".into(), "ghi".into()];
         assert_eq!(
@@ -738,9 +727,9 @@ mod tests {
     }
 
     #[test]
-    fn string_remainder_alone_infers_lenient_extra_data() {
-        // da-tcr8: `-S` without `-R`/`-C`/`-l` should "string the rest" into
-        // the lenient extra_data bucket (joined), not error.
+    fn string_remainder_alone_infers_extra_data() {
+        // da-tcr8: `-S` without `-R`/`-C` should "string the rest" into
+        // the extra_data bucket (joined), not error.
         let mut a = args();
         a.string_remainder = true;
         a.data = vec!["extra".into(), "extra".into(), "extra".into()];
@@ -766,10 +755,10 @@ mod tests {
     }
 
     #[test]
-    fn lenient_alone_collects_array_not_joined() {
-        // `-l` without `-S` keeps single tokens as an array (unchanged).
+    fn remainder_alone_collects_array_not_joined() {
+        // `-R` without `-S` keeps single tokens as an array.
         let mut a = args();
-        a.lenient = true;
+        a.remainder = Some("extra_data".into());
         a.data = vec!["extra".into(), "extra".into()];
         assert_eq!(
             run(a),

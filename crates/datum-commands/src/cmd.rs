@@ -1040,7 +1040,7 @@ mod tests {
             keys: vec![],
             comment: Vec::new(),
             dry_run: false,
-            strict: false,
+            all_or_nothing: false,
             output: Default::default(),
         }
     }
@@ -1880,7 +1880,7 @@ mod tests {
                     id_or_slug: Some(id.to_string()),
                     force: true,
                     dry_run: false,
-                    strict: false,
+                    all_or_nothing: false,
                     comment: None,
                     output: Default::default(),
                 },
@@ -1955,7 +1955,7 @@ mod tests {
                 id_or_slug: None,
                 force: true,
                 dry_run: false,
-                strict: false,
+                all_or_nothing: false,
                 comment: None,
                 output: Default::default(),
             },

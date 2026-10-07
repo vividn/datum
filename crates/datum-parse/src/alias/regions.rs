@@ -351,7 +351,6 @@ fn side_slots(side_idx: usize, side: &[String]) -> Vec<Slot> {
     let mut keys: Vec<String> = Vec::new();
     let mut explicit_kv: Vec<String> = Vec::new(); // body `key=value` names
     let mut join: Option<GreedyTarget> = None;
-    let mut lenient = false;
     let mut plain_r_key: Option<Option<String>> = None; // Some(key) when -R seen w/o join
     let mut has_dur_kv = false;
     let mut body_positionals = 0usize;
@@ -385,7 +384,6 @@ fn side_slots(side_idx: usize, side: &[String]) -> Vec<Slot> {
                         pending_r = Some(v.clone());
                     }
                 }
-                "-l" | "--lenient" => lenient = true,
                 "-R" | "--remainder" => {
                     if let Some(v) = side.get(i + 1) {
                         pending_r = Some(v.clone());
@@ -511,15 +509,8 @@ fn side_slots(side_idx: usize, side: &[String]) -> Vec<Slot> {
         slots.push(Slot::single(SlotKind::Dur, side_idx, has_dur_kv));
     }
 
-    // Sinks at the very end: `-l`, plain `-R key`, and `add`'s
-    // primary-value remainder absorb any leftovers (spec rule 9).
-    if lenient {
-        slots.push(Slot::single(
-            SlotKind::Greedy(GreedyTarget::Sink(None)),
-            side_idx,
-            false,
-        ));
-    }
+    // Sinks at the very end: plain `-R key` and `add`'s primary-value
+    // remainder absorb any leftovers (spec rule 9).
     if let Some(rkey) = plain_r_key {
         slots.push(Slot::single(
             SlotKind::Greedy(GreedyTarget::Sink(rkey)),
@@ -1223,8 +1214,8 @@ mod tests {
         assert!(matches!(err, ParseError::ExtraData(ref t) if t == &vec!["2".to_string()]));
     }
     #[test]
-    fn lenient_sink_absorbs_excess() {
-        let out = apply(&[&["occur", "f", "-l", ",,", "stray", "bits"]]).unwrap();
+    fn remainder_sink_absorbs_excess() {
+        let out = apply(&[&["occur", "f", "-R", "extra_data", ",,", "stray", "bits"]]).unwrap();
         assert!(has_seq(&out[0], &["stray", "bits"]));
     }
 

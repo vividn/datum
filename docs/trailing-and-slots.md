@@ -146,7 +146,8 @@ implementation detail.
    unfilled (downstream verb validation applies, e.g. a stateless switch
    errors at the log layer).
 9. **Excess positionals** (all slots satisfied, no greedy): **error**,
-   unless a sink exists (`-l`, plain `-R`, add-verb semantics). Same-named
+   unless a sink exists (plain `-R`, the field spec's `remainder`,
+   add-verb semantics). Same-named
    `-R` buckets on multiple sides all receive the extras; differing
    buckets → the **first** side's bucket takes them all.
 

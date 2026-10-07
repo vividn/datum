@@ -6,7 +6,7 @@
 //!   * Compound slug lists mutate every matched row.
 //!   * Wildcards expand through the batch resolver.
 //!   * `--dry-run` leaves the DB untouched.
-//!   * `--strict` aborts on first error; default continues.
+//!   * `--all-or-nothing` aborts on first error; default continues.
 //!   * A batched rekey applies its template per-row.
 
 use crate::common;
@@ -103,7 +103,7 @@ fn compound_update_dry_run_does_not_mutate() {
     }
 }
 
-/// Default (non-strict) behavior: a tombstoned row errors but the batch
+/// Default (best effort) behavior: a tombstoned row errors but the batch
 /// still mutates the live siblings.
 #[test]
 fn compound_update_continues_past_tombstoned_entry() {
@@ -132,10 +132,10 @@ fn compound_update_continues_past_tombstoned_entry() {
     assert_eq!(fresh.data.as_ref().unwrap()["reps"], json!(20));
 }
 
-/// `--strict` aborts the batch on the first tombstoned match — the live
+/// `--all-or-nothing` aborts the batch on the first tombstoned match — the live
 /// siblings are left unchanged.
 #[test]
-fn strict_compound_update_aborts_on_first_error() {
+fn all_or_nothing_compound_update_aborts_on_first_error() {
     let db = fresh_db();
     let live = entry_builder("gym")
         .state(json!(1))
@@ -149,27 +149,27 @@ fn strict_compound_update_aborts_on_first_error() {
 
     // Put the tombstone first so we can verify the live row was never touched.
     let compound = format!("{},{}", dead.slug, live.slug);
-    let err = run_cli(&["update", &compound, "reps=99", "--strict"], &db)
-        .expect_err("strict must bail on tombstoned match");
+    let err = run_cli(&["update", &compound, "reps=99", "--all-or-nothing"], &db)
+        .expect_err("all-or-nothing must bail on tombstoned match");
     let msg = format!("{err:#}");
     assert!(
         msg.to_lowercase().contains("tombstoned"),
-        "strict error must name tombstoned, got: {msg}",
+        "all-or-nothing error must name tombstoned, got: {msg}",
     );
 
     let fresh = db.get_entry(&live.slug).unwrap();
     assert_eq!(
         fresh.data.as_ref().unwrap()["reps"],
         json!(10),
-        "strict mode must not have mutated the live sibling",
+        "all-or-nothing must not have mutated the live sibling",
     );
 }
 
-/// Strict mode pre-scans the batch for tombstones: even a tombstone placed
+/// All-or-nothing pre-scans the batch for tombstones: even a tombstone placed
 /// AFTER live siblings must abort before any live sibling is mutated.
-/// This is what distinguishes strict from default semantics on a mixed batch.
+/// This is what distinguishes all-or-nothing from default semantics on a mixed batch.
 #[test]
-fn strict_compound_update_rejects_later_tombstone_without_partial_mutation() {
+fn all_or_nothing_compound_update_rejects_later_tombstone_without_partial_mutation() {
     let db = fresh_db();
     let first = entry_builder("gym")
         .state(json!(1))
@@ -185,15 +185,15 @@ fn strict_compound_update_rejects_later_tombstone_without_partial_mutation() {
         .insert(&db);
     db.soft_delete_entry(&tomb.slug).unwrap();
 
-    // Tombstone is LAST in the batch. Non-strict would have mutated first/second
-    // before hitting the tombstone; strict must catch it before any writes.
+    // Tombstone is LAST in the batch. Best effort would have mutated first/second
+    // before hitting the tombstone; all-or-nothing must catch it before any writes.
     let compound = format!("{},{},{}", first.slug, second.slug, tomb.slug);
-    let err = run_cli(&["update", &compound, "reps=99", "--strict"], &db)
-        .expect_err("strict must reject the batch entirely");
+    let err = run_cli(&["update", &compound, "reps=99", "--all-or-nothing"], &db)
+        .expect_err("all-or-nothing must reject the batch entirely");
     let msg = format!("{err:#}");
     assert!(
         msg.to_lowercase().contains("tombstoned"),
-        "strict error must name tombstoned, got: {msg}",
+        "all-or-nothing error must name tombstoned, got: {msg}",
     );
 
     for slug in [&first.slug, &second.slug] {
@@ -201,7 +201,7 @@ fn strict_compound_update_rejects_later_tombstone_without_partial_mutation() {
         assert_eq!(
             row.data.as_ref().unwrap()["reps"],
             json!(10),
-            "strict must not have partially-mutated {slug}",
+            "all-or-nothing must not have partially-mutated {slug}",
         );
     }
 }
@@ -266,12 +266,12 @@ fn compound_update_tolerates_trailing_comma() {
     }
 }
 
-// ─── da-rcoi: strict-spec enforcement on update/merge/rekey ──────────────
+// ─── da-rcoi: only_listed_keys enforcement on update/merge/rekey ──────────────
 
-/// `datum update` against a strict-spec entry must reject a payload that
+/// `datum update` against an only_listed_keys entry must reject a payload that
 /// introduces an undeclared key, leaving the existing row unchanged.
 #[test]
-fn strict_spec_blocks_update_introducing_undeclared_key() {
+fn only_listed_keys_blocks_update_introducing_undeclared_key() {
     let db = fresh_db();
 
     let row = entry_builder("mood")
@@ -292,13 +292,16 @@ fn strict_spec_blocks_update_introducing_undeclared_key() {
         },
     );
     spec.subfields = subfields;
-    spec.strict = true;
+    spec.only_listed_keys = true;
     db.save_field_spec(&spec).unwrap();
 
     let err = run_cli(&["update", row.slug.as_str(), "weather=sunny"], &db)
-        .expect_err("update introducing undeclared key under strict spec must fail");
+        .expect_err("update introducing undeclared key under only_listed_keys must fail");
     let msg = err.to_string();
-    assert!(msg.contains("strict"), "error mentions strict mode: {msg}");
+    assert!(
+        msg.contains("only_listed_keys"),
+        "error names the setting: {msg}"
+    );
     assert!(msg.contains("'weather'"), "error names the bad key: {msg}");
 
     let fresh = db.get_entry(&row.slug).unwrap();
@@ -307,10 +310,10 @@ fn strict_spec_blocks_update_introducing_undeclared_key() {
     assert!(data.get("weather").is_none(), "rejected key never landed");
 }
 
-/// `datum rekey` to a name not declared in the strict spec must also fail,
+/// `datum rekey` to a name not declared in the only_listed_keys spec must also fail,
 /// since rekey can otherwise smuggle in unowned keys past the log gate.
 #[test]
-fn strict_spec_blocks_rekey_into_undeclared_name() {
+fn only_listed_keys_blocks_rekey_into_undeclared_name() {
     let db = fresh_db();
 
     let row = entry_builder("mood")
@@ -331,13 +334,16 @@ fn strict_spec_blocks_rekey_into_undeclared_name() {
         },
     );
     spec.subfields = subfields;
-    spec.strict = true;
+    spec.only_listed_keys = true;
     db.save_field_spec(&spec).unwrap();
 
     let err = run_cli(&["rekey", row.slug.as_str(), "intensity=vibe"], &db)
-        .expect_err("rekey to undeclared name under strict spec must fail");
+        .expect_err("rekey to undeclared name under only_listed_keys must fail");
     let msg = err.to_string();
-    assert!(msg.contains("strict"), "error mentions strict mode: {msg}");
+    assert!(
+        msg.contains("only_listed_keys"),
+        "error names the setting: {msg}"
+    );
     assert!(
         msg.contains("'vibe'"),
         "error names the new (bad) key: {msg}"
@@ -349,12 +355,12 @@ fn strict_spec_blocks_rekey_into_undeclared_name() {
     assert!(data.get("vibe").is_none());
 }
 
-/// `--strict` that fails on a later row after writing an earlier one still
+/// `--all-or-nothing` that fails on a later row after writing an earlier one still
 /// stamps `_LAST` at what it wrote, so a bare `undo` reverts that row rather
 /// than the command before it (da-5leng). Tombstones are pre-scanned under
-/// `--strict`, so the mid-batch failure here is a strict spec on coffee.
+/// `--all-or-nothing`, so the mid-batch failure here is an only_listed_keys spec on coffee.
 #[test]
-fn strict_update_failing_mid_batch_stamps_last_at_what_it_wrote() {
+fn all_or_nothing_update_failing_mid_batch_stamps_last_at_what_it_wrote() {
     let db = fresh_db();
     let last = |db: &datum_core::db::Db| {
         datum_core::last_docs::get_last_docs(db)
@@ -370,12 +376,15 @@ fn strict_update_failing_mid_batch_stamps_last_at_what_it_wrote() {
 
     let mut spec =
         datum_core::field_spec::FieldSpec::new("coffee", datum_core::action::Action::Occur);
-    spec.strict = true;
+    spec.only_listed_keys = true;
     db.save_field_spec(&spec).unwrap();
 
     let batch = format!("{tea},{coffee}");
-    run_cli(&["update", &batch, "weather=sunny", "--strict"], &db)
-        .expect_err("coffee's strict spec must fail the batch");
+    run_cli(
+        &["update", &batch, "weather=sunny", "--all-or-nothing"],
+        &db,
+    )
+    .expect_err("coffee's only_listed_keys spec must fail the batch");
     assert_eq!(
         db.get_entry(&tea).unwrap().data.unwrap()["weather"],
         json!("sunny")

@@ -62,6 +62,10 @@ pub struct SpecKeyWords {
     pub keys: Vec<String>,
     /// `key=value` words, to stand ahead of the line's own.
     pub assigned: Vec<String>,
+    /// The spec's `remainder` (da-eqb30), as `-R` — when the line names
+    /// no bucket of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remainder: Option<String>,
 }
 
 /// Whether a `verb` line takes its field's keys: only an ACTIVE entry does
@@ -108,8 +112,14 @@ pub fn typed_state(line: &LogArgs) -> Option<String> {
 /// The slots `declared` adds to `line`: a required, optional or default
 /// key as its `-k`/`-K` slot, an assigned one as a `key=value` — a `-K`
 /// one also as its slot, which the value fills. A key the line already
-/// names, as a slot or a `key=value`, is left to the line.
-pub fn spec_key_words(line: &LogArgs, declared: &[DeclaredKey]) -> SpecKeyWords {
+/// names, as a slot or a `key=value`, is left to the line. The spec's
+/// `remainder` becomes the line's `-R` unless the line routes its leftover
+/// words itself (`-R`, `-C`, `-I`); a bare `-S` joins them into it.
+pub fn spec_key_words(
+    line: &LogArgs,
+    declared: &[DeclaredKey],
+    remainder: Option<&str>,
+) -> SpecKeyWords {
     let slots = line
         .keys
         .iter()
@@ -121,7 +131,11 @@ pub fn spec_key_words(line: &LogArgs, declared: &[DeclaredKey]) -> SpecKeyWords 
         .iter()
         .filter_map(|t| t.split_once('=').map(|(n, _)| n));
     let named: Vec<&str> = slots.map(|k| parse_key_decl(k).0).chain(set).collect();
-    let mut out = SpecKeyWords::default();
+    let routed = line.remainder.is_some() || line.comment_remainder || line.string_state;
+    let mut out = SpecKeyWords {
+        remainder: remainder.filter(|_| !routed).map(str::to_string),
+        ..SpecKeyWords::default()
+    };
     for key in declared
         .iter()
         .filter(|k| !named.contains(&k.name.as_str()))
@@ -156,6 +170,7 @@ impl SpecKeyWords {
         let mut out: Vec<String> = flags("-K", self.slug_keys).collect();
         out.extend(flags("-k", self.keys));
         out.extend(self.assigned);
+        out.extend(self.remainder.into_iter().flat_map(|r| ["-R".into(), r]));
         out
     }
 }

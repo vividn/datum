@@ -46,7 +46,7 @@ should deliver it.
 | `consolidateKeys` (`-k`) | ✓ | ✓ (step 2/N) | ✓ | — |
 | `-K` id-key variant | ✓ | ✓ (step 2b/N, `DataArgs::push_id_key`) | ✓ | — |
 | `key=value` interleaved with positional | ✓ | ✓ (step 2b/N, `handle_data_args`) | ✓ | — |
-| `--lenient` / `--strict` / `-R` / `-S` / `-C` remainder modes | ✓ | ✓ (step 2b/N) | ✓ | — |
+| `--lenient` / `--strict` / `-R` / `-S` / `-C` remainder modes | ✓ | ✓ (step 2b/N); `-l`/`--lenient` removed (da-eqb30: `-R`, or a spec's `remainder`) | ✓ | — |
 | `-b/--base-data` (JSON object) | ✓ | ✗ | — | — |
 | `-d` / `-t` / `-y*` / `-q*` / `-z` / `-D` / `-T` | ✓ | ✓ (datum-parse) | ✓ | `-yy`/`-qqq` shorthand via pre-pass; `±N[unit]` uncertainty suffix (D2) |
 | duration | `duration` positional | trailing positional or `dur=` | ✓ | da-ooe2 added the positional; da-azqq removed the `--dur` flag it replaced |
@@ -484,7 +484,7 @@ underline on future.
 | `-k key=default` | ✓ | ✓ (step 2/N) | ✓ |
 | `-K key` (id-slug key) | ✓ | ✓ (step 2/N) | partial |
 | `-R`/`-S`/`-C` remainder | ✓ | ✓ (step 2/N) | ✓ (da-4t5f) |
-| `-l`/`--strict` remainder toggles | ✓ | ✓ (step 2/N) | missing |
+| `-l`/`--strict` remainder toggles | ✓ | removed (da-eqb30) | — |
 | `.` skip token | ✓ | ✓ (step 2/N) | missing |
 | Command-change escape mid-parse | ✓ | N/A (intentional) | intentional non-port |
 | `-d`/`-t`/`-y*`/`-q*` stackable | ✓ (`-q*` via count) | ✓ | ✓ |

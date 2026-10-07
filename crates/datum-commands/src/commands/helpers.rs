@@ -50,48 +50,43 @@ pub(crate) fn load_registry_opt(db: &Db) -> Option<datum_core::field_spec::SpecR
     load_registry(db).ok()
 }
 
-/// Insert-time enforcement of `spec.strict` for `entry.data` (da-rcoi).
-///
-/// When the entry's field carries a FieldSpec with `strict = true`, every
-/// top-level key in `entry.data` must be declared in `spec.subfields`. Any
-/// undeclared key fails the write up-front with a message naming the field,
-/// the offending key(s), and the remediation. Non-strict specs and rows
-/// with no spec / no extra_data are no-ops, preserving the existing
-/// permissive default.
+/// Insert-time enforcement of a spec's lists (da-rcoi, da-eqb30): under
+/// `only_listed_keys` every key in `entry.data` must be one the spec lists,
+/// and under `only_listed_states` the entry's state and following state
+/// must be listed states ([`FieldSpec::refuses_state`]). A write breaking
+/// either fails up-front with a message naming the field and the setting.
+/// No spec, or neither setting, is a no-op.
 ///
 /// Loads the registry on demand (`None` = no specs configured → no-op) so
 /// callers can use the same line at any insert site.
-pub(crate) fn enforce_strict_extra_data(entry: &Entry, db: &Db) -> Result<()> {
+pub(crate) fn enforce_spec_lists(entry: &Entry, db: &Db) -> Result<()> {
     let Some(registry) = load_registry_opt(db) else {
         return Ok(());
     };
-    enforce_strict_extra_data_against(entry, &registry)
+    enforce_spec_lists_against(entry, &registry)
 }
 
-/// Variant of [`enforce_strict_extra_data`] that takes an already-loaded
+/// Variant of [`enforce_spec_lists`] that takes an already-loaded
 /// registry. Lets callers reuse a registry they loaded for rendering.
-pub(crate) fn enforce_strict_extra_data_against(
-    entry: &Entry,
-    registry: &SpecRegistry,
-) -> Result<()> {
+pub(crate) fn enforce_spec_lists_against(entry: &Entry, registry: &SpecRegistry) -> Result<()> {
     let Some(spec) = registry.field_spec(&entry.field) else {
         return Ok(());
     };
-    if !spec.strict {
+    for state in [&entry.state, &entry.following_state].into_iter().flatten() {
+        if let Some(why) = spec.refuses_state(state) {
+            anyhow::bail!(why);
+        }
+    }
+    if !spec.only_listed_keys {
         return Ok(());
     }
     let Some(JsonValue::Object(map)) = entry.data.as_ref() else {
         return Ok(());
     };
-    let mut undeclared: Vec<&str> = map
-        .keys()
-        .filter(|k| !spec.subfields.contains_key(k.as_str()))
-        .map(String::as_str)
-        .collect();
+    let undeclared = spec.unlisted_keys(map, entry.state.as_ref().and_then(JsonValue::as_str));
     if undeclared.is_empty() {
         return Ok(());
     }
-    undeclared.sort();
     let rendered = undeclared
         .iter()
         .map(|k| format!("'{k}'"))
@@ -99,9 +94,9 @@ pub(crate) fn enforce_strict_extra_data_against(
         .join(", ");
     let plural = if undeclared.len() == 1 { "" } else { "s" };
     anyhow::bail!(
-        "field '{field}' is strict: undeclared extra_data key{plural}: {rendered} \
-         (declare {them} in the field spec via `datum spec set {field} key:<type>`, \
-          or remove `--strict` from the spec)",
+        "field '{field}' takes only its listed keys (only_listed_keys): undeclared key{plural}: \
+         {rendered} (declare {them} in the spec, e.g. `datum spec set {field} --data-key <key>`, \
+          or `datum spec set {field} --any-keys`)",
         field = entry.field,
         them = if undeclared.len() == 1 { "it" } else { "them" },
     );
@@ -695,7 +690,7 @@ mod tests {
         assert!(row_b.contains(":33"), "seconds rendered: {row_b:?}");
     }
 
-    fn spec_with_intensity(strict: bool) -> FieldSpec {
+    fn spec_with_intensity(only_listed_keys: bool) -> FieldSpec {
         let mut subfields = HashMap::new();
         subfields.insert(
             "intensity".to_string(),
@@ -708,7 +703,7 @@ mod tests {
         );
         let mut spec = FieldSpec::new("mood", Action::Switch);
         spec.subfields = subfields;
-        spec.strict = strict;
+        spec.only_listed_keys = only_listed_keys;
         spec
     }
 
@@ -731,30 +726,33 @@ mod tests {
     }
 
     #[test]
-    fn strict_spec_rejects_undeclared_key() {
+    fn only_listed_keys_rejects_undeclared_key() {
         let registry = registry_with(spec_with_intensity(true));
         let entry = mood_entry(json!({"weather": "sunny"}));
-        let err = enforce_strict_extra_data_against(&entry, &registry)
+        let err = enforce_spec_lists_against(&entry, &registry)
             .expect_err("undeclared key must be rejected");
         let msg = err.to_string();
-        assert!(msg.contains("strict"), "error mentions strict: {msg}");
+        assert!(
+            msg.contains("only_listed_keys"),
+            "error names the setting: {msg}"
+        );
         assert!(msg.contains("'weather'"), "error names the bad key: {msg}");
         assert!(msg.contains("mood"), "error names the field: {msg}");
     }
 
     #[test]
-    fn strict_spec_accepts_declared_key() {
+    fn only_listed_keys_accepts_declared_key() {
         let registry = registry_with(spec_with_intensity(true));
         let entry = mood_entry(json!({"intensity": 7}));
-        enforce_strict_extra_data_against(&entry, &registry).expect("declared key must pass");
+        enforce_spec_lists_against(&entry, &registry).expect("declared key must pass");
     }
 
     #[test]
-    fn nonstrict_spec_accepts_undeclared_key() {
+    fn any_keys_spec_accepts_undeclared_key() {
         let registry = registry_with(spec_with_intensity(false));
         let entry = mood_entry(json!({"weather": "sunny"}));
-        enforce_strict_extra_data_against(&entry, &registry)
-            .expect("non-strict spec must silently accept undeclared keys");
+        enforce_spec_lists_against(&entry, &registry)
+            .expect("a spec without only_listed_keys must silently accept undeclared keys");
     }
 
     #[test]
@@ -770,15 +768,15 @@ mod tests {
             None,
             "d1",
         );
-        enforce_strict_extra_data_against(&entry, &registry)
+        enforce_spec_lists_against(&entry, &registry)
             .expect("fields without a spec are unaffected");
     }
 
     #[test]
-    fn strict_spec_lists_all_undeclared_keys_sorted() {
+    fn only_listed_keys_lists_all_undeclared_keys_sorted() {
         let registry = registry_with(spec_with_intensity(true));
         let entry = mood_entry(json!({"weather": "sunny", "altitude": 100}));
-        let err = enforce_strict_extra_data_against(&entry, &registry).unwrap_err();
+        let err = enforce_spec_lists_against(&entry, &registry).unwrap_err();
         let msg = err.to_string();
         let alt_pos = msg.find("'altitude'").expect("lists altitude");
         let weather_pos = msg.find("'weather'").expect("lists weather");
@@ -1026,7 +1024,7 @@ mod tests {
     }
 
     #[test]
-    fn strict_spec_with_no_extra_data_is_a_noop() {
+    fn only_listed_keys_with_no_extra_data_is_a_noop() {
         let registry = registry_with(spec_with_intensity(true));
         let entry = Entry::new_legacy(
             "mood",
@@ -1037,7 +1035,7 @@ mod tests {
             None,
             "d1",
         );
-        enforce_strict_extra_data_against(&entry, &registry)
-            .expect("strict spec accepts rows with no extra_data");
+        enforce_spec_lists_against(&entry, &registry)
+            .expect("only_listed_keys accepts rows with no extra_data");
     }
 }

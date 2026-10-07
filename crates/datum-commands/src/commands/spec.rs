@@ -271,8 +271,14 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         spec.no_autoalias = true;
         spec.derived_aliases.clear();
     }
-    if let Some(s) = args.strict {
-        spec.strict = s;
+    if let Some(k) = args.only_listed_keys {
+        spec.only_listed_keys = k;
+    }
+    if let Some(s) = args.only_listed_states {
+        spec.only_listed_states = s;
+    }
+    if let Some(r) = &args.remainder {
+        spec.remainder = Some(r.clone()).filter(|r| !r.is_empty());
     }
     if let Some(n) = args.never_false {
         spec.never_false = n;
@@ -821,7 +827,9 @@ mod tests {
             height: None,
             z_index: None,
             tags: vec![],
-            strict: None,
+            only_listed_keys: None,
+            only_listed_states: None,
+            remainder: None,
             ..Default::default()
         };
         spec_set(args, &db).unwrap();
@@ -863,7 +871,9 @@ mod tests {
             height: None,
             z_index: None,
             tags: vec![],
-            strict: None,
+            only_listed_keys: None,
+            only_listed_states: None,
+            remainder: None,
             ..Default::default()
         };
         spec_set(args2, &db).unwrap();

@@ -12,7 +12,7 @@ pub(crate) struct UpdateParsing {
     keys: Vec<String>,
     comment: Vec<String>,
     dry_run: bool,
-    strict: bool,
+    all_or_nothing: bool,
 }
 
 pub(crate) fn update_args_registry() -> Vec<LiftedSpec<UpdateParsing>> {
@@ -48,8 +48,8 @@ pub(crate) fn update_args_registry() -> Vec<LiftedSpec<UpdateParsing>> {
         p.dry_run = true;
         Ok(())
     }));
-    r.push(local_switch(None, Some("strict"), |p| {
-        p.strict = true;
+    r.push(local_switch(None, Some("all-or-nothing"), |p| {
+        p.all_or_nothing = true;
         Ok(())
     }));
     r
@@ -69,7 +69,7 @@ pub(crate) fn parse_update_args(tail: &[&str]) -> Result<UpdateArgs> {
         keys: composed.keys,
         comment: composed.comment,
         dry_run: composed.dry_run,
-        strict: composed.strict,
+        all_or_nothing: composed.all_or_nothing,
         output: composed.output,
     })
 }

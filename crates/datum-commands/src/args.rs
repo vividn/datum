@@ -551,6 +551,10 @@ impl<'a> Resolver for DbAliasResolver<'a> {
         let spec = self.db.load_spec(field).ok().flatten();
         spec.map(|s| s.declared_keys(state)).unwrap_or_default()
     }
+
+    fn spec_remainder(&self, field: &str) -> Option<String> {
+        self.db.load_spec(field).ok().flatten()?.remainder
+    }
 }
 
 // ─── Extension traits: attach convenience methods to intent structs ──────

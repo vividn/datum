@@ -686,7 +686,7 @@ OPTIONS:
   -k, --key <KV>          Extra key=value (repeatable)
   -c, --comment <T>       Append a comment to data.comment (repeatable)
       --dry-run           Show what would change
-      --strict            Abort on first batch error
+      --all-or-nothing    Change nothing if any batched id fails
 
 OUTPUT:
       --show <MODE>       default|none|minimal|standard|format|all|json

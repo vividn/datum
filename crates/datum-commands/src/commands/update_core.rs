@@ -163,9 +163,9 @@ pub fn update_from_args(
 /// and hid prefixes work), and applies the same payload to every resolved
 /// row.
 ///
-/// Default semantics: non-strict — per-row failures are reported but don't
+/// Default semantics: best effort — per-row failures are reported but don't
 /// abort the batch; the overall invocation exits non-zero if anything
-/// failed. With `--strict`, the first resolution or tombstone error aborts
+/// failed. With `--all-or-nothing`, the first resolution or tombstone error aborts
 /// before any write (tombstone pre-scan keeps a later tombstone from
 /// partially mutating earlier live siblings).
 ///
@@ -202,11 +202,11 @@ pub fn update_batch_from_args(
         anyhow::bail!("no entries specified");
     }
 
-    if args.strict {
+    if args.all_or_nothing {
         if let Some((_, err)) = token_errors.first() {
             return Err(anyhow::anyhow!("{err}"));
         }
-        // Pre-scan tombstones so strict never partially mutates a batch:
+        // Pre-scan tombstones so all-or-nothing never partially mutates a batch:
         // the tombstone refusal is knowable before any write. Runtime
         // errors (rekey collisions, etc.) still abort mid-loop — those
         // aren't pre-detectable.
@@ -279,7 +279,7 @@ pub fn update_batch_from_args(
     // closing the pipe ends the process at the print (da-ki5j3).
     let mut first_err: Option<anyhow::Error> = None;
     let mut outcomes: Vec<UpdateOutcome> = Vec::new();
-    // Strict stops at the first row that fails to write (resolution and
+    // All-or-nothing stops at the first row that fails to write (resolution and
     // tombstone errors were refused above, before any write), but what it
     // already wrote is still stamped into `_LAST` below and on the undo
     // stack, so a bare `undo` reverts it (da-5leng).
@@ -290,7 +290,7 @@ pub fn update_batch_from_args(
                 strategy.verb(),
                 existing.slug,
             );
-            if args.strict {
+            if args.all_or_nothing {
                 first_err = Some(anyhow::anyhow!(msg));
                 break;
             }
@@ -313,7 +313,7 @@ pub fn update_batch_from_args(
         match result {
             Ok(outcome) => outcomes.push(outcome),
             Err(e) => {
-                if args.strict {
+                if args.all_or_nothing {
                     first_err = Some(e);
                     break;
                 }
@@ -522,8 +522,8 @@ fn persist_with_auto_reinterp(
     slug_delimiter: &str,
     db: &Db,
 ) -> Result<UpdateOutcome> {
-    // da-rcoi: strict-spec enforcement also runs on the update / merge /
-    // rekey paths — a key renamed into an undeclared slot or merged in
+    // da-rcoi: the spec's lists are enforced on the update / merge /
+    // rekey paths too — a key renamed into an undeclared slot or merged in
     // from a payload would otherwise slip past the log-time check.
     // A mutation that changes nothing writes nothing — no version, no op —
     // and says NODIFF, as datum's updateDoc.ts did (`isEqual(oldData,
@@ -548,7 +548,7 @@ fn persist_with_auto_reinterp(
             changed: false,
         });
     }
-    crate::commands::helpers::enforce_strict_extra_data(&updated, db)?;
+    crate::commands::helpers::enforce_spec_lists(&updated, db)?;
     let (entry, old_slug) =
         db.save_existing_entry_with_auto_reinterp(&existing.slug, updated, slug_delimiter)?;
     Ok(UpdateOutcome {
@@ -789,7 +789,7 @@ mod tests {
             keys: vec![],
             comment: Vec::new(),
             dry_run: false,
-            strict: false,
+            all_or_nothing: false,
             output: Default::default(),
         }
     }

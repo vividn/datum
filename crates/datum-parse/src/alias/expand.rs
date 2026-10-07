@@ -54,6 +54,12 @@ pub trait Resolver {
     fn spec_keys(&self, _field: &str, _state: Option<&str>) -> Vec<crate::spec_keys::DeclaredKey> {
         Vec::new()
     }
+
+    /// Where `field`'s spec sends the words no slot takes (da-eqb30).
+    /// None by default.
+    fn spec_remainder(&self, _field: &str) -> Option<String> {
+        None
+    }
 }
 
 /// Always returns `None` — used by callers that want to skip alias
@@ -439,7 +445,8 @@ fn add_spec_keys(body: &mut Vec<String>, trailing: &[String], resolver: &dyn Res
         if takes_spec_keys(verb, &line) {
             let state = (verb == "switch").then(|| typed_state(&line)).flatten();
             let declared = resolver.spec_keys(&line.field_or_verb, state.as_deref());
-            let words = spec_key_words(&line, &declared);
+            let remainder = resolver.spec_remainder(&line.field_or_verb);
+            let words = spec_key_words(&line, &declared, remainder.as_deref());
             let words = words.into_argv();
             added |= !words.is_empty();
             out.extend(words);
@@ -649,11 +656,10 @@ fn expand_stacked(s: &str) -> Option<Vec<String>> {
     // Switch shorts: every value-less flag across the concern modules.
     // Value-taking shorts (c/k/K/R/o/d/t/z) are intentionally excluded —
     // they can only appear as the terminal char in a bundle.
-    let is_switch =
-        |c: char| matches!(c, 'y' | 'q' | 'S' | 'C' | 'l' | 'm' | 'F' | 'A' | 'D' | 'T');
+    let is_switch = |c: char| matches!(c, 'y' | 'q' | 'S' | 'C' | 'm' | 'F' | 'A' | 'D' | 'T');
     let prefix_len = chars.iter().take_while(|c| is_switch(**c)).count();
 
-    // All-switch run (e.g. `-yy`, `-qqq`, `-SC`, `-Cl`).
+    // All-switch run (e.g. `-yy`, `-qqq`, `-SC`, `-CT`).
     if prefix_len == chars.len() {
         return Some(chars.iter().map(|c| format!("-{c}")).collect());
     }
@@ -1419,13 +1425,13 @@ mod tests {
 
     #[test]
     fn all_switch_bundle_expands() {
-        // `-SC` → `-S -C`, `-Sl` → `-S -l`, `-yS` → `-y -S`. Mixing the
+        // `-SC` → `-S -C`, `-ST` → `-S -T`, `-yS` → `-y -S`. Mixing the
         // existing count-stackable shorts with new boolean switches works.
         let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-SC"]), &NoResolver).unwrap();
         assert_eq!(argv, v(&["datum", "occur", "x", "-S", "-C"]));
 
-        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-Sl"]), &NoResolver).unwrap();
-        assert_eq!(argv, v(&["datum", "occur", "x", "-S", "-l"]));
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-ST"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "occur", "x", "-S", "-T"]));
 
         let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-yS"]), &NoResolver).unwrap();
         assert_eq!(argv, v(&["datum", "occur", "x", "-y", "-S"]));

@@ -765,12 +765,11 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         entry.verb = derived_verb;
     }
 
-    // da-rcoi: when the field's spec is strict, reject undeclared
-    // extra_data keys before the write lands. Runs ahead of the dry-run
-    // and multi-collector branches so the failure surfaces uniformly —
-    // strict-mode protection shouldn't depend on which insert path the
-    // CLI chose.
-    crate::commands::helpers::enforce_strict_extra_data(&entry, db)?;
+    // da-rcoi / da-eqb30: a key or a state the field's spec does not list,
+    // under its `only_listed_*` settings, is refused before the write
+    // lands. Runs ahead of the dry-run and multi-collector branches so the
+    // failure surfaces uniformly, whichever insert path the CLI chose.
+    crate::commands::helpers::enforce_spec_lists(&entry, db)?;
 
     // --dry-run: preview the would-be entry — including slug derivation,
     // reserved-column routing, and state canonicalization — without
@@ -1375,7 +1374,11 @@ fn apply_spec_keys(action: Action, args: &mut LogArgs, db: &Db) -> Result<Option
     let state = matches!(action, Action::Switch)
         .then(|| typed_state(args))
         .flatten();
-    let words = spec_key_words(args, &spec.declared_keys(state.as_deref()));
+    let words = spec_key_words(
+        args,
+        &spec.declared_keys(state.as_deref()),
+        spec.remainder.as_deref(),
+    );
     if words == SpecKeyWords::default() {
         return Ok(None);
     }
@@ -1389,6 +1392,9 @@ pub(crate) fn bind_spec_words(args: &mut LogArgs, words: SpecKeyWords) {
     args.slug_keys.extend(words.slug_keys);
     args.keys.extend(words.keys);
     args.rest.splice(0..0, words.assigned);
+    if words.remainder.is_some() {
+        args.remainder = words.remainder;
+    }
 }
 
 /// The verbs whose trailing positional can be a duration.

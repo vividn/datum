@@ -228,3 +228,43 @@ fn a_stored_unit_is_ignored_and_dropped_on_the_next_write() {
         "a unit survived the write: {stored}"
     );
 }
+
+/// da-eqb30: `strict` is now `only_listed_keys`. A spec stored as `strict`
+/// reads as the new key — shown under it, still refusing an unlisted key
+/// — and the next write stores the new name.
+#[test]
+fn a_stored_strict_reads_as_only_listed_keys() {
+    let env = Env::new();
+    env.run(&["occur", "tea", "cups=2"]);
+    env.store_old_spec(
+        "tea",
+        r#"{"field":"tea","verb":"occur","data_keys":["cups"],"strict":true}"#,
+    );
+
+    let spec: Value = serde_json::from_str(&env.run(&["spec", "show", "tea"])).unwrap();
+    assert_eq!(spec["only_listed_keys"], true, "{spec}");
+    assert!(
+        spec.get("strict").is_none(),
+        "shown with the old key: {spec}"
+    );
+    env.run(&["occur", "tea", "3"]);
+    let (ok, text) = env.try_run(&["occur", "tea", "3", "brand=x"]);
+    assert!(
+        !ok && text.contains("'brand'"),
+        "an unlisted key was taken:\n{text}"
+    );
+
+    env.run(&["spec", "set", "tea", "--description", "green"]);
+    let conn = rusqlite::Connection::open(&env.db).unwrap();
+    let stored: String = conn
+        .query_row(
+            "SELECT data FROM entries WHERE slug = 'spec:tea'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        stored.contains(r#""only_listed_keys":true"#) && !stored.contains("strict"),
+        "the write kept the old name: {stored}"
+    );
+}

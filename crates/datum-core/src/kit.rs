@@ -98,8 +98,15 @@ pub struct FieldEntry {
     /// `--state-lookup-field` (da-f9jyv).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_lookup_field: Option<String>,
+    /// The spec's `only_listed_keys`, `only_listed_states` and
+    /// `remainder` (da-eqb30). A kit's `strict` reads as `only_listed_keys`,
+    /// as a stored spec's does.
+    #[serde(default, alias = "strict", skip_serializing_if = "std::ops::Not::not")]
+    pub only_listed_keys: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub strict: bool,
+    pub only_listed_states: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remainder: Option<String>,
     /// No aliases are derived for the field: `[[alias]]` entries are its own.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub no_autoalias: bool,
@@ -530,7 +537,9 @@ impl FieldEntry {
         spec.subfields = self.subfields.into_iter().collect();
         spec.id_template = self.id_template;
         spec.state_lookup_field = self.state_lookup_field;
-        spec.strict = self.strict;
+        spec.only_listed_keys = self.only_listed_keys;
+        spec.only_listed_states = self.only_listed_states;
+        spec.remainder = self.remainder;
         spec.no_autoalias = self.no_autoalias;
         spec.never_false = self.never_false;
         spec.color = color_resolved;
@@ -640,7 +649,9 @@ impl FieldEntry {
             subfields: spec.subfields.clone().into_iter().collect(),
             id_template: spec.id_template.clone(),
             state_lookup_field: spec.state_lookup_field.clone(),
-            strict: spec.strict,
+            only_listed_keys: spec.only_listed_keys,
+            only_listed_states: spec.only_listed_states,
+            remainder: spec.remainder.clone(),
             no_autoalias: spec.no_autoalias,
             never_false: spec.never_false,
             pos,
