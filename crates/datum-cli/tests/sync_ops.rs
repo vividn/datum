@@ -504,15 +504,17 @@ fn an_edit_of_the_merged_in_row_shows_in_the_merged_entry() {
 #[test]
 fn an_edit_of_the_merged_entry_takes_a_key_from_the_merged_in_row() {
     let (x, y) = (Copy::new(), Copy::new());
-    let (first, _) = one_id_twice(&x, &y);
+    let (first, second) = one_id_twice(&x, &y);
+    // A key only the merged-in row gives, which the edit below leaves alone.
+    y.ok(&["update", &second, "c=5"]);
     converged(&x, &y);
     x.ok(&["update", &first, "note=third", "b=4"]);
     converged(&x, &y);
     for copy in [&x, &y] {
         let data = copy.data(&first);
         assert_eq!(
-            (&data["note"], &data["b"]),
-            (&"third".into(), &4.into()),
+            (&data["note"], &data["a"], &data["b"], &data["c"]),
+            (&"third".into(), &1.into(), &4.into(), &5.into()),
             "{data}"
         );
     }
@@ -806,6 +808,34 @@ fn copies_that_diverged_before_ops_keep_the_delete() {
     for c in [&a, &b] {
         assert!(c.deleted(&hid), "the tombstone stands");
         assert!(c.ok(&["conflicts"]).contains("sync_conflict"));
+    }
+}
+
+/// Before merging into a row with no ops, each copy signs a baseline for it:
+/// two copies of one pre-ops file sign two, under two endpoints, for one hid.
+#[test]
+fn two_copies_each_baselining_one_op_less_survivor_converge() {
+    let a = Copy::new();
+    let at = "2026-10-04 08:00";
+    a.ok(&["occur", "coffee", "-t", at, "a=1"]);
+    a.sql("DELETE FROM ops; DELETE FROM sync_local;");
+    let b = Copy::new();
+    std::fs::copy(a.db(), b.db()).unwrap();
+    let survivor = a.hid("coffee");
+    let c = Copy::new();
+    c.ok(&["occur", "coffee", "-t", at, "b=2"]);
+    c.send(&a);
+    c.send(&b);
+    let baselines = "SELECT COUNT(DISTINCT endpoint) FROM ops WHERE kind = 'baseline' AND hid = ?1";
+    converged(&a, &b);
+    converged(&a, &c);
+    converged(&b, &c);
+    for copy in [&a, &b, &c] {
+        assert_eq!(copy.hash(), a.hash());
+        assert_eq!(live(copy, "coffee"), 1);
+        assert_eq!(copy.query(baselines, &survivor), "2");
+        let data = copy.data(&survivor);
+        assert_eq!((&data["a"], &data["b"]), (&1.into(), &2.into()), "{data}");
     }
 }
 
