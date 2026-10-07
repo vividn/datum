@@ -11,6 +11,7 @@
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -200,3 +201,27 @@ export const countOf = async (app, field) => Number((await app.run(['count', fie
 
 /** The databases whose sync `app`'s tab leads. */
 export const leadsOf = (app) => app.page.evaluate(() => window.datum.sync.leads());
+
+/**
+ * A tab and one more on its database, paired with a running native copy (or
+ * none), for the several-tabs files (`sync-tabs*.test.mjs`).
+ */
+export async function withTabs(relay, fn, { peer = true } = {}) {
+	const native = peer ? await nativeCopy(relay) : null;
+	try {
+		await withWallClock(
+			async (first) => {
+				await first.declare('burst');
+				if (native) {
+					assert.equal((await pairWith(first, native)).verified, true);
+					native.spawn(['sync', 'run']);
+				}
+				const second = await first.newTab();
+				await fn(first, second, native);
+			},
+			{ prepare: relayed(relay) }
+		);
+	} finally {
+		await native?.close();
+	}
+}

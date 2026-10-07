@@ -4,7 +4,7 @@
 // worker with the CLI as its store, a native one is `datum` itself, and the
 // relay is iroh's. What a test asserts is what the copies HOLD — their
 // `sync pipe verify` hashes and their entries — never what the page says it did.
-// The several-tabs cases are sync-tabs.test.mjs.
+// The several-tabs cases are sync-tabs.test.mjs and sync-tabs-leader.test.mjs.
 
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
