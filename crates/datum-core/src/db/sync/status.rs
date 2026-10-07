@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
 
-use super::chain::Filter;
+use super::chain::{Filter, Member};
 use super::{belongs_to, clock_ahead, filtered_lines, now_ms, row, row_to_entry, unhex};
 use crate::db::Db;
 use crate::error::{DatumError, Result};
@@ -159,7 +159,8 @@ impl Db {
             .collect())
     }
 
-    /// Every member of the chain but this copy, and how it stands with it.
+    /// Every member of the chain but this copy — in none yet, every copy it
+    /// is joining one through — and how it stands with it.
     pub fn sync_status(&self) -> Result<Vec<PeerStatus>> {
         let chain = self.sync_chain()?;
         let mine = self.sync_endpoint_id()?;
@@ -173,8 +174,29 @@ impl Db {
             .query_map([], row_to_entry)?
             .map(|e| e.map(|e| belongs_to(&row(&e))))
             .collect::<rusqlite::Result<_>>()?;
+        // In no chain yet, the copies it is joining one through (da-idw54).
+        let joining: Vec<Member> = self
+            .sync_joining()?
+            .into_iter()
+            .map(|p| Member {
+                endpoint: p.id,
+                label: p.label,
+                admitted: p.added_at,
+                via: String::new(),
+                client: None,
+                kind: None,
+                revoked: None,
+                roles: Vec::new(),
+                filter: None,
+            })
+            .collect();
         let mut out = Vec::new();
-        for m in chain.members.iter().filter(|m| m.endpoint != mine) {
+        for m in chain
+            .members
+            .iter()
+            .chain(&joining)
+            .filter(|m| m.endpoint != mine)
+        {
             let row: Option<Session> = self
                 .conn
                 .query_row(

@@ -73,10 +73,43 @@ impl Db {
             .collect()
     }
 
-    /// A copy this one syncs with: an unrevoked member of its chain.
+    /// A copy this one syncs with: an unrevoked member of its chain, or, in
+    /// none yet, a copy it is joining one through ([`Db::sync_joining`]).
     pub fn sync_is_peer(&self, id: &str) -> Result<bool> {
         let chain = self.sync_chain()?;
+        if !chain.exists() {
+            return Ok(self.sync_joining()?.iter().any(|p| p.id == id));
+        }
         Ok(chain.member(id).is_some_and(|m| m.revoked.is_none()))
+    }
+
+    /// The copies this one is joining a sync chain through (da-idw54): in
+    /// no chain, those it met in a handshake whose ops it holds. A first
+    /// sync carries the inviter's history before its chain records — what
+    /// it held got its ops before its chain began — so a join cut short (a
+    /// reload, a lost connection) leaves the copy holding part of it and in
+    /// no chain yet; these are where it resumes. A copy that left a chain
+    /// holds none of its ops, so none of its old peers is one.
+    pub fn sync_joining(&self) -> Result<Vec<Peer>> {
+        if self.sync_chain()?.exists() {
+            return Ok(Vec::new());
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT endpoint_id, label, addrs, added_at, last_seen FROM sync_peers p
+             WHERE EXISTS (SELECT 1 FROM ops WHERE endpoint = p.endpoint_id)
+             ORDER BY added_at",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(Peer {
+                id: r.get(0)?,
+                label: r.get(1)?,
+                addrs: r.get(2)?,
+                added_at: r.get(3)?,
+                last_seen: r.get(4)?,
+                synced: true,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     /// Record `id` as a peer, or refresh its label, address and last seen.

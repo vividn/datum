@@ -173,6 +173,8 @@ class Leader {
 	chain = false;
 	/** The chain's id, while there is one. */
 	chainId?: string;
+	/** In no chain yet, joining one through `peers`: a join cut short (da-idw54). */
+	joining = false;
 	paused?: string;
 	label = 'datum.day';
 	/** Per peer: its vector when last in step, a session in flight, one more asked for. */
@@ -196,7 +198,11 @@ class Leader {
 	 * Read whether the database syncs, and start an endpoint if it does.
 	 * `sync chain list` fails, writing nothing, in a database in no chain;
 	 * `sync status` would mint an endpoint key there, on every fresh
-	 * device's first boot, so only a member is asked it.
+	 * device's first boot, so only a member is asked it — or a copy joining
+	 * a chain, which it names and which has its key (da-idw54). A join
+	 * cut short, by a reload say, resumes there: the endpoint starts and
+	 * dials the copies it was joining through, and once in the chain the
+	 * copy says what it is, as `connect` does.
 	 *
 	 * A read that fails changes nothing (da-zyox0): emptying the peers
 	 * first left a failed one pushing to nobody until the next refresh.
@@ -204,14 +210,18 @@ class Leader {
 	async refresh(): Promise<void> {
 		failInjected();
 		const members = await cli(['--db', this.db, 'sync', 'chain', 'list', '--json']);
-		const chain = members.code === 0;
-		const status = chain ? JSON.parse(await must(['--db', this.db, 'sync', 'status', '--json'])) : undefined;
+		const syncs = members.code === 0;
+		const status = syncs ? JSON.parse(await must(['--db', this.db, 'sync', 'status', '--json'])) : undefined;
+		const chain = Boolean(status?.chain);
+		const joined = this.joining && chain;
+		this.joining = syncs && !chain;
 		this.chain = chain;
 		this.chainId = status?.chain ?? undefined;
 		this.label = status?.this.label ?? this.label;
 		this.paused = status?.paused ?? undefined;
 		this.peers = ((status?.members ?? []) as Peer[]).filter((p) => !p.revoked && p.addr);
-		if (chain) await this.start();
+		if (syncs) await this.start();
+		if (joined) await cli(['--db', this.db, 'sync', 'chain', 'rename', this.label]);
 		this.post();
 	}
 
@@ -267,11 +277,14 @@ class Leader {
 			announceHere([this.db]);
 			void this.push().catch(() => {});
 		}
-		if (report.added) void this.refresh();
+		if (report.added || this.joining) void this.refresh();
 	}
 
 	served(e: Extract<SyncEvent, { served: string }>): void {
 		if ('report' in e) this.done(e.report.id, e.report);
+		// One that failed may have admitted its peer all the same: a join
+		// whose first sync was cut short (da-idw54).
+		else void this.refresh().catch(() => {});
 		this.post();
 	}
 

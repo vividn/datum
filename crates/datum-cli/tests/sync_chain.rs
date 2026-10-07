@@ -1031,6 +1031,87 @@ fn status_of_a_copy_in_no_chain_is_empty() {
     );
 }
 
+/// A join cut short (da-idw54): `a` held entries before its chain began, so
+/// a first sync carries its chain records — `b`'s admission among them —
+/// after them. `b`, holding part of the history, is in no chain yet: it
+/// names `a` as the copy it is joining through, and takes a session with it
+/// either way round, which is how it resumes. Before any of `a`'s ops, and
+/// for a copy whose ops it does not hold, the address book grants nothing.
+#[test]
+fn a_join_cut_short_names_the_copy_it_joins_through_and_resumes_with_it() {
+    let (a, b) = (Copy::new(), Copy::new());
+    for t in ["0800", "0900", "1000"] {
+        a.ok(&["occur", "tea", "-t", t]);
+    }
+    let out = redeem(&a, &b, "b", None, &["--chain", ""]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // b's side of the handshake: it dialed a, and was welcomed.
+    let hello = ["sync", "handshake", &a.id(), "--label", "a", "--addr", "{}"];
+    b.ok(&[&hello[..], &["--dialed"]].concat());
+    assert!(b
+        .fails(&["sync", "chain", "list"], "")
+        .contains("in no sync chain"));
+
+    let ops = a.ops_for(&b);
+    assert!(
+        ops.lines()
+            .take(2)
+            .all(|l| !l.contains(r#""kind":"chain""#)),
+        "the history comes first"
+    );
+    b.ok_in(
+        &["sync", "pipe", "apply"],
+        &ops.lines().take(2).collect::<Vec<_>>().join("\n"),
+    );
+    let list = json(&b.ok(&["sync", "chain", "list", "--json"]));
+    assert!(list["chain"].is_null(), "{list}");
+    assert_eq!(list["joining"][0]["endpoint"], a.id().as_str(), "{list}");
+    let text = b.ok(&["sync", "chain", "list"]);
+    assert!(text.contains("joining a sync chain through a ("), "{text}");
+    assert!(b
+        .ok(&["sync", "status"])
+        .contains("`datum sync` resumes it"));
+    let status = json(&b.ok(&["sync", "status", "--json"]));
+    assert!(status["chain"].is_null(), "{status}");
+    assert_eq!(
+        status["members"][0]["endpoint"],
+        a.id().as_str(),
+        "{status}"
+    );
+    assert_eq!(status["members"][0]["addr"], "{}", "{status}");
+    // a dials b to push: taken. A stranger: refused.
+    assert!(b.ok(&hello).contains("known"));
+    let stranger = Copy::new().id();
+    let refused = b.fails(
+        &[
+            "sync",
+            "handshake",
+            &stranger,
+            "--label",
+            "s",
+            "--addr",
+            "{}",
+        ],
+        "",
+    );
+    assert!(
+        refused.contains("not a member of this sync chain"),
+        "{refused}"
+    );
+
+    // The rest arrives: b is in a's chain, and joining nothing.
+    assert!(a.send(&b).0);
+    let theirs = json(&a.ok(&["sync", "chain", "list", "--json"]))["chain"].clone();
+    let list = json(&b.ok(&["sync", "chain", "list", "--json"]));
+    assert_eq!(list["chain"], theirs, "{list}");
+    assert!(list.get("joining").is_none(), "{list}");
+    assert_eq!(a.hash(), b.hash());
+}
+
 #[test]
 fn the_network_workers_commands_are_hidden_and_endpoint_key_is_the_secret() {
     let a = Copy::new();

@@ -19,6 +19,14 @@ use crate::commands::check::{Issue, Severity};
 
 const NO_CHAIN: &str = "this copy is in no sync chain: `datum sync chain invite` on this device starts one, or `datum sync chain connect <TICKET>` joins one with a ticket from another";
 
+/// What a copy joining a chain through `label` (`endpoint`) says of it.
+fn joining(label: &str, endpoint: &str) -> String {
+    format!(
+        "joining a sync chain through {label} ({}): its first sync did not finish — `datum sync` resumes it",
+        &endpoint[..10.min(endpoint.len())]
+    )
+}
+
 /// What an open chain says beside its members.
 const OPEN: &str =
     "no admin: any device can add devices — `datum sync admin add` to protect the chain";
@@ -26,7 +34,7 @@ const OPEN: &str =
 pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
     match cmd {
         SyncCommand::Now => {
-            if !db.sync_chain()?.exists() {
+            if !db.sync_chain()?.exists() && db.sync_joining()?.is_empty() {
                 println!("{NO_CHAIN}");
                 return Ok(());
             }
@@ -644,6 +652,24 @@ fn filter_json(f: Option<&chain::Filter>) -> Value {
 /// `datum sync chain list`.
 fn members(db: &Db, json: bool) -> Result<()> {
     let chain = db.sync_chain()?;
+    // A copy joining a chain is in none yet, and says through which copies
+    // (da-idw54): datum.day reads this to resume the join.
+    let through = db.sync_joining()?;
+    if !chain.exists() && !through.is_empty() {
+        match json {
+            true => println!(
+                "{}",
+                json!({"chain": null, "admins": [], "members": [], "joining": through
+                    .iter()
+                    .map(|p| json!({"endpoint": p.id, "label": p.label}))
+                    .collect::<Vec<_>>()})
+            ),
+            false => through
+                .iter()
+                .for_each(|p| println!("{}", joining(&p.label, &p.id))),
+        }
+        return Ok(());
+    }
     ensure!(chain.exists(), NO_CHAIN);
     let mine = db.sync_endpoint_id()?;
     if json {
@@ -757,7 +783,12 @@ fn status(db: &Db, json: bool) -> Result<()> {
         println!("⚠ {w}");
     }
     if !chain.exists() {
-        println!("{NO_CHAIN}");
+        match peers.is_empty() {
+            true => println!("{NO_CHAIN}"),
+            false => peers
+                .iter()
+                .for_each(|p| println!("{}", joining(&p.label, &p.endpoint))),
+        }
         return Ok(());
     }
     if let Some(at) = &paused {

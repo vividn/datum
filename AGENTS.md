@@ -147,6 +147,11 @@ A copy belongs to one chain, but one holding nothing but its own data — no
 other live member, no other endpoint's op — may leave its chain: `chain
 leave`, or by redeeming another chain's invite, which leaves once admitted.
 Its ops go and its entries stay, signed again as baselines on the next sync.
+A first sync carries the inviter's chain records after its history, so a join
+cut short (a reload, a lost connection) leaves the joiner in no chain holding
+part of it: `sync chain list` / `status` then name the copy it is JOINING
+through, which counts as its peer, and bare `sync` or datum.day's leader
+resumes there (da-idw54).
 A reader may be FILTERED: its invite's `caps` or a `role` record
 carries `fields` (`--fields a,b`, or `--kit K` resolved to that kit's fields)
 and `of`. Every member serving it sends only the entries that belong to those
