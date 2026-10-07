@@ -452,6 +452,23 @@ export function closeTab(layout: Layout, paneId: NodeId, tabIndex: number): Layo
 	);
 }
 
+/**
+ * Move a tab from index `from` to index `to`, the others closing up behind
+ * it (da-w19ny). The tab in front stays in front, wherever it lands.
+ */
+export function moveTab(layout: Layout, paneId: NodeId, from: number, to: number): Layout {
+	if (from === to) return layout;
+	return withRoot(
+		layout,
+		mapPanes(layout.root, (pane) => {
+			if (pane.id !== paneId || !pane.tabs[from] || !pane.tabs[to]) return pane;
+			const tabs = pane.tabs.filter((_, i) => i !== from);
+			tabs.splice(to, 0, pane.tabs[from]);
+			return { ...pane, tabs, active: tabs.indexOf(pane.tabs[pane.active]) };
+		})
+	);
+}
+
 export function setActive(layout: Layout, paneId: NodeId, active: number): Layout {
 	return withRoot(
 		layout,

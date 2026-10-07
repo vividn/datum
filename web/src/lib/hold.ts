@@ -36,6 +36,27 @@ export interface Holding {
 	within?: string;
 }
 
+/**
+ * Eat the one click a gesture is about to leave behind, wherever it lands —
+ * see the head of this file. It is taken down by that click or by the next
+ * press, so no click a reader means is ever inside it. A root tab's drag
+ * leaves one too (layout/reorder.ts).
+ */
+export function swallowTail() {
+	const off = () => {
+		removeEventListener('click', eat, true);
+		removeEventListener('pointerdown', off, true);
+	};
+	const eat = (event: MouseEvent) => {
+		event.stopPropagation();
+		event.preventDefault();
+		off();
+	};
+	addEventListener('click', eat, true);
+	addEventListener('pointerdown', off, true);
+	return off;
+}
+
 export function holds(node: HTMLElement, spec: Holding) {
 	let held: Holding = spec;
 	let timer: ReturnType<typeof setTimeout> | null = null;
@@ -114,26 +135,6 @@ export function holds(node: HTMLElement, spec: Holding) {
 		// follow on a touch platform.
 		if (fired) return;
 		held.run?.(target);
-	}
-
-	/**
-	 * Eat the one click this gesture is about to leave behind, wherever it
-	 * lands — see the head of this file. It is taken down by that click or
-	 * by the next press, so no click a reader means is ever inside it.
-	 */
-	function swallowTail() {
-		const off = () => {
-			removeEventListener('click', eat, true);
-			removeEventListener('pointerdown', off, true);
-		};
-		const eat = (event: MouseEvent) => {
-			event.stopPropagation();
-			event.preventDefault();
-			off();
-		};
-		addEventListener('click', eat, true);
-		addEventListener('pointerdown', off, true);
-		return off;
 	}
 
 	/**

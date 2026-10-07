@@ -21,6 +21,7 @@ import {
 	findPane,
 	findSplit,
 	isCanonical,
+	moveTab,
 	newId,
 	newPane,
 	newSplit,
@@ -446,6 +447,26 @@ describe('addTab / setActive / closeTab', () => {
 		const after = closeTab(layout, layout.root.id, 0);
 		assert.deepEqual(kinds(after.root), ['b', 'c']);
 		assert.equal(kinds(after.root)[after.root.active], 'c');
+	});
+
+	test('moving a tab keeps the one in front in front (da-w19ny)', () => {
+		let layout = single('a');
+		layout = addTab(layout, layout.root.id);
+		layout = setWidget(layout, layout.root.tabs[1].id, newWidget('b'));
+		layout = addTab(layout, layout.root.id);
+		layout = setWidget(layout, layout.root.tabs[2].id, newWidget('c'));
+		layout = setActive(layout, layout.root.id, 1);
+		const before = moveTab(layout, layout.root.id, 2, 0);
+		assert.deepEqual(kinds(before.root), ['c', 'a', 'b']);
+		assert.equal(kinds(before.root)[before.root.active], 'b');
+		const back = moveTab(before, before.root.id, 0, 2);
+		assert.deepEqual(kinds(back.root), ['a', 'b', 'c']);
+		assert.equal(kinds(back.root)[back.root.active], 'b');
+		assert.equal(moveTab(layout, layout.root.id, 1, 1), layout);
+		// The tab in front itself, moved, is still in front where it lands.
+		const front = moveTab(layout, layout.root.id, 1, 2);
+		assert.deepEqual(kinds(front.root), ['a', 'c', 'b']);
+		assert.equal(front.root.active, 2);
 	});
 
 	test('the last pane cannot be closed', () => {

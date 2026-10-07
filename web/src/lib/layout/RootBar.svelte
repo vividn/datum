@@ -108,6 +108,11 @@
 	On a phone the tabs scroll sideways rather than wrapping — one row,
 	always — while the `+`, the `▾`, the beta pair, the lock and the gear
 	stay where they are.
+
+	A tab DRAGGED along the strip moves there (da-w19ny, `reorder.ts`):
+	picked up by a mouse that moves, or by a finger that holds, so a
+	sideways finger still scrolls. The order is the tree's (`moveTab`), so
+	it is written where the open list is and a reload keeps it.
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
@@ -126,7 +131,8 @@
 	import PaneMenu from './PaneMenu.svelte';
 	import { labelOf, titleOf } from './registry.js';
 	import { activate, close, keepTab, modified, open, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, toggleLock, versions } from './shell.js';
-	import { addEdge } from './tree.js';
+	import { reorders } from './reorder.js';
+	import { addEdge, moveTab } from './tree.js';
 	import type { BarEdge, Tab } from './types.js';
 	import type { Toward } from './tree.js';
 
@@ -352,7 +358,13 @@
 </script>
 
 <nav class="root-bar" class:modified={dirty} aria-busy={!ready} aria-label="layouts">
-	<div class="tabs" role="tablist" aria-orientation="horizontal" bind:this={strip}>
+	<div
+		class="tabs"
+		role="tablist"
+		aria-orientation="horizontal"
+		bind:this={strip}
+		use:reorders={{ tabs: '[role="tab"]', move: (from, to) => apply((l) => moveTab(l, l.root.id, from, to)) }}
+	>
 		{#each $loaded ? tabs : [] as tab, i (tab.id)}
 			{#if i === $layout.root.active && items.length > 0}
 				<!-- The tab in front is the menu's button; the others switch. -->
@@ -526,6 +538,29 @@
 	.tabs :global(.tab[aria-selected='true']) {
 		color: var(--accent);
 		border-color: var(--accent);
+	}
+
+	/* A tab being dragged (da-w19ny) rides over the others, and the tab it
+	   would land beside wears an accent line on that side. Inset, because
+	   the strip clips: the first tab's outer edge is the strip's. */
+	.tabs {
+		-webkit-user-select: none;
+		user-select: none;
+		-webkit-touch-callout: none;
+	}
+
+	.tabs :global([data-dragging]) {
+		position: relative;
+		z-index: 1;
+		cursor: grabbing;
+	}
+
+	.tabs :global([data-drop='before']) {
+		box-shadow: inset 2px 0 0 var(--accent);
+	}
+
+	.tabs :global([data-drop='after']) {
+		box-shadow: inset -2px 0 0 var(--accent);
 	}
 
 	.tabs :global(.tab:hover),
