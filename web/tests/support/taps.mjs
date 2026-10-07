@@ -14,9 +14,9 @@
 // IGNORED field that acts draws a double DASHED line (da-nmna0) — a dashed
 // border with a dashed outline inside it — and counts as double here.
 //
-// Each tap is taken on the page as it was seeded: `solo` puts the layout,
-// the line, the menus and the modals back, and empties the database only
-// if the tap wrote, which is then seeded again. Twice over: the page idle,
+// Each tap is taken on the page as it was seeded: `reset` puts the layout,
+// the line, the menus and the modals back, and the database's seeded bytes
+// only if the tap wrote. Twice over: the page idle,
 // and with `occur ` on the line — which is what draws Send, the ×, and
 // the fields under a pending verb.
 //
@@ -28,7 +28,7 @@
 
 import { before, after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { changeCounter, sharedApp, startApp, stopApp } from './app.mjs';
+import { changeCounter, ready, settled, sharedApp, startApp, stopApp } from './app.mjs';
 import { toggleOption } from './layout.mjs';
 import { FIXTURE, MOOD } from './fields.mjs';
 
@@ -95,10 +95,25 @@ const world = (page) =>
 	page.evaluate(() => JSON.stringify([window.datum.layout.current(), localStorage.getItem('datum.layout.root.v1')]));
 
 /**
+ * The layout world `app.kept` holds — the tree, and this device's layout
+ * keys — put back through the store's own setter: whether that is the
+ * world `solo` left.
+ */
+async function putBack(app) {
+	await app.page.evaluate(([tree, stored]) => {
+		window.datum.layout.apply(() => tree);
+		for (const key of Object.keys(localStorage)) if (key.startsWith('datum.layout.')) localStorage.removeItem(key);
+		for (const [key, value] of Object.entries(stored)) localStorage.setItem(key, value);
+	}, app.kept);
+	await ready(app.page);
+	await settled(app);
+	return (await world(app.page)) === app.world;
+}
+
+/**
  * The page as seeded, with `line` typed on it. `home` closes what a tap
- * opened; `solo` is taken only when the tap moved the layout world, and the
- * database emptied and seeded again only when it wrote — each is seconds,
- * and most taps do neither.
+ * opened; the layout world is put back only when the tap moved it, and the
+ * database only when it wrote — and most taps do neither.
  */
 async function reset(app, line) {
 	const { page } = app;
@@ -120,20 +135,34 @@ async function reset(app, line) {
 	// or flags — backed out of, as a reader would.
 	for (let back; (back = page.locator('.bar [data-back]')), (await back.count()) > 0; ) await back.first().click();
 	// Once seeded, the layout goes back without the database: whether the
-	// tap wrote is the counter's to say, below.
-	if (app.seeded === undefined || (await world(page)) !== app.world) {
+	// tap wrote is the counter's to say, below. The world the first `solo`
+	// left is put straight back (da-vop9n), and `solo` taken again only
+	// where that does not reproduce it — or after a tap that saved a
+	// layout, which `solo`'s wipe deletes and a tree put back would keep.
+	if (
+		app.seeded === undefined ||
+		((await world(page)) !== app.world &&
+			((await changeCounter(page, '_internal')) !== app.layouts || !(await putBack(app))))
+	) {
 		await app.solo(undefined, { keepDb: app.seeded !== undefined });
 		app.world = await world(page);
+		app.kept = await page.evaluate(() => [
+			window.datum.layout.current(),
+			Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.startsWith('datum.layout.')))
+		]);
 	}
-	if ((await writes(app)) !== app.seeded) {
+	// The seeded file's own bytes back (`restore`), which keep its undo trail
+	// — a `db restore -` would not, and `command: undo` would then write
+	// nothing. Seeded line by line only where the page has kept no bytes.
+	if ((await writes(app)) !== app.seeded && !(await app.restore())) {
 		await app.empty();
-		// Through the quiet door, and one redraw over all of it. Line by line
-		// and not a `db restore -`: a backup carries no undo trail, and
-		// `command: undo` then writes nothing.
+		// Through the quiet door, and one redraw over all of it.
 		for (const line of SEED) assert.equal((await app.runLine(line)).code, 0, line);
 		await app.redraw();
 		app.seeded = await writes(app);
+		await app.keep();
 	}
+	assert.equal(await writes(app), app.seeded, 'the database is back as seeded');
 	// The session's «show ignored fields», which `solo` keeps — unless the
 	// tap before closed or changed the pane it was set on. Read once the
 	// bar is drawn, or a bar still mounting reads as the option off.
@@ -151,6 +180,7 @@ async function reset(app, line) {
 		for (const argv of INTERNAL) await app.run(argv);
 		app.internal = await changeCounter(page, '_internal');
 	}
+	app.layouts = await changeCounter(page, '_internal');
 	if (line) {
 		await page.locator('.prompt-bar input').fill(line);
 		await page.locator('.prompt-bar .send').waitFor();
@@ -261,6 +291,7 @@ export function everyButton(screen, options, must) {
 
 		test('idle: a double outline is exactly a tap that wrote or ran, a › one that opened a modal', async () => {
 			const { keys, acted, wrong } = await tapAll(await shared());
+			console.log(`# ${keys.length} buttons tapped, ${acted.length} acted`);
 			assert.deepEqual(wrong, []);
 			for (const key of must) {
 				assert.ok(keys.includes(key), `${key} not surveyed; saw ${keys.join(', ')}`);
@@ -271,11 +302,36 @@ export function everyButton(screen, options, must) {
 		test('with `occur ` on the line: the bar and the widgets it changes', async () => {
 			const within = '.prompt-bar, section.pane[data-title="fields"], section.pane[data-title="command"]';
 			const { keys, acted, wrong } = await tapAll(await shared(), 'occur ', within);
+			console.log(`# ${keys.length} buttons tapped, ${acted.length} acted`);
 			assert.deepEqual(wrong, []);
 			for (const key of ['bar: run the line', 'fields: coffee']) {
 				assert.ok(keys.includes(key), `${key} not surveyed; saw ${keys.join(', ')}`);
 				assert.ok(acted.includes(key), `${key} did nothing; acted: ${acted.join(', ')}`);
 			}
+		});
+
+		// The control on `reset`'s restore (da-vop9n): the seed's own rows come
+		// back, hids and all — a seed run again mints new ones — and the undo
+		// trail with them, so `undo` undoes the seed exactly as it first did.
+		test('a reset after a write puts the seeded file back, undo trail and all', async () => {
+			const app = await shared();
+			await reset(app);
+			const seeded = await app.tailRows();
+			// What it said and wrote, not how long it took.
+			const undone = async () => {
+				const { code, stdout, stderr, changed } = await app.run(['undo']);
+				return { code, stdout, stderr, changed };
+			};
+			const undo = await undone();
+			assert.equal(undo.code, 0, undo.stderr);
+			assert.notEqual(await writes(app), app.seeded, 'the undo wrote');
+			await reset(app);
+			assert.deepEqual(await app.tailRows(), seeded);
+			assert.ok((await tap(app, 'fields: coffee')).wrote, 'the tap wrote');
+			await reset(app);
+			assert.deepEqual(await app.tailRows(), seeded);
+			assert.deepEqual(await undone(), undo);
+			await reset(app);
 		});
 	});
 }

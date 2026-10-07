@@ -621,7 +621,7 @@ function countRuns(page) {
  * one late — a restored `main`'s nowview does — then nothing in flight, so a
  * test that counts runs counts its own (da-6b3dj).
  */
-async function settled(app) {
+export async function settled(app) {
 	await app.page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
 	await app.idle();
 }
@@ -645,6 +645,32 @@ function removeDb(page, db) {
 	);
 }
 
+/**
+ * Database `db`'s file as bytes, kept in the page (`keep`), or those bytes
+ * written back over it and its journal gone (`restore`) — under the
+ * worker's own lock, as `removeDb`, so no handle is open there. A restore
+ * with nothing kept — another database, or a page navigated since, which
+ * took the window with it — writes nothing and says false.
+ */
+function snapshotDb(page, db, restore) {
+	return page.evaluate(
+		async ([dir, db, restore]) =>
+			navigator.locks.request('datum-cli-files', async () => {
+				const files = await (await navigator.storage.getDirectory()).getDirectoryHandle(dir);
+				const file = await files.getFileHandle(`${db}.db`);
+				window.__datumKept ??= {};
+				if (!restore) return void (window.__datumKept[db] = await (await file.getFile()).arrayBuffer());
+				if (!window.__datumKept[db]) return false;
+				const out = await file.createWritable();
+				await out.write(window.__datumKept[db]);
+				await out.close();
+				await files.removeEntry(`${db}.db-journal`).catch(() => {});
+				return true;
+			}),
+		[OPFS_DIR, db, restore]
+	);
+}
+
 /** The change counter of the page's database — or of `named` — read under the worker's own lock: 0 with no file. */
 export function changeCounter(page, named) {
 	return page.evaluate(async ([dir, named]) => {
@@ -663,7 +689,7 @@ export function changeCounter(page, named) {
 	}, [OPFS_DIR, named]);
 }
 
-async function ready(page) {
+export async function ready(page) {
 	// A prompt is disabled until `initDb()` resolves, so an enabled one is
 	// the app's own statement that the database is open. The bottom bar's
 	// (da-0a5o): it is on every page, whatever layout is in front.
@@ -692,6 +718,15 @@ function app(page, errors, query, clean, locks, internal) {
 		page.evaluate(() => JSON.stringify(window.datum.layout.current().root.tabs.find((t) => t.layout === 'main') ?? null));
 	/** The screen the app opened on, which `home` puts back. */
 	const viewport = page.viewportSize();
+	/** The bar's pills and the time cursor gone, and the clock back where the app opened (da-ydao). */
+	const unpoint = async () => {
+		await self.idle();
+		await self.clock?.reset();
+		await page.evaluate(() => {
+			window.datum.bar.setPills([]);
+			window.datum.cursor.set(null);
+		});
+	};
 	const self = {
 		page,
 		/** Uncaught errors the page threw, in order. */
@@ -1067,17 +1102,39 @@ function app(page, errors, query, clean, locks, internal) {
 		 * its own commands from the end.
 		 */
 		async empty() {
-			await self.idle();
-			await self.clock?.reset();
-			await page.evaluate(() => {
-				window.datum.bar.setPills([]);
-				window.datum.cursor.set(null);
-			});
+			await unpoint();
 			if ((await changeCounter(page)) === clean) return self;
 			await removeDb(page, await pageDb(page));
 			await self.redraw();
 			clean = await changeCounter(page);
 			return self;
+		},
+
+		/**
+		 * The page's database as it now is, kept for `restore` (da-vop9n).
+		 *
+		 * The file's own bytes rather than a `db backup -`: the undo trail
+		 * (`undo_actions`) is a table in the same file and a backup carries
+		 * none of it, so `undo` after a restore undoes what it would have.
+		 */
+		async keep() {
+			await self.idle();
+			await snapshotDb(page, await pageDb(page), false);
+			return self;
+		},
+
+		/**
+		 * The database back to what `keep` took, byte for byte, and every
+		 * pane re-drawn from it: what `empty` and a seed again give, for one
+		 * file written. The pills, the cursor and the clock go back as `empty`
+		 * takes them. False, with the database untouched, if this page has
+		 * kept nothing of it.
+		 */
+		async restore() {
+			await unpoint();
+			if (!(await snapshotDb(page, await pageDb(page), true))) return false;
+			await self.redraw();
+			return true;
 		},
 
 		/**
