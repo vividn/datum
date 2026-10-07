@@ -20,6 +20,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp, seedLines } from './support/app.mjs';
+import { along, widgetPane } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -30,6 +31,11 @@ const DESKTOP = { viewport: { width: 1280, height: 800 } };
 // support/app.mjs). What slows the runner (`slowRunner` installs one, which
 // `solo` does not take out) or asks for no motion opens an app of its own.
 const shared = sharedApp(DESKTOP);
+// `main` as a draft of the REPL and the widget bar alone: nothing here
+// reads the rest of the day frame, and drawing it costs what a boot did
+// (da-m1m9a).
+const BAR = JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('bar', 'widgetbar')));
+const onBar = (fn) => shared.solo(fn, BAR);
 
 /**
  * Make any command carrying `slowly` take `ms`, through the seam's own
@@ -131,7 +137,7 @@ describe('the bar after Enter', () => {
 
 describe('the ghost', () => {
 	test('a press shows the argv it ran without it becoming the input’s value, and fades within a second', async () => {
-		await shared.solo(async (app) => {
+		await onBar(async (app) => {
 			const { page } = app;
 			await withCoffee(app);
 
@@ -197,7 +203,7 @@ describe('the ghost', () => {
 	});
 
 	test('a second press replaces the first and restarts the fade — never two at once', async () => {
-		await shared.solo(async (app) => {
+		await onBar(async (app) => {
 			const { page } = app;
 			await withCoffee(app);
 
@@ -219,7 +225,7 @@ describe('the ghost', () => {
 	});
 
 	test('a keystroke takes the ghost away at once — the box is the reader’s', async () => {
-		await shared.solo(async (app) => {
+		await onBar(async (app) => {
 			const { page } = app;
 			await withCoffee(app);
 			const input = page.locator('.prompt-bar input');
@@ -257,7 +263,7 @@ describe('the ghost', () => {
 	});
 
 	test('the console ghosts too: a command nobody typed says what it ran', async () => {
-		await shared.solo(async (app) => {
+		await onBar(async (app) => {
 			const { page } = app;
 			await page.evaluate(() => window.datum.run(['occur', 'tea']).then(() => {}));
 			assert.deepEqual(await ghostAndValue(page), { ghost: 'occur tea', value: '' });

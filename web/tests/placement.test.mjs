@@ -9,6 +9,7 @@
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
+import { ONE_PANE } from './support/layout.mjs';
 import { editedSpec, placeOf } from '../src/lib/track.ts';
 import { SPEC as MODAL, cancelSpec, openSpec } from './support/spec.mjs';
 
@@ -52,6 +53,9 @@ describe('the Placement tab', () => {
 	before(startApp);
 	after(stopApp);
 	const shared = sharedApp();
+	// `main` as a draft of ONE REPL pane: nothing here reads the day frame,
+	// and drawing it costs what a boot did (da-m1m9a).
+	const onSeam = (fn) => shared.solo(fn, ONE_PANE);
 
 	const spec = async (app, field) => JSON.parse((await app.run(['spec', 'show', field])).stdout);
 	const lane = async (app, field) =>
@@ -88,7 +92,7 @@ describe('the Placement tab', () => {
 	}
 
 	test('a field nobody placed says so, and dragging writes `y`; an edge writes `height`', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'coffee', '--verb', 'occur']);
 			await app.run(['occur', 'coffee', '-t', '-30']);
@@ -122,7 +126,7 @@ describe('the Placement tab', () => {
 	});
 
 	test('tied to a neighbour it writes the ratios, not y/height, and moves with its anchor', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'mood', '--verb', 'switch']);
 			await setPlace(app, 'mood', { y: 0.2, height: 0.25 });
@@ -165,7 +169,7 @@ describe('the Placement tab', () => {
 
 	// da-c05v1: an occur field sizes its dot here, on the band, as it moves.
 	test("an occur field's size slider scales its dot on the band and in the spec; aspect widens it alone", async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'coffee', '--verb', 'occur']);
 			// Not today: the band draws the day of its latest dot instead.
@@ -218,7 +222,7 @@ describe('the Placement tab', () => {
 	});
 
 	test('a block field has no size to set', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			await app.run(['track', 'work', '--verb', 'start']);
 			const { saved } = await openPlacement(app.page, 'work');
 			assert.equal(await app.page.locator(`${MODAL} .size`).count(), 0);

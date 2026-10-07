@@ -21,6 +21,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
+import { ONE_PANE } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -30,6 +31,9 @@ after(stopApp);
 // through the quiet door, so the REPL's scrollback stays the empty one the
 // examples are read from.
 const shared = sharedApp();
+// `main` as a draft of ONE REPL pane: nothing here reads the day frame,
+// and drawing it costs what a boot did (da-m1m9a).
+const onSeam = (fn) => shared.solo(fn, ONE_PANE);
 
 /**
  * Every command the freshly opened page offers, as the reader sees it.
@@ -42,7 +46,7 @@ const shared = sharedApp();
 let offered;
 async function hints() {
 	if (!offered) {
-		await shared.solo(async ({ page }) => {
+		await onSeam(async ({ page }) => {
 			offered = {
 				placeholder: await page.locator('.prompt-bar input').getAttribute('placeholder'),
 				examples: await page.locator('.repl .quiet code').allInnerTexts()
@@ -55,7 +59,7 @@ async function hints() {
 /** Type the hint verbatim into a first-time reader's empty database. */
 async function typedFresh(line) {
 	let result;
-	await shared.solo(async ({ runLine }) => {
+	await onSeam(async ({ runLine }) => {
 		result = await runLine(line);
 	});
 	return result;

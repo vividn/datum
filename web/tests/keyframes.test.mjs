@@ -10,11 +10,15 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, seedLines } from './support/app.mjs';
+import { ONE_PANE } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
 
 const shared = sharedApp({ viewport: { width: 1280, height: 800 } });
+// `main` as a draft of ONE REPL pane: nothing here reads the day frame,
+// and drawing it costs what a boot did (da-m1m9a).
+const onSeam = (fn) => shared.solo(fn, ONE_PANE);
 
 const TEA = 'spec set tea --verb occur --data-key amount --data-key size= --data-key cups=1 --assign brand=acme';
 const WORK = 'spec set work --verb start --data-key project --data-key n=1';
@@ -48,7 +52,7 @@ async function enter(app) {
 describe('key frames', () => {
 	// da-p3hxn: the CLI binds a spec's keys to positionals, so a frame holds a bare value.
 	test('frames in order, required solid and the rest dashed, an assign none; `3 space 2` runs `occur tea 3 2`', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			const { page } = app;
 			await seedLines(app, [TEA]);
 
@@ -90,7 +94,7 @@ describe('key frames', () => {
 	});
 
 	test('inside quotes a space is a space', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			const { page } = app;
 			await seedLines(app, [TEA]);
 			await type(page, 'occur tea "a b" ');
@@ -101,7 +105,7 @@ describe('key frames', () => {
 	});
 
 	test('a space in an empty frame skips it; Enter leaves an empty optional absent and the default to the CLI', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			const { page } = app;
 			await seedLines(app, [TEA]);
 			await type(page, 'occur tea 3  ');
@@ -117,7 +121,7 @@ describe('key frames', () => {
 
 	// da-cej7q: a state may declare keys of its own.
 	test("a switch frames its state's own keys: sad asks for reason, happy for nothing", async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			const { page } = app;
 			await seedLines(app, ['spec set mood --verb switch --state happy --state sad --state-key sad=reason']);
 			await type(page, 'switch mood happy');
@@ -136,7 +140,7 @@ describe('key frames', () => {
 	// this one, so I think that should be the default. But allowing it might
 	// also be nice??» — not prompted, and typed still runs.
 	test('end draws no frames and Enter writes no defaults; a key typed on it runs as typed; start keeps its frames', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			const { page } = app;
 			await seedLines(app, [WORK, 'start work project=a -t -30']);
 

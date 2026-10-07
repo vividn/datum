@@ -11,18 +11,21 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, seedLines } from './support/app.mjs';
-import { DESKTOP } from './support/layout.mjs';
+import { DESKTOP, ONE_PANE } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
 
 const shared = sharedApp(DESKTOP);
+// `main` as a draft of ONE REPL pane: nothing here reads the day frame,
+// and drawing it costs what a boot did (da-m1m9a).
+const onSeam = (fn) => shared.solo(fn, ONE_PANE);
 
 const TWICE = 'occur coffee -t 0900';
 
 describe('seedLines — a refused line throws', () => {
 	test('through the quiet door: names the line and its code', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			await assert.rejects(seedLines(app, [TWICE, TWICE, 'occur tea']), {
 				message: `seed line \`${TWICE}\` exited 11`
 			});
@@ -30,7 +33,7 @@ describe('seedLines — a refused line throws', () => {
 	});
 
 	test('through the bar: the last line is checked too', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			await assert.rejects(seedLines(app, [TWICE, TWICE]), {
 				message: `seed line \`${TWICE}\` exited 11`
 			});
@@ -38,7 +41,7 @@ describe('seedLines — a refused line throws', () => {
 	});
 
 	test('a seed that lands returns quietly', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			await seedLines(app, ['occur coffee -t 0900', 'occur tea -t 0905']);
 			assert.equal((await app.entries()).length, 2);
 		});

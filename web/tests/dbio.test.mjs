@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium, webkit } from 'playwright';
 import { fileArgv } from '../src/lib/fileargv.ts';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { ONE_PANE } from './support/layout.mjs';
 
 // The probe is the file's one top-level await, and it comes before any
 // hook or test is registered (da-h9vv0): node:test runs the root `after`
@@ -70,6 +71,10 @@ after(stopApp);
 // still counts from zero. The legs keep an app each: their browser is a
 // persistent profile of its own, and the phone's has an init script.
 const desk = sharedApp({ viewport: { width: 1280, height: 1000 } });
+// `main` as a draft of ONE REPL pane for the tests that never read the day
+// frame, since drawing it costs what a boot did (da-m1m9a); the one that
+// waits on the tail pane takes `main` as it ships.
+const onSeam = (fn) => desk.solo(fn, ONE_PANE);
 
 // The rewrite keeps every option and its value, in order, and makes only
 // the input source `-` (da-1vz2): read off the CLI's option table, not
@@ -349,7 +354,7 @@ for (const engine of [chromium, webkit]) {
 // A ~50 MB import on a phone ran in silence (da-h9vj). The CLI counts on
 // stderr, and the worker streams it out while the process still holds it.
 test('an import shows its progress while it runs, and the result after', async () => {
-	await desk.solo(
+	await onSeam(
 		async (app) => {
 			const { page } = app;
 			const utc = (i) => new Date(Date.UTC(2025, 0, 1) + i * 60000).toISOString();
@@ -387,7 +392,7 @@ test('an import shows its progress while it runs, and the result after', async (
 });
 
 test('an option keeps its value, and only the source is the chosen file (da-1vz2)', async () => {
-	await desk.solo(
+	await onSeam(
 		async (app) => {
 			const { page } = app;
 			// What the CLI is asked — argv and stdin — through the seam's own hook.
@@ -529,7 +534,7 @@ test('a replacing restore confirms its deletions first; one that deletes nothing
 // yes-default — a 16-minute-old coffee retimed without a word. Now the
 // CLI's own question is a confirm, and only a yes retimes.
 test('a stale _LAST question is asked in a confirm, in the CLI’s words, and only a yes retimes', async () => {
-	await desk.solo(async (app) => {
+	await onSeam(async (app) => {
 		const { page } = app;
 		await app.declare('coffee');
 		await app.submit('occur coffee');
@@ -564,7 +569,7 @@ test('a stale _LAST question is asked in a confirm, in the CLI’s words, and on
 // confirm never showed. The answer is now for the entry shown, and a moved
 // `_LAST` is asked about again.
 test('an answer to the stale _LAST question acts on the entry it showed, or asks again', async () => {
-	await desk.solo(async (app) => {
+	await onSeam(async (app) => {
 		const { page } = app;
 		await app.declare('coffee');
 		await app.declare('tea');
@@ -608,7 +613,7 @@ test('an answer to the stale _LAST question acts on the entry it showed, or asks
 // deleted uncounted. The yes is now pinned to what was counted, and a
 // database that changed since is counted and asked about again.
 test('a restore’s yes deletes what its confirm counted; another tab’s write since is asked about again', async () => {
-	await desk.solo(async (app) => {
+	await onSeam(async (app) => {
 		const { page } = app;
 		await app.declare('coffee');
 		await app.declare('tea');
@@ -646,7 +651,7 @@ test('a restore’s yes deletes what its confirm counted; another tab’s write 
 // deletes nothing and warns of nothing — else a database that keeps
 // changing under the run would be retried unattended, with no end.
 test('a restore refused by a write since its count asks, even when the recount deletes nothing', async () => {
-	await desk.solo(async (app) => {
+	await onSeam(async (app) => {
 		const { page } = app;
 		await app.declare('coffee');
 		await app.submit('occur coffee');
@@ -684,7 +689,7 @@ test('a restore refused by a write since its count asks, even when the recount d
 // da-i4rqd: the confirm was built from the dry run's counts alone, so a
 // backup whose header disagrees with its lines was confirmed as if whole.
 test('a replacing restore names the dry run’s warnings in its confirm', async () => {
-	await desk.solo(
+	await onSeam(
 		async (app) => {
 			const { page } = app;
 			await app.declare('coffee');
@@ -718,7 +723,7 @@ test('a replacing restore names the dry run’s warnings in its confirm', async 
 // then ran with no word before it. A warning asks too; a clean restore
 // that deletes nothing still runs at once.
 test('a restore whose dry run warns asks first, even when nothing would be deleted', async () => {
-	await desk.solo(
+	await onSeam(
 		async (app) => {
 			const { page } = app;
 			await page.evaluate(() => {
@@ -787,7 +792,7 @@ test('a restore whose dry run warns asks first, even when nothing would be delet
 // its run was not pinned to them, so another tab's write while the dialog
 // was open was dropped uncounted. Now it is refused, counted and asked again.
 test('a hard restore’s name drops what its confirm counted; another tab’s write since is asked about again', async () => {
-	await desk.solo(async (app) => {
+	await onSeam(async (app) => {
 		const { page } = app;
 		await app.declare('coffee');
 		await app.declare('juice');
@@ -827,7 +832,7 @@ test('a hard restore’s name drops what its confirm counted; another tab’s wr
 // typed `--yes`, which that refusal points at, asked nobody. Now `--hard`
 // asks in the CLI's own words, behind the database's name, every time.
 test('a hard restore asks with what it drops and the database’s name, even with a typed --yes', async () => {
-	await desk.solo(
+	await onSeam(
 		async (app) => {
 			const { page } = app;
 			await page.evaluate(() => {

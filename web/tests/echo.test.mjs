@@ -26,6 +26,7 @@ import { readFileSync } from 'node:fs';
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
+import { ONE_PANE } from './support/layout.mjs';
 import { echoEnv, parseEcho } from '../src/lib/echo.ts';
 
 before(startApp);
@@ -35,6 +36,9 @@ after(stopApp);
 // empties the database between tests, and what is read off the screen is
 // the NEWEST document, so the scrollback of the tests before is not in it.
 const shared = sharedApp();
+// `main` as a draft of ONE REPL pane: nothing here reads the day frame,
+// and drawing it costs what a boot did (da-m1m9a).
+const onSeam = (fn) => shared.solo(fn, ONE_PANE);
 
 const ASKED = ['DATUM_SHOW=json'];
 
@@ -71,7 +75,7 @@ describe('echoEnv', () => {
 
 describe('the record is what was typed (da-vx31e)', () => {
 	test('`why` quotes the line, not the page’s --show', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			await app.submit('occur coffee');
 			const why = await app.run(['why', '_LAST']);
 			assert.match(why.stdout, /raw_input:\s+occur coffee$/m, why.stdout || why.stderr);
@@ -83,7 +87,7 @@ describe('the record is what was typed (da-vx31e)', () => {
 	});
 
 	test('a --show the reader typed wins', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			await app.submit('occur coffee --show minimal');
 			assert.match((await app.stdouts()).at(-1) ?? '', /^CREATE /);
 		});
@@ -140,7 +144,7 @@ describe('the echo is painted in datum’s colours', () => {
 	};
 
 	test('the field is in its own colour, in the bar and in the REPL alike', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			await app.submit('occur coffee');
 			const [doc] = parseEcho((await app.run(['get', 'coffee', '--show', 'json'])).stdout);
 			assert.ok(doc.field_color, 'the CLI answered no field colour');
@@ -165,7 +169,7 @@ describe('the echo is painted in datum’s colours', () => {
 	});
 
 	test('a state gets its own colour, which is not the field’s', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			// The field exists first, so the echo is its own entry alone.
 			await app.declare('mood', 'switch');
 			await app.submit('switch mood happy');
@@ -245,7 +249,7 @@ const WRITERS = [
 
 describe('the list says what the CLI does', () => {
 	test('every reader would gain nothing or break, which is why it is on the list', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			await app.run(['occur', 'coffee']);
 			for (const argv of READERS) {
 				assert.deepEqual(echoEnv(argv), [], `${argv.join(' ')} is not on the list`);
@@ -260,7 +264,7 @@ describe('the list says what the CLI does', () => {
 	});
 
 	test('every echoing verb still answers with a document', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			for (const argv of WRITERS) {
 				const result = await app.run([...argv, '--show', 'json']);
 				assert.deepEqual(echoEnv(argv), ASKED, `${argv.join(' ')} is on the list by mistake`);
@@ -285,7 +289,7 @@ describe('a kit command answers with its table', () => {
 	const chores = readFileSync(new URL('../../kits/chores.toml', import.meta.url), 'utf8');
 
 	test('chorelist in the bar prints the table, not its JSON', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			const installed = await app.run(['kit', 'install', '--yes', '-'], chores);
 			assert.equal(installed.code, 0, installed.stderr);
 			await app.run(['occur', 'laundry', '-d', '-3', 'next_date=+1']);
@@ -319,7 +323,7 @@ describe('a kit alias logs in the bar', () => {
 	const chores = readFileSync(new URL('../../kits/chores.toml', import.meta.url), 'utf8');
 
 	test('feel, spent and newchore log, and the slots get their words', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			const installed = await app.run(['kit', 'install', '--yes', '-'], chores);
 			assert.equal(installed.code, 0, installed.stderr);
 			await app.run(['alias', 'set', 'feel', 'occur mood -k feel -k energy= -C']);

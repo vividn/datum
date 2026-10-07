@@ -14,6 +14,7 @@
 import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { atEachScreen, sharedApp, startApp, stopApp } from './support/app.mjs';
+import { ONE_PANE } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { SPEC as MODAL, cancelSpec, openSpec } from './support/spec.mjs';
 const TABS = ['basics', 'states', 'keys', 'aliases', 'placement'];
@@ -22,9 +23,12 @@ describe('the spec modal', () => {
 	before(startApp);
 	after(stopApp);
 	const shared = sharedApp();
+	// `main` as a draft of ONE REPL pane: nothing here reads the day frame,
+	// and drawing it costs what a boot did (da-m1m9a).
+	const onSeam = (fn) => shared.solo(fn, ONE_PANE);
 
 	test('keeps one width and one height on every tab', async (t) => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'mood', '--verb', 'switch']);
 			const spec = JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout);

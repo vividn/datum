@@ -15,7 +15,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
-import { fill } from './support/layout.mjs';
+import { fill, ONE_PANE } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -24,6 +24,9 @@ after(stopApp);
 // an alias is a row, and `solo` empties the database between tests. The
 // reload, the navigation and the lone test at 1280x900 keep their own.
 const shared = sharedApp();
+// `main` as a draft of ONE REPL pane: nothing here reads the day frame,
+// and drawing it costs what a boot did (da-m1m9a).
+const onSeam = (fn) => shared.solo(fn, ONE_PANE);
 
 /** `run`, asserting the command succeeded, and handing back its stdout. */
 async function ok(run, argv) {
@@ -34,7 +37,7 @@ async function ok(run, argv) {
 
 describe('aliases in the REPL', () => {
 	test('an alias set in one line fires on the next, with no reload', async () => {
-		await shared.solo(async ({ run, entries }) => {
+		await onSeam(async ({ run, entries }) => {
 			assert.equal(
 				await ok(run, ['alias', 'set', 'cof', 'occur coffee strength=strong']),
 				"✓ Alias 'cof' saved."
@@ -58,7 +61,7 @@ describe('aliases in the REPL', () => {
 	// %comment%`, so two transactions on one day are two rows keyed by what
 	// each was for, rather than one row per minute.
 	test('an `--id %comment%` alias slugs the row on its own data', async () => {
-		await shared.solo(async ({ run, entries }) => {
+		await onSeam(async ({ run, entries }) => {
 			await ok(run, ['alias', 'set', 'tx', 'occur tx --id %comment%']);
 			await ok(run, ['tx', 'amount=40', 'comment=electricity', '-d', '2026-09-01']);
 			await ok(run, ['tx', 'amount=12', 'comment=coffee', '-d', '2026-09-01']);
@@ -77,7 +80,7 @@ describe('aliases in the REPL', () => {
 	});
 
 	test('a field spec makes its own names commands', async () => {
-		await shared.solo(async ({ run, entries }) => {
+		await onSeam(async ({ run, entries }) => {
 			await ok(run, ['spec', 'set', 'mood', '--verb', 'switch', '--state', 'happy']);
 
 			// The bare field name, and the state name, both without a verb.
@@ -97,7 +100,7 @@ describe('aliases in the REPL', () => {
 	});
 
 	test('`alias list` prints the CLI’s lines, and `alias remove` unmakes one', async () => {
-		await shared.solo(async ({ run }) => {
+		await onSeam(async ({ run }) => {
 			assert.equal(await ok(run, ['alias', 'list']), 'No aliases defined.');
 
 			await ok(run, ['alias', 'set', 'cof', 'occur coffee']);

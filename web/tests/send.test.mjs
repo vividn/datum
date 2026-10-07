@@ -9,12 +9,15 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
-import { DESKTOP, along, widgetPane } from './support/layout.mjs';
+import { DESKTOP, along, widgetPane, ONE_PANE } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
 
 const shared = sharedApp({ ...DESKTOP });
+// `main` as a draft of ONE REPL pane: nothing here reads the day frame,
+// and drawing it costs what a boot did (da-m1m9a).
+const onSeam = (fn) => shared.solo(fn, ONE_PANE);
 
 const BOX = '.prompt-bar input';
 const SEND = '.prompt-bar button[aria-label="run the line"]';
@@ -34,7 +37,7 @@ async function load(page, text, pills) {
 
 describe('Send', () => {
 	test('runs a pill-composed line, and the box never takes the focus', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			const { page } = app;
 			await page.evaluate(() => {
 				window.__focused = false;
@@ -54,7 +57,7 @@ describe('Send', () => {
 	});
 
 	test('is shown only while Enter would run something', async () => {
-		await shared.solo(async ({ page }) => {
+		await onSeam(async ({ page }) => {
 			assert.equal(await page.locator(SEND).count(), 0, 'drawn over an empty line');
 			// Pills alone are not a line: Enter runs nothing. Send holds its
 			// place beside the × there, but is not there to be pressed.
@@ -76,7 +79,7 @@ describe('Send', () => {
 	// it must not slide into the spot Send was just pressed in, where a
 	// second tap would clear the locked pill.
 	test('after a run that leaves a locked pill, the × holds still and Send’s spot clears nothing', async () => {
-		await shared.solo(async (app) => {
+		await onSeam(async (app) => {
 			const { page } = app;
 			const LOCKED = { id: 'k', kind: 'note', text: 'cups=3', locked: true };
 			await load(page, 'occur sendhold', [LOCKED]);
@@ -102,7 +105,7 @@ describe('Send', () => {
 	});
 
 	test('the × stands left of it, both 24px targets or more, with a gap between', async () => {
-		await shared.solo(async ({ page }) => {
+		await onSeam(async ({ page }) => {
 			await load(page, 'occur coffee', []);
 			const send = await page.locator(SEND).boundingBox();
 			const clear = await page.locator(CLEAR).boundingBox();

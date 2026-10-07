@@ -677,6 +677,11 @@ async function ready(page) {
 function app(page, errors, query, clean, locks, internal) {
 	/** The layouts of the reader's own the last `wipe` deleted. */
 	let wiped = [];
+	/** The draft the last `redraft` drew `main` from, and `main`'s tab as it drew it. */
+	let drafted = null;
+	/** `main`'s tab as the shell holds it, as JSON. */
+	const mainTab = () =>
+		page.evaluate(() => JSON.stringify(window.datum.layout.current().root.tabs.find((t) => t.layout === 'main') ?? null));
 	/** The screen the app opened on, which `home` puts back. */
 	const viewport = page.viewportSize();
 	const self = {
@@ -969,7 +974,12 @@ function app(page, errors, query, clean, locks, internal) {
 			// A draft rebuilds `main` whole, so what it was left as is moot.
 			if (draft === undefined) await self.restoreMain();
 			await self.settleRoot();
-			if (draft !== undefined) await self.redraft(draft);
+			// `main` still the tab the same draft drew is not drawn again
+			// (da-m1m9a): the draft goes back where `wipe` took it from, so a
+			// reload still opens it.
+			if (draft !== undefined && drafted?.draft === draft && drafted.tab === (await mainTab()))
+				await page.evaluate((json) => localStorage.setItem('datum.layout.draft.v1.main', json), draft);
+			else if (draft !== undefined) await self.redraft(draft);
 			if (!keepDb) await self.empty();
 			await ready(page);
 			await settled(self);
@@ -1024,6 +1034,7 @@ function app(page, errors, query, clean, locks, internal) {
 				shell.close(at('__redraft'));
 			}, json);
 			await ready(page);
+			drafted = { draft: json, tab: await mainTab() };
 			return self;
 		},
 
