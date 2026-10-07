@@ -124,13 +124,9 @@ impl Copy {
     /// `sync chain invite` serving, and its ticket.
     fn invite(&self, args: &[&str]) -> (Serving, String) {
         let mut s = self.serve(&[&["sync", "chain", "invite"], args].concat());
-        let ticket = s
-            .lines_until("datum sync chain connect ")
-            .rsplit(' ')
-            .next()
-            .unwrap()
-            .trim()
-            .to_string();
+        let line = s.lines_until("datum sync chain connect ");
+        let ticket = line.trim().rsplit(' ').next().unwrap();
+        let ticket = ticket.trim_matches('\'').to_string();
         (s, ticket)
     }
 
@@ -268,6 +264,45 @@ fn connect_takes_the_join_link_or_its_bare_ticket() {
         .contains("verify ok"));
     assert!(inviting.finish().0);
     assert_eq!(a.hash(), c.hash());
+}
+
+/// The connect line an invite prints, pasted into a shell, hands `connect` the
+/// whole link as one argument (da-sin5b). Unquoted, zsh with `extendedglob`
+/// refused it — the `#` is a glob there, «no matches found» — and sh took it.
+#[test]
+fn the_printed_connect_line_pastes_into_a_shell() {
+    let a = Copy::new();
+    let mut inviting = a.serve(&["sync", "chain", "invite"]);
+    let line = inviting.lines_until("datum sync chain connect ");
+    let link = line.trim().rsplit(' ').next().unwrap().trim_matches('\'');
+    assert!(link.starts_with("https://datum.day/sync/join#"), "{line}");
+    let args = line.trim().strip_prefix("datum ").unwrap();
+    for shell in [
+        &["sh", "-c"][..],
+        &["zsh", "-f", "-o", "extendedglob", "-c"],
+    ] {
+        let Ok(out) = Command::new(shell[0])
+            .args(&shell[1..])
+            .arg(format!("printf '%s\\n' {args}"))
+            .output()
+        else {
+            eprintln!("{} is not installed: not tried", shell[0]);
+            continue;
+        };
+        let said = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success(),
+            "{}: {}",
+            shell[0],
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(
+            said.lines().collect::<Vec<_>>(),
+            ["sync", "chain", "connect", link],
+            "{}",
+            shell[0]
+        );
+    }
 }
 
 #[test]

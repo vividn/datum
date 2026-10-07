@@ -431,7 +431,7 @@
 				<div class="qr">{@html offer.svg}</div>
 				<details class="terminal">
 					<summary>connect from a terminal</summary>
-					<code class="code ticket">datum sync chain connect {offer.link}</code>
+					<code class="code ticket">datum sync chain connect '{offer.link}'</code>
 				</details>
 				<div class="actions">
 					<button type="button" class="command" use:act={'run'} on:click={() => navigator.clipboard?.writeText(offer?.link ?? '')}>Copy link</button>

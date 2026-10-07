@@ -96,7 +96,7 @@ describe('datum.day and a native copy', () => {
 					await app.run(['occur', 'coffee', '-t', '0900']);
 					await app.run(['occur', 'coffee', '-t', '1000']);
 					const serving = native.spawn(['sync', 'chain', 'invite', '--reader']);
-					const said = await until(() => /datum sync chain connect (\S+)/.exec(serving.stdout), Boolean);
+					const said = await until(() => /datum sync chain connect '([^']+)'/.exec(serving.stdout), Boolean);
 					const refused = await app.page.evaluate(
 						(t) => window.datum.sync.connect('datum', t).then(
 							() => 'joined',

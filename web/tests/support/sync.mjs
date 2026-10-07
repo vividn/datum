@@ -188,7 +188,7 @@ export async function nativeCopy(relay) {
  */
 export async function pairWith(app, native) {
 	const serving = native.spawn(['sync', 'chain', 'invite']);
-	const said = await until(() => /datum sync chain connect (\S+)/.exec(serving.stdout), Boolean);
+	const said = await until(() => /datum sync chain connect '([^']+)'/.exec(serving.stdout), Boolean);
 	return app.page.evaluate((t) => window.datum.sync.connect('datum', t), said[1]);
 }
 

@@ -229,7 +229,9 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
         }
         .link()?;
         println!("One-time invite, until {expires_at}. On the other copy run:\n");
-        println!("  datum sync chain connect {link}\n");
+        // Quoted: zsh's `extendedglob` reads the `#` as a glob (da-sin5b).
+        // The link is a fixed prefix and base32, so it holds no `'`.
+        println!("  datum sync chain connect '{link}'\n");
         println!("or open the link in a browser.\n");
         if qr {
             let code = qrcode::QrCode::new(link.as_bytes())?;

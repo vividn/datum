@@ -99,7 +99,7 @@ describe('the sync widget’s actions', () => {
 					const offer = page.locator(`${WIDGET} .offer[data-db="datum"]`);
 					await offer.locator('.qr svg').waitFor();
 					await offer.locator('summary', { hasText: 'connect from a terminal' }).click();
-					const ticket = /datum sync chain connect (\S+)/.exec(await offer.locator('.ticket').innerText())[1];
+					const ticket = /datum sync chain connect '([^']+)'/.exec(await offer.locator('.ticket').innerText())[1];
 					// This browser is the chain's first member, and the chain is open.
 					const chain = JSON.parse(await cli(app, ['sync', 'chain', 'list', '--json']));
 					assert.equal(chain.members.length, 1);
