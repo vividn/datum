@@ -83,6 +83,39 @@ jobs:
     # on 3 cores the bead expects 45–75 min. The runner's own cap is 3 h.
     timeout-minutes: 150
     steps:
+      # A push to main whose COMMIT a green ci.yml run already tested ends GREEN
+      # here (da-7wmzo). Under the integration branch (ct-0eyz) cantown-bot
+      # fast-forwards main to a staging commit only once staging's push run on
+      # it is green, so main's sha IS the tested sha and testing it again is
+      # an hour of runner for nothing. The evidence is a RUN, which only the
+      # forge creates — never a commit status, which anyone with write can
+      # post: a completed `success` run of this workflow, triggered by a push
+      # (a pull_request run may have skipped the web suite, see WEB below),
+      # on exactly this sha. Found, it sets the same TRAIN=1 as the next step.
+      # None — a direct push, a red or unfinished staging run — and the run goes
+      # on in full; so does an unreadable API, with a warning saying so.
+      - name: Inherit a green run of this commit
+        if: github.ref == 'refs/heads/main'
+        env:
+          TOKEN: ${{ github.token }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          set -uo pipefail
+          url="${SERVER%/}/api/v1/repos/${{ github.repository }}/actions/runs?head_sha=${{ github.sha }}"
+          runs=$(printf 'header = "Authorization: token %s"\n' "$TOKEN" | curl -sSf -K - "$url" 2>&1) ||
+            { echo "::warning::could not read $url ($runs); verifying ${{ github.sha }} in full"; exit 0; }
+          found=$(node -e 'const r = JSON.parse(require("fs").readFileSync(0)).workflow_runs.find(r => r.workflow_id === "ci.yml" && r.event === "push" && r.status === "success" && r.commit_sha === process.argv[1]); if (r) console.log(`run ${r.id} (${r.prettyref})`, r.html_url)' "${{ github.sha }}" <<<"$runs" 2>/dev/null) ||
+            { echo "::warning::$url did not answer a run list; verifying ${{ github.sha }} in full"; exit 0; }
+          if [ -n "$found" ]; then
+            echo "TRAIN=1" >> "$GITHUB_ENV"
+            echo "inherited, every later step skipped: $found"
+          else
+            echo "no green ci.yml push run on ${{ github.sha }}"
+          fi
+
+      # The merge train's bridge, kept until the cutover to the integration
+      # branch (ct-0eyz) removes it: the train squashes, so main's sha is not
+      # the staging sha it tested and the step above finds nothing.
       # A push to main whose tree a green staging run already tested ends GREEN
       # here, without testing it again (da-kc0k7): 10 of 10 main runs on 10-01
       # were such re-tests, 5h14m of runner. The alchemiter, once it has
@@ -95,7 +128,7 @@ jobs:
       # cancel, which the forge maps to failure. Absent or unreadable — a
       # direct merge carries none — the run goes on in full.
       - name: Inherit the merge train's verdict for this tree
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && env.TRAIN != '1'
         env:
           TOKEN: ${{ github.token }}
           SERVER: ${{ github.server_url }}
