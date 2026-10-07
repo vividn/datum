@@ -236,6 +236,7 @@ CREATE 19zx6 activity:2026-09-24T14:47:29.927Z
 | `true` `{"a":1}`     | anything strict JSON parses keeps its JSON shape    |
 | `75.2kg` `4th`       | a string, exactly as typed — no unit is inferred    |
 | `'"42"'`             | JSON quotes force a string                          |
+| `"'a,b'"` `"['a']"`  | single quotes mean what double quotes do            |
 | `null` `undefined`   | a JSON null; no key (`'"null"'` is the string)      |
 | `=2`                 | an empty key is no key — the whole token is data    |
 | `ref://<slug>`       | a reference to the entry `<slug>`                   |
@@ -368,6 +369,24 @@ datum occur shapes flag=true obj='{"a":1}' empty="''"
 CREATE k4opv shapes:2026-09-22T16:06:14.598Z
 18:06:14+2  shapes ∅●
   empty: "", flag: true, obj: {"a":1}
+```
+
+A single-quoted string means exactly what the double-quoted one does, as
+in v2 (relaxed-json) and JSON5, inside brackets too: `'a,b'` is the text
+«a,b», `'5'` the string `"5"`, `['a', 'b']` the array `["a","b"]`. Inside
+one, `\'` is a quote and `"` needs no escape. There is no shell-style
+difference between the two, since datum expands nothing in a value. The
+shell takes one layer of quotes itself, so on a command line it is
+`"'a,b'"` or `'"a,b"'`. A lone or unbalanced `'` is text.
+
+```bash
+datum occur quoted -k key "',,'" "v='a,b'" "l=['a', 'b']"
+```
+
+```
+CREATE mfqdd quoted:2026-10-07T17:39:46.343Z
+19:39:46+2  quoted ∅●
+  key: ",,", l: ["a","b"], v: "a,b"
 ```
 
 An `=` with nothing before it is not a key at all — the whole token,

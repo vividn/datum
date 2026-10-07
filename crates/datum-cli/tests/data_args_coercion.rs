@@ -363,3 +363,33 @@ fn glued_comma_lists_and_comma_space_text() {
     assert_eq!(extra["q"], json!(",,"));
     assert_eq!(extra["n"], json!(1000));
 }
+
+/// da-qzfnb: a single-quoted value means what the double-quoted one does,
+/// as v2's relaxed-json read it — vividn's `-k key "',,'"` stores «,,».
+#[test]
+fn single_quoted_values_are_strings() {
+    let db = fresh_db();
+    run_cli(
+        &[
+            "occur",
+            "x",
+            "-k",
+            "key",
+            "',,'",
+            "v='a,b'",
+            "n='5'",
+            "l=['a', 'b']",
+            "u='unbalanced",
+        ],
+        &db,
+    )
+    .expect("occur x with single-quoted values");
+
+    let entry = &datum_core::test_util::logged_entries(&db, "x")[0];
+    let extra = entry.data.as_ref().expect("extra_data populated");
+    assert_eq!(extra["key"], json!(",,"));
+    assert_eq!(extra["v"], json!("a,b"));
+    assert_eq!(extra["n"], json!("5"));
+    assert_eq!(extra["l"], json!(["a", "b"]));
+    assert_eq!(extra["u"], json!("'unbalanced"));
+}

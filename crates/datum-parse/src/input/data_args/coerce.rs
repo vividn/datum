@@ -130,9 +130,9 @@ fn resolve_date_arg(d: &DateArg, compat: Compat) -> Option<chrono::NaiveDate> {
 }
 
 /// Port of datum's `inferType`: turn a raw string into the most specific
-/// JSON shape we can. Unlike datum we don't carry relaxed-JSON parsing
-/// (that would pull in a fat dep for a rare branch); values that aren't
-/// strict JSON or one of the recognised literals fall through unchanged.
+/// JSON shape we can. Of datum's relaxed-JSON we read the single-quoted
+/// string (no dependency for it); values that aren't JSON in that sense
+/// or one of the recognised literals fall through unchanged.
 pub fn infer_type(value: &str) -> Option<Value> {
     if value.is_empty() {
         return None;
@@ -169,9 +169,14 @@ pub fn infer_type(value: &str) -> Option<Value> {
         return Some(Value::String("-Infinity".to_string()));
     }
 
-    // Strict JSON — numbers, arrays, objects, quoted strings. A quoted
-    // `"ref://…"` is a literal, which stores as `str://ref://…` (da-s5k2s).
-    if let Ok(v) = serde_json::from_str::<Value>(value) {
+    // Strict JSON — numbers, arrays, objects, quoted strings — or the
+    // same with single-quoted strings, as v2's relaxed-json read them
+    // (da-qzfnb). A quoted `"ref://…"` is a literal, which stores as
+    // `str://ref://…` (da-s5k2s).
+    if let Some(v) = serde_json::from_str::<Value>(value)
+        .ok()
+        .or_else(|| single_quoted_json(value))
+    {
         return Some(match v {
             Value::String(s) if s.starts_with(REF_MARK) => Value::String(format!("{STR_MARK}{s}")),
             v => v,
@@ -206,6 +211,39 @@ pub fn infer_type(value: &str) -> Option<Value> {
     }
 
     Some(Value::String(value.to_string()))
+}
+
+/// `value` as JSON once each single-quoted string in it is double-quoted,
+/// as relaxed-json and JSON5 read it: `'a,b'` → «a,b», `['a', 'b']` →
+/// `["a","b"]`. Inside one, `\'` is a quote and `"` needs no escape.
+/// `None` when the result is not JSON (`'unbalanced`, `'`, `it's`).
+fn single_quoted_json(value: &str) -> Option<Value> {
+    if !value.contains('\'') {
+        return None;
+    }
+    let mut out = String::with_capacity(value.len() + 2);
+    let mut quote = None;
+    let mut chars = value.chars();
+    while let Some(c) = chars.next() {
+        match (quote, c) {
+            (Some('\''), '\\') => match chars.next()? {
+                '\'' => out.push('\''),
+                e => out.extend(['\\', e]),
+            },
+            (Some(_), '\\') => out.extend(['\\', chars.next()?]),
+            (Some('\''), '"') => out.push_str("\\\""),
+            (Some(q), c) if c == q => {
+                quote = None;
+                out.push('"');
+            }
+            (None, '"' | '\'') => {
+                quote = Some(c);
+                out.push('"');
+            }
+            _ => out.push(c),
+        }
+    }
+    serde_json::from_str(&out).ok()
 }
 
 /// The items of a comma list, or `None` when `value` is not one: split
@@ -364,6 +402,30 @@ mod tests {
             infer_type(r#",ref://a:b,"ref://c:d","#),
             Some(json!(["ref://a:b", "str://ref://c:d"]))
         );
+    }
+
+    /// da-qzfnb: a single-quoted string means what the double-quoted one
+    /// does, as v2's relaxed-json read it, inside brackets too; a lone or
+    /// unbalanced `'` is text.
+    #[test]
+    fn infer_type_single_quoted_strings() {
+        for (typed, want) in [
+            ("'a,b'", json!("a,b")),
+            ("'5'", json!("5")),
+            ("',,'", json!(",,")),
+            (r"'it\'s'", json!("it's")),
+            (r#"'say "hi"'"#, json!("say \"hi\"")),
+            (r"'a\nb'", json!("a\nb")),
+            ("['a', 'b']", json!(["a", "b"])),
+            ("{'k': 'v'}", json!({"k": "v"})),
+            (r#"['it"s', "it's"]"#, json!(["it\"s", "it's"])),
+            ("'ref://a:b'", json!("str://ref://a:b")),
+            ("'unbalanced", json!("'unbalanced")),
+            ("'", json!("'")),
+            ("it's", json!("it's")),
+        ] {
+            assert_eq!(infer_type(typed), Some(want), "{typed}");
+        }
     }
 
     #[test]
