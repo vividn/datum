@@ -66,38 +66,37 @@ impl Db {
         Ok(results)
     }
 
-    /// The distinct `(state, client_id)` of the rows [`Self::list_entries`]
-    /// filters in but its time bounds leave out, declarations aside
-    /// ([`crate::track::track_verb`]): what a reader of the window needs of
-    /// the rest of the history without reading its rows (da-vq29c). Empty
-    /// when `params` is unbounded.
+    /// The distinct `(state, client_id)`, among `states`, of the rows
+    /// [`Self::list_entries`] filters in but its time bounds leave out,
+    /// declarations aside ([`crate::track::NOT_A_DECLARATION_SQL`]): what a
+    /// reader of the window needs of the rest of the history without
+    /// reading its rows (da-vq29c). A seek per state on
+    /// `entries_field_states`, so it costs those states' rows and not the
+    /// field's history (da-cwpr1). Empty when `params` is unbounded.
     pub fn distinct_states_outside(
         &self,
         params: &ListParams,
+        states: &[JsonValue],
     ) -> Result<Vec<(Option<JsonValue>, String)>> {
         let Some((window, window_bindings)) = list_window_sql(params) else {
             return Ok(Vec::new());
         };
         let (filter, mut bindings) = list_filter_sql(params);
+        let among = vec!["?"; states.len()].join(", ");
+        bindings.extend(states.iter().map(JsonValue::to_string));
         bindings.extend(window_bindings);
         let sql = format!(
-            "SELECT DISTINCT state, client_id, json_extract(extra_metadata, '$.{}')
-             FROM entries WHERE {filter} AND NOT ({window})",
-            crate::track::TRACK_META_KEY
+            "SELECT DISTINCT state, client_id FROM entries
+             WHERE {filter} AND state IN ({among}) AND {} AND NOT ({window})",
+            crate::track::NOT_A_DECLARATION_SQL
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(rusqlite::params_from_iter(bindings.iter()), |row| {
-            let track = match row.get::<_, rusqlite::types::Value>(2)? {
-                rusqlite::types::Value::Text(t) => t.parse::<crate::action::Action>().ok(),
-                _ => None,
-            };
             let state =
                 (row.get::<_, Option<String>>(0)?).and_then(|s| serde_json::from_str(&s).ok());
-            let client: String = row.get(1)?;
-            Ok(track.is_none().then_some((state, client)))
+            Ok((state, row.get(1)?))
         })?;
-        rows.filter_map(|r| r.map_err(DatumError::Db).transpose())
-            .collect()
+        rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
     /// Live entries whose `create_time` is strictly greater than `since`,

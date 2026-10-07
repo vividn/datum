@@ -240,7 +240,7 @@ pub struct AllFieldsStats {
 /// it off the widget bar, not out of the record, and `stats <ignored>`
 /// answers for one today.
 pub fn compute_all_fields(args: &StatsArgs, db: &Db) -> Result<AllFieldsStats> {
-    let (start, end, _) = resolve_window(args, db)?;
+    let (start, end, _) = resolve_window(args, db, Duration::zero())?;
     let registry = db.load_registry()?;
     let mut rows = Vec::new();
     for field in db.distinct_fields()? {
@@ -260,7 +260,7 @@ pub fn compute_by_client(args: &StatsArgs, db: &Db) -> Result<AllFieldsStats> {
     if field.contains(':') {
         bail!("stats --group-by client takes a field, not a field:state");
     }
-    let (start, end, _) = resolve_window(args, db)?;
+    let (start, end, _) = resolve_window(args, db, Duration::zero())?;
     let color = field_hex(field, db.load_registry()?.fields.get(field));
     let label = crate::commands::sync::client_labeller(db)?;
     let timeline = load_timeline(field, db, start, end)?;
@@ -350,7 +350,8 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
         _ => (selector.to_string(), None),
     };
 
-    let (start, end, zones) = resolve_window(args, db)?;
+    // The periods reach back a year and a day at most: YTD's 1 January.
+    let (start, end, zones) = resolve_window(args, db, Duration::days(367))?;
     // Every period is read as of the window's end, in the window's zones.
     let anchor = end.min(DatumTime::now().utc);
     let periods = named_periods(anchor, resolve_week_start()?, &zones)?;
@@ -410,10 +411,6 @@ fn load_timeline(
     until: DateTime<Utc>,
 ) -> Result<Timeline> {
     let edges = state_spans(field, db, from, until)?;
-    let bounds = from.map(|from| {
-        (edges.iter().filter_map(|(_, _, at)| *at))
-            .fold((from, until), |(lo, hi), at| (lo.min(at), hi.max(at)))
-    });
     // Oldest→newest, time-bearing state rows only. `TimeMetric::Occur` drops
     // TRACK documents too (da-c8mh): declaring a field is not an
     // observation of it.
@@ -423,11 +420,25 @@ fn load_timeline(
     let params = ListParams {
         fields: vec![field.to_string()],
         metric: TimeMetric::Occur,
-        start_utc: bounds.map(|(lo, _)| lo),
-        end_utc: bounds.map(|(_, hi)| hi),
+        start_utc: from,
+        end_utc: from.map(|_| until),
         ..Default::default()
     };
     let entries = db.list_entries(&params)?;
+    // A span the window opens on can be begun by a row long before it — a
+    // field of dots by its first dot. Its client is read at its own instant,
+    // not with the history between (da-cwpr1).
+    let mut begun = Vec::new();
+    for at in (edges.iter().filter_map(|(_, _, at)| *at))
+        .filter(|at| from.is_some_and(|from| *at < from || *at > until))
+    {
+        let at = Some(at);
+        begun.extend(db.list_entries(&ListParams {
+            start_utc: at,
+            end_utc: at,
+            ..params.clone()
+        })?);
+    }
     let label = |v: Option<&JsonValue>| state_label(v).unwrap_or_else(|| "(none)".to_string());
     let rows = entries
         .iter()
@@ -442,10 +453,11 @@ fn load_timeline(
             })
         })
         .collect();
-    let seen = (db.distinct_states_outside(&params)?.into_iter())
+    let outside = db.distinct_states_outside(&params, &shared_labels())?;
+    let seen = (outside.into_iter())
         .map(|(v, client)| (label(v.as_ref()), classify(v.as_ref()), client))
         .collect();
-    let client_of: std::collections::HashMap<&str, &str> = (entries.iter())
+    let client_of: std::collections::HashMap<&str, &str> = (entries.iter().chain(&begun))
         .map(|e| (e.hid.as_str(), e.client_id.as_str()))
         .collect();
     let spans = (edges.into_iter())
@@ -706,12 +718,19 @@ pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
 /// that is local now (da-ztae). A machine that moved Berlin → Lisbon has an
 /// hour of skew in every boundary otherwise. That timeline is returned
 /// too, so the periods line reads the same zones without a second query.
+///
+/// The zones are read from a little before the earliest instant resolved
+/// in them — the window's start, or `reach` before its end, which is where
+/// the periods line begins — and read again when the window turns out to
+/// begin before that (da-cwpr1), so `--today` reads days of history and
+/// not years. Two zones read one local time at most 27 hours apart, so a
+/// boundary two days past where the read began is the whole timeline's.
 fn resolve_window(
     args: &StatsArgs,
     db: &Db,
+    reach: Duration,
 ) -> Result<(Option<DateTime<Utc>>, DateTime<Utc>, ZoneTimeline)> {
     let now = DatumTime::now().utc;
-    let zones = window_zones(args, db)?;
 
     let sources = [
         (args.slice.is_some(), "a time-slice positional"),
@@ -734,28 +753,42 @@ fn resolve_window(
     // Parsed once, up front: `--until` overrides the end of every branch.
     let until = args.until.as_deref().map(parse_until).transpose()?;
 
-    let (start, end) = if let Some(slice) = &args.slice {
-        let (s, e) = parse_slice(slice, &zones)?;
-        (Some(s), until.unwrap_or(e))
-    } else if let Some(period) = args.period {
-        let (s, e) = period_window(period, resolve_week_start()?, &zones, now)?;
-        (Some(s), until.unwrap_or(e))
-    } else if names_a_moment(&args.time) {
-        let built = args.time.build(&DatumTime::now())?;
-        let at = built
-            .time
-            .clone()
-            .context("stats does not expose -T, so the timing flags always yield a moment")?;
-        if built.only_date {
-            let (s, e) = day_window(local_date_at(&zones, at.utc), &zones)?;
+    let window = |zones: &ZoneTimeline| -> Result<(Option<DateTime<Utc>>, DateTime<Utc>)> {
+        Ok(if let Some(slice) = &args.slice {
+            let (s, e) = parse_slice(slice, zones)?;
             (Some(s), until.unwrap_or(e))
+        } else if let Some(period) = args.period {
+            let (s, e) = period_window(period, resolve_week_start()?, zones, now)?;
+            (Some(s), until.unwrap_or(e))
+        } else if names_a_moment(&args.time) {
+            let built = args.time.build(&DatumTime::now())?;
+            let at = built
+                .time
+                .clone()
+                .context("stats does not expose -T, so the timing flags always yield a moment")?;
+            if built.only_date {
+                let (s, e) = day_window(local_date_at(zones, at.utc), zones)?;
+                (Some(s), until.unwrap_or(e))
+            } else {
+                (Some(at.utc), until.unwrap_or(now))
+            }
         } else {
-            (Some(at.utc), until.unwrap_or(now))
-        }
-    } else {
-        let start = args.since.as_deref().map(parse_since).transpose()?;
-        (start, until.unwrap_or(now))
+            let start = args.since.as_deref().map(parse_since).transpose()?;
+            (start, until.unwrap_or(now))
+        })
     };
+    let earliest = |(start, end): (Option<DateTime<Utc>>, DateTime<Utc>)| {
+        let anchor = end.min(now);
+        start.map_or(anchor, |s| s.min(anchor)) - reach
+    };
+    let since = now - reach - Duration::days(4);
+    let mut zones = window_zones(args, db, since)?;
+    let mut bounds = window(&zones)?;
+    if earliest(bounds) < since + Duration::days(2) {
+        zones = window_zones(args, db, earliest(bounds) - Duration::days(4))?;
+        bounds = window(&zones)?;
+    }
+    let (start, end) = bounds;
 
     // An inverted or empty window reports zero, which is indistinguishable
     // from "you did nothing" — the one reading a life-review tool must never
@@ -788,10 +821,10 @@ fn names_a_moment(t: &TimeArgs) -> bool {
 
 /// The zone history local boundaries are read in: whatever an explicit `-z`
 /// named, else the zone the database says the user was in at that instant.
-fn window_zones(args: &StatsArgs, db: &Db) -> Result<ZoneTimeline> {
+fn window_zones(args: &StatsArgs, db: &Db, since: DateTime<Utc>) -> Result<ZoneTimeline> {
     match args.time.timezone.as_deref() {
         Some(spec) => Ok(ZoneTimeline::single(Zone::iana(&resolve_timezone(spec)?)?)),
-        None => Ok(db.zone_timeline(Zone::host())?),
+        None => Ok(db.zone_timeline(Zone::host(), Some(since))?),
     }
 }
 
@@ -987,6 +1020,15 @@ fn classify(v: Option<&JsonValue>) -> StateClass {
         v if is_inactive_state(v) => StateClass::Untracked,
         _ => StateClass::Tracked,
     }
+}
+
+/// The tracked values that share a label with an untracked one: the
+/// strings `"false"` (`false`'s), `"null"` (null's) and `"(none)"` (no
+/// state's). They are all a reading outside a window can change there
+/// (da-cwpr1): [`note_class`] lets a tracked reading win a label, and every
+/// other label is either tracked already or has no tracked value at all.
+fn shared_labels() -> [JsonValue; 3] {
+    ["false", "null", "(none)"].map(JsonValue::from)
 }
 
 /// Record a label's class. Distinct JSON values can share a label (the
@@ -1803,6 +1845,21 @@ mod tests {
                 ],
             ),
             ("dots", vec![dot(100), dot(300), dot(900)]),
+            (
+                // A tracked reading outside the window wins a label its
+                // inside reads untracked (da-cwpr1's `shared_labels`).
+                "shared-labels",
+                vec![
+                    sw(json!("false"), 100),
+                    sw(json!(false), 200),
+                    sw(json!("null"), 300),
+                    sw(JsonValue::Null, 400),
+                    sw(json!("(none)"), 500),
+                    block(None, 600, 30),
+                    sw(json!(false), 700),
+                    sw(JsonValue::Null, 800),
+                ],
+            ),
             ("future", vec![sw(json!("a"), 100), sw(json!("b"), 1300)]),
             (
                 "declared",

@@ -39,6 +39,10 @@ use super::Db;
 /// every live entry — is materialised into an ephemeral table the plan
 /// never mentions. That is why this is a tidy-up and `temp_store = MEMORY`
 /// (`Db::configure_connection`) is the fix for the browser.
+///
+/// From `?1` on, plus the newest zoned row before it — the zone in effect
+/// there — so a reader of the recent past reads the recent past, not the
+/// whole history (da-cwpr1). `''` reaches every row.
 const ZONE_CHANGES_SQL: &str = "\
     SELECT occur_time, occur_time_tz FROM (
         SELECT occur_time,
@@ -47,11 +51,23 @@ const ZONE_CHANGES_SQL: &str = "\
           FROM entries
          WHERE deleted_at IS NULL
            AND superseded_by IS NULL
-           AND occur_time IS NOT NULL
+           AND occur_time >= ?1
            AND occur_time_tz IS NOT NULL
            AND field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')
     )
-    WHERE prev_tz IS NULL OR prev_tz <> occur_time_tz";
+    WHERE prev_tz IS NULL OR prev_tz <> occur_time_tz
+    UNION ALL
+    SELECT * FROM (
+        SELECT occur_time, occur_time_tz
+          FROM entries
+         WHERE deleted_at IS NULL
+           AND superseded_by IS NULL
+           AND occur_time < ?1
+           AND occur_time_tz IS NOT NULL
+           AND field NOT IN ('spec', 'layout', 'alias', 'view', 'command', 'index', 'kit')
+         ORDER BY occur_time DESC
+         LIMIT 1
+    )";
 
 impl Db {
     /// Load the [`ZoneTimeline`] this database describes.
@@ -64,9 +80,17 @@ impl Db {
     /// failing the load: one unparseable row should not make every boundary
     /// in the database unresolvable, and `datum check tz` is where that row
     /// gets reported.
-    pub fn zone_timeline(&self, fallback: Zone) -> Result<ZoneTimeline> {
+    ///
+    /// `since` bounds the read: the timeline is exact from there on, and
+    /// before it extends the zone in effect at `since` backwards.
+    pub fn zone_timeline(
+        &self,
+        fallback: Zone,
+        since: Option<DateTime<Utc>>,
+    ) -> Result<ZoneTimeline> {
+        let since = since.map(|t| t.to_rfc3339()).unwrap_or_default();
         let mut stmt = self.conn.prepare(ZONE_CHANGES_SQL)?;
-        let rows = stmt.query_map([], |row| {
+        let rows = stmt.query_map([since], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
 
@@ -109,7 +133,7 @@ mod tests {
     #[test]
     fn empty_db_answers_with_the_fallback() {
         let db = fresh_db();
-        let tl = db.zone_timeline(chicago()).unwrap();
+        let tl = db.zone_timeline(chicago(), None).unwrap();
         assert_eq!(tl.segments().len(), 1);
         assert_eq!(tl.zone_at(utc("2024-06-01T00:00:00Z")), &chicago());
     }
@@ -121,7 +145,7 @@ mod tests {
         for day in 1..=5 {
             logged_in(&db, &format!("2024-01-0{day}T12:00:00Z"), "America/Chicago");
         }
-        let tl = db.zone_timeline(berlin()).unwrap();
+        let tl = db.zone_timeline(berlin(), None).unwrap();
         assert_eq!(tl.segments().len(), 1);
         assert_eq!(tl.zone_at(utc("2024-01-03T00:00:00Z")), &chicago());
     }
@@ -134,12 +158,33 @@ mod tests {
         logged_in(&db, "2024-06-05T10:00:00Z", "Europe/Berlin");
         logged_in(&db, "2024-07-05T10:00:00Z", "Europe/Berlin");
 
-        let tl = db.zone_timeline(chicago()).unwrap();
+        let tl = db.zone_timeline(chicago(), None).unwrap();
         assert_eq!(tl.segments().len(), 2, "one segment per move");
         assert_eq!(tl.zone_at(utc("2024-03-01T00:00:00Z")), &chicago());
         assert_eq!(tl.zone_at(utc("2024-08-01T00:00:00Z")), &berlin());
         // Everything before the first entry is covered by the first segment.
         assert_eq!(tl.zone_at(utc("1999-01-01T00:00:00Z")), &chicago());
+    }
+
+    /// From `since` on, a bounded timeline is the whole one: the zone in
+    /// effect at `since` is the newest row's before it, not the fallback.
+    #[test]
+    fn a_bounded_timeline_starts_with_the_zone_in_effect() {
+        let db = fresh_db();
+        logged_in(&db, "2024-01-05T18:00:00Z", "Europe/Berlin");
+        logged_in(&db, "2024-02-05T18:00:00Z", "America/Chicago");
+        logged_in(&db, "2024-06-05T10:00:00Z", "Europe/Berlin");
+
+        let tl = db
+            .zone_timeline(berlin(), Some(utc("2024-03-01T00:00:00Z")))
+            .unwrap();
+        assert_eq!(tl.segments().len(), 2, "Chicago at `since`, then Berlin");
+        assert_eq!(tl.zone_at(utc("2024-03-01T00:00:00Z")), &chicago());
+        assert_eq!(tl.zone_at(utc("2024-08-01T00:00:00Z")), &berlin());
+        let past = db
+            .zone_timeline(chicago(), Some(utc("2024-09-01T00:00:00Z")))
+            .unwrap();
+        assert_eq!(past.zone_at(utc("2024-09-01T00:00:00Z")), &berlin());
     }
 
     /// A move *back* is a third segment — the timeline is ordered history,
@@ -151,7 +196,7 @@ mod tests {
         logged_in(&db, "2024-06-05T10:00:00Z", "Europe/Berlin");
         logged_in(&db, "2024-09-05T18:00:00Z", "America/Chicago");
 
-        let tl = db.zone_timeline(chicago()).unwrap();
+        let tl = db.zone_timeline(chicago(), None).unwrap();
         assert_eq!(tl.segments().len(), 3);
         assert_eq!(tl.zone_at(utc("2024-10-01T00:00:00Z")), &chicago());
     }
@@ -173,7 +218,7 @@ mod tests {
             .insert(&db);
         logged_in(&db, "2024-05-05T18:00:00Z", "America/Chicago");
 
-        let tl = db.zone_timeline(berlin()).unwrap();
+        let tl = db.zone_timeline(berlin(), None).unwrap();
         assert_eq!(tl.segments().len(), 1);
         assert_eq!(tl.zone_at(utc("2024-03-05T18:00:00Z")), &chicago());
     }
@@ -186,7 +231,7 @@ mod tests {
     fn timeline_resolves_dst_no_entry_witnessed() {
         let db = fresh_db();
         logged_in(&db, "2024-01-05T18:00:00Z", "America/Chicago");
-        let tl = db.zone_timeline(berlin()).unwrap();
+        let tl = db.zone_timeline(berlin(), None).unwrap();
 
         let july_noon = "2024-07-15T12:00:00"
             .parse::<chrono::NaiveDateTime>()
@@ -209,7 +254,7 @@ mod tests {
         let sql = format!("EXPLAIN QUERY PLAN {ZONE_CHANGES_SQL}");
         let mut stmt = db.conn.prepare(&sql).unwrap();
         let plan: Vec<String> = stmt
-            .query_map([], |row| row.get::<_, String>(3))
+            .query_map([""], |row| row.get::<_, String>(3))
             .unwrap()
             .map(|r| r.unwrap())
             .collect();
@@ -237,7 +282,7 @@ mod tests {
 
         let mut stmt = db.conn.prepare(ZONE_CHANGES_SQL).unwrap();
         let rows: Vec<(String, String)> = stmt
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .query_map([""], |row| Ok((row.get(0)?, row.get(1)?)))
             .unwrap()
             .map(|r| r.unwrap())
             .collect();
@@ -264,7 +309,7 @@ mod tests {
             logged_in(&db, at, tz);
         }
 
-        let tl = db.zone_timeline(berlin()).unwrap();
+        let tl = db.zone_timeline(berlin(), None).unwrap();
         assert_eq!(
             tl.segments(),
             [

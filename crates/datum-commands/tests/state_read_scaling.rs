@@ -47,7 +47,12 @@ fn datum_time(utc: DateTime<Utc>) -> DatumTime {
 /// behind it.
 fn store(n: usize, fields: usize) -> Db {
     let db = Db::open_in_memory().unwrap();
-    let base = anchor();
+    fill(&db, anchor(), n, fields);
+    db
+}
+
+/// [`store`]'s rows, `n` of them back from `base`, into `db`.
+fn fill(db: &Db, base: DateTime<Utc>, n: usize, fields: usize) {
     for i in 1..=n {
         let field = format!("f{}", i % fields);
         let t = base - Duration::minutes(10 * i as i64);
@@ -72,7 +77,6 @@ fn store(n: usize, fields: usize) -> Db {
         ))
         .unwrap();
     }
-    db
 }
 
 /// Median wall-clock of `runs` calls, in milliseconds.
@@ -255,6 +259,54 @@ fn a_write_and_the_reads_after_it_do_not_grow_with_the_history() {
         &["now", "--json"],
         &["fields", "--json"],
         &["dayview", "-d", "2026-09-14", "--width", "400", "-o", svg],
+    ];
+    for argv in commands {
+        let [small, large] = [&stores[0], &stores[1]].map(|db| vm_steps(db, argv));
+        assert!(
+            large <= small + small / 10,
+            "`{}` visits more with more history behind the same days: \
+             {small} hundred VM steps on 2k rows, {large} on 8k",
+            argv.join(" "),
+        );
+    }
+}
+
+/// da-cwpr1: `stats` with a period read the zone history and every field's
+/// states outside it from the first entry on — `stats --today` was 423 ms
+/// on five years against 11 ms on a day. It costs the period now: the
+/// window, and for one field the year its periods line reaches back (365 d,
+/// YTD). So both stores hold the same last fortnight, the larger with a
+/// year of nothing and then three times as much history behind it, a
+/// field of occur dots among it.
+#[test]
+fn stats_with_a_period_does_not_grow_with_the_history() {
+    let now = Utc::now();
+    let stores = [0, 6_000].map(|behind| {
+        let db = Db::open_in_memory().unwrap();
+        fill(&db, now, 2_000, 8);
+        let old = now - Duration::days(400);
+        fill(&db, old, behind, 8);
+        let dots = (0..250)
+            .map(|i| now - Duration::minutes(80 * i + 5))
+            .chain((0..behind as i64 / 8).map(|i| old - Duration::minutes(80 * i + 5)));
+        for t in dots {
+            let dot = Entry::new(
+                "coffee",
+                Verb::Point,
+                None,
+                None,
+                Some(datum_time(t)),
+                None,
+                "bench",
+            );
+            db.insert_entry(&dot).unwrap();
+        }
+        db
+    });
+    let commands: [&[&str]; 3] = [
+        &["stats", "--today"],
+        &["stats", "f1", "--today"],
+        &["stats", "coffee", "--today"],
     ];
     for argv in commands {
         let [small, large] = [&stores[0], &stores[1]].map(|db| vm_steps(db, argv));
