@@ -6,7 +6,7 @@
 
 import type { CliResult, DbCommand, DbMessage, DbResponse, Stage, StorageKind } from './dbProtocol.js';
 import { announceChange } from './changes.js';
-import { answered, upgrading } from './waiting.js';
+import { answered, blocked, upgrading } from './waiting.js';
 
 export type { StorageKind };
 
@@ -71,6 +71,10 @@ function ensureWorker(): Worker {
 		if ('notice' in message) {
 			if (message.notice === 'stderr') return listeners.get(message.id)?.(message.text);
 			if (message.notice === 'upgrading') return upgrading.set(performance.now());
+			// Dated from when the wait BEGAN, so the line changes its words in
+			// place and keeps counting, rather than blink back to 0 s (kimi-k3 on #493).
+			if (message.notice === 'blocked')
+				return blocked.set(message.waited === null ? null : performance.now() - message.waited);
 			// A tab that was in memory just moved its rows onto the file,
 			// which is news for every other tab.
 			setStorage(message.storage);
@@ -89,6 +93,8 @@ function ensureWorker(): Worker {
 			settle({ id, ok: false, error: `database worker failed: ${event.message}` });
 		}
 		if (worker === started) worker = null;
+		// Its wait for the files, if it was in one, is not this page's any more.
+		blocked.set(null);
 	};
 	worker = started;
 	return started;

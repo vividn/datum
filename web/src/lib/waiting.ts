@@ -15,6 +15,9 @@ export const first = writable(false);
 /** When the running process began upgrading a schema, on `performance.now()`; null when none is. */
 export const upgrading = writable<number | null>(null);
 
+/** Since when, on `performance.now()`, another tab has kept the files from this one; null when none is (da-89kom). */
+export const blocked = writable<number | null>(null);
+
 /** Bumped each time the worker's queue empties: every command sent has answered. */
 export const idle = writable(0);
 

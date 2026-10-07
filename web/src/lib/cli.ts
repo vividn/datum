@@ -78,6 +78,13 @@ const FILES_LOCK = 'datum-cli-files';
  */
 const BURST_HOLD_MS = 250;
 
+/**
+ * How long a wait for the lock is a fair turn. Past it another tab is
+ * holding the files — a long process, or a tab the system froze mid-burst
+ * — and the page says so rather than sit on «opening database…» (da-89kom).
+ */
+const BLOCKED_MS = 1000;
+
 /** How soon a tab in memory goes back for the file, and the most it waits. */
 const RETRY_FIRST_MS = 2000;
 const RETRY_MAX_MS = 30000;
@@ -146,6 +153,9 @@ let lastEnv: string[] = [];
 
 /** Told when storage changes under the page. */
 let announce: (storage: StorageKind) => void = () => {};
+
+/** Told how long another tab has kept this one waiting for the files, and `null` when it lets go. */
+let blocked: (waited: number | null) => void = () => {};
 
 /** A queued job, and what tells its caller it was dropped unrun. */
 interface Job {
@@ -331,9 +341,21 @@ async function hold(): Promise<Files> {
 	// is the handle back INTO the lock's callback.
 	let give!: () => void;
 	const given = new Promise<void>((resolve) => (give = resolve));
+	let said = false;
+	const asked = performance.now();
+	const waiting = setTimeout(() => {
+		said = true;
+		blocked(performance.now() - asked);
+	}, BLOCKED_MS);
+	const over = () => {
+		clearTimeout(waiting);
+		if (said) blocked(null);
+		said = false;
+	};
 	return new Promise<Files>((resolve, reject) => {
 		locks
 			.request(FILES_LOCK, async () => {
+				over();
 				let got: { handles: Map<string, Handle>; tries: number };
 				try {
 					got = await acquire();
@@ -348,7 +370,10 @@ async function hold(): Promise<Files> {
 					close(got.handles);
 				}
 			})
-			.catch(reject);
+			.catch((e) => {
+				over();
+				reject(e);
+			});
 	});
 }
 
@@ -549,6 +574,11 @@ export function storageNow(): StorageKind {
 /** Be told when storage changes under the page. */
 export function onStorage(listener: (storage: StorageKind) => void): void {
 	announce = listener;
+}
+
+/** Be told when another tab keeps this one waiting for the files past `BLOCKED_MS`, and when it lets go. */
+export function onBlocked(listener: (waited: number | null) => void): void {
+	blocked = listener;
 }
 
 /**

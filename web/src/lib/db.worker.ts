@@ -9,7 +9,7 @@
 // $lib/cli.ts. This file is only the door: a request in, a process's
 // outcome out, and a word to the page when storage changes under it.
 
-import { onStorage, probe, runCli, storageNow } from './cli.js';
+import { onBlocked, onStorage, probe, runCli, storageNow } from './cli.js';
 import { onUpgrade } from './wasiFs.js';
 import type { DbMessage, DbRequest, DbResponse } from './dbProtocol.js';
 
@@ -45,6 +45,7 @@ async function serve(request: DbRequest): Promise<DbResponse> {
 
 onStorage((storage) => ctx.postMessage({ notice: 'storage', storage }));
 onUpgrade(() => ctx.postMessage({ notice: 'upgrading' }));
+onBlocked((waited) => ctx.postMessage({ notice: 'blocked', waited }));
 
 ctx.addEventListener('message', (event: MessageEvent<DbRequest>) => {
 	void serve(event.data).then((response) => ctx.postMessage(response));

@@ -8,16 +8,30 @@
 	answer, or a second into a schema upgrade, with the seconds counting:
 	an upgrade says so, because it is the one wait that is not the page's
 	fault and will not happen again.
+
+	vividn, 2026-10-07 (da-89kom): a phone hung on «opening database…» after
+	a reload, «completely unable to proceed». The bar is not ready until the
+	CLI has answered, so the line stays up until it is, not merely until a
+	first answer. And the one wait with no deadline is another tab of the
+	site holding the files — a long process there, or, suspected and not
+	reproduced, a tab the phone froze in the background mid-burst — which
+	the line names, at any time, with
+	the way out: that tab closed, this one opens, and nothing is lost.
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
-	import { first, upgrading } from './waiting.js';
+	import { blocked, first, upgrading } from './waiting.js';
+	import { ready } from './layout/engine.js';
 
-	/** When the wait began, on `performance.now()`: the navigation, or the upgrade. */
-	$: since = $upgrading ?? ($first ? null : 0);
+	/** When the wait began, on `performance.now()`: another tab's hold, the upgrade, or the navigation. */
+	$: since = $blocked ?? $upgrading ?? ($first && $ready ? null : 0);
 
 	let now = browser ? performance.now() : 0;
+	// Read again when the wait's start moves: the tick's `now` is up to
+	// 250 ms old, which put a wait dated a second back under a second and
+	// blinked the line out as its words changed (kimi-k3 on #493).
+	$: if (browser && since !== null) now = performance.now();
 	let timer: ReturnType<typeof setInterval> | undefined;
 	$: if (browser && since !== null) timer ??= setInterval(() => (now = performance.now()), 250);
 	$: if (since === null && timer) {
@@ -31,7 +45,11 @@
 
 {#if since !== null && seconds >= 1}
 	<p class="waiting" role="status">
-		{$upgrading !== null ? 'Upgrading your data to this version (one time)…' : 'Opening your data…'}
+		{$blocked !== null
+			? `Another datum.day tab or window is using your data. This one ${$ready ? 'waits until' : 'opens when'} it is done, or closed.`
+			: $upgrading !== null
+				? 'Upgrading your data to this version (one time)…'
+				: 'Opening your data…'}
 		<span class="seconds">{seconds} s</span>
 	</p>
 {/if}

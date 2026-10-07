@@ -97,7 +97,11 @@ export function registerRepl(instance: ReplLike): () => void {
 export const grammar = writable<Grammar | null>(null);
 
 export async function boot(): Promise<void> {
-	await initDb();
+	// A worker that failed to load rejects this. The bar is enabled all the
+	// same (da-89kom): a command then says what failed, and the next one
+	// starts a fresh worker, where a rejection here left «opening database…»
+	// up for good.
+	await initDb().catch((e) => console.error('datum: the database did not open:', e));
 	const help = await run(['help', '--json']);
 	try {
 		if (help.code === 0) grammar.set(grammarOf(JSON.parse(help.stdout) as GrammarEntry[]));

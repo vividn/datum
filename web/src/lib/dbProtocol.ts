@@ -65,10 +65,13 @@ export type DbRequest = DbCommand & { id: number };
  * An unsolicited word from the worker: a tab that fell to memory got the
  * file after all and moved its entries across — or request `id`'s process
  * wrote `text` to stderr while it is still running (da-h9vj) — or the
- * running process began upgrading a database's schema (da-bhudz).
+ * running process began upgrading a database's schema (da-bhudz) — or
+ * another tab has held the files past a second, `waited` ms so far, and
+ * then let go, `null` (da-89kom).
  */
 export type DbNotice =
 	| { notice: 'upgrading' }
+	| { notice: 'blocked'; waited: number | null }
 	| { notice: 'storage'; storage: StorageKind }
 	| { notice: 'stderr'; id: number; text: string };
 
