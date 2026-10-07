@@ -456,6 +456,19 @@ export const drawnRuns = (argvs) => ({
 });
 
 /**
+ * How many times `of` was run for the box it ended at. Not runs counted
+ * after the drop: a pane keeps one run out and one waiting (CliPane's
+ * `refresh`), so on a loaded box the run a drag's last tick asked for can
+ * start after the drop, and by the clock it was the drop's (da-i1ok). The
+ * drop's own run is the last box, and asking twice for it is a redraw of a
+ * picture already drawn.
+ */
+export const finalAsks = (argvs, of) => {
+	const mine = argvs.filter((a) => a[0] === of).map((a) => JSON.stringify(a));
+	return mine.filter((a) => a === mine.at(-1)).length;
+};
+
+/**
  * Drag from the middle of `border` by (dx, dy) at pointer rate for
  * `ms`, and leave the button down. Time-bounded rather than counted:
  * the measurement is redraws PER SECOND of dragging, so the 16ms between

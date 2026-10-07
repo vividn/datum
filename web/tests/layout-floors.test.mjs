@@ -13,6 +13,7 @@ import {
 	canvasWidth,
 	dragFor,
 	drawnRuns,
+	finalAsks,
 	grab,
 	pane,
 	settled,
@@ -123,7 +124,7 @@ const waitForRedraw = (page, id, before) =>
 		});
 
 describe('resizing', () => {
-	test('a border dragged 200px over a second redraws a drawn pane 2–6 times, and once more at the drop', async () => {
+	test('a border dragged 200px over a second redraws a drawn pane 1–6 times, and the final box once', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const seen = await app.spyOnRunner();
@@ -131,7 +132,11 @@ describe('resizing', () => {
 			const took = await dragFor(page, border, 200, 0, 1000);
 			const during = drawnRuns(await seen());
 			console.log(`  drag: ${took}ms, nowview ran ${during.nowview}x during it, dayview ${during.dayview}x`);
-			assert.ok(during.nowview >= 2 && during.nowview <= 6, `nowview ran ${during.nowview} times during a ${took}ms drag`);
+			// At least once: a drag redraws as it goes, not only at the drop. Not
+			// twice — that is the throttle's (resizing.test.mjs): this counts the
+			// CLI's runs, and a pane keeps one out, so on a loaded box one run
+			// can take the whole second (da-i1ok).
+			assert.ok(during.nowview >= 1 && during.nowview <= 6, `nowview ran ${during.nowview} times during a ${took}ms drag`);
 			// The strip spans the page above this split: its box did not move,
 			// so it has nothing to redraw — and redraws nothing.
 			assert.equal(during.dayview, 0, `the strip redrew ${during.dayview}x for a border that did not touch it`);
@@ -148,7 +153,7 @@ describe('resizing', () => {
 			const after = drawnRuns(await seen());
 			const atDrop = after.nowview - during.nowview;
 			console.log(`  drop: nowview ran ${atDrop}x, asked ${Date.now() - dropped}ms after it`);
-			assert.ok(atDrop <= 1, `nowview ran ${atDrop} times at the drop`);
+			assert.equal(finalAsks(await seen(), 'nowview'), 1, `nowview ran ${atDrop} times at the drop, the final box more than once`);
 			assert.equal(after.dayview, 0);
 			// And the picture is the box's size: asked for at the final width,
 			// not the old one stretched to it.
