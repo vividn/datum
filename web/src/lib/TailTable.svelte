@@ -26,10 +26,13 @@
 	gap nor a scrollbar at rest; a box too short for one row shows the
 	header alone — and the listing is `tail -n <n>`. The header is pinned
 	(a sticky `thead`) as `tail -w` pins it, so it is there at every scroll
-	position. Scrolling to the top asks for the page above
-	it, `tail -n <n+1> -t <oldest shown>` (the CLI's own bound, inclusive, at
-	its own precision; what came back already is dropped by hid), prepended
-	with the reader's place kept. A write lands as the epoch bump does
+	position. Scrolling up asks for the page above it long before the
+	reader gets there — while all but a screen of the last page is still
+	above them — and asks for several screens at once (da-j6frl, vividn: "rows should load long before you get
+	to them"), `tail -n <size+1> -t <oldest shown>` (the CLI's own bound,
+	inclusive, at its own precision; what came back already is dropped by
+	hid), prepended with the reader's place kept. The reader scrolls on
+	through what is held while it is in flight. A write lands as the epoch bump does
 	today: pinned at the bottom the newest page simply replaces the screen;
 	scrolled up, the place is kept and a quiet `↓ new` at the foot says
 	something landed below. A page the reader pulled in is scrolled up
@@ -61,7 +64,7 @@
 -->
 <script lang="ts">
 	import { onDestroy, tick } from 'svelte';
-	import { ansiSpans } from './ansi.js';
+	import { ansiSpans, type AnsiSpan } from './ansi.js';
 	import AnsiText from './AnsiText.svelte';
 	import StateCell from './StateCell.svelte';
 	import { fieldPill, select, selected } from './bar.js';
@@ -81,12 +84,30 @@
 
 	/** Most rows the table holds. Past it, older rows replace newer ones. */
 	const CAP = 300;
+	/** Most rows of a page drawn in one task. */
+	const DRAW = 25;
+
+	/**
+	 * Rows the page above asks for, with `n` on screen: four screens, at
+	 * least 100. A page costs about the same whatever its size (a second
+	 * at five years, da-j6frl), so a bigger one brings rows faster than a
+	 * steady scroll uses them. It is asked for once the reader has scrolled
+	 * a screen up from where the last one landed — all but a screen of a
+	 * page still above them — and never so big that the cap would cut the
+	 * reader's own screen when it lands: the page, the lead above the
+	 * reader (a page less a screen) and their screen are two pages, which
+	 * fit in `CAP` with a screen to spare. A pane so tall that a page is
+	 * only a screen has no lead, and asks at the top as it did.
+	 */
+	const pageSize = (n: number) => Math.max(n, Math.min(Math.max(100, 4 * n), Math.floor((CAP - n) / 2)));
 
 	/** One row as laid out: the CLI's cells by column key, and the row itself. */
 	interface Shown {
 		hid: string;
 		time: string | null;
 		cells: Record<string, string>;
+		/** The cells painted, once: the same spans are not painted again (da-j6frl). */
+		spans: Record<string, AnsiSpan[]>;
 		/** What `tail --json` said: the `state` cell is drawn from it (da-fknn8). */
 		row: TailRow;
 	}
@@ -300,13 +321,15 @@
 
 	const at = (row: Shown) => (row.time === null ? -Infinity : Date.parse(row.time));
 
+	/** A cell a row has no listing's word for: `keys` is every listing's columns. */
+	const BLANK = ansiSpans('');
+
 	function toShown(table: { rows: TailRow[]; columns: TailColumn[] }): Shown[] {
-		return table.rows.map((row, i) => ({
-			hid: row.hid,
-			time: row.time,
-			cells: Object.fromEntries(table.columns.map((column) => [column.key, column.cells[i] ?? ''])),
-			row
-		}));
+		return table.rows.map((row, i) => {
+			const cells = Object.fromEntries(table.columns.map((column) => [column.key, column.cells[i] ?? '']));
+			const spans = Object.fromEntries(Object.entries(cells).map(([key, cell]) => [key, ansiSpans(cell)]));
+			return { hid: row.hid, time: row.time, cells, spans, row };
+		});
 	}
 
 	/**
@@ -451,21 +474,28 @@
 		try {
 			// One more than a page: the bound is inclusive, so the oldest row
 			// comes back with the page above it and is dropped again by hid.
-			const table = await tailListing({ count: n + 1, before: oldest.time, ...(field ? { field } : {}) });
+			const table = await tailListing({ count: pageSize(n) + 1, before: oldest.time, ...(field ? { field } : {}) });
 			if (of !== generation) return;
 			const held = new Set(rows.map((row) => row.hid));
 			const fresh = toShown(table).filter((row) => !held.has(row.hid));
 			if (fresh.length === 0) return void (exhausted = true);
 			away = true;
-			const a = anchor();
-			rows = [...fresh, ...rows];
-			if (rows.length > CAP) {
-				rows = rows.slice(0, CAP);
-				unseen = true;
-			}
 			adopt(table.columns, false);
-			await decide();
-			await keep(a);
+			// Drawn `DRAW` rows a task, the newest first, so no one frame
+			// waits on a whole page (da-j6frl); the place is the one before
+			// the first, so a scroll offset's rounding is not carried on.
+			const a = anchor();
+			for (let end = fresh.length; end > 0; end -= DRAW) {
+				if (of !== generation) return;
+				rows = [...fresh.slice(Math.max(0, end - DRAW), end), ...rows];
+				if (rows.length > CAP) {
+					rows = rows.slice(0, CAP);
+					unseen = true;
+				}
+				await decide();
+				await keep(a);
+				if (end > DRAW) await new Promise((resolve) => setTimeout(resolve));
+			}
 		} catch {
 			// A page that failed is a page not shown; the table stands.
 		} finally {
@@ -478,8 +508,8 @@
 		if (n !== null) void refresh(Math.max(1, n), epoch, true);
 	}
 
-	// The reader's scrolling, on the pane's body. At the top, the page
-	// above; at the bottom, nothing is unseen. A table that fits exactly
+	// The reader's scrolling, on the pane's body. Up to within a page of
+	// the top, less a screen, the page above; at the bottom, nothing is unseen. A table that fits exactly
 	// cannot be scrolled at all, so a wheel or a finger pulling down at the
 	// top asks the same way.
 	let attached: HTMLElement | undefined;
@@ -505,9 +535,14 @@
 		attached = undefined;
 	}
 
+	/** Where the body was at its last scroll event: below it now is the reader going up. */
+	let last = 0;
+
 	function onScroll(): void {
 		if (!scroller) return;
 		const top = scroller.scrollTop;
+		const up = top < last;
+		last = top;
 		// Fewer rows than before clamp the scroll on their own, and a
 		// clamp is a scroll event too — so a scroll of ours is known by
 		// where it landed, and a scroll that cannot be a reader's, in a
@@ -516,7 +551,8 @@
 		own = null;
 		if (mine) return;
 		if (nearBottom()) unseen = away = false;
-		if (top <= 0 && scroller.scrollHeight > scroller.clientHeight + 1) void page();
+		const lead = n && fit ? (pageSize(n) - n) * fit.row : 0;
+		if (up && top <= lead && scroller.scrollHeight > scroller.clientHeight + 1) void page();
 	}
 
 	function onWheel(e: WheelEvent): void {
@@ -562,7 +598,7 @@
 			{#each keys as key (key)}
 				<div class="cell {key}">
 					{#if key === 'state'}<StateCell row={row.row} painted={row.cells.state ?? ''} />{:else}<AnsiText
-							spans={ansiSpans(row.cells[key] ?? '')}
+							spans={row.spans[key] ?? BLANK}
 						/>{/if}
 				</div>
 			{/each}
@@ -603,7 +639,7 @@
 							>{#if key === 'state'}<StateCell
 									row={row.row}
 									painted={row.cells.state ?? ''}
-								/>{:else}<AnsiText spans={ansiSpans(row.cells[key] ?? '')} />{/if}</td
+								/>{:else}<AnsiText spans={row.spans[key] ?? BLANK} />{/if}</td
 						>
 					{/each}
 				</tr>

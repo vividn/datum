@@ -162,6 +162,13 @@ async function seed(app, count) {
 	await app.reload();
 }
 
+/**
+ * The rows a page above brings with `n` on screen (TailTable.svelte's
+ * `pageSize`): four screens, at least 100, and with the lead and the
+ * screen, within the cap of 300.
+ */
+const pageOf = (n) => Math.max(n, Math.min(Math.max(100, 4 * n), Math.floor((300 - n) / 2)));
+
 const seedHid = (i) => 'seed' + i.toString().padStart(8, '0');
 const seedIndex = (hid) => Number(hid.slice(4));
 
@@ -268,19 +275,23 @@ describe('scrolling up', () => {
 	test('the wheel pages older rows in, the top row stays put, the header stays pinned, to the start of the log', async () => {
 		await TALL.solo(async (app) => {
 			const { page } = app;
-			await seed(app, 60);
+			// Under the cap, and room for two whole pages above the screen.
+			const total = 250;
+			await seed(app, total);
 			await atRest(page);
 			const g0 = await geometry(page);
 			assertFits(g0, 'at rest');
 			const n = g0.n;
+			const size = pageOf(n);
+			assert.ok(n + 2 * size < total, `${total} rows is not two pages of ${size} above ${n}`);
 
 			// The table fits its box exactly, so there is nothing to
 			// scroll: the wheel, turned up over it, asks for the page above.
 			await wheelUp(page);
-			await waitRows(page, 'n === arg', 2 * n);
+			await waitRows(page, 'n === arg', n + size);
 			const g1 = await geometry(page);
 			const top = g0.hids[0];
-			assert.deepEqual(g1.hids, g1.hids.map((_, i) => seedHid(60 - 2 * n + i)), 'the page above is not contiguous');
+			assert.deepEqual(g1.hids, g1.hids.map((_, i) => seedHid(total - n - size + i)), 'the page above is not contiguous');
 			// To the pixel: scroll offsets are whole pixels and the rows are not.
 			assert.ok(Math.abs(g1.ys[top] - g0.ys[top]) <= 1, `the row that was at the top moved: ${g0.ys[top]} → ${g1.ys[top]}`);
 			assert.ok(g1.headInside, 'the header scrolled out of the pane');
@@ -288,7 +299,7 @@ describe('scrolling up', () => {
 			// Up to the top of that, and the page above it.
 			const ys = await toTop(page);
 			const top2 = g1.hids[0];
-			await waitRows(page, 'n === arg', 3 * n);
+			await waitRows(page, 'n === arg', n + 2 * size);
 			const g2 = await geometry(page);
 			assert.ok(Math.abs(g2.ys[top2] - ys[top2]) <= 1, `the row that was at the top moved: ${ys[top2]} → ${g2.ys[top2]}`);
 			assert.ok(g2.headInside, 'after two pages, the header is not in the pane');
@@ -297,18 +308,18 @@ describe('scrolling up', () => {
 
 			// On to the start of the log: every row, oldest first.
 			let count = g2.hids.length;
-			for (let pages = 0; pages < 20 && count < 60; pages++) {
+			for (let pages = 0; pages < 20 && count < total; pages++) {
 				await toTop(page);
 				await waitRows(page, 'n !== arg', count);
 				count = await rowCount(page);
 			}
-			assert.equal(count, 60, 'the whole log is not listed');
+			assert.equal(count, total, 'the whole log is not listed');
 			// Once more, at the start: nothing comes, and the first row
 			// says it is the first.
 			await toTop(page);
 			await page.locator('section.pane[data-title="tail"] tbody tr.start').waitFor();
 			const g3 = await geometry(page);
-			assert.equal(g3.hids.length, 60, 'rows came from before the start of the log');
+			assert.equal(g3.hids.length, total, 'rows came from before the start of the log');
 			assert.deepEqual(g3.start, [seedHid(0)], 'the first row of the log is not marked as the start');
 			assert.ok(g3.headInside, 'at the start of the log, the header is not in the pane');
 		});
@@ -336,10 +347,11 @@ describe('scrolling up', () => {
 				}
 				await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 
-				await waitRows(page, 'n === arg', 2 * g0.n);
+				const want = Math.min(60, g0.n + pageOf(g0.n));
+				await waitRows(page, 'n === arg', want);
 				const g1 = await geometry(page);
 				const top = g0.hids[0];
-				assert.deepEqual(g1.hids, g1.hids.map((_, i) => seedHid(60 - 2 * g0.n + i)), 'the page above is not contiguous');
+				assert.deepEqual(g1.hids, g1.hids.map((_, i) => seedHid(60 - want + i)), 'the page above is not contiguous');
 				assert.ok(Math.abs(g1.ys[top] - g0.ys[top]) <= 1, `the row that was at the top moved: ${g0.ys[top]} → ${g1.ys[top]}`);
 				assert.ok(g1.headInside, 'the header scrolled out of the pane');
 			},
@@ -373,15 +385,107 @@ describe('scrolling up', () => {
 		});
 	});
 
+	// vividn (da-j6frl): «rows should load long before you get to them … The
+	// scrolling should just feel smooth and effortless.» A steady scroll up
+	// a long log, past the cap: the page above is asked for while the
+	// reader is still a screen or more below the top, several screens at a
+	// time, and the reader is never at the top with a page in flight.
+	test('a steady scroll up asks ahead, several screens a page, and never waits at the top', async () => {
+		await TALL.solo(async (app) => {
+			const { page } = app;
+			await seed(app, 3000);
+			await atRest(page);
+			const { n, row } = await geometry(page);
+			// How far ahead of the top a page is asked for.
+			const lead = (pageOf(n) - n) * row;
+			// Each page asked for, where the reader was when it was, and how
+			// many are in flight.
+			await page.evaluate(() => {
+				const pages = (window.__pages = { asked: [], inflight: 0 });
+				const previous = window.datum.setRunner(async (argv, ...rest) => {
+					if (argv[0] !== 'tail' || !argv.includes('-t')) return previous(argv, ...rest);
+					const body = document.querySelector('section.pane[data-title="tail"] .body:not(.behind .body)');
+					const ask = { top: body.scrollTop, screen: body.clientHeight, t: performance.now() };
+					pages.asked.push(ask);
+					pages.inflight++;
+					try {
+						return await previous(argv, ...rest);
+					} finally {
+						pages.inflight--;
+						ask.ms = performance.now() - ask.t;
+					}
+				});
+				window.__restore = () => window.datum.setRunner(previous);
+			});
+			try {
+				// The first page by the wheel: a table that fits has no scroll to set.
+				await wheelUp(page);
+				await page.waitForFunction(() => window.__pages.asked.length === 1 && window.__pages.inflight === 0);
+				// Steady, and at a speed the look-ahead is for: the reader
+				// takes four times the slowest page yet to cover the lead it
+				// is asked for with. Asked for at the top instead, as it was,
+				// a page is in flight there at any speed.
+				let scrolled = 0;
+				let screen = 0;
+				const stalls = [];
+				let most = 0;
+				for (let step = 0; step < 100; step++) {
+					const s = await page.evaluate(
+						([px, lead]) =>
+							new Promise((resolve) => {
+								const body = document.querySelector('section.pane[data-title="tail"] .body:not(.behind .body)');
+								const before = body.scrollTop;
+								body.scrollTop = before - px;
+								const moved = before - body.scrollTop;
+								const slowest = Math.max(...window.__pages.asked.map((a) => a.ms ?? performance.now() - a.t));
+								const pause = (4 * slowest * px) / lead;
+								requestAnimationFrame(() => {
+									const sample = {
+										moved,
+										top: body.scrollTop,
+										screen: body.clientHeight,
+										inflight: window.__pages.inflight,
+										rows: body.querySelectorAll('tbody tr').length
+									};
+									setTimeout(() => resolve(sample), pause);
+								});
+							}),
+						[60, lead]
+					);
+					scrolled += s.moved;
+					screen = s.screen;
+					most = Math.max(most, s.rows);
+					if (s.top <= 0 && s.inflight > 0) stalls.push(step);
+				}
+				const { asked } = await page.evaluate(() => window.__pages);
+				const screens = scrolled / screen;
+				const ahead = asked.slice(1);
+				assert.ok(screens > 15, `scrolled ${screens.toFixed(1)} screens, not a long scroll`);
+				assert.deepEqual(stalls, [], 'the reader sat at the top with a page in flight');
+				assert.ok(most > 300 - 1 && most <= 300, `held ${most} rows: the scroll did not reach the cap, or passed it`);
+				assert.ok(
+					ahead.every((a) => a.top >= a.screen),
+					`a page asked for less than a screen from the top: ${JSON.stringify(ahead)}`
+				);
+				assert.ok(
+					asked.length * 3 <= screens,
+					`${asked.length} pages for ${screens.toFixed(1)} screens scrolled: not several screens a page`
+				);
+			} finally {
+				await page.evaluate(() => window.__restore?.());
+			}
+		});
+	});
+
 	test('stops at the cap: past 300 rows, the newest go as older ones come', async () => {
 		await TALLEST.solo(async (app) => {
 			const { page } = app;
-			await seed(app, 320);
+			await seed(app, 600);
 			await atRest(page);
 			// The first page by the wheel: a table that fits has no scroll to set.
 			let count = await rowCount(page);
 			await wheelUp(page);
-			await waitRows(page, 'n === arg', 2 * count);
+			await waitRows(page, 'n > arg', count);
 			count = await rowCount(page);
 			for (let pages = 0; pages < 60 && count < 300; pages++) {
 				await toTop(page);
@@ -412,7 +516,7 @@ describe('a write', () => {
 			const g0 = await geometry(page);
 			// A page above, then up to its top: scrolled up, not at the bottom.
 			await wheelUp(page);
-			await waitRows(page, 'n === arg', 2 * g0.n);
+			await waitRows(page, 'n === arg', Math.min(30, g0.n + pageOf(g0.n)));
 			// Up the older rows, a little short of the top — the top asks
 			// for the page above, and this is about a write, not a page.
 			await page.evaluate(() => {
@@ -454,7 +558,8 @@ describe('a write', () => {
 		// Both have come back; two frames for them to be drawn.
 		await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 		const g = await geometry(page);
-		const want = Array.from({ length: 2 * g0.n }, (_, i) => seedHid(30 - 2 * g0.n + i));
+		const held = Math.min(30, g0.n + pageOf(g0.n));
+		const want = Array.from({ length: held }, (_, i) => seedHid(30 - held + i));
 		assert.deepEqual(g.hids.slice(0, want.length), want, `${label}: the page above is gone`);
 		const top = g0.hids[0];
 		assert.ok(Math.abs(g.ys[top] - g0.ys[top]) <= 1, `${label}: the reader's row moved: ${g0.ys[top]} → ${g.ys[top]}`);
@@ -514,7 +619,7 @@ describe('a write', () => {
 			const g0 = await geometry(page);
 			assertFits(g0, 'at rest');
 			await wheelUp(page);
-			await waitRows(page, 'n === arg', 2 * g0.n);
+			await waitRows(page, 'n === arg', Math.min(30, g0.n + pageOf(g0.n)));
 			// The case: the reader's row still sits at the live end.
 			assert.ok((await geometry(page)).atBottom, 'the page left the screen off the bottom: not the case this is about');
 			await app.submit('occur tea');

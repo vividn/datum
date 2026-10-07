@@ -53,7 +53,7 @@
 	import AnsiText from './AnsiText.svelte';
 	import type { TailRow } from './tail.js';
 
-	/** The row, as `datum tail --json` reports it. */
+	/** The row, as `datum tail --json` reports it, never changed in place (immutable). */
 	export let row: TailRow;
 	/** The row's painted `state` cell, for a listing with no parts to draw. */
 	export let painted = '';
@@ -105,7 +105,7 @@
 		class="edge to"
 		title={hover(row.following_state, row.following_state_label)}
 		><AnsiText spans={ansiSpans(trail)} /></span
-	>{/if}
+	>{/if}<svelte:options immutable />
 
 <style>
 	/*
