@@ -128,7 +128,7 @@ export const boxes = (locator, selector) =>
  * Scroll the bar to its right end: is its furthest `selector` button then
  * wholly in it? The furthest and not the last: the rows pack on their own,
  * so the last button ends a row that may be shorter than another — as a
- * `Track +` that wears its chevron makes the first (da-vteda). Within a
+ * `Track +` that wore its chevron made the first (da-vteda). Within a
  * pixel on the right: `scrollWidth` and `scrollLeft` are
  * whole pixels, so up to one of a fractional content width is never
  * scrolled to (measured 0.62px with `note` on the bar, da-8ru0m).

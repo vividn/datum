@@ -396,6 +396,10 @@ rule is decided but not yet everywhere, it names the bead.
     «yes I like the chevron much better» than the `…` such a label ended in, which is gone). It
     is the kind `open`, drawn once in `app.css`; a list or a form that takes a widget's place, or
     `< Back`, is `show` and wears none. The same tap-everything tests hold chevron ⇔ a modal opened.
+    Except a `+` face — the root bar's `+`, a pane's `+`, the fields' `Track +` and its trailing
+    `+`: it says `open` and wears none, the `+` saying it already (da-pmmgm; vividn: «that looks
+    rather ugly, I would make an exception for the + button»). The tests read a `+` face off the
+    button's text. A `+N` chip is a count, not a `+` face, and keeps its `›`.
     «Save a backup file» keeps its `›` where a browser has no save picker and downloads
     instead: the chevron says the tap hands the reader to the browser to put the file
     somewhere, which the download does too (its prompt or its panel), and the page cannot
@@ -457,7 +461,8 @@ rule is decided but not yet everywhere, it names the bead.
     so each field has one modal or tab. Declaring a field stays the Track dialog — «which verb?»
     is a question.
 
-    Every control that opens a place, a sheet or a modal wears rule 22's `›` (da-jozgv). The
+    Every control that opens a place, a sheet or a modal wears rule 22's `›` (da-jozgv), a `+`
+    face excepted. The
     sweep of 2026-09-29 found three without it: the commands widget's `Sync` (it was `show`), and
     the documents' `+N` chips in the bar and the REPL (`Docs.svelte`, `Doc.svelte`). The menus,
     the gear and the pane badges already said `open`, which the tap walks hold. The walks cannot

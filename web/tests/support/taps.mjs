@@ -25,6 +25,9 @@
 // (`prompt`, a file picker). The chevron is `[data-act='open']`'s alone
 // (app.css), so a button that wears one says `open`, and one that opens a
 // modal without saying so is named here.
+// Except a `+` face (da-pmmgm): it says `open` and wears none, the `+`
+// saying it already. Read here off the FACE, not off app.css's `.add`, so
+// a `+` that lost the class is named as well as a chevron that came back.
 
 import { before, after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -82,8 +85,9 @@ const survey = (page, { within, mark, layer } = {}) =>
 				const double =
 					style.borderTopStyle === 'double' || (style.borderTopStyle === 'dashed' && style.outlineStyle === 'dashed');
 				const chevron = getComputedStyle(b, '::after').content.includes('›');
+				const plus = b.textContent.trim().endsWith('+');
 				if (key === mark) b.dataset.tap = '';
-				out.push({ key, double, chevron, kind: b.dataset.act ?? null });
+				out.push({ key, double, chevron, plus, kind: b.dataset.act ?? null });
 			}
 			return out;
 		},
@@ -233,13 +237,13 @@ async function watchModals(page) {
  * stray rule drew on a button that opens nothing is named as well.
  */
 const chevronWrong = (t) =>
-	t.chevron !== (t.kind === 'open')
-		? `${t.chevron ? 'wears a ›' : 'wears no ›'} as ${t.kind ?? 'no kind'}`
-		: t.chevron === t.modal
+	t.chevron !== (t.kind === 'open' && !t.plus)
+		? `${t.chevron ? 'wears a ›' : 'wears no ›'} as ${t.kind ?? 'no kind'}${t.plus ? ' with a + face' : ''}`
+		: (t.kind === 'open') === t.modal
 			? null
 			: t.modal
 				? `opened a modal, and wears no › (${t.kind ?? 'no kind'})`
-				: `wears a › (${t.kind ?? 'no kind'}), and opened no modal`;
+				: `says open${t.plus ? ' (a + face)' : ', wears a ›,'} and opened no modal`;
 
 /** Tap `key` on a freshly reset page and say what the tap did. */
 async function tap(app, key, line, within) {

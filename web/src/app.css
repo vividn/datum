@@ -103,8 +103,11 @@
 /* A tap that OPENS a modal, a sheet or a confirm wears a trailing chevron
    (da-vteda, rule 22): drawn here and nowhere else, on the kind `use:act`
    writes ($lib/act.ts). `/ ''` keeps it out of the button's accessible
-   name, which says what the button is and not where it leads. */
-[data-act='open']::after {
+   name, which says what the button is and not where it leads.
+   A `+` face wears none (da-pmmgm): the `+` already says something
+   opens to add to, and vividn found `+›` «rather ugly». The root bar's and
+   a pane's `+` (`.add`), the fields' `Track +` and its trailing `+`. */
+[data-act='open']:not(.add):not(.add-button):not(.add-field)::after {
 	content: '›' / '';
 	margin-inline-start: 0.35em;
 }
@@ -186,17 +189,6 @@ body {
 	place-items: center;
 	font-size: 0.85rem;
 	line-height: 1;
-}
-
-/* A badge that opens a modal (a pane's `+`, the root's): its chevron stands
-   beside the glyph, and not in a second row under it. */
-.control.badge[data-act='open'] {
-	grid-auto-flow: column;
-	justify-content: center;
-}
-.control.badge[data-act='open']::after {
-	margin-inline-start: 0;
-	font-size: 0.7em;
 }
 
 /* Pointed at or focused. Badges only: a tab's outline is how it says

@@ -17,13 +17,16 @@
 // The same door draws the one other mark (da-vteda): a tap that OPENS a
 // modal, a sheet or a confirm wears a trailing chevron `›`, drawn on
 // `[data-act='open']` in `app.css` and nowhere else. vividn: «yes I like the
-// chevron much better» — than the `…` such a label used to end in.
+// chevron much better» — than the `…` such a label used to end in. Except a
+// `+` face (da-pmmgm), whose `+` says it already: «I would make an
+// exception for the + button».
 
 /**
  * `run` — something is written or run at once; `fill` — a line is left in
  * the prompt; `arm` — the next tap means something else; `show` — a list or
  * a form takes the widget's place, or gives way again; `open` — a modal, a
- * sheet or a confirm opens over the page, and the button wears a `›`.
+ * sheet or a confirm opens over the page, and the button wears a `›`
+ * (a `+` face excepted).
  */
 export type ActKind = 'run' | 'fill' | 'arm' | 'show' | 'open';
 

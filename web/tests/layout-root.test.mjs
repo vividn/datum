@@ -91,6 +91,30 @@ describe('the default layout', () => {
 	});
 });
 
+// da-pmmgm: a `+` face says what opens already, so it wears no `›` (vividn:
+// «that looks rather ugly, I would make an exception for the + button»),
+// and every other button that opens a modal still does.
+describe('the chevron', () => {
+	test('the root bar\'s +, a pane\'s + and the fields\' Track + wear none; Change Widget still does', async () => {
+		await shared.solo(async ({ page }) => {
+			const after = (locator) => locator.evaluate((b) => getComputedStyle(b, '::after').content);
+			for (const plus of [
+				page.locator('button[aria-label="open a layout"]'),
+				page.locator('button[aria-label^="add a tab to the"]').first(),
+				page.locator('button.add-button')
+			]) {
+				assert.equal(await plus.getAttribute('data-act'), 'open', 'the + no longer says open');
+				assert.equal(await after(plus), 'none', `${await plus.textContent()} wears a chevron`);
+			}
+			await manageButton(page, 'tail').click();
+			const change = page.getByRole('menuitem', { name: 'Change Widget', exact: true });
+			assert.equal(await change.getAttribute('data-act'), 'open');
+			assert.match(await after(change), /›/, 'Change Widget lost its chevron');
+			await page.keyboard.press('Escape');
+		});
+	});
+});
+
 describe('the draft', () => {
 	test('is back after a reload, and a layout with no draft is the default', async () => {
 		await withApp(async (app) => { // own app: it reloads
