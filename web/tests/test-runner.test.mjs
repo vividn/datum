@@ -110,3 +110,69 @@ describe('parseShard', () => {
 		}
 	});
 });
+
+// The retry (da-8bmqe), through the real runner: a temp dir holding a file
+// that fails once and then passes, and one that always fails.
+
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+
+describe('DATUM_TEST_RETRY', () => {
+	const runner = new URL('../scripts/test.mjs', import.meta.url).pathname;
+	const suite = (files, retry, extra = {}) => {
+		const dir = mkdtempSync(join(tmpdir(), 'datum-retry-'));
+		mkdirSync(join(dir, 'tests'));
+		for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, 'tests', name), body);
+		const env = { ...process.env, DATUM_TEST_RETRY: retry, DATUM_TEST_CONCURRENCY: '1', ...extra };
+		delete env.NODE_TEST_CONTEXT; // or the child reports to this runner instead of running
+		const r = spawnSync(process.execPath, [runner], { cwd: dir, env, encoding: 'utf8' });
+		rmSync(dir, { recursive: true, force: true });
+		return { code: r.status, out: r.stdout + r.stderr };
+	};
+	const once = `import test from 'node:test';
+import { existsSync, writeFileSync } from 'node:fs';
+const mark = new URL(import.meta.url + '.ran');
+test('fails the first time', () => {
+	if (existsSync(mark)) return;
+	writeFileSync(mark, '');
+	throw new Error('first run');
+});
+`;
+	const always = `import test from 'node:test';
+test('fails', () => { throw new Error('always'); });
+`;
+
+	test('a listed file that fails once is retried, and the suite passes', () => {
+		const { code, out } = suite({ 'flaky.test.mjs': once }, 'tests/flaky.test.mjs=da-x');
+		assert.match(out, /^RETRIED web\/tests\/flaky\.test\.mjs \(da-x\): first run failed, retry passed$/m);
+		assert.match(out, /^ +[\d.]+ s ↻ tests\/flaky\.test\.mjs$/m); // the tail says it healed, not ✗
+		assert.equal(code, 0, out);
+	});
+
+	test('a listed file whose retry fails is red, and says so', () => {
+		const { code, out } = suite({ 'flaky.test.mjs': always }, 'tests/flaky.test.mjs=da-x');
+		assert.match(out, /^RETRIED web\/tests\/flaky\.test\.mjs \(da-x\): first run failed, retry failed$/m);
+		assert.equal(code, 1, out);
+	});
+
+	test('an unlisted failing file is never retried', () => {
+		const { code, out } = suite({ 'flaky.test.mjs': once, 'other.test.mjs': once }, 'tests/other.test.mjs=da-x');
+		assert.doesNotMatch(out, /RETRIED web\/tests\/flaky/);
+		assert.match(out, /^RETRIED web\/tests\/other\.test\.mjs \(da-x\): first run failed, retry passed$/m);
+		assert.equal(code, 1, out);
+	});
+
+	test('a name that is not a test file is refused, not ignored', () => {
+		for (const retry of ['tests/gone.test.mjs=da-x', 'tests/flaky.test.mjs']) {
+			const { code, out } = suite({ 'flaky.test.mjs': once }, retry);
+			assert.match(out, /DATUM_TEST_RETRY wants tests\/<file>=<bead> naming a file this run has; got /, retry);
+			assert.notEqual(code, 0, retry);
+		}
+		// A DEBUG file is a test file, but CI never runs it, so it is never retried.
+		const { code, out } = suite({ 'debug-x.test.mjs': once }, 'tests/debug-x.test.mjs=da-x', { CI: '1', DATUM_TEST_DEBUG: '' });
+		assert.match(out, /DATUM_TEST_RETRY wants .* got tests\/debug-x\.test\.mjs=da-x/);
+		assert.notEqual(code, 0);
+	});
+});

@@ -404,3 +404,12 @@ jobs:
         run: /usr/bin/time -v pnpm test
         env:
           DATUM_TEST_CONCURRENCY: 3
+          # Known flakes get ONE retry, logged as `RETRIED web/tests/<file>
+          # (<bead>): …`; no other file is ever retried (da-8bmqe). Taking a
+          # file off this list is part of its bead's acceptance:
+          #   bar.test.mjs — da-d7ndh
+          #   layout-strip.test.mjs, layout-floors.test.mjs — da-i1ok
+          DATUM_TEST_RETRY: >-
+            tests/bar.test.mjs=da-d7ndh
+            tests/layout-strip.test.mjs=da-i1ok
+            tests/layout-floors.test.mjs=da-i1ok

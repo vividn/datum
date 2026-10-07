@@ -56,6 +56,13 @@
 // `tests/debug*.test.mjs`, and with `CI` set those files are skipped and
 // named — vividn, 2026-09-24: "they are not important in userland". Locally,
 // or with `DATUM_TEST_DEBUG=1`, they run.
+//
+// RETRY ONCE, FOR NAMED FILES ONLY (da-8bmqe). `DATUM_TEST_RETRY` lists
+// `tests/<file>=<bead>` pairs: a listed file that fails is run once more
+// after the suite, and a retry that passes clears it. Its failure does not
+// count toward the fail-fast three. Every retry is logged as `RETRIED
+// web/tests/<file> (<bead>): …`, and an unlisted file is never retried. The
+// list lives in ci.yml, beside the beads whose fixes take each file off it.
 
 import { availableParallelism, loadavg } from 'node:os';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -69,7 +76,8 @@ const flag = args.indexOf('--shard');
 const spec = flag === -1 ? process.env.DATUM_TEST_SHARD : args.splice(flag, 2)[1];
 if (flag !== -1 && spec === undefined) throw new Error('--shard wants an N/M after it');
 const pattern = '--test-name-pattern=';
-const testNamePatterns = args.filter((a) => a.startsWith(pattern)).map((a) => a.slice(pattern.length));
+const names = args.filter((a) => a.startsWith(pattern)).map((a) => a.slice(pattern.length));
+const testNamePatterns = names.length ? names : undefined;
 const rest = args.filter((a) => !a.startsWith(pattern));
 if (rest.length) throw new Error(`test.mjs takes --shard N/M and --test-name-pattern=RE, not ${rest.join(' ')}`);
 const shard = parseShard(spec);
@@ -114,6 +122,14 @@ const debug = (f) => /^tests\/debug[^/]*\.test\.mjs$/.test(f);
 const skipDebug = process.env.CI && process.env.DATUM_TEST_DEBUG !== '1';
 const all = skipDebug ? listed.filter((f) => !debug(f)) : listed;
 if (skipDebug) console.log(`test: skipped under CI (DEBUG widgets): ${listed.filter(debug).join(' ')}`);
+const retry = new Map(
+	(process.env.DATUM_TEST_RETRY ?? '')
+		.split(/\s+/)
+		.filter(Boolean)
+		.map((p) => p.split('='))
+);
+// `all`, not `listed`: a DEBUG file skipped under CI would never be retried.
+for (const [f, bead] of retry) if (!all.includes(f) || !bead) throw new Error(`DATUM_TEST_RETRY wants tests/<file>=<bead> naming a file this run has; got ${f}=${bead ?? ''}`);
 const record = new URL('durations.json', import.meta.url);
 const known = JSON.parse(readFileSync(record, 'utf8'));
 const files = shardFiles(all, shard).sort((a, b) => (known[b] ?? Infinity) - (known[a] ?? Infinity) || a.localeCompare(b));
@@ -128,6 +144,7 @@ const took = {};
 process.exitCode = 1; // until the run's own summary says it passed
 const bail = process.env.DATUM_TEST_BAIL === '0' ? Infinity : 3;
 const failed = [];
+const healed = new Set();
 const started = new Set();
 let notRun;
 const stop = new AbortController();
@@ -136,7 +153,7 @@ const stream = run({
 	concurrency,
 	signal: stop.signal,
 	timeout: 300_000,
-	testNamePatterns: testNamePatterns.length ? testNamePatterns : undefined
+	testNamePatterns
 });
 // An aborted run still dequeues and completes every file, so what had
 // started is read up to the abort and no further.
@@ -146,7 +163,7 @@ stream.on('test:dequeue', (t) => {
 stream.on('test:complete', (t) => {
 	if (t.nesting !== 0 || !files.includes(t.name)) return;
 	took[t.name] = t.details;
-	if (!t.details.passed && !notRun && failed.push(t.name) >= bail) {
+	if (!t.details.passed && !notRun && !retry.has(t.name) && failed.push(t.name) >= bail) {
 		notRun = files.filter((f) => !started.has(f));
 		stop.abort();
 	}
@@ -155,9 +172,10 @@ stream.on('test:summary', (s) => {
 	if (s.file === undefined && s.success) process.exitCode = 0;
 });
 // After the reporter's last line, so the summary is the run's tail.
-const out = stream.compose(process.stdout.isTTY ? new Spec() : tap);
+const reporter = () => (process.stdout.isTTY ? new Spec() : tap);
+const out = stream.compose(reporter());
 out.pipe(process.stdout);
-out.on('end', () => {
+out.on('end', async () => {
 	// A file the runner never reported as its own is a red run, and says which.
 	const missing = files.filter((f) => !(f in took));
 	if (notRun) {
@@ -169,9 +187,23 @@ out.on('end', () => {
 		process.exitCode = 1;
 		console.log(`test: ${missing.length} file${missing.length === 1 ? '' : 's'} never completed: ${missing.join(' ')}`);
 	}
+	const red = Object.keys(took).filter((f) => !took[f].passed);
+	if (!notRun && !missing.length) {
+		for (const f of red.filter((f) => retry.has(f))) {
+			let passed = false;
+			const again = run({ files: [f], timeout: 300_000, testNamePatterns });
+			again.on('test:summary', (s) => {
+				if (s.file === undefined) passed = s.success;
+			});
+			for await (const chunk of again.compose(reporter())) process.stdout.write(chunk);
+			console.log(`RETRIED web/${f} (${retry.get(f)}): first run failed, retry ${passed ? 'passed' : 'failed'}`);
+			if (passed) healed.add(f);
+		}
+		if (red.length && healed.size === red.length) process.exitCode = 0;
+	}
 	const ran = Object.entries(took).sort(([, a], [, b]) => b.duration_ms - a.duration_ms);
-	console.log(`test: ${ran.length} files, slowest first (✗ failed or cut):`);
-	for (const [f, d] of ran) console.log(`  ${(d.duration_ms / 1000).toFixed(1).padStart(6)} s ${d.passed ? ' ' : '✗'} ${f}`);
+	console.log(`test: ${ran.length} files, slowest first (✗ failed or cut, ↻ failed and then passed its retry):`);
+	for (const [f, d] of ran) console.log(`  ${(d.duration_ms / 1000).toFixed(1).padStart(6)} s ${d.passed ? ' ' : healed.has(f) ? '↻' : '✗'} ${f}`);
 	const wall = (Date.now() - t0) / 1000;
 	const after = cpuStat();
 	if (max !== undefined) {
