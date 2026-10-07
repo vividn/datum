@@ -172,7 +172,8 @@
 	$: n = fit ? (drawn.n ?? fit.n) : null;
 	$: slack = fit ? Math.min(fit.slack, drawn.slack) : 0;
 	// A box that holds no row still asks for one: its columns are the
-	// header. A new box asks again at the same count: its width rewraps.
+	// header. A new box lays the listing out again at the same count: its
+	// width rewraps — but asks the CLI only if the count changed (da-4glsf).
 	$: if (n !== null && box) void refresh(Math.max(1, n), epoch);
 	$: visible = n === 0 ? [] : rows;
 
@@ -366,12 +367,26 @@
 		scrollTo(top);
 	}
 
+	/**
+	 * The last listing asked for, and what it asked with. A resize that
+	 * leaves the count alone asks the same `tail -n`, whose answer only an
+	 * epoch or a field can change: it reuses this one, in flight or landed,
+	 * rather than re-run it — 1.3 s in the one queue on five years of data
+	 * (da-4glsf).
+	 */
+	let asked: { with: string; listing: ReturnType<typeof tailListing> } | null = null;
+
 	async function refresh(count: number, _epoch: number, force = false): Promise<void> {
 		const started_at = ++started;
+		const ask = JSON.stringify([count, _epoch, field]);
+		if (force || asked?.with !== ask) asked = { with: ask, listing: tailListing({ count, ...(field ? { field } : {}) }) };
+		const mine = asked;
 		let table: { rows: TailRow[]; columns: TailColumn[] };
 		try {
-			table = await tailListing({ count, ...(field ? { field } : {}) });
+			table = await mine.listing;
 		} catch (e) {
+			// A failed listing is asked for again, not remembered.
+			if (asked === mine) asked = null;
 			if (started_at < shown) return;
 			shown = started_at;
 			error = e instanceof Error ? e.message : String(e);
