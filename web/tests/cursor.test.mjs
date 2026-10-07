@@ -177,7 +177,9 @@ describe('the time cursor', () => {
 			assert.match(await barRun(page, 'occur tea'), /^CREATE /);
 			const [tea] = (await app.entries()).filter((e) => e.field === 'tea');
 			assert.equal(Date.parse(tea.occur_time.utc), cursor, JSON.stringify(tea.occur_time));
-			const tail = await app.paneTable('tail');
+			// Waited for: the pane's refresh runs behind every other command
+			// (da-icmo1), the read above included.
+			const tail = await until(() => app.paneTable('tail'), (t) => t.rows.some((r) => r.includes('tea')));
 			// The LAST tea row: the TRACK document that declared the field
 			// (da-c8mh) is the row above it.
 			const row = tail.rows.filter((r) => r.includes('tea')).at(-1);

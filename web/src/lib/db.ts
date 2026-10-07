@@ -138,9 +138,10 @@ export async function runCli(
 	onStderr?: (text: string) => void,
 	key?: string,
 	stage?: Stage,
-	session?: boolean
+	session?: boolean,
+	pane?: boolean
 ): Promise<CliResult | null> {
-	const cli = (await request({ op: 'cli', argv, env, stdin, key, stage }, onStderr)).cli;
+	const cli = (await request({ op: 'cli', argv, env, stdin, key, stage, pane }, onStderr)).cli;
 	if (!cli) return null;
 	if (cli.changed.length) {
 		announceChange(cli.changed, session);

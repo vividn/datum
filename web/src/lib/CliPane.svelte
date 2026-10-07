@@ -148,7 +148,7 @@
 		out = true;
 		const of = spec;
 		const argv = request.argv!;
-		const next = await run(argv, undefined, undefined, guard ? undefined : key);
+		const next = await run(argv, undefined, undefined, guard ? undefined : key, undefined, undefined, !guard);
 		out = false;
 		if (guard && (next.changed?.length || next.code === UNANSWERED)) writer = of;
 		if (waiting) {

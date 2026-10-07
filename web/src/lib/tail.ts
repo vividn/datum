@@ -90,7 +90,7 @@ export async function tailListing(page: TailPage = {}): Promise<{ rows: TailRow[
 	const argv = ['tail', ...(page.field ? [page.field] : []), '--json'];
 	if (page.count !== undefined) argv.push('-n', String(page.count));
 	if (page.before !== undefined) argv.push('-t', page.before);
-	const result = await run(argv);
+	const result = await run(argv, undefined, undefined, undefined, undefined, undefined, true);
 	if (result.code !== 0) throw new Error(result.stderr || `tail exited ${result.code}`);
 	const doc = JSON.parse(result.stdout) as { rows?: TailRow[]; columns?: TailColumn[] };
 	return { rows: doc.rows ?? [], columns: doc.columns ?? [] };

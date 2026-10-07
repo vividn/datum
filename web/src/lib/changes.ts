@@ -103,8 +103,9 @@ export function onAnyChange(handler: (session: boolean) => void, db: string): ()
  * (tests/burst.test.mjs). The last of them is after the last write, so what
  * the panes settle on is still what the database now holds.
  *
- * So the handler must be the whole refresh — `onExternalChange(ran)`, not
- * `onExternalChange(() => void ran())`, whose promise nothing can wait for.
+ * So the handler must be the whole refresh — `ran().then(settled)`, the
+ * panes it set off included (+page.svelte), not `() => void ran()`, whose
+ * promise nothing can wait for.
  */
 export function onExternalChange(handler: () => unknown, db = 'datum'): () => void {
 	const c = open();

@@ -147,14 +147,48 @@ let lastEnv: string[] = [];
 /** Told when storage changes under the page. */
 let announce: (storage: StorageKind) => void = () => {};
 
-/** One process at a time per worker, so a command never meets its own tab. */
-let queue: Promise<unknown> = Promise.resolve();
+/** A queued job, and what tells its caller it was dropped unrun. */
+interface Job {
+	/** A pane's identity: a newer job with the same key drops this one. */
+	key?: string;
+	/** A pane's refresh: behind every other job, cheapest first. */
+	pane: boolean;
+	/** The command word, what the job's cost is measured under. */
+	word: string;
+	/** Never rejects: a failed job's rejection is handed to its caller. */
+	start: () => Promise<void>;
+	drop: () => void;
+}
 
-/** The newest queued job per key, told when a newer one replaces it. */
-const waiting = new Map<string, () => void>();
+/**
+ * The jobs not yet started. One process at a time per worker, so a command
+ * never meets its own tab; while any job waits, the files are kept.
+ */
+const jobs: Job[] = [];
 
-/** Jobs queued and not yet started: while any wait, the files are kept. */
-let queued = 0;
+/** Whether a job is running, so the next is picked when it finishes. */
+let busy = false;
+
+/** How long each pane's command word last took, in ms. */
+const cost = new Map<string, number>();
+
+/**
+ * Where `job` stands in the line (da-icmo1): everything but a pane's refresh
+ * — a line typed, a button pressed, the bar's own reads, a save — first, in
+ * the order sent, so a read still follows the write before it; then the
+ * panes, cheapest first by their command's last run. A command never run
+ * counts as cheap. First in, first out had nowview's half second answer
+ * 12.9 s after a write, behind `stats`, and a typed `occur` 13 s after its
+ * Enter. vividn: «This whole app must feel very snappy».
+ */
+const rank = (job: Job) => (job.pane ? (cost.get(job.word) ?? 0) : -1);
+
+/**
+ * `argv`'s command word: the first that is neither a flag nor `--db`'s value.
+ * Only a pane's is ranked, and a pane's argv starts with its command; `--db`
+ * is the one flag the seam puts before it ($lib/run.ts `dbArgv`).
+ */
+const wordOf = (argv: string[]) => argv.find((word, i) => !word.startsWith('-') && argv[i - 1] !== '--db') ?? '';
 
 /**
  * Queue `job`; resolves `null` if it was superseded before it started.
@@ -165,29 +199,45 @@ let queued = 0;
  * typed or pressed — is never dropped.
  */
 function enqueue<T>(job: () => Promise<T>): Promise<T>;
-function enqueue<T>(job: () => Promise<T>, key?: string): Promise<T | null>;
-function enqueue<T>(job: () => Promise<T>, key?: string): Promise<T | null> {
-	let dropped = false;
-	const drop = () => (dropped = true);
-	if (key) {
-		waiting.get(key)?.();
-		waiting.set(key, drop);
-	}
-	queued++;
-	const next = queue.then(async () => {
-		queued--;
-		if (key && waiting.get(key) === drop) waiting.delete(key);
-		try {
-			return dropped ? null : await job();
-		} finally {
-			// Drained: nothing is behind this job, so the files go back rather
-			// than be held across an idle page — including when every job
-			// behind it was dropped, and so never asked for them at all.
-			if (queued === 0) release();
-		}
+function enqueue<T>(job: () => Promise<T>, argv: string[], pane?: boolean, key?: string): Promise<T | null>;
+function enqueue<T>(job: () => Promise<T>, argv: string[] = [], pane = false, key?: string): Promise<T | null> {
+	return new Promise<T | null>((resolve, reject) => {
+		const stale = key === undefined ? -1 : jobs.findIndex((waiting) => waiting.key === key);
+		if (stale >= 0) jobs.splice(stale, 1)[0].drop();
+		jobs.push({ key, pane, word: wordOf(argv), drop: () => resolve(null), start: () => job().then(resolve, reject) });
+		void pump();
 	});
-	queue = next.catch(() => {});
-	return next;
+}
+
+/** A task boundary: a request that arrived meanwhile is queued before the next pick. */
+const nextTask = () =>
+	new Promise<void>((resolve) => {
+		const { port1, port2 } = new MessageChannel();
+		port1.onmessage = () => resolve();
+		port2.postMessage(null);
+	});
+
+/**
+ * Run jobs, the best ranked first and the earliest among equals, until none
+ * wait. A job can end in a microtask and the next start in the same one,
+ * so the queue crosses a task between jobs: a line typed while one ran is
+ * otherwise not queued until a burst of them yields.
+ */
+async function pump(): Promise<void> {
+	if (busy) return;
+	busy = true;
+	while (jobs.length) {
+		const at = jobs.reduce((best, job, i) => (rank(job) < rank(jobs[best]) ? i : best), 0);
+		const [job] = jobs.splice(at, 1);
+		const t0 = performance.now();
+		await job.start();
+		if (job.pane) cost.set(job.word, performance.now() - t0);
+		// Drained: nothing is behind this job, so the files go back rather
+		// than be held across an idle page.
+		if (!jobs.length) release();
+		else await nextTask();
+	}
+	busy = false;
 }
 
 function compile(): Promise<WebAssembly.Module> {
@@ -504,6 +554,7 @@ export function onStorage(listener: (storage: StorageKind) => void): void {
 /**
  * Run `datum <argv>` with `env`; resolves once the process has exited, or
  * `null` if a newer command with the same `key` superseded it first.
+ * `pane`: a pane's refresh, which waits behind every other command.
  */
 export function runCli(
 	argv: string[],
@@ -511,7 +562,8 @@ export function runCli(
 	stdin?: string,
 	onStderr?: (text: string) => void,
 	key?: string,
-	stage?: Stage
+	stage?: Stage,
+	pane = false
 ): Promise<CliResult | null> {
 	lastEnv = env;
 	useDatabase(argv);
@@ -541,5 +593,5 @@ export function runCli(
 			};
 		};
 		return memory ? runIn(memory, 0) : withFiles(runIn);
-	}, key);
+	}, argv, pane, key);
 }

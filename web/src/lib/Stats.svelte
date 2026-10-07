@@ -121,7 +121,7 @@
 	 */
 	async function refresh(argv: string[], _epoch: number): Promise<void> {
 		const at = ++started;
-		const r = await run([...argv, '--show', 'all']);
+		const r = await run([...argv, '--show', 'all'], undefined, undefined, undefined, undefined, undefined, true);
 		// Last started wins, not last to return (see CliPane.svelte).
 		if (at < shown) return;
 		shown = at;

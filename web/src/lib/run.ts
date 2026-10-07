@@ -43,6 +43,8 @@ export interface RunResult {
  * `key` names who is asking (a pane): a newer command with the same key drops
  * this one if it has not started yet. Without a key a command always runs.
  * `env` is added to the process's environment (`DATUM_SHOW`, $lib/echo.ts).
+ * `pane`: a pane's refresh, which waits behind every other command and is
+ * run cheapest first (da-icmo1).
  */
 export type CommandRunner = (
 	argv: string[],
@@ -50,7 +52,8 @@ export type CommandRunner = (
 	onStderr?: (text: string) => void,
 	key?: string,
 	stage?: Stage,
-	env?: string[]
+	env?: string[],
+	pane?: boolean
 ) => Promise<RunResult>;
 
 /** Generic failure, as `datum-cli`'s `main` reports one. */
@@ -129,6 +132,18 @@ export function setRunner(next: CommandRunner): CommandRunner | null {
 	return previous;
 }
 
+/** Commands sent through `run` and not yet answered, and who waits for none. */
+let out = 0;
+const quiet: (() => void)[] = [];
+
+/**
+ * Resolves once every command sent through `run` has answered: the panes a
+ * refresh set off as well as the bar's reads, which now run ahead of them.
+ */
+export function settled(): Promise<void> {
+	return out ? new Promise((resolve) => quiet.push(resolve)) : Promise.resolve();
+}
+
 /**
  * Run one command, with `stdin` on its standard input if it reads any, and
  * `stage`'s files in `/data/stage` if it is given one.
@@ -140,13 +155,15 @@ export async function run(
 	onStderr?: (text: string) => void,
 	key?: string,
 	stage?: Stage,
-	env?: string[]
+	env?: string[],
+	pane?: boolean
 ): Promise<RunResult> {
 	if (argv.length === 0) return { argv, code: 0, stdout: '', stderr: '' };
 	const against = dbArgv(argv);
+	out++;
 	try {
 		runner ??= (await import('./runners/wasi.js')).wasiRun;
-		const result = await runner(against, stdin, onStderr, key, stage, env);
+		const result = await runner(against, stdin, onStderr, key, stage, env, pane);
 		// `sync new-invite`, a revoke, an admin…: its leader reads the setup again (da-6kpj5).
 		if (argv.includes('sync') && result.changed?.length) {
 			void import('./sync.js').then(({ syncTouched }) => syncTouched(dbOf(argv)));
@@ -161,6 +178,10 @@ export async function run(
 			stdout: '',
 			stderr: `error: ${e instanceof Error ? e.message : String(e)}`
 		};
+	} finally {
+		// Asked again a task later: a pane whose earlier run was still out
+		// sends its next one only once that run's answer reaches it.
+		if (--out === 0) setTimeout(() => out === 0 && quiet.splice(0).forEach((resolve) => resolve()));
 	}
 }
 

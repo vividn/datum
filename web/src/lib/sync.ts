@@ -108,7 +108,7 @@ const pending = new Map<number, (e: SyncEvent) => void>();
  * `session`: a run the sync worker's session asked for. */
 async function cli(argv: string[], stdin?: string, session?: boolean): Promise<RunResult> {
 	const { wasiRun } = await import('./runners/wasi.js');
-	return wasiRun(argv, stdin, undefined, undefined, undefined, [], session);
+	return wasiRun(argv, stdin, undefined, undefined, undefined, [], undefined, session);
 }
 
 async function must(argv: string[], stdin?: string): Promise<string> {

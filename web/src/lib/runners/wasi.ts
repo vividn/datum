@@ -19,6 +19,7 @@ export async function wasiRun(
 	key?: string,
 	stage?: Stage,
 	extra: string[] = [],
+	pane?: boolean,
 	session?: boolean
 ): Promise<RunResult> {
 	const env = [
@@ -30,6 +31,6 @@ export async function wasiRun(
 	];
 	// The whole process record — its timings and storage ride along for
 	// scripts/measure-wasi.mjs, unread by the app.
-	const cli = await runCli(argv, env, stdin, onStderr, key, stage, session);
+	const cli = await runCli(argv, env, stdin, onStderr, key, stage, session, pane);
 	return cli ?? { argv, code: 0, stdout: '', stderr: '', superseded: true };
 }

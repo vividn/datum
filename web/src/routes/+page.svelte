@@ -23,14 +23,17 @@
 	import { epoch, ran } from '$lib/layout/engine.js';
 	import { onExternalChange } from '$lib/changes.js';
 	import { currentDb } from '$lib/database.js';
+	import { settled } from '$lib/run.js';
 
 	// Another tab wrote. Same treatment as a local command finishing — bump
 	// the epoch the panes hang off and rebuild the widget bar — so there is
 	// one refresh path rather than two that can disagree.
 	//
-	// `ran` itself, not a call wrapped in `void`: its promise is how the
+	// `ran`'s own promise, not a call wrapped in `void`: it is how the
 	// channel knows this refresh is still out, and a burst next door is
-	// coalesced behind it (da-s3pt, $lib/changes.ts).
+	// coalesced behind it (da-s3pt, $lib/changes.ts). Out until the panes it
+	// set off have answered too (`settled`): the bar's reads go ahead of
+	// them (da-icmo1), so `ran` alone ends before the refresh does.
 	//
 	// Subscribed here rather than from `onMount`: Svelte takes a teardown from
 	// a SYNCHRONOUS onMount only, and an async one returns a promise it cannot
@@ -40,7 +43,7 @@
 	// is no reason for a `datum` tab to re-run its panes, and the other way
 	// about. `announceChange` already carries which databases a process
 	// wrote to, measured off their change counters ($lib/cli.ts).
-	onDestroy(onExternalChange(ran, currentDb()));
+	onDestroy(onExternalChange(() => ran().then(settled), currentDb()));
 </script>
 
 <div class="frame">

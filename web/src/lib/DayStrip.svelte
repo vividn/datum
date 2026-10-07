@@ -532,7 +532,7 @@
 		const ask = (argv: string[]): Promise<RunResult> => {
 			const id = argv.join(' ');
 			let pending = cache.runs.get(id);
-			if (!pending) cache.runs.set(id, (pending = { epoch: at.epoch, run: run(argv) }));
+			if (!pending) cache.runs.set(id, (pending = { epoch: at.epoch, run: run(argv, undefined, undefined, undefined, undefined, undefined, true) }));
 			return pending.run;
 		};
 
