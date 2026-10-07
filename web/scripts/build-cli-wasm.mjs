@@ -57,6 +57,9 @@ TOOLS.wasmBindgen = {
 };
 
 const toolchains = resolve(repoRoot, 'target', 'toolchains');
+// Where cargo writes, as cargo resolves it: CARGO_TARGET_DIR (relative to the
+// cwd it runs in, repoRoot) when set, else <repoRoot>/target.
+const targetDir = resolve(repoRoot, process.env.CARGO_TARGET_DIR || 'target');
 const out = resolve(repoRoot, 'web', 'src', 'lib', 'wasm', 'datum-cli.wasm');
 
 /** The unpacked tool's directory, downloading and verifying it first if needed. */
@@ -140,7 +143,7 @@ function shrink(from, to) {
 	chmodSync(to, 0o644);
 }
 
-shrink(resolve(repoRoot, 'target/wasm32-wasip1/wasm-release/datum.wasm'), out);
+shrink(resolve(targetDir, 'wasm32-wasip1/wasm-release/datum.wasm'), out);
 
 const bytes = statSync(out).size;
 const gz = gzipSync(readFileSync(out)).length;
@@ -167,7 +170,7 @@ const wasmDir = resolve(out, '..');
 execFileSync(
 	`${wasmBindgen}/wasm-bindgen`,
 	[
-		resolve(repoRoot, 'target/wasm32-unknown-unknown/wasm-release/datum_sync_wire.wasm'),
+		resolve(targetDir, 'wasm32-unknown-unknown/wasm-release/datum_sync_wire.wasm'),
 		'--target',
 		'web',
 		'--out-name',
