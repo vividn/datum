@@ -140,9 +140,10 @@ describe('the × on the widget title', () => {
 			// draft, as every other layout act does: whatever this device has
 			// SAVED is byte for byte what it was, so `Restore layout` — which
 			// the menu still offers — is the way back, and the database was
-			// never touched at all, a widget being a view of it.
+			// never touched at all, a widget being a view of it. (Nor is the
+			// copy of the tree the next load draws first a save, da-bhudz.)
 			const after = await layoutStorage(page);
-			const saves = (all) => Object.fromEntries(Object.entries(all).filter(([k]) => !k.includes('.draft.')));
+			const saves = (all) => Object.fromEntries(Object.entries(all).filter(([k]) => !/\.(draft|shell)\./.test(k)));
 			assert.deepEqual(saves(after), saves(before), 'the × wrote something other than the draft');
 			assert.notDeepEqual(after, before, 'the × did not write the draft either');
 			assert.ok((await rootMenuLines(page)).includes('Restore layout'));

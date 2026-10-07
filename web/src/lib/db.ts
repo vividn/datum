@@ -6,6 +6,7 @@
 
 import type { CliResult, DbCommand, DbMessage, DbResponse, Stage, StorageKind } from './dbProtocol.js';
 import { announceChange } from './changes.js';
+import { answered, upgrading } from './waiting.js';
 
 export type { StorageKind };
 
@@ -69,6 +70,7 @@ function ensureWorker(): Worker {
 		const message = event.data;
 		if ('notice' in message) {
 			if (message.notice === 'stderr') return listeners.get(message.id)?.(message.text);
+			if (message.notice === 'upgrading') return upgrading.set(performance.now());
 			// A tab that was in memory just moved its rows onto the file,
 			// which is news for every other tab.
 			setStorage(message.storage);
@@ -103,6 +105,8 @@ function request(
 	return new Promise((resolve, reject) => {
 		pending.set(id, (response) => {
 			listeners.delete(id);
+			// One process at a time: an answer is the end of any upgrade it ran.
+			if (command.op === 'cli') answered(pending.size === 0);
 			if (!response.ok) return reject(new Error(response.error));
 			setStorage(response.storage);
 			resolve(response);

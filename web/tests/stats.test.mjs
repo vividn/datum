@@ -335,6 +335,8 @@ describe('/stats', () => {
 				await app.page.reload();
 				await app.page.waitForFunction(() => typeof window.datum?.run === 'function');
 				await app.page.locator('section.pane[data-title="stats"]').waitFor();
+				// Drawn from the last visit before its layouts are read (da-bhudz).
+				await app.page.evaluate(() => window.datum.shell.boot());
 			};
 
 			await seed(app);

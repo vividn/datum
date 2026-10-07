@@ -701,6 +701,9 @@ export async function ready(page) {
 	// And the shell has filled the tree: the root bar names a tab.
 	await page.locator('.root-bar [role="tab"]').first().waitFor();
 	await page.waitForFunction(() => typeof window.datum?.run === 'function');
+	// And the tree is the reader's own, not the one drawn before the CLI
+	// answered (da-bhudz): the shell's boot is over.
+	await page.evaluate(() => window.datum.shell.boot());
 	// Every pane is a command that runs on mount ($lib/panes.ts) and shows
 	// `…` until it answers. Waiting them out means a command a test runs
 	// next is the next command the runner sees, not a race with the frame
@@ -710,6 +713,9 @@ export async function ready(page) {
 			(body) => body.textContent.trim() !== '…'
 		)
 	);
+	// And no pane still shows its copy from the last visit (da-bhudz,
+	// Stale.svelte): a reload draws one over every pane until it answers.
+	await page.waitForFunction(() => !document.querySelector('[data-stale]'));
 }
 
 function app(page, errors, query, clean, locks, internal) {

@@ -64,9 +64,11 @@ export type DbRequest = DbCommand & { id: number };
 /**
  * An unsolicited word from the worker: a tab that fell to memory got the
  * file after all and moved its entries across — or request `id`'s process
- * wrote `text` to stderr while it is still running (da-h9vj).
+ * wrote `text` to stderr while it is still running (da-h9vj) — or the
+ * running process began upgrading a database's schema (da-bhudz).
  */
 export type DbNotice =
+	| { notice: 'upgrading' }
 	| { notice: 'storage'; storage: StorageKind }
 	| { notice: 'stderr'; id: number; text: string };
 

@@ -25,12 +25,29 @@ function get(key: string): string | null {
 	}
 }
 
+/**
+ * The panes' copies from the last visit (`Stale.svelte`, da-bhudz): ONE key
+ * for every database, so the cache is bounded once, and the first thing to
+ * go when the reader's own state needs the room.
+ */
+export const STALE = 'datum.stale.v1';
+
 function set(key: string, value: string | null): void {
-	try {
-		if (value === null) localStorage.removeItem(key);
-		else localStorage.setItem(key, value);
-	} catch {
-		// Refused: the draft is simply not kept.
+	for (const retry of [false, true]) {
+		try {
+			if (value === null) localStorage.removeItem(key);
+			else localStorage.setItem(key, value);
+			return;
+		} catch {
+			// Full, perhaps of the cache: drop it and try once more. Refused
+			// outright: the draft is simply not kept.
+			if (retry) return;
+			try {
+				localStorage.removeItem(STALE);
+			} catch {
+				return;
+			}
+		}
 	}
 }
 
@@ -77,6 +94,25 @@ export function loadRoot(): RootState | null {
 }
 
 export const saveRoot = (state: RootState) => set(ROOT, JSON.stringify(state));
+
+/**
+ * The whole tree as this device last drew it on database `db` (da-bhudz):
+ * what the page draws at once, before the CLI has answered anything — a
+ * schema upgrade after a deploy can hold the first answer for a minute.
+ * Per database, because a kit's layouts are the data db's.
+ */
+const SHELL = `${PREFIX}shell.v1.`;
+
+export function loadShell(db: string): Layout | null {
+	try {
+		const tree = JSON.parse(get(SHELL + db) ?? 'null');
+		return Array.isArray(tree?.root?.tabs) && tree.root.tabs.length ? tree : null;
+	} catch {
+		return null;
+	}
+}
+
+export const saveShell = (db: string, layout: Layout) => set(SHELL + db, JSON.stringify(layout));
 
 /** JSON with every object's keys sorted, so key order is never a change. */
 function canonical(value: unknown): string {

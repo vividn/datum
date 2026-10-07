@@ -87,7 +87,7 @@ import { currentDb } from '$lib/database.js';
 import { initDb } from '$lib/db.js';
 import type { Layout, NodeId, Pane, Split, Tab, Widget } from './types.js';
 import { LAYOUT_VERSION, isSplit, isWidget } from './types.js';
-import { apply, layout, loaded } from './current.js';
+import { apply, layout, loaded, replay } from './current.js';
 import {
 	ALIASES,
 	BUILTIN_NAMES,
@@ -105,9 +105,11 @@ import {
 	loadDraft,
 	loadLocked,
 	loadRoot,
+	loadShell,
 	saveDraft,
 	saveLocked,
 	saveRoot,
+	saveShell,
 	type RootState
 } from './draft.js';
 import {
@@ -181,10 +183,17 @@ export const canonicalName = (name: string): string => ALIASES[name] ?? name;
  * being the person's own save: what a lock defaults to (da-gshh).
  */
 async function meaning(name: string): Promise<{ layout: Layout | null; shipped: boolean }> {
-	const own = await loadLayout(name).catch(() => null);
+	const own = provisional ? null : await loadLayout(name).catch(() => null);
 	const layout = pick(own, kitLayout(name), builtinLayout(name, phone()));
 	return { layout, shipped: !!layout && layout !== own };
 }
+
+/**
+ * While the boot draws before the CLI has answered (da-bhudz), a name means
+ * what this device can say without asking it: the kit's as last cached,
+ * else the built-in. A save of the reader's own waits for the real pass.
+ */
+let provisional = false;
 
 /** The layout `name` means here: the save, else the kit's, else the built-in. */
 export const resolve = async (name: string): Promise<Layout | null> => (await meaning(name)).layout;
@@ -547,13 +556,15 @@ async function fillRoot(state: RootState): Promise<void> {
 			if (tab) tabs.push(tab);
 		}
 		if (tabs.length === 0) tabs.push((await openTab(home(), taken)) as Tab);
-		layout.set(
-			normalize({
-				version: LAYOUT_VERSION,
-				name: 'root',
-				root: { id: 'shell', tabs, active: Math.min(state.active, tabs.length - 1), bar: BAR }
-			})
-		);
+		const built = normalize({
+			version: LAYOUT_VERSION,
+			name: 'root',
+			root: { id: 'shell', tabs, active: Math.min(state.active, tabs.length - 1), bar: BAR }
+		});
+		const tree = provisional ? built : replay(built);
+		// The tree already drawn from last time is left mounted when it is
+		// this one (da-bhudz): its panes are running their commands.
+		if (JSON.stringify(tree) !== JSON.stringify(get(layout))) layout.set(tree);
 	} finally {
 		booted = resting;
 	}
@@ -612,18 +623,30 @@ const withDebug = (state: RootState): RootState =>
 /** Fill the root from this device's open layouts (`main` or `mobile` alone at first). Once. */
 export function boot(): Promise<void> {
 	return (booting ??= (async () => {
+		const stored = loadRoot();
+		// Drawn before the CLI is asked anything (da-bhudz, vividn: «none of
+		// the tabs are even there in header bar»): the tree as this device
+		// last drew it, else what it can build without the database. The
+		// real pass below replaces it only where it differs.
+		const last = loadShell(currentDb());
+		if (last) layout.set(last);
+		else {
+			provisional = true;
+			await fillRoot(withDebug(stored ?? fresh())).finally(() => (provisional = false));
+		}
+		loaded.set(true);
 		await initDb().catch(() => {});
 		// Before the first `resolve`: a kit's layout is one of the trees a
 		// name may mean, and `shippedTree` reads the cache synchronously.
 		await refreshKitLayouts();
 		await shipDebugLayout();
-		const stored = loadRoot();
 		await fillRoot(withDebug(stored ?? fresh()));
 		booted = true;
 		// A fresh device's home is decided here, once (da-shzs): written now,
 		// so a phone turned or widened later does not reopen as a desktop.
-		if (!stored) settle();
-		loaded.set(true);
+		// And a change made to the tree drawn early is written down now
+		// (da-bhudz), rather than at the next change after it.
+		settle();
 		addEventListener('popstate', onPopState);
 		onExternalChange(followSaves, '_internal');
 		// A kit installed in another tab — into the data db — changes what
@@ -674,10 +697,10 @@ function settle(): void {
 	//   [x*, main]        active 0 → none before → 0 (main, the only name left)
 	const front = names.indexOf(tabs[$layout.root.active]);
 	const before = tabs.slice(0, $layout.root.active).filter(kept).length;
-	saveRoot({
-		names: names.map((t) => t.layout as string),
-		active: front >= 0 ? front : Math.max(0, before - 1)
-	});
+	const active = front >= 0 ? front : Math.max(0, before - 1);
+	saveRoot({ names: names.map((t) => t.layout as string), active });
+	// What the next load draws before the CLI answers: the tree as written.
+	saveShell(currentDb(), { ...$layout, root: { ...$layout.root, tabs: names, active } });
 	const bases = get(baselines);
 	const drafted = new Set<string>();
 	const clean = new Set<string>();

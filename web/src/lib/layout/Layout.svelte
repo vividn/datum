@@ -54,6 +54,8 @@
 	import { act } from '$lib/act.js';
 	import PaneFrame, { ROW, badge } from './PaneFrame.svelte';
 	import TabBody from './TabBody.svelte';
+	import Stale from './Stale.svelte';
+	import { ready } from './engine.js';
 	import { fillTab } from './chooser.js';
 	import { CHANGE } from './menu.js';
 	import type { NodeId, Pane as PaneNode, Split, Tab } from './types.js';
@@ -402,13 +404,20 @@
 				     what this session already set rather than onto the tree
 				     underneath it; `setSession` keeps only what differs from the
 				     tree, so a setting moved back leaves nothing held. -->
-				<svelte:component
-					this={kind.component}
-					{...kind.props ? kind.props(settings) : { settings }}
-					{epoch}
-					{key}
-					on:change={(e) => fold && setSession(key, widget.settings, fold(settings, e.detail))}
-				/>
+				<!-- The tree is drawn before the CLI has answered (da-bhudz), with each
+				     widget's last output over it; the widget itself mounts once the
+				     bar can take a command, so the bar's own reads are not queued
+				     behind every pane's. -->
+				<Stale id={widget.id} live={$ready} />
+				{#if $ready}
+					<svelte:component
+						this={kind.component}
+						{...kind.props ? kind.props(settings) : { settings }}
+						{epoch}
+						{key}
+						on:change={(e) => fold && setSession(key, widget.settings, fold(settings, e.detail))}
+					/>
+				{/if}
 			{:else}
 				<Pane title={content.kind}>
 					<p class="quiet">no widget of kind “{content.kind}” in this build</p>

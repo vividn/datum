@@ -47,6 +47,23 @@ export const dbFiles = (dbs: readonly string[]): string[] =>
 /** Those files for the databases that are always open. */
 export const DB_FILES = dbFiles(DATABASES);
 
+/**
+ * A schema upgrade's first file: `Db::migrate` snapshots the database to
+ * `<db>.pre-v<from>-to-v<to>-<stamp>.bak` before it changes anything
+ * (`backup_before_migration`), so its creation is the upgrade beginning.
+ */
+const PRE_MIGRATION = /\.pre-v\d+-to-v\d+-[^/]*\.bak$/;
+
+let upgradeHeard: (() => void) | undefined;
+
+/**
+ * Hear every schema upgrade as it begins (da-bhudz): it runs inside
+ * whichever command opens the database first after a deploy, and can hold
+ * that command for a minute on a big history. The CLI's own «note:
+ * database schema migrated» is printed only once it is over.
+ */
+export const onUpgrade = (heard: () => void) => (upgradeHeard = heard);
+
 /** The part of `FileSystemSyncAccessHandle` the shim uses. */
 export type Handle = ConstructorParameters<typeof SyncOPFSFile>[0];
 
@@ -67,6 +84,7 @@ export function opfsDirectory(name: string, handles: Map<string, Handle>, stage?
 
 	class OpfsDirectory extends Directory {
 		create_entry_for_path(path: string, isDir: boolean) {
+			if (PRE_MIGRATION.test(path)) upgradeHeard?.();
 			const opfs = backed.get(path);
 			if (!opfs || isDir) return super.create_entry_for_path(path, isDir);
 			opfs.handle.truncate(0);

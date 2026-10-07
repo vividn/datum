@@ -6,9 +6,11 @@
 // the renderer (Layout.svelte), the root bar, and the shell (shell.ts,
 // da-0a5o), which fills it on boot from this device's open layouts — each
 // one's draft or its save — and keeps each draft in `localStorage` on
-// every change. `loaded` is the shell's word that the store holds the
-// reader's tree rather than the placeholder below; the page draws nothing
-// before it, so no widget mounts twice.
+// every change. `loaded` is the shell's word that the store holds a tree
+// to draw rather than the placeholder below: the tree this device last drew,
+// or what it can build without the database, set before the CLI is asked
+// anything (da-bhudz) — and replaced by the reader's own only where the two
+// differ, so a widget mounts twice only when there is something to change.
 
 import { writable } from 'svelte/store';
 import type { Layout } from './types.js';
@@ -19,8 +21,23 @@ export const layout = writable<Layout>(defaultLayoutFor(false));
 
 export const loaded = writable(false);
 
+/**
+ * The changes made to the tree drawn before the shell's boot was over
+ * (da-bhudz) — a tab chosen, an option saved while an upgrade ran — which
+ * the reader's own tree is given too when it arrives (`replay`).
+ */
+let early: ((layout: Layout) => Layout)[] | null = [];
+
 export function apply(op: (layout: Layout) => Layout): void {
+	early?.push(op);
 	layout.update(op);
+}
+
+/** `tree` with every change made to the early one; from now on nothing is kept. */
+export function replay(tree: Layout): Layout {
+	const ops = early ?? [];
+	early = null;
+	return ops.reduce((t, op) => op(t), tree);
 }
 
 // A tab that has gone takes what this session set on it with it (da-vhwq):

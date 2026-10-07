@@ -271,6 +271,16 @@ endpoint by a Web Lock (`datum-sync:<db>`), which pushes on every tab's writes
   instead. `web/tests/offline.test.mjs` reloads the app with the network
   down and logs an entry, so the precache cannot silently lose a file
   again.
+- The page never waits on the CLI to draw (da-bhudz): the first command
+  after a deploy can be a schema upgrade, a minute on a big history. The
+  shell draws the tree it last drew on this database (`loadShell`,
+  `draft.ts`) before asking anything, each widget's last output is laid over
+  it, dimmed, until its answer lands — the widget mounts once the bar can
+  take a command, so the bar's reads queue first (`layout/Stale.svelte`, in a closed
+  shadow root so no locator finds it; `ready()` in the tests waits the
+  copies out), and `Waiting.svelte` says «Opening your data…» or
+  «Upgrading your data…» once the first answer is a second late — the
+  upgrade heard by the worker as the pre-migration backup is created.
 - Background Sync API queues sync when offline
 - The page is a LAYOUT TREE, not a grid (`web/src/lib/layout/`):
   panes hold widgets or splits of panes, each pane has tabs and draggable
