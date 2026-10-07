@@ -69,28 +69,23 @@ pub(crate) fn live_window_params(fetch_start: DateTime<Utc>, end: DateTime<Utc>)
 /// the same order. Used by the table path so the canonical state-cell
 /// renderer can emit transition arrows for tail rows.
 ///
-/// Per da-uuu: reads each field's state rows once up front
-/// ([`FieldStateRows`](datum_core::state::FieldStateRows)) so the lead /
-/// trail / ongoing state probes run in memory instead of issuing one query
-/// per entry. The whole field is read, not a prefix bounded by the batch's
-/// latest probe: a block stored after that probe can still span it
-/// (da-zwct), and the probe window must be the one `state_at` reads
-/// (da-u5l1o). The cache is scoped to this batch.
+/// Per da-uuu: reads each field's state rows once up front so the lead /
+/// trail / ongoing probes run in memory instead of issuing one query per
+/// entry. What is read is the span the batch's rows of that field probe
+/// ([`probed_state_rows`](crate::render::action::probed_state_rows)), so
+/// ten rows cost ten rows' worth however long the field's history
+/// (da-asgt4). The cache is scoped to this batch.
 pub(crate) fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderContext> {
-    use std::collections::HashMap;
-    let mut cache: HashMap<String, datum_core::state::FieldStateRows> = HashMap::new();
+    let mut cache: HashMap<&str, datum_core::state::FieldStateRows> = HashMap::new();
     for e in entries {
-        if !cache.contains_key(&e.field) {
-            // Transitions only: a TRACK document declares the field, it
-            // does not move it (da-c8mh).
-            let rows = datum_core::state::FieldStateRows::load_transitions(db.conn(), &e.field)
-                .unwrap_or_default();
-            cache.insert(e.field.clone(), rows);
-        }
+        cache.entry(&e.field).or_insert_with(|| {
+            let of_field = entries.iter().filter(|x| x.field == e.field);
+            crate::render::action::probed_state_rows(db, &e.field, of_field)
+        });
     }
     entries
         .iter()
-        .map(|e| RenderContext::from_rows(cache.get(&e.field), e))
+        .map(|e| RenderContext::from_rows(cache.get(e.field.as_str()), e))
         .collect()
 }
 

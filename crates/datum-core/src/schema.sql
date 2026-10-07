@@ -204,10 +204,31 @@ CREATE INDEX IF NOT EXISTS entries_field_occur
 -- filter tombstones per field; a partial index lets SQLite skip deleted rows
 -- entirely rather than filter them after an index lookup. `occur_time` is
 -- nullable (timeless adds, da-lxyw); SQLite indexes the NULL rows too, which
--- is fine — the views read them back as `None`.
+-- is fine — the views read them back as `None`. `slug` is the state
+-- order's tie-break (`occur_time DESC, slug DESC`): without it "the newest
+-- row before T" sorted the field's whole history to return one (da-asgt4).
 CREATE INDEX IF NOT EXISTS entries_live_field_occur
-    ON entries (field, occur_time)
+    ON entries (field, occur_time, slug)
     WHERE deleted_at IS NULL;
+
+-- The rows that move a field's state: live, timed, and not an occur dot
+-- (`OCCUR_DOT_SQL`, spelled exactly as the readers spell it, or SQLite will
+-- not use the index). "The field's newest state row before T" seeks here;
+-- on the live index a field of nothing but dots walked its whole history
+-- to find there was none (da-asgt4).
+CREATE INDEX IF NOT EXISTS entries_field_state
+    ON entries (field, occur_time, slug)
+    WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
+      AND NOT (verb = 'point' AND (state IS NULL OR state = 'true'));
+
+-- The states each field has been logged with (`datum fields`): live,
+-- stated, and not a TRACK declaration — `NOT_A_DECLARATION_SQL`, spelled as
+-- the reader spells it. The reader skips from one (field, state) to the
+-- next, so its cost is the pairs it returns, not the history (da-asgt4).
+CREATE INDEX IF NOT EXISTS entries_field_states
+    ON entries (field, state)
+    WHERE deleted_at IS NULL AND superseded_by IS NULL AND state IS NOT NULL
+      AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL;
 
 -- Dedup lookup on the hashed content fingerprint.
 CREATE INDEX IF NOT EXISTS entries_content_hash

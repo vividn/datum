@@ -163,8 +163,7 @@ impl RenderContext {
         Ok(match surface {
             Surface::InfoLine | Surface::NowView => RenderContext::default(),
             Surface::Action | Surface::Table => {
-                let rows =
-                    FieldStateRows::load_transitions(db.conn(), &entry.field).unwrap_or_default();
+                let rows = probed_state_rows(db, &entry.field, [entry]);
                 Self::from_rows(Some(&rows), entry)
             }
         })
@@ -308,6 +307,28 @@ pub(crate) fn compute_is_state_repeat(prior: Option<&JsonValue>, row: &Entry) ->
     let prior_norm = datum_core::state::normalize_state(prior).to_json();
     let row_norm = datum_core::state::normalize_state(row_state).to_json();
     datum_core::state::states_equal_set_aware(&row_norm, &prior_norm)
+}
+
+/// The rows of `field` that [`RenderContext::from_rows`] reads for
+/// `entries`, all of that field: every probe below lies between the
+/// earliest leading edge (less the lead probe's microsecond) and the latest
+/// `occur`, and [`FieldStateRows::load_transitions_between`] answers there
+/// as the whole history would — at the cost of the span, not of the
+/// field's history (da-asgt4).
+pub fn probed_state_rows<'a>(
+    db: &Db,
+    field: &str,
+    entries: impl IntoIterator<Item = &'a Entry>,
+) -> FieldStateRows {
+    let span = entries
+        .into_iter()
+        .filter_map(|e| Some((e.leading_edge_utc()?, e.occur_time.as_ref()?.utc)))
+        .reduce(|(lo, hi), (l, h)| (lo.min(l), hi.max(h)));
+    let Some((lo, hi)) = span else {
+        return FieldStateRows::default();
+    };
+    let lo = lo - chrono::Duration::microseconds(1);
+    FieldStateRows::load_transitions_between(db.conn(), field, lo, hi).unwrap_or_default()
 }
 
 fn compute_lead_state(rows: Option<&FieldStateRows>, entry: &Entry) -> Option<JsonValue> {

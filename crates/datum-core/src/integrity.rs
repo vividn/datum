@@ -294,6 +294,23 @@ pub fn detect_for_entries(
     detected_by: DetectedBy,
 ) -> Result<Vec<IntegrityWarning>> {
     let mut snaps = FieldSnapshots::default();
+    // Every state probe below sits just before a trigger's leading edge or
+    // at its `occur`, so a field's state rows are read over its triggers'
+    // span and no further (da-asgt4).
+    for t in triggers {
+        let Some(span) = t
+            .leading_edge_utc()
+            .zip(t.occur_time.as_ref().map(|o| o.utc))
+        else {
+            continue;
+        };
+        let lo = span.0 - chrono::Duration::microseconds(1);
+        snaps
+            .spans
+            .entry(t.field.clone())
+            .and_modify(|(l, h)| (*l, *h) = ((*l).min(lo), (*h).max(span.1)))
+            .or_insert((lo, span.1));
+    }
     let mut filed = Vec::new();
     for trigger in triggers {
         detect_one(conn, trigger, detected_by, &mut snaps, &mut filed)?;
@@ -312,6 +329,8 @@ struct FieldSnapshots {
     /// Live Block / BlockSwitch rows per field, in canonical oldest-first
     /// order, for the overlap scan.
     blocks: std::collections::HashMap<String, Vec<Entry>>,
+    /// Each field's `[from, until]` the batch's state probes fall in.
+    spans: std::collections::HashMap<String, (DateTime<Utc>, DateTime<Utc>)>,
 }
 
 impl FieldSnapshots {
@@ -327,7 +346,12 @@ impl FieldSnapshots {
         if !self.states.contains_key(field) {
             // Transitions only: a TRACK document declares a field, it does
             // not open or close it (da-c8mh).
-            let rows = crate::state::FieldStateRows::load_transitions(conn, field)?;
+            let rows = match self.spans.get(field) {
+                Some(&(from, until)) => crate::state::FieldStateRows::load_transitions_between(
+                    conn, field, from, until,
+                )?,
+                None => crate::state::FieldStateRows::default(),
+            };
             self.states.insert(field.to_string(), rows);
         }
         Ok(self.states[field].at(probe, Some(exclude_hid)))

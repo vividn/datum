@@ -199,6 +199,7 @@ fn every_pair_has_a_roundtrip_test() {
         (49, 50),
         (50, 51),
         (51, 52),
+        (52, 53),
     ];
     assert_eq!(
         covered.len(),
@@ -2613,6 +2614,32 @@ fn roundtrip_v51_to_v52_undo_actions() {
     apply_one_down(conn, 52);
     assert!(!table_exists(conn, "undo_actions"));
     assert!(!column_exists(conn, "entry_history", "action_id"));
+}
+
+#[test]
+fn roundtrip_v52_to_v53_field_state_indexes() {
+    let db = fresh_at(52);
+    let conn = db.conn();
+    let live_sql = || -> String {
+        conn.query_row(
+            "SELECT sql FROM sqlite_master WHERE name = 'entries_live_field_occur'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    apply_one_up(conn, 52);
+    assert!(index_exists(conn, "entries_field_state"));
+    assert!(index_exists(conn, "entries_field_states"));
+    assert!(
+        live_sql().contains("(field, occur_time, slug)"),
+        "{}",
+        live_sql()
+    );
+    apply_one_down(conn, 53);
+    assert!(!index_exists(conn, "entries_field_state"));
+    assert!(!index_exists(conn, "entries_field_states"));
+    assert!(live_sql().contains("(field, occur_time)"), "{}", live_sql());
 }
 
 /// Life data logged under `kit` stops v51 before it is hidden; a deleted

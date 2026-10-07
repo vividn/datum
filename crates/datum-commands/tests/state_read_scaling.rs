@@ -8,9 +8,10 @@
 //! the pass. A tiny store proves nothing (trap 2), which is why the
 //! small size is already 2k rows.
 //!
-//! `#[ignore]` because it is a stopwatch, not an assertion CI should
-//! gate on — a loaded runner makes wall-clock lie. The durable gates are
-//! the query-plan tests next to the queries themselves
+//! The stopwatch is `#[ignore]`: a loaded runner makes wall-clock lie.
+//! The gate is [`a_write_and_the_reads_after_it_do_not_grow_with_the_history`],
+//! which counts what SQLite DOES (VM steps) on the commands themselves,
+//! and the query-plan tests next to the queries
 //! (`datum-core`'s `state_reads_stop_at_their_limit`,
 //! `distinct_fields_seeks_and_never_scans_entries`,
 //! `the_render_window_read_is_index_bounded`). Run it with:
@@ -187,4 +188,81 @@ fn the_cost_of_a_normal_read_does_not_grow_with_the_history() {
         "\nworst: {} at {:.1}x — 25x more history behind the same window\n",
         worst.1, worst.0
     );
+}
+
+/// SQLite VM steps, in hundreds, that `argv` costs on `db` — the rows a
+/// command visits, and nothing a loaded runner can move.
+fn vm_steps(db: &Db, argv: &[&str]) -> usize {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    let steps = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&steps);
+    db.conn().progress_handler(
+        100,
+        Some(move || {
+            counter.fetch_add(1, Ordering::Relaxed);
+            false
+        }),
+    );
+    let argv = std::iter::once("datum").chain(argv.iter().copied());
+    datum_commands::cmd::dispatch_argv(argv.map(String::from).collect(), db).unwrap();
+    db.conn().progress_handler(0, None::<fn() -> bool>);
+    steps.load(Ordering::Relaxed)
+}
+
+/// da-asgt4: on five years of data `tail -n 10` was ×26 slower than on a
+/// day of it, for ten rows either way; `now`, `fields` and a one-day
+/// `dayview` slower too, and the write itself. A write and the commands
+/// datum.day runs after it, on two stores with the same recent days and
+/// four times the history behind them, must cost the same — a field of
+/// nothing but occur dots among them, which is the one "the newest state
+/// row before T" finds nothing in, and a field of blocks, which reads
+/// back further.
+#[test]
+fn a_write_and_the_reads_after_it_do_not_grow_with_the_history() {
+    let stores = [2_000, 8_000].map(|n| {
+        let db = store(n, 8);
+        for i in 0..n / 8 {
+            let t = anchor() - Duration::minutes(80 * i as i64 + 5);
+            let dot = Entry::new(
+                "coffee",
+                Verb::Point,
+                None,
+                None,
+                Some(datum_time(t)),
+                None,
+                "bench",
+            );
+            db.insert_entry(&dot).unwrap();
+            let nap = Entry::new(
+                "nap",
+                Verb::Block,
+                None,
+                None,
+                Some(datum_time(t - Duration::minutes(40))),
+                datum_core::dur::Dur::parse("PT30M"),
+                "bench",
+            );
+            db.insert_entry(&nap).unwrap();
+        }
+        db
+    });
+    let svg = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+    let svg = svg.path().to_str().unwrap();
+    let commands: [&[&str]; 5] = [
+        &["switch", "f1", "on", "-t", "2026-09-14T12:05:00Z"],
+        &["tail", "-n", "10", "--json"],
+        &["now", "--json"],
+        &["fields", "--json"],
+        &["dayview", "-d", "2026-09-14", "--width", "400", "-o", svg],
+    ];
+    for argv in commands {
+        let [small, large] = [&stores[0], &stores[1]].map(|db| vm_steps(db, argv));
+        assert!(
+            large <= small + small / 10,
+            "`{}` visits more with more history behind the same days: \
+             {small} hundred VM steps on 2k rows, {large} on 8k",
+            argv.join(" "),
+        );
+    }
 }

@@ -70,6 +70,8 @@ fn fresh_db_matches_schema_sql_shape() {
         "entries_content_hash",
         "entries_field_occur",
         "entries_field_occurtime",
+        "entries_field_state",
+        "entries_field_states",
         "entries_field_structure",
         "entries_id_structure",
         "entries_live_field_occur",

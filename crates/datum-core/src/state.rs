@@ -311,6 +311,8 @@ pub const RESUME_LOOKBACK: usize = 64;
 /// dots out, since an occur never decides a state and a field logged by
 /// occurs would otherwise fill the whole lookback with them. They fetch
 /// the one dot that matters, the first after an IGNORED, on its own.
+/// The partial index `entries_field_state` spells it too, and SQLite uses
+/// that index only while the two spellings match (da-asgt4).
 pub(crate) const OCCUR_DOT_SQL: &str = "(verb = 'point' AND (state IS NULL OR state = 'true'))";
 
 /// One state-bearing row, in as much of it as the oracle reads. The

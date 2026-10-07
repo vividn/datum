@@ -173,15 +173,33 @@ impl Db {
     /// Every distinct `(field, state)` pair among live entries that carry a
     /// state, ordered by field. The state is the stored JSON, parsed.
     pub fn distinct_field_states(&self) -> Result<Vec<(String, serde_json::Value)>> {
-        let mut stmt = self.conn.prepare(&format!(
-            // da-c8mh: a TRACK document's state is a STATUS — the `false`
-            // or TRACKED a declaration sits in — not a state the field has
-            // been switched to, so it is no more evidence here than
-            // IGNORED is (da-5ifp).
-            "SELECT DISTINCT field, state FROM entries \
-             WHERE {LIVE_SQL} AND state IS NOT NULL AND {} \
-             ORDER BY field, state",
+        // da-c8mh: a TRACK document's state is a STATUS — the `false` or
+        // TRACKED a declaration sits in — not a state the field has been
+        // switched to, so it is no more evidence here than IGNORED is
+        // (da-5ifp). `stated` is `entries_field_states`' WHERE, which the
+        // index is used under only while the two match.
+        //
+        // da-asgt4: a skip scan — from each (field, state) seek the next,
+        // the same field's next state or else the next field's first — so
+        // the read costs the pairs returned, where a DISTINCT walked every
+        // row of the history.
+        let stated = format!(
+            "{LIVE_SQL} AND state IS NOT NULL AND {}",
             crate::track::NOT_A_DECLARATION_SQL
+        );
+        let mut stmt = self.conn.prepare(&format!(
+            "WITH RECURSIVE d(field, state) AS (
+               SELECT * FROM (SELECT field, state FROM entries WHERE {stated}
+                               ORDER BY field, state LIMIT 1)
+               UNION ALL
+               SELECT n.field, n.state FROM d JOIN entries n ON n.rowid = COALESCE(
+                 (SELECT rowid FROM entries WHERE {stated}
+                     AND field = d.field AND state > d.state
+                   ORDER BY field, state LIMIT 1),
+                 (SELECT rowid FROM entries WHERE {stated} AND field > d.field
+                   ORDER BY field, state LIMIT 1))
+             )
+             SELECT field, state FROM d",
         ))?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))

@@ -72,3 +72,45 @@ pub(super) fn down_52_to_51_undo_actions(conn: &Connection) -> Result<()> {
     )?;
     Ok(())
 }
+
+/// da-asgt4: `entries_live_field_occur` gains `slug`, the tie-break of the
+/// state order (`occur_time DESC, slug DESC`), `entries_field_state`
+/// indexes the rows that move a field's state, and `entries_field_states`
+/// the states each field was logged with. Without them "the field's newest
+/// state row before T, LIMIT 1" sorted every earlier row of the field (on a
+/// field of occur dots alone, walked all of it to find none), and `datum
+/// fields` read the whole table.
+pub(super) fn m52_to_53_field_state_indexes(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "entries")? {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS entries_live_field_occur;
+         CREATE INDEX entries_live_field_occur
+             ON entries (field, occur_time, slug) WHERE deleted_at IS NULL;
+         CREATE INDEX IF NOT EXISTS entries_field_state
+             ON entries (field, occur_time, slug)
+             WHERE occur_time IS NOT NULL AND deleted_at IS NULL AND superseded_by IS NULL
+               AND NOT (verb = 'point' AND (state IS NULL OR state = 'true'));
+         CREATE INDEX IF NOT EXISTS entries_field_states
+             ON entries (field, state)
+             WHERE deleted_at IS NULL AND superseded_by IS NULL AND state IS NOT NULL
+               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL;",
+    )?;
+    Ok(())
+}
+
+/// Reverse v52→v53: the live index without `slug`, and no state indexes.
+pub(super) fn down_53_to_52_field_state_indexes(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "entries")? {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS entries_field_state;
+         DROP INDEX IF EXISTS entries_field_states;
+         DROP INDEX IF EXISTS entries_live_field_occur;
+         CREATE INDEX entries_live_field_occur
+             ON entries (field, occur_time) WHERE deleted_at IS NULL;",
+    )?;
+    Ok(())
+}

@@ -617,20 +617,20 @@ mod tests {
     /// The gate for da-vmjh. Both state reads must be able to STOP at
     /// their `LIMIT`, and the plan says whether they can.
     ///
-    /// `SEARCH … USING INDEX entries_live_field_occur` is the seek: the
-    /// partial `(field, occur_time) WHERE deleted_at IS NULL` index,
-    /// whose predicate [`STATE_PARTICIPATION_SQL`] implies. A `SCAN`
-    /// line is the discriminator — the predecessor ranked every row of
-    /// every field with `ROW_NUMBER() OVER (PARTITION BY field …)` and
-    /// filtered `rn <= depth` outside the window, so its plan read
-    /// `CO-ROUTINE (subquery-N)` / `SCAN (subquery-N)` / `USE TEMP
-    /// B-TREE FOR ORDER BY`: the whole history materialized and sorted
-    /// before one row per field was kept. Neither may reappear.
+    /// `SEARCH … USING INDEX entries_field_state` is the seek: the partial
+    /// index of the rows that move a state, whose predicate
+    /// [`STATE_PARTICIPATION_SQL`] and `NOT` [`crate::state::OCCUR_DOT_SQL`]
+    /// imply. A `SCAN` line is the discriminator — the predecessor ranked
+    /// every row of every field with `ROW_NUMBER() OVER (PARTITION BY field
+    /// …)` and filtered `rn <= depth` outside the window, so its plan read
+    /// `CO-ROUTINE (subquery-N)` / `SCAN (subquery-N)` / `USE TEMP B-TREE
+    /// FOR ORDER BY`: the whole history materialized and sorted before one
+    /// row per field was kept. Neither may reappear.
     ///
-    /// `USE TEMP B-TREE FOR LAST TERM OF ORDER BY` is allowed and
-    /// expected: the index does not carry `slug`, so SQLite sorts the
-    /// tiebreak within each equal-`occur_time` block. That is block
-    /// sorting, which still terminates at the LIMIT.
+    /// No temp b-tree at all (da-asgt4): the index carries `slug`, the
+    /// tiebreak. `entries_live_field_occur`, which these reads used before
+    /// it, sorted each equal-`occur_time` block, and on a field of occur
+    /// dots alone walked to the field's first row looking for a state.
     #[test]
     fn state_reads_stop_at_their_limit() {
         let db = Db::open_in_memory().unwrap();
@@ -649,17 +649,17 @@ mod tests {
         ] {
             let plan = plan_of(&db, &sql);
             assert!(
-                plan.contains("SEARCH") && plan.contains("entries_live_field_occur"),
-                "{label}: expected a SEARCH on entries_live_field_occur, got:\n{plan}"
+                plan.contains("SEARCH entries USING INDEX entries_field_state "),
+                "{label}: expected a SEARCH on entries_field_state, got:\n{plan}"
             );
             assert!(
                 !plan.contains("SCAN"),
                 "{label}: a SCAN means the read cannot stop at its LIMIT, got:\n{plan}"
             );
             assert!(
-                !plan.contains("USE TEMP B-TREE FOR ORDER BY"),
-                "{label}: a full sort means the whole history is materialized first \
-                 (a LAST-TERM b-tree is fine), got:\n{plan}"
+                !plan.contains("USE TEMP B-TREE"),
+                "{label}: a sort means more of the history is read than the LIMIT, \
+                 got:\n{plan}"
             );
         }
     }
