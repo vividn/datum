@@ -112,7 +112,7 @@ describe('Reset widget', () => {
 
 	// A second kind, whose settings are a whole object rather than one
 	// number: the same one act, reading the same one registry.
-	test('stats: a chosen range goes back to bare stats', async () => {
+	test('stats: a chosen range goes back to this month', async () => {
 		await withApp(async ({ page, run }) => {
 			for (const argv of [['occur', 'coffee', '-t', '-30'], ['switch', 'mood', 'happy', '-t', '-20']]) {
 				const r = await run(argv);
@@ -132,10 +132,10 @@ describe('Reset widget', () => {
 			assert.equal(lines[0], RESET, `the stats menu reads ${lines.join(' | ')}`);
 
 			await choose(page, 'tail', RESET);
-			// DEFAULT_STATS is all time over every field: a bare `stats`,
-			// which is the argv the widget shows it is running (da-ptuwr).
-			await page.waitForFunction(() => document.querySelector('.stats .argv')?.textContent === 'stats');
-			assert.equal(await page.locator('.stats .range button[aria-pressed="true"]').innerText(), 'all time');
+			// DEFAULT_STATS is this month over every field: `stats --month`,
+			// which is the argv the widget shows it is running (da-80do8).
+			await page.waitForFunction(() => document.querySelector('.stats .argv')?.textContent === 'stats --month');
+			assert.equal(await page.locator('.stats .range button[aria-pressed="true"]').innerText(), 'month');
 		}, DESKTOP);
 	});
 

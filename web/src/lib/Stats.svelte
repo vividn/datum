@@ -32,7 +32,7 @@
 	selected", which before this was a bar and a table and no headline at
 	all:
 
-	    entries 128 · tracked 42h30m · fields 9 · since 4 Sep   datum · all time · stats
+	    entries 128 · tracked 42h30m · fields 9 · since 4 Sep   datum · this month · stats --month
 
 	and the quiet half of the line is there because a figure whose scope
 	the reader has to guess at is worse than no figure — these are ONE
@@ -300,7 +300,10 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: baseline;
-		gap: 0 0.8rem;
+		/* Tight enough that `since` and the month's source — `datum · this
+		   month · stats --month`, the default since da-80do8 — share one
+		   line at 390px; at 0.8rem they missed it by 2px. */
+		gap: 0 0.5rem;
 	}
 
 	/* The figures wrap one by one among the head's items, not as a block:
@@ -345,7 +348,7 @@
 	   ones between the figures are: `.argv` is the argv, exactly. */
 	.source {
 		display: flex;
-		gap: 0.4rem;
+		gap: 0.3rem;
 		color: var(--muted);
 		font-size: 0.75rem;
 	}

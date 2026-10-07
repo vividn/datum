@@ -6,9 +6,9 @@
 // test — never to "some numbers appeared".
 //
 // What da-ptuwr changed: there is no field selector. Opened fresh the
-// widget runs a BARE `stats`, which is the whole database — every field,
-// ranked by tracked time — and the only thing that narrows it is the
-// field pill another widget mints. The narrowing is driven by the real
+// widget runs `stats --month` (da-80do8; bare `stats`, all time, until
+// then) — every field, ranked by tracked time — and the only thing that
+// narrows it to a field is the field pill another widget mints. The narrowing is driven by the real
 // gesture in `fieldpill.test.mjs`; this file is the widget itself.
 
 import test, { before, after, describe } from 'node:test';
@@ -33,6 +33,9 @@ const withApp = (fn, options = {}) => withAnyApp(fn, { clock: AT, ...options });
 // keeps its query), opens a second page, reloads, or starts from blocked
 // storage or a screen of its own.
 const shared = sharedApp({ clock: AT });
+
+/** What a stats pane runs when nothing chose its window: this month (da-80do8). */
+const MONTH = ['stats', '--month'];
 
 /** Terminal text as a reader sees it: no colour codes, runs of space as one. */
 const plain = (s) => s.replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+/g, ' ').trim();
@@ -91,7 +94,7 @@ describe('/stats', () => {
 		await shared.solo(async (app) => {
 			await seed(app);
 			await openStats(app);
-			await expectStats(app, ['stats']);
+			await expectStats(app, MONTH);
 			assert.equal(
 				await app.page.locator('.stats button.field, .stats button.state').count(),
 				0,
@@ -99,7 +102,7 @@ describe('/stats', () => {
 			);
 			assert.equal(
 				await app.page.locator('.stats .range button[aria-pressed="true"]').innerText(),
-				'all time'
+				'month'
 			);
 			assert.deepEqual(app.errors, []);
 		});
@@ -115,9 +118,9 @@ describe('/stats', () => {
 		await shared.solo(async (app) => {
 			await seed(app);
 			await openStats(app);
-			await expectStats(app, ['stats']);
+			await expectStats(app, MONTH);
 
-			const json = await app.run(['stats', '--json']);
+			const json = await app.run([...MONTH, '--json']);
 			assert.equal(json.code, 0, json.stderr);
 			const { fields, total_count, tracked_duration_seconds, earliest } = JSON.parse(json.stdout);
 			assert.ok(tracked_duration_seconds > 0, 'the seed tracked no time: this proves nothing');
@@ -128,7 +131,7 @@ describe('/stats', () => {
 			// The duration's SPELLING is the CLI's too, read off the header
 			// line of the very text the tile sits over — not off a formatter
 			// written down a second time here.
-			const header = plain((await app.run(['stats'])).stdout).match(
+			const header = plain((await app.run(MONTH)).stdout).match(
 				/^all fields · (\S+) tracked over (\d+) entries/
 			);
 			assert.ok(header, 'the CLI stopped printing an all-fields header');
@@ -152,7 +155,7 @@ describe('/stats', () => {
 		await shared.solo(async (app) => {
 			await seed(app);
 			await openStats(app);
-			await expectStats(app, ['stats']);
+			await expectStats(app, MONTH);
 			await app.idle();
 			const seen = await app.spyOnRunner();
 			// The loud door, as a pane's write is: /stats has no bar to type in.
@@ -162,9 +165,9 @@ describe('/stats', () => {
 			await app.page.waitForTimeout(500);
 			await app.idle();
 			const runs = (await seen()).filter((argv) => argv[0] === 'stats').map((argv) => argv.join(' '));
-			assert.deepEqual(runs, ['stats --show all']);
-			await expectStats(app, ['stats']);
-			const { total_count } = JSON.parse((await app.run(['stats', '--json'])).stdout);
+			assert.deepEqual(runs, ['stats --month --show all']);
+			await expectStats(app, MONTH);
+			const { total_count } = JSON.parse((await app.run([...MONTH, '--json'])).stdout);
 			assert.deepEqual((await tiles(app.page))[0], ['entries', String(total_count)]);
 		});
 	});
@@ -177,15 +180,15 @@ describe('/stats', () => {
 		await shared.solo(async (app) => {
 			await seed(app);
 			await openStats(app);
-			await expectStats(app, ['stats']);
-			assert.equal(await app.page.locator('.stats .scope').innerText(), 'datum · all time');
+			await expectStats(app, MONTH);
+			assert.equal(await app.page.locator('.stats .scope').innerText(), 'datum · this month');
 
 			await app.page.locator('.stats .range button', { hasText: 'week' }).click();
 			await expectStats(app, ['stats', '--week']);
 			assert.equal(await app.page.locator('.stats .scope').innerText(), 'datum · this week');
 
-			// And the numbers moved with the window rather than staying all
-			// time's — so the line is about these tiles and not decoration.
+			// And the numbers moved with the window rather than staying this
+			// month's — so the line is about these tiles and not decoration.
 			const json = await app.run(['stats', '--week', '--json']);
 			assert.equal(json.code, 0, json.stderr);
 			const { fields, total_count } = JSON.parse(json.stdout);
@@ -207,7 +210,7 @@ describe('/stats', () => {
 			const r = await app.run(['occur', 'coffee', '-t', '-10']);
 			assert.equal(r.code, 0, r.stderr);
 			await app.page.waitForFunction(
-				() => document.querySelector('.stats .scope')?.textContent === 'notes · all time'
+				() => document.querySelector('.stats .scope')?.textContent === 'notes · this month'
 			);
 			assert.deepEqual(app.errors, []);
 		});
@@ -219,7 +222,7 @@ describe('/stats', () => {
 	test('an empty database is three zeroes, not a blank pane', async () => {
 		await shared.solo(async (app) => {
 			await openStats(app);
-			await expectStats(app, ['stats']);
+			await expectStats(app, MONTH);
 			assert.deepEqual(await tiles(app.page), [
 				['entries', '0'],
 				['tracked', '0s'],
@@ -233,9 +236,9 @@ describe('/stats', () => {
 		await shared.solo(async (app) => {
 			await seed(app);
 			await openStats(app);
-			await expectStats(app, ['stats']);
+			await expectStats(app, MONTH);
 
-			const json = await app.run(['stats', '--json']);
+			const json = await app.run([...MONTH, '--json']);
 			assert.equal(json.code, 0, json.stderr);
 			const { fields } = JSON.parse(json.stdout);
 			// A field with no share of the time — coffee, two instants — is
@@ -271,6 +274,11 @@ describe('/stats', () => {
 		await shared.solo(async (app) => {
 			await seed(app);
 			await openStats(app);
+			await expectStats(app, MONTH);
+
+			// All time is one chip away, and it is bare `stats` (da-80do8).
+			await app.page.locator('.stats .range button', { hasText: 'all time' }).click();
+			await expectStats(app, ['stats']);
 
 			await app.page.locator('.stats .range button', { hasText: 'today' }).click();
 			await expectStats(app, ['stats', '--today']);
@@ -294,7 +302,7 @@ describe('/stats', () => {
 		await withApp(async (app) => {
 			await seed(app);
 			await openStats(app);
-			await expectStats(app, ['stats']);
+			await expectStats(app, MONTH);
 			const before = await app.page.locator('.stats .body').innerText();
 
 			// The day frame, in a second tab on the same database.
@@ -308,7 +316,7 @@ describe('/stats', () => {
 				(was) => document.querySelector('.stats .body')?.innerText !== was,
 				before
 			);
-			await expectStats(app, ['stats']);
+			await expectStats(app, MONTH);
 		});
 	});
 
@@ -334,8 +342,8 @@ describe('/stats', () => {
 			await pick();
 
 			await reloaded();
-			// Back at what the LAYOUT says, which is all time over every field.
-			await expectStats(app, ['stats']);
+			// Back at what the LAYOUT says, which is this month over every field.
+			await expectStats(app, MONTH);
 
 			// `/stats` is one widget, so the acts are on the ROOT tab's menu
 			// (da-ze1x) — and a layout that shipped opens locked, which is the
@@ -356,7 +364,8 @@ describe('/stats', () => {
 				await app.page.locator('section.pane[data-title="stats"]').waitFor();
 				// The tree still carries `field`, and the widget is every field
 				// all the same: da-ptuwr took it out of the settings, so there
-				// is nothing left for a stale layout to select.
+				// is nothing left for a stale layout to select. And its stored
+				// all time is the reader's, kept as it is: bare `stats`.
 				await expectStats(app, ['stats']);
 				assert.deepEqual(app.errors, []);
 			},
@@ -373,10 +382,10 @@ describe('/stats', () => {
 			async (app) => {
 				await seed(app);
 				await openStats(app);
-				await expectStats(app, ['stats']);
+				await expectStats(app, MONTH);
 				assert.equal(
 					await app.page.locator('.stats .range button[aria-pressed="true"]').innerText(),
-					'all time'
+					'month'
 				);
 				assert.deepEqual(app.errors, [], 'the page threw with storage blocked');
 			},
@@ -410,7 +419,7 @@ describe('/stats', () => {
 					assert.equal(r.code, 0, r.stderr);
 				}
 				await openStats(app);
-				await expectStats(app, ['stats']);
+				await expectStats(app, MONTH);
 
 				const fit = await app.page.evaluate(() => {
 					const widget = document.querySelector('section.pane .stats');

@@ -21,8 +21,13 @@ export interface StatsSettings {
 	range: StatsRange;
 }
 
-/** All time, every field: bare `stats` is the model (vividn, 2026-09-10). */
-export const DEFAULT_STATS: StatsSettings = { range: 'all' };
+/**
+ * This month, every field (da-80do8). Every pane re-runs after a write, and
+ * all time costs the whole history — about 9 s in Chromium on five years —
+ * while a period costs only the period (da-cwpr1). All time is one chip
+ * away. vividn, 2026-10-07: «yes lets default stats pane to this month».
+ */
+export const DEFAULT_STATS: StatsSettings = { range: 'month' };
 
 /** `stats --json` for a whole field — what a field pill narrows the widget to. */
 export interface FieldStats {

@@ -510,13 +510,13 @@ describe('what narrows to it', () => {
 		await seeded(async (app) => {
 			const { page } = app;
 			const stats = pane(page, 'stats');
-			// Every field until something narrows it (da-ptuwr): a bare `stats`.
+			// Every field until something narrows it (da-ptuwr): `stats --month` (da-80do8).
 			await stats.locator('code.argv').waitFor();
-			await page.waitForFunction(() => document.querySelector('.stats code.argv')?.textContent === 'stats');
+			await page.waitForFunction(() => document.querySelector('.stats code.argv')?.textContent === 'stats --month');
 
 			await hold(page, 'coffee');
 			await page.waitForFunction(
-				() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee'
+				() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee --month'
 			);
 			// And the body is that field's own, not the table of all of them.
 			await page.waitForFunction(
@@ -525,7 +525,7 @@ describe('what narrows to it', () => {
 
 			// A filter, not a write: it widens back to every field.
 			await fieldPill(page).locator('button.remove').click();
-			await page.waitForFunction(() => document.querySelector('.stats code.argv')?.textContent === 'stats');
+			await page.waitForFunction(() => document.querySelector('.stats code.argv')?.textContent === 'stats --month');
 			await page.waitForFunction(
 				() => document.querySelector('.stats .body')?.textContent?.includes('all fields')
 			);
@@ -535,13 +535,13 @@ describe('what narrows to it', () => {
 
 	// da-05oit: the second hold is the filter's off switch, and a LOCKED
 	// pill goes too — the reader asked for it by name. «Whole again» is read
-	// off the widgets, not the pill: stats is bare `stats` and the tail
+	// off the widgets, not the pill: stats is `stats --month` and the tail
 	// lists mood again.
 	test('a second right click takes a locked pill away, and stats and the tail are whole again', async () => {
 		await seeded(async (app) => {
 			const { page } = app;
 			await hold(page, 'coffee');
-			await page.waitForFunction(() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee');
+			await page.waitForFunction(() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee --month');
 			await page.waitForFunction(() =>
 				[...document.querySelectorAll('section[data-pane="tail"] tbody td.field')].every((td) => td.textContent.trim() === 'coffee')
 			);
@@ -551,7 +551,7 @@ describe('what narrows to it', () => {
 			await hold(page, 'coffee');
 			await fieldPill(page).waitFor({ state: 'detached' });
 			assert.equal(await chip(page, 'coffee').getAttribute('data-pilled'), null);
-			await page.waitForFunction(() => document.querySelector('.stats code.argv')?.textContent === 'stats');
+			await page.waitForFunction(() => document.querySelector('.stats code.argv')?.textContent === 'stats --month');
 			await page.waitForFunction(() =>
 				[...document.querySelectorAll('section[data-pane="tail"] tbody td.field')].some((td) => td.textContent.trim() === 'mood')
 			);
@@ -680,7 +680,7 @@ describe('what survives a reload', () => {
 			// The pill came back and narrows, exactly as the next test says.
 			await fieldPill(page).waitFor();
 			await page.waitForFunction(
-				() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee'
+				() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee --month'
 			);
 			// And this load wrote nothing: the counter is re-made by the init
 			// script on every load, so it holds only what THIS load did.
@@ -695,7 +695,7 @@ describe('what survives a reload', () => {
 			await hold(page, 'coffee');
 			await fieldPill(page).waitFor();
 			await page.waitForFunction(
-				() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee'
+				() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee --month'
 			);
 
 			await fieldPill(page).locator('button.lock').click();
@@ -717,7 +717,7 @@ describe('what survives a reload', () => {
 			// THE POINT: it filters. The argv the widget runs, and the body
 			// that came back from it.
 			await page.waitForFunction(
-				() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee'
+				() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee --month'
 			);
 			await page.waitForFunction(
 				() => document.querySelector('.stats .body')?.textContent?.startsWith('coffee')
@@ -735,13 +735,13 @@ describe('what survives a reload', () => {
 			await hold(page, 'coffee');
 			await fieldPill(page).waitFor();
 			await page.waitForFunction(
-				() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee'
+				() => document.querySelector('.stats code.argv')?.textContent === 'stats coffee --month'
 			);
 
 			await app.reload();
 
 			await page.waitForFunction(
-				() => document.querySelector('.stats code.argv')?.textContent === 'stats'
+				() => document.querySelector('.stats code.argv')?.textContent === 'stats --month'
 			);
 			assert.equal(await fieldPill(page).count(), 0, 'an unlocked pill came back');
 			await page.waitForFunction(
@@ -769,7 +769,7 @@ describe('what survives a reload', () => {
 			await app.reload();
 
 			await page.waitForFunction(
-				() => document.querySelector('.stats code.argv')?.textContent === 'stats'
+				() => document.querySelector('.stats code.argv')?.textContent === 'stats --month'
 			);
 			assert.equal(await fieldPill(page).count(), 0, 'a removed pill came back');
 			assert.deepEqual(app.errors, []);

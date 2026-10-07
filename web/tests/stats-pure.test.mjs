@@ -18,7 +18,7 @@ import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
 resolveLibAsSource(import.meta.url);
-const { fieldTiles, formatDur, summaryTiles, windowLabel } = await import('../src/lib/stats.ts');
+const { fieldTiles, formatDur, statsArgv, summaryTiles, windowLabel } = await import('../src/lib/stats.ts');
 
 describe('a span in the CLI’s own spelling', () => {
 	// `human_duration_names_two_units_unpadded`, case for case.
@@ -123,5 +123,37 @@ describe('the window in words', () => {
 			'2026-01-01T00:00 → 2026-02-01T00:00'
 		);
 		assert.equal(windowLabel({ since: '', until: '' }), 'all time');
+	});
+});
+
+// da-80do8: the default window is this month, not all time — every pane
+// re-runs after a write, and all time costs the whole history. The argv is
+// read through the registry's own `props`, which is what the pane mounts
+// with, so a layout's stored settings and the kind's default both count.
+describe('the window a pane opens on', () => {
+	const statsWidgets = (node) =>
+		!node || typeof node !== 'object'
+			? []
+			: node.kind === 'stats' && node.settings
+				? [node.settings]
+				: Object.values(node).flatMap(statsWidgets);
+
+	test('a new stats pane, and every layout that ships, runs stats --month', async () => {
+		const { KINDS } = await import('../src/lib/layout/registry.ts');
+		const { BUILTIN, DEBUG_LAYOUT_TREE } = await import('../src/lib/layout/defaults.ts');
+		const argvOf = (settings) => statsArgv(KINDS.stats.props(settings).settings);
+
+		assert.deepEqual(argvOf({ ...KINDS.stats.meta.defaultSettings }), ['stats', '--month']);
+		const shipped = [
+			...Object.values(BUILTIN).flatMap((at) => [at(false), at(true)]),
+			DEBUG_LAYOUT_TREE
+		].flatMap(statsWidgets);
+		assert.ok(shipped.length >= 2, `found ${shipped.length} stats panes: this proves nothing`);
+		for (const settings of shipped) assert.deepEqual(argvOf(settings), ['stats', '--month']);
+	});
+
+	test('a stored all time is not rewritten: it still runs bare stats', async () => {
+		const { KINDS } = await import('../src/lib/layout/registry.ts');
+		assert.deepEqual(statsArgv(KINDS.stats.props({ range: 'all' }).settings), ['stats']);
 	});
 });
