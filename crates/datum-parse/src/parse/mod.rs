@@ -370,7 +370,11 @@ fn apply_show(command: &mut Command, show: Show) {
             SyncCommand::Members { show: s }
             | SyncCommand::AdminList { show: s }
             | SyncCommand::Status { show: s }
-            | SyncCommand::Apply { show: s },
+            | SyncCommand::Apply { show: s }
+            | SyncCommand::Admin {
+                act: SyncAdminAct::Purge { show: s, .. },
+                ..
+            },
         ) => *s = show,
         Command::Db(DbCommand::Restore(a)) => a.show = show,
         Command::Db(DbCommand::BackupRotation(a)) => a.show = show,

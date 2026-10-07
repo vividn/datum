@@ -127,7 +127,7 @@ type Rest<'a> = std::slice::Iter<'a, &'a str>;
 
 /// `datum sync chain …`: the chain's membership.
 fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "invite|connect|leave|list|rename|revoke|role|ack|rekey";
+    const SET: &str = "invite|connect|leave|list|rename|revoke|purge|unpurge|role|ack|rekey";
     Ok(match rest.next().copied() {
         Some("invite") => {
             let values = ["expires", "admin-key", "fields", "kit"];
@@ -160,6 +160,20 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
             }
         }
         Some("revoke") => act(rest, SyncAdminAct::Revoke, &[], &[])?,
+        Some("purge") => {
+            let mut o = opts(rest, &["admin-key"], &["yes"], 1..=1)?;
+            SyncCommand::Admin {
+                act: SyncAdminAct::Purge {
+                    yes: o.on("yes"),
+                    show: Show::Default,
+                },
+                who: o.positional.remove(0),
+                label: None,
+                admin_key: o.get("admin-key"),
+                allow_unlock: false,
+            }
+        }
+        Some("unpurge") => act(rest, SyncAdminAct::Unpurge, &[], &[])?,
         Some("role") => {
             let mut o = opts(rest, &["admin-key", "fields", "kit"], &[], 2..=2)?;
             let filter = o.filter()?;
@@ -514,6 +528,31 @@ mod tests {
                 allow_unlock: false
             }
         );
+        assert_eq!(
+            p(&["chain", "purge", "b", "--yes", "--admin-key", "k"]),
+            SyncCommand::Admin {
+                act: SyncAdminAct::Purge {
+                    yes: true,
+                    show: Show::Default
+                },
+                who: "b".into(),
+                label: None,
+                admin_key: Some("k".into()),
+                allow_unlock: false
+            }
+        );
+        assert_eq!(
+            p(&["chain", "unpurge", "b"]),
+            SyncCommand::Admin {
+                act: SyncAdminAct::Unpurge,
+                who: "b".into(),
+                label: None,
+                admin_key: None,
+                allow_unlock: false
+            }
+        );
+        assert!(parse_sync_cmd(&["chain", "purge"]).is_err());
+        assert!(parse_sync_cmd(&["chain", "unpurge", "b", "--yes"]).is_err());
         assert_eq!(
             p(&["chain", "role", "b", "reader", "--admin-key", "k"]),
             SyncCommand::Admin {

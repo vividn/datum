@@ -42,6 +42,11 @@
 //!     which opens the chain again. Every act is judged at its own HLC, so
 //!     a member's act refused while the chain was locked stays refused, and
 //!     only its acts after the unlock count.
+//!   - `purge {endpoint}` (da-ry11c): every op the endpoint signed is set
+//!     aside — refused, its entries folded again without them — and it is
+//!     revoked from that HLC on. `unpurge {endpoint}` folds them back in,
+//!     the revoke standing, while the purge is the newest act about it.
+//!     Both admin acts, as a revoke is; no copy purges itself.
 //!   - `role {endpoint, role}` (da-9yvb6): `member` or `reader` from its
 //!     HLC on, an admin act like a revoke. A reader's `role` or invite
 //!     `caps` may carry a filter (da-u81u1): `fields`, the fields it is
@@ -343,6 +348,10 @@ pub struct Member {
     pub kind: Option<String>,
     /// The HLC of the revoke: its ops from then on are refused.
     pub revoked: Option<String>,
+    /// The HLC of its purge (da-ry11c): every op of its is refused.
+    pub purged: Option<String>,
+    /// The HLC of the newest act about it: an unpurge needs it to be the purge.
+    last_act: String,
     /// Its role from each HLC on, oldest first: its admission's, then each
     /// `role` record's.
     pub roles: Vec<(String, Role)>,
@@ -435,12 +444,28 @@ impl Member {
         at.or(self.roles.first()).map_or(Role::Member, |r| r.1)
     }
 
+    /// Why an unpurge of it would be refused, if it would: it is not purged,
+    /// or an act about it came after the purge.
+    pub fn unpurge_refused(&self) -> Option<&'static str> {
+        match &self.purged {
+            None => Some("not purged"),
+            Some(p) if *p != self.last_act => Some("an act about it came after its purge"),
+            Some(_) => None,
+        }
+    }
+
     /// The HLC from which some of its ops are refused, if any are: its
-    /// revoke, or when it first was a reader (all of them, admitted as one).
+    /// revoke, or when it first was a reader (all of them, admitted as one);
+    /// a purge refuses all of them, whenever made, so it is `""`, not its HLC.
     pub(super) fn refused_from(&self) -> Option<&str> {
         let reader = self.roles.iter().position(|r| r.1 == Role::Reader);
         let reader = reader.map(|i| if i == 0 { "" } else { self.roles[i].0.as_str() });
-        reader.into_iter().chain(self.revoked.as_deref()).min()
+        let purged = self.purged.as_ref().map(|_| "");
+        reader
+            .into_iter()
+            .chain(self.revoked.as_deref())
+            .chain(purged)
+            .min()
     }
 }
 
@@ -509,6 +534,12 @@ impl Chain {
         match self.member(endpoint) {
             _ if !self.exists() => Ok(()),
             None => Err("not a member of the sync chain".into()),
+            Some(Member {
+                purged: Some(p), ..
+            }) => Err(format!(
+                "set aside: its endpoint was purged ({})",
+                hlc_time(p)
+            )),
             Some(Member {
                 revoked: Some(r), ..
             }) if hlc >= r.as_str() => Err(format!(
@@ -683,6 +714,7 @@ impl Chain {
                 m.label = s("label");
                 m.client = client.as_str().map(Into::into);
                 m.kind = kind.as_str().map(Into::into);
+                m.last_act = op.hlc.clone();
                 Ok(())
             }
             "invite" => {
@@ -710,6 +742,7 @@ impl Chain {
                     .ok_or("not a member")?;
                 m.roles.push((op.hlc.clone(), role));
                 m.filter = filter;
+                m.last_act = op.hlc.clone();
                 Ok(())
             }
             "revoke" => {
@@ -719,6 +752,30 @@ impl Chain {
                     .find(|m| m.endpoint == s("endpoint"))
                     .ok_or("not a member")?;
                 m.revoked.get_or_insert_with(|| op.hlc.clone());
+                m.last_act = op.hlc.clone();
+                Ok(())
+            }
+            "purge" | "unpurge" => {
+                if s("endpoint") == op.endpoint {
+                    return Err("a copy does not purge itself".into());
+                }
+                let m = self
+                    .members
+                    .iter_mut()
+                    .find(|m| m.endpoint == s("endpoint"))
+                    .ok_or("not a member")?;
+                if kind == "unpurge" {
+                    if let Some(why) = m.unpurge_refused() {
+                        return Err(why.into());
+                    }
+                    m.purged = None;
+                } else if m.purged.is_some() {
+                    return Err("already purged".into());
+                } else {
+                    m.purged = Some(op.hlc.clone());
+                    m.revoked.get_or_insert_with(|| op.hlc.clone());
+                }
+                m.last_act = op.hlc.clone();
                 Ok(())
             }
             "add_admin" => {
@@ -775,6 +832,8 @@ impl Chain {
             admitted: hlc.into(),
             via: via.into(),
             revoked: None,
+            purged: None,
+            last_act: hlc.into(),
             client: None,
             kind: None,
             roles: vec![(hlc.into(), role)],
@@ -839,6 +898,17 @@ pub(super) fn note(conn: &Connection, chain: &Chain, quiet: bool) -> Result<()> 
     Ok(())
 }
 
+/// [`Db::sync_purge_preview`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PurgePreview {
+    pub created: usize,
+    pub edited: usize,
+    pub deleted: usize,
+    /// When its first and last ops were made, RFC 3339.
+    pub first: Option<String>,
+    pub last: Option<String>,
+}
+
 /// A notice not yet acknowledged.
 #[derive(Debug, Clone)]
 pub struct Notice {
@@ -896,6 +966,49 @@ impl Db {
         note(&tx, &chain, quiet)?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// What a purge of `endpoint` sets aside (da-ry11c): of its ops applied
+    /// now — not those a revoke already refused — the entries it created (a
+    /// baseline is one it brought), else deleted, else edited, one count per
+    /// entry, specs and the other definitions left out; and when its first
+    /// and last ops were made.
+    pub fn sync_purge_preview(&self, endpoint: &str) -> Result<PurgePreview> {
+        let mut kinds: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut out = PurgePreview::default();
+        let mut stmt = self.conn.prepare(
+            "SELECT hid, kind, hlc, slug FROM ops WHERE endpoint = ?1 AND hid != ?2 AND applied = 1",
+        )?;
+        let rows = stmt.query_map(params![endpoint, CHAIN_HID], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?;
+        for row in rows {
+            let (hid, kind, hlc, slug) = row?;
+            let field = slug.split(':').next().unwrap_or_default();
+            if !crate::db::is_meta_field(field) {
+                kinds.entry(hid).or_default().insert(kind);
+            }
+            let at = hlc_time(&hlc).to_string();
+            if out.first.as_ref().is_none_or(|f| at < *f) {
+                out.first = Some(at.clone());
+            }
+            if out.last.as_ref().is_none_or(|l| at > *l) {
+                out.last = Some(at);
+            }
+        }
+        for k in kinds.values() {
+            match () {
+                _ if k.contains("create") || k.contains("baseline") => out.created += 1,
+                _ if k.contains("delete") => out.deleted += 1,
+                _ => out.edited += 1,
+            }
+        }
+        Ok(out)
     }
 
     /// This copy's client id: one per data directory, shared by its dbs.
@@ -1155,6 +1268,66 @@ mod tests {
         assert!(chain.is_open());
         assert_eq!(chain.unlocks.len(), 1);
         assert_eq!(chain.unlocks[0].0, "k");
+    }
+
+    /// A purge (da-ry11c) refuses every op of its endpoint, whenever made,
+    /// and revokes it; no copy purges itself; an unpurge stands only while
+    /// the purge is the newest act about the endpoint, and leaves the revoke.
+    #[test]
+    fn a_purge_refuses_every_op_and_an_unpurge_needs_it_to_be_the_newest_act() {
+        let (a, b) = ("ab".repeat(32), "cd".repeat(32));
+        let at = |t: u32| format!("2026-09-29T00:00:{t:02}.000Z/0000");
+        let mut chain = Chain::default();
+        let mut step = |t: u32, rec: Value| {
+            let mut rec = rec;
+            rec["chain"] = "c1".into();
+            rec["created"] = at(t).into();
+            let op = json!({
+                "endpoint": a, "seq": t, "hlc": at(t), "hid": CHAIN_HID,
+                "slug": CHAIN_HID, "kind": "chain", "effect": rec, "sig": "",
+            });
+            let done = chain.step(&Op::parse(&op.to_string()).unwrap());
+            let m = chain
+                .member(&b)
+                .map(|m| (m.purged.is_some(), m.revoked.is_some()));
+            (done, m, chain.allows(&b, &at(1)).is_ok())
+        };
+        let it = |kind: &str, who: &str| json!({"type": kind, "endpoint": who});
+        assert_eq!(
+            step(1, json!({"type": "genesis", "admins": [], "label": "a"})).0,
+            Ok(())
+        );
+        let invite = json!({"type": "invite", "invite_id": "i", "secret_hash": sha256_hex("s"),
+            "expires": "2099-01-01T00:00:00Z", "caps": {}});
+        assert_eq!(step(2, invite).0, Ok(()));
+        let admit =
+            json!({"type": "admit", "endpoint": b, "label": "b", "via": "i", "secret": "s"});
+        assert_eq!(step(3, admit).0, Ok(()));
+        assert_eq!(step(4, it("unpurge", &b)).0, Err("not purged".into()));
+        assert_eq!(
+            step(5, it("purge", &a)).0,
+            Err("a copy does not purge itself".into())
+        );
+        // An op from before the purge — and before the admit — is refused.
+        assert_eq!(
+            step(6, it("purge", &b)),
+            (Ok(()), Some((true, true)), false)
+        );
+        assert_eq!(chain_err(&step(7, it("purge", &b))), "already purged");
+        assert_eq!(
+            step(8, it("unpurge", &b)),
+            (Ok(()), Some((false, true)), true)
+        );
+        assert_eq!(step(9, it("purge", &b)).0, Ok(()));
+        assert_eq!(step(10, it("revoke", &b)).0, Ok(()));
+        assert_eq!(
+            chain_err(&step(11, it("unpurge", &b))),
+            "an act about it came after its purge"
+        );
+    }
+
+    fn chain_err<T>(r: &(std::result::Result<(), String>, T, bool)) -> String {
+        r.0.clone().unwrap_err()
     }
 
     /// `holds` (da-bjxts) knows a record the fold took by its unsigned

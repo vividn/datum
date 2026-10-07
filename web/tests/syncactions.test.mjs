@@ -143,6 +143,44 @@ describe('the sync widget’s actions', () => {
 		}, AT_DATUM_DAY);
 	});
 
+	test('a purge previews what goes and takes the device’s name typed; an unpurge brings it back, revoked', async () => {
+		await withWallClock(
+			async (app) => {
+				const { page } = app;
+				const phone = await openChain(app);
+				const of = async () => (await members(app)).members.find((m) => m.endpoint === phone);
+				await app.goto('/sync?db=home');
+				await more(page);
+				await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Purge', exact: true }).click();
+				const dialog = page.locator('dialog.confirm');
+				assert.match(await dialog.innerText(), /Purge phone from home\? It made no change to an entry: this only revokes it\./);
+				// A wrong name is a no.
+				await dialog.locator('input').fill('phon');
+				await dialog.getByRole('button', { name: 'purge', exact: true }).click();
+				assert.equal((await of()).purged, null);
+
+				await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Purge', exact: true }).click();
+				await dialog.locator('input').fill('phone');
+				await dialog.getByRole('button', { name: 'purge', exact: true }).click();
+				const gone = page.locator(`${WIDGET} .more .device[data-endpoint="${phone}"]`);
+				await gone.getByRole('button', { name: 'Unpurge' }).waitFor();
+				assert.equal(await gone.locator('.name').innerText(), 'phone · purged');
+				// Listed once: its device line, with Rename and Revoke, is gone.
+				assert.equal(await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).count(), 0);
+				assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
+				assert.ok((await of()).purged);
+
+				await gone.getByRole('button', { name: 'Unpurge' }).click();
+				await dialog.getByRole('button', { name: 'unpurge' }).click();
+				await gone.getByRole('button', { name: 'Purge', exact: true }).waitFor();
+				assert.equal(await gone.locator('.name').innerText(), 'phone · revoked');
+				assert.equal((await of()).purged, null);
+				assert.ok((await of()).revoked);
+			},
+			{ viewport: DESKTOP }
+		);
+	});
+
 	test('removing the last admin asks first, and only a yes unlocks the chain', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
