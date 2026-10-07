@@ -46,7 +46,9 @@ export interface FieldButton {
 	glyph?: string;
 	/**
 	 * What the field is in now, by `datum now --json`: `true` for an open
-	 * block, the state's name for a switch; absent when it is off.
+	 * block, the state's name for a switch; absent when it is off. Until
+	 * that answers after a write, by the write's own echo (`guess` in
+	 * $lib/layout/engine.ts).
 	 */
 	current?: true | string;
 	/**

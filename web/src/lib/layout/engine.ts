@@ -124,9 +124,10 @@ export async function boot(): Promise<void> {
  * hence a rebuild on the same beat the panes refresh on.
  */
 export async function refresh(): Promise<void> {
-	const listed = await run(['fields', '--json']);
+	// Both asked at once (da-70g2u): `now` waiting for `fields` to answer
+	// queued it behind every pane the same beat set off — 14 s on five years.
+	const [listed, now] = await Promise.all([run(['fields', '--json']), run(['now', '--json'])]);
 	if (listed.code !== 0) return;
-	const now = await run(['now', '--json']);
 	// Guarded like the tail pane's own listing: stdout that is not the JSON
 	// asked for (a partial write, a crashed process) keeps the bar it had
 	// rather than throwing out of the one refresh path every pane is on.
@@ -157,8 +158,37 @@ function activeOf(now: RunResult): NowActive[] {
  */
 export async function ran(result?: RunResult): Promise<void> {
 	if (result && !result.changed?.length) return;
+	if (result) guess(result);
+	// The bar's own reads go into the queue AHEAD of the panes' (da-70g2u):
+	// the epoch is bumped after, so what it sets off queues behind them.
+	const bar = refresh();
 	epoch.update((n) => n + 1);
-	await refresh();
+	await bar;
+}
+
+/**
+ * The bar as the write's own echo says it now stands, at once (da-70g2u;
+ * vividn: «the whole app must feel very snappy»): a CREATE in `true` or a
+ * state turns its field's button on, in the state's colour; one in `false`
+ * turns it off; anything else (an occur's `null` or quantity, a point or a
+ * record field) changes nothing. A guess — a block with a duration, or a
+ * backdated switch, may not be what `now` says — so `refresh` still runs
+ * and what it reads wins.
+ */
+function guess(result: RunResult): void {
+	const docs = (parseEcho(result.stdout) ?? []).filter((d) => d.action === 'CREATE');
+	if (!docs.length) return;
+	fields.update((buttons) =>
+		buttons.map((b) => {
+			const doc = docs.findLast((d) => d.field === b.field);
+			if (!doc || b.shape.kind === 'point' || b.shape.kind === 'record') return b;
+			const { state, state_color } = doc;
+			if (state === false) return { ...b, active: false, current: undefined };
+			if (state === true) return { ...b, active: true, current: true };
+			if (typeof state !== 'string' || state === '') return b;
+			return { ...b, active: true, current: state, stateColors: state_color ? { ...b.stateColors, [state]: state_color } : b.stateColors };
+		})
+	);
 }
 
 /**
