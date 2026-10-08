@@ -23,8 +23,8 @@
 	scrolled left and right (da-vu7pi). NOTHING HANGS OUT OF IT: the widget's only
 	floating surface was the `-t` / `dur` / `note` panel, and da-e78x6
 	removed it.
-	Ignored fields get no button: the Track modal lists them, and a press
-	runs `track <field>`. `showIgnored` (da-xhio) is the way to SEE them
+	Ignored fields get no button: the field widget lists them under a new
+	field, and a press runs `track <field>`. `showIgnored` (da-xhio) is the way to SEE them
 	without going through the (+) — a switch in the menu the pane's NAME
 	opens (da-vhwq), this session's and off by default. It adds them to the
 	list; it does not change what they are, so each is drawn faint and
@@ -50,8 +50,9 @@
 	one through the command line they share: the list becomes the fields
 	that verb can be spent on, a press MEANS that verb and runs at once,
 	and the (+) stands at the end of the list instead of
-	before its start — the one door on the modal that PRESETS a verb, which
-	is what `startTracking`'s note below leaves room for. Which fields, and
+	before its start — the one door on the field widget that PRESETS a kind,
+	mapped to one a field can be DECLARED with: `end` is not, so it declares
+	the block it would have ended (`declaredVerb`). Which fields, and
 	what a press then runs, are `fieldsUnder` and `verbPress` in commands.ts.
 
 	A SELECTION talks to it too (da-qu16). A `dur=` pill on the bar leaves
@@ -63,10 +64,9 @@
 	say why the bar changed. Nothing moves under a finger: while a pointer
 	is over the bar the order is held until it leaves.
 
-	The (+) opens that modal (da-94q1, $lib/track.ts) — a `<dialog>` over
-	the whole page with a pictogram per verb — rather than a form hanging
-	off the bar. The widget still runs nothing itself: the modal answers
-	with an argv and it goes out the same `run` as a press.
+	The (+) opens the field widget on a new field (`openField`,
+	$lib/fieldWidget.ts, da-fu29p) rather than a form hanging off the bar;
+	that widget runs its own save.
 
 	Press to log. HOLD — or right-click, or shift+click, or the menu key —
 	to put the field on the bar as a PILL (da-8810n), which is how the rest
@@ -145,7 +145,7 @@
 	import { holds } from './hold.js';
 	import { fieldPill, setFieldPill } from './bar.js';
 	import { closer, rowsUnder, type Near } from './lanes.js';
-	import { openTrack } from './specModal.js';
+	import { openField } from './fieldWidget.js';
 	import { shellJoin } from './shellSplit.js';
 	import {
 		declaredVerb,
@@ -268,7 +268,6 @@
 		),
 		verb
 	);
-	$: ignored = fields.filter((w) => w.ignored);
 	$: picking = picked === null ? null : (buttons.find((b) => b.field === picked) ?? null);
 	// A picked field no longer on the bar — deleted, the database emptied or
 	// restored, another tab's write, or a verb or `dur=` pill filtering it
@@ -548,19 +547,6 @@
 		else emit(argv);
 	}
 
-	/**
-	 * Ask «which verb?» and run the answer (da-94q1).
-	 *
-	 * The one door the widget has on the Track modal, so the set-up
-	 * walkthrough has a single place to take it over. Nothing is preset
-	 * from here: the doors that DO preset one — a filtered list's `+`, the
-	 * CLI's own refusal — call `openTrack` themselves. A dismissed modal
-	 * answers null and nothing runs.
-	 */
-	async function startTracking() {
-		const argv = await openTrack({ ignored: ignored.map((w) => w.field) });
-		if (argv) emit(argv);
-	}
 
 	/**
 	 * Show `button`'s states in the bar, in place of the fields (da-g635).
@@ -604,21 +590,6 @@
 		else emit(argv);
 	}
 
-	/**
-	 * The `+` at the end of a filtered list: the same modal, with the
-	 * pending verb already chosen (da-ltux).
-	 *
-	 * One of the doors `startTracking` above leaves the presetting to. The
-	 * verb is mapped to one a field can be DECLARED with — `end` is not, so
-	 * it declares the block it would have ended (`declaredVerb`).
-	 */
-	async function trackUnder(pending: Verb) {
-		const argv = await openTrack({
-			verb: declaredVerb(pending),
-			ignored: ignored.map((w) => w.field)
-		});
-		if (argv) emit(argv);
-	}
 
 	/**
 	 * Enter in the `+`'s input. A state is learned from the log, so
@@ -856,7 +827,7 @@
 					{disabled}
 					aria-label="track a new field"
 					title="track a new field"
-					on:click={() => void startTracking()}
+					on:click={() => void openField()}
 				>
 					+
 				</button>
@@ -869,7 +840,7 @@
 					{disabled}
 					aria-label="track a new {pending} field"
 					title="track a new {pending} field"
-					on:click={() => void trackUnder(pending)}
+					on:click={() => void openField('', declaredVerb(pending))}
 				>
 					+
 				</button>

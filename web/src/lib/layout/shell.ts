@@ -241,10 +241,12 @@ const without = <T extends object, K extends keyof T>(o: T, key: K): Omit<T, K> 
  * device still names it, and an unknown kind draws as an untitled empty
  * pane.
  *
- * EMPTY, and kept: `input` was the one entry (da-22vg, `input` → `repl`)
- * and the input widget is back under that very id (da-3zon), so a layout
- * saved with one opens as one again — which is the whole point of a kind's
- * id being a saved-layout key. The next kind to go writes its arm here.
+ * `input` was the first entry (da-22vg, `input` → `repl`) and the input
+ * widget is back under that very id (da-3zon), so a layout saved with one
+ * opens as one again — which is the whole point of a kind's id being a
+ * saved-layout key. `spec` is the field widget's old half (da-fu29p); the
+ * `field` setting a saved one carries is read by nobody now, and kept as
+ * it is — `RETIRED_SETTINGS` drops a known value, not a key.
  *
  * Here rather than in `tree.ts` because this is where layouts are READ:
  * `inline` is the one door every save, draft and built-in comes through,
@@ -253,7 +255,7 @@ const without = <T extends object, K extends keyof T>(o: T, key: K): Omit<T, K> 
  * on every drag of a border instead, and would give the tree's shape
  * module an opinion about kinds, which it has never had.
  */
-const RETIRED_KINDS: Record<string, string> = {};
+const RETIRED_KINDS: Record<string, string> = { spec: 'field' };
 
 /**
  * A setting a saved layout may carry that no reader ever chose, dropped so
@@ -1011,7 +1013,7 @@ layout.subscribe(($layout) => {
 });
 
 /**
- * Leave the place in front (da-hbrfg: the spec widget's Done and Cancel):
+ * Leave the place in front (da-hbrfg: the field widget's Done and Cancel):
  * the modal, closed as its × closes it, or else a place tab, for the tab it
  * opened beside, as a tap on that tab would. Anywhere else, nothing.
  */

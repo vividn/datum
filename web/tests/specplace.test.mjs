@@ -1,8 +1,8 @@
-// A field's spec is a PLACE (da-hbrfg): «a modal asks; a place is a tab».
-// The `spec` widget takes the field, and `spec:<field>` is its tab — opened
-// beside the tab you were on, focused again for the same field, closed when
-// left. The tab tests run on a phone, where a place is a tab whatever a
-// desktop comes to open it as (da-jozgv).
+// A field's spec is edited in a PLACE (da-hbrfg): «a modal asks; a place is
+// a tab». The place is the field widget's (da-fu29p), ONE tab whatever the
+// field — opened beside the tab you were on, put on another field where it
+// stands, closed when left. The tab tests run on a phone, where a place is a
+// tab whatever a desktop comes to open it as (da-jozgv).
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,27 +25,33 @@ const described = async (app, field) => JSON.parse((await app.run(['spec', 'show
 describe('the spec place, on a phone', () => {
 	const phone = sharedApp(PHONE);
 
-	test('opens beside the tab you were on, one tab per field, and back closes it', async () => {
+	test('opens beside the tab you were on, one tab for every field, and back closes it', async () => {
 		await phone.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'mood', '--verb', 'switch']);
+			await app.run(['track', 'tea', '--verb', 'occur']);
 			const was = await rootTabs(page);
 			const from = was.indexOf(await shown(page));
 
 			await openSpec(page, 'mood');
-			await until(() => shown(page), (t) => t === 'spec:mood');
-			const beside = [...was.slice(0, from + 1), 'spec:mood', ...was.slice(from + 1)];
+			await until(() => shown(page), (t) => t === 'field');
+			const beside = [...was.slice(0, from + 1), 'field', ...was.slice(from + 1)];
 			assert.deepEqual(await rootTabs(page), beside);
 			assert.equal((await page.locator(`${SPEC} h2`).innerText()).trim(), 'mood');
 
 			// The same field again is the same tab, and whoever opened it first
 			// is answered — nothing is left waiting (canary on #360).
-			const first = page.evaluate(() => window.datum.spec('mood'));
+			const first = page.evaluate(() => window.datum.field('mood'));
 			await page.locator(SPEC).waitFor();
-			await page.evaluate(() => void window.datum.spec('mood'));
+			await page.evaluate(() => void window.datum.field('mood'));
 			assert.equal(await first, null);
 			await page.locator(SPEC).waitFor();
 			assert.deepEqual(await rootTabs(page), beside, 'a second open made a second tab');
+
+			// And another field is that tab too, put on it where it stands.
+			await page.evaluate(() => void window.datum.field('tea'));
+			await until(async () => (await page.locator(`${SPEC} h2`).allInnerTexts()).join().trim(), (t) => t === 'tea');
+			assert.deepEqual(await rootTabs(page), beside, 'a second field made a second tab');
 
 			await page.goBack();
 			await until(() => rootTabs(page), (t) => t.join() === was.join());
@@ -101,7 +107,7 @@ describe('a refused save', () => {
 			assert.notEqual(result.code, 0);
 			assert.match(result.stderr, /at most 4 kB/);
 
-			assert.equal(await shown(page), 'spec:tea', 'the refusal left the place');
+			assert.equal(await shown(page), 'field', 'the refusal left the place');
 			assert.equal(await page.locator(`${SPEC} input.description`).inputValue(), 'green', 'the edit was lost');
 			assert.equal(await described(app, 'tea'), null, 'the refusal wrote');
 
@@ -122,7 +128,7 @@ describe('the spec place, on a desktop', () => {
 			const was = await rootTabs(page);
 
 			const { saved } = await openSpec(page, 'tea');
-			const modal = page.locator('dialog.sheet[data-place="spec:tea"]');
+			const modal = page.locator('dialog.sheet[data-place="field"]');
 			await modal.locator(`${SPEC} h2`).waitFor();
 			assert.equal((await modal.locator(`${SPEC} h2`).innerText()).trim(), 'tea');
 			assert.deepEqual(await rootTabs(page), was, 'a desktop opened a tab');
@@ -137,20 +143,20 @@ describe('the spec place, on a desktop', () => {
 	});
 });
 
-describe('the spec widget in a pane', () => {
+describe('the field widget in a pane', () => {
 	const desktop = sharedApp(DESKTOP);
 
-	test('asks which field, then edits it where it stands', async () => {
+	test('a chip picks the field, which is edited where it stands', async () => {
 		await desktop.solo(async (app) => {
 			const { page } = app;
 			// Through the bar, as a person would, so the fields it offers have it.
 			await app.submit('track tea --verb occur');
 			const was = await rootTabs(page);
 			const tab = await page.evaluate(() => window.datum.layout.current().root.tabs[0].content.children[0].tabs[0].id);
-			await page.evaluate((tab) => window.datum.shell.widgetInto(tab, 'spec'), tab);
-			const pane = page.locator('section.pane[data-title="spec"]');
+			await page.evaluate((tab) => window.datum.shell.widgetInto(tab, 'field'), tab);
+			const pane = page.locator('section.pane[data-title="field"]');
 
-			await pane.locator('button[data-field="tea"]').click();
+			await pane.locator('button[data-chip="tea"]').click();
 			assert.equal((await pane.locator(`${SPEC} h2`).innerText()).trim(), 'tea');
 			await pane.locator(`${SPEC} input.description`).fill('green');
 			await pane.locator(`${SPEC} button.commit`).click();

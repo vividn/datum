@@ -99,7 +99,7 @@
 	import {
 		commandsUnder,
 		drills,
-		opensSpec,
+		opensField,
 		fieldVerb,
 		fires,
 		flagsOf,
@@ -134,7 +134,7 @@
 
 	const dispatch = createEventDispatcher<{
 		run: string[];
-		line: { name: string; line: string; keyboard: boolean; spend?: Pill[] };
+		line: { name: string; line: string; keyboard: boolean; spend?: Pill[]; held?: boolean };
 		flag: { command: string; flag: string; keyboard: boolean };
 	}>();
 
@@ -151,7 +151,7 @@
 	/** What a tap on `command` does: the press below and the outline are both this. */
 	$: kindOf = (command: CommandButton): ActKind =>
 		FIXED[command.press] ??
-		(opensSpec(command.name, pills)
+		(opensField(command.name, pills)
 			? 'open'
 			: !open && drills(grammar, command.name, pills)
 				? 'show'
@@ -167,7 +167,7 @@
 	function hold(el: HTMLElement): void {
 		const name = el.dataset.command!;
 		flagged = name;
-		dispatch('line', { name, line: `${name} `, keyboard: false });
+		dispatch('line', { name, line: `${name} `, keyboard: false, held: true });
 	}
 
 	onMount(() => holds(bar!, { within: 'button[data-holds]', run: hold }).destroy);

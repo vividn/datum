@@ -13,7 +13,7 @@ that module and let the names below be examples. A list has to be remembered to 
 what is remembered drifts: §1, §2 and §9 were each rewritten from a roster into their rule
 after their rosters went wrong, §9's in both directions at once. §4 is the counter-example and
 the reason to believe this: *“the argv that runs is the argv that is echoed”* is one reactive
-binding in `TrackModal.svelte` read by both the submit and the preview, so no second array
+binding in `FieldForm.svelte` read by both the submit and the preview, so no second array
 exists for the doc to be out of date about. Where a rule can be made structural, that beats
 writing it down.
 
@@ -456,10 +456,11 @@ rule is decided but not yet everywhere, it names the bead.
     hands the modal's entry on rather than pushing a second. The body is the kind's own
     component in both, so there is one widget and one set of tests, and the same place dropped
     into a pane is just the widget. A place's tab tests run on a phone viewport.
-    A place that takes a parameter is named with it: the field editor (da-hbrfg) is the `spec`
-    widget taking a field, and its place is `spec:<field>` (`specPlace`, `layout/defaults.ts`),
-    so each field has one modal or tab. Declaring a field stays the Track dialog — «which verb?»
-    is a question.
+    A place takes no parameter: where a field is made and edited is the ONE `field` widget
+    (da-fu29p, which merged the Track dialog and da-hbrfg's `spec:<field>` places into it), and
+    which field it is on is a store every copy of it draws (`editing`, `$lib/fieldWidget.ts`),
+    so `openField` says «this field» and then opens or focuses the place. No dialog asks «which
+    verb?» any more — the CLI's refusal opens the same place with the field named.
 
     Every control that opens a place, a sheet or a modal wears rule 22's `›` (da-jozgv), a `+`
     face excepted. The

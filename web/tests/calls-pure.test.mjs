@@ -145,6 +145,7 @@ seed(
 		glyph: 'c',
 		glyph_by: { key: 'size', map: { big: 'C' } },
 		icon: '<svg viewBox="0 0 1 1"/>',
+		remainder: 'note',
 		subfields: { size: SIZE }
 	})
 );
@@ -198,7 +199,8 @@ const SAMPLES = {
 				{ name: 'brand', kind: 'required', value: '' },
 				{ name: 'note', kind: 'optional', value: '' },
 				{ name: 'size', kind: 'assign', value: 'big' }
-			]
+			],
+			'note'
 		]
 	],
 	specArgv: [[{ field: 'coffee', verb: 'occur', color: '#123456', description: 'beans', allowed_states: null, state_colors: {} }]],

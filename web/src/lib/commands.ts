@@ -569,16 +569,18 @@ export function fieldVerb(name: string, all: Pill[], fields: FieldButton[]): { f
 const BACKUPS = ['db backup', 'db restore'];
 
 /**
- * Does a tap on `name` open a field's spec? `spec` under a field pill does
- * (da-ybai9, vividn: «no need for sub commands or pressing enter»), and the
- * spec is a place (da-hbrfg), which the pane opens with the fill.
+ * Does a tap on `name` open the field widget? `track` does, on a new field
+ * or the pilled one (da-fu29p), and so does `spec` under a field pill
+ * (da-ybai9, vividn: «no need for sub commands or pressing enter»): a field
+ * is made and edited in a place (da-hbrfg), which the pane opens with the
+ * fill.
  */
-export const opensSpec = (name: string, pills: Pill[]): boolean =>
-	name === 'spec' && argumentsOf(pills).some((p) => p.kind === 'field');
+export const opensField = (name: string, pills: Pill[]): boolean =>
+	name === 'track' || (name === 'spec' && argumentsOf(pills).some((p) => p.kind === 'field'));
 
-/** Does a tap on `name` drill into its subcommands? Not where it opens the spec instead. */
+/** Does a tap on `name` drill into its subcommands? Not where it opens the field widget instead. */
 export const drills = (grammar: Grammar | null, name: string, pills: Pill[]): boolean =>
-	!!grammar?.get(name)?.subcommands.length && !opensSpec(name, pills);
+	!!grammar?.get(name)?.subcommands.length && !opensField(name, pills);
 
 /**
  * The bar while `name` is drilled into: `< Back`, Help (which no bar is

@@ -1,62 +1,43 @@
 <!--
-	The web's «which verb?» (da-94q1), and the rest of what a field is
-	(da-ci85o): ONE modal for declaring a field and for editing its spec.
-	vividn, 2026-09-23 — «Let's redesign the spec modal (the one that pops up
-	with track as well), they should be very similar, maybe even the same.»
+	The form a field is declared and edited in (da-94q1, da-ci85o), the body
+	of the field widget ($lib/layout/FieldWidget.svelte, da-fu29p): vividn,
+	2026-10-08 — «let's fully combine track/spec widgets into just 1».
+	There is no dialog: a field is made and edited in a place.
 
-	A field cannot be born without a verb (da-c8mh), so this is the question
-	datum asks whenever a field is declared — and the four pictograms are
-	the whole of it. The glyphs are the CLI's own (`VERBS` in
-	$lib/track.ts, `track_action_label` in datum-core): the row this modal
+	A field cannot be born without a verb (da-c8mh), and the four pictograms
+	are the whole of that question. The glyphs are the CLI's own (`VERBS` in
+	$lib/track.ts, `track_action_label` in datum-core): the row this form
 	is about to write will print `TRACK●` in every action column there is,
-	so what a person presses here is the shape they will meet again.
+	so what a person presses here is the shape they will meet again. Each is
+	named by what a field of that kind DOES — happens, lasts, switches, a
+	note — with the CLI's word under it.
 
-	A field with a spec also picks the GLYPH its dots draw (da-ogyxa):
-	one for the field, or one by a data key's value with the field's as
-	the default, and one per state beside the state's colour. `track`
-	carries none, so declaring asks for none.
+	A NEW field starts as its name box and the examples (`EXAMPLES`, less
+	the ones there is already a field for): one tap fills the form — never
+	the database — with a field of that kind, to be read, changed and saved
+	or not. Named, it shows Basics and nothing
+	else: the kind, the colour, the keys its entries carry (da-h119q: a name
+	and a KIND — required, optional, default or assign, da-p3hxn), the key
+	the rest of a line goes to, and a switch's states. `track` carries all
+	of that in one command, so that is all a new field is asked.
 
-	Segmented: Basics · States · Keys · Aliases · Placement. Track is this
-	modal opened on Basics, and that is all it needs — name, pictogram,
-	Done, the same taps it always took. The keys a field's entries carry
-	are on Basics too (da-h119q): a name and a KIND — required, optional,
-	default or assign, each with its value where it has one (da-p3hxn),
-	the four ways a log line names a key — the first thing a person adds
-	to a field, and `track` carries them. The rows are `spec show`'s own
-	`keys`, parsed by the CLI, so what is saved is what it reads back. The
-	Keys tab has the rest of a key — its type, whether it is in the slug —
-	and it, Aliases and Placement are a spec's alone (da-cap5m, da-btyvj),
-	so a field being declared has them shut. Placement is a fifth tab
-	because it is a drag surface, not a row of inputs — cheap to move under
-	Basics.
-
-	Keys are grouped required over the rest, so which is which reads at a
-	glance and not only off each row's kind, and each row says whether
-	the key is IN THE SLUG — whether it identifies an entry or merely
-	annotates it. Aliases are made by datum from the verb and the states
-	until that is switched off (`no_autoalias`); from then on the list is
-	the person's, added to and removed from here.
+	A field with a spec has the five segments — Basics · States · Keys ·
+	Aliases · Placement — and picks the GLYPH its dots draw (da-ogyxa): one
+	for the field, or one by a data key's value, and one per state beside
+	the state's colour. Keys are grouped required over the rest, and each
+	row says whether the key is IN THE SLUG. Aliases are made by datum from
+	the verb and the states until that is switched off (`no_autoalias`).
+	The rows are `spec show`'s own `keys`, parsed by the CLI, so what is
+	saved is what it reads back.
 
 	What it writes is decided by what it was opened on. A new field gets
-	`track`, the one command that writes the TRACK document, and so only
-	what `track` can carry is asked (no descriptions, no glyphs). A field with
-	a spec gets the whole edited spec back in ONE `spec set --from-json` —
-	the `set` shape, the list entire, never a stream of `add-state`s.
-
-	It is opened from three doors to declare and is the same modal at each:
-	the widget bar's (+), a filtered list's `+` with its verb already
-	chosen, and the CLI's refusal, which arrives with the field already
-	typed. The `<dialog>` pattern is Confirm's and Chooser's — `showModal`
-	puts focus inside, Escape and a click on the backdrop close it and run
-	nothing.
-
-	Editing a spec is a PLACE, not a question (da-hbrfg): «a modal asks; a
-	place is a tab». `inline` draws the same form without the dialog, in
-	the `spec` widget ($lib/layout/SpecWidget.svelte), which is what a
-	field's `spec:<field>` tab holds. Declaring stays the dialog.
+	`track`, the one command that writes the TRACK document. A field with a
+	spec gets the whole edited spec back in ONE `spec set --from-json` — the
+	`set` shape, the list entire, never a stream of `add-state`s. Either is
+	handed up as `close`'s argv for the widget to run; null runs nothing.
 -->
 <script lang="ts">
-	import { createEventDispatcher, onMount } from 'svelte';
+	import { createEventDispatcher } from 'svelte';
 	import { act } from './act.js';
 	import { fieldNameHint, suggestFieldName } from './fieldName.js';
 	import { defaultColor } from './fields.js';
@@ -66,6 +47,7 @@
 	import Swatch from './Swatch.svelte';
 	import {
 		editedSpec,
+		EXAMPLES,
 		keyRows,
 		KEY_KINDS,
 		KEY_TYPES,
@@ -76,6 +58,7 @@
 		trackArgv,
 		VERBS,
 		type DerivedAlias,
+		type Example,
 		type KeyRow,
 		type Place,
 		type Spec,
@@ -91,13 +74,14 @@
 	export let ignored: string[] = [];
 	/** The spec to edit (`spec show`); null declares a new field instead. */
 	export let spec: Spec | null = null;
-	/** Drawn in a pane rather than as a dialog: the `spec` widget's body. */
-	export let inline = false;
+	/** The fields there are already: an example of that name would re-declare one, so it is not offered. */
+	export let taken: string[] = [];
+	/** Whether it differs from what it opened as: what leaving it now would lose. */
+	export let dirty = false;
 
 	const dispatch = createEventDispatcher<{ close: string[] | null }>();
 	const TABS = ['basics', 'states', 'keys', 'aliases', 'placement'] as const;
 
-	let dialog: HTMLElement;
 	let tab: (typeof TABS)[number] = 'basics';
 	let color = spec?.color ?? '';
 	let description = spec?.description ?? '';
@@ -114,15 +98,11 @@
 	let aliases: DerivedAlias[] = (spec?.derived_aliases ?? []).map((a) => ({ ...a }));
 	let place: Place = spec ? placeOf(spec) : {};
 	let icon = spec?.icon ?? '';
-	/** The file the icon came from, while this modal is open; a stored icon has none. */
+	/** The file the icon came from, while this form is open; a stored icon has none. */
 	let iconName = '';
+	/** The key a line's leftover words go to (`-R KEY`), or none. */
+	let remainder = spec?.remainder ?? '';
 	if (spec) verb = spec.verb;
-	/** The argv to run, set by whatever was pressed; null closes and runs nothing. */
-	let chosen: string[] | null = null;
-
-	onMount(() => {
-		if (!inline) (dialog as HTMLDialogElement).showModal();
-	});
 
 	// What the name would do if it were submitted, before the press rather
 	// than after it: `my coffee` is what a person naturally types and the
@@ -151,12 +131,29 @@
 					glyph,
 					glyph_by,
 					place,
-					icon
+					icon,
+					remainder
 				})
 			)
-		: trackArgv(field.trim() || '<field>', verb ?? 'occur', states, color, keys);
-	// A new field's states are a switch's: `track` carries them for no other verb.
-	$: statesOpen = spec !== null || verb === 'switch';
+		: trackArgv(field.trim() || '<field>', verb ?? 'occur', states, color, keys, remainder);
+	let opened: string | undefined;
+	$: {
+		const now = JSON.stringify([verb, argv]);
+		opened ??= now;
+		dirty = now !== opened;
+	}
+	// A new field with no name and no kind yet is its name box and the examples.
+	$: named = spec !== null || field.trim() !== '' || verb !== null;
+	$: examples = EXAMPLES.filter((e) => !taken.includes(e.field));
+
+	/** Fill the form with `example`: nothing is written until it is saved. */
+	function fill(example: Example) {
+		field = example.field;
+		verb = example.verb;
+		states = (example.states ?? []).map((name) => ({ name, color: '', description: '', glyph: '' }));
+		keys = (example.keys ?? []).map((k) => ({ ...k, value: '', value_type: 'any', in_slug: false }));
+		remainder = example.remainder ?? '';
+	}
 
 	// da-45wgz: the file is read as it is; whether it is an icon — SVG,
 	// under the cap, nothing that runs — is the CLI's to say on Done, in
@@ -181,51 +178,27 @@
 		return next;
 	}
 
-	/** Close with `next` to run, or null to run nothing. */
-	function finish(next: string[] | null) {
-		chosen = next;
-		if (inline) dispatch('close', next);
-		else (dialog as HTMLDialogElement).close();
-	}
-
-	/** A click on the dialog's own box is on its backdrop: close, running nothing. */
-	function backdrop(e: MouseEvent) {
-		if (!inline && e.target === dialog) finish(null);
-	}
+	/** Hand `next` up to run, or null to run nothing. */
+	const finish = (next: string[] | null) => dispatch('close', next);
 </script>
 
-<!-- The backdrop is the dialog's own box outside its content, so a click on
-     it lands on the dialog: Chooser's rule, and the pointer's Escape. -->
-<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-noninteractive-element-interactions -->
-<svelte:element
-	this={inline ? 'div' : 'dialog'}
-	class="spec"
-	class:inline
-	role={inline ? 'region' : undefined}
-	aria-label={spec ? `the spec of ${field}` : 'track a field'}
-	bind:this={dialog}
-	on:close={() => dispatch('close', chosen)}
-	on:click={backdrop}
->
-	<form method="dialog" on:submit|preventDefault={() => ready && finish(argv)}>
-		<header>
-			{#if spec}
-				<h2>{field}</h2>
-			{:else}
-				<!-- svelte-ignore a11y-autofocus -->
-				<input
-					class="field"
-					bind:value={field}
-					placeholder="field"
-					aria-label="the field's name"
-					spellcheck="false"
-					autocapitalize="none"
-					autocomplete="off"
-					autofocus
-				/>
-			{/if}
-			<button type="button" class="close" aria-label="close" on:click={() => finish(null)}>✕</button>
-		</header>
+<div class="field-form" role="region" aria-label={spec ? `the spec of ${field}` : 'track a field'}>
+	<form on:submit|preventDefault={() => ready && finish(argv)}>
+		{#if spec}
+			<h2>{field}</h2>
+		{:else}
+			<!-- svelte-ignore a11y-autofocus -->
+			<input
+				class="field"
+				bind:value={field}
+				placeholder="name a field"
+				aria-label="the field's name"
+				spellcheck="false"
+				autocapitalize="none"
+				autocomplete="off"
+				autofocus
+			/>
+		{/if}
 		{#if hint}
 			<p class="hint">
 				{hint}{#if fixed}
@@ -234,23 +207,38 @@
 			</p>
 		{/if}
 
-		<div class="tabs" role="tablist">
-			{#each TABS as name (name)}
-				<button
-					type="button"
-					role="tab"
-					id="spec-tab-{name}"
-					aria-controls="spec-panel"
-					data-tab={name}
-					aria-selected={tab === name}
-					disabled={name === 'states' ? !statesOpen : name !== 'basics' && !spec}
-					on:click={() => (tab = name)}>{name}</button
-				>
-			{/each}
-		</div>
+		{#if spec}
+			<div class="tabs" role="tablist">
+				{#each TABS as name (name)}
+					<button
+						type="button"
+						role="tab"
+						id="spec-tab-{name}"
+						aria-controls="spec-panel"
+						data-tab={name}
+						aria-selected={tab === name}
+						on:click={() => (tab = name)}>{name}</button
+					>
+				{/each}
+			</div>
+		{/if}
 
-		<div class="panel" role="tabpanel" id="spec-panel" aria-labelledby="spec-tab-{tab}" data-panel={tab}>
-			{#if tab === 'basics'}
+		<div class="panel" role="tabpanel" id="spec-panel" aria-labelledby={spec ? `spec-tab-${tab}` : undefined} data-panel={tab}>
+			{#if !named && examples.length}
+				<!-- Each fills the form, not the database; «+ new field» is the way back to them. -->
+				<div class="examples" role="group" aria-label="examples">
+					<span class="label">or start from an example</span>
+					{#each examples as example (example.field)}
+						<button type="button" data-example={example.field} on:click={() => fill(example)}>
+							<span class="name"
+								><span class="mark">{VERBS.find((v) => v.verb === example.verb)?.glyph}</span> {example.field}</span
+							>
+							<span class="what">{example.shows}</span>
+						</button>
+					{/each}
+				</div>
+			{/if}
+			{#if named && tab === 'basics'}
 				<div class="verbs" role="radiogroup" aria-label="what a press logs">
 					{#each VERBS as choice (choice.verb)}
 						<button
@@ -263,8 +251,8 @@
 							on:click={() => (verb = choice.verb)}
 						>
 							<span class="glyph">{choice.glyph}</span>
-							<span class="name">{choice.verb}</span>
-							<span class="what">{choice.what}</span>
+							<span class="name">{choice.what}</span>
+							<span class="what">{choice.verb}</span>
 						</button>
 					{/each}
 				</div>
@@ -305,6 +293,10 @@
 					{/each}
 				</ul>
 				<button type="button" class="add" on:click={addKey}>+ key</button>
+				<label class="row" title="the words of a line that no key takes are kept under this key, as -R KEY keeps them">
+					<span class="label">rest of line</span>
+					<input class="remainder" bind:value={remainder} placeholder="key" spellcheck="false" autocapitalize="none" />
+				</label>
 				{#if spec}
 					<label class="row">
 						<span class="label">description</span>
@@ -380,7 +372,10 @@
 						{/if}
 					</div>
 				{/if}
-			{:else if tab === 'states'}
+			{/if}
+			<!-- A new field's states are a switch's, asked under its kind: `track` carries them for no other verb. -->
+			{#if !spec && verb === 'switch'}<span class="label">states</span>{/if}
+			{#if tab === 'states' || (!spec && verb === 'switch')}
 				<ul class="states" class:glyphed={spec}>
 					{#each states as state, i (state)}
 						<li class="state">
@@ -506,7 +501,7 @@
 				>
 			{:else if tab === 'placement'}
 				<Placement {field} occur={verb === 'occur'} bind:place />
-			{:else}
+			{:else if tab === 'aliases'}
 				<label class="auto"
 					><input type="checkbox" class="autoalias" bind:checked={autoalias} /> made from the verb and states</label
 				>
@@ -556,7 +551,7 @@
 
 		<div class="buttons">
 			<button type="button" class="cancel" on:click={() => finish(null)}>Cancel</button>
-			<button class="commit" use:act={'run'} type="submit" disabled={!ready}>Done</button>
+			<button class="commit" use:act={'run'} type="submit" disabled={!ready}>{spec ? 'Done' : 'Save'}</button>
 		</div>
 		{#if verb !== null && !spec}
 			<code class="preview">{shellJoin(argv)}</code>
@@ -574,47 +569,30 @@
 			</div>
 		{/if}
 	</form>
-</svelte:element>
+</div>
 
 <style>
-	/* Narrow enough for a 320px phone with the backdrop showing either
-	   side. One height whatever the tab (da-laxpn): a centred dialog that
-	   followed its content jumped on every tab press. 38rem is the tallest
-	   tab's natural height, measured — Basics, with two keys on it since
-	   da-h119q; never taller than the screen. */
-	.spec {
-		box-sizing: border-box;
-		inline-size: min(24rem, calc(100vw - 2rem));
-		block-size: min(38rem, calc(100dvh - 2rem));
-		overflow: auto;
-		background: var(--ground);
+	/* The room under the widget's chips, and never less than its name, tabs,
+	   a few rows and Done: a pane shorter than that scrolls the widget. A
+	   long tab scrolls in the panel. */
+	.field-form {
+		display: flex;
+		flex: 1 1 0;
+		min-block-size: 14rem;
 		color: var(--ink);
-		border: 1px solid var(--rule);
-		border-radius: 6px;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		font-size: 0.85rem;
-	}
-
-	/* In a pane, the pane's box: its frame is the border. */
-	.spec.inline {
-		inline-size: auto;
-		block-size: 100%;
-		border: 0;
-		padding: 0.5rem 0.6rem;
-	}
-
-	.spec::backdrop {
-		background: rgb(0 0 0 / 0.6);
 	}
 
 	form {
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
-		block-size: 100%;
+		flex: 1;
+		min-inline-size: 0;
 	}
 
-	/* Header, hint, tabs and buttons stay put; a long tab scrolls here. */
+	/* The name, hint, tabs and buttons stay put; a long tab scrolls here. */
 	.panel {
 		display: flex;
 		flex-direction: column;
@@ -622,17 +600,6 @@
 		flex: 1;
 		min-block-size: 0;
 		overflow: auto;
-	}
-
-	header {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	header > :first-child {
-		flex: 1;
-		min-inline-size: 0;
 	}
 
 	h2 {
@@ -657,7 +624,8 @@
 
 	/* One control of five segments: the chosen one carries the accent
 	   along its foot, the mockup's underline. Each is as wide as its word
-	   and shares out the rest, so five words fit a 320px phone. */
+	   and shares out the rest, with next to no padding of its own, so five
+	   words fit the place's modal on a 320px screen (tests/track.test.mjs). */
 	.tabs {
 		display: flex;
 		border: 1px solid var(--rule);
@@ -668,7 +636,7 @@
 	.tabs button {
 		flex: 1 1 auto;
 		min-block-size: 28px;
-		padding-inline: 0.2rem;
+		padding-inline: 0.1rem;
 		background: #1a1a30;
 		border: 0;
 		border-inline-start: 1px solid var(--rule);
@@ -688,17 +656,41 @@
 		border-block-end-color: var(--accent);
 	}
 
-	.tabs button:disabled {
-		opacity: 0.4;
-		cursor: default;
-	}
-
-	/* Two across at every width the modal has: four fingertips, not a list
-	   of words with a picture beside each. */
-	.verbs {
+	/* Two across at every width the form has: four fingertips, not a list
+	   of words with a picture beside each — and the six examples the same. */
+	.verbs,
+	.examples {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
 		gap: 0.4rem;
+	}
+
+	.examples .label {
+		grid-column: 1 / -1;
+		inline-size: auto;
+	}
+
+	.examples button {
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+		background: #1a1a30;
+		border: 1px solid var(--rule);
+		border-radius: 6px;
+		padding: 0.35rem 0.5rem;
+		color: var(--ink-bright);
+		font: inherit;
+		text-align: start;
+		cursor: pointer;
+	}
+
+	.examples button:hover,
+	.examples button:focus-visible {
+		border-color: var(--accent);
+	}
+
+	.mark {
+		color: var(--accent);
 	}
 
 	.verb {
@@ -718,7 +710,7 @@
 		text-align: center;
 	}
 
-	/* The pictogram is the point of the modal: big enough to be a picture
+	/* The pictogram is the point of the question: big enough to be a picture
 	   rather than a character that happens to be in front of the word. */
 	.glyph {
 		font-size: 1.6rem;
@@ -984,7 +976,6 @@
 	.buttons button,
 	.ignored button,
 	.fix,
-	.close,
 	.remove,
 	.add {
 		box-sizing: border-box;
@@ -999,7 +990,6 @@
 		cursor: pointer;
 	}
 
-	.close,
 	.remove {
 		padding: 0.2rem 0.45rem;
 	}

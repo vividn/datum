@@ -31,6 +31,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { along, widgetPane } from './support/layout.mjs';
+import { SPEC } from './support/spec.mjs';
 const { cases } = JSON.parse(
 	readFileSync(
 		fileURLToPath(new URL('../../tests/fixtures/field-name.json', import.meta.url)),
@@ -57,7 +58,7 @@ after(stopApp);
 
 // ONE APP for the file (da-6b3dj, sharedApp in support/app.mjs): `solo`
 // empties the database each test wrote, so the counts below are this
-// test's, and closes the Track modal a test left open.
+// test's, and closes the field widget a test left open.
 const shared = sharedApp();
 // `main` as a draft of the REPL and the widget bar alone: nothing here
 // reads the rest of the day frame, and drawing it costs what a boot did
@@ -66,18 +67,16 @@ const BAR = JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPan
 const onBar = (fn) => shared.solo(fn, BAR);
 
 /**
- * Open the Track modal and type `field` into it, without submitting.
+ * Open the field widget on a new field and type `field` into it, without
+ * submitting.
  *
  * A verb is chosen at the same time: Done needs both (da-94q1), so a
  * test about the NAME has to answer the other half or every case would
  * read as refused for the wrong reason.
  */
 async function typeIntoTheForm(page, field) {
-	if ((await page.locator('dialog.spec').count()) === 0) {
-		await page.locator('.bar button.add-button').click();
-		await page.locator('dialog.spec').waitFor();
-	}
-	const form = page.locator('dialog.spec');
+	const form = page.locator(SPEC);
+	if ((await form.count()) === 0) await page.locator('.bar button.add-button').click();
 	await form.locator('input.field').fill(field);
 	await form.locator('button[data-verb="occur"]').click();
 	const hint = form.locator('p.hint');
@@ -87,10 +86,13 @@ async function typeIntoTheForm(page, field) {
 	};
 }
 
-/** Press Done on the open modal, the way a user declares a field. */
+/** Press Save on the open form, the way a user declares a field. */
 async function trackIt(app, field) {
-	await app.page.locator('dialog.spec button.commit').click();
+	await app.page.locator(`${SPEC} button.commit`).click();
 	await chipIndex(app, field);
+	// The widget stays on the field it made, over the page: left, to press the chip.
+	await app.page.keyboard.press('Escape');
+	await app.page.locator(SPEC).waitFor({ state: 'detached' });
 	// A second on: the clock is held, and a log at the instant the field
 	// was declared would share the declaration's slug.
 	await app.clock.forward(1000);
@@ -156,8 +158,8 @@ describe('a field name the (+) form accepts', () => {
 	test('one press of the offered name gets you a usable one', async () => {
 		await onBar(async (app) => {
 			await typeIntoTheForm(app.page, 'cups=2');
-			await app.page.locator('dialog.spec p.hint button.fix').click();
-			assert.equal(await app.page.locator('dialog.spec input.field').inputValue(), 'cups_2');
+			await app.page.locator(`${SPEC} p.hint button.fix`).click();
+			assert.equal(await app.page.locator(`${SPEC} input.field`).inputValue(), 'cups_2');
 
 			await trackIt(app, 'cups_2');
 			await pressChip(app, 'cups_2');

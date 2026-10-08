@@ -1,24 +1,24 @@
-// A field's spec is a PLACE (da-hbrfg): the `spec` widget in a `spec:<field>`
-// tab, or on a desktop the same widget in the place modal (da-jozgv). The
-// Track dialog that declares a field is the same form, so SPEC finds any of
-// them — and not the widget's host, which is classed by its kind, nor the
-// copy a tab slides in as (`.beside`), which is thrown away when it lands
-// (da-6du3o): what is typed there is lost.
+// A field is made and edited in the field widget (da-fu29p): in its place —
+// a tab, or on a desktop the same widget in the place modal (da-jozgv) — or
+// in a pane someone put it in. SPEC finds its form, and not the copy a tab
+// slides in as (`.beside`), which is thrown away when it lands (da-6du3o):
+// what is typed there is lost.
 
-export const SPEC = '.spec:is(dialog, .inline):not(.beside *)';
+export const SPEC = '.field-form:not(.beside *)';
 
 /** Any copy of the form, the sliding one too: what must be gone before another opens. */
-const ANY = '.spec:is(dialog, .inline)';
+const ANY = '.field-form';
 
 /**
- * Open `field`'s spec as the console does, once any place before it has
- * gone — a Done slides back before its tab closes. `saved` is `datum.spec`'s
- * answer, what Done ran or null when left, BOXED: awaiting this must not
+ * Open the field widget on `field` as the console does — none is a new
+ * field, `verb` its kind — once any place before it has gone: a Done slides
+ * back before its tab closes. `saved` is `datum.field`'s answer, what the
+ * place's next save ran or null when left, BOXED: awaiting this must not
  * await the save.
  */
-export async function openSpec(page, field) {
+export async function openSpec(page, field, verb) {
 	await page.locator(ANY).waitFor({ state: 'detached' });
-	return { saved: page.evaluate((f) => window.datum.spec(f), field) };
+	return { saved: page.evaluate(([f, v]) => window.datum.field(f, v), [field, verb]) };
 }
 
 /** Leave the place running nothing: its Cancel. */

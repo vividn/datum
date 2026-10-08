@@ -2,7 +2,7 @@
 //
 // A field cannot be born verbless (da-c8mh): `track <field>` on a field
 // with neither a spec nor a log refuses and names the four choices. The
-// CLI asks with that sentence; the web asks with `SpecModal.svelte`, and
+// CLI asks with that sentence; the web asks with `FieldForm.svelte`, and
 // this module is the one place that knows what the four are, what they
 // look like, and what answering one runs — or, on a field that already
 // has a spec, what saving the edited one runs (da-ci85o).
@@ -16,7 +16,8 @@
 //
 // Pure, and away from the markup as `fields.ts` is: node loads this file
 // as it is, which is what lets the glyph table be compared with the CLI's
-// own render. The modal itself is `specModal.ts`.
+// own render. The form is `FieldForm.svelte`, in the field widget
+// (`fieldWidget.ts`).
 
 import type { SpecKey } from './fields.js';
 import type { RunResult } from './run.js';
@@ -29,7 +30,7 @@ export interface VerbChoice {
 	verb: Verb;
 	/** The glyph the CLI prints after `TRACK` for a field declared this way. */
 	glyph: string;
-	/** One line of what the verb is, for the person choosing. */
+	/** What a field of this kind does, in everyday words: the name a newcomer chooses by (da-fu29p). */
 	what: string;
 }
 
@@ -38,10 +39,43 @@ export interface VerbChoice {
  * smallest claim a field can make.
  */
 export const VERBS: VerbChoice[] = [
-	{ verb: 'occur', glyph: '●', what: 'a thing that happened' },
-	{ verb: 'start', glyph: '█', what: 'a block that begins and ends' },
-	{ verb: 'switch', glyph: '▞', what: 'one of several states' },
-	{ verb: 'add', glyph: '¢', what: 'a record you type' }
+	{ verb: 'occur', glyph: '●', what: 'happens' },
+	{ verb: 'start', glyph: '█', what: 'lasts (start/end)' },
+	{ verb: 'switch', glyph: '▞', what: 'switches between states' },
+	{ verb: 'add', glyph: '¢', what: 'a note' }
+];
+
+/** A field to start from: what an example fills the form with, never the database (da-fu29p). */
+export interface Example {
+	field: string;
+	verb: Verb;
+	/** What it shows of datum, under its name. */
+	shows: string;
+	states?: string[];
+	keys?: Pick<KeyRow, 'name' | 'kind'>[];
+	remainder?: string;
+}
+
+const optional = (name: string) => ({ name, kind: 'optional' as const });
+
+/**
+ * vividn's six (2026-10-08): «field by field, so that it fills out the spec
+ * with an example … showcasing the various types, as well as something with
+ * extra data». A spec has no range, so mood's -5 to +5 is its caption and
+ * the key is a required one.
+ */
+export const EXAMPLES: Example[] = [
+	{ field: 'alcohol', verb: 'occur', shows: 'each drink, when it happens' },
+	{ field: 'sleep', verb: 'start', shows: 'start at night, end in the morning' },
+	{ field: 'activity', verb: 'switch', shows: 'admin, meeting or focus, until you end it', states: ['admin', 'meeting', 'focus'] },
+	{
+		field: 'person',
+		verb: 'add',
+		shows: 'a note with keys: name, email, city',
+		keys: [{ name: 'id', kind: 'required' }, ...['first_name', 'last_name', 'email', 'city', 'number'].map(optional)]
+	},
+	{ field: 'mood', verb: 'occur', shows: 'with a number, -5 to +5', keys: [{ name: 'level', kind: 'required' }] },
+	{ field: 'emotion', verb: 'occur', shows: 'with any words after it', remainder: 'emotions' }
 ];
 
 /** The action word `tail` prints for a field declared with `verb`. */
@@ -68,13 +102,15 @@ export interface StateRow {
  * `track` carries, and so the modal does not ask for one there. Its keys
  * are (da-h119q, da-p3hxn): `--required-key NAME`, `--key NAME` for an
  * optional one, `--key NAME=DEFAULT`, and `NAME=VALUE` for an assign.
+ * `-R KEY` is where a line's leftover words go (da-fu29p).
  */
 export function trackArgv(
 	field: string,
 	verb: Verb,
 	states: StateRow[] = [],
 	color = '',
-	keys: KeyRow[] = []
+	keys: KeyRow[] = [],
+	remainder = ''
 ): string[] {
 	const argv = ['track', field, '--verb', verb];
 	if (verb === 'switch') {
@@ -86,6 +122,7 @@ export function trackArgv(
 	for (const { name, kind, value } of keys.filter((k) => k.name.trim()))
 		if (kind === 'assign') argv.push(`${name.trim()}=${value}`);
 		else argv.push(kind === 'required' ? '--required-key' : '--key', kind === 'default' && value.trim() ? `${name.trim()}=${value}` : name.trim());
+	if (remainder.trim()) argv.push('-R', remainder.trim());
 	return argv;
 }
 
@@ -108,6 +145,8 @@ export interface Spec {
 	no_autoalias?: boolean;
 	/** The field is never off (da-cwieh); left out of `spec show` when false. */
 	never_false?: boolean;
+	/** The key a line's leftover words go to, as `-R KEY` sends them; left out when none. */
+	remainder?: string;
 	/** The field's `<svg>` icon for the dayview (da-45wgz); the band draws `glyph` in its place. */
 	icon?: string;
 	[key: string]: unknown;
@@ -337,6 +376,8 @@ export function editedSpec(
 		neverFalse?: boolean;
 		place?: Place;
 		icon?: string;
+		/** Where leftover words go; empty clears it, left out the spec's is kept. */
+		remainder?: string;
 	}
 ): Spec {
 	const rows = edit.states.map((s) => ({ ...s, name: s.name.trim() })).filter((s) => s.name);
@@ -365,8 +406,9 @@ export function editedSpec(
 	const glyph_by = edit.glyph_by === undefined ? spec.glyph_by : key ? { key, map } : undefined;
 	const icon = edit.icon === undefined ? spec.icon : edit.icon.trim();
 	const never_false = edit.neverFalse ?? (spec.never_false === true);
+	const remainder = (edit.remainder ?? spec.remainder ?? '').trim();
 	// `keys` and `keys_by_state` are the CLI's reading of the spec, not the spec: never sent (da-p3hxn).
-	const { state_descriptions: _d, glyph: _g, state_glyphs: _s, glyph_by: _b, icon: _i, keys: _k, keys_by_state: _ks, never_false: _n, ...rest } = spec;
+	const { state_descriptions: _d, glyph: _g, state_glyphs: _s, glyph_by: _b, icon: _i, keys: _k, keys_by_state: _ks, never_false: _n, remainder: _r, ...rest } = spec;
 	// The key rows are the whole answer: every place a key can live is written from them.
 	if (edit.keys) for (const k of ['id_keys', 'data_keys', 'assign', 'id_assign']) delete rest[k];
 	// The placement is the Placement tab's whole answer: free drops the anchor, tied drops y/height.
@@ -386,6 +428,7 @@ export function editedSpec(
 		...(glyph_by ? { glyph_by } : {}),
 		...(icon ? { icon } : {}),
 		...(never_false ? { never_false } : {}),
+		...(remainder ? { remainder } : {}),
 		...(edit.keys && placed(spec, edit.keys)),
 		...(edit.autoalias !== undefined && { no_autoalias: !edit.autoalias }),
 		// Only a list datum does not make is the person's to send; the CLI

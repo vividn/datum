@@ -14,6 +14,7 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
         required_keys: Vec<String>,
         data_keys: Vec<String>,
         id_keys: Vec<String>,
+        remainder: Option<String>,
     }
     let registry: Vec<LiftedSpec<TrackParsing>> = vec![
         local_value(None, Some("verb"), |p, v| {
@@ -46,6 +47,10 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
         }),
         local_value(Some('K'), None, |p, v| {
             p.id_keys.push(v.to_string());
+            Ok(())
+        }),
+        local_value(Some('R'), Some("remainder"), |p, v| {
+            p.remainder = Some(v.to_string());
             Ok(())
         }),
     ];
@@ -85,6 +90,7 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
         data_keys: composed.data_keys,
         id_keys: composed.id_keys,
         assign,
+        remainder: composed.remainder,
     })
 }
 
