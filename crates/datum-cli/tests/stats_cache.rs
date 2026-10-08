@@ -181,7 +181,7 @@ fn assert_same_over(db: &Db, after: &str, every: bool) {
         "after {after}: the cache holds nothing, so nothing was compared"
     );
     assert_eq!(
-        check_sample(db, false).unwrap(),
+        check_sample(db, false).unwrap().1,
         Vec::<(String, String)>::new()
     );
 }
@@ -311,7 +311,7 @@ fn check_names_a_corrupted_cached_day_and_fix_drops_it() {
     };
     let truth = compute(&all(true), &db);
     assert_eq!(compute(&all(false), &db), truth);
-    assert_eq!(check_sample(&db, false).unwrap(), vec![]);
+    assert_eq!(check_sample(&db, false).unwrap(), (5, vec![]));
 
     db.conn()
         .execute(
@@ -322,14 +322,14 @@ fn check_names_a_corrupted_cached_day_and_fix_drops_it() {
         .unwrap();
     let corrupt = vec![("activity".to_string(), "2026-06-11".to_string())];
     assert_ne!(compute(&all(false), &db), truth, "the corruption is read");
-    assert_eq!(check_sample(&db, false).unwrap(), corrupt);
-    assert_eq!(check_sample(&db, true).unwrap(), corrupt);
+    assert_eq!(check_sample(&db, false).unwrap(), (5, corrupt.clone()));
+    assert_eq!(check_sample(&db, true).unwrap(), (5, corrupt));
     assert_eq!(
         compute(&all(false), &db),
         truth,
         "--fix dropped it, stats refilled it"
     );
-    assert_eq!(check_sample(&db, false).unwrap(), vec![]);
+    assert_eq!(check_sample(&db, false).unwrap(), (5, vec![]));
 }
 
 /// datum.day hears any write to the file as a change and re-runs every pane

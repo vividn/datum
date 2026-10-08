@@ -81,7 +81,7 @@ field from it, since it moves their midnights. The tables, triggers and the
 index they read are `db/stats_cache.sql`, laid down by the v55→v56 migration
 and after `schema.sql` at every open; a later migration that drops or
 rebuilds an `entries` column they name must drop them first. A span's seconds are `floor(end) − floor(start)`, which adds up
-exactly across midnights. `datum check stats` recomputes a sample of days.
+exactly across midnights. `datum check stats` recomputes a sample of days and says how many.
 
 ## CLI conventions
 

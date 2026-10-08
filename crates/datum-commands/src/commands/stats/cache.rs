@@ -273,14 +273,17 @@ fn stamp() -> String {
 const SAMPLE: usize = 32;
 
 /// `datum check stats`: recompute a random sample of cached days from the
-/// entries, each over that day alone, and name every `(field, day)` whose
-/// cached reading differs. With `fix`, a differing day and those after it
-/// are dropped from the cache, so the next `stats` fills them again.
-pub fn check_sample(db: &Db, fix: bool) -> Result<Vec<(String, String)>> {
+/// entries, each over that day alone: how many it recomputed, and every
+/// `(field, day)` whose cached reading differs. With `fix`, a differing day
+/// and those after it are dropped from the cache, so the next `stats` fills
+/// them again.
+pub fn check_sample(db: &Db, fix: bool) -> Result<(usize, Vec<(String, String)>)> {
     let zones = db.zone_timeline(Zone::host(), Some(DatumTime::now().utc - Duration::days(4)))?;
     let cache = Cache::new(db, &zones)?;
     let mut differ = Vec::new();
-    for (field, day) in db.stats_cache_sample(SAMPLE)? {
+    let sample = db.stats_cache_sample(SAMPLE)?;
+    let recomputed = sample.len();
+    for (field, day) in sample {
         let date: NaiveDate = day.parse().context("stats cache: bad day")?;
         // A day a write has reached since is filled again first.
         cache.fill(&field, Some(date))?;
@@ -307,7 +310,7 @@ pub fn check_sample(db: &Db, fix: bool) -> Result<Vec<(String, String)>> {
         }
     }
     differ.sort();
-    Ok(differ)
+    Ok((recomputed, differ))
 }
 
 /// A class and the bit the cache stores it as.

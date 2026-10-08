@@ -144,7 +144,9 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     }
     if run_stats {
         examined.checkers.push("stats");
-        issues.extend(collect_stats_cache_drift(db, args.fix)?);
+        let (recomputed, drift) = collect_stats_cache_drift(db, args.fix)?;
+        examined.stats_days = Some(recomputed);
+        issues.extend(drift);
     }
     // Counted from the slice the last checkers walked, after any `--fix`
     // re-read, and without its tombstones.
@@ -400,6 +402,10 @@ pub struct Examined {
     pub specs: usize,
     /// User/kit aliases the `aliases` checker walked.
     pub aliases: usize,
+    /// Cached `stats` days the `stats` checker recomputed; absent when it
+    /// did not run, so a clean run over an empty cache reads as one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stats_days: Option<usize>,
     /// The checkers that ran; `base` is the default battery.
     pub checkers: Vec<&'static str>,
 }
@@ -1083,6 +1089,45 @@ fn collect_repeated_state_live(db: &Db) -> Result<Option<Issue>> {
     }))
 }
 
+/// da-n7tp2: a sample of `stats`' cached days, each recomputed from the
+/// entries. The cache is derived, so a day that differs is a bug in what
+/// keeps it true — never in the record — and `--fix` drops it.
+/// Returns how many cached days it recomputed beside the issue.
+fn collect_stats_cache_drift(db: &Db, fix: bool) -> Result<(usize, Option<Issue>)> {
+    let (recomputed, differ) = crate::commands::stats::check_sample(db, fix)?;
+    let Some((field, day)) = differ.first() else {
+        return Ok((recomputed, None));
+    };
+    let days: Vec<String> = differ.iter().map(|(f, d)| format!("{f} {d}")).collect();
+    Ok((
+        recomputed,
+        Some(Issue {
+            severity: Severity::Error,
+            category: "stats_cache_drift",
+            message: format!(
+                "{} cached stats day{} differ{} from the entries: {}{}",
+                differ.len(),
+                if differ.len() == 1 { "" } else { "s" },
+                if differ.len() == 1 { "s" } else { "" },
+                days.join(", "),
+                if fix {
+                    " (dropped from the cache)"
+                } else {
+                    " (--fix drops them)"
+                },
+            ),
+            count: differ.len(),
+            example: Some(IssueExample {
+                id: None,
+                field: Some(field.clone()),
+                detail: Some(day.clone()),
+            }),
+            entries: Vec::new(),
+            rendered_block: String::new(),
+        }),
+    ))
+}
+
 /// da-ghlx: surface every live row whose `extra_metadata.flag` is JSON
 /// `true` as a `flagged_entry` warning. These rows are the `datum flag
 /// <field> [comment]` review markers (da-dnnn) — they live in the DB
@@ -1094,41 +1139,6 @@ fn collect_repeated_state_live(db: &Db) -> Result<Option<Issue>> {
 /// #flagged), with the rendered block carrying one line per flagged
 /// entry through the real tail formatter so column alignment matches
 /// the live view (da-cr4n).
-/// da-n7tp2: a sample of `stats`' cached days, each recomputed from the
-/// entries. The cache is derived, so a day that differs is a bug in what
-/// keeps it true — never in the record — and `--fix` drops it.
-fn collect_stats_cache_drift(db: &Db, fix: bool) -> Result<Option<Issue>> {
-    let differ = crate::commands::stats::check_sample(db, fix)?;
-    let Some((field, day)) = differ.first() else {
-        return Ok(None);
-    };
-    let days: Vec<String> = differ.iter().map(|(f, d)| format!("{f} {d}")).collect();
-    Ok(Some(Issue {
-        severity: Severity::Error,
-        category: "stats_cache_drift",
-        message: format!(
-            "{} cached stats day{} differ{} from the entries: {}{}",
-            differ.len(),
-            if differ.len() == 1 { "" } else { "s" },
-            if differ.len() == 1 { "s" } else { "" },
-            days.join(", "),
-            if fix {
-                " (dropped from the cache)"
-            } else {
-                " (--fix drops them)"
-            },
-        ),
-        count: differ.len(),
-        example: Some(IssueExample {
-            id: None,
-            field: Some(field.clone()),
-            detail: Some(day.clone()),
-        }),
-        entries: Vec::new(),
-        rendered_block: String::new(),
-    }))
-}
-
 fn collect_pending_flags(db: &Db) -> Result<Vec<Issue>> {
     // Pull the full set of flagged rows in one go. `include_meta = true`
     // bypasses the default-hide filter (da-ghlx) so this query actually
@@ -1583,8 +1593,14 @@ pub fn render_human(report: &Report) -> String {
         let n = |count: usize, one: &str, many: &str| {
             format!("{count} {}", if count == 1 { one } else { many })
         };
+        let stats = ex.stats_days.map_or(String::new(), |d| {
+            format!(
+                ", {} recomputed, 0 differ",
+                n(d, "cached day", "cached days")
+            )
+        });
         return format!(
-            "✓ No consistency issues found: {}, {}, {} examined (checkers: {}).\n",
+            "✓ No consistency issues found: {}, {}, {} examined{stats} (checkers: {}).\n",
             n(ex.entries, "entry", "entries"),
             n(ex.specs, "field spec", "field specs"),
             n(ex.aliases, "alias", "aliases"),

@@ -47,14 +47,14 @@ fn all_clear_over_an_empty_db_differs_from_one_over_entries() {
     );
     assert_eq!(
         on_empty,
-        format!("✓ No consistency issues found: 0 entries, 0 field specs, 0 aliases examined ({all}).\n")
+        format!("✓ No consistency issues found: 0 entries, 0 field specs, 0 aliases examined, 0 cached days recomputed, 0 differ ({all}).\n")
     );
     // Two coffees, the spec the first one wrote and the alias: specs and
     // aliases are entries too, and the checkers walk them.
     assert_eq!(
         on_seeded,
         format!(
-            "✓ No consistency issues found: 4 entries, 1 field spec, 1 alias examined ({all}).\n"
+            "✓ No consistency issues found: 4 entries, 1 field spec, 1 alias examined, 0 cached days recomputed, 0 differ ({all}).\n"
         )
     );
 
@@ -69,4 +69,26 @@ fn all_clear_over_an_empty_db_differs_from_one_over_entries() {
     assert_eq!(json["examined"]["specs"], 1);
     assert_eq!(json["examined"]["aliases"], 1);
     assert_eq!(json["examined"]["checkers"].as_array().unwrap().len(), 9);
+}
+
+/// da-1i6mi: `check stats` says how many cached days it recomputed, so a
+/// clean run over an empty cache does not read like one over a full one.
+#[test]
+fn check_stats_names_the_cached_days_it_recomputed() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("stats.db");
+    datum(&db, &["switch", "mood", "calm", "-yyy"]);
+    let only = "(checkers: stats).\n";
+    let clean = |days: &str| {
+        format!("✓ No consistency issues found: 0 entries, 0 field specs, 0 aliases examined, {days} recomputed, 0 differ {only}")
+    };
+    assert_eq!(datum(&db, &["check", "stats"]), clean("0 cached days"));
+    datum(&db, &["stats"]);
+    // Three days ago, the two after it: the closed days the span covers.
+    assert_eq!(datum(&db, &["check", "stats"]), clean("3 cached days"));
+
+    let json: Value = serde_json::from_str(&datum(&db, &["check", "stats", "--json"])).unwrap();
+    assert_eq!(json["examined"]["stats_days"], 3);
+    let json: Value = serde_json::from_str(&datum(&db, &["check", "aliases", "--json"])).unwrap();
+    assert!(json["examined"].get("stats_days").is_none(), "{json}");
 }
