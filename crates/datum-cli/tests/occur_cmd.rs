@@ -947,6 +947,39 @@ fn occur_routes_dur_uncertainty_reserved_key_to_column() {
     );
 }
 
+/// da-wzktd: a dur's ± says what `-t`'s does, one way. `-t` takes `±` and
+/// `+-`; so does every spelling of a duration — `dur=` and the trailing
+/// positional, human or ISO — and each stores PT30M ± PT5M. `30m±5m`
+/// panicked in the unit scan; the `+-` forms were «invalid dur value».
+#[test]
+fn dur_takes_plus_minus_wherever_time_does() {
+    for t in ["10:00±5m", "10:00+-5m"] {
+        let db = fresh_db();
+        run_cli(&["occur", "run", "-t", t], &db).unwrap_or_else(|e| panic!("-t {t}: {e}"));
+        let entry = &datum_core::test_util::logged_entries(&db, "run")[0];
+        let at = entry.occur_time.as_ref().expect("-t places the entry");
+        assert_eq!(at.uncertainty.as_deref(), Some("PT5M"), "-t {t}");
+    }
+    for argv in [
+        &["occur", "run", "dur=PT30M±PT5M"][..],
+        &["occur", "run", "dur=PT30M+-PT5M"],
+        &["occur", "run", "dur=30m±5m"],
+        &["occur", "run", "dur=30+-5"],
+        &["end", "run", "30m±5m"],
+        &["end", "run", "30m+-5m"],
+    ] {
+        let db = fresh_db();
+        run_cli(argv, &db).unwrap_or_else(|e| panic!("{argv:?}: {e}"));
+        let entry = &datum_core::test_util::logged_entries(&db, "run")[0];
+        let dur = entry
+            .dur
+            .as_ref()
+            .map(datum_core::dur::Dur::to_storage_string);
+        assert_eq!(dur.as_deref(), Some("PT30M"), "{argv:?}");
+        assert_eq!(entry.dur_uncertainty(), Some("PT5M"), "{argv:?}");
+    }
+}
+
 /// da-b8rs: an uncertainty qualifies something. With no duration on the
 /// entry there is nothing for `dur_uncertainty=` to be *about*, and the old
 /// loose column would have stored it anyway — an orphan value no reader

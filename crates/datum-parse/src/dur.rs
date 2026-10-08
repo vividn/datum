@@ -20,7 +20,9 @@
 //! `DatumTime::uncertainty` on the occur side. One concept, one name, one
 //! home, on both halves of the time model.
 
-use crate::time::{format_iso_duration, parse_iso_duration};
+use crate::time::{
+    format_iso_duration, parse_duration, parse_iso_duration, parse_uncertainty, split_uncertainty,
+};
 use chrono::Duration;
 use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 
@@ -86,25 +88,39 @@ impl Dur {
     /// for malformed ISO-8601 spans so the caller can decide whether to
     /// surface a parse error or fall back.
     ///
-    /// Accepts an optional `±<iso>` uncertainty suffix — the form
-    /// [`to_wire_string`] emits and the one a user can type as
-    /// `dur=PT1H30M±PT5M`. The bare form (what the `dur` column holds)
-    /// parses to an unstated uncertainty.
+    /// Accepts an optional `±<iso>` (or `+-<iso>`) uncertainty suffix — the
+    /// form [`to_wire_string`] emits. The bare form (what the `dur` column
+    /// holds) parses to an unstated uncertainty.
     ///
     /// [`to_wire_string`]: Self::to_wire_string
     pub fn parse(s: &str) -> Option<Self> {
-        let (span_str, uncertainty) = match s.split_once('±') {
-            Some((span, unc)) if !unc.is_empty() => {
-                // Validate the suffix rather than storing any old token.
+        Self::parse_with(s, false)
+    }
+
+    /// Parse a duration as a person types it (`dur=…`, the trailing
+    /// positional): the span in any form [`parse_duration`] takes, and the
+    /// uncertainty split and parsed as `-t`'s is, so `30m±5m`, `30m+-5m`,
+    /// `30+-5` (minutes) and `PT30M+-PT5M` all say PT30M ± PT5M.
+    pub fn parse_input(s: &str) -> Option<Self> {
+        Self::parse_with(s, true)
+    }
+
+    fn parse_with(s: &str, typed: bool) -> Option<Self> {
+        let (span_str, uncertainty) = match split_uncertainty(s) {
+            (span, None) => (span, None),
+            // An ISO body is kept as typed, the form the column holds.
+            (span, Some(unc)) if unc.starts_with('P') => {
                 parse_iso_duration(unc).ok()?;
                 (span, Some(unc.to_string()))
             }
-            Some(_) => return None,
-            None => (s, None),
+            (span, Some(unc)) if typed => (span, parse_uncertainty(unc).ok()?.to_iso()),
+            _ => return None,
         };
         let span = match span_str {
             "MOMENT" => DurSpan::Moment,
             "UNKNOWN" => DurSpan::Unknown,
+            // `-PT5M` (a coerced `-5m`) is ISO's alone, refused later by name.
+            d if typed => DurSpan::Of(parse_duration(d).or_else(|_| parse_iso_duration(d)).ok()?),
             iso => DurSpan::Of(parse_iso_duration(iso).ok()?),
         };
         Some(Dur { span, uncertainty })
@@ -228,6 +244,8 @@ mod tests {
         assert_eq!(d.uncertainty.as_deref(), Some("PT5M"));
         assert_eq!(d.to_storage_string(), "PT1H30M");
         assert_eq!(d.to_wire_string(), "PT1H30M±PT5M");
+        // da-wzktd: `+-` is the ASCII spelling of the same marker, as on `-t`.
+        assert_eq!(Dur::parse("PT1H30M+-PT5M"), Some(d));
     }
 
     /// Uncertainty is uniform across spans: `MOMENT` and `UNKNOWN` rows can

@@ -548,7 +548,8 @@ CREATE 6r55f coffee:2026-09-22T12:00:00.000Z
 `14:00+-15m` is the same input — the ASCII form only splits when
 something precedes it, so a leading-sign offset like `-t +5` is still an
 offset. A bare number defaults to minutes; `s`/`m`/`h`/`d` and ISO
-(`PT5M`) are accepted. A duration takes it too:
+(`PT5M`) are accepted. A duration takes it too, `dur=` or the trailing
+positional, in the same forms (`dur=90m+-5`, `end task 90m±5m`):
 
 ```bash
 datum start task dur=PT1H30M±PT5M

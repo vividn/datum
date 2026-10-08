@@ -1750,7 +1750,7 @@ pub(crate) fn extract_reserved_columns(
         } else {
             let s = json_to_dur_string(&v)?;
             out.dur = Some(
-                datum_core::dur::Dur::parse(&s)
+                datum_core::dur::Dur::parse_input(&s)
                     .ok_or_else(|| anyhow::anyhow!("invalid dur value: {s:?}"))?,
             );
         }

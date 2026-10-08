@@ -123,7 +123,7 @@ fn parse_compound_duration(s: &str) -> Result<Duration> {
             .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
 
         let unit_start = i;
-        while i < bytes.len() && (bytes[i] as char).is_alphabetic() {
+        while i < bytes.len() && bytes[i].is_ascii_alphabetic() {
             i += 1;
         }
         let unit = &s[unit_start..i];
@@ -394,6 +394,15 @@ mod tests {
     fn iso_rejects_trailing_digits() {
         // A number with no unit is malformed.
         assert!(parse_iso_duration("PT5").is_err());
+    }
+
+    #[test]
+    fn non_ascii_after_the_number_is_an_error_not_a_panic() {
+        // A UTF-8 lead byte read as Latin-1 (Â, Ã) is alphabetic; the unit
+        // scan once stepped into the character and sliced inside it.
+        for s in ["30±5", "5é", "5µs"] {
+            assert!(parse_duration(s).is_err(), "{s}");
+        }
     }
 
     #[test]
