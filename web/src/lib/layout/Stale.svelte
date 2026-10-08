@@ -10,7 +10,13 @@
 	from then, the first change to its content after the CLI has answered
 	anything takes the copy away, and so does the CLI's queue running dry:
 	a widget whose fresh answer draws exactly what it drew before has
-	nothing to change.
+	nothing to change. A queue ALREADY dry two frames after the widget went
+	live is the same news (da-qhu1g): a REPL asks the CLI nothing, and on a
+	tab opened through `/repl` the tree mounts after the boot's commands have
+	answered, so nothing was coming to run dry — unless the tab led the sync,
+	whose own read took the copy down by accident, which is why it stayed
+	only beside another tab. Two frames, because a widget that measures its
+	box before it asks (the tail, the strip) asks in the first.
 
 	The copy is in a CLOSED shadow root, adopting the page's own rules:
 	nothing that queries the document — the app, or a test's locator — can find a stale row and take it for a live one, and the
@@ -20,6 +26,7 @@
 <script context="module" lang="ts">
 	import { get } from 'svelte/store';
 	import { currentDb } from '$lib/database.js';
+	import { dry } from '$lib/db.js';
 	import { first, idle } from '$lib/waiting.js';
 	import { STALE } from './draft.js';
 
@@ -133,6 +140,7 @@
 			observer.observe(body, { subtree: true, childList: true, characterData: true });
 			const drained = get(idle);
 			unsubscribe = idle.subscribe((n) => n !== drained && done());
+			requestAnimationFrame(() => requestAnimationFrame(() => dry() && done()));
 		};
 		function done() {
 			gone = true;

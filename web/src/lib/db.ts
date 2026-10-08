@@ -101,6 +101,9 @@ function ensureWorker(): Worker {
 	return started;
 }
 
+/** Whether nothing is out: every request sent to the worker has answered. */
+export const dry = (): boolean => pending.size === 0;
+
 /** Send one request to the worker and resolve with its answer. */
 function request(
 	command: DbCommand,

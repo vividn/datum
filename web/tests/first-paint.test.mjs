@@ -253,6 +253,25 @@ describe('before the CLI answers', () => {
 			assert.equal(await app.page.locator('[data-stale]').count(), 0);
 		});
 	});
+
+	// da-qhu1g: a REPL asks the CLI nothing, and through `/repl` the tree
+	// mounts after the boot's commands have answered, so no queue was left to
+	// run dry for it. Beside another tab, because a lone one leads the sync,
+	// and its read of the chain took the copy down by accident.
+	test('a pane that asks the CLI nothing loses its copy on a tab opened through /repl', async () => {
+		await withApp(
+			async (app) => {
+				// Kept when a tab is left, which a close is.
+				await (await app.newTab('repl')).page.close();
+				await watch(app.page.context());
+				const third = await app.newTab('repl');
+				assert.equal((await marksOf(third.page)).stale, 1, 'the copy was not drawn');
+				// ready() has waited it out.
+				assert.equal(await third.page.locator('[data-stale]').count(), 0);
+			},
+			{ query: 'repl' }
+		);
+	});
 });
 
 // vremya on #485: «the stale cache must never crowd out the reader's own
