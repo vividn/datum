@@ -66,6 +66,23 @@ pair lands as `occur_time = end`, and a bare `start` with no end — an
 open block — is the one shape whose `occur_time` is its leading edge,
 because it has no other instant to store.
 
+### `stats`' per-day cache
+`stats` reads a window's whole closed days from `stats_cache` (one row per
+field, local day and state) and computes only its partial edges and today
+live (`commands/stats/cache.rs`), so all time costs what a day does. A
+field's periods line stays one read of the year it reaches back, which is
+cheaper than its nine windows' cached days and edges; the cache serves a
+field's window only when it starts before that year. It is
+local and derived: never synced, wiped when its stamp (`_meta`
+`stats_cache`: version, host zone, schema version) differs, refilled from
+the first day a write reached. Triggers on `entries` record that day for
+every write path, and a row that changes the database's zone forgets every
+field from it, since it moves their midnights. The tables, triggers and the
+index they read are `db/stats_cache.sql`, laid down by the v55→v56 migration
+and after `schema.sql` at every open; a later migration that drops or
+rebuilds an `entries` column they name must drop them first. A span's seconds are `floor(end) − floor(start)`, which adds up
+exactly across midnights. `datum check stats` recomputes a sample of days.
+
 ## CLI conventions
 
 ### Time flags (datum-compatible)

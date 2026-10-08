@@ -57,7 +57,7 @@ use v51_v60::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 55;
+pub const CURRENT_SCHEMA_VERSION: u32 = 56;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -460,5 +460,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "ops_held indexes the held ops, so an apply finds them without reading every op (da-89ujs)",
         apply: m54_to_55_ops_held,
         down: down_55_to_54_ops_held,
+    },
+    Migration {
+        from: 55,
+        to: 56,
+        summary: "stats_cache: stats per closed local day, kept true by triggers on entries; entries_zoned answers the zone before a row in one seek (da-n7tp2)",
+        apply: m55_to_56_stats_cache,
+        down: down_56_to_55_stats_cache,
     },
 ];

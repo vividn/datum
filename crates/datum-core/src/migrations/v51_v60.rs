@@ -156,3 +156,30 @@ pub(super) fn down_54_to_53_sync_peer_redeemed(conn: &Connection) -> Result<()> 
     conn.execute_batch("ALTER TABLE sync_peers DROP COLUMN redeemed_at;")?;
     Ok(())
 }
+
+/// da-n7tp2: `stats`' per-day cache, its triggers and the index they read.
+/// It starts empty; the first `stats` fills it.
+pub(super) fn m55_to_56_stats_cache(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "entries")? {
+        return Ok(());
+    }
+    conn.execute_batch(crate::db::STATS_CACHE_SQL)?;
+    Ok(())
+}
+
+/// Reverse v55→v56. Local and derived: nothing is lost that `stats` cannot
+/// compute again.
+pub(super) fn down_56_to_55_stats_cache(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP TRIGGER IF EXISTS stats_cache_insert;
+         DROP TRIGGER IF EXISTS stats_cache_update;
+         DROP TRIGGER IF EXISTS stats_cache_delete;
+         DROP INDEX IF EXISTS entries_zoned;
+         DROP TABLE IF EXISTS stats_cache;
+         DROP TABLE IF EXISTS stats_cache_days;
+         DROP TABLE IF EXISTS stats_cache_through;
+         DROP TABLE IF EXISTS stats_cache_dirty;
+         DELETE FROM _meta WHERE key = 'stats_cache';",
+    )?;
+    Ok(())
+}

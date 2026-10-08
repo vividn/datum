@@ -39,6 +39,10 @@ use crate::config::resolve_week_start;
 use crate::render::colors::{field_hex, paint, parse_hex, Rgb};
 use datum_parse::time::{format_human_duration, DurationPrecision};
 
+mod cache;
+pub use cache::check_sample;
+use cache::Cache;
+
 /// Per-state slice of a field's rollup.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StateStat {
@@ -240,12 +244,13 @@ pub struct AllFieldsStats {
 /// it off the widget bar, not out of the record, and `stats <ignored>`
 /// answers for one today.
 pub fn compute_all_fields(args: &StatsArgs, db: &Db) -> Result<AllFieldsStats> {
-    let (start, end, _) = resolve_window(args, db, Duration::zero())?;
+    let (start, end, zones) = resolve_window(args, db, Duration::zero())?;
+    let cache = Cache::open(db, args, &zones)?;
     let registry = db.load_registry()?;
     let mut rows = Vec::new();
     for field in db.distinct_fields()? {
         let color = field_hex(&field, registry.fields.get(&field));
-        let r = field_stats(&field, None, args, db, start, end)?;
+        let r = field_stats(&field, None, args, db, (start, end), cache.as_ref(), &zones)?;
         rows.push((field, None, color, r));
     }
     Ok(ranked(None, rows))
@@ -355,14 +360,40 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
     // Every period is read as of the window's end, in the window's zones.
     let anchor = end.min(DatumTime::now().utc);
     let periods = named_periods(anchor, resolve_week_start()?, &zones)?;
-    // One read covers the window and every period.
-    let from = start.map(|s| periods.iter().map(|(_, (p, _))| *p).fold(s, DateTime::min));
+    // The periods line is one read of the year it reaches back, whatever the
+    // window: a year of rows costs less than nine windows' cached days and
+    // edges. A window that starts before that year — all time — is the
+    // cache's (da-n7tp2), so a long history is not read for it.
+    let reach = periods.iter().map(|(_, (p, _))| *p).min();
+    let cached = start.is_none_or(|s| reach.is_some_and(|r| s < r));
+    let cache = match cached {
+        true => Cache::open(db, args, &zones)?,
+        false => None,
+    };
+    let from = match cache {
+        Some(_) => reach,
+        None => start.map(|s| reach.map_or(s, |r| r.min(s))),
+    };
     let until = periods
         .iter()
         .map(|(_, (_, e))| *e)
         .fold(end, DateTime::max);
     let timeline = load_timeline(&field, db, from, until)?;
-    let mut r = rollup(&field, selected_state.clone(), args, &timeline, start, end);
+    let mut r = match &cache {
+        Some(cache) => {
+            let selected = selected_state.clone();
+            field_stats(
+                &field,
+                selected,
+                args,
+                db,
+                (start, end),
+                Some(cache),
+                &zones,
+            )?
+        }
+        None => rollup(&field, selected_state.clone(), args, &timeline, start, end),
+    };
     for (name, (s, e)) in periods {
         let p = rollup(&field, selected_state.clone(), args, &timeline, Some(s), e);
         let (count, duration_seconds) = p.subject();
@@ -387,15 +418,24 @@ impl StatsResult {
 }
 
 /// One field's rollup over an already-resolved window — the core both the
-/// per-field command and the all-fields table are made of.
+/// per-field command and the all-fields table are made of: from the
+/// cache's days inside it when there are any, otherwise from its timeline.
 fn field_stats(
     field: &str,
     selected_state: Option<String>,
     args: &StatsArgs,
     db: &Db,
-    start: Option<DateTime<Utc>>,
-    end: DateTime<Utc>,
+    (start, end): (Option<DateTime<Utc>>, DateTime<Utc>),
+    cache: Option<&Cache>,
+    zones: &ZoneTimeline,
 ) -> Result<StatsResult> {
+    if let Some(tally) = (cache
+        .map(|c| c.tally(field, start, end, zones))
+        .transpose()?)
+    .flatten()
+    {
+        return Ok(tally.finish(field, selected_state, args, end));
+    }
     let timeline = load_timeline(field, db, start, end)?;
     Ok(rollup(field, selected_state, args, &timeline, start, end))
 }
@@ -417,13 +457,7 @@ fn load_timeline(
     // timeless `add`/`note` rows (NULL occur_time) and the default meta
     // filter drops `flag` / protocol-note markers — the same exclusions
     // tail / dayview / now apply, so the timeline matches what the user sees.
-    let params = ListParams {
-        fields: vec![field.to_string()],
-        metric: TimeMetric::Occur,
-        start_utc: from,
-        end_utc: from.map(|_| until),
-        ..Default::default()
-    };
+    let params = timeline_params(field, from, until);
     let entries = db.list_entries(&params)?;
     // A span the window opens on can be begun by a row long before it — a
     // field of dots by its first dot. Its client is read at its own instant,
@@ -439,7 +473,6 @@ fn load_timeline(
             ..params.clone()
         })?);
     }
-    let label = |v: Option<&JsonValue>| state_label(v).unwrap_or_else(|| "(none)".to_string());
     let rows = entries
         .iter()
         .filter(|e| datum_core::track::track_verb(e).is_none())
@@ -453,10 +486,7 @@ fn load_timeline(
             })
         })
         .collect();
-    let outside = db.distinct_states_outside(&params, &shared_labels())?;
-    let seen = (outside.into_iter())
-        .map(|(v, client)| (label(v.as_ref()), classify(v.as_ref()), client))
-        .collect();
+    let seen = seen_outside(db, &params)?;
     let client_of: std::collections::HashMap<&str, &str> = (entries.iter().chain(&begun))
         .map(|e| (e.hid.as_str(), e.client_id.as_str()))
         .collect();
@@ -471,6 +501,32 @@ fn load_timeline(
         })
         .collect();
     Ok(Timeline { rows, spans, seen })
+}
+
+/// The rows a timeline of `[from, until]` counts: its whole history when
+/// `from` is unbounded.
+fn timeline_params(field: &str, from: Option<DateTime<Utc>>, until: DateTime<Utc>) -> ListParams {
+    ListParams {
+        fields: vec![field.to_string()],
+        metric: TimeMetric::Occur,
+        start_utc: from,
+        end_utc: from.map(|_| until),
+        ..Default::default()
+    }
+}
+
+/// The label stats files a state value under.
+fn label(v: Option<&JsonValue>) -> String {
+    state_label(v).unwrap_or_else(|| "(none)".to_string())
+}
+
+/// [`Timeline::seen`]: the readings outside `params`' window that can
+/// change a label's class inside it.
+fn seen_outside(db: &Db, params: &ListParams) -> Result<Vec<(String, StateClass, String)>> {
+    let outside = db.distinct_states_outside(params, &shared_labels())?;
+    Ok((outside.into_iter())
+        .map(|(v, client)| (label(v.as_ref()), classify(v.as_ref()), client))
+        .collect())
 }
 
 /// A state span, with no client yet, and the hid and time of the row
@@ -522,138 +578,172 @@ fn rollup(
     start: Option<DateTime<Utc>>,
     end: DateTime<Utc>,
 ) -> StatsResult {
-    let field = field.to_string();
-    let now = DatumTime::now().utc;
+    let mut tally = Tally::default();
+    tally.add(timeline, start, end);
+    tally.finish(field, selected_state, args, end)
+}
 
-    let mut dur_by_state: BTreeMap<String, i64> = BTreeMap::new();
-    let mut count_by_state: BTreeMap<String, usize> = BTreeMap::new();
-    let mut class_by_state: BTreeMap<String, StateClass> = BTreeMap::new();
-    let (mut earliest, mut latest) = (None, None);
+/// What a rollup adds up before it is read: each state's time and count,
+/// the classes its label was read with, and the first and last counted
+/// entry. Every part adds across adjoining windows, which is what lets the
+/// cache's days stand in for a stretch of the timeline (da-n7tp2).
+#[derive(Default)]
+struct Tally {
+    dur: BTreeMap<String, i64>,
+    count: BTreeMap<String, usize>,
+    class: BTreeMap<String, StateClass>,
+    earliest: Option<DateTime<FixedOffset>>,
+    latest: Option<DateTime<FixedOffset>>,
+}
 
-    // Each state holds until the next change, the last until `now`.
-    for (i, span) in timeline.spans.iter().enumerate() {
-        let Some(state) = &span.state else { continue };
-        let to = timeline.spans.get(i + 1).map_or(now, |next| next.from);
-        add_overlap(&mut dur_by_state, state, span.from, to, start, end);
-        note_class(&mut class_by_state, state, span.class);
-    }
+impl Tally {
+    /// Add `timeline` over `[start, end)`, which follows whatever was added
+    /// before it.
+    fn add(&mut self, timeline: &Timeline, start: Option<DateTime<Utc>>, end: DateTime<Utc>) {
+        let now = DatumTime::now().utc;
+        // Each state holds until the next change, the last until `now`.
+        for (i, span) in timeline.spans.iter().enumerate() {
+            let Some(state) = &span.state else { continue };
+            let to = timeline.spans.get(i + 1).map_or(now, |next| next.from);
+            add_overlap(&mut self.dur, state, span.from, to, start, end);
+            note_class(&mut self.class, state, span.class);
+        }
 
-    for (state, class, _) in &timeline.seen {
-        note_class(&mut class_by_state, state, *class);
-    }
-    for row in &timeline.rows {
-        note_class(&mut class_by_state, &row.state, row.class);
-        // Count the entry itself when its occur instant lands in-window.
-        // The timeline runs oldest→newest, so the first counted row is the
-        // earliest and the last the latest.
-        if within(row.occur, start, end) {
-            *count_by_state.entry(row.state.clone()).or_default() += 1;
-            earliest.get_or_insert(row.local);
-            latest = Some(row.local);
+        for (state, class, _) in &timeline.seen {
+            note_class(&mut self.class, state, *class);
+        }
+        for row in &timeline.rows {
+            note_class(&mut self.class, &row.state, row.class);
+            // Count the entry itself when its occur instant lands in-window.
+            // The timeline runs oldest→newest, so the first counted row is the
+            // earliest and the last the latest.
+            if within(row.occur, start, end) {
+                *self.count.entry(row.state.clone()).or_default() += 1;
+                self.earliest.get_or_insert(row.local);
+                self.latest = Some(row.local);
+            }
         }
     }
 
-    // A counted state with zero measured duration (single-instant window)
-    // still deserves a row.
-    for state in count_by_state.keys() {
-        dur_by_state.entry(state.clone()).or_insert(0);
-    }
+    fn finish(
+        self,
+        field: &str,
+        selected_state: Option<String>,
+        args: &StatsArgs,
+        end: DateTime<Utc>,
+    ) -> StatsResult {
+        let field = field.to_string();
+        let now = DatumTime::now().utc;
+        let Tally {
+            dur: mut dur_by_state,
+            count: count_by_state,
+            class: class_by_state,
+            earliest,
+            latest,
+        } = self;
 
-    // The denominator. `false` (every gap between blocks) and the untracked
-    // states would otherwise swamp the ratio column, turning it into "share
-    // of wall-clock" instead of "share of tracked time" (da-icba). A state
-    // named outright by the selector is always its own subject, so it stays
-    // in the denominator whatever its class.
-    let counted = |state: &str| {
-        selected_state.as_deref() == Some(state)
-            || match class_by_state
-                .get(state)
-                .copied()
-                .unwrap_or(StateClass::Tracked)
-            {
-                StateClass::Tracked => true,
-                StateClass::Closed => args.include_false,
-                StateClass::Untracked => args.include_untracked,
-            }
-    };
+        // A counted state with zero measured duration (single-instant window)
+        // still deserves a row.
+        for state in count_by_state.keys() {
+            dur_by_state.entry(state.clone()).or_insert(0);
+        }
 
-    let total_duration_seconds: i64 = dur_by_state.values().sum();
-    let tracked_duration_seconds: i64 = dur_by_state
-        .iter()
-        .filter(|(state, _)| counted(state))
-        .map(|(_, d)| *d)
-        .sum();
-    let total_count: usize = count_by_state.values().sum();
-
-    let mut states: Vec<StateStat> = dur_by_state
-        .into_iter()
-        .map(|(state, duration_seconds)| {
-            let count = count_by_state.get(&state).copied().unwrap_or(0);
-            let ratio = counted(&state).then(|| {
-                if tracked_duration_seconds > 0 {
-                    duration_seconds as f64 / tracked_duration_seconds as f64
-                } else {
-                    0.0
+        // The denominator. `false` (every gap between blocks) and the untracked
+        // states would otherwise swamp the ratio column, turning it into "share
+        // of wall-clock" instead of "share of tracked time" (da-icba). A state
+        // named outright by the selector is always its own subject, so it stays
+        // in the denominator whatever its class.
+        let counted = |state: &str| {
+            selected_state.as_deref() == Some(state)
+                || match class_by_state
+                    .get(state)
+                    .copied()
+                    .unwrap_or(StateClass::Tracked)
+                {
+                    StateClass::Tracked => true,
+                    StateClass::Closed => args.include_false,
+                    StateClass::Untracked => args.include_untracked,
                 }
-            });
-            StateStat {
-                state,
-                count,
-                duration_seconds,
-                ratio,
-            }
-        })
-        .collect();
-    states.sort_by(|a, b| {
-        b.duration_seconds
-            .cmp(&a.duration_seconds)
-            .then_with(|| a.state.cmp(&b.state))
-    });
+        };
 
-    if let Some(sel) = &selected_state {
-        // Keep only the requested state — synthesizing a zero row when the
-        // field was never in that state during the window, so the output is
-        // still a well-formed answer rather than "empty".
-        let one = states
+        let total_duration_seconds: i64 = dur_by_state.values().sum();
+        let tracked_duration_seconds: i64 = dur_by_state
+            .iter()
+            .filter(|(state, _)| counted(state))
+            .map(|(_, d)| *d)
+            .sum();
+        let total_count: usize = count_by_state.values().sum();
+
+        let mut states: Vec<StateStat> = dur_by_state
             .into_iter()
-            .find(|s| &s.state == sel)
-            .unwrap_or(StateStat {
-                state: sel.clone(),
-                count: 0,
-                duration_seconds: 0,
-                ratio: Some(0.0),
-            });
-        states = vec![one];
-    }
+            .map(|(state, duration_seconds)| {
+                let count = count_by_state.get(&state).copied().unwrap_or(0);
+                let ratio = counted(&state).then(|| {
+                    if tracked_duration_seconds > 0 {
+                        duration_seconds as f64 / tracked_duration_seconds as f64
+                    } else {
+                        0.0
+                    }
+                });
+                StateStat {
+                    state,
+                    count,
+                    duration_seconds,
+                    ratio,
+                }
+            })
+            .collect();
+        states.sort_by(|a, b| {
+            b.duration_seconds
+                .cmp(&a.duration_seconds)
+                .then_with(|| a.state.cmp(&b.state))
+        });
 
-    let mut r = StatsResult {
-        field,
-        selected_state,
-        total_count,
-        total_duration_seconds,
-        tracked_duration_seconds,
-        earliest,
-        latest,
-        states,
-        frequency: None,
-        rate: None,
-        periods: Vec::new(),
-    };
-    let (count, secs) = r.subject();
-    let timed = r.tracked_duration_seconds > 0;
-    let span = earliest.map(|first| (end.min(now) - first.to_utc()).num_seconds());
-    r.frequency = span.filter(|_| !timed).map(|s| Frequency::new(count, s));
-    // How often, so a state no entry logged has no row, in the text or the
-    // JSON: an occur's TRACKED (da-795cy) holds time and nothing else
-    // (da-x1er9). A selected state keeps its row, count 0 or not.
-    if r.frequency.is_some() && r.selected_state.is_none() {
-        r.states.retain(|s| s.count > 0);
+        if let Some(sel) = &selected_state {
+            // Keep only the requested state — synthesizing a zero row when the
+            // field was never in that state during the window, so the output is
+            // still a well-formed answer rather than "empty".
+            let one = states
+                .into_iter()
+                .find(|s| &s.state == sel)
+                .unwrap_or(StateStat {
+                    state: sel.clone(),
+                    count: 0,
+                    duration_seconds: 0,
+                    ratio: Some(0.0),
+                });
+            states = vec![one];
+        }
+
+        let mut r = StatsResult {
+            field,
+            selected_state,
+            total_count,
+            total_duration_seconds,
+            tracked_duration_seconds,
+            earliest,
+            latest,
+            states,
+            frequency: None,
+            rate: None,
+            periods: Vec::new(),
+        };
+        let (count, secs) = r.subject();
+        let timed = r.tracked_duration_seconds > 0;
+        let span = earliest.map(|first| (end.min(now) - first.to_utc()).num_seconds());
+        r.frequency = span.filter(|_| !timed).map(|s| Frequency::new(count, s));
+        // How often, so a state no entry logged has no row, in the text or the
+        // JSON: an occur's TRACKED (da-795cy) holds time and nothing else
+        // (da-x1er9). A selected state keeps its row, count 0 or not.
+        if r.frequency.is_some() && r.selected_state.is_none() {
+            r.states.retain(|s| s.count > 0);
+        }
+        r.rate = span.map(|s| match timed {
+            true => Rate::new(secs as f64, s, true),
+            false => Rate::new(count as f64, s, false),
+        });
+        r
     }
-    r.rate = span.map(|s| match timed {
-        true => Rate::new(secs as f64, s, true),
-        false => Rate::new(count as f64, s, false),
-    });
-    r
 }
 
 /// `--show all` is the text and then the `--json` line under it, from ONE
@@ -1055,7 +1145,11 @@ fn add_overlap(
         None => block_start,
     };
     let hi = block_end.min(end);
-    let secs = (hi - lo).num_seconds();
+    // The whole seconds the clock crosses between the two edges, not the
+    // elapsed time truncated: the instants carry nanoseconds, and only the
+    // first adds up exactly when a span is cut at midnights — the cache's
+    // days (da-n7tp2). The two differ by a second at most.
+    let secs = hi.timestamp() - lo.timestamp();
     if secs > 0 {
         *map.entry(state.to_string()).or_default() += secs;
     }

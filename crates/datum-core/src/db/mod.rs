@@ -35,6 +35,8 @@ mod row_mapper;
 mod spec;
 mod spec_alias_index;
 mod state;
+mod stats_cache;
+pub(crate) use stats_cache::STATS_CACHE_SQL;
 mod sync;
 mod time;
 mod tombstone;
@@ -64,6 +66,7 @@ pub use now::{
 };
 pub use row_mapper::row_to_entry_public;
 pub use spec::{is_meta_field, META_FIELDS, SPEC_FIELD};
+pub use stats_cache::{CachedDay, CachedState, CachedSum, Dirty, Refill};
 pub use sync::{canonical_json, chain, peers, set_client_source, set_invocation, ApplySummary};
 pub use tombstone::{revert_in_tx, soft_delete_in_tx};
 pub use types::{
@@ -325,6 +328,7 @@ impl Db {
         // CREATE … IF NOT EXISTS keeps the pass idempotent on already-current
         // databases.
         self.conn.execute_batch(include_str!("../schema.sql"))?;
+        self.conn.execute_batch(STATS_CACHE_SQL)?;
         // A kit index is this device's, derived from the definitions the
         // file holds (da-fwwtn). One that will not build is no reason not
         // to open: it is only an index.
@@ -388,6 +392,7 @@ impl Db {
                 .execute(&format!("DROP TABLE IF EXISTS \"{t}\""), [])?;
         }
         self.conn.execute_batch(include_str!("../schema.sql"))?;
+        self.conn.execute_batch(STATS_CACHE_SQL)?;
         // A kit index is this device's, derived from the definitions the
         // file holds (da-fwwtn). One that will not build is no reason not
         // to open: it is only an index.

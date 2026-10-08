@@ -107,6 +107,7 @@ mod state_keys;
 mod state_oracle;
 mod state_refs;
 mod stateless_same_instant;
+mod stats_cache;
 mod stop_cmd;
 mod stored_spec_compat;
 mod subcommand_flag_as_name;

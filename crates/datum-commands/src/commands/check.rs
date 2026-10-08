@@ -59,6 +59,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     let run_flags = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "flags");
     let run_tz = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "tz");
     let run_refs = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "refs");
+    let run_stats = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "stats");
     let run_default_battery = args.checkers.is_empty();
 
     // One walk of the entries, shared by every checker that reads them, so
@@ -140,6 +141,10 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     if run_refs {
         examined.checkers.push("refs");
         issues.extend(collect_dangling_refs(db, &entries)?);
+    }
+    if run_stats {
+        examined.checkers.push("stats");
+        issues.extend(collect_stats_cache_drift(db, args.fix)?);
     }
     // Counted from the slice the last checkers walked, after any `--fix`
     // re-read, and without its tombstones.
@@ -1089,6 +1094,41 @@ fn collect_repeated_state_live(db: &Db) -> Result<Option<Issue>> {
 /// #flagged), with the rendered block carrying one line per flagged
 /// entry through the real tail formatter so column alignment matches
 /// the live view (da-cr4n).
+/// da-n7tp2: a sample of `stats`' cached days, each recomputed from the
+/// entries. The cache is derived, so a day that differs is a bug in what
+/// keeps it true — never in the record — and `--fix` drops it.
+fn collect_stats_cache_drift(db: &Db, fix: bool) -> Result<Option<Issue>> {
+    let differ = crate::commands::stats::check_sample(db, fix)?;
+    let Some((field, day)) = differ.first() else {
+        return Ok(None);
+    };
+    let days: Vec<String> = differ.iter().map(|(f, d)| format!("{f} {d}")).collect();
+    Ok(Some(Issue {
+        severity: Severity::Error,
+        category: "stats_cache_drift",
+        message: format!(
+            "{} cached stats day{} differ{} from the entries: {}{}",
+            differ.len(),
+            if differ.len() == 1 { "" } else { "s" },
+            if differ.len() == 1 { "s" } else { "" },
+            days.join(", "),
+            if fix {
+                " (dropped from the cache)"
+            } else {
+                " (--fix drops them)"
+            },
+        ),
+        count: differ.len(),
+        example: Some(IssueExample {
+            id: None,
+            field: Some(field.clone()),
+            detail: Some(day.clone()),
+        }),
+        entries: Vec::new(),
+        rendered_block: String::new(),
+    }))
+}
+
 fn collect_pending_flags(db: &Db) -> Result<Vec<Issue>> {
     // Pull the full set of flagged rows in one go. `include_meta = true`
     // bypasses the default-hide filter (da-ghlx) so this query actually

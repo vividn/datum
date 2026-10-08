@@ -1204,6 +1204,10 @@ pub struct StatsArgs {
     /// `--group-by client`: the field's rollup split by the client that
     /// wrote it, the key `count --group-by` takes (da-z99wr).
     pub group_by: Option<String>,
+    /// Compute every day from the entries, past the per-day cache
+    /// (da-n7tp2). No flag sets it: `datum check stats` and the tests do,
+    /// to hold the cache to the record.
+    pub no_cache: bool,
     /// The output level the shared layer swept out of argv (da-qt6z).
     /// `--json` is the value `json`; `Show::None` prints nothing.
     pub show: Show,
@@ -1316,6 +1320,7 @@ pub const KNOWN_CHECKERS: &[&str] = &[
     "flags",
     "tz",
     "refs",
+    "stats",
 ];
 
 /// Render orientation for `datum dayview` and `datum nowview`, named by

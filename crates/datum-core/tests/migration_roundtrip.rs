@@ -202,6 +202,7 @@ fn every_pair_has_a_roundtrip_test() {
         (52, 53),
         (53, 54),
         (54, 55),
+        (55, 56),
     ];
     assert_eq!(
         covered.len(),
@@ -2664,6 +2665,48 @@ fn roundtrip_v54_to_v55_ops_held() {
     assert!(index_exists(conn, "ops_held"));
     apply_one_down(conn, 55);
     assert!(!index_exists(conn, "ops_held"));
+}
+
+/// da-n7tp2: v56 lays down `stats`' cache and the triggers that keep it
+/// true, which mark a write; v55 takes them away, and a write marks nothing.
+#[test]
+fn roundtrip_v55_to_v56_stats_cache() {
+    let db = fresh_at(55);
+    let conn = db.conn();
+    let write = |hid: &str| {
+        conn.execute(
+            "INSERT INTO entries
+                (hid, slug, content_hash, field, occur_time, create_time, modify_time, client_id)
+             VALUES (?1, ?1, ?1, 'coffee', '2026-09-01T00:00:00+00:00',
+                     '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z', 'dev-a')",
+            [hid],
+        )
+        .unwrap();
+    };
+    apply_one_up(conn, 55);
+    for table in [
+        "stats_cache",
+        "stats_cache_days",
+        "stats_cache_through",
+        "stats_cache_dirty",
+    ] {
+        assert!(table_exists(conn, table), "{table}");
+    }
+    assert!(index_exists(conn, "entries_zoned"));
+    write("h1");
+    let dirty = || -> i64 {
+        conn.query_row(
+            "SELECT COUNT(*) FROM stats_cache_dirty WHERE field = 'coffee'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(dirty(), 1, "the trigger marks a write");
+    apply_one_down(conn, 56);
+    assert!(!table_exists(conn, "stats_cache"));
+    assert!(!index_exists(conn, "entries_zoned"));
+    write("h2");
 }
 
 /// Life data logged under `kit` stops v51 before it is hidden; a deleted
