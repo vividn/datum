@@ -18,7 +18,9 @@
 //
 // Every other path lives in memory for the length of one process: the
 // dot-file lock SQLite's WASI build takes (`datum.db.lock`, a directory —
-// WASI has no fcntl locks), and anything else datum writes under HOME.
+// WASI has no fcntl locks), and anything else datum writes under HOME —
+// except a pre-migration backup, which the worker keeps in OPFS once the
+// process is over (`unkept`), and whose kept copies are handles here too.
 //
 // The process's own stdout and stderr are here too (`Sink`), for the same
 // reason the directory is: what the shim ships grows by copying itself.
@@ -52,7 +54,7 @@ export const DB_FILES = dbFiles(DATABASES);
  * `<db>.pre-v<from>-to-v<to>-<stamp>.bak` before it changes anything
  * (`backup_before_migration`), so its creation is the upgrade beginning.
  */
-const PRE_MIGRATION = /\.pre-v\d+-to-v\d+-[^/]*\.bak$/;
+export const PRE_MIGRATION = /\.pre-v\d+-to-v\d+-[^/]*\.bak$/;
 
 let upgradeHeard: (() => void) | undefined;
 
@@ -86,6 +88,13 @@ export function opfsDirectory(name: string, handles: Map<string, Handle>, stage?
 		create_entry_for_path(path: string, isDir: boolean) {
 			if (PRE_MIGRATION.test(path)) upgradeHeard?.();
 			const opfs = backed.get(path);
+			// A backup grows by doubling, not by a copy per page (`File`'s
+			// way), and is a handle for `unkept` to hand to OPFS (da-hse93).
+			if (!opfs && !isDir && PRE_MIGRATION.test(path) && !path.includes('/')) {
+				const backup = new SyncOPFSFile(new MemoryHandle());
+				this.contents.set(path, backup);
+				return { ret: wasi.ERRNO_SUCCESS, entry: backup as Inode };
+			}
 			if (!opfs || isDir) return super.create_entry_for_path(path, isDir);
 			opfs.handle.truncate(0);
 			this.contents.set(path, opfs);
@@ -98,6 +107,13 @@ export function opfsDirectory(name: string, handles: Map<string, Handle>, stage?
 	if (stage) files.push(['stage', new Directory(Object.entries(stage).map(([file, bytes]) => [file, new File(bytes)]))]);
 	preopen.dir = new OpfsDirectory(new Contents(files));
 	return preopen;
+}
+
+/** The pre-migration backups the process wrote that are still only in memory. */
+export function unkept(preopen: PreopenDirectory): [string, Handle][] {
+	return [...preopen.dir.contents].flatMap(([file, inode]) =>
+		inode instanceof SyncOPFSFile && inode.handle instanceof MemoryHandle ? [[file, inode.handle]] : []
+	);
 }
 
 /** The stage's files as the process left them: every file directly in it. */

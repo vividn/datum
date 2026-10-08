@@ -341,8 +341,10 @@ pub struct MigrationReport {
 
 /// How many pre-migration snapshots to keep alongside a database. Older
 /// ones are pruned after a successful migration — never before, so a
-/// failed migration can never cost you a backup.
-pub const MAX_PRE_MIGRATION_BACKUPS: usize = 5;
+/// failed migration can never cost you a backup. Fewer in datum.day (the
+/// CLI built for WASI), where each is a full copy against the browser's
+/// storage quota (da-hse93).
+pub const MAX_PRE_MIGRATION_BACKUPS: usize = if cfg!(target_os = "wasi") { 2 } else { 5 };
 
 /// Snapshot the database file before migrating it. Returns the snapshot's
 /// path: the one written, or an identical one already beside the file.
@@ -383,15 +385,9 @@ pub fn backup_before_migration(
         "{}.pre-v{from}-to-",
         db_path.file_name().unwrap_or_default().to_string_lossy()
     );
-    let newest = std::fs::read_dir(dest.parent().unwrap_or(std::path::Path::new(".")))
+    let newest = backups_by_stamp(dest.parent().unwrap_or(std::path::Path::new(".")), &prefix)
         .into_iter()
-        .flatten()
-        .flatten()
-        .filter(|e| {
-            let n = e.file_name().to_string_lossy().into_owned();
-            n.starts_with(&prefix) && n.ends_with(".bak") && e.path() != dest
-        })
-        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
+        .filter(|(_, path)| *path != dest)
         .max();
     if let Some((_, prev)) = newest {
         let same = matches!(
@@ -423,6 +419,38 @@ fn free_backup_path(db_path: &std::path::Path, from: u32, to: u32) -> std::path:
     candidate
 }
 
+/// The snapshots in `dir` whose names start with `prefix`, each with its
+/// place in time as its own name gives it: the UTC stamp [`free_backup_path`]
+/// writes (`%Y%m%dT%H%M%SZ`, which sorts as it reads) and its `-<n>`.
+/// Not `modified()`: datum.day's filesystem dates every file at the epoch,
+/// so the newest snapshot tied with the oldest and could be the one pruned
+/// (da-hse93). A name not of that form — a `to` that is not a number, a
+/// stamp that is not a real UTC time, an `-n` that is not a number, anything
+/// after it — is left out: never ranked, never removed.
+fn backups_by_stamp(
+    dir: &std::path::Path,
+    prefix: &str,
+) -> Vec<((String, u32), std::path::PathBuf)> {
+    let stamp = |name: &str| -> Option<(String, u32)> {
+        let rest = name
+            .strip_suffix(".bak")
+            .filter(|_| name.starts_with(prefix))?;
+        let mut parts = rest.rsplit_once("-to-v")?.1.split('-');
+        parts.next()?.parse::<u32>().ok()?;
+        let stamp = parts.next().filter(|s| {
+            s.len() == 16 && chrono::NaiveDateTime::parse_from_str(s, "%Y%m%dT%H%M%SZ").is_ok()
+        })?;
+        let n = parts.next().map_or(Some(1), |n| n.parse().ok())?;
+        parts.next().is_none().then(|| (stamp.to_string(), n))
+    };
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| Some((stamp(&e.file_name().to_string_lossy())?, e.path())))
+        .collect()
+}
+
 /// Drop all but the newest [`MAX_PRE_MIGRATION_BACKUPS`] snapshots taken
 /// for this database. Best-effort: anything we cannot read or remove is
 /// left alone, since failing to prune is harmless and refusing to open the
@@ -431,26 +459,12 @@ pub fn prune_pre_migration_backups(db_path: &std::path::Path) -> Vec<std::path::
     let (Some(dir), Some(name)) = (db_path.parent(), db_path.file_name()) else {
         return Vec::new();
     };
-    let prefix = format!("{}.pre-v", name.to_string_lossy());
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut found: Vec<(std::time::SystemTime, std::path::PathBuf)> = entries
-        .flatten()
-        .filter(|e| {
-            let n = e.file_name().to_string_lossy().into_owned();
-            n.starts_with(&prefix) && n.ends_with(".bak")
-        })
-        .filter_map(|e| {
-            let modified = e.metadata().ok()?.modified().ok()?;
-            Some((modified, e.path()))
-        })
-        .collect();
+    let mut found = backups_by_stamp(dir, &format!("{}.pre-v", name.to_string_lossy()));
     if found.len() <= MAX_PRE_MIGRATION_BACKUPS {
         return Vec::new();
     }
     // Newest first, then discard everything past the keep window.
-    found.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
+    found.sort_by(|a, b| b.cmp(a));
     found
         .split_off(MAX_PRE_MIGRATION_BACKUPS)
         .into_iter()

@@ -194,7 +194,7 @@ describe('before the CLI answers', () => {
 				const from = lines.findIndex((line) => line.startsWith('Upgrading'));
 				assert.ok(from >= 0, `the upgrade was never named: ${lines.join(' | ')}`);
 				assert.ok(
-					lines.slice(from).every((line) => /^Upgrading your data to this version \(one time\)… \d s$/.test(line)),
+					lines.slice(from).every((line) => /^Upgrading your data to this version \(one time\), keeping a copy of it as it was… \d s$/.test(line)),
 					lines.join(' | ')
 				);
 				assert.ok(marks.quiet !== undefined, 'the line stayed after the upgrade');
@@ -204,6 +204,37 @@ describe('before the CLI answers', () => {
 			},
 			{ prepare: async (context) => (await inWorker(held('upgrade'))(context), await watch(context)) }
 		);
+	});
+
+	// da-hse93: the copy was a file in the process's memory, gone at its exit
+	// while the CLI's note said it was saved.
+	test('the upgrade keeps a copy of the data as it was, beside it, past a reload', async () => {
+		await withApp(async (app) => {
+			await app.run(['occur', 'coffee']);
+			await previousSchema(app.page);
+			await app.reload();
+			await app.reload();
+			await app.run(['tail', '-n', '1']);
+			const names = await app.page.evaluate(async (dir) => {
+				const files = await (await navigator.storage.getDirectory()).getDirectoryHandle(dir);
+				const names = [];
+				for await (const name of files.keys()) names.push(name);
+				return names;
+			}, OPFS_DIR);
+			const kept = names.filter((name) => /^datum\.db\.pre-v54-to-v\d+-\d{8}T\d{6}Z\.bak$/.test(name));
+			assert.equal(kept.length, 1, names.join(', '));
+			const scratch = await mkdtemp(join(tmpdir(), 'datum-backup-'));
+			try {
+				const path = join(scratch, kept[0]);
+				await writeFile(path, Uint8Array.from(await opfsBytes(app.page, kept[0])));
+				const db = new DatabaseSync(path, { readOnly: true });
+				assert.equal(db.prepare("SELECT value FROM _meta WHERE key = 'schema_version'").get().value, '54');
+				assert.equal(db.prepare("SELECT COUNT(*) AS n FROM entries WHERE field = 'coffee'").get().n, 1);
+				db.close();
+			} finally {
+				await rm(scratch, { recursive: true, force: true });
+			}
+		});
 	});
 
 	test('each pane shows its last output until its answer lands', async () => {
@@ -275,15 +306,7 @@ describe('the copies from the last visit', () => {
  * migration (`down_55_to_54_ops_held`) and its version stamp.
  */
 async function previousSchema(page) {
-	const bytes = await page.evaluate(
-		(dir) =>
-			navigator.locks.request('datum-cli-files', async () => {
-				const files = await (await navigator.storage.getDirectory()).getDirectoryHandle(dir);
-				const file = await (await files.getFileHandle('datum.db')).getFile();
-				return [...new Uint8Array(await file.arrayBuffer())];
-			}),
-		OPFS_DIR
-	);
+	const bytes = await opfsBytes(page, 'datum.db');
 	const scratch = await mkdtemp(join(tmpdir(), 'datum-schema-'));
 	try {
 		const path = join(scratch, 'datum.db');
@@ -308,4 +331,17 @@ async function previousSchema(page) {
 	} finally {
 		await rm(scratch, { recursive: true, force: true });
 	}
+}
+
+/** A file of the worker's in OPFS, read under its lock. */
+function opfsBytes(page, name) {
+	return page.evaluate(
+		([dir, name]) =>
+			navigator.locks.request('datum-cli-files', async () => {
+				const files = await (await navigator.storage.getDirectory()).getDirectoryHandle(dir);
+				const file = await (await files.getFileHandle(name)).getFile();
+				return [...new Uint8Array(await file.arrayBuffer())];
+			}),
+		[OPFS_DIR, name]
+	);
 }

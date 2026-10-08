@@ -317,7 +317,8 @@ endpoint by a Web Lock (`datum-sync:<db>`), which pushes on every tab's writes
   shadow root so no locator finds it; `ready()` in the tests waits the
   copies out), and `Waiting.svelte` says «Opening your data…» or
   «Upgrading your data…» once the first answer is a second late — the
-  upgrade heard by the worker as the pre-migration backup is created.
+  upgrade heard by the worker as the pre-migration backup is created,
+  which the worker keeps in OPFS beside the database (da-hse93).
   It stays until the bar is ready, and at any time says «Another
   datum.day tab or window is using your data» while another tab has held
   the files' lock past a second (da-89kom): the one wait with no deadline,

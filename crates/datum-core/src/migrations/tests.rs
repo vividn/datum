@@ -1085,22 +1085,40 @@ fn a_migration_that_keeps_failing_keeps_one_snapshot_per_state() {
 
 /// Retention keeps the newest [`MAX_PRE_MIGRATION_BACKUPS`] snapshots
 /// and reports what it removed, so the accumulation is neither
-/// unbounded nor silent.
+/// unbounded nor silent. Newest by the stamp in the name, not by mtime,
+/// which datum.day's filesystem leaves at the epoch for every file
+/// (da-hse93): here the mtimes run backwards, and the names still win.
 #[test]
 fn retention_prunes_the_oldest_snapshots() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("datum.db");
     std::fs::write(&path, b"").unwrap();
-    // Unrelated neighbours that must survive.
+    // Unrelated neighbours that must survive, and names with no real stamp:
+    // ranked, the bogus one would be "newest" and cost a real snapshot.
     std::fs::write(dir.path().join("other.db.pre-v1-to-v2-x.bak"), b"").unwrap();
     std::fs::write(dir.path().join("datum.db.bak"), b"").unwrap();
+    std::fs::write(dir.path().join("datum.db.pre-v1-to-v2-t.bak"), b"").unwrap();
+    std::fs::write(
+        dir.path()
+            .join("datum.db.pre-v1-to-v2-99999999T999999Z.bak"),
+        b"",
+    )
+    .unwrap();
 
     let epoch = std::time::SystemTime::UNIX_EPOCH;
     let mut made = Vec::new();
     for i in 0..MAX_PRE_MIGRATION_BACKUPS + 2 {
-        let p = dir.path().join(format!("datum.db.pre-v{i}-to-v33-t.bak"));
+        // The last two share a second: `-2` is the later of them.
+        let (sec, n) = if i == MAX_PRE_MIGRATION_BACKUPS + 1 {
+            (i - 1, "-2")
+        } else {
+            (i, "")
+        };
+        let p = dir.path().join(format!(
+            "datum.db.pre-v{i}-to-v33-20260101T0000{sec:02}Z{n}.bak"
+        ));
         let f = std::fs::File::create(&p).unwrap();
-        f.set_modified(epoch + std::time::Duration::from_secs(i as u64))
+        f.set_modified(epoch + std::time::Duration::from_secs(100 - i as u64))
             .unwrap();
         made.push(p);
     }
@@ -1108,9 +1126,16 @@ fn retention_prunes_the_oldest_snapshots() {
     let mut pruned = prune_pre_migration_backups(&path);
     pruned.sort();
     assert_eq!(pruned, made[..2].to_vec(), "the two oldest go");
-    assert_eq!(backups_beside(&path).len(), MAX_PRE_MIGRATION_BACKUPS);
+    // The kept ones, and the two with no stamp (one not a real time).
+    assert_eq!(backups_beside(&path).len(), MAX_PRE_MIGRATION_BACKUPS + 2);
     assert!(dir.path().join("other.db.pre-v1-to-v2-x.bak").exists());
     assert!(dir.path().join("datum.db.bak").exists());
+    assert!(dir.path().join("datum.db.pre-v1-to-v2-t.bak").exists());
+    assert!(dir
+        .path()
+        .join("datum.db.pre-v1-to-v2-99999999T999999Z.bak")
+        .exists());
+    assert!(made.last().unwrap().exists(), "the newest stays");
 
     // Idempotent once the directory is inside the keep window.
     assert!(prune_pre_migration_backups(&path).is_empty());

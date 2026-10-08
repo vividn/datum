@@ -48,7 +48,7 @@
 		{$blocked !== null
 			? `Another datum.day tab or window is using your data. This one ${$ready ? 'waits until' : 'opens when'} it is done, or closed.`
 			: $upgrading !== null
-				? 'Upgrading your data to this version (one time)…'
+				? 'Upgrading your data to this version (one time), keeping a copy of it as it was…'
 				: 'Opening your data…'}
 		<span class="seconds">{seconds} s</span>
 	</p>

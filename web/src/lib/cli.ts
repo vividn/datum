@@ -37,9 +37,9 @@
 // going back for the file: when it gets it, what was typed meanwhile moves
 // across through the CLI's own `db backup -` and `db restore -`.
 
-import { File as MemFile, OpenFile, WASI, type Fd } from '@bjorn3/browser_wasi_shim';
+import { File as MemFile, OpenFile, WASI, type Fd, type PreopenDirectory } from '@bjorn3/browser_wasi_shim';
 import cliWasm from './wasm/datum-cli.wasm?url';
-import { cached, DATABASES, dbFiles, forgetCached, MemoryHandle, opfsDirectory, Sink, staged, type Handle } from './wasiFs.js';
+import { cached, DATABASES, dbFiles, forgetCached, MemoryHandle, opfsDirectory, PRE_MIGRATION, Sink, staged, unkept, type Handle } from './wasiFs.js';
 import { OPFS_DIR } from './databases.js';
 import type { CliResult, Stage, StorageKind } from './dbProtocol.js';
 
@@ -279,6 +279,23 @@ async function open(): Promise<Map<string, Handle>> {
 			// The journal is read only to roll it back: there is nothing to keep.
 			handles.set(name, name.endsWith('.db') ? cached(name, handle) : handle);
 		}
+		// The kept pre-migration backups, so the CLI sees them to keep one
+		// per state and prune the oldest; one it pruned was truncated, and
+		// goes now (da-hse93) — once the listing is over, which a removal
+		// could otherwise cut short.
+		const pruned: string[] = [];
+		for await (const name of (dir as unknown as { keys(): AsyncIterable<string> }).keys()) {
+			if (!PRE_MIGRATION.test(name)) continue;
+			const file = await dir.getFileHandle(name);
+			const handle = await (file as unknown as { createSyncAccessHandle(): Promise<Handle> }).createSyncAccessHandle();
+			if (handle.getSize() > 0) {
+				handles.set(name, handle);
+				continue;
+			}
+			handle.close();
+			pruned.push(name);
+		}
+		for (const name of pruned) await dir.removeEntry(name);
 	} catch (e) {
 		for (const handle of handles.values()) handle.close();
 		throw e;
@@ -476,11 +493,12 @@ async function exec(
 	}
 	const ran = performance.now();
 	for (const handle of handles.values()) handle.flush();
+	const unsaved = handles === memory ? [] : await keep(handles, data);
 	return {
 		code,
 		// Unterminated, as every stdout on the seam is.
 		stdout: stdout.text().replace(/\n+$/, ''),
-		stderr: stderr.text().replace(/\n+$/, ''),
+		stderr: [stderr.text().replace(/\n+$/, ''), ...unsaved].filter(Boolean).join('\n'),
 		stage: stage && staged(data),
 		changed: dbs
 			.filter(({ db }, i) => before[i] !== false && changeCounter(db) !== before[i])
@@ -489,6 +507,36 @@ async function exec(
 		ran,
 		flushed: performance.now()
 	};
+}
+
+/**
+ * Write every pre-migration backup the process left in memory to OPFS,
+ * beside the database, and hold it with the burst's other files (da-hse93).
+ * The CLI has already said it was saved, so one that cannot be is told on
+ * stderr, as the process's own warning would be.
+ */
+async function keep(handles: Map<string, Handle>, data: PreopenDirectory): Promise<string[]> {
+	const said: string[] = [];
+	const backups = unkept(data);
+	if (!backups.length) return said;
+	const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(OPFS_DIR);
+	for (const [name, backup] of backups) {
+		let handle: Handle | undefined;
+		try {
+			const file = await dir.getFileHandle(name, { create: true });
+			handle = await (file as unknown as { createSyncAccessHandle(): Promise<Handle> }).createSyncAccessHandle();
+			const bytes = new Uint8Array(backup.getSize());
+			backup.read(bytes, { at: 0 });
+			if (handle.write(bytes, { at: 0 }) !== bytes.length) throw new Error('short write');
+			handle.flush();
+			handles.set(name, handle);
+		} catch (e) {
+			handle?.close();
+			await dir.removeEntry(name).catch(() => {});
+			said.push(`warning: the pre-migration backup ${name} could not be kept: ${e}`);
+		}
+	}
+	return said;
 }
 
 /**
