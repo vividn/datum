@@ -84,7 +84,18 @@ describe('before the CLI answers', () => {
 				const [at, line] = marks.said[0];
 				assert.ok(at >= 1000 && at < marks.prompt, `said at ${at} ms`);
 				assert.match(line, /^Opening your data… 1 s$/);
-				assert.match(marks.said.at(-1)[1], /^Opening your data… [23] s$/);
+				// Counting, never ahead of the clock, and through the hold. No
+				// upper bound: how long past the hold the answer takes is the
+				// CLI's latency, which a loaded runner stretches («4 s» on CI,
+				// da-xldfb). The count trails its clock by up to a 250 ms tick,
+				// so at the hold's end it reads at least one second less.
+				const counts = marks.said.map(([at, said]) => {
+					const n = Number(said.match(/^Opening your data… (\d+) s$/)?.[1]);
+					assert.ok(n <= at / 1000, `«${said}» at ${at} ms`);
+					return n;
+				});
+				assert.ok(counts.every((n, i) => !i || n >= counts[i - 1]), counts.join(' '));
+				assert.ok(counts.at(-1) >= HOLD / 1000 - 1, `the count stopped at ${counts.at(-1)} s`);
 				// Through the hold, and gone after it: the prompt's own `help --json`
 				// is sent only once `open` answers, so it may enable well after.
 				assert.ok(marks.quiet !== undefined, 'the line outlived the wait');
