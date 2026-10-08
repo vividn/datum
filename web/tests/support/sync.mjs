@@ -226,3 +226,39 @@ export async function withTabs(relay, fn, { peer = true } = {}) {
 		await native?.close();
 	}
 }
+
+/** A backup of `n` entries over five years: a dot, a state, a block's ends, some with data. */
+export function backup(n) {
+	const at = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
+	const hash = (s) => createHash('sha256').update(s).digest('hex');
+	const start = Date.UTC(2021, 9, 1);
+	const step = Math.floor((5 * 365 * 864e5) / n);
+	const header = { type: 'daydumb_backup', schema_version: 53, backup_time: at(start), source_db: 'generated', entry_count: n };
+	const lines = [JSON.stringify(header)];
+	for (let i = 0; i < n; i++) {
+		const t = at(start + i * step);
+		const kind = i % 3;
+		const field = ['tea', 'mood', 'work'][kind];
+		lines.push(
+			JSON.stringify({
+				hid: hash(`hid${i}`).slice(0, 12),
+				slug: `${field}:${t.replace('Z', '.000Z')}`,
+				content_hash: hash(`c${i}`),
+				field,
+				verb: kind === 0 ? 'point-switch' : 'switch',
+				state: kind === 0 ? null : kind === 1 ? ['happy', 'calm', 'tired'][i % 3] : i % 2 === 0,
+				dur: kind === 0 ? 'MOMENT' : null,
+				following_state: kind === 0 ? 'TRACKED' : null,
+				data: i % 7 === 0 ? { note: `entry ${i}`, cups: i % 4 } : null,
+				occur_time: { utc: t, offset_minutes: 0, timezone: 'UTC' },
+				create_time: t,
+				modify_time: t,
+				client_id: '01M4BPEA25C60PADHYSC9J53NP',
+				id_structure: '%occur_time%',
+				raw_input: `generated ${i}`,
+				parser_version: 2
+			})
+		);
+	}
+	return lines.join('\n') + '\n';
+}

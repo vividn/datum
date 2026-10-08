@@ -159,6 +159,8 @@
 	$: locked = !!active?.locked;
 	/** When this database's sync was paused, while it is (da-wlbyx). */
 	$: paused = $syncStates[currentDb()]?.paused;
+	/** How far a sync session's apply is, while one runs (da-a7oa4). */
+	$: applying = $syncStates[currentDb()]?.applying;
 
 	/**
 	 * The widget's own options, inline (da-vhwq), for a root tab that SHOWS
@@ -423,6 +425,13 @@
 	{#if paused}
 		<button type="button" class="control paused" title="sync paused since {paused} — tap to resume" on:click={() => run(['sync', 'resume'])}
 			>sync paused</button
+		>
+	{/if}
+	<!-- Any session's apply, not just a join's (da-a7oa4): each step holds the
+	     database, so a command typed meanwhile waits, and this says why. -->
+	{#if applying}
+		<span class="syncing" role="status" title="a command typed meanwhile waits for the step under way"
+			>syncing {applying.done.toLocaleString()} of {applying.of.toLocaleString()}</span
 		>
 	{/if}
 	<span class="end"><Beta /></span>
@@ -707,6 +716,12 @@
 		background: var(--error);
 		border-color: var(--error);
 		font-weight: 600;
+		white-space: nowrap;
+	}
+
+	.syncing {
+		font-size: 0.75rem;
+		color: var(--accent);
 		white-space: nowrap;
 	}
 
