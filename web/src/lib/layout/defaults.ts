@@ -334,6 +334,21 @@ export function builtinLayout(name: string, phone: boolean): Layout | null {
 /** The built-in names, `main` first, in the order the chooser offers them. */
 export const BUILTIN_NAMES = Object.keys(BUILTIN);
 
+/**
+ * Each NEW DEFAULT datum has shipped since this list began, as the sentence
+ * that says what changed (da-cr0w2). A device that started on an earlier
+ * one is offered the new one once, with the sentences it has not seen
+ * (`offerDefaults`, shell.ts), so a change to what a first visit opens —
+ * its tabs (`fresh`, shell.ts) or a tree above — that a reader should hear
+ * of is one sentence APPENDED here. Never edited or removed: a device
+ * remembers how many it has seen.
+ */
+const NEW_DEFAULTS: string[] = [];
+
+/** `NEW_DEFAULTS`, or the web suite's in its place, handed over as `pinned`'s tree is. */
+export const newDefaults = (): string[] =>
+	(globalThis as { __datumNewDefaults?: string[] }).__datumNewDefaults ?? NEW_DEFAULTS;
+
 // ---- the DEBUG database (da-o2wm8) -------------------------------------
 //
 // vividn, 2026-09-21: "A db named DEBUG, which has a layout preloaded into

@@ -83,6 +83,7 @@
 
 import { derived, get, writable } from 'svelte/store';
 import { onExternalChange } from '$lib/changes.js';
+import { confirm } from '$lib/confirm.js';
 import { currentDb } from '$lib/database.js';
 import { initDb } from '$lib/db.js';
 import type { Layout, NodeId, Pane, Split, Tab, Widget } from './types.js';
@@ -96,16 +97,19 @@ import {
 	DEBUG_LAYOUT,
 	DEBUG_LAYOUT_TREE,
 	PHONE_WIDTH,
-	builtinLayout
+	builtinLayout,
+	newDefaults
 } from './defaults.js';
 import {
 	clearDraft,
 	clearLocked,
 	isModified,
+	loadDefaults,
 	loadDraft,
 	loadLocked,
 	loadRoot,
 	loadShell,
+	saveDefaults,
 	saveDraft,
 	saveLocked,
 	saveRoot,
@@ -657,6 +661,7 @@ export function boot(): Promise<void> {
 		onExternalChange(refreshKitLayouts, currentDb());
 		// Every tab takes part; one per database leads it (da-6kpj5).
 		void import('$lib/sync.js').then(({ startSync }) => startSync(currentDb()));
+		void offerDefaults(stored === null);
 	})());
 }
 
@@ -1186,6 +1191,35 @@ export async function resetDefaults(): Promise<void> {
 	baselines.set({});
 	previews.set(new Set());
 	await fillRoot(fresh());
+}
+
+/**
+ * The one prompt that offers a reset by itself (da-cr0w2). vividn: «Do we
+ * have a way to trigger a prompt to reset to default views? … That way
+ * users can decide».
+ *
+ * A device whose open list was written under an earlier default is asked
+ * ONCE per new one, with what changed, and either answer — Escape is «Keep
+ * mine» — is remembered, so that default is never offered here again. A
+ * `fresh` device starts on the newest and is only marked as having it.
+ */
+async function offerDefaults(fresh: boolean): Promise<void> {
+	const news = newDefaults();
+	const seen = fresh ? news.length : loadDefaults();
+	if (fresh) saveDefaults(seen);
+	if (seen >= news.length) return;
+	const yes = await confirm(
+		`datum has a new default layout. ${news.slice(seen).join(' ')}\n\n` +
+			'Using it puts every layout that ships with datum back the way it comes, and the tabs at the top of the page back to the ones a first visit opens. ' +
+			'Layouts you saved yourself, and layouts a kit installed, are not touched.\n\n' +
+			'Keep yours and this is not asked again; «Reset default layouts» in the ⚙ menu does the same at any time.',
+		'Use the new layout',
+		'',
+		'Keep mine'
+	);
+	// Remembered once it is done: a reset that failed is offered again.
+	if (yes) await resetDefaults();
+	saveDefaults(news.length);
 }
 
 /**

@@ -387,6 +387,12 @@ endpoint by a Web Lock (`datum-sync:<db>`), which pushes on every tab's writes
   built-in's name, `Reset layout` goes back to the kit's tree, and
   `designedFor` decides which of two same-named layouts wins on THIS
   device and orders the chooser — it never hides one.
+  A NEW DEFAULT IS OFFERED, ONCE (da-cr0w2): a change to what a first
+  visit opens is a sentence appended to `NEW_DEFAULTS` (`defaults.ts`), and
+  a device that started before it is asked at boot (`offerDefaults`,
+  `shell.ts`) — the sentence, then «Use the new layout», which is «Reset
+  default layouts», or «Keep mine». Either is remembered per device; a
+  first visit starts on the newest and is never asked.
 - The tail pane is `tail -w` (`web/src/lib/TailTable.svelte`):
   its box decides the row count (`tail -n <n>`, n from a hidden probe
   row's height, never from the drawn table, and never under `tail`'s own

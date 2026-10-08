@@ -75,6 +75,14 @@ export const saveLocked = (name: string, locked: boolean) => set(LOCKED + name, 
 /** Forget this device's say on `name`, so it opens as a first time would. */
 export const clearLocked = (name: string) => set(LOCKED + name, null);
 
+/**
+ * How many of datum's new defaults (`newDefaults`, defaults.ts) this device
+ * started on or has been offered (da-cr0w2) — none, where it has never said.
+ */
+const DEFAULTS = `${PREFIX}defaults.v1`;
+export const loadDefaults = (): number => Number(get(DEFAULTS)) || 0;
+export const saveDefaults = (seen: number) => set(DEFAULTS, String(seen));
+
 /** The root bar as this device left it: the open layouts, and which is active. */
 export interface RootState {
 	names: string[];

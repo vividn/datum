@@ -10,10 +10,13 @@
 import Ask from './Ask.svelte';
 import Confirm from './Confirm.svelte';
 
-/** Whether the reader pressed `action` in a dialog saying `text` (and typed `name`, if one is given). */
-export function confirm(text: string, action: string, name = ''): Promise<boolean> {
+/**
+ * Whether the reader pressed `action` in a dialog saying `text` (and typed
+ * `name`, if one is given). `cancel` is what the other button reads.
+ */
+export function confirm(text: string, action: string, name = '', cancel = 'cancel'): Promise<boolean> {
 	return new Promise((resolve) => {
-		const dialog = new Confirm({ target: document.body, props: { text, action, name } });
+		const dialog = new Confirm({ target: document.body, props: { text, action, name, cancel } });
 		dialog.$on('close', ({ detail }) => {
 			dialog.$destroy();
 			resolve(detail);

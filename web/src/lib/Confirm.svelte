@@ -15,6 +15,7 @@
 	export let text: string;
 	export let action: string;
 	export let name = '';
+	export let cancel = 'cancel';
 
 	const dispatch = createEventDispatcher<{ close: boolean }>();
 	let dialog: HTMLDialogElement;
@@ -35,7 +36,7 @@
 		{/if}
 		<div class="buttons">
 			<button value={action} use:act={'run'}>{action}</button>
-			<button type="button" on:click={() => dialog.close()}>cancel</button>
+			<button type="button" on:click={() => dialog.close()}>{cancel}</button>
 		</div>
 	</form>
 </dialog>
