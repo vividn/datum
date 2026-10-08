@@ -39,5 +39,7 @@ export interface FieldSpec {
 	glyph?: string | null;
 	/** The field is never off (da-cwieh); absent when false. */
 	never_false?: boolean;
+	/** The field whose lane this one's is placed against (Placement.svelte). */
+	relative_to?: string | null;
 	[key: string]: unknown;
 }

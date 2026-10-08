@@ -47,6 +47,7 @@ import {
 	savePlanArgv
 } from './calls.js';
 import { confirm } from './confirm.js';
+import type { RestorePreview } from './dbio.js';
 import type { Stage } from './dbProtocol.js';
 import { DEBUG_DB } from './layout/defaults.js';
 import { cliError, run, type RunResult } from './run.js';
@@ -203,11 +204,15 @@ async function internal(...argv: string[]): Promise<RunResult> {
 /** Re-read the plans. */
 export async function loadPlans(): Promise<Plan[]> {
 	const { stdout } = await internal(...plansArgv());
-	// A field's first log also writes a TRACK row with no data (da-c8mh).
-	const rows: { data: { plan?: Plan } | null }[] = JSON.parse(stdout).rows;
+	const { rows } = JSON.parse(stdout) as PlanRows;
 	const found = rows.flatMap((r) => (r.data?.plan ? [r.data.plan] : [])).sort((a, b) => a.name.localeCompare(b.name));
 	plans.set(found);
 	return found;
+}
+
+/** `tail backup_plan --json`. A field's first log also writes a TRACK row with no data (da-c8mh). */
+export interface PlanRows {
+	rows: { data: { plan?: Plan } | null }[];
 }
 
 /** Save `plan` under its name, new or not. */
@@ -284,11 +289,18 @@ export function merged(now: Index | null, ours: Index, db: string, slot: number)
 	return { index, replaced: theirs.filter((b) => b.slot === slot && b.file !== entry.file).map((b) => b.file) };
 }
 
+/** `db backup --to --json`: the slot written, or null when none was due, and the files it wrote and removed. */
+export interface BackupRun {
+	slot: number | null;
+	written: string[];
+	removed: string[];
+}
+
 /** One run of the rotation for `db`: the CLI writes, and the destination is given what it wrote. */
 async function backupOne(plan: Plan, db: string): Promise<void> {
 	const dest = destination(plan);
 	const index = await dest.get('index.json');
-	const out = await json<{ slot: number | null; written: string[]; removed: string[] }>(
+	const out = await json<BackupRun>(
 		['--db', db, ...backupToArgv(plan)],
 		index ? { 'index.json': index } : {}
 	);
@@ -335,10 +347,7 @@ export async function restoreFrom(plan: Plan, db: string, backup: Backup): Promi
 	if (!bytes) throw new Error(`${backup.file} is not at the destination any more`);
 	const stage = { [backup.file]: bytes };
 	const argv = ['--db', db, ...restoreStagedArgv(backup.file)];
-	const seen = await json<{ would_delete: number; would_insert: number; would_update: number; warnings: string[] }>(
-		restorePreviewArgv(argv),
-		stage
-	);
+	const seen = await json<RestorePreview>(restorePreviewArgv(argv), stage);
 	// Its warnings too (da-vceux): a header that disagrees with the lines is known before the yes.
 	const text =
 		`Restore ${db} to the backup of ${new Date(backup.backup_time).toLocaleString()} (${backup.entry_count} entries): ` +

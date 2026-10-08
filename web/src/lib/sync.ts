@@ -44,6 +44,7 @@ import { chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusAr
 import { announceHere, onAnyChange } from './changes.js';
 import type { SyncEvent, SyncReport, SyncRequest, TicketAbout } from './syncProtocol.js';
 import { cliError, dbOf, type RunResult } from './run.js';
+import type { Member, SyncStatus } from './syncView.js';
 import { shellSplit } from './shellSplit.js';
 
 const PULL_MS = 30_000;
@@ -81,13 +82,8 @@ export interface SyncState {
 	peers: Record<string, PeerState>;
 }
 
-/** A member, from `sync status --json`: `addr` is where it was last seen. */
-interface Peer {
-	endpoint: string;
-	label: string;
-	addr: string;
-	revoked: boolean;
-}
+/** A member that can be dialled: seen somewhere. */
+type Peer = Member & { addr: string };
 
 /** An invite as `sync new-invite` prints it. */
 export interface Invite {
@@ -233,7 +229,7 @@ class Leader {
 		failInjected();
 		const members = await cli(['--db', this.db, ...chainListArgv()]);
 		const syncs = members.code === 0;
-		const status = syncs ? JSON.parse(await must(['--db', this.db, ...syncStatusArgv()])) : undefined;
+		const status = syncs ? (JSON.parse(await must(['--db', this.db, ...syncStatusArgv()])) as SyncStatus) : undefined;
 		const chain = Boolean(status?.chain);
 		const joined = this.joining && chain;
 		this.joining = syncs && !chain;
@@ -242,7 +238,7 @@ class Leader {
 		this.label = status?.this.label ?? this.label;
 		this.version = status?.this ?? this.version;
 		this.paused = status?.paused ?? undefined;
-		this.peers = ((status?.members ?? []) as Peer[]).filter((p) => !p.revoked && p.addr);
+		this.peers = (status?.members ?? []).filter((p): p is Peer => !p.revoked && !!p.addr);
 		if (syncs) await this.start();
 		if (joined) await cli(['--db', this.db, ...renameArgv(this.label)]);
 		this.post();
@@ -253,7 +249,7 @@ class Leader {
 		if (this.endpoint && key === this.key) return;
 		// Held only once bound: a failed bind is tried again on the next start.
 		const { datum, schema } =
-			this.version ?? (this.version = JSON.parse(await must(['--db', this.db, ...syncStatusArgv()])).this);
+			this.version ?? (this.version = (JSON.parse(await must(['--db', this.db, ...syncStatusArgv()])) as SyncStatus).this);
 		this.endpoint = await ask<string>(this.db, { op: 'start', key, relay: relay(), label: this.label, datum, schema });
 		this.key = key;
 		this.post();

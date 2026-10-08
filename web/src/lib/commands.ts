@@ -331,6 +331,14 @@ export interface Flag {
 	help?: string;
 }
 
+/** One row of `datum alias list --json`. */
+export interface Alias {
+	name: string;
+	expansion: string;
+	source: 'user' | 'derived';
+	field?: string;
+}
+
 /** What a command's grammar takes of the pills the bar can hold. */
 export interface Takes {
 	/**

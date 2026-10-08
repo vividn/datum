@@ -122,6 +122,17 @@ function feed(argv: string[], stdin: string): Promise<RunResult> {
 	return run(argv, stdin, said).finally(() => progress.set(''));
 }
 
+/** `db restore --dry-run --json`: what a restore would do; `dropped` only with `--hard`. */
+export interface RestorePreview {
+	would_delete: number;
+	would_insert: number;
+	would_update: number;
+	warnings: string[];
+	/** The live entries counted, which the run is pinned to; null for an empty backup. */
+	fingerprint: string | null;
+	dropped?: { entries?: number; tombstones?: number; history?: number };
+}
+
 /**
  * `db restore -` with the backup the reader picks. A replace tombstones
  * what the backup lacks, and the CLI asks first only on a TTY (da-5fooh),
@@ -146,7 +157,7 @@ export function restore(argv: string[]): Promise<RunResult> {
 		for (let moved = ''; ; moved = '⚠ The database changed since it was counted. ') {
 			const seen = await feed(restorePreviewArgv(argv), backup);
 			if (seen.code !== 0) return seen;
-			const { would_delete, would_insert, would_update, warnings, fingerprint } = JSON.parse(seen.stdout);
+			const { would_delete, would_insert, would_update, warnings, fingerprint } = JSON.parse(seen.stdout) as RestorePreview;
 			const pin = fingerprint ? ['--if-unchanged', fingerprint] : [];
 			// A warning asks too, deleting or not (da-fnjku): a truncated backup into an empty db deletes nothing.
 			// So does a database that changed under a run, so a busy one never retries unattended.
@@ -189,7 +200,7 @@ function hard(argv: string[]): Promise<RunResult> {
 		for (let moved = ''; ; moved = '⚠ The database changed since it was counted. ') {
 			const seen = await feed(restorePreviewArgv(argv), backup);
 			if (seen.code !== 0) return seen;
-			const { would_insert, dropped, warnings, fingerprint } = JSON.parse(seen.stdout);
+			const { would_insert, dropped, warnings, fingerprint } = JSON.parse(seen.stdout) as RestorePreview;
 			// An empty file is a backup of nothing, and replaces nothing: no fingerprint.
 			const pin = fingerprint ? ['--if-unchanged', fingerprint] : [];
 			const { entries = 0, tombstones = 0, history = 0 } = dropped ?? {};

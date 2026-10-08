@@ -60,7 +60,15 @@ export interface TailRow {
 	state_body: string;
 	/** This row's state is the one it was already in — the CLI's `!` (da-qfv0). */
 	state_repeat: boolean;
+	/** How long a block lasted, ending at `time`; null for a row with no duration (DayStrip.svelte's first entry). */
+	dur_seconds: number | null;
 	[key: string]: unknown;
+}
+
+/** `datum tail --json`, and `head --json`. */
+export interface TailListing {
+	rows: TailRow[];
+	columns: TailColumn[];
 }
 
 /**
@@ -85,9 +93,9 @@ export interface TailPage {
 }
 
 /** The listing, oldest first, the way `tail` prints. Rejects on a failed command. */
-export async function tailListing(page: TailPage = {}): Promise<{ rows: TailRow[]; columns: TailColumn[] }> {
+export async function tailListing(page: TailPage = {}): Promise<TailListing> {
 	const result = await run(tailArgv(page), undefined, undefined, undefined, undefined, undefined, true);
 	if (result.code !== 0) throw cliError(result.stderr, `tail exited ${result.code}`);
-	const doc = JSON.parse(result.stdout) as { rows?: TailRow[]; columns?: TailColumn[] };
+	const doc = JSON.parse(result.stdout) as Partial<TailListing>;
 	return { rows: doc.rows ?? [], columns: doc.columns ?? [] };
 }

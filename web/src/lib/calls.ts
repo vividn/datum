@@ -3,19 +3,27 @@
 //
 // `tests/calls-pure.test.mjs` runs each export through the real CLI in node,
 // on a seeded database, and fails on a usage error — a flag, subcommand or
-// argument the Rust side renamed — naming the files that send it. `READS`
-// is the keys the page reads out of each JSON answer, so a key renamed in
-// Rust fails there too, and not on live. A new call goes here; one that is
-// parsed goes into `READS` as well, and the test refuses a `--json` without.
+// argument the Rust side renamed — naming the files that send it. `Reads`
+// is the type the page reads each JSON answer as, so a key renamed in Rust
+// fails there too, and not on live. A new call goes here; one that is
+// parsed goes into `Reads` as well, and the test refuses a `--json` without.
 //
 // A `--db` is left to the caller (`syncAct`, sync.ts's `cli`, the layout
 // store's `_internal`…): it is a global flag, and the database a call names
 // is the caller's to choose.
 
-import type { Plan } from './backups.js';
+import type { Backup, BackupRun, Plan, PlanRows, Reach } from './backups.js';
+import type { Alias, GrammarEntry } from './commands.js';
+import type { RestorePreview } from './dbio.js';
+import type { FieldListing, NowListing } from './fields.js';
+import type { LayoutRow, LayoutVersion } from './layout/store.js';
 import type { Layout } from './layout/types.js';
-import type { PaneSpec } from './panes.js';
-import type { TailPage } from './tail.js';
+import type { DayviewJson, PaneSpec } from './panes.js';
+import type { AllFieldsStats, FieldStats } from './stats.js';
+import type { Invite } from './sync.js';
+import type { Admins, PurgePreview, SyncStatus } from './syncView.js';
+import type { TailListing, TailPage } from './tail.js';
+import type { Spec } from './track.js';
 
 export { bandArgv, geometryArgv, nowviewSpec } from './panes.js';
 export { statsArgv } from './stats.js';
@@ -281,124 +289,39 @@ export function kitUninstallArgv(): string[] {
 // ---- what the page reads -----------------------------------------------------------
 
 /**
- * The keys the page reads from each call's JSON, by the call's name. A path
- * is dotted; `[]` after a segment is any element of an array, and a leading
- * `[]` is the answer itself being one. Each must be found in at least one
- * sample answer the test gets (`tests/calls-pure.test.mjs`).
+ * The type the page reads each call's JSON as, by the call's name — the
+ * types its call sites parse the answer into, and nothing kept beside them
+ * (da-qy4w0). `tests/calls-pure.test.mjs` walks each with the TypeScript
+ * checker into every key it names, nested, and fails on one that no sample
+ * answer carries: a key a call site starts reading is checked once its type
+ * has it. Where call sites read several, `|` lists them. The walk checks a
+ * property tagged `@shallow` and nothing under it: what the page wrote
+ * itself, or what no seeded database can hold.
  */
-export const READS: Record<string, string[]> = {
-	// $lib/fields.ts `FieldListing`, the lane Placement.svelte reads
-	fieldsArgv: ['[].field', '[].spec', '[].states', '[].color', '[].state_colors', '[].ignored', '[].y', '[].height'],
-	frecencyArgv: ['[].field', '[].y', '[].frecency'],
-	// $lib/commands.ts `GrammarEntry`
-	grammarArgv: [
-		'[].name',
-		'[].aliases',
-		'[].usage',
-		'[].bare',
-		'[].subcommands[].name',
-		'[].flags[].short',
-		'[].flags[].long',
-		'[].flags[].takes_value'
-	],
-	nowArgv: ['active[].field', 'active[].state'],
-	firstEntryArgv: ['rows[].time', 'rows[].dur_seconds'],
-	lastDotsArgv: ['rows[].verb', 'rows[].time'],
-	aliasesArgv: ['[].name', '[].expansion', '[].source', '[].field'],
-	// $lib/tail.ts `TailRow`, `TailColumn`
-	tailArgv: [
-		'rows[].hid',
-		'rows[].field',
-		'rows[].verb',
-		'rows[].time',
-		'rows[].state_label',
-		'rows[].quick_id',
-		'rows[].previous_state',
-		'rows[].previous_state_label',
-		'rows[].previous_state_color',
-		'rows[].previous_state_cell',
-		'rows[].following_state',
-		'rows[].following_state_label',
-		'rows[].following_state_color',
-		'rows[].following_state_cell',
-		'rows[].state_body',
-		'rows[].state_repeat',
-		'columns[].key',
-		'columns[].header',
-		'columns[].cells'
-	],
-	// DayStrip.svelte `readGeometry`
-	geometryArgv: ['hours[].hour', 'hours[].x', 'axis_ticks[].is_major', 'axis_ticks[].label', 'days[].date'],
-	// $lib/stats.ts `AllFieldsStats`, `FieldStats`
-	showAllArgv: [
-		'total_count',
-		'tracked_duration_seconds',
-		'earliest',
-		'latest',
-		'fields[].field',
-		'fields[].color',
-		'fields[].count',
-		'fields[].duration_seconds',
-		'fields[].ratio',
-		'fields[].frequency.per_day',
-		'total_duration_seconds',
-		'frequency',
-		'states[].state',
-		'states[].count',
-		'states[].duration_seconds',
-		'states[].ratio'
-	],
-	// $lib/track.ts `Spec`
-	specShowArgv: ['field', 'verb', 'color', 'description', 'allowed_states', 'state_colors'],
-	// $lib/syncView.ts `DbSync`, `Member`; $lib/sync.ts `Peer`
-	syncStatusArgv: [
-		'chain',
-		'paused',
-		'notices',
-		'clock',
-		'this.endpoint',
-		'this.client',
-		'this.label',
-		'this.datum',
-		'this.schema',
-		'members[].endpoint',
-		'members[].label',
-		'members[].kind',
-		'members[].revoked',
-		'members[].addr',
-		'members[].state',
-		'members[].to_send'
-	],
-	chainListArgv: ['admins'],
-	adminListArgv: ['admins'],
-	// $lib/sync.ts `Invite`
-	newInviteArgv: ['secret', 'expires'],
-	// $lib/syncView.ts `purgeWords`: the preview's; the `--yes` purge answers no JSON
-	purgeArgv: ['created', 'edited', 'deleted', 'defined', 'first', 'last'],
-	restorePreviewArgv: ['would_delete', 'would_insert', 'would_update', 'warnings', 'fingerprint', 'dropped'],
-	plansArgv: ['rows[].data.plan'],
-	// $lib/backups.ts `Backup`
-	backupListArgv: [
-		'backups[].slot',
-		'backups[].file',
-		'backups[].backup_time',
-		'backups[].source_db',
-		'backups[].entry_count',
-		'backups[].size',
-		'backups[].age_secs'
-	],
-	backupToArgv: ['slot', 'written', 'removed'],
-	planReachArgv: ['span_secs', 'files', 'reach_secs'],
-	// $lib/layout/store.ts `Row`
-	layoutsArgv: [
-		'rows[].hid',
-		'rows[].slug',
-		'rows[].modify_time',
-		'rows[].data.name',
-		'rows[].data.version',
-		'rows[].data.root',
-		'rows[].data.designedFor',
-		'rows[].data.kit_id'
-	],
-	layoutHistoryArgv: ['[].version', '[].modify_time']
-};
+export interface Reads {
+	/** `frecency` comes with `--sort frecency` alone. */
+	fieldsArgv: Omit<FieldListing, 'frecency'>[];
+	frecencyArgv: FieldListing[];
+	grammarArgv: GrammarEntry[];
+	nowArgv: NowListing;
+	firstEntryArgv: TailListing;
+	lastDotsArgv: TailListing;
+	aliasesArgv: Alias[];
+	tailArgv: TailListing;
+	geometryArgv: DayviewJson;
+	showAllArgv: AllFieldsStats | FieldStats;
+	specShowArgv: Spec;
+	syncStatusArgv: SyncStatus;
+	chainListArgv: Admins;
+	adminListArgv: Admins;
+	newInviteArgv: Invite;
+	/** The preview's: the `--yes` purge answers no JSON. */
+	purgeArgv: PurgePreview;
+	restorePreviewArgv: RestorePreview;
+	plansArgv: PlanRows;
+	backupListArgv: { backups: Backup[] };
+	backupToArgv: BackupRun;
+	planReachArgv: Reach;
+	layoutsArgv: { rows: LayoutRow[] };
+	layoutHistoryArgv: LayoutVersion[];
+}

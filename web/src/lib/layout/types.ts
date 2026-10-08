@@ -106,6 +106,7 @@ export interface Pane {
 export interface Layout {
 	version: typeof LAYOUT_VERSION;
 	name: string;
+	/** @shallow the page's own tree, read back as it wrote it: no key under it is the CLI's. */
 	root: Pane;
 	designedFor?: 'mobile' | 'desktop';
 }

@@ -33,6 +33,7 @@ import {
 	type FieldButton,
 	type FieldListing,
 	type NowActive,
+	type NowListing,
 	type Standings
 } from '$lib/fields.js';
 
@@ -146,7 +147,7 @@ export async function refresh(): Promise<void> {
 /** `now --json`'s active fields; none when it failed, so every field is drawn off rather than lost. */
 function activeOf(now: RunResult): NowActive[] {
 	try {
-		return now.code === 0 ? ((JSON.parse(now.stdout) as { active?: NowActive[] }).active ?? []) : [];
+		return now.code === 0 ? ((JSON.parse(now.stdout) as NowListing).active ?? []) : [];
 	} catch {
 		return [];
 	}

@@ -29,11 +29,16 @@ export interface Member {
 	label: string;
 	kind?: string | null;
 	revoked: boolean;
+	/** Where it was last seen, which sync.ts dials. */
+	addr?: string | null;
 	/** Every op it signed set aside (da-ry11c): revoked too. */
 	purged?: boolean;
 	/** A reader (da-9yvb6): it receives, and writes nothing. */
 	reader?: boolean;
-	/** A filtered reader's fields, and how many the database had (da-u81u1). */
+	/**
+	 * A filtered reader's fields, and how many the database had (da-u81u1).
+	 * @shallow a reader takes a second device, which no seeded database is.
+	 */
 	filter?: Filter | null;
 	state: 'synced' | 'pending' | 'never' | 'error';
 	to_send: number;
@@ -55,6 +60,11 @@ export interface Admin {
 	label: string;
 }
 
+/** `sync chain list --json` and `sync admin list --json`. */
+export interface Admins {
+	admins: Admin[];
+}
+
 /** A new member or admin, or an unlock, not yet acknowledged (`sync chain ack`). */
 export interface Notice {
 	subject: string;
@@ -67,15 +77,35 @@ export interface Notice {
 export interface DbSync {
 	db: string;
 	chain: string | null;
-	this?: { endpoint: string; client: string; label: string; reader?: boolean; filter?: Filter | null; revoked?: string | null };
+	this?: {
+		endpoint: string;
+		client: string;
+		label: string;
+		/** The build and schema this copy runs, which sync.ts says to every peer (da-3zqyv). */
+		datum: string;
+		schema: number;
+		reader?: boolean;
+		/** @shallow as a member's. */
+		filter?: Filter | null;
+		revoked?: string | null;
+	};
 	members: Member[];
 	admins?: Admin[];
 	/** When this copy's sync was paused, while it is. */
 	paused?: string | null;
 	notices?: Notice[];
-	/** Devices whose changes wait for this copy's clock to catch up with theirs (da-ns8dq). */
+	/**
+	 * Devices whose changes wait for this copy's clock to catch up with theirs (da-ns8dq).
+	 * @shallow it takes a second device, ahead of this one.
+	 */
 	clock?: { endpoint: string; text: string }[];
 }
+
+/**
+ * `sync status --json`: a `DbSync` but for the database's name and the admins, which `sync chain list` has.
+ * `this` is always there: only a `DbSync` made for a database in no chain lacks it.
+ */
+export type SyncStatus = Omit<DbSync, 'db' | 'admins'> & Required<Pick<DbSync, 'this'>>;
 
 /**
  * A link's `#` held in this tab's `sessionStorage` as well as in memory
@@ -160,8 +190,8 @@ export function readSync(dbs: string[]): Promise<DbSync[]> {
 			if (members.code !== 0) return { db, chain: null, members: [] };
 			const status = await run(['--db', db, ...syncStatusArgv()]);
 			if (status.code !== 0) return { db, chain: null, members: [] };
-			const s = JSON.parse(status.stdout);
-			const { admins } = JSON.parse(members.stdout);
+			const s = JSON.parse(status.stdout) as SyncStatus;
+			const { admins } = JSON.parse(members.stdout) as Admins;
 			return { db, chain: s.chain, this: s.this, members: s.members, admins, paused: s.paused, notices: s.notices, clock: s.clock };
 		})
 	);

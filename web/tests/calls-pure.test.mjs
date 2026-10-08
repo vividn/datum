@@ -7,7 +7,9 @@
 // samples below, through the same wasm CLI the page runs, on a copy of one
 // seeded database, as `runners/wasi.ts` runs it. A usage error — a flag,
 // subcommand or argument the CLI no longer takes — fails it, and so does a
-// key in `READS` that no answer carries, naming the files that send it.
+// key the page reads that no answer carries, naming the files that send it.
+// The keys are every one `Reads` — the types the call sites parse each
+// answer into — names, walked by the TypeScript checker (da-qy4w0).
 // What a call does at RUN time is not this test's business: a revoke of a
 // member that is not there may fail, as long as it fails as a revoke.
 //
@@ -20,6 +22,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { File as MemFile, OpenFile, WASI } from '@bjorn3/browser_wasi_shim';
+import ts from 'typescript';
 import { resolveLibAsSource } from './support/libhook.mjs';
 
 resolveLibAsSource(import.meta.url);
@@ -59,6 +62,63 @@ function copy(handles) {
 	);
 }
 
+// ---- what the page reads -------------------------------------------------------
+
+/**
+ * `Reads`, as each call's paths: dotted, with `[]` after a segment for any
+ * element of an array (a leading one: the answer itself is one) and `{}`
+ * for any value of a map. Every key of every type, nested — each member
+ * of a union's — but under a property tagged `@shallow`; an array or a map
+ * of plain values is its key alone, and a type met again inside itself
+ * stops there. A type the checker cannot see into (`any`: an import it
+ * could not resolve) fails, rather than passing with nothing to check.
+ */
+function readsOf(file) {
+	const program = ts.createProgram([file], {
+		strict: true,
+		noEmit: true,
+		skipLibCheck: true,
+		target: ts.ScriptTarget.ESNext,
+		module: ts.ModuleKind.ESNext,
+		moduleResolution: ts.ModuleResolutionKind.Bundler,
+		paths: { '$lib/*': [join(web, 'src/lib/*')] }
+	});
+	const checker = program.getTypeChecker();
+	const exported = checker.getExportsOfModule(checker.getSymbolAtLocation(program.getSourceFile(file)));
+	const reads = checker.getDeclaredTypeOfSymbol(exported.find((s) => s.name === 'Reads'));
+	let call;
+	const walk = (type, key, seen) => {
+		type = checker.getNonNullableType(type);
+		assert.ok(!(type.flags & ts.TypeFlags.Any), `Reads.${call}: «${key}» is any`);
+		if (type.isUnion()) return [...new Set(type.types.flatMap((t) => walk(t, key, seen)))];
+		if (seen.includes(type)) return [key];
+		const keyed = type.flags & ts.TypeFlags.Object || type.isIntersection();
+		const props = keyed ? checker.getPropertiesOfType(type) : [];
+		// An array's elements, or the values of a map with no key of its own: named only where they have keys.
+		const each = checker.isArrayType(type)
+			? [checker.getTypeArguments(type)[0], '[]']
+			: keyed && !props.length && checker.getIndexInfosOfType(type)[0]
+				? [checker.getIndexInfosOfType(type)[0].type, '{}']
+				: null;
+		if (each) {
+			const paths = walk(each[0], key + each[1], [...seen, type]);
+			return paths.length === 1 && paths[0] === key + each[1] ? [key] : paths;
+		}
+		if (!props.length) return [key];
+		return props
+			.flatMap((p) =>
+				p.getJsDocTags().some((tag) => tag.name === 'shallow')
+					? [p.name]
+					: walk(checker.getTypeOfSymbol(p), p.name, [...seen, type])
+			)
+			.map((path) => (key ? `${key}.${path}` : path));
+	};
+	return Object.fromEntries(
+		checker.getPropertiesOfType(reads).map((p) => [(call = p.name), walk(checker.getTypeOfSymbol(p), '', [])])
+	);
+}
+const READS = readsOf(join(web, 'src/lib/calls.ts'));
+
 // ---- the seeded database -----------------------------------------------------
 
 const PLAN = { name: 'nightly', kind: 's3', config: {}, dbs: ['datum'], every: 86_400, slots: 7 };
@@ -75,12 +135,31 @@ seed(['switch', 'mood', 'happy', '-t', '-120']);
 seed(['switch', 'mood', 'calm', '-t', '-60']);
 seed(['start', 'walk']);
 seed(['track', 'coffee', '--verb', 'occur']);
+// Every key a spec leaves out when empty, on a spec that has it.
+const SPEC = { verb: 'occur', color: null, description: null, allowed_states: null, state_colors: {} };
+const SIZE = { required: false, value_type: 'string', in_slug: false, default: 'big' };
+seed(
+	calls.specArgv({
+		...SPEC,
+		field: 'coffee',
+		glyph: 'c',
+		glyph_by: { key: 'size', map: { big: 'C' } },
+		icon: '<svg viewBox="0 0 1 1"/>',
+		subfields: { size: SIZE }
+	})
+);
+seed(calls.specArgv({ ...SPEC, field: 'mood', verb: 'switch', never_false: true, relative_to: 'coffee', state_descriptions: { happy: 'up' }, state_glyphs: { happy: 'h' } }));
 seed(['alias', 'set', 'cof', 'occur coffee']);
 seed(calls.savePlanArgv(PLAN, false));
 seed(calls.newLayoutArgv(LAYOUT, 'k'));
 seed(calls.updateLayoutArgv({ ...LAYOUT, root: { kind: 'split' } }, 'k'));
 // Started by another client: `sync status` lists it as a member besides this copy.
 seed(calls.newInviteArgv(), { client: 'phone' });
+// An admin it adds and removes, which leaves a notice of the unlock, and one
+// it adds again, locking it: each from a key file made in the stage.
+const KEYS = seed(calls.adminAddArgv('/data/stage/first.key'), { client: 'phone', stage: {} }).stage;
+seed([...calls.adminRemoveArgv('first.key', true), '--admin-key', '/data/stage/first.key'], { client: 'phone', stage: KEYS });
+seed(calls.adminAddArgv('/data/stage/admin.key'), { client: 'phone', stage: {} });
 const STAGE = seed(calls.backupToArgv(PLAN), { stage: {} }).stage;
 const FILE = Object.keys(STAGE).find((file) => file !== 'index.json');
 const BACKUP = seed(calls.backupArgv()).stdout;
@@ -95,9 +174,9 @@ const SAMPLES = {
 	helpArgv: [[], ['db backup']],
 	lastDotsArgv: [['coffee']],
 	tailArgv: [[{}], [{ field: 'mood', count: 5, before: new Date().toISOString() }]],
-	showAllArgv: [[statsArgv(DEFAULT_STATS)], [statsArgv(DEFAULT_STATS, 'mood')]],
+	showAllArgv: [[statsArgv(DEFAULT_STATS)], [statsArgv(DEFAULT_STATS, 'mood')], [statsArgv({ range: 'all' }, 'coffee')]],
 	statsArgv: [[DEFAULT_STATS], [{ range: 'all' }, 'coffee']],
-	specShowArgv: [['coffee']],
+	specShowArgv: [['coffee'], ['mood']],
 	bandArgv: [[400, 40], [400, 40, 3]],
 	geometryArgv: [[400, 40]],
 	nowviewSpec: [['30m'], ['0', new Date().toISOString(), true]],
@@ -184,15 +263,16 @@ function parse(stdout) {
 	return null;
 }
 
-/** Whether `path` (`READS`' spelling) is found in `value`: some element, for `[]`. */
-function has(value, [segment, ...rest]) {
-	if (segment === undefined) return true;
-	const many = segment.endsWith('[]');
-	const key = many ? segment.slice(0, -2) : segment;
-	if (key && !(value !== null && typeof value === 'object' && key in value)) return false;
-	const next = key ? value[key] : value;
-	return many ? Array.isArray(next) && next.some((item) => has(item, rest)) : has(next, rest);
+/** The values `segment` names in `value`: a key's, every element's for `[]`, every value's for `{}`. */
+function at(value, segment) {
+	const [, inner, of] = segment.match(/^(.*?)(\[\]|\{\})?$/);
+	const keyed = (v) => v !== null && typeof v === 'object';
+	if (!of) return !inner ? [value] : keyed(value) && inner in value ? [value[inner]] : [];
+	return at(value, inner).flatMap((v) => (of === '[]' ? (Array.isArray(v) ? v : []) : keyed(v) && !Array.isArray(v) ? Object.values(v) : []));
 }
+
+/** Whether `path` (`readsOf`'s spelling) is found in `value`: in some element or value, for `[]` and `{}`. */
+const has = (value, [segment, ...rest]) => segment === undefined || at(value, segment).some((v) => has(v, rest));
 
 // ---- where each call is sent from -------------------------------------------------
 
@@ -204,7 +284,7 @@ const sitesOf = (name) =>
 	sources.filter(({ file, text }) => !file.endsWith('lib/calls.ts') && new RegExp(`\\b${name}\\b`).test(text)).map(({ file }) => file);
 
 const USAGE = /^Error: (Invalid argument|Missing required key|Extra data with no matching key)/m;
-const named = Object.entries(calls).filter(([name]) => name !== 'READS');
+const named = Object.entries(calls);
 
 describe('every call the page sends', () => {
 	for (const [name, value] of named) {
@@ -218,14 +298,14 @@ describe('every call the page sends', () => {
 				const r = datum(handles, argv, { stdin: STDIN[name] ?? '', stage: { ...STAGE } });
 				assert.doesNotMatch(r.stderr, USAGE, `${at}: datum ${argv.join(' ')}`);
 				if (isJson(argv)) {
-					assert.ok(calls.READS[name], `${at} asks for JSON: name what the page reads of it in READS`);
+					assert.ok(READS[name], `${at} asks for JSON: name the type the page reads it as in Reads`);
 					assert.equal(r.code, 0, `${at}: datum ${argv.join(' ')}: ${r.stderr}`);
 				}
 				// Some answer JSON unasked (`spec show`, `sync new-invite`), and some samples do not (a purge's `--yes`).
-				if (calls.READS[name] && r.code === 0) answers.push(parse(r.stdout));
+				if (READS[name] && r.code === 0) answers.push(parse(r.stdout));
 			}
-			for (const path of calls.READS[name] ?? [])
-				assert.ok(answers.some((answer) => has(answer, path.split('.'))), `${at}: no answer has «${path}», which the page reads`);
+			const missing = (READS[name] ?? []).filter((path) => !answers.some((answer) => has(answer, path.split('.'))));
+			assert.deepEqual(missing, [], `${at}: no answer has these keys, which the page reads`);
 		});
 	}
 
@@ -235,8 +315,8 @@ describe('every call the page sends', () => {
 			assert.match(datum(copy(seeded), argv).stderr, USAGE, `datum ${argv.join(' ')}`);
 	});
 
-	test('READS names only calls', () => {
-		for (const name of Object.keys(calls.READS)) assert.ok(name in calls, `READS.${name} is no call`);
+	test('Reads names only calls', () => {
+		for (const name of Object.keys(READS)) assert.ok(name in calls, `Reads.${name} is no call`);
 	});
 });
 

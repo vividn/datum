@@ -187,6 +187,11 @@ export interface NowActive {
 	state: unknown;
 }
 
+/** `datum now --json`. */
+export interface NowListing {
+	active?: NowActive[];
+}
+
 /**
  * The widget's entries: every field `datum fields` lists, as high up the
  * pictures as the CLI draws it (the `y` it resolved, da-vu7pi), and the

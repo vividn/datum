@@ -57,9 +57,11 @@
 		syncAct,
 		table,
 		type Admin,
+		type Admins,
 		type DbSync,
 		type Mark,
 		type Notice,
+		type PurgePreview,
 		type Row
 	} from '$lib/syncView.js';
 	import { approve, approveRecord, createPasskey } from '$lib/passkey.js';
@@ -268,7 +270,7 @@
 	/** A purge previews first (da-ry11c): the confirm names the device and what goes. */
 	const purge = (label: string, endpoint: string) =>
 		doing(async () => {
-			const preview = JSON.parse(ok(await syncAct(db, purgeArgv(endpoint))).stdout);
+			const preview = JSON.parse(ok(await syncAct(db, purgeArgv(endpoint))).stdout) as PurgePreview;
 			if (!(await confirm(purgeWords(label, db, preview), 'purge', label))) return;
 			ok(await syncAct(db, purgeArgv(endpoint, true)));
 		});
@@ -280,7 +282,7 @@
 			ok(await syncAct(d.db, adminAddArgv(await createPasskey(label))));
 			// Remembered, so an approval card can say a key is this browser's.
 			const before = new Set((d.admins ?? []).map((a) => a.key));
-			const { admins } = JSON.parse(ok(await syncAct(d.db, adminListArgv())).stdout) as { admins: Admin[] };
+			const { admins } = JSON.parse(ok(await syncAct(d.db, adminListArgv())).stdout) as Admins;
 			markOwn(admins.map((a) => a.key).filter((k) => !before.has(k)));
 		});
 

@@ -23,6 +23,8 @@
 	import { inlineSvg } from './hover.js';
 	import { bandArgv, fieldsArgv, lastDotsArgv } from './calls.js';
 	import { run } from './run.js';
+	import type { FieldListing } from './fields.js';
+	import type { TailListing } from './tail.js';
 	import type { Place } from './track.js';
 
 	export let field: string;
@@ -35,16 +37,10 @@
 	/** The thinnest lane a drag leaves. */
 	const MIN = 0.02;
 
-	interface Lane {
-		y: number;
-		height: number;
-		spec: { relative_to?: string | null } | null;
-	}
-
 	let band: HTMLDivElement;
 	let svg: SVGSVGElement | null = null;
 	/** Every field's lane as the pictures resolve it (`fields --json`), anchors included. */
-	let lanes: Record<string, Lane> = {};
+	let lanes: Record<string, FieldListing> = {};
 	/** The fields today's band draws, whose names label their lanes. */
 	let named: string[] = [];
 	let drag: { mode: 'move' | 'top' | 'bottom'; at: number; y: number; h: number } | null = null;
@@ -58,7 +54,7 @@
 	async function lastDot(): Promise<string | undefined> {
 		const r = await run(lastDotsArgv(field));
 		if (r.code !== 0) return undefined;
-		const rows = JSON.parse(r.stdout).rows as { verb: string; time: string | null }[];
+		const { rows } = JSON.parse(r.stdout) as TailListing;
 		return rows.findLast((row) => row.verb === 'point')?.time?.slice(0, 10);
 	}
 
@@ -67,7 +63,7 @@
 		let [picture, listing] = await Promise.all([run(argv), run(fieldsArgv())]);
 		if (listing.code === 0) {
 			lanes = Object.fromEntries(
-				(JSON.parse(listing.stdout) as ({ field: string } & Lane)[]).map((f) => [f.field, f])
+				(JSON.parse(listing.stdout) as FieldListing[]).map((f) => [f.field, f])
 			);
 		}
 		svg = picture.code === 0 ? inlineSvg(picture.stdout) : null;

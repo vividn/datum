@@ -402,6 +402,13 @@ export const geometryArgv = (width: number, dayHeight: number): string[] => [
 	'json'
 ];
 
+/** `geometryArgv`'s answer, as much of it as the strip draws with. */
+export interface DayviewJson {
+	hours?: { hour: number; x: number }[];
+	axis_ticks?: { is_major?: boolean; label?: string }[];
+	days?: { date: string }[];
+}
+
 // `nowview -o -`, not `now` or bare `nowview`: both of those paint a band
 // for a terminal, and a browser pane is a better place for the picture the
 // CLI writes to a .svg file — which `-o -` puts on stdout.

@@ -69,10 +69,18 @@ async function stdoutOf(argv: string[]): Promise<string> {
 	return result.stdout;
 }
 
-interface Row {
+/** One row of `tail layout --json`. */
+export interface LayoutRow {
 	hid: string;
 	slug: string;
-	data: Layout;
+	/** A kit's layout carries its kit (da-o2wm8). */
+	data: Layout & { kit_id?: string };
+	modify_time: string;
+}
+
+/** One version of `history --json`. */
+export interface LayoutVersion {
+	version: number;
 	modify_time: string;
 }
 
@@ -83,13 +91,13 @@ interface Row {
  * the `layout` field (da-c8mh). That row carries no data, and it is not a
  * layout — a saved one always has a name.
  */
-async function rows(): Promise<Row[]> {
-	const listed: Row[] = JSON.parse(await datum(...layoutsArgv())).rows;
+async function rows(): Promise<LayoutRow[]> {
+	const listed = (JSON.parse(await datum(...layoutsArgv())) as { rows: LayoutRow[] }).rows;
 	return listed.filter((r) => r.data?.name !== undefined);
 }
 
 /** A row's data as a `Layout` — the two stores hold the same shape. */
-const layoutOf = ({ data: d }: Row): Layout => ({
+const layoutOf = ({ data: d }: LayoutRow): Layout => ({
 	version: d.version,
 	name: d.name,
 	root: d.root,
@@ -116,7 +124,7 @@ export const kitOf = (name: string): string | null => kits.get(name)?.kit ?? nul
  * process) leaves the cache as it was rather than emptying it.
  */
 export async function refreshKitLayouts(): Promise<void> {
-	let listed: Row[];
+	let listed: LayoutRow[];
 	try {
 		listed = JSON.parse(await data(...layoutsArgv())).rows;
 	} catch {
@@ -129,7 +137,7 @@ export async function refreshKitLayouts(): Promise<void> {
 		// row carries no data. Nothing wrote a `layout` row into a data
 		// database until `installKitLayout` did (da-o2wm8), so this list
 		// had never held one and the dereference had never been reached.
-		const kit = (row.data as { kit_id?: unknown } | null)?.kit_id;
+		const kit = row.data?.kit_id;
 		if (typeof kit !== 'string' || !row.data?.name) continue;
 		if (!next.has(row.data.name)) next.set(row.data.name, { layout: layoutOf(row), kit });
 	}
@@ -155,7 +163,7 @@ export async function installKitLayout(layout: Layout, kit: string, replace = fa
 	await data(...(replace ? updateLayoutArgv(layout, kit) : newLayoutArgv(layout, kit)));
 }
 
-async function row(name: string): Promise<Row> {
+async function row(name: string): Promise<LayoutRow> {
 	const found = (await rows()).find((r) => r.slug === slug(name));
 	if (!found) throw new Error(`no saved layout named ${name}`);
 	return found;
@@ -220,8 +228,8 @@ export async function saveAs(layout: Layout, newName: string): Promise<Layout> {
 
 /** The entry's versions, newest first, as `history --json` lists them. */
 export async function versions(name: string): Promise<{ version: number; modifyTime: string }[]> {
-	const trail = JSON.parse(await datum(...layoutHistoryArgv(name)));
-	return trail.map((v: { version: number; modify_time: string }) => ({
+	const trail = JSON.parse(await datum(...layoutHistoryArgv(name))) as LayoutVersion[];
+	return trail.map((v) => ({
 		version: v.version,
 		modifyTime: v.modify_time
 	}));

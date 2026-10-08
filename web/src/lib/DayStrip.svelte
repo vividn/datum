@@ -168,6 +168,7 @@
 	import { advance, LONG_MS, SLOP_PX, type Mode, type Press } from './nowpoint.js';
 	import { run, type RunResult } from './run.js';
 	import { firstEntryArgv } from './calls.js';
+	import type { TailListing } from './tail.js';
 	import {
 		AXIS_HEIGHT,
 		DIVIDER,
@@ -186,6 +187,7 @@
 		dayPitch,
 		geometryArgv,
 		pictureWidth,
+		type DayviewJson,
 		todayBox,
 		wholeDay,
 		windowMap,
@@ -585,16 +587,14 @@
 	/** `dayview --show json`, as much of it as the strip draws with. */
 	function readGeometry(stdout: string): Geometry | null {
 		try {
-			const json = JSON.parse(stdout);
-			const ticks: { is_major?: boolean; label?: string }[] = json.axis_ticks ?? [];
-			const hours: Hour[] = (json.hours ?? []).map(
-				(mark: { hour: number; x: number }, i: number) => ({
-					hour: mark.hour,
-					x: mark.x,
-					major: !!ticks[i]?.is_major,
-					label: ticks[i]?.label ?? String(mark.hour).padStart(2, '0')
-				})
-			);
+			const json = JSON.parse(stdout) as DayviewJson;
+			const ticks = json.axis_ticks ?? [];
+			const hours: Hour[] = (json.hours ?? []).map((mark, i) => ({
+				hour: mark.hour,
+				x: mark.x,
+				major: !!ticks[i]?.is_major,
+				label: ticks[i]?.label ?? String(mark.hour).padStart(2, '0')
+			}));
 			return hours.length ? { hours, today: json.days?.[0]?.date ?? null } : null;
 		} catch {
 			return null;
@@ -665,7 +665,7 @@
 	 */
 	async function firstEntry(today: string): Promise<{ back: number; date: string } | null> {
 		try {
-			const { rows } = JSON.parse((await run(firstEntryArgv())).stdout);
+			const { rows } = JSON.parse((await run(firstEntryArgv())).stdout) as Partial<TailListing>;
 			const row = rows?.[0];
 			if (!row?.time) return null;
 			const at = new Date(Date.parse(row.time) - (row.dur_seconds ?? 0) * 1000);

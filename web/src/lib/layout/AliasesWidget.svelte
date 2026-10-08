@@ -11,19 +11,12 @@
 	import Pane from '$lib/Pane.svelte';
 	import { run } from '$lib/run.js';
 	import { aliasesArgv } from '$lib/calls.js';
+	import type { Alias } from '$lib/commands.js';
 	import { fields } from './engine.js';
 
 	export let epoch = 0;
 
-	/** One row of `datum alias list --json`. */
-	interface Listed {
-		name: string;
-		expansion: string;
-		source: 'user' | 'derived';
-		field?: string;
-	}
-
-	let listed: Listed[] | null = null;
+	let listed: Alias[] | null = null;
 	/** Listings started and the newest one on screen: last started wins (see CliPane.svelte). */
 	let started = 0;
 	let shown = -1;
@@ -36,7 +29,7 @@
 		if (at < shown || result.code !== 0) return;
 		shown = at;
 		try {
-			listed = JSON.parse(result.stdout) as Listed[];
+			listed = JSON.parse(result.stdout) as Alias[];
 		} catch {
 			// Not the JSON asked for (a process killed mid-write): the list stays as it was.
 		}
@@ -46,7 +39,7 @@
 	$: derived = [
 		...(listed ?? [])
 			.filter((a) => a.source === 'derived')
-			.reduce((m, a) => m.set(a.field ?? '', [...(m.get(a.field ?? '') ?? []), a]), new Map<string, Listed[]>())
+			.reduce((m, a) => m.set(a.field ?? '', [...(m.get(a.field ?? '') ?? []), a]), new Map<string, Alias[]>())
 	].sort(([a], [b]) => a.localeCompare(b));
 	$: colors = new Map($fields.map((w) => [w.field, w.color]));
 </script>
