@@ -82,14 +82,14 @@ pub(crate) fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
     // Either shift form returns before the time args are read, so beside
     // them it would silently drop them (da-k5oa5).
     let t = &composed.time;
-    let time_args = t.time.is_some()
+    let placing = t.time.is_some()
         || t.yesterday > 0
         || t.quick > 0
         || t.date.is_some()
         || t.full_day
-        || t.omit_timestamp
-        || t.timezone.is_some();
-    if time_args || composed.relative {
+        || t.timezone.is_some()
+        || composed.relative;
+    if placing || t.omit_timestamp {
         let shift = (composed.offset.as_ref().map(|_| "--offset".to_string()))
             .or(bare_offset_min.map(|n| format!("a bare minutes offset ({n})")));
         if let Some(shift) = shift {
@@ -97,6 +97,15 @@ pub(crate) fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
                 "{shift} is mutually exclusive with time-arg flags"
             )));
         }
+    }
+
+    // `-T` takes the time away (da-1d0v2), so a time it would be moved to
+    // has nowhere to go.
+    if t.omit_timestamp && placing {
+        return Err(ParseError::InvalidArg(
+            "-T/--no-timestamp removes the time; it cannot be combined with time flags or -r"
+                .into(),
+        ));
     }
 
     Ok(RetimeArgs {

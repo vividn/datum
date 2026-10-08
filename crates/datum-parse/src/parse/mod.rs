@@ -1004,6 +1004,29 @@ mod tests {
         assert!(msg.contains("--offset"), "got: {msg}");
     }
 
+    /// da-1d0v2: `-T` takes the time away, so a flag placing it is refused.
+    #[test]
+    fn retime_no_timestamp_conflicts_with_placing_flags() {
+        for extra in [
+            &["-t", "0930"][..],
+            &["-r"],
+            &["-y"],
+            &["-q"],
+            &["-d", "-1"],
+            &["-D"],
+            &["-z", "+4"],
+        ] {
+            let mut args = vec!["retime", "coffee:abc", "-T"];
+            args.extend_from_slice(extra);
+            let msg = format!("{}", parse_argv(&argv(&args)).unwrap_err());
+            assert!(
+                msg.contains("-T/--no-timestamp removes the time"),
+                "{extra:?} got: {msg}"
+            );
+        }
+        assert!(parse_argv(&argv(&["retime", "coffee:abc", "-T"])).is_ok());
+    }
+
     /// da-k5oa5: a bare minutes offset returns before the time args are
     /// read, so beside them it is refused like `--offset`, not ignored.
     #[test]

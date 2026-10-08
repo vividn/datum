@@ -2,7 +2,7 @@
 //!
 //! Post-pivot the entry's time-shape is just `occur_time` + `dur` — no
 //! end_time to slide. These methods retime `occur_time` and leave `dur`
-//! untouched.
+//! untouched — except `clear_occur_time` (`retime -T`), which makes a note.
 //!
 //! da-5ns.4: when the row's `id_structure` references `%occur_time%`, a
 //! retime cascades into the slug. Each row goes through
@@ -39,6 +39,57 @@ impl Db {
         filter: &RetimeFilter,
         new_start: &crate::time::DatumTime,
     ) -> Result<Vec<Retimed>> {
+        self.retime_with(filter, |e| {
+            e.occur_time = Some(new_start.clone());
+            Ok(())
+        })
+    }
+
+    /// Shift matching rows' `occur_time` by `offset`. Atomic over the
+    /// batch, same as [`Self::set_start_time`] (da-sunq).
+    pub fn update_times(&self, filter: &RetimeFilter, offset: Duration) -> Result<Vec<Retimed>> {
+        self.retime_with(filter, |e| {
+            if let Some(t) = e.occur_time.as_mut() {
+                t.utc += offset;
+                // A raw `utc` mutation desyncs `offset_minutes` (see the
+                // DatumTime doc-comment); re-derive it so a cross-DST shift
+                // renders the intended wall-clock and rekeys %occur_time%
+                // slugs correctly. Propagates on unknown-tz.
+                t.refresh_offset()?;
+            }
+            Ok(())
+        })
+    }
+
+    /// `retime -T` (da-1d0v2): take matching rows' `occur_time` away, making
+    /// each the note `-T` logs. A state or a duration leaves a point
+    /// (`Dur::moment()`), as `start -T` / `occur -T` store; the span and the
+    /// following state, which only a time can place, go. The default `%occur_time%` id becomes
+    /// `%create_time%`, so the slug is `field:c<create_time>` as a timeless
+    /// insert's is. Atomic over the batch, same as [`Self::set_start_time`].
+    pub fn clear_occur_time(&self, filter: &RetimeFilter) -> Result<Vec<Retimed>> {
+        self.retime_with(filter, |e| {
+            e.occur_time = None;
+            e.following_state = None;
+            e.dur = (e.state.is_some() || e.dur.is_some()).then(crate::dur::Dur::moment);
+            if e.id_structure.as_deref() == Some("%occur_time%") {
+                e.id_structure = Some("%create_time%".into());
+            }
+            Ok(())
+        })
+    }
+
+    /// Apply `change` to every row the filter selects, in one transaction
+    /// (da-sunq: a mid-batch failure — rekey collision, disk error — rolls
+    /// back every row already changed, so a partial retime is never
+    /// visible). Each row is saved through
+    /// [`Db::save_existing_entry_with_auto_reinterp`], so a templated slug
+    /// is re-derived.
+    fn retime_with(
+        &self,
+        filter: &RetimeFilter,
+        mut change: impl FnMut(&mut Entry) -> Result<()>,
+    ) -> Result<Vec<Retimed>> {
         let entries = select_retime_targets(self, filter)?;
         let tx = self.conn.unchecked_transaction()?;
         let mut moved = Vec::with_capacity(entries.len());
@@ -47,46 +98,11 @@ impl Db {
             // Targets always carry an occur_time (the selector excludes
             // timeless rows), so the `before` half of the pair is always
             // there to render.
-            let before = e.occur_time.take();
-            e.occur_time = Some(new_start.clone());
+            let before = e.occur_time.clone();
+            change(&mut e)?;
             let (saved, _) = self.save_existing_entry_with_auto_reinterp_kind_in_tx(
                 &old_slug,
                 e,
-                DEFAULT_ID_DELIMITER,
-                crate::history::ChangeKind::Retime,
-            )?;
-            if let Some(before) = before {
-                moved.push(Retimed {
-                    before,
-                    entry: saved,
-                });
-            }
-        }
-        tx.commit()?;
-        Ok(moved)
-    }
-
-    /// Shift matching rows' `occur_time` by `offset`. Atomic over the
-    /// batch, same as [`Self::set_start_time`] (da-sunq).
-    pub fn update_times(&self, filter: &RetimeFilter, offset: Duration) -> Result<Vec<Retimed>> {
-        let entries = select_retime_targets(self, filter)?;
-        let tx = self.conn.unchecked_transaction()?;
-        let mut moved = Vec::with_capacity(entries.len());
-        for e in entries {
-            let old_slug = e.slug.clone();
-            let mut shifted = e;
-            let before = shifted.occur_time.clone();
-            if let Some(t) = shifted.occur_time.as_mut() {
-                t.utc += offset;
-                // A raw `utc` mutation desyncs `offset_minutes` (see the
-                // DatumTime doc-comment); re-derive it so a cross-DST shift
-                // renders the intended wall-clock and rekeys %occur_time%
-                // slugs correctly. Propagates on unknown-tz.
-                t.refresh_offset()?;
-            }
-            let (saved, _) = self.save_existing_entry_with_auto_reinterp_kind_in_tx(
-                &old_slug,
-                shifted,
                 DEFAULT_ID_DELIMITER,
                 crate::history::ChangeKind::Retime,
             )?;
@@ -522,6 +538,46 @@ mod tests {
         assert!(unset_after.occur_time.is_none());
         let timed_after = db.get_entry(&timed.hid).unwrap();
         assert_eq!(timed_after.occur_time.unwrap().utc, new_start.utc);
+    }
+
+    /// da-1d0v2: `retime -T` makes a block-switch a timeless point about its
+    /// state — the span and the following state go, the default id moves to
+    /// `%create_time%`, and the hid stays.
+    #[test]
+    fn clear_occur_time_makes_a_note() {
+        let db = Db::open_in_memory().unwrap();
+        let mut e = Entry::new(
+            "mood",
+            Verb::BlockSwitch,
+            Some(serde_json::json!("happy")),
+            None,
+            Some(seed_dt("2024-01-01T10:00:00Z")),
+            crate::dur::Dur::parse("PT30M"),
+            "d1",
+        );
+        e.following_state = Some(serde_json::json!("sad"));
+        e.id_structure = Some("%occur_time%".to_string());
+        db.insert_entry(&e).unwrap();
+
+        let filter = RetimeFilter {
+            slug_or_hid: Some(&e.hid.0),
+            ..Default::default()
+        };
+        let moved = db.clear_occur_time(&filter).unwrap();
+        assert_eq!(moved.len(), 1);
+        assert_eq!(moved[0].before.utc, seed_dt("2024-01-01T10:00:00Z").utc);
+
+        let after = db.get_entry(&e.hid.0).unwrap();
+        assert!(after.occur_time.is_none());
+        assert_eq!(after.verb, Verb::Point);
+        assert_eq!(after.state, Some(serde_json::json!("happy")));
+        assert!(after.dur.as_ref().is_some_and(crate::dur::Dur::is_moment));
+        assert!(after.following_state.is_none());
+        assert!(
+            after.slug.as_str().starts_with("mood:c"),
+            "got {}",
+            after.slug
+        );
     }
 
     /// Retime on a row whose `id_structure` does NOT reference

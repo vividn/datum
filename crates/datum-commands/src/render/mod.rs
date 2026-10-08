@@ -656,7 +656,7 @@ fn format_retime_line(
         .occur_time
         .as_ref()
         .map(|t| self::action::format_timestamp(t, now, entry.occur_uncertainty()))
-        .unwrap_or_default();
+        .unwrap_or_else(|| "timeless".into()); // `retime -T`
     format!(
         "{} {} {} {} ⟶ {}",
         paint_action(Outcome::Retime),

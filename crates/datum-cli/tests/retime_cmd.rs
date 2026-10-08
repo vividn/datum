@@ -173,3 +173,21 @@ fn retime_lone_unsigned_number_not_found_hints_signed_shift() {
         assert!(!msg.contains("to shift _LAST"), "{argv:?}: {msg}");
     }
 }
+
+/// da-1d0v2: `retime -T` takes the time away, turning a start into a note
+/// about its state rather than moving it to now.
+#[test]
+fn retime_no_timestamp_makes_a_start_a_note() {
+    let db = fresh_db();
+    let start = entry_builder("work")
+        .time_start_utc(utc("2024-01-01T08:00:00Z"))
+        .state(json!(true))
+        .insert(&db);
+
+    run_cli(&["retime", start.hid.as_str(), "-T"], &db).expect("retime -T");
+
+    let after = db.get_entry(start.hid.as_str()).unwrap();
+    assert!(after.occur_time.is_none(), "got {:?}", after.occur_time);
+    assert_eq!(after.verb, datum_core::entry::Verb::Point);
+    assert_eq!(after.state, Some(json!(true)));
+}

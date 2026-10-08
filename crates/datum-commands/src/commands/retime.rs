@@ -163,6 +163,16 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
         return shift(db, &filters, relative_delta(&args.time)?);
     }
 
+    // Path 3c — `-T` takes the time away: the entry becomes a note
+    // (da-1d0v2). The parser refuses it beside any other time arg.
+    if args.time.omit_timestamp {
+        let mut moved = Vec::new();
+        for filter in &filters {
+            moved.extend(db.clear_occur_time(filter)?);
+        }
+        return report(db, &moved);
+    }
+
     // Path 3b — absolute target. No time-args still computes a target
     // (TimeBuilder::now() with nothing applied = exact "now"), which
     // is the default "set to now" path the bead asks for.
