@@ -155,8 +155,12 @@ describe('a root tab dragged on a phone', () => {
 				assert.ok(await strip.evaluate((el) => el.scrollWidth > el.clientWidth), 'the strip does not overflow');
 				assert.equal(await scroll(), 0);
 				const box = await boxOf(strip);
+				// Waited out to its `scrollend`: the swipe leaves the strip flinging, and a
+				// tap on a strip still flinging only stops it — no click (da-9i1wu).
+				await strip.evaluate((el) => el.addEventListener('scrollend', () => (el.swiped = true), { once: true }));
 				await swipe(page, box.x + box.width - 20, box.y + box.height / 2, -150, 0);
-				await page.waitForFunction(() => document.querySelector('.root-bar .tabs').scrollLeft > 0);
+				await page.waitForFunction(() => document.querySelector('.root-bar .tabs').swiped);
+				assert.ok((await scroll()) > 0, 'the swipe did not scroll the strip');
 				assert.deepEqual(await rootTabs(page), names);
 				assert.equal(await shown(page), 'main');
 				await tab(page, 'tail').tap();
