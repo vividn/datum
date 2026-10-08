@@ -391,7 +391,18 @@ export const KINDS: Record<string, WidgetKind> = {
 	// to see the ignored fields the bar leaves out, alongside Track + and
 	// not in place of it, that a reload starts back at off.
 	widgetbar: {
-		meta: meta('widgetbar', 'fields', { switchLabel: 'field', showIgnored: false }, [
+		meta: meta('widgetbar', 'fields', { align: 'rows', switchLabel: 'field', showIgnored: false }, [
+			// Where the buttons stand (da-omw4n): today's rows, or each at the
+			// height its field is drawn in the pictures.
+			{
+				key: 'align',
+				label: 'the buttons stand',
+				type: 'choice',
+				choices: [
+					{ value: 'rows', label: 'in rows' },
+					{ value: 'picture', label: 'aligned to the picture' }
+				]
+			},
 			{
 				key: 'switchLabel',
 				label: 'a switch is labelled with its',
@@ -409,7 +420,8 @@ export const KINDS: Record<string, WidgetKind> = {
 			'Tap to log it, with any pending verb and pills; hold for a field pill.',
 			'Track + declares a new field.'
 		].join('\n'),
-		props: ({ switchLabel, showIgnored }) => ({
+		props: ({ align, switchLabel, showIgnored }) => ({
+			align: align === 'picture' ? 'picture' : 'rows',
 			switchLabel: switchLabel === 'state' ? 'state' : 'field',
 			showIgnored: showIgnored === true
 		}),

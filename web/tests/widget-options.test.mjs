@@ -128,6 +128,7 @@ describe('widget options', () => {
 			assert.deepEqual(await linesOf(page, 'nowview'), ['Reset widget', 'history', 'orientation']);
 			assert.deepEqual(await linesOf(page, 'bar'), [
 				'Reset widget',
+				'the buttons stand',
 				'a switch is labelled with its',
 				'show ignored fields'
 			]);

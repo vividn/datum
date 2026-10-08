@@ -34,12 +34,14 @@
 	import { clearPending, pending, pills, prefill, text } from '$lib/bar.js';
 	import { flagLine, hasDuration } from '$lib/commands.js';
 	import { advance } from '$lib/keyframes.js';
-	import type { SwitchLabel } from '$lib/fields.js';
+	import type { Align, SwitchLabel } from '$lib/fields.js';
 	import { lanes } from '$lib/lanes.js';
 	import { shellJoin, shellSplit } from '$lib/shellSplit.js';
 	import { fields, grammar, pressWithPills, ready, standings } from './engine.js';
 
 	export let switchLabel: SwitchLabel = 'field';
+	/** Where the buttons stand: in rows, or where their fields are drawn (da-omw4n). */
+	export let align: Align = 'rows';
 	/**
 	 * Whether the ignored fields get a button too (da-xhio) — this
 	 * session's option, merged over the tree's settings by the renderer,
@@ -82,6 +84,7 @@
 		duration={hasDuration($pills)}
 		rank={$lanes}
 		standings={$standings}
+		{align}
 		{switchLabel}
 		{showIgnored}
 		on:run={(e) => run(e.detail)}

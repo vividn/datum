@@ -27,6 +27,22 @@
 	list; it does not change what they are, so each is drawn faint and
 	dashed and says «ignored» when a pointer rests on it.
 
+	ALIGNED TO THE PICTURE (da-omw4n) is the other layout, a choice in the
+	same menu, rows the default: the widget becomes a legend on the
+	pictures' own y axis. Each field's button stands centred on its band,
+	`y` and `height` from `datum fields --json` — never computed here —
+	and as tall as the band where that is taller than a button; fields
+	whose bands overlap stand side by side, most used first by the last
+	sort, and a band too crowded for the width runs on to the right, where
+	the bar scrolls (`aligned` in fields.ts). Track + is a `+` placed after
+	them all in the bottom band, so the fields start at the pane's left
+	edge. A pinch — two fingers, or ctrl+wheel, a trackpad's pinch — zooms
+	the y axis around itself: the buttons keep their size and glide apart.
+	While zoomed a vertical drag or the wheel pans, a press on a picture
+	pans to the field it landed nearest, and a slim marker down the right
+	edge shows which part of the pictures' height is in view; a tap on it
+	shows the whole again. The zoom is this session's alone.
+
 	A PENDING VERB (`verb`, da-ltux) is the commands widget talking to this
 	one through the command line they share: the list becomes the fields
 	that verb can be spent on, a press MEANS that verb and runs at once,
@@ -104,8 +120,13 @@
 	import { createEventDispatcher, onMount, tick } from 'svelte';
 	import ButtonRows from './ButtonRows.svelte';
 	import {
+		FULL,
+		aligned,
+		panned,
 		ringOf,
 		lookOf,
+		yIn,
+		zoomed,
 		pressArgv,
 		stateLook,
 		type Spot,
@@ -113,12 +134,14 @@
 		type SwitchLabel,
 		type FieldButton,
 		type FieldShape,
-		type Standings
+		type Standings,
+		type Align,
+		type View
 	} from './fields.js';
 	import { act } from './act.js';
 	import { holds } from './hold.js';
 	import { fieldPill, setFieldPill } from './bar.js';
-	import { rowsUnder, type Near } from './lanes.js';
+	import { closer, rowsUnder, type Near } from './lanes.js';
 	import { openTrack } from './specModal.js';
 	import { shellJoin } from './shellSplit.js';
 	import {
@@ -133,6 +156,12 @@
 	} from './commands.js';
 
 	export let fields: FieldButton[] = [];
+	/**
+	 * Where the buttons stand (da-omw4n): `rows`, today's, or `picture` —
+	 * each at the height its field is drawn, see «ALIGNED TO THE PICTURE»
+	 * above.
+	 */
+	export let align: Align = 'rows';
 	export let disabled = false;
 	/** How a switch in a state is labelled; see `SwitchLabel`. */
 	export let switchLabel: SwitchLabel = 'field';
@@ -181,7 +210,14 @@
 	let bar: HTMLElement | undefined;
 	// The hold's action ($lib/hold.ts) on the bar ButtonRows draws — an
 	// action cannot be handed through a component, so it is attached here.
-	onMount(() => holds(bar!, { within: 'button[data-field]', run: holdField }).destroy);
+	// So are the picture layout's pinch, pan and wheel.
+	onMount(() => {
+		const held = holds(bar!, { within: 'button[data-field]', run: holdField });
+		const unzoom = zooming(bar!);
+		const box = new ResizeObserver(() => (tall = bar!.clientHeight));
+		box.observe(bar!);
+		return () => (held.destroy(), unzoom(), box.disconnect());
+	});
 
 	/**
 	 * The field whose STATES have taken the bar over, by name (da-g635).
@@ -265,23 +301,171 @@
 		? (items: Entry[]): Entry[][] => [items]
 		: buttons.length === 0
 			? lanesOf
-			: (_: Entry[], rows: number): Entry[][] => {
-					const lanes = rowsUnder(buttons, rows, standings, shown).map(({ lead, rest }): Entry[] => [
-						...lead.map(
-							(button, k): Entry => ({
-								kind: 'field',
-								button,
-								promoted: true,
-								edge: k === lead.length - 1 && rest.length > 0
-							})
-						),
-						...rest.map((button): Entry => ({ kind: 'field', button, promoted: false, edge: false }))
-					]);
-					if (verb === null) lanes[0].unshift({ kind: 'track' });
-					else lanes[lanes.length - 1].push({ kind: 'track' });
-					return lanes;
-				};
+			: picture
+				? (): Entry[][] => [placing]
+				: (_: Entry[], rows: number): Entry[][] => {
+						const lanes = rowsUnder(buttons, rows, standings, shown).map(({ lead, rest }): Entry[] => [
+							...lead.map(
+								(button, k): Entry => ({
+									kind: 'field',
+									button,
+									promoted: true,
+									edge: k === lead.length - 1 && rest.length > 0
+								})
+							),
+							...rest.map((button): Entry => ({ kind: 'field', button, promoted: false, edge: false }))
+						]);
+						if (verb === null) lanes[0].unshift({ kind: 'track' });
+						else lanes[lanes.length - 1].push({ kind: 'track' });
+						return lanes;
+					};
 	const keyOf = (e: Entry) => (e.kind === 'field' ? `f:${e.button.field}` : e.kind);
+
+	/** Whether the buttons stand where their fields are drawn: the option, on a bar of fields. */
+	$: picture = align === 'picture' && !picking && buttons.length > 0;
+	/** The fields in the order they claim their places: most used at the last sort first. */
+	$: stood = [...buttons]
+		.sort((a, b) => (standings.get(b.field)?.frecency ?? -1) - (standings.get(a.field)?.frecency ?? -1))
+		.map((button): Entry => ({ kind: 'field', button, promoted: false, edge: false }));
+	/**
+	 * And Track + after them all, a `+` in the bottom band (vremya on #494:
+	 * first, it took the left column and pushed every field right of it,
+	 * cutting the most used one off a half-width pane).
+	 */
+	$: placing = [...stood, { kind: 'track' } as Entry];
+	/** The bar's height, and each placed slot's size as drawn, in px. */
+	let tall = 0;
+	let sizes = new Map<string, { w: number; h: number }>();
+	/** The part of the pictures shown; this session's, never the layout's. */
+	let view: View = FULL;
+	$: zoomedIn = view.to - view.from < 1;
+	const GAP = 6;
+	/** Where each slot stands. */
+	$: stands = ((): Map<string, { x: number; top: number }> => {
+		if (!picture) return new Map();
+		const keys = placing.map(keyOf);
+		const at = aligned(
+			placing.map((e, i) => ({
+				...(e.kind === 'field' ? e.button : { y: 1, height: 0 }),
+				...(sizes.get(keys[i]) ?? { w: 0, h: 0 })
+			})),
+			tall,
+			view,
+			GAP
+		);
+		return new Map(at.map((stand, i) => [keys[i], stand]));
+	})();
+	/** Whether a move glides: not on the first placing, nor under a finger that is moving it. */
+	let glide = false;
+	let live = false;
+	$: if (picture) requestAnimationFrame(() => requestAnimationFrame(() => (glide = picture)));
+	else glide = false;
+
+	/** Keep `sizes` to the slot's size as drawn. */
+	function sized(node: HTMLElement, key: string) {
+		const observer = new ResizeObserver(() => {
+			const { width: w, height: h } = node.getBoundingClientRect();
+			const was = sizes.get(key);
+			if (was?.w !== w || was?.h !== h) sizes = new Map(sizes).set(key, { w, h });
+		});
+		observer.observe(node);
+		// A key let go of takes its size with it, so a stale one is never read.
+		const drop = () => sizes.delete(key) && (sizes = new Map(sizes));
+		return {
+			update: (next: string) => void (next !== key && (drop(), (key = next))),
+			destroy: () => (observer.disconnect(), drop())
+		};
+	}
+
+	/** How tall a field's button is drawn: its band, and never less than a button. */
+	const tallOf = (button: FieldButton) => (picture ? `; min-height: ${Math.max(24, button.height * tall)}px` : '');
+
+	/**
+	 * The picture layout's gestures, on the bar: a pinch — two pointers, or
+	 * ctrl+wheel, which is what a trackpad's pinch arrives as — zooms around
+	 * where it is; while zoomed one pointer dragging up or down, or the
+	 * wheel, pans. A drag that moved the view eats the click it leaves, and
+	 * calls off a hold the press had started.
+	 */
+	function zooming(node: HTMLElement) {
+		const pointers = new Map<number, { x: number; y: number }>();
+		let from = { view, at: 0, d: 0, y: 0 };
+		// Taken again whenever a finger lands or lifts: a second finger turns a
+		// pan into a pinch around the two, a lifted one a pinch back into a
+		// pan under the one left.
+		const begin = () => {
+			const ps = [...pointers.values()];
+			const box = node.getBoundingClientRect();
+			const y = ps.reduce((sum, p) => sum + p.y, 0) / ps.length;
+			const d = ps.length > 1 ? Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y) : 0;
+			from = { view, at: (y - box.top) / box.height, d, y };
+		};
+		const moving = () => {
+			if (!live) node.dispatchEvent(new PointerEvent('pointercancel'));
+			live = true;
+		};
+		const down = (e: PointerEvent) => {
+			if (!picture) return;
+			pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+			begin();
+		};
+		const move = (e: PointerEvent) => {
+			if (!picture || !pointers.has(e.pointerId)) return;
+			pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+			const ps = [...pointers.values()];
+			if (ps.length > 1 && from.d > 0) {
+				moving();
+				view = zoomed(from.view, from.at, Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y) / from.d);
+			} else if (ps.length === 1 && zoomedIn && (live || Math.abs(ps[0].y - from.y) > 8)) {
+				moving();
+				view = panned(from.view, (from.y - ps[0].y) / tall);
+			}
+		};
+		const up = (e: PointerEvent) => {
+			if (!pointers.delete(e.pointerId)) return;
+			if (pointers.size > 0) return begin();
+			if (live && e.type === 'pointerup') {
+				const off = () => (removeEventListener('click', eat, true), removeEventListener('pointerdown', off, true));
+				const eat = (click: MouseEvent) => (click.stopPropagation(), click.preventDefault(), off());
+				addEventListener('click', eat, true);
+				addEventListener('pointerdown', off, true);
+			}
+			live = false;
+		};
+		const wheel = (e: WheelEvent) => {
+			if (!picture) return;
+			const box = node.getBoundingClientRect();
+			if (e.ctrlKey) view = zoomed(view, (e.clientY - box.top) / box.height, Math.exp(-e.deltaY / 200));
+			else if (zoomedIn && Math.abs(e.deltaY) > Math.abs(e.deltaX)) view = panned(view, e.deltaY / tall);
+			else return;
+			e.preventDefault();
+		};
+		node.addEventListener('pointerdown', down);
+		addEventListener('pointermove', move);
+		addEventListener('pointerup', up);
+		addEventListener('pointercancel', up);
+		node.addEventListener('wheel', wheel, { passive: false });
+		return () => {
+			node.removeEventListener('pointerdown', down);
+			removeEventListener('pointermove', move);
+			removeEventListener('pointerup', up);
+			removeEventListener('pointercancel', up);
+			node.removeEventListener('wheel', wheel);
+		};
+	}
+
+	/**
+	 * A press on a picture, while zoomed: the view pans to the height of the
+	 * field it landed nearest (`closer` in $lib/lanes.ts).
+	 */
+	$: towards(rank);
+	function towards(near: Map<string, Near> | null) {
+		if (!near || !picture || !zoomedIn) return;
+		const first = [...near].sort(([, a], [, b]) => closer(a, b))[0];
+		if (!first) return;
+		const button = buttons.find((b) => b.field === first[0]);
+		if (button) view = panned(view, yIn(view, button.y) - 0.5);
+	}
 
 	/** A look as the custom properties every button below is painted from. */
 	function vars(look: Look) {
@@ -552,6 +736,7 @@
 
 <svelte:window on:keydown={onWindowKeyDown} />
 
+<div class="fields" class:picture data-align={picture ? 'picture' : 'rows'}>
 <ButtonRows
 	items={entries}
 	{arrange}
@@ -649,16 +834,29 @@
 			</div>
 		</div>
 	{:else if item.kind === 'track'}
-		<div class="slot">
+		{@const stand = stands.get('track')}
+		<div
+			class="slot"
+			class:stand={picture}
+			class:glide={glide && !live}
+			style:left={stand ? `${stand.x}px` : null}
+			style:top={stand ? `${stand.top}px` : null}
+			use:sized={'track'}
+		>
 			{#if verb === null}
+				<!-- Aligned to the picture it is a `+` after the fields, not a
+				     button that would claim their room — `add-button` either
+				     way, the class #488's rule in app.css spares the `›` an
+				     opener wears. -->
 				<button
-					class="track add-button"
+					class={picture ? 'nav add-button' : 'track add-button'}
+					data-track
 					use:act={'open'}
 					{disabled}
 					title="track a new field"
 					on:click={() => void startTracking()}
 				>
-					Track +
+					{picture ? '+' : 'Track +'}
 				</button>
 			{:else}
 				{@const pending = verb}
@@ -683,7 +881,17 @@
 	{:else if item.kind === 'field'}
 		{@const button = item.button}
 		{@const look = lookOf(button, switchLabel)}
-		<div class="slot" class:edge={item.edge} data-promoted={item.promoted ? '' : undefined}>
+		{@const stand = stands.get(keyOf(item))}
+		<div
+			class="slot"
+			class:edge={item.edge}
+			class:stand={picture}
+			class:glide={glide && !live}
+			style:left={stand ? `${stand.x}px` : null}
+			style:top={stand ? `${stand.top}px` : null}
+			data-promoted={item.promoted ? '' : undefined}
+			use:sized={keyOf(item)}
+		>
 			{#if button.shape.kind === 'record'}
 				<!-- A PRESS runs nothing: the line goes to the bar's prompt. The
 				     HOLD is every field's (da-8810n) — a record is a field like
@@ -697,7 +905,7 @@
 					data-field={button.field}
 					data-ignored={button.ignored ? '' : undefined}
 					data-pilled={$fieldPill === button.field ? '' : undefined}
-					style={vars(look)}
+					style={vars(look) + tallOf(button)}
 					{disabled}
 					title={titleOf(button)}
 					on:click={(e) => press(button, e.currentTarget)}>{button.field}</button
@@ -709,7 +917,7 @@
 					class:on={look.fill !== null}
 					class:ignored={button.ignored}
 					class:pilled={$fieldPill === button.field}
-					style={vars(look)}
+					style={vars(look) + tallOf(button)}
 					{disabled}
 					data-field={button.field}
 					data-ignored={button.ignored ? '' : undefined}
@@ -721,8 +929,82 @@
 		</div>
 	{/if}
 </ButtonRows>
+{#if picture && zoomedIn}
+	<!-- Which part of the pictures' height is in view; a tap shows it all again. -->
+	<button
+		class="range"
+		data-from={view.from}
+		data-to={view.to}
+		title="showing {Math.round(view.from * 100)}–{Math.round(view.to * 100)}% of the pictures' height · tap to zoom out"
+		aria-label="zoom out"
+		on:click={() => (view = FULL)}
+	>
+		<span style:top="{view.from * 100}%" style:height="{(view.to - view.from) * 100}%"></span>
+	</button>
+{/if}
+</div>
 
 <style>
+	.fields {
+		position: relative;
+		flex: 1;
+		min-width: 0;
+		min-height: 0;
+		display: flex;
+	}
+
+	/* A pinch on the bar is the widget's, not the page's; its sideways
+	   scroll is still the browser's. */
+	.picture :global(.bar) {
+		touch-action: pan-x;
+	}
+
+	/* ALIGNED TO THE PICTURE (da-omw4n): each field's slot where `aligned`
+	   stood it, over the bar's own box — whose sideways scroll is what a
+	   band too crowded for the width runs into. */
+	.slot.stand {
+		position: absolute;
+		white-space: nowrap;
+	}
+
+	.slot.glide {
+		transition:
+			left 0.25s ease-out,
+			top 0.25s ease-out;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.slot.glide {
+			transition: none;
+		}
+	}
+
+	/* The zoom's range: a slim track down the widget's right edge, the part
+	   of the pictures in view lit on it. */
+	.range {
+		position: absolute;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		width: 10px;
+		padding: 0;
+		border: none;
+		border-left: 1px solid var(--rule);
+		background: var(--ground);
+		cursor: zoom-out;
+	}
+
+	.range span {
+		position: absolute;
+		left: 2px;
+		right: 2px;
+		border-radius: 2px;
+		background: var(--accent);
+		transition:
+			top 0.25s ease-out,
+			height 0.25s ease-out;
+	}
+
 	/* The press's own quiet mark (da-qu16): a hairline after the fields a
 	   click promoted, so the reader can SEE why the bar changed. It says
 	   where the promotion ends and nothing else — no fill, no animation,

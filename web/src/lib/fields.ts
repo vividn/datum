@@ -72,6 +72,8 @@ export interface FieldButton {
 	active: boolean;
 	/** Where the field's band sits in the pictures, 0 at the top — `fields --json`'s `y`. */
 	y: number;
+	/** How tall that band is, as a share of the pictures — `fields --json`'s `height`. */
+	height: number;
 	/** The keys a log of it cannot do without (`requiredKeys`). */
 	required: string[];
 	/** Every key its spec declares (`keysOf`): the input line's frames. */
@@ -173,6 +175,8 @@ export interface FieldListing {
 	ignored: boolean;
 	/** Where the field's band sits in the dayview and nowview, 0 at the top (da-vu7pi). */
 	y: number;
+	/** How tall the band is, as a share of the pictures' data area. */
+	height: number;
 	/** How much the field is used, recent use weighing more — `--sort frecency` alone carries it (da-xtkcp). */
 	frecency?: number;
 }
@@ -197,7 +201,7 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 	const now = new Map(active.map((a) => [a.field, a.state]));
 	return [...listing]
 		.sort((a, b) => a.y - b.y)
-		.map(({ field, spec, states, color, state_colors, ignored, y }) => {
+		.map(({ field, spec, states, color, state_colors, ignored, y, height }) => {
 			const state = now.get(field);
 			return {
 				field,
@@ -210,6 +214,7 @@ export function buttonsFor(listing: FieldListing[], active: NowActive[] = []): F
 				active: now.has(field),
 				current: state === true || (typeof state === 'string' && state !== '') ? state : undefined,
 				y,
+				height,
 				required: requiredKeys(spec),
 				keys: keysOf(spec),
 				stateKeys: stateKeysOf(spec)
@@ -258,6 +263,96 @@ export function fieldRows(buttons: FieldButton[], rows: number, standings: Stand
 	for (const b of buttons)
 		if (!standings.has(b.field)) lanes[Math.max(0, tops.findLastIndex((top) => top <= b.y))].push(b);
 	return lanes;
+}
+
+/**
+ * Where the fields widget's buttons stand: in `fieldRows`' rows, or each
+ * at the height its field is drawn in the pictures (`aligned`, da-omw4n).
+ */
+export type Align = 'rows' | 'picture';
+
+/**
+ * The part of the pictures' 0–1 height the widget shows (da-omw4n): all of
+ * it, `FULL`, until a pinch zooms in.
+ */
+export interface View {
+	from: number;
+	to: number;
+}
+
+export const FULL: View = { from: 0, to: 1 };
+
+/** As far in as a pinch goes: an eighth of the pictures. */
+const DEEPEST = 1 / 8;
+
+/** Where `y` of the pictures lands in the box, as a share of its height. */
+export const yIn = (view: View, y: number) => (y - view.from) / (view.to - view.from);
+
+/** Which `y` of the pictures a share `at` of the box's height shows. */
+export const yOut = (view: View, at: number) => view.from + at * (view.to - view.from);
+
+/** `view` moved by `by` of the box's height, down for a positive one, and kept inside 0–1. */
+export function panned(view: View, by: number): View {
+	const span = view.to - view.from;
+	const from = Math.min(1 - span, Math.max(0, view.from + by * span));
+	return { from, to: from + span };
+}
+
+/**
+ * `view` zoomed in by `factor` (out, under 1) around the share `at` of the
+ * box's height, so the `y` under the pinch stays under it — as far as the
+ * pictures' own edges allow, and never past `FULL` or `DEEPEST`.
+ */
+export function zoomed(view: View, at: number, factor: number): View {
+	const span = Math.min(1, Math.max(DEEPEST, (view.to - view.from) / factor));
+	const from = yOut(view, at) - at * span;
+	return panned({ from, to: from + span }, 0);
+}
+
+/** A button the picture layout places: its band (`fields --json`'s `y` and `height`), and its size as drawn. */
+export interface Sized {
+	y: number;
+	height: number;
+	w: number;
+	h: number;
+}
+
+/** Where a placed button stands in the box, in px. */
+export interface Stand {
+	x: number;
+	top: number;
+}
+
+/**
+ * The fields widget's second layout, «aligned to the picture» (da-omw4n):
+ * each button stands where its field is drawn: centred on its band —
+ * zoomed by `view` over a box `height` tall — so a button as tall as its
+ * band starts where the band does and a shorter one stands in its middle,
+ * as far as it stays inside the pictures. Its height is the band's at
+ * `FULL`, never the zoom's: a pinch spreads the buttons, it does not
+ * grow them. And it takes the LEFTMOST place
+ * clear of every button already placed whose height it shares, `gap`
+ * between them. So fields whose bands overlap stand side by side, a band
+ * crowded past the box's width runs off its right edge, where the widget
+ * scrolls, and a zoom that pulls two bands apart lets the second fall back
+ * to the left.
+ *
+ * `items` come in the order they claim places — most used first — and the
+ * stands come back in it.
+ */
+export function aligned(items: Sized[], height: number, view: View, gap: number): Stand[] {
+	const tall = height / (view.to - view.from);
+	const placed: (Stand & Sized)[] = [];
+	return items.map((item) => {
+		// A button taller than the box itself starts at its top and runs off its bottom.
+		const top = Math.max(0, Math.min((item.y + item.height / 2) * tall - item.h / 2, tall - item.h)) - view.from * tall;
+		const beside = placed.filter((p) => p.top < top + item.h && top < p.top + p.h);
+		const x = [0, ...beside.map((p) => p.x + p.w + gap)]
+			.sort((a, b) => a - b)
+			.find((x) => beside.every((p) => x + item.w + gap <= p.x || p.x + p.w + gap <= x))!;
+		placed.push({ ...item, x, top });
+		return { x, top };
+	});
 }
 
 /**
