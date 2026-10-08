@@ -12,6 +12,10 @@
 //! clock cannot pin. So the tests either use dates far from today or
 //! dates relative to the moment they log, which puts a millisecond window
 //! around local midnight.
+//!
+//! `last_occur` is the UTC instant, so an entry whose `last_occur` date a
+//! test reads is logged `-z UTC`: in the host's zone, 10:00 at +14 is the
+//! day before in UTC (da-5ig22).
 
 use std::fs;
 use std::io::Write;
@@ -159,6 +163,8 @@ fn the_latest_occurrence_by_occur_time_sets_due() {
             "2020-05-10",
             "-t",
             "10:00",
+            "-z",
+            "UTC",
             "next_date=2020-05-17",
         ],
     );
@@ -171,6 +177,8 @@ fn the_latest_occurrence_by_occur_time_sets_due() {
             "2020-05-01",
             "-t",
             "10:00",
+            "-z",
+            "UTC",
             "next_date=2020-05-08",
         ],
     );
@@ -197,6 +205,8 @@ fn a_shirk_moves_due_but_not_last_occur() {
             "2020-01-01",
             "-t",
             "08:00",
+            "-z",
+            "UTC",
             "next_date=2020-01-08",
         ],
     );
@@ -361,6 +371,8 @@ fn a_superseded_entry_does_not_count() {
             "2020-05-01",
             "-t",
             "10:00",
+            "-z",
+            "UTC",
             "next_date=2020-05-08",
         ],
     );
@@ -373,6 +385,8 @@ fn a_superseded_entry_does_not_count() {
             "2020-05-10",
             "-t",
             "10:00",
+            "-z",
+            "UTC",
             "next_date=2020-05-17",
         ],
     );
