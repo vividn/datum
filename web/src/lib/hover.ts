@@ -563,6 +563,34 @@ export function picture(node: HTMLElement, text: string) {
 		bringOut(svg, chosen);
 	}
 
+	/**
+	 * A redraw that lands while a press is down on the picture waits for
+	 * the lift (da-hn2w6). It replaces the element the press went down on,
+	 * and the browser then has nothing to dispatch the click at: the press
+	 * set no cursor and said nothing. Drawn a task after the lift, which is
+	 * after its click.
+	 */
+	let pressed = false;
+	let late: string | null = null;
+	let lifting: ReturnType<typeof setTimeout> | undefined;
+	const hold = (e: PointerEvent) => {
+		// Only the press a click comes of: a right press's lift may go to
+		// the browser's menu and never arrive.
+		if (e.button !== 0) return;
+		clearTimeout(lifting);
+		pressed = true;
+	};
+	const lift = () => {
+		if (!pressed) return;
+		clearTimeout(lifting);
+		lifting = setTimeout(() => {
+			pressed = false;
+			if (late !== null) draw(late);
+			late = null;
+		});
+	};
+	const LIFTS = ['pointerup', 'pointercancel', 'contextmenu'];
+
 	let sel: Cursor | null = null;
 	/** The field the bar's pill names, as the last change left it. */
 	let pilled: string | null = null;
@@ -661,6 +689,12 @@ export function picture(node: HTMLElement, text: string) {
 	node.addEventListener('focusout', blur);
 	document.addEventListener('pointerdown', away);
 	node.addEventListener('pointerdown', press);
+	node.addEventListener('pointerdown', hold);
+	// On the document, in capture: the lift may land anywhere on the page.
+	for (const type of LIFTS) document.addEventListener(type, lift, true);
+	// And the window losing focus: a button let go over another app never
+	// lifts here. Not in capture, where every element's own blur would be one.
+	window.addEventListener('blur', lift);
 	node.addEventListener('pointerup', chord);
 	node.addEventListener('contextmenu', chord);
 	node.addEventListener('click', click);
@@ -684,9 +718,15 @@ export function picture(node: HTMLElement, text: string) {
 		bringOut(node.querySelector('svg'), chosen);
 	});
 	return {
-		update: draw,
+		update: (text: string) => {
+			if (pressed) late = text;
+			else draw(text);
+		},
 		destroy: () => {
 			document.removeEventListener('pointerdown', away);
+			for (const type of LIFTS) document.removeEventListener(type, lift, true);
+			window.removeEventListener('blur', lift);
+			clearTimeout(lifting);
 			unsubscribe();
 			unpilled();
 			unchosen();

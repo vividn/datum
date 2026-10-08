@@ -194,7 +194,8 @@ describe('the time cursor', () => {
 			// Click again: a press on a fresh pill also clears the cursor everywhere.
 			// Once the band has drawn the tea (da-cv8p6): its refresh runs
 			// behind every other command as the tail's does, and a picture
-			// redrawn between a press and its lift is sent no click at all.
+			// redrawn between a press and its lift was sent no click at all
+			// until the picture held that redraw to the lift (da-hn2w6).
 			await page.locator(`${TODAY} [data-state][data-field="tea"]`).waitFor({ state: 'attached' });
 			const at2 = await spot(page, TODAY, 0.5);
 			await page.mouse.click(at2.x, at2.y);
@@ -301,6 +302,57 @@ describe('the time cursor', () => {
 			const again = await spot(page, TODAY, 0.5);
 			await page.mouse.click(again.x, again.y);
 			assert.match((await pillText(page)) ?? '', /^-t \d\d:\d\d$/);
+		});
+	});
+
+	// da-hn2w6: a redraw replaces the element the press went down on, and
+	// the browser then has nothing to dispatch the click at.
+	test('a write that redraws the day between the press and the lift: the click still sets the cursor, and the day is drawn on the lift', async () => {
+		await withDay(async (app) => {
+			const { page } = app;
+			const tea = page.locator(`${TODAY} .field[data-field="tea"]`);
+			const at = await spot(page, TODAY, 0.5);
+			await page.mouse.move(at.x, at.y);
+			await page.mouse.down();
+			const logged = await app.run(['occur', 'tea', '-t', '11:00']);
+			assert.equal(logged.code, 0, logged.stderr);
+			await app.redraw();
+			assert.equal(await tea.count(), 0, 'the day was redrawn under the press');
+			await page.mouse.up();
+
+			const text = await pillText(page);
+			assert.match(text ?? '', /^-t \d\d:\d\d$/, `the pill: ${text}`);
+			assert.ok(Math.abs(pillInstant(text) - at.at) <= 60_000, `${text} for ${new Date(at.at).toISOString()}`);
+			await tea.first().waitFor();
+		});
+	});
+
+	test('a right press holds no redraw: its lift may go to the menu and never arrive', async () => {
+		await withDay(async (app) => {
+			const { page } = app;
+			const at = await spot(page, TODAY, 0.5);
+			await page.mouse.move(at.x, at.y);
+			await page.mouse.down({ button: 'right' });
+			const logged = await app.run(['occur', 'tea', '-t', '11:00']);
+			assert.equal(logged.code, 0, logged.stderr);
+			await app.redraw();
+			await page.locator(`${TODAY} .field[data-field="tea"]`).first().waitFor();
+			await page.mouse.up({ button: 'right' });
+		});
+	});
+
+	test('a press the window loses focus under holds no redraw: the button let go over another app never lifts here', async () => {
+		await withDay(async (app) => {
+			const { page } = app;
+			const at = await spot(page, TODAY, 0.5);
+			await page.mouse.move(at.x, at.y);
+			await page.mouse.down();
+			await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+			const logged = await app.run(['occur', 'tea', '-t', '11:00']);
+			assert.equal(logged.code, 0, logged.stderr);
+			await app.redraw();
+			await page.locator(`${TODAY} .field[data-field="tea"]`).first().waitFor();
+			await page.mouse.up();
 		});
 	});
 
