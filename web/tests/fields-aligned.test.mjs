@@ -188,18 +188,15 @@ test('a fresh phone: the most used field is whole on open, and the fields start 
 			const most = fields.crowd7;
 			assert.ok(most.left >= -0.5 && most.right <= bar.width + 0.5, `crowd7 at ${most.left}–${most.right} of ${bar.width}`);
 			assert.ok(Math.min(...Object.values(fields).map((r) => r.left)) <= 0.5, 'no field starts at the left edge');
-			// A `+`, of the class #488's rule spares the `›` an opener wears
-			// (app.css's `[data-act='open']:not(.add-button)…`, on staging).
-			// The class and not the `::after`: this branch predates #488 and
-			// still draws the `›` on every opener, so the drawn mark is only
-			// right once the two meet — which vremya and garnet ran on the
-			// merge with staging (#494).
-			const [plus, exempt] = await page.$eval(`${BAR} [data-track]`, (el) => [
+			// A `+`, and no `›` drawn after it: app.css's
+			// `[data-act='open']:not(.add-button)…` spares it the opener's mark
+			// (#488), and the check is on what is DRAWN, not on that class.
+			const [plus, after] = await page.$eval(`${BAR} [data-track]`, (el) => [
 				el.textContent.trim(),
-				el.classList.contains('add-button')
+				getComputedStyle(el, '::after').content
 			]);
 			assert.equal(plus, '+');
-			assert.ok(exempt, 'the + is not an add-button');
+			assert.equal(after, 'none', `the + wears ${after}`);
 			assert.deepEqual(app.errors, []);
 		},
 		{ viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: null }
