@@ -256,8 +256,9 @@ following are deliberate divergences and **not** regressions:
 * **Single-quoted strings in a data value** (da-qzfnb, vividn 10-07) are
   an *alignment*, not a divergence: datum's `inferType` reads values with
   `relaxed-json` (`RJSON.parse`), so `'a,b'` is «a,b» and `['a', 'b']` is
-  `["a","b"]`. Daydumb reads the single-quoted string the same way
-  (`single_quoted_json` in `crates/datum-parse/src/input/data_args/coerce.rs`)
+  `["a","b"]`. Daydumb reads the single-quoted string the same way, and
+  the trailing comma inside brackets (`[8,]` → `[8]`, da-igesg)
+  (`relaxed_json` in `crates/datum-parse/src/input/data_args/coerce.rs`),
   and nothing else of relaxed-json — not unquoted keys, not bare words
   inside brackets.
 
