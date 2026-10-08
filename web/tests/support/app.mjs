@@ -123,6 +123,13 @@ export async function atEachScreen(t, page, screens, body) {
 
 let server;
 let browser;
+/**
+ * How long a file may run on after its last `stopApp`: the suite's one tier
+ * (until.mjs). `DATUM_TEST_LINGER_MS` is for lingering.test.mjs, which proves
+ * the stop without waiting the tier out.
+ */
+const LINGER = Number(process.env.DATUM_TEST_LINGER_MS ?? 30_000);
+let lingering;
 
 /**
  * Run `prelude` inside the database worker, before the app's own module.
@@ -270,6 +277,7 @@ function clockOf(page, at, holdTimers) {
 
 /** Build-independent: `npm test` runs `vite build` first (see package.json). */
 export async function startApp() {
+	clearTimeout(lingering);
 	server = await preview({
 		root,
 		logLevel: 'warn',
@@ -309,6 +317,21 @@ export async function stopApp() {
 				'something the page does during its server render is holding the process, and the suite will not exit'
 		);
 	}
+	// A handle of any other kind shows only as a process that outlives its
+	// tests: CI cut layouts.test.mjs at the runner's 300 s with every subtest
+	// passed, 205 s after this server closed, and nothing said what held it
+	// (da-0co61, not reproduced). So a file still running `LINGER` later says
+	// what is open and ends there, red. `startApp` calls it off.
+	lingering = setTimeout(() => {
+		const handles = process
+			._getActiveHandles()
+			.map((h) => [h.constructor.name, h.spawnfile, h.pid, h.remoteAddress, h.remotePort, h.fd].filter((x) => x != null).join(' '));
+		process.stderr.write(
+			`still running ${LINGER / 1000} s after the browser and server closed, held by ` +
+				`${process.getActiveResourcesInfo().join(', ')} (${handles.join('; ')})\n`
+		);
+		process.exit(1);
+	}, LINGER).unref();
 }
 
 function baseUrl() {
