@@ -272,8 +272,8 @@ for (const engine of [chromium, webkit]) {
 					await tailShows(page, 4);
 
 					// vividn's legacy backup, twice: the second is all skips.
-					// The import declares every field it brings (da-c8mh), so
-					// its own TRACK documents ride along with the 120 rows.
+					// The import declares every field it brings with a spec
+					// alone, so the 120 rows are all it adds (da-r6ofr).
 					await choose(page, 'db v2import', LEGACY);
 					assert.match((await app.stdouts()).at(-1), /120 imported/);
 					const imported = (await count(app)) - 4;
@@ -423,9 +423,9 @@ test('an option keeps its value, and only the source is the chosen file (da-1vz2
 			await choose(page, 'db v2import --skip-log skips.txt', LEGACY);
 			assert.deepEqual(await asked(), { argv: ['db', 'v2import', '--skip-log', 'skips.txt', '-'], stdin: legacy });
 			assert.match((await app.outputs()).at(-1), /not a file in the browser: skips\.txt$/);
-			// The 120 rows, plus the TRACK document each imported field is
-			// declared with (da-c8mh).
-			assert.ok((await count(app)) > 120);
+			// The 120 rows and nothing beside them: each imported field is
+			// declared by its spec alone, which `count` does not count (da-r6ofr).
+			assert.equal(await count(app), 120);
 
 			const [download] = await Promise.all([
 				page.waitForEvent('download'),

@@ -7,8 +7,8 @@
 //! spec is what records that the field exists. What still writes a TRACK
 //! row is the EXPLICIT act: `datum track`, which has no entry of its own
 //! to carry a trailing state and whose row is what un-ignores a field
-//! (ignored-ness is read off the log, da-d08c), and `db v2import`, which
-//! declares each field it brings ahead of the history it brings.
+//! (ignored-ness is read off the log, da-d08c). `db v2import` declares
+//! the fields it brings with their specs alone (da-r6ofr).
 //!
 //! The row carries that answer in `extra_metadata.track`, which is also
 //! how every reader recognises it: a TRACK row's state is `false` or the

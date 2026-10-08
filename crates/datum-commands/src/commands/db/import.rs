@@ -385,7 +385,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
                 _ => {}
             }
         }
-        write_track_documents(db, &entries)?;
+        write_track_specs(db, &entries)?;
         // The whole import is `_LAST` and one action, so one `undo` reverts it
         // (da-yyjob, da-z0zh3): the specs by their history, the bulk rows,
         // which have none, by hid.
@@ -550,35 +550,21 @@ fn parse_datum_uncertainty(occur_block: &JsonValue) -> Option<String> {
     }
 }
 
-/// da-c8mh: an imported database is whole under the same rule a typed one
-/// is — every field carries a spec with a verb, and a TRACK document
-/// records the declaration. The verb is the one the imported entries
-/// imply; the row sits one millisecond ahead of the field's earliest
-/// imported instant, so the declaration precedes the history it declares.
-fn write_track_documents(db: &Db, entries: &[datum_core::entry::Entry]) -> Result<()> {
-    use std::collections::BTreeMap;
-    let mut earliest: BTreeMap<&str, Option<DatumTime>> = BTreeMap::new();
-    for entry in entries {
-        let slot = earliest.entry(entry.field.as_str()).or_default();
-        match (&slot, &entry.occur_time) {
-            (None, Some(t)) => *slot = Some(t.clone()),
-            (Some(best), Some(t)) if t.utc < best.utc => *slot = Some(t.clone()),
-            _ => {}
-        }
-    }
-    for (field, first) in earliest {
+/// An imported database is whole under the same rule a typed one is: every
+/// field carries a spec with the verb its imported entries imply. The spec
+/// alone records that the field exists (da-gvcen); da-c8mh's TRACK row, a
+/// millisecond ahead of the field's first entry, was an event that never
+/// happened and is no longer written (da-r6ofr).
+fn write_track_specs(db: &Db, entries: &[datum_core::entry::Entry]) -> Result<()> {
+    let fields: std::collections::BTreeSet<&str> =
+        entries.iter().map(|e| e.field.as_str()).collect();
+    for field in fields {
         if db.load_spec(field)?.is_some() {
             continue;
         }
-        let Some(verb) = db.verb_from_field_log(field)? else {
-            continue;
-        };
-        let mut at = first.unwrap_or_else(DatumTime::now);
-        at.utc -= chrono::Duration::milliseconds(1);
-        at.uncertainty = None;
-        let client = crate::config::client_id()?;
-        db.insert_entry(&datum_core::track::track_entry(field, verb, at, &client))?;
-        crate::commands::helpers::save_track_spec(db, field, verb)?;
+        if let Some(verb) = db.verb_from_field_log(field)? {
+            crate::commands::helpers::save_track_spec(db, field, verb)?;
+        }
     }
     Ok(())
 }

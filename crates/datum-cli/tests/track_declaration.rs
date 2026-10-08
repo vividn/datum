@@ -13,7 +13,7 @@
 //! `e2e_subprocess.rs` the table; what lives here is the matrix the other
 //! two leave out — one case per verb, the spec that is written either
 //! way, the `_LAST` group `undo` takes back, the IGNORED field a first
-//! log brings back, and the import that still declares with a TRACK row.
+//! log brings back, and the import, which declares with specs alone.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -493,8 +493,11 @@ fn a_different_event_at_the_declaring_rows_instant_still_refuses() {
 
 /// An imported database is whole under the same rule a typed one is: a
 /// v2 backup carrying three fields in three different shapes comes out
-/// with a declaration and a spec for each, with the verb its entries
-/// imply.
+/// with a spec for each, with the verb its entries imply — and with
+/// exactly the rows the backup holds. vividn, 2026-10-08, of the TRACK row
+/// da-c8mh put a millisecond ahead of each field's first entry: «I don't
+/// think anything should be there» (da-r6ofr). It was an event that never
+/// happened, which `tail` drew as a plain `end`.
 #[test]
 fn v2import_declares_every_field_it_brings() {
     let env = Env::new();
@@ -514,25 +517,24 @@ fn v2import_declares_every_field_it_brings() {
     let conn = rusqlite::Connection::open(&env.db).expect("open db");
     let mut stmt = conn
         .prepare(
-            "SELECT field, json_extract(extra_metadata, '$.track') FROM entries
-             WHERE deleted_at IS NULL
-               AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NOT NULL
-             ORDER BY field",
+            "SELECT field, COUNT(*) FROM entries
+             WHERE deleted_at IS NULL AND field IN ('coffee', 'mood', 'work')
+             GROUP BY field ORDER BY field",
         )
         .unwrap();
-    let declared: Vec<(String, String)> = stmt
+    let rows: Vec<(String, i64)> = stmt
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
         .unwrap()
         .map(|r| r.unwrap())
         .collect();
     assert_eq!(
-        declared,
+        rows,
         vec![
-            ("coffee".to_string(), "occur".to_string()),
-            ("mood".to_string(), "switch".to_string()),
-            ("work".to_string(), "start".to_string()),
+            ("coffee".to_string(), 1),
+            ("mood".to_string(), 1),
+            ("work".to_string(), 1),
         ],
-        "one declaration per imported field, with the verb its entries imply",
+        "one row per imported document, and no TRACK row beside it",
     );
 
     // The spec is written too, so the next log of an imported field has a
@@ -549,24 +551,4 @@ fn v2import_declares_every_field_it_brings() {
         assert_eq!(spec["verb"], verb, "{field}'s spec");
         assert!(spec["default_verb"].is_null(), "{field} kept the old key");
     }
-
-    // The declaration precedes the history it declares.
-    let (earliest_track, earliest_entry): (String, String) = conn
-        .query_row(
-            "SELECT
-               (SELECT MIN(occur_time) FROM entries
-                 WHERE field = 'coffee'
-                   AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NOT NULL),
-               (SELECT MIN(occur_time) FROM entries
-                 WHERE field = 'coffee'
-                   AND json_extract(COALESCE(extra_metadata, '{}'), '$.track') IS NULL)",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .unwrap();
-    assert!(
-        earliest_track < earliest_entry,
-        "the declaration should sit ahead of the field's first entry: \
-         {earliest_track} vs {earliest_entry}",
-    );
 }

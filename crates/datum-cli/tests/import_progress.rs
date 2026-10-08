@@ -79,9 +79,9 @@ fn v2import_and_restore_report_progress_on_stderr_only() {
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );
-    // The backup also carries the TRACK document the import declared
-    // `coffee` with (da-c8mh) and its spec (da-lc26c), two rows more.
-    let restored = N + 2;
+    // The backup also carries the spec the import declared `coffee` with
+    // (da-lc26c), one row more; no TRACK row (da-r6ofr).
+    let restored = N + 1;
     assert!(
         stderr.contains(&format!("restore: reading {restored}/{restored}\n")),
         "{stderr}"
