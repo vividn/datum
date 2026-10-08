@@ -285,10 +285,17 @@ export interface PurgePreview {
 /** The purge's confirm, naming the device and what goes, before anything is done. */
 export function purgeWords(label: string, db: string, p: PurgePreview): string {
 	const day = (t?: string | null) => (t ?? '').slice(0, 10);
+	const many = (n: number, one: string, more: string) => `${n} ${n === 1 ? one : more}`;
+	// As the CLI's purge preview: a zero count says nothing, and the noun rides the first count.
+	const did = ([[p.created, 'created'], [p.edited, 'edited'], [p.deleted, 'deleted']] as const)
+		.filter(([n]) => n > 0)
+		.map(([n, verb], i) => `${i ? n : many(n, 'entry', 'entries')} it ${verb}`);
+	if (p.defined) did.push(`${many(p.defined, 'definition', 'definitions')} it signed`);
+	const list = did.length > 1 ? `${did.slice(0, -1).join(', ')} and ${did.at(-1)}` : did[0];
 	const what = p.first
-		? `Every change it made goes, on every device: ${p.created} ${p.created === 1 ? 'entry' : 'entries'} it created, ${p.edited} it edited and ${p.deleted} it deleted, ${day(p.first)} to ${day(p.last)}.`
+		? `Every change it made goes, on every device: ${list}, ${day(p.first)} to ${day(p.last)}.`
 		: p.defined
-			? `It made no change to an entry, only ${p.defined === 1 ? '1 definition' : `${p.defined} definitions`}: this revokes it and sets ${p.defined === 1 ? 'that' : 'them'} aside.`
+			? `It made no change to an entry, only ${many(p.defined, 'definition', 'definitions')}: this revokes it and sets ${p.defined === 1 ? 'that' : 'them'} aside.`
 			: 'It made no change to an entry: this only revokes it.';
 	return `Purge ${label} from ${db}? ${what} It is revoked too; Unpurge brings its changes back.`;
 }
