@@ -22,7 +22,9 @@ use super::types::{RetimeFilter, Retimed};
 use super::Db;
 
 impl Db {
-    /// Retime matching rows to a fresh absolute `occur_time`. Returns one
+    /// Retime matching rows to a fresh absolute `occur_time`, which
+    /// `new_start` makes from the time each row has now (da-jix52: `retime
+    /// -t 1040` is 10:40 on the row's own day). Returns one
     /// [`Retimed`] per moved row — the entry plus the time it came from, so
     /// the caller can render `before ⟶ after`.
     ///
@@ -37,10 +39,12 @@ impl Db {
     pub fn set_start_time(
         &self,
         filter: &RetimeFilter,
-        new_start: &crate::time::DatumTime,
+        mut new_start: impl FnMut(&crate::time::DatumTime) -> Result<crate::time::DatumTime>,
     ) -> Result<Vec<Retimed>> {
         self.retime_with(filter, |e| {
-            e.occur_time = Some(new_start.clone());
+            if let Some(t) = e.occur_time.as_mut() {
+                *t = new_start(t)?;
+            }
             Ok(())
         })
     }
@@ -256,7 +260,8 @@ mod tests {
             unit: crate::time::UncertaintyUnit::Minute,
         }
         .to_iso();
-        db.set_start_time(&filter, &new_start).unwrap();
+        db.set_start_time(&filter, |_| Ok(new_start.clone()))
+            .unwrap();
 
         let by_hid = db.get_entry(&hid).unwrap();
         assert_eq!(by_hid.slug.as_str(), "coffee:2026-05-01T10:00:00.000Z");
@@ -407,7 +412,7 @@ mod tests {
         );
 
         let target = seed_dt("2024-02-01T07:00:00Z");
-        let moved = db.set_start_time(&filter, &target).unwrap();
+        let moved = db.set_start_time(&filter, |_| Ok(target.clone())).unwrap();
         assert_eq!(moved.len(), 1);
         assert_eq!(
             moved[0].before.utc,
@@ -457,7 +462,7 @@ mod tests {
             ..Default::default()
         };
         let new_start = seed_dt("2026-05-01T10:00:00Z");
-        let err = db.set_start_time(&filter, &new_start);
+        let err = db.set_start_time(&filter, |_| Ok(new_start.clone()));
         assert!(
             err.is_err(),
             "second row must collide on (field, occur_time)"
@@ -490,7 +495,9 @@ mod tests {
             ..Default::default()
         };
         let new_start = seed_dt("2026-05-01T10:00:00Z");
-        let moved = db.set_start_time(&filter, &new_start).unwrap();
+        let moved = db
+            .set_start_time(&filter, |_| Ok(new_start.clone()))
+            .unwrap();
         assert_eq!(moved.len(), 2);
 
         for hid in [&a.hid, &b.hid] {
@@ -531,7 +538,9 @@ mod tests {
             ..Default::default()
         };
         let new_start = seed_dt("2026-05-01T10:00:00Z");
-        let moved = db.set_start_time(&filter, &new_start).unwrap();
+        let moved = db
+            .set_start_time(&filter, |_| Ok(new_start.clone()))
+            .unwrap();
         assert_eq!(moved.len(), 1, "only the timed row is a retime target");
 
         let unset_after = db.get_entry(timeless_slug.as_str()).unwrap();

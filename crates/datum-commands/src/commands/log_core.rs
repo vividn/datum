@@ -15,6 +15,7 @@ use datum_core::{
     field_spec::{self, InterpolationContext},
     time::{
         parse_date, parse_duration, parse_time, resolve_timezone, DatumTime, TimeBuilder, TimeCtx,
+        Zone,
     },
 };
 use datum_parse::input::TimeArgs;
@@ -1943,12 +1944,33 @@ pub(crate) fn build_time_from_flags(
     time: &TimeArgs,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<DatumTime> {
+    build_time_anchored(time, now, None)
+}
+
+/// [`build_time_from_flags`] with an entry's `own` time standing where the
+/// wall clock does (retime, da-jix52): `now` is its instant, so `-t 1040`
+/// is 10:40 on its own day, `-t -5` five minutes before it and `sunday` the
+/// Sunday before it, all in its own zone unless `-z` names another.
+pub(crate) fn build_time_anchored(
+    time: &TimeArgs,
+    now: chrono::DateTime<chrono::Utc>,
+    own: Option<&DatumTime>,
+) -> Result<DatumTime> {
     let tz_name = match time.timezone.as_deref() {
         Some(spec) => Some(
             resolve_timezone(spec)
                 .map_err(|e| anyhow::anyhow!("Invalid -z/--timezone value '{spec}': {e}"))?,
         ),
         None => None,
+    };
+    let own = match (own, &tz_name) {
+        (Some(_), Some(name)) => Some((Zone::iana(name)?, tz_name.clone())),
+        (Some(t), None) => Some((Zone::of(t)?, t.timezone.clone())),
+        (None, _) => None,
+    };
+    let ctx = match &own {
+        Some((zone, _)) => TimeCtx::at(zone.local_naive(now)),
+        None => TimeCtx::now(),
     };
 
     let mut builder = TimeBuilder::now()
@@ -1959,15 +1981,18 @@ pub(crate) fn build_time_from_flags(
         .with_full_day(time.full_day);
 
     if let Some(d) = &time.date {
-        let da = parse_date(d, TimeCtx::now())?;
+        let da = parse_date(d, ctx)?;
         builder = builder.with_date_arg(da);
     }
     for t in time.time_values() {
-        let ta = parse_time(t, TimeCtx::now())?;
+        let ta = parse_time(t, ctx)?;
         builder = builder.with_time_arg(ta);
     }
 
-    Ok(builder.build_with_uncertainty_now(now))
+    Ok(match own {
+        Some((zone, name)) => builder.build_with_uncertainty_at(now, zone, name),
+        None => builder.build_with_uncertainty_now(now),
+    })
 }
 
 #[cfg(test)]

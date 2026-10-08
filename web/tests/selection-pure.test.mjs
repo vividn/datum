@@ -45,7 +45,7 @@ const GRAMMAR = grammarOf([
 	entry('get', ['datum get <ID_OR_SLUG> [--pretty]']),
 	entry('update', ['datum update <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]...']),
 	entry('retime', [
-		'datum retime [SLUG[,SLUG]...] [SHIFT]',
+		'datum retime [SLUG[,SLUG]...] [T]',
 		'datum retime [SLUG[,SLUG]...] [-r] [-t T] [-y]... [-q]... [-d D]'
 	]),
 	entry('history', ['datum history <ID_OR_SLUG> [--version N | --diff A B]']),
@@ -113,7 +113,7 @@ describe('what the grammar says a command takes', () => {
 
 // da-3lxol. Which taps RUN is read off the same grammar, never listed:
 // an id command runs on a selected hid unless its usage has a word still
-// to come after the id — `update`'s VALUE, `retime`'s SHIFT, which a time
+// to come after the id — `update`'s VALUE, `retime`'s T, which a time
 // pill supplies and nothing else does.
 describe('what a tap runs rather than fills', () => {
 	const firing = (pills) => COMMANDS.map((c) => c.name).filter((n) => fires(GRAMMAR.get(n), pills));

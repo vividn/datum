@@ -1728,11 +1728,12 @@ mod tests {
         );
     }
 
-    /// da-rorg: bare numeric positional auto-relative shift.
-    /// `retime <id> -5` shifts the entry's occur_time by -5 minutes.
+    /// da-jix52: a `-t -5` (where the parser puts `retime <id> -5`) is five
+    /// minutes before the entry's own time, not before now.
     #[test]
-    fn retime_bare_numeric_positional_shifts_minutes() {
+    fn retime_relative_time_arg_is_read_from_the_entry() {
         use datum_core::db::Db;
+        use datum_parse::input::TimeArgs;
         let db = Db::open_in_memory().unwrap();
         let e = make_entry_at("coffee", 10_000, "d1");
         let id = e.slug.clone();
@@ -1741,12 +1742,15 @@ mod tests {
 
         let args = RetimeArgs {
             slug: Some(id.to_string()),
-            bare_offset_min: Some(-5),
+            time: TimeArgs {
+                time: Some("-5".to_string()),
+                ..Default::default()
+            },
             ..Default::default()
         };
         crate::commands::retime::retime(args, &db).unwrap();
 
-        let after = db.get_entry(&id).unwrap();
+        let after = db.get_entry(&e.hid).unwrap();
         assert_eq!(
             after.occur_time.as_ref().unwrap().utc,
             t0 - chrono::Duration::minutes(5)

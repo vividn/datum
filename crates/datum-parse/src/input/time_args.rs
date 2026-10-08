@@ -76,6 +76,23 @@ impl TimeArgs {
         self.time.iter().chain(&self.time_offsets)
     }
 
+    /// Take one more `-t` value: a relative one stacks, an absolute one
+    /// replaces only the absolute (see [`TimeArgs::time_offsets`]).
+    pub fn push_time(&mut self, v: &str) {
+        let relative = |s: &str| s.starts_with(['+', '-']);
+        match self.time.take() {
+            Some(prev) if relative(v) => {
+                self.time = Some(prev);
+                self.time_offsets.push(v.to_string());
+            }
+            Some(prev) if relative(&prev) => {
+                self.time_offsets.insert(0, prev);
+                self.time = Some(v.to_string());
+            }
+            _ => self.time = Some(v.to_string()),
+        }
+    }
+
     /// Whether these flags resolve to a date-only moment — `-D`, or a
     /// `-d` / `-y*` without any clock-level input — as
     /// [`TimeFromArgs::only_date`] will say, known before building.
@@ -197,18 +214,7 @@ pub static FLAG_SPECS: &[FlagSpec<TimeArgs>] = &[
         short: Some('t'),
         long: Some("time"),
         action: FlagAction::Value(|a, v| {
-            let relative = |s: &str| s.starts_with(['+', '-']);
-            match a.time.take() {
-                Some(prev) if relative(v) => {
-                    a.time = Some(prev);
-                    a.time_offsets.push(v.to_string());
-                }
-                Some(prev) if relative(&prev) => {
-                    a.time_offsets.insert(0, prev);
-                    a.time = Some(v.to_string());
-                }
-                _ => a.time = Some(v.to_string()),
-            }
+            a.push_time(v);
             Ok(())
         }),
     },

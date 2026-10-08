@@ -37,10 +37,9 @@ pub(crate) fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
         p.before = Some(v.to_string());
         Ok(())
     }));
-    // da-rorg: `-r`/`--relative` flips the reference frame for the
-    // accompanying time args (and matches the implicit semantics of
-    // a bare numeric positional). Note: `-r` is also `--reverse` on
-    // tail; flag namespaces are per-command so they don't collide.
+    // da-rorg: `-r`/`--relative` reads the accompanying time args as a
+    // pure shift. Note: `-r` is also `--reverse` on tail; flag namespaces
+    // are per-command so they don't collide.
     registry.push(local_switch(Some('r'), Some("relative"), |p| {
         p.relative = true;
         Ok(())
@@ -49,38 +48,28 @@ pub(crate) fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
     let mut composed = RetimeParsing::default();
     let pos = fold_args(tail, &mut composed, &registry)?;
 
-    // da-rorg: positionals split into a slug and at most one bare
-    // numeric (minutes-offset shorthand for `-r -t <N>`). A short hid can
-    // be all digits (da-q1k4p), so a number is the offset only when it is
-    // signed or follows the slug: `retime 15437` names entry 15437, and
-    // `retime +30` / `retime -5` / `retime <id> 30` shift.
-    let mut slug: Option<String> = None;
-    let mut bare_offset_min: Option<i64> = None;
-    for p in &pos {
-        let signed = p.starts_with(['-', '+']);
-        if let Some(n) = p.parse::<i64>().ok().filter(|_| signed || slug.is_some()) {
-            if bare_offset_min.is_some() {
-                return Err(ParseError::InvalidArg(
-                    "retime accepts at most one bare numeric positional (minutes offset)".into(),
-                ));
-            }
-            bare_offset_min = Some(n);
-        } else if slug.is_none() {
-            slug = Some(p.to_string());
-        } else {
+    // A slug, then at most one time in `-t`'s own grammar (da-jix52). A
+    // short hid can be all digits (da-q1k4p), so a positional alone is the
+    // time only when it is signed: `retime 15437` names entry 15437, and
+    // `retime +30` / `retime -1h` / `retime <id> 1040` place `_LAST` or <id>.
+    let (slug, when) = match pos[..] {
+        [] => (None, None),
+        [p] if p.starts_with(['-', '+']) => (None, Some(p)),
+        [slug] => (Some(slug), None),
+        [slug, when] => (Some(slug), Some(when)),
+        [_, _, extra, ..] => {
             return Err(ParseError::InvalidArg(format!(
-                "unexpected positional after slug: '{p}'"
-            )));
+                "unexpected positional after the time: '{extra}'"
+            )))
         }
+    };
+    // It IS a `-t` value from here on, so the two cannot disagree.
+    if let Some(when) = when {
+        composed.time.push_time(when);
     }
 
-    if composed.offset.is_some() && bare_offset_min.is_some() {
-        return Err(ParseError::InvalidArg(
-            "--offset and a bare numeric positional are mutually exclusive".into(),
-        ));
-    }
-    // Either shift form returns before the time args are read, so beside
-    // them it would silently drop them (da-k5oa5).
+    // `--offset` returns before the time args are read, so beside them it
+    // would silently drop them (da-k5oa5).
     let t = &composed.time;
     let placing = t.time.is_some()
         || t.yesterday > 0
@@ -89,14 +78,10 @@ pub(crate) fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
         || t.full_day
         || t.timezone.is_some()
         || composed.relative;
-    if placing || t.omit_timestamp {
-        let shift = (composed.offset.as_ref().map(|_| "--offset".to_string()))
-            .or(bare_offset_min.map(|n| format!("a bare minutes offset ({n})")));
-        if let Some(shift) = shift {
-            return Err(ParseError::InvalidArg(format!(
-                "{shift} is mutually exclusive with time-arg flags"
-            )));
-        }
+    if composed.offset.is_some() && (placing || t.omit_timestamp) {
+        return Err(ParseError::InvalidArg(
+            "--offset is mutually exclusive with time-arg flags".into(),
+        ));
     }
 
     // `-T` takes the time away (da-1d0v2), so a time it would be moved to
@@ -109,13 +94,12 @@ pub(crate) fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
     }
 
     Ok(RetimeArgs {
-        slug,
+        slug: slug.map(str::to_string),
         offset: composed.offset,
         time: composed.time,
         field: composed.field,
         after: composed.after,
         before: composed.before,
         relative: composed.relative,
-        bare_offset_min,
     })
 }

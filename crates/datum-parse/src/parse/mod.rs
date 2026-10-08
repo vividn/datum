@@ -915,7 +915,6 @@ mod tests {
             Command::Retime(a) => {
                 assert!(a.slug.is_none());
                 assert!(a.offset.is_none());
-                assert!(a.bare_offset_min.is_none());
                 assert!(!a.relative);
                 assert!(a.time.time.is_none() && a.time.yesterday == 0 && a.time.quick == 0);
             }
@@ -923,43 +922,26 @@ mod tests {
         }
     }
 
+    /// da-jix52: the positional after the slug is a `-t` value in every
+    /// form `-t` takes, and lands in `-t`'s own slot.
     #[test]
-    fn retime_bare_numeric_positional_captures_minutes() {
-        // `retime <slug> -5` → slug + bare_offset_min=-5.
-        let cli = parse_argv(&argv(&["retime", "coffee:2024", "-5"])).unwrap();
-        match cli.command {
-            Command::Retime(a) => {
-                assert_eq!(a.slug.as_deref(), Some("coffee:2024"));
-                assert_eq!(a.bare_offset_min, Some(-5));
-                assert!(a.offset.is_none());
+    fn retime_positional_after_the_slug_is_a_time() {
+        for when in ["1040", "-5", "+5", "30", "-1h", "yesterday", "9:15am"] {
+            match parse_argv(&argv(&["retime", "coffee:2024", when]))
+                .unwrap()
+                .command
+            {
+                Command::Retime(a) => {
+                    assert_eq!(a.slug.as_deref(), Some("coffee:2024"), "{when}");
+                    assert_eq!(a.time.time.as_deref(), Some(when));
+                    let flag = parse_argv(&argv(&["retime", "coffee:2024", "-t", when])).unwrap();
+                    let Command::Retime(flag) = flag.command else {
+                        panic!("expected Retime")
+                    };
+                    assert_eq!(a.time, flag.time, "{when}");
+                }
+                _ => panic!("expected Retime"),
             }
-            _ => panic!("expected Retime"),
-        }
-    }
-
-    #[test]
-    fn retime_bare_positive_numeric_positional() {
-        let cli = parse_argv(&argv(&["retime", "mood:abc", "30"])).unwrap();
-        match cli.command {
-            Command::Retime(a) => {
-                assert_eq!(a.slug.as_deref(), Some("mood:abc"));
-                assert_eq!(a.bare_offset_min, Some(30));
-            }
-            _ => panic!("expected Retime"),
-        }
-    }
-
-    #[test]
-    fn retime_numeric_only_positional_defaults_slug_to_last() {
-        // `retime -5` (no slug) — bare numeric goes to `bare_offset_min`;
-        // the command layer fills slug=_LAST.
-        let cli = parse_argv(&argv(&["retime", "-5"])).unwrap();
-        match cli.command {
-            Command::Retime(a) => {
-                assert!(a.slug.is_none());
-                assert_eq!(a.bare_offset_min, Some(-5));
-            }
-            _ => panic!("expected Retime"),
         }
     }
 
@@ -967,36 +949,33 @@ mod tests {
     fn retime_unsigned_number_before_a_slug_is_the_slug() {
         // A short hid is the hid's first five characters, and about one in
         // three hundred is all digits (da-q1k4p): `retime 15437 -t 0930`
-        // names entry 15437; it must not move `_LAST` by 15437 minutes.
-        for args in [&["retime", "15437", "-t", "0930"][..], &["retime", "15437"]] {
+        // names entry 15437; it must not read 15437 as a time for `_LAST`.
+        for (args, when) in [
+            (&["retime", "15437", "-t", "0930"][..], Some("0930")),
+            (&["retime", "15437"], None),
+            (&["retime", "15437", "30"], Some("30")),
+        ] {
             match parse_argv(&argv(args)).unwrap().command {
                 Command::Retime(a) => {
                     assert_eq!(a.slug.as_deref(), Some("15437"), "{args:?}");
-                    assert_eq!(a.bare_offset_min, None, "{args:?}");
+                    assert_eq!(a.time.time.as_deref(), when, "{args:?}");
                 }
                 _ => panic!("expected Retime"),
             }
         }
-        match parse_argv(&argv(&["retime", "15437", "30"]))
-            .unwrap()
-            .command
-        {
-            Command::Retime(a) => {
-                assert_eq!(a.slug.as_deref(), Some("15437"));
-                assert_eq!(a.bare_offset_min, Some(30));
-            }
-            _ => panic!("expected Retime"),
-        }
     }
 
+    /// Alone, a signed positional is the time and the slug is `_LAST`.
     #[test]
-    fn retime_signed_number_alone_is_an_offset() {
-        match parse_argv(&argv(&["retime", "+30"])).unwrap().command {
-            Command::Retime(a) => {
-                assert!(a.slug.is_none());
-                assert_eq!(a.bare_offset_min, Some(30));
+    fn retime_signed_positional_alone_is_a_time() {
+        for when in ["+30", "-5", "-1h"] {
+            match parse_argv(&argv(&["retime", when])).unwrap().command {
+                Command::Retime(a) => {
+                    assert!(a.slug.is_none(), "{when}");
+                    assert_eq!(a.time.time.as_deref(), Some(when));
+                }
+                _ => panic!("expected Retime"),
             }
-            _ => panic!("expected Retime"),
         }
     }
 
@@ -1007,21 +986,17 @@ mod tests {
             Command::Retime(a) => {
                 assert!(a.relative);
                 assert_eq!(a.time.time.as_deref(), Some("-5"));
-                assert!(a.bare_offset_min.is_none());
             }
             _ => panic!("expected Retime"),
         }
     }
 
     #[test]
-    fn retime_offset_conflicts_with_bare_numeric() {
+    fn retime_offset_conflicts_with_a_positional_time() {
         let err =
             parse_argv(&argv(&["retime", "coffee:abc", "5", "--offset", "PT5M"])).unwrap_err();
         let msg = format!("{err}");
-        assert!(
-            msg.contains("--offset") && msg.contains("bare numeric"),
-            "got: {msg}"
-        );
+        assert!(msg.contains("--offset is mutually exclusive"), "got: {msg}");
     }
 
     #[test]
@@ -1055,36 +1030,33 @@ mod tests {
         assert!(parse_argv(&argv(&["retime", "coffee:abc", "-T"])).is_ok());
     }
 
-    /// da-k5oa5: a bare minutes offset returns before the time args are
-    /// read, so beside them it is refused like `--offset`, not ignored.
+    /// da-k5oa5: a positional time beside the time flags is not dropped: it
+    /// is one more `-t` value, stacking as two `-t`s do. `-T` still refuses.
     #[test]
-    fn retime_bare_numeric_conflicts_with_time_args() {
-        for extra in [
-            &["-t", "0930"][..],
-            &["-r"],
-            &["-y"],
-            &["-q"],
-            &["-d", "-1"],
-            &["-D"],
-            &["-T"],
-            &["-z", "+4"],
-        ] {
-            let mut args = vec!["retime", "coffee:abc", "-5"];
-            args.extend_from_slice(extra);
-            let err = parse_argv(&argv(&args)).unwrap_err();
-            let msg = format!("{err}");
-            assert!(
-                msg.contains("bare minutes offset (-5)") && msg.contains("time-arg"),
-                "{extra:?} got: {msg}"
-            );
+    fn retime_positional_time_composes_with_time_flags() {
+        let cli = parse_argv(&argv(&["retime", "coffee:abc", "-5", "-t", "0930", "-y"])).unwrap();
+        match cli.command {
+            Command::Retime(a) => {
+                assert_eq!(a.time.time.as_deref(), Some("0930"));
+                assert_eq!(a.time.time_offsets, ["-5"]);
+                assert_eq!(a.time.yesterday, 1);
+            }
+            _ => panic!("expected Retime"),
         }
+        let msg = parse_argv(&argv(&["retime", "coffee:abc", "-5", "-T"]))
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("-T/--no-timestamp removes the time"), "{msg}");
     }
 
     #[test]
-    fn retime_two_bare_numerics_errors() {
+    fn retime_two_times_after_the_slug_errors() {
         let err = parse_argv(&argv(&["retime", "coffee:abc", "5", "10"])).unwrap_err();
         let msg = format!("{err}");
-        assert!(msg.contains("at most one bare numeric"), "got: {msg}");
+        assert!(
+            msg.contains("unexpected positional after the time: '10'"),
+            "got: {msg}"
+        );
     }
 
     /// da-nhnip: the error names the flag typed and what THAT flag accepts.

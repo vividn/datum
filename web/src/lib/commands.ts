@@ -363,8 +363,8 @@ export interface Takes {
 	field: false | 1 | 2;
 	/**
 	 * Some usage line puts a POSITIONAL after the id (da-3lxol): a VALUE
-	 * (`update <ID> [VALUE | KEY=VALUE]...`) or a SHIFT (`retime [SLUG]
-	 * [SHIFT]`) the command is waiting for. Measured: `retime <hid>` alone
+	 * (`update <ID> [VALUE | KEY=VALUE]...`) or a time (`retime [SLUG]
+	 * [T]`) the command is waiting for. Measured: `retime <hid>` alone
 	 * moves the entry to NOW and `update <hid>` alone rewrites nothing —
 	 * both run, neither is what a tap meant.
 	 */
@@ -524,7 +524,7 @@ export function commandsUnder(grammar: Grammar | null, pills: Pill[], fields: Fi
  * than listed: a selected hid completes an id command that waits for
  * nothing after the id (`delete`, `get`, `history`, `undo`, `redo`), and
  * a command that does wait (`more`) is completed by a loaded time only
- * when `-t` is what it takes instead — `retime`, whose `[SHIFT]` and
+ * when `-t` is what it takes instead — `retime`, whose `[T]` and
  * `-t T` are two lines of one grammar (vividn, 09-17: «retime should just
  * fire when you tap it»). `update`'s VALUE no pill holds, so it fills.
  * With no hid loaded, nothing here fires: `undo` is `press: 'run'` on
