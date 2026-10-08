@@ -14,7 +14,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
+import { inWorker, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
 
 /** A sync access handle that is never granted and never refused. */
@@ -37,48 +37,72 @@ const notBefore = (until) => `
 `;
 
 /**
- * A sync access handle whose `flush` stalls for `ms` once told to — over the
- * `datum-test-slow` channel, so the panes that run at load are not the
- * command that stalls — and says so on the same channel as it starts.
+ * A sync access handle whose next `flush` stalls for as long as it is told
+ * to — over the `datum-test-slow` channel, so the panes that run at load
+ * are not the command that stalls — and says so on the same channel as it
+ * starts. One flush, and then it runs at full speed again.
  *
  * `flush` is where SQLite's sync lands under the shim, which is the middle
  * of a write: the journal is on disk and the transaction is not committed.
- * `once` stalls one flush and then runs at full speed again.
  */
-const slowFlush = (ms, { once = false } = {}) => `
+const slowFlush = `
 	const channel = new BroadcastChannel('datum-test-slow');
-	let slow = false;
-	channel.onmessage = (e) => { if (e.data === 'slow') slow = true; };
+	let stall = 0;
+	channel.onmessage = (e) => { if (e.data?.stall) stall = e.data.stall; };
 	const flush = FileSystemSyncAccessHandle.prototype.flush;
 	FileSystemSyncAccessHandle.prototype.flush = function (...args) {
-		if (slow) {
-			slow = !${once};
+		if (stall) {
+			const deadline = performance.now() + stall;
+			stall = 0;
 			channel.postMessage('flushing');
-			const deadline = performance.now() + ${ms};
 			while (performance.now() < deadline) {}
 		}
 		return flush.apply(this, args);
 	};
 `;
 
-/** Tell the database worker to stall its next flush; resolve once it has. */
-async function stallNextFlush(page) {
-	await page.evaluate(() => {
+/**
+ * Tell the database worker to stall its next flush for `ms`; resolve once it
+ * has. The channel is the context's, so this is for a page with no tab
+ * beside it: another tab's worker would stall its next flush too.
+ */
+async function stallNextFlush(page, ms) {
+	await page.evaluate((ms) => {
 		const channel = new BroadcastChannel('datum-test-slow');
 		window.__flushing = new Promise((resolve) => {
 			channel.onmessage = (e) => e.data === 'flushing' && resolve(true);
 		});
-		channel.postMessage('slow');
-	});
+		channel.postMessage({ stall: ms });
+	}, ms);
 	return () => page.evaluate(() => window.__flushing);
 }
 
 before(startApp);
 after(stopApp);
 
-// An app per test, not `sharedApp` (da-6b3dj): every test here prepares the
-// worker's storage before the page exists, reloads, or opens a second tab
-// of the same OPFS — what a shared app's `empty` cannot stand in for.
+/**
+ * ONE app for a describe, where its tests can share one (da-87x74): an open
+ * is a second, and `sharedApp` inside a describe is taken down with it. Each
+ * test is handed the app as a fresh one opens — no tab beside it, the page
+ * tidied, the database empty — and may reload it or open tabs of its own.
+ *
+ * What that cannot stand in for still opens its own, and says so where it
+ * does: storage the worker is refused from its first line, and the day page.
+ */
+function oneApp(options) {
+	const shared = sharedApp(options);
+	return async (fn) => {
+		const app = await shared();
+		for (const page of app.page.context().pages()) if (page !== app.page) await page.close();
+		// Nor a pane's copy from a last visit, which a tab keeps as it closes
+		// (Stale.svelte) and a tab opened on `/repl` after it may never take
+		// down (da-qhu1g), so `ready` would wait on it for good.
+		await app.page.evaluate(() => localStorage.removeItem('datum.stale.v1'));
+		await app.home();
+		await app.empty();
+		return fn(app);
+	};
+}
 
 /**
  * The repl layout, for the tests the day page is only scenery for.
@@ -177,6 +201,10 @@ describe('when durable storage arrives late', () => {
 // separate storage, so the second tab would open OPFS happily and every
 // test here would pass against a build that never learned to share.
 describe('two tabs', () => {
+	const alone = oneApp({ ...REPL, prepare: inWorker(slowFlush) });
+
+	// An app of its own: the one test here that reads the DAY page — both
+	// tails — and a device that has opened `/repl` opens on it from then on.
 	test('both are durable, and each sees the other write without a reload', async () => {
 		await withApp(async (first) => {
 			const second = await first.newTab();
@@ -206,7 +234,7 @@ describe('two tabs', () => {
 	});
 
 	test('both keep everything through a reload', async () => {
-		await withApp(async (first) => {
+		await alone(async (first) => {
 			const second = await first.newTab();
 			await first.submit('occur coffee -t 0700');
 			await second.submit('occur tea -t 0800');
@@ -222,14 +250,14 @@ describe('two tabs', () => {
 					['coffee', 'tea']
 				);
 			}
-		}, REPL);
+		});
 	});
 
 	// On the repl layout: on the day page every write re-runs the other
 	// tab's five panes, 200 processes the writes queue behind for these
 	// forty, and the parallel suite stretched that pile past two minutes.
 	test('forty writes from both tabs at once all land, once each, and check is clean', async () => {
-		await withApp(async (first) => {
+		await alone(async (first) => {
 			const second = await first.newTab();
 			const tabs = [first, second];
 			// Fired without awaiting, so both tabs' processes contend for the
@@ -252,7 +280,7 @@ describe('two tabs', () => {
 			}
 			const check = await third.run(['check']);
 			assert.equal(check.code, 0, check.stdout + check.stderr);
-		}, REPL);
+		});
 	});
 
 	// Both tabs logging the same field in the same minute is the one case
@@ -261,7 +289,7 @@ describe('two tabs', () => {
 	// (exit 11) of a row that is already there — never a row that went
 	// missing. Two tabs must not make this any worse than one tab does.
 	test('the same field in the same minute is a duplicate, not a loss', async () => {
-		await withApp(async (first) => {
+		await alone(async (first) => {
 			const second = await first.newTab();
 			const both = await Promise.all([
 				first.run(['occur', 'coffee', '-t', '0700']),
@@ -278,47 +306,7 @@ describe('two tabs', () => {
 					['coffee']
 				);
 			}
-		}, REPL);
-	});
-
-	test('a tab closed mid-write leaves the database whole, and check says so', async () => {
-		await withApp(
-			async (first) => {
-				assert.equal((await first.run(['occur', 'coffee', '-t', '0600'])).code, 0);
-
-				// A long write: one `db restore -` of many rows, which is one
-				// transaction. Made from the CLI's own dump of the row above,
-				// renamed so every copy is a row of its own.
-				const [header, row] = (await first.run(['db', 'backup', '-'])).stdout.split('\n');
-				const template = JSON.parse(row);
-				const copies = Array.from({ length: 500 }, (_, i) =>
-					JSON.stringify({
-						...template,
-						hid: String(i).padStart(12, 'x'),
-						slug: `ping:${i}`,
-						field: 'ping',
-						content_hash: i.toString(16).padStart(64, '0')
-					})
-				);
-				const flushing = await stallNextFlush(first.page);
-				// Not awaited: the page closes under it.
-				void first.run(['db', 'restore', '-', '--merge'], [header, ...copies].join('\n')).catch(() => {});
-				assert.equal(await flushing(), true);
-				await first.page.close();
-
-				// The journal that write left is still there; the next process
-				// rolls it back before it reads anything.
-				const next = await first.newTab();
-				const check = await next.run(['check']);
-				assert.equal(check.code, 0, check.stdout + check.stderr);
-				assert.deepEqual(
-					(await next.entries(1000)).map((e) => e.field),
-					['coffee']
-				);
-				assert.equal((await next.run(['occur', 'tea', '-t', '0700'])).code, 0);
-			},
-			{ ...REPL, prepare: inWorker(slowFlush(60000)) }
-		);
+		});
 	});
 
 	// The owner design this replaced sent a request again when 3 s went by
@@ -326,23 +314,59 @@ describe('two tabs', () => {
 	// the hid, so nothing marks the two as one write. Per-command handles
 	// resend nothing; a command slower than that must still land once.
 	test('a command slower than three seconds lands once, not twice', async () => {
-		await withApp(
-			async (app) => {
-				await stallNextFlush(app.page);
-				const started = Date.now();
-				const logged = await app.run(['occur', 'coffee', '-t', '0700']);
-				assert.equal(logged.code, 0, logged.stderr);
-				assert.ok(Date.now() - started > 3000, 'the stall did not happen, so this proves nothing');
-				// No wait: a resend at 3 s went out before this answer did, and
-				// the worker runs what it is sent in order, so the read below
-				// comes after anything a resend would have written.
-				assert.deepEqual(
-					(await app.entries()).map((e) => e.field),
-					['coffee']
-				);
-			},
-			{ ...REPL, prepare: inWorker(slowFlush(3500, { once: true })) }
-		);
+		await alone(async (app) => {
+			await stallNextFlush(app.page, 3500);
+			const started = Date.now();
+			const logged = await app.run(['occur', 'coffee', '-t', '0700']);
+			assert.equal(logged.code, 0, logged.stderr);
+			assert.ok(Date.now() - started > 3000, 'the stall did not happen, so this proves nothing');
+			// No wait: a resend at 3 s went out before this answer did, and
+			// the worker runs what it is sent in order, so the read below
+			// comes after anything a resend would have written.
+			assert.deepEqual(
+				(await app.entries()).map((e) => e.field),
+				['coffee']
+			);
+		});
+	});
+
+	// LAST, and that is its place (da-87x74): the tab it closes mid-write is
+	// the one this describe's tests share.
+	test('a tab closed mid-write leaves the database whole, and check says so', async () => {
+		await alone(async (first) => {
+			assert.equal((await first.run(['occur', 'coffee', '-t', '0600'])).code, 0);
+
+			// A long write: one `db restore -` of many rows, which is one
+			// transaction. Made from the CLI's own dump of the row above,
+			// renamed so every copy is a row of its own.
+			const [header, row] = (await first.run(['db', 'backup', '-'])).stdout.split('\n');
+			const template = JSON.parse(row);
+			const copies = Array.from({ length: 500 }, (_, i) =>
+				JSON.stringify({
+					...template,
+					hid: String(i).padStart(12, 'x'),
+					slug: `ping:${i}`,
+					field: 'ping',
+					content_hash: i.toString(16).padStart(64, '0')
+				})
+			);
+			const flushing = await stallNextFlush(first.page, 60000);
+			// Not awaited: the page closes under it.
+			void first.run(['db', 'restore', '-', '--merge'], [header, ...copies].join('\n')).catch(() => {});
+			assert.equal(await flushing(), true);
+			await first.page.close();
+
+			// The journal that write left is still there; the next process
+			// rolls it back before it reads anything.
+			const next = await first.newTab();
+			const check = await next.run(['check']);
+			assert.equal(check.code, 0, check.stdout + check.stderr);
+			assert.deepEqual(
+				(await next.entries(1000)).map((e) => e.field),
+				['coffee']
+			);
+			assert.equal((await next.run(['occur', 'tea', '-t', '0700'])).code, 0);
+		});
 	});
 });
 
@@ -448,6 +472,8 @@ const writes = Array.from({ length: 10 }, (_, i) => ['occur', 'ping', '-t', `07$
 const versions = Array.from({ length: 10 }, () => ['--version']);
 
 describe('the files, held across a burst', () => {
+	const alone = oneApp({ ...REPL, prepare: inWorker(countOpens) });
+
 	// `--version` for the counting, because sharing is only possible between
 	// commands that fit inside the cap and this suite runs a browser per file
 	// in parallel: a burst of ten writes on a loaded machine can spend the cap
@@ -455,68 +481,65 @@ describe('the files, held across a burst', () => {
 	// as a regression. What the burst does to the rows is asserted below it,
 	// where the command has to be a write.
 	test('back-to-back commands share one acquisition, and give it back when the queue drains', async () => {
-		await withApp(
-			async (app) => {
-				await app.idle();
-				// What one acquisition costs in opens, measured rather than
-				// written down: one handle per file SQLite may touch.
-				let before = await counts(app.page);
-				assert.equal((await app.run(['--version'])).code, 0);
-				const measured = since(before, await counts(app.page));
-				const perAcquire = measured.opens / measured.acquired;
-				assert.ok(
-					Number.isInteger(perAcquire) && perAcquire > 0,
-					`${measured.opens} opens over ${measured.acquired} acquisitions — the count is not reaching the worker`
-				);
+		await alone(async (app) => {
+			await app.idle();
+			// What one acquisition costs in opens, measured rather than
+			// written down: one handle per file SQLite may touch.
+			let before = await counts(app.page);
+			assert.equal((await app.run(['--version'])).code, 0);
+			const measured = since(before, await counts(app.page));
+			const perAcquire = measured.opens / measured.acquired;
+			assert.ok(
+				Number.isInteger(perAcquire) && perAcquire > 0,
+				`${measured.opens} opens over ${measured.acquired} acquisitions — the count is not reaching the worker`
+			);
 
-				before = await counts(app.page);
-				const burst = await fireAtOnce(app.page, versions);
-				burst.runs.forEach((r, i) => assert.equal(r.code, 0, `${i}: ${r.stderr}`));
+			before = await counts(app.page);
+			const burst = await fireAtOnce(app.page, versions);
+			burst.runs.forEach((r, i) => assert.equal(r.code, 0, `${i}: ${r.stderr}`));
 
-				// Each acquisition is one command's: the one that opened the
-				// handles reports the tries, the ones after it opened nothing.
-				const spent = since(before, await counts(app.page));
-				assert.equal(
-					spent.opens,
-					spent.acquired * perAcquire,
-					'the handles opened do not match the commands that say they opened them'
-				);
-				const acquisitions = burst.runs.filter((r) => r.tries > 0).length;
-				assert.ok(acquisitions < 10, `ten commands, ${acquisitions} acquisitions — nothing was shared`);
-				// One per cap window the burst spanned, plus the one it opened with.
-				const allowed = Math.ceil(burst.spanMs / HOLD_MS) + 1;
-				assert.ok(
-					acquisitions <= allowed,
-					`${acquisitions} acquisitions over ${burst.spanMs}ms, where ${allowed} is the cap's worth`
-				);
+			// Each acquisition is one command's: the one that opened the
+			// handles reports the tries, the ones after it opened nothing.
+			const spent = since(before, await counts(app.page));
+			assert.equal(
+				spent.opens,
+				spent.acquired * perAcquire,
+				'the handles opened do not match the commands that say they opened them'
+			);
+			const acquisitions = burst.runs.filter((r) => r.tries > 0).length;
+			assert.ok(acquisitions < 10, `ten commands, ${acquisitions} acquisitions — nothing was shared`);
+			// One per cap window the burst spanned, plus the one it opened with.
+			const allowed = Math.ceil(burst.spanMs / HOLD_MS) + 1;
+			assert.ok(
+				acquisitions <= allowed,
+				`${acquisitions} acquisitions over ${burst.spanMs}ms, where ${allowed} is the cap's worth`
+			);
 
-				// Nothing was written, so no pane is refreshing behind this: the
-				// queue drained, the files went back, and the next command has to
-				// open them again.
-				before = await counts(app.page);
-				assert.equal((await app.run(['tail'])).code, 0);
-				const reopened = since(before, await counts(app.page));
-				assert.ok(reopened.acquired > 0, 'the files were still held across an idle page');
-				assert.equal(reopened.opens, reopened.acquired * perAcquire);
+			// Nothing was written, so no pane is refreshing behind this: the
+			// queue drained, the files went back, and the next command has to
+			// open them again.
+			before = await counts(app.page);
+			assert.equal((await app.run(['tail'])).code, 0);
+			const reopened = since(before, await counts(app.page));
+			assert.ok(reopened.acquired > 0, 'the files were still held across an idle page');
+			assert.equal(reopened.opens, reopened.acquired * perAcquire);
 
-				// And a burst of writes on shared handles keeps the database
-				// whole: each created a journal and deleted it again, so a
-				// directory not rebuilt per process would show up here.
-				const wrote = await fireAtOnce(app.page, writes);
-				wrote.runs.forEach((r, i) => assert.equal(r.code, 0, `${i}: ${r.stderr}`));
-				const check = await app.run(['check']);
-				assert.equal(check.code, 0, check.stdout + check.stderr);
-				const rows = await app.entries(100);
-				assert.equal(rows.length, 10);
-				assert.equal(new Set(rows.map((e) => e.hid)).size, 10);
-				assert.deepEqual(app.errors, []);
-			},
-			{ ...REPL, prepare: inWorker(countOpens) }
-		);
+			// And a burst of writes on shared handles keeps the database
+			// whole: each created a journal and deleted it again, so a
+			// directory not rebuilt per process would show up here.
+			const wrote = await fireAtOnce(app.page, writes);
+			wrote.runs.forEach((r, i) => assert.equal(r.code, 0, `${i}: ${r.stderr}`));
+			const check = await app.run(['check']);
+			assert.equal(check.code, 0, check.stdout + check.stderr);
+			const rows = await app.entries(100);
+			assert.equal(rows.length, 10);
+			assert.equal(new Set(rows.map((e) => e.hid)).size, 10);
+			assert.deepEqual(app.errors, []);
+		});
 	});
 
 	test('a burst in one tab lets the other in without waiting for the whole of it', async () => {
-		await withApp(async (first) => {
+		await alone(async (first) => {
 			const second = await first.newTab();
 			await first.idle();
 			await second.idle();
@@ -569,7 +592,7 @@ describe('the files, held across a burst', () => {
 			assert.equal(new Set(rows.map((e) => e.hid)).size, 21);
 			const check = await second.run(['check']);
 			assert.equal(check.code, 0, check.stdout + check.stderr);
-		}, REPL);
+		});
 	});
 });
 
@@ -583,21 +606,21 @@ describe('the files, held across a burst', () => {
 
 /**
  * Count the page's calls to `navigator.storage.persist()`, keeping the
- * browser's answer. `answer: 'throw'` makes it throw instead; `answer: true`
- * grants, which headless Chromium itself does not (it answers false).
+ * browser's answer — or the one a test set as `window.__persistAs`:
+ * `'throw'` makes it throw instead, and `true` grants, which headless
+ * Chromium itself does not (it answers false).
  */
-const spyOnPersist =
-	({ answer } = {}) =>
-	(context) =>
-		context.addInitScript((answer) => {
-			const real = StorageManager.prototype.persist;
-			window.__persistCalls = 0;
-			StorageManager.prototype.persist = function () {
-				window.__persistCalls++;
-				if (answer === 'throw') throw new DOMException('refused by the test', 'NotAllowedError');
-				return (window.__persistAnswer = answer === true ? Promise.resolve(true) : real.call(this));
-			};
-		}, answer);
+const spyOnPersist = (context) =>
+	context.addInitScript(() => {
+		const real = StorageManager.prototype.persist;
+		window.__persistCalls = 0;
+		StorageManager.prototype.persist = function () {
+			window.__persistCalls++;
+			const answer = window.__persistAs;
+			if (answer === 'throw') throw new DOMException('refused by the test', 'NotAllowedError');
+			return (window.__persistAnswer = answer === true ? Promise.resolve(true) : real.call(this));
+		};
+	});
 
 const persistCalls = (app) => app.page.evaluate(() => window.__persistCalls);
 
@@ -608,49 +631,39 @@ const KEPT = `${DURABLE} the browser has promised to keep them.`;
 const MAY_CLEAR = `${DURABLE} the browser may clear them if space runs short — install the app to keep them.`;
 
 describe('asking the browser to keep it', () => {
-	test('nothing is asked before the first write', async () => {
-		await withApp(
-			async (app) => {
-				assert.equal(await app.page.evaluate(() => navigator.storage.persisted()), false);
-				assert.equal(await persistCalls(app), 0);
-				assert.equal(await app.bannerText(), MAY_CLEAR);
-			},
-			{ ...REPL, prepare: spyOnPersist() }
-		);
-	});
+	const alone = oneApp({ ...REPL, prepare: spyOnPersist });
 
-	test('the first durable write asks once, and the banner says what was granted', async () => {
-		await withApp(
-			async (app) => {
-				for (const [i, time] of ['0700', '0701', '0702'].entries()) {
-					const logged = await app.run(['occur', 'coffee', '-t', time]);
-					assert.equal(logged.code, 0, logged.stderr);
-					assert.equal(await persistCalls(app), 1, `after write ${i + 1}`);
-				}
-				// Headless Chromium may answer either way, so the claim is the
-				// correspondence: the sentence is the one for what it answered.
-				const granted = await app.page.evaluate(async () => {
-					await window.__persistAnswer;
-					return navigator.storage.persisted();
-				});
-				await until(app.bannerText, (t) => t === (granted ? KEPT : MAY_CLEAR));
-			},
-			{ ...REPL, prepare: spyOnPersist() }
-		);
+	/**
+	 * The describe's app in a session that has asked nothing, where `persist()`
+	 * answers `answer`. A session that HAS asked is over, and a reload is the
+	 * next: `asked` is the page's own, once per session ($lib/storageState.ts).
+	 */
+	const session = (fn, answer) =>
+		alone(async (app) => {
+			if (await persistCalls(app)) await app.reload();
+			await app.page.evaluate((answer) => (window.__persistAs = answer), answer);
+			return fn(app);
+		});
+
+	test('nothing is asked before the first write', async () => {
+		await session(async (app) => {
+			assert.equal(await app.page.evaluate(() => navigator.storage.persisted()), false);
+			assert.equal(await persistCalls(app), 0);
+			assert.equal(await app.bannerText(), MAY_CLEAR);
+		});
 	});
 
 	test('a granted request is what the banner promises', async () => {
-		await withApp(
-			async (app) => {
-				assert.equal(await app.bannerText(), MAY_CLEAR);
-				const logged = await app.run(['occur', 'coffee', '-t', '0700']);
-				assert.equal(logged.code, 0, logged.stderr);
-				await until(app.bannerText, (t) => t === KEPT);
-			},
-			{ ...REPL, prepare: spyOnPersist({ answer: true }) }
-		);
+		await session(async (app) => {
+			assert.equal(await app.bannerText(), MAY_CLEAR);
+			const logged = await app.run(['occur', 'coffee', '-t', '0700']);
+			assert.equal(logged.code, 0, logged.stderr);
+			await until(app.bannerText, (t) => t === KEPT);
+		}, true);
 	});
 
+	// An app of its own: its storage never opens, which the worker is told
+	// before its first line.
 	test('nothing is asked while entries are held in memory', async () => {
 		await withApp(
 			async (app) => {
@@ -663,26 +676,42 @@ describe('asking the browser to keep it', () => {
 				...REPL,
 				prepare: async (context) => {
 					await inWorker(NEVER)(context);
-					await spyOnPersist()(context);
+					await spyOnPersist(context);
 				}
 			}
 		);
 	});
 
 	test('a persist that throws does not fail the write', async () => {
-		await withApp(
-			async (app) => {
-				const logged = await app.run(['occur', 'coffee', '-t', '0700']);
+		await session(async (app) => {
+			const logged = await app.run(['occur', 'coffee', '-t', '0700']);
+			assert.equal(logged.code, 0, logged.stderr);
+			assert.deepEqual(
+				(await app.entries()).map((e) => e.field),
+				['coffee']
+			);
+			assert.equal(await persistCalls(app), 1);
+			assert.equal(await app.bannerText(), MAY_CLEAR);
+			assert.deepEqual(app.errors, []);
+		}, 'throw');
+	});
+
+	// LAST, and that is its place (da-87x74): this `persist()` is the
+	// browser's own, and an origin it grants is never asked again.
+	test('the first durable write asks once, and the banner says what was granted', async () => {
+		await session(async (app) => {
+			for (const [i, time] of ['0700', '0701', '0702'].entries()) {
+				const logged = await app.run(['occur', 'coffee', '-t', time]);
 				assert.equal(logged.code, 0, logged.stderr);
-				assert.deepEqual(
-					(await app.entries()).map((e) => e.field),
-					['coffee']
-				);
-				assert.equal(await persistCalls(app), 1);
-				assert.equal(await app.bannerText(), MAY_CLEAR);
-				assert.deepEqual(app.errors, []);
-			},
-			{ ...REPL, prepare: spyOnPersist({ answer: 'throw' }) }
-		);
+				assert.equal(await persistCalls(app), 1, `after write ${i + 1}`);
+			}
+			// Headless Chromium may answer either way, so the claim is the
+			// correspondence: the sentence is the one for what it answered.
+			const granted = await app.page.evaluate(async () => {
+				await window.__persistAnswer;
+				return navigator.storage.persisted();
+			});
+			await until(app.bannerText, (t) => t === (granted ? KEPT : MAY_CLEAR));
+		});
 	});
 });

@@ -54,13 +54,11 @@ const PHONE = {
 
 const BAR = '.prompt-bar';
 
-// ONE desktop app for the three tests below that begin and end with the
-// bar at rest and read the log from its newest row (da-6b3dj, sharedApp in
-// support/app.mjs) — tidied by hand, not by `solo`, which would close the
-// repl tab under them. Everything else opens its own: a phone starts
-// FOLDED and the device remembers every fold a test leaves it in, a drag's
-// swallow window outlives the test that armed it, and a count of the log's
-// or the pane's rows would count the tests before.
+// ONE desktop app for the four tests below that begin and end with the bar
+// at rest (da-6b3dj, sharedApp in support/app.mjs) — tidied by hand, not by
+// `solo`, which would close the repl tab under them. Its scrollback keeps
+// every test's commands, so a test on it reads the log from its newest row
+// and counts the rows it drew itself.
 const shared = sharedApp(DESKTOP);
 const desktop = async (fn) => {
 	const app = await shared();
@@ -68,6 +66,30 @@ const desktop = async (fn) => {
 	await app.empty();
 	return fn(app);
 };
+
+/**
+ * ONE phone for a describe, where a describe has several tests on one
+ * (da-87x74): an open is a second, and `sharedApp` inside a describe is
+ * taken down with it. Each test is handed the phone as a fresh one opens —
+ * the page tidied, the bar shut and folded, the database empty.
+ *
+ * Two things a test leaves are NOT put back, and they decide the order of
+ * the tests that care: the log stays MOUNTED once a drag has pulled the bar
+ * (`armed`, $lib/log.ts), and the scrollback keeps every command. So the
+ * test that a tap mounts no log comes before any drag, and the test that
+ * reads the log's rows before any other that submits. A describe with one
+ * test on a phone still opens its own.
+ */
+function onePhone() {
+	const phone = sharedApp(PHONE);
+	return async (fn) => {
+		const app = await phone();
+		await app.home();
+		await shut(app.page);
+		await app.empty();
+		return fn(app);
+	};
+}
 
 /** How far the bar is open, and where the things that move with it are. */
 const where = (page) =>
@@ -128,6 +150,23 @@ const settled = (page) =>
 			})
 	);
 
+/**
+ * The bar shut, as a phone opens with it: a drag with no speed in it, down
+ * further than any list is long — but not on a bar already shut, since a
+ * drag mounts the log.
+ *
+ * And the click a drag ends in, spent: the drag before this — a test's, or
+ * the one above — may have armed the 300ms swallow ($lib/grip.ts), which
+ * would otherwise take the next test's first click. On the bar's own box,
+ * which nothing listens to, so a click the swallow lets through does nothing.
+ */
+async function shut(page) {
+	const { shown, height } = await where(page);
+	if (shown || height) await dragBy(page, BAR, 100_000);
+	await page.locator(BAR).dispatchEvent('click');
+	await settled(page);
+}
+
 /** The log's echoed command lines, as it draws them: newest first. */
 const logEchoes = async (page) =>
 	(await page.locator('.log .echo').allInnerTexts()).map((t) => t.replace(/^\s*❯\s*/, '').trim());
@@ -140,8 +179,53 @@ async function wheelOver(page, selector, dy) {
 }
 
 describe('the bar is the way in', () => {
+	const phone = onePhone();
+
+	// FIRST, and that is its place (da-87x74): the phone is the describe's
+	// one, the log stays mounted once any drag has pulled the
+	// bar, and this is the test that says a cancelled tap mounts none.
+	//
+	// A pointercancel BEFORE the threshold: the system took a gesture that was
+	// still a tap. Nothing was armed, nothing moved, and nothing settles — a
+	// canary on PR #46 asked twice whether a cancel between `arm()` and
+	// `dragging` could settle a bar nobody dragged. It cannot: `dragging` is
+	// set BEFORE `arm()`, so there is no such moment, and this holds it that
+	// way if the two are ever reordered.
+	test('a cancel before the threshold moves nothing and arms nothing', async () => {
+		await phone(async (app) => {
+			const { page } = app;
+			const before = await where(page);
+			const seen = await page.evaluate(() => {
+				const el = document.querySelector('.prompt-bar');
+				const r = el.getBoundingClientRect();
+				const x = r.left + r.width / 2;
+				const y = r.top + r.height / 2;
+				const send = (type, at) =>
+					el.dispatchEvent(
+						new PointerEvent(type, {
+							pointerId: 13,
+							pointerType: 'touch',
+							isPrimary: true,
+							clientX: x,
+							clientY: at,
+							bubbles: true,
+							cancelable: true
+						})
+					);
+				send('pointerdown', y);
+				send('pointermove', y - 4);
+				send('pointercancel', y - 4);
+				return { log: !!document.querySelector('.log .repl, .log section.pane') };
+			});
+			await settled(page);
+			assert.equal(seen.log, false, 'a cancelled tap mounted the log');
+			assert.deepEqual(await where(page), before, 'a cancelled tap moved the bar');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
 	test('a finger dragging the bar up puts the input at the top with the newest entry under it', async () => {
-		await withApp(async (app) => {
+		await phone(async (app) => {
 			const { page } = app;
 			for (const line of ['occur coffee', 'occur water', 'occur tea']) await app.submit(line);
 			await app.idle();
@@ -188,7 +272,7 @@ describe('the bar is the way in', () => {
 			);
 			assert.deepEqual((await logEchoes(page))[0], 'occur tea');
 			assert.deepEqual(app.errors, []);
-		}, PHONE);
+		});
 	});
 
 	// UNDER THE THRESHOLD, NOTHING IS PREVENTED. A drag on the bar takes the
@@ -203,7 +287,7 @@ describe('the bar is the way in', () => {
 	// for it. Two canary rounds read the code as preventing before the
 	// threshold; this is the measurement that settles it either way.
 	test('a move under the threshold is not prevented; past it, every move is', async () => {
-		await withApp(async (app) => {
+		await phone(async (app) => {
 			const { page } = app;
 			const prevented = await page.evaluate(() => {
 				const el = document.querySelector('.prompt-bar');
@@ -233,7 +317,7 @@ describe('the bar is the way in', () => {
 			});
 			assert.deepEqual(prevented, { tiny: false, nearly: false, past: true, after: true });
 			assert.deepEqual(app.errors, []);
-		}, PHONE);
+		});
 	});
 
 	// A drag ends in a click the browser dispatches from the pointerup it
@@ -244,7 +328,7 @@ describe('the bar is the way in', () => {
 	// which would take the caret away from a finger that dragged and then
 	// pressed it quickly. This is that claim, at the event level.
 	test('a drag swallows the one click it ends in, and no other', async () => {
-		await withApp(async (app) => {
+		await phone(async (app) => {
 			const { page } = app;
 			const seen = await page.evaluate(() => {
 				const el = document.querySelector('.prompt-bar');
@@ -281,7 +365,7 @@ describe('the bar is the way in', () => {
 			// again — inside the same 300ms, because none of this waits.
 			assert.deepEqual(seen, { before: false, tail: true, next: false });
 			assert.deepEqual(app.errors, []);
-		}, PHONE);
+		});
 	});
 
 	test('a wheel over the bar goes down and comes back; over a pane it moves nothing', async () => {
@@ -315,45 +399,6 @@ describe('the bar is the way in', () => {
 		});
 	});
 
-	// A pointercancel BEFORE the threshold: the system took a gesture that was
-	// still a tap. Nothing was armed, nothing moved, and nothing settles — a
-	// canary on PR #46 asked twice whether a cancel between `arm()` and
-	// `dragging` could settle a bar nobody dragged. It cannot: `dragging` is
-	// set BEFORE `arm()`, so there is no such moment, and this holds it that
-	// way if the two are ever reordered.
-	test('a cancel before the threshold moves nothing and arms nothing', async () => {
-		await withApp(async (app) => {
-			const { page } = app;
-			const before = await where(page);
-			const seen = await page.evaluate(() => {
-				const el = document.querySelector('.prompt-bar');
-				const r = el.getBoundingClientRect();
-				const x = r.left + r.width / 2;
-				const y = r.top + r.height / 2;
-				const send = (type, at) =>
-					el.dispatchEvent(
-						new PointerEvent(type, {
-							pointerId: 13,
-							pointerType: 'touch',
-							isPrimary: true,
-							clientX: x,
-							clientY: at,
-							bubbles: true,
-							cancelable: true
-						})
-					);
-				send('pointerdown', y);
-				send('pointermove', y - 4);
-				send('pointercancel', y - 4);
-				return { log: !!document.querySelector('.log .repl, .log section.pane') };
-			});
-			await settled(page);
-			assert.equal(seen.log, false, 'a cancelled tap mounted the log');
-			assert.deepEqual(await where(page), before, 'a cancelled tap moved the bar');
-			assert.deepEqual(app.errors, []);
-		}, PHONE);
-	});
-
 	// `inert` is not only a Tab-order rule: an inert subtree is not focusable
 	// at all, so a `.focus()` on something inside it does nothing either. A
 	// canary on PR #46 said twice that programmatic focus gets through. It
@@ -361,7 +406,7 @@ describe('the bar is the way in', () => {
 	// the browser rather than by either of us. (`Repl.svelte` calls `.focus()`
 	// nowhere, which is the other half of the answer.)
 	test('inert on the log refuses a programmatic focus too', async () => {
-		await withApp(async (app) => {
+		await phone(async (app) => {
 			const { page } = app;
 			const seen = await page.evaluate(() => {
 				const log = document.querySelector('.log');
@@ -381,7 +426,7 @@ describe('the bar is the way in', () => {
 				without: { inert: false, took: true }
 			});
 			assert.deepEqual(app.errors, []);
-		}, PHONE);
+		});
 	});
 
 	// A REAL FINGER, on the BOX. Everything else in this file dispatches
@@ -398,7 +443,7 @@ describe('the bar is the way in', () => {
 	// and the bar came back shut. vremya measured it on PR #46 with seven
 	// drags; this is that measurement, kept.
 	test('a real finger dragging up FROM THE BOX opens the log', async () => {
-		await withApp(async (app) => {
+		await phone(async (app) => {
 			const { page } = app;
 			await app.submit('occur coffee');
 			const box = await page.locator(`${BAR} input`).boundingBox();
@@ -410,14 +455,14 @@ describe('the bar is the way in', () => {
 				`a drag from the box left the log at ${seen.height}px — the browser took the gesture`
 			);
 			assert.deepEqual(app.errors, []);
-		}, PHONE);
+		});
 	});
 
 	// The other half of the same declaration: sideways on the box is still
 	// the RUN's, so a pill off the right edge is still reachable and the bar
 	// does not move for it.
 	test('a real finger dragging sideways on the box scrolls the run, not the bar', async () => {
-		await withApp(async (app) => {
+		await phone(async (app) => {
 			const { page } = app;
 			await page.evaluate(() =>
 				window.datum.bar.setPills([
@@ -438,11 +483,11 @@ describe('the bar is the way in', () => {
 			assert.ok(scrolled > 0, `the run did not scroll: scrollLeft ${scrolled}`);
 			assert.deepEqual(await where(page), before, 'a sideways drag moved the bar');
 			assert.deepEqual(app.errors, []);
-		}, PHONE);
+		});
 	});
 
 	test('a drag that starts on a pane never opens the bar', async () => {
-		await withApp(async (app) => {
+		await phone(async (app) => {
 			const { page } = app;
 			await app.submit('occur coffee');
 			await app.idle();
@@ -457,7 +502,7 @@ describe('the bar is the way in', () => {
 				'a drag on a pane moved the bar'
 			);
 			assert.deepEqual(app.errors, []);
-		}, PHONE);
+		});
 	});
 });
 
@@ -518,6 +563,7 @@ describe('a tap during a settle', () => {
 });
 
 describe('a fling keeps going', () => {
+	const phone = onePhone();
 	// vividn, 2026-09-18: "There should be acceleration on the REPL drawer
 	// you're pulling out. So if you let go with velocity, it should keep
 	// moving. So a big swipe will fully close or open the bar. When closing
@@ -555,7 +601,7 @@ describe('a fling keeps going', () => {
 	};
 
 	test('a big swipe up opens the bar the whole way', async () => {
-		await withApp(async (app) => {
+		await phone(async (app) => {
 			const { page } = app;
 			await app.submit('occur coffee');
 			const threw = await flick(page, -400);
@@ -565,11 +611,11 @@ describe('a fling keeps going', () => {
 			assert.ok(seen.log.height > 400, `the log is ${seen.log.height}px — ${threw}`);
 			assert.ok(seen.main.height <= 1, `the dashboard is still ${seen.main.height}px — ${threw}`);
 			assert.deepEqual(app.errors, []);
-		}, PHONE);
+		});
 	});
 
 	test('a big swipe down SNAGS at the notch, and a second one shuts it', async () => {
-		await withApp(async (app) => {
+		await phone(async (app) => {
 			const { page } = app;
 			await app.submit('occur coffee');
 			const up = await flick(page, -400);
@@ -588,13 +634,13 @@ describe('a fling keeps going', () => {
 			const shut = await where(page);
 			assert.equal(shut.shown, 0, `the output section is still ${shut.shown}px — ${again}`);
 			assert.deepEqual(app.errors, []);
-		}, PHONE);
+		});
 	});
 
 	// "but you can drag over this notch if you like" — a deliberate drag that
 	// ENDS below the notch closes, however it got there. Only a fling snags.
 	test('a slow drag through the notch closes it', async () => {
-		await withApp(async (app) => {
+		await phone(async (app) => {
 			const { page } = app;
 			await app.submit('occur coffee');
 			await dragBy(page, BAR, -200);
@@ -608,7 +654,7 @@ describe('a fling keeps going', () => {
 			assert.equal(shut.height, 0, `the log is ${shut.height}px`);
 			assert.equal(shut.shown, 0, `the output section is ${shut.shown}px — the drag did not pass the notch`);
 			assert.deepEqual(app.errors, []);
-		}, PHONE);
+		});
 	});
 });
 
@@ -791,14 +837,16 @@ describe('the seam between the bar’s row and the log', () => {
 	// and there the first row is the first row: a hairline above it would be
 	// a rule against the top of the pane's own body.
 	test('a repl widget still draws no rule above its first row', async () => {
-		await withApp(async (app) => {
+		await desktop(async (app) => {
 			const { page } = app;
+			const pane = page.locator('.pane.repl, [data-title="repl"]').first();
+			await pane.waitFor();
+			// The desktop's repl keeps the tests before this one: counted from there.
+			const had = await pane.locator('.head').count();
 			for (const line of ['occur coffee', 'occur water']) await app.submit(line);
 			await app.idle();
 
-			const pane = page.locator('.pane.repl, [data-title="repl"]').first();
-			await pane.waitFor();
-			assert.equal(await pane.locator('.head').count(), 2, 'the widget drew the wrong rows');
+			assert.equal((await pane.locator('.head').count()) - had, 2, 'the widget drew the wrong rows');
 			// Whatever the columns do with those two entries, the ones on
 			// the pane's first row carry no rule: there is nothing above
 			// them but the top of the pane's own body.
@@ -817,7 +865,7 @@ describe('the seam between the bar’s row and the log', () => {
 				'the widget ruled its first row'
 			);
 			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
+		});
 	});
 });
 
@@ -842,6 +890,7 @@ describe('the seam between the bar’s row and the log', () => {
 // The handoffs are inside ONE drag, so what these assert is the SEQUENCE —
 // sampled at every step of the gesture — and not merely where it ends up.
 describe('the bar and the log are one handle', () => {
+	const phone = onePhone();
 	/**
 	 * A history taller than the screen, so there is something to scroll.
 	 *
@@ -851,11 +900,18 @@ describe('the bar and the log are one handle', () => {
 	 * three commands whose ANSWER is tall are submitted through the bar,
 	 * which buys a list twice the screen's height for four round trips
 	 * instead of forty.
+	 *
+	 * ONCE for the describe (da-87x74): the phone is its one, and nothing puts
+	 * a scrollback back, so the list the first test seeds is the list the
+	 * rest drag.
 	 */
-	const seed = async (app, lines = ['tail -n 25', 'tail -n 25', 'tail -n 25', 'occur coffee']) => {
+	let seeded = false;
+	const seed = async (app) => {
+		if (seeded) return;
 		for (let i = 0; i < 25; i += 1) await app.runLine(`occur field${i}`);
-		for (const line of lines) await app.submit(line);
+		for (const line of ['tail -n 25', 'tail -n 25', 'tail -n 25', 'occur coffee']) await app.submit(line);
 		await app.idle();
+		seeded = true;
 	};
 
 	/**
@@ -917,7 +973,7 @@ describe('the bar and the log are one handle', () => {
 	// vertical scroll is what did that, and it is inert now — asserted as
 	// the RULE (the computed value) and as what the rule is for (the drag).
 	test('a drag on the rows pulls the bar up; it does not scroll them', async () => {
-		await withApp(async (app) => {
+		await phone(async (app) => {
 			const { page } = app;
 			await seed(app);
 
@@ -945,11 +1001,11 @@ describe('the bar and the log are one handle', () => {
 			assert.equal(pulled.scroll, 0, `the rows scrolled ${pulled.scroll}px under the finger`);
 			assert.equal(pulled.rolled, 0, "the bar's own row moved before the bar was at the top");
 			assert.deepEqual(app.errors, []);
-		}, PHONE);
+		});
 	});
 
 	test('the list starts scrolling when, and only when, the input row reaches the top', async () => {
-		await withApp(async (app) => {
+		await phone(async (app) => {
 			const { page } = app;
 			await seed(app);
 			await dragBy(page, BAR, -200);
@@ -977,11 +1033,11 @@ describe('the bar and the log are one handle', () => {
 				`the row rolled ${rolled.rolled}px and the section kept ${rolled.shown}px of ${whole}px`
 			);
 			assert.deepEqual(app.errors, []);
-		}, PHONE);
+		});
 	});
 
 	test('and pulling the other way scrolls back to the top before it closes anything', async () => {
-		await withApp(async (app) => {
+		await phone(async (app) => {
 			const { page } = app;
 			await seed(app);
 			// TWO DRAGS, and the first one is what MOUNTS the log: the
@@ -1008,7 +1064,7 @@ describe('the bar and the log are one handle', () => {
 			const end = seen.at(-1);
 			assert.ok(end.main > 1, `the pull never started closing: ${JSON.stringify(end)}`);
 			assert.deepEqual(app.errors, []);
-		}, PHONE);
+		});
 	});
 
 	// "it should allow little bits of acceleration sliding the section up
@@ -1016,9 +1072,9 @@ describe('the bar and the log are one handle', () => {
 	// `detent.test.mjs`; what is asserted HERE is that a real thumb's push
 	// reaches the bar at all, which is the half no pure test can make.
 	test('a real finger’s push keeps the bar moving after the finger has gone', async () => {
-		await withApp(async (app) => {
+		await phone(async (app) => {
 			const { page } = app;
-			await seed(app, ['occur coffee']);
+			await seed(app);
 			const r = await page.locator(BAR).boundingBox();
 			const middle = [r.x + r.width / 2, r.y + r.height / 2];
 
@@ -1049,6 +1105,6 @@ describe('the bar and the log are one handle', () => {
 				`a 220px push left the log ${thrownLog}px tall; the same 220px placed left it ${placedLog}px`
 			);
 			assert.deepEqual(app.errors, []);
-		}, PHONE);
+		});
 	});
 });
