@@ -171,3 +171,38 @@ fn a_missing_required_key_refuses_a_raw_occur() {
     assert!(logged_entries(&db, "run").is_empty());
     assert_eq!(log(&db, "run", "km=4"), Ok(json!(4)));
 }
+
+/// `update` parses what a person typed, so its field's spec types it as a
+/// log line is typed, and a refusal leaves the entry as it was (da-60n1b).
+/// A relative value counts from the entry's own time, as on its log line.
+/// A rekey's values are key names, not typed by the spec.
+#[test]
+fn update_types_a_key_by_its_target_fields_spec() {
+    let db = typed_db();
+    log(&db, "run", "km=5").unwrap();
+    let data = |db: &Db| logged_entries(db, "run")[0].data.clone().unwrap();
+    let err = run_cli(&["update", "run:*", "km=abc"], &db).unwrap_err();
+    assert_eq!(format!("{err:#}"), r#"km: "abc" is not a number"#);
+    assert_eq!(data(&db)["km"], json!(5));
+    run_cli(&["update", "run:*", "code=1e5"], &db).unwrap();
+    assert_eq!(data(&db)["code"], json!("1e5"));
+    // Logged on 2026-10-07 at noon.
+    run_cli(&["update", "run:*", "on=yesterday", "due_date=+3"], &db).unwrap();
+    assert_eq!(data(&db)["on"], json!("2026-10-06"));
+    assert_eq!(data(&db)["due_date"], json!("2026-10-10"));
+    run_cli(&["rekey", "run:*", "km=dist"], &db).unwrap();
+    assert_eq!(data(&db)["dist"], json!(5));
+}
+
+/// A timeless entry's update counts from its create time, as its log line did.
+#[test]
+fn update_of_a_timeless_entry_counts_from_its_create_time() {
+    let db = typed_db();
+    run_cli(&["occur", "run", "-T", "on=+0"], &db).unwrap();
+    let entry = || logged_entries(&db, "run")[0].clone();
+    let logged = entry().data.unwrap()["on"].as_str().unwrap().to_string();
+    let day: chrono::NaiveDate = logged.parse().unwrap();
+    run_cli(&["update", entry().hid.as_ref(), "on=+1"], &db).unwrap();
+    let want = (day + chrono::Duration::days(1)).to_string();
+    assert_eq!(entry().data.unwrap()["on"], json!(want));
+}

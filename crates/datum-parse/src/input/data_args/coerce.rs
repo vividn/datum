@@ -143,7 +143,7 @@ const ENTRY_KEYS: [&str; 4] = ["dur", "occur_time", "start_time", "end_time"];
 /// Relative forms (`+30`, `-1h`) and day words (`sunday`, `yesterday`)
 /// resolve against `compat.base_local` (the entry's effective occur-time
 /// in its local zone) when supplied — `wake_time=+30` with `-t 10:00`
-/// becomes `10:30:00`. With no base anchor (reparse / update payload) a
+/// becomes `10:30:00`. With no base anchor a
 /// time or date that parses but cannot be resolved is kept as typed; a
 /// datetime, which names its own day, resolves against the wall clock.
 /// Data args face `Nearest`: an unmarked `finish_time=sunday` means the
@@ -229,7 +229,7 @@ fn time_ctx(compat: Compat) -> TimeCtx {
 
 /// The calendar day a parsed [`DateArg`] names. Pinned dates stand alone;
 /// a relative day-offset (`+3`, `-7`, `0`, `yesterday`) needs a base, and
-/// yields `None` without one (reparse / update payload).
+/// yields `None` without one.
 fn resolve_date_arg(d: &DateArg, base: Option<NaiveDateTime>) -> Option<chrono::NaiveDate> {
     d.absolute
         .or_else(|| Some(base?.date() + chrono::Duration::days(d.days_offset)))

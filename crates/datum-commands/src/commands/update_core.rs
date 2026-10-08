@@ -139,7 +139,7 @@ pub fn update_from_args(
         default_last: _,
         value: payload_value,
         extra: payload_extra,
-    } = parse_update_payload(&args)?;
+    } = parse_update_payload(&args, Default::default(), None)?;
     let output = args.output()?;
     let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
 
@@ -181,13 +181,13 @@ pub fn update_batch_from_args(
         .transpose()?
         .unwrap_or(default_strategy);
 
-    let payload = parse_update_payload(&args)?;
     let UpdatePayload {
         pattern,
         default_last,
         value: payload_value,
         extra: payload_extra,
-    } = payload;
+    } = parse_update_payload(&args, Default::default(), None)?;
+    let untyped = (payload_value, payload_extra);
     let (entries, token_errors) = crate::commands::helpers::resolve_batch(
         db,
         &pattern,
@@ -200,6 +200,42 @@ pub fn update_batch_from_args(
             return Err(err);
         }
         anyhow::bail!("no entries specified");
+    }
+
+    // da-60n1b: each entry's payload parses as a log line of it would — a key
+    // its field's spec types parses as that type or refuses, and a relative
+    // value counts from the entry's own time (its create time, for a timeless
+    // one) — all
+    // before anything is written. A rekey's values are key names, so no spec
+    // types them (its key names still type them: da-xvtbd).
+    let mut types = std::collections::HashMap::new();
+    let mut payloads = Vec::with_capacity(entries.len());
+    for e in &entries {
+        if strategy == UpdateStrategy::Rekey {
+            payloads.push(untyped.clone());
+            continue;
+        }
+        if !types.contains_key(&e.field) {
+            let spec = db.load_spec(&e.field)?;
+            types.insert(
+                e.field.clone(),
+                spec.map(|s| s.key_types()).unwrap_or_default(),
+            );
+        }
+        let base = e.occur_time.clone().unwrap_or_else(|| {
+            let mut created = DatumTime {
+                utc: e.create_time,
+                ..DatumTime::now()
+            };
+            let _ = created.refresh_offset();
+            created
+        });
+        let p = parse_update_payload(
+            &args,
+            types[&e.field].clone(),
+            Some(base.local_time().naive_local()),
+        )?;
+        payloads.push((p.value, p.extra));
     }
 
     if args.all_or_nothing {
@@ -283,7 +319,7 @@ pub fn update_batch_from_args(
     // tombstone errors were refused above, before any write), but what it
     // already wrote is still stamped into `_LAST` below and on the undo
     // stack, so a bare `undo` reverts it (da-5leng).
-    for existing in entries {
+    for (existing, (value, extra)) in entries.into_iter().zip(payloads) {
         if existing.deleted_at.is_some() {
             let msg = format!(
                 "Cannot {} tombstoned entry {} — restore it first with `datum undo`",
@@ -302,8 +338,8 @@ pub fn update_batch_from_args(
         let result = update_with_strategy(
             UpdateRequest {
                 id_or_slug: &existing.slug,
-                payload_value: payload_value.clone(),
-                payload_extra: payload_extra.clone(),
+                payload_value: value,
+                payload_extra: extra,
                 strategy,
                 slug_delimiter: &delim,
             },
@@ -648,7 +684,11 @@ pub(crate) struct UpdatePayload {
     pub extra: Option<JsonValue>,
 }
 
-pub(crate) fn parse_update_payload(args: &UpdateArgs) -> Result<UpdatePayload> {
+pub(crate) fn parse_update_payload(
+    args: &UpdateArgs,
+    types: std::collections::BTreeMap<String, datum_parse::input::KeyType>,
+    base_local: Option<chrono::NaiveDateTime>,
+) -> Result<UpdatePayload> {
     use datum_parse::input::data_args::{handle_data_args, DataArgs};
 
     // da-sk5c: rewire the leading positional through the same slot-fill
@@ -699,6 +739,8 @@ pub(crate) fn parse_update_payload(args: &UpdateArgs) -> Result<UpdatePayload> {
     // `flat_paths` compat shim is gone (da-ju71.4); leading-dot keys
     // now fold into `state.*`.
     let mut data_args = DataArgs {
+        types,
+        base_local,
         ..DataArgs::default()
     };
     let mut injected_immediates: Vec<String> = Vec::new();
@@ -1070,7 +1112,12 @@ mod tests {
             None,
         );
 
-        let payload = parse_update_payload(&update_args(&e.slug, vec!["state=happy"])).unwrap();
+        let payload = parse_update_payload(
+            &update_args(&e.slug, vec!["state=happy"]),
+            Default::default(),
+            None,
+        )
+        .unwrap();
         let outcome = update_with_strategy(
             UpdateRequest {
                 id_or_slug: &e.slug,
@@ -1108,7 +1155,12 @@ mod tests {
             None,
         );
 
-        let payload = parse_update_payload(&update_args(&e.slug, vec![".a=1", ".b=2"])).unwrap();
+        let payload = parse_update_payload(
+            &update_args(&e.slug, vec![".a=1", ".b=2"]),
+            Default::default(),
+            None,
+        )
+        .unwrap();
         let outcome = update_with_strategy(
             UpdateRequest {
                 id_or_slug: &e.slug,

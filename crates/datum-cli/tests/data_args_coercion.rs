@@ -256,7 +256,8 @@ fn durations_and_time_flags_keep_their_units() {
 /// da-rp2rq: a timeless entry (`-T`, `note`) anchors relative `*date` /
 /// `*time` values at its create time in the local zone — the chore-shirk
 /// `occur chore -T next_date=+7` — as a timed entry anchors at its occur
-/// time. An update payload has no anchor and keeps the text.
+/// time. An update anchors at the entry's own time as its log line did
+/// (da-60n1b).
 #[test]
 fn relative_temporal_keys_anchor_a_timeless_entry_at_its_create_time() {
     let _g = datum_core::test_util::freeze_time("2026-09-10T12:00:00");
@@ -295,8 +296,8 @@ fn relative_temporal_keys_anchor_a_timeless_entry_at_its_create_time() {
     run_cli(&["update", &hid, "next_date=+7"], &db).unwrap();
     assert_eq!(
         data("dishes"),
-        Some(json!({"next_date": "+7"})),
-        "an update payload keeps the text"
+        Some(json!({"next_date": "2026-09-16"})),
+        "an update anchors at the entry's occur time"
     );
 }
 

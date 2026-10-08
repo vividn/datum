@@ -166,8 +166,7 @@ pub struct DataArgs {
     /// Local-time anchor used to resolve relative-offset values on
     /// `*_time` / `*_date` keys (`wake_time=+30`, `nextDate=+3`,
     /// `bedTime=-1h`). When `None`, relative offsets fall through as
-    /// raw strings — callers without a clean occur-time anchor (reparse,
-    /// update payload) leave this unset to preserve existing behavior.
+    /// raw strings.
     pub base_local: Option<NaiveDateTime>,
     /// The types a field's spec declares for its keys (da-b2f8o), by
     /// key name. A typed key parses as its type or refuses; one with no
