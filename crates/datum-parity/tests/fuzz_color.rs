@@ -102,6 +102,9 @@ proptest! {
     /// before the named-state branch runs.
     #[test]
     fn state_color_true_falls_through_to_field(field in "[a-z][a-z0-9_]{0,15}") {
+        // md5_color keeps 24 bits, so a field can share true's color
+        // ("j8_u_" ≡ "true" = #b326b5); the inequality can't tell those apart.
+        prop_assume!(md5_color(&field) != md5_color("true"));
         let c = state_color(Some("true"), Some(&field), None, None);
         prop_assert_eq!(c.clone(), md5_color(&field));
         prop_assert_ne!(c, md5_color("true"));
