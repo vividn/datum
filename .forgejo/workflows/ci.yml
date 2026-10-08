@@ -213,6 +213,27 @@ jobs:
           fi
           echo "$files"
 
+      # A PR run tests the PR as it would LAND (da-kz73u): its head merged with
+      # its base's tip as fetched just above, not on the old base it was cut
+      # from. Two PRs each green on their own base and textually clean together
+      # still broke staging twice on 10-07 (#495 x #497, #508 x #515). After
+      # the step above, so the web decision stays the PR's own diff. A verdict
+      # is (head, base@sha): this logs the sha and the last step posts it as a
+      # `ci/base` status on the head. A conflict is the one case for a rebase
+      # (ct-tahc). It narrows the window, it does not close it: something can
+      # still land on the base after this run and before the merge.
+      - name: Merge the PR with its base's tip
+        if: env.TRAIN != '1' && github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse "origin/$BASE")
+          echo "BASE_SHA=$sha" >> "$GITHUB_ENV"
+          echo "testing ${{ github.event.pull_request.head.sha }} merged with $BASE at $sha"
+          git -c user.name=ci -c user.email=ci@localhost merge -q --no-edit "origin/$BASE" ||
+            { git diff --name-only --diff-filter=U; echo "::error::conflicts with $BASE at $sha: rebase"; exit 1; }
+
       - name: System tools the image lacks (time, for max RSS per step)
         if: env.TRAIN != '1'
         run: apt-get update -qq && apt-get install -y -qq --no-install-recommends time >/dev/null && /usr/bin/time --version 2>&1 | head -1
@@ -419,3 +440,22 @@ jobs:
             tests/bar.test.mjs=da-ehpe5
             tests/layout-strip.test.mjs=da-i1ok
             tests/layout-floors.test.mjs=da-i1ok
+
+      # A PR's verdict names the base it was reached on (da-kz73u): the forge's
+      # own status says only pass or fail, at the head. Mirrors the job's
+      # outcome, so it never turns a red run green or a green one red.
+      - name: Post the base this verdict was reached on
+        if: always() && env.BASE_SHA != ''
+        env:
+          TOKEN: ${{ github.token }}
+          SERVER: ${{ github.server_url }}
+          STATE: ${{ job.status }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          case "$STATE" in success|failure) ;; *) echo "job $STATE: no status posted"; exit 0 ;; esac
+          printf '{"state":"%s","context":"ci/base","description":"%s with %s@%s","target_url":"%s"}' \
+            "$STATE" "$STATE" "$BASE" "${BASE_SHA:0:12}" "${SERVER%/}/${{ github.repository }}/actions/runs/${{ github.run_number }}" > /tmp/status.json
+          printf 'header = "Authorization: token %s"\n' "$TOKEN" |
+            curl -sSf -K - -H 'Content-Type: application/json' --data @/tmp/status.json \
+              "${SERVER%/}/api/v1/repos/${{ github.repository }}/statuses/${{ github.event.pull_request.head.sha }}" >/dev/null ||
+            echo "::warning::could not post ci/base ($STATE with $BASE@$BASE_SHA)"
