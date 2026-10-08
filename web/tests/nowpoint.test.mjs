@@ -765,14 +765,22 @@ describe('the snapshot says «a selected time, not now»', () => {
 			assert.equal((await drawn(page, NOWVIEW)).lines, 0, 'a line with nothing selected');
 
 			await page.evaluate(() => window.datum.cursor.set(new Date(Date.UTC(2026, 8, 10, 14, 40))));
-			await until(
-				() => drawn(page, NOWVIEW).then((d) => d.lines),
-				(n) => n === 1
+			// Found and read in ONE evaluation: the line is drawn again after
+			// the selection lands, and one found first and read after can be
+			// the detached copy, whose computed stroke is '' (da-bctg0).
+			const lines = await until(
+				() =>
+					page
+						.locator(NOWVIEW)
+						.evaluate((el) =>
+							[...el.querySelectorAll('svg.svg line.cursor')].map((l) => [
+								getComputedStyle(l).stroke,
+								l.getAttribute('stroke-dasharray')
+							])
+						),
+				(ls) => ls.length === 1
 			);
-			const line = await page
-				.locator(`${NOWVIEW} svg.svg line.cursor`)
-				.evaluate((l) => [getComputedStyle(l).stroke, l.getAttribute('stroke-dasharray')]);
-			assert.deepEqual(line, ['rgb(255, 255, 255)', '3 3']);
+			assert.deepEqual(lines, [['rgb(255, 255, 255)', '3 3']]);
 		});
 	});
 });
