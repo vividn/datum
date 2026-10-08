@@ -29,6 +29,7 @@ struct Cli {
     run: Function,
     progress: Function,
     label: String,
+    version: Version,
 }
 
 impl Cli {
@@ -167,12 +168,16 @@ impl Store for Cli {
         invite: Option<&str>,
         chain: Option<&str>,
         holds: u64,
+        version: &Version,
         dialed: bool,
     ) -> Result<bool> {
         let addr = serde_json::to_string(addr)?;
-        let holds = holds.to_string();
+        let (holds, schema) = (holds.to_string(), version.schema.to_string());
         let mut argv = vec!["sync", "handshake", peer, "--label", label, "--addr", &addr];
         argv.extend(["--holds", &holds]);
+        if version.schema > 0 {
+            argv.extend(["--datum", &version.datum, "--schema", &schema]);
+        }
         if let Some(secret) = invite {
             argv.extend(["--invite", secret]);
         }
@@ -184,6 +189,10 @@ impl Store for Cli {
             argv.push("--dialed");
         }
         Ok(self.run(&argv, None).await?.trim() == "added")
+    }
+
+    fn version(&self) -> Version {
+        self.version.clone()
     }
 
     async fn holds(&self) -> Result<u64> {
@@ -241,11 +250,15 @@ pub fn about(ticket: String) -> Result<String, JsError> {
 #[wasm_bindgen]
 impl Node {
     /// Bind the endpoint whose key is `key` (hex, `datum sync
-    /// endpoint-key`), on n0's relays or the one `relay` names.
+    /// endpoint-key`), on n0's relays or the one `relay` names. `datum`
+    /// and `schema` are what the CLI runs (`sync status --json`'s `this`).
+    #[allow(clippy::too_many_arguments)]
     pub async fn bind(
         key: String,
         relay: Option<String>,
         label: String,
+        datum: String,
+        schema: u32,
         run: Function,
         progress: Function,
     ) -> Result<Node, JsError> {
@@ -263,6 +276,7 @@ impl Node {
                 run,
                 progress,
                 label,
+                version: Version { datum, schema },
             },
         })
     }

@@ -49,6 +49,7 @@ pub fn render_parse_special(e: &ParseError) -> Option<Result<()>> {
 /// Does **not** route through the REPL — callers handle the empty-argv
 /// case themselves.
 pub fn run(argv: Vec<String>) -> Result<()> {
+    let _ = datum_core::BUILD.set(env!("DATUM_BUILD"));
     // Shell completion's hidden reader (da-bu09u): before any parse or db
     // open, and it never fails — a TAB must not print an error.
     if argv.get(1).is_some_and(|a| a == "__complete") {

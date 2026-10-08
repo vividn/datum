@@ -5,7 +5,7 @@
 
 use rusqlite::Connection;
 
-use super::support::table_exists;
+use super::support::{has_column, table_exists};
 
 use crate::db::KIT_FIELD;
 use crate::error::{DatumError, Result};
@@ -180,6 +180,32 @@ pub(super) fn down_56_to_55_stats_cache(conn: &Connection) -> Result<()> {
          DROP TABLE IF EXISTS stats_cache_through;
          DROP TABLE IF EXISTS stats_cache_dirty;
          DELETE FROM _meta WHERE key = 'stats_cache';",
+    )?;
+    Ok(())
+}
+
+/// da-3zqyv: `sync_peers.datum` and `schema`, what a member last said it
+/// runs, so a copy behind it can say so.
+pub(super) fn m56_to_57_sync_peer_version(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "sync_peers")? {
+        return Ok(());
+    }
+    for (column, ty) in [("datum", "TEXT"), ("schema", "INTEGER")] {
+        if !has_column(conn, "sync_peers", column)? {
+            conn.execute_batch(&format!("ALTER TABLE sync_peers ADD COLUMN {column} {ty};"))?;
+        }
+    }
+    Ok(())
+}
+
+/// Reverse v56→v57. Local: the next handshake says it again.
+pub(super) fn down_57_to_56_sync_peer_version(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "sync_peers")? {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "ALTER TABLE sync_peers DROP COLUMN datum;
+         ALTER TABLE sync_peers DROP COLUMN schema;",
     )?;
     Ok(())
 }

@@ -194,6 +194,12 @@ handshake and pipe refuse, `sync run` and the page's leader push nothing, and
 datum.day's root bar says «sync paused» in every tab until a tap resumes it.
 A write on a copy with another member that has not synced for a day warns
 once a day on stderr (`sync_local.warned_at`).
+Each copy says what it runs in the handshake — `datum` (the build) and
+`schema` on `Hello` and `Welcome`, defaulted so a copy one version back
+still reads them — and the other records it (`sync_peers.datum` / `schema`,
+in `sync chain list`). A copy behind a member's schema syncs on and warns to
+upgrade, once per new version on stderr and for as long as it lasts in
+`sync status` and `datum check` (da-3zqyv).
 
 The session itself is `crates/datum-sync-wire`, generic over a `Store`,
 and the handshake's storage side — members, invites, admission — is

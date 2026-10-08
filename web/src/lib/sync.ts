@@ -195,6 +195,8 @@ class Leader {
 	joining = false;
 	paused?: string;
 	label = 'datum.day';
+	/** What the CLI runs (`sync status --json`'s `this`), said to every peer (da-3zqyv). */
+	version?: { datum: string; schema: number };
 	/** Per peer: its vector when last in step, a session in flight, one more asked for. */
 	inStep = new Map<string, string>();
 	busy = new Set<string>();
@@ -237,6 +239,7 @@ class Leader {
 		this.chain = chain;
 		this.chainId = status?.chain ?? undefined;
 		this.label = status?.this.label ?? this.label;
+		this.version = status?.this ?? this.version;
 		this.paused = status?.paused ?? undefined;
 		this.peers = ((status?.members ?? []) as Peer[]).filter((p) => !p.revoked && p.addr);
 		if (syncs) await this.start();
@@ -248,7 +251,9 @@ class Leader {
 		const key = (await must(['--db', this.db, 'sync', 'endpoint-key'])).trim();
 		if (this.endpoint && key === this.key) return;
 		// Held only once bound: a failed bind is tried again on the next start.
-		this.endpoint = await ask<string>(this.db, { op: 'start', key, relay: relay(), label: this.label });
+		const { datum, schema } =
+			this.version ?? (this.version = JSON.parse(await must(['--db', this.db, 'sync', 'status', '--json'])).this);
+		this.endpoint = await ask<string>(this.db, { op: 'start', key, relay: relay(), label: this.label, datum, schema });
 		this.key = key;
 		this.post();
 	}

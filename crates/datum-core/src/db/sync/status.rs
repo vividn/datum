@@ -12,6 +12,7 @@ use super::chain::{Filter, Member};
 use super::{belongs_to, clock_ahead, filtered_lines, now_ms, row, row_to_entry, unhex};
 use crate::db::Db;
 use crate::error::{DatumError, Result};
+use crate::migrations::CURRENT_SCHEMA_VERSION;
 
 /// One member, as `sync status` reports it.
 #[derive(Debug, Clone)]
@@ -283,4 +284,77 @@ impl Db {
         }
         Ok(out)
     }
+}
+
+impl Db {
+    /// Record what `endpoint` said it runs in a handshake (da-3zqyv). When
+    /// its schema is newer than this copy's, and newly so, the warning to
+    /// upgrade comes back, to print once: syncing goes on regardless.
+    pub fn sync_record_version(
+        &self,
+        endpoint: &str,
+        datum: &str,
+        schema: u32,
+    ) -> Result<Option<String>> {
+        let before: Option<(String, Option<u32>)> = self
+            .conn
+            .query_row(
+                "SELECT label, schema FROM sync_peers WHERE endpoint_id = ?1",
+                [endpoint],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let Some((label, was)) = before else {
+            return Ok(None);
+        };
+        self.conn.execute(
+            "UPDATE sync_peers SET datum = ?2, schema = ?3 WHERE endpoint_id = ?1",
+            params![endpoint, datum, schema],
+        )?;
+        let label = self
+            .sync_chain()?
+            .member(endpoint)
+            .map_or(label, |m| m.label.clone());
+        Ok((schema > CURRENT_SCHEMA_VERSION && was != Some(schema))
+            .then(|| upgrade(&label, datum, schema)))
+    }
+
+    /// What each peer last said it runs, by endpoint: its build and schema.
+    pub fn sync_versions(&self) -> Result<BTreeMap<String, (String, u32)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT endpoint_id, COALESCE(datum, ''), schema FROM sync_peers
+             WHERE schema IS NOT NULL",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?))))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// A warning for each member of the chain whose schema is newer than
+    /// this copy's, for `sync status` and `datum check`.
+    pub fn sync_upgrade_warnings(&self) -> Result<Vec<String>> {
+        let versions = self.sync_versions()?;
+        Ok(self
+            .sync_chain()?
+            .members
+            .iter()
+            .filter(|m| m.revoked.is_none())
+            .filter_map(|m| {
+                let (datum, schema) = versions.get(&m.endpoint)?;
+                (*schema > CURRENT_SCHEMA_VERSION).then(|| upgrade(&m.label, datum, *schema))
+            })
+            .collect())
+    }
+}
+
+/// What a copy behind a member says: both versions, and how to upgrade.
+fn upgrade(label: &str, datum: &str, schema: u32) -> String {
+    let how = match cfg!(target_family = "wasm") {
+        true => "reload datum.day to update this copy",
+        false => "to upgrade this copy, `git pull && scripts/install.sh`",
+    };
+    format!(
+        "{label} runs datum {datum} (schema {schema}), newer than this copy's {} \
+         (schema {CURRENT_SCHEMA_VERSION}); syncing goes on, but {how}",
+        crate::build()
+    )
 }

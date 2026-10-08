@@ -887,6 +887,7 @@ pub enum SyncCommand {
     /// `--chain` is the redeemer's own chain, empty for none (da-mepav);
     /// `--holds` its entries, as `datum count` counts them (da-tti3w).
     /// `--dialed` with `--invite`: this copy redeemed it there (da-38eye).
+    /// `--datum <BUILD> --schema <N>`: what the peer runs (da-3zqyv).
     Handshake {
         endpoint: String,
         label: String,
@@ -894,6 +895,7 @@ pub enum SyncCommand {
         invite: Option<String>,
         chain: Option<String>,
         holds: u64,
+        version: Option<(String, u32)>,
         dialed: bool,
     },
     /// Hidden: `datum sync new-invite [--reader] [--expires <DUR>]

@@ -32,3 +32,12 @@ pub mod test_util;
 /// They are defined there, not here, because they are pure — no database,
 /// no I/O (da-7scm). One definition per rule; this crate is one of its callers.
 pub use datum_parse::{dur, shape, time, verb};
+
+/// This build's version, `3.0.<height>-beta (<sha7>)`, which the `datum`
+/// binary sets as it starts: what a copy says it runs to its sync peers
+/// (da-3zqyv). Cargo's version where nothing set it.
+pub static BUILD: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+
+pub fn build() -> &'static str {
+    BUILD.get().copied().unwrap_or(env!("CARGO_PKG_VERSION"))
+}

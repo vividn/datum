@@ -13,6 +13,7 @@ use anyhow::{bail, ensure, Context, Result};
 use datum_core::db::chain::{self, Chain, Notice};
 use datum_core::db::Db;
 use datum_core::error::DatumError;
+use datum_core::migrations::CURRENT_SCHEMA_VERSION;
 use serde_json::{json, Value};
 
 use crate::args::{ShowFlag, SyncAdminAct, SyncCommand, SyncFilter};
@@ -318,6 +319,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             invite,
             chain,
             holds,
+            version,
             dialed,
         } => {
             let (invite, chain) = (invite.as_deref(), chain.as_deref());
@@ -329,6 +331,12 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                         println!("{}", json!(kind));
                     }
                 })?;
+            // Recording never stops a sync (da-3zqyv).
+            if let Some((datum, schema)) = version {
+                if let Ok(Some(w)) = db.sync_record_version(&endpoint, &datum, schema) {
+                    eprintln!("⚠ {w}");
+                }
+            }
             println!("{}", if added { "added" } else { "known" });
         }
         SyncCommand::NewInvite {
@@ -778,6 +786,12 @@ fn members(db: &Db, json: bool) -> Result<()> {
     }
     ensure!(chain.exists(), NO_CHAIN);
     let mine = db.sync_endpoint_id()?;
+    // What each runs: this copy's own, the others' as they last said (da-3zqyv).
+    let mut versions = db.sync_versions()?;
+    versions.insert(
+        mine.clone(),
+        (datum_core::build().into(), CURRENT_SCHEMA_VERSION),
+    );
     if json {
         let admins = admins_json(&chain);
         let members: Vec<Value> = chain
@@ -792,6 +806,8 @@ fn members(db: &Db, json: bool) -> Result<()> {
                     "rejoined": m.rejoined.as_deref().map(chain::hlc_time),
                     "role": m.role().as_str(), "this": m.endpoint == mine,
                     "filter": filter_json(chain.filter(&m.endpoint)),
+                    "datum": versions.get(&m.endpoint).map(|v| &v.0),
+                    "schema": versions.get(&m.endpoint).map(|v| v.1),
                 })
             })
             .collect();
@@ -806,7 +822,7 @@ fn members(db: &Db, json: bool) -> Result<()> {
         let revoked = m.revoked.as_deref().map(chain::hlc_time);
         let rejoined = m.rejoined.as_deref().map(chain::hlc_time);
         println!(
-            "  {}  {}{}  {}{}  admitted {}{} via {}{}{}",
+            "  {}  {}{}  {}{}  admitted {}{} via {}{}{}{}",
             m.label,
             m.role().as_str(),
             chain
@@ -821,6 +837,10 @@ fn members(db: &Db, json: bool) -> Result<()> {
             chain::hlc_time(&m.admitted),
             rejoined.map(|r| format!(", again {r}")).unwrap_or_default(),
             m.via,
+            versions
+                .get(&m.endpoint)
+                .map(|(d, s)| format!("  datum {d} (schema {s})"))
+                .unwrap_or_default(),
             match m.purged.as_deref().map(chain::hlc_time) {
                 Some(p) => format!("  PURGED {p}"),
                 None => revoked
@@ -849,6 +869,7 @@ fn status(db: &Db, json: bool) -> Result<()> {
     let notices = db.sync_notices_unacked()?;
     let unlocks: Vec<_> = notices.iter().filter(|n| n.kind == "unlock").collect();
     let clock = db.sync_clock_waits()?;
+    let upgrade = db.sync_upgrade_warnings()?;
     if json {
         let path = db.conn().path().unwrap_or_default();
         let name = std::path::Path::new(path)
@@ -876,6 +897,7 @@ fn status(db: &Db, json: bool) -> Result<()> {
             "open": chain.exists() && chain.is_open(), "unlocked": unlocked,
             "this": {
                 "endpoint": mine, "client": db.sync_client_id()?, "label": label,
+                "datum": datum_core::build(), "schema": CURRENT_SCHEMA_VERSION,
                 "reader": chain.member(&mine).is_some_and(|m| m.role() == chain::Role::Reader),
                 "revoked": chain.member(&mine).and_then(|m| m.revoked.as_deref()).map(chain::hlc_time),
                 "filter": filter_json(chain.filter(&mine)),
@@ -888,6 +910,7 @@ fn status(db: &Db, json: bool) -> Result<()> {
                 "endpoint": w.endpoint, "label": w.label, "ops": w.ops,
                 "ahead_ms": w.ahead_ms, "text": w.to_string(),
             })).collect::<Vec<_>>(),
+            "upgrade": upgrade,
         });
         println!("{out}");
         return Ok(());
@@ -927,6 +950,9 @@ fn status(db: &Db, json: bool) -> Result<()> {
     }
     if chain.is_open() {
         println!("{OPEN}");
+    }
+    for w in &upgrade {
+        println!("⚠ {w}");
     }
     for n in &unlocks {
         println!("⚠ {n} — {UNLOCK_HINT}");
@@ -1026,6 +1052,18 @@ pub fn notice_issues(db: &Db) -> Result<Vec<Issue>> {
     if !unlocks.is_empty() {
         let head = format!("the sync chain was unlocked: {UNLOCK_HINT}");
         out.push(issue("sync_unlocked", head, &unlocks));
+    }
+    // A member runs a newer schema than this copy (da-3zqyv).
+    for w in db.sync_upgrade_warnings()? {
+        out.push(Issue {
+            severity: Severity::Warning,
+            category: "sync_upgrade",
+            message: format!("⚠ {w}"),
+            count: 1,
+            example: None,
+            entries: Vec::new(),
+            rendered_block: String::new(),
+        });
     }
     Ok(out)
 }

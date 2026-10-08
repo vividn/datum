@@ -372,6 +372,8 @@ CREATE TABLE IF NOT EXISTS sync_local (
 -- peer only `sync record-session` has named (the browser's transport).
 -- `redeemed_at`: when this copy redeemed an invite with it and was admitted,
 -- where a join cut short resumes (da-38eye).
+-- `datum` / `schema`: the build and schema version it last said it runs, in
+-- its handshake (da-3zqyv); NULL for a copy that says neither.
 CREATE TABLE IF NOT EXISTS sync_peers (
     endpoint_id       TEXT NOT NULL PRIMARY KEY,
     label             TEXT NOT NULL,
@@ -384,7 +386,9 @@ CREATE TABLE IF NOT EXISTS sync_peers (
     last_verify_match INTEGER,
     last_error        TEXT,
     last_error_at     TEXT,
-    redeemed_at       TEXT
+    redeemed_at       TEXT,
+    datum             TEXT,
+    schema            INTEGER
 );
 
 -- A filtered reader's marks (da-u81u1): a member that served it sent every

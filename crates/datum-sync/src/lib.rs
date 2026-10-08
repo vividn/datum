@@ -26,10 +26,11 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use datum_core::db::peers::Peer;
 use datum_core::db::{chain, Db};
 use datum_core::error::{DatumError, Refusal as CoreRefusal};
+use datum_core::migrations::CURRENT_SCHEMA_VERSION;
 use datum_parse::time::Zone;
 use datum_sync_wire::{
     dial, failure, redeem, serve, unix_now, About, Applied, Endpoint, EndpointAddr, Failure, Lost,
-    Net, Refusal, Report, Store, Ticket, Vector, Why,
+    Net, Refusal, Report, Store, Ticket, Vector, Version, Why,
 };
 use futures_util::stream::{FuturesUnordered, StreamExt};
 
@@ -134,6 +135,7 @@ impl Store for DbStore<'_> {
         invite: Option<&str>,
         chain: Option<&str>,
         holds: u64,
+        version: &Version,
         dialed: bool,
     ) -> Result<bool> {
         let addr = serde_json::to_string(addr)?;
@@ -142,7 +144,24 @@ impl Store for DbStore<'_> {
             .sync_handshake(peer, label, &addr, invite, chain, holds, dialed)
             .map_err(refusal)?;
         self.1.set(self.1.get() || dialed);
+        // A copy before da-3zqyv says nothing; recording never stops a sync.
+        if version.schema > 0 {
+            let said = self
+                .0
+                .sync_record_version(peer, &version.datum, version.schema);
+            if let Ok(Some(w)) = said {
+                eprintln!("⚠ {w}");
+            }
+        }
         Ok(added)
+    }
+
+    fn version(&self) -> Version {
+        Version {
+            datum: datum_core::build().into(),
+            // Test knob: a copy that says it is newer than it is.
+            schema: env("DATUM_SYNC_TEST_SCHEMA").unwrap_or(CURRENT_SCHEMA_VERSION),
+        }
     }
 
     async fn holds(&self) -> Result<u64> {

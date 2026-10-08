@@ -63,7 +63,9 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         "handshake" => {
             let mut o = opts(
                 &mut rest,
-                &["label", "addr", "invite", "chain", "holds"],
+                &[
+                    "label", "addr", "invite", "chain", "holds", "datum", "schema",
+                ],
                 &["dialed"],
                 1..=1,
             )?;
@@ -81,6 +83,15 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                         ParseError::InvalidArg(format!("--holds is a count, not {n}"))
                     })?,
                     None => 0,
+                },
+                version: match o.get("schema") {
+                    Some(n) => Some((
+                        o.get("datum").unwrap_or_default(),
+                        n.parse().map_err(|_| {
+                            ParseError::InvalidArg(format!("--schema is a version, not {n}"))
+                        })?,
+                    )),
+                    None => None,
                 },
                 dialed: o.on("dialed"),
                 endpoint: o.positional.remove(0),
@@ -447,6 +458,7 @@ mod tests {
                 invite: None,
                 chain: None,
                 holds: 0,
+                version: None,
                 dialed: true
             }
         );
@@ -458,7 +470,11 @@ mod tests {
                 "--addr={}",
                 "--invite=s",
                 "--holds",
-                "42"
+                "42",
+                "--datum",
+                "3.0.9-beta (abc1234)",
+                "--schema",
+                "57"
             ]),
             SyncCommand::Handshake {
                 endpoint: "ab".into(),
@@ -467,6 +483,7 @@ mod tests {
                 invite: Some("s".into()),
                 chain: None,
                 holds: 42,
+                version: Some(("3.0.9-beta (abc1234)".into(), 57)),
                 dialed: false
             }
         );

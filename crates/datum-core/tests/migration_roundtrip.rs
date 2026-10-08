@@ -203,6 +203,7 @@ fn every_pair_has_a_roundtrip_test() {
         (53, 54),
         (54, 55),
         (55, 56),
+        (56, 57),
     ];
     assert_eq!(
         covered.len(),
@@ -2707,6 +2708,20 @@ fn roundtrip_v55_to_v56_stats_cache() {
     assert!(!table_exists(conn, "stats_cache"));
     assert!(!index_exists(conn, "entries_zoned"));
     write("h2");
+}
+
+/// da-3zqyv: v57 remembers what each member runs; v56 forgets it.
+#[test]
+fn roundtrip_v56_to_v57_sync_peer_version() {
+    let db = fresh_at(56);
+    let conn = db.conn();
+    apply_one_up(conn, 56);
+    assert!(column_exists(conn, "sync_peers", "datum"));
+    assert!(column_exists(conn, "sync_peers", "schema"));
+    apply_one_down(conn, 57);
+    assert!(!column_exists(conn, "sync_peers", "datum"));
+    assert!(!column_exists(conn, "sync_peers", "schema"));
+    assert!(table_exists(conn, "sync_peers"));
 }
 
 /// Life data logged under `kit` stops v51 before it is hidden; a deleted

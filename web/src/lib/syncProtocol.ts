@@ -27,7 +27,7 @@ export interface TicketAbout {
 
 export type SyncRequest =
 	| ({ id: number; db: string } & (
-			| { op: 'start'; key: string; relay?: string; label: string }
+			| { op: 'start'; key: string; relay?: string; label: string; datum: string; schema: number }
 			| { op: 'dial'; addr: string }
 			| { op: 'connect'; ticket: string }
 			| { op: 'ticket'; secret: string; also?: string; about?: string }

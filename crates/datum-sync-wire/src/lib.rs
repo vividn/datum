@@ -103,6 +103,8 @@ pub trait Store {
     /// saying why not; a redeemer names its own `chain`, and how many
     /// entries it `holds`. When this copy dialed it, `invite` is the one
     /// it just redeemed there. Whether it is new to this copy comes back.
+    /// Admitted, what it said it runs is recorded, and a copy behind it
+    /// warns to upgrade — and syncs on (da-3zqyv).
     #[allow(clippy::too_many_arguments)]
     async fn handshake(
         &self,
@@ -112,6 +114,7 @@ pub trait Store {
         invite: Option<&str>,
         chain: Option<&str>,
         holds: u64,
+        version: &Version,
         dialed: bool,
     ) -> Result<bool>;
     /// How many entries this copy holds, as `datum count` counts them (life
@@ -125,6 +128,8 @@ pub trait Store {
         verify: Option<bool>,
         error: Option<&str>,
     ) -> Result<()>;
+    /// What this copy runs, said in its handshake (da-3zqyv).
+    fn version(&self) -> Version;
 }
 
 fn short(id: &str) -> &str {
@@ -206,6 +211,16 @@ impl Ticket {
     }
 }
 
+/// What a copy runs (da-3zqyv): its datum build and its schema version.
+/// Both are missing from a copy before it, and read as `""` and 0.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct Version {
+    #[serde(default)]
+    pub datum: String,
+    #[serde(default)]
+    pub schema: u32,
+}
+
 #[derive(Serialize, Deserialize)]
 struct Hello {
     label: String,
@@ -220,6 +235,8 @@ struct Hello {
     /// copy before da-b6xh6, is refused the old way.
     #[serde(default)]
     typed: bool,
+    #[serde(flatten)]
+    version: Version,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -227,6 +244,8 @@ enum Reply {
     Welcome {
         label: String,
         addr: EndpointAddr,
+        #[serde(flatten)]
+        version: Version,
     },
     /// A refusal's words alone: to and from a copy before da-b6xh6.
     Refused(String),
@@ -584,17 +603,31 @@ async fn session(
         chain: invite.map(|r| r.chain.clone()),
         holds,
         typed: true,
+        version: store.version(),
     };
     put_json(&mut s, &hello).await?;
     let (label, added) = match get_json(&mut r, MAX_HELLO).await? {
-        Reply::Welcome { label, addr } => {
+        Reply::Welcome {
+            label,
+            addr,
+            version,
+        } => {
             // Its own handshake may refuse too (a paused copy): only then
             // does it leave. Given the invite, it marks where this copy was
             // admitted, so a join cut short before any op applies resumes
             // there (da-38eye).
             let admitted = async {
                 let added = store
-                    .handshake(&id, &label, &addr, invite.map(|r| r.secret), None, 0, true)
+                    .handshake(
+                        &id,
+                        &label,
+                        &addr,
+                        invite.map(|r| r.secret),
+                        None,
+                        0,
+                        &version,
+                        true,
+                    )
                     .await?;
                 if left.is_some() {
                     store.leave(false).await?;
@@ -668,6 +701,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
                 hello.invite.as_deref(),
                 hello.chain.as_deref(),
                 hello.holds,
+                &hello.version,
                 false,
             )
             .await
@@ -690,6 +724,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
     let welcome = Reply::Welcome {
         label: store.label(),
         addr: ep.addr(),
+        version: store.version(),
     };
     put_json(&mut s, &welcome).await?;
     let mut rep = Report::new(hello.label, id.clone(), !known, hello.invite.is_some());
@@ -837,5 +872,33 @@ mod tests {
             assert_eq!(failure(&e), Some(Failure::Refused(kind)), "{words}");
             assert_eq!(e.to_string(), format!("refused: {words}"));
         }
+    }
+
+    /// A copy before da-3zqyv says nothing of what it runs, and its Hello
+    /// and Welcome still read; a newer copy says both beside the old fields.
+    #[test]
+    fn a_handshake_without_a_version_reads() {
+        let addr = EndpointAddr::new(SecretKey::from_bytes(&[1; 32]).public());
+        let old: Hello = serde_json::from_value(json!({
+            "label": "old", "addr": addr, "invite": null, "chain": null, "holds": 0, "typed": true
+        }))
+        .unwrap();
+        assert_eq!(old.version, Version::default());
+        let welcome = json!({"Welcome": {"label": "old", "addr": addr}});
+        let Reply::Welcome { version, .. } = serde_json::from_value(welcome).unwrap() else {
+            panic!("not a welcome");
+        };
+        assert_eq!(version, Version::default());
+        let new = Hello {
+            version: Version {
+                datum: "3.0.900-beta (abc1234)".into(),
+                schema: 57,
+            },
+            ..old
+        };
+        let said = serde_json::to_value(&new).unwrap();
+        assert_eq!(said["datum"], "3.0.900-beta (abc1234)");
+        assert_eq!(said["schema"], 57);
+        assert_eq!(said["label"], "old");
     }
 }
