@@ -465,7 +465,7 @@ const DATUM = {
 };
 
 /** The colours that MEAN something, which no database moves. */
-const MEANING = { '--alarm': 'rgb(232, 130, 12)', '--error': 'rgb(244, 100, 90)', '--warn': 'rgb(255, 209, 102)' };
+const MEANING = { '--alarm': 'rgb(232, 130, 12)', '--error': 'rgb(244, 100, 90)', '--warn': 'rgb(255, 209, 102)', '--track': 'rgb(38, 162, 105)' };
 
 const paletteOf = async (page, tokens) =>
 	Object.fromEntries(await Promise.all(Object.keys(tokens).map(async (t) => [t, await paintOf(page, t)])));

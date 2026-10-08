@@ -474,7 +474,7 @@ describe('widget options', () => {
 	//
 	// The first option that was this session's, and now the rule rather than
 	// the exception. What is held to is the whole contract, not just the
-	// filter: the button comes back, it is visibly still ignored, Track +
+	// filter: the button comes back, it is visibly still ignored, the (+)
 	// still offers it, the layout is not dirtied, «defaults» puts it back,
 	// and a reload starts it off again.
 	test('fields: «show ignored fields» is this session’s — marked, composing, and never the layout’s', async () => {
@@ -535,8 +535,8 @@ describe('widget options', () => {
 			assert.equal(await tracked.evaluate((b) => parseFloat(getComputedStyle(b).opacity)), 1);
 
 			// It is a SECOND way to see them, not a replacement for the one that
-			// exists: Track + still offers `run` back.
-			await page.locator('.bar button.track').click();
+			// exists: the (+) still offers `run` back.
+			await page.locator('.bar [data-track]').click();
 			await page.locator('dialog.spec [data-ignored="run"]').waitFor();
 			await page.keyboard.press('Escape');
 			await page.locator('dialog.spec').waitFor({ state: 'detached' });
@@ -555,7 +555,7 @@ describe('widget options', () => {
 			await toggleOption(page, 'bar', 'show ignored fields');
 			await button.waitFor();
 			await app.reload();
-			await page.locator('.bar button.track').waitFor();
+			await page.locator('.bar [data-track]').waitFor();
 			assert.equal(await button.count(), 0, 'the toggle survived a reload');
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);

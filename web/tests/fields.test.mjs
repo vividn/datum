@@ -1,4 +1,4 @@
-// The fields widget (da-c7u8): every field `datum fields` lists, Track +
+// The fields widget (da-c7u8): every field `datum fields` lists, the (+)
 // first, each tracked field shaped by its kind and filled by what it is
 // now, the untracked ones dim after them.
 //
@@ -252,7 +252,7 @@ describe('the logic', () => {
 		assert.deepEqual(shapeFor(undefined), { kind: 'point' });
 	});
 
-	// What Track + declares a field WITH is the Track modal's (da-94q1):
+	// What the (+) declares a field WITH is the Track modal's (da-94q1):
 	// `trackArgv` in $lib/track.ts, held to the CLI in tests/track.test.mjs.
 });
 
@@ -282,16 +282,16 @@ describe('in the app', () => {
 	// empties the database each test wrote, and the REPL is read from its end.
 	const shared = sharedApp();
 
-	test('Track + first and largest, then every field as high up the pictures as the CLI draws it, each drawn by its kind', async () => {
+	test('the (+) first, small and unfilled, then every field as high up the pictures as the CLI draws it, each drawn by its kind', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of FIXTURE) await type(page, line);
 			await page.locator('.bar [data-field="untracked"]').waitFor();
 
-			// Read row by row: Track + starts the top row, and with nothing
+			// Read row by row: the (+) starts the top row, and with nothing
 			// sorted yet (the seed is typed after the load) the rows are bands
 			// of y, so top to bottom and left to right is the order of y.
-			const order = (await rowsOf(page.locator('.bar'), 'button.track, [data-field]', (el) => el.field ?? 'Track +')).flat();
+			const order = (await rowsOf(page.locator('.bar'), '[data-track], [data-field]', (el) => el.field ?? '+')).flat();
 			// Nothing is on, so the bar is the pictures' order top to bottom —
 			// the `y` `fields --json` resolves (da-vu7pi) — with no
 			// tracked/untracked partition and so no dim group after it (da-d08c).
@@ -299,16 +299,23 @@ describe('in the app', () => {
 				.sort((a, b) => a.y - b.y)
 				.map((f) => f.field);
 			assert.notDeepEqual(byY, [...byY].sort(), 'this seed is alphabetical by y too: the order proves nothing');
-			assert.deepEqual(order, ['Track +', ...byY]);
-			const track = await page.locator('.bar button.track').evaluate((el) => ({
+			assert.deepEqual(order, ['+', ...byY]);
+			// da-y6jfb: a circle no taller than a field, on the pane's own ground
+			// — where a filled «Track +», larger than every field, stood.
+			const track = await page.locator('.bar [data-track]').evaluate((el) => ({
+				width: el.getBoundingClientRect().width,
 				height: el.getBoundingClientRect().height,
 				bg: getComputedStyle(el).backgroundColor,
+				ground: getComputedStyle(el.closest('section.pane')).backgroundColor,
+				radius: getComputedStyle(el).borderRadius,
 				text: el.textContent.trim()
 			}));
-			assert.equal(track.text, 'Track +');
-			assert.equal(track.bg, 'rgb(124, 124, 255)');
+			assert.equal(track.text, '+');
+			assert.equal(track.bg, track.ground, 'the (+) is filled');
+			assert.equal(track.width, track.height, 'the (+) is not as wide as it is tall');
+			assert.equal(track.radius, '50%');
 			const heights = await page.locator('.bar button.widget').evaluateAll((all) => all.map((el) => el.getBoundingClientRect().height));
-			assert.ok(heights.every((h) => track.height > h), `Track + is ${track.height}px, the fields ${heights}`);
+			assert.ok(heights.every((h) => track.height <= h), `the (+) is ${track.height}px, the fields ${heights}`);
 
 			// da-h2io6: an occur is an empty pill, its mark beside the name in
 			// the field's colour — the CLI's dot until the spec names a glyph.
@@ -344,7 +351,7 @@ describe('in the app', () => {
 
 	// da-d08c, the three cases as measured: whether a field has a spec says
 	// nothing about whether it gets a button — its track/ignore status does.
-	test('track tea and occur walk are buttons; an ignored run with a spec is not, and Track + un-ignores it', async () => {
+	test('track tea and occur walk are buttons; an ignored run with a spec is not, and the (+) un-ignores it', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			for (const line of ['track tea --verb occur', 'occur walk', 'spec set run --verb occur']) await type(page, line);
@@ -364,7 +371,7 @@ describe('in the app', () => {
 			// A second on: the clock is held, and a re-track at the instant
 			// of the ignore would share its slug.
 			await app.clock.forward(1000);
-			await page.locator('.bar button.track').click();
+			await page.locator('.bar [data-track]').click();
 			await page.locator('dialog.spec [data-ignored="run"]').click();
 			await page.locator('.bar button[data-field="run"]').waitFor();
 			assert.equal((await app.echoes()).at(-1), 'track run');
@@ -421,11 +428,11 @@ describe('in the app', () => {
 		});
 	});
 
-	test('Track + is there on an empty database, the hint one line beside it', async () => {
+	test('the (+) is there on an empty database, the hint one line beside it', async () => {
 		await shared.solo(async ({ page }) => {
-			const track = await page.locator('.bar button.track').boundingBox();
+			const track = await page.locator('.bar [data-track]').boundingBox();
 			const hint = await page.locator('.bar .hint.empty').boundingBox();
-			assert.ok(Math.abs(hint.y + hint.height / 2 - (track.y + track.height / 2)) < 4, 'the hint is not beside Track +');
+			assert.ok(Math.abs(hint.y + hint.height / 2 - (track.y + track.height / 2)) < 4, 'the hint is not beside the (+)');
 			assert.ok(hint.height < 24, `the hint is ${hint.height}px tall`);
 		});
 	});

@@ -176,6 +176,43 @@ describe('the bar of commands', () => {
 		});
 	});
 
+	// da-y6jfb. The icon is DRAWN — a glyph by CSS, a drawing with ink in
+	// it — and the button's text is still its word (the test above reads
+	// it); `track` is the one command in a colour of its own.
+	test('a common command wears its icon, no two alike, and track alone is green', async () => {
+		await onPage(async ({ page }) => {
+			const looks = await commands(page).evaluate((bar) =>
+				Object.fromEntries(
+					[...bar.querySelectorAll('button[data-command]')].map((b) => {
+						const path = b.querySelector('svg path');
+						const glyph = getComputedStyle(b, '::before').content;
+						return [
+							b.dataset.command,
+							{
+								icon: path ? (path.getBoundingClientRect().width > 4 ? path.getAttribute('d') : 'no ink') : glyph,
+								color: getComputedStyle(b).color,
+								border: getComputedStyle(b).borderTopColor
+							}
+						];
+					})
+				)
+			);
+			const glyphs = { undo: '↶', occur: '●', start: '█', end: '■', switch: '▞', add: '¢', note: '✎', track: '+' };
+			for (const [name, glyph] of Object.entries(glyphs)) assert.ok(looks[name].icon.startsWith(`"${glyph}"`), `${name} draws ${looks[name].icon}`);
+			for (const name of ['delete', 'retime', 'tail', 'stats', 'sync']) assert.match(looks[name].icon, /^M/, `${name} draws ${looks[name].icon}`);
+			const iconed = Object.values(looks).map((l) => l.icon).filter((icon) => icon !== 'none');
+			assert.equal(iconed.length, 13);
+			assert.equal(new Set(iconed).size, 13, 'two commands draw the same icon');
+			assert.equal(looks.flag.icon, 'none');
+
+			// The green the CLI paints a new row's tag (`Outcome::Create`).
+			const GREEN = 'rgb(38, 162, 105)';
+			assert.deepEqual([looks.track.color, looks.track.border], [GREEN, GREEN]);
+			const others = Object.entries(looks).filter(([name, l]) => name !== 'track' && (l.color === GREEN || l.border === GREEN));
+			assert.deepEqual(others, [], 'track is not the only green command');
+		});
+	});
+
 	// da-0mepr. vividn, 2026-09-26: «let's divide the command widget into
 	// sections. I think that will visually differentiate different kinds of
 	// actions» — undo and help, logging, setup, edits, analysis, db.
@@ -404,14 +441,14 @@ describe('a verb fills the line and filters the fields', () => {
 			assert.deepEqual(await showing(page), ['coffee']);
 
 			// The `+` at the END of the filtered list: after the last field a
-			// reader reads, where the whole list has `Track +` before the first.
+			// reader reads, where the whole list has the (+) before the first.
 			const plus = await place(fieldsBar(page).locator('[data-add-field]'));
 			const coffee = await place(fieldsBar(page).locator('[data-field="coffee"]'));
 			assert.ok(
 				plus.line > coffee.line || (plus.line === coffee.line && plus.along > coffee.along),
 				'the + is not after the fields'
 			);
-			assert.equal(await fieldsBar(page).locator('button.track').count(), 0, 'Track + is still there');
+			assert.equal(await fieldsBar(page).locator('[data-track]').count(), 0, 'the (+) is still there');
 
 			// And it is the Track modal (da-94q1) with the pending verb already
 			// chosen — the door that presets one, which `startTracking` leaves

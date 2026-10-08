@@ -55,7 +55,7 @@ const contrasts = (page) =>
 			const [light, dark] = [luminance(fg), luminance(bg)].sort((a, b) => b - a);
 			return (light + 0.05) / (dark + 0.05);
 		};
-		return [...bar.querySelectorAll('button.track, [data-field]')].map((el) => {
+		return [...bar.querySelectorAll('[data-track], [data-field]')].map((el) => {
 			const fg = parse(getComputedStyle(el).color).slice(0, 3);
 			const bg = behind(el);
 			return {
@@ -102,7 +102,7 @@ describe('the widget fits its screen, legibly', () => {
 			const on = await contrasts(page);
 			assert.deepEqual(
 				on.map((r) => r.label).sort(),
-				['Track +', 'energy', 'mood', 'pushups', 'untracked', 'work'],
+				['+', 'energy', 'mood', 'pushups', 'untracked', 'work'],
 				'all four kinds have to be in the measurement'
 			);
 			for (const row of on) {
@@ -128,7 +128,7 @@ describe('the widget fits its screen, legibly', () => {
 		{ width: 320, height: 664 },
 		{ width: 1280, height: 800 }
 	]) {
-		test(`at ${viewport.width}x${viewport.height} the widget obeys the scroll rule, every button ≥ 24px, Track + first in the Tab order`, async () => {
+		test(`at ${viewport.width}x${viewport.height} the widget obeys the scroll rule, every button ≥ 24px, the (+) first in the Tab order`, async () => {
 			await withApp(async ({ page }) => {
 				for (const line of [...FIXTURE, 'occur tea', 'occur water', 'occur run']) await type(page, line);
 				await page.locator('.bar [data-field="run"]').waitFor();
@@ -187,7 +187,7 @@ describe('the widget fits its screen, legibly', () => {
 					const focusable = [...el.querySelectorAll('button, input, [tabindex]')].filter((b) => !b.disabled && b.tabIndex >= 0);
 					return focusable[0]?.textContent.trim();
 				});
-				assert.equal(first, 'Track +');
+				assert.equal(first, '+');
 			}, { viewport });
 		});
 	}

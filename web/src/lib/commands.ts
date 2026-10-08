@@ -132,6 +132,36 @@ export const COMMANDS: CommandButton[] = [
 ];
 
 /**
+ * The mark a common command wears before its name (da-y6jfb), vividn,
+ * 2026-10-08: «let's make the command buttons a bit easier to differentiate
+ * from each other. I think each one needs a different icon, at least for
+ * the most commonly used actions.»
+ *
+ * One character is a GLYPH, drawn as text: a verb's is the CLI's own, so
+ * the button shows the shape the row it writes will show (`TRACK●`/`█`/
+ * `▞`/`¢` in datum-core's track.rs; `■` is the end of a `█`). `note`
+ * writes a `¢` too, and stands beside `add`, so it takes the pencil the
+ * app already draws for «edit». No two share a mark. Anything longer is
+ * the path of a 16×16 line DRAWING, for the shapes no font every device
+ * carries: a clock, a bin, a list, bars, two arrows.
+ */
+export const ICONS: Record<string, string> = {
+	undo: '↶',
+	occur: '●',
+	start: '█',
+	end: '■',
+	switch: '▞',
+	add: '¢',
+	note: '✎',
+	track: '+',
+	delete: 'M2.5 4.5h11M6 4.5v-2h4v2M4 4.5l.7 9h6.6l.7-9M6.7 7v4M9.3 7v4',
+	retime: 'M8 1.5a6.5 6.5 0 1 0 0 13a6.5 6.5 0 1 0 0-13zM8 4.5V8l2.5 1.5',
+	tail: 'M2.5 4h.01M5.5 4h8M2.5 8h.01M5.5 8h8M2.5 12h.01M5.5 12h8',
+	stats: 'M2 13.5v-4h3v4zM6.5 13.5v-11h3v11zM11 13.5v-7h3v7z',
+	sync: 'M2.5 5.5h10l-3-3M13.5 10.5h-10l3 3'
+};
+
+/**
  * The verb the command line is pending, from what is typed in it.
  *
  * The FIRST WORD, whole: a tap on `occur` puts `occur ` in the box and a

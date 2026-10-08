@@ -5,7 +5,7 @@
 // question. Mounted imperatively, the way `confirm.ts` mounts Confirm and
 // `chooser.ts` mounts Chooser: a modal belongs to the moment it is asked
 // for, not to a place in the tree — which is what lets the fields widget's
-// `Track +`, the CLI's own refusal ($lib/layout/engine.ts) and the
+// (+), the CLI's own refusal ($lib/layout/engine.ts) and the
 // console's `datum.track` all open the same one.
 //
 // Editing a spec is not a question but a PLACE (da-hbrfg): `openSpec`

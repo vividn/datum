@@ -27,8 +27,9 @@
 // and a custom pane showing one: its header row and three rows (21.6px
 // each) plus padding, 102px — and the tail's follows its `type` option
 // (da-hkjp), the 16px of padding standing still while the text in it
-// scales. The fields widget: one row, as tall as its
-// Track + (33px), plus padding. The aliases list: three of its lines
+// scales. The fields widget: one row, as tall as the «Track +» it began
+// with (33px; the (+) it became is a field's height, da-y6jfb), plus
+// padding. The aliases list: three of its lines
 // (18.4px each) plus padding, 72px. The input widget: its prompt row
 // (36.4px) and one document line of receipt (21.6px), 58px. nowview: datum draws it no shorter than a 50px band plus its
 // axis, 92px of picture (da-wb2n), plus padding. Widths are where each
@@ -388,7 +389,7 @@ export const KINDS: Record<string, WidgetKind> = {
 	// the widget is called `fields` everywhere else (da-850j). How a switch in
 	// a state is labelled is one setting (`SwitchLabel` in fields.ts);
 	// `showIgnored` (da-xhio) is the other, and it is the SESSION's — a way
-	// to see the ignored fields the bar leaves out, alongside Track + and
+	// to see the ignored fields the bar leaves out, alongside the (+) and
 	// not in place of it, that a reload starts back at off.
 	widgetbar: {
 		meta: meta('widgetbar', 'fields', { align: 'rows', switchLabel: 'field', showIgnored: false }, [
@@ -418,7 +419,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		help: [
 			'Every field you log, as a button, lit when it is on.',
 			'Tap to log it, with any pending verb and pills; hold for a field pill.',
-			'Track + declares a new field.'
+			'+ declares a new field.'
 		].join('\n'),
 		props: ({ align, switchLabel, showIgnored }) => ({
 			align: align === 'picture' ? 'picture' : 'rows',

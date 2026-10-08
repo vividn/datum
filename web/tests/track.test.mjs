@@ -37,9 +37,9 @@ async function actionWord(app, field) {
 	return stripAnsi(JSON.parse(stdout).docs[0].action).trim();
 }
 
-/** Open the modal from the widget bar's `Track +` and wait for it. */
+/** Open the modal from the widget bar's (+) and wait for it. */
 async function openIt(page) {
-	await page.locator('.bar button.track').click();
+	await page.locator('.bar [data-track]').click();
 	await page.locator(MODAL).waitFor();
 }
 
@@ -277,7 +277,7 @@ describe('in the app', () => {
 		}, { query: 'repl' });
 	});
 
-	test('Track + opens the modal: four pictograms, Done shut until a name and a verb', async () => {
+	test('the (+) opens the modal: four pictograms, Done shut until a name and a verb', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
@@ -415,7 +415,7 @@ describe('in the app', () => {
 	});
 
 	// da-ci85o: Track is the spec modal opened on Basics, and it must stay
-	// as quick as the modal it absorbed — `Track +`, a pictogram, Done:
+	// as quick as the modal it absorbed — the (+), a pictogram, Done:
 	// three taps, the name typed into the box that already has the focus.
 	test('declaring a field is three taps, as it was before the tabs', async () => {
 		await withApp(async (app) => { // a listener of its own, which `solo` would keep
@@ -864,7 +864,7 @@ describe('in the app', () => {
 	// no second life.
 	test('the form that used to hang off the bar is gone from the DOM', async () => {
 		await shared.solo(async ({ page }) => {
-			await page.locator('.bar button.track').click();
+			await page.locator('.bar [data-track]').click();
 			await page.locator(MODAL).waitFor();
 			assert.equal(await page.locator('.bar form.add, .bar .panel.add').count(), 0);
 			assert.equal(await page.locator(`${MODAL} select`).count(), 0, 'the `<select>` came along');

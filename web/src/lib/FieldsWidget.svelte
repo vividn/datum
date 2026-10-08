@@ -2,8 +2,11 @@
 	The fields widget — every field `datum fields` lists, and the primary
 	way anything gets logged without typing (da-nz29, da-c7u8).
 
-	Track + comes first: the way into the whole app, so it is there on an
-	empty database too. Then every field that is not ignored (`ignored` in
+	The (+) comes first: the way into the whole app, so it is there on an
+	empty database too — small and unfilled, a field's own height (da-y6jfb,
+	vividn: «let's remove the big "Track +" button in the fields widget, it
+	can just be an unfilled (+) button»). Then every field that is not
+	ignored (`ignored` in
 	`datum fields --json`, da-d08c), spec or no spec — in ROWS by how high
 	up the pictures they are drawn, top to bottom, and most used first
 	along each row (`fieldRows`, da-xtkcp), an order taken on load and on
@@ -22,7 +25,7 @@
 	removed it.
 	Ignored fields get no button: the Track modal lists them, and a press
 	runs `track <field>`. `showIgnored` (da-xhio) is the way to SEE them
-	without going through Track + — a switch in the menu the pane's NAME
+	without going through the (+) — a switch in the menu the pane's NAME
 	opens (da-vhwq), this session's and off by default. It adds them to the
 	list; it does not change what they are, so each is drawn faint and
 	dashed and says «ignored» when a pointer rests on it.
@@ -34,7 +37,7 @@
 	and as tall as the band where that is taller than a button; fields
 	whose bands overlap stand side by side, most used first by the last
 	sort, and a band too crowded for the width runs on to the right, where
-	the bar scrolls (`aligned` in fields.ts). Track + is a `+` placed after
+	the bar scrolls (`aligned` in fields.ts). The (+) is placed after
 	them all in the bottom band, so the fields start at the pane's left
 	edge. A pinch — two fingers, or ctrl+wheel, a trackpad's pinch — zooms
 	the y axis around itself: the buttons keep their size and glide apart.
@@ -46,7 +49,7 @@
 	A PENDING VERB (`verb`, da-ltux) is the commands widget talking to this
 	one through the command line they share: the list becomes the fields
 	that verb can be spent on, a press MEANS that verb and runs at once,
-	and Track + is the `+` at the end of the list instead of the button
+	and the (+) stands at the end of the list instead of
 	before its start — the one door on the modal that PRESETS a verb, which
 	is what `startTracking`'s note below leaves room for. Which fields, and
 	what a press then runs, are `fieldsUnder` and `verbPress` in commands.ts.
@@ -60,7 +63,7 @@
 	say why the bar changed. Nothing moves under a finger: while a pointer
 	is over the bar the order is held until it leaves.
 
-	Track + opens that modal (da-94q1, $lib/track.ts) — a `<dialog>` over
+	The (+) opens that modal (da-94q1, $lib/track.ts) — a `<dialog>` over
 	the whole page with a pictogram per verb — rather than a form hanging
 	off the bar. The widget still runs nothing itself: the modal answers
 	with an argv and it goes out the same `run` as a press.
@@ -194,7 +197,7 @@
 	 * Whether the IGNORED fields get a button too (da-xhio).
 	 *
 	 * Off is today's bar: a field whose latest status is IGNORED is not
-	 * drawn, and `Track +` is where it is offered back. On adds it to the
+	 * drawn, and the (+) is where it is offered back. On adds it to the
 	 * list, drawn as an ignored field and not as a tracked one — a second
 	 * way to see it, never a way to stop it being ignored.
 	 *
@@ -278,7 +281,7 @@
 	 * the ring over the whole bar (da-7q3ka): `< Back`, which logs nothing,
 	 * the states around the tap, and `+ Add state`, which is how a state
 	 * never logged gets into the list at all. Otherwise the fields in their rows
-	 * (`arrange`), with Track + starting the top one — the way into the app
+	 * (`arrange`), with the (+) starting the top one — the way into the app
 	 * on an empty database — or, under a pending verb, the `+` ending the
 	 * bottom one (vividn: «There should be a + field at the end of this
 	 * filtered fields view for adding new fields»).
@@ -328,7 +331,7 @@
 		.sort((a, b) => (standings.get(b.field)?.frecency ?? -1) - (standings.get(a.field)?.frecency ?? -1))
 		.map((button): Entry => ({ kind: 'field', button, promoted: false, edge: false }));
 	/**
-	 * And Track + after them all, a `+` in the bottom band (vremya on #494:
+	 * And the (+) after them all, in the bottom band (vremya on #494:
 	 * first, it took the left column and pushed every field right of it,
 	 * cutting the most used one off a half-width pane).
 	 */
@@ -844,19 +847,18 @@
 			use:sized={'track'}
 		>
 			{#if verb === null}
-				<!-- Aligned to the picture it is a `+` after the fields, not a
-				     button that would claim their room — `add-button` either
-				     way, the class #488's rule in app.css spares the `›` an
-				     opener wears. -->
+				<!-- `add-button` is the class #488's rule in app.css spares
+				     the `›` an opener wears. -->
 				<button
-					class={picture ? 'nav add-button' : 'track add-button'}
+					class="nav add-button"
 					data-track
 					use:act={'open'}
 					{disabled}
+					aria-label="track a new field"
 					title="track a new field"
 					on:click={() => void startTracking()}
 				>
-					{picture ? '+' : 'Track +'}
+					+
 				</button>
 			{:else}
 				{@const pending = verb}
@@ -865,6 +867,7 @@
 					use:act={'open'}
 					data-add-field
 					{disabled}
+					aria-label="track a new {pending} field"
 					title="track a new {pending} field"
 					on:click={() => void trackUnder(pending)}
 				>
@@ -1017,7 +1020,6 @@
 	}
 
 	.widget,
-	.track,
 	.record,
 	.nav {
 		/* A held press must not also select the label or raise the platform's
@@ -1126,7 +1128,6 @@
 	}
 
 	.widget:disabled,
-	.track:disabled,
 	.record:disabled,
 	.nav:disabled {
 		opacity: 0.4;
@@ -1183,23 +1184,14 @@
 		font-weight: 700;
 	}
 
-	/* The first thing a person meets: larger than the fields, and filled. */
-	.track {
-		background: var(--accent);
-		border: none;
-		border-radius: 0.5rem;
-		padding: 0.45rem 1.1rem;
-		color: var(--page);
-		font-size: 1rem;
-		font-weight: 700;
-		letter-spacing: 0.02em;
-		box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 40%, transparent);
-	}
-
-	/* Not `--accent-bright`: this is the accent as a FILL under a pointer,
-	   which lifts less than the accent as ink does. */
-	.track:hover:not(:disabled) {
-		background: #9a9aff;
+	/* The (+) that tracks a new field (da-y6jfb): a circle, a field's
+	   button high. */
+	.add-button,
+	.add-field {
+		inline-size: 1.8rem;
+		block-size: 1.8rem;
+		border-radius: 50%;
+		padding: 0;
 	}
 
 	.record {

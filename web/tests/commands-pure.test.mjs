@@ -11,8 +11,10 @@
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveLibAsSource } from './support/libhook.mjs';
+import { VERBS as TRACK_VERBS } from '../src/lib/track.ts';
 import {
 	COMMANDS,
+	ICONS,
 	VERBS,
 	commandsUnder,
 	fieldsUnder,
@@ -91,6 +93,23 @@ describe('the commands, in order', () => {
 	// da-6du3o: one button, Sync, opening its place rather than drilling into nineteen.
 	test('sync is one button that opens its place', () => {
 		assert.deepEqual(COMMANDS.find((c) => c.name === 'sync'), { name: 'sync', label: 'Sync', press: 'place', section: 'db' });
+	});
+});
+
+// da-y6jfb. vividn, 2026-10-08: «each one needs a different icon, at least
+// for the most commonly used actions».
+describe('the icons', () => {
+	const COMMON = ['undo', 'occur', 'start', 'end', 'switch', 'add', 'note', 'track', 'delete', 'retime', 'tail', 'stats', 'sync'];
+
+	test('every common command has one, and no two share it', () => {
+		assert.deepEqual(Object.keys(ICONS).sort(), [...COMMON].sort());
+		assert.deepEqual(COMMON.filter((name) => !ORDER.includes(name)), [], 'an icon for a command the bar does not draw');
+		assert.equal(new Set(Object.values(ICONS)).size, COMMON.length, 'two commands share an icon');
+	});
+
+	test('a verb wears the glyph the CLI prints for the row it writes', () => {
+		// track.ts's table is the one track.test.mjs holds to the CLI's render.
+		for (const { verb, glyph } of TRACK_VERBS) assert.equal(ICONS[verb], glyph, verb);
 	});
 });
 
@@ -348,7 +367,7 @@ describe('the scroll rule', () => {
 			['Redo', 'end'],
 			['occur', 'switch']
 		]);
-		assert.deepEqual(lanesOf(['Track +', 'coffee'], 3), [['Track +'], ['coffee']]);
+		assert.deepEqual(lanesOf(['+', 'coffee'], 3), [['+'], ['coffee']]);
 		assert.deepEqual(lanesOf([], 2), []);
 	});
 });

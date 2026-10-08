@@ -1,4 +1,4 @@
-// A field Track + creates has to be a field the app can log to.
+// A field the (+) creates has to be a field the app can log to.
 //
 // It was not. The form ran `spec set <whatever was typed>`, said "✓ Spec
 // saved", and drew a chip. `my coffee` then logged by pressing that chip
@@ -46,7 +46,7 @@ const THE_RULE = /field name has no equals, commas or colons/;
 
 const acceptable = cases.filter((c) => c.ok);
 // The empty name is not a state the form can be typed into — it is what the
-// modal starts as, and Track + has always refused to submit it. Nor is a
+// modal starts as, and the (+) has always refused to submit it. Nor is a
 // space at either end: the form trims what is typed, so ` coffee` declares
 // `coffee` there, and only `spec set` sees the name untrimmed.
 const refused = cases.filter((c) => !c.ok && c.field !== '');

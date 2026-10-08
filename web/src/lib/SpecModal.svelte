@@ -44,7 +44,7 @@
 	the `set` shape, the list entire, never a stream of `add-state`s.
 
 	It is opened from three doors to declare and is the same modal at each:
-	the widget bar's `Track +`, a filtered list's `+` with its verb already
+	the widget bar's (+), a filtered list's `+` with its verb already
 	chosen, and the CLI's refusal, which arrives with the field already
 	typed. The `<dialog>` pattern is Confirm's and Chooser's — `showModal`
 	puts focus inside, Escape and a click on the backdrop close it and run

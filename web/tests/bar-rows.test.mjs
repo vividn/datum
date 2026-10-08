@@ -51,7 +51,7 @@ describe('the fields bar and the scroll rule', () => {
 				const { page } = app;
 				await seedLines(app, SEED);
 				await page.locator('.bar [data-field="hotel"]').waitFor();
-				for (const want of [1, 2, 3]) await holds(page, want, 'Track +');
+				for (const want of [1, 2, 3]) await holds(page, want, '+');
 			},
 			{
 				// Narrow enough that nine buttons wrap onto three lines.

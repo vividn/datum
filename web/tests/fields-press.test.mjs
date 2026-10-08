@@ -64,12 +64,12 @@ describe('a press', () => {
 		});
 	});
 
-	// The modal is tests/track.test.mjs's; what belongs here is that Track +
+	// The modal is tests/track.test.mjs's; what belongs here is that the (+)
 	// opens it and that the field it declares is the field the bar then draws.
 	test('the Track modal asks for the verb and writes it', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			await page.locator('.bar button.track').click();
+			await page.locator('.bar [data-track]').click();
 			const modal = page.locator('dialog.spec');
 			await modal.waitFor();
 			assert.equal(await modal.locator('.verb[aria-checked="true"]').count(), 0, 'a verb was chosen for them');

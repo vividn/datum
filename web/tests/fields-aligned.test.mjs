@@ -177,7 +177,7 @@ for (const [name, screen] of [
 // vremya on #494, on her own record: Track + stood first and wide, and every
 // field started right of its column, so on the half-width fields pane of a
 // fresh phone's `mobile` layout the most used field showed as «ac». The
-// fields start at the pane's left edge, and Track + is a `+` after them.
+// fields start at the pane's left edge, and the (+) comes after them.
 test('a fresh phone: the most used field is whole on open, and the fields start at the left edge', async () => {
 	await withApp(
 		async (app) => {

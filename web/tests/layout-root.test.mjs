@@ -95,7 +95,7 @@ describe('the default layout', () => {
 // «that looks rather ugly, I would make an exception for the + button»),
 // and every other button that opens a modal still does.
 describe('the chevron', () => {
-	test('the root bar\'s +, a pane\'s + and the fields\' Track + wear none; Change Widget still does', async () => {
+	test('the root bar\'s +, a pane\'s + and the fields\' + wear none; Change Widget still does', async () => {
 		await shared.solo(async ({ page }) => {
 			const after = (locator) => locator.evaluate((b) => getComputedStyle(b, '::after').content);
 			for (const plus of [

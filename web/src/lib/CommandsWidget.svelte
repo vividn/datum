@@ -73,6 +73,14 @@
 	without them — its Help carries a section — so it is the one run it
 	always was.
 
+	A common command wears an ICON before its name (da-y6jfb, `ICONS` in
+	commands.ts), no two alike, and `track` is drawn in a colour of its own
+	— vividn: «I wouldn't put track first in the commands widget, it can stay
+	more or less where it is, maybe if it has a nice color, it would be
+	easy to find.» The icon is paid for out of the button's own padding, so
+	a button is as wide as its word alone made it, and a glyph is drawn by
+	CSS, so the button's text is still its word.
+
 	What the bar is SHOWING — the command drilled into, the one held for its
 	flags — outlives the widget (da-ria1a): on a phone a place opens as a
 	root tab and unmounts the tab it left, and coming back must find the bar
@@ -96,6 +104,7 @@
 		fires,
 		flagsOf,
 		hasFlags,
+		ICONS,
 		subcommandsOf,
 		type CommandButton,
 		type Grammar,
@@ -215,7 +224,7 @@
 	<button slot="probe" class="command" tabindex="-1">probe</button>
 	{#if command.name === 'undo'}
 		<span class="undo">
-			<button class="command" use:act={'run'} {disabled} data-command="undo" aria-label="undo" title="run undo" on:click={() => press(command)}>
+			<button class="command" use:act={'run'} {disabled} data-command="undo" data-glyph={ICONS.undo} aria-label="undo" title="run undo" on:click={() => press(command)}>
 				{command.label}
 			</button>
 			<button
@@ -264,17 +273,20 @@
 			{command.label}
 		</button>
 	{:else}
+		{@const icon = ICONS[command.name] ?? ''}
 		<button
 			class="command"
 			use:act={kindOf(command)}
 			class:opens={kindOf(command) === 'open'}
+			class:drawn={icon.length > 1}
 			{disabled}
 			data-command={command.name}
+			data-glyph={icon.length === 1 ? icon : undefined}
 			data-holds={!open && hasFlags(grammar, command.name) ? '' : undefined}
 			title={kindOf(command) === 'run' ? `run ${command.name}` : command.press === 'backups' ? 'open Backups' : command.press === 'place' ? `open ${command.label}` : `${command.name} …`}
 			on:click={() => press(command)}
 		>
-			{command.label}
+			{#if icon.length > 1}<svg viewBox="0 0 16 16" aria-hidden="true"><path d={icon} /></svg>{/if}{command.label}
 		</button>
 	{/if}
 </ButtonRows>
@@ -287,6 +299,38 @@
 	.command.opens {
 		border-color: var(--accent);
 		color: var(--ink-bright);
+	}
+
+	/* An icon'd button gives the icon's width back out of its padding
+	   (`--pad`, app.css): the phone's one row holds the verbs it held
+	   (da-shzs). `/ ''` keeps a glyph out of the button's name. */
+	.command[data-glyph],
+	.command.drawn {
+		--pad: 0.45rem;
+	}
+
+	.command[data-glyph]::before {
+		content: attr(data-glyph) / '';
+		margin-right: 0.3em;
+	}
+
+	.command svg {
+		inline-size: 1em;
+		block-size: 1em;
+		margin-right: 0.3em;
+		vertical-align: -0.125em;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	/* Track is where a field begins, so it is the one command in a colour
+	   of its own (da-y6jfb): easy to find where it stands. */
+	.command[data-command='track'] {
+		border-color: var(--track);
+		color: var(--track);
 	}
 
 	/* Help is outlined as Undo is but once, not twice (da-35f23): the

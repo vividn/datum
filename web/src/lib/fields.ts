@@ -30,7 +30,7 @@ export interface FieldButton {
 	/**
 	 * `datum fields --json`'s `ignored` — the field's latest track/ignore
 	 * status, defined once in datum-core (da-d08c). The bar draws a button
-	 * for every field that is not; Track + offers the ignored ones back.
+	 * for every field that is not; the (+) offers the ignored ones back.
 	 */
 	ignored: boolean;
 	/**

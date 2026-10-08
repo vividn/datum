@@ -154,7 +154,7 @@
 	}
 
 	/* Each line centres its buttons, so a button taller than the probe
-	   (`Track +`) cannot push the next line out of it; along the axis it is
+	   cannot push the next line out of it; along the axis it is
 	   as long as its own buttons. */
 	.lane {
 		display: flex;

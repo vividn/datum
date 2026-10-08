@@ -21,7 +21,7 @@
 // again (da-vyo2). So the cases here run against a POPULATED bar as well as
 // an empty one.
 //
-// The bar is the fields widget now (da-c7u8): Track + first, then a button
+// The bar is the fields widget now (da-c7u8): the (+) first, then a button
 // per TRACKED field — so the handful here is declared with `spec set`,
 // which is what gives a field its button.
 //
@@ -105,10 +105,10 @@ async function assertOnScreen(page, selector, what) {
 }
 
 describe('on a phone-sized screen', () => {
-	test("the fields widget's Track + is on screen", async (t) => {
+	test("the fields widget's (+) is on screen", async (t) => {
 		await phone.solo(async ({ page }) => {
 			await atEachScreen(t, page, [PHONE, SHORT], async () => {
-				await assertOnScreen(page, '.bar button.track', 'Track +');
+				await assertOnScreen(page, '.bar [data-track]', 'the (+)');
 			});
 		});
 	});
@@ -131,7 +131,7 @@ describe('on a phone-sized screen', () => {
 		await phone.solo(async (app) => {
 			await track(app, FIELDS);
 			await atEachScreen(t, app.page, SCREENS, async () => {
-				await assertOnScreen(app.page, '.bar button.track', 'Track +');
+				await assertOnScreen(app.page, '.bar [data-track]', 'the (+)');
 				await assertOnScreen(app.page, '.bar button.widget', "the first field's chip");
 			});
 		});
@@ -325,12 +325,12 @@ describe('on a phone-sized screen', () => {
 		});
 	});
 
-	// Track + opens a modal now (da-94q1) — over the page rather than
+	// The (+) opens a modal now (da-94q1) — over the page rather than
 	// hanging off the bar's bottom row, so what it has to clear is the
 	// screen's own box. Its pictograms are measured in tests/track.test.mjs.
-	test('the modal Track + opens is on screen', async () => {
+	test('the modal the (+) opens is on screen', async () => {
 		await phone.solo(async ({ page }) => {
-			await page.locator('.bar button.track').click();
+			await page.locator('.bar [data-track]').click();
 			await assertOnScreen(page, 'dialog.spec', 'the Track modal');
 			// Shut again: a modal left open makes the page under it inert
 			// for the shared app's next test.
@@ -382,11 +382,11 @@ describe('on a phone-sized screen', () => {
 		});
 	});
 
-	test('the modal Track + opens is on screen with a wrapped bar', async () => {
+	test('the modal the (+) opens is on screen with a wrapped bar', async () => {
 		await phone.solo(async (app) => {
 			const { page } = app;
 			await track(app, FIELDS);
-			await page.locator('.bar button.track').click();
+			await page.locator('.bar [data-track]').click();
 			await assertOnScreen(page, 'dialog.spec', 'the Track modal');
 			// Shut again: a modal left open makes the page under it inert
 			// for the shared app's next test.

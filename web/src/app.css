@@ -63,7 +63,7 @@
 		them fainter than 240 does.)
 
 		The colours that MEAN something are outside it and do not move with
-		the database: `--alarm`, `--error`, `--warn` below, the beta mark's
+		the database: `--alarm`, `--error`, `--warn`, `--track` below, the beta mark's
 		amber, and every field's own colour, which the CLI picks.
 	*/
 	--hue: 240;
@@ -94,6 +94,9 @@
 	--error: #f4645a;
 	/* Unsaved work: an act with something still to do. */
 	--warn: #ffd166;
+	/* Where a field begins: the Track command, in the green the CLI paints
+	   the tag of the row it writes (`Outcome::Create`). */
+	--track: #26a269;
 }
 
 *, *::before, *::after {
@@ -106,7 +109,7 @@
    name, which says what the button is and not where it leads.
    A `+` face wears none (da-pmmgm): the `+` already says something
    opens to add to, and vividn found `+›` «rather ugly». The root bar's and
-   a pane's `+` (`.add`), the fields' `Track +` and its trailing `+`. */
+   a pane's `+` (`.add`), the fields' `+` and its trailing `+`. */
 [data-act='open']:not(.add):not(.add-button):not(.add-field)::after {
 	content: '›' / '';
 	margin-inline-start: 0.35em;
@@ -219,7 +222,7 @@ button.command {
 	background: var(--ground);
 	border: 1px solid var(--rule);
 	border-radius: 3px;
-	padding: 0.35rem 0.85rem;
+	padding: 0.35rem var(--pad, 0.85rem);
 	color: var(--ink);
 	font: inherit;
 	font-size: 0.85rem;
@@ -232,7 +235,7 @@ button.command {
 }
 button.command[data-act='run'] {
 	border: 3px double var(--accent);
-	padding: calc(0.35rem - 2px) calc(0.85rem - 2px);
+	padding: calc(0.35rem - 2px) calc(var(--pad, 0.85rem) - 2px);
 	color: var(--ink-bright);
 }
 /* Focused by the keyboard, as pointed at: the browser's own ring is drawn

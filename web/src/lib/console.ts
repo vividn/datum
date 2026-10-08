@@ -105,7 +105,7 @@ export interface DatumConsole {
 	};
 	/**
 	 * Open the Track modal (da-94q1) and run what it answers with, as
-	 * `Track +` does — with a field or a verb already chosen, which is the
+	 * the fields' (+) does — with a field or a verb already chosen, which is the
 	 * door a filtered list's `+` comes in by. Null if it was dismissed.
 	 */
 	track(options?: TrackOptions): Promise<RunResult | null>;

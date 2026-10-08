@@ -375,7 +375,7 @@ describe('a URL', () => {
 				await app.goto(path);
 				assert.deepEqual(await rootTabs(page), ['main', 'fields']);
 				assert.equal(await activeRootTab(page), 'fields');
-				await page.locator('section.pane[data-title="fields"] button.track').waitFor();
+				await page.locator('section.pane[data-title="fields"] [data-track]').waitFor();
 				assert.deepEqual(await titles(page), ['fields']);
 			}
 			assert.deepEqual(app.errors, []);
@@ -395,7 +395,7 @@ describe('a URL', () => {
 			});
 			await app.goto('/old');
 			assert.deepEqual(await titles(page), ['fields']);
-			await page.locator('section.pane[data-title="fields"] button.track').waitFor();
+			await page.locator('section.pane[data-title="fields"] [data-track]').waitFor();
 			assert.deepEqual(app.errors, []);
 		});
 	});

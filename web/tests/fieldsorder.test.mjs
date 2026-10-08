@@ -155,7 +155,7 @@ describe('a click on the picture puts the fields drawn there first', () => {
 
 				// The fields a press reached head the rows, from the top
 				// (da-xtkcp), so the one promoted field is the first on the top
-				// row as DRAWN — after Track +, which starts it.
+				// row as DRAWN — after the (+), which starts it.
 				const rows = await page.$eval(BAR, (bar) => Number(bar.dataset.rows));
 				assert.equal(rows, 2, 'this screen was chosen for a two-row bar');
 				const boxes = await page.$$eval(`${BAR} [data-field]`, (els) =>

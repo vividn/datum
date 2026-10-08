@@ -19,5 +19,5 @@ everyLayer('desktop', { ...DESKTOP, desk: null }, 'rest', [
 	'page: main',
 	'page: settings › page: Backups',
 	'page: settings › page: Backups › backups: Delete plan',
-	'fields: Track +'
+	'fields: track a new field'
 ]);
