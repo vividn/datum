@@ -7,16 +7,8 @@
 	handle, the frozen today) are the horizontal strip's; the pivot is the
 	CLI's picture as it draws it.
 -->
-<script context="module" lang="ts">
-	import type { PaneSpec } from '$lib/panes.js';
-
-	const VERTICAL: PaneSpec = {
-		title: 'dayview',
-		argv: ['dayview', '--orientation', 'vertical', '--days', '7']
-	};
-</script>
-
 <script lang="ts">
+	import { DAYVIEW_VERTICAL } from '$lib/calls.js';
 	import CliPane from '$lib/CliPane.svelte';
 	import DayStrip from '$lib/DayStrip.svelte';
 
@@ -25,7 +17,7 @@
 </script>
 
 {#if orientation === 'vertical'}
-	<CliPane spec={VERTICAL} {epoch} />
+	<CliPane spec={DAYVIEW_VERTICAL} {epoch} />
 {:else}
 	<DayStrip {...$$restProps} {epoch} on:change />
 {/if}

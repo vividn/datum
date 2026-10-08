@@ -167,6 +167,7 @@
 	import { markOf } from './inspect.js';
 	import { advance, LONG_MS, SLOP_PX, type Mode, type Press } from './nowpoint.js';
 	import { run, type RunResult } from './run.js';
+	import { firstEntryArgv } from './calls.js';
 	import {
 		AXIS_HEIGHT,
 		DIVIDER,
@@ -664,9 +665,7 @@
 	 */
 	async function firstEntry(today: string): Promise<{ back: number; date: string } | null> {
 		try {
-			const { rows } = JSON.parse(
-				(await run(['head', '-n', '1', '--metric', 'occur', '--json'])).stdout
-			);
+			const { rows } = JSON.parse((await run(firstEntryArgv())).stdout);
 			const row = rows?.[0];
 			if (!row?.time) return null;
 			const at = new Date(Date.parse(row.time) - (row.dur_seconds ?? 0) * 1000);

@@ -55,6 +55,7 @@
 	import { inkOver } from './fields.js';
 	import CliOutput from './CliOutput.svelte';
 	import { run, type RunResult } from './run.js';
+	import { showAllArgv } from './calls.js';
 	import { shellJoin } from './shellSplit.js';
 	import { currentDb } from './database.js';
 	import {
@@ -121,7 +122,7 @@
 	 */
 	async function refresh(argv: string[], _epoch: number): Promise<void> {
 		const at = ++started;
-		const r = await run([...argv, '--show', 'all'], undefined, undefined, undefined, undefined, undefined, true);
+		const r = await run(showAllArgv(argv), undefined, undefined, undefined, undefined, undefined, true);
 		// Last started wins, not last to return (see CliPane.svelte).
 		if (at < shown) return;
 		shown = at;

@@ -20,6 +20,7 @@
 // tag is how "what seeding wrote" outlives the page that wrote it.
 
 import { stripAnsi } from './ansi.js';
+import { deleteSampleArgv, kitInstallArgv, kitUninstallArgv, sampleTaggedArgv } from './calls.js';
 import { run, type RunResult } from './run.js';
 import SAMPLE_KIT from '../../../kits/sample.toml?raw';
 
@@ -137,7 +138,7 @@ async function step(argv: string[], onStep: (s: Step) => void, stdin?: string): 
 
 /** The sample's entries now in the database, by full hid — read back, never counted from what was sent. */
 async function tagged(onStep: (s: Step) => void): Promise<string[]> {
-	const found = await step(['grep', '"sample":true', '-o', '%full_hid%'], onStep);
+	const found = await step(sampleTaggedArgv(), onStep);
 	return stripAnsi(found.stdout)
 		.split('\n')
 		.filter((line) => /^[0-9a-z]+$/.test(line));
@@ -151,7 +152,7 @@ async function tagged(onStep: (s: Step) => void): Promise<string[]> {
 export async function clearSample(onStep: (s: Step) => void): Promise<number> {
 	const hids = await tagged(onStep);
 	if (!hids.length) return 0;
-	await step(['delete', hids.join(','), '--show', 'none'], onStep);
+	await step(deleteSampleArgv(hids), onStep);
 	return (await tagged(onStep)).length;
 }
 
@@ -177,6 +178,6 @@ export async function seedSample(
  * and uninstalling gives each field back the spec it had.
  */
 export const installKit = (onStep: (s: Step) => void) =>
-	step(['kit', 'install', '-'], onStep, SAMPLE_KIT);
+	step(kitInstallArgv(), onStep, SAMPLE_KIT);
 export const uninstallKit = (onStep: (s: Step) => void) =>
-	step(['kit', 'uninstall', 'sample'], onStep);
+	step(kitUninstallArgv(), onStep);

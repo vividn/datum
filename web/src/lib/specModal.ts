@@ -16,6 +16,7 @@
 // it and hold the glyphs to the CLI's render.
 
 import SpecModal from './SpecModal.svelte';
+import { specShowArgv } from './calls.js';
 import { run, type RunResult } from './run.js';
 import { specPlace } from './layout/defaults.js';
 import { derived } from 'svelte/store';
@@ -66,7 +67,7 @@ const waiting = new Map<string, (result: RunResult | null) => void>();
  * `track` it ran, or null if it was dismissed.
  */
 export async function openSpec(field: string): Promise<RunResult | null> {
-	const shown = await run(['spec', 'show', field]);
+	const shown = await run(specShowArgv(field));
 	let spec = false;
 	try {
 		spec = shown.code === 0 && !!JSON.parse(shown.stdout);

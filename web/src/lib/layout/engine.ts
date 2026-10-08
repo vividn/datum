@@ -25,6 +25,7 @@ import { syncCommand } from '$lib/sync.js';
 import { parseEcho, runEchoed } from '$lib/echo.js';
 import { record } from '$lib/replStore.js';
 import { run, type RunResult } from '$lib/run.js';
+import { fieldsArgv, frecencyArgv, grammarArgv, nowArgv } from '$lib/calls.js';
 import { verbAsked } from '$lib/track.js';
 import { openTrack } from '$lib/specModal.js';
 import {
@@ -58,7 +59,7 @@ export const standings = writable<Standings>(new Map());
  * — and never moves a button.
  */
 export async function resort(): Promise<void> {
-	const sorted = await run(['fields', '--json', '--sort', 'frecency']);
+	const sorted = await run(frecencyArgv());
 	try {
 		if (sorted.code === 0)
 			standings.set(
@@ -102,7 +103,7 @@ export async function boot(): Promise<void> {
 	// starts a fresh worker, where a rejection here left «opening database…»
 	// up for good.
 	await initDb().catch((e) => console.error('datum: the database did not open:', e));
-	const help = await run(['help', '--json']);
+	const help = await run(grammarArgv());
 	try {
 		if (help.code === 0) grammar.set(grammarOf(JSON.parse(help.stdout) as GrammarEntry[]));
 	} catch {
@@ -130,7 +131,7 @@ export async function boot(): Promise<void> {
 export async function refresh(): Promise<void> {
 	// Both asked at once (da-70g2u): `now` waiting for `fields` to answer
 	// queued it behind every pane the same beat set off — 14 s on five years.
-	const [listed, now] = await Promise.all([run(['fields', '--json']), run(['now', '--json'])]);
+	const [listed, now] = await Promise.all([run(fieldsArgv()), run(nowArgv())]);
 	if (listed.code !== 0) return;
 	// Guarded like the tail pane's own listing: stdout that is not the JSON
 	// asked for (a partial write, a crashed process) keeps the bar it had

@@ -19,6 +19,7 @@
 	import { onDestroy, onMount, tick } from 'svelte';
 	import Pane from '$lib/Pane.svelte';
 	import { act } from '$lib/act.js';
+	import { restoreArgv } from '$lib/calls.js';
 	import { confirm } from '$lib/confirm.js';
 	import { currentDb, INTERNAL_DB } from '$lib/database.js';
 	import { listDatabases } from '$lib/databases.js';
@@ -152,7 +153,7 @@
 
 	const restoreLocal = () =>
 		perform(async () => {
-			const r = await restoreFile(['db', 'restore', '-']);
+			const r = await restoreFile(restoreArgv());
 			note = r.code === 0 ? [r.stdout.split('\n').at(-1) || 'restored', ...warnings(r)].join(' ') : r.stderr;
 			// The panes of this tab re-run on it, as after a typed command.
 			await ran(r);

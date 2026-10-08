@@ -40,6 +40,7 @@
 // as `DATUM_SYNC_RELAY` names one for the CLI: the tests' local relay.
 
 import { writable, type Readable } from 'svelte/store';
+import { chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusArgv, vectorArgv } from './calls.js';
 import { announceHere, onAnyChange } from './changes.js';
 import type { SyncEvent, SyncReport, SyncRequest, TicketAbout } from './syncProtocol.js';
 import { cliError, dbOf, type RunResult } from './run.js';
@@ -230,9 +231,9 @@ class Leader {
 	 */
 	async refresh(): Promise<void> {
 		failInjected();
-		const members = await cli(['--db', this.db, 'sync', 'chain', 'list', '--json']);
+		const members = await cli(['--db', this.db, ...chainListArgv()]);
 		const syncs = members.code === 0;
-		const status = syncs ? JSON.parse(await must(['--db', this.db, 'sync', 'status', '--json'])) : undefined;
+		const status = syncs ? JSON.parse(await must(['--db', this.db, ...syncStatusArgv()])) : undefined;
 		const chain = Boolean(status?.chain);
 		const joined = this.joining && chain;
 		this.joining = syncs && !chain;
@@ -243,16 +244,16 @@ class Leader {
 		this.paused = status?.paused ?? undefined;
 		this.peers = ((status?.members ?? []) as Peer[]).filter((p) => !p.revoked && p.addr);
 		if (syncs) await this.start();
-		if (joined) await cli(['--db', this.db, 'sync', 'chain', 'rename', this.label]);
+		if (joined) await cli(['--db', this.db, ...renameArgv(this.label)]);
 		this.post();
 	}
 
 	async start(): Promise<void> {
-		const key = (await must(['--db', this.db, 'sync', 'endpoint-key'])).trim();
+		const key = (await must(['--db', this.db, ...endpointKeyArgv()])).trim();
 		if (this.endpoint && key === this.key) return;
 		// Held only once bound: a failed bind is tried again on the next start.
 		const { datum, schema } =
-			this.version ?? (this.version = JSON.parse(await must(['--db', this.db, 'sync', 'status', '--json'])).this);
+			this.version ?? (this.version = JSON.parse(await must(['--db', this.db, ...syncStatusArgv()])).this);
 		this.endpoint = await ask<string>(this.db, { op: 'start', key, relay: relay(), label: this.label, datum, schema });
 		this.key = key;
 		this.post();
@@ -270,7 +271,7 @@ class Leader {
 		try {
 			do {
 				this.pushAgain = false;
-				const vector = all ? '' : (await must(['--db', this.db, 'sync', 'pipe', 'vector'])).trim();
+				const vector = all ? '' : (await must(['--db', this.db, ...vectorArgv()])).trim();
 				for (const p of this.peers) if (all || this.inStep.get(p.endpoint) !== vector) void this.dial(p);
 				all = false;
 			} while (this.pushAgain);
@@ -333,12 +334,12 @@ class Leader {
 			this.done(report.id, report);
 			// Admitted to a chain, it says what it is (`datum sync chain connect`).
 			await this.refresh();
-			if (this.chain) await cli(['--db', this.db, 'sync', 'chain', 'rename', this.label]);
+			if (this.chain) await cli(['--db', this.db, ...renameArgv(this.label)]);
 			return report;
 		}
 		// An invite the page wrote already (the Sync widget, approved with a
 		// passkey in the tab tapped — da-bjxts), or a new one.
-		const invite: Invite = c.invite ?? JSON.parse(await must(['--db', this.db, 'sync', 'new-invite']));
+		const invite: Invite = c.invite ?? JSON.parse(await must(['--db', this.db, ...newInviteArgv()]));
 		// The first invite starts the chain, and with it the endpoint.
 		await this.refresh();
 		// Any member can admit the redeemer.

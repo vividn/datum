@@ -25,6 +25,14 @@
 // another tab writes to the data db, and whenever the chooser is opened —
 // so a kit installed at the prompt is offered without a reload.
 
+import {
+	deleteLayoutArgv,
+	layoutHistoryArgv,
+	layoutsArgv,
+	layoutUndoArgv,
+	newLayoutArgv,
+	updateLayoutArgv
+} from '../calls.js';
 import { cliError, run } from '../run.js';
 import type { Layout } from './types.js';
 
@@ -61,19 +69,6 @@ async function stdoutOf(argv: string[]): Promise<string> {
 	return result.stdout;
 }
 
-/**
- * The tree, as `-k` data. Every value JSON, so a name like `123` stays a
- * string; an empty `designedFor=` removes one a previous save had.
- */
-const keys = (layout: Layout) => [
-	'-k',
-	`version=${layout.version}`,
-	'-k',
-	`root=${JSON.stringify(layout.root)}`,
-	'-k',
-	`designedFor=${layout.designedFor ? JSON.stringify(layout.designedFor) : ''}`
-];
-
 interface Row {
 	hid: string;
 	slug: string;
@@ -89,7 +84,7 @@ interface Row {
  * layout — a saved one always has a name.
  */
 async function rows(): Promise<Row[]> {
-	const listed: Row[] = JSON.parse(await datum('tail', 'layout', '--json', '-n', '100000')).rows;
+	const listed: Row[] = JSON.parse(await datum(...layoutsArgv())).rows;
 	return listed.filter((r) => r.data?.name !== undefined);
 }
 
@@ -123,7 +118,7 @@ export const kitOf = (name: string): string | null => kits.get(name)?.kit ?? nul
 export async function refreshKitLayouts(): Promise<void> {
 	let listed: Row[];
 	try {
-		listed = JSON.parse(await data('tail', 'layout', '--json', '-n', '100000')).rows;
+		listed = JSON.parse(await data(...layoutsArgv())).rows;
 	} catch {
 		return;
 	}
@@ -157,14 +152,7 @@ export async function refreshKitLayouts(): Promise<void> {
  * row the caller has just read as its own kit's (`kitLayout`).
  */
 export async function installKitLayout(layout: Layout, kit: string, replace = false): Promise<void> {
-	await data(
-		...(replace
-			? ['update', slug(layout.name)]
-			: ['occur', 'layout', '--id', '%name', '-k', `name=${JSON.stringify(layout.name)}`]),
-		...keys(layout),
-		'-k',
-		`kit_id=${JSON.stringify(kit)}`
-	);
+	await data(...(replace ? updateLayoutArgv(layout, kit) : newLayoutArgv(layout, kit)));
 }
 
 async function row(name: string): Promise<Row> {
@@ -211,12 +199,12 @@ export async function loadLayout(name: string): Promise<Layout> {
 
 /** A layout under a name no entry has yet. Rejects if the name is taken. */
 function create(layout: Layout): Promise<string> {
-	return datum('occur', 'layout', '--id', '%name', '-k', `name=${JSON.stringify(layout.name)}`, ...keys(layout));
+	return datum(...newLayoutArgv(layout));
 }
 
 /** Save in place — a new version of the entry — or create it if absent. */
 export async function saveLayout(layout: Layout): Promise<void> {
-	const updated = await run(['--db', '_internal', 'update', slug(layout.name), ...keys(layout)]);
+	const updated = await run(['--db', '_internal', ...updateLayoutArgv(layout)]);
 	if (updated.code === 0) return;
 	await create(layout).catch((e: Error) => {
 		throw new Error(`${cliError(updated.stderr).message}\n${e.message}`);
@@ -232,7 +220,7 @@ export async function saveAs(layout: Layout, newName: string): Promise<Layout> {
 
 /** The entry's versions, newest first, as `history --json` lists them. */
 export async function versions(name: string): Promise<{ version: number; modifyTime: string }[]> {
-	const trail = JSON.parse(await datum('history', slug(name), '--json'));
+	const trail = JSON.parse(await datum(...layoutHistoryArgv(name)));
 	return trail.map((v: { version: number; modify_time: string }) => ({
 		version: v.version,
 		modifyTime: v.modify_time
@@ -245,11 +233,11 @@ export async function versions(name: string): Promise<{ version: number; modifyT
  * nothing is lost by restoring. Resolves with the tree now saved.
  */
 export async function restore(name: string, version?: number): Promise<Layout> {
-	await datum('undo', slug(name), ...(version === undefined ? [] : ['--to-version', String(version)]));
+	await datum(...layoutUndoArgv(name, version));
 	return loadLayout(name);
 }
 
 /** By hid, since `del` splits its argument at commas and a name may have one. */
 export async function deleteLayout(name: string): Promise<void> {
-	await datum('del', (await row(name)).hid, '--force');
+	await datum(...deleteLayoutArgv((await row(name)).hid));
 }

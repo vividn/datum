@@ -40,6 +40,7 @@
 import { File as MemFile, OpenFile, WASI, type Fd, type PreopenDirectory } from '@bjorn3/browser_wasi_shim';
 import cliWasm from './wasm/datum-cli.wasm?url';
 import { cached, DATABASES, dbFiles, forgetCached, MemoryHandle, opfsDirectory, PRE_MIGRATION, Sink, staged, unkept, type Handle } from './wasiFs.js';
+import { backupArgv, mergeArgv } from './calls.js';
 import { OPFS_DIR } from './databases.js';
 import type { CliResult, Stage, StorageKind } from './dbProtocol.js';
 
@@ -590,12 +591,12 @@ function keepTrying(delay: number): void {
 				const restored = await withFiles(async (handles) => {
 					const said: string[] = [];
 					for (const db of databases) {
-						const backup = await exec(module, held, ['--db', db, 'db', 'backup', '-'], lastEnv);
+						const backup = await exec(module, held, ['--db', db, ...backupArgv()], lastEnv);
 						if (backup.code !== 0) throw new Error(backup.stderr);
 						const restore = await exec(
 							module,
 							handles,
-							['--db', db, 'db', 'restore', '-', '--merge'],
+							['--db', db, ...mergeArgv()],
 							lastEnv,
 							backup.stdout
 						);

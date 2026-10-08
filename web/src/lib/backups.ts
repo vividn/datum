@@ -35,6 +35,17 @@
 // (slug `backup_plan:<name>`), the whole plan as `-k plan=<json>`.
 
 import { writable, get } from 'svelte/store';
+import {
+	backupListArgv,
+	backupSizeArgv,
+	backupToArgv,
+	deletePlanArgv,
+	planReachArgv,
+	plansArgv,
+	restorePreviewArgv,
+	restoreStagedArgv,
+	savePlanArgv
+} from './calls.js';
 import { confirm } from './confirm.js';
 import type { Stage } from './dbProtocol.js';
 import { DEBUG_DB } from './layout/defaults.js';
@@ -183,8 +194,6 @@ async function json<T>(argv: string[], stage?: Stage): Promise<T & { stage?: Sta
 
 // ---- plans in `_internal` ---------------------------------------------------
 
-const slug = (name: string) => `backup_plan:${name}`;
-
 async function internal(...argv: string[]): Promise<RunResult> {
 	const result = await run(['--db', '_internal', ...argv]);
 	if (result.code !== 0) throw cliError(result.stderr, `datum ${argv[0]} exited ${result.code}`);
@@ -193,7 +202,7 @@ async function internal(...argv: string[]): Promise<RunResult> {
 
 /** Re-read the plans. */
 export async function loadPlans(): Promise<Plan[]> {
-	const { stdout } = await internal('tail', 'backup_plan', '--json', '-n', '100000');
+	const { stdout } = await internal(...plansArgv());
 	// A field's first log also writes a TRACK row with no data (da-c8mh).
 	const rows: { data: { plan?: Plan } | null }[] = JSON.parse(stdout).rows;
 	const found = rows.flatMap((r) => (r.data?.plan ? [r.data.plan] : [])).sort((a, b) => a.name.localeCompare(b.name));
@@ -204,15 +213,12 @@ export async function loadPlans(): Promise<Plan[]> {
 /** Save `plan` under its name, new or not. */
 export async function savePlan(plan: Plan): Promise<void> {
 	const exists = get(plans).some((p) => p.name === plan.name);
-	const value = `plan=${JSON.stringify(plan)}`;
-	await (exists
-		? internal('update', slug(plan.name), '-k', value)
-		: internal('occur', 'backup_plan', '--id', '%name', '-k', `name=${JSON.stringify(plan.name)}`, '-k', value));
+	await internal(...savePlanArgv(plan, exists));
 	await loadPlans();
 }
 
 export async function deletePlan(name: string): Promise<void> {
-	await internal('delete', slug(name));
+	await internal(...deletePlanArgv(name));
 	await loadPlans();
 }
 
@@ -225,7 +231,7 @@ export async function deletePlan(name: string): Promise<void> {
 export async function listed(plan: Plan): Promise<Backup[]> {
 	const index = await destination(plan).get('index.json');
 	if (!index) return [];
-	return (await json<{ backups: Backup[] }>(['db', 'backup', '--list', '/data/stage', '--json'], { 'index.json': index })).backups;
+	return (await json<{ backups: Backup[] }>(backupListArgv(), { 'index.json': index })).backups;
 }
 
 /** Re-read `plan`'s backups into `status`. */
@@ -253,8 +259,6 @@ export function overdue(plan: Plan, s: PlanStatus, db: string): boolean {
 }
 
 // ---- taking one --------------------------------------------------------------
-
-const everyArgs = (plan: Plan) => ['--every', `${plan.every}s`, ...(plan.slots ? ['--slots', String(plan.slots)] : [])];
 
 /** `index.json` as the CLI writes it: per db, the rotation and its backups. */
 interface Index {
@@ -285,7 +289,7 @@ async function backupOne(plan: Plan, db: string): Promise<void> {
 	const dest = destination(plan);
 	const index = await dest.get('index.json');
 	const out = await json<{ slot: number | null; written: string[]; removed: string[] }>(
-		['--db', db, 'db', 'backup', '--to', '/data/stage', ...everyArgs(plan), '--json'],
+		['--db', db, ...backupToArgv(plan)],
 		index ? { 'index.json': index } : {}
 	);
 	if (out.slot === null) return;
@@ -330,9 +334,9 @@ export async function restoreFrom(plan: Plan, db: string, backup: Backup): Promi
 	const bytes = await destination(plan).get(backup.file);
 	if (!bytes) throw new Error(`${backup.file} is not at the destination any more`);
 	const stage = { [backup.file]: bytes };
-	const argv = ['--db', db, 'db', 'restore', `/data/stage/${backup.file}`];
+	const argv = ['--db', db, ...restoreStagedArgv(backup.file)];
 	const seen = await json<{ would_delete: number; would_insert: number; would_update: number; warnings: string[] }>(
-		[...argv, '--dry-run', '--json'],
+		restorePreviewArgv(argv),
 		stage
 	);
 	// Its warnings too (da-vceux): a header that disagrees with the lines is known before the yes.
@@ -358,13 +362,13 @@ export interface Reach {
 export const reaches = (plan: Plan): Promise<Reach[]> =>
 	Promise.all(
 		[86_400, 30 * 86_400, 365 * 86_400].map((span) =>
-			json<Reach>(['db', 'backup', '--plan', ...everyArgs(plan), '--span', `${span}s`, '--json'])
+			json<Reach>(planReachArgv(plan, span))
 		)
 	);
 
 /** The size of one backup of `db`, gzipped, as the CLI writes it. */
 export async function backupSize(db: string): Promise<number> {
-	const result = await run(['--db', db, 'db', 'backup', '/data/stage/size.jsonl.gz'], undefined, undefined, undefined, {});
+	const result = await run(['--db', db, ...backupSizeArgv()], undefined, undefined, undefined, {});
 	if (result.code !== 0) throw new Error(result.stderr);
 	return result.stage?.['size.jsonl.gz']?.length ?? 0;
 }

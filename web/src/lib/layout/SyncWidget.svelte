@@ -65,6 +65,17 @@
 	import { approve, approveRecord, createPasskey } from '$lib/passkey.js';
 	import { ask, confirm } from '$lib/confirm.js';
 	import { cliError, type RunResult } from '$lib/run.js';
+	import {
+		ackArgv,
+		adminAddArgv,
+		adminListArgv,
+		adminRemoveArgv,
+		leaveArgv,
+		pausedArgv,
+		purgeArgv,
+		renameArgv,
+		revokeArgv
+	} from '$lib/calls.js';
 	import { act } from '$lib/act.js';
 	import { prefill } from '$lib/bar.js';
 	import { grammar } from './engine.js';
@@ -238,38 +249,38 @@
 			const was = cur.this?.label ?? '';
 			const label = await ask('Rename this device to', 'rename', was);
 			if (!label || label === was) return;
-			for (const d of dbs) if (d.this) ok(await syncAct(d.db, ['chain', 'rename', label]));
+			for (const d of dbs) if (d.this) ok(await syncAct(d.db, renameArgv(label)));
 		});
 
 	const rename = (row: Row) =>
 		doing(async () => {
 			const label = await ask(`Rename ${row.label} to`, 'rename', row.label);
 			if (!label || label === row.label) return;
-			ok(await syncAct(db, ['chain', 'rename', row.endpoints[db], label]));
+			ok(await syncAct(db, renameArgv(label, row.endpoints[db])));
 		});
 
 	const revoke = (row: Row) =>
 		doing(async () => {
 			if (!(await confirm(`Revoke ${row.label}? It can no longer sync ${db} until a new invite admits it again.`, 'revoke'))) return;
-			ok(await syncAct(db, ['chain', 'revoke', row.endpoints[db]]));
+			ok(await syncAct(db, revokeArgv(row.endpoints[db])));
 		});
 
 	/** A purge previews first (da-ry11c): the confirm names the device and what goes. */
 	const purge = (label: string, endpoint: string) =>
 		doing(async () => {
-			const preview = JSON.parse(ok(await syncAct(db, ['chain', 'purge', endpoint, '--json'])).stdout);
+			const preview = JSON.parse(ok(await syncAct(db, purgeArgv(endpoint))).stdout);
 			if (!(await confirm(purgeWords(label, db, preview), 'purge', label))) return;
-			ok(await syncAct(db, ['chain', 'purge', endpoint, '--yes']));
+			ok(await syncAct(db, purgeArgv(endpoint, true)));
 		});
 
 	const addAdmin = (d: DbSync) =>
 		doing(async () => {
 			const label = await ask('Name the passkey', 'add', 'passkey');
 			if (!label) return;
-			ok(await syncAct(d.db, ['admin', 'add', await createPasskey(label)]));
+			ok(await syncAct(d.db, adminAddArgv(await createPasskey(label))));
 			// Remembered, so an approval card can say a key is this browser's.
 			const before = new Set((d.admins ?? []).map((a) => a.key));
-			const { admins } = JSON.parse(ok(await syncAct(d.db, ['admin', 'list', '--json'])).stdout) as { admins: Admin[] };
+			const { admins } = JSON.parse(ok(await syncAct(d.db, adminListArgv())).stdout) as { admins: Admin[] };
 			markOwn(admins.map((a) => a.key).filter((k) => !before.has(k)));
 		});
 
@@ -278,21 +289,21 @@
 			const last = d.admins?.length === 1;
 			const unlock = 'This unlocks the chain: any device can add, revoke or rename devices.';
 			if (last && !(await confirm(unlock, 'unlock'))) return;
-			ok(await syncAct(d.db, ['admin', 'remove', a.key, ...(last ? ['--allow-unlock'] : [])]));
+			ok(await syncAct(d.db, adminRemoveArgv(a.key, last)));
 		});
 
 	const ack = (db: string, n: Notice) =>
-		doing(async () => ok(await syncAct(db, ['chain', 'ack', n.kind === 'unlock' ? 'unlock' : n.subject])));
+		doing(async () => ok(await syncAct(db, ackArgv(n.kind === 'unlock' ? 'unlock' : n.subject))));
 
 	/** Leave the chain from any chain, for a fresh start (da-j8c4l). */
 	const leave = (d: DbSync) =>
 		doing(async () => {
 			const words = `Leave this sync chain with ${d.db}? Every entry is kept, this device’s own and those it received. It stops syncing with the chain’s other devices; adding a device after starts a new chain.`;
 			if (!(await confirm(words, 'leave'))) return;
-			ok(await syncAct(d.db, ['chain', 'leave']));
+			ok(await syncAct(d.db, leaveArgv()));
 		});
 
-	const pause = (d: DbSync) => doing(async () => ok(await syncAct(d.db, [d.paused ? 'resume' : 'pause'])));
+	const pause = (d: DbSync) => doing(async () => ok(await syncAct(d.db, pausedArgv(!d.paused))));
 
 	const approveHere = (c: { link: string; db?: string }) =>
 		doing(async () => {

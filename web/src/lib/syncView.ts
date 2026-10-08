@@ -1,6 +1,7 @@
 // The Sync widget's one reader of the CLI (da-x4t0a): every `datum sync`
-// the widget reads or runs goes through here, so a renamed command
-// (da-aam46's `members` → `chain list`) changes this file and no other.
+// the widget reads or runs goes through here, built in $lib/calls.ts, so a
+// renamed command (da-aam46's `members` → `chain list`) changes that file
+// and no other.
 //
 // `syncAct` runs an act (da-bjxts). In a locked chain the CLI stops at an
 // approve link, as it would at a terminal: the passkey approves the record
@@ -15,6 +16,7 @@
 // broadcast reachability ($lib/sync.ts `syncStates`) into clients × databases.
 
 import { writable } from 'svelte/store';
+import { approveArgv, canLeaveArgv, chainListArgv, newInviteArgv, qrArgv, syncStatusArgv } from './calls.js';
 import { cliError, run, type RunResult } from './run.js';
 import { approve, approveLink } from './passkey.js';
 import type { Invite, Reach, SyncState } from './sync.js';
@@ -147,16 +149,16 @@ export function joinWords(
 
 /** Whether `db` may leave its chain to join another: it holds nothing but its own data (da-h7pnc). */
 export async function canLeave(db: string): Promise<boolean> {
-	return (await run(['--db', db, 'sync', 'chain', 'leave', '--alone', '--dry-run'])).code === 0;
+	return (await run(['--db', db, ...canLeaveArgv()])).code === 0;
 }
 
 /** Every database's chain, read through the CLI. */
 export function readSync(dbs: string[]): Promise<DbSync[]> {
 	return Promise.all(
 		dbs.map(async (db): Promise<DbSync> => {
-			const members = await run(['--db', db, 'sync', 'chain', 'list', '--json']);
+			const members = await run(['--db', db, ...chainListArgv()]);
 			if (members.code !== 0) return { db, chain: null, members: [] };
-			const status = await run(['--db', db, 'sync', 'status', '--json']);
+			const status = await run(['--db', db, ...syncStatusArgv()]);
 			if (status.code !== 0) return { db, chain: null, members: [] };
 			const s = JSON.parse(status.stdout);
 			const { admins } = JSON.parse(members.stdout);
@@ -301,31 +303,32 @@ export function purgeWords(label: string, db: string, p: PurgePreview): string {
 }
 
 /**
- * `datum --db <db> sync <argv>`, approved with a passkey when the chain is
- * locked: the stdout of both runs, `new-invite`'s secret being the first's.
+ * `datum --db <db> <argv>`, a `sync` act, approved with a passkey when the
+ * chain is locked: the stdout of both runs, `new-invite`'s secret being the
+ * first's.
  */
 export async function syncAct(db: string, argv: string[]): Promise<RunResult> {
-	const r = await run(['--db', db, 'sync', ...argv], '');
+	const r = await run(['--db', db, ...argv], '');
 	const link = r.code !== 0 && approveLink(r.stderr);
 	if (!link) return r;
-	const done = await run(['--db', db, 'sync', 'approve', link], await approve(link));
+	const done = await run(['--db', db, ...approveArgv(link)], await approve(link));
 	return { ...done, stdout: r.stdout + done.stdout };
 }
 
 /** Write `link`'s record into `db`, signed with `code`. */
 export const approveInto = (db: string, link: string, code: string): Promise<RunResult> =>
-	run(['--db', db, 'sync', 'approve', link], code);
+	run(['--db', db, ...approveArgv(link)], code);
 
 /** A new invite on `db` (starting an open chain on a db in none): its secret, and when it expires. */
 export async function newInvite(db: string): Promise<Invite> {
-	const r = await syncAct(db, ['new-invite']);
+	const r = await syncAct(db, newInviteArgv());
 	if (r.code !== 0) throw cliError(r.stderr);
 	return JSON.parse(r.stdout.split('\n')[0]);
 }
 
 /** `text` as a QR code, SVG, drawn by the CLI. */
 export async function qr(text: string): Promise<string> {
-	return (await run(['sync', 'qr', text])).stdout;
+	return (await run(qrArgv(text))).stdout;
 }
 
 const OWN_KEYS = 'datum.syncPasskeys';

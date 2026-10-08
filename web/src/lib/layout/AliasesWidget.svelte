@@ -10,6 +10,7 @@
 	import { browser } from '$app/environment';
 	import Pane from '$lib/Pane.svelte';
 	import { run } from '$lib/run.js';
+	import { aliasesArgv } from '$lib/calls.js';
 	import { fields } from './engine.js';
 
 	export let epoch = 0;
@@ -31,7 +32,7 @@
 
 	async function list(_epoch: number): Promise<void> {
 		const at = ++started;
-		const result = await run(['alias', 'list', '--json']);
+		const result = await run(aliasesArgv());
 		if (at < shown || result.code !== 0) return;
 		shown = at;
 		try {

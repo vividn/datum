@@ -22,6 +22,7 @@
 
 import { writable } from 'svelte/store';
 import { saveFile } from './backup.js';
+import { backupArgv, dbPurgeArgv, restorePreviewArgv } from './calls.js';
 import { confirm } from './confirm.js';
 import { fileArgv } from './fileargv.js';
 import { dbOf, run, type CommandRunner, type RunResult } from './run.js';
@@ -143,7 +144,7 @@ export function restore(argv: string[]): Promise<RunResult> {
 		if (!file) return nothing(argv, 'no file chosen — nothing ran');
 		const backup = await file.text();
 		for (let moved = ''; ; moved = '⚠ The database changed since it was counted. ') {
-			const seen = await feed([...argv, '--dry-run', '--json'], backup);
+			const seen = await feed(restorePreviewArgv(argv), backup);
 			if (seen.code !== 0) return seen;
 			const { would_delete, would_insert, would_update, warnings, fingerprint } = JSON.parse(seen.stdout);
 			const pin = fingerprint ? ['--if-unchanged', fingerprint] : [];
@@ -186,7 +187,7 @@ function hard(argv: string[]): Promise<RunResult> {
 		const backup = await file.text();
 		const db = dbOf(argv);
 		for (let moved = ''; ; moved = '⚠ The database changed since it was counted. ') {
-			const seen = await feed([...argv, '--dry-run', '--json'], backup);
+			const seen = await feed(restorePreviewArgv(argv), backup);
 			if (seen.code !== 0) return seen;
 			const { would_insert, dropped, warnings, fingerprint } = JSON.parse(seen.stdout);
 			// An empty file is a backup of nothing, and replaces nothing: no fingerprint.
@@ -230,7 +231,7 @@ export function kit(argv: string[]): Promise<RunResult> {
 }
 
 /** `db backup -`, handed to the browser as a download; the transcript gets the header. */
-export async function download(name?: string, argv = ['db', 'backup', '-']): Promise<RunResult> {
+export async function download(name?: string, argv = backupArgv()): Promise<RunResult> {
 	const result = await run(argv);
 	if (result.code !== 0) return result;
 	// `sv` writes a date as YYYY-MM-DD, in the reader's own day.
@@ -246,7 +247,7 @@ export async function download(name?: string, argv = ['db', 'backup', '-']): Pro
  * first, inside the press: an `await` before it spends the activation.
  */
 export async function saveBackup(): Promise<RunResult> {
-	const argv = ['db', 'backup', '-'];
+	const argv = backupArgv();
 	const name = `${dbOf(argv)}-${new Date().toLocaleDateString('sv')}.jsonl`;
 	const picker = (window as { showSaveFilePicker?: (o: { suggestedName: string }) => Promise<FileSystemFileHandle> })
 		.showSaveFilePicker;
@@ -275,10 +276,10 @@ export async function purge(flags: string[] = []): Promise<RunResult> {
 	// to type the name of a database that SURVIVED while the one they were
 	// standing in was destroyed. `dbOf` reads the argv first, so a typed
 	// `db purge --db x` names `x`.
-	const db = dbOf(['db', 'purge', '--yes', ...flags]);
+	const db = dbOf(dbPurgeArgv(flags));
 	if (!(await confirm(`This will destroy ALL data in ${db}.`, 'purge', db))) {
 		// The CLI's own words for a mismatch at its prompt.
 		return { argv: ['db', 'purge'], code: 1, stdout: '', stderr: `db purge: aborted (input did not match ${db})` };
 	}
-	return run(['db', 'purge', '--yes', ...flags]);
+	return run(dbPurgeArgv(flags));
 }

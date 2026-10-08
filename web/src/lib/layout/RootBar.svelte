@@ -118,6 +118,7 @@
 	import { tick } from 'svelte';
 	import { currentDb } from '$lib/database.js';
 	import { run } from '$lib/run.js';
+	import { pausedArgv } from '$lib/calls.js';
 	import { syncStates } from '$lib/sync.js';
 	import Beta from '$lib/Beta.svelte';
 	import { act } from '$lib/act.js';
@@ -423,7 +424,7 @@
 	<!-- Sync paused (da-wlbyx) is loud: vividn calls it risky. Every tab hears
 	     it from the database's sync leader, and a tap resumes. -->
 	{#if paused}
-		<button type="button" class="control paused" title="sync paused since {paused} — tap to resume" on:click={() => run(['sync', 'resume'])}
+		<button type="button" class="control paused" title="sync paused since {paused} — tap to resume" on:click={() => run(pausedArgv(false))}
 			>sync paused</button
 		>
 	{/if}

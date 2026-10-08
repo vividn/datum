@@ -21,7 +21,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { inlineSvg } from './hover.js';
-	import { bandArgv } from './panes.js';
+	import { bandArgv, fieldsArgv, lastDotsArgv } from './calls.js';
 	import { run } from './run.js';
 	import type { Place } from './track.js';
 
@@ -56,7 +56,7 @@
 
 	/** The day of the field's latest dot, `YYYY-MM-DD` as its own zone reads it. */
 	async function lastDot(): Promise<string | undefined> {
-		const r = await run(['tail', field, '-n', '50', '--json']);
+		const r = await run(lastDotsArgv(field));
 		if (r.code !== 0) return undefined;
 		const rows = JSON.parse(r.stdout).rows as { verb: string; time: string | null }[];
 		return rows.findLast((row) => row.verb === 'point')?.time?.slice(0, 10);
@@ -64,7 +64,7 @@
 
 	onMount(async () => {
 		const argv = bandArgv(Math.floor(band.clientWidth), H);
-		let [picture, listing] = await Promise.all([run(argv), run(['fields', '--json'])]);
+		let [picture, listing] = await Promise.all([run(argv), run(fieldsArgv())]);
 		if (listing.code === 0) {
 			lanes = Object.fromEntries(
 				(JSON.parse(listing.stdout) as ({ field: string } & Lane)[]).map((f) => [f.field, f])

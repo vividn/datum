@@ -19,6 +19,7 @@
 	import SpecModal from '$lib/SpecModal.svelte';
 	import { answerSpec } from '$lib/specModal.js';
 	import { run } from '$lib/run.js';
+	import { specShowArgv } from '$lib/calls.js';
 	import type { Spec } from '$lib/track.js';
 	import { fields, press } from './engine.js';
 	import { leavePlace } from './shell.js';
@@ -35,7 +36,7 @@
 	$: if (browser && field) void load(field);
 
 	async function load(name: string): Promise<void> {
-		const shown = await run(['spec', 'show', name]);
+		const shown = await run(specShowArgv(name));
 		if (name !== field) return;
 		try {
 			spec = shown.code === 0 ? JSON.parse(shown.stdout) : null;

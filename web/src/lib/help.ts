@@ -36,6 +36,7 @@ import { get, writable } from 'svelte/store';
 import { pills, spent, type Pill } from './bar.js';
 import { KINDS, titleOf } from './layout/registry.js';
 import { openPlace } from './layout/shell.js';
+import { helpArgv } from './calls.js';
 import { run } from './run.js';
 
 export const helping = writable(false);
@@ -81,7 +82,7 @@ async function explain(target: Element | null): Promise<void> {
 	if (flag) return show(`datum ${flag.dataset.flag}`, flag.dataset.help ?? '');
 	if (!command && kind && KINDS[kind]) return show(titleOf(kind), KINDS[kind].help);
 	if (!command && helped) return show(helped.title, helped.dataset.help ?? '');
-	const argv = command && command !== 'help' ? ['help', ...command.split(' ')] : ['help'];
+	const argv = helpArgv(command);
 	const { stdout, stderr } = await run(argv);
 	show(`datum ${argv.join(' ')}`, stdout || stderr);
 }

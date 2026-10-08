@@ -43,6 +43,7 @@
 	import { argumentsOf, withFlag } from '$lib/commands.js';
 	import { openSpec } from '$lib/specModal.js';
 	import { run } from '$lib/run.js';
+	import { redoArgv } from '$lib/calls.js';
 	import { withPills } from '$lib/selection.js';
 	import { fields, grammar, pressWithPills, ready } from './engine.js';
 
@@ -60,7 +61,7 @@
 		if (mine === asked) redoable = code === 0;
 	}
 
-	$: if ($ready) void ask(withPills($grammar, ['redo', '--dry-run'], $pills).argv, epoch);
+	$: if ($ready) void ask(withPills($grammar, redoArgv(), $pills).argv, epoch);
 
 	function runNow(argv: string[]): void {
 		// A thumb that tapped the command before its pills were all loaded
