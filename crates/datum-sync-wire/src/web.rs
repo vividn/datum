@@ -23,9 +23,11 @@ fn text(v: &JsValue, key: &str) -> String {
 }
 
 /// The CLI, as the worker hands it over: `run(argv, stdin)` resolves to a
-/// process's `{code, stdout, stderr}`.
+/// process's `{code, stdout, stderr}`; `progress(done, of)` hears an
+/// apply's.
 struct Cli {
     run: Function,
+    progress: Function,
     label: String,
 }
 
@@ -128,6 +130,16 @@ impl Store for Cli {
         })
     }
 
+    fn yields(&self) -> bool {
+        true
+    }
+
+    fn progress(&self, done: usize, of: usize) {
+        let _ = self
+            .progress
+            .call2(&JsValue::NULL, &(done as u32).into(), &(of as u32).into());
+    }
+
     async fn verify(&self, peer: &str) -> Result<String> {
         Ok(self
             .run(&["sync", "pipe", "verify", "--peer", peer], None)
@@ -224,6 +236,7 @@ impl Node {
         relay: Option<String>,
         label: String,
         run: Function,
+        progress: Function,
     ) -> Result<Node, JsError> {
         let bytes: Vec<u8> = (0..key.len())
             .step_by(2)
@@ -235,7 +248,11 @@ impl Node {
         let ep = bind(secret, &net).await.map_err(js)?;
         Ok(Node {
             ep,
-            cli: Cli { run, label },
+            cli: Cli {
+                run,
+                progress,
+                label,
+            },
         })
     }
 

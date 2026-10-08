@@ -338,6 +338,9 @@ CREATE TABLE IF NOT EXISTS ops (
 CREATE INDEX IF NOT EXISTS ops_hid ON ops(hid);
 CREATE INDEX IF NOT EXISTS ops_slug ON ops(slug);
 CREATE INDEX IF NOT EXISTS ops_hlc ON ops(hlc);
+-- The held ops (`applied = 0`), without reading every op's body. Partial,
+-- so that no query for applied ops is drawn onto it (da-89ujs).
+CREATE INDEX IF NOT EXISTS ops_held ON ops(endpoint, seq) WHERE applied = 0;
 
 -- This copy's endpoint: its Ed25519 key, which signs its ops. LOCAL, never
 -- synced, one row. `client_id` and `path` are the client and the file the

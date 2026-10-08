@@ -260,8 +260,8 @@ describe('the copies from the last visit', () => {
 
 /**
  * The page's database moved back a schema version, under the worker's own
- * lock, so the next command that opens it upgrades it: v54's own down
- * migration (`down_54_to_53_sync_peer_redeemed`) and its version stamp.
+ * lock, so the next command that opens it upgrades it: v55's own down
+ * migration (`down_55_to_54_ops_held`) and its version stamp.
  */
 async function previousSchema(page) {
 	const bytes = await page.evaluate(
@@ -279,8 +279,8 @@ async function previousSchema(page) {
 		await writeFile(path, Uint8Array.from(bytes));
 		const db = new DatabaseSync(path);
 		db.exec(`
-			ALTER TABLE sync_peers DROP COLUMN redeemed_at;
-			UPDATE _meta SET value = '53' WHERE key = 'schema_version';
+			DROP INDEX IF EXISTS ops_held;
+			UPDATE _meta SET value = '54' WHERE key = 'schema_version';
 		`);
 		db.close();
 		const older = [...(await readFile(path))];

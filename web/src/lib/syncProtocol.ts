@@ -45,4 +45,6 @@ export type SyncEvent =
 	| { run: number; argv: string[]; stdin?: string }
 	/** A session a peer dialed, which this endpoint served. */
 	| { served: string; report: SyncReport }
-	| { served: string; error: string };
+	| { served: string; error: string }
+	/** `done` of the `of` ops a session of `db`'s received are applied (da-89ujs). */
+	| { progress: string; done: number; of: number };

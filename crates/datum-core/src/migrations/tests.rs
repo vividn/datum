@@ -87,6 +87,7 @@ fn fresh_db_matches_schema_sql_shape() {
         "integrity_warnings_hid",
         "integrity_warnings_pending",
         "integrity_warnings_slug",
+        "ops_held",
         "ops_hid",
         "ops_hlc",
         "ops_slug",

@@ -606,8 +606,25 @@ fn vector_where(conn: &Connection, hid: Option<&str>) -> Result<BTreeMap<String,
             )?
             .query_map(params![h], pair)?
             .collect::<rusqlite::Result<_>>(),
+        // A skip scan of the primary key, endpoint to endpoint, each read
+        // back from its newest op to its newest applied one: a GROUP BY
+        // read every op's row for `applied`, the whole table, on every
+        // apply and every push (da-89ujs).
         None => conn
-            .prepare_cached("SELECT endpoint, MAX(seq) FROM ops WHERE applied > 0 GROUP BY endpoint")?
+            .prepare_cached(
+                "WITH RECURSIVE e(endpoint) AS (
+                     SELECT MIN(endpoint) FROM ops
+                     UNION ALL
+                     SELECT (SELECT MIN(endpoint) FROM ops WHERE endpoint > e.endpoint)
+                     FROM e WHERE e.endpoint IS NOT NULL
+                 )
+                 SELECT endpoint, head FROM (
+                     SELECT endpoint, (SELECT seq FROM ops o
+                                       WHERE o.endpoint = e.endpoint AND o.applied > 0
+                                       ORDER BY seq DESC LIMIT 1) AS head
+                     FROM e WHERE endpoint IS NOT NULL
+                 ) WHERE head IS NOT NULL",
+            )?
             .query_map([], pair)?
             .collect::<rusqlite::Result<_>>(),
     };

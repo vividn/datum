@@ -100,6 +100,28 @@ pub(super) fn m52_to_53_field_state_indexes(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// da-89ujs: `ops_held` indexes the held ops (`applied = 0`), which every
+/// apply asks for: without it the question read every op's body, the whole
+/// table, and a browser's join paid that once per chunk on a cold page
+/// cache. Partial, so that no query asking for applied ops can be drawn
+/// onto it: a full index on `applied` was, and `MAX(hlc) … WHERE applied =
+/// 1` walked every op on every write.
+pub(super) fn m54_to_55_ops_held(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "ops")? {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS ops_held ON ops(endpoint, seq) WHERE applied = 0;",
+    )?;
+    Ok(())
+}
+
+/// Reverse v54→v55.
+pub(super) fn down_55_to_54_ops_held(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DROP INDEX IF EXISTS ops_held;")?;
+    Ok(())
+}
+
 /// Reverse v52→v53: the live index without `slug`, and no state indexes.
 pub(super) fn down_53_to_52_field_state_indexes(conn: &Connection) -> Result<()> {
     if !table_exists(conn, "entries")? {

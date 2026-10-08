@@ -153,7 +153,8 @@ export async function nativeCopy(relay) {
 	const self = {
 		run: (argv, stdin, more = {}) =>
 			new Promise((resolve) => {
-				const child = execFile(...tie(bin, argv), { env: { ...env, ...more }, encoding: 'utf8' }, (e, stdout, stderr) =>
+				// `maxBuffer`: execFile's 1 MiB cut a `tail --json` of thousands of rows short.
+				const child = execFile(...tie(bin, argv), { env: { ...env, ...more }, encoding: 'utf8', maxBuffer: 1 << 28 }, (e, stdout, stderr) =>
 					resolve({ code: e ? (e.code ?? 1) : 0, stdout: stdout.trim(), stderr: stderr.trim() })
 				);
 				// A command that exits before reading its stdin (most do: `count`,

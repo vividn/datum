@@ -51,7 +51,9 @@ async function answer(request: Exclude<SyncRequest, { ran: number }>): Promise<u
 	await ready;
 	if (request.op === 'about') return JSON.parse(about(request.ticket));
 	if (request.op === 'start' && !nodes.has(request.db)) {
-		const binding = Node.bind(request.key, request.relay, request.label, runner(request.db));
+		const db = request.db;
+		const progress = (done: number, of: number) => ctx.postMessage({ progress: db, done, of });
+		const binding = Node.bind(request.key, request.relay, request.label, runner(db), progress);
 		nodes.set(request.db, binding);
 		binding.then((node) => serve(request.db, node), () => nodes.delete(request.db));
 	}

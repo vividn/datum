@@ -22,18 +22,24 @@
 //! - **Progress.** A session fails only when no frame has moved either way
 //!   for [`idle`] (da-039jx). A long apply is chunked, and between chunks
 //!   the side applying sends a [`BUSY`] frame, which a reader skips: a
-//!   first sync of 32k ops takes minutes and is not a dead peer.
+//!   first sync of 32k ops takes minutes and is not a dead peer. A store
+//!   whose apply runs elsewhere ([`Store::yields`], a browser's CLI) is sent
+//!   BUSYs while it runs too, and its chunks double (da-89ujs): each is a
+//!   process that commits, and a commit rewrites every index page the chunk
+//!   touched, however few ops it held.
 
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::pin::pin;
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use data_encoding::BASE32_NOPAD;
+use futures_util::future::{select, Either};
 use iroh::endpoint::{presets, Incoming, RecvStream, SendStream};
 pub use iroh::{Endpoint, EndpointAddr};
 use iroh::{RelayMode, SecretKey, Watcher};
-use n0_future::time::timeout;
+use n0_future::time::{sleep, timeout};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -45,8 +51,11 @@ const MAX_FRAME: usize = 64 << 20;
 const MAX_HELLO: usize = 64 << 10;
 /// A session in which both sides keep writing still ends.
 const MAX_ROUNDS: usize = 16;
-/// Ops per apply: about a second at 13 ms an op (da-kg95e).
+/// Ops per apply — the first, where a store [`yields`](Store::yields).
 const CHUNK: usize = 64;
+/// The most ops a doubling chunk grows to: one CLI process applying 8,192
+/// ops peaked at 108 MiB, and a command typed meanwhile waits for it.
+const MAX_CHUNK: usize = 8192;
 /// datum-core's `peers::COPY`, which this crate cannot see.
 const COPY: &str =
     "this peer is a copy of this database (same endpoint key); run `datum sync chain rekey` on one of them";
@@ -79,6 +88,13 @@ pub trait Store {
     /// it is a filtered reader, the lines pass (da-u81u1).
     async fn ops_since(&self, peer: &str, since: &Vector) -> Result<Vec<String>>;
     async fn apply(&self, ops: &[String]) -> Result<Applied>;
+    /// Whether [`apply`](Store::apply) awaits work done off this thread,
+    /// so that a session can send meanwhile: a browser's CLI process.
+    fn yields(&self) -> bool {
+        false
+    }
+    /// `done` of a session's `of` received ops are applied.
+    fn progress(&self, _done: usize, _of: usize) {}
     /// The state hash, over what a session with `peer` shares.
     async fn verify(&self, peer: &str) -> Result<String>;
     /// `peer` introduced itself as `label` at `addr`: record it, and when
@@ -315,7 +331,9 @@ impl std::fmt::Display for Lost {
 
 impl std::error::Error for Lost {}
 
-/// Apply `ops` a [`CHUNK`] at a time, and between chunks send a [`BUSY`].
+/// Apply `ops` in chunks, and between chunks send a [`BUSY`]: a [`CHUNK`]
+/// at a time, or where the store [`yields`](Store::yields), twice the last
+/// up to [`MAX_CHUNK`], with a BUSY every quarter of [`idle`] while each runs.
 async fn apply(
     store: &impl Store,
     s: &mut SendStream,
@@ -324,11 +342,30 @@ async fn apply(
 ) -> Result<()> {
     // Test knob: the keepalives off (the mutation control).
     let keepalive = env::<u8>("DATUM_SYNC_TEST_KEEPALIVE") != Some(0);
-    for (i, chunk) in ops.chunks(CHUNK).enumerate() {
-        if i > 0 && keepalive {
+    let (mut done, mut size) = (0, CHUNK);
+    while done < ops.len() {
+        if done > 0 && keepalive {
             put(s, BUSY).await?;
         }
-        let applied = store.apply(chunk).await?;
+        let chunk = &ops[done..ops.len().min(done + size)];
+        let applied = match store.yields() {
+            false => store.apply(chunk).await?,
+            true => {
+                size = (size * 2).min(MAX_CHUNK);
+                // A BUSY is sent outside the race: one dropped half-sent
+                // would cut the stream's framing.
+                let mut work = pin!(store.apply(chunk));
+                loop {
+                    match select(work.as_mut(), pin!(sleep(idle() / 4))).await {
+                        Either::Left((applied, _)) => break applied?,
+                        Either::Right(_) if keepalive => put(s, BUSY).await?,
+                        Either::Right(_) => {}
+                    }
+                }
+            }
+        };
+        done += chunk.len();
+        store.progress(done, ops.len());
         for why in &applied.refused {
             eprintln!("refused from {}: {why}", rep.label);
         }

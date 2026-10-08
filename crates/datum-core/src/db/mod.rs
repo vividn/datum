@@ -156,6 +156,13 @@ impl Db {
     /// real profile and 90-280 ms in a private window, where every call is
     /// an IPC.
     ///
+    /// And a sixth, `cache_size` of 64 MiB rather than SQLite's 2 MiB
+    /// (da-89ujs). A process's cache is gone when it exits, and a write
+    /// bigger than the cache read its pages again and spilled them early,
+    /// each page an OPFS call: a 2k-op sync apply read 7,190 pages and wrote
+    /// 2,410, against 152 and 1,740 with this. The cache grows only as pages
+    /// are read; a small command stays small.
+    ///
     /// Every transaction opens IMMEDIATE (da-5pulr): it takes the write lock
     /// at `BEGIN`, where `busy_timeout` waits for it. A DEFERRED one takes it
     /// at its first write, and if it read first while another connection
@@ -172,7 +179,9 @@ impl Db {
              PRAGMA synchronous = NORMAL;",
         )?;
         #[cfg(target_family = "wasm")]
-        conn.execute_batch("PRAGMA temp_store = MEMORY;\nPRAGMA locking_mode = EXCLUSIVE;")?;
+        conn.execute_batch(
+            "PRAGMA temp_store = MEMORY;\nPRAGMA locking_mode = EXCLUSIVE;\nPRAGMA cache_size = -65536;",
+        )?;
         Ok(())
     }
 

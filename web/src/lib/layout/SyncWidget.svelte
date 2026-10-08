@@ -189,6 +189,15 @@
 		if (ticket === $joining) join = { ticket, db, ...said };
 	}
 
+	/**
+	 * How far a join is: its apply's `done` of `of` ops, once the ops are in.
+	 * Each step holds the database, so a command typed meanwhile waits for it.
+	 */
+	const joinProgress = (a?: SyncState['applying']) =>
+		a
+			? `Joining: ${a.done.toLocaleString()} of ${a.of.toLocaleString()} ops applied… A command typed meanwhile waits for the step under way.`
+			: 'Joining…';
+
 	const joinHere = (j: NonNullable<typeof join>) =>
 		doing(async () => {
 			const r = await syncConnect(j.db, j.ticket);
@@ -347,6 +356,9 @@
 					</ul>
 					{#if join.done}
 						<p class="done">{join.done}</p>
+					{:else if busy}
+						<!-- A first join of years of history takes a while: it says how far it is (da-89ujs). -->
+						<p class="quiet joining" role="status">{joinProgress($syncStates[join.db]?.applying)}</p>
 					{:else if join.refused}
 						<p class="failure">{join.refused}</p>
 					{/if}

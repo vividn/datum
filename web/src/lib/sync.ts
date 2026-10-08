@@ -75,6 +75,8 @@ export interface SyncState {
 	endpoint?: string;
 	/** When its sync was paused, while it is. */
 	paused?: string;
+	/** How far a session's apply is, while one runs (da-89ujs): `done` of `of` ops. */
+	applying?: { done: number; of: number };
 	peers: Record<string, PeerState>;
 }
 
@@ -131,6 +133,8 @@ function syncWorker(): Worker {
 			);
 		} else if ('served' in data) {
 			led.get(data.served)?.served(data);
+		} else if ('progress' in data) {
+			led.get(data.progress)?.progress(data.done < data.of ? data : undefined);
 		} else {
 			pending.get(data.id)?.(data);
 			pending.delete(data.id);
@@ -195,6 +199,7 @@ class Leader {
 	again = new Set<string>();
 	seen = new Map<string, number>();
 	errors = new Map<string, string>();
+	applying?: { done: number; of: number };
 	/** A push reading the vector, and a write since it began. */
 	pushing = false;
 	pushAgain = false;
@@ -275,9 +280,16 @@ class Leader {
 			this.errors.set(p.endpoint, (e as Error).message);
 		} finally {
 			this.busy.delete(p.endpoint);
+			this.applying = undefined;
 			this.post();
 			if (this.again.delete(p.endpoint)) void this.push();
 		}
+	}
+
+	/** A session's apply moved on; undefined once it is over. */
+	progress(applying?: { done: number; of: number }): void {
+		this.applying = applying && { done: applying.done, of: applying.of };
+		this.post();
 	}
 
 	/** A session that ended well, dialed or served. */
@@ -289,7 +301,11 @@ class Leader {
 			announceHere([this.db]);
 			void this.push().catch(() => {});
 		}
-		if (report.added || this.joining) void this.refresh();
+		// A peer this leader does not list yet: admitted in a session that was
+		// cut short (da-idw54), which the leader hears of only once that dead
+		// connection times out, ~35 s on.
+		const unknown = !this.peers.some((p) => p.endpoint === id);
+		if (report.added || this.joining || unknown) void this.refresh();
 	}
 
 	served(e: Extract<SyncEvent, { served: string }>): void {
@@ -297,13 +313,14 @@ class Leader {
 		// One that failed may have admitted its peer all the same: a join
 		// whose first sync was cut short (da-idw54).
 		else void this.refresh().catch(() => {});
+		this.applying = undefined;
 		this.post();
 	}
 
 	async call(c: Call): Promise<unknown> {
 		if (c.op === 'connect') {
 			await this.start();
-			const report = await ask<SyncReport>(this.db, { op: 'connect', ticket: c.ticket });
+			const report = await ask<SyncReport>(this.db, { op: 'connect', ticket: c.ticket }).finally(() => this.progress());
 			this.done(report.id, report);
 			// Admitted to a chain, it says what it is (`datum sync chain connect`).
 			await this.refresh();
@@ -335,7 +352,7 @@ class Leader {
 					: 'offline';
 			peers[p.endpoint] = { label: p.label, reach, lastSeen, error: this.errors.get(p.endpoint) };
 		}
-		return { db: this.db, endpoint: this.endpoint, paused: this.paused, peers };
+		return { db: this.db, endpoint: this.endpoint, paused: this.paused, applying: this.applying, peers };
 	}
 
 	post(): void {
