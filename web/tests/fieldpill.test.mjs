@@ -830,7 +830,7 @@ describe('`spec` under the pill', () => {
 
 			// Dismissed, it runs nothing, and the pill stays spent: it was spent
 			// at the tap, which is the choice (review 3754).
-			await page.locator(`${MODAL} button.cancel`).click();
+			await page.locator(`${MODAL} button.close`).click();
 			await page.locator(MODAL).waitFor({ state: 'detached' });
 			await app.idle();
 			assert.equal(await fieldPill(page).count(), 0, 'a dismiss put the pill back');

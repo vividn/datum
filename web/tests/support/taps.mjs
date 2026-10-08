@@ -199,9 +199,7 @@ async function reset(app, line) {
  * picker is the one Playwright does not report, so a stand-in takes its
  * place: it says it opened, and is cancelled, as a reader may.
  *
- * Asked with `wait`, it gives a modal that long to turn up — every tap that
- * SAYS it opens is, a `+` face as much as a `›`: Track + opens a place
- * (da-fu29p). `idle()` is no
+ * Asked with `wait`, it gives a modal that long to turn up. `idle()` is no
  * command in flight at one instant, and a place opened as a tab lands at
  * the end of a slide: when commands took hundreds of ms in a test's private
  * profile they covered the slide, and once they did not the slide was read
@@ -267,7 +265,7 @@ async function tap(app, key, line, within) {
 	// A press dispatches, and the run starts a frame or two behind it.
 	await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 	await app.idle();
-	const modal = await opened(found.kind === 'open' ? 2000 : 0);
+	const modal = await opened(found.chevron ? 2000 : 0);
 	const ran = await page.evaluate(() => window.datum.bar.last() !== window.__lastRun);
 	// `reset` left the counter at `seeded`.
 	const wrote = (await writes(app)) !== app.seeded;
@@ -424,7 +422,7 @@ async function press(app, key, inLayer) {
 	await page.locator('[data-tap]').click();
 	await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 	await app.idle();
-	found.modal = await modal(found.kind === 'open' ? 2000 : 0);
+	found.modal = await modal(found.chevron ? 2000 : 0);
 	const opened = await page.evaluate((sel) => {
 		const fresh = [...document.querySelectorAll(sel)].filter((l) => !('under' in l.dataset));
 		if (fresh.length === 0) return false;

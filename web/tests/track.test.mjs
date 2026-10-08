@@ -1,11 +1,10 @@
-// The field form: the web's «which verb?» (da-94q1), and a field's spec.
+// The Track modal: the web's «which verb?» (da-94q1).
 //
 // A field cannot be born verbless (da-c8mh), so declaring one is a
-// question with four answers, and this is where the web asks it: the form
-// of the field widget (da-fu29p), which opens as a place — a modal on a
-// desktop — with a pictogram per verb. vividn, 2026-09-15: «have nice
-// pictograms for each of the verbs». What a newcomer meets there — the
-// sentence, the examples, the chips — is `fieldwidget.test.mjs`'s.
+// question with four answers, and this is where the web asks it. The old
+// form was a `<select>` hanging off the widget bar; it is a `<dialog>` now,
+// with a pictogram per verb — vividn, 2026-09-15: «let's make it a modal, and
+// have nice pictograms for each of the verbs».
 //
 // The claim that rots if nobody watches it is the first one: the four
 // glyphs are the CLI's, not the web's. `track_action_label` in
@@ -38,16 +37,10 @@ async function actionWord(app, field) {
 	return stripAnsi(JSON.parse(stdout).docs[0].action).trim();
 }
 
-/** Open the field widget from the widget bar's (+), on a new field, and wait for its form. */
+/** Open the modal from the widget bar's (+) and wait for it. */
 async function openIt(page) {
 	await page.locator('.bar [data-track]').click();
 	await page.locator(MODAL).waitFor();
-}
-
-/** Leave the place a new field's Save stays in, on the field it made. */
-async function leave(page) {
-	await cancelSpec(page);
-	await page.locator(MODAL).waitFor({ state: 'detached' });
 }
 
 /** Fill the name box and choose a verb, as a person does. */
@@ -56,12 +49,11 @@ async function fill(page, field, verb) {
 	if (verb) await page.locator(`${MODAL} button[data-verb="${verb}"]`).click();
 }
 
-/** Add one state row per name: on a spec's States tab, or under a new switch field's kind. */
+/** On the States tab, add one row per name. */
 async function addStates(page, names) {
-	const tab = page.locator(`${MODAL} [data-tab="states"]`);
-	if ((await tab.count()) > 0) await tab.click();
+	await page.locator(`${MODAL} [data-tab="states"]`).click();
 	for (const name of names) {
-		await page.locator(`${MODAL} .states + button.add`).click();
+		await page.locator(`${MODAL} button.add`).click();
 		await page.locator(`${MODAL} .state input.name`).last().fill(name);
 	}
 }
@@ -245,18 +237,6 @@ describe('the argv it composes', () => {
 		assert.equal(set.icon, '<svg viewBox="0 0 1 1"/>');
 	});
 
-	// da-fu29p: where a line's leftover words go rides on the `track` too,
-	// and an edit sets it, clears it — the key left out — or carries it.
-	test('a remainder key is `-R KEY` on the track, and set, cleared or carried on an edit', () => {
-		assert.deepEqual(trackArgv('emotion', 'occur', [], '', [], ' emotions ').slice(-2), ['-R', 'emotions']);
-		assert.deepEqual(trackArgv('emotion', 'occur', [], '', [], ' '), ['track', 'emotion', '--verb', 'occur']);
-		const spec = { field: 'emotion', verb: 'occur', color: null, description: null, allowed_states: null, state_colors: {}, remainder: 'emotions' };
-		const edit = { verb: 'occur', color: '', description: '', states: [] };
-		assert.equal(editedSpec(spec, edit).remainder, 'emotions');
-		assert.equal(editedSpec(spec, { ...edit, remainder: ' words ' }).remainder, 'words');
-		assert.equal('remainder' in editedSpec(spec, { ...edit, remainder: '' }), false);
-	});
-
 	test('the refusal is read for the field it names, and nothing else is', () => {
 		const said = (stderr, code = 1) => ({ argv: [], code, stdout: '', stderr });
 		assert.equal(
@@ -297,27 +277,28 @@ describe('in the app', () => {
 		}, { query: 'repl' });
 	});
 
-	test('the (+) opens the form: four pictograms once it is named, Save shut until a name and a verb', async () => {
+	test('the (+) opens the modal: four pictograms, Done shut until a name and a verb', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
+			const glyphs = await page.locator(`${MODAL} .verb .glyph`).allInnerTexts();
+			assert.deepEqual(glyphs.map((g) => g.trim()), VERBS.map((v) => v.glyph));
+			assert.deepEqual(
+				await page.locator(`${MODAL} .verb .name`).allInnerTexts(),
+				VERBS.map((v) => v.verb)
+			);
+
 			const commit = page.locator(`${MODAL} button.commit`);
 			assert.equal(await commit.isEnabled(), false, 'nothing named, nothing chosen');
 			await fill(page, 'mood', null);
 			assert.equal(await commit.isEnabled(), false, 'a name alone is not a field');
-			const glyphs = await page.locator(`${MODAL} .verb .glyph`).allInnerTexts();
-			assert.deepEqual(glyphs.map((g) => g.trim()), VERBS.map((v) => v.glyph));
-			// Named by what it does, with the CLI's word under it.
-			assert.deepEqual(await page.locator(`${MODAL} .verb .name`).allInnerTexts(), VERBS.map((v) => v.what));
-			assert.deepEqual(await page.locator(`${MODAL} .verb .what`).allInnerTexts(), VERBS.map((v) => v.verb));
-			await page.locator(`${MODAL} button[data-verb="occur"]`).click();
-			await fill(page, '', null);
+			await fill(page, '', 'occur');
 			assert.equal(await commit.isEnabled(), false, 'a verb alone is not a field');
 			await fill(page, 'mood', null);
 			assert.equal(await commit.isEnabled(), true);
 
-			// The states belong to the switch, and to nothing else.
-			assert.equal(await page.locator(`${MODAL} .states`).count(), 0);
+			// The States tab belongs to the switch, and to nothing else.
+			assert.equal(await page.locator(`${MODAL} [data-tab="states"]`).isEnabled(), false);
 			await page.locator(`${MODAL} button[data-verb="switch"]`).click();
 			await addStates(page, ['good', 'bad']);
 			assert.equal(
@@ -343,8 +324,7 @@ describe('in the app', () => {
 			assert.deepEqual(spec.allowed_states, ['good', 'bad']);
 
 			assert.equal(await actionWord(app, 'mood'), 'TRACK▞');
-			// And the widget stays, on the field it made (da-fu29p).
-			assert.equal((await page.locator(`${MODAL} h2`).innerText()).trim(), 'mood');
+			assert.equal(await page.locator(MODAL).count(), 0, 'the modal stayed open');
 		});
 	});
 
@@ -362,14 +342,14 @@ describe('in the app', () => {
 	});
 
 	// The door a filtered list's `+` comes in by (the commands widget): the
-	// verb is already chosen, so the form opens on it.
+	// verb is already chosen, so the modal opens on it.
 	test('a preset verb opens already chosen, and only that one', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			const { saved: ran } = await openSpec(page, '', 'occur');
+			const ran = page.evaluate(() => window.datum.track({ verb: 'occur' }));
 			await page.locator(MODAL).waitFor();
 			assert.deepEqual(
-				await page.locator(`${MODAL} .verb[aria-checked="true"] .what`).allInnerTexts(),
+				await page.locator(`${MODAL} .verb[aria-checked="true"] .name`).allInnerTexts(),
 				['occur']
 			);
 			await fill(page, 'coffee', null);
@@ -382,9 +362,9 @@ describe('in the app', () => {
 	});
 
 	// The CLI's own refusal is the third door: `track <field>` on a field
-	// with neither a spec nor a log comes back asking, and the form is the
-	// asking. What it saves replaces the refused command.
-	test('a bare `track` on a new field opens the form, with the field already in it', async () => {
+	// with neither a spec nor a log comes back asking, and the modal is the
+	// asking. What it answers with replaces the refused command.
+	test('a bare `track` on a new field opens the modal, with the field already in it', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			const typed = page.evaluate(() => window.datum.runLine('track sleep'));
@@ -403,7 +383,7 @@ describe('in the app', () => {
 			const { page } = app;
 			await app.submit('track run --verb occur');
 			// Drawn BEFORE it is taken away: a bar that has not got round to
-			// drawing `run` yet satisfies "no run button" too, and the form
+			// drawing `run` yet satisfies "no run button" too, and the modal
 			// would then open on an ignored list the widget had not seen.
 			await page.locator('.bar button[data-field="run"]').waitFor();
 			// A second between the three: the clock is held (da-ydao), and
@@ -434,9 +414,9 @@ describe('in the app', () => {
 		});
 	});
 
-	// da-ci85o: declaring is the spec's form on Basics, and it must stay as
-	// quick as the modal it absorbed — the (+), a pictogram, Save: three
-	// taps, the name typed into the box that already has the focus.
+	// da-ci85o: Track is the spec modal opened on Basics, and it must stay
+	// as quick as the modal it absorbed — the (+), a pictogram, Done:
+	// three taps, the name typed into the box that already has the focus.
 	test('declaring a field is three taps, as it was before the tabs', async () => {
 		await withApp(async (app) => { // a listener of its own, which `solo` would keep
 			const { page } = app;
@@ -453,7 +433,7 @@ describe('in the app', () => {
 		});
 	});
 
-	// The same form on a field that has a spec: everything it edits comes
+	// The same modal on a field that has a spec: everything it edits comes
 	// back in ONE `spec set`, and `spec show` then reads what was sent.
 	test('editing a spec writes one `spec set`, and the CLI reads back what it was sent', async () => {
 		await shared.solo(async (app) => {
@@ -464,7 +444,7 @@ describe('in the app', () => {
 			const { saved } = await openSpec(page, 'sleep');
 			await page.locator(MODAL).waitFor();
 			assert.equal((await page.locator(`${MODAL} h2`).innerText()).trim(), 'sleep');
-			assert.deepEqual(await page.locator(`${MODAL} .verb[aria-checked="true"] .what`).allInnerTexts(), ['start']);
+			assert.deepEqual(await page.locator(`${MODAL} .verb[aria-checked="true"] .name`).allInnerTexts(), ['start']);
 			assert.equal(await page.locator(`${MODAL} input.description`).inputValue(), 'night');
 
 			await page.locator(`${MODAL} button[data-verb="switch"]`).click();
@@ -595,7 +575,7 @@ describe('in the app', () => {
 				}
 			};
 			await openIt(page);
-			await fill(page, 'mood', 'switch');
+			await page.locator(`${MODAL} button[data-verb="switch"]`).click();
 			await noHex('track, basics');
 			await addStates(page, ['good']);
 			await noHex('track, states');
@@ -677,8 +657,8 @@ describe('in the app', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
-			await fill(page, 'coffee', 'occur');
 			assert.equal(await page.locator(`${MODAL} input.unit`).count(), 0, 'no unit on a new field');
+			await fill(page, 'coffee', 'occur');
 			await page.locator(`${MODAL} .basic-keys + button.add`).click();
 			const row = page.locator(`${MODAL} .basic-keys li`).last();
 			await row.locator('input.name').fill('cups');
@@ -695,10 +675,7 @@ describe('in the app', () => {
 			const shown = JSON.parse((await app.run(['spec', 'show', 'coffee'])).stdout);
 			assert.deepEqual(shown.subfields.cups, { required: false, value_type: 'any', in_slug: false, default: 2 });
 
-			// Saved, it is on Basics with its keys there, and still no unit; and so it opens again.
-			await page.locator(`${MODAL} h2`).waitFor();
-			assert.deepEqual(await page.locator(`${MODAL} .basic-keys input.name`).evaluateAll((els) => els.map((e) => e.value)), ['cups']);
-			await leave(page);
+			// A spec opens on Basics with its keys there, and still no unit.
 			const { saved: shut } = await openSpec(page, 'coffee');
 			await page.locator(MODAL).waitFor();
 			assert.equal(await page.locator(`${MODAL} input.unit`).count(), 0, 'no unit on a spec');
@@ -708,15 +685,11 @@ describe('in the app', () => {
 		});
 	});
 
-	// `track` carries no aliases, nor a key's type or slug, so a field being declared is Basics alone (da-fu29p).
-	test('the tabs are a spec\'s: a field being declared has none, and a saved one all five', async () => {
+	// `track` carries no aliases, nor a key's type or slug, so a field being declared has those tabs shut.
+	test('Keys and Aliases are a spec\'s tabs: declaring a field has them shut', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
-			await fill(page, 'coffee', 'occur');
-			assert.equal(await page.locator(`${MODAL} [role="tab"]`).count(), 0);
-			await page.locator(`${MODAL} button.commit`).click();
-			await page.locator(`${MODAL} h2`).waitFor();
 			assert.deepEqual(
 				(await page.locator(`${MODAL} [role="tab"]`).allInnerTexts()).map((t) => t.trim().toLowerCase()),
 				['basics', 'states', 'keys', 'aliases', 'placement']
@@ -731,6 +704,8 @@ describe('in the app', () => {
 				}).map((t) => t.textContent)
 			);
 			assert.deepEqual(cut, []);
+			// Nor is there a spec to place yet (da-btyvj).
+			for (const tab of ['keys', 'aliases', 'placement']) assert.ok(await page.locator(`${MODAL} [data-tab="${tab}"]`).isDisabled(), tab);
 			await page.keyboard.press('Escape');
 			await page.locator(MODAL).waitFor({ state: 'detached' });
 		});
@@ -1033,14 +1008,13 @@ describe('in the app', () => {
 	test(`every pictogram is a fingertip on a ${PHONE.width}x${PHONE.height} screen`, async () => {
 		await withApp(async ({ page }) => {
 			await openIt(page);
-			await fill(page, 'tea', null);
 			const box = await page.locator(MODAL).boundingBox();
 			const screen = await page.evaluate(() => ({
 				width: document.documentElement.clientWidth,
 				height: document.documentElement.clientHeight
 			}));
-			assert.ok(box.x >= 0 && box.x + box.width <= screen.width + 1, `the form is ${box.x}–${box.x + box.width} on a ${screen.width}px screen`);
-			assert.ok(box.y >= 0 && box.y + box.height <= screen.height + 1, 'the form is taller than the screen');
+			assert.ok(box.x >= 0 && box.x + box.width <= screen.width + 1, `the modal is ${box.x}–${box.x + box.width} on a ${screen.width}px screen`);
+			assert.ok(box.y >= 0 && box.y + box.height <= screen.height + 1, 'the modal is taller than the screen');
 			const verbs = page.locator(`${MODAL} .verb`);
 			assert.equal(await verbs.count(), VERBS.length);
 			for (let i = 0; i < VERBS.length; i++) {

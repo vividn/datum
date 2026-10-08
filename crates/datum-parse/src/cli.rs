@@ -1049,9 +1049,6 @@ pub struct TrackArgs {
     pub id_keys: Vec<String>,
     /// ...and a bare `KEY=VALUE` declares an assigned key.
     pub assign: Vec<String>,
-    /// `-R KEY` / `--remainder KEY`: where the words no slot takes go, as
-    /// `spec set --remainder` says it (da-fu29p); `''` clears it.
-    pub remainder: Option<String>,
 }
 
 #[derive(Debug)]

@@ -384,7 +384,7 @@ export function inkOver(hex: string): string {
  * The colour datum paints a name that has none stored — `md5_rgb` in
  * crates/datum-commands/src/render/colors.rs: the first three bytes of
  * `md5(name)`. A field falls back to its own name's, a state to the
- * STATE's name's (`state_rgb`), never to the field's. The field form
+ * STATE's name's (`state_rgb`), never to the field's. The spec modal
  * shows it on a swatch left at auto (da-jf6l2), and needs it for a name
  * still being typed, which no `fields --json` has listed yet.
  */

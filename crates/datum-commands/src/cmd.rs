@@ -568,7 +568,6 @@ mod tests {
             data_keys: vec![],
             id_keys: vec![],
             assign: vec![],
-            remainder: None,
         };
         crate::commands::track::track(track_args, &db).unwrap();
 
@@ -617,7 +616,6 @@ mod tests {
                 data_keys: vec![],
                 id_keys: vec![],
                 assign: vec![],
-                remainder: None,
             },
             &db,
         )

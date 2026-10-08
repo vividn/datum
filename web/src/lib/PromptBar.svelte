@@ -135,7 +135,7 @@
 	 * it taken with `preventDefault`.
 	 *   1. Help, armed — `help.ts` stops the key in the capture phase, so
 	 *      nothing below ever hears it;
-	 *   2. an open `<dialog>` (Confirm, Ask, Chooser, a
+	 *   2. an open `<dialog>` (Confirm, Ask, Chooser, the spec modal, a
 	 *      Sheet) — the browser's own cancel, which marks nothing, so it is
 	 *      asked for by looking;
 	 *   3. an open menu (PaneMenu), the ⓘ note (Beta), a custom pane's

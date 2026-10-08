@@ -1,4 +1,4 @@
-// The field form's Placement tab (da-btyvj): drag a field's lane on
+// The spec modal's Placement tab (da-btyvj): drag a field's lane on
 // today's real dayview band, optionally tied to a neighbour.
 //
 // Every assertion reads what was WRITTEN — `spec show`, `fields --json`,

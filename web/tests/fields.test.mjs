@@ -33,7 +33,6 @@ import { defaultColor, inkOver, lookOf, pressArgv, requiredKeys, shapeFor, butto
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, GREEN, ORANGE, PURPLE, type, untilFieldStyle } from './support/fields.mjs';
 import { listed, rowsOf } from './support/rows.mjs';
-import { SPEC } from './support/spec.mjs';
 
 const spec = (field, rest = {}) => ({ field, ...rest });
 
@@ -253,7 +252,7 @@ describe('the logic', () => {
 		assert.deepEqual(shapeFor(undefined), { kind: 'point' });
 	});
 
-	// What the (+) declares a field WITH is the field form's (da-94q1):
+	// What the (+) declares a field WITH is the Track modal's (da-94q1):
 	// `trackArgv` in $lib/track.ts, held to the CLI in tests/track.test.mjs.
 });
 
@@ -360,7 +359,7 @@ describe('in the app', () => {
 			// says one beat EARLIER, before `spec set run` lands — the store
 			// catches up a refresh behind the echo `type` waits for — so
 			// asserting it without first seeing `run` appear passes on the
-			// wrong state, and the field widget then opens on an ignored list
+			// wrong state, and the Track modal then opens on an ignored list
 			// that has not heard of `run` either.
 			await page.locator('.bar button[data-field="run"]').waitFor();
 			await type(page, 'ignore run');
@@ -373,7 +372,7 @@ describe('in the app', () => {
 			// of the ignore would share its slug.
 			await app.clock.forward(1000);
 			await page.locator('.bar [data-track]').click();
-			await page.locator(`${SPEC} [data-ignored="run"]`).click();
+			await page.locator('dialog.spec [data-ignored="run"]').click();
 			await page.locator('.bar button[data-field="run"]').waitFor();
 			assert.equal((await app.echoes()).at(-1), 'track run');
 			assert.deepEqual(await drawn(), ['BUTTON:run', 'BUTTON:tea', 'BUTTON:walk']);

@@ -15,15 +15,13 @@
 	is a tap is focused without a phone's keyboard (`next` in
 	$lib/commands.ts, da-k34p).
 
-	`track` opens the field widget on a new field (da-fu29p), and `track`
-	or `spec` with a FIELD pill loaded opens it on that field at once
-	(da-ybai9, vividn: «no need for sub commands or pressing enter. It should
-	just work»): the pill named the subject, so it is spent at the TAP — not
-	on success, as a press spends its pills — because the bead asked that it
-	not sit in the bar once the widget is open; leaving it without a save
-	leaves it spent too. There is only ever one field pill (`setFieldPill`).
-	Without one, `spec ` goes on the line as ever. A HOLD is the bare
-	command and its flags, as on any button.
+	`spec` with a FIELD pill loaded opens the spec modal on that field at
+	once (da-ybai9, vividn: «no need for sub commands or pressing enter. It
+	should just work»): the pill named the subject, so it is spent at the
+	TAP — not on success, as a press spends its pills — because the bead
+	asked that it not sit in the bar once the modal is open; a dismissed
+	modal leaves it spent too. There is only ever one field pill
+	(`setFieldPill`). Without one, `spec ` goes on the line as ever.
 
 	`occur`/`start`/`end` under a FIELD pill run it (da-lxqqz); when the
 	field wants keys typed, the tap writes `occur <field> ` instead — never
@@ -42,8 +40,8 @@
 <script lang="ts">
 	import CommandsWidget from '$lib/CommandsWidget.svelte';
 	import { clearUnlockedPills, pills, prefill, text, type Pill } from '$lib/bar.js';
-	import { argumentsOf, opensField, withFlag } from '$lib/commands.js';
-	import { openField } from '$lib/fieldWidget.js';
+	import { argumentsOf, withFlag } from '$lib/commands.js';
+	import { openSpec } from '$lib/specModal.js';
 	import { run } from '$lib/run.js';
 	import { redoArgv } from '$lib/calls.js';
 	import { withPills } from '$lib/selection.js';
@@ -73,12 +71,12 @@
 		void pressWithPills(argv);
 	}
 
-	function fill({ name, line, keyboard, spend, held }: { name: string; line: string; keyboard: boolean; spend?: Pill[]; held?: boolean }): void {
+	function fill({ name, line, keyboard, spend }: { name: string; line: string; keyboard: boolean; spend?: Pill[] }): void {
 		const field = argumentsOf($pills).find((p) => p.kind === 'field');
-		if (!held && opensField(name, $pills)) {
-			if (field) clearUnlockedPills([field]);
-			// The widget runs its own save; what it answers is the console's.
-			void openField(field?.text);
+		if (name === 'spec' && field) {
+			clearUnlockedPills([field]);
+			// The place runs its own save; what it answers is the console's.
+			void openSpec(field.text);
 		} else {
 			if (spend) clearUnlockedPills(spend);
 			prefill.set({ line, keyboard });

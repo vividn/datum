@@ -22,7 +22,7 @@ import {
 	pendingVerb,
 	declaredVerb,
 	drills,
-	opensField,
+	opensSpec,
 	fieldVerb,
 	flagLine,
 	flagsOf,
@@ -286,10 +286,10 @@ describe('what a press under a verb runs', () => {
 		assert.equal(verbPress('add', record), null);
 	});
 
-	// The `+` at the end of a filtered list opens the field widget on the
+	// The `+` at the end of a filtered list opens the Track modal on the
 	// pending verb (da-94q1's four). `end` is not one a field can be BORN
 	// with, and a block you are ending is a block — so it declares `start`.
-	test('the `+` opens the field widget on the pending verb, with end declaring start', () => {
+	test('the `+` opens the Track modal on the pending verb, with end declaring start', () => {
 		assert.deepEqual(VERBS.map(declaredVerb), ['occur', 'start', 'start', 'switch', 'add']);
 	});
 });
@@ -404,14 +404,12 @@ describe('subcommands', () => {
 	]);
 	const field = { id: 'field', kind: 'field', text: 'mood' };
 
-	test('a command with subcommands drills; alternate forms do not; spec under a field opens the field widget instead, and so does track', () => {
+	test('a command with subcommands drills; alternate forms do not; spec under a field opens its spec instead', () => {
 		assert.deepEqual(['db', 'conflicts', 'spec', 'add', 'tail'].map((n) => drills(TREE, n, [])), [true, true, true, false, false]);
-		assert.equal(drills(TREE, 'spec', [field]), false, 'da-ybai9: the field widget, not the subcommands');
+		assert.equal(drills(TREE, 'spec', [field]), false, 'da-ybai9: the modal, not the subcommands');
 		assert.equal(drills(TREE, 'db', [field]), true);
 		// da-hbrfg: the spec is a place, so that tap OPENS, and draws the `›`.
-		assert.deepEqual([opensField('spec', [field]), opensField('spec', []), opensField('db', [field])], [true, false, false]);
-		// da-fu29p: `track` opens it with a field named or none, a new one.
-		assert.deepEqual([opensField('track', []), opensField('track', [field])], [true, true]);
+		assert.deepEqual([opensSpec('spec', [field]), opensSpec('spec', []), opensSpec('db', [field])], [true, false, false]);
 	});
 
 	test('< Back and Help lead; a command that runs bare is offered as itself; each subcommand fills its whole line', () => {

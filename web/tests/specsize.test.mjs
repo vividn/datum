@@ -1,4 +1,4 @@
-// The field form is one size across its tabs (da-laxpn). vividn, 2026-09-25:
+// The spec modal is one size across its tabs (da-laxpn). vividn, 2026-09-25:
 // «The spec modal should stay the same size across different tabs».
 //
 // A centred `<dialog>` whose height followed its content re-centred on
@@ -19,7 +19,7 @@ import { until } from './support/until.mjs';
 import { SPEC as MODAL, cancelSpec, openSpec } from './support/spec.mjs';
 const TABS = ['basics', 'states', 'keys', 'aliases', 'placement'];
 
-describe('the field form', () => {
+describe('the spec modal', () => {
 	before(startApp);
 	after(stopApp);
 	const shared = sharedApp();
