@@ -65,19 +65,33 @@ async function withCoffee(app) {
 }
 
 /**
- * The ghost's text and, read in the same breath, what is in the box.
+ * The ghost's text and, read in the same breath, what is in the box — and
+ * `look`, everything a test reads OF the ghost: its shade beside the box's
+ * two, how far into its fade it is, how many animations it has. `mark` is
+ * written onto the element found, so a later one is known to be another.
  *
  * One evaluation: the ghost is gone in about a second, so two round trips
  * could see the box after it rather than during it, and the claim is
- * precisely that the two are true AT THE SAME TIME.
+ * precisely that the two are true AT THE SAME TIME. And a second round trip
+ * to read the ghost itself is one a loaded runner can outlast (da-ohoei).
  */
-const ghostAndValue = (page) =>
+const ghostAndValue = (page, mark) =>
 	page
-		.waitForFunction(() => {
+		.waitForFunction((mark) => {
 			const ghost = document.querySelector('.prompt-bar .ghost');
 			if (!ghost) return null;
-			return { ghost: ghost.textContent, value: document.querySelector('.prompt-bar input').value };
-		})
+			const input = document.querySelector('.prompt-bar input');
+			if (mark) ghost.dataset.mark = mark;
+			const fades = ghost.getAnimations();
+			const look = {
+				shade: getComputedStyle(ghost).color,
+				typed: getComputedStyle(input).color,
+				placeholder: getComputedStyle(input, '::placeholder').color,
+				age: fades[0]?.currentTime ?? 0,
+				animations: fades.length
+			};
+			return { ghost: ghost.textContent, value: input.value, look };
+		}, mark)
 		.then((handle) => handle.jsonValue());
 
 const gone = (page) => page.waitForFunction(() => !document.querySelector('.prompt-bar .ghost'));
@@ -142,22 +156,13 @@ describe('the ghost', () => {
 			await withCoffee(app);
 
 			await page.locator('.bar [data-field="coffee"]').click();
-			const seen = await ghostAndValue(page);
+			const { look, ...seen } = await ghostAndValue(page);
 			assert.deepEqual(seen, { ghost: 'occur coffee', value: '' });
 
 			// Dimmer than a typed line, and brighter than the placeholder it
 			// stands in for: read off the page, both.
-			const shades = await page.evaluate(() => {
-				const bar = document.querySelector('.prompt-bar');
-				const input = bar.querySelector('input');
-				return {
-					ghost: getComputedStyle(bar.querySelector('.ghost')).color,
-					typed: getComputedStyle(input).color,
-					placeholder: getComputedStyle(input, '::placeholder').color
-				};
-			});
-			assert.notEqual(shades.ghost, shades.typed, 'the ghost is as bright as a typed line');
-			assert.notEqual(shades.ghost, shades.placeholder, 'the ghost is as dim as the placeholder');
+			assert.notEqual(look.shade, look.typed, 'the ghost is as bright as a typed line');
+			assert.notEqual(look.shade, look.placeholder, 'the ghost is as dim as the placeholder');
 
 			const from = Date.now();
 			await gone(page);
@@ -177,25 +182,27 @@ describe('the ghost', () => {
 			// *finally* appears" (da-jrozq). Found while the command is still
 			// in flight — no echo yet — in the same evaluation, so a command
 			// landing between two reads cannot make it pass.
+			//
+			// And the shape of the fade, read off the animation held at two
+			// instants: fully opaque at 350ms ("stay fully opaque for 250-500
+			// ms"), and going by 700ms, and all of it inside GHOST_MS. In the
+			// same evaluation too: a second one can come after the ghost.
 			await page.evaluate(() => void window.datum.run(['occur', 'slowly']));
-			const seen = await page
+			const { opacity, ...seen } = await page
 				.waitForFunction((n) => {
 					const ghost = document.querySelector('.prompt-bar .ghost');
 					if (!ghost) return null;
-					return { ghost: ghost.textContent, landed: document.querySelectorAll('.repl .echo').length > n };
+					const [fade] = ghost.getAnimations();
+					fade.pause();
+					const at = (ms) => ((fade.currentTime = ms), Number(getComputedStyle(ghost).opacity));
+					return {
+						ghost: ghost.textContent,
+						landed: document.querySelectorAll('.repl .echo').length > n,
+						opacity: { held: at(350), going: at(700), total: fade.effect.getComputedTiming().endTime }
+					};
 				}, echoes)
 				.then((h) => h.jsonValue());
 			assert.deepEqual(seen, { ghost: 'occur slowly', landed: false });
-
-			// The shape of the fade, read off the animation held at two
-			// instants: fully opaque at 350ms ("stay fully opaque for 250-500
-			// ms"), and going by 700ms, and all of it inside GHOST_MS.
-			const opacity = await page.locator('.prompt-bar .ghost').evaluate((el) => {
-				const [fade] = el.getAnimations();
-				fade.pause();
-				const at = (ms) => ((fade.currentTime = ms), Number(getComputedStyle(el).opacity));
-				return { held: at(350), going: at(700), total: fade.effect.getComputedTiming().endTime };
-			});
 			assert.equal(opacity.held, 1, 'the ghost was already fading 350ms in');
 			assert.ok(opacity.going < 1 && opacity.going > 0, `the ghost read ${opacity.going} at 700ms`);
 			assert.equal(opacity.total, 1000, 'the fade is no longer GHOST_MS long');
@@ -207,11 +214,11 @@ describe('the ghost', () => {
 			const { page } = app;
 			await withCoffee(app);
 
-			await page.locator('.bar [data-field="coffee"]').click();
-			assert.deepEqual(await ghostAndValue(page), { ghost: 'occur coffee', value: '' });
-			// Mark the first one, so the second is known to be another
+			// Marked as it is found, so the second is known to be another
 			// element and not the same one living on.
-			await page.locator('.prompt-bar .ghost').evaluate((el) => (el.dataset.mark = 'first'));
+			await page.locator('.bar [data-field="coffee"]').click();
+			const { look: _, ...first } = await ghostAndValue(page, 'first');
+			assert.deepEqual(first, { ghost: 'occur coffee', value: '' });
 
 			await page.locator('.bar [data-field="coffee"]').click();
 			// A fresh element AND a fade starting over: the element's own
@@ -230,16 +237,13 @@ describe('the ghost', () => {
 			await withCoffee(app);
 			const input = page.locator('.prompt-bar input');
 
+			// How far into its second the ghost is, read as it is found and
+			// before the key — a ghost that had already run out would make
+			// what follows true of nothing.
 			await page.locator('.bar [data-field="coffee"]').click();
-			assert.deepEqual(await ghostAndValue(page), { ghost: 'occur coffee', value: '' });
-
-			// How far into its second the ghost is, read before the key —
-			// a ghost that had already run out would make what follows
-			// true of nothing.
-			const age = await page
-				.locator('.prompt-bar .ghost')
-				.evaluate((el) => el.getAnimations()[0]?.currentTime ?? 0);
-			assert.ok(age < 500, `the ghost was already ${age}ms old before the keystroke`);
+			const { look, ...seen } = await ghostAndValue(page);
+			assert.deepEqual(seen, { ghost: 'occur coffee', value: '' });
+			assert.ok(look.age < 500, `the ghost was already ${look.age}ms old before the keystroke`);
 
 			// A key that types nothing, so what clears the ghost is the
 			// keystroke itself and not the box turning non-empty. Gone well
@@ -265,11 +269,13 @@ describe('the ghost', () => {
 	test('the console ghosts too: a command nobody typed says what it ran', async () => {
 		await onBar(async (app) => {
 			const { page } = app;
-			// Not awaited: the ghost is up from the call for GHOST_MS, and a
-			// command that took longer than that to land had taken it with it
-			// before the wait began, which then waited 30s for nothing (da-pzfdz).
+			// Watched from before the call: the ghost is up from it for
+			// GHOST_MS, and a wait begun after it — even one round trip
+			// after — can begin after the ghost has gone (da-pzfdz, da-ohoei).
+			const saw = await app.watchGhosts();
 			await page.evaluate(() => void window.datum.run(['occur', 'tea']));
-			assert.deepEqual(await ghostAndValue(page), { ghost: 'occur tea', value: '' });
+			const ghosts = (await saw('occur tea')).filter((g) => g.line === 'occur tea');
+			assert.deepEqual([...new Set(ghosts.map((g) => g.value))], [''], 'the console\'s command became the input\'s value');
 			await app.idle();
 		});
 	});
@@ -281,12 +287,9 @@ describe('the ghost', () => {
 				await withCoffee(app);
 
 				await page.locator('.bar [data-field="coffee"]').click();
-				assert.deepEqual(await ghostAndValue(page), { ghost: 'occur coffee', value: '' });
-				assert.deepEqual(
-					await page.locator('.prompt-bar .ghost').evaluate((el) => el.getAnimations().length),
-					0,
-					'the ghost fades for a reader who asked for no motion'
-				);
+				const { look, ...seen } = await ghostAndValue(page);
+				assert.deepEqual(seen, { ghost: 'occur coffee', value: '' });
+				assert.equal(look.animations, 0, 'the ghost fades for a reader who asked for no motion');
 				await gone(page);
 			},
 			{ ...DESKTOP, reducedMotion: 'reduce' }

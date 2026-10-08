@@ -1262,9 +1262,11 @@ describe('the pills ride with the text', () => {
 
 			// Gone from the live pills — so gone from the next command's argv
 			// and from the time cursor — and on screen only as a spent one.
-			await pressLanded(app);
-			assert.equal(await page.locator(`${BAR} .pill`).count(), 0);
-			assert.equal(await page.locator(`${BAR} .spent`).count(), 1);
+			// Counted at the landing itself: the spent pill lives what is left
+			// of GHOST_MS after it, which can be milliseconds (da-ohoei).
+			const { pills, spent } = await pressLanded(app);
+			assert.equal(pills, 0);
+			assert.equal(spent, 1);
 			await page.waitForFunction(() => !document.querySelector('.prompt-bar .spent'));
 			assert.deepEqual(app.errors, []);
 			// The day page, as above: the press is the fields widget's.
@@ -1285,6 +1287,10 @@ const GHOST_MS = 1000;
  * is the runner, not the bar, so a press that slow is pressed again with a
  * fresh pill — at a time of its own, so no two presses write one entry —
  * and three of them fail, with every timing.
+ *
+ * Answers the bar's live and spent pill counts read in the landing's own
+ * evaluation, since a press landing just under GHOST_MS leaves the spent
+ * pill milliseconds to live.
  */
 const pressLanded = async (app) => {
 	const { page } = app;
@@ -1294,12 +1300,19 @@ const pressLanded = async (app) => {
 		await page.locator(`${BAR} .pill`).waitFor();
 		await page.evaluate(() => (window.__pressedAt = performance.now()));
 		await app.pressWidget('coffee');
-		took.push(
-			await page
-				.waitForFunction(() => window.datum.bar.pills().length === 0 && performance.now() - window.__pressedAt)
-				.then((h) => h.jsonValue())
-		);
-		if (took.at(-1) < GHOST_MS) return;
+		const landed = await page
+			.waitForFunction(
+				(bar) =>
+					window.datum.bar.pills().length === 0 && {
+						took: performance.now() - window.__pressedAt,
+						pills: document.querySelectorAll(`${bar} .pill`).length,
+						spent: document.querySelectorAll(`${bar} .spent`).length
+					},
+				BAR
+			)
+			.then((h) => h.jsonValue());
+		took.push(landed.took);
+		if (landed.took < GHOST_MS) return landed;
 	}
 	assert.fail(`no press landed inside the ghost's ${GHOST_MS}ms: ${took.map(Math.round).join(', ')}ms`);
 };

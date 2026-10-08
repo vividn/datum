@@ -855,8 +855,8 @@ function app(page, errors, query, clean, locks, internal) {
 		 * after it waits 30s for a ghost that came and went.
 		 *
 		 * Hands back `saw(line)`, which waits for a ghost reading `line`
-		 * and answers every moment a ghost was in the page: its `line` and
-		 * the `left` the pills were placed at beside it.
+		 * and answers every moment a ghost was in the page: its `line`, the
+		 * `left` the pills were placed at beside it, and the box's `value`.
 		 */
 		async watchGhosts() {
 			await page.evaluate(() => {
@@ -865,7 +865,8 @@ function app(page, errors, query, clean, locks, internal) {
 				window.__datumGhostWatch = new MutationObserver(() => {
 					const ghost = document.querySelector('.prompt-bar .ghost');
 					const pills = document.querySelector('.prompt-bar .pills');
-					if (ghost) seen.push({ line: ghost.textContent, left: parseFloat(pills?.style.left) });
+					const value = document.querySelector('.prompt-bar input')?.value;
+					if (ghost) seen.push({ line: ghost.textContent, left: parseFloat(pills?.style.left), value });
 				});
 				window.__datumGhostWatch.observe(document.body, {
 					subtree: true,
