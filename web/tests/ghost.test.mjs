@@ -265,8 +265,12 @@ describe('the ghost', () => {
 	test('the console ghosts too: a command nobody typed says what it ran', async () => {
 		await onBar(async (app) => {
 			const { page } = app;
-			await page.evaluate(() => window.datum.run(['occur', 'tea']).then(() => {}));
+			// Not awaited: the ghost is up from the call for GHOST_MS, and a
+			// command that took longer than that to land had taken it with it
+			// before the wait began, which then waited 30s for nothing (da-pzfdz).
+			await page.evaluate(() => void window.datum.run(['occur', 'tea']));
 			assert.deepEqual(await ghostAndValue(page), { ghost: 'occur tea', value: '' });
+			await app.idle();
 		});
 	});
 
