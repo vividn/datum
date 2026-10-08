@@ -982,3 +982,28 @@ fn resolving_a_keep_both_pair_leaves_the_copies_converged() {
         }
     }
 }
+
+/// da-b2f8o: a value logging would refuse is merged as it is when another
+/// device wrote it — a refusal there would lose data — and `datum check`
+/// lists it instead.
+#[test]
+fn a_synced_value_its_spec_would_refuse_is_applied_and_check_lists_it() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "run", "km=5", "-q"]);
+    a.send(&b);
+    // `b` types the key; `a` logs before it hears of that.
+    let spec = r#"{"field":"run","verb":"occur","subfields":{"km":{"value_type":"number"}}}"#;
+    b.ok(&["spec", "set", "run", "--from-json", spec]);
+    assert!(!b.run(&["occur", "run", "km=abc"], "").status.success());
+    a.ok(&["occur", "run", "km=abc"]);
+    a.send(&b);
+    assert_eq!(b.data(&b.hid("run"))["km"], "abc");
+    let check: Value = serde_json::from_slice(&b.run(&["check", "--json"], "").stdout).unwrap();
+    let issue = check["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["category"] == "mistyped_data_value")
+        .unwrap_or_else(|| panic!("check lists no mistyped value: {check}"));
+    assert_eq!(issue["entries"][0]["state"], r#"km: "abc" is not a number"#);
+}

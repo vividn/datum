@@ -4,10 +4,12 @@
 //! Layered, in evaluation order:
 //! - empty / `undefined` → `None` (or `Err` when the slot is required)
 //! - literal `null` → `Value::Null`
-//! - path-suffix coercions (`*time`, `*date`, `*dur`/`*duration`) when
-//!   classification flagged a temporal slot
+//! - a typed key — by the field's spec, or by suffix (`*time`, `*date`,
+//!   `*dur`/`*duration`, `*num`/`*number`) — parses as its [`KeyType`]
+//!   or is refused
 //! - generic [`infer_type`] (booleans, numbers, JSON, comma arrays)
 
+use chrono::NaiveDateTime;
 use serde_json::Value;
 
 use crate::error::{ParseError, Result};
@@ -17,14 +19,84 @@ use crate::time::{
     format_iso_duration, parse_date, parse_duration, parse_time, DateArg, DefaultDirection, TimeCtx,
 };
 
-use super::classify::{path_is_date, path_is_duration, path_is_time};
+use super::classify::{path_is_date, path_is_duration, path_is_number, path_is_time};
 
-/// Infer the JSON shape for a value, applying the time/date/duration
-/// key-pattern rules before falling back to the generic [`infer_type`].
+/// A key's type (da-b2f8o): declared by the field's spec, or by the key's
+/// suffix (`due_date`, `wake_time`, `run_dur`, `km_num`). A typed key's
+/// value parses as its type or is refused — as v2 refused an unparseable
+/// time or date — and an untyped key is guessed by [`infer_type`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KeyType {
+    /// A decimal point, `_` between digits; a comma makes a list, refused.
+    Number,
+    /// The text as typed, never guessed: `007` stays `"007"`.
+    String,
+    /// `true` or `false`.
+    Bool,
+    /// A day, stored `YYYY-MM-DD`.
+    Date,
+    /// A day and a time, stored `YYYY-MM-DDTHH:MM:SS` (an instant given
+    /// with its offset is stored in UTC, `…Z`).
+    DateTime,
+    /// By suffix (`*time`): a clock time `HH:MM:SS`, or a day as its midnight.
+    Time,
+    /// By suffix (`*dur`, `*duration`): stored as ISO 8601.
+    Duration,
+}
+
+impl KeyType {
+    fn of_suffix(path: &str) -> Option<Self> {
+        [
+            (path_is_time(path), Self::Time),
+            (path_is_date(path), Self::Date),
+            (path_is_duration(path), Self::Duration),
+            (path_is_number(path), Self::Number),
+        ]
+        .into_iter()
+        .find_map(|(hit, ty)| hit.then_some(ty))
+    }
+
+    /// Whether a stored value is one of this type, as logging it would
+    /// have stored it — for `datum check`, since an entry another device
+    /// wrote is merged unrefused. A null is no value, and fits.
+    pub fn fits(self, v: &Value) -> bool {
+        let day = |s: &str| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok();
+        let at = |s: &str| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").is_ok();
+        match (self, v) {
+            (_, Value::Null) => true,
+            (Self::Number, v) => v.is_number(),
+            (Self::Bool, v) => v.is_boolean(),
+            (Self::Date, Value::String(s)) => day(s),
+            (Self::DateTime, Value::String(s)) => {
+                at(s.strip_suffix('Z').unwrap_or(s))
+                    || chrono::DateTime::parse_from_rfc3339(s).is_ok()
+            }
+            (_, Value::String(s)) => coerce_as(self, s, Compat::default()).is_some(),
+            _ => false,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Number => "number",
+            Self::String => "string",
+            Self::Bool => "bool",
+            Self::Date => "date",
+            Self::DateTime => "datetime",
+            Self::Time => "time",
+            Self::Duration => "duration",
+        }
+    }
+}
+
+/// Infer the JSON shape for a value: as its key's [`KeyType`] when it has
+/// one, else by the generic [`infer_type`].
 ///
 /// Returns `Ok(None)` for values the TS code would turn into `undefined`
 /// (empty string, literal `"undefined"`). Returns `Err(MissingRequiredKey)`
-/// when the slot is required and nothing was supplied.
+/// when the slot is required and nothing was supplied, and
+/// `Err(WrongType)` when a typed key's value does not parse as its type.
 pub(super) fn infer_typed_value(
     path: &str,
     value: &str,
@@ -45,71 +117,106 @@ pub(super) fn infer_typed_value(
         return Ok(Some(Value::Null));
     }
 
-    // Time-like key → parse as time. Relative forms (`+30`, `-1h`) and
-    // day words (`sunday`, `yesterday`) resolve against `compat.base_local`
-    // (the entry's effective occur-time in its local zone) when supplied —
-    // `wake_time=+30` with `-t 10:00` becomes `10:30:00`. With no base
-    // anchor (reparse / update payload) the relative branches fall through
-    // to raw-string passthrough. Data args face `Nearest`: an unmarked
-    // `finish_time=sunday` means the Sunday closest to the entry, not one
-    // a week out.
-    if path_is_time(path) {
-        let ctx = time_ctx(compat);
-        if let Ok(t) = parse_time(value, ctx) {
+    let declared = compat.types.and_then(|t| t.get(path)).copied();
+    let Some(ty) = declared.or_else(|| KeyType::of_suffix(path)) else {
+        return Ok(infer_type(value));
+    };
+    match coerce_as(ty, value, compat) {
+        Some(v) => Ok(Some(v)),
+        // The entry's own time and duration keep their own parsers, and
+        // their own refusals (`dur=1h±5m` is a duration with uncertainty).
+        None if ENTRY_KEYS.contains(&path) => Ok(infer_type(value)),
+        None => Err(ParseError::WrongType {
+            key: path.to_string(),
+            ty: ty.name(),
+            value: value.to_string(),
+            hint: wrong_type_hint(ty, value),
+        }),
+    }
+}
+
+/// The keys that place the entry rather than describe it.
+const ENTRY_KEYS: [&str; 4] = ["dur", "occur_time", "start_time", "end_time"];
+
+/// `value` as a `ty`, or `None` when it is not one.
+///
+/// Relative forms (`+30`, `-1h`) and day words (`sunday`, `yesterday`)
+/// resolve against `compat.base_local` (the entry's effective occur-time
+/// in its local zone) when supplied — `wake_time=+30` with `-t 10:00`
+/// becomes `10:30:00`. With no base anchor (reparse / update payload) a
+/// time or date that parses but cannot be resolved is kept as typed; a
+/// datetime, which names its own day, resolves against the wall clock.
+/// Data args face `Nearest`: an unmarked `finish_time=sunday` means the
+/// Sunday closest to the entry, not one a week out.
+fn coerce_as(ty: KeyType, value: &str, compat: Compat) -> Option<Value> {
+    let text = |s: String| Some(Value::String(s));
+    match ty {
+        KeyType::Number => infer_type(value).filter(Value::is_number),
+        KeyType::Bool => infer_type(value).filter(Value::is_boolean),
+        // A string is never a reference: `ref://x` is stored as its literal.
+        KeyType::String if value.starts_with(REF_MARK) => text(format!("{STR_MARK}{value}")),
+        KeyType::String => text(value.to_string()),
+        KeyType::Duration => text(format_iso_duration(parse_duration(value).ok()?)),
+        KeyType::Date => {
+            // Relative day offsets (`nextDate=+3`) count from the entry's day.
+            let d = parse_date(value, time_ctx(compat)).ok()?;
+            match resolve_date_arg(&d, compat.base_local) {
+                Some(day) => text(day.format("%Y-%m-%d").to_string()),
+                None => infer_type(value),
+            }
+        }
+        KeyType::Time => {
+            let t = parse_time(value, time_ctx(compat)).ok()?;
             if let Some(abs) = t.absolute {
-                return Ok(Some(Value::String(abs.format("%H:%M:%S").to_string())));
+                return text(abs.format("%H:%M:%S").to_string());
+            }
+            if let (Some(offset), Some(base)) = (t.offset, compat.base_local) {
+                return text((base + offset).time().format("%H:%M:%S").to_string());
+            }
+            // The value named a day rather than a clock (`finish_time=sunday`,
+            // `next_time=yesterday`). It becomes that day's midnight, the same
+            // full-datetime shape the plugin due-dates below already use.
+            if let Some(day) = t.date.and_then(|d| resolve_date_arg(&d, compat.base_local)) {
+                return text(day.format("%Y-%m-%dT00:00:00").to_string());
             }
             // ISO datetimes (`2026-05-03T00:00:00Z`, naive `2026-05-20T08:15:00`)
             // on a `*_time` key pass through as-is — the chores kit and similar
             // plugins store full-instant due-dates on `next_time`-style keys
-            // and would be broken by truncating to time-of-day. Users who want
-            // just the time-of-day write `wake_time=08:15`.
-            // Relative offset (`+30`, `-15`, `+1h`, `-90m`) resolves against
-            // the entry's effective occur-time. `parse_time` now handles
-            // decimal/unit forms directly, so this is the single relative
-            // branch — bare `1h` (no sign) falls through to a plain string.
-            // With no base anchor (reparse/update payload) it drops through
-            // to raw-string passthrough.
-            if let (Some(offset), Some(base)) = (t.offset, compat.base_local) {
-                let resolved = base + offset;
-                return Ok(Some(Value::String(
-                    resolved.time().format("%H:%M:%S").to_string(),
-                )));
-            }
-            // The value named a day rather than a clock (`finish_time=sunday`,
-            // `next_time=yesterday`). It becomes that day's midnight, the same
-            // full-datetime shape the plugin due-dates above already use.
-            if let Some(date) = t.date {
-                if let Some(day) = resolve_date_arg(&date, compat) {
-                    return Ok(Some(Value::String(
-                        day.format("%Y-%m-%dT00:00:00").to_string(),
-                    )));
-                }
-            }
+            // and would be broken by truncating to time-of-day.
+            infer_type(value)
         }
-        // Fallthrough: if we couldn't parse as time, leave as inferType's
-        // usual handling. Datum would have errored; we accept the value
-        // so users can still record free-form time fields.
-    }
-
-    // Date-like key → parse as date. Relative day offsets (`nextDate=+3`)
-    // resolve against `compat.base_local.date()` when supplied.
-    if path_is_date(path) {
-        if let Ok(d) = parse_date(value, time_ctx(compat)) {
-            if let Some(day) = resolve_date_arg(&d, compat) {
-                return Ok(Some(Value::String(day.format("%Y-%m-%d").to_string())));
+        KeyType::DateTime => {
+            let ctx = time_ctx(compat);
+            let t = parse_time(value, ctx).ok()?;
+            if let Some(utc) = t.iso_instant {
+                return text(utc.format("%Y-%m-%dT%H:%M:%SZ").to_string());
             }
+            let base = ctx.reference;
+            let at = t
+                .iso_naive
+                .or_else(|| match (t.offset, t.absolute, t.date) {
+                    (Some(offset), _, _) => Some(base? + offset),
+                    (_, Some(clock), _) => Some(base?.date().and_time(clock)),
+                    (_, _, Some(d)) => resolve_date_arg(&d, base)?.and_hms_opt(0, 0, 0),
+                    _ => None,
+                })?;
+            text(at.format("%Y-%m-%dT%H:%M:%S").to_string())
         }
     }
+}
 
-    // Duration-like key → parse and emit ISO 8601.
-    if path_is_duration(path) {
-        if let Ok(dur) = parse_duration(value) {
-            return Ok(Some(Value::String(format_iso_duration(dur))));
-        }
+/// What to say after a refusal: a decimal comma is a list (da-fwsre), and
+/// the point is how a decimal is written.
+fn wrong_type_hint(ty: KeyType, value: &str) -> String {
+    let typed_list = value.starts_with('[');
+    if ty != KeyType::Number || typed_list || !infer_type(value).is_some_and(|v| v.is_array()) {
+        return String::new();
     }
-
-    Ok(infer_type(value))
+    let point = value.replace(',', ".");
+    match infer_type(&point) {
+        Some(Value::Number(_)) => format!(": a comma makes a list; a decimal is {point}"),
+        _ => ": a comma makes a list".to_string(),
+    }
 }
 
 /// What ambiguous data-arg values resolve against: the entry's own
@@ -121,12 +228,11 @@ fn time_ctx(compat: Compat) -> TimeCtx {
 }
 
 /// The calendar day a parsed [`DateArg`] names. Pinned dates stand alone;
-/// a relative day-offset (`+3`, `-7`, `0`, `yesterday`) needs the entry's
-/// base date, and yields `None` without one (reparse / update payload) so
-/// the value drops through to raw-string passthrough.
-fn resolve_date_arg(d: &DateArg, compat: Compat) -> Option<chrono::NaiveDate> {
+/// a relative day-offset (`+3`, `-7`, `0`, `yesterday`) needs a base, and
+/// yields `None` without one (reparse / update payload).
+fn resolve_date_arg(d: &DateArg, base: Option<NaiveDateTime>) -> Option<chrono::NaiveDate> {
     d.absolute
-        .or_else(|| Some(compat.base_local?.date() + chrono::Duration::days(d.days_offset)))
+        .or_else(|| Some(base?.date() + chrono::Duration::days(d.days_offset)))
 }
 
 /// Port of datum's `inferType`: turn a raw string into the most specific

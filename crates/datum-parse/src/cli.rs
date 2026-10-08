@@ -325,6 +325,9 @@ pub struct LogArgs {
     /// `--if-changed` (switch/start/end only, da-hxmtg) — write nothing
     /// when the field already holds this state at the entry's time.
     pub if_changed: bool,
+    /// The types the field's spec declares for its keys (da-b2f8o) — not
+    /// a flag; filled from the spec before the line is parsed.
+    pub key_types: std::collections::BTreeMap<String, crate::input::KeyType>,
 }
 
 impl LogArgs {

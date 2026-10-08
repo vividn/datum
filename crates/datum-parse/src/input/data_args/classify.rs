@@ -81,6 +81,10 @@ pub(super) fn path_is_duration(path: &str) -> bool {
     matches_suffix(path, "dur") || matches_suffix(path, "duration")
 }
 
+pub(super) fn path_is_number(path: &str) -> bool {
+    matches_suffix(path, "num") || matches_suffix(path, "number")
+}
+
 /// Case-insensitive suffix match following datum's TS regex semantics:
 ///
 /// * `/(?:\b|_)<suffix>\d*$/i` — word boundary or underscore before
@@ -142,5 +146,7 @@ mod tests {
         assert!(!matches_suffix("sometime", "time"));
         assert!(!matches_suffix("datetime", "time"));
         assert!(!matches_suffix("sometime", "date"));
+        assert!(path_is_number("km_num") && path_is_number("stepNumber"));
+        assert!(!path_is_number("enum") && !path_is_number("album"));
     }
 }

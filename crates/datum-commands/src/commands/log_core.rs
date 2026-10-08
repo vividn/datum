@@ -595,9 +595,17 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         };
         entry.alias_chain = ctx.alias_chain_json();
         // da-zv2jr: the keys the spec bound ride with the chain, so
-        // `reparse` replays them without reading the spec as it is now.
+        // `reparse` replays them without reading the spec as it is now —
+        // and so do the types it gave them (da-b2f8o).
+        let mut step = serde_json::Map::new();
         if let Some(words) = spec_words {
-            let step = json!({ "spec_keys": words });
+            step.insert("spec_keys".into(), json!(words));
+        }
+        if !args.key_types.is_empty() {
+            step.insert("key_types".into(), json!(args.key_types));
+        }
+        if !step.is_empty() {
+            let step = JsonValue::Object(step);
             match &mut entry.alias_chain {
                 Some(JsonValue::Array(steps)) => steps.push(step),
                 _ => entry.alias_chain = Some(JsonValue::Array(vec![step])),
@@ -940,6 +948,7 @@ pub(crate) fn parse_log_args(
     // state-bearing verbs is handled below.
     let mut data_args = DataArgs {
         base_local,
+        types: args.key_types.clone(),
         ..DataArgs::default()
     };
     let mut slug_paths: Vec<String> = Vec::new();
@@ -1365,12 +1374,14 @@ fn compound_field(field: String, field_keys: &[String]) -> Result<String> {
 /// Returns the words it added, if any.
 fn apply_spec_keys(action: Action, args: &mut LogArgs, db: &Db) -> Result<Option<SpecKeyWords>> {
     use datum_parse::spec_keys::{spec_key_words, takes_spec_keys, typed_state};
-    if !takes_spec_keys(&action.to_string(), args) {
-        return Ok(None);
-    }
     let Some(spec) = db.load_spec(&args.field_or_verb)? else {
         return Ok(None);
     };
+    // da-b2f8o: a typed key parses as its type on every line of the field.
+    args.key_types = spec.key_types();
+    if !takes_spec_keys(&action.to_string(), args) {
+        return Ok(None);
+    }
     let state = matches!(action, Action::Switch)
         .then(|| typed_state(args))
         .flatten();

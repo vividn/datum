@@ -1439,6 +1439,57 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
         });
     }
 
+    // 4b. a value that does not fit the type its key's spec declares
+    //     (WARNING, da-b2f8o). Logging refuses one; an entry another
+    //     device wrote is merged as it is, and lands here instead.
+    let mut mistyped: Vec<(Entry, String)> = Vec::new();
+    for e in entries {
+        let Some(spec) = registry.field_spec(&e.field) else {
+            continue;
+        };
+        let Some(JsonValue::Object(map)) = e.data.as_ref() else {
+            continue;
+        };
+        for (key, ty) in spec.key_types() {
+            if let Some(v) = map.get(&key).filter(|v| !ty.fits(v)) {
+                mistyped.push((e.clone(), format!("{key}: {v} is not a {}", ty.name())));
+            }
+        }
+    }
+    if let Some((first, detail)) = mistyped.first() {
+        let count = mistyped.len();
+        // One row per value in `entries`, one line per entry in the block.
+        let mut seen = std::collections::HashSet::new();
+        let flagged: Vec<Entry> = mistyped
+            .iter()
+            .filter(|(e, _)| seen.insert(e.hid.clone()))
+            .map(|(e, _)| e.clone())
+            .collect();
+        issues.push(Issue {
+            severity: Severity::Warning,
+            category: "mistyped_data_value",
+            message: format!(
+                "{count} data value{s} not of the type the field's spec declares",
+                s = if count == 1 { "" } else { "s" },
+            ),
+            count,
+            example: Some(IssueExample {
+                id: Some(first.slug.to_string()),
+                field: Some(first.field.clone()),
+                detail: Some(detail.clone()),
+            }),
+            entries: mistyped
+                .iter()
+                .map(|(e, detail)| FlaggedEntry {
+                    hid: e.short_uid(),
+                    field: e.field.clone(),
+                    state: detail.clone(),
+                })
+                .collect(),
+            rendered_block: render_flagged_block(db, &flagged),
+        });
+    }
+
     // 5. kit indices declared but not built on this device (WARNING) — a
     //    `unique` one no kit may declare any more (da-9lo90), or one whose
     //    DDL will not build here. `datum kit show <kit>` says which.

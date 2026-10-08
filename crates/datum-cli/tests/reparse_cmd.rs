@@ -427,3 +427,62 @@ fn reparse_round_trips_every_log_verb() {
         );
     }
 }
+
+/// da-b2f8o: a row logged before its key was typed — `wake_time=soonish`,
+/// stored as text then, refused now — is reported and passed over, and the
+/// rows named after it are still replayed and fixed.
+#[test]
+fn reparse_passes_over_a_row_that_no_longer_parses() {
+    let db = fresh_db();
+    run_cli(&["occur", "coffee", "wake_time=07:00"], &db).expect("occur coffee");
+    run_cli(&["switch", "mood", "happy"], &db).expect("switch mood");
+    let hid = |field: &str| db.entries_for_field(field, None).unwrap()[0].hid.0.clone();
+    let (coffee, mood) = (hid("coffee"), hid("mood"));
+    db.conn()
+        .execute_batch(
+            "UPDATE entries SET raw_input = replace(raw_input, '07:00', 'soonish') \
+               WHERE field = 'coffee';
+             UPDATE entries SET state = '\"sad\"' WHERE field = 'mood';",
+        )
+        .unwrap();
+
+    run_cli(&["reparse", &coffee, &mood, "--fix"], &db).expect("reparse runs on");
+    assert_eq!(
+        db.get_entry(&mood).unwrap().state,
+        Some(serde_json::json!("happy"))
+    );
+}
+
+/// da-b2f8o: the types a spec gave its keys ride with the entry, as its
+/// bound keys do (da-zv2jr), so `--fix` replays `at=yesterday 10am` as the
+/// datetime it was logged as — not as the text, which no longer says which
+/// day it was.
+#[test]
+fn reparse_fix_replays_a_spec_typed_value_as_its_type() {
+    let db = fresh_db();
+    let spec = serde_json::json!({"field": "run", "verb": "occur", "subfields": {
+        "at": {"value_type": "datetime"},
+        "on": {"value_type": "date"},
+        "code": {"value_type": "string"},
+    }});
+    run_cli(
+        &["spec", "set", "run", "--from-json", &spec.to_string()],
+        &db,
+    )
+    .unwrap();
+    let line = [
+        "occur",
+        "run",
+        "at=yesterday 10am",
+        "on=yesterday",
+        "code=007",
+    ];
+    run_cli(&[&line[..], &["-t", "2026-10-07T12:00"]].concat(), &db).unwrap();
+    let hid = db.entries_for_field("run", None).unwrap()[0].hid.0.clone();
+    let logged =
+        serde_json::json!({"at": "2026-10-06T10:00:00", "on": "2026-10-06", "code": "007"});
+    assert_eq!(db.get_entry(&hid).unwrap().data, Some(logged.clone()));
+
+    run_cli(&["reparse", &hid, "--fix"], &db).expect("reparse --fix");
+    assert_eq!(db.get_entry(&hid).unwrap().data, Some(logged));
+}

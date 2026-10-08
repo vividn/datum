@@ -25,6 +25,16 @@ pub enum ParseError {
     #[error("Missing required key: {path}{hint}", path = .0, hint = missing_key_hint(.0))]
     MissingRequiredKey(String),
 
+    /// A typed key's value does not parse as its type (da-b2f8o): typed
+    /// by the field's spec or by the key's suffix (`due_date`, `km_num`).
+    #[error("{key}: {value:?} is not a {ty}{hint}")]
+    WrongType {
+        key: String,
+        ty: &'static str,
+        value: String,
+        hint: String,
+    },
+
     /// Positional data exceeded the declared keys with no remainder bucket
     /// in scope. Mirrors datum's `ExtraDataError([...remainders])`.
     #[error("Extra data with no matching key: {0:?}")]

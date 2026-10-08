@@ -99,6 +99,9 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
     if let Some(words) = bound.and_then(|steps| steps.iter().find_map(|s| s.get("spec_keys"))) {
         bind_spec_words(&mut log_args, serde_json::from_value(words.clone())?);
     }
+    if let Some(types) = bound.and_then(|steps| steps.iter().find_map(|s| s.get("key_types"))) {
+        log_args.key_types = serde_json::from_value(types.clone())?;
+    }
 
     // Mirror the per-action pre-pass from `log_entry` so the parsed
     // bundle matches what the insert path would have produced (da-ooe2:
@@ -351,6 +354,7 @@ pub fn reparse(args: ReparseArgs, db: &Db) -> Result<()> {
     let mut scanned = 0usize;
     let mut drifted = 0usize;
     let mut fixed = 0usize;
+    let mut refused = 0usize;
 
     // Comma-aware tokenisation (da-obes): `reparse a,b` resolves the
     // same as `reparse a b`, matching get/del/update/retime. Unlike
@@ -376,13 +380,21 @@ pub fn reparse(args: ReparseArgs, db: &Db) -> Result<()> {
 
             scanned += 1;
 
-            let shape = match replay_shape(&entry)? {
-                Some(s) => s,
+            let shape = match replay_shape(&entry) {
+                Ok(Some(s)) => s,
                 // Non-log verb or no provenance — nothing to compare.
-                None => {
+                Ok(None) => {
                     lines.push(format!("{}: no replayable raw_input — skipped", entry.slug));
                     continue;
                 }
+                // A line today's parser refuses (`wake_time=soonish`, da-b2f8o)
+                // is reported and passed over, so the rows after it are read.
+                Err(e) if e.downcast_ref::<datum_parse::ParseError>().is_some() => {
+                    lines.push(format!("{}: no longer parses: {e}", entry.slug));
+                    refused += 1;
+                    continue;
+                }
+                Err(e) => return Err(e),
             };
 
             let deltas = diff_shape(&shape, &entry);
@@ -408,10 +420,14 @@ pub fn reparse(args: ReparseArgs, db: &Db) -> Result<()> {
     }
     walked?;
 
+    let refused = match refused {
+        0 => String::new(),
+        n => format!(", {n} no longer parse{}", if n == 1 { "s" } else { "" }),
+    };
     if args.fix {
-        println!("\nreparse: {scanned} scanned, {drifted} drifted, {fixed} fixed.");
+        println!("\nreparse: {scanned} scanned, {drifted} drifted, {fixed} fixed{refused}.");
     } else {
-        println!("\nreparse: {scanned} scanned, {drifted} would change.");
+        println!("\nreparse: {scanned} scanned, {drifted} would change{refused}.");
     }
 
     Ok(())

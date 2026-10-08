@@ -121,6 +121,7 @@ mod timeless_id_redesign;
 mod timeless_state_note;
 mod track_cmd;
 mod track_declaration;
+mod typed_keys;
 mod undo_shared_slug;
 mod undo_stack;
 mod unit_removed;

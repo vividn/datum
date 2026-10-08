@@ -11,6 +11,7 @@
 //! derived from the entry log via [`Db::state_at`](crate::db::Db::state_at).
 
 use datum_parse::alias::shell_join;
+use datum_parse::input::KeyType;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, HashMap};
@@ -48,6 +49,25 @@ pub enum SubfieldType {
     /// A bare slug is a reference to that entry (da-s5k2s,
     /// [`data_refs`](crate::doc_ref::data_refs)).
     Ref,
+    /// A day, `YYYY-MM-DD` (da-b2f8o).
+    Date,
+    /// A day and a time, `YYYY-MM-DDTHH:MM:SS`.
+    DateTime,
+}
+
+impl SubfieldType {
+    /// The type a value of this key is parsed as at log time, or refused
+    /// (da-b2f8o); `None` leaves the key to its suffix or to datum's guess.
+    pub fn key_type(&self) -> Option<KeyType> {
+        Some(match self {
+            Self::String => KeyType::String,
+            Self::Number => KeyType::Number,
+            Self::Bool => KeyType::Bool,
+            Self::Date => KeyType::Date,
+            Self::DateTime => KeyType::DateTime,
+            Self::Array | Self::Any | Self::Ref => return None,
+        })
+    }
 }
 
 /// Full specification for a tracked field.
@@ -370,6 +390,14 @@ impl FieldSpec {
                 })
             }
         }
+    }
+
+    /// The types this spec's subfields declare, by key (da-b2f8o).
+    pub fn key_types(&self) -> BTreeMap<String, KeyType> {
+        self.subfields
+            .iter()
+            .filter_map(|(k, s)| Some((k.clone(), s.value_type.key_type()?)))
+            .collect()
     }
 
     /// Every key the spec declares: the positional slots — the `id_keys`,

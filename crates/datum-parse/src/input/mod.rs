@@ -28,7 +28,7 @@ pub mod quick_id_arg;
 pub mod time_args;
 
 pub use consolidate_keys::consolidate_keys;
-pub use data_args::{handle_data_args, infer_type, DataArgs, DatumData};
+pub use data_args::{handle_data_args, infer_type, DataArgs, DatumData, KeyType};
 pub use duration_args::{DurationArgs, DurationIntent};
 pub use flag_registry::{
     lift, local_optional, local_switch, local_value, FlagAction, FlagSpec, LiftedSpec, ValueMode,

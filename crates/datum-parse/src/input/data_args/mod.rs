@@ -36,6 +36,8 @@ mod accumulate;
 mod classify;
 mod coerce;
 
+use std::collections::BTreeMap;
+
 use chrono::NaiveDateTime;
 use serde_json::{Map, Value};
 
@@ -49,7 +51,7 @@ use classify::{
     datum_path, find_default_for_path, inferred_value_for_default, is_dot_scalar, split_first_eq,
 };
 
-pub use coerce::infer_type;
+pub use coerce::{infer_type, KeyType};
 
 /// Canonical flag set for the data concern.
 ///
@@ -167,6 +169,10 @@ pub struct DataArgs {
     /// raw strings — callers without a clean occur-time anchor (reparse,
     /// update payload) leave this unset to preserve existing behavior.
     pub base_local: Option<NaiveDateTime>,
+    /// The types a field's spec declares for its keys (da-b2f8o), by
+    /// key name. A typed key parses as its type or refuses; one with no
+    /// entry here is typed by its suffix, or guessed by [`infer_type`].
+    pub types: BTreeMap<String, KeyType>,
 }
 
 impl FlexibleTarget for DataArgs {
@@ -192,9 +198,11 @@ impl DataArgs {
 /// helpers in this module. Built once by [`handle_data_args`] from the
 /// caller's [`DataArgs`].
 #[derive(Clone, Copy, Default)]
-pub(crate) struct Compat {
+pub(crate) struct Compat<'a> {
     /// See [`DataArgs::base_local`].
     pub(crate) base_local: Option<NaiveDateTime>,
+    /// See [`DataArgs::types`].
+    pub(crate) types: Option<&'a BTreeMap<String, KeyType>>,
 }
 
 /// Resolve `DataArgs` into the final `DatumData` object.
@@ -205,6 +213,7 @@ pub(crate) struct Compat {
 pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
     let compat = Compat {
         base_local: args.base_local,
+        types: Some(&args.types),
     };
 
     // Clone the bits we mutate; the input bag is treated as read-only.
