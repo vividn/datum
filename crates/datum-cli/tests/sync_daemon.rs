@@ -228,7 +228,10 @@ fn a_join_whose_first_sync_fails_still_installs_it() {
         .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap();
-    let ticket = BufReader::new(inviting.stdout.take().unwrap())
+    // Kept open until the join is done: the invite prints past the ticket,
+    // and a closed pipe ends it before it serves (exit 141, da-aa2hw).
+    let mut out = BufReader::new(inviting.stdout.take().unwrap());
+    let ticket = (&mut out)
         .lines()
         .map_while(Result::ok)
         .find_map(|l| {
