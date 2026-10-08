@@ -34,9 +34,9 @@
 //! | 8     | malformed_dur  | bad str  | NULL    | absent          | null           | Point       | Point           |
 //! | 9     | feeling        | absent   | NULL    | {prim, int}     | {prim, int}    | Switch      | Switch          |
 //! | 10    | tags           | absent   | NULL    | [arr]           | [arr]          | Switch      | Switch          |
-//! | 11    | thinking       | null     | "PT0S"  | "idea"          | "idea"         | Point       | Point           |
+//! | 11    | thinking       | null     | MOMENT  | "idea"          | "idea"         | Point       | Point           |
 //!
-//! Counts: 11 imported (8 dur=NULL/zero, 3 dur=positive).
+//! Counts: 11 imported (7 dur=NULL, 1 dur=MOMENT (doc 11), 3 dur=positive).
 
 use crate::common;
 
@@ -70,43 +70,29 @@ fn db_import_synthetic_locks_db_shape() {
     let entries = datum_core::test_util::logged_all(&db);
     assert_eq!(entries.len(), 11, "fixture defines 11 importable docs");
 
-    // Per the table above: 8 entries have dur NULL or zero, 3 have positive dur.
+    // Per the table above: 8 entries have dur NULL or MOMENT, 3 have positive dur.
     let zero_or_null = entries.iter().filter(|e| !is_block_dur(&e.dur)).count();
     let positive = entries.iter().filter(|e| is_block_dur(&e.dur)).count();
     assert_eq!(
         zero_or_null, 8,
-        "expected 8 entries with dur=NULL or dur=zero (docs 1, 4, 5, 7, 8, 9, 10, 11)",
+        "expected 8 entries with dur=NULL or dur=MOMENT (docs 1, 4, 5, 7, 8, 9, 10, 11)",
     );
     assert_eq!(
         positive, 3,
         "expected 3 entries with positive dur (docs 2, 3, 6)"
     );
 
-    // Every entry with positive dur must carry the original `dur` literal in
-    // the `data` blob as intent (datum-compatible read-back) AND store it
-    // verbatim in the `dur` column.
+    // Every entry with positive dur stores it in the `dur` column alone —
+    // its literal no longer rides along in `data` (da-w94vu, vividn 10-08).
     for e in entries.iter().filter(|e| is_block_dur(&e.dur)) {
         assert!(
             e.occur_time.is_some(),
             "block {} missing occur_time",
             e.slug
         );
-        let dur_str = e
-            .dur
-            .as_ref()
-            .map(datum_core::dur::Dur::to_storage_string)
-            .expect("block has dur set");
-        let extra = e.data.as_ref().expect("block must have data blob");
         assert!(
-            extra["dur"].is_string(),
-            "block {} must preserve `dur` literal in data, got {}",
-            e.slug,
-            extra["dur"],
-        );
-        assert_eq!(
-            extra["dur"].as_str().unwrap(),
-            dur_str,
-            "block {} data.dur literal must match dur column",
+            e.data.as_ref().and_then(|d| d.get("dur")).is_none(),
+            "block {} kept its dur in data",
             e.slug,
         );
     }
@@ -177,11 +163,7 @@ fn db_import_synthetic_locks_db_shape() {
     );
     assert_eq!(sleep.verb, Verb::Block, "doc 2: stored verb");
     assert_eq!(verb_of(sleep), Verb::Block);
-    assert_eq!(
-        sleep.data.as_ref().unwrap()["dur"],
-        serde_json::json!("PT8H"),
-        "sleep dur literal also preserved in data",
-    );
+    assert!(sleep.data.is_none(), "sleep dur is a column, not data");
 
     // Doc 3 (work, string state + dur): Block with state preserved.
     let work = entries
@@ -320,8 +302,8 @@ fn db_import_synthetic_locks_db_shape() {
     assert_eq!(verb_of(tags), Verb::Switch);
     assert_eq!(tags.state, Some(serde_json::json!(["focus", "deep-work"])));
 
-    // Doc 11 (thinking, state + dur=null): explicit null → dur="PT0S".
-    // state="idea" + DurKind::Zero + no fs → Verb::Point (state preserved).
+    // Doc 11 (thinking, state + dur=null): explicit null → dur=MOMENT
+    // (da-w94vu; was PT0S). state="idea" + a moment → Verb::Point.
     let thinking = entries
         .iter()
         .find(|e| e.field == "thinking")
@@ -332,16 +314,13 @@ fn db_import_synthetic_locks_db_shape() {
             .as_ref()
             .map(datum_core::dur::Dur::to_storage_string)
             .as_deref(),
-        Some("PT0S"),
-        "null dur → PT0S"
+        Some("MOMENT"),
+        "null dur → MOMENT"
     );
     assert_eq!(thinking.state, Some(serde_json::json!("idea")));
     assert_eq!(thinking.verb, Verb::Point, "doc 11: stored verb");
     assert_eq!(verb_of(thinking), Verb::Point);
-    assert!(
-        thinking.data.as_ref().unwrap()["dur"].is_null(),
-        "explicit dur=null must round-trip into data",
-    );
+    assert!(thinking.data.is_none(), "dur=null left in data");
 }
 
 #[test]

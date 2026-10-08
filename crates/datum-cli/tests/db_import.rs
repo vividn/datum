@@ -115,9 +115,9 @@ fn occur_with_dur_maps_to_block() {
     );
     assert!(e.state.is_none(), "null state stays null (no promotion)");
     assert!(e.following_state.is_none());
-    // dur literal also survives as user-visible intent in `data`.
-    let extra = e.data.as_ref().unwrap();
-    assert_eq!(extra["dur"], serde_json::json!("PT30M"));
+    // The dur lives in its column alone; until 10-08 its literal was copied
+    // into `data` too (vividn: a key v3 parses into a column stays out of data).
+    assert!(e.data.is_none(), "dur is a column, not data: {:?}", e.data);
     // `_import` provenance lives in `extra_metadata` (da-tsw), strictly
     // disjoint from user-payload `data`.
     let metadata = e
@@ -163,28 +163,32 @@ fn switch_doc_with_boolean_state_maps_to_switch() {
     assert_eq!(verb_of(e), Verb::Switch);
     assert_eq!(e.state, Some(serde_json::json!(false)));
     assert!(e.dur.is_none());
-    // lastState preserved as intent (no longer stripped).
-    let extra = e.data.as_ref().unwrap();
-    assert_eq!(extra["lastState"], serde_json::json!(true));
+    // lastState is dropped (changed 10-08, da-w94vu): v2 required it for
+    // CouchDB's map/reduce views, so it was never asserted by the person —
+    // it goes neither to data (where it was kept) nor to
+    // user_asserted_last_state.
+    assert!(e.data.is_none(), "lastState left in data: {:?}", e.data);
+    assert!(e.user_asserted_last_state.is_none());
 }
 
-// ─── 4. explicit dur=null → dur="PT0S", literal null preserved in data ─
-// Per da-5ns.6: legacy `dur: null` (explicit) maps to `dur="PT0S"`
-// (zero-duration / point-for-state). With state=undefined, derive_verb on
-// import returns (Verb::Block, Some(true)) — see truth table row
-// `(false, Zero, false) => Block`. The original JSON null survives in the
-// `data` blob. Re-derive on stored values gives Verb::Point because
-// state is now Some(true) (state_set=true changes the truth-table row).
+// ─── 4. explicit dur=null → dur=MOMENT, nothing left in data ────────
+// Changed 10-08 (vividn, da-w94vu): legacy `dur: null` was a state held for
+// a moment, so it imports as MOMENT — what `switch … dur=MOMENT` stores —
+// and renders as one. It used to store PT0S (da-5ns.6, from before v3 had
+// MOMENT) and keep the literal null in `data`; a key that becomes a column
+// no longer stays in data, and lastState is dropped (see test 3).
 
 #[test]
-fn explicit_dur_null_maps_to_zero_duration() {
+fn explicit_dur_null_maps_to_moment() {
     let db = fresh_db();
     let f = write_backup(serde_json::json!([{
-        "_id": "walk:2025-01-08T07:05:00.000Z",
+        "_id": "mood:2025-01-08T07:05:00.000Z",
         "data": {
             "occurTime": {"utc": "2025-01-08T07:05:00.000Z", "o": 1, "tz": "Europe/Berlin"},
-            "field": "walk",
-            "dur": serde_json::Value::Null
+            "field": "mood",
+            "state": "startled",
+            "dur": serde_json::Value::Null,
+            "lastState": "happy"
         },
         "meta": {
             "humanId": "n",
@@ -202,15 +206,13 @@ fn explicit_dur_null_maps_to_zero_duration() {
             .as_ref()
             .map(datum_core::dur::Dur::to_storage_string)
             .as_deref(),
-        Some("PT0S"),
-        "explicit null → PT0S"
+        Some("MOMENT"),
+        "explicit null → MOMENT"
     );
-    assert!(e.state.is_none(), "null state stays null (no promotion)");
-    let extra = e.data.as_ref().unwrap();
-    assert!(
-        extra["dur"].is_null(),
-        "legacy null literal preserved in data"
-    );
+    assert_eq!(verb_of(e), Verb::Point);
+    assert_eq!(e.state, Some(serde_json::json!("startled")));
+    assert!(e.user_asserted_last_state.is_none());
+    assert!(e.data.is_none(), "column keys left in data: {:?}", e.data);
 }
 
 // ─── 5. missing occurTime → Point with occur_time NULL ───────────────
@@ -356,23 +358,8 @@ fn import_3day_fixture_produces_blocks_and_points() {
         "fixture must produce at least one block entry"
     );
 
-    // Every block entry must round-trip its dur literal verbatim into
-    // both the `dur` column and the `data` blob (intent layer).
     for e in &blocks {
         assert!(e.occur_time.is_some(), "block missing occur_time");
-        let dur_str = e
-            .dur
-            .as_ref()
-            .map(datum_core::dur::Dur::to_storage_string)
-            .expect("block has dur set");
-        let dur_lit = &e.data.as_ref().unwrap()["dur"];
-        assert!(
-            dur_lit.is_string() || dur_lit.is_number(),
-            "block must preserve a non-null dur literal in data, got {dur_lit}"
-        );
-        if let Some(s) = dur_lit.as_str() {
-            assert_eq!(s, dur_str, "data.dur literal must match dur column");
-        }
         // derive_verb on a block must succeed and classify as Block (or
         // BlockSwitch — but legacy entries never carry following_state so
         // it's always plain Block here).
@@ -387,8 +374,16 @@ fn import_3day_fixture_produces_blocks_and_points() {
     }
 
     // Every imported row must carry the provenance marker — in
-    // `extra_metadata`, never in user-payload `data` (da-tsw).
+    // `extra_metadata`, never in user-payload `data` (da-tsw) — and its
+    // `data` holds no key v3 keeps in a column (da-w94vu).
     for e in &entries {
+        for key in ["field", "state", "occurTime", "dur", "lastState"] {
+            assert!(
+                e.data.as_ref().and_then(|d| d.get(key)).is_none(),
+                "row {} kept column key {key} in data",
+                e.slug,
+            );
+        }
         let metadata = e
             .extra_metadata
             .as_ref()
@@ -762,7 +757,7 @@ fn import_3day_fixture_columns_are_well_formed() {
         // Every row must derive a valid verb from its (state, dur, fs)
         // triple. derive_verb errors on malformed dur strings — none of
         // our stored durs are malformed (we either keep the legacy ISO
-        // or store NULL/PT0S).
+        // or store NULL/MOMENT).
         let _ = derive_verb(e.state.clone(), e.dur.as_ref(), e.following_state.clone())
             .unwrap_or_else(|err| {
                 panic!("row {} derive_verb failed: {}", e.slug, err);

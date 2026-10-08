@@ -109,9 +109,10 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         });
 
         // ─── dur ────────────────────────────────────────────────────
-        // Per da-5ns.6:
+        // Per da-5ns.6, and da-w94vu for null:
         //   legacy `dur` undefined (key missing) → dur=NULL
-        //   legacy `dur` null (explicit null)    → dur="PT0S"  (point-for-state)
+        //   legacy `dur` null (explicit null)    → dur=MOMENT  (what
+        //                                          `switch … dur=MOMENT` stores)
         //   legacy `dur` "<ISO>"                 → dur="<ISO>" verbatim
         //   legacy `dur` malformed               → dur=NULL, warn, preserve
         //                                          literal in `data` blob
@@ -119,7 +120,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         let raw_dur = data.get("dur");
         let dur_in: Option<datum_core::dur::Dur> = match raw_dur {
             None => None,
-            Some(v) if v.is_null() => Some(datum_core::dur::Dur::of(chrono::Duration::zero())),
+            Some(v) if v.is_null() => Some(datum_core::dur::Dur::moment()),
             Some(JsonValue::String(s)) => {
                 if let Some(d) = datum_core::dur::Dur::parse(s) {
                     Some(d)
@@ -178,16 +179,23 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         let verb = Verb::Point;
 
         // ─── data blob ──────────────────────────────────────────────
-        // Everything in `data` except first-class columns goes into the
-        // `data` blob. Note: `dur` is preserved here as user-visible intent
-        // (datum-compatible read-back). System provenance lives in
-        // `extra_metadata._import` (da-tsw) — strictly disjoint.
+        // `data` holds only what has no column (da-w94vu): field, state,
+        // occurTime and a `dur` that parsed live in columns, and
+        // `lastState` is dropped — v2 required it for CouchDB's views, so
+        // it was never something the person asserted. A `dur` that did not
+        // parse stays, being the only copy of it. System provenance lives
+        // in `extra_metadata._import` (da-tsw) — strictly disjoint.
         // Doc-root `_rev` and `_attachments` are CouchDB plumbing and never
         // make it into `data` (they live on the doc, not on `data.*`).
         let mut blob = serde_json::Map::new();
         if let Some(obj) = data.as_object() {
             for (k, v) in obj {
-                if !matches!(k.as_str(), "field" | "state" | "occurTime") {
+                let column = match k.as_str() {
+                    "field" | "state" | "occurTime" | "lastState" => true,
+                    "dur" => dur_in.is_some(),
+                    _ => false,
+                };
+                if !column {
                     blob.insert(k.clone(), v.clone());
                 }
             }
