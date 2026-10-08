@@ -218,7 +218,8 @@ const LIFT: &str = r#"{"field": "lift", "verb": "occur", "subfields": {
 /// A list-typed key always splits on a glued comma, a single value is a
 /// one-item list, the bracket form works, and each element parses as its
 /// type or the whole value is refused, naming the element. A bracket value
-/// that is not JSON is refused, never stored as fragments (da-igesg).
+/// that is not JSON is refused, never stored as fragments (da-igesg), with
+/// an example in the key's element type that itself parses (da-80ox9).
 #[test]
 fn a_list_typed_key_parses_each_element_or_refuses() {
     let db = fresh_db();
@@ -233,7 +234,7 @@ fn a_list_typed_key_parses_each_element_or_refuses() {
         (
             "reps=[8,x]",
             Err(
-                r#"reps: "[8,x]" is not a number[]: the bracket form is JSON: ["a","b"], or write a,b"#,
+                r#"reps: "[8,x]" is not a number[]: the bracket form is JSON: [8,6], or write 8,6"#,
             ),
         ),
         (
@@ -245,9 +246,16 @@ fn a_list_typed_key_parses_each_element_or_refuses() {
         (
             "needs=[issue:a]",
             Err(
-                r#"needs: "[issue:a]" is not a ref[]: the bracket form is JSON: ["a","b"], or write a,b"#,
+                r#"needs: "[issue:a]" is not a ref[]: the bracket form is JSON: ["issue:a","issue:b"], or write issue:a,issue:b"#,
             ),
         ),
+        (
+            "done=[true,x]",
+            Err(
+                r#"done: "[true,x]" is not a bool[]: the bracket form is JSON: [true,false], or write true,false"#,
+            ),
+        ),
+        ("done=[true,false]", Ok(json!([true, false]))),
         (
             "reps=8,x,6",
             Err(r#"reps: "8,x,6" is not a number[]: element 2 "x" is not a number"#),
@@ -266,6 +274,10 @@ fn a_list_typed_key_parses_each_element_or_refuses() {
             Err(r#"done: "true,yes" is not a bool[]: element 2 "yes" is not a bool"#),
         ),
         ("needs=issue:a,issue:b", Ok(json!(["issue:a", "issue:b"]))),
+        (
+            r#"needs=["issue:a","issue:b"]"#,
+            Ok(json!(["issue:a", "issue:b"])),
+        ),
     ] {
         assert_eq!(log(&db, "lift", kv), want.map_err(String::from), "{kv}");
     }

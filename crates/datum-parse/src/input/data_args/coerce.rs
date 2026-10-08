@@ -284,7 +284,18 @@ fn coerce_list(
                 v => v.to_string(),
             })
             .collect(),
-        Some(_) => return Err(r#": the bracket form is JSON: ["a","b"], or write a,b"#.into()),
+        Some(_) => {
+            // The example is in the key's own element type (da-80ox9).
+            let (bracket, plain) = match ty {
+                KeyType::NumberList => ("[8,6]", "8,6"),
+                KeyType::BoolList => ("[true,false]", "true,false"),
+                KeyType::RefList => (r#"["issue:a","issue:b"]"#, "issue:a,issue:b"),
+                _ => (r#"["a","b"]"#, "a,b"),
+            };
+            return Err(format!(
+                ": the bracket form is JSON: {bracket}, or write {plain}"
+            ));
+        }
         None => {
             let marked = if value.starts_with(',') {
                 value.to_string()
