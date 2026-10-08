@@ -16,6 +16,7 @@ pub mod conflicts;
 pub mod count;
 pub mod dayview;
 pub mod db;
+pub mod debug;
 pub mod del;
 pub mod edit;
 pub mod end;

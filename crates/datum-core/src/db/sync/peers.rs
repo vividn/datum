@@ -151,6 +151,7 @@ impl Db {
         dialed: bool,
     ) -> Result<bool> {
         super::pause::refuse_paused(&self.conn)?;
+        super::debug::refuse(&self.conn)?;
         let refuse = |why: String| Err(DatumError::Other(why));
         if let Some(why) = chain::label_problem(label) {
             return refuse(why);

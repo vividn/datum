@@ -1004,6 +1004,7 @@ impl Db {
     /// nothing, when the chain would not take it. `quiet`: see [`note`].
     pub fn sync_chain_write(&self, record: Value, quiet: bool) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
+        super::debug::refuse(&tx)?;
         // A copy that starts a chain gives up any join it was making
         // (da-38eye): left later, it is joining nothing.
         if record["type"] == "genesis" {

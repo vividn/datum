@@ -42,6 +42,23 @@ describe('the wasi CLI', () => {
 		});
 	});
 
+	// vividn, 2026-10-08: «add a DEBUG db feature that generates conflicts so
+	// that I can easily test it on the web» (da-4dvk7). The two lines, typed
+	// into the bar.
+	test('`debug conflicts 3` in the bar, and `conflicts` lists four', async () => {
+		await onSeam(async (app) => {
+			const typed = async (line) => {
+				await app.submit(line);
+				return (await app.page.evaluate(() => window.datum.bar.last())).result;
+			};
+			const made = await typed('debug conflicts 3');
+			assert.equal(made.code, 0, made.stderr);
+			const listed = await typed('conflicts');
+			assert.equal(listed.code, 0, listed.stderr);
+			assert.equal(plain(listed.stdout).match(/sync_conflict/g)?.length, 4, listed.stdout);
+		});
+	});
+
 	test('an unknown command is the CLI’s own error', async () => {
 		await onSeam(async (app) => {
 			const result = await app.run(['nosuch']);

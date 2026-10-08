@@ -121,6 +121,7 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
     "config",
     "sync",
     "conflicts",
+    "debug",
     "reparse",
     "completions",
 ];

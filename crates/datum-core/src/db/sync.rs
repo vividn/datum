@@ -65,10 +65,12 @@ use super::row_mapper::row_to_entry;
 use super::Db;
 
 pub mod chain;
+mod debug;
 mod pause;
 pub mod peers;
 pub mod status;
 use chain::{Chain, Filter, Role, CHAIN_HID};
+pub use debug::DebugConflicts;
 
 // ─── The invocation ─────────────────────────────────────────────────────────
 
@@ -1425,6 +1427,79 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
     Ok(())
 }
 
+/// [`Db::sync_apply`] in a transaction of the caller's, past its refusals:
+/// `datum debug conflicts` applies its device's ops here, in its own.
+fn apply_in(tx: &Connection, lines: &str) -> Result<ApplySummary> {
+    let (mine, signed) = own_head(tx)?;
+    let chain = Chain::load(tx)?;
+    let before = chain.filter(&mine).cloned();
+    let mut s = ApplySummary::default();
+    let (mut got, mut words) = (Vec::new(), Vec::new());
+    let mut each = Vec::new();
+    for line in lines.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        // Canonical JSON: an op's first key is `alias_chain`.
+        if line.starts_with("{\"caught_up\"") || line.starts_with("{\"remove\"") {
+            match serde_json::from_str::<Value>(line) {
+                Ok(w) => words.push(w),
+                Err(e) => s.refused.push(format!("unreadable line: {e}")),
+            }
+            continue;
+        }
+        match line.starts_with('[') {
+            true => match serde_json::from_str::<Vec<Value>>(line) {
+                Ok(ops) => each.extend(ops.iter().map(Value::to_string)),
+                Err(e) => s.refused.push(format!("unreadable ops: {e}")),
+            },
+            false => each.push(line.to_string()),
+        }
+    }
+    for line in each.iter().map(String::as_str) {
+        let op = match Op::parse(line) {
+            Ok(op) => op,
+            Err(e) => {
+                s.refused.push(format!("unreadable op: {e}"));
+                continue;
+            }
+        };
+        if let Err(why) = check_signature(line, &op) {
+            s.refused.push(format!("{}/{}: {why}", op.endpoint, op.seq));
+            continue;
+        }
+        // A copy in a chain takes no record of another (da-d8ort): the
+        // fold takes the earliest genesis it holds, so an older chain's
+        // would become this copy's, and its own be refused.
+        let theirs = op.effect["chain"].as_str().unwrap_or_default();
+        if op.is_chain() && chain.exists() && theirs != chain.id {
+            s.refused.push(format!(
+                "{}/{}: a record of another sync chain ({theirs}); this copy is in {}",
+                op.endpoint, op.seq, chain.id
+            ));
+            continue;
+        }
+        let held: Option<String> = tx
+            .prepare_cached("SELECT body FROM ops WHERE endpoint = ?1 AND seq = ?2")?
+            .query_row(params![op.endpoint, op.seq], |r| r.get(0))
+            .optional()?;
+        // Two copies signing with one key each number their ops from the
+        // same seq: another op at a seq held, or an op of this copy's own
+        // that it never signed. Say so rather than take one for the other.
+        let forked = op.endpoint == mine && op.seq > signed;
+        match held {
+            None if !forked => {
+                store(tx, &op, false)?;
+                got.push((op.endpoint, op.seq, op.hid));
+            }
+            Some(body) if body == op.body => s.already_had += 1,
+            _ => s
+                .refused
+                .push(format!("{}/{}: {SHARED_KEY}", op.endpoint, op.seq)),
+        }
+    }
+    settle(tx, &mut s)?;
+    settle_filter(tx, &mine, before.as_ref(), &got, &words, &mut s)?;
+    Ok(s)
+}
+
 // ─── Filtered readers (da-u81u1) ────────────────────────────────────────────
 
 /// The ops of `hid` held, applied or refused, in fold order, each with
@@ -1730,6 +1805,7 @@ impl Db {
         peer: Option<&str>,
     ) -> Result<Vec<String>> {
         pause::refuse_paused(&self.conn)?;
+        debug::refuse(&self.conn)?;
         let tx = self.conn.unchecked_transaction()?;
         // A vector holding more of this copy's ops than it signed was made
         // by another copy signing with this key.
@@ -1798,74 +1874,9 @@ impl Db {
     /// sender's removal or mark, which only a filtered reader acts on.
     pub fn sync_apply(&self, lines: &str) -> Result<ApplySummary> {
         pause::refuse_paused(&self.conn)?;
+        debug::refuse(&self.conn)?;
         let tx = self.conn.unchecked_transaction()?;
-        let (mine, signed) = own_head(&tx)?;
-        let chain = Chain::load(&tx)?;
-        let before = chain.filter(&mine).cloned();
-        let mut s = ApplySummary::default();
-        let (mut got, mut words) = (Vec::new(), Vec::new());
-        let mut each = Vec::new();
-        for line in lines.lines().map(str::trim).filter(|l| !l.is_empty()) {
-            // Canonical JSON: an op's first key is `alias_chain`.
-            if line.starts_with("{\"caught_up\"") || line.starts_with("{\"remove\"") {
-                match serde_json::from_str::<Value>(line) {
-                    Ok(w) => words.push(w),
-                    Err(e) => s.refused.push(format!("unreadable line: {e}")),
-                }
-                continue;
-            }
-            match line.starts_with('[') {
-                true => match serde_json::from_str::<Vec<Value>>(line) {
-                    Ok(ops) => each.extend(ops.iter().map(Value::to_string)),
-                    Err(e) => s.refused.push(format!("unreadable ops: {e}")),
-                },
-                false => each.push(line.to_string()),
-            }
-        }
-        for line in each.iter().map(String::as_str) {
-            let op = match Op::parse(line) {
-                Ok(op) => op,
-                Err(e) => {
-                    s.refused.push(format!("unreadable op: {e}"));
-                    continue;
-                }
-            };
-            if let Err(why) = check_signature(line, &op) {
-                s.refused.push(format!("{}/{}: {why}", op.endpoint, op.seq));
-                continue;
-            }
-            // A copy in a chain takes no record of another (da-d8ort): the
-            // fold takes the earliest genesis it holds, so an older chain's
-            // would become this copy's, and its own be refused.
-            let theirs = op.effect["chain"].as_str().unwrap_or_default();
-            if op.is_chain() && chain.exists() && theirs != chain.id {
-                s.refused.push(format!(
-                    "{}/{}: a record of another sync chain ({theirs}); this copy is in {}",
-                    op.endpoint, op.seq, chain.id
-                ));
-                continue;
-            }
-            let held: Option<String> = tx
-                .prepare_cached("SELECT body FROM ops WHERE endpoint = ?1 AND seq = ?2")?
-                .query_row(params![op.endpoint, op.seq], |r| r.get(0))
-                .optional()?;
-            // Two copies signing with one key each number their ops from the
-            // same seq: another op at a seq held, or an op of this copy's own
-            // that it never signed. Say so rather than take one for the other.
-            let forked = op.endpoint == mine && op.seq > signed;
-            match held {
-                None if !forked => {
-                    store(&tx, &op, false)?;
-                    got.push((op.endpoint, op.seq, op.hid));
-                }
-                Some(body) if body == op.body => s.already_had += 1,
-                _ => s
-                    .refused
-                    .push(format!("{}/{}: {SHARED_KEY}", op.endpoint, op.seq)),
-            }
-        }
-        settle(&tx, &mut s)?;
-        settle_filter(&tx, &mine, before.as_ref(), &got, &words, &mut s)?;
+        let s = apply_in(&tx, lines)?;
         tx.commit()?;
         Ok(s)
     }

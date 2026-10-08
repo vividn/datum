@@ -335,6 +335,7 @@ fn dispatch_inner(cli: Cli, db: &Db) -> Result<()> {
         Command::Alias(sub) => commands::alias::alias(sub, db),
         Command::Kit(sub) => commands::kit::kit(sub, db),
         Command::Conflicts(sub) => commands::conflicts::conflicts(sub, db),
+        Command::Debug(sub) => commands::debug::debug(sub, db),
         Command::Track(args) => commands::track::track(args, db),
         Command::Ignore(args) => commands::ignore::ignore(args, db),
         Command::Meta(sub) => commands::meta::meta(sub, db),

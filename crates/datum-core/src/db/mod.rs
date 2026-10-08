@@ -67,7 +67,9 @@ pub use now::{
 pub use row_mapper::row_to_entry_public;
 pub use spec::{is_meta_field, META_FIELDS, SPEC_FIELD};
 pub use stats_cache::{CachedDay, CachedState, CachedSum, Dirty, Refill};
-pub use sync::{canonical_json, chain, peers, set_client_source, set_invocation, ApplySummary};
+pub use sync::{
+    canonical_json, chain, peers, set_client_source, set_invocation, ApplySummary, DebugConflicts,
+};
 pub use tombstone::{revert_in_tx, soft_delete_in_tx};
 pub use types::{
     AliasConflict, AliasConflictReason, ConflictStrategy, GroupColumn, HardReplaceCounts,

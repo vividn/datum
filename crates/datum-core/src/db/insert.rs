@@ -734,7 +734,7 @@ impl Db {
 /// retime batch, da-sunq) can wrap N per-row saves in a single
 /// all-or-nothing transaction — the same posture as
 /// [`Db::insert_entries_atomic`].
-fn save_existing_entry_with_kind_in_tx(
+pub(super) fn save_existing_entry_with_kind_in_tx(
     conn: &Connection,
     entry: &Entry,
     change_kind: ChangeKind,

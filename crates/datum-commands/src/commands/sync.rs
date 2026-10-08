@@ -36,6 +36,7 @@ const OPEN: &str =
 pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
     match cmd {
         SyncCommand::Now => {
+            db.sync_refuse_debug()?;
             if !db.sync_chain()?.exists() && db.sync_joining()?.is_empty() {
                 println!("{NO_CHAIN}");
                 return Ok(());
@@ -392,6 +393,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
         }
         #[cfg(feature = "net")]
         SyncCommand::Connect { ticket } => {
+            db.sync_refuse_debug()?;
             let ticket = match ticket {
                 Some(t) => t,
                 None => {
@@ -410,7 +412,10 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             done?;
         }
         #[cfg(feature = "net")]
-        SyncCommand::Run => datum_sync::run(db)?,
+        SyncCommand::Run => {
+            db.sync_refuse_debug()?;
+            datum_sync::run(db)?
+        }
         #[cfg(feature = "net")]
         SyncCommand::Daemon(act) => super::sync_daemon::daemon(act)?,
         #[cfg(not(feature = "net"))]
@@ -894,6 +899,7 @@ fn status(db: &Db, json: bool) -> Result<()> {
             .collect();
         let out = json!({
             "db": name, "chain": chain.exists().then_some(&chain.id), "paused": paused,
+            "debug": db.debug_copy()?,
             "open": chain.exists() && chain.is_open(), "unlocked": unlocked,
             "this": {
                 "endpoint": mine, "client": db.sync_client_id()?, "label": label,
@@ -918,6 +924,10 @@ fn status(db: &Db, json: bool) -> Result<()> {
     // Before the chain: the pipe syncs copies in none.
     for w in &clock {
         println!("⚠ {w}");
+    }
+    if let Err(why) = db.sync_refuse_debug() {
+        println!("{why}");
+        return Ok(());
     }
     if !chain.exists() {
         match peers.is_empty() {

@@ -60,6 +60,9 @@ pub enum Command {
     /// `datum conflicts` — the integrity-warning queue: list, resolve one,
     /// or run the auto-resolver (da-ttsm).
     Conflicts(ConflictsCommand),
+    /// `datum debug <what>` — test situations made in the current database
+    /// (da-4dvk7). Kept off the command list; `datum help debug` has it.
+    Debug(DebugCommand),
 
     Track(TrackArgs),
     Ignore(IgnoreArgs),
@@ -989,6 +992,18 @@ pub struct ConflictsResolveArgs {
     /// Warning hid (5-char prefix form accepted) or full id.
     pub hid: String,
     pub keep: ConflictsKeep,
+}
+
+// ─── Debug (da-4dvk7) ─────────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub enum DebugCommand {
+    /// `datum debug conflicts [N]` — N entries (3 by default) each edited
+    /// here and by a debug device unseen, and one deleted here as it edited
+    /// it: N + 1 sync conflicts.
+    Conflicts(usize),
+    /// `datum debug ops <HID>` — every op held of an entry.
+    Ops(String),
 }
 
 // ─── Now / Track / Ignore ─────────────────────────────────────────────────

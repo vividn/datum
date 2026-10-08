@@ -1209,6 +1209,31 @@ pub const TOPICS: &[TopicSpec] = &[
         outro: "\nNot taken: slash dates (9/28 is month-first or day-first depending on\n\
                 who types it), and words beyond the ones above (\"3 days ago at 10\").\n",
     },
+    TopicSpec {
+        name: "debug",
+        summary: "test situations, made in the current database",
+        intro: "`datum debug` is off the command list: it writes made-up data, for\n\
+                trying out the CLI and datum.day, into a database of its own\n\
+                (`datum --db <scratch> debug …`, ?db=<scratch> on datum.day). It\n\
+                refuses one holding an entry it did not make — specs, layouts and\n\
+                DEBUG's sample=true entries aside — or in a sync chain.\n\
+                \n\
+                datum debug conflicts [N]  N entries (3 by default) whose state this\n\
+                \x20                          copy and a debug device each edited without\n\
+                \x20                          seeing the other's edit, and one more deleted\n\
+                \x20                          here while the device edited it: N + 1 sync\n\
+                \x20                          conflicts, for `datum conflicts`. The device's\n\
+                \x20                          ops go in as a sync's do; a copy holding them\n\
+                \x20                          never syncs, nor starts or joins a chain.\n\
+                datum debug ops <HID>      every op held of an entry: its HLC, endpoint\n\
+                \x20                          and seq, kind, the ops it had seen (deps) and\n\
+                \x20                          what it changed. Two ops conflict when neither\n\
+                \x20                          saw the other.\n",
+        flags: &[],
+        summary_col: 24,
+        forms: &[],
+        outro: "",
+    },
 ];
 
 /// The examples on `datum help time` (da-6yqu9).
