@@ -6,12 +6,12 @@
 // $lib/dbio.ts's (`download`, `saveBackup`), and backup plans are
 // $lib/backups.ts's.
 
-import { run } from './run.js';
+import { cliError, run } from './run.js';
 
 /** The backup document, as the CLI wrote it. Rejects on a failed command. */
 export async function backup(): Promise<string> {
 	const result = await run(['db', 'backup', '-']);
-	if (result.code !== 0) throw new Error(result.stderr || `db backup exited ${result.code}`);
+	if (result.code !== 0) throw cliError(result.stderr, `db backup exited ${result.code}`);
 	return result.stdout;
 }
 

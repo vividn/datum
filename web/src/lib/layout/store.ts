@@ -25,7 +25,7 @@
 // another tab writes to the data db, and whenever the chooser is opened —
 // so a kit installed at the prompt is offered without a reload.
 
-import { run } from '../run.js';
+import { cliError, run } from '../run.js';
 import type { Layout } from './types.js';
 
 /**
@@ -57,7 +57,7 @@ function data(...argv: string[]): Promise<string> {
 
 async function stdoutOf(argv: string[]): Promise<string> {
 	const result = await run(argv);
-	if (result.code !== 0) throw new Error(result.stderr || `datum ${argv[0]} exited ${result.code}`);
+	if (result.code !== 0) throw cliError(result.stderr, `datum ${argv[0]} exited ${result.code}`);
 	return result.stdout;
 }
 
@@ -219,7 +219,7 @@ export async function saveLayout(layout: Layout): Promise<void> {
 	const updated = await run(['--db', '_internal', 'update', slug(layout.name), ...keys(layout)]);
 	if (updated.code === 0) return;
 	await create(layout).catch((e: Error) => {
-		throw new Error(`${updated.stderr}\n${e.message}`);
+		throw new Error(`${cliError(updated.stderr).message}\n${e.message}`);
 	});
 }
 

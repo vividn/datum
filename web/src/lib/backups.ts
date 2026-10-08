@@ -38,7 +38,7 @@ import { writable, get } from 'svelte/store';
 import { confirm } from './confirm.js';
 import type { Stage } from './dbProtocol.js';
 import { DEBUG_DB } from './layout/defaults.js';
-import { run, type RunResult } from './run.js';
+import { cliError, run, type RunResult } from './run.js';
 import { corsRules, DEFAULT_PREFIX, s3, testConnection, type StepResult } from './s3.js';
 
 /** Where a plan's files go. Names are flat: `index.json` and the slot files. */
@@ -177,7 +177,7 @@ const destination = (plan: Plan): Destination => {
 /** `argv`'s stdout, parsed; a rejection with its stderr when it failed. */
 async function json<T>(argv: string[], stage?: Stage): Promise<T & { stage?: Stage }> {
 	const result = await run(argv, undefined, undefined, undefined, stage);
-	if (result.code !== 0) throw new Error(result.stderr || `datum ${argv.join(' ')} exited ${result.code}`);
+	if (result.code !== 0) throw cliError(result.stderr, `datum ${argv.join(' ')} exited ${result.code}`);
 	return { ...JSON.parse(result.stdout), stage: result.stage };
 }
 
@@ -187,7 +187,7 @@ const slug = (name: string) => `backup_plan:${name}`;
 
 async function internal(...argv: string[]): Promise<RunResult> {
 	const result = await run(['--db', '_internal', ...argv]);
-	if (result.code !== 0) throw new Error(result.stderr || `datum ${argv[0]} exited ${result.code}`);
+	if (result.code !== 0) throw cliError(result.stderr, `datum ${argv[0]} exited ${result.code}`);
 	return result;
 }
 

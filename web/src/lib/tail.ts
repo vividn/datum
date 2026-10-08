@@ -8,7 +8,7 @@
 // because the page runs it with DATUM_COLOR=1 — so nothing about what a cell
 // SAYS is decided in the browser.
 
-import { run } from './run.js';
+import { cliError, run } from './run.js';
 
 /** One column of the CLI's table: its header word and one cell per row. */
 export interface TailColumn {
@@ -91,7 +91,7 @@ export async function tailListing(page: TailPage = {}): Promise<{ rows: TailRow[
 	if (page.count !== undefined) argv.push('-n', String(page.count));
 	if (page.before !== undefined) argv.push('-t', page.before);
 	const result = await run(argv, undefined, undefined, undefined, undefined, undefined, true);
-	if (result.code !== 0) throw new Error(result.stderr || `tail exited ${result.code}`);
+	if (result.code !== 0) throw cliError(result.stderr, `tail exited ${result.code}`);
 	const doc = JSON.parse(result.stdout) as { rows?: TailRow[]; columns?: TailColumn[] };
 	return { rows: doc.rows ?? [], columns: doc.columns ?? [] };
 }

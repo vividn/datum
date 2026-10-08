@@ -167,3 +167,17 @@ describe('window.datum.runQuiet — the exception', () => {
 		});
 	});
 });
+
+describe('window.datum.tailRows — a read that fails', () => {
+	test('rejects with the CLI’s reason, without its «Error: » — what the tail pane shows (da-nepqe)', async () => {
+		await shared.solo(async ({ page }) => {
+			const message = await page.evaluate(() =>
+				window.datum.tailRows({ count: 1, before: 'soonish' }).then(
+					() => 'resolved',
+					(e) => e.message
+				)
+			);
+			assert.equal(message, "Invalid time: cannot parse time 'soonish' — see `datum help time`");
+		});
+	});
+});
