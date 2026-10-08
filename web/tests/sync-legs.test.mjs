@@ -85,8 +85,7 @@ test('a terminal redeeming a link already used is told by the page to ask for a 
 				assert.equal(joined.code, 0, joined.stderr);
 				const used = await second.run(['sync', 'chain', 'connect', link]);
 				assert.notEqual(used.code, 0, used.stdout);
-				// «refused: Error: …» is da-16d3s; what is asserted here is the kind.
-				assert.match(used.stderr, /invite already used\. Next: ask datum\.day for a fresh invite/);
+				assert.match(used.stderr, /refused: invite already used\. Next: ask datum\.day for a fresh invite/);
 			},
 			{ prepare: relayed(own) }
 		);

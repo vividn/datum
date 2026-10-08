@@ -49,7 +49,13 @@ impl Cli {
             .and_then(|c| c.as_f64());
         if code != Some(0.0) {
             let err = text(&out, "stderr");
-            let why = err.trim().trim_start_matches("error: ").to_string();
+            // main prints «Error: », the REPL «error: » (da-16d3s).
+            let err = err.trim();
+            let why = err
+                .strip_prefix("Error: ")
+                .or_else(|| err.strip_prefix("error: "))
+                .unwrap_or(err)
+                .to_string();
             return Err(match serde_json::from_str(text(&out, "stdout").trim()) {
                 Ok(kind) => Refusal(kind, why).into(),
                 Err(_) => anyhow!(why),
