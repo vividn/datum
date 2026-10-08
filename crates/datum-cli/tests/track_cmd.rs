@@ -158,7 +158,7 @@ fn a_stored_verb_wins_over_the_log() {
 
 /// One `track` declares a switch field whole: `--state NAME` names a state
 /// it may be switched to, `--state NAME=COLOR` paints one, and the `=` is
-/// what tells the two apart (da-94q1). The web's Track modal runs exactly
+/// what tells the two apart (da-94q1). The web's field form runs exactly
 /// this argv, so the two forms have to coexist on the one flag.
 #[test]
 fn a_bare_state_is_an_allowed_state_and_a_keyed_one_is_a_colour() {
@@ -202,7 +202,7 @@ fn a_bare_state_is_an_allowed_state_and_a_keyed_one_is_a_colour() {
 }
 
 /// `--key` / `--required-key` declare a field's keys in the same command
-/// that declares the field (da-h119q) — the web's spec modal asks for keys
+/// that declares the field (da-h119q) — the web's field form asks for keys
 /// on its first page, and a field being tracked for the first time has no
 /// spec for a second command to edit. A default is JSON when it parses.
 #[test]
@@ -256,4 +256,35 @@ fn keys_ride_on_the_track() {
         .unwrap()
         .subfields
         .contains_key(""));
+}
+
+/// `-R KEY` says where a line's leftover words go in the command that
+/// declares the field (da-fu29p): datum.day saves a new field with one
+/// `track`, and a field whose entries are «whatever words follow» is that
+/// key alone.
+#[test]
+fn the_remainder_rides_on_the_track() {
+    let db = fresh_db();
+    let remainder = |db: &Db| db.load_spec("emotion").unwrap().unwrap().remainder;
+    run_cli(
+        &["track", "emotion", "--verb", "occur", "-R", "emotions"],
+        &db,
+    )
+    .unwrap();
+    assert_eq!(remainder(&db).as_deref(), Some("emotions"));
+
+    run_cli(&["emotion", "calm", "tired"], &db).unwrap();
+    let logged = db.entries_for_field("emotion", None).unwrap();
+    assert!(
+        logged
+            .iter()
+            .any(|e| e.data == Some(json!({"emotions": ["calm", "tired"]}))),
+        "{logged:?}"
+    );
+
+    // A re-track that does not name it keeps it; `''` clears it.
+    run_cli(&["track", "emotion"], &db).unwrap();
+    assert_eq!(remainder(&db).as_deref(), Some("emotions"));
+    run_cli(&["track", "emotion", "--remainder", ""], &db).unwrap();
+    assert_eq!(remainder(&db), None);
 }

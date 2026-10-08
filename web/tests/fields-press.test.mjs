@@ -24,6 +24,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, type, untilFieldStyle } from './support/fields.mjs';
+import { SPEC } from './support/spec.mjs';
 
 describe('a press', () => {
 	before(startApp);
@@ -64,17 +65,16 @@ describe('a press', () => {
 		});
 	});
 
-	// The modal is tests/track.test.mjs's; what belongs here is that the (+)
+	// The form is tests/track.test.mjs's; what belongs here is that the (+)
 	// opens it and that the field it declares is the field the bar then draws.
-	test('the Track modal asks for the verb and writes it', async () => {
+	test('Track + asks for the verb and writes it', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await page.locator('.bar [data-track]').click();
-			const modal = page.locator('dialog.spec');
-			await modal.waitFor();
+			const modal = page.locator(SPEC);
+			await modal.locator('input.field').fill('sleep');
 			assert.equal(await modal.locator('.verb[aria-checked="true"]').count(), 0, 'a verb was chosen for them');
 
-			await modal.locator('input.field').fill('sleep');
 			await modal.locator('button[data-verb="start"]').click();
 			assert.equal((await modal.locator('code.preview').innerText()).trim(), 'track sleep --verb start');
 			await modal.locator('button.commit').click();

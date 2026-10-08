@@ -27,7 +27,7 @@ import { record } from '$lib/replStore.js';
 import { run, type RunResult } from '$lib/run.js';
 import { fieldsArgv, frecencyArgv, grammarArgv, nowArgv } from '$lib/calls.js';
 import { verbAsked } from '$lib/track.js';
-import { openTrack } from '$lib/specModal.js';
+import { openField } from '$lib/fieldWidget.js';
 import {
 	buttonsFor,
 	type FieldButton,
@@ -245,26 +245,20 @@ export async function press(
 /**
  * The CLI's «which verb?» refusal is a question, and the web has somewhere
  * to ask it: `track <field>` on a field with neither a spec nor a log
- * comes back asking for `--verb`, and that is the Track modal's own
- * question (da-94q1). The modal opens with the field already in it, and
- * what it answers with REPLACES the refused command — the answer is a
+ * comes back asking for `--verb`, and that is the field widget's own
+ * question (da-94q1, da-fu29p). Its place opens with the field already
+ * named, and what it saves REPLACES the refused command — the answer is a
  * `track` with the verb on it, so there is nothing left to retry.
  *
- * Null whenever the result was not that refusal, or the modal was
- * dismissed: the refusal then stands, as any other error does.
+ * Null whenever the result was not that refusal, or the place was left
+ * without a save: the refusal then stands, as any other error does. It
+ * stands too where a field widget was in view already — that one is put on
+ * the field and saves in its own time, which nothing here waits for.
  */
 async function answerVerb(argv: string[], result: RunResult): Promise<RunResult | null> {
 	const field = verbAsked(argv, result);
-	if (field === null) return null;
-	const answer = await openTrack({ field, ignored: ignoredFields() });
-	return answer && (await press(answer));
+	return field === null ? null : openField(field);
 }
-
-/** The fields `datum fields` calls ignored — the ones the modal offers back (da-d08c). */
-const ignoredFields = (): string[] =>
-	get(fields)
-		.filter((button) => button.ignored)
-		.map((button) => button.field);
 
 /** With no REPL mounted: run it, record it, and bump the epoch here. */
 async function alone(argv: string[], line?: string, stdin?: string): Promise<RunResult> {

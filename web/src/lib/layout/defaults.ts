@@ -295,7 +295,7 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	sync: () => only('sync', 'sync'),
 	help: () => only('help', 'help'),
 	backups: () => only('backups', 'backups'),
-	spec: () => only('spec', 'spec'),
+	field: () => only('field', 'field'),
 	input: () => only('input', 'input')
 };
 
@@ -311,22 +311,13 @@ export const ALIASES: Record<string, string> = {
 	now: 'nowview',
 	daystrip: 'dayview',
 	widgets: 'fields',
-	widgetbar: 'fields'
+	widgetbar: 'fields',
+	// The spec widget became the field widget (da-fu29p).
+	spec: 'field'
 };
-
-/**
- * The place that edits one field's spec (da-hbrfg): the `spec` widget
- * taking the field, under a name of its own, so a field has one tab and a
- * second open focuses it (`openPlace`). Unambiguous for any field: a field
- * name never holds a colon (`field_name.rs`), and the name is a tab's, never
- * a URL's.
- */
-export const specPlace = (field: string): string => `spec:${field}`;
 
 /** The built-in layout `name` names, if any; `phone` picks `main`'s tree. */
 export function builtinLayout(name: string, phone: boolean): Layout | null {
-	const field = /^spec:(.+)$/.exec(name)?.[1];
-	if (field) return only(name, 'spec', { field });
 	const make = BUILTIN[ALIASES[name] ?? name];
 	return make ? make(phone) : null;
 }

@@ -37,6 +37,7 @@ import { atEachScreen, focusTop, seedLines, sharedApp, startApp, stopApp, withAp
 import { fold, unfold } from './support/bar.mjs';
 import { chooser, inRoom } from './support/layout.mjs';
 import { until } from './support/until.mjs';
+import { SPEC } from './support/spec.mjs';
 
 before(startApp);
 after(stopApp);
@@ -56,7 +57,7 @@ const TINY = { width: 280, height: 664 };
 // each test on `main` alone with an empty database. A test that leaves a
 // widget's own state behind — a field pressed into its states, the custom
 // pane's command — takes a room, whose widgets go with it, and one that
-// opens the Track modal shuts it again. What still opens an app of its own
+// opens the field widget shuts it again. What still opens an app of its own
 // is alone at its options: the chooser's 320px, a coarse pointer, and a
 // locked `main` from `prepare`.
 const phone = sharedApp({ viewport: PHONE });
@@ -325,17 +326,17 @@ describe('on a phone-sized screen', () => {
 		});
 	});
 
-	// The (+) opens a modal now (da-94q1) — over the page rather than
-	// hanging off the bar's bottom row, so what it has to clear is the
-	// screen's own box. Its pictograms are measured in tests/track.test.mjs.
-	test('the modal the (+) opens is on screen', async () => {
+	// The (+) opens the field widget's place (da-94q1, da-fu29p) — a tab on
+	// a phone, rather than a form hanging off the bar's bottom row — so what
+	// its form has to clear is the screen's own box. Its pictograms are measured in tests/track.test.mjs.
+	test('the form the (+) opens is on screen', async () => {
 		await phone.solo(async ({ page }) => {
 			await page.locator('.bar [data-track]').click();
-			await assertOnScreen(page, 'dialog.spec', 'the Track modal');
-			// Shut again: a modal left open makes the page under it inert
-			// for the shared app's next test.
-			await page.keyboard.press('Escape');
-			await page.locator('dialog.spec').waitFor({ state: 'detached' });
+			await page.locator(SPEC).waitFor();
+			await assertOnScreen(page, SPEC, 'the field form');
+			// Left again, as a place is on a phone: back.
+			await page.goBack();
+			await page.locator(SPEC).waitFor({ state: 'detached' });
 		});
 	});
 
@@ -382,16 +383,16 @@ describe('on a phone-sized screen', () => {
 		});
 	});
 
-	test('the modal the (+) opens is on screen with a wrapped bar', async () => {
+	test('the form the (+) opens is on screen with a wrapped bar', async () => {
 		await phone.solo(async (app) => {
 			const { page } = app;
 			await track(app, FIELDS);
 			await page.locator('.bar [data-track]').click();
-			await assertOnScreen(page, 'dialog.spec', 'the Track modal');
-			// Shut again: a modal left open makes the page under it inert
-			// for the shared app's next test.
-			await page.keyboard.press('Escape');
-			await page.locator('dialog.spec').waitFor({ state: 'detached' });
+			await page.locator(SPEC).waitFor();
+			await assertOnScreen(page, SPEC, 'the field form');
+			// Left again, as a place is on a phone: back.
+			await page.goBack();
+			await page.locator(SPEC).waitFor({ state: 'detached' });
 		});
 	});
 });

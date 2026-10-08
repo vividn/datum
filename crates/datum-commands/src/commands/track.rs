@@ -56,7 +56,7 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
     // `--state` carries both halves of a switch field's declaration
     // (da-94q1): a bare NAME is a state it may be switched to, `NAME=COLOR`
     // paints one. So `track mood --verb switch --state good --state bad`
-    // declares the field whole, in the one command the web's Track modal
+    // declares the field whole, in the one command the web's field form
     // runs.
     let mut states: Vec<String> = Vec::new();
     for sc in &args.states {
@@ -130,6 +130,11 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
             spec.forget_key(k);
             spec.assign.insert(k.to_string(), v.to_string());
         }
+    }
+    // da-fu29p: `-R KEY`, as a log line's own, so a field whose entries are
+    // «whatever words follow» is declared in the one command too.
+    if let Some(r) = &args.remainder {
+        spec.remainder = Some(r.clone()).filter(|r| !r.is_empty());
     }
     spec.regenerate_derived_aliases();
     let client = client_id()?;

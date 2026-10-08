@@ -28,7 +28,8 @@ import * as shell from './layout/shell.js';
 import { last, pills, removePill, setPills, type LastRun, type Pill } from './bar.js';
 import { cursor, pointAt, setCursor, type Cursor } from './cursor.js';
 import { shellSplit } from './shellSplit.js';
-import { openSpec, openTrack, type TrackOptions } from './specModal.js';
+import { openField } from './fieldWidget.js';
+import type { Verb } from './track.js';
 import { get } from 'svelte/store';
 import { apply, layout } from './layout/current.js';
 import { forgetSession, keyOf, session, withSession } from './layout/session.js';
@@ -104,17 +105,11 @@ export interface DatumConsole {
 		point(sel: (Partial<Cursor> & { at?: Date }) | null): void;
 	};
 	/**
-	 * Open the Track modal (da-94q1) and run what it answers with, as
-	 * the fields' (+) does — with a field or a verb already chosen, which is the
-	 * door a filtered list's `+` comes in by. Null if it was dismissed.
+	 * Open the field widget (da-fu29p) on `field` — none is a new one, as
+	 * the fields' (+) opens it, `verb` its kind chosen — resolving with what its
+	 * place's next save ran, or null when it is left without one.
 	 */
-	track(options?: TrackOptions): Promise<RunResult | null>;
-	/**
-	 * Open `field`'s spec as its place (da-hbrfg), resolving when it is
-	 * left: with the one `spec set` its Done ran, or null. A field with no
-	 * spec is declared instead, as `track` above.
-	 */
-	spec(field: string): Promise<RunResult | null>;
+	field(field?: string, verb?: Verb | null): Promise<RunResult | null>;
 }
 
 /** Publish the handle on `target` (the window, in the app). */
@@ -148,11 +143,7 @@ export function installConsole(target: Record<string, unknown>): void {
 		sync: { states: () => get(syncStates), leads: syncLeads, offer: syncOffer, connect: syncConnect },
 		bar: { pills: () => get(pills), setPills, removePill, last: () => get(last) },
 		cursor: { at: () => get(cursor)?.at ?? null, set: setCursor, of: () => get(cursor), point: pointAt },
-		track: async (options) => {
-			const argv = await openTrack(options);
-			return argv && (await press(argv));
-		},
-		spec: openSpec
+		field: openField
 	};
 	target.datum = handle;
 }

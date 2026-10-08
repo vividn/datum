@@ -1,5 +1,5 @@
 <!--
-	The spec modal's Placement tab (da-btyvj): where a field's lane sits in
+	The field form's Placement tab (da-btyvj): where a field's lane sits in
 	the day, chosen by dragging it on today's REAL band — the CLI's own
 	`dayview`, so the field is placed against its actual neighbours.
 
