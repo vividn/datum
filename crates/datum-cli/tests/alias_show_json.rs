@@ -10,7 +10,7 @@ use std::process::Command;
 fn datum(db: &Path, args: &[&str]) -> String {
     let out = Command::new(env!("CARGO_BIN_EXE_datum"))
         .env("DATUM_DB", db)
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .args(args)
         .output()
         .expect("run datum");

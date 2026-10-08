@@ -25,7 +25,7 @@
 //!
 //! Layering note: the P0 harness (`common::run_cli`) dispatches in-process
 //! and cannot capture stdout. Cases that assert on user-visible output
-//! shell out to the compiled binary with `DATUM_COLOR=0`, mirroring
+//! shell out to the compiled binary with `NO_COLOR=1`, mirroring
 //! `delete_cmd.rs` and `output_parity.rs`.
 
 use crate::common;
@@ -247,7 +247,7 @@ fn get_not_found_exits_nonzero_with_clean_error() {
     let bin = env!("CARGO_BIN_EXE_datum");
     let out = Command::new(bin)
         .env("DATUM_DB", &db)
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .args(["get", "missing:handle"])
         .output()
         .expect("run datum");
@@ -376,7 +376,7 @@ fn show_format_without_output_string_errors() {
     let bin = env!("CARGO_BIN_EXE_datum");
     let out = Command::new(bin)
         .env("DATUM_DB", &db)
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .args(["get", "--show", "format", "_LAST"])
         .output()
         .expect("run datum");
@@ -477,7 +477,7 @@ fn run_binary_color(db: &PathBuf, args: &[&str]) -> (String, String) {
     let bin = env!("CARGO_BIN_EXE_datum");
     let out = Command::new(bin)
         .env("DATUM_DB", db)
-        .env("DATUM_COLOR", "1")
+        .env("FORCE_COLOR", "1")
         .env_remove("NO_COLOR")
         .args(args)
         .output()
@@ -508,7 +508,7 @@ fn run_binary(db: &PathBuf, args: &[&str]) -> (String, String) {
     let bin = env!("CARGO_BIN_EXE_datum");
     let out = Command::new(bin)
         .env("DATUM_DB", db)
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .args(args)
         .output()
         .expect("run datum");

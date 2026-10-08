@@ -491,7 +491,7 @@ The browser runs `datum-cli` itself, compiled to wasm32-wasip1 by
 `pnpm run build:cli-wasm` (pinned wasi-sdk and binaryen, fetched into
 `target/toolchains/`) and loaded through `@bjorn3/browser_wasi_shim`. What
 the page supplies is what a shell would: argv, stdin, `TZ`, a client id,
-`DATUM_COLOR=1` (there is no tty), and `HOME`/`DATUM_DB` inside the
+`FORCE_COLOR=1` (there is no tty), and `HOME`/`DATUM_DB` inside the
 preopened `/data`. The module is NOT committed: a binary cannot
 merge, and every CLI merge conflicted every other open CLI PR on it. Each
 push to main builds one onto the `wasm` branch (`.forgejo/workflows/wasm.yml`)

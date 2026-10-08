@@ -412,7 +412,12 @@ fn parse_invocation_inner(
     // position. (The pre-scan that picked the resolver in
     // `parse_invocation` already used the same flag value, so the
     // alias DB and the dispatch DB stay aligned.)
-    let (argv_for_expand, db_flag_tokens) = crate::config::split_off_global_db_flag(argv);
+    let (argv_for_expand, mut db_flag_tokens) = crate::config::split_off_global_db_flag(argv);
+    // `--color WHEN` likewise, or the field/verb swap moves a lone
+    // `--color=always` behind the command.
+    let (argv_for_expand, color_tokens) =
+        crate::config::split_off_global_color_flag(argv_for_expand);
+    db_flag_tokens.extend(color_tokens);
 
     // da-wdo9: a zero-token tail (`datum`, `datum --db NAME`) is the
     // documented REPL invocation, not a comma-split. Route it straight

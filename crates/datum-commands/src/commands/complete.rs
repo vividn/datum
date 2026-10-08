@@ -183,7 +183,7 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
         .chain(GLOBAL_FLAGS)
         .collect();
 
-    // A flag's value: only `--db` has anything to offer.
+    // A flag's value: only `--db` and `--color` have anything to offer.
     if let Some(prev) = rest.last() {
         if let Some(flag) = lookup_flag(&all_flags, prev) {
             if flag.takes_value && !flag.value_optional && !prev.contains('=') {
@@ -390,6 +390,9 @@ fn field_on_line(slots: &[(Slot, bool)], given: &[&String]) -> Option<String> {
 
 /// What a flag's value may be: the known databases for `--db`.
 fn value_of(flag: &str) -> Candidates {
+    if flag == "--color" {
+        return ["auto", "always", "never"].map(String::from).to_vec();
+    }
     if flag != "--db" {
         return Vec::new();
     }

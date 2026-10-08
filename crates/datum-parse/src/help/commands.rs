@@ -995,6 +995,18 @@ const REPARSE_BODY: &str = "USAGE:\n  datum reparse <HID[,HID]...>... [--fix]\n\
 // Global flags shown in `datum --help` under `GLOBAL OPTIONS:`.
 // ---------------------------------------------------------------------------
 
+/// `--color`, in GLOBAL OPTIONS and on `datum help color`.
+const COLOR_FLAG: FlagSpec = FlagSpec {
+    short: None,
+    long: "color",
+    takes_value: true,
+    value_hint: Some("WHEN"),
+    value_optional: false,
+    summary: "auto|always|never; see `datum help color`",
+    long_description: None,
+    left_override: Some("--color <WHEN>"),
+};
+
 pub const GLOBAL_FLAGS: &[FlagSpec] = &[
     FlagSpec {
         short: None,
@@ -1006,6 +1018,7 @@ pub const GLOBAL_FLAGS: &[FlagSpec] = &[
         long_description: None,
         left_override: Some("--db <NAME_OR_PATH>"),
     },
+    COLOR_FLAG,
     FlagSpec {
         short: None,
         long: "show",
@@ -1240,6 +1253,24 @@ pub const TOPICS: &[TopicSpec] = &[
         summary_col: 24,
         forms: &[],
         outro: "",
+    },
+    TopicSpec {
+        name: "color",
+        summary: "when the output is coloured",
+        intro: "The first of these that says anything decides. In front of the command:\n",
+        flags: &[FlagSpec {
+            summary: "always or never outranks the environment; auto leaves it to it",
+            ..COLOR_FLAG
+        }],
+        summary_col: 24,
+        forms: &[],
+        outro: "\nThen the environment, as other tools read it:\n\
+                \n\
+                \x20 NO_COLOR=1          any non-empty value: no colour\n\
+                \x20 CLICOLOR_FORCE=1    colour even through a pipe (not 0 or empty)\n\
+                \x20 FORCE_COLOR=1       the same (not 0, false or empty)\n\
+                \n\
+                Then whether stdout is a terminal: colour on one, none in a pipe or file.\n",
     },
 ];
 
@@ -1568,8 +1599,16 @@ pub const ENV_VARS: &[EnvVarSpec] = &[
         summary: "Weekday a week opens on (`monday`…`sunday`, or `1`-`7`; default Monday).",
     },
     EnvVarSpec {
-        name: "DATUM_COLOR",
-        summary: "`0` disables colour; otherwise auto-detect from the TTY.",
+        name: "NO_COLOR",
+        summary: "Any non-empty value turns colour off (`--color always` wins).",
+    },
+    EnvVarSpec {
+        name: "CLICOLOR_FORCE",
+        summary: "Colour even when stdout is not a terminal; `0` or empty does not (`NO_COLOR` wins).",
+    },
+    EnvVarSpec {
+        name: "FORCE_COLOR",
+        summary: "The same as `CLICOLOR_FORCE` (Node's name); `0` or `false` does not force.",
     },
     EnvVarSpec {
         name: "DATUM_SHOW",

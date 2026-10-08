@@ -68,8 +68,9 @@ test(`a page joins a chain holding ${ENTRIES} entries, says how far it is, and h
 				const tail = ['tail', '--json', '-n', String(ENTRIES + 10)];
 				const mine = (await app.run(tail)).stdout;
 				assert.equal(JSON.parse(mine).rows.length, ENTRIES);
-				// In the page's colours: it runs the CLI with DATUM_COLOR=1.
-				assert.equal(mine, (await native.run(tail, '', { DATUM_COLOR: '1' })).stdout);
+				// In the page's colours: it runs the CLI with FORCE_COLOR=1, which the
+				// native copy's NO_COLOR=1 would outrank, so that is emptied.
+				assert.equal(mine, (await native.run(tail, '', { NO_COLOR: '', FORCE_COLOR: '1' })).stdout);
 			},
 			{ prepare: relayed(relay) }
 		);

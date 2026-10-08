@@ -37,7 +37,7 @@ function datum(handles, argv, { stdin = '', stage, client = 'calls' } = {}) {
 	const stderr = new Sink();
 	const dir = opfsDirectory('/data', handles, stage);
 	const fds = [new OpenFile(new MemFile(new TextEncoder().encode(stdin))), stdout, stderr, dir];
-	const vars = ['HOME=/data', 'DATUM_HOME=/data', 'DATUM_DB=/data/datum.db', 'TZ=UTC', `DATUM_CLIENT_ID=${client}`, 'DATUM_COLOR=1'];
+	const vars = ['HOME=/data', 'DATUM_HOME=/data', 'DATUM_DB=/data/datum.db', 'TZ=UTC', `DATUM_CLIENT_ID=${client}`, 'FORCE_COLOR=1'];
 	const wasi = new WASI(['datum', ...argv], vars, fds, { debug: false });
 	const code = wasi.start(new WebAssembly.Instance(module, { wasi_snapshot_preview1: wasi.wasiImport }));
 	return { code, stdout: stdout.text(), stderr: stderr.text(), stage: staged(dir) };

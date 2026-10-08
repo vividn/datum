@@ -203,7 +203,7 @@ fn del_alias_dispatches_to_delete_handler() {
 /// action tag through `show_delete` → `show_action` (`Outcome::Delete.name()`
 /// = "DELETE"). The in-process harness doesn't capture stdout, so this case
 /// follows `output_parity.rs` and shells out to the compiled binary with
-/// `DATUM_COLOR=0` for portable assertions.
+/// `NO_COLOR=1` for portable assertions.
 ///
 /// Also locks in `--show none` silencing — proof the "DELETE" string above
 /// comes from the output pipeline, not a stray `println!`.
@@ -486,7 +486,7 @@ fn run_binary(db: &PathBuf, args: &[&str]) -> (String, String) {
     let bin = env!("CARGO_BIN_EXE_datum");
     let out = Command::new(bin)
         .env("DATUM_DB", db)
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .args(args)
         .output()
         .expect("run datum");
@@ -572,7 +572,7 @@ fn an_extra_word_is_refused_by_name_and_nothing_is_deleted() {
     ] {
         let out = Command::new(env!("CARGO_BIN_EXE_datum"))
             .env("DATUM_DB", &path)
-            .env("DATUM_COLOR", "0")
+            .env("NO_COLOR", "1")
             .args(args)
             .output()
             .expect("run datum");

@@ -1203,7 +1203,6 @@ mod tests {
     #[test]
     fn timestamp_prepends_prefix_when_not_today() {
         // No-color path so we can match the prefix verbatim.
-        std::env::set_var("DATUM_COLOR", "0");
         std::env::set_var("NO_COLOR", "1");
         let target = dt(2026, 4, 19);
         let now = dt(2026, 4, 22);
@@ -1218,13 +1217,11 @@ mod tests {
             out_old.starts_with("2024-12-13 "),
             "expected ISO-date prefix, got {out_old:?}"
         );
-        std::env::remove_var("DATUM_COLOR");
         std::env::remove_var("NO_COLOR");
     }
 
     #[test]
     fn timestamp_today_has_no_prefix() {
-        std::env::set_var("DATUM_COLOR", "0");
         std::env::set_var("NO_COLOR", "1");
         let target = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 9, 15, 30).unwrap(),
@@ -1243,7 +1240,6 @@ mod tests {
             out.starts_with("09:15:30"),
             "today rows must not carry a prefix: {out:?}"
         );
-        std::env::remove_var("DATUM_COLOR");
         std::env::remove_var("NO_COLOR");
     }
 
@@ -1251,7 +1247,6 @@ mod tests {
     /// No clock, no offset suffix, no relative-day prefix.
     #[test]
     fn timestamp_p1d_renders_as_bare_local_date() {
-        std::env::set_var("DATUM_COLOR", "0");
         std::env::set_var("NO_COLOR", "1");
         // 2026-04-22 00:00 UTC in a +5h zone is 2026-04-22 05:00 local — the
         // displayed date is the local one, mirroring start-of-day stripping.
@@ -1269,7 +1264,6 @@ mod tests {
         let old = dt(2024, 12, 13);
         let out_old = format_timestamp(&old, &now, Some("P1D"));
         assert_eq!(out_old, "2024-12-13");
-        std::env::remove_var("DATUM_COLOR");
         std::env::remove_var("NO_COLOR");
     }
 
@@ -1277,7 +1271,6 @@ mod tests {
     /// full datetime rendering.
     #[test]
     fn timestamp_non_p1d_uncertainty_keeps_clock() {
-        std::env::set_var("DATUM_COLOR", "0");
         std::env::set_var("NO_COLOR", "1");
         let target = DatumTime {
             utc: Utc.with_ymd_and_hms(2026, 4, 22, 9, 15, 30).unwrap(),
@@ -1301,7 +1294,6 @@ mod tests {
             format!("{out_none}±1s"),
             "PT1S keeps clock + ± suffix"
         );
-        std::env::remove_var("DATUM_COLOR");
         std::env::remove_var("NO_COLOR");
     }
 
@@ -1310,7 +1302,6 @@ mod tests {
     /// offset as a parenthesized prefix so `HH:MM:SS` stays aligned.
     #[test]
     fn timestamp_ref_mode_prefixes_only_differing_offsets() {
-        std::env::set_var("DATUM_COLOR", "0");
         std::env::set_var("NO_COLOR", "1");
         let now = dt(2026, 4, 22);
         let same = DatumTime {
@@ -1342,7 +1333,6 @@ mod tests {
             format_timestamp_ref(&other, &now, Some("PT3M"), Some(120)),
             "(+1)09:15:00±3m"
         );
-        std::env::remove_var("DATUM_COLOR");
         std::env::remove_var("NO_COLOR");
     }
 
@@ -1353,7 +1343,6 @@ mod tests {
     /// host conversion.
     #[test]
     fn timestamp_renders_in_entrys_stored_timezone() {
-        std::env::set_var("DATUM_COLOR", "0");
         std::env::set_var("NO_COLOR", "1");
         // Berlin 12:00 CEST (UTC+2) → UTC 10:00 → NY 06:00 EDT (UTC-4).
         let ny_target = DatumTime {
@@ -1383,7 +1372,6 @@ mod tests {
             !out.contains("12:00:00"),
             "must NOT render as Berlin wall-clock 12:00:00, got {out:?}"
         );
-        std::env::remove_var("DATUM_COLOR");
         std::env::remove_var("NO_COLOR");
     }
 

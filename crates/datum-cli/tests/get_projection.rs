@@ -22,7 +22,7 @@ impl Env {
             .env("DATUM_DB", p.join("t.db"))
             .env("DATUM_HOME", p)
             .env("DATUM_CONFIG_HOME", p)
-            .env("DATUM_COLOR", "0")
+            .env("NO_COLOR", "1")
             .args(args)
             .output()
             .expect("spawn datum")

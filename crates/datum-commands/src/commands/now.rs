@@ -157,7 +157,7 @@ fn print_now_band(args: &NowArgs, db: &Db, cols: u16, at: Option<chrono::DateTim
         Ok(f) => f,
         Err(_) => return, // never block the state list on a band-render error
     };
-    // da-tpny: the canonical color gate (DATUM_COLOR → NO_COLOR → TTY),
+    // da-tpny: the canonical color gate (NO_COLOR → FORCE_COLOR → TTY),
     // so the band colors exactly like the state list above it.
     let use_color = !args.no_color && colors::color_enabled();
     let cfg = TerminalConfig {

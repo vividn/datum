@@ -232,6 +232,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 ## Global Options
 
 - `--db <NAME_OR_PATH>` — Override the active DB
+- `--color <WHEN>` — auto|always|never; see `datum help color`
 - `--show <MODE>` — default|none|minimal|standard|format|all|json
 - `--json` — Shorthand for --show json
 - `-A, --show-all` — Shorthand for --show all
@@ -373,7 +374,9 @@ from the table the binary itself carries:
 | `DATUM_EDITOR`         | Editor for `datum edit`. Read FIRST, before toml `editor`, `$VISUAL`, `$EDITOR`.                |
 | `DATUM_ID_DELIMITER`   | Delimiter that collapses empty `%key%` segments in a slug template (default `:`).               |
 | `DATUM_WEEK_START`     | Weekday a week opens on (`monday`…`sunday`, or `1`-`7`; default Monday).                        |
-| `DATUM_COLOR`          | `0` disables colour; otherwise auto-detect from the TTY.                                        |
+| `NO_COLOR`             | Any non-empty value turns colour off (`--color always` wins).                                   |
+| `CLICOLOR_FORCE`       | Colour even when stdout is not a terminal; `0` or empty does not (`NO_COLOR` wins).             |
+| `FORCE_COLOR`          | The same as `CLICOLOR_FORCE` (Node's name); `0` or `false` does not force.                      |
 | `DATUM_SHOW`           | `--show` for a command that has the rendering, kept out of `raw_input` (a typed `--show` wins). |
 | `DATUM_NO_TIPS`        | Set to `1` to never print the one-time tab-completion tip.                                      |
 | `DATUM_SYNC_NO_DAEMON` | Set to `1` so a first `sync chain invite`/`connect` does not install the sync daemon.           |

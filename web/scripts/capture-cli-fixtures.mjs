@@ -143,7 +143,7 @@ try {
 	const mask = masker();
 	script.cases = script.script.map((argv) => {
 		const { code, stdout } = cliWith(
-			{ HOME: home, DATUM_DB: join(home, 'datum.db'), DATUM_CLIENT_ID: STDOUT_DEVICE, DATUM_COLOR: '1', TZ: 'UTC' },
+			{ HOME: home, DATUM_DB: join(home, 'datum.db'), DATUM_CLIENT_ID: STDOUT_DEVICE, FORCE_COLOR: '1', TZ: 'UTC' },
 			argv
 		);
 		return { argv, code, stdout: mask(stdout) };

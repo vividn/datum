@@ -51,7 +51,7 @@ impl Env {
             .env("DATUM_DB", &self.db)
             .env("DATUM_HOME", &self.home)
             .env("DATUM_CONFIG_HOME", &self.config_home)
-            .env("DATUM_COLOR", "0")
+            .env("NO_COLOR", "1")
             .args(args)
             .output()
             .expect("spawn datum")
@@ -74,7 +74,7 @@ impl Env {
             .env("DATUM_DB", &self.db)
             .env("DATUM_HOME", &self.home)
             .env("DATUM_CONFIG_HOME", &self.config_home)
-            .env("DATUM_COLOR", "0")
+            .env("NO_COLOR", "1")
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -682,7 +682,7 @@ fn subprocess_unwritable_backup_refuses_to_migrate() {
             .env("DATUM_DB", &db)
             .env("DATUM_HOME", &home)
             .env("DATUM_CONFIG_HOME", &config_home)
-            .env("DATUM_COLOR", "0")
+            .env("NO_COLOR", "1")
             .args(args)
             .output()
             .expect("spawn datum")
@@ -842,8 +842,8 @@ fn subprocess_tail_json_carries_the_table_columns() {
         "no action column: {doc}"
     );
     assert_eq!(column("hid").as_array().unwrap().len(), 2);
-    // DATUM_COLOR=0: the cells are plain.
-    assert!(!out.stdout.contains(&0x1b), "unpainted under DATUM_COLOR=0");
+    // NO_COLOR=1: the cells are plain.
+    assert!(!out.stdout.contains(&0x1b), "unpainted under NO_COLOR=1");
 }
 
 /// `db backup -` is the JSONL document on stdout, and `db restore -` reads
@@ -1154,7 +1154,7 @@ fn subprocess_backup_header_names_the_db_it_backed_up() {
             .env_remove("DATUM_DB")
             .env("DATUM_HOME", tmp.path().join("home"))
             .env("DATUM_CONFIG_HOME", tmp.path().join("config"))
-            .env("DATUM_COLOR", "0")
+            .env("NO_COLOR", "1")
             .args(args)
             .output()
             .expect("spawn datum");
@@ -1199,7 +1199,7 @@ fn subprocess_backup_rotation_indexes_the_db_it_backed_up() {
             .env_remove("DATUM_DB")
             .env("DATUM_HOME", tmp.path().join("home"))
             .env("DATUM_CONFIG_HOME", tmp.path().join("config"))
-            .env("DATUM_COLOR", "0")
+            .env("NO_COLOR", "1")
             .args(args)
             .output()
             .expect("spawn datum");

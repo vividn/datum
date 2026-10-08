@@ -352,7 +352,7 @@ fn db_import_synthetic_summary_reports_correct_counts() {
     let bin = env!("CARGO_BIN_EXE_datum");
     let out = std::process::Command::new(bin)
         .env("DATUM_DB", &db_path)
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .args(["db", "v2import", FIXTURE])
         .output()
         .expect("run datum binary");
@@ -386,7 +386,7 @@ fn datum_with_stdin(args: &[&str], stdin: &[u8]) -> std::process::Output {
     let dir = tempfile::tempdir().unwrap();
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
         .env("DATUM_DB", dir.path().join("datum.db"))
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .args(args)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())

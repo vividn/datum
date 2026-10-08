@@ -38,7 +38,7 @@ impl Env {
         cmd.env("DATUM_DB", self.db())
             .env("DATUM_HOME", p.join("data"))
             .env("DATUM_CONFIG_HOME", p.join("config"))
-            .env("DATUM_COLOR", "0");
+            .env("NO_COLOR", "1");
         cmd
     }
 
@@ -403,7 +403,7 @@ fn an_alias_only_datum_completes() {
     std::fs::create_dir_all(&fpath).unwrap();
     std::fs::write(fpath.join("_datum"), env.ok(&["completions", "zsh"])).unwrap();
     // Several words, so a script that ran only the first would run `env`.
-    let alias = format!("'env DATUM_COLOR=0 {bin}'");
+    let alias = format!("'env NO_COLOR=1 {bin}'");
     // compsys's `compadd` and `_message` need a live completion widget:
     // these print what they are handed.
     let zsh = format!(

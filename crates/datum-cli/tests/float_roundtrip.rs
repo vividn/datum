@@ -49,7 +49,7 @@ impl Env {
         cmd.env("DATUM_DB", &self.db)
             .env("DATUM_HOME", &self.home)
             .env("DATUM_CONFIG_HOME", &self.config_home)
-            .env("DATUM_COLOR", "0");
+            .env("NO_COLOR", "1");
         cmd
     }
 

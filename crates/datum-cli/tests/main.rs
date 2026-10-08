@@ -27,6 +27,7 @@ mod check_fix_shared_slug;
 mod cli_harness;
 mod client_templates;
 mod closed_pipe_last;
+mod color_flag;
 mod comma_slugs;
 mod comment_appends;
 mod completion;

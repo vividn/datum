@@ -110,10 +110,11 @@ pub fn parse_argv_string(s: &str) -> Result<Cli> {
 fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
     // Consume global flags before the subcommand.
     //
-    // `--db NAME_OR_PATH` is the only pre-subcommand global. We walk
-    // linearly; the first non-flag token (or an unknown flag) is the
-    // subcommand name.
+    // `--db NAME_OR_PATH` and `--color WHEN` are the pre-subcommand
+    // globals. We walk linearly; the first non-flag token (or an unknown
+    // flag) is the subcommand name.
     let mut db: Option<String> = None;
+    let mut color: Option<bool> = None;
     let mut i = 0;
     let sub_idx = loop {
         let Some(tok) = tail.get(i) else {
@@ -122,6 +123,7 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
             // caller supplied. `dm` and `dm --db finance` both land here.
             return Ok(Cli {
                 db,
+                color,
                 command: Command::Repl,
             });
         };
@@ -135,6 +137,17 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
                     .get(i + 1)
                     .ok_or_else(|| ParseError::InvalidArg("--db requires a value".into()))?;
                 db = Some((*v).to_string());
+                i += 2;
+            }
+            FlagSplit::LongAttached("color", v) => {
+                color = parse_color(v)?;
+                i += 1;
+            }
+            FlagSplit::Long("color") => {
+                let v = tail
+                    .get(i + 1)
+                    .ok_or_else(|| ParseError::InvalidArg("--color requires a value".into()))?;
+                color = parse_color(v)?;
                 i += 2;
             }
             FlagSplit::LongAttached("help", _) | FlagSplit::Long("help") => {
@@ -326,7 +339,19 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
         input::check_show(show, sub)?;
         apply_show(&mut command, show);
     }
-    Ok(Cli { db, command })
+    Ok(Cli { db, color, command })
+}
+
+/// `--color auto|always|never`, as git, cargo and ripgrep spell it.
+fn parse_color(v: &str) -> Result<Option<bool>> {
+    match v {
+        "auto" => Ok(None),
+        "always" => Ok(Some(true)),
+        "never" => Ok(Some(false)),
+        _ => Err(ParseError::InvalidArg(format!(
+            "--color takes auto, always or never, not '{v}'"
+        ))),
+    }
 }
 
 /// Hand the swept `--show` to whichever intent carries the output level.

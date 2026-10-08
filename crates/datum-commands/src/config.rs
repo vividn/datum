@@ -182,6 +182,25 @@ pub fn split_off_global_db_flag(argv: Vec<String>) -> (Vec<String>, Vec<String>)
     (without, flag)
 }
 
+/// Split the global `--color WHEN` / `--color=WHEN` off argv, as
+/// [`split_off_global_db_flag`] does `--db`. Only in front of the command
+/// and of any `--`: after the command, `--color` is `track`'s and `spec set`'s.
+pub fn split_off_global_color_flag(mut argv: Vec<String>) -> (Vec<String>, Vec<String>) {
+    let mut i = 1;
+    while let Some(tok) = argv.get(i) {
+        if tok == "--color" || tok.starts_with("--color=") {
+            let end = (i + 1 + usize::from(tok == "--color")).min(argv.len());
+            let flag = argv.drain(i..end).collect();
+            return (argv, flag);
+        }
+        if !tok.starts_with('-') || tok == "--" {
+            break;
+        }
+        i += 1 + usize::from(tok == "--show");
+    }
+    (argv, Vec::new())
+}
+
 /// Load the DB registry from `~/.config/datum/dbs.toml` (or via
 /// `DATUM_CONFIG_HOME` override). Missing file → empty registry. Parse
 /// errors surface as `Err` so callers can show the user what's wrong.

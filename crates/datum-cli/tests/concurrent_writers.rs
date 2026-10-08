@@ -26,7 +26,7 @@ fn concurrent_writer_processes_lose_no_writes() {
             .env("DATUM_DB", &db)
             .env("DATUM_HOME", &home)
             .env("DATUM_CONFIG_HOME", &home)
-            .env("DATUM_COLOR", "0")
+            .env("NO_COLOR", "1")
             .args(args)
             .output()
             .expect("spawn datum")

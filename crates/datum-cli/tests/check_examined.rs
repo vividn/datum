@@ -17,7 +17,7 @@ fn datum(db: &Path, args: &[&str]) -> String {
         .env("DATUM_DB", db)
         .env("DATUM_HOME", db.parent().unwrap())
         .env("DATUM_CONFIG_HOME", db.parent().unwrap())
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .args(args)
         .output()
         .expect("spawn datum");

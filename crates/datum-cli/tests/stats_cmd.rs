@@ -1066,7 +1066,7 @@ fn datum_with(home: &std::path::Path, env: &[(&str, &str)], args: &[&str]) -> St
         .env_remove("DATUM_DB")
         .env("DATUM_HOME", home)
         .env("DATUM_CONFIG_HOME", home.join("config"))
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .env("TZ", "UTC")
         .args(args)
         .output()

@@ -30,7 +30,7 @@ use serde_json::json;
 // ─── Environment guard ───────────────────────────────────────────────────────
 // `cargo test` threads share a process, so env-var flips for one test could
 // bleed into another. The shared scopes (da-3ywd) lock the process-wide
-// mutex and restore the prior `DATUM_COLOR` / `NO_COLOR` on drop.
+// mutex and restore the prior `FORCE_COLOR` / `NO_COLOR` on drop.
 use datum_test_util::{color_scope, no_color_scope};
 
 // ─── Entry-construction helpers ──────────────────────────────────────────────

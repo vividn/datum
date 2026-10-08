@@ -53,7 +53,7 @@ impl Env {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        self.run_with(args, &[("DATUM_COLOR", "0")])
+        self.run_with(args, &[("NO_COLOR", "1")])
     }
 
     fn run_with(&self, args: &[&str], vars: &[(&str, &str)]) -> Output {
@@ -62,7 +62,8 @@ impl Env {
             .env("DATUM_HOME", self.0.path().join("home"))
             .env("DATUM_CONFIG_HOME", self.0.path().join("config"))
             .env_remove("NO_COLOR")
-            .env_remove("DATUM_COLOR")
+            .env_remove("FORCE_COLOR")
+            .env_remove("CLICOLOR_FORCE")
             .envs(vars.iter().copied())
             .args(args)
             .output()
@@ -198,8 +199,8 @@ fn a_switch_binds_one_when_given_and_zero_when_not() {
 }
 
 /// A colour rule goes through the canonical gate (da-cjh89): piped with
-/// `DATUM_COLOR=1` — how datum.day runs the CLI — the matching row is
-/// painted, and `DATUM_COLOR=0` or `NO_COLOR` keeps it plain.
+/// `FORCE_COLOR=1` — how datum.day runs the CLI — the matching row is
+/// painted, and `FORCE_COLOR=0` or `NO_COLOR` keeps it plain.
 #[test]
 fn a_color_rule_follows_the_color_gate() {
     let env = Env::new();
@@ -208,12 +209,24 @@ fn a_color_rule_follows_the_color_gate() {
         assert!(out.status.success());
         String::from_utf8(out.stdout).unwrap()
     };
-    let yellow = nums(&[("DATUM_COLOR", "1")]);
+    let yellow = nums(&[("FORCE_COLOR", "1")]);
     let row = yellow.lines().find(|l| l.contains('2')).unwrap();
     assert!(row.starts_with("\x1b[33m"), "{yellow:?}");
     assert_eq!(yellow.matches("\x1b[33m").count(), 1, "{yellow:?}");
-    for vars in [&[("DATUM_COLOR", "0")][..], &[("NO_COLOR", "1")], &[]] {
+    for vars in [&[("FORCE_COLOR", "0")][..], &[("NO_COLOR", "1")], &[]] {
         let plain = nums(vars);
         assert!(!plain.contains('\x1b'), "{vars:?}: {plain:?}");
     }
+    // `--color` in front of a kit command, which no parse knows (da-r15mq).
+    let flagged = |args: &[&str], vars: &[(&str, &str)]| {
+        let out = env.run_with(args, vars);
+        assert!(out.status.success(), "{args:?}: {out:?}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+    assert_eq!(
+        flagged(&["--color", "always", "nums"], &[("NO_COLOR", "1")]),
+        yellow
+    );
+    let plain = flagged(&["--color=never", "nums"], &[("FORCE_COLOR", "1")]);
+    assert!(!plain.contains('\x1b'), "{plain:?}");
 }

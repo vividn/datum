@@ -126,7 +126,7 @@ fn one_comment_prints_bare_in_columns_and_format_strings() {
             .env("DATUM_DB", tmp.path().join("t.db"))
             .env("DATUM_HOME", tmp.path())
             .env("DATUM_CONFIG_HOME", tmp.path())
-            .env("DATUM_COLOR", "0")
+            .env("NO_COLOR", "1")
             .args(args)
             .output()
             .unwrap();

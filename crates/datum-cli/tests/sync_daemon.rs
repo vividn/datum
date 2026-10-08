@@ -65,7 +65,7 @@ impl Home {
             .env("DATUM_HOME", self.path("data"))
             .env("DATUM_CONFIG_HOME", self.path("dc%onf"))
             .env("DATUM_DB", self.path("data/data.db"))
-            .env("DATUM_COLOR", "0")
+            .env("NO_COLOR", "1")
             .env("DATUM_SYNC_BIND", format!("127.0.0.1:{}", self.port))
             .env("USER", "tester")
             .env_remove("DATUM_SYNC_NO_DAEMON");

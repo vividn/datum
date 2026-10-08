@@ -61,7 +61,7 @@ impl Copy {
         c.env("DATUM_DB", self.db())
             .env("DATUM_HOME", self.tmp.path().join("home"))
             .env("DATUM_CONFIG_HOME", self.tmp.path().join("config"))
-            .env("DATUM_COLOR", "0")
+            .env("NO_COLOR", "1")
             .env("DATUM_SYNC_BIND", format!("127.0.0.1:{}", self.port))
             // Never a service in the real home (da-vd2sn).
             .env("DATUM_SYNC_NO_DAEMON", "1")

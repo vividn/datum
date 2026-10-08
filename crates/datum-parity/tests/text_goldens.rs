@@ -277,7 +277,7 @@ mod daydumb_tests {
             .env("DATUM_DB", dir.join("parity.db"))
             .env("TZ", datum_parity::GOLDEN_TZ)
             // v2's snapshots are coloured; daydumb colours a pipe only when asked.
-            .env("DATUM_COLOR", "1")
+            .env("FORCE_COLOR", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

@@ -187,8 +187,8 @@ fn render_once(cmd: &InstalledKitCommand, call: &Call, db: &Db) -> Result<String
     let result = db
         .run_view(&view_row, &call.params)
         .with_context(|| format!("execute view '{view_name}'"))?;
-    // da-cjh89: the canonical gate (DATUM_COLOR → NO_COLOR → TTY), so the
-    // page's DATUM_COLOR=1 colours a rule's row and NO_COLOR shuts it off.
+    // da-cjh89: the canonical gate (NO_COLOR → FORCE_COLOR → TTY), so the
+    // page's FORCE_COLOR=1 colours a rule's row and NO_COLOR shuts it off.
     render(cmd, call, result, crate::render::colors::color_enabled())
 }
 

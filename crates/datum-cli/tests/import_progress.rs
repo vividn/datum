@@ -10,7 +10,7 @@ const N: usize = 3000;
 fn datum(db: &std::path::Path, args: &[&str], stdin: &[u8]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_datum"))
         .env("DATUM_DB", db)
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

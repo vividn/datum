@@ -252,7 +252,7 @@ fn run_command(args: &[String], env: &TestEnv) -> std::process::Output {
         .env("DATUM_DB", &env.db)
         .env("DATUM_HOME", &env.home)
         .env("DATUM_CONFIG_HOME", &env.config_home)
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .args(args)
         .output()
         .expect("spawn datum")

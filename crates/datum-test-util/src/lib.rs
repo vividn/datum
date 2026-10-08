@@ -1,5 +1,5 @@
 //! Shared harness for tests that mutate process-global state — env vars
-//! (`DATUM_COLOR`, `NO_COLOR`, `DATUM_HOME`, `TZ`, …) and other
+//! (`NO_COLOR`, `FORCE_COLOR`, `DATUM_HOME`, `TZ`, …) and other
 //! per-process globals.
 //!
 //! `cargo test` runs the tests inside one binary as parallel *threads* of
@@ -21,7 +21,7 @@
 //!   guards can coexist inside one locked scope without deadlocking on
 //!   the non-reentrant mutex. Acquire [`env_lock`] first.
 //! - [`no_color_scope`] / [`color_scope`] and the closure forms
-//!   [`with_no_color`] / [`with_color`] — lock + `DATUM_COLOR`/`NO_COLOR`
+//!   [`with_no_color`] / [`with_color`] — lock + `NO_COLOR`/`FORCE_COLOR`
 //!   override in one guard, for the very common color-gate toggle.
 
 use std::ffi::{OsStr, OsString};
@@ -76,30 +76,30 @@ impl Drop for ScopedEnv {
     }
 }
 
-/// Composite guard: the process-wide lock plus `DATUM_COLOR`/`NO_COLOR`
+/// Composite guard: the process-wide lock plus `FORCE_COLOR`/`NO_COLOR`
 /// overrides. Field order matters — env restores before the lock drops.
 pub struct ColorScope {
-    _datum: ScopedEnv,
+    _force: ScopedEnv,
     _no: ScopedEnv,
     _lock: MutexGuard<'static, ()>,
 }
 
-/// Force colors OFF (`DATUM_COLOR=0`, `NO_COLOR=1`) so assertions don't
+/// Force colors OFF (`NO_COLOR=1`, `FORCE_COLOR` unset) so assertions don't
 /// depend on whether the test binary happens to have a TTY.
 pub fn no_color_scope() -> ColorScope {
     let lock = env_lock();
     ColorScope {
-        _datum: ScopedEnv::set("DATUM_COLOR", "0"),
+        _force: ScopedEnv::remove("FORCE_COLOR"),
         _no: ScopedEnv::set("NO_COLOR", "1"),
         _lock: lock,
     }
 }
 
-/// Force colors ON (`DATUM_COLOR=1`, `NO_COLOR` unset).
+/// Force colors ON (`FORCE_COLOR=1`, `NO_COLOR` unset).
 pub fn color_scope() -> ColorScope {
     let lock = env_lock();
     ColorScope {
-        _datum: ScopedEnv::set("DATUM_COLOR", "1"),
+        _force: ScopedEnv::set("FORCE_COLOR", "1"),
         _no: ScopedEnv::remove("NO_COLOR"),
         _lock: lock,
     }
@@ -150,17 +150,17 @@ mod tests {
 
     #[test]
     fn color_scopes_toggle_and_restore() {
-        let prior_datum = std::env::var_os("DATUM_COLOR");
+        let prior_force = std::env::var_os("FORCE_COLOR");
         let prior_no = std::env::var_os("NO_COLOR");
         with_no_color(|| {
-            assert_eq!(std::env::var("DATUM_COLOR").as_deref(), Ok("0"));
+            assert!(std::env::var_os("FORCE_COLOR").is_none());
             assert_eq!(std::env::var("NO_COLOR").as_deref(), Ok("1"));
         });
         with_color(|| {
-            assert_eq!(std::env::var("DATUM_COLOR").as_deref(), Ok("1"));
+            assert_eq!(std::env::var("FORCE_COLOR").as_deref(), Ok("1"));
             assert!(std::env::var_os("NO_COLOR").is_none());
         });
-        assert_eq!(std::env::var_os("DATUM_COLOR"), prior_datum);
+        assert_eq!(std::env::var_os("FORCE_COLOR"), prior_force);
         assert_eq!(std::env::var_os("NO_COLOR"), prior_no);
     }
 }

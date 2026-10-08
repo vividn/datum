@@ -75,6 +75,7 @@ VIEWS / SYNC:
 
 GLOBAL OPTIONS:
   --db <NAME_OR_PATH>        Override the active DB
+  --color <WHEN>             auto|always|never; see `datum help color`
   --show <MODE>              default|none|minimal|standard|format|all|json
   --json                     Shorthand for --show json
   -A, --show-all             Shorthand for --show all

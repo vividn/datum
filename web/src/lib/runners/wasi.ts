@@ -25,7 +25,7 @@ export async function wasiRun(
 	const env = [
 		`TZ=${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
 		`DATUM_CLIENT_ID=${clientId()}`,
-		'DATUM_COLOR=1',
+		'FORCE_COLOR=1',
 		'DATUM_NO_DEFAULT_ANSWER=1',
 		...extra
 	];

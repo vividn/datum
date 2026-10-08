@@ -472,7 +472,7 @@ fn render_dayview_json(db_path: &Path) -> JsonValue {
     let out = Command::new(bin)
         .env("TZ", "UTC")
         .env("DATUM_DB", db_path)
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .args([
             "dayview",
             "--start-date",

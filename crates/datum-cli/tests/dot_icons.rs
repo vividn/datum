@@ -27,7 +27,7 @@ impl Env {
             .env("HOME", self.tmp.path())
             .env("DATUM_HOME", self.tmp.path())
             .env("DATUM_CONFIG_HOME", self.tmp.path())
-            .env("DATUM_COLOR", "0")
+            .env("NO_COLOR", "1")
             .args(args)
             .output()
             .unwrap()

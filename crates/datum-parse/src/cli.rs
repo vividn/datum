@@ -15,6 +15,10 @@ use crate::input::{DurationArgs, Matcher, OutputArgs, Show, TimeArgs};
 #[derive(Debug)]
 pub struct Cli {
     pub db: Option<String>,
+    /// `--color always|never` (`Some(true)` / `Some(false)`); `auto`, or no
+    /// flag, leaves it to `NO_COLOR`, `CLICOLOR_FORCE` / `FORCE_COLOR` and
+    /// the tty.
+    pub color: Option<bool>,
     pub command: Command,
 }
 

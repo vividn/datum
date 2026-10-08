@@ -278,7 +278,7 @@ fn render_data_multiline(pairs: &[(String, String)]) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
-    // da-46nj: tests that toggle the process-global `DATUM_COLOR`/`NO_COLOR`
+    // da-46nj: tests that toggle the process-global `FORCE_COLOR`/`NO_COLOR`
     // env vars must run serialized — otherwise one test's `set_var`/
     // `remove_var` races with another's read inside `render_value_chip` /
     // `format_state_doc_line`. The shared scopes lock the process-wide

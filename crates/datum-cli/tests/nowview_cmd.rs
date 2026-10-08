@@ -1156,7 +1156,7 @@ fn on_a_terminal(cmd: &str) -> Vec<String> {
         .args(["-qc", &format!("stty rows 30 cols 100; {cmd}"), "/dev/null"])
         .env("DATUM_DB", dir.path().join("t.db"))
         .env("HOME", dir.path())
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         // A terminal is where the one-time completion tip prints (da-bu09u).
         .env("DATUM_NO_TIPS", "1")
         .env(

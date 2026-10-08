@@ -40,7 +40,7 @@ impl Env {
             .env("DATUM_HOME", &self.home)
             .env("DATUM_CONFIG_HOME", &self.home)
             .env("HOME", &self.home)
-            .env("DATUM_COLOR", "0")
+            .env("NO_COLOR", "1")
             .args(args);
         c
     }

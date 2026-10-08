@@ -559,14 +559,14 @@ fn now_json_emits_versioned_snapshot() {
     let bin = env!("CARGO_BIN_EXE_datum");
     Command::new(bin)
         .env("DATUM_DB", &db_arg)
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .args(["switch", "activity", "writing"])
         .output()
         .expect("seed switch");
 
     let out = Command::new(bin)
         .env("DATUM_DB", &db_arg)
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .args(["now", "--json"])
         .output()
         .expect("run datum now --json");
@@ -1034,8 +1034,8 @@ fn now_time_travel_excludes_fields_born_after_anchor() {
 }
 
 /// da-5v3pl: the state list honours the same colour gate as the band —
-/// `DATUM_COLOR`, `NO_COLOR`, the tty and `--no-color` — and prints no
-/// escape at all when colour is off. `DATUM_COLOR=1` (what the web sets)
+/// `NO_COLOR`, `FORCE_COLOR`, the tty and `--no-color` — and prints no
+/// escape at all when colour is off. `FORCE_COLOR=1` (what the web sets)
 /// still paints it.
 #[test]
 fn now_state_list_honours_the_colour_gate() {
@@ -1046,7 +1046,8 @@ fn now_state_list_honours_the_colour_gate() {
     let run = |env: &[(&str, &str)], args: &[&str]| {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_datum"));
         cmd.env("DATUM_DB", &db)
-            .env_remove("DATUM_COLOR")
+            .env_remove("FORCE_COLOR")
+            .env_remove("CLICOLOR_FORCE")
             .env_remove("NO_COLOR")
             .stdout(Stdio::piped())
             .args(args);
@@ -1061,11 +1062,11 @@ fn now_state_list_honours_the_colour_gate() {
     run(&[], &["track", "mood", "--verb", "switch"]);
 
     for (env, args) in [
-        (&[("DATUM_COLOR", "0")][..], &["now", "--tracked"][..]),
+        (&[("FORCE_COLOR", "0")][..], &["now", "--tracked"][..]),
         (&[("NO_COLOR", "1")][..], &["now", "--tracked"][..]),
         (&[][..], &["now", "--tracked"][..]),
         (
-            &[("DATUM_COLOR", "1")][..],
+            &[("FORCE_COLOR", "1")][..],
             &["now", "--tracked", "--no-color"][..],
         ),
     ] {
@@ -1076,7 +1077,7 @@ fn now_state_list_honours_the_colour_gate() {
             "{env:?} {args:?} coloured:\n{out:?}"
         );
     }
-    let out = run(&[("DATUM_COLOR", "1")], &["now", "--bare", "--tracked"]);
+    let out = run(&[("FORCE_COLOR", "1")], &["now", "--bare", "--tracked"]);
     assert!(
         out.contains("\x1b[2m"),
         "tracked-false row must be DIM:\n{out:?}"
@@ -1095,7 +1096,7 @@ fn run_datum(db: &std::path::Path, env: &[(&str, &str)], args: &[&str]) -> Strin
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_datum"));
     cmd.env("DATUM_DB", db)
         .env("HOME", db.parent().expect("db dir"))
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .env("TZ", noon_zone())
         .env_remove("COLUMNS")
         .stdout(Stdio::piped())

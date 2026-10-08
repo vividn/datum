@@ -22,7 +22,7 @@ fn tmp_db() -> (tempfile::TempDir, PathBuf) {
 fn run(db: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_datum"))
         .env("DATUM_DB", db)
-        .env("DATUM_COLOR", "1")
+        .env("FORCE_COLOR", "1")
         .env_remove("NO_COLOR")
         .args(args)
         .output()

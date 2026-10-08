@@ -290,9 +290,9 @@ thread_local! {
     /// The in-thread override, ahead of every environment answer. `0` is
     /// unset, `1` forced on, `2` forced off — see [`ColorOverride`].
     ///
-    /// A caller that must paint regardless of `DATUM_COLOR`, `NO_COLOR` and
-    /// `is_terminal()` sets this and drops the guard when it is done; the
-    /// CLI never touches it.
+    /// A caller that must paint regardless of the environment and
+    /// `is_terminal()` sets this and drops the guard when it is done: the
+    /// CLI for its `--color always|never`, a render that needs both forms.
     ///
     /// Thread-local, not process-wide: a threaded `cargo test` runs renders concurrently,
     /// and a process-wide gate let one test's forced colour decide what
@@ -302,10 +302,9 @@ thread_local! {
 
 /// Force the colour gate on or off for as long as the guard lives.
 ///
-/// Scoped to the calling thread, so it is the wasm module's to use (one
-/// call at a time) and not a general-purpose knob: the CLI decides colour
-/// from `DATUM_COLOR` / `NO_COLOR` / the tty, and this sits ahead of all
-/// three. Restores whatever was in force when it drops, so a nested
+/// Scoped to the calling thread, the one that renders: it is what
+/// `--color always|never` sets, so it sits ahead of `NO_COLOR`,
+/// `CLICOLOR_FORCE` / `FORCE_COLOR` and the tty. Restores whatever was in force when it drops, so a nested
 /// override — or a panic partway through a render — cannot leave the gate
 /// stuck open for the next call.
 #[must_use = "the override lasts only as long as the guard"]
@@ -333,41 +332,33 @@ fn color_override() -> Option<bool> {
     }
 }
 
-/// ANSI colors are suppressed when stdout is not a TTY, when `NO_COLOR` is
-/// set, or when the test-only `DATUM_COLOR=0`/`never` override is in force.
+/// Whether to paint, by the conventions every other tool reads.
 ///
-/// Precedence: [`ColorOverride`] → `DATUM_COLOR` (explicit) → `NO_COLOR` →
-/// TTY detection.
+/// Precedence: [`ColorOverride`] (what `--color always|never` sets) →
+/// `NO_COLOR` (no-color.org: any non-empty value turns colour off) →
+/// `CLICOLOR_FORCE` / `FORCE_COLOR` (any value but empty, `0` or `false`
+/// turns it on through a pipe) → whether stdout is a terminal.
 pub(crate) fn color_enabled() -> bool {
     if let Some(forced) = color_override() {
         return forced;
     }
     color_decision(
-        force_color(),
-        std::env::var_os("NO_COLOR").is_some(),
+        env_truthy("NO_COLOR"),
+        env_truthy("CLICOLOR_FORCE") || env_truthy("FORCE_COLOR"),
         std::io::stdout().is_terminal(),
     )
 }
 
-/// Pure precedence core, split out for tests — the `DATUM_COLOR=always`
-/// branch can't be exercised by mutating the live env without racing
-/// concurrent no-color tests under threaded `cargo test`.
-fn color_decision(force: Option<bool>, no_color: bool, tty: bool) -> bool {
-    if let Some(f) = force {
-        return f;
-    }
-    if no_color {
-        return false;
-    }
-    tty
+/// Pure precedence core, split out for tests — the forcing branch can't be
+/// exercised by mutating the live env without racing concurrent no-color
+/// tests under threaded `cargo test`.
+fn color_decision(no_color: bool, force: bool, tty: bool) -> bool {
+    !no_color && (force || tty)
 }
 
-fn force_color() -> Option<bool> {
-    match std::env::var("DATUM_COLOR").ok().as_deref() {
-        Some("1") | Some("always") => Some(true),
-        Some("0") | Some("never") => Some(false),
-        _ => None,
-    }
+/// `var` holds a value that says yes: not empty, `0` or `false`.
+fn env_truthy(var: &str) -> bool {
+    std::env::var(var).is_ok_and(|v| !matches!(v.as_str(), "" | "0" | "false"))
 }
 
 /// Paint `body` with an ANSI sequence if color is enabled.
@@ -750,35 +741,51 @@ mod tests {
         assert!(cs.is_empty(), "Bool(false) → no colour");
     }
 
-    /// da-tpny: the gate's precedence table — `DATUM_COLOR` overrides
-    /// both `NO_COLOR` and TTY state in either direction; `NO_COLOR`
-    /// beats TTY; bare TTY detection is the final word.
+    /// da-r15mq: the gate's precedence table — `NO_COLOR` beats a forcing
+    /// variable and the tty; a forcing variable paints through a pipe;
+    /// bare tty detection is the final word.
     #[test]
     fn color_decision_precedence() {
-        assert!(color_decision(Some(true), true, false));
-        assert!(!color_decision(Some(false), false, true));
-        assert!(!color_decision(None, true, true));
-        assert!(color_decision(None, false, true));
-        assert!(!color_decision(None, false, false));
+        assert!(!color_decision(true, true, true));
+        assert!(color_decision(false, true, false));
+        assert!(color_decision(false, false, true));
+        assert!(!color_decision(false, false, false));
     }
 
-    /// da-tpny: env wiring — `DATUM_COLOR=never`/`0` shuts the gate even
-    /// on a TTY. Serialized on the shared env lock (da-3ywd): unlocked,
-    /// this test's `set_var` raced every concurrent color-gate reader.
+    /// da-r15mq: env wiring — `CLICOLOR_FORCE` and `FORCE_COLOR` open the
+    /// gate off a terminal (as `cargo test` runs) unless they say no, and
+    /// an empty `NO_COLOR` is no `NO_COLOR` (no-color.org).
     #[test]
-    fn color_enabled_honors_datum_color_never_via_env() {
+    fn color_enabled_reads_the_conventional_variables() {
         let _lock = datum_test_util::env_lock();
-        let _dc = datum_test_util::ScopedEnv::set("DATUM_COLOR", "never");
-        assert!(!color_enabled());
-        let _dc = datum_test_util::ScopedEnv::set("DATUM_COLOR", "0");
-        assert!(!color_enabled());
+        let _nc = datum_test_util::ScopedEnv::remove("NO_COLOR");
+        let _cf = datum_test_util::ScopedEnv::remove("CLICOLOR_FORCE");
+        let _fc = datum_test_util::ScopedEnv::remove("FORCE_COLOR");
+        assert!(!color_enabled(), "stdout is not a terminal under test");
+        for var in ["CLICOLOR_FORCE", "FORCE_COLOR"] {
+            for (v, on) in [
+                ("1", true),
+                ("3", true),
+                ("0", false),
+                ("false", false),
+                ("", false),
+            ] {
+                let _on = datum_test_util::ScopedEnv::set(var, v);
+                assert_eq!(color_enabled(), on, "{var}={v:?}");
+            }
+        }
+        let _on = datum_test_util::ScopedEnv::set("FORCE_COLOR", "1");
+        let _nc = datum_test_util::ScopedEnv::set("NO_COLOR", "");
+        assert!(color_enabled(), "an empty NO_COLOR says nothing");
+        let _nc = datum_test_util::ScopedEnv::set("NO_COLOR", "1");
+        assert!(!color_enabled(), "NO_COLOR outranks FORCE_COLOR");
     }
 
     /// da-6ec2: the override sits ahead of the whole environment table —
     /// which is the point of it. `NO_COLOR` is the strongest thing the
     /// environment says on its own, and a browser that asked for colour
     /// still gets colour over it; a browser that asked for none gets none
-    /// even where `DATUM_COLOR=always` would have forced it on.
+    /// even where `FORCE_COLOR` would have forced it on.
     ///
     /// On the shared env lock for the same reason as the test above: it
     /// mutates process-wide state every other colour test reads.
@@ -793,10 +800,11 @@ mod tests {
         }
         assert!(!color_enabled(), "and the gate closes again when it drops");
 
-        let _dc = datum_test_util::ScopedEnv::set("DATUM_COLOR", "always");
-        assert!(color_enabled(), "DATUM_COLOR=always reopens it");
+        let _nc = datum_test_util::ScopedEnv::remove("NO_COLOR");
+        let _dc = datum_test_util::ScopedEnv::set("FORCE_COLOR", "1");
+        assert!(color_enabled(), "FORCE_COLOR reopens it");
         let _off = ColorOverride::set(false);
-        assert!(!color_enabled(), "the override outranks DATUM_COLOR too");
+        assert!(!color_enabled(), "the override outranks FORCE_COLOR too");
     }
 
     /// The gate is a request bit, not a global left on: a nested guard

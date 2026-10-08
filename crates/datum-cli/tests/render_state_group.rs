@@ -34,7 +34,7 @@ fn run_color(db: &PathBuf, args: &[&str]) -> String {
     let bin = env!("CARGO_BIN_EXE_datum");
     let out = Command::new(bin)
         .env("DATUM_DB", db)
-        .env("DATUM_COLOR", "1")
+        .env("FORCE_COLOR", "1")
         .env_remove("NO_COLOR")
         .args(args)
         .output()

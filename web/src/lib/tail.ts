@@ -5,7 +5,7 @@
 // (da-6ec2): the REPL shows the CLI's text table, and the pane lays the
 // same cells out in a real `<table>`. The cells come from the CLI —
 // `table_columns_with`, the cell-building `format_table_with` pads, painted
-// because the page runs it with DATUM_COLOR=1 — so nothing about what a cell
+// because the page runs it with FORCE_COLOR=1 — so nothing about what a cell
 // SAYS is decided in the browser.
 
 import { tailArgv } from './calls.js';

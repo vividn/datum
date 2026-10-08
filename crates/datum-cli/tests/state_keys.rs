@@ -276,7 +276,7 @@ fn text_view_lists_state_keys() {
             .env("HOME", tmp.path())
             .env("DATUM_HOME", tmp.path())
             .env("DATUM_CONFIG_HOME", tmp.path())
-            .env("DATUM_COLOR", "0")
+            .env("NO_COLOR", "1")
             .args(args)
             .output()
             .unwrap();

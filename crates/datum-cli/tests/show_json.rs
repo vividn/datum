@@ -1,7 +1,7 @@
 //! `--show json` (da-yc9w): the action echo as data.
 //!
 //! Driven through the real binary because the mode is defined by what lands
-//! on *stdout*, and because the web passes `DATUM_COLOR=1` (there is no tty)
+//! on *stdout*, and because the web passes `FORCE_COLOR=1` (there is no tty)
 //! — so every case here runs with colour ON, which is the condition under
 //! which an un-stripped escape would leak into the JSON.
 
@@ -41,7 +41,8 @@ impl Env {
             .env("DATUM_DB", &self.db)
             .env("DATUM_HOME", &self.home)
             .env("DATUM_CONFIG_HOME", &self.config_home)
-            .env("DATUM_COLOR", "1")
+            .env("FORCE_COLOR", "1")
+            .env_remove("NO_COLOR")
             .args(args)
             .output()
             .expect("spawn datum")

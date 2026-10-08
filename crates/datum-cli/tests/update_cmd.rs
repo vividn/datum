@@ -69,7 +69,7 @@ fn run_bin(db_path: &std::path::Path, args: &[&str], input: &str) -> Output {
         .env("DATUM_DB", db_path)
         .env("DATUM_HOME", &home)
         .env("DATUM_CONFIG_HOME", &home)
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

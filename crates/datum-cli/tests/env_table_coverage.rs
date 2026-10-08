@@ -11,7 +11,7 @@
 //!
 //! The check is one-directional on purpose: every `DATUM_*` the config
 //! layer reads must be documented, while the table may document more
-//! (`DATUM_COLOR` is read by the output layer, not by `Config::load`).
+//! (`NO_COLOR` is read by the output layer, not by `Config::load`).
 
 /// The one module that layers CLI flag > env > toml > default. A
 /// user-facing `DATUM_*` variable is read here or it is not user-facing.

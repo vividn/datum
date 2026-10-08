@@ -1941,7 +1941,7 @@ mod tests {
     use super::*;
     use datum_core::time::DatumTime;
     // da-jfw6 / da-46nj: tests in this mod toggle the process-global
-    // `DATUM_COLOR` / `NO_COLOR` env vars via `ScopedEnv` to drive
+    // `FORCE_COLOR` / `NO_COLOR` env vars via `ScopedEnv` to drive
     // deterministic color-on/off rendering. Under parallel `cargo test
     // --lib`, one test's mid-flight set_var/remove_var races with
     // another's read inside `color_enabled` / `paint`, producing
@@ -2183,23 +2183,11 @@ mod tests {
     /// behaviour the bead asks for.
     #[test]
     fn no_color_env_suppresses_all_ansi() {
-        // Use the NO_COLOR path explicitly by clearing DATUM_COLOR and
-        // setting NO_COLOR. The guard restores both on drop.
+        // The guard restores NO_COLOR on drop.
         let _env_lock = env_lock();
-        let _datum = ScopedEnv::remove("DATUM_COLOR");
         let _no = ScopedEnv::set("NO_COLOR", "1");
         assert!(!color_enabled());
         assert_eq!(paint("\x1b[38;2;255;0;0m", "hi"), "hi");
-    }
-
-    /// `DATUM_COLOR` overrides `NO_COLOR` — useful for the internal test
-    /// matrix that wants to force colour on regardless of env.
-    #[test]
-    fn datum_color_overrides_no_color() {
-        let _env_lock = env_lock();
-        let _no = ScopedEnv::set("NO_COLOR", "1");
-        let _dc = ScopedEnv::set("DATUM_COLOR", "1");
-        assert!(color_enabled());
     }
 
     // ─── da-gvj1 corpus: state-cell rendering ─────────────────────────────
@@ -2248,7 +2236,7 @@ mod tests {
     #[test]
     fn same_structured_state_id_gets_same_color_across_entries() {
         let _env_lock = env_lock();
-        let _dc = ScopedEnv::set("DATUM_COLOR", "1");
+        let _dc = ScopedEnv::set("FORCE_COLOR", "1");
         let _no = ScopedEnv::remove("NO_COLOR");
         let a = sample_entry(
             "call",
@@ -2281,7 +2269,7 @@ mod tests {
     #[test]
     fn different_id_gets_different_color() {
         let _env_lock = env_lock();
-        let _dc = ScopedEnv::set("DATUM_COLOR", "1");
+        let _dc = ScopedEnv::set("FORCE_COLOR", "1");
         let _no = ScopedEnv::remove("NO_COLOR");
         let a = sample_entry("call", Verb::Switch, Some(serde_json::json!({"id": "joe"})));
         let b = sample_entry("call", Verb::Switch, Some(serde_json::json!({"id": "bob"})));
@@ -2316,7 +2304,7 @@ mod tests {
     #[test]
     fn parallel_simple_states_chipped_separately_in_main_line() {
         let _env_lock = env_lock();
-        let _dc = ScopedEnv::set("DATUM_COLOR", "1");
+        let _dc = ScopedEnv::set("FORCE_COLOR", "1");
         let _no = ScopedEnv::remove("NO_COLOR");
         let entry = sample_entry(
             "body",
@@ -2385,17 +2373,17 @@ mod tests {
 
     // ─── Test helpers ────────────────────────────────────────────────────────
 
-    /// RAII guard that flips `DATUM_COLOR=1` for the test scope and restores
+    /// RAII guard that flips `FORCE_COLOR=1` for the test scope and restores
     /// the prior value on drop. Required because `cargo test` threads share
     /// a process, so one test changing env could bleed into another.
     struct ColorGuard {
-        _datum: ScopedEnv,
+        _force: ScopedEnv,
         _no: ScopedEnv,
     }
     impl ColorGuard {
         fn force_on() -> Self {
             Self {
-                _datum: ScopedEnv::set("DATUM_COLOR", "1"),
+                _force: ScopedEnv::set("FORCE_COLOR", "1"),
                 _no: ScopedEnv::remove("NO_COLOR"),
             }
         }

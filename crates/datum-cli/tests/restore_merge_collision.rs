@@ -29,7 +29,7 @@ impl Env {
         let out = Command::new(env!("CARGO_BIN_EXE_datum"))
             .env("DATUM_HOME", self.tmp.path().join("home"))
             .env("DATUM_CONFIG_HOME", self.tmp.path().join("config"))
-            .env("DATUM_COLOR", "0")
+            .env("NO_COLOR", "1")
             .env("DATUM_SYNC_NO_DAEMON", "1")
             .arg("--db")
             .arg(self.path(db))

@@ -30,7 +30,7 @@ impl Env {
     fn run(&self, args: &[&str]) -> (bool, String) {
         let out = Command::new(env!("CARGO_BIN_EXE_datum"))
             .env("DATUM_DB", &self.path)
-            .env("DATUM_COLOR", "0")
+            .env("NO_COLOR", "1")
             .env("DATUM_SYNC_NO_DAEMON", "1")
             .args(args)
             .output()

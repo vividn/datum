@@ -87,6 +87,9 @@ pub fn run(argv: Vec<String>) -> Result<()> {
 }
 
 fn dispatch_single(cli: Cli) -> Result<()> {
+    // `--color always|never` outranks the environment for the whole run,
+    // a REPL started under it included.
+    let _color = cli.color.map(output::colors::ColorOverride::set);
     if matches!(&cli.command, Command::Repl) {
         #[cfg(feature = "native")]
         return repl::run(cli.db.as_deref());
@@ -145,10 +148,15 @@ fn dispatch_single(cli: Cli) -> Result<()> {
 }
 
 fn dispatch_multi(invocation: Invocation) -> Result<()> {
-    let db_hint = match &invocation {
-        Invocation::Multi { sides, .. } => sides.first().and_then(|c| c.db.clone()),
+    // The global flags are prepended to every side, so the first has them.
+    let first = match &invocation {
+        Invocation::Multi { sides, .. } => sides.first(),
         _ => None,
     };
+    let db_hint = first.and_then(|c| c.db.clone());
+    let _color = first
+        .and_then(|c| c.color)
+        .map(output::colors::ColorOverride::set);
     let resolved = config::resolve_db(db_hint.as_deref())?;
     if resolved.created_new {
         if let Some(name) = resolved.name.as_deref() {
@@ -169,12 +177,33 @@ fn dispatch_multi(invocation: Invocation) -> Result<()> {
 fn try_kit_level2_dispatch() -> Result<Option<()>> {
     let mut raw: Vec<String> = std::env::args().collect();
     // A leading `--db NAME` names the database the command runs against —
-    // the web passes one on every named database (da-1mkej).
-    let named = match raw.get(1).map(String::as_str) {
-        Some("--db") if raw.len() > 2 => Some(raw.drain(1..3).nth(1).unwrap_or_default()),
-        Some(a) if a.starts_with("--db=") => Some(raw.remove(1)["--db=".len()..].to_string()),
-        _ => None,
-    };
+    // the web passes one on every named database (da-1mkej) — and a
+    // `--color WHEN` beside it was already checked by the parse that failed.
+    let (mut named, mut color) = (None, None);
+    while let Some(first) = raw.get(1).cloned() {
+        let (flag, value) = match first.split_once('=') {
+            Some((f @ ("--db" | "--color"), v)) => {
+                raw.remove(1);
+                (f.to_string(), v.to_string())
+            }
+            None if (first == "--db" || first == "--color") && raw.len() > 2 => {
+                let v = raw.remove(2);
+                raw.remove(1);
+                (first.clone(), v)
+            }
+            _ => break,
+        };
+        if flag == "--db" {
+            named = Some(value);
+        } else {
+            color = match value.as_str() {
+                "always" => Some(true),
+                "never" => Some(false),
+                _ => None,
+            };
+        }
+    }
+    let _color = color.map(output::colors::ColorOverride::set);
     if raw.len() < 2 {
         return Ok(None);
     }

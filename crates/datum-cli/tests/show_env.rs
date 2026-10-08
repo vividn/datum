@@ -16,7 +16,7 @@ fn datum(db: &Path, show: &str, args: &[&str]) -> Output {
         .env("DATUM_DB", db)
         .env("DATUM_HOME", db.parent().unwrap())
         .env("DATUM_CONFIG_HOME", db.parent().unwrap())
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .env("DATUM_SHOW", show)
         .args(args)
         .output()

@@ -1,7 +1,7 @@
 //! End-to-end snapshot-style tests for the ported datum output format.
 //!
 //! These run the compiled `datum` binary so they exercise the full arg-parse →
-//! dispatch → output path. Colors are forced off via `DATUM_COLOR=0` so the
+//! dispatch → output path. Colors are forced off via `NO_COLOR=1` so the
 //! assertions stay portable across terminals / CI.
 
 use std::path::PathBuf;
@@ -22,7 +22,7 @@ fn run(db: &PathBuf, args: &[&str]) -> (String, String) {
     let bin = env!("CARGO_BIN_EXE_datum");
     let out = Command::new(bin)
         .env("DATUM_DB", db)
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .args(args)
         .output()
         .expect("run datum");

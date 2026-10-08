@@ -26,7 +26,7 @@ impl Copy {
         c.env("DATUM_DB", self.tmp.path().join("data.db"))
             .env("DATUM_HOME", self.tmp.path().join("home"))
             .env("DATUM_CONFIG_HOME", self.tmp.path().join("config"))
-            .env("DATUM_COLOR", "0")
+            .env("NO_COLOR", "1")
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

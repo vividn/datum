@@ -101,7 +101,7 @@ fn v2import_dry_run_reports_the_normalized_count() {
     let dir = tempfile::tempdir().unwrap();
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
         .env("DATUM_DB", dir.path().join("t.db"))
-        .env("DATUM_COLOR", "0")
+        .env("NO_COLOR", "1")
         .args(["db", "v2import", "--dry-run", f.path().to_str().unwrap()])
         .output()
         .unwrap();

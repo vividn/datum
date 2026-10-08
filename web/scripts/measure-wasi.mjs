@@ -238,7 +238,7 @@ async function parity() {
 					HOME: home,
 					DATUM_DB: join(home, 'datum.db'),
 					DATUM_CLIENT_ID: 'web-parity',
-					DATUM_COLOR: '1',
+					FORCE_COLOR: '1',
 					TZ: 'UTC'
 				},
 				encoding: 'utf8',
