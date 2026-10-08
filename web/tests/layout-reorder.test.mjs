@@ -33,6 +33,8 @@ const rootTabs = (page) =>
 	page.locator('.root-bar [role="tab"]').evaluateAll((all) => all.map((b) => b.textContent.replace('•', '').trim()));
 const shown = (page) =>
 	page.locator('.root-bar [role="tab"][aria-selected="true"]').evaluate((b) => b.textContent.replace('•', '').trim());
+/** Waits for `name` to be the tab in front: a switch lands a frame after the tap or click resolves (da-qwdm0). */
+const front = (page, name) => tab(page, name).and(page.locator('[aria-selected="true"]')).waitFor();
 const marked = (page) =>
 	page.evaluate(() =>
 		[...document.querySelectorAll('.root-bar [data-drop]')].map((t) => [t.textContent.replace('•', '').trim(), t.dataset.drop])
@@ -84,6 +86,7 @@ describe('a root tab dragged on a desktop', () => {
 		await withApp(
 			async ({ page, errors }) => {
 				await tab(page, 'main').click();
+				await front(page, 'main');
 				assert.equal(await shown(page), 'main');
 				assert.deepEqual(await rootTabs(page), ['main', 'tail', 'repl']);
 
@@ -157,6 +160,7 @@ describe('a root tab dragged on a phone', () => {
 				assert.deepEqual(await rootTabs(page), names);
 				assert.equal(await shown(page), 'main');
 				await tab(page, 'tail').tap();
+				await front(page, 'tail');
 				assert.equal(await shown(page), 'tail');
 				assert.deepEqual(await rootTabs(page), names);
 				assert.deepEqual(errors, []);
