@@ -25,8 +25,19 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-base="${MQ_BASE:-origin/main}"
-merge_base="$(git merge-base "$base" HEAD)"
+# Cans branch from staging, which runs ahead of main: diffing against main
+# made a one-line change pay for every crate staging touched (da-0k6rq). So by
+# default the base is the NEARER of the two: `git merge-base HEAD A B` is the
+# merge base of HEAD and a hypothetical merge of A and B.
+if [ -n "${MQ_BASE:-}" ]; then
+  bases=("$MQ_BASE")
+else
+  bases=()
+  for ref in origin/staging origin/main; do
+    git rev-parse --verify --quiet "$ref" >/dev/null && bases+=("$ref")
+  done
+fi
+merge_base="$(git merge-base HEAD "${bases[@]}")"
 changed="$(git diff --name-only "$merge_base" HEAD)"
 
 rust="$(printf '%s\n' "$changed" | grep -E '^(crates/|xtask/|Cargo\.(toml|lock)$|rust-toolchain|scripts/check(-changed)?\.sh$)' || true)"
