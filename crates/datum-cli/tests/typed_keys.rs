@@ -289,3 +289,42 @@ fn list_types_round_trip_through_a_kit() {
         ["issue:a", "issue:b"]
     );
 }
+
+/// A type declared over history makes `datum check` list the old values
+/// that do not fit, and the update `datum help spec` gives clears one, run
+/// as the page spells it (da-zetes).
+#[test]
+fn the_spec_help_update_clears_an_old_value_a_later_type_lists() {
+    let db = fresh_db();
+    // A lone value is not a list (da-jhi0x).
+    log(&db, "lift", "reps=8").unwrap();
+    run_cli(&["spec", "set", "lift", "--from-json", LIFT], &db).unwrap();
+    let mistyped = |db: &Db| {
+        let entries = db.list_including_deleted().unwrap();
+        let report = datum_commands::commands::check::collect_issues(db, &entries).unwrap();
+        report
+            .issues
+            .iter()
+            .any(|i| i.category == "mistyped_data_value")
+    };
+    assert!(mistyped(&db), "check lists the old value");
+    let page = datum_parse::help::command_help("spec");
+    let at = page
+        .find("`datum update <hid> ")
+        .expect("no update on spec --help");
+    let hid = logged_entries(&db, "lift")[0].hid.0.clone();
+    let argv: Vec<&str> = page[at + 1..]
+        .split('`')
+        .next()
+        .unwrap()
+        .split_whitespace()
+        .skip(1)
+        .map(|w| if w == "<hid>" { hid.as_str() } else { w })
+        .collect();
+    run_cli(&argv, &db).unwrap();
+    assert_eq!(
+        logged_entries(&db, "lift")[0].data.as_ref().unwrap()["reps"],
+        json!([8])
+    );
+    assert!(!mistyped(&db), "check is clean after the update");
+}
