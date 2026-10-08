@@ -143,9 +143,10 @@ fn idle() -> Duration {
 
 async fn within<T>(f: impl Future<Output = Result<T>>) -> Result<T> {
     let limit = idle();
-    timeout(limit, f)
-        .await
-        .map_err(|_| anyhow!("timed out: nothing moved for {}s", limit.as_secs()))?
+    timeout(limit, f).await.map_err(|_| {
+        let why = format!("timed out: nothing moved for {}s", limit.as_secs());
+        Failed(Failure::TimedOut, why)
+    })?
 }
 
 // ─── Wire ───────────────────────────────────────────────────────────────────
@@ -215,12 +216,47 @@ struct Hello {
     /// A redeemer's entries, as `datum count` counts them (da-tti3w).
     #[serde(default)]
     holds: u64,
+    /// The dialer reads a [`Reply::Refusal`]; one that does not say so, a
+    /// copy before da-b6xh6, is refused the old way.
+    #[serde(default)]
+    typed: bool,
 }
 
 #[derive(Serialize, Deserialize)]
 enum Reply {
-    Welcome { label: String, addr: EndpointAddr },
+    Welcome {
+        label: String,
+        addr: EndpointAddr,
+    },
+    /// A refusal's words alone: to and from a copy before da-b6xh6.
     Refused(String),
+    Refusal {
+        why: String,
+        kind: Why,
+    },
+}
+
+impl Reply {
+    /// Refuse a dialer with `kind` and `why`, in the form it reads.
+    fn refusal(typed: bool, kind: Why, why: String) -> Self {
+        match typed {
+            true => Reply::Refusal { why, kind },
+            false => Reply::Refused(why),
+        }
+    }
+}
+
+/// A refusal's [`Failed`]. An older acceptor's has words alone; the one
+/// kind a redeemer routes on, try the next address, is read from them as it
+/// was before da-b6xh6, and any other is [`Why::Other`]. The words are
+/// datum-core's `UNKNOWN_INVITE` as such a copy sends them: a suffix, since
+/// an older datum.day sends «Error: unknown invite» (da-16d3s).
+fn refused(why: String, kind: Option<Why>) -> anyhow::Error {
+    let kind = kind.unwrap_or(match why.ends_with("unknown invite") {
+        true => Why::UnknownInvite,
+        false => Why::Other,
+    });
+    Failed(Failure::Refused(kind), format!("refused: {why}")).into()
 }
 
 /// Sent between the chunks of a long apply; progress, and otherwise ignored.
@@ -331,6 +367,60 @@ impl std::fmt::Display for Lost {
 }
 
 impl std::error::Error for Lost {}
+
+/// Why a copy refuses a session, sent beside its words so a redeemer acts
+/// on the kind, never on the text (da-b6xh6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Why {
+    UnknownInvite,
+    InviteUsed,
+    InviteExpired,
+    /// The refusing copy's sync is paused.
+    Paused,
+    Other,
+}
+
+/// A [`Store`]'s refusal of a handshake: its [`Why`], and its words.
+#[derive(Debug)]
+pub struct Refusal(pub Why, pub String);
+
+/// Why a dial failed, where its caller acts on it (da-b6xh6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Failure {
+    /// The other copy refused it.
+    Refused(Why),
+    /// It reached no one.
+    Unreachable,
+    /// Nothing moved for [`idle`].
+    TimedOut,
+    /// It reached no one, and the ticket's invite had expired.
+    Late,
+}
+
+/// A dial's [`Failure`], and its words.
+#[derive(Debug)]
+pub struct Failed(pub Failure, pub String);
+
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.1)
+    }
+}
+
+impl std::fmt::Display for Failed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.1)
+    }
+}
+
+impl std::error::Error for Refusal {}
+impl std::error::Error for Failed {}
+
+/// `e`'s [`Failure`], if it is a [`Failed`].
+pub fn failure(e: &anyhow::Error) -> Option<Failure> {
+    e.downcast_ref::<Failed>().map(|f| f.0)
+}
 
 /// Apply `ops` in chunks, and between chunks send a [`BUSY`]: a [`CHUNK`]
 /// at a time, or where the store [`yields`](Store::yields), twice the last
@@ -493,6 +583,7 @@ async fn session(
         invite: invite.map(|r| r.secret.to_string()),
         chain: invite.map(|r| r.chain.clone()),
         holds,
+        typed: true,
     };
     put_json(&mut s, &hello).await?;
     let (label, added) = match get_json(&mut r, MAX_HELLO).await? {
@@ -520,7 +611,11 @@ async fn session(
         }
         Reply::Refused(why) => {
             conn.close(0u32.into(), b"refused");
-            bail!("refused: {why}");
+            return Err(refused(why, None));
+        }
+        Reply::Refusal { why, kind } => {
+            conn.close(0u32.into(), b"refused");
+            return Err(refused(why, Some(kind)));
         }
     };
     let mut rep = Report::new(label, id, added, invite.is_some());
@@ -537,22 +632,24 @@ async fn session(
 
 /// Why a dial reached no one, and what to do about it (da-shfv4): this
 /// copy's own relay is down, or the other copy is not running. Either way it
-/// starts «could not reach», which `redeem` reads as «try the next address».
+/// is [`Failure::Unreachable`], which `redeem` reads as «try the next address».
 fn unreachable(ep: &Endpoint, id: &str, e: anyhow::Error) -> anyhow::Error {
     let relays = ep.home_relay_status().get();
-    if !relays.is_empty() && !relays.iter().any(|r| r.is_connected()) {
-        let url = relays[0].url();
-        return anyhow!(
-            "could not reach {}: this copy is not connected to its relay ({url}); is it online?",
+    let why = if !relays.is_empty() && !relays.iter().any(|r| r.is_connected()) {
+        format!(
+            "could not reach {}: this copy is not connected to its relay ({}); is it online?",
+            short(id),
+            relays[0].url()
+        )
+    } else {
+        format!(
+            "could not reach {}: {e}; is the other copy running? A terminal syncs while \
+             `datum sync run` or its daemon runs (`datum sync daemon status`), datum.day while \
+             a tab is open on the database",
             short(id)
-        );
-    }
-    anyhow!(
-        "could not reach {}: {e}; is the other copy running? A terminal syncs while \
-         `datum sync run` or its daemon runs (`datum sync daemon status`), datum.day while \
-         a tab is open on the database",
-        short(id)
-    )
+        )
+    };
+    Failed(Failure::Unreachable, why).into()
 }
 
 /// Answer one incoming connection: a peer, or the redemption of an invite.
@@ -562,7 +659,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
     let (mut s, mut r) = within(async { Ok(conn.accept_bi().await?) }).await?;
     let hello: Hello = get_json(&mut r, MAX_HELLO).await?;
     let verdict = match conn.remote_id() == ep.id() {
-        true => Err(COPY.to_string()),
+        true => Err((Why::Other, COPY.to_string())),
         false => store
             .handshake(
                 &id,
@@ -574,12 +671,18 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
                 false,
             )
             .await
-            .map_err(|e| format!("{e:#}")),
+            .map_err(|e| {
+                (
+                    e.downcast_ref::<Refusal>().map_or(Why::Other, |r| r.0),
+                    format!("{e:#}"),
+                )
+            }),
     };
     let known = match verdict {
         Ok(added) => !added,
-        Err(why) => {
-            put_json(&mut s, &Reply::Refused(why.clone())).await?;
+        Err((kind, why)) => {
+            let reply = Reply::refusal(hello.typed, kind, why.clone());
+            put_json(&mut s, &reply).await?;
             let _ = timeout(Duration::from_secs(5), conn.closed()).await;
             bail!("refused {} ({}): {why}", hello.label, short(&id));
         }
@@ -627,12 +730,14 @@ pub async fn redeem(store: &impl Store, ep: &Endpoint, ticket: &Ticket) -> Resul
     for addr in &ticket.addrs {
         rep = dial(store, ep, addr.clone(), Some(&invite)).await;
         // Unreachable, or a member not yet holding the invite: the next
-        // address may admit.
-        let next = rep.as_ref().is_err_and(|e| {
-            let e = e.to_string();
-            e.starts_with("could not reach") || e.ends_with("unknown invite")
-        });
-        if !next {
+        // address may admit. Any other refusal stops here, a paused inviter
+        // too: going on would report whatever the last address said, often
+        // «could not reach», in place of the refusal that says what to do.
+        let next = rep.as_ref().err().and_then(failure);
+        if !matches!(
+            next,
+            Some(Failure::Unreachable | Failure::Refused(Why::UnknownInvite))
+        ) {
             break;
         }
     }
@@ -640,14 +745,13 @@ pub async fn redeem(store: &impl Store, ep: &Endpoint, ticket: &Ticket) -> Resul
     // ticket reaches no one; this clock says why. Only then: a clock that
     // is wrong must not refuse an invite still served (da-l9kdr).
     let late = ticket.about.expires.is_some_and(|at| at <= unix_now());
-    if late
-        && rep
-            .as_ref()
-            .is_err_and(|e| e.to_string().starts_with("could not reach"))
-    {
-        return rep.context("invite expired: ask the inviting device for a new one");
+    match rep {
+        Err(e) if late && failure(&e) == Some(Failure::Unreachable) => {
+            let why = "invite expired: ask the inviting device for a new one";
+            Err(e.context(Failed(Failure::Late, why.into())))
+        }
+        rep => rep,
     }
-    rep
 }
 
 // ─── The endpoint ───────────────────────────────────────────────────────────
@@ -690,4 +794,48 @@ pub async fn bind(secret: [u8; 32], net: &Net) -> Result<Endpoint> {
         let _ = timeout(Duration::from_secs(10), ep.online()).await;
     }
     Ok(ep)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// A copy one version apart keeps reading a refusal (da-b6xh6): the
+    /// frames below are what a copy before it sends and reads.
+    #[test]
+    fn a_refusal_reads_across_one_version() {
+        let addr = EndpointAddr::new(SecretKey::from_bytes(&[1; 32]).public());
+        // An older dialer says nothing of `typed`, and is refused in words.
+        let old: Hello = serde_json::from_value(json!({
+            "label": "old", "addr": addr, "invite": "s", "chain": "", "holds": 0
+        }))
+        .unwrap();
+        let reply = Reply::refusal(old.typed, Why::InviteUsed, "invite already used".into());
+        assert_eq!(
+            serde_json::to_value(&reply).unwrap(),
+            json!({"Refused": "invite already used"})
+        );
+        // A dialer that says so is refused with the kind.
+        let reply = Reply::refusal(true, Why::InviteUsed, "invite already used".into());
+        assert_eq!(
+            serde_json::to_value(&reply).unwrap(),
+            json!({"Refusal": {"why": "invite already used", "kind": "invite-used"}})
+        );
+        // An older acceptor's refusal reads, and «unknown invite» still
+        // sends a redeemer on to the next address.
+        for (words, kind) in [
+            ("unknown invite", Why::UnknownInvite),
+            ("Error: unknown invite", Why::UnknownInvite),
+            ("invite already used", Why::Other),
+        ] {
+            let Reply::Refused(why) = serde_json::from_value(json!({ "Refused": words })).unwrap()
+            else {
+                panic!("{words}: not a refusal");
+            };
+            let e = refused(why, None);
+            assert_eq!(failure(&e), Some(Failure::Refused(kind)), "{words}");
+            assert_eq!(e.to_string(), format!("refused: {words}"));
+        }
+    }
 }

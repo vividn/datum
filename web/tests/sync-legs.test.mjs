@@ -68,3 +68,30 @@ test('the page invites, the CLI connects, they sync both ways, and the widget na
 		await native.close();
 	}
 });
+
+// The page's refusal reaches the terminal as a KIND beside its words (da-b6xh6):
+// the page's store hears it from `sync handshake`'s stdout, and the terminal's
+// next step follows it. Read as any other refusal, it would point at
+// `datum sync status` instead.
+test('a terminal redeeming a link already used is told by the page to ask for a fresh one', { timeout: 120_000 }, async () => {
+	// Its own relay: the test above ends by stopping the file's.
+	const own = await startRelay();
+	const [first, second] = [await nativeCopy(own), await nativeCopy(own)];
+	try {
+		await withWallClock(
+			async (app) => {
+				const link = await app.page.evaluate(async () => `${location.origin}/sync/join#${await window.datum.sync.offer('datum')}`);
+				const joined = await first.run(['sync', 'chain', 'connect', link]);
+				assert.equal(joined.code, 0, joined.stderr);
+				const used = await second.run(['sync', 'chain', 'connect', link]);
+				assert.notEqual(used.code, 0, used.stdout);
+				// «refused: Error: …» is da-16d3s; what is asserted here is the kind.
+				assert.match(used.stderr, /invite already used\. Next: ask datum\.day for a fresh invite/);
+			},
+			{ prepare: relayed(own) }
+		);
+	} finally {
+		await Promise.all([first.close(), second.close()]);
+		await own.stop();
+	}
+});

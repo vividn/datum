@@ -379,6 +379,57 @@ fn connect_says_what_it_waits_for_and_why_it_ended_unanswered() {
     assert!(out.contains("or ask it for a fresh invite"), "{out}");
 }
 
+/// A ticket past its time that nobody answers says the invite expired, in
+/// its own words and with no «did not answer» after them: the failure is
+/// its own kind, though an unreachable one lies under it (da-b6xh6).
+#[test]
+fn a_late_ticket_nobody_answers_says_it_expired() {
+    let (a, mut c) = (Copy::new(), Copy::new());
+    let (mut expiring, stale) = a.invite(&["--expires", "1s"]);
+    assert!(!expiring.finish().0);
+    c.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
+    let late = c.fails(&["sync", "chain", "connect", &stale], "");
+    // As before da-b6xh6: the expiry, caused by the leg that was down.
+    assert!(
+        late.contains("invite expired: ask the inviting device for a new one\n\nCaused by:")
+            && late.contains("could not reach "),
+        "{late}"
+    );
+    assert!(!late.contains("Next:"), "{late}");
+}
+
+/// A refusal reaches the redeemer as a kind beside its words, and the next
+/// step follows the kind (da-b6xh6): an invite the inviter does not hold asks
+/// for a fresh one, and an inviter whose sync is paused is named as the copy
+/// to resume, its words («paused on this copy») being the inviter's.
+#[test]
+fn a_refusal_names_its_next_step_by_its_kind() {
+    let (a, c) = (Copy::new(), Copy::new());
+    let (_inviting, ticket) = a.invite(&[]);
+    let (head, code) = ticket.rsplit_once('#').unwrap();
+    let b32 = data_encoding::BASE32_NOPAD;
+    let mut t: serde_json::Value =
+        serde_json::from_slice(&b32.decode(code.to_uppercase().as_bytes()).unwrap()).unwrap();
+    t["secret"] = "not-an-invite-this-chain-holds".into();
+    let forged = format!("{head}#{}", b32.encode(&serde_json::to_vec(&t).unwrap()));
+    let unknown = c.fails(&["sync", "chain", "connect", &forged], "");
+    assert!(unknown.contains("refused: unknown invite"), "{unknown}");
+    assert!(unknown.contains("Next: ask "), "{unknown}");
+    assert!(unknown.contains(" for a fresh invite"), "{unknown}");
+
+    a.ok(&["sync", "pause"]);
+    let paused = c.fails(&["sync", "chain", "connect", &ticket], "");
+    assert!(
+        paused.contains("refused: sync is paused on this copy"),
+        "{paused}"
+    );
+    assert!(paused.contains("Next: sync is paused on "), "{paused}");
+    assert!(
+        paused.contains(", not on this copy: resume it there"),
+        "{paused}"
+    );
+}
+
 /// A stranger that dials without an invite is refused by the store's
 /// handshake (`sync_chain`'s `a_non_members_act_is_refused_open_chain_or_not`);
 /// here, the copy of this key, refused before it dials. In the inviter's
@@ -474,6 +525,8 @@ fn a_paused_chain_of_one_refused_at_its_own_handshake_keeps_its_chain() {
     let (_inviting, ticket) = a.invite(&[]);
     let refused = b.fails(&["sync", "chain", "connect", &ticket], "");
     assert!(refused.contains("paused"), "{refused}");
+    // Its OWN pause: no next step pointing at the inviter (da-b6xh6).
+    assert!(!refused.contains("Next:"), "{refused}");
     assert_eq!(b.query("SELECT COUNT(*) FROM ops"), ops);
     assert!(!a.has("tea"));
 }
@@ -880,6 +933,11 @@ fn a_copy_holding_entries_is_refused_a_reader_invite() {
         let refused = r.fails(&["sync", "chain", "connect", &ticket], "");
         assert!(
             refused.contains("holds 2 entries of its own; a reader writes nothing"),
+            "{refused}"
+        );
+        // A refusal of no kind of its own (da-b6xh6).
+        assert!(
+            refused.contains("Next: `datum sync status` shows where this copy stands"),
             "{refused}"
         );
         assert_eq!(

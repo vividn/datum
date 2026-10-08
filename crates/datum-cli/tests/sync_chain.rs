@@ -169,6 +169,42 @@ fn admit(member: &Copy, copy: &Copy, label: &str, admin_key: Option<&str>) {
     assert!(member.send(copy).0);
 }
 
+/// A refusal of a kind a redeemer acts on prints the kind on stdout, which
+/// is how datum.day's store hears it (da-b6xh6); one of no kind prints none.
+#[test]
+fn a_handshake_refusal_prints_its_kind() {
+    let a = Copy::new();
+    let invite = json(&a.ok(&["sync", "new-invite"]));
+    let secret = invite["secret"].as_str().unwrap();
+    let hello = |c: &Copy, secret: &str| {
+        let id = c.id();
+        let args = ["sync", "handshake", &id, "--label", "c", "--addr", "{}"];
+        a.run(
+            &[&args[..], &["--invite", secret, "--chain", ""]].concat(),
+            "",
+        )
+    };
+    let (c, d) = (Copy::new(), Copy::new());
+    assert!(hello(&c, secret).status.success());
+    let used = hello(&d, secret);
+    let unknown = hello(&d, "not-an-invite");
+    let other = a.run(
+        &["sync", "handshake", &d.id(), "--label", "d", "--addr", "{}"],
+        "",
+    );
+    a.ok(&["sync", "pause"]);
+    let paused = hello(&d, secret);
+    for (out, kind) in [
+        (used, "\"invite-used\""),
+        (unknown, "\"unknown-invite\""),
+        (other, ""),
+        (paused, "\"paused\""),
+    ] {
+        assert!(!out.status.success(), "{kind}");
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), kind);
+    }
+}
+
 /// A copy belongs to one chain (da-mepav): a redeemer in another chain, or
 /// one that does not say, is refused at the admitting member's handshake,
 /// and nothing of it is admitted.

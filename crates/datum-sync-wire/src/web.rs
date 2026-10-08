@@ -3,7 +3,7 @@
 //! sync …` command the worker runs through the page's database runner, so
 //! no storage logic exists in the browser apart from the CLI's own.
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use js_sys::{Array, Function, Promise, Reflect};
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
@@ -32,7 +32,8 @@ struct Cli {
 }
 
 impl Cli {
-    /// stdout of `datum <argv>`, or its stderr as the error.
+    /// stdout of `datum <argv>`, or its stderr as the error: a [`Refusal`]
+    /// when stdout names its [`Why`], as `sync handshake`'s does (da-b6xh6).
     async fn run(&self, argv: &[&str], stdin: Option<&str>) -> Result<String> {
         let args: Array = argv.iter().map(|a| JsValue::from_str(a)).collect();
         let stdin = stdin.map_or(JsValue::UNDEFINED, JsValue::from_str);
@@ -48,7 +49,11 @@ impl Cli {
             .and_then(|c| c.as_f64());
         if code != Some(0.0) {
             let err = text(&out, "stderr");
-            bail!("{}", err.trim().trim_start_matches("error: "));
+            let why = err.trim().trim_start_matches("error: ").to_string();
+            return Err(match serde_json::from_str(text(&out, "stdout").trim()) {
+                Ok(kind) => Refusal(kind, why).into(),
+                Err(_) => anyhow!(why),
+            });
         }
         Ok(text(&out, "stdout"))
     }

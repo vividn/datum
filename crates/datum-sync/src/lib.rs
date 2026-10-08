@@ -25,10 +25,11 @@ use anyhow::{anyhow, bail, ensure, Context, Result};
 use chrono::{DateTime, SecondsFormat, Utc};
 use datum_core::db::peers::Peer;
 use datum_core::db::{chain, Db};
+use datum_core::error::{DatumError, Refusal as CoreRefusal};
 use datum_parse::time::Zone;
 use datum_sync_wire::{
-    dial, redeem, serve, unix_now, About, Applied, Endpoint, EndpointAddr, Lost, Net, Report,
-    Store, Ticket, Vector,
+    dial, failure, redeem, serve, unix_now, About, Applied, Endpoint, EndpointAddr, Failure, Lost,
+    Net, Refusal, Report, Store, Ticket, Vector, Why,
 };
 use futures_util::stream::{FuturesUnordered, StreamExt};
 
@@ -138,7 +139,8 @@ impl Store for DbStore<'_> {
         let addr = serde_json::to_string(addr)?;
         let added = self
             .0
-            .sync_handshake(peer, label, &addr, invite, chain, holds, dialed)?;
+            .sync_handshake(peer, label, &addr, invite, chain, holds, dialed)
+            .map_err(refusal)?;
         self.1.set(self.1.get() || dialed);
         Ok(added)
     }
@@ -156,6 +158,21 @@ impl Store for DbStore<'_> {
     ) -> Result<()> {
         Ok(self.0.sync_record_session(peer, vector, verify, error)?)
     }
+}
+
+/// A handshake's error, with its kind where it is a [`Refusal`] the wire
+/// sends (da-b6xh6).
+fn refusal(e: DatumError) -> anyhow::Error {
+    let DatumError::Refused(kind, why) = e else {
+        return e.into();
+    };
+    let kind = match kind {
+        CoreRefusal::UnknownInvite => Why::UnknownInvite,
+        CoreRefusal::InviteUsed => Why::InviteUsed,
+        CoreRefusal::InviteExpired => Why::InviteExpired,
+        CoreRefusal::Paused => Why::Paused,
+    };
+    Refusal(kind, why).into()
 }
 
 fn addr(p: &Peer) -> Result<EndpointAddr> {
@@ -339,29 +356,29 @@ pub fn connect(db: &Db, ticket: &str) -> Result<()> {
     })
 }
 
-/// A join that failed, as one line: why, and what to do next.
+/// A join that failed, as one line: why, and what to do next — by the
+/// failure's kind, never its words (da-b6xh6).
 fn next_step(e: anyhow::Error, from: &str) -> anyhow::Error {
-    let why = format!("{e:#}");
-    let next = if ["invite expired", "invite already used", "unknown invite"]
-        .iter()
-        .any(|w| why.contains(w))
-    {
-        format!("ask {from} for a fresh invite")
-    } else if why.contains("could not reach") || why.contains("timed out") {
-        format!(
+    let next = match failure(&e) {
+        Some(Failure::Refused(Why::UnknownInvite | Why::InviteUsed | Why::InviteExpired)) => {
+            format!("ask {from} for a fresh invite")
+        }
+        // Its words say «this copy», read on the redeemer's terminal.
+        Some(Failure::Refused(Why::Paused)) => format!(
+            "sync is paused on {from}, not on this copy: resume it there (`datum sync \
+             resume`, or tap «sync paused» on datum.day) and connect again"
+        ),
+        Some(Failure::Refused(Why::Other)) => {
+            "`datum sync status` shows where this copy stands".into()
+        }
+        Some(Failure::Unreachable | Failure::TimedOut) => format!(
             "{from} did not answer: open datum.day on that database (or run \
              `datum sync chain invite` there) and connect again, or ask it for a fresh invite"
-        )
-    } else if why.starts_with("refused") {
-        "`datum sync status` shows where this copy stands".into()
-    } else {
-        return e;
+        ),
+        // Its own words say it already.
+        Some(Failure::Late) | None => return e,
     };
-    // Its own words may say it already.
-    match why.contains("for a new one") {
-        true => e,
-        false => anyhow!("{why}. Next: {next}"),
-    }
+    anyhow!("{e:#}. Next: {next}")
 }
 
 /// `datum sync`: sync with every member once.
@@ -478,4 +495,21 @@ pub fn run(db: &Db) -> Result<()> {
         ep.close().await;
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// datum.day's store reads the kind the CLI prints (core's name) as the
+    /// wire's: each kind is named alike in both (da-b6xh6).
+    #[test]
+    fn a_refusals_kind_is_named_alike_in_core_and_on_the_wire() {
+        use CoreRefusal::*;
+        for kind in [UnknownInvite, InviteUsed, InviteExpired, Paused] {
+            let e = refusal(DatumError::Refused(kind, String::new()));
+            let wire = e.downcast_ref::<Refusal>().unwrap().0;
+            assert_eq!(serde_json::json!(kind), serde_json::json!(wire));
+        }
+    }
 }

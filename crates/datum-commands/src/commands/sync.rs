@@ -12,6 +12,7 @@ use std::io::Read;
 use anyhow::{bail, ensure, Context, Result};
 use datum_core::db::chain::{self, Chain, Notice};
 use datum_core::db::Db;
+use datum_core::error::DatumError;
 use serde_json::{json, Value};
 
 use crate::args::{ShowFlag, SyncAdminAct, SyncCommand, SyncFilter};
@@ -333,8 +334,14 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             dialed,
         } => {
             let (invite, chain) = (invite.as_deref(), chain.as_deref());
-            let added =
-                db.sync_handshake(&endpoint, &label, &addr, invite, chain, holds, dialed)?;
+            // A refusal's kind on stdout, for datum.day's store (da-b6xh6).
+            let added = db
+                .sync_handshake(&endpoint, &label, &addr, invite, chain, holds, dialed)
+                .inspect_err(|e| {
+                    if let DatumError::Refused(kind, _) = e {
+                        println!("{}", json!(kind));
+                    }
+                })?;
             println!("{}", if added { "added" } else { "known" });
         }
         SyncCommand::NewInvite {

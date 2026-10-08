@@ -94,7 +94,7 @@ use super::{
     digest, endpoint, hex, parse_hlc, push, reconsider, settle, sha256_hex, unhex, ApplySummary, Op,
 };
 use crate::db::Db;
-use crate::error::{DatumError, Result};
+use crate::error::{DatumError, Refusal, Result};
 
 /// The fewest characters of an id that may name it: a one-letter prefix
 /// revoking whichever endpoint happens to start with it is a footgun.
@@ -1110,15 +1110,14 @@ impl Db {
             .invites
             .iter()
             .find(|(_, i)| i.secret_hash == hash)
-            .ok_or_else(|| DatumError::Other(UNKNOWN_INVITE.into()))?;
+            .ok_or_else(|| DatumError::Refused(Refusal::UnknownInvite, UNKNOWN_INVITE.into()))?;
         if invite.used {
-            return Err(DatumError::Other("invite already used".into()));
+            let why = "invite already used".into();
+            return Err(DatumError::Refused(Refusal::InviteUsed, why));
         }
         if invite.expires <= Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true) {
-            return Err(DatumError::Other(format!(
-                "invite expired ({})",
-                invite.expires
-            )));
+            let why = format!("invite expired ({})", invite.expires);
+            return Err(DatumError::Refused(Refusal::InviteExpired, why));
         }
         if invite.role == Role::Reader && holds > 0 {
             let entries = if holds == 1 { "entry" } else { "entries" };

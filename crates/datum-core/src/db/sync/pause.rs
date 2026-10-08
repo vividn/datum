@@ -8,7 +8,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use super::endpoint;
 use crate::db::Db;
-use crate::error::{DatumError, Result};
+use crate::error::{DatumError, Refusal, Result};
 
 fn now() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
@@ -25,9 +25,10 @@ fn paused(conn: &Connection) -> Result<Option<String>> {
 /// and apply.
 pub(super) fn refuse_paused(conn: &Connection) -> Result<()> {
     match paused(conn)? {
-        Some(at) => Err(DatumError::Other(format!(
-            "sync is paused on this copy since {at}: `datum sync resume` resumes it"
-        ))),
+        Some(at) => Err(DatumError::Refused(
+            Refusal::Paused,
+            format!("sync is paused on this copy since {at}: `datum sync resume` resumes it"),
+        )),
         None => Ok(()),
     }
 }

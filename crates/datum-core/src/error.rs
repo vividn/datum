@@ -77,8 +77,23 @@ pub enum DatumError {
     #[error("the database changed since its fingerprint was taken")]
     Changed,
 
+    /// A sync handshake's refusal, of a kind a redeemer acts on (da-b6xh6).
+    #[error("{1}")]
+    Refused(Refusal, String),
+
     #[error("{0}")]
     Other(String),
+}
+
+/// Why a sync handshake refused, as `sync handshake` names it (da-b6xh6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Refusal {
+    UnknownInvite,
+    InviteUsed,
+    InviteExpired,
+    /// This copy's sync is paused.
+    Paused,
 }
 
 fn format_candidates(candidates: &[PrefixCandidate]) -> String {
