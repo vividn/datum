@@ -58,6 +58,15 @@
 //!     copies group as one client — da-lfsei), its label, `cli` or `web`. The latest per endpoint wins. Unsigned when an
 //!     endpoint describes ITSELF; about another member, an admin act.
 //!
+//!   An `admit` of an endpoint the chain lists already RE-ADMITS it
+//!   (da-j8c4l): a revoked device rejoins by a fresh invite as a new one
+//!   joins, keeping its endpoint, its first admission and its label, its
+//!   revoke cleared and its role the invite's from the revoke on. Its ops
+//!   then fold as any member's, those it made while out among them. A
+//!   PURGED device rejoins afresh: every op it made before the re-admission
+//!   stays set aside (`set_aside_before`), and with no purge standing there
+//!   is none to unpurge.
+//!
 //!   Every record but a genesis must be written by a member — a member
 //!   that is no reader, but for a describe of itself — and the same
 //!   record twice does nothing the second time. Every label a record
@@ -352,6 +361,11 @@ pub struct Member {
     pub purged: Option<String>,
     /// The HLC of the newest act about it: an unpurge needs it to be the purge.
     pub(super) last_act: String,
+    /// The HLC of its latest re-admission (da-j8c4l), if it rejoined.
+    pub rejoined: Option<String>,
+    /// A purged member re-admitted starts afresh: its ops made before this
+    /// HLC, its re-admission's, stay set aside.
+    pub set_aside_before: Option<String>,
     /// Its role from each HLC on, oldest first: its admission's, then each
     /// `role` record's.
     pub roles: Vec<(String, Role)>,
@@ -460,7 +474,9 @@ impl Member {
     pub(super) fn refused_from(&self) -> Option<&str> {
         let reader = self.roles.iter().position(|r| r.1 == Role::Reader);
         let reader = reader.map(|i| if i == 0 { "" } else { self.roles[i].0.as_str() });
-        let purged = self.purged.as_ref().map(|_| "");
+        let purged = (self.purged.as_ref())
+            .or(self.set_aside_before.as_ref())
+            .map(|_| "");
         reader
             .into_iter()
             .chain(self.revoked.as_deref())
@@ -539,6 +555,13 @@ impl Chain {
             }) => Err(format!(
                 "set aside: its endpoint was purged ({})",
                 hlc_time(p)
+            )),
+            Some(Member {
+                set_aside_before: Some(b),
+                ..
+            }) if hlc < b.as_str() => Err(format!(
+                "set aside: its endpoint was purged before it rejoined ({})",
+                hlc_time(b)
             )),
             Some(Member {
                 revoked: Some(r), ..
@@ -823,8 +846,22 @@ impl Chain {
         if unhex::<32>(endpoint).is_none() {
             return Err("not an endpoint id".into());
         }
-        if self.member(endpoint).is_some() {
-            return Err("already in the chain".into());
+        // Re-admitted: the admission vouches for what it brings, as a first
+        // one does, so its revoke goes, and what it made while out is judged
+        // by the role it is admitted with now. A purged one starts afresh:
+        // what it made before stays set aside, and there is no purge left
+        // to undo.
+        if let Some(m) = self.members.iter_mut().find(|m| m.endpoint == endpoint) {
+            let from = m.revoked.take().unwrap_or_else(|| hlc.into());
+            if m.purged.take().is_some() {
+                m.set_aside_before = Some(hlc.into());
+            }
+            m.rejoined = Some(hlc.into());
+            m.last_act = hlc.into();
+            m.via = via.into();
+            m.roles.push((from, role));
+            m.filter = filter;
+            return Ok(());
         }
         self.members.push(Member {
             endpoint: endpoint.into(),
@@ -834,6 +871,8 @@ impl Chain {
             revoked: None,
             purged: None,
             last_act: hlc.into(),
+            rejoined: None,
+            set_aside_before: None,
             client: None,
             kind: None,
             roles: vec![(hlc.into(), role)],
@@ -875,6 +914,18 @@ pub(super) fn note(conn: &Connection, chain: &Chain, quiet: bool) -> Result<()> 
             m.via,
             quiet
         ])?;
+        // A rejoin vouches for what it brings, as an admission does: told
+        // once per re-admission (da-j8c4l).
+        if let Some(at) = &m.rejoined {
+            stmt.execute(params![
+                format!("rejoin:{}:{at}", m.endpoint),
+                "rejoin",
+                m.label,
+                hlc_time(at),
+                m.via,
+                quiet
+            ])?;
+        }
     }
     for a in &chain.admins {
         stmt.execute(params![
@@ -913,7 +964,7 @@ pub struct PurgePreview {
 #[derive(Debug, Clone)]
 pub struct Notice {
     pub subject: String,
-    /// `endpoint`, `admin` or `unlock`.
+    /// `endpoint`, `rejoin`, `admin` or `unlock`.
     pub kind: String,
     pub label: String,
     pub at: String,
@@ -922,10 +973,16 @@ pub struct Notice {
 
 impl std::fmt::Display for Notice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let id = &self.subject[..self.subject.len().min(18)];
+        let id = self.subject.trim_start_matches("rejoin:");
+        let id = &id[..id.len().min(18)];
         match self.kind.as_str() {
             "admin" => write!(f, "new sync admin {} ({id}) added {}", self.label, self.at),
             "unlock" => write!(f, "sync chain unlocked by {} at {}", self.label, self.at),
+            "rejoin" => write!(
+                f,
+                "sync endpoint {} ({id}) admitted again {} via {}",
+                self.label, self.at, self.via
+            ),
             _ => write!(
                 f,
                 "new sync endpoint {} ({id}) admitted {} via {}",
@@ -936,6 +993,13 @@ impl std::fmt::Display for Notice {
 }
 
 // ─── The chain on a Db ──────────────────────────────────────────────────────
+
+/// A copy's chain gone: its ops and the chain's local records (notices, a
+/// filtered reader's marks). Every entry stays.
+fn forget_chain(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DELETE FROM ops; DELETE FROM sync_notices; DELETE FROM sync_caught_up;")?;
+    Ok(())
+}
 
 impl Db {
     /// The chain this copy holds (`exists()` is false with none).
@@ -1071,17 +1135,35 @@ impl Db {
         self.sync_chain_write(record, false)
     }
 
-    /// Leave this copy's chain, or with `dry_run` only say whether it may
-    /// (da-h7pnc). It may when it is the chain's one live member and holds no
-    /// op of another endpoint's, so nothing of anyone else's goes with it — a
-    /// chain whose other members were revoked still holds their data
-    /// (da-mepav). Its ops and the chain's local records (notices, a
-    /// filtered reader's marks) go; every entry stays, with its integrity
-    /// warnings, and the next sync signs it again as a baseline. What is the
-    /// copy's whatever its chain stays: its key and pause (`sync_local`), and
-    /// `sync_peers`, an address book that grants nothing — the redeemer of
-    /// another chain's invite has just recorded the member that admitted it.
-    pub fn sync_chain_leave(&self, dry_run: bool) -> Result<()> {
+    /// Leave this copy's chain, whatever it holds (da-j8c4l): it forgets the
+    /// chain and its peers, and keeps every entry — its own and those it
+    /// received — with their integrity warnings. Its ops go, so it takes a
+    /// new endpoint key: numbering its ops from one again under the old key
+    /// would read, to a copy holding the old ones, as a second copy signing
+    /// with it. The next sync signs every entry again as a baseline, so a
+    /// later invite from it starts a new chain vouching for all it holds,
+    /// and a later connect joins another chain the same way. Its pause and
+    /// client stay (`sync_local`).
+    pub fn sync_chain_leave(&self) -> Result<()> {
+        if !self.sync_chain()?.exists() {
+            return Err(DatumError::Other("this copy is in no sync chain".into()));
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        forget_chain(&tx)?;
+        tx.execute_batch("DELETE FROM sync_peers; UPDATE sync_local SET endpoint_secret = '';")?;
+        endpoint(&tx)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Leave this copy's chain to join another's (da-h7pnc), or with
+    /// `dry_run` only say whether it may: when it is the chain's one live
+    /// member and holds no op of another endpoint's, so nothing of anyone
+    /// else's goes with it — a chain whose other members were revoked still
+    /// holds their data (da-mepav). Unlike [`Db::sync_chain_leave`] it keeps
+    /// its key, which the chain it joins has just admitted, and `sync_peers`,
+    /// where the member that admitted it is recorded.
+    pub fn sync_chain_leave_alone(&self, dry_run: bool) -> Result<()> {
         let chain = self.sync_chain()?;
         let me = self.sync_endpoint_id()?;
         let others = chain
@@ -1104,14 +1186,15 @@ impl Db {
         };
         if let Some(why) = why {
             return Err(DatumError::Other(format!(
-                "{why}; only a copy holding nothing but its own data can leave its chain"
+                "{why}; only a copy holding nothing but its own data leaves its chain to join \
+                 another (`datum sync chain leave` first, keeping every entry)"
             )));
         }
         if dry_run {
             return Ok(());
         }
         let tx = self.conn.unchecked_transaction()?;
-        tx.execute_batch("DELETE FROM ops; DELETE FROM sync_notices; DELETE FROM sync_caught_up;")?;
+        forget_chain(&tx)?;
         tx.commit()?;
         Ok(())
     }
@@ -1177,10 +1260,16 @@ impl Db {
             })
             .collect();
         let mut subjects: BTreeSet<&str> = hits.iter().map(|n| n.subject.as_str()).collect();
-        if subjects.len() > 1 && !hits.iter().all(named) {
+        // An endpoint's rejoins (`rejoin:<id>:<hlc>`) are that endpoint's.
+        fn whose(s: &str) -> &str {
+            s.strip_prefix("rejoin:")
+                .map_or(s, |r| r.split(':').next().unwrap_or(r))
+        }
+        let named_ids: BTreeSet<&str> = subjects.iter().map(|s| whose(s)).collect();
+        if named_ids.len() > 1 && !hits.iter().all(named) {
             return Err(DatumError::Other(format!(
                 "{who} names {} subjects; give more of the id",
-                subjects.len()
+                named_ids.len()
             )));
         }
         if unhex::<32>(who).is_some() {
@@ -1196,7 +1285,10 @@ impl Db {
                 "UPDATE integrity_warnings SET resolution = 'keep_both', resolved_at = ?2
                  WHERE kind = 'sync_unauthorised' AND resolution IS NULL
                    AND instr(local_entry, ?1) > 0",
-                params![format!("\"op\":\"{subject}/"), Utc::now().to_rfc3339()],
+                params![
+                    format!("\"op\":\"{}/", whose(subject)),
+                    Utc::now().to_rfc3339()
+                ],
             )?;
         }
         Ok(settled)

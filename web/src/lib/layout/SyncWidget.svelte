@@ -250,7 +250,7 @@
 
 	const revoke = (row: Row) =>
 		doing(async () => {
-			if (!(await confirm(`Revoke ${row.label}? It can no longer sync ${db}.`, 'revoke'))) return;
+			if (!(await confirm(`Revoke ${row.label}? It can no longer sync ${db} until a new invite admits it again.`, 'revoke'))) return;
 			ok(await syncAct(db, ['chain', 'revoke', row.endpoints[db]]));
 		});
 
@@ -289,6 +289,14 @@
 
 	const ack = (db: string, n: Notice) =>
 		doing(async () => ok(await syncAct(db, ['chain', 'ack', n.kind === 'unlock' ? 'unlock' : n.subject])));
+
+	/** Leave the chain from any chain, for a fresh start (da-j8c4l). */
+	const leave = (d: DbSync) =>
+		doing(async () => {
+			const words = `Leave this sync chain with ${d.db}? Every entry is kept, this device’s own and those it received. It stops syncing with the chain’s other devices; adding a device after starts a new chain.`;
+			if (!(await confirm(words, 'leave'))) return;
+			ok(await syncAct(d.db, ['chain', 'leave']));
+		});
 
 	const pause = (d: DbSync) => doing(async () => ok(await syncAct(d.db, [d.paused ? 'resume' : 'pause'])));
 
@@ -480,6 +488,7 @@
 				<section class="more">
 					<div class="actions">
 						<button type="button" class="command" use:act={'run'} disabled={busy} on:click={() => pause(cur)}>{cur.paused ? 'Resume sync' : 'Pause sync'}</button>
+						<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => leave(cur)}>Leave chain</button>
 					</div>
 					{#each rows.filter((r) => !r.here && !r.revoked) as row (row.key)}
 						<div class="actions device" data-client={row.key}>

@@ -23,6 +23,8 @@ const ready = init({ module_or_path: syncWasm });
 const said = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /** Each database's endpoint, as it binds: a second `start` waits on the first. */
 const nodes = new Map<string, Promise<Node>>();
+/** The key each is bound with: a `start` with another (a leave rekeyed it) binds afresh. */
+const keys = new Map<string, string>();
 /** The CLI processes a store is waiting on, by number. */
 const waiting = new Map<number, (result: { code: number; stdout: string; stderr: string }) => void>();
 let nextRun = 0;
@@ -50,12 +52,18 @@ async function serve(db: string, node: Node): Promise<void> {
 async function answer(request: Exclude<SyncRequest, { ran: number }>): Promise<unknown> {
 	await ready;
 	if (request.op === 'about') return JSON.parse(about(request.ticket));
-	if (request.op === 'start' && !nodes.has(request.db)) {
+	if (request.op === 'start' && keys.get(request.db) !== request.key) {
+		void nodes.get(request.db)?.then((old) => old.close(), () => {});
 		const db = request.db;
 		const progress = (done: number, of: number) => ctx.postMessage({ progress: db, done, of });
 		const binding = Node.bind(request.key, request.relay, request.label, runner(db), progress);
 		nodes.set(request.db, binding);
-		binding.then((node) => serve(request.db, node), () => nodes.delete(request.db));
+		keys.set(request.db, request.key);
+		// A bind replaced while it was in flight (a leave rekeyed the db) clears nothing of its successor's.
+		binding.then(
+			(node) => serve(request.db, node),
+			() => nodes.get(request.db) === binding && (nodes.delete(request.db), keys.delete(request.db))
+		);
 	}
 	const node = await nodes.get(request.db);
 	if (!node) throw new Error(`no endpoint for ${request.db}`);

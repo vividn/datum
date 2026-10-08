@@ -144,9 +144,13 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
         Some("connect") => SyncCommand::Connect {
             ticket: rest.next().map(|t| t.to_string()),
         },
-        Some("leave") => SyncCommand::Leave {
-            dry_run: opts(rest, &[], &["dry-run"], 0..=0)?.on("dry-run"),
-        },
+        Some("leave") => {
+            let o = opts(rest, &[], &["alone", "dry-run"], 0..=0)?;
+            SyncCommand::Leave {
+                alone: o.on("alone"),
+                dry_run: o.on("dry-run"),
+            }
+        }
         Some("list") => SyncCommand::Members {
             show: Show::Default,
         },
@@ -603,7 +607,17 @@ mod tests {
         assert_eq!(p(&["chain", "rekey"]), SyncCommand::Rekey);
         assert_eq!(
             p(&["chain", "leave", "--dry-run"]),
-            SyncCommand::Leave { dry_run: true }
+            SyncCommand::Leave {
+                alone: false,
+                dry_run: true
+            }
+        );
+        assert_eq!(
+            p(&["chain", "leave", "--alone"]),
+            SyncCommand::Leave {
+                alone: true,
+                dry_run: false
+            }
         );
         assert_eq!(
             p(&["admin", "list"]),

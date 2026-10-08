@@ -210,11 +210,15 @@ fn a_redeemer_in_another_chain_or_not_saying_is_refused() {
     admit(&other, &Copy::new(), "fresh", None);
 }
 
+/// The chain a copy's records name.
+fn chain_of(copy: &Copy) -> String {
+    copy.query("SELECT json_extract(body, '$.effect.chain') FROM ops WHERE hid = '~chain' LIMIT 1")
+}
+
 /// `sync chain leave` (da-h7pnc): a chain of one is left with every entry
-/// kept, and those entries go to the next copy it syncs with; a copy with
-/// another member, or holding a revoked one's data, refuses and says why.
+/// kept, and those entries go to the next copy it syncs with.
 #[test]
-fn a_chain_of_one_is_left_with_its_entries_and_a_bigger_one_refuses() {
+fn a_chain_of_one_is_left_with_its_entries() {
     let a = Copy::new();
     a.ok(&["occur", "tea"]);
     a.ok(&["sync", "new-invite"]);
@@ -239,23 +243,79 @@ fn a_chain_of_one_is_left_with_its_entries_and_a_bigger_one_refuses() {
     assert!(a.send(&b).0);
     assert!(a.has("coffee") && b.has("tea"));
     assert_eq!(a.hash(), b.hash());
+}
 
-    // Another member: refused, by `--dry-run` too, and nothing goes.
+/// The leave `connect` makes on its own (`--alone`, da-h7pnc) is only a
+/// copy's holding nothing but its own data: another member, or a revoked
+/// one's data, refuses it, and nothing goes.
+#[test]
+fn the_leave_connect_makes_is_refused_a_copy_holding_others_data() {
+    let (a, b) = chained();
+    b.ok(&["occur", "tea"]);
+    assert!(b.send(&a).0);
     let ops = a.query("SELECT COUNT(*) FROM ops");
     for argv in [
-        &["sync", "chain", "leave", "--dry-run"][..],
-        &["sync", "chain", "leave"],
+        &["sync", "chain", "leave", "--alone", "--dry-run"][..],
+        &["sync", "chain", "leave", "--alone"],
     ] {
         let refused = a.fails(argv, "");
         assert!(refused.contains("has 1 other member(s)"), "{refused}");
         assert!(refused.contains("only a copy holding nothing but its own data"));
     }
     assert_eq!(a.query("SELECT COUNT(*) FROM ops"), ops);
-    // Revoked, its data stays: still refused.
-    b.ok(&["sync", "chain", "revoke", "a"]);
-    let refused = b.fails(&["sync", "chain", "leave"], "");
+    a.ok(&["sync", "chain", "revoke", "b"]);
+    let refused = a.fails(&["sync", "chain", "leave", "--alone"], "");
     assert!(refused.contains("holds other copies' data"), "{refused}");
-    assert!(b.has("tea"));
+    assert!(a.has("tea"));
+}
+
+/// `sync chain leave` works from any chain (da-j8c4l): from a chain of
+/// three, the copy keeps every entry, its own and those it received, under
+/// a new key with no peer; an invite from it starts a new chain with it the
+/// first member; and a member of the old chain can't sync with it: each
+/// one's handshake refuses the other (the pipe has none).
+#[test]
+fn leaving_a_chain_of_three_keeps_every_entry_and_starts_afresh() {
+    let (a, b) = chained();
+    let c = Copy::new();
+    admit(&a, &c, "c", None);
+    a.ok(&["occur", "coffee"]);
+    b.ok(&["occur", "tea"]);
+    assert!(a.send(&b).0 && b.send(&a).0 && a.send(&c).0);
+    let old = chain_of(&b);
+    let (old_id, entries) = (b.id(), b.query("SELECT COUNT(*) FROM entries"));
+    b.ok(&["sync", "handshake", &a.id(), "--label", "a", "--addr", "{}"]);
+    assert_ne!(b.query("SELECT COUNT(*) FROM sync_peers"), "0");
+
+    let left = b.ok(&["sync", "chain", "leave"]);
+    assert!(left.contains(&format!("left sync chain {old}")), "{left}");
+    assert!(left.contains("new endpoint key"), "{left}");
+    assert_eq!(b.query("SELECT COUNT(*) FROM entries"), entries);
+    assert!(b.has("coffee") && b.has("tea"));
+    assert_eq!(b.query("SELECT COUNT(*) FROM ops"), "0");
+    assert_eq!(b.query("SELECT COUNT(*) FROM sync_peers"), "0");
+    assert_ne!(b.id(), old_id);
+
+    // A new chain, b its first member, vouching for all it holds.
+    b.ok(&["sync", "new-invite"]);
+    let new = chain_of(&b);
+    assert_ne!(new, old);
+    let members = json(&b.ok(&["sync", "chain", "list", "--json"]))["members"].clone();
+    assert_eq!(members.as_array().unwrap().len(), 1, "{members}");
+    let d = Copy::new();
+    admit(&b, &d, "d", None);
+    assert!(d.has("coffee") && d.has("tea"));
+
+    // The old chain's members and b refuse each other.
+    let hello = ["sync", "handshake", &a.id(), "--label", "a", "--addr", "{}"];
+    assert!(b
+        .fails(&hello, "")
+        .contains("not a member of this sync chain"));
+    let hello = ["sync", "handshake", &b.id(), "--label", "b", "--addr", "{}"];
+    assert!(a
+        .fails(&hello, "")
+        .contains("not a member of this sync chain"));
+    assert_eq!(chain_of(&a), old);
 }
 
 /// A copy in a chain refuses the records of another (da-d8ort): the fold
@@ -595,6 +655,57 @@ fn a_purge_sets_aside_a_devices_ops_on_every_copy_and_an_unpurge_restores_them()
     assert!(twice.contains("not purged"), "{twice}");
 }
 
+/// A PURGED device rejoins afresh (da-j8c4l, the mayor's reading of vividn's
+/// «as if it is a new device joining»): what it made before the fresh
+/// invite admits it — before the purge, and while it was out — stays set
+/// aside on every copy, itself included; what it makes after flows; and
+/// with no purge standing, there is none to unpurge.
+#[test]
+fn a_purged_device_rejoins_afresh_its_old_ops_staying_set_aside() {
+    let (a, b) = chained();
+    let c = Copy::new();
+    admit(&a, &c, "c", None);
+    a.ok(&["occur", "tea", "cups=1"]);
+    assert!(a.send(&b).0);
+    let tea = a.query("SELECT hid FROM entries WHERE field = 'tea'");
+    b.ok(&["occur", "coffee"]);
+    b.ok(&["update", &tea, "cups=3"]);
+    assert!(b.send(&a).0 && a.send(&c).0);
+    a.ok(&["sync", "chain", "purge", "b", "--yes"]);
+    a.send(&b);
+    a.send(&c);
+    b.ok(&["occur", "out"]);
+
+    let out = redeem(&a, &b, "b", None, &["--chain", &chain_of(&a)]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    a.send(&b);
+    b.ok(&["occur", "fresh"]);
+    // Its op from while it was out is refused; the one after flows.
+    let (_, text) = b.send(&a);
+    assert!(text.contains("purged before it rejoined"), "{text}");
+    a.send(&c);
+    let cups = "SELECT json_extract(data, '$.cups') FROM entries WHERE field = 'tea'";
+    for copy in [&a, &b, &c] {
+        assert!(!copy.has("coffee") && !copy.has("out") && copy.has("fresh"));
+        assert_eq!(copy.query(cups), "1");
+        let m = member_of(copy, &b.id());
+        assert!(m["purged"].is_null() && m["revoked"].is_null(), "{m}");
+        assert!(
+            m["set_aside_before"].is_string() && m["rejoined"].is_string(),
+            "{m}"
+        );
+    }
+    assert_eq!(a.hash(), b.hash());
+    assert_eq!(a.hash(), c.hash());
+    check_clean(&a, &[&b, &c]);
+    let unpurge = a.fails(&["sync", "chain", "unpurge", "b"], "");
+    assert!(unpurge.contains("not purged"), "{unpurge}");
+}
+
 /// Two copies logging one coffee at one minute are one entry, the
 /// earlier-created row showing both (da-04glw). Purging the device that
 /// made it leaves the other's row standing on its own, not merged into a
@@ -656,6 +767,64 @@ fn a_purge_frees_two_rows_merged_into_the_purged_devices_row() {
     assert_eq!(a.hash(), c.hash());
     check_clean(&a, &[&b, &c]);
     check_clean(&c, &[&a, &b]);
+}
+
+/// A revoked device rejoins by a fresh invite (da-j8c4l), as a new device
+/// joins: its endpoint, label and first admission kept, its revoke cleared.
+/// What it made while out — refused by every copy until then, and by its
+/// own once it heard of its revoke — folds in everywhere, and what the
+/// others made meanwhile reaches it. Every member is told it came back.
+#[test]
+fn a_revoked_device_rejoins_by_a_fresh_invite_with_what_it_made_while_out() {
+    let (a, b) = chained();
+    let c = Copy::new();
+    admit(&a, &c, "c", None);
+    b.ok(&["occur", "before"]);
+    assert!(b.send(&a).0 && a.send(&c).0);
+    let admitted = member_of(&a, &b.id())["admitted"].clone();
+
+    a.ok(&["sync", "chain", "revoke", "b"]);
+    assert!(a.send(&b).0 && a.send(&c).0);
+    b.ok(&["occur", "out"]);
+    let (ok, text) = b.send(&a);
+    assert!(
+        !ok && text.contains("made after its endpoint was revoked"),
+        "{text}"
+    );
+    assert!(!a.has("out"));
+    a.ok(&["occur", "meanwhile"]);
+    let status = b.ok(&["sync", "status"]);
+    assert!(status.contains("this copy was revoked"), "{status}");
+
+    let out = redeem(&a, &b, "b again", None, &["--chain", &chain_of(&a)]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(a.has("out"));
+    assert!(a.send(&b).0 && b.send(&a).0 && a.send(&c).0);
+    for copy in [&a, &b, &c] {
+        assert!(copy.has("before") && copy.has("out") && copy.has("meanwhile"));
+        let m = member_of(copy, &b.id());
+        assert!(m["revoked"].is_null() && m["rejoined"].is_string(), "{m}");
+        assert_eq!(
+            (&m["label"], &m["admitted"]),
+            (&"b".into(), &admitted),
+            "{m}"
+        );
+    }
+    assert_eq!(a.hash(), b.hash());
+    assert_eq!(a.hash(), c.hash());
+    let members = json(&c.ok(&["sync", "chain", "list", "--json"]))["members"].clone();
+    assert_eq!(members.as_array().unwrap().len(), 3, "{members}");
+    let notices = c.ok(&["sync", "status", "--json"]);
+    assert!(notices.contains("admitted again"), "{notices}");
+    // Its whole id names its admission and its rejoin: one endpoint.
+    c.ok(&["sync", "chain", "ack", &b.id()]);
+    let notices = json(&c.ok(&["sync", "status", "--json"]))["notices"].to_string();
+    assert!(!notices.contains(&b.id()[..18]), "{notices}");
+    assert!(!b.ok(&["sync", "status"]).contains("revoked"));
 }
 
 #[test]

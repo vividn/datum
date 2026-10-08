@@ -96,7 +96,7 @@ impl Store for DbStore<'_> {
     }
 
     async fn leave(&self, dry_run: bool) -> Result<()> {
-        Ok(self.0.sync_chain_leave(dry_run)?)
+        Ok(self.0.sync_chain_leave_alone(dry_run)?)
     }
 
     async fn vector(&self) -> Result<Vector> {

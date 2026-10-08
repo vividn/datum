@@ -1225,6 +1225,7 @@ fn apply_one(conn: &Connection, x: &Op) -> Result<usize> {
 /// refused are as contiguous as the applied, and what waits for an op
 /// before it stays held.
 fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
+    let before = s.refused.len();
     let mut chain = Chain::load(conn)?;
     let mut vector = vector_where(conn, None)?;
     // A filtered reader is never sent what its filter leaves out, so it
@@ -1291,6 +1292,19 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
         }
     };
     s.held = waiting.len();
+    // What a later record allowed again — a re-admission (da-j8c4l), whose
+    // deps were the very ops its revoke refused — is not refused.
+    let mut again = conn.prepare_cached(
+        "SELECT 1 FROM ops WHERE endpoint = ?1 AND seq = ?2 AND hid != ?3 AND applied != 2",
+    )?;
+    let mut kept = Vec::new();
+    for r in s.refused.split_off(before) {
+        let op = r.split(':').next().and_then(|o| o.rsplit_once('/'));
+        if !op.map_or(Ok(false), |(e, n)| again.exists(params![e, n, CHAIN_HID]))? {
+            kept.push(r);
+        }
+    }
+    s.refused.extend(kept);
     Ok(())
 }
 
@@ -1320,15 +1334,14 @@ fn refuse(
     s.refused.push(format!("{}/{}: {why}", op.endpoint, op.seq));
     let tag = format!("\"op\":\"{}/", op.endpoint);
     // A purged endpoint's refusals are on purpose, and warn of nothing.
-    let quiet = chain
-        .member(&op.endpoint)
-        .is_some_and(|m| m.purged.is_some())
-        || conn
-            .prepare_cached(
-                "SELECT 1 FROM integrity_warnings WHERE kind = 'sync_unauthorised'
+    let quiet = chain.member(&op.endpoint).is_some_and(|m| {
+        m.purged.is_some() || m.set_aside_before.as_deref() > Some(op.hlc.as_str())
+    }) || conn
+        .prepare_cached(
+            "SELECT 1 FROM integrity_warnings WHERE kind = 'sync_unauthorised'
                AND resolution IS NULL AND instr(local_entry, ?1) > 0",
-            )?
-            .exists(params![tag])?;
+        )?
+        .exists(params![tag])?;
     let mut r = fetch_by_hid(conn, &op.hid)?.map(|e| row(&e));
     fold_into(&mut r, &op.effect);
     if let (false, Some(r)) = (quiet, r) {

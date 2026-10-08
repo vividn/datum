@@ -185,6 +185,8 @@ function relay(): string | undefined {
 /** What the leading tab of one database does. */
 class Leader {
 	endpoint?: string;
+	/** The key `endpoint` is bound with: a leave takes a new one (da-j8c4l). */
+	key?: string;
 	peers: Peer[] = [];
 	chain = false;
 	/** The chain's id, while there is one. */
@@ -243,9 +245,11 @@ class Leader {
 	}
 
 	async start(): Promise<void> {
-		if (this.endpoint) return;
 		const key = (await must(['--db', this.db, 'sync', 'endpoint-key'])).trim();
+		if (this.endpoint && key === this.key) return;
+		// Held only once bound: a failed bind is tried again on the next start.
 		this.endpoint = await ask<string>(this.db, { op: 'start', key, relay: relay(), label: this.label });
+		this.key = key;
 		this.post();
 	}
 

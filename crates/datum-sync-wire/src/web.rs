@@ -82,8 +82,8 @@ impl Store for Cli {
 
     async fn leave(&self, dry_run: bool) -> Result<()> {
         let argv: &[&str] = match dry_run {
-            true => &["sync", "chain", "leave", "--dry-run"],
-            false => &["sync", "chain", "leave"],
+            true => &["sync", "chain", "leave", "--alone", "--dry-run"],
+            false => &["sync", "chain", "leave", "--alone"],
         };
         self.run(argv, None).await.map(drop)
     }

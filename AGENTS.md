@@ -149,10 +149,14 @@ its entries again without them — what it made goes, its edits and deletes
 are undone — and revokes it; `unpurge` folds them back in while the purge
 is the newest act about it.
 A copy belongs to one chain — its apply refuses another chain's records
-(da-d8ort) — but one holding nothing but its own data — no
-other live member, no other endpoint's op — may leave its chain: `chain
-leave`, or by redeeming another chain's invite, which leaves once admitted.
-Its ops go and its entries stay, signed again as baselines on the next sync.
+(da-d8ort). `chain leave` leaves it from any chain: its ops, peers and
+notices go, its entries stay — signed again as baselines on the next sync —
+and it takes a new endpoint key, being a new device now. Redeeming another
+chain's invite leaves on its own only a copy holding nothing but its own data
+(no other live member, no other endpoint's op), keeping its key. A revoked
+device rejoins by a fresh invite to its chain: the `admit` of a listed
+endpoint RE-ADMITS it, clearing the revoke, so what it made while out folds
+in (da-j8c4l).
 A first sync carries the inviter's chain records after its history, so a join
 cut short (a reload, a lost connection) leaves the joiner in no chain holding
 part of it, or none (`sync_peers.redeemed_at`, da-38eye): `sync chain list` /

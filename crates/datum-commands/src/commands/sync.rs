@@ -105,15 +105,25 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                 anyhow::bail!("{} op(s) refused", s.refused.len());
             }
         }
-        SyncCommand::Leave { dry_run } => {
+        SyncCommand::Leave { alone, dry_run } => {
             let chain = db.sync_chain()?;
             ensure!(chain.exists(), NO_CHAIN);
-            db.sync_chain_leave(dry_run)?;
+            match alone {
+                true => db.sync_chain_leave_alone(dry_run)?,
+                false if dry_run => {}
+                false => db.sync_chain_leave()?,
+            }
             if !dry_run {
                 println!(
                     "left sync chain {}: this copy is in none, its entries kept",
                     chain.id
                 );
+                if !alone {
+                    println!(
+                        "new endpoint key {}: an invite from this copy starts a new chain",
+                        db.sync_endpoint_id()?
+                    );
+                }
             }
         }
         SyncCommand::Rekey => {
@@ -746,6 +756,8 @@ fn members(db: &Db, json: bool) -> Result<()> {
                     "kind": m.kind, "admitted": chain::hlc_time(&m.admitted), "via": m.via,
                     "revoked": m.revoked.as_deref().map(chain::hlc_time),
                     "purged": m.purged.as_deref().map(chain::hlc_time),
+                    "rejoined": m.rejoined.as_deref().map(chain::hlc_time),
+                    "set_aside_before": m.set_aside_before.as_deref().map(chain::hlc_time),
                     "role": m.role().as_str(), "this": m.endpoint == mine,
                     "filter": filter_json(chain.filter(&m.endpoint)),
                 })
@@ -760,8 +772,9 @@ fn members(db: &Db, json: bool) -> Result<()> {
     println!("endpoints:");
     for m in &chain.members {
         let revoked = m.revoked.as_deref().map(chain::hlc_time);
+        let rejoined = m.rejoined.as_deref().map(chain::hlc_time);
         println!(
-            "  {}  {}{}  {}{}  admitted {} via {}{}{}",
+            "  {}  {}{}  {}{}  admitted {}{} via {}{}{}",
             m.label,
             m.role().as_str(),
             chain
@@ -774,6 +787,7 @@ fn members(db: &Db, json: bool) -> Result<()> {
                 .map(|c| format!("  {} on {c}", m.kind.as_deref().unwrap_or("?")))
                 .unwrap_or_default(),
             chain::hlc_time(&m.admitted),
+            rejoined.map(|r| format!(", again {r}")).unwrap_or_default(),
             m.via,
             match m.purged.as_deref().map(chain::hlc_time) {
                 Some(p) => format!("  PURGED {p}"),
@@ -831,6 +845,7 @@ fn status(db: &Db, json: bool) -> Result<()> {
             "this": {
                 "endpoint": mine, "client": db.sync_client_id()?, "label": label,
                 "reader": chain.member(&mine).is_some_and(|m| m.role() == chain::Role::Reader),
+                "revoked": chain.member(&mine).and_then(|m| m.revoked.as_deref()).map(chain::hlc_time),
                 "filter": filter_json(chain.filter(&mine)),
             },
             "members": members,
@@ -870,6 +885,13 @@ fn status(db: &Db, json: bool) -> Result<()> {
     if let Some(f) = chain.filter(&mine) {
         let fields: Vec<&str> = f.fields.iter().map(String::as_str).collect();
         println!("a reader, {}: {}", f.describe(), fields.join(", "));
+    }
+    if let Some(at) = chain.member(&mine).and_then(|m| m.revoked.as_deref()) {
+        println!(
+            "⚠ this copy was revoked at {}: it syncs again once a member's invite admits it, \
+             or `datum sync chain leave` keeps every entry and starts afresh",
+            chain::hlc_time(at)
+        );
     }
     if chain.is_open() {
         println!("{OPEN}");

@@ -232,10 +232,10 @@ describe('a browser joins a chain (da-l9kdr)', () => {
 			await card.locator('.done').waitFor();
 			await converged(a, b);
 
-			// Opened again, the link says there is nothing to join.
+			// Opened again, the link offers to join again, as a revoked device rejoins (da-j8c4l).
 			await b.goto(link);
-			await until(() => card.locator('.failure').innerText(), (t) => /«datum» is in this chain already/.test(t));
-			assert.equal(await join.count(), 0);
+			await until(() => card.locator('.what').innerText(), (t) => /«datum» is in this chain already: joining again admits it back/.test(t));
+			assert.equal(await join.count(), 1);
 		});
 	});
 
@@ -256,13 +256,14 @@ describe('a browser joins a chain (da-l9kdr)', () => {
 			await converged(a, b);
 			assert.equal(JSON.parse((await b.run(['sync', 'status', '--json'])).stdout).chain, chain);
 
-			// In a chain of two now, another invite is refused before it dials.
+			// In a chain of two now, an invite to that chain admits it again, as a revoked device rejoins (da-j8c4l).
 			const ticket = (await linkFrom(a)).split('#')[1];
 			const again = await b.page.evaluate(
 				(t) => window.datum.sync.connect('datum', t).then(() => 'joined', (e) => e.message),
 				ticket
 			);
-			assert.match(again, /a copy belongs to one chain/);
+			assert.equal(again, 'joined');
+			assert.equal(JSON.parse((await b.run(['sync', 'status', '--json'])).stdout).chain, chain);
 		});
 	});
 

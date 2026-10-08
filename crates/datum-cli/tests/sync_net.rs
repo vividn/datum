@@ -343,9 +343,9 @@ fn an_invite_is_one_time_and_expires() {
         used.contains("Next: ask") && used.contains("for a fresh invite"),
         "{used}"
     );
-    // A member presenting it is refused before it dials: it is in a chain.
+    // A member presenting it is a redeemer like any (da-j8c4l): refused.
     let again = b.fails(&["sync", "chain", "connect", &ticket], "");
-    assert!(again.contains("a copy belongs to one chain"), "{again}");
+    assert!(again.contains("invite already used"), "{again}");
     let expired = c.fails(&["sync", "chain", "connect", &stale], "");
     assert!(expired.contains("invite expired"), "{expired}");
     assert!(expired.contains("for a fresh invite"), "{expired}");
@@ -381,9 +381,9 @@ fn connect_says_what_it_waits_for_and_why_it_ended_unanswered() {
 
 /// A stranger that dials without an invite is refused by the store's
 /// handshake (`sync_chain`'s `a_non_members_act_is_refused_open_chain_or_not`);
-/// here, the copy of this key. It is in the inviter's chain, so it is refused
-/// before it dials (da-mepav); the handshake's own refusal of the key is
-/// `sync_chain`'s, where a hello can be forced.
+/// here, the copy of this key, refused before it dials. In the inviter's
+/// chain, it would rejoin (da-j8c4l); the handshake's own refusal of the key
+/// is `sync_chain`'s, where a hello can be forced.
 #[test]
 fn a_copy_of_this_key_is_refused() {
     let (a, _b) = paired();
@@ -393,7 +393,7 @@ fn a_copy_of_this_key_is_refused() {
     own.env("DATUM_SYNC_BIND", format!("127.0.0.1:{port}"));
     let out = own.output().unwrap();
     let text = String::from_utf8_lossy(&out.stderr);
-    assert!(text.contains("a copy belongs to one chain"), "{text}");
+    assert!(text.contains("is a copy of this database"), "{text}");
 }
 
 /// A copy belongs to one chain (da-mepav): one already in a chain that tries
@@ -413,7 +413,8 @@ fn a_copy_in_a_chain_is_refused_another_chains_invite() {
     assert!(
         refused.contains(&format!(
             "this copy is in sync chain {chain} (2 members); a copy belongs to one chain. \
-             To join another, use a copy that isn't in one"
+             To join another, `datum sync chain leave` first (every entry is kept), or use \
+             a copy that isn't in one"
         )),
         "{refused}"
     );
@@ -500,7 +501,7 @@ fn a_chain_of_one_holding_a_revoked_members_data_is_refused() {
 }
 
 /// `db purge` destroys sync too (da-8v7ua, vividn's reproduction): a copy
-/// that synced, revoked the other and was refused `chain leave` keeps
+/// that synced, revoked the other and was refused `chain leave --alone` keeps
 /// nothing after a purge — no op, no chain, no key — and its next invite
 /// starts a new chain as a new endpoint.
 #[test]
@@ -514,7 +515,7 @@ fn a_purge_drops_the_ops_the_chain_and_the_endpoint_key() {
         .contains("verify ok"));
     assert!(inviting.finish().0);
     b.ok(&["sync", "chain", "revoke", &a.id()]);
-    let held = b.fails(&["sync", "chain", "leave"], "");
+    let held = b.fails(&["sync", "chain", "leave", "--alone"], "");
     assert!(held.contains("holds other copies' data"), "{held}");
     let (old_id, old_chain) = (b.id(), b.query(CHAIN));
 
@@ -573,6 +574,35 @@ fn a_purged_copy_serves_the_old_chain_nothing() {
     assert!(!b.has("tea") && !b.has("walk"));
     assert_eq!(b.query("SELECT COUNT(*) FROM ops"), "0");
     assert_eq!(a.query("SELECT COUNT(*) FROM entries"), entries);
+}
+
+/// A revoked device rejoins by a fresh invite to its own chain (da-j8c4l),
+/// as a new device joins: what each holds, both will — the entry it logged
+/// while out among them — and it stays in that chain, with its endpoint.
+#[test]
+fn a_revoked_device_rejoins_by_a_fresh_invite_and_data_goes_both_ways() {
+    let (a, b) = paired();
+    let chain = a
+        .query("SELECT json_extract(body, '$.effect.chain') FROM ops WHERE hid = '~chain' LIMIT 1");
+    let b_id = b.id();
+    a.ok(&["sync", "chain", "revoke", &b_id]);
+    b.ok(&["occur", "out"]);
+    a.ok(&["occur", "meanwhile"]);
+    let (mut inviting, ticket) = a.invite(&[]);
+    let joined = b.ok(&["sync", "chain", "connect", &ticket]);
+    assert!(joined.contains("verify ok"), "{joined}");
+    assert!(!joined.contains("is replaced by"), "{joined}");
+    assert!(inviting.finish().0);
+    assert!(a.has("out") && b.has("meanwhile"));
+    assert_eq!(a.hash(), b.hash());
+    assert_eq!(b.id(), b_id);
+    let list = b.ok(&["sync", "chain", "list", "--json"]);
+    assert!(list.contains(&chain), "{list}");
+    let list = a.ok(&["sync", "chain", "list"]);
+    assert!(
+        !list.contains("REVOKED") && list.contains(", again "),
+        "{list}"
+    );
 }
 
 #[test]

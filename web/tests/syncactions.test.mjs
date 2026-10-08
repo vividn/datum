@@ -181,6 +181,32 @@ describe('the sync widget’s actions', () => {
 		);
 	});
 
+	test('leaving the chain asks first, then keeps every entry under a new key, and sync can be turned on afresh (da-j8c4l)', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			await openChain(app);
+			await cli(app, ['--db', 'home', 'occur', 'tea']);
+			const key = await cli(app, ['--db', 'home', 'sync', 'endpoint-key']);
+			await app.goto('/sync?db=home');
+			await more(page);
+			const leave = page.locator(`${WIDGET} .more .actions`).getByRole('button', { name: 'Leave chain' });
+
+			await leave.click();
+			const dialog = page.locator('dialog.confirm');
+			assert.match(await dialog.innerText(), /Every entry is kept, this device’s own and those it received/);
+			await dialog.getByRole('button', { name: 'cancel' }).click();
+			assert.equal((await members(app)).members.length, 2);
+
+			await leave.click();
+			await dialog.getByRole('button', { name: 'leave' }).click();
+			await page.locator(`${WIDGET} .actions[data-db="home"]`).getByRole('button', { name: 'Turn on sync' }).waitFor();
+			assert.equal(JSON.parse(await cli(app, ['--db', 'home', 'sync', 'status', '--json'])).chain, null);
+			assert.match(await cli(app, ['--db', 'home', 'tail']), /tea/);
+			assert.notEqual(await cli(app, ['--db', 'home', 'sync', 'endpoint-key']), key);
+			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
+		}, AT_DATUM_DAY);
+	});
+
 	test('removing the last admin asks first, and only a yes unlocks the chain', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;

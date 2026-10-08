@@ -65,7 +65,7 @@ export interface Notice {
 export interface DbSync {
 	db: string;
 	chain: string | null;
-	this?: { endpoint: string; client: string; label: string; reader?: boolean; filter?: Filter | null };
+	this?: { endpoint: string; client: string; label: string; reader?: boolean; filter?: Filter | null; revoked?: string | null };
 	members: Member[];
 	admins?: Admin[];
 	/** When this copy's sync was paused, while it is. */
@@ -114,6 +114,8 @@ export const joining = heldInTab('datum-sync-joining');
  * cannot, why not: the link expired, or the database is in a chain already
  * (a copy belongs to one) that it cannot leave. One that holds nothing but
  * its own data can (`alone`), and joining replaces its chain (da-h7pnc).
+ * One in the link's own chain joins it again: a revoked device rejoins so
+ * (da-j8c4l).
  */
 export function joinWords(
 	a: TicketAbout,
@@ -127,8 +129,13 @@ export function joinWords(
 	const words = [`Join the sync chain of ${from}${chain} with this browser’s database «${db}»: what each holds, both will.`];
 	const until = a.expires && new Date(a.expires * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 	if (a.expires && a.expires * 1000 <= now) return { words, refused: `This link expired at ${until}: ask ${from} for a new one.` };
-	if (d?.chain && d.chain === a.chain) return { words, refused: `«${db}» is in this chain already: there is nothing to join.` };
-	if (d?.chain && alone) words.push(`«${db}»’s own sync chain, just this browser, is replaced by this one.`);
+	if (d?.chain && d.chain === a.chain)
+		words.push(
+			d.this?.revoked
+				? `«${db}» was revoked from this chain: joining again admits it back, and what it logged since goes to the others.`
+				: `«${db}» is in this chain already: joining again admits it back, as after a revoke.`
+		);
+	else if (d?.chain && alone) words.push(`«${db}»’s own sync chain, just this browser, is replaced by this one.`);
 	else if (d?.chain)
 		return {
 			words,
@@ -140,7 +147,7 @@ export function joinWords(
 
 /** Whether `db` may leave its chain to join another: it holds nothing but its own data (da-h7pnc). */
 export async function canLeave(db: string): Promise<boolean> {
-	return (await run(['--db', db, 'sync', 'chain', 'leave', '--dry-run'])).code === 0;
+	return (await run(['--db', db, 'sync', 'chain', 'leave', '--alone', '--dry-run'])).code === 0;
 }
 
 /** Every database's chain, read through the CLI. */

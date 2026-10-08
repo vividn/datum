@@ -80,8 +80,9 @@ pub trait Store {
     /// The sync chain this copy is in, and its unrevoked members; none
     /// when it is in no chain.
     async fn chain(&self) -> Result<Option<(String, usize)>>;
-    /// Leave this copy's chain, or with `dry_run` only say why it may not:
-    /// only a copy holding nothing but its own data may (da-h7pnc).
+    /// Leave this copy's chain to join another, keeping its key, or with
+    /// `dry_run` only say why it may not: only a copy holding nothing but
+    /// its own data may (da-h7pnc).
     async fn leave(&self, dry_run: bool) -> Result<()>;
     async fn vector(&self) -> Result<Vector>;
     /// Every op `since` lacks, as JSON lines — for `peer`, whose filter, if
@@ -446,13 +447,22 @@ async fn record(store: &impl Store, id: &str, rep: &Result<Report>) {
         .await;
 }
 
+/// How a redeemer joins: the invite's secret, the chain it says it is in —
+/// its own when it rejoins that chain (da-j8c4l), none otherwise — and the
+/// chain it leaves once admitted, if it leaves one (da-h7pnc).
+pub struct Redeem<'a> {
+    secret: &'a str,
+    chain: String,
+    leaves: Option<String>,
+}
+
 /// Dial a peer, presenting `invite` if this is its redemption, sync, and
 /// record how it went.
 pub async fn dial(
     store: &impl Store,
     ep: &Endpoint,
     addr: EndpointAddr,
-    invite: Option<&str>,
+    invite: Option<&Redeem<'_>>,
 ) -> Result<Report> {
     let id = addr.id.to_string();
     let rep = session(store, ep, addr, invite).await;
@@ -464,7 +474,7 @@ async fn session(
     store: &impl Store,
     ep: &Endpoint,
     addr: EndpointAddr,
-    invite: Option<&str>,
+    invite: Option<&Redeem<'_>>,
 ) -> Result<Report> {
     ensure!(addr.id != ep.id(), COPY);
     let id = addr.id.to_string();
@@ -472,13 +482,7 @@ async fn session(
         .await
         .map_err(|e| unreachable(ep, &id, e))?;
     let (mut s, mut r) = conn.open_bi().await?;
-    // A redeemer still in a chain is one `redeem` found may leave it: it
-    // says it is in none, and leaves once admitted (da-h7pnc).
-    let left = match invite {
-        Some(_) => store.chain().await?.map(|c| c.0),
-        None => None,
-    };
-    let chain = invite.map(|_| String::new());
+    let left = invite.and_then(|r| r.leaves.clone());
     let holds = match invite {
         Some(_) => store.holds().await?,
         None => 0,
@@ -486,8 +490,8 @@ async fn session(
     let hello = Hello {
         label: store.label(),
         addr: ep.addr(),
-        invite: invite.map(str::to_string),
-        chain,
+        invite: invite.map(|r| r.secret.to_string()),
+        chain: invite.map(|r| r.chain.clone()),
         holds,
     };
     put_json(&mut s, &hello).await?;
@@ -499,7 +503,7 @@ async fn session(
             // there (da-38eye).
             let admitted = async {
                 let added = store
-                    .handshake(&id, &label, &addr, invite, None, 0, true)
+                    .handshake(&id, &label, &addr, invite.map(|r| r.secret), None, 0, true)
                     .await?;
                 if left.is_some() {
                     store.leave(false).await?;
@@ -598,21 +602,30 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
 }
 
 /// Redeem `ticket`'s invite and sync, with the first of its addresses that
-/// admits it. A copy already in a chain is refused before anything is sent:
-/// its ops would flow one way into the other chain (da-mepav) — unless they
-/// are its own alone, when it leaves its chain once admitted (da-h7pnc).
+/// admits it. A copy invited back into its own chain — a revoked device —
+/// rejoins it, as a new device joins (da-j8c4l). A copy in another chain is
+/// refused before anything is sent: its ops would flow one way into the
+/// other chain (da-mepav) — unless they are its own alone, when it leaves
+/// its chain once admitted (da-h7pnc).
 pub async fn redeem(store: &impl Store, ep: &Endpoint, ticket: &Ticket) -> Result<Report> {
-    if let Some((id, n)) = store.chain().await? {
-        if store.leave(true).await.is_err() {
-            bail!(
-                "this copy is in sync chain {id} ({n} members); a copy belongs to one chain. \
-                 To join another, use a copy that isn't in one"
-            );
-        }
-    }
+    let (chain, leaves) = match store.chain().await? {
+        None => (String::new(), None),
+        Some((id, _)) if ticket.about.chain.as_ref() == Some(&id) => (id, None),
+        Some((id, n)) if store.leave(true).await.is_err() => bail!(
+            "this copy is in sync chain {id} ({n} members); a copy belongs to one chain. \
+             To join another, `datum sync chain leave` first (every entry is kept), or use \
+             a copy that isn't in one"
+        ),
+        Some((id, _)) => (String::new(), Some(id)),
+    };
+    let invite = Redeem {
+        secret: &ticket.secret,
+        chain,
+        leaves,
+    };
     let mut rep = Err(anyhow!("the ticket names no address"));
     for addr in &ticket.addrs {
-        rep = dial(store, ep, addr.clone(), Some(&ticket.secret)).await;
+        rep = dial(store, ep, addr.clone(), Some(&invite)).await;
         // Unreachable, or a member not yet holding the invite: the next
         // address may admit.
         let next = rep.as_ref().is_err_and(|e| {
