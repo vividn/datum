@@ -1246,7 +1246,7 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
                         s.conflicts += apply_one(conn, op)?;
                         s.applied += 1;
                     }
-                    Err(why) => refuse(conn, op, &why, s)?,
+                    Err(why) => refuse(conn, &chain, op, &why, s)?,
                 }
                 let head = vector.entry(op.endpoint.clone()).or_default();
                 *head = (*head).max(op.seq);
@@ -1287,23 +1287,34 @@ fn waiting_ops(conn: &Connection) -> Result<Vec<Op>> {
 /// Refuse an op the chain does not allow: it is kept, applied = 2, so it is
 /// not asked for again, and a membership that later allows it lets it wait
 /// again ([`reconsider`]). The first refused of an endpoint files a
-/// `sync_unauthorised` warning, which `datum sync chain ack` settles.
-fn refuse(conn: &Connection, op: &Op, why: &str, s: &mut ApplySummary) -> Result<()> {
+/// `sync_unauthorised` warning, which `datum sync chain ack` settles — but
+/// for a purged endpoint's, set aside on purpose (da-ry11c).
+fn refuse(
+    conn: &Connection,
+    chain: &Chain,
+    op: &Op,
+    why: &str,
+    s: &mut ApplySummary,
+) -> Result<()> {
     conn.execute(
         "UPDATE ops SET applied = 2 WHERE endpoint = ?1 AND seq = ?2",
         params![op.endpoint, op.seq],
     )?;
     s.refused.push(format!("{}/{}: {why}", op.endpoint, op.seq));
     let tag = format!("\"op\":\"{}/", op.endpoint);
-    let warned = conn
-        .prepare_cached(
-            "SELECT 1 FROM integrity_warnings WHERE kind = 'sync_unauthorised'
+    // A purged endpoint's refusals are on purpose, and warn of nothing.
+    let quiet = chain
+        .member(&op.endpoint)
+        .is_some_and(|m| m.purged.is_some())
+        || conn
+            .prepare_cached(
+                "SELECT 1 FROM integrity_warnings WHERE kind = 'sync_unauthorised'
                AND resolution IS NULL AND instr(local_entry, ?1) > 0",
-        )?
-        .exists(params![tag])?;
+            )?
+            .exists(params![tag])?;
     let mut r = fetch_by_hid(conn, &op.hid)?.map(|e| row(&e));
     fold_into(&mut r, &op.effect);
-    if let (false, Some(r)) = (warned, r) {
+    if let (false, Some(r)) = (quiet, r) {
         let mut side = conflict_side(&entry_from(r)?, op, false)?;
         if let Some(m) = side.extra_metadata.as_mut() {
             m["sync_op"]["refused"] = why.into();
@@ -1314,8 +1325,10 @@ fn refuse(conn: &Connection, op: &Op, why: &str, s: &mut ApplySummary) -> Result
 }
 
 /// The membership moved: refused ops it now allows wait again, and applied
-/// ops it no longer allows — a revoked endpoint's, made after the revoke —
-/// are refused and their entries refolded without them.
+/// ops it no longer allows — a revoked endpoint's, made after the revoke;
+/// a purged one's, all of them — are refused and their entries refolded
+/// without them. An entry left with no create is gone, and the rows merged
+/// into it stand on their own again.
 fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<()> {
     let bodies = |sql: &str, p: &[&dyn rusqlite::ToSql]| -> Result<Vec<Op>> {
         conn.prepare_cached(sql)?
@@ -1342,7 +1355,7 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
                    WHERE endpoint = ?1 AND applied = 1 AND hlc >= ?2 AND hid != ?3";
         for op in bodies(sql, &[&m.endpoint, &from, &CHAIN_HID])? {
             if let Err(why) = chain.allows(&op.endpoint, &op.hlc) {
-                refuse(conn, &op, &why, s)?;
+                refuse(conn, chain, &op, &why, s)?;
                 hids.insert(op.hid);
             }
         }
@@ -1352,9 +1365,28 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
         match fold(&ops_of(conn, &hid)?, None) {
             Some(r) => write_merged(conn, pre.as_ref(), entry_from(r)?)?,
             None => {
-                if let Some(pre) = pre {
-                    history::record(conn, &pre, ChangeKind::SyncMerge)?;
-                    conn.execute("DELETE FROM entries WHERE hid = ?1", params![hid])?;
+                let Some(pre) = pre else { continue };
+                history::record(conn, &pre, ChangeKind::SyncMerge)?;
+                let freed: Vec<Entry> = conn
+                    .prepare_cached("SELECT * FROM entries WHERE superseded_by = ?1")?
+                    .query_map(params![hid], row_to_entry)?
+                    .collect::<rusqlite::Result<_>>()?;
+                conn.execute("DELETE FROM entries WHERE hid = ?1", params![hid])?;
+                // One at a time, each still pointing at the gone row — out of
+                // the identity indexes — while `write_merged` decides it: two
+                // freed rows may share an identity, and the later merges into
+                // the earlier. One that stands alone points at nothing after.
+                for mut f in freed {
+                    f.superseded_by = None;
+                    let own = own(conn, &f)?;
+                    write_merged(conn, Some(&f), own)?;
+                    conn.execute(
+                        "UPDATE entries SET superseded_by = NULL WHERE hid = ?1 AND superseded_by = ?2",
+                        params![f.hid, hid],
+                    )?;
+                }
+                if let Some(kept) = &pre.superseded_by {
+                    rederive(conn, kept.as_str())?;
                 }
             }
         }
