@@ -1140,6 +1140,60 @@ fn a_join_cut_short_names_the_copy_it_joins_through_and_resumes_with_it() {
     assert_eq!(a.hash(), b.hash());
 }
 
+/// A join cut short before any op applied (da-38eye): `b` holds nothing of
+/// `a`'s, but its own side of the handshake said it redeemed an invite
+/// there, so it names `a` as the copy it is joining through and takes a
+/// session with it — `a` has already used the invite, so nothing else could.
+#[test]
+fn a_join_cut_short_before_any_op_resumes_where_its_invite_was_redeemed() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "tea", "-t", "0800"]);
+    let out = redeem(&a, &b, "b", None, &["--chain", ""]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let hello = ["sync", "handshake", &a.id(), "--label", "a", "--addr", "{}"];
+    b.ok(&[&hello[..], &["--dialed", "--invite", "secret"]].concat());
+    let list = json(&b.ok(&["sync", "chain", "list", "--json"]));
+    assert!(list["chain"].is_null(), "{list}");
+    assert_eq!(list["joining"][0]["endpoint"], a.id().as_str(), "{list}");
+    let status = json(&b.ok(&["sync", "status", "--json"]));
+    assert_eq!(
+        status["members"][0]["endpoint"],
+        a.id().as_str(),
+        "{status}"
+    );
+    assert!(b.ok(&hello).contains("known"));
+
+    assert!(a.send(&b).0);
+    let list = json(&b.ok(&["sync", "chain", "list", "--json"]));
+    assert!(!list["chain"].is_null(), "{list}");
+    assert!(list.get("joining").is_none(), "{list}");
+    assert_eq!(a.hash(), b.hash());
+}
+
+/// A copy cut short like that which starts a chain of its own gives the
+/// join up: left later, it is joining nothing (da-38eye).
+#[test]
+fn a_copy_that_starts_its_own_chain_gives_up_the_join_it_was_making() {
+    let (a, b) = (Copy::new(), Copy::new());
+    let out = redeem(&a, &b, "b", None, &["--chain", ""]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let hello = ["sync", "handshake", &a.id(), "--label", "a", "--addr", "{}"];
+    b.ok(&[&hello[..], &["--dialed", "--invite", "secret"]].concat());
+    b.ok(&["sync", "new-invite"]);
+    b.ok(&["sync", "chain", "leave"]);
+    assert!(b
+        .fails(&["sync", "chain", "list"], "")
+        .contains("in no sync chain"));
+}
+
 #[test]
 fn the_network_workers_commands_are_hidden_and_endpoint_key_is_the_secret() {
     let a = Copy::new();

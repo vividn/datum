@@ -150,7 +150,8 @@ leave`, or by redeeming another chain's invite, which leaves once admitted.
 Its ops go and its entries stay, signed again as baselines on the next sync.
 A first sync carries the inviter's chain records after its history, so a join
 cut short (a reload, a lost connection) leaves the joiner in no chain holding
-part of it: `sync chain list` / `status` then name the copy it is JOINING
+part of it, or none (`sync_peers.redeemed_at`, da-38eye): `sync chain list` /
+`status` then name the copy it is JOINING
 through, which counts as its peer, and bare `sync` or datum.day's leader
 resumes there (da-idw54).
 A reader may be FILTERED: its invite's `caps` or a `role` record

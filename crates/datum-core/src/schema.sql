@@ -367,6 +367,8 @@ CREATE TABLE IF NOT EXISTS sync_local (
 -- version vector as it ended (JSON), its verify, and the error it failed
 -- with (NULL once one succeeds), each with its time. `addrs` is '' for a
 -- peer only `sync record-session` has named (the browser's transport).
+-- `redeemed_at`: when this copy redeemed an invite with it and was admitted,
+-- where a join cut short resumes (da-38eye).
 CREATE TABLE IF NOT EXISTS sync_peers (
     endpoint_id       TEXT NOT NULL PRIMARY KEY,
     label             TEXT NOT NULL,
@@ -378,7 +380,8 @@ CREATE TABLE IF NOT EXISTS sync_peers (
     last_verify_at    TEXT,
     last_verify_match INTEGER,
     last_error        TEXT,
-    last_error_at     TEXT
+    last_error_at     TEXT,
+    redeemed_at       TEXT
 );
 
 -- A filtered reader's marks (da-u81u1): a member that served it sent every

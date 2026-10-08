@@ -114,3 +114,23 @@ pub(super) fn down_53_to_52_field_state_indexes(conn: &Connection) -> Result<()>
     )?;
     Ok(())
 }
+
+/// da-38eye: `sync_peers.redeemed_at`, when this copy redeemed an invite
+/// with the peer and was admitted. A join cut short before any op applied
+/// holds nothing of its inviter's, so only this says where it resumes.
+pub(super) fn m53_to_54_sync_peer_redeemed(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "sync_peers")? {
+        return Ok(());
+    }
+    conn.execute_batch("ALTER TABLE sync_peers ADD COLUMN redeemed_at TEXT;")?;
+    Ok(())
+}
+
+/// Reverse v53→v54. Local: the mark goes, the peers stay.
+pub(super) fn down_54_to_53_sync_peer_redeemed(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "sync_peers")? {
+        return Ok(());
+    }
+    conn.execute_batch("ALTER TABLE sync_peers DROP COLUMN redeemed_at;")?;
+    Ok(())
+}

@@ -51,6 +51,9 @@ const PULL_MS = 30_000;
 const RETRY_MS = 2_000;
 /** How many of a leader's next reads of its setup fail: a test's lever. */
 const FAIL_KEY = 'datum.syncFailRefresh';
+/** While set, the worker's `sync pipe apply` is never answered: a test's
+ * lever for a join cut short before any op applies (da-38eye). */
+const HOLD_KEY = 'datum.syncHoldApply';
 const REACHABLE_MS = 60_000;
 const CHANNEL = 'datum-sync';
 
@@ -122,6 +125,7 @@ function syncWorker(): Worker {
 	worker = new Worker(new URL('./sync.worker.ts', import.meta.url), { type: 'module' });
 	worker.onmessage = ({ data }: MessageEvent<SyncEvent>) => {
 		if ('run' in data) {
+			if (data.argv.includes('apply') && held()) return;
 			void cli(data.argv, data.stdin, true).then((r) =>
 				worker?.postMessage({ ran: data.run, result: { code: r.code, stdout: r.stdout, stderr: r.stderr } })
 			);
@@ -144,6 +148,14 @@ function ask<T>(db: string, op: Op): Promise<T> {
 		pending.set(id, (e) => ('ok' in e && e.ok ? resolve(e.value as T) : reject(new Error((e as { error: string }).error))));
 		syncWorker().postMessage({ ...op, id, db });
 	});
+}
+
+function held(): boolean {
+	try {
+		return localStorage.getItem(HOLD_KEY) !== null;
+	} catch {
+		return false;
+	}
 }
 
 /** Throws while `FAIL_KEY` counts down (da-zyox0's injection, da-olsuv). */

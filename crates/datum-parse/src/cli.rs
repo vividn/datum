@@ -880,6 +880,7 @@ pub enum SyncCommand {
     /// transport (da-6kpj5): `added`, `known`, or the refusal as the error.
     /// `--chain` is the redeemer's own chain, empty for none (da-mepav);
     /// `--holds` its entries, as `datum count` counts them (da-tti3w).
+    /// `--dialed` with `--invite`: this copy redeemed it there (da-38eye).
     Handshake {
         endpoint: String,
         label: String,

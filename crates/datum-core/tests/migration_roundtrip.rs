@@ -200,6 +200,7 @@ fn every_pair_has_a_roundtrip_test() {
         (50, 51),
         (51, 52),
         (52, 53),
+        (53, 54),
     ];
     assert_eq!(
         covered.len(),
@@ -2640,6 +2641,18 @@ fn roundtrip_v52_to_v53_field_state_indexes() {
     assert!(!index_exists(conn, "entries_field_state"));
     assert!(!index_exists(conn, "entries_field_states"));
     assert!(live_sql().contains("(field, occur_time)"), "{}", live_sql());
+}
+
+/// da-38eye: the redemption mark comes and goes; the peers stay.
+#[test]
+fn roundtrip_v53_to_v54_sync_peer_redeemed() {
+    let db = fresh_at(53);
+    let conn = db.conn();
+    apply_one_up(conn, 53);
+    assert!(column_exists(conn, "sync_peers", "redeemed_at"));
+    apply_one_down(conn, 54);
+    assert!(!column_exists(conn, "sync_peers", "redeemed_at"));
+    assert!(table_exists(conn, "sync_peers"));
 }
 
 /// Life data logged under `kit` stops v51 before it is hidden; a deleted

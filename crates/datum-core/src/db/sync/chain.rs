@@ -882,6 +882,11 @@ impl Db {
     /// nothing, when the chain would not take it. `quiet`: see [`note`].
     pub fn sync_chain_write(&self, record: Value, quiet: bool) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
+        // A copy that starts a chain gives up any join it was making
+        // (da-38eye): left later, it is joining nothing.
+        if record["type"] == "genesis" {
+            tx.execute("UPDATE sync_peers SET redeemed_at = NULL", [])?;
+        }
         let ep = endpoint(&tx)?;
         let seq = push(&tx, &ep, (CHAIN_HID, CHAIN_HID, None), "chain", record)?;
         let chain = Chain::load(&tx)?;

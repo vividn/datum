@@ -84,19 +84,22 @@ impl Db {
     }
 
     /// The copies this one is joining a sync chain through (da-idw54): in
-    /// no chain, those it met in a handshake whose ops it holds. A first
-    /// sync carries the inviter's history before its chain records — what
-    /// it held got its ops before its chain began — so a join cut short (a
-    /// reload, a lost connection) leaves the copy holding part of it and in
-    /// no chain yet; these are where it resumes. A copy that left a chain
-    /// holds none of its ops, so none of its old peers is one.
+    /// no chain, those that admitted its invite (da-38eye) or that it met in
+    /// a handshake whose ops it holds. A first sync carries the inviter's
+    /// history before its chain records — what it held got its ops before
+    /// its chain began — so a join cut short (a reload, a lost connection)
+    /// leaves the copy holding part of it, or nothing at all, and in no
+    /// chain yet; these are where it resumes. A copy that left a chain
+    /// holds none of its ops, and starting it cleared every mark, so none
+    /// of its old peers is one.
     pub fn sync_joining(&self) -> Result<Vec<Peer>> {
         if self.sync_chain()?.exists() {
             return Ok(Vec::new());
         }
         let mut stmt = self.conn.prepare(
             "SELECT endpoint_id, label, addrs, added_at, last_seen FROM sync_peers p
-             WHERE EXISTS (SELECT 1 FROM ops WHERE endpoint = p.endpoint_id)
+             WHERE redeemed_at IS NOT NULL
+                OR EXISTS (SELECT 1 FROM ops WHERE endpoint = p.endpoint_id)
              ORDER BY added_at",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -126,7 +129,8 @@ impl Db {
 
     /// A session's handshake, as it bears on this copy: `id` introduced
     /// itself as `label` at `addrs`. Dialed (it answered this copy's dial):
-    /// recorded. Served (it dialed this copy): admitted — a member, or the
+    /// recorded, and marked as where this copy redeemed `invite`, when it
+    /// did. Served (it dialed this copy): admitted — a member, or the
     /// redeemer of `invite` — and recorded; anyone else is refused, and the
     /// error says why. An invite presented is redeemed or refused, even by a
     /// member: one use. A redeemer says which `chain` it is in (empty: none);
@@ -175,6 +179,12 @@ impl Db {
             }
         }
         self.sync_record_peer(id, label, addrs)?;
+        if dialed && invite.is_some() {
+            self.conn.execute(
+                "UPDATE sync_peers SET redeemed_at = ?2 WHERE endpoint_id = ?1",
+                params![id, now()],
+            )?;
+        }
         Ok(!known)
     }
 }

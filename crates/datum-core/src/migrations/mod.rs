@@ -57,7 +57,7 @@ use v51_v60::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 53;
+pub const CURRENT_SCHEMA_VERSION: u32 = 54;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -446,5 +446,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entries_live_field_occur gains slug (the state order's tie-break); entries_field_state and entries_field_states index the rows that move a state and the states logged, so neither read walks a field's history (da-asgt4)",
         apply: m52_to_53_field_state_indexes,
         down: down_53_to_52_field_state_indexes,
+    },
+    Migration {
+        from: 53,
+        to: 54,
+        summary: "sync_peers.redeemed_at: the peer this copy redeemed an invite with, where a join cut short before any op applied resumes (da-38eye)",
+        apply: m53_to_54_sync_peer_redeemed,
+        down: down_54_to_53_sync_peer_redeemed,
     },
 ];

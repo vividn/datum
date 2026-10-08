@@ -84,7 +84,8 @@ pub trait Store {
     /// `peer` introduced itself as `label` at `addr`: record it, and when
     /// it `dialed` this copy, admit it (as a peer, or by `invite`) or fail
     /// saying why not; a redeemer names its own `chain`, and how many
-    /// entries it `holds`. Whether it is new to this copy comes back.
+    /// entries it `holds`. When this copy dialed it, `invite` is the one
+    /// it just redeemed there. Whether it is new to this copy comes back.
     #[allow(clippy::too_many_arguments)]
     async fn handshake(
         &self,
@@ -456,10 +457,12 @@ async fn session(
     let (label, added) = match get_json(&mut r, MAX_HELLO).await? {
         Reply::Welcome { label, addr } => {
             // Its own handshake may refuse too (a paused copy): only then
-            // does it leave.
+            // does it leave. Given the invite, it marks where this copy was
+            // admitted, so a join cut short before any op applies resumes
+            // there (da-38eye).
             let admitted = async {
                 let added = store
-                    .handshake(&id, &label, &addr, None, None, 0, true)
+                    .handshake(&id, &label, &addr, invite, None, 0, true)
                     .await?;
                 if left.is_some() {
                     store.leave(false).await?;

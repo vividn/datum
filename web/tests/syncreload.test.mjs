@@ -1,4 +1,4 @@
-// A browser reloaded mid-join resumes the join (da-idw54).
+// A browser reloaded mid-join resumes the join (da-idw54, da-38eye).
 //
 // Starting a chain comes after every op of the history it starts on, so a
 // first sync carries the inviter's chain records — the joiner's own
@@ -28,7 +28,7 @@ const N = 1000;
 
 /** A `db restore` of `N` entries of `seed`, a minute apart. */
 function backup() {
-	const lines = [JSON.stringify({ type: 'daydumb_backup', schema_version: 53, backup_time: new Date().toISOString(), source_db: 'seed', entry_count: N })];
+	const lines = [JSON.stringify({ type: 'daydumb_backup', schema_version: 54, backup_time: new Date().toISOString(), source_db: 'seed', entry_count: N })];
 	const start = Date.parse('2026-01-01T00:00:00Z');
 	for (let i = 0; i < N; i++) {
 		const t = new Date(start + i * 60_000).toISOString().replace('.000Z', 'Z');
@@ -92,5 +92,35 @@ test('a browser reloaded mid-join resumes it by itself, and the inviter pushes t
 		);
 		await a.run(['occur', 'later', '-t', '1000']);
 		await until(() => countOf(b, 'later'), (n) => n === 1);
+	});
+});
+
+// A reload after the handshake but before the first op applies (da-38eye):
+// the inviter has used the invite, and the joiner holds none of its ops, so
+// only its own side of the handshake can say where it resumes.
+test('a browser reloaded after its handshake, holding nothing yet, resumes it by itself', async () => {
+	await twoBrowsers(async (a, b) => {
+		const restored = await a.run(['db', 'restore', '-', '--merge', '-y'], backup());
+		assert.equal(restored.code, 0, restored.stderr);
+		const link = await a.page.evaluate(async () => `${location.origin}/sync/join#${await window.datum.sync.offer('datum')}`);
+		const inviter = JSON.parse((await a.run(['sync', 'status', '--json'])).stdout);
+		await b.goto(link);
+		await b.page.evaluate(() => localStorage.setItem('datum.syncHoldApply', '1'));
+		const join = b.page.locator('.card.join').getByRole('button', { name: 'Join', exact: true });
+		await join.waitFor();
+		await join.click();
+		const list = async () => {
+			const r = await b.run(['sync', 'chain', 'list', '--json']);
+			return r.code === 0 ? JSON.parse(r.stdout) : null;
+		};
+		const joining = (await until(list, (l) => l?.joining?.length > 0)).joining;
+		assert.equal(joining[0].endpoint, inviter.this.endpoint);
+		assert.equal(await countOf(b, 'seed'), 0, 'an op applied before the reload: the cut is not before the first one');
+		await b.page.evaluate(() => localStorage.removeItem('datum.syncHoldApply'));
+		await b.reload();
+
+		await until(() => countOf(b, 'seed'), (n) => n === N, 90_000);
+		await until(async () => [await verifyOf(a), await verifyOf(b)], ([x, y]) => x === y);
+		assert.equal(JSON.parse((await b.run(['sync', 'status', '--json'])).stdout).chain, inviter.chain);
 	});
 });
