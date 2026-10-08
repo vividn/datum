@@ -96,8 +96,12 @@
 		// Never `_internal`: it holds every plan's keys, to this bucket and others.
 		dbs = (await listDatabases().catch(() => [currentDb()])).filter((db) => db !== INTERNAL_DB);
 		if (!dbs.includes(currentDb())) dbs = [currentDb(), ...dbs];
-		for (const plan of await loadPlans()) void refresh(plan).then(() => explain(plan));
+		const shown = (await loadPlans()).map((plan) => refresh(plan).then(() => explain(plan)));
 		if (fresh.kind) void explain(fresh, '');
+		// Ready once the first plan's listing and reach are drawn: they stand
+		// above the backups `db restore` scrolls to, and landing after the
+		// scroll pushed those back out of view (da-p3bc8).
+		await shown[0];
 	}
 
 	async function explain(plan: Plan, key = plan.name): Promise<void> {

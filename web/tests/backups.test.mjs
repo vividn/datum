@@ -325,8 +325,12 @@ describe('«Backups»', () => {
 							const b = box.getBoundingClientRect();
 							return r.top >= b.top && r.top < b.bottom;
 						});
-					if (shown) await until(inView, (v) => v);
-					else {
+					if (shown) {
+						await until(inView, (v) => v);
+						// da-p3bc8: the plan's reach, drawn above them, landed after the
+						// scroll and pushed them back out of view on a loaded runner.
+						assert.equal(await page.locator('section.plan[data-plan="r"] .explain').count(), 1, 'scrolled before the reach was drawn');
+					} else {
 						await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 						assert.equal(await inView(), false, 'the backups start in view: the box is too tall to tell');
 					}
