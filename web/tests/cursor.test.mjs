@@ -192,9 +192,13 @@ describe('the time cursor', () => {
 			assert.equal(await page.locator('line.cursor').count(), 0);
 
 			// Click again: a press on a fresh pill also clears the cursor everywhere.
+			// Once the band has drawn the tea (da-cv8p6): its refresh runs
+			// behind every other command as the tail's does, and a picture
+			// redrawn between a press and its lift is sent no click at all.
+			await page.locator(`${TODAY} [data-state][data-field="tea"]`).waitFor({ state: 'attached' });
 			const at2 = await spot(page, TODAY, 0.5);
 			await page.mouse.click(at2.x, at2.y);
-			await pillText(page);
+			assert.match((await pillText(page)) ?? '', /^-t \d\d:\d\d$/, 'the second click set no pill');
 			await page.locator(`${PILL} button.remove`).click();
 			assert.equal(await page.locator(PILL).count(), 0);
 			await page.waitForFunction(() => {
