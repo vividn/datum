@@ -628,8 +628,10 @@ export function boot(): Promise<void> {
 		// the tabs are even there in header bar»): the tree as this device
 		// last drew it, else what it can build without the database. The
 		// real pass below replaces it only where it differs.
+		// A copy written by another version of the tree is not drawn: the
+		// provisional tree is, and the real pass writes a new copy.
 		const last = loadShell(currentDb());
-		if (last) layout.set(last);
+		if (last?.version === LAYOUT_VERSION) layout.set(last);
 		else {
 			provisional = true;
 			await fillRoot(withDebug(stored ?? fresh())).finally(() => (provisional = false));

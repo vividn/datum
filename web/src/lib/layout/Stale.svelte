@@ -129,6 +129,7 @@
 		const observer = new MutationObserver(() => get(first) && done());
 		let unsubscribe: (() => void) | undefined;
 		watch = () => {
+			if (unsubscribe) return;
 			observer.observe(body, { subtree: true, childList: true, characterData: true });
 			const drained = get(idle);
 			unsubscribe = idle.subscribe((n) => n !== drained && done());

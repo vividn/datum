@@ -70,7 +70,8 @@ function ensureWorker(): Worker {
 		const message = event.data;
 		if ('notice' in message) {
 			if (message.notice === 'stderr') return listeners.get(message.id)?.(message.text);
-			if (message.notice === 'upgrading') return upgrading.set(performance.now());
+			// From the first: one process may snapshot more than one database.
+			if (message.notice === 'upgrading') return upgrading.update((since) => since ?? performance.now());
 			// Dated from when the wait BEGAN, so the line changes its words in
 			// place and keeps counting, rather than blink back to 0 s (kimi-k3 on #493).
 			if (message.notice === 'blocked')

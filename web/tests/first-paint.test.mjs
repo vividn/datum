@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
 import { OPFS_DIR } from '../src/lib/databases.ts';
+import { LAYOUT_VERSION } from '../src/lib/layout/types.ts';
 
 const HOLD = 3000;
 
@@ -92,6 +93,44 @@ describe('before the CLI answers', () => {
 			{ prepare: async (context) => (await inWorker(held('request'))(context), await watch(context)) }
 		);
 	});
+
+	// vremya on #506: with the copy never drawn, every test above still
+	// passed. A copy of the last visit, its first tab renamed, tells it from
+	// the provisional tree.
+	for (const [version, drawn] of [[LAYOUT_VERSION, true], [LAYOUT_VERSION + 1, false]]) {
+		test(`a copy of the last visit at version ${version} is ${drawn ? '' : 'not '}what draws first`, async () => {
+			await withApp(async (app) => {
+				const key = await app.page.evaluate(() => Object.keys(localStorage).find((k) => k.startsWith('datum.layout.shell.v1.')));
+				await app.page.evaluate(
+					([key, version]) => {
+						const copy = JSON.parse(localStorage.getItem(key));
+						localStorage.setItem(key, JSON.stringify({ ...copy, version, root: { ...copy.root, tabs: copy.root.tabs.map((t, i) => (i ? t : { ...t, layout: 'from-the-copy' })) } }));
+					},
+					[key, version]
+				);
+				await inWorker(held('request'))(app.page.context());
+				await watch(app.page.context());
+				await app.page.context().addInitScript(() => {
+					const tick = () => {
+						if ([...document.querySelectorAll('.root-bar [role="tab"]')].some((t) => t.textContent.includes('from-the-copy')))
+							return (window.__marks.copy = performance.now());
+						if (performance.now() < 30000) requestAnimationFrame(tick);
+					};
+					tick();
+				});
+				await app.reload();
+				const marks = await marksOf(app.page);
+				assert.ok(marks.prompt >= HOLD, `the first answer at ${marks.prompt} ms: the hold did not hold`);
+				if (drawn) assert.ok(marks.copy < marks.prompt, `the copy's tab at ${marks.copy} ms, the first answer at ${marks.prompt}`);
+				else assert.equal(marks.copy, undefined, 'a copy of another version was drawn');
+				assert.ok(marks.tab < marks.prompt, `tabs at ${marks.tab} ms, the first answer at ${marks.prompt}`);
+				// The real pass writes a copy of its own, at this version.
+				const copy = await app.page.evaluate((key) => JSON.parse(localStorage.getItem(key)), key);
+				assert.equal(copy.version, LAYOUT_VERSION);
+				assert.ok(!JSON.stringify(copy).includes('from-the-copy'), 'the old copy was kept');
+			});
+		});
+	}
 
 	test('a change made to the early tree outlives the boot, and is written down', async () => {
 		await withApp(
