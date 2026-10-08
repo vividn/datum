@@ -259,6 +259,23 @@
 			}
 		}
 	}
+
+	/**
+	 * A spent pill fades on its ghost's own clock (da-d7ndh). The delay of
+	 * `-age` says where the ghost was when the press landed, but each
+	 * animation starts at the next frame it gets, and on a loaded CI runner
+	 * that left the pill 53ms behind its ghost. Taking the ghost's start
+	 * time leaves nothing to drift. A ghost not drawn yet has none to take,
+	 * and then the pill, at no delay, starts on the frame the ghost does.
+	 * With no ghost up, or no motion (no animations at all), the delay stands.
+	 */
+	function withGhost(node: HTMLElement): void {
+		const ghost = node.closest('.run')?.querySelector('.ghost')?.getAnimations()[0];
+		const fade = node.getAnimations()[0];
+		if (!fade || !ghost) return;
+		fade.effect?.updateTiming({ delay: 0 });
+		if (ghost.startTime !== null) fade.startTime = ghost.startTime;
+	}
 </script>
 
 <form class="line" on:submit|preventDefault={submit}>
@@ -326,7 +343,7 @@
 			     `.pill` — a test included — is never handed one. -->
 			{#each $spent as pill (pill.id)}
 				<span class="spent {pill.kind}" style:--pill={pill.color} style:animation-delay="-{pill.age}ms"
-					>{pill.text}</span
+					use:withGhost>{pill.text}</span
 				>
 			{/each}
 		</span>
@@ -677,7 +694,8 @@
 	/* From the spent pill's own opacity, not from 1: it is a receipt
 	   fading, and it never brightens on its way out. The ghost's shape, so
 	   the two go together — and a pill spent after the press joins the
-	   ghost part-way through, by a negative delay of its `age`. */
+	   ghost part-way through: on the ghost's own clock (`withGhost`),
+	   or by a negative delay of its `age` when no ghost is up. */
 	@keyframes spent-fade {
 		0%,
 		40% {

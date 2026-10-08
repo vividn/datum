@@ -1213,26 +1213,37 @@ describe('the pills ride with the text', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await withCoffee(app);
-			await setPill(page, { text: '-t 14:30' });
-			await page.locator(`${BAR} .pill`).waitFor();
 
 			// The ghost starts at the press and the pill is spent only when
 			// the command lands (da-jrozq), so a pill that started a fade of
 			// its own would lag the ghost by the whole command. Both clocks
 			// read in one evaluation, the moment the spent pill is there.
+			//
+			// And a busy frame, made here rather than hoped for from a loaded
+			// runner (da-d7ndh): the main thread held 150ms the moment the
+			// spent pill is in the page, so a pill whose fade starts at the
+			// next frame it gets falls that far behind, every run.
+			await page.evaluate(() => {
+				new MutationObserver(() => {
+					if (window.__held || !document.querySelector('.prompt-bar .spent')) return;
+					window.__held = performance.now();
+					while (performance.now() - window.__held < 150);
+				}).observe(document.body, { subtree: true, childList: true });
+			});
 			await pressLanded(app);
 			const clocks = await page
 				.waitForFunction(() => {
 					const pill = document.querySelector('.prompt-bar .spent');
 					const ghost = document.querySelector('.prompt-bar .ghost');
 					if (!pill || !ghost) return null;
-					// How far through, in ms: the pill's own clock starts at 0
-					// and its delay is what says where in the fade it joined.
+					// How far through, in ms: the pill takes the ghost's start
+					// time (`withGhost`), so a busy frame cannot put it behind.
 					const t = (el) => el.getAnimations()[0].effect.getComputedTiming().progress * 1000;
 					return { pill: t(pill), ghost: t(ghost) };
 				})
 				.then((h) => h.jsonValue());
 			assert.ok(Math.abs(clocks.pill - clocks.ghost) < 50, `pill at ${clocks.pill}ms, ghost at ${clocks.ghost}ms`);
+			assert.ok(await page.evaluate(() => window.__held), 'the busy frame never came: nothing held the spent pill');
 			await page.waitForFunction(() => !document.querySelector('.prompt-bar .spent'));
 			assert.deepEqual(app.errors, []);
 			// The wall clock: how far into its fade the pill joins is the
@@ -1245,8 +1256,6 @@ describe('the pills ride with the text', () => {
 		await day.solo(async (app) => {
 			const { page } = app;
 			await withCoffee(app);
-			await setPill(page, { text: '-t 14:30' });
-			await page.locator(`${BAR} .pill`).waitFor();
 
 			// Gone from the live pills — so gone from the next command's argv
 			// and from the time cursor — and on screen only as a spent one.
@@ -1264,21 +1273,32 @@ describe('the pills ride with the text', () => {
 const GHOST_MS = 1000;
 
 /**
- * Press the coffee widget and wait for the press to LAND: its unlocked
- * pill leaving the live set, which is the moment it is spent (da-jrozq).
- * A spent pill joins the ghost's clock, so a press that lands more than
- * GHOST_MS after it was pressed leaves none to see, and a test waiting for
- * one would time out 30s later reading as a missing feature. So the
- * precondition fails first, and says it was the press (da-wjz42).
+ * Load an unlocked time pill, press the coffee widget and wait for the
+ * press to LAND: the pill leaving the live set, which is the moment it is
+ * spent (da-jrozq). A spent pill joins the ghost's clock, so a press that
+ * lands more than GHOST_MS after it was pressed leaves none to see, and a
+ * test waiting for one would time out 30s later reading as a missing
+ * feature (da-wjz42). A loaded CI runner took 1032ms once (da-d7ndh): that
+ * is the runner, not the bar, so a press that slow is pressed again with a
+ * fresh pill — at a time of its own, so no two presses write one entry —
+ * and three of them fail, with every timing.
  */
 const pressLanded = async (app) => {
 	const { page } = app;
-	await page.evaluate(() => (window.__pressedAt = performance.now()));
-	await app.pressWidget('coffee');
-	const took = await page
-		.waitForFunction(() => window.datum.bar.pills().length === 0 && performance.now() - window.__pressedAt)
-		.then((h) => h.jsonValue());
-	assert.ok(took < GHOST_MS, `the press took ${Math.round(took)}ms to land, past the ghost's ${GHOST_MS}ms`);
+	const took = [];
+	while (took.length < 3) {
+		await setPill(page, { text: `-t 14:3${took.length}` });
+		await page.locator(`${BAR} .pill`).waitFor();
+		await page.evaluate(() => (window.__pressedAt = performance.now()));
+		await app.pressWidget('coffee');
+		took.push(
+			await page
+				.waitForFunction(() => window.datum.bar.pills().length === 0 && performance.now() - window.__pressedAt)
+				.then((h) => h.jsonValue())
+		);
+		if (took.at(-1) < GHOST_MS) return;
+	}
+	assert.fail(`no press landed inside the ghost's ${GHOST_MS}ms: ${took.map(Math.round).join(', ')}ms`);
 };
 
 /**
