@@ -831,6 +831,39 @@ function app(page, errors, query, clean, locks, internal) {
 			);
 		},
 
+		/**
+		 * Watch the bar's ghost from BEFORE a press, so a test reads the
+		 * ghost it showed even when it is already gone (da-ehpe5): the
+		 * ghost lives GHOST_MS from the press, and a loaded runner can take
+		 * longer than that to land the press (1490ms seen), so a wait begun
+		 * after it waits 30s for a ghost that came and went.
+		 *
+		 * Hands back `saw(line)`, which waits for a ghost reading `line`
+		 * and answers every moment a ghost was in the page: its `line` and
+		 * the `left` the pills were placed at beside it.
+		 */
+		async watchGhosts() {
+			await page.evaluate(() => {
+				window.__datumGhostWatch?.disconnect();
+				const seen = (window.__datumGhosts = []);
+				window.__datumGhostWatch = new MutationObserver(() => {
+					const ghost = document.querySelector('.prompt-bar .ghost');
+					const pills = document.querySelector('.prompt-bar .pills');
+					if (ghost) seen.push({ line: ghost.textContent, left: parseFloat(pills?.style.left) });
+				});
+				window.__datumGhostWatch.observe(document.body, {
+					subtree: true,
+					childList: true,
+					characterData: true,
+					attributeFilter: ['style']
+				});
+			});
+			return (line) =>
+				page
+					.waitForFunction((l) => window.__datumGhosts.some((g) => g.line === l) && window.__datumGhosts, line)
+					.then((h) => h.jsonValue());
+		},
+
 		/** Press a widget in the bar, by the field it names. */
 		async pressWidget(field) {
 			const before = await page.locator('.repl .echo').count();

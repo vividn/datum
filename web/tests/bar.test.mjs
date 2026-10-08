@@ -1183,24 +1183,27 @@ describe('the pills ride with the text', () => {
 			await setPill(page, { text: '-t 14:30', locked: true });
 			await page.locator(`${BAR} .pill`).waitFor();
 			const waiting = (await pillAt(page)).pill;
+			const placed = await page.evaluate(() => parseFloat(document.querySelector('.prompt-bar .pills').style.left));
 
 			// A press nobody typed — the widget bar's, which is the press that
-			// carries the pills (`pressWithPills`).
+			// carries the pills (`pressWithPills`). Watched from before it:
+			// the ghost can be gone by the time the press lands (da-ehpe5).
+			const saw = await app.watchGhosts();
 			await app.pressWidget('coffee');
 			// The ghost is the command ALONE: the pill is drawn as a pill
 			// beside it, so saying it in the text too would say it twice.
-			assert.equal(await page.locator(`${BAR} .ghost`).innerText(), 'occur coffee');
+			assert.deepEqual([...new Set((await saw('occur coffee')).map((g) => g.line))], ['occur coffee']);
 			await page.waitForFunction(
-				(was) => document.querySelector('.prompt-bar .pill').getBoundingClientRect().left > was + 20,
-				waiting
+				(was) => window.__datumGhosts.some((g) => g.left > was + 20),
+				placed
 			);
-			const beside = (await pillAt(page)).pill;
 
-			// The ghost goes; the locked pill stays and returns leftward.
+			// The ghost goes; the locked pill stays and returns leftward, to
+			// where it waited.
 			await page.waitForFunction(() => !document.querySelector('.prompt-bar .ghost'));
 			await page.waitForFunction(
-				(was) => document.querySelector('.prompt-bar .pill').getBoundingClientRect().left < was - 20,
-				beside
+				(was) => Math.abs(document.querySelector('.prompt-bar .pill').getBoundingClientRect().left - was) < 1,
+				waiting
 			);
 			assert.equal(await page.locator(`${BAR} .pill`).count(), 1, 'a locked pill was spent');
 			assert.deepEqual(app.errors, []);

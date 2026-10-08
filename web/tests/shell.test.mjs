@@ -833,10 +833,9 @@ describe('the bottom bar', () => {
 			// receipt is the press's. A second on: the clock is held, and a
 			// second coffee at the first one's instant is the first again.
 			await app.clock.forward(1000);
+			const saw = await app.watchGhosts();
 			await page.locator('.bar button.widget', { hasText: 'coffee' }).click();
-			await page.waitForFunction(
-				() => document.querySelector('.prompt-bar .ghost')?.textContent === 'occur coffee'
-			);
+			await saw('occur coffee');
 			assert.equal(await input.inputValue(), '', 'the press became the input\'s value');
 			await until(() => receipt(page).innerText(), (t) => t.startsWith('CREATE ') && t !== `CREATE ${hid}`);
 			await app.idle();

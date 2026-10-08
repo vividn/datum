@@ -90,11 +90,12 @@ describe('a press', () => {
 			// A second between the steps: the clock is held (da-ydao), and
 			// the newest row is only the newest at an instant of its own.
 			await app.clock.forward(1000);
+			const saw = await app.watchGhosts();
 			await page.locator('.bar [data-field="coffee"]').click();
-			// Ghosted beside the prompt, not typed into it (da-jprg).
-			await page.waitForFunction(
-				() => document.querySelector('.prompt-bar .ghost')?.textContent === 'occur coffee'
-			);
+			// Ghosted beside the prompt, not typed into it (da-jprg) — read
+			// off a watch begun before the press, since a slow press can
+			// outlast the ghost (da-ehpe5).
+			await saw('occur coffee');
 			await page.waitForFunction(() =>
 				document.querySelector('.prompt-bar .doc .receipt')?.textContent.startsWith('CREATE ')
 			);
