@@ -14,9 +14,9 @@
 //
 // All three sides of the trap are asserted in one test on purpose, because
 // the plausible overshoot is to suppress the clock whenever the row carries
-// an uncertainty at all. `P1D` is the date-only marker, not an uncertainty
-// (`format_uncertainty_suffix` in crates/datum-commands/src/render/
-// action.rs returns None for it and only it); `±5m` is a real one, and an
+// an uncertainty at all. On a time `P1D` is the date-only marker, not an
+// uncertainty (`format_timestamp_ref` in crates/datum-commands/src/render/
+// action.rs draws the bare date for it and only it); `±5m` is a real one, and an
 // entry that has it still happened at a knowable minute. A test written
 // only for the -y case would call stripping those a pass.
 

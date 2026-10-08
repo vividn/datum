@@ -564,6 +564,9 @@ precisely it is known are separate columns:
   dur_uncertainty           PT5M
 ```
 
+Wherever the duration is printed — the echo, `get`, `tail`'s dur column —
+its `±` follows it, as a time's does: `21:17:33+2  task  start  1h30m±5m`.
+
 Uncertainty is deliberately outside the content hash — `coffee ±5m` and
 `coffee ±1m` at the same instant are one coffee, and hashing the
 precision would stop them ever deduping.

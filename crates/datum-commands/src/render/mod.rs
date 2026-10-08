@@ -307,9 +307,7 @@ pub(crate) fn extract_with_context_at(
         time_hybrid: hybrid,
         field: Some(self::action::format_field_cell(&entry.field, spec)),
         state: self::action::format_state_group(entry, spec, state_ctx),
-        dur: entry
-            .duration_seconds()
-            .map(|s| format_human_duration(s, DurationPrecision::Seconds)),
+        dur: self::action::format_dur(entry),
     }
 }
 

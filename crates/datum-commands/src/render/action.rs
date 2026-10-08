@@ -961,14 +961,12 @@ pub(crate) fn compress_offset_minutes(minutes: i32) -> String {
 
 /// Render the stored `occur_time_uncertainty` (ISO-8601, as written by
 /// `Uncertainty::to_iso`) as the display suffix body — `PT3M` →
-/// `±3m`, `PT90S` → `±90s`, `P2D` → `±2d` (da-lkji). `P1D` is the
-/// date-only marker (da-5uph), never an uncertainty, so it returns `None`;
-/// so do unparseable or compound forms.
+/// `±3m`, `PT90S` → `±90s`, `P2D` → `±2d` (da-lkji). Unparseable or
+/// compound forms return `None`. A time's `P1D` is the date-only marker
+/// (da-5uph), which [`format_timestamp_ref`] draws before it asks here; a
+/// duration's is a day either way.
 fn format_uncertainty_suffix(uncertainty: Option<&str>) -> Option<String> {
     let iso = uncertainty?;
-    if iso == "P1D" {
-        return None;
-    }
     let rest = iso.strip_prefix('P')?;
     let (num, unit) = match rest.strip_prefix('T') {
         Some(t) => {
@@ -996,6 +994,16 @@ fn format_uncertainty_suffix(uncertainty: Option<&str>) -> Option<String> {
         return None;
     }
     Some(format!("±{num}{unit}"))
+}
+
+/// An entry's duration as every surface prints it — `30m`, and `30m±5m`
+/// when its uncertainty is stated, the `±` gray as a time's is (da-avqf4).
+pub(crate) fn format_dur(entry: &Entry) -> Option<String> {
+    let dur = format_human_duration(entry.duration_seconds()?, DurationPrecision::Seconds);
+    let suffix = format_uncertainty_suffix(entry.dur_uncertainty())
+        .map(|u| paint(GRAY_FG, &u))
+        .unwrap_or_default();
+    Some(format!("{dur}{suffix}"))
 }
 
 // ─── Info-line composition ───────────────────────────────────────────────────
@@ -1043,9 +1051,7 @@ pub fn format_info_line_at(
             parts.push(group);
         }
     }
-    if let Some(secs) = entry.duration_seconds() {
-        parts.push(format_human_duration(secs, DurationPrecision::Seconds));
-    }
+    parts.extend(format_dur(entry));
     parts.join(" ")
 }
 
@@ -1079,9 +1085,9 @@ mod tests {
     fn uncertainty_suffix_renders_stored_iso_forms() {
         assert_eq!(format_uncertainty_suffix(None), None);
         assert_eq!(
-            format_uncertainty_suffix(Some("P1D")),
-            None,
-            "date-only marker"
+            format_uncertainty_suffix(Some("P1D")).as_deref(),
+            Some("±1d"),
+            "a duration's day; a time's P1D never reaches here"
         );
         assert_eq!(
             format_uncertainty_suffix(Some("PT3M")).as_deref(),
