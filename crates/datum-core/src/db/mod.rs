@@ -371,8 +371,12 @@ impl Db {
             )?
             .query_map([], |row| row.get(0))?
             .collect::<rusqlite::Result<_>>()?;
+        // IF EXISTS: dropping a virtual table drops its shadow tables,
+        // which are later in the list (da-k3uqd).
         for t in &tables {
-            self.conn.execute(&format!("DROP TABLE \"{t}\""), [])?;
+            let t = t.replace('"', "\"\"");
+            self.conn
+                .execute(&format!("DROP TABLE IF EXISTS \"{t}\""), [])?;
         }
         self.conn.execute_batch(include_str!("../schema.sql"))?;
         // A kit index is this device's, derived from the definitions the

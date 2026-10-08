@@ -309,6 +309,33 @@ fn force_recreate_resets_schema_version_to_current() {
     );
 }
 
+/// da-k3uqd: dropping a virtual table drops its shadow tables, which the
+/// loop then reaches already gone; and a name with a `"` in it is quoted.
+#[test]
+fn force_recreate_drops_virtual_tables_and_quoted_names() {
+    let db = Db::open_in_memory().unwrap();
+    db.conn()
+        .execute_batch(
+            "CREATE VIRTUAL TABLE notes_fts USING fts5(body);
+             CREATE TABLE \"we\"\"ird\" (x);",
+        )
+        .unwrap();
+    let dropped = db.force_recreate_schema().unwrap();
+    assert!(dropped.contains(&"notes_fts".to_string()));
+    assert!(dropped.contains(&"notes_fts_data".to_string()));
+    assert!(dropped.contains(&"we\"ird".to_string()));
+    let left: i64 = db
+        .conn()
+        .query_row(
+            "SELECT count(*) FROM sqlite_master \
+             WHERE name LIKE 'notes_fts%' OR name = 'we\"ird'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(left, 0);
+}
+
 /// da-a7g: v17→v18 adds the `tags` column with default `'[]'` so existing
 /// rows stay readable as having no tags.
 #[test]
