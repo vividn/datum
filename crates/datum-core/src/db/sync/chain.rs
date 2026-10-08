@@ -44,9 +44,12 @@
 //!     only its acts after the unlock count.
 //!   - `purge {endpoint}` (da-ry11c): every op the endpoint signed is set
 //!     aside — refused, its entries folded again without them — and it is
-//!     revoked from that HLC on. `unpurge {endpoint}` folds them back in,
-//!     the revoke standing, while the purge is the newest act about it.
-//!     Both admin acts, as a revoke is; no copy purges itself.
+//!     revoked from that HLC on, until a fresh invite re-admits it.
+//!     An admin act, as a revoke is; no copy purges itself. `unpurge
+//!     {endpoint}` is no longer written (da-q4rau: a rejoin undoes a
+//!     purge), but one a chain holds still folds as it always did: the
+//!     ops come back, the revoke standing, while the purge is the newest
+//!     act about it.
 //!   - `role {endpoint, role}` (da-9yvb6): `member` or `reader` from its
 //!     HLC on, an admin act like a revoke. A reader's `role` or invite
 //!     `caps` may carry a filter (da-u81u1): `fields`, the fields it is
@@ -63,9 +66,8 @@
 //!   joins, keeping its endpoint, its first admission and its label, its
 //!   revoke cleared and its role the invite's from the revoke on. Its ops
 //!   then fold as any member's, those it made while out among them. A
-//!   PURGED device rejoins afresh: every op it made before the re-admission
-//!   stays set aside (`set_aside_before`), and with no purge standing there
-//!   is none to unpurge.
+//!   PURGED device rejoins as at a first connection (da-q4rau): its purge
+//!   goes too, so every op it made folds back in on every copy.
 //!
 //!   Every record but a genesis must be written by a member — a member
 //!   that is no reader, but for a describe of itself — and the same
@@ -363,9 +365,6 @@ pub struct Member {
     pub(super) last_act: String,
     /// The HLC of its latest re-admission (da-j8c4l), if it rejoined.
     pub rejoined: Option<String>,
-    /// A purged member re-admitted starts afresh: its ops made before this
-    /// HLC, its re-admission's, stay set aside.
-    pub set_aside_before: Option<String>,
     /// Its role from each HLC on, oldest first: its admission's, then each
     /// `role` record's.
     pub roles: Vec<(String, Role)>,
@@ -460,7 +459,7 @@ impl Member {
 
     /// Why an unpurge of it would be refused, if it would: it is not purged,
     /// or an act about it came after the purge.
-    pub fn unpurge_refused(&self) -> Option<&'static str> {
+    fn unpurge_refused(&self) -> Option<&'static str> {
         match &self.purged {
             None => Some("not purged"),
             Some(p) if *p != self.last_act => Some("an act about it came after its purge"),
@@ -474,9 +473,7 @@ impl Member {
     pub(super) fn refused_from(&self) -> Option<&str> {
         let reader = self.roles.iter().position(|r| r.1 == Role::Reader);
         let reader = reader.map(|i| if i == 0 { "" } else { self.roles[i].0.as_str() });
-        let purged = (self.purged.as_ref())
-            .or(self.set_aside_before.as_ref())
-            .map(|_| "");
+        let purged = self.purged.as_ref().map(|_| "");
         reader
             .into_iter()
             .chain(self.revoked.as_deref())
@@ -555,13 +552,6 @@ impl Chain {
             }) => Err(format!(
                 "set aside: its endpoint was purged ({})",
                 hlc_time(p)
-            )),
-            Some(Member {
-                set_aside_before: Some(b),
-                ..
-            }) if hlc < b.as_str() => Err(format!(
-                "set aside: its endpoint was purged before it rejoined ({})",
-                hlc_time(b)
             )),
             Some(Member {
                 revoked: Some(r), ..
@@ -848,14 +838,11 @@ impl Chain {
         }
         // Re-admitted: the admission vouches for what it brings, as a first
         // one does, so its revoke goes, and what it made while out is judged
-        // by the role it is admitted with now. A purged one starts afresh:
-        // what it made before stays set aside, and there is no purge left
-        // to undo.
+        // by the role it is admitted with now. A purged one's purge goes
+        // too: it rejoins as at a first connection, all it made with it.
         if let Some(m) = self.members.iter_mut().find(|m| m.endpoint == endpoint) {
             let from = m.revoked.take().unwrap_or_else(|| hlc.into());
-            if m.purged.take().is_some() {
-                m.set_aside_before = Some(hlc.into());
-            }
+            m.purged = None;
             m.rejoined = Some(hlc.into());
             m.last_act = hlc.into();
             m.via = via.into();
@@ -872,7 +859,6 @@ impl Chain {
             purged: None,
             last_act: hlc.into(),
             rejoined: None,
-            set_aside_before: None,
             client: None,
             kind: None,
             roles: vec![(hlc.into(), role)],
@@ -1373,8 +1359,9 @@ mod tests {
     }
 
     /// A purge (da-ry11c) refuses every op of its endpoint, whenever made,
-    /// and revokes it; no copy purges itself; an unpurge stands only while
-    /// the purge is the newest act about the endpoint, and leaves the revoke.
+    /// and revokes it; no copy purges itself; an old chain's unpurge still
+    /// stands only while the purge is the newest act about the endpoint,
+    /// and leaves the revoke.
     #[test]
     fn a_purge_refuses_every_op_and_an_unpurge_needs_it_to_be_the_newest_act() {
         let (a, b) = ("ab".repeat(32), "cd".repeat(32));
@@ -1426,6 +1413,15 @@ mod tests {
             chain_err(&step(11, it("unpurge", &b))),
             "an act about it came after its purge"
         );
+        // A fresh invite re-admits it as at a first connection (da-q4rau):
+        // the purge goes with the revoke, and its old op is allowed again.
+        let invite = json!({"type": "invite", "invite_id": "j", "secret_hash": sha256_hex("t"),
+            "expires": "2099-01-01T00:00:00Z", "caps": {}});
+        assert_eq!(step(12, invite).0, Ok(()));
+        let admit =
+            json!({"type": "admit", "endpoint": b, "label": "b", "via": "j", "secret": "t"});
+        assert_eq!(step(13, admit), (Ok(()), Some((false, false)), true));
+        assert_eq!(chain_err(&step(14, it("unpurge", &b))), "not purged");
     }
 
     fn chain_err<T>(r: &(std::result::Result<(), String>, T, bool)) -> String {

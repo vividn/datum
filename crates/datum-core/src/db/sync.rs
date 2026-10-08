@@ -1334,14 +1334,15 @@ fn refuse(
     s.refused.push(format!("{}/{}: {why}", op.endpoint, op.seq));
     let tag = format!("\"op\":\"{}/", op.endpoint);
     // A purged endpoint's refusals are on purpose, and warn of nothing.
-    let quiet = chain.member(&op.endpoint).is_some_and(|m| {
-        m.purged.is_some() || m.set_aside_before.as_deref() > Some(op.hlc.as_str())
-    }) || conn
-        .prepare_cached(
-            "SELECT 1 FROM integrity_warnings WHERE kind = 'sync_unauthorised'
+    let quiet = chain
+        .member(&op.endpoint)
+        .is_some_and(|m| m.purged.is_some())
+        || conn
+            .prepare_cached(
+                "SELECT 1 FROM integrity_warnings WHERE kind = 'sync_unauthorised'
                AND resolution IS NULL AND instr(local_entry, ?1) > 0",
-        )?
-        .exists(params![tag])?;
+            )?
+            .exists(params![tag])?;
     let mut r = fetch_by_hid(conn, &op.hid)?.map(|e| row(&e));
     fold_into(&mut r, &op.effect);
     if let (false, Some(r)) = (quiet, r) {

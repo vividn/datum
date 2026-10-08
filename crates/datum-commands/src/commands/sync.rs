@@ -175,7 +175,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                     }
                     ensure!(
                         purged.is_none(),
-                        "{who} is purged already: `datum sync chain unpurge {who}` folds its ops back in"
+                        "{who} is purged already: a fresh invite brings it back, its ops with it"
                     );
                     let what = purge_words(&who, &m, &p);
                     if !yes {
@@ -186,20 +186,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                     }
                     (
                         json!({"type": "purge", "endpoint": m}),
-                        format!(
-                            "purged: {what}\n`datum sync chain unpurge {who}` folds them back in"
-                        ),
-                    )
-                }
-                SyncAdminAct::Unpurge => {
-                    let m = member(&chain, &who)?;
-                    // Nothing to sign: in a locked chain, a passkey tap for nothing.
-                    if let Some(why) = chain.member(&m).and_then(|m| m.unpurge_refused()) {
-                        bail!("{who} can't be unpurged: {why}");
-                    }
-                    (
-                        json!({"type": "unpurge", "endpoint": m}),
-                        format!("unpurged {who}: its ops are folded back in; it stays revoked"),
+                        format!("purged: {what}\na fresh invite brings it back, its ops with it"),
                     )
                 }
                 SyncAdminAct::Role { reader, filter } => {
@@ -803,7 +790,6 @@ fn members(db: &Db, json: bool) -> Result<()> {
                     "revoked": m.revoked.as_deref().map(chain::hlc_time),
                     "purged": m.purged.as_deref().map(chain::hlc_time),
                     "rejoined": m.rejoined.as_deref().map(chain::hlc_time),
-                    "set_aside_before": m.set_aside_before.as_deref().map(chain::hlc_time),
                     "role": m.role().as_str(), "this": m.endpoint == mine,
                     "filter": filter_json(chain.filter(&m.endpoint)),
                 })

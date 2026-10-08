@@ -145,7 +145,7 @@ only members are served
 (`sync_peers` is just where they were last seen), and bare `sync` / the
 hidden `sync run` swap vectors and ops until neither moves. The tree:
 `sync`, `status`, `pause | resume`, `chain invite | connect | leave |
-list | rename | revoke | purge | unpurge | ack | rekey`, `admin list | add | remove`, `daemon
+list | rename | revoke | purge | ack | rekey`, `admin list | add | remove`, `daemon
 install | uninstall | status` (a systemd user unit / launchd agent
 running the hidden `sync daemon run`, which is `sync run` for every chained
 db; a copy's first `chain invite` / `connect` installs it unless
@@ -163,8 +163,8 @@ keeps a notice of the unlock until `sync chain ack unlock`.
 `sync chain purge <WHO>` (da-ry11c) previews, and with `--yes` writes a
 `purge` record: every copy refuses every op that endpoint signed and folds
 its entries again without them — what it made goes, its edits and deletes
-are undone — and revokes it; `unpurge` folds them back in while the purge
-is the newest act about it.
+are undone — and revokes it. There is no unpurge: a fresh invite brings it
+back (below), though an old chain's `unpurge` record still folds as it did.
 A copy belongs to one chain — its apply refuses another chain's records
 (da-d8ort). `chain leave` leaves it from any chain: its ops, peers and
 notices go, its entries stay — signed again as baselines on the next sync —
@@ -173,7 +173,8 @@ chain's invite leaves on its own only a copy holding nothing but its own data
 (no other live member, no other endpoint's op), keeping its key. A revoked
 device rejoins by a fresh invite to its chain: the `admit` of a listed
 endpoint RE-ADMITS it, clearing the revoke, so what it made while out folds
-in (da-j8c4l).
+in (da-j8c4l) — and a purge too, so a purged device rejoins as at a first
+connection, every op it made folding back in (da-q4rau).
 A first sync carries the inviter's chain records after its history, so a join
 cut short (a reload, a lost connection) leaves the joiner in no chain holding
 part of it, or none (`sync_peers.redeemed_at`, da-38eye): `sync chain list` /

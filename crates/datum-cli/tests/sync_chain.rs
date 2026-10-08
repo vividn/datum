@@ -634,10 +634,9 @@ fn a_purge_preview_of_a_device_that_only_made_specs_says_they_go() {
 /// device … you can scrape out all the bad data easily») sets aside every
 /// op its endpoint signed, on every copy: what it created goes, its edit of
 /// another device's entry and its delete are undone. A copy that hears of
-/// it later — and the purged copy itself — does the same; an unpurge folds
-/// it all back in.
+/// it later — and the purged copy itself — does the same.
 #[test]
-fn a_purge_sets_aside_a_devices_ops_on_every_copy_and_an_unpurge_restores_them() {
+fn a_purge_sets_aside_a_devices_ops_on_every_copy() {
     let (a, b) = chained();
     let c = Copy::new();
     admit(&a, &c, "c", None);
@@ -697,31 +696,15 @@ fn a_purge_sets_aside_a_devices_ops_on_every_copy_and_an_unpurge_restores_them()
     // A copy does not purge itself.
     let own = a.fails(&["sync", "chain", "purge", &a.id()[..10], "--yes"], "");
     assert!(own.contains("does not purge itself"), "{own}");
-
-    let back = a.ok(&["sync", "chain", "unpurge", "b"]);
-    assert!(back.contains("stays revoked"), "{back}");
-    a.send(&b);
-    a.send(&c);
-    for copy in [&a, &b, &c] {
-        assert_eq!(purge_view(copy), poisoned);
-    }
-    assert_eq!(a.hash(), b.hash());
-    assert_eq!(a.hash(), c.hash());
-    assert!(member_of(&c, &b.id())["purged"].is_null());
-    assert!(member_of(&c, &b.id())["revoked"].is_string());
-    check_clean(&a, &[&b, &c]);
-    check_clean(&c, &[&a, &b]);
-    let twice = a.fails(&["sync", "chain", "unpurge", "b"], "");
-    assert!(twice.contains("not purged"), "{twice}");
 }
 
-/// A PURGED device rejoins afresh (da-j8c4l, the mayor's reading of vividn's
-/// «as if it is a new device joining»): what it made before the fresh
-/// invite admits it — before the purge, and while it was out — stays set
-/// aside on every copy, itself included; what it makes after flows; and
-/// with no purge standing, there is none to unpurge.
+/// A PURGED device that rejoins by a fresh invite connects as if for the
+/// first time (da-q4rau, vividn 10-08: «It should be like that device is
+/// connecting for the first time»): its purge goes with its revoke, so
+/// everything it made — before the purge, and while it was out — folds back
+/// in on every copy, itself included. There is no unpurge.
 #[test]
-fn a_purged_device_rejoins_afresh_its_old_ops_staying_set_aside() {
+fn a_purged_device_that_rejoins_brings_all_its_ops_back() {
     let (a, b) = chained();
     let c = Copy::new();
     admit(&a, &c, "c", None);
@@ -734,6 +717,11 @@ fn a_purged_device_rejoins_afresh_its_old_ops_staying_set_aside() {
     a.ok(&["sync", "chain", "purge", "b", "--yes"]);
     a.send(&b);
     a.send(&c);
+    let cups = "SELECT json_extract(data, '$.cups') FROM entries WHERE field = 'tea'";
+    for copy in [&a, &b, &c] {
+        assert!(!copy.has("coffee"));
+        assert_eq!(copy.query(cups), "1");
+    }
     b.ok(&["occur", "out"]);
 
     let out = redeem(&a, &b, "b", None, &["--chain", &chain_of(&a)]);
@@ -743,27 +731,19 @@ fn a_purged_device_rejoins_afresh_its_old_ops_staying_set_aside() {
         String::from_utf8_lossy(&out.stderr)
     );
     a.send(&b);
-    b.ok(&["occur", "fresh"]);
-    // Its op from while it was out is refused; the one after flows.
-    let (_, text) = b.send(&a);
-    assert!(text.contains("purged before it rejoined"), "{text}");
+    b.send(&a);
     a.send(&c);
-    let cups = "SELECT json_extract(data, '$.cups') FROM entries WHERE field = 'tea'";
     for copy in [&a, &b, &c] {
-        assert!(!copy.has("coffee") && !copy.has("out") && copy.has("fresh"));
-        assert_eq!(copy.query(cups), "1");
+        assert!(copy.has("coffee") && copy.has("out"));
+        assert_eq!(copy.query(cups), "3");
         let m = member_of(copy, &b.id());
         assert!(m["purged"].is_null() && m["revoked"].is_null(), "{m}");
-        assert!(
-            m["set_aside_before"].is_string() && m["rejoined"].is_string(),
-            "{m}"
-        );
+        assert!(m["rejoined"].is_string(), "{m}");
     }
     assert_eq!(a.hash(), b.hash());
     assert_eq!(a.hash(), c.hash());
     check_clean(&a, &[&b, &c]);
-    let unpurge = a.fails(&["sync", "chain", "unpurge", "b"], "");
-    assert!(unpurge.contains("not purged"), "{unpurge}");
+    check_clean(&c, &[&a, &b]);
 }
 
 /// Two copies logging one coffee at one minute are one entry, the
@@ -1800,8 +1780,8 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
     assert_eq!(
         complete(&["chain"]),
         [
-            "invite", "connect", "leave", "list", "rename", "revoke", "purge", "unpurge", "role",
-            "ack", "rekey"
+            "invite", "connect", "leave", "list", "rename", "revoke", "purge", "role", "ack",
+            "rekey"
         ]
     );
     assert_eq!(complete(&["admin"]), ["list", "add", "remove"]);

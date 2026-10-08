@@ -297,7 +297,7 @@ export function purgeWords(label: string, db: string, p: PurgePreview): string {
 		: p.defined
 			? `It made no change to an entry, only ${many(p.defined, 'definition', 'definitions')}: this revokes it and sets ${p.defined === 1 ? 'that' : 'them'} aside.`
 			: 'It made no change to an entry: this only revokes it.';
-	return `Purge ${label} from ${db}? ${what} It is revoked too; Unpurge brings its changes back.`;
+	return `Purge ${label} from ${db}? ${what} It is revoked too, until a fresh invite brings it and its changes back.`;
 }
 
 /**
@@ -370,6 +370,7 @@ export function approvalWords(r: Record<string, unknown>, d: DbSync | undefined,
 			return [`Revoke ${who(r.endpoint)} ${where}`];
 		case 'purge':
 			return [`Purge ${who(r.endpoint)} ${where}: every change it made goes, on every device`];
+		// No longer written (da-q4rau), but an older CLI's link may ask for one.
 		case 'unpurge':
 			return [`Unpurge ${who(r.endpoint)} ${where}: its changes come back`];
 		case 'role':

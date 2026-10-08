@@ -191,7 +191,6 @@ impl Db {
                 purged: None,
                 last_act: String::new(),
                 rejoined: None,
-                set_aside_before: None,
                 roles: Vec::new(),
                 filter: None,
             })

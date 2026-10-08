@@ -158,7 +158,7 @@ describe('the sync widget’s actions', () => {
 		}, { viewport: DESKTOP });
 	});
 
-	test('a purge previews what goes and takes the device’s name typed; an unpurge brings it back, revoked', async () => {
+	test('a purge previews what goes and takes the device’s name typed, and leaves no unpurge (da-q4rau)', async () => {
 		await withWallClock(
 			async (app) => {
 				const { page } = app;
@@ -169,6 +169,7 @@ describe('the sync widget’s actions', () => {
 				await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Purge', exact: true }).click();
 				const dialog = page.locator('dialog.confirm');
 				assert.match(await dialog.innerText(), /Purge phone from home\? It made no change to an entry: this only revokes it\./);
+				assert.match(await dialog.innerText(), /It is revoked too, until a fresh invite brings it and its changes back\./);
 				// A wrong name is a no.
 				await dialog.locator('input').fill('phon');
 				await dialog.getByRole('button', { name: 'purge', exact: true }).click();
@@ -178,19 +179,12 @@ describe('the sync widget’s actions', () => {
 				await dialog.locator('input').fill('phone');
 				await dialog.getByRole('button', { name: 'purge', exact: true }).click();
 				const gone = page.locator(`${WIDGET} .more .device[data-endpoint="${phone}"]`);
-				await gone.getByRole('button', { name: 'Unpurge' }).waitFor();
-				assert.equal(await gone.locator('.name').innerText(), 'phone · purged');
+				await gone.filter({ hasText: 'phone · purged' }).waitFor();
+				assert.equal(await gone.getByRole('button').count(), 0);
 				// Listed once: its device line, with Rename and Revoke, is gone.
 				assert.equal(await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).count(), 0);
 				assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
 				assert.ok((await of()).purged);
-
-				await gone.getByRole('button', { name: 'Unpurge' }).click();
-				await dialog.getByRole('button', { name: 'unpurge' }).click();
-				await gone.getByRole('button', { name: 'Purge', exact: true }).waitFor();
-				assert.equal(await gone.locator('.name').innerText(), 'phone · revoked');
-				assert.equal((await of()).purged, null);
-				assert.ok((await of()).revoked);
 			},
 			{ viewport: DESKTOP }
 		);

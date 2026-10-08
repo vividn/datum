@@ -127,7 +127,7 @@ type Rest<'a> = std::slice::Iter<'a, &'a str>;
 
 /// `datum sync chain …`: the chain's membership.
 fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "invite|connect|leave|list|rename|revoke|purge|unpurge|role|ack|rekey";
+    const SET: &str = "invite|connect|leave|list|rename|revoke|purge|role|ack|rekey";
     Ok(match rest.next().copied() {
         Some("invite") => {
             let values = ["expires", "admin-key", "fields", "kit"];
@@ -177,7 +177,6 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                 allow_unlock: false,
             }
         }
-        Some("unpurge") => act(rest, SyncAdminAct::Unpurge, &[], &[])?,
         Some("role") => {
             let mut o = opts(rest, &["admin-key", "fields", "kit"], &[], 2..=2)?;
             let filter = o.filter()?;
@@ -545,18 +544,9 @@ mod tests {
                 allow_unlock: false
             }
         );
-        assert_eq!(
-            p(&["chain", "unpurge", "b"]),
-            SyncCommand::Admin {
-                act: SyncAdminAct::Unpurge,
-                who: "b".into(),
-                label: None,
-                admin_key: None,
-                allow_unlock: false
-            }
-        );
         assert!(parse_sync_cmd(&["chain", "purge"]).is_err());
-        assert!(parse_sync_cmd(&["chain", "unpurge", "b", "--yes"]).is_err());
+        // Gone (da-q4rau): a fresh invite brings a purged device back.
+        assert!(parse_sync_cmd(&["chain", "unpurge", "b"]).is_err());
         assert_eq!(
             p(&["chain", "role", "b", "reader", "--admin-key", "k"]),
             SyncCommand::Admin {
