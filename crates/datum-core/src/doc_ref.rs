@@ -88,8 +88,8 @@ pub fn state_refs(spec: Option<&FieldSpec>, state: &JsonValue) -> Vec<String> {
 ///
 /// 1. a string beginning `ref://` refers to the slug after it, on any key —
 ///    the prefix is reserved, so a literal one is stored `str://ref://…`;
-/// 2. any other string, on a key the spec types [`SubfieldType::Ref`], is
-///    itself a slug — except that literal;
+/// 2. any other string, on a key the spec types [`SubfieldType::Ref`] or
+///    [`SubfieldType::RefList`], is itself a slug — except that literal;
 /// 3. anything else refers to nothing.
 ///
 /// An array takes the rule per element, and an object per member under
@@ -108,7 +108,7 @@ pub fn data_refs(spec: Option<&FieldSpec>, key: &str, value: &JsonValue) -> Vec<
             None if s.is_empty() || literal(s).is_some() => vec![],
             None => spec
                 .and_then(|sp| sp.subfields.get(key))
-                .filter(|sf| matches!(sf.value_type, SubfieldType::Ref))
+                .filter(|sf| matches!(sf.value_type, SubfieldType::Ref | SubfieldType::RefList))
                 .map(|_| vec![s.clone()])
                 .unwrap_or_default(),
         },

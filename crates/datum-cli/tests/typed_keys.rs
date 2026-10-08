@@ -206,3 +206,86 @@ fn update_of_a_timeless_entry_counts_from_its_create_time() {
     let want = (day + chrono::Duration::days(1)).to_string();
     assert_eq!(entry().data.unwrap()["on"], json!(want));
 }
+
+/// `lift` with one key of each list type (da-jhi0x).
+const LIFT: &str = r#"{"field": "lift", "verb": "occur", "subfields": {
+    "reps": {"value_type": "number[]"},
+    "tags": {"value_type": "string[]"},
+    "done": {"value_type": "bool[]"},
+    "needs": {"value_type": "ref[]"}
+}}"#;
+
+/// A list-typed key always splits on a glued comma, a single value is a
+/// one-item list, the bracket form works, and each element parses as its
+/// type or the whole value is refused, naming the element.
+#[test]
+fn a_list_typed_key_parses_each_element_or_refuses() {
+    let db = fresh_db();
+    run_cli(&["spec", "set", "lift", "--from-json", LIFT], &db).unwrap();
+    for (kv, want) in [
+        ("reps=8,8,6", Ok(json!([8, 8, 6]))),
+        ("reps=8", Ok(json!([8]))),
+        ("reps=[8, 6]", Ok(json!([8, 6]))),
+        ("reps=8,", Ok(json!([8]))),
+        ("reps=[]", Ok(json!([]))),
+        (
+            "reps=8,x,6",
+            Err(r#"reps: "8,x,6" is not a number[]: element 2 "x" is not a number"#),
+        ),
+        (
+            "reps=8, 6",
+            Err(r#"reps: "8, 6" is not a number[]: element 1 "8, 6" is not a number"#),
+        ),
+        ("tags=a,b", Ok(json!(["a", "b"]))),
+        ("tags=a, b", Ok(json!(["a, b"]))),
+        ("tags=007", Ok(json!(["007"]))),
+        (r#"tags=["a,b", 1]"#, Ok(json!(["a,b", "1"]))),
+        ("done=true,FALSE", Ok(json!([true, false]))),
+        (
+            "done=true,yes",
+            Err(r#"done: "true,yes" is not a bool[]: element 2 "yes" is not a bool"#),
+        ),
+        ("needs=issue:a,issue:b", Ok(json!(["issue:a", "issue:b"]))),
+    ] {
+        assert_eq!(log(&db, "lift", kv), want.map_err(String::from), "{kv}");
+    }
+}
+
+/// Each list type goes through `spec set`, a kit's export and its install,
+/// and the installed kit logs; a `ref[]` element refers as a bare `ref`
+/// value does.
+#[test]
+fn list_types_round_trip_through_a_kit() {
+    let db = fresh_db();
+    run_cli(&["spec", "set", "lift", "--from-json", LIFT], &db).unwrap();
+    let spec = db.load_spec("lift").unwrap().unwrap();
+    let toml = datum_core::kit::KitToml::from_field_specs("lifts", None, &[spec], &[])
+        .to_toml()
+        .unwrap();
+    for ty in ["number[]", "string[]", "bool[]", "ref[]"] {
+        assert!(toml.contains(&format!("value_type = \"{ty}\"")), "{toml}");
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let kit = dir.path().join("lifts.toml");
+    std::fs::write(&kit, toml).unwrap();
+    let installed = fresh_db();
+    run_cli(&["kit", "install", &kit.to_string_lossy()], &installed).unwrap();
+    let back = installed.load_spec("lift").unwrap().unwrap();
+    assert_eq!(
+        serde_json::to_value(&back.subfields).unwrap(),
+        serde_json::to_value(&db.load_spec("lift").unwrap().unwrap().subfields).unwrap()
+    );
+    assert_eq!(log(&installed, "lift", "reps=5,5,3"), Ok(json!([5, 5, 3])));
+    run_cli(&["update", "lift:*", "reps=5,5"], &installed).unwrap();
+    let err = run_cli(&["update", "lift:*", "reps=5,x"], &installed).unwrap_err();
+    assert_eq!(
+        format!("{err:#}"),
+        r#"reps: "5,x" is not a number[]: element 2 "x" is not a number"#
+    );
+    let data = logged_entries(&installed, "lift")[0].data.clone().unwrap();
+    assert_eq!(data["reps"], json!([5, 5]));
+    assert_eq!(
+        datum_core::doc_ref::data_refs(Some(&back), "needs", &json!(["issue:a", "issue:b"])),
+        ["issue:a", "issue:b"]
+    );
+}

@@ -53,6 +53,17 @@ pub enum SubfieldType {
     Date,
     /// A day and a time, `YYYY-MM-DDTHH:MM:SS`.
     DateTime,
+    /// A list of one element type (da-jhi0x); `array` is a list of
+    /// anything. No tuples, no nested lists.
+    #[serde(rename = "number[]")]
+    NumberList,
+    #[serde(rename = "string[]")]
+    StringList,
+    #[serde(rename = "bool[]")]
+    BoolList,
+    /// Each element a reference, as a bare [`Ref`](Self::Ref) value is.
+    #[serde(rename = "ref[]")]
+    RefList,
 }
 
 impl SubfieldType {
@@ -65,6 +76,10 @@ impl SubfieldType {
             Self::Bool => KeyType::Bool,
             Self::Date => KeyType::Date,
             Self::DateTime => KeyType::DateTime,
+            Self::NumberList => KeyType::NumberList,
+            Self::StringList => KeyType::StringList,
+            Self::BoolList => KeyType::BoolList,
+            Self::RefList => KeyType::RefList,
             Self::Array | Self::Any | Self::Ref => return None,
         })
     }

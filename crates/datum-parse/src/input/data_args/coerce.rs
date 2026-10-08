@@ -43,6 +43,18 @@ pub enum KeyType {
     Time,
     /// By suffix (`*dur`, `*duration`): stored as ISO 8601.
     Duration,
+    /// A list of one element type (da-jhi0x): a comma always splits, a
+    /// single value is a one-item list, and each element parses as its
+    /// type or the whole value is refused.
+    #[serde(rename = "number[]")]
+    NumberList,
+    #[serde(rename = "string[]")]
+    StringList,
+    #[serde(rename = "bool[]")]
+    BoolList,
+    /// Each element a slug, kept as typed.
+    #[serde(rename = "ref[]")]
+    RefList,
 }
 
 impl KeyType {
@@ -65,6 +77,12 @@ impl KeyType {
         let at = |s: &str| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").is_ok();
         match (self, v) {
             (_, Value::Null) => true,
+            (ty, v) if ty.is_list() => v.as_array().is_some_and(|items| {
+                items.iter().all(|v| match ty.element() {
+                    Some(el) => el.fits(v),
+                    None => v.is_string(),
+                })
+            }),
             (Self::Number, v) => v.is_number(),
             (Self::Bool, v) => v.is_boolean(),
             (Self::Date, Value::String(s)) => day(s),
@@ -86,6 +104,27 @@ impl KeyType {
             Self::DateTime => "datetime",
             Self::Time => "time",
             Self::Duration => "duration",
+            Self::NumberList => "number[]",
+            Self::StringList => "string[]",
+            Self::BoolList => "bool[]",
+            Self::RefList => "ref[]",
+        }
+    }
+
+    fn is_list(self) -> bool {
+        matches!(
+            self,
+            Self::NumberList | Self::StringList | Self::BoolList | Self::RefList
+        )
+    }
+
+    /// A list's element type; `None` for `ref[]`, whose elements are text.
+    fn element(self) -> Option<Self> {
+        match self {
+            Self::NumberList => Some(Self::Number),
+            Self::StringList => Some(Self::String),
+            Self::BoolList => Some(Self::Bool),
+            _ => None,
         }
     }
 }
@@ -121,6 +160,20 @@ pub(super) fn infer_typed_value(
     let Some(ty) = declared.or_else(|| KeyType::of_suffix(path)) else {
         return Ok(infer_type(value));
     };
+    if ty.is_list() {
+        return match coerce_list(ty, value, compat) {
+            Ok(items) => Ok(Some(Value::Array(items))),
+            Err((n, item)) => Err(ParseError::WrongType {
+                key: path.to_string(),
+                ty: ty.name(),
+                value: value.to_string(),
+                hint: format!(
+                    ": element {n} {item:?} is not a {}",
+                    ty.element().map_or("ref", KeyType::name)
+                ),
+            }),
+        };
+    }
     match coerce_as(ty, value, compat) {
         Some(v) => Ok(Some(v)),
         // The entry's own time and duration keep their own parsers, and
@@ -202,7 +255,50 @@ fn coerce_as(ty: KeyType, value: &str, compat: Compat) -> Option<Value> {
                 })?;
             text(at.format("%Y-%m-%dT%H:%M:%S").to_string())
         }
+        _ => coerce_list(ty, value, compat).ok().map(Value::Array),
     }
+}
+
+/// A list-typed value's elements (da-jhi0x), or the 1-based position and
+/// text of the first that is not its element type. The bracket form gives
+/// its elements; otherwise the value is a list already, as if marked with
+/// a leading comma: `8,8,6` and `8` split as `,8,8,6` and `,8` would, and
+/// `a, b` is the one element «a, b».
+fn coerce_list(
+    ty: KeyType,
+    value: &str,
+    compat: Compat,
+) -> std::result::Result<Vec<Value>, (usize, String)> {
+    let items: Vec<String> = match value.starts_with('[').then(|| infer_type(value)) {
+        Some(Some(Value::Array(a))) => a
+            .into_iter()
+            .map(|v| match v {
+                Value::String(s) => s,
+                v => v.to_string(),
+            })
+            .collect(),
+        _ => {
+            let marked = if value.starts_with(',') {
+                value.to_string()
+            } else {
+                format!(",{value}")
+            };
+            comma_items(&marked)
+                .map(|items| items.into_iter().map(str::to_string).collect())
+                .unwrap_or_else(|| vec![value.to_string()])
+        }
+    };
+    items
+        .into_iter()
+        .enumerate()
+        .map(|(i, item)| {
+            match ty.element() {
+                Some(el) => coerce_as(el, &item, compat),
+                None => Some(Value::String(item.clone())),
+            }
+            .ok_or((i + 1, item))
+        })
+        .collect()
 }
 
 /// What to say after a refusal: a decimal comma is a list (da-fwsre), and
@@ -486,6 +582,20 @@ mod tests {
         ] {
             assert_eq!(infer_type(typed), Some(want), "{typed}");
         }
+    }
+
+    /// A stored list fits its list type when every element fits its
+    /// element type (da-jhi0x); a lone value is not a list.
+    #[test]
+    fn a_list_fits_by_its_elements() {
+        assert!(KeyType::NumberList.fits(&json!([8, 6])));
+        assert!(KeyType::NumberList.fits(&json!([])));
+        assert!(!KeyType::NumberList.fits(&json!(8)));
+        assert!(!KeyType::NumberList.fits(&json!(["8"])));
+        assert!(KeyType::StringList.fits(&json!(["a"])));
+        assert!(!KeyType::BoolList.fits(&json!([true, "x"])));
+        assert!(KeyType::RefList.fits(&json!(["issue:a"])));
+        assert!(!KeyType::RefList.fits(&json!([1])));
     }
 
     #[test]

@@ -140,8 +140,33 @@ export const wide = (glyph: string): boolean =>
 	);
 
 /** A key's type — `SubfieldType` in datum-core's field_spec. */
-export type KeyType = 'string' | 'number' | 'bool' | 'date' | 'datetime' | 'array' | 'any' | 'ref';
-export const KEY_TYPES: KeyType[] = ['string', 'number', 'bool', 'date', 'datetime', 'array', 'any', 'ref'];
+export type KeyType =
+	| 'string'
+	| 'number'
+	| 'bool'
+	| 'date'
+	| 'datetime'
+	| 'array'
+	| 'any'
+	| 'ref'
+	| 'number[]'
+	| 'string[]'
+	| 'bool[]'
+	| 'ref[]';
+export const KEY_TYPES: KeyType[] = [
+	'string',
+	'number',
+	'bool',
+	'date',
+	'datetime',
+	'array',
+	'any',
+	'ref',
+	'number[]',
+	'string[]',
+	'bool[]',
+	'ref[]'
+];
 
 /** A key of the entry's data as the spec declares it — `SubfieldSpec`. */
 export interface Subfield {
