@@ -139,20 +139,31 @@ impl Uncertainty {
     /// `occur_time_uncertainty` / `dur_uncertainty` columns. Returns `None`
     /// for exact (no uncertainty) so the column lands as NULL.
     ///
+    /// It is written in the unit the person typed when that unit divides
+    /// `seconds`, else in the largest smaller one that does: `±1.5h` is
+    /// `PT90M`, never a truncated `PT1H` (da-42ug9).
+    ///
     /// [`DatumTime::uncertainty`]: crate::time::DatumTime::uncertainty
     pub fn to_iso(&self) -> Option<String> {
-        if self.seconds == 0 || matches!(self.unit, UncertaintyUnit::Exact) {
-            return None;
-        }
-        match self.unit {
-            UncertaintyUnit::Second => Some(format!("PT{}S", self.seconds)),
-            UncertaintyUnit::Minute => Some(format!("PT{}M", (self.seconds / 60).max(1))),
-            UncertaintyUnit::Hour => Some(format!("PT{}H", (self.seconds / 3600).max(1))),
-            UncertaintyUnit::Date => Some(format!("P{}D", (self.seconds / 86_400).max(1))),
-            UncertaintyUnit::Month => Some("P1M".to_string()),
-            UncertaintyUnit::Year => Some("P1Y".to_string()),
-            UncertaintyUnit::Exact => None,
-        }
+        let typed = match self.unit {
+            _ if self.seconds == 0 => return None,
+            UncertaintyUnit::Exact => return None,
+            UncertaintyUnit::Month => return Some("P1M".to_string()),
+            UncertaintyUnit::Year => return Some("P1Y".to_string()),
+            UncertaintyUnit::Date => 86_400,
+            UncertaintyUnit::Hour => 3600,
+            UncertaintyUnit::Minute => 60,
+            UncertaintyUnit::Second => 1,
+        };
+        let (step, iso) = [
+            (86_400, "P{}D"),
+            (3600, "PT{}H"),
+            (60, "PT{}M"),
+            (1, "PT{}S"),
+        ]
+        .into_iter()
+        .find(|&(step, _)| step <= typed && self.seconds.is_multiple_of(step))?;
+        Some(iso.replace("{}", &(self.seconds / step).to_string()))
     }
 }
 
@@ -291,6 +302,22 @@ mod tests {
             "Hour".parse::<UncertaintyUnit>().unwrap(),
             UncertaintyUnit::Hour
         );
+    }
+
+    /// A fractional count of the typed unit is written in the next unit
+    /// down that divides it, never truncated (da-42ug9).
+    #[test]
+    fn to_iso_keeps_a_fractional_unit_whole() {
+        for (typed, iso) in [
+            ("1.5h", "PT90M"),
+            ("1.5m", "PT90S"),
+            ("2h", "PT2H"),
+            ("0.5d", "PT12H"),
+            ("90m", "PT90M"),
+        ] {
+            let u = parse_uncertainty(typed).unwrap();
+            assert_eq!(u.to_iso().as_deref(), Some(iso), "±{typed}");
+        }
     }
 
     #[test]

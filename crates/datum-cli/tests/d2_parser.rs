@@ -142,6 +142,23 @@ fn retime_overwrites_uncertainty_from_new_input() {
     );
 }
 
+/// `-t 10:00±1.5h` stores the half hour: a fractional count of the typed
+/// unit is written in the next unit down, not truncated to `PT1H` (da-42ug9).
+#[test]
+fn a_fractional_uncertainty_is_stored_whole() {
+    let db = fresh_db();
+    for (field, t, iso) in [
+        ("a", "10:00±1.5h", "PT90M"),
+        ("b", "10:00±1.5m", "PT90S"),
+        ("c", "10:00±2h", "PT2H"),
+        ("d", "10:00±0.5d", "PT12H"),
+    ] {
+        run_cli(&["occur", field, "-t", t], &db).expect(t);
+        let e = &datum_core::test_util::logged_entries(&db, field)[0];
+        assert_eq!(e.occur_uncertainty(), Some(iso), "-t {t}");
+    }
+}
+
 /// Every new entry written through the parser carries the current
 /// `parser_version` so a future parser-bugfix replay can reprocess them.
 #[test]
