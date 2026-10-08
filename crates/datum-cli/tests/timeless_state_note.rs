@@ -1,8 +1,8 @@
 //! da-w149: `-T` on a state verb is a note about a state. The row keeps the
 //! state, has no `occur_time`, and is a MOMENT point; it renders as `¢` and
 //! the state label, both in the state's colour as fg, with no LEAD/TRAIL and
-//! no bg chip — and no surface compiles it into a state. `-T` with a
-//! duration is an error.
+//! no bg chip — and no surface compiles it into a state. A duration beside
+//! `-T` is dropped (da-fu7a0).
 //!
 //! Runs the binary so the rendered lines carry their real SGR bytes.
 
@@ -11,7 +11,6 @@ use std::process::{Command, Output};
 
 use serde_json::{json, Value};
 
-const DUR_ERR: &str = "-T makes note-data, which has no duration; drop the duration or drop -T";
 const BG: &str = "\x1b[48;2;";
 
 fn tmp_db() -> (tempfile::TempDir, PathBuf) {
@@ -195,22 +194,21 @@ fn structured_and_parallel_states_render_through_the_moment_label() {
     );
 }
 
-// ─── Test 4: a duration is refused, `-m` is redundant ───────────────────────
+// ─── Test 4: a duration is dropped, `-m` is redundant ───────────────────────
 
 #[test]
-fn dash_t_with_a_duration_is_an_error() {
+fn dash_t_drops_a_duration() {
     let (_dir, db) = tmp_db();
     for args in [
         &["start", "work", "30m", "-T"][..],
         &["switch", "environment", "outside", "dur=5m", "-T"][..],
     ] {
-        let out = run(&db, args);
-        assert!(!out.status.success(), "{args:?} must fail");
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        assert!(stderr.contains(DUR_ERR), "{args:?}: {stderr}");
+        ok(&db, args);
+        let row = last_row(&db);
+        assert_eq!(row["dur"], "MOMENT", "{args:?}");
+        assert_eq!(row["verb"], "point", "{args:?}");
+        assert_eq!(row["time_metric"], "create", "{args:?}");
     }
-    let doc = json_of(&db, &["tail", "--json"]);
-    assert_eq!(doc["rows"], json!([]), "nothing written");
 }
 
 #[test]

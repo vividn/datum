@@ -62,7 +62,8 @@ how the entry is identified:
 still lands, but no occurrence is logged and the entry gets a create_time id.
 Canonical use — *chore-shirk*: advance a recurring chore's schedule without
 claiming you did it. On a state verb it is a note *about* a state: the state is
-kept, `dur=MOMENT`, and nothing starts or ends. `-T` with a duration errors.
+kept, `dur=MOMENT`, and nothing starts or ends. A duration beside `-T` is
+dropped, as `retime -T` drops an entry's.
 
 ```bash
 datum occur chore -T next_date=+3   # bump the next-due date; logs no occurrence

@@ -6,8 +6,8 @@
 //! derive_verb returns for the action's canonical (state, dur, fs) triple. A
 //! state-bearing verb stamps `dur=MOMENT`, so it is a point naming a state,
 //! not a transition (da-w149). Distinct create_times keep many-per-field
-//! timeless entries apart. Time-specifying flags or a duration mixed with
-//! `-T` error out.
+//! timeless entries apart. Time-specifying flags mixed with `-T` error out;
+//! a duration is dropped (da-fu7a0).
 
 use crate::common;
 
@@ -190,24 +190,29 @@ fn minus_t_with_d_flag_errors() {
     assert!(format!("{err:#}").contains("-d"), "got: {err:#}");
 }
 
-/// da-w149: `-T` makes note-data, which has no duration — the trailing
-/// positional and `dur=` are refused like the time flags. (The retired
-/// `--dur`'s death is covered by `dur_flag_removed.rs`.)
+/// da-fu7a0: `-T` makes note-data, which has no duration — `dur=` and the
+/// trailing positional are dropped, as `retime -T` drops an entry's, and
+/// the note is logged a timeless MOMENT point. (The retired `--dur`'s death
+/// is covered by `dur_flag_removed.rs`.)
 #[test]
-fn minus_t_with_a_duration_errors() {
+fn minus_t_drops_a_duration() {
     let db = fresh_db();
-    for args in [
-        &["start", "sleep", "-T", "30m"][..],
-        &["occur", "coffee", "-T", "dur=5m"][..],
+    for (args, field) in [
+        (&["occur", "run", "-T", "dur=30m"][..], "run"),
+        (&["start", "work", "-T", "dur=2h"][..], "work"),
+        (&["start", "sleep", "-T", "30m"][..], "sleep"),
+        (
+            &["occur", "coffee", "-T", "dur=5m±1m", "dur_uncertainty=2m"][..],
+            "coffee",
+        ),
     ] {
-        let err = run_cli(args, &db).expect_err("-T + a duration must reject");
-        assert_eq!(
-            format!("{err:#}"),
-            "-T makes note-data, which has no duration; drop the duration or drop -T"
-        );
+        run_cli(args, &db).unwrap_or_else(|e| panic!("{args:?}: {e:#}"));
+        let e = &datum_core::test_util::logged_entries(&db, field)[0];
+        assert_entry_matches!(e, verb: "point");
+        assert!(e.occur_time.is_none(), "{args:?}: timeless");
+        assert!(slug_is_timeless(e.slug.as_str()), "{args:?}: {}", e.slug);
+        assert_eq!(e.dur, Some(Dur::moment()), "{args:?}");
     }
-    assert_count!(db, "sleep", 0);
-    assert_count!(db, "coffee", 0);
 }
 
 #[test]
