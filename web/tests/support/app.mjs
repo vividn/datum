@@ -856,17 +856,54 @@ function app(page, errors, query, clean, locks, internal) {
 		 *
 		 * Hands back `saw(line)`, which waits for a ghost reading `line`
 		 * and answers every moment a ghost was in the page: its `line`, the
-		 * `left` the pills were placed at beside it, and the box's `value`.
+		 * `left` the pills were placed at beside it, the box's `value`, how
+		 * many ghosts were up (`count`) — and `look`, what the ghost element
+		 * was as it was INSERTED, read once per element (da-vp0qc): `nth`
+		 * says which element, `shade` its colour beside the box's `typed`
+		 * and `placeholder`, `animations` and `age` its fade, `fade` that
+		 * fade's opacity sought to 350 and 700ms and its `total`, `echoes`
+		 * the REPL's echo count then. Seeking puts the fade back where it
+		 * was, in the same task, so nothing is drawn of it.
 		 */
 		async watchGhosts() {
 			await page.evaluate(() => {
 				window.__datumGhostWatch?.disconnect();
 				const seen = (window.__datumGhosts = []);
+				const looks = new WeakMap();
+				let nth = 0;
+				const lookOf = (ghost, input) => {
+					const fades = ghost.getAnimations();
+					const [fade] = fades;
+					const look = {
+						nth: ++nth,
+						shade: getComputedStyle(ghost).color,
+						typed: getComputedStyle(input).color,
+						placeholder: getComputedStyle(input, '::placeholder').color,
+						animations: fades.length,
+						age: fade?.currentTime ?? 0,
+						echoes: document.querySelectorAll('.repl .echo').length
+					};
+					if (fade?.currentTime != null) {
+						const was = fade.currentTime;
+						const at = (ms) => ((fade.currentTime = ms), Number(getComputedStyle(ghost).opacity));
+						look.fade = { 350: at(350), 700: at(700), total: fade.effect.getComputedTiming().endTime };
+						fade.currentTime = was;
+					}
+					return look;
+				};
 				window.__datumGhostWatch = new MutationObserver(() => {
 					const ghost = document.querySelector('.prompt-bar .ghost');
 					const pills = document.querySelector('.prompt-bar .pills');
-					const value = document.querySelector('.prompt-bar input')?.value;
-					if (ghost) seen.push({ line: ghost.textContent, left: parseFloat(pills?.style.left), value });
+					const input = document.querySelector('.prompt-bar input');
+					if (!ghost) return;
+					if (!looks.has(ghost)) looks.set(ghost, lookOf(ghost, input));
+					seen.push({
+						line: ghost.textContent,
+						left: parseFloat(pills?.style.left),
+						value: input?.value,
+						count: document.querySelectorAll('.prompt-bar .ghost').length,
+						look: looks.get(ghost)
+					});
 				});
 				window.__datumGhostWatch.observe(document.body, {
 					subtree: true,

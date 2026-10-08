@@ -13,9 +13,10 @@
 // never the value. The assertion that carries this file is `inputValue() ===
 // ''` WHILE the ghost is on screen; it is what fails against the old code.
 //
-// Timing is read off the page, never slept through: the ghost is found by
-// waiting for it, and the box's value is read in the SAME evaluation that
-// finds it, so a fade that ends early cannot turn an assertion into a race.
+// Timing is read off the page, never slept through: the ghost is recorded by
+// `app.watchGhosts()`, installed before the press, in the page as it is
+// inserted — with the box's value beside it in the same record — so a ghost
+// gone before the test's first round trip is read all the same (da-vp0qc).
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -65,34 +66,15 @@ async function withCoffee(app) {
 }
 
 /**
- * The ghost's text and, read in the same breath, what is in the box — and
- * `look`, everything a test reads OF the ghost: its shade beside the box's
- * two, how far into its fade it is, how many animations it has. `mark` is
- * written onto the element found, so a later one is known to be another.
- *
- * One evaluation: the ghost is gone in about a second, so two round trips
- * could see the box after it rather than during it, and the claim is
- * precisely that the two are true AT THE SAME TIME. And a second round trip
- * to read the ghost itself is one a loaded runner can outlast (da-ohoei).
+ * What `saw` (from `app.watchGhosts()`) recorded of the ghost reading
+ * `line`: every value the box held while it was up — the claim is that the
+ * two are true AT THE SAME TIME, so each record pairs them — and its `look`
+ * as it was inserted.
  */
-const ghostAndValue = (page, mark) =>
-	page
-		.waitForFunction((mark) => {
-			const ghost = document.querySelector('.prompt-bar .ghost');
-			if (!ghost) return null;
-			const input = document.querySelector('.prompt-bar input');
-			if (mark) ghost.dataset.mark = mark;
-			const fades = ghost.getAnimations();
-			const look = {
-				shade: getComputedStyle(ghost).color,
-				typed: getComputedStyle(input).color,
-				placeholder: getComputedStyle(input, '::placeholder').color,
-				age: fades[0]?.currentTime ?? 0,
-				animations: fades.length
-			};
-			return { ghost: ghost.textContent, value: input.value, look };
-		}, mark)
-		.then((handle) => handle.jsonValue());
+const ghostOf = async (saw, line) => {
+	const ghosts = (await saw(line)).filter((g) => g.line === line);
+	return { values: [...new Set(ghosts.map((g) => g.value))], look: ghosts[0].look };
+};
 
 const gone = (page) => page.waitForFunction(() => !document.querySelector('.prompt-bar .ghost'));
 
@@ -155,9 +137,10 @@ describe('the ghost', () => {
 			const { page } = app;
 			await withCoffee(app);
 
+			const saw = await app.watchGhosts();
 			await page.locator('.bar [data-field="coffee"]').click();
-			const { look, ...seen } = await ghostAndValue(page);
-			assert.deepEqual(seen, { ghost: 'occur coffee', value: '' });
+			const { values, look } = await ghostOf(saw, 'occur coffee');
+			assert.deepEqual(values, [''], 'the press became the input’s value');
 
 			// Dimmer than a typed line, and brighter than the placeholder it
 			// stands in for: read off the page, both.
@@ -179,33 +162,20 @@ describe('the ghost', () => {
 			const echoes = await page.locator('.repl .echo').count();
 
 			// vividn: "~1.5 s later, finally the ghost text of the command
-			// *finally* appears" (da-jrozq). Found while the command is still
-			// in flight — no echo yet — in the same evaluation, so a command
-			// landing between two reads cannot make it pass.
+			// *finally* appears" (da-jrozq). The REPL's echoes counted as the
+			// ghost is inserted: none new, so the command was still in flight.
 			//
-			// And the shape of the fade, read off the animation held at two
-			// instants: fully opaque at 350ms ("stay fully opaque for 250-500
-			// ms"), and going by 700ms, and all of it inside GHOST_MS. In the
-			// same evaluation too: a second one can come after the ghost.
+			// And the shape of the fade, its animation sought to two instants
+			// as it was inserted: fully opaque at 350ms ("stay fully opaque
+			// for 250-500 ms"), and going by 700ms, and all of it inside
+			// GHOST_MS.
+			const saw = await app.watchGhosts();
 			await page.evaluate(() => void window.datum.run(['occur', 'slowly']));
-			const { opacity, ...seen } = await page
-				.waitForFunction((n) => {
-					const ghost = document.querySelector('.prompt-bar .ghost');
-					if (!ghost) return null;
-					const [fade] = ghost.getAnimations();
-					fade.pause();
-					const at = (ms) => ((fade.currentTime = ms), Number(getComputedStyle(ghost).opacity));
-					return {
-						ghost: ghost.textContent,
-						landed: document.querySelectorAll('.repl .echo').length > n,
-						opacity: { held: at(350), going: at(700), total: fade.effect.getComputedTiming().endTime }
-					};
-				}, echoes)
-				.then((h) => h.jsonValue());
-			assert.deepEqual(seen, { ghost: 'occur slowly', landed: false });
-			assert.equal(opacity.held, 1, 'the ghost was already fading 350ms in');
-			assert.ok(opacity.going < 1 && opacity.going > 0, `the ghost read ${opacity.going} at 700ms`);
-			assert.equal(opacity.total, 1000, 'the fade is no longer GHOST_MS long');
+			const { look } = await ghostOf(saw, 'occur slowly');
+			assert.equal(look.echoes, echoes, 'the ghost waited for the command to land');
+			assert.equal(look.fade[350], 1, 'the ghost was already fading 350ms in');
+			assert.ok(look.fade[700] < 1 && look.fade[700] > 0, `the ghost read ${look.fade[700]} at 700ms`);
+			assert.equal(look.fade.total, 1000, 'the fade is no longer GHOST_MS long');
 		}, DESKTOP);
 	});
 
@@ -214,20 +184,22 @@ describe('the ghost', () => {
 			const { page } = app;
 			await withCoffee(app);
 
-			// Marked as it is found, so the second is known to be another
-			// element and not the same one living on.
+			// Each element the watch sees is numbered (`nth`), so the second
+			// is known to be another element and not the same one living on.
+			const saw = await app.watchGhosts();
 			await page.locator('.bar [data-field="coffee"]').click();
-			const { look: _, ...first } = await ghostAndValue(page, 'first');
-			assert.deepEqual(first, { ghost: 'occur coffee', value: '' });
+			assert.deepEqual((await ghostOf(saw, 'occur coffee')).values, ['']);
 
 			await page.locator('.bar [data-field="coffee"]').click();
 			// A fresh element AND a fade starting over: the element's own
 			// animation says how far through it is.
-			await page.waitForFunction(() => {
-				const g = document.querySelector('.prompt-bar .ghost');
-				return !!g && g.dataset.mark !== 'first' && (g.getAnimations()[0]?.currentTime ?? 0) < 400;
-			});
-			assert.equal(await page.locator('.prompt-bar .ghost').count(), 1, 'two ghosts at once');
+			const ghosts = await page
+				.waitForFunction(() => window.__datumGhosts.some((g) => g.look.nth === 2) && window.__datumGhosts)
+				.then((h) => h.jsonValue());
+			const second = ghosts.find((g) => g.look.nth === 2);
+			assert.equal(second.line, 'occur coffee');
+			assert.ok(second.look.age < 400, `the second ghost's fade began ${second.look.age}ms in`);
+			assert.deepEqual([...new Set(ghosts.map((g) => g.count))], [1], 'two ghosts at once');
 		});
 	});
 
@@ -237,31 +209,35 @@ describe('the ghost', () => {
 			await withCoffee(app);
 			const input = page.locator('.prompt-bar input');
 
-			// How far into its second the ghost is, read as it is found and
-			// before the key — a ghost that had already run out would make
-			// what follows true of nothing.
+			const saw = await app.watchGhosts();
 			await page.locator('.bar [data-field="coffee"]').click();
-			const { look, ...seen } = await ghostAndValue(page);
-			assert.deepEqual(seen, { ghost: 'occur coffee', value: '' });
-			assert.ok(look.age < 500, `the ghost was already ${look.age}ms old before the keystroke`);
+			assert.deepEqual((await ghostOf(saw, 'occur coffee')).values, ['']);
 
 			// A key that types nothing, so what clears the ghost is the
-			// keystroke itself and not the box turning non-empty. Gone well
-			// inside the second it had left, so the key is what took it:
-			// 500 above + 400 here is still short of the animation's ~1000ms,
-			// and only a ghost that goes inside that window proves the KEY
-			// took it rather than its own life running out.
-			//
-			// The 400 is an ASSERTION on the elapsed time and not a wait's
-			// cap (§16). It cannot be a cap: raised to the suite's 30s tier
-			// it would stop checking anything, and left at 400 a loaded box
-			// reports a bare TimeoutError that names neither the number nor
-			// what it was for. Asserted, it says both.
-			const pressed = Date.now();
+			// keystroke itself and not the box turning non-empty. Read in the
+			// page, on either side of the key: the ghost's age as the key
+			// arrives, and whether it is still there one task later — the
+			// key's own update lands before that, and the ghost's timer, due
+			// at GHOST_MS, is not due yet at an age short of it. So a ghost
+			// gone then is one the KEY took, not its own life running out,
+			// however slow the runner is between the reads.
+			await page.evaluate(() => {
+				window.__datumKey = new Promise((resolve) =>
+					addEventListener(
+						'keydown',
+						() => {
+							const age = document.querySelector('.prompt-bar .ghost')?.getAnimations()[0]?.currentTime;
+							setTimeout(() => resolve({ age, after: !!document.querySelector('.prompt-bar .ghost') }));
+						},
+						{ capture: true, once: true }
+					)
+				);
+			});
 			await input.press('ArrowLeft');
-			await page.waitForFunction(() => !document.querySelector('.prompt-bar .ghost'));
-			const took = Date.now() - pressed;
-			assert.ok(took < 400, `the ghost took ${took}ms to go, long enough that it could have simply expired`);
+			const key = await page.evaluate(() => window.__datumKey);
+			assert.ok(key.age != null, 'the ghost was gone before the key');
+			assert.ok(key.age < 800, `the ghost was ${key.age}ms old at the key, too near its own end to tell`);
+			assert.equal(key.after, false, 'the ghost outlived the keystroke');
 			assert.equal(await input.inputValue(), '');
 		});
 	});
@@ -274,8 +250,7 @@ describe('the ghost', () => {
 			// after — can begin after the ghost has gone (da-pzfdz, da-ohoei).
 			const saw = await app.watchGhosts();
 			await page.evaluate(() => void window.datum.run(['occur', 'tea']));
-			const ghosts = (await saw('occur tea')).filter((g) => g.line === 'occur tea');
-			assert.deepEqual([...new Set(ghosts.map((g) => g.value))], [''], 'the console\'s command became the input\'s value');
+			assert.deepEqual((await ghostOf(saw, 'occur tea')).values, [''], 'the console\'s command became the input\'s value');
 			await app.idle();
 		});
 	});
@@ -286,9 +261,10 @@ describe('the ghost', () => {
 				const { page } = app;
 				await withCoffee(app);
 
+				const saw = await app.watchGhosts();
 				await page.locator('.bar [data-field="coffee"]').click();
-				const { look, ...seen } = await ghostAndValue(page);
-				assert.deepEqual(seen, { ghost: 'occur coffee', value: '' });
+				const { values, look } = await ghostOf(saw, 'occur coffee');
+				assert.deepEqual(values, ['']);
 				assert.equal(look.animations, 0, 'the ghost fades for a reader who asked for no motion');
 				await gone(page);
 			},
