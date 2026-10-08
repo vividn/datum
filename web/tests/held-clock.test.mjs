@@ -38,6 +38,28 @@ describe('the held clock', () => {
 		});
 	});
 
+	test('the run after a move sees it, however late the clock’s channel is (da-9reef)', async () => {
+		// A second's delay on every message the clock's channel carries: a
+		// move that reached the worker that way lost the race to the command
+		// after it.
+		const late = (context) =>
+			context.addInitScript(() => {
+				const post = BroadcastChannel.prototype.postMessage;
+				BroadcastChannel.prototype.postMessage = function (data) {
+					if (this.name !== 'datum-test-clock') return post.call(this, data);
+					setTimeout(() => post.call(this, data), 1000);
+				};
+			});
+		await withApp(
+			async (app) => {
+				await app.clock.forward(MINUTE);
+				assert.equal((await app.run(['occur', 'juice'])).code, 0);
+				assert.deepEqual(await logged(app, 'juice'), [HELD_AT + MINUTE]);
+			},
+			{ prepare: late }
+		);
+	});
+
 	test('a reload does not wind a moved clock back, on the page or in the CLI', async () => {
 		await withApp(async (app) => {
 			await app.clock.forward(MINUTE);

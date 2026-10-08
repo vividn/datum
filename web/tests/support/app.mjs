@@ -161,6 +161,7 @@ export function inWorker(prelude) {
 						});
 					`;
 					super(URL.createObjectURL(new Blob([source], { type: 'text/javascript' })), options);
+					(window.__datumWorkers ??= []).push(this);
 				}
 			};
 		}, prelude);
@@ -184,9 +185,12 @@ export const HELD_AT = todayAt(15);
  * minutes, so a `Date` that never moves never ticks — no redraw can land
  * inside a test's window by the wall clock turning.
  *
- * The CLI runs in the database worker, so the worker is held too, and a
- * move goes to both over a BroadcastChannel, which the worker hears
- * before the next command it is sent. A move is also written down
+ * The CLI runs in the database worker, so the worker is held too. A move
+ * reaches the page's own workers by `postMessage`, the port its commands
+ * take, so the next command is behind it: over a BroadcastChannel it
+ * raced the command, and a run under load wrote at the old time
+ * (da-9reef). The channel carries it to the context's OTHER pages, which
+ * hand it to their workers the same way. A move is also written down
  * (`localStorage`), because a reload runs these scripts again: the page
  * reads where the clock stands, and hands it to the workers it starts
  * (`fromPage`, `inWorker`), so a reload does not wind time back.
@@ -198,14 +202,30 @@ function holdDate(context, at, pin = true) {
 	return Promise.all([
 		inWorker(`
 			let fixed = fromPage.heldAt;
-			new BroadcastChannel('datum-test-clock').onmessage = (e) => { fixed = e.data; };
+			// First in line, ahead of the app's listener and the import's buffer.
+			self.addEventListener('message', (e) => {
+				if (e.data?.datumTestClock === undefined) return;
+				fixed = e.data.datumTestClock;
+				e.stopImmediatePropagation();
+			});
 			${heldDate}
 		`)(context),
 		context.addInitScript(`{
 			let fixed = ${at};
 			try { fixed = Number(localStorage.getItem('datum-test-clock') ?? fixed); } catch {}
 			window.__datumHeldAt = fixed;
-			new BroadcastChannel('datum-test-clock').onmessage = (e) => { fixed = window.__datumHeldAt = e.data; };
+			const hold = (to) => {
+				fixed = window.__datumHeldAt = to;
+				for (const worker of (window.__datumWorkers ??= [])) worker.postMessage({ datumTestClock: to });
+			};
+			// A channel never hears itself, so a move reaches this page once.
+			const channel = new BroadcastChannel('datum-test-clock');
+			channel.onmessage = (e) => hold(e.data);
+			window.__datumMoveClock = (to) => {
+				try { localStorage.setItem('datum-test-clock', String(to)); } catch {}
+				hold(to);
+				channel.postMessage(to);
+			};
 			${pin ? heldDate : ''}
 		}`)
 	]);
@@ -231,11 +251,7 @@ const heldDate = `
  */
 function clockOf(page, at, holdTimers) {
 	let now = at;
-	const move = (to) =>
-		page.evaluate((to) => {
-			try { localStorage.setItem('datum-test-clock', String(to)); } catch {}
-			new BroadcastChannel('datum-test-clock').postMessage(to);
-		}, (now = to));
+	const move = (to) => page.evaluate((to) => window.__datumMoveClock(to), (now = to));
 	return {
 		at: () => now,
 		async set(to) {
