@@ -606,6 +606,30 @@ fn check_clean(copy: &Copy, others: &[&Copy]) {
     assert!(check.contains("No consistency issues found"), "{check}");
 }
 
+/// A device that only made specs signed no change to an entry, and its
+/// preview says so rather than a span of zeroes — and that its specs go
+/// too, which a purge does (da-sivjb).
+#[test]
+fn a_purge_preview_of_a_device_that_only_made_specs_says_they_go() {
+    let (a, b) = chained();
+    b.ok(&["spec", "set", "coffee", "--verb", "occur"]);
+    assert!(b.send(&a).0);
+    let spec = || a.ok(&["spec", "show", "coffee"]);
+    assert!(!spec().contains("No spec defined"), "{}", spec());
+    let preview = a.ok(&["sync", "chain", "purge", "b"]);
+    assert!(
+        preview.contains("signed no change to an entry, only 1 definition: purging it revokes it and sets that aside"),
+        "{preview}"
+    );
+    let p = json(&a.ok(&["sync", "chain", "purge", "b", "--json"]));
+    assert!(
+        p["first"].is_null() && p["last"].is_null() && p["defined"] == 1,
+        "{p}"
+    );
+    a.ok(&["sync", "chain", "purge", "b", "--yes"]);
+    assert!(spec().contains("No spec defined"), "{}", spec());
+}
+
 /// A purge (da-ry11c, vividn 10-07: «if you accidentally add a poisoned
 /// device … you can scrape out all the bad data easily») sets aside every
 /// op its endpoint signed, on every copy: what it created goes, its edit of
@@ -633,7 +657,7 @@ fn a_purge_sets_aside_a_devices_ops_on_every_copy_and_an_unpurge_restores_them()
     let preview = a.ok(&["sync", "chain", "purge", "b"]);
     assert!(
         preview.contains("b (")
-            && preview.contains("1 entry it created go")
+            && preview.contains("1 entry it created goes,")
             && preview.contains("1 it edited and 1 it deleted")
             && preview.contains("nothing changed: `datum sync chain purge b --yes`"),
         "{preview}"

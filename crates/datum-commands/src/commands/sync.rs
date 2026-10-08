@@ -167,7 +167,7 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                         let label = chain.member(&m).map(|m| m.label.as_str());
                         let out = json!({
                             "endpoint": m, "label": label, "created": p.created,
-                            "edited": p.edited, "deleted": p.deleted, "first": p.first,
+                            "edited": p.edited, "deleted": p.deleted, "defined": p.defined, "first": p.first,
                             "last": p.last, "purged": purged.map(chain::hlc_time),
                         });
                         println!("{out}");
@@ -586,21 +586,60 @@ fn names(who: &str, label: &str, id: &str) -> bool {
     label == who || who.len() >= chain::MIN_PREFIX && id.starts_with(who)
 }
 
-/// What purging `who` sets aside, in words (da-ry11c).
+/// What purging `who` sets aside, in words (da-ry11c): a verb agrees with
+/// its count, and a count of zero says nothing (da-sivjb).
 fn purge_words(who: &str, endpoint: &str, p: &chain::PurgePreview) -> String {
     let minute = |t: &Option<String>| t.as_deref().map(|t| t.chars().take(16).collect::<String>());
     let id = &endpoint[..10];
-    match (minute(&p.first), minute(&p.last)) {
-        (Some(first), Some(last)) => format!(
-            "{who} ({id}) — every op it signed, {first} to {last} UTC: {} entr{} it created \
-             go, {} it edited and {} it deleted go back to the state without it; it is revoked",
-            p.created,
-            if p.created == 1 { "y" } else { "ies" },
-            p.edited,
-            p.deleted,
-        ),
-        _ => format!("{who} ({id}) signed no change to an entry: purging it only revokes it"),
+    let many = |n: usize, one: &str, more: &str| match n {
+        1 => format!("1 {one}"),
+        n => format!("{n} {more}"),
+    };
+    let go = |n: usize| if n == 1 { "goes" } else { "go" };
+    let defs = many(p.defined, "definition", "definitions");
+    let (Some(first), Some(last)) = (minute(&p.first), minute(&p.last)) else {
+        return match p.defined {
+            0 => format!("{who} ({id}) signed no change to an entry: purging it only revokes it"),
+            n => format!(
+                "{who} ({id}) signed no change to an entry, only {defs}: purging it revokes \
+                 it and sets {} aside",
+                if n == 1 { "that" } else { "them" }
+            ),
+        };
+    };
+    let mut what = vec![];
+    if p.created > 0 {
+        let n = p.created;
+        what.push(format!(
+            "{} it created {}",
+            many(n, "entry", "entries"),
+            go(n)
+        ));
     }
+    let back: Vec<_> = [(p.edited, "edited"), (p.deleted, "deleted")]
+        .into_iter()
+        .filter(|&(n, _)| n > 0)
+        .enumerate()
+        .map(|(i, (n, did))| match i == 0 && what.is_empty() {
+            true => format!("{} it {did}", many(n, "entry", "entries")),
+            false => format!("{n} it {did}"),
+        })
+        .collect();
+    if !back.is_empty() {
+        let n = p.edited + p.deleted;
+        what.push(format!(
+            "{} {} back to the state without it",
+            back.join(" and "),
+            go(n)
+        ));
+    }
+    if p.defined > 0 {
+        what.push(format!("{defs} it signed {}", go(p.defined)));
+    }
+    format!(
+        "{who} ({id}) — every op it signed, {first} to {last} UTC: {}; it is revoked",
+        what.join(", ")
+    )
 }
 
 /// The chain member `who` names, by label or a prefix of its endpoint id.
@@ -1003,4 +1042,48 @@ pub fn notice_issues(db: &Db) -> Result<Vec<Issue>> {
         out.push(issue("sync_unlocked", head, &unlocks));
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A verb agrees with its count, a count of zero says nothing, and the
+    /// definitions a device signed beside its entries are named (da-sivjb).
+    #[test]
+    fn purge_words_agree_with_their_counts() {
+        let words = |created, edited, deleted, defined| {
+            let at = Some("2026-10-07T10:00:00Z".to_string());
+            let p = chain::PurgePreview {
+                created,
+                edited,
+                deleted,
+                defined,
+                first: at.clone(),
+                last: at,
+            };
+            let w = purge_words("b", "0123456789abcdef", &p);
+            w[w.find("UTC: ").unwrap() + 5..].to_string()
+        };
+        let back = "back to the state without it; it is revoked";
+        assert_eq!(
+            words(1, 1, 1, 0),
+            format!("1 entry it created goes, 1 it edited and 1 it deleted go {back}")
+        );
+        assert_eq!(words(2, 0, 0, 0), "2 entries it created go; it is revoked");
+        assert_eq!(words(0, 1, 0, 0), format!("1 entry it edited goes {back}"));
+        assert_eq!(words(0, 0, 3, 0), format!("3 entries it deleted go {back}"));
+        assert_eq!(
+            words(1, 0, 1, 0),
+            format!("1 entry it created goes, 1 it deleted goes {back}")
+        );
+        assert_eq!(
+            words(1, 0, 0, 2),
+            "1 entry it created goes, 2 definitions it signed go; it is revoked"
+        );
+        assert_eq!(
+            words(0, 1, 0, 1),
+            format!("1 entry it edited goes back to the state without it, 1 definition it signed goes; it is revoked")
+        );
+    }
 }

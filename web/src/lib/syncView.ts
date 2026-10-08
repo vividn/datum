@@ -276,6 +276,8 @@ export interface PurgePreview {
 	created: number;
 	edited: number;
 	deleted: number;
+	/** The specs and other definitions it signed, which go too (da-sivjb). */
+	defined?: number;
 	first?: string | null;
 	last?: string | null;
 }
@@ -285,7 +287,9 @@ export function purgeWords(label: string, db: string, p: PurgePreview): string {
 	const day = (t?: string | null) => (t ?? '').slice(0, 10);
 	const what = p.first
 		? `Every change it made goes, on every device: ${p.created} ${p.created === 1 ? 'entry' : 'entries'} it created, ${p.edited} it edited and ${p.deleted} it deleted, ${day(p.first)} to ${day(p.last)}.`
-		: 'It made no change to an entry: this only revokes it.';
+		: p.defined
+			? `It made no change to an entry, only ${p.defined === 1 ? '1 definition' : `${p.defined} definitions`}: this revokes it and sets ${p.defined === 1 ? 'that' : 'them'} aside.`
+			: 'It made no change to an entry: this only revokes it.';
 	return `Purge ${label} from ${db}? ${what} It is revoked too; Unpurge brings its changes back.`;
 }
 

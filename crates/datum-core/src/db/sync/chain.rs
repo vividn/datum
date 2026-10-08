@@ -955,6 +955,8 @@ pub struct PurgePreview {
     pub created: usize,
     pub edited: usize,
     pub deleted: usize,
+    /// The specs and other definitions it made or changed, which go too.
+    pub defined: usize,
     /// When its first and last ops were made, RFC 3339.
     pub first: Option<String>,
     pub last: Option<String>,
@@ -1040,10 +1042,11 @@ impl Db {
     /// What a purge of `endpoint` sets aside (da-ry11c): of its ops applied
     /// now — not those a revoke already refused — the entries it created (a
     /// baseline is one it brought), else deleted, else edited, one count per
-    /// entry, specs and the other definitions left out; and when its first
-    /// and last ops were made.
+    /// entry, specs and the other definitions counted apart; and when its
+    /// first and last entry ops were made.
     pub fn sync_purge_preview(&self, endpoint: &str) -> Result<PurgePreview> {
         let mut kinds: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut defined = BTreeSet::new();
         let mut out = PurgePreview::default();
         let mut stmt = self.conn.prepare(
             "SELECT hid, kind, hlc, slug FROM ops WHERE endpoint = ?1 AND hid != ?2 AND applied = 1",
@@ -1059,9 +1062,11 @@ impl Db {
         for row in rows {
             let (hid, kind, hlc, slug) = row?;
             let field = slug.split(':').next().unwrap_or_default();
-            if !crate::db::is_meta_field(field) {
-                kinds.entry(hid).or_default().insert(kind);
+            if crate::db::is_meta_field(field) {
+                defined.insert(hid);
+                continue;
             }
+            kinds.entry(hid).or_default().insert(kind);
             let at = hlc_time(&hlc).to_string();
             if out.first.as_ref().is_none_or(|f| at < *f) {
                 out.first = Some(at.clone());
@@ -1070,6 +1075,7 @@ impl Db {
                 out.last = Some(at);
             }
         }
+        out.defined = defined.len();
         for k in kinds.values() {
             match () {
                 _ if k.contains("create") || k.contains("baseline") => out.created += 1,
