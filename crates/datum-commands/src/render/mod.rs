@@ -33,6 +33,7 @@ use datum_core::entry::Verb;
 use datum_core::{entry::Entry, field_spec::SpecRegistry, time::DatumTime};
 use datum_parse::time::{format_human_duration, DurationPrecision};
 use serde_json::Value as JsonValue;
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 // ─── ANSI primitives ─────────────────────────────────────────────────────────
@@ -1016,6 +1017,7 @@ pub fn format_table_with(
         return Some(out);
     }
 
+    let args = &with_last_state_column(entries, args);
     let (rows, reference_offset) = build_rows(entries, contexts, now, registry, args);
 
     let Shown {
@@ -1291,6 +1293,7 @@ pub fn table_columns_with(
     registry: Option<&SpecRegistry>,
     args: &TableArgs,
 ) -> Vec<TableColumn> {
+    let args = &with_last_state_column(entries, args);
     let (rows, reference_offset) = build_rows(entries, contexts, now, registry, args);
     let shown = Shown::of(&rows);
     let headers = Headers::of(&rows, reference_offset);
@@ -1422,6 +1425,9 @@ fn render_extra_value(v: &JsonValue) -> String {
 }
 
 fn extract_column(entry: &Entry, col: &str) -> String {
+    if let (LAST_STATE_COLUMN, Some(v)) = (col, &entry.user_asserted_last_state) {
+        return render_extra_value(v);
+    }
     entry
         .data
         .as_ref()
@@ -1432,6 +1438,22 @@ fn extract_column(entry: &Entry, col: &str) -> String {
             ))
         })
         .unwrap_or_default()
+}
+
+/// The column `-L`'s assertion shows in, ahead of a `last_state` data key.
+const LAST_STATE_COLUMN: &str = "last_state";
+
+/// `-A` adds the `last_state` column when a row asserts one (da-n86g3).
+fn with_last_state_column<'a>(entries: &[Entry], args: &'a TableArgs) -> Cow<'a, TableArgs> {
+    if args.output.show != Show::All
+        || args.columns.iter().any(|c| c == LAST_STATE_COLUMN)
+        || entries.iter().all(|e| e.user_asserted_last_state.is_none())
+    {
+        return Cow::Borrowed(args);
+    }
+    let mut args = args.clone();
+    args.columns.push(LAST_STATE_COLUMN.to_string());
+    Cow::Owned(args)
 }
 
 // ─── Format-string interpolation ────────────────────────────────────────────
@@ -2330,6 +2352,35 @@ mod tests {
         assert_eq!(format_ago(-60), "in 1m");
         assert_eq!(format_ago(-3600), "in 1h");
         assert_eq!(format_ago(-10080), "in 2h48m");
+    }
+
+    /// da-n86g3: `-A` adds a `last_state` column holding what `-L` asserted,
+    /// only when a row asserts one; the default view never does.
+    #[test]
+    fn show_all_adds_the_asserted_last_state_column() {
+        let mut asserted = sample_entry("mood", Verb::Switch, Some(serde_json::json!("sad")));
+        asserted.user_asserted_last_state = Some(serde_json::json!("happy"));
+        let plain = sample_entry("mood", Verb::Switch, Some(serde_json::json!("ok")));
+        let last_state = |show, entries: &[Entry]| {
+            let args = TableArgs {
+                output: OutputArgs {
+                    show,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            table_columns_with(entries, None, None, None, &args)
+                .into_iter()
+                .find(|c| c.key == "last_state")
+                .map(|c| c.cells)
+        };
+        let both = [asserted, plain.clone()];
+        assert_eq!(
+            last_state(Show::All, &both),
+            Some(vec!["happy".to_string(), String::new()])
+        );
+        assert_eq!(last_state(Show::Default, &both), None);
+        assert_eq!(last_state(Show::All, &[plain]), None);
     }
 
     // ─── Test helpers ────────────────────────────────────────────────────────

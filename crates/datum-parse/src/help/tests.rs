@@ -341,6 +341,7 @@ USAGE:
 
 OPTIONS:
       --if-changed      switch/start/end: write nothing if already in this state
+  -L, --last-state <V>  The state being left; `datum check` flags a mismatch
   common logging options: `datum help logging`
 
 OUTPUT:
@@ -817,9 +818,9 @@ fn help_json_lists_db_subcommands() {
 
 /// A flag in `help --json` says what it does and whether a value follows
 /// it, so the web's flag list explains `-t` and opens a keyboard for it
-/// without a copy of either (da-st2xl). `value_optional` says a bare
-/// `-L` takes no word after it (`stop -L coffee` stops coffee), which the
-/// web's field slot must know to place a field past one (da-e9e5g).
+/// without a copy of either (da-st2xl). `value_optional` says a bare flag
+/// takes no word after it, which the web's field slot must know to place a
+/// field past one (da-e9e5g); `-L` takes its word, as v2's did (da-n86g3).
 #[test]
 fn help_json_flags_carry_help_and_takes_value() {
     let table: serde_json::Value = serde_json::from_str(&render_json()).unwrap();
@@ -845,7 +846,8 @@ fn help_json_flags_carry_help_and_takes_value() {
     );
     assert_eq!(flag("q")["takes_value"], false);
     assert_eq!(flag("t")["value_optional"], false);
-    assert_eq!(flag("L")["value_optional"], true);
+    assert_eq!(flag("L")["takes_value"], true);
+    assert_eq!(flag("L")["value_optional"], false);
     assert_eq!(
         flag("q")["help"],
         "Go back 5 min (stackable: -qq=10 min, ...)"

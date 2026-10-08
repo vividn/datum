@@ -173,15 +173,18 @@ fn switch_always_anchors_time_no_omit_timestamp_flag() {
 ///
 /// Divergence: daydumb has no `--omit-timestamp` flag — switch entries always
 /// anchor `time_start`. The portable assertion: passing `--last-state`
-/// (bare) alongside a state change still records the new entry with
-/// `time_start` set; the flag is a no-op assertion-wise with no value.
+/// alongside a state change still records the new entry with
+/// `time_start` set.
 #[test]
 fn switch_with_last_state_still_anchors_time() {
     let db = fresh_db();
 
     run_cli(&["switch", "project", "linux", "-t=-1"], &db).expect("seed switch");
-    run_cli(&["switch", "project", "backend", "--last-state"], &db)
-        .expect("switch with --last-state");
+    run_cli(
+        &["switch", "project", "backend", "--last-state", "linux"],
+        &db,
+    )
+    .expect("switch with --last-state");
 
     let backend = db
         .entries_for_field("project", None)

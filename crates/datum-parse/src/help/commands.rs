@@ -412,16 +412,7 @@ const LOG_FLAGS: &[FlagSpec] = &[
         ),
         left_override: None,
     },
-    FlagSpec {
-        short: Some('L'),
-        long: "last-state",
-        takes_value: true,
-        value_hint: Some("V"),
-        value_optional: true,
-        summary: "Assert prior state (bare: close-most-recent on stop)",
-        long_description: None,
-        left_override: None,
-    },
+    LAST_STATE,
     FlagSpec {
         short: Some('m'),
         long: "moment",
@@ -1148,10 +1139,26 @@ const IF_CHANGED: FlagSpec = FlagSpec {
     left_override: None,
 };
 
-/// `start`, `stop` and `switch` keep `--if-changed` on their own pages.
+/// `-L` (da-n86g3): the state being left, a required value as in v2.
+const LAST_STATE: FlagSpec = FlagSpec {
+    short: Some('L'),
+    long: "last-state",
+    takes_value: true,
+    value_hint: Some("V"),
+    value_optional: false,
+    summary: "The state being left; `datum check` flags a mismatch",
+    long_description: Some(
+        "Stored as the entry's `user_asserted_last_state` and shown by \
+         `tail -A`. On `end` it also closes the field's open block, and \
+         fails when there is none.",
+    ),
+    left_override: None,
+};
+
+/// `start`, `stop` and `switch` keep `--if-changed` and `-L` on their own pages.
 const SWITCH_SHARED_FLAGS: SharedFlags = SharedFlags {
     topic: "logging",
-    own: &[IF_CHANGED],
+    own: &[IF_CHANGED, LAST_STATE],
 };
 
 /// `add` is the one verb that REQUIRES an id, so the two flags that give it

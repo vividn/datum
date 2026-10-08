@@ -169,7 +169,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
                 anyhow::bail!("end_time= on switch already asserts the prior state; drop -L");
             }
             // The slot's default `true` names nothing; a stated state is
-            // the assertion. Bare `-L` still records the prior state.
+            // the assertion. Without one the block still closes, its state
+            // recorded, asserting nothing.
             args.last_state = Some(match reserved.state.take() {
                 Some(s) if s != JsonValue::Bool(true) => switch_state_raw(&s),
                 _ => String::new(),
@@ -399,10 +400,9 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
 
         // --last-state on Stop: close the most recent open block, recording
         // its prior state as `last_state` metadata. Errors if there's nothing
-        // to close. S6: the flag is value-accepting (`-L=<v>`); any `Some(_)`
-        // form triggers the close-most-recent behavior. A provided value is
-        // carried onto the entry's `user_asserted_last_state` for the
-        // post-write mismatch detector.
+        // to close. The value (`-L <v>`, required since da-n86g3) is carried
+        // onto the entry's `user_asserted_last_state` for the post-write
+        // mismatch detector.
         if args.last_state.is_some() && matches!(action, Action::Stop) {
             match db.find_open_block(&field, base_time.utc)? {
                 None => anyhow::bail!("No open block for '{field}' to close with --last-state"),
@@ -554,9 +554,9 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         }
     }
 
-    // S6: carry an explicit `-L/--last-state=<v>` assertion onto the entry.
-    // Bare `-L` (no value) is a no-op assertion-wise; only a supplied value
-    // enters the column. Parsed through the same token parser that handles
+    // S6: carry an explicit `-L/--last-state <v>` assertion onto the entry.
+    // The empty sentinel (`end_time=` on a switch naming no state) asserts
+    // nothing; only a supplied value enters the column. Parsed through the same token parser that handles
     // positional switch values so `null` / `true` / numbers normalize
     // consistently with state compilation downstream.
     if let Some(raw) = args.last_state.as_deref() {

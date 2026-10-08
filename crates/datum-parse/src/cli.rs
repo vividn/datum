@@ -301,11 +301,11 @@ pub struct LogArgs {
     /// `-L`/`--last-state` user assertion.
     ///
     /// * `None` — flag not supplied.
-    /// * `Some("")` — bare `-L`/`--last-state` (no `=VALUE`). On Stop,
-    ///   triggers the close-most-recent-open behavior; on Switch, no-op
-    ///   assertion-wise.
-    /// * `Some("<value>")` — `-L=<value>`/`--last-state=<value>`; recorded
-    ///   as an assertion on the entry's `user_asserted_last_state`.
+    /// * `Some("<value>")` — `-L <value>`/`--last-state=<value>`; recorded
+    ///   as an assertion on the entry's `user_asserted_last_state`, and on
+    ///   Stop closes the most recent open block.
+    /// * `Some("")` — never from the parser, which requires a value; set
+    ///   internally by `end_time=` on a switch that names no state.
     pub last_state: Option<String>,
     pub conflict: Option<ConflictStrategyArg>,
     pub update: bool,

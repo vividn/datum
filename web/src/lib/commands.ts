@@ -326,7 +326,7 @@ export interface Flag {
 	short: string | null;
 	long: string;
 	takes_value?: boolean;
-	/** Its value only ever comes attached (`-L=V`): a bare one takes no word after it (da-e9e5g). */
+	/** Its value only ever comes attached (`-w=2`): a bare one takes no word after it (da-e9e5g). */
 	value_optional?: boolean;
 	help?: string;
 }
@@ -663,9 +663,8 @@ export function withFlag(line: string, command: string, flag: string): string {
  * tap under that verb runs them with the field after, and spends the line
  * (da-bbmpx). Null for anything else — a positional (`occur half-typed`)
  * is a line being typed, which a press never takes, and a trailing `-t`
- * waits for its value, which the field would otherwise become. A bare
- * `-L` is not waiting: its value only ever comes attached (`value_optional`),
- * so `stop -L` and a tap on coffee is `stop -L coffee` (da-69mzq).
+ * waits for its value, which the field would otherwise become. A flag
+ * whose value only ever comes attached (`value_optional`) is not waiting.
  */
 /** The flags of `takes` whose value is the next word (`-t 1400`); none without a grammar. */
 export const valuedFlags = (takes: Takes | undefined): string[] =>

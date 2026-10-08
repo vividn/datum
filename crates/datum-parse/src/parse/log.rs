@@ -1,7 +1,7 @@
 use super::core::*;
 use crate::cli::*;
 use crate::error::{ParseError, Result};
-use crate::input::{self, lift, local_optional, local_switch, local_value, LiftedSpec};
+use crate::input::{self, lift, local_switch, local_value, LiftedSpec};
 
 // ─── Subcommand parsers ──────────────────────────────────────────────────
 
@@ -89,10 +89,15 @@ pub(crate) fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
         p.id_delimiter = Some(v.to_string());
         Ok(())
     }));
-    r.push(local_optional(Some('L'), Some("last-state"), |p, v| {
-        // Bare → Some(""), `=value` → Some(value). The empty-string sentinel
-        // is the trigger for Stop's close-most-recent behaviour.
-        p.last_state = Some(v.unwrap_or("").to_string());
+    // The value is required, as v2's `-L` (da-n86g3): an optional one left
+    // `-L happy` taking nothing and `happy` landing in the duration slot.
+    r.push(local_value(Some('L'), Some("last-state"), |p, v| {
+        if v.is_empty() {
+            return Err(ParseError::InvalidArg(
+                "-L/--last-state needs a value: the state being left".into(),
+            ));
+        }
+        p.last_state = Some(v.to_string());
         Ok(())
     }));
     r.push(local_value(None, Some("conflict"), |p, v| {

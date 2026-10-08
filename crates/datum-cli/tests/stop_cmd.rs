@@ -64,7 +64,8 @@ fn stop_last_state_captures_prior_switch_state() {
 
     // Switch 1 minute ago so it strictly precedes the stop.
     run_cli(&["switch", "activity", "cello", "-t=-1"], &db).expect("switch dispatch");
-    run_cli(&["stop", "activity", "--last-state"], &db).expect("stop --last-state dispatch");
+    run_cli(&["stop", "activity", "--last-state", "cello"], &db)
+        .expect("stop --last-state dispatch");
 
     let entries = datum_core::test_util::logged_entries(&db, "activity");
     assert_eq!(entries.len(), 2, "switch + stop produce two entries");
@@ -322,7 +323,7 @@ fn stop_last_state_closes_open_start_block() {
     let db = fresh_db();
 
     run_cli(&["start", "working", "-t=-1"], &db).expect("start dispatch");
-    run_cli(&["stop", "working", "--last-state"], &db).expect("stop --last-state dispatch");
+    run_cli(&["stop", "working", "--last-state", "true"], &db).expect("stop --last-state dispatch");
 
     let entries = datum_core::test_util::logged_entries(&db, "working");
     let stop = entries

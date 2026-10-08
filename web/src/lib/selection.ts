@@ -91,8 +91,8 @@ export const hidPill = (hids: string[], locked = false): Pill | null =>
  * STILL CONSERVATIVE where the grammar cannot say (canary deepseek, PR
  * #62): a flag the command's table does not list (a global one, `--db`), a
  * `--`, a value flag with nothing after it yet (the pill would BE its
- * value), or an optional-value flag written bare (`value_optional`:
- * `stop -L coffee` stops coffee, while `tail -w 5` watches every 5s) — the
+ * value), or an optional-value flag written bare (`value_optional`,
+ * `tail -w`) — the
  * pill is refused there and the reader types the field. A refusal is
  * VISIBLE — the pill stays on the bar — where a misplacement is a wrong
  * row, so this is the side to err on.

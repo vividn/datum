@@ -440,7 +440,7 @@ describe('flags', () => {
 			usage: ['datum occur <FIELD>'],
 			flags: [f('y', 'yesterday'), f('q', 'quick'), f('d', 'date', true), f('t', 'time', true), f('z', 'timezone', true), f('c', 'comment', true), f(null, 'id', true), f('m', 'moment')]
 		},
-		{ name: 'stop', aliases: ['end'], usage: ['datum stop <FIELD>'], flags: [f('t', 'time', true), { ...f('L', 'last-state', true), value_optional: true }] }
+		{ name: 'stop', aliases: ['end'], usage: ['datum stop <FIELD>'], flags: [f('t', 'time', true), f('L', 'last-state', true)] }
 	]);
 
 	test('< Back and Help lead; the curated flags first, the rest in the CLI order; a value flag is typed next', () => {
@@ -486,12 +486,10 @@ describe('flags', () => {
 		assert.equal(flagLine(['occur', '-t', '1400'], undefined), null);
 		assert.equal(flagLine(['occur', '-t'], undefined), null);
 		assert.deepEqual(flagLine(['occur'], undefined), ['occur']);
-		// da-69mzq: `-L`'s value only ever comes attached, so a bare one waits for nothing.
+		// da-n86g3: `-L` takes its word, as v2's did, so a bare one waits for it.
 		const stop = TREE.get('stop');
-		assert.deepEqual(flagLine(['stop', '-L'], stop), ['stop', '-L']);
-		assert.deepEqual(flagLine(['stop', '--last-state', '-t', '-8'], stop), ['stop', '--last-state', '-t', '-8']);
+		assert.equal(flagLine(['stop', '-L'], stop), null);
+		assert.deepEqual(flagLine(['stop', '-L', 'done'], stop), ['stop', '-L', 'done']);
 		assert.deepEqual(flagLine(['stop', '-L=done'], stop), ['stop', '-L=done']);
-		assert.equal(flagLine(['stop', '-L', 'done'], stop), null);
-		assert.equal(flagLine(['stop', '-L', '-t'], stop), null);
 	});
 });

@@ -285,7 +285,7 @@ fn reparse_keeps_the_duration_of_a_yesterday_start_time() {
 fn reparse_fix_keeps_the_closed_blocks_last_state() {
     let db = fresh_db();
     run_cli(&["start", "p", "-t", "2026-01-01T10:00"], &db).unwrap();
-    run_cli(&["end", "p", "-L", "-t", "2026-01-01T11:00"], &db).unwrap();
+    run_cli(&["end", "p", "-L", "true", "-t", "2026-01-01T11:00"], &db).unwrap();
     run_cli(&["start", "q", "-t", "2026-01-01T10:00"], &db).unwrap();
     run_cli(&["switch", "q", "true", "end_time=2026-01-01T11:00"], &db).unwrap();
 

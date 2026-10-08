@@ -14,7 +14,7 @@ fn stop_last_state_closes_most_recent_open_block() {
 
     // Open a block, then close it with `stop --last-state`.
     run_cli(&["start", "working"], &db).expect("start");
-    run_cli(&["stop", "working", "--last-state"], &db).expect("stop --last-state");
+    run_cli(&["stop", "working", "--last-state", "true"], &db).expect("stop --last-state");
 
     // Two entries: the start and the closing stop.
     let entries = datum_core::test_util::logged_entries(&db, "working");
@@ -42,7 +42,7 @@ fn stop_last_state_closes_most_recent_open_block() {
 #[test]
 fn stop_last_state_errors_when_no_open_block() {
     let db = fresh_db();
-    let err = run_cli(&["stop", "mood", "--last-state"], &db).expect_err("no open block → error");
+    let err = run_cli(&["stop", "mood", "-L", "happy"], &db).expect_err("no open block → error");
     assert!(
         err.to_string().contains("No open block"),
         "error should mention missing open block, got: {err}"
@@ -158,15 +158,13 @@ fn switch_last_state_assertion_mismatch_files_conflict() {
     );
 }
 
+/// da-n86g3: `-L` takes its value as v2's did, so `-L happy` is the
+/// assertion and not `-L` plus a duration `happy`; a bare one is refused.
 #[test]
-fn bare_switch_last_state_is_noop_assertion_wise() {
-    // Bare `--last-state` on switch carries no value → no user_asserted_last_state,
-    // no mismatch, no dedup error (unless the value itself repeats).
+fn last_state_takes_the_next_word_as_its_value() {
     let db = fresh_db();
-
     run_cli(&["switch", "mood", "happy", "-t=-1"], &db).expect("first switch");
-    run_cli(&["switch", "mood", "sad", "--last-state"], &db)
-        .expect("bare --last-state no longer errors");
+    run_cli(&["switch", "mood", "sad", "-L", "happy"], &db).expect("-L happy");
 
     let sad = db
         .entries_for_field("mood", None)
@@ -174,10 +172,22 @@ fn bare_switch_last_state_is_noop_assertion_wise() {
         .into_iter()
         .find(|e| e.state.as_ref() == Some(&serde_json::json!("sad")))
         .expect("sad entry present");
-    assert!(
-        sad.user_asserted_last_state.is_none(),
-        "bare -L records no assertion"
+    assert_eq!(
+        sad.user_asserted_last_state,
+        Some(serde_json::json!("happy"))
     );
+    assert_eq!(sad.dur, None, "`happy` is not a duration");
+
+    for bare in [
+        &["switch", "mood", "ok", "-L"][..],
+        &["end", "mood", "--last-state"],
+    ] {
+        let err = run_cli(bare, &db).expect_err("bare -L is a usage error");
+        assert!(
+            err.to_string().contains("-L/--last-state"),
+            "{bare:?}: {err}"
+        );
+    }
 }
 
 #[test]
