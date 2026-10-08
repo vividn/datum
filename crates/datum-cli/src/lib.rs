@@ -51,9 +51,10 @@ pub fn render_parse_special(e: &ParseError) -> Option<Result<()>> {
 pub fn run(argv: Vec<String>) -> Result<()> {
     let _ = datum_core::BUILD.set(env!("DATUM_BUILD"));
     // Shell completion's hidden reader (da-bu09u): before any parse or db
-    // open, and it never fails — a TAB must not print an error.
-    if argv.get(1).is_some_and(|a| a == "__complete") {
-        commands::complete::run(&argv[2..]);
+    // open, and it never fails — a TAB must not print an error. Global
+    // options may stand before it (da-ejoes).
+    if let Some(at) = commands::complete::position(&argv) {
+        commands::complete::run(&argv[1..at], &argv[at + 1..]);
         return Ok(());
     }
     // Clear the dedup-no-op flag so it reflects only this invocation

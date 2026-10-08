@@ -305,6 +305,27 @@ fn nonsense_is_an_empty_answer_never_an_error() {
     }
 }
 
+/// Global options before `__complete` — an alias's own, `alias dm='datum
+/// --db v3'` — are applied as on the line, not refused (da-ejoes).
+#[test]
+fn global_options_before_complete_apply() {
+    let env = Env::new();
+    env.ok(&["--db", "x", "occur", "coffee"]);
+    let ask = |args: &[&str]| {
+        let out = env.cmd().args(args).output().unwrap();
+        assert!(out.status.success() && out.stderr.is_empty(), "{args:?}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let raw = ["__complete", "--raw", "2", "--", "datum", "occur", "co"];
+    assert!(!ask(&raw).lines().any(|l| l == "coffee"), "default db");
+    for globals in [&["--db", "x"][..], &["--db=x", "--json"][..]] {
+        let first = [globals, &["__complete", "--raw", "1", "--", "datum", "oc"]].concat();
+        assert!(ask(&first).lines().any(|l| l == "occur"), "{globals:?}");
+        let field = ask(&[globals, &raw[..]].concat());
+        assert!(field.lines().any(|l| l == "coffee"), "{globals:?}: {field}");
+    }
+}
+
 /// A value the one-candidate-per-line answer cannot carry — a field may
 /// hold a tab — is left out rather than split in two. A state carries it
 /// in: a new field name may not (da-fi2vu).
@@ -429,6 +450,73 @@ fn an_alias_only_datum_completes() {
                 "{text:?}"
             );
         }
+    }
+}
+
+/// An installed script asks the datum that installed it, whatever `datum`
+/// names in the shell — here another program, and none on PATH (da-ejoes:
+/// v2, on a machine moving to v3).
+#[test]
+fn an_installed_script_asks_the_datum_that_installed_it() {
+    let env = Env::new();
+    let t = env.tmp.path();
+    let fpath = t.join("fpath");
+    std::fs::create_dir_all(&fpath).unwrap();
+    let homes = |cmd: &mut Command| {
+        cmd.env("HOME", t.join("home"))
+            .env("XDG_DATA_HOME", t.join("xdg-data"))
+            .env("XDG_CONFIG_HOME", t.join("xdg-config"));
+    };
+    let inherited = std::env::var_os("PATH").unwrap_or_default();
+    let path = std::env::join_paths(
+        std::env::split_paths(&inherited).filter(|d| !d.join("datum").exists()),
+    )
+    .unwrap();
+    let zsh = format!(
+        "fpath=({} $fpath); autoload -Uz compinit _datum; compinit -u -D\n\
+         compadd() {{ print -rl -- ${{(P)${{@[-1]}}}} }}; _message() {{ print -r -- \"message: ${{@[-1]}}\" }}\n\
+         setopt $_comp_options; words=(datum switch mood ''); CURRENT=4\n\
+         alias datum=false; _datum",
+        fpath.display()
+    );
+    let bash = format!(
+        "alias datum=false\nsource {}\n\
+         COMP_WORDS=(datum switch mood ''); COMP_CWORD=3\n\
+         _datum; printf '%s\\n' \"${{COMPREPLY[@]}}\"",
+        t.join("xdg-data/bash-completion/completions/datum")
+            .display()
+    );
+    let fish = "function datum; false; end\ncomplete -C 'datum switch mood '";
+    for (shell, args) in [
+        ("zsh", ["-f", "-c", &zsh]),
+        ("bash", ["--norc", "-ic", &bash]),
+        ("fish", ["--no-config", "-c", fish]),
+    ] {
+        let mut install = env.cmd();
+        homes(&mut install);
+        install
+            .env("FPATH", &fpath)
+            .args(["completions", "install", "--shell", shell]);
+        let out = install.output().unwrap();
+        assert!(out.status.success(), "{shell}: {out:?}");
+        let cmd = env.cmd();
+        let mut run = Command::new(shell);
+        homes(&mut run);
+        let out = run
+            .args(args)
+            .envs(cmd.get_envs().filter_map(|(k, v)| Some((k, v?))))
+            .env("PATH", &path)
+            .output();
+        let Ok(out) = out else {
+            eprintln!("{shell} not installed: skipped");
+            continue;
+        };
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            text.lines().any(|l| l.starts_with("happy")),
+            "{shell}: {text:?} {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 }
 

@@ -5,9 +5,16 @@
 _datum() {
   local -a vals keys cmd
   local line out rc
-  # Completion runs with aliases off (compinit's NO_aliases), so a `datum`
-  # that is only an alias is expanded here, as the prompt would.
-  eval "cmd=(${aliases[datum]:-datum})" 2>/dev/null || cmd=(datum)
+  # Ask the datum that installed this file, not whatever `datum` names now
+  # (da-ejoes). With none, or that one gone: `datum`. Completion runs with
+  # aliases off (compinit's NO_aliases), so a `datum` that is only an alias
+  # is expanded here, as the prompt would.
+  local exe=@DATUM_EXE@
+  if [[ -x $exe ]]; then
+    cmd=($exe)
+  else
+    eval "cmd=(${aliases[datum]:-datum})" 2>/dev/null || cmd=(datum)
+  fi
   out=$($cmd __complete --raw $((CURRENT - 1)) -- "${words[@]}" 2>/dev/null)
   rc=$?
   if (( rc == 127 )); then

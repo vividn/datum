@@ -10,7 +10,14 @@ _datum() {
     words=("${COMP_WORDS[@]}") cword=$COMP_CWORD cur=${COMP_WORDS[COMP_CWORD]}
   fi
   local IFS=$'\n'
-  COMPREPLY=($(datum __complete "$cword" -- "${words[@]}" 2>/dev/null))
+  # Ask the datum that installed this file, not whatever `datum` names now
+  # (da-ejoes). With none, or that one gone: `datum`, or its alias.
+  local exe=@DATUM_EXE@
+  if [[ -x $exe ]]; then
+    COMPREPLY=($("$exe" __complete "$cword" -- "${words[@]}" 2>/dev/null))
+  else
+    COMPREPLY=($(datum __complete "$cword" -- "${words[@]}" 2>/dev/null))
+  fi
   [[ ${#COMPREPLY[@]} -eq 1 && ${COMPREPLY[0]} == *= ]] && compopt -o nospace 2>/dev/null
   declare -F __ltrim_colon_completions >/dev/null && __ltrim_colon_completions "$cur"
   return 0

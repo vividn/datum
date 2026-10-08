@@ -34,21 +34,45 @@ const RECENT_ENTRIES: usize = 50;
 
 type Candidates = Vec<String>;
 
+/// Where `__complete` stands in `argv`, when only global options come
+/// before it: an alias's own (`alias dm='datum --db v3'`, da-ejoes).
+pub fn position(argv: &[String]) -> Option<usize> {
+    let mut i = 1;
+    loop {
+        let word = argv.get(i)?;
+        if word == "__complete" {
+            return Some(i);
+        }
+        i += 1 + usize::from(global_takes_value(word)?);
+    }
+}
+
+/// Whether the global option `word` takes the next word as its value, or
+/// `None` when it is not a global option.
+fn global_takes_value(word: &str) -> Option<bool> {
+    let globals: Vec<&FlagSpec> = GLOBAL_FLAGS.iter().collect();
+    lookup_flag(&globals, word).map(|f| f.takes_value && !f.value_optional && !word.contains('='))
+}
+
 /// Run `__complete` on the words after it: `[--raw] <cword> -- <words…>`,
 /// and print the candidates. `--raw` leaves values unquoted, for a shell
-/// that quotes what it inserts itself (fish).
-pub fn run(args: &[String]) {
+/// that quotes what it inserts itself (fish). `globals`, the options before
+/// `__complete`, count as if typed after the command name.
+pub fn run(globals: &[String], args: &[String]) {
     let raw = args.first().is_some_and(|a| a == "--raw");
     let args = &args[raw as usize..];
     let Some(cword) = args.first().and_then(|c| c.parse::<usize>().ok()) else {
         return;
     };
-    let words = match args.get(1).map(String::as_str) {
-        Some("--") => &args[2..],
-        _ => &args[1..],
+    let mut words = match args.get(1).map(String::as_str) {
+        Some("--") => args[2..].to_vec(),
+        _ => args[1..].to_vec(),
     };
+    if !words.is_empty() {
+        words.splice(1..1, globals.iter().cloned());
+    }
     let mut out = String::new();
-    for value in complete(cword, words) {
+    for value in complete(cword + globals.len(), &words) {
         // One candidate per line: a value holding a control character (a
         // field may hold a newline) cannot cross that, nor be typed at a
         // prompt, so it is not offered.
@@ -81,7 +105,7 @@ pub fn complete(cword: usize, words: &[String]) -> Candidates {
     while let Some(tok) = before.get(i) {
         if let Some(v) = tok.strip_prefix("--db=") {
             db_name = Some(v.to_string());
-        } else if tok == "--db" || tok == "--show" {
+        } else if global_takes_value(tok) == Some(true) {
             match before.get(i + 1) {
                 Some(v) if tok == "--db" => db_name = Some(v.clone()),
                 Some(_) => {}

@@ -6,7 +6,6 @@
 //! [`ShellEnv::from_process`]: the paths come in as a [`ShellEnv`], so a
 //! test names its own home rather than setting one on the process (#303).
 
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -18,12 +17,17 @@ pub const TIP: &str = "tip: tab completion is available: datum completions insta
 /// Proof a file is ours before `uninstall` removes it.
 const MARK: &str = "datum __complete";
 
-pub fn script(shell: Shell) -> &'static str {
-    match shell {
+/// `shell`'s script, asking `exe` when it is given (an installed script
+/// asks the binary that installed it, da-ejoes), else `datum`.
+pub fn script(shell: Shell, exe: Option<&Path>) -> String {
+    let template = match shell {
         Shell::Zsh => include_str!("../../completions/datum.zsh"),
         Shell::Bash => include_str!("../../completions/datum.bash"),
         Shell::Fish => include_str!("../../completions/datum.fish"),
-    }
+    };
+    // Single-quoted, which reads the same in all three shells.
+    let exe = exe.map_or(String::new(), |p| p.display().to_string());
+    template.replace("@DATUM_EXE@", &format!("'{}'", exe.replace('\'', r"'\''")))
 }
 
 /// Where a shell's autoloaded completions live, for this user.
@@ -38,10 +42,9 @@ pub struct ShellEnv {
     /// [`Self::from_process`]: asking costs a zsh, so only the zsh paths ask
     /// ([`Self::with_fpath`]).
     pub fpath: Vec<PathBuf>,
-    /// `$PATH`, where the scripts find the `datum` they ask, and the
-    /// binary running, which that one should be. `None` from
-    /// [`Self::from_process`]: only install asks ([`Self::with_exe`]).
-    pub path: Option<OsString>,
+    /// The binary running, which an installed script asks (da-ejoes).
+    /// `None` from [`Self::from_process`]: only install asks
+    /// ([`Self::with_exe`]).
     pub exe: Option<PathBuf>,
 }
 
@@ -61,7 +64,6 @@ impl ShellEnv {
             xdg_data_home: var("XDG_DATA_HOME"),
             xdg_config_home: var("XDG_CONFIG_HOME"),
             fpath: Vec::new(),
-            path: None,
             exe: None,
         })
     }
@@ -92,7 +94,6 @@ impl ShellEnv {
     }
 
     fn with_exe(mut self) -> ShellEnv {
-        self.path = std::env::var_os("PATH");
         self.exe = std::env::current_exe().ok();
         self
     }
@@ -133,7 +134,7 @@ impl ShellEnv {
 pub fn run(cmd: &CompletionsCommand) -> Result<()> {
     let env = || ShellEnv::from_process().context("HOME is not set");
     match *cmd {
-        CompletionsCommand::Script(shell) => print!("{}", script(shell)),
+        CompletionsCommand::Script(shell) => print!("{}", script(shell, None)),
         CompletionsCommand::Install(shell) => {
             let env = env()?;
             let shell = pick(shell, &env)?;
@@ -163,7 +164,7 @@ pub fn install(shell: Shell, env: &ShellEnv) -> Result<String> {
         let written = path
             .parent()
             .map_or(Ok(()), std::fs::create_dir_all)
-            .and_then(|()| std::fs::write(&path, script(shell)));
+            .and_then(|()| std::fs::write(&path, script(shell, env.exe.as_deref())));
         match written {
             Ok(()) => return Ok(installed_message(shell, env, &path, before)),
             Err(e) => last_err = Some((path, e)),
@@ -224,17 +225,14 @@ fn installed_message(shell: Shell, env: &ShellEnv, path: &Path, before: Option<S
     if completes(shell, env) {
         let said = match before {
             None => wrote,
-            Some(b) if b != script(shell) => format!("updated {}\n", path.display()),
+            Some(b) if b != script(shell, env.exe.as_deref()) => {
+                format!("updated {}\n", path.display())
+            }
             Some(_) => String::new(),
         };
-        return format!(
-            "{said}{}tab completion: already set up ({})\n",
-            path_warning(env),
-            shell.name()
-        );
+        return format!("{said}tab completion: already set up ({})\n", shell.name());
     }
     let mut msg = wrote;
-    msg.push_str(&path_warning(env));
     let dir = path.parent().unwrap_or(path);
     if shell == Shell::Zsh && !env.fpath.iter().any(|d| d == dir) {
         msg.push_str(&format!(
@@ -248,33 +246,6 @@ fn installed_message(shell: Shell, env: &ShellEnv, path: &Path, before: Option<S
     }
     msg.push_str("start a new shell to use it\n");
     msg
-}
-
-/// The scripts run `datum` (or the alias of that name): warn when no
-/// `datum` is on `$PATH`, or when the one there is not the binary running.
-/// Existence only: a `datum` without its exec bit reads as present.
-fn path_warning(env: &ShellEnv) -> String {
-    let name = format!("datum{}", std::env::consts::EXE_SUFFIX);
-    let found = env.path.as_ref().and_then(|p| {
-        std::env::split_paths(p)
-            .map(|d| d.join(&name))
-            .find(|f| f.is_file())
-    });
-    let exe = env.exe.as_ref();
-    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-    match (found, exe) {
-        (None, Some(exe)) => format!(
-            "warning: no `datum` on PATH: completion runs `datum`, so put {} on PATH or alias datum to it\n",
-            exe.display()
-        ),
-        (None, None) => "warning: no `datum` on PATH: completion runs `datum`\n".into(),
-        (Some(f), Some(exe)) if real(&f) != real(exe) => format!(
-            "warning: the `datum` on PATH is {}, not {} (this one); completion asks your `datum` alias if there is one, else that\n",
-            f.display(),
-            exe.display()
-        ),
-        _ => String::new(),
-    }
 }
 
 /// Remove the script `install` wrote, and say which.
@@ -300,9 +271,8 @@ pub fn installed(shell: Shell, env: &ShellEnv) -> Option<PathBuf> {
 pub fn tip_wanted(argv: &[String], no_tips: bool, stderr_tty: bool) -> bool {
     let json = argv.iter().any(|a| a == "--json" || a == "--show=json")
         || argv.windows(2).any(|w| w[0] == "--show" && w[1] == "json");
-    let completing = argv
-        .get(1)
-        .is_some_and(|a| a == "__complete" || a == "completions");
+    let completing = super::complete::position(argv).is_some()
+        || argv.get(1).is_some_and(|a| a == "completions");
     !no_tips && stderr_tty && !json && !completing
 }
 
@@ -342,7 +312,6 @@ mod tests {
             xdg_data_home: Some(tmp.join("data")),
             xdg_config_home: None,
             fpath,
-            path: None,
             exe: None,
         }
     }
@@ -371,10 +340,10 @@ mod tests {
             let env = env(t, shell, fpath);
             let said = install(shell, &env).unwrap();
             assert!(said.contains(&want.display().to_string()), "{said}");
-            assert_eq!(std::fs::read_to_string(&want).unwrap(), script(shell));
+            assert_eq!(std::fs::read_to_string(&want).unwrap(), script(shell, None));
             // Idempotent: again, same file, same bytes.
             install(shell, &env).unwrap();
-            assert_eq!(std::fs::read_to_string(&want).unwrap(), script(shell));
+            assert_eq!(std::fs::read_to_string(&want).unwrap(), script(shell, None));
             assert_eq!(installed(shell, &env), Some(want.clone()));
             uninstall(shell, &env).unwrap();
             assert!(!want.exists(), "{want:?}");
@@ -485,34 +454,6 @@ mod tests {
         let said = install(Shell::Bash, &env).unwrap();
         assert!(start.elapsed() < PROBE_WAIT * 2, "{:?}", start.elapsed());
         assert!(said.contains("new shell"), "{said}");
-    }
-
-    #[test]
-    fn install_warns_when_path_has_no_datum_or_another_one() {
-        let tmp = tempfile::tempdir().unwrap();
-        let t = tmp.path();
-        let exe = t.join("build/datum");
-        let other = t.join("bin/datum");
-        for f in [&exe, &other] {
-            std::fs::create_dir_all(f.parent().unwrap()).unwrap();
-            std::fs::write(f, "").unwrap();
-        }
-        let said = |path: &str| {
-            let env = ShellEnv {
-                path: Some(path.into()),
-                exe: Some(exe.clone()),
-                ..env(t, Shell::Bash, vec![])
-            };
-            install(Shell::Bash, &env).unwrap()
-        };
-        let none = said(&t.join("empty").display().to_string());
-        assert!(none.contains("warning: no `datum` on PATH"), "{none}");
-        assert!(none.contains(&exe.display().to_string()), "{none}");
-        let another = said(&t.join("bin").display().to_string());
-        assert!(another.contains(&other.display().to_string()), "{another}");
-        assert!(another.contains(&exe.display().to_string()), "{another}");
-        let this_one = said(&t.join("build").display().to_string());
-        assert!(!this_one.contains("warning"), "{this_one}");
     }
 
     #[test]

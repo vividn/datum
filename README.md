@@ -34,8 +34,8 @@ This produces a `datum` binary on your `PATH`, and `scripts/install.sh`
 also installs tab completion for your shell (`datum completions install`,
 into the directory your shell loads completions from). Skip that with
 `scripts/install.sh --no-completions`; undo it with `datum completions
-uninstall`. The installed script only asks `datum` for its answers, so an
-upgrade never needs a reinstall.
+uninstall`. The installed script only asks the `datum` that installed it
+for its answers, so an upgrade never needs a reinstall.
 
 To upgrade, `git pull && scripts/install.sh`. A `--path` install always
 builds and installs, replacing the `datum` cargo installed before even
