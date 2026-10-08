@@ -105,6 +105,11 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         // adds it at v35). A missing column reads as `None`, which is the
         // right answer for every DB that has not reached v35 yet.
         superseded_by: row.get("superseded_by").ok().flatten(),
+        conflicts: row
+            .get::<_, Option<String>>("conflicts")
+            .ok()
+            .flatten()
+            .and_then(|c| serde_json::from_str(&c).ok()),
         id_structure: row.get("id_structure")?,
         field_structure: row.get("field_structure")?,
         // §5 #11: raw_input went from `String` with empty-string sentinel

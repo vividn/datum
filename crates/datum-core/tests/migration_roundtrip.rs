@@ -204,6 +204,7 @@ fn every_pair_has_a_roundtrip_test() {
         (54, 55),
         (55, 56),
         (56, 57),
+        (57, 58),
     ];
     assert_eq!(
         covered.len(),
@@ -3016,4 +3017,40 @@ fn insert_tx(
                  '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z', 'dev-a')",
         rusqlite::params![hid, slug, field, state],
     )
+}
+
+/// da-05rkv: v58 gives entries the `conflicts` the sync fold derives, and
+/// drops the conflict kinds each copy filed in `integrity_warnings`, which
+/// the column replaces; v57 takes the column away.
+#[test]
+fn roundtrip_v57_to_v58_conflicts() {
+    let db = fresh_at(57);
+    let conn = db.conn();
+    conn.execute_batch(
+        "INSERT INTO integrity_warnings
+             (id, hid, entry_slug, local_entry, detected_at, detected_by, kind)
+         VALUES ('w1', 'w1', 's', '{}', '2026-10-01T00:00:00Z', 'sync_pull', 'sync_conflict'),
+                ('w2', 'w2', 's', '{}', '2026-10-01T00:00:00Z', 'sync_pull', 'lww_overwrite'),
+                ('w3', 'w3', 's', '{}', '2026-10-01T00:00:00Z', 'local_validator', 'identity_collision'),
+                ('w4', 'w4', 's', '{}', '2026-10-01T00:00:00Z', 'local_validator', 'double_open');",
+    )
+    .unwrap();
+    assert!(!column_exists(conn, "entries", "conflicts"));
+    apply_one_up(conn, 57);
+    assert!(column_exists(conn, "entries", "conflicts"));
+    assert!(index_exists(conn, "entries_conflicts"));
+    let kinds: Vec<String> = conn
+        .prepare("SELECT kind FROM integrity_warnings ORDER BY id")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(kinds, ["double_open"], "a check finding stays");
+    // Stamped back with the column still there, it upgrades again.
+    datum_core::migrations::set_schema_version(conn, 57).unwrap();
+    apply_one_up(conn, 57);
+    apply_one_down(conn, 58);
+    assert!(!column_exists(conn, "entries", "conflicts"));
+    assert!(!index_exists(conn, "entries_conflicts"));
 }

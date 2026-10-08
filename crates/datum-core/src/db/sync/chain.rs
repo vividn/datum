@@ -93,7 +93,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use super::{
-    digest, endpoint, hex, parse_hlc, push, reconsider, settle, sha256_hex, unhex, ApplySummary, Op,
+    digest, endpoint, hex, parse_hlc, push, reconsider, relabel_conflicts, settle, sha256_hex,
+    unhex, ApplySummary, Op,
 };
 use crate::db::Db;
 use crate::error::{DatumError, Refusal, Result};
@@ -1022,6 +1023,7 @@ impl Db {
         reconsider(&tx, &chain, &mut s)?;
         settle(&tx, &mut s)?;
         note(&tx, &chain, quiet)?;
+        relabel_conflicts(&tx)?;
         tx.commit()?;
         Ok(())
     }

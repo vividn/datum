@@ -129,11 +129,10 @@ fn hard_restore_makes_the_database_exactly_the_backup() {
     );
 }
 
-/// A sync conflict filed against the pre-restore rows goes with them: it
-/// lives in `integrity_warnings` (the old `sync_conflicts` table, renamed
-/// by `m25_to_26`), which the hard batch empties.
+/// A finding filed against the pre-restore rows goes with them: it lives in
+/// `integrity_warnings`, which the hard batch empties.
 #[test]
-fn hard_restore_leaves_no_conflict_about_a_dropped_entry() {
+fn hard_restore_leaves_no_finding_about_a_dropped_entry() {
     let env = Env::new();
     let backup = env.backed_up_then_changed();
     let water = env.ok(&["db", "backup", "-"], b"");
@@ -147,20 +146,17 @@ fn hard_restore_leaves_no_conflict_about_a_dropped_entry() {
             "INSERT INTO integrity_warnings (id, hid, entry_slug, local_entry, \
              detected_at, detected_by, kind) \
              VALUES ('c0nflict00001', 'c0nfl', 'water:x', ?1, '2026-09-26T12:00:00Z', \
-             'sync_pull', 'lww_overwrite')",
+             'local_validator', 'orphan_end')",
             [water],
         )
         .unwrap();
-    assert!(env.ok(&["conflicts"], b"").contains("lww_overwrite"));
+    assert_eq!(env.count("SELECT COUNT(*) FROM integrity_warnings"), 1);
 
     env.ok(
         &["db", "restore", "--hard", "--yes", "-"],
         backup.as_bytes(),
     );
 
-    assert!(env
-        .ok(&["conflicts", "--all"], b"")
-        .starts_with("No sync conflicts"));
     assert_eq!(env.count("SELECT COUNT(*) FROM integrity_warnings"), 0);
 }
 

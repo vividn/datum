@@ -71,6 +71,7 @@ fn fresh_db_matches_schema_sql_shape() {
         .unwrap();
     indexes.sort();
     let expected_indexes = vec![
+        "entries_conflicts",
         "entries_content_hash",
         "entries_field_occur",
         "entries_field_occurtime",

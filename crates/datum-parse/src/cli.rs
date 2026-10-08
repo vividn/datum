@@ -959,43 +959,26 @@ pub enum SyncAdminAct {
     RemoveAdmin,
 }
 
-// ─── Conflicts (da-ttsm) ──────────────────────────────────────────────────
+// ─── Conflicts (da-ttsm, da-05rkv) ────────────────────────────────────────
 
 #[derive(Debug)]
 pub enum ConflictsCommand {
-    /// `datum conflicts list [--all]` — the sync-conflict queue.
-    /// Pending-only unless `--all`.
+    /// `datum conflicts [list]` — every entry with conflicts, each side.
     List(ConflictsListArgs),
-    /// `datum conflicts resolve <HID> (--take-local | --take-remote |
-    /// --keep-both)` — record which side wins and rewrite the entry to
-    /// match.
+    /// `datum conflicts resolve <HID> [KEY=VALUE…]` — one edit that saw
+    /// every side: each contested key the value given, or the one shown.
     Resolve(ConflictsResolveArgs),
 }
 
 #[derive(Debug, Default)]
-pub struct ConflictsListArgs {
-    /// `--all` — include already-resolved rows (default: pending only).
-    pub all: bool,
-}
-
-/// Which side of a sync conflict the user is keeping. No default — the
-/// parser requires the choice, because guessing one silently discards
-/// somebody's data.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConflictsKeep {
-    /// `--take-local` — restore this device's version.
-    Local,
-    /// `--take-remote` — accept the counterpart's version.
-    Remote,
-    /// `--keep-both` — leave both rows as they are; record the decision.
-    Both,
-}
+pub struct ConflictsListArgs {}
 
 #[derive(Debug)]
 pub struct ConflictsResolveArgs {
-    /// Warning hid (5-char prefix form accepted) or full id.
+    /// The entry: a hid prefix or a slug.
     pub hid: String,
-    pub keep: ConflictsKeep,
+    /// `KEY=VALUE` picks, a value read as JSON when it is JSON.
+    pub picks: Vec<(String, String)>,
 }
 
 // ─── Debug (da-4dvk7) ─────────────────────────────────────────────────────

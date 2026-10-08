@@ -11,7 +11,7 @@ use crate::common;
 
 use common::run_cli;
 use datum_core::db::Db;
-use datum_core::integrity::{self, IntegrityKind, ListFilter};
+use datum_core::integrity::{self, ListFilter};
 use datum_core::test_util::fresh_db;
 
 /// Live (non-superseded, non-tombstoned) rows for a field, oldest first by
@@ -224,11 +224,11 @@ fn multi_invocation_still_folds_two_switches() {
     );
 }
 
-/// The integrity checker must never call two stateless points a collision —
-/// asserted directly against the kind, so a future detector that files one
-/// is caught even if `datum check`'s summary stays green.
+/// Two stateless points at one instant are never a collision — asserted
+/// on the rows, so one set aside is caught even if `datum check`'s summary
+/// stays green.
 #[test]
-fn no_identity_collision_is_filed_for_stateless_points() {
+fn no_collision_is_made_of_stateless_points() {
     let db = fresh_db();
     for comment in ["rent", "electricity"] {
         run_cli(
@@ -247,16 +247,14 @@ fn no_identity_collision_is_filed_for_stateless_points() {
         .expect("both land");
     }
 
-    let collisions = integrity::list(
-        db.conn(),
-        &ListFilter {
-            kind: Some(IntegrityKind::IdentityCollision),
-            pending: None,
-        },
-    )
-    .unwrap();
-    assert!(
-        collisions.is_empty(),
-        "expected no identity_collision rows, got {collisions:?}"
-    );
+    let superseded: i64 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM entries WHERE superseded_by IS NOT NULL",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(superseded, 0, "neither point may be set aside");
+    assert!(db.sync_conflicts().unwrap().is_empty());
 }

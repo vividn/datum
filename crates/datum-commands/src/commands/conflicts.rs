@@ -1,162 +1,75 @@
-//! `datum conflicts` — triage for the two conflict kinds sync-pull files
-//! when two devices claim one identity (da-ttsm; scope per da-q0fm).
+//! `datum conflicts` — the entries whose ops leave a key contested
+//! (da-05rkv): values two copies set without seeing each other's. The sync
+//! fold writes them into each entry's `conflicts` column, so every copy that
+//! holds the same ops lists the same ones, and a resolution is an ordinary
+//! edit that saw every side, which settles them wherever it arrives.
 //!
-//! Deliberately *not* a lever over the whole `integrity_warnings` table.
-//! da-z46t removed that surface: a double_open or an orphan_end is
-//! resolved by looking at the data and fixing it (`datum check` shows
-//! them, `datum edit` / `datum delete` clears them), and a resolution
-//! menu would suggest otherwise. `lww_overwrite` and
-//! `identity_collision` are different — the losing version only exists
-//! in the warning row, so someone has to say which one wins. That is the
-//! whole job of this command.
-//!
-//! - `list [--all]` — the sync-conflict queue, pending-only by default,
-//!   each row showing both versions so the choice can be made from it.
-//! - `resolve <HID> (--take-local | --take-remote | --keep-both)` — record
-//!   the decision and rewrite the entry row to the winning snapshot.
+//! - `list` — each such entry, and per key each side: the device that set
+//!   it, when, and the value.
+//! - `resolve <HID> [KEY=VALUE…]` — that edit: each contested key the value
+//!   given, or else the one the entry shows now.
 
 use anyhow::Result;
 use datum_core::db::Db;
-use datum_core::entry::Entry;
-use datum_core::integrity::{DetectedBy, IntegrityKind, IntegrityWarning, ListFilter, Resolution};
-use datum_core::time::Zone;
+use serde_json::{Map, Value};
 
-use crate::args::{ConflictsCommand, ConflictsKeep, ConflictsListArgs, ConflictsResolveArgs};
-
-/// The kinds this command owns, filed by a sync apply (an
-/// `identity_collision` by `db restore --merge` too); every other kind
-/// belongs to `datum check`.
-const SYNC_KINDS: [IntegrityKind; 3] = [
-    IntegrityKind::LwwOverwrite,
-    IntegrityKind::IdentityCollision,
-    IntegrityKind::SyncConflict,
-];
+use crate::args::{ConflictsCommand, ConflictsResolveArgs};
 
 pub fn conflicts(cmd: ConflictsCommand, db: &Db) -> Result<()> {
     match cmd {
-        ConflictsCommand::List(args) => list(args, db),
+        ConflictsCommand::List(_) => list(db),
         ConflictsCommand::Resolve(args) => resolve(args, db),
     }
 }
 
-fn sync_conflicts(db: &Db, pending_only: bool) -> Result<Vec<IntegrityWarning>> {
-    let mut rows = Vec::new();
-    for kind in SYNC_KINDS {
-        rows.extend(db.list_integrity_warnings(&ListFilter {
-            kind: Some(kind),
-            pending: if pending_only { Some(true) } else { None },
-        })?);
-    }
-    // `list` is newest-first per kind; re-sort so the merged view is too.
-    rows.sort_by_key(|w| std::cmp::Reverse(w.detected_at));
-    Ok(rows)
-}
-
-/// One side of a conflict, compact enough to sit under its row: what the
-/// entry says and when that version was last touched.
-fn side(label: &str, e: &Entry) -> String {
-    let state = match e.state.as_ref() {
-        Some(v) => v.to_string(),
-        None => "—".to_string(),
-    };
-    // A `sync_conflict` side names the op that made it (da-k329q).
-    let by = match e.extra_metadata.as_ref().map(|m| &m["sync_op"]["raw"]) {
-        Some(serde_json::Value::String(raw)) => format!("  by `{raw}`"),
-        _ => String::new(),
-    };
-    format!(
-        "    {label:<10} {slug}  state={state}  modified={modified}{by}",
-        slug = e.slug,
-        modified = e.modify_time.format("%Y-%m-%d %H:%M"),
-    )
-}
-
-fn list(args: ConflictsListArgs, db: &Db) -> Result<()> {
-    let rows = sync_conflicts(db, !args.all)?;
+fn list(db: &Db) -> Result<()> {
+    let rows = db.sync_conflicts()?;
     if rows.is_empty() {
-        println!(
-            "No {}sync conflicts. (`datum check` reports integrity findings.)",
-            if args.all { "" } else { "pending " }
-        );
+        println!("No sync conflicts. (`datum check` reports integrity findings.)");
         return Ok(());
     }
-
-    for w in &rows {
-        // An identity_collision's pair is the superseded row and the one
-        // that kept the identity, whichever side each came from — and a
-        // restore's came from no remote at all (da-vrqih): it is the
-        // backup's entry and the live one it was merged into (da-0v1zt).
-        let (first, second) = match (w.kind, w.detected_by) {
-            (IntegrityKind::IdentityCollision, DetectedBy::LocalValidator) => ("backup", "live"),
-            (IntegrityKind::IdentityCollision, _) => ("superseded", "kept"),
-            _ => ("local", "remote"),
-        };
+    for e in &rows {
         println!(
-            "{hid}  {kind}  {field}  detected {detected}{by}  {status}",
-            hid = w.hid,
-            kind = w.kind.as_str(),
-            field = w.local_entry.field,
-            detected = Zone::host()
-                .local_naive(w.detected_at)
-                .format("%Y-%m-%d %H:%M"),
-            by = match w.detected_by {
-                DetectedBy::LocalValidator => " by `db restore --merge`",
-                DetectedBy::SyncPull => "",
+            "{hid}  {slug}{deleted}",
+            hid = e.short_uid(),
+            slug = e.slug,
+            deleted = if e.deleted_at.is_some() {
+                "  (deleted)"
+            } else {
+                ""
             },
-            status = w.resolution.as_deref().unwrap_or("pending"),
         );
-        println!("{}", side(first, &w.local_entry));
-        match w.remote_entry.as_ref() {
-            Some(remote) => println!("{}", side(second, remote)),
-            None => println!("    {second:<10} (not recorded)"),
-        }
-        // A pair merged into one entry: each key the two gave different
-        // values, and which the merge took (da-04glw).
-        if let Some(serde_json::Value::Object(clash)) =
-            w.local_entry.extra_metadata.as_ref().map(|m| &m["merge"])
-        {
-            for (key, c) in clash {
+        let conflicts = e.conflicts.as_ref().and_then(Value::as_object);
+        for (key, sides) in conflicts.into_iter().flatten() {
+            println!("    {key}");
+            for side in sides.as_array().into_iter().flatten() {
                 println!(
-                    "    {:<10} {key}: {} over {}",
-                    "merged", c["took"], c["over"]
+                    "      {device:<12} {at}  {value}",
+                    device = side["device"].as_str().unwrap_or("?"),
+                    at = datum_core::db::chain::hlc_time(side["hlc"].as_str().unwrap_or("")),
+                    value = side["value"],
                 );
             }
         }
     }
-    if rows.iter().any(|w| w.is_pending()) {
-        println!(
-            "\nResolve with: datum conflicts resolve <hid> \
-             (--take-local | --take-remote | --keep-both)"
-        );
-    }
+    println!(
+        "\nResolve with: datum conflicts resolve <hid> [KEY=VALUE…] \
+         (a key not given keeps the value the entry shows)"
+    );
     Ok(())
 }
 
 fn resolve(args: ConflictsResolveArgs, db: &Db) -> Result<()> {
-    // Refuse hids outside this command's scope rather than silently
-    // resolving an integrity finding through a sync-shaped lever.
-    if let Some(w) = db.get_integrity_warning(&args.hid)? {
-        if !SYNC_KINDS.contains(&w.kind) {
-            anyhow::bail!(
-                "{hid} is a {kind} finding, not a sync conflict — fix the data \
-                 (see `datum check`); resolving it by picking a side would not \
-                 change what is wrong",
-                hid = w.hid,
-                kind = w.kind.as_str(),
-            );
-        }
-    }
-    let resolution = match args.keep {
-        ConflictsKeep::Local => Resolution::TakeLocal,
-        ConflictsKeep::Remote => Resolution::TakeRemote,
-        ConflictsKeep::Both => Resolution::KeepBoth,
-    };
-    let resolved = db.resolve_integrity_warning(&args.hid, resolution)?;
-    println!(
-        "Resolved {hid} ({kind}) on {field}: {resolution}",
-        hid = resolved.hid,
-        kind = resolved.kind.as_str(),
-        field = resolved.local_entry.field,
-    );
+    let e = db.get_entry_including_deleted(&args.hid)?;
+    let picks: Map<String, Value> = args
+        .picks
+        .into_iter()
+        .map(|(k, v)| {
+            let v = serde_json::from_str(&v).unwrap_or(Value::String(v));
+            (k, v)
+        })
+        .collect();
+    let post = db.resolve_conflicts(e.hid.as_str(), &picks)?;
+    println!("Resolved {} ({})", post.slug, post.short_uid());
     Ok(())
 }

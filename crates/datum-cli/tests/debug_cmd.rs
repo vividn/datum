@@ -55,8 +55,12 @@ fn debug_conflicts_files_n_conflicts_and_the_delete_case() {
     assert!(out.starts_with("4 sync conflicts filed"), "{out}");
 
     let list = env.conflicts();
-    assert_eq!(list.matches("sync_conflict").count(), 4, "{list}");
-    assert_eq!(list.matches(r#"state="edited here""#).count(), 3, "{list}");
+    // One header a conflicted entry, its contested keys under it (da-05rkv).
+    let entries = list.lines().filter(|l| l.contains("  debug:")).count();
+    assert_eq!(entries, 4, "{list}");
+    assert_eq!(list.matches("\n    state\n").count(), 3, "{list}");
+    assert_eq!(list.matches(r#""edited here""#).count(), 3, "{list}");
+    assert_eq!(list.matches("\n    deleted\n").count(), 1, "{list}");
     // The delete stands: three entries are left to see.
     let (_, tail) = env.run(&["tail"]);
     assert_eq!(tail.matches("edited there").count(), 3, "{tail}");
@@ -125,7 +129,7 @@ fn a_copy_in_a_chain_is_refused_and_nothing_is_written() {
     assert!(!ok && out.contains("sync chain c1"), "{out}");
     let (_, tail) = env.run(&["tail"]);
     assert!(!tail.contains("debug"), "{tail}");
-    assert!(env.conflicts().starts_with("No pending"));
+    assert!(env.conflicts().starts_with("No sync conflicts"));
 }
 
 #[test]

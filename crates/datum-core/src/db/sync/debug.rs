@@ -60,7 +60,7 @@ pub struct DebugConflicts {
     pub device: String,
     /// The entries, the delete-against-edit last.
     pub hids: Vec<String>,
-    /// How many `sync_conflict`s the apply filed.
+    /// How many entries the apply left with conflicts.
     pub filed: usize,
 }
 

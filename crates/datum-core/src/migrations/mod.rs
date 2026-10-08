@@ -57,7 +57,7 @@ use v51_v60::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 57;
+pub const CURRENT_SCHEMA_VERSION: u32 = 58;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -474,5 +474,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "sync_peers.datum + schema: the build and schema version each member last said it runs, so a copy behind one warns to upgrade (da-3zqyv)",
         apply: m56_to_57_sync_peer_version,
         down: down_57_to_56_sync_peer_version,
+    },
+    Migration {
+        from: 57,
+        to: 58,
+        summary: "entries.conflicts: what an entry's ops leave contested, derived by the sync fold; integrity_warnings drops sync_conflict, lww_overwrite and identity_collision (da-05rkv)",
+        apply: m57_to_58_conflicts,
+        down: down_58_to_57_conflicts,
     },
 ];

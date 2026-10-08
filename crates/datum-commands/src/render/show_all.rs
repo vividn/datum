@@ -42,6 +42,7 @@ const BOOK_COLS: &[&str] = &[
     "client_id",
     "deleted_at",
     "superseded_by",
+    "conflicts",
 ];
 const INTENT_COLS: &[&str] = &[
     "raw_input",
@@ -169,6 +170,7 @@ fn render_column(col: &str, e: &Entry) -> String {
             Some(h) => h.to_string(),
             None => null_marker(),
         },
+        "conflicts" => render_json_opt(e.conflicts.as_ref()),
         "raw_input" => render_str_opt(e.raw_input.as_deref()),
         "alias_chain" => render_json_opt(e.alias_chain.as_ref()),
         "parser_version" => e.parser_version.to_string(),
@@ -242,6 +244,7 @@ mod tests {
             field_structure: None,
             deleted_at: None,
             superseded_by: None,
+            conflicts: None,
             raw_input: None,
             alias_chain: None,
             parser_version: 2,

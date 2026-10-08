@@ -25,8 +25,12 @@
 //!   the earlier-created shows both, the later wins a key both have, and the
 //!   later stays superseded, the record of what was merged in.
 //! - **Conflict.** Two ops are concurrent when neither's `deps` covers the
-//!   other. Concurrent ops that give one key different values, or a delete
-//!   and a concurrent edit, file a `sync_conflict` for the loser.
+//!   other. Of the ops that set a key, those no later one setting it saw
+//!   stand; when they give it different values, the entry's `conflicts`
+//!   column names each, written by the fold from the ops alone (da-05rkv),
+//!   so every copy holding them agrees. A delete stands against an edit
+//!   made without seeing it, and both show. A resolution is an ordinary
+//!   edit that saw every side ([`Db::resolve_conflicts`]).
 //!
 //! Seq, HLC and the version vector are all read off the `ops` table rather
 //! than kept as counters beside it, so there is no second copy of them to
@@ -548,10 +552,6 @@ impl Op {
                 .get(&other.endpoint)
                 .is_some_and(|s| *s >= other.seq)
     }
-
-    fn deletes(&self) -> bool {
-        self.effect.get("deleted") == Some(&Value::Bool(true))
-    }
 }
 
 fn digest(unsigned: &Value) -> [u8; 32] {
@@ -602,9 +602,14 @@ fn vector_where(conn: &Connection, hid: Option<&str>) -> Result<BTreeMap<String,
     // `ops_hid`, and every op signed would scan every op held.
     let pair = |r: &rusqlite::Row<'_>| Ok((r.get(0)?, r.get(1)?));
     let rows = match hid {
+        // An entry's ops and those of the rows it supersedes: an edit of the
+        // entry shown saw them all, and settles their conflicts too.
         Some(h) => conn
             .prepare_cached(
-                "SELECT endpoint, MAX(seq) FROM ops WHERE hid = ?1 AND applied > 0 GROUP BY endpoint",
+                "SELECT endpoint, MAX(seq) FROM ops
+                 WHERE hid IN (SELECT ?1 UNION SELECT hid FROM entries WHERE superseded_by = ?1)
+                   AND applied > 0
+                 GROUP BY endpoint",
             )?
             .query_map(params![h], pair)?
             .collect::<rusqlite::Result<_>>(),
@@ -777,10 +782,20 @@ pub(super) fn emit(
     // An edit of a row merged into another moves the entry it shows, as the
     // op does on every other copy. An edit of the entry shown needs nothing:
     // its row was the merge, and is the merge with the edit.
-    match &post.superseded_by {
-        Some(s) => rederive(conn, s.as_str()),
-        None => Ok(()),
+    if let Some(s) = &post.superseded_by {
+        rederive(conn, s.as_str())?;
     }
+    // An edit of the entry shown saw every op of it, so it can settle a
+    // conflict and make none: only one that has some is looked at again.
+    // An edit of a row merged into another saw that row's ops alone.
+    let contested = post.superseded_by.is_some()
+        || conn
+            .prepare_cached("SELECT 1 FROM entries WHERE hid = ?1 AND conflicts IS NOT NULL")?
+            .exists(params![hid])?;
+    if contested {
+        refresh_conflicts(conn, hid.as_str())?;
+    }
+    Ok(())
 }
 
 // ─── Apply ──────────────────────────────────────────────────────────────────
@@ -845,40 +860,183 @@ fn conflict_side(entry: &Entry, op: &Op, apply_it: bool) -> Result<Entry> {
     Ok(side)
 }
 
-/// File a `sync_conflict` for every op of the entry concurrent with `x`
-/// that gives one of its keys a different value, or that is a delete where
-/// the other is an edit. The later HLC is the winner; with a delete, the
-/// delete stands and the edit is the loser whatever the clocks say.
-fn file_conflicts(conn: &Connection, x: &Op, ops: &[Op], merged: &Entry) -> Result<usize> {
-    let xv = values(x);
-    let edits = |o: &Op, v: &BTreeMap<String, Value>| {
-        o.effect.get("deleted").is_none() && v.keys().any(|k| !NOT_A_CONFLICT.contains(&k.as_str()))
-    };
-    let mut filed = 0;
-    // A baseline is under every edit, so it is concurrent only with another
-    // copy's baseline of the same entry.
-    let concurrent =
-        |y: &&Op| !y.same(x) && !x.saw(y) && !y.saw(x) && x.is_baseline() == y.is_baseline();
-    for y in ops.iter().filter(concurrent) {
-        let yv = values(y);
-        let clash = xv.iter().any(|(k, v)| {
-            !NOT_A_CONFLICT.contains(&k.as_str()) && yv.get(k).is_some_and(|w| w != v)
-        });
-        let loser = match (x.deletes(), y.deletes()) {
-            (true, false) if edits(y, &yv) => y,
-            (false, true) if edits(x, &xv) => x,
-            _ if clash => std::cmp::min_by(x, y, |a, b| a.order().cmp(&b.order())),
-            _ => continue,
-        };
-        let winner = if loser.same(x) { y } else { x };
-        crate::integrity::file_sync_conflict(
-            conn,
-            &conflict_side(merged, loser, true)?,
-            &conflict_side(merged, winner, false)?,
-        )?;
-        filed += 1;
+// ─── Conflicts (da-05rkv) ───────────────────────────────────────────────────
+
+/// Keys that say where a row came from rather than what it says: two rows
+/// merged into one differ in them without disagreeing.
+const PROVENANCE: &[&str] = &["create_time", "raw_input", "alias_chain", "parser_version"];
+
+/// May two ops setting `k` differently be a conflict?
+fn contestable(k: &str) -> bool {
+    k != "deleted_at" && !NOT_A_CONFLICT.contains(&k) && !PROVENANCE.contains(&k)
+}
+
+/// Does `later` settle the value `op` gave a key both set: it saw `op`, or
+/// `op` is a baseline of its entry and `later` is not — a baseline is under
+/// every edit of its own entry, and of no other merged into it.
+fn settles(later: &Op, op: &Op) -> bool {
+    !later.same(op)
+        && (later.saw(op) || op.is_baseline() && !later.is_baseline() && op.hid == later.hid)
+}
+
+/// The keys `op` gives a value, as [`values`] names them — but a create
+/// gives none to a key it leaves empty: of two rows merged into one, a key
+/// only one of them has is no clash.
+fn intents(op: &Op) -> BTreeMap<String, Value> {
+    let mut v = values(op);
+    if op.effect.get("create").is_some() {
+        v.retain(|_, x| !x.is_null());
     }
-    Ok(filed)
+    v
+}
+
+/// What `ops` — an entry's, with those of the rows superseded by it — leave
+/// contested, from the set of them alone: per key, the values of the ops
+/// that set it and that no other op setting it settles, when they differ.
+/// `deleted` is the entry's own: its deletes and undeletes as a key's
+/// values, and against a delete that stands, an edit made without seeing
+/// it, which wants the entry live.
+fn contention(ops: &[Op]) -> BTreeMap<String, Vec<(&Op, Value)>> {
+    let vals: Vec<_> = ops.iter().map(intents).collect();
+    let mut setters: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for (i, v) in vals.iter().enumerate() {
+        for k in v.keys() {
+            setters.entry(k.as_str()).or_default().push(i);
+        }
+    }
+    let standing = |set: &[usize]| -> Vec<usize> {
+        let settled = |i: usize| set.iter().any(|&j| settles(&ops[j], &ops[i]));
+        set.iter().copied().filter(|&i| !settled(i)).collect()
+    };
+    let mut out = BTreeMap::new();
+    for (k, set) in setters.iter().filter(|(k, _)| contestable(k)) {
+        let sides: Vec<_> = standing(set)
+            .into_iter()
+            .map(|i| (&ops[i], vals[i][*k].clone()))
+            .collect();
+        if sides.iter().any(|(_, v)| *v != sides[0].1) {
+            out.insert(k.to_string(), sides);
+        }
+    }
+    // `deleted_at` is contested by what it says, not by its instant: two
+    // deletes agree. Its standing setters are `deleted`'s sides, true or
+    // false; and an edit sets no `deleted_at`, so one made beside a standing
+    // delete is found here, as a side that wants the entry live.
+    let Some(set) = setters.get("deleted_at") else {
+        return out;
+    };
+    let mut sides: Vec<(usize, bool)> = standing(set)
+        .into_iter()
+        .map(|i| (i, !vals[i]["deleted_at"].is_null()))
+        .collect();
+    let deletes: Vec<usize> = sides.iter().filter(|s| s.1).map(|s| s.0).collect();
+    let concurrent = |i: usize, d: usize| !settles(&ops[i], &ops[d]) && !settles(&ops[d], &ops[i]);
+    for (i, v) in vals.iter().enumerate() {
+        let edit = !v.contains_key("deleted_at") && v.keys().any(|k| contestable(k));
+        if edit && deletes.iter().any(|&d| concurrent(i, d)) {
+            sides.push((i, false));
+        }
+    }
+    if sides.iter().any(|s| s.1) && sides.iter().any(|s| !s.1) {
+        sides.sort();
+        let sides = sides.into_iter().map(|(i, d)| (&ops[i], Value::Bool(d)));
+        out.insert("deleted".into(), sides.collect());
+    }
+    out
+}
+
+/// `e`'s `conflicts`: per contested key, each side's value, the device that
+/// set it (its label in the chain), its op's HLC, and the op. They are read
+/// from `e`'s ops and those of the rows it supersedes — merged into it, or
+/// set aside for the instant it holds; a superseded row has none.
+fn conflicts_of(conn: &Connection, e: &Entry) -> Result<Option<Value>> {
+    if e.superseded_by.is_some() {
+        return Ok(None);
+    }
+    let mut ops = ops_of(conn, e.hid.as_str())?;
+    let behind: Vec<String> = conn
+        .prepare_cached("SELECT hid FROM entries WHERE superseded_by = ?1")?
+        .query_map(params![e.hid], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    for hid in behind {
+        ops.extend(ops_of(conn, &hid)?);
+    }
+    ops.sort_by(|a, b| a.order().cmp(&b.order()));
+    let found = contention(&ops);
+    if found.is_empty() {
+        return Ok(None);
+    }
+    let chain = Chain::load(conn)?;
+    let device = |ep: &str| match chain.member(ep) {
+        Some(m) => m.label.clone(),
+        None => ep.chars().take(8).collect(),
+    };
+    let side = |(op, value): (&Op, Value)| {
+        json!({
+            "value": value,
+            "device": device(&op.endpoint),
+            "hlc": op.hlc,
+            "op": format!("{}/{}", op.endpoint, op.seq),
+        })
+    };
+    let found = found
+        .into_iter()
+        .map(|(k, sides)| (k, sides.into_iter().map(side).collect()))
+        .collect();
+    Ok(Some(Value::Object(found)))
+}
+
+/// Write the `conflicts` of `hid`, of the entry superseding it and of the
+/// rows it supersedes — what a write to it can move; whether that gave one
+/// of them conflicts it did not have.
+fn refresh_conflicts(conn: &Connection, hid: &str) -> Result<bool> {
+    let mut rows: Vec<Entry> = conn
+        .prepare_cached(
+            "SELECT * FROM entries WHERE hid = ?1 OR superseded_by = ?1
+               OR hid = (SELECT superseded_by FROM entries WHERE hid = ?1)",
+        )?
+        .query_map(params![hid], row_to_entry)?
+        .collect::<rusqlite::Result<_>>()?;
+    rows.sort_by(|a, b| a.hid.0.cmp(&b.hid.0));
+    let mut write = conn.prepare_cached(
+        "UPDATE entries SET conflicts = ?2 WHERE hid = ?1 AND conflicts IS NOT ?2",
+    )?;
+    let mut new = false;
+    for e in rows {
+        let found = conflicts_of(conn, &e)?.map(|c| canonical_json(&c));
+        new |= write.execute(params![e.hid, found])? > 0 && found.is_some();
+    }
+    Ok(new)
+}
+
+/// Write again every entry's `conflicts` that has some: the chain moved,
+/// and a side's device may be named otherwise now.
+fn relabel_conflicts(conn: &Connection) -> Result<()> {
+    let hids: Vec<String> = conn
+        .prepare_cached("SELECT hid FROM entries WHERE conflicts IS NOT NULL")?
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    for hid in hids {
+        refresh_conflicts(conn, &hid)?;
+    }
+    Ok(())
+}
+
+/// Write `conflicts` for every entry that could have any: ops from more than
+/// one copy, or rows merged into it. The v57→v58 migration, once.
+pub(crate) fn derive_all_conflicts(conn: &Connection) -> Result<()> {
+    let hids: Vec<String> = conn
+        .prepare(
+            "SELECT hid FROM ops WHERE applied = 1 AND hid != ?1
+               GROUP BY hid HAVING COUNT(DISTINCT endpoint) > 1
+             UNION SELECT superseded_by FROM entries WHERE superseded_by IS NOT NULL",
+        )?
+        .query_map(params![CHAIN_HID], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    for hid in hids {
+        refresh_conflicts(conn, &hid)?;
+    }
+    Ok(())
 }
 
 /// Rows other than `e` holding an identity `e` needs: its slug, or its live
@@ -908,13 +1066,6 @@ pub(super) fn blockers(conn: &Connection, e: &Entry) -> Result<Vec<Entry>> {
         found.extend(rows.into_iter().filter(|r| r.slug != e.slug));
     }
     Ok(found)
-}
-
-/// One event logged on two copies — the same fact, place included — as
-/// two copies each declaring a field's `spec` before they ever synced.
-fn same_event(a: &Entry, b: &Entry) -> bool {
-    a.expected_content_hash() == b.expected_content_hash()
-        && (a.lat, a.lon, &a.location) == (b.lat, b.lon, &b.location)
 }
 
 /// A row's content as [`diff`] names its keys, without its identity and the
@@ -1044,67 +1195,13 @@ fn rederive(conn: &Connection, hid: &str) -> Result<()> {
     apply_entry_state(conn, &next)
 }
 
-/// File the `identity_collision` for `lost`, newly superseded by `kept`.
-fn file_collision(conn: &Connection, lost: &str, kept: &str) -> Result<()> {
-    let (Some(l), Some(k)) = (fetch_by_hid(conn, lost)?, fetch_by_hid(conn, kept)?) else {
-        return Ok(());
-    };
-    let by = crate::integrity::DetectedBy::SyncPull;
-    surface(conn, own(conn, &l)?, &own(conn, &k)?, &k, by).map(drop)
-}
-
-/// File the `identity_collision` for `lost` against `kept`, which holds its
-/// identity and now shows `shown`, unless they are one event twice; whether
-/// it did. A pair merged into one entry names, on the `lost` side's
-/// `extra_metadata.merge`, each key the two gave different values: the
-/// value the merge took and the one it took it over. `by` says who merged
-/// them: a sync, or a `db restore --merge` (da-0v1zt).
-fn surface(
-    conn: &Connection,
-    mut lost: Entry,
-    kept: &Entry,
-    shown: &Entry,
-    by: crate::integrity::DetectedBy,
-) -> Result<bool> {
-    if same_event(&lost, kept) {
-        return Ok(false);
-    }
-    if lost.slug == shown.slug {
-        let (a, b, shown) = (
-            content(&row(kept)),
-            content(&row(&lost)),
-            content(&row(shown)),
-        );
-        let mut clash = Map::new();
-        for (key, x) in &a {
-            let Some(y) = b.get(key).filter(|y| *y != x) else {
-                continue;
-            };
-            let took = shown.get(key).cloned().unwrap_or(Value::Null);
-            let over = if &took == y { x } else { y };
-            clash.insert(key.clone(), json!({ "took": took, "over": over }));
-        }
-        if !clash.is_empty() {
-            let mut meta = lost.extra_metadata.take().unwrap_or_else(|| json!({}));
-            if let Some(m) = meta.as_object_mut() {
-                m.insert("merge".into(), Value::Object(clash));
-            }
-            lost.extra_metadata = Some(meta);
-        }
-    }
-    crate::integrity::file_identity_collision(conn, &lost, kept, by)?;
-    Ok(true)
-}
-
 /// Merge `incoming`, a backup's entry, into `live`, the live entry holding
 /// its slug or its state's instant (`db restore --merge`, da-0v1zt), by
 /// the rule a sync merges two rows with: under one slug `live` shows
 /// [`merge_rows`] with `incoming` in it; under one instant alone `live` is
 /// the one kept. Either way `incoming` is not written. The change is the
-/// user's — a `user_edit`, so `undo` reverts it — and the pair is surfaced
-/// `local_validator`, unless an earlier restore already surfaced it,
-/// resolved or not: that is a second restore of one backup, which adds
-/// nothing. Whether anything was merged or surfaced.
+/// user's — a `user_edit`, so `undo` reverts it. Whether anything changed,
+/// or `incoming` says something `live` now does not.
 pub(super) fn merge_in(conn: &Connection, live: &Entry, incoming: &Entry) -> Result<bool> {
     let mut shown = match live.slug == incoming.slug {
         true => merge_rows(
@@ -1122,26 +1219,18 @@ pub(super) fn merge_in(conn: &Connection, live: &Entry, incoming: &Entry) -> Res
         apply_entry_state(conn, &shown)?;
         emit(conn, Some(live), &live.hid, ChangeKind::UserEdit)?;
     }
-    let surfaced: bool = conn.query_row(
-        "SELECT EXISTS (SELECT 1 FROM integrity_warnings
-           WHERE kind = 'identity_collision' AND json_extract(local_entry, '$.hid') = ?1
-             AND json_extract(remote_entry, '$.hid') = ?2)",
-        params![incoming.hid, live.hid],
-        |r| r.get(0),
-    )?;
-    let by = crate::integrity::DetectedBy::LocalValidator;
-    Ok((!surfaced && surface(conn, incoming.clone(), live, &shown, by)?) || changed)
+    Ok(changed || content(&row(incoming)) != content(&row(&shown)))
 }
 
 /// Write the row an entry's ops fold to. Two distinct entries claiming one
 /// identity decide it from the rows alone, so every copy reaches the same
 /// answer: the earlier-created keeps it and the other is superseded
-/// (`superseded_by`), with an `identity_collision` naming the pair unless
-/// they are one event twice. Under one slug the two are one entry
+/// (`superseded_by`), and what the two gave different values shows in the
+/// survivor's `conflicts`. Under one slug the two are one entry
 /// ([`merge_rows`]); under one live state-bearing instant alone, two.
 fn write_merged(conn: &Connection, pre: Option<&Entry>, mut next: Entry) -> Result<()> {
     next.superseded_by = pre.and_then(|p| p.superseded_by.clone());
-    let (mut pairs, mut demoted) = (Vec::new(), Vec::new());
+    let mut demoted = Vec::new();
     if next.superseded_by.is_none() {
         // What a row loses its identity with goes over to the row that
         // took it, so a pair's rows point at one survivor on every copy.
@@ -1150,7 +1239,6 @@ fn write_merged(conn: &Connection, pre: Option<&Entry>, mut next: Entry) -> Resu
             if (&next.create_time, &next.hid.0) < (&b.create_time, &b.hid.0) {
                 history::record(conn, &b, ChangeKind::SyncMerge)?;
                 conn.execute(repoint, params![b.hid, next.hid])?;
-                pairs.push((b.hid.0.clone(), next.hid.0.clone()));
                 demoted.push(b.hid.0);
             } else if next.superseded_by.is_none() {
                 // A row older than its ops is signed as it stands before
@@ -1160,7 +1248,6 @@ fn write_merged(conn: &Connection, pre: Option<&Entry>, mut next: Entry) -> Resu
                 }
                 conn.execute(repoint, params![next.hid, b.hid])?;
                 next.superseded_by = Some(b.hid.clone());
-                pairs.push((next.hid.0.clone(), b.hid.0));
             }
         }
     }
@@ -1196,13 +1283,11 @@ fn write_merged(conn: &Connection, pre: Option<&Entry>, mut next: Entry) -> Resu
     {
         rederive(conn, hid)?;
     }
-    for (lost, kept) in pairs {
-        file_collision(conn, &lost, &kept)?;
-    }
     Ok(())
 }
 
-/// Apply one op that is ready: refold its entry and write the result.
+/// Apply one op that is ready: refold its entry and write the result; 1 if
+/// that gave it, or the entry it is merged into, a conflict it had not had.
 fn apply_one(conn: &Connection, x: &Op) -> Result<usize> {
     conn.execute(
         "UPDATE ops SET applied = 1 WHERE endpoint = ?1 AND seq = ?2",
@@ -1216,10 +1301,8 @@ fn apply_one(conn: &Connection, x: &Op) -> Result<usize> {
     let Some(merged) = fold(&ops, base) else {
         return Ok(0);
     };
-    let merged = entry_from(merged)?;
-    let filed = file_conflicts(conn, x, &ops, &merged)?;
-    write_merged(conn, pre.as_ref(), merged)?;
-    Ok(filed)
+    write_merged(conn, pre.as_ref(), entry_from(merged)?)?;
+    Ok(refresh_conflicts(conn, &x.hid)?.into())
 }
 
 /// Apply every held op that is ready, records first, until none is; an
@@ -1285,6 +1368,7 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
             }
             reconsider(conn, &chain, s)?;
             chain::note(conn, &chain, false)?;
+            relabel_conflicts(conn)?;
             vector = vector_where(conn, None)?;
             // What waits has changed with the membership.
             break;
@@ -1393,8 +1477,10 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
             }
         }
     }
+    let mut touched = Vec::new();
     for hid in hids {
         let pre = fetch_by_hid(conn, &hid)?;
+        touched.push(hid.clone());
         match fold(&ops_of(conn, &hid)?, None) {
             Some(r) => write_merged(conn, pre.as_ref(), entry_from(r)?)?,
             None => {
@@ -1410,6 +1496,7 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
                 // freed rows may share an identity, and the later merges into
                 // the earlier. One that stands alone points at nothing after.
                 for mut f in freed {
+                    touched.push(f.hid.0.clone());
                     f.superseded_by = None;
                     let own = own(conn, &f)?;
                     write_merged(conn, Some(&f), own)?;
@@ -1419,10 +1506,14 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
                     )?;
                 }
                 if let Some(kept) = &pre.superseded_by {
+                    touched.push(kept.0.clone());
                     rederive(conn, kept.as_str())?;
                 }
             }
         }
+    }
+    for hid in touched {
+        refresh_conflicts(conn, &hid)?;
     }
     Ok(())
 }
@@ -1757,6 +1848,117 @@ fn settle_filter(
 }
 
 impl Db {
+    /// Every entry with conflicts, in slug order.
+    pub fn sync_conflicts(&self) -> Result<Vec<Entry>> {
+        self.conn
+            .prepare("SELECT * FROM entries WHERE conflicts IS NOT NULL ORDER BY slug")?
+            .query_map([], row_to_entry)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(DatumError::Db)
+    }
+
+    /// Resolve the conflicts of entry `hid` (full) with one ordinary edit,
+    /// which saw every side: each contested key set to its value in
+    /// `picks` (a data key named bare or as `data.<key>`), or else to the
+    /// one the entry shows (`deleted`: true keeps it deleted, false brings
+    /// it back). Wherever the edit arrives, the conflicts are gone. The
+    /// entry as it stands after.
+    pub fn resolve_conflicts(&self, hid: &str, picks: &Map<String, Value>) -> Result<Entry> {
+        let tx = self.conn.unchecked_transaction()?;
+        let ep = endpoint(&tx)?;
+        if is_reader(&tx, &ep)? {
+            return Err(DatumError::Other(READ_ONLY.into()));
+        }
+        let conflicts: Option<String> = tx
+            .query_row(
+                "SELECT conflicts FROM entries WHERE hid = ?1",
+                params![hid],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        let (Some(pre), Some(Value::Object(conflicts))) = (
+            fetch_by_hid(&tx, hid)?,
+            conflicts.map(|c| serde_json::from_str(&c)).transpose()?,
+        ) else {
+            return Err(DatumError::Other(format!("{hid} has no conflicts")));
+        };
+        // A data key is picked as it is typed, `cups` for `data.cups`.
+        let mut named = Map::new();
+        for (k, v) in picks {
+            let key = [k.clone(), format!("data.{k}")]
+                .into_iter()
+                .find(|key| conflicts.contains_key(key))
+                .ok_or_else(|| DatumError::Other(format!("{hid} has no conflict on {k}")))?;
+            named.insert(key, v.clone());
+        }
+        let picks = named;
+        let shown = row(&pre);
+        let (mut set, mut unset) = (Map::new(), Vec::new());
+        for k in conflicts.keys() {
+            let v = match (k.as_str(), picks.get(k)) {
+                ("deleted", pick) => {
+                    let gone = match pick {
+                        None => pre.deleted_at.is_some(),
+                        Some(p) => p.as_bool().ok_or_else(|| {
+                            DatumError::Other("deleted takes true or false".into())
+                        })?,
+                    };
+                    match gone {
+                        true => {
+                            let at = pre.deleted_at.unwrap_or_else(Utc::now);
+                            set.insert("deleted_at".into(), json!(at));
+                        }
+                        false => unset.push(json!("deleted_at")),
+                    }
+                    continue;
+                }
+                (_, Some(v)) => v.clone(),
+                (k, None) => match k.strip_prefix("data.") {
+                    Some(dk) => shown.get("data").and_then(|d| d.get(dk)).cloned(),
+                    None => shown.get(k).cloned(),
+                }
+                .unwrap_or(Value::Null),
+            };
+            match v {
+                Value::Null => unset.push(json!(k)),
+                v => {
+                    set.insert(k.clone(), v);
+                }
+            }
+        }
+        let picked = json!({ "set": set, "unset": unset });
+        let mut r = Some(shown);
+        fold_into(&mut r, &picked);
+        let mut post = entry_from(r.unwrap_or_default())?;
+        post.modify_time = Utc::now();
+        history::record(&tx, &pre, ChangeKind::UserEdit)?;
+        apply_entry_state(&tx, &post)?;
+        let post = fetch_by_hid(&tx, hid)?.unwrap_or(post);
+        // The edit's own changes, and every contested key even where it
+        // keeps the value: setting it is what says the edit saw each side.
+        let mut effect = diff(&pre, &post);
+        for (k, v) in set {
+            effect["set"][k] = v;
+        }
+        for k in unset {
+            match effect["unset"].as_array_mut() {
+                Some(a) if !a.contains(&k) => a.push(k),
+                Some(_) => {}
+                None => effect["unset"] = json!([k]),
+            }
+        }
+        let kind = match effect.get("deleted").and_then(Value::as_bool) {
+            Some(true) => "delete",
+            Some(false) => "undelete",
+            None => "update",
+        };
+        push_entry(&tx, &ep, &post, kind, effect)?;
+        refresh_conflicts(&tx, hid)?;
+        tx.commit()?;
+        Ok(post)
+    }
+
     /// This copy's endpoint secret, minted on first need. It is also the
     /// iroh endpoint's key, so the iroh endpoint id IS the ops' `endpoint`
     /// (da-rugg8).
@@ -1883,8 +2085,8 @@ impl Db {
 
     /// The state hash: SHA-256 over the canonical JSON of every entry row,
     /// live and tombstoned, in `(slug, hid)` order, each with its
-    /// `superseded_by` — so two copies agree only if they hold exactly the
-    /// same data, bookkeeping included. The map is the same hash per column,
+    /// `superseded_by` and any `conflicts` — so two copies agree only if they
+    /// hold exactly the same data, bookkeeping included. The map is the same hash per column,
     /// to narrow a mismatch down. With a filtered reader on either side —
     /// this copy, or `peer` — only the entries that pass both filters count
     /// (da-u81u1), which both sides compute alike.
@@ -1905,14 +2107,19 @@ impl Db {
         let rows: Vec<Map<String, Value>> = self
             .conn
             .prepare("SELECT * FROM entries ORDER BY slug, hid")?
-            .query_map([], row_to_entry)?
-            .map(|e| {
-                e.map(|e| {
-                    let mut r = row(&e);
-                    r.insert("superseded_by".into(), json!(e.superseded_by));
-                    r
-                })
-            })
+            .query_map([], |r| {
+                let e = row_to_entry(r)?;
+                let conflicts: Option<String> = r.get("conflicts")?;
+                let mut r = row(&e);
+                r.insert("superseded_by".into(), json!(e.superseded_by));
+                if let Some(c) = conflicts {
+                    r.insert(
+                        "conflicts".into(),
+                        serde_json::from_str(&c).unwrap_or_default(),
+                    );
+                }
+                Ok(r)
+            })?
             .filter(|r| {
                 r.as_ref().map_or(true, |r| {
                     let belongs = belongs_to(r);

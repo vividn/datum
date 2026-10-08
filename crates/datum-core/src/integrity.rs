@@ -6,16 +6,12 @@
 //! `block`s — both entries land in the `entries` table and a pending row
 //! is filed here for later review.
 //!
-//! Most rows here are *local* findings, but this is also where
-//! cross-device sync conflicts live — there is no separate table for
-//! them. `lww_overwrite` and `identity_collision` are filed by the sync
-//! apply with `detected_by = sync_pull` and triaged by `datum conflicts`
-//! (an `identity_collision` by `db restore --merge` too, `local_validator`,
-//! da-0v1zt); a merge that cannot give one identity to both rows keeps both and
-//! marks the loser with `superseded_by` on `entries` (da-uxgv) instead of
-//! deleting it. `schema.sql` draws that column apart from `deleted_at`:
-//! `deleted_at` is *the user deleted this*, `superseded_by` is *a sync
-//! merge set this aside*.
+//! These are each copy's *local* findings. Cross-device sync conflicts are
+//! not here: the sync fold derives them from the ops into the entry's own
+//! `conflicts` column, so every copy holding the same ops agrees on them
+//! (da-05rkv). Two rows claiming one identity are both kept, the loser
+//! marked with `superseded_by` on `entries` (da-uxgv), and their clash shows
+//! in the survivor's `conflicts`.
 //!
 //! Detection runs post-insert (see [`detect_for_entry`]) and the queue
 //! is reported by `datum check`. Warnings clear naturally when the user
@@ -41,19 +37,7 @@
 //! - `resolution`: NULL while pending; filled on resolve (auto or manual).
 //! - `detected_by`: `local_validator` | `sync_pull`.
 //! - `kind`: `double_open` | `orphan_end` | `overlap`
-//!   | `same_state_repeat` | `last_state_mismatch` | `lww_overwrite`
-//!   | `identity_collision` | `sync_conflict`.
-//!   `lww_overwrite` rows are filed by the sync-apply path when an
-//!   incoming row wins last-write-wins over an existing local row;
-//!   `local_entry` is the overwritten edit, `remote_entry` the winner.
-//!   `identity_collision` names two distinct rows that claimed one
-//!   identity; `local_entry` is the one now carrying `superseded_by`,
-//!   `remote_entry` the one that kept it.
-//!   `sync_conflict` names two ops from different copies that set one key
-//!   of one entry without either having seen the other (da-k329q);
-//!   `local_entry` is the entry as the losing op would have it,
-//!   `remote_entry` as it stands, and each carries its op's line under
-//!   `extra_metadata.sync_op`.
+//!   | `same_state_repeat` | `last_state_mismatch` | `sync_unauthorised`.
 
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -111,36 +95,6 @@ pub enum IntegrityKind {
     /// An entry carried an explicit `--last-state=<v>` assertion whose
     /// normalized value differs from the state computed from history (S6).
     LastStateMismatch,
-    /// A last-write-wins sync merge overwrote a local edit: an incoming
-    /// remote row with a newer `modify_time` replaced the existing local
-    /// row for the same slug. `local_entry` is the overwritten local edit,
-    /// `remote_entry` the winning remote edit. The loser is also preserved
-    /// in `entry_history` as `sync_merge`; this row surfaces the overwrite
-    /// to the user (C4e) instead of leaving it silent. Only ever filed with
-    /// `detected_by = sync_pull` (da-t96a).
-    LwwOverwrite,
-    /// Two *distinct* entries (different `hid`) claim one identity the
-    /// `entries` table can only give to one row: the same `slug`, or the
-    /// same live *state-bearing* `(field, occur_time)` — two stateless
-    /// points at one instant are two events, not one contested identity, and
-    /// never file this (da-2fkr). Since da-zlug the sync apply merges
-    /// on `hid`, so these are genuinely two rows rather than two versions
-    /// of one — both are kept, the deterministic loser is *superseded*
-    /// (`superseded_by` = the winner's hid, da-uxgv), and this row names the
-    /// pair. `local_entry` is the superseded loser, `remote_entry` the row
-    /// that kept the identity. Filed with `detected_by = sync_pull` by a
-    /// sync apply, and `local_validator` by a `db restore --merge`, which
-    /// merges the backup's entry into the live one and writes no second row
-    /// (da-0v1zt).
-    IdentityCollision,
-    /// Two ops from different copies set one key of one entry, neither
-    /// having seen the other (Easy Sync, da-k329q). The op with the later
-    /// HLC won and is applied; `local_entry` is the entry as the loser would
-    /// have left it, `remote_entry` as it stands. A delete and a concurrent
-    /// edit file one too: the delete stands and the edit is the loser. Each
-    /// side's `extra_metadata.sync_op` holds its op (`endpoint/seq`, `hlc`)
-    /// and the command line that made it. Only ever `detected_by = sync_pull`.
-    SyncConflict,
     /// An op refused because its endpoint is not an admitted member of the
     /// sync chain, or made it after its revoke (da-odwc7). Filed once per
     /// endpoint while pending: `local_entry` is the entry as the op would
@@ -157,9 +111,6 @@ impl IntegrityKind {
             IntegrityKind::Overlap => "overlap",
             IntegrityKind::SameStateRepeat => "same_state_repeat",
             IntegrityKind::LastStateMismatch => "last_state_mismatch",
-            IntegrityKind::LwwOverwrite => "lww_overwrite",
-            IntegrityKind::IdentityCollision => "identity_collision",
-            IntegrityKind::SyncConflict => "sync_conflict",
             IntegrityKind::SyncUnauthorised => "sync_unauthorised",
         }
     }
@@ -180,9 +131,6 @@ impl std::str::FromStr for IntegrityKind {
             "overlap" => Ok(IntegrityKind::Overlap),
             "same_state_repeat" => Ok(IntegrityKind::SameStateRepeat),
             "last_state_mismatch" => Ok(IntegrityKind::LastStateMismatch),
-            "lww_overwrite" => Ok(IntegrityKind::LwwOverwrite),
-            "identity_collision" => Ok(IntegrityKind::IdentityCollision),
-            "sync_conflict" => Ok(IntegrityKind::SyncConflict),
             "sync_unauthorised" => Ok(IntegrityKind::SyncUnauthorised),
             other => Err(format!("unknown kind: '{other}'")),
         }
@@ -735,74 +683,6 @@ fn file_warning(
     })
 }
 
-/// File an [`IntegrityKind::LwwOverwrite`] warning: an incoming sync row
-/// (`winner`, newer `modify_time`) replaced an existing local edit
-/// (`loser`) under last-write-wins. `local_entry` becomes the overwritten
-/// local edit (so a later `take_local` resolution can restore it) and
-/// `remote_entry` the winning remote edit. Always tagged `sync_pull` — LWW
-/// overwrites only occur on apply. The loser is also snapshotted to
-/// `entry_history` as `sync_merge` by the apply path; this row is the
-/// user-facing counterpart so the overwrite is surfaced, not silent
-/// (da-t96a). Call from inside the apply transaction so the warning lands
-/// atomically with the overwrite.
-pub fn file_lww_overwrite(
-    conn: &Connection,
-    loser: &Entry,
-    winner: &Entry,
-) -> Result<IntegrityWarning> {
-    file_warning(
-        conn,
-        loser,
-        Some(winner),
-        DetectedBy::SyncPull,
-        IntegrityKind::LwwOverwrite,
-    )
-}
-
-/// File an [`IntegrityKind::IdentityCollision`] warning: two distinct
-/// entries claimed one `slug` (or one live state-bearing
-/// `(field, occur_time)`, da-2fkr) during a sync apply or a `db restore
-/// --merge`, which `by` names (da-0v1zt). `superseded` is the deterministic loser as it now stands —
-/// same content, same derived slug, `superseded_by` pointing at the winner
-/// — and `kept` the row that holds the contested identity. Both rows
-/// survive. Under one slug the entry shown is the two merged, and
-/// `superseded`'s `extra_metadata.merge` names each key they gave different
-/// values, with the value the merge took and the one it took it over
-/// (da-04glw); this row is what surfaces it (da-zlug; da-uxgv replaced
-/// parking with the pointer). Call from inside the apply transaction so the
-/// warning lands atomically with the supersession.
-pub fn file_identity_collision(
-    conn: &Connection,
-    superseded: &Entry,
-    kept: &Entry,
-    by: DetectedBy,
-) -> Result<IntegrityWarning> {
-    file_warning(
-        conn,
-        superseded,
-        Some(kept),
-        by,
-        IntegrityKind::IdentityCollision,
-    )
-}
-
-/// File an [`IntegrityKind::SyncConflict`] warning: `loser` is the entry as
-/// the losing op would have left it, `winner` as the merge left it. Call
-/// from inside the apply transaction.
-pub fn file_sync_conflict(
-    conn: &Connection,
-    loser: &Entry,
-    winner: &Entry,
-) -> Result<IntegrityWarning> {
-    file_warning(
-        conn,
-        loser,
-        Some(winner),
-        DetectedBy::SyncPull,
-        IntegrityKind::SyncConflict,
-    )
-}
-
 /// File an [`IntegrityKind::SyncUnauthorised`] warning for `refused`, the
 /// entry as a refused op would have left it.
 pub fn file_sync_unauthorised(conn: &Connection, refused: &Entry) -> Result<IntegrityWarning> {
@@ -841,21 +721,9 @@ pub fn list(conn: &Connection, filter: &ListFilter) -> Result<Vec<IntegrityWarni
     // otherwise `datum check` keeps reporting (e.g.) a double-open after the
     // offending entry was deleted. Resolution by id still works: it goes
     // through `get_by_hid_or_id`, which is unfiltered.
-    //
-    // `identity_collision` is exempt (da-zlug, and still exempt after
-    // da-uxgv for a sharper reason): the pair it names *shares one slug*,
-    // which is the whole conflict, so this slug-keyed suppression cannot
-    // tell which side of the pair was tombstoned. Deleting the row that
-    // *won* would otherwise silence the warning about the row that is still
-    // sitting superseded behind it — hiding a conflict the user never
-    // resolved. `sync_conflict` likewise: a delete against a concurrent edit
-    // is filed ON the tombstone, and the deletion is the conflict (da-k329q).
-    clauses.push(format!(
-        "(kind IN ('{}', '{}') OR \
-          entry_slug NOT IN (SELECT slug FROM entries WHERE deleted_at IS NOT NULL))",
-        IntegrityKind::IdentityCollision.as_str(),
-        IntegrityKind::SyncConflict.as_str(),
-    ));
+    clauses.push(
+        "entry_slug NOT IN (SELECT slug FROM entries WHERE deleted_at IS NOT NULL)".to_string(),
+    );
     if let Some(kind) = filter.kind {
         clauses.push(format!("kind = ?{}", binds.len() + 1));
         binds.push(kind.as_str().to_string());

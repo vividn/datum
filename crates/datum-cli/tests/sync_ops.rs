@@ -97,6 +97,17 @@ impl Copy {
         serde_json::from_str(&self.query("SELECT data FROM entries WHERE hid = ?1", hid)).unwrap()
     }
 
+    /// Entry `hid`'s `conflicts` column (da-05rkv), `Null` when it has none.
+    fn conflicts(&self, hid: &str) -> Value {
+        let c: Option<String> = rusqlite::Connection::open(self.db())
+            .unwrap()
+            .query_row("SELECT conflicts FROM entries WHERE hid = ?1", [hid], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        c.map_or(Value::Null, |c| serde_json::from_str(&c).unwrap())
+    }
+
     fn deleted(&self, hid: &str) -> bool {
         self.query(
             "SELECT deleted_at IS NOT NULL FROM entries WHERE hid = ?1",
@@ -291,6 +302,20 @@ fn concurrent_edits_of_different_keys_both_land() {
         (Some(3), Some("big"))
     );
     assert!(!a.ok(&["check"]).contains("sync_conflict"));
+    assert_eq!(
+        (a.conflicts(&hid), b.conflicts(&hid)),
+        (Value::Null, Value::Null)
+    );
+}
+
+/// The values of each side of `key` in `conflicts`, as they are listed.
+fn sides(conflicts: &Value, key: &str) -> Vec<Value> {
+    conflicts[key]
+        .as_array()
+        .unwrap_or_else(|| panic!("no conflict on {key}: {conflicts}"))
+        .iter()
+        .map(|s| s["value"].clone())
+        .collect()
 }
 
 #[test]
@@ -322,18 +347,131 @@ fn concurrent_edits_of_one_key_go_to_the_later_and_file_a_conflict() {
         4
     };
     assert_eq!(a.data(&hid)["cups"], won);
+    // Both copies hold the one conflict, byte for byte (da-05rkv).
+    assert_eq!(a.conflicts(&hid), b.conflicts(&hid));
+    let mut values = sides(&a.conflicts(&hid), "data.cups");
+    values.sort_by_key(|v| v.as_i64());
+    assert_eq!(values, [4, 5]);
+    for side in a.conflicts(&hid)["data.cups"].as_array().unwrap() {
+        assert!(side["op"].as_str().unwrap().contains('/'), "{side}");
+        assert!(
+            side["hlc"].is_string() && side["device"].is_string(),
+            "{side}"
+        );
+    }
     for copy in [&a, &b] {
         let check = copy.run(&["check"], "");
         let out = String::from_utf8_lossy(&check.stdout);
-        assert!(out.contains("integrity_sync_conflict"), "{out}");
-        assert!(
-            out.contains(&format!(
-                "`update {hid} cups=4` lost to `update {hid} cups=5`"
-            )),
-            "{out}"
-        );
+        assert!(out.contains("sync_conflict"), "{out}");
         let conflicts = copy.ok(&["conflicts"]);
-        assert!(conflicts.contains("sync_conflict"), "{conflicts}");
+        assert!(conflicts.contains("data.cups"), "{conflicts}");
+    }
+}
+
+#[test]
+fn a_resolution_settles_the_conflict_on_every_copy() {
+    for pick in [None, Some("cups=7")] {
+        let (a, b) = (Copy::new(), Copy::new());
+        a.ok(&["occur", "coffee", "cups=2"]);
+        a.send(&b);
+        let hid = a.hid("coffee");
+        a.ok(&["update", &hid, "cups=4"]);
+        b.ok(&["update", &hid, "cups=5"]);
+        converged(&a, &b);
+        let shown = a.data(&hid)["cups"].clone();
+        // Keeping the value shown is an edit too: one op, setting it.
+        let mut resolve = vec!["conflicts", "resolve", &hid];
+        resolve.extend(pick);
+        let op = one_op(&b, &resolve);
+        assert!(op["effect"]["set"]["data.cups"].is_number(), "{op}");
+        converged(&a, &b);
+        for copy in [&a, &b] {
+            assert_eq!(copy.conflicts(&hid), Value::Null, "{pick:?}");
+            let want = if pick.is_some() {
+                7.into()
+            } else {
+                shown.clone()
+            };
+            assert_eq!(copy.data(&hid)["cups"], want, "{pick:?}");
+            assert!(copy.ok(&["conflicts"]).contains("No sync conflicts"));
+        }
+    }
+}
+
+#[test]
+fn an_edit_concurrent_with_the_resolution_is_a_new_conflict_on_both() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "cups=2"]);
+    a.send(&b);
+    let hid = a.hid("coffee");
+    a.ok(&["update", &hid, "cups=4"]);
+    b.ok(&["update", &hid, "cups=5"]);
+    converged(&a, &b);
+    a.ok(&["conflicts", "resolve", &hid, "cups=6"]);
+    b.ok(&["update", &hid, "cups=8"]);
+    converged(&a, &b);
+    assert_eq!(a.conflicts(&hid), b.conflicts(&hid));
+    let mut values = sides(&a.conflicts(&hid), "data.cups");
+    values.sort_by_key(|v| v.as_i64());
+    assert_eq!(values, [6, 8], "the settled sides stay settled");
+}
+
+/// A database from before da-05rkv: its conflicts were rows of its own
+/// `integrity_warnings`. Upgraded, they are its entries' `conflicts`, the
+/// same as a copy that never had the rows derives, and the rows are gone.
+#[test]
+fn the_upgrade_moves_filed_conflicts_into_the_entries() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "cups=2"]);
+    a.send(&b);
+    let hid = a.hid("coffee");
+    a.ok(&["update", &hid, "cups=4"]);
+    b.ok(&["update", &hid, "cups=5"]);
+    converged(&a, &b);
+    let want = b.conflicts(&hid);
+    assert!(want.is_object(), "{want}");
+    a.sql(
+        "DROP INDEX entries_conflicts;
+         ALTER TABLE entries DROP COLUMN conflicts;
+         INSERT INTO integrity_warnings
+             (id, hid, entry_slug, local_entry, detected_at, detected_by, kind)
+         VALUES ('w1', 'w1', 'coffee', '{}', '2026-10-01T00:00:00Z', 'sync_pull', 'sync_conflict'),
+                ('w2', 'w2', 'coffee', '{}', '2026-10-01T00:00:00Z', 'sync_pull', 'lww_overwrite'),
+                ('w3', 'w3', 'coffee', '{}', '2026-10-01T00:00:00Z', 'sync_pull', 'identity_collision');
+         UPDATE _meta SET value = '57' WHERE key = 'schema_version';",
+    );
+    a.ok(&["conflicts"]);
+    assert_eq!(a.conflicts(&hid), want);
+    let filed = a.query(
+        "SELECT COUNT(*) FROM integrity_warnings WHERE kind != ?1",
+        "sync_unauthorised",
+    );
+    assert_eq!(filed, "0");
+    assert_eq!(a.hash(), b.hash());
+}
+
+/// Three copies: one has the two clashing ops in one batch, one gets them
+/// one at a time, and the two that made them each hear of the other's.
+#[test]
+fn a_conflict_reads_the_same_however_its_ops_arrived() {
+    let (a, b, c, d) = (Copy::new(), Copy::new(), Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "cups=2"]);
+    for x in [&b, &c, &d] {
+        a.send(x);
+    }
+    let hid = a.hid("coffee");
+    a.ok(&["update", &hid, "cups=4"]);
+    b.ok(&["update", &hid, "cups=5"]);
+    a.send(&d);
+    b.send(&d);
+    a.send(&b);
+    b.send(&c);
+    b.send(&a);
+    let want = a.conflicts(&hid);
+    assert!(want.is_object(), "{want}");
+    for x in [&b, &c, &d] {
+        assert_eq!(x.conflicts(&hid), want);
+        assert_eq!(x.hash(), a.hash());
     }
 }
 
@@ -346,14 +484,47 @@ fn a_delete_stands_against_a_concurrent_edit() {
     b.ok(&["update", &hid, "cups=9"]);
     a.ok(&["delete", &hid]);
     converged(&a, &b);
+    assert_eq!(a.conflicts(&hid), b.conflicts(&hid));
+    assert_eq!(sides(&a.conflicts(&hid), "deleted").len(), 2);
     for copy in [&a, &b] {
         assert!(copy.deleted(&hid), "the entry stays deleted");
         let conflicts = copy.ok(&["conflicts"]);
-        assert!(conflicts.contains("sync_conflict"), "{conflicts}");
-        assert!(
-            conflicts.contains(&format!("by `update {hid} cups=9`")),
-            "{conflicts}"
-        );
+        assert!(conflicts.contains("deleted"), "{conflicts}");
+    }
+    // Resolving brings it back, on both.
+    b.ok(&["conflicts", "resolve", &hid, "deleted=false"]);
+    converged(&a, &b);
+    for copy in [&a, &b] {
+        assert!(!copy.deleted(&hid));
+        assert_eq!(copy.data(&hid)["cups"], 9);
+        assert_eq!(copy.conflicts(&hid), Value::Null);
+    }
+}
+
+/// A delete against an undelete that did not see it: the later clock's
+/// stands — here the undelete, so the entry is live — and both copies name
+/// the two sides until one that saw both decides.
+#[test]
+fn a_delete_against_an_undelete_shows_on_both_whichever_stands() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "cups=2"]);
+    a.send(&b);
+    let hid = a.hid("coffee");
+    a.ok(&["delete", &hid]);
+    b.ok(&["delete", &hid]);
+    b.ok(&["undo", &hid]);
+    converged(&a, &b);
+    assert_eq!(a.conflicts(&hid), b.conflicts(&hid));
+    assert_eq!(sides(&a.conflicts(&hid), "deleted"), [true, false]);
+    for copy in [&a, &b] {
+        assert!(!copy.deleted(&hid), "the later clock's, the undelete");
+        assert!(!copy.ok(&["conflicts"]).contains("(deleted)"));
+    }
+    a.ok(&["conflicts", "resolve", &hid, "deleted=true"]);
+    converged(&a, &b);
+    for copy in [&a, &b] {
+        assert!(copy.deleted(&hid));
+        assert_eq!(copy.conflicts(&hid), Value::Null);
     }
 }
 
@@ -388,17 +559,20 @@ fn two_entries_with_one_id_merge_into_one_and_the_later_created_wins_a_clash() {
         assert_eq!(data["a"], 1, "{data}");
         assert_eq!(data["b"], 2, "{data}");
         assert_eq!(data["note"], "second", "{data}");
-        let conflicts = copy.ok(&["conflicts", "list"]);
+        // Both copies declared `coffee`'s spec: one event twice, no conflict.
         assert_eq!(
-            conflicts.matches("identity_collision").count(),
-            1,
-            "both copies declared `coffee`'s spec: one event twice, no warning\n{conflicts}"
+            copy.query(
+                "SELECT COUNT(*) FROM entries WHERE conflicts IS NOT NULL AND ?1 = ?1",
+                ""
+            ),
+            "1"
         );
-        assert!(
-            conflicts.contains(r#"data.note: "second" over "first""#),
-            "{conflicts}"
+        assert_eq!(
+            sides(&copy.conflicts(&first), "data.note"),
+            ["first", "second"]
         );
     }
+    assert_eq!(x.conflicts(&first), y.conflicts(&first));
     // The merge is settled: syncing again rewrites nothing.
     let history = |c: &Copy| c.query("SELECT COUNT(*) FROM entry_history WHERE ?1 != ''", "x");
     let before = (history(&x), history(&y));
@@ -434,11 +608,41 @@ fn a_survivor_older_than_its_ops_names_the_clash_too() {
         let data = copy.data(&first);
         assert_eq!((&data["a"], &data["b"]), (&1.into(), &2.into()), "{data}");
         assert_eq!(data["note"], "second", "{data}");
-        let conflicts = copy.ok(&["conflicts", "list"]);
-        assert!(
-            conflicts.contains(r#"data.note: "second" over "first""#),
-            "{conflicts}"
+        assert_eq!(
+            sides(&copy.conflicts(&first), "data.note"),
+            ["first", "second"]
         );
+    }
+}
+
+/// `update` naming the row merged in, after the merge, edits the entry it
+/// shows: it settles the clash, from either copy.
+#[test]
+fn an_update_naming_the_merged_in_row_settles_the_clash() {
+    for by_its_maker in [true, false] {
+        let (x, y) = (Copy::new(), Copy::new());
+        let (first, second) = one_id_twice(&x, &y);
+        converged(&x, &y);
+        let editor = if by_its_maker { &y } else { &x };
+        editor.ok(&["update", &second, "note=third"]);
+        converged(&x, &y);
+        for copy in [&x, &y] {
+            assert_eq!(copy.conflicts(&first), Value::Null, "{by_its_maker}");
+            assert_eq!(copy.data(&first)["note"], "third");
+        }
+    }
+}
+
+#[test]
+fn an_edit_of_the_merged_entry_settles_the_clash_of_its_rows() {
+    let (x, y) = (Copy::new(), Copy::new());
+    let (first, _) = one_id_twice(&x, &y);
+    converged(&x, &y);
+    x.ok(&["update", &first, "note=both"]);
+    converged(&x, &y);
+    for copy in [&x, &y] {
+        assert_eq!(copy.conflicts(&first), Value::Null);
+        assert_eq!(copy.data(&first)["note"], "both");
     }
 }
 
@@ -544,7 +748,7 @@ fn one_event_logged_on_two_copies_is_one_entry_and_no_conflict() {
     for copy in [&x, &y] {
         assert_eq!(live(copy, "coffee"), 1);
         let conflicts = copy.ok(&["conflicts", "list"]);
-        assert!(!conflicts.contains("identity_collision"), "{conflicts}");
+        assert!(conflicts.contains("No sync conflicts"), "{conflicts}");
     }
 }
 
@@ -570,10 +774,11 @@ fn two_states_at_one_instant_under_two_ids_keep_the_earlier_and_merge_nothing() 
         assert_eq!(live(copy, "mood"), 1);
         let state = copy.query("SELECT state FROM entries WHERE hid = ?1", &earlier);
         assert_eq!(state, r#""happy""#);
-        let conflicts = copy.ok(&["conflicts", "list"]);
-        assert!(conflicts.contains("identity_collision"), "{conflicts}");
-        assert!(!conflicts.contains("    merged "), "{conflicts}");
+        // The row set aside shows on the one kept: its state, not merged.
+        assert_eq!(sides(&copy.conflicts(&earlier), "state"), ["happy", "sad"]);
+        assert_eq!(copy.data(&earlier)["n"], 1);
     }
+    assert_eq!(x.conflicts(&earlier), y.conflicts(&earlier));
 }
 
 #[test]
@@ -720,7 +925,7 @@ fn a_baseline_signed_later_does_not_undo_an_edit() {
         3,
         "the edit stands on the copy it never touched"
     );
-    assert!(!a.ok(&["conflicts"]).contains("sync_conflict"));
+    assert!(a.ok(&["conflicts"]).contains("No sync conflicts"));
 }
 
 #[test]
@@ -807,8 +1012,9 @@ fn copies_that_diverged_before_ops_keep_the_delete() {
     converged(&a, &b);
     for c in [&a, &b] {
         assert!(c.deleted(&hid), "the tombstone stands");
-        assert!(c.ok(&["conflicts"]).contains("sync_conflict"));
+        assert_eq!(sides(&c.conflicts(&hid), "deleted").len(), 2);
     }
+    assert_eq!(a.conflicts(&hid), b.conflicts(&hid));
 }
 
 /// Before merging into a row with no ops, each copy signs a baseline for it:
@@ -961,25 +1167,18 @@ fn an_edit_of_a_keep_both_row_rewrites_that_row_alone_on_both_copies() {
 
 #[test]
 fn resolving_a_keep_both_pair_leaves_the_copies_converged() {
-    for side in ["--take-local", "--take-remote"] {
-        let (a, b) = (Copy::new(), Copy::new());
-        let (_, gone) = keep_both_pair(&a, &b);
-        converged(&a, &b);
-        let before = b.data(&gone);
-        let warning = b.query(
-            "SELECT id FROM integrity_warnings WHERE kind = ?1",
-            "identity_collision",
-        );
-        b.ok(&["conflicts", "resolve", &warning, side]);
-        converged(&a, &b);
-        converged(&a, &b);
-        for copy in [&a, &b] {
-            assert_eq!(
-                copy.data(&gone),
-                before,
-                "{side} rewrote the superseded row"
-            );
-        }
+    let (a, b) = (Copy::new(), Copy::new());
+    let (kept, gone) = keep_both_pair(&a, &b);
+    converged(&a, &b);
+    let before = b.data(&gone);
+    assert_eq!(sides(&b.conflicts(&kept), "data.note").len(), 2);
+    b.ok(&["conflicts", "resolve", &kept, "note=from-b"]);
+    converged(&a, &b);
+    converged(&a, &b);
+    for copy in [&a, &b] {
+        assert_eq!(copy.data(&gone), before, "the superseded row was rewritten");
+        assert_eq!(copy.data(&kept)["note"], "from-b");
+        assert_eq!(copy.conflicts(&kept), Value::Null);
     }
 }
 

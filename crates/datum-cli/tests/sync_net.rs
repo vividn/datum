@@ -712,8 +712,30 @@ fn concurrent_edits_across_the_link_file_a_conflict_on_both_sides() {
     assert_eq!(a.hash(), b.hash());
     for copy in [&a, &b] {
         let conflicts = copy.ok(&["conflicts"]);
-        assert!(conflicts.contains("sync_conflict"), "{conflicts}");
+        assert!(conflicts.contains("data.cups"), "{conflicts}");
     }
+    // Each side is named by its device's label in the chain, and renamed
+    // with it, on both copies (da-05rkv).
+    drop(_a_runs);
+    a.ok(&["sync", "chain", "rename", "alpha"]);
+    b.ok(&["sync", "chain", "rename", "beta"]);
+    let _a_runs = a.serve(&["sync", "run"]);
+    b.ok(&["sync"]);
+    let column = |c: &Copy| {
+        c.query(&format!(
+            "SELECT conflicts FROM entries WHERE hid = '{hid}'"
+        ))
+    };
+    assert_eq!(column(&a), column(&b));
+    let sides: serde_json::Value = serde_json::from_str(&column(&a)).unwrap();
+    let mut devices: Vec<&str> = sides["data.cups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["device"].as_str().unwrap())
+        .collect();
+    devices.sort();
+    assert_eq!(devices, ["alpha", "beta"]);
 }
 
 /// A copy behind a member's schema syncs on and warns to upgrade (da-3zqyv):

@@ -137,6 +137,11 @@ CREATE TABLE IF NOT EXISTS entries (
     modify_time_ms INTEGER GENERATED ALWAYS AS
         (CAST(unixepoch(modify_time, 'subsec') * 1000 AS INTEGER)) VIRTUAL,
 
+    -- da-05rkv: what the entry's ops leave contested (JSON, per key each
+    -- side's value, device, HLC and op), derived by the sync fold so every
+    -- copy holding the same ops holds the same; NULL when nothing is.
+    conflicts       TEXT,
+
     -- `following_state` is only meaningful when `dur` is set. The
     -- parser-level rejection in da-5ns.3 keeps malformed inserts from
     -- ever reaching this layer; the CHECK is a defence-in-depth gate
@@ -194,6 +199,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS entries_field_occurtime
 CREATE INDEX IF NOT EXISTS entries_superseded_by
     ON entries (superseded_by)
     WHERE superseded_by IS NOT NULL;
+
+-- da-05rkv: the entries with conflicts — none in steady state, so listing
+-- them is one read of an index that is empty.
+CREATE INDEX IF NOT EXISTS entries_conflicts
+    ON entries (hid)
+    WHERE conflicts IS NOT NULL;
 
 -- Field-scoped tail queries: most reads are "last N entries for field F" so
 -- a composite (field, occur_time DESC) index lets them avoid a sort.

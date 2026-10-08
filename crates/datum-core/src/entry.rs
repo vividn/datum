@@ -178,6 +178,12 @@ pub struct Entry {
     #[serde(skip)]
     pub superseded_by: Option<Hid>,
 
+    /// What the entry's ops leave contested (da-05rkv): per key, each side's
+    /// value, device, HLC and op. Derived by the sync fold on every copy, as
+    /// `superseded_by` is, so it is never in an op and never shipped.
+    #[serde(skip)]
+    pub conflicts: Option<JsonValue>,
+
     // --- Intent capture ---
     /// Literal argv of the command that produced this entry. `None` for
     /// entries whose source path didn't carry an argv at all — e.g.
@@ -287,6 +293,7 @@ impl Entry {
             field_structure: None,
             deleted_at: None,
             superseded_by: None,
+            conflicts: None,
             raw_input: None,
             alias_chain: None,
             parser_version: CURRENT_PARSER_VERSION,

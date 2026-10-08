@@ -209,3 +209,44 @@ pub(super) fn down_57_to_56_sync_peer_version(conn: &Connection) -> Result<()> {
     )?;
     Ok(())
 }
+
+/// da-05rkv: `entries.conflicts`, what an entry's ops leave contested,
+/// derived by the sync fold, replaces the conflict kinds each copy filed in
+/// its own `integrity_warnings`: those rows go, and every entry that could
+/// have conflicts — ops from more than one copy, or rows superseded by it —
+/// shows them in the column.
+pub(super) fn m57_to_58_conflicts(conn: &Connection) -> Result<()> {
+    if !table_exists(conn, "entries")? {
+        return Ok(());
+    }
+    // A database stamped back below v58 with the column still on it — a
+    // version reset, not a down — upgrades again all the same.
+    if !has_column(conn, "entries", "conflicts")? {
+        conn.execute_batch("ALTER TABLE entries ADD COLUMN conflicts TEXT;")?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS entries_conflicts ON entries (hid)
+             WHERE conflicts IS NOT NULL;",
+    )?;
+    if table_exists(conn, "integrity_warnings")? {
+        conn.execute(
+            "DELETE FROM integrity_warnings
+              WHERE kind IN ('sync_conflict', 'lww_overwrite', 'identity_collision')",
+            [],
+        )?;
+    }
+    if table_exists(conn, "ops")? {
+        crate::db::derive_all_conflicts(conn)?;
+    }
+    Ok(())
+}
+
+/// Reverse v57→v58. The column is derived, and goes; the warnings it
+/// replaced do not come back.
+pub(super) fn down_58_to_57_conflicts(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS entries_conflicts;
+         ALTER TABLE entries DROP COLUMN conflicts;",
+    )?;
+    Ok(())
+}

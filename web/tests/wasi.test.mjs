@@ -55,7 +55,8 @@ describe('the wasi CLI', () => {
 			assert.equal(made.code, 0, made.stderr);
 			const listed = await typed('conflicts');
 			assert.equal(listed.code, 0, listed.stderr);
-			assert.equal(plain(listed.stdout).match(/sync_conflict/g)?.length, 4, listed.stdout);
+			// One header line an entry with conflicts (da-05rkv).
+			assert.equal(plain(listed.stdout).match(/^\S+ {2}debug:/gm)?.length, 4, listed.stdout);
 		});
 	});
 

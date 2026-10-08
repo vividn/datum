@@ -342,9 +342,11 @@ change to an entry is an op signed by this copy's endpoint key (which is
 also its iroh identity), and two copies that hold the same ops hold the
 same entries. `datum sync help` lists the whole tree.
 
-Per key the op with the later hybrid logical clock wins; concurrent edits
-of one key, or a delete against a concurrent edit, file a `sync_conflict`
-that `datum check` and `datum conflicts` show.
+Per key the op with the later hybrid logical clock wins. Concurrent edits
+of one key, or a delete against a concurrent edit, leave the entry's
+`conflicts` naming each side — the same on every copy that holds both — which
+`datum check` and `datum conflicts` show until an edit that saw both settles
+it (`datum conflicts resolve`).
 
 A copy of the file at another path mints its own key the first time it
 signs, so `cp a.db b.db` gives two copies that sync. Two copies found

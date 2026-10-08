@@ -761,7 +761,7 @@ fn apply_slug_fixes(db: &Db, fixes: &[SlugFix], delim: &str) -> Result<FixReport
 /// the warning vanishes on the next `datum check` — there's no
 /// stored row left behind.
 fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
-    use datum_core::integrity::{DetectedBy, IntegrityKind, IntegrityWarning, ListFilter};
+    use datum_core::integrity::{IntegrityKind, IntegrityWarning, ListFilter};
     let pending = db.list_integrity_warnings(&ListFilter {
         kind: None,
         pending: Some(true),
@@ -771,8 +771,6 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
     // group so per-entry render output matches the queue order. SameStateRepeat
     // is intentionally skipped — it's computed live below (da-acft); any rows
     // that slipped past the cleanup migration are ignored here.
-    // Keyed by detector too: an `identity_collision` from a sync and one
-    // from `db restore --merge` read differently (da-vrqih).
     let mut by_kind: std::collections::BTreeMap<
         (&'static str, &'static str),
         Vec<&IntegrityWarning>,
@@ -815,45 +813,6 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
                 "{count} entr{y} carried a --last-state assertion that disagrees with history",
                 y = if count == 1 { "y" } else { "ies" },
             ),
-            IntegrityKind::LwwOverwrite => format!(
-                "{count} local edit{s} {were} overwritten by a newer remote edit during sync. \
-                 Both versions are in the conflict row — `datum conflicts` prints them and \
-                 takes the choice.",
-                s = if count == 1 { "" } else { "s" },
-                were = if count == 1 { "was" } else { "were" },
-            ),
-            IntegrityKind::IdentityCollision => format!(
-                "{count} entr{y} {from} collided with a local entry on slug \
-                 or on (field, occur_time). Both were kept — the loser's slug carries its \
-                 hid, and it is tombstoned when the two could not both stay live. \
-                 `datum conflicts` prints the pair and takes the choice.",
-                y = if count == 1 { "y" } else { "ies" },
-                from = match first.detected_by {
-                    DetectedBy::SyncPull => "from another device",
-                    DetectedBy::LocalValidator => "from a backup merged by `db restore --merge`",
-                },
-            ),
-            IntegrityKind::SyncConflict => {
-                let raw = |e: &datum_core::entry::Entry| {
-                    e.extra_metadata
-                        .as_ref()
-                        .and_then(|m| m["sync_op"]["raw"].as_str().map(str::to_string))
-                        .unwrap_or_else(|| "?".into())
-                };
-                let pairs: Vec<String> = group
-                    .iter()
-                    .map(|w| {
-                        let won = w.remote_entry.as_ref().map(raw).unwrap_or_default();
-                        format!("  {}: `{}` lost to `{won}`", w.entry_slug, raw(&w.local_entry))
-                    })
-                    .collect();
-                format!(
-                    "{count} edit{s} from different copies changed one entry concurrently; \
-                     the later one stands. `datum conflicts` prints both versions.\n{}",
-                    pairs.join("\n"),
-                    s = if count == 1 { "" } else { "s" },
-                )
-            }
             IntegrityKind::SyncUnauthorised => {
                 let lines: Vec<String> = group
                     .iter()
@@ -880,9 +839,6 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
             IntegrityKind::OrphanEnd => "integrity_orphan_end",
             IntegrityKind::Overlap => "integrity_overlap",
             IntegrityKind::LastStateMismatch => "integrity_last_state_mismatch",
-            IntegrityKind::LwwOverwrite => "integrity_lww_overwrite",
-            IntegrityKind::IdentityCollision => "integrity_identity_collision",
-            IntegrityKind::SyncConflict => "integrity_sync_conflict",
             IntegrityKind::SyncUnauthorised => "integrity_sync_unauthorised",
         };
         // da-mkes: collect one FlaggedEntry per warning. The state column
@@ -953,7 +909,49 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
     if let Some(issue) = collect_repeated_state_live(db)? {
         issues.push(issue);
     }
+    issues.extend(collect_sync_conflicts(db)?);
     Ok(issues)
+}
+
+/// da-05rkv: the entries whose ops leave a key contested — read off their
+/// `conflicts` column, which the sync fold keeps, so it is the same on every
+/// copy and goes when an edit that saw both sides arrives.
+fn collect_sync_conflicts(db: &Db) -> Result<Option<Issue>> {
+    let conflicted = db.sync_conflicts()?;
+    let Some(first) = conflicted.first() else {
+        return Ok(None);
+    };
+    let count = conflicted.len();
+    let keys = |e: &Entry| {
+        let c = e.conflicts.as_ref().and_then(JsonValue::as_object);
+        let keys: Vec<&str> = c.into_iter().flatten().map(|(k, _)| k.as_str()).collect();
+        keys.join(", ")
+    };
+    Ok(Some(Issue {
+        severity: Severity::Warning,
+        category: "sync_conflict",
+        message: format!(
+            "{count} entr{y} hold{s} values two copies set without seeing each other's; \
+             `datum conflicts` lists each side and resolves them.",
+            y = if count == 1 { "y" } else { "ies" },
+            s = if count == 1 { "s" } else { "" },
+        ),
+        count,
+        example: Some(IssueExample {
+            id: Some(first.short_uid()),
+            field: Some(first.field.clone()),
+            detail: Some(format!("contested: {}", keys(first))),
+        }),
+        entries: conflicted
+            .iter()
+            .map(|e| FlaggedEntry {
+                hid: e.short_uid(),
+                field: e.field.clone(),
+                state: keys(e),
+            })
+            .collect(),
+        rendered_block: render_flagged_block(db, &conflicted),
+    }))
 }
 
 /// da-f9jyv: state references that name no live entry — a `field:id`
