@@ -432,14 +432,13 @@ jobs:
         env:
           DATUM_TEST_CONCURRENCY: 3
           # Known flakes get ONE retry, logged as `RETRIED web/tests/<file>
-          # (<bead>): …`; no other file is ever retried (da-8bmqe). Taking a
-          # file off this list is part of its bead's acceptance:
-          #   bar.test.mjs — da-ehpe5 (da-d7ndh is fixed by #504)
-          #   layout-strip.test.mjs, layout-floors.test.mjs — da-i1ok
-          DATUM_TEST_RETRY: >-
-            tests/bar.test.mjs=da-ehpe5
-            tests/layout-strip.test.mjs=da-i1ok
-            tests/layout-floors.test.mjs=da-i1ok
+          # (<bead>): …`; no other file is ever retried (da-8bmqe). An entry
+          # is added only once a flake reddens a STAGING run, as one
+          # `tests/<file>=<bead>` line appended at the list's end (under `>-`),
+          # and taking it off is part of that bead's acceptance: a retry left
+          # behind a closed bead hides any regression in exactly that file
+          # (da-pzq4s emptied three, da-ehpe5 and da-i1ok's).
+          DATUM_TEST_RETRY: ""
 
       # A PR's verdict names the base it was reached on (da-kz73u): the forge's
       # own status says only pass or fail, at the head. Mirrors the job's
