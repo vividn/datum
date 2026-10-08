@@ -602,7 +602,13 @@ pub(crate) fn compute_occur_dot_colors(
     spec: Option<&FieldSpec>,
     ongoing_state: Option<&JsonValue>,
 ) -> (Rgb, Option<Rgb>) {
-    let fg = field_rgb(&row.field, spec);
+    // A moment's dot is its state's colour (da-22750); an occur's, with
+    // no state or `true`, the field's.
+    let fg = row
+        .state
+        .as_ref()
+        .and_then(|v| state_value_rgb(v, &row.field, spec))
+        .unwrap_or_else(|| field_rgb(&row.field, spec));
     let bg = match ongoing_state {
         // No prior state, or block was explicitly stopped → no bg.
         None | Some(JsonValue::Bool(false)) => None,

@@ -379,7 +379,13 @@ impl StateRow {
     ///
     /// da-zwct: the trailing edge is `occur` itself, so a completed block
     /// has already handed the field back by the instant it stores.
+    ///
+    /// A moment ([`StateRow::is_moment_state`]) hands the field back from
+    /// its own instant: it never decides what holds after it.
     pub fn hands_field_back(&self, at: DateTime<Utc>) -> bool {
+        if self.is_moment_state() {
+            return self.occur.is_some_and(|occur| at >= occur);
+        }
         if !crate::shape::hands_field_back(self.verb) || self.following_state.is_some() {
             return false;
         }
@@ -396,6 +402,13 @@ impl StateRow {
     /// transitions to TRACKED)» — [`resolve_effective`] passes over it.
     pub fn is_occur_dot(&self) -> bool {
         self.verb == Verb::Point && matches!(self.state, None | Some(Value::Bool(true)))
+    }
+
+    /// A moment: a point that names a state (dur MOMENT, or a zero one,
+    /// which vividn rules the same). vividn, 2026-10-08: the state before it
+    /// resumes — it does not switch the field (da-22750).
+    pub fn is_moment_state(&self) -> bool {
+        self.verb == Verb::Point && !self.is_occur_dot()
     }
 
     /// An occur-shaped row: an occur dot, or a row with no state at all.
@@ -488,7 +501,11 @@ pub fn resolve_effective<R: std::borrow::Borrow<StateRow>>(
             continue;
         }
         if r.hands_field_back(at) {
-            resumed_at = resumed_at.or_else(|| r.trailing_edge());
+            // A moment interrupted nothing, so the state it passes over
+            // holds from where it began.
+            if !r.is_moment_state() {
+                resumed_at = resumed_at.or_else(|| r.trailing_edge());
+            }
             continue;
         }
         let eff = Effective {
@@ -1377,6 +1394,46 @@ mod tests {
             rows.at(t("2026-04-01T09:00:00Z"), None),
             Some(json!("TRACKED"))
         );
+    }
+
+    /// da-22750: a moment (dur MOMENT, or zero) names a state for an
+    /// instant and switches nothing — the state before it holds on, from
+    /// where it began, and the field changes only at the next switch.
+    #[test]
+    fn a_moment_state_leaves_the_state_before_it() {
+        let sw = |s: &str, at: &str| row("mood", Verb::Switch, Some(json!(s)), at, None, None);
+        let moment = |s: &str, at: &str, dur: &str| {
+            let mut e = row("mood", Verb::Point, Some(json!(s)), at, None, None);
+            e.dur = Some(Dur::parse(dur).unwrap());
+            e
+        };
+        let happy = sw("happy", "2025-01-08T09:00:00Z");
+        let startled = moment("startled", "2025-01-08T11:00:00Z", "MOMENT");
+        let startled2 = moment("startled2", "2025-01-08T12:00:00Z", "PT0S");
+        let tired = sw("tired", "2025-01-08T15:00:00Z");
+        let rows = FieldStateRows::from_entries([&happy, &startled, &startled2, &tired]);
+        for at in ["11:00", "11:30", "12:00", "14:59"] {
+            let at = t(&format!("2025-01-08T{at}:00Z"));
+            assert_eq!(rows.at(at, None), Some(json!("happy")), "at {at}");
+        }
+        let changes: Vec<_> = rows
+            .changes()
+            .iter()
+            .map(|c| (c.at, c.state.clone()))
+            .collect();
+        assert_eq!(
+            changes,
+            [
+                (t("2025-01-08T09:00:00Z"), json!("happy")),
+                (t("2025-01-08T15:00:00Z"), json!("tired")),
+            ]
+        );
+        // `now`'s read: the newest row is the moment, the one it resumes
+        // began at 09:00.
+        let newest_first = [startled2.clone(), startled, happy].map(|e| StateRow::from_entry(&e));
+        let eff = resolve_effective(&newest_first, t("2025-01-08T13:00:00Z"));
+        assert_eq!(eff.state, json!("happy"));
+        assert_eq!(eff.since, Some(t("2025-01-08T09:00:00Z")));
     }
 
     /// vividn, 2026-09-29: an occur leaves a state alone, unless it is

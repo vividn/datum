@@ -100,16 +100,18 @@ fn updating_a_state_to_null_is_ignore() {
     assert_eq!(last_state(&db, "x"), Some(JsonValue::Null));
 }
 
+/// Switches: no `dur`. v2's `dur: null` is a moment, which moves no
+/// field's state (da-22750).
 #[test]
 fn a_v2_null_state_imports_as_ignored() {
     let db = fresh_db();
     let backup = json!({"backupTime": "2025-02-02T12:26:32.488Z", "docs": [
         {"_id": "mood:2020-03-01T09:00:00.000Z",
-         "data": {"field": "mood", "state": "happy", "dur": null,
+         "data": {"field": "mood", "state": "happy",
                   "occurTime": {"utc": "2020-03-01T09:00:00.000Z", "o": 0, "tz": "UTC"}},
          "meta": {"humanId": "m1", "createTime": {"utc": "2020-03-01T09:00:01.000Z", "o": 0, "tz": "UTC"}}},
         {"_id": "mood:2020-03-02T09:00:00.000Z",
-         "data": {"field": "mood", "state": null, "dur": null,
+         "data": {"field": "mood", "state": null,
                   "occurTime": {"utc": "2020-03-02T09:00:00.000Z", "o": 0, "tz": "UTC"}},
          "meta": {"humanId": "m2", "createTime": {"utc": "2020-03-02T09:00:01.000Z", "o": 0, "tz": "UTC"}}}
     ]});

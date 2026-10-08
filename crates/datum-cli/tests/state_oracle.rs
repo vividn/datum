@@ -26,6 +26,7 @@ impl Env {
             .env("DATUM_HOME", self.tmp.path())
             .env("DATUM_CONFIG_HOME", self.tmp.path())
             .env("DATUM_COLOR", "0")
+            .env("TZ", "UTC")
             .args(args)
             .output()
             .expect("spawn datum");
@@ -96,4 +97,63 @@ fn a_genuine_repeat_is_still_marked_and_flagged() {
     assert!(out.contains("!state2"), "{out}");
     let check = env.ok(&["check"]);
     assert!(check.contains("repeated_state"), "{check}");
+}
+
+/// da-22750, vividn's report: a moment (dur MOMENT, or zero) names a state
+/// for an instant and switches nothing. The day draws one happy block
+/// under both dots, each dot in its own state's colour; tail's next switch
+/// comes from happy; stats counts happy's whole six hours.
+#[test]
+fn a_moment_state_resumes_the_state_before_it() {
+    let env = Env::new();
+    let day = ["-d", "2025-01-08"];
+    env.ok(&[&["switch", "mood", "happy", "-t", "09:00"][..], &day].concat());
+    env.ok(&["spec", "add-state", "mood", "startled", "#ff0000", "x"]);
+    env.ok(&["spec", "add-state", "mood", "startled2", "#0000ff", "y"]);
+    env.ok(&[
+        &["switch", "mood", "startled", "-t", "11:00", "dur=MOMENT"][..],
+        &day,
+    ]
+    .concat());
+    env.ok(&[
+        &["switch", "mood", "startled2", "-t", "12:00", "0"][..],
+        &day,
+    ]
+    .concat());
+    env.ok(&[&["switch", "mood", "tired", "-t", "15:00"][..], &day].concat());
+
+    let view: serde_json::Value =
+        serde_json::from_str(&env.ok(&[&["dayview", "--json"][..], &day].concat())).unwrap();
+    let mood = &view["days"][0]["fields"][0];
+    let titles: Vec<_> = mood["blocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(titles, ["mood: happy 09:00–15:00", "mood: tired 15:00 →"]);
+    let dots: Vec<_> = mood["points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["fg_color"].as_str().unwrap())
+        .collect();
+    assert_eq!(dots, ["#ff0000", "#0000ff"]);
+
+    let tail: serde_json::Value = serde_json::from_str(&env.ok(&["tail", "--json"])).unwrap();
+    let tired = tail["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["state"] == "tired")
+        .unwrap();
+    assert_eq!(tired["previous_state"], "happy");
+
+    let stats = env.ok(&["stats", "mood"]);
+    assert!(
+        stats
+            .lines()
+            .any(|l| l.trim_start().starts_with("6h") && l.ends_with("happy")),
+        "{stats}"
+    );
 }

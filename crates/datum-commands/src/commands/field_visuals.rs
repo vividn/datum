@@ -22,9 +22,7 @@ use datum_core::db::IGNORED_STATE_VALUE;
 use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
 use datum_core::shape::is_off_state;
-use datum_core::shape::{
-    dot_fg_uses_state, is_block_verb, is_unrendered_switch_value, render_shape, RenderShape,
-};
+use datum_core::shape::{is_block_verb, is_unrendered_switch_value, render_shape, RenderShape};
 use datum_core::state::FieldStateRows;
 use datum_core::time::Zone;
 use datum_layout::dayview::{BlockFill, DayviewBlock, DayviewPoint};
@@ -248,15 +246,13 @@ pub(crate) fn render_field_visuals(
             RenderShape::Region => {}
             RenderShape::Dot => {
                 if occur_ms >= day_start_ms && occur_ms <= day_end_ms {
-                    let fg = if dot_fg_uses_state(verb) {
-                        entry
-                            .state
-                            .as_ref()
-                            .and_then(|v| state_value_rgb(v, field, spec))
-                            .unwrap_or_else(|| field_rgb(field, spec))
-                    } else {
-                        field_rgb(field, spec)
-                    };
+                    // A moment's dot is its state's colour (da-22750); an
+                    // occur's, with no state or `true`, the field's.
+                    let fg = entry
+                        .state
+                        .as_ref()
+                        .and_then(|v| state_value_rgb(v, field, spec))
+                        .unwrap_or_else(|| field_rgb(field, spec));
                     points.push(DayviewPoint {
                         time_ms: occur_ms,
                         fg_color: rgb_to_hex(fg),

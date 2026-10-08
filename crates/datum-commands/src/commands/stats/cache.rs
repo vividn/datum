@@ -19,7 +19,7 @@ use super::*;
 
 /// Bump when a cached day would read differently: what a [`Tally`] holds,
 /// how a span or a row is counted, or how days are cut.
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 
 /// The cache, ready to read for one run.
 pub(super) struct Cache<'a> {

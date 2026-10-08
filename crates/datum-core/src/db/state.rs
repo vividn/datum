@@ -1106,28 +1106,20 @@ mod tests {
     }
 
     #[test]
-    fn state_back_counts_moment_switches_as_transitions() {
-        // Review finding on #43: `switch x --moment` derives Verb::Point
-        // while keeping its real state — a genuine zero-length transition
-        // that must participate in both the current pick and the walk.
+    fn state_back_passes_over_moment_states() {
+        // da-22750: a moment (`switch x --moment`, Verb::Point with a
+        // state) switches nothing, so the timeline never holds it — the
+        // walk goes back over the states the field was actually in.
         let db = Db::open_in_memory().unwrap();
         push_switch(&db, "mood", json!("a"), 100);
         push_moment_switch(&db, "mood", json!("b"), 200);
         push_switch(&db, "mood", json!("c"), 300);
-        push_moment_switch(&db, "mood", json!("d"), 400); // current = d
+        push_moment_switch(&db, "mood", json!("d"), 400); // current = c
         assert_eq!(
             db.resolve_state_back("mood", 1, probe()).unwrap(),
-            Some(json!("c")),
-            "a moment-switch as the newest row IS the current state"
-        );
-        assert_eq!(
-            db.resolve_state_back("mood", 2, probe()).unwrap(),
-            Some(json!("b"))
-        );
-        assert_eq!(
-            db.resolve_state_back("mood", 3, probe()).unwrap(),
             Some(json!("a"))
         );
+        assert_eq!(db.resolve_state_back("mood", 2, probe()).unwrap(), None);
     }
 
     // ─── da-2i8g: following_state-aware state_at / batch_state_at ───
