@@ -4,6 +4,7 @@
 //! Layered, in evaluation order:
 //! - empty / `undefined` → `None` (or `Err` when the slot is required)
 //! - literal `null` → `Value::Null`
+//! - literal (`rekey`'s new key names) → the string as typed
 //! - a typed key — by the field's spec, or by suffix (`*time`, `*date`,
 //!   `*dur`/`*duration`, `*num`/`*number`) — parses as its [`KeyType`]
 //!   or is refused
@@ -154,6 +155,17 @@ pub(super) fn infer_typed_value(
     // string is `'"null"'`, the JSON-quote escape.
     if value.eq_ignore_ascii_case("null") {
         return Ok(Some(Value::Null));
+    }
+    if compat.literal {
+        // Quotes still escape: `a='"b c"'` names the key `b c`.
+        let quoted = serde_json::from_str(value)
+            .ok()
+            .or_else(|| single_quoted_json(value));
+        let name = match quoted {
+            Some(Value::String(s)) => s,
+            _ => value.to_string(),
+        };
+        return Ok(Some(Value::String(name)));
     }
 
     let declared = compat.types.and_then(|t| t.get(path)).copied();

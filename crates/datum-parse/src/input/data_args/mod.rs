@@ -172,6 +172,13 @@ pub struct DataArgs {
     /// key name. A typed key parses as its type or refuses; one with no
     /// entry here is typed by its suffix, or guessed by [`infer_type`].
     pub types: BTreeMap<String, KeyType>,
+    /// Every value stays the string it was typed as: no spec type, no
+    /// suffix type, no guess. `rekey`'s values are new key NAMES, so
+    /// `due_date=deadline` must not parse `deadline` as a date (da-xvtbd).
+    /// The sentinels still apply: an empty or `undefined` value drops its
+    /// pair, and `null` stays a JSON null, which `rekey` refuses. A quoted
+    /// value loses its quotes, as anywhere: `a='"b c"'` names `b c`.
+    pub literal: bool,
 }
 
 impl FlexibleTarget for DataArgs {
@@ -202,6 +209,8 @@ pub(crate) struct Compat<'a> {
     pub(crate) base_local: Option<NaiveDateTime>,
     /// See [`DataArgs::types`].
     pub(crate) types: Option<&'a BTreeMap<String, KeyType>>,
+    /// See [`DataArgs::literal`].
+    pub(crate) literal: bool,
 }
 
 /// Resolve `DataArgs` into the final `DatumData` object.
@@ -213,6 +222,7 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
     let compat = Compat {
         base_local: args.base_local,
         types: Some(&args.types),
+        literal: args.literal,
     };
 
     // Clone the bits we mutate; the input bag is treated as read-only.

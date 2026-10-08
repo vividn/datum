@@ -139,7 +139,7 @@ pub fn update_from_args(
         default_last: _,
         value: payload_value,
         extra: payload_extra,
-    } = parse_update_payload(&args, Default::default(), None)?;
+    } = parse_update_payload(&args, strategy, Default::default(), None)?;
     let output = args.output()?;
     let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
 
@@ -186,7 +186,7 @@ pub fn update_batch_from_args(
         default_last,
         value: payload_value,
         extra: payload_extra,
-    } = parse_update_payload(&args, Default::default(), None)?;
+    } = parse_update_payload(&args, strategy, Default::default(), None)?;
     let untyped = (payload_value, payload_extra);
     let (entries, token_errors) = crate::commands::helpers::resolve_batch(
         db,
@@ -206,8 +206,8 @@ pub fn update_batch_from_args(
     // its field's spec types parses as that type or refuses, and a relative
     // value counts from the entry's own time (its create time, for a timeless
     // one) — all
-    // before anything is written. A rekey's values are key names, so no spec
-    // types them (its key names still type them: da-xvtbd).
+    // before anything is written. A rekey's values are key names, so nothing
+    // types them: it reuses the first parse, which is literal (da-xvtbd).
     let mut types = std::collections::HashMap::new();
     let mut payloads = Vec::with_capacity(entries.len());
     for e in &entries {
@@ -232,6 +232,7 @@ pub fn update_batch_from_args(
         });
         let p = parse_update_payload(
             &args,
+            strategy,
             types[&e.field].clone(),
             Some(base.local_time().naive_local()),
         )?;
@@ -686,6 +687,7 @@ pub(crate) struct UpdatePayload {
 
 pub(crate) fn parse_update_payload(
     args: &UpdateArgs,
+    strategy: UpdateStrategy,
     types: std::collections::BTreeMap<String, datum_parse::input::KeyType>,
     base_local: Option<chrono::NaiveDateTime>,
 ) -> Result<UpdatePayload> {
@@ -738,7 +740,9 @@ pub(crate) fn parse_update_payload(
     // Same daydumb compat as the log path — see `parse_log_args`. The
     // `flat_paths` compat shim is gone (da-ju71.4); leading-dot keys
     // now fold into `state.*`.
+    // A rekey's values are new key names, never typed (da-xvtbd).
     let mut data_args = DataArgs {
+        literal: strategy == UpdateStrategy::Rekey,
         types,
         base_local,
         ..DataArgs::default()
@@ -954,6 +958,57 @@ mod tests {
     }
 
     #[test]
+    fn rekey_renames_a_key_typed_by_its_name() {
+        // da-xvtbd: the new name is a name, not a date to parse.
+        let db = Db::open_in_memory().unwrap();
+        let e = seed_entry(
+            &db,
+            "task",
+            Verb::Point,
+            None,
+            Some(serde_json::json!({"due_date": "2026-10-09", "km_num": 7, "n": 1})),
+        );
+
+        // `datum rekey`'s own path, which reuses its first parse per entry.
+        update_batch_from_args(
+            update_args(&e.slug, vec!["due_date=deadline", "km_num=12", "n=\"a b\""]),
+            UpdateStrategy::Rekey,
+            &db,
+        )
+        .unwrap();
+
+        let after = db.get_entry(&e.slug).unwrap();
+        let data = after.data.as_ref().unwrap();
+        assert_eq!(data["deadline"], serde_json::json!("2026-10-09"));
+        assert_eq!(data["12"], serde_json::json!(7));
+        assert_eq!(data["a b"], serde_json::json!(1), "quotes escape, not name");
+        assert!(data.get("due_date").is_none() && data.get("km_num").is_none());
+    }
+
+    #[test]
+    fn rekey_to_null_refuses() {
+        let db = Db::open_in_memory().unwrap();
+        let e = seed_entry(
+            &db,
+            "gym",
+            Verb::Point,
+            None,
+            Some(serde_json::json!({"reps": 10})),
+        );
+
+        let err = update_from_args(
+            update_args(&e.slug, vec!["reps=null"]),
+            UpdateStrategy::Rekey,
+            &db,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("must be a non-empty string"),
+            "{err}"
+        );
+    }
+
+    #[test]
     fn rekey_without_mapping_errors() {
         let db = Db::open_in_memory().unwrap();
         let e = seed_entry(
@@ -1114,6 +1169,7 @@ mod tests {
 
         let payload = parse_update_payload(
             &update_args(&e.slug, vec!["state=happy"]),
+            UpdateStrategy::Replace,
             Default::default(),
             None,
         )
@@ -1157,6 +1213,7 @@ mod tests {
 
         let payload = parse_update_payload(
             &update_args(&e.slug, vec![".a=1", ".b=2"]),
+            UpdateStrategy::Replace,
             Default::default(),
             None,
         )
