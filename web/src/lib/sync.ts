@@ -42,7 +42,7 @@
 import { writable, type Readable } from 'svelte/store';
 import { announceHere, onAnyChange } from './changes.js';
 import type { SyncEvent, SyncReport, SyncRequest, TicketAbout } from './syncProtocol.js';
-import { dbOf, type RunResult } from './run.js';
+import { cliError, dbOf, type RunResult } from './run.js';
 import { shellSplit } from './shellSplit.js';
 
 const PULL_MS = 30_000;
@@ -118,7 +118,7 @@ async function cli(argv: string[], stdin?: string, session?: boolean): Promise<R
 
 async function must(argv: string[], stdin?: string): Promise<string> {
 	const r = await cli(argv, stdin);
-	if (r.code !== 0) throw new Error(r.stderr.replace(/^error: /, ''));
+	if (r.code !== 0) throw cliError(r.stderr);
 	return r.stdout;
 }
 

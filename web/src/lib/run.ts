@@ -59,6 +59,9 @@ export type CommandRunner = (
 /** Generic failure, as `datum-cli`'s `main` reports one. */
 export const EXIT_ERROR = 1;
 
+/** A failed command's stderr as an Error, without the prefix `main` («Error: ») or the REPL («error: ») put on it. */
+export const cliError = (stderr: string): Error => new Error(stderr.trim().replace(/^[Ee]rror: /, ''));
+
 /**
  * The database `argv` names for itself: whether it names one at all, and
  * which — `--db X` or `--db=X`, the first of them, stopping at `--`, which

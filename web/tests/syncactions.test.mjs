@@ -143,6 +143,21 @@ describe('the sync widget’s actions', () => {
 		}, AT_DATUM_DAY);
 	});
 
+	test('a refused action reads the CLI’s reason, without its «Error: » (da-s6o5z)', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			const phone = await openChain(app);
+			await app.goto('/sync?db=home');
+			await more(page);
+			await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Rename' }).click();
+			await page.locator('dialog.ask input').fill('x'.repeat(65));
+			await page.locator('dialog.ask').getByRole('button', { name: 'rename' }).click();
+			const failure = page.locator(`${WIDGET} .failure`);
+			await failure.waitFor();
+			assert.equal(await failure.innerText(), 'a label is at most 64 characters, not 65');
+		}, { viewport: DESKTOP });
+	});
+
 	test('a purge previews what goes and takes the device’s name typed; an unpurge brings it back, revoked', async () => {
 		await withWallClock(
 			async (app) => {

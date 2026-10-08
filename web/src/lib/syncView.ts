@@ -15,7 +15,7 @@
 // broadcast reachability ($lib/sync.ts `syncStates`) into clients × databases.
 
 import { writable } from 'svelte/store';
-import { run, type RunResult } from './run.js';
+import { cliError, run, type RunResult } from './run.js';
 import { approve, approveLink } from './passkey.js';
 import type { Invite, Reach, SyncState } from './sync.js';
 import type { TicketAbout } from './syncProtocol.js';
@@ -319,7 +319,7 @@ export const approveInto = (db: string, link: string, code: string): Promise<Run
 /** A new invite on `db` (starting an open chain on a db in none): its secret, and when it expires. */
 export async function newInvite(db: string): Promise<Invite> {
 	const r = await syncAct(db, ['new-invite']);
-	if (r.code !== 0) throw new Error(r.stderr.replace(/^error: /, ''));
+	if (r.code !== 0) throw cliError(r.stderr);
 	return JSON.parse(r.stdout.split('\n')[0]);
 }
 

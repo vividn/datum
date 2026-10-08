@@ -64,7 +64,7 @@
 	} from '$lib/syncView.js';
 	import { approve, approveRecord, createPasskey } from '$lib/passkey.js';
 	import { ask, confirm } from '$lib/confirm.js';
-	import type { RunResult } from '$lib/run.js';
+	import { cliError, type RunResult } from '$lib/run.js';
 	import { act } from '$lib/act.js';
 	import { prefill } from '$lib/bar.js';
 	import { grammar } from './engine.js';
@@ -219,7 +219,7 @@
 	}
 
 	function ok(r: RunResult): RunResult {
-		if (r.code !== 0) throw new Error(r.stderr.replace(/^error: /, '').trim());
+		if (r.code !== 0) throw cliError(r.stderr);
 		return r;
 	}
 
