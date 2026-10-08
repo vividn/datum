@@ -78,7 +78,13 @@ env:
 jobs:
   ci:
     name: CI (cargo + web)
-    runs-on: ubuntu-latest
+    # A staging push runs on its own runner, labelled ONLY `staging` so it never
+    # takes a PR job (da-laema). On the shared one it queued behind every PR
+    # run and, started after the tip had moved, cancelled itself at the step
+    # below (run 2169: ~27 min waiting, then that). Now it starts on the tip
+    # and finishes, and the runs queued behind it cancel in seconds. With no
+    # runner carrying that label, a staging run waits forever.
+    runs-on: ${{ github.event_name == 'push' && github.ref == 'refs/heads/staging' && 'staging' || 'ubuntu-latest' }}
     # GitHub's six jobs sum to ~27 min on separate 4-core runners; serialised
     # on 3 cores the bead expects 45–75 min. The runner's own cap is 3 h.
     timeout-minutes: 150
