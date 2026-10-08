@@ -338,12 +338,45 @@ fn an_invite_is_one_time_and_expires() {
     let c = Copy::new();
     let used = c.fails(&["sync", "chain", "connect", &ticket], "");
     assert!(used.contains("invite already used"), "{used}");
+    // Why, and what to do next (da-0tawk).
+    assert!(
+        used.contains("Next: ask") && used.contains("for a fresh invite"),
+        "{used}"
+    );
     // A member presenting it is refused before it dials: it is in a chain.
     let again = b.fails(&["sync", "chain", "connect", &ticket], "");
     assert!(again.contains("a copy belongs to one chain"), "{again}");
     let expired = c.fails(&["sync", "chain", "connect", &stale], "");
     assert!(expired.contains("invite expired"), "{expired}");
+    assert!(expired.contains("for a fresh invite"), "{expired}");
     assert!(!a.ok(&["sync", "chain", "list"]).contains(&c.id()[..10]));
+}
+
+/// `connect` says at once whom it waits for and until when, says every few
+/// seconds that it still is, and a join nobody answers ends saying why and
+/// what to do next (da-0tawk): vividn's terminal sat silent for a minute.
+#[test]
+fn connect_says_what_it_waits_for_and_why_it_ended_unanswered() {
+    let (a, mut b) = (Copy::new(), Copy::new());
+    let (inviting, ticket) = a.invite(&[]);
+    // Nobody serves the invite now.
+    drop(inviting);
+    b.env = vec![("DATUM_SYNC_TIMEOUT_S", "6")];
+    let out = b.fails(&["sync", "chain", "connect", &ticket], "");
+    let lines: Vec<&str> = out.lines().collect();
+    let waiting = lines.iter().position(|l| {
+        l.contains("'s sync chain: waiting for it to answer (the invite holds until ")
+    });
+    let still = lines
+        .iter()
+        .position(|l| l.starts_with("still waiting for "));
+    let ended = lines.iter().position(|l| l.contains("did not answer"));
+    assert!(
+        matches!((waiting, still, ended), (Some(w), Some(s), Some(e)) if w < s && s < e),
+        "{out}"
+    );
+    assert!(out.contains("datum.day open on that database"), "{out}");
+    assert!(out.contains("or ask it for a fresh invite"), "{out}");
 }
 
 /// A stranger that dials without an invite is refused by the store's
@@ -665,6 +698,13 @@ fn without_keepalives_it_fails_says_what_landed_and_the_invite_still_exits() {
     assert!(!joined.status.success(), "{text}");
     assert!(text.contains("applied 30"), "{text}");
     assert!(text.contains("paired with"), "{text}");
+    // The redeemer is told it was admitted, and what finishes it (da-0tawk):
+    // cut short before the chain's records, it is only joining (da-idw54).
+    assert!(
+        text.contains("this copy was admitted to its sync chain")
+            && text.contains("`datum sync` finishes it"),
+        "{text}"
+    );
     // The admission held although the session failed: the invite exits 0.
     assert!(ok, "{served}");
     assert!(

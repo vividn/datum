@@ -730,6 +730,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "datum-core",
+ "datum-parse",
  "datum-sync-wire",
  "futures-util",
  "iroh",

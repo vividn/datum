@@ -14,6 +14,7 @@
 //!   unrevoked members are served or dialed (`Db::sync_handshake`). Anyone
 //!   else is refused at the handshake, and so is this copy's own key.
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -21,9 +22,10 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
-use chrono::{SecondsFormat, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use datum_core::db::peers::Peer;
 use datum_core::db::{chain, Db};
+use datum_parse::time::Zone;
 use datum_sync_wire::{
     dial, redeem, serve, unix_now, About, Applied, Endpoint, EndpointAddr, Lost, Net, Report,
     Store, Ticket, Vector,
@@ -72,8 +74,15 @@ fn runtime() -> Result<tokio::runtime::Runtime> {
 
 // ─── The store ──────────────────────────────────────────────────────────────
 
-/// A session's store: this copy's `Db`, on the session's own thread.
-struct DbStore<'a>(&'a Db);
+/// A session's store: this copy's `Db`, on the session's own thread, and
+/// whether a peer has welcomed it.
+struct DbStore<'a>(&'a Db, Cell<bool>);
+
+impl<'a> DbStore<'a> {
+    fn new(db: &'a Db) -> Self {
+        DbStore(db, Cell::new(false))
+    }
+}
 
 impl Store for DbStore<'_> {
     fn label(&self) -> String {
@@ -127,9 +136,11 @@ impl Store for DbStore<'_> {
         dialed: bool,
     ) -> Result<bool> {
         let addr = serde_json::to_string(addr)?;
-        Ok(self
+        let added = self
             .0
-            .sync_handshake(peer, label, &addr, invite, chain, holds, dialed)?)
+            .sync_handshake(peer, label, &addr, invite, chain, holds, dialed)?;
+        self.1.set(self.1.get() || dialed);
+        Ok(added)
     }
 
     async fn holds(&self) -> Result<u64> {
@@ -162,14 +173,11 @@ fn synced_peers(db: &Db) -> Result<Vec<Peer>> {
 }
 
 /// Say so if `e` is a session that redeemed an invite and then failed: the
-/// two copies are paired, and only the first sync is unfinished.
-fn paired_unfinished(e: &anyhow::Error) -> bool {
+/// two copies are paired, and only the first sync is unfinished — `then`.
+fn paired_unfinished(e: &anyhow::Error, then: &str) -> bool {
     match e.downcast_ref::<Lost>() {
         Some(Lost(rep, _)) if rep.redeemed => {
-            println!(
-                "paired with {}; the first sync did not finish: run `datum sync`",
-                rep.label
-            );
+            println!("paired with {}; {then}", rep.label);
             true
         }
         _ => false,
@@ -210,7 +218,7 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
     let secret = secret.to_string();
     runtime()?.block_on(async {
         let ep = bind(db).await?;
-        let store = DbStore(db);
+        let store = DbStore::new(db);
         let mut addrs = vec![ep.addr()];
         addrs.extend(synced_peers(db)?.iter().filter_map(|p| addr(p).ok()));
         let chain = db.sync_chain()?;
@@ -254,7 +262,7 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
                         }
                         Err(e) => {
                             eprintln!("{e:#}");
-                            if paired_unfinished(&e) { break Ok(()) }
+                            if paired_unfinished(&e, UNFINISHED) { break Ok(()) }
                         }
                     }
                 }
@@ -265,24 +273,95 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
     })
 }
 
-/// `datum sync chain connect <ticket>`: redeem an invite and sync, with the first
-/// of the ticket's addresses that admits it.
+const UNFINISHED: &str = "the first sync did not finish: run `datum sync`";
+
+/// How often `connect` says it is still waiting.
+const WAITING: Duration = Duration::from_secs(5);
+
+/// `datum sync chain connect <ticket>`: redeem an invite and sync, with the
+/// first of the ticket's addresses that admits it. It says at once whom it
+/// waits for and until when, then every [`WAITING`] that it still is; a join
+/// that fails ends saying why and what to do next (da-0tawk).
 pub fn connect(db: &Db, ticket: &str) -> Result<()> {
     let t = Ticket::decode(ticket)?;
+    let from = t.about.from.as_deref().unwrap_or("the inviting device");
+    let until = t
+        .about
+        .expires
+        .and_then(|at| DateTime::from_timestamp(at as i64, 0))
+        .map(|at| {
+            format!(
+                " (the invite holds until {})",
+                Zone::host().local_naive(at).format("%H:%M")
+            )
+        });
+    eprintln!(
+        "joining {from}'s sync chain: waiting for it to answer{}\n\
+         it answers while it is online: datum.day open on that database, or \
+         `datum sync chain invite` still running there",
+        until.as_deref().unwrap_or_default()
+    );
     runtime()?.block_on(async {
         let ep = bind(db).await?;
-        let rep = redeem(&DbStore(db), &ep, &t).await;
+        let store = DbStore::new(db);
+        let redeeming = redeem(&store, &ep, &t);
+        tokio::pin!(redeeming);
+        let start = tokio::time::Instant::now();
+        let mut tick = tokio::time::interval_at(start + WAITING, WAITING);
+        let rep = loop {
+            tokio::select! {
+                rep = &mut redeeming => break rep,
+                _ = tick.tick() => {
+                    let doing = if store.1.get() { "syncing" } else { "still waiting for" };
+                    eprintln!("{doing} {from} ({}s)", start.elapsed().as_secs());
+                }
+            }
+        };
         ep.close().await;
         // Admitted, it says what it is; its peers hear on the next sync. A
         // copy refused (one already in a chain) writes nothing.
-        let admitted = rep.as_ref().map_or_else(paired_unfinished, |_| true);
+        let joined =
+            "this copy was admitted to its sync chain, but the first sync did not finish: \
+                      `datum sync` finishes it";
+        let admitted = rep
+            .as_ref()
+            .map_or_else(|e| paired_unfinished(e, joined), |_| true);
         let me = db.sync_endpoint_id()?;
         if admitted && db.sync_chain()?.member(&me).is_some() {
             db.sync_describe_self(&label(), "cli")?;
         }
-        print_added(&rep?);
+        let rep = match rep {
+            Err(e) if !admitted => return Err(next_step(e, from)),
+            rep => rep?,
+        };
+        print_added(&rep);
         Ok(())
     })
+}
+
+/// A join that failed, as one line: why, and what to do next.
+fn next_step(e: anyhow::Error, from: &str) -> anyhow::Error {
+    let why = format!("{e:#}");
+    let next = if ["invite expired", "invite already used", "unknown invite"]
+        .iter()
+        .any(|w| why.contains(w))
+    {
+        format!("ask {from} for a fresh invite")
+    } else if why.contains("could not reach") || why.contains("timed out") {
+        format!(
+            "{from} did not answer: open datum.day on that database (or run \
+             `datum sync chain invite` there) and connect again, or ask it for a fresh invite"
+        )
+    } else if why.starts_with("refused") {
+        "`datum sync status` shows where this copy stands".into()
+    } else {
+        return e;
+    };
+    // Its own words may say it already.
+    match why.contains("for a new one") {
+        true => e,
+        false => anyhow!("{why}. Next: {next}"),
+    }
 }
 
 /// `datum sync`: sync with every member once.
@@ -294,7 +373,7 @@ pub fn now_all(db: &Db) -> Result<()> {
     }
     runtime()?.block_on(async {
         let ep = bind(db).await?;
-        let store = DbStore(db);
+        let store = DbStore::new(db);
         let dials = peers
             .iter()
             .map(|p| async { dial(&store, &ep, addr(p)?, None).await });
@@ -336,7 +415,7 @@ pub fn run(db: &Db) -> Result<()> {
     runtime()?.block_on(async {
         let key = db.sync_endpoint_secret()?;
         let ep = bind(db).await?;
-        let store = &DbStore(db);
+        let store = &DbStore::new(db);
         eprintln!("datum sync run: {} is up; Ctrl-C to stop", short(&ep.id().to_string()));
         let mut sessions: FuturesUnordered<Session> = FuturesUnordered::new();
         // Per peer, the vector last pushed to it, and when to retry a failed push.
