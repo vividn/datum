@@ -62,6 +62,57 @@ fn retime_positional_and_t_are_read_from_the_entrys_own_time() {
     assert_eq!(after.uncertainty.as_deref(), Some("P1D"));
 }
 
+/// da-fdc7o: `update <hid> occur_time=T` reads T as `retime <hid> T` does,
+/// which is `-t`'s grammar whole. An unsigned duration (`30m`, `90`) is
+/// refused in `-t`'s words and the entry stays put: it used to move the
+/// entry that much LATER. The rest land where they did at 38539b02.
+#[test]
+fn update_occur_time_reads_its_value_as_retime_does() {
+    let start = "2026-10-05T07:15:00Z";
+    // 09:15 in Berlin, then `verb <hid> arg`: where it lands, or the refusal.
+    let after = |verb: &str, arg: &str| {
+        let db = fresh_db();
+        let hid = point_in(&db, "coffee", start, "Europe/Berlin");
+        let ran = run_cli(&[verb, &hid, "--", arg], &db).map_err(|e| e.to_string());
+        let at = time_of(&db, &hid).utc;
+        assert!(
+            ran.is_ok() || at == utc(start),
+            "{verb} {arg}: refused, yet moved"
+        );
+        ran.map(|()| at)
+    };
+    for (token, want) in [
+        ("-5m", Some("2026-10-05T07:10:00Z")),
+        ("+1h", Some("2026-10-05T08:15:00Z")),
+        ("-30s", Some("2026-10-05T07:14:30Z")),
+        // `-t`'s reading, the hour lost (da-ciajj).
+        ("-1h30m", Some("2026-10-05T06:45:00Z")),
+        ("+90m", Some("2026-10-05T08:45:00Z")),
+        ("-1.5h", Some("2026-10-05T05:45:00Z")),
+        ("-1d", Some("2026-10-04T07:15:00Z")),
+        ("+3H", None),
+        ("-5", Some("2026-10-05T07:10:00Z")),
+        ("+5", Some("2026-10-05T07:20:00Z")),
+        ("-30 minutes", Some("2026-10-05T06:45:00Z")),
+        ("11:00", Some("2026-10-05T09:00:00Z")),
+        ("8", Some("2026-10-05T06:00:00Z")),
+        ("5pm", Some("2026-10-05T15:00:00Z")),
+        ("+5x", None),
+        ("now", Some(start)),
+        ("2026-10-01T10:00:00Z", Some("2026-10-01T10:00:00Z")),
+        ("2026-10-01T10:00:00+02:00", Some("2026-10-01T08:00:00Z")),
+        ("30m", None),
+        ("90", None),
+        ("1h", None),
+        ("PT30M", None),
+        ("1.5", None),
+    ] {
+        let updated = after("update", &format!("occur_time={token}"));
+        assert_eq!(updated, after("retime", token), "{token}");
+        assert_eq!(updated.ok(), want.map(utc), "{token}");
+    }
+}
+
 /// da-jix52: a comma list resolves each entry against its own time — two
 /// entries on two days, in two zones, each go to 10:40 on their own day.
 #[test]

@@ -496,12 +496,12 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         entry.following_state = Some(fs);
     }
     // da-r17h (task 8): an explicit `occur_time=` key always overwrites the
-    // column — like `dur=` above — with type-aware parsing (RFC3339, clock
-    // times, `now`, or signed offsets). This makes the time-anchored columns
-    // uniformly settable across every verb: `add field occur_time=+5` shifts
-    // it +5m and re-anchors what was a timeless entry. The relative-offset
-    // base is the entry's current occur_time when present, else wall-clock
-    // now (mirrors the `dm update` path in update_core::apply_mutation).
+    // column — like `dur=` above — read as `-t` reads its value (or `now`).
+    // This makes the time-anchored columns uniformly settable across every
+    // verb: `add field occur_time=+5` shifts it +5m and re-anchors what was
+    // a timeless entry. The relative-offset base is the entry's current
+    // occur_time when present, else wall-clock now (mirrors the `dm update`
+    // path in update_core::apply_mutation).
     if let Some(t) = reserved.occur_time {
         let base = entry.occur_time.clone().unwrap_or_else(DatumTime::now);
         entry.occur_time = Some(parse_reserved_occur_time(&t, &base)?);
@@ -1823,7 +1823,7 @@ fn json_to_raw_token(v: &JsonValue) -> String {
 }
 
 /// da-5ns.4: parse the reserved `occur_time=` payload from `dm update`:
-/// "now", `±N{m,h,s}` offsets, clock times, or RFC3339 timestamps. Exposed crate-private so [`update_core::apply_mutation`]
+/// "now", or anything `-t` takes. Exposed crate-private so [`update_core::apply_mutation`]
 /// can reuse the parser.
 pub(crate) fn parse_reserved_occur_time(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
     parse_add_time_value(v, base)
@@ -1834,12 +1834,10 @@ pub(crate) fn parse_reserved_occur_time(v: &JsonValue, base: &DatumTime) -> Resu
 /// lifted raw and take the `-t` path, see [`lift_time_keys`].) Accepts:
 ///  * a v2 time block `{utc, o, tz}` — what `infer_typed_value` makes of
 ///    every `*_time` key's value, `occur_time` included (da-x15of)
-///  * "now" → `base_time`
-///  * RFC3339 timestamps → absolute
-///  * clock-time forms (`11:00`, `1:32`, `8`, `5pm`, `9:15am`): parsed via
-///    the same grammar as the global `-t` flag and anchored on `base`'s
-///    date in its timezone.
-///  * signed duration offsets like `-5m`, `+1h`, `-30s` → base ± offset
+///  * empty or "now" → `base`
+///  * anything `-t` takes, composed from `base` as `-t` composes it, and
+///    nothing else: an unsigned duration (`30m`, `90`) is refused with
+///    `-t`'s own message, where it moved the entry later (da-fdc7o)
 fn parse_add_time_value(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
     // The data parser already made a `*_time` value an instant (da-x15of).
     if let Some(t) = DatumTime::from_v2_json(v) {
@@ -1850,66 +1848,11 @@ fn parse_add_time_value(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
     if s.is_empty() || s.eq_ignore_ascii_case("now") {
         return Ok(base.clone());
     }
-    // Try RFC3339 absolute.
-    if let Ok(abs) = chrono::DateTime::parse_from_rfc3339(s) {
-        return Ok(DatumTime {
-            utc: abs.with_timezone(&chrono::Utc),
-            ..base.clone()
-        });
-    }
-    // Clock-time path: reuse the `-t` grammar via `TimeArgs::build` so a
-    // bare `11:00` / `11:00:00` / `8` / `5pm` interprets the same way the
-    // global `-t` flag does. We only take this branch when the token
-    // doesn't look like a signed duration (which TimeArgs would otherwise
-    // greedily eat — e.g. `-5` is "5 minutes ago" to TimeArgs but `-5m`
-    // is duration here). A leading `+`/`-` followed by a digit-then-unit
-    // pattern stays on the duration path below.
-    if !looks_like_signed_duration(s) {
-        let ta = datum_parse::input::TimeArgs {
-            time: Some(s.to_string()),
-            ..Default::default()
-        };
-        if let Ok(out) = ta.build(base) {
-            if let Some(t) = out.time {
-                return Ok(t);
-            }
-        }
-    }
-    // Otherwise treat as a signed duration offset (`-5m`, `+1h`, `-30s`).
-    let (sign, body) = if let Some(rest) = s.strip_prefix('-') {
-        (-1i64, rest)
-    } else if let Some(rest) = s.strip_prefix('+') {
-        (1i64, rest)
-    } else {
-        (1i64, s)
+    let ta = datum_parse::input::TimeArgs {
+        time: Some(s.to_string()),
+        ..Default::default()
     };
-    let dur = parse_duration(body)?;
-    let delta = if sign < 0 { -dur } else { dur };
-    let utc = base.utc + delta;
-    Ok(DatumTime {
-        utc,
-        ..base.clone()
-    })
-}
-
-/// `±N<unit>` — a signed token with a trailing duration unit letter (`m`,
-/// `s`, `h`, `d`, etc.). `+5m`, `-1h30m`, `-30s` qualify; `+30`, `11:00`,
-/// `5pm` do not. Used to keep the clock-time path from greedily eating
-/// signed-duration tokens that have always had duration semantics here.
-fn looks_like_signed_duration(s: &str) -> bool {
-    let body = match s.strip_prefix(['-', '+']) {
-        Some(rest) => rest,
-        None => return false,
-    };
-    let mut chars = body.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !first.is_ascii_digit() {
-        return false;
-    }
-    body.chars()
-        .any(|c| c.is_ascii_alphabetic() && c != 'e' && c != 'E')
+    Ok(ta.build(base)?.time.unwrap_or_else(|| base.clone()))
 }
 
 /// Build the log entry's base time with its effective uncertainty on it
@@ -2105,6 +2048,29 @@ mod tests {
             got.utc,
             Utc.with_ymd_and_hms(2026, 5, 21, 13, 30, 42).unwrap()
         );
+    }
+
+    /// da-fdc7o: a raw string is read by `-t` and by nothing after it: an
+    /// instant with its offset lands, and an unsigned duration, which the
+    /// fallback added to the base, is refused.
+    #[test]
+    fn parse_add_time_value_is_the_t_grammar_and_no_more() {
+        use chrono::{TimeZone, Utc};
+        let base = DatumTime::from_utc_and_tz(
+            Utc.with_ymd_and_hms(2026, 10, 25, 11, 0, 0).unwrap(),
+            "Europe/Berlin",
+        )
+        .unwrap();
+        let parse = |s: &str| parse_add_time_value(&JsonValue::String(s.into()), &base);
+
+        // Across the DST change the offset is the instant's, not the base's.
+        let got = parse("2026-10-01T10:00:00+02:00").unwrap();
+        assert_eq!(got.utc, Utc.with_ymd_and_hms(2026, 10, 1, 8, 0, 0).unwrap());
+        assert_eq!((got.offset_minutes, base.offset_minutes), (120, 60));
+
+        for s in ["30m", "90", "1h", "PT30M", "1.5"] {
+            assert!(parse(s).is_err(), "{s} is no time");
+        }
     }
 
     // ─── da-a2o8: extract_switch_then_chain ──────────────────────────────
