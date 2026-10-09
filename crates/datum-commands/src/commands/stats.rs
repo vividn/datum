@@ -29,7 +29,7 @@ use datum_core::shape::{is_inactive_state, is_off_state};
 use datum_core::state::{FieldStateRows, StateChange};
 use datum_core::time::DatumTime;
 use datum_parse::input::TimeArgs;
-use datum_parse::time::{resolve_timezone, TimeCtx, Zone, ZoneTimeline};
+use datum_parse::time::{resolve_timezone, Direction, TimeCtx, Zone, ZoneTimeline};
 use serde_json::Value as JsonValue;
 
 use crate::args::{ShowFlag, StatsArgs, StatsPeriod};
@@ -799,9 +799,10 @@ pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
 /// * anything carrying a clock time (`-t 9:15`, `-q`, `-d ... -t ...`) is a
 ///   lower bound, exactly like `--since`.
 ///
-/// Both read the shared `-t` grammar with its ordinary past-facing default
-/// (da-0gs4): on a query "10:00" means the most recent 10:00, which is the
-/// direction a backward-looking statistic wants.
+/// Both read the shared `-t` grammar as every command does: a bare weekday
+/// or year-less date faces the past (da-0gs4), and a bare clock is TODAY's
+/// (da-6qlpi), so one still ahead is an empty window, whose error names the
+/// way to the last one ([`last_clock_hint`]).
 ///
 /// Every local boundary here is resolved through the database's
 /// [`ZoneTimeline`] — the zone that was local *at that period*, not the one
@@ -896,14 +897,44 @@ fn resolve_window(
                     .to_string()
             };
             bail!(
-                "empty window: the end ({}) is not after the start ({}), local time in {}",
+                "empty window: the end ({}) is not after the start ({}), local time in {}{}",
                 show(end),
                 show(s),
                 zones.zone_at(s).name(),
+                last_clock_hint(&args.time, &zones, now, end)?,
             );
         }
     }
     Ok((start, end, zones))
+}
+
+/// What to type for the last such clock, when a window is empty because a
+/// bare `-t` clock is still ahead today: a clock means today's in every
+/// command (da-6qlpi). Empty unless `-t`'s own `-` mark would open the window.
+fn last_clock_hint(
+    time: &TimeArgs,
+    zones: &ZoneTimeline,
+    now: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Result<String> {
+    let zone = zones.zone_at(now);
+    let mut builder = time.builder(TimeCtx::at(zone.local_naive(now)))?;
+    let (Some(clock), None, false, Some(typed)) = (
+        builder.time_override,
+        builder.time_direction,
+        builder.day_named,
+        &time.time,
+    ) else {
+        return Ok(String::new());
+    };
+    builder.time_direction = Some(Direction::Past);
+    if builder.build_at(now, zone.clone(), None).utc >= end {
+        return Ok(String::new());
+    }
+    let clock = clock.format("%H:%M");
+    Ok(format!(
+        "\n{clock} is later today: for the last {clock} use `-t {typed}-`, or `-y -t {typed}`"
+    ))
 }
 
 /// True when the timing flags name a moment at all. `-z` alone only picks

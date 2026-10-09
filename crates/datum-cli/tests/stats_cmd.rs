@@ -905,6 +905,52 @@ fn an_inverted_window_is_an_error_not_a_zero() {
     assert!(err.contains("empty window"), "{err}");
 }
 
+/// da-6qlpi: a bare clock is today's in every command, so one still ahead is
+/// an empty window, and the error says what to type for the last one. Both
+/// spellings it names are run: each opens the window at yesterday's 09:15.
+#[test]
+fn a_clock_still_ahead_today_is_refused_with_the_way_to_the_last_one() {
+    let _g = freeze_time("2026-06-15T00:19:00Z");
+    let db = fresh_db();
+    seed_utc_zoned(&db, &[("2026-06-14T08:00:00Z", "coding")]);
+    let stats = |time: &str, yesterday| {
+        let mut args = selector("activity");
+        args.time.timezone = Some("UTC".to_string());
+        args.time.time = Some(time.to_string());
+        args.time.yesterday = yesterday;
+        compute_stats(&args, &db).map(|r| r.total_duration_seconds)
+    };
+
+    let err = stats("9:15", 0).unwrap_err().to_string();
+    assert_eq!(
+        err,
+        "empty window: the end (2026-06-15 00:19) is not after the start (2026-06-15 09:15), \
+         local time in UTC\n\
+         09:15 is later today: for the last 09:15 use `-t 9:15-`, or `-y -t 9:15`"
+    );
+    let since_the_last = 15 * 3600 + 4 * 60;
+    assert_eq!(stats("9:15-", 0).unwrap(), since_the_last);
+    assert_eq!(stats("9:15", 1).unwrap(), since_the_last);
+
+    // The hint is only for a window the `-` opens: a named day says which
+    // 09:15, and a clock already past is not what emptied the window.
+    let mut dated = selector("activity");
+    dated.time.timezone = Some("UTC".to_string());
+    dated.time.date = Some("today".to_string());
+    dated.time.time = Some("9:15".to_string());
+    let mut past = selector("activity");
+    past.time.timezone = Some("UTC".to_string());
+    past.time.time = Some("0:10".to_string());
+    past.until = Some("2026-06-15T00:05:00Z".to_string());
+    for args in [dated, past] {
+        let err = compute_stats(&args, &db).unwrap_err().to_string();
+        assert!(
+            err.starts_with("empty window") && !err.contains('\n'),
+            "{err}"
+        );
+    }
+}
+
 #[test]
 fn period_and_timing_flags_parse_and_dispatch() {
     let _g = freeze_time("2026-06-15T09:00:00Z");
