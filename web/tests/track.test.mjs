@@ -24,7 +24,7 @@ import {
 	editedSpec, GLYPHS, keyRows, specArgv, specKeys, stateRows, trackArgv, trackLabel, VERBS, verbAsked, wide
 } from '../src/lib/track.ts';
 import { stripAnsi } from './support/tail.mjs';
-import { SPEC as MODAL, cancelSpec, openSpec } from './support/spec.mjs';
+import { FIELD_FORM as MODAL, cancelField, openField } from './support/field.mjs';
 
 const PHONE = { width: 320, height: 480 };
 
@@ -46,7 +46,7 @@ async function openIt(page) {
 
 /** Leave the place a new field's Save stays in, on the field it made. */
 async function leave(page) {
-	await cancelSpec(page);
+	await cancelField(page);
 	await page.locator(MODAL).waitFor({ state: 'detached' });
 }
 
@@ -366,7 +366,7 @@ describe('in the app', () => {
 	test('a preset verb opens already chosen, and only that one', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			const { saved: ran } = await openSpec(page, '', 'occur');
+			const { saved: ran } = await openField(page, '', 'occur');
 			await page.locator(MODAL).waitFor();
 			assert.deepEqual(
 				await page.locator(`${MODAL} .verb[aria-checked="true"] .what`).allInnerTexts(),
@@ -461,7 +461,7 @@ describe('in the app', () => {
 			await app.run(['track', 'sleep', '--verb', 'start']);
 			await app.run(['spec', 'set', 'sleep', '--description', 'night']);
 			const before = (await app.echoes()).length;
-			const { saved } = await openSpec(page, 'sleep');
+			const { saved } = await openField(page, 'sleep');
 			await page.locator(MODAL).waitFor();
 			assert.equal((await page.locator(`${MODAL} h2`).innerText()).trim(), 'sleep');
 			assert.deepEqual(await page.locator(`${MODAL} .verb[aria-checked="true"] .what`).allInnerTexts(), ['start']);
@@ -512,7 +512,7 @@ describe('in the app', () => {
 			await app.run(['spec', 'set', 'sleep', '--state-description', 'awake=']);
 			const untouched = (await app.run(['spec', 'show', 'sleep'])).stdout;
 			assert.doesNotMatch(untouched, /state_descriptions/);
-			const { saved: again } = await openSpec(page, 'sleep');
+			const { saved: again } = await openField(page, 'sleep');
 			await page.locator(`${MODAL} button.commit`).click();
 			assert.equal((await again).code, 0);
 			assert.equal((await app.run(['spec', 'show', 'sleep'])).stdout, untouched);
@@ -532,7 +532,7 @@ describe('in the app', () => {
 			await app.run(['occur', 'coffee']);
 			const beans = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="6" ry="9" fill="currentColor"/></svg>';
 			const pick = async (name, svg) => {
-				const { saved } = await openSpec(page, 'coffee');
+				const { saved } = await openField(page, 'coffee');
 				await page.locator(MODAL).waitFor();
 				await page.locator(`${MODAL} .drop input[type="file"]`).setInputFiles({ name, mimeType: 'image/svg+xml', buffer: Buffer.from(svg) });
 				await page.locator(`${MODAL} .drop`, { hasText: name }).waitFor();
@@ -563,8 +563,8 @@ describe('in the app', () => {
 			await app.run(['track', 'sleep', '--verb', 'start']);
 			const spec = (await app.run(['spec', 'show', 'sleep'])).stdout;
 			const before = (await app.echoes()).length;
-			for (const dismiss of [() => cancelSpec(page), () => page.goBack()]) {
-				const { saved: shut } = await openSpec(page, 'sleep');
+			for (const dismiss of [() => cancelField(page), () => page.goBack()]) {
+				const { saved: shut } = await openField(page, 'sleep');
 				await page.locator(`${MODAL} input.description`).fill('h');
 				await dismiss();
 				assert.equal(await shut, null);
@@ -603,14 +603,14 @@ describe('in the app', () => {
 			await page.waitForFunction((sel) => !document.querySelector(sel), MODAL);
 
 			await app.run(['track', 'mood', '--verb', 'switch', '--state', 'good', '--state', 'good=#00ff00', '--color', '#123456']);
-			const { saved: shut } = await openSpec(page, 'mood');
+			const { saved: shut } = await openField(page, 'mood');
 			await page.locator(MODAL).waitFor();
 			await noHex('spec, basics');
 			assert.equal(await page.locator(`${MODAL} .row .swatch[aria-expanded]`).getAttribute('data-color'), '#123456');
 			await page.locator(`${MODAL} [data-tab="states"]`).click();
 			await noHex('spec, states');
 			assert.equal(await page.locator(`${MODAL} .state .swatch[aria-expanded]`).getAttribute('data-color'), '#00ff00');
-			await cancelSpec(page);
+			await cancelField(page);
 			assert.equal(await shut, null);
 		});
 	});
@@ -630,7 +630,7 @@ describe('in the app', () => {
 					return { fill: s.backgroundColor, border: s.borderTopStyle, color: el.dataset.color };
 				});
 
-			const { saved: shut } = await openSpec(page, 'hue');
+			const { saved: shut } = await openField(page, 'hue');
 			await page.locator(MODAL).waitFor();
 			const swatch = page.locator(`${MODAL} .row .swatch[aria-expanded]`);
 			assert.deepEqual(await looks(swatch), { fill: rgb(listed.color), border: 'dashed', color: '' });
@@ -651,7 +651,7 @@ describe('in the app', () => {
 			const state = page.locator(`${MODAL} .state .swatch[aria-expanded]`);
 			assert.notEqual(listed.state_colors.calm, listed.color);
 			assert.deepEqual(await looks(state), { fill: rgb(listed.state_colors.calm), border: 'dashed', color: '' });
-			await cancelSpec(page);
+			await cancelField(page);
 			assert.equal(await shut, null);
 		});
 	});
@@ -659,7 +659,7 @@ describe('in the app', () => {
 	test('`spec` on a field with no spec declares it, with the field already in the box', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			const { saved: ran } = await openSpec(page, 'walk');
+			const { saved: ran } = await openField(page, 'walk');
 			await page.locator(MODAL).waitFor();
 			assert.equal(await page.locator(`${MODAL} input.field`).inputValue(), 'walk');
 			await page.locator(`${MODAL} button[data-verb="occur"]`).click();
@@ -699,11 +699,11 @@ describe('in the app', () => {
 			await page.locator(`${MODAL} h2`).waitFor();
 			assert.deepEqual(await page.locator(`${MODAL} .basic-keys input.name`).evaluateAll((els) => els.map((e) => e.value)), ['cups']);
 			await leave(page);
-			const { saved: shut } = await openSpec(page, 'coffee');
+			const { saved: shut } = await openField(page, 'coffee');
 			await page.locator(MODAL).waitFor();
 			assert.equal(await page.locator(`${MODAL} input.unit`).count(), 0, 'no unit on a spec');
 			assert.deepEqual(await page.locator(`${MODAL} .basic-keys input.name`).evaluateAll((els) => els.map((e) => e.value)), ['cups']);
-			await cancelSpec(page);
+			await cancelField(page);
 			assert.equal(await shut, null);
 		});
 	});
@@ -742,9 +742,9 @@ describe('in the app', () => {
 	 * for the save — beside the echoes before it, counted while the REPL is
 	 * drawn: behind the place in front, it is not.
 	 */
-	async function openSpecTab(app, field, tab) {
+	async function openFieldTab(app, field, tab) {
 		const before = (await app.echoes()).length;
-		const { saved } = await openSpec(app.page, field);
+		const { saved } = await openField(app.page, field);
 		await app.page.locator(MODAL).waitFor();
 		if (tab) await app.page.locator(`${MODAL} [data-tab="${tab}"]`).click();
 		return { saved, before };
@@ -769,7 +769,7 @@ describe('in the app', () => {
 			const subfields = async () => JSON.parse((await app.run(['spec', 'show', 'word'])).stdout).subfields;
 			await app.run(['track', 'word', '--verb', 'add']);
 
-			let opened = await openSpecTab(app, 'word', 'keys');
+			let opened = await openFieldTab(app, 'word', 'keys');
 			for (const name of ['pos', 'gloss']) {
 				await page.locator(`${MODAL} button.add`).click();
 				await page.locator(`${MODAL} .key input.name`).last().fill(name);
@@ -786,7 +786,7 @@ describe('in the app', () => {
 				gloss: { required: false, value_type: 'any', in_slug: false, default: null }
 			});
 
-			opened = await openSpecTab(app, 'word', 'keys');
+			opened = await openFieldTab(app, 'word', 'keys');
 			assert.deepEqual(await names('required'), ['pos']);
 			await page.locator(`${MODAL} .keys[data-group="required"] select.kind`).selectOption('optional');
 			assert.equal(await page.locator(`${MODAL} .keys[data-group="required"]`).count(), 0);
@@ -805,7 +805,7 @@ describe('in the app', () => {
 			const kinds = (spec) => spec.keys.map(({ name, kind, value }) => [name, kind, value]);
 			await app.run(['track', 'tea', '--verb', 'occur']);
 
-			let opened = await openSpecTab(app, 'tea');
+			let opened = await openFieldTab(app, 'tea');
 			await page.locator(MODAL).waitFor();
 			for (const [name, kind, value] of [['a', 'required'], ['b', 'optional'], ['c', 'default', 'hot'], ['d', 'assign', 'acme']]) {
 				await page.locator(`${MODAL} .basic-keys + button.add`).click();
@@ -820,7 +820,7 @@ describe('in the app', () => {
 			assert.deepEqual(spec.assign, { d: 'acme' });
 
 			// Opened again, the rows are what the CLI read back; a and d swap places.
-			opened = await openSpecTab(app, 'tea');
+			opened = await openFieldTab(app, 'tea');
 			await page.locator(MODAL).waitFor();
 			const rows = page.locator(`${MODAL} .basic-keys li`);
 			assert.deepEqual(await rows.locator('select.kind').evaluateAll((els) => els.map((e) => e.value)), ['required', 'optional', 'default', 'assign']);
@@ -849,7 +849,7 @@ describe('in the app', () => {
 			const shown = async () => JSON.parse((await app.run(['spec', 'show', 'sleep'])).stdout);
 			await app.run(['track', 'sleep', '--verb', 'start']);
 
-			let opened = await openSpecTab(app, 'sleep', 'aliases');
+			let opened = await openFieldTab(app, 'sleep', 'aliases');
 			assert.deepEqual(await page.locator(`${MODAL} .alias code.name`).allInnerTexts(), ['sleep', 'sleepe']);
 			assert.equal(await page.locator(`${MODAL} .alias input`).count(), 0, 'a made alias is not edited: the save makes it again');
 			await page.locator(`${MODAL} input.autoalias`).uncheck();
@@ -871,7 +871,7 @@ describe('in the app', () => {
 			const bare = await app.run(['sleep']);
 			assert.notEqual(bare.code, 0, 'the removed alias still resolves');
 
-			opened = await openSpecTab(app, 'sleep', 'aliases');
+			opened = await openFieldTab(app, 'sleep', 'aliases');
 			await page.locator(`${MODAL} input.autoalias`).check();
 			await save(app, opened);
 			spec = await shown();
@@ -917,7 +917,7 @@ describe('in the app', () => {
 			const { page } = app;
 			await app.run(['track', 'tea', '--verb', 'occur']);
 			const before = (await app.echoes()).length;
-			const { saved } = await openSpec(page, 'tea');
+			const { saved } = await openField(page, 'tea');
 			await page.locator(MODAL).waitFor();
 			const field = tile(page, "the field's glyph");
 			assert.equal(await field.getAttribute('data-glyph'), '', 'no glyph yet: the circle');
@@ -950,7 +950,7 @@ describe('in the app', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'mood', '--verb', 'switch', '--state', 'up', '--state', 'down']);
-			const { saved } = await openSpec(page, 'mood');
+			const { saved } = await openField(page, 'mood');
 			await page.locator(MODAL).waitFor();
 			await page.locator(`${MODAL} [data-tab="states"]`).click();
 			await tile(page, 'the glyph of up').click();
@@ -974,7 +974,7 @@ describe('in the app', () => {
 			const { page } = app;
 			await app.run(['track', 'mood', '--verb', 'switch', '--state', 'up', '--state', 'down', '--state', 'flat']);
 			await app.run(['spec', 'set', 'mood', '--state-glyph', 'up=▲', '--state-glyph', 'down=▼', '--state-glyph', 'flat=■']);
-			const { saved } = await openSpec(page, 'mood');
+			const { saved } = await openField(page, 'mood');
 			await page.locator(MODAL).waitFor();
 			await page.locator(`${MODAL} [data-tab="states"]`).click();
 			await page.locator(`${MODAL} button.remove[aria-label="remove down"]`).click();
@@ -992,7 +992,7 @@ describe('in the app', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'tea', '--verb', 'occur']);
-			const { saved } = await openSpec(page, 'tea');
+			const { saved } = await openField(page, 'tea');
 			await page.locator(MODAL).waitFor();
 			await page.locator(`${MODAL} .glyph-by [role="radio"]`, { hasText: 'by a key' }).click();
 			await page.locator(`${MODAL} input.glyph-key`).fill('size');
@@ -1022,7 +1022,7 @@ describe('in the app', () => {
 			assert.doesNotMatch(row, /☕/);
 
 			// Opened and saved untouched, the glyphs read back byte for byte.
-			const { saved: again } = await openSpec(page, 'tea');
+			const { saved: again } = await openField(page, 'tea');
 			await page.locator(`${MODAL} button.commit`).click();
 			assert.equal((await again).code, 0);
 			assert.equal((await app.run(['spec', 'show', 'tea'])).stdout, shown);

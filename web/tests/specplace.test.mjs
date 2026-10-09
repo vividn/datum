@@ -8,7 +8,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { DESKTOP, PHONE } from './support/layout.mjs';
-import { SPEC, cancelSpec, openSpec } from './support/spec.mjs';
+import { FIELD_FORM, cancelField, openField } from './support/field.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -33,29 +33,29 @@ describe('the spec place, on a phone', () => {
 			const was = await rootTabs(page);
 			const from = was.indexOf(await shown(page));
 
-			await openSpec(page, 'mood');
+			await openField(page, 'mood');
 			await until(() => shown(page), (t) => t === 'field');
 			const beside = [...was.slice(0, from + 1), 'field', ...was.slice(from + 1)];
 			assert.deepEqual(await rootTabs(page), beside);
-			assert.equal((await page.locator(`${SPEC} h2`).innerText()).trim(), 'mood');
+			assert.equal((await page.locator(`${FIELD_FORM} h2`).innerText()).trim(), 'mood');
 
 			// The same field again is the same tab, and whoever opened it first
 			// is answered — nothing is left waiting (canary on #360).
 			const first = page.evaluate(() => window.datum.field('mood'));
-			await page.locator(SPEC).waitFor();
+			await page.locator(FIELD_FORM).waitFor();
 			await page.evaluate(() => void window.datum.field('mood'));
 			assert.equal(await first, null);
-			await page.locator(SPEC).waitFor();
+			await page.locator(FIELD_FORM).waitFor();
 			assert.deepEqual(await rootTabs(page), beside, 'a second open made a second tab');
 
 			// And another field is that tab too, put on it where it stands.
 			await page.evaluate(() => void window.datum.field('tea'));
-			await until(async () => (await page.locator(`${SPEC} h2`).allInnerTexts()).join().trim(), (t) => t === 'tea');
+			await until(async () => (await page.locator(`${FIELD_FORM} h2`).allInnerTexts()).join().trim(), (t) => t === 'tea');
 			assert.deepEqual(await rootTabs(page), beside, 'a second field made a second tab');
 
 			await page.goBack();
 			await until(() => rootTabs(page), (t) => t.join() === was.join());
-			assert.equal(await page.locator(SPEC).count(), 0);
+			assert.equal(await page.locator(FIELD_FORM).count(), 0);
 		});
 	});
 
@@ -65,9 +65,9 @@ describe('the spec place, on a phone', () => {
 			await app.run(['track', 'tea', '--verb', 'occur']);
 			const was = await rootTabs(page);
 
-			let { saved } = await openSpec(page, 'tea');
-			await page.locator(`${SPEC} input.description`).fill('green');
-			await page.locator(`${SPEC} button.commit`).click();
+			let { saved } = await openField(page, 'tea');
+			await page.locator(`${FIELD_FORM} input.description`).fill('green');
+			await page.locator(`${FIELD_FORM} button.commit`).click();
 			const result = await saved;
 			assert.equal(result.code, 0, result.stderr);
 			assert.match(result.argv.join(' '), /^spec set tea --from-json /);
@@ -76,9 +76,9 @@ describe('the spec place, on a phone', () => {
 			await until(() => rootTabs(page), (t) => t.join() === was.join());
 			assert.equal(await described(app, 'tea'), 'green');
 
-			({ saved } = await openSpec(page, 'tea'));
-			await page.locator(`${SPEC} input.description`).fill('black');
-			await cancelSpec(page);
+			({ saved } = await openField(page, 'tea'));
+			await page.locator(`${FIELD_FORM} input.description`).fill('black');
+			await cancelField(page);
 			assert.equal(await saved, null);
 			await until(() => rootTabs(page), (t) => t.join() === was.join());
 			assert.equal(await described(app, 'tea'), 'green');
@@ -97,21 +97,21 @@ describe('a refused save', () => {
 			await app.run(['track', 'tea', '--verb', 'occur']);
 			const was = await rootTabs(page);
 
-			const { saved } = await openSpec(page, 'tea');
-			await page.locator(`${SPEC} input.description`).fill('green');
+			const { saved } = await openField(page, 'tea');
+			await page.locator(`${FIELD_FORM} input.description`).fill('green');
 			const big = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="${'M0 0'.repeat(1200)}"/></svg>`;
-			await page.locator(`${SPEC} .drop input[type="file"]`).setInputFiles({ name: 'big.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(big) });
-			await page.locator(`${SPEC} .drop`, { hasText: 'big.svg' }).waitFor();
-			await page.locator(`${SPEC} button.commit`).click();
+			await page.locator(`${FIELD_FORM} .drop input[type="file"]`).setInputFiles({ name: 'big.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(big) });
+			await page.locator(`${FIELD_FORM} .drop`, { hasText: 'big.svg' }).waitFor();
+			await page.locator(`${FIELD_FORM} button.commit`).click();
 			const result = await saved;
 			assert.notEqual(result.code, 0);
 			assert.match(result.stderr, /at most 4 kB/);
 
 			assert.equal(await shown(page), 'field', 'the refusal left the place');
-			assert.equal(await page.locator(`${SPEC} input.description`).inputValue(), 'green', 'the edit was lost');
+			assert.equal(await page.locator(`${FIELD_FORM} input.description`).inputValue(), 'green', 'the edit was lost');
 			assert.equal(await described(app, 'tea'), null, 'the refusal wrote');
 
-			await cancelSpec(page);
+			await cancelField(page);
 			await until(() => rootTabs(page), (t) => t.join() === was.join());
 		});
 	});
@@ -127,14 +127,14 @@ describe('the spec place, on a desktop', () => {
 			await app.run(['track', 'tea', '--verb', 'occur']);
 			const was = await rootTabs(page);
 
-			const { saved } = await openSpec(page, 'tea');
+			const { saved } = await openField(page, 'tea');
 			const modal = page.locator('dialog.sheet[data-place="field"]');
-			await modal.locator(`${SPEC} h2`).waitFor();
-			assert.equal((await modal.locator(`${SPEC} h2`).innerText()).trim(), 'tea');
+			await modal.locator(`${FIELD_FORM} h2`).waitFor();
+			assert.equal((await modal.locator(`${FIELD_FORM} h2`).innerText()).trim(), 'tea');
 			assert.deepEqual(await rootTabs(page), was, 'a desktop opened a tab');
 
-			await modal.locator(`${SPEC} input.description`).fill('green');
-			await modal.locator(`${SPEC} button.commit`).click();
+			await modal.locator(`${FIELD_FORM} input.description`).fill('green');
+			await modal.locator(`${FIELD_FORM} button.commit`).click();
 			const result = await saved;
 			assert.equal(result.code, 0, result.stderr);
 			await modal.waitFor({ state: 'detached' });
@@ -157,14 +157,14 @@ describe('the field widget in a pane', () => {
 			const pane = page.locator('section.pane[data-title="field"]');
 
 			await pane.locator('button[data-chip="tea"]').click();
-			assert.equal((await pane.locator(`${SPEC} h2`).innerText()).trim(), 'tea');
-			await pane.locator(`${SPEC} input.description`).fill('green');
-			await pane.locator(`${SPEC} button.commit`).click();
+			assert.equal((await pane.locator(`${FIELD_FORM} h2`).innerText()).trim(), 'tea');
+			await pane.locator(`${FIELD_FORM} input.description`).fill('green');
+			await pane.locator(`${FIELD_FORM} button.commit`).click();
 			await until(() => described(app, 'tea'), (d) => d === 'green');
 
 			// No place to leave: the pane keeps the form, read again from the save.
 			assert.deepEqual(await rootTabs(page), was);
-			await until(() => pane.locator(`${SPEC} input.description`).inputValue(), (v) => v === 'green');
+			await until(() => pane.locator(`${FIELD_FORM} input.description`).inputValue(), (v) => v === 'green');
 		});
 	});
 });

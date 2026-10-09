@@ -31,7 +31,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { along, widgetPane } from './support/layout.mjs';
-import { SPEC } from './support/spec.mjs';
+import { FIELD_FORM } from './support/field.mjs';
 const { cases } = JSON.parse(
 	readFileSync(
 		fileURLToPath(new URL('../../tests/fixtures/field-name.json', import.meta.url)),
@@ -75,7 +75,7 @@ const onBar = (fn) => shared.solo(fn, BAR);
  * read as refused for the wrong reason.
  */
 async function typeIntoTheForm(page, field) {
-	const form = page.locator(SPEC);
+	const form = page.locator(FIELD_FORM);
 	if ((await form.count()) === 0) await page.locator('.bar button.add-button').click();
 	await form.locator('input.field').fill(field);
 	await form.locator('button[data-verb="occur"]').click();
@@ -88,11 +88,11 @@ async function typeIntoTheForm(page, field) {
 
 /** Press Save on the open form, the way a user declares a field. */
 async function trackIt(app, field) {
-	await app.page.locator(`${SPEC} button.commit`).click();
+	await app.page.locator(`${FIELD_FORM} button.commit`).click();
 	await chipIndex(app, field);
 	// The widget stays on the field it made, over the page: left, to press the chip.
 	await app.page.keyboard.press('Escape');
-	await app.page.locator(SPEC).waitFor({ state: 'detached' });
+	await app.page.locator(FIELD_FORM).waitFor({ state: 'detached' });
 	// A second on: the clock is held, and a log at the instant the field
 	// was declared would share the declaration's slug.
 	await app.clock.forward(1000);
@@ -158,8 +158,8 @@ describe('a field name the (+) form accepts', () => {
 	test('one press of the offered name gets you a usable one', async () => {
 		await onBar(async (app) => {
 			await typeIntoTheForm(app.page, 'cups=2');
-			await app.page.locator(`${SPEC} p.hint button.fix`).click();
-			assert.equal(await app.page.locator(`${SPEC} input.field`).inputValue(), 'cups_2');
+			await app.page.locator(`${FIELD_FORM} p.hint button.fix`).click();
+			assert.equal(await app.page.locator(`${FIELD_FORM} input.field`).inputValue(), 'cups_2');
 
 			await trackIt(app, 'cups_2');
 			await pressChip(app, 'cups_2');

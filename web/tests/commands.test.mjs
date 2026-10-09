@@ -16,7 +16,7 @@ import { sharedApp, startApp, stopApp, withApp as withAnyApp, seedLines } from '
 import { DESKTOP, along, draft, widgetPane } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { atRows, axes, boxes, gaps, lastReached, listed, packed } from './support/rows.mjs';
-import { SPEC } from './support/spec.mjs';
+import { FIELD_FORM } from './support/field.mjs';
 
 before(startApp);
 after(stopApp);
@@ -454,13 +454,13 @@ describe('a verb fills the line and filters the fields', () => {
 			// And it is the field widget on a new field (da-94q1, da-fu29p)
 			// with the pending verb already chosen — the door that presets one.
 			await fieldsBar(page).locator('[data-add-field]').click();
-			await page.locator(SPEC).waitFor();
+			await page.locator(FIELD_FORM).waitFor();
 			assert.equal(
-				await page.locator(`${SPEC} button[data-verb="occur"]`).getAttribute('aria-checked'),
+				await page.locator(`${FIELD_FORM} button[data-verb="occur"]`).getAttribute('aria-checked'),
 				'true'
 			);
 			await page.keyboard.press('Escape');
-			await page.locator(SPEC).waitFor({ state: 'detached' });
+			await page.locator(FIELD_FORM).waitFor({ state: 'detached' });
 
 			await echoed(app, () => fieldsBar(page).locator('[data-field="coffee"]').click());
 			assert.equal((await app.echoes()).at(-1), 'occur coffee');
@@ -496,9 +496,9 @@ describe('a verb fills the line and filters the fields', () => {
 			// opens the form on `start`: a block you are ending is a block.
 			await tap(page, 'end');
 			await fieldsBar(page).locator('[data-add-field]').click();
-			await page.locator(SPEC).waitFor();
+			await page.locator(FIELD_FORM).waitFor();
 			assert.equal(
-				await page.locator(`${SPEC} button[data-verb="start"]`).getAttribute('aria-checked'),
+				await page.locator(`${FIELD_FORM} button[data-verb="start"]`).getAttribute('aria-checked'),
 				'true'
 			);
 		});

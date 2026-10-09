@@ -37,7 +37,7 @@ import { atEachScreen, focusTop, seedLines, sharedApp, startApp, stopApp, withAp
 import { fold, unfold } from './support/bar.mjs';
 import { chooser, inRoom } from './support/layout.mjs';
 import { until } from './support/until.mjs';
-import { SPEC } from './support/spec.mjs';
+import { FIELD_FORM } from './support/field.mjs';
 
 before(startApp);
 after(stopApp);
@@ -332,11 +332,11 @@ describe('on a phone-sized screen', () => {
 	test('the form the (+) opens is on screen', async () => {
 		await phone.solo(async ({ page }) => {
 			await page.locator('.bar [data-track]').click();
-			await page.locator(SPEC).waitFor();
-			await assertOnScreen(page, SPEC, 'the field form');
+			await page.locator(FIELD_FORM).waitFor();
+			await assertOnScreen(page, FIELD_FORM, 'the field form');
 			// Left again, as a place is on a phone: back.
 			await page.goBack();
-			await page.locator(SPEC).waitFor({ state: 'detached' });
+			await page.locator(FIELD_FORM).waitFor({ state: 'detached' });
 		});
 	});
 
@@ -388,11 +388,11 @@ describe('on a phone-sized screen', () => {
 			const { page } = app;
 			await track(app, FIELDS);
 			await page.locator('.bar [data-track]').click();
-			await page.locator(SPEC).waitFor();
-			await assertOnScreen(page, SPEC, 'the field form');
+			await page.locator(FIELD_FORM).waitFor();
+			await assertOnScreen(page, FIELD_FORM, 'the field form');
 			// Left again, as a place is on a phone: back.
 			await page.goBack();
-			await page.locator(SPEC).waitFor({ state: 'detached' });
+			await page.locator(FIELD_FORM).waitFor({ state: 'detached' });
 		});
 	});
 });

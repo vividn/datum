@@ -17,7 +17,7 @@ import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { EXAMPLES, VERBS, trackArgv } from '../src/lib/track.ts';
 import { shellJoin } from '../src/lib/shellSplit.ts';
 import { DESKTOP } from './support/layout.mjs';
-import { SPEC, openSpec } from './support/spec.mjs';
+import { FIELD_FORM, openField } from './support/field.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -47,27 +47,27 @@ describe('the field widget', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await page.locator('.bar button[data-track]').click();
-			await page.locator(SPEC).waitFor();
+			await page.locator(FIELD_FORM).waitFor();
 			assert.equal(
 				(await page.locator(`${WIDGET} p.what`).innerText()).trim(),
 				'A field is one thing you track: mood, coffee, sleep. Each time you log it, that\'s an entry.'
 			);
 			assert.deepEqual(await chipTexts(page), ['+ new field']);
 			assert.deepEqual(await marked(page), ['+ new field']);
-			assert.equal(await page.locator(`${SPEC} input.field`).inputValue(), '');
+			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), '');
 			assert.deepEqual(
-				await page.locator(`${SPEC} [data-example]`).evaluateAll((all) => all.map((b) => b.dataset.example)),
+				await page.locator(`${FIELD_FORM} [data-example]`).evaluateAll((all) => all.map((b) => b.dataset.example)),
 				EXAMPLES.map((e) => e.field)
 			);
 			// Each says its kind by the CLI's own glyph, and what it shows.
 			assert.deepEqual(
-				(await page.locator(`${SPEC} [data-example] .name`).allInnerTexts()).map((t) => t.trim()),
+				(await page.locator(`${FIELD_FORM} [data-example] .name`).allInnerTexts()).map((t) => t.trim()),
 				EXAMPLES.map((e) => `${glyphOf(e.verb)} ${e.field}`)
 			);
 			// Nothing else until it has a name: no kinds, no tabs, nothing to save.
-			assert.equal(await page.locator(`${SPEC} .verb`).count(), 0);
-			assert.equal(await page.locator(`${SPEC} [role="tab"]`).count(), 0);
-			assert.equal(await page.locator(`${SPEC} button.commit`).isEnabled(), false);
+			assert.equal(await page.locator(`${FIELD_FORM} .verb`).count(), 0);
+			assert.equal(await page.locator(`${FIELD_FORM} [role="tab"]`).count(), 0);
+			assert.equal(await page.locator(`${FIELD_FORM} button.commit`).isEnabled(), false);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -76,8 +76,8 @@ describe('the field widget', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await page.locator('.bar button[data-track]').click();
-			await page.locator(`${SPEC} input.field`).fill('tea');
-			const said = await page.locator(`${SPEC} .verb`).evaluateAll((all) =>
+			await page.locator(`${FIELD_FORM} input.field`).fill('tea');
+			const said = await page.locator(`${FIELD_FORM} .verb`).evaluateAll((all) =>
 				all.map((b) => [...b.children].map((c) => c.textContent.trim()))
 			);
 			assert.deepEqual(said, [
@@ -87,8 +87,8 @@ describe('the field widget', () => {
 				['¢', 'a note', 'add']
 			]);
 			// A new field is Basics alone: the tabs come once it is saved.
-			assert.equal(await page.locator(`${SPEC} [role="tab"]`).count(), 0);
-			assert.equal(await page.locator(`${SPEC} [data-example]`).count(), 0, 'a named field still offers the examples');
+			assert.equal(await page.locator(`${FIELD_FORM} [role="tab"]`).count(), 0);
+			assert.equal(await page.locator(`${FIELD_FORM} [data-example]`).count(), 0, 'a named field still offers the examples');
 		});
 	});
 
@@ -96,24 +96,24 @@ describe('the field widget', () => {
 		test(`the ${example.field} example fills the form, not the database, and saves to a field the bar logs`, async () => {
 			await shared.solo(async (app) => {
 				const { page } = app;
-				const { saved } = await openSpec(page);
-				const tall = () => page.locator(SPEC).evaluate((el) => el.getBoundingClientRect().height);
-				await page.locator(`${SPEC} [data-example]`).first().waitFor();
+				const { saved } = await openField(page);
+				const tall = () => page.locator(FIELD_FORM).evaluate((el) => el.getBoundingClientRect().height);
+				await page.locator(`${FIELD_FORM} [data-example]`).first().waitFor();
 				const was = await tall();
-				await page.locator(`${SPEC} [data-example="${example.field}"]`).click();
+				await page.locator(`${FIELD_FORM} [data-example="${example.field}"]`).click();
 				// The place keeps its size: nothing moves under the finger that tapped.
-				await page.locator(`${SPEC} .verb`).first().waitFor();
+				await page.locator(`${FIELD_FORM} .verb`).first().waitFor();
 				assert.equal(await tall(), was, 'the form changed height from the examples to Basics');
 
 				// The form says what the field would be: its name, kind, states, keys.
-				assert.equal(await page.locator(`${SPEC} input.field`).inputValue(), example.field);
-				assert.equal(await page.locator(`${SPEC} .verb[aria-checked="true"]`).getAttribute('data-verb'), example.verb);
-				assert.deepEqual(await page.locator(`${SPEC} .state input.name`).evaluateAll((all) => all.map((i) => i.value)), example.states ?? []);
+				assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), example.field);
+				assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).getAttribute('data-verb'), example.verb);
+				assert.deepEqual(await page.locator(`${FIELD_FORM} .state input.name`).evaluateAll((all) => all.map((i) => i.value)), example.states ?? []);
 				assert.deepEqual(
-					await page.locator(`${SPEC} .basic-keys li`).evaluateAll((all) => all.map((li) => [li.querySelector('input.name').value, li.querySelector('select.kind').value])),
+					await page.locator(`${FIELD_FORM} .basic-keys li`).evaluateAll((all) => all.map((li) => [li.querySelector('input.name').value, li.querySelector('select.kind').value])),
 					(example.keys ?? []).map((k) => [k.name, k.kind])
 				);
-				assert.equal(await page.locator(`${SPEC} input.remainder`).inputValue(), example.remainder ?? '');
+				assert.equal(await page.locator(`${FIELD_FORM} input.remainder`).inputValue(), example.remainder ?? '');
 				const argv = trackArgv(
 					example.field,
 					example.verb,
@@ -122,26 +122,26 @@ describe('the field widget', () => {
 					(example.keys ?? []).map((k) => ({ ...k, value: '' })),
 					example.remainder
 				);
-				assert.equal((await page.locator(`${SPEC} code.preview`).innerText()).trim(), shellJoin(argv));
+				assert.equal((await page.locator(`${FIELD_FORM} code.preview`).innerText()).trim(), shellJoin(argv));
 				// And nothing is written yet.
 				await app.idle();
 				assert.deepEqual(await app.allEntries(), []);
 				assert.equal((await app.run(['spec', 'list'])).stdout.includes(example.field), false, 'the tap declared it');
 
 				// Saved, it is one `track`, and the widget stays on the field it made — with its tabs now.
-				await page.locator(`${SPEC} button.commit`).click();
+				await page.locator(`${FIELD_FORM} button.commit`).click();
 				const result = await saved;
 				assert.equal(result.code, 0, result.stderr);
 				assert.equal((await app.echoes()).at(-1), shellJoin(argv));
-				await page.locator(`${SPEC} h2`).waitFor();
-				assert.equal((await page.locator(`${SPEC} h2`).innerText()).trim(), example.field);
+				await page.locator(`${FIELD_FORM} h2`).waitFor();
+				assert.equal((await page.locator(`${FIELD_FORM} h2`).innerText()).trim(), example.field);
 				assert.deepEqual(
-					await page.locator(`${SPEC} [role="tab"]`).evaluateAll((all) => all.map((t) => t.dataset.tab)),
+					await page.locator(`${FIELD_FORM} [role="tab"]`).evaluateAll((all) => all.map((t) => t.dataset.tab)),
 					['basics', 'states', 'keys', 'aliases', 'placement']
 				);
 				await until(() => marked(page), (m) => m.join() === `${glyphOf(example.verb)} ${example.field}`);
 				await page.keyboard.press('Escape');
-				await page.locator(SPEC).waitFor({ state: 'detached' });
+				await page.locator(FIELD_FORM).waitFor({ state: 'detached' });
 
 				// A working field: the bar logs one entry of it.
 				const [line, data] = LOGGED[example.field];
@@ -163,8 +163,8 @@ describe('the field widget', () => {
 			await app.run(['track', 'mood', '--verb', 'switch', '--state', 'good']);
 			await app.run(['track', 'person', '--verb', 'add']);
 			await app.redraw();
-			await openSpec(page, 'coffee');
-			await page.locator(`${SPEC} h2`).waitFor();
+			await openField(page, 'coffee');
+			await page.locator(`${FIELD_FORM} h2`).waitFor();
 			assert.deepEqual([...(await chipTexts(page))].sort(), ['+ new field', '¢ person', '█ sleep', '▞ mood', '● coffee'].sort());
 			assert.deepEqual(await marked(page), ['● coffee']);
 			assert.equal(
@@ -173,19 +173,19 @@ describe('the field widget', () => {
 			);
 
 			await page.locator(`${WIDGET} .chips [data-chip="sleep"]`).click();
-			await until(async () => (await page.locator(`${SPEC} h2`).innerText()).trim(), (t) => t === 'sleep');
+			await until(async () => (await page.locator(`${FIELD_FORM} h2`).innerText()).trim(), (t) => t === 'sleep');
 			assert.deepEqual(await marked(page), ['█ sleep']);
-			assert.equal(await page.locator(`${SPEC} .verb[aria-checked="true"]`).getAttribute('data-verb'), 'start');
+			assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).getAttribute('data-verb'), 'start');
 
 			// Edits nobody saved are not dropped by a stray tap: the chip asks, and cancel keeps them.
-			const h2 = async () => (await page.locator(`${SPEC} h2`).allInnerTexts()).join().trim();
+			const h2 = async () => (await page.locator(`${FIELD_FORM} h2`).allInnerTexts()).join().trim();
 			const asks = (answer) => page.locator('dialog.confirm').getByRole('button', { name: answer, exact: true }).click();
-			await page.locator(`${SPEC} input.description`).fill('nights');
+			await page.locator(`${FIELD_FORM} input.description`).fill('nights');
 			await page.locator(`${WIDGET} .chips [data-chip="coffee"]`).click();
 			assert.match(await page.locator('dialog.confirm p').innerText(), /^Leave sleep without saving/);
 			await asks('cancel');
 			assert.equal(await h2(), 'sleep');
-			assert.equal(await page.locator(`${SPEC} input.description`).inputValue(), 'nights', 'cancel lost the edit');
+			assert.equal(await page.locator(`${FIELD_FORM} input.description`).inputValue(), 'nights', 'cancel lost the edit');
 			await page.locator(`${WIDGET} .chips [data-chip="coffee"]`).click();
 			await asks('leave');
 			await until(h2, (t) => t === 'coffee');
@@ -193,12 +193,12 @@ describe('the field widget', () => {
 
 			// And «+ new field» is the way back to an empty form and its examples.
 			await page.locator(`${WIDGET} .chips .new`).click();
-			await page.locator(`${SPEC} [data-example]`).first().waitFor();
+			await page.locator(`${FIELD_FORM} [data-example]`).first().waitFor();
 			assert.deepEqual(await marked(page), ['+ new field']);
-			assert.equal(await page.locator(`${SPEC} input.field`).inputValue(), '');
+			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), '');
 			// Less the ones there is a field for already: a tap would re-declare it.
 			assert.deepEqual(
-				await page.locator(`${SPEC} [data-example]`).evaluateAll((all) => all.map((b) => b.dataset.example)),
+				await page.locator(`${FIELD_FORM} [data-example]`).evaluateAll((all) => all.map((b) => b.dataset.example)),
 				['alcohol', 'activity', 'emotion']
 			);
 			assert.deepEqual(app.errors, []);
@@ -211,7 +211,7 @@ describe('the field widget', () => {
 			const names = ['tea', 'team', 'run', 'walk', 'read', 'nap'];
 			for (const name of names) await app.run(['track', name, '--verb', 'occur']);
 			await app.redraw();
-			await openSpec(page);
+			await openField(page);
 			await until(() => chips(page).count(), (n) => n === names.length + 1);
 			assert.equal(await page.locator(`${WIDGET} .chips .find`).count(), 0, 'six fields are a glance');
 
@@ -233,18 +233,18 @@ describe('the field widget', () => {
 			await app.run(['track', 'tea', '--verb', 'occur']);
 			await app.run(['track', 'nap', '--verb', 'start']);
 			await app.redraw();
-			await openSpec(page, 'nap');
-			await page.locator(`${SPEC} h2`).waitFor();
+			await openField(page, 'nap');
+			await page.locator(`${FIELD_FORM} h2`).waitFor();
 			await page.locator(`${WIDGET} .chips [data-chip="tea"]`).waitFor();
 			const before = (await app.echoes()).length;
 			// Done and the chip in one turn of the page, so the save is in flight when the chip lands.
 			await page.evaluate((form) => {
 				document.querySelector(`${form} button.commit`).click();
 				document.querySelector('[data-chip="tea"]').click();
-			}, SPEC);
+			}, FIELD_FORM);
 			await until(async () => (await app.echoes()).length, (n) => n === before + 1);
 			await app.idle();
-			assert.equal((await page.locator(`${SPEC} h2`).allInnerTexts()).join().trim(), 'tea', 'the save took the place away, or the field back');
+			assert.equal((await page.locator(`${FIELD_FORM} h2`).allInnerTexts()).join().trim(), 'tea', 'the save took the place away, or the field back');
 			assert.match((await app.echoes()).at(-1), /^spec set nap /);
 		});
 	});
@@ -256,11 +256,11 @@ describe('the field widget', () => {
 			await app.run(['track', 'emotion', '--verb', 'occur', '-R', 'emotions']);
 			const remainder = async () => JSON.parse((await app.run(['spec', 'show', 'emotion'])).stdout).remainder;
 			for (const [typed, stored] of [['words', 'words'], ['', undefined]]) {
-				const { saved } = await openSpec(page, 'emotion');
-				const box = page.locator(`${SPEC} input.remainder`);
+				const { saved } = await openField(page, 'emotion');
+				const box = page.locator(`${FIELD_FORM} input.remainder`);
 				assert.equal(await box.inputValue(), (await remainder()) ?? '');
 				await box.fill(typed);
-				await page.locator(`${SPEC} button.commit`).click();
+				await page.locator(`${FIELD_FORM} button.commit`).click();
 				assert.equal((await saved).code, 0);
 				assert.equal(await remainder(), stored);
 			}
@@ -280,7 +280,7 @@ describe('the field widget', () => {
 			const track = (await put(page, 'command')).locator('[data-command="track"]');
 			assert.equal(await track.getAttribute('data-act'), 'open');
 			await track.click();
-			await page.locator(`${SPEC} input.field`).waitFor();
+			await page.locator(`${FIELD_FORM} input.field`).waitFor();
 			assert.equal(await page.locator('.prompt-bar input').first().inputValue(), '', 'the tap wrote a line as well');
 			assert.deepEqual(await marked(page), ['+ new field']);
 		});
@@ -293,19 +293,19 @@ describe('the field widget', () => {
 			const { page } = app;
 			await app.submit('track tea --verb occur');
 			const pane = await put(page, 'field');
-			await pane.locator(`${SPEC} input.field`).waitFor();
+			await pane.locator(`${FIELD_FORM} input.field`).waitFor();
 
 			await page.locator('.bar button[data-field="tea"]').click({ modifiers: ['Shift'] });
-			await pane.locator(`${SPEC} h2`).waitFor();
-			assert.equal((await pane.locator(`${SPEC} h2`).innerText()).trim(), 'tea');
+			await pane.locator(`${FIELD_FORM} h2`).waitFor();
+			assert.equal((await pane.locator(`${FIELD_FORM} h2`).innerText()).trim(), 'tea');
 			assert.equal(await page.locator('dialog[open]').count(), 0, 'a widget in view opened a place as well');
 
 			// And the fields widget's `+` goes to the pane, not to a place of its own.
 			await page.locator('.bar button[data-track]').click();
-			await pane.locator(`${SPEC} input.field`).fill('nap');
-			await pane.locator(`${SPEC} button[data-verb="start"]`).click();
-			await pane.locator(`${SPEC} button.commit`).click();
-			await until(async () => (await pane.locator(`${SPEC} h2`).allInnerTexts()).join().trim(), (t) => t === 'nap');
+			await pane.locator(`${FIELD_FORM} input.field`).fill('nap');
+			await pane.locator(`${FIELD_FORM} button[data-verb="start"]`).click();
+			await pane.locator(`${FIELD_FORM} button.commit`).click();
+			await until(async () => (await pane.locator(`${FIELD_FORM} h2`).allInnerTexts()).join().trim(), (t) => t === 'nap');
 			assert.equal(JSON.parse((await app.run(['spec', 'show', 'nap'])).stdout).verb, 'start');
 			assert.equal(await page.locator('dialog[open]').count(), 0);
 			assert.deepEqual(app.errors, []);

@@ -30,7 +30,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
-import { SPEC } from './support/spec.mjs';
+import { FIELD_FORM } from './support/field.mjs';
 import {
 	DESKTOP,
 	choiceLines,
@@ -538,9 +538,9 @@ describe('widget options', () => {
 			// It is a SECOND way to see them, not a replacement for the one that
 			// exists: the (+) still offers `run` back.
 			await page.locator('.bar [data-track]').click();
-			await page.locator(`${SPEC} [data-ignored="run"]`).waitFor();
+			await page.locator(`${FIELD_FORM} [data-ignored="run"]`).waitFor();
 			await page.keyboard.press('Escape');
-			await page.locator(SPEC).waitFor({ state: 'detached' });
+			await page.locator(FIELD_FORM).waitFor({ state: 'detached' });
 
 			// The layout never hears of it: no dot, and the key is nowhere in
 			// the tree the draft is written from.

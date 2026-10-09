@@ -24,7 +24,7 @@ import assert from 'node:assert/strict';
 import { changeCounter, seedLines, sharedApp, startApp, stopApp, withApp as withAnyApp } from './support/app.mjs';
 import { DESKTOP, along, draft, pane, widgetPane } from './support/layout.mjs';
 import { listed } from './support/rows.mjs';
-import { SPEC } from './support/spec.mjs';
+import { FIELD_FORM } from './support/field.mjs';
 
 before(startApp);
 after(stopApp);
@@ -783,7 +783,7 @@ describe('what survives a reload', () => {
 // gestures with a settle between them: the long press MOUNTS the pill, and
 // the tap is only driven once the pill is drawn.
 describe('`spec` under the pill', () => {
-	const MODAL = SPEC;
+	const MODAL = FIELD_FORM;
 	const specButton = (page) => pane(page, 'cmd').locator('[data-command="spec"]');
 	const line = (page) => page.locator('.prompt-bar input').first();
 

@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, seedLines, todayAt } from './support/app.mjs';
 import { along, draft, widgetPane } from './support/layout.mjs';
 import { atRows } from './support/rows.mjs';
-import { SPEC, cancelSpec, openSpec } from './support/spec.mjs';
+import { FIELD_FORM, cancelField, openField } from './support/field.mjs';
 
 const PAGE = JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('bar', 'widgetbar')));
 const BAR = 'section[data-pane="bar"] .bar';
@@ -84,18 +84,18 @@ describe('a switch field opens with `end` under the tap, a never-false one with 
 					assert.ok(Math.abs(env.centre.right - env.centre.left - (mood.centre.right - mood.centre.left)) <= 1, 'the gap is not end’s width');
 
 					// The States tab says so, and turns it off.
-					const { saved } = await openSpec(page, 'env');
-					await page.locator(`${SPEC} [data-tab="states"]`).click();
-					const box = page.locator(`${SPEC} input.never-false`);
+					const { saved } = await openField(page, 'env');
+					await page.locator(`${FIELD_FORM} [data-tab="states"]`).click();
+					const box = page.locator(`${FIELD_FORM} input.never-false`);
 					assert.equal(await box.isChecked(), true);
 					// A field that lists `false` keeps its `end`, so the box cannot say otherwise.
-					await page.locator(`${SPEC} button.add`).click();
-					await page.locator(`${SPEC} .state input.name`).last().fill('false');
+					await page.locator(`${FIELD_FORM} button.add`).click();
+					await page.locator(`${FIELD_FORM} .state input.name`).last().fill('false');
 					assert.equal(await box.isDisabled(), true, 'a listed `false` leaves «never false» to tick');
-					await page.locator(`${SPEC} [aria-label="remove false"]`).click();
+					await page.locator(`${FIELD_FORM} [aria-label="remove false"]`).click();
 					assert.equal(await box.isDisabled(), false);
 					await box.uncheck();
-					await page.locator(`${SPEC} .commit`).click();
+					await page.locator(`${FIELD_FORM} .commit`).click();
 					await saved;
 					assert.equal(JSON.parse((await app.run(['spec', 'show', 'env'])).stdout).never_false, undefined);
 					await app.idle();
@@ -105,10 +105,10 @@ describe('a switch field opens with `end` under the tap, a never-false one with 
 					assert.equal((await tap(page, 'env')).under, 'false', 'end did not come back');
 
 					// Only a switch has a ring, so only a switch is offered it.
-					const { saved: left } = await openSpec(page, 'alfa');
-					await page.locator(`${SPEC} [data-tab="states"]`).click();
-					assert.equal(await page.locator(`${SPEC} input.never-false`).count(), 0, 'an occur field offers «never false»');
-					await cancelSpec(page);
+					const { saved: left } = await openField(page, 'alfa');
+					await page.locator(`${FIELD_FORM} [data-tab="states"]`).click();
+					assert.equal(await page.locator(`${FIELD_FORM} input.never-false`).count(), 0, 'an occur field offers «never false»');
+					await cancelField(page);
 					await left;
 				},
 				{ viewport, clock: todayAt(15), prepare: (context) => context.addInitScript(draft, PAGE) }

@@ -1,10 +1,10 @@
 // A field is made and edited in the field widget (da-fu29p): in its place —
 // a tab, or on a desktop the same widget in the place modal (da-jozgv) — or
-// in a pane someone put it in. SPEC finds its form, and not the copy a tab
-// slides in as (`.beside`), which is thrown away when it lands (da-6du3o):
-// what is typed there is lost.
+// in a pane someone put it in. FIELD_FORM finds its form, and not the copy a
+// tab slides in as (`.beside`), which is thrown away when it lands
+// (da-6du3o): what is typed there is lost.
 
-export const SPEC = '.field-form:not(.beside *)';
+export const FIELD_FORM = '.field-form:not(.beside *)';
 
 /** Any copy of the form, the sliding one too: what must be gone before another opens. */
 const ANY = '.field-form';
@@ -16,10 +16,10 @@ const ANY = '.field-form';
  * place's next save ran or null when left, BOXED: awaiting this must not
  * await the save.
  */
-export async function openSpec(page, field, verb) {
+export async function openField(page, field, verb) {
 	await page.locator(ANY).waitFor({ state: 'detached' });
 	return { saved: page.evaluate(([f, v]) => window.datum.field(f, v), [field, verb]) };
 }
 
 /** Leave the place running nothing: its Cancel. */
-export const cancelSpec = (page) => page.locator(`${SPEC} button.cancel`).click();
+export const cancelField = (page) => page.locator(`${FIELD_FORM} button.cancel`).click();

@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 import { atEachScreen, sharedApp, startApp, stopApp } from './support/app.mjs';
 import { ONE_PANE } from './support/layout.mjs';
 import { until } from './support/until.mjs';
-import { SPEC as MODAL, cancelSpec, openSpec } from './support/spec.mjs';
+import { FIELD_FORM as MODAL, cancelField, openField } from './support/field.mjs';
 const TABS = ['basics', 'states', 'keys', 'aliases', 'placement'];
 
 describe('the field form', () => {
@@ -41,7 +41,7 @@ describe('the field form', () => {
 			assert.equal(r.code, 0, r.stderr);
 
 			await atEachScreen(t, page, [{ width: 390, height: 844 }, { width: 1280, height: 900 }], async () => {
-				const { saved: closed } = await openSpec(page, 'mood');
+				const { saved: closed } = await openField(page, 'mood');
 				await page.locator(MODAL).waitFor();
 				const sizes = {};
 				for (const tab of TABS) {
@@ -67,7 +67,7 @@ describe('the field form', () => {
 					assert.ok(Math.abs(size.width - first.width) <= 1, `${TABS[i + 1]} width ${size.width} vs ${first.width}`);
 					assert.ok(Math.abs(size.height - first.height) <= 1, `${TABS[i + 1]} height ${size.height} vs ${first.height}`);
 				}
-				await cancelSpec(page);
+				await cancelField(page);
 				assert.equal(await closed, null);
 			});
 		});
