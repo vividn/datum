@@ -1512,6 +1512,20 @@ fn status_says_never_then_synced_then_pending_then_error_each_with_its_time() {
     session(&a, &b);
     assert_eq!(status_of(&a, &b)["state"], "synced");
 
+    // So does a session that ended with no verify to give, one copy ahead
+    // of the other (da-t3ey2); one that failed keeps it.
+    a.ok(&["sync", "record-session", &b.id(), "--verify", "mismatch"]);
+    a.ok(&["sync", "record-session", &b.id(), "--error", "cut"]);
+    assert_eq!(status_of(&a, &b)["last_verify"]["match"], false);
+    a.ok(&["sync", "record-session", &b.id()]);
+    let row = status_of(&a, &b);
+    assert_eq!(
+        (row["state"].as_str(), row["last_verify"].is_null()),
+        (Some("pending"), true),
+        "{row}"
+    );
+    session(&a, &b);
+
     // b revoked, what it makes is refused, and the transport says so.
     a.ok(&["sync", "chain", "revoke", "b"]);
     b.ok(&["occur", "after"]);

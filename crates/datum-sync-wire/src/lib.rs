@@ -377,7 +377,11 @@ pub struct Report {
     pub sent: usize,
     pub got: usize,
     pub conflicts: usize,
-    pub verified: bool,
+    /// Whether the two state hashes agree. None when they differ and one
+    /// copy is ahead of the other: no verdict (da-t3ey2).
+    pub verified: Option<bool>,
+    /// The verify in words, as [`verdict`] says it.
+    pub verify: String,
     /// The peer's version vector, as it last sent it.
     pub vector: Vector,
     /// The members' addresses the peer passed on.
@@ -399,7 +403,8 @@ impl Report {
             sent: 0,
             got: 0,
             conflicts: 0,
-            verified: false,
+            verified: None,
+            verify: String::new(),
             vector: BTreeMap::new(),
             left: None,
         }
@@ -410,12 +415,8 @@ impl std::fmt::Display for Report {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}: sent {}, got {}, conflicts {}, verify {}",
-            self.label,
-            self.sent,
-            self.got,
-            self.conflicts,
-            if self.verified { "ok" } else { "MISMATCH" }
+            "{}: sent {}, got {}, conflicts {}, {}",
+            self.label, self.sent, self.got, self.conflicts, self.verify
         )
     }
 }
@@ -589,15 +590,44 @@ async fn exchange(
         put_json(s, &hash).await?;
         h
     };
-    rep.verified = theirs == hash;
+    let mine = last.map(|round| round.0).unwrap_or_default();
+    (rep.verified, rep.verify) = verdict(&rep.label, theirs == hash, &mine, &rep.vector);
     Ok(())
+}
+
+/// A session's verify, and its words. Hashes that differ are a MISMATCH only
+/// over the same ops: with one copy ahead of the other they could not agree,
+/// and it says who is ahead by how many ops instead. A reader ahead of a
+/// member stays so, since it never relays (da-t3ey2).
+fn verdict(label: &str, same: bool, mine: &Vector, theirs: &Vector) -> (Option<bool>, String) {
+    let ahead = |a: &Vector, of: &Vector| -> i64 {
+        a.iter()
+            .map(|(e, s)| (s - of.get(e).copied().unwrap_or(0)).max(0))
+            .sum()
+    };
+    let says = |who: &str, n: i64, of: &str| {
+        let s = if n == 1 { "" } else { "s" };
+        (n > 0).then(|| format!("{who} is {n} change{s} ahead of {of}"))
+    };
+    let apart: Vec<String> = [
+        says("this copy", ahead(mine, theirs), label),
+        says(label, ahead(theirs, mine), "this copy"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    match apart.is_empty() {
+        _ if same => (Some(true), "verify ok".into()),
+        true => (Some(false), "verify MISMATCH".into()),
+        false => (None, format!("not verified: {}", apart.join(", "))),
+    }
 }
 
 /// Record how a session with `id` ended. A peer that is neither a member
 /// nor paired (a refused redemption) has no row to record it in.
 async fn record(store: &impl Store, id: &str, rep: &Result<Report>) {
     let (vector, verify, error, met) = match rep {
-        Ok(r) => (Some(&r.vector), Some(r.verified), None, &r.met[..]),
+        Ok(r) => (Some(&r.vector), r.verified, None, &r.met[..]),
         Err(e) => (
             e.downcast_ref::<Lost>().map(|Lost(r, _)| &r.vector),
             None,
@@ -1002,5 +1032,32 @@ mod tests {
         assert_eq!(said["datum"], "3.0.900-beta (abc1234)");
         assert_eq!(said["schema"], 57);
         assert_eq!(said["label"], "old");
+    }
+
+    /// A verify between copies that hold different ops is no verdict, and
+    /// names each one ahead (da-t3ey2); over the same ops it is one.
+    #[test]
+    fn a_verify_is_a_mismatch_only_over_the_same_ops() {
+        let v = |seqs: &[(&str, i64)]| -> Vector {
+            seqs.iter().map(|(e, s)| (e.to_string(), *s)).collect()
+        };
+        let (mine, theirs) = (v(&[("a", 3), ("b", 1)]), v(&[("b", 2), ("c", 0)]));
+        assert_eq!(
+            verdict("B", false, &mine, &theirs),
+            (
+                None,
+                "not verified: this copy is 3 changes ahead of B, \
+                 B is 1 change ahead of this copy"
+                    .into()
+            )
+        );
+        assert_eq!(
+            verdict("B", false, &mine, &mine),
+            (Some(false), "verify MISMATCH".into())
+        );
+        assert_eq!(
+            verdict("B", true, &mine, &theirs),
+            (Some(true), "verify ok".into())
+        );
     }
 }

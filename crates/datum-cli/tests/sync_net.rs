@@ -1231,6 +1231,67 @@ fn a_redeemer_describes_itself_and_every_session_is_recorded_for_status() {
     );
 }
 
+/// A reader ahead of the member it syncs with (da-t3ey2): r holds an entry
+/// of a's that b, which knows r, lacks, and a reader never relays, so no
+/// session between them can make them equal. Each says who is ahead and by
+/// how much, and neither a MISMATCH, in its session or its status; the same
+/// ops and different rows are still one.
+#[test]
+fn a_reader_ahead_of_a_member_says_so_and_the_same_ops_apart_are_a_mismatch() {
+    let (a, mut b, r) = admitted_unheard(&["--reader"]);
+    // A dial that reaches no one fails the command: what it printed.
+    let sync = |c: &Copy| String::from_utf8(c.run(&["sync"]).stdout).unwrap();
+
+    // b hears of r from a; r alone gets a's next entry; a goes.
+    let a_runs = a.serve(&["sync", "run"]);
+    let heard = sync(&b);
+    assert!(heard.contains("verify ok"), "{heard}");
+    a.ok(&["occur", "later"]);
+    let got = sync(&r);
+    assert!(got.contains("verify ok") && r.has("later"), "{got}");
+    drop(a_runs);
+
+    let (b_label, r_label) = (member_label(&r, &b.id()), member_label(&b, &r.id()));
+    // b's run dials r in its turn, and reaches no one: its status would say
+    // that, so not while this looks.
+    b.env = vec![("DATUM_SYNC_TIMEOUT_S", "30")];
+    let mut b_runs = b.serve(&["sync", "run"]);
+    let dialed = sync(&r);
+    let served = b_runs.lines_until(" got ");
+    drop(b_runs);
+    b.env = r.env.clone();
+    // The entry, and the spec its first log declared.
+    let ahead = format!("not verified: this copy is 2 changes ahead of {b_label}");
+    assert!(dialed.contains(&ahead), "{dialed}");
+    let ahead = format!("not verified: {r_label} is 2 changes ahead of this copy");
+    assert!(served.contains(&ahead), "{served}");
+    for (x, y) in [(&b, &r), (&r, &b)] {
+        let row = entry_of(x, "status", y);
+        assert_eq!(
+            (row["state"].as_str(), row["error"].as_str()),
+            (Some("pending"), None),
+            "{row}"
+        );
+    }
+
+    // b catches up from a, so the two hold the same ops and verify; then r
+    // loses a row.
+    let a_runs = a.serve(&["sync", "run"]);
+    assert!(sync(&b).contains("verify ok") && b.has("later"));
+    drop(a_runs);
+    let _b_runs = b.serve(&["sync", "run"]);
+    let level = sync(&r);
+    assert!(level.contains("verify ok"), "{level}");
+    assert_eq!(entry_of(&r, "status", &b)["state"], "synced");
+    rusqlite::Connection::open(r.db())
+        .unwrap()
+        .execute("DELETE FROM entries WHERE field = 'later'", [])
+        .unwrap();
+    let lost = sync(&r);
+    assert!(lost.contains("verify MISMATCH"), "{lost}");
+    assert_eq!(entry_of(&r, "status", &b)["error"], "verify MISMATCH");
+}
+
 /// A reader writes nothing, so a copy holding entries of its own is refused
 /// a reader invite, filtered or not, by count (da-tti3w): it is in no chain
 /// after and its entries are as they were, and the invite, unused, admits a
@@ -1417,8 +1478,8 @@ fn a_filtered_reader_only_its_inviter_heard_of_shows_its_admission_and_syncs() {
 
 /// A plain reader is served the same way, and gets all the member holds.
 /// It holds the inviter's entry too, which the member lacks and no reader
-/// relays, so their verify differs by that entry, as it does for a reader
-/// the member has long known (da-t3ey2).
+/// relays, so there is no verify to give: each says the reader is ahead, as
+/// for a reader the member has long known (da-t3ey2).
 #[test]
 fn a_plain_reader_only_its_inviter_heard_of_shows_its_admission_and_syncs() {
     let (_a, b, r) = admitted_unheard(&["--reader"]);
@@ -1430,7 +1491,14 @@ fn a_plain_reader_only_its_inviter_heard_of_shows_its_admission_and_syncs() {
         (true.into(), serde_json::Value::Null)
     );
     assert!(r.has("from-a") && !b.has("from-a"));
-    assert!(out.contains("verify MISMATCH"), "{out}");
-    assert!(served.contains("verify MISMATCH"), "{served}");
-    assert_eq!(listed["last_verify"]["match"], false);
+    // The entry and its spec, which the member lacks; and the reader's
+    // invite, its admission and its describe, which the member holds
+    // waiting on those two.
+    let ahead = "not verified: this copy is 5 changes ahead of ";
+    assert!(out.contains(ahead), "{out}");
+    assert!(
+        served.contains(" is 5 changes ahead of this copy"),
+        "{served}"
+    );
+    assert!(listed["last_verify"].is_null(), "{listed}");
 }

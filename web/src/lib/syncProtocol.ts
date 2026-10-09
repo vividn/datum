@@ -9,7 +9,10 @@ export interface SyncReport {
 	sent: number;
 	got: number;
 	conflicts: number;
-	verified: boolean;
+	/** Whether the state hashes agree; null with one copy ahead of the other (da-t3ey2). */
+	verified: boolean | null;
+	/** The verify in words. */
+	verify: string;
 	vector: Record<string, number>;
 	/** The chain of one this copy left to redeem the invite, and the chain it joined (da-h7pnc). */
 	left?: [string, string] | null;

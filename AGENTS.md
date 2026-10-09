@@ -183,7 +183,12 @@ this copy has an address for. Each side says in its handshake where it last
 saw the chain's members (`known` on `Hello` and `Welcome`), and the other
 keeps what it has not itself seen once the session has synced, so two copies
 one inviter admitted dial each other (da-fly3f); a member with no address yet
-is named as one by `sync` and `sync status`, with nothing «to send». The tree:
+is named as one by `sync` and `sync status`, with nothing «to send». A session
+ends by comparing state hashes: `verify ok`, `verify MISMATCH` when they
+differ over the same ops, and with one copy ahead of the other — a reader
+holding what a member lacks, which it never relays — «not verified: R is N
+changes ahead of this copy», `pending` in `sync status` and no error
+(da-t3ey2). The tree:
 `sync`, `status`, `pause | resume`, `chain invite | connect | leave |
 list | rename | revoke | purge | ack | rekey`, `admin list | add | remove`, `daemon
 install | uninstall | status` (a systemd user unit / launchd agent

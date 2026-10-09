@@ -112,7 +112,10 @@ type Session = (
 impl Db {
     /// Record how a session with `endpoint` ended: the vector it had at the
     /// end, its verify, and the error it failed with (none: it succeeded,
-    /// which clears the last one). What is not given is kept. A failed
+    /// which clears the last one). What is not given is kept, with one
+    /// exception: a session that succeeded and gave no verify, one copy
+    /// being ahead of the other, clears the verify recorded before it,
+    /// which says nothing of the two copies now (da-t3ey2). A failed
     /// session's vector is the peer's as its last round began, before that
     /// round's ops reached it, so `to_send` may count more than is waiting,
     /// never less. A chain
@@ -139,8 +142,11 @@ impl Db {
         let n = self.conn.execute(
             "UPDATE sync_peers SET
                last_vector = COALESCE(?2, last_vector),
-               last_verify_at = CASE WHEN ?3 IS NULL THEN last_verify_at ELSE ?5 END,
-               last_verify_match = COALESCE(?3, last_verify_match),
+               last_verify_at = CASE WHEN ?3 IS NOT NULL THEN ?5
+                                     WHEN ?4 IS NOT NULL THEN last_verify_at
+                                     ELSE NULL END,
+               last_verify_match = CASE WHEN ?4 IS NULL THEN ?3
+                                        ELSE COALESCE(?3, last_verify_match) END,
                last_error = ?4,
                last_error_at = CASE WHEN ?4 IS NULL THEN NULL ELSE ?5 END,
                last_seen = CASE WHEN ?4 IS NULL THEN ?5 ELSE last_seen END
