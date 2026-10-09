@@ -97,6 +97,8 @@ description = "stop for the day"
 # Water by day — each entry's own local day, not the UTC one. «Today» in a
 # view is `local_today()`: SQLite's own local-time modifier answers the UTC
 # day on datum.day.
+# Time spent is `SUM(dur_seconds(dur))`: `dur` is ISO text, and
+# `dur_seconds` is its seconds, null for an entry with no span.
 [[view]]
 name = "water_by_day"
 sql = """

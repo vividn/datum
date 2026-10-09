@@ -206,4 +206,21 @@ describe('the wasi CLI', () => {
 			{ clock: Date.parse('2026-09-12T00:30:00+02:00'), timezone: 'Europe/Berlin' }
 		);
 	});
+
+	// `dur` is ISO text; `dur_seconds(dur)` is what a view adds up (da-es4em).
+	test('a kit view totals time spent with dur_seconds', async () => {
+		await onSeam(async (app) => {
+			const kit = `[kit]\nname = "practice"\n\n[[view]]\nname = "practised"\nsql = "SELECT SUM(dur_seconds(dur)) AS seconds, COUNT(*) AS n FROM entries WHERE field = 'practice'"\n`;
+			const installed = await app.run(['kit', 'install', '--yes', '-'], kit);
+			assert.equal(installed.code, 0, installed.stderr);
+			// A time each: the app's clock is held, and one instant is one entry.
+			for (const argv of [['dur=30m', '-t', '0900'], ['dur=1:30', '-t', '1100'], ['-t', '1200']]) {
+				const logged = await app.run(['occur', 'practice', ...argv]);
+				assert.equal(logged.code, 0, logged.stderr);
+			}
+			const view = await app.run(['view', 'practised', '--format', 'json']);
+			assert.equal(view.code, 0, view.stderr);
+			assert.deepEqual(JSON.parse(view.stdout), [{ seconds: 7200, n: 3 }]);
+		});
+	});
 });

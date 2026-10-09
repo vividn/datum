@@ -23,6 +23,7 @@ use rusqlite::functions::FunctionFlags;
 use rusqlite::types::ValueRef;
 use serde_json::{Map, Number, Value as JsonValue};
 
+use crate::dur::Dur;
 use crate::error::{DatumError, Result};
 use crate::kit::ViewEntry;
 use crate::time::DatumTime;
@@ -273,6 +274,7 @@ impl Db {
 
         register_local_day(&self.conn)?;
         register_local_today(&self.conn)?;
+        register_dur_seconds(&self.conn)?;
         self.conn.execute_batch("PRAGMA query_only = 1;")?;
         // Returning true from the progress handler interrupts the query;
         // the flag distinguishes our deadline from a genuine SQL error.
@@ -295,11 +297,12 @@ impl Db {
         // Remove the handler so the shared connection's normal work (the
         // logging hot path) doesn't keep paying the per-callback cost.
         self.conn.progress_handler(0, None::<fn() -> bool>);
-        // `local_day` and `local_today` are the views' alone, never a
-        // writer's. A failed removal leaves only a pure read-only function
-        // behind.
+        // `local_day`, `local_today` and `dur_seconds` are the views' alone,
+        // never a writer's. A failed removal leaves only a pure read-only
+        // function behind.
         let _ = self.conn.remove_function(LOCAL_DAY, 2);
         let _ = self.conn.remove_function(LOCAL_TODAY, 0);
+        let _ = self.conn.remove_function(DUR_SECONDS, 1);
         // Always clear query_only, even when the query failed, so a later
         // `datum log …` against the same connection can still write. If
         // the clear itself fails, say so loudly: the shared connection
@@ -326,6 +329,23 @@ impl Db {
 
 const LOCAL_DAY: &str = "local_day";
 const LOCAL_TODAY: &str = "local_today";
+const DUR_SECONDS: &str = "dur_seconds";
+
+/// `dur_seconds(dur)` → the seconds of an entry's duration, as `tail`'s
+/// `dur_seconds` reads it (`Dur::as_seconds`): the column is ISO text, which
+/// SQL cannot add up. Null for null, `MOMENT`, `UNKNOWN` and anything that
+/// is no duration, so `SUM` passes over them (da-es4em).
+fn register_dur_seconds(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    conn.create_scalar_function(
+        DUR_SECONDS,
+        1,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| {
+            let dur = ctx.get_raw(0).as_str().ok().and_then(Dur::parse);
+            Ok(dur.and_then(|d| d.as_seconds()))
+        },
+    )
+}
 
 /// `local_today()` → `YYYY-MM-DD`, today in the zone datum stamps entries
 /// with (`DatumTime::now()`), read once per view. SQLite's own
@@ -667,6 +687,44 @@ mod tests {
         let err = db
             .conn()
             .query_row("SELECT local_today()", [], |r| r.get::<_, String>(0))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no such function"), "{err}");
+    }
+
+    /// `dur_seconds` is the seconds of a stored duration and null for
+    /// everything that has none, so a `SUM` over a field's entries totals
+    /// the time spent (da-es4em).
+    #[test]
+    fn dur_seconds_totals_the_durations_and_passes_over_the_rest() {
+        let db = db();
+        let r = db
+            .execute_view(
+                "SELECT dur_seconds('PT1H30M'), dur_seconds('PT0S'), dur_seconds('MOMENT'), \
+                        dur_seconds('UNKNOWN'), dur_seconds(NULL), dur_seconds('soon'), \
+                        dur_seconds(90), \
+                        (SELECT SUM(dur_seconds(column1)) \
+                         FROM (VALUES ('PT30M'), ('PT1H30M'), ('MOMENT')))",
+            )
+            .unwrap();
+        let null = json!(null);
+        assert_eq!(
+            r.rows,
+            vec![vec![
+                json!(5400),
+                json!(0),
+                null.clone(),
+                null.clone(),
+                null.clone(),
+                null.clone(),
+                null,
+                json!(7200)
+            ]]
+        );
+
+        let err = db
+            .conn()
+            .query_row("SELECT dur_seconds('PT30M')", [], |r| r.get::<_, i64>(0))
             .unwrap_err()
             .to_string();
         assert!(err.contains("no such function"), "{err}");

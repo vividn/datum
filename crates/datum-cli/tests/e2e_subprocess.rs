@@ -1014,6 +1014,37 @@ sql = "SELECT date(occur_time) AS day, COUNT(*) AS n FROM entries WHERE field = 
     );
 }
 
+/// A kit view totals time spent with `dur_seconds(dur)`: the column is ISO
+/// text, and a moment has no seconds to add (da-es4em).
+#[test]
+fn subprocess_kit_view_totals_time_spent() {
+    let env = Env::new();
+    let kit = r#"[kit]
+name = "practice"
+
+[[view]]
+name = "practised"
+sql = "SELECT SUM(dur_seconds(dur)) AS seconds, COUNT(*) AS n FROM entries WHERE field = 'practice'"
+"#;
+    assert_ok(
+        &env.run_with_stdin(&["kit", "install", "-"], kit),
+        "kit install",
+    );
+    for argv in [
+        &["occur", "practice", "dur=30m"][..],
+        &["end", "practice", "1:30"],
+        &["occur", "practice"],
+    ] {
+        assert_ok(&env.run(argv), &argv.join(" "));
+    }
+    let out = env.run(&["view", "practised", "--format", "json"]);
+    assert_ok(&out, "view practised");
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap(),
+        serde_json::json!([{"seconds": 7200, "n": 3}])
+    );
+}
+
 /// The sample kit's `hydration` counts a glass on the local day it was
 /// drunk, not the UTC one (da-tgsqs).
 #[test]

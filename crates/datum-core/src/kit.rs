@@ -208,6 +208,11 @@ pub struct FieldEntry {
 /// entries with, so `local_day(occur_time, occur_time_offset) =
 /// local_today()` is «logged today». SQLite's `date('now', 'localtime')` is
 /// not: on datum.day it has no zone data and answers the UTC day.
+///
+/// `dur` is ISO text (`PT1H30M`), which SQL cannot add up.
+/// `dur_seconds(dur)` is its seconds, and null for an entry with no span
+/// (no `dur`, `MOMENT`, `UNKNOWN`), so `SUM(dur_seconds(dur)) / 60` over a
+/// field's entries is the minutes spent on it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewEntry {
     pub name: String,
