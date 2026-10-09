@@ -3,13 +3,24 @@
 //! reaches a real service manager. Linux only: that is the unit's platform.
 #![cfg(target_os = "linux")]
 
+use std::io::{BufRead, BufReader};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Child, ChildStdout, Command, Output, Stdio};
 
 use tempfile::TempDir;
 
-use crate::sync_net::claim_port;
+use crate::sync_net::{claim_port, eventually};
+
+/// A long-running `datum`, killed when dropped.
+struct Killed(Child);
+
+impl Drop for Killed {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
 
 struct Home {
     tmp: TempDir,
@@ -81,6 +92,35 @@ impl Home {
         let out = self.datum(args, &[]);
         assert!(out.status.success(), "{args:?}: {out:?}");
         String::from_utf8(out.stdout).unwrap()
+    }
+
+    fn spawn(&self, args: &[&str], env: &[(&str, &str)]) -> Killed {
+        let mut c = self.command(env!("CARGO_BIN_EXE_datum"));
+        c.args(args).envs(env.iter().copied());
+        c.stdout(Stdio::piped()).stderr(Stdio::piped());
+        Killed(c.spawn().unwrap())
+    }
+
+    /// An invite serving, its ticket, and its stdout: kept open until the
+    /// join is done, since the invite prints past the ticket, and a closed
+    /// pipe ends it before it serves (exit 141, da-aa2hw).
+    fn inviting(&self, env: &[(&str, &str)]) -> (Killed, BufReader<ChildStdout>, String) {
+        let mut inviting = self.spawn(&["sync", "chain", "invite"], env);
+        let mut out = BufReader::new(inviting.0.stdout.take().unwrap());
+        let ticket = (&mut out)
+            .lines()
+            .map_while(Result::ok)
+            .find_map(|l| {
+                Some(
+                    l.split("datum sync chain connect ")
+                        .nth(1)?
+                        .trim()
+                        .trim_matches('\'')
+                        .to_string(),
+                )
+            })
+            .unwrap();
+        (inviting, out, ticket)
     }
 
     /// A first invite, served for a second and expiring: its stderr.
@@ -210,7 +250,6 @@ fn install_sh_restarts_an_installed_daemon() {
 /// applies 300 ops at 20 ms each with no keepalives, on a 3 s timeout.
 #[test]
 fn a_join_whose_first_sync_fails_still_installs_it() {
-    use std::io::{BufRead, BufReader};
     let (a, b) = (Home::new(), Home::new());
     for i in 0..300 {
         a.ok(&["occur", "step", &format!("n={i}")]);
@@ -220,33 +259,9 @@ fn a_join_whose_first_sync_fails_still_installs_it() {
         ("DATUM_SYNC_TEST_APPLY_DELAY_MS", "20"),
         ("DATUM_SYNC_TEST_KEEPALIVE", "0"),
     ];
-    let mut inviting = a
-        .command(env!("CARGO_BIN_EXE_datum"))
-        .args(["sync", "chain", "invite"])
-        .envs(slow)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
-    // Kept open until the join is done: the invite prints past the ticket,
-    // and a closed pipe ends it before it serves (exit 141, da-aa2hw).
-    let mut out = BufReader::new(inviting.stdout.take().unwrap());
-    let ticket = (&mut out)
-        .lines()
-        .map_while(Result::ok)
-        .find_map(|l| {
-            Some(
-                l.split("datum sync chain connect ")
-                    .nth(1)?
-                    .trim()
-                    .trim_matches('\'')
-                    .to_string(),
-            )
-        })
-        .unwrap();
+    let (inviting, _out, ticket) = a.inviting(&slow);
     let joined = b.datum(&["sync", "chain", "connect", &ticket], &slow);
-    let _ = inviting.kill();
-    let _ = inviting.wait();
+    drop(inviting);
     let said = format!(
         "{}{}",
         String::from_utf8_lossy(&joined.stdout),
@@ -256,4 +271,70 @@ fn a_join_whose_first_sync_fails_still_installs_it() {
     assert!(said.contains("paired with"), "{said}");
     assert!(said.contains("sync now runs in the background"), "{said}");
     assert!(b.service().exists());
+}
+
+/// `connect` installs the daemon once it is admitted, not after its first
+/// sync (da-qr7gz): killed while that sync runs it has left the daemon, which
+/// kept off the database for as long as the `connect` lived, and finishes
+/// the join. The joiner applies 300 ops at 20 ms each: six seconds to be
+/// killed in.
+#[test]
+fn a_join_killed_at_its_first_sync_left_the_daemon_which_finishes_it() {
+    let (a, b) = (Home::new(), Home::new());
+    for i in 0..300 {
+        a.ok(&["occur", "step", &format!("n={i}")]);
+    }
+    let (inviting, _out, ticket) = a.inviting(&[]);
+    let slow = [("DATUM_SYNC_TEST_APPLY_DELAY_MS", "20")];
+    let mut joining = b.spawn(&["sync", "chain", "connect", &ticket], &slow);
+    // Read no further, and kept open: a closed stderr would end the join.
+    let mut err = BufReader::new(joining.0.stderr.take().unwrap());
+    let said = (&mut err)
+        .lines()
+        .map_while(Result::ok)
+        .any(|l| l.contains("sync now runs in the background"));
+    assert!(said, "the join ended without installing the daemon");
+    // Said with the first sync still to finish, and the daemon leaves the
+    // database to the `connect` meanwhile.
+    let status = b.ok(&["sync", "status"]);
+    assert!(status.contains("joining a sync chain through"), "{status}");
+    let daemon = b.ok(&["sync", "daemon", "status"]);
+    assert!(daemon.contains("0 chained database(s)"), "{daemon}");
+
+    drop(joining);
+    // Killed, it left its lock's file behind, let go: the daemon reads past it.
+    assert!(b.path("data/data.db.joining").exists());
+    assert!(b.service().exists());
+    assert!(b
+        .log()
+        .contains("systemctl --user restart datum-sync.service"));
+    let status = b.ok(&["sync", "status"]);
+    assert!(status.contains("joining a sync chain through"), "{status}");
+    let daemon = b.ok(&["sync", "daemon", "status"]);
+    assert!(daemon.contains("1 chained database(s): data"), "{daemon}");
+
+    drop(inviting);
+    let _a_runs = a.spawn(&["sync", "run"], &[]);
+    let _b_runs = b.spawn(&["sync", "daemon", "run"], &[]);
+    eventually("the daemon finishing the join", || {
+        b.ok(&["sync", "status"]).contains("  synced  ")
+    });
+    assert!(b.ok(&["tail", "-n", "1"]).contains("step"));
+}
+
+#[test]
+fn status_names_a_missing_daemon_on_a_chained_copy() {
+    let h = Home::new();
+    let missing = "no sync daemon";
+    assert!(!h.ok(&["sync", "status"]).contains(missing));
+    h.invite(&[("DATUM_SYNC_NO_DAEMON", "1")]);
+    let status = h.ok(&["sync", "status"]);
+    assert!(
+        status.contains(missing) && status.contains("`datum sync daemon install`"),
+        "{status}"
+    );
+    let opted_out = h.datum(&["sync", "status"], &[("DATUM_SYNC_NO_DAEMON", "1")]);
+    assert!(!String::from_utf8_lossy(&opted_out.stdout).contains(missing));
+    h.ok(&["sync", "daemon", "install"]);
+    assert!(!h.ok(&["sync", "status"]).contains(missing));
 }

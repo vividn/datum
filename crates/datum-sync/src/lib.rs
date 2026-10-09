@@ -14,6 +14,7 @@
 //!   unrevoked members are served or dialed (`Db::sync_handshake`). Anyone
 //!   else is refused at the handshake, and so is this copy's own key.
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -78,13 +79,14 @@ fn runtime() -> Result<tokio::runtime::Runtime> {
 
 // ─── The store ──────────────────────────────────────────────────────────────
 
-/// A session's store: this copy's `Db`, on the session's own thread, and
-/// where a command that says how its one session goes hears of it.
-struct DbStore<'a>(&'a Db, Option<&'a Mutex<Told>>);
+/// A session's store: this copy's `Db`, on the session's own thread, where
+/// a command that says how its one session goes hears of it, and what to do
+/// the first time a peer this copy dialed welcomes it.
+struct DbStore<'a>(&'a Db, Option<&'a Mutex<Told>>, Cell<Option<&'a dyn Fn()>>);
 
 impl<'a> DbStore<'a> {
     fn new(db: &'a Db) -> Self {
-        DbStore(db, None)
+        DbStore(db, None, Cell::new(None))
     }
 
     fn tell(&self, f: impl FnOnce(&mut Told)) {
@@ -249,6 +251,11 @@ impl Store for DbStore<'_> {
             .sync_handshake(peer, label, &addr, invite, chain, holds, dialed)
             .map_err(refusal)?;
         self.tell(|t| t.met(label, !dialed, invite.is_some()));
+        if dialed {
+            if let Some(welcomed) = self.2.take() {
+                welcomed();
+            }
+        }
         // A copy before da-3zqyv says nothing; recording never stops a sync.
         if version.schema > 0 {
             let said = self
@@ -360,7 +367,7 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
     runtime()?.block_on(async {
         let ep = bind(db).await?;
         let told = Told::new(String::new());
-        let store = DbStore(db, Some(&told));
+        let store = DbStore(db, Some(&told), Cell::new(None));
         let mut addrs = vec![ep.addr()];
         addrs.extend(synced_peers(db)?.iter().filter_map(|p| addr(p).ok()));
         let chain = db.sync_chain()?;
@@ -421,8 +428,9 @@ const UNFINISHED: &str = "the first sync did not finish: run `datum sync`";
 /// first of the ticket's addresses that admits it. It says at once whom it
 /// waits for and until when, then every [`WAITING`] that it still is, and
 /// once it is answered how far the sync is; a join that fails ends saying why
-/// and what to do next (da-0tawk).
-pub fn connect(db: &Db, ticket: &str) -> Result<()> {
+/// and what to do next (da-0tawk). `admitted` runs once it is welcomed, a
+/// member from then on, before its first sync (da-qr7gz).
+pub fn connect(db: &Db, ticket: &str, admitted: &dyn Fn()) -> Result<()> {
     let t = Ticket::decode(ticket)?;
     let from = t.about.from.as_deref().unwrap_or("the inviting device");
     let until = t
@@ -444,7 +452,7 @@ pub fn connect(db: &Db, ticket: &str) -> Result<()> {
     runtime()?.block_on(async {
         let ep = bind(db).await?;
         let told = Told::new(format!("still waiting for {from}"));
-        let store = DbStore(db, Some(&told));
+        let store = DbStore(db, Some(&told), Cell::new(Some(admitted)));
         let rep = telling(&told, redeem(&store, &ep, &t)).await;
         ep.close().await;
         // Admitted, it says what it is; its peers hear on the next sync. A

@@ -4,10 +4,13 @@
 //! which is `sync run` for each of them in one process. The first `chain
 //! invite` or `chain connect` of a copy in no chain installs it, unless
 //! `DATUM_SYNC_NO_DAEMON=1`: background work starts when the person opts
-//! into the feature it serves, never at CLI install time. Linger is left
-//! alone: a user service stops at logout, and `status` says so.
+//! into the feature it serves, never at CLI install time. A `connect`
+//! installs it once admitted, so a first sync cut short leaves it, and the
+//! daemon finishes that sync (da-qr7gz). Linger is left alone: a user
+//! service stops at logout, and `status` says so.
 
 use std::collections::BTreeSet;
+use std::fs::{File, TryLockError};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -241,11 +244,71 @@ fn status(manager: Option<Manager>) -> Result<()> {
     Ok(())
 }
 
+fn opted_out() -> bool {
+    std::env::var(NO_DAEMON).is_ok_and(|v| !v.is_empty() && v != "0")
+}
+
+/// Whether `sync status` should say a chained copy has no daemon: one could
+/// be installed here, none is, and `DATUM_SYNC_NO_DAEMON` is not why.
+pub fn missing() -> bool {
+    !opted_out()
+        && Manager::here()
+            .and_then(|m| m.path().ok())
+            .is_some_and(|p| !p.exists())
+}
+
+/// A `connect` at work on a database (da-qr7gz): a lock on a file beside it,
+/// held for the command's life and so let go when it is killed. The daemon,
+/// installed once the copy is admitted, leaves the database alone until
+/// then: it would bind the copy's endpoint key in a second process, and a
+/// relay sends a key's traffic to whichever bound it last.
+pub struct FirstSync {
+    _lock: File,
+    path: PathBuf,
+}
+
+impl Drop for FirstSync {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+fn first_sync_lock(db: &Path) -> PathBuf {
+    let mut path = std::fs::canonicalize(db)
+        .unwrap_or_else(|_| db.into())
+        .into_os_string();
+    path.push(".joining");
+    path.into()
+}
+
+/// Hold `db`'s [`FirstSync`]. A database with no file has none. A second
+/// `connect` on the database waits here until the first ends; where the
+/// filesystem has no locks, the `connect` goes on without one.
+pub fn first_sync(db: &Db) -> Result<Option<FirstSync>> {
+    let Some(path) = db.conn().path().filter(|p| !p.is_empty()) else {
+        return Ok(None);
+    };
+    let path = first_sync_lock(Path::new(path));
+    let lock = File::options()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .with_context(|| format!("creating {}", path.display()))?;
+    let _ = lock.lock();
+    Ok(Some(FirstSync { _lock: lock, path }))
+}
+
+/// Whether a `connect` holds `db`'s [`FirstSync`].
+fn in_first_sync(db: &Path) -> bool {
+    File::open(first_sync_lock(db))
+        .is_ok_and(|f| matches!(f.try_lock_shared(), Err(TryLockError::WouldBlock)))
+}
+
 /// The first time this copy starts or joins a chain: install the daemon,
 /// and say so — unless it is installed already, or `DATUM_SYNC_NO_DAEMON`.
 /// Never fails the chain command it follows.
 pub fn auto_install() {
-    if std::env::var(NO_DAEMON).is_ok_and(|v| !v.is_empty() && v != "0") {
+    if opted_out() {
         return;
     }
     let Some(m) = Manager::here() else {
@@ -264,15 +327,18 @@ pub fn auto_install() {
     }
 }
 
-/// Every database datum knows of that is in a sync chain, read without
-/// touching it.
+/// Every database datum knows of that is in a sync chain, or was admitted
+/// to one and has its first sync to finish (da-qr7gz), read without touching
+/// it. Not one a `connect` is still at work on.
 fn chained() -> Vec<(String, PathBuf)> {
     config::known_dbs()
         .into_iter()
         .filter(|(_, path)| {
-            Db::open_read_only(&path.to_string_lossy())
-                .and_then(|db| db.sync_chain())
-                .is_ok_and(|c| c.exists())
+            !in_first_sync(path)
+                && Db::open_read_only(&path.to_string_lossy()).is_ok_and(|db| {
+                    db.sync_chain().is_ok_and(|c| c.exists())
+                        || db.sync_joining().is_ok_and(|j| !j.is_empty())
+                })
         })
         .collect()
 }

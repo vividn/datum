@@ -184,7 +184,11 @@ list | rename | revoke | purge | ack | rekey`, `admin list | add | remove`, `dae
 install | uninstall | status` (a systemd user unit / launchd agent
 running the hidden `sync daemon run`, which is `sync run` for every chained
 db; a copy's first `chain invite` / `connect` installs it unless
-`DATUM_SYNC_NO_DAEMON=1`, and `scripts/install.sh` restarts it).
+`DATUM_SYNC_NO_DAEMON=1`, and `scripts/install.sh` restarts it; a `connect`
+installs it once admitted and holds `<db>.joining` locked for its life, so the
+daemon leaves that database alone until the `connect` ends or is killed, and
+then finishes a first sync cut short; a chained copy with none says so in
+`sync status`, da-qr7gz).
 `DATUM_SYNC_BIND=<ip:port>` binds one address with no relay or discovery (the
 tests), `DATUM_SYNC_RELAY=<url>` one relay and nothing else. A copy of the file at another path mints its own key (`sync_local.path`,
 v44); two copies found signing with one key are refused by name, and

@@ -215,7 +215,7 @@ fn paired() -> (Copy, Copy) {
     (a, b)
 }
 
-fn eventually(what: &str, f: impl Fn() -> bool) {
+pub fn eventually(what: &str, f: impl Fn() -> bool) {
     let start = Instant::now();
     while !f() {
         assert!(

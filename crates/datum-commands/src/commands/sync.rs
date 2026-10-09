@@ -419,13 +419,14 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                 }
             };
             let joins = !db.sync_chain()?.exists();
-            // Admitted, it is a member whose first sync may still have
-            // failed: unserved, every other copy times out on it (da-shfv4).
-            let done = datum_sync::connect(db, &ticket);
-            if joins && db.sync_chain()?.exists() {
-                super::sync_daemon::auto_install();
-            }
-            done?;
+            let _first = super::sync_daemon::first_sync(db)?;
+            // Admitted, it is a member whether or not its first sync ends:
+            // unserved, every other copy times out on it (da-shfv4, da-qr7gz).
+            datum_sync::connect(db, &ticket, &|| {
+                if joins {
+                    super::sync_daemon::auto_install();
+                }
+            })?;
         }
         #[cfg(feature = "net")]
         SyncCommand::Run => {
@@ -976,6 +977,13 @@ fn status(db: &Db, json: bool) -> Result<()> {
     }
     if chain.is_open() {
         println!("{OPEN}");
+    }
+    #[cfg(feature = "net")]
+    if super::sync_daemon::missing() {
+        println!(
+            "⚠ no sync daemon: this copy syncs only when `datum sync` is run — \
+             `datum sync daemon install` keeps it syncing in the background"
+        );
     }
     for w in &upgrade {
         println!("⚠ {w}");
