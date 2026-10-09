@@ -96,10 +96,12 @@ describe('a press', () => {
 			// off a watch begun before the press, since a slow press can
 			// outlast the ghost (da-ehpe5).
 			await saw('occur coffee');
-			await page.waitForFunction(() =>
-				document.querySelector('.prompt-bar .doc .receipt')?.textContent.startsWith('CREATE ')
-			);
+			// The bar's row one once the press has landed, its echo with its
+			// receipt: FIXTURE's last line left a CREATE there too, so a wait
+			// for one passed before the press did, and said nothing of what
+			// stood there when it did not (da-v5ote).
 			await app.idle();
+			assert.match(await page.locator('.prompt-bar .section.output').innerText(), /❯ occur coffee\nCREATE /);
 			assert.equal((await app.tailRows()).rows.at(-1).field, 'coffee');
 
 			await type(page, 'start work');
