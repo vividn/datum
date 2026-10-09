@@ -416,6 +416,172 @@ fn an_edit_concurrent_with_the_resolution_is_a_new_conflict_on_both() {
     assert_eq!(values, [6, 8], "the settled sides stay settled");
 }
 
+/// A coffee two copies edited unseen: each set `cups` and `note`, and the
+/// later dropped the `size` the earlier changed (da-07594). The copies and
+/// the hid.
+fn clash() -> (Copy, Copy, String) {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "cups=2", "size=small", "note=plain"]);
+    a.send(&b);
+    let hid = a.hid("coffee");
+    b.ok(&["update", &hid, "cups=5", "size=big", "note=strong"]);
+    a.ok(&[
+        "update",
+        &hid,
+        "--strategy",
+        "useNew",
+        "cups=4",
+        "note=weak",
+    ]);
+    converged(&a, &b);
+    (a, b, hid)
+}
+
+/// `[A, B]` of `key`, read from the column: which copy's clock is the
+/// earlier is not assumed.
+fn a_and_b(copy: &Copy, hid: &str, key: &str) -> (Value, Value) {
+    match &sides(&copy.conflicts(hid), key)[..] {
+        [a, b] => (a.clone(), b.clone()),
+        other => panic!("{key} has {} sides", other.len()),
+    }
+}
+
+#[test]
+fn each_strategy_combines_a_and_b_and_settles_both_copies() {
+    use serde_json::json;
+    for how in ["--use-a", "--use-b", "--prefer-a", "--prefer-b", "--merge"] {
+        let (a, b, hid) = clash();
+        let (cups, note, size) = (
+            a_and_b(&a, &hid, "data.cups"),
+            a_and_b(&a, &hid, "data.note"),
+            a_and_b(&a, &hid, "data.size"),
+        );
+        // One side unset `size`: only the other has it.
+        assert!(size.0.is_null() != size.1.is_null(), "{size:?}");
+        let either = if size.0.is_null() { &size.1 } else { &size.0 };
+        let want = match how {
+            "--use-a" => json!({"cups": cups.0, "note": note.0, "size": size.0}),
+            "--use-b" => json!({"cups": cups.1, "note": note.1, "size": size.1}),
+            "--prefer-a" => json!({"cups": cups.0, "note": note.0, "size": either}),
+            "--prefer-b" => json!({"cups": cups.1, "note": note.1, "size": either}),
+            _ => json!({
+                "cups": [cups.0, cups.1], "note": [note.0, note.1], "size": either,
+            }),
+        };
+        one_op(&b, &["conflicts", "resolve", &hid, how]);
+        converged(&a, &b);
+        for copy in [&a, &b] {
+            let data = copy.data(&hid);
+            for key in ["cups", "note", "size"] {
+                assert_eq!(data[key], want[key], "{how} {key}");
+            }
+            assert_eq!(copy.conflicts(&hid), Value::Null, "{how}");
+        }
+    }
+}
+
+#[test]
+fn a_bare_resolve_leaves_unset_the_key_the_later_side_unset() {
+    // The one key where `--prefer-b` and what the entry shows part: B unset
+    // `size`, so the entry shows none, and `--prefer-b` would keep A's.
+    let (a, b, hid) = clash();
+    let (earlier, later) = a_and_b(&a, &hid, "data.size");
+    assert_eq!((earlier, later), ("big".into(), Value::Null));
+    let shown = a.data(&hid);
+    assert_eq!(shown["size"], Value::Null);
+    let op = one_op(&b, &["conflicts", "resolve", &hid]);
+    assert!(
+        op["effect"]["unset"].to_string().contains("data.size"),
+        "{op}"
+    );
+    converged(&a, &b);
+    for copy in [&a, &b] {
+        assert_eq!(copy.data(&hid), shown, "no data moved");
+        assert_eq!(copy.conflicts(&hid), Value::Null);
+    }
+}
+
+#[test]
+fn picks_take_their_keys_and_the_strategy_the_rest_under_the_same_letters() {
+    let (a, b, hid) = clash();
+    // The letters are the column's order, so both copies print one listing.
+    let listing = a.ok(&["conflicts"]);
+    assert_eq!(listing, b.ok(&["conflicts"]));
+    assert_eq!(
+        a.ok(&["conflicts", "--json"]),
+        b.ok(&["conflicts", "--json"])
+    );
+    for key in ["data.cups", "data.note", "data.size"] {
+        let at = listing.find(&format!("    {key}\n")).expect(key);
+        let mut sides = listing[at..].lines().skip(1);
+        assert!(sides.next().unwrap().starts_with("      A  "), "{listing}");
+        assert!(sides.next().unwrap().starts_with("      B  "), "{listing}");
+    }
+    for copy in [&a, &b] {
+        let check = copy.run(&["check"], "");
+        let out = String::from_utf8_lossy(&check.stdout);
+        assert!(out.contains("sync_conflict (x1)"), "{out}");
+    }
+    let (cups, _) = a_and_b(&a, &hid, "data.cups");
+    let (_, size) = a_and_b(&a, &hid, "data.size");
+    // A side, a new value, and B's for the key not named.
+    one_op(
+        &a,
+        &[
+            "conflicts",
+            "resolve",
+            &hid,
+            "cups=a",
+            "note=sweet",
+            "--use-b",
+        ],
+    );
+    converged(&a, &b);
+    for copy in [&a, &b] {
+        let data = copy.data(&hid);
+        assert_eq!(
+            (&data["cups"], &data["note"], &data["size"]),
+            (&cups, &Value::from("sweet"), &size)
+        );
+        assert!(copy.ok(&["conflicts"]).contains("No sync conflicts"));
+        assert_eq!(copy.ok(&["conflicts", "--json"]), "[]\n");
+        assert!(!copy.ok(&["check"]).contains("sync_conflict"));
+    }
+}
+
+#[test]
+fn a_key_with_three_sides_takes_a_pick_by_letter() {
+    let (a, b, c) = (Copy::new(), Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "cups=2"]);
+    a.send(&b);
+    a.send(&c);
+    let hid = a.hid("coffee");
+    for (copy, cups) in [(&a, "cups=4"), (&b, "cups=5"), (&c, "cups=6")] {
+        copy.ok(&["update", &hid, cups]);
+    }
+    converged(&a, &b);
+    converged(&b, &c);
+    converged(&a, &b);
+    let third = sides(&a.conflicts(&hid), "data.cups");
+    assert_eq!(third.len(), 3);
+    let listing = c.ok(&["conflicts"]);
+    assert_eq!(listing, a.ok(&["conflicts"]));
+    assert!(listing.contains("\n      C  "), "{listing}");
+    // A strategy is over two sides.
+    let refused = c.run(&["conflicts", "resolve", &hid, "--use-a"], "");
+    let err = String::from_utf8_lossy(&refused.stderr);
+    assert!(!refused.status.success(), "{err}");
+    assert!(err.contains("data.cups has more than two sides"), "{err}");
+    assert_eq!(c.conflicts(&hid), a.conflicts(&hid), "nothing was written");
+    c.ok(&["conflicts", "resolve", &hid, "cups=c"]);
+    converged(&b, &c);
+    converged(&a, &b);
+    for copy in [&a, &b, &c] {
+        assert_eq!(copy.data(&hid)["cups"], third[2]);
+        assert_eq!(copy.conflicts(&hid), Value::Null);
+    }
+}
+
 /// A database from before da-05rkv: its conflicts were rows of its own
 /// `integrity_warnings`. Upgraded, they are its entries' `conflicts`, the
 /// same as a copy that never had the rows derives, and the rows are gone.

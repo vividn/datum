@@ -234,8 +234,7 @@ fn help_json_declares_which_verbs_take_a_list() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|u| u
-                == "datum conflicts resolve <HID> (--take-local | --take-remote | --keep-both)")
+            .any(|u| u == "datum conflicts resolve <HID> [--use-a | --use-b | --prefer-a | --prefer-b | --merge] [KEY=a|b|VALUE…]")
     );
 }
 

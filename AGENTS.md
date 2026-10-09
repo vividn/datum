@@ -136,7 +136,13 @@ order give the same row. Its conflicts are part of the fold (da-05rkv): the
 `conflicts` column names each key two ops set without seeing each other's
 (and a delete against an edit made without seeing it), derived from the ops
 alone, so every copy holding them agrees; an edit that saw every side —
-`datum conflicts resolve` — settles it on each copy it reaches. An entry's
+`datum conflicts resolve` — settles it on each copy it reaches. A key's sides
+are lettered A, B, … in the column's order, the fold's, so the letters are
+every copy's (da-07594): `resolve` takes `KEY=a|b|<value>` picks, and for the
+keys not picked one of `--use-a | --use-b | --prefer-a | --prefer-b | --merge`
+(`datum_parse::combine` over A and B, `deleted` a key like any other); with no
+strategy named they keep what the entry shows, so a bare `resolve` settles and
+changes no data. An entry's
 history is read from the same ops (`db/sync/versions.rs`, da-s4erq): a version
 per op in fold order, a `fork` where a key became contested and a `join` where
 an edit settled it, so `datum history`, `why --full` and `undo --to-version`

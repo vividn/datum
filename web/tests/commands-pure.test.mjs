@@ -397,7 +397,7 @@ describe('subcommands', () => {
 	const sub = (...names) => names.map((name) => ({ name }));
 	const TREE = grammarOf([
 		{ name: 'db', aliases: [], usage: ['datum db setup', 'datum db backup <PATH | ->'], flags: [], subcommands: sub('setup', 'backup'), bare: false },
-		{ name: 'conflicts', aliases: [], usage: ['datum conflicts [list] [--all]'], flags: [], subcommands: sub('resolve'), bare: true },
+		{ name: 'conflicts', aliases: [], usage: ['datum conflicts [list] [--json]'], flags: [], subcommands: sub('resolve'), bare: true },
 		{ name: 'spec', aliases: [], usage: ['datum spec show <FIELD>'], flags: [], subcommands: sub('show'), bare: false },
 		// Two forms, no subcommands: `add` fills as it always did.
 		{ name: 'add', aliases: [], usage: ['datum add <FIELD>', 'datum add <FIELD> <DUR>'], flags: [] }

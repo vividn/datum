@@ -8,6 +8,7 @@
 
 use super::core::*;
 use crate::cli::*;
+use crate::combine::Combine;
 use crate::error::{ParseError, Result};
 
 pub(crate) fn parse_conflicts_cmd(tail: &[&str]) -> Result<ConflictsCommand> {
@@ -17,6 +18,7 @@ pub(crate) fn parse_conflicts_cmd(tail: &[&str]) -> Result<ConflictsCommand> {
     };
 
     match sub {
+        // `--json` is the swept `--show json`, set by `apply_show`.
         "list" => match rest.first() {
             None => Ok(ConflictsCommand::List(ConflictsListArgs::default())),
             Some(tok) => Err(unknown_flag(split_flag(tok))),
@@ -24,13 +26,27 @@ pub(crate) fn parse_conflicts_cmd(tail: &[&str]) -> Result<ConflictsCommand> {
         "resolve" => {
             let mut pos: Vec<&str> = Vec::new();
             let mut picks = Vec::new();
+            let mut strategy = None;
             for tok in rest {
-                match split_flag(tok) {
-                    FlagSplit::Positional(s) => match s.split_once('=') {
-                        Some((k, v)) if !pos.is_empty() => picks.push((k.into(), v.into())),
-                        _ => pos.push(s),
-                    },
+                let how = match split_flag(tok) {
+                    FlagSplit::Positional(s) => {
+                        match s.split_once('=') {
+                            Some((k, v)) if !pos.is_empty() => picks.push((k.into(), v.into())),
+                            _ => pos.push(s),
+                        }
+                        continue;
+                    }
+                    FlagSplit::Long("use-a") => Combine::USE_A,
+                    FlagSplit::Long("use-b") => Combine::USE_B,
+                    FlagSplit::Long("prefer-a") => Combine::PREFER_A,
+                    FlagSplit::Long("prefer-b") => Combine::PREFER_B,
+                    FlagSplit::Long("merge") => Combine::MERGE,
                     f => return Err(unknown_flag(f)),
+                };
+                if strategy.replace(how).is_some() {
+                    return Err(ParseError::InvalidArg(format!(
+                        "conflicts resolve takes one strategy: '{tok}' is a second"
+                    )));
                 }
             }
             if pos.len() > 1 {
@@ -42,6 +58,7 @@ pub(crate) fn parse_conflicts_cmd(tail: &[&str]) -> Result<ConflictsCommand> {
             let hid = require_pos(&pos, "<HID>")?;
             Ok(ConflictsCommand::Resolve(ConflictsResolveArgs {
                 hid,
+                strategy,
                 picks,
             }))
         }

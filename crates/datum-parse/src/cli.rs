@@ -61,8 +61,8 @@ pub enum Command {
     Spec(SpecCommand),
     Alias(AliasCommand),
     Kit(KitCommand),
-    /// `datum conflicts` — the integrity-warning queue: list, resolve one,
-    /// or run the auto-resolver (da-ttsm).
+    /// `datum conflicts` — the entries whose ops leave a key contested:
+    /// list them, resolve one (da-05rkv, da-07594).
     Conflicts(ConflictsCommand),
     /// `datum debug <what>` — test situations made in the current database
     /// (da-4dvk7). Kept off the command list; `datum help debug` has it.
@@ -963,25 +963,33 @@ pub enum SyncAdminAct {
     RemoveAdmin,
 }
 
-// ─── Conflicts (da-ttsm, da-05rkv) ────────────────────────────────────────
+// ─── Conflicts (da-ttsm, da-05rkv, da-07594) ──────────────────────────────
 
 #[derive(Debug)]
 pub enum ConflictsCommand {
-    /// `datum conflicts [list]` — every entry with conflicts, each side.
+    /// `datum conflicts [list] [--json]` — every entry with conflicts, each
+    /// contested key's sides lettered A, B, … in clock order.
     List(ConflictsListArgs),
-    /// `datum conflicts resolve <HID> [KEY=VALUE…]` — one edit that saw
-    /// every side: each contested key the value given, or the one shown.
+    /// `datum conflicts resolve <HID> [STRATEGY] [KEY=a|b|VALUE…]` — one
+    /// edit that saw every side.
     Resolve(ConflictsResolveArgs),
 }
 
 #[derive(Debug, Default)]
-pub struct ConflictsListArgs {}
+pub struct ConflictsListArgs {
+    /// `--json` is the value `json`: each entry's `conflicts` as stored.
+    pub show: Show,
+}
 
 #[derive(Debug)]
 pub struct ConflictsResolveArgs {
     /// The entry: a hid prefix or a slug.
     pub hid: String,
-    /// `KEY=VALUE` picks, a value read as JSON when it is JSON.
+    /// `--use-a | --use-b | --prefer-a | --prefer-b | --merge`: what the
+    /// keys no pick names become, A the earlier side and B the later.
+    /// `None`: they keep what the entry shows.
+    pub strategy: Option<crate::combine::Combine>,
+    /// `KEY=LETTER` (a side) or `KEY=VALUE` (typed as a data value) picks.
     pub picks: Vec<(String, String)>,
 }
 

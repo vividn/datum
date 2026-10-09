@@ -201,6 +201,8 @@ pub fn shows_for(command: &str) -> &'static [Show] {
         // A group: `sync status`, `sync chain list` and `sync admin list`
         // render the document.
         "sync" => &[Show::Default, Show::Json],
+        // `conflicts list` prints each entry's column as stored.
+        "conflicts" => &[Show::Default, Show::Json],
         // Everything else prints one thing, one way.
         _ => &[Show::Default],
     }

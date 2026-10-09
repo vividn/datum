@@ -53,7 +53,7 @@ const GRAMMAR = grammarOf([
 	entry('undo', ['datum undo [ID_OR_SLUG] [--to-version N]']),
 	entry('flag', ['datum flag <FIELD> [COMMENT...]']),
 	entry('reparse', ['datum reparse <HID>... [--fix]']),
-	entry('conflicts', ['datum conflicts resolve <HID> (--take-local | --take-remote)']),
+	entry('conflicts', ['datum conflicts resolve <HID> [--use-a | --use-b | --prefer-a | --prefer-b | --merge] [KEY=a|b|VALUE…]']),
 	// The field pill's own cases (da-8810n): a field at slot 1, a field
 	// behind a SUBCOMMAND at slot 2, a field behind a FLAG (not a slot at
 	// all), and `stats`, whose `<FIELD[:STATE]>` must not read as one.

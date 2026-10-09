@@ -331,6 +331,11 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
     };
 
     let mut command = command;
+    // `conflicts` draws JSON for its listing alone: a typed `--show` on
+    // `resolve` is refused, as on any command with no rendering for it.
+    if let (Some(typed), Command::Conflicts(ConflictsCommand::Resolve(_))) = (show, &command) {
+        input::check_show(typed, "conflicts resolve")?;
+    }
     let show = show.or(fallback.filter(|s| input::shows_for(sub).contains(s)));
     if let Some(show) = show {
         // Only now that the subcommand is known to be real: a typo'd verb
@@ -394,6 +399,7 @@ fn apply_show(command: &mut Command, show: Show) {
         Command::Check(a) => a.show = show,
         Command::Config(ConfigCommand::Show(a)) => a.show = show,
         Command::Alias(AliasCommand::List { show: s }) => *s = show,
+        Command::Conflicts(ConflictsCommand::List(a)) => a.show = show,
         Command::Sync(
             SyncCommand::Members { show: s }
             | SyncCommand::AdminList { show: s }
@@ -1057,6 +1063,29 @@ mod tests {
             msg.contains("unexpected positional after the time: '10'"),
             "got: {msg}"
         );
+    }
+
+    /// `conflicts` draws JSON for its listing alone (da-07594): typed on
+    /// `resolve` it is refused, and from `DATUM_SHOW` it is ignored.
+    #[test]
+    fn conflicts_resolve_refuses_a_typed_json_and_ignores_the_fallback() {
+        let list = parse_argv(&argv(&["conflicts", "--json"])).unwrap();
+        assert!(matches!(
+            list.command,
+            Command::Conflicts(ConflictsCommand::List(a)) if a.show == Show::Json
+        ));
+        let resolve = ["conflicts", "resolve", "abc", "--use-a"];
+        let typed = [&resolve[..], &["--json"]].concat();
+        assert_eq!(
+            parse_argv(&argv(&typed)).unwrap_err().to_string(),
+            "Invalid argument: conflicts resolve: --show json is not a rendering \
+             conflicts resolve has (it draws: default)"
+        );
+        let asked = parse_argv_showing(&argv(&resolve), Some(Show::Json)).unwrap();
+        assert!(matches!(
+            asked.command,
+            Command::Conflicts(ConflictsCommand::Resolve(a)) if a.strategy.is_some()
+        ));
     }
 
     /// da-nhnip: the error names the flag typed and what THAT flag accepts.
