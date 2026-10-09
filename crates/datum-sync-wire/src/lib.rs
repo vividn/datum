@@ -96,6 +96,10 @@ pub trait Store {
     }
     /// `done` of a session's `of` received ops are applied.
     fn progress(&self, _done: usize, _of: usize) {}
+    /// `done` of the `of` ops a round sends are on the wire.
+    fn sent(&self, _done: usize, _of: usize) {}
+    /// `n` of the ops a round receives have come.
+    fn got(&self, _n: usize) {}
     /// The state hash, over what a session with `peer` shares.
     async fn verify(&self, peer: &str) -> Result<String>;
     /// `peer` introduced itself as `label` at `addr`: record it, and when
@@ -505,8 +509,9 @@ async fn exchange(
         }
         let ops = store.ops_since(&rep.id, &round.1).await?;
         let send = async {
-            for op in &ops {
+            for (i, op) in ops.iter().enumerate() {
                 put(s, op.as_bytes()).await?;
+                store.sent(i + 1, ops.len());
             }
             put(s, b"").await
         };
@@ -518,6 +523,7 @@ async fn exchange(
                     return Ok::<_, anyhow::Error>(lines);
                 }
                 lines.push(String::from_utf8(f)?);
+                store.got(lines.len());
             }
         };
         let ((), lines) = futures_util::future::try_join(send, recv).await?;

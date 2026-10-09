@@ -893,6 +893,59 @@ fn without_keepalives_it_fails_says_what_landed_and_the_invite_still_exits() {
     assert_eq!(a.hash(), b.hash());
 }
 
+/// A first sync says how far it is on both sides (da-nyg6u): vividn's joiner
+/// went silent for a minute and then printed ten lines that all said «87s»,
+/// and his inviter said nothing until it was done. b applies a's 300-odd ops
+/// at 40ms each: 12s, in chunks that each hold its thread for 2.5s.
+#[test]
+fn a_first_sync_says_how_far_it_is_on_both_sides() {
+    let (a, mut b) = (Copy::new(), Copy::new());
+    for i in 0..300 {
+        a.ok(&["occur", "step", &format!("n={i}")]);
+    }
+    b.env = vec![("DATUM_SYNC_TEST_APPLY_DELAY_MS", "40")];
+    let (mut inviting, ticket) = a.invite(&[]);
+    let mut joining = b.cmd(&["sync", "chain", "connect", &ticket]);
+    let mut joining = joining.spawn().expect("spawn datum");
+
+    // The inviter names the joiner while the joiner is still at it.
+    let mut said = BufReader::new(inviting.child.stderr.take().unwrap());
+    let mut named = String::new();
+    while !named.contains(" is joining: sending") && said.read_line(&mut named).unwrap() > 0 {}
+    assert!(named.contains(" is joining: sending"), "{named}");
+    assert!(joining.try_wait().unwrap().is_none(), "the join had ended");
+
+    let joined = joining.wait_with_output().unwrap();
+    let (out, err) = (
+        String::from_utf8_lossy(&joined.stdout),
+        String::from_utf8_lossy(&joined.stderr),
+    );
+    assert!(
+        joined.status.success() && out.contains("verify ok"),
+        "{out}{err}"
+    );
+    // The joiner says how many ops are applied, and each line it says is an
+    // interval on from the last: none held back, then said together.
+    let at: Vec<u64> = err
+        .lines()
+        .filter_map(|l| l.strip_suffix("s)")?.rsplit_once('(')?.1.parse().ok())
+        .collect();
+    assert!(
+        at.len() > 1 && at.windows(2).all(|w| w[0] + 5 <= w[1]),
+        "{err}"
+    );
+    assert!(err.contains(" ops applied ("), "{err}");
+
+    let (ok, served) = inviting.finish();
+    assert!(ok && served.contains("verify ok"), "{served}");
+    let mut rest = String::new();
+    said.read_to_string(&mut rest).unwrap();
+    assert!(
+        rest.contains(" ops sent, waiting for it to apply them ("),
+        "{rest}"
+    );
+}
+
 // ─── The sync chain (da-odwc7) ──────────────────────────────────────────────
 
 #[test]

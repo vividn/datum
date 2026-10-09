@@ -14,11 +14,11 @@
 //!   unrevoked members are served or dialed (`Db::sync_handshake`). Anyone
 //!   else is refused at the handshake, and so is this copy's own key.
 
-use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
@@ -33,6 +33,7 @@ use datum_sync_wire::{
     Net, Refusal, Report, Store, Ticket, Vector, Version, Why,
 };
 use futures_util::stream::{FuturesUnordered, StreamExt};
+use tokio::time::Instant;
 
 fn now() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
@@ -66,7 +67,8 @@ fn env<T: std::str::FromStr>(name: &str) -> Option<T> {
 }
 
 /// The session runs on the calling thread, and blocks it while it applies;
-/// iroh's own tasks run on a worker, so frames still go out meanwhile.
+/// iroh's own tasks run on a worker, so frames still go out meanwhile, and so
+/// does what says how far the session is ([`telling`]).
 fn runtime() -> Result<tokio::runtime::Runtime> {
     Ok(tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -77,13 +79,104 @@ fn runtime() -> Result<tokio::runtime::Runtime> {
 // ─── The store ──────────────────────────────────────────────────────────────
 
 /// A session's store: this copy's `Db`, on the session's own thread, and
-/// whether a peer has welcomed it.
-struct DbStore<'a>(&'a Db, Cell<bool>);
+/// where a command that says how its one session goes hears of it.
+struct DbStore<'a>(&'a Db, Option<&'a Mutex<Told>>);
 
 impl<'a> DbStore<'a> {
     fn new(db: &'a Db) -> Self {
-        DbStore(db, Cell::new(false))
+        DbStore(db, None)
     }
+
+    fn tell(&self, f: impl FnOnce(&mut Told)) {
+        if let Some(told) = self.1 {
+            f(&mut told.lock().unwrap());
+        }
+    }
+}
+
+/// How often a session says what it is doing.
+const WAITING: Duration = Duration::from_secs(5);
+
+/// What `connect` and `offer` say of their session as it goes (da-nyg6u):
+/// whom it is with, and how far its ops are.
+struct Told {
+    began: Instant,
+    said: Instant,
+    /// «still waiting for X», and from the handshake «syncing X»; empty
+    /// says nothing.
+    whom: String,
+    /// Ops sent and of how many, ops received, ops applied and of how many.
+    sent: (usize, usize),
+    got: usize,
+    applied: (usize, usize),
+}
+
+impl Told {
+    fn new(whom: String) -> Arc<Mutex<Self>> {
+        let now = Instant::now();
+        Arc::new(Mutex::new(Told {
+            began: now,
+            said: now,
+            whom,
+            sent: (0, 0),
+            got: 0,
+            applied: (0, 0),
+        }))
+    }
+
+    /// The session is with `label` from here. One this copy `serves` starts
+    /// its clock, and the redeemer of an invite is named at once.
+    fn met(&mut self, label: &str, serves: bool, redeems: bool) {
+        if serves {
+            (self.began, self.said) = (Instant::now(), Instant::now());
+        }
+        if serves && redeems {
+            eprintln!("{label} is joining: sending…");
+        }
+        self.whom = format!("syncing {label}");
+        (self.sent, self.got, self.applied) = Default::default();
+    }
+
+    /// Say what the session is doing, if it last did [`WAITING`] ago.
+    fn say(&mut self) {
+        if Instant::now() < self.said + WAITING {
+            return;
+        }
+        self.said = Instant::now();
+        let ((sent, of), (done, all)) = (self.sent, self.applied);
+        let how = if done < all {
+            format!(": {done} of {all} ops applied")
+        } else if sent < of {
+            format!(": {sent} of {of} ops sent")
+        } else if all == 0 && self.got > 0 {
+            format!(": {} ops received", self.got)
+        } else if of > 0 {
+            format!(": {of} ops sent, waiting for it to apply them")
+        } else {
+            String::new()
+        };
+        if !self.whom.is_empty() {
+            let s = self.began.elapsed().as_secs();
+            eprintln!("{}{how} ({s}s)", self.whom);
+        }
+    }
+}
+
+/// Run `session`, saying what it is doing each [`WAITING`] — from a worker:
+/// the session holds its own thread while it applies, and a timer beside it
+/// there said nothing for a minute, then every line it had missed at once.
+async fn telling<T>(told: &Arc<Mutex<Told>>, session: impl Future<Output = T>) -> T {
+    let told = told.clone();
+    let saying = tokio::spawn(async move {
+        loop {
+            let due = told.lock().unwrap().said + WAITING;
+            tokio::time::sleep_until(due).await;
+            told.lock().unwrap().say();
+        }
+    });
+    let out = session.await;
+    saying.abort();
+    out
 }
 
 impl Store for DbStore<'_> {
@@ -123,6 +216,18 @@ impl Store for DbStore<'_> {
         })
     }
 
+    fn progress(&self, done: usize, of: usize) {
+        self.tell(|t| t.applied = (done, of));
+    }
+
+    fn sent(&self, done: usize, of: usize) {
+        self.tell(|t| t.sent = (done, of));
+    }
+
+    fn got(&self, n: usize) {
+        self.tell(|t| t.got = n);
+    }
+
     async fn verify(&self, peer: &str) -> Result<String> {
         Ok(self.0.sync_state_hash(Some(peer))?.0)
     }
@@ -143,7 +248,7 @@ impl Store for DbStore<'_> {
             .0
             .sync_handshake(peer, label, &addr, invite, chain, holds, dialed)
             .map_err(refusal)?;
-        self.1.set(self.1.get() || dialed);
+        self.tell(|t| t.met(label, !dialed, invite.is_some()));
         // A copy before da-3zqyv says nothing; recording never stops a sync.
         if version.schema > 0 {
             let said = self
@@ -254,7 +359,8 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
     let secret = secret.to_string();
     runtime()?.block_on(async {
         let ep = bind(db).await?;
-        let store = DbStore::new(db);
+        let told = Told::new(String::new());
+        let store = DbStore(db, Some(&told));
         let mut addrs = vec![ep.addr()];
         addrs.extend(synced_peers(db)?.iter().filter_map(|p| addr(p).ok()));
         let chain = db.sync_chain()?;
@@ -291,7 +397,7 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
                 _ = &mut deadline => break Err(anyhow!("the invite expired unredeemed")),
                 incoming = ep.accept() => {
                     let Some(incoming) = incoming else { break Ok(()) };
-                    match serve(&store, &ep, incoming).await {
+                    match telling(&told, serve(&store, &ep, incoming)).await {
                         Ok(rep) => {
                             print_added(&rep);
                             if rep.redeemed { break Ok(()) }
@@ -311,13 +417,11 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
 
 const UNFINISHED: &str = "the first sync did not finish: run `datum sync`";
 
-/// How often `connect` says it is still waiting.
-const WAITING: Duration = Duration::from_secs(5);
-
 /// `datum sync chain connect <ticket>`: redeem an invite and sync, with the
 /// first of the ticket's addresses that admits it. It says at once whom it
-/// waits for and until when, then every [`WAITING`] that it still is; a join
-/// that fails ends saying why and what to do next (da-0tawk).
+/// waits for and until when, then every [`WAITING`] that it still is, and
+/// once it is answered how far the sync is; a join that fails ends saying why
+/// and what to do next (da-0tawk).
 pub fn connect(db: &Db, ticket: &str) -> Result<()> {
     let t = Ticket::decode(ticket)?;
     let from = t.about.from.as_deref().unwrap_or("the inviting device");
@@ -339,20 +443,9 @@ pub fn connect(db: &Db, ticket: &str) -> Result<()> {
     );
     runtime()?.block_on(async {
         let ep = bind(db).await?;
-        let store = DbStore::new(db);
-        let redeeming = redeem(&store, &ep, &t);
-        tokio::pin!(redeeming);
-        let start = tokio::time::Instant::now();
-        let mut tick = tokio::time::interval_at(start + WAITING, WAITING);
-        let rep = loop {
-            tokio::select! {
-                rep = &mut redeeming => break rep,
-                _ = tick.tick() => {
-                    let doing = if store.1.get() { "syncing" } else { "still waiting for" };
-                    eprintln!("{doing} {from} ({}s)", start.elapsed().as_secs());
-                }
-            }
-        };
+        let told = Told::new(format!("still waiting for {from}"));
+        let store = DbStore(db, Some(&told));
+        let rep = telling(&told, redeem(&store, &ep, &t)).await;
         ep.close().await;
         // Admitted, it says what it is; its peers hear on the next sync. A
         // copy refused (one already in a chain) writes nothing.
