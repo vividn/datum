@@ -452,6 +452,7 @@ mod tests {
                 icon: None,
                 glyph_size: Default::default(),
             }],
+            spans: Vec::new(),
         };
         let cfg = DayviewConfig {
             days: vec![day],
@@ -552,6 +553,7 @@ mod tests {
                     glyph_size: Default::default(),
                 },
             ],
+            spans: Vec::new(),
         };
         let cfg = DayviewConfig {
             days: vec![day],
@@ -639,6 +641,7 @@ mod tests {
                 icon: None,
                 glyph_size: Default::default(),
             }],
+            spans: Vec::new(),
         };
         let cfg = DayviewConfig {
             days: vec![day],
@@ -723,6 +726,7 @@ mod tests {
                 icon: None,
                 glyph_size: Default::default(),
             }],
+            spans: Vec::new(),
         };
         let cfg = DayviewConfig {
             days: vec![day],
@@ -793,6 +797,7 @@ mod tests {
                 icon: None,
                 glyph_size: Default::default(),
             }],
+            spans: Vec::new(),
         };
         let cfg = DayviewConfig {
             days: vec![day],
@@ -857,6 +862,7 @@ mod tests {
                 icon: None,
                 glyph_size: Default::default(),
             }],
+            spans: Vec::new(),
         };
         let cfg = DayviewConfig {
             days: vec![day],

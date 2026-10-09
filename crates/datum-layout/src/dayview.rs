@@ -24,10 +24,13 @@
 //! `wasm32-unknown-unknown` so the SvelteKit PWA can render the same view
 //! client-side.
 //!
-//! TODO: Timezone handling. v1 renders in the host's local time. A day with
-//! entries in multiple timezones (DST or travel) should bifurcate visually
-//! during the ambiguous overlap window — see bead da-vp7's spec for the
-//! long-term plan. Bifurcation will be a separate visualization bead.
+//! ## A day the clock jumped in (da-1v9gp)
+//!
+//! A day is drawn on the wall clock it was lived by, so its axis is the
+//! clock's 00:00 → 24:00 and the caller cuts it into [`DayviewSpan`]s, one
+//! per UTC offset. Where the clock jumped forward no span covers the axis:
+//! a dead zone. Where it jumped back two spans cover the same clock times,
+//! and the band forks into a lane for each ([`RenderedSpan::lane`]).
 
 use serde::{Deserialize, Serialize};
 
@@ -74,6 +77,24 @@ pub struct DayviewDayInput {
     /// Per-field data for this day, with positioning and colors already
     /// resolved.
     pub fields: Vec<DayviewFieldInput>,
+    /// The day's stretches in time order (da-1v9gp). Empty is one: the
+    /// whole window across the whole axis.
+    #[serde(default)]
+    pub spans: Vec<DayviewSpan>,
+}
+
+/// One stretch of a day lived at a single UTC offset (da-1v9gp).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DayviewSpan {
+    /// The stretch's instants in UTC ms, `[start_ms, end_ms)`.
+    pub start_ms: i64,
+    pub end_ms: i64,
+    /// Where its wall clock begins and ends along the day's axis, as
+    /// fractions of it: 0 is 00:00, 1 is 24:00.
+    pub lo: f64,
+    pub hi: f64,
+    /// What an end of it inside the day is labelled: `UTC+2`.
+    pub label: String,
 }
 
 /// One field's data for a day. Position/height/z-index are fractions of
@@ -337,6 +358,64 @@ pub struct RenderedDay {
     pub start_ms: i64,
     #[serde(default)]
     pub end_ms: i64,
+    /// Near end of the now-line, as `now_extent_far` is its far one: the
+    /// day's leading edge, or its lane's where the band is forked.
+    #[serde(default)]
+    pub now_extent_near: f64,
+    /// The day's stretches, placed; each mark names its own by index.
+    #[serde(default)]
+    pub spans: Vec<RenderedSpan>,
+    /// The clock times that never happened, each `[time_offset,
+    /// time_extent]` in pixels: the renderer hatches them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dead_zones: Vec<[f64; 2]>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub zone_labels: Vec<RenderedZoneLabel>,
+}
+
+/// A [`DayviewSpan`] placed along the time axis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenderedSpan {
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub time_offset: f64,
+    pub time_extent: f64,
+    /// Where the band narrows to this stretch's lane and widens again:
+    /// `[time_pos, near, far]` knots, the band's two cross-axis edges as
+    /// fractions of it, straight between two knots and level outside
+    /// them. Empty is the whole band.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lane: Vec<[f64; 3]>,
+}
+
+impl RenderedSpan {
+    /// The band's cross-axis edges at `time_pos`, as fractions of it.
+    pub fn lane_at(&self, time_pos: f64) -> (f64, f64) {
+        let Some(i) = self.lane.iter().rposition(|k| k[0] <= time_pos) else {
+            return self.lane.first().map_or((0.0, 1.0), |k| (k[1], k[2]));
+        };
+        let a = self.lane[i];
+        match self.lane.get(i + 1) {
+            Some(b) => {
+                let f = (time_pos - a[0]) / (b[0] - a[0]);
+                (a[1] + f * (b[1] - a[1]), a[2] + f * (b[2] - a[2]))
+            }
+            None => (a[1], a[2]),
+        }
+    }
+}
+
+/// The offset written at an end of a stretch, in the room beside it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenderedZoneLabel {
+    pub time_pos: f64,
+    /// Cross-axis pixel position within the day's band.
+    pub cross_pos: f64,
+    pub text: String,
+    pub font_size: f64,
+    /// The text ENDS at `time_pos`, where its stretch begins; otherwise it
+    /// starts there, where its stretch ended.
+    pub ends: bool,
 }
 
 /// One field's positioned blocks + points within a day.
@@ -366,6 +445,10 @@ fn is_one(n: &f64) -> bool {
     *n == 1.0
 }
 
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenderedBlock {
     /// Time-axis offset of the block (clipped to the day window), in pixels.
@@ -384,6 +467,10 @@ pub struct RenderedBlock {
     pub end_ms: i64,
     #[serde(default)]
     pub title: Option<String>,
+    /// Which of [`RenderedDay::spans`] this piece is drawn in. A block the
+    /// clock jumped under is a piece in each.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub span: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -408,6 +495,9 @@ pub struct RenderedPoint {
     /// As [`DayviewPoint::icon`].
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub icon: bool,
+    /// As [`RenderedBlock::span`].
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub span: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -474,6 +564,102 @@ pub fn day_height_for_extent(
     }
     let usable = extent - 2.0 * margin - time_axis_height - (n_days - 1) as f64 * interday_margin;
     (usable > 0.0).then(|| (usable / n_days as f64).max(MIN_DAY_HEIGHT))
+}
+
+/// Air between a zone label and the end it names.
+const ZONE_LABEL_PAD: f64 = 3.0;
+
+/// Place a day's stretches along `extent` pixels of axis (da-1v9gp): the
+/// lanes where their clock times overlap, the dead zones no stretch
+/// covers, and a label at each end that falls inside the day.
+///
+/// Stretches that overlap share the band, the earliest nearest. The first
+/// narrows to its lane on a slope before the overlap and the last widens
+/// again after it, each leaving room past the end beside it for that
+/// end's label.
+fn place_spans(
+    spans: &[DayviewSpan],
+    extent: f64,
+    day_height: f64,
+) -> (Vec<RenderedSpan>, Vec<[f64; 2]>, Vec<RenderedZoneLabel>) {
+    const EPS: f64 = 1e-6;
+    let lo = |i: usize| spans[i].lo * extent;
+    let hi = |i: usize| spans[i].hi * extent;
+    let mut placed: Vec<RenderedSpan> = (0..spans.len())
+        .map(|i| RenderedSpan {
+            start_ms: spans[i].start_ms,
+            end_ms: spans[i].end_ms,
+            time_offset: lo(i),
+            time_extent: hi(i) - lo(i),
+            lane: Vec::new(),
+        })
+        .collect();
+    let mut labels = Vec::new();
+    let slope = extent / 48.0;
+    let mut i = 0;
+    while i < spans.len() {
+        let mut end = i + 1;
+        let mut reach = hi(i);
+        while end < spans.len() && lo(end) < reach - EPS {
+            reach = reach.max(hi(end));
+            end += 1;
+        }
+        // The two ends of a dead zone share the band as two lanes do.
+        let (k, lanes) = (end - i, (end - i).max(2));
+        let font_size = (day_height / lanes as f64 - 4.0).clamp(6.0, 11.0);
+        let widest = (i..end).map(|s| spans[s].label.chars().count()).max();
+        let room = widest.unwrap_or(0) as f64 * font_size * 0.6 + 2.0 * ZONE_LABEL_PAD;
+        for s in i..end {
+            let j = s - i;
+            let (near, far) = (j as f64 / k as f64, (j + 1) as f64 / k as f64);
+            if k > 1 {
+                let split = (i + 1..end).map(lo).fold(f64::INFINITY, f64::min) - room;
+                let merge = (i..s).map(hi).fold(0.0, f64::max) + room;
+                placed[s].lane = if j == 0 && split > lo(s) {
+                    vec![[(split - slope).max(lo(s)), 0.0, 1.0], [split, near, far]]
+                } else if s + 1 == end && merge < hi(s) {
+                    vec![[merge, near, far], [(merge + slope).min(hi(s)), 0.0, 1.0]]
+                } else {
+                    vec![[lo(s), near, far]]
+                };
+            }
+            // Beside its end, but never off the axis: against an edge the
+            // text is over its own stretch instead.
+            let width = spans[s].label.chars().count() as f64 * font_size * 0.6;
+            let mut label = |time_pos: f64, lane: usize, ends: bool| {
+                labels.push(RenderedZoneLabel {
+                    time_pos,
+                    cross_pos: (lane as f64 + 0.5) / lanes as f64 * day_height,
+                    text: spans[s].label.clone(),
+                    font_size,
+                    ends,
+                });
+            };
+            if lo(s) > EPS {
+                let at = (lo(s) - ZONE_LABEL_PAD).max(width);
+                label(at, if k > 1 { j } else { 1 }, true);
+            }
+            if hi(s) < extent - EPS {
+                let at = (hi(s) + ZONE_LABEL_PAD).min(extent - width);
+                label(at, if k > 1 { j } else { 0 }, false);
+            }
+        }
+        i = end;
+    }
+    let mut order: Vec<usize> = (0..spans.len()).collect();
+    order.sort_by(|a, b| lo(*a).total_cmp(&lo(*b)));
+    let mut dead = Vec::new();
+    let mut reach = 0.0_f64;
+    for s in order {
+        if lo(s) > reach + EPS {
+            dead.push([reach, lo(s) - reach]);
+        }
+        reach = reach.max(hi(s));
+    }
+    if reach < extent - EPS {
+        dead.push([reach, extent - reach]);
+    }
+    (placed, dead, labels)
 }
 
 /// Compute the dayview layout.
@@ -587,10 +773,30 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             .cloned()
             .collect();
 
-        let span_ms = (day.end_ms - day.start_ms).max(1) as f64;
-        let time_to_pos = |t_ms: i64| -> f64 {
-            let dt = (t_ms - day.start_ms) as f64;
-            (dt / span_ms) * time_axis_extent
+        let whole = [DayviewSpan {
+            start_ms: day.start_ms,
+            end_ms: day.end_ms,
+            lo: 0.0,
+            hi: 1.0,
+            label: String::new(),
+        }];
+        let day_spans: &[DayviewSpan] = if day.spans.is_empty() {
+            &whole
+        } else {
+            &day.spans
+        };
+        let (spans, dead_zones, zone_labels) =
+            place_spans(day_spans, time_axis_extent, config.day_height);
+        // The whole axis in ms: every stretch runs at the one wall-clock rate.
+        let span_ms = (day_spans[0].end_ms - day_spans[0].start_ms).max(1) as f64
+            / (day_spans[0].hi - day_spans[0].lo);
+        let time_to_pos = |s: &DayviewSpan, t_ms: i64| -> f64 {
+            let f = (t_ms - s.start_ms) as f64 / (s.end_ms - s.start_ms).max(1) as f64;
+            (s.lo + f * (s.hi - s.lo)) * time_axis_extent
+        };
+        // The stretch an instant is drawn in: the later of two that meet at it.
+        let span_of = |t_ms: i64| {
+            (day_spans.iter().enumerate()).rfind(|(_, s)| s.start_ms <= t_ms && t_ms <= s.end_ms)
         };
 
         // Sort fields by z_index ascending (low first → renders below).
@@ -615,24 +821,27 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
 
             let mut blocks: Vec<RenderedBlock> = Vec::with_capacity(f.blocks.len());
             for b in &f.blocks {
-                // Clip to the day's window.
-                let s = b.start_ms.max(day.start_ms);
-                let e = b.end_ms.min(day.end_ms);
-                if e <= s {
-                    continue;
+                for (span, within) in day_spans.iter().enumerate() {
+                    // Clip to the stretch's window.
+                    let s = b.start_ms.max(within.start_ms);
+                    let e = b.end_ms.min(within.end_ms);
+                    if e <= s {
+                        continue;
+                    }
+                    let t_off = time_to_pos(within, s);
+                    let t_ext = (time_to_pos(within, e) - t_off).max(0.5);
+                    blocks.push(RenderedBlock {
+                        time_offset: t_off,
+                        time_extent: t_ext,
+                        fill: b.fill.clone(),
+                        state_label: b.state_label.clone(),
+                        id: b.id.clone(),
+                        start_ms: b.start_ms,
+                        end_ms: b.end_ms,
+                        title: b.title.clone(),
+                        span,
+                    });
                 }
-                let t_off = time_to_pos(s);
-                let t_ext = (time_to_pos(e) - t_off).max(0.5);
-                blocks.push(RenderedBlock {
-                    time_offset: t_off,
-                    time_extent: t_ext,
-                    fill: b.fill.clone(),
-                    state_label: b.state_label.clone(),
-                    id: b.id.clone(),
-                    start_ms: b.start_ms,
-                    end_ms: b.end_ms,
-                    title: b.title.clone(),
-                });
             }
 
             let mut points: Vec<RenderedPoint> = Vec::with_capacity(f.points.len());
@@ -647,10 +856,10 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                 * f.glyph_size.scale;
 
             for p in &f.points {
-                if p.time_ms < day.start_ms || p.time_ms > day.end_ms {
+                let Some((span, within)) = span_of(p.time_ms) else {
                     continue;
-                }
-                let t = time_to_pos(p.time_ms);
+                };
+                let t = time_to_pos(within, p.time_ms);
                 let c = cross_offset + cross_extent / 2.0;
                 points.push(RenderedPoint {
                     time_pos: t,
@@ -663,6 +872,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
                     title: p.title.clone(),
                     glyph: p.glyph.clone(),
                     icon: p.icon,
+                    span,
                 });
             }
 
@@ -679,17 +889,17 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         }
 
         // Now-line: only on the day whose window contains now_ms.
-        let now_time_pos = if config.now_ms >= day.start_ms && config.now_ms <= day.end_ms {
-            Some(time_to_pos(config.now_ms))
-        } else {
-            None
-        };
+        let now = span_of(config.now_ms).map(|(i, s)| (i, time_to_pos(s, config.now_ms)));
+        let now_time_pos = now.map(|(_, pos)| pos);
+        let (now_near, now_far) = now.map_or((0.0, 1.0), |(i, pos)| spans[i].lane_at(pos));
         // Last day extends now-line through the axis; otherwise stops at
         // day's far edge along the cross/day-stack axis. Only horizontally:
         // a vertical axis strip is BEFORE the first day, not past the last
         // (da-78evn), and the renderer reaches back into it instead.
         let is_last_day = i + 1 == config.days.len();
-        let now_extent_far = if is_last_day && config.orientation == Orientation::Horizontal {
+        let now_extent_far = if now_far < 1.0 {
+            day_offset + now_far * config.day_height
+        } else if is_last_day && config.orientation == Orientation::Horizontal {
             day_offset + config.day_height + config.time_axis_height
         } else {
             day_offset + config.day_height
@@ -709,6 +919,10 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             now_extent_far,
             start_ms: day.start_ms,
             end_ms: day.end_ms,
+            now_extent_near: day_offset + now_near * config.day_height,
+            spans,
+            dead_zones,
+            zone_labels,
         });
     }
 
@@ -768,6 +982,7 @@ mod tests {
             end_ms: DAY_START + 24 * HOUR,
             has_error: false,
             fields: vec![],
+            spans: Vec::new(),
         }
     }
 
@@ -868,6 +1083,7 @@ mod tests {
             end_ms: DAY_START + 24 * HOUR,
             has_error: false,
             fields: vec![],
+            spans: Vec::new(),
         };
         let day2 = DayviewDayInput {
             date: None,
@@ -876,6 +1092,7 @@ mod tests {
             end_ms: DAY_START + 48 * HOUR,
             has_error: false,
             fields: vec![],
+            spans: Vec::new(),
         };
         let now_ms = DAY_START + 24 * HOUR + 12 * HOUR;
         let cfg = horizontal(DayviewConfig {
@@ -905,6 +1122,7 @@ mod tests {
             end_ms: DAY_START + 24 * HOUR,
             has_error: false,
             fields: vec![],
+            spans: Vec::new(),
         };
         let day2 = DayviewDayInput {
             date: None,
@@ -913,6 +1131,7 @@ mod tests {
             end_ms: DAY_START + 48 * HOUR,
             has_error: false,
             fields: vec![],
+            spans: Vec::new(),
         };
         let cfg = horizontal(DayviewConfig {
             days: vec![day1, day2],
@@ -971,6 +1190,7 @@ mod tests {
                     glyph_size: Default::default(),
                 },
             ],
+            spans: Vec::new(),
         };
         let cfg = horizontal(DayviewConfig {
             days: vec![day],
@@ -1014,6 +1234,7 @@ mod tests {
             end_ms: DAY_START + 24 * HOUR,
             has_error: false,
             fields: vec![mk_field("c", 0.9), mk_field("a", 0.1), mk_field("b", 0.5)],
+            spans: Vec::new(),
         };
         let cfg = horizontal(DayviewConfig {
             days: vec![day],
@@ -1056,6 +1277,7 @@ mod tests {
                 icon: None,
                 glyph_size: Default::default(),
             }],
+            spans: Vec::new(),
         };
         let cfg = horizontal(DayviewConfig {
             days: vec![day],
@@ -1131,6 +1353,7 @@ mod tests {
                 icon: None,
                 glyph_size: Default::default(),
             }],
+            spans: Vec::new(),
         };
         let cfg = horizontal(DayviewConfig {
             days: vec![day],
@@ -1267,6 +1490,7 @@ mod tests {
                 icon: None,
                 glyph_size: Default::default(),
             }],
+            spans: Vec::new(),
         };
         let cfg = DayviewConfig {
             days: vec![day],
@@ -1290,6 +1514,174 @@ mod tests {
             (block.time_extent - 800.0).abs() < 1.0,
             "time_extent was {}",
             block.time_extent
+        );
+    }
+
+    /// A stretch that begins `start_h` hours of real time into the day,
+    /// its wall clock reading `lo_h` → `hi_h`.
+    fn span(start_h: i64, lo_h: i64, hi_h: i64, label: &str) -> DayviewSpan {
+        DayviewSpan {
+            start_ms: DAY_START + start_h * HOUR,
+            end_ms: DAY_START + (start_h + hi_h - lo_h) * HOUR,
+            lo: lo_h as f64 / 24.0,
+            hi: hi_h as f64 / 24.0,
+            label: label.into(),
+        }
+    }
+
+    /// A day cut into `spans`, at 100px an hour and 100px tall: one field
+    /// over its near half, with a block from 1h to 4h of real time and a
+    /// dot, and now, `at_h` hours in.
+    fn jumped(spans: Vec<DayviewSpan>, at_h: f64) -> RenderedDay {
+        let at = |h: f64| DAY_START + (h * HOUR as f64) as i64;
+        let day = DayviewDayInput {
+            date: None,
+            label_lines: vec![],
+            start_ms: DAY_START,
+            end_ms: spans[spans.len() - 1].end_ms,
+            has_error: false,
+            fields: vec![DayviewFieldInput {
+                field: "sleep".into(),
+                y_frac: 0.0,
+                height_frac: 0.5,
+                z_index: 0.0,
+                blocks: vec![DayviewBlock {
+                    start_ms: at(1.0),
+                    end_ms: at(4.0),
+                    fill: BlockFill::Single("#111111".into()),
+                    state_label: None,
+                    id: None,
+                    title: None,
+                }],
+                points: vec![DayviewPoint {
+                    time_ms: at(at_h),
+                    fg_color: "#ffffff".into(),
+                    state_label: None,
+                    id: None,
+                    title: None,
+                    glyph: None,
+                    icon: false,
+                }],
+                icon: None,
+                glyph_size: Default::default(),
+            }],
+            spans,
+        };
+        let cfg = DayviewConfig {
+            days: vec![day],
+            now_ms: at(at_h),
+            width: 2400.0,
+            day_height: 100.0,
+            margin: 0.0,
+            label_width: Some(0.0),
+            time_axis_height: 0.0,
+            ..Default::default()
+        };
+        compute_dayview(&cfg).days.remove(0)
+    }
+
+    /// Pixels to the hundredth, so a position reads as the hour it is.
+    fn px(n: f64) -> f64 {
+        (n * 100.0).round() / 100.0
+    }
+
+    fn pieces(day: &RenderedDay) -> Vec<(usize, f64, f64)> {
+        (day.fields[0].blocks.iter())
+            .map(|b| (b.span, px(b.time_offset), px(b.time_extent)))
+            .collect()
+    }
+
+    fn labels(day: &RenderedDay) -> Vec<(&str, f64, f64, bool)> {
+        (day.zone_labels.iter())
+            .map(|l| (l.text.as_str(), px(l.time_pos), l.cross_pos, l.ends))
+            .collect()
+    }
+
+    /// Berlin, 2026-03-29: the clock went from 02:00 to 03:00.
+    #[test]
+    fn a_forward_jump_is_a_dead_zone_labelled_at_each_end() {
+        let day = jumped(vec![span(0, 0, 2, "UTC+1"), span(2, 3, 24, "UTC+2")], 2.5);
+        let dead: Vec<[f64; 2]> = day.dead_zones.iter().map(|z| z.map(px)).collect();
+        assert_eq!(dead, [[200.0, 100.0]]);
+        // Each end's offset in the zone, the earlier one nearest.
+        assert_eq!(
+            labels(&day),
+            [("UTC+1", 203.0, 25.0, false), ("UTC+2", 297.0, 75.0, true)]
+        );
+        // The block stops at 02:00 and goes on from 03:00; half an hour
+        // after the jump is 03:30, where the dot and the now-line are.
+        assert_eq!(pieces(&day), [(0, 100.0, 100.0), (1, 300.0, 200.0)]);
+        let dot = &day.fields[0].points[0];
+        assert_eq!((dot.span, px(dot.time_pos)), (1, 350.0));
+        assert_eq!(day.now_time_pos.map(px), Some(350.0));
+        assert!(day.spans.iter().all(|s| s.lane.is_empty()), "no fork");
+    }
+
+    /// Berlin, 2026-10-25: the clock went from 03:00 back to 02:00.
+    #[test]
+    fn a_backward_jump_forks_the_band_into_a_lane_for_each_occurrence() {
+        let spans = vec![span(0, 0, 3, "UTC+2"), span(3, 2, 24, "UTC+1")];
+        let (first, second) = (jumped(spans.clone(), 2.5), jumped(spans, 3.5));
+        // 02:30 happened twice: the same place along the axis, a lane each.
+        for (day, lane) in [(&first, 0), (&second, 1)] {
+            let dot = &day.fields[0].points[0];
+            assert_eq!((dot.span, px(dot.time_pos)), (lane, 250.0));
+            assert_eq!(day.now_time_pos.map(px), Some(250.0));
+        }
+        let lane = |s: usize, at: f64| first.spans[s].lane_at(at);
+        assert_eq!((lane(0, 250.0), lane(1, 250.0)), ((0.0, 0.5), (0.5, 1.0)));
+        // Whole again away from the fork, which each slope leaves a
+        // label's room beside: `UTC+1` is 33px at this size, 3px of air.
+        assert_eq!((lane(0, 0.0), lane(1, 2400.0)), ((0.0, 1.0), (0.0, 1.0)));
+        let knots = |s: usize| -> Vec<[f64; 3]> {
+            (first.spans[s].lane.iter().map(|k| k.map(px))).collect()
+        };
+        assert_eq!(knots(0), [[111.0, 0.0, 1.0], [161.0, 0.0, 0.5]]);
+        assert_eq!(knots(1), [[339.0, 0.5, 1.0], [389.0, 0.0, 1.0]]);
+        assert_eq!(
+            labels(&first),
+            [("UTC+2", 303.0, 25.0, false), ("UTC+1", 197.0, 75.0, true)]
+        );
+        // The block runs to 03:00 in the first lane and from 02:00 in the
+        // second, and no clock time is dead.
+        assert_eq!(pieces(&first), [(0, 100.0, 200.0), (1, 200.0, 100.0)]);
+        assert!(first.dead_zones.is_empty());
+        // The now-line keeps to the lane now is in.
+        assert_eq!((first.now_extent_near, first.now_extent_far), (0.0, 50.0));
+        assert_eq!(
+            (second.now_extent_near, second.now_extent_far),
+            (50.0, 100.0)
+        );
+    }
+
+    /// On an axis with no room beside an end, 240px here for 33px of
+    /// text, the label stays on the axis, over its own stretch: the one
+    /// that ends at 02:00 (20px), and the one that starts at 23:00 (230px).
+    #[test]
+    fn a_zone_label_never_leaves_the_axis() {
+        let at = |spans: &[DayviewSpan]| -> Vec<(f64, bool)> {
+            let (_, _, labels) = place_spans(spans, 240.0, 100.0);
+            labels.iter().map(|l| (px(l.time_pos), l.ends)).collect()
+        };
+        let early = [span(0, 0, 3, "UTC+2"), span(3, 2, 24, "UTC+1")];
+        assert_eq!(at(&early), [(33.0, false), (33.0, true)]);
+        let late = [span(0, 0, 23, "UTC+2"), span(23, 22, 24, "UTC+1")];
+        assert_eq!(at(&late), [(207.0, false), (217.0, true)]);
+    }
+
+    /// Two jumps back whose repeats overlap: 06:00 → 04:00, then 08:00 →
+    /// 05:00, so 05:00–06:00 happened three times.
+    #[test]
+    fn clock_times_that_happened_n_times_get_n_lanes() {
+        let spans = vec![span(0, 0, 6, "A"), span(6, 4, 8, "B"), span(10, 5, 24, "C")];
+        let day = jumped(spans, 0.5);
+        let third = |s: usize| {
+            let (near, far) = day.spans[s].lane_at(550.0);
+            (px(near * 3.0), px(far * 3.0))
+        };
+        assert_eq!(
+            [third(0), third(1), third(2)],
+            [(0.0, 1.0), (1.0, 2.0), (2.0, 3.0)]
         );
     }
 }

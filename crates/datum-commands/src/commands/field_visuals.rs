@@ -24,7 +24,7 @@ use datum_core::field_spec::FieldSpec;
 use datum_core::shape::is_off_state;
 use datum_core::shape::{is_block_verb, is_unrendered_switch_value, render_shape, RenderShape};
 use datum_core::state::FieldStateRows;
-use datum_core::time::Zone;
+use datum_core::time::ZoneTimeline;
 use datum_layout::dayview::{BlockFill, DayviewBlock, DayviewPoint};
 use serde_json::Value as JsonValue;
 
@@ -457,17 +457,18 @@ fn mark_state(v: Option<&JsonValue>) -> Option<String> {
 /// block starting at the first began before it (`mood: happy …–14:30`,
 /// the leading region nowview synthesizes), and one ending at the second
 /// is still going, as an open state is (`mood: happy 14:00 →`). A dot is
-/// named alone; its time is the viewer's to show.
+/// named alone; its time is the viewer's to show. The clock is the one
+/// `zones` says each instant was lived by.
 pub(crate) fn title_marks(
     field: &str,
     blocks: &mut [DayviewBlock],
     points: &mut [DayviewPoint],
     cut: (i64, i64),
+    zones: &ZoneTimeline,
 ) {
-    let zone = Zone::host();
     let clock = |ms: i64| {
         DateTime::from_timestamp_millis(ms)
-            .map(|t| clock_label(&zone.local_naive(t)))
+            .map(|t| clock_label(&zones.zone_at(t).local_naive(t)))
             .unwrap_or_default()
     };
     let name = |state: &Option<String>| match state {

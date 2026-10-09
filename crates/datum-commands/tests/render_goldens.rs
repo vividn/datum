@@ -620,6 +620,7 @@ fn dayview_scene_empty() -> DayviewLayoutResult {
             end_ms: DAY_START_MS + 24 * HOUR_MS,
             has_error: false,
             fields: vec![],
+            spans: Vec::new(),
         }],
         now_ms: DAY_START_MS + 24 * HOUR_MS, // past today → no now-line
         width: 800.0,
@@ -668,6 +669,7 @@ fn dayview_scene_single_block() -> DayviewLayoutResult {
             icon: None,
             glyph_size: Default::default(),
         }],
+        spans: Vec::new(),
     };
     let cfg = DayviewConfig {
         days: vec![day],
@@ -720,6 +722,7 @@ fn dayview_scene_multi_state() -> DayviewLayoutResult {
             icon: None,
             glyph_size: Default::default(),
         }],
+        spans: Vec::new(),
     };
     let cfg = DayviewConfig {
         days: vec![day],
@@ -766,6 +769,7 @@ fn dayview_scene_today_now_line() -> DayviewLayoutResult {
             icon: None,
             glyph_size: Default::default(),
         }],
+        spans: Vec::new(),
     };
     let cfg = DayviewConfig {
         days: vec![day],
@@ -830,6 +834,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
             icon: None,
             glyph_size: Default::default(),
         }],
+        spans: Vec::new(),
     };
     let cfg = DayviewConfig {
         days: vec![day],
@@ -899,6 +904,7 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
             icon: None,
             glyph_size: Default::default(),
         }],
+        spans: Vec::new(),
     };
     let cfg = DayviewConfig {
         days: vec![day],

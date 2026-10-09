@@ -772,3 +772,130 @@ fn a_state_switched_on_before_the_fetch_buffer_is_carried_into_the_day() {
     // Every day of a multi-day view carries it, the first included.
     assert_eq!(fields_per_day(&db, 3), vec![vec!["mood30", "mood5"]; 3]);
 }
+
+/// A dot logged at `utc` by a clock in `zone`.
+fn dot_in(db: &datum_core::db::Db, utc: &str, zone: &str) {
+    let at = datum_core::time::DatumTime::from_utc_and_tz(utc.parse().unwrap(), zone).unwrap();
+    entry_builder("water").time_start(at).insert(db);
+}
+
+/// `date` as `dayview` lays it out, in hours along its axis: each
+/// stretch's wall clock, the dead zones, the labels, the stretches that
+/// have a lane, and each dot's `(stretch, hour)`.
+#[derive(Debug, PartialEq)]
+struct Drawn {
+    spans: Vec<(f64, f64)>,
+    dead: Vec<(f64, f64)>,
+    labels: Vec<String>,
+    lanes: usize,
+    dots: Vec<(u64, f64)>,
+}
+
+fn drawn(db: &datum_core::db::Db, date: &str) -> Drawn {
+    let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
+    run_cli(&["dayview", "--json", "-d", date, "-o", &path], db).expect("dayview --json");
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let axis = json["time_axis_extent"].as_f64().unwrap();
+    let hour = |px: &serde_json::Value| (px.as_f64().unwrap() / axis * 2400.0).round() / 100.0;
+    let day = &json["days"][0];
+    assert_eq!(day["date"], date);
+    let list = |key: &str| day[key].as_array().cloned().unwrap_or_default();
+    let from_to = |a: &serde_json::Value, b: &serde_json::Value| {
+        (
+            hour(a),
+            hour(&(a.as_f64().unwrap() + b.as_f64().unwrap()).into()),
+        )
+    };
+    Drawn {
+        spans: (list("spans").iter())
+            .map(|s| from_to(&s["time_offset"], &s["time_extent"]))
+            .collect(),
+        dead: (list("dead_zones").iter())
+            .map(|z| from_to(&z[0], &z[1]))
+            .collect(),
+        labels: (list("zone_labels").iter())
+            .map(|l| l["text"].as_str().unwrap().to_string())
+            .collect(),
+        lanes: (list("spans").iter())
+            .filter(|s| s.get("lane").is_some())
+            .count(),
+        dots: (list("fields").iter())
+            .flat_map(|f| f["points"].as_array().cloned().unwrap_or_default())
+            .map(|p| (p["span"].as_u64().unwrap_or(0), hour(&p["time_pos"])))
+            .collect(),
+    }
+}
+
+/// da-1v9gp: a day is drawn on the clock it was lived by, whatever zone
+/// the reader is in (the suite's host is not Berlin). The clock times a
+/// forward jump skipped are a dead zone, and the ones a backward jump
+/// repeated are a lane for each time they happened, with each entry in the
+/// lane of the offset it was logged at.
+#[test]
+fn a_day_the_clock_jumped_in_is_drawn_on_the_clock_it_was_lived_by() {
+    let _g = freeze_time("2026-11-01T12:00:00");
+    let db = fresh_db();
+    // 01:40 at +1, and 03:20 at +2 forty minutes later.
+    dot_in(&db, "2026-03-29T00:40:00Z", "Europe/Berlin");
+    dot_in(&db, "2026-03-29T01:20:00Z", "Europe/Berlin");
+    // 02:20 at +2, and 02:15 at +1 fifty-five minutes later.
+    dot_in(&db, "2026-10-25T00:20:00Z", "Europe/Berlin");
+    dot_in(&db, "2026-10-25T01:15:00Z", "Europe/Berlin");
+
+    let label = |a: &str, b: &str| vec![a.to_string(), b.to_string()];
+    assert_eq!(
+        drawn(&db, "2026-03-29"),
+        Drawn {
+            spans: vec![(0.0, 2.0), (3.0, 24.0)],
+            dead: vec![(2.0, 3.0)],
+            labels: label("UTC+1", "UTC+2"),
+            lanes: 0,
+            dots: vec![(0, 1.67), (1, 3.33)],
+        }
+    );
+    assert_eq!(
+        drawn(&db, "2026-10-25"),
+        Drawn {
+            spans: vec![(0.0, 3.0), (2.0, 24.0)],
+            dead: vec![],
+            labels: label("UTC+2", "UTC+1"),
+            lanes: 2,
+            dots: vec![(0, 2.33), (1, 2.25)],
+        }
+    );
+    // An ordinary day between them is one stretch, midnight to midnight.
+    assert_eq!(drawn(&db, "2026-06-01").spans, [(0.0, 24.0)]);
+}
+
+/// da-1v9gp: a traveller. Moscow (+3) until the first entry logged in
+/// Berlin (+1), at 08:40 there, which is 10:40 in Moscow: the clock went
+/// back two hours, and those two hours are a lane each.
+#[test]
+fn a_traveller_whose_clock_went_back_has_a_lane_for_each_zone() {
+    let _g = freeze_time("2026-02-01T12:00:00");
+    let db = fresh_db();
+    dot_in(&db, "2026-01-10T09:00:00Z", "Europe/Moscow");
+    dot_in(&db, "2026-01-11T03:30:00Z", "Europe/Moscow"); // 06:30
+    dot_in(&db, "2026-01-11T06:20:00Z", "Europe/Moscow"); // 09:20
+    dot_in(&db, "2026-01-11T07:40:00Z", "Europe/Berlin"); // 08:40
+    dot_in(&db, "2026-01-11T08:10:00Z", "Europe/Berlin"); // 09:10
+
+    assert_eq!(
+        drawn(&db, "2026-01-11"),
+        Drawn {
+            spans: vec![(0.0, 10.67), (8.67, 24.0)],
+            dead: vec![],
+            labels: vec!["UTC+3".to_string(), "UTC+1".to_string()],
+            lanes: 2,
+            dots: vec![(0, 6.5), (0, 9.33), (1, 8.67), (1, 9.17)],
+        }
+    );
+    // The day before was all Moscow's: 12:00 there, on a whole band.
+    let before = drawn(&db, "2026-01-10");
+    assert_eq!(
+        (before.spans, before.dots),
+        (vec![(0.0, 24.0)], vec![(0, 12.0)])
+    );
+}

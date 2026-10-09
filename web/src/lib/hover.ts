@@ -58,6 +58,29 @@ function readDay(svg: SVGSVGElement, el: Element) {
 	};
 }
 
+type Day = ReturnType<typeof readDay>;
+
+/**
+ * Which stretch of `day`'s day a point is over (da-1v9gp).
+ *
+ * A day the clock jumped in is one group per UTC offset it was lived at,
+ * each with a straight axis of its own. Clock times a jump skipped are
+ * under none of them, and the point reads as the nearest end; ones a jump
+ * repeated are under two, each in a lane the stretch outlines with its own
+ * `.lane`, and the point is in one of them.
+ */
+function stretchAt(days: Day[], day: Day, along: number, clientX: number, clientY: number): Day {
+	const same = days.filter((d) => d.el.getAttribute('data-day') === day.el.getAttribute('data-day'));
+	const under = same.filter((d) => d.lo <= along && along <= d.hi);
+	const inLane = (d: Day) => {
+		const lane = d.el.querySelector<SVGGeometryElement>(':scope > .lane');
+		const ctm = lane?.getScreenCTM();
+		return !!lane && !!ctm && lane.isPointInFill(new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse()));
+	};
+	const off = (d: Day) => Math.max(d.lo - along, along - d.hi);
+	return under.find(inLane) ?? under.at(-1) ?? same.reduce((a, b) => (off(b) < off(a) ? b : a), day);
+}
+
 /** A point on screen in `svg`'s user units. */
 function userPoint(svg: SVGSVGElement, x: number, y: number): DOMPoint | null {
 	const ctm = svg.getScreenCTM();
@@ -72,6 +95,10 @@ function userPoint(svg: SVGSVGElement, x: number, y: number): DOMPoint | null {
  * picture has no time axis (nowview's snapshot). Read off the picture's
  * own geometry, so it holds at any scale the picture is shown at: the one
  * mapping the time cursor calls too; its line is placed by `placeOf`.
+ *
+ * A mark is asked about its own stretch of the day; anything else — the
+ * ground, the day the strip holds for a gesture — about the stretch the
+ * point is over (`stretchAt`).
  */
 export function timeAt(el: Element, clientX: number, clientY = 0): Date | null {
 	const svg = pictureOf(el);
@@ -79,9 +106,12 @@ export function timeAt(el: Element, clientX: number, clientY = 0): Date | null {
 	if (!svg || !p) return null;
 	const days = [...svg.querySelectorAll('[data-lo]')].map((d) => readDay(svg, d));
 	const own = el.closest('[data-lo]');
-	const day = days.find((d) => d.el === own) ?? days.findLast((d) => d.start <= (d.y ? p.x : p.y)) ?? days[0];
-	if (!day || !(day.hi > day.lo)) return null;
-	const f = Math.min(1, Math.max(0, ((day.y ? p.y : p.x) - day.lo) / (day.hi - day.lo)));
+	const found = days.find((d) => d.el === own) ?? days.findLast((d) => d.start <= (d.y ? p.x : p.y)) ?? days[0];
+	if (!found) return null;
+	const along = found.y ? p.y : p.x;
+	const day = own && own !== el ? found : stretchAt(days, found, along, clientX, clientY);
+	if (!(day.hi > day.lo)) return null;
+	const f = Math.min(1, Math.max(0, (along - day.lo) / (day.hi - day.lo)));
 	return new Date(day.from + f * (day.to - day.from));
 }
 
@@ -116,7 +146,8 @@ function placeOf(svg: SVGSVGElement, c: Cursor) {
 		const near = day.y ? view.x : view.y;
 		const far = day.y ? view.x + view.width : view.y + view.height;
 		const start = Number.isFinite(day.start) ? day.start : near;
-		const next = days[i + 1]?.start;
+		// The next DAY's: a day the clock jumped in is several groups (da-1v9gp).
+		const next = days.slice(i + 1).find((d) => d.start !== day.start)?.start;
 		return { ...day, perMs, start, end: next !== undefined && Number.isFinite(next) ? next : far };
 	};
 	const now = c.rel === undefined ? null : nowAlong(svg, days[0].y);

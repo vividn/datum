@@ -15,6 +15,9 @@
 //! - Per-field band rendering: solid blocks, multi-state diagonal stripes,
 //!   point markers, each its coloured symbol alone (da-qietq).
 //! - Yellow dashed "now" line on today's row only.
+//! - A day the clock jumped in (da-1v9gp): the times that never happened
+//!   hatched grey, the times that happened twice a lane each, and the UTC
+//!   offset written at each end.
 //! - Warning icon next to date labels for days with conflicts.
 //! - Time-axis strip on the side opposite the date labels (bottom for
 //!   horizontal, left for vertical).
@@ -22,7 +25,10 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
-use crate::dayview::{BlockFill, DayviewAxisTick, DayviewLayout, Orientation};
+use crate::dayview::{
+    BlockFill, DayviewAxisTick, DayviewLayout, Orientation, RenderedBlock, RenderedDay,
+    RenderedField, RenderedSpan,
+};
 
 const NOW_LINE_COLOR: &str = "#ffcc00";
 const BG_COLOR: &str = "black";
@@ -151,6 +157,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
     let mut defs = String::new();
     let mut patterns: HashMap<String, String> = HashMap::new();
     let mut icons: HashSet<&str> = HashSet::new();
+    let mut hatched = false;
     let geom = PlotGeom::new(layout);
 
     // The picture is pressed and tapped, not copied: none of its text — a
@@ -250,172 +257,228 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
 
         // Per-field bands — emitted in plot coords (no per-day transform);
         // helpers map (time, cross) → (x, y) per orientation.
-        // The day's time axis in the root's user units: `data-lo` is
-        // `data-from`, `data-hi` is `data-to`, along `data-axis`.
+        // A stretch's time axis in the root's user units: `data-lo` is
+        // `data-from`, `data-hi` is `data-to`, along `data-axis`. A day is
+        // one group per stretch (da-1v9gp), so each is a straight axis.
         let (axis, lo) = match layout.orientation {
             Orientation::Horizontal => ("x", layout.margin + geom.data_x),
             Orientation::Vertical => ("y", layout.margin + geom.data_y),
         };
-        let _ = write!(
-            &mut out,
-            r#"<g class="day-data" data-day="{i}" data-from="{from}" data-to="{to}" data-axis="{axis}" data-lo="{lo}" data-hi="{hi}">"#,
-            from = iso(day.start_ms),
-            to = iso(day.end_ms),
-            hi = lo + layout.time_axis_extent,
-        );
-        for field in &day.fields {
+        for (si, span) in day.spans.iter().enumerate() {
             let _ = write!(
                 &mut out,
-                r#"<g class="field" data-field="{f}">"#,
-                f = escape_xml(&field.field),
+                r#"<g class="day-data" data-day="{i}" data-from="{from}" data-to="{to}" data-axis="{axis}" data-lo="{lo}" data-hi="{hi}">"#,
+                from = iso(span.start_ms),
+                to = iso(span.end_ms),
+                lo = lo + span.time_offset,
+                hi = lo + span.time_offset + span.time_extent,
             );
-            for b in &field.blocks {
-                let (rect_x, rect_y, rect_w, rect_h) = block_rect(
-                    layout,
-                    &geom,
-                    day.day_offset + field.cross_offset,
-                    field.cross_extent,
-                    b.time_offset,
-                    b.time_extent,
-                );
-                push_fill_rect(
+            if !span.lane.is_empty() {
+                let _ = write!(
                     &mut out,
-                    &mut defs,
-                    &mut patterns,
-                    "block",
-                    &b.fill,
-                    rect_x,
-                    rect_y,
-                    rect_w,
-                    rect_h,
-                    field.cross_extent,
-                    &mark_close(
-                        "rect",
-                        &field.field,
-                        b.state_label.as_deref(),
-                        b.id.as_deref(),
-                        &[("from", b.start_ms), ("to", b.end_ms)],
-                        b.title.as_deref(),
-                    ),
+                    r#"<path class="lane" d="{d}" fill="none" stroke="white" stroke-opacity="0.5" pointer-events="none"/>"#,
+                    d = lane_outline(layout, &geom, day, span),
                 );
             }
-            // The reserved strip beyond the now-line: the lane running on
-            // in whatever state it is in now (da-nk84). Painted with the
-            // field's blocks so gridlines and the now-line still sit over
-            // it, and positioned through `block_rect` so it follows the
-            // orientation like any other block.
-            if layout.right_panel_width > 0.0 && day.now_time_pos.is_some() {
-                if let Some(pf) = opts
-                    .right_panel_fills
-                    .iter()
-                    .find(|r| r.field == field.field)
-                {
-                    let (rect_x, rect_y, rect_w, rect_h) = block_rect(
-                        layout,
-                        &geom,
-                        day.day_offset + field.cross_offset,
-                        field.cross_extent,
-                        layout.time_axis_extent,
-                        layout.right_panel_width,
-                    );
-                    push_fill_rect(
+            for field in &day.fields {
+                let here = field.blocks.iter().any(|b| b.span == si)
+                    || field.points.iter().any(|p| p.span == si);
+                if day.spans.len() > 1 && !here {
+                    continue;
+                }
+                let _ = write!(
+                    &mut out,
+                    r#"<g class="field" data-field="{f}">"#,
+                    f = escape_xml(&field.field),
+                );
+                for b in field.blocks.iter().filter(|b| b.span == si) {
+                    let (tag, shape) = block_shape(layout, &geom, day, field, span, b);
+                    push_fill(
                         &mut out,
                         &mut defs,
                         &mut patterns,
-                        "now-chunk",
-                        &pf.fill,
-                        rect_x,
-                        rect_y,
-                        rect_w,
-                        rect_h,
+                        "block",
+                        &b.fill,
+                        tag,
+                        &shape,
                         field.cross_extent,
-                        &now_chunk_close(pf.id.as_deref()),
+                        &mark_close(
+                            tag,
+                            &field.field,
+                            b.state_label.as_deref(),
+                            b.id.as_deref(),
+                            &[("from", b.start_ms), ("to", b.end_ms)],
+                            b.title.as_deref(),
+                        ),
                     );
                 }
-            }
-            for p in &field.points {
-                let (cx, cy) = to_xy(layout, &geom, p.time_pos, day.day_offset + p.cross_pos);
-                let outer_r = p.r;
-                // The disc is the mark — the pointer target, the title, the
-                // data attributes — but it is never painted: a dot is its
-                // symbol alone, in its own colour (da-qietq). The symbol
-                // lets the pointer through to it.
-                let icon = (field.icon.as_deref()).filter(|svg| p.icon && svg.starts_with("<svg"));
-                // da-c05v1: a mark wider or narrower than it is tall is
-                // stretched along x about its own centre; the disc under it,
-                // the pointer target, is not.
-                let a = field.glyph_aspect;
-                let stretch = if a == 1.0 {
-                    String::new()
-                } else {
-                    format!(
-                        r#" transform="matrix({a} 0 0 1 {dx} 0)""#,
-                        dx = cx * (1.0 - a)
-                    )
-                };
-                let _ = write!(
-                    &mut out,
-                    r#"<circle class="point-bg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" fill-opacity="0"{close}"#,
-                    cx = cx,
-                    cy = cy,
-                    r = outer_r,
-                    c = p.fg_color,
-                    close = mark_close(
-                        "circle",
-                        &field.field,
-                        p.state_label.as_deref(),
-                        p.id.as_deref(),
-                        &[("at", p.time_ms)],
-                        p.title.as_deref(),
-                    ),
-                );
-                // da-45wgz: an icon is written ONCE, in `<defs>`, under an
-                // id named for its field — the same in every band the page
-                // stacks, so a reference can never find another field's —
-                // and each dot `<use>`s it, sized to the disc and handed the
-                // dot's colour as `currentColor`.
-                if let Some(svg) = icon {
-                    let id = icon_id(&field.field);
-                    if icons.insert(&field.field) {
-                        let rest = &scope_ids(svg, &id)["<svg".len()..];
-                        let _ = write!(&mut defs, r#"<svg id="{id}"{rest}"#);
+                // The reserved strip beyond the now-line: the lane running on
+                // in whatever state it is in now (da-nk84). Painted with the
+                // field's blocks so gridlines and the now-line still sit over
+                // it, and positioned through `block_rect` so it follows the
+                // orientation like any other block.
+                if layout.right_panel_width > 0.0 && day.now_time_pos.is_some() {
+                    if let Some(pf) = opts
+                        .right_panel_fills
+                        .iter()
+                        .find(|r| r.field == field.field)
+                    {
+                        push_fill(
+                            &mut out,
+                            &mut defs,
+                            &mut patterns,
+                            "now-chunk",
+                            &pf.fill,
+                            "rect",
+                            &block_rect(
+                                layout,
+                                &geom,
+                                day.day_offset + field.cross_offset,
+                                field.cross_extent,
+                                layout.time_axis_extent,
+                                layout.right_panel_width,
+                            ),
+                            field.cross_extent,
+                            &now_chunk_close(pf.id.as_deref()),
+                        );
                     }
+                }
+                for p in field.points.iter().filter(|p| p.span == si) {
+                    // A dot in a lane is the lane's size (da-1v9gp).
+                    let (near, far) = span.lane_at(p.time_pos);
+                    let cross = near * layout.day_height + (far - near) * p.cross_pos;
+                    let (cx, cy) = to_xy(layout, &geom, p.time_pos, day.day_offset + cross);
+                    let outer_r = p.r * (far - near);
+                    // The disc is the mark — the pointer target, the title, the
+                    // data attributes — but it is never painted: a dot is its
+                    // symbol alone, in its own colour (da-qietq). The symbol
+                    // lets the pointer through to it.
+                    let icon =
+                        (field.icon.as_deref()).filter(|svg| p.icon && svg.starts_with("<svg"));
+                    // da-c05v1: a mark wider or narrower than it is tall is
+                    // stretched along x about its own centre; the disc under it,
+                    // the pointer target, is not.
+                    let a = field.glyph_aspect;
+                    let stretch = if a == 1.0 {
+                        String::new()
+                    } else {
+                        format!(
+                            r#" transform="matrix({a} 0 0 1 {dx} 0)""#,
+                            dx = cx * (1.0 - a)
+                        )
+                    };
                     let _ = write!(
                         &mut out,
-                        r##"<use class="point-fg" href="#{id}" x="{x}" y="{y}" width="{d}" height="{d}" color="{c}" pointer-events="none"{stretch}/>"##,
-                        x = cx - outer_r,
-                        y = cy - outer_r,
-                        d = outer_r * 2.0,
-                        c = p.fg_color,
-                    );
-                    continue;
-                }
-                // da-gzowt: a glyph stands where the circle would, centred
-                // on the same point, in the same colour. Sized to the disc
-                // so it reads as the mark rather than as a label on it.
-                let _ = match p.glyph.as_deref() {
-                    None => write!(
-                        &mut out,
-                        r#"<circle class="point-fg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" pointer-events="none"{stretch}/>"#,
+                        r#"<circle class="point-bg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" fill-opacity="0"{close}"#,
                         cx = cx,
                         cy = cy,
                         r = outer_r,
                         c = p.fg_color,
-                    ),
-                    Some(g) => write!(
-                        &mut out,
-                        r#"<text class="point-fg" x="{cx}" y="{cy}" dy="0.35em" text-anchor="middle" font-size="{fs}" fill="{c}" pointer-events="none"{stretch}>{g}</text>"#,
-                        cx = cx,
-                        cy = cy,
-                        fs = outer_r * 1.6,
-                        c = p.fg_color,
-                        g = escape_xml(g),
-                    ),
-                };
+                        close = mark_close(
+                            "circle",
+                            &field.field,
+                            p.state_label.as_deref(),
+                            p.id.as_deref(),
+                            &[("at", p.time_ms)],
+                            p.title.as_deref(),
+                        ),
+                    );
+                    // da-45wgz: an icon is written ONCE, in `<defs>`, under an
+                    // id named for its field — the same in every band the page
+                    // stacks, so a reference can never find another field's —
+                    // and each dot `<use>`s it, sized to the disc and handed the
+                    // dot's colour as `currentColor`.
+                    if let Some(svg) = icon {
+                        let id = icon_id(&field.field);
+                        if icons.insert(&field.field) {
+                            let rest = &scope_ids(svg, &id)["<svg".len()..];
+                            let _ = write!(&mut defs, r#"<svg id="{id}"{rest}"#);
+                        }
+                        let _ = write!(
+                            &mut out,
+                            r##"<use class="point-fg" href="#{id}" x="{x}" y="{y}" width="{d}" height="{d}" color="{c}" pointer-events="none"{stretch}/>"##,
+                            x = cx - outer_r,
+                            y = cy - outer_r,
+                            d = outer_r * 2.0,
+                            c = p.fg_color,
+                        );
+                        continue;
+                    }
+                    // da-gzowt: a glyph stands where the circle would, centred
+                    // on the same point, in the same colour. Sized to the disc
+                    // so it reads as the mark rather than as a label on it.
+                    let _ = match p.glyph.as_deref() {
+                        None => write!(
+                            &mut out,
+                            r#"<circle class="point-fg" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" pointer-events="none"{stretch}/>"#,
+                            cx = cx,
+                            cy = cy,
+                            r = outer_r,
+                            c = p.fg_color,
+                        ),
+                        Some(g) => write!(
+                            &mut out,
+                            r#"<text class="point-fg" x="{cx}" y="{cy}" dy="0.35em" text-anchor="middle" font-size="{fs}" fill="{c}" pointer-events="none"{stretch}>{g}</text>"#,
+                            cx = cx,
+                            cy = cy,
+                            fs = outer_r * 1.6,
+                            c = p.fg_color,
+                            g = escape_xml(g),
+                        ),
+                    };
+                }
+                out.push_str("</g>");
             }
             out.push_str("</g>");
         }
-        out.push_str("</g>");
+
+        // The clock's jumps (da-1v9gp): the times that never happened,
+        // hatched, and the offset at each end of a stretch. Neither takes
+        // the pointer: a press there is a press on the day's ground.
+        for zone in &day.dead_zones {
+            if !std::mem::replace(&mut hatched, true) {
+                let _ = write!(
+                    &mut defs,
+                    r##"<pattern id="{DEAD_ZONE_ID}" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="2" height="6" fill="#808080"/></pattern>"##,
+                );
+            }
+            let _ = write!(
+                &mut out,
+                r##"<rect class="dead-zone" {shape} fill="url(#{DEAD_ZONE_ID})" pointer-events="none"/>"##,
+                shape = block_rect(
+                    layout,
+                    &geom,
+                    day.day_offset,
+                    layout.day_height,
+                    zone[0],
+                    zone[1]
+                ),
+            );
+        }
+        for label in &day.zone_labels {
+            let (x, y) = to_xy(
+                layout,
+                &geom,
+                label.time_pos,
+                day.day_offset + label.cross_pos,
+            );
+            // Along a horizontal axis the text runs away from its end; down
+            // a vertical one it sits above or hangs below it.
+            let place = match (layout.orientation, label.ends) {
+                (Orientation::Horizontal, true) => r#"dy="0.35em" text-anchor="end""#,
+                (Orientation::Horizontal, false) => r#"dy="0.35em" text-anchor="start""#,
+                (Orientation::Vertical, true) => r#"text-anchor="middle""#,
+                (Orientation::Vertical, false) => r#"dy="0.8em" text-anchor="middle""#,
+            };
+            let _ = write!(
+                &mut out,
+                r#"<text class="zone-label" x="{x}" y="{y}" {place} font-size="{fs}" fill="{c}" stroke="{bg}" stroke-width="2" paint-order="stroke" pointer-events="none">{txt}</text>"#,
+                fs = label.font_size,
+                c = TEXT_COLOR,
+                bg = BG_COLOR,
+                txt = escape_xml(&label.text),
+            );
+        }
     }
 
     // Time axis — bottom strip in horizontal, left strip in vertical.
@@ -455,7 +518,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                     let x = geom.data_x + nt;
                     (
                         x,
-                        geom.data_y + day.day_offset,
+                        geom.data_y + day.now_extent_near,
                         x,
                         geom.data_y + day.now_extent_far,
                     )
@@ -464,13 +527,13 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                     // The axis strip is left of the first day, so that
                     // day's line crosses it (da-78evn).
                     let y = geom.data_y + nt;
-                    let near = if day.day_offset <= 1e-9 {
+                    let near = if day.now_extent_near <= 1e-9 {
                         layout.time_axis_height
                     } else {
                         0.0
                     };
                     (
-                        geom.data_x + day.day_offset - near,
+                        geom.data_x + day.now_extent_near - near,
                         y,
                         geom.data_x + day.now_extent_far,
                         y,
@@ -592,22 +655,21 @@ fn after_first_tag(s: &str) -> usize {
     s.find('>').map(|i| i + 1).unwrap_or(0)
 }
 
-/// Emit one filled rect for a [`BlockFill`], solid or 45°-striped. `class`
-/// names the element (`block` for a lane's own blocks, `now-chunk` for the
-/// strip past the now-line); a striped fill appends its `<pattern>` to
-/// `defs` on first use, keyed so identical fills share one def. `close`
-/// ends the tag — `/>`, or a mark's [`mark_close`].
+/// Emit one filled shape for a [`BlockFill`], solid or 45°-striped: a
+/// `tag` element with the geometry attributes `shape`. `class` names the
+/// element (`block` for a lane's own blocks, `now-chunk` for the strip
+/// past the now-line); a striped fill appends its `<pattern>` to `defs` on
+/// first use, keyed so identical fills share one def. `close` ends the tag
+/// — `/>`, or a mark's [`mark_close`].
 #[allow(clippy::too_many_arguments)]
-fn push_fill_rect(
+fn push_fill(
     out: &mut String,
     defs: &mut String,
     patterns: &mut HashMap<String, String>,
     class: &str,
     fill: &BlockFill,
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
+    tag: &str,
+    shape: &str,
     cross_extent: f64,
     close: &str,
 ) {
@@ -615,7 +677,7 @@ fn push_fill_rect(
         BlockFill::Single(color) => {
             let _ = write!(
                 out,
-                r#"<rect class="{cl}" x="{x}" y="{y}" width="{w}" height="{h}" fill="{c}"{close}"#,
+                r#"<{tag} class="{cl}" {shape} fill="{c}"{close}"#,
                 cl = class,
                 c = color,
             );
@@ -627,7 +689,7 @@ fn push_fill_rect(
             let pattern_id = stripe_pattern_id(defs, patterns, colors, cross_extent);
             let _ = write!(
                 out,
-                r#"<rect class="{cl} multi-state" x="{x}" y="{y}" width="{w}" height="{h}" fill="url(#{pid})"{close}"#,
+                r#"<{tag} class="{cl} multi-state" {shape} fill="url(#{pid})"{close}"#,
                 cl = class,
                 pid = pattern_id,
             );
@@ -697,7 +759,7 @@ fn iso(ms: i64) -> String {
         .unwrap_or_default()
 }
 
-/// Compute the SVG rect (x, y, w, h) for a block given its cross-axis
+/// A `<rect>`'s geometry attributes for a block given its cross-axis
 /// position+extent (in plot-coord cross axis) and time-axis position+extent.
 fn block_rect(
     layout: &DayviewLayout,
@@ -706,8 +768,8 @@ fn block_rect(
     cross_ext: f64,
     time_off: f64,
     time_ext: f64,
-) -> (f64, f64, f64, f64) {
-    match layout.orientation {
+) -> String {
+    let (x, y, w, h) = match layout.orientation {
         Orientation::Horizontal => (
             geom.data_x + time_off,
             geom.data_y + cross_off,
@@ -720,6 +782,104 @@ fn block_rect(
             cross_ext,
             time_ext,
         ),
+    };
+    format!(r#"x="{x}" y="{y}" width="{w}" height="{h}""#)
+}
+
+/// The `<pattern>` a dead zone is hatched with: one id, so the bands a
+/// page stacks share it.
+const DEAD_ZONE_ID: &str = "dead-zone";
+
+/// `from`, the lane's knots strictly between, `to`: where an edge drawn
+/// across that stretch of a forked band bends.
+fn bends(span: &RenderedSpan, from: f64, to: f64) -> Vec<f64> {
+    let inner = span.lane.iter().map(|k| k[0]);
+    let mut xs = vec![from];
+    xs.extend(inner.filter(|x| from < *x && *x < to));
+    xs.push(to);
+    xs
+}
+
+/// A path through `(time, cross-fraction of the day's band)` points.
+fn path_d(
+    layout: &DayviewLayout,
+    geom: &PlotGeom,
+    day: &RenderedDay,
+    points: impl Iterator<Item = (f64, f64)>,
+) -> String {
+    let mut d = String::new();
+    for (time, frac) in points {
+        let cross = day.day_offset + frac * layout.day_height;
+        let (x, y) = to_xy(layout, geom, time, cross);
+        let _ = write!(d, "{}{x},{y}", if d.is_empty() { "M" } else { "L" });
+    }
+    d
+}
+
+/// A block's element and geometry attributes: the `<rect>` it has always
+/// been, or in a forked band (da-1v9gp) a `<path>` that narrows and widens
+/// with its lane.
+fn block_shape(
+    layout: &DayviewLayout,
+    geom: &PlotGeom,
+    day: &RenderedDay,
+    field: &RenderedField,
+    span: &RenderedSpan,
+    b: &RenderedBlock,
+) -> (&'static str, String) {
+    if span.lane.is_empty() {
+        let cross = day.day_offset + field.cross_offset;
+        let rect = block_rect(
+            layout,
+            geom,
+            cross,
+            field.cross_extent,
+            b.time_offset,
+            b.time_extent,
+        );
+        return ("rect", rect);
+    }
+    // The field's own edges, as fractions of the lane's.
+    let edge = |x: f64, within: f64| {
+        let (near, far) = span.lane_at(x);
+        (x, near + (far - near) * within / layout.day_height)
+    };
+    let xs = bends(span, b.time_offset, b.time_offset + b.time_extent);
+    let near = xs.iter().map(|x| edge(*x, field.cross_offset));
+    let far = (xs.iter().rev()).map(|x| edge(*x, field.cross_offset + field.cross_extent));
+    let d = path_d(layout, geom, day, near.chain(far));
+    ("path", format!(r#"d="{d}Z""#))
+}
+
+/// The outline of a stretch's lane where the band is forked (da-1v9gp):
+/// its two edges from where the band narrows to where it widens again, and
+/// a cap across each end the stretch has there.
+fn lane_outline(
+    layout: &DayviewLayout,
+    geom: &PlotGeom,
+    day: &RenderedDay,
+    span: &RenderedSpan,
+) -> String {
+    let (first, last) = (span.lane[0], span.lane[span.lane.len() - 1]);
+    let (cap_lo, cap_hi) = (first[1..] != [0.0, 1.0], last[1..] != [0.0, 1.0]);
+    let from = if cap_lo { span.time_offset } else { first[0] };
+    let to = if cap_hi {
+        span.time_offset + span.time_extent
+    } else {
+        last[0]
+    };
+    let mut xs = bends(span, from, to);
+    // One stroke: out along an edge, across the cap, back along the other.
+    if cap_lo && !cap_hi {
+        xs.reverse();
+    }
+    let near = xs.iter().map(|x| (*x, span.lane_at(*x).0));
+    let far = xs.iter().rev().map(|x| (*x, span.lane_at(*x).1));
+    let d = path_d(layout, geom, day, near.chain(far));
+    if cap_lo && cap_hi {
+        d + "Z"
+    } else {
+        d
     }
 }
 
@@ -974,7 +1134,7 @@ mod tests {
     use super::*;
     use crate::dayview::{
         compute_dayview, BlockFill, DayviewBlock, DayviewConfig, DayviewDayInput,
-        DayviewFieldInput, DayviewPoint, Orientation,
+        DayviewFieldInput, DayviewPoint, DayviewSpan, Orientation,
     };
 
     const DAY_START: i64 = 1_745_712_000_000;
@@ -1013,6 +1173,7 @@ mod tests {
                     icon: None,
                     glyph_size: Default::default(),
                 }],
+                spans: Vec::new(),
             }],
             now_ms: DAY_START + 12 * HOUR,
             width: 800.0,
@@ -1162,6 +1323,7 @@ mod tests {
                 end_ms: DAY_START + 24 * HOUR,
                 has_error: false,
                 fields: vec![],
+                spans: Vec::new(),
             }],
             now_ms: DAY_START + 100 * HOUR,
             width: 800.0,
@@ -1268,5 +1430,92 @@ mod tests {
         );
         assert!(unnamed.contains(r#"class="now-chunk""#), "{unnamed}");
         assert!(!unnamed.contains("data-id"), "{unnamed}");
+    }
+
+    /// `one_day_with_block` at 100px an hour, its day cut where the clock
+    /// jumped: a block over 06:00–07:00 of real time and a dot at 08:00.
+    fn jumped(spans: &[(i64, i64, i64, &str)]) -> String {
+        render_dayview_svg(&compute_dayview(&jumped_config(spans)))
+    }
+
+    fn jumped_config(spans: &[(i64, i64, i64, &str)]) -> DayviewConfig {
+        let mut cfg = DayviewConfig {
+            width: 2400.0,
+            margin: 0.0,
+            label_width: Some(0.0),
+            ..one_day_with_block(false, Orientation::Horizontal)
+        };
+        cfg.days[0].spans = (spans.iter())
+            .map(|(start, lo, hi, label)| DayviewSpan {
+                start_ms: DAY_START + start * HOUR,
+                end_ms: DAY_START + (start + hi - lo) * HOUR,
+                lo: *lo as f64 / 24.0,
+                hi: *hi as f64 / 24.0,
+                label: label.to_string(),
+            })
+            .collect();
+        cfg
+    }
+
+    /// The hatch is written whatever else `<defs>` holds: an icon whose
+    /// own markup says `dead-zone` once stood in for it.
+    #[test]
+    fn a_dead_zone_is_hatched_beside_an_icon_that_names_one() {
+        let mut cfg = jumped_config(&[(0, 0, 7, "UTC+1"), (7, 8, 24, "UTC+2")]);
+        let field = &mut cfg.days[0].fields[0];
+        field.icon =
+            Some(r#"<svg viewBox="0 0 2 2"><rect class="dead-zone" width="2"/></svg>"#.into());
+        field.points[0].icon = true;
+        let svg = render_dayview_svg(&compute_dayview(&cfg));
+        assert_eq!(svg.matches(r#"<pattern id="dead-zone""#).count(), 1);
+    }
+
+    /// The clock skipped 07:00–08:00: each stretch is a day group with its
+    /// own straight axis, the skipped hour is hatched, and its ends say
+    /// which offset each side ran at.
+    #[test]
+    fn a_forward_jump_draws_a_hatched_zone_between_two_axes() {
+        let svg = jumped(&[(0, 0, 7, "UTC+1"), (7, 8, 24, "UTC+2")]);
+        let groups: Vec<&str> = svg.split(r#"<g class="day-data""#).skip(1).collect();
+        assert_eq!(groups.len(), 2);
+        assert!(groups[0].starts_with(
+            r#" data-day="0" data-from="2025-04-27T00:00:00.000Z" data-to="2025-04-27T07:00:00.000Z" data-axis="x" data-lo="0" data-hi="700">"#
+        ));
+        assert!(groups[1].starts_with(
+            r#" data-day="0" data-from="2025-04-27T07:00:00.000Z" data-to="2025-04-27T23:00:00.000Z" data-axis="x" data-lo="800" data-hi="2400">"#
+        ));
+        assert!(svg.contains(r##"<rect class="dead-zone" x="700" y="0" width="100" height="100" fill="url(#dead-zone)" pointer-events="none"/>"##));
+        assert_eq!(svg.matches(r#"<pattern id="dead-zone""#).count(), 1);
+        assert!(svg.contains(r#"text-anchor="start" font-size="11" fill="white" stroke="black" stroke-width="2" paint-order="stroke" pointer-events="none">UTC+1</text>"#));
+        assert!(svg.contains(r#"text-anchor="end" font-size="11" fill="white" stroke="black" stroke-width="2" paint-order="stroke" pointer-events="none">UTC+2</text>"#));
+        // The dot an hour after the jump is at 09:00, and nothing forks.
+        assert!(groups[1].contains(r#"<circle class="point-bg" cx="900" cy="17.5" r="7.5""#));
+        assert!(!svg.contains("<path"));
+    }
+
+    /// The clock went from 07:00 back to 06:00: each stretch has a lane,
+    /// outlined, and a mark is drawn at its lane's size.
+    #[test]
+    fn a_backward_jump_draws_each_stretch_in_its_own_lane() {
+        let svg = jumped(&[(0, 0, 7, "UTC+2"), (7, 6, 24, "UTC+1")]);
+        let groups: Vec<&str> = svg.split(r#"<g class="day-data""#).skip(1).collect();
+        assert_eq!(groups.len(), 2);
+        // The first 06:00–07:00 is the near half of the band; mood's own
+        // 10%–25% of it is 5–12.5px there.
+        assert!(groups[0].contains(
+            r##"<path class="block" d="M600,5L700,5L700,12.5L600,12.5Z" fill="#abcdef""##
+        ));
+        // The outlines: narrowing from 05:11 to a cap at 07:00, and from a
+        // cap at 06:00 to whole again by 07:53.
+        assert!(groups[0].starts_with(concat!(
+            r#" data-day="0" data-from="2025-04-27T00:00:00.000Z" data-to="2025-04-27T07:00:00.000Z" data-axis="x" data-lo="0" data-hi="700">"#,
+            r#"<path class="lane" d="M511,0L561,0L700,0L700,50L561,50L511,100" fill="none""#
+        )));
+        assert!(groups[1].contains(
+            r#"<path class="lane" d="M789,0L739,50L600,50L600,100L739,100L789,100" fill="none""#
+        ));
+        // An hour after the jump is 07:00 again, in the far half.
+        assert!(groups[1].contains(r#"<circle class="point-bg" cx="700" cy="58.75" r="3.75""#));
+        assert!(!svg.contains("dead-zone"));
     }
 }

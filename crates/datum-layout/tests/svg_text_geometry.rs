@@ -249,6 +249,7 @@ fn dayview_at(width: f64, orientation: Orientation) -> String {
                 end_ms: e,
                 has_error: false,
                 fields: day_fields(s, e),
+                spans: Vec::new(),
             }
         })
         .collect();

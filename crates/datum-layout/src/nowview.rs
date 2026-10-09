@@ -413,6 +413,7 @@ pub fn nowview_config(
         end_ms: now_ms + (after * 60_000.0) as i64,
         has_error: false,
         fields,
+        spans: Vec::new(),
     };
 
     // The now strip is `NOW_WIDTH_MINUTES` of the same scale the history

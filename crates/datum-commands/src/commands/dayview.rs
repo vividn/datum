@@ -8,22 +8,22 @@
 //! resolves colors through `crate::render::colors`, queries the integrity warnings
 //! queue for per-day error overlays, and writes the chosen output format.
 //!
-//! TODO (timezone bifurcation): v1 renders in the host's local time. A day
-//! with entries in multiple timezones (DST or travel) should bifurcate
-//! visually during the ambiguous overlap window — see bead da-vp7's spec
-//! for the long-term plan. Bifurcation is a separate visualization bead.
+//! A day is drawn in local time as it was lived (da-1v9gp): on the wall
+//! clock of the zone the record was kept in then (`Db::zone_timeline`),
+//! whatever zone the reader is in now. [`day_spans`] cuts each day where
+//! that clock jumped, and the layout draws the jump.
 
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use chrono::{Datelike, NaiveDate, TimeZone, Utc};
+use chrono::{Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use datum_core::db::Db;
 use datum_core::entry::Entry;
 use datum_core::integrity::ListFilter;
-use datum_core::time::{DatumTime, Zone};
+use datum_core::time::{DatumTime, Zone, ZoneTimeline};
 use datum_layout::dayview::{
     compute_dayview, day_height_for_extent, DayviewConfig, DayviewDayInput, DayviewFieldInput,
-    GlyphSize, Orientation,
+    DayviewSpan, GlyphSize, Orientation,
 };
 use datum_layout::dayview_svg::{render_dayview_svg, wrap_dayview_svg_in_html};
 use datum_parse::cli::DayviewOrientation;
@@ -49,7 +49,7 @@ pub fn dayview(args: DayviewArgs, db: &Db) -> Result<()> {
         // only when the visible window actually contains "now" (otherwise
         // the now-line isn't visible and there's nothing to advance), and
         // suppressed when we'd be dumping SVG into a terminal.
-        let today = today();
+        let today = today(db, &DatumTime::now())?;
         let end_date = resolved_end_date(&args, today)?;
         let contains_now = window_contains_today(&args, today, end_date)?;
         let periodic =
@@ -116,11 +116,13 @@ fn dayview_periodic_refresh(
     Some(std::time::Duration::from_secs(60))
 }
 
-/// Today on the reader's clock (`DatumTime::now()`), the zone the day
-/// boundaries below are cut in — not `chrono::Local`, which is UTC in the
-/// browser and made today yesterday until the zone's offset (da-y6qj).
-fn today() -> NaiveDate {
-    DatumTime::now().local_time().date_naive()
+/// Today on the clock the record is kept by (da-1v9gp): the zone of its
+/// newest entry, and the reader's own (`Zone::host`, never `chrono::Local`:
+/// da-y6qj) while it has none. The zone the days below are cut in, so
+/// today is the day the now-line is on.
+fn today(db: &Db, now: &DatumTime) -> Result<NaiveDate> {
+    let zones = db.zone_timeline(Zone::host(), Some(now.utc))?;
+    Ok(zones.zone_at(now.utc).local_naive(now.utc).date())
 }
 
 fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
@@ -128,7 +130,7 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
     // days and the now-line both, so they cannot disagree about which day
     // is today, not even across midnight (da-tyggo).
     let now = DatumTime::now();
-    let today = now.local_time().date_naive();
+    let today = today(db, &now)?;
     let end_date = match args.end_date.as_deref() {
         Some(s) => {
             resolve_date_arg(s, today).with_context(|| format!("invalid --end-date: '{s}'"))?
@@ -178,9 +180,19 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
     // 4. For each day, build the field input list.
     let mut days_input: Vec<DayviewDayInput> = Vec::with_capacity(day_dates.len());
     let now_ms = now.utc.timestamp_millis();
+    // The zones the days were lived in, read from three days before the
+    // first date: a day begins up to 14 hours before its date's midnight in
+    // UTC, and a block's title reads the clock of a start as far back as
+    // the fetch's two-day buffer before that.
+    let since = day_dates[0].and_time(Default::default()).and_utc() - Duration::days(3);
+    let zones = db.zone_timeline(Zone::host(), Some(since))?;
 
     for date in &day_dates {
-        let (day_start_ms, day_end_ms) = local_day_bounds_ms(*date)?;
+        // The day's window is every instant its date was read on a clock.
+        // A date no clock read (Samoa's 2011-12-30) is an empty band.
+        let spans = day_spans(&zones, *date);
+        let day_start_ms = spans.iter().map(|s| s.start_ms).min().unwrap_or_default();
+        let day_end_ms = spans.iter().map(|s| s.end_ms).max().unwrap_or_default();
         let label_lines = format_day_label(*date);
 
         // Bucket pending integrity warnings whose detected_at falls in this
@@ -190,7 +202,7 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
             t >= day_start_ms && t < day_end_ms
         });
 
-        let fields = build_day_fields(db, day_start_ms, day_end_ms, now_ms)?;
+        let fields = build_day_fields(db, &zones, day_start_ms, day_end_ms, now_ms)?;
 
         days_input.push(DayviewDayInput {
             date: Some(date.to_string()),
@@ -199,6 +211,7 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
             end_ms: day_end_ms,
             has_error,
             fields,
+            spans,
         });
     }
 
@@ -365,24 +378,47 @@ fn resolve_date_arg(s: &str, today: NaiveDate) -> Result<NaiveDate> {
     Ok(today + chrono::Duration::days(parsed.days_offset))
 }
 
-/// Local-day bounds in UTC ms: `[local midnight, next local midnight)`.
-///
-/// Both ends go through [`Resolved::for_boundary`] (da-ztae), which takes
-/// the earlier instant of a fall-back overlap and clamps a spring-forward
-/// gap to the transition, so one day's end is exactly the next day's start.
-/// The end is the *next day's midnight* rather than `start + 24h`: on a DST
-/// day the local day is 23 or 25 hours long, and adding a fixed day either
-/// spilled an hour of the neighbour into this column or dropped one.
-fn local_day_bounds_ms(date: NaiveDate) -> Result<(i64, i64)> {
-    let zone = Zone::host();
-    let midnight = |d: NaiveDate| -> Result<i64> {
-        let naive = d
-            .and_hms_opt(0, 0, 0)
-            .context("local midnight not representable")?;
-        Ok(zone.resolve(naive).for_boundary().timestamp_millis())
-    };
-    let next = date.succ_opt().context("date out of range")?;
-    Ok((midnight(date)?, midnight(next)?))
+/// `date` as it was lived (da-1v9gp): one stretch per UTC offset its wall
+/// clock ran at, each the part of that offset's run the clock read `date`
+/// in. An ordinary day is one. A day the clock jumped forward in is two
+/// with the skipped times between them, and one it jumped back in is two
+/// that both hold the repeated times: a 23 or a 25 hour day, each hour
+/// drawn at the hour it was.
+fn day_spans(zones: &ZoneTimeline, date: NaiveDate) -> Vec<DayviewSpan> {
+    let midnight = date.and_time(Default::default());
+    let next = midnight + Duration::days(1);
+    // No offset is a day from UTC, so every instant of the date is within
+    // a day of its own midnights read as UTC.
+    let to = next.and_utc() + Duration::days(1);
+    let runs = zones.offsets(midnight.and_utc() - Duration::days(1), to);
+    let mut spans = Vec::new();
+    for (i, (start, offset)) in runs.iter().enumerate() {
+        let end = runs.get(i + 1).map_or(to, |run| run.0);
+        let lo = (start.naive_utc() + *offset).max(midnight);
+        let hi = (end.naive_utc() + *offset).min(next);
+        if lo < hi {
+            let ms = |wall: NaiveDateTime| (wall - *offset).and_utc().timestamp_millis();
+            let along = |wall: NaiveDateTime| (wall - midnight).num_milliseconds() as f64 / 864e5;
+            spans.push(DayviewSpan {
+                start_ms: ms(lo),
+                end_ms: ms(hi),
+                lo: along(lo),
+                hi: along(hi),
+                label: offset_label(*offset),
+            });
+        }
+    }
+    spans
+}
+
+/// An offset as a stretch's end is labelled: `UTC+2`, `UTC-3`, `UTC+5:30`.
+fn offset_label(offset: FixedOffset) -> String {
+    let minutes = offset.local_minus_utc() / 60;
+    let sign = if minutes < 0 { '-' } else { '+' };
+    match (minutes.abs() / 60, minutes.abs() % 60) {
+        (h, 0) => format!("UTC{sign}{h}"),
+        (h, m) => format!("UTC{sign}{h}:{m:02}"),
+    }
 }
 
 /// Format `date` as datum's 3-line label `["ccc", "LLL dd", "yyyy"]`. The
@@ -428,6 +464,7 @@ fn format_day_label(date: NaiveDate) -> Vec<String> {
 /// dropped by `push_switch_region`.
 fn build_day_fields(
     db: &Db,
+    zones: &ZoneTimeline,
     day_start_ms: i64,
     day_end_ms: i64,
     now_ms: i64,
@@ -516,6 +553,7 @@ fn build_day_fields(
             &mut blocks,
             &mut points,
             (fetch_start.timestamp_millis(), fallback_end_ms),
+            zones,
         );
 
         // Per the bead spec: "Empty fields (zero entries in window) are
@@ -559,6 +597,78 @@ mod tests {
     use datum_core::action::Action;
     use datum_parse::cli::DayviewOrientation;
     use serde_json::Value as JsonValue;
+
+    fn utc_zone() -> ZoneTimeline {
+        ZoneTimeline::single(Zone::Fixed(FixedOffset::east_opt(0).unwrap()))
+    }
+
+    /// What [`day_spans`] cuts `date` into: each stretch's wall clock in
+    /// minutes of the day, its length in real minutes, and its label.
+    fn cut(zones: &ZoneTimeline, date: &str) -> Vec<(i64, i64, i64, String)> {
+        (day_spans(zones, date.parse().unwrap()).into_iter())
+            .map(|s| {
+                let minute = |f: f64| (f * 1440.0).round() as i64;
+                let real = (s.end_ms - s.start_ms) / 60_000;
+                (minute(s.lo), minute(s.hi), real, s.label)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_day_is_cut_where_its_wall_clock_jumped() {
+        let zone = |name: &str| Zone::iana(name).unwrap();
+        let berlin = ZoneTimeline::single(zone("Europe/Berlin"));
+        let h = 60;
+        assert_eq!(
+            cut(&berlin, "2026-06-01"),
+            [(0, 24 * h, 24 * h, "UTC+2".to_string())]
+        );
+        // 02:00 → 03:00: 23 hours, none of them between the two.
+        assert_eq!(
+            cut(&berlin, "2026-03-29"),
+            [
+                (0, 2 * h, 2 * h, "UTC+1".to_string()),
+                (3 * h, 24 * h, 21 * h, "UTC+2".to_string())
+            ]
+        );
+        // 03:00 → 02:00: 25 hours, 02:00–03:00 in both.
+        assert_eq!(
+            cut(&berlin, "2026-10-25"),
+            [
+                (0, 3 * h, 3 * h, "UTC+2".to_string()),
+                (2 * h, 24 * h, 22 * h, "UTC+1".to_string())
+            ]
+        );
+        // A traveller, Moscow to Berlin: the clock goes back two hours at
+        // the first entry logged in Berlin, 08:40 there and 10:40 in Moscow.
+        let at = |t: &str| t.parse::<chrono::DateTime<Utc>>().unwrap();
+        let moved = ZoneTimeline::new(
+            [
+                (at("2026-01-10T05:00:00Z"), zone("Europe/Moscow")),
+                (at("2026-01-11T07:40:00Z"), zone("Europe/Berlin")),
+            ],
+            zone("Europe/Moscow"),
+        );
+        assert_eq!(
+            cut(&moved, "2026-01-11"),
+            [
+                (0, 10 * h + 40, 10 * h + 40, "UTC+3".to_string()),
+                (8 * h + 40, 24 * h, 15 * h + 20, "UTC+1".to_string())
+            ]
+        );
+        // A date no clock read: Samoa went from 12-29 straight to 12-31.
+        let apia = ZoneTimeline::single(zone("Pacific/Apia"));
+        assert_eq!(cut(&apia, "2011-12-30"), []);
+    }
+
+    #[test]
+    fn an_offset_is_labelled_as_hours_from_utc() {
+        let label = |minutes: i32| offset_label(FixedOffset::east_opt(minutes * 60).unwrap());
+        assert_eq!(
+            [label(120), label(0), label(-180), label(330), label(-570)],
+            ["UTC+2", "UTC+0", "UTC-3", "UTC+5:30", "UTC-9:30"]
+        );
+    }
 
     fn args_with(
         end_date: Option<&str>,
@@ -711,7 +821,7 @@ mod tests {
             .unwrap()
             .timestamp_millis();
 
-        let fields = build_day_fields(&db, day_start, day_end, day_end).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end).unwrap();
         assert_eq!(fields.len(), 1);
         let mood = &fields[0];
         assert_eq!(mood.field, "mood");
@@ -782,7 +892,7 @@ mod tests {
             .unwrap()
             .timestamp_millis();
 
-        let fields = build_day_fields(&db, day_start, day_end, day_end).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end).unwrap();
         assert_eq!(fields.len(), 1);
         let mood = &fields[0];
         // Two regions: 8-12 (happy) and 16-day_end (focus). The false-switch
@@ -846,7 +956,7 @@ mod tests {
             .timestamp_millis();
         let t8 = utc8.timestamp_millis();
 
-        let fields = build_day_fields(&db, day_start, day_end, now_ms).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, now_ms).unwrap();
         let mood = &fields[0];
         assert_eq!(mood.blocks.len(), 1);
         assert_eq!(mood.blocks[0].start_ms, t8);
@@ -892,7 +1002,7 @@ mod tests {
             .unwrap()
             .timestamp_millis();
 
-        let fields = build_day_fields(&db, day_start, day_end, now_ms).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, now_ms).unwrap();
         let mood = &fields[0];
         assert_eq!(mood.blocks.len(), 1);
         assert_eq!(mood.blocks[0].end_ms, day_end);
@@ -936,7 +1046,7 @@ mod tests {
                 .timestamp_millis()
         };
         let lane = |db: &Db| {
-            let f = build_day_fields(db, day(0), day(23), day(23)).unwrap();
+            let f = build_day_fields(db, &utc_zone(), day(0), day(23), day(23)).unwrap();
             assert_eq!(f.len(), 1, "mood has no marks, only coffee draws");
             (f[0].y_frac, f[0].height_frac)
         };
@@ -1002,7 +1112,7 @@ mod tests {
             .unwrap()
             .timestamp_millis();
 
-        let fields = build_day_fields(&db, day_start, day_end, day_end).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end).unwrap();
         let names: Vec<&str> = fields.iter().map(|f| f.field.as_str()).collect();
         assert!(names.contains(&"coffee"), "names = {names:?}");
         assert!(
@@ -1048,7 +1158,7 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let fields = build_day_fields(&db, day_start, day_end, day_end).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end).unwrap();
         assert!(
             fields.iter().all(|f| f.field != "stretch_routine"),
             "render.dayview=false must drop the band",
@@ -1086,7 +1196,7 @@ mod tests {
                 .unwrap()
                 .timestamp_millis()
         };
-        let fields = build_day_fields(&db, day(27), day(28), day(28)).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day(27), day(28), day(28)).unwrap();
         let work = fields.iter().find(|f| f.field == "work").unwrap();
         let states: Vec<_> = work
             .blocks
@@ -1121,7 +1231,7 @@ mod tests {
             spec.presentation.glyph_scale = Some(scale);
             spec.presentation.glyph_aspect = Some(aspect);
             db.save_field_spec(&spec).unwrap();
-            let fields = build_day_fields(&db, day(0), day(24), day(24)).unwrap();
+            let fields = build_day_fields(&db, &utc_zone(), day(0), day(24), day(24)).unwrap();
             fields
                 .into_iter()
                 .find(|f| f.field == "coffee")
@@ -1187,7 +1297,7 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let fields = build_day_fields(&db, day_start, day_end, day_end).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end).unwrap();
         let caffeine = fields
             .iter()
             .find(|f| f.field == "caffeine")
@@ -1227,7 +1337,7 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let fields = build_day_fields(&db, day_start, day_end, day_end).unwrap();
+        let fields = build_day_fields(&db, &utc_zone(), day_start, day_end, day_end).unwrap();
         let alarm = fields
             .iter()
             .find(|f| f.field == "alarm")

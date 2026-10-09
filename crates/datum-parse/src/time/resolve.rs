@@ -28,7 +28,7 @@
 //! ours, and they happen twice a year without any entry marking them. Keying
 //! on zone identity instead of on offset changes is both simpler and correct.
 
-use chrono::{DateTime, FixedOffset, NaiveDateTime, Offset, TimeZone, Utc};
+use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Offset, TimeZone, Utc};
 use chrono_tz::Tz;
 
 use crate::error::{ParseError, Result};
@@ -332,12 +332,60 @@ impl ZoneTimeline {
         }
         self.segments[0].zone.resolve(naive)
     }
+
+    /// The UTC offsets in effect over `[from, to)`, as runs: each `(start,
+    /// offset)` holds until the next one's start. A run ends where a wall
+    /// clock jumps: at a move to another zone, or at a change the zone's
+    /// own rules make (DST), found to the second. Never empty.
+    pub fn offsets(
+        &self,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    ) -> Vec<(DateTime<Utc>, FixedOffset)> {
+        let at = |secs: i64| DateTime::from_timestamp(secs, 0).unwrap_or(from);
+        let mut runs = vec![(from, self.zone_at(from).offset_at(from))];
+        let mut push = |t: DateTime<Utc>, offset: FixedOffset| {
+            if runs.last().is_some_and(|run| run.1 != offset) {
+                runs.push((t, offset));
+            }
+        };
+        // Every move, and a grid finer than any two changes of one zone's
+        // rules, so a stretch between two cuts holds one change at most.
+        let grid = (1..).map(|i| from + Duration::hours(6 * i));
+        let mut cuts: Vec<DateTime<Utc>> = (self.segments.iter().map(|s| s.from))
+            .filter(|t| from < *t && *t < to)
+            .chain(grid.take_while(|t| *t < to))
+            .collect();
+        cuts.push(to);
+        cuts.sort_unstable();
+        let mut lo = from;
+        for hi in cuts {
+            let zone = self.zone_at(lo);
+            let before = zone.offset_at(lo);
+            let (mut a, mut b) = (lo.timestamp(), hi.timestamp() - 1);
+            if b > a && zone.offset_at(at(b)) != before {
+                while b - a > 1 {
+                    let mid = a + (b - a) / 2;
+                    if zone.offset_at(at(mid)) == before {
+                        a = mid;
+                    } else {
+                        b = mid;
+                    }
+                }
+                push(at(b), zone.offset_at(at(b)));
+            }
+            if hi < to {
+                push(hi, self.zone_at(hi).offset_at(hi));
+            }
+            lo = hi;
+        }
+        runs
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Duration;
 
     fn utc(s: &str) -> DateTime<Utc> {
         s.parse::<DateTime<Utc>>().unwrap()
@@ -537,6 +585,51 @@ mod tests {
         let tl = ZoneTimeline::new([], chicago());
         assert_eq!(tl.segments().len(), 1);
         assert_eq!(tl.zone_at(utc("2024-06-01T00:00:00Z")), &chicago());
+    }
+
+    /// A wall clock jumps where the rules say (Berlin's fall back, 01:00Z)
+    /// and where the person moved, and nowhere else.
+    #[test]
+    fn offsets_are_runs_cut_at_dst_and_at_a_move() {
+        let east = |h: i32| FixedOffset::east_opt(h * 3600).unwrap();
+        let berlin = Zone::iana("Europe/Berlin").unwrap();
+        let tl = ZoneTimeline::new(
+            [
+                (utc("2026-10-20T12:00:00Z"), berlin),
+                (utc("2026-10-26T09:30:00.500Z"), chicago()),
+            ],
+            chicago(),
+        );
+        assert_eq!(
+            tl.offsets(utc("2026-10-24T00:00:00Z"), utc("2026-10-27T00:00:00Z")),
+            vec![
+                (utc("2026-10-24T00:00:00Z"), east(2)),
+                (utc("2026-10-25T01:00:00Z"), east(1)),
+                (utc("2026-10-26T09:30:00.500Z"), east(-5)),
+            ]
+        );
+        // The window is half-open: a change at its first instant is its
+        // first run's, and one at its end is not in it.
+        assert_eq!(
+            tl.offsets(utc("2026-10-25T01:00:00Z"), utc("2026-10-25T02:00:00Z")),
+            vec![(utc("2026-10-25T01:00:00Z"), east(1))]
+        );
+        assert_eq!(
+            tl.offsets(utc("2026-10-25T00:00:00Z"), utc("2026-10-25T01:00:00Z")),
+            vec![(utc("2026-10-25T00:00:00Z"), east(2))]
+        );
+        // A move after the window hides nothing inside it.
+        assert_eq!(
+            tl.offsets(utc("2026-10-24T00:00:00Z"), utc("2026-10-26T00:00:00Z")),
+            vec![
+                (utc("2026-10-24T00:00:00Z"), east(2)),
+                (utc("2026-10-25T01:00:00Z"), east(1)),
+            ]
+        );
+        assert_eq!(
+            tl.offsets(utc("2026-07-01T00:00:00Z"), utc("2026-07-03T00:00:00Z")),
+            vec![(utc("2026-07-01T00:00:00Z"), east(2))]
+        );
     }
 
     /// The point of the whole cache: DST is computed from the *rules*, not

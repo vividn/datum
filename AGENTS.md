@@ -466,6 +466,19 @@ endpoint by a Web Lock (`datum-sync:<db>`), which pushes on every tab's writes
   load-bearing: the CLI's slot is a painted SPACE, and a lone space in a
   `<td>` collapses to zero width with its background set and nothing drawn.
   `web/tests/statecell.test.mjs`.
+- A day is drawn in LOCAL TIME AS IT WAS LIVED (da-1v9gp), the author's
+  rule: "if you see 10am somewhere it actually meant it was 10am when it
+  was experienced regardless if your timezone, location, or dst has changed
+  meanwhile." `dayview` cuts a day on the wall clock of `db.zone_timeline`
+  (the zone its entries were logged in, the host's only with none), into
+  one `DayviewSpan` per UTC offset (`day_spans`, `commands/dayview.rs`), on
+  an axis that is always 00:00 to 24:00. A forward jump leaves clock times
+  no span covers, a hatched `.dead-zone`; a backward one lays two spans
+  over the same clock times, and the layout gives each a lane
+  (`RenderedSpan::lane`), which blocks narrow into as `<path>`s. Each end
+  inside the day is labelled `UTC+n`. The SVG is one `g.day-data` per span,
+  each a straight axis, so `timeAt` (`$lib/hover.ts`) reads a press against
+  the span it is over (`stretchAt`). `web/tests/dayjump.test.mjs`.
 - The dayview strip is a stack of days, not one band: today is
   pinned at the bottom and the days before it are stacked above, as many
   as the strip's box SHOWS (the height comes from the container,

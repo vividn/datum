@@ -26,7 +26,7 @@ use datum_core::shape::{
     dot_fg_uses_state, is_block_verb, is_unrendered_switch_value, render_shape, RenderShape,
 };
 use datum_core::state::FieldStateRows;
-use datum_core::time::Zone;
+use datum_core::time::{Zone, ZoneTimeline};
 use datum_layout::dayview::{compute_dayview, DayviewFieldInput, Orientation};
 use datum_layout::nowview::{
     nowview_config, NowviewBlock, NowviewCurrentState, NowviewField, NowviewGeometry, NowviewPoint,
@@ -538,6 +538,7 @@ pub(crate) fn build_dayview_fields(
             &mut blocks,
             &mut points,
             (fetch_start.timestamp_millis(), open_end_ms),
+            &ZoneTimeline::single(Zone::host()),
         );
 
         if blocks.is_empty() && points.is_empty() {

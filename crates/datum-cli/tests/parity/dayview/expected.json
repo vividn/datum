@@ -242,7 +242,16 @@
         "2026"
       ],
       "now_extent_far": 115.0,
+      "now_extent_near": 0.0,
       "now_time_pos": null,
+      "spans": [
+        {
+          "end_ms": 1768521600000,
+          "start_ms": 1768435200000,
+          "time_extent": 1916.0,
+          "time_offset": 0.0
+        }
+      ],
       "start_ms": 1768435200000,
       "y": 2.0
     }
