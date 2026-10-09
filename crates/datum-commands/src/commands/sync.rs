@@ -367,10 +367,26 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             let code = qrcode::QrCode::new(text.as_bytes())?;
             println!("{}", code.render::<qrcode::render::svg::Color>().build());
         }
-        SyncCommand::Ack { who } => {
+        SyncCommand::Ack { who: Some(who) } => {
             ensure!(db.sync_ack(&who)? > 0, "nothing to acknowledge for {who}");
             println!("acknowledged {who}");
         }
+        // Bare: the one notice pending, or the list to name one from.
+        SyncCommand::Ack { who: None } => match db.sync_notices_unacked()?.as_slice() {
+            [] => bail!("nothing to acknowledge"),
+            [n] => {
+                db.sync_ack(n.who())?;
+                println!("acknowledged {n}");
+            }
+            many => bail!(
+                "{} to acknowledge; name one:\n{}",
+                many.len(),
+                many.iter()
+                    .map(|n| format!("  ⚠ {n} — `datum sync chain ack {}`", n.who()))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ),
+        },
         #[cfg(feature = "net")]
         SyncCommand::Invite {
             reader,
@@ -1011,15 +1027,27 @@ fn status(db: &Db, json: bool) -> Result<()> {
 /// The warnings (da-odwc7): once, on the first command after the chain
 /// admits an endpoint or an admin, since each can read and write
 /// everything, or is unlocked. Each also stays in `datum check` until
-/// `datum sync chain ack`.
-pub fn warn_new_members(db: &Db) {
+/// `datum sync chain ack`. `before` is what was unannounced when the
+/// command began, so a session never tells its own admissions to nobody,
+/// and this runs after the command's output, which would push the warning
+/// off the screen: a command that died first leaves it to the next
+/// (da-36xnc).
+pub fn warn_new_members(db: &Db, before: &[Notice]) {
+    if before.is_empty() {
+        return;
+    }
     for n in db.sync_notices_unannounced().unwrap_or_default() {
+        if !before.iter().any(|b| b.subject == n.subject) {
+            continue;
+        }
         match n.kind.as_str() {
             "unlock" => eprintln!("⚠ {n} — {UNLOCK_HINT}"),
             _ => eprintln!(
-                "⚠ {n} — `datum sync chain list` to review, `datum sync chain ack` to acknowledge"
+                "⚠ {n} — `datum sync chain list` to review, `datum sync chain ack {}` to acknowledge",
+                n.who()
             ),
         }
+        let _ = db.sync_notice_announced(&n);
     }
 }
 

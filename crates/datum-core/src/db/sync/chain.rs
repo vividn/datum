@@ -960,10 +960,21 @@ pub struct Notice {
     pub via: String,
 }
 
+impl Notice {
+    /// What `datum sync chain ack` takes to acknowledge it: `unlock`, or
+    /// the id its line shows.
+    pub fn who(&self) -> &str {
+        if self.kind == "unlock" {
+            return "unlock";
+        }
+        let id = self.subject.trim_start_matches("rejoin:");
+        &id[..id.len().min(18)]
+    }
+}
+
 impl std::fmt::Display for Notice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let id = self.subject.trim_start_matches("rejoin:");
-        let id = &id[..id.len().min(18)];
+        let id = self.who();
         match self.kind.as_str() {
             "admin" => write!(f, "new sync admin {} ({id}) added {}", self.label, self.at),
             "unlock" => write!(f, "sync chain unlocked by {} at {}", self.label, self.at),
@@ -1193,16 +1204,18 @@ impl Db {
         Ok(())
     }
 
-    /// Notices not yet printed, now marked printed.
+    /// Notices not yet printed.
     pub fn sync_notices_unannounced(&self) -> Result<Vec<Notice>> {
-        let out = self.sync_notices("announced = 0")?;
-        if !out.is_empty() {
-            self.conn.execute(
-                "UPDATE sync_notices SET announced = 1 WHERE announced = 0",
-                [],
-            )?;
-        }
-        Ok(out)
+        self.sync_notices("announced = 0")
+    }
+
+    /// Mark a notice printed.
+    pub fn sync_notice_announced(&self, notice: &Notice) -> Result<()> {
+        self.conn.execute(
+            "UPDATE sync_notices SET announced = 1 WHERE subject = ?1",
+            params![notice.subject],
+        )?;
+        Ok(())
     }
 
     /// Notices not yet acknowledged (`datum check`).

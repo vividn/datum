@@ -215,10 +215,7 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
             }
         }
         Some("ack") => SyncCommand::Ack {
-            who: rest
-                .next()
-                .ok_or_else(|| ParseError::InvalidArg("ack needs an endpoint or admin".into()))?
-                .to_string(),
+            who: rest.next().map(|w| w.to_string()),
         },
         Some("rekey") => SyncCommand::Rekey,
         Some(other) => return Err(unknown("sync chain", other, SET)),
@@ -609,8 +606,11 @@ mod tests {
         assert!(parse_sync_cmd(&["chain", "role", "b"]).is_err());
         assert_eq!(
             p(&["chain", "ack", "abc"]),
-            SyncCommand::Ack { who: "abc".into() }
+            SyncCommand::Ack {
+                who: Some("abc".into())
+            }
         );
+        assert_eq!(p(&["chain", "ack"]), SyncCommand::Ack { who: None });
         assert_eq!(p(&["chain", "rekey"]), SyncCommand::Rekey);
         assert_eq!(
             p(&["chain", "leave", "--dry-run"]),

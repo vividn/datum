@@ -826,10 +826,10 @@ pub enum SyncCommand {
         label: String,
         admin_key: Option<String>,
     },
-    /// `datum sync chain ack <WHO>` — acknowledge a notice: a new endpoint
-    /// or admin, or (`unlock`) the chain's unlocking.
+    /// `datum sync chain ack [<WHO>]` — acknowledge a notice: a new endpoint
+    /// or admin, or (`unlock`) the chain's unlocking. Bare, the one pending.
     Ack {
-        who: String,
+        who: Option<String>,
     },
     /// `datum sync chain rekey` — a new endpoint key for this copy (da-p79vq).
     Rekey,
