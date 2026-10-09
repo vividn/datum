@@ -5,7 +5,7 @@
 
 use rusqlite::Connection;
 
-use super::support::{has_column, table_exists};
+use super::support::{has_column, rename_json_key, table_exists};
 
 use crate::db::KIT_FIELD;
 use crate::error::{DatumError, Result};
@@ -248,5 +248,20 @@ pub(super) fn down_58_to_57_conflicts(conn: &Connection) -> Result<()> {
         "DROP INDEX IF EXISTS entries_conflicts;
          ALTER TABLE entries DROP COLUMN conflicts;",
     )?;
+    Ok(())
+}
+
+/// da-m34q7: v48 renamed `device_id` to `client_id` everywhere but in the
+/// entries a warning stores, so a warning filed before it no longer decoded
+/// and every `check` failed on it. Local: `integrity_warnings` never syncs.
+pub(super) fn m58_to_59_warning_client_id(conn: &Connection) -> Result<()> {
+    for column in ["local_entry", "remote_entry"] {
+        rename_json_key(conn, "integrity_warnings", column, "device_id", "client_id")?;
+    }
+    Ok(())
+}
+
+/// Reverse v58→v59. Nothing to undo: `client_id` is what v58 reads too.
+pub(super) fn down_59_to_58_warning_client_id(_conn: &Connection) -> Result<()> {
     Ok(())
 }

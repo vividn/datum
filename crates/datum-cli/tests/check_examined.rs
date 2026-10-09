@@ -92,3 +92,50 @@ fn check_stats_names_the_cached_days_it_recomputed() {
     let json: Value = serde_json::from_str(&datum(&db, &["check", "aliases", "--json"])).unwrap();
     assert!(json["examined"].get("stats_days").is_none(), "{json}");
 }
+
+/// da-m34q7: a stored warning `check` cannot decode is a finding that names
+/// the row, beside the findings of the rows it can — where it used to abort
+/// the whole command with «Database error».
+#[test]
+fn a_warning_row_that_does_not_decode_is_a_finding() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("datum.db");
+    datum(&db, &["start", "work", "-t", "-5"]);
+    datum(&db, &["start", "work"]);
+    rusqlite::Connection::open(&db)
+        .unwrap()
+        .execute_batch(
+            "INSERT INTO integrity_warnings
+                 (id, hid, entry_slug, local_entry, detected_at, detected_by, kind)
+             VALUES ('w-old', 'w-old', 'work:x', '{\"device_id\": \"d\"}',
+                     '2026-10-01T00:00:00Z', 'local_validator', 'overlap'),
+                    ('w-bad', 'w-bad', 'work:x', 'not json',
+                     '2026-10-01T00:00:00Z', 'local_validator', 'overlap')",
+        )
+        .unwrap();
+
+    let out = Command::new(env!("CARGO_BIN_EXE_datum"))
+        .env("DATUM_DB", &db)
+        .env("DATUM_HOME", dir.path())
+        .env("DATUM_CONFIG_HOME", dir.path())
+        .env("NO_COLOR", "1")
+        .arg("check")
+        .output()
+        .unwrap();
+    let (stdout, stderr) = (
+        String::from_utf8(out.stdout).unwrap(),
+        String::from_utf8(out.stderr).unwrap(),
+    );
+    assert_eq!(out.status.code(), Some(1), "{stdout}{stderr}");
+    assert!(!stderr.contains("Database error"), "{stderr}");
+    assert!(
+        stdout.contains(
+            "2 stored integrity warnings cannot be read:\n  w-old: missing field `hid` at line 1 column 18\n  w-bad: expected ident at line 1 column 2"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("1 field opened a second time while already open"),
+        "the readable row is still reported: {stdout}"
+    );
+}

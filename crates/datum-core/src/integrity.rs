@@ -708,6 +708,18 @@ pub struct ListFilter {
 
 /// Read rows from `integrity_warnings`, newest first.
 pub fn list(conn: &Connection, filter: &ListFilter) -> Result<Vec<IntegrityWarning>> {
+    list_rows(conn, filter)?
+        .into_iter()
+        .map(|row| row.map_err(|(_, e)| DatumError::Db(e)))
+        .collect()
+}
+
+/// [`list`], with a row that does not decode given as its id and the reason
+/// rather than failing the read, so `check` can report it.
+pub fn list_rows(
+    conn: &Connection,
+    filter: &ListFilter,
+) -> Result<Vec<std::result::Result<IntegrityWarning, (String, rusqlite::Error)>>> {
     let mut sql = String::from(
         "SELECT id, hid, entry_slug, local_entry, remote_entry, detected_at,
                 resolution, resolved_at, detected_by, kind
@@ -742,7 +754,9 @@ pub fn list(conn: &Connection, filter: &ListFilter) -> Result<Vec<IntegrityWarni
     let mut stmt = conn.prepare(&sql)?;
     let params_slice: Vec<&dyn rusqlite::ToSql> =
         binds.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
-    let rows = stmt.query_map(params_slice.as_slice(), row_to_warning)?;
+    let rows = stmt.query_map(params_slice.as_slice(), |row| {
+        Ok(row_to_warning(row).map_err(|e| (row.get("id").unwrap_or_default(), e)))
+    })?;
     rows.map(|r| r.map_err(DatumError::Db)).collect()
 }
 

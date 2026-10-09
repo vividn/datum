@@ -4,7 +4,7 @@
 
 use rusqlite::Connection;
 
-use super::support::{has_column, table_exists};
+use super::support::{has_column, rename_json_key};
 
 use crate::error::Result;
 
@@ -158,18 +158,7 @@ fn rename_client_id(conn: &Connection, from: &str, to: &str) -> Result<()> {
             ))?;
         }
     }
-    if table_exists(conn, "entry_history")? {
-        conn.execute(
-            &format!(
-                "UPDATE entry_history
-                    SET snapshot = json_set(json_remove(snapshot, '$.{from}'),
-                                            '$.{to}', json_extract(snapshot, '$.{from}'))
-                  WHERE json_type(snapshot, '$.{from}') IS NOT NULL"
-            ),
-            [],
-        )?;
-    }
-    Ok(())
+    rename_json_key(conn, "entry_history", "snapshot", from, to)
 }
 
 /// da-wlbyx: `sync_local.paused_at` and `warned_at`.

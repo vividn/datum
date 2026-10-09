@@ -205,6 +205,7 @@ fn every_pair_has_a_roundtrip_test() {
         (55, 56),
         (56, 57),
         (57, 58),
+        (58, 59),
     ];
     assert_eq!(
         covered.len(),
@@ -3053,4 +3054,72 @@ fn roundtrip_v57_to_v58_conflicts() {
     apply_one_down(conn, 58);
     assert!(!column_exists(conn, "entries", "conflicts"));
     assert!(!index_exists(conn, "entries_conflicts"));
+}
+
+/// da-m34q7: v48 left `device_id` in the entries a warning stores, so a
+/// warning filed before it stopped decoding. v59 renames the key there too;
+/// what is not JSON at all is left for `check` to name.
+#[test]
+fn roundtrip_v58_to_v59_warning_client_id() {
+    use datum_core::integrity::{list, list_rows};
+    let db = fresh_at(58);
+    let conn = db.conn();
+    conn.execute(
+        "INSERT INTO entries
+            (hid, slug, content_hash, field, occur_time, create_time, modify_time, client_id)
+         VALUES ('h1', 'ex2:1', 'h1', 'ex2', '2026-09-01T00:00:00+00:00',
+                 '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z', 'dev-a')",
+        [],
+    )
+    .unwrap();
+    // The entry as a build from before v48 stored it.
+    let mut old = serde_json::to_value(db.get_entry("h1").unwrap()).unwrap();
+    let id = old.as_object_mut().unwrap().remove("client_id").unwrap();
+    old["device_id"] = id;
+    conn.execute(
+        "INSERT INTO integrity_warnings
+             (id, hid, entry_slug, local_entry, remote_entry, detected_at, detected_by, kind)
+         VALUES ('w1', 'w1', 'ex2:1', ?1, ?1, '2026-10-01T00:00:00Z', 'local_validator', 'overlap')",
+        [old.to_string()],
+    )
+    .unwrap();
+    let missing = list(conn, &Default::default()).unwrap_err().to_string();
+    assert!(missing.contains("missing field `client_id`"), "{missing}");
+    conn.execute_batch(
+        "INSERT INTO integrity_warnings
+             (id, hid, entry_slug, local_entry, detected_at, detected_by, kind)
+         VALUES ('w2', 'w2', 'ex2:1', 'not json', '2026-10-01T00:00:00Z',
+                 'local_validator', 'overlap')",
+    )
+    .unwrap();
+
+    apply_one_up(conn, 58);
+    let read = |conn: &Connection| -> Vec<String> {
+        list_rows(conn, &Default::default())
+            .unwrap()
+            .into_iter()
+            .map(|row| match row {
+                Ok(w) => format!(
+                    "{} {} {}",
+                    w.id,
+                    w.local_entry.client_id,
+                    w.remote_entry.unwrap().client_id
+                ),
+                Err((id, _)) => format!("{id} unreadable"),
+            })
+            .collect()
+    };
+    assert_eq!(read(conn), ["w2 unreadable", "w1 dev-a dev-a"]);
+    let stored: String = conn
+        .query_row(
+            "SELECT local_entry FROM integrity_warnings WHERE id = 'w1'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(!stored.contains("device_id"), "{stored}");
+
+    // v58 reads `client_id` too, so the down leaves the rows as they are.
+    apply_one_down(conn, 59);
+    assert_eq!(read(conn), ["w2 unreadable", "w1 dev-a dev-a"]);
 }

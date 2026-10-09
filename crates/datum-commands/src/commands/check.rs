@@ -763,10 +763,24 @@ fn apply_slug_fixes(db: &Db, fixes: &[SlugFix], delim: &str) -> Result<FixReport
 /// stored row left behind.
 fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
     use datum_core::integrity::{IntegrityKind, IntegrityWarning, ListFilter};
-    let pending = db.list_integrity_warnings(&ListFilter {
+    let filter = ListFilter {
         kind: None,
         pending: Some(true),
-    })?;
+    };
+    // da-m34q7: a row that does not decode is a finding of its own, and the
+    // rows that do are still checked.
+    let mut pending = Vec::new();
+    let mut unreadable = Vec::new();
+    for row in datum_core::integrity::list_rows(db.conn(), &filter)? {
+        match row {
+            Ok(warning) => pending.push(warning),
+            Err((id, e)) => {
+                // The decoder's own words, without SQLite's column wrapper.
+                let why = std::error::Error::source(&e).map_or(e.to_string(), |s| s.to_string());
+                unreadable.push(format!("  {id}: {why}"));
+            }
+        }
+    }
 
     // Group pending warnings by kind; preserve insertion order within each
     // group so per-entry render output matches the queue order. SameStateRepeat
@@ -787,6 +801,22 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
     }
 
     let mut issues = Vec::new();
+    if !unreadable.is_empty() {
+        let count = unreadable.len();
+        issues.push(Issue {
+            severity: Severity::Error,
+            category: "integrity_warning_unreadable",
+            message: format!(
+                "{count} stored integrity warning{s} cannot be read:\n{}",
+                unreadable.join("\n"),
+                s = if count == 1 { "" } else { "s" },
+            ),
+            count,
+            example: None,
+            entries: Vec::new(),
+            rendered_block: String::new(),
+        });
+    }
     for (_, group) in by_kind {
         let first = group[0];
         let count = group.len();

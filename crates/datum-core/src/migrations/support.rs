@@ -555,6 +555,31 @@ pub(super) fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
     Ok(n > 0)
 }
 
+/// Rename the top-level key `from` to `to` in every JSON object `column` of
+/// `table` holds. A value that is not JSON is left as it is, since
+/// `json_type` on one would fail the whole migration.
+pub(super) fn rename_json_key(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    from: &str,
+    to: &str,
+) -> Result<()> {
+    if table_exists(conn, table)? {
+        conn.execute(
+            &format!(
+                "UPDATE {table}
+                    SET {column} = json_set(json_remove({column}, '$.{from}'),
+                                            '$.{to}', json_extract({column}, '$.{from}'))
+                  WHERE CASE WHEN json_valid({column})
+                             THEN json_type({column}, '$.{from}') END IS NOT NULL"
+            ),
+            [],
+        )?;
+    }
+    Ok(())
+}
+
 /// Run `f`, a step that reads or writes `entries` through the live row
 /// mapper or `db::try_insert`, against the client column's live name. Before
 /// v48 it was `device_id` (da-lfsei), so it is renamed for the step and back
