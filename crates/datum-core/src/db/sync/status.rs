@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
 
-use super::chain::{Chain, Filter, Member};
+use super::chain::{Chain, Filter, Member, Role};
 use super::{belongs_to, clock_ahead, filtered_lines, now_ms, row, row_to_entry, unhex};
 use crate::db::Db;
 use crate::error::{DatumError, Result};
@@ -191,14 +191,18 @@ impl Db {
     pub fn sync_status(&self) -> Result<Vec<PeerStatus>> {
         let chain = Chain::served(&self.conn)?;
         let mine = self.sync_endpoint_id()?;
-        let held = self.sync_vector()?;
+        // A reader never relays and signs no baselines (`sync_ops_since`):
+        // what it has to send is its own ops alone (da-b2krf).
+        let reader = chain.member(&mine).map(Member::role) == Some(Role::Reader);
+        let mut held = self.sync_vector()?;
+        held.retain(|e, _| !reader || *e == mine);
         // Entries no op covers yet go as baselines on the next session: to a
         // filtered reader, those of its fields alone. By the field each
         // belongs to.
         let uncovered: Vec<Option<String>> = self
             .conn
-            .prepare("SELECT * FROM entries WHERE hid NOT IN (SELECT hid FROM ops)")?
-            .query_map([], row_to_entry)?
+            .prepare("SELECT * FROM entries WHERE NOT ?1 AND hid NOT IN (SELECT hid FROM ops)")?
+            .query_map([reader], row_to_entry)?
             .map(|e| e.map(|e| belongs_to(&row(&e))))
             .collect::<rusqlite::Result<_>>()?;
         // In no chain yet, the copies it is joining one through (da-idw54).
@@ -257,9 +261,7 @@ impl Db {
             let filter = chain.filter(&m.endpoint);
             let to_send = match filter {
                 Some(f) => {
-                    let reader = chain.member(&mine).map(|m| m.role());
-                    let only =
-                        (reader == Some(super::chain::Role::Reader)).then_some(mine.as_str());
+                    let only = reader.then_some(mine.as_str());
                     let baselines = uncovered.iter().filter(|b| f.admits(b.as_deref())).count();
                     (baselines + filtered_lines(&self.conn, &theirs, f, &chain, only)?.1) as i64
                 }
@@ -300,7 +302,7 @@ impl Db {
                 kind: m.kind.clone(),
                 revoked: m.revoked.is_some(),
                 purged: m.purged.is_some(),
-                reader: m.role() == super::chain::Role::Reader,
+                reader: m.role() == Role::Reader,
                 filter: filter.cloned(),
                 state,
                 to_send,

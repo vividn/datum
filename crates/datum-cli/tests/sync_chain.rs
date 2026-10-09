@@ -2220,6 +2220,38 @@ fn a_readers_entry_op_and_forged_acts_are_refused_open_chain_or_locked() {
     }
 }
 
+/// A reader's status counts what it will send a member: its own ops alone,
+/// never another member's, which it does not relay, nor an entry no op
+/// covers, which it signs no baseline for (da-b2krf).
+#[test]
+fn a_readers_status_counts_its_own_ops_alone_as_to_send() {
+    let (a, b) = chained();
+    let r = Copy::new();
+    a.ok(&["occur", "tea"]);
+    assert!(admit_reader(&a, &r, "r", None).0);
+    b.ok(&["occur", "juice"]);
+    assert!(b.send(&a).0 && a.send(&r).0);
+    // r has an address for each: with none, nothing waits whoever asks
+    // (da-fly3f).
+    for (m, label) in [(&a, "a"), (&b, "b")] {
+        let hello = ["sync", "handshake", &m.id(), "--label", label];
+        r.ok(&[&hello[..], &["--addr", "{}", "--dialed"]].concat());
+    }
+    // r holds a's and b's ops, and has no vector of b's: none are r's to send.
+    assert!(json(&r.ok(&["sync", "pipe", "vector"]))[b.id()].as_i64() > Some(0));
+    assert_eq!(status_of(&r, &b)["to_send"], 0);
+    assert_eq!(status_of(&r, &a)["to_send"], 0);
+    let hid = r.query("SELECT MIN(hid) FROM entries WHERE field = 'tea'");
+    r.exec(&format!("DELETE FROM ops WHERE hid = '{hid}'"));
+    assert_eq!(status_of(&r, &b)["to_send"], 0);
+    // Its describe of itself is its own.
+    r.ok(&["sync", "chain", "rename", "phone"]);
+    assert_eq!(status_of(&r, &b)["to_send"], 1);
+    assert_eq!(status_of(&r, &a)["to_send"], 1);
+    // A member still counts all it holds.
+    assert!(status_of(&a, &b)["to_send"].as_i64() > Some(1));
+}
+
 /// Roles change at a record's HLC, either way: a reader made a member
 /// writes; a member made a reader keeps what it wrote before, and what it
 /// wrote after is refused everywhere, its own copy included once it hears.
