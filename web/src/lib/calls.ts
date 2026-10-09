@@ -14,6 +14,7 @@
 
 import type { Backup, BackupRun, Plan, PlanRows, Reach } from './backups.js';
 import type { Alias, GrammarEntry } from './commands.js';
+import type { Conflicted } from './conflicts.js';
 import type { RestorePreview } from './dbio.js';
 import type { FieldListing, NowListing } from './fields.js';
 import type { LayoutRow, LayoutVersion } from './layout/store.js';
@@ -29,6 +30,7 @@ export { bandArgv, geometryArgv, nowviewSpec } from './panes.js';
 export { statsArgv } from './stats.js';
 export { pressArgv } from './fields.js';
 export { specArgv, trackArgv } from './track.js';
+export { resolveArgv } from './conflicts.js';
 
 // ---- the fields bar, the strip, the panes --------------------------------------
 
@@ -87,6 +89,10 @@ export function specShowArgv(field: string): string[] {
 
 export function redoArgv(): string[] {
 	return ['redo', '--dry-run'];
+}
+
+export function conflictsArgv(): string[] {
+	return ['conflicts', '--json'];
 }
 
 export const DAYVIEW_VERTICAL: PaneSpec = {
@@ -307,6 +313,7 @@ export interface Reads {
 	firstEntryArgv: TailListing;
 	lastDotsArgv: TailListing;
 	aliasesArgv: Alias[];
+	conflictsArgv: Conflicted[];
 	tailArgv: TailListing;
 	geometryArgv: DayviewJson;
 	showAllArgv: AllFieldsStats | FieldStats;

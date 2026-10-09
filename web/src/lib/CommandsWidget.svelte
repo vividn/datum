@@ -52,6 +52,9 @@
 	- `Sync` opens the sync PLACE (da-6du3o, `openPlace`): a modal on a
 	  desktop, a tab beside this one on a phone (da-jozgv), rather than drilling into its nineteen subcommands,
 	  which live in that widget's Advanced section. Outlined once, too.
+	- `conflicts` opens its place the same way (da-6cutb), and is RED, with
+	  their count, while `datum conflicts --json` lists any (`conflicts`,
+	  from the pane): it blocks nothing, and goes plain with the last one.
 	- HOLDING a command with flags (da-st2xl, `$lib/hold.ts`) fills it as a
 	  tap does, and the bar becomes `< Back`, Help and its flags
 	  (`flagsOf`). A flag's tap appends it to the line; one that takes a
@@ -126,6 +129,8 @@
 	export let fields: FieldButton[] = [];
 	/** Would `redo` move anything? The CLI's own answer, from the pane. */
 	export let redoable = false;
+	/** How many entries have sync conflicts: the CLI's count, from the pane. */
+	export let conflicts = 0;
 	/** Whose bar this is: what it was showing is kept under it across a remount. */
 	export let key = '';
 
@@ -274,11 +279,13 @@
 		</button>
 	{:else}
 		{@const icon = ICONS[command.name] ?? ''}
+		{@const clashing = command.name === 'conflicts' ? conflicts : 0}
 		<button
 			class="command"
 			use:act={kindOf(command)}
 			class:opens={kindOf(command) === 'open'}
 			class:drawn={icon.length > 1}
+			class:clashing
 			{disabled}
 			data-command={command.name}
 			data-glyph={icon.length === 1 ? icon : undefined}
@@ -286,7 +293,7 @@
 			title={kindOf(command) === 'run' ? `run ${command.name}` : command.press === 'backups' ? 'open Backups' : command.press === 'place' ? `open ${command.label}` : `${command.name} …`}
 			on:click={() => press(command)}
 		>
-			{#if icon.length > 1}<svg viewBox="0 0 16 16" aria-hidden="true"><path d={icon} /></svg>{/if}{command.label}
+			{#if icon.length > 1}<svg viewBox="0 0 16 16" aria-hidden="true"><path d={icon} /></svg>{/if}{command.label}{clashing ? ` ${clashing}` : ''}
 		</button>
 	{/if}
 </ButtonRows>
@@ -299,6 +306,12 @@
 	.command.opens {
 		border-color: var(--accent);
 		color: var(--ink-bright);
+	}
+
+	/* Conflicts to deal with (da-6cutb): red until the last is resolved. */
+	.command.clashing {
+		border-color: var(--error);
+		color: var(--error);
 	}
 
 	/* An icon'd button gives the icon's width back out of its padding

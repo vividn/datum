@@ -64,6 +64,7 @@ import { DEBUG_DB } from './defaults.js';
 import { DEFAULT_STATS, type StatsRange } from '$lib/stats.js';
 import AliasesWidget from './AliasesWidget.svelte';
 import BackupsWidget from './BackupsWidget.svelte';
+import ConflictsWidget from './ConflictsWidget.svelte';
 import DayviewWidget from './DayviewWidget.svelte';
 import FieldsPane from './FieldsPane.svelte';
 import HelpWidget from './HelpWidget.svelte';
@@ -490,6 +491,19 @@ export const KINDS: Record<string, WidgetKind> = {
 			'Each plan lists its backups by database, newest first, each with Restore.'
 		].join('\n'),
 		legible: { width: 206, height: 99 }
+	},
+	// The conflicts widget (da-6cutb), a place: the commands widget's
+	// «conflicts» and a typed `conflicts` open it. Legible at one entry — its
+	// heading, a key's sides, the strategies and the Resolve row (about 26px
+	// each, estimated) — plus padding; the rest scrolls.
+	conflicts: {
+		meta: meta('conflicts', 'conflicts'),
+		component: ConflictsWidget,
+		help: [
+			'Every entry two devices changed without seeing each other: per key, each side lettered as `datum conflicts` letters it, with its device and time.',
+			'Tap a side or type a value to pick a key; choose what the rest follow, or keep them as shown; Resolve runs one `conflicts resolve`.'
+		].join('\n'),
+		legible: { width: 220, height: 120 }
 	},
 	// The field widget (da-fu29p): where a field is made and changed — the
 	// Track dialog and the spec widget (da-hbrfg, kind `spec`: `RETIRED_KINDS`

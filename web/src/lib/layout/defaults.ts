@@ -304,6 +304,7 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	help: () => only('help', 'help'),
 	welcome: () => only('welcome', 'welcome'),
 	backups: () => only('backups', 'backups'),
+	conflicts: () => only('conflicts', 'conflicts'),
 	field: () => only('field', 'field'),
 	input: () => only('input', 'input')
 };

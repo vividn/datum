@@ -299,7 +299,7 @@ describe('the shell', () => {
 	test('+ lists day, the widget kinds and the saved layouts; nowview opens a tab; a reload keeps it, another device starts fresh', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			assert.deepEqual(await offered(page), ['main', 'collect', 'dayview', 'repl', 'nowview', 'tail', 'custom', 'command', 'stats', 'fields', 'aliases', 'sync', 'help', 'welcome', 'backups', 'field', 'input']);
+			assert.deepEqual(await offered(page), ['main', 'collect', 'dayview', 'repl', 'nowview', 'tail', 'custom', 'command', 'stats', 'fields', 'aliases', 'sync', 'help', 'welcome', 'backups', 'conflicts', 'field', 'input']);
 
 			await pick(page, 'nowview');
 			await until(() => rootTabs(page), (t) => t.includes('nowview'));
@@ -320,7 +320,7 @@ describe('the shell', () => {
 			await until(() => rootTabs(page), (t) => t.includes('mine'));
 			// The chooser reads the saved layouts each time it opens, so the
 			// save is on the list the first time it is asked.
-			assert.deepEqual(await offered(page), ['main', 'collect', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'custom', 'command', 'stats', 'fields', 'aliases', 'sync', 'help', 'welcome', 'backups', 'field', 'input']);
+			assert.deepEqual(await offered(page), ['main', 'collect', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'custom', 'command', 'stats', 'fields', 'aliases', 'sync', 'help', 'welcome', 'backups', 'conflicts', 'field', 'input']);
 		});
 
 		// Which tabs are open is per device (vividn: the selection is not synced).
@@ -1112,7 +1112,7 @@ describe('the one chooser', () => {
 			// A saved layout, so the Layouts section holds more than `main`.
 			await layouts(app, 'saveLayout', { version: 1, name: 'mine', root: { id: 'm', tabs: [{ id: 'm-tab', content: { id: 'm-w', kind: 'nowview', settings: {} } }], active: 0, bar: { edge: 'top', align: 'start' } } });
 			const fromRoot = await offered(page);
-			assert.deepEqual(fromRoot, ['main', 'collect', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'custom', 'command', 'stats', 'fields', 'aliases', 'sync', 'help', 'welcome', 'backups', 'field', 'input']);
+			assert.deepEqual(fromRoot, ['main', 'collect', 'mine', 'dayview', 'repl', 'nowview', 'tail', 'custom', 'command', 'stats', 'fields', 'aliases', 'sync', 'help', 'welcome', 'backups', 'conflicts', 'field', 'input']);
 
 			await manage(page, 'tail', 'split: a new pane to the right');
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'empty', 'custom', 'fields']);

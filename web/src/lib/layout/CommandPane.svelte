@@ -47,7 +47,7 @@
 	import { run } from '$lib/run.js';
 	import { redoArgv } from '$lib/calls.js';
 	import { withPills } from '$lib/selection.js';
-	import { fields, grammar, pressWithPills, ready } from './engine.js';
+	import { conflicts, fields, grammar, pressWithPills, ready } from './engine.js';
 
 	export let epoch = 0;
 	/** This widget's session key, which its bar keeps what it shows under (da-ria1a). */
@@ -93,6 +93,7 @@
 		pills={$pills}
 		fields={$fields}
 		{redoable}
+		conflicts={$conflicts.length}
 		{key}
 		on:run={(e) => runNow(e.detail)}
 		on:line={(e) => fill(e.detail)}

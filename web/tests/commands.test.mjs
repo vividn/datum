@@ -300,15 +300,6 @@ describe('a command with subcommands drills into them', () => {
 		});
 	});
 
-	test('conflicts, which runs bare, is offered among its own subcommands', async () => {
-		await onPage(async ({ page }) => {
-			await commands(page).locator('button[data-command="conflicts"]').click();
-			await back(page).waitFor();
-			assert.deepEqual((await drawn(page)).slice(1, 3), ['conflicts', 'list']);
-			await tap(page, 'conflicts');
-		});
-	});
-
 	test('a command without subcommands still fills as before', async () => {
 		await onPage(async ({ page }) => {
 			await tap(page, 'tail');

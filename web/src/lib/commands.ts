@@ -41,7 +41,7 @@ export type Press =
 	| 'flag'
 	/** Open the «Backups» place ($lib/backups.ts, da-9ow8m, da-ea5q2): `db backup`, and `db restore` at its list. */
 	| 'backups'
-	/** Open the command's PLACE, a modal on a desktop and a tab on a phone (`openPlace`, da-6du3o, da-jozgv): `sync`. */
+	/** Open the command's PLACE, a modal on a desktop and a tab on a phone (`openPlace`, da-6du3o, da-jozgv): `sync`, `conflicts`. */
 	| 'place';
 
 export interface CommandButton {
@@ -128,7 +128,10 @@ export const COMMANDS: CommandButton[] = [
 	// One button for sync, which opens its place (da-6du3o): its nineteen
 	// subcommands are in that widget's Advanced section.
 	{ name: 'sync', label: 'Sync', press: 'place', section: 'db' },
-	...fills('db', ['db', 'conflicts'])
+	...fills('db', ['db']),
+	// Its place too (da-6cutb): the widget each conflict is resolved in. The
+	// bar draws it red, with their count, while there are any.
+	{ name: 'conflicts', label: 'conflicts', press: 'place', section: 'db' }
 ];
 
 /**
@@ -562,8 +565,8 @@ export function fieldVerb(name: string, all: Pill[], fields: FieldButton[]): { f
 // them should then show the subcommands in the commands widget instead.»
 // A tap on `db` DRILLS: the bar shows `< Back` and db's subcommands, and a
 // tap on one fills `db backup ` — so `db `, which runs nothing, is never
-// what a tap leaves on the line. A command that also runs bare (`conflicts`)
-// is offered among its subcommands as itself.
+// what a tap leaves on the line. A command that also runs bare is offered
+// among its subcommands as itself.
 
 /** The subcommands whose press opens the «Backups» place. */
 const BACKUPS = ['db backup', 'db restore'];

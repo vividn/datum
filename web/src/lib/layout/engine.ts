@@ -25,9 +25,11 @@ import { syncCommand } from '$lib/sync.js';
 import { parseEcho, runEchoed } from '$lib/echo.js';
 import { record } from '$lib/replStore.js';
 import { run, type RunResult } from '$lib/run.js';
-import { fieldsArgv, frecencyArgv, grammarArgv, nowArgv } from '$lib/calls.js';
+import { conflictsArgv, fieldsArgv, frecencyArgv, grammarArgv, nowArgv } from '$lib/calls.js';
+import { listsConflicts, type Conflicted } from '$lib/conflicts.js';
 import { verbAsked } from '$lib/track.js';
 import { openField } from '$lib/fieldWidget.js';
+import { openPlace } from './shell.js';
 import {
 	buttonsFor,
 	type FieldButton,
@@ -45,6 +47,13 @@ export const ready = writable(false);
 
 /** The fields widget's entries — `datum fields --json` and `now --json`, rebuilt on every beat. */
 export const fields = writable<FieldButton[]>([]);
+
+/**
+ * The entries with sync conflicts — `datum conflicts --json`, read on every
+ * beat (da-6cutb): the commands widget's button counts them and the
+ * conflicts widget lists them, so the two cannot disagree.
+ */
+export const conflicts = writable<Conflicted[]>([]);
 
 /**
  * Where each field stood at the last sort (da-xtkcp) — which row of the
@@ -132,7 +141,12 @@ export async function boot(): Promise<void> {
 export async function refresh(): Promise<void> {
 	// Both asked at once (da-70g2u): `now` waiting for `fields` to answer
 	// queued it behind every pane the same beat set off — 14 s on five years.
-	const [listed, now] = await Promise.all([run(fieldsArgv()), run(nowArgv())]);
+	const [listed, now, clashing] = await Promise.all([run(fieldsArgv()), run(nowArgv()), run(conflictsArgv())]);
+	try {
+		if (clashing.code === 0) conflicts.set(JSON.parse(clashing.stdout) as Conflicted[]);
+	} catch {
+		// The list stays as it was.
+	}
 	if (listed.code !== 0) return;
 	// Guarded like the tail pane's own listing: stdout that is not the JSON
 	// asked for (a partial write, a crashed process) keeps the bar it had
@@ -239,6 +253,8 @@ export async function press(
 	// okay for it to fade before then».
 	if (!typed) showGhost(echo ?? line ?? shellJoin(argv));
 	const result = await (repl ? repl.runArgv(argv, line, stdin) : alone(argv, line, stdin));
+	// The listing, typed, opens the widget they are resolved in (da-6cutb).
+	if (result.code === 0 && listsConflicts(argv)) void openPlace('conflicts');
 	return (await answerVerb(argv, result)) ?? result;
 }
 

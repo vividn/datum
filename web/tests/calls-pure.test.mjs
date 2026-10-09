@@ -238,6 +238,16 @@ const STDIN = { mergeArgv: BACKUP, restoreArgv: BACKUP, restorePreviewArgv: BACK
  */
 const FRESH = new Set(['newInviteArgv']);
 
+/**
+ * Run on a database of conflicts (da-6cutb): `debug conflicts`, which the
+ * seeded copy — in a chain, holding real entries — refuses.
+ */
+const CONFLICTED = new Map(DB_FILES.map((file) => [file, new MemoryHandle()]));
+assert.equal(datum(CONFLICTED, ['debug', 'conflicts', '1']).code, 0);
+const CLASH = JSON.parse(datum(CONFLICTED, calls.conflictsArgv()).stdout).find((e) => e.conflicts.state).hid;
+SAMPLES.resolveArgv = [[CLASH], [CLASH, 'merge'], [CLASH, '', { state: 'b' }], [CLASH, 'use-a', { state: '"typed"' }]];
+const ON_CONFLICTED = new Set(['conflictsArgv', 'resolveArgv']);
+
 /** A pane's box, which a sized pane's argv is given as `CliPane.svelte` gives it. */
 const BOX = { width: 600, height: 300 };
 
@@ -296,7 +306,9 @@ describe('every call the page sends', () => {
 			const at = `${name} (sent from ${sites.join(', ')})`;
 			const answers = [];
 			for (const argv of argvsOf(name, value)) {
-				const handles = FRESH.has(name) ? new Map(DB_FILES.map((file) => [file, new MemoryHandle()])) : copy(seeded);
+				const handles = FRESH.has(name)
+					? new Map(DB_FILES.map((file) => [file, new MemoryHandle()]))
+					: copy(ON_CONFLICTED.has(name) ? CONFLICTED : seeded);
 				const r = datum(handles, argv, { stdin: STDIN[name] ?? '', stage: { ...STAGE } });
 				assert.doesNotMatch(r.stderr, USAGE, `${at}: datum ${argv.join(' ')}`);
 				if (isJson(argv)) {
