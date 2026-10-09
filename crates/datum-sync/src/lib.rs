@@ -243,12 +243,23 @@ impl Store for DbStore<'_> {
         chain: Option<&str>,
         holds: u64,
         version: &Version,
+        records: Option<&[String]>,
         dialed: bool,
     ) -> Result<bool> {
         let addr = serde_json::to_string(addr)?;
+        let records = records.map(|r| r.join("\n"));
         let added = self
             .0
-            .sync_handshake(peer, label, &addr, invite, chain, holds, dialed)
+            .sync_handshake(
+                peer,
+                label,
+                &addr,
+                invite,
+                chain,
+                holds,
+                records.as_deref(),
+                dialed,
+            )
             .map_err(refusal)?;
         self.tell(|t| t.met(label, !dialed, invite.is_some()));
         if dialed {
@@ -266,6 +277,10 @@ impl Store for DbStore<'_> {
             }
         }
         Ok(added)
+    }
+
+    async fn records(&self) -> Result<Vec<String>> {
+        Ok(self.0.sync_chain_records()?)
     }
 
     fn version(&self) -> Version {
@@ -302,6 +317,7 @@ fn refusal(e: DatumError) -> anyhow::Error {
         CoreRefusal::InviteUsed => Why::InviteUsed,
         CoreRefusal::InviteExpired => Why::InviteExpired,
         CoreRefusal::Paused => Why::Paused,
+        CoreRefusal::NotMember => Why::NotMember,
     };
     Refusal(kind, why).into()
 }
@@ -488,7 +504,7 @@ fn next_step(e: anyhow::Error, from: &str) -> anyhow::Error {
             "sync is paused on {from}, not on this copy: resume it there (`datum sync \
              resume`, or tap «sync paused» on datum.day) and connect again"
         ),
-        Some(Failure::Refused(Why::Other)) => {
+        Some(Failure::Refused(Why::Other | Why::NotMember)) => {
             "`datum sync status` shows where this copy stands".into()
         }
         Some(Failure::Unreachable | Failure::TimedOut) => format!(
@@ -626,7 +642,7 @@ mod tests {
     #[test]
     fn a_refusals_kind_is_named_alike_in_core_and_on_the_wire() {
         use CoreRefusal::*;
-        for kind in [UnknownInvite, InviteUsed, InviteExpired, Paused] {
+        for kind in [UnknownInvite, InviteUsed, InviteExpired, Paused, NotMember] {
             let e = refusal(DatumError::Refused(kind, String::new()));
             let wire = e.downcast_ref::<Refusal>().unwrap().0;
             assert_eq!(serde_json::json!(kind), serde_json::json!(wire));

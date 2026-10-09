@@ -169,6 +169,7 @@ impl Store for Cli {
         chain: Option<&str>,
         holds: u64,
         version: &Version,
+        records: Option<&[String]>,
         dialed: bool,
     ) -> Result<bool> {
         let addr = serde_json::to_string(addr)?;
@@ -188,7 +189,16 @@ impl Store for Cli {
         if dialed {
             argv.push("--dialed");
         }
-        Ok(self.run(&argv, None).await?.trim() == "added")
+        let records = records.map(|r| r.join("\n"));
+        if records.is_some() {
+            argv.push("--records");
+        }
+        Ok(self.run(&argv, records.as_deref()).await?.trim() == "added")
+    }
+
+    async fn records(&self) -> Result<Vec<String>> {
+        let out = self.run(&["sync", "pipe", "records"], None).await?;
+        Ok(out.lines().map(String::from).collect())
     }
 
     fn version(&self) -> Version {

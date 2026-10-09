@@ -66,7 +66,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 &[
                     "label", "addr", "invite", "chain", "holds", "datum", "schema",
                 ],
-                &["dialed"],
+                &["dialed", "records"],
                 1..=1,
             )?;
             let need = |name: &str| {
@@ -93,6 +93,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                     )),
                     None => None,
                 },
+                records: o.on("records"),
                 dialed: o.on("dialed"),
                 endpoint: o.positional.remove(0),
             }
@@ -257,9 +258,10 @@ fn act(
 
 /// Hidden: `datum sync pipe …`, ops as JSON lines on stdin and stdout.
 fn parse_pipe(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "vector|ops|apply|verify";
+    const SET: &str = "vector|ops|apply|records|verify";
     Ok(match rest.next().copied() {
         Some("vector") => SyncCommand::Vector,
+        Some("records") => SyncCommand::Records,
         // `--json` is the swept `--show json`, set by `apply_show`.
         Some("apply") => SyncCommand::Apply {
             show: Show::Default,
@@ -410,6 +412,7 @@ mod tests {
             Err(ParseError::HelpRequested(Some(s))) if s == "sync"
         ));
         assert_eq!(p(&["pipe", "vector"]), SyncCommand::Vector);
+        assert_eq!(p(&["pipe", "records"]), SyncCommand::Records);
         assert_eq!(
             p(&["pipe", "apply"]),
             SyncCommand::Apply {
@@ -456,6 +459,7 @@ mod tests {
                 chain: None,
                 holds: 0,
                 version: None,
+                records: false,
                 dialed: true
             }
         );
@@ -471,7 +475,8 @@ mod tests {
                 "--datum",
                 "3.0.9-beta (abc1234)",
                 "--schema",
-                "57"
+                "57",
+                "--records"
             ]),
             SyncCommand::Handshake {
                 endpoint: "ab".into(),
@@ -481,6 +486,7 @@ mod tests {
                 chain: None,
                 holds: 42,
                 version: Some(("3.0.9-beta (abc1234)".into(), 57)),
+                records: true,
                 dialed: false
             }
         );

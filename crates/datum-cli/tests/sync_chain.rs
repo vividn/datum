@@ -188,21 +188,56 @@ fn a_handshake_refusal_prints_its_kind() {
     assert!(hello(&c, secret).status.success());
     let used = hello(&d, secret);
     let unknown = hello(&d, "not-an-invite");
-    let other = a.run(
-        &["sync", "handshake", &d.id(), "--label", "d", "--addr", "{}"],
-        "",
-    );
+    let plain = |id: &str| {
+        a.run(
+            &["sync", "handshake", id, "--label", "d", "--addr", "{}"],
+            "",
+        )
+    };
+    let (stranger, own) = (plain(&d.id()), plain(&a.id()));
     a.ok(&["sync", "pause"]);
     let paused = hello(&d, secret);
     for (out, kind) in [
         (used, "\"invite-used\""),
         (unknown, "\"unknown-invite\""),
-        (other, ""),
+        (stranger, "\"not-member\""),
+        (own, ""),
         (paused, "\"paused\""),
     ] {
         assert!(!out.status.success(), "{kind}");
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), kind);
     }
+}
+
+/// A member admitted since this copy last synced is refused by name, with
+/// what would fix it, and admitted once it shows its chain's records
+/// (da-2u95o) — as datum.day's store does it: `sync pipe records` on the
+/// one, `sync handshake --records` on the other. The admission is past an
+/// entry of the inviter's this copy lacks, and nothing shown is kept: the
+/// session brings it.
+#[test]
+fn a_handshake_admits_a_member_it_has_not_heard_of_by_its_records() {
+    let (a, b) = chained();
+    a.ok(&["occur", "tea"]);
+    let c = Copy::new();
+    admit(&a, &c, "c", None);
+    let id = c.id();
+    let hello = ["sync", "handshake", &id, "--label", "c", "--addr", "{}"];
+    let refused = b.fails(&hello, "");
+    let fix = "not a member of this sync chain as b holds it: if c has joined, sync b with \
+               the copy that invited it";
+    assert!(refused.contains(fix), "{refused}");
+    let hello = [&hello[..], &["--records"]].concat();
+    let held = b.ok(&["sync", "pipe", "records"]);
+    assert!(b.fails(&hello, &held).contains(fix));
+
+    let records = c.ok(&["sync", "pipe", "records"]);
+    assert_eq!(b.ok_in(&hello, &records).trim(), "added");
+    assert_eq!(b.ok(&["sync", "pipe", "records"]), held);
+    assert!(c.send(&b).0);
+    assert_eq!(member_of(&b, &id)["label"], "c");
+    assert_eq!(b.ok(&hello[..7]).trim(), "known");
+    assert!(b.has("tea"));
 }
 
 /// A copy belongs to one chain (da-mepav): a redeemer in another chain, or

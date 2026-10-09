@@ -866,6 +866,9 @@ pub enum SyncCommand {
     Apply {
         show: Show,
     },
+    /// Hidden: `datum sync pipe records` — the chain's records as this copy
+    /// holds them, one op line each (da-2u95o).
+    Records,
     /// Hidden: `datum sync pipe verify [--verbose] [--peer <ENDPOINT>]` —
     /// the state hash, per column too; over what this copy shares with a
     /// peer, when either is a filtered reader (da-u81u1).
@@ -892,13 +895,15 @@ pub enum SyncCommand {
         error: Option<String>,
     },
     /// Hidden: `datum sync handshake <ENDPOINT> --label <L> --addr <JSON>
-    /// [--invite <SECRET> --chain <ID> --holds <N>] [--dialed]` — a
+    /// [--invite <SECRET> --chain <ID> --holds <N>] [--records] [--dialed]` — a
     /// session's handshake as it bears on this copy, for datum.day's
     /// transport (da-6kpj5): `added`, `known`, or the refusal as the error.
     /// `--chain` is the redeemer's own chain, empty for none (da-mepav);
     /// `--holds` its entries, as `datum count` counts them (da-tti3w).
     /// `--dialed` with `--invite`: this copy redeemed it there (da-38eye).
     /// `--datum <BUILD> --schema <N>`: what the peer runs (da-3zqyv).
+    /// `--records`: the peer's chain records are on stdin, to admit it by
+    /// when this copy has not heard it joined (da-2u95o).
     Handshake {
         endpoint: String,
         label: String,
@@ -907,6 +912,7 @@ pub enum SyncCommand {
         chain: Option<String>,
         holds: u64,
         version: Option<(String, u32)>,
+        records: bool,
         dialed: bool,
     },
     /// Hidden: `datum sync new-invite [--reader] [--expires <DUR>]

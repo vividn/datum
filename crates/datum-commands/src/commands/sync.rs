@@ -83,6 +83,11 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                 println!("{line}");
             }
         }
+        SyncCommand::Records => {
+            for line in db.sync_chain_records()? {
+                println!("{line}");
+            }
+        }
         SyncCommand::Apply { show } => {
             let mut input = String::new();
             std::io::stdin().read_to_string(&mut input)?;
@@ -321,12 +326,20 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             chain,
             holds,
             version,
+            records,
             dialed,
         } => {
             let (invite, chain) = (invite.as_deref(), chain.as_deref());
+            let mut shown = String::new();
+            if records {
+                std::io::stdin().read_to_string(&mut shown)?;
+            }
+            let records = records.then_some(shown.as_str());
             // A refusal's kind on stdout, for datum.day's store (da-b6xh6).
             let added = db
-                .sync_handshake(&endpoint, &label, &addr, invite, chain, holds, dialed)
+                .sync_handshake(
+                    &endpoint, &label, &addr, invite, chain, holds, records, dialed,
+                )
                 .inspect_err(|e| {
                     if let DatumError::Refused(kind, _) = e {
                         println!("{}", json!(kind));

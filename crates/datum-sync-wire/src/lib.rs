@@ -12,7 +12,9 @@
 //! - **Wire.** One bidirectional stream of frames, each a big-endian u32
 //!   length and its bytes. The dialer sends a [`Hello`], the acceptor a
 //!   [`Reply`], each after the store's [`Store::handshake`] has admitted the
-//!   other. Then rounds: each side sends its version vector, then the ops
+//!   other. An acceptor that has not heard of the dialer asks first for its
+//!   chain's records ([`Reply::Prove`]), and admits it if they make it a
+//!   member (da-2u95o). Then rounds: each side sends its version vector, then the ops
 //!   the other lacks, one frame each, and an empty frame, and applies what
 //!   came — until a round in which neither vector moved. Last the verify
 //!   hashes, the dialer's first, and the dialer closes.
@@ -49,6 +51,8 @@ pub mod web;
 pub const ALPN: &[u8] = b"datum/sync/2";
 const MAX_FRAME: usize = 64 << 20;
 const MAX_HELLO: usize = 64 << 10;
+/// A chain's records, from a dialer not yet admitted.
+const MAX_RECORDS: usize = 1 << 20;
 /// A session in which both sides keep writing still ends.
 const MAX_ROUNDS: usize = 16;
 /// Ops per apply — the first, where a store [`yields`](Store::yields).
@@ -108,7 +112,9 @@ pub trait Store {
     /// entries it `holds`. When this copy dialed it, `invite` is the one
     /// it just redeemed there. Whether it is new to this copy comes back.
     /// Admitted, what it said it runs is recorded, and a copy behind it
-    /// warns to upgrade — and syncs on (da-3zqyv).
+    /// warns to upgrade — and syncs on (da-3zqyv). A dialer this copy's
+    /// chain does not hold fails as [`Why::NotMember`]; asked again with
+    /// its `records`, it is admitted if they make it a member (da-2u95o).
     #[allow(clippy::too_many_arguments)]
     async fn handshake(
         &self,
@@ -119,8 +125,12 @@ pub trait Store {
         chain: Option<&str>,
         holds: u64,
         version: &Version,
+        records: Option<&[String]>,
         dialed: bool,
     ) -> Result<bool>;
+    /// This copy's chain records, as op lines: what it shows a member that
+    /// has not heard it joined (da-2u95o).
+    async fn records(&self) -> Result<Vec<String>>;
     /// How many entries this copy holds, as `datum count` counts them (life
     /// data: no spec, layout or alias): a reader invite refuses a redeemer
     /// holding any, which a reader's fold would hide (da-tti3w).
@@ -235,6 +245,10 @@ struct Hello {
     /// A redeemer's entries, as `datum count` counts them (da-tti3w).
     #[serde(default)]
     holds: u64,
+    /// The dialer answers a [`Reply::Prove`], and reads [`Why::NotMember`];
+    /// a copy before da-2u95o does neither.
+    #[serde(default)]
+    proves: bool,
     /// The dialer reads a [`Reply::Refusal`]; one that does not say so, a
     /// copy before da-b6xh6, is refused the old way.
     #[serde(default)]
@@ -257,14 +271,23 @@ enum Reply {
         why: String,
         kind: Why,
     },
+    /// The acceptor has not heard of the dialer: the dialer sends its
+    /// chain's records, a frame holding a list of op lines, and reads the
+    /// reply to them (da-2u95o).
+    Prove,
 }
 
 impl Reply {
-    /// Refuse a dialer with `kind` and `why`, in the form it reads.
-    fn refusal(typed: bool, kind: Why, why: String) -> Self {
-        match typed {
-            true => Reply::Refusal { why, kind },
-            false => Reply::Refused(why),
+    /// Refuse the dialer of `hello` with `kind` and `why`, in the form it
+    /// reads: a copy before da-2u95o knows no [`Why::NotMember`].
+    fn refusal(hello: &Hello, kind: Why, why: String) -> Self {
+        match (hello.typed, kind) {
+            (false, _) => Reply::Refused(why),
+            (true, Why::NotMember) if !hello.proves => Reply::Refusal {
+                why,
+                kind: Why::Other,
+            },
+            (true, kind) => Reply::Refusal { why, kind },
         }
     }
 }
@@ -401,6 +424,8 @@ pub enum Why {
     InviteExpired,
     /// The refusing copy's sync is paused.
     Paused,
+    /// The dialer is no member of the chain as the refusing copy holds it.
+    NotMember,
     Other,
 }
 
@@ -608,11 +633,17 @@ async fn session(
         invite: invite.map(|r| r.secret.to_string()),
         chain: invite.map(|r| r.chain.clone()),
         holds,
+        proves: invite.is_none(),
         typed: true,
         version: store.version(),
     };
     put_json(&mut s, &hello).await?;
-    let (label, added) = match get_json(&mut r, MAX_HELLO).await? {
+    let mut reply = get_json(&mut r, MAX_HELLO).await?;
+    if hello.proves && matches!(reply, Reply::Prove) {
+        put_json(&mut s, &store.records().await?).await?;
+        reply = get_json(&mut r, MAX_HELLO).await?;
+    }
+    let (label, added) = match reply {
         Reply::Welcome {
             label,
             addr,
@@ -632,6 +663,7 @@ async fn session(
                         None,
                         0,
                         &version,
+                        None,
                         true,
                     )
                     .await?;
@@ -656,6 +688,7 @@ async fn session(
             conn.close(0u32.into(), b"refused");
             return Err(refused(why, Some(kind)));
         }
+        Reply::Prove => bail!("{} asked for what it was not offered", short(&id)),
     };
     let mut rep = Report::new(label, id, added, invite.is_some());
     let done = exchange(store, &mut s, &mut r, true, &mut rep).await;
@@ -697,31 +730,43 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
     let id = conn.remote_id().to_string();
     let (mut s, mut r) = within(async { Ok(conn.accept_bi().await?) }).await?;
     let hello: Hello = get_json(&mut r, MAX_HELLO).await?;
-    let verdict = match conn.remote_id() == ep.id() {
-        true => Err((Why::Other, COPY.to_string())),
-        false => store
-            .handshake(
-                &id,
-                &hello.label,
-                &hello.addr,
-                hello.invite.as_deref(),
-                hello.chain.as_deref(),
-                hello.holds,
-                &hello.version,
-                false,
-            )
-            .await
-            .map_err(|e| {
-                (
-                    e.downcast_ref::<Refusal>().map_or(Why::Other, |r| r.0),
-                    format!("{e:#}"),
+    let mut records: Option<Vec<String>> = None;
+    let verdict = loop {
+        let verdict = match conn.remote_id() == ep.id() {
+            true => Err((Why::Other, COPY.to_string())),
+            false => store
+                .handshake(
+                    &id,
+                    &hello.label,
+                    &hello.addr,
+                    hello.invite.as_deref(),
+                    hello.chain.as_deref(),
+                    hello.holds,
+                    &hello.version,
+                    records.as_deref(),
+                    false,
                 )
-            }),
+                .await
+                .map_err(|e| {
+                    (
+                        e.downcast_ref::<Refusal>().map_or(Why::Other, |r| r.0),
+                        format!("{e:#}"),
+                    )
+                }),
+        };
+        // A member this copy has not heard of shows that it is one, once.
+        match verdict {
+            Err((Why::NotMember, _)) if hello.proves && records.is_none() => {
+                put_json(&mut s, &Reply::Prove).await?;
+                records = Some(get_json(&mut r, MAX_RECORDS).await?);
+            }
+            verdict => break verdict,
+        }
     };
     let known = match verdict {
         Ok(added) => !added,
         Err((kind, why)) => {
-            let reply = Reply::refusal(hello.typed, kind, why.clone());
+            let reply = Reply::refusal(&hello, kind, why.clone());
             put_json(&mut s, &reply).await?;
             let _ = timeout(Duration::from_secs(5), conn.closed()).await;
             bail!("refused {} ({}): {why}", hello.label, short(&id));
@@ -852,17 +897,30 @@ mod tests {
             "label": "old", "addr": addr, "invite": "s", "chain": "", "holds": 0
         }))
         .unwrap();
-        let reply = Reply::refusal(old.typed, Why::InviteUsed, "invite already used".into());
+        let reply = Reply::refusal(&old, Why::InviteUsed, "invite already used".into());
         assert_eq!(
             serde_json::to_value(&reply).unwrap(),
             json!({"Refused": "invite already used"})
         );
         // A dialer that says so is refused with the kind.
-        let reply = Reply::refusal(true, Why::InviteUsed, "invite already used".into());
+        let typed = Hello { typed: true, ..old };
+        let reply = Reply::refusal(&typed, Why::InviteUsed, "invite already used".into());
         assert_eq!(
             serde_json::to_value(&reply).unwrap(),
             json!({"Refusal": {"why": "invite already used", "kind": "invite-used"}})
         );
+        // One that says nothing of `proves`, a copy before da-2u95o, is
+        // never asked for its records and reads no kind it does not know.
+        assert!(!typed.proves);
+        let said = |hello: &Hello| {
+            serde_json::to_value(Reply::refusal(hello, Why::NotMember, "no".into())).unwrap()
+        };
+        assert_eq!(said(&typed)["Refusal"]["kind"], "other");
+        let proves = Hello {
+            proves: true,
+            ..typed
+        };
+        assert_eq!(said(&proves)["Refusal"]["kind"], "not-member");
         // An older acceptor's refusal reads, and «unknown invite» still
         // sends a redeemer on to the next address.
         for (words, kind) in [

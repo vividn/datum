@@ -242,6 +242,18 @@ still reads them — and the other records it (`sync_peers.datum` / `schema`,
 in `sync chain list`). A copy behind a member's schema syncs on and warns to
 upgrade, once per new version on stderr and for as long as it lasts in
 `sync status` and `datum check` (da-3zqyv).
+A member admitted since the serving copy last synced is no member of the
+chain as that copy holds it (da-2u95o). Asked (`Reply::Prove`, to a dialer
+whose `Hello` says it `proves`), the dialer sends its chain's records, and is
+admitted when they make it a member that is no reader: folded with the
+server's own (`Chain::load_with`), each signed by its endpoint, none kept,
+since the session brings every op the server lacks, and two kinds not read:
+a genesis, and a record of an endpoint the server holds as revoked, which
+only that endpoint's clock dates before its revoke. A reader brings none of
+the inviter's ops, and stays refused. The refusal
+names both copies and what fixes it: sync the refusing one with the copy that
+invited the other. datum.day's store does the same through the hidden `sync
+pipe records` and `sync handshake --records`.
 
 The session itself is `crates/datum-sync-wire`, generic over a `Store`,
 and the handshake's storage side — members, invites, admission — is

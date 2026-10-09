@@ -1132,3 +1132,76 @@ fn a_filtered_reader_over_the_link_gets_its_fields_and_verifies() {
     assert!(now.contains("verify ok"), "{now}");
     assert!(r.has("tea"));
 }
+
+// ─── A member only its inviter has heard of (da-2u95o) ──────────────────────
+
+/// `a`, `b` and `c` in one chain: `a` admitted `b`, logged an entry, then
+/// admitted `c` by an invite with `caps`, and never ran again, so `b` has
+/// not heard that `c` joined. `c` knows where `b` is, as `a` last saw it:
+/// what a handshake passes on (da-fly3f). A dial that reaches no one fails
+/// in 3s.
+fn admitted_unheard(caps: &[&str]) -> (Copy, Copy, Copy) {
+    let (a, mut b) = paired();
+    a.ok(&["occur", "from-a"]);
+    let mut c = Copy::new();
+    let (mut inviting, ticket) = a.invite(caps);
+    c.ok(&["sync", "chain", "connect", &ticket]);
+    assert!(inviting.finish().0);
+    let at = format!(
+        "SELECT addrs FROM sync_peers WHERE endpoint_id = '{}'",
+        b.id()
+    );
+    let told = "INSERT OR REPLACE INTO sync_peers (endpoint_id, label, addrs, added_at)
+                VALUES (?1, 'b', ?2, '2026-10-09T00:00:00Z')";
+    let sql = rusqlite::Connection::open(c.db()).unwrap();
+    sql.execute(told, [b.id(), a.query(&at)]).unwrap();
+    b.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
+    c.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
+    (a, b, c)
+}
+
+/// With the inviter gone for good, the member that has not heard of the
+/// newer one still syncs with it: asked, the newer one shows the chain's
+/// records, which make it a member. The session then brings every op the
+/// older lacks — the inviter's entry, the admission past it — and both
+/// verify.
+#[test]
+fn a_member_only_its_inviter_heard_of_shows_its_admission_and_syncs() {
+    let (a, b, c) = admitted_unheard(&[]);
+    let heard = |of: &Copy| b.ok(&["sync", "chain", "list"]).contains(&of.id()[..10]);
+    assert!(!heard(&c));
+    b.ok(&["occur", "from-b"]);
+    c.ok(&["occur", "from-c"]);
+    let mut b_runs = b.serve(&["sync", "run"]);
+    let out = c.fails(&["sync"], "");
+    assert!(out.contains("verify ok"), "{out}");
+    assert!(out.contains("1 of 2 peer(s) failed"), "a is gone: {out}");
+    let served = b_runs.lines_until(" got ");
+    assert!(served.contains("verify ok"), "{served}");
+    assert!(heard(&c) && b.has("from-a") && b.has("from-c") && c.has("from-b"));
+    assert!(!a.has("from-c"));
+    assert_eq!(b.hash(), c.hash());
+}
+
+/// A reader shows the same records and stays refused: it brings none of the
+/// inviter's ops, so the copy that has not heard of it could neither keep
+/// its admission nor learn its filter. The refusal names both copies and
+/// says what would fix it, on both ends, and nothing of the reader's is kept.
+#[test]
+fn a_reader_only_its_inviter_heard_of_is_refused_with_what_would_fix_it() {
+    let (_a, b, c) = admitted_unheard(&["--reader"]);
+    let mut b_runs = b.cmd(&["sync", "run"]);
+    let mut b_runs = Serving::of(b_runs.stderr(Stdio::null()));
+    let out = c.fails(&["sync"], "");
+    let (me, it) = (member_label(&b, &b.id()), member_label(&c, &c.id()));
+    let fix = format!(
+        "refused: not a member of this sync chain as {me} holds it: if {it} has joined, sync \
+         {me} with the copy that invited it"
+    );
+    assert!(out.contains(&fix), "{out}");
+    assert!(!out.contains("verify"), "{out}");
+    drop(b_runs.child.kill());
+    assert_eq!(b_runs.finish().1, "", "b served no session");
+    let kept = format!("SELECT COUNT(*) FROM ops WHERE endpoint = '{}'", c.id());
+    assert_eq!(b.query(&kept), "0");
+}

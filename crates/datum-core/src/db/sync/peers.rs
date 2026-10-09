@@ -9,9 +9,9 @@
 use chrono::{SecondsFormat, Utc};
 use rusqlite::params;
 
-use super::chain;
+use super::chain::{self, Chain, Role};
 use crate::db::Db;
-use crate::error::{DatumError, Result};
+use crate::error::{DatumError, Refusal, Result};
 
 /// A copy of this database that dialing it, or dialing from it, found.
 #[derive(Debug, Clone)]
@@ -127,6 +127,20 @@ impl Db {
         Ok(())
     }
 
+    /// What a dialer labelled `label` is told when this copy's chain does not
+    /// hold it: words that read on both ends, and what would fix it.
+    fn not_a_member(&self, label: &str) -> Result<String> {
+        let chain = self.sync_chain()?;
+        let no = "not a member of this sync chain";
+        Ok(match chain.member(&self.sync_endpoint_id()?) {
+            Some(me) => format!(
+                "{no} as {0} holds it: if {label} has joined, sync {0} with the copy that invited it",
+                me.label
+            ),
+            None => no.into(),
+        })
+    }
+
     /// A session's handshake, as it bears on this copy: `id` introduced
     /// itself as `label` at `addrs`. Dialed (it answered this copy's dial):
     /// recorded, and marked as where this copy redeemed `invite`, when it
@@ -139,6 +153,15 @@ impl Db {
     /// `holds` too, which a reader invite refuses (da-tti3w). Whether `id` is
     /// new to this copy comes back. A paused copy refuses every session
     /// (da-wlbyx).
+    ///
+    /// A member admitted since this copy last synced is no member as this
+    /// copy holds the chain, and is refused as [`Refusal::NotMember`]. Asked
+    /// again with `records`, the dialer's own chain records as op lines, it
+    /// is admitted when they make it one (da-2u95o: [`Chain::load_with`]).
+    /// Nothing of them is kept: the session brings every op this copy lacks,
+    /// those among them. A reader stays refused, since it brings none of the
+    /// ops its admission waits on: this copy could not keep its admission,
+    /// nor learn its filter.
     #[allow(clippy::too_many_arguments)]
     pub fn sync_handshake(
         &self,
@@ -148,6 +171,7 @@ impl Db {
         invite: Option<&str>,
         chain: Option<&str>,
         holds: u64,
+        records: Option<&str>,
         dialed: bool,
     ) -> Result<bool> {
         super::pause::refuse_paused(&self.conn)?;
@@ -176,7 +200,19 @@ impl Db {
                     Some(_) => self.sync_admit(id, label, secret, holds)?,
                 },
                 None if known => {}
-                None => return refuse("not a member of this sync chain".into()),
+                None => {
+                    let shown = records.map(|r| Chain::load_with(&self.conn, r));
+                    let member = shown.transpose()?.is_some_and(|c| {
+                        c.member(id)
+                            .is_some_and(|m| m.revoked.is_none() && m.role() == Role::Member)
+                    });
+                    if !member {
+                        return Err(DatumError::Refused(
+                            Refusal::NotMember,
+                            self.not_a_member(label)?,
+                        ));
+                    }
+                }
             }
         }
         self.sync_record_peer(id, label, addrs)?;
@@ -187,5 +223,94 @@ impl Db {
             )?;
         }
         Ok(!known)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{json, Value};
+
+    fn id(db: &Db) -> String {
+        db.sync_endpoint_id().unwrap()
+    }
+
+    fn genesis(db: &Db, label: &str) {
+        let record = json!({"type": "genesis", "chain": "c1", "admins": [], "label": label});
+        db.sync_chain_write(record, true).unwrap();
+    }
+
+    /// `member` admits `copy` by a new invite granting `caps`, and sends it
+    /// all it holds.
+    fn admit(member: &Db, copy: &Db, label: &str, caps: Value) {
+        let invite = json!({
+            "type": "invite", "chain": "c1", "invite_id": label, "caps": caps,
+            "secret_hash": chain::secret_hash(label), "expires": "2099-01-01T00:00:00Z",
+        });
+        member.sync_chain_write(invite, true).unwrap();
+        let hello = member.sync_handshake(
+            &id(copy),
+            label,
+            "{}",
+            Some(label),
+            Some(""),
+            0,
+            None,
+            false,
+        );
+        assert!(hello.unwrap());
+        let ops = member.sync_ops_since(&copy.sync_vector().unwrap(), false, None);
+        copy.sync_apply(&ops.unwrap().join("\n")).unwrap();
+    }
+
+    /// A member admitted since this copy last synced is admitted by its own
+    /// chain records, and by nothing less (da-2u95o): not without them, not
+    /// by another's, nor by another's rewritten to name it, not as a reader,
+    /// not once the records shown revoke it, and not by a genesis of its own
+    /// for this chain, though it is the earlier. Nothing shown is kept. One
+    /// a member admitted is admitted in turn, until this copy holds that
+    /// member as revoked: then only the revoked one's clock says which came
+    /// first.
+    #[test]
+    fn a_member_not_heard_of_is_admitted_by_its_chain_records_alone() {
+        let [a, b, c, r, x, y] = [(); 6].map(|()| Db::open_in_memory().unwrap());
+        genesis(&x, "x");
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        genesis(&a, "a");
+        admit(&a, &b, "b", json!({}));
+        admit(&a, &c, "c", json!({}));
+        admit(&a, &r, "r", json!({"role": "reader"}));
+        let records = |of: &Db| of.sync_chain_records().unwrap().join("\n");
+        let hello = |who: &Db, shown: Option<String>| {
+            b.sync_handshake(&id(who), "l", "{}", None, None, 0, shown.as_deref(), false)
+        };
+        let refused = |what: &str, who: &Db, shown: Option<String>| match hello(who, shown) {
+            Err(DatumError::Refused(Refusal::NotMember, why)) => why,
+            other => panic!("{what}: {other:?}"),
+        };
+        assert_eq!(
+            refused("showing nothing", &c, None),
+            "not a member of this sync chain as b holds it: if l has joined, sync b with the \
+             copy that invited it"
+        );
+        refused("records without its admission", &c, Some(records(&b)));
+        refused("another's records", &x, Some(records(&c)));
+        let rewritten = records(&c).replace(&id(&c), &id(&x));
+        refused("another's records naming it", &x, Some(rewritten));
+        refused("a genesis of its own", &x, Some(records(&x)));
+        refused("a reader", &r, Some(records(&r)));
+        let held = records(&b);
+        assert!(hello(&c, Some(records(&c))).unwrap());
+        assert_eq!(records(&b), held);
+        assert!(b.sync_chain().unwrap().member(&id(&c)).is_none());
+
+        admit(&c, &y, "y", json!({}));
+        assert!(hello(&y, Some(records(&y))).unwrap());
+        let revoke = json!({"type": "revoke", "chain": "c1", "endpoint": id(&c)});
+        a.sync_chain_write(revoke, true).unwrap();
+        refused("revoked by the records shown", &c, Some(records(&a)));
+        b.sync_apply(&records(&a)).unwrap();
+        let by = "admitted by one this copy holds as revoked";
+        refused(by, &y, Some(records(&y)));
     }
 }

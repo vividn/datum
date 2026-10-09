@@ -94,6 +94,8 @@ pub enum Refusal {
     InviteExpired,
     /// This copy's sync is paused.
     Paused,
+    /// The dialer is no member of the chain as this copy holds it.
+    NotMember,
 }
 
 fn format_candidates(candidates: &[PrefixCandidate]) -> String {
