@@ -78,19 +78,38 @@ const DAY = 24 * 60 * 60_000;
 const pad = (n: number) => String(n).padStart(2, '0');
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
+/** The clock time `at` reads on the page's wall. */
+const clock = (at: Date) => `${pad(at.getHours())}:${pad(at.getMinutes())}`;
+
+/**
+ * The UTC offset `at` must say for its clock time to be read as it, or
+ * nothing (da-fir4a). A clock the day reads twice, the hour the clocks go
+ * back over, is read at its FIRST occurrence by the CLI's `-t` and by
+ * `new Date` alike, so only a later occurrence says its own: `+01:00`.
+ */
+function offset(at: Date): string {
+	const first = new Date(at.getFullYear(), at.getMonth(), at.getDate(), at.getHours(), at.getMinutes());
+	const east = -at.getTimezoneOffset();
+	if (east === -first.getTimezoneOffset()) return '';
+	return `${east < 0 ? '-' : '+'}${pad(Math.floor(Math.abs(east) / 60))}:${pad(Math.abs(east) % 60)}`;
+}
+
 /**
  * `-t` as the CLI parses it, in the page's zone: `HH:MM` today, the
  * dated `YYYY-MM-DDTHH:MM` another day (`-t "YYYY-MM-DD HH:MM"` it
- * does not read).
+ * does not read), and dated with its offset when the clock time alone
+ * would be read as an earlier instant.
  */
 export function timeArg(at: Date, now = new Date()): string {
-	const hm = `${pad(at.getHours())}:${pad(at.getMinutes())}`;
 	const day = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
-	return at.toDateString() === now.toDateString() ? hm : `${day}T${hm}`;
+	const off = offset(at);
+	return !off && at.toDateString() === now.toDateString() ? clock(at) : `${day}T${clock(at)}${off}`;
 }
 
 /** The instant `-t <arg>` names, as `timeArg` writes it; `null` if it is not one. */
-function timeArgAt(arg: string, now = new Date()): Date | null {
+export function timeArgAt(arg: string, now = new Date()): Date | null {
+	// With its offset it is ISO, which `Date` reads as the CLI does.
+	if (/^\d{4}-\d\d-\d\dT\d\d:\d\d[+-]\d\d:\d\d$/.test(arg)) return new Date(arg);
 	const m = /^(?:(\d{4})-(\d\d)-(\d\d)T)?(\d\d):(\d\d)$/.exec(arg);
 	if (!m) return null;
 	const [y, mo, d] = m[1] ? [+m[1], +m[2] - 1, +m[3]] : [now.getFullYear(), now.getMonth(), now.getDate()];
@@ -123,12 +142,14 @@ export function dateLabel(at: Date, now = new Date()): string | null {
  * The pill's two sections: the date, when there is one to say, and the
  * time. Pressing the date leaves the time behind — today's date implied,
  * which is what a bare `-t HH:MM` means — and pressing the time takes the
- * whole pill, and so the cursor, away.
+ * whole pill, and so the cursor, away. A time that says its offset in the
+ * argv says it here too, or the two lanes of a repeated hour read alike.
  */
 export function pillSections(at: Date, now = new Date()): PillSection[] {
-	const time = { text: `${pad(at.getHours())}:${pad(at.getMinutes())}` };
+	const bare = { text: clock(at) };
+	const time = { text: bare.text + offset(at) };
 	const date = dateLabel(at, now);
-	return date === null ? [time] : [{ text: date, rest: { text: `-t ${time.text}`, sections: [time] } }, time];
+	return date === null ? [time] : [{ text: date, rest: { text: `-t ${bare.text}`, sections: [bare] } }, time];
 }
 
 /** To the minute a pill can say — every selection is whole minutes. */

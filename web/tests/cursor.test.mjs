@@ -453,3 +453,29 @@ describe('the time pill says a date and a time', () => {
 		});
 	});
 });
+
+// da-fir4a. On the day the clocks go back, 02:00 to 03:00 is lived twice,
+// and a bare `-t 02:30` is the FIRST of the two to the CLI. So the second
+// says its offset, and the entry lands on the instant the page was pointed
+// at rather than an hour before it. Held to the row the CLI wrote.
+describe('a clock time the day reads twice', () => {
+	test('Europe/Berlin, 2026-10-25: each 02:30 is logged at its own instant', async () => {
+		await withApp(
+			async (app) => {
+				const { page } = app;
+				for (const [field, iso, face, argv] of [
+					['first', '2026-10-25T00:30:00.000Z', ['02:30'], '-t 02:30'],
+					['second', '2026-10-25T01:30:00.000Z', ['02:30+01:00'], '-t 2026-10-25T02:30+01:00']
+				]) {
+					await pointAt(page, iso);
+					await saysPill(page, face);
+					assert.equal(await pillText(page), argv);
+					assert.match(await barRun(page, `occur ${field}`), /^CREATE /);
+					const [entry] = (await app.entries()).filter((e) => e.field === field);
+					assert.equal(new Date(entry.occur_time.utc).toISOString(), iso, JSON.stringify(entry.occur_time));
+				}
+			},
+			{ clock: Date.UTC(2026, 9, 25, 11, 0, 0), timezone: 'Europe/Berlin' }
+		);
+	});
+});
