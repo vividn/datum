@@ -94,7 +94,9 @@ name = "wrap"
 expands_to = "end work , switch mood calm"
 description = "stop for the day"
 
-# Water by day — each entry's own local day, not the UTC one.
+# Water by day — each entry's own local day, not the UTC one. «Today» in a
+# view is `local_today()`: SQLite's own local-time modifier answers the UTC
+# day on datum.day.
 [[view]]
 name = "water_by_day"
 sql = """

@@ -203,6 +203,11 @@ pub struct FieldEntry {
 /// SELECT local_day(occur_time, occur_time_offset) AS day, COUNT(*) AS n
 /// FROM entries WHERE field = 'water' AND deleted_at IS NULL GROUP BY day
 /// ```
+///
+/// «Today» is `local_today()` → `YYYY-MM-DD`, in the zone datum stamps
+/// entries with, so `local_day(occur_time, occur_time_offset) =
+/// local_today()` is «logged today». SQLite's `date('now', 'localtime')` is
+/// not: on datum.day it has no zone data and answers the UTC day.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewEntry {
     pub name: String,

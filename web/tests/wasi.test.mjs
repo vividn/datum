@@ -185,4 +185,25 @@ describe('the wasi CLI', () => {
 			{ clock: Date.parse('2026-09-12T00:30:00+02:00'), timezone: 'Europe/Berlin' }
 		);
 	});
+
+	// And a kit view's: SQLite's own local time is UTC here, wasi-libc having
+	// no zone data, so chores read a chore done at 00:30 as not done today
+	// until `local_today()` (da-5fonh).
+	test("a kit view's today is the zone's date: chores done after midnight are done", async () => {
+		await withApp(
+			async (app) => {
+				const chores = await readFile(new URL('../../kits/chores.toml', import.meta.url), 'utf8');
+				const installed = await app.run(['kit', 'install', '--yes', '-'], chores);
+				assert.equal(installed.code, 0, installed.stderr);
+				assert.equal((await app.run(['occur', 'vacuum', 'next_date=+7'])).code, 0);
+				const listed = await app.run(['chorelist', '--show', 'json']);
+				assert.equal(listed.code, 0, listed.stderr);
+				assert.deepEqual(
+					JSON.parse(listed.stdout).map(({ field, due, status }) => [field, due, status]),
+					[['vacuum', '2026-09-19', 'done']]
+				);
+			},
+			{ clock: Date.parse('2026-09-12T00:30:00+02:00'), timezone: 'Europe/Berlin' }
+		);
+	});
 });

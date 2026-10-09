@@ -25,6 +25,7 @@ use serde_json::{Map, Number, Value as JsonValue};
 
 use crate::error::{DatumError, Result};
 use crate::kit::ViewEntry;
+use crate::time::DatumTime;
 
 use super::definition::{definition_data, KIT_KEY, VIEW_FIELD};
 use super::Db;
@@ -271,6 +272,7 @@ impl Db {
         }
 
         register_local_day(&self.conn)?;
+        register_local_today(&self.conn)?;
         self.conn.execute_batch("PRAGMA query_only = 1;")?;
         // Returning true from the progress handler interrupts the query;
         // the flag distinguishes our deadline from a genuine SQL error.
@@ -293,9 +295,11 @@ impl Db {
         // Remove the handler so the shared connection's normal work (the
         // logging hot path) doesn't keep paying the per-callback cost.
         self.conn.progress_handler(0, None::<fn() -> bool>);
-        // `local_day` is the views' alone, never a writer's. A failed
-        // removal leaves only a pure read-only function behind.
+        // `local_day` and `local_today` are the views' alone, never a
+        // writer's. A failed removal leaves only a pure read-only function
+        // behind.
         let _ = self.conn.remove_function(LOCAL_DAY, 2);
+        let _ = self.conn.remove_function(LOCAL_TODAY, 0);
         // Always clear query_only, even when the query failed, so a later
         // `datum log …` against the same connection can still write. If
         // the clear itself fails, say so loudly: the shared connection
@@ -321,6 +325,19 @@ impl Db {
 }
 
 const LOCAL_DAY: &str = "local_day";
+const LOCAL_TODAY: &str = "local_today";
+
+/// `local_today()` → `YYYY-MM-DD`, today in the zone datum stamps entries
+/// with (`DatumTime::now()`), read once per view. SQLite's own
+/// `date('now', 'localtime')` is the UTC day on datum.day: wasi-libc's
+/// `localtime` has no zone data (da-5fonh).
+fn register_local_today(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    let now = DatumTime::now();
+    let today = crate::views::duration_sum::local_date_for(&now.utc, now.offset_minutes);
+    conn.create_scalar_function(LOCAL_TODAY, 0, FunctionFlags::SQLITE_UTF8, move |_| {
+        Ok(today.clone())
+    })
+}
 
 /// `local_day(occur_time, occur_time_offset)` → `YYYY-MM-DD`, the day in the
 /// offset the entry was logged with (da-tgsqs), as `duration_sum` buckets it
@@ -628,6 +645,28 @@ mod tests {
             .query_row("SELECT local_day('2026-09-09T22:30:00Z', 120)", [], |r| {
                 r.get::<_, String>(0)
             })
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no such function"), "{err}");
+    }
+
+    /// `local_today` is the clock's day in the clock's zone, not the UTC
+    /// day: 22:30Z in Berlin is already tomorrow (da-5fonh).
+    #[test]
+    fn local_today_is_the_clocks_day_in_its_zone() {
+        use datum_parse::time::clock::{self, MockClock};
+        let db = db();
+        let at =
+            DatumTime::from_utc_and_tz("2026-09-09T22:30:00Z".parse().unwrap(), "Europe/Berlin")
+                .unwrap();
+        clock::install(Arc::new(MockClock::new(at)));
+        let r = db.execute_view("SELECT local_today()");
+        clock::uninstall();
+        assert_eq!(r.unwrap().rows, vec![vec![json!("2026-09-10")]]);
+
+        let err = db
+            .conn()
+            .query_row("SELECT local_today()", [], |r| r.get::<_, String>(0))
             .unwrap_err()
             .to_string();
         assert!(err.contains("no such function"), "{err}");

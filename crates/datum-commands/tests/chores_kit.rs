@@ -8,10 +8,9 @@
 //! shows what is due or was done today, coloured by how overdue a chore is
 //! against its iti.
 //!
-//! ⚠ The views read SQLite's `date('now', 'localtime')`, which the test
-//! clock cannot pin. So the tests either use dates far from today or
-//! dates relative to the moment they log, which puts a millisecond window
-//! around local midnight.
+//! «Today» is the views' `local_today()`, which follows the test clock
+//! (da-5fonh). A timed chore's `is_due` still reads SQLite's own `'now'`,
+//! which it cannot pin, so those tests use instants far in the past.
 //!
 //! `last_occur` is the UTC instant, so an entry whose `last_occur` date a
 //! test reads is logged `-z UTC`: in the host's zone, 10:00 at +14 is the
@@ -302,6 +301,78 @@ fn status_follows_v2s_colours_and_chores_due_filters() {
         chorelist(&db, &["--all", "--sort", "-due"]),
         ["windows", "vacuum", "mop", "dishes", "bins"]
     );
+}
+
+/// Install a clock frozen at `utc` in Europe/Berlin for this thread. That is
+/// `DatumTime::now()`'s zone only: a logged entry is still stamped in the
+/// HOST's zone (`TZ`), which a test must not set beside its siblings, so a
+/// test that logs under this clock says `-z Europe/Berlin` (da-5fonh: one
+/// that did not passed on a Berlin box and failed CI's UTC one).
+fn berlin_clock(utc: &str) -> impl Drop {
+    use datum_core::time::clock::{self, MockClock};
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            clock::uninstall();
+        }
+    }
+    let at = datum_core::time::DatumTime::from_utc_and_tz(utc.parse().unwrap(), "Europe/Berlin")
+        .unwrap();
+    clock::install(std::sync::Arc::new(MockClock::new(at)));
+    Reset
+}
+
+/// A chore done just after local midnight is done TODAY: at 00:30 in Berlin
+/// the UTC day is still yesterday, which is the day SQLite's local-time
+/// modifier answers on datum.day (da-5fonh).
+#[test]
+fn a_chore_done_just_after_local_midnight_is_done_today() {
+    let db = fresh_db();
+    install_chores(&db);
+    let _clock = berlin_clock("2026-09-09T22:30:00Z");
+    let berlin = ["-z", "Europe/Berlin"];
+    run(
+        &db,
+        &[&["occur", "vacuum", "next_date=+7"], &berlin[..]].concat(),
+    );
+    // Due on the local day, a day the UTC day has not reached.
+    run(
+        &db,
+        &[
+            &["occur", "mop", "-d", "-7", "-t", "12:00", "next_date=+7"],
+            &berlin[..],
+        ]
+        .concat(),
+    );
+
+    let all = view(&db, "chores");
+    assert_eq!(cell(&all, "vacuum", "due"), "2026-09-17");
+    assert_eq!(cell(&all, "vacuum", "status"), "done");
+    assert_eq!(cell(&all, "mop", "due"), "2026-09-10");
+    assert_eq!(cell(&all, "mop", "status"), "due");
+    assert_eq!(chorelist(&db, &[]), ["mop", "vacuum"]);
+}
+
+/// A timed chore's due DAY is its instant in the offset its entry was
+/// logged with: 22:30Z on the 7th is the 8th at +02, two days before the
+/// 10th and not three.
+#[test]
+fn a_timed_chores_due_day_is_in_its_entrys_offset() {
+    let db = fresh_db();
+    install_chores(&db);
+    let mut f = tempfile::NamedTempFile::new().unwrap();
+    let docs = serde_json::json!({"docs": [
+        {"_id": "mop:2026-09-01T08:00:00.000Z",
+         "data": {"field": "mop",
+                  "occurTime": {"utc": "2026-09-01T08:00:00.000Z", "o": 2, "tz": "Europe/Berlin"},
+                  "nextTime": {"utc": "2026-09-07T22:30:00.000Z", "o": 2, "tz": "Europe/Berlin"}},
+         "meta": {"humanId": "m1", "createTime": {"utc": "2026-09-01T08:00:01.000Z", "o": 2, "tz": "Europe/Berlin"}}}
+    ]});
+    write!(f, "{docs}").unwrap();
+    run(&db, &["db", "v2import", f.path().to_str().unwrap()]);
+
+    let _clock = berlin_clock("2026-09-09T22:30:00Z");
+    assert_eq!(cell(&view(&db, "chores"), "mop", "days_overdue"), 2);
 }
 
 /// v2import keeps v2's spellings: `nextDate`, and `nextTime` as a
