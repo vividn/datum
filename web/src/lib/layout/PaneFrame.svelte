@@ -259,11 +259,22 @@
 	 */
 	const titleHost = writable<HTMLElement | null>(null);
 	const hosted = writable(false);
-	setContext('layout-frame', { alarm, titleHost, hosted });
+	/**
+	 * The `×`'s act, for a widget that offers it in its own body (the
+	 * welcome widget's «Close welcome», da-zhz0u) — or null wherever the
+	 * `×` is not offered: under the lock that hides it, which is the one
+	 * from above and at the root the tab's own (RootBar.svelte), and on
+	 * the root's last tab.
+	 */
+	const close = writable<(() => void) | null>(null);
+	setContext('layout-frame', { alarm, titleHost, hosted, close });
 	let h2: HTMLElement | null = null;
 	$: titleHost.set(h2);
 
 	$: active = pane.tabs[pane.active];
+	$: close.set(
+		(root ? active.locked : locked) || !canClose ? null : () => apply((l) => closeTab(l, pane.id, pane.active))
+	);
 	/**
 	 * Scaffolding, not a thing: a split someone made by splitting. A tab
 	 * carrying a LAYOUT is not one however its content is shaped (da-9puz)

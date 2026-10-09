@@ -112,9 +112,58 @@ describe('a layout that shipped', () => {
 			const dialog = page.locator('dialog.confirm');
 			await dialog.getByRole('button', { name: 'reset', exact: true }).click();
 			await dialog.waitFor({ state: 'detached' });
-			await lockedClean(page, 'welcome');
+			// The reset opens on `welcome`; `collect` is two tabs along.
+			await rootMenuButton(page).filter({ hasText: 'welcome' }).waitFor();
+			const collect = () => page.locator('.root-bar [role="tab"]', { hasText: /^\s*collect\s*$/ }).click();
+			await collect();
+			await lockedClean(page, 'collect');
 			await app.reload();
-			await lockedClean(page, 'welcome');
+			await collect();
+			await lockedClean(page, 'collect');
+		}, { ...FRESH_DESKTOP, home: ON_COLLECT });
+	});
+
+	// vividn, 2026-10-09: «maybe start unlocked» (da-zhz0u). The one layout
+	// that ships unlocked, being the one a reader is meant to close.
+	for (const [what, device] of [
+		['a phone', FRESH_PHONE],
+		['a desktop', FRESH_DESKTOP]
+	])
+		test(`${what}'s first visit: \`welcome\` opens unlocked, nothing stored and nothing an edit; \`track\` beside it is locked`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				assert.equal(await locked(page), false);
+				assert.equal(await stored(page, 'welcome'), null, 'a first open wrote a lock down');
+				assert.equal(await page.locator('.root-bar [role="tab"].modified').count(), 0);
+				assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.draft.v1.welcome')), null);
+				// The ▾ beside the +, with its Close tab, and no padlock first.
+				await page.locator('.root-bar button.manage').click();
+				await page.getByRole('menuitem', { name: 'Close tab', exact: true }).waitFor();
+				await page.keyboard.press('Escape');
+
+				await page.locator('.root-bar [role="tab"]', { hasText: /^\s*track\s*$/ }).click();
+				await until(() => locked(page), (l) => l === true);
+				assert.equal(await stored(page, 'track'), null);
+				assert.deepEqual(app.errors, []);
+			}, device);
+		});
+
+	test('a lock put on `welcome` is remembered, and Reset default layouts opens it unlocked again', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await toggleRootLock(page);
+			await until(() => locked(page), (l) => l === true);
+			await app.reload();
+			assert.equal(await locked(page), true);
+			assert.equal(await stored(page, 'welcome'), '1');
+
+			await page.locator('.root-bar button.gear').click();
+			await page.getByRole('menuitem', { name: 'Reset default layouts', exact: true }).click();
+			const dialog = page.locator('dialog.confirm');
+			await dialog.getByRole('button', { name: 'reset', exact: true }).click();
+			await dialog.waitFor({ state: 'detached' });
+			await until(() => locked(page), (l) => l === false);
+			assert.equal(await stored(page, 'welcome'), null);
 		}, FRESH_DESKTOP);
 	});
 });

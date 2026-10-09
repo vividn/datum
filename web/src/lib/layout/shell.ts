@@ -432,12 +432,14 @@ async function expandContent(content: Widget | Split, path: string[], taken: Set
  *
  * A device that has never locked or unlocked the name gets the lock a
  * first open does (da-gshh): a layout that SHIPPED opens locked, one a
- * person made opens unlocked.
+ * person made opens unlocked. `welcome` is the one that ships unlocked
+ * (da-zhz0u; vividn, 2026-10-09: «maybe start unlocked»): it is the tab a
+ * reader is meant to close, by its own button or the `▾`.
  */
 async function tabHolding(name: string, source: Layout, path: string[], taken: Set<NodeId>, shipped = false): Promise<Tab> {
 	const inlined = inline(normalize({ ...source, name }), taken);
 	const filled: Tab = { ...inlined, content: await expandContent(inlined.content, path, taken) };
-	return (loadLocked(name) ?? shipped) ? { ...filled, locked: true } : filled;
+	return (loadLocked(name) ?? (shipped && name !== 'welcome')) ? { ...filled, locked: true } : filled;
 }
 
 /** A tab with its nested layouts (any depth) filled in from their drafts, else their saves. */
@@ -1186,10 +1188,10 @@ export async function resetLayout(tabId: NodeId): Promise<void> {
  * and a layout a KIT installed (which lives in the data db, not here), are
  * neither read nor written, and stay in the `+`.
  *
- * This device's lock on each built-in is forgotten too, so each opens
- * locked again, as a first open does (da-gshh) — and so is which device it
- * said it was, so the trees it goes back to are the ones a first visit on
- * the screen as it is NOW would draw (`device`, da-lsjs9).
+ * This device's lock on each built-in is forgotten too, so each opens as
+ * a first open does (`tabHolding`): locked, and `welcome` unlocked — and so
+ * is which device it said it was, so the trees it goes back to are the ones
+ * a first visit on the screen as it is NOW would draw (`device`, da-lsjs9).
  *
  * This one WRITES, which is what separates it from `resetLayout`: a batch
  * that only moved the drafts would leave every save still shadowing its
@@ -1205,7 +1207,7 @@ export async function resetDefaults(): Promise<void> {
 	saveDevice(null);
 	for (const name of BUILTIN_NAMES) {
 		clearDraft(name);
-		// Locked again, as a first open is (da-gshh).
+		// Its lock as a first open's again (da-gshh).
 		clearLocked(name);
 		if (saved.has(name)) await deleteLayout(name);
 	}

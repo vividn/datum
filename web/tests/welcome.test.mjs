@@ -13,11 +13,17 @@
 // leaving the other two, and the `+` brings it back; and a device that has
 // been here keeps the tabs it had. What the WORDS claim about the page is
 // done to the page here, by the controls they name.
+//
+// And it closes by a button of its own (da-zhz0u). vividn, 2026-10-09:
+// «maybe start unlocked. Let's put a button at the bottom of the welcome
+// widget that closes the widget too … I am imagining that the welcome
+// widget will have some scrolling and reading rather than all fitting on
+// one page».
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP, chooser, exactly, manage, manageButton, manageRoot, rootManageButton, rootMenuButton, titledPane, titles, toggleRootLock } from './support/layout.mjs';
+import { DESKTOP, activeTab, addTab, chooser, exactly, manage, manageButton, manageRoot, pane, rootMenuButton, titledPane, titles, toggleRootLock } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -40,6 +46,16 @@ const front = (page) =>
 
 /** The welcome widget's own text. */
 const words = (page) => page.locator('.host.welcome').innerText();
+
+/** The widget's last button (da-zhz0u). */
+const closeWelcome = (page) => page.getByRole('button', { name: 'Close welcome', exact: true });
+
+/** Whether the root tab in front is locked. */
+const locked = (page) =>
+	page.evaluate(() => {
+		const { tabs, active } = window.datum.layout.current().root;
+		return !!tabs[active].locked;
+	});
 
 describe('a first visit', () => {
 	for (const [what, device, collect] of [
@@ -82,13 +98,15 @@ describe('a first visit', () => {
 				'Choose a few things to track.',
 				'Log them: tap, or type in the bar below.',
 				'Watch your day and your stats fill in.',
-				'Close a tab, this one too: ▾ beside the +, Close tab.',
+				'Close a tab: ▾ beside the +, Close tab.',
 				'Open a widget, or a tab you closed: the + at the top.',
 				'Move a tab: drag it. On a phone, hold it first.',
-				'The pages datum comes with start locked. The padlock, top right, unlocks the one in front',
+				'The other pages start locked, with no ▾. The padlock, top right, unlocks the one in front.',
 				'Split a pane: ▾ on its bar, Split.'
 			])
 				assert.ok(text.includes(said), `not said: ${said}\n${text}`);
+			// «a button at the bottom of the welcome widget»: the last thing in it.
+			assert.ok(text.trimEnd().endsWith('Close welcome'), text);
 			// The four kinds, glyph and all, are the ones the Track form offers.
 			const kinds = await page.locator('.host.welcome .kinds li').allInnerTexts();
 			assert.deepEqual(kinds.map((k) => k.replace(/\s+/g, ' ')), [
@@ -116,13 +134,71 @@ describe('a first visit', () => {
 		}, FRESH_PHONE);
 	});
 
-	test('welcome closes the way it says: the padlock, the ▾ beside the +, Close tab; track and collect stay, and the + brings it back', async () => {
+	for (const [what, device] of [
+		['a desktop', FRESH_DESKTOP],
+		['a phone', FRESH_PHONE]
+	])
+		test(`${what}: «Close welcome» closes the tab in one tap, and it stays closed; the + brings it back with its button`, async () => {
+			await withApp(async (app) => {
+				const { page } = app;
+				await closeWelcome(page).click();
+				await until(() => rootNames(page), (names) => names.join() === 'track,collect');
+				assert.deepEqual(await front(page), ['track', 'field']);
+
+				await app.reload();
+				assert.deepEqual(await rootNames(page), ['track', 'collect']);
+
+				await page.locator('.root-bar button.add').first().click();
+				await chooser(page).locator('button', { hasText: exactly('welcome') }).click();
+				await until(() => rootNames(page), (names) => names.join() === 'track,collect,welcome');
+				await closeWelcome(page).waitFor();
+				assert.deepEqual(app.errors, []);
+			}, device);
+		});
+
+	test('the button is the tab\'s own ×: gone under the padlock, and on the last tab of the page', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			// Locked, as a layout that ships opens (da-gshh): no ▾ to find,
-			// which is why the widget names the padlock first.
-			assert.equal(await rootManageButton(page).count(), 0);
+			await closeWelcome(page).waitFor();
 			await toggleRootLock(page);
+			assert.equal(await locked(page), true);
+			assert.equal(await closeWelcome(page).count(), 0);
+			await toggleRootLock(page);
+			await closeWelcome(page).waitFor();
+
+			// The root's last tab does not close (tree.ts), so nothing offers to.
+			await page.evaluate(() => window.datum.shell.close(2));
+			await page.evaluate(() => window.datum.shell.close(1));
+			await until(() => rootNames(page), (names) => names.join() === 'welcome');
+			assert.equal(await closeWelcome(page).count(), 0);
+			assert.deepEqual(app.errors, []);
+		}, FRESH_DESKTOP);
+	});
+
+	test('in a pane of another page it closes that tab alone, and the page\'s lock takes it away', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await addTab(page, 'tail', 'welcome');
+			await until(() => activeTab(page, 'tail'), (name) => name === 'welcome');
+			await toggleRootLock(page);
+			assert.equal(await closeWelcome(page).count(), 0);
+			await toggleRootLock(page);
+
+			await closeWelcome(page).click();
+			// One tab again, so no strip: the pane is titled by what is left.
+			await until(() => pane(page, 'tail').getAttribute('data-title'), (title) => title === 'tail');
+			assert.equal(await pane(page, 'tail').locator('[role="tab"]').count(), 0);
+			assert.equal(await page.locator('.host.welcome').count(), 0);
+			assert.deepEqual(await rootNames(page), ['main']);
+			assert.deepEqual(app.errors, []);
+		}, DESKTOP);
+	});
+
+	test('welcome closes the way it says: the ▾ beside the +, Close tab, with no padlock first; track and collect stay, and the + brings it back', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			// Unlocked from the first (da-zhz0u): the ▾ is there to find.
+			assert.equal(await locked(page), false);
 			await manageRoot(page, 'Close tab');
 			await until(() => rootNames(page), (names) => names.join() === 'track,collect');
 			assert.deepEqual(await front(page), ['track', 'field']);

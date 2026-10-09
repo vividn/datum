@@ -41,7 +41,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, devices } from 'playwright';
-import { inWorker, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { ON_COLLECT, inWorker, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
 import {
 	chooseRoot,
@@ -767,13 +767,14 @@ describe('the acts', () => {
 		});
 
 		// Another device, FRESH: the unlock above did not travel — it has
-		// nothing said of `main`, so it opens as a first open does, locked
-		// (da-gshh).
+		// nothing said of `main`, and the page it logs on, `collect`, is
+		// locked as a first open is (da-gshh). Not its `welcome`, the one
+		// layout that ships unlocked (da-zhz0u).
 		await withApp(async ({ page }) => {
-			assert.equal(await page.evaluate(() => !!window.datum.layout.current().root.tabs[0].locked), true);
+			assert.equal(await page.evaluate(() => !!window.datum.layout.current().root.tabs[2].locked), true);
 			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.main')), null);
 			assert.equal(await lockButton(page).getAttribute('aria-pressed'), 'true');
-		}, { ...DESKTOP, home: null });
+		}, { ...DESKTOP, home: ON_COLLECT });
 	});
 
 	// The review thread on #168: the cross-tab refresh decided "unmodified"

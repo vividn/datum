@@ -31,6 +31,7 @@
 		alarm: Writable<boolean>;
 		titleHost: Writable<HTMLElement | null>;
 		hosted: Writable<boolean>;
+		close: Writable<(() => void) | null>;
 	}
 
 	const frame = getContext<Frame>('layout-frame');
@@ -43,6 +44,8 @@
 	setContext('layout-frame', {
 		alarm,
 		hosted,
+		// A tab behind is inert, so the frame's close only ever hears the one in front.
+		close: frame.close,
 		titleHost: derived([frame.titleHost, front], ([host, on]) => (on ? host : null))
 	});
 </script>

@@ -8,20 +8,33 @@
 
 	So it is read in about half a minute, top to bottom: what datum is, a
 	field and an entry in a sentence each, the four kinds as the Track form
-	names them (`VERBS`, so the two cannot come to disagree), the flow, the
-	one button, and how tabs and widgets are handled. That last part says
-	the padlock before the two acts it stands in front of, because a layout
-	that ships opens locked (da-gshh) and a locked tab has no «Close tab» to
-	find; and that the + brings back a tab that was closed, this one too.
+	names them (`VERBS`, so the two cannot come to disagree), the flow, its
+	button, and how tabs and widgets are handled: that the + brings back
+	a tab that was closed, this one too, and that the other pages start
+	locked (da-gshh), which is why they show no ▾ until the padlock.
 
-	The button is the field widget's door (`openField`): the Track tab
-	while it is open, the place every other door reaches once it is closed.
+	The first button is the field widget's door (`openField`): the Track
+	tab while it is open, the place every other door reaches once it is
+	closed.
+
+	The last one closes the widget (da-zhz0u). vividn, 2026-10-09: «maybe
+	start unlocked. Let's put a button at the bottom of the welcome widget
+	that closes the widget too … I am imagining that the welcome widget will
+	have some scrolling and reading rather than all fitting on one page».
+	So `welcome` opens unlocked (`tabHolding`, shell.ts), and the button
+	stands after the text, where the reading ends. It is the frame's own
+	`×` (PaneFrame.svelte's `close`), so it is there exactly where that is:
+	not under a lock, not on the page's last tab, not in a place's modal.
 -->
 <script lang="ts">
+	import { getContext } from 'svelte';
+	import type { Readable } from 'svelte/store';
 	import { act } from '$lib/act.js';
 	import { openField } from '$lib/fieldWidget.js';
 	import Pane from '$lib/Pane.svelte';
 	import { VERBS } from '$lib/track.js';
+
+	const close = getContext<{ close: Readable<(() => void) | null> } | undefined>('layout-frame')?.close;
 </script>
 
 <Pane title="welcome">
@@ -46,12 +59,13 @@
 		<ul>
 			<li>Move a tab: drag it. On a phone, hold it first.</li>
 			<li>Open a widget, or a tab you closed: the + at the top.</li>
-		</ul>
-		<p>The pages datum comes with start locked. The padlock, top right, unlocks the one in front; then</p>
-		<ul>
-			<li>Close a tab, this one too: ▾ beside the +, Close tab.</li>
+			<li>Close a tab: ▾ beside the +, Close tab.</li>
 			<li>Split a pane: ▾ on its bar, Split.</li>
 		</ul>
+		<p>The other pages start locked, with no ▾. The padlock, top right, unlocks the one in front.</p>
+		{#if $close}
+			<button type="button" class="command" use:act={'run'} on:click={$close}>Close welcome</button>
+		{/if}
 	</div>
 </Pane>
 
