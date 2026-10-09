@@ -394,10 +394,13 @@ export const focusTop = (page) =>
  *
  * `home` is the layout this device already has open, as if it had been
  * here before — `main` unless a test says otherwise, because the suite is
- * written against `main` and a FRESH phone opens `mobile` (da-shzs). Written
+ * written against `main` and a FRESH device opens on `welcome` (da-u7vz8). Written
  * only where nothing is stored, so a reload keeps what the test changed.
  * It has also unlocked it (da-gshh), which a fresh device finds locked.
- * `home: null` is a device that has never opened the site.
+ * `home: null` is a device that has never opened the site, which opens on
+ * `welcome` (da-u7vz8); `home: ON_COLLECT` is that device one tap later.
+ * A device that has been here has no new default waiting to be offered
+ * (da-cr0w2): the suite's are none unless a test ships some.
  *
  * `desk` is the desktop tree `main` is drawn from: `DESK` (support/desk.mjs),
  * the tree the suite is written against, unless a test says otherwise.
@@ -416,6 +419,13 @@ export const focusTop = (page) =>
  * timers. It holds the boot as well: `page.clock.runFor(200)` and
  * `app.idle()` before asserting, since a pane's box arrives on a timer.
  */
+/**
+ * A first visit's tabs with `collect` in front (da-u7vz8): the page a fresh
+ * device opened alone until then, `mobile`'s tree on a phone. Nothing is
+ * said of a lock, so it is locked as a first open is (da-gshh).
+ */
+export const ON_COLLECT = { names: ['welcome', 'track', 'collect'], active: 2 };
+
 export async function withApp(fn, options) {
 	const { app, close } = await openApp(options);
 	try {
@@ -473,14 +483,17 @@ async function openApp({
 		}
 		if (desk) await context.addInitScript((tree) => (window.__datumDesktopLayout = tree), desk);
 		if (home)
-			await context.addInitScript((name) => {
+			await context.addInitScript((home) => {
 				const key = 'datum.layout.root.v1';
+				const name = typeof home === 'string' ? home : null;
 				const lock = `datum.layout.locked.v1.${name}`;
+				window.__datumNewDefaults = [];
 				try {
-					if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify({ names: [name], active: 0 }));
+					if (!localStorage.getItem(key))
+						localStorage.setItem(key, JSON.stringify(name ? { names: [name], active: 0 } : home));
 					// A device that has been here has unlocked its home (da-gshh):
 					// the suite drags, splits and closes its panes.
-					if (localStorage.getItem(lock) === null) localStorage.setItem(lock, '0');
+					if (name && localStorage.getItem(lock) === null) localStorage.setItem(lock, '0');
 				} catch {}
 			}, home);
 		if (origin) await serveAt(context, origin);
@@ -1441,6 +1454,17 @@ function app(page, errors, query, clean, locks, internal) {
 			await page.reload();
 			await ready(page);
 			await countRuns(page);
+		},
+
+		/**
+		 * Bring `collect` to the front, and wait for its panes: the page a
+		 * first visit has behind `welcome` (da-u7vz8) — which every load is
+		 * for a browser that blocks the store.
+		 */
+		async toCollect() {
+			await page.evaluate(() => window.datum.shell.open('collect'));
+			await ready(page);
+			await self.idle();
 		},
 
 		/**

@@ -6,7 +6,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
 	ONE_PANE,
@@ -183,6 +183,7 @@ describe('the menu the title opens', () => {
 			assert.deepEqual(await empty.locator('.body button').allInnerTexts(), ['Change Widget']);
 			await openChooser(page);
 			assert.deepEqual(await offers(page), [
+				'collect',
 				'dayview',
 				'repl',
 				'nowview',
@@ -194,6 +195,7 @@ describe('the menu the title opens', () => {
 				'aliases',
 				'sync',
 				'help',
+				'welcome',
 				'backups',
 				'field',
 				'input'
@@ -419,7 +421,7 @@ describe('the menu the title opens', () => {
 					await titledPane(page, 'empty').waitFor();
 					assert.deepEqual(await overStrip(page, 'bar'), { titles: 2, overlaps: [] });
 				},
-				{ viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: null }
+				{ viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT }
 			);
 		});
 	}

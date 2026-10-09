@@ -9,7 +9,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { ON_COLLECT, startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
 	chooseRoot,
@@ -50,10 +50,10 @@ async function lockedClean(page, name) {
 // FIRST visit finds, which a shared app has already made.
 describe('a layout that shipped', () => {
 	for (const [what, device, name] of [
-		['a fresh phone: `mobile`', FRESH_PHONE, 'mobile'],
-		['a fresh desktop: `main`', FRESH_DESKTOP, 'main']
+		['a phone', { ...FRESH_PHONE, home: ON_COLLECT }, 'collect'],
+		['a desktop', { ...FRESH_DESKTOP, home: ON_COLLECT }, 'collect']
 	])
-		test(`${what} opens locked; unlocked it drags, and stays unlocked over a reload`, async () => {
+		test(`${what}'s first visit: \`collect\` opens locked; unlocked it drags, and stays unlocked over a reload`, async () => {
 			await withApp(async (app) => {
 				const { page } = app;
 				await lockedClean(page, name);
@@ -93,6 +93,8 @@ describe('a layout that shipped', () => {
 				...FRESH_DESKTOP,
 				prepare: (context) =>
 					context.addInitScript(() => {
+						// Nothing to offer it (da-cr0w2): the lock is what this is about.
+						window.__datumNewDefaults = [];
 						if (!localStorage.getItem('datum.layout.root.v1'))
 							localStorage.setItem('datum.layout.root.v1', JSON.stringify({ names: ['main'], active: 0 }));
 					})
@@ -110,9 +112,9 @@ describe('a layout that shipped', () => {
 			const dialog = page.locator('dialog.confirm');
 			await dialog.getByRole('button', { name: 'reset', exact: true }).click();
 			await dialog.waitFor({ state: 'detached' });
-			await lockedClean(page, 'main');
+			await lockedClean(page, 'welcome');
 			await app.reload();
-			await lockedClean(page, 'main');
+			await lockedClean(page, 'welcome');
 		}, FRESH_DESKTOP);
 	});
 });
@@ -130,19 +132,19 @@ describe('a layout a person made', () => {
 			await app.reload();
 			assert.equal(await locked(page), false);
 			assert.deepEqual(app.errors, []);
-		}, FRESH_DESKTOP);
+		}, { ...FRESH_DESKTOP, home: ON_COLLECT });
 	});
 
-	test('a save of their own over `main` is theirs: with nothing said, it opens unlocked', async () => {
+	test('a save of their own over `collect` is theirs: with nothing said, it opens unlocked', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await toggleRootLock(page);
 			await until(() => locked(page), (l) => l === false);
 			await chooseRoot(page, 'Save layout');
-			await until(() => page.evaluate(() => window.datum.shell.versions('main').catch(() => [])), (v) => v.length === 1);
-			await page.evaluate(() => localStorage.removeItem('datum.layout.locked.v1.main'));
+			await until(() => page.evaluate(() => window.datum.shell.versions('collect').catch(() => [])), (v) => v.length === 1);
+			await page.evaluate(() => localStorage.removeItem('datum.layout.locked.v1.collect'));
 			await app.reload();
 			assert.equal(await locked(page), false);
-		}, FRESH_DESKTOP);
+		}, { ...FRESH_DESKTOP, home: ON_COLLECT });
 	});
 });

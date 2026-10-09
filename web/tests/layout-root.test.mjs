@@ -135,9 +135,13 @@ describe('the draft', () => {
 	test('a blocked localStorage renders the default with no error', async () => {
 		await withApp( // own app: a `prepare` that blocks the store
 			async (app) => {
+				// Nothing remembers a visit here, so it is a first one
+				// (da-u7vz8): `welcome` in front, the default behind it.
+				assert.deepEqual(await titles(app.page), ['welcome']);
+				await app.toCollect();
 				assert.deepEqual(await titles(app.page), ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields']);
-				// Nothing remembers an unlock here, so `main` opens locked as a
-				// first open does (da-gshh) — and unlocks for the visit.
+				// Nor an unlock, so `collect` opens locked as a first open
+				// does (da-gshh) — and unlocks for the visit.
 				await toggleRootLock(app.page);
 				await addTab(app.page, 'tail', 'aliases');
 				assert.equal(await activeTab(app.page, 'tail'), 'aliases');

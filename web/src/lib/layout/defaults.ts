@@ -269,8 +269,11 @@ export const defaultLayoutFor = (phone: boolean): Layout =>
 // width at first load — and one layout per widget kind that is just that
 // widget, named as its pane is titled (`nowview`, `tail`, `stats`, …), so
 // `datum.day/nowview` is the nowview alone. A saved layout of the same
-// name shadows a built-in. vividn's prebuilt layouts (collect / check /
-// analyze) are his to design: one object each, added to `BUILTIN` below.
+// name shadows a built-in. And the three tabs a first visit opens
+// (da-u7vz8, `fresh` in shell.ts): `welcome`, a kind's own; `track`, the
+// field widget under the name its tab wears; and `collect`. vividn's
+// prebuilt layouts (collect / check / analyze) are his to design: one
+// object each, added to `BUILTIN` below.
 
 /** A layout that is one widget, filling the root. */
 const only = (name: string, kind: string, settings: Record<string, unknown> = {}): Layout => ({
@@ -282,6 +285,11 @@ const only = (name: string, kind: string, settings: Record<string, unknown> = {}
 /** The built-ins by name; `main` is looked up through `builtinLayout`, since it depends on the screen. */
 export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	main: (phone) => ({ ...defaultLayoutFor(phone), name: 'main' }),
+	// The page to log on: what a phone and a desktop each opened alone until
+	// da-u7vz8, `mobile`'s tree and `main`'s desktop one — by the screen at
+	// each load, as `main` is.
+	collect: (phone) => ({ ...(phone ? MOBILE_LAYOUT : defaultLayoutFor(false)), name: 'collect' }),
+	track: () => only('track', 'field'),
 	mobile: () => MOBILE_LAYOUT,
 	dayview: () => only('dayview', 'daystrip', { ...STRIP }),
 	repl: () => only('repl', 'repl'),
@@ -294,6 +302,7 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	aliases: () => only('aliases', 'aliases'),
 	sync: () => only('sync', 'sync'),
 	help: () => only('help', 'help'),
+	welcome: () => only('welcome', 'welcome'),
 	backups: () => only('backups', 'backups'),
 	field: () => only('field', 'field'),
 	input: () => only('input', 'input')
@@ -334,7 +343,9 @@ export const BUILTIN_NAMES = Object.keys(BUILTIN);
  * of is one sentence APPENDED here. Never edited or removed: a device
  * remembers how many it has seen.
  */
-const NEW_DEFAULTS: string[] = [];
+const NEW_DEFAULTS: string[] = [
+	'A first visit now opens three tabs: welcome, which says what datum is and how the page is handled; track, where you choose what to track; and collect, the page you log on.'
+];
 
 /** `NEW_DEFAULTS`, or the web suite's in its place, handed over as `pinned`'s tree is. */
 export const newDefaults = (): string[] =>

@@ -315,7 +315,7 @@
 	const doResetDefaults = () =>
 		attempt(async () => {
 			const yes = await confirm(
-				'Every layout that ships with datum goes back to the way it came, and the tabs at the top of the page go back to just “day”.\n\n' +
+				'Every layout that ships with datum goes back to the way it came, and the tabs at the top of the page go back to welcome, track and collect.\n\n' +
 					'Layouts you saved yourself, and layouts a kit installed, are not touched — they stay in the +.',
 				'reset'
 			);

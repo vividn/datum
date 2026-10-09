@@ -73,6 +73,7 @@ import NowviewWidget from './NowviewWidget.svelte';
 import ReplWidget from './ReplWidget.svelte';
 import FieldWidget from './FieldWidget.svelte';
 import SyncWidget from './SyncWidget.svelte';
+import WelcomeWidget from './WelcomeWidget.svelte';
 
 export interface WidgetKind {
 	meta: WidgetKindMeta;
@@ -463,6 +464,19 @@ export const KINDS: Record<string, WidgetKind> = {
 			'Press Help, then tap a command, a widget or a pill; Help again for general help.'
 		].join('\n'),
 		legible: { width: 200, height: 72 }
+	},
+	// The welcome widget (da-u7vz8): what datum is and how the page is
+	// handled, as prose — the first tab of a first visit. Legible at its
+	// title and the two sentences under it (20px a line) plus padding; the
+	// rest scrolls.
+	welcome: {
+		meta: meta('welcome', 'welcome'),
+		component: WelcomeWidget,
+		help: [
+			'What datum is, what a field and an entry are, and how tabs and widgets are opened, moved, split and closed.',
+			'«Choose what to track» goes to the field widget.'
+		].join('\n'),
+		legible: { width: 200, height: 100 }
 	},
 	// «Backups» (da-9ow8m), a place (da-ea5q2): the gear's Backups and the
 	// commands widget's `db backup` / `db restore` open it (`openPlace`). Legible

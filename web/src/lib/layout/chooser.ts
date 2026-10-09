@@ -28,11 +28,14 @@ export interface Offer {
 }
 
 /**
- * The layouts the modal offers, in the one order: `main`, then the rest —
- * every built-in but `main` IS a kind's one-widget layout, and is listed
- * once, among the widgets — less the names already open above the tab,
- * since `main` may not hold `main` (the shell refuses such names too; the
- * modal does not offer them).
+ * The layouts the modal offers, in the one order: `main` and `collect`
+ * (da-u7vz8: a first visit's tab, closeable like any, so it has to be
+ * here to come back), then the rest — every other built-in IS a kind's
+ * one-widget layout, and is listed once, among the widgets (`track` is
+ * the field widget's again), or is `mobile`, `collect`'s tree on a phone
+ * — less the names already open above the tab, since `main` may not hold
+ * `main` (the shell refuses such names too; the modal does not offer
+ * them).
  *
  * The rest, which is the person's saves and whatever a kit installed into
  * this database (da-gg0v), are ordered BY DEVICE: the ones designed for
@@ -53,7 +56,7 @@ async function layoutsFor(ancestors: string[]): Promise<Offer[]> {
 	const here = device();
 	const mine = listed.filter((l) => l.designedFor === here);
 	const rest = listed.filter((l) => l.designedFor !== here);
-	return [{ name: 'main', source: 'builtin' as const }, ...mine, ...rest]
+	return [...['main', 'collect'].map((name) => ({ name, source: 'builtin' as const })), ...mine, ...rest]
 		.map(({ name, source }) => ({ name, source }))
 		.filter((o) => !ancestors.includes(o.name));
 }

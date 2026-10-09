@@ -12,7 +12,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp, sharedApp } from './support/app.mjs';
+import { ON_COLLECT, startApp, stopApp, withApp, sharedApp } from './support/app.mjs';
 import { widgetPane } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
@@ -261,7 +261,7 @@ describe('a narrow tail gives up hid, then _n', () => {
 					assert.deepEqual(t.tall, [], 'a row taller than one line');
 					assert.ok(!t.sideways, 'the pane scrolls sideways');
 				},
-				{ viewport: { width, height }, device: { isMobile: true, hasTouch: true }, home: null }
+				{ viewport: { width, height }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT }
 			);
 		});
 	}
@@ -325,7 +325,7 @@ describe('the tail header keeps its height', () => {
 					}
 					assert.deepEqual(app.errors, []);
 				},
-				{ ...options, home: null, desk: null }
+				{ ...options, home: ON_COLLECT, desk: null }
 			);
 		});
 	}

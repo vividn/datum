@@ -29,7 +29,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { FIELD_FORM } from './support/field.mjs';
 import {
 	DESKTOP,
@@ -653,7 +653,7 @@ describe('widget options', () => {
 				await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 				assert.equal(await button.evaluate((b) => b === document.activeElement), true, 'focus did not go back');
 			},
-			{ device: { viewport: { width: 360, height: 640 }, hasTouch: true, isMobile: true }, home: null }
+			{ device: { viewport: { width: 360, height: 640 }, hasTouch: true, isMobile: true }, home: ON_COLLECT }
 		);
 	});
 });

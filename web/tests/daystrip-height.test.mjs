@@ -559,6 +559,8 @@ describe("the day strip's day height and its pin", () => {
 		// draws, and the handle works for the visit.
 		await withApp( // own app: a `prepare` that blocks the store
 			async (app) => {
+				// Nothing remembers a visit, so it is a first one, on `welcome` (da-u7vz8).
+				await app.toCollect();
 				await app.page.locator('.band[data-days-ago="0"] svg.svg').waitFor();
 				assert.equal(await valueOf(app), fallback);
 				await sizeFor(app, 1);

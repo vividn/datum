@@ -6,7 +6,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp, withApp as withAnyApp, seedLines } from './support/app.mjs';
+import { ON_COLLECT, sharedApp, startApp, stopApp, withApp as withAnyApp, seedLines } from './support/app.mjs';
 import { DESKTOP, along, widgetPane } from './support/layout.mjs';
 import { listed } from './support/rows.mjs';
 
@@ -21,12 +21,12 @@ const PAGE = JSON.stringify(
 // ONE APP for every desktop test (da-6b3dj, sharedApp in support/app.mjs),
 // `main` opened from PAGE's draft by `solo`, which empties the database and
 // the bar's pills between them; each reads the REPL from its end. The
-// phone opens its own: a fresh device, which opens `mobile`.
+// phone opens its own: a first visit, with `mobile`'s tree in front.
 const shared = sharedApp(DESKTOP);
 const solo = (fn) => shared.solo(fn, PAGE);
 
-/** A phone that has never opened the site: it opens `mobile` (da-shzs). */
-const PHONE = { viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true }, home: null };
+/** A phone on its first visit, `collect` in front: `mobile`'s tree (da-shzs, da-u7vz8). */
+const PHONE = { viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT };
 
 /** Four entries of one field, after the row that tracks it. */
 const SEED = ['track a --verb occur', 'occur a', 'occur a', 'occur a', 'occur a'];

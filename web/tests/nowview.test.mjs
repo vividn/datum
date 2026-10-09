@@ -10,7 +10,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
+import { ON_COLLECT, sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
 import { DESKTOP, activeTab, choose, chooseRoot, draft, pane, settled, swipe } from './support/layout.mjs';
 
 before(startApp);
@@ -441,7 +441,7 @@ describe('the nowview steps stay off the picture', () => {
 				assert.deepEqual(where.wrong, []);
 				assert.deepEqual(app.errors, []);
 			},
-			{ viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true }, home: null }
+			{ viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT }
 		);
 	});
 

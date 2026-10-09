@@ -261,7 +261,10 @@ describe('the scrollback across a reload', () => {
 
 	test('is empty, and quiet, when the browser blocks the store', async () => {
 		await withApp(
-			async ({ page, submit, echoes, reload, errors }) => {
+			async ({ page, submit, echoes, reload, errors, toCollect }) => {
+				// Nothing remembers a visit, so each load is a first one, on
+				// `welcome` (da-u7vz8): the REPL pane is a tab away.
+				await toCollect();
 				// The session itself works — a blocked store must cost the
 				// scrollback, not the terminal.
 				await submit('occur coffee');
@@ -269,6 +272,8 @@ describe('the scrollback across a reload', () => {
 				assert.match((await stamps(page))[0], HHMMSS);
 
 				await reload();
+				await toCollect();
+				await page.locator('.repl').first().waitFor();
 				assert.deepEqual(await echoes(), [], 'something was restored from a blocked store');
 				assert.deepEqual(errors, [], `the blocked store threw at the page: ${errors[0]}`);
 			},

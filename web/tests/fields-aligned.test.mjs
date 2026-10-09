@@ -10,7 +10,7 @@
 
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, stopApp, withApp } from './support/app.mjs';
+import { ON_COLLECT, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, PHONE, pickOption } from './support/layout.mjs';
 
 before(startApp);
@@ -199,7 +199,7 @@ test('a fresh phone: the most used field is whole on open, and the fields start 
 			assert.equal(after, 'none', `the + wears ${after}`);
 			assert.deepEqual(app.errors, []);
 		},
-		{ viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: null }
+		{ viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT }
 	);
 });
 

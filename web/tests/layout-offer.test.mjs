@@ -31,6 +31,16 @@ const SECOND = 'The day view moved to the bottom.';
 /** Where a device keeps how many new defaults it has seen (layout/draft.ts). */
 const SEEN = 'datum.layout.defaults.v1';
 
+/**
+ * The tabs a first visit opens, by how many new defaults datum had shipped
+ * when it opened them.
+ *
+ * ⚑ WHEN THE LAST TEST FAILS the default moved. Append the sentence that
+ * says what changed to `NEW_DEFAULTS` (layout/defaults.ts) — that is what
+ * offers it to everybody already here — and its tabs to this list.
+ */
+const FIRST_VISIT = [['main'], ['welcome', 'track', 'collect']];
+
 /** From the next load on, datum has shipped `news`. */
 const ship = (context, news) => context.addInitScript((news) => (window.__datumNewDefaults = news), news);
 
@@ -63,11 +73,11 @@ describe('a new default is offered', () => {
 			assert.deepEqual(await rootNames(page), ['tail']);
 
 			await offer(page).getByRole('button', { name: USE, exact: true }).click();
-			await until(() => rootNames(page), (names) => names.join() === 'main');
+			await until(() => rootNames(page), (names) => names.join() === FIRST_VISIT.at(-1).join());
 
 			await app.reload();
 			assert.equal(await offer(page).count(), 0);
-			assert.deepEqual(await rootNames(page), ['main']);
+			assert.deepEqual(await rootNames(page), FIRST_VISIT.at(-1));
 		}, returning([FIRST, SECOND]));
 	});
 
@@ -106,17 +116,8 @@ describe('a new default is offered', () => {
 	});
 });
 
-/**
- * The tabs a first visit opens, by how many new defaults datum had shipped
- * when it opened them. A first visit is marked with that number, so this is
- * read against datum's OWN list — nothing shipped by the suite.
- *
- * ⚑ WHEN THIS FAILS the default moved. Append the sentence that says what
- * changed to `NEW_DEFAULTS` (layout/defaults.ts) — that is what offers it
- * to everybody already here — and its tabs to this list.
- */
-const FIRST_VISIT = [['main']];
-
+// A first visit is marked with how many new defaults datum had shipped, so
+// this is read against datum's OWN list — nothing shipped by the suite.
 test('the tabs a first visit opens are the ones the last new default was announced with', async () => {
 	await withApp(async (app) => {
 		assert.deepEqual(await rootNames(app.page), FIRST_VISIT[Number(await seen(app.page))]);

@@ -144,14 +144,12 @@ const phone = () =>
 	typeof matchMedia === 'function' && matchMedia(`(max-width: ${PHONE_WIDTH}px)`).matches;
 
 /**
- * The layout a device starts with: `mobile` on a phone (da-shzs), `main`
- * elsewhere. Asked only where nothing is stored — once the open list is
- * written, turning or widening the screen never swaps it.
+ * The root bar a fresh install shows (da-u7vz8), `welcome` in front: what
+ * datum is, the field widget to choose what to track in, and `collect`,
+ * the page to log on — which is what a first visit opened alone before, as
+ * `mobile` on a phone (da-shzs) and `main` elsewhere.
  */
-const home = () => (phone() ? 'mobile' : 'main');
-
-/** The root bar a fresh install shows: the one layout, in front. */
-const fresh = (): RootState => ({ names: [home()], active: 0 });
+const fresh = (): RootState => ({ names: ['welcome', 'track', 'collect'], active: 0 });
 
 /** This screen, in the word a layout's `designedFor` uses. */
 export const device = (): NonNullable<Layout['designedFor']> => (phone() ? 'mobile' : 'desktop');
@@ -561,7 +559,7 @@ async function fillRoot(state: RootState): Promise<void> {
 			const tab = await openTab(name, taken);
 			if (tab) tabs.push(tab);
 		}
-		if (tabs.length === 0) tabs.push((await openTab(home(), taken)) as Tab);
+		if (tabs.length === 0) tabs.push((await openTab('collect', taken)) as Tab);
 		const built = normalize({
 			version: LAYOUT_VERSION,
 			name: 'root',
@@ -626,7 +624,7 @@ const withDebug = (state: RootState): RootState =>
 		? { names: [DEBUG_LAYOUT, ...state.names], active: 0 }
 		: state;
 
-/** Fill the root from this device's open layouts (`main` or `mobile` alone at first). Once. */
+/** Fill the root from this device's open layouts (`fresh`'s at first). Once. */
 export function boot(): Promise<void> {
 	return (booting ??= (async () => {
 		const stored = loadRoot();
@@ -650,10 +648,10 @@ export function boot(): Promise<void> {
 		await shipDebugLayout();
 		await fillRoot(withDebug(stored ?? fresh()));
 		booted = true;
-		// A fresh device's home is decided here, once (da-shzs): written now,
-		// so a phone turned or widened later does not reopen as a desktop.
-		// And a change made to the tree drawn early is written down now
-		// (da-bhudz), rather than at the next change after it.
+		// A fresh device's tabs are written now, and so is a change made to
+		// the tree drawn early (da-bhudz), rather than at the next change
+		// after it. The list is the same on every screen (da-u7vz8): what
+		// follows the screen is `collect`'s tree, at each load.
 		settle();
 		addEventListener('popstate', onPopState);
 		onExternalChange(followSaves, '_internal');
@@ -1307,8 +1305,10 @@ export async function inlineInto(tabId: NodeId, name: string): Promise<void> {
  * no act is left over for a copy that is not there.
  *
  * At the ROOT it is the built-in ONE-WIDGET LAYOUT the kind is instead
- * (da-y2f6): every built-in but `main` and `mobile` is exactly that widget alone, named
- * as its pane is titled, so the tab can be the widget AND have a name —
+ * (da-y2f6): every kind has a built-in that is exactly that widget alone, named
+ * as its pane is titled — the others are `main`, `mobile` and `collect`, which are
+ * pages, and `track`, the field widget's a second time under its tab's name
+ * (da-u7vz8) — so the tab can be the widget AND have a name —
  * and it has to have one, because this device's open list is a list of
  * NAMES (`settle`, `saveRoot`) and a nameless root tab has nothing to
  * write there, so it would be gone after a reload. It is the same path

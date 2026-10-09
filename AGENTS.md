@@ -381,7 +381,10 @@ endpoint by a Web Lock (`datum-sync:<db>`), which pushes on every tab's writes
   single-child split, no empty pane, ratios sum to 1) are `tree.ts` (`tests/tree.test.mjs`, node); the
   widget kinds and their components,
   floors and settings are `registry.ts`; today's page as data is
-  `defaults.ts` (a desktop and a phone tree); the one live store is
+  `defaults.ts` (a desktop and a phone tree), which a first visit opens as
+  the third of three root tabs (da-u7vz8, `fresh` in `shell.ts`):
+  `welcome`, a widget saying what datum is and how tabs and widgets are
+  handled, `track`, the field widget, and `collect`, that page; the one live store is
   `current.ts` (`layout` + `apply`), which the header's save/restore
   controls fill from the draft or the saved layout. `engine.ts`
   owns the epoch and routes a widget-bar press through whichever REPL is

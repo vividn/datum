@@ -176,11 +176,15 @@ describe('the custom pane', () => {
 				const logged = [];
 				app.page.on('console', (m) => m.type() === 'error' && logged.push(m.text()));
 
+				// Nothing remembers a visit, so each load is a first one, on
+				// `welcome` (da-u7vz8): the pane is a tab away.
+				await app.toCollect();
 				await setCommand(app.page, 'tail -n 1');
 				await app.submit('occur coffee');
 				await shows(app.page, /coffee/);
 
 				await app.reload();
+				await app.toCollect();
 				await app.page.locator(`${PANE} h2`, { hasText: 'custom' }).waitFor();
 				assert.match(await shows(app.page, /type a datum command/), /type a datum command/);
 				assert.deepEqual(app.errors, [], `the blocked store threw at the page: ${app.errors[0]}`);

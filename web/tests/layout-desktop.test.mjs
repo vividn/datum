@@ -1,5 +1,5 @@
-// The desktop default (da-ncsyn): `main` on a desktop that has never opened
-// the site.
+// The desktop default (da-ncsyn): `main`'s tree, which a desktop that has
+// never opened the site finds under its `collect` tab (da-u7vz8).
 //
 // vividn, 2026-09-23: «change the default desktop interface to be more
 // similar to the mobile interface, so commands along the bottom, next row
@@ -15,14 +15,14 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { atEachScreen, sharedApp, startApp, stopApp } from './support/app.mjs';
+import { ON_COLLECT, atEachScreen, sharedApp, startApp, stopApp } from './support/app.mjs';
 import { CHROME, DESKTOP, pane, titles } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
 
-/** A desktop that has never opened the site, drawn from the shipped tree. */
-const fresh = sharedApp({ ...DESKTOP, home: null, desk: null });
+/** A desktop on its first visit, `collect` in front (da-u7vz8), drawn from the shipped tree. */
+const fresh = sharedApp({ ...DESKTOP, home: ON_COLLECT, desk: null });
 
 /**
  * Desktop screens, tallest to shortest: 1080p, a 1440×900 laptop, the
@@ -82,11 +82,11 @@ const wholeCommands = (page) =>
 		});
 
 describe('a fresh desktop', () => {
-	test('opens `main`: dayview / tail | nowview | stats / fields / command', async () => {
+	test('`collect` is `main`: dayview / tail | nowview | stats / fields / command', async () => {
 		const { page, errors } = await fresh();
 		assert.deepEqual(
 			await page.evaluate(() => window.datum.shell.rootTabs(window.datum.layout.current()).map((t) => t.layout)),
-			['main']
+			['welcome', 'track', 'collect']
 		);
 		assert.deepEqual(await titles(page), ['dayview', 'tail', 'nowview', 'stats', 'fields', 'command']);
 		// No `input`: the bottom bar is the command line, and one is enough.

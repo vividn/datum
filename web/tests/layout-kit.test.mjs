@@ -101,6 +101,7 @@ describe('a kit ships a layout', () => {
 			await openChooser(app.page);
 			assert.deepEqual(await layoutOffers(app.page), [
 				{ name: 'main', source: 'builtin' },
+				{ name: 'collect', source: 'builtin' },
 				{ name: 'focus-day', source: 'kit:focus' }
 			]);
 
@@ -198,7 +199,7 @@ describe('the device a layout was designed for', () => {
 			return names;
 		}
 
-		assert.deepEqual(await order(shared.solo), ['main', 'deskish', 'phonish']);
-		assert.deepEqual(await order((fn) => withApp(fn, PHONE)), ['main', 'phonish', 'deskish']);
+		assert.deepEqual(await order(shared.solo), ['main', 'collect', 'deskish', 'phonish']);
+		assert.deepEqual(await order((fn) => withApp(fn, PHONE)), ['main', 'collect', 'phonish', 'deskish']);
 	});
 });

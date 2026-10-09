@@ -1,12 +1,14 @@
-// `mobile` (da-shzs, da-hkjp): the layout a phone opens first.
+// `mobile` (da-shzs, da-hkjp): the layout a phone opened first — and
+// still does, as the tree of its `collect` tab (da-u7vz8), behind
+// `welcome` and `track` (welcome.test.mjs). So the phones here are one tap
+// into their first visit (`ON_COLLECT`), with that tree in front.
 //
 // vividn, 2026-09-17: «a layout "mobile" that is the default one loaded when
 // the site is opened on a phone» — dayview / tail | a tiny nowview /
 // fields + nowview / commands, over the app's own bottom bar. So this file
 // holds the tree, that every pane of it is on the screen at a phone's
-// sizes, that the two taps of a log work inside it, and that only a FRESH
-// phone gets it: a device with an open list keeps it, and a desktop still
-// opens `main`.
+// sizes, that the two taps of a log work inside it, and that a device with
+// an open list keeps it.
 //
 // vividn, 2026-09-21, changed three things about it (da-hkjp): the strip
 // shows ONE day, the tail's type is smaller, and row 3 is a SPLIT of the
@@ -25,7 +27,7 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { unfold as openBar } from './support/bar.mjs';
 import { DESKTOP, pane, titles } from './support/layout.mjs';
 import { until } from './support/until.mjs';
@@ -33,12 +35,15 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
-/** A phone that has never opened the site, at `width`×`height`. */
+/** A phone on its first visit, `collect` in front, at `width`×`height`. */
 const phone = (width = 390, height = 844) => ({
 	viewport: { width, height },
 	device: { isMobile: true, hasTouch: true },
-	home: null
+	home: ON_COLLECT
 });
+
+/** The tabs a first visit opens (da-u7vz8). */
+const FIRST = ['welcome', 'track', 'collect'];
 
 /** A desktop that has never opened the site. */
 const FRESH_DESKTOP = { ...DESKTOP, home: null };
@@ -155,11 +160,11 @@ const typeSize = (page, id) =>
 	pane(page, id).evaluate((p) => parseFloat(getComputedStyle(p.querySelector('.body')).fontSize));
 
 describe('a fresh phone', () => {
-	test('opens `mobile`: dayview / tail | nowview / fields + nowview / command', async () => {
+	test('`collect` is `mobile`: dayview / tail | nowview / fields + nowview / command', async () => {
 		await asOpened(async (app) => {
 			const { page } = app;
 			await app.spyOnRunner();
-			assert.deepEqual(await rootNames(page), ['mobile']);
+			assert.deepEqual(await rootNames(page), FIRST);
 			// Six panes, not five: row 3 shows the fields widget and a
 			// nowview side by side (da-hkjp) where it used to show one of
 			// two tabs, so BOTH are on the screen and neither wears a tab.
@@ -177,7 +182,7 @@ describe('a fresh phone', () => {
 			// Unmodified as it opens: its extract is its baseline, and nothing
 			// was written for it.
 			assert.equal(await page.locator('.root-bar').evaluate((el) => el.classList.contains('modified')), false);
-			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.draft.v1.mobile')), null);
+			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.draft.v1.collect')), null);
 
 			// The row's nowview is the snapshot and the one beside `fields`
 			// is the default window — both drawn at once now, so both are
@@ -323,12 +328,6 @@ describe('a fresh phone', () => {
 });
 
 describe('who gets it', () => {
-	test('a fresh desktop still opens `main`', async () => {
-		await withApp(async ({ page }) => {
-			assert.deepEqual(await rootNames(page), ['main']);
-		}, FRESH_DESKTOP);
-	});
-
 	test('a device with an open list keeps it, phone or desktop', async () => {
 		for (const device of [phone(), DESKTOP])
 			await withApp(async ({ page }) => {
@@ -336,31 +335,32 @@ describe('who gets it', () => {
 			}, { ...device, home: 'tail' });
 	});
 
-	test('decided once: a phone widened to a desktop keeps `mobile` after a reload', async () => {
+	// The tabs are the same on every screen; what follows the screen is
+	// `collect`'s tree, at each load, as `main`'s always has (da-u7vz8).
+	test('a phone widened to a desktop keeps its tabs after a reload, and `collect` draws the desktop tree', async () => {
 		await withApp(async (app) => {
-			assert.deepEqual(await rootNames(app.page), ['mobile']);
+			assert.deepEqual(await rootNames(app.page), FIRST);
+			assert.deepEqual(await titles(app.page), ['dayview', 'tail', 'nowview', 'fields', 'nowview', 'command']);
 			await app.page.setViewportSize({ width: 1200, height: 900 });
 			await app.reload();
-			assert.deepEqual(await rootNames(app.page), ['mobile']);
-		}, phone());
+			assert.deepEqual(await rootNames(app.page), FIRST);
+			assert.deepEqual(await titles(app.page), ['dayview', 'tail', 'nowview', 'stats', 'fields', 'command']);
+		}, { ...phone(), desk: null });
 	});
 
-	test('Reset default layouts lands on `mobile` on a phone and `main` on a desktop', async () => {
-		for (const [device, want] of [
-			[phone(), 'mobile'],
-			[FRESH_DESKTOP, 'main']
-		])
+	test('Reset default layouts lands on the first visit’s tabs, on a phone and on a desktop', async () => {
+		for (const device of [phone(), FRESH_DESKTOP])
 			await withApp(async ({ page }) => {
 				await page.evaluate(() => window.datum.shell.open('tail'));
-				await page.waitForFunction(() => window.datum.shell.rootTabs(window.datum.layout.current()).length === 2);
-				await page.evaluate(() => window.datum.shell.close(0));
+				await until(() => rootNames(page), (names) => names.join() === [...FIRST, 'tail'].join());
+				for (const _ of FIRST) await page.evaluate(() => window.datum.shell.close(0));
 				assert.deepEqual(await rootNames(page), ['tail']);
 				await page.locator('.root-bar button.gear').click();
 				await page.getByRole('menuitem', { name: 'Reset default layouts', exact: true }).click();
 				const dialog = page.locator('dialog.confirm');
 				await dialog.getByRole('button', { name: 'reset', exact: true }).click();
 				await dialog.waitFor({ state: 'detached' });
-				await until(() => rootNames(page), (names) => names.length === 1 && names[0] === want);
+				await until(() => rootNames(page), (names) => names.join() === FIRST.join());
 			}, device);
 	});
 

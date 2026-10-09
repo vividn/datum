@@ -204,9 +204,11 @@ describe('Reset default layouts', () => {
 			await chooseSettings(page, RESET);
 			await answer(page, 'reset');
 
-			// The root's tabs are the shipped set: the one tab a fresh
-			// install shows.
-			await until(() => rootNames(page), (names) => names.join() === 'main');
+			// The root's tabs are the shipped set: the three a fresh install
+			// shows (da-u7vz8). `main` is no longer among them, so it is
+			// opened again to be read.
+			await until(() => rootNames(page), (names) => names.join() === 'welcome,track,collect');
+			await page.evaluate(() => window.datum.shell.open('main'));
 
 			// And the built-in is the tree it shipped with — the same tree,
 			// through the same lens, that this app started on.
@@ -226,10 +228,12 @@ describe('Reset default layouts', () => {
 				(await layouts(page, 'listLayouts')).map((l) => `${l.name} ${l.source}`),
 				['mine user', 'focus-day kit:focus']
 			);
-			// (`main` is the one built-in the chooser lists as a LAYOUT: the
-			// others are each one widget, and are listed among the widgets.)
+			// (`main` and `collect` are the built-ins the chooser lists as
+			// LAYOUTS: the others are each one widget, and are listed among
+			// the widgets.)
 			assert.deepEqual(await layoutOffers(page), [
 				{ name: 'main', source: 'builtin' },
+				{ name: 'collect', source: 'builtin' },
 				{ name: 'mine', source: 'user' },
 				{ name: 'focus-day', source: 'kit:focus' }
 			]);

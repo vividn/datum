@@ -313,11 +313,13 @@ describe('the draft', () => {
 	test('with localStorage blocked there is no draft, and no error', async () => {
 		await withApp(
 			async (app) => {
+				// Nothing remembers a visit here, so this is a first one
+				// (da-u7vz8): on `welcome`, whose layout saves like any.
 				await controlsReady(app);
 				assert.equal(await isModified(app), false);
 				await chooseRoot(app.page, 'Save layout');
 				await controlsReady(app);
-				assert.equal(await layouts(app, 'loadLayout', 'main').then((l) => l.name), 'main');
+				assert.equal(await layouts(app, 'loadLayout', 'welcome').then((l) => l.name), 'welcome');
 				assert.equal(await app.page.locator('.root-bar .error').count(), 0);
 				assert.deepEqual(app.errors, []);
 			},
