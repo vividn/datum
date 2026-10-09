@@ -2,7 +2,8 @@
 //!
 //! Every case here spawns the actual `datum` binary and reads its stdout /
 //! exit code. A conflict itself takes two copies and a sync, which
-//! `sync_ops.rs` drives; here is what the command does around it.
+//! `sync_ops.rs` drives; here is what the command does around it, and how
+//! `resolve` finds its entry, on the conflicts `debug conflicts` makes.
 //!
 //! Scope note: `conflicts` lists what the sync fold leaves contested in
 //! the entries' `conflicts` column, not the integrity queue. da-z46t
@@ -41,6 +42,9 @@ impl Env {
         let out = Command::new(env!("CARGO_BIN_EXE_datum"))
             .env("DATUM_DB", &self.path)
             .env("NO_COLOR", "1")
+            // CI sets RUST_BACKTRACE, which puts a stack trace under an error.
+            .env_remove("RUST_BACKTRACE")
+            .env_remove("RUST_LIB_BACKTRACE")
             .args(args)
             .output()
             .expect("spawn datum");
@@ -62,6 +66,37 @@ impl Env {
             .expect("double_open filed")
             .hid
             .clone()
+    }
+
+    /// `debug conflicts 2`, then the short hids `conflicts` lists them by:
+    /// the two live entries', and the deleted one's. None is a whole hid.
+    fn debug_conflicts(&self) -> (Vec<String>, String) {
+        assert!(self.run(&["debug", "conflicts", "2"]).0);
+        let (_, list) = self.run(&["conflicts"]);
+        let (deleted, live): (Vec<&str>, Vec<&str>) = list
+            .lines()
+            .filter(|l| l.contains("  debug:"))
+            .partition(|l| l.ends_with("(deleted)"));
+        let short = |l: &&str| l.split_whitespace().next().unwrap().to_string();
+        let (live, deleted): (Vec<_>, Vec<_>) = (
+            live.iter().map(short).collect(),
+            deleted.iter().map(short).collect(),
+        );
+        assert_eq!((live.len(), deleted.len()), (2, 1), "{list}");
+        let db = self.db();
+        for hid in live.iter().chain(&deleted) {
+            assert!(db.get_entry_including_deleted(hid).is_err(), "{hid}");
+        }
+        (live, deleted[0].clone())
+    }
+
+    /// The header lines of `conflicts`: one an entry with conflicts.
+    fn conflicted(&self) -> Vec<String> {
+        let (_, list) = self.run(&["conflicts"]);
+        list.lines()
+            .filter(|l| l.contains("  debug:"))
+            .map(str::to_string)
+            .collect()
     }
 }
 
@@ -103,6 +138,46 @@ fn resolve_refuses_an_entry_with_no_conflicts() {
     let (ok, out) = env.run(&["conflicts", "resolve", &hid]);
     assert!(!ok, "nothing to resolve, and nothing may be written: {out}");
     assert!(out.contains("has no conflicts"), "{out}");
+}
+
+#[test]
+fn resolve_takes_the_short_hid_tail_prints() {
+    // da-q4x3c: an exact-hid lookup refused the hid every listing prints.
+    let env = Env::new();
+    let (live, _) = env.debug_conflicts();
+    let (_, tail) = env.run(&["tail"]);
+    assert!(tail.contains(&live[0]), "{tail}");
+
+    let (ok, out) = env.run(&["conflicts", "resolve", &live[0]]);
+    assert!(ok, "{out}");
+    assert!(out.ends_with(&format!("({})\n", live[0])), "{out}");
+    let left = env.conflicted();
+    assert_eq!(left.len(), 2, "{left:?}");
+    assert!(!left.iter().any(|l| l.starts_with(&live[0])), "{left:?}");
+}
+
+#[test]
+fn resolve_takes_the_short_hid_of_a_deleted_entry() {
+    // A delete can be one side of a conflict, and `tail` never shows it.
+    let env = Env::new();
+    let (_, deleted) = env.debug_conflicts();
+    let (ok, out) = env.run(&["conflicts", "resolve", &deleted]);
+    assert!(ok, "{out}");
+    assert!(out.ends_with(&format!("({deleted})\n")), "{out}");
+    let left = env.conflicted();
+    assert_eq!(left.len(), 2, "{left:?}");
+    assert!(!left.iter().any(|l| l.contains("(deleted)")), "{left:?}");
+}
+
+#[test]
+fn resolve_refuses_an_ambiguous_prefix_as_update_does() {
+    let env = Env::new();
+    env.debug_conflicts();
+    let (ok, out) = env.run(&["conflicts", "resolve", "debug:"]);
+    assert!(!ok, "{out}");
+    assert!(out.contains("'debug:' is ambiguous"), "{out}");
+    assert_eq!(out, env.run(&["update", "debug:", "note=y"]).1);
+    assert_eq!(env.conflicted().len(), 3, "nothing was resolved");
 }
 
 #[test]

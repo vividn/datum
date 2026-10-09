@@ -14,6 +14,7 @@ use datum_core::db::Db;
 use serde_json::{Map, Value};
 
 use crate::args::{ConflictsCommand, ConflictsResolveArgs};
+use crate::commands::helpers::resolve_prefix_or_tombstone;
 
 pub fn conflicts(cmd: ConflictsCommand, db: &Db) -> Result<()> {
     match cmd {
@@ -60,7 +61,7 @@ fn list(db: &Db) -> Result<()> {
 }
 
 fn resolve(args: ConflictsResolveArgs, db: &Db) -> Result<()> {
-    let e = db.get_entry_including_deleted(&args.hid)?;
+    let e = resolve_prefix_or_tombstone(db, &args.hid)?;
     let picks: Map<String, Value> = args
         .picks
         .into_iter()
