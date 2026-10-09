@@ -23,7 +23,9 @@
 //!   same row. An op is applied from its `effect`, never by re-running `raw`.
 //!   Two entries with one slug are one entry ([`merge_rows`], da-04glw):
 //!   the earlier-created shows both, the later wins a key both have, and the
-//!   later stays superseded, the record of what was merged in.
+//!   later stays superseded, the record of what was merged in. A backup's
+//!   entry that `db restore --merge` finds a live one in the place of is
+//!   such a second entry ([`restore`], da-4ldvb).
 //! - **Conflict.** Two ops are concurrent when neither's `deps` covers the
 //!   other. Of the ops that set a key, those no later one setting it saw
 //!   stand; when they give it different values, the entry's `conflicts`
@@ -59,10 +61,10 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
-use crate::entry::Entry;
+use crate::entry::{new_hid, Entry};
 use crate::error::{DatumError, Result};
 use crate::history::{self, ChangeKind};
-use crate::ids::Hid;
+use crate::ids::{Hid, Slug};
 
 use super::insert::{apply_entry_state, try_insert};
 use super::row_mapper::row_to_entry;
@@ -548,9 +550,11 @@ impl Op {
         self.endpoint == other.endpoint && self.seq == other.seq
     }
 
-    /// Had the copy that made this op seen `other`?
+    /// Had the copy that made this op seen `other`? A `restore` is a
+    /// backup's entry, signed by the copy it is restored on ([`restore`]):
+    /// it saw what its `deps` name, and none of that copy's ops since.
     fn saw(&self, other: &Op) -> bool {
-        self.endpoint == other.endpoint && self.seq > other.seq
+        self.kind != "restore" && self.endpoint == other.endpoint && self.seq > other.seq
             || self
                 .deps
                 .get(&other.endpoint)
@@ -788,7 +792,7 @@ pub(super) fn emit(
     // op does on every other copy. An edit of the entry shown needs nothing:
     // its row was the merge, and is the merge with the edit.
     if let Some(s) = &post.superseded_by {
-        rederive(conn, s.as_str())?;
+        rederive(conn, s.as_str(), change)?;
     }
     // An edit of the entry shown saw every op of it, so it can settle a
     // conflict and make none: only one that has some is looked at again.
@@ -976,7 +980,9 @@ fn conflicts_of(conn: &Connection, e: &Entry) -> Result<Option<Value>> {
 fn about(conn: &Connection, e: &Entry) -> Result<Vec<Op>> {
     let mut ops = ops_of(conn, e.hid.as_str())?;
     let behind: Vec<String> = conn
-        .prepare_cached("SELECT hid FROM entries WHERE superseded_by = ?1")?
+        .prepare_cached(&format!(
+            "SELECT hid FROM entries e WHERE superseded_by = ?1 AND NOT ({TAKEN_BACK})"
+        ))?
         .query_map(params![e.hid], |r| r.get(0))?
         .collect::<rusqlite::Result<_>>()?;
     for hid in behind {
@@ -986,11 +992,13 @@ fn about(conn: &Connection, e: &Entry) -> Result<Vec<Op>> {
     Ok(ops)
 }
 
-/// The device an endpoint is: its label in the chain, or the head of its id.
-fn device(chain: &Chain, endpoint: &str) -> String {
-    match chain.member(endpoint) {
+/// The device an op is from: its endpoint's label in the chain, or the head
+/// of its id — and for a `restore`, the backup, whichever copy read it in.
+fn device(chain: &Chain, op: &Op) -> String {
+    match chain.member(&op.endpoint) {
+        _ if op.kind == "restore" => "backup".into(),
         Some(m) => m.label.clone(),
-        None => endpoint.chars().take(8).collect(),
+        None => op.endpoint.chars().take(8).collect(),
     }
 }
 
@@ -998,7 +1006,7 @@ fn device(chain: &Chain, endpoint: &str) -> String {
 fn side(chain: &Chain, (op, value): &(&Op, Value)) -> Value {
     json!({
         "value": value,
-        "device": device(chain, &op.endpoint),
+        "device": device(chain, op),
         "hlc": op.hlc,
         "op": format!("{}/{}", op.endpoint, op.seq),
     })
@@ -1121,18 +1129,32 @@ fn own(conn: &Connection, e: &Entry) -> Result<Entry> {
     Ok(out)
 }
 
+/// Was `hid`'s row brought in by `db restore --merge` ([`restore`])?
+fn restored(conn: &Connection, hid: &Hid) -> Result<bool> {
+    Ok(conn
+        .prepare_cached("SELECT 1 FROM ops WHERE hid = ?1 AND kind = 'restore' AND applied = 1")?
+        .exists(params![hid])?)
+}
+
+/// A restored row that `undo` took back out, a tombstone, as a SQL
+/// condition on `entries e`: no part of the entry it went under, nor of its
+/// conflicts, so that entry folds to what it was before the restore, and
+/// `redo` brings the row back in.
+const TAKEN_BACK: &str = "e.deleted_at IS NOT NULL AND EXISTS (SELECT 1 FROM ops r
+    WHERE r.hid = e.hid AND r.kind = 'restore' AND r.applied = 1)";
+
 /// The rows merged into `s`: superseded by it, and holding or having held
 /// a slug `s` holds or held, so the merge follows a retime of either
 /// (da-yose2). A row superseded under another slug alone — one state at one
 /// instant, which an id template declared two events — is not merged.
 fn merged_into(conn: &Connection, s: &Entry) -> Result<Vec<Entry>> {
-    conn.prepare_cached(
+    conn.prepare_cached(&format!(
         "WITH held(slug) AS (SELECT ?2 UNION SELECT slug FROM ops WHERE hid = ?1 AND applied = 1)
-         SELECT * FROM entries e WHERE superseded_by = ?1
+         SELECT * FROM entries e WHERE superseded_by = ?1 AND NOT ({TAKEN_BACK})
            AND (slug IN (SELECT slug FROM held)
              OR EXISTS (SELECT 1 FROM ops o WHERE o.hid = e.hid AND o.applied = 1
                           AND o.slug IN (SELECT slug FROM held)))",
-    )?
+    ))?
     .query_map(params![s.hid, s.slug], row_to_entry)?
     .collect::<rusqlite::Result<_>>()
     .map_err(DatumError::Db)
@@ -1143,16 +1165,9 @@ fn merged_into(conn: &Connection, s: &Entry) -> Result<Vec<Entry>> {
 /// have, the later-created row's value — then every edit of any of them in
 /// fold order, so an edit addressed to either lands. Identity stays `s`'s.
 /// It is derived from the ops alone, the same on every copy, and sent as
-/// none. `outside`, a row from no copy's ops — a backup's, which `db restore
-/// --merge` merges into the live entry (da-0v1zt) — goes in as a create
-/// whose ops are not read: its hid may be a tombstone's here.
-fn merge_rows(
-    conn: &Connection,
-    s: &Entry,
-    members: &[Entry],
-    outside: Option<&Entry>,
-) -> Result<Entry> {
-    merge_from(s, members, outside, |hid| ops_of(conn, hid))
+/// none.
+fn merge_rows(conn: &Connection, s: &Entry, members: &[Entry]) -> Result<Entry> {
+    merge_from(s, members, |hid| ops_of(conn, hid))
 }
 
 /// [`merge_rows`] over the ops `ops_of` gives each row: all it has applied,
@@ -1160,23 +1175,19 @@ fn merge_rows(
 fn merge_from(
     s: &Entry,
     members: &[Entry],
-    outside: Option<&Entry>,
     ops_of: impl Fn(&str) -> Result<Vec<Op>>,
 ) -> Result<Entry> {
-    if members.is_empty() && outside.is_none() {
+    if members.is_empty() {
         return Ok(s.clone());
     }
-    let mut rows: Vec<&Entry> = std::iter::once(s).chain(members).chain(outside).collect();
+    let mut rows: Vec<&Entry> = std::iter::once(s).chain(members).collect();
     rows.sort_by(|a, b| (&a.create_time, &a.hid.0).cmp(&(&b.create_time, &b.hid.0)));
     // `s` is not always the first created, so its own create is the base —
     // the bookkeeping — and every create's content, its own included, goes
     // over it in creation order.
     let (mut base, mut creates, mut edits) = (None, Vec::new(), Vec::new());
     for e in rows {
-        let ops = match outside {
-            Some(o) if std::ptr::eq(e, o) => Vec::new(),
-            _ => ops_of(e.hid.as_str())?,
-        };
+        let ops = ops_of(e.hid.as_str())?;
         let n = ops
             .iter()
             .take_while(|o| o.effect.get("create").is_some())
@@ -1207,66 +1218,97 @@ fn merge_from(
 }
 
 /// Rewrite `hid`'s row to what it shows: its own fold when superseded, and
-/// otherwise with what is merged into it.
-fn rederive(conn: &Connection, hid: &str) -> Result<()> {
+/// otherwise with what is merged into it. `kind` is what moved it: a sync's
+/// merge, or the command whose write it follows from.
+fn rederive(conn: &Connection, hid: &str, kind: ChangeKind) -> Result<()> {
     let Some(pre) = fetch_by_hid(conn, hid)? else {
         return Ok(());
     };
     let own = own(conn, &pre)?;
     let next = match pre.superseded_by {
         Some(_) => own,
-        None => merge_rows(conn, &own, &merged_into(conn, &own)?, None)?,
+        None => merge_rows(conn, &own, &merged_into(conn, &own)?)?,
     };
     if row(&pre) == row(&next) {
         return Ok(());
     }
-    history::record(conn, &pre, ChangeKind::SyncMerge)?;
+    history::record(conn, &pre, kind)?;
     apply_entry_state(conn, &next)
 }
 
-/// Merge `incoming`, a backup's entry, into `live`, the live entry holding
-/// its slug or its state's instant (`db restore --merge`, da-0v1zt), by
-/// the rule a sync merges two rows with: under one slug `live` shows
-/// [`merge_rows`] with `incoming` in it; under one instant alone `live` is
-/// the one kept. Either way `incoming` is not written. The change is the
-/// user's — a `user_edit`, so `undo` reverts it. Whether anything changed,
-/// or `incoming` says something `live` now does not.
-pub(super) fn merge_in(conn: &Connection, live: &Entry, incoming: &Entry) -> Result<bool> {
-    let mut shown = match live.slug == incoming.slug {
-        true => merge_rows(
-            conn,
-            &own(conn, live)?,
-            &merged_into(conn, live)?,
-            Some(incoming),
-        )?,
-        false => live.clone(),
-    };
-    let changed = content(&row(&shown)) != content(&row(live));
-    if changed {
-        shown.modify_time = Utc::now();
-        history::record(conn, live, ChangeKind::UserEdit)?;
-        apply_entry_state(conn, &shown)?;
-        emit(conn, Some(live), &live.hid, ChangeKind::UserEdit)?;
+/// Bring `incoming` in as a sync from a copy frozen at its backup would
+/// (`db restore --merge`, da-4ldvb): a backup's entry whose slug or state's
+/// instant a live entry holds gets a row of its own and a `restore` op that
+/// saw none of that entry's ops ([`Op::saw`]). What the entry shows and its
+/// `conflicts` are then the fold's ([`write_merged`]), the same on every
+/// copy the op reaches. The row's hid is new, so the op's `deps` are empty
+/// and its only create is the restore on every copy, and the changes are
+/// the command's own, so one `undo` takes the row back out
+/// ([`TAKEN_BACK`]). The slug of the entry it shows in; none when that
+/// entry's own row, or a live one under it, has its content `hash` already.
+pub(super) fn restore(conn: &Connection, incoming: &Entry, hash: &str) -> Result<Option<Slug>> {
+    let ep = endpoint(conn)?;
+    if is_reader(conn, &ep)? {
+        return Err(DatumError::Other(READ_ONLY.into()));
     }
-    Ok(changed || content(&row(incoming)) != content(&row(&shown)))
+    let mut row = incoming.clone();
+    row.hid = new_hid();
+    let live = blockers(conn, &row)?;
+    let mut under = conn.prepare_cached(
+        "SELECT 1 FROM entries
+         WHERE superseded_by = ?1 AND deleted_at IS NULL AND content_hash = ?2",
+    )?;
+    for b in &live {
+        if under.exists(params![b.hid, hash])? || own(conn, b)?.content_hash == hash {
+            return Ok(None);
+        }
+    }
+    // An entry older than its ops is signed as it stands first: a baseline
+    // this copy signed after the restore would have seen it.
+    for b in &live {
+        if !has_ops(conn, &b.hid)? {
+            push_entry(conn, &ep, b, "baseline", create_effect(b))?;
+        }
+    }
+    push_entry(conn, &ep, &row, "restore", create_effect(&row))?;
+    refold(conn, row.hid.as_str(), ChangeKind::UserEdit)?;
+    conn.query_row(
+        "SELECT slug FROM entries
+         WHERE hid = (SELECT COALESCE(superseded_by, hid) FROM entries WHERE hid = ?1)",
+        params![row.hid],
+        |r| r.get(0),
+    )
+    .optional()
+    .map_err(DatumError::Db)
 }
 
 /// Write the row an entry's ops fold to. Two distinct entries claiming one
 /// identity decide it from the rows alone, so every copy reaches the same
 /// answer: the earlier-created keeps it and the other is superseded
-/// (`superseded_by`), and what the two gave different values shows in the
-/// survivor's `conflicts`. Under one slug the two are one entry
+/// (`superseded_by`) — a row a restore brought in ([`restored`]) keeping it
+/// from none that was not — and what the two gave different values shows in
+/// the survivor's `conflicts`. Under one slug the two are one entry
 /// ([`merge_rows`]); under one live state-bearing instant alone, two.
-fn write_merged(conn: &Connection, pre: Option<&Entry>, mut next: Entry) -> Result<()> {
+/// `kind` is what the rows it moves record: a sync's merge, or the command
+/// ([`restore`]) whose write this is, which creates the row it inserts.
+fn write_merged(
+    conn: &Connection,
+    pre: Option<&Entry>,
+    mut next: Entry,
+    kind: ChangeKind,
+) -> Result<()> {
     next.superseded_by = pre.and_then(|p| p.superseded_by.clone());
     let mut demoted = Vec::new();
     if next.superseded_by.is_none() {
         // What a row loses its identity with goes over to the row that
         // took it, so a pair's rows point at one survivor on every copy.
         let repoint = "UPDATE entries SET superseded_by = ?2 WHERE hid = ?1 OR superseded_by = ?1";
+        let rank = |e: &Entry| {
+            Ok::<_, DatumError>((restored(conn, &e.hid)?, e.create_time, e.hid.0.clone()))
+        };
         for b in blockers(conn, &next)? {
-            if (&next.create_time, &next.hid.0) < (&b.create_time, &b.hid.0) {
-                history::record(conn, &b, ChangeKind::SyncMerge)?;
+            if rank(&next)? < rank(&b)? {
+                history::record(conn, &b, kind)?;
                 conn.execute(repoint, params![b.hid, next.hid])?;
                 demoted.push(b.hid.0);
             } else if next.superseded_by.is_none() {
@@ -1281,7 +1323,7 @@ fn write_merged(conn: &Connection, pre: Option<&Entry>, mut next: Entry) -> Resu
         }
     }
     if next.superseded_by.is_none() {
-        next = merge_rows(conn, &next, &merged_into(conn, &next)?, None)?;
+        next = merge_rows(conn, &next, &merged_into(conn, &next)?)?;
     }
     match pre {
         Some(pre) => {
@@ -1293,14 +1335,18 @@ fn write_merged(conn: &Connection, pre: Option<&Entry>, mut next: Entry) -> Resu
             }
             // Bookkeeping alone is no change of content, and no history.
             if row(pre) != row(&next) {
-                history::record(conn, pre, ChangeKind::SyncMerge)?;
+                history::record(conn, pre, kind)?;
                 apply_entry_state(conn, &next)?;
             }
         }
         None => {
             try_insert(conn, &next.slug, &next.hid, &next)?;
             if let Some(stored) = fetch_by_hid(conn, next.hid.as_str())? {
-                history::record(conn, &stored, ChangeKind::SyncMerge)?;
+                let made = match kind {
+                    ChangeKind::SyncMerge => kind,
+                    _ => ChangeKind::Create,
+                };
+                history::record(conn, &stored, made)?;
             }
         }
     }
@@ -1310,28 +1356,33 @@ fn write_merged(conn: &Connection, pre: Option<&Entry>, mut next: Entry) -> Resu
         .iter()
         .chain(next.superseded_by.as_ref().map(|h| &h.0))
     {
-        rederive(conn, hid)?;
+        rederive(conn, hid, kind)?;
     }
     Ok(())
 }
 
-/// Apply one op that is ready: refold its entry and write the result; 1 if
-/// that gave it, or the entry it is merged into, a conflict it had not had.
+/// Apply one op that is ready: refold its entry.
 fn apply_one(conn: &Connection, x: &Op) -> Result<usize> {
     conn.execute(
         "UPDATE ops SET applied = 1 WHERE endpoint = ?1 AND seq = ?2",
         params![x.endpoint, x.seq],
     )?;
-    let pre = fetch_by_hid(conn, &x.hid)?;
-    let ops = ops_of(conn, &x.hid)?;
+    refold(conn, &x.hid, ChangeKind::SyncMerge)
+}
+
+/// Write the row `hid`'s applied ops fold to, as `kind`; 1 if that gave it,
+/// or the entry it is merged into, a conflict it had not had.
+fn refold(conn: &Connection, hid: &str, kind: ChangeKind) -> Result<usize> {
+    let pre = fetch_by_hid(conn, hid)?;
+    let ops = ops_of(conn, hid)?;
     let base = pre
         .as_ref()
         .filter(|_| ops.first().is_none_or(|o| o.effect.get("create").is_none()));
     let Some(merged) = fold(&ops, base) else {
         return Ok(0);
     };
-    write_merged(conn, pre.as_ref(), entry_from(merged)?)?;
-    Ok(refresh_conflicts(conn, &x.hid)?.into())
+    write_merged(conn, pre.as_ref(), entry_from(merged)?, kind)?;
+    Ok(refresh_conflicts(conn, hid)?.into())
 }
 
 /// Apply every held op that is ready, records first, until none is; an
@@ -1511,7 +1562,7 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
         let pre = fetch_by_hid(conn, &hid)?;
         touched.push(hid.clone());
         match fold(&ops_of(conn, &hid)?, None) {
-            Some(r) => write_merged(conn, pre.as_ref(), entry_from(r)?)?,
+            Some(r) => write_merged(conn, pre.as_ref(), entry_from(r)?, ChangeKind::SyncMerge)?,
             None => {
                 let Some(pre) = pre else { continue };
                 history::record(conn, &pre, ChangeKind::SyncMerge)?;
@@ -1528,7 +1579,7 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
                     touched.push(f.hid.0.clone());
                     f.superseded_by = None;
                     let own = own(conn, &f)?;
-                    write_merged(conn, Some(&f), own)?;
+                    write_merged(conn, Some(&f), own, ChangeKind::SyncMerge)?;
                     conn.execute(
                         "UPDATE entries SET superseded_by = NULL WHERE hid = ?1 AND superseded_by = ?2",
                         params![f.hid, hid],
@@ -1536,7 +1587,7 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
                 }
                 if let Some(kept) = &pre.superseded_by {
                     touched.push(kept.0.clone());
-                    rederive(conn, kept.as_str())?;
+                    rederive(conn, kept.as_str(), ChangeKind::SyncMerge)?;
                 }
             }
         }

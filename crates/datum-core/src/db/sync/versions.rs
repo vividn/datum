@@ -108,7 +108,7 @@ fn versions(conn: &Connection, e: &Entry) -> Result<Vec<Version>> {
             let took: BTreeSet<String> = sides
                 .iter()
                 .filter(|(_, v)| Some(v) == value.as_ref())
-                .map(|(o, _)| device(&chain, &o.endpoint))
+                .map(|(o, _)| device(&chain, o))
                 .collect();
             join.insert(k.clone(), json!({ "value": value, "took": took }));
         }
@@ -127,7 +127,7 @@ fn versions(conn: &Connection, e: &Entry) -> Result<Vec<Version>> {
             version: i as u32 + 1,
             hid: op.hid.clone(),
             op: id(op),
-            device: device(&chain, &op.endpoint),
+            device: device(&chain, op),
             hlc: op.hlc.clone(),
             time: hlc_time(&op.hlc).to_string(),
             kind: op.kind.clone(),
@@ -160,7 +160,7 @@ fn entry_at(conn: &Connection, e: &Entry, version: u32) -> Result<Option<Entry>>
         .iter()
         .filter_map(|m| at(m.hid.as_str()).transpose())
         .collect::<Result<_>>()?;
-    merge_from(&own, &members, None, |hid| Ok(of(hid))).map(Some)
+    merge_from(&own, &members, |hid| Ok(of(hid))).map(Some)
 }
 
 impl Db {

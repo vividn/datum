@@ -154,7 +154,15 @@ every copy's (da-07594): `resolve` takes `KEY=a|b|<value>` picks, and for the
 keys not picked one of `--use-a | --use-b | --prefer-a | --prefer-b | --merge`
 (`datum_parse::combine` over A and B, `deleted` a key like any other); with no
 strategy named they keep what the entry shows, so a bare `resolve` settles and
-changes no data. An entry's
+changes no data. `db restore --merge` is a sync from a copy frozen at the
+backup (da-4ldvb): a backup's entry whose slug or state's instant a live one
+holds gets a row with a hid of its own and a `restore` op, the one kind that
+saw only what its `deps` name and not its endpoint's earlier ops, so the fold
+merges the two and derives their conflict, its side's device `backup`. Two
+rules are a restored row's alone: it takes the identity from no row that was
+not restored, so the live entry keeps its hid, and as a tombstone it is no
+part of the entry it went under — which is `undo` of the restore, exactly,
+on every copy. An entry's
 history is read from the same ops (`db/sync/versions.rs`, da-s4erq): a version
 per op in fold order, a `fork` where a key became contested and a `join` where
 an edit settled it, so `datum history`, `why --full` and `undo --to-version`

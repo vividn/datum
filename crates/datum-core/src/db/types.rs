@@ -309,7 +309,7 @@ pub enum InsertOutcome {
     Updated { slug: Slug },
     /// Collision resolved by merging `extra_data` into the existing row —
     /// or, in a `db restore --merge`, the entry into the live one holding
-    /// its identity, as a sync merges two (da-0v1zt).
+    /// its identity, as a sync merges two (da-4ldvb).
     Merged { slug: Slug },
     /// Collision resolved by inserting a new row under a new slug. The
     /// `new_hid` reflects the actual stored hid for the freshly-inserted row.

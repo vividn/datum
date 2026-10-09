@@ -309,11 +309,11 @@ impl Db {
 
     /// The write behind `db restore --merge` (da-0v1zt):
     /// [`Self::insert_entries_batch`], except an entry whose slug or live
-    /// state-bearing `(field, occur_time)` a different live entry holds is
-    /// merged into that entry by the rule a sync merges two with
-    /// (`sync::merge_in`) — [`InsertOutcome::Merged`] — where the batch
-    /// would abort. With `commit` false the transaction is rolled back, so
-    /// a dry run's outcomes are the run's.
+    /// state-bearing `(field, occur_time)` a different live entry holds
+    /// comes in as a sync from a copy frozen at the backup would bring it
+    /// (`sync::restore`, da-4ldvb) — [`InsertOutcome::Merged`] — where the
+    /// batch would abort. With `commit` false the transaction is rolled
+    /// back, so a dry run's outcomes are the run's.
     pub fn merge_entries(
         &self,
         entries: &[Entry],
@@ -1054,10 +1054,9 @@ fn write_entry_in_tx(
                     false => None,
                 };
                 if let Some(live) = live {
-                    let slug = live.slug.clone();
-                    let outcome = match super::sync::merge_in(conn, &live, entry)? {
-                        true => InsertOutcome::Merged { slug },
-                        false => InsertOutcome::Ignored { slug },
+                    let outcome = match super::sync::restore(conn, entry, &dedup_hash)? {
+                        Some(slug) => InsertOutcome::Merged { slug },
+                        None => InsertOutcome::Ignored { slug: live.slug },
                     };
                     return Ok((outcome, None));
                 }

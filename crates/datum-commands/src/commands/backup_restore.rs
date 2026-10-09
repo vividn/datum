@@ -10,8 +10,10 @@
 //! exactly the backup's, and the rest are tombstoned — ordinary deletions,
 //! so they sync and can be seen. `--merge` only adds, content-hash
 //! idempotent; an entry edited since the backup keeps its live version, and
-//! one whose slug or state's instant a different live entry holds is merged
-//! into it as a sync merges two (da-0v1zt). Either way it gates on the `schema_version` recorded in the
+//! one whose slug or state's instant a different live entry holds comes in
+//! as a sync from a copy frozen at the backup would bring it (da-4ldvb): a
+//! row and an op of its own under the live entry, merged by the fold, what
+//! the two give differently in the entry's `conflicts`. Either way it gates on the `schema_version` recorded in the
 //! header and commits in a single transaction — any failure rolls back to
 //! "nothing restored". See `RestoreReport` for the projected/committed
 //! outcome contract.
@@ -311,10 +313,10 @@ pub(crate) struct RestoreReport {
     pub header_source_db: Option<String>,
     pub header_entry_count: Option<usize>,
     pub warnings: Vec<String>,
-    /// Slugs of the live entries a `--merge` merged a backup entry into,
-    /// one holding its slug or its state's instant (da-0v1zt), as a sync
-    /// merges two; each pair is in `datum conflicts`. Always empty for a
-    /// replace.
+    /// Slugs of the entries a `--merge` merged a backup entry with, one
+    /// holding its slug or its state's instant, as a sync merges two
+    /// (da-4ldvb): what the pair gives differently is in `datum conflicts`.
+    /// Always empty for a replace.
     pub merged: Vec<String>,
     /// True if the counts are projections from a dry-run, not committed writes.
     pub dry_run: bool,
@@ -484,7 +486,7 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
     Ok(())
 }
 
-/// Name each live entry a merge reconciled a backup entry with (da-0v1zt):
+/// Name each live entry a merge reconciled a backup entry with (da-4ldvb):
 /// merged into it under one slug, kept over it under one state instant.
 fn print_merged(slugs: &[String], verb: &str) {
     if slugs.is_empty() {
@@ -798,7 +800,7 @@ fn restore_from_reader<R: std::io::BufRead>(
         // Same per-row semantics as insert_entry_with_strategy (history rows,
         // conflict strategy dispatch), one commit for the whole batch — or
         // none, for a dry run — except an entry a different live one holds
-        // the identity of is merged into it (da-0v1zt). Tallies come from
+        // the identity of is merged into it (da-4ldvb). Tallies come from
         // the outcomes, so the entry-count integrity check below reflects
         // what actually landed.
         let mut inserting = Progress::new("restore: inserting", Some(pending.len()));
