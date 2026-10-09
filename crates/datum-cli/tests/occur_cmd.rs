@@ -709,6 +709,58 @@ fn relative_time_beside_a_named_day_needs_a_clock() {
     assert!(logged().iter().any(|e| at(e).starts_with("2026-09-30")));
 }
 
+/// da-6knvw: `flag` and `tail` read their time flags through the composer
+/// `occur` does. Each filled a builder by hand, `-y` and `-q` before `-d`, so
+/// `flag x -y -d 2026-10-05` landed on the 5th where `occur` lands on the 4th.
+/// On a day alone a flag keeps its clock and `tail` shows the days either
+/// side, so there it is the day that is `occur`'s.
+#[test]
+fn flag_and_tail_compose_their_time_flags_as_occur_does() {
+    use datum_cli::args::{parse_invocation_with_db, Command, Invocation};
+
+    // `occur`'s time, `flag`'s, and `tail`'s window, for the same flags.
+    let all = |flags: &[&str]| {
+        let db = fresh_db();
+        run_cli(&[&["occur", "o"], flags].concat(), &db).expect("occur");
+        run_cli(&[&["flag", "f"], flags].concat(), &db).expect("flag");
+        let at = |field| {
+            let e = datum_core::test_util::logged_entries(&db, field).remove(0);
+            e.occur_time.unwrap()
+        };
+        let argv = [&["datum", "tail"], flags].concat();
+        let argv = argv.iter().map(|s| s.to_string()).collect();
+        let tail = match parse_invocation_with_db(argv, &db).expect("tail") {
+            Invocation::Single(cli) => match cli.command {
+                Command::Tail(args) => {
+                    datum_commands::commands::tail::tail_params(&args).expect("tail")
+                }
+                other => panic!("not tail: {other:?}"),
+            },
+            Invocation::Multi { .. } => panic!("not one command"),
+        };
+        (at("o"), at("f"), tail)
+    };
+
+    for flags in [
+        &["-y", "-d", "2026-10-05", "-t", "1830"][..],
+        &["-q", "-d", "2010-09-01", "-y", "-t", "0915"],
+    ] {
+        let (occur, flag, tail) = all(flags);
+        assert_eq!(flag.utc, occur.utc, "flag {flags:?}");
+        assert_eq!(tail.end_utc, Some(occur.utc), "tail {flags:?}");
+    }
+
+    for flags in [&["-y", "-d", "2026-10-05"][..], &["-d", "2026-10-05", "-y"]] {
+        let (occur, flag, tail) = all(flags);
+        let day = occur.local_time().date_naive();
+        assert_eq!(day.to_string(), "2026-10-04", "occur {flags:?}");
+        assert_eq!(flag.local_time().date_naive(), day, "flag {flags:?}");
+        let on = |utc: Option<chrono::DateTime<Utc>>| Zone::host().local_naive(utc.unwrap()).date();
+        assert_eq!(on(tail.start_utc), day - Duration::days(1), "{flags:?}");
+        assert_eq!(on(tail.end_utc), day + Duration::days(1), "{flags:?}");
+    }
+}
+
 /// da-c312 (vividn's rule, 2026-09-14 — not datum parity): a token with an
 /// empty key is raw data, `=` included, never a `""` key.
 #[test]

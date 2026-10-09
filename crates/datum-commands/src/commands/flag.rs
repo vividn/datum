@@ -17,7 +17,7 @@ use datum_core::{
     db::Db,
     dur::Dur,
     entry::{Entry, Verb},
-    time::{parse_date, parse_time, TimeBuilder, TimeCtx},
+    time::TimeCtx,
 };
 use serde_json::Value as JsonValue;
 
@@ -34,17 +34,9 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
     // Resolve occur_time from the standard timing flags so back-dated
     // markers land where the user pointed. Default is "now" — a bare
     // `datum flag <field>` stamps the moment of the command, same as
-    // every other logging verb.
-    let mut builder = TimeBuilder::now()
-        .with_yesterday_count(time.yesterday as i64)
-        .with_quick_count(time.quick as i64);
-    if let Some(d) = time.date.as_deref() {
-        builder = builder.with_date_arg(parse_date(d, TimeCtx::now())?);
-    }
-    for t in time.time_values() {
-        builder = builder.with_time_arg(parse_time(t, TimeCtx::now())?);
-    }
-    let occur_time = builder.shift_needs_clock()?.build();
+    // every other logging verb. A day alone (`-y`) keeps now's clock:
+    // a flag marks a moment, never a whole day.
+    let occur_time = time.builder(TimeCtx::now())?.build();
 
     // Build the extra_metadata payload. Always emit `flag: true` so
     // downstream filters can match without caring whether a comment
