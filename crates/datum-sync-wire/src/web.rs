@@ -219,9 +219,14 @@ impl Store for Cli {
         vector: Option<&Vector>,
         verify: Option<bool>,
         error: Option<&str>,
+        met: &[EndpointAddr],
     ) -> Result<()> {
         let vector = vector.map(serde_json::to_string).transpose()?;
+        let said = serde_json::to_string(met)?;
         let mut argv = vec!["sync", "record-session", peer];
+        if !met.is_empty() {
+            argv.extend(["--met", &said]);
+        }
         if let Some(v) = &vector {
             argv.extend(["--vector", v]);
         }
@@ -232,6 +237,16 @@ impl Store for Cli {
             argv.extend(["--error", e]);
         }
         self.run(&argv, None).await.map(drop)
+    }
+
+    async fn known(&self) -> Result<Vec<EndpointAddr>> {
+        let status: serde_json::Value =
+            serde_json::from_str(&self.run(&["sync", "status", "--json"], None).await?)?;
+        let members = status["members"].as_array().into_iter().flatten();
+        Ok(members
+            .filter(|m| m["revoked"] != true)
+            .filter_map(|m| serde_json::from_str(m["addr"].as_str()?).ok())
+            .collect())
     }
 }
 

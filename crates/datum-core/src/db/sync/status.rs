@@ -36,8 +36,31 @@ pub struct PeerStatus {
     pub last_verify: Option<(String, bool)>,
     pub error: Option<String>,
     pub error_at: Option<String>,
-    /// Where it was last seen (the transport's address, as JSON), if ever.
+    /// Where it was last seen, or a member said it is (the transport's
+    /// address, as JSON), if anywhere.
     pub addr: Option<String>,
+}
+
+impl PeerStatus {
+    /// What `sync` and `sync status` say of a member this copy cannot dial:
+    /// it has never met it, and no member has passed its address on yet
+    /// (da-fly3f). Its ops arrive meanwhile through the members of `all`,
+    /// the status it is one row of, that this copy does dial: a reader is
+    /// none of them, it relays nothing.
+    pub fn no_address(&self, all: &[PeerStatus]) -> Option<String> {
+        if self.state != "never" || self.addr.is_some() || self.revoked {
+            return None;
+        }
+        let via: Vec<&str> = all
+            .iter()
+            .filter(|p| p.addr.is_some() && !p.revoked && !p.reader)
+            .map(|p| p.label.as_str())
+            .collect();
+        Some(match via.is_empty() {
+            true => "no address for it yet".into(),
+            false => format!("no address for it yet: it syncs through {}", via.join(", ")),
+        })
+    }
 }
 
 /// Ops from one device held because its clock runs ahead of this copy's
@@ -223,7 +246,6 @@ impl Db {
                     },
                 )
                 .optional()?;
-            let had_session = row.is_some();
             let (last_seen, vector, verify_at, verify_match, mut error, mut error_at, addr) =
                 row.unwrap_or_default();
             let theirs: BTreeMap<String, i64> = vector
@@ -251,7 +273,8 @@ impl Db {
             let last_verify = verify_at.zip(verify_match);
             let state = match (&error, last_verify.as_ref()) {
                 (Some(_), _) => "error",
-                _ if !had_session => "never",
+                // No session yet: a row may hold only an address passed on.
+                _ if last_seen.is_none() => "never",
                 // A mismatch stands until a session says otherwise: a write
                 // since does not make it merely pending.
                 (_, Some((at, false))) => {
@@ -263,6 +286,11 @@ impl Db {
                 (_, Some((_, true))) => "synced",
                 // Nothing to send, but no verify says the copies agree.
                 (_, None) => "pending",
+            };
+            // Nothing waits for a member this copy cannot try (da-fly3f).
+            let to_send = match state == "never" && addr.is_none() {
+                true => 0,
+                false => to_send,
             };
             out.push(PeerStatus {
                 endpoint: m.endpoint.clone(),
@@ -357,4 +385,54 @@ fn upgrade(label: &str, datum: &str, schema: u32) -> String {
          (schema {CURRENT_SCHEMA_VERSION}); syncing goes on, but {how}",
         crate::build()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PeerStatus;
+
+    fn peer(label: &str, addr: bool) -> PeerStatus {
+        PeerStatus {
+            endpoint: label.into(),
+            client: None,
+            label: label.into(),
+            kind: None,
+            revoked: false,
+            purged: false,
+            reader: false,
+            filter: None,
+            state: if addr { "synced" } else { "never" },
+            to_send: 0,
+            last_seen: None,
+            last_verify: None,
+            error: None,
+            error_at: None,
+            addr: addr.then(String::new),
+        }
+    }
+
+    /// A member with no address syncs through the members this copy dials:
+    /// not a reader, which relays nothing, nor a revoked one; and with none
+    /// to name, it names none.
+    #[test]
+    fn no_address_names_only_the_members_that_relay() {
+        let c = peer("c", false);
+        let reader = PeerStatus {
+            reader: true,
+            ..peer("r", true)
+        };
+        let revoked = PeerStatus {
+            revoked: true,
+            ..peer("x", true)
+        };
+        let all = [peer("a", true), reader.clone(), revoked.clone(), c.clone()];
+        let said = c.no_address(&all);
+        assert_eq!(
+            said.as_deref(),
+            Some("no address for it yet: it syncs through a")
+        );
+        let said = c.no_address(&[reader, revoked, c.clone()]);
+        assert_eq!(said.as_deref(), Some("no address for it yet"));
+        assert_eq!(all[0].no_address(&all), None);
+    }
 }

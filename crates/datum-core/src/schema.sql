@@ -376,7 +376,9 @@ CREATE TABLE IF NOT EXISTS sync_local (
 -- Where this copy last saw the members of its sync chain (da-rugg8): an
 -- address book, granting nothing — only members are synced with (da-6177s).
 -- LOCAL, never synced. `addrs` is the iroh address the peer last gave
--- (JSON), to dial it without discovery; `announced` is unused since.
+-- (JSON), to dial it without discovery, or until this copy has seen it
+-- (`last_seen`), the one a member passed on (da-fly3f); `announced` is
+-- unused since.
 -- The last session with it (da-rcb5m, `datum sync status`): the peer's
 -- version vector as it ended (JSON), its verify, and the error it failed
 -- with (NULL once one succeeds), each with its time. `addrs` is '' for a

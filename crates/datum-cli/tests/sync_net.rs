@@ -1046,14 +1046,17 @@ fn a_member_that_has_not_seen_the_invite_passes_the_redeemer_on() {
     let (a, b) = paired();
     // d joins a second later, so a's ticket lists b before d.
     std::thread::sleep(Duration::from_millis(1100));
-    let d = Copy::new();
+    let mut d = Copy::new();
     let (mut inviting, ticket) = a.invite(&[]);
     d.ok(&["sync", "chain", "connect", &ticket]);
     assert!(inviting.finish().0);
 
-    // Only d fetches the next invite before a goes away; b is behind.
+    // Only d fetches the next invite before a goes away; b is behind, and
+    // not up: d, told where b is (da-fly3f), dials it too and reaches no one.
     let (inviting, ticket) = a.invite(&[]);
-    d.ok(&["sync"]);
+    d.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
+    let synced = d.fails(&["sync"], "");
+    assert!(synced.contains("verify ok"), "{synced}");
     drop(inviting);
     let (_b_runs, _d_runs) = (b.serve(&["sync", "run"]), d.serve(&["sync", "run"]));
     let mut c = Copy::new();
@@ -1061,6 +1064,105 @@ fn a_member_that_has_not_seen_the_invite_passes_the_redeemer_on() {
     let joined = c.ok(&["sync", "chain", "connect", &ticket]);
     assert!(joined.contains("verify ok"), "{joined}");
     assert!(d.ok(&["sync", "chain", "list"]).contains(&c.id()[..10]));
+}
+
+// ─── Members one inviter admitted (da-fly3f) ────────────────────────────────
+
+/// `a`, `b` and `c` in one chain, `b` and `c` both admitted by `a`, which
+/// has gone away: `b` heard of `c` from `a` first. A dial that reaches no
+/// one fails in 3s.
+fn admitted_by_one_inviter() -> (Copy, Copy, Copy) {
+    let (a, mut b) = paired();
+    let mut c = Copy::new();
+    let (mut inviting, ticket) = a.invite(&[]);
+    c.ok(&["sync", "chain", "connect", &ticket]);
+    assert!(inviting.finish().0);
+    let (serving, _) = a.invite(&[]);
+    b.ok(&["sync"]);
+    drop(serving);
+    b.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
+    c.env = vec![("DATUM_SYNC_TIMEOUT_S", "3")];
+    (a, b, c)
+}
+
+/// Two members one inviter admitted have never dialed each other: each
+/// learns where the other is from the inviter's handshake, so with the
+/// inviter gone they sync directly, and verify.
+#[test]
+fn two_members_one_inviter_admitted_sync_with_each_other_directly() {
+    let (a, b, c) = admitted_by_one_inviter();
+    for (x, y) in [(&b, &c), (&c, &b)] {
+        let row = entry_of(x, "status", y);
+        assert_eq!(row["state"], "never", "{row}");
+        assert!(row["addr"].is_string() && row["to_send"] != 0, "{row}");
+    }
+    b.ok(&["occur", "from-b"]);
+    c.ok(&["occur", "from-c"]);
+    // Each dials the other in turn; an invite being offered serves members.
+    for (x, y) in [(&b, &c), (&c, &b)] {
+        let (_serving, _) = x.invite(&[]);
+        let out = y.fails(&["sync"], "");
+        assert!(out.contains("verify ok"), "{out}");
+        assert!(out.contains("1 of 2 peer(s) failed"), "a is gone: {out}");
+    }
+    assert!(b.has("from-c") && c.has("from-b") && !a.has("from-b"));
+    assert_eq!(b.hash(), c.hash());
+    for (x, y) in [(&b, &c), (&c, &b)] {
+        let row = entry_of(x, "status", y);
+        assert_eq!(
+            (row["state"].as_str(), row["to_send"].as_i64()),
+            (Some("synced"), Some(0)),
+            "{row}"
+        );
+    }
+}
+
+/// A member this copy has no address for, as a copy before da-fly3f leaves
+/// every member it did not meet: `sync` and `sync status` say so, and count
+/// nothing as waiting for it. An address a member passes on is kept for it,
+/// and for no one else: not over one a handshake gave, not for this copy,
+/// not for a copy outside the chain.
+#[test]
+fn a_member_with_no_address_is_named_and_an_address_passed_on_is_kept() {
+    let (a, b, c) = admitted_by_one_inviter();
+    let sql = rusqlite::Connection::open(b.db()).unwrap();
+    let forget = "DELETE FROM sync_peers WHERE endpoint_id = ?1";
+    assert_eq!(sql.execute(forget, [c.id()]).unwrap(), 1);
+    let none = format!(
+        "no address for it yet: it syncs through {}",
+        member_label(&b, &a.id())
+    );
+    let row = entry_of(&b, "status", &c);
+    assert_eq!(
+        (row["state"].as_str(), row["to_send"].as_i64()),
+        (Some("never"), Some(0)),
+        "{row}"
+    );
+    assert!(row["addr"].is_null(), "{row}");
+    let status = b.ok(&["sync", "status"]);
+    let line = status.lines().find(|l| l.contains(&c.id()[..10])).unwrap();
+    assert!(
+        line.contains("to send 0") && line.ends_with(&none),
+        "{line}"
+    );
+    let out = b.fails(&["sync"], "");
+    assert!(out.contains(&format!(": {none}\n")), "{out}");
+
+    let at = |id: &str| serde_json::json!({ "id": id, "addrs": [] });
+    let stranger = "ab".repeat(32);
+    let (mine, seen, lacked) = (b.id(), a.id(), c.id());
+    let met = serde_json::json!([at(&mine), at(&seen), at(&lacked), at(&stranger)]).to_string();
+    let before = entry_of(&b, "status", &a)["addr"].clone();
+    b.ok(&["sync", "record-session", &seen, "--met", &met]);
+    assert_eq!(entry_of(&b, "status", &a)["addr"], before);
+    let row = entry_of(&b, "status", &c);
+    assert_eq!(row["addr"], at(&lacked).to_string(), "{row}");
+    assert_eq!(
+        (row["state"].as_str(), row["to_send"] != 0),
+        (Some("never"), true)
+    );
+    let rows = b.query("SELECT COUNT(*) FROM sync_peers");
+    assert_eq!(rows, "2", "a and c alone");
 }
 
 // ─── A device's identity, and each session recorded (da-rcb5m) ──────────────

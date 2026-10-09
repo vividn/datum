@@ -311,12 +311,16 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
             vector,
             verify,
             error,
+            met,
         } => {
             let vector: Option<BTreeMap<String, i64>> = vector
                 .map(|v| serde_json::from_str(&v))
                 .transpose()
                 .context("--vector is not a version vector")?;
             db.sync_record_session(&endpoint, vector.as_ref(), verify, error.as_deref())?;
+            if let Some(met) = met {
+                db.sync_introduce(&met)?;
+            }
         }
         SyncCommand::Handshake {
             endpoint,
@@ -1037,7 +1041,8 @@ fn status(db: &Db, json: bool) -> Result<()> {
                 .map(|f| format!(" ({})", f.describe()))
                 .unwrap_or_default(),
             p.error
-                .as_deref()
+                .clone()
+                .or_else(|| p.no_address(&peers))
                 .map(|e| format!("  {e}"))
                 .unwrap_or_default(),
         );

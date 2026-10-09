@@ -178,7 +178,12 @@ join link, `/sync/join#<ticket>`, which `connect`, a browser and the page's
 prompt bar all redeem, so a browser can join a chain as well as start one),
 only members are served
 (`sync_peers` is just where they were last seen), and bare `sync` / the
-hidden `sync run` swap vectors and ops until neither moves. The tree:
+hidden `sync run` swap vectors and ops until neither moves, with every member
+this copy has an address for. Each side says in its handshake where it last
+saw the chain's members (`known` on `Hello` and `Welcome`), and the other
+keeps what it has not itself seen once the session has synced, so two copies
+one inviter admitted dial each other (da-fly3f); a member with no address yet
+is named as one by `sync` and `sync status`, with nothing «to send». The tree:
 `sync`, `status`, `pause | resume`, `chain invite | connect | leave |
 list | rename | revoke | purge | ack | rekey`, `admin list | add | remove`, `daemon
 install | uninstall | status` (a systemd user unit / launchd agent

@@ -886,13 +886,15 @@ pub enum SyncCommand {
     /// for datum.day's network worker.
     EndpointKey,
     /// Hidden: `datum sync record-session <ENDPOINT> [--vector <JSON>]
-    /// [--verify match|mismatch] [--error <TEXT>]` — how a session the
-    /// browser's transport ran ended.
+    /// [--verify match|mismatch] [--error <TEXT>] [--met <JSON>]` — how a
+    /// session the browser's transport ran ended, and the members' addresses
+    /// the peer passed on (da-fly3f).
     RecordSession {
         endpoint: String,
         vector: Option<String>,
         verify: Option<bool>,
         error: Option<String>,
+        met: Option<String>,
     },
     /// Hidden: `datum sync handshake <ENDPOINT> --label <L> --addr <JSON>
     /// [--invite <SECRET> --chain <ID> --holds <N>] [--records] [--dialed]` — a

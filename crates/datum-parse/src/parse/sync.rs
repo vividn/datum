@@ -41,7 +41,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         // Hidden (da-rcb5m): datum.day's network worker, not a person.
         "endpoint-key" => SyncCommand::EndpointKey,
         "record-session" => {
-            let mut o = opts(&mut rest, &["vector", "verify", "error"], &[], 1..=1)?;
+            let mut o = opts(&mut rest, &["vector", "verify", "error", "met"], &[], 1..=1)?;
             let verify = match o.get("verify").as_deref() {
                 None => None,
                 Some("match") => Some(true),
@@ -57,6 +57,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
                 vector: o.get("vector"),
                 verify,
                 error: o.get("error"),
+                met: o.get("met"),
             }
         }
         // Hidden (da-6kpj5): datum.day's transport, as for `record-session`.

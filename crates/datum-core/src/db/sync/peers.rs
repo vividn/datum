@@ -18,8 +18,9 @@ use crate::error::{DatumError, Refusal, Result};
 pub struct Peer {
     pub id: String,
     pub label: String,
-    /// Where it was last seen (the transport's address, as JSON); empty for
-    /// a member only `sync record-session` has named.
+    /// Where it was last seen, or where a member said it is (the transport's
+    /// address, as JSON); empty for a member only `sync record-session` has
+    /// named.
     pub addrs: String,
     pub added_at: String,
     pub last_seen: Option<String>,
@@ -139,6 +140,34 @@ impl Db {
             ),
             None => no.into(),
         })
+    }
+
+    /// The members' addresses a peer passed on in its handshake (da-fly3f):
+    /// `addrs` is a JSON list of them, each naming its `id`. Two copies one
+    /// inviter admitted have never dialed each other, and this is how each
+    /// learns where the other is. Kept for a member this copy has not itself
+    /// seen; an address a handshake gave stands.
+    pub fn sync_introduce(&self, addrs: &str) -> Result<()> {
+        let chain = self.sync_chain()?;
+        let mine = self.sync_endpoint_id()?;
+        let addrs: Vec<serde_json::Value> = serde_json::from_str(addrs)
+            .map_err(|e| DatumError::Other(format!("not a list of addresses: {e}")))?;
+        for a in addrs {
+            let member = a["id"].as_str().and_then(|id| chain.member(id));
+            let Some(m) = member.filter(|m| m.endpoint != mine) else {
+                continue;
+            };
+            // Only a row no handshake has filled: one never seen takes the
+            // newest address passed on, one seen takes it while it has none.
+            self.conn.execute(
+                "INSERT INTO sync_peers (endpoint_id, label, addrs, added_at)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT (endpoint_id) DO UPDATE SET addrs = excluded.addrs
+                 WHERE last_seen IS NULL OR addrs = ''",
+                params![m.endpoint, m.label, a.to_string(), now()],
+            )?;
+        }
+        Ok(())
     }
 
     /// A session's handshake, as it bears on this copy: `id` introduced

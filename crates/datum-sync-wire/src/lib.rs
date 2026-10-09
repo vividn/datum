@@ -21,6 +21,10 @@
 //! - **Record.** Every session this copy dials, and every one it serves past
 //!   the handshake, is recorded as it ends — the peer's vector, the verify,
 //!   or the error it failed with — for `datum sync status` (da-rcb5m).
+//! - **Members.** Each side says in its handshake where it last saw the
+//!   chain's members, and the other keeps what it lacks once the session
+//!   has synced (da-fly3f): two copies one inviter admitted have never
+//!   dialed each other, and this is how each learns where the other is.
 //! - **Progress.** A session fails only when no frame has moved either way
 //!   for [`idle`] (da-039jx). A long apply is chunked, and between chunks
 //!   the side applying sends a [`BUSY`] frame, which a reader skips: a
@@ -60,6 +64,8 @@ const CHUNK: usize = 64;
 /// The most ops a doubling chunk grows to: one CLI process applying 8,192
 /// ops peaked at 108 MiB, and a command typed meanwhile waits for it.
 const MAX_CHUNK: usize = 8192;
+/// The most addresses a handshake passes on: it is one [`MAX_HELLO`] frame.
+const MAX_KNOWN: usize = 64;
 /// datum-core's `peers::COPY`, which this crate cannot see.
 const COPY: &str =
     "this peer is a copy of this database (same endpoint key); run `datum sync chain rekey` on one of them";
@@ -135,13 +141,18 @@ pub trait Store {
     /// data: no spec, layout or alias): a reader invite refuses a redeemer
     /// holding any, which a reader's fold would hide (da-tti3w).
     async fn holds(&self) -> Result<u64>;
+    /// `met`: the members' addresses `peer` passed on, to keep for each
+    /// member this copy has not itself seen (da-fly3f).
     async fn record_session(
         &self,
         peer: &str,
         vector: Option<&Vector>,
         verify: Option<bool>,
         error: Option<&str>,
+        met: &[EndpointAddr],
     ) -> Result<()>;
+    /// Where this copy last saw the members of its chain, to pass on.
+    async fn known(&self) -> Result<Vec<EndpointAddr>>;
     /// What this copy runs, said in its handshake (da-3zqyv).
     fn version(&self) -> Version;
 }
@@ -253,6 +264,10 @@ struct Hello {
     /// copy before da-b6xh6, is refused the old way.
     #[serde(default)]
     typed: bool,
+    /// Where the dialer last saw the chain's members (da-fly3f); a redeemer,
+    /// not yet one of them, says none.
+    #[serde(default)]
+    known: Vec<EndpointAddr>,
     #[serde(flatten)]
     version: Version,
 }
@@ -262,6 +277,9 @@ enum Reply {
     Welcome {
         label: String,
         addr: EndpointAddr,
+        /// Where the acceptor last saw the chain's members (da-fly3f).
+        #[serde(default)]
+        known: Vec<EndpointAddr>,
         #[serde(flatten)]
         version: Version,
     },
@@ -362,18 +380,22 @@ pub struct Report {
     pub verified: bool,
     /// The peer's version vector, as it last sent it.
     pub vector: Vector,
+    /// The members' addresses the peer passed on.
+    #[serde(skip)]
+    met: Vec<EndpointAddr>,
     /// The chain of one this copy left to redeem the invite, and the chain
     /// it joined (da-h7pnc).
     pub left: Option<(String, String)>,
 }
 
 impl Report {
-    fn new(label: String, id: String, added: bool, redeemed: bool) -> Self {
+    fn new(label: String, id: String, added: bool, redeemed: bool, met: Vec<EndpointAddr>) -> Self {
         Report {
             label,
             id,
             added,
             redeemed,
+            met,
             sent: 0,
             got: 0,
             conflicts: 0,
@@ -574,17 +596,26 @@ async fn exchange(
 /// Record how a session with `id` ended. A peer that is neither a member
 /// nor paired (a refused redemption) has no row to record it in.
 async fn record(store: &impl Store, id: &str, rep: &Result<Report>) {
-    let (vector, verify, error) = match rep {
-        Ok(r) => (Some(&r.vector), Some(r.verified), None),
+    let (vector, verify, error, met) = match rep {
+        Ok(r) => (Some(&r.vector), Some(r.verified), None, &r.met[..]),
         Err(e) => (
             e.downcast_ref::<Lost>().map(|Lost(r, _)| &r.vector),
             None,
             Some(format!("{e:#}")),
+            &[][..],
         ),
     };
     let _ = store
-        .record_session(id, vector, verify, error.as_deref())
+        .record_session(id, vector, verify, error.as_deref(), met)
         .await;
+}
+
+/// What a handshake passes on of [`Store::known`]: failing to read it
+/// never stops a sync.
+async fn known(store: &impl Store) -> Vec<EndpointAddr> {
+    let mut known = store.known().await.unwrap_or_default();
+    known.truncate(MAX_KNOWN);
+    known
 }
 
 /// How a redeemer joins: the invite's secret, the chain it says it is in —
@@ -635,6 +666,10 @@ async fn session(
         holds,
         proves: invite.is_none(),
         typed: true,
+        known: match invite {
+            Some(_) => Vec::new(),
+            None => known(store).await,
+        },
         version: store.version(),
     };
     put_json(&mut s, &hello).await?;
@@ -643,10 +678,11 @@ async fn session(
         put_json(&mut s, &store.records().await?).await?;
         reply = get_json(&mut r, MAX_HELLO).await?;
     }
-    let (label, added) = match reply {
+    let (label, added, met) = match reply {
         Reply::Welcome {
             label,
             addr,
+            known,
             version,
         } => {
             // Its own handshake may refuse too (a paused copy): only then
@@ -673,7 +709,7 @@ async fn session(
                 Ok(added)
             };
             match admitted.await {
-                Ok(added) => (label, added),
+                Ok(added) => (label, added, known),
                 Err(e) => {
                     conn.close(0u32.into(), b"refused");
                     return Err(e);
@@ -690,7 +726,7 @@ async fn session(
         }
         Reply::Prove => bail!("{} asked for what it was not offered", short(&id)),
     };
-    let mut rep = Report::new(label, id, added, invite.is_some());
+    let mut rep = Report::new(label, id, added, invite.is_some(), met);
     let done = exchange(store, &mut s, &mut r, true, &mut rep).await;
     if let (Some(old), Ok(Some((new, _)))) = (left, store.chain().await) {
         rep.left = Some((old, new));
@@ -775,10 +811,12 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
     let welcome = Reply::Welcome {
         label: store.label(),
         addr: ep.addr(),
+        known: self::known(store).await,
         version: store.version(),
     };
     put_json(&mut s, &welcome).await?;
-    let mut rep = Report::new(hello.label, id.clone(), !known, hello.invite.is_some());
+    let redeemed = hello.invite.is_some();
+    let mut rep = Report::new(hello.label, id.clone(), !known, redeemed, hello.known);
     let done = match exchange(store, &mut s, &mut r, false, &mut rep).await {
         Ok(()) => {
             let _ = timeout(Duration::from_secs(5), conn.closed()).await;

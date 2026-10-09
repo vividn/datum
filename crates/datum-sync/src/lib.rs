@@ -301,8 +301,14 @@ impl Store for DbStore<'_> {
         vector: Option<&Vector>,
         verify: Option<bool>,
         error: Option<&str>,
+        met: &[EndpointAddr],
     ) -> Result<()> {
-        Ok(self.0.sync_record_session(peer, vector, verify, error)?)
+        self.0.sync_record_session(peer, vector, verify, error)?;
+        Ok(self.0.sync_introduce(&serde_json::to_string(met)?)?)
+    }
+
+    async fn known(&self) -> Result<Vec<EndpointAddr>> {
+        known(self.0)
     }
 }
 
@@ -333,6 +339,15 @@ fn synced_peers(db: &Db) -> Result<Vec<Peer>> {
         .sync_peers()?
         .into_iter()
         .filter(|p| p.synced && addr(p).is_ok())
+        .collect())
+}
+
+/// Where this copy last saw them: what a ticket lists, and a handshake
+/// passes on.
+fn known(db: &Db) -> Result<Vec<EndpointAddr>> {
+    Ok(synced_peers(db)?
+        .iter()
+        .filter_map(|p| addr(p).ok())
         .collect())
 }
 
@@ -385,7 +400,7 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
         let told = Told::new(String::new());
         let store = DbStore(db, Some(&told), Cell::new(None));
         let mut addrs = vec![ep.addr()];
-        addrs.extend(synced_peers(db)?.iter().filter_map(|p| addr(p).ok()));
+        addrs.extend(known(db)?);
         let chain = db.sync_chain()?;
         let from = chain
             .member(&db.sync_endpoint_id()?)
@@ -541,6 +556,13 @@ pub fn now_all(db: &Db) -> Result<()> {
                     failed += 1;
                     println!("{}: {e:#}", p.label);
                 }
+            }
+        }
+        // After the dials: one of them may have passed its address on.
+        let status = db.sync_status()?;
+        for p in &status {
+            if let Some(why) = p.no_address(&status) {
+                println!("{}: {why}", p.label);
             }
         }
         ep.close().await;
