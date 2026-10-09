@@ -80,6 +80,14 @@ fn test_parse_time_relative_decimal_and_units() {
         parse_time("+100s", TimeCtx::now()).unwrap().offset.unwrap(),
         Duration::seconds(100),
     );
+    // da-ciajj: the sign is the whole offset's, however it is spelled.
+    for s in ["-1h30m", "-1h 30m", "-1:30", "-90m"] {
+        assert_eq!(
+            parse_time(s, TimeCtx::now()).unwrap().offset.unwrap(),
+            Duration::minutes(-90),
+            "{s}",
+        );
+    }
     // Unsigned decimals are NOT relative offsets (the sign is the opt-in,
     // per da-4h7k) and aren't valid clocks → rejected.
     assert!(matches!(
@@ -165,6 +173,26 @@ fn test_parse_duration_compound() {
         parse_duration("2d4h").unwrap(),
         Duration::seconds(2 * 86400 + 4 * 3600),
     );
+}
+
+#[test]
+fn a_leading_sign_is_the_whole_durations() {
+    // da-ciajj: the sign reached the first unit only, so `-1h30m` was
+    // -60 + 30. v2 negates the whole duration (parseDurationStr.ts).
+    for s in ["1h30m", "1:30", "90m", "90", "1.5h", "PT1H30M", "0:90:00"] {
+        let minus = parse_duration(&format!("-{s}")).unwrap();
+        let plus = parse_duration(&format!("+{s}")).unwrap();
+        assert_eq!(minus, Duration::minutes(-90), "-{s}");
+        assert_eq!(plus, Duration::minutes(90), "+{s}");
+    }
+    assert_eq!(
+        parse_duration("-1d2h3m4s").unwrap(),
+        -Duration::seconds(86400 + 2 * 3600 + 3 * 60 + 4),
+    );
+    // A sign anywhere but the front is no duration.
+    for s in ["--1h", "+-1h", "1:-30", "-1:-30", "1h-30m", "-", "+"] {
+        assert!(parse_duration(s).is_err(), "{s}");
+    }
 }
 
 #[test]

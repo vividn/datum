@@ -40,7 +40,22 @@ use crate::time::uncertainty::UncertaintyUnit;
 /// (`[[[[years:]days:]hours:]minutes:]seconds`), so v2's `1:30` meant
 /// 1 min 30 sec — 60× shorter. See `docs/parity-audit/parsing.md`
 /// (`parseDurationStr.ts`) for the divergence record.
+///
+/// A leading sign is the whole duration's, as v2's is: `-1h30m` and `-1:30`
+/// are 90 minutes back, not 30 (da-ciajj). No sign stands anywhere else.
 pub fn parse_duration(s: &str) -> Result<Duration> {
+    let (negative, body) = match s.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, s.strip_prefix('+').unwrap_or(s)),
+    };
+    if body.contains(['+', '-']) {
+        return Err(ParseError::InvalidTime(s.to_string()));
+    }
+    let dur = parse_unsigned_duration(body)?;
+    Ok(if negative { -dur } else { dur })
+}
+
+fn parse_unsigned_duration(s: &str) -> Result<Duration> {
     // ISO 8601 duration
     if s.starts_with("PT") || s.starts_with("P") {
         return parse_iso_duration(s);
@@ -105,11 +120,6 @@ fn parse_compound_duration(s: &str) -> Result<Duration> {
     let mut segments = 0;
 
     while i < bytes.len() {
-        let num_start = i;
-        // Optional leading sign (only on the first segment).
-        if segments == 0 && (bytes[i] == b'-' || bytes[i] == b'+') {
-            i += 1;
-        }
         let digits_start = i;
         while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
             i += 1;
@@ -117,7 +127,7 @@ fn parse_compound_duration(s: &str) -> Result<Duration> {
         if i == digits_start {
             return Err(ParseError::InvalidTime(s.to_string()));
         }
-        let num_str = &s[num_start..i];
+        let num_str = &s[digits_start..i];
         let n: f64 = num_str
             .parse()
             .map_err(|_| ParseError::InvalidTime(s.to_string()))?;

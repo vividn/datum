@@ -119,8 +119,8 @@ impl Dur {
         let span = match span_str {
             "MOMENT" => DurSpan::Moment,
             "UNKNOWN" => DurSpan::Unknown,
-            // `-PT5M` (a coerced `-5m`) is ISO's alone, refused later by name.
-            d if typed => DurSpan::Of(parse_duration(d).or_else(|_| parse_iso_duration(d)).ok()?),
+            // A negative span (`-5m`, `-PT5M`) parses, and is refused later by name.
+            d if typed => DurSpan::Of(parse_duration(d).ok()?),
             iso => DurSpan::Of(parse_iso_duration(iso).ok()?),
         };
         Some(Dur { span, uncertainty })
