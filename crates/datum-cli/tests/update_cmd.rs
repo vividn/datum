@@ -13,10 +13,9 @@
 //!   * `--merge` lets the incoming value win a key, where datum's `merge`
 //!     collected both into an array — the note `add_cmd.rs` carries (#371).
 //!     TS #2 expects `foo: "baz"`, not `["bar", "baz"]`.
-//!   * `--strategy` takes update|merge|rekey, not datum's fourteen
-//!     `combineData` strategies. No decision to drop the other eleven is
-//!     recorded anywhere I could find; da-zd0vx asks for one. TS #3 runs its
-//!     payload through `merge` and asserts `xor` is refused.
+//!   * `--strategy update` and `merge` are daydumb's, not datum's rows of
+//!     the same names; every other `combineData` name is its row
+//!     (`datum_parse::combine`, da-0id4s).
 //!   * `update` is a SHALLOW overlay: a payload object replaces the stored
 //!     one, where datum's `update` strategy recursed into objects present on
 //!     both sides. Chosen in c4050ccc (da-gd1j, "update: shallow overlay");
@@ -143,31 +142,96 @@ fn merge_fills_declared_key_slots_from_positionals() {
 // ─── TS #3: "calls quickId and updateDoc" ─────────────────────────────────────
 
 /// Adapted: the spies become the row they stood for — the quick id resolves,
-/// and the named strategy (not the default) is what combines the payload.
-/// datum's `xor` has no daydumb counterpart (da-zd0vx).
+/// and the named strategy (not the default) is what combines the payload:
+/// `xor` drops the `foo` both hold.
 #[test]
 fn the_named_strategy_combines_the_payload_into_the_resolved_row() {
     let db = fresh_db();
-    run_cli(&["note", "n", r#"o={"a":0}"#, "--id", "input_quick"], &db).unwrap();
     run_cli(
         &[
-            "update",
-            "n:input_quick",
-            "--strategy",
-            "merge",
-            r#"o={"b":1}"#,
+            "note",
+            "n",
+            r#"o={"a":0}"#,
+            "foo=baz",
+            "--id",
+            "input_quick",
         ],
         &db,
     )
     .unwrap();
-    assert_eq!(data(&db, "n:input_quick"), json!({"o": {"a": 0, "b": 1}}));
-
-    let err = run_cli(
+    run_cli(
         &["update", "n:input_quick", "--strategy", "xor", "foo=bar"],
         &db,
     )
-    .unwrap_err();
-    assert!(format!("{err:#}").contains("xor"), "got: {err:#}");
+    .unwrap();
+    assert_eq!(data(&db, "n:input_quick"), json!({"o": {"a": 0}}));
+}
+
+/// Every combineData name works from the CLI, the stored data as A and the
+/// payload as B (da-0id4s); the table itself is tested in datum-parse.
+#[test]
+fn every_combine_strategy_works_from_the_cli() {
+    let db = fresh_db();
+    for (i, (strategy, want)) in [
+        ("useOld", json!({"a": 1, "both": "x"})),
+        ("useNew", json!({"b": 2, "both": "y"})),
+        ("preferOld", json!({"a": 1, "b": 2, "both": "x"})),
+        ("preferNew", json!({"a": 1, "b": 2, "both": "y"})),
+        ("intersection", json!(null)),
+        ("removeConflicting", json!({"a": 1, "b": 2})),
+        ("xor", json!({"a": 1, "b": 2})),
+        ("append", json!({"a": 1, "b": 2, "both": ["x", "y"]})),
+        ("prepend", json!({"a": 1, "b": 2, "both": ["y", "x"]})),
+        ("mergeSort", json!({"a": 1, "b": 2, "both": ["x", "y"]})),
+        ("appendSort", json!({"a": 1, "b": 2, "both": ["x", "y"]})),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        // A field each: the same content twice is one entry (EXISTS).
+        let (field, slug) = (format!("c{i}"), format!("c{i}:x"));
+        run_cli(&["note", &field, "a=1", "both=x", "--id", "x"], &db).unwrap();
+        run_cli(
+            &["update", &slug, "--strategy", strategy, "b=2", "both=y"],
+            &db,
+        )
+        .unwrap();
+        assert_eq!(data(&db, &slug), want, "{strategy}");
+    }
+}
+
+/// A comment appends (da-ult68) by the row's own going first in the payload;
+/// a strategy that joins the two arrays itself must not get them twice.
+#[test]
+fn a_joining_strategy_takes_each_comment_once() {
+    let db = fresh_db();
+    for (i, (strategy, want)) in [
+        ("append", json!(["c1", "c2"])),
+        ("prepend", json!(["c2", "c1"])),
+        ("appendSort", json!(["c1", "c2"])),
+        ("preferNew", json!(["c1", "c2"])),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (field, slug) = (format!("k{i}"), format!("k{i}:x"));
+        run_cli(&["note", &field, "-c", "c1", "--id", "x"], &db).unwrap();
+        run_cli(&["update", &slug, "--strategy", strategy, "-c", "c2"], &db).unwrap();
+        assert_eq!(data(&db, &slug)["comment"], want, "{strategy}");
+    }
+}
+
+/// An entry with no data is an empty A, not a reason to skip the strategy:
+/// `useOld` keeps nothing of the payload.
+#[test]
+fn a_strategy_applies_to_an_entry_with_no_data() {
+    let db = fresh_db();
+    run_cli(&["occur", "coffee"], &db).unwrap();
+    let hid = logged_all(&db)[0].hid.0.clone();
+    run_cli(&["update", &hid, "--strategy", "useOld", "b=2"], &db).unwrap();
+    assert_eq!(data(&db, &hid), Value::Null);
+    run_cli(&["update", &hid, "--strategy", "preferOld", "b=2"], &db).unwrap();
+    assert_eq!(data(&db, &hid), json!({"b": 2}));
 }
 
 // ─── TS #4: "uses update as the default updateStrategy" ───────────────────────

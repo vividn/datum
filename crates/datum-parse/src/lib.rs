@@ -49,6 +49,7 @@ compile_error!(
 
 pub mod alias;
 pub mod cli;
+pub mod combine;
 pub mod dur;
 pub mod entry_id;
 pub mod error;

@@ -1064,12 +1064,10 @@ mod tests {
     fn strategy_and_conflict_errors_name_their_own_flag_and_values() {
         for (words, want) in [
             (
-                &["update", "doc:z", "--strategy", "xor", "foo=bar"][..],
-                "invalid --strategy value: 'xor' (expected update|merge|rekey)",
-            ),
-            (
                 &["update", "doc:z", "--strategy", "ignore", "foo=bar"][..],
-                "invalid --strategy value: 'ignore' (expected update|merge|rekey)",
+                "invalid --strategy value: 'ignore' (expected update|merge|rekey|useOld|useNew|\
+                 preferOld|preferNew|intersection|removeConflicting|xor|append|prepend|\
+                 mergeSort|appendSort)",
             ),
             (
                 &["add", "doc", "--conflict", "xor", "foo=bar"][..],

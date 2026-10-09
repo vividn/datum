@@ -1,12 +1,12 @@
 use super::core::*;
 use crate::cli::*;
-use crate::error::Result;
+use crate::error::{ParseError, Result};
 use crate::input::{self, lift, local_switch, local_value, LiftedSpec, OutputArgs};
 
 #[derive(Default)]
 pub(crate) struct UpdateParsing {
     output: OutputArgs,
-    strategy: Option<ConflictStrategyArg>,
+    strategy: Option<UpdateStrategyArg>,
     id: Option<String>,
     id_delimiter: Option<String>,
     keys: Vec<String>,
@@ -21,11 +21,7 @@ pub(crate) fn update_args_registry() -> Vec<LiftedSpec<UpdateParsing>> {
         r.push(lift(|p: &mut UpdateParsing| &mut p.output, spec));
     }
     r.push(local_value(None, Some("strategy"), |p, v| {
-        p.strategy = Some(parse_conflict_strategy(
-            "strategy",
-            &["update", "merge", "rekey"],
-            v,
-        )?);
+        p.strategy = Some(parse_update_strategy(v)?);
         Ok(())
     }));
     r.push(local_value(None, Some("id"), |p, v| {
@@ -53,6 +49,31 @@ pub(crate) fn update_args_registry() -> Vec<LiftedSpec<UpdateParsing>> {
         Ok(())
     }));
     r
+}
+
+/// update, merge and rekey are daydumb's own; every other combineData name
+/// is its row of the table (datum's own `update` and `merge` are not these).
+fn parse_update_strategy(v: &str) -> Result<UpdateStrategyArg> {
+    use crate::combine::{Combine, STRATEGIES};
+    Ok(match v.to_ascii_lowercase().as_str() {
+        "update" => UpdateStrategyArg::Update,
+        "merge" => UpdateStrategyArg::Merge,
+        "rekey" => UpdateStrategyArg::Rekey,
+        _ => UpdateStrategyArg::Combine(Combine::named(v).ok_or_else(|| {
+            let names = STRATEGIES
+                .iter()
+                .map(|(n, _)| *n)
+                .filter(|n| !["update", "merge"].contains(n));
+            let all: Vec<&str> = ["update", "merge", "rekey"]
+                .into_iter()
+                .chain(names)
+                .collect();
+            ParseError::InvalidArg(format!(
+                "invalid --strategy value: '{v}' (expected {})",
+                all.join("|")
+            ))
+        })?),
+    })
 }
 
 pub(crate) fn parse_update_args(tail: &[&str]) -> Result<UpdateArgs> {

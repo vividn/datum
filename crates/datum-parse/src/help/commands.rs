@@ -651,7 +651,7 @@ const UPDATE_FLAGS: &[FlagSpec] = &[
         takes_value: true,
         value_hint: Some("S"),
         value_optional: false,
-        summary: "update|merge|rekey",
+        summary: "update|merge|rekey, or a combine: useOld|useNew|preferOld|preferNew|intersection|removeConflicting|xor|append|prepend|mergeSort|appendSort",
         long_description: None,
         left_override: None,
     },

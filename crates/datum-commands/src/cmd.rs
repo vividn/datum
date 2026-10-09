@@ -1165,8 +1165,8 @@ mod tests {
         assert_eq!(ex["nested"]["b"], serde_json::json!(2));
     }
 
-    // `deep_merge_recurses_into_objects` lives in update_core.rs where the
-    // helper now resides; this crate-level test would be redundant.
+    // `merge_recurses_into_objects` lives in update_core.rs, beside
+    // `combine_extra`; this crate-level test would be redundant.
 
     #[test]
     fn update_empty_value_drops_key() {
@@ -1368,7 +1368,7 @@ mod tests {
         // Invoke via Update default but override strategy to Merge — the nested
         // {color, size} should survive because deep-merge preserves siblings.
         let mut args = update_args(&e.slug, vec![]);
-        args.strategy = Some(crate::args::ConflictStrategyArg::Merge);
+        args.strategy = Some(crate::args::UpdateStrategyArg::Merge);
         args.keys = vec!["tag.priority=1".to_string()];
         update_from_args(args, UpdateStrategy::Replace, &db).unwrap();
 

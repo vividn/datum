@@ -1,7 +1,7 @@
 //! Unified update/merge/rekey core.
 //!
-//! One entry point — [`update_with_strategy`] — implements the three
-//! mutation strategies. The `update`, `merge`, and `rekey` verbs are thin
+//! One entry point — [`update_with_strategy`] — implements the mutation
+//! strategies: daydumb's three and the rows of datum's combineData table. The `update`, `merge`, and `rekey` verbs are thin
 //! CLI wrappers around it. Future batch mutations (S3) iterate over this
 //! function rather than reimplementing per-strategy code.
 
@@ -11,17 +11,19 @@ use datum_core::{
     entry::Entry,
     time::DatumTime,
 };
+use datum_parse::combine::{combine, Combine, Conflict};
 use serde_json::Value as JsonValue;
 
 use crate::{
-    args::{ConflictStrategyArg, OutputFlagsExt, UpdateArgs},
+    args::{OutputFlagsExt, UpdateArgs, UpdateStrategyArg},
     // da-5t94 rider: the remainder-bucket sentinel is shared with the log
     // path rather than re-declared here.
     commands::log_core::PRIMARY_VALUE_KEY,
     render::{show_create, show_nodiff, show_rename, show_update, OutputArgs},
 };
 
-/// Command-level mutation strategy for `update` / `merge` / `rekey`.
+/// Command-level mutation strategy for `update` / `merge` / `rekey`, and
+/// the combineData rows `update --strategy` names.
 ///
 /// A narrower sibling of [`ConflictStrategy`]: no `Ignore` (it isn't a
 /// meaningful choice when the caller has explicitly asked to mutate a row).
@@ -40,6 +42,9 @@ pub enum UpdateStrategy {
     /// `field_structure` cascades into the slug/field columns automatically.
     /// Mirrors original datum's `combineData` strategy 'rekey' (utils/rekey.ts).
     Rekey,
+    /// A row of the original datum's combineData table, the stored data as
+    /// A and the payload as B (`datum_parse::combine`).
+    Combine(Combine),
 }
 
 impl UpdateStrategy {
@@ -48,6 +53,7 @@ impl UpdateStrategy {
             UpdateStrategy::Replace => "update",
             UpdateStrategy::Merge => "merge",
             UpdateStrategy::Rekey => "rekey",
+            UpdateStrategy::Combine(_) => "update",
         }
     }
 }
@@ -80,7 +86,7 @@ pub struct UpdateRequest<'a> {
     pub slug_delimiter: &'a str,
 }
 
-/// Apply one of the three mutation strategies to the row identified by
+/// Apply a mutation strategy to the row identified by
 /// `req.id_or_slug` and return the resulting entry.
 ///
 /// Does not print — callers that need the CLI confirmation line should
@@ -104,11 +110,20 @@ pub fn update_with_strategy(req: UpdateRequest<'_>, db: &Db) -> Result<UpdateOut
             req.slug_delimiter,
             db,
         ),
+        // daydumb's merge is datum's preferNew: the payload wins a conflict.
         UpdateStrategy::Merge => apply_mutation(
             existing,
             req.payload_value,
             req.payload_extra,
-            ExtraMergeMode::Deep,
+            ExtraMergeMode::Combine(Combine::PREFER_B),
+            req.slug_delimiter,
+            db,
+        ),
+        UpdateStrategy::Combine(how) => apply_mutation(
+            existing,
+            req.payload_value,
+            req.payload_extra,
+            ExtraMergeMode::Combine(how),
             req.slug_delimiter,
             db,
         ),
@@ -131,7 +146,6 @@ pub fn update_from_args(
     let strategy = args
         .strategy
         .map(strategy_from_arg)
-        .transpose()?
         .unwrap_or(default_strategy);
 
     let UpdatePayload {
@@ -178,7 +192,6 @@ pub fn update_batch_from_args(
     let strategy = args
         .strategy
         .map(strategy_from_arg)
-        .transpose()?
         .unwrap_or(default_strategy);
 
     let UpdatePayload {
@@ -398,14 +411,12 @@ pub fn render_outcome(outcome: &UpdateOutcome, output: &OutputArgs, db: &Db) {
     }
 }
 
-fn strategy_from_arg(a: ConflictStrategyArg) -> Result<UpdateStrategy> {
+fn strategy_from_arg(a: UpdateStrategyArg) -> UpdateStrategy {
     match a {
-        ConflictStrategyArg::Update => Ok(UpdateStrategy::Replace),
-        ConflictStrategyArg::Merge => Ok(UpdateStrategy::Merge),
-        ConflictStrategyArg::Rekey => Ok(UpdateStrategy::Rekey),
-        ConflictStrategyArg::Ignore => {
-            anyhow::bail!("`ignore` is not a meaningful strategy for update/merge/rekey")
-        }
+        UpdateStrategyArg::Update => UpdateStrategy::Replace,
+        UpdateStrategyArg::Merge => UpdateStrategy::Merge,
+        UpdateStrategyArg::Rekey => UpdateStrategy::Rekey,
+        UpdateStrategyArg::Combine(how) => UpdateStrategy::Combine(how),
     }
 }
 
@@ -413,8 +424,8 @@ fn strategy_from_arg(a: ConflictStrategyArg) -> Result<UpdateStrategy> {
 enum ExtraMergeMode {
     /// Top-level keys from payload replace existing; other keys preserved.
     Shallow,
-    /// Recursive object merge; scalar conflicts → payload wins.
-    Deep,
+    /// A row of the combineData table, the existing data as A.
+    Combine(Combine),
 }
 
 fn apply_mutation(
@@ -441,8 +452,12 @@ fn apply_mutation(
 
     // da-ult68: a comment APPENDS — the payload's go after the row's own,
     // and a row written before comments were arrays holds a string, which
-    // is kept as the first element rather than replaced.
-    if let (Some(old), Some(JsonValue::Array(new))) = (
+    // is kept as the first element rather than replaced. A strategy that
+    // joins a conflict's arrays (append, merge, …) does that itself.
+    let joins = matches!(mode, ExtraMergeMode::Combine(c)
+        if !matches!(c.conflict, Conflict::A | Conflict::B | Conflict::Drop));
+    if let (false, Some(old), Some(JsonValue::Array(new))) = (
+        joins,
         existing.data.as_ref().and_then(|d| d.get("comment")),
         payload_extra.as_mut().and_then(|p| p.get_mut("comment")),
     ) {
@@ -454,7 +469,7 @@ fn apply_mutation(
         new.splice(0..0, old);
     }
     let mut updated = existing.clone();
-    updated.data = combine_extra(updated.data, payload_extra, mode);
+    updated.data = combine_extra(updated.data, payload_extra, mode)?;
     // da-5t94: `field=` / `id=` re-field and re-slug in place. Setting
     // `updated.field` (or the literal `id_structure`) makes
     // `persist_with_auto_reinterp` re-derive the slug as `<field>:<body>`
@@ -599,8 +614,22 @@ fn combine_extra(
     existing: Option<JsonValue>,
     payload: Option<JsonValue>,
     mode: ExtraMergeMode,
-) -> Option<JsonValue> {
-    match (existing, payload, mode) {
+) -> Result<Option<JsonValue>> {
+    Ok(match (existing, payload, mode) {
+        // To the table a side with no data is an empty object.
+        (
+            e @ (None | Some(JsonValue::Object(_))),
+            p @ (None | Some(JsonValue::Object(_))),
+            ExtraMergeMode::Combine(how),
+        ) => {
+            let obj = |v| match v {
+                Some(JsonValue::Object(m)) => m,
+                _ => Default::default(),
+            };
+            Some(combine(&obj(e), &obj(p), how)?)
+                .filter(|m| !m.is_empty())
+                .map(JsonValue::Object)
+        }
         (None, payload, _) => payload,
         (existing, None, _) => existing,
         (
@@ -622,12 +651,9 @@ fn combine_extra(
                 Some(JsonValue::Object(e_map))
             }
         }
-        (Some(existing), Some(payload), ExtraMergeMode::Deep) => {
-            Some(deep_merge(existing, payload))
-        }
         // Non-object payload on an existing: payload wins wholesale.
         (_, Some(payload), _) => Some(payload),
-    }
+    })
 }
 
 fn is_empty_string(v: &JsonValue) -> bool {
@@ -651,25 +677,6 @@ fn take_reserved_id(payload_extra: &mut Option<JsonValue>) -> Option<String> {
         *payload_extra = None;
     }
     Some(lit)
-}
-
-fn deep_merge(existing: JsonValue, incoming: JsonValue) -> JsonValue {
-    match (existing, incoming) {
-        (JsonValue::Object(mut e_map), JsonValue::Object(i_map)) => {
-            for (k, v) in i_map {
-                match e_map.remove(&k) {
-                    Some(prev) => {
-                        e_map.insert(k, deep_merge(prev, v));
-                    }
-                    None => {
-                        e_map.insert(k, v);
-                    }
-                }
-            }
-            JsonValue::Object(e_map)
-        }
-        (_, incoming) => incoming,
-    }
 }
 
 /// Outcome of [`parse_update_payload`].
@@ -1099,20 +1106,6 @@ mod tests {
 
         assert_eq!(outcome.old_slug.as_deref(), Some(e.slug.as_str()));
         assert_eq!(outcome.entry.slug, "task:chore");
-    }
-
-    #[test]
-    fn strategy_override_ignore_rejected() {
-        let db = Db::open_in_memory().unwrap();
-        let e = seed_entry(&db, "gym", Verb::Point, Some(serde_json::json!(1)), None);
-
-        let mut args = update_args(&e.slug, vec!["note=x"]);
-        args.strategy = Some(ConflictStrategyArg::Ignore);
-        let err = update_from_args(args, UpdateStrategy::Replace, &db).unwrap_err();
-        assert!(
-            err.to_string().to_lowercase().contains("ignore"),
-            "expected ignore rejection, got: {err}"
-        );
     }
 
     #[test]
@@ -1557,7 +1550,7 @@ mod tests {
         // exactly as argparse would after seeing `update some=data <slug>`.
         assert_eq!(args.id_or_slug.as_deref(), Some("some=data"));
 
-        args.strategy = Some(ConflictStrategyArg::Update);
+        args.strategy = Some(UpdateStrategyArg::Update);
         update_from_args(args, UpdateStrategy::Replace, &db).unwrap();
 
         let after = db.get_entry(&e.slug).unwrap();
@@ -1600,11 +1593,32 @@ mod tests {
         assert_eq!(data["reps"], serde_json::json!(10));
     }
 
+    /// To the table a side with no data is an empty object: it is not a
+    /// reason to skip the strategy.
     #[test]
-    fn deep_merge_recurses_into_objects() {
+    fn a_side_with_no_data_still_goes_through_the_strategy() {
+        let (a, b) = (serde_json::json!({"a": 1}), serde_json::json!({"b": 2}));
+        let run = |e: Option<&JsonValue>, p: Option<&JsonValue>, how| {
+            combine_extra(e.cloned(), p.cloned(), ExtraMergeMode::Combine(how)).unwrap()
+        };
+        let intersection = Combine::named("intersection").unwrap();
+        assert_eq!(run(None, Some(&b), Combine::USE_A), None);
+        assert_eq!(run(None, Some(&b), intersection), None);
+        assert_eq!(run(Some(&a), None, Combine::USE_B), None);
+        assert_eq!(run(Some(&a), None, intersection), None);
+        // daydumb's merge keeps whichever side there is.
+        assert_eq!(run(None, Some(&b), Combine::PREFER_B), Some(b.clone()));
+        assert_eq!(run(Some(&a), None, Combine::PREFER_B), Some(a.clone()));
+    }
+
+    #[test]
+    fn merge_recurses_into_objects() {
         let existing = serde_json::json!({"a": {"b": 1, "c": 2}, "x": "keep"});
         let incoming = serde_json::json!({"a": {"b": 10, "d": 4}, "y": "new"});
-        let merged = deep_merge(existing, incoming);
+        let mode = ExtraMergeMode::Combine(Combine::PREFER_B);
+        let merged = combine_extra(Some(existing), Some(incoming), mode)
+            .unwrap()
+            .unwrap();
         assert_eq!(merged["a"]["b"], serde_json::json!(10));
         assert_eq!(merged["a"]["c"], serde_json::json!(2));
         assert_eq!(merged["a"]["d"], serde_json::json!(4));

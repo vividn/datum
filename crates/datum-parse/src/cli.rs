@@ -359,6 +359,16 @@ pub enum ConflictStrategyArg {
     Ignore,
 }
 
+/// `update --strategy`: daydumb's update | merge | rekey, or a row of the
+/// original datum's combineData table by its name there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UpdateStrategyArg {
+    Update,
+    Merge,
+    Rekey,
+    Combine(crate::combine::Combine),
+}
+
 // ─── Read / list commands ─────────────────────────────────────────────────
 
 #[derive(Debug)]
@@ -464,7 +474,7 @@ pub struct UpdateArgs {
     /// last-accessed pointer, refusing if it's > 15 min stale).
     pub id_or_slug: Option<String>,
     pub rest: Vec<String>,
-    pub strategy: Option<ConflictStrategyArg>,
+    pub strategy: Option<UpdateStrategyArg>,
     pub id: Option<String>,
     /// `--id-delimiter` raw CLI value. `None` falls through to env /
     /// `datumrc.toml` / built-in default at the slug-interpolation site.
