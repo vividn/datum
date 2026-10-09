@@ -135,7 +135,7 @@ impl Uncertainty {
     }
 
     /// Render this uncertainty as the ISO-8601 duration string carried on
-    /// [`DatumTime::uncertainty`] / [`Dur::uncertainty`] and stored in the
+    /// [`DatumTime::uncertainty`] / [`Dur::uncertainty`](crate::Dur::uncertainty) and stored in the
     /// `occur_time_uncertainty` / `dur_uncertainty` columns. Returns `None`
     /// for exact (no uncertainty) so the column lands as NULL.
     ///

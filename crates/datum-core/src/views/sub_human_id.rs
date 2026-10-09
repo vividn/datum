@@ -6,7 +6,7 @@
 //!
 //! daydumb's `hid` column is a stored 12-char base36 random — that value
 //! IS the human id. The short form shown in action output is
-//! [`Entry::short_uid`] (first [`SHORT_HID_LEN`] chars), so this view emits
+//! [`Entry::short_uid`](crate::entry::Entry::short_uid) (first [`SHORT_HID_LEN`] chars), so this view emits
 //! prefixes up to that length. When the caller supplies a string `key` up
 //! to that length, the scan pushes a `substr(hid,1,SHORT_HID_LEN)
 //! LIKE <key>%` filter into SQL and only fans out prefixes in Rust for the

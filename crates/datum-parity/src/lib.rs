@@ -18,7 +18,7 @@
 //! * [`myspec`] — a port of datum's `src/field/mySpecs.ts` to daydumb's
 //!   kit format (`specs/myspec.toml`), so parity tests can install it
 //!   into a daydumb DB and have spec overrides line up.
-//! * [`runtime`] (feature `parity-runtime`) — the `DatumRuntime` wrapper
+//! * `runtime` (feature `parity-runtime`) — the `DatumRuntime` wrapper
 //!   that spawns the TS process. Off by default; CI must opt in.
 //!
 //! ## Layout

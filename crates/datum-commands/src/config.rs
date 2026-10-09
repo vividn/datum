@@ -138,7 +138,7 @@ pub fn pre_scan_db_flag(argv: &[String]) -> Option<String> {
 /// makes up the flag (one token for `--db=X`, two for `--db X`). The
 /// alias pre-pass uses this to strip the flag out of argv before
 /// alias-expansion runs, so the alias name isn't shadowed by `--db`
-/// at argv[1]. Returns `(start_index, end_index_exclusive, value)`.
+/// at `argv[1]`. Returns `(start_index, end_index_exclusive, value)`.
 /// `None` when no `--db` is present before `--`.
 pub fn extract_global_db_flag(argv: &[String]) -> Option<(usize, usize, String)> {
     let mut i = 1; // skip argv[0] (binary name)
@@ -163,7 +163,7 @@ pub fn extract_global_db_flag(argv: &[String]) -> Option<(usize, usize, String)>
 
 /// Split argv into (argv-without-`--db`-tokens, `--db`-tokens). Used by
 /// the alias-expansion pre-pass: the global `--db <X>` flag must not
-/// occupy argv[1] or it shadows the alias name. Strip it for expansion,
+/// occupy `argv[1]` or it shadows the alias name. Strip it for expansion,
 /// re-prepend it before the parser sees the final argv so the global
 /// flag still routes downstream.
 pub fn split_off_global_db_flag(argv: Vec<String>) -> (Vec<String>, Vec<String>) {

@@ -3,8 +3,8 @@
 //! All three are pure functions of an entry's own columns, so they live
 //! here — in the crate that compiles to `wasm32-unknown-unknown` — rather
 //! than in `datum-core` beside the database. `datum-core` wraps them back
-//! into its `Hid` / `Slug` newtypes ([`datum_core::entry::new_hid`],
-//! [`datum_core::entry::build_slug`]) (da-7scm).
+//! into its `Hid` / `Slug` newtypes (`datum_core::entry::new_hid`,
+//! `datum_core::entry::build_slug`) (da-7scm).
 //!
 //! Randomness is the one thing this module will not source for itself:
 //! [`hid_from_bytes`] takes the bytes. On the host `rand` supplies them,

@@ -5,8 +5,8 @@
 //!
 //! | TS                      | Rust                              | Status |
 //! |-------------------------|-----------------------------------|--------|
-//! | `consolidateKeys.ts`    | [`consolidate_keys`]              | ported |
-//! | `flexiblePositional.ts` | [`flexible_positional`]           | ported |
+//! | `consolidateKeys.ts`    | [`mod@consolidate_keys`]          | ported |
+//! | `flexiblePositional.ts` | [`mod@flexible_positional`]       | ported |
 //! | `dataArgs.ts`           | [`data_args`]                     | ported |
 //! | `timeArgs.ts`           | [`time_args`]                     | ported |
 //! | `durationArgs.ts`       | [`duration_args`]                 | ported |

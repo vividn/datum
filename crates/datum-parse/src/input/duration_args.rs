@@ -15,7 +15,7 @@
 //! | no `-m`, no positional| [`DurationIntent::Absent`]    |
 //! | `duration = "."` or `""` | [`DurationIntent::Absent`] |
 //! | `-m` / `--moment`     | [`DurationIntent::Moment`]    |
-//! | anything else         | [`DurationIntent::Value(s)`]  |
+//! | anything else         | [`DurationIntent::Value(s)`](DurationIntent::Value) |
 //!
 //! See `docs/parity-audit/parsing.md` ("`durationArgs.ts`") for the spec.
 

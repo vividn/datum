@@ -70,7 +70,7 @@ pub const CURRENT_SCHEMA_VERSION: u32 = 58;
 /// inside a transaction opened by the caller. Where the forward migration
 /// is data-destructive (e.g. v2→v3 replaces the entries table), the
 /// docstring on `down` MUST document the data-loss; the down may either
-/// proceed with documented loss or return [`DatumError::NotReversible`]
+/// proceed with documented loss or return [`DatumError::NotReversible`](crate::error::DatumError::NotReversible)
 /// when it would silently destroy production data.
 pub struct Migration {
     pub from: u32,

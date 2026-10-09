@@ -25,7 +25,7 @@ use crate::{
 /// Command-level mutation strategy for `update` / `merge` / `rekey`, and
 /// the combineData rows `update --strategy` names.
 ///
-/// A narrower sibling of [`ConflictStrategy`]: no `Ignore` (it isn't a
+/// A narrower sibling of [`ConflictStrategy`](datum_core::db::ConflictStrategy): no `Ignore` (it isn't a
 /// meaningful choice when the caller has explicitly asked to mutate a row).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UpdateStrategy {

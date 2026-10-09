@@ -114,10 +114,10 @@ pub struct FieldEntry {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub never_false: bool,
     /// Position perpendicular to the time axis, fraction `[0.0, 1.0]`.
-    /// Maps to [`FieldSpec::y`] for the current axis-orientation.
+    /// Maps to [`PresentationSpec::y`](crate::field_spec::PresentationSpec::y) for the current axis-orientation.
     #[serde(default)]
     pub pos: Option<f64>,
-    /// Row size as a fraction `[0.0, 1.0]`. Maps to [`FieldSpec::height`].
+    /// Row size as a fraction `[0.0, 1.0]`. Maps to [`PresentationSpec::height`](crate::field_spec::PresentationSpec::height).
     #[serde(default)]
     pub size: Option<f64>,
     /// `#RRGGBB`, `#RRGGBBAA`, or a hue name (`red`, `blue`, …).
@@ -151,7 +151,7 @@ pub struct FieldEntry {
     /// Anchor field whose resolved (pos, size) drive this field's effective
     /// position at render time. When set, `pos` is reinterpreted as the
     /// pos-ratio against the anchor and `size` as the size-ratio (mapping to
-    /// [`FieldSpec::anchor_pos_ratio`] / [`FieldSpec::anchor_size_ratio`]),
+    /// [`PresentationSpec::anchor_pos_ratio`](crate::field_spec::PresentationSpec::anchor_pos_ratio) / [`PresentationSpec::anchor_size_ratio`](crate::field_spec::PresentationSpec::anchor_size_ratio)),
     /// and the field's own `y`/`height` are not stored — resolution happens
     /// at render time via [`crate::field_spec::resolve_positions`].
     #[serde(default)]
@@ -519,8 +519,8 @@ impl FieldEntry {
     /// `color_resolved` is the hex value produced by
     /// [`crate::kit_color::resolve_color`] from the user-typed value; we
     /// store the resolved hex so subsequent loads don't need to repeat the
-    /// resolution. Per-state colors get the same treatment via
-    /// [`StateEntry::resolve_color`].
+    /// resolution. Per-state colors get the same treatment, in
+    /// [`StateSpec::color`].
     pub fn into_spec(self, color_resolved: Option<String>) -> Result<FieldSpec> {
         let action = match self.verb.as_str() {
             "occur" => Action::Occur,

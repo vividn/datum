@@ -6,7 +6,7 @@
 //!
 //! The expansion is argv-level: given the raw argv (e.g.
 //! `["datum", "vbp", "correr"]`), we look up `argv[1]` in the resolver.
-//! If it's an alias, we splice the expansion in, keeping argv[0]
+//! If it's an alias, we splice the expansion in, keeping `argv[0]`
 //! intact. We keep looping until we hit a known subcommand, a missing
 //! alias, or [`MAX_ALIAS_HOPS`].
 //!
@@ -24,7 +24,7 @@
 //!
 //! Substitution applies inside tokens (so `$1` inside a quoted string
 //! resolves correctly). If `$N` references a position with no
-//! corresponding argv entry, expansion fails with [`ParseError::InvalidArg`].
+//! corresponding argv entry, expansion fails with [`ParseError::InvalidArg`](crate::ParseError::InvalidArg).
 
 /// Maximum number of alias-expansion hops before we give up (guard
 /// against user-defined cycles).
@@ -157,7 +157,7 @@ pub struct AliasStep {
 ///
 /// Returns the expanded argv plus the list of alias steps that were
 /// applied (for provenance stamping onto the entry). Returns
-/// [`ParseError::InvalidArg`] if a positional placeholder (`$N`) in an
+/// [`ParseError::InvalidArg`](crate::ParseError::InvalidArg) if a positional placeholder (`$N`) in an
 /// alias expansion references a slot with no argv value.
 pub fn expand_argv(
     argv: Vec<String>,
@@ -241,11 +241,11 @@ pub fn apply_switch_promote_override(argv: Vec<String>) -> Vec<String> {
     out
 }
 
-/// Resolve argv[1] as an alias from the resolver, recording each
+/// Resolve `argv[1]` as an alias from the resolver, recording each
 /// expansion step. Stops on a known subcommand or missing alias.
-/// Returns [`ParseError::InvalidArg`] if a positional placeholder
+/// Returns [`ParseError::InvalidArg`](crate::ParseError::InvalidArg) if a positional placeholder
 /// references an argv slot that does not exist, or
-/// [`ParseError::AliasCycle`] if expansion revisits a previously
+/// [`ParseError::AliasCycle`](crate::ParseError::AliasCycle) if expansion revisits a previously
 /// expanded name (e.g. `set a 'b'; set b 'a'; datum a`).
 pub fn try_expand_alias(
     mut argv: Vec<String>,
@@ -593,7 +593,7 @@ fn scan_placeholders(s: &str, mut f: impl FnMut(usize)) {
     }
 }
 
-/// Swap argv[1] and argv[2] when argv[1] is a field name and argv[2] is
+/// Swap `argv[1]` and `argv[2]` when `argv[1]` is a field name and `argv[2]` is
 /// a verb. E.g. `datum mood switch happy` → `datum switch mood happy`.
 pub fn maybe_swap_field_verb(mut argv: Vec<String>) -> Vec<String> {
     if argv.len() >= 3
@@ -861,7 +861,7 @@ pub const MULTI_COMMA: &str = ",";
 ///   alias-specific. Callers wire it in at every argv-rewrite seam.
 ///
 /// Returns the per-side token vectors in order. Returns
-/// [`ParseError::InvalidArg`] when any side is empty (leading, trailing,
+/// [`ParseError::InvalidArg`](crate::ParseError::InvalidArg) when any side is empty (leading, trailing,
 /// or middle `,` with no tokens on one side), matching the
 /// `empty_*_side_errors` cases in section M of the bead's test corpus.
 ///

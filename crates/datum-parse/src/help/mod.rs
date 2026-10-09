@@ -42,7 +42,7 @@ pub fn command_help(cmd: &str) -> String {
 }
 
 /// The text a `--help` / `--version` / `--man` request prints, or `None`
-/// for a [`ParseError`] that is a real error.
+/// for a [`ParseError`](crate::ParseError) that is a real error.
 ///
 /// Those three variants are errors only in the plumbing sense: their doc
 /// comments say the caller renders the text and exits 0. Deciding that on

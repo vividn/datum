@@ -2,7 +2,7 @@
 //! two copies of a database sync over a QUIC connection. The merge is
 //! datum-core's; this crate moves the ops, over a [`Store`] that holds them
 //! — `datum-sync`'s over `Db` natively, the CLI's in datum.day's sync worker
-//! ([`web`]). It builds for wasm32-unknown-unknown, where iroh is relay-only.
+//! (`web`). It builds for wasm32-unknown-unknown, where iroh is relay-only.
 //!
 //! - **Endpoint.** The iroh endpoint's key IS the db's endpoint key, so the
 //!   iroh endpoint id is the `endpoint` every op of this copy carries. ALPN

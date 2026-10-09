@@ -88,7 +88,7 @@ pub struct DayviewFieldInput {
     /// Position along the cross-axis (perpendicular to time) as a fraction
     /// (0.0 = near edge, 1.0 = far edge) of the day's data area. In horizontal
     /// mode 0.0 = top of the row, in vertical mode 0.0 = left of the day's
-    /// column. Caller resolves from [`FieldSpec`] (y, height, z_index columns)
+    /// column. Caller resolves from `FieldSpec` (y, height, z_index columns)
     /// with deterministic-hash fallback.
     pub y_frac: f64,
     /// Cross-axis extent as a fraction of the day's data area.

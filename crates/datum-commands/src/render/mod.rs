@@ -1607,7 +1607,7 @@ fn render_now_state_scalar(
 
 // ─── Snapshot-driven Now view (da-mpod) ──────────────────────────────────────
 
-/// Render a [`NowSnapshot`] as the terminal `datum now` view. Single
+/// Render a [`NowSnapshot`](datum_core::db::NowSnapshot) as the terminal `datum now` view. Single
 /// source of truth with the JSON path: `now.rs` builds the snapshot
 /// from `db.current_now(&filter)` and the snapshot's contents alone
 /// determine which sections appear:
@@ -1625,7 +1625,7 @@ fn render_now_state_scalar(
 /// (now.rs), so the renderer is a straight dump of what's there.
 ///
 /// `state_colors` and `overlap_counts` carry the same semantics as
-/// the legacy [`render_now_view`] — the snapshot doesn't (yet) own
+/// the legacy `render_now_view` — the snapshot doesn't (yet) own
 /// per-state colour overrides or the overlap-count map, so callers
 /// supply them.
 ///

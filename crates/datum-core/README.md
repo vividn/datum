@@ -18,7 +18,6 @@ off to remain WASM-clean (see `datum-parse`, `datum-layout`).
 | [`views`]       | Read-side projections (now/today/history) consumed by the CLI/web. |
 | [`migrations`]  | Embedded SQL migrations, applied at [`Db::open`](db::Db::open). |
 | [`history`]     | Audit/history records for entry mutations.                    |
-| [`conflicts`]   | CRDT conflict detection + last-writer-wins resolution.        |
 | [`last_docs`]   | `_LAST` / `_LAST_WITH_PROTECTION` tokens for quickIds.        |
 | [`doc_ref`]     | Stable references between entries (parent/child links).       |
 | [`error`]       | The crate-wide [`DatumError`](error::DatumError) enum.        |

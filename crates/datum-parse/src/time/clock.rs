@@ -152,7 +152,7 @@ impl Clock for SystemClock {
 }
 
 /// Test clock backed by an interior-mutable [`DatumTime`]. `now()` always
-/// returns the currently-stored instant; [`set`] and [`advance`] mutate it.
+/// returns the currently-stored instant; [`set`](MockClock::set) and [`advance`](MockClock::advance) mutate it.
 pub struct MockClock {
     time: Mutex<DatumTime>,
 }

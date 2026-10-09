@@ -220,7 +220,7 @@ impl Db {
     /// `hid`. `datum check --fix` (da-adyj) uses this to repair legacy
     /// rows whose stored hash diverges from `Entry::expected_content_hash`
     /// — typically because they were written before da-r569 fixed the
-    /// canonicalization rule and never re-saved. Like [`set_entry_verb`],
+    /// canonicalization rule and never re-saved. Like [`set_entry_verb`](Self::set_entry_verb),
     /// this is an integrity housekeeping rewrite and does not record a
     /// history row: `content_hash` is a derived dedup key, not user-
     /// editable data. Errors [`DatumError::NotFound`] when the hid

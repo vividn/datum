@@ -934,7 +934,7 @@ pub fn states_share_element(a: &serde_json::Value, b: &serde_json::Value) -> boo
 /// else compares structurally.
 ///
 /// Exported so the renderer's `!` marker uses the same predicate as
-/// [`IntegrityKind::SameStateRepeat`] (da-g1b8).
+/// [`IntegrityKind::SameStateRepeat`](crate::integrity::IntegrityKind::SameStateRepeat) (da-g1b8).
 pub fn states_equal_set_aware(a: &serde_json::Value, b: &serde_json::Value) -> bool {
     let Ok(sva) = StateValue::from_json(a) else {
         return false;

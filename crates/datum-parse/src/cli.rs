@@ -27,7 +27,7 @@ pub enum Command {
     /// No subcommand given — drop into the interactive REPL. Carries no
     /// args because every global flag (`--db`, etc.) already lives on
     /// the outer [`Cli`]. Reached when argv has only global flags (or is
-    /// empty after argv[0]).
+    /// empty after `argv[0]`).
     Repl,
     Occur(LogArgs),
     Start(LogArgs),
@@ -278,7 +278,7 @@ pub struct LogArgs {
     /// `-c` / `--comment`. Repeatable; each flag APPENDS one string to the
     /// `data.comment` array, which is an array however many there are
     /// (da-ult68). Joined into the entry by
-    /// [`datum_parse::input::data_args::handle_data_args`].
+    /// [`crate::input::data_args::handle_data_args`].
     pub comment: Vec<String>,
     /// `-R` / `--remainder`: route un-keyed positionals to `<field>` in
     /// `extra_data` instead of the primary `value` column. Mirrors datum's
@@ -1019,7 +1019,7 @@ pub struct NowArgs {
     /// the standard `-t TIME` time_args flag can fly here.
     pub show_tracked: bool,
     /// The swept `--show` (da-qt6z). `--show json` — the old `--json` —
-    /// emits the [`NowSnapshot`](datum_core::db::NowSnapshot) wire schema
+    /// emits the `datum_core::db::NowSnapshot` wire schema
     /// instead of the terminal view. Other surfaces (web, wear, voice)
     /// consume this; the schema is versioned via
     /// `datum_core::db::NOW_SCHEMA_ID`.
@@ -1319,7 +1319,7 @@ pub struct CheckArgs {
     /// `--fix` — rewrite drifted `verb` columns to match `derive_verb`.
     /// For the `aliases` checker, annotates state-name collisions with the
     /// explicit first-saved-wins resolution (no DB mutation — the
-    /// precedence is already deterministic in [`SpecAliasIndex`]).
+    /// precedence is already deterministic in `SpecAliasIndex`).
     pub fix: bool,
     /// `--list` — print the set of known checker names and exit without
     /// running any checks.
@@ -1342,7 +1342,7 @@ pub const KNOWN_CHECKERS: &[&str] = &[
 
 /// Render orientation for `datum dayview` and `datum nowview`, named by
 /// time-axis direction.
-/// Mirrors [`datum_layout::dayview::Orientation`] so callers don't need a
+/// Mirrors `datum_layout::dayview::Orientation` so callers don't need a
 /// layout dep just to construct args.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DayviewOrientation {

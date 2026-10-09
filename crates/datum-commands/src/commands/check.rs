@@ -373,11 +373,11 @@ pub struct Issue {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entries: Vec<FlaggedEntry>,
     /// Pre-rendered tail-formatter block for the flagged entries (da-cr4n).
-    /// Populated at collect time when [`entries`] is non-empty so the human
+    /// Populated at collect time when [`entries`](Self::entries) is non-empty so the human
     /// renderer can embed the real `datum tail` columns (time / field /
     /// state / dur / hid, plus the `!` repeated-state marker) without
     /// re-querying the DB at render time. Skipped from JSON — programmatic
-    /// consumers read [`entries`].
+    /// consumers read [`entries`](Self::entries).
     #[serde(skip)]
     #[serde(default)]
     pub rendered_block: String,
@@ -957,8 +957,8 @@ fn collect_sync_conflicts(db: &Db) -> Result<Option<Issue>> {
 
 /// da-f9jyv: state references that name no live entry — a `field:id`
 /// state, and a bare state whose `F:<state>` document is missing (the
-/// rules are [`state_refs`]'s). da-s5k2s: and data references, per key
-/// (the rules are [`data_refs`]'s). A tombstoned document is missing. One
+/// rules are [`state_refs`](datum_core::doc_ref::state_refs)'s). da-s5k2s: and data references, per key
+/// (the rules are [`data_refs`](datum_core::doc_ref::data_refs)'s). A tombstoned document is missing. One
 /// warning per (field, key, slug) with a count and sample hids, since a
 /// tracker has thousands of rows in one state. Never an error: the
 /// document may yet arrive by sync.

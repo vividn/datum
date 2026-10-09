@@ -80,7 +80,7 @@ use self::track_ignore::*;
 use self::update::*;
 use self::views::*;
 
-/// Entry point: parse an argv (including argv[0]) into a [`Cli`].
+/// Entry point: parse an argv (including `argv[0]`) into a [`Cli`].
 pub fn parse_argv(argv: &[String]) -> Result<Cli> {
     // Strip argv[0] ("datum" or whatever binary name the caller passed).
     parse_argv_showing(argv, None)

@@ -38,7 +38,7 @@ pub struct PositionResolution {
 ///
 /// Resolution rules:
 /// - Absolute (no `relative_to`): `y`/`height`/`z_index` with hash/default
-///   fallback (same as [`FieldSpec::resolve_position`]).
+///   fallback (same as [`PresentationSpec::resolve_position`](super::PresentationSpec::resolve_position)).
 /// - Anchored: `effective_y = anchor.y + anchor.height * anchor_pos_ratio`,
 ///   `effective_height = anchor.height * anchor_size_ratio`,
 ///   `z_index = self.z_index.unwrap_or(effective_y)` (anchored fields

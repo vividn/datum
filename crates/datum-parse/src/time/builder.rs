@@ -32,7 +32,7 @@ pub struct TimeBuilder {
     pub iso_instant_override: Option<DateTime<Utc>>,
     /// ISO-8601 datetime without zone suffix (`2024-03-16T15:30:00`).
     /// Interpreted as local-in-the-effective-zone (`self.timezone` or
-    /// host local) when [`build`] resolves it.
+    /// host local) when [`build`](Self::build) resolves it.
     pub iso_naive_override: Option<NaiveDateTime>,
     /// Implicit uncertainty produced by `-q*` stacks (None when no `-q`
     /// given). Overridden by any explicit `±N` attached to a `-d`/`-t` arg.
@@ -59,7 +59,7 @@ pub struct TimeBuilder {
 impl TimeBuilder {
     /// Construct a builder anchored at "now" in the local timezone. Requires
     /// the `native` feature; callers targeting WASM should build via
-    /// [`TimeBuilder::at`] with an explicit `DatumTime`.
+    /// [`TimeBuilder::build_at`] with an explicit instant.
     pub fn now() -> Self {
         Self::default()
     }
