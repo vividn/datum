@@ -332,9 +332,10 @@ fn detect_one(
     //   existing Block/BlockSwitch on the same field → Overlap.
     // - LastStateMismatch (S6) is independent of the above.
 
-    // da-c8mh: a TRACK document is a DECLARATION, not a transition. Its
-    // `false` says "this field exists and is off", which is exactly the
-    // shape OrphanEnd is looking for, so detection skips it entirely.
+    // da-c8mh: a TRACK document is a DECLARATION, not a transition. One
+    // written before da-6fvys carries `false` on a switch or span field,
+    // which is exactly the shape OrphanEnd is looking for, so detection
+    // skips it entirely.
     if crate::track::track_verb(trigger).is_some() {
         return Ok(());
     }

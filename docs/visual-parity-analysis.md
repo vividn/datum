@@ -169,12 +169,13 @@ Same `da-25l` colored-cell rule applies: TRAIL is a single cell, no glyph, paint
 
 - **`"IGNORED"`** — set by `datum ignore <field>`. Grey bg override (`#888888`), dimmed text.
 - **`true` / `false`** — universal; `true` uses field color, `false` has no styling.
+- **`"TRACKED"`** — set by `datum track <field>`. Not in the original: the word in grey, no chip, the marker of when tracking began.
 - **Array** — concurrent states; see §5 and §7.
 
 ## 9. Track / ignore command behavior
 
 - `datum ignore <field>` — writes entry with `value = "IGNORED"`
-- `datum track <field>` — writes entry with `value = false` (tracked but stopped)
+- `datum track <field>` — the original writes an entry with `value = false` (tracked but stopped); daydumb writes `state = "TRACKED"` for every verb
 - `datum now` filters: show if most-recent state != `"IGNORED"`
 - `datum now -A` shows all, including ignored
 

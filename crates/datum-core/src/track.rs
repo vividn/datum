@@ -7,16 +7,18 @@
 //! spec is what records that the field exists. What still writes a TRACK
 //! row is the EXPLICIT act: `datum track`, which has no entry of its own
 //! to carry a trailing state and whose row is what un-ignores a field
-//! (ignored-ness is read off the log, da-d08c). `db v2import` declares
-//! the fields it brings with their specs alone (da-r6ofr).
+//! (ignored-ness is read off the log, da-d08c) — and only for a field
+//! that is IGNORED or has no entries (da-6fvys): any other field gets its
+//! spec and no row. `db v2import` declares the fields it brings with their
+//! specs alone (da-r6ofr).
 //!
 //! The row carries that answer in `extra_metadata.track`, which is also
-//! how every reader recognises it: a TRACK row's state is `false` or the
-//! TRACKED sentinel (da-5ifp), and `false` alone is indistinguishable from
-//! a plain `end`. The marker is what lets `get` and the write echo print
-//! `TRACK●` where they would otherwise print an action. A TABLE does not
-//! (da-ftg8p): a column only a declaration fills is one row re-laying-out
-//! the rows around it.
+//! how every reader recognises it: a TRACK row's state is the TRACKED
+//! sentinel (da-5ifp; `false` on a switch or span field before da-6fvys,
+//! indistinguishable from a plain `end`). The marker is what lets `get`
+//! and the write echo print `TRACK●` where they would otherwise print an
+//! action. A TABLE does not (da-ftg8p): a column only a declaration fills
+//! is one row re-laying-out the rows around it.
 
 use serde_json::{json, Value as JsonValue};
 
@@ -73,14 +75,11 @@ pub fn verb_for_action(action: Action) -> Action {
     }
 }
 
-/// The state a declaration of `verb` sits in — da-5ifp: a field that
-/// holds a state is tracked `false`, because it has an off state to sit
-/// in, and one that does not gets the TRACKED sentinel. Either way it is
-/// not IGNORED, which is what un-ignores a field.
-///
-/// One rule, two places: the row `datum track` writes, and the
-/// `following_state` a field's FIRST log declares itself with (da-gvcen).
-/// The declaration changed which column it lives in, not what it says.
+/// The trailing state a field's FIRST log declares itself with (da-gvcen):
+/// `false` for a field that holds a state, because the block that declared
+/// it has ended, and the TRACKED sentinel for one with no off state to sit
+/// in (da-5ifp). Either way it is not IGNORED, which is what un-ignores a
+/// field.
 pub fn declared_state(verb: Action) -> JsonValue {
     if matches!(verb, Action::Start | Action::Switch) {
         JsonValue::Bool(false)
@@ -89,9 +88,12 @@ pub fn declared_state(verb: Action) -> JsonValue {
     }
 }
 
-/// The TRACK document for `field` declared with `verb`, at `at`.
+/// The TRACK document for `field` declared with `verb`, at `at`. Its state
+/// is the TRACKED sentinel whatever the verb (da-6fvys): tracking began.
+/// `datum track` writes it only for a field that is IGNORED or has no
+/// entries, so it never ends a running field.
 pub fn track_entry(field: &str, verb: Action, at: DatumTime, client_id: &str) -> Entry {
-    let state = declared_state(verb);
+    let state = JsonValue::String(TRACKED_STATE_VALUE.to_string());
     let mut entry = Entry::new_legacy(
         field,
         Verb::Switch,

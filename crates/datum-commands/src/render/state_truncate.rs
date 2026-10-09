@@ -12,7 +12,11 @@
 //!    exceeds the column cap (default 10 chars). Field names like
 //!    `environment` or `brushteeth` otherwise compress the state column.
 
-use datum_core::{entry::Entry, field_spec::FieldSpec, shape::has_state_badge};
+use datum_core::{
+    entry::Entry,
+    field_spec::FieldSpec,
+    shape::{has_state_badge, TRACKED_STATE_VALUE},
+};
 use serde_json::Value as JsonValue;
 
 use super::action::{
@@ -123,6 +127,9 @@ fn truncate_state_body(
         Some(JsonValue::Null) => paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, NULL_SET),
         Some(JsonValue::String(s)) if s == IGNORED_STATE => {
             paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, &right_truncate(s, budget))
+        }
+        Some(JsonValue::String(s)) if s == TRACKED_STATE_VALUE => {
+            paint(GRAY_FG, &right_truncate(s, budget))
         }
         Some(JsonValue::String(s)) => paint_bg(state_rgb(s, spec), &right_truncate(s, budget)),
         Some(JsonValue::Object(obj)) => {

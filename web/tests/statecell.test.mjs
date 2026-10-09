@@ -396,6 +396,57 @@ describe('a state transition is three values, and the page draws them', () => {
 		});
 	});
 
+	test('a track row is a grey marker, whatever the verb, and the state after it draws as usual', async () => {
+		await onTail(async (app) => {
+			const { page } = app;
+			// da-6fvys: `track` wrote `false` on a switch or span field, which
+			// drew as an `end` nobody logged. It writes TRACKED for every
+			// verb, and the CLI paints that as the word in grey with no chip,
+			// which the page draws as it is.
+			for (const verb of ['occur', 'add', 'switch', 'start']) {
+				const out = await app.run(['track', `f${verb}`, '--verb', verb]);
+				assert.equal(out.code, 0, out.stderr);
+			}
+			// `track` writes at now, so the state after it is a minute on.
+			await app.clock.forward(60_000);
+			await seedLines(app, ['switch fswitch happy']);
+			await app.clock.forward(60_000);
+			await app.redraw();
+			await settled(page, 5);
+
+			/** The paint of each row's chip: the body's own span. */
+			const paint = await page.evaluate((sel) => {
+				return [...document.querySelectorAll(`${sel} tbody tr`)].map((tr) => {
+					const body = [...tr.querySelectorAll('td.state > span')].find((el) => !el.classList.contains('edge'));
+					const style = body && getComputedStyle(body);
+					return { text: body?.textContent, color: style?.color, background: style?.backgroundColor };
+				});
+			}, TAIL);
+			const markers = paint.filter((p) => p.text === 'TRACKED');
+			assert.equal(markers.length, 4, `one marker a field: ${JSON.stringify(paint)}`);
+			for (const m of markers) {
+				assert.equal(m.background, 'rgba(0, 0, 0, 0)', `a marker has no chip: ${JSON.stringify(m)}`);
+				assert.equal(m.color, markers[0].color);
+			}
+			const happy = paint.find((p) => p.text === 'happy');
+			assert.ok(happy, JSON.stringify(paint));
+			assert.notEqual(happy.background, 'rgba(0, 0, 0, 0)', `a state keeps its chip: ${JSON.stringify(happy)}`);
+			assert.notEqual(happy.color, markers[0].color);
+
+			// The same thing at the seam: the stored state, and the CLI's paint.
+			const rows = JSON.parse((await app.run(['tail', 'fswitch', '--json'])).stdout).rows;
+			assert.deepEqual(
+				rows.map((r) => [r.state, r.following_state]),
+				[
+					['TRACKED', 'TRACKED'],
+					['happy', 'happy']
+				]
+			);
+			assert.equal(rows[0].state_body, '\x1b[90mTRACKED\x1b[0m');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
 	test('the row reports the transition, so nothing is read back out of colours', async () => {
 		await onTail(async (app) => {
 			// The data half of the bead, at the seam: `tail --json` carries

@@ -1,5 +1,6 @@
 //! `datum track <field>` — declare a field: what a press of it means,
-//! written down (da-c8mh), plus the TRACK row that records the decision.
+//! written down (da-c8mh), plus the TRACK row that says tracking began,
+//! for a field that is IGNORED or has no entries (da-6fvys).
 
 use anyhow::Result;
 use datum_core::{
@@ -8,6 +9,7 @@ use datum_core::{
     field_spec::{
         parse_key_decl, FieldSpec, KeyKind, SubfieldSpec, SubfieldType, VERB_CHOICES_TEXT,
     },
+    shape::is_ignored_state,
     time::DatumTime,
     track::track_entry,
 };
@@ -46,6 +48,14 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
     // the spec is written in the same breath, so the field's verb is a
     // fact about the field rather than a re-reading of its log.
     let verb = resolve_verb(&args.field, args.verb.as_deref(), db)?;
+    // da-6fvys (vividn, 2026-10-09): «track should only change the state of a
+    // field if it is IGNORED or nothing (because no data exists)». A field
+    // that is running, ended or already TRACKED gets its spec and no row.
+    let now = DatumTime::now();
+    let begins_tracking = match db.state_at(&args.field, now.utc)? {
+        Some(state) => is_ignored_state(&state),
+        None => db.entries_for_field(&args.field, Some(1))?.is_empty(),
+    };
     let mut spec = db
         .load_spec(&args.field)?
         .unwrap_or_else(|| FieldSpec::new(&args.field, verb));
@@ -141,9 +151,11 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
     db.set_client_id(&client);
     db.save_field_spec(&spec)?;
 
-    let entry = track_entry(&args.field, verb, DatumTime::now(), &client);
-    db.insert_entry(&entry)?;
-    let _ = datum_core::last_docs::set_last_docs(db, std::slice::from_ref(&entry.hid));
+    if begins_tracking {
+        let entry = track_entry(&args.field, verb, now, &client);
+        db.insert_entry(&entry)?;
+        let _ = datum_core::last_docs::set_last_docs(db, std::slice::from_ref(&entry.hid));
+    }
     println!("✓ Tracking '{}' ({verb})", args.field);
     Ok(())
 }

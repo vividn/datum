@@ -346,10 +346,14 @@ describe('a kit alias logs in the bar', () => {
 			const spec = await app.run(['spec', 'show', 'vacuum']);
 			assert.match(spec.stdout, /next_date=\+4/, spec.stdout || spec.stderr);
 
-			// Again, now the page has learned the word: one TRACK row more.
+			// Again, now the page has learned the word: it runs, and writes
+			// no second row, the field being tracked already (da-6fvys).
+			const ran = async () => (await app.stdouts()).filter((out) => /Tracking 'vacuum'/.test(out)).length;
+			assert.equal(await ran(), 1);
 			await app.clock.forward(1000);
 			await app.submit('newchore vacuum 4');
-			assert.equal(await tracked(), 2);
+			assert.equal(await ran(), 2);
+			assert.equal(await tracked(), 1);
 		});
 	});
 });

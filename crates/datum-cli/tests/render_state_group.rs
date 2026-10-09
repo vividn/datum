@@ -229,6 +229,42 @@ fn block_on_ignored_field_uses_empty_trail_slot() {
     let _ = std::fs::remove_file(&db);
 }
 
+/// da-6fvys: `datum track` writes TRACKED whatever the field's verb, and
+/// `tail` draws it as the marker of when tracking began: the word in grey,
+/// with no chip, so it does not read as a state somebody picked. A switch
+/// or span field used to get `false` here, drawn `end`.
+#[test]
+fn a_track_row_is_a_grey_marker_for_every_verb() {
+    let db = tmp_db();
+    for verb in ["occur", "add", "switch", "start"] {
+        let field = format!("f{verb}");
+        run_color(&db, &["track", &field, "--verb", verb]);
+        let tail = run_color(&db, &["tail", &field]);
+        let row = tail.lines().nth(1).unwrap_or_default();
+        assert!(
+            row.contains("\x1b[90mTRACKED\x1b[0m"),
+            "{verb}: the marker is grey text: {row:?}"
+        );
+        assert!(
+            !row.contains(&bg_escape("TRACKED")),
+            "{verb}: the marker has no chip: {row:?}"
+        );
+    }
+
+    // The first real state after it draws as any first state does.
+    run_color(&db, &["switch", "fswitch", "happy"]);
+    let tail = run_color(&db, &["tail", "fswitch"]);
+    let row = tail.lines().nth(2).unwrap_or_default();
+    assert_lead_then_state_then_trail_bg(
+        row,
+        "happy",
+        IGNORED_BG_ESC,
+        &bg_escape("happy"),
+        &bg_escape("happy"),
+    );
+    let _ = std::fs::remove_file(&db);
+}
+
 // ─── Cross-cutting: no directional arrow glyphs anywhere ─────────────────────
 
 #[test]

@@ -55,9 +55,9 @@ use crate::verb::Verb;
 /// region rather than opening one (see [`is_unrendered_switch_value`]).
 pub const IGNORED_STATE_VALUE: &str = "IGNORED";
 
-/// The sentinel state `datum track` writes on an occur field: "tracked,
-/// nothing logged yet" (da-5ifp). Everywhere but the text it reads as
-/// `false` — see [`is_off_state`].
+/// The sentinel state `datum track` writes, on a field of any verb
+/// (da-6fvys): "tracked, nothing logged yet" (da-5ifp). Everywhere but the
+/// text it reads as `false` — see [`is_off_state`].
 pub const TRACKED_STATE_VALUE: &str = "TRACKED";
 
 /// A stored string beginning `ref://` IS a reference to the slug after it

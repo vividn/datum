@@ -542,8 +542,11 @@ fn a_track_row_adds_no_column_of_its_own() {
         alone_table.lines().last(),
         "{table:?} vs {alone_table:?}"
     );
+    // The action WORD: the row's state cell says TRACKED (da-6fvys).
     assert!(
-        !table.contains("TRACK"),
+        !table.contains(datum_core::track::track_action_label(
+            datum_core::action::Action::Switch
+        )),
         "the declaration names no action in a table: {table:?}"
     );
 }

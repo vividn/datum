@@ -23,7 +23,7 @@ use datum_core::state::FieldStateRows;
 use datum_core::{
     entry::{Entry, EntryShape},
     field_spec::{FieldSpec, SpecRegistry},
-    shape::{hands_field_back, has_state_badge},
+    shape::{hands_field_back, has_state_badge, TRACKED_STATE_VALUE},
     time::{DatumTime, Zone},
 };
 use datum_parse::time::{format_human_duration, DurationPrecision};
@@ -794,6 +794,9 @@ fn render_switch_badge(value: Option<&JsonValue>, field: &str, spec: Option<&Fie
         Some(JsonValue::String(s)) if s == IGNORED_STATE => {
             paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, s)
         }
+        // da-6fvys: «tracking began» is a marker, not a state anyone
+        // picked, so it gets no chip: the word alone, in grey.
+        Some(JsonValue::String(s)) if s == TRACKED_STATE_VALUE => paint(GRAY_FG, s),
         Some(JsonValue::String(s)) => paint_bg(state_rgb(s, spec), s),
         Some(JsonValue::Object(obj)) => render_structured_chip(obj, spec),
         Some(JsonValue::Array(items)) if items.len() >= 2 => {
