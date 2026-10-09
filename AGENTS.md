@@ -494,7 +494,9 @@ endpoint by a Web Lock (`datum-sync:<db>`), which pushes on every tab's writes
   (`RenderedSpan::lane`), which blocks narrow into as `<path>`s. Each end
   inside the day is labelled `UTC+n`. The SVG is one `g.day-data` per span,
   each a straight axis, so `timeAt` (`$lib/hover.ts`) reads a press against
-  the span it is over (`stretchAt`). `web/tests/dayjump.test.mjs`.
+  the span it is over (`stretchAt`), and each says its clock, `data-offset`
+  in seconds east of UTC, which the hover tip tells a mark's time by and
+  not the browser's (da-3ctgr). `web/tests/dayjump.test.mjs`.
 - The dayview strip is a stack of days, not one band: today is
   pinned at the bottom and the days before it are stacked above, as many
   as the strip's box SHOWS (the height comes from the container,

@@ -259,7 +259,8 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
         // helpers map (time, cross) → (x, y) per orientation.
         // A stretch's time axis in the root's user units: `data-lo` is
         // `data-from`, `data-hi` is `data-to`, along `data-axis`. A day is
-        // one group per stretch (da-1v9gp), so each is a straight axis.
+        // one group per stretch (da-1v9gp), so each is a straight axis, and
+        // `data-offset` is its clock in seconds east of UTC (da-3ctgr).
         let (axis, lo) = match layout.orientation {
             Orientation::Horizontal => ("x", layout.margin + geom.data_x),
             Orientation::Vertical => ("y", layout.margin + geom.data_y),
@@ -267,11 +268,13 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
         for (si, span) in day.spans.iter().enumerate() {
             let _ = write!(
                 &mut out,
-                r#"<g class="day-data" data-day="{i}" data-from="{from}" data-to="{to}" data-axis="{axis}" data-lo="{lo}" data-hi="{hi}">"#,
+                r#"<g class="day-data" data-day="{i}" data-from="{from}" data-to="{to}" data-axis="{axis}" data-lo="{lo}" data-hi="{hi}"{offset}>"#,
                 from = iso(span.start_ms),
                 to = iso(span.end_ms),
                 lo = lo + span.time_offset,
                 hi = lo + span.time_offset + span.time_extent,
+                offset =
+                    (span.offset_s).map_or(String::new(), |s| format!(r#" data-offset="{s}""#)),
             );
             if !span.lane.is_empty() {
                 let _ = write!(
@@ -1452,6 +1455,8 @@ mod tests {
                 lo: *lo as f64 / 24.0,
                 hi: *hi as f64 / 24.0,
                 label: label.to_string(),
+                // The clock its wall hours are of its real ones.
+                offset_s: Some(((lo - start) * 3600) as i32),
             })
             .collect();
         cfg
@@ -1479,10 +1484,10 @@ mod tests {
         let groups: Vec<&str> = svg.split(r#"<g class="day-data""#).skip(1).collect();
         assert_eq!(groups.len(), 2);
         assert!(groups[0].starts_with(
-            r#" data-day="0" data-from="2025-04-27T00:00:00.000Z" data-to="2025-04-27T07:00:00.000Z" data-axis="x" data-lo="0" data-hi="700">"#
+            r#" data-day="0" data-from="2025-04-27T00:00:00.000Z" data-to="2025-04-27T07:00:00.000Z" data-axis="x" data-lo="0" data-hi="700" data-offset="0">"#
         ));
         assert!(groups[1].starts_with(
-            r#" data-day="0" data-from="2025-04-27T07:00:00.000Z" data-to="2025-04-27T23:00:00.000Z" data-axis="x" data-lo="800" data-hi="2400">"#
+            r#" data-day="0" data-from="2025-04-27T07:00:00.000Z" data-to="2025-04-27T23:00:00.000Z" data-axis="x" data-lo="800" data-hi="2400" data-offset="3600">"#
         ));
         assert!(svg.contains(r##"<rect class="dead-zone" x="700" y="0" width="100" height="100" fill="url(#dead-zone)" pointer-events="none"/>"##));
         assert_eq!(svg.matches(r#"<pattern id="dead-zone""#).count(), 1);
@@ -1508,7 +1513,7 @@ mod tests {
         // The outlines: narrowing from 05:11 to a cap at 07:00, and from a
         // cap at 06:00 to whole again by 07:53.
         assert!(groups[0].starts_with(concat!(
-            r#" data-day="0" data-from="2025-04-27T00:00:00.000Z" data-to="2025-04-27T07:00:00.000Z" data-axis="x" data-lo="0" data-hi="700">"#,
+            r#" data-day="0" data-from="2025-04-27T00:00:00.000Z" data-to="2025-04-27T07:00:00.000Z" data-axis="x" data-lo="0" data-hi="700" data-offset="0">"#,
             r#"<path class="lane" d="M511,0L561,0L700,0L700,50L561,50L511,100" fill="none""#
         )));
         assert!(groups[1].contains(

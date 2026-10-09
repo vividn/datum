@@ -179,3 +179,26 @@ test('an hour that never happened is hatched, and a press on it is the instant t
 		await pointedAt(page, xOf(d, 2.25), y, jump);
 	});
 });
+
+// da-3ctgr: the tip told a mark's time on the BROWSER's clock, so a reader
+// now in Berlin was told 07:20 for a dot drawn at 09:20, the time it was
+// in Moscow, where it was logged.
+test("a mark's tip tells its time on the clock its day was lived by, as the axis under it does", async () => {
+	await withApp(
+		async (app) => {
+			const logged = await app.run(['occur', 'water', '-t', '2026-01-11T06:20:00Z', '-z', 'Europe/Moscow']);
+			assert.equal(logged.code, 0, logged.stderr);
+			await app.redraw();
+			const d = await until(
+				() => drawn(app.page),
+				(d) => d.stretches[0]?.dots.length === 1
+			);
+			assert.deepEqual(d.stretches[0].span, ['2026-01-10T21:00:00.000Z', '2026-01-11T21:00:00.000Z'], "Moscow's day");
+			const [dot] = d.stretches[0].dots;
+			assert.ok(Math.abs((dot.left + dot.right) / 2 - xOf(d, 9 + 20 / 60)) <= 1, `drawn at 09:20: ${JSON.stringify(dot)}`);
+			await app.page.locator(`${TODAY} svg.svg .day-data circle[data-at]`).hover();
+			assert.equal(await app.page.locator(`${TODAY} .tip`).innerText(), '09:20 water');
+		},
+		{ clock: Date.UTC(2026, 0, 11, 12), ...BERLIN }
+	);
+});

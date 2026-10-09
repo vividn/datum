@@ -247,6 +247,7 @@
       "spans": [
         {
           "end_ms": 1768521600000,
+          "offset_s": 0,
           "start_ms": 1768435200000,
           "time_extent": 1916.0,
           "time_offset": 0.0

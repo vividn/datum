@@ -341,11 +341,15 @@ function markTime(mark: Element): Date {
  * The label for a mark: a time, then the mark's title. A dot's time
  * is its own; a block's is the one under `clientX`, or where it is drawn
  * from when there is no pointer — as when it has the keyboard's focus.
+ * It is told on the clock the mark is drawn on (da-3ctgr): its stretch's
+ * `data-offset`, the one a day was lived by, and the reader's own where
+ * the picture names none, as nowview's does not.
  */
 export function tipText(mark: Element, clientX?: number): string {
 	const when = mark.hasAttribute('data-at') || clientX === undefined ? markTime(mark) : timeAt(mark, clientX);
 	const title = mark.getAttribute('data-title') ?? '';
-	return when ? `${clockLabel(when)} ${title}` : title;
+	const offset = mark.closest('[data-lo]')?.getAttribute('data-offset');
+	return when ? `${clockLabel(when, offset ? Number(offset) : undefined)} ${title}` : title;
 }
 
 /**

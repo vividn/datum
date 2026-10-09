@@ -780,11 +780,12 @@ fn dot_in(db: &datum_core::db::Db, utc: &str, zone: &str) {
 }
 
 /// `date` as `dayview` lays it out, in hours along its axis: each
-/// stretch's wall clock, the dead zones, the labels, the stretches that
-/// have a lane, and each dot's `(stretch, hour)`.
+/// stretch's wall clock and its seconds east of UTC, the dead zones, the
+/// labels, the stretches that have a lane, and each dot's `(stretch, hour)`.
 #[derive(Debug, PartialEq)]
 struct Drawn {
     spans: Vec<(f64, f64)>,
+    offsets: Vec<i64>,
     dead: Vec<(f64, f64)>,
     labels: Vec<String>,
     lanes: usize,
@@ -811,6 +812,9 @@ fn drawn(db: &datum_core::db::Db, date: &str) -> Drawn {
     Drawn {
         spans: (list("spans").iter())
             .map(|s| from_to(&s["time_offset"], &s["time_extent"]))
+            .collect(),
+        offsets: (list("spans").iter())
+            .map(|s| s["offset_s"].as_i64().unwrap())
             .collect(),
         dead: (list("dead_zones").iter())
             .map(|z| from_to(&z[0], &z[1]))
@@ -849,6 +853,7 @@ fn a_day_the_clock_jumped_in_is_drawn_on_the_clock_it_was_lived_by() {
         drawn(&db, "2026-03-29"),
         Drawn {
             spans: vec![(0.0, 2.0), (3.0, 24.0)],
+            offsets: vec![3600, 7200],
             dead: vec![(2.0, 3.0)],
             labels: label("UTC+1", "UTC+2"),
             lanes: 0,
@@ -859,6 +864,7 @@ fn a_day_the_clock_jumped_in_is_drawn_on_the_clock_it_was_lived_by() {
         drawn(&db, "2026-10-25"),
         Drawn {
             spans: vec![(0.0, 3.0), (2.0, 24.0)],
+            offsets: vec![7200, 3600],
             dead: vec![],
             labels: label("UTC+2", "UTC+1"),
             lanes: 2,
@@ -886,16 +892,18 @@ fn a_traveller_whose_clock_went_back_has_a_lane_for_each_zone() {
         drawn(&db, "2026-01-11"),
         Drawn {
             spans: vec![(0.0, 10.67), (8.67, 24.0)],
+            offsets: vec![10800, 3600],
             dead: vec![],
             labels: vec!["UTC+3".to_string(), "UTC+1".to_string()],
             lanes: 2,
             dots: vec![(0, 6.5), (0, 9.33), (1, 8.67), (1, 9.17)],
         }
     );
-    // The day before was all Moscow's: 12:00 there, on a whole band.
+    // The day before was all Moscow's: 12:00 there, on a whole band, which
+    // says whose clock it is though no end of it is labelled (da-3ctgr).
     let before = drawn(&db, "2026-01-10");
     assert_eq!(
-        (before.spans, before.dots),
-        (vec![(0.0, 24.0)], vec![(0, 12.0)])
+        (before.spans, before.offsets, before.dots),
+        (vec![(0.0, 24.0)], vec![10800], vec![(0, 12.0)])
     );
 }

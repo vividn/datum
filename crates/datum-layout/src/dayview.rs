@@ -95,6 +95,9 @@ pub struct DayviewSpan {
     pub hi: f64,
     /// What an end of it inside the day is labelled: `UTC+2`.
     pub label: String,
+    /// Its clock in seconds east of UTC, for a reader of the picture to
+    /// tell a mark's time by (da-3ctgr). `None` is the reader's own clock.
+    pub offset_s: Option<i32>,
 }
 
 /// One field's data for a day. Position/height/z-index are fractions of
@@ -380,6 +383,9 @@ pub struct RenderedSpan {
     pub end_ms: i64,
     pub time_offset: f64,
     pub time_extent: f64,
+    /// [`DayviewSpan::offset_s`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset_s: Option<i32>,
     /// Where the band narrows to this stretch's lane and widens again:
     /// `[time_pos, near, far]` knots, the band's two cross-axis edges as
     /// fractions of it, straight between two knots and level outside
@@ -591,6 +597,7 @@ fn place_spans(
             end_ms: spans[i].end_ms,
             time_offset: lo(i),
             time_extent: hi(i) - lo(i),
+            offset_s: spans[i].offset_s,
             lane: Vec::new(),
         })
         .collect();
@@ -779,6 +786,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             lo: 0.0,
             hi: 1.0,
             label: String::new(),
+            offset_s: None,
         }];
         let day_spans: &[DayviewSpan] = if day.spans.is_empty() {
             &whole
@@ -1526,6 +1534,7 @@ mod tests {
             lo: lo_h as f64 / 24.0,
             hi: hi_h as f64 / 24.0,
             label: label.into(),
+            offset_s: None,
         }
     }
 

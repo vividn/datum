@@ -14,7 +14,8 @@
 // long after the time half was fixed, because the fix named only the call
 // it had found (da-6eou). Both conventions live here now. The zone is
 // still the browser's, which is what `getHours` reads; only the
-// convention is pinned.
+// convention is pinned. The one clock that is not the browser's is a day's
+// own, the one it was lived by, which `clockLabel` takes as an offset.
 
 import { readable } from 'svelte/store';
 import type { DatumTime } from './types.js';
@@ -57,8 +58,9 @@ export function startOfDay(date: Date): Date {
 	return day;
 }
 
-/** `HH:MM` in the browser's zone, 24-hour. */
-export function clockLabel(date: Date): string {
+/** `HH:MM`, 24-hour: in the browser's zone, or on the clock `offset` seconds east of UTC. */
+export function clockLabel(date: Date, offset?: number): string {
+	if (offset !== undefined) return new Date(+date + offset * 1000).toISOString().slice(11, 16);
 	return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 

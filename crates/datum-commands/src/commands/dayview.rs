@@ -405,6 +405,7 @@ fn day_spans(zones: &ZoneTimeline, date: NaiveDate) -> Vec<DayviewSpan> {
                 lo: along(lo),
                 hi: along(hi),
                 label: offset_label(*offset),
+                offset_s: Some(offset.local_minus_utc()),
             });
         }
     }
