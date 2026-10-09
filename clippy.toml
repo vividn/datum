@@ -8,8 +8,8 @@
 # So the guarantee is a lint, not a note: reinventing the conversion fails CI.
 # `resolve.rs` itself carries a scoped `#[allow]` — it is the wrapper.
 disallowed-methods = [
-    { path = "chrono::TimeZone::from_local_datetime", reason = "use datum_parse::time::Zone::resolve, then Resolved::for_boundary() or ::for_logging() (da-ztae) — .single() silently drops the two DST cases" },
-    { path = "chrono::NaiveDateTime::and_local_timezone", reason = "use datum_parse::time::Zone::resolve, then Resolved::for_boundary() or ::for_logging() (da-ztae) — .single() silently drops the two DST cases" },
+    { path = "chrono::TimeZone::from_local_datetime", reason = "use datum_parse::time::Zone::resolve, then Resolved::for_boundary() (da-ztae) — .single() silently drops the two DST cases" },
+    { path = "chrono::NaiveDateTime::and_local_timezone", reason = "use datum_parse::time::Zone::resolve, then Resolved::for_boundary() (da-ztae) — .single() silently drops the two DST cases" },
 ]
 
 # The reader's zone likewise has one source: `Zone::host()` / `DatumTime::now()`,

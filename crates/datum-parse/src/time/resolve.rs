@@ -14,8 +14,9 @@
 //!   silently. (`TimeArg` was a struct of four `Option`s and `coerce.rs`
 //!   quietly ignored one of them; da-svvy. An enum makes that a compile
 //!   error, not a bug report.)
-//! * [`Resolved::for_boundary`] / [`Resolved::for_logging`] — the two
-//!   *policies*, named once here instead of re-decided per call site.
+//! * [`Resolved::for_boundary`] — the one *policy*, named once here instead
+//!   of re-decided per call site: a skipped clock comes out at the change, a
+//!   repeated one at its first reading.
 //! * [`ZoneTimeline`] — the cache. The only fact that needs the database is
 //!   *which IANA zone the user was in at instant T*, which changes when a
 //!   person moves: a handful of segments over a lifetime. Load it once and
@@ -141,8 +142,9 @@ pub enum Resolved {
 }
 
 impl Resolved {
-    /// Policy for **period boundaries** (day/week/month starts, `--since`,
-    /// `--until`, day bounds): always yields an instant, never fails.
+    /// The policy, for every command — period boundaries (day/week/month
+    /// starts, `--since`, `--until`, day bounds) and a time the user typed
+    /// alike: always yields an instant, never fails.
     ///
     /// * `Ambiguous` picks the **first** — clean boundaries, no missed data.
     ///   Taking the later instant would drop the hour that the clock repeated.
@@ -157,36 +159,11 @@ impl Resolved {
         }
     }
 
-    /// Policy for a **time the user typed** (logging an entry, `--time`,
-    /// `--date`, `retime`): refuses rather than silently moving it.
-    ///
-    /// A user who types a local time that does not exist has made an error,
-    /// and shifting it by an hour behind their back hides that. An ambiguous
-    /// time is a genuine question only they can answer — a `-z` / offset
-    /// spelled out on the command line resolves it.
-    ///
-    /// Nothing takes this policy today: the time flags are composed by
-    /// `TimeBuilder` for every command, under [`for_boundary`](Self::for_boundary).
-    pub fn for_logging(self) -> Result<DateTime<Utc>> {
-        match self {
-            Resolved::Unique(t) => Ok(t),
-            Resolved::Ambiguous { first, second } => Err(ParseError::InvalidTime(format!(
-                "Ambiguous local time: the clock read this twice \
-                 ({first} and {second} UTC). Disambiguate with an explicit offset."
-            ))),
-            Resolved::Nonexistent { transition } => Err(ParseError::InvalidTime(format!(
-                "Nonexistent local time: the clock skipped it at the \
-                 transition {transition} UTC (daylight-saving gap)."
-            ))),
-        }
-    }
-
     /// The instant, when there is exactly one. `None` for both the ambiguous
-    /// and the nonexistent case — prefer [`for_boundary`] or [`for_logging`],
-    /// which say which of those two you meant to happen.
+    /// and the nonexistent case — prefer [`for_boundary`], which says what
+    /// becomes of each.
     ///
     /// [`for_boundary`]: Self::for_boundary
-    /// [`for_logging`]: Self::for_logging
     pub fn single(self) -> Option<DateTime<Utc>> {
         match self {
             Resolved::Unique(t) => Some(t),
@@ -510,25 +487,6 @@ mod tests {
         assert_eq!(
             *bounds.last().unwrap() - *bounds.first().unwrap(),
             Duration::hours(3)
-        );
-    }
-
-    #[test]
-    fn logging_policy_refuses_rather_than_guessing() {
-        assert!(chicago()
-            .resolve(naive("2024-11-03T01:30:00"))
-            .for_logging()
-            .is_err());
-        assert!(chicago()
-            .resolve(naive("2024-03-10T02:30:00"))
-            .for_logging()
-            .is_err());
-        assert_eq!(
-            chicago()
-                .resolve(naive("2024-06-15T09:15:00"))
-                .for_logging()
-                .unwrap(),
-            utc("2024-06-15T14:15:00Z")
         );
     }
 
