@@ -126,6 +126,41 @@ fn a_suffix_typed_key_parses_or_refuses() {
     assert_eq!(next.to_rfc3339(), "2026-05-03T00:00:00+00:00");
 }
 
+/// da-iqzxa: a datetime is the instant a `*_time` key holds for the same
+/// words, written as its wall clock: `-t`'s builder makes both, so `9am+`
+/// is the coming 9am on a datetime key too (it was the entry's day's).
+#[test]
+fn a_datetime_is_the_time_keys_instant_as_a_wall_clock() {
+    let db = typed_db();
+    let forms = [
+        "9am+",
+        "9am-",
+        "+16h",
+        "-90",
+        "sunday",
+        "yesterday 10am",
+        "2026-09-28T10:00",
+    ];
+    let mut stored = vec![];
+    for (i, v) in forms.iter().enumerate() {
+        let at = format!("2026-10-07T12:{i:02}");
+        let (a, t) = (format!("at={v}"), format!("wake_time={v}"));
+        run_cli(&["occur", "run", &a, &t, "-t", &at], &db).unwrap();
+        let entries = logged_entries(&db, "run");
+        let latest = entries
+            .iter()
+            .max_by_key(|e| e.occur_time.clone().unwrap().utc);
+        let data = latest.unwrap().data.clone().unwrap();
+        let wake = DatumTime::from_v2_json(&data["wake_time"]).expect(v);
+        let wall = wake.local_time().naive_local();
+        let wall = wall.format("%Y-%m-%dT%H:%M:%S").to_string();
+        assert_eq!(data["at"], json!(wall), "{v}");
+        stored.push(wall);
+    }
+    assert_eq!(stored[0], "2026-10-08T09:00:00");
+    assert_eq!(stored[1], "2026-10-07T09:00:00");
+}
+
 /// No boundary before the suffix is no type, an untyped key is guessed as
 /// before, and a spec's type wins over the suffix.
 #[test]

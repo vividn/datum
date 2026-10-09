@@ -231,36 +231,33 @@ fn coerce_as(ty: KeyType, value: &str, compat: Compat) -> Option<Value> {
                 None => infer_type(value),
             }
         }
-        // As `-t` composes its value, from the entry's time in its zone: a
-        // day word is that day's midnight, an ISO instant keeps the
-        // entry's zone, as `-t` does.
-        KeyType::Time => {
-            let t = parse_time(value, time_ctx(compat)).ok()?;
-            let base = compat.base.cloned().or_else(wall_clock)?;
-            let at = TimeBuilder::default()
-                .with_time_arg(t)
-                .build_with_uncertainty_at(base.utc, Zone::of(&base).ok()?, base.timezone);
-            Some(at.to_v2_json())
-        }
+        KeyType::Time => Some(instant(value, compat)?.0.to_v2_json()),
+        // The same instant (da-iqzxa), stored as its wall clock in the
+        // entry's zone, or in UTC when the value gave its own offset.
         KeyType::DateTime => {
-            let ctx = time_ctx(compat);
-            let t = parse_time(value, ctx).ok()?;
-            if let Some(utc) = t.iso_instant {
-                return text(utc.format("%Y-%m-%dT%H:%M:%SZ").to_string());
-            }
-            let base = ctx.reference;
-            let at = t
-                .iso_naive
-                .or_else(|| match (t.offset, t.absolute, t.date) {
-                    (Some(offset), _, _) => Some(base? + offset),
-                    (_, Some(clock), _) => Some(base?.date().and_time(clock)),
-                    (_, _, Some(d)) => resolve_date_arg(&d, base)?.and_hms_opt(0, 0, 0),
-                    _ => None,
-                })?;
-            text(at.format("%Y-%m-%dT%H:%M:%S").to_string())
+            let (at, zoned) = instant(value, compat)?;
+            text(if zoned {
+                at.utc.format("%Y-%m-%dT%H:%M:%SZ").to_string()
+            } else {
+                let local = at.local_time().naive_local();
+                local.format("%Y-%m-%dT%H:%M:%S").to_string()
+            })
         }
         _ => coerce_list(ty, value, compat).ok().map(Value::Array),
     }
+}
+
+/// `value` as `-t` composes its own, from the entry's time in its zone: a
+/// day word is that day's midnight, an ISO instant keeps the entry's zone.
+/// With it, whether the value was an instant given with its offset.
+fn instant(value: &str, compat: Compat) -> Option<(DatumTime, bool)> {
+    let t = parse_time(value, time_ctx(compat)).ok()?;
+    let zoned = t.iso_instant.is_some();
+    let base = compat.base.cloned().or_else(wall_clock)?;
+    let at = TimeBuilder::default()
+        .with_time_arg(t)
+        .build_with_uncertainty_at(base.utc, Zone::of(&base).ok()?, base.timezone);
+    Some((at, zoned))
 }
 
 /// A list-typed value's elements (da-jhi0x), or the refusal's hint: the
