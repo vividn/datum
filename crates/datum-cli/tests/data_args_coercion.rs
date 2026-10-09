@@ -1,55 +1,86 @@
-//! Suffix-coercion + `handle_data_args` parity tests for da-6iy.
+//! Suffix-coercion + `handle_data_args` tests (da-6iy).
 //!
-//! Verifies that the orphaned `_time` / `_date` / `_dur` / `_duration`
-//! coercion logic in `datum_parse::input::data_args` actually runs through
-//! the command flow now that `cmd::parse_log_args` delegates to
-//! `handle_data_args`. Pre-da-6iy, `wake_time=8am` stored the literal
-//! string `"8am"`; post-da-6iy it should resolve to `"08:00:00"`.
+//! A `*_time` value is an instant: parsed as `-t` parses its value, from
+//! the entry's time, and stored as v2 stored it, `{utc, o, tz}` (da-x15of).
 
 use crate::common;
 
 use common::run_cli;
 use datum_core::test_util::fresh_db;
-use serde_json::json;
+use datum_parse::time::DatumTime;
+use serde_json::{json, Value};
 
-/// `wake_time=8am` — `_time` suffix coerces a clock-time string to ISO
-/// `HH:MM:SS`. The pre-da-6iy code path stored the raw token verbatim.
-#[test]
-fn time_suffix_coerces_clock_string() {
+/// The `*_time` values of one entry logged at 2024-01-15 09:00 in Berlin.
+fn time_keys(kvs: &[&str]) -> Value {
     let db = fresh_db();
-    run_cli(&["occur", "morning", "wake_time=8am"], &db).expect("occur with wake_time=8am");
-
+    let mut argv = vec![
+        "occur",
+        "morning",
+        "-t",
+        "2024-01-15T09:00",
+        "-z",
+        "Europe/Berlin",
+    ];
+    argv.extend(kvs);
+    run_cli(&argv, &db).expect("occur with *_time keys");
     let entry = &datum_core::test_util::logged_entries(&db, "morning")[0];
-    let extra = entry.data.as_ref().expect("extra_data populated");
-    assert_eq!(
-        extra["wake_time"],
-        json!("08:00:00"),
-        "_time suffix must coerce `8am` → `08:00:00`",
-    );
+    entry.data.clone().expect("data populated")
 }
 
-/// `wakeTime=8am` — camelCase variant: same coercion applies via the
-/// uppercase-letter branch of `matches_suffix`.
-#[test]
-fn time_suffix_camel_case_coerces() {
-    let db = fresh_db();
-    run_cli(&["occur", "morning", "wakeTime=8am"], &db).expect("occur with wakeTime=8am");
-
-    let entry = &datum_core::test_util::logged_entries(&db, "morning")[0];
-    let extra = entry.data.as_ref().expect("extra_data populated");
-    assert_eq!(extra["wakeTime"], json!("08:00:00"));
+/// The wall clock a stored `*_time` value names, in its own zone.
+fn local(v: &Value) -> String {
+    let t = DatumTime::from_v2_json(v).unwrap_or_else(|| panic!("not an instant: {v}"));
+    t.local_time().naive_local().to_string()
 }
 
-/// `bed_time=15:13` — HH:MM input format also resolves through the
-/// time parser to `HH:MM:SS`.
+/// v2 at the pin (f5e7c1b8), Europe/Berlin, stored these for an entry at
+/// 2024-01-15 09:00: `c_time=2024-01-15T07:15` as {utc
+/// "2024-01-15T06:15:00.000Z", o 1, tz "Europe/Berlin"}, and a clock time,
+/// an offset or a day word the same shape. v2 read those three against the
+/// wall clock; v3 reads them against the entry (da-rp2rq), so `8am` is the
+/// entry's 8am. `sunday` is the nearest Sunday's midnight, as on `-t`.
 #[test]
-fn time_suffix_handles_hhmm_input() {
-    let db = fresh_db();
-    run_cli(&["occur", "evening", "bed_time=15:13"], &db).expect("occur with bed_time=15:13");
+fn a_time_key_stores_v2s_instant() {
+    let berlin = |utc: &str| json!({"utc": utc, "o": 1, "tz": "Europe/Berlin"});
+    let data = time_keys(&[
+        "wake_time=8am",
+        "wakeTime=8am",
+        "bed_time=15:13",
+        "next_time=+3h",
+        "finish_time=sunday",
+        "c_time=2024-01-15T07:15",
+        "z_time=2024-01-15T07:15:00Z",
+    ]);
+    assert_eq!(data["wake_time"], berlin("2024-01-15T07:00:00.000Z"));
+    assert_eq!(data["wakeTime"], berlin("2024-01-15T07:00:00.000Z"));
+    assert_eq!(data["bed_time"], berlin("2024-01-15T14:13:00.000Z"));
+    assert_eq!(data["next_time"], berlin("2024-01-15T11:00:00.000Z"));
+    assert_eq!(data["finish_time"], berlin("2024-01-13T23:00:00.000Z"));
+    assert_eq!(data["c_time"], berlin("2024-01-15T06:15:00.000Z"));
+    // The instant as given, in the entry's zone as `-t` keeps it (v2
+    // named the literal's own offset, `o: 0, tz: "UTC"`).
+    assert_eq!(data["z_time"], berlin("2024-01-15T07:15:00.000Z"));
+}
 
-    let entry = &datum_core::test_util::logged_entries(&db, "evening")[0];
-    let extra = entry.data.as_ref().expect("extra_data populated");
-    assert_eq!(extra["bed_time"], json!("15:13:00"));
+/// The bug: `next_time=+16h` at 20:00 is tomorrow noon, and its day is
+/// kept — a clock time stored `12:00:00` and lost it at log time.
+#[test]
+fn a_relative_time_across_midnight_keeps_its_day() {
+    let db = fresh_db();
+    run_cli(
+        &[
+            "occur",
+            "plants",
+            "-t",
+            "2024-01-15T20:00",
+            "next_time=+16h",
+        ],
+        &db,
+    )
+    .unwrap();
+    let entry = &datum_core::test_util::logged_entries(&db, "plants")[0];
+    let data = entry.data.as_ref().expect("data populated");
+    assert_eq!(local(&data["next_time"]), "2024-01-16 12:00:00");
 }
 
 /// `weight=75.2kg` is the string typed, as the switch state and as a
@@ -273,13 +304,15 @@ fn relative_temporal_keys_anchor_a_timeless_entry_at_its_create_time() {
         &db,
     )
     .unwrap();
-    assert_eq!(
-        data("vacuum"),
-        Some(json!({"next_date": "2026-09-17", "next_time": "14:00:00"}))
-    );
+    let vacuum = data("vacuum").unwrap();
+    assert_eq!(vacuum["next_date"], json!("2026-09-17"));
+    assert_eq!(local(&vacuum["next_time"]), "2026-09-10 14:00:00");
     // `-D` is not refused beside `-T`; it must not move the anchor to midnight.
     run_cli(&["occur", "mop", "-T", "-D", "next_time=+2h"], &db).unwrap();
-    assert_eq!(data("mop"), Some(json!({"next_time": "14:00:00"})));
+    assert_eq!(
+        local(&data("mop").unwrap()["next_time"]),
+        "2026-09-10 14:00:00"
+    );
     run_cli(&["note", "chore", "next_date=+3"], &db).unwrap();
     assert_eq!(data("chore"), Some(json!({"next_date": "2026-09-13"})));
 
@@ -309,7 +342,7 @@ fn relative_temporal_keys_anchor_at_an_occur_time_key() {
     let _g = datum_core::test_util::freeze_time("2026-09-10T12:00:00");
     let db = fresh_db();
     let entry = |field: &str| datum_core::test_util::logged_entries(&db, field)[0].clone();
-    let local = |field: &str| {
+    let occur = |field: &str| {
         let t = entry(field).occur_time.unwrap();
         t.local_time().naive_local().to_string()
     };
@@ -319,12 +352,13 @@ fn relative_temporal_keys_anchor_at_an_occur_time_key() {
         &db,
     )
     .unwrap();
-    assert_eq!(local("a1"), "2026-01-01 10:00:00");
+    assert_eq!(occur("a1"), "2026-01-01 10:00:00");
     assert_eq!(entry("a1").data, Some(json!({"next_date": "2026-01-02"})));
 
     run_cli(&["occur", "a2", "occur_time=+2h", "next_time=+30m"], &db).unwrap();
-    assert_eq!(local("a2"), "2026-09-10 14:00:00");
-    assert_eq!(entry("a2").data, Some(json!({"next_time": "14:30:00"})));
+    assert_eq!(occur("a2"), "2026-09-10 14:00:00");
+    let a2 = entry("a2").data.unwrap();
+    assert_eq!(local(&a2["next_time"]), "2026-09-10 14:30:00");
 }
 
 /// da-fwsre: a glued comma makes a list and drops one trailing comma, a

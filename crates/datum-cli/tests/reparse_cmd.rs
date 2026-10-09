@@ -486,3 +486,56 @@ fn reparse_fix_replays_a_spec_typed_value_as_its_type() {
     run_cli(&["reparse", &hid, "--fix"], &db).expect("reparse --fix");
     assert_eq!(db.get_entry(&hid).unwrap().data, Some(logged));
 }
+
+/// da-x15of: a `*_time` value logged before it was an instant — a clock
+/// time that lost its day — is listed by `datum check`, typed by its name
+/// alone, and the command the listing names reads the day again from the
+/// entry's line.
+#[test]
+fn check_lists_a_clock_time_and_its_reparse_recovers_the_day() {
+    let db = fresh_db();
+    run_cli(
+        &[
+            "occur",
+            "plants",
+            "-t",
+            "2024-01-15T20:00",
+            "next_time=+16h",
+        ],
+        &db,
+    )
+    .unwrap();
+    let hid = datum_core::test_util::logged_entries(&db, "plants")[0]
+        .hid
+        .0
+        .clone();
+    db.conn()
+        .execute(
+            r#"UPDATE entries SET data = '{"next_time":"12:00:00"}' WHERE hid = ?1"#,
+            params![hid.as_str()],
+        )
+        .unwrap();
+    let listed = || {
+        let entries = db.list_including_deleted().unwrap();
+        let report = datum_commands::commands::check::collect_issues(&db, &entries).unwrap();
+        report
+            .issues
+            .into_iter()
+            .find(|i| i.category == "mistyped_data_value")
+            .map(|i| i.entries[0].state.clone())
+    };
+    let detail = listed().expect("check lists the clock time");
+    let cmd = detail.split('`').nth(1).expect("a command in backticks");
+    let argv: Vec<&str> = cmd.split_whitespace().skip(1).collect();
+    assert_eq!(argv[0], "reparse", "{detail}");
+    run_cli(&argv, &db).unwrap();
+
+    let entry = &datum_core::test_util::logged_entries(&db, "plants")[0];
+    let next = &entry.data.as_ref().unwrap()["next_time"];
+    let next = datum_parse::time::DatumTime::from_v2_json(next).expect("an instant again");
+    assert_eq!(
+        next.local_time().naive_local().to_string(),
+        "2024-01-16 12:00:00"
+    );
+    assert_eq!(listed(), None, "nothing left to list");
+}

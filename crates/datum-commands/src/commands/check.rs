@@ -11,6 +11,7 @@ use datum_core::field_spec::{self, InterpolationContext};
 use datum_core::ids::Slug;
 use datum_core::time::DatumTime;
 use datum_parse::cli::KNOWN_CHECKERS;
+use datum_parse::input::KeyType;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
@@ -1489,18 +1490,33 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
 
     // 4b. a value that does not fit the type its key's spec declares
     //     (WARNING, da-b2f8o). Logging refuses one; an entry another
-    //     device wrote is merged as it is, and lands here instead.
+    //     device wrote is merged as it is, and lands here instead. So does
+    //     a `*_time` value logged before it was an instant (da-x15of),
+    //     typed by its name or a spec: its line still holds its day.
     let mut mistyped: Vec<(Entry, String)> = Vec::new();
     for e in entries {
-        let Some(spec) = registry.field_spec(&e.field) else {
-            continue;
-        };
         let Some(JsonValue::Object(map)) = e.data.as_ref() else {
             continue;
         };
-        for (key, ty) in spec.key_types() {
+        let mut types = registry
+            .field_spec(&e.field)
+            .map(|spec| spec.key_types())
+            .unwrap_or_default();
+        for key in map.keys() {
+            if !types.contains_key(key) && KeyType::of_suffix(key) == Some(KeyType::Time) {
+                types.insert(key.clone(), KeyType::Time);
+            }
+        }
+        for (key, ty) in types {
             if let Some(v) = map.get(&key).filter(|v| !ty.fits(v)) {
-                mistyped.push((e.clone(), format!("{key}: {v} is not a {}", ty.name())));
+                let hint = match ty {
+                    KeyType::Time => format!(": `datum reparse {} --fix`", e.short_uid()),
+                    _ => String::new(),
+                };
+                mistyped.push((
+                    e.clone(),
+                    format!("{key}: {v} is not a {}{hint}", ty.name()),
+                ));
             }
         }
     }
@@ -1517,7 +1533,7 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
             severity: Severity::Warning,
             category: "mistyped_data_value",
             message: format!(
-                "{count} data value{s} not of the type the field's spec declares",
+                "{count} data value{s} not of the type its key declares",
                 s = if count == 1 { "" } else { "s" },
             ),
             count,

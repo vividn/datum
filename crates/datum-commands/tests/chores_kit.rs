@@ -405,6 +405,30 @@ fn v2_imported_chores_read_nextdate_and_the_nexttime_block() {
     assert_eq!(cell(&all, "oven", "status"), "overdue");
 }
 
+/// da-x15of: `next_time=+Nh` logs an instant, so its due keeps its day and
+/// the interval is the N hours — a clock time read as 2000-01-01 made it
+/// -9776 days.
+#[test]
+fn a_logged_next_time_is_due_at_its_instant() {
+    let db = fresh_db();
+    install_chores(&db);
+    run(
+        &db,
+        &[
+            "occur",
+            "plants",
+            "-t",
+            "2020-09-20T20:00:00Z",
+            "next_time=+16h",
+        ],
+    );
+    let all = view(&db, "chores");
+    assert_eq!(cell(&all, "plants", "due"), "2020-09-21T12:00:00.000Z");
+    let iti = cell(&all, "plants", "iti").as_f64().unwrap();
+    assert!((iti - 16.0 / 24.0).abs() < 1e-6, "{iti}");
+    assert_eq!(cell(&all, "plants", "status"), "overdue");
+}
+
 #[test]
 fn entries_without_a_next_due_key_are_not_chores() {
     let db = fresh_db();

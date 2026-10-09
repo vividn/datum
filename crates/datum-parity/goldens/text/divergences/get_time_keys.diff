@@ -1,0 +1,10 @@
+-2024-01-15 09:00:00⟨fg=90⟩+1⟨⟩ ⟨fg=#ffffff bg=#37b90b⟩wake⟨⟩ ⟨fg=#37b90b bg=#888888⟩●⟨⟩
++⟨fg=90⟩2024-01-15⟨⟩ 09:00:00⟨fg=90⟩+1⟨⟩  ⟨fg=#ffffff bg=#37b90b⟩wake⟨⟩ ⟨fg=90⟩∅⟨fg=#37b90b⟩●⟨⟩
+-  local_time: { utc: "2024-01-15T06:15:00.000Z",
++  local_time: {"o":1,"tz":"Europe/Berlin","utc":"2024-01-15T06:15:00.000Z"}
+-                  o:  1,
++    utc_time: {"o":1,"tz":"Europe/Berlin","utc":"2024-01-15T07:15:00.000Z"}
+-                 tz: "Europe/Berlin"             },
+-    utc_time: { utc: "2024-01-15T07:15:00.000Z",
+-                  o:  0,
+-                 tz: "UTC"                       }

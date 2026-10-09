@@ -117,6 +117,42 @@ impl DatumTime {
             .unwrap_or_else(|| chrono::FixedOffset::east_opt(0).unwrap());
         self.utc.with_timezone(&offset)
     }
+
+    /// The instant as v2's `toDatumTime` writes it into an entry's data:
+    /// `{utc, o, tz}`, `utc` to the millisecond with a `Z`, `o` the offset
+    /// in hours, `tz` the zone's name (absent when unknown). What a
+    /// `*_time` data key stores (da-x15of).
+    pub fn to_v2_json(&self) -> serde_json::Value {
+        let o = match self.offset_minutes % 60 {
+            0 => serde_json::json!(self.offset_minutes / 60),
+            _ => serde_json::json!(f64::from(self.offset_minutes) / 60.0),
+        };
+        let mut v = serde_json::json!({
+            "utc": self.utc.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string(),
+            "o": o,
+        });
+        if let Some(tz) = &self.timezone {
+            v["tz"] = tz.as_str().into();
+        }
+        v
+    }
+
+    /// Read a v2 time block (`{utc, o?, tz?}`), as [`to_v2_json`] writes it
+    /// and as v2import keeps it. `o` and `tz` are read independently: an
+    /// absent `tz` leaves the zone `None` rather than naming UTC (da-vfbq).
+    /// `o` is in hours and may be fractional (India +5.5, Nepal +5.75); it
+    /// is rounded, not truncated, so the minutes survive.
+    ///
+    /// [`to_v2_json`]: Self::to_v2_json
+    pub fn from_v2_json(v: &serde_json::Value) -> Option<Self> {
+        let utc = v.get("utc")?.as_str()?.parse().ok()?;
+        Some(DatumTime {
+            utc,
+            offset_minutes: v["o"].as_f64().map_or(0, |o| (o * 60.0).round() as i32),
+            timezone: v["tz"].as_str().map(str::to_string),
+            uncertainty: None,
+        })
+    }
 }
 
 #[cfg(feature = "native")]
@@ -156,6 +192,23 @@ mod tests {
         t.offset_minutes = 0; // desynchronized
         t.refresh_offset().unwrap();
         assert_eq!(t.offset_minutes, -300);
+    }
+
+    /// v2's `{utc, o, tz}`: `o` is whole hours where it can be, and a
+    /// fractional negative offset (Marquesas, −9:30) survives the round trip.
+    #[test]
+    fn v2_json_round_trips_its_offset() {
+        for (zone, o) in [
+            ("Pacific/Marquesas", serde_json::json!(-9.5)),
+            ("Asia/Kolkata", serde_json::json!(5.5)),
+            ("America/Chicago", serde_json::json!(-6)),
+        ] {
+            let t = DatumTime::from_utc_and_tz(at("2024-01-15T12:00:00Z"), zone).unwrap();
+            let v = t.to_v2_json();
+            assert_eq!(v["o"], o, "{zone}");
+            assert_eq!(v["utc"], "2024-01-15T12:00:00.000Z");
+            assert_eq!(DatumTime::from_v2_json(&v), Some(t), "{zone}");
+        }
     }
 
     #[test]

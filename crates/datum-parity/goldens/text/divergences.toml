@@ -65,6 +65,18 @@ status = "open"
 what = "v2's `tail` ends with an empty line; daydumb's ends at the last row"
 why = "No recorded reason found."
 
+[[rule]]
+id = "object-value-one-line"
+status = "open"
+what = "`get` prints an object data value as one line of JSON (`{\"o\":1,\"tz\":…,\"utc\":…}`, keys sorted); v2 pretty-prints it over several lines, keys as stored (`utc`, `o`, `tz`)"
+why = "No recorded reason found."
+
+[[rule]]
+id = "time-key-literal-zone"
+status = "open"
+what = "a `*_time` value given as an instant with its own offset (`2024-01-15T07:15:00Z`) keeps that instant in the entry's zone (`o: 1, tz: \"Europe/Berlin\"`); v2 names the literal's offset (`o: 0, tz: \"UTC\"`, or `\"UTC+2\"` for `+02:00`)"
+why = "da-x15of: a `*_time` value parses as `-t` parses its value (vividn, 10-08), and `-t` keeps the entry's zone for an instant (the literal sets the moment, not the zone). v2's `UTC+2` is not an IANA name. The instant itself agrees."
+
 # ─── SVG: dayview ───────────────────────────────────────────────────────────
 
 [[rule]]
@@ -112,6 +124,10 @@ rules = ["grey-date", "get-field-gap", "null-before-point"]
 [[fixture]]
 name = "get_with_unit"
 rules = ["grey-date", "get-field-gap", "null-before-point"]
+
+[[fixture]]
+name = "get_time_keys"
+rules = ["grey-date", "get-field-gap", "null-before-point", "object-value-one-line", "time-key-literal-zone"]
 
 [[fixture]]
 name = "get_specced_state"

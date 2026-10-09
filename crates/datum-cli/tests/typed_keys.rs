@@ -9,6 +9,7 @@ use crate::common;
 use common::run_cli;
 use datum_core::db::Db;
 use datum_core::test_util::{fresh_db, logged_entries};
+use datum_parse::time::DatumTime;
 use serde_json::{json, Value};
 
 /// `run` with one key of each spec type.
@@ -97,11 +98,6 @@ fn a_suffix_typed_key_parses_or_refuses() {
     for (kv, want) in [
         ("due_date=tomorrow", Ok(json!("2026-10-08"))),
         ("dueDate=+3", Ok(json!("2026-10-10"))),
-        ("wake_time=07:15", Ok(json!("07:15:00"))),
-        (
-            "next_time=2026-05-03T00:00:00Z",
-            Ok(json!("2026-05-03T00:00:00Z")),
-        ),
         ("run_dur=1:30", Ok(json!("PT1H30M"))),
         ("km_num=3.5", Ok(json!(3.5))),
         ("stepNumber=7", Ok(json!(7))),
@@ -121,6 +117,12 @@ fn a_suffix_typed_key_parses_or_refuses() {
     ] {
         assert_eq!(log(&db, "task", kv), want.map_err(String::from), "{kv}");
     }
+    // A `*_time` value is an instant {utc, o, tz} (da-x15of).
+    let instant = |kv| DatumTime::from_v2_json(&log(&db, "task", kv).unwrap()).expect(kv);
+    let wake = instant("wake_time=07:15").local_time().naive_local();
+    assert_eq!(wake.to_string(), "2026-10-07 07:15:00");
+    let next = instant("next_time=2026-05-03T00:00:00Z").utc;
+    assert_eq!(next.to_rfc3339(), "2026-05-03T00:00:00+00:00");
 }
 
 /// No boundary before the suffix is no type, an untyped key is guessed as

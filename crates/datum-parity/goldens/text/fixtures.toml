@@ -76,6 +76,17 @@ setup = [
 ]
 query = ["get", "caffeine:2024-01-15T09:00:00.000Z"]
 
+# A clock time, an offset or a day word on a `*_time` key resolves against
+# v2's wall clock, so only an ISO value is the same on every capture.
+[[fixture]]
+name = "get_time_keys"
+description = "`get` on `*_time` keys: each an instant {utc, o, tz} (da-x15of)"
+surface = "get"
+setup = [
+  ["occur", "wake", "-d", "2024-01-15", "-t", "0900", "local_time=2024-01-15T07:15", "utc_time=2024-01-15T07:15:00Z"],
+]
+query = ["get", "wake:2024-01-15T08:00:00.000Z"]
+
 [[fixture]]
 name = "get_specced_state"
 description = "`get` on a `country=germany` entry — exercises mySpec state override"

@@ -115,19 +115,21 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // `wake_time=+30`, `nextDate=+3`) can anchor against it inside
     // `handle_data_args`. We deliberately swallow build errors here —
     // an invalid `-t`/`-d` flag surfaces from the downstream
-    // `build_time_with_uncertainty` call below (line ~410) with its full
-    // error message intact; here we only want a clean base when the
-    // flags parse. A timeless `-T` entry anchors at now in the local zone —
+    // `build_time_from_flags` call below with its full error message
+    // intact; here we only want a clean base when the flags parse. A timeless `-T` entry anchors at now in the local zone —
     // its create time, which is what v2's shirk counted from: `occur chore
     // -T next_date=+7` (da-rp2rq). Not through the flags: `-D` rides along
-    // with `-T` unrefused and would move the anchor to midnight.
-    let base = if args.time.omit_timestamp {
-        Some(DatumTime::now())
-    } else {
-        build_time_with_uncertainty(&args).ok()
+    // with `-T` unrefused and would move the anchor to midnight. The clock
+    // is read once: a timeless entry is created at that instant and a timed
+    // one placed from it, so `reparse` anchors where the log did, to the
+    // millisecond a `*_time` value keeps (da-x15of).
+    let now = DatumTime::now();
+    let created = args.time.omit_timestamp.then(|| now.clone());
+    let base = match &created {
+        Some(now) => Some(now.clone()),
+        None => build_time_from_flags(&args.time, now.utc).ok(),
     };
-    let local = |dt: &DatumTime| dt.local_time().naive_local();
-    let mut parsed = parse_log_args(&args, action, base.as_ref().map(local))?;
+    let mut parsed = parse_log_args(&args, action, base.clone())?;
     // da-bcdjm: an `occur_time=` key places the entry, so the relative keys
     // anchor at it as they do at `-t`. Resolved against the same base the
     // column gets below, then the line is parsed again at that anchor —
@@ -136,7 +138,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     let data_occur_time = |p: &ParsedLogArgs| p.extra_data.as_ref()?.get("occur_time").cloned();
     if let Some(t) = data_occur_time(&parsed) {
         let anchor = parse_reserved_occur_time(&t, &base.unwrap_or_else(DatumTime::now))?;
-        parsed = parse_log_args(&args, action, Some(local(&anchor)))?;
+        parsed = parse_log_args(&args, action, Some(anchor))?;
         if let Some(JsonValue::Object(obj)) = parsed.extra_data.as_mut() {
             obj.insert("occur_time".into(), t);
         }
@@ -338,8 +340,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     let (time_start, time_end) = if args.time.omit_timestamp {
         (None, None)
     } else {
-        let now = DatumTime::now().utc;
-        let base_time = build_time_from_flags(&args.time, now)?;
+        let base_time = build_time_from_flags(&args.time, now.utc)?;
 
         // da-mjwq: the two lifted forms that are not a plain `-t` twin.
         // `base_time` is the lifted anchor (`end_time=`, else `start_time=`):
@@ -362,7 +363,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
                         time: Some(s.clone()),
                         ..args.time.clone()
                     },
-                    now,
+                    now.utc,
                 )?;
                 if base_time.utc < start.utc {
                     anyhow::bail!("end_time={e} is before start_time={s}");
@@ -469,6 +470,10 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         time_end,
         client,
     );
+    if let Some(now) = created {
+        entry.create_time = now.utc;
+        entry.modify_time = now.utc;
+    }
 
     // da-5ns.3: stamp the reserved columns extracted upstream onto the
     // entry. `state=` overrides the value-derived state assignment from
@@ -924,7 +929,7 @@ pub(crate) const PRIMARY_VALUE_KEY: &str = "__datum_primary_value";
 pub(crate) fn parse_log_args(
     args: &LogArgs,
     action: Action,
-    base_local: Option<chrono::NaiveDateTime>,
+    base: Option<DatumTime>,
 ) -> Result<ParsedLogArgs> {
     use datum_parse::input::data_args::{handle_data_args, DataArgs};
     use datum_parse::input::flexible_positional::flexible_positional;
@@ -950,7 +955,7 @@ pub(crate) fn parse_log_args(
     // `.x=<v>` keys fold into `state.x`. The bare positional state for
     // state-bearing verbs is handled below.
     let mut data_args = DataArgs {
-        base_local,
+        base,
         types: args.key_types.clone(),
         ..DataArgs::default()
     };
@@ -1821,16 +1826,19 @@ pub(crate) fn parse_reserved_occur_time(v: &JsonValue, base: &DatumTime) -> Resu
 /// Parse an `occur_time=…` value token against a base time. (da-mjwq: the
 /// `start_time=` / `end_time=` keys no longer come through here — they are
 /// lifted raw and take the `-t` path, see [`lift_time_keys`].) Accepts:
+///  * a v2 time block `{utc, o, tz}` — what `infer_typed_value` makes of
+///    every `*_time` key's value, `occur_time` included (da-x15of)
 ///  * "now" → `base_time`
 ///  * RFC3339 timestamps → absolute
 ///  * clock-time forms (`11:00`, `1:32`, `8`, `5pm`, `9:15am`): parsed via
 ///    the same grammar as the global `-t` flag and anchored on `base`'s
-///    date in its timezone. Per da-2jty, `infer_typed_value` already
-///    pre-normalizes `*_time`/`*Time` keys to `HH:MM:SS`, so when the
-///    user types `end_time=11:00` we land in this branch — not in the
-///    duration fall-through.
+///    date in its timezone.
 ///  * signed duration offsets like `-5m`, `+1h`, `-30s` → base ± offset
 fn parse_add_time_value(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
+    // The data parser already made a `*_time` value an instant (da-x15of).
+    if let Some(t) = DatumTime::from_v2_json(v) {
+        return Ok(t);
+    }
     let raw = json_to_raw_token(v);
     let s = raw.trim();
     if s.is_empty() || s.eq_ignore_ascii_case("now") {
@@ -1931,10 +1939,6 @@ fn check_no_time_flags(args: &LogArgs) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn build_time_with_uncertainty(args: &LogArgs) -> Result<DatumTime> {
-    build_time_from_flags(&args.time, DatumTime::now().utc)
-}
-
 /// The `-t` path proper: the timing flag group resolved against `now`.
 /// da-mjwq: a lifted `start_time=` / `end_time=` goes through here with its
 /// raw value in the `-t` slot, so the keys and the flag cannot disagree —
@@ -2028,7 +2032,7 @@ mod tests {
         let mut args = LogArgs::with_field("sleep");
         args.duration.duration = Some("8h".to_string());
         // Just verify the dur parsing logic: an 8h duration → end = start + 8h
-        let base = build_time_with_uncertainty(&args).unwrap();
+        let base = build_time_from_flags(&args.time, DatumTime::now().utc).unwrap();
         let dur = parse_duration("8h").unwrap();
         let end_utc = base.utc + dur;
         let diff_secs = (end_utc - base.utc).num_seconds();

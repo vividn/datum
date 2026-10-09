@@ -363,5 +363,7 @@ fn other_time_keys_stay_in_data() {
     run_cli(&["occur", "sleep", "wake_time=7am"], &db).unwrap();
     let e = only(&db, "sleep");
     assert_eq!(occur_utc(&e), "2026-09-10T12:00:00+00:00", "logged now");
-    assert_eq!(e.data, Some(json!({"wake_time": "07:00:00"})));
+    let wake = &e.data.as_ref().expect("data")["wake_time"];
+    let wake = datum_parse::time::DatumTime::from_v2_json(wake).expect("an instant");
+    assert_eq!(wake.local_time().time().to_string(), "07:00:00");
 }

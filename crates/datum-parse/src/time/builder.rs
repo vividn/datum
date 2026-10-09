@@ -12,6 +12,7 @@ use crate::time::uncertainty::{Direction, Uncertainty};
 
 /// Build a `DatumTime` from the combination of -y stacks, -q stacks,
 /// -d arg, -t arg, and an optional base time (defaults to now).
+#[derive(Default)]
 pub struct TimeBuilder {
     pub days_back: i64,
     pub minutes_back: i64,
@@ -57,20 +58,7 @@ impl TimeBuilder {
     /// the `native` feature; callers targeting WASM should build via
     /// [`TimeBuilder::at`] with an explicit `DatumTime`.
     pub fn now() -> Self {
-        TimeBuilder {
-            days_back: 0,
-            minutes_back: 0,
-            time_offset: Duration::zero(),
-            date_override: None,
-            time_override: None,
-            iso_instant_override: None,
-            iso_naive_override: None,
-            quick_uncertainty: None,
-            explicit_uncertainty: None,
-            timezone: None,
-            time_direction: None,
-            full_day: false,
-        }
+        Self::default()
     }
 }
 

@@ -38,13 +38,13 @@ mod coerce;
 
 use std::collections::BTreeMap;
 
-use chrono::NaiveDateTime;
 use serde_json::{Map, Value};
 
 use crate::error::{ParseError, Result};
 use crate::input::consolidate_keys::consolidate_keys;
 use crate::input::flag_registry::{FlagAction, FlagSpec};
 use crate::input::flexible_positional::FlexibleTarget;
+use crate::time::DatumTime;
 
 use accumulate::alter_datum_data;
 use classify::{
@@ -163,11 +163,11 @@ pub struct DataArgs {
     /// command layer when a string-join remainder (`-I`/`-S`/`-C`) is
     /// active on a duration-bearing verb — never by a flag directly.
     pub peek_trailing_dur: bool,
-    /// Local-time anchor used to resolve relative-offset values on
-    /// `*_time` / `*_date` keys (`wake_time=+30`, `nextDate=+3`,
-    /// `bedTime=-1h`). When `None`, relative offsets fall through as
-    /// raw strings.
-    pub base_local: Option<NaiveDateTime>,
+    /// The entry's own time, which `*_time` / `*_date` values resolve
+    /// against as `-t` would (`wake_time=+30`, `nextDate=+3`,
+    /// `bedTime=8am`), in its zone. When `None`, a relative `*_date`
+    /// falls through as the raw string and a `*_time` reads the wall clock.
+    pub base: Option<DatumTime>,
     /// The types a field's spec declares for its keys (da-b2f8o), by
     /// key name. A typed key parses as its type or refuses; one with no
     /// entry here is typed by its suffix, or guessed by [`infer_type`].
@@ -205,8 +205,8 @@ impl DataArgs {
 /// caller's [`DataArgs`].
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Compat<'a> {
-    /// See [`DataArgs::base_local`].
-    pub(crate) base_local: Option<NaiveDateTime>,
+    /// See [`DataArgs::base`].
+    pub(crate) base: Option<&'a DatumTime>,
     /// See [`DataArgs::types`].
     pub(crate) types: Option<&'a BTreeMap<String, KeyType>>,
     /// See [`DataArgs::literal`].
@@ -220,7 +220,7 @@ pub(crate) struct Compat<'a> {
 /// command-change escape) never surface.
 pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
     let compat = Compat {
-        base_local: args.base_local,
+        base: args.base.as_ref(),
         types: Some(&args.types),
         literal: args.literal,
     };
@@ -1319,22 +1319,30 @@ mod tests {
         let out = run(a);
         assert_eq!(out["state"]["subtask"], json!("mop"));
         assert!(out.get(".subtask").is_none());
-        assert_eq!(out["wake_time"], json!("08:00:00"));
+        let wake = DatumTime::from_v2_json(&out["wake_time"]).expect("an instant");
+        assert_eq!(wake.local_time().time().to_string(), "08:00:00");
     }
 
     // ── suffix coercion with relative offsets (da-l9ie) ──────────────────
 
-    fn base_at(year: i32, month: u32, day: u32, hour: u32, min: u32) -> chrono::NaiveDateTime {
-        chrono::NaiveDate::from_ymd_opt(year, month, day)
+    /// An entry time in UTC, so its wall clock is the instant.
+    fn base_at(year: i32, month: u32, day: u32, hour: u32, min: u32) -> DatumTime {
+        let naive = chrono::NaiveDate::from_ymd_opt(year, month, day)
             .unwrap()
             .and_hms_opt(hour, min, 0)
-            .unwrap()
+            .unwrap();
+        DatumTime::from_utc_and_tz(naive.and_utc(), "UTC").unwrap()
+    }
+
+    /// A `*_time` value as v2 stores it, for an instant in UTC.
+    fn instant(utc: &str) -> Value {
+        json!({"utc": format!("{utc}.000Z"), "o": 0, "tz": "UTC"})
     }
 
     #[test]
     fn relative_date_offset_resolves_against_base_local() {
         let mut a = args();
-        a.base_local = Some(base_at(2026, 5, 20, 10, 0));
+        a.base = Some(base_at(2026, 5, 20, 10, 0));
         a.data = vec![
             "nextDate=+3".into(),
             "prev_date=-7".into(),
@@ -1374,32 +1382,26 @@ mod tests {
     #[test]
     fn relative_time_minute_offset_resolves_against_base_local() {
         let mut a = args();
-        a.base_local = Some(base_at(2026, 5, 20, 10, 0));
+        a.base = Some(base_at(2026, 5, 20, 10, 0));
         a.data = vec!["wake_time=+30".into()];
-        assert_eq!(
-            run(a),
-            *json!({"wake_time": "10:30:00"}).as_object().unwrap()
-        );
+        assert_eq!(run(a)["wake_time"], instant("2026-05-20T10:30:00"));
 
         let mut a = args();
-        a.base_local = Some(base_at(2026, 5, 20, 10, 0));
+        a.base = Some(base_at(2026, 5, 20, 10, 0));
         a.data = vec!["snooze_time=-15".into()];
-        assert_eq!(
-            run(a),
-            *json!({"snooze_time": "09:45:00"}).as_object().unwrap()
-        );
+        assert_eq!(run(a)["snooze_time"], instant("2026-05-20T09:45:00"));
     }
 
     #[test]
     fn relative_time_duration_offset_resolves_against_base_local() {
         let mut a = args();
-        a.base_local = Some(base_at(2026, 5, 20, 10, 0));
+        a.base = Some(base_at(2026, 5, 20, 10, 0));
         a.data = vec!["wake_time=-1h".into(), "bedTime=+90m".into()];
         assert_eq!(
             run(a),
             *json!({
-                "wake_time": "09:00:00",
-                "bedTime": "11:30:00",
+                "wake_time": instant("2026-05-20T09:00:00"),
+                "bedTime": instant("2026-05-20T11:30:00"),
             })
             .as_object()
             .unwrap()
@@ -1424,19 +1426,53 @@ mod tests {
     }
 
     #[test]
-    fn iso_instant_on_time_key_passes_through() {
-        // Full-instant timestamps on `*_time` keys (e.g. chores-kit
-        // `next_time=2026-05-03T00:00:00Z` due-dates) must not be
-        // truncated to time-of-day — they carry calendar information
-        // that callers depend on.
+    fn iso_instant_on_time_key_keeps_its_instant() {
+        // An ISO instant is that instant, in the entry's zone, as `-t`
+        // keeps it (chores-kit `next_time=2026-05-03T00:00:00Z` due-dates).
         let mut a = args();
+        a.base = Some(base_at(2026, 5, 20, 10, 0));
         a.data = vec!["next_time=2026-05-03T00:00:00Z".into()];
-        assert_eq!(
-            run(a),
-            *json!({"next_time": "2026-05-03T00:00:00Z"})
-                .as_object()
-                .unwrap()
+        assert_eq!(run(a)["next_time"], instant("2026-05-03T00:00:00"));
+    }
+
+    /// da-x15of: a relative `*_time` that crosses midnight keeps its day —
+    /// a clock time stored `12:00:00` and lost it at log time.
+    #[test]
+    fn relative_time_across_midnight_keeps_its_day() {
+        let mut a = args();
+        a.base = Some(base_at(2026, 5, 20, 20, 0));
+        a.data = vec!["next_time=+16h".into()];
+        assert_eq!(run(a)["next_time"], instant("2026-05-21T12:00:00"));
+    }
+
+    /// da-x15of: the shape v2's `toDatumTime` writes — `o` in hours, `tz`
+    /// the zone's name — as v2 at the pin stored these values for an
+    /// entry at 2024-01-15 09:00 in Europe/Berlin (a clock time against
+    /// the entry's day here, where v2 read the wall clock). An unparsed
+    /// value is refused, as v2 refused it.
+    #[test]
+    fn a_time_value_is_v2s_instant_in_the_entrys_zone() {
+        let berlin = |utc: &str| json!({"utc": utc, "o": 1, "tz": "Europe/Berlin"});
+        let mut a = args();
+        a.base = Some(
+            DatumTime::from_utc_and_tz("2024-01-15T08:00:00Z".parse().unwrap(), "Europe/Berlin")
+                .unwrap(),
         );
+        a.data = vec![
+            "wake_time=8am".into(),
+            "c_time=2024-01-15T07:15".into(),
+            "next_time=+3h".into(),
+        ];
+        let out = run(a.clone());
+        assert_eq!(out["wake_time"], berlin("2024-01-15T07:00:00.000Z"));
+        assert_eq!(out["c_time"], berlin("2024-01-15T06:15:00.000Z"));
+        assert_eq!(out["next_time"], berlin("2024-01-15T11:00:00.000Z"));
+
+        a.data = vec!["e_time=garbage".into()];
+        assert!(matches!(
+            handle_data_args(&a),
+            Err(ParseError::WrongType { ty: "time", .. })
+        ));
     }
 
     // ── day words / weekdays on temporal keys (da-0gs4) ─────────────────
@@ -1447,7 +1483,7 @@ mod tests {
         // `*_time` key yields that day's midnight, matching the full-
         // datetime shape plugin due-dates already use.
         let mut a = args();
-        a.base_local = Some(base_at(2026, 5, 20, 10, 0));
+        a.base = Some(base_at(2026, 5, 20, 10, 0));
         a.data = vec![
             "question_date=yesterday".into(),
             "next_time=tomorrow".into(),
@@ -1456,7 +1492,7 @@ mod tests {
             run(a),
             *json!({
                 "question_date": "2026-05-19",
-                "next_time": "2026-05-21T00:00:00",
+                "next_time": instant("2026-05-21T00:00:00"),
             })
             .as_object()
             .unwrap()
@@ -1469,12 +1505,12 @@ mod tests {
         // unmarked `friday` is the coming one (2 days on) rather than
         // the past one (5 days back). `-` forces the past.
         let mut a = args();
-        a.base_local = Some(base_at(2026, 5, 20, 10, 0));
+        a.base = Some(base_at(2026, 5, 20, 10, 0));
         a.data = vec!["finish_time=friday".into(), "start_date=friday-".into()];
         assert_eq!(
             run(a),
             *json!({
-                "finish_time": "2026-05-22T00:00:00",
+                "finish_time": instant("2026-05-22T00:00:00"),
                 "start_date": "2026-05-15",
             })
             .as_object()
@@ -1490,9 +1526,10 @@ mod tests {
         let mut a = args();
         a.data = vec!["finish_time=friday".into()];
         let out = run(a);
-        let resolved = out["finish_time"].as_str().expect("resolved to a string");
-        let day = chrono::NaiveDate::parse_from_str(&resolved[..10], "%Y-%m-%d")
-            .expect("resolved value is a date");
+        let day = DatumTime::from_v2_json(&out["finish_time"])
+            .expect("resolved to an instant")
+            .local_time()
+            .date_naive();
         assert_eq!(day.weekday(), Weekday::Fri);
         let today = crate::time::DatumTime::now().local_time().date_naive();
         assert!(

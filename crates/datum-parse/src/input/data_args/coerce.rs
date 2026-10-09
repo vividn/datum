@@ -17,7 +17,8 @@ use crate::error::{ParseError, Result};
 use crate::input::data_args::Compat;
 use crate::shape::{REF_MARK, STR_MARK};
 use crate::time::{
-    format_iso_duration, parse_date, parse_duration, parse_time, DateArg, DefaultDirection, TimeCtx,
+    format_iso_duration, parse_date, parse_duration, parse_time, DateArg, DatumTime,
+    DefaultDirection, TimeBuilder, TimeCtx, Zone,
 };
 
 use super::classify::{path_is_date, path_is_duration, path_is_number, path_is_time};
@@ -40,7 +41,8 @@ pub enum KeyType {
     /// A day and a time, stored `YYYY-MM-DDTHH:MM:SS` (an instant given
     /// with its offset is stored in UTC, `…Z`).
     DateTime,
-    /// By suffix (`*time`): a clock time `HH:MM:SS`, or a day as its midnight.
+    /// By suffix (`*time`): an instant, parsed as `-t` parses its value and
+    /// stored as v2 stored it, `{utc, o, tz}` (da-x15of).
     Time,
     /// By suffix (`*dur`, `*duration`): stored as ISO 8601.
     Duration,
@@ -59,7 +61,8 @@ pub enum KeyType {
 }
 
 impl KeyType {
-    fn of_suffix(path: &str) -> Option<Self> {
+    /// The type a key's name gives it (`due_date`, `wake_time`), if any.
+    pub fn of_suffix(path: &str) -> Option<Self> {
         [
             (path_is_time(path), Self::Time),
             (path_is_date(path), Self::Date),
@@ -87,6 +90,10 @@ impl KeyType {
             (Self::Number, v) => v.is_number(),
             (Self::Bool, v) => v.is_boolean(),
             (Self::Date, Value::String(s)) => day(s),
+            // A string is the shape before da-x15of — a clock time that lost
+            // its day — whether the type came from the key's name or a spec.
+            // It does not fit, so `check` lists it for `reparse --fix`.
+            (Self::Time, v) => DatumTime::from_v2_json(v).is_some(),
             (Self::DateTime, Value::String(s)) => {
                 at(s.strip_suffix('Z').unwrap_or(s))
                     || chrono::DateTime::parse_from_rfc3339(s).is_ok()
@@ -200,11 +207,11 @@ const ENTRY_KEYS: [&str; 4] = ["dur", "occur_time", "start_time", "end_time"];
 /// `value` as a `ty`, or `None` when it is not one.
 ///
 /// Relative forms (`+30`, `-1h`) and day words (`sunday`, `yesterday`)
-/// resolve against `compat.base_local` (the entry's effective occur-time
-/// in its local zone) when supplied — `wake_time=+30` with `-t 10:00`
-/// becomes `10:30:00`. With no base anchor a
-/// time or date that parses but cannot be resolved is kept as typed; a
-/// datetime, which names its own day, resolves against the wall clock.
+/// resolve against `compat.base` (the entry's effective occur-time, in
+/// its zone) when supplied — `wake_time=+30` with `-t 10:00` is 10:30 on
+/// the entry's day. With no base anchor a date that parses but cannot be
+/// resolved is kept as typed; a time or datetime resolves against the
+/// wall clock.
 /// Data args face `Nearest`: an unmarked `finish_time=sunday` means the
 /// Sunday closest to the entry, not one a week out.
 fn coerce_as(ty: KeyType, value: &str, compat: Compat) -> Option<Value> {
@@ -219,30 +226,21 @@ fn coerce_as(ty: KeyType, value: &str, compat: Compat) -> Option<Value> {
         KeyType::Date => {
             // Relative day offsets (`nextDate=+3`) count from the entry's day.
             let d = parse_date(value, time_ctx(compat)).ok()?;
-            match resolve_date_arg(&d, compat.base_local) {
+            match resolve_date_arg(&d, base_local(compat)) {
                 Some(day) => text(day.format("%Y-%m-%d").to_string()),
                 None => infer_type(value),
             }
         }
+        // As `-t` composes its value, from the entry's time in its zone: a
+        // day word is that day's midnight, an ISO instant keeps the
+        // entry's zone, as `-t` does.
         KeyType::Time => {
             let t = parse_time(value, time_ctx(compat)).ok()?;
-            if let Some(abs) = t.absolute {
-                return text(abs.format("%H:%M:%S").to_string());
-            }
-            if let (Some(offset), Some(base)) = (t.offset, compat.base_local) {
-                return text((base + offset).time().format("%H:%M:%S").to_string());
-            }
-            // The value named a day rather than a clock (`finish_time=sunday`,
-            // `next_time=yesterday`). It becomes that day's midnight, the same
-            // full-datetime shape the plugin due-dates below already use.
-            if let Some(day) = t.date.and_then(|d| resolve_date_arg(&d, compat.base_local)) {
-                return text(day.format("%Y-%m-%dT00:00:00").to_string());
-            }
-            // ISO datetimes (`2026-05-03T00:00:00Z`, naive `2026-05-20T08:15:00`)
-            // on a `*_time` key pass through as-is — the chores kit and similar
-            // plugins store full-instant due-dates on `next_time`-style keys
-            // and would be broken by truncating to time-of-day.
-            infer_type(value)
+            let base = compat.base.cloned().or_else(wall_clock)?;
+            let at = TimeBuilder::default()
+                .with_time_arg(t)
+                .build_with_uncertainty_at(base.utc, Zone::of(&base).ok()?, base.timezone);
+            Some(at.to_v2_json())
         }
         KeyType::DateTime => {
             let ctx = time_ctx(compat);
@@ -341,8 +339,22 @@ fn wrong_type_hint(ty: KeyType, value: &str) -> String {
 /// occur-time when it has one, else the wall clock.
 fn time_ctx(compat: Compat) -> TimeCtx {
     TimeCtx::now()
-        .anchored_at(compat.base_local)
+        .anchored_at(base_local(compat))
         .facing(DefaultDirection::Nearest)
+}
+
+/// The entry's time as a wall clock in its own zone.
+fn base_local(compat: Compat) -> Option<NaiveDateTime> {
+    compat.base.map(|b| b.local_time().naive_local())
+}
+
+/// The wall clock, where there is one: what a `*_time` value resolves
+/// against on a line with no entry time.
+fn wall_clock() -> Option<DatumTime> {
+    #[cfg(feature = "native")]
+    return Some(DatumTime::now());
+    #[cfg(not(feature = "native"))]
+    None
 }
 
 /// The calendar day a parsed [`DateArg`] names. Pinned dates stand alone;

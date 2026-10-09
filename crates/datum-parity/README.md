@@ -15,7 +15,7 @@ This crate exists to be that reference.
 |---|---|---|
 | md5 color algebra | `goldens/colors/colors.tsv` (19 rows) | no |
 | mySpec field/state map | `src/myspec.rs` (23 fields, 100+ states) | no |
-| `get` text output | `goldens/text/fixtures.toml` (6 fixtures) | daydumb against the snapshots: no; v2 against them: yes |
+| `get` text output | `goldens/text/fixtures.toml` (7 fixtures) | daydumb against the snapshots: no; v2 against them: yes |
 | `tail` text output | `goldens/text/fixtures.toml` (7 fixtures) | daydumb against the snapshots: no; v2 against them: yes |
 | `nowview` SVG output | `goldens/text/fixtures.toml` (4 fixtures, all `uncapturable` — see da-t5f5) | skipped, with the reason |
 | `dayview` SVG output | `goldens/text/fixtures.toml` (6 fixtures) | daydumb against the snapshots: no; v2 against them: yes |
@@ -189,7 +189,7 @@ crates/datum-parity/
 │   ├── hash/
 │   │   └── content_hash.toml  # entry → canonical preimage → SHA-256
 │   └── text/
-│       ├── fixtures.toml          # 23 fixtures across all 4 surfaces
+│       ├── fixtures.toml          # 24 fixtures across all 4 surfaces
 │       ├── expected/<name>.txt    # v2's captured stdout/SVG, one per fixture
 │       ├── divergences.toml       # where daydumb differs, and why (for vividn's walk)
 │       └── divergences/<name>.diff  # each one's exact difference

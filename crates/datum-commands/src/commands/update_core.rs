@@ -243,12 +243,7 @@ pub fn update_batch_from_args(
             let _ = created.refresh_offset();
             created
         });
-        let p = parse_update_payload(
-            &args,
-            strategy,
-            types[&e.field].clone(),
-            Some(base.local_time().naive_local()),
-        )?;
+        let p = parse_update_payload(&args, strategy, types[&e.field].clone(), Some(base))?;
         payloads.push((p.value, p.extra));
     }
 
@@ -696,7 +691,7 @@ pub(crate) fn parse_update_payload(
     args: &UpdateArgs,
     strategy: UpdateStrategy,
     types: std::collections::BTreeMap<String, datum_parse::input::KeyType>,
-    base_local: Option<chrono::NaiveDateTime>,
+    base: Option<DatumTime>,
 ) -> Result<UpdatePayload> {
     use datum_parse::input::data_args::{handle_data_args, DataArgs};
 
@@ -751,7 +746,7 @@ pub(crate) fn parse_update_payload(
     let mut data_args = DataArgs {
         literal: strategy == UpdateStrategy::Rekey,
         types,
-        base_local,
+        base,
         ..DataArgs::default()
     };
     let mut injected_immediates: Vec<String> = Vec::new();

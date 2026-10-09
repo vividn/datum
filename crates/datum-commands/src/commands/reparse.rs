@@ -160,7 +160,7 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
             t
         }
     };
-    let parsed = parse_log_args(&log_args, action, Some(base.local_time().naive_local()))?;
+    let parsed = parse_log_args(&log_args, action, Some(base.clone()))?;
     let mut extra_data = parsed.extra_data;
     let mut reserved = extract_reserved_columns(&mut extra_data)?;
 

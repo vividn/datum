@@ -103,7 +103,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         };
 
         let occur_uncertainty = parse_datum_uncertainty(&data["occurTime"]);
-        let occur_time = parse_datum_time(&data["occurTime"]).map(|mut t| {
+        let occur_time = DatumTime::from_v2_json(&data["occurTime"]).map(|mut t| {
             t.uncertainty = occur_uncertainty;
             t
         });
@@ -230,12 +230,12 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         metadata_obj.insert("_import".to_string(), JsonValue::Object(import_marker));
         let extra_metadata = Some(JsonValue::Object(metadata_obj));
 
-        let created_at = parse_datum_time(&meta["createTime"])
+        let created_at = DatumTime::from_v2_json(&meta["createTime"])
             .map(|t| t.utc)
             .unwrap_or_else(chrono::Utc::now);
         // Prefer source modifyTime; fall back to createTime so imported rows
         // never carry a fresh "now" stamp when the source had a time at all.
-        let modified_at = parse_datum_time(&meta["modifyTime"])
+        let modified_at = DatumTime::from_v2_json(&meta["modifyTime"])
             .map(|t| t.utc)
             .unwrap_or(created_at);
 
@@ -505,33 +505,6 @@ fn write_skip_log(
         writeln!(f, "{}\t{}\t{}", reason.as_str(), id, detail)?;
     }
     Ok(())
-}
-
-/// Map a legacy datum time block (`{utc, o?, tz?}`) onto a [`DatumTime`].
-///
-/// Both `o` and `tz` are optional upstream, and they are read
-/// independently: an absent `tz` leaves the zone `None` rather than naming
-/// UTC. Fabricating `"UTC"` beside a non-zero `o` asserts a zone the backup
-/// never contained and contradicts the offset stored next to it, which is
-/// what `datum check tz` was flagging on every non-UTC row (da-vfbq).
-///
-/// `o` is a signed offset in **hours** and may be fractional (India +5.5,
-/// Nepal +5.75, Chatham +12.75); it is rounded, not truncated, so the
-/// minutes survive.
-fn parse_datum_time(v: &JsonValue) -> Option<DatumTime> {
-    let utc_str = v["utc"].as_str()?;
-    let utc: chrono::DateTime<chrono::Utc> = utc_str.parse().ok()?;
-    let timezone = v["tz"].as_str().map(str::to_string);
-    let offset_minutes = v["o"]
-        .as_f64()
-        .map(|o| (o * 60.0).round() as i32)
-        .unwrap_or(0);
-    Some(DatumTime {
-        utc,
-        offset_minutes,
-        timezone,
-        uncertainty: None,
-    })
 }
 
 /// Map a legacy datum `occurTime` block to a single ISO-8601 uncertainty

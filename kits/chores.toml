@@ -1,6 +1,6 @@
 [kit]
 name = "chores"
-version = "0.6"
+version = "0.7"
 description = "Chores as datum v2 kept them: a chore is any entry whose data says when it is next due (next_date / next_time, or v2's nextDate / nextTime). Log it done with `datum occur <chore> next_date=+7`; shirk it — move the date without claiming it — with `-T`. `datum newchore vacuum 4` declares a chore done every 4 days, so every `datum vacuum` then logs it due four days on; a first due date other than that is a shirk, `datum occur vacuum -T next_date=<date>`. `datum chorelist` shows what is due or was done today, `datum chorelist <chore>` one chore, and `datum chorelist --all` every chore; `--sort due` (or `-due`) sorts by a shown column."
 
 # Every chore query scans only the entries that say when they are next due.
@@ -33,15 +33,17 @@ where = "deleted_at IS NULL AND superseded_by IS NULL AND (json_type(data, '$.ne
 # local-time modifier gives the UTC day on datum.day, where it has no zone
 # data (da-5fonh). A timed chore's due day is its instant in the offset its
 # entry was logged with, for the same reason.
-# Every key spelling is read: v3 writes next_date/next_time, and v2import
-# keeps v2's nextDate and nextTime ({utc, o, tz}).
+# Every key spelling is read: next_date / nextDate a day, next_time /
+# nextTime an instant {utc, o, tz} as v2 wrote it and v3 now logs it
+# (da-x15of); a next_time logged before that is the text it was.
 [[view]]
 name = "chores"
 sql = """
 WITH chore AS (
   SELECT field, occur_time, occur_time_offset,
          COALESCE(occur_time, create_time) AS t,
-         COALESCE(json_extract(data, '$.next_time'),
+         COALESCE(json_extract(data, '$.next_time.utc'),
+                  json_extract(data, '$.next_time'),
                   json_extract(data, '$.nextTime.utc'),
                   json_extract(data, '$.next_date'),
                   json_extract(data, '$.nextDate'))              AS next,
