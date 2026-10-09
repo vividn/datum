@@ -21,6 +21,7 @@ use datum_core::{
 };
 use serde_json::Value as JsonValue;
 
+use crate::commands::log_core::zone_name;
 use crate::config::client_id;
 use datum_parse::cli::FlagArgs;
 
@@ -34,9 +35,13 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
     // Resolve occur_time from the standard timing flags so back-dated
     // markers land where the user pointed. Default is "now" — a bare
     // `datum flag <field>` stamps the moment of the command, same as
-    // every other logging verb. A day alone (`-y`) keeps now's clock:
-    // a flag marks a moment, never a whole day.
-    let occur_time = time.builder(TimeCtx::now())?.build();
+    // every other logging verb, in the zone `-z` names (da-rsa54). A day
+    // alone (`-y`) keeps now's clock: a flag marks a moment, never a
+    // whole day.
+    let occur_time = time
+        .builder(TimeCtx::now())?
+        .with_timezone(zone_name(&time)?)
+        .build();
 
     // Build the extra_metadata payload. Always emit `flag: true` so
     // downstream filters can match without caring whether a comment

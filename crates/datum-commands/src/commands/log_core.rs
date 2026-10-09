@@ -1900,6 +1900,15 @@ pub(crate) fn build_time_from_flags(
     build_time_anchored(time, now, None, false)
 }
 
+/// The IANA name `-z` resolves to, `None` without one: the host's zone.
+pub(crate) fn zone_name(time: &TimeArgs) -> Result<Option<String>> {
+    let name = |spec| {
+        resolve_timezone(spec)
+            .map_err(|e| anyhow::anyhow!("Invalid -z/--timezone value '{spec}': {e}"))
+    };
+    time.timezone.as_deref().map(name).transpose()
+}
+
 /// [`build_time_from_flags`] with an entry's `own` time standing where the
 /// wall clock does (retime, da-jix52): `now` is its instant, so `-t 1040`
 /// is 10:40 on its own day, `-t -5` five minutes before it and `sunday` the
@@ -1912,13 +1921,7 @@ pub(crate) fn build_time_anchored(
     own: Option<&DatumTime>,
     shift: bool,
 ) -> Result<DatumTime> {
-    let tz_name = match time.timezone.as_deref() {
-        Some(spec) => Some(
-            resolve_timezone(spec)
-                .map_err(|e| anyhow::anyhow!("Invalid -z/--timezone value '{spec}': {e}"))?,
-        ),
-        None => None,
-    };
+    let tz_name = zone_name(time)?;
     let own = match (own, &tz_name) {
         (Some(_), Some(name)) => Some((Zone::iana(name)?, tz_name.clone())),
         (Some(t), None) => Some((Zone::of(t)?, t.timezone.clone())),

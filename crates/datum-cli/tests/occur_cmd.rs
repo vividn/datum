@@ -236,6 +236,29 @@ fn iana_timezone_flag_applies() {
     assert_eq!(start.offset_minutes, 60, "CET winter offset");
 }
 
+/// da-rsa54: `flag` reads `-z` as `occur` does. It took the flag and built
+/// in the host zone, so `flag x -t 1000 -z UTC` stored 10:00 host time. Two
+/// zones, so one is not the host's wherever this runs.
+#[test]
+fn flag_reads_the_timezone_flag_as_occur_does() {
+    for zone in ["UTC", "Asia/Tokyo"] {
+        let db = fresh_db();
+        let flags = ["-d", "2023-12-04", "-t", "1000", "-z", zone];
+        run_cli(&[&["occur", "o"], &flags[..]].concat(), &db).expect("occur");
+        run_cli(&[&["flag", "f"], &flags[..]].concat(), &db).expect("flag");
+        let at = |field| {
+            let e = datum_core::test_util::logged_entries(&db, field).remove(0);
+            e.occur_time.unwrap()
+        };
+        let (occur, flag) = (at("o"), at("f"));
+        assert_eq!(flag.utc, occur.utc, "-z {zone}");
+        assert_eq!(flag.timezone.as_deref(), Some(zone));
+    }
+
+    let err = run_cli(&["flag", "f", "-z", "Nowhere/Land"], &fresh_db()).unwrap_err();
+    assert!(err.to_string().contains("Nowhere/Land"), "{err}");
+}
+
 /// TS #6: "records lastState as null if the active state is null"
 ///
 /// Datum writes `lastState` onto the occur document to capture the prior
