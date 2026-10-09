@@ -374,7 +374,7 @@ fn apply_time_value(flags: &mut TimeFlags, val: &str) {
 /// Recognise a bare `+N` / `-N` minutes offset. Returns the signed
 /// minute count, or `None` if `val` carries a unit suffix, a clock-like
 /// shape, or any other content the structured time parser would route
-/// through [`crate::input::time_args::apply_time_arg`].
+/// through [`crate::time::parse_time`].
 ///
 /// Conservative on purpose: we only fold cases where composition is
 /// unambiguous (relative + relative → sum). Mixed forms (`10:00` +

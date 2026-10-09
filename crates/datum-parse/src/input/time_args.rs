@@ -1,14 +1,13 @@
-//! `timeArgs` — composition of `-d`/`-y*`/`-t`/`-q*`/`-z`/`-D`/`-T` into
-//! a `DatumTime` + onlyDate flag + uncertainty. Port of datum's
-//! `src/input/timeArgs.ts`.
+//! `timeArgs` — the `-d`/`-y*`/`-t`/`-q*`/`-z`/`-D`/`-T` flag group, as
+//! datum's `src/input/timeArgs.ts` had it.
 //!
 //! # Design
 //!
-//! The TS version reads the current time directly via luxon. Daydumb
-//! must stay WASM-safe, so [`TimeArgs::build`] takes an explicit
-//! reference time (a `DatumTime`) that the host supplies. On native
-//! builds the `datum-commands` caller passes `DatumTime::now()`; on
-//! web/mobile, the host passes in the equivalent.
+//! The flags are composed in one place, [`TimeBuilder`]: [`TimeArgs::builder`]
+//! reads them into one, and [`TimeArgs::build`] builds it at a reference
+//! time the host supplies (the TS version read the clock through luxon;
+//! daydumb must stay WASM-safe). `crates/datum-parse/tests/time_flag_grid.rs`
+//! holds the two ways in to the same instant.
 //!
 //! # Non-ports
 //!
@@ -22,12 +21,11 @@
 //!
 //! See `docs/parity-audit/parsing.md` ("`timeArgs.ts`") for the spec.
 
-use chrono::{Duration, Offset};
 use chrono_tz::Tz;
 
 use crate::error::{ParseError, Result};
 use crate::input::flag_registry::{FlagAction, FlagSpec};
-use crate::time::{parse_date, parse_time, DatumTime, Direction, TimeCtx, Uncertainty, Zone};
+use crate::time::{parse_date, parse_time, DatumTime, TimeBuilder, TimeCtx, Uncertainty, Zone};
 
 /// Parsed shape of the timing flag group.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -63,10 +61,10 @@ pub struct TimeFromArgs {
     /// can tell "no args" from "user explicitly asked for now").
     pub unmodified: bool,
     /// `true` when the resolved moment is date-only — `-D`, or a `-d` /
-    /// `-y*` without any clock-level input.
+    /// `-y*` / `-t <day>` without any clock-level input.
     pub only_date: bool,
-    /// Explicit `±N[unit]` uncertainty carried on the parsed time/date.
-    /// `None` when no uncertainty suffix was supplied.
+    /// The `±N[unit]` typed on the time or date, else `-q`'s own.
+    /// `None` when the moment is exact.
     pub uncertainty: Option<Uncertainty>,
 }
 
@@ -94,8 +92,8 @@ impl TimeArgs {
     }
 
     /// Whether these flags resolve to a date-only moment — `-D`, or a
-    /// `-d` / `-y*` without any clock-level input — as
-    /// [`TimeFromArgs::only_date`] will say, known before building.
+    /// `-d` / `-y*` without any clock-level input — known before building.
+    /// [`TimeFromArgs::only_date`] also knows a `-t` that named a day.
     pub fn only_date(&self) -> bool {
         !self.omit_timestamp
             && (self.full_day
@@ -104,13 +102,28 @@ impl TimeArgs {
                     && self.quick == 0))
     }
 
+    /// The flags read into a [`TimeBuilder`], in the order it composes
+    /// them: `-t`, `-q`, `-d`, `-y`. `ctx` is what a weekday or a year-less
+    /// date is measured from. `-z` is the caller's: it names the zone the
+    /// builder is built in.
+    pub fn builder(&self, ctx: TimeCtx) -> Result<TimeBuilder> {
+        let mut builder = TimeBuilder::default()
+            .with_quick_count(i64::from(self.quick))
+            .with_quick_uncertainty(self.quick)
+            .with_full_day(self.full_day);
+        for t in self.time_values() {
+            builder = builder.with_time_arg(parse_time(t, ctx)?);
+        }
+        if let Some(d) = &self.date {
+            builder = builder.with_date_arg(parse_date(d, ctx)?);
+        }
+        Ok(builder.with_yesterday_count(i64::from(self.yesterday)))
+    }
+
     /// Build a `TimeFromArgs` relative to `reference` — the caller-
-    /// supplied "now". The reference carries the effective timezone:
-    /// if [`TimeArgs::timezone`] overrides it, we re-anchor to that
-    /// zone first.
-    ///
-    /// Matches datum's `handleTimeArgs` for every branch except the
-    /// NL-parsing paths (see crate docs).
+    /// supplied "now". The reference carries the effective timezone, and
+    /// [`TimeArgs::timezone`] overrides it. The moment keeps its clock when
+    /// it is date-only: `only_date` says so, and the caller picks the day.
     pub fn build(&self, reference: &DatumTime) -> Result<TimeFromArgs> {
         if self.omit_timestamp {
             return Ok(TimeFromArgs {
@@ -121,59 +134,29 @@ impl TimeArgs {
             });
         }
 
-        // Resolve the effective timezone.
         // `None` means the reference carries no zone name of its own and
         // none was requested — its fixed offset stands in for one.
-        let tz_name = match self.timezone.as_deref() {
+        let name = match self.timezone.as_deref() {
             Some(s) => Some(resolve_timezone(s)?),
             None => reference.timezone.clone(),
         };
-
-        // Shift the reference into the effective timezone without changing
-        // the instant, so clock-level overrides (time / date) land in the
-        // local-time frame the user expects.
-        let reference = match tz_name.as_deref() {
-            Some(name) => rebase_to_timezone(reference.clone(), name)?,
-            None => reference.clone(),
+        let zone = match &name {
+            Some(name) => Zone::iana(name)?,
+            None => Zone::of(reference)?,
         };
-
-        let mut unmodified = true;
-        let mut cur = reference.clone();
-        let mut uncertainty: Option<Uncertainty> = None;
-
-        for s in self.time_values() {
-            cur = apply_time_arg(cur, s, &mut uncertainty, tz_name.as_deref())?;
-            unmodified = false;
-        }
-
-        if self.quick > 0 {
-            let minutes = i64::from(self.quick) * 5;
-            cur = shift_minutes(cur, -minutes)?;
-            unmodified = false;
-        }
-
-        if let Some(ref s) = self.date {
-            cur = apply_date_arg(cur, s, &mut uncertainty, tz_name.as_deref())?;
-            unmodified = false;
-        }
-
-        if self.yesterday > 0 {
-            cur = shift_days(cur, -(i64::from(self.yesterday)), tz_name.as_deref())?;
-            unmodified = false;
-        }
-
-        let only_date = self.only_date();
-
-        // Refresh `offset_minutes` in case a date shift crossed a DST
-        // boundary — `cur.utc` is authoritative; the offset must re-derive
-        // from the effective tz at that moment.
-        cur.refresh_offset()?;
+        let builder = self.builder(TimeCtx::at(zone.local_naive(reference.utc)))?;
 
         Ok(TimeFromArgs {
-            time: Some(cur),
-            unmodified,
-            only_date,
-            uncertainty,
+            unmodified: self.time_values().next().is_none()
+                && self.quick == 0
+                && self.date.is_none()
+                && self.yesterday == 0,
+            only_date: builder.is_only_date(),
+            uncertainty: Some(builder.uncertainty()).filter(|u| *u != Uncertainty::exact()),
+            time: Some(DatumTime {
+                uncertainty: reference.uncertainty.clone(),
+                ..builder.build_at(reference.utc, zone, name)
+            }),
         })
     }
 }
@@ -328,222 +311,6 @@ fn validate_tz_name(name: &str) -> Result<String> {
         .parse()
         .map_err(|_| ParseError::InvalidArg(format!("Unknown timezone: {name}")))?;
     Ok(name.to_string())
-}
-
-fn rebase_to_timezone(mut t: DatumTime, tz_name: &str) -> Result<DatumTime> {
-    let tz: Tz = tz_name
-        .parse()
-        .map_err(|_| ParseError::InvalidArg(format!("Unknown timezone: {tz_name}")))?;
-    let local = t.utc.with_timezone(&tz);
-    t.offset_minutes = local.offset().fix().local_minus_utc() / 60;
-    t.timezone = Some(tz_name.to_string());
-    Ok(t)
-}
-
-// ─── time/date application ──────────────────────────────────────────────
-
-fn apply_time_arg(
-    cur: DatumTime,
-    s: &str,
-    uncertainty: &mut Option<Uncertainty>,
-    tz_name: Option<&str>,
-) -> Result<DatumTime> {
-    // Try daydumb's structured parser first. Ambiguous forms resolve
-    // against the running `cur`, so `-t` reads relative to whatever the
-    // earlier flags already established rather than to wall-clock now.
-    let ctx = TimeCtx::at(cur.local_time().naive_local());
-    if let Ok(arg) = parse_time(s, ctx) {
-        if let Some(u) = arg.uncertainty {
-            *uncertainty = Some(u);
-        }
-        // The value named a day, not a clock time (`-t sunday`). It fell
-        // back to the date parser, so it takes the date path here too.
-        if let Some(date) = arg.date {
-            return if let Some(abs) = date.absolute {
-                set_date(cur, abs, tz_name)
-            } else {
-                shift_days(cur, date.days_offset, tz_name)
-            };
-        }
-        // ISO-8601 instant (`...Z` / `...+02:00`) — the wall clock and zone
-        // are fully resolved by the literal. We keep the entry's `timezone`
-        // field (so `-z` still drives the IANA name) but the UTC moment is
-        // the literal's instant. Direction marker is meaningless on a
-        // pinned instant — silently ignored.
-        if let Some(instant) = arg.iso_instant {
-            return Ok(DatumTime {
-                utc: instant,
-                ..cur
-            });
-        }
-        // ISO-8601 with no zone suffix (`2024-03-16T15:30:00`) — interpret
-        // as local-in-the-current-effective-zone (i.e. `cur.timezone`,
-        // which already reflects any `-z` override). Direction ignored:
-        // the wall clock is fully specified.
-        if let Some(naive) = arg.iso_naive {
-            return set_naive_datetime(cur, naive);
-        }
-        if let Some(abs) = arg.absolute {
-            return set_clock(cur, abs, arg.direction);
-        }
-        if let Some(offset) = arg.offset {
-            // Relative offsets are already directional — ignore suffix.
-            // Held as a Duration so decimal/unit forms keep second precision.
-            return Ok(DatumTime {
-                utc: cur.utc + offset,
-                ..cur
-            });
-        }
-    }
-
-    // Relative-with-unit forms: "+10m", "-3hrs", "+87.3", "+3h", "+100s".
-    if let Some(rest) = s.strip_prefix('+').or_else(|| s.strip_prefix('-')) {
-        let sign = if s.starts_with('-') { -1.0f64 } else { 1.0f64 };
-        if let Some(secs) = parse_signed_duration_seconds(rest) {
-            let nanos = (sign * secs * 1_000_000_000.0) as i64;
-            let shifted = cur.utc + Duration::nanoseconds(nanos);
-            return Ok(DatumTime {
-                utc: shifted,
-                ..cur
-            });
-        }
-    }
-
-    Err(ParseError::InvalidTime(format!(
-        "cannot parse time '{s}' — see `datum help time`"
-    )))
-}
-
-fn apply_date_arg(
-    cur: DatumTime,
-    s: &str,
-    uncertainty: &mut Option<Uncertainty>,
-    tz_name: Option<&str>,
-) -> Result<DatumTime> {
-    let ctx = TimeCtx::at(cur.local_time().naive_local());
-    if let Ok(arg) = parse_date(s, ctx) {
-        if let Some(u) = arg.uncertainty {
-            *uncertainty = Some(u);
-        }
-        // Direction marker on year-pinned ISO dates and on relative
-        // offsets has no effect — the moment is fully specified. The
-        // hint becomes load-bearing once the parser produces year-less
-        // forms (compact `apr29`, `jan5`, …).
-        if let Some(abs) = arg.absolute {
-            let _ = arg.direction;
-            return set_date(cur, abs, tz_name);
-        }
-        let _ = arg.direction;
-        return shift_days(cur, arg.days_offset, tz_name);
-    }
-
-    Err(ParseError::InvalidTime(format!(
-        "cannot parse date '{s}' — see `datum help time`"
-    )))
-}
-
-/// Parse a signed duration body (`"10m"`, `"3hrs"`, `"87.3"`, `"100s"`)
-/// into seconds. Returns `None` for anything our duration parser
-/// doesn't recognise (leaves the decision to the caller).
-fn parse_signed_duration_seconds(body: &str) -> Option<f64> {
-    // Strip trailing space-and-unit words ("minutes", "hours").
-    let body = body.trim();
-    // If the remainder is a bare number, minutes are the default unit.
-    if let Ok(n) = body.parse::<f64>() {
-        return Some(n * 60.0);
-    }
-    // Split number / unit, treating the number part as f64.
-    let (num_str, unit) = split_number_unit(body);
-    let n: f64 = num_str.parse().ok()?;
-    let unit = unit.trim_start_matches(' ').to_ascii_lowercase();
-    let multiplier: f64 = match unit.as_str() {
-        "s" | "sec" | "secs" | "second" | "seconds" => 1.0,
-        "m" | "min" | "mins" | "minute" | "minutes" | "" => 60.0,
-        "h" | "hr" | "hrs" | "hour" | "hours" => 3600.0,
-        "d" | "day" | "days" => 86_400.0,
-        _ => return None,
-    };
-    Some(n * multiplier)
-}
-
-fn split_number_unit(s: &str) -> (&str, &str) {
-    let idx = s
-        .char_indices()
-        .find(|(_, c)| !c.is_ascii_digit() && *c != '.' && *c != '-')
-        .map(|(i, _)| i)
-        .unwrap_or(s.len());
-    (&s[..idx], &s[idx..])
-}
-
-/// The zone to read a `DatumTime`'s wall clock in: the named IANA zone when
-/// there is one, otherwise the fixed offset stored beside the instant.
-///
-/// A zone-less time (a legacy import that carried an offset but no `tz` —
-/// da-vfbq) still has a local clock; it just has no DST rules. Falling back
-/// to the offset keeps every clock/date operation working on such a time
-/// instead of erroring on a name that was never there.
-fn zone_of(name: Option<&str>, t: &DatumTime) -> Result<Zone> {
-    match name {
-        Some(name) => Zone::iana(name),
-        None => Ok(Zone::Fixed(*t.local_time().offset())),
-    }
-}
-
-/// These four setters all take a time the *user typed*, so they resolve
-/// under [`Resolved::for_logging`]: a wall clock that does not exist, or one
-/// that happened twice, is the user's error to see rather than ours to
-/// silently move (da-ztae).
-fn set_naive_datetime(cur: DatumTime, naive: chrono::NaiveDateTime) -> Result<DatumTime> {
-    let utc = zone_of(cur.timezone.as_deref(), &cur)?
-        .resolve(naive)
-        .for_logging()?;
-    Ok(DatumTime { utc, ..cur })
-}
-
-fn set_clock(
-    cur: DatumTime,
-    abs: chrono::NaiveTime,
-    direction: Option<Direction>,
-) -> Result<DatumTime> {
-    let zone = zone_of(cur.timezone.as_deref(), &cur)?;
-    let now_naive = zone.local_naive(cur.utc);
-    let mut local_dt = now_naive.date().and_time(abs);
-    // Direction-suffix disambiguation: shift by ±1 day when the candidate
-    // sits on the wrong side of "now". Tie-break (candidate == now) goes
-    // *with* the requested direction — `+` even at exact equality picks
-    // the future, `-` picks the past.
-    if let Some(dir) = direction {
-        match dir {
-            Direction::Future if local_dt <= now_naive => {
-                local_dt += chrono::Duration::days(1);
-            }
-            Direction::Past if local_dt >= now_naive => {
-                local_dt -= chrono::Duration::days(1);
-            }
-            _ => {}
-        }
-    }
-    let utc = zone.resolve(local_dt).for_logging()?;
-    Ok(DatumTime { utc, ..cur })
-}
-
-fn set_date(cur: DatumTime, abs: chrono::NaiveDate, tz_name: Option<&str>) -> Result<DatumTime> {
-    let zone = zone_of(tz_name, &cur)?;
-    let local_dt = abs.and_time(zone.local_naive(cur.utc).time());
-    let utc = zone.resolve(local_dt).for_logging()?;
-    Ok(DatumTime { utc, ..cur })
-}
-
-fn shift_minutes(cur: DatumTime, minutes: i64) -> Result<DatumTime> {
-    Ok(DatumTime {
-        utc: cur.utc + Duration::minutes(minutes),
-        ..cur
-    })
-}
-
-fn shift_days(cur: DatumTime, days: i64, tz_name: Option<&str>) -> Result<DatumTime> {
-    let utc = zone_of(tz_name, &cur)?.shift_days(cur.utc, days);
-    Ok(DatumTime { utc, ..cur })
 }
 
 // ─── tests ────────────────────────────────────────────────────────────────

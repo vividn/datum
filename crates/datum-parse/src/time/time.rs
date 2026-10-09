@@ -175,9 +175,11 @@ fn parse_whole(s: &str, ctx: TimeCtx) -> Result<TimeArg> {
     // unit suffixes (`-3.5`, `+10m`, `-1.5h`, `+100s`); a bare signed
     // number still defaults to minutes (`-8` = 8 min ago, `+5` = 5 min
     // ahead). (da-5722 — previously integer-only, so `-3.5`/`-10m` fell
-    // through to the generic reject below.)
+    // through to the generic reject below.) A space may stand before the
+    // unit here, as v2 took it (`-30 minutes`); a duration elsewhere is one
+    // word.
     if primary.starts_with('+') || primary.starts_with('-') {
-        return parse_duration(primary)
+        return parse_duration(&primary.replace(' ', ""))
             .map(|dur| TimeArg {
                 offset: Some(dur),
                 absolute: None,

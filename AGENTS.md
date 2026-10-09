@@ -100,6 +100,13 @@ exactly across midnights. `datum check stats` recomputes a sample of days and sa
   joined by a space or `T` (`'2026-09-28 10:00'`, `'yesterday 10am'`,
   `2026-09-28T10`), and ISO with an offset (`…T10:00+02:00`).
   `datum help time` lists every form, and a test parses each example on it
+- the flags compose in one order however they are typed, v2's: `-t` (a
+  clock, then its `±N`), `-q`, `-d`, `-y`. So `-t 10:15 -q` is 10:10,
+  `-d 2010-09-01 -y` is August 31, and `-d` names the day whatever a shift
+  crossed. One composer for every command, `TimeBuilder`, which
+  `TimeArgs::builder` reads the flags into; a clock a DST night skipped comes
+  out at the change, one it repeated at its first reading
+  (`crates/datum-parse/tests/time_flag_grid.rs`)
 - a duration is a trailing positional (`datum end work 30m`) or `dur=30m`
   (`1:30`, `2h`, ISO `PT30M` all work). It says how long the thing LASTED,
   so the block ENDS at the entry's time and the span precedes it —

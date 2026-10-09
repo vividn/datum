@@ -13,10 +13,7 @@ use datum_core::{
     dur::DurSpan,
     entry::{Entry, Verb},
     field_spec::{self, InterpolationContext},
-    time::{
-        parse_date, parse_duration, parse_time, resolve_timezone, DatumTime, TimeBuilder, TimeCtx,
-        Zone,
-    },
+    time::{parse_duration, resolve_timezone, DatumTime, TimeCtx, Zone},
 };
 use datum_parse::input::TimeArgs;
 use datum_parse::spec_keys::SpecKeyWords;
@@ -1977,21 +1974,7 @@ pub(crate) fn build_time_anchored(
         None => TimeCtx::now(),
     };
 
-    let mut builder = TimeBuilder::now()
-        .with_yesterday_count(time.yesterday as i64)
-        .with_quick_count(time.quick as i64)
-        .with_quick_uncertainty(time.quick)
-        .with_timezone(tz_name)
-        .with_full_day(time.full_day);
-
-    if let Some(d) = &time.date {
-        let da = parse_date(d, ctx)?;
-        builder = builder.with_date_arg(da);
-    }
-    for t in time.time_values() {
-        let ta = parse_time(t, ctx)?;
-        builder = builder.with_time_arg(ta);
-    }
+    let builder = time.builder(ctx)?.with_timezone(tz_name);
 
     Ok(match own {
         Some((zone, name)) => builder.build_with_uncertainty_at(now, zone, name),

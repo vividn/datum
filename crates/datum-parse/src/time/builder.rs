@@ -15,6 +15,9 @@ use crate::time::uncertainty::{Direction, Uncertainty};
 #[derive(Default)]
 pub struct TimeBuilder {
     pub days_back: i64,
+    /// A `-d` or `-y` was given, whatever it adds up to: `-d today` moves
+    /// nothing and still names a day.
+    pub day_named: bool,
     pub minutes_back: i64,
     /// Signed relative shift from `-t ±N` (positive = future). Held as a
     /// `Duration` rather than folded into `minutes_back` so decimal and
@@ -65,6 +68,7 @@ impl TimeBuilder {
 impl TimeBuilder {
     pub fn with_yesterday_count(mut self, n: i64) -> Self {
         self.days_back += n;
+        self.day_named |= n != 0;
         self
     }
 
@@ -87,8 +91,12 @@ impl TimeBuilder {
     }
 
     pub fn with_date_arg(mut self, arg: DateArg) -> Self {
+        self.day_named = true;
         if let Some(abs) = arg.absolute {
+            // A date replaces the day named so far; a later `-y` or
+            // relative `-d` counts back from it.
             self.date_override = Some(abs);
+            self.days_back = 0;
         } else {
             self.days_back += -arg.days_offset; // -1 means yesterday → days_back += 1
         }
@@ -215,17 +223,16 @@ impl TimeBuilder {
     }
 
     /// True when the inputs describe a date-only event: explicit `full_day`,
-    /// or a date/`-y` shift with no time-of-day input. Mirrors the
-    /// `only_date` flag computed in `TimeArgs::apply_to`.
-    fn is_only_date(&self) -> bool {
-        let date_or_yesterday = self.date_override.is_some() || self.days_back != 0;
+    /// or a date/`-y` with no time-of-day input. A `-t` that named a day
+    /// (`-t sunday`) is a date.
+    pub fn is_only_date(&self) -> bool {
         let time_or_quick = self.time_override.is_some()
             || self.iso_instant_override.is_some()
             || self.iso_naive_override.is_some()
             || self.minutes_back != 0
             || self.time_offset != Duration::zero()
             || self.quick_uncertainty.is_some();
-        self.full_day || (date_or_yesterday && !time_or_quick)
+        self.full_day || (self.day_named && !time_or_quick)
     }
 
     #[cfg(feature = "native")]
@@ -270,60 +277,62 @@ impl TimeBuilder {
     }
 
     /// Compose the stacked flags into a `DatumTime` anchored at `now` in
-    /// `zone`.
+    /// `zone`, in v2's order: `-t`, then `-q`, then `-d`, then `-y`. So a
+    /// `-q` or a `-t ±N` shifts the clock `-t` named (da-y4xv4), a `-d`
+    /// names the day whatever the shifts crossed, and a `-y` counts back
+    /// from it.
     ///
-    /// Every local→UTC step goes through [`Zone::resolve`] under the
-    /// [`Resolved::for_boundary`] policy: these are composed *shifts* of a
-    /// moment and one must always come out. The `.single()` guards this
-    /// replaces silently discarded the entire `-d`/`-t` override whenever
-    /// the resulting wall clock landed on a DST seam, which is the failure
-    /// mode da-ztae exists to remove.
+    /// The clock and the day are a wall reading (`wall`), read as an
+    /// instant once it is whole, so a reading a DST night skips or repeats
+    /// on the way (today's 02:30, bound for another day) never reaches the
+    /// result. That read is [`Zone::resolve`] under
+    /// [`Resolved::for_boundary`]: one must always come out. The `.single()`
+    /// guards this replaces silently discarded the entire `-d`/`-t`
+    /// override whenever the wall clock landed on a DST seam (da-ztae).
+    /// Flags that move nothing leave the instant alone, so the later
+    /// reading of a fall-back overlap is not re-read as the earlier.
+    ///
+    /// [`Resolved::for_boundary`]: crate::time::Resolved::for_boundary
     pub fn build_at(
         self,
         now: DateTime<Utc>,
         zone: Zone,
         timezone_name: Option<String>,
     ) -> DatumTime {
-        // ISO-8601 overrides establish the base instant; otherwise we anchor
-        // on the caller's "now" in the effective zone.
-        let mut utc = if let Some(instant) = self.iso_instant_override {
-            instant
-        } else if let Some(naive) = self.iso_naive_override {
-            zone.resolve(naive).for_boundary()
-        } else {
-            now
+        let mut utc = self.iso_instant_override.unwrap_or(now);
+        let mut wall = self
+            .iso_naive_override
+            .unwrap_or_else(|| zone.local_naive(utc));
+        // The instant `wall` reads as: `utc` itself until `wall` has moved.
+        let read = |wall: NaiveDateTime, utc: DateTime<Utc>| {
+            if wall == zone.local_naive(utc) {
+                utc
+            } else {
+                zone.resolve(wall).for_boundary()
+            }
         };
 
-        utc -= chrono::Duration::minutes(self.minutes_back);
-        // A calendar day, not 24 h of elapsed time (da-yxc71).
-        utc = zone.shift_days(utc, -self.days_back);
-
-        if let Some(date) = self.date_override {
-            let time = self
-                .time_override
-                .unwrap_or_else(|| zone.local_naive(utc).time());
-            utc = zone.resolve(date.and_time(time)).for_boundary();
-        } else if let Some(time) = self.time_override {
-            let now_naive = zone.local_naive(utc);
-            let mut local_dt = now_naive.date().and_time(time);
-            if let Some(dir) = self.time_direction {
-                match dir {
-                    Direction::Future if local_dt <= now_naive => {
-                        local_dt += chrono::Duration::days(1);
-                    }
-                    Direction::Past if local_dt >= now_naive => {
-                        local_dt -= chrono::Duration::days(1);
-                    }
-                    _ => {}
-                }
+        if let Some(time) = self.time_override {
+            let from = wall;
+            wall = from.date().and_time(time);
+            match self.time_direction {
+                Some(Direction::Future) if wall <= from => wall += Duration::days(1),
+                Some(Direction::Past) if wall >= from => wall -= Duration::days(1),
+                _ => {}
             }
-            utc = zone.resolve(local_dt).for_boundary();
         }
 
-        // Signed `-t ±N` shift (future positive), after the clock override
-        // so an alias-bound `-t +5` lands on a call-site `-t 10:00` as
-        // 10:05 instead of being overwritten by it (da-y4xv4).
-        utc += self.time_offset;
+        // `-t ±N` and `-q` are elapsed time, so they shift the instant.
+        let elapsed = self.time_offset - Duration::minutes(self.minutes_back);
+        if !elapsed.is_zero() {
+            utc = read(wall, utc) + elapsed;
+            wall = zone.local_naive(utc);
+        }
+
+        // `-d` and `-y` are calendar days: the same wall clock on that day,
+        // not 24 h of elapsed time (da-yxc71).
+        let day = self.date_override.unwrap_or(wall.date()) - Duration::days(self.days_back);
+        let utc = read(day.and_time(wall.time()), utc);
 
         DatumTime {
             utc,

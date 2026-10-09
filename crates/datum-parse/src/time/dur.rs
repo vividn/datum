@@ -129,9 +129,9 @@ fn parse_compound_duration(s: &str) -> Result<Duration> {
         let unit = &s[unit_start..i];
 
         let secs = match unit {
-            "s" | "sec" | "second" | "seconds" => n as i64,
-            "m" | "min" | "minute" | "minutes" => (n * 60.0) as i64,
-            "h" | "hr" | "hour" | "hours" => (n * 3600.0) as i64,
+            "s" | "sec" | "secs" | "second" | "seconds" => n as i64,
+            "m" | "min" | "mins" | "minute" | "minutes" => (n * 60.0) as i64,
+            "h" | "hr" | "hrs" | "hour" | "hours" => (n * 3600.0) as i64,
             "d" | "day" | "days" => (n * 86400.0) as i64,
             "" => {
                 // Bare number is only allowed as the entire input (default: minutes).
