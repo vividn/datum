@@ -295,7 +295,8 @@ impl TimeBuilder {
         };
 
         utc -= chrono::Duration::minutes(self.minutes_back);
-        utc -= chrono::Duration::days(self.days_back);
+        // A calendar day, not 24 h of elapsed time (da-yxc71).
+        utc = zone.shift_days(utc, -self.days_back);
 
         if let Some(date) = self.date_override {
             let time = self
@@ -657,5 +658,44 @@ mod tests {
             "clamped to the transition — the first instant of the local day"
         );
         assert_eq!(start.offset_minutes, -180, "post-transition offset (-03)");
+    }
+
+    /// da-yxc71: a day shift is a calendar day, not 24 h. Berlin's fall-back
+    /// day (2026-10-25) is 25 h long and its spring-forward day (2026-03-29)
+    /// 23 h, so 24 h back from the hour beside either change was the same
+    /// day, or two days back.
+    #[test]
+    fn a_day_shift_is_a_calendar_day_beside_a_dst_change() {
+        let berlin = |now: &str, b: TimeBuilder| {
+            let zone = Zone::iana("Europe/Berlin").unwrap();
+            let name = Some("Europe/Berlin".to_string());
+            let dt = b.build_with_uncertainty_at(now.parse().unwrap(), zone.clone(), name);
+            zone.local_naive(dt.utc).to_string()
+        };
+        let y = || TimeBuilder::default().with_yesterday_count(1);
+        // 23:30 CET on the fall-back day.
+        assert_eq!(berlin("2026-10-25T22:30:00Z", y()), "2026-10-24 00:00:00");
+        // 00:30 CEST on the day after spring-forward.
+        assert_eq!(berlin("2026-03-29T22:30:00Z", y()), "2026-03-29 00:00:00");
+        // Forward, into the long day and out of the short one.
+        let tomorrow = || TimeBuilder::default().with_yesterday_count(-1);
+        assert_eq!(
+            berlin("2026-10-24T21:30:00Z", tomorrow().with_quick_count(1)),
+            "2026-10-25 23:25:00"
+        );
+        assert_eq!(
+            berlin("2026-03-28T22:30:00Z", tomorrow()),
+            "2026-03-29 00:00:00"
+        );
+        // `-q` stays elapsed time and the wall clock keeps its reading:
+        // five minutes back, then the same clock a day earlier.
+        assert_eq!(
+            berlin("2026-10-25T22:30:00Z", y().with_quick_count(1)),
+            "2026-10-24 23:25:00"
+        );
+        assert_eq!(
+            berlin("2026-03-29T22:02:00Z", y().with_quick_count(1)),
+            "2026-03-28 23:57:00"
+        );
     }
 }
