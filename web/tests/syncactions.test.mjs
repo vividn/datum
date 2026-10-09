@@ -10,7 +10,7 @@ import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import { startApp, stopApp } from './support/app.mjs';
-import { nativeCopy, relayed, startRelay, withWallClock } from './support/sync.mjs';
+import { nativeCopy, pairWith, relayed, startRelay, withWallClock } from './support/sync.mjs';
 import { until } from './support/until.mjs';
 
 let relay;
@@ -55,11 +55,11 @@ async function authenticator(page) {
 	});
 }
 
-/** `home` in an open chain with a member `phone` beside this copy; the phone's endpoint. */
-async function openChain(app) {
+/** `home` in an open chain with a member `label` beside this copy, admitted as a session admits one; its endpoint. */
+async function openChain(app, label = 'phone') {
 	const { secret } = JSON.parse(await cli(app, ['--db', 'home', 'sync', 'new-invite', '--expires', '1d']));
 	const phone = endpointId();
-	await cli(app, ['--db', 'home', 'sync', 'handshake', phone, '--label', 'phone', '--addr', '{}', '--invite', secret, '--chain', '']);
+	await cli(app, ['--db', 'home', 'sync', 'handshake', phone, '--label', label, '--addr', '{}', '--invite', secret, '--chain', '']);
 	return phone;
 }
 
@@ -241,6 +241,67 @@ describe('the sync widget’s actions', () => {
 			await notice.getByRole('button', { name: 'ok' }).click();
 			await until(async () => (await notice.count()) === 0, Boolean);
 		}, AT_DATUM_DAY);
+	});
+
+	// The root bar's ⚠ (da-8fucg). vividn: «a little warning icon in the upper
+	// bar next to the gear … If you click on it it displays a message box
+	// saying that another device joined. ok to dismiss. tells user to go to
+	// sync to manage». The Sync widget's own line was the only place a notice
+	// showed, so this page has none.
+	test('an unacknowledged notice is a ⚠ in the root bar with no Sync widget on the page: its dialog names the device and the Sync widget, OK acknowledges it, and the next device brings it back', async () => {
+		await withWallClock(async (app) => {
+			const { page } = app;
+			const notices = async () => JSON.parse(await cli(app, ['--db', 'home', 'sync', 'status', '--json'])).notices;
+			await openChain(app);
+			await app.goto('/repl?db=home');
+			assert.equal(await page.locator(WIDGET).count(), 0);
+			const warn = page.locator('.root-bar').getByRole('button', { name: 'sync notices' });
+			const dialog = page.locator('dialog.confirm');
+
+			await warn.click();
+			const said = await dialog.innerText();
+			assert.match(said, /Another device joined \(«home»\): new sync endpoint phone /);
+			assert.match(said, /To manage devices, open the Sync widget/);
+			// Closed without an OK, nothing is acknowledged.
+			await dialog.getByRole('button', { name: 'not now' }).click();
+			assert.equal((await notices()).length, 1);
+
+			await warn.click();
+			await dialog.getByRole('button', { name: 'OK' }).click();
+			await until(() => warn.count(), (n) => n === 0);
+			assert.deepEqual(await notices(), []);
+
+			// With the page open: no reload brings the next one.
+			await openChain(app, 'tablet');
+			await warn.click();
+			assert.match(await dialog.innerText(), /new sync endpoint tablet /);
+			assert.doesNotMatch(await dialog.innerText(), /phone/);
+		}, { viewport: DESKTOP });
+	});
+
+	// A device another member let in reaches this copy as an op, in a session
+	// with a peer it already knows: only what came in says the chain changed.
+	test('a device another member admitted is a ⚠ here once a sync brings its admit', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			await withWallClock(
+				async (app) => {
+					const { page } = app;
+					await pairWith(app, native);
+					const { secret } = JSON.parse((await native.run(['sync', 'new-invite', '--expires', '1d'])).stdout);
+					const admit = ['sync', 'handshake', endpointId(), '--label', 'tablet', '--addr', '{}', '--invite', secret, '--chain', ''];
+					assert.equal((await native.run(admit)).code, 0);
+					native.spawn(['sync', 'run']);
+					const said = () => page.evaluate(() => (window.datum.sync.states().datum?.notices ?? []).map((n) => n.label));
+					await until(said, (labels) => labels.includes('tablet'));
+					await page.locator('.root-bar').getByRole('button', { name: 'sync notices' }).click();
+					assert.match(await page.locator('dialog.confirm').innerText(), /Another device joined \(«datum»\): new sync endpoint tablet /);
+				},
+				{ prepare: relayed(relay), viewport: DESKTOP }
+			);
+		} finally {
+			await native.close();
+		}
 	});
 
 	test('the approve link writes the record into a copy of its chain, with no code to paste; another chain’s shows the code', async () => {

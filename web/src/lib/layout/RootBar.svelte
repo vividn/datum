@@ -105,6 +105,15 @@
 	(da-y992). They were under the logo on the bottom bar until then. So
 	the bar's right end reads ⓘ · lock · gear (da-fphjw).
 
+	Before the beta pair, a ⚠ (da-8fucg) while a sync notice — a new device,
+	a new admin, an unlock — is unacknowledged. vividn, 2026-10-09: "a little
+	warning icon in the upper bar next to the gear and stuff. If you click
+	on it it displays a message box saying that another device joined. ok
+	to dismiss. tells user to go to sync to manage". The Sync widget's own
+	`⚠ … [OK]` was the only place one showed, so a layout without that
+	widget never showed it. It is not between the ⓘ, the lock and the gear,
+	which stay hard up against each other (brand.test.mjs).
+
 	On a phone the tabs scroll sideways rather than wrapping — one row,
 	always — while the `+`, the `▾`, the beta pair, the lock and the gear
 	stay where they are.
@@ -120,6 +129,7 @@
 	import { run } from '$lib/run.js';
 	import { pausedArgv } from '$lib/calls.js';
 	import { syncStates } from '$lib/sync.js';
+	import { ackNotice, noticeWords } from '$lib/syncView.js';
 	import Beta from '$lib/Beta.svelte';
 	import { act } from '$lib/act.js';
 	import { openBackups } from '$lib/backups.js';
@@ -162,6 +172,14 @@
 	$: paused = $syncStates[currentDb()]?.paused;
 	/** How far a sync session's apply is, while one runs (da-a7oa4). */
 	$: applying = $syncStates[currentDb()]?.applying;
+	/**
+	 * The sync notices nobody has acknowledged (da-8fucg), of every database
+	 * a tab is on: each one's sync leader reads them and says so to every
+	 * tab, as it does `paused`. A database no tab is on has no endpoint
+	 * running, so nothing joins it unseen, and its old notices are said
+	 * again when it is opened.
+	 */
+	$: noticed = Object.values($syncStates).flatMap((s) => (s.notices ?? []).map((n) => ({ db: s.db, n })));
 
 	/**
 	 * The widget's own options, inline (da-vhwq), for a root tab that SHOWS
@@ -323,6 +341,22 @@
 		});
 
 	/**
+	 * The ⚠'s dialog (da-8fucg): each notice, where devices are managed, and
+	 * an OK that acknowledges what it showed, as the Sync widget's OK does.
+	 * Nothing is checked of an ack: one settles a device's rejoins with it,
+	 * the next then has nothing to acknowledge, and whatever is left the
+	 * leader says again, the ⚠ with it.
+	 */
+	const doNotices = () =>
+		attempt(async () => {
+			const shown = noticed;
+			const text =
+				shown.map(({ db, n }) => noticeWords(db, n)).join('\n\n') +
+				'\n\nTo manage devices, open the Sync widget: the + in this bar, then sync. OK acknowledges this.';
+			if (await confirm(text, 'OK', '', 'not now')) for (const { db, n } of shown) await ackNotice(db, n);
+		});
+
+	/**
 	 * The gear's menu: the page's own settings, which belong to no layout
 	 * and no pane — the backups, the act above, and which build is in front of you,
 	 * disabled, because it is a fact and not an act.
@@ -433,6 +467,17 @@
 	{#if applying}
 		<span class="syncing" role="status" title="a command typed meanwhile waits for the step under way"
 			>syncing {applying.done.toLocaleString()} of {applying.of.toLocaleString()}</span
+		>
+	{/if}
+	{#if noticed.length}
+		<button
+			type="button"
+			class="control notices"
+			use:act={'open'}
+			aria-label="sync notices"
+			title="a device joined, or the sync chain changed: tap to read"
+			data-help="Something changed in a sync chain: a device joined, an admin was added, or the chain was unlocked. Tap to read it and acknowledge it."
+			on:click={doNotices}>⚠</button
 		>
 	{/if}
 	<span class="end"><Beta /></span>
@@ -665,6 +710,23 @@
 	.end {
 		margin-left: auto;
 		flex: none;
+	}
+
+	/* The ⚠ (da-8fucg) rides at the end too, ahead of the pair, so while it
+	   is drawn the `auto` is its own. A pill and not a badge: it opens a
+	   dialog, and so wears the `›` ($lib/act.ts). */
+	.notices {
+		margin-left: auto;
+		flex: none;
+		block-size: 24px;
+		padding: 0 0.4rem;
+		color: var(--warn);
+		border-color: var(--warn);
+		white-space: nowrap;
+	}
+
+	.notices + .end {
+		margin-left: 0;
 	}
 
 	.root-bar :global(.gear) {

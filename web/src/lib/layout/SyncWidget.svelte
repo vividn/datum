@@ -42,6 +42,7 @@
 	import { listDatabases } from '$lib/databases.js';
 	import { joinLink, syncConnect, syncOffer, syncStates, ticketAbout, type SyncState } from '$lib/sync.js';
 	import {
+		ackNotice,
 		approvalWords,
 		approveInto,
 		approving,
@@ -68,7 +69,6 @@
 	import { ask, confirm } from '$lib/confirm.js';
 	import { cliError, type RunResult } from '$lib/run.js';
 	import {
-		ackArgv,
 		adminAddArgv,
 		adminListArgv,
 		adminRemoveArgv,
@@ -294,8 +294,7 @@
 			ok(await syncAct(d.db, adminRemoveArgv(a.key, last)));
 		});
 
-	const ack = (db: string, n: Notice) =>
-		doing(async () => ok(await syncAct(db, ackArgv(n.kind === 'unlock' ? 'unlock' : n.subject))));
+	const ack = (db: string, n: Notice) => doing(async () => ok(await ackNotice(db, n)));
 
 	/** Leave the chain from any chain, for a fresh start (da-j8c4l). */
 	const leave = (d: DbSync) =>

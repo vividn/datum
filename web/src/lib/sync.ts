@@ -29,6 +29,10 @@
 // - PAUSED (`datum sync pause`, da-wlbyx), it pushes nothing, and a session
 //   that reaches it is refused at the handshake. The state carries when, and
 //   the root bar says so in every tab.
+// - NOTICES (da-8fucg) — a new device, a new admin, an unlock, until each is
+//   acknowledged — ride the state too, read with the setup: at load, after a
+//   session that admitted a peer or received ops, and after any `sync`
+//   command that wrote (`syncTouched`), an ack among them.
 // - A tab that is not the leader forwards `offer` and `connect` to it.
 //   Pairing is the chain's (da-6177s): `offer` writes a chain invite —
 //   starting an open chain when there is none — and `connect` redeems one.
@@ -44,7 +48,7 @@ import { chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusAr
 import { announceHere, onAnyChange } from './changes.js';
 import type { SyncEvent, SyncReport, SyncRequest, TicketAbout } from './syncProtocol.js';
 import { cliError, dbOf, type RunResult } from './run.js';
-import type { Member, SyncStatus } from './syncView.js';
+import type { Member, Notice, SyncStatus } from './syncView.js';
 import { shellSplit } from './shellSplit.js';
 
 const PULL_MS = 30_000;
@@ -79,6 +83,8 @@ export interface SyncState {
 	paused?: string;
 	/** How far a session's apply is, while one runs (da-89ujs): `done` of `of` ops. */
 	applying?: { done: number; of: number };
+	/** Its notices not yet acknowledged (da-8fucg). */
+	notices?: Notice[];
 	peers: Record<string, PeerState>;
 }
 
@@ -191,6 +197,7 @@ class Leader {
 	/** In no chain yet, joining one through `peers`: a join cut short (da-idw54). */
 	joining = false;
 	paused?: string;
+	notices: Notice[] = [];
 	label = 'datum.day';
 	/** What the CLI runs (`sync status --json`'s `this`), said to every peer (da-3zqyv). */
 	version?: { datum: string; schema: number };
@@ -238,6 +245,7 @@ class Leader {
 		this.label = status?.this.label ?? this.label;
 		this.version = status?.this ?? this.version;
 		this.paused = status?.paused ?? undefined;
+		this.notices = status?.notices ?? [];
 		this.peers = (status?.members ?? []).filter((p): p is Peer => !p.revoked && !!p.addr);
 		if (syncs) await this.start();
 		if (joined) await cli(['--db', this.db, ...renameArgv(this.label)]);
@@ -311,7 +319,8 @@ class Leader {
 		// cut short (da-idw54), which the leader hears of only once that dead
 		// connection times out, ~35 s on.
 		const unknown = !this.peers.some((p) => p.endpoint === id);
-		if (report.added || this.joining || unknown) void this.refresh();
+		// What came in may be a chain record, and with it a notice (da-8fucg).
+		if (report.got || report.added || this.joining || unknown) void this.refresh();
 	}
 
 	served(e: Extract<SyncEvent, { served: string }>): void {
@@ -358,7 +367,7 @@ class Leader {
 					: 'offline';
 			peers[p.endpoint] = { label: p.label, reach, lastSeen, error: this.errors.get(p.endpoint) };
 		}
-		return { db: this.db, endpoint: this.endpoint, paused: this.paused, applying: this.applying, peers };
+		return { db: this.db, endpoint: this.endpoint, paused: this.paused, applying: this.applying, notices: this.notices, peers };
 	}
 
 	post(): void {

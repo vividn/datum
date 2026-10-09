@@ -194,7 +194,10 @@ chain with no admin is OPEN — any member invites, revokes or renames, and
 `invite` on a copy in no chain starts one — and the first `admin add`
 LOCKS it, after which those acts take an admin key (passkey or key file).
 Removing the last admin takes `--allow-unlock` and reopens it; every copy
-keeps a notice of the unlock until `sync chain ack unlock`.
+keeps a notice of the unlock until `sync chain ack unlock`. A notice — a new
+device, a new admin, an unlock — not yet acknowledged is a ⚠ in datum.day's
+root bar, in every tab, for each database a tab is on: its sync leader reads
+them with its setup and carries them in its state (da-8fucg).
 `sync chain purge <WHO>` (da-ry11c) previews, and with `--yes` writes a
 `purge` record: every copy refuses every op that endpoint signed and folds
 its entries again without them — what it made goes, its edits and deletes

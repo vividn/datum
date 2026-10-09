@@ -16,7 +16,7 @@
 // broadcast reachability ($lib/sync.ts `syncStates`) into clients × databases.
 
 import { writable } from 'svelte/store';
-import { approveArgv, canLeaveArgv, chainListArgv, newInviteArgv, qrArgv, syncStatusArgv } from './calls.js';
+import { ackArgv, approveArgv, canLeaveArgv, chainListArgv, newInviteArgv, qrArgv, syncStatusArgv } from './calls.js';
 import { cliError, run, type RunResult } from './run.js';
 import { approve, approveLink } from './passkey.js';
 import type { Invite, Reach, SyncState } from './sync.js';
@@ -72,6 +72,17 @@ export interface Notice {
 	label: string;
 	text: string;
 }
+
+/** A notice's kind in plain words (da-8fucg), said before the CLI's own line, which names who and when. */
+const NOTICED: Record<string, string> = {
+	endpoint: 'Another device joined',
+	rejoin: 'A device joined again',
+	admin: 'An admin was added',
+	unlock: 'The chain was unlocked'
+};
+
+/** `n`, a notice of `db`'s, as the root bar's dialog says it. */
+export const noticeWords = (db: string, n: Notice): string => `${NOTICED[n.kind] ?? 'Sync notice'} («${db}»): ${n.text}`;
 
 /** One database's chain, or `chain: null` for one that is in none. */
 export interface DbSync {
@@ -344,6 +355,10 @@ export async function syncAct(db: string, argv: string[]): Promise<RunResult> {
 	const done = await run(['--db', db, ...approveArgv(link)], await approve(link));
 	return { ...done, stdout: r.stdout + done.stdout };
 }
+
+/** Acknowledge `n` in `db`: every unlock by the word, anything else by its subject. */
+export const ackNotice = (db: string, n: Notice): Promise<RunResult> =>
+	syncAct(db, ackArgv(n.kind === 'unlock' ? 'unlock' : n.subject));
 
 /** Write `link`'s record into `db`, signed with `code`. */
 export const approveInto = (db: string, link: string, code: string): Promise<RunResult> =>
