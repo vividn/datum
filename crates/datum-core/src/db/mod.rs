@@ -113,6 +113,9 @@ pub struct Db {
     /// was already current. datum-core never prints; the CLI reads this
     /// and tells the user (da-ksao).
     last_migration: Option<MigrationReport>,
+    /// The file this handle was opened at, as it was named: what datum
+    /// writes beside a database is beside this. `None` in memory.
+    path: Option<std::path::PathBuf>,
 }
 
 impl Db {
@@ -201,6 +204,7 @@ impl Db {
             spec_alias_cache: RefCell::new(None),
             client_id: OnceCell::new(),
             last_migration: None,
+            path: Some(path.into()),
         };
         db.last_migration = db.migrate(Some(std::path::Path::new(path)))?;
         Ok(db)
@@ -219,6 +223,7 @@ impl Db {
             spec_alias_cache: RefCell::new(None),
             client_id: OnceCell::new(),
             last_migration: None,
+            path: Some(path.into()),
         })
     }
 
@@ -254,6 +259,7 @@ impl Db {
             spec_alias_cache: RefCell::new(None),
             client_id: OnceCell::new(),
             last_migration: None,
+            path: Some(path.into()),
         })
     }
 
@@ -265,6 +271,7 @@ impl Db {
             spec_alias_cache: RefCell::new(None),
             client_id: OnceCell::new(),
             last_migration: None,
+            path: None,
         };
         db.last_migration = db.migrate(None)?;
         Ok(db)
@@ -362,6 +369,11 @@ impl Db {
         &self.conn
     }
 
+    /// The file this handle was opened at; `None` for an in-memory database.
+    pub fn path(&self) -> Option<&std::path::Path> {
+        self.path.as_deref()
+    }
+
     /// Current stored schema version, read fresh from `_meta`.
     pub fn schema_version(&self) -> Result<u32> {
         match crate::migrations::read_schema_version(&self.conn)? {
@@ -379,6 +391,15 @@ impl Db {
     /// endpoint key, so a purge that kept them kept the data and the
     /// membership both (da-8v7ua). The purged copy mints a new key on its
     /// next sync and is a new copy, in no chain.
+    ///
+    /// And nothing of them stays in the file, as deleting it would leave
+    /// nothing (da-nc8i1): a dropped table's pages are only marked free, so
+    /// `VACUUM` rewrites the file without them, and the `-wal`, which holds
+    /// earlier images of those pages, is checkpointed and truncated. The
+    /// file itself stays: a running `sync run` holds it open, and reads its
+    /// changed endpoint key through that handle. A reader that will not let
+    /// the checkpoint finish within `busy_timeout` is an error, and a
+    /// second purge finishes the job.
     pub fn force_recreate_schema(&self) -> Result<Vec<String>> {
         let tables: Vec<String> = self
             .conn
@@ -395,6 +416,7 @@ impl Db {
             self.conn
                 .execute(&format!("DROP TABLE IF EXISTS \"{t}\""), [])?;
         }
+        self.conn.execute_batch("VACUUM")?;
         self.conn.execute_batch(include_str!("../schema.sql"))?;
         self.conn.execute_batch(STATS_CACHE_SQL)?;
         // A kit index is this device's, derived from the definitions the
@@ -405,6 +427,21 @@ impl Db {
             &self.conn,
             crate::migrations::CURRENT_SCHEMA_VERSION,
         )?;
+        // The first column is `busy`: 1 when a reader kept the checkpoint
+        // from finishing. No row from an SQLite built without WAL,
+        // datum.day's: it has no `-wal` to truncate.
+        use rusqlite::OptionalExtension;
+        let busy: Option<i64> = self
+            .conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| row.get(0))
+            .optional()?;
+        if busy.is_some_and(|busy| busy != 0) {
+            return Err(DatumError::Other(
+                "the database is purged and usable, empty, but another process is reading \
+                 it, so its -wal file still holds old pages: run the purge again to clear them"
+                    .to_string(),
+            ));
+        }
         Ok(tables)
     }
 }

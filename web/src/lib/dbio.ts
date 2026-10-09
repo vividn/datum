@@ -288,7 +288,7 @@ export async function purge(flags: string[] = []): Promise<RunResult> {
 	// standing in was destroyed. `dbOf` reads the argv first, so a typed
 	// `db purge --db x` names `x`.
 	const db = dbOf(dbPurgeArgv(flags));
-	if (!(await confirm(`This will destroy ALL data in ${db}.`, 'purge', db))) {
+	if (!(await confirm(`This will destroy ALL data in ${db}, and the copies of it kept before upgrades.`, 'purge', db))) {
 		// The CLI's own words for a mismatch at its prompt.
 		return { argv: ['db', 'purge'], code: 1, stdout: '', stderr: `db purge: aborted (input did not match ${db})` };
 	}

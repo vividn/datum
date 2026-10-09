@@ -237,6 +237,42 @@ describe('before the CLI answers', () => {
 		});
 	});
 
+	// da-nc8i1: a purge leaves nothing of the database, as deleting its file
+	// would. Every file the worker keeps for it is read: the database, its
+	// journal, and the copy an upgrade kept, which is the whole of it as it was.
+	test('a purge leaves none of the data in OPFS: the file, its journal, the copy an upgrade kept', async () => {
+		await withApp(async (app) => {
+			// Long enough to fill more pages than the new schema takes back:
+			// a page it reuses is zeroed whether or not the file is rewritten.
+			const mark = 'zebra-marker-77';
+			await app.run(['occur', 'coffee', `note=${mark.repeat(8000)}`]);
+			await previousSchema(app.page);
+			await app.reload();
+			await app.run(['tail', '-n', '1']);
+			const holding = () =>
+				app.page.evaluate(
+					([dir, mark]) =>
+						navigator.locks.request('datum-cli-files', async () => {
+							const files = await (await navigator.storage.getDirectory()).getDirectoryHandle(dir);
+							const names = [];
+							for await (const [name, file] of files.entries()) {
+								const bytes = await (await file.getFile()).arrayBuffer();
+								if (new TextDecoder('latin1').decode(bytes).includes(mark)) names.push(name);
+							}
+							return names.sort();
+						}),
+					[OPFS_DIR, mark]
+				);
+			const before = await holding();
+			assert.ok(before.includes('datum.db') && before.some((name) => name.endsWith('.bak')), before.join(', '));
+			const purged = await app.run(['db', 'purge', '--yes']);
+			assert.equal(purged.code, 0, purged.stderr);
+			assert.match(purged.stdout, /removed: \S*datum\.db\.pre-v54-to-v\d+-\d{8}T\d{6}Z\.bak/);
+			assert.deepEqual(await holding(), []);
+			assert.equal((await app.run(['count'])).stdout.trim(), '0');
+		});
+	});
+
 	test('each pane shows its last output until its answer lands', async () => {
 		await withApp(async (app) => {
 			// Through the seam, which refreshes no pane: the reload draws it.

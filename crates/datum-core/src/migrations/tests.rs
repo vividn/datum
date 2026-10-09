@@ -316,6 +316,52 @@ fn force_recreate_resets_schema_version_to_current() {
     );
 }
 
+/// da-nc8i1: a purged file holds none of what it held, as a deleted one
+/// would not: no page of a dropped table stays in it or in its `-wal`. A
+/// reader that keeps the `-wal` from being truncated is an error, and the
+/// purge run again once it lets go finishes.
+#[test]
+fn force_recreate_leaves_no_old_page_in_the_file_or_its_wal() {
+    const MARK: &str = "zebra-marker-77";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("purged.db").to_string_lossy().to_string();
+    let db = Db::open(&path).unwrap();
+    db.conn()
+        .execute_batch(&format!(
+            "CREATE TABLE planted (x);
+             WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 2000)
+             INSERT INTO planted SELECT '{MARK}' FROM n;"
+        ))
+        .unwrap();
+    let held = || -> usize {
+        ["", "-wal"]
+            .iter()
+            .map(|ext| {
+                let bytes = std::fs::read(format!("{path}{ext}")).unwrap_or_default();
+                bytes
+                    .windows(MARK.len())
+                    .filter(|w| *w == MARK.as_bytes())
+                    .count()
+            })
+            .sum()
+    };
+    assert!(held() >= 2000);
+
+    let reader = rusqlite::Connection::open(&path).unwrap();
+    reader
+        .execute_batch("BEGIN; SELECT count(*) FROM planted;")
+        .unwrap();
+    db.conn().busy_timeout(std::time::Duration::ZERO).unwrap();
+    let err = db.force_recreate_schema().unwrap_err().to_string();
+    assert!(err.contains("run the purge again"), "{err}");
+    assert!(held() > 0, "the reader's snapshot is still in the -wal");
+
+    reader.execute_batch("COMMIT").unwrap();
+    db.force_recreate_schema().unwrap();
+    assert_eq!(held(), 0);
+    assert_eq!(std::fs::metadata(format!("{path}-wal")).unwrap().len(), 0);
+}
+
 /// da-k3uqd: dropping a virtual table drops its shadow tables, which the
 /// loop then reaches already gone; and a name with a `"` in it is quoted.
 #[test]

@@ -348,7 +348,7 @@ describe('the seam under review', () => {
 
 			let said = ask();
 			await dialog.waitFor();
-			assert.match(await dialog.locator('p').innerText(), /ALL data in other/);
+			assert.equal(await dialog.locator('p').innerText(), 'This will destroy ALL data in other, and the copies of it kept before upgrades.');
 			assert.match(await dialog.locator('label').innerText(), /Type\s+other\s+to confirm/);
 
 			// The OTHER database's name is now the wrong answer, and refused.

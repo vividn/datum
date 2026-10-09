@@ -74,20 +74,33 @@ pub fn purge_with_io(
     is_tty: bool,
     confirm: &str,
 ) -> Result<()> {
+    // Whole copies of earlier states of this database, so a purge that left
+    // them would leave the data (da-nc8i1). Beside the path the handle was
+    // opened at, where they were written: SQLite's own name for the file is
+    // the target of a symlinked database.
+    let snapshots = db
+        .path()
+        .map(datum_core::migrations::pre_migration_backups)
+        .unwrap_or_default();
     if !args.yes {
         let path = current_db_path(db).unwrap_or_else(|_| "(in-memory)".to_string());
-        confirm_by_name(
-            "purge",
-            &format!("This will destroy ALL data in {path}."),
-            stdin,
-            is_tty,
-            confirm,
-        )?;
+        let headline = purge_headline(&path, &snapshots);
+        confirm_by_name("purge", &headline, stdin, is_tty, confirm)?;
     }
 
     let dropped = db.force_recreate_schema()?;
+    // Only once that succeeded: a purge it failed is run again, and removes
+    // them then.
+    for snapshot in &snapshots {
+        std::fs::remove_file(snapshot)
+            .map_err(|e| anyhow::anyhow!("db purge: {} is not removed: {e}", snapshot.display()))?;
+    }
     println!("db purge: complete");
     println!("  dropped: {}", dropped.join(", "));
+    for snapshot in &snapshots {
+        println!("  removed: {}", snapshot.display());
+    }
+    println!("  file: rewritten, none of the old pages are left in it");
     println!(
         "  schema: v{}",
         datum_core::migrations::CURRENT_SCHEMA_VERSION
@@ -95,6 +108,18 @@ pub fn purge_with_io(
 
     println!("  OK");
     Ok(())
+}
+
+/// What a purge says it will take, before it asks.
+fn purge_headline(path: &str, snapshots: &[std::path::PathBuf]) -> String {
+    let mut headline = format!("This will destroy ALL data in {path}.");
+    if !snapshots.is_empty() {
+        headline += "\nIts pre-migration snapshots go too:";
+        for snapshot in snapshots {
+            headline += &format!("\n  {}", snapshot.display());
+        }
+    }
+    headline
 }
 
 /// The confirmation a command that destroys the whole database asks for:
@@ -146,4 +171,27 @@ pub(crate) fn current_db_path(db: &Db) -> Result<String> {
         |row| row.get(0),
     )?;
     Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::purge_headline;
+
+    /// da-nc8i1: the warning names every snapshot the purge removes.
+    #[test]
+    fn the_purge_warning_names_the_snapshots_it_removes() {
+        assert_eq!(
+            purge_headline("/d/x.db", &[]),
+            "This will destroy ALL data in /d/x.db."
+        );
+        assert_eq!(
+            purge_headline(
+                "/d/x.db",
+                &["/d/x.db.pre-v1-to-v2-20260101T000000Z.bak".into()]
+            ),
+            "This will destroy ALL data in /d/x.db.\n\
+             Its pre-migration snapshots go too:\n  \
+             /d/x.db.pre-v1-to-v2-20260101T000000Z.bak"
+        );
+    }
 }

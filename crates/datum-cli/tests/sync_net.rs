@@ -629,6 +629,78 @@ fn a_purged_copy_serves_the_old_chain_nothing() {
     assert_eq!(a.query("SELECT COUNT(*) FROM entries"), entries);
 }
 
+/// A purge leaves nothing of the database, as deleting its file would
+/// (da-nc8i1), and with `sync run` holding the file open: no page of what it
+/// held in the file or its `-wal`, no row but a new copy's own, and none of
+/// its pre-migration snapshots, each a whole copy of an earlier state, which
+/// the summary names. Another database's snapshot beside it stays.
+#[test]
+fn a_purge_leaves_nothing_of_the_database_in_its_file_or_beside_it() {
+    const MARK: &str = "zebra-marker-77";
+    let (a, b) = paired();
+    let _b_runs = b.serve(&["sync", "run"]);
+    // Long enough to fill more pages than the new schema takes back: a page
+    // it reuses is zeroed whether or not the file is rewritten.
+    a.ok(&["occur", "tea", &format!("note={}", MARK.repeat(8000))]);
+    a.ok(&["sync"]);
+    assert!(b.has("tea"));
+    let old_id = b.id();
+    let own = b
+        .tmp
+        .path()
+        .join("data.db.pre-v1-to-v2-20260101T000000Z.bak");
+    std::fs::write(&own, MARK).unwrap();
+    std::fs::write(
+        b.tmp
+            .path()
+            .join("other.db.pre-v1-to-v2-20260101T000000Z.bak"),
+        MARK,
+    )
+    .unwrap();
+    // The files beside the database that hold the marker, by name.
+    let marked = || -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(b.tmp.path())
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                std::fs::read(e.path())
+                    .is_ok_and(|bytes| bytes.windows(MARK.len()).any(|w| w == MARK.as_bytes()))
+            })
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        names
+    };
+    let before = marked();
+    assert!(
+        before.iter().any(|n| n == "data.db" || n == "data.db-wal") && before.len() >= 3,
+        "{before:?}"
+    );
+
+    let purged = b.ok(&["db", "purge", "-y"]);
+    assert!(
+        purged.contains(&format!("removed: {}", own.display())) && !purged.contains("other.db"),
+        "{purged}"
+    );
+    assert_eq!(marked(), ["other.db.pre-v1-to-v2-20260101T000000Z.bak"]);
+    // `_meta` is the new schema's stamp, and `sync_local` the key `sync run`
+    // mints for the new copy before it stops.
+    let tables = b.query(
+        "SELECT group_concat(name) FROM sqlite_master WHERE type = 'table' \
+         AND name NOT IN ('_meta', 'sync_local')",
+    );
+    for table in tables.split(',') {
+        let rows = b.query(&format!("SELECT COUNT(*) FROM \"{table}\""));
+        assert_eq!(rows, "0", "{table}");
+    }
+    assert_eq!(
+        b.query(&format!(
+            "SELECT COUNT(*) FROM sync_local WHERE endpoint_id = '{old_id}'"
+        )),
+        "0"
+    );
+}
+
 /// A revoked device rejoins by a fresh invite to its own chain (da-j8c4l),
 /// as a new device joins: what each holds, both will — the entry it logged
 /// while out among them — and it stays in that chain, with its endpoint.

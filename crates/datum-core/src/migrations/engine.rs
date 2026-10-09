@@ -451,24 +451,33 @@ fn backups_by_stamp(
         .collect()
 }
 
+/// Every pre-migration snapshot taken for this database, oldest first:
+/// each a whole copy of an earlier state of it.
+pub fn pre_migration_backups(db_path: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let (Some(dir), Some(name)) = (db_path.parent(), db_path.file_name()) else {
+        return Vec::new();
+    };
+    // A bare file name's parent is "", which no directory listing reads.
+    let dir = if dir.as_os_str().is_empty() {
+        std::path::Path::new(".")
+    } else {
+        dir
+    };
+    let mut found = backups_by_stamp(dir, &format!("{}.pre-v", name.to_string_lossy()));
+    found.sort();
+    found.into_iter().map(|(_, path)| path).collect()
+}
+
 /// Drop all but the newest [`MAX_PRE_MIGRATION_BACKUPS`] snapshots taken
 /// for this database. Best-effort: anything we cannot read or remove is
 /// left alone, since failing to prune is harmless and refusing to open the
 /// database over it would not be.
 pub fn prune_pre_migration_backups(db_path: &std::path::Path) -> Vec<std::path::PathBuf> {
-    let (Some(dir), Some(name)) = (db_path.parent(), db_path.file_name()) else {
-        return Vec::new();
-    };
-    let mut found = backups_by_stamp(dir, &format!("{}.pre-v", name.to_string_lossy()));
-    if found.len() <= MAX_PRE_MIGRATION_BACKUPS {
-        return Vec::new();
-    }
-    // Newest first, then discard everything past the keep window.
-    found.sort_by(|a, b| b.cmp(a));
+    let found = pre_migration_backups(db_path);
+    let extra = found.len().saturating_sub(MAX_PRE_MIGRATION_BACKUPS);
     found
-        .split_off(MAX_PRE_MIGRATION_BACKUPS)
         .into_iter()
-        .filter(|(_, path)| std::fs::remove_file(path).is_ok())
-        .map(|(_, path)| path)
+        .take(extra)
+        .filter(|path| std::fs::remove_file(path).is_ok())
         .collect()
 }

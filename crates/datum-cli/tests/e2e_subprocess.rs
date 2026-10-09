@@ -1384,3 +1384,37 @@ fn subprocess_answered_stale_retime_says_nothing_again() {
         "nothing said again"
     );
 }
+
+/// da-nc8i1: a database named by a bare file name has its pre-migration
+/// snapshots beside it in the working directory, and its `Path::parent` is
+/// "": a purge found none of them, so it named none and removed none.
+#[test]
+fn subprocess_purge_removes_the_snapshots_of_a_database_named_by_a_bare_file_name() {
+    let env = Env::new();
+    let dir = env.db.parent().unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_datum"))
+            .current_dir(dir)
+            .env_remove("DATUM_DB")
+            .env("DATUM_HOME", &env.home)
+            .env("DATUM_CONFIG_HOME", &env.config_home)
+            .env("NO_COLOR", "1")
+            .args(["--db", "data.db"])
+            .args(args)
+            .output()
+            .expect("spawn datum")
+    };
+    assert_ok(&run(&["occur", "tea"]), "occur");
+    assert!(dir.join("data.db").exists(), "the database is not beside");
+    let snapshot = dir.join("data.db.pre-v1-to-v2-20260101T000000Z.bak");
+    std::fs::write(&snapshot, "as it was").unwrap();
+
+    let purged = run(&["db", "purge", "-y"]);
+    assert_ok(&purged, "db purge");
+    let said = String::from_utf8_lossy(&purged.stdout);
+    assert!(
+        said.contains("removed: ./data.db.pre-v1-to-v2-20260101T000000Z.bak"),
+        "{said}"
+    );
+    assert!(!snapshot.exists());
+}
