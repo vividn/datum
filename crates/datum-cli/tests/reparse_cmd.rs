@@ -539,3 +539,76 @@ fn check_lists_a_clock_time_and_its_reparse_recovers_the_day() {
     );
     assert_eq!(listed(), None, "nothing left to list");
 }
+
+/// What plain `datum check` prints.
+fn plain_check(db: &datum_core::db::Db) -> String {
+    let entries = db.list_including_deleted().unwrap();
+    let report = datum_commands::commands::check::collect_issues(db, &entries).unwrap();
+    datum_commands::commands::check::render_human(&report)
+}
+
+/// da-q3r7v: plain `datum check` says under each row what is wrong with it,
+/// and names the reparse for a clock time whose line still replays. A row
+/// with no line — merged from another device, imported — is listed without
+/// a command that would skip it.
+#[test]
+fn plain_check_names_the_reparse_under_each_row_it_mends() {
+    let db = fresh_db();
+    for at in ["2024-01-15T20:00", "2024-01-16T20:00"] {
+        run_cli(&["occur", "plants", "-t", at, "next_time=+16h"], &db).unwrap();
+    }
+    let logged = datum_core::test_util::logged_entries(&db, "plants");
+    let (mended, lineless) = (logged[0].short_uid(), logged[1].short_uid());
+    let conn = db.conn();
+    conn.execute(
+        r#"UPDATE entries SET data = '{"next_time":"12:00:00"}' WHERE field = 'plants'"#,
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE entries SET raw_input = NULL WHERE hid = ?1",
+        params![logged[1].hid.0.as_str()],
+    )
+    .unwrap();
+
+    let plain = plain_check(&db);
+    let lines: Vec<&str> = plain.lines().collect();
+    let under = |hid: &str| {
+        let row = lines.iter().position(|l| l.contains(hid));
+        lines[row.unwrap_or_else(|| panic!("no row for {hid}:\n{plain}")) + 1]
+    };
+    let wrong = r#"      next_time: "12:00:00" is not a time"#;
+    assert_eq!(
+        under(&mended),
+        format!("{wrong}: `datum reparse {mended} --fix`"),
+        "{plain}"
+    );
+    assert_eq!(under(&lineless), wrong, "{plain}");
+}
+
+/// A newline in a state spreads its row over two lines, so nothing is paired
+/// by position: every row stays, and each detail names the row it is about.
+#[test]
+fn plain_check_keeps_every_row_when_one_spans_lines() {
+    let db = fresh_db();
+    let at = ["-t", "2024-01-15T20:00", "next_time=+16h"];
+    run_cli(&[&["switch", "mood", "two\nlines"], &at[..]].concat(), &db).unwrap();
+    run_cli(&[&["occur", "plants"], &at[..]].concat(), &db).unwrap();
+    db.conn()
+        .execute(
+            r#"UPDATE entries SET data = '{"next_time":"12:00:00"}' WHERE field IN ('mood', 'plants')"#,
+            [],
+        )
+        .unwrap();
+
+    let plain = plain_check(&db);
+    for field in ["mood", "plants"] {
+        let hid = datum_core::test_util::logged_entries(&db, field)[0].short_uid();
+        let named: Vec<&str> = plain.lines().filter(|l| l.contains(&hid)).collect();
+        let detail = format!(
+            r#"      {hid} next_time: "12:00:00" is not a time: `datum reparse {hid} --fix`"#
+        );
+        assert_eq!(named.len(), 2, "a row and a detail for {field}:\n{plain}");
+        assert_eq!(named[1], detail, "{plain}");
+    }
+}

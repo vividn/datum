@@ -11,7 +11,6 @@ use datum_core::field_spec::{self, InterpolationContext};
 use datum_core::ids::Slug;
 use datum_core::time::DatumTime;
 use datum_parse::cli::KNOWN_CHECKERS;
-use datum_parse::input::KeyType;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
@@ -22,6 +21,7 @@ use crate::render::{format_table_with, OutputArgs, TableArgs, TimeMetricCol};
 
 mod aliases;
 use aliases::collect_alias_drift;
+mod mistyped;
 
 /// Typed API for `datum check`. Exits the process with status 1 when the
 /// report contains any [`Severity::Error`] items.
@@ -1489,70 +1489,8 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
     }
 
     // 4b. a value that does not fit the type its key's spec declares
-    //     (WARNING, da-b2f8o). Logging refuses one; an entry another
-    //     device wrote is merged as it is, and lands here instead. So does
-    //     a `*_time` value logged before it was an instant (da-x15of),
-    //     typed by its name or a spec: its line still holds its day.
-    let mut mistyped: Vec<(Entry, String)> = Vec::new();
-    for e in entries {
-        let Some(JsonValue::Object(map)) = e.data.as_ref() else {
-            continue;
-        };
-        let mut types = registry
-            .field_spec(&e.field)
-            .map(|spec| spec.key_types())
-            .unwrap_or_default();
-        for key in map.keys() {
-            if !types.contains_key(key) && KeyType::of_suffix(key) == Some(KeyType::Time) {
-                types.insert(key.clone(), KeyType::Time);
-            }
-        }
-        for (key, ty) in types {
-            if let Some(v) = map.get(&key).filter(|v| !ty.fits(v)) {
-                let hint = match ty {
-                    KeyType::Time => format!(": `datum reparse {} --fix`", e.short_uid()),
-                    _ => String::new(),
-                };
-                mistyped.push((
-                    e.clone(),
-                    format!("{key}: {v} is not a {}{hint}", ty.name()),
-                ));
-            }
-        }
-    }
-    if let Some((first, detail)) = mistyped.first() {
-        let count = mistyped.len();
-        // One row per value in `entries`, one line per entry in the block.
-        let mut seen = std::collections::HashSet::new();
-        let flagged: Vec<Entry> = mistyped
-            .iter()
-            .filter(|(e, _)| seen.insert(e.hid.clone()))
-            .map(|(e, _)| e.clone())
-            .collect();
-        issues.push(Issue {
-            severity: Severity::Warning,
-            category: "mistyped_data_value",
-            message: format!(
-                "{count} data value{s} not of the type its key declares",
-                s = if count == 1 { "" } else { "s" },
-            ),
-            count,
-            example: Some(IssueExample {
-                id: Some(first.slug.to_string()),
-                field: Some(first.field.clone()),
-                detail: Some(detail.clone()),
-            }),
-            entries: mistyped
-                .iter()
-                .map(|(e, detail)| FlaggedEntry {
-                    hid: e.short_uid(),
-                    field: e.field.clone(),
-                    state: detail.clone(),
-                })
-                .collect(),
-            rendered_block: render_flagged_block(db, &flagged),
-        });
-    }
+    //     (WARNING, da-b2f8o): `check/mistyped.rs`.
+    issues.extend(mistyped::collect_mistyped(db, entries, &registry));
 
     // 5. kit indices declared but not built on this device (WARNING) — a
     //    `unique` one no kit may declare any more (da-9lo90), or one whose

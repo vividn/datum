@@ -315,6 +315,12 @@ fn diff_shape(shape: &ReparsedShape, entry: &Entry) -> Vec<Delta> {
     out
 }
 
+/// The `data` `reparse --fix` would write to `entry`: `None` when its line
+/// is missing or no longer parses, which is when the command cannot help.
+pub(crate) fn replayed_data(entry: &Entry) -> Option<JsonValue> {
+    replay_shape(entry).ok().flatten()?.data
+}
+
 fn drift(entry: &Entry, deltas: &[Delta]) -> String {
     let mut out = format!(
         "{}  ({} delta{})",
