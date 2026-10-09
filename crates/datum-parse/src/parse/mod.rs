@@ -336,13 +336,25 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
     if let (Some(typed), Command::Conflicts(ConflictsCommand::Resolve(_))) = (show, &command) {
         input::check_show(typed, "conflicts resolve")?;
     }
+    let typed = show.is_some();
     let show = show.or(fallback.filter(|s| input::shows_for(sub).contains(s)));
     if let Some(show) = show {
         // Only now that the subcommand is known to be real: a typo'd verb
         // deserves the typo guard's message, not a lecture about the
         // renderings it does not have (da-sg3b).
+        //
+        // `sync` is a group, and its `json` is the subcommands' that carry
+        // it: a typed `--show` the rest would drop is refused by the
+        // subcommand's own words (da-8un1i). `DATUM_SHOW` they still ignore.
+        if !apply_show(&mut command, show) && typed && sub == "sync" {
+            let words = match rest.first() {
+                Some(&("chain" | "admin" | "daemon" | "pipe")) => 2,
+                _ => 1,
+            };
+            let name = [&[sub], &rest[..words.min(rest.len())]].concat().join(" ");
+            input::check_show_in(show, &name, &[Show::Default])?;
+        }
         input::check_show(show, sub)?;
-        apply_show(&mut command, show);
     }
     Ok(Cli { db, color, command })
 }
@@ -367,7 +379,9 @@ fn parse_color(v: &str) -> Result<Option<bool>> {
 /// document beside its stock output just needs the level. The thirteen
 /// readers used to carry a hand-wired `json: bool` each; they carry a
 /// `show` now, and `--json` is the value `json` (da-qt6z).
-fn apply_show(command: &mut Command, show: Show) {
+///
+/// Returns whether the intent had a place for it.
+fn apply_show(command: &mut Command, show: Show) -> bool {
     let named = show.name().to_string();
     match command {
         Command::Occur(a)
@@ -415,8 +429,9 @@ fn apply_show(command: &mut Command, show: Show) {
 
         // `shows_for` allowed nothing but `default` for the rest, so
         // there is no level left to carry.
-        _ => {}
+        _ => return false,
     }
+    true
 }
 
 #[cfg(test)]
@@ -1133,5 +1148,81 @@ mod tests {
         let err = parse_argv(&argv(&["view"])).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("requires a name"), "got: {msg}");
+    }
+
+    /// da-8un1i: `sync` is a group, and a typed `--json` is refused by each
+    /// subcommand that draws no document, by its own name, where it used to
+    /// be dropped. `DATUM_SHOW=json` those still ignore.
+    #[test]
+    fn a_typed_json_is_refused_by_a_sync_subcommand_that_draws_none() {
+        let words = |name: &str, args: &str| -> Vec<String> {
+            let line = format!("{name} {args}");
+            argv(&line.split_whitespace().collect::<Vec<_>>())
+        };
+        let debug = |cli: Result<Cli>| format!("{:?}", cli.unwrap().command);
+
+        for (name, args) in [
+            ("sync status", ""),
+            ("sync chain list", ""),
+            ("sync chain purge", "bob"),
+            ("sync admin list", ""),
+            ("sync pipe apply", ""),
+        ] {
+            let typed = debug(parse_argv(&words(name, &format!("{args} --json"))));
+            assert!(typed.contains("show: Json"), "{name}: {typed}");
+            let env = debug(parse_argv_showing(&words(name, args), Some(Show::Json)));
+            assert_eq!(env, typed, "{name}");
+        }
+
+        let dropped = [
+            ("sync", ""),
+            ("sync pause", ""),
+            ("sync resume", ""),
+            ("sync chain invite", ""),
+            ("sync chain connect", "ticket"),
+            ("sync chain leave", ""),
+            ("sync chain rename", "bob Bobby"),
+            ("sync chain revoke", "bob"),
+            ("sync chain role", "bob reader"),
+            ("sync chain ack", "bob"),
+            ("sync chain rekey", ""),
+            ("sync admin add", "key"),
+            ("sync admin remove", "bob"),
+            ("sync daemon install", ""),
+            ("sync daemon uninstall", ""),
+            ("sync daemon status", ""),
+            ("sync daemon run", ""),
+            ("sync pipe vector", ""),
+            ("sync pipe ops", ""),
+            ("sync pipe verify", ""),
+            ("sync run", ""),
+            ("sync endpoint-key", ""),
+            ("sync record-session", "ab"),
+            ("sync handshake", "ab --label l --addr a"),
+            ("sync new-invite", ""),
+            ("sync approve", "link"),
+            ("sync qr", "text"),
+        ];
+        for (name, args) in dropped {
+            let plain = debug(parse_argv(&words(name, args)));
+            for flag in ["--json", "--show json", "--show=json"] {
+                let err = parse_argv(&words(name, &format!("{args} {flag}"))).unwrap_err();
+                assert_eq!(
+                    err.to_string(),
+                    format!(
+                        "Invalid argument: {name}: --show json is not a rendering {name} has (it draws: default)"
+                    ),
+                );
+            }
+            // Typed anywhere on the line, the group's word included.
+            let mut early = words(name, args);
+            early.insert(1, "--json".into());
+            assert!(parse_argv(&early).is_err(), "{name}");
+            // The rendering it does have is not refused, and the env is ignored.
+            let default = parse_argv(&words(name, &format!("{args} --show default")));
+            assert_eq!(debug(default), plain, "{name}");
+            let env = parse_argv_showing(&words(name, args), Some(Show::Json));
+            assert_eq!(debug(env), plain, "{name}");
+        }
     }
 }

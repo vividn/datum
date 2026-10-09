@@ -75,3 +75,24 @@ fn a_value_show_would_refuse_is_an_error() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("DATUM_SHOW"));
 }
+
+/// da-8un1i: `sync` is a group, and `sync resume` draws no JSON. The env
+/// is ignored there as anywhere; a typed `--json` is refused, not dropped.
+#[test]
+fn a_sync_subcommand_with_no_json_ignores_the_env_and_refuses_the_flag() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("t.db");
+    assert_eq!(
+        ok(&db, "json", &["sync", "resume"]),
+        "sync was not paused\n"
+    );
+    assert!(ok(&db, "json", &["sync", "status"]).starts_with('{'));
+
+    let out = datum(&db, "", &["sync", "resume", "--json"]);
+    assert!(!out.status.success(), "should have refused");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("sync resume: --show json is not a rendering sync resume has"),
+        "{stderr:?}"
+    );
+}

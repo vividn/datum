@@ -198,8 +198,9 @@ pub fn shows_for(command: &str) -> &'static [Show] {
         "spec" => &[Show::Default, Show::Json],
         // `help --json` is the command table itself (da-r13j).
         "help" => &[Show::Default, Show::Json],
-        // A group: `sync status`, `sync chain list` and `sync admin list`
-        // render the document.
+        // A group: `sync status`, `sync chain list`, `sync admin list`,
+        // `sync chain purge` and `sync pipe apply` render the document, and
+        // the parser refuses a typed `json` on the rest (da-8un1i).
         "sync" => &[Show::Default, Show::Json],
         // `conflicts list` prints each entry's column as stored.
         "conflicts" => &[Show::Default, Show::Json],
@@ -259,7 +260,12 @@ pub fn take_show<'a>(tokens: &[&'a str]) -> ParseResult<(Option<Show>, Vec<&'a s
 /// without this `fields --show minimal` would parse and then draw the
 /// default, which is the failure mode the family was meant to remove.
 pub fn check_show(show: Show, command: &str) -> ParseResult<()> {
-    let allowed = shows_for(command);
+    check_show_in(show, command, shows_for(command))
+}
+
+/// [`check_show`] against the renderings the caller knows `command` to
+/// have: a group's subcommand, which [`shows_for`] does not list.
+pub fn check_show_in(show: Show, command: &str, allowed: &[Show]) -> ParseResult<()> {
     if allowed.contains(&show) {
         return Ok(());
     }
