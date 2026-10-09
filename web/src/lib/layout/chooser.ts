@@ -39,7 +39,7 @@ export interface Offer {
  *
  * The rest, which is the person's saves and whatever a kit installed into
  * this database (da-gg0v), are ordered BY DEVICE: the ones designed for
- * this screen first, then the ones designed for the other or for neither.
+ * this device first, then the ones designed for the other or for neither.
  * vividn, 2026-09-15 18:01: "load a different set of layouts by default when
  * the device is detected to be mobile, but still let them both load each
  * other's custom layouts". Both halves are there, in that order — nothing

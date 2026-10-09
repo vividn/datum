@@ -45,6 +45,10 @@ const phone = (width = 390, height = 844) => ({
 /** The tabs a first visit opens (da-u7vz8). */
 const FIRST = ['welcome', 'track', 'collect'];
 
+/** `collect`'s two trees, by their panes' titles: the phone's, and the shipped desktop's (`desk: null`). */
+const MOBILE_TREE = ['dayview', 'tail', 'nowview', 'fields', 'nowview', 'command'];
+const DESKTOP_TREE = ['dayview', 'tail', 'nowview', 'stats', 'fields', 'command'];
+
 /** A desktop that has never opened the site. */
 const FRESH_DESKTOP = { ...DESKTOP, home: null };
 
@@ -335,16 +339,53 @@ describe('who gets it', () => {
 			}, { ...device, home: 'tail' });
 	});
 
-	// The tabs are the same on every screen; what follows the screen is
-	// `collect`'s tree, at each load, as `main`'s always has (da-u7vz8).
-	test('a phone widened to a desktop keeps its tabs after a reload, and `collect` draws the desktop tree', async () => {
+	// The tabs are the same on every device; what follows the DEVICE is
+	// `collect`'s tree, as `main`'s (da-u7vz8) — and which device this is, is
+	// decided at its first load and kept (da-lsjs9). vividn, 2026-10-09: «once
+	// per device i would say … I would definitely keep the layouts
+	// consistent per device». Until then it was the screen's width at each
+	// load, so a phone on its side — 844px, past the 720 that says phone —
+	// reloaded into the desktop tree.
+	test('a phone turned on its side and reloaded keeps the mobile tree', async () => {
 		await withApp(async (app) => {
-			assert.deepEqual(await rootNames(app.page), FIRST);
-			assert.deepEqual(await titles(app.page), ['dayview', 'tail', 'nowview', 'fields', 'nowview', 'command']);
-			await app.page.setViewportSize({ width: 1200, height: 900 });
+			assert.deepEqual(await titles(app.page), MOBILE_TREE);
+			await app.page.setViewportSize({ width: 844, height: 390 });
 			await app.reload();
 			assert.deepEqual(await rootNames(app.page), FIRST);
-			assert.deepEqual(await titles(app.page), ['dayview', 'tail', 'nowview', 'stats', 'fields', 'command']);
+			assert.deepEqual(await titles(app.page), MOBILE_TREE);
+		}, { ...phone(), desk: null });
+	});
+
+	test('a desktop narrowed to a phone’s width and reloaded keeps the desktop tree', async () => {
+		await withApp(async (app) => {
+			assert.deepEqual(await titles(app.page), DESKTOP_TREE);
+			await app.page.setViewportSize({ width: 600, height: 900 });
+			await app.reload();
+			assert.deepEqual(await rootNames(app.page), FIRST);
+			assert.deepEqual(await titles(app.page), DESKTOP_TREE);
+		}, { ...DESKTOP, home: ON_COLLECT, desk: null });
+	});
+
+	// The way to change it: a reset is a first visit again, and a first
+	// visit decides — by the screen as it is then.
+	test('Reset default layouts decides the device again, by the screen it is pressed on', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await page.setViewportSize({ width: 1200, height: 900 });
+			await app.reload();
+			assert.deepEqual(await titles(page), MOBILE_TREE);
+			await page.locator('.root-bar button.gear').click();
+			await page.getByRole('menuitem', { name: 'Reset default layouts', exact: true }).click();
+			await page.locator('dialog.confirm').getByRole('button', { name: 'reset', exact: true }).click();
+			await page.locator('dialog.confirm').waitFor({ state: 'detached' });
+			// A reset lands on `welcome`, some time after its dialog goes;
+			// `collect` is the third tab.
+			await until(
+				async () => (await page.evaluate(() => window.datum.shell.activate(2)), titles(page)),
+				(t) => t.join() === DESKTOP_TREE.join()
+			);
+			await app.reload();
+			assert.deepEqual(await titles(page), DESKTOP_TREE);
 		}, { ...phone(), desk: null });
 	});
 

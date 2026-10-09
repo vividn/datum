@@ -105,11 +105,13 @@ import {
 	clearLocked,
 	isModified,
 	loadDefaults,
+	loadDevice,
 	loadDraft,
 	loadLocked,
 	loadRoot,
 	loadShell,
 	saveDefaults,
+	saveDevice,
 	saveDraft,
 	saveLocked,
 	saveRoot,
@@ -151,8 +153,25 @@ const phone = () =>
  */
 const fresh = (): RootState => ({ names: ['welcome', 'track', 'collect'], active: 0 });
 
-/** This screen, in the word a layout's `designedFor` uses. */
-export const device = (): NonNullable<Layout['designedFor']> => (phone() ? 'mobile' : 'desktop');
+/**
+ * This DEVICE, in the word a layout's `designedFor` uses: decided ONCE, by
+ * the screen it first opens on, and kept (da-lsjs9). vividn, 2026-10-09:
+ * «once per device i would say … I would definitely keep the layouts
+ * consistent per device» — so a phone turned on its side and reloaded keeps
+ * its trees, and a desktop window narrowed keeps its own. «Reset default
+ * layouts» is a first visit again and decides again (`resetDefaults`). A
+ * browser that refuses storage is asked its screen each time, as all were.
+ */
+export function device(): NonNullable<Layout['designedFor']> {
+	const kept = loadDevice();
+	if (kept === 'mobile' || kept === 'desktop') return kept;
+	const now = phone() ? 'mobile' : 'desktop';
+	saveDevice(now);
+	return now;
+}
+
+/** Whether a shipped layout draws its phone tree here. */
+const mobile = () => device() === 'mobile';
 
 /**
  * Whether `l` may SHADOW a same-named layout here (vividn, 2026-09-15 18:01):
@@ -186,7 +205,7 @@ export const canonicalName = (name: string): string => ALIASES[name] ?? name;
  */
 async function meaning(name: string): Promise<{ layout: Layout | null; shipped: boolean }> {
 	const own = provisional ? null : await loadLayout(name).catch(() => null);
-	const layout = pick(own, kitLayout(name), builtinLayout(name, phone()));
+	const layout = pick(own, kitLayout(name), builtinLayout(name, mobile()));
 	return { layout, shipped: !!layout && layout !== own };
 }
 
@@ -650,8 +669,8 @@ export function boot(): Promise<void> {
 		booted = true;
 		// A fresh device's tabs are written now, and so is a change made to
 		// the tree drawn early (da-bhudz), rather than at the next change
-		// after it. The list is the same on every screen (da-u7vz8): what
-		// follows the screen is `collect`'s tree, at each load.
+		// after it. The list is the same on every device (da-u7vz8): what
+		// follows the device is `collect`'s tree (`device`, da-lsjs9).
 		settle();
 		addEventListener('popstate', onPopState);
 		onExternalChange(followSaves, '_internal');
@@ -1125,7 +1144,7 @@ export async function saveAs(tabId: NodeId, newName: string): Promise<void> {
  * saved themselves, under a name nothing else claims — has no reset at all.
  */
 export const shippedTree = (name: string): Layout | null =>
-	pick(kitLayout(name), builtinLayout(name, phone()));
+	pick(kitLayout(name), builtinLayout(name, mobile()));
 
 /**
  * Back to the shipped tree: this copy's DRAFT set to what `defaults.ts`
@@ -1168,7 +1187,9 @@ export async function resetLayout(tabId: NodeId): Promise<void> {
  * neither read nor written, and stay in the `+`.
  *
  * This device's lock on each built-in is forgotten too, so each opens
- * locked again, as a first open does (da-gshh).
+ * locked again, as a first open does (da-gshh) — and so is which device it
+ * said it was, so the trees it goes back to are the ones a first visit on
+ * the screen as it is NOW would draw (`device`, da-lsjs9).
  *
  * This one WRITES, which is what separates it from `resetLayout`: a batch
  * that only moved the drafts would leave every save still shadowing its
@@ -1180,6 +1201,8 @@ export async function resetDefaults(): Promise<void> {
 	// Which of the shipped names the reader has actually saved, asked once:
 	// the rest have no entry to remove, and are the draft alone.
 	const saved = new Set((await listLayouts()).filter((l) => l.source === 'user').map((l) => l.name));
+	// A first visit decides which device this is, so this does again (da-lsjs9).
+	saveDevice(null);
 	for (const name of BUILTIN_NAMES) {
 		clearDraft(name);
 		// Locked again, as a first open is (da-gshh).

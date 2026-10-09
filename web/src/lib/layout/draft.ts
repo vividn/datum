@@ -1,5 +1,5 @@
-// The unsaved draft, which layouts this device has open, and which it has
-// locked (da-wpgy, da-0a5o).
+// The unsaved draft, which layouts this device has open, which it has
+// locked (da-wpgy, da-0a5o), and which device it is (da-lsjs9).
 //
 // All per device, never synced — vividn: "Different devices will want
 // different layouts", of the draft "I lean per device", and of the lock
@@ -82,6 +82,14 @@ export const clearLocked = (name: string) => set(LOCKED + name, null);
 const DEFAULTS = `${PREFIX}defaults.v1`;
 export const loadDefaults = (): number => Number(get(DEFAULTS)) || 0;
 export const saveDefaults = (seen: number) => set(DEFAULTS, String(seen));
+
+/**
+ * Which of a shipped layout's two trees this device draws, `mobile` or
+ * `desktop` (da-lsjs9) — null where it has not decided (`device`, shell.ts).
+ */
+const DEVICE = `${PREFIX}device.v1`;
+export const loadDevice = (): string | null => get(DEVICE);
+export const saveDevice = (device: string | null) => set(DEVICE, device);
 
 /** The root bar as this device left it: the open layouts, and which is active. */
 export interface RootState {

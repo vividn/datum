@@ -266,8 +266,9 @@ export const defaultLayoutFor = (phone: boolean): Layout =>
 //
 // What the root bar's `+` and a URL can name without anything saved:
 // `main` — today's page, the desktop or the phone tree by the screen's
-// width at first load — and one layout per widget kind that is just that
-// widget, named as its pane is titled (`nowview`, `tail`, `stats`, …), so
+// width at the device's first load (`device`, shell.ts) — and one layout
+// per widget kind that is just that widget, named as its pane is titled
+// (`nowview`, `tail`, `stats`, …), so
 // `datum.day/nowview` is the nowview alone. A saved layout of the same
 // name shadows a built-in. And the three tabs a first visit opens
 // (da-u7vz8, `fresh` in shell.ts): `welcome`, a kind's own; `track`, the
@@ -282,12 +283,12 @@ const only = (name: string, kind: string, settings: Record<string, unknown> = {}
 	root: widgetPane(`${name}-only`, kind, settings)
 });
 
-/** The built-ins by name; `main` is looked up through `builtinLayout`, since it depends on the screen. */
+/** The built-ins by name; `main` is looked up through `builtinLayout`, since it depends on the device. */
 export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	main: (phone) => ({ ...defaultLayoutFor(phone), name: 'main' }),
 	// The page to log on: what a phone and a desktop each opened alone until
-	// da-u7vz8, `mobile`'s tree and `main`'s desktop one — by the screen at
-	// each load, as `main` is.
+	// da-u7vz8, `mobile`'s tree and `main`'s desktop one — by the device,
+	// as `main` is (da-lsjs9).
 	collect: (phone) => ({ ...(phone ? MOBILE_LAYOUT : defaultLayoutFor(false)), name: 'collect' }),
 	track: () => only('track', 'field'),
 	mobile: () => MOBILE_LAYOUT,

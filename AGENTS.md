@@ -411,7 +411,11 @@ endpoint by a Web Lock (`datum-sync:<db>`), which pushes on every tab's writes
   which (`builtin` | `user` | `kit:<name>`); a save shadows a kit's or a
   built-in's name, `Reset layout` goes back to the kit's tree, and
   `designedFor` decides which of two same-named layouts wins on THIS
-  device and orders the chooser — it never hides one.
+  device and orders the chooser — it never hides one. Which device this
+  is, `mobile` or `desktop`, is decided ONCE, by the screen it first opens
+  on, and kept in `localStorage` (`device` in `shell.ts`, da-lsjs9): a
+  phone turned on its side keeps its trees, and «Reset default layouts»
+  decides again.
   A NEW DEFAULT IS OFFERED, ONCE (da-cr0w2): a change to what a first
   visit opens is a sentence appended to `NEW_DEFAULTS` (`defaults.ts`), and
   a device that started before it is asked at boot (`offerDefaults`,
