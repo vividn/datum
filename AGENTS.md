@@ -259,7 +259,11 @@ none but its own, so its records are kept (da-91wab): they wait on whatever
 entry op of the inviter's the server lacks, and the server serves by the
 chain they make meanwhile (`Chain::served`: the handshake, a reader's filter
 in what it is sent and in the verify, `sync status`), while which ops apply
-stays with the records applied. A dialer still refused is told so by name,
+stays with the records applied. The waiting records it reads are all of them,
+one held for its clock (`MAX_CLOCK_AHEAD`) as well as one held for a missing
+op, so a member's admission dated far ahead opens a session before it applies
+and a held revoke stops one (da-zo8ak): no hole, since a member is trusted to
+admit. A dialer still refused is told so by name,
 with what fixes it: sync the refusing copy with the copy that
 invited the other. datum.day's store does the same through the hidden `sync
 pipe records` and `sync handshake --records`.
