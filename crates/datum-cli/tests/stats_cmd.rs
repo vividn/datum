@@ -799,6 +799,59 @@ fn a_date_plus_a_time_is_a_lower_bound_not_a_day() {
     assert_eq!(r.total_duration_seconds, 11 * 3600, "22:00 through now");
 }
 
+/// da-4tj7q: the timing flags name a day and a clock in the database's zone,
+/// whatever zone the host is in. `work` ran from 09:00 for 1h, 2h and 3h on
+/// 10-04, 10-05 and 10-06 in Pago Pago (−11), and it is 10:00 there on the
+/// 7th — which a host in Kiritimati (+14) reads as 11:00 on the 8th, so its
+/// 10-05 at that clock was Pago Pago's 10-04. `-y` was right from both
+/// before and stays so: neither zone changes its offset, so a calendar day
+/// back is the same instant read from either.
+#[test]
+fn timing_flags_are_read_in_the_databases_zone_not_the_hosts() {
+    use datum_core::time::clock::{install, MockClock};
+    use datum_core::time::DatumTime;
+
+    const NOW: &str = "2026-10-07T21:00:00Z";
+    let db = fresh_db();
+    seed_zoned(
+        &db,
+        "Pacific/Pago_Pago",
+        &[
+            ("2026-10-04T20:00:00Z", "work"),
+            ("2026-10-04T21:00:00Z", "rest"),
+            ("2026-10-05T20:00:00Z", "work"),
+            ("2026-10-05T22:00:00Z", "rest"),
+            ("2026-10-06T20:00:00Z", "work"),
+            ("2026-10-06T23:00:00Z", "rest"),
+        ],
+    );
+    for host in ["Pacific/Pago_Pago", "Pacific/Kiritimati"] {
+        let _g = freeze_time(NOW);
+        let now = DatumTime::from_utc_and_tz(at(NOW), host).unwrap();
+        install(std::sync::Arc::new(MockClock::new(now)));
+        let work = |date: Option<&str>, time: Option<&str>, yesterday| {
+            let mut args = selector("activity");
+            args.time.date = date.map(str::to_string);
+            args.time.time = time.map(str::to_string);
+            args.time.yesterday = yesterday;
+            dur(&compute_stats(&args, &db).unwrap(), "work")
+        };
+
+        assert_eq!(
+            work(Some("2026-10-05"), None, 0),
+            2 * 3600,
+            "-d 2026-10-05 from {host}"
+        );
+        assert_eq!(work(None, None, 1), 3 * 3600, "-y from {host}");
+        // A lower bound: half an hour into the 5th's two, then the 6th's three.
+        assert_eq!(
+            work(Some("2026-10-05"), Some("9:30"), 0),
+            4 * 3600 + 1800,
+            "-d 2026-10-05 -t 9:30 from {host}"
+        );
+    }
+}
+
 #[test]
 fn closed_periods_stop_where_the_open_ones_start() {
     let _g = freeze_time("2026-06-17T09:00:00Z"); // a Wednesday

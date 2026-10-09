@@ -1,8 +1,9 @@
 //! The time flags by both ways in, over one grid of inputs (da-m8pjs):
 //! every combination of `-y`, `-q`, `-d`, `-t`, `-z`, `-D` and `-T`, at
 //! reference times that include both DST nights in Europe/Berlin and a +14
-//! and a −11 zone. `TimeArgs::build` (nowview, stats, now) and the build log
-//! does (`build_time_anchored` in datum-commands) are one composer,
+//! and a −11 zone. `TimeArgs::build` (nowview, now), the same two calls in
+//! the database's zone (stats), and the build log does
+//! (`build_time_anchored` in datum-commands) are one composer,
 //! `TimeBuilder`, so they name the same instant; the grid holds them to it,
 //! and prints every input where they do not.
 //!

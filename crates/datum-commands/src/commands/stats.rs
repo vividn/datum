@@ -29,7 +29,7 @@ use datum_core::shape::{is_inactive_state, is_off_state};
 use datum_core::state::{FieldStateRows, StateChange};
 use datum_core::time::DatumTime;
 use datum_parse::input::TimeArgs;
-use datum_parse::time::{resolve_timezone, Zone, ZoneTimeline};
+use datum_parse::time::{resolve_timezone, TimeCtx, Zone, ZoneTimeline};
 use serde_json::Value as JsonValue;
 
 use crate::args::{ShowFlag, StatsArgs, StatsPeriod};
@@ -809,6 +809,10 @@ pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
 /// hour of skew in every boundary otherwise. That timeline is returned
 /// too, so the periods line reads the same zones without a second query.
 ///
+/// The timing flags are composed in that timeline's zone at now, never the
+/// host's (da-4tj7q): the date and the clock they name are the database's,
+/// so a host a day ahead of it does not count the day before the one named.
+///
 /// The zones are read from a little before the earliest instant resolved
 /// in them — the window's start, or `reach` before its end, which is where
 /// the periods line begins — and read again when the window turns out to
@@ -851,13 +855,12 @@ fn resolve_window(
             let (s, e) = period_window(period, resolve_week_start()?, zones, now)?;
             (Some(s), until.unwrap_or(e))
         } else if names_a_moment(&args.time) {
-            let built = args.time.build(&DatumTime::now())?;
-            let at = built
-                .time
-                .clone()
-                .context("stats does not expose -T, so the timing flags always yield a moment")?;
-            if built.only_date {
-                let (s, e) = day_window(local_date_at(zones, at.utc), zones)?;
+            let zone = zones.zone_at(now);
+            let builder = args.time.builder(TimeCtx::at(zone.local_naive(now)))?;
+            let only_date = builder.is_only_date();
+            let at = builder.build_at(now, zone.clone(), None);
+            if only_date {
+                let (s, e) = day_window(zone.local_naive(at.utc).date(), zones)?;
                 (Some(s), until.unwrap_or(e))
             } else {
                 (Some(at.utc), until.unwrap_or(now))
