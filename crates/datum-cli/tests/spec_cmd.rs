@@ -274,3 +274,25 @@ fn spec_set_never_false_sets_keeps_and_clears() {
     set(&["--allow-false"]);
     assert!(!never());
 }
+
+/// da-59amk: a never-false field has no end, so `spec set` makes it no
+/// `<field>e` alias: the flag takes the saved one away, `--allow-false`
+/// or a listed `false` brings it back.
+#[test]
+fn spec_set_never_false_drops_the_end_alias_and_allow_false_restores_it() {
+    let db = fresh_db();
+    let end_alias = || db.lookup_alias("enve").unwrap().map(|a| a.expands_to);
+    let set = |args: &[&str]| run_cli(&[&["spec", "set", "env"], args].concat(), &db).unwrap();
+    set(&["--verb", "switch", "--state", "home"]);
+    assert_eq!(end_alias().as_deref(), Some("end env"));
+    set(&["--never-false"]);
+    assert_eq!(end_alias(), None);
+    assert!(db.lookup_alias("env").unwrap().is_some());
+    assert!(db.lookup_alias("home").unwrap().is_some());
+    set(&["--state", "home", "--state", "false"]);
+    assert_eq!(end_alias().as_deref(), Some("end env"));
+    set(&["--state", "home"]);
+    assert_eq!(end_alias(), None);
+    set(&["--allow-false"]);
+    assert_eq!(end_alias().as_deref(), Some("end env"));
+}

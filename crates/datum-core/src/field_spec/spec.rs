@@ -180,7 +180,8 @@ pub struct FieldSpec {
     pub no_autoalias: bool,
     /// When true, the field is never off (da-cwieh) — vividn: «for example
     /// environment is never false». datum.day's ring then leaves a gap
-    /// where `end` would stand, unless `allowed_states` lists `"false"`.
+    /// where `end` would stand, and the field gets no `<field>e` alias
+    /// (da-59amk), unless `allowed_states` lists `"false"`.
     /// With [`only_listed_states`](Self::only_listed_states) as well, an
     /// `end` or a `switch … false` is refused (da-eqb30).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -486,7 +487,9 @@ impl FieldSpec {
     ///
     /// 1. `<field>` → `<verb> <field>` (kind=BareField).
     /// 2. `<field>e` → `end <field>` (kind=TerminalEnd) — only when
-    ///    `verb ∈ {Start, Switch}` (duration-capable verbs).
+    ///    `verb ∈ {Start, Switch}` (duration-capable verbs), and not for a
+    ///    [`never_false`](Self::never_false) field, which has no end
+    ///    (da-59amk), unless `allowed_states` lists `"false"`.
     /// 3. One `<state>` → `switch <field> <state>` per allowed state
     ///    (kind=State).
     ///
@@ -510,8 +513,11 @@ impl FieldSpec {
             kind: DerivedAliasKind::BareField,
         });
 
-        // 2. Terminal-end alias: only for duration-capable verbs.
-        if matches!(self.verb, Action::Start | Action::Switch) {
+        // 2. Terminal-end alias: only for duration-capable verbs, and a
+        // field that is ever off.
+        let listed = self.allowed_states.as_deref().unwrap_or_default();
+        let ends = !self.never_false || listed.iter().any(|s| s == "false");
+        if matches!(self.verb, Action::Start | Action::Switch) && ends {
             out.push(DerivedAlias {
                 name: format!("{}e", self.field),
                 expands_to: shell_join(&["end".into(), self.field.clone()]),
@@ -623,6 +629,28 @@ mod tests {
             .find(|a| a.name == "sleepe")
             .unwrap();
         assert_eq!(terminal.expands_to, "end sleep");
+    }
+
+    /// da-59amk: a field that is never off has no end to alias, unless
+    /// its states list `false`.
+    #[test]
+    fn a_never_false_field_gets_no_terminal_alias_unless_it_lists_false() {
+        let names = |spec: &mut FieldSpec| -> Vec<String> {
+            spec.regenerate_derived_aliases();
+            let aliases = spec.derived_aliases.iter();
+            aliases.map(|a| a.name.clone()).collect()
+        };
+        for verb in [Action::Switch, Action::Start] {
+            let mut spec = FieldSpec::new("env", verb);
+            spec.allowed_states = Some(vec!["home".into()]);
+            assert_eq!(names(&mut spec), ["env", "enve", "home"], "{verb}");
+            spec.never_false = true;
+            assert_eq!(names(&mut spec), ["env", "home"], "{verb}");
+            spec.allowed_states = Some(vec!["home".into(), "false".into()]);
+            assert_eq!(names(&mut spec), ["env", "enve", "home", "false"]);
+            spec.never_false = false;
+            assert_eq!(names(&mut spec), ["env", "enve", "home", "false"]);
+        }
     }
 
     #[test]
