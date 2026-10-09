@@ -1,4 +1,6 @@
-//! `datum history <id_or_slug>` — show the modification trail for an entry.
+//! `datum history <id_or_slug>` — an entry's history, a version per op
+//! (da-s4erq): read from its ops, so every copy that holds them prints the
+//! same trail, forks and joins included. `entry_history` is the undo journal.
 
 use anyhow::{Context, Result};
 use datum_core::{db::Db, entry::Entry};
@@ -6,7 +8,7 @@ use serde_json::Value as JsonValue;
 
 use crate::args::{HistoryArgs, ShowFlag};
 use crate::commands::helpers::{
-    for_each_id, format_version_row, is_id_list, resolve_prefix_or_tombstone,
+    for_each_id, is_id_list, names_devices, resolve_prefix_or_tombstone, version_lines,
 };
 use crate::render::action::now_local;
 
@@ -45,23 +47,26 @@ fn history_of(
         resolve_prefix_or_tombstone(db, id).with_context(|| format!("entry not found: {id}"))?;
     let hid = current.hid.clone();
 
-    // `--version N` wins over `--diff` when both are set. The snapshot is
-    // rendered as pretty JSON either way — `--show json` is a no-op here
-    // but accepted for symmetry with the list/diff forms.
     if args.show == ShowFlag::None {
         return Ok(());
     }
 
+    // `--version N` wins over `--diff` when both are set. The snapshot is
+    // rendered as pretty JSON either way — `--show json` is a no-op here
+    // but accepted for symmetry with the list/diff forms.
+    let snapshot = |n: u32| {
+        db.entry_at_version(&current, n)?
+            .ok_or_else(|| anyhow::anyhow!("version {n} not found for entry {hid}"))
+    };
+
     if let Some(v) = args.version {
-        let snap = resolve_version_snapshot(db, &current, v)?;
-        println!("{}", serde_json::to_string_pretty(&snap)?);
+        println!("{}", serde_json::to_string_pretty(&snapshot(v)?)?);
         return Ok(());
     }
 
     if let Some(ab) = args.diff.as_ref() {
         let (a, b) = (ab[0], ab[1]);
-        let snap_a = resolve_version_snapshot(db, &current, a)?;
-        let snap_b = resolve_version_snapshot(db, &current, b)?;
+        let (snap_a, snap_b) = (snapshot(a)?, snapshot(b)?);
         if json {
             let payload = serde_json::json!({
                 "a": { "version": a, "snapshot": snap_a },
@@ -75,25 +80,14 @@ fn history_of(
     }
 
     // Default: list every version, newest first.
-    let versions = datum_core::history::list(db.conn(), &hid, true).map_err(anyhow::Error::from)?;
+    let mut versions = db.versions(&current)?;
+    let devices = names_devices(db, &versions)?;
+    versions.reverse();
 
     if json {
-        let payload: Vec<_> = versions
-            .iter()
-            .map(|v| {
-                serde_json::json!({
-                    "version": v.version,
-                    "modify_time": v.modify_time.to_rfc3339(),
-                    "change_kind": v.change_kind.as_str(),
-                    "raw_input": v.raw_input,
-                    "alias_chain": v.alias_chain,
-                    "client_id": v.client_id,
-                })
-            })
-            .collect();
         match trails {
-            Some(trails) => trails.push(serde_json::json!({ "hid": hid, "versions": payload })),
-            None => println!("{}", serde_json::to_string_pretty(&payload)?),
+            Some(trails) => trails.push(serde_json::json!({ "hid": hid, "versions": versions })),
+            None => println!("{}", serde_json::to_string_pretty(&versions)?),
         }
         return Ok(());
     }
@@ -105,22 +99,13 @@ fn history_of(
     }
     let now = now_local();
     for v in versions {
-        let raw = match v.raw_input.as_deref() {
+        let raw = match v.raw.as_deref() {
             None | Some("") => String::new(),
             Some(s) => format!("'{s}'"),
         };
-        println!("{}", format_version_row(&v, &now, &raw));
+        println!("{}", version_lines(&v, &now, &raw, devices).join("\n"));
     }
     Ok(())
-}
-
-/// Resolve "state at version N" for display or diff. Uses
-/// [`datum_core::history::state_at_version`] so the call site doesn't need
-/// to re-encode the v1-is-special rule.
-fn resolve_version_snapshot(db: &Db, current: &Entry, version: u32) -> Result<Entry> {
-    datum_core::history::state_at_version(db.conn(), &current.hid, version, Some(current))
-        .map_err(anyhow::Error::from)?
-        .ok_or_else(|| anyhow::anyhow!("version {version} not found for entry {}", current.hid))
 }
 
 fn print_history_diff(a: u32, snap_a: &Entry, b: u32, snap_b: &Entry) {

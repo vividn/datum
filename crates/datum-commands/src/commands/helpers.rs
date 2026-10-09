@@ -17,30 +17,96 @@ fn load_registry(db: &Db) -> Result<datum_core::field_spec::SpecRegistry> {
     Ok(db.load_registry()?)
 }
 
-/// One shared formatter for the version-listing row printed by
-/// `datum history` and `datum why --full` (da-r8xj). `modify_time` is a
-/// host-clock UTC instant; render it through the render layer's local
-/// formatter (`HH:MM:SS+TZ`, relative-day prefix when the day differs)
-/// so the trail's times agree with what tail/now show — and keep seconds
-/// so same-minute edits stay distinguishable in the very listing meant
-/// to sequence them. `raw` is the caller's already-decorated raw_input
-/// cell (the two commands quote/placeholder it differently).
-pub(crate) fn format_version_row(
-    v: &datum_core::history::HistoryVersion,
+/// An op's instant as the trail prints one: an RFC 3339 UTC time through
+/// the render layer's local formatter (`HH:MM:SS+TZ`, relative-day prefix
+/// when the day differs), so the trail's times agree with what tail/now
+/// show — and with seconds, so same-minute edits stay distinguishable in
+/// the very listing meant to sequence them (da-r8xj).
+fn version_time(rfc3339: &str, now: &datum_core::time::DatumTime) -> String {
+    use crate::render::action::{format_timestamp, synthesize_local_datumtime};
+    match rfc3339.parse() {
+        Ok(utc) => format_timestamp(&synthesize_local_datumtime(utc), now, None),
+        Err(_) => rfc3339.to_string(),
+    }
+}
+
+/// The lines `datum history` and `datum why --full` print for one version
+/// of an entry (da-s4erq): the op — when, its kind, the device when
+/// `device` says the trail names them, and `raw`, the caller's
+/// already-decorated cell for the line that wrote it (the two commands
+/// quote/placeholder it differently) — then what an edit set and unset,
+/// each key it left contested as a `fork` with every side, and each it
+/// settled as a `join` with the value it took and whose that was.
+pub(crate) fn version_lines(
+    v: &datum_core::db::Version,
     now: &datum_core::time::DatumTime,
     raw: &str,
-) -> String {
-    format!(
-        "  v{}  {}  {:<22} {}",
+    device: bool,
+) -> Vec<String> {
+    let who = match device {
+        true => format!("{}  ", v.device),
+        false => String::new(),
+    };
+    let head = format!(
+        "  v{}  {}  {:<9} {who}{raw}",
         v.version,
-        crate::render::action::format_timestamp(
-            &crate::render::action::synthesize_local_datumtime(v.modify_time),
-            now,
-            None,
-        ),
-        v.change_kind.as_str(),
-        raw
-    )
+        version_time(&v.time, now),
+        v.kind
+    );
+    let mut lines = vec![head.trim_end().to_string()];
+    let (set, unset): (Vec<_>, Vec<_>) = v.changes().into_iter().partition(|(_, v)| v.is_some());
+    let mut changed = Vec::new();
+    if !set.is_empty() {
+        let pairs = set
+            .iter()
+            .map(|(k, v)| format!("{k}={}", v.as_ref().unwrap_or(&JsonValue::Null)));
+        changed.push(format!("set {}", pairs.collect::<Vec<_>>().join(" ")));
+    }
+    if !unset.is_empty() {
+        let keys: Vec<&str> = unset.iter().map(|(k, _)| k.as_str()).collect();
+        changed.push(format!("unset {}", keys.join(" ")));
+    }
+    if !changed.is_empty() {
+        lines.push(format!("        {}", changed.join(", ")));
+    }
+    for (key, sides) in &v.fork {
+        let sides = sides.as_array().into_iter().flatten().map(|s| {
+            format!(
+                "{} ({}, {}, v{})",
+                s["value"],
+                s["device"].as_str().unwrap_or("?"),
+                version_time(
+                    datum_core::db::chain::hlc_time(s["hlc"].as_str().unwrap_or("")),
+                    now
+                ),
+                s["version"],
+            )
+        });
+        lines.push(format!(
+            "        fork {key}: {}",
+            sides.collect::<Vec<_>>().join(" | ")
+        ));
+    }
+    for (key, join) in &v.join {
+        let took: Vec<String> = join["took"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|d| Some(format!("{}'s", d.as_str()?)))
+            .collect();
+        let whose = match took.is_empty() {
+            true => "a value of its own".to_string(),
+            false => took.join(" and "),
+        };
+        lines.push(format!("        join {key}: {} ({whose})", join["value"]));
+    }
+    lines
+}
+
+/// Does a trail name its devices: in a sync chain, or with ops of more than
+/// one. A database that has never synced reads as it did.
+pub(crate) fn names_devices(db: &Db, versions: &[datum_core::db::Version]) -> Result<bool> {
+    Ok(versions.iter().any(|v| v.device != versions[0].device) || db.sync_chain()?.exists())
 }
 
 /// Convenience wrapper that swallows registry-load errors (the renderer
@@ -663,31 +729,55 @@ mod tests {
         let _lock = datum_test_util::env_lock();
         let _nc = datum_test_util::ScopedEnv::set("NO_COLOR", "1");
 
-        let snapshot = datum_core::test_util::entry_builder("mood").build();
         let now = DatumTime {
             utc: chrono::Utc.with_ymd_and_hms(2026, 6, 4, 12, 0, 0).unwrap(),
             offset_minutes: 0,
             timezone: Some("UTC".to_string()),
             uncertainty: None,
         };
-        let mk = |version: u32, sec: u32| datum_core::history::HistoryVersion {
-            entry_hid: "h1".to_string(),
-            version,
-            snapshot: snapshot.clone(),
-            modify_time: chrono::Utc
-                .with_ymd_and_hms(2026, 6, 4, 9, 15, sec)
-                .unwrap(),
-            raw_input: None,
-            alias_chain: None,
-            client_id: "dev".to_string(),
-            change_kind: datum_core::history::ChangeKind::UserEdit,
-        };
         // Same minute, different seconds. Seconds survive any whole-minute
         // host-TZ offset, so assert on them directly.
-        let row_a = format_version_row(&mk(1, 7), &now, "");
-        let row_b = format_version_row(&mk(2, 33), &now, "");
+        let row_a = version_time("2026-06-04T09:15:07.000Z", &now);
+        let row_b = version_time("2026-06-04T09:15:33.000Z", &now);
         assert!(row_a.contains(":07"), "seconds rendered: {row_a:?}");
         assert!(row_b.contains(":33"), "seconds rendered: {row_b:?}");
+    }
+
+    /// A join that took a value two devices had both given names both.
+    #[test]
+    fn a_join_names_every_device_whose_side_it_took() {
+        let _lock = datum_test_util::env_lock();
+        let _nc = datum_test_util::ScopedEnv::set("NO_COLOR", "1");
+        let join = |took: serde_json::Value| datum_core::db::Version {
+            version: 4,
+            hid: "h1".into(),
+            op: "e/4".into(),
+            device: "a".into(),
+            hlc: "2026-06-04T09:15:07.000Z/0000".into(),
+            time: "2026-06-04T09:15:07.000Z".into(),
+            kind: "update".into(),
+            raw: None,
+            alias_chain: None,
+            effect: json!({ "set": { "data.cups": 5 } }),
+            fork: Default::default(),
+            join: json!({ "data.cups": { "value": 5, "took": took } })
+                .as_object()
+                .cloned()
+                .unwrap(),
+        };
+        let last = |took| {
+            let lines = version_lines(&join(took), &DatumTime::now(), "", false);
+            lines.last().cloned().unwrap()
+        };
+        assert_eq!(
+            last(json!(["b", "c"])),
+            "        join data.cups: 5 (b's and c's)"
+        );
+        assert_eq!(last(json!(["b"])), "        join data.cups: 5 (b's)");
+        assert_eq!(
+            last(json!([])),
+            "        join data.cups: 5 (a value of its own)"
+        );
     }
 
     fn spec_with_intensity(only_listed_keys: bool) -> FieldSpec {

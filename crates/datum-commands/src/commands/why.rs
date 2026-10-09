@@ -6,7 +6,7 @@ use datum_core::db::Db;
 
 use crate::args::WhyArgs;
 use crate::commands::helpers::{
-    assembled_expansion, for_each_id, format_version_row, resolve_prefix_or_tombstone,
+    assembled_expansion, for_each_id, names_devices, resolve_prefix_or_tombstone, version_lines,
 };
 use crate::render::action::now_local;
 
@@ -40,8 +40,9 @@ fn why_of(args: &WhyArgs, id: &str, db: &Db) -> Result<()> {
         return Ok(());
     }
 
-    let versions =
-        datum_core::history::list(db.conn(), &current.hid, true).map_err(anyhow::Error::from)?;
+    let mut versions = db.versions(&current)?;
+    let devices = names_devices(db, &versions)?;
+    versions.reverse();
     println!();
     println!("history (newest first):");
     if versions.is_empty() {
@@ -50,14 +51,11 @@ fn why_of(args: &WhyArgs, id: &str, db: &Db) -> Result<()> {
     }
     let now = now_local();
     for v in versions {
-        let raw = match v.raw_input.as_deref() {
-            None | Some("") => "<no raw_input captured>".to_string(),
-            Some(s) => s.to_string(),
-        };
-        println!("{}", format_version_row(&v, &now, &raw));
+        let raw = v.raw.as_deref().filter(|s| !s.is_empty());
+        let shown = raw.unwrap_or("<no raw_input captured>");
+        println!("{}", version_lines(&v, &now, shown, devices).join("\n"));
         if let Some(chain) = &v.alias_chain {
             println!("       alias_chain: {chain}");
-            let raw = v.raw_input.as_deref().filter(|s| !s.is_empty());
             if let Some(expanded) = raw.and_then(|r| assembled_expansion(r, Some(chain))) {
                 println!("       expanded:    {expanded}");
             }

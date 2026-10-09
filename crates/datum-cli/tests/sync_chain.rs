@@ -2577,3 +2577,28 @@ fn a_filtered_reader_made_a_member_claims_only_what_it_holds_without_gaps() {
     assert!(feed(&a, &r2).0);
     assert_eq!(head(&r2), head(&a));
 }
+
+/// da-s4erq: in a chain a history names each version's device by its label
+/// — the one `sync chain list` gives it — and reads the same on every member.
+#[test]
+fn history_names_each_versions_device_by_its_label_on_every_member() {
+    let (a, b) = chained();
+    a.ok(&["occur", "tea", "cups=1"]);
+    assert!(a.send(&b).0);
+    let hid = a.ok(&["tail", "tea", "-n", "1", "-o", "%full_hid%"]);
+    let hid = hid.trim();
+    b.ok(&["update", hid, "cups=2"]);
+    assert!(b.send(&a).0);
+    let members = json(&a.ok(&["sync", "chain", "list", "--json"]));
+    let genesis = members["members"][0]["label"].as_str().unwrap();
+    let shown = a.ok(&["history", hid]);
+    assert_eq!(shown, b.ok(&["history", hid]));
+    let versions = json(&a.ok(&["history", hid, "--json"]));
+    assert_eq!(versions, json(&b.ok(&["history", hid, "--json"])));
+    assert_eq!(versions[0]["device"], "b", "{versions}");
+    assert_eq!(versions[1]["device"], genesis, "{versions}");
+    let line = format!("update    b  'update {hid} cups=2'\n");
+    assert!(shown.contains(&line), "{shown}");
+    let line = format!("create    {genesis}  'occur tea cups=1'\n");
+    assert!(shown.contains(&line), "{shown}");
+}

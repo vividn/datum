@@ -223,19 +223,16 @@ fn every_last(db: &Db, list: &str) -> String {
     }
 }
 
-/// Move a named entry back to `version` of its own trail.
+/// Move a named entry back to `version` of its history — the number `datum
+/// history` prints, a version per op (da-s4erq).
 fn undo_to_version(db: &Db, current: &Entry, version: u32) -> Result<Entry> {
-    // Bounds-check against the entry's version range [1, latest].
-    // `state_at_version` is version-agnostic by design and misbehaves
-    // silently at the edges (v=0 reverts to create-state; v>latest
-    // no-ops), so the clarity check belongs here where `latest` is
-    // known. An out-of-range version must point at the problem, not
-    // quietly do the wrong thing (da-96yy).
-    let latest = history::latest_version(db.conn(), &current.hid)?.unwrap_or(0);
-    if version < 1 || version > latest {
+    // An out-of-range version must point at the problem, not quietly do the
+    // wrong thing (da-96yy).
+    let Some(target) = db.entry_at_version(current, version)? else {
+        let latest = db.versions(current)?.len();
         anyhow::bail!("version {version} doesn't exist; entry has {latest} version(s)");
-    }
-    Ok(db.revert_entry_to_as(&current.hid, version, ChangeKind::Undo)?)
+    };
+    Ok(db.revert_entry_to_state(current, &target)?)
 }
 
 /// One step back along one entry's trail — the one rule every undo path

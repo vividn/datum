@@ -73,8 +73,10 @@ mod debug;
 mod pause;
 pub mod peers;
 pub mod status;
+mod versions;
 use chain::{Chain, Filter, Role, CHAIN_HID};
 pub use debug::DebugConflicts;
+pub use versions::Version;
 
 // ─── The invocation ─────────────────────────────────────────────────────────
 
@@ -496,6 +498,8 @@ struct Op {
     field: Option<String>,
     #[serde(default)]
     raw: Option<String>,
+    #[serde(default)]
+    alias_chain: Option<Value>,
     effect: Value,
     #[serde(default)]
     deps: BTreeMap<String, i64>,
@@ -678,6 +682,7 @@ fn push(
         kind: kind.into(),
         field,
         raw: None,
+        alias_chain: None,
         // `store` reads the head and the body; the effect is in the body.
         effect: Value::Null,
         deps: BTreeMap::new(),
@@ -953,6 +958,22 @@ fn conflicts_of(conn: &Connection, e: &Entry) -> Result<Option<Value>> {
     if e.superseded_by.is_some() {
         return Ok(None);
     }
+    let ops = about(conn, e)?;
+    let found = contention(&ops);
+    if found.is_empty() {
+        return Ok(None);
+    }
+    let chain = Chain::load(conn)?;
+    let found = found
+        .into_iter()
+        .map(|(k, sides)| (k, sides.iter().map(|s| side(&chain, s)).collect()))
+        .collect();
+    Ok(Some(Value::Object(found)))
+}
+
+/// The ops `e`'s conflicts and history are read from, in fold order: its
+/// own, and those of the rows it supersedes.
+fn about(conn: &Connection, e: &Entry) -> Result<Vec<Op>> {
     let mut ops = ops_of(conn, e.hid.as_str())?;
     let behind: Vec<String> = conn
         .prepare_cached("SELECT hid FROM entries WHERE superseded_by = ?1")?
@@ -962,28 +983,25 @@ fn conflicts_of(conn: &Connection, e: &Entry) -> Result<Option<Value>> {
         ops.extend(ops_of(conn, &hid)?);
     }
     ops.sort_by(|a, b| a.order().cmp(&b.order()));
-    let found = contention(&ops);
-    if found.is_empty() {
-        return Ok(None);
-    }
-    let chain = Chain::load(conn)?;
-    let device = |ep: &str| match chain.member(ep) {
+    Ok(ops)
+}
+
+/// The device an endpoint is: its label in the chain, or the head of its id.
+fn device(chain: &Chain, endpoint: &str) -> String {
+    match chain.member(endpoint) {
         Some(m) => m.label.clone(),
-        None => ep.chars().take(8).collect(),
-    };
-    let side = |(op, value): (&Op, Value)| {
-        json!({
-            "value": value,
-            "device": device(&op.endpoint),
-            "hlc": op.hlc,
-            "op": format!("{}/{}", op.endpoint, op.seq),
-        })
-    };
-    let found = found
-        .into_iter()
-        .map(|(k, sides)| (k, sides.into_iter().map(side).collect()))
-        .collect();
-    Ok(Some(Value::Object(found)))
+        None => endpoint.chars().take(8).collect(),
+    }
+}
+
+/// One side of a contested key, as `conflicts` names it.
+fn side(chain: &Chain, (op, value): &(&Op, Value)) -> Value {
+    json!({
+        "value": value,
+        "device": device(chain, &op.endpoint),
+        "hlc": op.hlc,
+        "op": format!("{}/{}", op.endpoint, op.seq),
+    })
 }
 
 /// Write the `conflicts` of `hid`, of the entry superseding it and of the
@@ -1134,6 +1152,17 @@ fn merge_rows(
     members: &[Entry],
     outside: Option<&Entry>,
 ) -> Result<Entry> {
+    merge_from(s, members, outside, |hid| ops_of(conn, hid))
+}
+
+/// [`merge_rows`] over the ops `ops_of` gives each row: all it has applied,
+/// or those up to one version of its history.
+fn merge_from(
+    s: &Entry,
+    members: &[Entry],
+    outside: Option<&Entry>,
+    ops_of: impl Fn(&str) -> Result<Vec<Op>>,
+) -> Result<Entry> {
     if members.is_empty() && outside.is_none() {
         return Ok(s.clone());
     }
@@ -1146,7 +1175,7 @@ fn merge_rows(
     for e in rows {
         let ops = match outside {
             Some(o) if std::ptr::eq(e, o) => Vec::new(),
-            _ => ops_of(conn, e.hid.as_str())?,
+            _ => ops_of(e.hid.as_str())?,
         };
         let n = ops
             .iter()

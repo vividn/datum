@@ -137,6 +137,16 @@ impl Db {
         tx.commit()?;
         Ok(restored)
     }
+
+    /// Revert `current` to `target`, the entry at a version of the history
+    /// its ops make ([`Db::versions`]) — `undo --to-version`, whose number
+    /// is the one `datum history` prints (da-s4erq).
+    pub fn revert_entry_to_state(&self, current: &Entry, target: &Entry) -> Result<Entry> {
+        let tx = self.conn.unchecked_transaction()?;
+        let restored = revert_to(&tx, current, target, ChangeKind::Undo)?;
+        tx.commit()?;
+        Ok(restored)
+    }
 }
 
 /// Transaction-free body of [`Db::revert_entry_to_as`]: reverts inside
@@ -170,19 +180,28 @@ pub fn revert_in_tx(
                 ))
             },
         )?;
+    revert_to(conn, &current, &target_state, kind)
+}
 
+/// Write `target` over `current`, the same entry, as a `kind` step.
+fn revert_to(
+    conn: &Connection,
+    current: &Entry,
+    target: &Entry,
+    kind: ChangeKind,
+) -> Result<Entry> {
     // Record the pre-revert state as the new history row, tagged with the
     // step that is about to happen.
-    history::record(conn, &current, kind)?;
+    history::record(conn, current, kind)?;
 
     // Apply the target state to the live entries row. This covers
     // unchanged-slug updates as well as flipping `deleted_at` back and
     // forth — the snapshot drives every mutable column, including the
     // tombstone.
-    apply_entry_state(conn, &target_state)?;
-    super::sync::emit(conn, Some(&current), &current.hid, kind)?;
+    apply_entry_state(conn, target)?;
+    super::sync::emit(conn, Some(current), &current.hid, kind)?;
 
-    fetch_entry_any(conn, &target_state.hid)
+    fetch_entry_any(conn, &target.hid)
 }
 
 /// Transaction-free body of [`Db::soft_delete_entry_as`]: tombstones inside

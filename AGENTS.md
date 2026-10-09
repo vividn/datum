@@ -136,7 +136,12 @@ order give the same row. Its conflicts are part of the fold (da-05rkv): the
 `conflicts` column names each key two ops set without seeing each other's
 (and a delete against an edit made without seeing it), derived from the ops
 alone, so every copy holding them agrees; an edit that saw every side —
-`datum conflicts resolve` — settles it on each copy it reaches. A copy's HLC passes only the ops it has applied, and a received op
+`datum conflicts resolve` — settles it on each copy it reaches. An entry's
+history is read from the same ops (`db/sync/versions.rs`, da-s4erq): a version
+per op in fold order, a `fork` where a key became contested and a `join` where
+an edit settled it, so `datum history`, `why --full` and `undo --to-version`
+number the same versions on every copy; `entry_history` is this copy's undo
+journal alone. A copy's HLC passes only the ops it has applied, and a received op
 more than five minutes ahead of its clock (`MAX_CLOCK_AHEAD`) is held until
 the clock catches up, its device named by `sync status`. The hidden `datum sync pipe vector / ops / apply /
 verify` move ops as JSON lines over a pipe. The transport is iroh (`crates/datum-sync`,

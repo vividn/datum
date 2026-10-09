@@ -9,8 +9,8 @@ use datum_core::test_util::{entry_builder, fresh_db};
 #[test]
 fn history_command_lists_versions_newest_first() {
     // Dispatching `datum history <hid>` must not error for an entry that has
-    // a recorded trail, and the history list must come back newest-first at
-    // the library layer (which the command mirrors verbatim).
+    // history, and what it reads — the entry's ops, a version each
+    // (da-s4erq) — holds the create and the edit.
     let db = fresh_db();
     let v1 = entry_builder("mood")
         .verb(datum_core::entry::Verb::Switch)
@@ -30,19 +30,11 @@ fn history_command_lists_versions_newest_first() {
     // The command succeeds end-to-end (exercises args parsing + dispatch).
     run_cli(&["history", &v1.hid], &db).expect("history dispatch");
 
-    // Library-level view: newest-first ordering is v2, v1.
-    let versions = datum_core::history::list(db.conn(), &v1.hid, true).unwrap();
-    assert_eq!(versions.len(), 2);
-    assert_eq!(versions[0].version, 2);
-    assert_eq!(versions[1].version, 1);
-    assert_eq!(
-        versions[0].change_kind,
-        datum_core::history::ChangeKind::UserEdit
-    );
-    assert_eq!(
-        versions[1].change_kind,
-        datum_core::history::ChangeKind::Create
-    );
+    // What the command lists, oldest first: the create, then the edit.
+    let versions = db.versions(&v1).unwrap();
+    let kinds: Vec<&str> = versions.iter().map(|v| v.kind.as_str()).collect();
+    assert_eq!(kinds, ["create", "update"]);
+    assert_eq!(versions[1].version, 2);
 }
 
 #[test]
@@ -65,18 +57,10 @@ fn history_diff_between_versions() {
     // `--diff 1 2` must dispatch without error.
     run_cli(&["history", &v1.hid, "--diff", "1", "2"], &db).expect("history --diff dispatch");
 
-    // Library-level verification: v1 snapshot has value="happy", v2 pre-edit
-    // snapshot also has "happy" (state at v2 is what's in entries: "sad").
-    let snap_v1 = datum_core::history::state_at_version(db.conn(), &v1.hid, 1, None)
-        .unwrap()
-        .expect("v1 state");
-    let current = db.get_entry(&v1.slug).unwrap();
-    let snap_v2 = datum_core::history::state_at_version(db.conn(), &v1.hid, 2, Some(&current))
-        .unwrap()
-        .expect("v2 state");
-    // v3 (da-5ns): primary state lives in `entry.state`.
-    assert_eq!(snap_v1.state, Some(serde_json::json!("happy")));
-    assert_eq!(snap_v2.state, Some(serde_json::json!("sad")));
+    // What it diffs: the entry as each version left it.
+    let state = |n: u32| db.entry_at_version(&v1, n).unwrap().unwrap().state;
+    assert_eq!(state(1), Some(serde_json::json!("happy")));
+    assert_eq!(state(2), Some(serde_json::json!("sad")));
 }
 
 #[test]
@@ -165,25 +149,12 @@ fn why_full_traces_through_history() {
     db.save_existing_entry(&v2).expect("v2 user_edit");
 
     // The command must dispatch cleanly; its output goes to stdout, which
-    // we don't capture here — we assert the plumbing (library view) is in
-    // the shape the command consumes.
+    // we don't capture here — we assert what it walks is there to walk.
     run_cli(&["why", &v1.hid, "--full"], &db).expect("why --full dispatch");
 
-    let versions = datum_core::history::list(db.conn(), &v1.hid, true).unwrap();
-    assert_eq!(
-        versions.len(),
-        2,
-        "why --full walks the trail; it must not be empty"
-    );
-    // Newest-first: v2 is the user_edit, v1 is the create.
-    assert_eq!(
-        versions[0].change_kind,
-        datum_core::history::ChangeKind::UserEdit
-    );
-    assert_eq!(
-        versions[1].change_kind,
-        datum_core::history::ChangeKind::Create
-    );
+    let versions = db.versions(&v1).unwrap();
+    let kinds: Vec<&str> = versions.iter().map(|v| v.kind.as_str()).collect();
+    assert_eq!(kinds, ["create", "update"], "why --full walks the versions");
 }
 
 /// da-96yy: `undo --to-version` must bounds-check the target against the

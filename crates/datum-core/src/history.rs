@@ -1,4 +1,6 @@
-//! Per-entry modification trail (`entry_history` table).
+//! Per-entry modification trail (`entry_history` table): this copy's undo
+//! journal. What `datum history` prints is read from the entry's ops instead
+//! ([`crate::db::Db::versions`], da-s4erq), which every copy holds alike.
 //!
 //! Every mutating operation on the `entries` table writes a companion row
 //! here in the same transaction. Version numbering is monotonic per entry:
@@ -18,9 +20,8 @@ use crate::error::{DatumError, Result};
 
 /// Classification of the operation that produced a history row.
 ///
-/// The string form is what gets stored in the `change_kind` column and is
-/// also what `datum history <hid>` prints — so these strings are part of
-/// the user-visible surface.
+/// The string form is what gets stored in the `change_kind` column, and an
+/// op's `kind` for the ones a command writes ([`crate::db::Version`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeKind {
     /// First-ever write of the entry.

@@ -78,10 +78,10 @@ export interface LayoutRow {
 	modify_time: string;
 }
 
-/** One version of `history --json`. */
+/** One version of `history --json`: an op of the entry's, and when it was made. */
 export interface LayoutVersion {
 	version: number;
-	modify_time: string;
+	time: string;
 }
 
 /**
@@ -231,7 +231,7 @@ export async function versions(name: string): Promise<{ version: number; modifyT
 	const trail = JSON.parse(await datum(...layoutHistoryArgv(name))) as LayoutVersion[];
 	return trail.map((v) => ({
 		version: v.version,
-		modifyTime: v.modify_time
+		modifyTime: v.time
 	}));
 }
 

@@ -70,6 +70,7 @@ pub use stats_cache::{CachedDay, CachedState, CachedSum, Dirty, Refill};
 pub(crate) use sync::derive_all_conflicts;
 pub use sync::{
     canonical_json, chain, peers, set_client_source, set_invocation, ApplySummary, DebugConflicts,
+    Version,
 };
 pub use tombstone::{revert_in_tx, soft_delete_in_tx};
 pub use types::{

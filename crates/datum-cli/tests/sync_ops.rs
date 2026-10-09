@@ -1206,3 +1206,253 @@ fn a_synced_value_its_spec_would_refuse_is_applied_and_check_lists_it() {
         .unwrap_or_else(|| panic!("check lists no mistyped value: {check}"));
     assert_eq!(issue["entries"][0]["state"], r#"km: "abc" is not a number"#);
 }
+
+// ─── History (da-s4erq) ──────────────────────────────────────────────────────
+
+/// What `datum history` prints for `hid`, and its `--json`, newest first.
+fn history(copy: &Copy, hid: &str) -> (String, Value) {
+    let json = copy.ok(&["history", hid, "--json"]);
+    (
+        copy.ok(&["history", hid]),
+        serde_json::from_str(&json).unwrap(),
+    )
+}
+
+/// `side[key]` of each side of a fork, sorted as text.
+fn fork_sides(fork: &Value, key: &str) -> Vec<String> {
+    let mut all: Vec<String> = fork
+        .as_array()
+        .unwrap_or_else(|| panic!("no fork: {fork}"))
+        .iter()
+        .map(|s| s[key].to_string())
+        .collect();
+    all.sort();
+    all
+}
+
+/// History is read from the ops, so every copy that holds them prints the
+/// same one — the copy that made a change, the one that pulled it, and one
+/// that took every op in a single batch, each of which journalled it its
+/// own way — with the clash as a fork naming both sides and the edit that
+/// saw them as its join.
+#[test]
+fn history_is_the_same_on_every_copy_and_shows_the_fork_and_its_join() {
+    for pick in [None, Some("cups=7")] {
+        let (a, b, c) = (Copy::new(), Copy::new(), Copy::new());
+        a.ok(&["occur", "coffee", "cups=2"]);
+        a.send(&b);
+        let hid = a.hid("coffee");
+        a.ok(&["update", &hid, "cups=4"]);
+        b.ok(&["update", &hid, "cups=5"]);
+        converged(&a, &b);
+        let (text, json) = history(&a, &hid);
+        assert_eq!((text.clone(), json.clone()), history(&b, &hid));
+        // The later of the two updates is where the entry forked.
+        let fork = &json[0]["fork"]["data.cups"];
+        assert_eq!(fork_sides(fork, "value"), ["4", "5"], "{json}");
+        assert_eq!(fork_sides(fork, "version"), ["2", "3"], "{json}");
+        // Its sides are the `conflicts` column's, each with its version.
+        let mut column = fork.clone();
+        for side in column.as_array_mut().unwrap() {
+            side.as_object_mut().unwrap().remove("version");
+        }
+        assert_eq!(column, a.conflicts(&hid)["data.cups"]);
+        assert!(json[1].get("fork").is_none(), "one side is no fork: {json}");
+        assert!(text.contains("\n        fork data.cups: "), "{text}");
+        for side in fork.as_array().unwrap() {
+            let device = side["device"].as_str().unwrap();
+            assert!(
+                text.contains(&format!("{} ({device}, ", side["value"])),
+                "{text}"
+            );
+        }
+
+        let mut resolve = vec!["conflicts", "resolve", &hid];
+        resolve.extend(pick);
+        b.ok(&resolve);
+        converged(&a, &b);
+        a.send(&c);
+        let (text, json) = history(&a, &hid);
+        assert_eq!((text.clone(), json.clone()), history(&b, &hid));
+        assert_eq!((text.clone(), json.clone()), history(&c, &hid));
+        assert_eq!(
+            json.as_array().unwrap().len(),
+            4,
+            "a version per op: {json}"
+        );
+        assert!(json[0].get("fork").is_none(), "{json}");
+        let join = &json[0]["join"]["data.cups"];
+        assert_eq!(join["value"], a.data(&hid)["cups"], "{json}");
+        let took = match pick {
+            // A value neither side gave.
+            Some(_) => "a value of its own".to_string(),
+            // The value shown: the side whose it was.
+            None => {
+                let kept = fork
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|s| s["value"] == join["value"]);
+                format!("{}'s", kept.unwrap()["device"].as_str().unwrap())
+            }
+        };
+        let line = format!("\n        join data.cups: {} ({took})\n", join["value"]);
+        assert!(text.contains(&line), "{line:?} not in {text}");
+        assert_eq!(
+            json[0]["raw"],
+            resolve.join(" "),
+            "the line that settled it"
+        );
+
+        // The undo journal is each copy's own, and is not what was read.
+        let journal = |c: &Copy| {
+            c.query(
+                "SELECT group_concat(change_kind) FROM entry_history WHERE entry_hid = ?1",
+                &hid,
+            )
+        };
+        assert_ne!(journal(&a), journal(&c));
+    }
+}
+
+#[test]
+fn history_shows_a_delete_against_an_edit_as_a_fork_and_bringing_it_back_as_its_join() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "cups=2"]);
+    a.send(&b);
+    let hid = a.hid("coffee");
+    b.ok(&["update", &hid, "cups=9"]);
+    a.ok(&["delete", &hid]);
+    converged(&a, &b);
+    let (_, json) = history(&a, &hid);
+    assert_eq!(json, history(&b, &hid).1);
+    let fork = &json[0]["fork"]["deleted"];
+    assert_eq!(fork_sides(fork, "value"), ["false", "true"], "{json}");
+    b.ok(&["conflicts", "resolve", &hid, "deleted=false"]);
+    converged(&a, &b);
+    let (text, json) = history(&a, &hid);
+    assert_eq!((text.clone(), json.clone()), history(&b, &hid));
+    assert_eq!(json[0]["kind"], "undelete", "{json}");
+    assert_eq!(json[0]["join"]["deleted"]["value"], false, "{json}");
+    assert!(text.contains("\n        join deleted: false ("), "{text}");
+}
+
+/// Two rows merged under one id are one entry with one history: the ops of
+/// both, the clash between them a fork, and each version the merged entry
+/// as the ops up to it leave it.
+#[test]
+fn history_of_a_merged_entry_holds_the_ops_of_both_rows() {
+    let (x, y) = (Copy::new(), Copy::new());
+    let (first, second) = one_id_twice(&x, &y);
+    converged(&x, &y);
+    let (text, json) = history(&x, &first);
+    assert_eq!((text, json.clone()), history(&y, &first));
+    let versions = json.as_array().unwrap();
+    let hids: Vec<&str> = versions
+        .iter()
+        .map(|v| v["hid"].as_str().unwrap())
+        .collect();
+    assert!(
+        hids.contains(&first.as_str()) && hids.contains(&second.as_str()),
+        "{hids:?}"
+    );
+    let forked = versions.iter().find(|v| v.get("fork").is_some()).unwrap();
+    assert_eq!(
+        fork_sides(&forked["fork"]["data.note"], "value"),
+        [r#""first""#, r#""second""#]
+    );
+    let latest = versions.len().to_string();
+    let shown: Value =
+        serde_json::from_str(&x.ok(&["history", &first, "--version", &latest])).unwrap();
+    assert_eq!(
+        shown["data"],
+        x.data(&first),
+        "the newest version is the entry"
+    );
+    assert_eq!(shown["hid"], first);
+}
+
+/// A database that never synced has ops too: a version per command, with
+/// the line that wrote it and what it set, and no device to name. The
+/// numbers are the ones `--version` and `undo --to-version` take.
+#[test]
+fn a_database_that_never_synced_shows_a_version_per_command() {
+    let a = Copy::new();
+    a.ok(&["occur", "coffee", "cups=2"]);
+    let hid = a.hid("coffee");
+    a.ok(&["update", &hid, "cups=3"]);
+    a.ok(&["update", &hid, "cups=4", "with=oat"]);
+    let (text, json) = history(&a, &hid);
+    let kinds: Vec<&str> = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["update", "update", "create"]);
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 6, "{text}");
+    assert_eq!(lines[0], format!("hid: {hid}"));
+    assert!(
+        lines[1].starts_with("  v3  ")
+            && lines[1].ends_with(&format!("update    'update {hid} cups=4 with=oat'")),
+        "{text}"
+    );
+    assert_eq!(lines[2], r#"        set data.cups=4 data.with="oat""#);
+    assert_eq!(lines[4], "        set data.cups=3");
+    assert!(
+        lines[5].starts_with("  v1  ") && lines[5].ends_with("create    'occur coffee cups=2'"),
+        "{text}"
+    );
+    assert!(
+        !text.contains(json[0]["device"].as_str().unwrap()),
+        "{text}"
+    );
+
+    let version = |n: &str| -> Value {
+        serde_json::from_str(&a.ok(&["history", &hid, "--version", n])).unwrap()
+    };
+    assert_eq!(version("2")["data"]["cups"], 3);
+    assert_eq!(version("3")["data"], a.data(&hid));
+    let diff = a.ok(&["history", &hid, "--diff", "1", "2"]);
+    assert!(diff.contains("- data.cups: 2\n+ data.cups: 3"), "{diff}");
+    assert!(!a
+        .run(&["history", &hid, "--version", "4"], "")
+        .status
+        .success());
+
+    a.ok(&["undo", &hid, "--to-version", "1"]);
+    assert_eq!(a.data(&hid), serde_json::json!({ "cups": 2 }));
+    let (text, json) = history(&a, &hid);
+    assert_eq!(json[0]["kind"], "undo", "{text}");
+    assert_eq!(json[0]["version"], 4);
+    assert!(
+        text.contains("        set data.cups=2, unset data.with"),
+        "{text}"
+    );
+    let refused = a.run(&["undo", &hid, "--to-version", "9"], "");
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("entry has 4 version(s)"));
+}
+
+/// An entry older than its ops has no history until something needs one:
+/// its first edit signs it as it stood, a `baseline` under the line that
+/// wrote it, and the edit is the version after.
+#[test]
+fn an_entry_older_than_its_ops_opens_its_history_with_a_baseline() {
+    let a = Copy::new();
+    a.ok(&["occur", "coffee", "cups=2"]);
+    a.sql("DELETE FROM ops; DELETE FROM sync_local;");
+    let hid = a.hid("coffee");
+    assert!(a.ok(&["history", &hid]).contains("(no history recorded)"));
+    assert!(!a
+        .run(&["undo", &hid, "--to-version", "1"], "")
+        .status
+        .success());
+    a.ok(&["update", &hid, "cups=3"]);
+    let (text, json) = history(&a, &hid);
+    assert_eq!(json[1]["kind"], "baseline", "{text}");
+    assert_eq!(json[1]["raw"], "occur coffee cups=2", "{text}");
+    assert_eq!(json[0]["raw"], format!("update {hid} cups=3"), "{text}");
+    a.ok(&["undo", &hid, "--to-version", "1"]);
+    assert_eq!(a.data(&hid)["cups"], 2);
+}
