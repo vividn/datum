@@ -1428,8 +1428,8 @@ const TIME_FORMS: &[FormGroup] = &[
                 meaning: "a T joins them as well",
             },
             FormSpec {
-                example: "-t 2026-09-28T10:00:00Z",
-                meaning: "ISO 8601 in UTC",
+                example: "-t 2026-09-28T10:00Z",
+                meaning: "ISO 8601 in UTC, with or without seconds",
             },
             FormSpec {
                 example: "-t 2026-09-28T10:00+02:00",

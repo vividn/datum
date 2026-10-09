@@ -131,6 +131,12 @@ fn parse_whole(s: &str, ctx: TimeCtx) -> Result<TimeArg> {
     // `<date> <time>`.
     if looks_like_iso_datetime(primary) {
         let iso = format!("{}T{}", &primary[..10], &primary[11..]);
+        // `Z` is `+00:00`: `%z` does not read it, and RFC 3339 reads it
+        // only after seconds (`…T10:00Z`).
+        let iso = match iso.strip_suffix(['Z', 'z']) {
+            Some(body) => format!("{body}+00:00"),
+            None => iso,
+        };
         let with_offset = DateTime::parse_from_rfc3339(&iso)
             .or_else(|_| DateTime::parse_from_str(&iso, "%Y-%m-%dT%H:%M:%S%.f%z"))
             .or_else(|_| DateTime::parse_from_str(&iso, "%Y-%m-%dT%H:%M%z"));

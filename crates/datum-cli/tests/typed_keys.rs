@@ -67,6 +67,7 @@ fn a_spec_typed_key_stores_its_type() {
         ("at=9am", json!("2026-10-07T09:00:00")),
         ("at=yesterday 10am", json!("2026-10-06T10:00:00")),
         ("at=2026-09-28T10:00+02:00", json!("2026-09-28T08:00:00Z")),
+        ("at=2026-09-28T10:00Z", json!("2026-09-28T10:00:00Z")),
     ] {
         assert_eq!(log(&db, "run", kv), Ok(want), "{kv}");
     }
