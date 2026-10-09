@@ -107,6 +107,11 @@ exactly across midnights. `datum check stats` recomputes a sample of days and sa
   `TimeArgs::builder` reads the flags into; a clock a DST night skipped comes
   out at the change, one it repeated at its first reading
   (`crates/datum-parse/tests/time_flag_grid.rs`)
+- a relative time (`-q`, `-t ±N`) beside a named day (`-d` of any form, `-y`,
+  a `-t` that names one) needs a clock, and without one is refused wherever
+  the anchor is now (`TimeBuilder::shift_needs_clock`): shift then day and
+  day then shift part at midnight and at DST. `-y -t 18:30 -t -6` is 18:24
+  yesterday. `retime` anchors on the entry's own time, a clock, and takes them
 - a duration is a trailing positional (`datum end work 30m`) or `dur=30m`
   (`1:30`, `2h`, ISO `PT30M` all work). It says how long the thing LASTED,
   so the block ENDS at the entry's time and the span precedes it —

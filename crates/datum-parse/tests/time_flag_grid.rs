@@ -217,8 +217,16 @@ fn what_each_disagreement_was_decided_as() {
         // minutes is 01:00, on the 29th. TimeBuilder shifted last.
         (
             "2026-10-25T22:30:00Z",
-            &["-d", "2026-03-29", "-t", "+90m"],
+            &["-d", "2026-03-29", "-t", "23:30", "-t", "+90m"],
             "2026-03-29 01:00:00",
+        ),
+        // With no clock the shift is from now, on a day that is not now's:
+        // refused (da-e93nr), where it was 01:00 on the 29th as well.
+        (
+            "2026-10-25T22:30:00Z",
+            &["-d", "2026-03-29", "-t", "+90m"],
+            "Invalid time: a relative time (-q, -t ±N) needs a clock when the day moves: \
+             give one, `-y -t 18:24`, or `-d 2026-10-05 -t 18:30 -t -6`",
         ),
         // A day that moves nothing is still a day. TimeBuilder took
         // `-d today` for no date at all.

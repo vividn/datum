@@ -962,7 +962,14 @@ fn every_time_page_example_parses() {
         }
     }
     assert!(n > 40, "only {n} examples on the page");
-    for bad in ["-t 9/28", "-d 9/28", "-t '3 days ago at 10'", "-t 25:00"] {
+    for bad in [
+        "-t 9/28",
+        "-d 9/28",
+        "-t '3 days ago at 10'",
+        "-t 25:00",
+        "-y -t -6",
+        "-d sunday -q",
+    ] {
         assert!(build_time_args(bad).is_err(), "`{bad}` parsed");
     }
     assert!(crate::time::parse_duration("an hour").is_err());

@@ -267,7 +267,7 @@ Key slot forms (`-k` and `-K` accept the same three shapes): `-k key` is require
 
 `--` semantics in multi-entry contexts: inside an alias body, flags before `--` scope to their side and flags after `--` apply to all sides. `--` is implicit at the end of every alias body, so call-site flags apply to all sides by default. A `--` inside an alias body does not propagate past the alias boundary.
 
-Time flags at the call site compose with the ones the alias bound: `-y`, `-q` and `-d` shift whatever time the alias bound, and a relative `-t` adds to it — on an alias bound to `-t +5`, `-t +10` writes at +15. In a multi-entry alias every side writes at ONE occur_time, taken from the first side, so a later side's `-t` is dropped.
+Time flags at the call site compose with the ones the alias bound: `-q` and a relative `-t` add to whatever time the alias bound — on an alias bound to `-t +5`, `-t +10` writes at +15 — and `-y` and `-d` move the day of a clock it bound; beside a relative time they need one (`datum help time`). In a multi-entry alias every side writes at ONE occur_time, taken from the first side, so a later side's `-t` is dropped.
 
 After a multi-entry write, `_LAST` refers to every entry written by the most recent invocation, so `rekey _LAST oldkey=newkey` affects every row of the atomic group. A subsequent single-entry write resets `_LAST` to that one row.
 
@@ -314,7 +314,7 @@ datum caf5 -t +10 # now + 15
 datum caf5 -q     # now + 5, then 5 back: now
 ```
 
-Call-site time flags compose with the alias-bound ones: `-y` / `-q` / `-d` shift whatever time the alias bound, and a relative `-t` adds to it.
+Call-site time flags compose with the alias-bound ones: `-q` and a relative `-t` add to whatever time the alias bound, and `-y` / `-d` move the day of a clock it bound.
 
 <!-- END AUTOGEN: ALIASES -->
 

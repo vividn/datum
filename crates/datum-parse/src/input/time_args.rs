@@ -94,8 +94,15 @@ impl TimeArgs {
     /// The flags read into a [`TimeBuilder`], in the order it composes
     /// them: `-t`, `-q`, `-d`, `-y`. `ctx` is what a weekday or a year-less
     /// date is measured from. `-z` is the caller's: it names the zone the
-    /// builder is built in.
+    /// builder is built in. A relative time beside a named day needs a
+    /// clock ([`TimeBuilder::shift_needs_clock`]).
     pub fn builder(&self, ctx: TimeCtx) -> Result<TimeBuilder> {
+        self.builder_anchored(ctx)?.shift_needs_clock()
+    }
+
+    /// [`builder`](Self::builder) for an anchor that is a clock of its own,
+    /// an entry's time (retime): a shift beside a day has one to move.
+    pub fn builder_anchored(&self, ctx: TimeCtx) -> Result<TimeBuilder> {
         let mut builder = TimeBuilder::default()
             .with_quick_count(i64::from(self.quick))
             .with_quick_uncertainty(self.quick)
@@ -541,6 +548,45 @@ mod tests {
         assert_utc(&build(a), "2020-05-05T15:25:30Z");
     }
 
+    /// da-e93nr: a `-q` or a `-t ±N` beside a named day reads two ways,
+    /// shift then day or day then shift, so with no clock it is refused.
+    /// An entry's own time is a clock, and retime composes them as before.
+    #[test]
+    fn a_relative_time_beside_a_named_day_needs_a_clock() {
+        let args = |date: Option<&str>, yesterday, quick, times: &[&str]| {
+            let mut a = TimeArgs::default();
+            (a.date, a.yesterday, a.quick) = (date.map(Into::into), yesterday, quick);
+            times.iter().for_each(|t| a.push_time(t));
+            a
+        };
+        for a in [
+            args(Some("2020-05-05"), 0, 0, &["-6"]),
+            args(Some("2020-05-05"), 0, 1, &[]),
+            args(Some("today"), 0, 1, &[]),
+            args(None, 1, 0, &["-6"]),
+            args(None, 1, 1, &[]),
+            args(None, 0, 0, &["-6", "yesterday"]),
+            args(None, 0, 1, &["sunday"]),
+        ] {
+            let err = a.build(&reference_now()).expect_err("no clock");
+            assert!(err.to_string().contains("needs a clock"), "{a:?}: {err}");
+            let ctx = TimeCtx::at(reference_now().utc.naive_utc());
+            assert!(a.builder_anchored(ctx).is_ok(), "{a:?}");
+        }
+        // A clock, by any spelling, or no day.
+        for (a, at) in [
+            (
+                args(Some("2020-05-05"), 0, 0, &["1830", "-6"]),
+                "05T18:24:00",
+            ),
+            (args(None, 1, 1, &["1830"]), "09T18:25:00"),
+            (args(None, 1, 1, &["2020-05-05T18:30"]), "04T18:25:00"),
+            (args(None, 0, 1, &["-6"]), "10T15:14:30"),
+        ] {
+            assert_utc(&build(a), &format!("2020-05-{at}Z"));
+        }
+    }
+
     /// da-xpvdi: a day shift is a calendar day, not 24 h. Berlin's fall-back
     /// day (2026-10-25) is 25 h long and its spring-forward day (2026-03-29)
     /// 23 h, so 24 h from the hour beside either change was the same day,
@@ -570,15 +616,6 @@ mod tests {
                 "{back:?}"
             );
         }
-        // `-q` stays elapsed time: five minutes back, then the same clock
-        // a day earlier.
-        assert_eq!(
-            berlin(
-                "2026-10-25T22:30:00Z",
-                args(|a| (a.yesterday, a.quick) = (1, 1))
-            ),
-            "2026-10-24 23:25:00"
-        );
         // 00:30 CEST on the day after spring-forward.
         assert_eq!(
             berlin("2026-03-29T22:30:00Z", args(|a| a.yesterday = 1)),

@@ -44,7 +44,7 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
     for t in time.time_values() {
         builder = builder.with_time_arg(parse_time(t, TimeCtx::now())?);
     }
-    let occur_time = builder.build();
+    let occur_time = builder.shift_needs_clock()?.build();
 
     // Build the extra_metadata payload. Always emit `flag: true` so
     // downstream filters can match without caring whether a comment

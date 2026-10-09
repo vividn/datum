@@ -295,39 +295,24 @@ fn occur_flips_state_from_null_to_tracked() {
 /// TS #7: "handles negative number time arguments correctly"
 ///
 /// Datum: `-d -1d -t -1h` → 1 day + 1 hour back; `-t -20` → 20 min back.
-/// Daydumb: `-d=-1` (days) and `-t=-60` (minutes) express the same offsets.
-/// The `=` form pins the negative value to the flag so the parser does
-/// not treat `-1` as a standalone arg (identical trick in `start_cmd.rs`).
+/// Daydumb refuses the first, a relative time beside a day with no clock
+/// (da-e93nr, not datum parity: `relative_time_beside_a_named_day_needs_a_clock`),
+/// and takes the second. The `=` form pins the negative value to the flag
+/// so the parser does not treat `-20` as a standalone arg (identical trick
+/// in `start_cmd.rs`).
 #[test]
 fn stacked_negative_offsets_subtract_correctly() {
     let db = fresh_db();
 
-    let before = Utc::now();
-    run_cli(&["occur", "event", "-d=-1", "-t=-60"], &db).expect("occur -d=-1 -t=-60");
-    let after = Utc::now();
-
-    let e1 = &datum_core::test_util::logged_entries(&db, "event")[0];
-    let ts1 = e1.occur_time.as_ref().unwrap().utc;
-    let offset = Duration::days(1) + Duration::hours(1);
-    let lo = before - offset - Duration::seconds(2);
-    let hi = after - offset + Duration::seconds(2);
-    assert!(
-        ts1 >= lo && ts1 <= hi,
-        "expected ~25h back (lo={lo} hi={hi} got={ts1})",
-    );
+    run_cli(&["occur", "event", "-d=-1", "-t=-60"], &db).expect_err("occur -d=-1 -t=-60");
 
     let before2 = Utc::now();
     run_cli(&["occur", "event", "-t=-20"], &db).expect("occur -t=-20");
     let after2 = Utc::now();
 
     let entries = datum_core::test_util::logged_entries(&db, "event");
-    assert_eq!(entries.len(), 2);
-    // Grab the most-recent entry by created_at.
-    let e2 = entries
-        .iter()
-        .max_by_key(|e| e.create_time)
-        .expect("entries present");
-    let ts2 = e2.occur_time.as_ref().unwrap().utc;
+    assert_eq!(entries.len(), 1);
+    let ts2 = entries[0].occur_time.as_ref().unwrap().utc;
     let lo2 = before2 - Duration::minutes(20) - Duration::seconds(2);
     let hi2 = after2 - Duration::minutes(20) + Duration::seconds(2);
     assert!(
@@ -675,6 +660,53 @@ fn occur_unsigned_integer_date_is_refused_and_logs_nothing() {
 
     run_cli(&["occur", "x", "-d", "+5"], &db).expect("a signed offset");
     assert_eq!(datum_core::test_util::logged_entries(&db, "x").len(), 1);
+}
+
+/// da-e93nr: a `-q` or a `-t ±N` beside a named day reads two ways, shift
+/// then day or day then shift, so with no clock it is refused wherever the
+/// anchor is now, and nothing is logged. retime's anchor is the entry's own
+/// time, a clock, and it takes them as before.
+#[test]
+fn relative_time_beside_a_named_day_needs_a_clock() {
+    let db = fresh_db();
+    let logged = || datum_core::test_util::logged_entries(&db, "x");
+
+    for flags in [
+        &["-d", "2026-10-05", "-t", "-6"][..],
+        &["-d", "2026-10-05", "-q"],
+        &["-y", "-t", "-6"],
+        &["-q", "-t", "yesterday"],
+    ] {
+        for cmd in [&["occur", "x"][..], &["flag", "x"], &["tail"], &["stats"]] {
+            let argv = [cmd, flags].concat();
+            let err = run_cli(&argv, &db).expect_err(&argv.join(" "));
+            assert!(
+                format!("{err:#}").contains("needs a clock when the day moves"),
+                "{argv:?}: {err:#}"
+            );
+        }
+    }
+    assert_eq!(logged().len(), 0);
+
+    for flags in [
+        &["-d", "2026-10-05", "-t", "1830", "-t", "-6"][..],
+        &["-t", "1830", "-t", "-6"],
+        &["-q"],
+        &["-t", "-6"],
+    ] {
+        run_cli(&[&["occur", "x"], flags].concat(), &db).expect("a clock, or no day");
+    }
+    let at = |e: &datum_core::entry::Entry| {
+        let t = e.occur_time.as_ref().unwrap().local_time();
+        t.format("%F %R").to_string()
+    };
+    assert_eq!(logged().len(), 4);
+    assert!(logged().iter().any(|e| at(e) == "2026-10-05 18:24"));
+
+    let hid = logged()[0].hid.clone();
+    run_cli(&["retime", &hid, "-d", "2026-10-01", "-t", "+5"], &db).expect("retime");
+    run_cli(&["retime", &hid, "-y", "-q"], &db).expect("retime");
+    assert!(logged().iter().any(|e| at(e).starts_with("2026-09-30")));
 }
 
 /// da-c312 (vividn's rule, 2026-09-14 — not datum parity): a token with an

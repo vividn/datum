@@ -477,7 +477,7 @@ fn build_window(args: &TailArgs) -> Result<TailWindow> {
     for t in args.time.time_values() {
         builder = builder.with_time_arg(parse_time(t, TimeCtx::now())?);
     }
-    let point = builder.build();
+    let point = builder.shift_needs_clock()?.build();
     let (day_start_utc, day_end_utc) = day_bounds_utc(point.utc, tz_name.as_deref())?;
     Ok(TailWindow {
         point_utc: point.utc,

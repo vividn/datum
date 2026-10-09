@@ -1929,7 +1929,11 @@ pub(crate) fn build_time_anchored(
         None => TimeCtx::now(),
     };
 
-    let builder = time.builder(ctx)?.with_timezone(tz_name);
+    let builder = match own {
+        Some(_) => time.builder_anchored(ctx),
+        None => time.builder(ctx),
+    }?
+    .with_timezone(tz_name);
 
     Ok(match own {
         Some((zone, name)) if shift => builder.build_at(now, zone, name),

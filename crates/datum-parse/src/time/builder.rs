@@ -2,6 +2,7 @@
 
 use chrono::{DateTime, Duration, NaiveDateTime, NaiveTime, Utc};
 
+use crate::error::{ParseError, Result};
 use crate::time::date::DateArg;
 use crate::time::datum_time::DatumTime;
 use crate::time::dur::quick_uncertainty_for_count;
@@ -131,6 +132,25 @@ impl TimeBuilder {
             self.explicit_uncertainty = Some(u);
         }
         self
+    }
+
+    /// Refuse a `-q` or a `-t ±N` beside a named day with no clock
+    /// (da-e93nr): shift then day and day then shift part at midnight and
+    /// at a DST change, so where the anchor is now neither is picked.
+    /// It asks what was given, not what it adds up to.
+    pub fn shift_needs_clock(self) -> Result<Self> {
+        let clock = self.time_override.is_some()
+            || self.iso_instant_override.is_some()
+            || self.iso_naive_override.is_some();
+        let shift = self.minutes_back != 0 || !self.time_offset.is_zero();
+        if self.day_named && shift && !clock {
+            return Err(ParseError::InvalidTime(
+                "a relative time (-q, -t ±N) needs a clock when the day moves: give one, \
+                 `-y -t 18:24`, or `-d 2026-10-05 -t 18:30 -t -6`"
+                    .to_string(),
+            ));
+        }
+        Ok(self)
     }
 
     /// Collapse the entry to a date-only event. Mirrors `-D/--full-day` on
