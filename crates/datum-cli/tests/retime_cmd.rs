@@ -103,6 +103,78 @@ fn retime_relative_time_keeps_the_uncertainty_a_clock_time_replaces() {
     assert_eq!(time_of(&db, &hid).uncertainty, None);
 }
 
+/// da-471ai: `-r -y` is the day before with the clock kept, on both of
+/// Berlin's DST nights. 2026-10-25 is 25 h long and 2026-03-29 is 23, so a
+/// day taken as 24 h left 23:30 at 00:30 on the same date, or at 22:30.
+#[test]
+fn retime_relative_day_is_a_calendar_day_beside_a_dst_change() {
+    // 23:30 on the day before each change, and 23:30 on the day of it.
+    let nights = [
+        ("2026-10-24T21:30:00Z", "2026-10-25T22:30:00Z"),
+        ("2026-03-28T22:30:00Z", "2026-03-29T21:30:00Z"),
+    ];
+    for (eve, night) in nights {
+        for (from, argv, want, plus) in [
+            (night, &["-r", "-y"][..], eve, 0),
+            (night, &["-r", "-d", "-1"], eve, 0),
+            (eve, &["-r", "-d", "+1"], night, 0),
+            (night, &["-r", "-y", "-t", "+5"], eve, 5),
+        ] {
+            let db = fresh_db();
+            let hid = point_in(&db, "coffee", from, "Europe/Berlin");
+            run_cli(&[&["retime", &hid][..], argv].concat(), &db).unwrap();
+            let after = time_of(&db, &hid);
+            let want = utc(want) + chrono::Duration::minutes(plus);
+            assert_eq!(after.utc, want, "{from} {argv:?}");
+            // The clock is kept: the day is not stripped to a whole one.
+            assert_eq!(after.uncertainty, None, "{from} {argv:?}");
+        }
+        // The bulk filter is the same path: every row from its own time.
+        let db = fresh_db();
+        let hid = point_in(&db, "coffee", night, "Europe/Berlin");
+        run_cli(&["retime", "--field", "coffee", "-r", "-y"], &db).unwrap();
+        assert_eq!(time_of(&db, &hid).utc, utc(eve));
+    }
+}
+
+/// `-r` alone is no shift, not "now", and an absolute form under it is
+/// still refused with nothing moved.
+#[test]
+fn retime_relative_refuses_absolute_forms_and_alone_moves_nothing() {
+    let db = fresh_db();
+    let at = "2026-10-05T07:15:00Z";
+    let hid = point_in(&db, "coffee", at, "Europe/Berlin");
+
+    run_cli(&["retime", &hid, "-r"], &db).unwrap();
+    assert_eq!(time_of(&db, &hid).utc, utc(at));
+
+    // A relative day word is a shift like any other, and no shift states
+    // how well the time is known.
+    let mut t = time_of(&db, &hid);
+    t.uncertainty = Some("PT150S".into());
+    let known = entry_builder("tea").time_start(t).insert(&db).hid;
+    for word in ["tomorrow", "yesterday"] {
+        run_cli(&["retime", &known, "-r", "-t", word], &db).unwrap();
+    }
+    run_cli(&["retime", &known, "-r", "-q", "-t", "+5"], &db).unwrap();
+    assert_eq!(time_of(&db, &known).utc, utc(at));
+    assert_eq!(time_of(&db, &known).uncertainty.as_deref(), Some("PT150S"));
+
+    for (argv, says) in [
+        (&["-t", "10:40"][..], "absolute clock-time forms"),
+        (&["-t", "2026-10-01T10:00:00Z"], "absolute clock-time forms"),
+        (&["-d", "2026-10-01"], "absolute date forms"),
+        (&["-d", "monday"], "absolute date forms"),
+        (&["-t", "monday"], "absolute date forms"),
+    ] {
+        let msg = run_cli(&[&["retime", &hid, "-r"][..], argv].concat(), &db)
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains(says), "{argv:?}: {msg}");
+        assert_eq!(time_of(&db, &hid).utc, utc(at), "{argv:?} moved it");
+    }
+}
+
 /// da-jix52: an unsigned number after the id is a clock time now, so the
 /// old `retime <id> 30` (minutes) is refused with the way to write it,
 /// rather than moving the entry somewhere unasked.

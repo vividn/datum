@@ -1954,17 +1954,20 @@ pub(crate) fn build_time_from_flags(
     time: &TimeArgs,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<DatumTime> {
-    build_time_anchored(time, now, None)
+    build_time_anchored(time, now, None, false)
 }
 
 /// [`build_time_from_flags`] with an entry's `own` time standing where the
 /// wall clock does (retime, da-jix52): `now` is its instant, so `-t 1040`
 /// is 10:40 on its own day, `-t -5` five minutes before it and `sunday` the
-/// Sunday before it, all in its own zone unless `-z` names another.
+/// Sunday before it, all in its own zone unless `-z` names another. With
+/// `shift` (retime's `-r`) the flags move `own` and keep its clock: a day
+/// alone is not stripped to the whole day, and no uncertainty is stated.
 pub(crate) fn build_time_anchored(
     time: &TimeArgs,
     now: chrono::DateTime<chrono::Utc>,
     own: Option<&DatumTime>,
+    shift: bool,
 ) -> Result<DatumTime> {
     let tz_name = match time.timezone.as_deref() {
         Some(spec) => Some(
@@ -1986,6 +1989,7 @@ pub(crate) fn build_time_anchored(
     let builder = time.builder(ctx)?.with_timezone(tz_name);
 
     Ok(match own {
+        Some((zone, name)) if shift => builder.build_at(now, zone, name),
         Some((zone, name)) => builder.build_with_uncertainty_at(now, zone, name),
         None => builder.build_with_uncertainty_now(now),
     })

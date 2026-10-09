@@ -8,8 +8,8 @@
 //! * Time-args group (`-t`/`-y`/`-q`/`-d`/...), the positional being one
 //!   more `-t` value (`retime <id> 1040`, `retime <id> -5`) — resolved
 //!   against each entry's OWN occur_time, in its own zone (da-jix52).
-//! * With `-r/--relative` the same args are a pure delta applied to the
-//!   entry's occur_time: `-y` moves it a day and keeps its clock.
+//! * With `-r/--relative` the same args are a pure shift of the entry's
+//!   occur_time: `-y` moves it a calendar day and keeps its clock.
 
 use anyhow::{Context, Result};
 use datum_core::{
@@ -143,13 +143,14 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
         return shift(db, &filters, offset);
     }
 
-    // Path 2a — `-r/--relative` resolves the time-args as a pure
-    // duration delta (-t -N → -N min, -y → -1 day, -q → -5 min) and
-    // applies it as a shift on the entry's current occur_time. Absolute
+    // Path 2a — `-r/--relative` reads the time-args as a pure shift of
+    // the entry's own time (-t -N → -N min, -y → the day before, -q → -5
+    // min), which path 2b then builds per entry with the clock kept: a day
+    // is a calendar day in the entry's zone, not 24 h (da-471ai). Absolute
     // clock/date forms (-t HH:MM, -d YYYY-MM-DD) are not meaningful as
-    // deltas; reject them with a directive error rather than guessing.
+    // shifts; reject them with a directive error rather than guessing.
     if args.relative {
-        return shift(db, &filters, relative_delta(&args.time)?);
+        refuse_absolute(&args.time)?;
     }
 
     // Path 2c — `-T` takes the time away: the entry becomes a note
@@ -165,12 +166,14 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
     // Path 2b — a target built from the time-args, each entry's own time
     // standing where "now" does for a log (da-jix52): `1040` is 10:40 on
     // the entry's day, `-5` five minutes before it. With no time-args there
-    // is nothing to read from the entry, and the target is now.
+    // is nothing to read from the entry, and the target is now; under `-r`
+    // no time-args is no shift, and the entry stays where it is.
     let now = DatumTime::now().utc;
-    let placed = args.time != Default::default();
-    // `+5`, `-y -t +5`, `-z` alone: no clock time is stated, so how well the
-    // entry's time is known stays as it was, as under a shift.
-    let shifted = placed && (args.time.time.as_deref()).is_none_or(|t| t.starts_with(['+', '-']));
+    let placed = args.relative || args.time != Default::default();
+    // `+5`, `-y -t +5`, `-z` alone, anything under `-r`: no clock time is
+    // stated, so how well the entry's time is known stays as it was.
+    let shifted = args.relative
+        || placed && (args.time.time.as_deref()).is_none_or(|t| t.starts_with(['+', '-']));
     let mut moved = Vec::new();
     for filter in &filters {
         moved.extend(db.set_start_time(filter, |own| {
@@ -179,7 +182,7 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
             } else {
                 (now, None)
             };
-            let mut t = build_time_anchored(&args.time, at, anchor)
+            let mut t = build_time_anchored(&args.time, at, anchor, args.relative)
                 .map_err(|e| datum_core::error::DatumError::Other(format!("{e:#}")))?;
             if shifted && t.uncertainty.is_none() {
                 t.uncertainty.clone_from(&own.uncertainty);
@@ -217,41 +220,30 @@ fn report(db: &Db, moved: &[datum_core::db::Retimed]) -> Result<()> {
     Ok(())
 }
 
-/// Compute the duration delta encoded by a `TimeArgs` group when used
-/// in relative mode. Numeric `-t -N` becomes `N` minutes, stacked `-q`
-/// becomes `quick * 5` minutes back, stacked `-y` becomes `yesterday`
-/// days back, and numeric `-d ±N` becomes `±N` days. Absolute clock
-/// or date forms have no meaning as pure deltas and are rejected up-
-/// front so the user gets a directive error instead of a surprise
-/// shift derived from "now".
-fn relative_delta(time: &datum_parse::input::TimeArgs) -> Result<chrono::Duration> {
-    let mut delta = chrono::Duration::zero();
-    if time.yesterday > 0 {
-        delta -= chrono::Duration::days(time.yesterday as i64);
-    }
-    if time.quick > 0 {
-        delta -= chrono::Duration::minutes(time.quick as i64 * 5);
-    }
+/// `-r/--relative` shifts the entry's own time, so an absolute clock or
+/// date form has no meaning under it and is refused up front: the user
+/// gets a directive error instead of a surprise placement.
+fn refuse_absolute(time: &datum_parse::input::TimeArgs) -> Result<()> {
+    // A day `-t` names (`-t sunday`) is a date as `-d`'s is.
+    let mut dates = Vec::new();
     for t in time.time_values() {
         let ta = parse_time(t, TimeCtx::now())?;
-        if let Some(off) = ta.offset {
-            delta += off;
-        } else if ta.absolute.is_some() || ta.iso_instant.is_some() || ta.iso_naive.is_some() {
+        if ta.absolute.is_some() || ta.iso_instant.is_some() || ta.iso_naive.is_some() {
             anyhow::bail!(
                 "-r/--relative does not support absolute clock-time forms (-t HH:MM); \
                  use a numeric -t -N or stacked -q for relative shifts."
             );
         }
+        dates.extend(ta.date);
     }
     if let Some(d) = &time.date {
-        let da = parse_date(d, TimeCtx::now())?;
-        if da.absolute.is_some() {
-            anyhow::bail!(
-                "-r/--relative does not support absolute date forms (-d YYYY-MM-DD); \
-                 use a numeric -d ±N or stacked -y for relative day shifts."
-            );
-        }
-        delta += chrono::Duration::days(da.days_offset);
+        dates.push(parse_date(d, TimeCtx::now())?);
     }
-    Ok(delta)
+    if dates.iter().any(|d| d.absolute.is_some()) {
+        anyhow::bail!(
+            "-r/--relative does not support absolute date forms (-d YYYY-MM-DD); \
+             use a numeric -d ±N or stacked -y for relative day shifts."
+        );
+    }
+    Ok(())
 }
