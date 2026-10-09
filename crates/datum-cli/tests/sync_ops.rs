@@ -746,6 +746,56 @@ fn two_entries_with_one_id_merge_into_one_and_the_later_created_wins_a_clash() {
     assert_eq!((history(&x), history(&y)), before);
 }
 
+/// A kit's spec for `weighin` on K, and on P afterwards the automatic one a
+/// first log writes — and, with `set`, a key its owner then set (da-m82n0).
+/// Returns K, P and the hid of the kit's spec, the earlier-created.
+fn a_kit_then_a_first_log(set: &[&str]) -> (Copy, Copy, String) {
+    let (k, p) = (Copy::new(), Copy::new());
+    let kit = k.tmp.path().join("w.toml");
+    std::fs::write(
+        &kit,
+        "[kit]\nname = \"w\"\n\n[[field]]\nname = \"weighin\"\nverb = \"occur\"\n\
+         remainder = \"note\"\n\n[field.subfields.kg]\nvalue_type = \"number\"\n",
+    )
+    .unwrap();
+    k.ok(&["kit", "install", kit.to_str().unwrap(), "--yes"]);
+    let spec = k.query("SELECT hid FROM entries WHERE slug = ?1", "spec:weighin");
+    p.ok(&["occur", "weighin"]);
+    if !set.is_empty() {
+        p.ok(set);
+    }
+    converged(&k, &p);
+    (k, p, spec)
+}
+
+#[test]
+fn a_kit_spec_applies_over_an_automatic_one_created_later() {
+    let (k, p, spec) = a_kit_then_a_first_log(&[]);
+    for copy in [&k, &p] {
+        let data = copy.data(&spec);
+        assert_eq!(data["subfields"]["kg"]["value_type"], "number", "{data}");
+        assert_eq!(
+            (&data["kit_id"], &data["remainder"]),
+            (&"w".into(), &"note".into())
+        );
+        assert_eq!(copy.conflicts(&spec), Value::Null, "nothing is contested");
+        assert_eq!(live(copy, "spec"), 1);
+    }
+}
+
+#[test]
+fn a_key_the_automatic_specs_owner_set_is_an_intent_like_any_other() {
+    let (k, p, spec) = a_kit_then_a_first_log(&["spec", "set", "weighin", "--remainder", "memo"]);
+    for copy in [&k, &p] {
+        let data = copy.data(&spec);
+        assert_eq!(data["remainder"], "memo", "the edit goes over the create");
+        assert_eq!(data["subfields"]["kg"]["value_type"], "number", "{data}");
+        let conflicts = copy.conflicts(&spec);
+        assert_eq!(sides(&conflicts, "data.remainder"), ["note", "memo"]);
+        assert_eq!(conflicts.as_object().unwrap().len(), 1, "{conflicts}");
+    }
+}
+
 #[test]
 fn a_survivor_older_than_its_ops_names_the_clash_too() {
     let (x, y) = (Copy::new(), Copy::new());

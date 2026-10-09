@@ -411,7 +411,8 @@ fn a_real_sync_with_the_backups_device_converges() {
 }
 
 /// A kit's `spec:weighin` (its `kit_id`, a subfield) against the bare one a
-/// first `occur weighin` wrote before the kit was installed.
+/// first `occur weighin` wrote, the later-created: it declares nothing, so
+/// the kit's subfield applies (da-m82n0).
 #[test]
 fn a_kit_spec_merges_into_an_automatic_one() {
     let env = Env::new();
@@ -432,6 +433,8 @@ fn a_kit_spec_merges_into_an_automatic_one() {
     let (shown, under) = env.shown("p.db", "spec:weighin");
     assert_eq!(under, 1);
     assert_eq!(shown["data"]["kit_id"], "w", "{shown}");
+    assert_eq!(shown["data"]["subfields"]["kg"]["value_type"], "number");
+    assert_eq!(env.sides("p.db", "spec:weighin", "data.subfields"), []);
 }
 
 /// The backup's entry whose hid a tombstone holds (retimed off the slug,

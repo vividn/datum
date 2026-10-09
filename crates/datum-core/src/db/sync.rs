@@ -25,7 +25,10 @@
 //!   the earlier-created shows both, the later wins a key both have, and the
 //!   later stays superseded, the record of what was merged in. A backup's
 //!   entry that `db restore --merge` finds a live one in the place of is
-//!   such a second entry ([`restore`], da-4ldvb).
+//!   such a second entry ([`restore`], da-4ldvb). The spec a field's first
+//!   log wrote declares nothing ([`automatic`], da-m82n0): a kit's or a
+//!   person's goes over it whichever is later, and no key is contested
+//!   between them.
 //! - **Conflict.** Two ops are concurrent when neither's `deps` covers the
 //!   other. Of the ops that set a key, those no later one setting it saw
 //!   stand; when they give it different values, the entry's `conflicts`
@@ -63,11 +66,13 @@ use sha2::{Digest, Sha256};
 
 use crate::entry::{new_hid, Entry};
 use crate::error::{DatumError, Result};
+use crate::field_spec::FieldSpec;
 use crate::history::{self, ChangeKind};
 use crate::ids::{Hid, Slug};
 
 use super::insert::{apply_entry_state, try_insert};
 use super::row_mapper::row_to_entry;
+use super::spec::{SPEC_FIELD, SPEC_KIT_KEY};
 use super::Db;
 
 pub mod chain;
@@ -899,9 +904,22 @@ fn intents(op: &Op) -> BTreeMap<String, Value> {
     v
 }
 
+/// Is `created` — a create's row — the spec a field's first log writes
+/// ([`FieldSpec::is_bare`]) and no kit's? It declares nothing (da-m82n0):
+/// what a kit or a person declared for the field applies whichever was
+/// created first, and the two are no conflict.
+fn automatic(created: &Map<String, Value>) -> bool {
+    created.get("field").and_then(Value::as_str) == Some(SPEC_FIELD)
+        && created.get("data").is_some_and(|d| {
+            d.get(SPEC_KIT_KEY).is_none()
+                && serde_json::from_value::<FieldSpec>(d.clone()).is_ok_and(|s| s.is_bare())
+        })
+}
+
 /// What `ops` — an entry's, with those of the rows superseded by it — leave
 /// contested, from the set of them alone: per key, the values of the ops
-/// that set it and that no other op setting it settles, when they differ.
+/// that set it and that no other op setting it settles, when they differ —
+/// an [`automatic`] spec's create being no side of a key anything else set.
 /// `deleted` is the entry's own: its deletes and undeletes as a key's
 /// values, and against a delete that stands, an edit made without seeing
 /// it, which wants the entry live.
@@ -917,9 +935,17 @@ fn contention(ops: &[Op]) -> BTreeMap<String, Vec<(&Op, Value)>> {
         let settled = |i: usize| set.iter().any(|&j| settles(&ops[j], &ops[i]));
         set.iter().copied().filter(|&i| !settled(i)).collect()
     };
+    let declares: Vec<bool> = ops
+        .iter()
+        .map(|o| !o.effect["create"].as_object().is_some_and(automatic))
+        .collect();
     let mut out = BTreeMap::new();
     for (k, set) in setters.iter().filter(|(k, _)| contestable(k)) {
-        let sides: Vec<_> = standing(set)
+        let mut sides = standing(set);
+        if sides.iter().any(|&i| declares[i]) {
+            sides.retain(|&i| declares[i]);
+        }
+        let sides: Vec<_> = sides
             .into_iter()
             .map(|i| (&ops[i], vals[i][*k].clone()))
             .collect();
@@ -1162,7 +1188,8 @@ fn merged_into(conn: &Connection, s: &Entry) -> Result<Vec<Entry>> {
 
 /// The row `s` shows with `members` merged into it (da-04glw): their
 /// creates in creation order, each over the one before — so of a key two
-/// have, the later-created row's value — then every edit of any of them in
+/// have, the later-created row's value, an [`automatic`] spec's going under
+/// every other — then every edit of any of them in
 /// fold order, so an edit addressed to either lands. Identity stays `s`'s.
 /// It is derived from the ops alone, the same on every copy, and sent as
 /// none.
@@ -1201,6 +1228,7 @@ fn merge_from(
             base = creates.last().cloned();
         }
     }
+    creates.sort_by_key(|c| !automatic(c));
     let mut shown = base;
     for created in &creates {
         fold_into(&mut shown, &json!({ "set": content(created) }));
