@@ -1,6 +1,6 @@
 [kit]
 name = "chores"
-version = "0.7"
+version = "0.8"
 description = "Chores as datum v2 kept them: a chore is any entry whose data says when it is next due (next_date / next_time, or v2's nextDate / nextTime). Log it done with `datum occur <chore> next_date=+7`; shirk it — move the date without claiming it — with `-T`. `datum newchore vacuum 4` declares a chore done every 4 days, so every `datum vacuum` then logs it due four days on; a first due date other than that is a shirk, `datum occur vacuum -T next_date=<date>`. `datum chorelist` shows what is due or was done today, `datum chorelist <chore>` one chore, and `datum chorelist --all` every chore; `--sort due` (or `-due`) sorts by a shown column."
 
 # Every chore query scans only the entries that say when they are next due.
@@ -31,8 +31,10 @@ where = "deleted_at IS NULL AND superseded_by IS NULL AND (json_type(data, '$.ne
 #                  columns it shows.
 # «Today» is `local_today()`, datum's own clock and zone: SQLite's own
 # local-time modifier gives the UTC day on datum.day, where it has no zone
-# data (da-5fonh). A timed chore's due day is its instant in the offset its
-# entry was logged with, for the same reason.
+# data (da-5fonh). A timed chore's due day is its instant in that instant's
+# own offset (`o`, in hours), for the same reason and because the entry may
+# have been logged on the other side of a DST change (da-hfdon); a due with
+# no `o` takes the offset its entry was logged with.
 # Every key spelling is read: next_date / nextDate a day, next_time /
 # nextTime an instant {utc, o, tz} as v2 wrote it and v3 now logs it
 # (da-x15of); a next_time logged before that is the text it was.
@@ -49,7 +51,9 @@ WITH chore AS (
                   json_extract(data, '$.nextDate'))              AS next,
          CASE WHEN json_extract(data, '$.next_time') IS NOT NULL
                 OR json_extract(data, '$.nextTime.utc') IS NOT NULL
-              THEN 0 ELSE 1 END                                  AS full_day
+              THEN 0 ELSE 1 END                                  AS full_day,
+         COALESCE(json_extract(data, '$.next_time.o'),
+                  json_extract(data, '$.nextTime.o')) * 60       AS next_offset
   FROM entries
   WHERE deleted_at IS NULL AND superseded_by IS NULL
     AND (json_type(data, '$.next_time') IS NOT NULL
@@ -92,7 +96,8 @@ row AS (
          CASE WHEN o.occur_time IS NOT NULL
                AND local_day(o.occur_time, o.occur_time_offset) = local_today()
               THEN 1 ELSE 0 END                                    AS done_today,
-         COALESCE(l.occur_time_offset, o.occur_time_offset, 0)     AS due_offset
+         COALESCE(l.next_offset, l.occur_time_offset,
+                  o.occur_time_offset, 0)                          AS due_offset
   FROM latest l LEFT JOIN occ o ON o.field = l.field AND o.rn = 1
                  LEFT JOIN spec sp ON sp.field = l.field
   WHERE l.rn = 1 AND l.next IS NOT NULL

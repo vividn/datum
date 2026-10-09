@@ -353,7 +353,7 @@ fn a_chore_done_just_after_local_midnight_is_done_today() {
     assert_eq!(chorelist(&db, &[]), ["mop", "vacuum"]);
 }
 
-/// A timed chore's due DAY is its instant in the offset its entry was
+/// A due instant with no offset of its own takes the one its entry was
 /// logged with: 22:30Z on the 7th is the 8th at +02, two days before the
 /// 10th and not three.
 #[test]
@@ -365,7 +365,7 @@ fn a_timed_chores_due_day_is_in_its_entrys_offset() {
         {"_id": "mop:2026-09-01T08:00:00.000Z",
          "data": {"field": "mop",
                   "occurTime": {"utc": "2026-09-01T08:00:00.000Z", "o": 2, "tz": "Europe/Berlin"},
-                  "nextTime": {"utc": "2026-09-07T22:30:00.000Z", "o": 2, "tz": "Europe/Berlin"}},
+                  "nextTime": {"utc": "2026-09-07T22:30:00.000Z"}},
          "meta": {"humanId": "m1", "createTime": {"utc": "2026-09-01T08:00:01.000Z", "o": 2, "tz": "Europe/Berlin"}}}
     ]});
     write!(f, "{docs}").unwrap();
@@ -373,6 +373,44 @@ fn a_timed_chores_due_day_is_in_its_entrys_offset() {
 
     let _clock = berlin_clock("2026-09-09T22:30:00Z");
     assert_eq!(cell(&view(&db, "chores"), "mop", "days_overdue"), 2);
+}
+
+/// da-hfdon: logged in winter at +01 and due across the DST change, the due
+/// DAY is the due instant's own (+02): 22:30Z on the 30th is 00:30 on the
+/// 31st there, one day before April 1st — at the logged +01 it was two.
+/// Both spellings: v2's imported `nextTime` and v3's logged `next_time`.
+#[test]
+fn a_timed_chores_due_day_is_in_the_due_instants_own_offset() {
+    let db = fresh_db();
+    install_chores(&db);
+    let mut f = tempfile::NamedTempFile::new().unwrap();
+    let docs = serde_json::json!({"docs": [
+        {"_id": "mop:2026-03-20T08:00:00.000Z",
+         "data": {"field": "mop",
+                  "occurTime": {"utc": "2026-03-20T08:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+                  "nextTime": {"utc": "2026-03-30T22:30:00.000Z", "o": 2, "tz": "Europe/Berlin"}},
+         "meta": {"humanId": "m1", "createTime": {"utc": "2026-03-20T08:00:01.000Z", "o": 1, "tz": "Europe/Berlin"}}}
+    ]});
+    write!(f, "{docs}").unwrap();
+    run(&db, &["db", "v2import", f.path().to_str().unwrap()]);
+
+    run(
+        &db,
+        &[
+            "occur",
+            "sweep",
+            "-t",
+            "2026-03-20T09:00",
+            "-z",
+            "Europe/Berlin",
+            "next_time=2026-03-31T00:30",
+        ],
+    );
+
+    let _clock = berlin_clock("2026-04-01T10:00:00Z");
+    let all = view(&db, "chores");
+    let overdue = ["mop", "sweep"].map(|chore| cell(&all, chore, "days_overdue").as_i64());
+    assert_eq!(overdue, [Some(1), Some(1)]);
 }
 
 /// v2import keeps v2's spellings: `nextDate`, and `nextTime` as a
