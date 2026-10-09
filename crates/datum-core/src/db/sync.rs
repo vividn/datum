@@ -2137,7 +2137,8 @@ impl Db {
                 push_entry(&tx, &ep, e, "baseline", create_effect(e))?;
             }
         }
-        if let Some(filter) = peer.and_then(|p| chain.filter(p)) {
+        let served = Chain::served(&tx)?;
+        if let Some(filter) = peer.and_then(|p| served.filter(p)) {
             let (lines, _) = filtered_lines(&tx, since, filter, &chain, reader.then_some(&mine))?;
             tx.commit()?;
             return Ok(lines);
@@ -2207,11 +2208,14 @@ impl Db {
             true => Some(endpoint(&self.conn)?.id),
             false => None,
         };
-        let filters: Vec<&Filter> = [mine.as_deref(), peer]
-            .into_iter()
-            .flatten()
-            .filter_map(|e| chain.filter(e))
-            .collect();
+        let served = Chain::served(&self.conn)?;
+        let filters: Vec<&Filter> = [
+            mine.as_deref().and_then(|e| chain.filter(e)),
+            peer.and_then(|e| served.filter(e)),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
         let rows: Vec<Map<String, Value>> = self
             .conn
             .prepare("SELECT * FROM entries ORDER BY slug, hid")?

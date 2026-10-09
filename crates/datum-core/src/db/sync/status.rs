@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
 
-use super::chain::{Filter, Member};
+use super::chain::{Chain, Filter, Member};
 use super::{belongs_to, clock_ahead, filtered_lines, now_ms, row, row_to_entry, unhex};
 use crate::db::Db;
 use crate::error::{DatumError, Result};
@@ -185,10 +185,11 @@ impl Db {
             .collect())
     }
 
-    /// Every member of the chain but this copy — in none yet, every copy it
-    /// is joining one through — and how it stands with it.
+    /// Every member of the chain but this copy, as it serves it
+    /// ([`Chain::served`]) — in none yet, every copy it is joining one
+    /// through — and how it stands with it.
     pub fn sync_status(&self) -> Result<Vec<PeerStatus>> {
-        let chain = self.sync_chain()?;
+        let chain = Chain::served(&self.conn)?;
         let mine = self.sync_endpoint_id()?;
         let held = self.sync_vector()?;
         // Entries no op covers yet go as baselines on the next session: to a

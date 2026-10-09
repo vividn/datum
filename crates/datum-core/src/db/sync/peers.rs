@@ -74,10 +74,11 @@ impl Db {
             .collect()
     }
 
-    /// A copy this one syncs with: an unrevoked member of its chain, or, in
-    /// none yet, a copy it is joining one through ([`Db::sync_joining`]).
+    /// A copy this one syncs with: an unrevoked member of its chain as it
+    /// serves it ([`Chain::served`]), or, in none yet, a copy it is joining
+    /// one through ([`Db::sync_joining`]).
     pub fn sync_is_peer(&self, id: &str) -> Result<bool> {
-        let chain = self.sync_chain()?;
+        let chain = Chain::served(&self.conn)?;
         if !chain.exists() {
             return Ok(self.sync_joining()?.iter().any(|p| p.id == id));
         }
@@ -187,10 +188,11 @@ impl Db {
     /// copy holds the chain, and is refused as [`Refusal::NotMember`]. Asked
     /// again with `records`, the dialer's own chain records as op lines, it
     /// is admitted when they make it one (da-2u95o: [`Chain::load_with`]).
-    /// Nothing of them is kept: the session brings every op this copy lacks,
-    /// those among them. A reader stays refused, since it brings none of the
-    /// ops its admission waits on: this copy could not keep its admission,
-    /// nor learn its filter.
+    /// Nothing of a member's is kept: the session brings every op this copy
+    /// lacks, those among them. A reader brings none but its own, so its
+    /// records are kept (da-91wab): applied as any received, they wait on
+    /// what this copy lacks of its inviter's, and the copy serves by them
+    /// meanwhile ([`Chain::served`]).
     #[allow(clippy::too_many_arguments)]
     pub fn sync_handshake(
         &self,
@@ -230,16 +232,18 @@ impl Db {
                 },
                 None if known => {}
                 None => {
-                    let shown = records.map(|r| Chain::load_with(&self.conn, r));
-                    let member = shown.transpose()?.is_some_and(|c| {
-                        c.member(id)
-                            .is_some_and(|m| m.revoked.is_none() && m.role() == Role::Member)
-                    });
-                    if !member {
-                        return Err(DatumError::Refused(
-                            Refusal::NotMember,
-                            self.not_a_member(label)?,
-                        ));
+                    let (shown, read) = Chain::load_with(&self.conn, records.unwrap_or(""))?;
+                    match shown.member(id).filter(|m| m.revoked.is_none()) {
+                        Some(m) if m.role() == Role::Reader => {
+                            self.sync_apply(&read)?;
+                        }
+                        Some(_) => {}
+                        None => {
+                            return Err(DatumError::Refused(
+                                Refusal::NotMember,
+                                self.not_a_member(label)?,
+                            ))
+                        }
                     }
                 }
             }
@@ -288,27 +292,43 @@ mod tests {
             false,
         );
         assert!(hello.unwrap());
-        let ops = member.sync_ops_since(&copy.sync_vector().unwrap(), false, None);
-        copy.sync_apply(&ops.unwrap().join("\n")).unwrap();
+        send(member, copy);
+    }
+
+    /// `from` sends `to` what it lacks, as a session does.
+    fn send(from: &Db, to: &Db) {
+        let ops = from.sync_ops_since(&to.sync_vector().unwrap(), false, Some(&id(to)));
+        to.sync_apply(&ops.unwrap().join("\n")).unwrap();
+    }
+
+    fn log(db: &Db, field: &str) {
+        let verb = crate::entry::Verb::Point;
+        let e = crate::entry::Entry::new(field, verb, None, None, None, None, "t");
+        db.insert_entry(&e).unwrap();
+    }
+
+    fn fields(db: &Db) -> String {
+        let sql =
+            "SELECT COALESCE(GROUP_CONCAT(field), '') FROM (SELECT field FROM entries ORDER BY 1)";
+        db.conn.query_row(sql, [], |r| r.get(0)).unwrap()
     }
 
     /// A member admitted since this copy last synced is admitted by its own
     /// chain records, and by nothing less (da-2u95o): not without them, not
-    /// by another's, nor by another's rewritten to name it, not as a reader,
-    /// not once the records shown revoke it, and not by a genesis of its own
+    /// by another's, nor by another's rewritten to name it, not once the
+    /// records shown revoke it, and not by a genesis of its own
     /// for this chain, though it is the earlier. Nothing shown is kept. One
     /// a member admitted is admitted in turn, until this copy holds that
     /// member as revoked: then only the revoked one's clock says which came
     /// first.
     #[test]
     fn a_member_not_heard_of_is_admitted_by_its_chain_records_alone() {
-        let [a, b, c, r, x, y] = [(); 6].map(|()| Db::open_in_memory().unwrap());
+        let [a, b, c, x, y] = [(); 5].map(|()| Db::open_in_memory().unwrap());
         genesis(&x, "x");
         std::thread::sleep(std::time::Duration::from_millis(2));
         genesis(&a, "a");
         admit(&a, &b, "b", json!({}));
         admit(&a, &c, "c", json!({}));
-        admit(&a, &r, "r", json!({"role": "reader"}));
         let records = |of: &Db| of.sync_chain_records().unwrap().join("\n");
         let hello = |who: &Db, shown: Option<String>| {
             b.sync_handshake(&id(who), "l", "{}", None, None, 0, shown.as_deref(), false)
@@ -327,7 +347,6 @@ mod tests {
         let rewritten = records(&c).replace(&id(&c), &id(&x));
         refused("another's records naming it", &x, Some(rewritten));
         refused("a genesis of its own", &x, Some(records(&x)));
-        refused("a reader", &r, Some(records(&r)));
         let held = records(&b);
         assert!(hello(&c, Some(records(&c))).unwrap());
         assert_eq!(records(&b), held);
@@ -341,5 +360,59 @@ mod tests {
         b.sync_apply(&records(&a)).unwrap();
         let by = "admitted by one this copy holds as revoked";
         refused(by, &y, Some(records(&y)));
+    }
+
+    /// A reader not heard of is admitted by its chain records too, and they
+    /// are kept (da-91wab): it brings no op of its inviter's, so past an
+    /// entry of the inviter's they wait, and this copy serves by them. The
+    /// reader is a peer from then on, is sent what its filter passes and
+    /// verified over it, and `sync status` lists it. A plain reader holds
+    /// the inviter's entry, which this copy lacks until the inviter's ops
+    /// reach it: then the records apply, and the two agree.
+    #[test]
+    fn a_reader_not_heard_of_is_kept_by_its_chain_records_and_served_by_them() {
+        let filtered = json!({"role": "reader", "fields": ["tea"], "of": 3});
+        for caps in [json!({"role": "reader"}), filtered] {
+            let plain = caps["fields"].is_null();
+            let [a, b, r] = [(); 3].map(|()| Db::open_in_memory().unwrap());
+            genesis(&a, "a");
+            admit(&a, &b, "b", json!({}));
+            log(&a, "coffee");
+            admit(&a, &r, "r", caps);
+            log(&b, "tea");
+            log(&b, "juice");
+            let records = |of: &Db| of.sync_chain_records().unwrap().join("\n");
+            let hello = |shown: Option<String>| {
+                b.sync_handshake(&id(&r), "r", "{}", None, None, 0, shown.as_deref(), false)
+            };
+            assert!(hello(None).is_err() && hello(Some(records(&b))).is_err());
+            assert!(hello(Some(records(&r))).unwrap());
+            assert!(b.sync_chain().unwrap().member(&id(&r)).is_none());
+            assert!(!hello(None).unwrap(), "known by the records kept");
+
+            // What passes its filter and no more, before the reader could drop it.
+            let since = r.sync_vector().unwrap();
+            let sent = b.sync_ops_since(&since, false, Some(&id(&r))).unwrap();
+            assert_eq!(sent.iter().any(|l| l.contains("juice")), plain);
+            send(&b, &r);
+            assert_eq!(fields(&r), if plain { "coffee,juice,tea" } else { "tea" });
+            let hash = |of: &Db, with: &Db| of.sync_state_hash(Some(&id(with))).unwrap().0;
+            assert_eq!(hash(&b, &r) == hash(&r, &b), !plain);
+            let listed = |of: &Db| {
+                let all = of.sync_status().unwrap();
+                let r = all.into_iter().find(|p| p.endpoint == id(&r));
+                r.map(|p| (p.reader, p.filter.map(|f| f.describe())))
+            };
+            let filter = (!plain).then(|| "filtered: 1 of 3 fields".to_string());
+            assert_eq!(listed(&b), Some((true, filter.clone())));
+
+            send(&a, &b);
+            assert!(b.sync_chain().unwrap().member(&id(&r)).is_some());
+            assert_eq!(
+                (listed(&b), listed(&a)),
+                (Some((true, filter.clone())), Some((true, filter)))
+            );
+            assert_eq!(hash(&b, &r), hash(&r, &b));
+        }
     }
 }

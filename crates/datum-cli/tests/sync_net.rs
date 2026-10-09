@@ -1357,13 +1357,13 @@ fn a_member_only_its_inviter_heard_of_shows_its_admission_and_syncs() {
     assert_eq!(b.hash(), c.hash());
 }
 
-/// A reader shows the same records and stays refused: it brings none of the
-/// inviter's ops, so the copy that has not heard of it could neither keep
-/// its admission nor learn its filter. The refusal names both copies and
-/// says what would fix it, on both ends, and nothing of the reader's is kept.
+/// One admitted by a copy this one holds as revoked shows records it does
+/// not read, and stays refused: the refusal names both copies and says what
+/// would fix it, on both ends, and nothing of the dialer's is kept.
 #[test]
-fn a_reader_only_its_inviter_heard_of_is_refused_with_what_would_fix_it() {
-    let (_a, b, c) = admitted_unheard(&["--reader"]);
+fn one_admitted_by_a_copy_held_as_revoked_is_refused_with_what_would_fix_it() {
+    let (a, b, c) = admitted_unheard(&["--reader"]);
+    b.ok(&["sync", "chain", "revoke", &a.id()[..10]]);
     let mut b_runs = b.cmd(&["sync", "run"]);
     let mut b_runs = Serving::of(b_runs.stderr(Stdio::null()));
     let out = c.fails(&["sync"], "");
@@ -1378,4 +1378,59 @@ fn a_reader_only_its_inviter_heard_of_is_refused_with_what_would_fix_it() {
     assert_eq!(b_runs.finish().1, "", "b served no session");
     let kept = format!("SELECT COUNT(*) FROM ops WHERE endpoint = '{}'", c.id());
     assert_eq!(b.query(&kept), "0");
+}
+
+// ─── A reader only its inviter has heard of (da-91wab) ──────────────────────
+
+/// `r` syncs with `b` serving, which had not heard of it; what each said,
+/// and `r` as `b`'s `sync status` lists it after. The inviter is gone, so
+/// `r`'s sync fails on that one.
+fn reader_syncs_unheard(b: &Copy, r: &Copy) -> (String, String, serde_json::Value) {
+    let mut b_runs = b.serve(&["sync", "run"]);
+    let out = r.fails(&["sync"], "");
+    assert!(out.contains("1 of 2 peer(s) failed"), "a is gone: {out}");
+    let served = b_runs.lines_until(" got ");
+    let status = b.ok(&["sync", "status", "--json"]);
+    (out, served, member_of_list(&status, &r.id()))
+}
+
+/// With the inviter gone for good, a filtered reader still syncs with the
+/// member that has not heard of it: it shows the chain's records, which the
+/// member keeps, since a reader brings none of the inviter's ops they wait
+/// on. The member reads its filter from them: the reader gets its fields
+/// alone, both verify over them, and the member's `sync status` lists it.
+/// The verify agrees because the inviter's entry the member lacks, `from-a`,
+/// is outside the filter: inside it, this is the plain reader's case below.
+#[test]
+fn a_filtered_reader_only_its_inviter_heard_of_shows_its_admission_and_syncs() {
+    let (_a, b, r) = admitted_unheard(&["--fields", "tea"]);
+    b.ok(&["occur", "tea"]);
+    b.ok(&["occur", "from-b"]);
+    let (out, served, listed) = reader_syncs_unheard(&b, &r);
+    assert!(out.contains("verify ok"), "{out}");
+    assert!(served.contains("verify ok"), "{served}");
+    assert!(r.has("tea") && !r.has("from-b") && !r.has("from-a"));
+    assert_eq!(listed["reader"], true);
+    assert_eq!(listed["filter"]["fields"], serde_json::json!(["tea"]));
+    assert_eq!(listed["last_verify"]["match"], true);
+}
+
+/// A plain reader is served the same way, and gets all the member holds.
+/// It holds the inviter's entry too, which the member lacks and no reader
+/// relays, so their verify differs by that entry, as it does for a reader
+/// the member has long known (da-t3ey2).
+#[test]
+fn a_plain_reader_only_its_inviter_heard_of_shows_its_admission_and_syncs() {
+    let (_a, b, r) = admitted_unheard(&["--reader"]);
+    b.ok(&["occur", "from-b"]);
+    let (out, served, listed) = reader_syncs_unheard(&b, &r);
+    assert!(r.has("from-b"), "{out}");
+    assert_eq!(
+        (listed["reader"].clone(), listed["filter"].clone()),
+        (true.into(), serde_json::Value::Null)
+    );
+    assert!(r.has("from-a") && !b.has("from-a"));
+    assert!(out.contains("verify MISMATCH"), "{out}");
+    assert!(served.contains("verify MISMATCH"), "{served}");
+    assert_eq!(listed["last_verify"]["match"], false);
 }

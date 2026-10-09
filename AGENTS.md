@@ -250,13 +250,17 @@ upgrade, once per new version on stderr and for as long as it lasts in
 A member admitted since the serving copy last synced is no member of the
 chain as that copy holds it (da-2u95o). Asked (`Reply::Prove`, to a dialer
 whose `Hello` says it `proves`), the dialer sends its chain's records, and is
-admitted when they make it a member that is no reader: folded with the
-server's own (`Chain::load_with`), each signed by its endpoint, none kept,
-since the session brings every op the server lacks, and two kinds not read:
-a genesis, and a record of an endpoint the server holds as revoked, which
-only that endpoint's clock dates before its revoke. A reader brings none of
-the inviter's ops, and stays refused. The refusal
-names both copies and what fixes it: sync the refusing one with the copy that
+admitted when they make it a member: folded with the
+server's own (`Chain::load_with`), each signed by its endpoint, and two kinds
+not read: a genesis, and a record of an endpoint the server holds as revoked,
+which only that endpoint's clock dates before its revoke. A member's are not
+kept, since the session brings every op the server lacks. A reader brings
+none but its own, so its records are kept (da-91wab): they wait on whatever
+entry op of the inviter's the server lacks, and the server serves by the
+chain they make meanwhile (`Chain::served`: the handshake, a reader's filter
+in what it is sent and in the verify, `sync status`), while which ops apply
+stays with the records applied. A dialer still refused is told so by name,
+with what fixes it: sync the refusing copy with the copy that
 invited the other. datum.day's store does the same through the hidden `sync
 pipe records` and `sync handshake --records`.
 

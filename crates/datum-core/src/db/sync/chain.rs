@@ -582,28 +582,50 @@ impl Chain {
         Self::load_where(conn, "applied IN (0, 1)")
     }
 
-    /// The chain this copy's records make with `lines`, the records of a
+    /// The chain this copy serves a peer by (da-91wab): the one it holds,
+    /// with the records still waiting. A reader's admission waits for as
+    /// long as an entry op of its inviter's before it is missing, and only
+    /// a member holding that op can bring it: a reader never relays. Who
+    /// gets a session and what it is sent are read from here; which ops
+    /// apply, from [`Chain::load`] alone.
+    pub(super) fn served(conn: &Connection) -> Result<Chain> {
+        Ok(Self::fold(Self::served_records(conn)?))
+    }
+
+    fn served_records(conn: &Connection) -> Result<Vec<Op>> {
+        match Self::load(conn)?.exists() {
+            true => Self::records(conn, "applied IN (0, 1)"),
+            false => Ok(Vec::new()),
+        }
+    }
+
+    /// The chain this copy serves by, with `lines`, the records of a
     /// dialer it has not heard of (da-2u95o): what the copy would hold once
-    /// it had them, to admit the dialer by. Each must be signed by its
-    /// endpoint, as an op applied is, and the fold checks it as it does any
-    /// record; none is kept. Two kinds are not read. A genesis: this copy
-    /// holds its chain's, and an earlier one would be the chain's first
-    /// record and its writer the first member. And a record of an endpoint
-    /// this copy holds as revoked: only that endpoint's own clock says it
-    /// wrote it before the revoke, and this copy serves it no session it
-    /// could send such a record in.
-    pub(super) fn load_with(conn: &Connection, lines: &str) -> Result<Chain> {
-        let held = Chain::load(conn)?;
-        let mut ops = Self::records(conn, "applied = 1")?;
-        ops.extend(lines.lines().filter_map(|line| {
+    /// it had them, to admit the dialer by, and the records of them it read,
+    /// each as its canonical op line, which need not be the line as sent.
+    /// Each must be signed by its endpoint, as an op applied is, and the
+    /// fold checks it as it does any record. Two kinds are not read. A
+    /// genesis: this copy holds its chain's, and an earlier one would be the
+    /// chain's first record and its writer the first member. And a record of
+    /// an endpoint this copy holds as revoked: only that endpoint's own
+    /// clock says it wrote it before the revoke, and this copy serves it no
+    /// session it could send such a record in.
+    pub(super) fn load_with(conn: &Connection, lines: &str) -> Result<(Chain, String)> {
+        let mut ops = Self::served_records(conn)?;
+        let held = Self::fold(ops.clone());
+        let shown = lines.lines().filter_map(|line| {
             let op = Op::parse(line).ok()?;
             let out = held
                 .member(&op.endpoint)
                 .is_some_and(|m| m.revoked.is_some());
             let read = !out && op.effect["type"] != "genesis";
             (read && check_signature(line, &op).is_ok()).then_some(op)
-        }));
-        Ok(Self::fold(ops))
+        });
+        let read: Vec<Op> = shown.collect();
+        let lines: Vec<&str> = read.iter().map(|op| op.body.as_str()).collect();
+        let lines = lines.join("\n");
+        ops.extend(read);
+        Ok((Self::fold(ops), lines))
     }
 
     fn load_where(conn: &Connection, applied: &str) -> Result<Chain> {
