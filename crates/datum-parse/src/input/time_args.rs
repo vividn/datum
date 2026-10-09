@@ -91,17 +91,6 @@ impl TimeArgs {
         }
     }
 
-    /// Whether these flags resolve to a date-only moment — `-D`, or a
-    /// `-d` / `-y*` without any clock-level input — known before building.
-    /// [`TimeFromArgs::only_date`] also knows a `-t` that named a day.
-    pub fn only_date(&self) -> bool {
-        !self.omit_timestamp
-            && (self.full_day
-                || ((self.date.is_some() || self.yesterday > 0)
-                    && self.time.is_none()
-                    && self.quick == 0))
-    }
-
     /// The flags read into a [`TimeBuilder`], in the order it composes
     /// them: `-t`, `-q`, `-d`, `-y`. `ctx` is what a weekday or a year-less
     /// date is measured from. `-z` is the caller's: it names the zone the

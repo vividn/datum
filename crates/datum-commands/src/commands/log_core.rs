@@ -982,7 +982,16 @@ pub(crate) fn parse_log_args(
     // as v2 did (c7d7a69d): `start walk -y 13:00` is a mistyped `-t`, and
     // its `13:00` must fail as extra data, not log a 13h full day. Only the
     // slot goes; an explicit `dur=<v>` is still a duration.
-    let date_only = dur_bearing(action) && args.time.only_date();
+    //
+    // Date-only is the composer's own answer (da-1m0t5), so a `-t` that
+    // names a day drops the slot too. A `-t` it cannot read is reported
+    // where the time is built.
+    let date_only = dur_bearing(action)
+        && !args.time.omit_timestamp
+        && args
+            .time
+            .builder(TimeCtx::now())
+            .is_ok_and(|b| b.is_only_date());
     for spec in args.field_keys.iter().chain(&args.keys) {
         let (name, _) = spec
             .split_once('=')

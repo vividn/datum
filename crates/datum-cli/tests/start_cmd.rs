@@ -371,6 +371,38 @@ fn date_only_time_takes_no_positional_duration() {
     assert_count!(db, "mood", 0);
 }
 
+/// da-1m0t5: a `-t` that names a day is date-only to the composer, so it
+/// drops the slot as `-y` does; with a clock beside the day it is a clock
+/// time, and a named `dur=` is still a duration.
+#[test]
+fn a_t_that_names_a_day_takes_no_positional_duration() {
+    let db = fresh_db();
+
+    for argv in [
+        &["start", "walk", "-t", "yesterday", "13:00"][..],
+        &["switch", "mood", "happy", "-t", "sunday", "13:00"],
+        &["end", "walk", "-t", "2024-03-16", "13:00"],
+        &["start", "walk", "-y", "-t", "yesterday", "30m"],
+        &["start", "walk", "start_time=yesterday", "30m"],
+    ] {
+        let err = run_cli(argv, &db).expect_err("the stray word is extra data");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("Extra data with no matching key"),
+            "{argv:?}: {msg}"
+        );
+    }
+    assert_count!(db, "walk", 0);
+    assert_count!(db, "mood", 0);
+
+    run_cli(&["start", "run", "-t", "yesterday 13:00", "30m"], &db).expect("a day and a clock");
+    run_cli(&["start", "swim", "-t", "yesterday", "dur=13h"], &db).expect("named dur is kept");
+
+    let dur = |f| datum_core::test_util::logged_entries(&db, f)[0].duration_seconds();
+    assert_eq!(dur("run"), Some(30 * 60));
+    assert_eq!(dur("swim"), Some(13 * 60 * 60));
+}
+
 /// da-98u27: only the positional slot goes. A bare `-y` still logs a
 /// full-day start, a clock time keeps its duration, and so does an
 /// explicit `dur=` (v2 removed only the positional key).
