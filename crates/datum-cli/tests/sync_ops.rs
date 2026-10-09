@@ -1024,6 +1024,79 @@ fn the_same_ops_twice_or_in_any_order_give_the_same_state() {
     assert_eq!(shuffled.hash(), a.hash());
 }
 
+/// Creates of one `spec:<field>` slug are one entry however the apply that
+/// brings them is cut (da-yrtk6): a first sync stopped part-way and
+/// finished later holds what one clean session does. Three copies make the
+/// spec one after another: the first two each the bare one a first log
+/// writes or a declared one, the second editing its own after, the third
+/// declaring a colour of its own — so two rows go under the survivor, and
+/// the later-created of them wins the colour whichever arrived first. A copy applying
+/// every copy's ops whole agrees with one applying them in two pieces, cut
+/// at every point, as sent and reversed: any create comes first, and the
+/// edit before its own create.
+#[test]
+fn specs_merged_under_one_slug_fold_the_same_however_their_apply_is_cut() {
+    let make = |copy: &Copy, declared: bool, color: &str| match declared {
+        true => copy.ok(&["spec", "set", "tea", "--verb", "occur", "--color", color]),
+        false => copy.ok(&["occur", "tea", "-t", "2026-10-04 08:00"]),
+    };
+    for (first, second) in [(false, true), (true, false), (true, true)] {
+        let (x, y, z) = (Copy::new(), Copy::new(), Copy::new());
+        make(&x, first, "#ff0000");
+        make(&y, second, "#00ffff");
+        y.ok(&["spec", "set", "tea", "--glyph", "y"]);
+        z.ok(&[
+            "spec", "set", "tea", "--verb", "occur", "--color", "#0000ff",
+        ]);
+        let lines: Vec<String> = [&x, &y, &z]
+            .iter()
+            .flat_map(|c| {
+                c.ok(&["sync", "pipe", "ops"])
+                    .lines()
+                    .map(String::from)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let apply = |pieces: &[&[String]]| {
+            let copy = Copy::new();
+            for piece in pieces {
+                copy.ok_in(&["sync", "pipe", "apply"], &piece.join("\n"));
+            }
+            copy
+        };
+        let whole = apply(&[&lines]);
+        let spec = whole.query(
+            "SELECT hid FROM entries WHERE slug = ?1 AND superseded_by IS NULL",
+            "spec:tea",
+        );
+        assert_eq!(
+            whole.query(
+                "SELECT COUNT(*) FROM entries WHERE superseded_by = ?1",
+                &spec
+            ),
+            "2",
+            "the three are one entry"
+        );
+        // The last-created's colour, and the edit, whichever row it is of.
+        let data = whole.data(&spec);
+        assert_eq!(data["color"], "#0000ff", "{data}");
+        assert_eq!(data["glyph"], "y", "{data}");
+        let want = whole.hash();
+        let reversed: Vec<String> = lines.iter().rev().cloned().collect();
+        for order in [&lines, &reversed] {
+            for cut in 1..order.len() {
+                let (head, tail) = order.split_at(cut);
+                assert_eq!(
+                    apply(&[head, tail]).hash(),
+                    want,
+                    "first declared: {first}, second declared: {second}, cut at {cut} of {}",
+                    order.len()
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn a_tampered_op_is_refused_and_a_gap_is_held_until_filled() {
     let a = Copy::new();
