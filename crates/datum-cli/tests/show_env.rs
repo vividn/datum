@@ -96,3 +96,46 @@ fn a_sync_subcommand_with_no_json_ignores_the_env_and_refuses_the_flag() {
         "{stderr:?}"
     );
 }
+
+/// da-a6p7v: so do the subcommands of `alias`, `db` and `spec` that draw no
+/// JSON, having done nothing; and `redo` draws the level it used to drop.
+#[test]
+fn a_subcommand_with_no_json_ignores_the_env_and_refuses_the_flag() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("t.db");
+    assert_eq!(
+        ok(&db, "json", &["alias", "set", "aa", "occur tea"]),
+        "✓ Alias 'aa' saved.\n"
+    );
+    assert!(ok(&db, "json", &["alias", "list"]).starts_with('['));
+
+    for (name, argv) in [
+        (
+            "alias set",
+            &["alias", "set", "zz", "occur coffee", "--json"][..],
+        ),
+        ("alias remove", &["alias", "remove", "aa", "--json"]),
+        ("db setup", &["db", "setup", "--json"]),
+        ("spec list", &["spec", "list", "--json"]),
+    ] {
+        let out = datum(&db, "", argv);
+        assert!(!out.status.success(), "{name} should have refused");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains(&format!(
+                "{name}: --show json is not a rendering {name} has"
+            )),
+            "{stderr:?}"
+        );
+    }
+    let aliases = ok(&db, "", &["alias", "list"]);
+    assert!(
+        aliases.contains("aa") && !aliases.contains("zz"),
+        "{aliases}"
+    );
+
+    ok(&db, "", &["occur", "coffee"]);
+    ok(&db, "", &["undo"]);
+    let redone = ok(&db, "", &["redo", "--json"]);
+    assert!(redone.starts_with("{\"docs\":["), "{redone}");
+}

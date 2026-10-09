@@ -185,8 +185,9 @@ pub fn shows_for(command: &str) -> &'static [Show] {
         "tail" | "head" => &[Show::Default, Show::None, Show::Format, Show::Json],
         // Readers carrying a JSON document beside their stock output.
         // `alias`, `config` and `db` are groups: only `alias list`,
-        // `config show` and `db restore` render the document, and the
-        // sibling subcommands ignore the flag.
+        // `config show`, `db restore` and `db backup --to | --list | --plan`
+        // render the document, and the parser refuses a typed `--show` on
+        // the sibling subcommands (da-a6p7v).
         "now" | "nowview" | "dayview" | "count" | "ids" | "history" | "check" | "alias"
         | "config" | "db" => &[Show::Default, Show::None, Show::Json],
         // `fields` draws one more: `--show all` is the engineering
@@ -194,7 +195,8 @@ pub fn shows_for(command: &str) -> &'static [Show] {
         // all` is its text and then its JSON line, from one run (da-cddng).
         "fields" | "stats" => &[Show::Default, Show::None, Show::Json, Show::All],
         // `spec show` prints its document by default, so `--show json` is
-        // the explicit form of that; it has no silent mode to offer.
+        // the explicit form of that; it has no silent mode to offer. Its
+        // sibling subcommands refuse it.
         "spec" => &[Show::Default, Show::Json],
         // `help --json` is the command table itself (da-r13j).
         "help" => &[Show::Default, Show::Json],

@@ -331,11 +331,6 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
     };
 
     let mut command = command;
-    // `conflicts` draws JSON for its listing alone: a typed `--show` on
-    // `resolve` is refused, as on any command with no rendering for it.
-    if let (Some(typed), Command::Conflicts(ConflictsCommand::Resolve(_))) = (show, &command) {
-        input::check_show(typed, "conflicts resolve")?;
-    }
     let typed = show.is_some();
     let show = show.or(fallback.filter(|s| input::shows_for(sub).contains(s)));
     if let Some(show) = show {
@@ -343,13 +338,16 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
         // deserves the typo guard's message, not a lecture about the
         // renderings it does not have (da-sg3b).
         //
-        // `sync` is a group, and its `json` is the subcommands' that carry
-        // it: a typed `--show` the rest would drop is refused by the
-        // subcommand's own words (da-8un1i). `DATUM_SHOW` they still ignore.
-        if !apply_show(&mut command, show) && typed && sub == "sync" {
-            let words = match rest.first() {
-                Some(&("chain" | "admin" | "daemon" | "pipe")) => 2,
-                _ => 1,
+        // A typed `--show` the parsed command has no place for is refused,
+        // where it used to be dropped: by the subcommand's own words in a
+        // group, whose `json` is the subcommands' that carry it (da-07594,
+        // da-8un1i, da-a6p7v). `DATUM_SHOW` they still ignore.
+        if !apply_show(&mut command, show) && typed {
+            let words = match (sub, rest.first()) {
+                ("sync", Some(&("chain" | "admin" | "daemon" | "pipe")))
+                | ("db", Some(&"migrate")) => 2,
+                ("sync" | "alias" | "config" | "conflicts" | "db" | "spec", _) => 1,
+                _ => 0,
             };
             let name = [&[sub], &rest[..words.min(rest.len())]].concat().join(" ");
             input::check_show_in(show, &name, &[Show::Default])?;
@@ -394,6 +392,7 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
         Command::Get(a) => a.output.show = Some(named),
         Command::Delete(a) => a.output.show = Some(named),
         Command::Undo(a) => a.output.show = Some(named),
+        Command::Redo(a) => a.output.show = Some(named),
         Command::Update(a) | Command::Merge(a) | Command::Rekey(a) => a.output.show = Some(named),
         Command::Edit(a) => a.output.show = Some(named),
         Command::Grep(a) => a.output.show = Some(named),
@@ -412,6 +411,8 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
         Command::History(a) => a.show = show,
         Command::Check(a) => a.show = show,
         Command::Config(ConfigCommand::Show(a)) => a.show = show,
+        // `spec show` prints its document by default: `json` is what it draws.
+        Command::Spec(SpecCommand::Show { .. }) => {}
         Command::Alias(AliasCommand::List { show: s }) => *s = show,
         Command::Conflicts(ConflictsCommand::List(a)) => a.show = show,
         Command::Sync(
@@ -427,8 +428,7 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
         Command::Db(DbCommand::Restore(a)) => a.show = show,
         Command::Db(DbCommand::BackupRotation(a)) => a.show = show,
 
-        // `shows_for` allowed nothing but `default` for the rest, so
-        // there is no level left to carry.
+        // The rest draw `default` alone: there is nowhere to carry a level.
         _ => return false,
     }
     true
@@ -1223,6 +1223,74 @@ mod tests {
             assert_eq!(debug(default), plain, "{name}");
             let env = parse_argv_showing(&words(name, args), Some(Show::Json));
             assert_eq!(debug(env), plain, "{name}");
+        }
+    }
+
+    /// da-a6p7v: so is it by every command with no place for it. `alias`,
+    /// `db` and `spec` are groups as `sync` is, and `redo` carries the
+    /// level `undo` does, where it had no arm and dropped it.
+    #[test]
+    fn a_typed_show_is_refused_by_any_command_with_no_place_for_it() {
+        let parse = |line: &str| parse_argv(&argv(&line.split_whitespace().collect::<Vec<_>>()));
+        let env = |line: &str| {
+            let words = argv(&line.split_whitespace().collect::<Vec<_>>());
+            format!(
+                "{:?}",
+                parse_argv_showing(&words, Some(Show::Json))
+                    .unwrap()
+                    .command
+            )
+        };
+        let debug = |cli: Result<Cli>| format!("{:?}", cli.unwrap().command);
+
+        for carried in [
+            "alias list",
+            "config show",
+            "db restore f",
+            "db backup --to d --every 1h",
+            "db backup --list d",
+            "db backup --plan --every 1h --span 1d",
+            "undo",
+            "redo",
+        ] {
+            let typed = debug(parse(&format!("{carried} --json")));
+            assert_ne!(typed, debug(parse(carried)), "{carried}");
+            assert_eq!(env(carried), typed, "{carried}");
+        }
+        // `spec show` draws JSON with or without it.
+        assert!(parse("spec show x --json").is_ok());
+
+        for (name, args) in [
+            ("alias set", "zz occur"),
+            ("alias show", "zz"),
+            ("alias remove", "zz"),
+            ("db setup", ""),
+            ("db purge", ""),
+            ("db backup", "f"),
+            ("db migrate run", ""),
+            ("db migrate status", ""),
+            ("db migrate edit", ""),
+            ("db v2import", "f"),
+            ("spec list", ""),
+            ("spec set", "x"),
+            ("spec add-state", "x on"),
+            ("spec remove", "x"),
+        ] {
+            let plain = debug(parse(&format!("{name} {args}")));
+            for show in ["json", "none"] {
+                let err = parse(&format!("{name} {args} --show {show}")).unwrap_err();
+                assert_eq!(
+                    err.to_string(),
+                    format!(
+                        "Invalid argument: {name}: --show {show} is not a rendering {name} has (it draws: default)"
+                    ),
+                );
+            }
+            assert!(parse(&format!("{name} --json {args}")).is_err(), "{name}");
+            // The rendering it does have is not refused, and the env is ignored.
+            let default = parse(&format!("{name} {args} --show default"));
+            assert_eq!(debug(default), plain, "{name}");
+            assert_eq!(env(&format!("{name} {args}")), plain, "{name}");
         }
     }
 }
