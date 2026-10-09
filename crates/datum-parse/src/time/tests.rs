@@ -760,6 +760,32 @@ fn date_no_direction_on_unsuffixed_input() {
     assert_eq!(d.direction, None);
 }
 
+/// da-6d09r: a day offset takes a sign, as `-t`'s minutes do. Unsigned,
+/// `2026` was 2026 days ahead and `20261005` the year 57499.
+#[test]
+fn date_unsigned_integer_is_refused_with_the_way_to_write_it() {
+    for (n, hint) in [
+        (
+            "5",
+            "(use '+5' or '-5' for relative days, or a date like 2026-10-05)",
+        ),
+        (
+            "999",
+            "(use '+999' or '-999' for relative days, or a date like 2026-10-05)",
+        ),
+        // Signed, these are where they were: only the date is offered.
+        ("2026", "(use a date like 2026-10-05)"),
+        ("20261005", "(use a date like 2026-10-05)"),
+    ] {
+        let err = parse_date(n, TimeCtx::now()).err().expect(n).to_string();
+        assert!(err.ends_with(hint), "{n}: {err}");
+    }
+    for (signed, days) in [("+5", 5), ("-5", -5), ("0", 0), ("+2026", 2026)] {
+        let d = parse_date(signed, TimeCtx::now()).unwrap();
+        assert_eq!((d.days_offset, d.absolute), (days, None), "{signed}");
+    }
+}
+
 // ── Day words ──────────────────────────────────────────────────────────
 
 #[test]

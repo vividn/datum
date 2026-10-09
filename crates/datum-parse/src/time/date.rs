@@ -31,8 +31,9 @@ pub struct DateArg {
 }
 
 /// Parse a -d / --date argument.
-/// Supports: "+1", "-1", "0", the day words "today" / "yesterday" /
-/// "tomorrow", weekday names ("sunday", "sun"), ISO date "2024-03-16",
+/// Supports: "+1", "-1", "0" (a day offset takes a sign), the day words
+/// "today" / "yesterday" / "tomorrow", weekday names ("sunday", "sun"),
+/// ISO date "2024-03-16",
 /// or compact `<mmm><day>[(-|@|,)YYYY]` (e.g. "apr29", "Jan5",
 /// "apr29-2025", "oct10,2022"), plus an optional `±N[unit]` uncertainty
 /// suffix and optional trailing `+`/`-` direction marker.
@@ -48,7 +49,14 @@ pub fn parse_date(s: &str, ctx: TimeCtx) -> Result<DateArg> {
     let (primary, uncert_body) = split_uncertainty(s_no_dir);
     let uncertainty = uncert_body.map(parse_uncertainty).transpose()?;
 
-    // Relative integer offset
+    // Relative integer offset: the sign opts in, as it does for `-t`'s
+    // minutes and did in v2 (da-6d09r). Unsigned, `2026` was 2026 days
+    // ahead and `20261005` the year 57499.
+    if let Some(hint) = unsigned_days_hint(primary) {
+        return Err(ParseError::InvalidTime(format!(
+            "cannot parse date '{s}' ({hint})"
+        )));
+    }
     if let Ok(n) = primary.parse::<i64>() {
         return Ok(DateArg {
             days_offset: n,
@@ -117,6 +125,19 @@ pub fn parse_date(s: &str, ctx: TimeCtx) -> Result<DateArg> {
     Err(ParseError::InvalidTime(format!(
         "cannot parse date '{s}' — see `datum help time`"
     )))
+}
+
+/// How to write what an unsigned day count may have meant. Four digits or
+/// more are likelier a year or a compact date, and a sign on `20261005`
+/// is the year 57499 again, so those are offered the date alone. Zero is
+/// today either way, so it needs no sign.
+pub(crate) fn unsigned_days_hint(s: &str) -> Option<String> {
+    let unsigned = s.bytes().all(|b| b.is_ascii_digit()) && s.bytes().any(|b| b != b'0');
+    let signed = match s.len() {
+        ..4 => format!("'+{s}' or '-{s}' for relative days, or "),
+        _ => String::new(),
+    };
+    unsigned.then(|| format!("use {signed}a date like 2026-10-05"))
 }
 
 /// Match `<mmm><1-2 digit day>` with an optional `-YYYY` or `@YYYY` tail.

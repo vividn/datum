@@ -66,8 +66,8 @@ pub fn count_stacked_flag(s: &str, ch: char) -> Option<usize> {
 /// An unsigned integer that is not a valid clock time (e.g. `2500`) is
 /// rejected rather than treated as a relative minute-offset — relative
 /// offsets require an explicit leading sign (`+2500` / `-2500`). That
-/// rejection is final: it must not reach the date fallback, where `2500`
-/// would read as a 2500-day offset.
+/// rejection is final: it does not go on to the date fallback, which
+/// would refuse it in `-d`'s words.
 ///
 /// What does not parse whole is tried as `<date> <time>` — see
 /// [`parse_date_then_time`].

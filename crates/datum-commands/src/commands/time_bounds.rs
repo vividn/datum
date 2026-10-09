@@ -84,8 +84,8 @@ pub(crate) fn parse_before(s: &str) -> Result<DateTime<Utc>> {
 ///   2. A calendar date via [`parse_date`] — `2026-06-01`, `apr29`.
 ///      Resolved to the local midnight that opens (every edge but
 ///      `Until`) or closes (`Until`) that day. Only the absolute forms:
-///      a bare integer is a day offset to `-d`, and tier 1 has already
-///      claimed it.
+///      a signed integer is a day offset to `-d`, and here it is tier
+///      3's minutes.
 ///   3. The shared `-t` grammar via [`parse_time`] — `now`, clock
 ///      times (`9:15am`, `21:30`), signed offsets (`-30`, `+2h`),
 ///      ISO-8601 datetimes with or without a zone suffix, and every word

@@ -654,6 +654,29 @@ fn occur_unbound_positional_is_rejected() {
     );
 }
 
+/// da-6d09r: `-d` takes a day offset with a sign. Unsigned, `-d 2026` logged
+/// 2032-04-26 and `-d 20261005` the year 57499.
+#[test]
+fn occur_unsigned_integer_date_is_refused_and_logs_nothing() {
+    let db = fresh_db();
+
+    for (n, hint) in [
+        (
+            "5",
+            "(use '+5' or '-5' for relative days, or a date like 2026-10-05)",
+        ),
+        ("2026", "(use a date like 2026-10-05)"),
+        ("20261005", "(use a date like 2026-10-05)"),
+    ] {
+        let err = run_cli(&["occur", "x", "-d", n], &db).expect_err(n);
+        assert!(format!("{err:#}").ends_with(hint), "{n}: {err:#}");
+    }
+    assert_eq!(datum_core::test_util::logged_entries(&db, "x").len(), 0);
+
+    run_cli(&["occur", "x", "-d", "+5"], &db).expect("a signed offset");
+    assert_eq!(datum_core::test_util::logged_entries(&db, "x").len(), 1);
+}
+
 /// da-c312 (vividn's rule, 2026-09-14 — not datum parity): a token with an
 /// empty key is raw data, `=` included, never a `""` key.
 #[test]

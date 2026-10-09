@@ -1360,6 +1360,27 @@ mod tests {
         );
     }
 
+    /// da-6d09r: unsigned, `due_date=2026` was 2026 days after the entry.
+    #[test]
+    fn unsigned_integer_on_a_date_key_is_refused_with_the_way_to_write_it() {
+        let mut a = args();
+        a.base = Some(base_at(2026, 5, 20, 10, 0));
+        for (typed, said) in [
+            (
+                "due_date=5",
+                "due_date: \"5\" is not a date: use '+5' or '-5' for relative days, \
+                 or a date like 2026-10-05",
+            ),
+            (
+                "due_date=2026",
+                "due_date: \"2026\" is not a date: use a date like 2026-10-05",
+            ),
+        ] {
+            a.data = vec![typed.into()];
+            assert_eq!(handle_data_args(&a).unwrap_err().to_string(), said);
+        }
+    }
+
     #[test]
     fn relative_date_offset_without_base_local_passes_through() {
         // No base anchor → relative day offsets cannot resolve, fall through

@@ -16,6 +16,7 @@ use serde_json::Value;
 use crate::error::{ParseError, Result};
 use crate::input::data_args::Compat;
 use crate::shape::{REF_MARK, STR_MARK};
+use crate::time::date::unsigned_days_hint;
 use crate::time::{
     format_iso_duration, parse_date, parse_duration, parse_time, DateArg, DatumTime,
     DefaultDirection, TimeBuilder, TimeCtx, Zone,
@@ -319,8 +320,11 @@ fn coerce_list(
 }
 
 /// What to say after a refusal: a decimal comma is a list (da-fwsre), and
-/// the point is how a decimal is written.
+/// the point is how a decimal is written; a day count takes a sign.
 fn wrong_type_hint(ty: KeyType, value: &str) -> String {
+    if ty == KeyType::Date {
+        return unsigned_days_hint(value).map_or_else(String::new, |hint| format!(": {hint}"));
+    }
     let typed_list = value.starts_with('[');
     if ty != KeyType::Number || typed_list || !infer_type(value).is_some_and(|v| v.is_array()) {
         return String::new();
