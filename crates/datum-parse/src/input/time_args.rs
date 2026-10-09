@@ -22,7 +22,7 @@
 //!
 //! See `docs/parity-audit/parsing.md` ("`timeArgs.ts`") for the spec.
 
-use chrono::{Duration, Offset, TimeZone, Utc};
+use chrono::{Duration, Offset};
 use chrono_tz::Tz;
 
 use crate::error::{ParseError, Result};
@@ -542,18 +542,7 @@ fn shift_minutes(cur: DatumTime, minutes: i64) -> Result<DatumTime> {
 }
 
 fn shift_days(cur: DatumTime, days: i64, tz_name: Option<&str>) -> Result<DatumTime> {
-    // Shifting by calendar days requires re-anchoring in the local zone so
-    // DST transitions land on the intended wall-clock moment.
-    match zone_of(tz_name, &cur)? {
-        Zone::Iana(tz) => shift_days_in(cur, days, tz),
-        Zone::Fixed(off) => shift_days_in(cur, days, off),
-    }
-}
-
-fn shift_days_in<Z: TimeZone>(cur: DatumTime, days: i64, tz: Z) -> Result<DatumTime> {
-    let local = cur.utc.with_timezone(&tz);
-    let shifted = local + Duration::days(days);
-    let utc = shifted.with_timezone(&Utc);
+    let utc = zone_of(tz_name, &cur)?.shift_days(cur.utc, days);
     Ok(DatumTime { utc, ..cur })
 }
 
@@ -567,7 +556,7 @@ fn shift_days_in<Z: TimeZone>(cur: DatumTime, days: i64, tz: Z) -> Result<DatumT
 #[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
-    use chrono::DateTime;
+    use chrono::{DateTime, Utc};
 
     /// Fixed "now" matching datum's test harness: 2020-05-10 15:25:30Z.
     fn reference_now() -> DatumTime {
@@ -794,6 +783,76 @@ mod tests {
         let mut a = TimeArgs::default();
         a.yesterday = 5;
         assert_utc(&build(a), "2020-05-05T15:25:30Z");
+    }
+
+    /// da-xpvdi: a day shift is a calendar day, not 24 h. Berlin's fall-back
+    /// day (2026-10-25) is 25 h long and its spring-forward day (2026-03-29)
+    /// 23 h, so 24 h from the hour beside either change was the same day,
+    /// or two days off.
+    #[test]
+    fn a_day_shift_is_a_calendar_day_beside_a_dst_change() {
+        let berlin = |now: &str, a: TimeArgs| {
+            let now = DatumTime::from_utc_and_tz(now.parse().unwrap(), "Europe/Berlin").unwrap();
+            let t = a.build(&now).unwrap().time.unwrap();
+            t.local_time().naive_local().to_string()
+        };
+        let args = |f: fn(&mut TimeArgs)| {
+            let mut a = TimeArgs::default();
+            f(&mut a);
+            a
+        };
+        // 23:30 CET on the fall-back day, by each spelling of a day back.
+        for back in [
+            args(|a| a.yesterday = 1),
+            args(|a| a.date = Some("-1".into())),
+            args(|a| a.date = Some("yesterday".into())),
+            args(|a| a.time = Some("yesterday".into())),
+        ] {
+            assert_eq!(
+                berlin("2026-10-25T22:30:00Z", back.clone()),
+                "2026-10-24 23:30:00",
+                "{back:?}"
+            );
+        }
+        // `-q` stays elapsed time: five minutes back, then the same clock
+        // a day earlier.
+        assert_eq!(
+            berlin(
+                "2026-10-25T22:30:00Z",
+                args(|a| (a.yesterday, a.quick) = (1, 1))
+            ),
+            "2026-10-24 23:25:00"
+        );
+        // 00:30 CEST on the day after spring-forward.
+        assert_eq!(
+            berlin("2026-03-29T22:30:00Z", args(|a| a.yesterday = 1)),
+            "2026-03-29 00:30:00"
+        );
+        // Forward, into the long day and out of the short one.
+        let tomorrow = || args(|a| a.date = Some("+1".into()));
+        assert_eq!(
+            berlin("2026-10-24T21:30:00Z", tomorrow()),
+            "2026-10-25 23:30:00"
+        );
+        assert_eq!(
+            berlin("2026-03-28T23:30:00Z", tomorrow()),
+            "2026-03-30 00:30:00"
+        );
+        // A clock the day before never read (02:30 in the gap) still comes
+        // out, at the change: nobody typed it, so it is no error.
+        assert_eq!(
+            berlin("2026-03-30T00:30:00Z", args(|a| a.yesterday = 1)),
+            "2026-03-29 03:00:00"
+        );
+        // No shift leaves the instant alone: the second 02:30 of the
+        // fall-back night is not re-read as the first.
+        assert_eq!(
+            berlin(
+                "2026-10-25T01:30:00Z",
+                args(|a| a.date = Some("today".into()))
+            ),
+            "2026-10-25 02:30:00"
+        );
     }
 
     #[test]

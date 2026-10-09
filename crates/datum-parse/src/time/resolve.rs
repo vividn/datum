@@ -108,6 +108,20 @@ impl Zone {
         }
     }
 
+    /// The instant `days` calendar days from `utc`: the same wall clock on
+    /// that day, not 24 h of elapsed time, which is another date in the hour
+    /// beside a clock change (da-xpvdi). A composed shift of a moment, so
+    /// one always comes out ([`Resolved::for_boundary`]); no shift leaves
+    /// the instant alone, so the later reading of a fall-back overlap is
+    /// not re-read as the earlier.
+    pub fn shift_days(&self, utc: DateTime<Utc>, days: i64) -> DateTime<Utc> {
+        if days == 0 {
+            return utc;
+        }
+        self.resolve(self.local_naive(utc) + chrono::Duration::days(days))
+            .for_boundary()
+    }
+
     /// Read `naive` as a wall-clock reading in this zone.
     ///
     /// This is *the* conversion; `clippy.toml` disallows the chrono calls it
