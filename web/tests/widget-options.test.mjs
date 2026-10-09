@@ -96,7 +96,9 @@ describe('widget options', () => {
 			// `tail` since da-hkjp: its type size is a declared option of the
 			// KIND rather than a number written into a layout, so it is here
 			// and its default must be one of its choices like any other.
+			// `command` since da-u79wl: its «scrolling sections» prototype.
 			assert.deepEqual(declared.map((k) => k.kind).sort(), [
+				'command',
 				'daystrip',
 				'input',
 				'nowview',
@@ -141,13 +143,14 @@ describe('widget options', () => {
 
 			await manage(page, 'custom', 'Change Widget');
 			await chooser(page).waitFor();
-			await chooser(page).locator('button').filter({ hasText: exactly('command') }).click();
+			await chooser(page).locator('button').filter({ hasText: exactly('aliases') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
-			// `command` declares neither options nor defaults, holds nothing
+			// `aliases` declares neither options nor defaults, holds nothing
 			// in this session and holds no layout, so the NAME's slice is
 			// empty and no menu is drawn at all (da-z8klv, which moved
-			// Change Widget to the `▾`).
-			assert.equal(await menuButton(page, 'custom').count(), 0, 'command has a name menu');
+			// Change Widget to the `▾`). `command` stood here until it
+			// declared an option (da-u79wl).
+			assert.equal(await menuButton(page, 'custom').count(), 0, 'aliases has a name menu');
 		});
 	});
 

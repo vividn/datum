@@ -355,9 +355,14 @@ export const KINDS: Record<string, WidgetKind> = {
 	// da-zqop renamed to `custom` to free it. Legible at one button row
 	// (33px) plus the body's padding — the scroll rule takes it from
 	// there, and one row reached sideways is still every command.
+	// `sections` (da-u79wl) is a PROTOTYPE to compare with it: the same
+	// commands as sections that scroll (SectionPages.svelte).
 	command: {
-		meta: meta('command', 'command'),
+		meta: meta('command', 'command', { sections: false }, [
+			{ key: 'sections', label: 'scrolling sections', type: 'boolean' }
+		]),
 		component: CommandPane,
+		props: ({ sections }) => ({ sections: sections === true }),
 		help: [
 			'Every datum command as a button, in sections: Undo (↷ redoes) and Help, the verbs, setup, edits, analysis, db.',
 			'A verb goes on the command line and filters the fields; a double outline runs at once.',

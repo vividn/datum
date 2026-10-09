@@ -13,7 +13,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp as withAnyApp, seedLines } from './support/app.mjs';
-import { DESKTOP, along, draft, widgetPane } from './support/layout.mjs';
+import { DESKTOP, along, draft, toggleOption, widgetPane } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { atRows, axes, boxes, gaps, lastReached, listed, packed } from './support/rows.mjs';
 import { FIELD_FORM } from './support/field.mjs';
@@ -837,6 +837,154 @@ describe('the scroll rule', () => {
 			);
 			assert.deepEqual([tall.x, tall.y, tall.display, tall.fits], ['auto', 'hidden', 'flex', true]);
 		});
+	});
+});
+
+describe('the sections that scroll (da-u79wl)', () => {
+	// The prototype of vividn's sketch, 2026-10-09: «maybe each section has
+	// vertical scroll, and then we can have a different number of columns
+	// per section and horizontal scrolling to go between the sections».
+	// It came from the red «conflicts» standing last in the one scrolling
+	// row, off a phone's screen — so that is what the old bar is caught
+	// doing here, beside the new one, on one page.
+	const BOTH = JSON.stringify(
+		along('column', widgetPane('repl', 'repl'), widgetPane('old', 'command'), widgetPane('new', 'command', { sections: true }))
+	);
+	const COLUMNS = { undo: 1, log: 3, setup: 2, edit: 1, analysis: 2, db: 1 };
+	const pages = (page) => page.locator('section[data-pane="new"] .pages.commands');
+
+	/** How the new bar is drawn: its scrollers' rules, and each section's columns, thumb and names. */
+	const read = (page) =>
+		pages(page).evaluate((bar) => {
+			const css = (el, ...keys) => keys.map((k) => getComputedStyle(el)[k]).join(' ');
+			const box = bar.getBoundingClientRect();
+			return {
+				rows: Number(bar.dataset.rows),
+				scroller: css(bar.querySelector('.scroller'), 'overflowX', 'overflowY', 'scrollSnapType'),
+				pinned: [...bar.querySelectorAll(':scope > .pinned button')].map((b) => b.dataset.command),
+				sections: [...bar.querySelectorAll('.scroller > .section')].map((section) => {
+					const grid = section.querySelector('.grid');
+					const names = [...grid.querySelectorAll('button[data-command]:not([data-command="redo"])')];
+					return {
+						name: section.dataset.section,
+						columns: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
+						rule: css(section, 'scrollSnapAlign') + ' / ' + css(grid, 'overflowY', 'scrollSnapType'),
+						names: names.map((b) => b.dataset.command),
+						/** The buttons wholly inside the bar, top to bottom. */
+						shown: names
+							.filter((b) => b.getBoundingClientRect().top >= box.top - 0.5 && b.getBoundingClientRect().bottom <= box.bottom + 0.5)
+							.map((b) => b.dataset.command),
+						hidden: grid.scrollHeight > grid.clientHeight + 1,
+						of: Number(getComputedStyle(section).getPropertyValue('--of')),
+						at: Number(getComputedStyle(section).getPropertyValue('--at'))
+					};
+				})
+			};
+		});
+
+	/** Is the pane's «conflicts» wholly inside its pane, and is it red? */
+	const conflictsOf = (page, id) =>
+		page.locator(`section[data-pane="${id}"]`).evaluate((pane) => {
+			const button = pane.querySelector('button[data-command="conflicts"]');
+			const [b, p] = [button.getBoundingClientRect(), pane.getBoundingClientRect()];
+			return {
+				text: button.textContent.trim(),
+				red: button.classList.contains('clashing'),
+				inView: b.left >= p.left && b.right <= p.right && b.top >= p.top && b.bottom <= p.bottom
+			};
+		});
+
+	test('each section has its columns and its own scroll, the sections page sideways, and conflicts cannot be scrolled away', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+
+			// One row high — a phone's box: the same box for both bars.
+			await atRows(page, 'old', 1);
+			const one = await until(() => read(page), (r) => r.rows === 1 && r.sections.every((s) => s.hidden === s.of > 0));
+			assert.equal(one.scroller, 'auto hidden x mandatory');
+			assert.deepEqual(one.pinned, [], 'no conflicts, nothing pinned');
+			assert.deepEqual(Object.fromEntries(one.sections.map((s) => [s.name, s.columns])), COLUMNS);
+			for (const s of one.sections) {
+				assert.equal(s.rule, 'start / auto y mandatory', s.name);
+				// The first row is the section's first commands, whole, and
+				// the rest is under it: marked by the thumb, never cut.
+				assert.deepEqual(s.shown, s.names.slice(0, COLUMNS[s.name]), `${s.name}: its first row`);
+				assert.equal(s.hidden, s.names.length > COLUMNS[s.name], `${s.name}: rows under the first`);
+				assert.ok(s.hidden ? s.of > 0 && s.of < 1 && s.at === 0 : s.of === 0, `${s.name}: thumb ${s.of} at ${s.at}`);
+			}
+			// The same commands as the row bar, in the same order.
+			const row = await listed(page.locator('section[data-pane="old"] .bar.commands'), 'button[data-command]');
+			assert.deepEqual(one.sections.flatMap((s) => s.names), row.map((b) => b.command).filter((name) => name !== 'redo'));
+
+			// A section scrolled to its end shows its last row, and says where it is.
+			await pages(page).locator('[data-section="log"] .grid').evaluate((grid) => grid.scrollTo(0, grid.scrollHeight));
+			const scrolled = await until(() => read(page), (r) => r.sections[1].at > 0);
+			assert.deepEqual(scrolled.sections[1].shown, ['flag']);
+
+			// Three rows high: every section draws three, and only the long ones scroll.
+			await atRows(page, 'old', 3);
+			const three = await until(() => read(page), (r) => r.rows === 3);
+			assert.deepEqual(
+				three.sections.filter((s) => s.hidden).map((s) => s.name),
+				three.sections.filter((s) => s.names.length > 3 * COLUMNS[s.name]).map((s) => s.name)
+			);
+			assert.deepEqual(three.sections[1].shown, ['occur', 'start', 'end', 'switch', 'add', 'note', 'flag']);
+
+			// Conflicts, on a screen too narrow for either bar: the row bar's
+			// button is off it, the new bar's is pinned before the scroller
+			// and stays when the sections are paged to their end.
+			await app.submit('debug conflicts 2');
+			await until(() => conflictsOf(page, 'new'), (c) => c.text === 'conflicts 3');
+			await page.setViewportSize({ width: 390, height: page.viewportSize().height });
+			await until(() => pages(page).locator('.scroller').evaluate((s) => s.scrollWidth > s.clientWidth + 1), Boolean);
+			assert.deepEqual(await conflictsOf(page, 'old'), { text: 'conflicts 3', red: true, inView: false }, 'the row bar');
+			await pages(page).locator('.scroller').evaluate((s) => s.scrollTo(s.scrollWidth, 0));
+			const pinned = await read(page);
+			assert.deepEqual(pinned.pinned, ['conflicts']);
+			assert.deepEqual(pinned.sections.at(-1).names, ['sync', 'db'], 'and it is drawn once');
+			assert.deepEqual(await conflictsOf(page, 'new'), { text: 'conflicts 3', red: true, inView: true }, 'the new bar');
+		}, BOTH);
+	});
+
+	test('it is the widget’s «scrolling sections» option, and a drilled bar is one run that wraps', async () => {
+		await shared.solo(async ({ page }) => {
+			const old = page.locator('section[data-pane="old"]');
+			await toggleOption(page, 'old', 'scrolling sections');
+			await old.locator('.pages.commands').waitFor();
+			assert.equal(await old.locator('.bar.commands').count(), 0);
+
+			await old.locator('button[data-command="db"]').click();
+			await old.locator('button[data-back]').waitFor();
+			assert.deepEqual(
+				await old.locator('.pages .section').evaluateAll((all) =>
+					all.map((s) => [s.dataset.section, getComputedStyle(s.querySelector('.grid')).display, getComputedStyle(s.querySelector('.grid')).flexWrap])
+				),
+				[[undefined, 'flex', 'wrap']]
+			);
+			// A short box, then the same box narrowed until the run wraps past
+			// it: the thumb follows the box's WIDTH, which no update or scroll
+			// of the bar's follows — the height alone would count its rows again.
+			const run = () =>
+				old.locator('.pages .section').evaluate((s) => {
+					const grid = s.querySelector('.grid');
+					return { hidden: grid.scrollHeight > grid.clientHeight + 1, of: Number(getComputedStyle(s).getPropertyValue('--of')) };
+				});
+			await page.setViewportSize({ width: 1280, height: 320 });
+			const height = () => old.locator('.pages').evaluate((bar) => bar.clientHeight);
+			const short = await until(height, (h) => h < 100);
+			assert.deepEqual(await run(), { hidden: false, of: 0 });
+			await page.setViewportSize({ width: 390, height: 320 });
+			const narrow = await until(run, (r) => r.hidden);
+			assert.equal(await height(), short, 'the box changed height too');
+			assert.ok(narrow.of > 0 && narrow.of < 1, `rows out of sight and a thumb of ${narrow.of}`);
+			await page.setViewportSize(DESKTOP.viewport);
+			await old.locator('button[data-back]').click();
+			await old.locator('[data-section="db"]').waitFor();
+
+			// Back as the layout has it, so the session holds nothing for the next test.
+			await toggleOption(page, 'old', 'scrolling sections');
+			await old.locator('.bar.commands').waitFor();
+		}, BOTH);
 	});
 });
 

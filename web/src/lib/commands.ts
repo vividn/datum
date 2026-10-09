@@ -73,6 +73,14 @@ export interface CommandButton {
  */
 export type Section = 'undo' | 'log' | 'setup' | 'edit' | 'analysis' | 'db';
 
+/**
+ * How many columns each section stands in where the sections scroll
+ * (da-u79wl, SectionPages.svelte): a section's first row is what shows in a
+ * box one row tall, so the count is how many of its commands are in reach
+ * without a scroll.
+ */
+export const COLUMNS: Record<Section, number> = { undo: 1, log: 3, setup: 2, edit: 1, analysis: 2, db: 1 };
+
 /** The fillers a tap completes: an id or a time pill is what comes next. */
 const TAPPED = ['retime', 'delete', 'get', 'history'];
 
@@ -734,6 +742,14 @@ export function lanesOf<T>(items: T[], rows: number): T[][] {
 	items.forEach((item, i) => lanes[i % lanes.length].push(item));
 	return lanes;
 }
+
+/** Consecutive items of one section, as runs (da-0mepr): a bar draws each run on its own. */
+export const runsOf = <T>(items: T[], section: (item: T) => unknown): T[][] =>
+	items.reduce<T[][]>((runs, item, i) => {
+		if (i && section(item) === section(items[i - 1])) runs.at(-1)!.push(item);
+		else runs.push([item]);
+		return runs;
+	}, []);
 
 /**
  * The axis a bar is reached along: `x`, rows reached left and right, is

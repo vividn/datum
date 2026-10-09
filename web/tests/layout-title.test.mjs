@@ -26,7 +26,7 @@
 //     milliseconds — the gesture is a timer ($lib/hold.ts), so a
 //     synthesised pair would be a test of the test.
 //   - a pane whose widget declares no options has NO title menu at all
-//     (`custom`, `command` — da-z8klv), and the hold still works there:
+//     (`custom`, `aliases` — da-z8klv), and the hold still works there:
 //     the gesture is on the title's box, not on the menu's button.
 //   - the press the title already had still opens what the pane IS, and
 //     `Change Widget` is still in the `▾`. A door was added, not moved.
@@ -57,10 +57,11 @@ after(stopApp);
 
 /**
  * Two panes, and the second one deliberately has NO title menu: the
- * `command` widget declares neither defaults nor options, so its name
- * opens nothing (da-z8klv). The hold has to reach it anyway.
+ * `aliases` widget declares neither defaults nor options, so its name
+ * opens nothing (da-z8klv). The hold has to reach it anyway. (`command`
+ * stood here until it declared an option, da-u79wl.)
  */
-const PAGE = JSON.stringify(along('row', widgetPane('repl', 'repl'), widgetPane('cmd', 'command')));
+const PAGE = JSON.stringify(along('row', widgetPane('repl', 'repl'), widgetPane('cmd', 'aliases')));
 
 // ONE APP for the file (da-6b3dj, sharedApp in support/app.mjs), each test
 // on `main` opened from the PAGE draft (`solo(fn, PAGE)`), locks put back
@@ -127,14 +128,14 @@ describe('the × on the widget title', () => {
 	test('it closes what the title names, and writes only the draft doing it', async () => {
 		await onPage(async ({ page }) => {
 			await unlockRoot(page);
-			assert.deepEqual(await titles(page), ['repl', 'command']);
+			assert.deepEqual(await titles(page), ['repl', 'aliases']);
 			const before = await layoutStorage(page);
 
 			// The act is named after the thing, as the menu's Close is.
 			assert.equal(await closeButton(page, 'repl').getAttribute('aria-label'), 'close the repl pane');
 			await closeButton(page, 'repl').click();
 			await settled(page);
-			assert.deepEqual(await titles(page), ['command'], 'the × did not close the pane');
+			assert.deepEqual(await titles(page), ['aliases'], 'the × did not close the pane');
 
 			// A MIS-TAP IS NOT A LOSS. The × writes the DRAFT and only the
 			// draft, as every other layout act does: whatever this device has
@@ -220,7 +221,7 @@ describe('the hold on the widget title', () => {
 	test('a pane with no title menu at all is still held', async () => {
 		await onPage(async ({ page }) => {
 			await unlockRoot(page);
-			// The premise, and it is the point of the pane: `command`
+			// The premise, and it is the point of the pane: `aliases`
 			// declares neither defaults nor options, so its name opens
 			// nothing (da-z8klv) and there is no button to hang this on.
 			assert.equal(await pane(page, 'cmd').locator('> .titlebar button.title').count(), 0);
@@ -294,7 +295,7 @@ describe('the hold on the widget title', () => {
 			await closeButton(page, 'repl').click();
 			await settled(page);
 			assert.deepEqual(await tabs.allInnerTexts(), [], 'the strip outlived its second tab');
-			assert.deepEqual(await titles(page), ['repl', 'command'], 'the × closed the pane, not the tab');
+			assert.deepEqual(await titles(page), ['repl', 'aliases'], 'the × closed the pane, not the tab');
 		});
 	});
 

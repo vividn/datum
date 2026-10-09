@@ -52,6 +52,8 @@
 	export let epoch = 0;
 	/** This widget's session key, which its bar keeps what it shows under (da-ria1a). */
 	export let key = '';
+	/** The widget's «scrolling sections» option (da-u79wl). */
+	export let sections = false;
 
 	let redoable = false;
 	let asked = 0;
@@ -87,18 +89,22 @@
 </script>
 
 <div class="body">
-	<CommandsWidget
-		disabled={!$ready}
-		grammar={$grammar}
-		pills={$pills}
-		fields={$fields}
-		{redoable}
-		conflicts={$conflicts.length}
-		{key}
-		on:run={(e) => runNow(e.detail)}
-		on:line={(e) => fill(e.detail)}
-		on:flag={(e) => prefill.set({ line: withFlag($text, e.detail.command, e.detail.flag), keyboard: e.detail.keyboard })}
-	/>
+	<!-- Keyed: the bar's holds are bound to the element it mounted with. -->
+	{#key sections}
+		<CommandsWidget
+			disabled={!$ready}
+			{sections}
+			grammar={$grammar}
+			pills={$pills}
+			fields={$fields}
+			{redoable}
+			conflicts={$conflicts.length}
+			{key}
+			on:run={(e) => runNow(e.detail)}
+			on:line={(e) => fill(e.detail)}
+			on:flag={(e) => prefill.set({ line: withFlag($text, e.detail.command, e.detail.flag), keyboard: e.detail.keyboard })}
+		/>
+	{/key}
 </div>
 
 <style>

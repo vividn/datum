@@ -160,7 +160,7 @@ export const settled = (page) =>
  *
  * ⚠ A pane may have NO such button (da-z8klv): the NAME's slice is wholly
  * conditional, so a pane holding a widget whose kind declares neither
- * defaults nor options — `custom`, `command`, `aliases`, `notice` — and no
+ * defaults nor options — `custom`, `aliases`, `notice` — and no
  * layout draws none. Everything done TO such a pane is under `manageButton`.
  */
 export const menuButton = (page, id) =>

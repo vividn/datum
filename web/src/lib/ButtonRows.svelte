@@ -32,7 +32,7 @@
 -->
 <script lang="ts" generics="T">
 	import { onMount } from 'svelte';
-	import { MAX_ROWS, lanesOf, watchRows, type Axis } from './commands.js';
+	import { MAX_ROWS, lanesOf, runsOf, watchRows, type Axis } from './commands.js';
 
 	export let items: T[];
 	export let key: (item: T) => unknown;
@@ -53,15 +53,7 @@
 
 	onMount(() => watchRows(bar!, probe, (n) => (fit = n), axis));
 
-	/** Consecutive items of one section, as runs; everything one run without `section`. */
-	const runsOf = (items: T[]): T[][] =>
-		items.reduce<T[][]>((runs, item, i) => {
-			if (i && section && section(item) === section(items[i - 1])) runs.at(-1)!.push(item);
-			else runs.push([item]);
-			return runs;
-		}, []);
-
-	$: groups = (section ? runsOf(items) : [items]).map((run) => ({
+	$: groups = (section ? runsOf(items, section) : [items]).map((run) => ({
 		name: section?.(run[0]),
 		lanes: arrange(run, rows)
 	}));

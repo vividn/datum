@@ -98,8 +98,10 @@
 	import type { Pill } from './bar.js';
 	import type { FieldButton } from './fields.js';
 	import ButtonRows from './ButtonRows.svelte';
+	import SectionPages from './SectionPages.svelte';
 	import { advance } from '$lib/keyframes.js';
 	import {
+		COLUMNS,
 		commandsUnder,
 		drills,
 		opensField,
@@ -133,6 +135,8 @@
 	export let conflicts = 0;
 	/** Whose bar this is: what it was showing is kept under it across a remount. */
 	export let key = '';
+	/** The prototype (da-u79wl): sections that scroll, and «conflicts» pinned while there are any. */
+	export let sections = false;
 
 	/** The presses whose kind is theirs whatever is loaded. */
 	const FIXED: Partial<Record<Press, ActKind>> = { run: 'run', help: 'arm', back: 'show', flag: 'fill', backups: 'open', place: 'open' };
@@ -149,6 +153,10 @@
 	let flagged = (inProgress.get(key)?.flagged as string | undefined) ?? null;
 	$: inProgress.set(key, { open, flagged });
 	let bar: HTMLElement | undefined;
+	/** Either bar: SectionPages takes ButtonRows' items, key, section and slot. */
+	$: Bar = (sections ? SectionPages : ButtonRows) as typeof ButtonRows<CommandButton>;
+	/** What SectionPages takes beyond them: its columns, and «conflicts» kept in sight while there are any. */
+	$: paged = sections ? { columns: COLUMNS, pinned: (command: CommandButton) => conflicts > 0 && command.name === 'conflicts' } : {};
 	$: listed = commandsUnder(grammar, pills, fields);
 	$: if (open && !listed.some((command) => command.name === open)) open = null;
 	$: if (flagged && !listed.some((command) => command.name === flagged)) flagged = null;
@@ -218,11 +226,13 @@
 
 <svelte:window on:keydown={onKeyDown} />
 
-<ButtonRows
+<svelte:component
+	this={Bar}
 	class="commands"
 	items={shown}
 	key={(command) => command.name}
 	section={open || flagged ? undefined : (command) => command.section}
+	{...paged}
 	bind:bar
 	let:item={command}
 >
@@ -296,7 +306,7 @@
 			{#if icon.length > 1}<svg viewBox="0 0 16 16" aria-hidden="true"><path d={icon} /></svg>{/if}{command.label}{clashing ? ` ${clashing}` : ''}
 		</button>
 	{/if}
-</ButtonRows>
+</svelte:component>
 
 <style>
 	/* The look itself is `button.command`, shared with the Sync widget
