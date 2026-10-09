@@ -265,6 +265,54 @@ fn a_track_row_is_a_grey_marker_for_every_verb() {
     let _ = std::fs::remove_file(&db);
 }
 
+/// da-ycbyx: the lead lookup reads declarations, so the row after a track
+/// row comes from TRACKED, not from untracked: `previous_state` says so,
+/// and an occur dot there draws `●` with no `∅`. A first log on a field
+/// nothing declared still draws `∅●`.
+#[test]
+fn the_row_after_a_track_row_comes_from_tracked() {
+    let db = tmp_db();
+    // The field's newest row: its `previous_state`, and the row as drawn.
+    let last = |field: &str| {
+        let json = run_color(&db, &["tail", field, "--json"]);
+        let json: serde_json::Value = serde_json::from_str(&json).expect("tail json");
+        let rows = json["rows"].as_array().expect("rows");
+        let previous = rows.last().expect("a row")["previous_state"].clone();
+        let table = run_color(&db, &["tail", field]);
+        let row = table.lines().last().unwrap_or_default().to_string();
+        (previous, row)
+    };
+
+    run_color(&db, &["track", "coffee", "--verb", "occur"]);
+    run_color(&db, &["occur", "coffee"]);
+    let (previous, row) = last("coffee");
+    assert_eq!(previous, "TRACKED", "{row:?}");
+    assert!(row.contains('●') && !row.contains('∅'), "{row:?}");
+
+    // `track` un-ignores a field, and the dot after it says so too.
+    run_color(&db, &["ignore", "coffee"]);
+    run_color(&db, &["track", "coffee"]);
+    run_color(&db, &["occur", "coffee"]);
+    let (previous, row) = last("coffee");
+    assert_eq!(previous, "TRACKED", "{row:?}");
+    assert!(row.contains('●') && !row.contains('∅'), "{row:?}");
+
+    for (field, verb, log) in [
+        ("mood", "switch", &["switch", "mood", "happy"][..]),
+        ("work", "start", &["start", "work"]),
+    ] {
+        run_color(&db, &["track", field, "--verb", verb]);
+        run_color(&db, log);
+        assert_eq!(last(field).0, "TRACKED", "{field}");
+    }
+
+    run_color(&db, &["occur", "tea"]);
+    let (previous, row) = last("tea");
+    assert_eq!(previous, "IGNORED", "{row:?}");
+    assert!(row.contains('∅') && row.contains('●'), "{row:?}");
+    let _ = std::fs::remove_file(&db);
+}
+
 // ─── Cross-cutting: no directional arrow glyphs anywhere ─────────────────────
 
 #[test]

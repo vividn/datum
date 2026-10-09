@@ -312,9 +312,10 @@ pub(crate) fn compute_is_state_repeat(prior: Option<&JsonValue>, row: &Entry) ->
 /// The rows of `field` that [`RenderContext::from_rows`] reads for
 /// `entries`, all of that field: every probe below lies between the
 /// earliest leading edge (less the lead probe's microsecond) and the latest
-/// `occur`, and [`FieldStateRows::load_transitions_between`] answers there
-/// as the whole history would — at the cost of the span, not of the
-/// field's history (da-asgt4).
+/// `occur`, and [`FieldStateRows::load_between`] answers there as the whole
+/// history would — at the cost of the span, not of the field's history
+/// (da-asgt4). Declarations are among them (da-ycbyx): the row after a
+/// track row comes from TRACKED, which is what `state_at` says of it.
 pub fn probed_state_rows<'a>(
     db: &Db,
     field: &str,
@@ -328,7 +329,7 @@ pub fn probed_state_rows<'a>(
         return FieldStateRows::default();
     };
     let lo = lo - chrono::Duration::microseconds(1);
-    FieldStateRows::load_transitions_between(db.conn(), field, lo, hi).unwrap_or_default()
+    FieldStateRows::load_between(db.conn(), field, lo, hi).unwrap_or_default()
 }
 
 fn compute_lead_state(rows: Option<&FieldStateRows>, entry: &Entry) -> Option<JsonValue> {
