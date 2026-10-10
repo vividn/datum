@@ -1537,4 +1537,30 @@ mod tests {
             "4x the rows walked {large} against {small}"
         );
     }
+
+    /// A read that excludes a row reads as though it were never written,
+    /// so an excluded block takes none of the [`SPAN_LOOKAHEAD`] and the
+    /// block one further out, which spans the probe, is still reached
+    /// (da-47v7z).
+    #[test]
+    fn an_excluded_block_takes_no_place_in_the_look_ahead() {
+        let block = |s: &str, end: &str, mins: i64| {
+            row("f", Verb::Block, Some(json!(s)), end, Some(mins), None)
+        };
+        let mut blocks: Vec<Entry> = (1..=SPAN_LOOKAHEAD)
+            .map(|i| block("short", &format!("2026-04-01T10:{:02}:00Z", 5 * i), 2))
+            .collect();
+        blocks.push(block("long", "2026-04-01T11:00:00Z", 90));
+        let rows = FieldStateRows::from_entries(&blocks);
+        let probe = t("2026-04-01T10:00:00Z");
+        assert_eq!(
+            rows.at(probe, None),
+            None,
+            "the ninth block is out of reach"
+        );
+        assert_eq!(
+            rows.at(probe, Some(blocks[0].hid.as_str())),
+            Some(json!("long"))
+        );
+    }
 }

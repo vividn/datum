@@ -965,6 +965,15 @@ mod tests {
                     .chain((1..=12).map(|i| (Verb::Point, None, 300 + i * 10, Some(0), None)))
                     .collect(),
             ),
+            // da-47v7z: as many blocks as a read looks ahead through, under
+            // one more that spans them all.
+            (
+                "blocks-under-a-block",
+                (1..=crate::state::SPAN_LOOKAHEAD as i64)
+                    .map(|i| block(json!("short"), 100 + i * 10, 4))
+                    .chain(std::iter::once(block(json!("long"), 400, 350)))
+                    .collect(),
+            ),
             // More dots than a state read looks back through: they never
             // decide a state, so they must not push the switch out of reach.
             (
@@ -976,7 +985,7 @@ mod tests {
         ];
         let db = Db::open_in_memory().unwrap();
         for (field, rows) in &histories {
-            let mut edges = Vec::new();
+            let (mut edges, mut written) = (Vec::new(), Vec::new());
             for (verb, state, end, secs, following) in rows {
                 let mut e = Entry::new(
                     *field,
@@ -994,8 +1003,21 @@ mod tests {
                 e.following_state = following.clone();
                 db.insert_entry(&e).unwrap();
                 edges.extend([at(*end).utc, at(end - secs.unwrap_or(0)).utc]);
+                written.push(e);
             }
             let cache = crate::state::FieldStateRows::load(&db.conn, field).unwrap();
+            // da-47v7z: the render and integrity detection load a row's own
+            // span and read its two ends there as though it were not written.
+            for e in &written {
+                let hid = Some(e.hid.as_str());
+                let lo = e.leading_edge_utc().unwrap() - chrono::Duration::microseconds(1);
+                let hi = e.occur_time.as_ref().unwrap().utc;
+                let span =
+                    crate::state::FieldStateRows::load_between(&db.conn, field, lo, hi).unwrap();
+                for probe in [lo, hi] {
+                    assert_eq!(span.at(probe, hid), cache.at(probe, hid), "{field} {probe}");
+                }
+            }
             for edge in edges {
                 for probe in [-1, 0, 1].map(|us| edge + chrono::Duration::microseconds(us)) {
                     let sql = db.state_at(field, probe).unwrap().filter(|v| !v.is_null());
