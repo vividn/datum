@@ -15,13 +15,15 @@ export const KEY = { key: 'AKIDFAKE', secret: 'fake-secret' };
 
 /**
  * Start one. `buckets` are the buckets that exist; `server.objects(bucket)`
- * is one's contents; `server.cors = false` stops answering preflights;
+ * is one's contents; `server.requests` is every request that reached it,
+ * `METHOD key`, in order; `server.cors = false` stops answering preflights;
  * `server.hold(match)` stops the first request `match(method, key)`
  * accepts until `release()`, and `reached` says it arrived.
  */
 export async function startS3(buckets = ['backups']) {
 	const store = new Map(buckets.map((b) => [b, new Map()]));
 	const holds = [];
+	const requests = [];
 	const state = { cors: true };
 
 	const reply = (res, status, body = '', headers = {}) => {
@@ -70,6 +72,7 @@ export async function startS3(buckets = ['backups']) {
 		const [bucket, ...rest] = url.pathname.slice(1).split('/').map(decodeURIComponent);
 		const key = rest.join('/');
 
+		requests.push(`${req.method} ${key}`);
 		const held = holds.find((h) => !h.done && h.match(req.method, key));
 		if (held) {
 			held.done = true;
@@ -90,7 +93,12 @@ export async function startS3(buckets = ['backups']) {
 		}
 		if (req.method === 'PUT') return objects.set(key, Buffer.concat(chunks)), reply(res, 200);
 		if (req.method === 'DELETE') return objects.delete(key), reply(res, 204);
-		if (req.method === 'GET') return objects.has(key) ? reply(res, 200, objects.get(key)) : error(res, 404, 'NoSuchKey');
+		// As S3 answers: `Last-Modified` and no `Cache-Control`. An hour back, so
+		// a browser's heuristic (RFC 9111 4.2.2) holds the object fresh for minutes.
+		if (req.method === 'GET')
+			return objects.has(key)
+				? reply(res, 200, objects.get(key), { 'last-modified': new Date(Date.now() - 3_600_000).toUTCString() })
+				: error(res, 404, 'NoSuchKey');
 		return error(res, 405, 'MethodNotAllowed');
 	});
 	await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -101,6 +109,7 @@ export async function startS3(buckets = ['backups']) {
 			state.cors = on;
 		},
 		objects: (bucket) => store.get(bucket),
+		requests,
 		hold(match) {
 			const h = { match, done: false };
 			h.reached = new Promise((r) => (h.arrived = r));

@@ -13,7 +13,7 @@ const PREFIX = 'datum-backups/';
 let s3;
 before(async () => {
 	await startApp();
-	s3 = await startS3(['probe', 'plan', 'shared', 'tabs']);
+	s3 = await startS3(['probe', 'plan', 'reread', 'shared', 'tabs']);
 });
 after(async () => {
 	await s3?.close();
@@ -102,6 +102,30 @@ describe('an S3-compatible destination', () => {
 			await sheet.getByRole('button', { name: 'Look for backups there', exact: true }).click();
 			await sheet.locator('[data-found]').waitFor();
 			assert.equal(await sheet.locator('[data-found]').innerText(), '1 backup of datum found, newest 0 s ago Add plan continues that rotation.');
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// The bucket says when the index was last modified and nothing of how long
+	// to keep it, so a browser's cache would answer every read here but the
+	// last (da-8g7zo) — the re-read before the put among them, which is what
+	// keeps a second device's slot in the test below.
+	test('a run reads the index from the bucket each time, never from the browser’s cache', async () => {
+		await withApp(async (app) => {
+			assert.equal((await app.run(['occur', 'coffee'])).code, 0);
+			const plan = await addPlan(await openSheet(app.page), 'cloud', 'reread');
+			await plan.locator('li[data-slot="0"]').waitFor();
+
+			const before = s3.requests.length;
+			await app.clock.forward(HOUR);
+			await plan.locator('button[data-backup="now"]').click();
+			await plan.locator('li[data-slot="1"]').waitFor();
+			const index = `${PREFIX}index.json`;
+			assert.deepEqual(
+				s3.requests.slice(before).map((r) => r.replace(/\.slot1\..*/, '.slot1')),
+				// The listing, the CLI's index, its slot, the re-read, the put, the listing.
+				[`GET ${index}`, `GET ${index}`, `PUT ${PREFIX}datum.slot1`, `GET ${index}`, `PUT ${index}`, `GET ${index}`]
+			);
 			assert.deepEqual(app.errors, []);
 		});
 	});

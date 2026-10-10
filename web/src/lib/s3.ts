@@ -73,7 +73,10 @@ async function send(c: S3Config, method: string, url: string, body?: Uint8Array)
 	let response: Response;
 	try {
 		const signed = await sign(c, url, { method, body: body as BodyInit | undefined });
-		response = await fetch(signed.url, signed);
+		// Never the browser's HTTP cache: S3 sends `Last-Modified` and no
+		// `Cache-Control`, so a GET is held as fresh for a tenth of the object's
+		// age, and a run's re-read of the index would not see another device's put.
+		response = await fetch(signed.url, { ...signed, cache: 'no-store' });
 	} catch {
 		// The browser hides WHY a cross-origin request got no response.
 		throw new S3Error('', 'CORS: the bucket does not allow this page — paste the CORS rules below — or the endpoint URL is wrong, or this device is offline');
