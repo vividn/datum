@@ -415,18 +415,26 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
         Command::Spec(SpecCommand::Show { .. }) => {}
         Command::Alias(AliasCommand::List { show: s }) => *s = show,
         Command::Conflicts(ConflictsCommand::List(a)) => a.show = show,
-        Command::Sync(
-            SyncCommand::Members { show: s }
-            | SyncCommand::AdminList { show: s }
-            | SyncCommand::Status { show: s }
-            | SyncCommand::Apply { show: s }
-            | SyncCommand::Diff { show: s, .. }
-            | SyncCommand::Refold { show: s }
-            | SyncCommand::Admin {
-                act: SyncAdminAct::Purge { show: s, .. },
-                ..
-            },
-        ) => *s = show,
+        Command::Sync(c) => {
+            // `sync --as` carries the level its command does.
+            let c = match c {
+                SyncCommand::As(_, c) => &mut **c,
+                c => c,
+            };
+            match c {
+                SyncCommand::Members { show: s }
+                | SyncCommand::AdminList { show: s }
+                | SyncCommand::Status { show: s }
+                | SyncCommand::Apply { show: s }
+                | SyncCommand::Diff { show: s, .. }
+                | SyncCommand::Refold { show: s }
+                | SyncCommand::Admin {
+                    act: SyncAdminAct::Purge { show: s, .. },
+                    ..
+                } => *s = show,
+                _ => return false,
+            }
+        }
         Command::Db(DbCommand::Restore(a)) => a.show = show,
         Command::Db(DbCommand::BackupRotation(a)) => a.show = show,
 

@@ -120,6 +120,8 @@ impl Db {
     /// round's ops reached it, so `to_send` may count more than is waiting,
     /// never less. A chain
     /// member gets a row if it has none; anyone else has none to update.
+    /// Nor has a session's file that was purged under it: it is asked who it
+    /// is in the transaction that writes (da-otz0d).
     pub fn sync_record_session(
         &self,
         endpoint: &str,
@@ -131,15 +133,17 @@ impl Db {
             return Err(DatumError::Other(format!("not an endpoint id: {endpoint}")));
         }
         let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let tx = self.conn.unchecked_transaction()?;
+        super::endpoint(&tx)?;
         if let Some(m) = self.sync_chain()?.member(endpoint) {
-            self.conn.execute(
+            tx.execute(
                 "INSERT OR IGNORE INTO sync_peers (endpoint_id, label, addrs, added_at, announced)
                  VALUES (?1, ?2, '', ?3, 1)",
                 params![endpoint, m.label, now],
             )?;
         }
         let vector = vector.map(serde_json::to_string).transpose()?;
-        let n = self.conn.execute(
+        let n = tx.execute(
             "UPDATE sync_peers SET
                last_vector = COALESCE(?2, last_vector),
                last_verify_at = CASE WHEN ?3 IS NOT NULL THEN ?5
@@ -158,7 +162,7 @@ impl Db {
                 "{endpoint} is not a member of this copy's sync chain"
             )));
         }
-        Ok(())
+        Ok(tx.commit()?)
     }
 
     /// The devices whose ops wait for this copy's clock to catch up with

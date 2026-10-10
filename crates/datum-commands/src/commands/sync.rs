@@ -33,8 +33,21 @@ fn joining(label: &str, endpoint: &str) -> String {
 const OPEN: &str =
     "no admin: any device can add devices — `datum sync admin add` to protect the chain";
 
+/// `datum sync …`. A session it ran bound this thread to the endpoint it
+/// began as, and that ends with the command (da-otz0d): the next one here, a
+/// REPL's next line, may purge or rekey the copy.
 pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
+    let done = command(cmd, db);
+    db.sync_session_as(None);
+    done
+}
+
+fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
     match cmd {
+        SyncCommand::As(endpoint, cmd) => {
+            db.sync_session_as(Some(&endpoint));
+            command(*cmd, db)?
+        }
         SyncCommand::Now => {
             db.sync_refuse_debug()?;
             if !db.sync_chain()?.exists() && db.sync_joining()?.is_empty() {
@@ -1155,6 +1168,17 @@ pub fn notice_issues(db: &Db) -> Result<Vec<Issue>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A session's endpoint binds its command alone (da-otz0d): the next on
+    /// this thread, a REPL's next line, gives the copy a new key.
+    #[test]
+    fn a_sessions_endpoint_is_bound_for_its_command_alone() {
+        let db = Db::open_in_memory().unwrap();
+        let id = db.sync_endpoint_id().unwrap();
+        let vector = SyncCommand::As(id.clone(), Box::new(SyncCommand::Vector));
+        sync(vector, &db).unwrap();
+        assert_ne!(db.sync_rekey().unwrap(), id);
+    }
 
     /// A verb agrees with its count, a count of zero says nothing, and the
     /// definitions a device signed beside its entries are named (da-sivjb).

@@ -849,6 +849,11 @@ pub enum SyncCommand {
     AdminList {
         show: Show,
     },
+    /// Hidden: `datum sync --as <ENDPOINT> <…>` — a `sync` command run as the
+    /// copy whose endpoint id that is, the one datum.day's session began as:
+    /// on a file whose key is another by now (purged, rekeyed, left its
+    /// chain) it fails and writes nothing (da-otz0d).
+    As(String, Box<SyncCommand>),
     /// Hidden: `datum sync pipe vector` — this copy's version vector as JSON.
     Vector,
     /// Hidden: `datum sync pipe ops [--since <VECTOR>]` — every op the

@@ -22,7 +22,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, ensure, Context, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use chrono::{DateTime, SecondsFormat, Utc};
 use datum_core::db::peers::Peer;
 use datum_core::db::{chain, Db};
@@ -382,7 +382,12 @@ async fn bind(db: &Db) -> Result<Endpoint> {
         (_, Ok(url)) => Net::Relay(url),
         _ => Net::N0,
     };
-    datum_sync_wire::bind(db.sync_endpoint_secret()?, &net).await
+    let ep = datum_sync_wire::bind(db.sync_endpoint_secret()?, &net).await?;
+    // Its sessions are this endpoint's: on a file purged or rekeyed under
+    // them they stop, and write nothing into it (da-otz0d). Until the
+    // command ends, which unbinds (`commands::sync`).
+    db.sync_session_as(Some(&ep.id().to_string()));
+    Ok(ep)
 }
 
 fn print_added(rep: &Report) {
@@ -607,9 +612,9 @@ const RETRY: Duration = Duration::from_secs(30);
 /// It stops, with an error, once the file's endpoint key is no longer the
 /// one it bound: a `db purge` or `sync chain rekey` made it another copy
 /// (da-8v7ua), and the daemon starts it again only if that copy is chained.
+/// A session open then stops as it does ([`bind`]).
 pub fn run(db: &Db) -> Result<()> {
     runtime()?.block_on(async {
-        let key = db.sync_endpoint_secret()?;
         let ep = bind(db).await?;
         let store = &DbStore::new(db);
         eprintln!("datum sync run: {} is up; Ctrl-C to stop", short(&ep.id().to_string()));
@@ -645,9 +650,9 @@ pub fn run(db: &Db) -> Result<()> {
                     }
                 }
                 _ = tick.tick() => {
-                    if db.sync_endpoint_secret()? != key {
+                    if let Err(e) = db.sync_endpoint_secret() {
                         ep.close().await;
-                        bail!("this copy's endpoint key changed (purged or rekeyed): stopped");
+                        return Err(e.into());
                     }
                     // Paused (da-wlbyx), it idles: an incoming session's
                     // handshake refuses, and nothing is pushed.

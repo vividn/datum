@@ -300,7 +300,15 @@ wire crate built for wasm32-unknown-unknown (relay-only iroh) with the CLI as
 its store (hidden `sync handshake` / `new-invite` / `endpoint-key` /
 `record-session`), and `$lib/sync.ts` elects ONE tab per database to run the
 endpoint by a Web Lock (`datum-sync:<db>`), which pushes on every tab's writes
-(`onAnyChange`). `web/tests/sync*.test.mjs` run on a pinned local `iroh-relay`.
+(`onAnyChange`). A session is its copy's only while the file's endpoint key is
+the one it began with (da-otz0d): a `db purge`, `chain leave` or `chain rekey`
+under an open session makes the file another copy, in no chain, which took
+the peer's whole chain at the next round as a copy joining does. So core's
+`endpoint()`, where what a session writes learns who this copy is, inside the
+transaction it writes in, fails and mints nothing once the key is not the one
+the session bound (`Db::sync_session_as`): datum-sync's `bind` binds a native
+session, and datum.day's store runs each command as the hidden `sync --as
+<ENDPOINT> …`. `web/tests/sync*.test.mjs` run on a pinned local `iroh-relay`.
 
 ## Web app (PWA)
 

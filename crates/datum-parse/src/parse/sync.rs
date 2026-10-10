@@ -42,6 +42,14 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             Some(other) => return Err(unknown("sync daemon", other, DAEMON)),
             None => return Err(missing("sync daemon", DAEMON)),
         }),
+        // Hidden (da-otz0d): datum.day's store, a session's command.
+        "--as" => {
+            let id = rest
+                .next()
+                .ok_or_else(|| missing("sync --as", "ENDPOINT"))?;
+            let cmd = parse_sync_cmd(rest.as_slice())?;
+            return Ok(SyncCommand::As(id.to_string(), Box::new(cmd)));
+        }
         // Hidden: the pipe transport, the daemon, and datum.day's store.
         "pipe" => parse_pipe(&mut rest)?,
         "run" => SyncCommand::Run,
@@ -426,6 +434,11 @@ mod tests {
             Err(ParseError::HelpRequested(Some(s))) if s == "sync"
         ));
         assert_eq!(p(&["pipe", "vector"]), SyncCommand::Vector);
+        assert_eq!(
+            p(&["--as", "ab", "pipe", "vector"]),
+            SyncCommand::As("ab".into(), Box::new(SyncCommand::Vector))
+        );
+        assert!(parse_sync_cmd(&["--as"]).is_err());
         assert_eq!(p(&["pipe", "records"]), SyncCommand::Records);
         assert_eq!(
             p(&["pipe", "apply"]),

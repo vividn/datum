@@ -26,9 +26,10 @@ after(async () => {
 const endpointOf = (app) => app.page.evaluate(() => window.datum.sync.states().datum?.endpoint);
 
 /**
- * An init script: count the leader's pushes — the `sync pipe vector` reads
- * the sync worker's session did not ask for — and its dials, at the workers'
- * doors, with the pull's 30-s tick taken away so that only writes push.
+ * An init script: count the leader's pushes — its `sync pipe vector` reads;
+ * the sync worker's session asks its own as `sync --as …` — and its dials, at
+ * the workers' doors, with the pull's 30-s tick taken away so that only
+ * writes push.
  */
 function countPushes() {
 	window.__pushes = { push: 0, dial: 0 };
@@ -38,12 +39,6 @@ function countPushes() {
 		if (m?.op === 'dial') window.__pushes.dial++;
 		if (m?.op === 'cli' && vector(m.argv)) window.__pushes.push++;
 		return post.call(this, m, ...rest);
-	};
-	window.Worker = class extends Worker {
-		constructor(...args) {
-			super(...args);
-			this.addEventListener('message', (e) => e.data?.run && vector(e.data.argv) && window.__pushes.push--);
-		}
 	};
 	// 30000 is `PULL_MS` in src/lib/sync.ts: a tick this misses dials with no
 	// write, which is what `dial` would count.
@@ -174,6 +169,35 @@ describe('datum.day and a native copy', () => {
 					assert.deepEqual({ push: after.push - before.push, dial: after.dial - before.dial }, { push: 1, dial: 1 });
 				},
 				{ prepare: async (context) => (await relayed(relay)(context), context.addInitScript(countPushes)) }
+			);
+		} finally {
+			await native.close();
+		}
+	});
+
+	// The native copy applies slowly, so the page, its first round applied,
+	// waits a round on it: the purge lands there. A session that went on took
+	// the whole chain back, as a copy in no chain does.
+	test('a purge between an open session\'s rounds leaves the database empty (da-otz0d)', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			await withWallClock(
+				async (app) => {
+					await pairWith(app, native);
+					await app.run(['occur', 'tea', '-t', '0900']);
+					assert.equal((await native.run(['occur', 'juice', '-t', '1000'])).code, 0);
+					const runs = native.spawn(['sync', 'run'], { DATUM_SYNC_TEST_APPLY_DELAY_MS: '2000' });
+					await until(() => countOf(app, 'juice'), (n) => n === 1);
+					assert.equal((await app.run(['db', 'purge', '--yes'])).code, 0);
+
+					// Its session with the page over, one way or the other: a line past «is up».
+					await until(() => native.count('tea'), (n) => n === 1);
+					await until(() => (runs.stdout + runs.stderr).trim().split('\n'), (lines) => lines.length > 1);
+					assert.equal(await countOf(app, 'juice'), 0);
+					assert.equal((await app.run(['sync', 'pipe', 'ops'])).stdout, '');
+					assert.notEqual((await app.run(['sync', 'chain', 'list'])).code, 0);
+				},
+				{ prepare: relayed(relay) }
 			);
 		} finally {
 			await native.close();

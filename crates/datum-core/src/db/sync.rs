@@ -185,6 +185,16 @@ thread_local! {
     static ENDPOINT: RefCell<Option<(String, Endpoint)>> = const { RefCell::new(None) };
 }
 
+thread_local! {
+    /// The file a sync session on this thread works on, and the endpoint id
+    /// it began as ([`Db::sync_session_as`]).
+    static SESSION: RefCell<Option<(String, String)>> = const { RefCell::new(None) };
+}
+
+/// Said to a session whose copy became another under it (da-otz0d).
+const KEY_CHANGED: &str =
+    "this copy's endpoint key changed (purged, rekeyed, or it left its chain): stopped";
+
 /// This copy's endpoint, minted on first need. The key is stored with the
 /// client and the file path it was minted at, and a file that opens under
 /// another client, or at another path while the original is still there
@@ -193,9 +203,25 @@ thread_local! {
 /// seq. A file MOVED keeps its key, and so its membership. A copy put back
 /// over the original's own path is the case this cannot see; `sync_apply`
 /// refuses the fork it makes, and `datum sync chain rekey` mints a new key.
+///
+/// A session's file is the endpoint the session began as, or this fails and
+/// mints nothing (da-otz0d): a `db purge` under an open session made the file
+/// a new copy in no chain, which would take the peer's whole chain as one
+/// joining it does. What a session writes asks here who this copy is, inside
+/// the transaction it writes in.
 fn endpoint(conn: &Connection) -> Result<Endpoint> {
     let client = client_id();
     let path = conn.path().unwrap_or_default().to_string();
+    let began = SESSION.with(|s| {
+        let s = s.borrow();
+        s.as_ref()
+            .filter(|(p, _)| *p == path)
+            .map(|(_, id)| id.clone())
+    });
+    let still = |ep: Endpoint| match &began {
+        Some(id) if *id != ep.id => Err(DatumError::Other(KEY_CHANGED.into())),
+        _ => Ok(ep),
+    };
     let held: Option<(String, String, String)> = conn
         .prepare_cached("SELECT endpoint_secret, client_id, path FROM sync_local WHERE id = 1")?
         .query_row([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
@@ -214,7 +240,7 @@ fn endpoint(conn: &Connection) -> Result<Endpoint> {
                 .map(|(_, ep)| ep.clone())
         });
         if let Some(ep) = cached {
-            return Ok(ep);
+            return still(ep);
         }
         if let Some(bytes) = unhex::<32>(&secret) {
             let key = SigningKey::from_bytes(&bytes);
@@ -223,19 +249,22 @@ fn endpoint(conn: &Connection) -> Result<Endpoint> {
                 key,
             };
             ENDPOINT.with(|c| *c.borrow_mut() = Some((secret, ep.clone())));
-            return Ok(ep);
+            return still(ep);
         }
     }
     let key = SigningKey::generate(&mut rand::rngs::OsRng);
     let id = hex(key.verifying_key().as_bytes());
+    // A session's file holding no key was purged or rekeyed under it: the
+    // new key is no session's, and is not stored.
+    let ep = still(Endpoint { key, id })?;
     conn.execute(
         "INSERT INTO sync_local (id, endpoint_secret, endpoint_id, client_id, path)
          VALUES (1, ?1, ?2, ?3, ?4)
          ON CONFLICT (id) DO UPDATE SET endpoint_secret = excluded.endpoint_secret,
            endpoint_id = excluded.endpoint_id, client_id = excluded.client_id, path = excluded.path",
-        params![hex(&key.to_bytes()), id, client, path],
+        params![hex(&ep.key.to_bytes()), ep.id, client, path],
     )?;
-    Ok(Endpoint { key, id })
+    Ok(ep)
 }
 
 /// What decides whether this copy is a reader: its endpoint, and the count
@@ -2118,6 +2147,15 @@ impl Db {
         Ok(post)
     }
 
+    /// From here on this thread works on this file as the copy whose endpoint
+    /// id is `id`, the one a sync session began as, or as any with `None`:
+    /// once the file's key is another, whatever of sync asks who this copy is
+    /// fails, and writes nothing (da-otz0d).
+    pub fn sync_session_as(&self, id: Option<&str>) {
+        let path = self.conn.path().unwrap_or_default().to_string();
+        SESSION.with(|s| *s.borrow_mut() = id.map(|id| (path, id.to_string())));
+    }
+
     /// This copy's endpoint secret, minted on first need. It is also the
     /// iroh endpoint's key, so the iroh endpoint id IS the ops' `endpoint`
     /// (da-rugg8).
@@ -2132,11 +2170,14 @@ impl Db {
     /// sharing a key (da-p79vq). Its ops so far stay signed by the old key;
     /// new ones use the new, which is also a new iroh endpoint id and no
     /// member of the chain: the copy joins it again. Returns the new id.
+    /// Refused, as a session's copy is, it changes nothing (da-otz0d).
     pub fn sync_rekey(&self) -> Result<String> {
+        let tx = self.conn.unchecked_transaction()?;
         // Blanked, not deleted: the pause is this copy's, whatever its key.
-        self.conn
-            .execute("UPDATE sync_local SET endpoint_secret = ''", [])?;
-        Ok(endpoint(&self.conn)?.id)
+        tx.execute("UPDATE sync_local SET endpoint_secret = ''", [])?;
+        let id = endpoint(&tx)?.id;
+        tx.commit()?;
+        Ok(id)
     }
 
     /// This copy's version vector: per endpoint, the highest seq applied.
@@ -2299,6 +2340,18 @@ mod tests {
             row,
             Some(json!({"client_id": "d2"}).as_object().unwrap().clone())
         );
+    }
+
+    /// A rekey a session's copy is refused leaves its key (da-otz0d).
+    #[test]
+    fn a_rekey_refused_a_sessions_copy_changes_nothing() {
+        let db = Db::open_in_memory().unwrap();
+        let id = db.sync_endpoint_id().unwrap();
+        db.sync_session_as(Some(&id));
+        assert!(db.sync_rekey().is_err());
+        assert_eq!(db.sync_endpoint_id().unwrap(), id);
+        db.sync_session_as(None);
+        assert_ne!(db.sync_rekey().unwrap(), id);
     }
 
     #[test]

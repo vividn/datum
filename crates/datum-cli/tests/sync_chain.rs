@@ -430,6 +430,49 @@ fn chained() -> (Copy, Copy) {
     (a, b)
 }
 
+/// A purge between two rounds of datum.day's session leaves the file as
+/// empty as it left it (da-otz0d). Its store runs each round as `sync --as
+/// <the endpoint the session began as> …`, a process a command: after the
+/// purge the commands that write fail, where the same apply with no `--as`
+/// takes the peer's whole chain, as a copy in no chain does.
+#[test]
+fn a_purge_between_the_rounds_of_a_piped_session_leaves_the_file_empty() {
+    let (a, b) = chained();
+    let (me, peer) = (a.id(), b.id());
+    fn session<'a>(me: &'a str, cmd: &[&'a str]) -> Vec<&'a str> {
+        [&["sync", "--as", me], cmd].concat()
+    }
+    b.ok(&["occur", "juice"]);
+    let vector = a.ok(&session(&me, &["pipe", "vector"]));
+    let ops = b.ok(&["sync", "pipe", "ops", "--since", vector.trim()]);
+    a.ok_in(&session(&me, &["pipe", "apply", "--json"]), &ops);
+    let done = ["record-session", &peer, "--verify", "match"];
+    a.ok(&session(&me, &done));
+    assert!(a.has("juice"));
+
+    a.ok(&["db", "purge", "--yes"]);
+    let all = b.ok(&["sync", "pipe", "ops"]);
+    let hello = ["handshake", &peer, "--label", "b", "--addr", "{}"];
+    let rounds: [(&[&str], &str); 5] = [
+        (&["pipe", "ops", "--since", "{}", "--peer", &peer], ""),
+        (&["pipe", "apply", "--json"], &all),
+        (&[&hello[..], &["--dialed"]].concat(), ""),
+        (&hello, ""),
+        (&done, ""),
+    ];
+    for (cmd, stdin) in rounds {
+        let why = a.fails(&session(&me, cmd), stdin);
+        assert!(why.contains("endpoint key changed"), "{cmd:?}: {why}");
+    }
+    for table in ["ops", "entries", "sync_peers", "sync_local"] {
+        let rows = a.query(&format!("SELECT COUNT(*) FROM {table}"));
+        assert_eq!(rows, "0", "{table}");
+    }
+
+    a.ok_in(&["sync", "pipe", "apply"], &all);
+    assert!(a.has("juice"));
+}
+
 /// `chained`, locked by `a` with the admin key file it returns, which
 /// `admin add` writes; `b` holds the lock.
 fn locked() -> (Copy, Copy, String) {

@@ -629,6 +629,35 @@ fn a_purged_copy_serves_the_old_chain_nothing() {
     assert_eq!(a.query("SELECT COUNT(*) FROM entries"), entries);
 }
 
+/// A purge that lands between an open session's rounds leaves the file as
+/// empty as it left it (da-otz0d): the session stops at its next round, where
+/// it took the peer's whole chain — genesis first, as a copy in no chain
+/// does — and wrote the peer's row back. `b` applies slowly, so `a`, which
+/// has applied its first round, waits a round on it: the purge lands there.
+#[test]
+fn a_purge_between_an_open_sessions_rounds_leaves_the_file_empty() {
+    let (a, mut b) = paired();
+    a.ok(&["occur", "tea"]);
+    b.ok(&["occur", "juice"]);
+    b.env = vec![("DATUM_SYNC_TEST_APPLY_DELAY_MS", "2000")];
+    let _b_runs = b.serve(&["sync", "run"]);
+    let a_syncs = a.cmd(&["sync"]).spawn().unwrap();
+    eventually("a's first round", || a.has("juice"));
+    a.ok(&["db", "purge", "-y"]);
+
+    let out = a_syncs.wait_with_output().unwrap();
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !out.status.success() && said.contains("endpoint key changed"),
+        "{said}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    for table in ["ops", "entries", "sync_peers", "sync_local"] {
+        let rows = a.query(&format!("SELECT COUNT(*) FROM {table}"));
+        assert_eq!(rows, "0", "{table}");
+    }
+}
+
 /// A purge leaves nothing of the database, as deleting its file would
 /// (da-nc8i1), and with `sync run` holding the file open: no page of what it
 /// held in the file or its `-wal`, no row but a new copy's own, and none of

@@ -28,6 +28,8 @@ fn text(v: &JsValue, key: &str) -> String {
 struct Cli {
     run: Function,
     progress: Function,
+    /// The endpoint its node is bound as.
+    id: String,
     label: String,
     version: Version,
 }
@@ -35,8 +37,16 @@ struct Cli {
 impl Cli {
     /// stdout of `datum <argv>`, or its stderr as the error: a [`Refusal`]
     /// when stdout names its [`Why`], as `sync handshake`'s does (da-b6xh6).
+    ///
+    /// A `sync` command runs `--as` this node's endpoint: on a database
+    /// purged or rekeyed under an open session it fails, and writes nothing
+    /// (da-otz0d).
     async fn run(&self, argv: &[&str], stdin: Option<&str>) -> Result<String> {
-        let args: Array = argv.iter().map(|a| JsValue::from_str(a)).collect();
+        let as_me = ["--as", self.id.as_str()];
+        let (head, tail) = argv.split_at(1.min(argv.len()));
+        let as_me = if head == ["sync"] { &as_me[..] } else { &[] };
+        let argv = head.iter().chain(as_me).chain(tail);
+        let args: Array = argv.map(|a| JsValue::from_str(a)).collect();
         let stdin = stdin.map_or(JsValue::UNDEFINED, JsValue::from_str);
         let done = self
             .run
@@ -307,13 +317,14 @@ impl Node {
         let net = relay.map_or(Net::N0, Net::Relay);
         let ep = bind(secret, &net).await.map_err(js)?;
         Ok(Node {
-            ep,
             cli: Cli {
                 run,
                 progress,
+                id: ep.id().to_string(),
                 label,
                 version: Version { datum, schema },
             },
+            ep,
         })
     }
 

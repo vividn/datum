@@ -10,6 +10,7 @@ use chrono::{SecondsFormat, Utc};
 use rusqlite::params;
 
 use super::chain::{self, Chain, Role};
+use super::endpoint;
 use crate::db::Db;
 use crate::error::{DatumError, Refusal, Result};
 
@@ -149,8 +150,9 @@ impl Db {
     /// learns where the other is. Kept for a member this copy has not itself
     /// seen; an address a handshake gave stands.
     pub fn sync_introduce(&self, addrs: &str) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
         let chain = self.sync_chain()?;
-        let mine = self.sync_endpoint_id()?;
+        let mine = endpoint(&tx)?.id;
         let addrs: Vec<serde_json::Value> = serde_json::from_str(addrs)
             .map_err(|e| DatumError::Other(format!("not a list of addresses: {e}")))?;
         for a in addrs {
@@ -160,7 +162,7 @@ impl Db {
             };
             // Only a row no handshake has filled: one never seen takes the
             // newest address passed on, one seen takes it while it has none.
-            self.conn.execute(
+            tx.execute(
                 "INSERT INTO sync_peers (endpoint_id, label, addrs, added_at)
                  VALUES (?1, ?2, ?3, ?4)
                  ON CONFLICT (endpoint_id) DO UPDATE SET addrs = excluded.addrs
@@ -168,7 +170,7 @@ impl Db {
                 params![m.endpoint, m.label, a.to_string(), now()],
             )?;
         }
-        Ok(())
+        Ok(tx.commit()?)
     }
 
     /// A session's handshake, as it bears on this copy: `id` introduced
@@ -248,13 +250,18 @@ impl Db {
                 }
             }
         }
+        // Asked who it is where it writes: a session's file purged since the
+        // look above keeps no row of its peer (da-otz0d).
+        let tx = self.conn.unchecked_transaction()?;
+        endpoint(&tx)?;
         self.sync_record_peer(id, label, addrs)?;
         if dialed && invite.is_some() {
-            self.conn.execute(
+            tx.execute(
                 "UPDATE sync_peers SET redeemed_at = ?2 WHERE endpoint_id = ?1",
                 params![id, now()],
             )?;
         }
+        tx.commit()?;
         Ok(!known)
     }
 }
@@ -293,6 +300,27 @@ mod tests {
         );
         assert!(hello.unwrap());
         send(member, copy);
+    }
+
+    /// A session's file purged under it takes no peer row (da-otz0d): each of
+    /// the three that write one asks who the copy is, and no key is minted.
+    #[test]
+    fn a_sessions_purged_file_takes_no_peer_row() {
+        let db = Db::open_in_memory().unwrap();
+        db.sync_session_as(Some(&id(&db)));
+        db.force_recreate_schema().unwrap();
+        let peer = "ab".repeat(32);
+        let hello = db.sync_handshake(&peer, "b", "{}", None, None, 0, None, true);
+        let ended = db.sync_record_session(&peer, None, Some(true), None);
+        let met = db.sync_introduce(&json!([{ "id": peer }]).to_string());
+        db.sync_session_as(None);
+        for refused in [hello.map(drop), ended, met] {
+            let why = refused.unwrap_err().to_string();
+            assert!(why.contains("endpoint key changed"), "{why}");
+        }
+        let rows = "SELECT (SELECT COUNT(*) FROM sync_peers) + (SELECT COUNT(*) FROM sync_local)";
+        let rows: i64 = db.conn.query_row(rows, [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 0);
     }
 
     /// `from` sends `to` what it lacks, as a session does.

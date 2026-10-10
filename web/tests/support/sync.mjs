@@ -121,7 +121,7 @@ function datumBinary() {
 
 /**
  * A native copy of a database, on `relay`. `run(argv, stdin, env)` resolves
- * to its `{ code, stdout, stderr }`; `spawn(argv)` starts a long-running one
+ * to its `{ code, stdout, stderr }`; `spawn(argv, env)` starts a long-running one
  * (`sync run`, `sync chain invite`) and collects what it prints; `count(field)`
  * is how many entries of `field` it holds; `close` stops every process and
  * removes the copy.
@@ -163,8 +163,8 @@ export async function nativeCopy(relay) {
 				child.stdin.on('error', () => {});
 				child.stdin.end(stdin ?? '');
 			}),
-		spawn(argv) {
-			const child = spawn(...tie(bin, argv), { env, stdio: ['ignore', 'pipe', 'pipe'] });
+		spawn(argv, more = {}) {
+			const child = spawn(...tie(bin, argv), { env: { ...env, ...more }, stdio: ['ignore', 'pipe', 'pipe'] });
 			const out = { stdout: '', stderr: '', child };
 			child.stdout.on('data', (d) => (out.stdout += d));
 			child.stderr.on('data', (d) => (out.stderr += d));
