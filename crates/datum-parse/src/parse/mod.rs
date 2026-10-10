@@ -420,6 +420,8 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
             | SyncCommand::AdminList { show: s }
             | SyncCommand::Status { show: s }
             | SyncCommand::Apply { show: s }
+            | SyncCommand::Diff { show: s, .. }
+            | SyncCommand::Refold { show: s }
             | SyncCommand::Admin {
                 act: SyncAdminAct::Purge { show: s, .. },
                 ..
@@ -1167,6 +1169,8 @@ mod tests {
             ("sync chain purge", "bob"),
             ("sync admin list", ""),
             ("sync pipe apply", ""),
+            ("sync diff", "bob"),
+            ("sync refold", ""),
         ] {
             let typed = debug(parse_argv(&words(name, &format!("{args} --json"))));
             assert!(typed.contains("show: Json"), "{name}: {typed}");
@@ -1195,6 +1199,8 @@ mod tests {
             ("sync pipe vector", ""),
             ("sync pipe ops", ""),
             ("sync pipe verify", ""),
+            ("sync pipe digest", ""),
+            ("sync pipe held", ""),
             ("sync run", ""),
             ("sync endpoint-key", ""),
             ("sync record-session", "ab"),

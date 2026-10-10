@@ -23,6 +23,13 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         },
         "pause" => SyncCommand::Pause,
         "resume" => SyncCommand::Resume,
+        "diff" => SyncCommand::Diff {
+            who: opts(&mut rest, &[], &[], 1..=1)?.positional.remove(0),
+            show: Show::Default,
+        },
+        "refold" => SyncCommand::Refold {
+            show: Show::Default,
+        },
         "help" => return Err(ParseError::HelpRequested(Some("sync".into()))),
         "chain" => parse_chain(&mut rest)?,
         "admin" => parse_admin(&mut rest)?,
@@ -124,7 +131,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
             return Err(unknown(
                 "sync",
                 other,
-                "status|chain|admin|daemon|pause|resume|help",
+                "status|diff|refold|chain|admin|daemon|pause|resume|help",
             ))
         }
     };
@@ -259,7 +266,7 @@ fn act(
 
 /// Hidden: `datum sync pipe …`, ops as JSON lines on stdin and stdout.
 fn parse_pipe(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "vector|ops|apply|records|verify";
+    const SET: &str = "vector|ops|apply|records|verify|digest|held";
     Ok(match rest.next().copied() {
         Some("vector") => SyncCommand::Vector,
         Some("records") => SyncCommand::Records,
@@ -274,6 +281,12 @@ fn parse_pipe(rest: &mut Rest) -> Result<SyncCommand> {
                 peer: o.get("peer"),
             }
         }
+        Some("digest") => SyncCommand::Digest {
+            peer: opts(rest, &["peer"], &[], 0..=0)?.get("peer"),
+        },
+        Some("held") => SyncCommand::Held {
+            peer: opts(rest, &["peer"], &[], 0..=0)?.get("peer"),
+        },
         Some("ops") => {
             let o = opts(rest, &["since", "peer"], &["no-overlap"], 0..=0)?;
             SyncCommand::Ops {

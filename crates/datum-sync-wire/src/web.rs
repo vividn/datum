@@ -160,6 +160,17 @@ impl Store for Cli {
             .to_string())
     }
 
+    async fn digest(&self, peer: &str) -> Result<(String, Digest)> {
+        let argv = ["sync", "pipe", "digest", "--peer", peer];
+        Ok(serde_json::from_str(&self.run(&argv, None).await?)?)
+    }
+
+    async fn held(&self, peer: &str, hids: &[String]) -> Result<Vec<serde_json::Value>> {
+        let argv = ["sync", "pipe", "held", "--peer", peer];
+        let hids = serde_json::to_string(hids)?;
+        Ok(serde_json::from_str(&self.run(&argv, Some(&hids)).await?)?)
+    }
+
     async fn handshake(
         &self,
         peer: &str,

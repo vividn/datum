@@ -876,6 +876,29 @@ pub enum SyncCommand {
         verbose: bool,
         peer: Option<String>,
     },
+    /// Hidden: `datum sync pipe digest [--peer <ENDPOINT>]` — the state
+    /// hash and, by hid, each row's own, as JSON: what a `sync diff`
+    /// compares (da-n0ruf).
+    Digest {
+        peer: Option<String>,
+    },
+    /// Hidden: `datum sync pipe held [--peer <ENDPOINT>]` — for the hids
+    /// on stdin (a JSON array), the row and the ops this copy holds of each.
+    Held {
+        peer: Option<String>,
+    },
+    /// `datum sync diff <WHO> [--json]` (da-n0ruf): the entries this copy
+    /// and one member hold differently, each with the columns that differ,
+    /// both values, and the ops each side holds for it. Changes nothing.
+    Diff {
+        who: String,
+        show: Show,
+    },
+    /// `datum sync refold [--json]` (da-n0ruf): write every row that is not
+    /// what its ops fold to again from its ops. Signs no op.
+    Refold {
+        show: Show,
+    },
     /// Hidden: `datum sync run` — stay up: serve members and push new ops.
     Run,
     /// `datum sync daemon install | uninstall | status` (da-vd2sn): the
@@ -1346,6 +1369,7 @@ pub const KNOWN_CHECKERS: &[&str] = &[
     "tz",
     "refs",
     "stats",
+    "sync",
 ];
 
 /// Render orientation for `datum dayview` and `datum nowview`, named by

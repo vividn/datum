@@ -69,8 +69,8 @@ pub use spec::{is_meta_field, META_FIELDS, SPEC_FIELD};
 pub use stats_cache::{CachedDay, CachedState, CachedSum, Dirty, Refill};
 pub(crate) use sync::derive_all_conflicts;
 pub use sync::{
-    canonical_json, chain, peers, set_client_source, set_invocation, ApplySummary, DebugConflicts,
-    Version,
+    canonical_json, chain, peers, row_diff, set_client_source, set_invocation, ApplySummary,
+    DebugConflicts, FoldCheck, Named, Orphan, Stale, Version,
 };
 pub use tombstone::{revert_in_tx, soft_delete_in_tx};
 pub use types::{

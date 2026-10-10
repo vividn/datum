@@ -1597,6 +1597,25 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
     Ok(())
 }
 
+/// `entry` as [`apply_entry_state`] writes it: its verb, its state's
+/// canonical form and its content hash are derived there from the rest of
+/// the row, whatever the snapshot says of them.
+pub(super) fn as_stored(entry: &Entry) -> Result<Entry> {
+    let (verb, _, state) = derive_verb_for_storage(entry)?;
+    let content_hash = storage_content_hash(
+        entry,
+        &hash_occur_str(entry),
+        state.as_ref(),
+        entry.data.as_ref(),
+    );
+    Ok(Entry {
+        verb: verb.parse().map_err(DatumError::Other)?,
+        state,
+        content_hash,
+        ..entry.clone()
+    })
+}
+
 /// Apply `entry` wholesale to the `entries` table (live or tombstoned) — the
 /// hid is the identifying target, every other column (including `slug`, so a
 /// revert across an auto-reinterp rekey restores the old slug; da-mryo) takes

@@ -149,6 +149,17 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                 }
             }
         }
+        SyncCommand::Digest { peer } => {
+            println!("{}", json!(db.sync_digest(peer.as_deref())?));
+        }
+        SyncCommand::Held { peer } => {
+            let mut input = String::new();
+            std::io::stdin().read_to_string(&mut input)?;
+            let hids: Vec<String> =
+                serde_json::from_str(&input).context("stdin is not a JSON array of hids")?;
+            println!("{}", json!(db.sync_held(peer.as_deref(), &hids)?));
+        }
+        SyncCommand::Refold { show } => super::sync_diagnose::refold(db, show == ShowFlag::Json)?,
         SyncCommand::Admin {
             act,
             who,
@@ -444,6 +455,15 @@ pub fn sync(cmd: SyncCommand, db: &Db) -> Result<()> {
                     super::sync_daemon::auto_install();
                 }
             })?;
+        }
+        #[cfg(feature = "net")]
+        SyncCommand::Diff { who, show } => {
+            let chain = db.sync_chain()?;
+            ensure!(chain.exists(), NO_CHAIN);
+            let m = member(&chain, &who)?;
+            ensure!(m != db.sync_endpoint_id()?, "{who} is this copy");
+            let label = chain.member(&m).map_or(who.as_str(), |m| &m.label);
+            super::sync_diagnose::diff(db, &m, label, show == ShowFlag::Json)?
         }
         #[cfg(feature = "net")]
         SyncCommand::Run => {

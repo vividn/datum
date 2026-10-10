@@ -77,12 +77,14 @@ use super::Db;
 
 pub mod chain;
 mod debug;
+mod diagnose;
 mod pause;
 pub mod peers;
 pub mod status;
 mod versions;
 use chain::{Chain, Filter, Role, CHAIN_HID};
 pub use debug::DebugConflicts;
+pub use diagnose::{row_diff, FoldCheck, Named, Orphan, Stale};
 pub use versions::Version;
 
 // ─── The invocation ─────────────────────────────────────────────────────────
@@ -1245,18 +1247,23 @@ fn merge_from(
     Ok(out)
 }
 
-/// Rewrite `hid`'s row to what it shows: its own fold when superseded, and
-/// otherwise with what is merged into it. `kind` is what moved it: a sync's
-/// merge, or the command whose write it follows from.
+/// The row `pre` shows by its ops: its own fold when superseded, and
+/// otherwise with what is merged into it.
+fn derived(conn: &Connection, pre: &Entry) -> Result<Entry> {
+    let own = own(conn, pre)?;
+    match pre.superseded_by {
+        Some(_) => Ok(own),
+        None => merge_rows(conn, &own, &merged_into(conn, &own)?),
+    }
+}
+
+/// Rewrite `hid`'s row to what it shows ([`derived`]). `kind` is what moved
+/// it: a sync's merge, or the command whose write it follows from.
 fn rederive(conn: &Connection, hid: &str, kind: ChangeKind) -> Result<()> {
     let Some(pre) = fetch_by_hid(conn, hid)? else {
         return Ok(());
     };
-    let own = own(conn, &pre)?;
-    let next = match pre.superseded_by {
-        Some(_) => own,
-        None => merge_rows(conn, &own, &merged_into(conn, &own)?)?,
-    };
+    let next = derived(conn, &pre)?;
     if row(&pre) == row(&next) {
         return Ok(());
     }
@@ -1955,6 +1962,50 @@ fn settle_filter(
     Ok(())
 }
 
+/// The rows [`Db::sync_state_hash`] hashes, in `(slug, hid)` order: every
+/// entry, each with its `superseded_by` and any `conflicts`, that passes the
+/// filter of this copy and of `peer`; and whether either has one.
+fn shared_rows(conn: &Connection, peer: Option<&str>) -> Result<(Vec<Map<String, Value>>, bool)> {
+    let chain = Chain::load(conn)?;
+    let mine = match chain.exists() {
+        true => Some(endpoint(conn)?.id),
+        false => None,
+    };
+    // The peer's filter is read from the chain this copy serves it by, with
+    // the records still waiting (da-91wab).
+    let served = Chain::served(conn)?;
+    let filters: Vec<&Filter> = [
+        mine.as_deref().and_then(|e| chain.filter(e)),
+        peer.and_then(|e| served.filter(e)),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let rows = conn
+        .prepare("SELECT * FROM entries ORDER BY slug, hid")?
+        .query_map([], |r| {
+            let e = row_to_entry(r)?;
+            let conflicts: Option<String> = r.get("conflicts")?;
+            let mut r = row(&e);
+            r.insert("superseded_by".into(), json!(e.superseded_by));
+            if let Some(c) = conflicts {
+                r.insert(
+                    "conflicts".into(),
+                    serde_json::from_str(&c).unwrap_or_default(),
+                );
+            }
+            Ok(r)
+        })?
+        .filter(|r| {
+            r.as_ref().map_or(true, |r| {
+                let belongs = belongs_to(r);
+                filters.iter().all(|f| f.admits(belongs.as_deref()))
+            })
+        })
+        .collect::<rusqlite::Result<_>>()?;
+    Ok((rows, !filters.is_empty()))
+}
+
 impl Db {
     /// Every entry with conflicts, in slug order.
     pub fn sync_conflicts(&self) -> Result<Vec<Entry>> {
@@ -2203,42 +2254,7 @@ impl Db {
         &self,
         peer: Option<&str>,
     ) -> Result<(String, BTreeMap<String, String>)> {
-        let chain = Chain::load(&self.conn)?;
-        let mine = match chain.exists() {
-            true => Some(endpoint(&self.conn)?.id),
-            false => None,
-        };
-        let served = Chain::served(&self.conn)?;
-        let filters: Vec<&Filter> = [
-            mine.as_deref().and_then(|e| chain.filter(e)),
-            peer.and_then(|e| served.filter(e)),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-        let rows: Vec<Map<String, Value>> = self
-            .conn
-            .prepare("SELECT * FROM entries ORDER BY slug, hid")?
-            .query_map([], |r| {
-                let e = row_to_entry(r)?;
-                let conflicts: Option<String> = r.get("conflicts")?;
-                let mut r = row(&e);
-                r.insert("superseded_by".into(), json!(e.superseded_by));
-                if let Some(c) = conflicts {
-                    r.insert(
-                        "conflicts".into(),
-                        serde_json::from_str(&c).unwrap_or_default(),
-                    );
-                }
-                Ok(r)
-            })?
-            .filter(|r| {
-                r.as_ref().map_or(true, |r| {
-                    let belongs = belongs_to(r);
-                    filters.iter().all(|f| f.admits(belongs.as_deref()))
-                })
-            })
-            .collect::<rusqlite::Result<_>>()?;
+        let (rows, _) = shared_rows(&self.conn, peer)?;
         let keys: BTreeSet<&String> = rows.iter().flat_map(|r| r.keys()).collect();
         let per_key = keys
             .into_iter()

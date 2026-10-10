@@ -61,6 +61,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     let run_tz = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "tz");
     let run_refs = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "refs");
     let run_stats = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "stats");
+    let run_sync = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "sync");
     let run_default_battery = args.checkers.is_empty();
 
     // One walk of the entries, shared by every checker that reads them, so
@@ -148,6 +149,15 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
         let (recomputed, drift) = collect_stats_cache_drift(db, args.fix)?;
         examined.stats_days = Some(recomputed);
         issues.extend(drift);
+    }
+    if run_sync {
+        examined.checkers.push("sync");
+        let (found, of) = crate::commands::sync_diagnose::fold_issues(db)?;
+        examined.sync = Some(SyncExamined {
+            rows: found.entries,
+            ops: found.ops,
+        });
+        issues.extend(of);
     }
     // Counted from the slice the last checkers walked, after any `--fix`
     // re-read, and without its tombstones.
@@ -407,8 +417,19 @@ pub struct Examined {
     /// did not run, so a clean run over an empty cache reads as one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stats_days: Option<usize>,
+    /// What the `sync` checker read; absent when it did not run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sync: Option<SyncExamined>,
     /// The checkers that ran; `base` is the default battery.
     pub checkers: Vec<&'static str>,
+}
+
+/// The rows the `sync` checker read against their ops, tombstones and
+/// superseded rows among them, and the applied ops it folded (da-n0ruf).
+#[derive(Debug, Clone, Serialize)]
+pub struct SyncExamined {
+    pub rows: usize,
+    pub ops: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1581,8 +1602,15 @@ pub fn render_human(report: &Report) -> String {
                 n(d, "cached day", "cached days")
             )
         });
+        let sync = ex.sync.as_ref().map_or(String::new(), |s| {
+            format!(
+                ", {} read against {}, 0 differ",
+                n(s.rows, "row", "rows"),
+                n(s.ops, "sync op", "sync ops")
+            )
+        });
         return format!(
-            "✓ No consistency issues found: {}, {}, {} examined{stats} (checkers: {}).\n",
+            "✓ No consistency issues found: {}, {}, {} examined{stats}{sync} (checkers: {}).\n",
             n(ex.entries, "entry", "entries"),
             n(ex.specs, "field spec", "field specs"),
             n(ex.aliases, "alias", "aliases"),

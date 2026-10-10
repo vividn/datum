@@ -91,6 +91,12 @@ impl Env {
             )
             .expect("store the old spec shape");
         assert_eq!(changed, 1, "no spec row for {field}");
+        // That binary (09-16) wrote before entries had sync ops (09-29), so
+        // its database holds none. Today's op for this row says today's
+        // shape, and a row that is not its ops' fold is what `check sync`
+        // reports (da-n0ruf).
+        conn.execute_batch("DELETE FROM ops; DELETE FROM sync_local;")
+            .expect("drop the ops");
         // A spec is an entry (da-lc26c): keep its content hash honest, as
         // the binary that wrote the old shape would have.
         let db = datum_core::db::Db::open(self.db.to_str().unwrap()).unwrap();

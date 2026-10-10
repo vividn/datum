@@ -324,6 +324,8 @@ class Leader {
 	}
 
 	served(e: Extract<SyncEvent, { served: string }>): void {
+		// A `sync diff` this copy answered moved nothing, and is no session (da-n0ruf).
+		if ('report' in e && e.report.diffed) return;
 		if ('report' in e) this.done(e.report.id, e.report);
 		// One that failed may have admitted its peer all the same: a join
 		// whose first sync was cut short (da-idw54).

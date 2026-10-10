@@ -18,6 +18,11 @@
 //!   the other lacks, one frame each, and an empty frame, and applies what
 //!   came — until a round in which neither vector moved. Last the verify
 //!   hashes, the dialer's first, and the dialer closes.
+//! - **Diff.** ALPN `datum/sync-diff/1` (da-n0ruf), which a copy before it
+//!   refuses: after the same handshake the dialer sends its state hash and
+//!   the acceptor its [`Digest`], or null when the hashes agree; then the
+//!   dialer the hids that differ and the acceptor what it holds of each
+//!   ([`Store::held`]). No op moves, and no session is recorded.
 //! - **Record.** Every session this copy dials, and every one it serves past
 //!   the handshake, is recorded as it ends — the peer's vector, the verify,
 //!   or the error it failed with — for `datum sync status` (da-rcb5m).
@@ -53,6 +58,8 @@ use serde::{Deserialize, Serialize};
 pub mod web;
 
 pub const ALPN: &[u8] = b"datum/sync/2";
+/// `datum sync diff`: what two copies hold differently, read-only.
+const DIFF: &[u8] = b"datum/sync-diff/1";
 const MAX_FRAME: usize = 64 << 20;
 const MAX_HELLO: usize = 64 << 10;
 /// A chain's records, from a dialer not yet admitted.
@@ -71,6 +78,8 @@ const COPY: &str =
     "this peer is a copy of this database (same endpoint key); run `datum sync chain rekey` on one of them";
 
 pub type Vector = BTreeMap<String, i64>;
+/// Per hid, the hash of the entry's row.
+pub type Digest = BTreeMap<String, String>;
 
 /// What applying a chunk of ops did.
 pub struct Applied {
@@ -112,6 +121,11 @@ pub trait Store {
     fn got(&self, _n: usize) {}
     /// The state hash, over what a session with `peer` shares.
     async fn verify(&self, peer: &str) -> Result<String>;
+    /// That state hash, and each row's own by hid (da-n0ruf).
+    async fn digest(&self, peer: &str) -> Result<(String, Digest)>;
+    /// What this copy holds of each of `hids`, as it shares it with `peer`:
+    /// its row and its ops.
+    async fn held(&self, peer: &str, hids: &[String]) -> Result<Vec<serde_json::Value>>;
     /// `peer` introduced itself as `label` at `addr`: record it, and when
     /// it `dialed` this copy, admit it (as a peer, or by `invite`) or fail
     /// saying why not; a redeemer names its own `chain`, and how many
@@ -382,6 +396,8 @@ pub struct Report {
     pub verified: Option<bool>,
     /// The verify in words, as [`verdict`] says it.
     pub verify: String,
+    /// It was no sync: this copy answered the peer's `sync diff`.
+    pub diffed: bool,
     /// The peer's version vector, as it last sent it.
     pub vector: Vector,
     /// The members' addresses the peer passed on.
@@ -405,6 +421,7 @@ impl Report {
             conflicts: 0,
             verified: None,
             verify: String::new(),
+            diffed: false,
             vector: BTreeMap::new(),
             left: None,
         }
@@ -413,6 +430,9 @@ impl Report {
 
 impl std::fmt::Display for Report {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.diffed {
+            return write!(f, "{}: answered its sync diff", self.label);
+        }
         write!(
             f,
             "{}: sent {}, got {}, conflicts {}, {}",
@@ -768,6 +788,61 @@ async fn session(
     }
 }
 
+/// What a `sync diff` with one peer found.
+pub struct Diffed {
+    /// How many entries were compared: those either copy holds.
+    pub entries: usize,
+    /// Per entry that differs, what this copy holds and what the peer does
+    /// ([`Store::held`]), in one order.
+    pub mine: Vec<serde_json::Value>,
+    pub theirs: Vec<serde_json::Value>,
+}
+
+/// Ask the peer at `addr` what it holds where it differs from this copy
+/// (da-n0ruf). The peer admits a member as it does for a sync; nothing is
+/// applied on either side.
+pub async fn diff(store: &impl Store, ep: &Endpoint, addr: EndpointAddr) -> Result<Diffed> {
+    ensure!(addr.id != ep.id(), COPY);
+    let id = addr.id.to_string();
+    let conn = within(async { Ok(ep.connect(addr, DIFF).await?) })
+        .await
+        .map_err(|e| unreachable(ep, &id, e))?;
+    let (mut s, mut r) = conn.open_bi().await?;
+    let hello = Hello {
+        label: store.label(),
+        addr: ep.addr(),
+        invite: None,
+        chain: None,
+        holds: 0,
+        proves: false,
+        known: Vec::new(),
+        typed: true,
+        version: store.version(),
+    };
+    put_json(&mut s, &hello).await?;
+    match get_json(&mut r, MAX_HELLO).await? {
+        Reply::Welcome { .. } => {}
+        Reply::Refused(why) => return Err(refused(why, None)),
+        Reply::Refusal { why, kind } => return Err(refused(why, Some(kind))),
+        Reply::Prove => bail!("{} asked for what it was not offered", short(&id)),
+    }
+    let (hash, mine) = store.digest(&id).await?;
+    put_json(&mut s, &hash).await?;
+    let theirs: Option<Digest> = get_json(&mut r, MAX_FRAME).await?;
+    let theirs = theirs.as_ref().unwrap_or(&mine);
+    let all: std::collections::BTreeSet<&String> = mine.keys().chain(theirs.keys()).collect();
+    let differs = |h: &&&String| mine.get(**h) != theirs.get(**h);
+    let hids: Vec<String> = all.iter().filter(differs).map(|h| (*h).clone()).collect();
+    put_json(&mut s, &hids).await?;
+    let theirs = get_json(&mut r, MAX_FRAME).await?;
+    conn.close(0u32.into(), b"done");
+    Ok(Diffed {
+        entries: all.len(),
+        mine: store.held(&id, &hids).await?,
+        theirs,
+    })
+}
+
 /// Why a dial reached no one, and what to do about it (da-shfv4): this
 /// copy's own relay is down, or the other copy is not running. Either way it
 /// is [`Failure::Unreachable`], which `redeem` reads as «try the next address».
@@ -796,6 +871,9 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
     let id = conn.remote_id().to_string();
     let (mut s, mut r) = within(async { Ok(conn.accept_bi().await?) }).await?;
     let hello: Hello = get_json(&mut r, MAX_HELLO).await?;
+    // A diff admits no one: it answers a member this copy holds, redeems
+    // no invite, and asks for no records to admit one it has not heard of.
+    let diff = conn.alpn() == DIFF;
     let mut records: Option<Vec<String>> = None;
     let verdict = loop {
         let verdict = match conn.remote_id() == ep.id() {
@@ -805,7 +883,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
                     &id,
                     &hello.label,
                     &hello.addr,
-                    hello.invite.as_deref(),
+                    hello.invite.as_deref().filter(|_| !diff),
                     hello.chain.as_deref(),
                     hello.holds,
                     &hello.version,
@@ -822,7 +900,7 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
         };
         // A member this copy has not heard of shows that it is one, once.
         match verdict {
-            Err((Why::NotMember, _)) if hello.proves && records.is_none() => {
+            Err((Why::NotMember, _)) if hello.proves && !diff && records.is_none() => {
                 put_json(&mut s, &Reply::Prove).await?;
                 records = Some(get_json(&mut r, MAX_RECORDS).await?);
             }
@@ -845,8 +923,18 @@ pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Res
         version: store.version(),
     };
     put_json(&mut s, &welcome).await?;
-    let redeemed = hello.invite.is_some();
+    let redeemed = hello.invite.is_some() && !diff;
     let mut rep = Report::new(hello.label, id.clone(), !known, redeemed, hello.known);
+    if diff {
+        let theirs: String = get_json(&mut r, MAX_HELLO).await?;
+        let (hash, digest) = store.digest(&id).await?;
+        put_json(&mut s, &(theirs != hash).then_some(digest)).await?;
+        let hids: Vec<String> = get_json(&mut r, MAX_FRAME).await?;
+        put_json(&mut s, &store.held(&id, &hids).await?).await?;
+        let _ = timeout(Duration::from_secs(5), conn.closed()).await;
+        rep.diffed = true;
+        return Ok(rep);
+    }
     let done = match exchange(store, &mut s, &mut r, false, &mut rep).await {
         Ok(()) => {
             let _ = timeout(Duration::from_secs(5), conn.closed()).await;
@@ -936,7 +1024,7 @@ pub async fn bind(secret: [u8; 32], net: &Net) -> Result<Endpoint> {
     };
     let ep = builder
         .secret_key(SecretKey::from_bytes(&secret))
-        .alpns(vec![ALPN.to_vec()])
+        .alpns(vec![ALPN.to_vec(), DIFF.to_vec()])
         .bind()
         .await?;
     #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]

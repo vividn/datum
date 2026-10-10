@@ -54,6 +54,7 @@ pub mod switch;
 pub mod sync;
 #[cfg(feature = "net")]
 pub mod sync_daemon;
+pub mod sync_diagnose;
 pub mod tail;
 pub mod tail_state;
 // The `tail --watch` TUI drives a terminal (crossterm); absent from a wasm

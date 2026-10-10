@@ -88,6 +88,48 @@ describe('datum.day and a native copy', () => {
 		}
 	});
 
+	test('the page answers a native copy\'s `sync diff`: what it holds of each entry that differs, and nothing moves (da-n0ruf)', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			await withWallClock(
+				async (app) => {
+					await app.run(['occur', 'coffee', '-t', '0900']);
+					await pairWith(app, native);
+					const web = (await endpointOf(app)).slice(0, 12);
+					// The invite's own process may still hold the native copy's key for a moment.
+					const same = await until(() => native.run(['sync', 'diff', web]), (r) => r.code === 0);
+					assert.match(same.stdout, /hold the same data \(\d+ entries compared\)$/);
+
+					// From here neither serves the other: the native copy runs nothing, so
+					// the page's push finds no one, and each keeps an entry of its own.
+					assert.equal((await native.run(['occur', 'tea', '-t', '0800'])).code, 0);
+					await app.run(['occur', 'juice', '-t', '1000']);
+					const held = await verifyOf(app);
+					const differ = await native.run(['sync', 'diff', web, '--json']);
+					assert.equal(differ.code, 0, differ.stderr);
+					// Each entry and the spec its log declared, by its field.
+					const all = JSON.parse(differ.stdout).differ;
+					const found = Object.fromEntries(all.map((d) => [d.slug.split(':')[0], d]));
+					assert.equal(all.length, 4, differ.stdout);
+					assert.deepEqual(Object.keys(found).sort(), ['juice', 'spec', 'tea']);
+					assert.equal(found.tea.there.row, null, differ.stdout);
+					assert.deepEqual(found.tea.there.ops, [], differ.stdout);
+					assert.equal(found.tea.here.ops[0].kind, 'create', differ.stdout);
+					assert.equal(found.juice.here.row, null, differ.stdout);
+					assert.equal(found.juice.there.row.field, 'juice', differ.stdout);
+					assert.equal(found.juice.there.ops[0].kind, 'create', differ.stdout);
+					assert.equal(await verifyOf(app), held);
+					// Answering was no session: the page still says the last one verified.
+					const status = JSON.parse((await app.run(['sync', 'status', '--json'])).stdout);
+					assert.equal(status.members[0].last_verify.match, true, JSON.stringify(status));
+				},
+				{ prepare: relayed(relay) }
+			);
+		} finally {
+			await native.close();
+		}
+	});
+
 	test('a page holding entries is refused a reader invite, by count, and joins nothing (da-tti3w)', async () => {
 		const native = await nativeCopy(relay);
 		try {

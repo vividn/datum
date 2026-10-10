@@ -38,7 +38,7 @@ fn all_clear_over_an_empty_db_differs_from_one_over_entries() {
     datum(&seeded, &["occur", "coffee", "-q"]);
     datum(&seeded, &["alias", "set", "cf", "occur coffee"]);
 
-    let all = "checkers: base, verbs, aliases, slugs, integrity, flags, tz, refs, stats";
+    let all = "checkers: base, verbs, aliases, slugs, integrity, flags, tz, refs, stats, sync";
     let on_empty = datum(&empty, &["check"]);
     let on_seeded = datum(&seeded, &["check"]);
     assert_ne!(
@@ -47,14 +47,14 @@ fn all_clear_over_an_empty_db_differs_from_one_over_entries() {
     );
     assert_eq!(
         on_empty,
-        format!("✓ No consistency issues found: 0 entries, 0 field specs, 0 aliases examined, 0 cached days recomputed, 0 differ ({all}).\n")
+        format!("✓ No consistency issues found: 0 entries, 0 field specs, 0 aliases examined, 0 cached days recomputed, 0 differ, 0 rows read against 0 sync ops, 0 differ ({all}).\n")
     );
     // Two coffees, the spec the first one wrote and the alias: specs and
     // aliases are entries too, and the checkers walk them.
     assert_eq!(
         on_seeded,
         format!(
-            "✓ No consistency issues found: 4 entries, 1 field spec, 1 alias examined, 0 cached days recomputed, 0 differ ({all}).\n"
+            "✓ No consistency issues found: 4 entries, 1 field spec, 1 alias examined, 0 cached days recomputed, 0 differ, 4 rows read against 4 sync ops, 0 differ ({all}).\n"
         )
     );
 
@@ -68,7 +68,11 @@ fn all_clear_over_an_empty_db_differs_from_one_over_entries() {
     assert_eq!(json["examined"]["entries"], 4);
     assert_eq!(json["examined"]["specs"], 1);
     assert_eq!(json["examined"]["aliases"], 1);
-    assert_eq!(json["examined"]["checkers"].as_array().unwrap().len(), 9);
+    assert_eq!(json["examined"]["checkers"].as_array().unwrap().len(), 10);
+    assert_eq!(
+        json["examined"]["sync"],
+        serde_json::json!({"rows": 4, "ops": 4})
+    );
 }
 
 /// da-1i6mi: `check stats` says how many cached days it recomputed, so a

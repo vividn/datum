@@ -13,6 +13,8 @@ export interface SyncReport {
 	verified: boolean | null;
 	/** The verify in words. */
 	verify: string;
+	/** It was no sync: this copy answered the peer's `sync diff` (da-n0ruf). */
+	diffed: boolean;
 	vector: Record<string, number>;
 	/** The chain of one this copy left to redeem the invite, and the chain it joined (da-h7pnc). */
 	left?: [string, string] | null;

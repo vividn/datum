@@ -30,8 +30,8 @@ use datum_core::error::{DatumError, Refusal as CoreRefusal};
 use datum_core::migrations::CURRENT_SCHEMA_VERSION;
 use datum_parse::time::Zone;
 use datum_sync_wire::{
-    dial, failure, redeem, serve, unix_now, About, Applied, Endpoint, EndpointAddr, Failure, Lost,
-    Net, Refusal, Report, Store, Ticket, Vector, Version, Why,
+    dial, failure, redeem, serve, unix_now, About, Applied, Diffed, Digest, Endpoint, EndpointAddr,
+    Failure, Lost, Net, Refusal, Report, Store, Ticket, Vector, Version, Why,
 };
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use tokio::time::Instant;
@@ -232,6 +232,14 @@ impl Store for DbStore<'_> {
 
     async fn verify(&self, peer: &str) -> Result<String> {
         Ok(self.0.sync_state_hash(Some(peer))?.0)
+    }
+
+    async fn digest(&self, peer: &str) -> Result<(String, Digest)> {
+        Ok(self.0.sync_digest(Some(peer))?)
+    }
+
+    async fn held(&self, peer: &str, hids: &[String]) -> Result<Vec<serde_json::Value>> {
+        Ok(self.0.sync_held(Some(peer), hids)?)
     }
 
     async fn handshake(
@@ -568,6 +576,19 @@ pub fn now_all(db: &Db) -> Result<()> {
         ep.close().await;
         ensure!(failed == 0, "{failed} of {} peer(s) failed", peers.len());
         Ok(())
+    })
+}
+
+/// `datum sync diff <WHO>`: what this copy and the member `id` hold
+/// differently (da-n0ruf). It asks the member, which must be up.
+pub fn diff(db: &Db, id: &str) -> Result<Diffed> {
+    let peer = synced_peers(db)?.into_iter().find(|p| p.id == id);
+    let peer = peer.context("this copy knows no address for it: `datum sync` with it first")?;
+    runtime()?.block_on(async {
+        let ep = bind(db).await?;
+        let found = datum_sync_wire::diff(&DbStore::new(db), &ep, addr(&peer)?).await;
+        ep.close().await;
+        found
     })
 }
 

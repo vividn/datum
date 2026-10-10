@@ -141,6 +141,16 @@ fn converged(a: &Copy, b: &Copy) {
     a.send(b);
     b.send(a);
     assert_eq!(a.hash(), b.hash(), "the two copies hold different data");
+    // And each holds what its own ops fold to (da-n0ruf): every scenario
+    // that converges is a control for `check sync` saying nothing.
+    for copy in [a, b] {
+        let out = copy.run(&["check", "sync"], "");
+        let said = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success(),
+            "`check sync` on a converged copy: {said}"
+        );
+    }
 }
 
 /// The single op a command adds, asserting that it adds exactly one.
@@ -1744,4 +1754,164 @@ fn an_entry_older_than_its_ops_opens_its_history_with_a_baseline() {
     assert_eq!(json[0]["raw"], format!("update {hid} cups=3"), "{text}");
     a.ok(&["undo", &hid, "--to-version", "1"]);
     assert_eq!(a.data(&hid)["cups"], 2);
+}
+
+// ─── Diagnostics (da-n0ruf) ─────────────────────────────────────────────────
+
+/// `datum check sync`: whether it passed, and what it printed.
+fn check_sync(copy: &Copy, json: bool) -> (bool, String) {
+    let args: &[&str] = match json {
+        true => &["check", "sync", "--json"],
+        false => &["check", "sync"],
+    };
+    let out = copy.run(args, "");
+    (out.status.success(), String::from_utf8(out.stdout).unwrap())
+}
+
+/// `db restore --hard` drops rows and keeps their ops (da-95y4o): `check
+/// sync` names each entry those ops make and this copy has no row for,
+/// with its ops, and `sync refold` leaves them as found.
+#[test]
+fn check_names_the_entries_whose_ops_have_no_row() {
+    let a = Copy::new();
+    a.ok(&["occur", "tea", "-t", "10:00"]);
+    let backup = a.tmp.path().join("b.jsonl");
+    let backup = backup.to_str().unwrap();
+    a.ok(&["db", "backup", backup]);
+    a.ok(&["occur", "juice", "-t", "12:00"]);
+    // Clean, it says what it read: each entry and the spec its log declared.
+    let (ok, clean) = check_sync(&a, false);
+    assert!(
+        ok && clean.contains("4 rows read against 4 sync ops, 0 differ"),
+        "{clean}"
+    );
+    a.ok(&["db", "restore", backup, "--hard", "--yes"]);
+
+    let (ok, said) = check_sync(&a, false);
+    assert!(!ok, "ops with no row are an error: {said}");
+    assert!(said.contains("[ERROR] sync_orphan_ops (x2)"), "{said}");
+    for named in ["\n  juice:", "\n  spec:juice ("] {
+        assert!(said.contains(named), "{named:?} in {said}");
+    }
+    assert!(said.contains("): create by "), "{said}");
+    assert!(!said.contains("tea"), "tea has its row: {said}");
+    let json: Value = serde_json::from_str(&check_sync(&a, true).1).unwrap();
+    let mut fields: Vec<&str> = json["issues"][0]["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["field"].as_str().unwrap())
+        .collect();
+    fields.sort();
+    assert_eq!(fields, ["juice", "spec"], "{json}");
+
+    let orphans =
+        "SELECT COUNT(*) FROM ops WHERE kind = ?1 AND hid NOT IN (SELECT hid FROM entries)";
+    let refold = a.ok(&["sync", "refold"]);
+    assert!(refold.contains("nothing to refold"), "{refold}");
+    assert!(
+        refold.contains("2 entries with ops and no row left as found"),
+        "{refold}"
+    );
+    assert_eq!(a.query(orphans, "create"), "2");
+}
+
+/// A row that is not what its ops fold to (da-yrtk6, da-z3y0o) is named
+/// with its column and both values, and `sync refold` writes it again from
+/// the ops: the copies verify again, and no op was signed for it.
+#[test]
+fn check_names_a_row_that_is_not_its_ops_fold_and_refold_writes_it_again() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "cups=2"]);
+    converged(&a, &b);
+    let hid = b.hid("coffee");
+    b.sql(&format!(
+        "UPDATE entries SET data = '{{\"cups\":5}}' WHERE hid = '{hid}'"
+    ));
+    assert_ne!(a.hash(), b.hash());
+
+    let (ok, said) = check_sync(&b, false);
+    assert!(!ok, "a stale row is an error: {said}");
+    assert!(said.contains("[ERROR] sync_stale_row (x1)"), "{said}");
+    assert!(said.contains("\n  coffee:"), "{said}");
+    assert!(said.contains("\n    data.cups: row 5, ops 2\n"), "{said}");
+    let json: Value = serde_json::from_str(&check_sync(&b, true).1).unwrap();
+    let named = &json["issues"][0]["entries"];
+    assert_eq!(named[0]["field"], "coffee", "{json}");
+    assert_eq!(named[0]["state"], "data.cups", "{json}");
+    assert_eq!(named.as_array().unwrap().len(), 1, "{json}");
+
+    let ops = b.ops().len();
+    let refold = b.ok(&["sync", "refold"]);
+    assert!(refold.contains("refolded 1 row from its ops"), "{refold}");
+    assert!(
+        refold.contains("\n    data.cups: was 5, now 2\n"),
+        "{refold}"
+    );
+    assert_eq!(b.ops().len(), ops, "a refold signs no op");
+    assert_eq!(b.data(&hid)["cups"], 2);
+    assert_eq!(a.hash(), b.hash());
+    // Done, it says so and what it examined, and the check is clean.
+    let again: Value = serde_json::from_str(&b.ok(&["sync", "refold", "--json"])).unwrap();
+    assert_eq!(again["refolded"], serde_json::json!([]), "{again}");
+    assert_eq!(again["rows"], 2, "{again}");
+    assert!(check_sync(&b, false).0);
+}
+
+/// The `conflicts` column is the fold's as well: one this copy lost is
+/// found by name and written again.
+#[test]
+fn a_lost_conflicts_column_is_found_and_refolded() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "cups=2"]);
+    a.send(&b);
+    let hid = a.hid("coffee");
+    a.ok(&["update", &hid, "cups=4"]);
+    b.ok(&["update", &hid, "cups=5"]);
+    converged(&a, &b);
+    assert!(!a.conflicts(&hid).is_null());
+    b.sql("UPDATE entries SET conflicts = NULL");
+    assert_ne!(a.hash(), b.hash());
+
+    let (ok, said) = check_sync(&b, false);
+    assert!(
+        !ok && said.contains("\n    conflicts: row ∅, ops {"),
+        "{said}"
+    );
+    b.ok(&["sync", "refold"]);
+    assert_eq!(b.conflicts(&hid), a.conflicts(&hid));
+    assert_eq!(a.hash(), b.hash());
+}
+
+/// Ops that fold to no row this build can store — here a verb it does not
+/// know — are a finding of their own, naming the entry and why, and the
+/// check goes on past them: the stale row beside it is still found, and
+/// still refolded.
+#[test]
+fn ops_that_fold_to_no_storable_row_are_named_and_the_check_goes_on() {
+    let a = Copy::new();
+    a.ok(&["occur", "coffee", "cups=2"]);
+    a.ok(&["occur", "tea", "cups=1"]);
+    let (coffee, tea) = (a.hid("coffee"), a.hid("tea"));
+    a.sql(&format!(
+        "UPDATE ops SET body = json_set(body, '$.effect.create.verb', 'bogus') WHERE hid = '{coffee}';
+         UPDATE entries SET data = '{{\"cups\":5}}' WHERE hid = '{tea}'"
+    ));
+
+    let (ok, said) = check_sync(&a, false);
+    assert!(!ok, "{said}");
+    assert!(said.contains("[ERROR] sync_unfoldable (x1)"), "{said}");
+    let named = said.lines().find(|l| l.starts_with("  coffee:")).unwrap();
+    assert!(named.contains("bogus"), "why is beside it: {said}");
+    assert!(said.contains("[ERROR] sync_stale_row (x1)"), "{said}");
+    assert!(said.contains("\n    data.cups: row 5, ops 1\n"), "{said}");
+
+    let refold = a.ok(&["sync", "refold"]);
+    assert!(refold.contains("refolded 1 row from its ops"), "{refold}");
+    assert!(
+        refold.contains("1 entry whose ops fold to no row left as found"),
+        "{refold}"
+    );
+    assert_eq!(a.data(&tea)["cups"], 1);
+    assert_eq!(a.data(&coffee)["cups"], 2);
 }

@@ -189,7 +189,7 @@ differ over the same ops, and with one copy ahead of the other — a reader
 holding what a member lacks, which it never relays — «not verified: R is N
 changes ahead of this copy», `pending` in `sync status` and no error
 (da-t3ey2). The tree:
-`sync`, `status`, `pause | resume`, `chain invite | connect | leave |
+`sync`, `status`, `pause | resume`, `diff <WHO>`, `refold`, `chain invite | connect | leave |
 list | rename | revoke | purge | ack | rekey`, `admin list | add | remove`, `daemon
 install | uninstall | status` (a systemd user unit / launchd agent
 running the hidden `sync daemon run`, which is `sync run` for every chained
@@ -272,6 +272,26 @@ admit. A dialer still refused is told so by name,
 with what fixes it: sync the refusing copy with the copy that
 invited the other. datum.day's store does the same through the hidden `sync
 pipe records` and `sync handshake --records`.
+
+A mismatch is diagnosed natively (da-n0ruf, `db/sync/diagnose.rs`).
+`datum check sync`, in the default battery too, reads every row against its
+ops: an entry whose applied ops fold to a row this copy lacks (`sync_orphan_ops`,
+an error: what `db restore --hard` leaves, da-95y4o), a row that is not what
+its ops fold to (`sync_stale_row`, an error: `derived` as storage writes it,
+which derives `verb` and `content_hash` itself, and the `conflicts` column),
+each with its columns and both values, an entry whose ops fold to no row
+storage takes (`sync_unfoldable`, an error naming it and why, which the check
+reads on past), and in a chain a row no op covers
+(`sync_no_op`, a warning: the next sync signs it). `datum sync refold` writes
+each stale row again from its ops and signs none, so a correct copy is
+unchanged; orphans it leaves as found. `datum sync diff <WHO>` asks one member
+over a second ALPN, `datum/sync-diff/1`, which `serve` answers after the same
+handshake and a copy before it refuses: state hashes, then a hash per row by
+hid, then for each hid that differs the row and the ops each side holds
+(the hidden `sync pipe digest` / `held`, which are datum.day's store too). It
+applies nothing on either side and records no session. The sync tests'
+`converged` asserts `check sync` clean, so every scenario that converges is
+its control.
 
 The session itself is `crates/datum-sync-wire`, generic over a `Store`,
 and the handshake's storage side — members, invites, admission — is
