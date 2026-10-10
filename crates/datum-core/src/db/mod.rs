@@ -76,7 +76,7 @@ pub use tombstone::{revert_in_tx, soft_delete_in_tx};
 pub use types::{
     AliasConflict, AliasConflictReason, ConflictStrategy, GroupColumn, HardReplaceCounts,
     InsertOutcome, ListParams, ReplaceCounts, RetimeFilter, Retimed, SaveSpecReport,
-    SpecAliasCollision, SpecAliasIndex, TimeMetric, TimeOrderIssue, TrackedField,
+    SpecAliasCollision, SpecAliasIndex, TimeMetric, TimeOrderIssue, TimelineEntry, TrackedField,
     IGNORED_STATE_VALUE,
 };
 pub use view::{InstallViewsReport, InstalledView, KitViewOutcome, ViewResult};

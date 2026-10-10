@@ -8,9 +8,11 @@ use serde_json::Value as JsonValue;
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
 
-use super::row_mapper::row_to_entry;
+use super::row_mapper::{build_datum_time, row_to_entry};
 use super::spec::NOT_META_FIELD_SQL;
-use super::types::{time_expr, time_expr_endbound, ListParams, TimeMetric, LIVE_SQL};
+use super::types::{
+    time_expr, time_expr_endbound, ListParams, TimeMetric, TimelineEntry, LIVE_SQL,
+};
 use super::Db;
 
 impl Db {
@@ -49,10 +51,39 @@ impl Db {
     /// optional final reverse. The returned vec is oldest-first by default
     /// (so tail's output reads top-to-bottom in chronological order).
     pub fn list_entries(&self, params: &ListParams) -> Result<Vec<Entry>> {
-        let (sql, bindings) = list_entries_sql(params);
+        self.list_rows("*", params, row_to_entry)
+    }
+
+    /// [`Self::list_entries`]' rows, in its order, as the columns `stats`
+    /// reads of them: a row's `data` can be any size, and reading and
+    /// decoding it was most of what a timeline cost (da-ypz6c). A timed
+    /// `before` cursor is an error here: its query orders by `slug`.
+    pub fn list_timeline(&self, params: &ListParams) -> Result<Vec<TimelineEntry>> {
+        const COLUMNS: &str = "hid, state, occur_time, occur_time_offset, occur_time_tz, \
+             occur_time_uncertainty, client_id, json_extract(extra_metadata, '$.track')";
+        self.list_rows(COLUMNS, params, |row| {
+            Ok(TimelineEntry {
+                hid: row.get(0)?,
+                state: (row.get::<_, Option<String>>(1)?)
+                    .and_then(|s| serde_json::from_str(&s).ok()),
+                occur_time: build_datum_time(row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?),
+                client_id: row.get(6)?,
+                declaration: (row.get_ref(7)?.as_str())
+                    .is_ok_and(|verb| verb.parse::<crate::action::Action>().is_ok()),
+            })
+        })
+    }
+
+    fn list_rows<T>(
+        &self,
+        columns: &str,
+        params: &ListParams,
+        read: impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+    ) -> Result<Vec<T>> {
+        let (sql, bindings) = list_entries_sql(columns, params);
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(rusqlite::params_from_iter(bindings.iter()), row_to_entry)?;
-        let mut results: Vec<Entry> = rows
+        let rows = stmt.query_map(rusqlite::params_from_iter(bindings.iter()), read)?;
+        let mut results: Vec<T> = rows
             .map(|r| r.map_err(DatumError::Db))
             .collect::<Result<_>>()?;
 
@@ -180,10 +211,10 @@ impl Db {
 /// `(occur_time, slug) WHERE deleted_at IS NULL` index: it covers the
 /// range AND the whole ORDER BY, so the read touches only the rows in
 /// the window and never sorts.
-pub(super) fn list_entries_sql(params: &ListParams) -> (String, Vec<String>) {
+pub(super) fn list_entries_sql(columns: &str, params: &ListParams) -> (String, Vec<String>) {
     let metric_expr: &str = time_expr(params.metric);
     let (filter, mut bindings) = list_filter_sql(params);
-    let mut sql = format!("SELECT * FROM entries WHERE {filter}");
+    let mut sql = format!("SELECT {columns} FROM entries WHERE {filter}");
     if let Some((window, b)) = list_window_sql(params) {
         sql.push_str(&format!(" AND {window}"));
         bindings.extend(b);
@@ -307,7 +338,7 @@ mod tests {
             end_utc: Some("2026-09-14T12:00:00Z".parse().unwrap()),
             ..Default::default()
         };
-        let (sql, bindings) = list_entries_sql(&params);
+        let (sql, bindings) = list_entries_sql("*", &params);
         let mut stmt = db
             .conn
             .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
@@ -347,7 +378,7 @@ mod tests {
                 before: Some((time, slug.clone())),
                 ..Default::default()
             };
-            let (sql, bindings) = list_entries_sql(&params);
+            let (sql, bindings) = list_entries_sql("*", &params);
             let mut stmt = db
                 .conn
                 .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
@@ -369,5 +400,108 @@ mod tests {
                 "a SCAN reads the whole history for one page above {time:?}, got:\n{plan}"
             );
         }
+    }
+
+    /// da-ypz6c: a timeline is the listing's rows, one for one and in its
+    /// order, under every filter: a declaration, a flag, a timeless row,
+    /// two zones, another field, a state of each kind and none, and a
+    /// `track` that is no verb, which declares nothing.
+    #[test]
+    fn a_timeline_is_the_listing_narrowed() {
+        use crate::action::Action;
+        use crate::entry::{Entry, Verb};
+        use crate::time::DatumTime;
+        use serde_json::json;
+
+        let db = Db::open_in_memory().unwrap();
+        let base: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
+        let at = |min: i64, offset_minutes: i32, zone: Option<&str>| DatumTime {
+            utc: base + chrono::Duration::minutes(min),
+            offset_minutes,
+            timezone: zone.map(Into::into),
+            uncertainty: (min == 20).then(|| "PT1M".into()),
+        };
+        let utc = |min| Some(at(min, 0, Some("UTC")));
+        let chicago = |min| Some(at(min, -300, Some("America/Chicago")));
+        let data = json!({ "note": "x".repeat(5000), "nested": { "a": [1, 2] } });
+        let row = |field: &str, state: Option<JsonValue>, time, client: &str| {
+            let verb = state.as_ref().map_or(Verb::Point, |_| Verb::Switch);
+            Entry::new(field, verb, state, Some(data.clone()), time, None, client)
+        };
+        let mut rows = vec![
+            crate::track::track_entry("walk", Action::Switch, at(5, 0, None), "d1"),
+            row("walk", Some(json!("a")), utc(10), "d1"),
+            row("run", Some(json!(1)), utc(15), "d1"),
+            row("walk", Some(json!(false)), chicago(20), "d2"),
+            row("walk", None, Some(at(30, 60, None)), "d2"),
+            row("walk", Some(json!("b")), utc(40), "d1"),
+            row("walk", None, None, "d1"),
+            row("walk", Some(json!("c")), utc(50), "d1"),
+            row("walk", Some(json!("d")), utc(60), "d1"),
+        ];
+        rows[5].extra_metadata = Some(json!({ "flag": true }));
+        rows[7].extra_metadata = Some(json!({ "track": 5 }));
+        rows[8].extra_metadata = Some(json!({ "track": "nonsense" }));
+        for row in &rows {
+            db.insert_entry(row).unwrap();
+        }
+
+        let narrowed = |e: &Entry| TimelineEntry {
+            hid: e.hid.clone(),
+            state: e.state.clone(),
+            occur_time: e.occur_time.clone(),
+            client_id: e.client_id.clone(),
+            declaration: crate::track::track_verb(e).is_some(),
+        };
+        let walk = ListParams {
+            fields: vec!["walk".into()],
+            ..Default::default()
+        };
+        let window = |from, to| ListParams {
+            metric: TimeMetric::Occur,
+            start_utc: utc(from).map(|t| t.utc),
+            end_utc: utc(to).map(|t| t.utc),
+            ..walk.clone()
+        };
+        let all = ListParams {
+            include_meta: true,
+            ..Default::default()
+        };
+        let cases = [
+            (all.clone(), 9),
+            (ListParams::default(), 8),
+            (walk.clone(), 7),
+            (window(0, 100), 6),
+            (window(10, 20), 2),
+            (window(30, 30), 1),
+            (
+                ListParams {
+                    limit: Some(3),
+                    ..all.clone()
+                },
+                3,
+            ),
+            (
+                ListParams {
+                    limit: Some(3),
+                    head: true,
+                    reverse: true,
+                    ..all
+                },
+                3,
+            ),
+        ];
+        for (params, count) in cases {
+            let listed = db.list_entries(&params).unwrap();
+            assert_eq!(listed.len(), count, "{params:?}");
+            let timeline = db.list_timeline(&params).unwrap();
+            assert_eq!(
+                timeline,
+                listed.iter().map(narrowed).collect::<Vec<_>>(),
+                "{params:?}"
+            );
+        }
+        let declared = db.list_timeline(&walk).unwrap();
+        assert_eq!(declared.iter().filter(|e| e.declaration).count(), 1);
     }
 }

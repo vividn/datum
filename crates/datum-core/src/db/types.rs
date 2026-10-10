@@ -236,6 +236,17 @@ pub struct ListParams {
     pub before: Option<(Option<DateTime<Utc>>, String)>,
 }
 
+/// A row of [`super::Db::list_timeline`]: what `stats` reads of an entry.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TimelineEntry {
+    pub hid: crate::ids::Hid,
+    pub state: Option<serde_json::Value>,
+    pub occur_time: Option<crate::time::DatumTime>,
+    pub client_id: String,
+    /// Whether it is a TRACK document ([`crate::track::track_verb`]).
+    pub declaration: bool,
+}
+
 /// Selection filter for [`super::Db::update_times`]. Every non-None field narrows
 /// the match. `slug_or_hid` matches either column. `after_utc` / `before_utc`
 /// bound `start_time` (inclusive); rows with null `start_time` are

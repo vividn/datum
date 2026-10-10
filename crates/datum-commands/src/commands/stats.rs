@@ -458,7 +458,7 @@ fn load_timeline(
     // filter drops `flag` / protocol-note markers — the same exclusions
     // tail / dayview / now apply, so the timeline matches what the user sees.
     let params = timeline_params(field, from, until);
-    let entries = db.list_entries(&params)?;
+    let entries = db.list_timeline(&params)?;
     // A span the window opens on can be begun by a row long before it — a
     // field of dots by its first dot. Its client is read at its own instant,
     // not with the history between (da-cwpr1).
@@ -467,7 +467,7 @@ fn load_timeline(
         .filter(|at| from.is_some_and(|from| *at < from || *at > until))
     {
         let at = Some(at);
-        begun.extend(db.list_entries(&ListParams {
+        begun.extend(db.list_timeline(&ListParams {
             start_utc: at,
             end_utc: at,
             ..params.clone()
@@ -475,7 +475,7 @@ fn load_timeline(
     }
     let rows = entries
         .iter()
-        .filter(|e| datum_core::track::track_verb(e).is_none())
+        .filter(|e| !e.declaration)
         .filter_map(|e| {
             Some(TimelineRow {
                 state: label(e.state.as_ref()),
