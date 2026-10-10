@@ -400,3 +400,33 @@ fn a_stale_last_asks_first_and_a_no_writes_nothing() {
     assert_eq!(data(&db, "field:bar"), json!({"foo": "bar"}));
     assert!(db.get_entry("field:baz").is_err());
 }
+
+// ─── rekey: `utils/rekey.ts`, through the same `updateDoc.ts` (da-wh822) ──────
+
+/// `rekey` renames a data key on the one row. A key the id template names,
+/// renamed away, empties that part of the slug, and the receipt is
+/// `updateDoc.ts`'s for an id that moved: `RENAME`, then `UPDATE` of the
+/// same hid.
+#[test]
+fn rekey_renames_a_data_key_in_place_and_prints_rename_then_update() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db_path = tmp.path().join("u.db");
+    let run = |args: &[&str]| {
+        let out = run_bin(&db_path, args, "");
+        assert!(out.status.success(), "{args:?}: {out:?}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let created = run(&["add", "met", "who=ben", "--id", "%who%"]);
+    let hid = created.split(' ').nth(1).unwrap();
+    let renamed = run(&["rekey", "met:ben", "who=eve"]);
+    assert!(
+        renamed.starts_with(&format!("RENAME met:ben ⟶ met:\nUPDATE {hid} met:\n")),
+        "got: {renamed}"
+    );
+
+    let db = Db::open(db_path.to_str().unwrap()).unwrap();
+    let rows = logged_all(&db);
+    assert_eq!(rows.len(), 1, "no copy, no old row");
+    assert_eq!(rows[0].slug, "met:");
+    assert_eq!(rows[0].data, Some(json!({"eve": "ben"})));
+}

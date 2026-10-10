@@ -1,5 +1,8 @@
-//! `datum rekey <id_or_slug>` — change an entry's slug via id-template
-//! re-interpolation (moves its slug; preserves the old row).
+//! `datum rekey <id_or_slug> old=new` — rename an entry's data keys, in
+//! place: `old`'s value moves to the key `new` on the same row, as v2's
+//! `rekey` does. The id template is read again afterwards, so the slug
+//! follows: a key renamed to one the template names fills that part of the
+//! id, and a template's key renamed away empties it.
 //!
 //! Thin wrapper over [`crate::commands::update_core::update_with_strategy`]
 //! with `UpdateStrategy::Rekey`.

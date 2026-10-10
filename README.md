@@ -185,7 +185,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `edit` — Open an entry in the configured editor
 - `update` — Replace keys on an existing entry
 - `merge` — Deep-merge new values into an entry
-- `rekey` — Copy an entry to a new id (old row stays)
+- `rekey` — Rename an entry's data keys, in place
 - `retime` — Move an entry's occur_time (alias: rt)
 - `delete` — Delete an entry (alias: del)
 - `undo` — Undo the last command, or one entry's last change

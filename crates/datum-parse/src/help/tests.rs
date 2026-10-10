@@ -33,7 +33,7 @@ MUTATE:
   edit     Open an entry in the configured editor
   update   Replace keys on an existing entry
   merge    Deep-merge new values into an entry
-  rekey    Copy an entry to a new id (old row stays)
+  rekey    Rename an entry's data keys, in place
   retime   Move an entry's occur_time (alias: rt)
   delete   Delete an entry (alias: del)
   undo     Undo the last command, or one entry's last change
@@ -712,6 +712,17 @@ fn merge_and_rekey_share_update_options() {
     assert!(
         command_help("rekey").contains(options),
         "rekey should render generated OPTIONS"
+    );
+}
+
+#[test]
+fn rekey_help_says_it_renames_data_keys_in_place() {
+    let help = command_help("rekey");
+    assert!(
+        help.starts_with(
+            "datum rekey — rename an entry's data keys, in place\n\nUSAGE:\n  datum rekey <ID_OR_SLUG[,ID_OR_SLUG]...> <OLD=NEW>...\n\nARGS:\n  <OLD=NEW>               Move OLD's value to the key NEW. The id template is read again, so the slug follows: a template key renamed away empties its part of the id\n\nOPTIONS:\n"
+        ),
+        "{help}"
     );
 }
 

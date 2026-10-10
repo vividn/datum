@@ -63,6 +63,12 @@ const UPDATE_ARGS: &[ArgSpec] = &[ArgSpec {
     variadic: false,
     summary: "Several ids are joined with commas (`a1b2,c3d4`): a word after a space is a VALUE",
 }];
+const REKEY_ARGS: &[ArgSpec] = &[ArgSpec {
+    name: "<OLD=NEW>",
+    required: true,
+    variadic: true,
+    summary: "Move OLD's value to the key NEW. The id template is read again, so the slug follows: a template key renamed away empties its part of the id",
+}];
 const NO_EXAMPLES: &[ExampleSpec] = &[];
 const NO_FLAGS: &[FlagSpec] = &[];
 const NO_SUBCOMMANDS: &[SubcommandSpec] = &[];
@@ -1999,10 +2005,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "rekey",
         aliases: &[],
         category: Category::Mutate,
-        summary: "copy an entry to a new id (old row stays)",
-        long_description: None,
-        usage: &["datum rekey <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]..."],
-        args: NO_ARGS,
+        summary: "rename an entry's data keys, in place",
+        long_description: Some(
+            "`rekey <id> old=new` moves `old`'s value to the key `new` on the same row: nothing is copied and no row is added. The entry's id template is read again afterwards, so its slug follows: a key renamed to one the template names fills that part of the id, and a template's key renamed away empties it.",
+        ),
+        usage: &["datum rekey <ID_OR_SLUG[,ID_OR_SLUG]...> <OLD=NEW>..."],
+        args: REKEY_ARGS,
         flags: UPDATE_FLAGS,
         shared_flags: None,
         examples: NO_EXAMPLES,

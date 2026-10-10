@@ -19,7 +19,7 @@ use crate::{
     // da-5t94 rider: the remainder-bucket sentinel is shared with the log
     // path rather than re-declared here.
     commands::log_core::PRIMARY_VALUE_KEY,
-    render::{show_create, show_nodiff, show_rename, show_update, OutputArgs},
+    render::{show_nodiff, show_rename, show_update, OutputArgs},
 };
 
 /// Command-level mutation strategy for `update` / `merge` / `rekey`, and
@@ -388,14 +388,14 @@ pub fn update_batch_from_args(
     }
 }
 
-/// Print the post-mutation confirmation line matching the old behavior:
-/// update/merge → `UPDATE`; rekey → `RENAME` + `CREATE`.
+/// Print the post-mutation confirmation: `UPDATE`, after a `RENAME` when the
+/// slug moved, as v2's `updateDoc` does. The row is the same one either way.
 pub fn render_outcome(outcome: &UpdateOutcome, output: &OutputArgs, db: &Db) {
     let registry = db.load_registry().ok();
     match &outcome.old_slug {
         Some(old) => {
             show_rename(old, &outcome.entry.slug, output);
-            show_create(&outcome.entry, registry.as_ref(), output);
+            show_update(&outcome.entry, registry.as_ref(), output);
         }
         None if outcome.changed => {
             show_update(&outcome.entry, registry.as_ref(), output);
