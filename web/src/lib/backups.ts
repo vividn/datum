@@ -28,7 +28,9 @@
 // so two devices backing up to one bucket could each write an index that
 // lacks the other's slot — naming a file the other removed. So the index
 // is read AGAIN just before it is put, and this run's slot merged into
-// what is there now (`merged`).
+// what is there now (`merged`). That leaves the time between the re-read
+// and the put, which two TABS of one device are kept out of by a Web Lock
+// (`alone`, da-u050c); two devices still share it.
 //
 // Plans are THIS DEVICE'S settings — a plan names a destination and its
 // credentials — so they are entries of field `backup_plan` in `_internal`
@@ -317,19 +319,43 @@ async function backupOne(plan: Plan, db: string): Promise<void> {
 /** One run at a time, across every plan: two runs on one index would lose a slot. */
 let queue: Promise<unknown> = Promise.resolve();
 
+/** What «Back up now» says while another tab holds the device's one run. */
+const BUSY = 'Another datum.day tab is backing up. Try again when it is done.';
+
+/**
+ * `job`, as this DEVICE's one run (da-u050c): `queue` is a tab's, and so is
+ * the schedule, and `merged` cannot see a tab that re-read the index before
+ * this one put its own — the later put names a file the other removed. The
+ * lock is taken only when free and never waited for: a bucket request hung
+ * in the tab holding it would hang this one too. False when another tab has
+ * it. A browser without Web Locks runs as it did.
+ */
+async function alone(job: () => Promise<void>): Promise<boolean> {
+	const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
+	if (!locks) return job().then(() => true);
+	return locks.request('datum-backups', { ifAvailable: true }, async (lock) => {
+		if (lock) await job();
+		return !!lock;
+	});
+}
+
 /** Back up `plan`'s databases now — every one of them, or only the `due` ones. */
 export function backUp(plan: Plan, due = false): Promise<void> {
 	const job = queue.then(async () => {
-		status.update((s) => ({ ...s, [plan.name]: { ...idle(), ...s[plan.name], running: true } }));
-		let error = '';
-		try {
-			const before = await refresh(plan);
-			for (const db of plan.dbs) if (!due || overdue(plan, before, db)) await backupOne(plan, db);
-		} catch (e) {
-			error = e instanceof Error ? e.message : String(e);
-		}
-		const after = await refresh(plan);
-		status.update((s) => ({ ...s, [plan.name]: { ...after, running: false, error: error || after.error } }));
+		const ran = await alone(async () => {
+			status.update((s) => ({ ...s, [plan.name]: { ...idle(), ...s[plan.name], running: true } }));
+			let error = '';
+			try {
+				const before = await refresh(plan);
+				for (const db of plan.dbs) if (!due || overdue(plan, before, db)) await backupOne(plan, db);
+			} catch (e) {
+				error = e instanceof Error ? e.message : String(e);
+			}
+			const after = await refresh(plan);
+			status.update((s) => ({ ...s, [plan.name]: { ...after, running: false, error: error || after.error } }));
+		});
+		// The schedule says nothing: its next check runs, and lists what that tab took.
+		if (!ran && !due) status.update((s) => ({ ...s, [plan.name]: { ...idle(), ...s[plan.name], error: BUSY } }));
 	});
 	queue = job;
 	return job;

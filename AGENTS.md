@@ -332,7 +332,8 @@ start the installed binary. `web/tests/sync*.test.mjs` run on a pinned local `ir
   hold is the transport: carrying those files to an S3-compatible bucket
   (`$lib/s3.ts`, SigV4 by aws4fetch, the browser straight to the bucket
   under its CORS), and merging a run's one slot into the index as the
-  bucket has it now, so two devices keep each other's.
+  bucket has it now, so two devices keep each other's. A device's tabs take
+  backups one run at a time, under the `datum-backups` Web Lock (da-u050c).
   A command a reader runs also carries `--show json` (`echoArgv`
   in `web/src/lib/echo.ts`), so the bottom bar and the REPL PLACE the
   CLI's own action echo — action, hid, id, info, data — instead of

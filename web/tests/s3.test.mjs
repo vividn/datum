@@ -13,7 +13,7 @@ const PREFIX = 'datum-backups/';
 let s3;
 before(async () => {
 	await startApp();
-	s3 = await startS3(['probe', 'plan', 'shared']);
+	s3 = await startS3(['probe', 'plan', 'shared', 'tabs']);
 });
 after(async () => {
 	await s3?.close();
@@ -146,5 +146,62 @@ describe('an S3-compatible destination', () => {
 				assert.deepEqual([...a.errors, ...b.errors], []);
 			});
 		});
+	});
+
+	// The re-read covers a writer that finished first, not one that re-read
+	// before this one put: tab A is held at its index put, after its re-read,
+	// and tab B is asked for a backup. Run then, B's slot would be in an index
+	// A's put replaces, its file named by nothing (da-u050c). One run a device.
+	//
+	// Past the HTTP cache, because Chromium keeps a tab's request for a URL
+	// behind another's unanswered PUT of it for 20 s (measured: B's four on
+	// the index arrived 20 s apart), so a B that did run would only be seen
+	// to once this test had timed out. Past it, B is done in 200 ms.
+	test('two tabs of one device take a plan’s backups one at a time: the second says the first is at it, and the index names every file', async () => {
+		await withApp(async (a) => {
+			assert.equal((await a.run(['occur', 'coffee'])).code, 0);
+			const planA = await addPlan(await openSheet(a.page), 'tabs', 'tabs');
+			await planA.locator('li[data-slot="0"]').waitFor();
+			const b = await a.newTab();
+			const planB = (await openSheet(b.page)).locator('section.plan[data-plan="tabs"]');
+			await planB.locator('li[data-slot="0"]').waitFor();
+
+			const objects = s3.objects('tabs');
+			const whole = (slots) => {
+				const backups = JSON.parse(objects.get(`${PREFIX}index.json`)).dbs.datum.backups;
+				// Every file the index names is there, and nothing else is.
+				assert.deepEqual([...objects.keys()].sort(), [...backups.map((x) => PREFIX + x.file), `${PREFIX}index.json`].sort());
+				assert.deepEqual(
+					backups.map((x) => x.slot),
+					slots
+				);
+			};
+
+			// A is an hour on (slot 1), B two (slot 2).
+			await a.clock.forward(HOUR);
+			const held = s3.hold((method, key) => method === 'PUT' && key.endsWith('index.json'));
+			await planA.locator('button[data-backup="now"]').click();
+			await held.reached;
+			await a.clock.forward(HOUR);
+			await b.page.waitForFunction((at) => window.__datumHeldAt === at, a.clock.at());
+			await planB.locator('button[data-backup="now"]').click();
+			// B's answer, whichever it is: that A is at it, or a backup taken.
+			const answer = planB.locator('.error, li[data-slot="2"]');
+			await answer.first().waitFor();
+			held.release();
+			await planA.locator('li[data-slot="1"]').waitFor();
+			whole([0, 1]);
+			assert.deepEqual(await answer.allInnerTexts(), ['Another datum.day tab is backing up. Try again when it is done.']);
+
+			// And B's turn comes: asked again, it merges into the index as A left it.
+			await planB.locator('button[data-backup="now"]').click();
+			await planB.locator('li[data-slot="2"]').waitFor();
+			whole([0, 1, 2]);
+			assert.equal(await planB.locator('.error').count(), 0);
+			assert.deepEqual([...a.errors, ...b.errors], []);
+		}, { prepare: (context) => context.addInitScript(() => {
+			const real = window.fetch;
+			window.fetch = (url, init) => real(url, { ...init, cache: 'no-store' });
+		}) });
 	});
 });
