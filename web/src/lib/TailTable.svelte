@@ -72,6 +72,7 @@
 	import { isSelected } from './selection.js';
 	import { tapped } from './tap.js';
 	import type { PaneBox } from './panes.js';
+	import { runKey } from './run.js';
 	import { tailListing, type TailColumn, type TailRow } from './tail.js';
 
 	/** Any change re-reads the listing. The pane bumps it after each run. */
@@ -413,15 +414,20 @@
 	 * (da-4glsf).
 	 */
 	let asked: { with: string; listing: ReturnType<typeof tailListing> } | null = null;
+	/** This table in the worker's queue: its newer listing drops its older, unstarted one. */
+	const key = runKey();
 
 	async function refresh(count: number, _epoch: number, force = false): Promise<void> {
 		const started_at = ++started;
 		const ask = JSON.stringify([count, _epoch, field]);
-		if (force || asked?.with !== ask) asked = { with: ask, listing: tailListing({ count, ...(field ? { field } : {}) }) };
+		if (force || asked?.with !== ask) asked = { with: ask, listing: tailListing({ count, ...(field ? { field } : {}) }, key) };
 		const mine = asked;
 		let table: { rows: TailRow[]; columns: TailColumn[] };
 		try {
-			table = await mine.listing;
+			const listing = await mine.listing;
+			// Dropped unrun for a newer listing, which draws.
+			if (!listing) return;
+			table = listing;
 		} catch (e) {
 			// A failed listing is asked for again, not remembered.
 			if (asked === mine) asked = null;

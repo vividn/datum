@@ -17,7 +17,7 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { inWorker, startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP } from './support/layout.mjs';
+import { along, DESKTOP, draft, widgetPane } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -25,8 +25,8 @@ after(stopApp);
 
 const SLOW = { dayview: 800 };
 
-const QUEUE = `
-	const slow = ${JSON.stringify(SLOW)};
+const queue = (slow) => `
+	const slow = ${JSON.stringify(slow)};
 	const channel = new BroadcastChannel('datum-test-queue');
 	let hold = null;
 	let gate = null;
@@ -83,6 +83,7 @@ const QUEUE = `
 		return instance;
 	};
 `;
+const QUEUE = queue(SLOW);
 
 /** Start hearing the worker; `heard()` is everything since, in order. */
 async function listen(page) {
@@ -161,11 +162,84 @@ test('a line typed while panes wait runs before them', async () => {
 			const typed = reqs.find((r) => /^occur tea/.test(r.argv));
 			assert.ok(typed, `the typed line ran:\n${show(reqs)}`);
 			// Every pane was waiting when the line arrived: the held process was the bar's.
-			const pending = reqs.filter((r) => PANE.test(r.argv) && r.ran && r.in < typed.in);
+			// Answered after it either way: run, or dropped unrun for the refresh the line's write set off (da-3wi18).
+			const pending = reqs.filter((r) => PANE.test(r.argv) && r.in < typed.in);
 			assert.ok(pending.length >= 4 && pending.every((r) => r.out > typed.in), `the panes were waiting:\n${show(reqs)}`);
 			const overtaken = pending.filter((r) => r.out > typed.out);
 			assert.equal(overtaken.length, pending.length, `the line went ahead of every waiting pane:\n${dump(await ear.heard())}`);
 		},
 		{ ...DESKTOP, prepare: inWorker(QUEUE) }
+	);
+});
+
+/** A refresh of the three widgets that run their own: the day strip's bands, stats and the tail's listing. */
+const own = (r) => r.pane && /^(dayview|stats|tail) /.test(r.argv);
+const WIDGETS = JSON.stringify(along('row', widgetPane('strip', 'daystrip'), widgetPane('stats', 'stats'), widgetPane('tail', 'tail')));
+
+/** What those widgets have drawn. */
+const drawn = (page) =>
+	page.evaluate(() => ({
+		bands: document.querySelectorAll('.band svg.svg').length,
+		stats: document.querySelector('.stats .body').textContent,
+		rows: document.querySelectorAll('section[data-pane="tail"] tbody tr').length,
+		errors: [...document.querySelectorAll('.error')].map((e) => e.textContent)
+	}));
+
+test('a refresh a newer one made stale while it waited is dropped unrun, and draws nothing (da-3wi18)', async () => {
+	await withApp(
+		async (app) => {
+			const { page } = app;
+			await app.idle();
+			const ear = await listen(page);
+			const since = async (mark) => requests((await ear.heard()).slice(mark)).filter(own);
+
+			// What one write asks of the three: the strip's share is its box's.
+			// Backdated: the page's clock is held, and a view of now leaves out its own instant.
+			await page.evaluate(() => window.datum.run(['occur', 'tea', '-qq']));
+			await app.idle();
+			const round = (await since(0)).map((r) => r.argv).sort();
+			assert.deepEqual(round, [...new Set(round)], 'one write asks each run once');
+			for (const word of ['dayview', 'stats', 'tail']) assert.ok(round.some((argv) => argv.startsWith(word)), `${word} refreshed: ${round.join(' | ')}`);
+
+			await page.evaluate(() => {
+				window.__superseded = 0;
+				const previous = window.datum.setRunner(async (...args) => {
+					const result = await previous(...args);
+					if (result.superseded) window.__superseded++;
+					return result;
+				});
+			});
+			// A write, and the bar's first read after it runs until released:
+			// its refresh waits, and another tab's write asks for a second.
+			const mark = (await ear.heard()).length;
+			await ear.hold('^fields --json', '^--version', 2);
+			await page.evaluate(() => void window.datum.run(['occur', 'coffee', '-q']));
+			await until(() => since(mark), (reqs) => reqs.length >= round.length);
+			const before = await drawn(page);
+			await page.evaluate(() => new BroadcastChannel('datum-db-changes').postMessage({ from: 'another tab', dbs: ['datum'] }));
+			await until(() => since(mark), (reqs) => reqs.length >= 2 * round.length);
+			// Whatever the worker answered before this arrived has been heard.
+			await page.evaluate(() => void window.datum.runQuiet(['--version']));
+			await waitFor(page, (log) => log.some((e) => e.argv === '--version'));
+
+			const waiting = await since(mark);
+			assert.deepEqual(waiting.map((r) => r.argv).sort(), [...round, ...round].sort(), 'two refreshes waited together');
+			const dropped = waiting.filter((r) => r.ran === false);
+			assert.deepEqual(dropped.map((r) => r.argv).sort(), round, `the first refresh was dropped while it waited:\n${show(waiting)}`);
+			// A dropped run is nothing to draw: what was on screen stays.
+			await page.waitForFunction((n) => window.__superseded >= n, round.length);
+			await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+			assert.deepEqual(await drawn(page), before);
+			assert.deepEqual(before.errors, []);
+
+			await page.evaluate(() => void window.datum.runQuiet(['--version']));
+			await app.idle();
+			const reqs = (await settled(ear)).filter((r) => r.in >= mark && own(r));
+			assert.deepEqual(reqs.filter((r) => r.ran).map((r) => r.argv).sort(), round, `each ran once:\n${show(reqs)}`);
+			const after = await drawn(page);
+			assert.match(after.stats, /coffee/);
+			assert.deepEqual({ ...after, stats: '' }, { ...before, stats: '', rows: before.rows + 1 });
+		},
+		{ ...DESKTOP, prepare: async (context) => Promise.all([inWorker(queue({}))(context), context.addInitScript(draft, WIDGETS)]) }
 	);
 });

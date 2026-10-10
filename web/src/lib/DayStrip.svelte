@@ -166,7 +166,7 @@
 	import { inspectMark, timeAt } from './hover.js';
 	import { markOf } from './inspect.js';
 	import { advance, LONG_MS, SLOP_PX, type Mode, type Press } from './nowpoint.js';
-	import { run, type RunResult } from './run.js';
+	import { run, runKey, type RunResult } from './run.js';
 	import { firstEntryArgv } from './calls.js';
 	import type { TailListing } from './tail.js';
 	import {
@@ -454,6 +454,11 @@
 	 */
 	type Asked = { epoch: number; run: Promise<RunResult> };
 	let cache = { key: '', size: '', runs: new Map<string, Asked>() };
+	/**
+	 * This strip in the worker's queue, with the band after it: a band's
+	 * newer run drops its older, unstarted one, whose answer is no picture.
+	 */
+	const queueKey = runKey();
 
 	/**
 	 * A midnight, counted — the one thing that makes a CACHED picture
@@ -532,17 +537,17 @@
 		const key = `${size}/${at.epoch}`;
 		if (cache.key !== key) cache = { key, size, runs: kept(at, cache.size === size) };
 		const token = ++started;
-		const ask = (argv: string[]): Promise<RunResult> => {
+		const ask = (argv: string[], band: number | 'geometry'): Promise<RunResult> => {
 			const id = argv.join(' ');
 			let pending = cache.runs.get(id);
-			if (!pending) cache.runs.set(id, (pending = { epoch: at.epoch, run: run(argv, undefined, undefined, undefined, undefined, undefined, true) }));
+			if (!pending) cache.runs.set(id, (pending = { epoch: at.epoch, run: run(argv, undefined, undefined, `${queueKey}:${band}`, undefined, undefined, true) }));
 			return pending.run;
 		};
 
 		// The geometry first: the gridlines, the ruler and the date stamps
 		// all hang off it, and it is one small JSON rather than a picture.
-		void ask(geometryArgv(at.width, at.dayHeight)).then((result) => {
-			if (token < geometryFrom) return;
+		void ask(geometryArgv(at.width, at.dayHeight), 'geometry').then((result) => {
+			if (result.superseded || token < geometryFrom) return;
 			geometryFrom = token;
 			const fresh = readGeometry(result.stdout);
 			if (!fresh) return;
@@ -554,12 +559,12 @@
 		});
 
 		for (const end of ends) {
-			void ask(bandArgv(at.width, at.dayHeight, end)).then((result) => {
+			void ask(bandArgv(at.width, at.dayHeight, end), end).then((result) => {
 				// A resize while a draw is in flight and two draws overlap;
 				// they can finish out of order, and the loser would paint the
 				// older answer over the newer one. Last started wins, band by
 				// band — and until it lands, the one on screen stays.
-				if (token < (from[end] ?? 0)) return;
+				if (result.superseded || token < (from[end] ?? 0)) return;
 				from[end] = token;
 				shown = { ...shown, [end]: result };
 				drawnAt = { ...drawnAt, [end]: at.width };

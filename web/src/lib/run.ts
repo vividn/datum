@@ -56,6 +56,10 @@ export type CommandRunner = (
 	pane?: boolean
 ) => Promise<RunResult>;
 
+let keys = 0;
+/** A `key` of the caller's own: a widget takes one, and its newer refresh drops its older, unstarted one (da-3wi18). */
+export const runKey = (): string => `key:${++keys}`;
+
 /** Generic failure, as `datum-cli`'s `main` reports one. */
 export const EXIT_ERROR = 1;
 

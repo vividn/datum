@@ -54,7 +54,7 @@
 	import { fieldPill } from './bar.js';
 	import { inkOver } from './fields.js';
 	import CliOutput from './CliOutput.svelte';
-	import { run, type RunResult } from './run.js';
+	import { run, runKey, type RunResult } from './run.js';
 	import { showAllArgv } from './calls.js';
 	import { shellJoin } from './shellSplit.js';
 	import { currentDb } from './database.js';
@@ -92,6 +92,8 @@
 	/** How many runs have been started, and the newest one on screen. */
 	let started = 0;
 	let shown = -1;
+	/** This widget in the worker's queue: its newer run drops its older, unstarted one. */
+	const key = runKey();
 
 	$: argv = statsArgv(settings, $fieldPill);
 	$: custom = typeof settings.range === 'object' ? settings.range : null;
@@ -122,9 +124,9 @@
 	 */
 	async function refresh(argv: string[], _epoch: number): Promise<void> {
 		const at = ++started;
-		const r = await run(showAllArgv(argv), undefined, undefined, undefined, undefined, undefined, true);
+		const r = await run(showAllArgv(argv), undefined, undefined, key, undefined, undefined, true);
 		// Last started wins, not last to return (see CliPane.svelte).
-		if (at < shown) return;
+		if (r.superseded || at < shown) return;
 		shown = at;
 		const body = r.stdout.replace(/\n$/, '');
 		const cut = body.lastIndexOf('\n') + 1;

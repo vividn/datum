@@ -95,9 +95,15 @@ export interface TailPage {
 	field?: string;
 }
 
-/** The listing, oldest first, the way `tail` prints. Rejects on a failed command. */
-export async function tailListing(page: TailPage = {}): Promise<TailListing> {
-	const result = await run(tailArgv(page), undefined, undefined, undefined, undefined, undefined, true);
+/**
+ * The listing, oldest first, the way `tail` prints. Rejects on a failed command.
+ * With a `key` (`run`'s), null when a newer listing of that key took its place unrun.
+ */
+export function tailListing(page?: TailPage): Promise<TailListing>;
+export function tailListing(page: TailPage, key: string): Promise<TailListing | null>;
+export async function tailListing(page: TailPage = {}, key?: string): Promise<TailListing | null> {
+	const result = await run(tailArgv(page), undefined, undefined, key, undefined, undefined, true);
+	if (result.superseded) return null;
 	if (result.code !== 0) throw cliError(result.stderr, `tail exited ${result.code}`);
 	const doc = JSON.parse(result.stdout) as Partial<TailListing>;
 	return { rows: doc.rows ?? [], columns: doc.columns ?? [] };
