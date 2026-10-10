@@ -377,11 +377,17 @@ start the installed binary. `web/tests/sync*.test.mjs` run on a pinned local `ir
   that three boxes are sized from — the page itself never scrolls. The
   output opens over the first `--output-height` of it, which is the NOTCH;
   past it the log grows to whatever height the finger leaves it at, up to
-  the whole page. A release CARRIES ITS SPEED: past 0.5 px/ms it is a
-  FLING, which goes all the way up, or down as far as the notch and no
-  further — the snag, so a fling closes the log and leaves the output open,
-  and a second one shuts it. Slower than that the let-go rules apply, so a
-  deliberate drag ending below the notch closes. Every settle is one
+  the whole page. A release CARRIES ITS SPEED, at any speed (`rest` in
+  `$lib/detent.ts`; there is no fling threshold): it glides on by `speed *
+  TAU` (320ms) and may rest anywhere but for three DETENTS — shut, the
+  notch, and the ceiling, the bar at the top of the screen. The notch and
+  the ceiling each take a glide ending within `DETENT` (24px) of them, and
+  a coast never crosses either from above — the SNAG — so a throw down from
+  a tall log stops at the notch, the output still open, and a second one
+  shuts it; a finger drags through both. BELOW THE NOTCH there is nowhere to
+  rest, and there the gesture's direction decides, not its speed: a glide
+  ending short of the notch's catch goes to the notch from a gesture
+  heading up, and shuts from one heading down. Every settle is one
   ease-out cubic whose duration is set to leave at the finger's own speed.
   A phone starts folded, anything wider open, remembered per device.
   `return to top` sits pinned at the bottom of the screen and Escape does
