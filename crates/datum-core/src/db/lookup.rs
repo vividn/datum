@@ -265,6 +265,10 @@ impl Db {
     /// only when that row is a block that has already handed the field
     /// back and the resumed state lies behind it (da-phoe). `skip_dots`
     /// leaves occur dots out, as the depth-limited state reads do.
+    ///
+    /// A flag (`extra_metadata.flag`, `datum flag`) is no row of `now`'s,
+    /// as it is none of `tail`'s (da-sy7zl): its comment is stored as its
+    /// state, and one dated ahead of now was the field's newest row.
     pub fn entries_for_now(
         &self,
         field: &str,
@@ -285,6 +289,7 @@ impl Db {
         let sql = format!(
             "SELECT * FROM entries
              WHERE field = ?1 AND {STATE_PARTICIPATION_SQL}
+               AND json_extract(extra_metadata, '$.flag') IS NOT 1
                {bound} {dots}
              ORDER BY {STATE_ORDER_NEWEST_FIRST}
              LIMIT {limit}",

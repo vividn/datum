@@ -1279,3 +1279,45 @@ fn now_band_centres_on_the_time_args() {
     );
     assert!(axis.contains("-30m") && axis.contains("+30m"), "{out}");
 }
+
+/// da-sy7zl: a flag is no row of `now`'s, as `datum help flag` says. Its
+/// comment is stored as its state, so one dated ahead of now was the
+/// field's newest row and `now` read «mood come back in 3h»; one behind
+/// a stopped field was its `last_event`.
+#[test]
+fn now_reads_no_flag_as_a_fields_state_or_last_event() {
+    let db = fresh_db();
+    run_cli(&["switch", "mood", "happy", "-t", "-180"], &db).expect("switch");
+    run_cli(&["flag", "mood", "come back", "-t", "+180"], &db).expect("future flag");
+    run_cli(&["switch", "nap", "true", "-t", "-180"], &db).expect("switch");
+    run_cli(&["end", "nap", "-t", "-120"], &db).expect("end");
+    run_cli(&["flag", "nap", "was it a nap", "-t", "-60"], &db).expect("past flag");
+
+    let snap = db
+        .current_now(&datum_core::db::NowFilter {
+            include_tracked_false: true,
+            ..Default::default()
+        })
+        .expect("current_now");
+    let ago =
+        |t: Option<chrono::DateTime<chrono::Utc>>| (snap.now - t.expect("a time")).num_minutes();
+
+    let [mood] = &snap.active[..] else {
+        panic!("mood alone is active: {:?}", snap.active);
+    };
+    assert_eq!(
+        (mood.field.as_str(), &mood.state),
+        ("mood", &json!("happy"))
+    );
+    assert_eq!(ago(mood.since), 180);
+
+    let [nap] = &snap.tracked_false[..] else {
+        panic!("nap alone is stopped: {:?}", snap.tracked_false);
+    };
+    assert_eq!(nap.field, "nap");
+    assert_eq!(
+        ago(nap.last_event),
+        120,
+        "the end, not the flag an hour after it"
+    );
+}

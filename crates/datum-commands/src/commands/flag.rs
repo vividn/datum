@@ -53,10 +53,10 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
         meta_obj.insert("comment".to_string(), JsonValue::String(comment.clone()));
     }
 
-    // Value = comment so a quick `datum get <hid>` shows the payload
+    // State = comment so a quick `datum get <hid>` shows the payload
     // without diving into extra_metadata. Empty bare-form flags carry
-    // no value — they're pure "look here" markers.
-    let value = if comment.is_empty() {
+    // no state — they're pure "look here" markers.
+    let state = if comment.is_empty() {
         None
     } else {
         Some(JsonValue::String(comment.clone()))
@@ -68,7 +68,7 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
     let mut entry = Entry::new(
         &field,
         Verb::Point,
-        value,
+        state,
         None,
         Some(occur_time.clone()),
         Some(Dur::moment()),
