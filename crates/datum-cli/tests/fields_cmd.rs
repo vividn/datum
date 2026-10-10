@@ -47,6 +47,11 @@ impl Env {
     }
 
     fn run(&self, args: &[&str]) -> String {
+        self.run_both(args).0
+    }
+
+    /// Stdout and stderr of a command that succeeds.
+    fn run_both(&self, args: &[&str]) -> (String, String) {
         let out = Command::new(env!("CARGO_BIN_EXE_datum"))
             .env("DATUM_DB", &self.db)
             .env("DATUM_HOME", &self.home)
@@ -60,7 +65,10 @@ impl Env {
             "datum {args:?} failed: {}",
             String::from_utf8_lossy(&out.stderr)
         );
-        String::from_utf8(out.stdout).expect("utf-8 stdout")
+        (
+            String::from_utf8(out.stdout).expect("utf-8 stdout"),
+            String::from_utf8(out.stderr).expect("utf-8 stderr"),
+        )
     }
 }
 
@@ -131,5 +139,39 @@ fn json_still_carries_every_field_and_prints_no_header() {
         &["fields", "--json", "-A"],
     ] {
         assert_eq!(env.run(argv), out, "{argv:?} changed the JSON");
+    }
+}
+
+/// da-t3quu: `ignore` on a name datum has never seen — a typo, most often —
+/// still writes the row, and says on stderr that there was no such field.
+#[test]
+fn ignoring_a_never_seen_field_notes_it_and_writes_the_row() {
+    let env = Env::new();
+    let (out, err) = env.run_both(&["ignore", "moood"]);
+    assert_eq!(out, "✓ Ignoring 'moood'\n");
+    assert_eq!(
+        err,
+        "note: no field 'moood' yet (no entries, no spec); ignoring it anyway\n"
+    );
+    let doc: Value = serde_json::from_str(&env.run(&["fields", "--json"])).unwrap();
+    let row = doc
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["field"] == "moood")
+        .expect("the IGNORED row makes it a field");
+    assert_eq!(row["ignored"], true);
+}
+
+/// A field datum knows, by an entry or by a spec alone (a kit's), is
+/// ignored with today's output and nothing on stderr.
+#[test]
+fn ignoring_a_known_field_prints_no_note() {
+    let env = Env::new();
+    env.run(&["spec", "set", "declared", "--verb", "occur"]);
+    for field in ["work", "declared"] {
+        let (out, err) = env.run_both(&["ignore", field]);
+        assert_eq!(out, format!("✓ Ignoring '{field}'\n"));
+        assert_eq!(err, "", "{field} is known");
     }
 }
