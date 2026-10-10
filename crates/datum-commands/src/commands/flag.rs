@@ -4,9 +4,10 @@
 //! Stored as a `Verb::Point` entry on `field` with `occur_time` taken
 //! from the standard timing flags (so back-dated flags land where the
 //! user said) and `extra_metadata = { flag: true, comment: "…" }`.
-//! This is the same shape `datum meta` uses, swapping `meta: true` for
+//! `datum meta` marks its rows the same way, with `meta: true` for
 //! `flag: true` — renderers that filter out meta-rows can extend the
-//! check with the same one-liner.
+//! check with the same one-liner. The payload keys differ: a flag's
+//! words are under `comment`, a meta note's under `text`.
 //!
 //! `datum check`-integration (surfacing pending flags during integrity
 //! sweeps) is a follow-up — filed as a separate bead. The storage

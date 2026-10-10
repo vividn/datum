@@ -259,6 +259,22 @@ fn flag_reads_the_timezone_flag_as_occur_does() {
     assert!(err.to_string().contains("Nowhere/Land"), "{err}");
 }
 
+/// `meta --help` and `flag --help` name the keys each stores (da-pzqup):
+/// meta's said `comment` for four months while meta.rs wrote and read
+/// `text`, so a query written from the help read NULL for every note.
+#[test]
+fn meta_and_flag_help_name_the_keys_they_store() {
+    for cmd in ["meta", "flag"] {
+        let db = fresh_db();
+        run_cli(&[cmd, "f", "words"], &db).expect(cmd);
+        let e = datum_core::test_util::logged_entries(&db, "f").remove(0);
+        let help = datum_parse::help::command_help(cmd);
+        for key in e.extra_metadata.unwrap().as_object().unwrap().keys() {
+            assert!(help.contains(&format!("{key}: ")), "{cmd}: {key}\n{help}");
+        }
+    }
+}
+
 /// TS #6: "records lastState as null if the active state is null"
 ///
 /// Datum writes `lastState` onto the occur document to capture the prior
