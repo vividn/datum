@@ -593,6 +593,16 @@ pub struct FieldStateRows {
     rows: Vec<StateRow>,
     /// The occur dots ([`StateRow::is_occur_dot`]), oldest first.
     dots: Vec<StateRow>,
+    /// Where in `rows` the blocks are, the rows with a `dur`, so a read
+    /// looks ahead through those alone (da-u65pa).
+    blocks: Vec<usize>,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// The rows [`FieldStateRows::window`] has looked at, for the test that
+    /// holds a read's cost to the rows it returns (da-u65pa).
+    static WALKED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// One change in a field's state, as [`FieldStateRows::changes`] lists it.
@@ -631,7 +641,8 @@ impl FieldStateRows {
         let (mut dots, rows): (Vec<_>, Vec<_>) =
             newest_first.into_iter().partition(StateRow::is_occur_dot);
         dots.reverse();
-        FieldStateRows { rows, dots }
+        let blocks = (0..rows.len()).filter(|&i| rows[i].dur.is_some()).collect();
+        FieldStateRows { rows, dots, blocks }
     }
 
     /// Every state-participating row of `field`.
@@ -791,16 +802,22 @@ impl FieldStateRows {
     /// [`Self::resolve`] adds the dot an IGNORED needs.
     fn window(&self, at: DateTime<Utc>, exclude: Option<&str>) -> Vec<&StateRow> {
         let kept = |r: &&StateRow| exclude != Some(r.id.as_str());
+        let walked = |_: &&StateRow| {
+            #[cfg(test)]
+            WALKED.with(|n| n.set(n.get() + 1));
+        };
         let split = self.rows.partition_point(|r| r.occur > Some(at));
-        let past = self.rows[split..].iter().filter(kept);
+        let past = self.rows[split..].iter().inspect(walked).filter(kept);
         let deep = past.clone().next().is_some_and(|r| r.hands_field_back(at));
         let mut out: Vec<&StateRow> = past.take(if deep { RESUME_LOOKBACK } else { 1 }).collect();
+        let newer = self.blocks.partition_point(|&i| i < split);
         out.extend(
-            self.rows[..split]
+            self.blocks[..newer]
                 .iter()
                 .rev()
+                .map(|&i| &self.rows[i])
+                .inspect(walked)
                 .filter(kept)
-                .filter(|r| r.dur.is_some())
                 .take(SPAN_LOOKAHEAD)
                 .filter(|r| r.leading_edge().is_some_and(|edge| edge <= at)),
         );
@@ -1492,6 +1509,32 @@ mod tests {
             rows.at(t("2026-04-01T09:15:00Z"), None),
             Some(json!("TRACKED")),
             "no state at all"
+        );
+    }
+
+    /// da-u65pa: `changes` reads the oracle once per edge, and a field of
+    /// plain switches has no block for a read to look ahead to, so what
+    /// the reads walk grows with the rows and not with their square.
+    #[test]
+    fn changes_over_blockless_switches_walk_rows_in_proportion() {
+        let walked = |n: usize| {
+            let base = t("2026-04-01T00:00:00Z");
+            let entries: Vec<Entry> = (0..n)
+                .map(|i| {
+                    let at = (base + chrono::Duration::minutes(i as i64)).to_rfc3339();
+                    let state = json!(if i % 2 == 0 { "on" } else { "off" });
+                    row("f", Verb::Switch, Some(state), &at, None, None)
+                })
+                .collect();
+            let rows = FieldStateRows::from_entries(&entries);
+            WALKED.set(0);
+            assert_eq!(rows.changes().len(), n);
+            WALKED.get()
+        };
+        let (small, large) = (walked(2_000), walked(8_000));
+        assert!(
+            large <= 4 * small,
+            "4x the rows walked {large} against {small}"
         );
     }
 }
