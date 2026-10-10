@@ -98,6 +98,64 @@ fn tail_args() -> TailArgs {
     TailArgs::default()
 }
 
+/// da-mhcla: paged by `--above`, a listing is every row the unbounded `tail`
+/// lists, in its order: the timeless rows too, which sort above every timed
+/// one and which a `-t` bound never reaches, and both of two rows at one
+/// instant.
+#[test]
+fn tail_above_pages_the_whole_listing_timeless_rows_included() {
+    let db = fresh_db();
+    for field in ["book", "snack", "tea"] {
+        let e = Entry::new(field, Verb::Point, None, None, None, None, "d1");
+        db.insert_entry(&e).expect("insert");
+    }
+    for m in 1..=6 {
+        insert(&db, "walk", Verb::Point, m);
+    }
+    insert(&db, "run", Verb::Point, 3);
+    let hids = |rows: &[Entry]| -> Vec<String> { rows.iter().map(|e| e.hid.0.clone()).collect() };
+    let list = |args: TailArgs| tail_entries(&args, &db).unwrap();
+
+    let all = list(TailArgs {
+        count: Some(100),
+        ..tail_args()
+    });
+    assert_eq!(all.len(), 10);
+    assert!(all[..3].iter().all(|e| e.occur_time.is_none()));
+
+    // The control: `-t` at the oldest timed row is that row and nothing above it.
+    let bounded = db
+        .list_entries(&ListParams {
+            end_utc: all[3].occur_time.as_ref().map(|t| t.utc),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(hids(&bounded), hids(&all[3..4]));
+
+    let mut paged: Vec<Entry> = Vec::new();
+    loop {
+        let page = list(TailArgs {
+            count: Some(2),
+            above: paged.first().map(|e| e.hid.0.clone()),
+            ..tail_args()
+        });
+        if page.is_empty() {
+            break;
+        }
+        paged.splice(0..0, page);
+    }
+    assert_eq!(hids(&paged), hids(&all));
+
+    // `head` reads the same rows from their other end.
+    let first = list(TailArgs {
+        count: Some(5),
+        above: Some(all[7].hid.0.clone()),
+        oldest_first: true,
+        ..tail_args()
+    });
+    assert_eq!(hids(&first), hids(&all[..5]));
+}
+
 // ─── Direct db::list_entries acceptance tests ────────────────────────────────
 
 #[test]

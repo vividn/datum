@@ -325,6 +325,54 @@ describe('scrolling up', () => {
 		});
 	});
 
+	// A timeless row (`add`, `-T`) is at no time, and `tail` lists it above
+	// every timed one. The page above was asked for by time, which no
+	// timeless row is at or before: in a log longer than a page the pane
+	// marked the oldest timed row as the start, and they never showed
+	// (da-mhcla). The rows are the ones the CLI lists, in its order.
+	test('in a log longer than a page, the timeless rows page in above the oldest timed one, and the first of them is the start', async () => {
+		await TALL.solo(async (app) => {
+			const { page } = app;
+			for (const argv of [['add', 'book', 'title=Dune', '-K', 'title'], ['occur', 'snack', '-T'], ['occur', 'tea', '-T']]) {
+				const made = await app.run(argv);
+				assert.equal(made.code, 0, made.stderr);
+			}
+			const timed = 250;
+			await seed(app, timed);
+			await atRest(page);
+			const listed = await app.run(['tail', '--json', '-n', '1000']);
+			assert.equal(listed.code, 0, listed.stderr);
+			const rows = JSON.parse(listed.stdout).rows;
+			const want = rows.map((row) => row.hid);
+			assert.equal(want.length, timed + 3);
+			assert.deepEqual(rows.slice(0, 4).map((row) => row.time_metric), ['create', 'create', 'create', 'occur'], 'the log does not start with its three timeless rows');
+			const g0 = await geometry(page);
+			assert.ok(g0.n + pageOf(g0.n) < timed, `${timed} timed rows are not more than a page above the screen`);
+
+			// Up until the pane says it is at the start, wherever it says so.
+			await wheelUp(page);
+			const start = page.locator('section.pane[data-title="tail"] tbody tr.start');
+			for (let pages = 0, count = g0.n; pages < 20 && !(await start.count()); pages++) {
+				await page.waitForFunction((arg) => {
+					const pane = document.querySelector('section.pane[data-title="tail"]');
+					return pane.querySelectorAll('tbody tr').length !== arg || pane.querySelector('tbody tr.start');
+				}, count);
+				count = await rowCount(page);
+				await toTop(page);
+			}
+			const g1 = await geometry(page);
+			assert.deepEqual(g1.hids, want, 'the pane, scrolled to its top, does not list what `tail` lists');
+			assert.deepEqual(g1.start, [want[0]], 'the start of the log is not its first row');
+
+			// A write while they are on screen keeps them: where a timeless
+			// row is listed is not the stamp its `time` cell shows.
+			await app.submit('occur seed');
+			await app.idle();
+			await marker(page).waitFor();
+			assert.deepEqual((await geometry(page)).hids.slice(0, 4), want.slice(0, 4), 'a write below dropped the timeless rows the reader was at');
+		});
+	});
+
 	test('a touch pull at 390x844 pages the rows above in', async () => {
 		await withApp(
 			async (app) => {
@@ -403,7 +451,7 @@ describe('scrolling up', () => {
 			await page.evaluate(() => {
 				const pages = (window.__pages = { asked: [], inflight: 0 });
 				const previous = window.datum.setRunner(async (argv, ...rest) => {
-					if (argv[0] !== 'tail' || !argv.includes('-t')) return previous(argv, ...rest);
+					if (argv[0] !== 'tail' || !argv.includes('--above')) return previous(argv, ...rest);
 					const body = document.querySelector('section.pane[data-title="tail"] .body:not(.behind .body)');
 					const ask = { top: body.scrollTop, screen: body.clientHeight, t: performance.now() };
 					pages.asked.push(ask);
@@ -623,7 +671,7 @@ describe('a write', () => {
 				const hold = new Promise((resolve) => (release = resolve));
 				const previous = window.datum.setRunner(async (argv, ...rest) => {
 					const result = await previous(argv, ...rest);
-					if (argv[0] === 'tail' && argv.includes('-t') && !window.__paged) {
+					if (argv[0] === 'tail' && argv.includes('--above') && !window.__paged) {
 						window.__paged = hold.then(() => result);
 						return window.__paged;
 					}

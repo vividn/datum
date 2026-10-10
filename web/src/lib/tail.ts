@@ -24,11 +24,15 @@ export interface TailColumn {
 /** One row of `datum tail --json`. Only the keys the app reads are named. */
 export interface TailRow {
 	hid: string;
+	/** `field:<ident>`: the row's place among rows of one time, and of none. */
+	slug: string;
 	field: string;
 	/** `point` | `switch` | `block` | `block-switch` | `point-switch`. */
 	verb: string;
-	/** The stamp the `time` column shows, RFC 3339; `null` for a timeless row. */
+	/** The stamp the `time` column shows, RFC 3339: a timeless row's is the one it was created at. */
 	time: string | null;
+	/** Which stamp `time` is — `occur`, or `create` for a timeless row. */
+	time_metric: string | null;
 	state_label: string | null;
 	quick_id: string | null;
 	/*
@@ -73,17 +77,16 @@ export interface TailListing {
 
 /**
  * Which page of the listing: how many rows (`-n`), and — for a page above
- * the one on screen — the stamp they must land at or before (`-t`).
+ * the one on screen — the row they are listed above (`--above`).
  *
- * `before` is a row's own `time` handed straight back: `tail -t` takes an
- * RFC 3339 instant at the CLI's full precision, and its bound is inclusive
- * (`<=`, `list.rs`), so the row it names comes back too — the caller drops
- * what it already holds by hid. Rounding the stamp first would drop rows
- * between the rounded instant and the real one, so it is not rounded.
+ * `above` is a row's hid, and the CLI's bound is that row's place in the
+ * listing's own order, so a page is exactly the rows above it: the timeless
+ * ones too, which sort above every timed row and which a time (`-t`) never
+ * reaches (da-mhcla), and each of two rows at one instant once.
  */
 export interface TailPage {
 	count?: number;
-	before?: string;
+	above?: string;
 	/**
 	 * Only this field's rows — `datum tail [FIELD]`, its first positional
 	 * (da-8810n). What the bar's field pill narrows the pane to; absent is

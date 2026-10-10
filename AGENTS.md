@@ -506,8 +506,9 @@ session, and datum.day's store runs each command as the hidden `sync --as
   10: a shorter pane scrolls, pinned at the newest, and agrees
   with the REPL's `tail`; nothing is asked until the box is taller than
   the header), scrolling to the top pages
-  the rows above in (`tail -n <n+1> -t <oldest row's own time>`, the
-  CLI's inclusive bound, deduped by hid, capped at 300 rows) with the
+  the rows above in (`tail -n <page> --above <oldest row's hid>`, the
+  CLI's bound in the listing's own order, so the timeless rows above every
+  timed one page in too, da-mhcla; capped at 300 rows) with the
   reader's row anchored, and a write while scrolled up keeps the place
   and shows `↓ new`. `web/tests/tailwatch.test.mjs` holds it to that.
   Its STATE cell is the one cell not taken whole from `columns` (`web/src/lib/StateCell.svelte`), and the reason is NOT that the page

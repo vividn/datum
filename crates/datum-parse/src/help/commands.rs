@@ -621,6 +621,16 @@ const TAIL_FLAGS: &[FlagSpec] = &[
         long_description: None,
         left_override: Some("    --show-meta       (alias: --show-all-metadata)"),
     },
+    FlagSpec {
+        short: None,
+        long: "above",
+        takes_value: true,
+        value_hint: Some("ID"),
+        value_optional: false,
+        summary: "Only the entries listed above this one, timeless ones included",
+        long_description: None,
+        left_override: None,
+    },
 ];
 
 // ---------------------------------------------------------------------------

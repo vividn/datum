@@ -29,9 +29,10 @@
 	position. Scrolling up asks for the page above it long before the
 	reader gets there — while all but a screen of the last page is still
 	above them — and asks for several screens at once (da-j6frl, vividn: "rows should load long before you get
-	to them"), `tail -n <size+1> -t <oldest shown>` (the CLI's own bound,
-	inclusive, at its own precision; what came back already is dropped by
-	hid), prepended with the reader's place kept. The reader scrolls on
+	to them"), `tail -n <size> --above <oldest shown>` (the CLI's own bound,
+	that row's place in the listing, so the timeless rows above every timed
+	one page in like any others, da-mhcla), prepended with the reader's
+	place kept. The reader scrolls on
 	through what is held while it is in flight. A write lands as the epoch bump does
 	today: pinned at the bottom the newest page simply replaces the screen;
 	scrolled up, the place is kept and a quiet `↓ new` at the foot says
@@ -327,7 +328,13 @@
 		own = last = scroller.scrollTop;
 	}
 
-	const at = (row: Shown) => (row.time === null ? -Infinity : Date.parse(row.time));
+	/**
+	 * A row's place in the listing, the CLI's order: the timeless rows
+	 * first — the `time` of one is the stamp it was created at, which is no
+	 * place (da-mhcla) — then by time, and by slug within either.
+	 */
+	const at = (row: Shown) => (row.time === null || row.row.time_metric === 'create' ? -Infinity : Date.parse(row.time));
+	const above = (a: Shown, b: Shown) => at(a) < at(b) || (at(a) === at(b) && a.row.slug < b.row.slug);
 
 	/** A cell a row has no listing's word for: `keys` is every listing's columns. */
 	const BLANK = ansiSpans('');
@@ -460,9 +467,9 @@
 			const fresh = page.some((row) => !held.has(row.hid));
 			const newest = rows[rows.length - 1];
 			const first = page[0];
-			if (first && at(first) <= at(newest)) {
+			if (first && !above(newest, first)) {
 				const inPage = new Set(page.map((row) => row.hid));
-				rows = [...rows.filter((row) => !inPage.has(row.hid) && at(row) < at(first)), ...page];
+				rows = [...rows.filter((row) => !inPage.has(row.hid) && above(row, first)), ...page];
 				if (rows.length > CAP) rows = rows.slice(rows.length - CAP);
 				adopt(table.columns, false);
 			}
@@ -475,15 +482,12 @@
 	/** The page above the oldest row on screen, prepended with the place kept. */
 	async function page(): Promise<void> {
 		if (paging || exhausted || !n || rows.length === 0) return;
-		const oldest = rows[0];
-		if (oldest.time === null) return void (exhausted = true);
 		paging = true;
 		const of = generation;
 		try {
-			// One more than a page: the bound is inclusive, so the oldest row
-			// comes back with the page above it and is dropped again by hid.
-			const table = await tailListing({ count: pageSize(n) + 1, before: oldest.time, ...(field ? { field } : {}) });
+			const table = await tailListing({ count: pageSize(n), above: rows[0].hid, ...(field ? { field } : {}) });
 			if (of !== generation) return;
+			// A row retimed since it was listed can come back above itself.
 			const held = new Set(rows.map((row) => row.hid));
 			const fresh = toShown(table).filter((row) => !held.has(row.hid));
 			if (fresh.length === 0) return void (exhausted = true);

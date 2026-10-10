@@ -194,11 +194,36 @@ pub(super) fn list_entries_sql(params: &ListParams) -> (String, Vec<String>) {
     // sort by `slug` keeps tied metric timestamps in a deterministic
     // order — slugs embed the timestamp so same-metric rows sort stably.
     let order_dir = if params.head { "ASC" } else { "DESC" };
-    sql.push_str(&format!(
-        " ORDER BY {metric_expr} {order_dir}, slug {order_dir}"
-    ));
+    let mut order = format!(" ORDER BY {metric_expr} {order_dir}, slug {order_dir}");
     if let Some(n) = params.limit {
-        sql.push_str(&format!(" LIMIT {n}"));
+        order.push_str(&format!(" LIMIT {n}"));
+    }
+
+    // da-mhcla: the rows before a cursor row in that order, where NULL
+    // sorts first. `(metric, slug) < (?, ?)` is a seek and is never true
+    // of a timeless row, and with `OR metric IS NULL` it is a scan of the
+    // whole index, so a timed cursor reads its two reaches as two seeks.
+    match &params.before {
+        None => sql.push_str(&order),
+        Some((None, slug)) => {
+            sql.push_str(&format!(" AND {metric_expr} IS NULL AND slug < ?{order}"));
+            bindings.push(slug.clone());
+        }
+        Some((Some(time), slug)) => {
+            let timed = format!("SELECT * FROM ({sql} AND ({metric_expr}, slug) < (?, ?){order})");
+            let timeless = format!("SELECT * FROM ({sql} AND {metric_expr} IS NULL{order})");
+            let cursor = [time.to_rfc3339(), slug.clone()];
+            let filter = bindings.clone();
+            if params.head {
+                sql = format!("{timeless} UNION ALL {timed}{order}");
+                bindings.extend(filter);
+                bindings.extend(cursor);
+            } else {
+                sql = format!("{timed} UNION ALL {timeless}{order}");
+                bindings.extend(cursor);
+                bindings.extend(filter);
+            }
+        }
     }
 
     (sql, bindings)
@@ -307,5 +332,42 @@ mod tests {
             !plan.contains("TEMP B-TREE"),
             "the index covers the ORDER BY; a sort means it stopped doing so, got:\n{plan}"
         );
+    }
+
+    /// da-mhcla: a page above a cursor row is a seek wherever the cursor
+    /// is: a pager deep in a long history must not read the index from
+    /// its live end down to its place on every page.
+    #[test]
+    fn the_page_above_a_cursor_is_index_bounded() {
+        let db = Db::open_in_memory().unwrap();
+        let slug = "walk:2026-09-12T00:00:00.000Z".to_string();
+        for time in [Some("2026-09-12T00:00:00Z".parse().unwrap()), None] {
+            let params = ListParams {
+                limit: Some(100),
+                before: Some((time, slug.clone())),
+                ..Default::default()
+            };
+            let (sql, bindings) = list_entries_sql(&params);
+            let mut stmt = db
+                .conn
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .unwrap();
+            let plan = stmt
+                .query_map(rusqlite::params_from_iter(bindings.iter()), |r| {
+                    r.get::<_, String>(3)
+                })
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<String>>>()
+                .unwrap()
+                .join("\n");
+            assert!(
+                plan.contains("SEARCH entries USING INDEX entries_occur_time"),
+                "expected a seek on entries_occur_time above {time:?}, got:\n{plan}"
+            );
+            assert!(
+                !plan.contains("SCAN entries"),
+                "a SCAN reads the whole history for one page above {time:?}, got:\n{plan}"
+            );
+        }
     }
 }

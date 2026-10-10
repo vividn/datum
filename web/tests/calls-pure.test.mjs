@@ -174,7 +174,7 @@ const HID = JSON.parse(seed(calls.layoutsArgv()).stdout).rows.find((r) => r.data
 const SAMPLES = {
 	helpArgv: [[], ['db backup']],
 	lastDotsArgv: [['coffee']],
-	tailArgv: [[{}], [{ field: 'mood', count: 5, before: new Date().toISOString() }]],
+	tailArgv: [[{}], [{ field: 'mood', count: 5, above: HID }]],
 	showAllArgv: [[statsArgv(DEFAULT_STATS)], [statsArgv(DEFAULT_STATS, 'mood')], [statsArgv({ range: 'all' }, 'coffee')]],
 	statsArgv: [[DEFAULT_STATS], [{ range: 'all' }, 'coffee']],
 	specShowArgv: [['coffee'], ['mood']],

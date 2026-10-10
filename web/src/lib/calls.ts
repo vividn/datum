@@ -74,7 +74,7 @@ export function tailArgv(page: TailPage = {}): string[] {
 		...(page.field ? [page.field] : []),
 		'--json',
 		...(page.count !== undefined ? ['-n', String(page.count)] : []),
-		...(page.before !== undefined ? ['-t', page.before] : [])
+		...(page.above !== undefined ? ['--above', page.above] : [])
 	];
 }
 

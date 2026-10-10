@@ -410,6 +410,10 @@ pub struct TailArgs {
     /// specs, layouts, aliases, views, kit commands and kit index definitions
     /// (da-lc26c, da-b3752, da-fwwtn) — which an unnamed tail leaves out.
     pub show_meta: bool,
+    /// `--above <ID>`: only the rows listed above that entry, whatever the
+    /// page that listed it (da-mhcla). Unlike `-t` it reaches the timeless
+    /// rows, which sort above every timed one.
+    pub above: Option<String>,
     /// `-A/--show-all` / `-o/--format-string`, plus the swept `--show`.
     ///
     /// `--show json` (da-c7uw's `--json`) emits one named object per row
@@ -434,6 +438,7 @@ impl Default for TailArgs {
             watch: None,
             table: false,
             show_meta: false,
+            above: None,
             output: OutputArgs::default(),
         }
     }

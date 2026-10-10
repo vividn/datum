@@ -41,7 +41,7 @@ use crossterm::{
 use datum_core::{db::Db, entry::Entry, field_spec::SpecRegistry, time::DatumTime};
 
 use super::render_helpers::build_table_contexts;
-use super::tail::{split_columns, tail_params};
+use super::tail::{split_columns, tail_entries_with_default_count};
 use crate::args::OutputFlagsExt;
 use crate::render::term_layout::{truncate_visible, visible_width};
 use crate::render::{format_table_with, OutputArgs, TableArgs, TimeMetricCol};
@@ -210,11 +210,7 @@ pub fn run(
 /// returns oldest-first by metric+slug, so the buffer is already the
 /// chronological top-to-bottom order the viewport renders.
 fn fetch_buffer(args: &crate::args::TailArgs, db: &Db, cap: usize) -> Result<Vec<Entry>> {
-    let mut params = tail_params(args)?;
-    if args.count.is_none() {
-        params.limit = Some(cap);
-    }
-    Ok(db.list_entries(&params)?)
+    tail_entries_with_default_count(args, Some(cap), db)
 }
 
 fn slugs_of(buffer: &[Entry]) -> Vec<String> {
