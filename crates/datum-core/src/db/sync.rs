@@ -69,6 +69,7 @@ use crate::error::{DatumError, Result};
 use crate::field_spec::FieldSpec;
 use crate::history::{self, ChangeKind};
 use crate::ids::{Hid, Slug};
+use crate::migrations::{peek_schema_version, CURRENT_SCHEMA_VERSION};
 
 use super::insert::{apply_entry_state, try_insert};
 use super::row_mapper::row_to_entry;
@@ -209,6 +210,10 @@ const KEY_CHANGED: &str =
 /// a new copy in no chain, which would take the peer's whole chain as one
 /// joining it does. What a session writes asks here who this copy is, inside
 /// the transaction it writes in.
+///
+/// And its file is at the schema this build writes, or this fails naming both
+/// versions (da-1tnup): a newer datum migrated it under the session, whose
+/// rows would be the old shape.
 fn endpoint(conn: &Connection) -> Result<Endpoint> {
     let client = client_id();
     let path = conn.path().unwrap_or_default().to_string();
@@ -218,6 +223,15 @@ fn endpoint(conn: &Connection) -> Result<Endpoint> {
             .filter(|(p, _)| *p == path)
             .map(|(_, id)| id.clone())
     });
+    if began.is_some() {
+        let file = peek_schema_version(conn)?;
+        if file != CURRENT_SCHEMA_VERSION {
+            return Err(DatumError::IncompatibleSchema(format!(
+                "this database is at schema v{file} and this datum writes \
+                 v{CURRENT_SCHEMA_VERSION}: another datum migrated it under this sync, which stopped"
+            )));
+        }
+    }
     let still = |ep: Endpoint| match &began {
         Some(id) if *id != ep.id => Err(DatumError::Other(KEY_CHANGED.into())),
         _ => Ok(ep),
@@ -2149,8 +2163,9 @@ impl Db {
 
     /// From here on this thread works on this file as the copy whose endpoint
     /// id is `id`, the one a sync session began as, or as any with `None`:
-    /// once the file's key is another, whatever of sync asks who this copy is
-    /// fails, and writes nothing (da-otz0d).
+    /// once the file's key is another, or its schema another build's
+    /// (da-1tnup), whatever of sync asks who this copy is fails, and writes
+    /// nothing (da-otz0d).
     pub fn sync_session_as(&self, id: Option<&str>) {
         let path = self.conn.path().unwrap_or_default().to_string();
         SESSION.with(|s| *s.borrow_mut() = id.map(|id| (path, id.to_string())));

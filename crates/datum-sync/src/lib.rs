@@ -612,7 +612,8 @@ const RETRY: Duration = Duration::from_secs(30);
 /// It stops, with an error, once the file's endpoint key is no longer the
 /// one it bound: a `db purge` or `sync chain rekey` made it another copy
 /// (da-8v7ua), and the daemon starts it again only if that copy is chained.
-/// A session open then stops as it does ([`bind`]).
+/// And once the file's schema is not this build's: a newer datum migrated it
+/// (da-1tnup). A session open then stops as it does ([`bind`]).
 pub fn run(db: &Db) -> Result<()> {
     runtime()?.block_on(async {
         let ep = bind(db).await?;

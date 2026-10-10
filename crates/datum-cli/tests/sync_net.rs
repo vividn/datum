@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use std::process::{Child, ChildStdout, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
+use datum_core::migrations::CURRENT_SCHEMA_VERSION;
 use tempfile::TempDir;
 
 /// A copy's UDP port, and the claim that holds it for as long as the copy
@@ -655,6 +656,96 @@ fn a_purge_between_an_open_sessions_rounds_leaves_the_file_empty() {
     for table in ["ops", "entries", "sync_peers", "sync_local"] {
         let rows = a.query(&format!("SELECT COUNT(*) FROM {table}"));
         assert_eq!(rows, "0", "{table}");
+    }
+}
+
+/// Stamp `copy`'s file one schema on, as a newer datum's migration leaves
+/// it. What an older build then says of the two versions.
+fn migrate_under(copy: &Copy) -> String {
+    let now = CURRENT_SCHEMA_VERSION + 1;
+    let stamped = rusqlite::Connection::open(copy.db())
+        .unwrap()
+        .execute(
+            "UPDATE _meta SET value = ?1 WHERE key = 'schema_version'",
+            [now.to_string()],
+        )
+        .unwrap();
+    assert_eq!(stamped, 1);
+    format!("at schema v{now} and this datum writes v{CURRENT_SCHEMA_VERSION}")
+}
+
+/// What sync holds in `copy`'s file: its ops, entries and peer rows.
+fn held(copy: &Copy) -> String {
+    copy.query(
+        "SELECT json_array(
+           (SELECT json_group_array(body) FROM ops),
+           (SELECT json_group_array(hid || modify_time) FROM entries),
+           (SELECT json_group_array(json_array(last_seen, last_vector, last_verify_at,
+              last_verify_match, last_error, last_error_at)) FROM sync_peers))",
+    )
+}
+
+/// A newer datum's migration that lands between an open session's rounds
+/// stops the session, which names both versions and writes nothing more
+/// into the file (da-1tnup): its rows would be the old shape. `b` applies
+/// slowly, so `a` waits a round on it, as for the purge above.
+#[test]
+fn a_migration_between_an_open_sessions_rounds_stops_it_and_it_writes_nothing_more() {
+    let (a, mut b) = paired();
+    a.ok(&["occur", "tea"]);
+    b.ok(&["occur", "juice"]);
+    b.env = vec![("DATUM_SYNC_TEST_APPLY_DELAY_MS", "2000")];
+    let _b_runs = b.serve(&["sync", "run"]);
+    let a_syncs = a.cmd(&["sync"]).spawn().unwrap();
+    eventually("a's first round", || a.has("juice"));
+    let versions = migrate_under(&a);
+    let before = held(&a);
+
+    let out = a_syncs.wait_with_output().unwrap();
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!out.status.success() && said.contains(&versions), "{said}");
+    assert_eq!(held(&a), before);
+}
+
+/// `sync run` and the daemon over it stop, failed and naming both versions,
+/// once a newer datum has migrated the file (da-1tnup): the unit then starts
+/// the installed binary. Neither writes into it again.
+#[test]
+fn a_migration_under_sync_run_or_the_daemon_stops_it() {
+    for daemon in [false, true] {
+        let (a, b) = paired();
+        let config = b.tmp.path().join("config");
+        std::fs::create_dir_all(&config).unwrap();
+        let registry = format!("[db.data]\npath = {:?}\n", b.db().display().to_string());
+        std::fs::write(config.join("dbs.toml"), registry).unwrap();
+        let args: &[&str] = if daemon {
+            &["sync", "daemon", "run"]
+        } else {
+            &["sync", "run"]
+        };
+        let mut b_runs = b.serve(args);
+        a.ok(&["occur", "tea"]);
+        eventually("a's sync reaching b", || {
+            a.run(&["sync"]).status.success() && b.has("tea")
+        });
+
+        let versions = migrate_under(&b);
+        let before = held(&b);
+        let start = Instant::now();
+        while b_runs.child.try_wait().unwrap().is_none() {
+            assert!(start.elapsed() < Duration::from_secs(10), "still running");
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let (ok, _) = b_runs.finish();
+        let mut why = String::new();
+        let mut stderr = b_runs.child.stderr.take().unwrap();
+        stderr.read_to_string(&mut why).unwrap();
+        assert!(!ok && why.contains(&versions), "daemon {daemon}: {why}");
+        assert_eq!(held(&b), before, "daemon {daemon}");
     }
 }
 

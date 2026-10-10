@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use datum_core::db::Db;
+use datum_core::error::DatumError;
 
 use crate::args::SyncDaemonAct;
 use crate::config;
@@ -345,7 +346,8 @@ fn chained() -> Vec<(String, PathBuf)> {
 
 /// `datum sync daemon run`: `sync run` for every chained database, each
 /// on a thread of its own, looking for a newly chained one every [`LOOK`].
-/// One that fails is tried again at the next look; Ctrl-C ends them all.
+/// One that fails is tried again at the next look; Ctrl-C ends them all, and
+/// so does one whose file a newer datum migrated under it, with an error.
 fn run() -> Result<()> {
     let (tx, rx) = std::sync::mpsc::channel();
     let mut running = BTreeSet::new();
@@ -361,10 +363,10 @@ fn run() -> Result<()> {
                 // The client source is per thread, as `dispatch` sets it.
                 datum_core::db::set_client_source(|| config::client_id().ok());
                 // A panic is a failure like any other: retried at the next look.
+                // `Ok(Err)`: it opened and ran, and then stopped.
                 let done = std::panic::catch_unwind(|| {
-                    Db::open(&path.to_string_lossy())
-                        .map_err(anyhow::Error::from)
-                        .and_then(|db| datum_sync::run(&db))
+                    let db = Db::open(&path.to_string_lossy())?;
+                    anyhow::Ok(datum_sync::run(&db))
                 })
                 .unwrap_or_else(|_| Err(anyhow::anyhow!("sync panicked")));
                 let _ = tx.send((path, done));
@@ -375,8 +377,15 @@ fn run() -> Result<()> {
         }
         loop {
             match rx.recv_timeout(LOOK) {
-                Ok((_, Ok(()))) => return Ok(()),
-                Ok((path, Err(e))) => {
+                Ok((_, Ok(Ok(())))) => return Ok(()),
+                // A newer datum migrated its file under it (da-1tnup): this
+                // build is the wrong one, and the unit starts the installed.
+                Ok((path, Ok(Err(e))))
+                    if matches!(e.downcast_ref(), Some(DatumError::IncompatibleSchema(_))) =>
+                {
+                    return Err(e.context(path.display().to_string()));
+                }
+                Ok((path, Ok(Err(e)) | Err(e))) => {
                     eprintln!("{}: {e:#}", path.display());
                     running.remove(&path);
                 }

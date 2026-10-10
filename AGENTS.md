@@ -308,7 +308,10 @@ the peer's whole chain at the next round as a copy joining does. So core's
 transaction it writes in, fails and mints nothing once the key is not the one
 the session bound (`Db::sync_session_as`): datum-sync's `bind` binds a native
 session, and datum.day's store runs each command as the hidden `sync --as
-<ENDPOINT> …`. `web/tests/sync*.test.mjs` run on a pinned local `iroh-relay`.
+<ENDPOINT> …`. There too a session's file is at the schema its build writes
+(da-1tnup): once a newer datum has migrated it, the session and `sync run`
+stop naming both versions, and `sync daemon run` exits, for its unit to
+start the installed binary. `web/tests/sync*.test.mjs` run on a pinned local `iroh-relay`.
 
 ## Web app (PWA)
 
