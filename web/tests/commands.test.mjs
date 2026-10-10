@@ -974,7 +974,9 @@ describe('the sections that scroll (da-u79wl)', () => {
 			const short = await until(height, (h) => h < 100);
 			assert.deepEqual(await run(), { hidden: false, of: 0 });
 			await page.setViewportSize({ width: 390, height: 320 });
-			const narrow = await until(run, (r) => r.hidden);
+			// The thumb with the rows: `hidden` is layout, true the moment the
+			// box is narrow, and `--of` is written when the observer hears of it.
+			const narrow = await until(run, (r) => r.hidden && r.of > 0);
 			assert.equal(await height(), short, 'the box changed height too');
 			assert.ok(narrow.of > 0 && narrow.of < 1, `rows out of sight and a thumb of ${narrow.of}`);
 			await page.setViewportSize(DESKTOP.viewport);
