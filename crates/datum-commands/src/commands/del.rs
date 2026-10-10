@@ -80,7 +80,7 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
     let mut first_err: Option<anyhow::Error> = None;
     let mut deleted: Vec<Entry> = Vec::new();
     for entry in &entries {
-        match db.soft_delete_entry_with_comment(&entry.slug, why.as_deref()) {
+        match db.soft_delete_entry_with_comment(&entry.hid, why.as_deref()) {
             Ok(dead) => deleted.push(dead),
             Err(e) => {
                 let msg = format!("{}: {}", entry.slug, e);

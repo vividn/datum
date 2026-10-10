@@ -306,7 +306,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             eprintln!("[dry-run] would undo (soft-delete) {}", target.slug);
             return Ok(());
         }
-        db.soft_delete_entry(&target.slug)?;
+        db.soft_delete_entry(&target.hid)?;
         let (specs, dropped) = crate::commands::helpers::drop_orphaned_bare_specs(
             db,
             std::slice::from_ref(&target),
