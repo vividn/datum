@@ -974,6 +974,18 @@ mod tests {
                     .chain(std::iter::once(block(json!("long"), 400, 350)))
                     .collect(),
             ),
+            // The look-ahead counts blocks, not rows (da-93o0j): from 95 the
+            // block running there is the eighth stored after it, behind
+            // twelve switches that use none of the look-ahead up.
+            (
+                "blocks-among-switches",
+                [sw("base", 10), block(json!("long"), 400, 350)]
+                    .into_iter()
+                    .chain((0..3).map(|i| block(json!("x"), 70 + i * 10, 5)))
+                    .chain((0..12).map(|i| sw("a", 200 + i * 10)))
+                    .chain((0..7).map(|i| block(json!("y"), 205 + i * 10, 5)))
+                    .collect(),
+            ),
             // More dots than a state read looks back through: they never
             // decide a state, so they must not push the switch out of reach.
             (
@@ -1053,6 +1065,7 @@ mod tests {
             Some(json!("vertical"))
         );
         assert_eq!(state("nested", 450), Some(json!("out")));
+        assert_eq!(state("blocks-among-switches", 95), Some(json!("long")));
         assert_eq!(
             state("occur", 250),
             Some(json!("on")),
