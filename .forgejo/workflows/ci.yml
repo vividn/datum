@@ -45,6 +45,12 @@ on:
     # 2026-09-16 17:0x branches are pushed to the forge itself and their PRs
     # trigger the run — with both triggers every PR head ran TWICE, two
     # ~40-minute runs on a capacity-1 runner (mayor, 17:03, reading PR 2).
+  # `ct run dispatch` runs staging's tip again with no push, to answer a flaky
+  # red (ct-bzat). Such a run is a push run in everything below: the staging
+  # runner, the whole web suite, and evidence main inherits. It takes NO
+  # inputs, and must not gain one: a green dispatched run promotes main
+  # because nothing could have told it to skip a step.
+  workflow_dispatch:
 
 # One run per ref at a time. On a PR ref a newer push cancels the run of the
 # head it replaced instead of queueing behind it: four runs sat «waiting» at
@@ -78,26 +84,30 @@ env:
 jobs:
   ci:
     name: CI (cargo + web)
-    # A staging push runs on its own runner, labelled ONLY `staging` so it never
-    # takes a PR job (da-laema). On the shared one it queued behind every PR
-    # run and, started after the tip had moved, cancelled itself at the step
-    # below (run 2169: ~27 min waiting, then that). Now it starts on the tip
-    # and finishes, and the runs queued behind it cancel in seconds. With no
-    # runner carrying that label, a staging run waits forever.
-    runs-on: ${{ github.event_name == 'push' && github.ref == 'refs/heads/staging' && 'staging' || 'ubuntu-latest' }}
+    # A staging run, pushed or dispatched, runs on its own runner, labelled ONLY
+    # `staging` so it never takes a PR job (da-laema). On the shared one it
+    # queued behind every PR run and, started after the tip had moved,
+    # cancelled itself at the step below (run 2169: ~27 min waiting, then
+    # that). Now it starts on the tip and finishes, and the runs queued behind
+    # it cancel in seconds. With no runner carrying that label, a staging run
+    # waits forever.
+    runs-on: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/staging' && 'staging' || 'ubuntu-latest' }}
     # GitHub's six jobs sum to ~27 min on separate 4-core runners; serialised
     # on 3 cores the bead expects 45–75 min. The runner's own cap is 3 h.
     timeout-minutes: 150
     steps:
       # A push to main whose COMMIT a green ci.yml run already tested ends GREEN
       # here (da-7wmzo). Under the integration branch (ct-0eyz) cantown-bot
-      # fast-forwards main to a staging commit only once staging's push run on
+      # fast-forwards main to a staging commit only once staging's run on
       # it is green, so main's sha IS the tested sha and testing it again is
       # an hour of runner for nothing. The evidence is a RUN, which only the
       # forge creates — never a commit status, which anyone with write can
       # post: a completed `success` run of this workflow, triggered by a push
-      # (a pull_request run may have skipped the web suite, see WEB below),
-      # on exactly this sha. Found, it sets the same TRAIN=1 as the next step.
+      # or a dispatch (a pull_request run may have skipped the web suite, see
+      # WEB below), on exactly this sha. The trigger is read from
+      # `trigger_event`: the API answers `event: ""` for a dispatched run
+      # (run 1719, parity.yml's, on Forgejo 16.0.5). Found, it sets the same
+      # TRAIN=1 as the next step.
       # None — a direct push, a red or unfinished staging run — and the run goes
       # on in full; so does an unreadable API, with a warning saying so.
       - name: Inherit a green run of this commit
@@ -110,13 +120,13 @@ jobs:
           url="${SERVER%/}/api/v1/repos/${{ github.repository }}/actions/runs?head_sha=${{ github.sha }}"
           runs=$(printf 'header = "Authorization: token %s"\n' "$TOKEN" | curl -sSf -K - "$url" 2>&1) ||
             { echo "::warning::could not read $url ($runs); verifying ${{ github.sha }} in full"; exit 0; }
-          found=$(node -e 'const r = JSON.parse(require("fs").readFileSync(0)).workflow_runs.find(r => r.workflow_id === "ci.yml" && r.event === "push" && r.status === "success" && r.commit_sha === process.argv[1]); if (r) console.log(`run ${r.id} (${r.prettyref})`, r.html_url)' "${{ github.sha }}" <<<"$runs" 2>/dev/null) ||
+          found=$(node -e 'const r = JSON.parse(require("fs").readFileSync(0)).workflow_runs.find(r => r.workflow_id === "ci.yml" && ["push", "workflow_dispatch"].includes(r.trigger_event) && r.status === "success" && r.commit_sha === process.argv[1]); if (r) console.log(`run ${r.id} (${r.prettyref})`, r.html_url)' "${{ github.sha }}" <<<"$runs" 2>/dev/null) ||
             { echo "::warning::$url did not answer a run list; verifying ${{ github.sha }} in full"; exit 0; }
           if [ -n "$found" ]; then
             echo "TRAIN=1" >> "$GITHUB_ENV"
             echo "inherited, every later step skipped: $found"
           else
-            echo "no green ci.yml push run on ${{ github.sha }}"
+            echo "no green ci.yml push or dispatched run on ${{ github.sha }}"
           fi
 
       # The merge train's bridge, kept until the cutover to the integration
