@@ -57,10 +57,16 @@ impl Db {
     /// [`Self::list_entries`]' rows, in its order, as the columns `stats`
     /// reads of them: a row's `data` can be any size, and reading and
     /// decoding it was most of what a timeline cost (da-ypz6c). A timed
-    /// `before` cursor is an error here: its query orders by `slug`.
+    /// `before` cursor is refused: its query orders by `slug`, which a
+    /// timeline does not select, and nothing pages one (da-jpvan).
     pub fn list_timeline(&self, params: &ListParams) -> Result<Vec<TimelineEntry>> {
         const COLUMNS: &str = "hid, state, occur_time, occur_time_offset, occur_time_tz, \
              occur_time_uncertainty, client_id, json_extract(extra_metadata, '$.track')";
+        if let Some((Some(_), slug)) = &params.before {
+            return Err(DatumError::Other(format!(
+                "a timeline does not page: list_timeline takes no timed `before` cursor ({slug})"
+            )));
+        }
         self.list_rows(COLUMNS, params, |row| {
             Ok(TimelineEntry {
                 hid: row.get(0)?,
@@ -503,5 +509,27 @@ mod tests {
         }
         let declared = db.list_timeline(&walk).unwrap();
         assert_eq!(declared.iter().filter(|e| e.declaration).count(), 1);
+    }
+
+    /// da-jpvan: a timed `before` cursor is refused in the timeline's own
+    /// words, where SQLite said «2nd ORDER BY term does not match any
+    /// column in the result set»; a timeless one, whose query is no
+    /// compound, pages as the listing does.
+    #[test]
+    fn a_timeline_refuses_a_timed_cursor() {
+        let db = Db::open_in_memory().unwrap();
+        let slug = "walk:2026-09-12T00:00:00.000Z".to_string();
+        let before = |time| ListParams {
+            before: Some((time, slug.clone())),
+            ..Default::default()
+        };
+        let timed = before(Some("2026-09-12T00:00:00Z".parse().unwrap()));
+        assert!(db.list_entries(&timed).unwrap().is_empty());
+        let refused = db.list_timeline(&timed).unwrap_err().to_string();
+        assert!(
+            refused.starts_with("a timeline does not page") && refused.contains(&slug),
+            "{refused}"
+        );
+        assert!(db.list_timeline(&before(None)).unwrap().is_empty());
     }
 }
