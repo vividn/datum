@@ -732,6 +732,55 @@ fn relative_time_beside_a_named_day_needs_a_clock() {
     assert!(logged().iter().any(|e| at(e).starts_with("2026-09-30")));
 }
 
+/// da-johpu: a relative `occur_time=` is one more `-t ±N` to the flags beside
+/// it. It shifted the midnight a day alone is stored as, so `-y occur_time=-6`
+/// logged 23:54 two days back; it is refused where that `-t` is, by whichever
+/// way the key gets its value. `-D` names no day, and `update`'s anchor is
+/// the entry's own time, a clock.
+#[test]
+fn relative_occur_time_key_beside_a_named_day_needs_a_clock() {
+    let db = fresh_db();
+    let logged = || datum_core::test_util::logged_entries(&db, "x");
+
+    for args in [
+        &["-y", "occur_time=-6"][..],
+        &["-d", "2026-10-05", "occur_time=-6"],
+        &["-t", "yesterday", "occur_time=+90"],
+        &["-y", "-k", "occur_time=-6"],
+        &["-y", "-k", "occur_time", "--", "-6"],
+        &["-y", r#"occur_time="-6""#],
+    ] {
+        let argv = [&["occur", "x"], args].concat();
+        let err = run_cli(&argv, &db).expect_err(&argv.join(" "));
+        assert!(
+            format!("{err:#}").contains("needs a clock when the day moves"),
+            "{argv:?}: {err:#}"
+        );
+    }
+    assert_eq!(logged().len(), 0);
+
+    for args in [
+        &["-d", "2026-10-05", "-t", "18:30", "occur_time=-6"][..],
+        &["-d", "2026-10-06", "occur_time=18:30"],
+        &["occur_time=-6"],
+        &["-D", "occur_time=-90"],
+    ] {
+        run_cli(&[&["occur", "x"], args].concat(), &db).expect("a clock, or no day");
+    }
+    let at = |e: &datum_core::entry::Entry| {
+        let t = e.occur_time.as_ref().unwrap().local_time();
+        t.format("%F %R").to_string()
+    };
+    assert_eq!(logged().len(), 4);
+    for want in ["2026-10-05 18:24", "2026-10-06 18:30"] {
+        assert!(logged().iter().any(|e| at(e) == want), "{want}");
+    }
+
+    let hid = |want| logged().into_iter().find(|e| at(e) == want).unwrap().hid;
+    run_cli(&["update", &hid("2026-10-05 18:24"), "occur_time=-6"], &db).expect("update");
+    assert!(logged().iter().any(|e| at(e) == "2026-10-05 18:18"));
+}
+
 /// da-6knvw: `flag` and `tail` read their time flags through the composer
 /// `occur` does. Each filled a builder by hand, `-y` and `-q` before `-d`, so
 /// `flag x -y -d 2026-10-05` landed on the 5th where `occur` lands on the 4th.

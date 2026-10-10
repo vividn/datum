@@ -137,7 +137,9 @@ impl TimeBuilder {
     /// Refuse a `-q` or a `-t ±N` beside a named day with no clock
     /// (da-e93nr): shift then day and day then shift part at midnight and
     /// at a DST change, so where the anchor is now neither is picked.
-    /// It asks what was given, not what it adds up to.
+    /// The day is asked as given, `-d today` names one; the shift is `-q`
+    /// and, apart from it, what the `-t ±N` add up to, so `-t -6 -t +6`
+    /// is no shift and `-q -t +5` is one.
     pub fn shift_needs_clock(self) -> Result<Self> {
         let clock = self.time_override.is_some()
             || self.iso_instant_override.is_some()

@@ -953,6 +953,7 @@ pub(crate) fn parse_log_args(
     // state-bearing verbs is handled below.
     let mut data_args = DataArgs {
         base,
+        time_flags: Some(args.time.clone()),
         types: args.key_types.clone(),
         ..DataArgs::default()
     };

@@ -44,6 +44,7 @@ use crate::error::{ParseError, Result};
 use crate::input::consolidate_keys::consolidate_keys;
 use crate::input::flag_registry::{FlagAction, FlagSpec};
 use crate::input::flexible_positional::FlexibleTarget;
+use crate::input::TimeArgs;
 use crate::time::DatumTime;
 
 use accumulate::alter_datum_data;
@@ -168,6 +169,11 @@ pub struct DataArgs {
     /// `bedTime=8am`), in its zone. When `None`, a relative `*_date`
     /// falls through as the raw string and a `*_time` reads the wall clock.
     pub base: Option<DatumTime>,
+    /// The time flags `base` was built from, on a log (da-johpu): an
+    /// `occur_time=` is one more `-t` beside them, and a relative one
+    /// beside a named day needs a clock as theirs does. `None` where the
+    /// base is a clock of its own, an entry's time (`update`).
+    pub time_flags: Option<TimeArgs>,
     /// The types a field's spec declares for its keys (da-b2f8o), by
     /// key name. A typed key parses as its type or refuses; one with no
     /// entry here is typed by its suffix, or guessed by [`infer_type`].
@@ -207,6 +213,8 @@ impl DataArgs {
 pub(crate) struct Compat<'a> {
     /// See [`DataArgs::base`].
     pub(crate) base: Option<&'a DatumTime>,
+    /// See [`DataArgs::time_flags`].
+    pub(crate) time_flags: Option<&'a TimeArgs>,
     /// See [`DataArgs::types`].
     pub(crate) types: Option<&'a BTreeMap<String, KeyType>>,
     /// See [`DataArgs::literal`].
@@ -221,6 +229,7 @@ pub(crate) struct Compat<'a> {
 pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
     let compat = Compat {
         base: args.base.as_ref(),
+        time_flags: args.time_flags.as_ref(),
         types: Some(&args.types),
         literal: args.literal,
     };

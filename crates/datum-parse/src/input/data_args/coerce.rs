@@ -188,6 +188,15 @@ pub(super) fn infer_typed_value(
             }),
         };
     }
+    // da-johpu: the flags alone are a day and the key alone a shift, of the
+    // midnight that day is stored as. So the two are asked as one line, the
+    // key one more `-t`; quoted, it is read as one all the same.
+    if let (true, Some(flags)) = (path == "occur_time", compat.time_flags) {
+        let key = parse_time(value.trim_matches('"'), time_ctx(compat));
+        if let (Ok(flags), Ok(key)) = (flags.builder_anchored(TimeCtx::now()), key) {
+            flags.with_time_arg(key).shift_needs_clock()?;
+        }
+    }
     match coerce_as(ty, value, compat) {
         Some(v) => Ok(Some(v)),
         // The entry's own time and duration keep their own parsers, and
