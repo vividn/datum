@@ -577,39 +577,34 @@ describe('a fling keeps going', () => {
 	// synthetic drags, which is what a drag WITHOUT a flick is.
 
 	/**
-	 * A flick: far enough and few enough steps that the box's own speed
-	 * cannot decide the answer.
+	 * A flick: 400px in four moves 40ms apart, by the gesture's OWN clock.
 	 *
-	 * `swipe` awaits every CDP round trip, so the gesture's DURATION — and so
-	 * the speed `settle` measures — is whatever this machine's round trips
-	 * cost. With the floor at 1.2 px/ms that margin is the test's to earn: a
-	 * canary on PR #46 worked out that a 260px swipe in 6 steps needs to land
-	 * inside ~215ms, which a loaded box cannot promise. 400px in 4 steps needs
-	 * ~330ms and takes five round trips instead of eight, so the same loaded
-	 * box has three times the room.
-	 *
-	 * And it reports what it actually achieved, so a failure here says whether
-	 * the code was wrong or the box was slow.
+	 * The clock is the point (da-wucn6). `swipe` awaits every CDP round trip,
+	 * and unstamped, each event is timed as the browser receives it — while a
+	 * release reads its speed off the moves of its last 80ms (`WINDOW_MS`,
+	 * $lib/grip.ts). At a runner's pace, some 60ms a move, the moves sit at
+	 * that window's edge: one round trip over 80ms before the last move left
+	 * it the window's only sample, the lift is where that move was, and the
+	 * release read a speed of exactly 0 — the bar stayed where the finger put
+	 * it, 342px of log, after a gesture that was 1.37 px/ms end to end (CI
+	 * run 2772). Stamped, the release reads 200px over 120ms on any box.
 	 */
 	const flick = async (page, dy) => {
 		const r = await page.locator(BAR).boundingBox();
-		const began = Date.now();
-		await swipe(page, r.x + r.width / 2, r.y + r.height / 2, 0, dy, 4);
-		const ms = Date.now() - began;
+		await swipe(page, r.x + r.width / 2, r.y + r.height / 2, 0, dy, 4, 40);
 		await settled(page);
-		return `${Math.abs(dy)}px in ${ms}ms = ${(Math.abs(dy) / ms).toFixed(2)} px/ms, against a 1.2 floor`;
 	};
 
 	test('a big swipe up opens the bar the whole way', async () => {
 		await phone(async (app) => {
 			const { page } = app;
 			await app.submit('occur coffee');
-			const threw = await flick(page, -400);
+			await flick(page, -400);
 			const seen = await where(page);
 			// The whole way: the bar's top is the top of the page, and the
 			// dashboard is gone. It went much further than the finger did.
-			assert.ok(seen.log.height > 400, `the log is ${seen.log.height}px — ${threw}`);
-			assert.ok(seen.main.height <= 1, `the dashboard is still ${seen.main.height}px — ${threw}`);
+			assert.ok(seen.log.height > 400, `the log is ${seen.log.height}px`);
+			assert.ok(seen.main.height <= 1, `the dashboard is still ${seen.main.height}px`);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -618,21 +613,21 @@ describe('a fling keeps going', () => {
 		await phone(async (app) => {
 			const { page } = app;
 			await app.submit('occur coffee');
-			const up = await flick(page, -400);
-			assert.ok((await where(page)).log.height > 0, `the fling up did not open the log — ${up}`);
+			await flick(page, -400);
+			assert.ok((await where(page)).log.height > 0, 'the fling up did not open the log');
 
 			// Down: it stops with the OUTPUT still open, not shut.
-			const down = await flick(page, 400);
+			await flick(page, 400);
 			const snagged = await where(page);
-			assert.equal(snagged.height, 0, `the log is still ${snagged.height}px — ${down}`);
-			assert.ok(snagged.out, `the fling down closed the output as well — it did not snag — ${down}`);
-			assert.ok(snagged.shown > 0, `the output section is ${snagged.shown}px — ${down}`);
+			assert.equal(snagged.height, 0, `the log is still ${snagged.height}px`);
+			assert.ok(snagged.out, 'the fling down closed the output as well — it did not snag');
+			assert.ok(snagged.shown > 0, `the output section is ${snagged.shown}px`);
 
 			// And from the notch, the next one shuts it. So a fling can still
 			// close the bar; it takes the two the snag asks for.
-			const again = await flick(page, 400);
+			await flick(page, 400);
 			const shut = await where(page);
-			assert.equal(shut.shown, 0, `the output section is still ${shut.shown}px — ${again}`);
+			assert.equal(shut.shown, 0, `the output section is still ${shut.shown}px`);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -1081,8 +1076,9 @@ describe('the bar and the log are one handle', () => {
 			// THE SAME DISTANCE TWICE, and the only difference is the TIME in
 			// it. A synthetic drag's moves all carry one stamp, so it has no
 			// speed and comes to rest exactly where the finger stopped; a real
-			// touch through CDP has stamps a frame apart and so has a push in
-			// it. Comparing them is what makes this claim independent of how
+			// touch through CDP has stamps a frame apart — its own, not the
+			// round trips' (`flick`, da-wucn6) — and so has a push in it.
+			// Comparing them is what makes this claim independent of how
 			// fast this machine happens to be — the numbers themselves are
 			// `detent.test.mjs`'s, and where a thumb lands is nobody's but a
 			// thumb's.
@@ -1097,7 +1093,7 @@ describe('the bar and the log are one handle', () => {
 			await settled(page);
 			assert.equal((await where(page)).height, 0, 'the bar did not come back shut');
 
-			await swipe(page, ...middle, 0, -220, 6);
+			await swipe(page, ...middle, 0, -220, 6, 16);
 			await settled(page);
 			const thrownLog = (await where(page)).height;
 			assert.ok(

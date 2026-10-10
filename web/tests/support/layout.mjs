@@ -342,17 +342,25 @@ export async function fill(page, name) {
  * handler. It moves in several steps because the gesture's axis is
  * committed at the first move that has gone far enough (da-kcmp), and
  * because the content follows the finger through those moves.
+ *
+ * `every` gives the gesture its OWN CLOCK (da-wucn6): its events are stamped
+ * that many ms apart, however long the round trips took. Without it each is
+ * stamped as the browser receives it, so the gesture's speed is the runner's
+ * — a test that asserts what a speed did passes `every`.
  */
-export async function swipe(page, x, y, dx, dy, steps = 6) {
+export async function swipe(page, x, y, dx, dy, steps = 6, every) {
 	const cdp = await page.context().newCDPSession(page);
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
-	for (let i = 1; i <= steps; i++) {
-		await cdp.send('Input.dispatchTouchEvent', {
-			type: 'touchMove',
-			touchPoints: [{ x: x + (dx * i) / steps, y: y + (dy * i) / steps }]
+	const t0 = Date.now() / 1000;
+	const at = (type, touchPoints, i) =>
+		cdp.send('Input.dispatchTouchEvent', {
+			type,
+			touchPoints,
+			...(every && { timestamp: t0 + (i * every) / 1000 })
 		});
-	}
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	await at('touchStart', [{ x, y }], 0);
+	for (let i = 1; i <= steps; i++)
+		await at('touchMove', [{ x: x + (dx * i) / steps, y: y + (dy * i) / steps }], i);
+	await at('touchEnd', [], steps + 1);
 	await cdp.detach();
 }
 
