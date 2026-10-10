@@ -133,8 +133,24 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // keeping the first pass's `occur_time`, which a second coercion at the
     // new base would shift again (`occur_time=+5` must not become +10).
     let data_occur_time = |p: &ParsedLogArgs| p.extra_data.as_ref()?.get("occur_time").cloned();
+    // da-2mti0: `-D` wins over the key as it does over `-t`, the key being
+    // one more `-t`. So beside `-D` it is read from the flags' time and not
+    // from the midnight `-D` made of it (`-D occur_time=-6` is today), and
+    // the relative keys anchor at its day's midnight, as at `-D -t`'s.
+    let full_day = args.time.full_day;
+    if full_day && data_occur_time(&parsed).is_some() {
+        let clock = TimeArgs {
+            full_day: false,
+            ..args.time.clone()
+        };
+        let read_from = build_time_from_flags(&clock, now.utc).ok();
+        parsed = parse_log_args(&args, action, read_from)?;
+    }
     if let Some(t) = data_occur_time(&parsed) {
-        let anchor = parse_reserved_occur_time(&t, &base.unwrap_or_else(DatumTime::now))?;
+        let mut anchor = parse_reserved_occur_time(&t, &base.unwrap_or_else(DatumTime::now))?;
+        if full_day {
+            anchor = whole_day(&anchor)?;
+        }
         parsed = parse_log_args(&args, action, Some(anchor))?;
         if let Some(JsonValue::Object(obj)) = parsed.extra_data.as_mut() {
             obj.insert("occur_time".into(), t);
@@ -501,10 +517,12 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // verb: `add field occur_time=+5` shifts it +5m and re-anchors what was
     // a timeless entry. The relative-offset base is the entry's current
     // occur_time when present, else wall-clock now (mirrors the `dm update`
-    // path in update_core::apply_mutation).
+    // path in update_core::apply_mutation). Beside `-D` the column is the
+    // key's whole day (da-2mti0).
     if let Some(t) = reserved.occur_time {
         let base = entry.occur_time.clone().unwrap_or_else(DatumTime::now);
-        entry.occur_time = Some(parse_reserved_occur_time(&t, &base)?);
+        let at = parse_reserved_occur_time(&t, &base)?;
+        entry.occur_time = Some(if full_day { whole_day(&at)? } else { at });
     }
 
     // da-ju71.2: stamp `Dur::moment()` ("MOMENT") to lock the entry to
@@ -1887,6 +1905,16 @@ fn check_no_time_flags(args: &LogArgs) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// `t`'s whole day, as `-D` makes it of the flags' time: its midnight in
+/// its own zone, `P1D` wide.
+fn whole_day(t: &DatumTime) -> Result<DatumTime> {
+    let full_day = TimeArgs {
+        full_day: true,
+        ..Default::default()
+    };
+    build_time_anchored(&full_day, t.utc, Some(t), false)
 }
 
 /// The `-t` path proper: the timing flag group resolved against `now`.

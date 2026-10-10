@@ -113,7 +113,9 @@ exactly across midnights. `datum check stats` recomputes a sample of days and sa
   day then shift part at midnight and at DST. `-y -t 18:30 -t -6` is 18:24
   yesterday. `retime` anchors on the entry's own time, a clock, and takes them.
   A relative `occur_time=` on a log is one more `-t ±N` to the rule
-  (`-y occur_time=-6` is refused); on `update` its anchor is the entry's time
+  (`-y occur_time=-6` is refused), and `-D` wins over the key as over `-t`
+  (`-D occur_time=18:30` is the whole day); on `update` its anchor is the
+  entry's time
 - a duration is a trailing positional (`datum end work 30m`) or `dur=30m`
   (`1:30`, `2h`, ISO `PT30M` all work). It says how long the thing LASTED,
   so the block ENDS at the entry's time and the span precedes it —

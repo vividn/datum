@@ -412,6 +412,36 @@ fn full_day_writes_uncertainty_and_strips_clock() {
     assert_eq!(local.time(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
 }
 
+/// da-2mti0: `-D` wins over an `occur_time=` key as it does over `-t`, the
+/// key being one more `-t`: each line logs the whole day its flag twin does.
+/// The key overwrote what `-D` had stripped, read from that midnight, so
+/// `-D occur_time=-6` was 23:54 the day before, exact.
+#[test]
+fn full_day_wins_over_an_occur_time_key() {
+    for (key, flags) in [
+        (&["occur_time=-6"][..], &["-t", "-6"][..]),
+        (&["occur_time=18:30"], &["-t", "18:30"]),
+        (
+            &["-t", "18:30", "occur_time=-6"],
+            &["-t", "18:30", "-t", "-6"],
+        ),
+        (
+            &["occur_time=18:30", "wake_time=+30"],
+            &["-t", "18:30", "wake_time=+30"],
+        ),
+    ] {
+        let db = fresh_db();
+        let logged = |field: &str, rest: &[&str]| {
+            run_cli(&[&["occur", field, "-D"], rest].concat(), &db).expect("occur -D");
+            let e = datum_core::test_util::logged_entries(&db, field).remove(0);
+            (e.occur_time.unwrap(), e.data)
+        };
+        let twin = logged("flags", flags);
+        assert_eq!(twin.0.uncertainty.as_deref(), Some("P1D"), "{flags:?}");
+        assert_eq!(logged("key", key), twin, "-D {key:?} is -D {flags:?}");
+    }
+}
+
 /// da-4fyb: a date-only entry slugs on the bare local date, not on the
 /// midnight timestamp its `occur_time` happens to store. `%occur_time%`
 /// interpolation is what builds the default slug, and a `T00:00:00.000Z`
