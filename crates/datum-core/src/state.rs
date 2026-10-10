@@ -380,11 +380,12 @@ impl StateRow {
     /// da-zwct: the trailing edge is `occur` itself, so a completed block
     /// has already handed the field back by the instant it stores.
     ///
-    /// A moment ([`StateRow::is_moment_state`]) hands the field back from
-    /// its own instant: it never decides what holds after it.
+    /// A moment ([`StateRow::is_moment_state`]) hands the field back at
+    /// any instant: it never decides a state, before itself or after.
+    /// Wall-clock `now` reads rows dated ahead of it (da-e47ap).
     pub fn hands_field_back(&self, at: DateTime<Utc>) -> bool {
         if self.is_moment_state() {
-            return self.occur.is_some_and(|occur| at >= occur);
+            return true;
         }
         if !crate::shape::hands_field_back(self.verb) || self.following_state.is_some() {
             return false;

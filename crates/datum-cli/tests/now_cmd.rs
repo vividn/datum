@@ -387,6 +387,35 @@ fn now_resumes_the_state_a_block_interrupted() {
     );
 }
 
+/// da-e47ap: a moment switches nothing (da-22750) dated ahead of now as
+/// well as behind it. Wall-clock `now` reads with no upper bound, so a
+/// moment to come is its field's newest row.
+#[test]
+fn now_passes_over_a_moment_dated_ahead() {
+    let db = fresh_db();
+    run_cli(&["switch", "energy", "high", "-t", "-60"], &db).expect("switch dispatch");
+    let high = db.entries_for_field("energy", Some(1)).expect("rows")[0].clone();
+    run_cli(&["switch", "energy", "low", "dur=0", "-t", "+120"], &db).expect("moment dispatch");
+    // A field of moments alone holds no state, whichever side of now.
+    run_cli(&["switch", "mood", "calm", "dur=0", "-t", "-120"], &db).expect("moment dispatch");
+    run_cli(&["switch", "mood", "calm", "dur=0", "-t", "+120"], &db).expect("moment dispatch");
+
+    let snapshot = db
+        .current_now(&datum_core::db::NowFilter {
+            include_tracked_false: true,
+            include_ignored: true,
+            snapshot_time: None,
+        })
+        .expect("current_now");
+    assert!(snapshot.tracked_false.iter().any(|r| r.field == "mood"));
+    let [row] = &snapshot.active[..] else {
+        panic!("energy alone is active: {:?}", snapshot.active);
+    };
+    assert_eq!(row.field, "energy");
+    assert_eq!(row.state, json!("high"));
+    assert_eq!(row.since, high.occur_time.map(|t| t.utc));
+}
+
 // ─── End-to-end: `datum now` through the shared CLI harness ──────────────────
 
 #[test]
