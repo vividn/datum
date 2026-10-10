@@ -140,6 +140,8 @@
 	$: cols = keys.filter((key) => !SACRIFICE.slice(0, dropped).includes(key));
 	/** Where the widget itself last scrolled to: the event that reports it is not the reader's. */
 	let own: number | null = null;
+	/** Where the body was at its last scroll event, or where the widget has put it since: below it now is the reader going up. */
+	let last = 0;
 
 	/**
 	 * The field the listing is narrowed to — the bar's field pill (da-8810n)
@@ -312,11 +314,17 @@
 		await tick();
 	}
 
-	/** Scroll to `top` as the widget, not the reader: the event it raises is told apart by where it landed. */
+	/**
+	 * Scroll to `top` as the widget, not the reader: the event it raises is
+	 * told apart by where it landed. And `last` is there from now, not from
+	 * that event: a reader who scrolls on before the frame is out shares the
+	 * one event with it, and up from where the widget put them is up
+	 * (da-gaiko).
+	 */
 	function scrollTo(top: number): void {
 		if (!scroller) return;
 		scroller.scrollTop = top;
-		own = scroller.scrollTop;
+		own = last = scroller.scrollTop;
 	}
 
 	const at = (row: Shown) => (row.time === null ? -Infinity : Date.parse(row.time));
@@ -534,9 +542,6 @@
 		attached.removeEventListener('touchmove', onTouchMove);
 		attached = undefined;
 	}
-
-	/** Where the body was at its last scroll event: below it now is the reader going up. */
-	let last = 0;
 
 	function onScroll(): void {
 		if (!scroller) return;

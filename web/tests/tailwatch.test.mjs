@@ -505,6 +505,50 @@ describe('scrolling up', () => {
 			await marker(page).waitFor();
 		});
 	});
+
+	// One scroll event for two scrolls (da-gaiko). A body raises its scroll
+	// events a frame at a time, so a reader who reaches the top in the frame
+	// the widget put them back at their row shares the one event with it.
+	// Read against where the body was at the event BEFORE, the top, that
+	// event was not a scroll up: no page was asked for, and the reader sat
+	// at the top of a log with a past — as this file's own loops (`toTop`,
+	// then wait for the rows to change) did once, on a busy lane. Built on
+	// purpose here: wherever the widget puts the body, the reader is at the
+	// top again before the task is out, so every event is such a one.
+	test('a reader at the top in the frame a page lands is brought the page above', async () => {
+		await TALL.solo(async (app) => {
+			const { page } = app;
+			const total = 250;
+			await seed(app, total);
+			await atRest(page);
+			await page.evaluate(() => {
+				const body = document.querySelector('section.pane[data-title="tail"] .body:not(.behind .body)');
+				const { get, set } = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop');
+				Object.defineProperty(body, 'scrollTop', {
+					configurable: true,
+					get: () => get.call(body),
+					set(top) {
+						set.call(body, top);
+						// A microtask: after the widget has read where it landed,
+						// before any frame.
+						if (top > 0) queueMicrotask(() => set.call(body, 0));
+					}
+				});
+				window.__release = () => (delete body.scrollTop, delete window.__release);
+			});
+			try {
+				// The one scroll that is this test's: a table that fits has no scroll to set.
+				await wheelUp(page);
+				await page.locator('section.pane[data-title="tail"] tbody tr.start').waitFor();
+				const g = await geometry(page);
+				assert.equal(g.hids.length, total, 'the whole log is not listed');
+				assert.deepEqual(g.start, [seedHid(0)], 'the first row of the log is not marked as the start');
+				assert.equal(g.scrollTop, 0, 'the reader is not at the top: not the case this is about');
+			} finally {
+				await page.evaluate(() => window.__release?.());
+			}
+		});
+	});
 });
 
 describe('a write', () => {
