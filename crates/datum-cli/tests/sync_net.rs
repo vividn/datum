@@ -1451,6 +1451,26 @@ fn a_copy_holding_entries_is_refused_a_reader_invite() {
     }
 }
 
+/// What a copy holds is more than `count` counts: a flag marker and a meta
+/// note are entries a reader could not send either, and `count`, as `tail`,
+/// leaves them out (da-lkh1j).
+#[test]
+fn a_copy_holding_a_flag_and_a_meta_note_is_refused_a_reader_invite() {
+    let a = Copy::new();
+    a.ok(&["occur", "coffee"]);
+    let r = Copy::new();
+    r.ok(&["flag", "tea", "come back to this"]);
+    r.ok(&["meta", "tea", "rate it"]);
+    assert_eq!(r.ok(&["count"]).trim(), "0");
+    assert_eq!(r.ok(&["sync", "holds"]).trim(), "2");
+    let (_inviting, ticket) = a.invite(&["--reader"]);
+    let refused = r.fails(&["sync", "chain", "connect", &ticket], "");
+    assert!(
+        refused.contains("holds 2 entries of its own; a reader writes nothing"),
+        "{refused}"
+    );
+}
+
 /// A filtered reader over iroh (da-u81u1): the member serving it knows who
 /// it is and sends its fields alone — more than one apply chunk of them —
 /// the verify over that set agrees, and a widened filter brings the rest

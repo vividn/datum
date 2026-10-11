@@ -1211,6 +1211,7 @@ mod tests {
             ("sync pipe held", ""),
             ("sync run", ""),
             ("sync endpoint-key", ""),
+            ("sync holds", ""),
             ("sync record-session", "ab"),
             ("sync handshake", "ab --label l --addr a"),
             ("sync new-invite", ""),

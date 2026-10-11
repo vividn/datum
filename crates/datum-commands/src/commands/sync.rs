@@ -330,6 +330,7 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
                 key.iter().map(|b| format!("{b:02x}")).collect::<String>()
             );
         }
+        SyncCommand::Holds => println!("{}", db.sync_holds()?),
         SyncCommand::RecordSession {
             endpoint,
             vector,

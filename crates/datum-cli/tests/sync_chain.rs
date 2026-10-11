@@ -1769,6 +1769,7 @@ fn the_network_workers_commands_are_hidden_and_endpoint_key_is_the_secret() {
     assert!(help.contains("rename") && help.contains("status"), "{help}");
     for hidden in [
         "endpoint-key",
+        "datum sync holds",
         "record-session",
         "handshake",
         "new-invite",
@@ -1784,6 +1785,7 @@ fn the_network_workers_commands_are_hidden_and_endpoint_key_is_the_secret() {
     );
     for hidden in [
         "endpoint-key",
+        "holds",
         "record-session",
         "handshake",
         "new-invite",

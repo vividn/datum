@@ -300,7 +300,7 @@ impl Store for DbStore<'_> {
     }
 
     async fn holds(&self) -> Result<u64> {
-        Ok(self.0.count_entries_filtered(None, None)? as u64)
+        Ok(self.0.sync_holds()?)
     }
 
     async fn record_session(

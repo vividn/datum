@@ -918,6 +918,10 @@ pub enum SyncCommand {
     /// Hidden: `datum sync endpoint-key` — this copy's endpoint secret,
     /// for datum.day's network worker.
     EndpointKey,
+    /// Hidden: `datum sync holds` — how many entries this copy holds, for
+    /// datum.day's store: `count`'s, and the flag markers and meta notes it
+    /// leaves out (da-lkh1j).
+    Holds,
     /// Hidden: `datum sync record-session <ENDPOINT> [--vector <JSON>]
     /// [--verify match|mismatch] [--error <TEXT>] [--met <JSON>]` — how a
     /// session the browser's transport ran ended, and the members' addresses
@@ -934,7 +938,7 @@ pub enum SyncCommand {
     /// session's handshake as it bears on this copy, for datum.day's
     /// transport (da-6kpj5): `added`, `known`, or the refusal as the error.
     /// `--chain` is the redeemer's own chain, empty for none (da-mepav);
-    /// `--holds` its entries, as `datum count` counts them (da-tti3w).
+    /// `--holds` its entries, as `datum sync holds` counts them (da-tti3w).
     /// `--dialed` with `--invite`: this copy redeemed it there (da-38eye).
     /// `--datum <BUILD> --schema <N>`: what the peer runs (da-3zqyv).
     /// `--records`: the peer's chain records are on stdin, to admit it by

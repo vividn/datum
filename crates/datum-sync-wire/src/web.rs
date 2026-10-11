@@ -227,11 +227,7 @@ impl Store for Cli {
     }
 
     async fn holds(&self) -> Result<u64> {
-        let n: serde_json::Value =
-            serde_json::from_str(&self.run(&["count", "--json"], None).await?)?;
-        n["count"]
-            .as_u64()
-            .context("`count --json` printed no count")
+        Ok(self.run(&["sync", "holds"], None).await?.trim().parse()?)
     }
 
     async fn record_session(

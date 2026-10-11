@@ -151,9 +151,9 @@ pub trait Store {
     /// This copy's chain records, as op lines: what it shows a member that
     /// has not heard it joined (da-2u95o).
     async fn records(&self) -> Result<Vec<String>>;
-    /// How many entries this copy holds, as `datum count` counts them (life
-    /// data: no spec, layout or alias): a reader invite refuses a redeemer
-    /// holding any, which a reader's fold would hide (da-tti3w).
+    /// How many entries this copy holds, as `datum sync holds` counts them
+    /// (life data: no spec, layout or alias): a reader invite refuses a
+    /// redeemer holding any, which a reader's fold would hide (da-tti3w).
     async fn holds(&self) -> Result<u64>;
     /// `met`: the members' addresses `peer` passed on, to keep for each
     /// member this copy has not itself seen (da-fly3f).
@@ -267,7 +267,7 @@ struct Hello {
     invite: Option<String>,
     /// A redeemer's own chain, empty for none (da-mepav).
     chain: Option<String>,
-    /// A redeemer's entries, as `datum count` counts them (da-tti3w).
+    /// A redeemer's entries, as `datum sync holds` counts them (da-tti3w).
     #[serde(default)]
     holds: u64,
     /// The dialer answers a [`Reply::Prove`], and reads [`Why::NotMember`];

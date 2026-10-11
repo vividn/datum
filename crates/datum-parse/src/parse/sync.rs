@@ -55,6 +55,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         "run" => SyncCommand::Run,
         // Hidden (da-rcb5m): datum.day's network worker, not a person.
         "endpoint-key" => SyncCommand::EndpointKey,
+        "holds" => SyncCommand::Holds,
         "record-session" => {
             let mut o = opts(&mut rest, &["vector", "verify", "error", "met"], &[], 1..=1)?;
             let verify = match o.get("verify").as_deref() {

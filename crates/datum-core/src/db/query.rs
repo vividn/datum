@@ -49,13 +49,16 @@ impl Db {
 
     /// Count live entries, optionally filtered by `field` and/or a lower
     /// bound on occur-time (falling back to `create_time` when unset).
+    /// Flag markers and meta notes are left out, as `tail` leaves them
+    /// (da-lkh1j).
     pub fn count_entries_filtered(
         &self,
         field: Option<&str>,
         since: Option<DateTime<Utc>>,
     ) -> Result<usize> {
         let (where_clause, bindings) = filtered_where(field, since);
-        let sql = format!("SELECT COUNT(*) FROM entries WHERE {where_clause}");
+        let sql =
+            format!("SELECT COUNT(*) FROM entries WHERE {where_clause} AND {NOT_FLAG_OR_META_SQL}");
         let n: i64 =
             self.conn
                 .query_row(&sql, rusqlite::params_from_iter(bindings.iter()), |row| {
@@ -64,9 +67,20 @@ impl Db {
         Ok(n as usize)
     }
 
+    /// How many entries this copy holds, which a reader invite refuses a
+    /// redeemer for (da-tti3w): every live one that is life data, a flag
+    /// marker and a meta note among them, which `count` leaves out
+    /// (da-lkh1j).
+    pub fn sync_holds(&self) -> Result<u64> {
+        let sql = format!("SELECT COUNT(*) FROM entries WHERE {LIVE_SQL} AND {NOT_META_FIELD_SQL}");
+        let n: i64 = self.conn.query_row(&sql, [], |row| row.get(0))?;
+        Ok(n as u64)
+    }
+
     /// Group live entries by one of {`value`, `verb`, `field`} and return
     /// `(group_key, count)` pairs ordered by count DESC, key ASC. NULL
-    /// group keys are emitted as the literal string `"null"`.
+    /// group keys are emitted as the literal string `"null"`. The entries
+    /// are [`Self::count_entries_filtered`]'s.
     pub fn count_entries_grouped(
         &self,
         field: Option<&str>,
@@ -77,7 +91,8 @@ impl Db {
         let (where_clause, bindings) = filtered_where(field, since);
         let sql = format!(
             "SELECT {col} AS g, COUNT(*) AS n FROM entries \
-             WHERE {where_clause} GROUP BY {col} ORDER BY n DESC, g ASC"
+             WHERE {where_clause} AND {NOT_FLAG_OR_META_SQL} \
+             GROUP BY {col} ORDER BY n DESC, g ASC"
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(rusqlite::params_from_iter(bindings.iter()), |row| {

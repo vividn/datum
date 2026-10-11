@@ -226,3 +226,40 @@ fn count_cli_dispatch_smoke_test() {
     run_cli(&["count", "coffee"], &db).expect("field-filtered count must dispatch");
     run_cli(&["count", "--json"], &db).expect("json count must dispatch");
 }
+
+/// A flag marker and a meta note keep their words in `state` and are no
+/// entries of their field: `count` counts what `tail` lists, and
+/// `--group-by state` only what the field was switched to (da-lkh1j).
+#[test]
+fn count_leaves_flag_markers_and_meta_notes_out() {
+    let (plain, flagged) = (fresh_db(), fresh_db());
+    for db in [&plain, &flagged] {
+        run_cli(&["switch", "mood", "good", "-t", "-3h"], db).unwrap();
+        run_cli(&["switch", "mood", "tired", "-t", "-1h"], db).unwrap();
+    }
+    run_cli(
+        &["flag", "mood", "come back to this", "-t", "-2h"],
+        &flagged,
+    )
+    .unwrap();
+    run_cli(&["meta", "mood", "rate it"], &flagged).unwrap();
+
+    for db in [&plain, &flagged] {
+        for field in [None, Some("mood".to_string())] {
+            let args = CountArgs {
+                field,
+                ..CountArgs::default()
+            };
+            assert_eq!(compute_count(&args, db).unwrap(), CountResult::Total(2));
+        }
+        let by_state = CountArgs {
+            field: Some("mood".to_string()),
+            group_by: Some("state".to_string()),
+            ..CountArgs::default()
+        };
+        assert_eq!(
+            compute_count(&by_state, db).unwrap(),
+            CountResult::Grouped(vec![("\"good\"".into(), 1), ("\"tired\"".into(), 1)])
+        );
+    }
+}
