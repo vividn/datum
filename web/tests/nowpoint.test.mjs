@@ -160,10 +160,29 @@ const asked = async (page) => {
 	return i < 0 ? null : argv[i + 1];
 };
 
-/** A press, a drag and a lift with the mouse, `hold` ms before the first move. */
+/**
+ * The next press arms no wait: a timer set while a `pointerdown` is being
+ * handled is not set, and the lift puts `setTimeout` back.
+ */
+const noWait = () => {
+	const real = window.setTimeout;
+	window.setTimeout = (...a) => (window.event?.type === 'pointerdown' ? 0 : real(...a));
+	addEventListener('pointerup', () => (window.setTimeout = real), { capture: true, once: true });
+};
+
+/**
+ * A press, a drag and a lift with the mouse, `hold` ms before the first move.
+ *
+ * With no `hold` the press is one that travels BEFORE the long press's wait
+ * is up (`LONG_MS`, $lib/nowpoint.ts), and how long the first move takes to
+ * arrive is the box's to say: on a loaded runner it came after the 400ms,
+ * and a drag asked for as a pan was a range (da-9ol3b). So that press has no
+ * wait to beat (`noWait`); one with a `hold` waits it out on the real timer.
+ */
 async function drag(page, from, to, { hold = 0, shift = false } = {}) {
 	await page.mouse.move(from.x, from.y);
 	if (shift) await page.keyboard.down('Shift');
+	if (!hold) await page.evaluate(noWait);
 	await page.mouse.down();
 	if (hold) await page.waitForTimeout(hold);
 	await page.mouse.move(to.x, to.y, { steps: 8 });
