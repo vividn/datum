@@ -143,3 +143,38 @@ fn a_warning_row_that_does_not_decode_is_a_finding() {
         "the readable row is still reported: {stdout}"
     );
 }
+
+/// da-tgulk: a flag's words are in `state` alone, so `check flags` reads
+/// the words an `update` wrote, where it read a second copy in
+/// `extra_metadata` that no edit reaches; and its hint names what clears a
+/// flag, `datum del`, where it said «deleting or updating the row».
+#[test]
+fn a_flags_words_have_one_copy_and_del_alone_clears_it() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("flag.db");
+    datum(&db, &["flag", "mood", "check this"]);
+    let issues = || -> Value {
+        serde_json::from_str::<Value>(&datum(&db, &["check", "flags", "--json"])).unwrap()["issues"]
+            .take()
+    };
+    let hid = issues()[0]["entries"][0]["hid"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    datum(&db, &["update", &hid, "state=checked: fine"]);
+    let issue = issues()[0].take();
+    assert_eq!(issue["entries"][0]["state"], "checked: fine");
+    assert_eq!(issue["example"]["detail"], "checked: fine");
+    let message = issue["message"].as_str().unwrap();
+    assert!(
+        message.ends_with("clear one with `datum del <hid>`."),
+        "{message}"
+    );
+    let row = datum_core::db::Db::open(db.to_str().unwrap()).unwrap();
+    let row = datum_core::test_util::logged_entries(&row, "mood").remove(0);
+    assert_eq!(row.extra_metadata, Some(serde_json::json!({"flag": true})));
+
+    datum(&db, &["del", &hid]);
+    assert_eq!(issues(), serde_json::json!([]));
+}

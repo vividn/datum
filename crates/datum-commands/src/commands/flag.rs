@@ -3,11 +3,12 @@
 //!
 //! Stored as a `Verb::Point` entry on `field` with `occur_time` taken
 //! from the standard timing flags (so back-dated flags land where the
-//! user said) and `extra_metadata = { flag: true, comment: "…" }`.
+//! user said), its words in `state` and `extra_metadata = { flag: true }`.
 //! `datum meta` marks its rows the same way, with `meta: true` for
 //! `flag: true` — renderers that filter out meta-rows can extend the
-//! check with the same one-liner. The payload keys differ: a flag's
-//! words are under `comment`, a meta note's under `text`.
+//! check with the same one-liner. A flag's words are in `state` alone
+//! (da-tgulk): a second copy in `extra_metadata`, which no edit reaches,
+//! kept the old words after `edit` or `update state=…`.
 //!
 //! `datum check`-integration (surfacing pending flags during integrity
 //! sweeps) is a follow-up — filed as a separate bead. The storage
@@ -44,19 +45,9 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
         .with_timezone(zone_name(&time)?)
         .build();
 
-    // Build the extra_metadata payload. Always emit `flag: true` so
-    // downstream filters can match without caring whether a comment
-    // exists; the comment is omitted (not empty-string'd) when the
-    // bare form is used so renderers don't have to special-case "".
-    let mut meta_obj = serde_json::Map::new();
-    meta_obj.insert("flag".to_string(), JsonValue::Bool(true));
-    if !comment.is_empty() {
-        meta_obj.insert("comment".to_string(), JsonValue::String(comment.clone()));
-    }
-
-    // State = comment so a quick `datum get <hid>` shows the payload
-    // without diving into extra_metadata. Empty bare-form flags carry
-    // no state — they're pure "look here" markers.
+    // State = comment, its one copy: `edit` and `update` reach it, and a
+    // quick `datum get <hid>` shows it. Empty bare-form flags carry no
+    // state — they're pure "look here" markers.
     let state = if comment.is_empty() {
         None
     } else {
@@ -75,7 +66,7 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
         Some(Dur::moment()),
         client_id()?,
     );
-    entry.extra_metadata = Some(JsonValue::Object(meta_obj));
+    entry.extra_metadata = Some(serde_json::json!({ "flag": true }));
 
     db.insert_entry(&entry)
         .with_context(|| format!("recording flag on field '{field}'"))?;

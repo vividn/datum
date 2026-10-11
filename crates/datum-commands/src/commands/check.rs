@@ -1218,19 +1218,14 @@ fn collect_pending_flags(db: &Db) -> Result<Vec<Issue>> {
     let count = flagged.len();
     let message = format!(
         "{count} entr{y} flagged for review. Inspect with `datum check flags`; \
-         clear by deleting or updating the row.",
+         clear one with `datum del <hid>`.",
         y = if count == 1 { "y" } else { "ies" },
     );
     let first = &flagged[0];
     let example = Some(IssueExample {
         id: Some(first.slug.to_string()),
         field: Some(first.field.clone()),
-        detail: first
-            .extra_metadata
-            .as_ref()
-            .and_then(|m| m.get("comment"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+        detail: first.state.as_ref().map(render_state_for_flag),
     });
     // FlaggedEntry triplet for the JSON output — same shape as the
     // integrity-warning rows so consumers don't branch on category.
@@ -1239,15 +1234,13 @@ fn collect_pending_flags(db: &Db) -> Result<Vec<Issue>> {
         .map(|e| FlaggedEntry {
             hid: e.short_uid(),
             field: e.field.clone(),
-            // Surface the comment if present, otherwise leave empty.
-            // Render-block (below) carries the canonical row layout.
+            // The flag's words, where it has any: `state` is their one
+            // copy (da-tgulk).
             state: e
-                .extra_metadata
+                .state
                 .as_ref()
-                .and_then(|m| m.get("comment"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
+                .map(render_state_for_flag)
+                .unwrap_or_default(),
         })
         .collect();
     let rendered_block = render_flagged_block(db, &flagged);
@@ -3005,26 +2998,24 @@ mod tests {
 
     /// One row tagged via `datum flag mood "review later"` shows up in
     /// `collect_pending_flags` as a single `flagged_entry` warning with
-    /// count=1, the field name in the example, and the comment threaded
-    /// through `IssueExample::detail`.
+    /// count=1, the field name in the example, and its words, the state,
+    /// threaded through `IssueExample::detail`.
     #[test]
     fn flagged_entries_surface_as_pending_review_warning() {
         let db = Db::open_in_memory().unwrap();
         // Build a flagged entry the same way `datum flag` does: occur on
-        // the field with `extra_metadata = { flag: true, comment: "..." }`.
+        // the field with its words in `state` and `extra_metadata =
+        // { flag: true }`.
         let mut e = Entry::new_legacy(
             "mood",
             Verb::Point,
-            None,
+            Some(serde_json::json!("review later")),
             None,
             Some(t_at("2024-01-01T10:00:00+00:00")),
             None,
             "d1",
         );
-        e.extra_metadata = Some(serde_json::json!({
-            "flag": true,
-            "comment": "review later"
-        }));
+        e.extra_metadata = Some(serde_json::json!({ "flag": true }));
         db.insert_entry(&e).unwrap();
 
         let issues = collect_pending_flags(&db).unwrap();

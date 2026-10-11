@@ -951,7 +951,7 @@ fn tail_hides_flag_and_meta_rows_by_default_and_shows_with_flag() {
     insert(&db, "mood", Verb::Switch, 60); // plain tracked row
                                            // Flagged row via `datum flag`-shaped extra_metadata.
     let mut flagged = Entry::new("mood", Verb::Point, None, None, Some(t_at(120)), None, "d1");
-    flagged.extra_metadata = Some(json!({"flag": true, "comment": "review later"}));
+    flagged.extra_metadata = Some(json!({"flag": true}));
     db.insert_entry(&flagged).unwrap();
 
     // Default tail (show_meta=false): plain row only.
