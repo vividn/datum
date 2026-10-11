@@ -4,9 +4,12 @@
 //! Each note is stored as a `Verb::Point` entry on the named field,
 //! `occur_time = now` (so multiple notes on the same field disambiguate
 //! by their wall-clock timestamps via the standard `<field>:<time>`
-//! slug), and `extra_metadata = { "meta": true, "text": "<note>" }`. Plain
-//! reads (`tail`, `now`, `dayview`) can filter on `extra_metadata.meta`
-//! to hide these; `meta show` queries explicitly for them.
+//! slug), its words in `state` and `extra_metadata = { "meta": true }`.
+//! Plain reads (`tail`, `now`, `dayview`) can filter on
+//! `extra_metadata.meta` to hide these; `meta show` queries explicitly for
+//! them. A note's words are in `state` alone (da-gmjyx), as a flag's are:
+//! a second copy in `extra_metadata`, which no edit reaches, kept the old
+//! words after `edit` or `update state=…`.
 
 use anyhow::{Context, Result};
 use datum_core::{
@@ -17,6 +20,7 @@ use datum_core::{
 };
 use serde_json::Value as JsonValue;
 
+use crate::commands::check::render_state_for_flag;
 use crate::config::client_id;
 use datum_parse::cli::MetaCommand;
 
@@ -46,10 +50,7 @@ fn add_note(field: &str, text: &str, db: &Db) -> Result<()> {
         Some(Dur::moment()),
         client_id()?,
     );
-    let mut meta_obj = serde_json::Map::new();
-    meta_obj.insert("meta".to_string(), JsonValue::Bool(true));
-    meta_obj.insert("text".to_string(), JsonValue::String(text.to_string()));
-    entry.extra_metadata = Some(JsonValue::Object(meta_obj));
+    entry.extra_metadata = Some(serde_json::json!({ "meta": true }));
 
     db.insert_entry(&entry)
         .with_context(|| format!("recording meta note on field '{field}'"))?;
@@ -78,11 +79,9 @@ fn show_notes(field: &str, db: &Db) -> Result<()> {
     entries.sort_by_key(|e| e.create_time);
     for e in &entries {
         let text = e
-            .extra_metadata
+            .state
             .as_ref()
-            .and_then(|v| v.get("text"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("(no text)");
+            .map_or("(no text)".to_string(), render_state_for_flag);
         let stamp = e.create_time.format("%Y-%m-%d %H:%M");
         println!("{stamp}  {text}");
     }

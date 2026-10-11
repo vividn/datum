@@ -178,3 +178,23 @@ fn a_flags_words_have_one_copy_and_del_alone_clears_it() {
     datum(&db, &["del", &hid]);
     assert_eq!(issues(), serde_json::json!([]));
 }
+
+/// da-gmjyx: a meta note's words are in `state` alone, as a flag's are, so
+/// `meta show` prints the words an `update` wrote, where it read a second
+/// copy in `extra_metadata` that no edit reaches.
+#[test]
+fn a_meta_notes_words_have_one_copy() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("meta.db");
+    let made = datum(&db, &["meta", "mood", "rate it at bedtime"]);
+    let hid = made.split_whitespace().nth(1).unwrap();
+    assert!(datum(&db, &["meta", "show", "mood"]).ends_with("  rate it at bedtime\n"));
+
+    datum(&db, &["update", hid, "state=rate it on waking"]);
+    let shown = datum(&db, &["meta", "show", "mood"]);
+    assert!(shown.ends_with("  rate it on waking\n"), "{shown}");
+    assert_eq!(shown.lines().count(), 1, "{shown}");
+    let row = datum_core::db::Db::open(db.to_str().unwrap()).unwrap();
+    let row = datum_core::test_util::logged_entries(&row, "mood").remove(0);
+    assert_eq!(row.extra_metadata, Some(serde_json::json!({"meta": true})));
+}

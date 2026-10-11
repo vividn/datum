@@ -1378,7 +1378,7 @@ fn render_flagged_block(db: &Db, entries: &[Entry]) -> String {
 /// lines: scalar bool/number/string unwrapped, anything structured
 /// serialized compactly. The shape mirrors what the live renderer prints
 /// in the state column.
-fn render_state_for_flag(v: &JsonValue) -> String {
+pub(crate) fn render_state_for_flag(v: &JsonValue) -> String {
     match v {
         JsonValue::String(s) => s.clone(),
         JsonValue::Bool(b) => b.to_string(),
@@ -3078,10 +3078,7 @@ mod tests {
             None,
             "d1",
         );
-        e.extra_metadata = Some(serde_json::json!({
-            "meta": true,
-            "text": "switch happy ⇒ unhappy means low energy",
-        }));
+        e.extra_metadata = Some(serde_json::json!({ "meta": true }));
         db.insert_entry(&e).unwrap();
         let issues = collect_pending_flags(&db).unwrap();
         assert!(issues.is_empty(), "meta notes must not surface as flags");
@@ -3129,7 +3126,7 @@ mod tests {
             None,
             "d1",
         );
-        meta.extra_metadata = Some(serde_json::json!({"meta": true, "text": "x"}));
+        meta.extra_metadata = Some(serde_json::json!({"meta": true}));
         db.insert_entry(&meta).unwrap();
 
         // Default: only the plain row survives.

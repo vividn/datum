@@ -357,7 +357,7 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         let mut meta = make_grep_entry("journal", 100, serde_json::json!("checkpoint"), None);
-        meta.extra_metadata = Some(serde_json::json!({"meta": true, "text": "x"}));
+        meta.extra_metadata = Some(serde_json::json!({"meta": true}));
         db.insert_entry(&meta).unwrap();
 
         let got = run_grep(&db, &["checkpoint"], None);
