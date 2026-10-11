@@ -60,6 +60,38 @@ fn state_colours_resolve_like_the_fields() {
     assert!(db.load_spec("mood").unwrap().is_none(), "nothing installed");
 }
 
+/// IGNORED and TRACKED are statuses, not states a kit can declare (da-af1u7):
+/// a declared state derives a one-word alias, so a bare `IGNORED` ignored the
+/// field. `false` is declarable, a never-false field's `end` (da-eqb30).
+#[test]
+fn a_kit_refuses_a_status_as_a_state() {
+    let kit = |states: &str| {
+        format!("[kit]\nname = \"statusprobe\"\n\n[[field]]\nname = \"mood\"\nverb = \"switch\"\nstates = {{ good = {{}}, {states} }}\n")
+    };
+    for (status, does) in [
+        ("IGNORED", "datum ignore mood"),
+        ("TRACKED", "datum track mood"),
+    ] {
+        let db = fresh_db();
+        let toml = kit(&format!("{status} = {{}}"));
+        for extra in [&[][..], &["--dry-run"]] {
+            let err = format!("{:#}", install(&db, &toml, extra).unwrap_err());
+            assert!(
+                err.contains("kit 'statusprobe' field 'mood'")
+                    && err.contains(&format!("'{status}' is a status, not a state"))
+                    && err.contains(does),
+                "{extra:?}: {err}"
+            );
+        }
+        assert!(db.load_spec("mood").unwrap().is_none(), "no row written");
+    }
+
+    let db = fresh_db();
+    install(&db, &kit("false = {}"), &[]).unwrap();
+    let spec = db.load_spec("mood").unwrap().unwrap();
+    assert_eq!(spec.allowed_states.unwrap(), ["good", "false"]);
+}
+
 /// `--force` over a hand-set spec remembers it, and uninstalling the kit
 /// writes it back rather than leaving the field with none.
 #[test]

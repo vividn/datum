@@ -259,6 +259,10 @@ fn install_toml(
         let resolved = resolve_color(entry.color.as_deref(), &entry.name)
             .with_context(|| format!("kit field '{}'", entry.name))?;
         for (state, s) in &mut entry.states {
+            // A status is no state (da-af1u7): each one derives a one-word
+            // alias, so a bare `IGNORED` would ignore the field.
+            super::spec::check_state_name(&entry.name, state)
+                .with_context(|| format!("kit '{}' field '{}'", kit.kit.name, entry.name))?;
             s.color = resolve_color(s.color.as_deref(), state)
                 .with_context(|| format!("kit field '{}' state '{state}'", entry.name))?;
         }
