@@ -22,6 +22,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, sharedApp, todayAt } from './support/app.mjs';
 import { PHONE, settled, swipe, titles } from './support/layout.mjs';
+import { drag, swipeNoWait } from './support/press.mjs';
 import { until } from './support/until.mjs';
 import { listed } from './support/rows.mjs';
 
@@ -186,17 +187,6 @@ const drawn = (page, scope) =>
 			lines: el.querySelectorAll('svg.svg line.cursor').length
 		};
 	});
-
-/** A press, a drag and a lift with the mouse, `hold` ms before the first move. */
-async function drag(page, from, to, { hold = 0, shift = false } = {}) {
-	await page.mouse.move(from.x, from.y);
-	if (shift) await page.keyboard.down('Shift');
-	await page.mouse.down();
-	if (hold) await page.waitForTimeout(hold);
-	await page.mouse.move(to.x, to.y, { steps: 8 });
-	await page.mouse.up();
-	if (shift) await page.keyboard.up('Shift');
-}
 
 /** Type a line into the bottom bar and wait for its receipt — the pills ride with it. */
 const receiptNow = () => document.querySelector('.prompt-bar .doc .receipt')?.textContent ?? '';
@@ -669,7 +659,7 @@ describe('what the bands take, and what they leave', () => {
 				// A band in the SCROLLER: today's is pinned below it and is
 				// not what the stack scrolls.
 				const box = await page.locator('.stack .band').last().boundingBox();
-				await swipe(page, box.x + box.width / 2, box.y + box.height / 2, 0, 300, 10);
+				await swipeNoWait(page, box.x + box.width / 2, box.y + box.height / 2, 0, 300, 10);
 				await until(
 					() => at(),
 					(top) => top <= rest - 200

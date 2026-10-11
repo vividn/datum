@@ -22,6 +22,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp, sharedApp } from './support/app.mjs';
 import { PHONE, activeTab, inRoom, maximizeButton, pane, pickOption, settled, swipe } from './support/layout.mjs';
+import { drag, swipeNoWait } from './support/press.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -159,36 +160,6 @@ const asked = async (page) => {
 	const i = argv ? argv.indexOf('-t') : -1;
 	return i < 0 ? null : argv[i + 1];
 };
-
-/**
- * The next press arms no wait: a timer set while a `pointerdown` is being
- * handled is not set, and the lift puts `setTimeout` back.
- */
-const noWait = () => {
-	const real = window.setTimeout;
-	window.setTimeout = (...a) => (window.event?.type === 'pointerdown' ? 0 : real(...a));
-	addEventListener('pointerup', () => (window.setTimeout = real), { capture: true, once: true });
-};
-
-/**
- * A press, a drag and a lift with the mouse, `hold` ms before the first move.
- *
- * With no `hold` the press is one that travels BEFORE the long press's wait
- * is up (`LONG_MS`, $lib/nowpoint.ts), and how long the first move takes to
- * arrive is the box's to say: on a loaded runner it came after the 400ms,
- * and a drag asked for as a pan was a range (da-9ol3b). So that press has no
- * wait to beat (`noWait`); one with a `hold` waits it out on the real timer.
- */
-async function drag(page, from, to, { hold = 0, shift = false } = {}) {
-	await page.mouse.move(from.x, from.y);
-	if (shift) await page.keyboard.down('Shift');
-	if (!hold) await page.evaluate(noWait);
-	await page.mouse.down();
-	if (hold) await page.waitForTimeout(hold);
-	await page.mouse.move(to.x, to.y, { steps: 8 });
-	await page.mouse.up();
-	if (shift) await page.keyboard.up('Shift');
-}
 
 /** Type a line into the bottom bar and wait for its receipt — the pills ride with it. */
 const receiptNow = () => document.querySelector('.prompt-bar .doc .receipt')?.textContent ?? '';
@@ -857,7 +828,7 @@ describe('on a phone', () => {
 				await app.spyOnRunner();
 				for (const dx of [-160, 160]) {
 					const b = await from(`${BAND} svg.svg`);
-					await swipe(page, b.x - dx / 2, b.y, dx, 0, 10);
+					await swipeNoWait(page, b.x - dx / 2, b.y, dx, 0, 10);
 					await settled(page);
 					assert.equal(await activeTab(page, 'side'), 'nowview', `a ${dx}px drag on the band moved the tab`);
 				}
@@ -917,7 +888,7 @@ describe('on a phone', () => {
 				// the window. That it does NOT move the tab is
 				// `layout-swipe.test.mjs`'s, which drags the band on a phone.
 				const g = await geometry(page);
-				await swipe(page, (g.lo + g.hi) / 2, g.y, 60, 0);
+				await swipeNoWait(page, (g.lo + g.hi) / 2, g.y, 60, 0);
 				await until(
 					() => asked(page),
 					(t) => t !== null
