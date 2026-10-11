@@ -487,10 +487,17 @@ fn subprocess_redo_of_an_undone_create_brings_the_entry_back() {
 /// same way as undo's. A stale `_LAST` no longer prompts — it deletes, and
 /// names the age on stderr. Needs the real binary: the old behaviour was a
 /// prompt that read stdin, so only a subprocess proves nothing is asked.
+///
+/// The age is the POINTER's (da-nduwi): the entry here is from yesterday
+/// evening and `_LAST` was set 23 minutes ago, and the warning said «deleting
+/// an entry from 23 minutes ago».
 #[test]
 fn subprocess_delete_past_the_window_warns_and_proceeds() {
     let env = Env::new();
-    assert_ok(&env.run(&["occur", "coffee"]), "create");
+    assert_ok(
+        &env.run(&["occur", "coffee", "-d", "-1", "-t", "21:00"]),
+        "create",
+    );
 
     let conn = Connection::open(&env.db).expect("open db");
     conn.execute(
@@ -504,8 +511,10 @@ fn subprocess_delete_past_the_window_warns_and_proceeds() {
     assert_ok(&out, "stale delete must proceed");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("deleting an entry from 23 minutes ago"),
-        "stale delete must name the age on stderr: {stderr:?}"
+        stderr
+            .lines()
+            .any(|l| l == "warning: deleting _LAST, set 23 minutes ago"),
+        "stale delete must name the pointer's age on stderr: {stderr:?}"
     );
     assert!(
         !stderr.contains("[Y/n]"),

@@ -97,7 +97,7 @@ fn undo_stack(db: &Db, registry: &Option<SpecRegistry>, output: &OutputArgs) -> 
     // cursor with them, or a failure part-way rolls all of it back.
     let tx = db.conn().unchecked_transaction()?;
     refuse_if_moved(db, &action, "undo")?;
-    warn_if_stale("undoing a change", action.time);
+    warn_if_stale("undoing a change from", action.time);
     let mut steps: Vec<(Entry, Entry)> = Vec::new();
     for member in &action.members {
         let Some(current) = still_there(db, &member.hid)? else {
@@ -136,7 +136,7 @@ fn redo_stack(
     // cursor with them, or a failure part-way rolls all of it back.
     let tx = db.conn().unchecked_transaction()?;
     refuse_if_moved(db, &action, "redo")?;
-    warn_if_stale("redoing a change", action.time);
+    warn_if_stale("redoing a change from", action.time);
     let mut steps: Vec<(Entry, Entry)> = Vec::new();
     for member in &action.members {
         let Some(current) = still_there(db, &member.hid)? else {

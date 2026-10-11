@@ -358,14 +358,16 @@ pub(crate) fn resolve_batch(
 /// warning». Nothing refuses: past [`STALE_WARNING_MINUTES`] the command says
 /// how old the change it is touching was, on stderr, and carries on.
 ///
-/// `phrase` is the clause before the age — "undoing a change", "deleting an
-/// entry" — so the whole line reads as a sentence.
+/// `phrase` is the clause before the age — "undoing a change from" — so the
+/// whole line reads as a sentence, and says WHAT is that old: for `undo` and
+/// `redo` the change, for a bare `delete` the `_LAST` pointer and not the
+/// entry it names (da-nduwi).
 ///
 /// [`STALE_WARNING_MINUTES`]: datum_core::last_docs::STALE_WARNING_MINUTES
 pub(crate) fn warn_if_stale(phrase: &str, reference_time: chrono::DateTime<chrono::Utc>) {
     if let Some(age) = datum_core::last_docs::stale_warning_age(reference_time, chrono::Utc::now())
     {
-        eprintln!("warning: {phrase} from {}", spell_age(age));
+        eprintln!("warning: {phrase} {}", spell_age(age));
     }
 }
 

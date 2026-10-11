@@ -68,10 +68,11 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
     // age is worth SAYING — it is not worth a prompt the user answers blind
     // on a tty, or a refusal everywhere else (a script, the web app, which
     // have no stdin to answer with). Past ten minutes the warning names the
-    // age; nothing stops. An explicit id names its own target and needs no
-    // warning about the pointer.
+    // age, as the pointer's: when `_LAST` was set, which says nothing of when
+    // the entry it names happened (da-nduwi). Nothing stops. An explicit id
+    // names its own target and needs no warning about the pointer.
     if args.id_or_slug.is_none() {
-        crate::commands::helpers::warn_if_stale_default_last("deleting an entry", db);
+        crate::commands::helpers::warn_if_stale_default_last("deleting _LAST, set", db);
     }
 
     // Every write, `_LAST` included, lands before anything prints: a reader
