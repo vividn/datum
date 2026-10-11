@@ -57,6 +57,11 @@ describe('the wasi CLI', () => {
 			assert.equal(listed.code, 0, listed.stderr);
 			// One header line an entry with conflicts (da-05rkv).
 			assert.equal(plain(listed.stdout).match(/^\S+ {2}debug:/gm)?.length, 4, listed.stdout);
+			// The listing, typed, opens the conflicts place too (da-6cutb), some
+			// time after `submit` returns: waited for, so the next test's `home`
+			// finds the modal up and closes it. One that landed between `home`'s
+			// count of the modals and its wait stayed open for the 30s (da-f68s9).
+			await app.page.locator('dialog.sheet[open][data-place="conflicts"]').waitFor();
 		});
 	});
 
