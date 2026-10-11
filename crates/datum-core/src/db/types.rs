@@ -163,6 +163,14 @@ pub(crate) const STATE_PARTICIPATION_SQL: &str =
 /// never drift apart at a call site that remembers only one of them.
 pub(crate) const LIVE_SQL: &str = "deleted_at IS NULL AND superseded_by IS NULL";
 
+/// "This row is neither a `datum flag` marker nor a `datum meta` note."
+/// Both keep their words in `state`, which is no state of the field, so
+/// the listings and the readers of a field's states leave them out with
+/// this one clause (da-ghlx, da-wt4bb). `json_extract` gives 1 for JSON
+/// true and NULL for an absent path or column, and `IS NOT 1` takes both.
+pub const NOT_FLAG_OR_META_SQL: &str = "json_extract(extra_metadata, '$.flag') IS NOT 1 \
+     AND json_extract(extra_metadata, '$.meta') IS NOT 1";
+
 /// Canonical newest-first ordering for state reads (da-ylet): latest
 /// `occur_time` wins; ties break on `slug` DESC. Same-instant live ties
 /// are schema-impossible on a single device (da-ga8b's partial UNIQUE on

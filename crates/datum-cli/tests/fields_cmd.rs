@@ -175,3 +175,32 @@ fn ignoring_a_known_field_prints_no_note() {
         assert_eq!(err, "", "{field} is known");
     }
 }
+
+/// da-wt4bb: a flag's comment and a meta note's text are stored in `state`,
+/// and are no state the field was switched to. A state that is also some
+/// flag's comment is still one.
+#[test]
+fn a_flags_comment_and_a_meta_notes_text_are_not_the_fields_states() {
+    let env = Env::new();
+    for argv in [
+        &["switch", "mood", "good", "-t", "-2h"][..],
+        &["switch", "mood", "tired", "-t", "-1h"],
+        &["flag", "mood", "come back to this"],
+        &["meta", "mood", "rate it at bedtime"],
+        &["flag", "mood", "tired"],
+    ] {
+        env.run(argv);
+    }
+    let out = env.run(&["fields"]);
+    assert_eq!(out.lines().nth(1), Some("mood   good tired"), "{out}");
+    let json: Value = serde_json::from_str(&env.run(&["fields", "--json"])).unwrap();
+    let mood = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["field"] == "mood");
+    assert_eq!(
+        mood.unwrap()["states"],
+        serde_json::json!(["good", "tired"])
+    );
+}

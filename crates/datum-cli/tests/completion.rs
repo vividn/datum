@@ -189,6 +189,19 @@ fn switch_offers_the_fields_states_then_its_keys() {
     assert!(!has(&env.complete("switch mood happy "), "calm"));
 }
 
+/// da-wt4bb: a flag's comment and a meta note's text are in `state`, and
+/// are not states to switch the field to.
+#[test]
+fn switch_does_not_offer_a_flags_comment_or_a_meta_notes_text() {
+    let env = Env::new();
+    env.ok(&["flag", "mood", "recheck"]);
+    env.ok(&["meta", "mood", "bedtime"]);
+    let found = env.complete("switch mood ");
+    assert!(has(&found, "happy"), "a logged state: {found:?}");
+    assert!(!has(&found, "recheck"), "a flag's comment: {found:?}");
+    assert!(!has(&found, "bedtime"), "a meta note's text: {found:?}");
+}
+
 #[test]
 fn a_field_position_offers_the_fields_quoted_for_the_shell() {
     let env = Env::new();

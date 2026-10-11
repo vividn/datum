@@ -10,7 +10,9 @@ use crate::error::{DatumError, Result};
 use crate::ids::Hid;
 
 use super::spec::NOT_META_FIELD_SQL;
-use super::types::{filtered_where, time_expr_endbound, GroupColumn, TimeOrderIssue, LIVE_SQL};
+use super::types::{
+    filtered_where, time_expr_endbound, GroupColumn, TimeOrderIssue, LIVE_SQL, NOT_FLAG_OR_META_SQL,
+};
 use super::Db;
 
 /// How far back [`Db::field_frecency`] reads, in weeks.
@@ -183,6 +185,11 @@ impl Db {
         // the same field's next state or else the next field's first — so
         // the read costs the pairs returned, where a DISTINCT walked every
         // row of the history.
+        //
+        // da-wt4bb: a flag's comment and a meta note's text are in `state`
+        // too, and in the index. A pair is one of the field's states when
+        // some row holding it is neither, asked per pair so that the index's
+        // WHERE stays the one the scan matches.
         let stated = format!(
             "{LIVE_SQL} AND state IS NOT NULL AND {}",
             crate::track::NOT_A_DECLARATION_SQL
@@ -199,7 +206,9 @@ impl Db {
                  (SELECT rowid FROM entries WHERE {stated} AND field > d.field
                    ORDER BY field, state LIMIT 1))
              )
-             SELECT field, state FROM d",
+             SELECT field, state FROM d WHERE EXISTS (
+               SELECT 1 FROM entries WHERE {stated} AND field = d.field
+                  AND state = d.state AND {NOT_FLAG_OR_META_SQL})",
         ))?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))

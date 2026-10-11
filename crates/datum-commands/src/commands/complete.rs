@@ -20,7 +20,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use datum_core::db::{is_meta_field, Db};
+use datum_core::db::{is_meta_field, Db, NOT_FLAG_OR_META_SQL};
 use datum_core::shape::is_ignored_state;
 use datum_core::track::NOT_A_DECLARATION_SQL;
 use datum_parse::alias::{self as palias, expand_argv};
@@ -491,7 +491,8 @@ fn states(db: &Db, field: &str) -> Candidates {
         .conn()
         .prepare(&format!(
             "SELECT DISTINCT state FROM entries WHERE field = ?1 AND deleted_at IS NULL \
-             AND superseded_by IS NULL AND state IS NOT NULL AND {NOT_A_DECLARATION_SQL}"
+             AND superseded_by IS NULL AND state IS NOT NULL AND {NOT_A_DECLARATION_SQL} \
+             AND {NOT_FLAG_OR_META_SQL}"
         ))
         .and_then(|mut stmt| stmt.query_map([field], |r| r.get(0))?.collect())
         .unwrap_or_default();

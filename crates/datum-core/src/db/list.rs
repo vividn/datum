@@ -12,6 +12,7 @@ use super::row_mapper::{build_datum_time, row_to_entry};
 use super::spec::NOT_META_FIELD_SQL;
 use super::types::{
     time_expr, time_expr_endbound, ListParams, TimeMetric, TimelineEntry, LIVE_SQL,
+    NOT_FLAG_OR_META_SQL,
 };
 use super::Db;
 
@@ -281,15 +282,9 @@ fn list_filter_sql(params: &ListParams) -> (String, Vec<String>) {
     }
     // da-ghlx: default-filter review markers (`extra_metadata.flag =
     // true`, da-dnnn) and protocol notes (`extra_metadata.meta =
-    // true`, da-xn8j). `json_extract` returns 1 for JSON true,
-    // 0 for JSON false, NULL when the path or column is absent —
-    // `IS NOT 1` covers all three "not-set" cases without
-    // dereferencing a NULL column.
+    // true`, da-xn8j).
     if !params.include_meta {
-        sql.push_str(
-            " AND json_extract(extra_metadata, '$.flag') IS NOT 1 \
-              AND json_extract(extra_metadata, '$.meta') IS NOT 1",
-        );
+        sql.push_str(&format!(" AND {NOT_FLAG_OR_META_SQL}"));
     }
     // da-lc26c: entries that describe the database — specs, layouts —
     // are not life data either. Naming the field (`tail spec`) asks for it.

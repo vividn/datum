@@ -77,7 +77,7 @@ pub use types::{
     AliasConflict, AliasConflictReason, ConflictStrategy, GroupColumn, HardReplaceCounts,
     InsertOutcome, ListParams, ReplaceCounts, RetimeFilter, Retimed, SaveSpecReport,
     SpecAliasCollision, SpecAliasIndex, TimeMetric, TimeOrderIssue, TimelineEntry, TrackedField,
-    IGNORED_STATE_VALUE,
+    IGNORED_STATE_VALUE, NOT_FLAG_OR_META_SQL,
 };
 pub use view::{InstallViewsReport, InstalledView, KitViewOutcome, ViewResult};
 
