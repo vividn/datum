@@ -23,9 +23,17 @@ pub fn ensure_meta_table(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Read the stored schema version, if any.
+/// Read the stored schema version, if any. It writes nothing, so a
+/// read-only handle can ask (da-1duhj): a file with no `_meta` has none.
 pub fn read_schema_version(conn: &Connection) -> Result<Option<u32>> {
-    ensure_meta_table(conn)?;
+    let has_meta = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='_meta'",
+        [],
+        |row| row.get::<_, i64>(0),
+    )? > 0;
+    if !has_meta {
+        return Ok(None);
+    }
     let value: Option<String> = conn
         .query_row(
             "SELECT value FROM _meta WHERE key = 'schema_version'",
@@ -94,8 +102,8 @@ pub fn infer_legacy_version(conn: &Connection) -> Result<u32> {
     // latest shape directly — and so the destructive v1→v2 / v2→v3
     // migrations (which assume legacy `sync_state` / `entries` tables to
     // drop) are unreachable. `_meta` is excluded: `read_schema_version`
-    // creates it as a side-effect via `ensure_meta_table`, so its presence
-    // is not evidence of pre-existing user data.
+    // created it as a side-effect until da-1duhj, so its presence is not
+    // evidence of pre-existing user data.
     let datum_tables: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master \
@@ -301,26 +309,10 @@ pub fn migrate_to_current(conn: &Connection) -> Result<Vec<String>> {
 /// side-effect. The pre-migration backup has to know `from` *before* any
 /// write lands, so this variant infers without stamping.
 pub fn peek_schema_version(conn: &Connection) -> Result<u32> {
-    let has_meta: bool = conn.query_row(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='_meta'",
-        [],
-        |row| row.get::<_, i64>(0),
-    )? > 0;
-    if has_meta {
-        let stored: Option<String> = conn
-            .query_row(
-                "SELECT value FROM _meta WHERE key = 'schema_version'",
-                [],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if let Some(s) = stored {
-            return s
-                .parse::<u32>()
-                .map_err(|e| DatumError::Other(format!("bad schema_version in _meta: {e}")));
-        }
+    match read_schema_version(conn)? {
+        Some(v) => Ok(v),
+        None => infer_legacy_version(conn),
     }
-    infer_legacy_version(conn)
 }
 
 /// What a single [`crate::db::Db::open`] did to the schema, so the CLI can

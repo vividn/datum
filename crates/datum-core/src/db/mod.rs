@@ -213,8 +213,9 @@ impl Db {
     /// Open the database without running migrations. Used by destructive
     /// recovery paths (`datum db purge`) that will rebuild the schema from
     /// scratch — auto-migrate on a half-state DB can fail before the
-    /// recovery code has a chance to run — and by read-only reporters such
-    /// as `datum info`, which must not rewrite what they report on.
+    /// recovery code has a chance to run. It still sets the journal mode,
+    /// which is in the file's header: a reader that must not rewrite what
+    /// it reads takes [`Db::open_read_only`].
     pub fn open_unmigrated(path: &str) -> Result<Self> {
         let mut conn = Connection::open(path)?;
         Self::configure_connection(&mut conn)?;

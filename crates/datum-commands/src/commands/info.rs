@@ -54,11 +54,11 @@ fn print_info_for_path(name: Option<&str>, path: &std::path::Path) -> Result<usi
         println!("  schema:   ✗ (missing)");
         return Ok(0);
     }
-    // Unmigrated: a report must not rewrite what it reports on, and the
+    // Read-only: a report must not rewrite what it reports on, and the
     // version it prints is only worth reading from the untouched file
     // (da-3n9t1). Any other command run with `--db` on it migrates it.
     let path_str = path.to_string_lossy();
-    let db = match datum_core::db::Db::open_unmigrated(&path_str) {
+    let db = match Db::open_read_only(&path_str) {
         Ok(db) => db,
         Err(e) => {
             println!("{}  {}", name.unwrap_or(""), config::display_path(path));
@@ -79,7 +79,14 @@ fn print_info_block(name: Option<&str>, path: &std::path::Path, db: Option<&Db>)
         return Ok(0);
     };
 
-    let stored = datum_core::migrations::read_schema_version(db.conn())?;
+    // The first read of the file, where one that is no database says so.
+    let stored = match datum_core::migrations::read_schema_version(db.conn()) {
+        Ok(stored) => stored,
+        Err(e) => {
+            println!("  schema:   ✗ ({e})");
+            return Ok(0);
+        }
+    };
     let current = datum_core::migrations::CURRENT_SCHEMA_VERSION;
     let (schema_glyph, schema_note) = match stored {
         Some(v) if v == current => ("✓", "current".to_string()),

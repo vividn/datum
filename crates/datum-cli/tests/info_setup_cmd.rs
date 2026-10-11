@@ -109,42 +109,31 @@ fn apply_migrations_walks_registered_steps() {
 
 /// da-3n9t1: `info` reports on a database without migrating it. One
 /// older and one newer than this binary sit in the data directory; `info
-/// --all` must leave both files byte for byte and read each version as it
-/// is stored — which is the only way either warning row can ever print.
+/// --all` and `info <path>` must leave both files byte for byte and read
+/// each version as it is stored — which is the only way either warning row
+/// can ever print. The older one is in rollback-journal mode, as a
+/// pre-migration backup is: the journal mode is in the file's header, and
+/// a connection that sets WAL rewrites it (da-1duhj).
 #[test]
-fn info_all_reports_without_migrating() {
+fn info_reports_without_rewriting() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
-    let stamp = |name: &str, version: u32| {
+    let stamp = |name: &str, version: u32, journal: &str| {
         let path = home.join(name);
         let db = datum_core::db::Db::open(path.to_str().unwrap()).unwrap();
         set_schema_version(db.conn(), version).unwrap();
+        db.conn()
+            .execute_batch(&format!("PRAGMA journal_mode = {journal}"))
+            .unwrap();
         drop(db);
         (path.clone(), std::fs::read(&path).unwrap())
     };
-    let (old_path, old_bytes) = stamp("old.db", CURRENT_SCHEMA_VERSION - 1);
-    let (new_path, new_bytes) = stamp("new.db", CURRENT_SCHEMA_VERSION + 1);
-
-    let out = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
-        .env_remove("DATUM_DB")
-        .env("DATUM_HOME", &home)
-        .env("DATUM_CONFIG_HOME", tmp.path().join("config"))
-        .env("NO_COLOR", "1")
-        .args(["info", "--all"])
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(out.status.success(), "{out:?}");
-
-    assert!(
-        std::fs::read(&old_path).unwrap() == old_bytes,
-        "old.db rewritten"
-    );
-    assert!(
-        std::fs::read(&new_path).unwrap() == new_bytes,
-        "new.db rewritten"
-    );
+    let (old_path, old_bytes) = stamp("old.db", CURRENT_SCHEMA_VERSION - 1, "DELETE");
+    let (new_path, new_bytes) = stamp("new.db", CURRENT_SCHEMA_VERSION + 1, "WAL");
+    // Bytes 18 and 19 of the header: 1 is a rollback journal, 2 is WAL.
+    assert_eq!(old_bytes[18..20], [1, 1]);
+    assert_eq!(new_bytes[18..20], [2, 2]);
     let old_row = format!(
         "v{} ⚠ (older than current v{CURRENT_SCHEMA_VERSION})",
         CURRENT_SCHEMA_VERSION - 1
@@ -153,8 +142,39 @@ fn info_all_reports_without_migrating() {
         "v{} ✗ (newer than binary (v{CURRENT_SCHEMA_VERSION}))",
         CURRENT_SCHEMA_VERSION + 1
     );
-    assert!(stdout.contains(&old_row), "no {old_row:?} in:\n{stdout}");
-    assert!(stdout.contains(&new_row), "no {new_row:?} in:\n{stdout}");
+
+    for (args, rows) in [
+        (vec!["info", "--all"], vec![&old_row, &new_row]),
+        (vec!["info", old_path.to_str().unwrap()], vec![&old_row]),
+        (vec!["info", new_path.to_str().unwrap()], vec![&new_row]),
+    ] {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_datum"))
+            .env_remove("DATUM_DB")
+            .env("DATUM_HOME", &home)
+            .env("DATUM_CONFIG_HOME", tmp.path().join("config"))
+            .env("NO_COLOR", "1")
+            .args(&args)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{args:?}: {out:?}");
+        for row in rows {
+            assert!(stdout.contains(row), "{args:?}: no {row:?} in:\n{stdout}");
+        }
+        assert!(
+            std::fs::read(&old_path).unwrap() == old_bytes,
+            "{args:?}: old.db rewritten"
+        );
+        assert!(
+            std::fs::read(&new_path).unwrap() == new_bytes,
+            "{args:?}: new.db rewritten"
+        );
+        let beside: Vec<_> = std::fs::read_dir(&home)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(beside.len(), 2, "{args:?}: files left beside: {beside:?}");
+    }
 }
 
 /// da-lrn59: `last write` is the newest live row's `modify_time`, read in
@@ -213,6 +233,27 @@ fn info_on(tmp: &std::path::Path, path: &std::path::Path, color: &str) -> (bool,
         String::from_utf8_lossy(&out.stdout).into_owned(),
         String::from_utf8_lossy(&out.stderr).into_owned(),
     )
+}
+
+/// da-1duhj: a file with no `_meta`, and one that is no database, are
+/// said to be what they are and left as they are. Reading the version
+/// created `_meta` in the first, which a read-only handle refuses.
+#[test]
+fn info_leaves_a_file_that_is_no_datum_database() {
+    let tmp = tempfile::tempdir().unwrap();
+    for (bytes, row) in [
+        (&b""[..], "schema:   ? ⚠ (unversioned"),
+        (
+            &[0xa5; 5000][..],
+            "schema:   ✗ (Database error: file is not a database)",
+        ),
+    ] {
+        let path = tmp.path().join("x.db");
+        std::fs::write(&path, bytes).unwrap();
+        let (_, stdout, stderr) = info_on(tmp.path(), &path, "0");
+        assert!(stdout.contains(row), "no {row:?} in:\n{stdout}\n{stderr}");
+        assert!(std::fs::read(&path).unwrap() == bytes, "{row}: rewritten");
+    }
 }
 
 /// da-gffn4: a line whose query fails prints `QUERY ERROR` (red when colour
