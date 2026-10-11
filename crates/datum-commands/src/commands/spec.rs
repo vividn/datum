@@ -6,6 +6,7 @@ use datum_core::{
     db::{Db, IGNORED_STATE_VALUE},
     entry::{Entry, Verb},
     field_spec::{parse_key_decl, FieldSpec, GlyphBy, KeyKind},
+    shape::TRACKED_STATE_VALUE,
     time::DatumTime,
 };
 use serde_json::Value as JsonValue;
@@ -109,6 +110,11 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     }
     if !args.states.is_empty() {
         spec.allowed_states = Some(args.states.clone());
+    }
+    if args.from_json.is_some() || !args.states.is_empty() {
+        for state in spec.allowed_states.iter().flatten() {
+            check_state_name(&spec.field, state)?;
+        }
     }
     if let Some(c) = &args.color {
         spec.color = Some(c.clone());
@@ -309,6 +315,19 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     println!("✓ Spec saved for '{}'", spec.field);
     warn_alias_conflicts(&report);
     Ok(())
+}
+
+/// IGNORED and TRACKED are statuses, not states a spec can list (da-h1l5o):
+/// completion offers a listed state to switch to, and picking one of them
+/// ignores the field or declares it. `false` stays listable: it is how a
+/// never-false field keeps its `end` (da-eqb30).
+pub(crate) fn check_state_name(field: &str, name: &str) -> Result<()> {
+    let does = match name {
+        IGNORED_STATE_VALUE => "ignore",
+        TRACKED_STATE_VALUE => "track",
+        _ => return Ok(()),
+    };
+    anyhow::bail!("'{name}' is a status, not a state; `datum {does} {field}` does that")
 }
 
 /// Point `_LAST` at the spec entry a command just wrote, so `undo _LAST`
@@ -588,6 +607,7 @@ fn spec_add_state(
     (keys, assign): (&[String], &[String]),
     db: &Db,
 ) -> Result<()> {
+    check_state_name(field, name)?;
     if let Some(g) = glyph {
         check_glyph("GLYPH", g)?;
     }

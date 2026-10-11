@@ -75,7 +75,10 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
                 spec.state_colors
                     .insert(state.to_string(), color.to_string());
             }
-            None => states.push(sc.clone()),
+            None => {
+                super::spec::check_state_name(&args.field, sc)?;
+                states.push(sc.clone());
+            }
         }
     }
     if !states.is_empty() {

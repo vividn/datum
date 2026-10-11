@@ -212,6 +212,39 @@ fn spec_add_state_merges_positionally_without_dropping_others() {
     );
 }
 
+/// IGNORED and TRACKED are statuses (da-h1l5o): listed as states, completion
+/// offered them, and picking IGNORED ignored the field. `false` is listable,
+/// a never-false field's `end` (da-eqb30).
+#[test]
+fn spec_refuses_a_status_as_a_state() {
+    let db = fresh_db();
+    for (status, does) in [
+        ("IGNORED", "datum ignore mood"),
+        ("TRACKED", "datum track mood"),
+    ] {
+        let json = format!(r#"{{"field":"mood","verb":"switch","allowed_states":["{status}"]}}"#);
+        for line in [
+            &["spec", "add-state", "mood", status][..],
+            &["spec", "set", "mood", "--state", "calm", "--state", status],
+            &["spec", "set", "mood", "--from-json", &json],
+            &["track", "mood", "--verb", "switch", "--state", status],
+        ] {
+            let msg = run_cli(line, &db).unwrap_err().to_string();
+            assert!(
+                msg.contains("is a status, not a state") && msg.contains(does),
+                "{line:?}: {msg}"
+            );
+        }
+    }
+    assert!(db.load_spec("mood").unwrap().is_none(), "nothing written");
+
+    for name in ["calm", "false"] {
+        run_cli(&["spec", "add-state", "mood", name], &db).unwrap();
+    }
+    let spec = db.load_spec("mood").unwrap().unwrap();
+    assert_eq!(spec.allowed_states.unwrap(), ["calm", "false"]);
+}
+
 #[test]
 fn spec_add_state_dash_color_sets_description_only() {
     let db = fresh_db();
