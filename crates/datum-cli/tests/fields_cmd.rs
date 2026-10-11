@@ -176,6 +176,70 @@ fn ignoring_a_known_field_prints_no_note() {
     }
 }
 
+/// da-mekab: a command that begins nothing says so of a name datum has
+/// never seen, as `ignore` does, and writes its row; of a field known by an
+/// entry or by a spec alone, and of the same name again, it says nothing.
+/// `argv`'s `FIELD` is the field.
+fn notes_only_a_never_seen_field(argv: &[&str], doing: &str) {
+    let env = Env::new();
+    env.run(&["spec", "set", "declared", "--verb", "start"]);
+    let stderr = |field: &str| {
+        let line: Vec<&str> = argv
+            .iter()
+            .map(|w| if *w == "FIELD" { field } else { w })
+            .collect();
+        env.run_both(&line).1
+    };
+    assert_eq!(stderr("work"), "", "work has entries");
+    assert_eq!(stderr("declared"), "", "declared has a spec");
+    assert_eq!(
+        stderr("moood"),
+        format!("note: no field 'moood' yet (no entries, no spec); {doing} it anyway\n")
+    );
+    assert_eq!(stderr("moood"), "", "the first row made it a field");
+    let all: Value = serde_json::from_str(&env.run(&["fields", "--json"])).unwrap();
+    let rows = all.as_array().unwrap();
+    assert!(rows.iter().any(|r| r["field"] == "moood"), "{all}");
+}
+
+#[test]
+fn ending_a_never_seen_field_notes_it() {
+    notes_only_a_never_seen_field(&["end", "FIELD"], "ending");
+    notes_only_a_never_seen_field(&["stop", "FIELD"], "ending");
+    notes_only_a_never_seen_field(&["FIELD", "end"], "ending");
+}
+
+/// A dry run ends nothing, so it says no «ending it anyway»; the end after
+/// it, the first to write, does.
+#[test]
+fn a_dry_run_end_of_a_never_seen_field_has_no_note() {
+    let env = Env::new();
+    let dry = env.run_both(&["end", "moood", "--dry-run"]).1;
+    assert!(!dry.contains("note:"), "{dry}");
+    let wet = env.run_both(&["end", "moood"]).1;
+    assert!(wet.starts_with("note: no field 'moood' yet"), "{wet}");
+}
+
+#[test]
+fn flagging_a_never_seen_field_notes_it() {
+    notes_only_a_never_seen_field(&["flag", "FIELD", "check this"], "flagging");
+}
+
+#[test]
+fn a_meta_note_on_a_never_seen_field_notes_it() {
+    notes_only_a_never_seen_field(&["meta", "FIELD", "protocol"], "noting");
+}
+
+/// da-mekab: `occur`, `start` and `switch` are how a field is born, so a
+/// note there would be noise.
+#[test]
+fn what_begins_a_field_has_no_note() {
+    let env = Env::new();
+    for argv in [&["occur", "a"][..], &["start", "b"], &["switch", "c", "on"]] {
+        assert_eq!(env.run_both(argv).1, "", "{argv:?}");
+    }
+}
+
 /// da-wt4bb: a flag's comment and a meta note's text are stored in `state`,
 /// and are no state the field was switched to. A state that is also some
 /// flag's comment is still one.

@@ -818,6 +818,13 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         return Ok(());
     }
 
+    // da-mekab: an end begins nothing, so on a name datum has never seen it
+    // is an orphan only `check` would find. Past the dry run, which ends
+    // nothing.
+    if declares_field && matches!(action, Action::Stop) {
+        crate::commands::helpers::note_unseen_field(db, &entry.field, "ending")?;
+    }
+
     // da-c8mh, da-gvcen: the spec is the field's record of existence, and
     // it is written ONLY ONCE THE ENTRY HAS LANDED — below on the single
     // path, and by the multi driver after its atomic insert. da-c8mh

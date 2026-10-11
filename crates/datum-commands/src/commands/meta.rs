@@ -52,6 +52,7 @@ fn add_note(field: &str, text: &str, db: &Db) -> Result<()> {
     );
     entry.extra_metadata = Some(serde_json::json!({ "meta": true }));
 
+    crate::commands::helpers::note_unseen_field(db, field, "noting")?;
     db.insert_entry(&entry)
         .with_context(|| format!("recording meta note on field '{field}'"))?;
     println!("META {} {}", entry.hid, entry.slug);

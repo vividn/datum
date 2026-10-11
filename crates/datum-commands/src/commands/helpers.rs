@@ -710,6 +710,19 @@ pub fn track_spec(
     Ok(Some(spec))
 }
 
+/// da-t3quu, da-mekab: a name datum has never seen — no live entry, no
+/// spec — is most often a typo, and `ignore`, `end`, `flag` and `meta`
+/// cannot sensibly begin a field. Each has a use ahead of a field's first
+/// entry (a kit's field, an end of something begun before datum), so the
+/// row is written and stderr says `doing` it anyway — under `--show none`
+/// too: it is a warning about the input, not the command's output.
+pub(crate) fn note_unseen_field(db: &Db, field: &str, doing: &str) -> Result<()> {
+    if db.entries_for_field(field, Some(1))?.is_empty() && db.load_spec(field)?.is_none() {
+        eprintln!("note: no field '{field}' yet (no entries, no spec); {doing} it anyway");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

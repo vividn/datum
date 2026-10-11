@@ -68,6 +68,7 @@ pub fn flag(args: FlagArgs, db: &Db) -> Result<()> {
     );
     entry.extra_metadata = Some(serde_json::json!({ "flag": true }));
 
+    crate::commands::helpers::note_unseen_field(db, &field, "flagging")?;
     db.insert_entry(&entry)
         .with_context(|| format!("recording flag on field '{field}'"))?;
 
