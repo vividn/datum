@@ -670,6 +670,53 @@ describe('what the bands take, and what they leave', () => {
 		);
 	});
 
+	test('a slow finger down a band is still the scroll once the long press has passed', async () => {
+		await withStrip(
+			async (app) => {
+				const { page } = app;
+				const at = () => page.locator('.stack').evaluate((el) => el.scrollTop);
+				const rest = await at();
+				assert.ok(rest > 200, `the phone's strip holds nothing to scroll: ${rest}`);
+
+				const box = await page.locator('.stack .band').last().boundingBox();
+				const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+				// «press» is the strip at rest as well as a press it dropped, so
+				// the touch has to be one it takes: over a band with a day drawn,
+				// which is what `begin` looks for.
+				assert.ok(
+					await page.evaluate(
+						([x, y]) => !!document.elementFromPoint(x, y)?.closest('.band')?.querySelector('svg.svg [data-lo]'),
+						[x, y]
+					),
+					'the finger is not over a day'
+				);
+				const cdp = await page.context().newCDPSession(page);
+				const touch = (type, dy) =>
+					cdp.send('Input.dispatchTouchEvent', { type, touchPoints: dy === undefined ? [] : [{ x, y: y + dy }] });
+				// The fast finger above is the browser's long before the long
+				// press, whatever the strip does. This one goes past the slop
+				// (SLOP_PX, 6) and rests through the wait, which is the strip's
+				// own vertical guard's to drop: a press it kept is a hold by
+				// now, and a hold keeps the moves that follow from the stack.
+				// The touch and its first move are sent together: a move that
+				// waited on a round trip could come after the long press, and a
+				// hold is not the guard's to drop.
+				await Promise.all([touch('touchStart', 0), touch('touchMove', 8)]);
+				await page.waitForTimeout(HOLD);
+				assert.equal(await page.locator(STRIP).getAttribute('data-mode'), 'press', 'the strip kept a vertical press');
+				for (let i = 1; i <= 10; i++) await touch('touchMove', 8 + (292 * i) / 10);
+				await touch('touchEnd');
+				await cdp.detach();
+				await until(
+					() => at(),
+					(top) => top <= rest - 200
+				);
+				assert.deepEqual(await pillsOf(page), [], 'the scroll left a selection behind');
+			},
+			PHONE
+		);
+	});
+
 	test('a swipe that starts OFF the bands still changes the layout; one on a band does not', async () => {
 		await withStrip(
 			async (app) => {
