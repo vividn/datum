@@ -44,9 +44,11 @@ const HOLD = 650;
  * The app with a mark on today's band, the strip drawn, and the clock
  * pinned on both sides of the seam.
  *
- * `clock` is a FIXED time rather than an installed one: every gesture here
- * is a real press over real milliseconds and the long press is a TIMER, so
- * an installed clock would freeze the very thing under test.
+ * `clock` is a FIXED time rather than an installed one: a gesture here is
+ * a real press over real milliseconds and the long press is a TIMER, so
+ * an installed clock would freeze the very thing under test. The slow
+ * finger alone holds the timers (`holdTimers`), and fires the long press
+ * itself.
  */
 async function withStrip(fn, options) {
 	const body = async (app) => {
@@ -698,11 +700,12 @@ describe('what the bands take, and what they leave', () => {
 				// (SLOP_PX, 6) and rests through the wait, which is the strip's
 				// own vertical guard's to drop: a press it kept is a hold by
 				// now, and a hold keeps the moves that follow from the stack.
-				// The touch and its first move are sent together: a move that
-				// waited on a round trip could come after the long press, and a
-				// hold is not the guard's to drop.
-				await Promise.all([touch('touchStart', 0), touch('touchMove', 8)]);
-				await page.waitForTimeout(HOLD);
+				// The page's timers are held, so the long press cannot come
+				// between the touch and its first move however late the move
+				// is: it fires in `runFor`, on a press the guard has had.
+				await touch('touchStart', 0);
+				await touch('touchMove', 8);
+				await page.clock.runFor(HOLD);
 				assert.equal(await page.locator(STRIP).getAttribute('data-mode'), 'press', 'the strip kept a vertical press');
 				for (let i = 1; i <= 10; i++) await touch('touchMove', 8 + (292 * i) / 10);
 				await touch('touchEnd');
@@ -713,7 +716,7 @@ describe('what the bands take, and what they leave', () => {
 				);
 				assert.deepEqual(await pillsOf(page), [], 'the scroll left a selection behind');
 			},
-			PHONE
+			{ ...PHONE, holdTimers: true }
 		);
 	});
 
