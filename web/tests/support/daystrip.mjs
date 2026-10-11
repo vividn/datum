@@ -5,6 +5,7 @@
 
 import { createHash } from 'node:crypto';
 import { devices } from 'playwright';
+import { swipeNoWait } from './press.mjs';
 
 /** «Save options with layout» (da-vhwq): what hands a widget's own move to the layout. */
 export const SAVE_OPTIONS = 'Save options with layout';
@@ -402,24 +403,14 @@ export async function wheelOverPast({ page }, by) {
  * Playwright's touchscreen only taps, so the sequence goes over CDP —
  * where a real touch comes from, and the only way to tell a finger that
  * scrolls from a finger a `touch-action` or a pointer capture has eaten.
+ *
+ * The press arms no long-press wait (`swipeNoWait`, da-o504v): a first move
+ * the runner sent after the 400ms found a hold, whose moves the strip keeps,
+ * and the stack did not scroll. A press on a band arms that one timer.
  */
 export async function dragOverPast({ page }, by) {
 	const box = await page.locator('.stack').boundingBox();
-	const x = box.x + box.width / 2;
-	const y = box.y + box.height / 2;
-	const cdp = await page.context().newCDPSession(page);
-	const at = (type, py) =>
-		cdp.send('Input.dispatchTouchEvent', {
-			type,
-			touchPoints: type === 'touchEnd' ? [] : [{ x, y: py }]
-		});
-	try {
-		await at('touchStart', y);
-		for (let i = 1; i <= 10; i++) await at('touchMove', y + (by * i) / 10);
-		await at('touchEnd', y + by);
-	} finally {
-		await cdp.detach();
-	}
+	await swipeNoWait(page, box.x + box.width / 2, box.y + box.height / 2, 0, by, 10);
 }
 
 /**

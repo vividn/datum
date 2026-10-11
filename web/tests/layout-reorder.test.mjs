@@ -9,7 +9,8 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP, PHONE, boxOf, swipe } from './support/layout.mjs';
+import { DESKTOP, PHONE, boxOf } from './support/layout.mjs';
+import { swipeNoWait } from './support/press.mjs';
 
 before(startApp);
 after(stopApp);
@@ -158,7 +159,10 @@ describe('a root tab dragged on a phone', () => {
 				// Waited out to its `scrollend`: the swipe leaves the strip flinging, and a
 				// tap on a strip still flinging only stops it — no click (da-9i1wu).
 				await strip.evaluate((el) => el.addEventListener('scrollend', () => (el.swiped = true), { once: true }));
-				await swipe(page, box.x + box.width - 20, box.y + box.height / 2, -150, 0);
+				// With no hold to beat (da-o504v): a first move the runner sent after 450ms
+				// found the tab picked up, and the strip did not scroll. A press
+				// on a root tab arms that one timer, reorder's `HOLD_MS`, and no other.
+				await swipeNoWait(page, box.x + box.width - 20, box.y + box.height / 2, -150, 0);
 				await page.waitForFunction(() => document.querySelector('.root-bar .tabs').swiped);
 				assert.ok((await scroll()) > 0, 'the swipe did not scroll the strip');
 				assert.deepEqual(await rootTabs(page), names);
