@@ -7,8 +7,9 @@
 // where a real thumb lands relative to a boundary is a thing only a real
 // thumb says. What is asserted here is the SHAPE — that momentum applies at
 // every speed, that no threshold divides a small push from a big one, that
-// the three detents catch, and that a coast snags at an edge it came from
-// above while a finger may be dragged through it.
+// the notch and the ceiling catch, that below the notch the gesture's
+// direction decides, and that a coast snags at an edge it came from above
+// while a finger may be dragged through it.
 //
 // The same rules as a reader meets them are `barlog.test.mjs`.
 

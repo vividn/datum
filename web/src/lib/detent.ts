@@ -23,10 +23,16 @@
 //     notch     the output section open and nothing else
 //     ceiling   the bar at the top of the screen, the list at its newest
 //
-// A detent CATCHES two ways, which are one rule: a glide that would come to
-// rest within `DETENT` of it is taken by it — that is "arrives at rest near
-// it" — and a glide that would pass it is measured the same way, because a
-// glide passing slowly is a glide that stops just beyond.
+// THE NOTCH AND THE CEILING CATCH, two ways which are one rule: a glide that
+// would come to rest within `DETENT` of one is taken by it — that is
+// "arrives at rest near it" — and a glide that would pass it is measured the
+// same way, because a glide passing slowly is a glide that stops just beyond.
+//
+// SHUT HAS NO CATCH. It is reached by the one rule left: BELOW THE NOTCH
+// there is nowhere to rest, so a glide ending short of the notch's catch goes
+// where the gesture was heading, whatever its speed — up to the notch, down
+// to shut. One that ends 10px from shut after a gesture heading up opens to
+// the notch.
 //
 // AND A COAST NEVER CROSSES A DETENT IT CAME FROM ABOVE — the SNAG. vividn,
 // 2026-09-18: "When closing snag at the notch so that the output section

@@ -272,10 +272,10 @@ export function moveTo(px: number): void {
 /**
  * Come to rest after a gesture that went `up` (or did not), at `speed`.
  *
- * All of the rule is `$lib/detent.ts` — momentum at any speed, three
- * detents that catch, and a coast that snags at a threshold it came from
- * above. What is left here is the two numbers the table needs and the
- * curve that carries the bar there.
+ * All of the rule is `$lib/detent.ts` — momentum at any speed, a notch and
+ * a ceiling that catch, a direction that decides below the notch, and a
+ * coast that snags at a threshold it came from above. What is left here is
+ * the two numbers the table needs and the curve that carries the bar there.
  */
 export function settle(up: boolean, speed = 0): void {
 	glide(rest(get(reveal), speed, up, out(), get(ceilingH), tuningNow()), speed);
