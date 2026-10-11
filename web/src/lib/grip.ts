@@ -102,9 +102,15 @@ let swallowUntil = -Infinity;
  */
 let swallowOn: HTMLElement | null = null;
 
-/** px/ms over the window, positive when the bar is opening. */
+/**
+ * px/ms over the window before `t`, positive when the bar is opening.
+ *
+ * Measured back from `t` and not from the last move (da-5rr8f): a pointer
+ * at rest sends none, so a finger that stopped and held would otherwise
+ * let go at the speed it had stopped from.
+ */
 function speed(y: number, t: number): number {
-	const first = track[0];
+	const first = track.find((sample) => t - sample.t <= WINDOW_MS);
 	if (!first) return 0;
 	const ms = t - first.t;
 	if (ms < MIN_MS) return 0;

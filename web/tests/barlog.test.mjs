@@ -577,7 +577,7 @@ describe('a fling keeps going', () => {
 	// synthetic drags, which is what a drag WITHOUT a flick is.
 
 	/**
-	 * A flick: 400px in four moves 40ms apart, by the gesture's OWN clock.
+	 * A flick: 400px in four moves 20ms apart, by the gesture's OWN clock.
 	 *
 	 * The clock is the point (da-wucn6). `swipe` awaits every CDP round trip,
 	 * and unstamped, each event is timed as the browser receives it — while a
@@ -587,11 +587,19 @@ describe('a fling keeps going', () => {
 	 * it the window's only sample, the lift is where that move was, and the
 	 * release read a speed of exactly 0 — the bar stayed where the finger put
 	 * it, 342px of log, after a gesture that was 1.37 px/ms end to end (CI
-	 * run 2772). Stamped, the release reads 200px over 120ms on any box.
+	 * run 2772). Stamped, the release reads the same on any box.
+	 *
+	 * 20ms and not 40 (da-5rr8f): the window is the 80ms before the LIFT, so
+	 * one stamp sits on its edge, in or out by the browser's rounding. At 20
+	 * that is 300px over 80ms or 200px over 60, a throw either way. At 40 it
+	 * was 100px over 80ms or the last move alone, a speed of 0: one run of
+	 * three failed.
+	 *
+	 * `hold` is how long the finger then rests before it lifts.
 	 */
-	const flick = async (page, dy) => {
+	const flick = async (page, dy, hold) => {
 		const r = await page.locator(BAR).boundingBox();
-		await swipe(page, r.x + r.width / 2, r.y + r.height / 2, 0, dy, 4, 40);
+		await swipe(page, r.x + r.width / 2, r.y + r.height / 2, 0, dy, 4, 20, hold);
 		await settled(page);
 	};
 
@@ -605,6 +613,25 @@ describe('a fling keeps going', () => {
 			// dashboard is gone. It went much further than the finger did.
 			assert.ok(seen.log.height > 400, `the log is ${seen.log.height}px`);
 			assert.ok(seen.main.height <= 1, `the dashboard is still ${seen.main.height}px`);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// The speed a release carries is the speed at the LIFT (da-5rr8f): a
+	// finger at rest sends no moves, so the race's were still the window
+	// half a second later, and the bar glided on from where it was held.
+	test('a big swipe up that stops and holds before the lift leaves the bar where it was put', async () => {
+		await phone(async (app) => {
+			const { page } = app;
+			await app.submit('occur coffee');
+			// The place: the same 400px with no time in it.
+			await dragBy(page, BAR, -400);
+			await settled(page);
+			const placed = (await where(page)).log.height;
+			await shut(page);
+
+			await flick(page, -400, 520);
+			assert.equal((await where(page)).log.height, placed);
 			assert.deepEqual(app.errors, []);
 		});
 	});

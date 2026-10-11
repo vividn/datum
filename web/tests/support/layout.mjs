@@ -346,9 +346,12 @@ export async function fill(page, name) {
  * `every` gives the gesture its OWN CLOCK (da-wucn6): its events are stamped
  * that many ms apart, however long the round trips took. Without it each is
  * stamped as the browser receives it, so the gesture's speed is the runner's
- * — a test that asserts what a speed did passes `every`.
+ * — a test that asserts what a speed did passes `every`. `hold` is how many
+ * ms longer the finger then rests where it stopped, before it lifts: a
+ * stamp as well, so without `every` it is refused and not dropped.
  */
-export async function swipe(page, x, y, dx, dy, steps = 6, every) {
+export async function swipe(page, x, y, dx, dy, steps = 6, every, hold = 0) {
+	if (hold && !every) throw new Error('swipe: `hold` is a stamp, and needs `every`');
 	const cdp = await page.context().newCDPSession(page);
 	const t0 = Date.now() / 1000;
 	const at = (type, touchPoints, i) =>
@@ -360,7 +363,7 @@ export async function swipe(page, x, y, dx, dy, steps = 6, every) {
 	await at('touchStart', [{ x, y }], 0);
 	for (let i = 1; i <= steps; i++)
 		await at('touchMove', [{ x: x + (dx * i) / steps, y: y + (dy * i) / steps }], i);
-	await at('touchEnd', [], steps + 1);
+	await at('touchEnd', [], steps + 1 + hold / every);
 	await cdp.detach();
 }
 
