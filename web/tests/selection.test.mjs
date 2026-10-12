@@ -336,6 +336,11 @@ describe('on a phone', () => {
 			// No REPL on `mobile` for `seedLines` to wait on: through the loud door, then idle.
 			await seedApart(app, (line) => page.evaluate((l) => window.datum.runLine(l), line));
 			await app.idle();
+			// The loud door leaves the last line's ghost up for a second of real
+			// time (`GHOST_MS`), the pills standing after it, and they slide 84px
+			// left when it goes: a lock tap whose click came after that hit where
+			// the lock had been, and the pill stayed unlocked (da-hoysk).
+			await page.locator('.prompt-bar .ghost').waitFor({ state: 'detached' });
 			await rows(page).nth(0).waitFor();
 			const count = await rows(page).count();
 			assert.ok(count >= 3, `the mobile tail shows ${count} rows`);
