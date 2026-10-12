@@ -13,10 +13,11 @@ use anyhow::{Context, Result};
 use datum_core::{
     db::{ConflictStrategy, Db, InsertOutcome, IGNORED_STATE_VALUE},
     derive_verb,
-    entry::{Entry, Verb},
+    entry::{build_slug, Entry, Verb},
     ids::Hid,
-    time::DatumTime,
+    time::{DatumTime, Zone},
 };
+use datum_parse::entry_id::DATE_ONLY_PRECISION;
 use serde_json::Value as JsonValue;
 
 use crate::{
@@ -110,10 +111,14 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         };
 
         let occur_uncertainty = parse_datum_uncertainty(&data["occurTime"]);
-        let occur_time = DatumTime::from_v2_json(&data["occurTime"]).map(|mut t| {
-            t.uncertainty = occur_uncertainty;
-            t
-        });
+        let create_time = DatumTime::from_v2_json(&meta["createTime"]);
+        let occur_time = match DatumTime::from_v2_json(&data["occurTime"]) {
+            Some(mut t) => {
+                t.uncertainty = occur_uncertainty;
+                Some(t)
+            }
+            None => v2_date_only(&data["occurTime"], create_time.as_ref()),
+        };
 
         // ─── dur ────────────────────────────────────────────────────
         // Per da-5ns.6, and da-w94vu for null:
@@ -237,9 +242,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         metadata_obj.insert("_import".to_string(), JsonValue::Object(import_marker));
         let extra_metadata = Some(JsonValue::Object(metadata_obj));
 
-        let created_at = DatumTime::from_v2_json(&meta["createTime"])
-            .map(|t| t.utc)
-            .unwrap_or_else(chrono::Utc::now);
+        let created_at = create_time.map(|t| t.utc).unwrap_or_else(chrono::Utc::now);
         // Prefer source modifyTime; fall back to createTime so imported rows
         // never carry a fresh "now" stamp when the source had a time at all.
         let modified_at = DatumTime::from_v2_json(&meta["modifyTime"])
@@ -257,6 +260,9 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         );
         entry.create_time = created_at;
         entry.modify_time = modified_at;
+        // A timeless row slugs on its create time, which is the source's,
+        // not the clock `Entry::new` read (da-dvyga).
+        entry.slug = build_slug(&entry.field, entry.occur_time.as_ref(), &entry.create_time);
         entry.id_structure = meta
             .get("idStructure")
             .and_then(|v| v.as_str())
@@ -388,8 +394,43 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
                     inserted += 1;
                     inserted_hids.push(hid.clone());
                 }
-                InsertOutcome::Ignored { .. } => {
-                    skipped_records.push((SkipReason::Duplicate, doc_id.clone(), None));
+                InsertOutcome::Ignored { slug } => {
+                    // Ignored is a live row with this content, or a row holding
+                    // its slug with other content, which is no duplicate
+                    // (da-dvyga). A tombstone holds its slug too.
+                    let live = match db.get_entry(slug.as_str()) {
+                        Ok(e) => Some(e),
+                        Err(datum_core::error::DatumError::NotFound(_)) => None,
+                        Err(e) => return Err(e.into()),
+                    };
+                    if live
+                        .as_ref()
+                        .is_some_and(|h| h.content_hash == entry.content_hash)
+                    {
+                        skipped_records.push((SkipReason::Duplicate, doc_id.clone(), None));
+                    } else {
+                        let source_id = |h: Entry| {
+                            h.extra_metadata
+                                .as_ref()
+                                .and_then(|m| m["_import"]["original_id"].as_str())
+                                .map_or(h.hid.to_string(), str::to_string)
+                        };
+                        let held = match live {
+                            Some(h) => format!("{} with other content", source_id(h)),
+                            None => match db.get_entry_including_deleted(slug.as_str()) {
+                                Ok(h) => format!("deleted {}", source_id(h)),
+                                Err(datum_core::error::DatumError::NotFound(_)) => {
+                                    "a row at its field and time".to_string()
+                                }
+                                Err(e) => return Err(e.into()),
+                            },
+                        };
+                        skipped_records.push((
+                            SkipReason::SlugCollision,
+                            doc_id.clone(),
+                            Some(format!("slug {slug} held by {held}")),
+                        ));
+                    }
                     match entry.shape() {
                         datum_core::entry::EntryShape::Block => {
                             blocks = blocks.saturating_sub(1);
@@ -460,6 +501,8 @@ enum SkipReason {
     InvalidShape,
     /// Already present in the target DB (content_hash dedup).
     Duplicate,
+    /// Its slug is held by a row with other content.
+    SlugCollision,
 }
 
 impl SkipReason {
@@ -468,6 +511,7 @@ impl SkipReason {
             SkipReason::NoField => "no-field",
             SkipReason::InvalidShape => "invalid-shape",
             SkipReason::Duplicate => "duplicate",
+            SkipReason::SlugCollision => "slug-collision",
         }
     }
 }
@@ -483,17 +527,21 @@ fn skip_breakdown(records: &[(SkipReason, String, Option<String>)]) -> String {
     if records.is_empty() {
         return String::new();
     }
-    let (mut nf, mut inv, mut dup) = (0usize, 0usize, 0usize);
+    let (mut nf, mut inv, mut dup, mut col) = (0usize, 0usize, 0usize, 0usize);
     for (r, _, _) in records {
         match r {
             SkipReason::NoField => nf += 1,
             SkipReason::InvalidShape => inv += 1,
             SkipReason::Duplicate => dup += 1,
+            SkipReason::SlugCollision => col += 1,
         }
     }
     let mut parts = Vec::new();
     if dup > 0 {
         parts.push(format!("{dup} duplicate"));
+    }
+    if col > 0 {
+        parts.push(format!("{col} slug-collision"));
     }
     if inv > 0 {
         parts.push(format!("{inv} invalid-shape"));
@@ -520,6 +568,29 @@ fn write_skip_log(
         writeln!(f, "{}\t{}\t{}", reason.as_str(), id, detail)?;
     }
     Ok(())
+}
+
+/// v2 writes a date-only time (`-D`, or `-d`/`-y` with no time) as
+/// `{utc: "YYYY-MM-DD"}` with no zone. It imports as `occur -D` writes one:
+/// local midnight with [`DATE_ONLY_PRECISION`], in the zone of the doc's
+/// createTime (UTC without one), so the calendar date stays v2's (da-dvyga).
+fn v2_date_only(occur: &JsonValue, create: Option<&DatumTime>) -> Option<DatumTime> {
+    let date: chrono::NaiveDate = occur.get("utc")?.as_str()?.parse().ok()?;
+    // A zone name that does not parse leaves the offset, still known.
+    let (zone, timezone) = match create {
+        Some(t) => match Zone::of(t) {
+            Ok(z) => (z, t.timezone.clone()),
+            Err(_) => (Zone::Fixed(*t.local_time().offset()), None),
+        },
+        None => (Zone::Fixed(chrono::FixedOffset::east_opt(0)?), None),
+    };
+    let utc = zone.resolve(date.and_hms_opt(0, 0, 0)?).for_boundary();
+    Some(DatumTime {
+        utc,
+        offset_minutes: zone.offset_at(utc).local_minus_utc() / 60,
+        timezone,
+        uncertainty: Some(DATE_ONLY_PRECISION.to_string()),
+    })
 }
 
 /// Map a legacy datum `occurTime` block to a single ISO-8601 uncertainty

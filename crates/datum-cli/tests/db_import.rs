@@ -1165,3 +1165,226 @@ fn import_preserves_a_half_hour_offset() {
     assert_eq!(chai.local_time().to_rfc3339(), "2025-01-08T12:30:00+05:30");
     assert_eq!(occur_of("momo").offset_minutes, 345, "+5:45 → 345 minutes");
 }
+
+// ─── da-dvyga: timeless and date-only docs are not duplicates ───────
+// v2 writes `-D` (and `-d`/`-y` with no time) as `{utc: "YYYY-MM-DD"}`,
+// and `-T` with no occurTime at all. Both used to import with no occur
+// time and a slug stamped with the import's clock, so all but one per
+// field per millisecond collided and were counted as «duplicate».
+
+fn skip_log_lines(docs: &tempfile::NamedTempFile, db: &datum_core::db::Db) -> Vec<String> {
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let log_path = log.path().to_str().unwrap();
+    run_cli(
+        &[
+            "db",
+            "v2import",
+            docs.path().to_str().unwrap(),
+            "--skip-log",
+            log_path,
+        ],
+        db,
+    )
+    .unwrap();
+    std::fs::read_to_string(log_path)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+        .map(str::to_string)
+        .collect()
+}
+
+fn slugs(db: &datum_core::db::Db) -> Vec<String> {
+    let mut s: Vec<String> = datum_core::test_util::logged_all(db)
+        .iter()
+        .map(|e| e.slug.to_string())
+        .collect();
+    s.sort();
+    s
+}
+
+#[test]
+fn date_only_docs_import_as_whole_days() {
+    let db = fresh_db();
+    let docs: Vec<_> = ["07", "08", "09"]
+        .iter()
+        .map(|d| {
+            serde_json::json!({
+                "_id": format!("3goals:2025-01-{d}"),
+                "data": {"field": "3goals", "occurTime": {"utc": format!("2025-01-{d}")}},
+                "meta": {
+                    "humanId": format!("goal{d}"),
+                    "createTime": {"utc": format!("2025-01-{d}T21:00:00.000Z"), "o": 1, "tz": "Europe/Berlin"}
+                }
+            })
+        })
+        .collect();
+    let f = write_backup(serde_json::Value::Array(docs));
+
+    assert!(skip_log_lines(&f, &db).is_empty(), "nothing skipped");
+    assert_eq!(
+        slugs(&db),
+        [
+            "3goals:2025-01-07",
+            "3goals:2025-01-08",
+            "3goals:2025-01-09"
+        ]
+    );
+    for e in datum_core::test_util::logged_all(&db) {
+        assert_eq!(
+            e.occur_uncertainty(),
+            Some("P1D"),
+            "{} is a whole day",
+            e.slug
+        );
+        let t = e.occur_time.as_ref().unwrap();
+        assert_eq!(t.offset_minutes, 60, "midnight in the createTime's zone");
+        assert_eq!(t.local_time().format("%H:%M").to_string(), "00:00");
+    }
+
+    // Re-importing the same file adds nothing: every row is a real duplicate.
+    let again = skip_log_lines(&f, &db);
+    assert_eq!(again.len(), 3);
+    assert!(
+        again.iter().all(|l| l.starts_with("duplicate\t")),
+        "{again:?}"
+    );
+    assert_eq!(datum_core::test_util::logged_all(&db).len(), 3);
+}
+
+#[test]
+fn timeless_docs_slug_on_their_own_create_time() {
+    let db = fresh_db();
+    let docs: Vec<_> = (1..=3)
+        .map(|i| {
+            serde_json::json!({
+                "_id": format!("physicalbackup:c{i}"),
+                "data": {"field": "physicalbackup", "nextDate": format!("2025-0{i}-01")},
+                "meta": {
+                    "humanId": format!("phys{i}"),
+                    "idStructure": "%?createTime%c",
+                    "createTime": {"utc": format!("2025-01-0{i}T10:00:00.000Z"), "o": 1, "tz": "Europe/Berlin"}
+                }
+            })
+        })
+        .collect();
+    let f = write_backup(serde_json::Value::Array(docs));
+
+    assert!(skip_log_lines(&f, &db).is_empty(), "nothing skipped");
+    assert_eq!(
+        slugs(&db),
+        [
+            "physicalbackup:c2025-01-01T10:00:00.000Z",
+            "physicalbackup:c2025-01-02T10:00:00.000Z",
+            "physicalbackup:c2025-01-03T10:00:00.000Z",
+        ]
+    );
+    for e in datum_core::test_util::logged_all(&db) {
+        assert!(e.occur_time.is_none());
+        assert!(
+            e.data.as_ref().unwrap()["nextDate"].is_string(),
+            "{} keeps nextDate",
+            e.slug
+        );
+    }
+
+    let again = skip_log_lines(&f, &db);
+    assert_eq!(again.len(), 3);
+    assert!(
+        again.iter().all(|l| l.starts_with("duplicate\t")),
+        "{again:?}"
+    );
+    assert_eq!(datum_core::test_util::logged_all(&db).len(), 3);
+}
+
+/// The timing-dependent case: rows built within one millisecond shared
+/// the import clock's slug.
+#[test]
+fn five_hundred_timeless_docs_import_as_five_hundred_rows() {
+    let db = fresh_db();
+    let docs: Vec<_> = (0..500)
+        .map(|i| {
+            serde_json::json!({
+                "_id": format!("chore:{i}"),
+                "data": {"field": "chore", "n": i},
+                "meta": {"createTime": {"utc": format!("2025-01-01T00:00:{:02}.{:03}Z", i / 100, i % 100)}}
+            })
+        })
+        .collect();
+    let f = write_backup(serde_json::Value::Array(docs));
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
+    assert_eq!(datum_core::test_util::logged_all(&db).len(), 500);
+}
+
+/// Two docs on one slug with different content are not duplicates: the
+/// second is skipped as a slug collision, naming both `_id`s.
+#[test]
+fn a_slug_collision_is_not_a_duplicate() {
+    let db = fresh_db();
+    let doc = |id: &str, state: &str| {
+        serde_json::json!({
+            "_id": id,
+            "data": {"field": "mood", "state": state, "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 0}},
+            "meta": {"createTime": {"utc": "2025-01-08T07:00:00.000Z"}}
+        })
+    };
+    let f = write_backup(serde_json::json!([
+        doc("first", "happy"),
+        doc("second", "sad")
+    ]));
+    let skipped = skip_log_lines(&f, &db);
+    assert_eq!(skipped.len(), 1, "{skipped:?}");
+    let line = &skipped[0];
+    assert!(line.starts_with("slug-collision\tsecond\t"), "{line}");
+    assert!(
+        line.contains("first"),
+        "names the doc holding the slug: {line}"
+    );
+}
+
+/// Import, delete, import again: the tombstone holds the slug. That is
+/// neither a duplicate nor «other content», and the skip names the
+/// deleted row (kimi-k3 on #682).
+#[test]
+fn a_slug_held_by_a_deleted_row_says_so() {
+    let db = fresh_db();
+    let f = write_backup(serde_json::json!([{
+        "_id": "chore:1",
+        "data": {"field": "chore"},
+        "meta": {"createTime": {"utc": "2025-01-01T10:00:00.000Z"}}
+    }]));
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(
+        &["delete", "chore:c2025-01-01T10:00:00.000Z", "--force"],
+        &db,
+    )
+    .unwrap();
+    assert!(datum_core::test_util::logged_all(&db)[0]
+        .deleted_at
+        .is_some());
+
+    let skipped = skip_log_lines(&f, &db);
+    assert_eq!(
+        skipped,
+        ["slug-collision\tchore:1\tslug chore:c2025-01-01T10:00:00.000Z held by deleted chore:1"]
+    );
+}
+
+/// A createTime whose zone name does not parse still has its offset, and
+/// a date-only doc takes midnight in it rather than in UTC.
+#[test]
+fn a_date_only_doc_keeps_the_offset_of_an_unknown_zone() {
+    let db = fresh_db();
+    let f = write_backup(serde_json::json!([{
+        "_id": "3goals:2025-01-08",
+        "data": {"field": "3goals", "occurTime": {"utc": "2025-01-08"}},
+        "meta": {"createTime": {"utc": "2025-01-08T20:00:00.000Z", "o": 9, "tz": "Not/AZone"}}
+    }]));
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
+    let e = &datum_core::test_util::logged_all(&db)[0];
+    assert_eq!(e.slug.to_string(), "3goals:2025-01-08");
+    let t = e.occur_time.as_ref().unwrap();
+    assert_eq!(t.offset_minutes, 540);
+    assert_eq!(t.local_time().to_rfc3339(), "2025-01-08T00:00:00+09:00");
+    assert_eq!(t.timezone, None, "a name that does not parse is not kept");
+}
