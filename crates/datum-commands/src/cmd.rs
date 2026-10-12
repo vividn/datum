@@ -233,7 +233,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         .then(|| datum_core::last_docs::history_mark(db).ok())
         .flatten();
     let outer = BATCH_MARK.replace(mark);
-    // A write reminds a copy that has not synced for a day (da-wlbyx); a
+    // A write reminds a copy whose changes no other device has (da-u10rl); a
     // sync command is itself about syncing, and `sync status` says the rest.
     let watch = (!matches!(cli.command, Command::Sync(_))).then(|| db.conn().total_changes());
     // A command is one action on the undo stack (da-z0zh3), save the ones
@@ -256,7 +256,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
 }
 
 /// After a command that changed the database since `before`, the warning
-/// that this copy has not synced for a day (da-wlbyx).
+/// that changes made here have reached no other device for a day (da-u10rl).
 fn warn_if_stale(db: &Db, before: Option<u64>) {
     if before.is_some_and(|n| db.conn().total_changes() > n) {
         if let Ok(Some(warning)) = db.sync_stale_warning() {

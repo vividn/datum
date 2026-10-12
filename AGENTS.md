@@ -252,8 +252,11 @@ marks (`sync_caught_up`, v50). `verify` hashes the filtered set on both sides.
 `sync pause` is this copy's alone (`sync_local.paused_at`): its
 handshake and pipe refuse, `sync run` and the page's leader push nothing, and
 datum.day's root bar says «sync paused» in every tab until a tap resumes it.
-A write on a copy with another member that has not synced for a day warns
-once a day on stderr (`sync_local.warned_at`).
+A write warns once a day on stderr (`sync_local.warned_at`) when changes made
+on this copy have reached no other live member for over a day, by each one's
+last known vector (da-u10rl): another device being off is no reason. Only a
+member holding everything counts, so a copy whose only others are filtered
+readers never warns, as a lone member never does.
 Each copy says what it runs in the handshake — `datum` (the build) and
 `schema` on `Hello` and `Welcome`, defaulted so a copy one version back
 still reads them — and the other records it (`sync_peers.datum` / `schema`,

@@ -362,7 +362,7 @@ CREATE INDEX IF NOT EXISTS ops_held ON ops(endpoint, seq) WHERE applied = 0;
 -- The secret is stored as it is: the key vouches for this copy's ops on the
 -- wire, and anyone who can read the file can sign as it.
 -- `paused_at`: `datum sync pause`, this copy's alone; `warned_at`: the last
--- once-a-day warning that it has not synced (da-wlbyx).
+-- once-a-day warning that its changes have reached no other device (da-u10rl).
 CREATE TABLE IF NOT EXISTS sync_local (
     id              INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
     endpoint_secret TEXT NOT NULL,

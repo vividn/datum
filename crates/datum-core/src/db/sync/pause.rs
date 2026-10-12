@@ -1,7 +1,7 @@
 //! `datum sync pause | resume` (da-wlbyx): a flag on this copy, never
 //! synced — pausing one device is that device's business — under which it
-//! neither sends nor receives. And the warning a write gives when a copy
-//! with other members has not synced for a day, whatever the cause.
+//! neither sends nor receives. And the warning a write gives when changes
+//! made on a copy have reached no other member for a day, whatever the cause.
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -60,10 +60,15 @@ impl Db {
         Ok(was)
     }
 
-    /// The warning a write gives, at most once a day: this copy is in a chain
-    /// with another member and has synced with none for over a day. It names
-    /// the cause it knows — the pause, or the last session's error. A lone
-    /// member gets none: its danger is the same, paused or not.
+    /// The warning a write gives, at most once a day: changes made on this
+    /// copy have reached no other member of its chain, as far as it knows,
+    /// the oldest of them over a day ago (da-u10rl). A member counts as
+    /// having received what its last known vector covers, however long it
+    /// has been off since, so another device being away is no reason. Only a
+    /// member that holds everything counts: a copy with none but itself and
+    /// filtered readers gets none, as a lone member gets none, since no sync
+    /// could carry all of it off. It names the cause it knows — the pause,
+    /// or the last session's error.
     pub fn sync_stale_warning(&self) -> Result<Option<String>> {
         let row: Option<(Option<String>, Option<String>)> = self
             .conn
@@ -74,49 +79,51 @@ impl Db {
         let Some((paused, warned)) = row else {
             return Ok(None);
         };
-        // A peer never synced with counts from when it was first heard of.
-        let last: Option<String> = self.conn.query_row(
-            "SELECT MAX(COALESCE(last_seen, added_at)) FROM sync_peers",
-            [],
-            |r| r.get(0),
-        )?;
-        if today(warned.as_deref()) || last.is_none() || today(last.as_deref()) {
+        if today(warned.as_deref()) {
             return Ok(None);
         }
         let (chain, mine) = (self.sync_chain()?, self.sync_endpoint_id()?);
-        let others: Vec<_> = chain
-            .members
-            .iter()
-            .filter(|m| m.revoked.is_none() && m.endpoint != mine)
-            .map(|m| m.endpoint.as_str())
-            .collect();
-        let mut stmt = self.conn.prepare(
-            "SELECT endpoint_id, COALESCE(last_seen, added_at), last_error FROM sync_peers
-             ORDER BY last_error_at DESC",
-        )?;
-        let peers = stmt
-            .query_map([], |r| {
+        let peers = self
+            .conn
+            .prepare(
+                "SELECT endpoint_id, COALESCE(json_extract(last_vector, '$.\"' || ?1 || '\"'), 0),
+                        last_error
+                 FROM sync_peers ORDER BY last_error_at DESC",
+            )?
+            .query_map([&mine], |r| {
                 Ok((
                     r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(1)?,
                     r.get::<_, Option<String>>(2)?,
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        // The live members that hold everything: a filtered reader holds a part.
         let peers: Vec<_> = peers
             .into_iter()
-            .filter(|(id, _, _)| others.contains(&id.as_str()))
+            .filter(|(id, _, _)| {
+                *id != mine
+                    && chain.filter(id).is_none()
+                    && chain.member(id).is_some_and(|m| m.revoked.is_none())
+            })
             .collect();
-        let Some(last) = peers.iter().map(|(_, at, _)| at).max() else {
+        let Some(seq) = peers.iter().map(|p| p.1).max() else {
             return Ok(None);
         };
-        let Ok(last) = DateTime::parse_from_rfc3339(last) else {
+        // This copy's ops past it: how many, and when the first was made.
+        let (n, first): (i64, Option<String>) = self.conn.query_row(
+            "SELECT COUNT(*), MIN(hlc) FROM ops WHERE endpoint = ?1 AND seq > ?2",
+            params![mine, seq],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let Some(since) = first
+            .as_deref()
+            .and_then(|h| h.split('/').next())
+            .filter(|t| !today(Some(t)))
+            .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
+        else {
             return Ok(None);
         };
-        let days = (Utc::now() - last.with_timezone(&Utc)).num_days();
-        if days < 1 {
-            return Ok(None);
-        }
         let cause = match (paused, peers.iter().find_map(|(_, _, e)| e.as_ref())) {
             (Some(at), _) => format!(" (paused since {at})"),
             (None, Some(e)) => format!(" (last error: {e})"),
@@ -125,8 +132,10 @@ impl Db {
         self.conn
             .execute("UPDATE sync_local SET warned_at = ?1", params![now()])?;
         Ok(Some(format!(
-            "⚠ not synced for {days} day{}{cause} — `datum sync status`",
-            if days == 1 { "" } else { "s" }
+            "⚠ {n} change{} made here since {} {} reached no other device{cause} — `datum sync status`",
+            if n == 1 { "" } else { "s" },
+            since.with_timezone(&chrono::Local).format("%Y-%m-%d"),
+            if n == 1 { "has" } else { "have" },
         )))
     }
 }
