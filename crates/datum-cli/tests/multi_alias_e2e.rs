@@ -166,6 +166,46 @@ fn binary_glued_comma_does_not_trigger_multi() {
     );
 }
 
+/// da-oe3so: a comma touching one side only is neither form — it was
+/// read as the state and a duration («invalid dur value», about a word
+/// nobody typed). It is refused by name, with both real forms, and
+/// writes nothing; the glued form, the standalone form and a comma
+/// inside a value are untouched.
+#[test]
+fn binary_one_sided_comma_is_refused_naming_both_forms() {
+    let db = tmp_db();
+    let _ = std::fs::remove_file(&db);
+
+    let (ok, _, stderr) = run(&db, &["switch", "body", "vertical,sit"]);
+    assert!(ok, "glued comma is one parallel state; stderr={stderr}");
+    for argv in [
+        ["switch", "body", "vertical", ",sit"],
+        ["switch", "body", "vertical,", "sit"],
+    ] {
+        let (ok, _, stderr) = run(&db, &argv);
+        assert!(!ok, "{argv:?} must be refused");
+        assert!(
+            stderr.contains("comma touches one side only")
+                && stderr.contains("`vertical,sit` is one parallel state")
+                && stderr.contains("`<command> , <command>`"),
+            "{argv:?} names the typo and both forms: {stderr}"
+        );
+    }
+    assert_eq!(live_rows(&db).len(), 1, "a refused typo writes nothing");
+
+    let (ok, _, stderr) = run(
+        &db,
+        &["switch", "body", "vertical", ",", "switch", "body", "sit"],
+    );
+    assert!(ok, "standalone comma is two sides; stderr={stderr}");
+    let (ok, _, stderr) = run(&db, &["occur", "coffee", "tags=a,b"]);
+    assert!(ok, "a comma inside a value is untouched; stderr={stderr}");
+    let rows = live_rows(&db);
+    assert_eq!(rows.len(), 3, "{rows:?}");
+    let data: serde_json::Value = serde_json::from_str(rows[2].3.as_ref().unwrap()).unwrap();
+    assert_eq!(data["tags"], serde_json::json!(["a", "b"]));
+}
+
 /// Acceptance #6 (regression): existing single-row scenarios still
 /// route through the standard path without engaging the multi
 /// collector.

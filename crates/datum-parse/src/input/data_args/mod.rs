@@ -263,11 +263,16 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
 
     let mut datum_data: DatumData = Map::new();
     let mut remainder_data: Vec<String> = Vec::new();
+    // The bare positional the state slot took, beside which a comma touching
+    // one side only (`vertical, sit`) is refused (da-oe3so). Any other slot's
+    // value may end in a comma: there `a,b` would be a list, not a state.
+    let mut prev_slot: Option<String> = None;
 
     // ── positional loop ────────────────────────────────────────────────
     while !data_queue.is_empty() {
         let arg = data_queue.remove(0);
         let (before_eq, after_eq) = split_first_eq(&arg);
+        let prev = prev_slot.take();
 
         if let Some(value) = after_eq {
             // Explicit key=value in the positional stream.
@@ -295,6 +300,19 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
         // Positional slot — try to consume the next unfilled key.
         let data_value = before_eq;
         let mut consumed = false;
+        if let Some(prev) =
+            prev.filter(|p| !keys.is_empty() && (p.ends_with(',') || data_value.starts_with(',')))
+        {
+            let (a, b) = (
+                prev.trim_end_matches(','),
+                data_value.trim_start_matches(','),
+            );
+            return Err(ParseError::InvalidArg(format!(
+                "`{prev} {data_value}`: a comma touches one side only. `{a},{b}` is one \
+                 parallel state; a comma standing alone between two commands \
+                 (`<command> , <command>`) logs both at one instant"
+            )));
+        }
         while !keys.is_empty() {
             let spec = keys.remove(0);
             let (raw_path, default_value) = split_first_eq(&spec);
@@ -316,6 +334,7 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
                 compat,
             )?;
             consumed = true;
+            prev_slot = (path == "state.id").then(|| data_value.to_string());
             break;
         }
 
@@ -587,6 +606,37 @@ mod tests {
         a.keys = vec!["abc".into()];
         a.data = vec!["abc=def".into()];
         assert_eq!(run(a), *json!({"abc": "def"}).as_object().unwrap());
+    }
+
+    #[test]
+    fn one_sided_comma_between_slots_is_refused() {
+        for data in [["vertical", ",sit"], ["vertical,", "sit"]] {
+            let mut a = args();
+            a.keys = vec!["state".into(), "dur=".into()];
+            a.data = data.iter().map(|s| s.to_string()).collect();
+            let Err(ParseError::InvalidArg(msg)) = handle_data_args(&a) else {
+                panic!("{data:?} must be refused");
+            };
+            assert!(
+                msg.contains("`vertical,sit` is one parallel state"),
+                "{msg}"
+            );
+        }
+        // A list touching nothing but its own slot is a list (`,sit`).
+        let mut a = args();
+        a.keys = vec!["field".into(), "state".into()];
+        a.data = vec!["body".into(), ",sit".into()];
+        assert!(handle_data_args(&a).is_ok());
+        // A data key's value may end in a comma: no state to misread.
+        let mut a = args();
+        a.keys = vec!["a".into(), "b".into()];
+        a.data = vec!["buy milk,".into(), "urgent".into()];
+        assert_eq!(
+            run(a),
+            *json!({"a": "buy milk,", "b": "urgent"})
+                .as_object()
+                .unwrap()
+        );
     }
 
     #[test]
