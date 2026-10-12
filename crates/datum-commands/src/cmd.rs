@@ -1891,6 +1891,7 @@ mod tests {
                     all_or_nothing: false,
                     comment: None,
                     output: Default::default(),
+                    ..Default::default()
                 },
                 &db,
             )
@@ -1966,6 +1967,7 @@ mod tests {
                 all_or_nothing: false,
                 comment: None,
                 output: Default::default(),
+                ..Default::default()
             },
             &db,
         )

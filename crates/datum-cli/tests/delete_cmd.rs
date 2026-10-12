@@ -589,3 +589,69 @@ fn an_extra_word_is_refused_by_name_and_nothing_is_deleted() {
     );
     let _ = std::fs::remove_file(&path);
 }
+
+/// The live rows' fields, sorted, every field included.
+fn live_fields(db: &datum_core::db::Db) -> Vec<String> {
+    let mut fields: Vec<String> = db
+        .list_entries(&datum_core::db::ListParams {
+            include_meta: true,
+            ..Default::default()
+        })
+        .unwrap()
+        .into_iter()
+        .map(|e| e.field)
+        .collect();
+    fields.sort();
+    fields
+}
+
+/// `delete --all --keep-meta` deletes the data entries and spares what
+/// `tail --show-meta` adds — specs, aliases, flags — and one bare `undo`
+/// brings the data back (da-97gth). `--dry-run` writes nothing.
+#[test]
+fn delete_all_keep_meta_spares_the_setup_and_undo_restores_the_data() {
+    let db = fresh_db();
+    run_cli(&["spec", "set", "coffee", "--verb", "occur"], &db).unwrap();
+    run_cli(&["occur", "coffee"], &db).unwrap();
+    run_cli(&["switch", "mood", "happy"], &db).unwrap();
+    run_cli(&["alias", "set", "c", "occur coffee"], &db).unwrap();
+    run_cli(&["flag", "_"], &db).unwrap();
+    let before = live_fields(&db);
+    let meta: Vec<String> = before
+        .iter()
+        .filter(|f| !["coffee", "mood"].contains(&f.as_str()))
+        .cloned()
+        .collect();
+    assert!(
+        meta.contains(&"spec".to_string()) && meta.contains(&"alias".to_string()),
+        "{before:?}"
+    );
+
+    run_cli(&["delete", "--all", "--dry-run"], &db).unwrap();
+    assert_eq!(live_fields(&db), before, "--dry-run writes nothing");
+
+    run_cli(&["delete", "--all", "--keep-meta"], &db).unwrap();
+    assert_eq!(live_fields(&db), meta);
+
+    run_cli(&["undo"], &db).unwrap();
+    assert_eq!(live_fields(&db), before);
+
+    run_cli(&["delete", "--all"], &db).unwrap();
+    assert!(live_fields(&db).is_empty());
+    run_cli(&["undo"], &db).unwrap();
+    assert_eq!(live_fields(&db), before);
+}
+
+/// `--all` names its own targets, and `--keep-meta` only qualifies it.
+#[test]
+fn delete_all_takes_no_id_and_keep_meta_needs_all() {
+    let db = fresh_db();
+    run_cli(&["occur", "coffee"], &db).unwrap();
+    for line in [
+        &["delete", "--all", "coffee:_"][..],
+        &["delete", "--keep-meta"][..],
+    ] {
+        assert!(run_cli(line, &db).is_err(), "{line:?}");
+    }
+    assert_count!(db, "coffee", 1);
+}

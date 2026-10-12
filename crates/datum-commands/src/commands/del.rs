@@ -1,7 +1,12 @@
 //! `datum del <id_or_slug>` — mark an entry deleted (tombstone, sync-safe).
 
 use anyhow::Result;
-use datum_core::{db::Db, entry::Entry, ids::Hid, time::DatumTime};
+use datum_core::{
+    db::{Db, ListParams},
+    entry::Entry,
+    ids::Hid,
+    time::DatumTime,
+};
 
 use crate::{
     args::{DeleteArgs, OutputFlagsExt},
@@ -21,7 +26,27 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
         .id_or_slug
         .as_deref()
         .unwrap_or(datum_core::ids::resolve::LAST_TOKEN);
-    let (entries, token_errors) = resolve_batch(db, pattern, BatchMode::Live, false);
+    let (entries, token_errors) = if args.all {
+        if let Some(id) = &args.id_or_slug {
+            anyhow::bail!("--all deletes every entry; it takes no ID_OR_SLUG ('{id}')");
+        }
+        // Every live entry `tail -A` lists, or `tail` alone with
+        // `--keep-meta` (da-97gth).
+        let params = ListParams {
+            include_meta: !args.keep_meta,
+            ..Default::default()
+        };
+        let entries = db.list_entries(&params)?;
+        if entries.is_empty() {
+            println!("Nothing to delete");
+            return Ok(());
+        }
+        (entries, Vec::new())
+    } else if args.keep_meta {
+        anyhow::bail!("--keep-meta goes with --all");
+    } else {
+        resolve_batch(db, pattern, BatchMode::Live, false)
+    };
 
     // Nothing resolved — propagate the first token error verbatim so single-token
     // NotFound / AmbiguousPrefix surfaces unchanged in the common case.
@@ -71,7 +96,7 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
     // age, as the pointer's: when `_LAST` was set, which says nothing of when
     // the entry it names happened (da-nduwi). Nothing stops. An explicit id
     // names its own target and needs no warning about the pointer.
-    if args.id_or_slug.is_none() {
+    if args.id_or_slug.is_none() && !args.all {
         crate::commands::helpers::warn_if_stale_default_last("deleting _LAST, set", db);
     }
 
@@ -101,19 +126,37 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
     // A field left with no live entry takes its bare spec with it, into
     // the same `_LAST` (da-elv6d). The pointer keeps the deleted hids so
     // `undo` (with no arg) can restore them. Skipped if nothing actually
-    // got deleted.
-    let (specs, dropped) = crate::commands::helpers::drop_orphaned_bare_specs(
-        db,
-        &deleted,
-        datum_core::history::ChangeKind::UserEdit,
-    );
+    // got deleted, and under `--keep-meta`, which keeps every spec.
+    let (specs, dropped) = if args.keep_meta {
+        (Vec::new(), Ok(()))
+    } else {
+        crate::commands::helpers::drop_orphaned_bare_specs(
+            db,
+            &deleted,
+            datum_core::history::ChangeKind::UserEdit,
+        )
+    };
     deleted.extend(specs);
     let deleted_hids: Vec<Hid> = deleted.iter().map(|e| e.hid.clone()).collect();
     if !deleted_hids.is_empty() {
         let _ = datum_core::last_docs::set_last_docs(db, &deleted_hids);
     }
-    for dead in &deleted {
-        show_delete(dead, registry.as_ref(), &output);
+    if args.all {
+        // A wipe echoes its count, not a line per row.
+        println!(
+            "Deleted {} {} — `datum undo` brings {} back",
+            deleted.len(),
+            if deleted.len() == 1 {
+                "entry"
+            } else {
+                "entries"
+            },
+            if deleted.len() == 1 { "it" } else { "them" },
+        );
+    } else {
+        for dead in &deleted {
+            show_delete(dead, registry.as_ref(), &output);
+        }
     }
 
     for (tok, err) in token_errors {

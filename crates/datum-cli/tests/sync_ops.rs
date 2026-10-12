@@ -1915,3 +1915,46 @@ fn ops_that_fold_to_no_storable_row_are_named_and_the_check_goes_on() {
     assert_eq!(a.data(&tea)["cups"], 1);
     assert_eq!(a.data(&coffee)["cups"], 2);
 }
+
+/// Every live row on `copy`, of every field, specs and aliases included.
+fn live_rows(copy: &Copy) -> usize {
+    copy.query(
+        "SELECT COUNT(*) FROM entries WHERE deleted_at IS NULL
+           AND superseded_by IS NULL AND ?1 = ?1",
+        "",
+    )
+    .parse()
+    .unwrap()
+}
+
+/// `delete --all` is an ordinary delete of every row, specs and aliases
+/// too: it reaches the other copy like any delete, one bare `undo` on the
+/// copy that ran it brings every row back on both, and `redo` deletes them
+/// again (da-97gth).
+#[test]
+fn delete_all_wipes_both_copies_and_one_undo_restores_both() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "cups=2"]);
+    a.ok(&["switch", "mood", "happy"]);
+    a.ok(&["alias", "set", "c", "occur coffee"]);
+    b.ok(&["occur", "tea"]);
+    converged(&a, &b);
+    let all = live_rows(&a);
+    assert!(all >= 5, "three entries, an alias and their specs: {all}");
+
+    let said = a.ok(&["delete", "--all"]);
+    assert!(
+        said.contains(&format!("Deleted {all} entries")) && said.contains("datum undo"),
+        "{said}"
+    );
+    converged(&a, &b);
+    assert_eq!((live_rows(&a), live_rows(&b)), (0, 0));
+
+    a.ok(&["undo"]);
+    converged(&a, &b);
+    assert_eq!((live_rows(&a), live_rows(&b)), (all, all));
+
+    a.ok(&["redo"]);
+    converged(&a, &b);
+    assert_eq!((live_rows(&a), live_rows(&b)), (0, 0));
+}

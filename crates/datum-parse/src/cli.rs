@@ -539,6 +539,13 @@ pub struct DeleteArgs {
     /// `--all-or-nothing`: with comma-batched tokens, delete nothing if
     /// any one fails to resolve (da-eqb30; was `--strict`).
     pub all_or_nothing: bool,
+    /// `--all`: every live entry, as one command — one step of the undo
+    /// stack, so a bare `undo` brings them all back (da-97gth).
+    pub all: bool,
+    /// `--keep-meta`, with `--all`: spare what `tail --show-meta` adds —
+    /// specs, layouts, aliases, views, commands, indexes, kits, flags and
+    /// `datum meta` notes.
+    pub keep_meta: bool,
     /// `-c` / `--comment`: why — appended to each row's `data.comment` as
     /// `deleted: <why>` in the transaction that tombstones it (da-ult68).
     pub comment: Option<String>,
