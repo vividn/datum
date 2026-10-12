@@ -152,9 +152,9 @@ export function revokeArgv(endpoint: string): string[] {
 	return ['sync', 'chain', 'revoke', endpoint];
 }
 
-/** The preview, or with `yes` the purge itself (da-ry11c). */
-export function purgeArgv(endpoint: string, yes = false): string[] {
-	return ['sync', 'chain', 'purge', endpoint, yes ? '--yes' : '--json'];
+/** The preview, or with `yes` the revert itself (da-ry11c). */
+export function revertArgv(endpoint: string, yes = false): string[] {
+	return ['sync', 'chain', 'revert', endpoint, yes ? '--yes' : '--json'];
 }
 
 export function ackArgv(subject: string): string[] {
@@ -322,8 +322,8 @@ export interface Reads {
 	chainListArgv: Admins;
 	adminListArgv: Admins;
 	newInviteArgv: Invite;
-	/** The preview's: the `--yes` purge answers no JSON. */
-	purgeArgv: PurgePreview;
+	/** The preview's: the `--yes` revert answers no JSON. */
+	revertArgv: PurgePreview;
 	restorePreviewArgv: RestorePreview;
 	plansArgv: PlanRows;
 	backupListArgv: { backups: Backup[] };

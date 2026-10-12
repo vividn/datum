@@ -551,7 +551,7 @@ impl Chain {
             Some(Member {
                 purged: Some(p), ..
             }) => Err(format!(
-                "set aside: its endpoint was purged ({})",
+                "set aside: its endpoint was reverted ({})",
                 hlc_time(p)
             )),
             Some(Member {
@@ -823,7 +823,7 @@ impl Chain {
             }
             "purge" | "unpurge" => {
                 if s("endpoint") == op.endpoint {
-                    return Err("a copy does not purge itself".into());
+                    return Err("a copy does not revert itself".into());
                 }
                 let m = self
                     .members
@@ -836,7 +836,7 @@ impl Chain {
                     }
                     m.purged = None;
                 } else if m.purged.is_some() {
-                    return Err("already purged".into());
+                    return Err("already reverted".into());
                 } else {
                     m.purged = Some(op.hlc.clone());
                     m.revoked.get_or_insert_with(|| op.hlc.clone());
@@ -1470,14 +1470,14 @@ mod tests {
         assert_eq!(step(4, it("unpurge", &b)).0, Err("not purged".into()));
         assert_eq!(
             step(5, it("purge", &a)).0,
-            Err("a copy does not purge itself".into())
+            Err("a copy does not revert itself".into())
         );
         // An op from before the purge — and before the admit — is refused.
         assert_eq!(
             step(6, it("purge", &b)),
             (Ok(()), Some((true, true)), false)
         );
-        assert_eq!(chain_err(&step(7, it("purge", &b))), "already purged");
+        assert_eq!(chain_err(&step(7, it("purge", &b))), "already reverted");
         assert_eq!(
             step(8, it("unpurge", &b)),
             (Ok(()), Some((false, true)), true)

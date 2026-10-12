@@ -700,17 +700,17 @@ fn a_purge_preview_of_a_device_that_only_made_specs_says_they_go() {
     assert!(b.send(&a).0);
     let spec = || a.ok(&["spec", "show", "coffee"]);
     assert!(!spec().contains("No spec defined"), "{}", spec());
-    let preview = a.ok(&["sync", "chain", "purge", "b"]);
+    let preview = a.ok(&["sync", "chain", "revert", "b"]);
     assert!(
-        preview.contains("signed no change to an entry, only 1 definition: purging it revokes it and sets that aside"),
+        preview.contains("signed no change to an entry, only 1 definition: reverting it revokes it and sets that aside"),
         "{preview}"
     );
-    let p = json(&a.ok(&["sync", "chain", "purge", "b", "--json"]));
+    let p = json(&a.ok(&["sync", "chain", "revert", "b", "--json"]));
     assert!(
         p["first"].is_null() && p["last"].is_null() && p["defined"] == 1,
         "{p}"
     );
-    a.ok(&["sync", "chain", "purge", "b", "--yes"]);
+    a.ok(&["sync", "chain", "revert", "b", "--yes"]);
     assert!(spec().contains("No spec defined"), "{}", spec());
 }
 
@@ -736,16 +736,19 @@ fn a_purge_sets_aside_a_devices_ops_on_every_copy() {
     let poisoned = (true, "3".to_string(), true);
     assert_eq!(purge_view(&a), poisoned);
 
+    // The old spelling is refused, naming the new (da-c9fiy).
+    let old = a.fails(&["sync", "chain", "purge", "b", "--yes"], "");
+    assert!(old.contains("`sync chain revert <WHO>`"), "{old}");
     // The preview names what goes, and changes nothing.
-    let preview = a.ok(&["sync", "chain", "purge", "b"]);
+    let preview = a.ok(&["sync", "chain", "revert", "b"]);
     assert!(
         preview.contains("b (")
             && preview.contains("1 entry it created goes,")
             && preview.contains("1 it edited and 1 it deleted")
-            && preview.contains("nothing changed: `datum sync chain purge b --yes`"),
+            && preview.contains("nothing changed: `datum sync chain revert b --yes`"),
         "{preview}"
     );
-    let p = json(&a.ok(&["sync", "chain", "purge", "b", "--json"]));
+    let p = json(&a.ok(&["sync", "chain", "revert", "b", "--json"]));
     assert_eq!(
         (&p["created"], &p["edited"], &p["deleted"], &p["purged"]),
         (&1.into(), &1.into(), &1.into(), &serde_json::Value::Null),
@@ -754,17 +757,17 @@ fn a_purge_sets_aside_a_devices_ops_on_every_copy() {
     assert!(p["first"].is_string() && p["last"].is_string(), "{p}");
     assert_eq!(purge_view(&a), poisoned);
 
-    let purged = a.ok(&["sync", "chain", "purge", "b", "--yes"]);
-    assert!(purged.starts_with("purged: b ("), "{purged}");
+    let purged = a.ok(&["sync", "chain", "revert", "b", "--yes"]);
+    assert!(purged.starts_with("reverted: b ("), "{purged}");
     let clean = (false, "1".to_string(), false);
     assert_eq!(purge_view(&a), clean);
-    let again = a.fails(&["sync", "chain", "purge", "b", "--yes"], "");
-    assert!(again.contains("purged already"), "{again}");
-    assert!(a.ok(&["sync", "chain", "list"]).contains("PURGED"));
+    let again = a.fails(&["sync", "chain", "revert", "b", "--yes"], "");
+    assert!(again.contains("reverted already"), "{again}");
+    assert!(a.ok(&["sync", "chain", "list"]).contains("REVERTED"));
 
     // c syncs after the purge, from a: b's ops arrive with it, set aside.
     let (_, text) = a.send(&c);
-    assert!(text.contains("its endpoint was purged"), "{text}");
+    assert!(text.contains("its endpoint was reverted"), "{text}");
     assert_eq!(purge_view(&c), clean);
     // b itself hears of it, and its own ops go.
     a.send(&b);
@@ -777,9 +780,9 @@ fn a_purge_sets_aside_a_devices_ops_on_every_copy() {
     check_clean(&a, &[&b, &c]);
     check_clean(&c, &[&a, &b]);
 
-    // A copy does not purge itself.
-    let own = a.fails(&["sync", "chain", "purge", &a.id()[..10], "--yes"], "");
-    assert!(own.contains("does not purge itself"), "{own}");
+    // A copy does not revert itself.
+    let own = a.fails(&["sync", "chain", "revert", &a.id()[..10], "--yes"], "");
+    assert!(own.contains("does not revert itself"), "{own}");
 }
 
 /// A PURGED device that rejoins by a fresh invite connects as if for the
@@ -798,7 +801,7 @@ fn a_purged_device_that_rejoins_brings_all_its_ops_back() {
     b.ok(&["occur", "coffee"]);
     b.ok(&["update", &tea, "cups=3"]);
     assert!(b.send(&a).0 && a.send(&c).0);
-    a.ok(&["sync", "chain", "purge", "b", "--yes"]);
+    a.ok(&["sync", "chain", "revert", "b", "--yes"]);
     a.send(&b);
     a.send(&c);
     let cups = "SELECT json_extract(data, '$.cups') FROM entries WHERE field = 'tea'";
@@ -846,7 +849,7 @@ fn a_purge_frees_the_rows_merged_into_the_purged_devices_row() {
     let b_row = b.query("SELECT hid FROM entries WHERE field = 'coffee'");
     let shown_hid = "SELECT hid FROM entries WHERE field = 'coffee' AND superseded_by IS NULL";
     assert_eq!(a.query(shown_hid), b_row);
-    a.ok(&["sync", "chain", "purge", "b", "--yes"]);
+    a.ok(&["sync", "chain", "revert", "b", "--yes"]);
     assert_eq!(a.query(shown), "1");
     assert_eq!(
         a.query("SELECT COUNT(*) FROM entries WHERE field = 'coffee'"),
@@ -877,7 +880,7 @@ fn a_purge_frees_two_rows_merged_into_the_purged_devices_row() {
         a.query(shown),
         b.query("SELECT hid FROM entries WHERE field = 'coffee'")
     );
-    a.ok(&["sync", "chain", "purge", "b", "--yes"]);
+    a.ok(&["sync", "chain", "revert", "b", "--yes"]);
     assert_eq!(a.query(rows), "2");
     assert_eq!(a.query(shown), a.query("SELECT hid FROM entries WHERE field = 'coffee' AND client_id = (SELECT client_id FROM sync_local)"));
     let live = "SELECT COUNT(*) FROM entries WHERE field = 'coffee'
@@ -885,7 +888,7 @@ fn a_purge_frees_two_rows_merged_into_the_purged_devices_row() {
     assert_eq!(a.query(live), "1");
     // At c the purge arrives by sync, and the session goes through.
     let (_, text) = a.send(&c);
-    assert!(text.contains("its endpoint was purged"), "{text}");
+    assert!(text.contains("its endpoint was reverted"), "{text}");
     assert!(!text.contains("UNIQUE"), "{text}");
     assert_eq!((c.query(rows), c.query(live)), ("2".into(), "1".into()));
     assert_eq!(a.hash(), c.hash());
@@ -1969,7 +1972,7 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
     assert_eq!(
         complete(&["chain"]),
         [
-            "invite", "connect", "leave", "list", "rename", "revoke", "purge", "role", "ack",
+            "invite", "connect", "leave", "list", "rename", "revoke", "revert", "role", "ack",
             "rekey"
         ]
     );
@@ -2875,7 +2878,7 @@ fn an_edit_a_purge_left_without_its_create_is_no_orphan() {
     assert!(b.send(&a).0);
     let coffee = a.query("SELECT hid FROM entries WHERE field = 'coffee'");
     a.ok(&["update", &coffee, "cups=3"]);
-    a.ok(&["sync", "chain", "purge", "b", "--yes"]);
+    a.ok(&["sync", "chain", "revert", "b", "--yes"]);
     assert!(!a.has("coffee"));
     let applied = format!("SELECT kind FROM ops WHERE hid = '{coffee}' AND applied = 1");
     assert_eq!(a.query(&applied), "update");

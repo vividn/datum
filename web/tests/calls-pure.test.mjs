@@ -206,7 +206,7 @@ const SAMPLES = {
 	specArgv: [[{ field: 'coffee', verb: 'occur', color: '#123456', description: 'beans', allowed_states: null, state_colors: {} }]],
 	renameArgv: [['phone'], ['phone', MEMBER]],
 	revokeArgv: [[MEMBER]],
-	purgeArgv: [[MEMBER], [MEMBER, true]],
+	revertArgv: [[MEMBER], [MEMBER, true]],
 	ackArgv: [['unlock'], [MEMBER]],
 	adminAddArgv: [['not-a-key']],
 	adminRemoveArgv: [['not-a-key'], ['not-a-key', true]],

@@ -314,7 +314,7 @@ export function table(dbs: DbSync[], states: Record<string, SyncState>): Row[] {
 	return all;
 }
 
-/** What `sync chain purge <who> --json` says a purge would set aside (da-ry11c). */
+/** What `sync chain revert <who> --json` says a revert would set aside (da-ry11c). */
 export interface PurgePreview {
 	created: number;
 	edited: number;
@@ -325,11 +325,11 @@ export interface PurgePreview {
 	last?: string | null;
 }
 
-/** The purge's confirm, naming the device and what goes, before anything is done. */
+/** The revert's confirm, naming the device and what goes, before anything is done. */
 export function purgeWords(label: string, db: string, p: PurgePreview): string {
 	const day = (t?: string | null) => (t ?? '').slice(0, 10);
 	const many = (n: number, one: string, more: string) => `${n} ${n === 1 ? one : more}`;
-	// As the CLI's purge preview: a zero count says nothing, and the noun rides the first count.
+	// As the CLI's revert preview: a zero count says nothing, and the noun rides the first count.
 	const did = ([[p.created, 'created'], [p.edited, 'edited'], [p.deleted, 'deleted']] as const)
 		.filter(([n]) => n > 0)
 		.map(([n, verb], i) => `${i ? n : many(n, 'entry', 'entries')} it ${verb}`);
@@ -340,7 +340,7 @@ export function purgeWords(label: string, db: string, p: PurgePreview): string {
 		: p.defined
 			? `It made no change to an entry, only ${many(p.defined, 'definition', 'definitions')}: this revokes it and sets ${p.defined === 1 ? 'that' : 'them'} aside.`
 			: 'It made no change to an entry: this only revokes it.';
-	return `Purge ${label} from ${db}? ${what} It is revoked too, until a fresh invite brings it and its changes back.`;
+	return `Revert ${label} in ${db}? ${what} It is revoked too, until a fresh invite brings it and its changes back.`;
 }
 
 /**
@@ -417,7 +417,7 @@ export function approvalWords(r: Record<string, unknown>, d: DbSync | undefined,
 		case 'revoke':
 			return [`Revoke ${who(r.endpoint)} ${where}`];
 		case 'purge':
-			return [`Purge ${who(r.endpoint)} ${where}: every change it made goes, on every device`];
+			return [`Revert ${who(r.endpoint)} ${where}: every change it made goes, on every device`];
 		// No longer written (da-q4rau), but an older CLI's link may ask for one.
 		case 'unpurge':
 			return [`Unpurge ${who(r.endpoint)} ${where}: its changes come back`];

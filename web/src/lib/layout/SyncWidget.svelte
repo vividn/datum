@@ -74,7 +74,7 @@
 		adminRemoveArgv,
 		leaveArgv,
 		pausedArgv,
-		purgeArgv,
+		revertArgv,
 		renameArgv,
 		revokeArgv
 	} from '$lib/calls.js';
@@ -267,12 +267,12 @@
 			ok(await syncAct(db, revokeArgv(row.endpoints[db])));
 		});
 
-	/** A purge previews first (da-ry11c): the confirm names the device and what goes. */
+	/** A revert previews first (da-ry11c): the confirm names the device and what goes. */
 	const purge = (label: string, endpoint: string) =>
 		doing(async () => {
-			const preview = JSON.parse(ok(await syncAct(db, purgeArgv(endpoint))).stdout) as PurgePreview;
-			if (!(await confirm(purgeWords(label, db, preview), 'purge', label))) return;
-			ok(await syncAct(db, purgeArgv(endpoint, true)));
+			const preview = JSON.parse(ok(await syncAct(db, revertArgv(endpoint))).stdout) as PurgePreview;
+			if (!(await confirm(purgeWords(label, db, preview), 'revert', label))) return;
+			ok(await syncAct(db, revertArgv(endpoint, true)));
 		});
 
 	const addAdmin = (d: DbSync) =>
@@ -501,14 +501,14 @@
 							<span class="name">{row.label}</span>
 							<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => rename(row)}>Rename</button>
 							<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => revoke(row)}>Revoke</button>
-							<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => purge(row.label, row.endpoints[db])}>Purge</button>
+							<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => purge(row.label, row.endpoints[db])}>Revert</button>
 						</div>
 					{/each}
 					{#each cur.members.filter((m) => m.revoked) as m (m.endpoint)}
 						<div class="actions device" data-endpoint={m.endpoint}>
-							<span class="name">{m.label} · {m.purged ? 'purged' : 'revoked'}</span>
+							<span class="name">{m.label} · {m.purged ? 'reverted' : 'revoked'}</span>
 							{#if !m.purged}
-								<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => purge(m.label, m.endpoint)}>Purge</button>
+								<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => purge(m.label, m.endpoint)}>Revert</button>
 							{/if}
 						</div>
 					{/each}

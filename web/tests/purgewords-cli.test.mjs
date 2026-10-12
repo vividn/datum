@@ -1,4 +1,4 @@
-// The purge confirm's joint (da-tyj2t): datum.day hands `sync chain purge
+// The revert confirm's joint (da-tyj2t): datum.day hands `sync chain revert
 // <who> --json` straight to `purgeWords`, and each side is tested alone —
 // the CLI's keys in sync_chain.rs, the words on objects built by hand in
 // purgewords-pure. Here the real CLI's output meets the real function, so a
@@ -28,7 +28,7 @@ async function purgeOf(writes) {
 		const joined = await b.run(['sync', 'chain', 'connect', ticket]);
 		assert.equal(joined.code, 0, joined.stderr);
 		const { endpoint } = JSON.parse((await b.run(['sync', 'status', '--json'])).stdout).this;
-		const preview = await a.run(['sync', 'chain', 'purge', endpoint, '--json']);
+		const preview = await a.run(['sync', 'chain', 'revert', endpoint, '--json']);
 		assert.equal(preview.code, 0, preview.stderr);
 		return purgeWords('phone', 'home', JSON.parse(preview.stdout));
 	} finally {

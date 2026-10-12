@@ -201,7 +201,7 @@ pub fn shows_for(command: &str) -> &'static [Show] {
         // `help --json` is the command table itself (da-r13j).
         "help" => &[Show::Default, Show::Json],
         // A group: `sync status`, `sync chain list`, `sync admin list`,
-        // `sync chain purge` and `sync pipe apply` render the document, and
+        // `sync chain revert` and `sync pipe apply` render the document, and
         // the parser refuses a typed `json` on the rest (da-8un1i).
         "sync" => &[Show::Default, Show::Json],
         // `conflicts list` prints each entry's column as stored.

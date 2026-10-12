@@ -156,7 +156,7 @@ type Rest<'a> = std::slice::Iter<'a, &'a str>;
 
 /// `datum sync chain …`: the chain's membership.
 fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "invite|connect|leave|list|rename|revoke|purge|role|ack|rekey";
+    const SET: &str = "invite|connect|leave|list|rename|revoke|revert|role|ack|rekey";
     Ok(match rest.next().copied() {
         Some("invite") => {
             let values = ["expires", "admin-key", "fields", "kit"];
@@ -193,10 +193,16 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
             }
         }
         Some("revoke") => act(rest, SyncAdminAct::Revoke, &[], &[])?,
+        // Renamed (da-c9fiy): `purge` is to be the chain-wide hard purge.
         Some("purge") => {
+            return Err(ParseError::InvalidArg(
+                "`sync chain purge <WHO>` is now `sync chain revert <WHO>`".into(),
+            ))
+        }
+        Some("revert") => {
             let mut o = opts(rest, &["admin-key"], &["yes"], 1..=1)?;
             SyncCommand::Admin {
-                act: SyncAdminAct::Purge {
+                act: SyncAdminAct::Revert {
                     yes: o.on("yes"),
                     show: Show::Default,
                 },
@@ -580,9 +586,9 @@ mod tests {
             }
         );
         assert_eq!(
-            p(&["chain", "purge", "b", "--yes", "--admin-key", "k"]),
+            p(&["chain", "revert", "b", "--yes", "--admin-key", "k"]),
             SyncCommand::Admin {
-                act: SyncAdminAct::Purge {
+                act: SyncAdminAct::Revert {
                     yes: true,
                     show: Show::Default
                 },
@@ -592,7 +598,12 @@ mod tests {
                 allow_unlock: false
             }
         );
-        assert!(parse_sync_cmd(&["chain", "purge"]).is_err());
+        assert!(parse_sync_cmd(&["chain", "revert"]).is_err());
+        let old = parse_sync_cmd(&["chain", "purge", "b", "--yes"]).unwrap_err();
+        assert!(
+            old.to_string().contains("`sync chain revert <WHO>`"),
+            "{old}"
+        );
         // Gone (da-q4rau): a fresh invite brings a purged device back.
         assert!(parse_sync_cmd(&["chain", "unpurge", "b"]).is_err());
         assert_eq!(

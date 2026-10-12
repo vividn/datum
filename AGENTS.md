@@ -194,7 +194,7 @@ holding what a member lacks, which it never relays — «not verified: R is N
 changes ahead of this copy», `pending` in `sync status` and no error
 (da-t3ey2). The tree:
 `sync`, `status`, `pause | resume`, `diff <WHO>`, `refold`, `chain invite | connect | leave |
-list | rename | revoke | purge | ack | rekey`, `admin list | add | remove`, `daemon
+list | rename | revoke | revert | ack | rekey`, `admin list | add | remove`, `daemon
 install | uninstall | status` (a systemd user unit / launchd agent
 running the hidden `sync daemon run`, which is `sync run` for every chained
 db; a copy's first `chain invite` / `connect` installs it unless
@@ -216,9 +216,9 @@ keeps a notice of the unlock until `sync chain ack unlock`. A notice — a new
 device, a new admin, an unlock — not yet acknowledged is a ⚠ in datum.day's
 root bar, in every tab, for each database a tab is on: its sync leader reads
 them with its setup and carries them in its state (da-8fucg).
-`sync chain purge <WHO>` (da-ry11c) previews, and with `--yes` writes a
-`purge` record: every copy refuses every op that endpoint signed and folds
-its entries again without them — what it made goes, its edits and deletes
+`sync chain revert <WHO>` (da-ry11c; `chain purge` until da-c9fiy, now
+refused) previews, and with `--yes` writes a `purge` record: every copy
+refuses every op that endpoint signed and folds its entries again without them — what it made goes, its edits and deletes
 are undone — and revokes it. There is no unpurge: a fresh invite brings it
 back (below), though an old chain's `unpurge` record still folds as it did.
 A copy belongs to one chain — its apply refuses another chain's records
@@ -229,7 +229,7 @@ chain's invite leaves on its own only a copy holding nothing but its own data
 (no other live member, no other endpoint's op), keeping its key. A revoked
 device rejoins by a fresh invite to its chain: the `admit` of a listed
 endpoint RE-ADMITS it, clearing the revoke, so what it made while out folds
-in (da-j8c4l) — and a purge too, so a purged device rejoins as at a first
+in (da-j8c4l) — and a revert too, so a reverted device rejoins as at a first
 connection, every op it made folding back in (da-q4rau).
 A first sync carries the inviter's chain records after its history, so a join
 cut short (a reload, a lost connection) leaves the joiner in no chain holding

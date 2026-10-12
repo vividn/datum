@@ -158,7 +158,7 @@ describe('the sync widget’s actions', () => {
 		}, { viewport: DESKTOP });
 	});
 
-	test('a purge previews what goes and takes the device’s name typed, and leaves no unpurge (da-q4rau)', async () => {
+	test('a revert previews what goes and takes the device’s name typed, and leaves no unpurge (da-q4rau)', async () => {
 		await withWallClock(
 			async (app) => {
 				const { page } = app;
@@ -166,20 +166,20 @@ describe('the sync widget’s actions', () => {
 				const of = async () => (await members(app)).members.find((m) => m.endpoint === phone);
 				await app.goto('/sync?db=home');
 				await more(page);
-				await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Purge', exact: true }).click();
+				await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Revert', exact: true }).click();
 				const dialog = page.locator('dialog.confirm');
-				assert.match(await dialog.innerText(), /Purge phone from home\? It made no change to an entry: this only revokes it\./);
+				assert.match(await dialog.innerText(), /Revert phone in home\? It made no change to an entry: this only revokes it\./);
 				assert.match(await dialog.innerText(), /It is revoked too, until a fresh invite brings it and its changes back\./);
 				// A wrong name is a no.
 				await dialog.locator('input').fill('phon');
-				await dialog.getByRole('button', { name: 'purge', exact: true }).click();
+				await dialog.getByRole('button', { name: 'revert', exact: true }).click();
 				assert.equal((await of()).purged, null);
 
-				await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Purge', exact: true }).click();
+				await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Revert', exact: true }).click();
 				await dialog.locator('input').fill('phone');
-				await dialog.getByRole('button', { name: 'purge', exact: true }).click();
+				await dialog.getByRole('button', { name: 'revert', exact: true }).click();
 				const gone = page.locator(`${WIDGET} .more .device[data-endpoint="${phone}"]`);
-				await gone.filter({ hasText: 'phone · purged' }).waitFor();
+				await gone.filter({ hasText: 'phone · reverted' }).waitFor();
 				assert.equal(await gone.getByRole('button').count(), 0);
 				// Listed once: its device line, with Rename and Revoke, is gone.
 				assert.equal(await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).count(), 0);
