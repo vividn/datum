@@ -125,8 +125,8 @@ fn v2import_lists_skipped_docs_and_ignores_design_docs() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     for want in [
         "1 imported (1 point, 0 block), 2 skipped (1 duplicate, 1 no-field).\n",
-        "  duplicate      coffee:copy\n",
-        "  no-field       orphan\n",
+        "  duplicate  coffee:copy\n",
+        "  no-field   orphan\n",
         "1 CouchDB design doc (_design/…) ignored: views, not entries.\n",
     ] {
         assert!(stdout.contains(want), "want {want:?} in:\n{stdout}");
@@ -142,7 +142,7 @@ fn v2import_lists_skipped_docs_and_ignores_design_docs() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     for want in [
         "2 would import (2 point, 0 block), 1 skipped (1 no-field).\n",
-        "  no-field       orphan\n",
+        "  no-field  orphan\n",
         "1 CouchDB design doc (_design/…) ignored: views, not entries.\n",
     ] {
         assert!(stdout.contains(want), "want {want:?} in:\n{stdout}");

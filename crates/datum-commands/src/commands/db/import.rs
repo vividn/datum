@@ -461,10 +461,16 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             "Migration complete: {imported} imported ({points} point, {blocks} block), {skipped} skipped{breakdown}."
         );
     }
+    // The reason column is as wide as the longest reason listed.
+    let w = skipped_records
+        .iter()
+        .map(|(r, ..)| r.as_str().len())
+        .max()
+        .unwrap_or(0);
     for (reason, id, detail) in &skipped_records {
         match detail {
-            Some(d) => println!("  {:<13}  {id}: {d}", reason.as_str()),
-            None => println!("  {:<13}  {id}", reason.as_str()),
+            Some(d) => println!("  {:<w$}  {id}: {d}", reason.as_str()),
+            None => println!("  {:<w$}  {id}", reason.as_str()),
         }
     }
     if design_docs > 0 {
