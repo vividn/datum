@@ -439,6 +439,9 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
         } => {
             let expires = std::time::Duration::from_secs(expires_secs);
             let starts = !db.sync_chain()?.exists();
+            // The daemon leaves the copy to the invite: a joiner it admitted
+            // would never be seen here, which waits out the expiry (da-apd52).
+            let _held = super::sync_daemon::first_sync(db)?;
             let caps = caps(db, reader, filter)?;
             if let Some(f) = caps.get("fields") {
                 eprintln!("the redeemer is a reader sent only {f}, each with its spec");

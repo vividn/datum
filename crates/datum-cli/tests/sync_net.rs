@@ -433,9 +433,10 @@ fn a_refusal_names_its_next_step_by_its_kind() {
 
 /// A stranger that dials without an invite is refused by the store's
 /// handshake (`sync_chain`'s `a_non_members_act_is_refused_open_chain_or_not`);
-/// here, the copy of this key, refused before it dials. In the inviter's
-/// chain, it would rejoin (da-j8c4l); the handshake's own refusal of the key
-/// is `sync_chain`'s, where a hello can be forced.
+/// here, the copy of this key, refused before it dials: the database's own
+/// invite holds it (da-apd52). In the inviter's chain, it would rejoin
+/// (da-j8c4l); the handshake's own refusal of the key is `sync_chain`'s,
+/// where a hello can be forced.
 #[test]
 fn a_copy_of_this_key_is_refused() {
     let (a, _b) = paired();
@@ -445,7 +446,10 @@ fn a_copy_of_this_key_is_refused() {
     own.env("DATUM_SYNC_BIND", format!("127.0.0.1:{port}"));
     let out = own.output().unwrap();
     let text = String::from_utf8_lossy(&out.stderr);
-    assert!(text.contains("is a copy of this database"), "{text}");
+    assert!(
+        text.contains("`invite` is at work on this database"),
+        "{text}"
+    );
 }
 
 /// A copy belongs to one chain (da-mepav): one already in a chain that tries

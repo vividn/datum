@@ -322,6 +322,29 @@ fn a_join_killed_at_its_first_sync_left_the_daemon_which_finishes_it() {
     assert!(b.ok(&["tail", "-n", "1"]).contains("step"));
 }
 
+/// An open invite holds the copy as `connect` does (da-apd52): a daemon
+/// serving it too binds its endpoint key in a second process and may admit
+/// the joiner itself, and the invite, having seen nothing, waits out its
+/// expiry. Redeemed, the invite says so and exits, and the daemon takes the
+/// database up; expired, as `the_first_invite_installs_it_and_says_so` reads.
+#[test]
+fn an_open_invite_keeps_the_daemon_off_the_copy() {
+    let (a, b) = (Home::new(), Home::new());
+    let (mut inviting, out, ticket) = a.inviting(&[]);
+    let daemon = a.ok(&["sync", "daemon", "status"]);
+    assert!(daemon.contains("0 chained database(s)"), "{daemon}");
+
+    b.ok(&["sync", "chain", "connect", &ticket]);
+    let said: Vec<String> = out.lines().map_while(Result::ok).collect();
+    assert!(inviting.0.wait().unwrap().success(), "{said:?}");
+    assert!(
+        said.iter().any(|l| l.starts_with("added sync peer")),
+        "{said:?}"
+    );
+    let daemon = a.ok(&["sync", "daemon", "status"]);
+    assert!(daemon.contains("1 chained database(s): data"), "{daemon}");
+}
+
 #[test]
 fn status_names_a_missing_daemon_on_a_chained_copy() {
     let h = Home::new();

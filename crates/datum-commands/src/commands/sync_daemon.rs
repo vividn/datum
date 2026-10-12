@@ -258,11 +258,11 @@ pub fn missing() -> bool {
             .is_some_and(|p| !p.exists())
 }
 
-/// A `connect` at work on a database (da-qr7gz): a lock on a file beside it,
-/// held for the command's life and so let go when it is killed. The daemon,
-/// installed once the copy is admitted, leaves the database alone until
-/// then: it would bind the copy's endpoint key in a second process, and a
-/// relay sends a key's traffic to whichever bound it last.
+/// A `connect` or an `invite` at work on a database (da-qr7gz, da-apd52): a
+/// lock on a file beside it, held for the command's life and so let go when
+/// it is killed. The daemon leaves the database alone until then: it would
+/// bind the copy's endpoint key in a second process, and a relay sends a
+/// key's traffic to whichever bound it last.
 pub struct FirstSync {
     _lock: File,
     path: PathBuf,
@@ -283,8 +283,9 @@ fn first_sync_lock(db: &Path) -> PathBuf {
 }
 
 /// Hold `db`'s [`FirstSync`]. A database with no file has none. A second
-/// `connect` on the database waits here until the first ends; where the
-/// filesystem has no locks, the `connect` goes on without one.
+/// `connect` or `invite` on the database is refused: waiting, it would wait
+/// out the first, an invite its whole expiry. Where the filesystem has no
+/// locks, it goes on without one.
 pub fn first_sync(db: &Db) -> Result<Option<FirstSync>> {
     let Some(path) = db.conn().path().filter(|p| !p.is_empty()) else {
         return Ok(None);
@@ -295,11 +296,17 @@ pub fn first_sync(db: &Db) -> Result<Option<FirstSync>> {
         .append(true)
         .open(&path)
         .with_context(|| format!("creating {}", path.display()))?;
-    let _ = lock.lock();
+    if let Err(TryLockError::WouldBlock) = lock.try_lock() {
+        bail!(BUSY);
+    }
     Ok(Some(FirstSync { _lock: lock, path }))
 }
 
-/// Whether a `connect` holds `db`'s [`FirstSync`].
+/// Why a second `connect` or `invite` on a database is refused.
+const BUSY: &str = "a `datum sync chain connect` or `invite` is at work on this database: \
+     let it end, or stop it, first";
+
+/// Whether a `connect` or an `invite` holds `db`'s [`FirstSync`].
 fn in_first_sync(db: &Path) -> bool {
     File::open(first_sync_lock(db))
         .is_ok_and(|f| matches!(f.try_lock_shared(), Err(TryLockError::WouldBlock)))
@@ -336,7 +343,7 @@ pub fn auto_install(db: &Db) {
 
 /// Every database datum knows of that is in a sync chain, or was admitted
 /// to one and has its first sync to finish (da-qr7gz), read without touching
-/// it. Not one a `connect` is still at work on.
+/// it. Not one a `connect` or an `invite` is still at work on.
 fn chained() -> Vec<(String, PathBuf)> {
     config::known_dbs()
         .into_iter()
