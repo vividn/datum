@@ -62,6 +62,22 @@ const toolchains = resolve(repoRoot, 'target', 'toolchains');
 const targetDir = resolve(repoRoot, process.env.CARGO_TARGET_DIR || 'target');
 const out = resolve(repoRoot, 'web', 'src', 'lib', 'wasm', 'datum-cli.wasm');
 
+/** `url`'s bytes, asking up to three times: one HTTP 500 from GitHub failed a CI run (da-wh359). */
+async function download(url) {
+	for (let attempt = 1; ; attempt++) {
+		console.log(`fetching ${url}`);
+		try {
+			const res = await fetch(url);
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			return Buffer.from(await res.arrayBuffer());
+		} catch (e) {
+			if (attempt === 3) throw new Error(`${url}: ${e.message}`);
+			console.log(`${e.message}; again in ${attempt * 10}s`);
+			await new Promise((r) => setTimeout(r, attempt * 10_000));
+		}
+	}
+}
+
 /** The unpacked tool's directory, downloading and verifying it first if needed. */
 async function tool({ url, sha256, dir }) {
 	const home = resolve(toolchains, dir);
@@ -69,10 +85,7 @@ async function tool({ url, sha256, dir }) {
 	mkdirSync(toolchains, { recursive: true });
 	const tarball = resolve(toolchains, url.split('/').pop());
 	if (!existsSync(tarball)) {
-		console.log(`fetching ${url}`);
-		const res = await fetch(url);
-		if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-		writeFileSync(tarball, Buffer.from(await res.arrayBuffer()));
+		writeFileSync(tarball, await download(url));
 	}
 	const actual = createHash('sha256').update(readFileSync(tarball)).digest('hex');
 	if (actual !== sha256) throw new Error(`${tarball}: sha256 ${actual}, pinned ${sha256}`);

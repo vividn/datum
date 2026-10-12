@@ -80,6 +80,9 @@ function done(how, source) {
 const have = built() && existsSync(stamp) ? sha(readFileSync(stamp, 'utf8').trim()) : null;
 if (have && tree(have)) done(`kept, built from ${have.slice(0, 10)}'s crates`, have);
 
+// A PR's CI checkout fetches only its base, `staging`: without main it built
+// every PR from scratch, on a toolchain download from GitHub (da-wh359).
+if (!sha('origin/main')) git(['fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main']);
 const base = sha('origin/main') && git(['merge-base', 'HEAD', 'origin/main'])?.trim();
 let why = base ? 'the crates differ from the merge-base with origin/main' : 'no merge-base with origin/main';
 if (base && tree(base)) {
