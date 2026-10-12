@@ -258,7 +258,7 @@ describe('the sync widget', () => {
 		}, DESKTOP);
 	});
 
-	test('a revoked device says so on its line, and its — is not «not syncing» in the legend', async () => {
+	test('a revoked device has no line, the list says one is hidden, and the legend has no «not syncing» (da-73gyz)', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
 			const phone = await member(app, 'home', 'phone');
@@ -266,9 +266,10 @@ describe('the sync widget', () => {
 			// Every other database chained too, so no «not syncing» comes from them.
 			await cli(app, ['sync', 'new-invite']);
 			await app.goto('/sync?db=home');
-			const revoked = page.locator(`${WIDGET} .devices li.revoked[data-client="${phone}"]`);
-			await revoked.waitFor();
-			assert.equal(await revoked.locator('.state').innerText(), '— revoked');
+			const hidden = page.locator(`${WIDGET} p.revoked`);
+			await hidden.waitFor();
+			assert.equal(await hidden.innerText(), '1 former member hidden — More lists it');
+			assert.equal(await page.locator(`${WIDGET} .devices li[data-client="${phone}"]`).count(), 0);
 			assert.deepEqual(await page.locator(`${WIDGET} .legend > span`).allInnerTexts(), ['✓ synced']);
 		}, DESKTOP);
 	});

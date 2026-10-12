@@ -235,6 +235,10 @@ device rejoins by a fresh invite to its chain: the `admit` of a listed
 endpoint RE-ADMITS it, clearing the revoke, so what it made while out folds
 in (da-j8c4l) — and a revert too, so a reverted device rejoins as at a first
 connection, every op it made folding back in (da-q4rau).
+`chain list` leaves a revoked, reverted or departed member out and counts it, and
+`status` a revoked or reverted one, a departed one having no row there at all
+(`--show-revoked` shows them, `--json` always carries them), as bare `sync` and
+datum.day's sync widget do: the chain's record of it stays (da-73gyz).
 A first sync carries the inviter's chain records after its history, so a join
 cut short (a reload, a lost connection) leaves the joiner in no chain holding
 part of it, or none (`sync_peers.redeemed_at`, da-38eye): `sync chain list` /

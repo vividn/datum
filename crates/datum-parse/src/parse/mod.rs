@@ -422,9 +422,9 @@ fn apply_show(command: &mut Command, show: Show) -> bool {
                 c => c,
             };
             match c {
-                SyncCommand::Members { show: s }
+                SyncCommand::Members { show: s, .. }
                 | SyncCommand::AdminList { show: s }
-                | SyncCommand::Status { show: s }
+                | SyncCommand::Status { show: s, .. }
                 | SyncCommand::Apply { show: s }
                 | SyncCommand::Diff { show: s, .. }
                 | SyncCommand::Refold { show: s }

@@ -133,8 +133,10 @@
 	$: others = dbs.filter((d) => d.db !== db);
 	$: rows = cur.chain ? table([cur], $syncStates) : [];
 	$: overall = standing(cur, $syncStates);
-	// A revoked device's line says «revoked» in words: its `—` is not «not syncing».
-	$: shown = [...rows.filter((r) => !r.revoked).map((r) => r.cells[db]), ...others.map((d) => standing(d, $syncStates))];
+	// A revoked device has no line, only a count of them: «More» lists them (da-73gyz).
+	$: live = rows.filter((r) => !r.revoked);
+	$: hidden = rows.filter((r) => r.revoked).length;
+	$: shown = [...live.map((r) => r.cells[db]), ...others.map((d) => standing(d, $syncStates))];
 	$: used = MARKS.filter((m) => shown.some((c) => c.mark === m));
 
 	/** How `d` stands as a whole: the worst of its devices, which this copy's cell already is. */
@@ -398,14 +400,13 @@
 		</header>
 		{#if cur.chain}
 			<ul class="devices">
-				{#each rows as row (row.key)}
+				{#each live as row (row.key)}
 					{@const cell = row.cells[db]}
 					<li
 						data-client={row.key}
 						data-reach={row.reach}
 						data-mark={cell.mark}
 						class:here={row.here}
-						class:revoked={row.revoked}
 						class:stale={cell.stale}
 						title={cell.title}
 					>
@@ -415,13 +416,14 @@
 							>{#if row.here}<span class="kind">this device</span>{:else if row.kind && row.kind !== row.label}<span class="kind">{row.kind}</span>{/if}</span
 						>
 						<span class="state {cell.stale ? 'stale' : cell.mark}"
-							><span class="symbol">{SYMBOL[cell.mark]}</span> {row.revoked ? 'revoked' : WORD[cell.mark]}{#if cell.reader}<span class="reader" aria-hidden="true">{READER}</span>{/if}{#if cell.filter}<span class="filter" aria-hidden="true">{FILTER}</span>{/if}</span
+							><span class="symbol">{SYMBOL[cell.mark]}</span> {WORD[cell.mark]}{#if cell.reader}<span class="reader" aria-hidden="true">{READER}</span>{/if}{#if cell.filter}<span class="filter" aria-hidden="true">{FILTER}</span>{/if}</span
 						>
-						{#if !row.revoked}<span class="seen">{row.here ? 'now' : ago(row.lastSeen)}</span>{/if}
+						<span class="seen">{row.here ? 'now' : ago(row.lastSeen)}</span>
 						{#if cell.error}<p class="reason">{cell.error}</p>{/if}
 					</li>
 				{/each}
 			</ul>
+			{#if hidden}<p class="quiet revoked">{hidden} former member{hidden === 1 ? '' : 's'} hidden — More lists {hidden === 1 ? 'it' : 'them'}</p>{/if}
 		{:else}
 			<p class="quiet">On this device only: no other device has a copy.</p>
 		{/if}
@@ -500,7 +502,7 @@
 						<button type="button" class="command" use:act={'run'} disabled={busy} on:click={() => pause(cur)}>{cur.paused ? 'Resume sync' : 'Pause sync'}</button>
 						<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => leave(cur)}>Leave chain</button>
 					</div>
-					{#each rows.filter((r) => !r.here && !r.revoked) as row (row.key)}
+					{#each live.filter((r) => !r.here) as row (row.key)}
 						<div class="actions device" data-client={row.key}>
 							<span class="name">{row.label}</span>
 							<button type="button" class="command" use:act={'open'} disabled={busy} on:click={() => rename(row)}>Rename</button>
@@ -630,10 +632,6 @@
 		flex-basis: 100%;
 		margin: 0.2rem 0 0 1.4rem;
 		color: var(--error);
-	}
-	.revoked .name {
-		text-decoration: line-through;
-		color: var(--muted);
 	}
 	.quiet {
 		color: var(--muted);

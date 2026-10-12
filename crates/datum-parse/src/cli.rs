@@ -792,10 +792,12 @@ pub struct KitUninstallArgs {
 pub enum SyncCommand {
     /// `datum sync` — sync with every member once, then one line of status.
     Now,
-    /// `datum sync status [--json]` — per member, how this copy stands
-    /// with it (da-rcb5m).
+    /// `datum sync status [--show-revoked] [--json]` — per member, how this copy
+    /// stands with it (da-rcb5m). A revoked member only with `--show-revoked` or
+    /// `--json` (da-73gyz).
     Status {
         show: Show,
+        show_revoked: bool,
     },
     /// `datum sync pause | resume` (da-wlbyx): this copy's, never synced.
     Pause,
@@ -829,9 +831,11 @@ pub enum SyncCommand {
         dry_run: bool,
         force: bool,
     },
-    /// `datum sync chain list [--json]` — the chain's admins and endpoints.
+    /// `datum sync chain list [--show-revoked] [--json]` — the chain's admins and
+    /// endpoints, a revoked one only with `--show-revoked` or `--json` (da-73gyz).
     Members {
         show: Show,
+        show_revoked: bool,
     },
     /// `datum sync chain rename [<WHO>] <LABEL> [--admin-key <FILE>]` —
     /// relabel this copy (no admin needed), or another member (an admin

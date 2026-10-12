@@ -20,6 +20,7 @@ pub(crate) fn parse_sync_cmd(tail: &[&str]) -> Result<SyncCommand> {
         // `--json` is the swept `--show json`, set by `apply_show`.
         "status" => SyncCommand::Status {
             show: Show::Default,
+            show_revoked: opts(&mut rest, &[], &["show-revoked"], 0..=0)?.on("show-revoked"),
         },
         "pause" => SyncCommand::Pause,
         "resume" => SyncCommand::Resume,
@@ -183,6 +184,7 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
         }
         Some("list") => SyncCommand::Members {
             show: Show::Default,
+            show_revoked: opts(rest, &[], &["show-revoked"], 0..=0)?.on("show-revoked"),
         },
         Some("rename") => {
             let mut o = opts(rest, &["admin-key"], &[], 1..=2)?;
@@ -432,7 +434,15 @@ mod tests {
         assert_eq!(
             p(&["status"]),
             SyncCommand::Status {
-                show: Show::Default
+                show: Show::Default,
+                show_revoked: false
+            }
+        );
+        assert_eq!(
+            p(&["status", "--show-revoked"]),
+            SyncCommand::Status {
+                show: Show::Default,
+                show_revoked: true
             }
         );
         assert_eq!(p(&["pause"]), SyncCommand::Pause);
@@ -565,7 +575,15 @@ mod tests {
         assert_eq!(
             p(&["chain", "list"]),
             SyncCommand::Members {
-                show: Show::Default
+                show: Show::Default,
+                show_revoked: false
+            }
+        );
+        assert_eq!(
+            p(&["chain", "list", "--show-revoked"]),
+            SyncCommand::Members {
+                show: Show::Default,
+                show_revoked: true
             }
         );
         assert_eq!(

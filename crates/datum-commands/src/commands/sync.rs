@@ -306,7 +306,9 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
             sign(db, record, &chain, admin_key.as_deref())?;
             println!("{said}");
         }
-        SyncCommand::Members { show } => members(db, show == ShowFlag::Json)?,
+        SyncCommand::Members { show, show_revoked } => {
+            members(db, show == ShowFlag::Json, show_revoked)?
+        }
         SyncCommand::AdminList { show } => admins(db, show == ShowFlag::Json)?,
         SyncCommand::Rename {
             who,
@@ -334,7 +336,9 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
             }
             println!("renamed {} to {label}", m.label);
         }
-        SyncCommand::Status { show } => status(db, show == ShowFlag::Json)?,
+        SyncCommand::Status { show, show_revoked } => {
+            status(db, show == ShowFlag::Json, show_revoked)?
+        }
         // The page's network worker runs the transport outside the CLI, and
         // the iroh key IS this secret. Handing it over widens nothing: the
         // page can already read the whole db file, `sync_local` included
@@ -856,7 +860,7 @@ fn filter_json(f: Option<&chain::Filter>) -> Value {
 }
 
 /// `datum sync chain list`.
-fn members(db: &Db, json: bool) -> Result<()> {
+fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
     let chain = db.sync_chain()?;
     // A copy joining a chain is in none yet, and says through which copies
     // (da-idw54): datum.day reads this to resume the join.
@@ -911,7 +915,12 @@ fn members(db: &Db, json: bool) -> Result<()> {
     println!("sync chain {}\nadmins:", chain.id);
     print_admins(&chain);
     println!("endpoints:");
-    for m in &chain.members {
+    // This copy's own row stays even when revoked: it says why it is out.
+    let (shown, hidden): (Vec<_>, Vec<_>) = chain
+        .members
+        .iter()
+        .partition(|m| show_revoked || m.revoked.is_none() || m.endpoint == mine);
+    for m in shown {
         let revoked = m.revoked.as_deref().map(chain::hlc_time);
         let rejoined = m.rejoined.as_deref().map(chain::hlc_time);
         println!(
@@ -948,6 +957,7 @@ fn members(db: &Db, json: bool) -> Result<()> {
             },
         );
     }
+    print_hidden(hidden.len());
     Ok(())
 }
 
@@ -988,8 +998,20 @@ fn depart(db: &Db, chain: &str) -> Result<Option<Vec<String>>> {
     Ok(Some(told))
 }
 
+/// The one line for the revoked members a human listing leaves out
+/// (da-73gyz). A revert revokes too, and so does a leave (da-dsob1), so the
+/// line says «former», which names all three. `status` counts only the two
+/// it can show: a member that left is no copy to stand with, and has no row
+/// there even with `--show-revoked`.
+fn print_hidden(n: usize) {
+    if n > 0 {
+        let s = if n == 1 { "" } else { "s" };
+        println!("  {n} former member{s} hidden — `--show-revoked`");
+    }
+}
+
 /// `datum sync status`: per member, how this copy stands with it.
-fn status(db: &Db, json: bool) -> Result<()> {
+fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
     let chain = db.sync_chain()?;
     let mine = db.sync_endpoint_id()?;
     let label = chain
@@ -1106,12 +1128,13 @@ fn status(db: &Db, json: bool) -> Result<()> {
     for n in &unlocks {
         println!("⚠ {n} — {UNLOCK_HINT}");
     }
-    let width = peers
+    let (shown, hidden): (Vec<_>, Vec<_>) = peers.iter().partition(|p| show_revoked || !p.revoked);
+    let width = shown
         .iter()
         .map(|p| p.label.chars().count())
         .max()
         .unwrap_or(0);
-    for p in &peers {
+    for p in shown {
         let when = match p.state {
             "error" => p.error_at.clone(),
             "never" => None,
@@ -1145,6 +1168,7 @@ fn status(db: &Db, json: bool) -> Result<()> {
                 .unwrap_or_default(),
         );
     }
+    print_hidden(hidden.len());
     Ok(())
 }
 

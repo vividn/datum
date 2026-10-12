@@ -394,11 +394,21 @@ fn leaving_a_chain_of_three_keeps_every_entry_and_starts_afresh() {
     assert!(left.contains("new endpoint key"), "{left}");
     assert!(a.send(&c).0);
     for x in [&a, &c] {
+        // A member that left is a former one (da-73gyz): hidden, counted.
         let list = x.ok(&["sync", "chain", "list"]);
+        assert!(!list.contains(&old_id[..10]), "{list}");
+        assert!(list.contains("1 former member hidden"), "{list}");
+        let list = x.ok(&["sync", "chain", "list", "--show-revoked"]);
         let row = list.lines().find(|l| l.contains(&old_id[..10])).unwrap();
         assert!(row.contains("  LEFT "), "{list}");
         let status = json(&x.ok(&["sync", "status", "--json"]));
         assert!(!status["members"].to_string().contains(&old_id), "{status}");
+        // `status` has no row for it to hide, so it counts none.
+        for flag in [&[][..], &["--show-revoked"]] {
+            let status = x.ok(&[&["sync", "status"][..], flag].concat());
+            assert!(!status.contains(&old_id[..10]), "{status}");
+            assert!(!status.contains("former member"), "{status}");
+        }
         assert!(x.has("tea"));
     }
     assert_eq!(b.query("SELECT COUNT(*) FROM entries"), entries);
@@ -643,6 +653,59 @@ fn in_an_open_chain_a_member_invites_a_third_copy_and_revokes_one() {
     );
 }
 
+/// `chain list` and `status` leave a revoked or reverted member out and say
+/// how many (da-73gyz); `--show-revoked` shows them, `--json` always carries them,
+/// and a revoked copy still lists itself.
+#[test]
+fn chain_list_and_status_hide_revoked_members_and_say_how_many() {
+    let (a, b) = chained();
+    let c = Copy::new();
+    admit(&a, &c, "c", None);
+    let shows = |args: &[&str], who: &Copy| a.ok(args).contains(&who.id()[..10]);
+    let count = |args: &[&str]| json(&a.ok(args))["members"].as_array().unwrap().len();
+
+    a.ok(&["sync", "chain", "revoke", "c"]);
+    for (cmd, live) in [
+        (&["sync", "chain", "list"][..], 3),
+        (&["sync", "status"], 2),
+    ] {
+        let out = a.ok(cmd);
+        assert!(
+            out.contains("1 former member hidden — `--show-revoked`"),
+            "{out}"
+        );
+        assert!(shows(cmd, &b) && !shows(cmd, &c), "{out}");
+        assert!(shows(&[cmd, &["--show-revoked"]].concat(), &c));
+        assert!(!a
+            .ok(&[cmd, &["--show-revoked"]].concat())
+            .contains("hidden"));
+        assert_eq!(count(&[cmd, &["--json"]].concat()), live);
+    }
+
+    // A revert is hidden the same way, and the count is of both.
+    a.ok(&["sync", "chain", "revert", "b", "--yes"]);
+    for cmd in [&["sync", "chain", "list"][..], &["sync", "status"]] {
+        let out = a.ok(cmd);
+        assert!(
+            out.contains("2 former members hidden — `--show-revoked`"),
+            "{out}"
+        );
+        assert!(!shows(cmd, &b) && !shows(cmd, &c), "{out}");
+        assert!(a
+            .ok(&[cmd, &["--show-revoked"]].concat())
+            .contains("REVERTED"));
+    }
+    assert!(shows(&["sync", "chain", "list"], &a));
+
+    // c hears of its own revoke, and still lists itself.
+    assert!(a.send(&c).0);
+    let own = c.ok(&["sync", "chain", "list"]);
+    assert!(
+        own.contains("(this copy)") && own.contains("REVOKED"),
+        "{own}"
+    );
+}
+
 #[test]
 fn the_first_admin_add_locks_the_chain() {
     let (a, b) = chained();
@@ -701,7 +764,7 @@ fn a_revoke_refuses_what_the_endpoint_made_after_it_on_every_copy() {
     );
     assert!(!a.has("after") && a.has("before"));
     assert_eq!(a.hash(), c.hash());
-    let members = a.ok(&["sync", "chain", "list"]);
+    let members = a.ok(&["sync", "chain", "list", "--show-revoked"]);
     assert!(members.contains("REVOKED"), "{members}");
 }
 
@@ -797,7 +860,9 @@ fn a_purge_sets_aside_a_devices_ops_on_every_copy() {
     assert_eq!(purge_view(&a), clean);
     let again = a.fails(&["sync", "chain", "revert", "b", "--yes"], "");
     assert!(again.contains("reverted already"), "{again}");
-    assert!(a.ok(&["sync", "chain", "list"]).contains("REVERTED"));
+    assert!(a
+        .ok(&["sync", "chain", "list", "--show-revoked"])
+        .contains("REVERTED"));
 
     // c syncs after the purge, from a: b's ops arrive with it, set aside.
     let (_, text) = a.send(&c);
@@ -1632,7 +1697,7 @@ fn status_says_never_then_synced_then_pending_then_error_each_with_its_time() {
             .contains("made after its endpoint was revoked"),
         "{row}"
     );
-    let table = a.ok(&["sync", "status"]);
+    let table = a.ok(&["sync", "status", "--show-revoked"]);
     assert!(
         table.contains("error") && table.contains("REVOKED"),
         "{table}"

@@ -120,7 +120,7 @@ describe('the sync widget’s actions', () => {
 		}
 	});
 
-	test('a passkey locks the chain; a revoke is approved with it and the row says revoked', async () => {
+	test('a passkey locks the chain; a revoke is approved with it and the device moves to More as revoked', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;
 			await authenticator(page);
@@ -135,9 +135,9 @@ describe('the sync widget’s actions', () => {
 			// Locked: the revoke stops at an approve link, which the passkey signs.
 			await page.locator(`${WIDGET} .more .device[data-client="${phone}"]`).getByRole('button', { name: 'Revoke' }).click();
 			await page.locator('dialog.confirm').getByRole('button', { name: 'revoke' }).click();
-			const row = page.locator(`${WIDGET} .devices li.revoked[data-client="${phone}"]`);
-			await row.waitFor();
-			assert.equal(await row.locator('.state').innerText(), '— revoked');
+			await page.locator(`${WIDGET} p.revoked`).waitFor();
+			assert.equal(await page.locator(`${WIDGET} .devices li[data-client="${phone}"]`).count(), 0);
+			assert.equal(await page.locator(`${WIDGET} .more .device[data-endpoint="${phone}"] .name`).innerText(), 'phone · revoked');
 			assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
 			assert.ok(await revokedOf(app, phone));
 		}, AT_DATUM_DAY);
