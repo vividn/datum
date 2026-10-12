@@ -62,6 +62,9 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
     // <missing-_id at #N> if absent). detail is an optional explanation
     // (the derive_verb error message for `invalid-shape`).
     let mut skipped_records: Vec<(SkipReason, String, Option<String>)> = Vec::new();
+    // CouchDB design docs (`_design/…`) are views, not entries: neither
+    // imported nor skipped, only counted, so the total still adds up.
+    let mut design_docs = 0usize;
     // Stable provenance timestamp pulled from the backup file itself, not
     // the wall clock at import time. Two imports of the same backup file
     // produce the same _import marker → identical content_hash → dedup.
@@ -75,6 +78,10 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         let data = &doc["data"];
         let meta = &doc["meta"];
         let doc_id = doc_id_or_synthetic(doc, doc_idx);
+        if doc_id.starts_with("_design/") {
+            design_docs += 1;
+            continue;
+        }
 
         let field = match data["field"].as_str() {
             Some(f) => f.to_string(),
@@ -412,12 +419,22 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         println!(
             "Migration complete: {imported} imported ({points} point, {blocks} block), {skipped} skipped{breakdown}."
         );
-        if imported > 0 {
-            // Bulk-load fast path skipped per-row conflict detection.
-            // Source backups are self-consistent so this is normally fine,
-            // but give the user a one-liner manual fallback.
-            println!("(run `datum conflicts list` to verify nothing slipped through.)");
+    }
+    for (reason, id, detail) in &skipped_records {
+        match detail {
+            Some(d) => println!("  {:<13}  {id}: {d}", reason.as_str()),
+            None => println!("  {:<13}  {id}", reason.as_str()),
         }
+    }
+    if design_docs > 0 {
+        let s = if design_docs == 1 { "" } else { "s" };
+        println!("{design_docs} CouchDB design doc{s} (_design/…) ignored: views, not entries.");
+    }
+    if !dry_run && imported > 0 {
+        // Bulk-load fast path skipped per-row conflict detection.
+        // Source backups are self-consistent so this is normally fine,
+        // but give the user a one-liner manual fallback.
+        println!("(run `datum conflicts list` to verify nothing slipped through.)");
     }
     if states_normalized > 0 {
         println!("states normalized: {states_normalized} ({{id: x}} collapsed to x)");
@@ -431,8 +448,6 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         if skipped > 0 {
             println!("(skipped IDs written to {path})");
         }
-    } else if skipped > 0 {
-        println!("(pass --skip-log <path> to dump the full list of skipped IDs for triage.)");
     }
     Ok(())
 }

@@ -101,3 +101,50 @@ fn v2import_and_restore_report_progress_on_stderr_only() {
     );
     assert!(String::from_utf8_lossy(&out.stdout).contains("0 imported"));
 }
+
+/// The summary lists every skipped doc by reason and v2 `_id`, and a CouchDB
+/// design doc is neither imported nor skipped, only counted (da-3clr4).
+#[test]
+fn v2import_lists_skipped_docs_and_ignores_design_docs() {
+    let dir = tempfile::tempdir().unwrap();
+    let coffee = serde_json::json!({
+        "field": "coffee",
+        "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 0},
+    });
+    let meta = serde_json::json!({"createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 0}});
+    let backup = serde_json::json!({"backupTime": "2025-02-01T00:00:00Z", "docs": [
+        {"_id": "coffee:a", "data": coffee, "meta": meta},
+        {"_id": "coffee:copy", "data": coffee, "meta": meta},
+        {"_id": "orphan", "data": {"occurTime": coffee["occurTime"]}, "meta": meta},
+        {"_id": "_design/x", "views": {"by_field": {"map": "function (doc) {}"}}},
+    ]})
+    .to_string();
+    let db = dir.path().join("v2.db");
+
+    let out = datum(&db, &["db", "v2import", "-"], backup.as_bytes());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    for want in [
+        "1 imported (1 point, 0 block), 2 skipped (1 duplicate, 1 no-field).\n",
+        "  duplicate      coffee:copy\n",
+        "  no-field       orphan\n",
+        "1 CouchDB design doc (_design/…) ignored: views, not entries.\n",
+    ] {
+        assert!(stdout.contains(want), "want {want:?} in:\n{stdout}");
+    }
+    assert!(!stdout.contains("_design/x"), "{stdout}");
+    assert!(!stdout.contains("--skip-log"), "{stdout}");
+
+    let out = datum(
+        &db,
+        &["db", "v2import", "--dry-run", "-"],
+        backup.as_bytes(),
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    for want in [
+        "2 would import (2 point, 0 block), 1 skipped (1 no-field).\n",
+        "  no-field       orphan\n",
+        "1 CouchDB design doc (_design/…) ignored: views, not entries.\n",
+    ] {
+        assert!(stdout.contains(want), "want {want:?} in:\n{stdout}");
+    }
+}
