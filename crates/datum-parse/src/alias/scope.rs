@@ -912,6 +912,32 @@ mod tests {
     }
 
     #[test]
+    fn point_switch_chain_body_takes_the_call_site_once() {
+        // da-cze5g: `rans 10` is `run -m distanceKm=10 , stretch` typed:
+        // 10 walks to the `-k` that `run`'s own region declared, and not
+        // to a duration on both sides. The rest of the trailing reaches
+        // both sides the body's `,` made; the chain is one entry, so
+        // `-t +5` composes once and `note=x` sits before the `,`, which
+        // takes a bare state alone.
+        let mut a = HashMap::new();
+        a.insert("run".into(), alias("switch body run"));
+        a.insert("stretch".into(), alias("switch body stretch"));
+        a.insert("rans".into(), alias("run -m -k distanceKm , stretch"));
+        let r = expand_into_sides(
+            v(&["datum", "rans", "10", "-t", "+5", "note=x"]),
+            &MapResolver(&a),
+        )
+        .unwrap();
+        assert_eq!(r.sides.len(), 1, "{:?}", r.sides);
+        let side = &r.sides[0];
+        let (chain, tail) = side.split_at(side.iter().position(|t| t == ",").unwrap());
+        assert_eq!(tail, v(&[",", "stretch"]), "{side:?}");
+        assert_eq!(chain.iter().filter(|t| *t == "+5").count(), 1, "{side:?}");
+        assert!(chain.contains(&"note=x".into()), "{side:?}");
+        assert!(chain.contains(&"distanceKm=10".into()), "{side:?}");
+    }
+
+    #[test]
     fn scaff_no_args_no_fills() {
         let r = expand(&["datum", "scaff"]);
         assert_eq!(r.sides[0], v(&["switch", "body", "sit"]));

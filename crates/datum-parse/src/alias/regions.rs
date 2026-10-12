@@ -65,7 +65,7 @@ const DUR_VERBS: &[&str] = &["switch", "start", "stop", "end"];
 /// lacked `--show`, so `feel 3 --show json` walked `json` as a positional
 /// (da-tckse). Unknown `--long=value` forms are self-contained and
 /// unknown bare flags are treated as switches.
-fn is_value_flag(tok: &str) -> bool {
+pub(super) fn is_value_flag(tok: &str) -> bool {
     static FLAGS: OnceLock<Vec<String>> = OnceLock::new();
     FLAGS
         .get_or_init(|| {
@@ -90,7 +90,7 @@ fn is_value_flag(tok: &str) -> bool {
         .any(|f| f == tok)
 }
 
-fn is_flag(tok: &str) -> bool {
+pub(super) fn is_flag(tok: &str) -> bool {
     tok.len() > 1 && tok.starts_with('-') && !tok.chars().nth(1).is_some_and(|c| c.is_ascii_digit())
 }
 
@@ -881,6 +881,27 @@ pub(super) fn apply_regions(sides: Vec<Vec<String>>) -> Result<Vec<Vec<String>>>
                 }
             }
         }
+        // A region's flags and k=v are its sides' own from here on: a
+        // later region walks the slots they declare, as it walks a
+        // body's. `rans 10`, `rans` = `run -m -k distanceKm , stretch`,
+        // is `( ( switch body run ,, -m -k distanceKm ) , … ,, 10 )`,
+        // and 10 is distanceKm's, as typed (da-cze5g).
+        let sided: Vec<Vec<String>> = (0..n)
+            .map(|s| {
+                let mut side = with_flags(&locals[s], &blanket_flags[s]);
+                side.extend(blanket_kv[s].iter().cloned());
+                side
+            })
+            .collect();
+        atoms = atoms_for(&sided)
+            .into_iter()
+            .map(|mut a| {
+                a.satisfied |= atoms
+                    .iter()
+                    .any(|o| o.satisfied && o.side == a.side && slot_identity_eq(&o.kind, &a.kind));
+                a
+            })
+            .collect();
     }
 
     // Emit: locals, then blanket flags (BEFORE any local `--` so they
@@ -895,20 +916,7 @@ pub(super) fn apply_regions(sides: Vec<Vec<String>>) -> Result<Vec<Vec<String>>>
             let at = 1.min(local.len());
             local.insert(at, field);
         }
-        let mut side: Vec<String> = Vec::with_capacity(
-            local.len() + blanket_flags[i].len() + blanket_kv[i].len() + key_fills[i].len() + 4,
-        );
-        match local.iter().position(|t| t == "--") {
-            Some(dd) => {
-                side.extend(local[..dd].iter().cloned());
-                side.extend(blanket_flags[i].iter().cloned());
-                side.extend(local[dd..].iter().cloned());
-            }
-            None => {
-                side.extend(local);
-                side.extend(blanket_flags[i].iter().cloned());
-            }
-        }
+        let mut side = with_flags(&local, &blanket_flags[i]);
         side.extend(blanket_kv[i].iter().cloned());
         side.extend(key_fills[i].iter().cloned());
         let dash_fill = state_fills[i]
@@ -926,6 +934,13 @@ pub(super) fn apply_regions(sides: Vec<Vec<String>>) -> Result<Vec<Vec<String>>>
         out.push(side);
     }
     Ok(out)
+}
+
+/// `local` with `flags` after it, but before a local `--`, so they stay
+/// flags.
+fn with_flags(local: &[String], flags: &[String]) -> Vec<String> {
+    let dd = local.iter().position(|t| t == "--").unwrap_or(local.len());
+    [&local[..dd], flags, &local[dd..]].concat()
 }
 
 fn slot_identity_eq(a: &SlotKind, b: &SlotKind) -> bool {

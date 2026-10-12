@@ -396,7 +396,7 @@ fn reparse_round_trips_every_log_verb() {
         &["end", "r5", "20"],
         &["switch", "r6", "happy", "5"],
         &["switch", "r7", "-I", "very", "happy"],
-        &["switch", "r8", "sit", "5", ",", "stand"],
+        &["switch", "r8", "sit", "5", ",", "switch", "r8", "stand"],
         &["add", "r9", "-K", "x", "x=1"],
         &["add", "r10", "--id", "b", "start_time=-60", "end_time=-30"],
         &["note", "r11", "hello", "world"],

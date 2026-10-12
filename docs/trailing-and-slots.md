@@ -53,7 +53,11 @@ implementation detail.
    produced — so `z , oov 30m` puts 30m on oov's two sides, not on z.
    Empty regions are no-ops; they occur constantly (every bare alias
    call produces one). Regions apply left-to-right; later regions see
-   earlier fills as satisfied.
+   earlier fills as satisfied, and walk the slots an earlier region's
+   flags declared as a body's: `rans = "run -m -k distanceKm , stretch"`
+   expands to `( ( switch body run ,, -m -k distanceKm ) , … ,, 10 )`,
+   and 10 is distanceKm's, as when typed (da-cze5g). A region's own
+   positionals never walk to its own `-k`.
 
    ```
    a , b ,, t1 , c , d ,, t2    # top level: t1 binds {a,b}; t2 binds {a,b,c,d}

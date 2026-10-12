@@ -706,7 +706,7 @@ fn switch_trailing_non_duration_positional_rejected() {
 /// conflict (better to fail loudly than to silently pick a winner).
 ///
 /// da-azqq removed `--dur`, which used to be the second route. The one
-/// that remains is the `,`-chain: `switch body end 5m , sit` peels its
+/// that remains is the `,`-chain: `switch body end 5m , switch body sit` peels its
 /// `5m` into `args.duration` before the slot machinery runs, so an
 /// explicit `dur=` alongside it is a genuine double-specification —
 /// unlike `ai 3 dur=5m`, where both spellings fill the same `dur=` slot
@@ -715,9 +715,14 @@ fn switch_trailing_non_duration_positional_rejected() {
 fn switch_chain_duration_conflicts_with_explicit_dur_key() {
     let db = fresh_db();
 
-    let err = run_cli(&["switch", "body", "end", "5m", "dur=10m", ",", "sit"], &db)
-        .expect_err("chain-peeled dur + dur= should conflict")
-        .to_string();
+    let err = run_cli(
+        &[
+            "switch", "body", "end", "5m", "dur=10m", ",", "switch", "body", "sit",
+        ],
+        &db,
+    )
+    .expect_err("chain-peeled dur + dur= should conflict")
+    .to_string();
     assert!(
         err.contains("specified twice") || err.contains("conflict"),
         "error should mention the conflict: {err}",

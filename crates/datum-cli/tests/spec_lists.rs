@@ -95,7 +95,7 @@ fn a_never_false_field_with_only_listed_states_cannot_be_ended() {
     for line in [
         &["end", "env"][..],
         &["switch", "env", "false"],
-        &["switch", "env", "home", "5", ",", "false"],
+        &["switch", "env", "home", "5", ",", "switch", "env", "false"],
     ] {
         let msg = refused(&db, line);
         assert!(

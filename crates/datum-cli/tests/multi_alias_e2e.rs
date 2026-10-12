@@ -300,3 +300,107 @@ fn binary_same_field_merge_leftmost_show_flag_wins() {
         "leftmost side's --show none must silence the merged row: {stdout:?}"
     );
 }
+
+/// The last body row: state, dur, following_state, verb, data.
+fn body_row(db: &PathBuf) -> [Option<String>; 5] {
+    let conn = Connection::open(db).expect("open db");
+    conn.query_row(
+        "SELECT state, dur, following_state, verb, data FROM entries \
+         WHERE deleted_at IS NULL AND field = 'body' ORDER BY rowid DESC LIMIT 1",
+        [],
+        |r| Ok([r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?]),
+    )
+    .expect("a body row")
+}
+
+/// A db with `run` = `switch body run` and `stretch` = `switch body
+/// stretch`, plus `extra` aliases.
+fn aliased_db(extra: &[(&str, &str)]) -> PathBuf {
+    let db = tmp_db();
+    let base = [
+        ("run", "switch body run"),
+        ("stretch", "switch body stretch"),
+    ];
+    for (name, body) in base.iter().chain(extra) {
+        let (ok, _, stderr) = run(&db, &["alias", "set", name, body]);
+        assert!(ok, "alias set {name}: {stderr}");
+    }
+    db
+}
+
+fn s(v: &str) -> Option<String> {
+    Some(v.to_string())
+}
+
+/// da-cze5g: an alias's sides merge exactly as the same sides typed.
+/// `rans 10` was a parallel `["run","stretch"]` with dur MOMENT: the `-m
+/// -k distanceKm` it gives `run` is that alias's trailing, which the walk
+/// of `10` did not see, so 10 went to both sides as a duration.
+#[test]
+fn binary_alias_sides_merge_as_typed() {
+    let point = [
+        s("\"run\""),
+        s("PT0S"),
+        s("\"stretch\""),
+        s("point-switch"),
+        s(r#"{"distanceKm":10}"#),
+    ];
+    let parallel = [s(r#"["run","stretch"]"#), None, None, s("switch"), None];
+    let typed: [(&[&str], _); 4] = [
+        (&["run", "-m", "distanceKm=10", ",", "stretch"], &point),
+        (
+            &[
+                "switch",
+                "body",
+                "run",
+                "-m",
+                "distanceKm=10",
+                ",",
+                "switch",
+                "body",
+                "stretch",
+            ],
+            &point,
+        ),
+        (&["run", ",", "stretch"], &parallel),
+        (
+            &["switch", "body", "run", ",", "switch", "body", "stretch"],
+            &parallel,
+        ),
+    ];
+    for (args, want) in typed {
+        let db = aliased_db(&[]);
+        let (ok, _, stderr) = run(&db, args);
+        assert!(ok, "{args:?}: {stderr}");
+        assert_eq!(&body_row(&db), want, "{args:?}");
+    }
+    let db = aliased_db(&[("rans", "run -m -k distanceKm , stretch"), ("rr", "rans")]);
+    for args in [
+        &["rans", "10"][..],
+        &["rr", "10"],
+        &["rans", "10", "-t", "10:40"],
+    ] {
+        let (ok, _, stderr) = run(&db, args);
+        assert!(ok, "{args:?}: {stderr}");
+        assert_eq!(body_row(&db), point, "{args:?}");
+    }
+}
+
+/// da-cze5g (vividn, 2026-10-12): a bare `,` separates sides, each a
+/// command, at the top level and in an alias alike; a parallel state is
+/// `run,stretch`, no spaces.
+#[test]
+fn binary_bare_comma_side_must_be_a_command() {
+    let db = aliased_db(&[("rb", "switch body run -m , stretchy")]);
+    for args in [
+        &["switch", "body", "run", "-m", ",", "stretchy"][..],
+        &["rb"],
+    ] {
+        let (ok, _, stderr) = run(&db, args);
+        assert!(!ok && stderr.contains("stretchy"), "{args:?}: {stderr}");
+    }
+    assert!(live_rows(&db).is_empty(), "{:?}", live_rows(&db));
+    let (ok, _, stderr) = run(&db, &["switch", "body", "run,stretch"]);
+    assert!(ok, "{stderr}");
+    assert_eq!(body_row(&db)[0], s(r#"["run","stretch"]"#));
+}
