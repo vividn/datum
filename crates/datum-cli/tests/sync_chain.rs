@@ -406,7 +406,8 @@ fn leaving_a_chain_of_three_keeps_every_entry_and_starts_afresh() {
         // `status` has no row for it to hide, so it counts none.
         for flag in [&[][..], &["--show-revoked"]] {
             let status = x.ok(&[&["sync", "status"][..], flag].concat());
-            assert!(!status.contains(&old_id[..10]), "{status}");
+            let mut rows = status.lines().filter(|l| !l.starts_with('⚠'));
+            assert!(!rows.any(|l| l.contains(&old_id[..10])), "{status}");
             assert!(!status.contains("former member"), "{status}");
         }
         assert!(x.has("tea"));
@@ -661,7 +662,12 @@ fn chain_list_and_status_hide_revoked_members_and_say_how_many() {
     let (a, b) = chained();
     let c = Copy::new();
     admit(&a, &c, "c", None);
-    let shows = |args: &[&str], who: &Copy| a.ok(args).contains(&who.id()[..10]);
+    // A member's row, not a ⚠ notice that names it.
+    let shows = |args: &[&str], who: &Copy| {
+        a.ok(args)
+            .lines()
+            .any(|l| !l.starts_with('⚠') && l.contains(&who.id()[..10]))
+    };
     let count = |args: &[&str]| json(&a.ok(args))["members"].as_array().unwrap().len();
 
     a.ok(&["sync", "chain", "revoke", "c"]);
@@ -1102,6 +1108,8 @@ fn an_added_admin_works_and_a_removed_one_is_refused_and_the_last_needs_a_flag()
     );
 }
 
+/// The notice is stored once and shown in both `check`, under its sync
+/// domain, and `sync status`, and one `ack` clears it from both (da-nq07y).
 #[test]
 fn a_new_endpoint_is_announced_once_and_stays_in_check_until_acked() {
     let (a, b, _) = locked();
@@ -1109,11 +1117,27 @@ fn a_new_endpoint_is_announced_once_and_stays_in_check_until_acked() {
     // since the invite may have been anyone's. Its own admin key is quiet.
     let admitted = a.ok(&["check"]);
     assert!(
-        admitted.contains("⚠ new sync endpoint b") && !admitted.contains("new sync admin"),
+        admitted.contains("sync:\n[WARN ] sync_new_member (x1)")
+            && admitted.contains("⚠ new sync endpoint b")
+            && !admitted.contains("new sync admin"),
         "{admitted}"
     );
+    let status = a.ok(&["sync", "status"]);
+    assert!(
+        status.contains("⚠ new sync endpoint b") && status.contains("to acknowledge"),
+        "{status}"
+    );
+    let report = json(&a.ok(&["check", "--show", "json"]));
+    let issue = report["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["category"] == "sync_new_member")
+        .unwrap();
+    assert_eq!(issue["domain"], "sync");
     a.ok(&["sync", "chain", "ack", "b"]);
     assert!(!a.ok(&["check"]).contains("new to the sync chain"));
+    assert!(!a.ok(&["sync", "status"]).contains("new sync endpoint"));
 
     // b heard of a, then of the lock: each announced once, on the first
     // command after it arrived.
@@ -2294,6 +2318,20 @@ fn a_write_warns_once_a_day_of_changes_no_other_device_has() {
         !a.stderr_of(&["occur", "tea"]).contains(stale),
         "once a day"
     );
+    // Shown, past the day's warning, wherever sync's question is asked, from
+    // one source (da-nq07y).
+    let unsent = format!("3 changes made here since {since} have reached no other device");
+    let status = a.ok(&["sync", "status"]);
+    assert!(status.contains(&format!("⚠ {unsent}\n")), "{status}");
+    let check = a.ok(&["check", "sync"]);
+    assert!(
+        check.contains(&format!("[WARN ] sync_unsent (x1): ⚠ {unsent}")),
+        "{check}"
+    );
+    assert_eq!(
+        json(&a.ok(&["sync", "status", "--json"]))["unsent"],
+        unsent.as_str()
+    );
 
     // A day later it warns again, and names the pause.
     a.ok(&["sync", "pause"]);
@@ -2322,6 +2360,8 @@ fn a_write_warns_once_a_day_of_changes_no_other_device_has() {
     age_unsent(&a, 3);
     a.exec("UPDATE sync_local SET warned_at = NULL");
     assert!(!a.stderr_of(&["occur", "tea"]).contains(stale));
+    assert!(!a.ok(&["sync", "status"]).contains(stale));
+    assert!(!a.ok(&["check", "sync"]).contains(stale));
 }
 
 /// A multi-side write commits after every side has run, and warns as a
@@ -3007,6 +3047,8 @@ fn history_names_each_versions_device_by_its_label_on_every_member() {
 #[test]
 fn check_names_the_rows_no_op_covers_until_a_sync_signs_them() {
     let (a, b) = chained();
+    // b's notice is a sync finding too: known, so the one left is the row's.
+    a.ok(&["sync", "chain", "ack", "b"]);
     a.ok(&["occur", "tea"]);
     // The entry and the spec its log declared: a's last two ops.
     a.exec("DELETE FROM ops WHERE hid IN (SELECT hid FROM entries WHERE slug LIKE '%tea%')");
@@ -3048,6 +3090,7 @@ fn check_names_the_rows_no_op_covers_until_a_sync_signs_them() {
 #[test]
 fn an_edit_a_purge_left_without_its_create_is_no_orphan() {
     let (a, b) = chained();
+    a.ok(&["sync", "chain", "ack", "b"]);
     b.ok(&["occur", "coffee", "cups=1"]);
     assert!(b.send(&a).0);
     let coffee = a.query("SELECT hid FROM entries WHERE field = 'coffee'");

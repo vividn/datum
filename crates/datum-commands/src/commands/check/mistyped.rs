@@ -10,7 +10,7 @@ use datum_core::field_spec::SpecRegistry;
 use datum_parse::input::KeyType;
 use serde_json::Value as JsonValue;
 
-use super::{render_flagged_block, FlaggedEntry, Issue, IssueExample, Severity};
+use super::{render_flagged_block, Domain, FlaggedEntry, Issue, IssueExample, Severity};
 use crate::commands::reparse;
 
 pub(super) fn collect_mistyped(
@@ -85,6 +85,7 @@ pub(super) fn collect_mistyped(
         }
     }
     Some(Issue {
+        domain: Domain::Entries,
         severity: Severity::Warning,
         category: "mistyped_data_value",
         message: format!(

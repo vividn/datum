@@ -221,6 +221,12 @@ keeps a notice of the unlock until `sync chain ack unlock`. A notice — a new
 device, a new admin, an unlock — not yet acknowledged is a ⚠ in datum.day's
 root bar, in every tab, for each database a tab is on: its sync leader reads
 them with its setup and carries them in its state (da-8fucg).
+A warning is stored once, shown wherever its question is asked, and cleared
+in one place (da-nq07y): the notices, a member's newer schema and changes no
+other device has for a day (`Db::sync_unsent`) are each read by both `sync
+status` and `datum check`, whose findings carry their `domain` (`entries`,
+`aliases`, `stats`, `sync`) and are grouped by it; one `ack` clears a notice
+from both.
 `sync chain revert <WHO>` (da-ry11c; `chain purge` until da-c9fiy, now
 refused) previews, and with `--yes` writes a `purge` record: every copy
 refuses every op that endpoint signed and folds its entries again without them — what it made goes, its edits and deletes

@@ -6,7 +6,7 @@ use anyhow::{bail, Result};
 use datum_core::db::{Db, FoldCheck, Stale};
 use serde_json::{json, Map, Value};
 
-use crate::commands::check::{FlaggedEntry, Issue, Severity};
+use crate::commands::check::{Domain, FlaggedEntry, Issue, Severity};
 
 /// How many uncovered entries a finding names before it counts the rest.
 const NAMED: usize = 10;
@@ -70,6 +70,7 @@ fn issue(
     of: &[FlaggedEntry],
 ) -> Issue {
     Issue {
+        domain: Domain::Sync,
         severity,
         category,
         message,

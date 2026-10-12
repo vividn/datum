@@ -1317,7 +1317,10 @@ fn a_member_with_no_address_is_named_and_an_address_passed_on_is_kept() {
     );
     assert!(row["addr"].is_null(), "{row}");
     let status = b.ok(&["sync", "status"]);
-    let line = status.lines().find(|l| l.contains(&c.id()[..10])).unwrap();
+    let line = status
+        .lines()
+        .find(|l| !l.starts_with('⚠') && l.contains(&c.id()[..10]))
+        .unwrap();
     assert!(
         line.contains("to send 0") && line.ends_with(&none),
         "{line}"

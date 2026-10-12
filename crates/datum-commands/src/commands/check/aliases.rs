@@ -5,7 +5,7 @@ use anyhow::Result;
 use datum_core::db::Db;
 use datum_parse::alias::{shell_split, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS};
 
-use super::{Issue, IssueExample, Severity};
+use super::{Domain, Issue, IssueExample, Severity};
 
 #[derive(Debug, Default)]
 pub(super) struct AliasReport {
@@ -63,6 +63,7 @@ pub(super) fn collect_alias_drift(db: &Db, fix_collisions: bool) -> Result<Alias
             )
         };
         issues.push(Issue {
+            domain: Domain::Aliases,
             severity: Severity::Warning,
             category: "alias_state_collision",
             message: format!(
@@ -98,6 +99,7 @@ pub(super) fn collect_alias_drift(db: &Db, fix_collisions: bool) -> Result<Alias
         if !legacy.is_empty() {
             let first = &legacy[0];
             issues.push(Issue {
+                domain: Domain::Aliases,
                 severity: Severity::Warning,
                 category: "alias_legacy_double_dash",
                 message: format!(
@@ -163,6 +165,7 @@ pub(super) fn collect_alias_drift(db: &Db, fix_collisions: bool) -> Result<Alias
 
     if orphan_count > 0 {
         issues.push(Issue {
+            domain: Domain::Aliases,
             severity: Severity::Warning,
             category: "alias_orphan",
             message: format!(
@@ -178,6 +181,7 @@ pub(super) fn collect_alias_drift(db: &Db, fix_collisions: bool) -> Result<Alias
     }
     if cycle_count > 0 {
         issues.push(Issue {
+            domain: Domain::Aliases,
             severity: Severity::Warning,
             category: "alias_cycle",
             message: format!(

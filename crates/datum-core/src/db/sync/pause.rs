@@ -60,28 +60,44 @@ impl Db {
         Ok(was)
     }
 
-    /// The warning a write gives, at most once a day: changes made on this
-    /// copy have reached no other member of its chain, as far as it knows,
-    /// the oldest of them over a day ago (da-u10rl). A member counts as
-    /// having received what its last known vector covers, however long it
-    /// has been off since, so another device being away is no reason. Only a
-    /// member that holds everything counts: a copy with none but itself and
-    /// filtered readers gets none, as a lone member gets none, since no sync
-    /// could carry all of it off. It names the cause it knows — the pause,
-    /// or the last session's error.
+    /// The warning a write gives, at most once a day, of
+    /// [`sync_unsent`](Self::sync_unsent) (da-u10rl).
     pub fn sync_stale_warning(&self) -> Result<Option<String>> {
-        let row: Option<(Option<String>, Option<String>)> = self
+        let warned: Option<String> = self
             .conn
-            .query_row("SELECT paused_at, warned_at FROM sync_local", [], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })
-            .optional()?;
-        let Some((paused, warned)) = row else {
-            return Ok(None);
-        };
+            .query_row("SELECT warned_at FROM sync_local", [], |r| r.get(0))
+            .optional()?
+            .flatten();
         if today(warned.as_deref()) {
             return Ok(None);
         }
+        let Some(unsent) = self.sync_unsent()? else {
+            return Ok(None);
+        };
+        self.conn
+            .execute("UPDATE sync_local SET warned_at = ?1", params![now()])?;
+        Ok(Some(format!("⚠ {unsent} — `datum sync status`")))
+    }
+
+    /// Changes made on this copy that have reached no other member of its
+    /// chain, as far as it knows, the oldest of them over a day ago: what
+    /// `sync status` and `datum check` show and a write warns of
+    /// (da-u10rl). A member counts as having received what its last known
+    /// vector covers, however long it has been off since, so another device
+    /// being away is no reason. Only a member that holds everything counts:
+    /// a copy with none but itself and filtered readers has none, as a lone
+    /// member has none, since no sync could carry all of it off. It names
+    /// the cause it knows — the pause, or the last session's error.
+    pub fn sync_unsent(&self) -> Result<Option<String>> {
+        let Some(paused) = self
+            .conn
+            .query_row("SELECT paused_at FROM sync_local", [], |r| {
+                r.get::<_, Option<String>>(0)
+            })
+            .optional()?
+        else {
+            return Ok(None);
+        };
         let (chain, mine) = (self.sync_chain()?, self.sync_endpoint_id()?);
         let peers = self
             .conn
@@ -129,10 +145,8 @@ impl Db {
             (None, Some(e)) => format!(" (last error: {e})"),
             (None, None) => String::new(),
         };
-        self.conn
-            .execute("UPDATE sync_local SET warned_at = ?1", params![now()])?;
         Ok(Some(format!(
-            "⚠ {n} change{} made here since {} {} reached no other device{cause} — `datum sync status`",
+            "{n} change{} made here since {} {} reached no other device{cause}",
             if n == 1 { "" } else { "s" },
             since.with_timezone(&chrono::Local).format("%Y-%m-%d"),
             if n == 1 { "has" } else { "have" },

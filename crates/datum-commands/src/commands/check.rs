@@ -130,7 +130,6 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     if run_integrity {
         examined.checkers.push("integrity");
         issues.extend(collect_integrity_warnings(db)?);
-        issues.extend(crate::commands::sync::notice_issues(db)?);
     }
     if run_flags {
         examined.checkers.push("flags");
@@ -158,7 +157,9 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
             ops: found.ops,
         });
         issues.extend(of);
+        issues.extend(crate::commands::sync::notice_issues(db)?);
     }
+    issues.sort_by_key(|i| i.domain);
     // Counted from the slice the last checkers walked, after any `--fix`
     // re-read, and without its tombstones.
     examined.entries = entries.iter().filter(|e| e.deleted_at.is_none()).count();
@@ -348,6 +349,19 @@ pub enum Severity {
     Warning,
 }
 
+/// What a finding is about, which the report groups by (da-nq07y): a
+/// warning is stored once, shown wherever its question is asked — sync's in
+/// `sync status` too — and cleared in one place. A new kind of warning
+/// takes a domain here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Domain {
+    Entries,
+    Aliases,
+    Stats,
+    Sync,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct IssueExample {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -372,6 +386,7 @@ pub struct FlaggedEntry {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Issue {
+    pub domain: Domain,
     pub severity: Severity,
     pub category: &'static str,
     pub message: String,
@@ -546,6 +561,7 @@ fn collect_verb_drift(entries: &[Entry]) -> Result<VerbReport> {
     let mut issues = Vec::new();
     if drift_count > 0 {
         issues.push(Issue {
+            domain: Domain::Entries,
             severity: Severity::Error,
             category: "verb_drift",
             message: format!(
@@ -561,6 +577,7 @@ fn collect_verb_drift(entries: &[Entry]) -> Result<VerbReport> {
     }
     if corrupt_count > 0 {
         issues.push(Issue {
+            domain: Domain::Entries,
             severity: Severity::Error,
             category: "verb_corruption",
             message: format!(
@@ -710,6 +727,7 @@ fn collect_slug_drift(entries: &[Entry], delim: &str) -> Result<SlugReport> {
     let mut issues = Vec::new();
     if drift_count > 0 {
         issues.push(Issue {
+            domain: Domain::Entries,
             severity: Severity::Error,
             category: "slug_drift",
             message: format!(
@@ -825,6 +843,7 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
     if !unreadable.is_empty() {
         let count = unreadable.len();
         issues.push(Issue {
+            domain: Domain::Entries,
             severity: Severity::Error,
             category: "integrity_warning_unreadable",
             message: format!(
@@ -936,6 +955,7 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
             .collect();
         let rendered_block = render_flagged_block(db, &full_entries);
         issues.push(Issue {
+            domain: Domain::Entries,
             severity: Severity::Warning,
             category,
             message,
@@ -980,6 +1000,7 @@ fn collect_sync_conflicts(db: &Db) -> Result<Option<Issue>> {
         keys.join(", ")
     };
     Ok(Some(Issue {
+        domain: Domain::Sync,
         severity: Severity::Warning,
         category: "sync_conflict",
         message: format!(
@@ -1074,6 +1095,7 @@ pub fn collect_dangling_refs(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>> {
                 ),
             };
             Issue {
+                domain: Domain::Entries,
                 severity: Severity::Warning,
                 category,
                 message,
@@ -1129,6 +1151,7 @@ fn collect_repeated_state_live(db: &Db) -> Result<Option<Issue>> {
     });
     let rendered_block = render_flagged_block(db, &triggers);
     Ok(Some(Issue {
+        domain: Domain::Entries,
         severity: Severity::Warning,
         category: "repeated_state",
         message,
@@ -1152,6 +1175,7 @@ fn collect_stats_cache_drift(db: &Db, fix: bool) -> Result<(usize, Option<Issue>
     Ok((
         recomputed,
         Some(Issue {
+            domain: Domain::Stats,
             severity: Severity::Error,
             category: "stats_cache_drift",
             message: format!(
@@ -1245,6 +1269,7 @@ fn collect_pending_flags(db: &Db) -> Result<Vec<Issue>> {
         .collect();
     let rendered_block = render_flagged_block(db, &flagged);
     Ok(vec![Issue {
+        domain: Domain::Entries,
         severity: Severity::Warning,
         category: "flagged_entry",
         message,
@@ -1340,6 +1365,7 @@ fn collect_tz_drift(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>> {
         .collect();
     let rendered_block = render_flagged_block(db, &flagged);
     Ok(vec![Issue {
+        domain: Domain::Entries,
         severity: Severity::Error,
         category: "tz_offset_mismatch",
         message: format!(
@@ -1397,6 +1423,7 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
     if !time_bad.is_empty() {
         let first = &time_bad[0];
         issues.push(Issue {
+            domain: Domain::Entries,
             severity: Severity::Error,
             category: "time_end_before_start",
             message: format!(
@@ -1434,6 +1461,7 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
     if !mismatches.is_empty() {
         let (slug, field, stored, expected) = mismatches[0].clone();
         issues.push(Issue {
+            domain: Domain::Entries,
             severity: Severity::Error,
             category: "content_hash_mismatch",
             message: format!(
@@ -1468,6 +1496,7 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
         .collect();
     if !unknown.is_empty() {
         issues.push(Issue {
+            domain: Domain::Entries,
             severity: Severity::Warning,
             category: "unknown_field",
             message: format!(
@@ -1514,6 +1543,7 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
     if orphan_count > 0 {
         let (id, field, key) = orphan_detail.unwrap();
         issues.push(Issue {
+            domain: Domain::Entries,
             severity: Severity::Warning,
             category: "orphaned_extra_data_key",
             message: format!(
@@ -1542,6 +1572,7 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
     let unbuilt = db.derive_kit_indices()?;
     if let Some((name, err)) = unbuilt.first() {
         issues.push(Issue {
+            domain: Domain::Entries,
             severity: Severity::Warning,
             category: "kit_index_unbuilt",
             message: format!(
@@ -1611,7 +1642,14 @@ pub fn render_human(report: &Report) -> String {
         );
     }
     let mut out = String::new();
+    let mut domain = None;
     for issue in &report.issues {
+        if domain.replace(issue.domain) != Some(issue.domain) {
+            out.push_str(&format!(
+                "{}:\n",
+                format!("{:?}", issue.domain).to_lowercase()
+            ));
+        }
         let tag = match issue.severity {
             Severity::Error => "ERROR",
             Severity::Warning => "WARN ",

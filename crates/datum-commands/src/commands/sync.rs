@@ -17,7 +17,7 @@ use datum_core::migrations::CURRENT_SCHEMA_VERSION;
 use serde_json::{json, Value};
 
 use crate::args::{ShowFlag, SyncAdminAct, SyncCommand, SyncFilter};
-use crate::commands::check::{Issue, Severity};
+use crate::commands::check::{Domain, Issue, Severity};
 
 const NO_CHAIN: &str = "this copy is in no sync chain: `datum sync chain invite` on this device starts one, or `datum sync chain connect <TICKET>` joins one with a ticket from another";
 
@@ -1034,6 +1034,7 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
     let unlocks: Vec<_> = notices.iter().filter(|n| n.kind == "unlock").collect();
     let clock = db.sync_clock_waits()?;
     let upgrade = db.sync_upgrade_warnings()?;
+    let unsent = db.sync_unsent()?;
     if json {
         let path = db.conn().path().unwrap_or_default();
         let name = std::path::Path::new(path)
@@ -1075,7 +1076,7 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
                 "endpoint": w.endpoint, "label": w.label, "ops": w.ops,
                 "ahead_ms": w.ahead_ms, "text": w.to_string(),
             })).collect::<Vec<_>>(),
-            "upgrade": upgrade,
+            "upgrade": upgrade, "unsent": unsent,
         });
         println!("{out}");
         return Ok(());
@@ -1133,11 +1134,12 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
              `datum sync daemon install` keeps it syncing in the background"
         );
     }
-    for w in &upgrade {
+    // What `datum check` shows of sync too, from the same source (da-nq07y).
+    for w in upgrade.iter().chain(&unsent) {
         println!("⚠ {w}");
     }
-    for n in &unlocks {
-        println!("⚠ {n} — {UNLOCK_HINT}");
+    for n in &notices {
+        println!("{}", notice_line(n));
     }
     let (shown, hidden): (Vec<_>, Vec<_>) = peers.iter().partition(|p| show_revoked || !p.revoked);
     let width = shown
@@ -1185,8 +1187,8 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
 
 /// The warnings (da-odwc7): once, on the first command after the chain
 /// admits an endpoint or an admin, since each can read and write
-/// everything, or is unlocked. Each also stays in `datum check` until
-/// `datum sync chain ack`. `before` is what was unannounced when the
+/// everything, or is unlocked. Each also stays in `datum check` and
+/// `datum sync status` until `datum sync chain ack`. `before` is what was unannounced when the
 /// command began, so a session never tells its own admissions to nobody,
 /// and this runs after the command's output, which would push the warning
 /// off the screen: a command that died first leaves it to the next
@@ -1199,14 +1201,19 @@ pub fn warn_new_members(db: &Db, before: &[Notice]) {
         if !before.iter().any(|b| b.subject == n.subject) {
             continue;
         }
-        match n.kind.as_str() {
-            "unlock" => eprintln!("⚠ {n} — {UNLOCK_HINT}"),
-            _ => eprintln!(
-                "⚠ {n} — `datum sync chain list` to review, `datum sync chain ack {}` to acknowledge",
-                n.who()
-            ),
-        }
+        eprintln!("{}", notice_line(&n));
         let _ = db.sync_notice_announced(&n);
+    }
+}
+
+/// A notice as a warning, with what clears it.
+fn notice_line(n: &Notice) -> String {
+    match n.kind.as_str() {
+        "unlock" => format!("⚠ {n} — {UNLOCK_HINT}"),
+        _ => format!(
+            "⚠ {n} — `datum sync chain list` to review, `datum sync chain ack {}` to acknowledge",
+            n.who()
+        ),
     }
 }
 
@@ -1215,13 +1222,16 @@ const UNLOCK_HINT: &str =
     "other devices may have relied on the lock; `datum sync chain ack unlock` to acknowledge";
 
 /// The sync chain's new endpoints and admins (da-odwc7), and its unlocks
-/// (da-aam46), until `datum sync chain ack` says they are known.
+/// (da-aam46), until `datum sync chain ack` says they are known; a member's
+/// newer schema; and changes no other device has. `sync status` shows each
+/// from the same source (da-nq07y).
 pub fn notice_issues(db: &Db) -> Result<Vec<Issue>> {
     let (unlocks, new): (Vec<_>, Vec<_>) = db
         .sync_notices_unacked()?
         .into_iter()
         .partition(|n| n.kind == "unlock");
     let issue = |category, head: String, notices: &[Notice]| Issue {
+        domain: Domain::Sync,
         severity: Severity::Warning,
         category,
         message: format!(
@@ -1250,11 +1260,16 @@ pub fn notice_issues(db: &Db) -> Result<Vec<Issue>> {
         let head = format!("the sync chain was unlocked: {UNLOCK_HINT}");
         out.push(issue("sync_unlocked", head, &unlocks));
     }
-    // A member runs a newer schema than this copy (da-3zqyv).
-    for w in db.sync_upgrade_warnings()? {
+    // A member runs a newer schema than this copy (da-3zqyv), and changes
+    // made here no other device has (da-u10rl).
+    let upgrade = db.sync_upgrade_warnings()?.into_iter();
+    let unsent = db.sync_unsent()?.into_iter();
+    let warnings = upgrade.map(|w| ("sync_upgrade", w));
+    for (category, w) in warnings.chain(unsent.map(|w| ("sync_unsent", w))) {
         out.push(Issue {
+            domain: Domain::Sync,
             severity: Severity::Warning,
-            category: "sync_upgrade",
+            category,
             message: format!("⚠ {w}"),
             count: 1,
             example: None,
