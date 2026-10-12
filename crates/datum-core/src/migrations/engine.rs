@@ -359,9 +359,11 @@ pub fn backup_before_migration(
 ) -> Result<std::path::PathBuf> {
     let dest = free_backup_path(db_path, from, to);
     // `VACUUM INTO` refuses to overwrite, so an existing file is an error
-    // rather than silent data loss — exactly what we want.
+    // rather than silent data loss — exactly what we want. A failed one has
+    // often created the file already; the name was free, so it is ours.
     conn.execute("VACUUM INTO ?1", params![dest.to_string_lossy()])
         .map_err(|e| {
+            let _ = std::fs::remove_file(&dest);
             DatumError::Other(format!(
                 "refusing to migrate schema v{from}→v{to}: could not write the \
                  pre-migration backup to {}: {e}",

@@ -1099,6 +1099,50 @@ fn a_failed_backup_aborts_the_migration() {
     assert!(backups_beside(&path).is_empty());
 }
 
+/// da-xcmum: `VACUUM INTO` that fails partway, here on a corrupt page, has
+/// already created its target. The refusal removes it, so failing opens
+/// leave no empty snapshot each beside the database.
+#[test]
+fn a_backup_that_fails_on_a_corrupt_page_leaves_no_snapshot() {
+    use std::io::{Seek, Write};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("datum.db");
+    legacy_file_db(&path, 30);
+    let (root, page_size): (u64, u64) = {
+        let raw = Connection::open(&path).unwrap();
+        raw.execute_batch(
+            "CREATE TABLE filler (x);
+             WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 200)
+             INSERT INTO filler SELECT randomblob(500) FROM n;",
+        )
+        .unwrap();
+        let root = raw
+            .query_row(
+                "SELECT rootpage FROM sqlite_master WHERE name = 'filler'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let size = raw.query_row("PRAGMA page_size", [], |r| r.get(0)).unwrap();
+        (root, size)
+    };
+    let mut file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+    file.seek(std::io::SeekFrom::Start((root - 1) * page_size))
+        .unwrap();
+    file.write_all(&vec![0xff; page_size as usize]).unwrap();
+    drop(file);
+
+    for _ in 0..2 {
+        let msg = match Db::open(path.to_str().unwrap()) {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("open must fail when the snapshot cannot be written"),
+        };
+        assert!(msg.contains("refusing to migrate"), "{msg}");
+        assert!(msg.contains("malformed"), "{msg}");
+    }
+    assert_eq!(backups_beside(&path), Vec::<std::path::PathBuf>::new());
+}
+
 /// da-wd5ip: a migration that fails leaves the file as it was, and every
 /// open tries it again. One snapshot of each state the file was in is
 /// enough; a snapshot per open grew to 153 copies of one database.
