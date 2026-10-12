@@ -195,7 +195,7 @@ impl Db {
             .collect())
     }
 
-    /// Every member of the chain but this copy, as it serves it
+    /// Every member of the chain but this copy and those that left, as it serves it
     /// ([`Chain::served`]) — in none yet, every copy it is joining one
     /// through — and how it stands with it.
     pub fn sync_status(&self) -> Result<Vec<PeerStatus>> {
@@ -228,6 +228,7 @@ impl Db {
                 kind: None,
                 revoked: None,
                 purged: None,
+                left: None,
                 last_act: String::new(),
                 rejoined: None,
                 roles: Vec::new(),
@@ -235,11 +236,12 @@ impl Db {
             })
             .collect();
         let mut out = Vec::new();
+        // A member that left (da-dsob1) is no copy to stand with.
         for m in chain
             .members
             .iter()
             .chain(&joining)
-            .filter(|m| m.endpoint != mine)
+            .filter(|m| m.endpoint != mine && m.left.is_none())
         {
             let row: Option<Session> = self
                 .conn

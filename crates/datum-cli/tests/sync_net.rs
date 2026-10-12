@@ -1592,6 +1592,43 @@ fn admitted_unheard(caps: &[&str]) -> (Copy, Copy, Copy) {
     (a, b, c)
 }
 
+/// `chain leave` tells the chain (da-dsob1), a reader's as a member's: the
+/// leaver signs its departure and syncs it to the members it reaches, and a
+/// member down then hears of it from one of those. Each lists it as left,
+/// and no more in its status, which dials it no more; what it logged stays
+/// on every copy. Reaching no one, it refuses, and stays.
+#[test]
+fn a_leave_reaches_every_member_through_those_it_reached() {
+    for caps in [&[][..], &["--reader"]] {
+        let (a, b, c) = admitted_unheard(caps);
+        let member = caps.is_empty();
+        if member {
+            c.ok(&["occur", "from-c"]);
+        }
+        let id = c.id();
+        let refused = c.fails(&["sync", "chain", "leave"], "");
+        assert!(
+            refused.contains("no member holds this copy's departure"),
+            "{refused}"
+        );
+        // a up and b down: a holds it, and b hears it from a.
+        let a_runs = a.serve(&["sync", "run"]);
+        let left = c.ok(&["sync", "chain", "leave"]);
+        assert!(left.contains("its departure is with "), "{left}");
+        assert!(b.ok(&["sync"]).contains("verify ok"));
+        drop(a_runs);
+        for x in [&a, &b] {
+            let list = x.ok(&["sync", "chain", "list", "--json"]);
+            assert!(member_of_list(&list, &id)["left"].is_string(), "{list}");
+            let status: serde_json::Value =
+                serde_json::from_str(&x.ok(&["sync", "status", "--json"])).unwrap();
+            assert!(!status["members"].to_string().contains(&id), "{status}");
+            assert_eq!(x.has("from-c"), member);
+        }
+        assert_eq!(c.has("from-c"), member);
+    }
+}
+
 /// With the inviter gone for good, the member that has not heard of the
 /// newer one still syncs with it: asked, the newer one shows the chain's
 /// records, which make it a member. The session then brings every op the

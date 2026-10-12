@@ -817,14 +817,17 @@ pub enum SyncCommand {
     Connect {
         ticket: Option<String>,
     },
-    /// `datum sync chain leave [--dry-run]` — leave this copy's chain,
-    /// keeping every entry, under a new endpoint key (da-j8c4l). Hidden
+    /// `datum sync chain leave [--force] [--dry-run]` — leave this copy's
+    /// chain, keeping every entry, under a new endpoint key (da-j8c4l), once
+    /// a member holds its departure; `--force` leaves telling no one
+    /// (da-dsob1). Hidden
     /// `--alone`: the leave `connect` makes to join another chain, only of a
     /// copy holding nothing but its own data, keeping its key (da-h7pnc).
     /// `--dry-run` only says whether it may.
     Leave {
         alone: bool,
         dry_run: bool,
+        force: bool,
     },
     /// `datum sync chain list [--json]` — the chain's admins and endpoints.
     Members {

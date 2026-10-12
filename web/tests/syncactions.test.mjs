@@ -208,6 +208,11 @@ describe('the sync widget’s actions', () => {
 
 			await leave.click();
 			await dialog.getByRole('button', { name: 'leave' }).click();
+			// The phone never syncs, so no member holds the departure: it asks again, to leave telling no one.
+			await dialog.getByRole('button', { name: 'leave anyway' }).waitFor();
+			assert.match(await dialog.innerText(), /No device of the chain has this device’s departure yet/);
+			assert.match(JSON.stringify(await members(app)), /"left":"/);
+			await dialog.getByRole('button', { name: 'leave anyway' }).click();
 			await page.locator(`${WIDGET} .actions[data-db="home"]`).getByRole('button', { name: 'Turn on sync' }).waitFor();
 			assert.equal(JSON.parse(await cli(app, ['--db', 'home', 'sync', 'status', '--json'])).chain, null);
 			assert.match(await cli(app, ['--db', 'home', 'tail']), /tea/);

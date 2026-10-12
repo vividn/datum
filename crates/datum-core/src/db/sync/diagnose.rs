@@ -12,7 +12,7 @@ use serde_json::{json, Map, Value};
 
 use super::chain::{Chain, CHAIN_HID};
 use super::{
-    canonical_json, conflicts_of, derived, device, endpoint, fold, has_ops, is_reader, ops_of,
+    canonical_json, conflicts_of, derived, device, endpoint, fold, has_ops, ops_of, read_only,
     rederive, refresh_conflicts, row, sha256_hex, shared_rows, Op,
 };
 use crate::db::insert::as_stored;
@@ -67,7 +67,8 @@ pub struct FoldCheck {
     /// Rows no op covers, on a copy in a chain. No other copy holds them
     /// until one is signed.
     pub uncovered: Vec<Named>,
-    /// This copy is a reader of its chain: it signs nothing.
+    /// This copy signs nothing in its chain: a reader, or a member that
+    /// signed its departure (da-dsob1).
     pub reader: bool,
 }
 
@@ -136,7 +137,7 @@ fn fold_check(conn: &Connection) -> Result<FoldCheck> {
             |r| r.get(0),
         )?,
         // In no chain there is no reader, and a read mints no endpoint key.
-        reader: chain.exists() && is_reader(conn, &endpoint(conn)?)?,
+        reader: chain.exists() && read_only(conn, &endpoint(conn)?)?.is_some(),
         ..FoldCheck::default()
     };
     let rows: Vec<Entry> = conn

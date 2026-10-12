@@ -195,7 +195,7 @@ pub fn fold_issues(db: &Db) -> Result<(FoldCheck, Vec<Issue>)> {
             },
             if count == 1 { "it" } else { "them" },
             match found.reader {
-                true => "this copy is a reader of its chain and signs nothing, so they stay here",
+                true => "this copy signs nothing in its chain, a reader or a copy leaving it, so they stay here",
                 false => "this copy's next sync signs each as it stands",
             },
             names.join("\n"),

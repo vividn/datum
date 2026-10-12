@@ -126,19 +126,35 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
                 anyhow::bail!("{} op(s) refused", s.refused.len());
             }
         }
-        SyncCommand::Leave { alone, dry_run } => {
+        SyncCommand::Leave {
+            alone,
+            dry_run,
+            force,
+        } => {
             let chain = db.sync_chain()?;
             ensure!(chain.exists(), NO_CHAIN);
+            let mut told = None;
             match alone {
                 true => db.sync_chain_leave_alone(dry_run)?,
                 false if dry_run => {}
-                false => db.sync_chain_leave()?,
+                false => {
+                    if !force {
+                        told = depart(db, &chain.id)?;
+                    }
+                    db.sync_chain_leave()?
+                }
             }
             if !dry_run {
                 println!(
                     "left sync chain {}: this copy is in none, its entries kept",
                     chain.id
                 );
+                if let Some(told) = told {
+                    println!(
+                        "its departure is with {}: every member learns of it through them",
+                        told.join(", ")
+                    );
+                }
                 if !alone {
                     println!(
                         "new endpoint key {}: an invite from this copy starts a new chain",
@@ -879,6 +895,7 @@ fn members(db: &Db, json: bool) -> Result<()> {
                     "kind": m.kind, "admitted": chain::hlc_time(&m.admitted), "via": m.via,
                     "revoked": m.revoked.as_deref().map(chain::hlc_time),
                     "purged": m.purged.as_deref().map(chain::hlc_time),
+                    "left": m.left.as_deref().map(chain::hlc_time),
                     "rejoined": m.rejoined.as_deref().map(chain::hlc_time),
                     "role": m.role().as_str(), "this": m.endpoint == mine,
                     "filter": filter_json(chain.filter(&m.endpoint)),
@@ -917,9 +934,10 @@ fn members(db: &Db, json: bool) -> Result<()> {
                 .get(&m.endpoint)
                 .map(|(d, s)| format!("  datum {d} (schema {s})"))
                 .unwrap_or_default(),
-            match m.purged.as_deref().map(chain::hlc_time) {
-                Some(p) => format!("  REVERTED {p}"),
-                None => revoked
+            match (m.purged.as_deref(), m.left.as_deref()) {
+                (Some(p), _) => format!("  REVERTED {}", chain::hlc_time(p)),
+                (_, Some(l)) => format!("  LEFT {}", chain::hlc_time(l)),
+                _ => revoked
                     .map(|r| format!("  REVOKED {r}"))
                     .unwrap_or_default(),
             },
@@ -931,6 +949,43 @@ fn members(db: &Db, json: bool) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// Tell the chain this copy leaves (da-dsob1): sign its departure, and
+/// sync it to every member unless one holds it already. The members that
+/// hold it; none, with no one to tell. Refused while none does: the copy
+/// stays in its chain, its departure signed, until a sync delivers it.
+fn depart(db: &Db, chain: &str) -> Result<Option<Vec<String>>> {
+    let Some(told) = db.sync_depart()? else {
+        return Ok(None);
+    };
+    // Signed, and held by no member yet: sync with every one, then ask
+    // again. Each it reaches, or fails to, is a line of its own; a sync that
+    // failed whole (no endpoint, say) is said with the refusal.
+    #[cfg(feature = "net")]
+    let (told, synced) = match told.is_empty() {
+        true => {
+            let synced = datum_sync::now_all(db);
+            // The sessions bound this thread to the endpoint key they began
+            // with (da-otz0d), and the leave mints a new one.
+            db.sync_session_as(None);
+            (db.sync_depart()?.unwrap_or_default(), synced)
+        }
+        false => (told, Ok(())),
+    };
+    #[cfg(not(feature = "net"))]
+    let synced: Result<()> = Ok(());
+    ensure!(
+        !told.is_empty(),
+        "no member holds this copy's departure from sync chain {chain} yet{}: it stays in the \
+         chain, writing nothing, until a sync delivers it. `datum sync chain leave` again once \
+         a member is up, or `--force` to leave now, telling no one",
+        synced
+            .err()
+            .map(|e| format!(" ({e:#})"))
+            .unwrap_or_default()
+    );
+    Ok(Some(told))
 }
 
 /// `datum sync status`: per member, how this copy stands with it.
@@ -1022,12 +1077,18 @@ fn status(db: &Db, json: bool) -> Result<()> {
         let fields: Vec<&str> = f.fields.iter().map(String::as_str).collect();
         println!("a reader, {}: {}", f.describe(), fields.join(", "));
     }
-    if let Some(at) = chain.member(&mine).and_then(|m| m.revoked.as_deref()) {
-        println!(
+    match chain.member(&mine).map(|m| (&m.left, &m.revoked)) {
+        Some((Some(at), _)) => println!(
+            "⚠ this copy signed its departure at {}: `datum sync chain leave` finishes once a \
+             member holds it",
+            chain::hlc_time(at)
+        ),
+        Some((_, Some(at))) => println!(
             "⚠ this copy was revoked at {}: it syncs again once a member's invite admits it, \
              or `datum sync chain leave` keeps every entry and starts afresh",
             chain::hlc_time(at)
-        );
+        ),
+        _ => {}
     }
     if chain.is_open() {
         println!("{OPEN}");

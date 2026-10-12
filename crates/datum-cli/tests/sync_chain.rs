@@ -351,6 +351,12 @@ fn the_leave_connect_makes_is_refused_a_copy_holding_others_data() {
 /// a new key with no peer; an invite from it starts a new chain with it the
 /// first member; and a member of the old chain can't sync with it: each
 /// one's handshake refuses the other (the pipe has none).
+///
+/// It tells the chain first (da-dsob1): it signs its departure, and leaves
+/// once a member's last session ended holding it — refused till then, and
+/// writing nothing. The member lists it as left and no more in its status,
+/// and so does the third, which hears it from that member; its entries stay
+/// on all three.
 #[test]
 fn leaving_a_chain_of_three_keeps_every_entry_and_starts_afresh() {
     let (a, b) = chained();
@@ -364,9 +370,37 @@ fn leaving_a_chain_of_three_keeps_every_entry_and_starts_afresh() {
     b.ok(&["sync", "handshake", &a.id(), "--label", "a", "--addr", "{}"]);
     assert_ne!(b.query("SELECT COUNT(*) FROM sync_peers"), "0");
 
+    let refused = b.fails(&["sync", "chain", "leave"], "");
+    assert!(
+        refused.contains("no member holds this copy's departure"),
+        "{refused}"
+    );
+    let leave = "SELECT COUNT(*) FROM ops WHERE json_extract(body, '$.effect.type') = 'leave'";
+    assert_eq!(b.query(leave), "1");
+    let status = b.ok(&["sync", "status"]);
+    assert!(
+        status.contains("this copy signed its departure"),
+        "{status}"
+    );
+    let write = b.fails(&["occur", "late"], "");
+    assert!(write.contains("signed its departure"), "{write}");
+    // A transport's session with a ends holding it.
+    assert!(b.send(&a).0);
+    let vector = a.ok(&["sync", "pipe", "vector"]);
+    b.ok(&["sync", "record-session", &a.id(), "--vector", vector.trim()]);
     let left = b.ok(&["sync", "chain", "leave"]);
     assert!(left.contains(&format!("left sync chain {old}")), "{left}");
+    assert!(left.contains("its departure is with "), "{left}");
     assert!(left.contains("new endpoint key"), "{left}");
+    assert!(a.send(&c).0);
+    for x in [&a, &c] {
+        let list = x.ok(&["sync", "chain", "list"]);
+        let row = list.lines().find(|l| l.contains(&old_id[..10])).unwrap();
+        assert!(row.contains("  LEFT "), "{list}");
+        let status = json(&x.ok(&["sync", "status", "--json"]));
+        assert!(!status["members"].to_string().contains(&old_id), "{status}");
+        assert!(x.has("tea"));
+    }
     assert_eq!(b.query("SELECT COUNT(*) FROM entries"), entries);
     assert!(b.has("coffee") && b.has("tea"));
     assert_eq!(b.query("SELECT COUNT(*) FROM ops"), "0");

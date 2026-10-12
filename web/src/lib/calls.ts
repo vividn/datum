@@ -115,8 +115,8 @@ export function canLeaveArgv(): string[] {
 	return ['sync', 'chain', 'leave', '--alone', '--dry-run'];
 }
 
-export function leaveArgv(): string[] {
-	return ['sync', 'chain', 'leave'];
+export function leaveArgv(force = false): string[] {
+	return ['sync', 'chain', 'leave', ...(force ? ['--force'] : [])];
 }
 
 export function newInviteArgv(): string[] {

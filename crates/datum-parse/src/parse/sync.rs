@@ -174,10 +174,11 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
             ticket: rest.next().map(|t| t.to_string()),
         },
         Some("leave") => {
-            let o = opts(rest, &[], &["alone", "dry-run"], 0..=0)?;
+            let o = opts(rest, &[], &["alone", "dry-run", "force"], 0..=0)?;
             SyncCommand::Leave {
                 alone: o.on("alone"),
                 dry_run: o.on("dry-run"),
+                force: o.on("force"),
             }
         }
         Some("list") => SyncCommand::Members {
@@ -661,14 +662,16 @@ mod tests {
             p(&["chain", "leave", "--dry-run"]),
             SyncCommand::Leave {
                 alone: false,
-                dry_run: true
+                dry_run: true,
+                force: false
             }
         );
         assert_eq!(
             p(&["chain", "leave", "--alone"]),
             SyncCommand::Leave {
                 alone: true,
-                dry_run: false
+                dry_run: false,
+                force: false
             }
         );
         assert_eq!(

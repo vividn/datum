@@ -281,37 +281,46 @@ fn endpoint(conn: &Connection) -> Result<Endpoint> {
     Ok(ep)
 }
 
-/// What decides whether this copy is a reader: its endpoint, and the count
+/// What decides whether this copy writes: its endpoint, and the count
 /// and latest HLC of the chain records held.
 type ReaderKey = (String, i64, Option<String>);
 
 thread_local! {
-    /// Whether this copy is a reader, by its [`ReaderKey`]. Every write
+    /// Why this copy writes nothing, by its [`ReaderKey`]. Every write
     /// asks, and a batch signs thousands of ops: the fold is dearer than
     /// the look.
-    static READER: RefCell<Option<(ReaderKey, bool)>> = const { RefCell::new(None) };
+    static READER: RefCell<Option<(ReaderKey, Option<&'static str>)>> = const { RefCell::new(None) };
 }
 
 /// Said when a reader's copy is asked to write (da-9yvb6).
 const READ_ONLY: &str = "this copy is a reader in its sync chain: it receives, and can't write";
 
-/// Whether this copy is a reader in its chain now.
-fn is_reader(conn: &Connection, ep: &Endpoint) -> Result<bool> {
+/// Said when a copy that signed its departure is asked to write (da-dsob1):
+/// every member holding the departure would refuse the op.
+const LEAVING: &str = "this copy signed its departure from its sync chain and writes nothing \
+     more: `datum sync chain leave` finishes once a member holds it, or `--force` leaves now";
+
+/// Why this copy writes nothing now, if it does not: a reader in its
+/// chain, or a member that signed its departure. Either serves its own ops
+/// alone, and signs no baseline.
+fn read_only(conn: &Connection, ep: &Endpoint) -> Result<Option<&'static str>> {
     let key: ReaderKey = conn
         .prepare_cached("SELECT ?1, COUNT(*), MAX(hlc) FROM ops WHERE hid = ?2 AND applied = 1")?
         .query_row(params![ep.id, CHAIN_HID], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
         })?;
     let cached = READER.with(|c| c.borrow().as_ref().filter(|(k, _)| *k == key).map(|r| r.1));
-    if let Some(reader) = cached {
-        return Ok(reader);
+    if let Some(why) = cached {
+        return Ok(why);
     }
     let chain = Chain::load(conn)?;
-    let reader = chain
-        .member(&ep.id)
-        .is_some_and(|m| m.role() == Role::Reader);
-    READER.with(|c| *c.borrow_mut() = Some((key, reader)));
-    Ok(reader)
+    let why = chain.member(&ep.id).and_then(|m| match () {
+        _ if m.left.is_some() => Some(LEAVING),
+        _ if m.role() == Role::Reader => Some(READ_ONLY),
+        _ => None,
+    });
+    READER.with(|c| *c.borrow_mut() = Some((key, why)));
+    Ok(why)
 }
 
 /// Said wherever two copies are found signing with one key (da-p79vq).
@@ -823,8 +832,8 @@ pub(super) fn emit(
         return Ok(());
     }
     let ep = endpoint(conn)?;
-    if is_reader(conn, &ep)? {
-        return Err(DatumError::Other(READ_ONLY.into()));
+    if let Some(why) = read_only(conn, &ep)? {
+        return Err(DatumError::Other(why.into()));
     }
     if let Some(pre) = pre {
         if !has_ops(conn, hid)? {
@@ -1326,8 +1335,8 @@ fn rederive(conn: &Connection, hid: &str, kind: ChangeKind) -> Result<()> {
 /// entry's own row, or a live one under it, has its content `hash` already.
 pub(super) fn restore(conn: &Connection, incoming: &Entry, hash: &str) -> Result<Option<Slug>> {
     let ep = endpoint(conn)?;
-    if is_reader(conn, &ep)? {
-        return Err(DatumError::Other(READ_ONLY.into()));
+    if let Some(why) = read_only(conn, &ep)? {
+        return Err(DatumError::Other(why.into()));
     }
     let mut row = incoming.clone();
     row.hid = new_hid();
@@ -1392,7 +1401,7 @@ fn write_merged(
             } else if next.superseded_by.is_none() {
                 // A row older than its ops is signed as it stands before
                 // the merge is written over it, so its own row stays known.
-                if !has_ops(conn, &b.hid)? && !is_reader(conn, &endpoint(conn)?)? {
+                if !has_ops(conn, &b.hid)? && read_only(conn, &endpoint(conn)?)?.is_none() {
                     push_entry(conn, &endpoint(conn)?, &b, "baseline", create_effect(&b))?;
                 }
                 conn.execute(repoint, params![next.hid, b.hid])?;
@@ -2074,8 +2083,8 @@ impl Db {
     pub fn resolve_conflicts(&self, hid: &str, picks: &Map<String, Value>) -> Result<Entry> {
         let tx = self.conn.unchecked_transaction()?;
         let ep = endpoint(&tx)?;
-        if is_reader(&tx, &ep)? {
-            return Err(DatumError::Other(READ_ONLY.into()));
+        if let Some(why) = read_only(&tx, &ep)? {
+            return Err(DatumError::Other(why.into()));
         }
         let conflicts: Option<String> = tx
             .query_row(
@@ -2238,7 +2247,7 @@ impl Db {
         }
         // A reader never relays: it serves its own ops alone, and signs no
         // baselines, which its chain would refuse.
-        let reader = is_reader(&tx, &endpoint(&tx)?)?;
+        let reader = read_only(&tx, &endpoint(&tx)?)?.is_some();
         let chain = Chain::load(&tx)?;
         let uncovered: Vec<Entry> = tx
             .prepare("SELECT * FROM entries WHERE hid NOT IN (SELECT hid FROM ops) ORDER BY hid")?

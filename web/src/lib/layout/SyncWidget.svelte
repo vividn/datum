@@ -301,7 +301,11 @@
 		doing(async () => {
 			const words = `Leave this sync chain with ${d.db}? Every entry is kept, this device’s own and those it received. It stops syncing with the chain’s other devices; adding a device after starts a new chain.`;
 			if (!(await confirm(words, 'leave'))) return;
-			ok(await syncAct(d.db, leaveArgv()));
+			const r = await syncAct(d.db, leaveArgv());
+			// The departure is signed but no member holds it yet (da-dsob1): this page's sync delivers it.
+			if (r.code === 0 || !r.stderr.includes('no member holds')) return void ok(r);
+			const unheard = `No device of the chain has this device’s departure yet. ${d.db} stays in the chain, writing nothing, until a sync delivers it; press Leave again then. Leave now, telling no one?`;
+			if (await confirm(unheard, 'leave anyway')) ok(await syncAct(d.db, leaveArgv(true)));
 		});
 
 	const pause = (d: DbSync) => doing(async () => ok(await syncAct(d.db, pausedArgv(!d.paused))));

@@ -61,6 +61,12 @@
 //!     copies group as one client — da-lfsei), its label, `cli` or `web`. The latest per endpoint wins. Unsigned when an
 //!     endpoint describes ITSELF; about another member, an admin act.
 //!
+//!   - `leave {endpoint}` (da-dsob1): a member's departure, which it signs
+//!     itself before it forgets the chain — unsigned by an admin, and the
+//!     one act a reader writes but its describe. From its HLC on the member
+//!     is out as a revoked one is: dialled by no one, served nothing, and
+//!     its ops before it stand. No copy leaves for another.
+//!
 //!   An `admit` of an endpoint the chain lists already RE-ADMITS it
 //!   (da-j8c4l): a revoked device rejoins by a fresh invite as a new one
 //!   joins, keeping its endpoint, its first admission and its label, its
@@ -70,7 +76,7 @@
 //!   goes too, so every op it made folds back in on every copy.
 //!
 //!   Every record but a genesis must be written by a member — a member
-//!   that is no reader, but for a describe of itself — and the same
+//!   that is no reader, but for a describe or a leave of itself — and the same
 //!   record twice does nothing the second time. Every label a record
 //!   carries must pass [`label_problem`]: each is printed on every member.
 //! - **Enforcement.** An entry op is allowed when its endpoint is a member,
@@ -362,6 +368,8 @@ pub struct Member {
     pub revoked: Option<String>,
     /// The HLC of its purge (da-ry11c): every op of its is refused.
     pub purged: Option<String>,
+    /// The HLC of its departure (da-dsob1): revoked from then on too.
+    pub left: Option<String>,
     /// The HLC of the newest act about it: an unpurge needs it to be the purge.
     pub(super) last_act: String,
     /// The HLC of its latest re-admission (da-j8c4l), if it rejoined.
@@ -709,9 +717,12 @@ impl Chain {
         if s("chain") != self.id {
             return Err("a record of another chain".into());
         }
-        // A reader describes itself, and writes nothing else.
-        let own_describe = kind == "describe" && op.endpoint == s("endpoint");
-        match own_describe {
+        // A reader describes itself and leaves, and writes nothing else.
+        let own = matches!(kind.as_str(), "describe" | "leave") && op.endpoint == s("endpoint");
+        if kind == "leave" && !own {
+            return Err("a copy leaves the chain only itself".into());
+        }
+        match own {
             true => self.live(&op.endpoint, &op.hlc),
             false => self.allows(&op.endpoint, &op.hlc),
         }
@@ -743,9 +754,9 @@ impl Chain {
                 filter,
             );
         }
-        // An endpoint describes itself unsigned; anything else takes an
-        // admin, once there is one: its writer is a live member already.
-        if !self.is_open() && !own_describe {
+        // An endpoint describes itself and leaves unsigned; anything else
+        // takes an admin, once there is one: its writer is a live member already.
+        if !self.is_open() && !own {
             admin_signed(&self.admins, &d, &s("sig"))?;
         }
         match kind.as_str() {
@@ -808,6 +819,17 @@ impl Chain {
                     .ok_or("not a member")?;
                 m.roles.push((op.hlc.clone(), role));
                 m.filter = filter;
+                m.last_act = op.hlc.clone();
+                Ok(())
+            }
+            "leave" => {
+                let m = self
+                    .members
+                    .iter_mut()
+                    .find(|m| m.endpoint == op.endpoint)
+                    .ok_or("not a member")?;
+                m.left = Some(op.hlc.clone());
+                m.revoked.get_or_insert_with(|| op.hlc.clone());
                 m.last_act = op.hlc.clone();
                 Ok(())
             }
@@ -896,6 +918,7 @@ impl Chain {
         if let Some(m) = self.members.iter_mut().find(|m| m.endpoint == endpoint) {
             let from = m.revoked.take().unwrap_or_else(|| hlc.into());
             m.purged = None;
+            m.left = None;
             m.rejoined = Some(hlc.into());
             m.last_act = hlc.into();
             m.via = via.into();
@@ -910,6 +933,7 @@ impl Chain {
             via: via.into(),
             revoked: None,
             purged: None,
+            left: None,
             last_act: hlc.into(),
             rejoined: None,
             client: None,
@@ -1218,6 +1242,52 @@ impl Db {
         endpoint(&tx)?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// Tell this copy's chain it leaves (da-dsob1): sign its departure,
+    /// unless it has, and say which members hold it — each whose last
+    /// session ended holding every op this copy signed, the departure its
+    /// last, as a copy that signed it writes nothing more. Only a member
+    /// that is no reader counts while there is one, since a reader relays
+    /// nothing. None: there is no one to tell — no other live member, or
+    /// this copy is revoked, and no member would take its record.
+    pub fn sync_depart(&self) -> Result<Option<Vec<String>>> {
+        let chain = self.sync_chain()?;
+        let me = self.sync_endpoint_id()?;
+        let Some(mine) = chain.member(&me) else {
+            return Ok(None);
+        };
+        let others: Vec<&Member> = chain
+            .members
+            .iter()
+            .filter(|m| m.endpoint != me && m.revoked.is_none())
+            .collect();
+        let relays = others.iter().any(|m| m.role() == Role::Member);
+        let tell = others
+            .iter()
+            .filter(|m| !relays || m.role() == Role::Member);
+        if others.is_empty() || mine.left.is_none() && mine.revoked.is_some() {
+            return Ok(None);
+        }
+        if mine.left.is_none() {
+            let record = json!({
+                "type": "leave", "chain": chain.id, "endpoint": me,
+                "created": Utc::now().to_rfc3339(),
+            });
+            self.sync_chain_write(record, true)?;
+        }
+        let (_, head) = super::own_head(&self.conn)?;
+        let mut held = self.conn.prepare(
+            "SELECT 1 FROM sync_peers WHERE endpoint_id = ?1
+               AND json_extract(last_vector, ?2) >= ?3",
+        )?;
+        let mut out = Vec::new();
+        for m in tell {
+            if held.exists(params![m.endpoint, format!("$.\"{me}\""), head])? {
+                out.push(m.label.clone());
+            }
+        }
+        Ok(Some(out))
     }
 
     /// Leave this copy's chain to join another's (da-h7pnc), or with
@@ -1604,6 +1674,63 @@ mod tests {
                 "a role is member or reader, not \"admin\""
             );
         }
+    }
+
+    /// A departure (da-dsob1) is its own writer's, unsigned in a locked
+    /// chain and a reader's too: from its HLC on the member is out, its ops
+    /// before it stand, and no copy leaves for another or leaves twice.
+    #[test]
+    fn a_member_or_reader_leaves_only_itself_and_is_out_from_then_on() {
+        let (a, r) = ("ab".repeat(32), "cd".repeat(32));
+        let at = |t: u32| format!("2026-09-29T00:00:{t:02}.000Z/0000");
+        let secret = [6u8; 32];
+        let mut chain = Chain::default();
+        let step = |chain: &mut Chain, t: u32, by: &str, mut rec: Value| {
+            rec["chain"] = "c1".into();
+            rec["created"] = at(t).into();
+            if !matches!(rec["type"].as_str(), Some("admit" | "leave")) {
+                rec["sig"] = sign_ed25519(&rec, &secret).into();
+            }
+            let op = json!({
+                "endpoint": by, "seq": t, "hlc": at(t), "hid": CHAIN_HID,
+                "slug": CHAIN_HID, "kind": "chain", "effect": rec, "sig": "",
+            });
+            chain.step(&Op::parse(&op.to_string()).unwrap())
+        };
+        let admins = json!([{"key": ed25519_admin_key(&secret), "label": "k"}]);
+        let leave = |who: &str| json!({"type": "leave", "endpoint": who});
+        assert_eq!(
+            step(
+                &mut chain,
+                1,
+                &a,
+                json!({"type": "genesis", "admins": admins, "label": "a"})
+            ),
+            Ok(())
+        );
+        let invite = json!({"type": "invite", "invite_id": "i", "secret_hash": sha256_hex("s"),
+            "expires": "2099-01-01T00:00:00Z", "caps": {"role": "reader"}});
+        assert_eq!(step(&mut chain, 2, &a, invite), Ok(()));
+        let admit =
+            json!({"type": "admit", "endpoint": r, "label": "r", "via": "i", "secret": "s"});
+        assert_eq!(step(&mut chain, 3, &a, admit), Ok(()));
+        assert_eq!(
+            step(&mut chain, 4, &a, leave(&r)),
+            Err("a copy leaves the chain only itself".into())
+        );
+        assert_eq!(step(&mut chain, 5, &r, leave(&r)), Ok(()));
+        assert_eq!(step(&mut chain, 6, &a, leave(&a)), Ok(()));
+        let m = chain.member(&a).unwrap();
+        assert_eq!(
+            (m.left.as_deref(), m.revoked.as_deref()),
+            (Some(at(6).as_str()), Some(at(6).as_str()))
+        );
+        assert!(chain.member(&r).unwrap().left.is_some());
+        assert!(chain.allows(&a, &at(5)).is_ok());
+        assert!(chain.allows(&a, &at(7)).is_err());
+        assert!(step(&mut chain, 7, &a, leave(&a))
+            .unwrap_err()
+            .contains("revoked"));
     }
 
     /// A filter (da-u81u1) is a reader's, names its fields, and its `of`
