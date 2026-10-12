@@ -845,10 +845,12 @@ pub enum SyncCommand {
         label: String,
         admin_key: Option<String>,
     },
-    /// `datum sync chain ack [<WHO>]` — acknowledge a notice: a new endpoint
-    /// or admin, or (`unlock`) the chain's unlocking. Bare, the one pending.
+    /// `datum sync chain ack [<WHO> | --all]` — acknowledge a notice: a new
+    /// endpoint or admin, or (`unlock`) the chain's unlocking. Bare, the one
+    /// pending; `--all`, every one pending, each named.
     Ack {
         who: Option<String>,
+        all: bool,
     },
     /// `datum sync chain rekey` — a new endpoint key for this copy (da-p79vq).
     Rekey,

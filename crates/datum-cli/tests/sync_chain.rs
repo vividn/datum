@@ -1170,7 +1170,12 @@ fn the_warning_names_its_ack_and_a_bare_ack_takes_the_only_notice() {
     let both = b.fails(&["sync", "chain", "ack"], "");
     assert!(both.contains("2 to acknowledge; name one"), "{both}");
     assert!(both.contains(&format!("`{}`", commands[0])), "{both}");
-    assert_eq!(both.matches("`datum sync chain ack ").count(), 2, "{both}");
+    assert_eq!(
+        both.matches("— `datum sync chain ack ").count(),
+        2,
+        "{both}"
+    );
+    assert!(both.contains("or `datum sync chain ack --all`"), "{both}");
     assert_eq!(pending(&b), 2);
 
     run(&b, commands[0]);
@@ -1182,6 +1187,36 @@ fn the_warning_names_its_ack_and_a_bare_ack_takes_the_only_notice() {
     assert_eq!(pending(&b), 0);
     let none = b.fails(&["sync", "chain", "ack"], "");
     assert!(none.contains("nothing to acknowledge"), "{none}");
+}
+
+/// `ack --all` acknowledges every notice pending, each on its own line, and
+/// a second one says nothing is pending (da-s3h3u).
+#[test]
+fn ack_all_acknowledges_every_notice_and_names_each() {
+    let (a, b) = chained();
+    let c = Copy::new();
+    admit(&a, &c, "c", None);
+    assert!(a.send(&b).0);
+    // d joins a chain of three: a notice per member it has not met.
+    let d = Copy::new();
+    admit(&b, &d, "d", None);
+    let pending = d.ok(&["check"]).matches("⚠ new sync").count();
+    assert!(pending >= 3, "{}", d.ok(&["check"]));
+
+    let acked = d.ok(&["sync", "chain", "ack", "--all"]);
+    let lines: Vec<&str> = acked.lines().collect();
+    assert_eq!(lines.len(), pending, "{acked}");
+    assert!(lines
+        .iter()
+        .all(|l| l.starts_with("acknowledged new sync ")));
+    for copy in [&a, &b, &c] {
+        assert!(acked.contains(&copy.id()[..18]), "{acked}");
+    }
+    assert!(!d.ok(&["check"]).contains("⚠ new sync"));
+    assert_eq!(
+        d.ok(&["sync", "chain", "ack", "--all"]).trim(),
+        "nothing to acknowledge"
+    );
 }
 
 /// The warning is the last thing a command prints, under its own output

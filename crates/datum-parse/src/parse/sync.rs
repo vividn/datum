@@ -241,9 +241,16 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                 allow_unlock: false,
             }
         }
-        Some("ack") => SyncCommand::Ack {
-            who: rest.next().map(|w| w.to_string()),
-        },
+        Some("ack") => {
+            let mut o = opts(rest, &[], &["all"], 0..=1)?;
+            let (who, all) = (o.positional.pop(), o.on("all"));
+            if who.is_some() && all {
+                return Err(ParseError::InvalidArg(
+                    "ack <WHO> or --all, not both".into(),
+                ));
+            }
+            SyncCommand::Ack { who, all }
+        }
         Some("rekey") => SyncCommand::Rekey,
         Some(other) => return Err(unknown("sync chain", other, SET)),
         None => return Err(missing("sync chain", SET)),
@@ -671,10 +678,25 @@ mod tests {
         assert_eq!(
             p(&["chain", "ack", "abc"]),
             SyncCommand::Ack {
-                who: Some("abc".into())
+                who: Some("abc".into()),
+                all: false
             }
         );
-        assert_eq!(p(&["chain", "ack"]), SyncCommand::Ack { who: None });
+        assert_eq!(
+            p(&["chain", "ack"]),
+            SyncCommand::Ack {
+                who: None,
+                all: false
+            }
+        );
+        assert_eq!(
+            p(&["chain", "ack", "--all"]),
+            SyncCommand::Ack {
+                who: None,
+                all: true
+            }
+        );
+        assert!(parse_sync_cmd(&["chain", "ack", "abc", "--all"]).is_err());
         assert_eq!(p(&["chain", "rekey"]), SyncCommand::Rekey);
         assert_eq!(
             p(&["chain", "leave", "--dry-run"]),

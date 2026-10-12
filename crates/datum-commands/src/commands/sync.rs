@@ -429,19 +429,30 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
             let code = qrcode::QrCode::new(text.as_bytes())?;
             println!("{}", code.render::<qrcode::render::svg::Color>().build());
         }
-        SyncCommand::Ack { who: Some(who) } => {
+        SyncCommand::Ack { who: Some(who), .. } => {
             ensure!(db.sync_ack(&who)? > 0, "nothing to acknowledge for {who}");
             println!("acknowledged {who}");
         }
+        // `--all`: every notice pending, each named, so none goes unseen.
+        SyncCommand::Ack { all: true, .. } => {
+            let notices = db.sync_notices_unacked()?;
+            if notices.is_empty() {
+                println!("nothing to acknowledge");
+            }
+            for n in notices {
+                db.sync_ack(n.who())?;
+                println!("acknowledged {n}");
+            }
+        }
         // Bare: the one notice pending, or the list to name one from.
-        SyncCommand::Ack { who: None } => match db.sync_notices_unacked()?.as_slice() {
+        SyncCommand::Ack { who: None, .. } => match db.sync_notices_unacked()?.as_slice() {
             [] => bail!("nothing to acknowledge"),
             [n] => {
                 db.sync_ack(n.who())?;
                 println!("acknowledged {n}");
             }
             many => bail!(
-                "{} to acknowledge; name one:\n{}",
+                "{} to acknowledge; name one, or `datum sync chain ack --all`:\n{}",
                 many.len(),
                 many.iter()
                     .map(|n| format!("  ⚠ {n} — `datum sync chain ack {}`", n.who()))
