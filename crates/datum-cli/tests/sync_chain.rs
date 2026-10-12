@@ -27,6 +27,7 @@ impl Copy {
             .env("DATUM_HOME", self.tmp.path().join("home"))
             .env("DATUM_CONFIG_HOME", self.tmp.path().join("config"))
             .env("NO_COLOR", "1")
+            .env("USER", "ann")
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -526,6 +527,19 @@ fn locked() -> (Copy, Copy, String) {
     a.ok(&["sync", "admin", "add", &admin]);
     assert!(a.send(&b).0);
     (a, b, admin)
+}
+
+/// `invite --label` in a locked chain renames this copy only once the
+/// invite is signed: one refused for want of an admin renames nothing
+/// (da-ey3hz).
+#[test]
+fn a_refused_invite_in_a_locked_chain_renames_nothing() {
+    let (a, _b, _) = locked();
+    let before = member_of(&a, &a.id())["label"].clone();
+    let why = a.fails(&["sync", "chain", "invite", "--label", "laptop"], "");
+    assert!(why.contains("no approval code"), "{why}");
+    assert_eq!(member_of(&a, &a.id())["label"], before);
+    assert_ne!(before, "laptop");
 }
 
 #[test]
@@ -1448,7 +1462,7 @@ fn a_copy_describes_itself_at_its_first_invite_and_renames_itself_without_an_adm
     let me = member_of(&a, &a.id());
     assert_eq!(me["client"], client_of(&a).as_str(), "{me}");
     assert_eq!(me["kind"], "cli", "{me}");
-    assert!(me["label"].as_str().unwrap().ends_with(" (cli)"), "{me}");
+    assert!(me["label"].as_str().unwrap().starts_with("ann@"), "{me}");
     assert_eq!(me["this"], true);
 
     // b was admitted at a handshake: it names itself, no key needed.

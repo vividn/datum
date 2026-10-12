@@ -803,21 +803,25 @@ pub enum SyncCommand {
     Pause,
     Resume,
     /// `datum sync chain invite [--reader] [--fields <F,…> | --kit <KIT>]
-    /// [--qr] [--expires <DUR>] [--admin-key <FILE>]` — an invite any
-    /// member can admit, served until redeemed; on a copy in no chain, it
-    /// starts an open one (da-6177s). `--reader` admits a reader
+    /// [--qr] [--expires <DUR>] [--label <L>] [--admin-key <FILE>]` — an
+    /// invite any member can admit, served until redeemed; on a copy in no
+    /// chain, it starts an open one (da-6177s). `--reader` admits a reader
     /// (da-9yvb6), and a filter a reader sent only those fields (da-u81u1).
+    /// `--label` names this copy (da-ey3hz).
     Invite {
         reader: bool,
         filter: Option<SyncFilter>,
         qr: bool,
         expires_secs: u64,
+        label: Option<String>,
         admin_key: Option<String>,
     },
-    /// `datum sync chain connect [<TICKET>]` — redeem an invite (the ticket
-    /// from stdin when not given) and sync.
+    /// `datum sync chain connect [<TICKET>] [--label <L>]` — redeem an
+    /// invite (the ticket from stdin when not given) and sync, joining as
+    /// `--label` or a default no other member carries (da-ey3hz).
     Connect {
         ticket: Option<String>,
+        label: Option<String>,
     },
     /// `datum sync chain leave [--force] [--dry-run]` — leave this copy's
     /// chain, keeping every entry, under a new endpoint key (da-j8c4l), once

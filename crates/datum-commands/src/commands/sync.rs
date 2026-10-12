@@ -410,7 +410,7 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
         } => {
             let expires = std::time::Duration::from_secs(expires_secs);
             let caps = caps(db, reader, filter)?;
-            invite(db, expires, admin_key.as_deref(), caps, true)?;
+            invite(db, expires, admin_key.as_deref(), caps, None, true)?;
         }
         SyncCommand::Approve { link } => {
             let chain = db.sync_chain()?;
@@ -466,8 +466,10 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
             filter,
             qr,
             expires_secs,
+            label,
             admin_key,
         } => {
+            let label = label.map(checked).transpose()?;
             let expires = std::time::Duration::from_secs(expires_secs);
             let starts = !db.sync_chain()?.exists();
             // The daemon leaves the copy to the invite: a joiner it admitted
@@ -477,14 +479,22 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
             if let Some(f) = caps.get("fields") {
                 eprintln!("the redeemer is a reader sent only {f}, each with its spec");
             }
-            let (secret, expires_at) = invite(db, expires, admin_key.as_deref(), caps, false)?;
+            let (secret, expires_at) = invite(
+                db,
+                expires,
+                admin_key.as_deref(),
+                caps,
+                label.as_deref(),
+                false,
+            )?;
             if starts {
                 super::sync_daemon::auto_install(db);
             }
             datum_sync::offer(db, &secret, expires, &expires_at, qr)?
         }
         #[cfg(feature = "net")]
-        SyncCommand::Connect { ticket } => {
+        SyncCommand::Connect { ticket, label } => {
+            let label = label.map(checked).transpose()?;
             db.sync_refuse_debug()?;
             let ticket = match ticket {
                 Some(t) => t,
@@ -498,7 +508,7 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
             let _first = super::sync_daemon::first_sync(db)?;
             // Admitted, it is a member whether or not its first sync ends:
             // unserved, every other copy times out on it (da-shfv4, da-qr7gz).
-            datum_sync::connect(db, &ticket, &|| {
+            datum_sync::connect(db, &ticket, label.as_deref(), &|| {
                 if joins {
                     super::sync_daemon::auto_install(db);
                 }
@@ -586,7 +596,8 @@ fn caps(db: &Db, reader: bool, filter: Option<SyncFilter>) -> Result<Value> {
 /// chain with this copy its first member when it is in none: its secret,
 /// which only the ticket carries, and when it expires. `caps`: what the
 /// redeemer is admitted as — a reader (da-9yvb6), filtered (da-u81u1) or
-/// not. `print`: say the secret on
+/// not. `label`: what this copy is named, in a chain it starts or the one it
+/// is in (da-ey3hz). `print`: say the secret on
 /// stdout before the record is signed, so a run that stops at an approve
 /// link has handed it over (datum.day signs with `sync approve`, da-bjxts).
 fn invite(
@@ -594,19 +605,25 @@ fn invite(
     expires: std::time::Duration,
     admin_key: Option<&str>,
     caps: Value,
+    label: Option<&str>,
     print: bool,
 ) -> Result<(String, String)> {
     let mut chain = db.sync_chain()?;
-    if !chain.exists() {
-        let genesis = json!({
-            "type": "genesis", "chain": ulid::Ulid::new().to_string().to_lowercase(),
-            "admins": [], "label": copy_label(), "created": chrono::Utc::now().to_rfc3339(),
-        });
-        db.sync_chain_write(genesis, true)?;
-        // The chain stands without it: a failure here is no reason to fail.
-        if let Err(e) = db.sync_describe_self(&copy_label(), kind()) {
+    let starts = !chain.exists();
+    let name = label.map_or_else(copy_label, String::from);
+    // The chain stands without it: a failure here is no reason to fail.
+    let describe = || {
+        if let Err(e) = db.sync_describe_self(&name, kind()) {
             eprintln!("⚠ this copy could not describe itself ({e}); `datum sync chain rename <LABEL>` tries again");
         }
+    };
+    if starts {
+        let genesis = json!({
+            "type": "genesis", "chain": ulid::Ulid::new().to_string().to_lowercase(),
+            "admins": [], "label": name, "created": chrono::Utc::now().to_rfc3339(),
+        });
+        db.sync_chain_write(genesis, true)?;
+        describe();
         chain = db.sync_chain()?;
         eprintln!(
             "started sync chain {}; this copy is its first member",
@@ -625,6 +642,11 @@ fn invite(
         "created": chrono::Utc::now().to_rfc3339(),
     });
     sign(db, record, &chain, admin_key)?;
+    // In a chain it was in, only once the invite is signed: a refused
+    // invite renames nothing.
+    if !starts && label.is_some() {
+        describe();
+    }
     Ok((secret, expires_at))
 }
 

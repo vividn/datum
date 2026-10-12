@@ -44,7 +44,8 @@ fn short(id: &str) -> &str {
     &id[..id.len().min(10)]
 }
 
-/// How this copy names itself to a peer: the host and the client type.
+/// How this copy names itself by default (da-ey3hz): `<user>@<host>`, the
+/// user from `USER` (else `LOGNAME`), so two accounts on one host differ.
 pub fn label() -> String {
     let mut buf = [0u8; 256];
     // SAFETY: gethostname writes at most `buf.len()` bytes into `buf`.
@@ -54,13 +55,52 @@ pub fn label() -> String {
     } else {
         "unknown".into()
     };
-    // Within the chain's label rules, whatever the host is called.
-    let host: String = host
-        .chars()
+    match std::env::var("USER").or_else(|_| std::env::var("LOGNAME")) {
+        Ok(user) if !user.is_empty() => fit(&format!("{user}@{host}"), chain::MAX_LABEL),
+        _ => fit(&host, chain::MAX_LABEL),
+    }
+}
+
+/// `s` within the chain's label rules, whatever it holds: at most `max`
+/// characters, each one a label may carry.
+fn fit(s: &str, max: usize) -> String {
+    s.chars()
         .filter(|c| chain::label_problem(&c.to_string()).is_none())
-        .take(chain::MAX_LABEL - " (cli)".len())
-        .collect();
-    format!("{host} (cli)")
+        .take(max)
+        .collect()
+}
+
+/// The label this copy takes in its chain unless told one: [`label`], and
+/// where another member already carries that, the database's name after it,
+/// then a short id too. A label is printed on every member for the chain's
+/// life, so it grows only where two would read alike (da-ey3hz).
+fn named(db: &Db) -> Result<String> {
+    let (chain, me) = (db.sync_chain()?, db.sync_endpoint_id()?);
+    // The chain as its inviter held it: a member whose describe had not
+    // reached the inviter carries its Hello's label here, so two copies
+    // joining one after the other can both take the same longer label.
+    let taken = |l: &str| {
+        chain
+            .members
+            .iter()
+            .any(|m| m.endpoint != me && m.label == l)
+    };
+    let base = label();
+    let with_db = match db.path().and_then(|p| p.file_stem()) {
+        Some(name) => format!("{base} ({})", name.to_string_lossy()),
+        None => base.clone(),
+    };
+    let id = format!(" {}", short(&me));
+    let tries = [
+        base,
+        fit(&with_db, chain::MAX_LABEL),
+        fit(&with_db, chain::MAX_LABEL - id.len()) + &id,
+    ];
+    Ok(tries
+        .iter()
+        .find(|l| !taken(l))
+        .unwrap_or(&tries[2])
+        .clone())
 }
 
 fn env<T: std::str::FromStr>(name: &str) -> Option<T> {
@@ -80,13 +120,19 @@ fn runtime() -> Result<tokio::runtime::Runtime> {
 // ─── The store ──────────────────────────────────────────────────────────────
 
 /// A session's store: this copy's `Db`, on the session's own thread, where
-/// a command that says how its one session goes hears of it, and what to do
-/// the first time a peer this copy dialed welcomes it.
-struct DbStore<'a>(&'a Db, Option<&'a Mutex<Told>>, Cell<Option<&'a dyn Fn()>>);
+/// a command that says how its one session goes hears of it, what to do
+/// the first time a peer this copy dialed welcomes it, and the label a
+/// `connect --label` introduces it by.
+struct DbStore<'a>(
+    &'a Db,
+    Option<&'a Mutex<Told>>,
+    Cell<Option<&'a dyn Fn()>>,
+    Option<&'a str>,
+);
 
 impl<'a> DbStore<'a> {
     fn new(db: &'a Db) -> Self {
-        DbStore(db, None, Cell::new(None))
+        DbStore(db, None, Cell::new(None), None)
     }
 
     fn tell(&self, f: impl FnOnce(&mut Told)) {
@@ -187,8 +233,20 @@ async fn telling<T>(told: &Arc<Mutex<Told>>, session: impl Future<Output = T>) -
 }
 
 impl Store for DbStore<'_> {
+    /// The label it joins as, else the one its chain knows it by, so a peer
+    /// names it as `chain list` does.
     fn label(&self) -> String {
-        label()
+        let db = self.0;
+        let mine = || {
+            Some(
+                db.sync_chain()
+                    .ok()?
+                    .member(&db.sync_endpoint_id().ok()?)?
+                    .label
+                    .clone(),
+            )
+        };
+        self.3.map(String::from).or_else(mine).unwrap_or_else(label)
     }
 
     async fn chain(&self) -> Result<Option<(String, usize)>> {
@@ -434,7 +492,7 @@ pub fn offer(db: &Db, secret: &str, expires: Duration, expires_at: &str, qr: boo
     runtime()?.block_on(async {
         let ep = bind(db).await?;
         let told = Told::new(String::new());
-        let store = DbStore(db, Some(&told), Cell::new(None));
+        let store = DbStore(db, Some(&told), Cell::new(None), None);
         let mut addrs = vec![ep.addr()];
         addrs.extend(known(db)?);
         let chain = db.sync_chain()?;
@@ -496,8 +554,9 @@ const UNFINISHED: &str = "the first sync did not finish: run `datum sync`";
 /// waits for and until when, then every [`WAITING`] that it still is, and
 /// once it is answered how far the sync is; a join that fails ends saying why
 /// and what to do next (da-0tawk). `admitted` runs once it is welcomed, a
-/// member from then on, before its first sync (da-qr7gz).
-pub fn connect(db: &Db, ticket: &str, admitted: &dyn Fn()) -> Result<()> {
+/// member from then on, before its first sync (da-qr7gz). `name`: the label
+/// it joins as (`--label`), else [`named`].
+pub fn connect(db: &Db, ticket: &str, name: Option<&str>, admitted: &dyn Fn()) -> Result<()> {
     let t = Ticket::decode(ticket)?;
     let from = t.about.from.as_deref().unwrap_or("the inviting device");
     let until = t
@@ -519,7 +578,7 @@ pub fn connect(db: &Db, ticket: &str, admitted: &dyn Fn()) -> Result<()> {
     runtime()?.block_on(async {
         let ep = bind(db).await?;
         let told = Told::new(format!("still waiting for {from}"));
-        let store = DbStore(db, Some(&told), Cell::new(Some(admitted)));
+        let store = DbStore(db, Some(&told), Cell::new(Some(admitted)), name);
         let rep = telling(&told, redeem(&store, &ep, &t)).await;
         ep.close().await;
         // Admitted, it says what it is; its peers hear on the next sync. A
@@ -532,7 +591,8 @@ pub fn connect(db: &Db, ticket: &str, admitted: &dyn Fn()) -> Result<()> {
             .map_or_else(|e| paired_unfinished(e, joined), |_| true);
         let me = db.sync_endpoint_id()?;
         if admitted && db.sync_chain()?.member(&me).is_some() {
-            db.sync_describe_self(&label(), "cli")?;
+            let name = name.map_or_else(|| named(db), |n| Ok(n.to_string()))?;
+            db.sync_describe_self(&name, "cli")?;
         }
         let rep = match rep {
             Err(e) if !admitted => return Err(next_step(e, from)),

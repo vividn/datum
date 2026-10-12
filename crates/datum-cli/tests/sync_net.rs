@@ -40,21 +40,35 @@ struct Copy {
     _claim: TcpListener,
     /// Set on every `datum` this copy runs.
     env: Vec<(&'static str, &'static str)>,
+    /// Its database's file name.
+    file: &'static str,
 }
 
 impl Copy {
     fn new() -> Self {
         let (port, _claim) = claim_port();
+        // A user of its own, so its default label is (da-ey3hz): the
+        // tests read a label in one copy and look for it in another.
+        let user: &'static str = Box::leak(format!("u{port}").into_boxed_str());
         Self {
             tmp: tempfile::tempdir().expect("create tmpdir"),
             port,
             _claim,
-            env: Vec::new(),
+            env: vec![("USER", user)],
+            file: "data.db",
         }
     }
 
+    /// A copy run by `user`, of a database in a file named `file`.
+    fn of(user: &'static str, file: &'static str) -> Self {
+        let mut copy = Self::new();
+        copy.env = vec![("USER", user)];
+        copy.file = file;
+        copy
+    }
+
     fn db(&self) -> PathBuf {
-        self.tmp.path().join("data.db")
+        self.tmp.path().join(self.file)
     }
 
     fn cmd(&self, args: &[&str]) -> Command {
@@ -998,6 +1012,76 @@ fn member_label(of: &Copy, id: &str) -> String {
         .as_str()
         .unwrap()
         .to_string()
+}
+
+/// `invite --label` names the copy that starts the chain, `connect --label`
+/// the one that joins, and every member lists both; an invite from a copy
+/// in the chain renames it (da-ey3hz).
+#[test]
+fn invite_and_connect_name_their_copies_by_label() {
+    let (a, b) = (Copy::new(), Copy::new());
+    let (mut inviting, ticket) = a.invite(&["--label", "laptop"]);
+    b.ok(&["sync", "chain", "connect", "--label", "phone", &ticket]);
+    assert!(inviting.finish().0);
+    for copy in [&a, &b] {
+        assert_eq!(member_label(copy, &a.id()), "laptop");
+        assert_eq!(member_label(copy, &b.id()), "phone");
+    }
+    // In a chain it is in, the invite once signed renames it.
+    let _inviting = b.invite(&["--label", "desk"]);
+    assert_eq!(member_label(&b, &b.id()), "desk");
+}
+
+/// A label the chain refuses is refused at the flag, saying why, before
+/// a chain is started or an invite redeemed.
+#[test]
+fn a_label_the_chain_refuses_is_refused_at_the_flag() {
+    let a = Copy::new();
+    for cmd in [&["invite"][..], &["connect", "ticket"]] {
+        let argv = [&["sync", "chain"][..], cmd, &["--label", "a\u{1b}[2J"]].concat();
+        let err = a.fails(&argv, "");
+        assert!(
+            err.contains("a label cannot contain a control character"),
+            "{err}"
+        );
+        let long = "x".repeat(65);
+        let err = a.fails(
+            &[&["sync", "chain"][..], cmd, &["--label", &long]].concat(),
+            "",
+        );
+        assert!(err.contains("a label is at most 64 characters"), "{err}");
+    }
+}
+
+/// Unnamed, a copy is `<user>@<host>`, and only where another member
+/// carries that already the database's name follows, then a short id: two
+/// accounts on one host, and two databases of one account, join with labels
+/// that differ and need no rename (da-ey3hz).
+#[test]
+fn the_default_label_is_user_at_host_and_grows_only_on_a_collision() {
+    let a = Copy::of("ann", "data.db");
+    let join = |copy: &Copy, args: &[&str]| {
+        let (mut inviting, ticket) = a.invite(&[]);
+        copy.ok(&[&["sync", "chain", "connect", &ticket][..], args].concat());
+        assert!(inviting.finish().0);
+        member_label(copy, &copy.id())
+    };
+    let bob = Copy::of("bob", "data.db");
+    let joined = join(&bob, &[]);
+    let label = member_label(&a, &a.id());
+    let host = label
+        .strip_prefix("ann@")
+        .unwrap_or_else(|| panic!("{label}"));
+    assert_eq!(joined, format!("bob@{host}"));
+    let work = Copy::of("ann", "work.db");
+    assert_eq!(join(&work, &[]), format!("ann@{host} (work)"));
+    // With `ann@<host> (data)` taken as well, another copy of ann's data
+    // takes its short id too.
+    let taken = format!("ann@{host} (data)");
+    join(&Copy::of("ann", "data.db"), &["--label", &taken]);
+    let third = Copy::of("ann", "data.db");
+    let label = join(&third, &[]);
+    assert_eq!(label, format!("{taken} {}", &third.id()[..10]));
 }
 
 #[test]

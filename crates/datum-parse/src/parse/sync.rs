@@ -160,7 +160,7 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
     const SET: &str = "invite|connect|leave|list|rename|revoke|revert|role|ack|rekey";
     Ok(match rest.next().copied() {
         Some("invite") => {
-            let values = ["expires", "admin-key", "fields", "kit"];
+            let values = ["expires", "admin-key", "fields", "kit", "label"];
             let o = opts(rest, &values, &["qr", "reader"], 0..=0)?;
             let filter = o.filter()?;
             SyncCommand::Invite {
@@ -168,12 +168,17 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
                 filter,
                 qr: o.on("qr"),
                 expires_secs: o.expires()?,
+                label: o.get("label"),
                 admin_key: o.get("admin-key"),
             }
         }
-        Some("connect") => SyncCommand::Connect {
-            ticket: rest.next().map(|t| t.to_string()),
-        },
+        Some("connect") => {
+            let mut o = opts(rest, &["label"], &[], 0..=1)?;
+            SyncCommand::Connect {
+                ticket: o.positional.pop(),
+                label: o.get("label"),
+            }
+        }
         Some("leave") => {
             let o = opts(rest, &[], &["alone", "dry-run", "force"], 0..=0)?;
             SyncCommand::Leave {
@@ -566,19 +571,39 @@ mod tests {
         }
         assert!(parse_sync_cmd(&["daemon", "install", "extra"]).is_err());
         assert_eq!(
-            p(&["chain", "invite", "--admin-key=k", "--qr", "--reader"]),
+            p(&[
+                "chain",
+                "invite",
+                "--admin-key=k",
+                "--qr",
+                "--reader",
+                "--label",
+                "laptop"
+            ]),
             SyncCommand::Invite {
                 reader: true,
                 filter: None,
                 qr: true,
                 expires_secs: 600,
+                label: Some("laptop".into()),
                 admin_key: Some("k".into())
             }
         );
         assert_eq!(
             p(&["chain", "connect"]),
-            SyncCommand::Connect { ticket: None }
+            SyncCommand::Connect {
+                ticket: None,
+                label: None
+            }
         );
+        assert_eq!(
+            p(&["chain", "connect", "--label", "phone", "t"]),
+            SyncCommand::Connect {
+                ticket: Some("t".into()),
+                label: Some("phone".into())
+            }
+        );
+        assert!(parse_sync_cmd(&["chain", "connect", "t", "u"]).is_err());
         assert_eq!(
             p(&["chain", "list"]),
             SyncCommand::Members {
@@ -671,6 +696,7 @@ mod tests {
                 filter: Some(SyncFilter::Kit("health".into())),
                 qr: false,
                 expires_secs: 600,
+                label: None,
                 admin_key: None
             }
         );
