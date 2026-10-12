@@ -538,6 +538,33 @@ export function syncLeads(): string[] {
 	return [...led.keys()];
 }
 
+/**
+ * True once `db`'s leader, this tab or another, ends a session well after
+ * `since` (ms since the epoch); false after `ms` with none, or at once when
+ * it has no member to dial.
+ */
+export function syncedSince(db: string, since: number, ms: number): Promise<boolean> {
+	return new Promise((resolve) => {
+		// Spent: a session seen meanwhile would answer at once, and a caller's deadline never pass.
+		if (ms <= 0) return resolve(false);
+		let over = false;
+		const end = (synced: boolean) => {
+			if (over) return;
+			over = true;
+			clearTimeout(timer);
+			// `subscribe` answers at once, before `stop` is set.
+			queueMicrotask(() => stop());
+			resolve(synced);
+		};
+		const timer = setTimeout(() => end(false), ms);
+		const stop = states.subscribe((all) => {
+			const peers = all[db] && Object.values(all[db].peers);
+			if (peers?.some((p) => (p.lastSeen ?? 0) > since)) end(true);
+			else if (peers?.length === 0) end(false);
+		});
+	});
+}
+
 /** Say that `db`'s sync setup changed (its chain): its leader reads it again. */
 export function syncTouched(db: string): void {
 	const leader = led.get(db);

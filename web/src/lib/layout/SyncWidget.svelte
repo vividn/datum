@@ -40,7 +40,7 @@
 	import { onAnyChange } from '$lib/changes.js';
 	import { currentDb, INTERNAL_DB, withDb } from '$lib/database.js';
 	import { listDatabases } from '$lib/databases.js';
-	import { joinLink, syncConnect, syncNow, syncOffer, syncStates, ticketAbout, type SyncState } from '$lib/sync.js';
+	import { joinLink, syncConnect, syncedSince, syncNow, syncOffer, syncStates, ticketAbout, type SyncState } from '$lib/sync.js';
 	import {
 		ackNotice,
 		approvalWords,
@@ -93,6 +93,8 @@
 	const FILTER = '⛛';
 	/** The order a legend and a database's overall state are read in. */
 	const MARKS: Mark[] = ['synced', 'syncing', 'pending', 'error', 'none'];
+	/** How long a Leave waits for a sync to deliver its departure. */
+	const DELIVER_MS = 20_000;
 	const canShare = browser && typeof navigator.share === 'function';
 
 	/** The page's database: the one this widget is about. */
@@ -104,6 +106,8 @@
 	/** An act under way, and how the last one failed. */
 	let busy = false;
 	let failure = '';
+	/** What an act under way waits on, in words. */
+	let waiting = '';
 	/** More's acts shown, and the whole legend. */
 	let more = false;
 	let key = false;
@@ -303,11 +307,22 @@
 		doing(async () => {
 			const words = `Leave this sync chain with ${d.db}? Every entry is kept, this device’s own and those it received. It stops syncing with the chain’s other devices; adding a device after starts a new chain.`;
 			if (!(await confirm(words, 'leave'))) return;
-			// The departure is signed but no member holds it yet (da-dsob1): this page's sync delivers it.
 			const refused = (r: RunResult) => r.code !== 0 && r.stderr.includes('no member holds');
-			const r = await syncAct(d.db, leaveArgv());
-			if (!refused(r)) return void ok(r);
-			const unheard = `No device of the chain has this device’s departure yet. ${d.db} stays in the chain, writing nothing, until a sync delivers it; press Leave again then. Leave now, telling no one?`;
+			// A departure leaves only once a member holds it (da-dsob1), which this page's sync
+			// delivers: each session it ends well is a reason to try again (da-2o19r).
+			const until = Date.now() + DELIVER_MS;
+			try {
+				for (;;) {
+					const since = Date.now();
+					const r = await syncAct(d.db, leaveArgv());
+					if (!refused(r)) return void ok(r);
+					waiting = 'Telling the chain’s other devices that this one is leaving…';
+					if (!(await syncedSince(d.db, since, until - Date.now()))) break;
+				}
+			} finally {
+				waiting = '';
+			}
+			const unheard = `No device of the chain could be reached to receive this device’s departure. ${d.db} stays in the chain, writing nothing, until a sync delivers it; press Leave again then. Leave now, telling no one?`;
 			if (!(await confirm(unheard, 'leave anyway'))) return;
 			// A member may have come up while the question was open (da-48g3o): one sync, and the leave again, which forces only if still unheard.
 			await syncNow(d.db);
@@ -476,6 +491,7 @@
 			{/each}
 		{/each}
 		{#if failure}<p class="failure" role="alert">{failure}</p>{/if}
+		{#if waiting}<p class="quiet waiting" role="status">{waiting}</p>{/if}
 
 		{#if offer}
 			<section class="card offer" data-db={offer.db}>

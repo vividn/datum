@@ -207,10 +207,14 @@ describe('the sync widget’s actions', () => {
 			assert.equal((await members(app)).members.length, 2);
 
 			await leave.click();
+			const pressed = Date.now();
 			await dialog.getByRole('button', { name: 'leave' }).click();
-			// The phone never syncs, so no member holds the departure: it asks again, to leave telling no one.
-			await dialog.getByRole('button', { name: 'leave anyway' }).waitFor();
-			assert.match(await dialog.innerText(), /No device of the chain has this device’s departure yet/);
+			// The phone never syncs, so no member holds the departure: it waits for a sync, then asks again, to leave telling no one.
+			assert.equal(await page.locator(`${WIDGET} .waiting`).innerText(), 'Telling the chain’s other devices that this one is leaving…');
+			await dialog.getByRole('button', { name: 'leave anyway' }).waitFor({ timeout: 30_000 });
+			assert.match(await dialog.innerText(), /No device of the chain could be reached to receive this device’s departure/);
+			// The phone has an address, so it is dialled: only the 20 s budget ends the wait.
+			assert.ok(Date.now() - pressed >= 19_000, `asked again after ${Date.now() - pressed} ms`);
 			assert.match(JSON.stringify(await members(app)), /"left":"/);
 			await dialog.getByRole('button', { name: 'leave anyway' }).click();
 			await page.locator(`${WIDGET} .actions[data-db="home"]`).getByRole('button', { name: 'Turn on sync' }).waitFor();
@@ -248,7 +252,7 @@ describe('the sync widget’s actions', () => {
 					await page.locator(`${WIDGET} .more .actions`).getByRole('button', { name: 'Leave chain' }).click();
 					const dialog = page.locator('dialog.confirm');
 					await dialog.getByRole('button', { name: 'leave', exact: true }).click();
-					await dialog.getByRole('button', { name: 'leave anyway' }).waitFor();
+					await dialog.getByRole('button', { name: 'leave anyway' }).waitFor({ timeout: 30_000 });
 
 					// It comes up, serving and dialing no one, while the question is open.
 					await serve();
@@ -258,6 +262,34 @@ describe('the sync widget’s actions', () => {
 					await page.locator(`${WIDGET} .actions[data-db="datum"]`).getByRole('button', { name: 'Turn on sync' }).waitFor({ timeout: 90_000 });
 					assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
 					assert.equal(await left(), true);
+				},
+				{ prepare: relayed(relay), viewport: DESKTOP }
+			);
+		} finally {
+			await native.close();
+		}
+	});
+
+	test('one press leaves: the departure waits for this page’s sync to deliver it, then the leave completes (da-2o19r)', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			await withWallClock(
+				async (app) => {
+					const { page } = app;
+					await pairWith(app, native);
+					native.spawn(['sync', 'run']);
+					const me = JSON.parse(await cli(app, ['sync', 'status', '--json'])).this.endpoint;
+					await app.goto('/sync');
+					await more(page);
+					await page.locator(`${WIDGET} .more .actions`).getByRole('button', { name: 'Leave chain' }).click();
+					const dialog = page.locator('dialog.confirm');
+					await dialog.getByRole('button', { name: 'leave' }).click();
+					await page.locator(`${WIDGET} .actions[data-db="datum"]`).getByRole('button', { name: 'Turn on sync' }).waitFor({ timeout: 30_000 });
+					assert.equal(await dialog.count(), 0);
+					assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
+					// The native member holds the departure: it lists this copy as left.
+					const { members } = JSON.parse((await native.run(['sync', 'chain', 'list', '--json'])).stdout);
+					assert.ok(members.find((m) => m.endpoint === me).left);
 				},
 				{ prepare: relayed(relay), viewport: DESKTOP }
 			);
