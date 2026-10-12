@@ -237,7 +237,7 @@ impl Db {
     /// own by hid: two copies whose state hashes differ find the entries
     /// that differ by comparing these.
     pub fn sync_digest(&self, peer: Option<&str>) -> Result<(String, BTreeMap<String, String>)> {
-        let (rows, _) = shared_rows(&self.conn, peer)?;
+        let (rows, _) = shared_rows(&self.conn, None, peer)?;
         let digest = rows
             .iter()
             .map(|r| {
@@ -255,7 +255,7 @@ impl Db {
     /// filtered reader, on either side, is told nothing of an entry outside
     /// its filter.
     pub fn sync_held(&self, peer: Option<&str>, hids: &[String]) -> Result<Vec<Value>> {
-        let (rows, filtered) = shared_rows(&self.conn, peer)?;
+        let (rows, filtered) = shared_rows(&self.conn, None, peer)?;
         let chain = Chain::load(&self.conn)?;
         let rows: BTreeMap<&str, &Map<String, Value>> = rows
             .iter()

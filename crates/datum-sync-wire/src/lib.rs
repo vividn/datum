@@ -37,7 +37,8 @@
 //!   whose apply runs elsewhere ([`Store::yields`], a browser's CLI) is sent
 //!   BUSYs while it runs too, and its chunks double (da-89ujs): each is a
 //!   process that commits, and a commit rewrites every index page the chunk
-//!   touched, however few ops it held.
+//!   touched, however few ops it held. So is the side verifying, whose hash
+//!   of a big history takes minutes (da-0mwws).
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -119,7 +120,10 @@ pub trait Store {
     fn sent(&self, _done: usize, _of: usize) {}
     /// `n` of the ops a round receives have come.
     fn got(&self, _n: usize) {}
-    /// The state hash, over what a session with `peer` shares.
+    /// The session's ops are all applied, and its verify begins.
+    fn verifying(&self) {}
+    /// The state hash, over what a session with `peer` shares. One whose
+    /// work is done off this thread lets the session send meanwhile.
     async fn verify(&self, peer: &str) -> Result<String>;
     /// That state hash, and each row's own by hid (da-n0ruf).
     async fn digest(&self, peer: &str) -> Result<(String, Digest)>;
@@ -513,9 +517,26 @@ pub fn failure(e: &anyhow::Error) -> Option<Failure> {
     e.downcast_ref::<Failed>().map(|f| f.0)
 }
 
+/// Await `work`, sending a [`BUSY`] every quarter of [`idle`] until it ends.
+/// Only work that awaits something done off this thread lets one out.
+async fn busy<T>(s: &mut SendStream, work: impl Future<Output = Result<T>>) -> Result<T> {
+    // Test knob: the keepalives off (the mutation control).
+    let keepalive = env::<u8>("DATUM_SYNC_TEST_KEEPALIVE") != Some(0);
+    let mut work = pin!(work);
+    loop {
+        // A BUSY is sent outside the race: one dropped half-sent would cut
+        // the stream's framing.
+        match select(work.as_mut(), pin!(sleep(idle() / 4))).await {
+            Either::Left((done, _)) => return done,
+            Either::Right(_) if keepalive => put(s, BUSY).await?,
+            Either::Right(_) => {}
+        }
+    }
+}
+
 /// Apply `ops` in chunks, and between chunks send a [`BUSY`]: a [`CHUNK`]
 /// at a time, or where the store [`yields`](Store::yields), twice the last
-/// up to [`MAX_CHUNK`], with a BUSY every quarter of [`idle`] while each runs.
+/// up to [`MAX_CHUNK`], each run [`busy`].
 async fn apply(
     store: &impl Store,
     s: &mut SendStream,
@@ -534,16 +555,7 @@ async fn apply(
             false => store.apply(chunk).await?,
             true => {
                 size = (size * 2).min(MAX_CHUNK);
-                // A BUSY is sent outside the race: one dropped half-sent
-                // would cut the stream's framing.
-                let mut work = pin!(store.apply(chunk));
-                loop {
-                    match select(work.as_mut(), pin!(sleep(idle() / 4))).await {
-                        Either::Left((applied, _)) => break applied?,
-                        Either::Right(_) if keepalive => put(s, BUSY).await?,
-                        Either::Right(_) => {}
-                    }
-                }
+                busy(s, store.apply(chunk)).await?
             }
         };
         done += chunk.len();
@@ -599,7 +611,9 @@ async fn exchange(
         apply(store, s, &lines, rep).await?;
         last = Some(round);
     }
-    let hash = store.verify(&rep.id).await?;
+    // A big history hashes for minutes on each side at once (da-0mwws).
+    store.verifying();
+    let hash = busy(s, store.verify(&rep.id)).await?;
     // The acceptor answers only after it has read the dialer's hash, so
     // the dialer's close can never cut a frame still in flight.
     let theirs: String = if dialer {

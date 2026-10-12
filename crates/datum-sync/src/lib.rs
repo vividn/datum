@@ -111,6 +111,8 @@ struct Told {
     sent: (usize, usize),
     got: usize,
     applied: (usize, usize),
+    /// Every op is applied, and the two copies hash what they hold.
+    verifying: bool,
 }
 
 impl Told {
@@ -123,6 +125,7 @@ impl Told {
             sent: (0, 0),
             got: 0,
             applied: (0, 0),
+            verifying: false,
         }))
     }
 
@@ -136,7 +139,7 @@ impl Told {
             eprintln!("{label} is joining: sending…");
         }
         self.whom = format!("syncing {label}");
-        (self.sent, self.got, self.applied) = Default::default();
+        (self.sent, self.got, self.applied, self.verifying) = Default::default();
     }
 
     /// Say what the session is doing, if it last did [`WAITING`] ago.
@@ -146,7 +149,9 @@ impl Told {
         }
         self.said = Instant::now();
         let ((sent, of), (done, all)) = (self.sent, self.applied);
-        let how = if done < all {
+        let how = if self.verifying {
+            ": verifying that both copies agree".into()
+        } else if done < all {
             format!(": {done} of {all} ops applied")
         } else if sent < of {
             format!(": {sent} of {of} ops sent")
@@ -230,8 +235,26 @@ impl Store for DbStore<'_> {
         self.tell(|t| t.got = n);
     }
 
+    fn verifying(&self) {
+        self.tell(|t| t.verifying = true);
+    }
+
+    /// Hashed on a connection of its own, off the session's thread, which
+    /// sends meanwhile: a big history hashes for minutes (da-0mwws).
     async fn verify(&self, peer: &str) -> Result<String> {
-        Ok(self.0.sync_state_hash(Some(peer))?.0)
+        let (me, peer) = (self.0.sync_endpoint_id()?, peer.to_string());
+        let hash = move |db: &Db| -> Result<String> {
+            // Test knob: a slow verify, holding its thread as a big one does.
+            let delay = env("DATUM_SYNC_TEST_VERIFY_DELAY_S").unwrap_or(0);
+            std::thread::sleep(Duration::from_secs(delay));
+            Ok(db.sync_state_hash_as(Some(&me), Some(&peer))?.0)
+        };
+        match self.0.path().and_then(|p| p.to_str()).map(String::from) {
+            Some(path) => {
+                tokio::task::spawn_blocking(move || hash(&Db::open_read_only(&path)?)).await?
+            }
+            None => hash(self.0),
+        }
     }
 
     async fn digest(&self, peer: &str) -> Result<(String, Digest)> {

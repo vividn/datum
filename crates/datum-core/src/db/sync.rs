@@ -2008,11 +2008,17 @@ fn settle_filter(
 /// The rows [`Db::sync_state_hash`] hashes, in `(slug, hid)` order: every
 /// entry, each with its `superseded_by` and any `conflicts`, that passes the
 /// filter of this copy and of `peer`; and whether either has one.
-fn shared_rows(conn: &Connection, peer: Option<&str>) -> Result<(Vec<Map<String, Value>>, bool)> {
+/// `me` is this copy's endpoint id where the caller holds it already.
+fn shared_rows(
+    conn: &Connection,
+    me: Option<&str>,
+    peer: Option<&str>,
+) -> Result<(Vec<Map<String, Value>>, bool)> {
     let chain = Chain::load(conn)?;
-    let mine = match chain.exists() {
-        true => Some(endpoint(conn)?.id),
-        false => None,
+    let mine = match (chain.exists(), me) {
+        (false, _) => None,
+        (true, Some(me)) => Some(me.to_string()),
+        (true, None) => Some(endpoint(conn)?.id),
     };
     // The peer's filter is read from the chain this copy serves it by, with
     // the records still waiting (da-91wab).
@@ -2310,7 +2316,19 @@ impl Db {
         &self,
         peer: Option<&str>,
     ) -> Result<(String, BTreeMap<String, String>)> {
-        let (rows, _) = shared_rows(&self.conn, peer)?;
+        self.sync_state_hash_as(None, peer)
+    }
+
+    /// [`Db::sync_state_hash`] as the copy whose endpoint id is `me`: a
+    /// connection on another thread than the session's, which hashes while
+    /// the session sends (da-0mwws), cannot tell it. Its endpoint is the
+    /// invocation's, and there it would be another copy's.
+    pub fn sync_state_hash_as(
+        &self,
+        me: Option<&str>,
+        peer: Option<&str>,
+    ) -> Result<(String, BTreeMap<String, String>)> {
+        let (rows, _) = shared_rows(&self.conn, me, peer)?;
         let keys: BTreeSet<&String> = rows.iter().flat_map(|r| r.keys()).collect();
         let per_key = keys
             .into_iter()

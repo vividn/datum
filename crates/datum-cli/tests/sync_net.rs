@@ -1085,6 +1085,59 @@ fn without_keepalives_it_fails_says_what_landed_and_the_invite_still_exits() {
     assert_eq!(a.hash(), b.hash());
 }
 
+/// A first sync whose verify outlasts the progress timeout (da-0mwws): the
+/// joiner's or the inviter's hash holds its thread for 6s on a 3s timeout,
+/// and the peer, whose own is done, hears a `BUSY` every 0.75s unless
+/// `keepalive` is off. Whether the join and the invite succeeded, and what
+/// each printed on stdout and stderr.
+fn slow_verify(joiner: bool, keepalive: bool) -> ((bool, String), (bool, String)) {
+    let (mut a, mut b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "tea"]);
+    for c in [&mut a, &mut b] {
+        c.env = vec![
+            ("DATUM_SYNC_TIMEOUT_S", "3"),
+            (
+                "DATUM_SYNC_TEST_KEEPALIVE",
+                if keepalive { "1" } else { "0" },
+            ),
+        ];
+    }
+    let slow = if joiner { &mut b } else { &mut a };
+    slow.env.push(("DATUM_SYNC_TEST_VERIFY_DELAY_S", "6"));
+    let (mut inviting, ticket) = a.invite(&[]);
+    let joined = b.run(&["sync", "chain", "connect", &ticket]);
+    let (served_ok, mut served) = inviting.finish();
+    let err = inviting.child.stderr.as_mut().unwrap();
+    err.read_to_string(&mut served).unwrap();
+    let joined_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&joined.stdout),
+        String::from_utf8_lossy(&joined.stderr)
+    );
+    ((joined.status.success(), joined_text), (served_ok, served))
+}
+
+#[test]
+fn a_verify_longer_than_the_timeout_completes_on_keepalives_and_says_so() {
+    for joiner in [true, false] {
+        let ((ok, joined), (served_ok, served)) = slow_verify(joiner, true);
+        assert!(ok && joined.contains("verify ok"), "{joined}");
+        assert!(served_ok && served.contains("verify ok"), "{served}");
+        let slow = if joiner { &joined } else { &served };
+        assert!(
+            slow.contains(": verifying that both copies agree ("),
+            "{slow}"
+        );
+    }
+}
+
+#[test]
+fn without_keepalives_a_slow_verify_times_out() {
+    let ((ok, joined), (_, served)) = slow_verify(true, false);
+    assert!(!ok && !joined.contains("verify ok"), "{joined}");
+    assert!(served.contains("nothing moved for 3s"), "{served}");
+}
+
 /// A first sync says how far it is on both sides (da-nyg6u): vividn's joiner
 /// went silent for a minute and then printed ten lines that all said «87s»,
 /// and his inviter said nothing until it was done. b applies a's 300-odd ops
