@@ -197,8 +197,10 @@ changes ahead of this copy», `pending` in `sync status` and no error
 list | rename | revoke | revert | ack | rekey`, `admin list | add | remove`, `daemon
 install | uninstall | status` (a systemd user unit / launchd agent
 running the hidden `sync daemon run`, which is `sync run` for every chained
-db; a copy's first `chain invite` / `connect` installs it unless
-`DATUM_SYNC_NO_DAEMON=1`, and `scripts/install.sh` restarts it; a `connect`
+db `known_dbs` lists; a copy's first `chain invite` / `connect` keeps a db
+opened by path in the registry under its absolute path, so the daemon finds
+it too (da-zrl7n), and installs it unless `DATUM_SYNC_NO_DAEMON=1`, and
+`scripts/install.sh` restarts it; a `connect`
 installs it once admitted and holds `<db>.joining` locked for its life, so the
 daemon leaves that database alone until the `connect` ends or is killed, and
 then finishes a first sync cut short; a chained copy with none says so in

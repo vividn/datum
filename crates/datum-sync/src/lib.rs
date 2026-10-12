@@ -489,8 +489,8 @@ pub fn connect(db: &Db, ticket: &str, admitted: &dyn Fn()) -> Result<()> {
         });
     eprintln!(
         "joining {from}'s sync chain: waiting for it to answer{}\n\
-         it answers while it is online: datum.day open on that database, or \
-         `datum sync chain invite` still running there",
+         it answers while it is online: datum.day open on that database, its \
+         sync daemon, or `datum sync chain invite` still running there",
         until.as_deref().unwrap_or_default()
     );
     runtime()?.block_on(async {

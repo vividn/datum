@@ -250,6 +250,23 @@ pub fn ensure_registered(resolved: &ResolvedDb) -> Result<()> {
     save_registry(&registry)
 }
 
+/// Keep a database opened by path among [`known_dbs`], so the sync daemon
+/// syncs it (da-zrl7n): a registry entry named by its absolute path, which
+/// `--db` reads as that path. A no-op for one known already.
+pub fn ensure_known(path: &Path) -> Result<()> {
+    let abs = path.canonicalize()?;
+    if known_dbs()
+        .values()
+        .any(|p| p.canonicalize().is_ok_and(|p| p == abs))
+    {
+        return Ok(());
+    }
+    let mut registry = load_registry()?;
+    let path = abs.to_string_lossy().into_owned();
+    registry.db.insert(path.clone(), DbEntry { path });
+    save_registry(&registry)
+}
+
 /// Location of the DB registry file.
 /// Reading it creates nothing; [`save_registry`] makes the directory.
 pub fn registry_path() -> Result<PathBuf> {

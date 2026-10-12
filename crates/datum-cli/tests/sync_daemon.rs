@@ -338,3 +338,23 @@ fn status_names_a_missing_daemon_on_a_chained_copy() {
     h.ok(&["sync", "daemon", "install"]);
     assert!(!h.ok(&["sync", "status"]).contains(missing));
 }
+
+/// A database opened by path, outside the data directory, is the daemon's
+/// once chained: the first invite keeps it in the registry (da-zrl7n).
+#[test]
+fn a_db_chained_by_path_is_the_daemons() {
+    let h = Home::new();
+    let db = h.path("elsewhere/bypath.db");
+    let db = db.to_str().unwrap();
+    h.ok(&["--db", db, "occur", "coffee"]);
+    h.datum(
+        &["--db", db, "sync", "chain", "invite", "--expires", "1s"],
+        &[("DATUM_SYNC_NO_DAEMON", "1")],
+    );
+    h.ok(&["sync", "daemon", "install"]);
+    let daemon = h.ok(&["sync", "daemon", "status"]);
+    assert!(
+        daemon.contains(&format!("1 chained database(s): {db}")),
+        "{daemon}"
+    );
+}

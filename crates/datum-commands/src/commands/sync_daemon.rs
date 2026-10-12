@@ -305,10 +305,16 @@ fn in_first_sync(db: &Path) -> bool {
         .is_ok_and(|f| matches!(f.try_lock_shared(), Err(TryLockError::WouldBlock)))
 }
 
-/// The first time this copy starts or joins a chain: install the daemon,
-/// and say so — unless it is installed already, or `DATUM_SYNC_NO_DAEMON`.
-/// Never fails the chain command it follows.
-pub fn auto_install() {
+/// The first time this copy starts or joins a chain: keep `db` where the
+/// daemon looks, and install the daemon, and say so — unless it is
+/// installed already, or `DATUM_SYNC_NO_DAEMON`. Never fails the chain
+/// command it follows.
+pub fn auto_install(db: &Db) {
+    if let Some(path) = db.conn().path().filter(|p| !p.is_empty()) {
+        if let Err(e) = config::ensure_known(Path::new(path)) {
+            eprintln!("warning: background sync will not find this database: {e:#}");
+        }
+    }
     if opted_out() {
         return;
     }

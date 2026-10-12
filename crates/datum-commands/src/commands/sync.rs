@@ -445,7 +445,7 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
             }
             let (secret, expires_at) = invite(db, expires, admin_key.as_deref(), caps, false)?;
             if starts {
-                super::sync_daemon::auto_install();
+                super::sync_daemon::auto_install(db);
             }
             datum_sync::offer(db, &secret, expires, &expires_at, qr)?
         }
@@ -466,7 +466,7 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
             // unserved, every other copy times out on it (da-shfv4, da-qr7gz).
             datum_sync::connect(db, &ticket, &|| {
                 if joins {
-                    super::sync_daemon::auto_install();
+                    super::sync_daemon::auto_install(db);
                 }
             })?;
         }
