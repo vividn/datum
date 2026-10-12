@@ -1429,3 +1429,31 @@ fn a_date_only_doc_keeps_the_offset_of_an_unknown_zone() {
     assert_eq!(t.local_time().to_rfc3339(), "2025-01-08T00:00:00+09:00");
     assert_eq!(t.timezone, None, "a name that does not parse is not kept");
 }
+
+/// da-s9ngd: identical timeless docs logged on different days are different
+/// events, each slugged on its own createTime; re-importing adds nothing.
+#[test]
+fn identical_timeless_docs_on_different_days_are_two_rows() {
+    let db = fresh_db();
+    let docs: Vec<_> = (1..=2)
+        .map(|i| {
+            serde_json::json!({
+                "_id": format!("shirk:c{i}"),
+                "data": {"field": "shirk"},
+                "meta": {"createTime": {"utc": format!("2025-01-0{i}T10:00:00.000Z")}}
+            })
+        })
+        .collect();
+    let f = write_backup(serde_json::Value::Array(docs));
+
+    assert!(skip_log_lines(&f, &db).is_empty(), "nothing skipped");
+    assert_eq!(datum_core::test_util::logged_all(&db).len(), 2);
+
+    let again = skip_log_lines(&f, &db);
+    assert_eq!(again.len(), 2);
+    assert!(
+        again.iter().all(|l| l.starts_with("duplicate\t")),
+        "{again:?}"
+    );
+    assert_eq!(datum_core::test_util::logged_all(&db).len(), 2);
+}

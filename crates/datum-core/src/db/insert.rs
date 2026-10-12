@@ -972,12 +972,17 @@ fn write_entry_in_tx(
         entry.data.as_ref(),
     );
 
+    // da-s9ngd: a timeless row's identity is its create_time, which its
+    // slug carries and its hash leaves out, so it dedups by slug: two notes
+    // with the same words are two events. Equal hashes mean equal occur, so
+    // the stored row's `occur_time` says which kind both are.
     let existing: Option<(Slug, Hid, Option<String>)> = conn
         .query_row(
             "SELECT slug, hid, data FROM entries
              WHERE content_hash = ?1 AND deleted_at IS NULL AND superseded_by IS NULL
+               AND (occur_time IS NOT NULL OR slug = ?2)
              LIMIT 1",
-            params![dedup_hash],
+            params![dedup_hash, entry.slug],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?;
@@ -1151,9 +1156,10 @@ fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOut
         let mut stmt = conn.prepare_cached(
             "SELECT slug FROM entries
              WHERE content_hash = ?1 AND deleted_at IS NULL AND superseded_by IS NULL
+               AND (occur_time IS NOT NULL OR slug = ?2)
              LIMIT 1",
         )?;
-        stmt.query_row(params![dedup_hash], |row| row.get::<_, Slug>(0))
+        stmt.query_row(params![dedup_hash, entry.slug], |row| row.get::<_, Slug>(0))
             .optional()?
     };
     match existing_slug {

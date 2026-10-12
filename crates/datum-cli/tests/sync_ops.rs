@@ -1958,3 +1958,20 @@ fn delete_all_wipes_both_copies_and_one_undo_restores_both() {
     converged(&a, &b);
     assert_eq!((live_rows(&a), live_rows(&b)), (0, 0));
 }
+
+/// da-s9ngd: two copies that each logged the same note made two events, and
+/// keep both.
+#[test]
+fn an_identical_note_on_each_copy_is_two_notes() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["note", "diary", "hello"]);
+    b.ok(&["note", "diary", "hello"]);
+    converged(&a, &b);
+    for copy in [&a, &b] {
+        let notes = copy.query(
+            "SELECT COUNT(*) FROM entries WHERE field = ?1 AND deleted_at IS NULL",
+            "diary",
+        );
+        assert_eq!(notes, "2");
+    }
+}

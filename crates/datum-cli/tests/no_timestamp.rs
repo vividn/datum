@@ -249,3 +249,27 @@ fn without_minus_t_occur_still_timestamps() {
         "plain `occur` must still stamp start_time"
     );
 }
+
+// ─── da-s9ngd: a timeless entry dedups by its slug ───────────────────────────
+
+/// A timeless entry's identity is its create_time, which its slug carries and
+/// its content hash leaves out, so the same words logged twice are two
+/// entries. The same slug with the same content is still one.
+#[test]
+fn identical_timeless_entries_are_two_entries() {
+    let db = fresh_db();
+    for args in [
+        &["note", "diary", "hello"][..],
+        &["occur", "chore", "-T", "item=x"][..],
+    ] {
+        run_cli(args, &db).expect("first");
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        run_cli(args, &db).expect("second");
+    }
+    assert_count!(db, "diary", 2);
+    assert_count!(db, "chore", 2);
+
+    run_cli(&["add", "book", "--id", "gatsby"], &db).expect("first");
+    run_cli(&["add", "book", "--id", "gatsby"], &db).expect("same slug, same content");
+    assert_count!(db, "book", 1);
+}
