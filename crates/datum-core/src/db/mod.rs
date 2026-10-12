@@ -261,12 +261,15 @@ impl Db {
     /// error, never a new database.
     ///
     /// A read-only open of a WAL database still creates its `-wal` and
-    /// `-shm` files when they are absent. Absent, there is nothing
-    /// uncheckpointed to read, so the file is opened `immutable` and
-    /// nothing is created beside it.
+    /// `-shm` files when they are absent. Absent, and with no rollback
+    /// journal to read either (WASI's every write, da-yajgu), the file is
+    /// opened `immutable` and nothing is created beside it. Beside a hot
+    /// journal SQLite refuses the open (`SQLITE_READONLY_ROLLBACK`), as a
+    /// read-only handle cannot roll it back: an error, never a cut write.
     pub fn open_read_only(path: &str) -> Result<Self> {
         use rusqlite::OpenFlags;
-        let checkpointed = !std::path::Path::new(&format!("{path}-wal")).exists();
+        let checkpointed = !std::path::Path::new(&format!("{path}-wal")).exists()
+            && std::fs::metadata(format!("{path}-journal")).map_or(true, |m| m.len() == 0);
         let escaped = path
             .replace('%', "%25")
             .replace('?', "%3f")
