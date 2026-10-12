@@ -195,8 +195,33 @@ impl Db {
         Ok(())
     }
 
+    /// On WASI, every file opens through SQLite's `unix-none` VFS rather
+    /// than the `unix-dotfile` its WASI build defaults to (da-dfmg8). That
+    /// VFS reads the lock directory a connection made for itself as another
+    /// process's reserved lock, and SQLite looks for a hot journal only
+    /// once it holds that lock: so no journal was ever hot, and a write cut
+    /// short — a tab closed, killed or crashed mid-commit — left its
+    /// half-written pages for every process after to read, «database disk
+    /// image is malformed». Nothing is given up: the lock directory lived
+    /// in each process's own memory, so it never kept one process from
+    /// another. The browser's OPFS handles and its Web Lock do that.
+    fn choose_vfs() {
+        #[cfg(target_os = "wasi")]
+        {
+            static ONCE: std::sync::Once = std::sync::Once::new();
+            // SAFETY: a VFS SQLite registered itself, found by name and made
+            // the default before any connection is opened.
+            ONCE.call_once(|| unsafe {
+                let vfs = rusqlite::ffi::sqlite3_vfs_find(c"unix-none".as_ptr());
+                assert!(!vfs.is_null(), "SQLite's WASI build has no unix-none VFS");
+                rusqlite::ffi::sqlite3_vfs_register(vfs, 1);
+            });
+        }
+    }
+
     /// Open (or create) the database at the given path.
     pub fn open(path: &str) -> Result<Self> {
+        Self::choose_vfs();
         let mut conn = Connection::open(path)?;
         Self::configure_connection(&mut conn)?;
         let mut db = Db {
@@ -217,6 +242,7 @@ impl Db {
     /// which is in the file's header: a reader that must not rewrite what
     /// it reads takes [`Db::open_read_only`].
     pub fn open_unmigrated(path: &str) -> Result<Self> {
+        Self::choose_vfs();
         let mut conn = Connection::open(path)?;
         Self::configure_connection(&mut conn)?;
         Ok(Db {
@@ -249,6 +275,7 @@ impl Db {
             "file:{escaped}?mode=ro{}",
             if checkpointed { "&immutable=1" } else { "" }
         );
+        Self::choose_vfs();
         let conn = Connection::open_with_flags(
             uri,
             OpenFlags::SQLITE_OPEN_READ_ONLY
@@ -401,9 +428,15 @@ impl Db {
     /// changed endpoint key through that handle. A reader that will not let
     /// the checkpoint finish within `busy_timeout` is an error, and a
     /// second purge finishes the job.
+    ///
+    /// The drops and the new schema are ONE transaction (da-dfmg8): dropped
+    /// one at a time, a DROP that failed — on a corrupt page, which DROP
+    /// walks every page of a table to meet — kept the tables after it and
+    /// not `_meta` or `entries` before them, and every open after read that
+    /// file as schema v7 and refused to migrate it.
     pub fn force_recreate_schema(&self) -> Result<Vec<String>> {
-        let tables: Vec<String> = self
-            .conn
+        let tx = self.conn.unchecked_transaction()?;
+        let tables: Vec<String> = tx
             .prepare(
                 "SELECT name FROM sqlite_master WHERE type = 'table' \
                  AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' ORDER BY name",
@@ -414,20 +447,17 @@ impl Db {
         // which are later in the list (da-k3uqd).
         for t in &tables {
             let t = t.replace('"', "\"\"");
-            self.conn
-                .execute(&format!("DROP TABLE IF EXISTS \"{t}\""), [])?;
+            tx.execute(&format!("DROP TABLE IF EXISTS \"{t}\""), [])?;
         }
+        tx.execute_batch(include_str!("../schema.sql"))?;
+        tx.execute_batch(STATS_CACHE_SQL)?;
+        crate::migrations::set_schema_version(&tx, crate::migrations::CURRENT_SCHEMA_VERSION)?;
+        tx.commit()?;
         self.conn.execute_batch("VACUUM")?;
-        self.conn.execute_batch(include_str!("../schema.sql"))?;
-        self.conn.execute_batch(STATS_CACHE_SQL)?;
         // A kit index is this device's, derived from the definitions the
         // file holds (da-fwwtn). One that will not build is no reason not
         // to open: it is only an index.
         let _ = self.derive_kit_indices();
-        crate::migrations::set_schema_version(
-            &self.conn,
-            crate::migrations::CURRENT_SCHEMA_VERSION,
-        )?;
         // The first column is `busy`: 1 when a reader kept the checkpoint
         // from finishing. No row from an SQLite built without WAL,
         // datum.day's: it has no `-wal` to truncate.

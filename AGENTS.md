@@ -428,7 +428,10 @@ start the installed binary. `web/tests/sync*.test.mjs` run on a pinned local `ir
   the file and moves its rows across with `db backup -` / `db restore -
   --merge` (a bare restore REPLACES, tombstoning what the backup lacks).
   SQLite runs in rollback-journal mode under the shim (WASI has no WAL); a
-  journal left by a killed process is rolled back by the next one.
+  journal left by a killed process is rolled back by the next one, which
+  takes SQLite's `unix-none` VFS: its WASI default, `unix-dotfile`, read a
+  connection's own lock as another's and so never saw a journal as hot, and
+  a write cut short read as «malformed» for good (da-dfmg8).
 - Service Worker caches app shell for offline use — the shell, everything
   `$service-worker` lists, and Vite's separate worker bundle (the database
   worker and datum-cli.wasm), which that list does not know about and which

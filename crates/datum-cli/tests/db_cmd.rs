@@ -195,3 +195,59 @@ fn db_purge_aborts_when_bare_name_mismatched() {
     );
     assert_eq!(db.count_entries().unwrap(), 1, "data must survive abort");
 }
+
+/// A purge that fails part way leaves the file as it was (da-dfmg8). One
+/// corrupt page of `ops` is enough to fail it — DROP walks every page of a
+/// table — and dropped one table at a time it had dropped `_meta` and
+/// `entries` first, so the next open read the file as schema v7 and
+/// refused it: «refusing to migrate schema v7→v59 … malformed», vividn's
+/// datum.day on 2026-10-12.
+#[test]
+fn db_purge_that_fails_leaves_the_file_as_it_was() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("datum.db");
+    let path = path.to_str().unwrap();
+    {
+        let db = Db::open(path).unwrap();
+        for i in 0..200 {
+            entry_builder("coffee")
+                .state(serde_json::json!(i))
+                .extra_data(serde_json::json!({ "note": "x".repeat(200) }))
+                .insert(&db);
+        }
+        db.conn()
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+            .unwrap();
+    }
+    // A leaf of `ops`: the first child of its root, an interior page.
+    let mut bytes = std::fs::read(path).unwrap();
+    let page = u16::from_be_bytes([bytes[16], bytes[17]]) as usize;
+    let root: usize = Db::open(path)
+        .unwrap()
+        .conn()
+        .query_row(
+            "SELECT rootpage FROM sqlite_master WHERE name = 'ops'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let at = (root - 1) * page;
+    assert_eq!(bytes[at], 0x05, "ops's root is an interior page");
+    let cell = u16::from_be_bytes([bytes[at + 12], bytes[at + 13]]) as usize;
+    let child = (root - 1) * page + cell;
+    let leaf = u32::from_be_bytes(bytes[child..child + 4].try_into().unwrap()) as usize;
+    bytes[(leaf - 1) * page..(leaf - 1) * page + 8].fill(0xff);
+    std::fs::write(path, bytes).unwrap();
+
+    let db = Db::open(path).unwrap();
+    let err = run_cli(&["db", "purge", "--yes"], &db).expect_err("a DROP meets the corrupt page");
+    assert!(format!("{err:#}").contains("malformed"), "{err:#}");
+    drop(db);
+
+    let db = Db::open(path).expect("the file opens as it did before the purge");
+    assert_eq!(
+        read_schema_version(db.conn()).unwrap(),
+        Some(CURRENT_SCHEMA_VERSION)
+    );
+    assert_eq!(db.count_entries().unwrap(), 200);
+}

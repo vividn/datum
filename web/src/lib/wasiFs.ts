@@ -15,11 +15,11 @@
 //
 // So a journal left behind by a tab that died mid-write is still there, and
 // non-empty, for the next process — which is what lets SQLite roll it back.
+// It takes no lock to do it: the CLI opens through SQLite's `unix-none` VFS
+// (`Db::choose_vfs`, da-dfmg8), since the handles already keep processes apart.
 //
-// Every other path lives in memory for the length of one process: the
-// dot-file lock SQLite's WASI build takes (`datum.db.lock`, a directory —
-// WASI has no fcntl locks), and anything else datum writes under HOME —
-// except a pre-migration backup, which the worker keeps in OPFS once the
+// Every other path lives in memory for the length of one process: anything
+// datum writes under HOME — except a pre-migration backup, which the worker keeps in OPFS once the
 // process is over (`unkept`), and whose kept copies are handles here too.
 //
 // The process's own stdout and stderr are here too (`Sink`), for the same
