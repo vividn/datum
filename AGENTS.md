@@ -204,7 +204,8 @@ it too (da-zrl7n), and installs it unless `DATUM_SYNC_NO_DAEMON=1`, and
 installs it once admitted and holds `<db>.joining` locked for its life, so the
 daemon leaves that database alone until the `connect` ends or is killed, and
 then finishes a first sync cut short; an `invite` holds the same lock, so a
-joiner is served by the `invite` that shows it and not by the daemon, and
+joiner is served by the `invite` that shows it and not by the daemon — whose
+thread already serving the database steps aside on its next tick, da-8sah2 — and
 a second `connect` or `invite` on the database is refused while it is held,
 da-apd52; a chained copy with none says so in `sync status`, da-qr7gz).
 `DATUM_SYNC_BIND=<ip:port>` binds one address with no relay or discovery (the

@@ -636,8 +636,10 @@ const RETRY: Duration = Duration::from_secs(30);
 /// one it bound: a `db purge` or `sync chain rekey` made it another copy
 /// (da-8v7ua), and the daemon starts it again only if that copy is chained.
 /// And once the file's schema is not this build's: a newer datum migrated it
-/// (da-1tnup). A session open then stops as it does ([`bind`]).
-pub fn run(db: &Db) -> Result<()> {
+/// (da-1tnup). A session open then stops as it does ([`bind`]). And with
+/// the error `stop` gives, which it asks every tick: the daemon's, once a
+/// `connect` or an `invite` takes the database (da-8sah2).
+pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
     runtime()?.block_on(async {
         let ep = bind(db).await?;
         let store = &DbStore::new(db);
@@ -674,9 +676,9 @@ pub fn run(db: &Db) -> Result<()> {
                     }
                 }
                 _ = tick.tick() => {
-                    if let Err(e) = db.sync_endpoint_secret() {
+                    if let Err(e) = db.sync_endpoint_secret().map_err(Into::into).and_then(|_| stop()) {
                         ep.close().await;
-                        return Err(e.into());
+                        return Err(e);
                     }
                     // Paused (da-wlbyx), it idles: an incoming session's
                     // handshake refuses, and nothing is pushed.

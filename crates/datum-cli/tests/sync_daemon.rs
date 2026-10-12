@@ -345,6 +345,45 @@ fn an_open_invite_keeps_the_daemon_off_the_copy() {
     assert!(daemon.contains("1 chained database(s): data"), "{daemon}");
 }
 
+/// An invite on a copy the daemon is ALREADY serving (da-8sah2): the lock
+/// is read only when the daemon takes a database up, so the thread serving
+/// it reads it too, and steps aside for the invite, which then admits the
+/// joiner itself.
+#[test]
+fn an_invite_moves_the_daemon_serving_the_copy_aside() {
+    let (a, b) = (Home::new(), Home::new());
+    a.invite(&[("DATUM_SYNC_NO_DAEMON", "1")]);
+    // On a port of its own: the invite binds the home's.
+    let (port, _claim) = claim_port();
+    let bind = format!("127.0.0.1:{port}");
+    let mut daemon = a.spawn(&["sync", "daemon", "run"], &[("DATUM_SYNC_BIND", &bind)]);
+    let err = BufReader::new(daemon.0.stderr.take().unwrap());
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        err.lines()
+            .map_while(Result::ok)
+            .try_for_each(|l| tx.send(l))
+    });
+    let says = |what: &str| {
+        while !rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap_or_else(|_| panic!("the daemon saying {what:?} within 10s"))
+            .contains(what)
+        {}
+    };
+    says("is up");
+
+    let (mut inviting, out, ticket) = a.inviting(&[]);
+    says("stepping aside until it ends");
+    b.ok(&["sync", "chain", "connect", &ticket]);
+    let said: Vec<String> = out.lines().map_while(Result::ok).collect();
+    assert!(inviting.0.wait().unwrap().success(), "{said:?}");
+    assert!(
+        said.iter().any(|l| l.starts_with("added sync peer")),
+        "{said:?}"
+    );
+}
+
 #[test]
 fn status_names_a_missing_daemon_on_a_chained_copy() {
     let h = Home::new();

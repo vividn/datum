@@ -505,7 +505,7 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
         #[cfg(feature = "net")]
         SyncCommand::Run => {
             db.sync_refuse_debug()?;
-            datum_sync::run(db)?
+            datum_sync::run(db, || Ok(()))?
         }
         #[cfg(feature = "net")]
         SyncCommand::Daemon(act) => super::sync_daemon::daemon(act)?,

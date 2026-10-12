@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use datum_core::db::Db;
 use datum_core::error::DatumError;
 
@@ -306,6 +306,10 @@ pub fn first_sync(db: &Db) -> Result<Option<FirstSync>> {
 const BUSY: &str = "a `datum sync chain connect` or `invite` is at work on this database: \
      let it end, or stop it, first";
 
+/// Why the daemon stopped serving a database it had taken up.
+const ASIDE: &str = "a `datum sync chain connect` or `invite` is at work on it: \
+     stepping aside until it ends";
+
 /// Whether a `connect` or an `invite` holds `db`'s [`FirstSync`].
 fn in_first_sync(db: &Path) -> bool {
     File::open(first_sync_lock(db))
@@ -379,7 +383,14 @@ fn run() -> Result<()> {
                 // `Ok(Err)`: it opened and ran, and then stopped.
                 let done = std::panic::catch_unwind(|| {
                     let db = Db::open(&path.to_string_lossy())?;
-                    anyhow::Ok(datum_sync::run(&db))
+                    // A `connect` or an `invite` taking it up meanwhile has it
+                    // to itself (da-8sah2): this endpoint would serve its
+                    // joiner too. Retried at a look that finds it free.
+                    let aside = || {
+                        ensure!(!in_first_sync(&path), ASIDE);
+                        Ok(())
+                    };
+                    anyhow::Ok(datum_sync::run(&db, aside))
                 })
                 .unwrap_or_else(|_| Err(anyhow::anyhow!("sync panicked")));
                 let _ = tx.send((path, done));
