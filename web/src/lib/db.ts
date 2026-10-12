@@ -7,6 +7,9 @@
 import type { CliResult, DbCommand, DbMessage, DbResponse, Stage, StorageKind } from './dbProtocol.js';
 import { announceChange } from './changes.js';
 import { answered, blocked, upgrading } from './waiting.js';
+import { DAMAGED, damaged } from './damaged.js';
+import { DEFAULT_DB } from './database.js';
+import { dbOf } from './run.js';
 
 export type { StorageKind };
 
@@ -157,6 +160,9 @@ export async function runCli(
 ): Promise<CliResult | null> {
 	const cli = (await request({ op: 'cli', argv, env, stdin, key, stage, pane }, onStderr)).cli;
 	if (!cli) return null;
+	// A file SQLite cannot read fails every command on it, `db purge` too:
+	// the page offers the way out that does not go through SQLite (da-0v940).
+	if (cli.code !== 0 && DAMAGED.test(cli.stderr)) damaged.set(dbOf(argv, DEFAULT_DB));
 	if (cli.changed.length) {
 		announceChange(cli.changed, session);
 		if (cli.storage === 'opfs') {

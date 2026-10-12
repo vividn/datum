@@ -29,6 +29,8 @@
 	import { attach, logHeight, rolled, shown } from '$lib/log.js';
 	import PromptBar from '$lib/PromptBar.svelte';
 	import Waiting from '$lib/Waiting.svelte';
+	import Damaged from '$lib/Damaged.svelte';
+	import { damaged } from '$lib/damaged.js';
 	import RootBar from '$lib/layout/RootBar.svelte';
 	import PlaceModal from '$lib/layout/PlaceModal.svelte';
 	import { boot as bootEngine } from '$lib/layout/engine.js';
@@ -162,7 +164,7 @@
 
 <div class="shell" style="--shown: {$shown}px; --log-height: {$logHeight}px; --rolled: {$rolled}px">
 	<RootBar />
-	<Waiting />
+	{#if $damaged !== null}<Damaged db={$damaged} />{:else}<Waiting />{/if}
 
 	<!-- The page. Moved by the bar and by nothing else: see the header. -->
 	<div class="pages" use:page_scroller>

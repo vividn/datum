@@ -41,9 +41,9 @@ export async function storedEntries(limit = 50): Promise<StoredEntry[]> {
 		.slice(0, limit);
 }
 
-/** Hand `text` to the browser as a download called `name`. */
-export function saveFile(text: string, name: string): void {
-	const url = URL.createObjectURL(new Blob([text], { type: 'application/x-ndjson' }));
+/** Hand `text` (or a Blob) to the browser as a download called `name`. */
+export function saveFile(text: string | Blob, name: string): void {
+	const url = URL.createObjectURL(typeof text === 'string' ? new Blob([text], { type: 'application/x-ndjson' }) : text);
 	const link = document.createElement('a');
 	link.href = url;
 	link.download = name;
