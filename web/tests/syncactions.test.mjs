@@ -221,6 +221,51 @@ describe('the sync widget’s actions', () => {
 		}, AT_DATUM_DAY);
 	});
 
+	// The refusal can go stale while its question is open: «leave anyway» syncs
+	// and leaves again, forcing only if still unheard (da-48g3o).
+	test('a member that comes up while «leave anyway» is asked gets the departure, and lists this copy LEFT', async () => {
+		const native = await nativeCopy(relay);
+		const left = async () => /"left":"/.test((await native.run(['sync', 'chain', 'list', '--json'])).stdout);
+		try {
+			// A native datum from before the departure record (da-dsob1) never lists anyone LEFT.
+			const help = await native.run(['sync', 'chain', 'leave', '--help']);
+			assert.match(help.stdout + help.stderr, /--force/, 'the native datum predates `chain leave`’s departure: build this tree’s');
+			await withWallClock(
+				async (app) => {
+					const { page } = app;
+					const serve = async () => {
+						const serving = native.spawn(['sync', 'chain', 'invite']);
+						return [serving, (await until(() => /datum sync chain connect '([^']+)'/.exec(serving.stdout), Boolean))[1]];
+					};
+					const [pairing, ticket] = await serve();
+					await page.evaluate((t) => window.datum.sync.connect('datum', t), ticket);
+					pairing.child.kill();
+					await until(() => pairing.child.exitCode !== null || pairing.child.signalCode !== null, Boolean);
+					await app.goto('/sync');
+					await more(page);
+
+					// The only other member is down: no one holds the departure.
+					await page.locator(`${WIDGET} .more .actions`).getByRole('button', { name: 'Leave chain' }).click();
+					const dialog = page.locator('dialog.confirm');
+					await dialog.getByRole('button', { name: 'leave', exact: true }).click();
+					await dialog.getByRole('button', { name: 'leave anyway' }).waitFor();
+
+					// It comes up, serving and dialing no one, while the question is open.
+					await serve();
+					assert.equal(await left(), false);
+					await dialog.getByRole('button', { name: 'leave anyway' }).click();
+					// First the dial begun while it was down, which a dead peer holds for the wire's 60 s idle timeout.
+					await page.locator(`${WIDGET} .actions[data-db="datum"]`).getByRole('button', { name: 'Turn on sync' }).waitFor({ timeout: 90_000 });
+					assert.equal(await page.locator(`${WIDGET} .failure`).count(), 0);
+					assert.equal(await left(), true);
+				},
+				{ prepare: relayed(relay), viewport: DESKTOP }
+			);
+		} finally {
+			await native.close();
+		}
+	});
+
 	test('removing the last admin asks first, and only a yes unlocks the chain', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;

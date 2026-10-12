@@ -40,7 +40,7 @@
 	import { onAnyChange } from '$lib/changes.js';
 	import { currentDb, INTERNAL_DB, withDb } from '$lib/database.js';
 	import { listDatabases } from '$lib/databases.js';
-	import { joinLink, syncConnect, syncOffer, syncStates, ticketAbout, type SyncState } from '$lib/sync.js';
+	import { joinLink, syncConnect, syncNow, syncOffer, syncStates, ticketAbout, type SyncState } from '$lib/sync.js';
 	import {
 		ackNotice,
 		approvalWords,
@@ -303,11 +303,16 @@
 		doing(async () => {
 			const words = `Leave this sync chain with ${d.db}? Every entry is kept, this device’s own and those it received. It stops syncing with the chain’s other devices; adding a device after starts a new chain.`;
 			if (!(await confirm(words, 'leave'))) return;
-			const r = await syncAct(d.db, leaveArgv());
 			// The departure is signed but no member holds it yet (da-dsob1): this page's sync delivers it.
-			if (r.code === 0 || !r.stderr.includes('no member holds')) return void ok(r);
+			const refused = (r: RunResult) => r.code !== 0 && r.stderr.includes('no member holds');
+			const r = await syncAct(d.db, leaveArgv());
+			if (!refused(r)) return void ok(r);
 			const unheard = `No device of the chain has this device’s departure yet. ${d.db} stays in the chain, writing nothing, until a sync delivers it; press Leave again then. Leave now, telling no one?`;
-			if (await confirm(unheard, 'leave anyway')) ok(await syncAct(d.db, leaveArgv(true)));
+			if (!(await confirm(unheard, 'leave anyway'))) return;
+			// A member may have come up while the question was open (da-48g3o): one sync, and the leave again, which forces only if still unheard.
+			await syncNow(d.db);
+			const again = await syncAct(d.db, leaveArgv());
+			ok(refused(again) ? await syncAct(d.db, leaveArgv(true)) : again);
 		});
 
 	const pause = (d: DbSync) => doing(async () => ok(await syncAct(d.db, pausedArgv(!d.paused))));

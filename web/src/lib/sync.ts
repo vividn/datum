@@ -98,7 +98,7 @@ export interface Invite {
 	expires: string;
 }
 
-type Call = { op: 'offer'; invite?: Invite } | { op: 'connect'; ticket: string };
+type Call = { op: 'offer'; invite?: Invite } | { op: 'connect'; ticket: string } | { op: 'sync' };
 
 const states = writable<Record<string, SyncState>>({});
 /** Every database's sync state this tab has heard, from its leader. */
@@ -201,9 +201,9 @@ class Leader {
 	label = 'datum.day';
 	/** What the CLI runs (`sync status --json`'s `this`), said to every peer (da-3zqyv). */
 	version?: { datum: string; schema: number };
-	/** Per peer: its vector when last in step, a session in flight, one more asked for. */
+	/** Per peer: its vector when last in step, a session in flight (settled when it ends), one more asked for. */
 	inStep = new Map<string, string>();
-	busy = new Set<string>();
+	busy = new Map<string, Promise<void>>();
 	again = new Set<string>();
 	seen = new Map<string, number>();
 	errors = new Map<string, string>();
@@ -286,7 +286,8 @@ class Leader {
 
 	async dial(p: Peer): Promise<void> {
 		if (this.busy.has(p.endpoint)) return void this.again.add(p.endpoint);
-		this.busy.add(p.endpoint);
+		let ended = () => {};
+		this.busy.set(p.endpoint, new Promise((r) => (ended = r)));
 		this.post();
 		try {
 			this.done(p.endpoint, await ask<SyncReport>(this.db, { op: 'dial', addr: p.addr }));
@@ -297,7 +298,24 @@ class Leader {
 			this.applying = undefined;
 			this.post();
 			if (this.again.delete(p.endpoint)) void this.push();
+			ended();
 		}
+	}
+
+	/**
+	 * Dial every peer once more and wait for it (da-48g3o): after a dial
+	 * under way, which may have begun before the peer came up. A dial begun
+	 * since that one ended counts as this one: a poll for a free peer lost
+	 * the race to the leader's own re-dials for as long as the peer was down.
+	 */
+	async syncNow(): Promise<void> {
+		if (!this.endpoint || this.paused) return;
+		await Promise.all(
+			this.peers.map(async (p) => {
+				await this.busy.get(p.endpoint);
+				await (this.busy.get(p.endpoint) ?? this.dial(p));
+			})
+		);
 	}
 
 	/** A session's apply moved on; undefined once it is over. */
@@ -335,6 +353,7 @@ class Leader {
 	}
 
 	async call(c: Call): Promise<unknown> {
+		if (c.op === 'sync') return this.syncNow();
 		if (c.op === 'connect') {
 			await this.start();
 			const report = await ask<SyncReport>(this.db, { op: 'connect', ticket: c.ticket }).finally(() => this.progress());
@@ -507,6 +526,11 @@ export function syncCommand(argv: string[]): Promise<RunResult> | null {
 /** Redeem `ticket` and sync (`datum sync chain connect`). */
 export function syncConnect(db: string, ticket: string): Promise<SyncReport> {
 	return call(db, { op: 'connect', ticket });
+}
+
+/** Sync `db` with every member now, on its leader, and wait for it. */
+export function syncNow(db: string): Promise<void> {
+	return call(db, { op: 'sync' });
 }
 
 /** The databases this tab leads — whose endpoint, if any, is here. */
