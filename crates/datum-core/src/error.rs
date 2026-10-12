@@ -30,6 +30,14 @@ pub enum DatumError {
     #[error("Entry not found: {0}")]
     NotFound(String),
 
+    #[error("Entry not found: {pattern} (live {field} entries with the state {state}: {count})")]
+    NoEntryInState {
+        pattern: String,
+        field: String,
+        state: String,
+        count: usize,
+    },
+
     #[error("Entry is tombstoned: {0}")]
     Tombstoned(String),
 

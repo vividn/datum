@@ -617,6 +617,7 @@ Every command that takes an `ID_OR_SLUG` takes these.
 | `_4`                    | the 4th, for counts past a few underscores     |
 | `_2-_10`                | the whole run between two ordinals             |
 | `<field>:_3`            | the same counting, inside one field            |
+| `<field>:<state>:_`     | inside one field, only entries in that state   |
 | `_LAST`                 | everything the last write touched              |
 | `_LAST_WITH_PROTECTION` | the same, but refuses if older than 15 minutes |
 | `*` `?`                 | slug/hid wildcards — any run, any one character|
@@ -672,6 +673,12 @@ instead, and `datum get b:_` gives that field's newest row:
 EXISTS rtzbg b:2026-09-22T15:59:04.598Z
 17:59:04+2  b ∅●
 ```
+
+`body:run:_` counts only the `body` entries whose state is `run`, or holds
+it among parallel states: after `switch body run -t 9:30` and `switch body
+lift -t 9:50 3`, `body:_` is the lift and `body:run:_` the run. The state
+is everything between the field and the last `:`, so `media:book:gatsby:_`
+reads the state `book:gatsby`. A slug spelled the same still wins.
 
 `datum get _1,_3` — a comma-batched list resolves per token:
 

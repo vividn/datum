@@ -17,6 +17,7 @@
 //! | `_2-_10`            | Every entry in that run of ordinals.        |
 //! | `<field>:_`         | Most recent live entry for `<field>`.       |
 //! | `<field>:__`, `_4`  | Field-scoped Nth most-recent.               |
+//! | `<field>:<state>:_` | Same, among its entries in `<state>`.       |
 //! | `book:gol*`         | Slug wildcard. `*` → any chars, `?` → one.  |
 //!
 //! Exact hid/slug matches always beat every other rule, so typing a full
@@ -46,6 +47,7 @@ use crate::entry::Entry;
 use crate::error::{DatumError, PrefixCandidate, Result};
 use crate::ids::{Hid, QUICK_ORDINAL_CAP};
 use crate::last_docs::{get_last_docs, within_protection_window, PROTECTION_WINDOW_MINUTES};
+use crate::state::states_share_element;
 
 /// `_LAST` — resolves to whatever hids the last-accessed pointer holds,
 /// no time guard.
@@ -74,12 +76,16 @@ const NTH_ORDER: &str = "ORDER BY occur_time DESC, slug DESC";
 /// 1. Underscore shorthands (`_`, `__`, `_4`, the `_2-_10` range, and
 ///    the `<field>:` variants of each).
 /// 2. Exact slug or hid match.
-/// 3. Slug wildcard expansion (when the pattern contains `*` or `?`).
-/// 4. Hid/slug prefix match (the pre-existing C3 behaviour).
+/// 3. `<field>:<state>:_` and its ordinals and ranges.
+/// 4. Slug wildcard expansion (when the pattern contains `*` or `?`).
+/// 5. Hid/slug prefix match (the pre-existing C3 behaviour).
 ///
 /// An empty vector is returned when the pattern is syntactically valid
-/// but has no matches. Callers that need a scalar result should use
-/// [`resolve_quickid_single`] instead — it converts the 0/>1 cases into
+/// but has no matches, except for the state-scoped form, which errors with
+/// [`DatumError::NoEntryInState`] so no tombstone fallback rewrites it.
+///
+/// Callers that need a scalar result should use [`resolve_quickid_single`]
+/// instead — it converts the 0/>1 cases into
 /// the appropriate [`DatumError`] variants.
 pub fn resolve_quickid(db: &Db, pattern: &str) -> Result<Vec<Entry>> {
     // `_LAST` / `_LAST_WITH_PROTECTION` — expand to the last-accessed
@@ -142,6 +148,14 @@ pub fn resolve_quickid(db: &Db, pattern: &str) -> Result<Vec<Entry>> {
     // tombstoned rows out of the resolution surface by design.
     if let Some(entry) = exact_live_match(db, pattern)? {
         return Ok(vec![entry]);
+    }
+
+    // `<field>:<state>:_` and its `__` / `_N` / `_A-_B` — the field's
+    // spans, counting only the entries whose state is, or in a parallel
+    // state includes, `<state>` (da-jloyq). After the exact match, so a slug
+    // spelled the same still wins.
+    if let Some((field, state, from, to)) = parse_state_scoped(pattern) {
+        return state_entry_range(db, pattern, field, state, from, to);
     }
 
     // Slug wildcard expansion.
@@ -299,6 +313,67 @@ fn live_entry_range(db: &Db, field: Option<&str>, from: usize, to: usize) -> Res
     rows.map(|r| r.map_err(DatumError::Db)).collect()
 }
 
+/// `<field>:<state>:<span>`. The state is everything between the first `:`
+/// and the last, so a slug state reads whole: `media:book:gatsby:_`.
+fn parse_state_scoped(pattern: &str) -> Option<(&str, &str, usize, usize)> {
+    let (field, rest) = pattern.split_once(':')?;
+    let (state, span) = rest.rsplit_once(':')?;
+    if field.is_empty() || state.is_empty() {
+        return None;
+    }
+    let (from, to) = parse_underscore_span(span)?;
+    Some((field, state, from, to))
+}
+
+/// [`live_entry_range`] over `field`'s entries whose state shares an element
+/// with `state`, read as a typed state is (`3` is a number; `undefined`,
+/// which types as nothing, is the string). Nothing in the
+/// span is an error naming the field, the state and how many there are.
+fn state_entry_range(
+    db: &Db,
+    pattern: &str,
+    field: &str,
+    state: &str,
+    from: usize,
+    to: usize,
+) -> Result<Vec<Entry>> {
+    let wanted = datum_parse::input::infer_type(state)
+        .unwrap_or_else(|| serde_json::Value::String(state.to_string()));
+    // No meta filter: the field is named, and a named field's meta entries
+    // count, as in `live_entry_range` (`spec:_` is the newest spec).
+    let mut stmt = db.conn().prepare(&format!(
+        "SELECT * FROM entries
+         WHERE deleted_at IS NULL AND superseded_by IS NULL AND field = ?1
+         {NTH_ORDER}"
+    ))?;
+    let mut rows = stmt.query(params![field])?;
+    let (mut seen, mut out) = (0, Vec::new());
+    while seen < to {
+        let Some(row) = rows.next()? else { break };
+        let entry = row_to_entry_public(row)?;
+        if !entry
+            .state
+            .as_ref()
+            .is_some_and(|s| states_share_element(s, &wanted))
+        {
+            continue;
+        }
+        seen += 1;
+        if seen >= from {
+            out.push(entry);
+        }
+    }
+    if out.is_empty() {
+        return Err(DatumError::NoEntryInState {
+            pattern: pattern.to_string(),
+            field: field.to_string(),
+            state: state.to_string(),
+            count: seen,
+        });
+    }
+    Ok(out)
+}
+
 /// Hid → `_N` ordinal for the [`QUICK_ORDINAL_CAP`] most recent live
 /// entries.
 ///
@@ -407,6 +482,31 @@ mod tests {
                     .insert(db)
             })
             .collect()
+    }
+
+    #[test]
+    fn state_scoped_parse() {
+        assert_eq!(
+            parse_state_scoped("body:run:_"),
+            Some(("body", "run", 1, 1))
+        );
+        assert_eq!(
+            parse_state_scoped("body:run:_2-_3"),
+            Some(("body", "run", 2, 3))
+        );
+        assert_eq!(
+            parse_state_scoped("media:book:gatsby:__"),
+            Some(("media", "book:gatsby", 2, 2))
+        );
+        for no in [
+            "body:_",
+            "body::_",
+            ":run:_",
+            "body:run:x",
+            "mood:2024-03-16T09:15Z",
+        ] {
+            assert_eq!(parse_state_scoped(no), None, "{no}");
+        }
     }
 
     // ─── parse_underscore_ordinal: pure unit coverage ────────────────────

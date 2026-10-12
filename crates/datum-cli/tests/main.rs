@@ -108,6 +108,7 @@ mod state_id_normalize;
 mod state_keys;
 mod state_oracle;
 mod state_refs;
+mod state_scoped_ref;
 mod stateless_same_instant;
 mod stats_cache;
 mod stop_cmd;
