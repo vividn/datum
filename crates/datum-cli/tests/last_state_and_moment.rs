@@ -85,6 +85,50 @@ fn switch_to_same_state_is_surfaced_live_not_stored() {
     assert_eq!(hits[0].field, "mood");
 }
 
+/// da-0sjt8 (vividn, 2026-10-12): a moment of the state in force — «ran
+/// 10k» at the end of a run — carries data, not a repeat. Typed as a
+/// compound switch it is one PT0S point-switch; typed bare, a MOMENT
+/// point. A block inside the run does not matter.
+#[test]
+fn same_state_moment_is_not_a_repeat() {
+    use datum_core::integrity;
+    for tail in [
+        &[
+            "switch",
+            "body",
+            "run",
+            "-m",
+            "distanceKm=10",
+            "-t=-10",
+            ",",
+            "switch",
+            "body",
+            "stretch",
+        ][..],
+        &["switch", "body", "run", "-m", "distanceKm=10", "-t=-10"][..],
+    ] {
+        let db = fresh_db();
+        run_cli(&["switch", "body", "run", "-t=-70"], &db).expect("run");
+        run_cli(&["switch", "body", "lift", "-t=-50", "3"], &db).expect("lift block");
+        run_cli(tail, &db).expect("moment");
+
+        let moment = datum_core::test_util::logged_entries(&db, "body")
+            .into_iter()
+            .find(|e| e.data.is_some())
+            .expect("the moment landed");
+        assert!(
+            moment.dur.as_ref().is_some_and(|d| d.is_instant()),
+            "{tail:?}: {:?}",
+            moment.dur
+        );
+        let hits = integrity::list_repeated_states(db.conn()).unwrap();
+        assert!(
+            hits.is_empty(),
+            "{tail:?}: a same-state moment flagged: {hits:?}"
+        );
+    }
+}
+
 #[test]
 fn switch_to_different_state_is_not_a_repeat() {
     use datum_core::integrity;

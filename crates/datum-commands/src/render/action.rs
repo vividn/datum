@@ -295,10 +295,13 @@ impl StateTransition {
 /// `["vertical","sit"]`) is a transition, not a repeat.
 ///
 /// Non-state-bearing verbs (`Point`, `Note`, `Add`) always return `false`
-/// — they don't drive a state cell to mark. A `None` prior or a missing
-/// row state likewise can't form a repeat.
+/// — they don't drive a state cell to mark, nor does a moment, which
+/// carries data of the state in force (da-0sjt8). A `None` prior or a
+/// missing row state likewise can't form a repeat.
 pub(crate) fn compute_is_state_repeat(prior: Option<&JsonValue>, row: &Entry) -> bool {
-    if !has_state_badge(row.verb, row.dur.as_ref()) {
+    if !has_state_badge(row.verb, row.dur.as_ref())
+        || row.dur.as_ref().is_some_and(|d| d.is_instant())
+    {
         return false;
     }
     let (Some(prior), Some(row_state)) = (prior, row.state.as_ref()) else {
@@ -1539,6 +1542,18 @@ mod tests {
             JsonValue::String("sit".into()),
         ]);
         assert!(compute_is_state_repeat(Some(&prior), &row));
+    }
+
+    /// da-0sjt8: a PT0S point-switch of the state in force is a moment
+    /// carrying data, not a repeat — the marker agrees with `check`.
+    #[test]
+    fn state_repeat_not_flagged_for_a_same_state_moment() {
+        let mut row = switch_row("body", JsonValue::String("run".into()));
+        row.verb = Verb::PointSwitch;
+        row.dur = datum_core::dur::Dur::parse("PT0S");
+        row.following_state = Some(JsonValue::String("stretch".into()));
+        let prior = JsonValue::String("run".into());
+        assert!(!compute_is_state_repeat(Some(&prior), &row));
     }
 
     /// Non-state-bearing verbs (`occur`/`point`) must never trigger the

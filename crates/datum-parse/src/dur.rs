@@ -181,6 +181,12 @@ impl Dur {
     pub fn is_zero_span(&self) -> bool {
         matches!(&self.span, DurSpan::Of(d) if d.is_zero())
     }
+
+    /// A span of no length: [`DurSpan::Moment`] or a zero span, which
+    /// vividn rules the same.
+    pub fn is_instant(&self) -> bool {
+        self.is_moment() || self.is_zero_span()
+    }
 }
 
 impl Serialize for Dur {

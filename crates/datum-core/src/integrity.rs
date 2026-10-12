@@ -469,6 +469,11 @@ pub fn list_repeated_states(conn: &Connection) -> Result<Vec<Entry>> {
             else {
                 continue;
             };
+            // A moment of the state in force carries data, not a repeat:
+            // «ran 10k» at the end of a run (vividn, 2026-10-12, da-0sjt8).
+            if entry.dur.as_ref().is_some_and(|d| d.is_instant()) {
+                continue;
+            }
             let probe = edge - chrono::Duration::microseconds(1);
             let Some(prior) = rows.at(probe, Some(entry.hid.as_str())) else {
                 continue;

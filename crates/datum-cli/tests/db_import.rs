@@ -215,6 +215,47 @@ fn explicit_dur_null_maps_to_moment() {
     assert!(e.data.is_none(), "column keys left in data: {:?}", e.data);
 }
 
+// ─── 4b. v2 moment of the state in force is not a repeat ─────────────
+// da-0sjt8 (vividn, 2026-10-12): ten years of v2 data log «ran 10k» as
+// `switch body run -m distanceKm=10` while running — a `dur: null` doc
+// whose state is the one in force. It imports as MOMENT and `check`
+// reads it as data of that state, so the history needs no migration.
+
+#[test]
+fn v2_same_state_moment_is_not_a_repeat() {
+    let db = fresh_db();
+    let doc = |at: &str, state: &str, extra: serde_json::Value| {
+        let mut data = serde_json::json!({
+            "occurTime": {"utc": at, "o": 1, "tz": "Europe/Berlin"},
+            "field": "body",
+            "state": state,
+        });
+        data.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        serde_json::json!({
+            "_id": format!("body:{at}"),
+            "data": data,
+            "meta": {"createTime": {"utc": at, "o": 1, "tz": "Europe/Berlin"}},
+        })
+    };
+    let f = write_backup(serde_json::json!([
+        doc("2025-01-08T07:30:00.000Z", "run", serde_json::json!({})),
+        doc(
+            "2025-01-08T08:40:00.000Z",
+            "run",
+            serde_json::json!({"dur": null, "distanceKm": 10, "lastState": "run"}),
+        ),
+        doc("2025-01-08T08:40:01.000Z", "stretch", serde_json::json!({})),
+    ]));
+
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
+
+    assert_eq!(datum_core::test_util::logged_all(&db).len(), 3);
+    let hits = datum_core::integrity::list_repeated_states(db.conn()).unwrap();
+    assert!(hits.is_empty(), "v2 moment flagged as a repeat: {hits:?}");
+}
+
 // ─── 5. missing occurTime → Point with occur_time NULL ───────────────
 // state=undefined + dur=undefined → derive_verb: Verb::Point with
 // state=null (promotion dropped in da-ju71.2). occur_time stays NULL —
