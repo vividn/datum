@@ -499,7 +499,10 @@ fn an_installed_script_asks_the_datum_that_installed_it() {
         t.join("xdg-data/bash-completion/completions/datum")
             .display()
     );
-    let fish = "function datum; false; end\ncomplete -C 'datum switch mood '";
+    // `--no-config` leaves fish 4's `fish_complete_path` empty (da-imc3d):
+    // name the directory `install` wrote to, so fish still autoloads it.
+    let fish = "set fish_complete_path $XDG_CONFIG_HOME/fish/completions\n\
+                function datum; false; end\ncomplete -C 'datum switch mood '";
     for (shell, args) in [
         ("zsh", ["-f", "-c", &zsh]),
         ("bash", ["--norc", "-ic", &bash]),
