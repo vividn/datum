@@ -16,6 +16,12 @@
 //! candidates, one value per line with no description (da-8bkh5: they made
 //! the list long, and a field's latest state confused it), and every
 //! failure is an empty answer — the caller always exits 0.
+//!
+//! A file position (da-2oz7k) — a usage line's `PATH`, `FILE` or `DIR` —
+//! is answered by the shell itself: `__complete` prints [`FILES`] or
+//! [`DIRS`], which each script hands to its own file completion, so `~`,
+//! escaping and descending into directories are the shell's as for any
+//! other command. Which positions those are stays here.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -31,6 +37,11 @@ use crate::config;
 
 /// How many recently modified entries an entry position offers.
 const RECENT_ENTRIES: usize = 50;
+
+/// The line that asks the shell for its file completion, and for its
+/// directories alone. No candidate holds a tab, so neither is ever one.
+pub const FILES: &str = "\tfile";
+pub const DIRS: &str = "\tdir";
 
 type Candidates = Vec<String>;
 
@@ -76,10 +87,15 @@ pub fn run(globals: &[String], args: &[String]) {
         // One candidate per line: a value holding a control character (a
         // field may hold a newline) cannot cross that, nor be typed at a
         // prompt, so it is not offered.
-        if value.chars().any(char::is_control) {
+        let sentinel = value == FILES || value == DIRS;
+        if !sentinel && value.chars().any(char::is_control) {
             continue;
         }
-        let value = if raw { value } else { shell_quote(&value) };
+        let value = if raw || sentinel {
+            value
+        } else {
+            shell_quote(&value)
+        };
         out.push_str(&value);
         out.push('\n');
     }
@@ -176,6 +192,7 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
     if sub.is_some() {
         rest.remove(0);
     }
+    let usage = sub.map_or(spec.usage, |s| s.usage);
     let all_flags: Vec<&FlagSpec> = spec
         .flags
         .iter()
@@ -190,11 +207,18 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
                 return value_of(&format!("--{}", flag.long));
             }
         }
+        // A flag only a usage line names: `--to DIR`, `--admin-key <FILE>`.
+        if let Some(v) = usage_value(usage, prev).filter(|_| !prev.contains('=')) {
+            return file_slot(v).and_then(files).unwrap_or_default();
+        }
     }
     if cur.starts_with('-') {
         return flags(all_flags.iter().copied());
     }
-    if sub.is_none() && !spec.subcommands.is_empty() && positionals(&rest, &all_flags).is_empty() {
+    if sub.is_none()
+        && !spec.subcommands.is_empty()
+        && positionals(&rest, &all_flags, usage).is_empty()
+    {
         return spec
             .subcommands
             .iter()
@@ -202,7 +226,7 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
             .collect();
     }
 
-    let given = positionals(&rest, &all_flags);
+    let given = positionals(&rest, &all_flags, usage);
     // A group of its own (`sync chain`): the word after it in its usage.
     if let Some(s) = sub.filter(|_| given.is_empty()) {
         let mut words: Vec<String> = s
@@ -217,12 +241,24 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
             return words;
         }
     }
-    let usage = sub.map_or(spec.usage, |s| s.usage);
-    let slots = slots(usage, 2 + sub.is_some() as usize);
+    // In a group, the lines of the word after it (`sync admin add`).
+    let lines: Vec<&str> = usage
+        .iter()
+        .copied()
+        .filter(|l| sub.is_some() && group_tokens(l).get(3) == given.first().copied())
+        .collect();
+    let (slots, given) = if lines.is_empty() {
+        (slots(usage, 2 + sub.is_some() as usize), &given[..])
+    } else {
+        (slots(&lines, 4), &given[1..])
+    };
     let slot = |n: usize| slots.get(n).or(slots.last().filter(|s| s.1)).map(|s| s.0);
     // Key/value words do not take a positional of their own in the usage
     // line's count: they fill the variadic tail.
     let n = given.iter().filter(|w| !w.contains('=')).count();
+    if let Some(found) = slot(n).and_then(files) {
+        return found;
+    }
     let Some(db) = db else {
         return Vec::new();
     };
@@ -231,7 +267,7 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
         Some(Slot::Entry) if spec.name == "get" && cur.contains("::") => projections(db, cur),
         Some(Slot::Entry) => entries(db, cur),
         Some(Slot::Keys) => {
-            let field = field_on_line(&slots, &given);
+            let field = field_on_line(&slots, given);
             // `switch`'s state is the word after the field.
             let state = (spec.name == "switch")
                 .then(|| given.iter().filter(|w| !w.contains('=')).nth(1))
@@ -266,6 +302,11 @@ enum Slot {
     Field,
     Entry,
     Keys,
+    /// A file, and `-` too when it is one of the alternatives (stdin).
+    File {
+        dash: bool,
+    },
+    Dir,
     Other,
 }
 
@@ -300,7 +341,7 @@ fn slots(usage: &[&str], skip: usize) -> Vec<(Slot, bool)> {
             {
                 Slot::Entry
             } else {
-                Slot::Other
+                file_slot(tok).unwrap_or(Slot::Other)
             };
             let repeats = tok.ends_with("...");
             match merged.get_mut(n) {
@@ -312,6 +353,47 @@ fn slots(usage: &[&str], skip: usize) -> Vec<(Slot, bool)> {
         }
     }
     merged
+}
+
+/// A file position, by its placeholder — the contract `CommandSpec::usage`
+/// states: a word ending in `DIR`, or in `FILE` / `PATH` (`KEYFILE`), with
+/// `-` beside it when the dash is an alternative.
+fn file_slot(tok: &str) -> Option<Slot> {
+    let mut words = tok.split(|c: char| !c.is_ascii_uppercase());
+    if words.clone().any(|w| w.ends_with("DIR")) {
+        return Some(Slot::Dir);
+    }
+    let alts = tok.trim_matches(['<', '>', '[', ']', '(', ')']).split('|');
+    let dash = alts.map(str::trim).any(|a| a == "-");
+    words
+        .any(|w| w.ends_with("FILE") || w.ends_with("PATH"))
+        .then_some(Slot::File { dash })
+}
+
+/// The value a usage line gives `flag`, for a flag only the usage lines
+/// name (`--to DIR`, `[--admin-key <FILE>]`); none where its group closes
+/// on it (`--merge]`) or the next word is another flag or alternative.
+fn usage_value<'a>(usage: &[&'a str], flag: &str) -> Option<&'a str> {
+    let flag = flag.split('=').next().filter(|f| f.starts_with('-'))?;
+    usage.iter().find_map(|line| {
+        let toks: Vec<&str> = line.split_whitespace().collect();
+        toks.windows(2)
+            .find(|w| w[0].trim_start_matches(['[', '(']) == flag && !w[0].ends_with([']', ')']))
+            .map(|w| w[1])
+            .filter(|v| !v.starts_with(['-', '|', '[', '(']))
+    })
+}
+
+/// A file position's answer: the shell's own completion, and `-`.
+fn files(slot: Slot) -> Option<Candidates> {
+    match slot {
+        Slot::File { dash } => {
+            let dash = dash.then(|| String::from("-"));
+            Some(dash.into_iter().chain([FILES.to_string()]).collect())
+        }
+        Slot::Dir => Some(vec![DIRS.to_string()]),
+        _ => None,
+    }
 }
 
 /// Split a usage line on the spaces outside `<>`, `[]` and `()`.
@@ -339,14 +421,16 @@ fn group_tokens(line: &str) -> Vec<String> {
 
 /// The positional words of `rest`: every word that is neither a flag nor
 /// a flag's value.
-fn positionals<'a>(rest: &'a [String], flags: &[&FlagSpec]) -> Vec<&'a String> {
+fn positionals<'a>(rest: &'a [String], flags: &[&FlagSpec], usage: &[&str]) -> Vec<&'a String> {
     let mut out = Vec::new();
     let mut words = rest.iter();
     while let Some(w) = words.next() {
         if w.starts_with('-') && w.len() > 1 {
-            if lookup_flag(flags, w).is_some_and(|f| f.takes_value && !f.value_optional)
-                && !w.contains('=')
-            {
+            let takes = lookup_flag(flags, w).map_or_else(
+                || usage_value(usage, w).is_some(),
+                |f| f.takes_value && !f.value_optional,
+            );
+            if takes && !w.contains('=') {
                 words.next();
             }
             continue;
@@ -591,9 +675,11 @@ fn label(v: &serde_json::Value) -> String {
 
 fn filtered(found: Candidates, cur: &str) -> Candidates {
     let mut seen = BTreeSet::new();
+    // A sentinel is the shell's to filter, by the word being typed.
+    let sentinel = |v: &String| v == FILES || v == DIRS;
     found
         .into_iter()
-        .filter(|v| v.starts_with(cur) && seen.insert(v.clone()))
+        .filter(|v| (v.starts_with(cur) || sentinel(v)) && seen.insert(v.clone()))
         .collect()
 }
 

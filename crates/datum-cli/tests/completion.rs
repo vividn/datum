@@ -399,6 +399,119 @@ fn the_scripts_complete_a_line() {
     }
 }
 
+/// A file position — a usage line's `PATH`, `FILE` or `DIR` — is the
+/// shell's to answer (da-2oz7k): `__complete` says so with a line of its
+/// own, a tab then `file` or `dir`, beside `-` where the line offers
+/// stdin, and at no other position.
+#[test]
+fn a_file_position_asks_the_shell_for_its_files() {
+    let env = Env::new();
+    let (file, dir) = ("\tfile", "\tdir");
+    for (line, want) in [
+        ("db v2import ", vec!["-", file]),
+        ("db v2import --from ", vec![file]),
+        ("db backup ", vec!["-", file]),
+        ("db restore --if-unchanged FP ", vec!["-", file]),
+        ("kit install ", vec!["-", file]),
+        ("kit export starter ", vec![file]),
+        ("sync chain invite --admin-key ", vec![file]),
+        ("sync admin add ", vec![file]),
+        ("db backup --to ", vec![dir]),
+        ("db backup --list ", vec![dir]),
+        // A flag's value that is not a file, and a position past the file.
+        ("db backup --every ", vec![]),
+        ("kit install k.toml ", vec![]),
+    ] {
+        assert_eq!(env.complete(line), want, "{line:?}");
+    }
+    for line in ["", "switch mood ", "get ", "occur tea "] {
+        let found = env.complete(line);
+        assert!(
+            !found.iter().any(|c| c.contains('\t')),
+            "{line:?}: {found:?}"
+        );
+    }
+}
+
+/// Each script hands a file position to its shell's own file completion and
+/// never offers the sentinel as a candidate: bash by `compgen` and by
+/// bash-completion's `_filedir`, zsh by `_files` (stubbed: it needs a live
+/// widget), fish by its path completion.
+#[test]
+fn the_scripts_translate_a_file_position() {
+    let env = Env::new();
+    let cwd = env.tmp.path().join("cwd");
+    std::fs::create_dir_all(cwd.join("sub")).unwrap();
+    std::fs::write(cwd.join("a.json"), "{}").unwrap();
+    let bin = Path::new(env!("CARGO_BIN_EXE_datum")).parent().unwrap();
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let bash = |pre: &str| {
+        format!(
+            "{pre}\nsource <(datum completions bash)\n\
+             for line in 'datum db v2import' 'datum db backup --to'; do\n\
+               read -ra W <<<\"$line\"; COMP_WORDS=(\"${{W[@]}}\" ''); COMP_CWORD=${{#W[@]}}\n\
+               COMPREPLY=(); _datum; printf '%s\\n' \"${{COMPREPLY[@]}}\" ==\n\
+             done"
+        )
+    };
+    let with_filedir = bash(
+        "source /usr/share/bash-completion/bash_completion || exit 3\n\
+         declare -F _filedir >/dev/null || exit 4",
+    );
+    let zsh = "source <(datum completions zsh)\n\
+               compadd() { print -rl -- ${(P)${@[-1]}} }; _files() { print -r -- \"_files $*\" }\n\
+               words=(datum db v2import ''); CURRENT=4; _datum; print -r -- '=='\n\
+               words=(datum db backup --to ''); CURRENT=5; _datum; print -r -- '=='";
+    let fish = "datum completions fish | source\n\
+                complete -C 'datum db v2import '; echo ==\n\
+                complete -C 'datum db backup --to '; echo ==";
+    for (shell, args) in [
+        ("bash", ["--norc", "-c", &bash("")]),
+        ("bash", ["--norc", "-c", &with_filedir]),
+        ("zsh", ["-f", "-c", zsh]),
+        ("fish", ["--no-config", "-c", fish]),
+    ] {
+        let cmd = env.cmd();
+        let out = Command::new(shell)
+            .args(args)
+            .current_dir(&cwd)
+            .envs(cmd.get_envs().filter_map(|(k, v)| Some((k, v?))))
+            .env("PATH", &path)
+            .output();
+        let Ok(out) = out else {
+            eprintln!("{shell} not installed: skipped");
+            continue;
+        };
+        if shell == "bash" && matches!(out.status.code(), Some(3 | 4)) {
+            eprintln!("bash-completion not installed: skipped");
+            continue;
+        }
+        let text = String::from_utf8_lossy(&out.stdout);
+        let blocks: Vec<Vec<&str>> = text
+            .split("==\n")
+            .map(|b| b.lines().map(|l| l.split('\t').next().unwrap()).collect())
+            .collect();
+        let ctx = format!("{shell}: {text:?} {}", String::from_utf8_lossy(&out.stderr));
+        assert!(!text.contains("\tfile") && !text.contains("\tdir"), "{ctx}");
+        assert_eq!(blocks.len(), 3, "{ctx}");
+        let (files, dirs) = (&blocks[0], &blocks[1]);
+        if shell == "zsh" {
+            assert_eq!(files, &["-", "_files "], "{ctx}");
+            assert_eq!(dirs, &["_files -/"], "{ctx}");
+        } else {
+            let sub = if shell == "fish" { "sub/" } else { "sub" };
+            for want in ["-", "a.json", sub] {
+                assert!(files.contains(&want), "{want}: {ctx}");
+            }
+            assert_eq!(dirs, &[sub], "{ctx}");
+        }
+    }
+}
+
 /// With `datum` only an alias and nothing of that name on PATH the scripts
 /// still complete (da-1f3z5): zsh under compsys's own options, which turn
 /// aliases off, and interactive bash, which expands one at the TAB. With no

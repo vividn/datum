@@ -7,6 +7,17 @@ function __datum_complete
     # now (da-ejoes). With none, or that one gone: `datum`.
     set -l exe @DATUM_EXE@
     test -x "$exe"; or set exe datum
-    $exe __complete --raw (math (count $words) - 1) -- $words 2>/dev/null
+    # A file position is a line of its own, a tab then `file` or `dir`:
+    # fish's own path completion answers it.
+    for line in ($exe __complete --raw (math (count $words) - 1) -- $words 2>/dev/null)
+        switch $line
+            case \tfile
+                __fish_complete_path (commandline -ct)
+            case \tdir
+                __fish_complete_directories (commandline -ct)
+            case '*'
+                printf '%s\n' $line
+        end
+    end
 end
 complete -c datum -f -a '(__datum_complete)'

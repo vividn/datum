@@ -18,6 +18,24 @@ _datum() {
   else
     COMPREPLY=($(datum __complete "$cword" -- "${words[@]}" 2>/dev/null))
   fi
+  # A file position is a line of its own, a tab then `file` or `dir`: the
+  # shell's file completion answers it, beside a `-` if that was offered.
+  local i want=
+  for i in "${!COMPREPLY[@]}"; do
+    [[ ${COMPREPLY[i]} == $'\t'* ]] || continue
+    want=${COMPREPLY[i]#$'\t'}
+    unset 'COMPREPLY[i]'
+  done
+  if [[ $want ]]; then
+    local opt=
+    [[ $want == dir ]] && opt=-d
+    if declare -F _filedir >/dev/null; then
+      _filedir $opt
+    else
+      COMPREPLY+=($(compgen ${opt:--f} -- "$cur"))
+      compopt -o filenames 2>/dev/null
+    fi
+  fi
   [[ ${#COMPREPLY[@]} -eq 1 && ${COMPREPLY[0]} == *= ]] && compopt -o nospace 2>/dev/null
   declare -F __ltrim_colon_completions >/dev/null && __ltrim_colon_completions "$cur"
   return 0

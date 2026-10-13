@@ -65,7 +65,11 @@ pub struct CommandSpec {
     /// Optional long-form prose for Markdown / man output.
     pub long_description: Option<&'static str>,
     /// Usage lines, rendered under the `USAGE:` heading. Each entry becomes
-    /// one line and is indented with two spaces by the renderer.
+    /// one line and is indented with two spaces by the renderer. Tab
+    /// completion reads their placeholders (`datum __complete`): a word
+    /// ending in `FILE` or `PATH` is a file, one ending in `DIR` a
+    /// directory, `-` among its alternatives stdin, so spell a file
+    /// argument that way (`<PATH | ->`, `--to DIR`) or it completes nothing.
     pub usage: &'static [&'static str],
     /// Positional arguments. Optional metadata for Markdown/man output;
     /// the bare `--help` text relies on `usage` strings.

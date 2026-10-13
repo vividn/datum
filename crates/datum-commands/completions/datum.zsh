@@ -4,7 +4,7 @@
 # (`datum completions install`) or with `source <(datum completions zsh)`.
 _datum() {
   local -a vals keys cmd
-  local line out rc
+  local line out rc want
   # Ask the datum that installed this file, not whatever `datum` names now
   # (da-ejoes). With none, or that one gone: `datum`. Completion runs with
   # aliases off (compinit's NO_aliases), so a `datum` that is only an alias
@@ -26,10 +26,14 @@ _datum() {
   fi
   for line in "${(@f)out}"; do
     [[ -n $line ]] || continue
-    if [[ $line == *= ]]; then keys+=("$line"); else vals+=("$line"); fi
+    # A file position: a tab then `file` or `dir`, for zsh's own `_files`.
+    if [[ $line == $'\t'* ]]; then want=${line#$'\t'}
+    elif [[ $line == *= ]]; then keys+=("$line"); else vals+=("$line"); fi
   done
   (( $#vals )) && compadd -a vals
   (( $#keys )) && compadd -S '' -a keys
+  [[ $want == file ]] && _files
+  [[ $want == dir ]] && _files -/
   return 0
 }
 if [[ $zsh_eval_context[-1] == loadautofunc ]]; then
