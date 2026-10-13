@@ -173,6 +173,15 @@ pub(super) fn infer_typed_value(
         return Ok(Some(Value::String(name)));
     }
 
+    let state_key = match path {
+        "state.id" => Some("state"),
+        "following_state" => Some(path),
+        _ => None,
+    };
+    if let Some(e) = state_key.and_then(|key| bracket_state_error(key, value)) {
+        return Err(e);
+    }
+
     let declared = compat.types.and_then(|t| t.get(path)).copied();
     let Some(ty) = declared.or_else(|| KeyType::of_suffix(path)) else {
         return Ok(infer_type(value));
@@ -499,6 +508,32 @@ fn relaxed_json(value: &str) -> Option<Value> {
         }
     }
     serde_json::from_str(&out).ok()
+}
+
+/// da-cktfm: a state in brackets that is not JSON (`[a,b]`) would be split
+/// by the comma rule with its brackets kept, `["[a","b]"]` — no state
+/// anyone meant, and one that hides a sentinel from da-z9efl's refusal.
+/// Refused as a typed list key's bracket text is, in its words.
+pub fn bracket_state_error(key: &str, value: &str) -> Option<ParseError> {
+    // Any comma: a switch splits `[a, b]` too, where the comma rule would not.
+    if !value.starts_with('[') || !value.contains(',') || json(value).is_some() {
+        return None;
+    }
+    let items: Vec<&str> = value
+        .trim_matches(['[', ']'])
+        .split(',')
+        .map(str::trim)
+        .collect();
+    Some(ParseError::WrongType {
+        key: key.to_string(),
+        ty: "list",
+        value: value.to_string(),
+        hint: format!(
+            ": the bracket form is JSON: {}, or write {}",
+            Value::from(items.clone()),
+            items.join(",")
+        ),
+    })
 }
 
 /// The items of a comma list, or `None` when `value` is not one: split

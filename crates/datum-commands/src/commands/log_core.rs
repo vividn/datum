@@ -1556,6 +1556,9 @@ fn parse_switch_state_token(s: &str) -> Result<JsonValue> {
 /// this pre-check, an interior `,,` inside a comma token would
 /// silently become a `null` array element.
 pub(crate) fn validate_switch_state_token(s: &str) -> Result<()> {
+    if let Some(e) = datum_parse::input::data_args::bracket_state_error("state", s) {
+        return Err(e.into());
+    }
     if !s.contains(',') {
         return Ok(());
     }

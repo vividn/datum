@@ -1183,7 +1183,7 @@ fn wide_now_db(dir: &tempfile::TempDir) -> std::path::PathBuf {
     run_datum(
         &db,
         &[],
-        &["switch", "body", "[vertical,sitting,typing]", "-t", "-30"],
+        &["switch", "body", "vertical,sitting,typing", "-t", "-30"],
     );
     run_datum(
         &db,

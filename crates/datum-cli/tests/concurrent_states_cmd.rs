@@ -381,3 +381,48 @@ fn update_refuses_a_sentinel_it_sets_but_edits_an_old_row() {
     let task = datum_core::test_util::logged_entries(&db, "task");
     assert_eq!(task[0].state, Some(json!(["reading", "TRACKED"])));
 }
+
+/// da-cktfm: a state in brackets that is not JSON was split on its commas
+/// with the brackets kept (`[a,IGNORED]` → `["[a","IGNORED]"]`), which also
+/// slipped a sentinel past the refusal above. It is refused on every
+/// spelling of a state, naming the JSON form; the JSON forms and a data
+/// key's bracket text stand.
+#[test]
+fn a_bracketed_state_that_is_not_json_is_refused() {
+    let db = fresh_db();
+    for argv in [
+        &["switch", "task", "[a,IGNORED]"][..],
+        &["switch", "task", "[a, IGNORED]"],
+        &["switch", "task", "state=[a,b]"],
+        &["switch", "task", "state=[a, b]"],
+        &["start", "task", "state=[a,b]"],
+        &["switch", "task", "a", "5m", "following_state=[a,b]"],
+        &["switch", "task", "a", "-L", "[a,b]"],
+    ] {
+        let err = run_cli(argv, &db).expect_err("refused").to_string();
+        assert!(
+            err.contains(r#"" is not a list: the bracket form is JSON: ["a","#),
+            "{argv:?}: {err}"
+        );
+    }
+    assert!(datum_core::test_util::logged_all(&db).is_empty());
+
+    run_cli(&["switch", "task", "a"], &db).expect("a plain state");
+    let hid = datum_core::test_util::logged_entries(&db, "task")[0]
+        .hid
+        .to_string();
+    let err = run_cli(&["update", &hid, "state=[a,b]"], &db).expect_err("refused");
+    assert!(err.to_string().contains("is not a list"), "{err}");
+
+    run_cli(&["switch", "task", r#"["a","b"]"#], &db).expect("JSON");
+    run_cli(&["switch", "task", "state=['c','d']", "-t", "+1"], &db).expect("relaxed JSON");
+    run_cli(&["note", "memo", "tags=[a,b]"], &db).expect("a data key");
+    let states: Vec<_> = datum_core::test_util::logged_entries(&db, "task")
+        .into_iter()
+        .map(|e| e.state)
+        .collect();
+    assert!(states.contains(&Some(json!(["a", "b"]))), "{states:?}");
+    assert!(states.contains(&Some(json!(["c", "d"]))), "{states:?}");
+    let memo = datum_core::test_util::logged_entries(&db, "memo");
+    assert_eq!(memo[0].data.as_ref().unwrap()["tags"], json!(["[a", "b]"]));
+}
