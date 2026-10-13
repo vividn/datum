@@ -82,8 +82,8 @@ why = "da-x15of: a `*_time` value parses as `-t` parses its value (vividn, 10-08
 [[rule]]
 id = "dayview-axis"
 status = "open"
-what = "the time axis: v2 draws 25 ticks (a closing `00` at the day's end), each 6px long, labels 4px lower and stroked as well as filled white, and the axis as a path with 6px end hooks; daydumb draws 24 ticks 4px long, unstroked labels, and a plain line"
-why = "No recorded reason found."
+what = "the hour labels: v2 draws them at 9px and centres the closing `00` on its tick, half off the picture; daydumb sizes them to fill the strip below the ticks (11.1px in its 15px) and insets the closing `00` to end where the axis does"
+why = "The size is da-l3tzj: vividn asked for hour numbers that fill the strip, and v2's 9px is one line in `axis_label_size` if he prefers it. The inset is da-i37p2: vividn allowed v2's crop or an inset, and a `00` cut at 11.1px reads as `0`. The ticks (25, 6px) and the hooked axis path match v2."
 
 [[rule]]
 id = "dayview-day-label-x"

@@ -62,7 +62,7 @@ async function beside(page, pane) {
 		// A label the steps take the place of is not drawn; the far one is.
 		const labels = all.filter((l) => getComputedStyle(l).visibility !== 'hidden');
 		const label = r(far);
-		const axis = r(p.querySelector('svg.svg line.axis'));
+		const axis = r(p.querySelector('svg.svg .axis'));
 		const bands = [...p.querySelectorAll('svg.svg .day-data rect')].map(r);
 		const steps = [...p.querySelectorAll('.nowview-steps button')].map(r);
 		const wrong = [];

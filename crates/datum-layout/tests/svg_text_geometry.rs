@@ -375,3 +375,68 @@ fn clock_never_shares_room_with_a_tick_label() {
         }
     }
 }
+
+/// Where the time axis ends, in the plot group's coordinates: the hooked
+/// path's origin plus its run (`H`, d3's half-pixel past the end).
+fn axis_end(svg: &str) -> f64 {
+    let tag = &svg[svg.find(r#"<path class="axis""#).expect("axis path")..];
+    let tag = &tag[..tag.find('>').unwrap()];
+    let d = str_attr(tag, "d").unwrap();
+    let run: f64 = d[d.find('H').unwrap() + 1..d.rfind('V').unwrap()]
+        .parse()
+        .unwrap();
+    translate_of(tag).0 + run - 0.5
+}
+
+/// The `x1` of every tick mark, in the plot group's coordinates.
+fn tick_xs(svg: &str) -> Vec<f64> {
+    svg.split(r#"<line class="tick" "#)
+        .skip(1)
+        .map(|t| attr(&t[..t.find('>').unwrap()], "x1").unwrap())
+        .collect()
+}
+
+/// A full day's axis ends on midnight, an hour it reaches, so it closes on
+/// a 25th tick and its `00`, inset to end where the axis does (da-i37p2).
+/// Squeezed by that inset, the `00` gives way alone rather than thin the
+/// other hours to every third: at 600px all 24 keep their labels.
+/// Nowview's axis ends on the now-line, an instant its clock owns: no mark.
+#[test]
+fn a_full_day_closes_on_midnight_and_the_now_line_on_no_tick() {
+    for width in WIDTHS {
+        for orientation in [Orientation::Horizontal, Orientation::Vertical] {
+            let svg = dayview_at(width, orientation);
+            assert_eq!(tick_xs(&svg).len(), 25, "{orientation:?} dayview @ {width}");
+        }
+        let svg = dayview_at(width, Orientation::Horizontal);
+        let end = 2.0 + axis_end(&svg); // the plot's margin
+        assert!((tick_xs(&svg)[24] + 2.0 - end).abs() < 1e-6);
+        let hours: Vec<TextBox> = text_boxes(&svg)
+            .into_iter()
+            .filter(|b| b.label.len() == 2 && b.label.chars().all(|c| c.is_ascii_digit()))
+            .collect();
+        let last = hours.last().unwrap();
+        match hours.len() {
+            24 => assert_eq!(last.label, "23", "dayview @ {width}"),
+            n => {
+                assert!(n == 25 || n == 9, "dayview @ {width}: {n} hour labels");
+                assert_eq!(last.label, "00", "dayview @ {width}");
+                assert!(
+                    (last.x1 - end).abs() < 1e-6,
+                    "dayview @ {width}: the closing 00 ends at {:.1}, the axis at {end:.1}",
+                    last.x1,
+                );
+            }
+        }
+        if width == 600.0 {
+            assert_eq!(hours.len(), 24, "the 00 gives way alone at 600px");
+        }
+
+        let svg = nowview_at(width, 30.0);
+        let end = axis_end(&svg);
+        assert!(
+            tick_xs(&svg).iter().all(|x| (x - end).abs() > 1.0),
+            "nowview @ {width}: a tick under the now-line at {end:.1}",
+        );
+    }
+}

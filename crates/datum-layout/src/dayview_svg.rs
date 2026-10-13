@@ -41,7 +41,32 @@ const STRIPE_WIDTH_PX: f64 = 8.0;
 /// Advance width of one character as a fraction of the font size. The
 /// renderer has no font engine, so axis-label placement (and the geometry
 /// tests that check it) estimate text extents with this ratio.
+///
+/// Calibrated for a MONOSPACED face (0.6 is its standard advance), which is
+/// what everything but the date labels and the hour axis still draws in.
+/// Those two are proportional (da-l3tzj) and stay under it for the strings
+/// they carry, measured once in each face named below: the hours are
+/// digits, 0.556 em in Arial and its metric twins, and the date labels a
+/// closed set (`Wed`, `May 22`, `2026`) whose widest is 3.08 em in Times
+/// against the 4 em strip they are given. Those numbers were measured
+/// outside the renderer (fontTools, against the closed label alphabet):
+/// `svg_text_geometry.rs` estimates with this same ratio, so it cannot
+/// check it.
 pub const CHAR_ADVANCE_RATIO: f64 = 0.6;
+
+/// The date labels' face: v2's, which set none and so took librsvg's
+/// default. Named before the generic family because a PNG maps every
+/// generic family to the first face it finds.
+const DATE_LABEL_FONT: &str = "'Times New Roman', 'Liberation Serif', serif";
+/// The hour axis's face, as v2's (d3's `sans-serif`), named for the same
+/// reason. Its labels are stroked as v2's are, which thickens the ink
+/// without moving the advance [`text_width`] estimates, as bold would.
+const AXIS_LABEL_FONT: &str = "Arial, 'Liberation Sans', Helvetica, sans-serif";
+/// A digit's height as a fraction of the font size (0.716 in Arial).
+const DIGIT_HEIGHT_RATIO: f64 = 0.72;
+/// How far a tick, and each of the axis's end hooks, reaches out of the
+/// axis line: d3's `tickSize`, as v2 drew it.
+const TICK_LENGTH: f64 = 6.0;
 
 /// Estimated rendered width (px) of `label` at `font_size`.
 pub fn text_width(label: &str, font_size: f64) -> f64 {
@@ -54,17 +79,20 @@ pub fn text_width(label: &str, font_size: f64) -> f64 {
 /// the size nowview's default 22px horizontal strip draws at.
 pub const VERTICAL_AXIS_LABEL_MAX: f64 = 16.0;
 
-/// The time axis's label font size: the strip less a little air, and in a
-/// vertical strip no larger than [`VERTICAL_AXIS_LABEL_MAX`]. `0` — a
-/// strip too thin for text — draws no labels.
+/// The time axis's label font size: in a horizontal strip the digits fill
+/// it from a pixel past the ticks to its bottom edge (da-l3tzj), and in a
+/// vertical one it is the strip less a little air, no larger than
+/// [`VERTICAL_AXIS_LABEL_MAX`]. `0` — a strip too thin for text — draws no
+/// labels.
 pub fn axis_label_size(orientation: Orientation, time_axis_height: f64) -> f64 {
     if time_axis_height <= 6.0 {
         return 0.0;
     }
-    let size = (time_axis_height - 6.0).max(6.0);
     match orientation {
-        Orientation::Horizontal => size,
-        Orientation::Vertical => size.min(VERTICAL_AXIS_LABEL_MAX),
+        Orientation::Horizontal => {
+            ((time_axis_height - TICK_LENGTH - 1.0) / DIGIT_HEIGHT_RATIO).max(6.0)
+        }
+        Orientation::Vertical => (time_axis_height - 6.0).clamp(6.0, VERTICAL_AXIS_LABEL_MAX),
     }
 }
 
@@ -227,7 +255,7 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 };
                 let _ = write!(
                     &mut out,
-                    r#"<text class="date-label" x="{lx}" y="{ly}" dy="0.35em" fill="{c}" text-anchor="{a}" font-size="{fs}">{txt}</text>"#,
+                    r#"<text class="date-label" x="{lx}" y="{ly}" dy="0.35em" fill="{c}" text-anchor="{a}" font-size="{fs}" font-family="{DATE_LABEL_FONT}">{txt}</text>"#,
                     c = TEXT_COLOR,
                     fs = layout.label_font_size,
                     a = anchor,
@@ -903,13 +931,14 @@ struct LabelSlot {
 ///
 /// The tick count is fixed while the render size is not, so a narrow render
 /// packs labels until they collide (da-sv8c). Labels that would cross an
-/// end of the range are inset to sit flush against it; if everything still
-/// doesn't fit, the series is thinned to its major ticks and then greedily
-/// to whatever survives.
+/// end of the range are inset to sit flush against it. The last label,
+/// squeezed by that inset (the closing `00`, da-i37p2), gives way alone
+/// rather than thin the rest; if more still doesn't fit, the series is
+/// thinned to its major ticks and then greedily to whatever survives.
 fn fit_axis_labels(slots: &[LabelSlot], lo: f64, hi: f64) -> Vec<(usize, f64)> {
     let all: Vec<usize> = (0..slots.len()).collect();
     let placed = greedy_place(&all, slots, lo, hi);
-    if placed.len() == all.len() {
+    if placed.len() + 1 >= all.len() && placed.iter().zip(&all).all(|(p, i)| p.0 == *i) {
         return placed;
     }
     let majors: Vec<usize> = all.iter().copied().filter(|&i| slots[i].is_major).collect();
@@ -946,14 +975,18 @@ fn emit_time_axis(
     opts: DayviewSvgOpts<'_>,
 ) {
     let label_size = axis_label_size(layout.orientation, layout.time_axis_height);
-    let n = layout.axis_ticks.len();
-    // The trailing tick is the day boundary / the now-line's own position;
-    // its label is never drawn. A strip too thin for text carries no ticks
-    // at all, as before.
-    let labelled: &[DayviewAxisTick] = if label_size > 0.0 {
-        layout.axis_ticks.get(..n.saturating_sub(1)).unwrap_or(&[])
+    // Every labelled tick is drawn, the closing midnight's `00` too: a full
+    // day's axis ends on an hour it reaches (da-i37p2). A tick with no label
+    // is an instant an overlay owns — nowview's now-line, under its clock —
+    // and gets no mark. A strip too thin for text carries no ticks at all.
+    let labelled: Vec<&DayviewAxisTick> = if label_size > 0.0 {
+        layout
+            .axis_ticks
+            .iter()
+            .filter(|t| !t.label.is_empty())
+            .collect()
     } else {
-        &[]
+        Vec::new()
     };
     let horizontal = matches!(layout.orientation, Orientation::Horizontal);
     let axis_origin = if horizontal { geom.data_x } else { geom.data_y };
@@ -966,15 +999,15 @@ fn emit_time_axis(
             center: axis_origin + t.time_pos,
             extent: if horizontal {
                 text_width(&t.label, label_size)
-            } else if t.label.is_empty() {
-                0.0
             } else {
                 label_size
             },
             is_major: t.is_major,
         })
         .collect();
-    // Labels stay inside the plot group and clear of any end overlay.
+    // Labels stay inside the plot group and clear of any end overlay, so
+    // the closing `00` is inset flush to the axis end, as the leading one
+    // is to the plot's edge when no date column holds its overhang.
     let placed = fit_axis_labels(
         &slots,
         0.0,
@@ -987,10 +1020,11 @@ fn emit_time_axis(
             let axis_y = geom.data_y + geom.cross_total;
             let _ = write!(
                 out,
-                r#"<line class="axis" x1="{x0}" x2="{x1}" y1="{y}" y2="{y}" stroke="{c}"/>"#,
-                x0 = geom.data_x,
-                x1 = geom.data_x + layout.time_axis_extent,
+                r#"<path class="axis" transform="translate({x},{y})" d="M0.5,{t}V0.5H{end}V{t}" fill="none" stroke="{c}"/>"#,
+                x = geom.data_x,
                 y = axis_y,
+                t = TICK_LENGTH,
+                end = layout.time_axis_extent + 0.5,
                 c = AXIS_COLOR,
             );
             let mut placed = placed.iter().peekable();
@@ -1001,7 +1035,7 @@ fn emit_time_axis(
                     r#"<line class="tick" x1="{x}" x2="{x}" y1="{y0}" y2="{y1}" stroke="{c}"/>"#,
                     x = x,
                     y0 = axis_y,
-                    y1 = axis_y + 4.0,
+                    y1 = axis_y + TICK_LENGTH,
                     c = AXIS_COLOR,
                 );
                 let Some((_, label_x)) = placed.next_if(|(j, _)| *j == i) else {
@@ -1009,9 +1043,9 @@ fn emit_time_axis(
                 };
                 let _ = write!(
                     out,
-                    r#"<text class="tick-label" x="{x}" y="{y}" text-anchor="middle" fill="{c}" font-size="{fs}">{label}</text>"#,
+                    r#"<text class="tick-label" x="{x}" y="{y}" text-anchor="middle" fill="{c}" stroke="{c}" font-size="{fs}" font-family="{AXIS_LABEL_FONT}">{label}</text>"#,
                     x = label_x,
-                    y = axis_y + label_size + 2.0,
+                    y = axis_y + layout.time_axis_height,
                     c = TEXT_COLOR,
                     fs = label_size,
                     label = tick.label,
@@ -1023,10 +1057,11 @@ fn emit_time_axis(
             let axis_x = geom.data_x;
             let _ = write!(
                 out,
-                r#"<line class="axis" x1="{x}" x2="{x}" y1="{y0}" y2="{y1}" stroke="{c}"/>"#,
+                r#"<path class="axis" transform="translate({x},{y})" d="M-{t},0.5H0.5V{end}H-{t}" fill="none" stroke="{c}"/>"#,
                 x = axis_x,
-                y0 = geom.data_y,
-                y1 = geom.data_y + layout.time_axis_extent,
+                y = geom.data_y,
+                t = TICK_LENGTH,
+                end = layout.time_axis_extent + 0.5,
                 c = AXIS_COLOR,
             );
             let mut placed = placed.iter().peekable();
@@ -1035,7 +1070,7 @@ fn emit_time_axis(
                 let _ = write!(
                     out,
                     r#"<line class="tick" x1="{x0}" x2="{x1}" y1="{y}" y2="{y}" stroke="{c}"/>"#,
-                    x0 = axis_x - 4.0,
+                    x0 = axis_x - TICK_LENGTH,
                     x1 = axis_x,
                     y = y,
                     c = AXIS_COLOR,
@@ -1045,7 +1080,7 @@ fn emit_time_axis(
                 };
                 let _ = write!(
                     out,
-                    r#"<text class="tick-label" x="{x}" y="{y}" text-anchor="end" fill="{c}" font-size="{fs}" dy="0.35em">{label}</text>"#,
+                    r#"<text class="tick-label" x="{x}" y="{y}" text-anchor="end" fill="{c}" stroke="{c}" font-size="{fs}" font-family="{AXIS_LABEL_FONT}" dy="0.35em">{label}</text>"#,
                     x = axis_x - VERTICAL_AXIS_LABEL_INSET,
                     y = label_y,
                     c = TEXT_COLOR,
@@ -1499,7 +1534,7 @@ mod tests {
         assert!(svg.contains(r#"text-anchor="end" font-size="11" fill="white" stroke="black" stroke-width="2" paint-order="stroke" pointer-events="none">UTC+2</text>"#));
         // The dot an hour after the jump is at 09:00, and nothing forks.
         assert!(groups[1].contains(r#"<circle class="point-bg" cx="900" cy="17.5" r="7.5""#));
-        assert!(!svg.contains("<path"));
+        assert!(!svg.contains(r#"<path class="block""#));
     }
 
     /// The clock went from 07:00 back to 06:00: each stretch has a lane,

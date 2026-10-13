@@ -226,9 +226,8 @@ pub fn nowview_axis_ticks_around(
             m += minor;
         }
     }
-    // Sort ascending by time_pos so the renderer's "skip last" logic in
-    // emit_time_axis (which omits the trailing tick label) drops the now
-    // tick rather than a meaningful one.
+    // Sort ascending by time_pos: emit_time_axis places labels in order.
+    // The now tick, unlabelled, gets no mark there; the now-line owns it.
     ticks.sort_by(|a, b| {
         a.time_pos
             .partial_cmp(&b.time_pos)

@@ -1,106 +1,56 @@
-+line x1=1040 y1=102 x2=1040 y2=106 stroke=white
--line x1=1041 y1=102 x2=1041 y2=108 stroke=white
-+line x1=1120 y1=102 x2=1120 y2=106 stroke=white
--line x1=1120 y1=102 x2=1120 y2=108 stroke=white
-+line x1=1200 y1=102 x2=1200 y2=106 stroke=white
--line x1=1200 y1=102 x2=1200 y2=108 stroke=white
-+line x1=1280 y1=102 x2=1280 y2=106 stroke=white
--line x1=1280 y1=102 x2=1280 y2=108 stroke=white
-+line x1=1359 y1=102 x2=1359 y2=106 stroke=white
--line x1=1360 y1=102 x2=1360 y2=108 stroke=white
-+line x1=1439 y1=102 x2=1439 y2=106 stroke=white
--line x1=1440 y1=102 x2=1440 y2=108 stroke=white
-+line x1=1519 y1=102 x2=1519 y2=106 stroke=white
--line x1=1520 y1=102 x2=1520 y2=108 stroke=white
-+line x1=1599 y1=102 x2=1599 y2=106 stroke=white
--line x1=1599 y1=102 x2=1599 y2=108 stroke=white
-+line x1=162 y1=102 x2=162 y2=106 stroke=white
--line x1=162 y1=102 x2=162 y2=108 stroke=white
-+line x1=1679 y1=102 x2=1679 y2=106 stroke=white
--line x1=1679 y1=102 x2=1679 y2=108 stroke=white
-+line x1=1759 y1=102 x2=1759 y2=106 stroke=white
--line x1=1759 y1=102 x2=1759 y2=108 stroke=white
-+line x1=1838 y1=102 x2=1838 y2=106 stroke=white
--line x1=1839 y1=102 x2=1839 y2=108 stroke=white
-+line x1=1918 y1=102 x2=1918 y2=106 stroke=white
--line x1=1919 y1=102 x2=1919 y2=108 stroke=white
--line x1=1999 y1=102 x2=1999 y2=108 stroke=white
-+line x1=242 y1=102 x2=242 y2=106 stroke=white
--line x1=242 y1=102 x2=242 y2=108 stroke=white
-+line x1=322 y1=102 x2=322 y2=106 stroke=white
--line x1=322 y1=102 x2=322 y2=108 stroke=white
-+line x1=401 y1=102 x2=401 y2=106 stroke=white
--line x1=402 y1=102 x2=402 y2=108 stroke=white
-+line x1=481 y1=102 x2=481 y2=106 stroke=white
--line x1=482 y1=102 x2=482 y2=108 stroke=white
-+line x1=561 y1=102 x2=561 y2=106 stroke=white
--line x1=562 y1=102 x2=562 y2=108 stroke=white
-+line x1=641 y1=102 x2=641 y2=106 stroke=white
--line x1=641 y1=102 x2=641 y2=108 stroke=white
-+line x1=721 y1=102 x2=721 y2=106 stroke=white
--line x1=721 y1=102 x2=721 y2=108 stroke=white
-+line x1=801 y1=102 x2=801 y2=106 stroke=white
--line x1=801 y1=102 x2=801 y2=108 stroke=white
-+line x1=82 y1=102 x2=1998 y2=102 stroke=white
-+line x1=82 y1=102 x2=82 y2=106 stroke=white
--line x1=83 y1=102 x2=83 y2=108 stroke=white
-+line x1=880 y1=102 x2=880 y2=106 stroke=white
--line x1=881 y1=102 x2=881 y2=108 stroke=white
-+line x1=960 y1=102 x2=960 y2=106 stroke=white
--line x1=961 y1=102 x2=961 y2=108 stroke=white
--path x=82 y=102 d=M0.5,6V0.5H1916.5V6 fill=none stroke=white
-+text x=1040 y=113 "12" fill=white text-anchor=middle font-size=9
++text x=1040 y=117 "12" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=1041 y=117 "12" fill=white stroke=white text-anchor=middle font-size=9
-+text x=1120 y=113 "13" fill=white text-anchor=middle font-size=9
++text x=1120 y=117 "13" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=1120 y=117 "13" fill=white stroke=white text-anchor=middle font-size=9
-+text x=1200 y=113 "14" fill=white text-anchor=middle font-size=9
++text x=1200 y=117 "14" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=1200 y=117 "14" fill=white stroke=white text-anchor=middle font-size=9
-+text x=1280 y=113 "15" fill=white text-anchor=middle font-size=9
++text x=1280 y=117 "15" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=1280 y=117 "15" fill=white stroke=white text-anchor=middle font-size=9
-+text x=1359 y=113 "16" fill=white text-anchor=middle font-size=9
++text x=1359 y=117 "16" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=1360 y=117 "16" fill=white stroke=white text-anchor=middle font-size=9
-+text x=1439 y=113 "17" fill=white text-anchor=middle font-size=9
++text x=1439 y=117 "17" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=1440 y=117 "17" fill=white stroke=white text-anchor=middle font-size=9
-+text x=1519 y=113 "18" fill=white text-anchor=middle font-size=9
++text x=1519 y=117 "18" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=1520 y=117 "18" fill=white stroke=white text-anchor=middle font-size=9
-+text x=1599 y=113 "19" fill=white text-anchor=middle font-size=9
++text x=1599 y=117 "19" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=1599 y=117 "19" fill=white stroke=white text-anchor=middle font-size=9
-+text x=162 y=113 "01" fill=white text-anchor=middle font-size=9
++text x=162 y=117 "01" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=162 y=117 "01" fill=white stroke=white text-anchor=middle font-size=9
-+text x=1679 y=113 "20" fill=white text-anchor=middle font-size=9
++text x=1679 y=117 "20" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=1679 y=117 "20" fill=white stroke=white text-anchor=middle font-size=9
-+text x=1759 y=113 "21" fill=white text-anchor=middle font-size=9
++text x=1759 y=117 "21" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=1759 y=117 "21" fill=white stroke=white text-anchor=middle font-size=9
-+text x=1838 y=113 "22" fill=white text-anchor=middle font-size=9
++text x=1838 y=117 "22" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=1839 y=117 "22" fill=white stroke=white text-anchor=middle font-size=9
-+text x=1918 y=113 "23" fill=white text-anchor=middle font-size=9
++text x=1918 y=117 "23" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=1919 y=117 "23" fill=white stroke=white text-anchor=middle font-size=9
++text x=1991 y=117 "00" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=1999 y=117 "00" fill=white stroke=white text-anchor=middle font-size=9
-+text x=242 y=113 "02" fill=white text-anchor=middle font-size=9
++text x=242 y=117 "02" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=242 y=117 "02" fill=white stroke=white text-anchor=middle font-size=9
-+text x=322 y=113 "03" fill=white text-anchor=middle font-size=9
++text x=322 y=117 "03" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=322 y=117 "03" fill=white stroke=white text-anchor=middle font-size=9
-+text x=401 y=113 "04" fill=white text-anchor=middle font-size=9
++text x=401 y=117 "04" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=402 y=117 "04" fill=white stroke=white text-anchor=middle font-size=9
-+text x=481 y=113 "05" fill=white text-anchor=middle font-size=9
++text x=481 y=117 "05" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=482 y=117 "05" fill=white stroke=white text-anchor=middle font-size=9
-+text x=561 y=113 "06" fill=white text-anchor=middle font-size=9
++text x=561 y=117 "06" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=562 y=117 "06" fill=white stroke=white text-anchor=middle font-size=9
-+text x=641 y=113 "07" fill=white text-anchor=middle font-size=9
++text x=641 y=117 "07" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=641 y=117 "07" fill=white stroke=white text-anchor=middle font-size=9
 -text x=72 y=26 "Mon" fill=white text-anchor=end font-size=20
 -text x=72 y=59 "Jan 15" fill=white text-anchor=end font-size=20
 -text x=72 y=92 "<HID>" fill=white text-anchor=end font-size=20
-+text x=721 y=113 "08" fill=white text-anchor=middle font-size=9
++text x=721 y=117 "08" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=721 y=117 "08" fill=white stroke=white text-anchor=middle font-size=9
 +text x=78 y=26 "Mon" fill=white text-anchor=end font-size=20
 +text x=78 y=59 "Jan 15" fill=white text-anchor=end font-size=20
 +text x=78 y=92 "2024" fill=white text-anchor=end font-size=20
-+text x=801 y=113 "09" fill=white text-anchor=middle font-size=9
++text x=801 y=117 "09" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=801 y=117 "09" fill=white stroke=white text-anchor=middle font-size=9
-+text x=82 y=113 "00" fill=white text-anchor=middle font-size=9
++text x=82 y=117 "00" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=83 y=117 "00" fill=white stroke=white text-anchor=middle font-size=9
-+text x=880 y=113 "10" fill=white text-anchor=middle font-size=9
++text x=880 y=117 "10" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=881 y=117 "10" fill=white stroke=white text-anchor=middle font-size=9
-+text x=960 y=113 "11" fill=white text-anchor=middle font-size=9
++text x=960 y=117 "11" fill=white stroke=white text-anchor=middle font-size=11.11111111111111
 -text x=961 y=117 "11" fill=white stroke=white text-anchor=middle font-size=9
