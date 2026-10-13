@@ -399,11 +399,14 @@ fn tick_xs(svg: &str) -> Vec<f64> {
 /// A full day's axis ends on midnight, an hour it reaches, so it closes on
 /// a 25th tick and its `00`, inset to end where the axis does (da-i37p2).
 /// Squeezed by that inset, the `00` gives way alone rather than thin the
-/// other hours to every third: at 600px all 24 keep their labels.
+/// other hours to every third: at 600px all 24 keep their labels. The
+/// count per width is pinned, so a thinning that moved would fail here.
 /// Nowview's axis ends on the now-line, an instant its clock owns: no mark.
+/// That half also passes on #727's parent, so it guards a regression; the
+/// dayview half is what #727 changed.
 #[test]
 fn a_full_day_closes_on_midnight_and_the_now_line_on_no_tick() {
-    for width in WIDTHS {
+    for (width, labels) in WIDTHS.into_iter().zip([9, 9, 24, 25, 25, 25]) {
         for orientation in [Orientation::Horizontal, Orientation::Vertical] {
             let svg = dayview_at(width, orientation);
             assert_eq!(tick_xs(&svg).len(), 25, "{orientation:?} dayview @ {width}");
@@ -415,21 +418,17 @@ fn a_full_day_closes_on_midnight_and_the_now_line_on_no_tick() {
             .into_iter()
             .filter(|b| b.label.len() == 2 && b.label.chars().all(|c| c.is_ascii_digit()))
             .collect();
+        assert_eq!(hours.len(), labels, "dayview @ {width}: hour labels");
         let last = hours.last().unwrap();
-        match hours.len() {
-            24 => assert_eq!(last.label, "23", "dayview @ {width}"),
-            n => {
-                assert!(n == 25 || n == 9, "dayview @ {width}: {n} hour labels");
-                assert_eq!(last.label, "00", "dayview @ {width}");
-                assert!(
-                    (last.x1 - end).abs() < 1e-6,
-                    "dayview @ {width}: the closing 00 ends at {:.1}, the axis at {end:.1}",
-                    last.x1,
-                );
-            }
-        }
-        if width == 600.0 {
-            assert_eq!(hours.len(), 24, "the 00 gives way alone at 600px");
+        if labels == 24 {
+            assert_eq!(last.label, "23", "dayview @ {width}: 00 gives way alone");
+        } else {
+            assert_eq!(last.label, "00", "dayview @ {width}");
+            assert!(
+                (last.x1 - end).abs() < 1e-6,
+                "dayview @ {width}: the closing 00 ends at {:.1}, the axis at {end:.1}",
+                last.x1,
+            );
         }
 
         let svg = nowview_at(width, 30.0);
