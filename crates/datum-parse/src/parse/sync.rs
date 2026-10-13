@@ -157,7 +157,7 @@ type Rest<'a> = std::slice::Iter<'a, &'a str>;
 
 /// `datum sync chain …`: the chain's membership.
 fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
-    const SET: &str = "invite|connect|leave|list|rename|revoke|revert|role|ack|rekey";
+    const SET: &str = "invite|connect|leave|list|rename|revoke|revert|purge|role|ack|rekey";
     Ok(match rest.next().copied() {
         Some("invite") => {
             let values = ["expires", "admin-key", "fields", "kit", "label"];
@@ -201,11 +201,26 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
             }
         }
         Some("revoke") => act(rest, SyncAdminAct::Revoke, &[], &[])?,
-        // Renamed (da-c9fiy): `purge` is to be the chain-wide hard purge.
+        // Renamed (da-c9fiy): one device's purge is `revert <WHO>`.
         Some("purge") => {
-            return Err(ParseError::InvalidArg(
-                "`sync chain purge <WHO>` is now `sync chain revert <WHO>`".into(),
-            ))
+            let o = opts(rest, &["admin-key"], &["data", "all", "yes"], 0..=1)?;
+            if !o.positional.is_empty() {
+                return Err(ParseError::InvalidArg(
+                    "`sync chain purge <WHO>` is now `sync chain revert <WHO>`".into(),
+                ));
+            }
+            if o.on("data") == o.on("all") {
+                return Err(ParseError::InvalidArg(
+                    "`sync chain purge` takes --data (every copy drops its data) or --all \
+                     (and the chain dissolves)"
+                        .into(),
+                ));
+            }
+            SyncCommand::Purge {
+                all: o.on("all"),
+                yes: o.on("yes"),
+                admin_key: o.get("admin-key"),
+            }
         }
         Some("revert") => {
             let mut o = opts(rest, &["admin-key"], &["yes"], 1..=1)?;
@@ -655,6 +670,21 @@ mod tests {
             old.to_string().contains("`sync chain revert <WHO>`"),
             "{old}"
         );
+        assert_eq!(
+            p(&["chain", "purge", "--all", "--yes", "--admin-key", "k"]),
+            SyncCommand::Purge {
+                all: true,
+                yes: true,
+                admin_key: Some("k".into()),
+            }
+        );
+        for wrong in [
+            &["chain", "purge"][..],
+            &["chain", "purge", "--data", "--all"],
+        ] {
+            let e = parse_sync_cmd(wrong).unwrap_err().to_string();
+            assert!(e.contains("takes --data") && e.contains("or --all"), "{e}");
+        }
         // Gone (da-q4rau): a fresh invite brings a purged device back.
         assert!(parse_sync_cmd(&["chain", "unpurge", "b"]).is_err());
         assert_eq!(

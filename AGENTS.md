@@ -227,11 +227,23 @@ other device has for a day (`Db::sync_unsent`) are each read by both `sync
 status` and `datum check`, whose findings carry their `domain` (`entries`,
 `aliases`, `stats`, `sync`) and are grouped by it; one `ack` clears a notice
 from both.
-`sync chain revert <WHO>` (da-ry11c; `chain purge` until da-c9fiy, now
-refused) previews, and with `--yes` writes a `purge` record: every copy
+`sync chain revert <WHO>` (da-ry11c; `chain purge <WHO>` until da-c9fiy,
+now refused with the new name) previews, and with `--yes` writes a `purge` record: every copy
 refuses every op that endpoint signed and folds its entries again without them — what it made goes, its edits and deletes
 are undone — and revokes it. There is no unpurge: a fresh invite brings it
 back (below), though an old chain's `unpurge` record still folds as it did.
+`sync chain purge --data | --all` (da-qzrj9) is the chain-wide hard purge, an
+admin act any member orders in an open chain: a `wipe` record each copy
+carries out as it comes to hold it, offline a year or not — every entry op
+before it scrubbed to a stub (`applied` = 3: its endpoint, seq and HLC, so
+no vector waits on a gap and no seq is signed twice), every entry, history,
+undo step, warning and stats cache row gone, and a sender's `{"purged": …}`
+line after the order filling the gaps of a copy behind. `--all` dissolves the
+chain: the fold takes no record after it, a copy holding it serves only
+records and stubs and says «in no sync chain», and keeps its key and records
+to pass the order on until an invite or connect starts it afresh. The
+ordering copy alone writes a backup, `<db>.purge-<time>.jsonl.gz`, before it
+purges: one on every copy would defeat a remote wipe.
 A copy belongs to one chain — its apply refuses another chain's records
 (da-d8ort). `chain leave` leaves it from any chain: its ops, peers and
 notices go, its entries stay — signed again as baselines on the next sync —

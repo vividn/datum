@@ -842,6 +842,14 @@ pub enum SyncCommand {
         dry_run: bool,
         force: bool,
     },
+    /// `datum sync chain purge (--data | --all) [--yes] [--admin-key <FILE>]`
+    /// (da-qzrj9): every copy drops every entry, op and history; `--all`
+    /// dissolves the chain too. Without `--yes` it says who is told when.
+    Purge {
+        all: bool,
+        yes: bool,
+        admin_key: Option<String>,
+    },
     /// `datum sync chain list [--show-revoked] [--json]` — the chain's admins and
     /// endpoints, a revoked one only with `--show-revoked` or `--json` (da-73gyz).
     Members {

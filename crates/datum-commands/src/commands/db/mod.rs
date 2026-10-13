@@ -84,8 +84,12 @@ pub fn purge_with_io(
         .unwrap_or_default();
     // A chained copy leaves its chain or rejoins it (da-qjxfx): wiped
     // silently, it would leave the other members dialling it.
-    // One that will not read (no `ops`: a damaged file) is in none.
-    let chain = db.sync_chain().ok().filter(|c| c.exists());
+    // One that will not read (no `ops`: a damaged file) is in none, and so
+    // is one a purge dissolved (da-qzrj9): nothing to leave or rejoin.
+    let chain = db
+        .sync_chain()
+        .ok()
+        .filter(|c| c.exists() && c.dissolved().is_none());
     let chain_id = chain.as_ref().map_or("", |c| c.id.as_str());
     let (leave, rejoin) = match (chain.is_some(), args.leave, args.rejoin) {
         (false, false, false) => (false, false),

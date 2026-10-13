@@ -2269,8 +2269,8 @@ fn the_old_spellings_are_gone_and_the_groups_complete() {
     assert_eq!(
         complete(&["chain"]),
         [
-            "invite", "connect", "leave", "list", "rename", "revoke", "revert", "role", "ack",
-            "rekey"
+            "invite", "connect", "leave", "list", "rename", "revoke", "revert", "purge", "role",
+            "ack", "rekey"
         ]
     );
     assert_eq!(complete(&["admin"]), ["list", "add", "remove"]);
@@ -2817,7 +2817,7 @@ fn a_reader_invite_refuses_a_redeemer_holding_entries() {
 fn holds_any(copy: &Copy, field: &str) -> bool {
     let rows = copy.query(&format!(
         "SELECT (SELECT COUNT(*) FROM entries WHERE field = '{field}' OR slug = 'spec:{field}')
-              + (SELECT COUNT(*) FROM ops WHERE json_extract(body, '$.field') = '{field}'
+              + (SELECT COUNT(*) FROM ops WHERE json_extract(nullif(body, ''), '$.field') = '{field}'
                    OR substr(slug, 1, {n}) = '{field}:' OR slug = 'spec:{field}')
               + (SELECT COUNT(*) FROM entry_history
                    WHERE json_extract(snapshot, '$.field') = '{field}'
@@ -3262,3 +3262,5 @@ fn a_copy_whose_only_other_is_a_filtered_reader_never_warns() {
     let out = a.stderr_of(&["occur", "tea"]);
     assert!(!out.contains("reached no other device"), "{out}");
 }
+
+mod purge;

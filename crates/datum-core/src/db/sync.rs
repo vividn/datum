@@ -53,6 +53,15 @@
 //!   falls outside its filter, and its vector is the marks made under a
 //!   filter covering its own (`sync_caught_up`), so a widened filter is sent
 //!   in full again.
+//! - **Purge orders (da-qzrj9).** A chain's `wipe` record takes every entry
+//!   op made before it, on each copy as the copy comes to hold it ([`wipe`]):
+//!   the op's row stays as a stub, `applied` = 3 and nothing but its
+//!   endpoint, seq and HLC, so seqs stay gapless and none is signed twice.
+//!   One endpoint's ops are in HLC order by seq, so what an order took of
+//!   it is a run of its seqs, its chain records aside; a sender says which
+//!   in one `{"purged": {endpoint: [[from, to], …]}}` line after the
+//!   order, and a copy holding an order fills its gaps with them, which a
+//!   copy behind would otherwise wait on forever.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -885,6 +894,8 @@ pub struct ApplySummary {
     pub conflicts: usize,
     /// Ops refused, each named with the reason.
     pub refused: Vec<String>,
+    /// A purge order took this copy's data now (da-qzrj9).
+    pub wiped: bool,
 }
 
 /// The ops of `hid` that are applied, in fold order.
@@ -1490,9 +1501,8 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
     // waits on no gap and no dep — the fold reads only the set of an
     // entry's ops, so order is no matter — and what it holds is ready;
     // `settle_filter` refuses what falls outside its filter (da-u81u1).
-    let filtered = Chain::load_with_waiting(conn)?
-        .filter(&endpoint(conn)?.id)
-        .is_some();
+    let mine = endpoint(conn)?.id;
+    let filtered = Chain::load_with_waiting(conn)?.filter(&mine).is_some();
     let now = now_ms();
     let waiting = loop {
         let mut waiting = waiting_ops(conn)?;
@@ -1517,7 +1527,12 @@ fn settle(conn: &Connection, s: &mut ApplySummary) -> Result<()> {
             }
             progressed = true;
             if !op.is_chain() {
+                // A purge order took it, or a dissolved chain takes nothing
+                // of another copy's: neither its data nor a refusal is kept.
+                let wiped = chain.wiped(&op.hlc).is_some()
+                    || chain.dissolved().is_some() && op.endpoint != mine;
                 match chain.allows(&op.endpoint, &op.hlc) {
+                    _ if wiped => scrub(conn, &op.endpoint, op.seq)?,
                     Ok(()) => {
                         s.conflicts += apply_one(conn, op)?;
                         s.applied += 1;
@@ -1620,6 +1635,7 @@ fn refuse(
 /// without them. An entry left with no create is gone, and the rows merged
 /// into it stand on their own again.
 fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<()> {
+    wipe(conn, chain, s)?;
     let bodies = |sql: &str, p: &[&dyn rusqlite::ToSql]| -> Result<Vec<Op>> {
         conn.prepare_cached(sql)?
             .query_map(p, |r| r.get::<_, String>(0))?
@@ -1691,6 +1707,113 @@ fn reconsider(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<
     Ok(())
 }
 
+/// The hid of an op a purge order took (da-qzrj9): no entry's.
+const PURGED: &str = "~purged";
+
+/// Keep of an op a purge order took only its endpoint, seq and HLC.
+fn scrub(conn: &Connection, endpoint: &str, seq: i64) -> Result<()> {
+    conn.prepare_cached(
+        "UPDATE ops SET applied = 3, hid = ?3, slug = '', kind = 'purged', body = ''
+         WHERE endpoint = ?1 AND seq = ?2",
+    )?
+    .execute(params![endpoint, seq, PURGED])?;
+    Ok(())
+}
+
+/// Carry out the chain's newest purge order, once (da-qzrj9): every entry op
+/// made before it is scrubbed — in a dissolved chain, every op of another
+/// copy's — and every entry, its history, the undo stack, the warnings and
+/// the stats cache go. What is left, the ops made after it, folds again.
+fn wipe(conn: &Connection, chain: &Chain, s: &mut ApplySummary) -> Result<()> {
+    let Some(w) = chain.wipes.last() else {
+        return Ok(());
+    };
+    let done: Option<String> = conn
+        .query_row(
+            "SELECT value FROM _meta WHERE key = 'sync_wiped'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if done.is_some_and(|d| d >= w.hlc) {
+        return Ok(());
+    }
+    let mine = endpoint(conn)?.id;
+    // What it frees is overwritten, not left in the file's free pages.
+    let secure: i64 = conn.query_row("PRAGMA secure_delete", [], |r| r.get(0))?;
+    conn.execute_batch("PRAGMA secure_delete = ON")?;
+    conn.execute(
+        "UPDATE ops SET applied = 3, hid = ?1, slug = '', kind = 'purged', body = ''
+         WHERE applied IN (1, 2) AND hid != ?2 AND (hlc < ?3 OR ?4 AND endpoint != ?5)",
+        params![PURGED, CHAIN_HID, w.hlc, w.all, mine],
+    )?;
+    conn.execute_batch(
+        "DELETE FROM entries; DELETE FROM entry_history; DELETE FROM undo_actions;
+         DELETE FROM integrity_warnings; DELETE FROM last_docs;
+         DELETE FROM stats_cache; DELETE FROM stats_cache_days;
+         DELETE FROM stats_cache_through; DELETE FROM stats_cache_dirty;",
+    )?;
+    // A PRAGMA binds no parameter; `secure` is the integer it gave.
+    conn.execute_batch(&format!("PRAGMA secure_delete = {secure}"))?;
+    let hids: Vec<String> = conn
+        .prepare("SELECT DISTINCT hid FROM ops WHERE applied = 1 AND hid != ?1")?
+        .query_map(params![CHAIN_HID], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    for hid in hids {
+        refold(conn, &hid, ChangeKind::SyncMerge)?;
+    }
+    conn.execute(
+        "INSERT INTO _meta (key, value) VALUES ('sync_wiped', ?1)
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        params![w.hlc],
+    )?;
+    s.wiped = true;
+    Ok(())
+}
+
+/// Fill this copy's gaps with the seqs a sender says a purge order took
+/// (da-qzrj9) — only while it holds an order, and per endpoint only on from
+/// what it holds, so a seq it lacks is never skipped: `settle` applies a
+/// member's ops in seq order, so its vector is a gapless head. A filtered
+/// reader's is not — it holds what its filter keeps — but it is served no
+/// such line ([`filtered_lines`]) and waits on no gap.
+fn take_purged(conn: &Connection, words: &[Value]) -> Result<()> {
+    let ordered = conn
+        .prepare_cached(
+            "SELECT 1 FROM ops WHERE hid = ?1 AND json_extract(body, '$.effect.type') = 'wipe'",
+        )?
+        .exists(params![CHAIN_HID])?;
+    if !ordered {
+        return Ok(());
+    }
+    let vector = vector_where(conn, None)?;
+    let mut held = conn.prepare_cached("SELECT 1 FROM ops WHERE endpoint = ?1 AND seq = ?2")?;
+    for runs in words.iter().filter_map(|w| w["purged"].as_object()) {
+        for (e, runs) in runs {
+            let took = |n: i64| {
+                runs.as_array().into_iter().flatten().any(|r| {
+                    r[0].as_i64().is_some_and(|a| a <= n) && r[1].as_i64().is_some_and(|b| n <= b)
+                })
+            };
+            let mut n = vector.get(e).copied().unwrap_or(0) + 1;
+            loop {
+                if !held.exists(params![e, n])? {
+                    if !took(n) {
+                        break;
+                    }
+                    conn.execute(
+                        "INSERT INTO ops (endpoint, seq, hlc, hid, slug, kind, applied, body)
+                         VALUES (?1, ?2, '', ?3, '', 'purged', 3, '')",
+                        params![e, n, PURGED],
+                    )?;
+                }
+                n += 1;
+            }
+        }
+    }
+    Ok(())
+}
+
 /// [`Db::sync_apply`] in a transaction of the caller's, past its refusals:
 /// `datum debug conflicts` applies its device's ops here, in its own.
 fn apply_in(tx: &Connection, lines: &str) -> Result<ApplySummary> {
@@ -1702,7 +1825,10 @@ fn apply_in(tx: &Connection, lines: &str) -> Result<ApplySummary> {
     let mut each = Vec::new();
     for line in lines.lines().map(str::trim).filter(|l| !l.is_empty()) {
         // Canonical JSON: an op's first key is `alias_chain`.
-        if line.starts_with("{\"caught_up\"") || line.starts_with("{\"remove\"") {
+        if ["{\"caught_up\"", "{\"remove\"", "{\"purged\""]
+            .iter()
+            .any(|w| line.starts_with(w))
+        {
             match serde_json::from_str::<Value>(line) {
                 Ok(w) => words.push(w),
                 Err(e) => s.refused.push(format!("unreadable line: {e}")),
@@ -1753,12 +1879,14 @@ fn apply_in(tx: &Connection, lines: &str) -> Result<ApplySummary> {
                 store(tx, &op, false)?;
                 got.push((op.endpoint, op.seq, op.hid));
             }
-            Some(body) if body == op.body => s.already_had += 1,
+            // A stub is an op a purge order took (da-qzrj9).
+            Some(body) if body == op.body || body.is_empty() => s.already_had += 1,
             _ => s
                 .refused
                 .push(format!("{}/{}: {SHARED_KEY}", op.endpoint, op.seq)),
         }
     }
+    take_purged(tx, &words)?;
     settle(tx, &mut s)?;
     settle_filter(tx, &mine, before.as_ref(), &got, &words, &mut s)?;
     Ok(s)
@@ -1768,10 +1896,10 @@ fn apply_in(tx: &Connection, lines: &str) -> Result<ApplySummary> {
 
 /// The ops of `hid` held, applied or refused, in fold order, each with
 /// whether it is refused: what a sender and a filtered reader both judge an
-/// entry's field by.
+/// entry's field by. A purge's stub is no entry's op and has no body.
 fn held_ops(conn: &Connection, hid: &str) -> Result<Vec<(Op, bool)>> {
     let mut stmt =
-        conn.prepare_cached("SELECT body, applied FROM ops WHERE hid = ?1 AND applied > 0")?;
+        conn.prepare_cached("SELECT body, applied FROM ops WHERE hid = ?1 AND applied IN (1, 2)")?;
     let rows = stmt
         .query_map(params![hid], |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
@@ -1807,7 +1935,7 @@ fn filtered_lines(
     let mut touched = BTreeSet::new();
     let mut stmt = conn.prepare(
         "SELECT endpoint, seq, hid, applied, CASE WHEN hid = ?1 THEN body END
-         FROM ops WHERE applied > 0 ORDER BY endpoint, seq",
+         FROM ops WHERE applied IN (1, 2) ORDER BY endpoint, seq",
     )?;
     let rows = stmt.query_map(params![CHAIN_HID], |r| {
         Ok((
@@ -1979,7 +2107,9 @@ fn settle_filter(
             .query_map(params![mine, CHAIN_HID], |r| r.get(0))?
             .collect::<rusqlite::Result<_>>()?,
     };
-    for hid in hids.iter().filter(|h| *h != CHAIN_HID) {
+    // A purge's stubs are no entry, and dropping them would open the gaps
+    // they fill (da-qzrj9).
+    for hid in hids.iter().filter(|h| *h != CHAIN_HID && *h != PURGED) {
         let ops: Vec<Op> = held_ops(conn, hid)?.into_iter().map(|o| o.0).collect();
         if filter.admits(belongs_after(&ops).as_deref()) {
             continue;
@@ -2030,6 +2160,10 @@ fn shared_rows(
     peer: Option<&str>,
 ) -> Result<(Vec<Map<String, Value>>, bool)> {
     let chain = Chain::load(conn)?;
+    // Copies of a dissolved chain share nothing (da-qzrj9).
+    if chain.dissolved().is_some() {
+        return Ok((Vec::new(), false));
+    }
     let mine = match (chain.exists(), me) {
         (false, _) => None,
         (true, Some(me)) => Some(me.to_string()),
@@ -2265,40 +2399,58 @@ impl Db {
                 push_entry(&tx, &ep, e, "baseline", create_effect(e))?;
             }
         }
+        // The seqs a purge order took (da-qzrj9) on one line after the
+        // order, so a copy behind holds it when it reads them; and of a
+        // dissolved chain nothing but they and the records.
+        let dissolved = chain.dissolved().is_some();
         let served = Chain::served(&tx)?;
-        if let Some(filter) = peer.and_then(|p| served.filter(p)) {
+        if let Some(filter) = peer.and_then(|p| served.filter(p)).filter(|_| !dissolved) {
             let (lines, _) = filtered_lines(&tx, since, filter, &chain, reader.then_some(&mine))?;
             tx.commit()?;
             return Ok(lines);
         }
+        let (mut lines, mut purged, mut after) = (Vec::new(), Map::new(), 0);
         let mut stmt = tx.prepare(
-            "SELECT endpoint, seq, body, applied FROM ops WHERE applied > 0 ORDER BY endpoint, seq",
+            "SELECT endpoint, seq, body, applied, hid FROM ops WHERE applied > 0
+             ORDER BY endpoint, seq",
         )?;
-        let lines = stmt
-            .query_map([], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, i64>(1)?,
-                    r.get(2)?,
-                    r.get::<_, i64>(3)?,
-                ))
-            })?
-            .filter_map(|r| match r {
-                Ok((e, ..)) if reader && e != mine => None,
-                // A member's refused op goes too, for every copy to refuse
-                // itself: the ops after it are counted past it. A
-                // non-member's stays here.
-                Ok((e, _, _, 2)) if chain.member(&e).is_none() => None,
-                Ok((e, s, body, _))
-                    if s > since.get(&e).copied().unwrap_or(0)
-                        || overlap && e == mine && since.get(&e) == Some(&s) =>
-                {
-                    Some(Ok(body))
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, String>(4)?,
+            ))
+        })?;
+        for row in rows {
+            let (e, seq, body, applied, hid) = row?;
+            let sent = seq > since.get(&e).copied().unwrap_or(0)
+                || overlap && e == mine && since.get(&e) == Some(&seq) && !body.is_empty();
+            // A member's refused op goes too, for every copy to refuse
+            // itself: the ops after it are counted past it. A non-member's
+            // stays here.
+            if !sent || reader && e != mine || applied == 2 && chain.member(&e).is_none() {
+                continue;
+            }
+            if applied == 3 {
+                let runs = purged.entry(e).or_insert_with(|| json!([]));
+                let runs = runs.as_array_mut().expect("an array");
+                match runs.last_mut() {
+                    Some(r) if r[1] == seq - 1 => r[1] = seq.into(),
+                    _ => runs.push(json!([seq, seq])),
                 }
-                Ok(_) => None,
-                Err(e) => Some(Err(e)),
-            })
-            .collect::<rusqlite::Result<Vec<String>>>()?;
+            } else if hid == CHAIN_HID || !dissolved {
+                let wipe = |r: Value| r["effect"]["type"] == "wipe";
+                if hid == CHAIN_HID && serde_json::from_str(&body).is_ok_and(wipe) {
+                    after = lines.len() + 1;
+                }
+                lines.push(body);
+            }
+        }
+        if !purged.is_empty() {
+            lines.insert(after, json!({ "purged": purged }).to_string());
+        }
         drop(stmt);
         tx.commit()?;
         Ok(lines)
@@ -2317,7 +2469,33 @@ impl Db {
         let tx = self.conn.unchecked_transaction()?;
         let s = apply_in(&tx, lines)?;
         tx.commit()?;
+        if s.wiped {
+            self.after_wipe()?;
+        }
         Ok(s)
+    }
+
+    /// What a purge order took leaves no copy beside the file (da-qzrj9):
+    /// the pre-migration snapshots go, as `db purge` removes them. The file
+    /// is rewritten if it can be, another connection to it aside; what was
+    /// freed was overwritten already ([`wipe`]).
+    pub(crate) fn after_wipe(&self) -> Result<()> {
+        for snapshot in self
+            .path()
+            .map(crate::migrations::pre_migration_backups)
+            .unwrap_or_default()
+        {
+            std::fs::remove_file(&snapshot).map_err(|e| {
+                DatumError::Other(format!("{} is not removed: {e}", snapshot.display()))
+            })?;
+        }
+        // Each fails only while another connection holds the file, and the
+        // purge stands: SQLite checkpoints at the last close.
+        let _ = self.conn.execute_batch("VACUUM");
+        let _ = self
+            .conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()));
+        Ok(())
     }
 
     /// The state hash: SHA-256 over the canonical JSON of every entry row,

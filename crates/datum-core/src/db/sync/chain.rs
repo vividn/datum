@@ -50,6 +50,13 @@
 //!     purge), but one a chain holds still folds as it always did: the
 //!     ops come back, the revoke standing, while the purge is the newest
 //!     act about it.
+//!   - `wipe {scope}` (da-qzrj9): the chain-wide purge, `sync chain purge
+//!     --data | --all`. Every entry op made before it is gone on every copy
+//!     holding it — its body, its entry and their history scrubbed, its seq
+//!     kept so no vector waits on it — and so is what a copy held of them.
+//!     An admin act, as a revoke is. `all` DISSOLVES the chain too: the fold
+//!     takes no record after it, and a copy holding it is in no chain to its
+//!     user, while it keeps its key and the records, to pass the order on.
 //!   - `role {endpoint, role}` (da-9yvb6): `member` or `reader` from its
 //!     HLC on, an admin act like a revoke. A reader's `role` or invite
 //!     `caps` may carry a filter (da-u81u1): `fields`, the fields it is
@@ -491,6 +498,14 @@ impl Member {
     }
 }
 
+/// A purge order (da-qzrj9): every entry op made before `hlc` is gone.
+#[derive(Debug, Clone)]
+pub struct Wipe {
+    pub hlc: String,
+    /// `all` dissolves the chain too; `data` leaves it.
+    pub all: bool,
+}
+
 #[derive(Debug)]
 struct Invite {
     secret_hash: String,
@@ -516,6 +531,8 @@ pub struct Chain {
     /// Each removal of the last admin (da-aam46): the admin's label, and
     /// the HLC it was removed at.
     pub unlocks: Vec<(String, String)>,
+    /// The purge orders taken, oldest first (da-qzrj9).
+    pub wipes: Vec<Wipe>,
 }
 
 /// The wall time of an HLC, as RFC 3339.
@@ -536,6 +553,16 @@ impl Chain {
     /// The fold took `record`, whatever its `sig`: the same act, signed.
     pub fn holds(&self, record: &Value) -> bool {
         self.taken.contains(&record_digest(record))
+    }
+
+    /// The purge order that took an op made at `hlc`, if one did.
+    pub fn wiped(&self, hlc: &str) -> Option<&Wipe> {
+        self.wipes.iter().find(|w| hlc < w.hlc.as_str())
+    }
+
+    /// The order that dissolved the chain (`purge --all`), if one did.
+    pub fn dissolved(&self) -> Option<&Wipe> {
+        self.wipes.iter().find(|w| w.all)
     }
 
     pub fn member(&self, endpoint: &str) -> Option<&Member> {
@@ -717,6 +744,12 @@ impl Chain {
         if s("chain") != self.id {
             return Err("a record of another chain".into());
         }
+        if let Some(w) = self.dissolved() {
+            return Err(format!(
+                "the sync chain was dissolved by a purge ({})",
+                hlc_time(&w.hlc)
+            ));
+        }
         // A reader describes itself and leaves, and writes nothing else.
         let own = matches!(kind.as_str(), "describe" | "leave") && op.endpoint == s("endpoint");
         if kind == "leave" && !own {
@@ -864,6 +897,18 @@ impl Chain {
                     m.revoked.get_or_insert_with(|| op.hlc.clone());
                 }
                 m.last_act = op.hlc.clone();
+                Ok(())
+            }
+            "wipe" => {
+                let all = match s("scope").as_str() {
+                    "data" => false,
+                    "all" => true,
+                    other => return Err(format!("a purge's scope is data or all, not '{other}'")),
+                };
+                self.wipes.push(Wipe {
+                    hlc: op.hlc.clone(),
+                    all,
+                });
                 Ok(())
             }
             "add_admin" => {
@@ -1119,6 +1164,9 @@ impl Db {
         note(&tx, &chain, quiet)?;
         relabel_conflicts(&tx)?;
         tx.commit()?;
+        if s.wiped {
+            self.after_wipe()?;
+        }
         Ok(())
     }
 
@@ -1311,6 +1359,8 @@ impl Db {
             .exists(params![me])?;
         let why = match (others, theirs) {
             _ if !chain.exists() => Some("this copy is in no sync chain".to_string()),
+            // A purge dissolved it (da-qzrj9): nothing of anyone's is left.
+            _ if chain.dissolved().is_some() => None,
             (0, false) => None,
             (0, true) => Some(format!(
                 "this copy holds other copies' data from sync chain {}",

@@ -21,6 +21,20 @@ use crate::commands::check::{Domain, Issue, Severity};
 
 const NO_CHAIN: &str = "this copy is in no sync chain: `datum sync chain invite` on this device starts one, or `datum sync chain connect <TICKET>` joins one with a ticket from another";
 
+/// What a copy of a chain a purge dissolved says (da-qzrj9): it is in none,
+/// though it keeps the chain's records to pass the order on.
+fn dissolved(chain: &Chain) -> Option<String> {
+    chain.dissolved().map(|w| {
+        format!(
+            "this copy is in no sync chain: a purge dissolved sync chain {} at {}, and this copy \
+             passes that on to its members still to hear of it. `datum sync chain invite` starts a \
+             new one, or `datum sync chain connect <TICKET>` joins one",
+            chain.id,
+            chain::hlc_time(&w.hlc)
+        )
+    })
+}
+
 /// What a copy joining a chain through `label` (`endpoint`) says of it.
 fn joining(label: &str, endpoint: &str) -> String {
     format!(
@@ -138,7 +152,7 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
                 true => db.sync_chain_leave_alone(dry_run)?,
                 false if dry_run => {}
                 false => {
-                    if !force {
+                    if !force && chain.dissolved().is_none() {
                         told = depart(db, &chain.id, "datum sync chain leave")?;
                     }
                     db.sync_chain_leave()?
@@ -306,6 +320,11 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
             sign(db, record, &chain, admin_key.as_deref())?;
             println!("{said}");
         }
+        SyncCommand::Purge {
+            all,
+            yes,
+            admin_key,
+        } => purge(db, all, yes, admin_key.as_deref())?,
         SyncCommand::Members { show, show_revoked } => {
             members(db, show == ShowFlag::Json, show_revoked)?
         }
@@ -609,6 +628,11 @@ fn invite(
     print: bool,
 ) -> Result<(String, String)> {
     let mut chain = db.sync_chain()?;
+    // A purge dissolved it (da-qzrj9): the new chain is a new copy's.
+    if chain.dissolved().is_some() {
+        db.sync_chain_leave()?;
+        chain = db.sync_chain()?;
+    }
     let starts = !chain.exists();
     let name = label.map_or_else(copy_label, String::from);
     // The chain stands without it: a failure here is no reason to fail.
@@ -708,6 +732,73 @@ fn kind() -> &'static str {
 /// characters of it.
 fn names(who: &str, label: &str, id: &str) -> bool {
     label == who || who.len() >= chain::MIN_PREFIX && id.starts_with(who)
+}
+
+/// `datum sync chain purge --data | --all` (da-qzrj9): a signed order every
+/// copy carries out as it comes to hold it, this one first, after a backup
+/// beside the database — on this copy alone: one on every copy would keep
+/// what a remote wipe is for. Without `--yes`, who learns of it when.
+fn purge(db: &Db, all: bool, yes: bool, admin_key: Option<&str>) -> Result<()> {
+    let chain = db.sync_chain()?;
+    ensure!(chain.exists() && chain.dissolved().is_none(), NO_CHAIN);
+    let (flag, scope, what) = match all {
+        false => ("--data", "data", "its members stay"),
+        true => (
+            "--all",
+            "all",
+            "the chain dissolves, and each copy is in no sync chain",
+        ),
+    };
+    println!(
+        "every copy in sync chain {} drops every entry, op and history; {what}:",
+        chain.id
+    );
+    for p in db.sync_status()? {
+        let who = format!("{} ({})", p.label, &p.endpoint[..10]);
+        match (p.revoked, &p.last_seen) {
+            (true, _) => println!("  {who} is revoked: it is never told, and keeps what it holds"),
+            (_, Some(at)) => {
+                println!("  {who} last synced with this copy {at}: it purges when it next connects")
+            }
+            (_, None) => println!(
+                "  {who} has not synced with this copy: it purges when it next connects to a member"
+            ),
+        }
+    }
+    println!("  this copy purges now, after a backup of its entries beside the database");
+    if !yes {
+        println!("nothing changed: `datum sync chain purge {flag} --yes` does it");
+        return Ok(());
+    }
+    // Beside the database, its name as the file system has it.
+    let now = chrono::Utc::now();
+    let backup = db.path().map(|path| {
+        let mut to = path.as_os_str().to_owned();
+        to.push(format!(".purge-{}.jsonl.gz", now.format("%Y%m%dT%H%M%SZ")));
+        (path, std::path::PathBuf::from(to))
+    });
+    if let Some((path, to)) = &backup {
+        let header = super::backup_restore::BackupHeader::new(db, path.display().to_string(), now)?;
+        let file =
+            std::fs::File::create(to).with_context(|| format!("creating {}", to.display()))?;
+        super::backup_restore::write_jsonl_gz(file, db, &header)?;
+    }
+    let record = json!({
+        "type": "wipe", "scope": scope, "chain": chain.id,
+        "created": chrono::Utc::now().to_rfc3339(),
+    });
+    // Refused, it leaves no backup of a purge that never happened.
+    if let Err(e) = sign(db, record, &chain, admin_key) {
+        if let Some((_, to)) = &backup {
+            let _ = std::fs::remove_file(to);
+        }
+        return Err(e);
+    }
+    let backup = backup.map_or("none: this database has no file".into(), |(_, to)| {
+        to.display().to_string()
+    });
+    println!("purged: every other copy follows when it next connects; backup: {backup}");
+    Ok(())
 }
 
 /// What reverting `who` sets aside, in words (da-ry11c): a verb agrees with
@@ -914,6 +1005,16 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
         return Ok(());
     }
     ensure!(chain.exists(), NO_CHAIN);
+    if let Some(words) = dissolved(&chain) {
+        match json {
+            true => println!(
+                "{}",
+                json!({"chain": null, "admins": [], "members": [], "dissolved": chain.id})
+            ),
+            false => println!("{words}"),
+        }
+        return Ok(());
+    }
     let mine = db.sync_endpoint_id()?;
     // What each runs: this copy's own, the others' as they last said (da-3zqyv).
     let mut versions = db.sync_versions()?;
@@ -1063,27 +1164,35 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
         let name = std::path::Path::new(path)
             .file_stem()
             .map(|s| s.to_string_lossy());
-        let members: Vec<Value> = peers
-            .iter()
-            .map(|p| {
-                json!({
-                    "endpoint": p.endpoint, "client": p.client, "label": p.label,
-                    "kind": p.kind, "revoked": p.revoked, "purged": p.purged, "reader": p.reader,
-                    "filter": filter_json(p.filter.as_ref()), "state": p.state,
-                    "to_send": p.to_send, "last_seen": p.last_seen,
-                    "last_verify": p.last_verify.as_ref().map(|(at, m)| json!({"at": at, "match": m})),
-                    "error": p.error, "error_at": p.error_at, "addr": p.addr,
+        // A purge dissolved it (da-qzrj9): no chain, as `chain list` says;
+        // a copy joining one names the member it joins through.
+        let live = chain.exists() && chain.dissolved().is_none();
+        let members: Vec<Value> = match chain.dissolved() {
+            Some(_) => Vec::new(),
+            None => peers
+                .iter()
+                .map(|p| {
+                    json!({
+                        "endpoint": p.endpoint, "client": p.client, "label": p.label,
+                        "kind": p.kind, "revoked": p.revoked, "purged": p.purged, "reader": p.reader,
+                        "filter": filter_json(p.filter.as_ref()), "state": p.state,
+                        "to_send": p.to_send, "last_seen": p.last_seen,
+                        "last_verify": p.last_verify.as_ref().map(|(at, m)| json!({"at": at, "match": m})),
+                        "error": p.error, "error_at": p.error_at, "addr": p.addr,
+                    })
                 })
-            })
-            .collect();
+                .collect(),
+        };
         let unlocked: Vec<Value> = unlocks
             .iter()
             .map(|n| json!({"by": n.label, "at": n.at}))
             .collect();
         let out = json!({
-            "db": name, "chain": chain.exists().then_some(&chain.id), "paused": paused,
+            "db": name, "paused": paused,
+            "chain": live.then_some(&chain.id),
+            "dissolved": chain.dissolved().map(|_| &chain.id),
             "debug": db.debug_copy()?,
-            "open": chain.exists() && chain.is_open(), "unlocked": unlocked,
+            "open": live && chain.is_open(), "unlocked": unlocked,
             "this": {
                 "endpoint": mine, "client": db.sync_client_id()?, "label": label,
                 "datum": datum_core::build(), "schema": CURRENT_SCHEMA_VERSION,
@@ -1110,6 +1219,10 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
     }
     if let Err(why) = db.sync_refuse_debug() {
         println!("{why}");
+        return Ok(());
+    }
+    if let Some(words) = dissolved(&chain) {
+        println!("{words}");
         return Ok(());
     }
     if !chain.exists() {
