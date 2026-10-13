@@ -49,10 +49,6 @@
 +line x1=960 y1=102 x2=960 y2=106 stroke=white
 -line x1=961 y1=102 x2=961 y2=108 stroke=white
 -path x=82 y=102 d=M0.5,6V0.5H1916.5V6 fill=none stroke=white
--rect x=801 y=37 w=74 h=12 field=work fill=#67e92c
-+rect x=801 y=43 w=73 h=12 field=work fill=#67e92c
--rect x=880 y=37 w=160 h=12 field=work fill=#67e92c
-+rect x=880 y=43 w=160 h=12 field=work fill=#67e92c
 +text x=1040 y=113 "12" fill=white text-anchor=middle font-size=9
 -text x=1041 y=117 "12" fill=white stroke=white text-anchor=middle font-size=9
 +text x=1120 y=113 "13" fill=white text-anchor=middle font-size=9

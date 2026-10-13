@@ -93,7 +93,8 @@
 				y: anchor.y + anchor.height * (place.anchor_pos_ratio ?? 0),
 				h: anchor.height * (place.anchor_size_ratio ?? 1)
 			}
-		: { y: place.y ?? drawn?.y ?? 0, h: place.height ?? drawn?.height ?? 0.12 };
+		: // A `y` with no `height` is the band's centre, not its top (da-1r506): the drawn lane says where that is.
+			{ y: (place.height === undefined ? undefined : place.y) ?? drawn?.y ?? 0, h: place.height ?? drawn?.height ?? 0.12 };
 
 	/** Would tying to `name` close a loop back to this field? */
 	function loops(name: string, seen = new Set<string>()): boolean {

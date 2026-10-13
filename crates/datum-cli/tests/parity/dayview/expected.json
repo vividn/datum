@@ -175,10 +175,10 @@
             }
           ],
           "cross_extent": 12.0,
-          "cross_offset": 14.42111621145159,
+          "cross_offset": 8.42111621145159,
           "field": "coffee",
           "points": [],
-          "z_index": 0.1442111621145159
+          "z_index": 0.0842111621145159
         },
         {
           "blocks": [
@@ -208,10 +208,10 @@
             }
           ],
           "cross_extent": 12.0,
-          "cross_offset": 27.72283353842795,
+          "cross_offset": 21.72283353842795,
           "field": "project",
           "points": [],
-          "z_index": 0.2772283353842795
+          "z_index": 0.2172283353842795
         },
         {
           "blocks": [
@@ -229,10 +229,10 @@
             }
           ],
           "cross_extent": 12.0,
-          "cross_offset": 48.28318995423615,
+          "cross_offset": 42.28318995423615,
           "field": "workout",
           "points": [],
-          "z_index": 0.4828318995423615
+          "z_index": 0.4228318995423615
         }
       ],
       "has_error": false,

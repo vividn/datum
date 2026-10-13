@@ -49,12 +49,6 @@
 +line x1=960 y1=102 x2=960 y2=106 stroke=white
 -line x1=961 y1=102 x2=961 y2=108 stroke=white
 -path x=82 y=102 d=M0.5,6V0.5H1916.5V6 fill=none stroke=white
--rect x=1280 y=82 w=559 h=12 field=mood fill=#49f0ba
-+rect x=1280 y=88 w=559 h=12 field=mood fill=#49f0ba
--rect x=1838 y=82 w=160 h=12 field=mood fill=#287f44
-+rect x=1838 y=88 w=160 h=12 field=mood fill=#287f44
--rect x=801 y=82 w=480 h=12 field=mood fill=#56ab24
-+rect x=801 y=88 w=479 h=12 field=mood fill=#56ab24
 +text x=1040 y=113 "12" fill=white text-anchor=middle font-size=9
 -text x=1041 y=117 "12" fill=white stroke=white text-anchor=middle font-size=9
 +text x=1120 y=113 "13" fill=white text-anchor=middle font-size=9

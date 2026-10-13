@@ -125,6 +125,27 @@ describe('the Placement tab', () => {
 		});
 	});
 
+	// da-1r506: a `y` with no `height` is its band's CENTRE, so the lane is
+	// where `fields --json` resolves it, half a default height above `y`.
+	test('a `y` set with no `height` is drawn where the band is, centred on it', async () => {
+		await onSeam(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'coffee', '--verb', 'occur']);
+			await setPlace(app, 'coffee', { y: 0.5 });
+			await app.run(['occur', 'coffee', '-t', '-30']);
+			const resolved = await lane(app, 'coffee');
+			assert.equal(round(resolved.y), 0.44, 'the band spans 0.44–0.56');
+
+			const { saved } = await openPlacement(page, 'coffee');
+			const band = await page.locator(`${MODAL} .placement .band`).boundingBox();
+			const box = await page.locator(LANE).boundingBox();
+			assert.ok(Math.abs(box.y - band.y - 1 - resolved.y * H) < 1.5, `${box.y - band.y} vs ${resolved.y * H}`);
+			assert.match(await page.locator(`${MODAL} .readout`).innerText(), /y 0\.44/);
+			await cancelField(page);
+			assert.equal(await saved, null);
+		});
+	});
+
 	test('tied to a neighbour it writes the ratios, not y/height, and moves with its anchor', async () => {
 		await onSeam(async (app) => {
 			const { page } = app;

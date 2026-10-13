@@ -86,12 +86,6 @@ what = "the time axis: v2 draws 25 ticks (a closing `00` at the day's end), each
 why = "No recorded reason found."
 
 [[rule]]
-id = "dayview-row-y"
-status = "open"
-what = "a field with no position in its spec sits 6px lower in daydumb (`coffee` 16 → 22, `work` 37 → 43, `mood` 82 → 88); `sleep`, placed by mySpec, matches"
-why = "No recorded reason found."
-
-[[rule]]
 id = "dayview-day-label-x"
 status = "open"
 what = "the day labels (`Mon`, `Jan 15`, the year) end at x=78 in daydumb and at x=72 in v2 (v2's `-0.5em` left of the data area)"
@@ -163,11 +157,11 @@ rules = ["grey-date", "tail-n-column", "tail-offset-in-header", "tail-column-pad
 
 [[fixture]]
 name = "dayview_single_day_svg"
-rules = ["dayview-axis", "dayview-row-y", "dayview-day-label-x", "snapshot-year-masked"]
+rules = ["dayview-axis", "dayview-day-label-x", "snapshot-year-masked"]
 
 [[fixture]]
 name = "dayview_state_chain_svg"
-rules = ["dayview-axis", "dayview-row-y", "dayview-day-label-x", "snapshot-year-masked"]
+rules = ["dayview-axis", "dayview-day-label-x", "snapshot-year-masked"]
 
 [[fixture]]
 name = "dayview_spec_color_svg"
@@ -179,8 +173,8 @@ rules = ["dayview-axis", "dayview-day-label-x", "snapshot-year-masked"]
 
 [[fixture]]
 name = "dayview_duration_block_svg"
-rules = ["dayview-axis", "dayview-row-y", "dayview-day-label-x", "snapshot-year-masked"]
+rules = ["dayview-axis", "dayview-day-label-x", "snapshot-year-masked"]
 
 [[fixture]]
 name = "dayview_false_block_is_a_hole_svg"
-rules = ["dayview-axis", "dayview-row-y", "dayview-day-label-x", "snapshot-year-masked"]
+rules = ["dayview-axis", "dayview-day-label-x", "snapshot-year-masked"]

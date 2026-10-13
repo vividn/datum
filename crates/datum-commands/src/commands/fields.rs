@@ -110,9 +110,10 @@ pub fn format_listing(listing: &JsonValue, include_ignored: bool) -> String {
 /// gets a button. `ignored` is the field's latest track/ignore status
 /// ([`is_ignored_state`], da-d08c) — whether a spec exists has no say in it.
 /// `y` and `height` are where the field's band sits across the dayview and
-/// nowview, 0 at the top — resolved as they resolve it (the anchor's place
-/// scaled by the ratios for a `relative_to` field, da-btyvj; else spec `y`,
-/// else the name's hash), so the web orders its buttons by the pictures
+/// nowview, 0 at the top and `y` its top edge — resolved as they resolve it
+/// (the anchor's place scaled by the ratios for a `relative_to` field,
+/// da-btyvj; else spec `y`, else the name's hash, either one the band's
+/// centre when no `height` is set, da-1r506), so the web orders its buttons by the pictures
 /// (da-vu7pi) and the Placement tab draws every lane without re-deriving it.
 pub fn compute_fields(db: &Db) -> Result<JsonValue> {
     let mut by_field: BTreeMap<String, Vec<JsonValue>> = db
@@ -176,7 +177,7 @@ mod tests {
     use super::*;
     use datum_core::action::Action;
     use datum_core::entry::Verb;
-    use datum_core::field_spec::{FieldSpec, PresentationSpec};
+    use datum_core::field_spec::{FieldSpec, PresentationSpec, DEFAULT_FIELD_HEIGHT};
     use datum_core::test_util::{entry_builder, fresh_db};
 
     /// da-1lnf: the plain listing leads with a header, so the second
@@ -275,7 +276,7 @@ mod tests {
             listing[0]["y"],
             json!(PresentationSpec::default().resolve_position("coffee").y)
         );
-        assert_eq!(listing[1]["y"], json!(0.25));
+        assert_eq!(listing[1]["y"], json!(0.25 - DEFAULT_FIELD_HEIGHT / 2.0));
     }
 
     /// da-xtkcp: `--sort frecency` puts the most used first — each use

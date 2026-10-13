@@ -31,7 +31,9 @@ use std::collections::{BTreeMap, HashMap};
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct PresentationSpec {
     /// Vertical position of the field's row, expressed as a fraction
-    /// (0.0 = top, 1.0 = bottom) of the dayview's data area. When None,
+    /// (0.0 = top, 1.0 = bottom) of the dayview's data area: the row's
+    /// CENTRE when `height` is unset, its top edge when `height` is set, as
+    /// in v2 (see [`PresentationSpec::resolve_position`]). When None,
     /// `resolve_position` falls back to a deterministic hash of the field
     /// name (port of original datum's
     /// `parseInt(md5(field).slice(0, 8), 16) / Math.pow(2, 32)`).
@@ -45,9 +47,9 @@ pub struct PresentationSpec {
     pub height: Option<f64>,
 
     /// Stacking order. Higher values render on top. When None, defaults to
-    /// the resolved `y` value (so lower-positioned fields render above
-    /// higher ones by default — matches original's `spec.zIndex ?? pY`
-    /// behavior).
+    /// the resolved `y` value, the band's top edge whether or not `height`
+    /// is set (so lower-positioned fields render above higher ones by
+    /// default — matches original's `spec.zIndex ?? pY` behavior).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub z_index: Option<f64>,
 
@@ -163,6 +165,13 @@ impl Render {
 /// Resolved triple of `(y, height, z_index)` after applying defaults and the
 /// deterministic-hash fallback for missing `y`. Consumed by dayview/nowview
 /// layout in `datum-layout`.
+///
+/// THE vertical anchor convention (da-1r506): a resolved `y` is always the
+/// band's NEAR (top) edge and `height` its extent, so the band spans
+/// `[y, y + height]`, and a field's occur dots sit on its centre line,
+/// `y + height / 2`. Every renderer — dayview, nowview, datum.day's field
+/// widget via `fields --json` — reads it so; the spec's own `y` is turned
+/// into it here, and nowhere else.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ResolvedPosition {
     pub y: f64,
@@ -217,9 +226,16 @@ impl PresentationSpec {
     /// the deterministic-hash fallback for an unset `y`. The `field_name`
     /// argument exists so the resolver can compute the hash fallback without
     /// the spec carrying its own name.
+    ///
+    /// A spec with no `height` names its band's centre, hashed or set, and
+    /// one with a `height` names its top edge, as v2's `allFieldsSvg` does
+    /// (`pY = specY - defaultHeight / 2` only when `spec.height` is unset).
     pub fn resolve_position(&self, field_name: &str) -> ResolvedPosition {
         let y = self.y.unwrap_or_else(|| hash_y(field_name));
-        let height = self.height.unwrap_or(DEFAULT_FIELD_HEIGHT);
+        let (y, height) = match self.height {
+            Some(height) => (y, height),
+            None => (y - DEFAULT_FIELD_HEIGHT / 2.0, DEFAULT_FIELD_HEIGHT),
+        };
         let z_index = self.z_index.unwrap_or(y);
         ResolvedPosition { y, height, z_index }
     }
@@ -303,9 +319,30 @@ mod tests {
     fn resolve_position_falls_back_to_hash_y_and_default_height() {
         let pres = PresentationSpec::default();
         let r = pres.resolve_position("coffee");
-        assert!(r.y >= 0.0 && r.y < 1.0);
+        assert_eq!(r.y, hash_y("coffee") - DEFAULT_FIELD_HEIGHT / 2.0);
         assert_eq!(r.height, DEFAULT_FIELD_HEIGHT);
         assert_eq!(r.z_index, r.y);
+    }
+
+    /// da-1r506: v2's rule. A `y` with no `height` is the default band's
+    /// centre; with a `height` it is the band's top edge.
+    #[test]
+    fn y_names_the_centre_without_a_height_and_the_top_with_one() {
+        let centred = PresentationSpec {
+            y: Some(0.5),
+            ..PresentationSpec::default()
+        };
+        let r = centred.resolve_position("alarm");
+        assert_eq!(
+            (r.y + r.height / 2.0, r.height),
+            (0.5, DEFAULT_FIELD_HEIGHT)
+        );
+        let topped = PresentationSpec {
+            y: Some(0.5),
+            height: Some(0.2),
+            ..PresentationSpec::default()
+        };
+        assert_eq!(topped.resolve_position("meditate").y, 0.5);
     }
 
     #[test]
@@ -315,9 +352,9 @@ mod tests {
             ..PresentationSpec::default()
         };
         let r = pres.resolve_position("focus");
-        assert_eq!(r.y, 0.42);
+        assert_eq!(r.y, 0.42 - DEFAULT_FIELD_HEIGHT / 2.0);
         assert_eq!(r.height, DEFAULT_FIELD_HEIGHT);
-        assert_eq!(r.z_index, 0.42);
+        assert_eq!(r.z_index, r.y);
     }
 
     #[test]

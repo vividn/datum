@@ -135,6 +135,10 @@ impl PlotGeom {
 }
 
 /// Map orientation-neutral (time, cross) → SVG (x, y) within the plot.
+/// `cross` is a coordinate, not an anchor: a band passes its near edge
+/// (`cross_offset`) and a dot its centre (`cross_offset + cross_extent / 2`),
+/// both from the one convention on `ResolvedPosition`
+/// (`crates/datum-core/src/field_spec/presentation.rs`).
 fn to_xy(layout: &DayviewLayout, geom: &PlotGeom, time: f64, cross: f64) -> (f64, f64) {
     match layout.orientation {
         Orientation::Horizontal => (geom.data_x + time, geom.data_y + cross),

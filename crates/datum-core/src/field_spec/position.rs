@@ -313,6 +313,12 @@ mod tests {
     use super::super::presentation::{hash_y, DEFAULT_FIELD_HEIGHT};
     use super::*;
 
+    /// Where a field with no spec position resolves: its hashed `y` as the
+    /// default band's centre.
+    fn hashed(field: &str) -> f64 {
+        hash_y(field) - DEFAULT_FIELD_HEIGHT / 2.0
+    }
+
     fn anchored_spec(name: &str, anchor: &str, pos_ratio: f64, size_ratio: f64) -> FieldSpec {
         let mut spec = FieldSpec::new(name, Action::Occur);
         spec.presentation.relative_to = Some(anchor.into());
@@ -375,7 +381,7 @@ mod tests {
         assert_eq!(report.missing_anchors[0].1, "body");
         // Falls back to absolute → hash-based y for "contacts"
         let pos = report.positions.get("contacts").unwrap();
-        assert_eq!(pos.y, hash_y("contacts"));
+        assert_eq!(pos.y, hashed("contacts"));
         assert_eq!(pos.height, DEFAULT_FIELD_HEIGHT);
     }
 
@@ -420,8 +426,8 @@ mod tests {
         // Both members fall back to absolute (hash y, default height).
         let a = report.positions.get("a").unwrap();
         let b = report.positions.get("b").unwrap();
-        assert_eq!(a.y, hash_y("a"));
-        assert_eq!(b.y, hash_y("b"));
+        assert_eq!(a.y, hashed("a"));
+        assert_eq!(b.y, hashed("b"));
         assert_eq!(a.height, DEFAULT_FIELD_HEIGHT);
         assert_eq!(b.height, DEFAULT_FIELD_HEIGHT);
     }
@@ -457,6 +463,6 @@ mod tests {
         assert!(report.malformed.iter().any(|n| n == "bad"));
         // Fell back to absolute (no y set on the spec → hash).
         let bad = report.positions.get("bad").unwrap();
-        assert_eq!(bad.y, hash_y("bad"));
+        assert_eq!(bad.y, hashed("bad"));
     }
 }

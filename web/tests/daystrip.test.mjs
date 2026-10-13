@@ -894,14 +894,16 @@ describe('the day strip zooms onto an hour range', () => {
 			// by the seed's last line, which goes through the bar. The next
 			// test's room puts the clock back.
 			await app.clock.set(todayAt(23));
-			await seedLines(
-				app,
-				['mood', 'work', 'place', 'posture'].flatMap((field, lane) =>
+			// `work` is centred on the band's middle by its spec, where the
+			// double tap lands, rather than wherever its name hashes to.
+			await seedLines(app, [
+				'spec set work --verb switch --y 0.5',
+				...['mood', 'work', 'place', 'posture'].flatMap((field, lane) =>
 					[0, 6, 12, 18].map(
 						(hour) => `switch ${field} s${lane}${hour} -t ${String(hour).padStart(2, '0')}:00`
 					)
 				)
-			);
+			]);
 			await page.locator(`${TODAY} svg.svg`).waitFor();
 			await app.idle();
 

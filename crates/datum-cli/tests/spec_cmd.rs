@@ -59,11 +59,12 @@ fn spec_set_position_flags_merge_into_existing_spec() {
     assert!(spec.presentation.height.is_none());
     assert!(spec.presentation.z_index.is_none());
 
-    // Resolver applies defaults for the missing fields.
+    // Resolver applies defaults for the missing fields: a `y` with no
+    // height is the default band's centre (da-1r506).
     let pos = spec.presentation.resolve_position("focus");
-    assert_eq!(pos.y, 0.42);
+    assert_eq!(pos.y, 0.42 - DEFAULT_FIELD_HEIGHT / 2.0);
     assert_eq!(pos.height, DEFAULT_FIELD_HEIGHT);
-    assert_eq!(pos.z_index, 0.42);
+    assert_eq!(pos.z_index, pos.y);
 }
 
 #[test]
