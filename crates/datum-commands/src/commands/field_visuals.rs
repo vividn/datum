@@ -445,8 +445,8 @@ pub(crate) fn state_label(v: Option<&JsonValue>) -> Option<String> {
     })
 }
 
-/// A mark's state as the tail prints it — `start` / `end` for a bool, `∅`
-/// for null — so the mark and the row it came from say the same word
+/// A mark's state as the tail prints it — `start` / `end` for a bool,
+/// `null` for null — so the mark and the row it came from say the same word
 /// (da-s5da). [`state_label`] stays the raw value: `stats` keys on it.
 fn mark_state(v: Option<&JsonValue>) -> Option<String> {
     v.map(crate::render::state_truncate::state_label)

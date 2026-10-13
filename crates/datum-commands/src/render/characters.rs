@@ -8,9 +8,17 @@ pub const DOT: &str = "●";
 /// `add`-verb marker — mirrors the `c` suffix in the generated slug id.
 pub const NON_OCCUR: &str = "¢";
 
-/// First-tracked / no-state marker — painted as the foreground of an empty
-/// LEAD/TRAIL slot when there's no prior or continuing state to depict.
+/// IGNORED's mark: drawn grey before an occur dot whose field was absent
+/// or IGNORED just before it. Never a `null` state's — see [`NULL_STATE`].
 pub const NULL_SET: &str = "∅";
+
+/// A `null` state's body: the word, dark grey (`Rgb::IGNORED_FG`) on the
+/// grey ground, since in v3 null is a state someone can assign and not
+/// IGNORED (da-pqdcv, vividn: «literal word null»). Where a state body is cut
+/// to fit, `null` is cut like any word (`nu…`); a one-cell LEAD/TRAIL slot
+/// carries no state's text, so there null is its grey ground alone — never
+/// a glyph, and never IGNORED's `∅`.
+pub const NULL_STATE: &str = "null";
 
 /// Checkerboard fill for array states (upper-right + lower-left triangle).
 pub const SHADING: &str = "▞";

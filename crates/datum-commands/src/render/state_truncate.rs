@@ -22,7 +22,7 @@ use serde_json::Value as JsonValue;
 use super::action::{
     compute_occur_dot_colors, render_lead_slot, render_slot, RenderContext, StateTransition,
 };
-use super::characters::{DOT, IGNORED_STATE, NON_OCCUR, NULL_SET};
+use super::characters::{DOT, IGNORED_STATE, NON_OCCUR, NULL_SET, NULL_STATE};
 use super::colors::{
     field_rgb, paint, paint_bg, paint_bg_fg, state_rgb, state_value_rgb, structured_state_rgb,
     visible_width, Rgb, GRAY_FG,
@@ -124,7 +124,11 @@ fn truncate_state_body(
             paint_bg(field_rgb(field, spec), &right_truncate("start", budget))
         }
         Some(JsonValue::Bool(false)) => right_truncate("end", budget),
-        Some(JsonValue::Null) => paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, NULL_SET),
+        Some(JsonValue::Null) => paint_bg_fg(
+            Rgb::IGNORED,
+            Rgb::IGNORED_FG,
+            &right_truncate(NULL_STATE, budget),
+        ),
         Some(JsonValue::String(s)) if s == IGNORED_STATE => {
             paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, &right_truncate(s, budget))
         }
@@ -302,7 +306,7 @@ pub(crate) fn state_label(item: &JsonValue) -> String {
     match item {
         JsonValue::Bool(true) => "start".to_string(),
         JsonValue::Bool(false) => "end".to_string(),
-        JsonValue::Null => NULL_SET.to_string(),
+        JsonValue::Null => NULL_STATE.to_string(),
         JsonValue::String(s) => s.clone(),
         JsonValue::Object(obj) => match obj.get("id").and_then(JsonValue::as_str) {
             Some(id) => format!("{{{id}}}"),
@@ -477,5 +481,29 @@ mod tests {
             occurrences,
             cell
         );
+    }
+
+    /// A `null` state is the word `null`, dark grey on the grey ground —
+    /// never IGNORED's `∅` (da-pqdcv) — on the badge, in a cut cell, as a
+    /// moment's label and as a parallel set's chip.
+    #[test]
+    fn null_state_is_the_word_not_ignoreds_glyph() {
+        use crate::render::action::format_state_body;
+        let _scope = color_scope();
+        let ctx = RenderContext::default();
+        let e = switch_entry("mood", json!(null));
+        let word = paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, "null");
+        assert_eq!(format_state_body(&e, None, &ctx), word);
+        assert!(truncate_state_cell(&e, None, &ctx, 20).contains(&word));
+        let cut = strip_ansi(&truncate_state_cell(&e, None, &ctx, 5));
+        assert!(cut.contains("nu…") && !cut.contains('∅'), "{cut:?}");
+        let mut moment = switch_entry("mood", json!(null));
+        moment.verb = datum_core::entry::Verb::Point;
+        let label = strip_ansi(&format_state_body(&moment, None, &ctx));
+        assert!(label.ends_with("null") && !label.contains('∅'), "{label:?}");
+        let set = switch_entry("body", json!(["sit", null]));
+        let chips = strip_ansi(&format_state_body(&set, None, &ctx));
+        assert_eq!(chips, "sit,null");
+        assert_eq!(state_label(&json!(null)), "null");
     }
 }

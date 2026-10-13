@@ -11,8 +11,9 @@
 //! whitespace inside the trio. The state cell is the existing bg-coloured
 //! badge. The LEAD and TRAIL slots are single literal spaces painted with
 //! the prior / continuing state's colour, replacing the old directional
-//! arrows. When no prior or continuing state exists (or it's IGNORED), the
-//! slot falls back to a lighter-grey bg with the `∅` glyph as fg.
+//! arrows. When no prior or continuing state exists, or it is IGNORED or
+//! null, the slot is the grey ground alone (da-25l); a `null` state's own
+//! body is the word `null` (`NULL_STATE`, da-pqdcv).
 //!
 //! See `crates/datum-cli/tests/render_state_group.rs` for the worked
 //! examples encoded as fixtures.
@@ -81,13 +82,13 @@ pub(crate) fn now_local() -> DatumTime {
 ///
 /// * `lead_state` — the field's state at `start - ε` with the row left
 ///   out ([`FieldStateRows::at`]). Drives the LEAD slot's bg colour. `None` = no prior
-///   history; the slot falls back to grey-`∅`.
+///   history; the slot falls back to the grey ground.
 /// * `trail_state` — the state continuing forward from this row. For a
 ///   `Block` shape, this is the field's state at `end_time` with the row
 ///   left out — what resumes after the block closes. For `Point`/
 ///   `Ongoing`, it's the row's own emitted state (the new switch value,
 ///   `Bool(true)` for start, `Bool(false)` for stop). Drives the TRAIL
-///   slot's bg colour, with the same grey-`∅` fallback.
+///   slot's bg colour, with the same grey fallback.
 /// * `prior_state_ignored` — the field's compiled state just before this
 ///   row is absent or IGNORED: the LEAD slot's grey-`∅` rule, carried to
 ///   the bare occur dot, which has no LEAD slot of its own. Derived from
@@ -556,7 +557,7 @@ fn render_point_state_label(state: &JsonValue, field: &str, spec: Option<&FieldS
     match state {
         JsonValue::Bool(true) => paint(&field_rgb(field, spec).fg(), "start"),
         JsonValue::Bool(false) => paint(&field_rgb(field, spec).fg(), "end"),
-        JsonValue::Null => paint(&Rgb::IGNORED.fg(), NULL_SET),
+        JsonValue::Null => paint(&Rgb::IGNORED.fg(), NULL_STATE),
         JsonValue::String(s) if s == IGNORED_STATE => paint(&Rgb::IGNORED.fg(), s),
         JsonValue::String(s) => paint(&state_rgb(s, spec).fg(), s),
         JsonValue::Object(obj) => {
@@ -794,7 +795,7 @@ fn render_switch_badge(value: Option<&JsonValue>, field: &str, spec: Option<&Fie
             paint_bg(fc, "start")
         }
         Some(JsonValue::Bool(false)) => "end".to_string(),
-        Some(JsonValue::Null) => paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, NULL_SET),
+        Some(JsonValue::Null) => paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, NULL_STATE),
         Some(JsonValue::String(s)) if s == IGNORED_STATE => {
             paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, s)
         }

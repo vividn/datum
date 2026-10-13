@@ -183,7 +183,7 @@ Same `da-25l` colored-cell rule applies: TRAIL is a single cell, no glyph, paint
 
 | Char | Codepoint | Purpose |
 |---|---|---|
-| `∅` | U+2205 | First-tracked / null-state marker |
+| `∅` | U+2205 | First-tracked marker: the field was absent or IGNORED before (a `null` state is the word `null`, da-pqdcv) |
 | `¢` | U+00A2 | add/create marker |
 | `!` (yellow) | U+0021 + ANSI yellow fg | Repeat/overlap warning |
 | `▞` | U+259E | Checkerboard (upper-right + lower-left half) |
