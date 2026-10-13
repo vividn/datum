@@ -32,8 +32,9 @@ use crate::render::action::clock_label;
 use crate::render::colors::{field_rgb, md5_rgb, state_value_rgb, Rgb};
 
 /// Resolve a block's fill from its value. Arrays → multi-state stripes
-/// (one color per element); scalars → single solid color.
-pub(crate) fn block_fill_for_value(
+/// (one color per element, `none` for an OFF one — a gap, as a false block
+/// is a hole, da-x2vw4); scalars → single solid color.
+pub fn block_fill_for_value(
     value: Option<&JsonValue>,
     field: &str,
     spec: Option<&FieldSpec>,
@@ -42,9 +43,9 @@ pub(crate) fn block_fill_for_value(
         Some(JsonValue::Array(items)) if !items.is_empty() => {
             let colors: Vec<String> = items
                 .iter()
-                .map(|v| {
-                    let rgb = state_value_rgb(v, field, spec).unwrap_or(md5_rgb(field));
-                    rgb_to_hex(rgb)
+                .map(|v| match is_off_state(v) {
+                    true => "none".into(),
+                    false => rgb_to_hex(state_value_rgb(v, field, spec).unwrap_or(md5_rgb(field))),
                 })
                 .collect();
             BlockFill::MultiState(colors)
@@ -572,6 +573,18 @@ mod tests {
         ]);
         match block_fill_for_value(Some(&v), "mood", None) {
             BlockFill::MultiState(colors) => assert_eq!(colors.len(), 2),
+            _ => panic!("expected multi-state fill"),
+        }
+    }
+
+    #[test]
+    fn block_fill_array_leaves_an_off_state_unpainted() {
+        let v = serde_json::json!(["happy", false, "TRACKED", null]);
+        match block_fill_for_value(Some(&v), "mood", None) {
+            BlockFill::MultiState(c) => {
+                assert_eq!(&c[1..3], ["none", "none"]);
+                assert!(c[0].starts_with('#') && c[3].starts_with('#'));
+            }
             _ => panic!("expected multi-state fill"),
         }
     }

@@ -186,7 +186,8 @@ pub struct DayviewBlock {
 pub enum BlockFill {
     /// Single solid hex color (e.g. `#a1b2c3`).
     Single(String),
-    /// Multi-state — each entry is a hex color for one stripe (in order).
+    /// Multi-state — each entry is a hex color for one stripe (in order),
+    /// or `none` for a stripe left unpainted.
     MultiState(Vec<String>),
 }
 

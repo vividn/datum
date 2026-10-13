@@ -34,6 +34,7 @@
 //! ```
 
 use chrono::{DateTime, TimeZone, Utc};
+use datum_commands::commands::field_visuals::block_fill_for_value;
 use datum_commands::render::{
     action::{format_info_line_at, RenderContext},
     colors::strip_ansi,
@@ -714,6 +715,16 @@ fn dayview_scene_multi_state() -> DayviewLayoutResult {
                     end_ms: DAY_START_MS + 15 * HOUR_MS,
                     fill: BlockFill::MultiState(vec!["#aa3333".into(), "#33aa33".into()]),
                     state_label: Some("multi".into()),
+                    id: None,
+                    title: None,
+                },
+                // An OFF sub-state is a gap in the stripes, as a false
+                // block is a hole (da-x2vw4): through the real resolver.
+                DayviewBlock {
+                    start_ms: DAY_START_MS + 17 * HOUR_MS,
+                    end_ms: DAY_START_MS + 19 * HOUR_MS,
+                    fill: block_fill_for_value(Some(&json!(["deep", false])), "tasks", None),
+                    state_label: Some("deep, false".into()),
                     id: None,
                     title: None,
                 },
