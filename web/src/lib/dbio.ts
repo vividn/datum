@@ -22,8 +22,8 @@
 
 import { writable } from 'svelte/store';
 import { saveFile } from './backup.js';
-import { backupArgv, dbPurgeArgv, restorePreviewArgv } from './calls.js';
-import { confirm } from './confirm.js';
+import { backupArgv, chainListArgv, dbPurgeArgv, dbPurgeProbeArgv, restorePreviewArgv } from './calls.js';
+import { choose, confirm } from './confirm.js';
 import { fileArgv } from './fileargv.js';
 import { dbOf, run, type CommandRunner, type RunResult } from './run.js';
 
@@ -278,7 +278,13 @@ export async function saveBackup(): Promise<RunResult> {
 	return { ...result, stdout: `${header}\n${entries.length} entries → ${file.name}` };
 }
 
-/** `db purge --yes`, once the reader has typed the database's name. */
+/**
+ * `db purge --yes`, once the reader has typed the database's name. A copy
+ * in a sync chain is asked first whether it leaves the chain or rejoins
+ * it, as the CLI asks on a TTY (da-0hay9): off one it refuses naming
+ * `--leave` and `--rejoin`, which reached the reader only after they had
+ * typed the name for nothing. A typed `--leave` or `--rejoin` is the answer.
+ */
 export async function purge(flags: string[] = []): Promise<RunResult> {
 	// The database this will really purge, never the word `datum` written
 	// down here (vremya on #22). The dialog stands in for the CLI's TTY
@@ -288,7 +294,34 @@ export async function purge(flags: string[] = []): Promise<RunResult> {
 	// standing in was destroyed. `dbOf` reads the argv first, so a typed
 	// `db purge --db x` names `x`.
 	const db = dbOf(dbPurgeArgv(flags));
-	if (!(await confirm(`This will destroy ALL data in ${db}, and the copies of it kept before upgrades.`, 'purge', db))) {
+	// `sync chain list` fails, writing nothing, in a copy in no chain, and
+	// one joining a chain is in none: what the CLI's purge reads.
+	const listed = await run(['--db', db, ...chainListArgv()]);
+	const chain = listed.code === 0 ? (JSON.parse(listed.stdout) as { chain: string | null }).chain : null;
+	let way = flags.find((f) => f === '--leave' || f === '--rejoin')?.slice(2) ?? null;
+	if (chain && !way) {
+		way = await choose(
+			`This copy is in sync chain ${chain}: leave tells the chain this copy leaves, then wipes it; ` +
+				'rejoin wipes it and refetches everything from the chain, staying a member.\nLeave or rejoin?',
+			['leave', 'rejoin']
+		);
+		if (!way) return { argv: ['db', 'purge'], code: 1, stdout: '', stderr: 'db purge: aborted (neither leave nor rejoin)' };
+		flags = [...flags, `--${way}`];
+	}
+	// What the CLI refuses before its name prompt — either flag out of a
+	// chain, a rejoin with no member to refetch from or a change none holds
+	// — it refuses off a TTY too: so the name is asked only for a purge
+	// that will run.
+	const probe = await run(dbPurgeProbeArgv(flags));
+	if (!probe.stderr.includes('stdin is not a TTY')) return probe;
+	const text =
+		`This will destroy ALL data in ${db}, and the copies of it kept before upgrades.` +
+		(way === 'rejoin'
+			? `\nIt stays a member of sync chain ${chain}, and refetches everything from it.`
+			: way
+				? `\nIt leaves sync chain ${chain} first.`
+				: '');
+	if (!(await confirm(text, 'purge', db))) {
 		// The CLI's own words for a mismatch at its prompt.
 		return { argv: ['db', 'purge'], code: 1, stdout: '', stderr: `db purge: aborted (input did not match ${db})` };
 	}

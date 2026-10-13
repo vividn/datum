@@ -370,6 +370,52 @@ describe('the seam under review', () => {
 		}, onSeam('?db=other'));
 	});
 
+	// da-0hay9: off a TTY the CLI refuses a chained purge naming --leave and
+	// --rejoin, and the dialog asked the name first, for nothing. Now it asks
+	// which, as the CLI does on a TTY, and the name only for a purge that runs.
+	test('db purge on a chained copy asks leave or rejoin before the name, and runs the answer', async () => {
+		await withApp(async (app) => { // purges its database
+			const { page } = app;
+			assert.equal((await app.run(['occur', 'coffee', '-t', '0700'])).code, 0);
+			// A lone member of an open chain: `new-invite` starts one.
+			assert.equal((await app.run(['sync', 'new-invite', '--expires', '1d'])).code, 0);
+			const dialog = page.locator('dialog.confirm');
+			const name = dialog.locator('input');
+			const button = (label) => dialog.getByRole('button', { name: label, exact: true });
+
+			// The question comes first, with no name to type; cancel runs nothing.
+			let said = app.submit('db purge');
+			await dialog.waitFor();
+			assert.match(await dialog.locator('p').innerText(), /^This copy is in sync chain \S+: leave .*rejoin .*\nLeave or rejoin\?$/s);
+			assert.equal(await name.count(), 0);
+			await button('cancel').click();
+			await said;
+			assert.match((await app.outputs()).at(-1), /aborted \(neither leave nor rejoin\)/);
+			assert.deepEqual(await fieldsIn(app, 'datum'), ['coffee']);
+
+			// Rejoin, with no other member to refetch from: the CLI's own
+			// refusal, and no name asked for it.
+			said = app.submit('db purge');
+			await button('rejoin').click();
+			await said;
+			assert.match((await app.outputs()).at(-1), /no other member of sync chain \S+ holds everything to refetch from/);
+			assert.equal(await dialog.count(), 0);
+			assert.deepEqual(await fieldsIn(app, 'datum'), ['coffee']);
+
+			// Leave: the name, then a lone member leaves telling no one and is wiped.
+			said = app.submit('db purge');
+			await button('leave').click();
+			await name.waitFor();
+			assert.match(await dialog.locator('p').innerText(), /\nIt leaves sync chain \S+ first\.$/);
+			await name.fill('datum');
+			await name.press('Enter');
+			await said;
+			assert.match((await app.outputs()).at(-1), /left sync chain/);
+			assert.deepEqual(await fieldsIn(app, 'datum'), []);
+			assert.notEqual((await app.run(['sync', 'chain', 'list'])).code, 0, 'still in a chain');
+		}, onSeam(''));
+	});
+
 	// A RACE, so it is run several times and at several delays. `hold()` used
 	// to record the database list as it stood when the acquisition RESOLVED,
 	// but `open()` chose its files when its loop STARTED — so a first-time

@@ -214,6 +214,7 @@ const SAMPLES = {
 	qrArgv: [['hello']],
 	pausedArgv: [[true], [false]],
 	dbPurgeArgv: [[]],
+	dbPurgeProbeArgv: [[], [['--leave', '--force']], [['--rejoin']]],
 	restorePreviewArgv: [[calls.restoreArgv()], [[...calls.restoreArgv(), '--hard']], [calls.restoreStagedArgv(FILE)]],
 	restoreStagedArgv: [[FILE]],
 	savePlanArgv: [[PLAN, false], [PLAN, true]],

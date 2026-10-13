@@ -25,6 +25,23 @@ export function confirm(text: string, action: string, name = '', cancel = 'cance
 }
 
 /**
+ * Which of `actions` the reader pressed in a dialog saying `text`, or null
+ * for Escape or cancel: a CLI question with more answers than yes, as a
+ * chained purge's leave or rejoin (da-0hay9). Each answer opens the next
+ * dialog, so each wears `open`'s chevron.
+ */
+export function choose(text: string, actions: string[], cancel = 'cancel'): Promise<string | null> {
+	const [action, ...also] = actions;
+	return new Promise((resolve) => {
+		const dialog = new Confirm({ target: document.body, props: { text, action, also, cancel, kind: 'open' } });
+		dialog.$on('chose', ({ detail }) => {
+			dialog.$destroy();
+			resolve(detail);
+		});
+	});
+}
+
+/**
  * What the reader typed in answer to `text`, trimmed — or null for Escape,
  * cancel, or nothing typed (`Ask.svelte`, da-y992). The app's own `prompt()`.
  * The field starts at `value`; `optional` takes an empty field as `''`.

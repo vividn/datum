@@ -191,6 +191,15 @@ export function dbPurgeArgv(flags: string[] = []): string[] {
 	return ['db', 'purge', '--yes', ...flags];
 }
 
+/**
+ * `db purge` without `--yes` (da-0hay9): off a TTY it makes every refusal
+ * the CLI makes before its name prompt, then refuses for want of one, so
+ * it purges nothing.
+ */
+export function dbPurgeProbeArgv(flags: string[] = []): string[] {
+	return ['db', 'purge', ...flags.filter((f) => f !== '--yes' && f !== '-y')];
+}
+
 /** What a restore would do, counted on the same file (da-5fooh). */
 export function restorePreviewArgv(argv: string[]): string[] {
 	return [...argv, '--dry-run', '--json'];
