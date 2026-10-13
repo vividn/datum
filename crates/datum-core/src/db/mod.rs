@@ -131,7 +131,9 @@ impl Db {
     /// * `busy_timeout = 5000` — absorbs writer-vs-writer overlap instead
     ///   of surfacing SQLITE_BUSY. rusqlite happens to set this same 5s
     ///   default on open, but that is an internal detail of rusqlite —
-    ///   datum's concurrency story shouldn't hinge on it.
+    ///   datum's concurrency story shouldn't hinge on it. `sync run` alone
+    ///   lowers it on its own connection, so a sync gives way to a person's
+    ///   write rather than the reverse (`datum_sync::YIELD`, da-lk1s2).
     /// * `journal_mode = WAL` — readers never block the writer (in
     ///   rollback-journal mode a reader holding a transaction BUSYs any
     ///   writer). Persistent in the DB file, but set here rather than in

@@ -941,6 +941,44 @@ fn daemon_run_serves_every_chained_database() {
     });
 }
 
+/// `sync run` is the one that gives way (da-lk1s2): with a write holding its
+/// file, it fails a session within its short busy timeout, where any other
+/// connection waits out 5 s, and tries every peer again at its next tick
+/// rather than after a failed push's 30 s.
+#[test]
+fn run_gives_way_to_a_write_holding_its_file_and_tries_again_at_once() {
+    let (a, b) = paired();
+    let mut a_runs = a.serve(&["sync", "run"]);
+    let (tx, rx) = std::sync::mpsc::channel();
+    let err = BufReader::new(a_runs.child.stderr.take().unwrap());
+    std::thread::spawn(move || {
+        err.lines()
+            .map_while(Result::ok)
+            .try_for_each(|l| tx.send(l))
+    });
+    let until = |needle: &str| loop {
+        let line = rx.recv_timeout(Duration::from_secs(10)).expect(needle);
+        if line.contains(needle) {
+            break;
+        }
+    };
+    // Up before b first pushes, or that push is unreachable and waits 30 s.
+    until("is up");
+    let _b_runs = b.serve(&["sync", "run"]);
+    let write = rusqlite::Connection::open(a.db()).unwrap();
+    write.execute_batch("BEGIN IMMEDIATE").unwrap();
+
+    b.ok(&["occur", "walk"]);
+    let start = Instant::now();
+    until("gave way to a write");
+    let took = start.elapsed();
+    assert!(took < Duration::from_secs(4), "a gave way after {took:?}");
+    assert!(!a.has("walk"));
+
+    write.execute_batch("COMMIT").unwrap();
+    eventually("b's walk reaching a", || a.has("walk"));
+}
+
 #[test]
 fn concurrent_edits_across_the_link_file_a_conflict_on_both_sides() {
     let (a, b) = paired();

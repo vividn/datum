@@ -686,6 +686,12 @@ type Session<'a> = Pin<Box<dyn Future<Output = (Option<(String, String)>, Result
 /// How long a peer a push failed to reach is left before the next try.
 const RETRY: Duration = Duration::from_secs(30);
 
+/// How long `sync run` waits for a write lock another connection holds,
+/// against every other connection's 5 s (da-lk1s2). Nobody waits on a
+/// background apply, so it is the one that gives way: a person's write
+/// waits out the sync, and the sync tries again at its next tick.
+const YIELD: Duration = Duration::from_millis(250);
+
 /// `datum sync run`: stay up — serve peers, and push to every peer each
 /// time this copy's vector moves (a write here, or ops from another peer).
 /// A push does not wait for an earlier one to the same peer: a dial to a
@@ -702,6 +708,7 @@ const RETRY: Duration = Duration::from_secs(30);
 pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
     runtime()?.block_on(async {
         let ep = bind(db).await?;
+        db.conn().busy_timeout(YIELD)?;
         let store = &DbStore::new(db);
         eprintln!("datum sync run: {} is up; Ctrl-C to stop", short(&ep.id().to_string()));
         let mut sessions: FuturesUnordered<Session> = FuturesUnordered::new();
@@ -726,6 +733,15 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                             // A peer that reached us, or we it, is up again.
                             retry.remove(&rep.id);
                             println!("{} {rep}", now());
+                        }
+                        // A write held this copy's file past YIELD, or the
+                        // peer's: every peer not waiting out RETRY for being
+                        // unreachable is tried again at the next tick. Matched
+                        // on the text, which sync_net's test pins:
+                        // `run_gives_way_to_a_write_holding_its_file_and_tries_again_at_once`.
+                        (Err(e), _) if format!("{e:#}").contains("database is locked") => {
+                            eprintln!("{} gave way to a write: {e:#}", now());
+                            pushed.clear();
                         }
                         (Err(e), None) => eprintln!("{} incoming: {e:#}", now()),
                         (Err(e), Some((id, label))) => {
