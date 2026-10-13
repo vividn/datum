@@ -40,7 +40,7 @@
 	import { onAnyChange } from '$lib/changes.js';
 	import { currentDb, INTERNAL_DB, withDb } from '$lib/database.js';
 	import { listDatabases } from '$lib/databases.js';
-	import { joinLink, syncConnect, syncedSince, syncNow, syncOffer, syncStates, ticketAbout, type SyncState } from '$lib/sync.js';
+	import { DELIVER_MS, joinLink, syncConnect, syncedSince, syncNow, syncOffer, syncStates, ticketAbout, type SyncState } from '$lib/sync.js';
 	import {
 		ackNotice,
 		approvalWords,
@@ -93,8 +93,6 @@
 	const FILTER = '⛛';
 	/** The order a legend and a database's overall state are read in. */
 	const MARKS: Mark[] = ['synced', 'syncing', 'pending', 'error', 'none'];
-	/** How long a Leave waits for a sync to deliver its departure. */
-	const DELIVER_MS = 20_000;
 	const canShare = browser && typeof navigator.share === 'function';
 
 	/** The page's database: the one this widget is about. */

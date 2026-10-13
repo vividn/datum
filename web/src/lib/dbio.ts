@@ -325,5 +325,25 @@ export async function purge(flags: string[] = []): Promise<RunResult> {
 		// The CLI's own words for a mismatch at its prompt.
 		return { argv: ['db', 'purge'], code: 1, stdout: '', stderr: `db purge: aborted (input did not match ${db})` };
 	}
-	return run(dbPurgeArgv(flags));
+	// A departure leaves only once a member holds it (da-dsob1), which this
+	// page's sync delivers: each session it ends well is a reason to run the
+	// purge again (da-a7kf7), as the sync widget's Leave does (da-2o19r).
+	const { DELIVER_MS, syncedSince, syncNow } = await import('./sync.js');
+	const refused = (r: RunResult) => r.code !== 0 && r.stderr.includes('no member holds');
+	const until = Date.now() + DELIVER_MS;
+	for (;;) {
+		const since = Date.now();
+		const r = await run(dbPurgeArgv(flags));
+		if (!refused(r)) return r;
+		progress.set('Telling the chain’s other devices that this copy is leaving…');
+		const synced = await syncedSince(db, since, until - Date.now()).finally(() => progress.set(''));
+		if (synced) continue;
+		const unheard = `No device of sync chain ${chain} could be reached to receive this copy’s departure. Purge ${db} now, leaving the chain telling no one?`;
+		if (!(await confirm(unheard, 'purge anyway'))) return r;
+		// A member may have come up while the question was open (da-48g3o): one
+		// sync, and the purge again, which forces only if still unheard.
+		await syncNow(db);
+		const again = await run(dbPurgeArgv(flags));
+		return refused(again) ? run(dbPurgeArgv([...flags, '--force'])) : again;
+	}
 }

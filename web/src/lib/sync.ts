@@ -538,6 +538,9 @@ export function syncLeads(): string[] {
 	return [...led.keys()];
 }
 
+/** How long a leave or a purge's departure waits for a sync to deliver it (da-2o19r). */
+export const DELIVER_MS = 20_000;
+
 /**
  * True once `db`'s leader, this tab or another, ends a session well after
  * `since` (ms since the epoch); false after `ms` with none, or at once when
