@@ -591,7 +591,7 @@ fn a_purge_drops_the_ops_the_chain_and_the_endpoint_key() {
     assert!(held.contains("holds other copies' data"), "{held}");
     let (old_id, old_chain) = (b.id(), b.query(CHAIN));
 
-    let purged = b.ok(&["db", "purge", "-y"]);
+    let purged = b.ok(&["db", "purge", "--leave", "-y"]);
     for table in ["entries", "ops", "sync_local", "sync_peers", "sync_notices"] {
         assert!(purged.contains(table), "{table} not dropped: {purged}");
     }
@@ -608,6 +608,42 @@ fn a_purge_drops_the_ops_the_chain_and_the_endpoint_key() {
 const CHAIN: &str =
     "SELECT json_extract(body, '$.effect.chain') FROM ops WHERE hid = '~chain' LIMIT 1";
 
+/// `db purge --rejoin` over iroh (da-qjxfx): the purge's own first sync
+/// refetches everything from the member that serves, the copy keeps its
+/// endpoint and its chain, and the next `datum sync` verifies with each.
+#[test]
+fn a_purge_with_rejoin_refetches_from_the_chain_and_verifies() {
+    let (a, b) = paired();
+    let c = Copy::new();
+    let (mut inviting, ticket) = a.invite(&[]);
+    c.ok(&["sync", "chain", "connect", &ticket]);
+    assert!(inviting.finish().0);
+    a.ok(&["occur", "tea"]);
+    b.ok(&["occur", "coffee"]);
+    // c is down: each sync fails it, and a's answer is enough.
+    let _a_runs = a.serve(&["sync", "run"]);
+    b.run(&["sync"]);
+    c.run(&["sync"]);
+    assert!(c.has("coffee"));
+    let (id, chain) = (b.id(), b.query(CHAIN));
+
+    let purged = b.ok(&["db", "purge", "--rejoin", "-y"]);
+    assert!(
+        purged.contains("verify ok") && !purged.contains("not refetched"),
+        "{purged}"
+    );
+    assert!(b.has("tea") && b.has("coffee"));
+    assert_eq!((b.id(), b.query(CHAIN)), (id, chain));
+    b.ok(&["occur", "walk"]);
+    let _c_runs = c.serve(&["sync", "run"]);
+    let synced = b.ok(&["sync"]);
+    assert_eq!(synced.matches("verify ok").count(), 2, "{synced}");
+    for x in [&a, &b, &c] {
+        assert!(x.has("walk"));
+        x.ok(&["check", "sync"]);
+    }
+}
+
 /// A copy purged while `sync run` serves it (the daemon's loop) stops
 /// serving the old key, and a member of the old chain that dials it gets
 /// nothing and sends nothing (da-8v7ua).
@@ -619,7 +655,7 @@ fn a_purged_copy_serves_the_old_chain_nothing() {
     a.ok(&["sync"]);
     assert!(b.has("tea"));
 
-    b.ok(&["db", "purge", "-y"]);
+    b.ok(&["db", "purge", "--leave", "--force", "-y"]);
     let start = Instant::now();
     while b_runs.child.try_wait().unwrap().is_none() {
         assert!(
@@ -662,7 +698,7 @@ fn a_purge_between_an_open_sessions_rounds_leaves_the_file_empty() {
     let _b_runs = b.serve(&["sync", "run"]);
     let a_syncs = a.cmd(&["sync"]).spawn().unwrap();
     eventually("a's first round", || a.has("juice"));
-    a.ok(&["db", "purge", "-y"]);
+    a.ok(&["db", "purge", "--leave", "--force", "-y"]);
 
     let out = a_syncs.wait_with_output().unwrap();
     let said = String::from_utf8_lossy(&out.stdout);
@@ -815,7 +851,7 @@ fn a_purge_leaves_nothing_of_the_database_in_its_file_or_beside_it() {
         "{before:?}"
     );
 
-    let purged = b.ok(&["db", "purge", "-y"]);
+    let purged = b.ok(&["db", "purge", "--leave", "--force", "-y"]);
     assert!(
         purged.contains(&format!("removed: {}", own.display())) && !purged.contains("other.db"),
         "{purged}"

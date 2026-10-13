@@ -69,14 +69,27 @@ pub(crate) fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
 }
 
 pub(crate) fn parse_db_purge_args(tail: &[&str]) -> Result<DbPurgeArgs> {
-    let mut yes = false;
+    let mut args = DbPurgeArgs::default();
     for tok in tail {
         match split_flag(tok) {
-            FlagSplit::Long("yes") | FlagSplit::Short('y') => yes = true,
+            FlagSplit::Long("yes") | FlagSplit::Short('y') => args.yes = true,
+            FlagSplit::Long("leave") => args.leave = true,
+            FlagSplit::Long("rejoin") => args.rejoin = true,
+            FlagSplit::Long("force") => args.force = true,
             f => return Err(unknown_flag(f)),
         }
     }
-    Ok(DbPurgeArgs { yes })
+    if args.leave && args.rejoin {
+        return Err(ParseError::InvalidArg(
+            "db purge: --leave or --rejoin, not both".into(),
+        ));
+    }
+    if args.force && !args.leave {
+        return Err(ParseError::InvalidArg(
+            "db purge: --force only goes with --leave".into(),
+        ));
+    }
+    Ok(args)
 }
 
 pub(crate) fn parse_completions_cmd(tail: &[&str]) -> Result<CompletionsCommand> {

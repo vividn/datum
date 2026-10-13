@@ -139,7 +139,7 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
                 false if dry_run => {}
                 false => {
                     if !force {
-                        told = depart(db, &chain.id)?;
+                        told = depart(db, &chain.id, "datum sync chain leave")?;
                     }
                     db.sync_chain_leave()?
                 }
@@ -998,7 +998,8 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
 /// sync it to every member unless one holds it already. The members that
 /// hold it; none, with no one to tell. Refused while none does: the copy
 /// stays in its chain, its departure signed, until a sync delivers it.
-fn depart(db: &Db, chain: &str) -> Result<Option<Vec<String>>> {
+/// `again` is the command that finishes it.
+pub(crate) fn depart(db: &Db, chain: &str, again: &str) -> Result<Option<Vec<String>>> {
     let Some(told) = db.sync_depart()? else {
         return Ok(None);
     };
@@ -1021,8 +1022,8 @@ fn depart(db: &Db, chain: &str) -> Result<Option<Vec<String>>> {
     ensure!(
         !told.is_empty(),
         "no member holds this copy's departure from sync chain {chain} yet{}: it stays in the \
-         chain, writing nothing, until a sync delivers it. `datum sync chain leave` again once \
-         a member is up, or `--force` to leave now, telling no one",
+         chain, writing nothing, until a sync delivers it. `{again}` again once a member is \
+         up, or `--force` to leave now, telling no one",
         synced
             .err()
             .map(|e| format!(" ({e:#})"))

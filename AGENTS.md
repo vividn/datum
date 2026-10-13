@@ -235,7 +235,14 @@ back (below), though an old chain's `unpurge` record still folds as it did.
 A copy belongs to one chain — its apply refuses another chain's records
 (da-d8ort). `chain leave` leaves it from any chain: its ops, peers and
 notices go, its entries stay — signed again as baselines on the next sync —
-and it takes a new endpoint key, being a new device now. Redeeming another
+and it takes a new endpoint key, being a new device now. `db purge` on a
+chained copy takes `--leave`, that departure and then the wipe, or `--rejoin`
+(da-qjxfx): the wipe keeps `sync_local`, `sync_peers` and `sync_notices`, the
+relaying members become the copies it is joining through, and `_meta`
+`sync_rejoin` holds the highest seq its key signed, which `own_head` counts as
+signed until its ops are back — so it takes them back and serves a member's
+vector without reading itself as a copy sharing its key, and signs nothing
+meanwhile. Refused while a change made here has reached no member. Redeeming another
 chain's invite leaves on its own only a copy holding nothing but its own data
 (no other live member, no other endpoint's op), keeping its key. A revoked
 device rejoins by a fresh invite to its chain: the `admit` of a listed
@@ -323,7 +330,7 @@ its store (hidden `sync handshake` / `new-invite` / `endpoint-key` /
 `record-session`), and `$lib/sync.ts` elects ONE tab per database to run the
 endpoint by a Web Lock (`datum-sync:<db>`), which pushes on every tab's writes
 (`onAnyChange`). A session is its copy's only while the file's endpoint key is
-the one it began with (da-otz0d): a `db purge`, `chain leave` or `chain rekey`
+the one it began with (da-otz0d): a `db purge --leave`, `chain leave` or `chain rekey`
 under an open session makes the file another copy, in no chain, which took
 the peer's whole chain at the next round as a copy joining does. So core's
 `endpoint()`, where what a session writes learns who this copy is, inside the

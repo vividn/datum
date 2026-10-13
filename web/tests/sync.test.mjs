@@ -188,7 +188,7 @@ describe('datum.day and a native copy', () => {
 					assert.equal((await native.run(['occur', 'juice', '-t', '1000'])).code, 0);
 					const runs = native.spawn(['sync', 'run'], { DATUM_SYNC_TEST_APPLY_DELAY_MS: '2000' });
 					await until(() => countOf(app, 'juice'), (n) => n === 1);
-					assert.equal((await app.run(['db', 'purge', '--yes'])).code, 0);
+					assert.equal((await app.run(['db', 'purge', '--leave', '--force', '--yes'])).code, 0);
 
 					// Its session with the page over, one way or the other: a line past «is up».
 					await until(() => native.count('tea'), (n) => n === 1);

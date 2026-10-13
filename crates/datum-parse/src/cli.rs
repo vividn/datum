@@ -233,6 +233,13 @@ pub struct DbPurgeArgs {
     /// `--yes` / `-y` — skip the type-the-database-path confirmation prompt
     /// and purge non-interactively. Required when stdin is not a TTY.
     pub yes: bool,
+    /// `--leave` — a chained copy tells its chain it leaves, then is wiped
+    /// (da-qjxfx); `--force` with it tells no one.
+    pub leave: bool,
+    pub force: bool,
+    /// `--rejoin` — a chained copy is wiped and stays a member, with its
+    /// endpoint key, refetching everything from the chain (da-qjxfx).
+    pub rejoin: bool,
 }
 
 #[derive(Debug, Default)]

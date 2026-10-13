@@ -438,6 +438,16 @@ impl Db {
     /// not `_meta` or `entries` before them, and every open after read that
     /// file as schema v7 and refused to migrate it.
     pub fn force_recreate_schema(&self) -> Result<Vec<String>> {
+        self.recreate_schema_with(|_| Ok(()))
+    }
+
+    /// [`Db::force_recreate_schema`], with `within` run in its transaction
+    /// on the new schema before it commits: what it writes lands with the
+    /// purge or not at all (`db purge --rejoin`, da-qjxfx).
+    pub(crate) fn recreate_schema_with(
+        &self,
+        within: impl FnOnce(&Connection) -> Result<()>,
+    ) -> Result<Vec<String>> {
         let tx = self.conn.unchecked_transaction()?;
         let tables: Vec<String> = tx
             .prepare(
@@ -455,6 +465,7 @@ impl Db {
         tx.execute_batch(include_str!("../schema.sql"))?;
         tx.execute_batch(STATS_CACHE_SQL)?;
         crate::migrations::set_schema_version(&tx, crate::migrations::CURRENT_SCHEMA_VERSION)?;
+        within(&tx)?;
         tx.commit()?;
         self.conn.execute_batch("VACUUM")?;
         // A kit index is this device's, derived from the definitions the

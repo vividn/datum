@@ -81,6 +81,7 @@ mod debug;
 mod diagnose;
 mod pause;
 pub mod peers;
+mod rejoin;
 pub mod status;
 mod versions;
 use chain::{Chain, Filter, Role, CHAIN_HID};
@@ -327,13 +328,15 @@ fn read_only(conn: &Connection, ep: &Endpoint) -> Result<Option<&'static str>> {
 const SHARED_KEY: &str = "these are two copies of one database sharing an endpoint key; \
      run `datum sync chain rekey` on one of them";
 
-/// This copy's endpoint id, and the highest seq it has signed.
+/// This copy's endpoint id, and the highest seq it has signed: held, or
+/// signed before a `db purge --rejoin` and not back yet.
 fn own_head(conn: &Connection) -> Result<(String, i64)> {
     let id = endpoint(conn)?.id;
-    let seq = conn
+    let seq: i64 = conn
         .prepare_cached("SELECT COALESCE(MAX(seq), 0) FROM ops WHERE endpoint = ?1")?
         .query_row(params![id], |r| r.get(0))?;
-    Ok((id, seq))
+    let before = rejoin::signed_before(conn, &id)?;
+    Ok((id, seq.max(before)))
 }
 
 // ─── HLC ────────────────────────────────────────────────────────────────────
@@ -716,6 +719,9 @@ fn push(
     let seq: i64 = conn
         .prepare_cached("SELECT COALESCE(MAX(seq), 0) + 1 FROM ops WHERE endpoint = ?1")?
         .query_row(params![ep.id], |r| r.get(0))?;
+    if seq <= rejoin::signed_before(conn, &ep.id)? {
+        return Err(DatumError::Other(rejoin::REJOINING.into()));
+    }
     let (raw, alias_chain) =
         INVOCATION.with(|i| (i.borrow().raw.clone(), i.borrow().alias_chain.clone()));
     let hlc = next_hlc(conn)?;
