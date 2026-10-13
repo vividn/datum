@@ -48,10 +48,15 @@ pub fn render_help_text(cmd: Option<&str>) -> String {
         Some(name) => match find_command(name) {
             Some((spec, was_alias)) => render_command(spec, name, was_alias),
             // `datum help logging` is not a command but is a page; only
-            // a word that is neither falls back to the top level.
+            // a word that is neither falls back to the top level, saying
+            // so — the CLI answers an alias or a kit command before this
+            // (da-3odno), so a miss must not read as the page it asked for.
             None => match find_topic(name) {
                 Some(topic) => render_topic(topic),
-                None => render_top_level(),
+                None => format!(
+                    "datum help: no command, topic or alias named '{name}'\n\n{}",
+                    render_top_level()
+                ),
             },
         },
     }

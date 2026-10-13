@@ -359,19 +359,7 @@ pub fn parse_invocation(argv: Vec<String>) -> anyhow::Result<Invocation> {
     // pre-scan routes the same db the dispatcher will use into the
     // alias resolver, so the two surfaces agree on which alias table
     // is canonical for this invocation.
-    let cli_db = crate::config::pre_scan_db_flag(&argv);
-    let maybe_db = (|| -> Option<datum_core::db::Db> {
-        let db_path = match crate::config::resolve_db(cli_db.as_deref()) {
-            Ok(r) => r.path,
-            Err(_) => return None,
-        };
-        if !db_path.exists() {
-            return None;
-        }
-        datum_core::db::Db::open(db_path.to_str()?).ok()
-    })();
-
-    match maybe_db {
+    match open_existing_db(&argv) {
         Some(db) => {
             // This open runs BEFORE any dispatch, so it is usually the one
             // that migrates — and its `Db` dies here, taking the report with
@@ -384,6 +372,17 @@ pub fn parse_invocation(argv: Vec<String>) -> anyhow::Result<Invocation> {
         }
         None => parse_invocation_inner(argv, &palias::NoResolver),
     }
+}
+
+/// The database `argv` names (its `--db`, else the configured one), opened
+/// when it exists — never created.
+pub fn open_existing_db(argv: &[String]) -> Option<datum_core::db::Db> {
+    let cli_db = crate::config::pre_scan_db_flag(argv);
+    let db_path = crate::config::resolve_db(cli_db.as_deref()).ok()?.path;
+    if !db_path.exists() {
+        return None;
+    }
+    datum_core::db::Db::open(db_path.to_str()?).ok()
 }
 
 /// Like [`parse_invocation`] but uses the provided `db` for alias

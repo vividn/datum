@@ -27,6 +27,7 @@ pub mod get;
 pub mod get_search;
 pub mod grep;
 pub mod head;
+pub mod help;
 pub mod helpers;
 pub mod history;
 pub mod ids;

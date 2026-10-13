@@ -84,7 +84,7 @@ fn run_line(line: &str, db: &Db) -> Result<()> {
             // command at the prompt just prints the error and the user
             // retries.
             if let Some(pe) = e.downcast_ref::<ParseError>() {
-                if let Some(result) = crate::render_parse_special(pe) {
+                if let Some(result) = crate::render_parse_special(pe, Some(db)) {
                     return result;
                 }
             }

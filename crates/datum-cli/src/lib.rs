@@ -33,8 +33,20 @@ pub const VERSION_BANNER: &str = concat!("datum ", env!("DATUM_BUILD"));
 ///
 /// The set itself lives in `datum_parse::help::special_output`, which is
 /// where the web runner reaches it too (da-e0m6) — so `run`, `repl::run_line`
-/// and the browser all honour exactly the same contract.
-pub fn render_parse_special(e: &ParseError) -> Option<Result<()>> {
+/// and the browser all honour exactly the same contract. `help NAME` for a
+/// name only `db` defines, an alias or a kit command, is answered from it
+/// first (da-3odno).
+pub fn render_parse_special(e: &ParseError, db: Option<&datum_core::db::Db>) -> Option<Result<()>> {
+    if let (Some(name), Some(db)) = (commands::help::asks_the_db(e), db) {
+        match commands::help::page(name, db) {
+            Ok(Some(text)) => {
+                print!("{text}");
+                return Some(Ok(()));
+            }
+            Ok(None) => {}
+            Err(e) => return Some(Err(e)),
+        }
+    }
     let text = help::special_output(e, VERSION_BANNER)?;
     print!("{text}");
     Some(Ok(()))
@@ -60,12 +72,17 @@ pub fn run(argv: Vec<String>) -> Result<()> {
     // Clear the dedup-no-op flag so it reflects only this invocation
     // (da-9sfm). `main` reads it after a clean run to choose exit code 11.
     args::reset_duplicate_noop();
-    let invocation = match args::parse_invocation(argv) {
+    let invocation = match args::parse_invocation(argv.clone()) {
         Ok(inv) => inv,
         Err(e) => {
             // Propagate `--help` / `--version` / `--man` as a clean stdout print.
             if let Some(pe) = e.downcast_ref::<ParseError>() {
-                if let Some(result) = render_parse_special(pe) {
+                // A second open: the parse's own died inside it. Only a help
+                // request for a name no table knows pays it, and the first
+                // open already migrated.
+                let db =
+                    commands::help::asks_the_db(pe).and_then(|_| args::open_existing_db(&argv));
+                if let Some(result) = render_parse_special(pe, db.as_ref()) {
                     return result;
                 }
                 if let ParseError::InvalidArg(msg) = pe {

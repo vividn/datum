@@ -63,6 +63,7 @@ mod float_roundtrip;
 mod get_cmd;
 mod get_projection;
 mod help_commands_dispatch;
+mod help_defined_names;
 mod history_cmd;
 mod id_lists;
 mod ids_cmd;

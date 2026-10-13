@@ -395,13 +395,19 @@ fn alias_rt_renders_with_canonical_name() {
 }
 
 // ---------------------------------------------------------------------------
-// Unknown commands fall back to top-level (legacy behaviour).
+// Unknown commands fall back to top-level, saying they are unknown
+// (da-3odno): a miss is told apart from `datum help` itself.
 // ---------------------------------------------------------------------------
 
 #[test]
 fn unknown_command_falls_back_to_top_level() {
     let s = command_help("not-a-real-command");
-    assert_eq!(s, EXPECTED_TOP_LEVEL);
+    assert_eq!(
+        s,
+        format!(
+            "datum help: no command, topic or alias named 'not-a-real-command'\n\n{EXPECTED_TOP_LEVEL}"
+        )
+    );
 }
 
 // ---------------------------------------------------------------------------
