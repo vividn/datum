@@ -496,14 +496,21 @@ export function ticketAbout(ticket: string): Promise<TicketAbout> {
 	return ask('', { op: 'about', ticket });
 }
 
+/** The database a bare `sync chain invite` typed on the page asked an invite of (da-5g0nk), until the Sync widget starts it. */
+export const inviting = writable<string | null>(null);
+
 /**
  * `sync chain connect <TICKET|LINK>` typed on the page (da-l9kdr): the page's
  * CLI has no network, so the ticket goes to the sync worker (`syncConnect`),
  * and the result says what native `connect` says. The argv it echoes holds
- * no ticket. Null for anything else — `--help` too — which runs as typed.
+ * no ticket. A bare `sync chain invite` (da-5g0nk) waits for a redeemer, which
+ * no prompt line can show, so it opens the Sync widget with the invite under
+ * way there. Null for anything else — `--help` and an invite's flags too —
+ * which runs as typed.
  */
 export function syncCommand(argv: string[]): Promise<RunResult> | null {
-	const [ticket, ...rest] = connectArgs(argv) ?? [];
+	if (chainArgs(argv, 'invite')?.length === 0) return inviteHere(argv);
+	const [ticket, ...rest] = chainArgs(argv, 'connect') ?? [];
 	if (!ticket || ticket.startsWith('-') || rest.length) return null;
 	const shown = argv.map((w) => (w === ticket ? '<ticket>' : w));
 	return syncConnect(dbOf(argv), ticket).then(
@@ -521,6 +528,13 @@ export function syncCommand(argv: string[]): Promise<RunResult> | null {
 		}),
 		(e) => ({ argv: shown, code: 1, stdout: '', stderr: `error: ${(e as Error).message}` })
 	);
+}
+
+async function inviteHere(argv: string[]): Promise<RunResult> {
+	inviting.set(dbOf(argv));
+	// Here and not at the top: the pure tests import this file, and the layout is the page's.
+	await (await import('./layout/shell.js')).openPlace('sync');
+	return { argv, code: 0, stdout: 'the invite is in the sync widget: scan its QR with the other device, or open its link there', stderr: '' };
 }
 
 /** Redeem `ticket` and sync (`datum sync chain connect`). */
@@ -575,15 +589,15 @@ export function syncTouched(db: string): void {
 	else listen().postMessage({ db, touched: true });
 }
 
-/** The words after `sync chain connect` in `argv`, `--db` and its name left out wherever they stand; null for any other command. */
-function connectArgs(argv: string[]): string[] | null {
+/** The words after `sync chain <sub>` in `argv`, `--db` and its name left out wherever they stand; null for any other command. */
+function chainArgs(argv: string[], sub: string): string[] | null {
 	const words: string[] = [];
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] === '--db') i++;
 		else if (!argv[i].startsWith('--db=')) words.push(argv[i]);
 	}
-	const [sync, chain, connect, ...rest] = words;
-	return sync === 'sync' && chain === 'chain' && connect === 'connect' ? rest : null;
+	const [sync, chain, verb, ...rest] = words;
+	return sync === 'sync' && chain === 'chain' && verb === sub ? rest : null;
 }
 
 /**
@@ -593,7 +607,7 @@ function connectArgs(argv: string[]): string[] | null {
  * secret.
  */
 export function maskTicket(line: string): string {
-	for (const word of connectArgs(shellSplit(line)) ?? []) {
+	for (const word of chainArgs(shellSplit(line), 'connect') ?? []) {
 		if (word.startsWith('-')) continue;
 		const esc = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 		line = line.replace(new RegExp(`(^|[\\s'"])${esc}(?=$|[\\s'"])`, 'g'), '$1<ticket>');

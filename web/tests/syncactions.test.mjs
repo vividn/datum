@@ -120,6 +120,36 @@ describe('the sync widget’s actions', () => {
 		}
 	});
 
+	test('`sync chain invite` typed in the bar opens the widget with the invite under way, which a native copy redeems; a flagged one runs as typed', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			await withWallClock(
+				async (app) => {
+					const { page } = app;
+					await app.goto('/');
+					assert.equal(await page.locator(WIDGET).count(), 0, 'the sync widget is not on the default page');
+					// A flag the widget has no word for is the CLI's, which has no network.
+					await app.submit('sync chain invite --reader');
+					assert.match((await app.outputs()).at(-1), /not in this build/);
+					assert.equal(await page.locator(WIDGET).count(), 0);
+
+					await app.submit('sync chain invite');
+					assert.match((await app.stdouts()).at(-1), /the invite is in the sync widget/);
+					const offer = page.locator(`${WIDGET} .offer[data-db="datum"]`);
+					await offer.locator('.qr svg').waitFor();
+					await offer.locator('summary', { hasText: 'connect from a terminal' }).click();
+					const ticket = /datum sync chain connect '([^']+)'/.exec(await offer.locator('.ticket').innerText())[1];
+					const joined = await native.run(['sync', 'chain', 'connect', ticket]);
+					assert.equal(joined.code, 0, joined.stderr);
+					await until(async () => (await page.locator(`${WIDGET} .devices li`).count()) === 2, Boolean);
+				},
+				{ prepare: relayed(relay), viewport: DESKTOP }
+			);
+		} finally {
+			await native.close();
+		}
+	});
+
 	test('a passkey locks the chain; a revoke is approved with it and the device moves to More as revoked', async () => {
 		await withWallClock(async (app) => {
 			const { page } = app;

@@ -20,7 +20,7 @@
 	chain; else [Add device], [Rename this device] and [More], which holds
 	pause, the other devices' rename and revoke, the admins (da-bjxts) and
 	the raw `sync` subcommands, each filling `sync <sub> ` on the line
-	(da-6du3o). [Add device] opens one panel — the QR, until when it works,
+	(da-6du3o). [Add device], or `sync chain invite` typed on the page (da-5g0nk), opens one panel — the QR, until when it works,
 	and its own buttons at its bottom — with the ticket under a closed
 	«connect from a terminal». The cards a link opens — `/sync/approve#…`,
 	which names what the passkey signs before it offers the passkey, since
@@ -40,7 +40,7 @@
 	import { onAnyChange } from '$lib/changes.js';
 	import { currentDb, INTERNAL_DB, withDb } from '$lib/database.js';
 	import { listDatabases } from '$lib/databases.js';
-	import { DELIVER_MS, joinLink, syncConnect, syncedSince, syncNow, syncOffer, syncStates, ticketAbout, type SyncState } from '$lib/sync.js';
+	import { DELIVER_MS, inviting, joinLink, syncConnect, syncedSince, syncNow, syncOffer, syncStates, ticketAbout, type SyncState } from '$lib/sync.js';
 	import {
 		ackNotice,
 		approvalWords,
@@ -129,6 +129,11 @@
 
 	$: if (browser) void resolve($approving);
 	$: if (browser) void resolveJoin($joining);
+	// `sync chain invite` typed on the page (da-5g0nk): the offer [Add device] makes.
+	$: if (browser && $inviting) {
+		void addDevice($inviting);
+		inviting.set(null);
+	}
 
 	$: if (browser) void read(epoch);
 	$: cur = dbs.find((d) => d.db === db) ?? { db, chain: null, members: [] };
