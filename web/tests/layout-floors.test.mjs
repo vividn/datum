@@ -5,6 +5,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
+import { SETTLE_MS } from '../src/lib/layout/resizing.ts';
 import {
 	CHROME,
 	DESKTOP,
@@ -88,6 +89,32 @@ const contentWidth = (page, id) =>
 			const s = getComputedStyle(el);
 			return Math.floor(el.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight));
 		});
+
+/**
+ * Wait for the page's next rendering step to have reported its resizes. A
+ * new observer's first report comes at that step, after the observers made
+ * before it — the panes' — have had theirs.
+ */
+const rendered = (page) =>
+	page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				const observer = new ResizeObserver(() => {
+					observer.disconnect();
+					resolve();
+				});
+				observer.observe(document.body);
+			})
+	);
+
+/** Wait until `id`'s picture is drawn at its pane's content box, `contentWidth`'s. */
+const fits = (page, id) =>
+	page.waitForFunction((of) => {
+		const body = document.querySelector(`section[data-pane="${of}"] .body`);
+		const s = getComputedStyle(body);
+		const box = Math.floor(body.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight));
+		return body.querySelector('svg.svg')?.width.baseVal.value === box;
+	}, id);
 
 // vividn's first look (da-jgrn): dragging a border was jittery, because every
 // drawn pane re-ran its CLI command at every size it passed through. His
@@ -177,9 +204,12 @@ describe('resizing', () => {
 			const border = page.locator('.split.row > [role="separator"]');
 			const at = await grab(page, border);
 			for (let i = 1; i <= 5; i++) await page.mouse.move(at.x + i * 20, at.y);
-			// A throttle period after the first of those moves, the trailing
+			// Within a throttle period of the last of those moves, the trailing
 			// tick draws the newest box — the one the pointer came to rest on.
-			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'nowview'));
+			// Waited for as that box drawn, not as any run: under load a tick
+			// can fire between two moves, and the first run is then of a box
+			// the pointer has already left (da-2q30w, 321 !== 301).
+			await fits(page, 'nowview');
 			await app.idle();
 			const before = drawnRuns(await seen()).nowview;
 			// It is the FINAL box: the picture already fits the pane it is in,
@@ -206,22 +236,32 @@ describe('resizing', () => {
 			const border = page.locator('.split.row > [role="separator"]');
 			await border.focus();
 			// 30ms apart, inside one `SETTLE_MS` burst: the pacing is the
-			// input, not a wait. The one redraw is the burst's trailing edge,
-			// and nothing is pushed after it, so once it is asked for and has
+			// input, so it is measured on the page's clock, held. On the wall
+			// clock a loaded runner stretched a gap past `SETTLE_MS` and the
+			// burst came out as two, the first after seven nudges (da-2q30w,
+			// 226 !== 151). The one redraw is the burst's trailing edge, and
+			// nothing is pushed after it, so once it is asked for and has
 			// answered there is no second one coming.
+			// Each press's box reaches `settle` by the pane's ResizeObserver,
+			// at a rendering step and not on the held clock, so the clock waits
+			// for it: moved first, it fired the flush before the last boxes
+			// came. Of 20 idle runs, 6 asked for no run at all, a hang in
+			// `fits` below, and 3 asked twice, the box at press 8 and then the
+			// last.
 			for (let i = 0; i < 10; i++) {
 				await page.keyboard.press('ArrowRight');
-				await page.waitForTimeout(30);
+				await rendered(page);
+				await page.clock.runFor(30);
 			}
-			await page.waitForFunction(() => window.__datumSeen.some((a) => a[0] === 'nowview'));
+			await page.clock.runFor(SETTLE_MS);
+			await fits(page, 'nowview');
 			await app.idle();
 			const runs = drawnRuns(await seen());
 			assert.equal(runs.nowview, 1, `nowview ran ${runs.nowview} times for ten nudges`);
 			assert.equal(runs.dayview, 0, `the strip, untouched by this border, ran ${runs.dayview} bands`);
 			assert.equal(await canvasWidth(page, 'nowview'), await contentWidth(page, 'nowview'));
-		}, STILL);
+		}, { ...STILL, holdTimers: true });
 	});
-
 
 	test('a border is grabbed right beside the badges, which hang half over the gap', async () => {
 		await shared.solo(async ({ page }) => {
