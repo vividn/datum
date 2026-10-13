@@ -1487,13 +1487,14 @@ pub fn collect_issues(db: &Db, entries: &[Entry]) -> Result<Report> {
     // Load registry once for the remaining checks.
     let registry = db.load_registry()?;
 
-    // 3. unknown fields — have entries but no field_spec (WARNING)
-    let fields = db.distinct_fields()?;
-    let unknown: Vec<String> = fields
-        .iter()
-        .filter(|f| registry.field_spec(f).is_none())
-        .cloned()
+    // 3. unknown fields — on a live row but in no field_spec (WARNING). A
+    //    field only flag/meta rows hold is datum's own bookkeeping (da-9p08z).
+    let logged: std::collections::BTreeSet<&str> = (entries.iter())
+        .filter(|e| e.deleted_at.is_none() && e.superseded_by.is_none() && !e.is_flag_or_meta())
+        .map(|e| e.field.as_str())
+        .filter(|f| !datum_core::db::is_meta_field(f) && registry.field_spec(f).is_none())
         .collect();
+    let unknown: Vec<String> = logged.into_iter().map(String::from).collect();
     if !unknown.is_empty() {
         issues.push(Issue {
             domain: Domain::Entries,

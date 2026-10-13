@@ -367,6 +367,17 @@ impl Entry {
         }
     }
 
+    /// A `datum flag` marker or a `datum meta` note: the Rust twin of
+    /// [`crate::db::NOT_FLAG_OR_META_SQL`], negated (da-9p08z). That reads
+    /// `json_extract(…) IS NOT 1`, which a JSON `1` matches as `true` does.
+    pub fn is_flag_or_meta(&self) -> bool {
+        let m = self.extra_metadata.as_ref();
+        ["flag", "meta"].iter().any(|k| {
+            m.and_then(|m| m.get(*k))
+                .is_some_and(|v| v.as_bool() == Some(true) || v.as_f64() == Some(1.0))
+        })
+    }
+
     /// Short hid — first [`SHORT_HID_LEN`] chars of the stored hid.
     pub fn short_uid(&self) -> String {
         self.hid.chars().take(SHORT_HID_LEN).collect()
@@ -527,6 +538,25 @@ mod tests {
             "UTC",
         )
         .unwrap()
+    }
+
+    /// The SQL clause hides a row whose marker is JSON `true` or `1`, and
+    /// the twin must count the same rows (da-9p08z).
+    #[test]
+    fn is_flag_or_meta_reads_the_marker_as_the_sql_clause_does() {
+        let mut e = Entry::new("x", Verb::Point, None, None, None, None, "d");
+        for (meta, marked) in [
+            (serde_json::json!({ "flag": true }), true),
+            (serde_json::json!({ "meta": 1 }), true),
+            (serde_json::json!({ "flag": 1.0 }), true),
+            (serde_json::json!({ "flag": false }), false),
+            (serde_json::json!({ "flag": "1" }), false),
+            (serde_json::json!({ "flag": 2 }), false),
+            (serde_json::json!({}), false),
+        ] {
+            e.extra_metadata = Some(meta.clone());
+            assert_eq!(e.is_flag_or_meta(), marked, "{meta}");
+        }
     }
 
     #[test]

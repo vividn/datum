@@ -24,6 +24,7 @@ mod batch_undo;
 mod batch_update_cmd;
 mod check_examined;
 mod check_fix_shared_slug;
+mod check_flag_field;
 mod cli_harness;
 mod client_templates;
 mod closed_pipe_last;
