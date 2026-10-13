@@ -44,7 +44,7 @@ mod types;
 mod view;
 mod zone_timeline;
 
-use std::cell::{OnceCell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 
 use rusqlite::{Connection, TransactionBehavior};
 
@@ -116,6 +116,9 @@ pub struct Db {
     /// The file this handle was opened at, as it was named: what datum
     /// writes beside a database is beside this. `None` in memory.
     path: Option<std::path::PathBuf>,
+    /// When this handle's run of sync apply chunks with no pause between
+    /// them began, and when it last committed one (`sync_apply`, da-2ejbs).
+    pub(crate) apply_run: Cell<Option<(std::time::Instant, std::time::Instant)>>,
 }
 
 impl Db {
@@ -228,6 +231,7 @@ impl Db {
             conn,
             spec_alias_cache: RefCell::new(None),
             client_id: OnceCell::new(),
+            apply_run: Cell::new(None),
             last_migration: None,
             path: Some(path.into()),
         };
@@ -249,6 +253,7 @@ impl Db {
             conn,
             spec_alias_cache: RefCell::new(None),
             client_id: OnceCell::new(),
+            apply_run: Cell::new(None),
             last_migration: None,
             path: Some(path.into()),
         })
@@ -289,6 +294,7 @@ impl Db {
             conn,
             spec_alias_cache: RefCell::new(None),
             client_id: OnceCell::new(),
+            apply_run: Cell::new(None),
             last_migration: None,
             path: Some(path.into()),
         })
@@ -301,6 +307,7 @@ impl Db {
             conn,
             spec_alias_cache: RefCell::new(None),
             client_id: OnceCell::new(),
+            apply_run: Cell::new(None),
             last_migration: None,
             path: None,
         };

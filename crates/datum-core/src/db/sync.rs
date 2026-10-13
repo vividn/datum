@@ -65,6 +65,7 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, TimeZone, Utc};
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
@@ -372,6 +373,21 @@ fn parse_hlc(s: &str) -> Option<(i64, u32)> {
 /// decision made from the local clock may only delay, never decide, or
 /// copies judging by their own clocks would fold apart.
 const MAX_CLOCK_AHEAD: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// How long one transaction of [`Db::sync_apply`] holds the write lock
+/// (da-2ejbs): one for a whole batch held it long enough that a write
+/// beside a large apply waited out `busy_timeout` and was lost. Bounded by
+/// the clock, not a count of ops, since an op costs more the larger the
+/// database it lands in, and never under [`APPLY_MIN`] ops: a chunk's own
+/// cost does not shrink with it, and once that passed the hold, chunks of
+/// one op each paid it per op (a join on a loaded runner, 22x slower).
+/// Once chunks have held it [`APPLY_HOLD`] with no pause, of one call or
+/// the back-to-back calls a session makes, the lock is let go for longer
+/// than SQLite's longest busy sleep (100 ms), so a waiting writer gets in.
+/// A pause per call instead cost a native session of 64-op steps 7x.
+const APPLY_HOLD: Duration = Duration::from_millis(500);
+const APPLY_MIN: usize = 32;
+const APPLY_YIELD: Duration = Duration::from_millis(110);
 
 #[cfg(test)]
 thread_local! {
@@ -1814,6 +1830,24 @@ fn take_purged(conn: &Connection, words: &[Value]) -> Result<()> {
     Ok(())
 }
 
+/// A sender's removal, mark or purged seqs rather than ops. Canonical
+/// JSON: an op's first key is `alias_chain`.
+fn is_word(line: &str) -> bool {
+    ["{\"caught_up\"", "{\"remove\"", "{\"purged\""]
+        .iter()
+        .any(|w| line.starts_with(w))
+}
+
+/// [`settle`]'s order for a line of ops: records first, then HLC. An
+/// array is one entry's ops in fold order, never a record, so by its
+/// first. An unreadable line sorts anywhere, and `apply_in` refuses it.
+fn apply_order(line: &str) -> (bool, String, String) {
+    let v: Value = serde_json::from_str(line).unwrap_or_default();
+    let op = if v.is_array() { &v[0] } else { &v };
+    let s = |k: &str| op[k].as_str().unwrap_or_default().to_string();
+    (op["kind"] != "chain", s("hlc"), s("endpoint"))
+}
+
 /// [`Db::sync_apply`] in a transaction of the caller's, past its refusals:
 /// `datum debug conflicts` applies its device's ops here, in its own.
 fn apply_in(tx: &Connection, lines: &str) -> Result<ApplySummary> {
@@ -1824,11 +1858,7 @@ fn apply_in(tx: &Connection, lines: &str) -> Result<ApplySummary> {
     let (mut got, mut words) = (Vec::new(), Vec::new());
     let mut each = Vec::new();
     for line in lines.lines().map(str::trim).filter(|l| !l.is_empty()) {
-        // Canonical JSON: an op's first key is `alias_chain`.
-        if ["{\"caught_up\"", "{\"remove\"", "{\"purged\""]
-            .iter()
-            .any(|w| line.starts_with(w))
-        {
+        if is_word(line) {
             match serde_json::from_str::<Value>(line) {
                 Ok(w) => words.push(w),
                 Err(e) => s.refused.push(format!("unreadable line: {e}")),
@@ -2463,12 +2493,70 @@ impl Db {
     /// `entry_history` (`sync_merge`) and emits no op of its own: it is that
     /// op. A line may also be one entry's ops as an array, or a filtered
     /// sender's removal or mark, which only a filtered reader acts on.
+    /// It commits in chunks of [`APPLY_HOLD`], so one failing leaves the
+    /// chunks before it applied: ops held are skipped when sent again.
     pub fn sync_apply(&self, lines: &str) -> Result<ApplySummary> {
         pause::refuse_paused(&self.conn)?;
         debug::refuse(&self.conn)?;
-        let tx = self.conn.unchecked_transaction()?;
-        let s = apply_in(&tx, lines)?;
-        tx.commit()?;
+        let (words, mut ops): (Vec<&str>, Vec<&str>) = lines
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .partition(|l| is_word(l));
+        // In settle's order, so a chunk waits on no later one.
+        ops.sort_by_cached_key(|l| apply_order(l));
+        // A wasm build is one process a command, and the page's tabs take
+        // the file in turn: no writer waits beside it, so one transaction,
+        // and no pause, which the shim would spin through.
+        let wasm = cfg!(target_family = "wasm");
+        let n = if wasm { usize::MAX } else { APPLY_MIN };
+        let (mut s, mut n, mut rest) = (ApplySummary::default(), n, &ops[..]);
+        loop {
+            // A gap as long as the pause since the last commit was one.
+            let run = match self.apply_run.get().filter(|_| !wasm) {
+                Some((start, last)) if last.elapsed() < APPLY_YIELD => {
+                    if start.elapsed() < APPLY_HOLD {
+                        start
+                    } else {
+                        std::thread::sleep(APPLY_YIELD - last.elapsed());
+                        Instant::now()
+                    }
+                }
+                _ => Instant::now(),
+            };
+            let (chunk, more) = rest.split_at(n.min(rest.len()));
+            // A mark answers the whole batch: it goes with the last chunk.
+            let chunk = match more.is_empty() {
+                true => [chunk, &words[..]].concat().join("\n"),
+                false => chunk.join("\n"),
+            };
+            let t = Instant::now();
+            let tx = self.conn.unchecked_transaction()?;
+            let c = apply_in(&tx, &chunk)?;
+            tx.commit()?;
+            self.apply_run.set(Some((run, Instant::now())));
+            s.applied += c.applied;
+            s.already_had += c.already_had;
+            // What waits in the whole copy, so the last chunk's.
+            s.held = c.held;
+            s.conflicts += c.conflicts;
+            s.refused.extend(c.refused);
+            s.wiped |= c.wiped;
+            rest = more;
+            if rest.is_empty() {
+                break;
+            }
+            // The next chunk sized by what this one took to what is left of
+            // the run's hold, or a whole one after the pause it then takes,
+            // at most twice this one: a chunk overshoots only by how much
+            // dearer its ops are than the last chunk's, and ops grow dearer
+            // as the database does, which shrinks the chunks.
+            let left = APPLY_HOLD.saturating_sub(run.elapsed());
+            let left = if left.is_zero() { APPLY_HOLD } else { left };
+            let took = t.elapsed().as_micros().max(1);
+            let next = n as u128 * left.as_micros() / took;
+            n = next.clamp(APPLY_MIN as u128, 2 * n as u128) as usize;
+        }
         if s.wiped {
             self.after_wipe()?;
         }

@@ -77,3 +77,115 @@ fn concurrent_writer_processes_lose_no_writes() {
         .unwrap();
     assert_eq!(count, PROCS * WRITES);
 }
+
+/// A write beside a large sync apply waits a chunk, not the apply
+/// (da-2ejbs). The apply held one transaction for its whole batch, so a
+/// write landing in it waited out `busy_timeout` and was lost; one that
+/// got in had still stalled for seconds. The writes above race each
+/// other, briefly; this one races a LONG holder.
+#[test]
+fn a_write_beside_a_large_sync_apply_waits_a_chunk() {
+    use std::collections::BTreeMap;
+    use std::io::Write;
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    use datum_core::db::{ConflictStrategy, Db};
+    use datum_core::entry::{Entry, Verb};
+    use datum_core::time::DatumTime;
+
+    const OPS: usize = 2000;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let db = tmp.path().join("b.db");
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let datum = |args: &[&str]| {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_datum"));
+        c.env("DATUM_DB", &db)
+            .env("DATUM_HOME", &home)
+            .env("DATUM_CONFIG_HOME", &home)
+            .env("NO_COLOR", "1")
+            .args(args);
+        c
+    };
+    assert!(datum(&["tail"]).output().unwrap().status.success());
+
+    // Another copy's history, as a first sync brings it: seconds of apply
+    // in one transaction on a debug build. A minute apart, so no two share
+    // a slug and every entry is an op.
+    let a = Db::open_in_memory().unwrap();
+    let base = chrono::Utc::now() - chrono::Duration::days(30);
+    let entries: Vec<Entry> = (0..OPS)
+        .map(|i| {
+            let at = DatumTime {
+                utc: base + chrono::Duration::minutes(i as i64),
+                offset_minutes: 0,
+                timezone: Some("UTC".into()),
+                uncertainty: None,
+            };
+            let state = Some(serde_json::json!(i));
+            Entry::new("f", Verb::Point, state, None, Some(at), None, "t")
+        })
+        .collect();
+    a.insert_entries_bulk(&entries, ConflictStrategy::Ignore, &mut |_| {})
+        .unwrap();
+    let ops = a.sync_ops_since(&BTreeMap::new(), false, None).unwrap();
+    assert_eq!(ops.len(), OPS);
+
+    let mut apply = datum(&["sync", "pipe", "apply"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    apply
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(ops.join("\n").as_bytes())
+        .unwrap();
+    let (mut writes, mut failed, mut slowest) = (0, Vec::new(), Duration::ZERO);
+    // Writes that got in while the apply still ran: one transaction for
+    // the batch lets at most the one before it, whatever the box's speed.
+    let mut beside = 0;
+    while apply.try_wait().unwrap().is_none() {
+        let t = Instant::now();
+        let out = datum(&["occur", "busyprobe", &format!("n={writes}")])
+            .output()
+            .unwrap();
+        slowest = slowest.max(t.elapsed());
+        writes += 1;
+        beside += usize::from(apply.try_wait().unwrap().is_none());
+        if !out.status.success() {
+            failed.push(String::from_utf8_lossy(&out.stderr).into_owned());
+        }
+    }
+    assert!(apply.wait().unwrap().success());
+    assert!(
+        failed.is_empty(),
+        "{} of {writes} writes failed: {:?}",
+        failed.len(),
+        failed[0]
+    );
+    // A chunk holds the lock 500 ms; measured, the slowest write took
+    // 0.56-0.66 s, and before the chunks one waited out the whole apply,
+    // 4.7-5.0 s.
+    assert!(
+        slowest < Duration::from_millis(2000),
+        "a write took {slowest:?}"
+    );
+    assert!(
+        beside >= 5,
+        "{beside} of {writes} writes got in beside the apply"
+    );
+
+    let n: usize = Connection::open(&db)
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM entries WHERE field = 'busyprobe'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(n, writes);
+}
