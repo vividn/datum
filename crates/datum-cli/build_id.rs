@@ -40,6 +40,21 @@ fn truncated(dir: &Path) -> bool {
     })
 }
 
+/// The commit `git archive` exported this tree from: `COMMIT` is
+/// `export-subst` in `.gitattributes`, so git writes the sha over its
+/// `$Format:%H$`, and a tree that was never archived keeps the placeholder.
+/// It attests the export, not the tree's content now: archive X, edit a
+/// file, build, and it still says X — staleness, not modification. And only
+/// if the build script ran: `git archive` dates every file at its commit, so
+/// a tree extracted where another tree was built (one shared target dir)
+/// looks older than that build, and cargo replays the other tree's stamp;
+/// `touch` the tree first. Its height is `unknown`, so the version says `0`.
+fn exported(dir: &Path) -> Option<String> {
+    let stamp = std::fs::read_to_string(dir.join("COMMIT")).ok()?;
+    let sha = stamp.trim();
+    (sha.len() >= 40 && sha.bytes().all(|b| b.is_ascii_hexdigit())).then(|| sha[..7].to_string())
+}
+
 /// `(height, commit)`: `height` is `git rev-list --count` — every commit
 /// reachable, the number the forge shows — and `commit` the sha7, with `+`
 /// for a dirty tree. `ci_sha` is CI's `GITHUB_SHA`, which names the commit
@@ -47,17 +62,21 @@ fn truncated(dir: &Path) -> bool {
 ///
 /// Either is `unknown` rather than wrong: a shallow clone would count only
 /// its own truncated history, and a tree with no git has nothing to count.
+/// Such a tree's commit is the one `git archive` wrote into it, if it was
+/// archived (`exported`); its height stays `unknown`.
 pub fn build_id(dir: &Path, ci_sha: Option<&str>) -> (String, String) {
     let rev = ci_sha.unwrap_or("HEAD");
     let height = (!truncated(dir))
         .then(|| git(dir, &["rev-list", "--count", rev]))
         .flatten();
-    let commit = git(dir, &["rev-parse", "--verify", rev]).map(|sha| {
-        let dirty = ci_sha.is_none()
-            && git(dir, &["--no-optional-locks", "status", "--porcelain"])
-                .is_some_and(|s| !s.is_empty());
-        format!("{}{}", &sha[..7], if dirty { "+" } else { "" })
-    });
+    let commit = git(dir, &["rev-parse", "--verify", rev])
+        .map(|sha| {
+            let dirty = ci_sha.is_none()
+                && git(dir, &["--no-optional-locks", "status", "--porcelain"])
+                    .is_some_and(|s| !s.is_empty());
+            format!("{}{}", &sha[..7], if dirty { "+" } else { "" })
+        })
+        .or_else(|| exported(dir));
     let unknown = || "unknown".to_string();
     (
         height.unwrap_or_else(unknown),

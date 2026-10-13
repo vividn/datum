@@ -126,3 +126,62 @@ fn no_git_says_unknown() {
     let got = build_id::build_id(tmp.path(), None);
     assert_eq!(got, ("unknown".into(), "unknown".into()));
 }
+
+#[test]
+fn an_archived_tree_says_the_commit_git_archive_wrote_into_it() {
+    let (src, _) = repo(2);
+    std::fs::write(src.path().join(".gitattributes"), "COMMIT export-subst\n").unwrap();
+    std::fs::write(src.path().join("COMMIT"), "$Format:%H$\n").unwrap();
+    git(src.path(), &["add", "."]);
+    git(src.path(), &["commit", "-q", "-m", "stamp"]);
+    let head = git(src.path(), &["rev-parse", "HEAD"]);
+    let out = tempfile::tempdir().unwrap();
+    let tar = format!("{}/t.tar", out.path().display());
+    git(src.path(), &["archive", "-o", &tar, "HEAD"]);
+    let x = Command::new("tar")
+        .args(["-xf", &tar, "-C"])
+        .arg(out.path())
+        .status()
+        .unwrap();
+    assert!(x.success());
+    assert_eq!(
+        build_id::build_id(out.path(), None),
+        ("unknown".into(), head[..7].into())
+    );
+    // Never archived, the placeholder is no commit.
+    std::fs::write(out.path().join("COMMIT"), "$Format:%H$\n").unwrap();
+    assert_eq!(
+        build_id::build_id(out.path(), None),
+        ("unknown".into(), "unknown".into())
+    );
+}
+
+/// This repo's own `.gitattributes` names where `COMMIT` lives: archived,
+/// it holds the commit. Skipped in a tree with no git. Archived from the top
+/// level, as a release is: git before 2.41 (CI has 2.39) mishandles
+/// attributes when `git archive` runs in a subdirectory.
+#[test]
+fn this_repos_commit_file_is_substituted_by_git_archive() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let head = Command::new("git")
+        .current_dir(dir)
+        .args(["rev-parse", "--verify", "HEAD"])
+        .output()
+        .unwrap();
+    if !head.status.success() {
+        return;
+    }
+    let archive = Command::new("sh")
+        .current_dir(dir)
+        .args([
+            "-c",
+            r#"p=$(git rev-parse --show-prefix) && cd "$(git rev-parse --show-toplevel)" && git archive HEAD "${p}COMMIT" | tar -xO"#,
+        ])
+        .output()
+        .unwrap();
+    assert!(archive.status.success(), "{archive:?}");
+    assert_eq!(
+        String::from_utf8(archive.stdout).unwrap().trim(),
+        String::from_utf8(head.stdout).unwrap().trim()
+    );
+}

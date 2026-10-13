@@ -1,0 +1,2 @@
+# `git archive` writes the commit it exports into this file (da-hlv82).
+crates/datum-cli/COMMIT export-subst

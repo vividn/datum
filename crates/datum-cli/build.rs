@@ -20,6 +20,7 @@ fn main() {
     // (the `+`). A path that does not exist would rerun every build.
     println!("cargo:rerun-if-env-changed=GITHUB_SHA");
     println!("cargo:rerun-if-changed=build_id.rs");
+    println!("cargo:rerun-if-changed=COMMIT");
     let rev_parse = |flag: &str| {
         std::process::Command::new("git")
             .current_dir(dir)
