@@ -1,0 +1,81 @@
+# The test map (da-fnt3v): which tests reach which functions, read by ci.yml
+# on a PR to run only the tests its change can reach (`cargo xtask testmap
+# select`). Built from staging's tip by one instrumented run of the suite
+# (scripts/testmap-build.sh) and kept on the `testmap` branch: ONE orphan
+# commit, force-pushed, holding `testmap.json`, whose `commit` is the staging
+# sha it maps. Only the newest map is worth having, so there is no history.
+#
+# Its own workflow, so it never gates anything: a red or missing map makes a
+# PR run its whole suite, saying so, and staging's verdict (ci.yml) never
+# waits for it. A PR that changes the map's own machinery builds one too, to
+# prove it, and pushes nothing.
+name: testmap
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .forgejo/workflows/testmap.yml
+      - scripts/testmap-*
+      - xtask/src/testmap.rs
+
+concurrency:
+  group: testmap-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_BUILD_JOBS: 3
+
+jobs:
+  testmap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: https://github.com/actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: System tools the image lacks (time, for max RSS per step)
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends time >/dev/null
+
+      # ci.yml's install, under its lock (da-nmf83), plus llvm-tools: the
+      # profiles are the toolchain's LLVM's, which no system LLVM reads.
+      - name: Install rustup, the pinned toolchain and llvm-tools
+        run: |
+          set -euo pipefail
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          mkdir -p "$HOME/.cargo" && exec 9>"$HOME/.cargo/.ci-install.lock" && flock 9
+          RUSTUP_AUTO_INSTALL=0 rustup --version >/dev/null 2>&1 ||
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal --no-modify-path
+          rustup toolchain install --no-self-update
+          rustup component add llvm-tools
+          v=0.9.146
+          if ! cargo nextest --version 2>/dev/null | grep -x "release: $v" >/dev/null; then
+            tmp=$(mktemp -d "$HOME/.cargo/.nextest.XXXXXX")
+            curl -LsSf "https://get.nexte.st/$v/linux" | tar zxf - -C "$tmp"
+            mv "$tmp/cargo-nextest" "$HOME/.cargo/bin/cargo-nextest" && rmdir "$tmp"
+          fi
+
+      # The cost is the point of reading this log: wall time and max RSS,
+      # against ci.yml's nextest steps on the same box.
+      - name: Build the map
+        run: /usr/bin/time -v scripts/testmap-build.sh "$RUNNER_TEMP/testmap.json" --test-threads 3
+
+      - name: Commit it to `testmap`
+        if: github.ref == 'refs/heads/staging' && github.event_name != 'pull_request'
+        env:
+          GIT_AUTHOR_NAME: testmap workflow
+          GIT_AUTHOR_EMAIL: testmap@git.vividn.dev
+          GIT_COMMITTER_NAME: testmap workflow
+          GIT_COMMITTER_EMAIL: testmap@git.vividn.dev
+        run: |
+          set -euo pipefail
+          export GIT_INDEX_FILE=$(mktemp -u)
+          git read-tree --empty
+          git update-index --add --cacheinfo "100644,$(git hash-object -w "$RUNNER_TEMP/testmap.json"),testmap.json"
+          commit=$(git commit-tree "$(git write-tree)" -m "testmap for $(git rev-parse HEAD)")
+          git push -f origin "$commit:refs/heads/testmap"
+          echo "testmap $commit for $(git rev-parse HEAD)"

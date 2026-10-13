@@ -273,6 +273,9 @@ mod daydumb_tests {
         let mut child = Command::new(env!("CARGO_BIN_EXE_daydumb"))
             .args(args)
             .env_clear()
+            // The test map's instrumented run (da-fnt3v) sets where the
+            // child's coverage goes; with no setting nothing is written.
+            .envs(std::env::var_os("LLVM_PROFILE_FILE").map(|v| ("LLVM_PROFILE_FILE", v)))
             .env("HOME", dir)
             .env("DATUM_DB", dir.join("parity.db"))
             .env("TZ", datum_parity::GOLDEN_TZ)

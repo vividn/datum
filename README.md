@@ -436,9 +436,10 @@ their transitive workspace dependents (so a one-line change in
 the full `scripts/check.sh` battery when a workspace-root config file
 changes, when nothing crate-shaped is touched, or when the dependent
 closure already covers ≥75% of the workspace. A `web/` change runs the
-web suite; a docs-only change runs nothing. CI runs the full workspace
-battery on every PR as the safety net; `./scripts/check.sh` is its local
-mirror when you want it.
+web suite; a docs-only change runs nothing. CI runs, on a PR, the tests
+its change reaches by per-test coverage, and the full workspace battery on
+staging as the safety net; `./scripts/check.sh` is its local mirror when
+you want it.
 
 ### `cargo xtask check`
 

@@ -5310,6 +5310,8 @@ version = "3.0.0-beta"
 dependencies = [
  "anyhow",
  "datum-parse",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

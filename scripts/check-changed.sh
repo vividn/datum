@@ -9,8 +9,8 @@
 #
 # Trade-off: only catches breakage in crates reachable from the changed
 # code. `scripts/mq-check.sh` (the cans' pre-submit gate) runs this
-# script; `.github/workflows/ci.yml` runs the full workspace battery on
-# every PR as the safety net, so this script is a velocity tool, not a
+# script; `.forgejo/workflows/ci.yml` runs the full workspace battery on
+# staging as the safety net, so this script is a velocity tool, not a
 # replacement.
 #
 # Falls back to invoking `scripts/check.sh` (full battery) when:
@@ -227,4 +227,4 @@ cargo test "${P_ARGS[@]}" --doc
 
 printf '\n\033[1;32m✓ scoped pre-submit checks passed (%d/%d crates)\033[0m\n' \
     "$SELECTED_COUNT" "$ALL_COUNT"
-printf '\033[2m  (full workspace battery still runs in CI.)\033[0m\n'
+printf '\033[2m  (full workspace battery still runs on staging.)\033[0m\n'

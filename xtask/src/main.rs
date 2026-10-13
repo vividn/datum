@@ -12,6 +12,8 @@ use anyhow::{bail, Context, Result};
 use datum_parse::help::{render_roff, COMMANDS};
 use xtask::{autogen_section, splice_autogen, README_BLOCKS};
 
+mod testmap;
+
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let task = args.next().unwrap_or_default();
@@ -19,6 +21,7 @@ fn main() -> Result<()> {
         "manpages" => manpages(args.collect()),
         "readme" => readme(),
         "check" => check(args.collect()),
+        "testmap" => testmap::run(args.collect()),
         "" => {
             print_usage();
             bail!("missing task name");
@@ -44,6 +47,7 @@ fn print_usage() {
     eprintln!("                        one gate: no-cfg-any | no-r2-stubs |");
     eprintln!("                                  no-legacy-verbs | max-file-size |");
     eprintln!("                                  toolchain-pin");
+    eprintln!("  testmap index|select  per-test coverage map, and the PR tests it selects");
 }
 
 fn readme() -> Result<()> {

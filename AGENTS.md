@@ -635,8 +635,13 @@ and doc tests scoped to the crates you touched plus their workspace
 dependents, falling back to the full `scripts/check.sh` on a workspace-root
 config change or when the closure is most of the workspace; for `web/`, the
 web suite; for docs alone, nothing. Do not run `cargo test --workspace` or
-`scripts/check.sh` for a localized change: CI runs the full workspace on
-every PR, and that is the safety net for what a scoped run cannot reach.
+`scripts/check.sh` for a localized change. CI on a PR runs the Rust tests
+its change can reach by per-test coverage (`cargo xtask testmap select`
+against the `testmap` branch's map of a staging commit, da-fnt3v), and
+everything when the change is a manifest, a build script, CI, a non-Rust
+file under `crates/` or the map is missing or stale; the job log names each
+test or the reason. Staging runs the full workspace, and that is the safety
+net for what a scoped run cannot reach.
 
 ## Building
 

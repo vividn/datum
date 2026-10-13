@@ -16,8 +16,8 @@
 # full `scripts/check.sh` on a root-config change or a closure of >=75% of
 # the crates). This is the gate every can runs before `ct done`, and the
 # full battery made a one-crate change pay ~25 minutes of workspace build
-# for 4 seconds of signal (da-kf28). The full workspace still runs where
-# the merge is decided: CI on the PR (`.github/workflows/ci.yml`).
+# for 4 seconds of signal (da-kf28). The full workspace still runs on
+# staging, whose green commit main is promoted to (`.forgejo/workflows/ci.yml`).
 #
 # The queue's environment may not have node on PATH (it is nvm's, loaded by
 # an interactive shell's rc file), so the web half puts it there itself.

@@ -292,6 +292,28 @@ jobs:
           fi
           cargo nextest --version
 
+      # A PR runs only the Rust tests its change can reach (da-fnt3v): those
+      # whose coverage, in the `testmap` branch's map of a staging commit
+      # (testmap.yml), holds a function around a changed line, every test it
+      # adds or edits by name, and the tests that read the tree. The whole
+      # suite instead, each reason printed, for a manifest, a build script,
+      # CI, a non-Rust file under crates/, a migration, test support, a map
+      # missing or over ten commits behind, or a selection that fails. A
+      # push runs everything: staging's full run is what main is promoted
+      # on. The doc tests and the lint gates always run in full.
+      - name: Which Rust tests can this change reach?
+        if: env.TRAIN != '1' && github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          set -uo pipefail
+          sel="$RUNNER_TEMP/tests" map="$RUNNER_TEMP/testmap.json"
+          git fetch -q origin +refs/heads/testmap:refs/remotes/origin/testmap &&
+            git show origin/testmap:testmap.json > "$map" || echo "no testmap branch"
+          cargo run -q -p xtask -- testmap select "$map" "origin/$BASE" "$sel" ||
+            { mkdir -p "$sel"; echo "the selection failed" > "$sel/FULL"; echo "::warning::the selection failed: every test runs"; }
+          echo "TESTS=$sel" >> "$GITHUB_ENV"
+
       # ── the Rust battery, in scripts/check.sh's order ─────────────────────
       - name: cargo fmt --all -- --check
         if: env.TRAIN != '1'
@@ -307,7 +329,14 @@ jobs:
 
       - name: cargo nextest run --workspace
         if: env.TRAIN != '1'
-        run: /usr/bin/time -v cargo nextest run --workspace --no-fail-fast --test-threads 3
+        run: |
+          set -euo pipefail
+          run=(/usr/bin/time -v cargo nextest run --workspace --no-fail-fast --test-threads 3 --no-tests=pass)
+          if [ -z "${TESTS:-}" ] || [ -e "$TESTS/FULL" ]; then "${run[@]}"
+          elif [ -s "$TESTS/workspace.tests" ] || [ -s "$TESTS/new.tests" ]; then
+            mapfile -t names < "$TESTS/workspace.tests"; mapfile -t new < "$TESTS/new.tests"
+            "${run[@]}" "${new[@]}" -- --exact "${names[@]}"
+          else echo "no test reaches this change"; fi
 
       - name: cargo test --workspace --doc
         if: env.TRAIN != '1'
@@ -315,7 +344,14 @@ jobs:
 
       - name: cargo nextest run --features e2e-full (the full cohort, da-1wat)
         if: env.TRAIN != '1'
-        run: /usr/bin/time -v cargo nextest run -p datum-commands --test e2e --features e2e-full --no-fail-fast --test-threads 3
+        run: |
+          set -euo pipefail
+          run=(/usr/bin/time -v cargo nextest run -p datum-commands --test e2e --features e2e-full --no-fail-fast --test-threads 3 --no-tests=pass)
+          if [ -z "${TESTS:-}" ] || [ -e "$TESTS/FULL" ]; then "${run[@]}"
+          elif [ -s "$TESTS/e2e-full.tests" ] || [ -s "$TESTS/new.tests" ]; then
+            mapfile -t names < "$TESTS/e2e-full.tests"; mapfile -t new < "$TESTS/new.tests"
+            "${run[@]}" "${new[@]}" -- --exact "${names[@]}"
+          else echo "no test reaches this change"; fi
 
       - name: cargo xtask check lint (the honesty gates, da-8y2q.7)
         if: env.TRAIN != '1'
