@@ -439,6 +439,16 @@ fn apply_mutation(
     // dur, fs) triple.
     let mut payload_extra = payload_extra;
     let reserved = crate::commands::log_core::extract_reserved_columns(&mut payload_extra)?;
+    // da-z9efl: refuse only what this update sets, so a row written before
+    // the refusal can still have its other keys edited.
+    for s in [&payload_value, &reserved.state, &reserved.following_state]
+        .into_iter()
+        .flatten()
+    {
+        if let Some(msg) = datum_core::shape::parallel_sentinel_error(s) {
+            anyhow::bail!(msg);
+        }
+    }
     // da-5t94: `id=` re-slugs on update. The shared peeler leaves `id`
     // alone (on insert it competes with `-K` slug slots); update has no
     // slug slots, so a bare `id=` here always rewrites the slug body. Peel

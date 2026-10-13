@@ -41,6 +41,8 @@ pub fn block_fill_for_value(
 ) -> BlockFill {
     match value {
         Some(JsonValue::Array(items)) if !items.is_empty() => {
+            // A TRACKED element is refused at write now (da-z9efl), but rows
+            // written before the refusal may hold one: keep handling it.
             let colors: Vec<String> = items
                 .iter()
                 .map(|v| match is_off_state(v) {

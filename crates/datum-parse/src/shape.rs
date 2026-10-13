@@ -93,6 +93,42 @@ pub fn is_ignored_state(v: &JsonValue) -> bool {
     matches!(v, JsonValue::String(s) if s == IGNORED_STATE_VALUE)
 }
 
+/// The refusal for a parallel state holding IGNORED or TRACKED (da-z9efl),
+/// or `None` when it holds neither. Each describes the whole field at an
+/// instant, so it is a single state only; `null` is a value someone
+/// assigns and may stand among others. A structured state's `id` is read
+/// as its state. Rows written before the refusal may hold one, so readers
+/// must still cope with it.
+pub fn parallel_sentinel_error(state: &JsonValue) -> Option<String> {
+    fn flatten<'a>(v: &'a JsonValue, out: &mut Vec<&'a JsonValue>) {
+        match v {
+            JsonValue::Array(items) => items.iter().for_each(|i| flatten(i, out)),
+            JsonValue::Object(o) if o.contains_key("id") => flatten(&o["id"], out),
+            v => out.push(v),
+        }
+    }
+    let mut states = Vec::new();
+    flatten(state, &mut states);
+    if states.len() < 2 {
+        return None;
+    }
+    let sentinel = states.iter().find_map(|v| match v {
+        JsonValue::String(s) if is_ignored_state(v) || s == TRACKED_STATE_VALUE => Some(s),
+        _ => None,
+    })?;
+    let typed = states
+        .iter()
+        .map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_string))
+        .collect::<Vec<_>>()
+        .join(",");
+    Some(format!(
+        "{sentinel} cannot be one of several states (`{typed}`): {IGNORED_STATE_VALUE} and \
+         {TRACKED_STATE_VALUE} describe the whole field at that instant — not tracked at all, \
+         or tracked with nothing logged yet — so each is a field's only state. Log it on its \
+         own, or leave it out; `null` may stand beside other states."
+    ))
+}
+
 /// Legacy shape classifier kept on the public surface as a compatibility
 /// shim for sub-bead 1: callers that were matching on
 /// `entry.entry_shape` still compile, but the value is derived from
@@ -345,6 +381,35 @@ mod tests {
 
     fn s(v: JsonValue) -> Option<JsonValue> {
         Some(v)
+    }
+
+    // ─── parallel_sentinel_error (da-z9efl) ──────────────────────────
+
+    #[test]
+    fn a_sentinel_among_several_states_is_refused() {
+        for (state, sentinel) in [
+            (json!(["a", "TRACKED"]), "TRACKED"),
+            (json!(["IGNORED", null]), "IGNORED"),
+            (json!({"id": ["a", "TRACKED"], "role": "x"}), "TRACKED"),
+            (json!(["a", {"id": "IGNORED", "role": "x"}]), "IGNORED"),
+        ] {
+            let msg = parallel_sentinel_error(&state).expect("refused");
+            assert!(msg.starts_with(&format!("{sentinel} cannot")), "{msg}");
+        }
+    }
+
+    #[test]
+    fn a_single_sentinel_null_and_false_among_states_pass() {
+        for state in [
+            json!("TRACKED"),
+            json!(["IGNORED"]),
+            json!({"id": "TRACKED", "role": "x"}),
+            json!(["a", null]),
+            json!(["a", false]),
+            json!(["a", "tracked"]),
+        ] {
+            assert_eq!(parallel_sentinel_error(&state), None, "{state}");
+        }
     }
 
     // ─── render_shape: Switch ────────────────────────────────────────

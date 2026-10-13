@@ -293,3 +293,91 @@ fn last_state_assertion_records_array_value() {
         "-L accepts comma-separated array assertions",
     );
 }
+
+/// da-z9efl: IGNORED and TRACKED describe the whole field at an instant, so
+/// a parallel state holding either is refused, however it was spelled, and
+/// the refusal names the sentinel and why. Nothing is written.
+#[test]
+fn a_parallel_state_refuses_ignored_and_tracked() {
+    let db = fresh_db();
+    for argv in [
+        &["switch", "task", "reading,TRACKED"][..],
+        &["switch", "task", "IGNORED,reading"],
+        &["switch", "task", "state=reading,TRACKED"],
+        &["start", "task", "state=reading,IGNORED"],
+        &[
+            "switch",
+            "task",
+            "reading",
+            "5m",
+            "following_state=idle,TRACKED",
+        ],
+        &[
+            "switch", "task", "reading", ",", "switch", "task", "TRACKED",
+        ],
+        &[
+            "switch",
+            "task",
+            "reading",
+            "5m",
+            "following_state=TRACKED",
+            ",",
+            "switch",
+            "task",
+            "reading",
+            "5m",
+            "following_state=idle",
+        ],
+    ] {
+        let err = run_cli(argv, &db).expect_err("refused").to_string();
+        let sentinel = if argv.join(" ").contains("IGNORED") {
+            "IGNORED"
+        } else {
+            "TRACKED"
+        };
+        assert!(
+            err.starts_with(&format!("{sentinel} cannot be one of several states"))
+                && err.contains("describe the whole field at that instant"),
+            "{argv:?}: {err}"
+        );
+    }
+    assert!(datum_core::test_util::logged_all(&db).is_empty());
+}
+
+/// da-z9efl: `null` is a value someone assigns, so it may stand among
+/// parallel states; a data key's list holding the word TRACKED is no state.
+#[test]
+fn a_parallel_state_keeps_null_and_a_data_list_keeps_tracked() {
+    let db = fresh_db();
+    run_cli(&["switch", "task", "reading,null"], &db).expect("null among states");
+    run_cli(&["note", "memo", "tags=a,TRACKED"], &db).expect("a data list");
+    let task = datum_core::test_util::logged_entries(&db, "task");
+    assert_eq!(task[0].state, Some(json!(["reading", null])));
+    let memo = datum_core::test_util::logged_entries(&db, "memo");
+    assert_eq!(
+        memo[0].data.as_ref().unwrap()["tags"],
+        json!(["a", "TRACKED"])
+    );
+}
+
+/// da-z9efl: `update` refuses what it sets, and only that: a row written
+/// before the refusal keeps its state and can still have other keys edited.
+#[test]
+fn update_refuses_a_sentinel_it_sets_but_edits_an_old_row() {
+    let db = fresh_db();
+    let old = datum_core::test_util::entry_builder("task")
+        .verb(datum_core::entry::Verb::Switch)
+        .state(json!(["reading", "TRACKED"]))
+        .insert(&db);
+    let hid = old.hid.to_string();
+    let err = run_cli(&["update", &hid, "state=reading,IGNORED"], &db)
+        .expect_err("refused")
+        .to_string();
+    assert!(
+        err.starts_with("IGNORED cannot be one of several states"),
+        "{err}"
+    );
+    run_cli(&["update", &hid, "mood=calm"], &db).expect("an old row stays editable");
+    let task = datum_core::test_util::logged_entries(&db, "task");
+    assert_eq!(task[0].state, Some(json!(["reading", "TRACKED"])));
+}

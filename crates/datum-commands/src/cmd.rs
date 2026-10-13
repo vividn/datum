@@ -91,6 +91,16 @@ fn dispatch_multi_sides(sides: Vec<Cli>, db: &Db) -> Result<()> {
     // 1:1, so we can pair them up directly when rendering.
     let group_outputs = leftmost_output_per_group(&normalized, &outputs);
 
+    // da-z9efl: `switch f a , switch f TRACKED` merges into one parallel
+    // state, which no side held alone; so may two sides' `following_state`.
+    for e in datum_core::db::merge_same_field_groups(normalized.clone()) {
+        for s in [&e.state, &e.following_state].into_iter().flatten() {
+            if let Some(msg) = datum_core::shape::parallel_sentinel_error(s) {
+                anyhow::bail!(msg);
+            }
+        }
+    }
+
     // The sides only buffered: this commit is the write (da-wlbyx).
     let before = db.conn().total_changes();
     let hids = db.insert_entries_atomic(normalized)?;

@@ -796,6 +796,14 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         entry.verb = derived_verb;
     }
 
+    // da-z9efl: IGNORED and TRACKED are single states only, however the
+    // parallel state was spelled (`a,TRACKED`, `state=`, `following_state=`).
+    for s in [&entry.state, &entry.following_state].into_iter().flatten() {
+        if let Some(msg) = datum_core::shape::parallel_sentinel_error(s) {
+            anyhow::bail!(msg);
+        }
+    }
+
     // da-rcoi / da-eqb30: a key or a state the field's spec does not list,
     // under its `only_listed_*` settings, is refused before the write
     // lands. Runs ahead of the dry-run and multi-collector branches so the
