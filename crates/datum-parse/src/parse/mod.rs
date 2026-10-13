@@ -210,7 +210,11 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
     // even when the rest of the line is nonsense.
     for tok in &tail[sub_idx + 1..] {
         match *tok {
-            "--help" | "-h" => return Err(ParseError::HelpRequested(Some(sub.to_string()))),
+            // `db purge --help` is purge's page, not db's (da-2bb7z).
+            "--help" | "-h" => {
+                let page = crate::help::page_name(sub, &tail[sub_idx + 1..]);
+                return Err(ParseError::HelpRequested(Some(page)));
+            }
             // `datum SUB --man` and (after the field/verb prepass swap)
             // `datum --man SUB` both land here.
             "--man" => return Err(ParseError::ManRequested(Some(sub.to_string()))),
@@ -295,6 +299,29 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
         "view" => Command::View(parse_view_args(rest)?),
 
         "info" => Command::Info(parse_info_args(rest)?),
+        // `db purge --keep-sync-chain` is `sync chain purge --data`, spelled
+        // where a person looks for a purge (da-2bb7z): one command, two names.
+        "db" if rest.first() == Some(&"purge") && rest.contains(&"--keep-sync-chain") => {
+            if rest
+                .iter()
+                .any(|t| matches!(*t, "--leave" | "--rejoin" | "--force"))
+            {
+                return Err(ParseError::InvalidArg(
+                    "db purge: --keep-sync-chain purges every copy in the chain; \
+                     --leave and --rejoin purge this copy alone"
+                        .into(),
+                ));
+            }
+            let argv: Vec<&str> = ["chain", "purge"]
+                .into_iter()
+                .chain(rest[1..].iter().map(|t| match *t {
+                    "--keep-sync-chain" => "--data",
+                    "-y" => "--yes",
+                    t => t,
+                }))
+                .collect();
+            Command::Sync(parse_sync_cmd(&argv)?)
+        }
         "db" => Command::Db(parse_db_cmd(rest)?),
 
         "config" => Command::Config(parse_config_cmd(rest)?),
@@ -310,8 +337,10 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
             if show == Some(Show::Json) {
                 return Err(ParseError::GrammarRequested);
             }
-            // `datum help <cmd>` → help request with that cmd.
-            let cmd = rest.first().map(|s| s.to_string());
+            // `datum help <cmd> [<sub>…]` → help request with that page.
+            let cmd = rest
+                .split_first()
+                .map(|(cmd, words)| crate::help::page_name(cmd, words));
             return Err(ParseError::HelpRequested(cmd));
         }
 
@@ -453,6 +482,27 @@ mod tests {
             .chain(words.iter().copied())
             .map(|s| s.to_string())
             .collect()
+    }
+
+    /// da-2bb7z: the chain-wide purge's other name is the same parse, not a
+    /// second command, and refuses the flags that purge this copy alone.
+    #[test]
+    fn db_purge_keep_sync_chain_is_sync_chain_purge_data() {
+        let cmd = |w: &[&str]| format!("{:?}", parse_argv(&argv(w)).unwrap().command);
+        for tail in [&[][..], &["--yes"], &["--admin-key", "k"]] {
+            let db = [&["db", "purge", "--keep-sync-chain"][..], tail].concat();
+            let chain = [&["sync", "chain", "purge", "--data"][..], tail].concat();
+            assert_eq!(cmd(&db), cmd(&chain));
+        }
+        // `db purge`'s `-y` is `--yes` here too: a spelling, not a flag.
+        assert_eq!(
+            cmd(&["db", "purge", "--keep-sync-chain", "-y"]),
+            cmd(&["sync", "chain", "purge", "--data", "--yes"])
+        );
+        for local in ["--leave", "--rejoin"] {
+            let e = parse_argv(&argv(&["db", "purge", "--keep-sync-chain", local])).unwrap_err();
+            assert!(e.to_string().contains("purge this copy alone"), "{e}");
+        }
     }
 
     #[test]

@@ -38,8 +38,11 @@ import { dbOf, run, type CommandRunner, type RunResult } from './run.js';
 export function fileCommand(argv: string[]): Promise<RunResult> | null {
 	const [cmd, sub, ...flags] = argv;
 	if (cmd === 'db' && sub === 'purge') {
-		// `--yes` typed by hand is the CLI's contract: straight through.
-		return flags.includes('--yes') || flags.includes('-y') ? null : purge(flags);
+		// `--yes` typed by hand is the CLI's contract: straight through. So is
+		// `--keep-sync-chain`, `sync chain purge --data` by another name
+		// (da-2bb7z), which asks nothing and changes nothing without `--yes`.
+		const typed = ['--yes', '-y', '--keep-sync-chain'].some((f) => flags.includes(f));
+		return typed ? null : purge(flags);
 	}
 	const file = fileArgv(argv);
 	if (!file) return null;

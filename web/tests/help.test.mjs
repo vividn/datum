@@ -126,14 +126,16 @@ describe('the Help button', () => {
 		});
 	});
 
-	// da-803mk: a subcommand is explained by the CLI's help for it.
+	// da-803mk: a subcommand is explained by the CLI's help for it, which is
+	// its own page and not db's (da-2bb7z).
 	test('then a subcommand: `datum help db backup`', async () => {
 		await onPage(async ({ page }) => {
 			await page.locator('.bar.commands button[data-command="db"]').click();
 			const backup = page.locator('.bar.commands button[data-command="db backup"]');
 			const lines = await explain(page, backup, 'datum help db backup');
-			assert.match(lines[0], /^datum db — /);
+			assert.equal(lines[0], 'datum db backup');
 			assert.ok(lines.some((l) => l.includes('datum db backup <PATH | ->')), lines.join('\n'));
+			assert.ok(!lines.some((l) => l.includes('datum db purge')), lines.join('\n'));
 			assert.equal(await page.locator('.prompt-bar input').inputValue(), '', 'backup filled the line');
 		});
 	});

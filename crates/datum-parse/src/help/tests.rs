@@ -992,3 +992,69 @@ fn every_time_page_example_parses() {
     }
     assert!(crate::time::parse_duration("an hour").is_err());
 }
+
+/// da-2bb7z: a subcommand's `--help` is its own page — its usage lines and
+/// what the parent's page says of it — where it was the parent's whole page,
+/// byte for byte; and each purge names the other.
+#[test]
+fn subcommand_help_is_its_own_page() {
+    let parse = |line: &str| {
+        let argv: Vec<String> = std::iter::once("datum")
+            .chain(line.split(' '))
+            .map(String::from)
+            .collect();
+        let e = crate::parse_argv(&argv).unwrap_err();
+        super::special_output(&e, "").unwrap()
+    };
+    let purge = parse("db purge --leave --help");
+    assert_ne!(purge, command_help("db"));
+    assert_eq!(purge, parse("help db purge"));
+    assert!(purge.starts_with("datum db purge\n\nUSAGE:\n"), "{purge}");
+    assert!(
+        purge.contains("Purge leaves nothing of this copy"),
+        "{purge}"
+    );
+    assert!(purge.contains("`datum sync chain purge --data`"), "{purge}");
+    assert!(!purge.contains("Backup dumps"), "{purge}");
+
+    let chain = parse("sync chain purge --help");
+    assert_eq!(chain, parse("help sync chain purge"));
+    assert!(chain.contains("  purge       Every copy drops"), "{chain}");
+    assert!(
+        chain.contains("`datum db purge --keep-sync-chain`"),
+        "{chain}"
+    );
+    assert!(!chain.contains("  revert"), "{chain}");
+
+    // `status` is the top-level row; the daemon's is under `daemon`.
+    assert!(parse("sync status -h").contains("Per member"));
+    assert!(parse("sync daemon status -h").contains("Whether it is installed"));
+    // A word that names no subcommand stops the path.
+    assert_eq!(parse("occur coffee --help"), command_help("occur"));
+    assert_eq!(parse("db nope --help"), command_help("db"));
+    // The renderer reads a page name as the parser does.
+    assert_eq!(command_help("db nope"), command_help("db"));
+    assert_eq!(command_help("db purge --leave"), purge);
+}
+
+/// Every subcommand's page carries its usage lines and something its
+/// parent says of it, or at least the way to the parent's page.
+#[test]
+fn every_subcommand_page_has_its_usage() {
+    for cmd in super::COMMANDS {
+        for sub in cmd.subcommands {
+            let page = command_help(&super::page_name(cmd.name, &[sub.name]));
+            assert!(
+                page.starts_with(&format!("datum {} {}\n", cmd.name, sub.name)),
+                "{page}"
+            );
+            for u in sub.usage {
+                assert!(page.contains(u), "{} {}: {u}\n{page}", cmd.name, sub.name);
+            }
+            assert!(
+                page.ends_with(&format!("datum help {}\n", cmd.name)),
+                "{page}"
+            );
+        }
+    }
+}

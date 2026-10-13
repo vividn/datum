@@ -232,7 +232,8 @@ now refused with the new name) previews, and with `--yes` writes a `purge` recor
 refuses every op that endpoint signed and folds its entries again without them — what it made goes, its edits and deletes
 are undone — and revokes it. There is no unpurge: a fresh invite brings it
 back (below), though an old chain's `unpurge` record still folds as it did.
-`sync chain purge --data | --all` (da-qzrj9) is the chain-wide hard purge, an
+`sync chain purge --data | --all` (da-qzrj9) is the chain-wide hard purge
+(`db purge --keep-sync-chain` is `--data`, parsed to the same command, da-2bb7z), an
 admin act any member orders in an open chain: a `wipe` record each copy
 carries out as it comes to hold it, offline a year or not — every entry op
 before it scrubbed to a stub (`applied` = 3: its endpoint, seq and HLC, so

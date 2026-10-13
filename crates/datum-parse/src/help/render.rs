@@ -8,8 +8,8 @@
 //!   roff section of this module for the formatting conventions.
 
 use super::commands::{
-    find_command, find_topic, COMMANDS, GLOBAL_FLAGS, GLOBAL_FLAGS_COL, TOP_LEVEL_FOOTER,
-    TOP_LEVEL_USAGE,
+    find_command, find_topic, page_name, starts_with_words, COMMANDS, GLOBAL_FLAGS,
+    GLOBAL_FLAGS_COL, TOP_LEVEL_FOOTER, TOP_LEVEL_USAGE,
 };
 use super::spec::{Category, CommandSpec, FlagSpec, TopicSpec};
 use crate::input::output_args::{shows_for, Show};
@@ -45,21 +45,111 @@ fn output_rows(command: &str) -> Vec<(String, String)> {
 pub fn render_help_text(cmd: Option<&str>) -> String {
     match cmd {
         None => render_top_level(),
-        Some(name) => match find_command(name) {
-            Some((spec, was_alias)) => render_command(spec, name, was_alias),
-            // `datum help logging` is not a command but is a page; only
-            // a word that is neither falls back to the top level, saying
-            // so — the CLI answers an alias or a kit command before this
-            // (da-3odno), so a miss must not read as the page it asked for.
-            None => match find_topic(name) {
-                Some(topic) => render_topic(topic),
-                None => format!(
-                    "datum help: no command, topic or alias named '{name}'\n\n{}",
-                    render_top_level()
-                ),
-            },
+        // Read again as the parser reads it, so a word naming no
+        // subcommand (`db nope`) is the parent's page.
+        Some(name) => match name.split(' ').collect::<Vec<_>>().split_first() {
+            Some((cmd, words)) if !words.is_empty() => {
+                let page = page_name(cmd, words);
+                match find_command(&page) {
+                    Some((spec, _)) if page.contains(' ') => render_subcommand(spec, &page),
+                    _ => render_page(&page),
+                }
+            }
+            _ => render_page(name),
         },
     }
+}
+
+fn render_page(name: &str) -> String {
+    match find_command(name) {
+        Some((spec, was_alias)) => render_command(spec, name, was_alias),
+        // `datum help logging` is not a command but is a page; only
+        // a word that is neither falls back to the top level, saying
+        // so — the CLI answers an alias or a kit command before this
+        // (da-3odno), so a miss must not read as the page it asked for.
+        None => match find_topic(name) {
+            Some(topic) => render_topic(topic),
+            None => format!(
+                "datum help: no command, topic or alias named '{name}'\n\n{}",
+                render_top_level()
+            ),
+        },
+    }
+}
+
+/// `datum db purge --help` (da-2bb7z): the subcommand's usage lines, then
+/// what its parent's page says of it, found there by name rather than
+/// written twice — a paragraph that opens with it (`Purge leaves…`), its row
+/// in a table (`  purge       …`), or, for `sync chain`, its section.
+fn render_subcommand(spec: &CommandSpec, page: &str) -> String {
+    let words: Vec<&str> = page.split(' ').skip(1).collect();
+    let full = format!("datum {} {}", spec.name, words.join(" "));
+    let mut s = format!("{full}\n\nUSAGE:\n");
+    for sub in spec.subcommands.iter().filter(|s| s.name == words[0]) {
+        for u in sub.usage {
+            if words.len() == 1 || starts_with_words(u, &full) {
+                s.push_str(&format!("  {u}\n"));
+            }
+        }
+    }
+    for part in said_of(spec.body_override.unwrap_or(""), &words) {
+        s.push('\n');
+        s.push_str(&part);
+        s.push('\n');
+    }
+    s.push_str(&format!(
+        "\nAll of `datum {0}`: datum help {0}\n",
+        spec.name
+    ));
+    s
+}
+
+/// What a command's page says of one of its subcommands: `words` is its
+/// path below the command, `chain purge` for `sync chain purge`.
+fn said_of(body: &str, words: &[&str]) -> Vec<String> {
+    let paras: Vec<&str> = body.split("\n\n").map(|p| p.trim_end()).collect();
+    // A section is a paragraph headed `chain — its devices:`.
+    let section_of = |p: &str, w: &str| p.starts_with(&format!("{w} — "));
+    let w = words[words.len() - 1];
+    if words.len() == 1 {
+        if let Some(p) = paras.iter().find(|p| section_of(p, w)) {
+            return vec![p.to_string()];
+        }
+    }
+    let mut out = Vec::new();
+    for p in &paras {
+        // A one-word page reads outside the sections (`daemon — …:`), where
+        // a word of the same name is another subcommand's; a deeper one
+        // reads inside its parent's section alone.
+        let in_scope = match words {
+            [_] => !p
+                .lines()
+                .next()
+                .is_some_and(|l| l.contains(" — ") && l.ends_with(':')),
+            [parent, ..] => section_of(p, parent),
+            [] => false,
+        };
+        if !in_scope {
+            continue;
+        }
+        let first = p.split_whitespace().next().unwrap_or("").trim_matches('`');
+        if words.len() == 1 && first.eq_ignore_ascii_case(w) {
+            out.push(p.to_string());
+            continue;
+        }
+        // A table row, `  purge       …`, and the lines indented under it.
+        let row = format!("  {w}  ");
+        let mut lines = p.lines().skip_while(|l| !l.starts_with(&row));
+        if let Some(head) = lines.next() {
+            let mut r = head.to_string();
+            for l in lines.take_while(|l| l.starts_with("   ")) {
+                r.push('\n');
+                r.push_str(l);
+            }
+            out.push(r);
+        }
+    }
+    out
 }
 
 /// Render a `datum help <TOPIC>` page — the one place an option wall
