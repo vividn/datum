@@ -36,14 +36,21 @@ impl Db {
     /// da-sunq: the whole batch runs in one transaction — a mid-batch
     /// failure (rekey collision, disk error) rolls back every
     /// already-shifted row, so a partial shift is never visible.
+    ///
+    /// `zone_stated` (`retime -z`) drops a zone's `tz_from` marker
+    /// ([`Entry::zone_stated`]) in the same save, so in the same op.
     pub fn set_start_time(
         &self,
         filter: &RetimeFilter,
+        zone_stated: bool,
         mut new_start: impl FnMut(&crate::time::DatumTime) -> Result<crate::time::DatumTime>,
     ) -> Result<Vec<Retimed>> {
         self.retime_with(filter, |e| {
             if let Some(t) = e.occur_time.as_mut() {
                 *t = new_start(t)?;
+            }
+            if zone_stated {
+                e.zone_stated();
             }
             Ok(())
         })
@@ -260,7 +267,7 @@ mod tests {
             unit: crate::time::UncertaintyUnit::Minute,
         }
         .to_iso();
-        db.set_start_time(&filter, |_| Ok(new_start.clone()))
+        db.set_start_time(&filter, false, |_| Ok(new_start.clone()))
             .unwrap();
 
         let by_hid = db.get_entry(&hid).unwrap();
@@ -412,7 +419,9 @@ mod tests {
         );
 
         let target = seed_dt("2024-02-01T07:00:00Z");
-        let moved = db.set_start_time(&filter, |_| Ok(target.clone())).unwrap();
+        let moved = db
+            .set_start_time(&filter, false, |_| Ok(target.clone()))
+            .unwrap();
         assert_eq!(moved.len(), 1);
         assert_eq!(
             moved[0].before.utc,
@@ -462,7 +471,7 @@ mod tests {
             ..Default::default()
         };
         let new_start = seed_dt("2026-05-01T10:00:00Z");
-        let err = db.set_start_time(&filter, |_| Ok(new_start.clone()));
+        let err = db.set_start_time(&filter, false, |_| Ok(new_start.clone()));
         assert!(
             err.is_err(),
             "second row must collide on (field, occur_time)"
@@ -496,7 +505,7 @@ mod tests {
         };
         let new_start = seed_dt("2026-05-01T10:00:00Z");
         let moved = db
-            .set_start_time(&filter, |_| Ok(new_start.clone()))
+            .set_start_time(&filter, false, |_| Ok(new_start.clone()))
             .unwrap();
         assert_eq!(moved.len(), 2);
 
@@ -539,7 +548,7 @@ mod tests {
         };
         let new_start = seed_dt("2026-05-01T10:00:00Z");
         let moved = db
-            .set_start_time(&filter, |_| Ok(new_start.clone()))
+            .set_start_time(&filter, false, |_| Ok(new_start.clone()))
             .unwrap();
         assert_eq!(moved.len(), 1, "only the timed row is a retime target");
 

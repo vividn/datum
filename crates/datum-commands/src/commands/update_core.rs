@@ -520,6 +520,10 @@ fn apply_mutation(
         updated.occur_time = Some(crate::commands::log_core::parse_reserved_occur_time(
             &t, &base,
         )?);
+        // A time in another zone states it (da-n79py).
+        if updated.occur_time.as_ref().map(|t| &t.timezone) != Some(&base.timezone) {
+            updated.zone_stated();
+        }
     }
     persist_with_auto_reinterp(existing, updated, slug_delimiter, db)
 }

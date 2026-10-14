@@ -756,6 +756,15 @@ pub(super) fn save_existing_entry_with_kind_in_tx(
             let pre = fetch_entry_any(conn, &entry.hid.0)?;
             history::record(conn, &pre, change_kind)?;
             raw_overwrite_mutables(conn, &pre.hid, &entry.slug, entry, None)?;
+            // An edit saves the row as fetched, so its metadata is the edit's
+            // to write too: `retime -z` drops a zone's `tz_from` (da-n79py).
+            conn.execute(
+                "UPDATE entries SET extra_metadata = ?2 WHERE hid = ?1",
+                params![
+                    pre.hid,
+                    entry.extra_metadata.as_ref().map(|v| v.to_string())
+                ],
+            )?;
             super::sync::emit(conn, Some(&pre), &pre.hid, change_kind)
         }
     }
@@ -1562,7 +1571,8 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
             raw_input = ?22,
             alias_chain = ?23,
             parser_version = ?24,
-            user_asserted_last_state = ?25
+            user_asserted_last_state = ?25,
+            extra_metadata = ?26
            WHERE hid = ?1"#,
     )?;
     let affected = stmt.execute(params![
@@ -1599,6 +1609,7 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
             .user_asserted_last_state
             .as_ref()
             .map(|v| v.to_string()),
+        entry.extra_metadata.as_ref().map(|v| v.to_string()),
     ])?;
     if affected == 0 {
         return Err(DatumError::NotFound(entry.hid.to_string()));

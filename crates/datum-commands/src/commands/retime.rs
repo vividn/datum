@@ -176,19 +176,21 @@ pub fn retime(args: RetimeArgs, db: &Db) -> Result<()> {
         || placed && (args.time.time.as_deref()).is_none_or(|t| t.starts_with(['+', '-']));
     let mut moved = Vec::new();
     for filter in &filters {
-        moved.extend(db.set_start_time(filter, |own| {
-            let (at, anchor) = if placed {
-                (own.utc, Some(own))
-            } else {
-                (now, None)
-            };
-            let mut t = build_time_anchored(&args.time, at, anchor, args.relative)
-                .map_err(|e| datum_core::error::DatumError::Other(format!("{e:#}")))?;
-            if shifted && t.uncertainty.is_none() {
-                t.uncertainty.clone_from(&own.uncertainty);
-            }
-            Ok(t)
-        })?);
+        moved.extend(
+            db.set_start_time(filter, args.time.timezone.is_some(), |own| {
+                let (at, anchor) = if placed {
+                    (own.utc, Some(own))
+                } else {
+                    (now, None)
+                };
+                let mut t = build_time_anchored(&args.time, at, anchor, args.relative)
+                    .map_err(|e| datum_core::error::DatumError::Other(format!("{e:#}")))?;
+                if shifted && t.uncertainty.is_none() {
+                    t.uncertainty.clone_from(&own.uncertainty);
+                }
+                Ok(t)
+            })?,
+        );
     }
     report(db, &moved)
 }

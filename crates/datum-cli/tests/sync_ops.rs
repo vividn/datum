@@ -2180,3 +2180,52 @@ fn an_identical_note_on_each_copy_is_two_notes() {
         assert_eq!(notes, "2");
     }
 }
+
+/// A zone the neighbours gave is marked a guess (da-h8dvi) until one is
+/// stated — `retime -z`, or an `update` putting the entry in another zone —
+/// and the marker's removal is in the op, so every copy drops it
+/// (da-n79py). A retime naming no zone keeps it.
+#[test]
+fn stating_the_zone_drops_the_neighbours_marker_on_every_copy() {
+    let (a, b) = (Copy::new(), Copy::new());
+    for day in [12, 13, 14, 16, 17, 18] {
+        let date = format!("2024-06-{day}");
+        a.ok(&[
+            "occur",
+            "coffee",
+            "-z",
+            "Pacific/Chatham",
+            "-d",
+            &date,
+            "-t",
+            "12:00",
+        ]);
+    }
+    let meta = |copy: &Copy, hid: &str| {
+        copy.query(
+            "SELECT coalesce(extra_metadata, 'none') FROM entries WHERE hid = ?1",
+            hid,
+        )
+    };
+    let stated: [&[&str]; 3] = [
+        &["retime", "-z", "Asia/Tokyo"],
+        &["retime", "-z", "Pacific/Chatham"],
+        &["update", "occur_time=2024-06-15T12:00+09:00"],
+    ];
+    for (i, how) in stated.into_iter().enumerate() {
+        let field = format!("tea{i}");
+        a.ok(&["occur", &field, "-d", "2024-06-15", "-t", "12:00"]);
+        let hid = a.hid(&field);
+        a.ok(&["retime", &hid, "-t", "12:30"]);
+        converged(&a, &b);
+        assert_eq!(meta(&b, &hid), r#"{"tz_from":"neighbours"}"#, "{how:?}");
+
+        a.ok(&[&how[..1], &[hid.as_str()], &how[1..]].concat());
+        converged(&a, &b);
+        assert_eq!(
+            (meta(&a, &hid), meta(&b, &hid)),
+            ("none".into(), "none".into()),
+            "{how:?}"
+        );
+    }
+}

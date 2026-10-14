@@ -382,6 +382,18 @@ impl Entry {
         })
     }
 
+    /// Drop the `tz_from` marker a log leaves on a zone it took from the
+    /// neighbours (da-h8dvi): once the zone is stated, it is no guess
+    /// (da-n79py). Saved like any edit, the marker's removal is in the op.
+    pub fn zone_stated(&mut self) {
+        if let Some(JsonValue::Object(m)) = self.extra_metadata.as_mut() {
+            m.remove("tz_from");
+            if m.is_empty() {
+                self.extra_metadata = None;
+            }
+        }
+    }
+
     /// The id template of a row imported from datum v2 that still leads with
     /// `%field%`, without it (da-ipwqb): v3's slug prefixes the field itself,
     /// so the stored template would name it twice. `v2import` strips it now;
