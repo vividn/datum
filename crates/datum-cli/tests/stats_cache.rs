@@ -229,7 +229,7 @@ fn cached_stats_are_the_uncached_stats_through_every_kind_of_write() {
     assert_same(&db, "a retime across midnight");
 
     let hid = hid_near(&db, "mood", "2026-02-01T00:00:00Z");
-    run_cli(&["del", &hid, "--force"], &db).unwrap();
+    run_cli(&["del", &hid], &db).unwrap();
     assert_same(&db, "a delete");
 
     run_cli(&["spec", "add-state", "activity", "piano"], &db).unwrap();

@@ -90,7 +90,7 @@ fn deleting_trigger_entry_suppresses_double_open_warning() {
     // Delete the trigger entry (the second start) via the CLI, mirroring
     // the bead repro.
     let trigger_slug = conflicts[0].entry_slug.clone();
-    run_cli(&["del", &trigger_slug, "--force"], &db).expect("delete trigger entry");
+    run_cli(&["del", &trigger_slug], &db).expect("delete trigger entry");
 
     let after = db.list_integrity_warnings(&filter).unwrap();
     assert!(
@@ -577,7 +577,7 @@ fn pending_integrity_count_excludes_soft_deleted_trigger() {
             pending: Some(true),
         })
         .unwrap();
-    run_cli(&["del", &pending[0].entry_slug, "--force"], &db).expect("delete trigger");
+    run_cli(&["del", &pending[0].entry_slug], &db).expect("delete trigger");
     assert_eq!(
         db.pending_integrity_count().unwrap(),
         0,

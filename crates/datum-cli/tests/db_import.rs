@@ -1493,11 +1493,7 @@ fn a_slug_held_by_a_deleted_row_says_so() {
         "meta": {"createTime": {"utc": "2025-01-01T10:00:00.000Z"}}
     }]));
     run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
-    run_cli(
-        &["delete", "chore:c2025-01-01T10:00:00.000Z", "--force"],
-        &db,
-    )
-    .unwrap();
+    run_cli(&["delete", "chore:c2025-01-01T10:00:00.000Z"], &db).unwrap();
     assert!(datum_core::test_util::logged_all(&db)[0]
         .deleted_at
         .is_some());

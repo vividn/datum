@@ -1896,7 +1896,6 @@ mod tests {
             crate::commands::del::del(
                 DeleteArgs {
                     id_or_slug: Some(id.to_string()),
-                    force: true,
                     dry_run: false,
                     all_or_nothing: false,
                     comment: None,
@@ -1951,11 +1950,9 @@ mod tests {
         assert_eq!(resolved.slug, inserted);
     }
 
-    /// Bare `delete --force` deletes the just-inserted coffee entry without
-    /// prompting. (Acceptance #3 — the prompt path is interactive and not
-    /// covered here.)
+    /// Bare `delete` deletes the just-inserted coffee entry. (Acceptance #3.)
     #[test]
-    fn last_docs_bare_delete_force_removes_most_recent_insert() {
+    fn last_docs_bare_delete_removes_most_recent_insert() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         log_entry(
@@ -1972,7 +1969,6 @@ mod tests {
         crate::commands::del::del(
             DeleteArgs {
                 id_or_slug: None,
-                force: true,
                 dry_run: false,
                 all_or_nothing: false,
                 comment: None,

@@ -63,8 +63,8 @@ fn undos_window_is_rejected_with_a_message_that_teaches() {
     }
 }
 
-/// da-8uig, vividn: "undo --force should also just be a no-op" — the twin of
-/// `delete_still_accepts_force_even_with_nothing_to_skip` below. A bare
+/// da-8uig, vividn: "undo --force should also just be a no-op" (`delete --force`,
+/// once its twin, was removed instead: da-286x). A bare
 /// switch carries no meaning past "don't stop to ask me", and nothing has
 /// asked since da-s6no, so it is accepted and the undo proceeds, stale
 /// `_LAST` and all. (That it also still WARNS past ten minutes is
@@ -168,17 +168,21 @@ fn a_stale_last_no_longer_refuses_delete() {
     assert!(db.get_entry(&hid).unwrap().deleted_at.is_none());
 }
 
-/// `--force` on `delete` is still ACCEPTED — scripts carry it everywhere —
-/// it simply has no prompt left to skip.
+/// `--force` on `delete` is gone (da-286x, vividn: «remove it yes»): it had
+/// no prompt left to skip, so it is refused as any unknown flag is, and
+/// nothing is deleted.
 #[test]
-fn delete_still_accepts_force_even_with_nothing_to_skip() {
+fn delete_refuses_force_as_an_unknown_flag() {
     let db = fresh_db();
     run_cli(&["occur", "coffee"], &db).expect("create");
-    age_pointer(&db, 90);
-    run_cli(&["delete", "--force"], &db).expect("--force is still a valid flag");
+    let err = run_cli(&["delete", "--force"], &db).expect_err("--force is refused");
+    assert!(
+        format!("{err:#}").contains("unexpected flag: --force"),
+        "{err:#}"
+    );
     assert!(datum_core::test_util::logged_all(&db)[0]
         .deleted_at
-        .is_some());
+        .is_none());
 }
 
 /// The boundary that is left. vividn named `undo` and `delete`; `update` keeps

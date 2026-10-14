@@ -53,7 +53,7 @@ fn range_delete_tombstones_the_whole_run() {
     let db = fresh_db();
     let rows = seed_newest_first(&db, "mood", 6);
 
-    run_cli(&["delete", "_2-_4", "--force"], &db)
+    run_cli(&["delete", "_2-_4"], &db)
         .unwrap_or_else(|err| panic!("range delete must succeed: {err:#}"));
 
     for ordinal in [2usize, 3, 4] {
@@ -76,7 +76,7 @@ fn reversed_range_deletes_the_same_run() {
     let db = fresh_db();
     let rows = seed_newest_first(&db, "mood", 5);
 
-    run_cli(&["delete", "_4-_2", "--force"], &db)
+    run_cli(&["delete", "_4-_2"], &db)
         .unwrap_or_else(|err| panic!("reversed range delete must succeed: {err:#}"));
 
     assert!(!is_tombstoned(&db, &rows[0]), "_1 must survive");
@@ -159,7 +159,7 @@ fn field_scoped_range_stays_inside_its_field() {
     let mood = seed_newest_first(&db, "mood", 3);
     let coffee = seed_newest_first(&db, "coffee", 3);
 
-    run_cli(&["delete", "mood:_1-_2", "--force"], &db)
+    run_cli(&["delete", "mood:_1-_2"], &db)
         .unwrap_or_else(|err| panic!("field-scoped range delete must succeed: {err:#}"));
 
     assert!(is_tombstoned(&db, &mood[0]), "mood:_1 must be tombstoned");
@@ -180,7 +180,7 @@ fn range_composes_with_comma_separated_tokens() {
     let db = fresh_db();
     let rows = seed_newest_first(&db, "mood", 6);
 
-    run_cli(&["delete", "_1,_3-_4", "--force"], &db)
+    run_cli(&["delete", "_1,_3-_4"], &db)
         .unwrap_or_else(|err| panic!("mixed comma/range delete must succeed: {err:#}"));
 
     for ordinal in [1usize, 3, 4] {
@@ -205,7 +205,7 @@ fn range_past_the_end_acts_on_what_exists() {
     let db = fresh_db();
     let rows = seed_newest_first(&db, "mood", 3);
 
-    run_cli(&["delete", "_2-_20", "--force"], &db)
+    run_cli(&["delete", "_2-_20"], &db)
         .unwrap_or_else(|err| panic!("overflowing range delete must succeed: {err:#}"));
 
     assert!(!is_tombstoned(&db, &rows[0]), "_1 must survive");

@@ -723,11 +723,10 @@ mod tests {
 
     #[test]
     fn del_alias() {
-        let cli = parse_argv(&argv(&["del", "some:id", "--force"])).unwrap();
+        let cli = parse_argv(&argv(&["del", "some:id"])).unwrap();
         match cli.command {
             Command::Delete(a) => {
                 assert_eq!(a.id_or_slug.as_deref(), Some("some:id"));
-                assert!(a.force);
             }
             _ => panic!(),
         }

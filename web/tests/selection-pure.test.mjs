@@ -49,7 +49,7 @@ const GRAMMAR = grammarOf([
 		'datum retime [SLUG[,SLUG]...] [-r] [-t T] [-y]... [-q]... [-d D]'
 	]),
 	entry('history', ['datum history <ID_OR_SLUG> [--version N | --diff A B]']),
-	entry('delete', ['datum delete [ID_OR_SLUG[,ID_OR_SLUG]...] [--force] [--dry-run] [--all-or-nothing]'], [], ['del']),
+	entry('delete', ['datum delete [ID_OR_SLUG[,ID_OR_SLUG]...] [--dry-run] [--all-or-nothing]'], [], ['del']),
 	entry('undo', ['datum undo [ID_OR_SLUG] [--to-version N]']),
 	entry('flag', ['datum flag <FIELD> [COMMENT...]']),
 	entry('reparse', ['datum reparse <HID>... [--fix]']),

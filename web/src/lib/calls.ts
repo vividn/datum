@@ -280,7 +280,7 @@ export function layoutUndoArgv(name: string, version?: number): string[] {
 
 /** By hid, since `del` splits its argument at commas and a name may have one. */
 export function deleteLayoutArgv(hid: string): string[] {
-	return ['del', hid, '--force'];
+	return ['del', hid];
 }
 
 // ---- the sample week -------------------------------------------------------------

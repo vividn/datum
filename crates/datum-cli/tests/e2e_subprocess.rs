@@ -319,8 +319,8 @@ fn subprocess_undo_past_the_window_warns_and_reverts_the_last_command() {
     };
     let x_hid = hid_of("coffee");
     let y_hid = hid_of("tea");
-    assert_ok(&env.run(&["del", &x_hid, "--force"]), "delete X");
-    assert_ok(&env.run(&["del", &y_hid, "--force"]), "delete Y");
+    assert_ok(&env.run(&["del", &x_hid]), "delete X");
+    assert_ok(&env.run(&["del", &y_hid]), "delete Y");
 
     // Point `_LAST` at X and age every command past the warning line.
     conn.execute_batch(&format!(
@@ -506,7 +506,7 @@ fn subprocess_delete_past_the_window_warns_and_proceeds() {
     )
     .expect("force-stale pointer");
 
-    // No `--force`, and stdin is closed: under the old gate this prompted.
+    // stdin is closed: under the old gate this prompted.
     let out = env.run(&["delete"]);
     assert_ok(&out, "stale delete must proceed");
     let stderr = String::from_utf8_lossy(&out.stderr);

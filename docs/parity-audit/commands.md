@@ -22,7 +22,7 @@ Reference points:
 |---|---|---|---|---|
 | add / occur / start / end / switch | ✓ | ✓ | ✓ | `-K` slug keys, `-m` moment, auto-alias expansion |
 | tail / head | ✓ | ✓ | ✓ | `--reverse` |
-| get / del / edit | ✓ | ✓ | ✓ | `--force` on del, `--pretty` on get |
+| get / del / edit | ✓ | ✓ | ✓ | `--pretty` on get |
 | update / merge / rekey | ✓ (one cmd, `-X` flag) | ✓ (three cmds) | ✓ | split into separate verbs |
 | retime | ✓ | ✓ | ✓ | stricter mutual-exclusion on `--offset`/`--time` |
 | backup / restore | ✓ | ✓ | ✓ | tar.gz archive support |

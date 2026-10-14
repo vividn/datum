@@ -197,7 +197,7 @@ fn delete_emits_delete_action_tag() {
     let db = tmp_db();
     let _ = std::fs::remove_file(&db);
     run(&db, &["occur", "coffee", "--id", "pin"]);
-    let (stdout, _) = run(&db, &["del", "coffee:pin", "--force"]);
+    let (stdout, _) = run(&db, &["del", "coffee:pin"]);
     assert!(stdout.contains("DELETE"), "expected DELETE: {stdout:?}");
     let _ = std::fs::remove_file(&db);
 }

@@ -60,8 +60,8 @@ fn del_alias_invokes_delete() {
         .state(serde_json::json!(2))
         .insert(&db);
 
-    // `datum del <id> --force` routes through the same dispatcher as `delete`.
-    run_cli(&["del", &entry.slug, "--force"], &db).expect("del alias dispatch");
+    // `datum del <id>` routes through the same dispatcher as `delete`.
+    run_cli(&["del", &entry.slug], &db).expect("del alias dispatch");
 
     // Entry is gone.
     let res = db.get_entry(&entry.slug);

@@ -124,7 +124,7 @@ fn redo_of_an_undone_delete_deletes_again() {
     let db = fresh_db();
     run_cli(&["occur", "tea"], &db).expect("create");
     let hid = only_hid(&db);
-    run_cli(&["delete", &hid, "--force"], &db).expect("delete");
+    run_cli(&["delete", &hid], &db).expect("delete");
 
     run_cli(&["undo"], &db).expect("undo the delete");
     assert!(db.get_entry(&hid).unwrap().deleted_at.is_none());

@@ -61,7 +61,6 @@ pub(crate) fn parse_get_args(tail: &[&str]) -> Result<GetArgs> {
 #[derive(Default)]
 pub(crate) struct DeleteParsing {
     output: OutputArgs,
-    force: bool,
     dry_run: bool,
     all_or_nothing: bool,
     all: bool,
@@ -74,10 +73,6 @@ pub(crate) fn delete_args_registry() -> Vec<LiftedSpec<DeleteParsing>> {
     for spec in input::output_args::FLAG_SPECS {
         r.push(lift(|p: &mut DeleteParsing| &mut p.output, spec));
     }
-    r.push(local_switch(None, Some("force"), |p| {
-        p.force = true;
-        Ok(())
-    }));
     r.push(local_switch(None, Some("dry-run"), |p| {
         p.dry_run = true;
         Ok(())
@@ -107,7 +102,6 @@ pub(crate) fn parse_delete_args(tail: &[&str]) -> Result<DeleteArgs> {
     let pos = fold_args(tail, &mut composed, &registry)?;
     Ok(DeleteArgs {
         id_or_slug: optional_pos(&pos)?,
-        force: composed.force,
         dry_run: composed.dry_run,
         all_or_nothing: composed.all_or_nothing,
         all: composed.all,
@@ -151,8 +145,8 @@ pub(crate) fn undo_args_registry() -> Vec<LiftedSpec<UndoParsing>> {
     //
     // `--force` is ACCEPTED and does nothing — it is a bare switch, so a
     // script that still carries it means only "don't stop to ask me", and
-    // there has been no prompt to skip since da-s6no. `delete --force` is
-    // idle for exactly this reason; the two commands stay alike.
+    // there has been no prompt to skip since da-s6no. `delete --force`,
+    // idle for the same reason, was removed outright (da-286x).
     r.push(local_switch(None, Some("force"), |_p| Ok(())));
     // `--window` stays a tombstone: it took a DURATION that meant something,
     // and a script passing one deserves the sentence that says what replaced

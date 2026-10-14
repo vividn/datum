@@ -22,8 +22,6 @@
 //! the bead scope):
 //!   * soft-delete sets `deleted_at`, the row is excluded from list queries
 //!     but still reachable via `get_entry_including_deleted` (A4 tombstone).
-//!   * `--force` is always passed in tests — the non-force path reads from
-//!     stdin and would block indefinitely under cargo test.
 
 use crate::common;
 
@@ -46,7 +44,7 @@ fn delete_by_exact_id_tombstones_entry() {
     let db = fresh_db();
     let entry = entry_builder("coffee").state(json!(1)).insert(&db);
 
-    run_cli(&["delete", &entry.slug, "--force"], &db).expect("delete --force");
+    run_cli(&["delete", &entry.slug], &db).expect("delete");
 
     // Live read paths hide the tombstoned row.
     assert_count!(db, "coffee", 0);
@@ -88,7 +86,7 @@ fn delete_by_slug_tombstones_entry() {
     let slug = seeded.slug.clone();
     assert_eq!(slug, "event:fixed", "slug interpolation must resolve");
 
-    run_cli(&["delete", &slug, "--force"], &db).expect("delete by slug");
+    run_cli(&["delete", &slug], &db).expect("delete by slug");
 
     assert_count!(db, "event", 0);
     assert!(
@@ -113,7 +111,7 @@ fn reoccur_at_same_slug_after_delete_succeeds() {
 
     // `--id pin` forces a fixed slug so both occurs target `coffee:pin`.
     run_cli(&["occur", "coffee", "--id", "pin"], &db).expect("first occur");
-    run_cli(&["delete", "coffee:pin", "--force"], &db).expect("delete the entry");
+    run_cli(&["delete", "coffee:pin"], &db).expect("delete the entry");
 
     // Re-`occur` at the very same slug — previously rejected by the slug
     // UNIQUE that the tombstone still held.
@@ -143,7 +141,7 @@ fn delete_targets_one_row_among_many() {
     let doomed = entry_builder("coffee").state(json!(1)).insert(&db);
     let keeper = entry_builder("coffee").state(json!(2)).insert(&db);
 
-    run_cli(&["delete", &doomed.slug, "--force"], &db).expect("delete doomed");
+    run_cli(&["delete", &doomed.slug], &db).expect("delete doomed");
 
     // Only the targeted row is tombstoned; the sibling survives intact.
     assert_count!(db, "coffee", 1);
@@ -183,8 +181,8 @@ fn del_alias_dispatches_to_delete_handler() {
         .state(json!("via-del"))
         .insert(&db);
 
-    run_cli(&["delete", &via_delete.slug, "--force"], &db).expect("canonical delete");
-    run_cli(&["del", &via_del.slug, "--force"], &db).expect("del alias");
+    run_cli(&["delete", &via_delete.slug], &db).expect("canonical delete");
+    run_cli(&["del", &via_del.slug], &db).expect("del alias");
 
     // Both rows are tombstoned — same handler, same effect.
     assert_count!(db, "mood", 0);
@@ -215,7 +213,7 @@ fn delete_emits_delete_tag_on_standard_show() {
     // Pinned slug so the subsequent delete can reference it deterministically.
     // da-ivld: id_structure is body-only; `<field>:` prefix is implicit.
     run_binary(&db, &["occur", "coffee", "--id", "pin"]);
-    let (stdout, _) = run_binary(&db, &["delete", "coffee:pin", "--force"]);
+    let (stdout, _) = run_binary(&db, &["delete", "coffee:pin"]);
     assert!(
         stdout.contains("DELETE"),
         "expected DELETE action tag on standard show, got: {stdout:?}",
@@ -223,7 +221,7 @@ fn delete_emits_delete_tag_on_standard_show() {
 
     // Second seed + delete with `--show none`: no tag, no noise.
     run_binary(&db, &["occur", "coffee", "--id", "pin2"]);
-    let (silent, _) = run_binary(&db, &["delete", "coffee:pin2", "--force", "--show", "none"]);
+    let (silent, _) = run_binary(&db, &["delete", "coffee:pin2", "--show", "none"]);
     assert_eq!(
         silent, "",
         "--show none must silence the DELETE tag, got: {silent:?}",
@@ -246,7 +244,7 @@ fn compound_ids_batch_delete_in_one_invocation() {
     let e3 = entry_builder("coffee").state(json!(3)).insert(&db);
 
     let compound = format!("{},{},{},", e1.slug, e2.slug, e3.slug);
-    run_cli(&["delete", &compound, "--force"], &db)
+    run_cli(&["delete", &compound], &db)
         .unwrap_or_else(|err| panic!("compound delete must succeed: {err:#}"));
 
     assert_count!(db, "coffee", 0);
@@ -273,7 +271,7 @@ fn compound_delete_expands_wildcards() {
     let untouched = entry_builder("coffee").state(json!(1)).insert(&db);
 
     // `mood:*` hits all three mood rows, `coffee:*` not listed → preserved.
-    run_cli(&["delete", "mood:*", "--force"], &db)
+    run_cli(&["delete", "mood:*"], &db)
         .unwrap_or_else(|err| panic!("wildcard delete must succeed: {err:#}"));
 
     assert_count!(db, "mood", 0);
@@ -324,7 +322,7 @@ fn a_wildcard_skips_meta_entries_unless_it_names_their_field() {
     assert_eq!(slugs("command:*"), ["command:hydration"]);
     assert_eq!(slugs("spec:fluid"), ["spec:fluid"]);
 
-    run_cli(&["delete", "c*", "--force"], &db).unwrap();
+    run_cli(&["delete", "c*"], &db).unwrap();
     assert_count!(db, "coffee", 0);
     assert_eq!(
         slugs("command:*"),
@@ -358,7 +356,7 @@ fn compound_delete_mixes_hid_slug_and_wildcard() {
     let outside = entry_builder("coffee").state(json!(1)).insert(&db);
 
     let mixed = format!("{},{},book:*", by_slug.slug, by_hid.hid);
-    run_cli(&["delete", &mixed, "--force"], &db)
+    run_cli(&["delete", &mixed], &db)
         .unwrap_or_else(|err| panic!("mixed delete must succeed: {err:#}"));
 
     // Four deleted, one untouched.
@@ -389,7 +387,7 @@ fn compound_delete_collapses_duplicates() {
     let hid5: String = e.hid.chars().take(5).collect();
     let dup = format!("{},{}", e.slug, hid5);
 
-    run_cli(&["delete", &dup, "--force"], &db)
+    run_cli(&["delete", &dup], &db)
         .unwrap_or_else(|err| panic!("duplicate-collapsed delete must succeed: {err:#}"));
 
     assert!(
@@ -410,7 +408,7 @@ fn compound_delete_continues_past_bad_token_by_default() {
     let doomed = entry_builder("coffee").state(json!(2)).insert(&db);
 
     let compound = format!("{},definitely-not-a-real-id", doomed.slug);
-    let err = run_cli(&["delete", &compound, "--force"], &db)
+    let err = run_cli(&["delete", &compound], &db)
         .expect_err("batch with a bad token must report a non-zero error");
     let msg = format!("{err:#}");
     assert!(
@@ -439,7 +437,7 @@ fn all_or_nothing_compound_delete_aborts_without_mutating() {
     let b = entry_builder("coffee").state(json!(2)).insert(&db);
 
     let compound = format!("not-a-real-id,{},{}", a.slug, b.slug);
-    let err = run_cli(&["delete", &compound, "--force", "--all-or-nothing"], &db)
+    let err = run_cli(&["delete", &compound, "--all-or-nothing"], &db)
         .expect_err("all-or-nothing must surface the resolution error");
     let msg = format!("{err:#}");
     assert!(
@@ -458,7 +456,7 @@ fn compound_delete_dry_run_does_not_mutate() {
     let a = entry_builder("mood").state(json!(1)).insert(&db);
     let b = entry_builder("mood").state(json!(2)).insert(&db);
 
-    run_cli(&["delete", "mood:*", "--force", "--dry-run"], &db)
+    run_cli(&["delete", "mood:*", "--dry-run"], &db)
         .unwrap_or_else(|err| panic!("dry-run must succeed: {err:#}"));
 
     // Both rows still live.
@@ -562,7 +560,7 @@ fn an_extra_word_is_refused_by_name_and_nothing_is_deleted() {
     let entry = entry_builder("coffee").state(json!(1)).insert(&db);
     let (hid, file) = (&entry.hid.to_string(), path.to_str().unwrap());
     for args in [
-        ["del", hid, "nope9", "--force"].as_slice(),
+        ["del", hid, "nope9"].as_slice(),
         &["undo", hid, "nope9"],
         &["redo", hid, "nope9"],
         &["history", hid, "nope9"],
