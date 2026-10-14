@@ -275,6 +275,153 @@ fn undo_refuses_a_command_whose_entry_a_sync_changed_since() {
     assert!(!a.deleted(&hid));
 }
 
+/// da-e3be3: after a wipe, the refusal names EVERY entry another copy
+/// changed, with what to do about each, and still moves nothing — undo is
+/// the whole command or none of it.
+#[test]
+fn undo_of_a_wipe_names_every_entry_a_sync_changed_since() {
+    let (a, b) = (Copy::new(), Copy::new());
+    for field in ["coffee", "tea", "water"] {
+        a.ok(&["occur", field, "n=1"]);
+    }
+    a.send(&b);
+    let (coffee, tea, water) = (a.hid("coffee"), a.hid("tea"), a.hid("water"));
+    a.ok(&["delete", "--all"]);
+    b.ok(&["update", &coffee, "n=2"]);
+    b.ok(&["update", &tea, "n=3"]);
+    b.send(&a);
+
+    let out = a.run(&["undo"], "");
+    assert!(!out.status.success(), "the undo must refuse");
+    let err = String::from_utf8_lossy(&out.stderr);
+    for hid in [&coffee, &tea] {
+        assert!(
+            err.contains(&format!("`datum conflicts resolve {hid}`")),
+            "the refusal names {hid} and what to do: {err}"
+        );
+    }
+    assert!(!err.contains(&water), "water is not in the way: {err}");
+    assert!(err.contains("nothing was changed"), "{err}");
+    for hid in [&coffee, &tea, &water] {
+        assert!(a.deleted(hid), "nothing moved: {hid} came back");
+    }
+}
+
+/// da-e3be3: `undo --skip-changed` is the way past that refusal — it
+/// takes back the rest of the wipe, leaves the changed entries as they are,
+/// naming each, and moves the cursor on.
+#[test]
+fn undo_skip_changed_takes_back_the_rest_of_a_wipe() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "n=1"]);
+    a.ok(&["occur", "water", "n=1"]);
+    a.send(&b);
+    let (coffee, water) = (a.hid("coffee"), a.hid("water"));
+    a.ok(&["delete", "--all"]);
+    b.ok(&["update", &coffee, "n=2"]);
+    b.send(&a);
+
+    let refused = String::from_utf8(a.run(&["undo"], "").stderr).unwrap();
+    assert!(refused.contains("`datum undo --skip-changed`"), "{refused}");
+
+    let out = a.run(&["undo", "--skip-changed"], "");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains(&coffee) && !err.contains(&water), "{err}");
+    assert!(!a.deleted(&water), "the rest came back");
+    assert!(a.deleted(&coffee), "the changed entry is left as it is");
+    assert_eq!(a.data(&coffee)["n"], 2);
+    // The cursor moved on: the next undo is the command before the wipe.
+    a.ok(&["undo"]);
+    assert!(a.deleted(&water));
+}
+
+/// …and when another copy changed EVERY entry of the command, it takes
+/// back nothing, names them all, and still moves the cursor past it: the
+/// step the flag asked for, which the refusal says in those words.
+#[test]
+fn undo_skip_changed_with_every_entry_changed_moves_only_the_cursor() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "n=1"]);
+    a.send(&b);
+    let coffee = a.hid("coffee");
+    a.ok(&["update", &coffee, "n=2"]);
+    a.send(&b);
+    b.ok(&["update", &coffee, "n=3"]);
+    b.send(&a);
+
+    let refused = String::from_utf8(a.run(&["undo"], "").stderr).unwrap();
+    assert!(
+        refused.contains("`datum undo --skip-changed` steps past it and takes nothing back"),
+        "{refused}"
+    );
+    let out = a.run(&["undo", "--skip-changed"], "");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("left 1 of the 1 entries") && err.contains(&coffee),
+        "{err}"
+    );
+    assert!(
+        !err.contains("nothing moved"),
+        "the skip already said it: {err}"
+    );
+    assert_eq!(a.data(&coffee)["n"], 3, "the other copy's change stays");
+    // The cursor moved on: the next undo is the occur before the update,
+    // which wrote coffee too, so the same change stands in its way.
+    let next = String::from_utf8(a.run(&["undo"], "").stderr).unwrap();
+    assert!(next.contains("1 of the 2 entries"), "{next}");
+}
+
+/// `--skip-changed` is the bare undo's: beside a named entry, which steps
+/// alone already, it is refused and moves nothing.
+#[test]
+fn undo_skip_changed_with_a_named_entry_is_refused() {
+    let a = Copy::new();
+    a.ok(&["occur", "coffee", "n=1"]);
+    let coffee = a.hid("coffee");
+    let out = a.run(&["undo", &coffee, "--skip-changed"], "");
+    assert!(!out.status.success(), "a named undo must refuse the flag");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("--skip-changed is for a bare `undo`"), "{err}");
+    assert!(!a.deleted(&coffee), "nothing moved");
+}
+
+/// A refused redo says what redo does, not undo's words.
+#[test]
+fn redo_refuses_in_its_own_words_an_entry_a_sync_changed_since() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "n=1"]);
+    a.send(&b);
+    let coffee = a.hid("coffee");
+    a.ok(&["update", &coffee, "n=2"]);
+    a.ok(&["undo"]);
+    a.send(&b);
+    b.ok(&["update", &coffee, "n=3"]);
+    b.send(&a);
+
+    let out = a.run(&["redo"], "");
+    assert!(!out.status.success(), "the redo must refuse");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("redo re-applies the whole command or nothing"),
+        "{err}"
+    );
+    assert!(
+        !err.contains("--skip-changed"),
+        "redo has no way past: {err}"
+    );
+    assert_eq!(a.data(&coffee)["n"], 3, "nothing moved");
+}
+
 /// …and so does one over an IMPORTED row, whose whole trail comes after
 /// the import: a sync can be its first history row.
 #[test]

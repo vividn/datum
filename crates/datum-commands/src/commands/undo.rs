@@ -57,6 +57,9 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
         .filter(|id| *id != datum_core::ids::resolve::UNDO_TOKEN || args.to_version.is_some());
     if let Some(list) = named.map(|list| every_last(db, list)) {
         let list = list.as_str();
+        if args.skip_changed {
+            anyhow::bail!("--skip-changed is for a bare `undo`: a named entry already steps alone");
+        }
         if args.to_version.is_some() && is_id_list(db, list) {
             anyhow::bail!(
                 "--to-version names a version of ONE entry's history; give one id, not the list '{list}'"
@@ -84,22 +87,28 @@ pub fn undo(args: UndoArgs, db: &Db) -> Result<()> {
         if args.to_version.is_some() {
             anyhow::bail!("--to-version requires an <id_or_slug> to target");
         }
-        undo_stack(db, &registry, &output)
+        undo_stack(db, args.skip_changed, &registry, &output)
     }
 }
 
 /// Bare `undo`: put every entry the action at the cursor wrote back as it was
-/// before it, and move the cursor back one.
-fn undo_stack(db: &Db, registry: &Option<SpecRegistry>, output: &OutputArgs) -> Result<()> {
+/// before it, and move the cursor back one. `skip_changed` leaves the entries
+/// another copy changed since as they are instead of refusing.
+fn undo_stack(
+    db: &Db,
+    skip_changed: bool,
+    registry: &Option<SpecRegistry>,
+    output: &OutputArgs,
+) -> Result<()> {
     let action = undo_log::cursor(db.conn())?
         .context("Nothing to undo — no command has changed anything here yet")?;
     // One step, one transaction (da-pxsa8): every member moves and the
     // cursor with them, or a failure part-way rolls all of it back.
     let tx = db.conn().unchecked_transaction()?;
-    refuse_if_moved(db, &action, "undo")?;
+    let (skipped, report) = refuse_if_moved(db, &action, "undo", skip_changed)?;
     warn_if_stale("undoing a change from", action.time);
     let mut steps: Vec<(Entry, Entry)> = Vec::new();
-    for member in &action.members {
+    for member in action.members.iter().filter(|m| !skipped.contains(&m.hid)) {
         let Some(current) = still_there(db, &member.hid)? else {
             continue;
         };
@@ -116,6 +125,14 @@ fn undo_stack(db: &Db, registry: &Option<SpecRegistry>, output: &OutputArgs) -> 
     }
     undo_log::set_undone(&tx, action.id, true)?;
     tx.commit()?;
+    // Said once it is true: a failure above rolls the step back.
+    if !report.is_empty() {
+        eprintln!("{report}");
+    }
+    if steps.is_empty() && !skipped.is_empty() {
+        // Every entry was left as it is, which the skip already said.
+        return Ok(());
+    }
     finish_stack(db, &steps, "undo", registry, output)
 }
 
@@ -135,7 +152,7 @@ fn redo_stack(
     // One step, one transaction (da-pxsa8): every member moves and the
     // cursor with them, or a failure part-way rolls all of it back.
     let tx = db.conn().unchecked_transaction()?;
-    refuse_if_moved(db, &action, "redo")?;
+    refuse_if_moved(db, &action, "redo", false)?;
     warn_if_stale("redoing a change from", action.time);
     let mut steps: Vec<(Entry, Entry)> = Vec::new();
     for member in &action.members {
@@ -162,31 +179,72 @@ fn still_there(db: &Db, hid: &Hid) -> Result<Option<Entry>> {
     }
 }
 
-/// Refuse, before anything moves, an action one of whose entries has changed
+/// Refuse, before anything moves, an action any of whose entries has changed
 /// since in a way the stack does not hold — a sync from another copy, or a
-/// write outside any command. Reverting it would throw that change away.
-fn refuse_if_moved(db: &Db, action: &undo_log::Action, verb: &str) -> Result<()> {
+/// write outside any command. Reverting it would throw that change away, and
+/// a step is the whole action or nothing (da-e3be3), so the refusal names
+/// every such entry and what to do about each. With `skip` it returns them,
+/// for the step to leave as they are, with the report naming them that the
+/// step prints once it has committed.
+fn refuse_if_moved(
+    db: &Db,
+    action: &undo_log::Action,
+    verb: &str,
+    skip: bool,
+) -> Result<(Vec<Hid>, String)> {
+    let mut hids = Vec::new();
+    let mut lines = Vec::new();
     for member in &action.members {
         let Some((version, kind)) = undo_log::blocker(db.conn(), member)? else {
             continue;
         };
         let hid = &member.hid;
-        let name = db
-            .get_entry_including_deleted(hid)
-            .map(|e| e.slug.to_string())
-            .unwrap_or_else(|_| hid.to_string());
+        let entry = db.get_entry_including_deleted(hid).ok();
+        let name = entry
+            .as_ref()
+            .map_or(hid.to_string(), |e| e.slug.to_string());
         let why = match kind {
             ChangeKind::SyncMerge | ChangeKind::SyncConflictResolve => {
-                "a sync brought in a change to it from another copy"
+                "a sync brought in a change from another copy"
             }
-            _ => "it was changed by a write that is not on the undo stack",
+            _ => "a write that is not on the undo stack",
         };
-        anyhow::bail!(
-            "Cannot {verb}: {name} ({hid}) has changed since — {why} (version {version}). \
-             Nothing was changed; `datum {verb} {hid}` steps that entry alone."
-        );
+        // What to do about it: settle a conflict, or see what changed.
+        let next = match entry.and_then(|e| e.conflicts) {
+            Some(_) => "conflicts resolve",
+            None => "history",
+        };
+        lines.push(format!(
+            "  {name} ({hid}): {why} (version {version}) — `datum {next} {hid}`"
+        ));
+        hids.push(hid.clone());
     }
-    Ok(())
+    let (n, of, lines) = (lines.len(), action.members.len(), lines.join("\n"));
+    if n == 0 {
+        return Ok((hids, String::new()));
+    }
+    if skip {
+        let report = format!("{verb}: left {n} of the {of} entries as they are:\n{lines}");
+        return Ok((hids, report));
+    }
+    // Only the stack's undo walks past them; redo always refuses.
+    let rest = match verb {
+        "undo" if n < of => format!(
+            " `datum undo --skip-changed` takes back the other {} and leaves these as they are.",
+            of - n
+        ),
+        "undo" => " `datum undo --skip-changed` steps past it and takes nothing back.".into(),
+        _ => String::new(),
+    };
+    let whole = match verb {
+        "redo" => "redo re-applies",
+        _ => "undo takes back",
+    };
+    anyhow::bail!(
+        "Cannot {verb}: {n} of the {of} entries that command wrote changed since:\n{lines}\n\
+         {whole} the whole command or nothing, and this would throw \
+         those changes away, so nothing was changed.{rest}"
+    )
 }
 
 /// `_LAST` names what a stack step moved, as after any command, and then

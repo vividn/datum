@@ -127,6 +127,7 @@ pub const UNDO_GATE_REMOVED: &str = "`--window` was removed from `undo` (da-s6no
 pub(crate) struct UndoParsing {
     output: OutputArgs,
     to_version: Option<u32>,
+    skip_changed: bool,
 }
 
 pub(crate) fn undo_args_registry() -> Vec<LiftedSpec<UndoParsing>> {
@@ -136,6 +137,10 @@ pub(crate) fn undo_args_registry() -> Vec<LiftedSpec<UndoParsing>> {
     }
     r.push(local_value(None, Some("to-version"), |p, v| {
         p.to_version = Some(parse_u32(v, "--to-version")?);
+        Ok(())
+    }));
+    r.push(local_switch(None, Some("skip-changed"), |p| {
+        p.skip_changed = true;
         Ok(())
     }));
     // The gate these two flags were the halves of is GONE (da-s6no): bare
@@ -165,6 +170,7 @@ pub(crate) fn parse_undo_args(tail: &[&str]) -> Result<UndoArgs> {
     Ok(UndoArgs {
         id_or_slug: optional_pos(&pos)?,
         to_version: composed.to_version,
+        skip_changed: composed.skip_changed,
         output: composed.output,
     })
 }

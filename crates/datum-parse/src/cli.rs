@@ -575,6 +575,9 @@ pub struct DeleteArgs {
 pub struct UndoArgs {
     pub id_or_slug: Option<String>,
     pub to_version: Option<u32>,
+    /// `--skip-changed`: a bare undo leaves the entries another copy changed
+    /// since as they are and takes back the rest (da-e3be3).
+    pub skip_changed: bool,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
 }
