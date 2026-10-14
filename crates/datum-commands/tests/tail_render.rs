@@ -238,11 +238,11 @@ fn tail_row_with_occur_time_has_no_c_prefix() {
 }
 
 #[test]
-fn tail_row_without_occur_time_uses_create_time_with_gray_c_prefix() {
+fn tail_row_without_occur_time_uses_create_time_with_grey_c_prefix() {
     // ITEM B (da-7jl): when the row has neither start_time nor end_time,
     // hybrid mode falls back to create_time prefixed by a gray 'c' so the
     // time column is never empty. Mirrors the table renderer's
-    // `format_gray_prefix("c", ...)` path in render/mod.rs.
+    // `format_grey_prefix("c", ...)` path in render/mod.rs.
     let _g = no_color_scope();
     let now = dt(2026, 4, 22, 17, 0);
     let mut e = entry_no_time("person", Verb::Point, Some(json!({"name": "john"})));
@@ -788,12 +788,12 @@ fn tail_table_offset_in_header_prefix_only_when_differing() {
     );
 }
 
-/// The `(±off)` prefix and the `±N<unit>` suffix are grey (GRAY_FG);
+/// The `(±off)` prefix and the `±N<unit>` suffix are grey (GREY_FG);
 /// the `HH:MM:SS` core stays unpainted.
 #[test]
 fn tail_table_offset_prefix_and_uncertainty_suffix_are_grey() {
     let _g = color_scope();
-    const GRAY: &str = "\x1b[90m";
+    const GREY: &str = "\x1b[90m";
     const RESET: &str = "\x1b[0m";
     let now = dt_off(2026, 4, 22, 15, 0, 120, "Europe/Berlin");
     let mut uncertain = entry_at(
@@ -824,11 +824,11 @@ fn tail_table_offset_prefix_and_uncertainty_suffix_are_grey() {
     };
     let table = format_table_with(&entries, None, Some(&now), None, &args).unwrap();
     assert!(
-        table.contains(&format!("21:00:00{GRAY}±3m{RESET}")),
+        table.contains(&format!("21:00:00{GREY}±3m{RESET}")),
         "± suffix grey, clock unpainted: {table:?}"
     );
     assert!(
-        table.contains(&format!("{GRAY}(+1){RESET}09:15:00")),
+        table.contains(&format!("{GREY}(+1){RESET}09:15:00")),
         "offset prefix grey, clock unpainted: {table:?}"
     );
 }

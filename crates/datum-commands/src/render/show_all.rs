@@ -22,7 +22,7 @@
 use datum_core::entry::Entry;
 use serde_json::Value as JsonValue;
 
-use super::{paint, DIM, GRAY_FG};
+use super::{paint, DIM, GREY_FG};
 
 const KEY_WIDTH: usize = 25;
 
@@ -86,12 +86,12 @@ fn heading(name: &str) -> String {
     // `── <Name> ` followed by a long em-dash run, in dim gray so it
     // reads as a comment divider rather than data.
     let dashes = "─".repeat(40_usize.saturating_sub(name.chars().count() + 4));
-    paint(GRAY_FG, &format!("── {name} {dashes}"))
+    paint(GREY_FG, &format!("── {name} {dashes}"))
 }
 
 fn push_row(out: &mut String, key: &str, value: &str) {
     let padded_key = format!("{key:<KEY_WIDTH$}");
-    let painted_key = paint(GRAY_FG, &padded_key);
+    let painted_key = paint(GREY_FG, &padded_key);
     if value.contains('\n') {
         // Multi-line value (typically pretty-printed JSON): print the key on
         // its own line, then indent each value line under it so the schema

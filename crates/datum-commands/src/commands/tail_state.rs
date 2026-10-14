@@ -244,7 +244,7 @@ fn print_blocks(blocks: &[&StateBlock]) {
         Some(r) => format!(
             "{label} {}",
             crate::render::colors::paint(
-                crate::render::colors::GRAY_FG,
+                crate::render::colors::GREY_FG,
                 &format!("({})", compress_offset_minutes(r))
             )
         ),

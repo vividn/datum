@@ -26,7 +26,7 @@ use super::characters::IGNORED_STATE;
 pub(crate) const RESET: &str = "\x1b[0m";
 pub(crate) const BOLD: &str = "\x1b[1m";
 pub(crate) const UNDERLINE: &str = "\x1b[4m";
-pub(crate) const GRAY_FG: &str = "\x1b[90m";
+pub(crate) const GREY_FG: &str = "\x1b[90m";
 
 // ─── RGB + YIQ ───────────────────────────────────────────────────────────────
 
@@ -47,8 +47,7 @@ impl Rgb {
     };
     /// `#888888` — the renderer's neutral grey. Not IGNORED's own: IGNORED
     /// and null both paint with it (§8), as do the empty LEAD/TRAIL slot
-    /// and a parallel member with no colour of its own; it is also what
-    /// [`GRAY_FG`], the slugs' and markers' bright black, reads as.
+    /// and a parallel member with no colour of its own.
     pub const GREY: Rgb = Rgb {
         r: 0x88,
         g: 0x88,
@@ -645,7 +644,7 @@ mod tests {
         let line = format!(
             "{}{}{}",
             "12:00:00",
-            paint(GRAY_FG, "+2"),
+            paint(GREY_FG, "+2"),
             paint_bg(Rgb { r: 1, g: 2, b: 3 }, "coffee")
         );
         assert_eq!(

@@ -40,7 +40,6 @@ use std::collections::HashMap;
 
 const RESET: &str = "\x1b[0m";
 const DIM: &str = "\x1b[2m";
-const GRAY_FG: &str = "\x1b[90m";
 /// da-uxgv: the sync-conflict marker's cast — bright yellow, so a `*` on a
 /// hid reads as "look at this" without competing with a state or field
 /// colour. Drops to plain text under `--no-color` / `NO_COLOR` like every
@@ -180,7 +179,7 @@ impl Outcome {
 // single source of truth. The mod-local palette duplicates were removed
 // when `format_field` was unified into `action::format_field_cell`
 // (da-c11); the mod-local gate duplicates followed in da-tpny.
-use self::colors::{color_enabled, paint};
+use self::colors::{color_enabled, paint, GREY_FG};
 
 // ─── Extraction (datum's `extractFormatted`) ─────────────────────────────────
 
@@ -260,7 +259,7 @@ pub(crate) fn extract_with_context_at(
         Some(verb) => Some(paint_track(verb)),
         None => action.map(paint_action),
     };
-    let slug_text = Some(paint(GRAY_FG, &entry.slug));
+    let slug_text = Some(paint(GREY_FG, &entry.slug));
     let hid_text = Some(paint(
         action.map(Outcome::ansi_color).unwrap_or(""),
         &short_hid(&entry.hid),
@@ -284,7 +283,7 @@ pub(crate) fn extract_with_context_at(
         reference_offset,
     ));
     let hybrid = occur.clone().or_else(|| {
-        Some(format_gray_prefix(
+        Some(format_grey_prefix(
             "c",
             self::action::format_timestamp_ref(
                 &self::action::synthesize_local_datumtime(entry.create_time),
@@ -337,8 +336,8 @@ fn paint_action(action: Outcome) -> String {
 
 // ─── Time rendering ──────────────────────────────────────────────────────────
 
-fn format_gray_prefix(prefix: &str, body: String) -> String {
-    format!("{}{}", paint(GRAY_FG, prefix), body)
+fn format_grey_prefix(prefix: &str, body: String) -> String {
+    format!("{}{}", paint(GREY_FG, prefix), body)
 }
 
 // ─── Outcome output: headers + info lines ────────────────────────────────────
@@ -889,7 +888,7 @@ fn build_rows(
             .collect();
         let quick = ctx
             .and_then(|c| c.quick_ordinal)
-            .map(|n| paint(GRAY_FG, &format!("_{n}")))
+            .map(|n| paint(GREY_FG, &format!("_{n}")))
             .unwrap_or_default();
         // da-uxgv: `*` after the hid means "another row lost an identity
         // contest to this one and is superseded behind it". vividn asked for
@@ -961,7 +960,7 @@ impl Headers {
                 Some(r) => format!(
                     "time {}",
                     paint(
-                        GRAY_FG,
+                        GREY_FG,
                         &format!("({})", self::action::compress_offset_minutes(r))
                     )
                 ),
@@ -1186,7 +1185,7 @@ pub fn format_table_with(
             let body = if r.time_metric_prefix.is_empty() {
                 r.time.clone()
             } else {
-                format!("{}{}", paint(GRAY_FG, r.time_metric_prefix), r.time)
+                format!("{}{}", paint(GREY_FG, r.time_metric_prefix), r.time)
             };
             let suffix_w = uncertainty_suffix_width(&r.time);
             let core_w = vw(&r.time) - suffix_w
@@ -1308,7 +1307,7 @@ pub fn table_columns_with(
             if r.time_metric_prefix.is_empty() {
                 r.time.clone()
             } else {
-                format!("{}{}", paint(GRAY_FG, r.time_metric_prefix), r.time)
+                format!("{}{}", paint(GREY_FG, r.time_metric_prefix), r.time)
             }
         }),
         (shown.field, "field", headers.field.to_string(), |r| {

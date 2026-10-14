@@ -440,7 +440,7 @@ fn render_occur(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) ->
     // It is the PREVIOUS state speaking, not this row's (da-fknn8), which
     // is why it is not part of the body below.
     if ctx.prior_state_ignored {
-        out.push_str(&paint(GRAY_FG, NULL_SET));
+        out.push_str(&paint(GREY_FG, NULL_SET));
     }
     out.push_str(&render_occur_body(entry, spec, ctx));
     out
@@ -511,7 +511,7 @@ pub fn format_lead_cell(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderCon
     }
     // The bare dot borrows the LEAD's rule and nothing else.
     if ctx.prior_state_ignored {
-        return paint(GRAY_FG, NULL_SET);
+        return paint(GREY_FG, NULL_SET);
     }
     String::new()
 }
@@ -801,7 +801,7 @@ fn render_switch_badge(value: Option<&JsonValue>, field: &str, spec: Option<&Fie
         }
         // da-6fvys: «tracking began» is a marker, not a state anyone
         // picked, so it gets no chip: the word alone, in grey.
-        Some(JsonValue::String(s)) if s == TRACKED_STATE_VALUE => paint(GRAY_FG, s),
+        Some(JsonValue::String(s)) if s == TRACKED_STATE_VALUE => paint(GREY_FG, s),
         Some(JsonValue::String(s)) => paint_bg(state_rgb(s, spec), s),
         Some(JsonValue::Object(obj)) => render_structured_chip(obj, spec),
         Some(JsonValue::Array(items)) if items.len() >= 2 => {
@@ -913,15 +913,15 @@ pub(crate) fn format_timestamp_ref(
         let base = format!("{}:{:02}", clock_label(&local), local.second());
         let offset = compress_offset_minutes(t.offset_minutes);
         let suffix = format_uncertainty_suffix(uncertainty)
-            .map(|u| paint(GRAY_FG, &u))
+            .map(|u| paint(GREY_FG, &u))
             .unwrap_or_default();
         let stamp = match reference_offset {
             Some(r) if r == t.offset_minutes => format!("{base}{suffix}"),
-            Some(_) => format!("{}{base}{suffix}", paint(GRAY_FG, &format!("({offset})"))),
-            None => format!("{base}{}{suffix}", paint(GRAY_FG, &offset)),
+            Some(_) => format!("{}{base}{suffix}", paint(GREY_FG, &format!("({offset})"))),
+            None => format!("{base}{}{suffix}", paint(GREY_FG, &offset)),
         };
         match format_relative_day_prefix(t, now) {
-            Some(prefix) => format!("{} {stamp}", paint(GRAY_FG, &prefix)),
+            Some(prefix) => format!("{} {stamp}", paint(GREY_FG, &prefix)),
             None => stamp,
         }
     };
@@ -1009,7 +1009,7 @@ fn format_uncertainty_suffix(uncertainty: Option<&str>) -> Option<String> {
 pub(crate) fn format_dur(entry: &Entry) -> Option<String> {
     let dur = format_human_duration(entry.duration_seconds()?, DurationPrecision::Seconds);
     let suffix = format_uncertainty_suffix(entry.dur_uncertainty())
-        .map(|u| paint(GRAY_FG, &u))
+        .map(|u| paint(GREY_FG, &u))
         .unwrap_or_default();
     Some(format!("{dur}{suffix}"))
 }
@@ -1043,13 +1043,13 @@ pub fn format_info_line_at(
     } else {
         // Hybrid fallback: row has no occur_time, so render create_time
         // prefixed by a gray 'c' — same convention the table renderer
-        // applies via `format_gray_prefix("c", ...)` in the
+        // applies via `format_grey_prefix("c", ...)` in the
         // `time_hybrid` extractor (render/mod.rs). create_time is a
         // wall-clock instant, never date-only.
         let synth = synthesize_local_datumtime(entry.create_time);
         parts.push(format!(
             "{}{}",
-            paint(GRAY_FG, "c"),
+            paint(GREY_FG, "c"),
             format_timestamp(&synth, now, None)
         ));
     }

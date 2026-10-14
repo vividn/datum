@@ -25,7 +25,7 @@ use super::action::{
 use super::characters::{DOT, IGNORED_STATE, NON_OCCUR, NULL_SET, NULL_STATE};
 use super::colors::{
     field_rgb, paint, paint_bg, paint_bg_fg, state_rgb, state_value_rgb, structured_state_rgb,
-    visible_width, Rgb, GRAY_FG,
+    visible_width, Rgb, GREY_FG,
 };
 
 /// Width budget below which we collapse the row to "drop trailing states
@@ -97,7 +97,7 @@ pub(crate) fn truncate_state_cell(
 fn render_occur_cell(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
     let mut out = String::new();
     if ctx.prior_state_ignored {
-        out.push_str(&paint(GRAY_FG, NULL_SET));
+        out.push_str(&paint(GREY_FG, NULL_SET));
     }
     let (fg, bg) = compute_occur_dot_colors(entry, spec, ctx.ongoing_state.as_ref());
     match bg {
@@ -133,7 +133,7 @@ fn truncate_state_body(
             paint_bg_fg(Rgb::GREY, Rgb::DARK_GREY, &right_truncate(s, budget))
         }
         Some(JsonValue::String(s)) if s == TRACKED_STATE_VALUE => {
-            paint(GRAY_FG, &right_truncate(s, budget))
+            paint(GREY_FG, &right_truncate(s, budget))
         }
         Some(JsonValue::String(s)) => paint_bg(state_rgb(s, spec), &right_truncate(s, budget)),
         Some(JsonValue::Object(obj)) => {
