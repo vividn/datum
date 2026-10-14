@@ -579,10 +579,11 @@ fn apply_data_key_rename(
 /// templated columns (`occur_time`, `state`, `dur`, …).
 fn persist_with_auto_reinterp(
     existing: Entry,
-    updated: Entry,
+    mut updated: Entry,
     slug_delimiter: &str,
     db: &Db,
 ) -> Result<UpdateOutcome> {
+    crate::commands::helpers::resolve_spec_colors(&mut updated, &existing)?;
     // da-rcoi: the spec's lists are enforced on the update / merge /
     // rekey paths too — a key renamed into an undeclared slot or merged in
     // from a payload would otherwise slip past the log-time check.

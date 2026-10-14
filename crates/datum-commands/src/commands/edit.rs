@@ -207,6 +207,7 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
     let mut updated = existing.clone();
     edited_view.apply_to(&mut updated);
     updated.modify_time = Utc::now();
+    crate::commands::helpers::resolve_spec_colors(&mut updated, &existing)?;
 
     // da-mryo: persist via the auto-reinterp path (like retime/update/rekey)
     // so a templated slug/field re-derives against the edited values —
@@ -439,6 +440,39 @@ mod tests {
         assert_eq!(after.content_hash, before.content_hash);
         assert_eq!(after.modify_time, before.modify_time);
         assert_eq!(after.state, before.state);
+    }
+
+    /// da-eciuy: editing a spec holds the colour it changes to `spec set
+    /// --color`'s rule — a hue resolves, anything else is refused.
+    #[test]
+    fn edit_holds_a_spec_colour_to_the_rule() {
+        let db = Db::open_in_memory().unwrap();
+        let spec =
+            datum_core::field_spec::FieldSpec::new("mood", datum_core::action::Action::Switch);
+        db.save_field_spec(&spec).unwrap();
+        let run = |color: &str| {
+            let e = db.get_entry("spec:mood").unwrap();
+            let prep = write_editor_payload(&editor_payload(&e, |doc| {
+                doc["data"]["color"] = color.into()
+            }));
+            with_datum_editor_result(&format!("cp {}", prep.path().display()), || {
+                edit(
+                    EditArgs {
+                        id_or_slug: "spec:mood".into(),
+                        output: Default::default(),
+                    },
+                    &db,
+                )
+            })
+        };
+        let err = run("nonsense").unwrap_err();
+        assert!(err.to_string().contains("is not a colour"), "{err}");
+        assert_eq!(db.load_spec("mood").unwrap().unwrap().color, None);
+        run("red").unwrap();
+        assert_eq!(
+            db.load_spec("mood").unwrap().unwrap().color,
+            Some(datum_core::kit_color::resolve("red", "mood").unwrap())
+        );
     }
 
     /// da-6p3du: moving an entry to a field is choosing its name, so a

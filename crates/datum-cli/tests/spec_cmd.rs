@@ -416,8 +416,8 @@ fn spec_set_color_takes_a_kits_colours_and_refuses_the_rest() {
 
 /// datum.day's field form saves an edited spec whole, as `spec set
 /// --from-json`, and a colour stored before the rule (da-xw1rx), which it
-/// sends back untouched, saves with it: the rule guards a colour a person
-/// gives a flag, and leaves alone one nobody touched.
+/// sends back untouched, saves with it: the rule guards a colour a write
+/// changes, and leaves alone one nobody touched (da-eciuy).
 #[test]
 fn the_field_forms_save_keeps_a_colour_stored_before_the_rule() {
     let db = fresh_db();
@@ -428,9 +428,10 @@ fn the_field_forms_save_keeps_a_colour_stored_before_the_rule() {
         &db,
     )
     .unwrap();
-    run_cli(&["update", "spec:mood", "color=#0f0"], &db).unwrap();
     let mut spec = db.load_spec("mood").unwrap().unwrap();
+    spec.color = Some("#0f0".into());
     spec.state_colors.insert("happy".into(), "beige".into());
+    db.save_field_spec(&spec).unwrap();
     spec.description = Some("edited".into());
     let json = serde_json::to_string(&spec).unwrap();
     run_cli(&["spec", "set", "mood", "--from-json", &json], &db).unwrap();
@@ -438,4 +439,57 @@ fn the_field_forms_save_keeps_a_colour_stored_before_the_rule() {
     assert_eq!(spec.description.as_deref(), Some("edited"));
     assert_eq!(spec.color.as_deref(), Some("#0f0"));
     assert_eq!(spec.state_colors["happy"], "beige");
+}
+
+/// `update spec:F color=…` and `spec set --from-json` hold a colour they
+/// change to `--color`'s rule (da-eciuy): a hue resolves as the kit's
+/// does, and anything else is refused, naming the key, with nothing
+/// written.
+#[test]
+fn update_and_from_json_hold_a_changed_colour_to_the_rule() {
+    let db = fresh_db();
+    run_cli(
+        &[
+            "spec", "set", "mood", "--verb", "switch", "--state", "happy",
+        ],
+        &db,
+    )
+    .unwrap();
+    let spec = || db.load_spec("mood").unwrap().unwrap();
+    let hue = |c, name| datum_core::kit_color::resolve(c, name).unwrap();
+
+    run_cli(&["update", "spec:mood", "color=red"], &db).unwrap();
+    assert_eq!(spec().color, Some(hue("red", "mood")));
+    let mut json = serde_json::to_value(spec()).unwrap();
+    json["color"] = "00FF00".into();
+    json["state_colors"]["happy"] = "pink".into();
+    run_cli(
+        &["spec", "set", "mood", "--from-json", &json.to_string()],
+        &db,
+    )
+    .unwrap();
+    assert_eq!(spec().color.as_deref(), Some("#00ff00"));
+    assert_eq!(spec().state_colors["happy"], hue("pink", "happy"));
+
+    let before = spec();
+    let err = format!(
+        "{:#}",
+        run_cli(&["update", "spec:mood", "color=nonsense"], &db).unwrap_err()
+    );
+    assert!(err.contains("color: 'nonsense' is not a colour"), "{err}");
+    json["state_colors"]["happy"] = "beige".into();
+    let err = format!(
+        "{:#}",
+        run_cli(
+            &["spec", "set", "mood", "--from-json", &json.to_string()],
+            &db
+        )
+        .unwrap_err()
+    );
+    assert!(
+        err.contains("state_colors.happy: 'beige' is not a colour"),
+        "{err}"
+    );
+    assert_eq!(spec().color, before.color);
+    assert_eq!(spec().state_colors, before.state_colors);
 }

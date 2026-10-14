@@ -116,6 +116,18 @@ pub(crate) fn load_registry_opt(db: &Db) -> Option<datum_core::field_spec::SpecR
     load_registry(db).ok()
 }
 
+/// An edit of a spec entry (`update spec:F`, `edit`) holds the colours it
+/// changes to `spec set --color`'s rule (da-eciuy). Here and not in
+/// storage, which takes a synced spec as its copy wrote it.
+pub(crate) fn resolve_spec_colors(updated: &mut Entry, existing: &Entry) -> Result<()> {
+    match updated.data.as_mut() {
+        Some(data) if updated.field == datum_core::db::SPEC_FIELD => Ok(
+            datum_core::kit_color::resolve_changed(data, existing.data.as_ref())?,
+        ),
+        _ => Ok(()),
+    }
+}
+
 /// Insert-time enforcement of a spec's lists (da-rcoi, da-eqb30): under
 /// `only_listed_keys` every key in `entry.data` must be one the spec lists,
 /// and under `only_listed_states` the entry's state and following state

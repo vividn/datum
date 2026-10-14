@@ -88,6 +88,42 @@ pub fn resolve(s: &str, field_name: &str) -> Result<String> {
     }
 }
 
+/// Hold the colours a write of a spec's JSON CHANGES to the rule
+/// (da-eciuy): `color`, and each of `state_colors`, that differs from
+/// `old`'s is resolved by [`resolve`] or refused, naming its key. One
+/// stored before the rule and sent back untouched — datum.day's field form
+/// saves a spec whole — is kept as it is, and so is an empty one.
+pub fn resolve_changed(
+    spec: &mut serde_json::Value,
+    old: Option<&serde_json::Value>,
+) -> Result<()> {
+    let field = spec["field"].as_str().unwrap_or_default().to_string();
+    let fix = |c: &mut serde_json::Value, path: &[&str], seed: &str| match c {
+        serde_json::Value::String(s)
+            if !s.is_empty()
+                && path
+                    .iter()
+                    .fold(old, |v, k| v.and_then(|v| v.get(k)))
+                    .and_then(|v| v.as_str())
+                    != Some(s) =>
+        {
+            resolve(s, seed)
+                .map(|r| *s = r)
+                .map_err(|e| DatumError::Other(format!("{}: {e}", path.join("."))))
+        }
+        _ => Ok(()),
+    };
+    if let Some(c) = spec.get_mut("color") {
+        fix(c, &["color"], &field)?;
+    }
+    if let Some(serde_json::Value::Object(m)) = spec.get_mut("state_colors") {
+        for (state, c) in m.iter_mut() {
+            fix(c, &["state_colors", state], state)?;
+        }
+    }
+    Ok(())
+}
+
 /// Build an HSL color from md5(field_name) constrained to the named hue's
 /// 30°-wide band starting at `base_hue`. Used for the daydumb-extension
 /// named-hue path (`color = "blue"` etc.).

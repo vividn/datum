@@ -91,7 +91,8 @@ fn a_spec_edits_and_undoes_like_a_doc() {
     assert_eq!(env.spec("mood")["color"], "#ff0000");
 
     env.ok(&["update", "spec:mood", "color=green"]);
-    assert_eq!(env.spec("mood")["color"], "green");
+    let green = datum_core::kit_color::resolve("green", "mood").unwrap();
+    assert_eq!(env.spec("mood")["color"], green.as_str());
     let history = env.ok(&["history", "spec:mood"]);
     assert!(
         history.contains("undo") && history.contains("redo"),

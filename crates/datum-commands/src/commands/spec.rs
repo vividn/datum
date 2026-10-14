@@ -82,10 +82,15 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
 fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     // --from-json replaces the entire spec; individual flags merge in.
     let mut spec = if let Some(json) = &args.from_json {
-        let mut s: FieldSpec =
+        let mut v: JsonValue =
             serde_json::from_str(json).with_context(|| "Invalid field spec JSON")?;
-        s.field = args.field.clone();
-        s
+        if let Some(obj) = v.as_object_mut() {
+            obj.insert("field".into(), args.field.clone().into());
+        }
+        // da-eciuy: the colours it changes, as `--color` would.
+        let old = db.load_spec(&args.field)?.map(serde_json::to_value);
+        datum_core::kit_color::resolve_changed(&mut v, old.transpose()?.as_ref())?;
+        serde_json::from_value(v).with_context(|| "Invalid field spec JSON")?
     } else {
         match db.load_spec(&args.field)? {
             Some(s) => s,
