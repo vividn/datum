@@ -396,7 +396,6 @@ export const focusTop = (page) =>
  * here before — `main` unless a test says otherwise, because the suite is
  * written against `main` and a FRESH device opens on `welcome` (da-u7vz8). Written
  * only where nothing is stored, so a reload keeps what the test changed.
- * It has also unlocked it (da-gshh), which a fresh device finds locked.
  * `home: null` is a device that has never opened the site, which opens on
  * `welcome` (da-u7vz8); `home: ON_COLLECT` is that device one tap later.
  * A device that has been here has no new default waiting to be offered
@@ -421,8 +420,7 @@ export const focusTop = (page) =>
  */
 /**
  * A first visit's tabs with `collect` in front (da-u7vz8): the page a fresh
- * device opened alone until then, `mobile`'s tree on a phone. Nothing is
- * said of a lock, so it is locked as a first open is (da-gshh).
+ * device opened alone until then, `mobile`'s tree on a phone.
  */
 export const ON_COLLECT = { names: ['welcome', 'track', 'collect'], active: 2 };
 
@@ -486,14 +484,10 @@ async function openApp({
 			await context.addInitScript((home) => {
 				const key = 'datum.layout.root.v1';
 				const name = typeof home === 'string' ? home : null;
-				const lock = `datum.layout.locked.v1.${name}`;
 				window.__datumNewDefaults = [];
 				try {
 					if (!localStorage.getItem(key))
 						localStorage.setItem(key, JSON.stringify(name ? { names: [name], active: 0 } : home));
-					// A device that has been here has unlocked its home (da-gshh):
-					// the suite drags, splits and closes its panes.
-					if (name && localStorage.getItem(lock) === null) localStorage.setItem(lock, '0');
 				} catch {}
 			}, home);
 		if (origin) await serveAt(context, origin);
@@ -519,10 +513,10 @@ async function openApp({
  *
  * `app().room('acts')` is the answer: `/acts?from=main` opens `main`'s tree
  * as a PREVIEW tab under a name of the test's own, written nowhere
- * (shell.ts), so the test may split it, drag it, lock it and save it
+ * (shell.ts), so the test may split it, drag it and save it
  * without the next test ever meeting any of it. The room is taken fresh:
  * every root tab but `main` is closed, every layout the reader saved is
- * deleted and every draft and lock this device kept is dropped, so what a
+ * deleted and every draft this device kept is dropped, so what a
  * test opens onto is the layout world a fresh install has.
  *
  * The DATABASE is one too — one app is one OPFS (da-vk1x) — so `solo` and
@@ -534,7 +528,7 @@ async function openApp({
  *   menu or modal open, the bar's line and pills and the time cursor empty,
  *   no errors yet, and no command in flight (`home`, `settled`);
  * - no layout of the reader's own and none of their history (`wipe`), the
- *   locks the page opened with (`relock`), and `main` as it ships (`restoreMain`)
+ *   page out of layout mode (`normal`), and `main` as it ships (`restoreMain`)
  *   — or as `draft` has it (`redraft`), or a room in front of it (`room`);
  * - an empty database and the clock where the app opened (`empty`), and
  *   `spyOnRunner` free to be called again.
@@ -634,17 +628,7 @@ async function open(page, query, origin = baseUrl()) {
 	await countRuns(page);
 	// What the database's change counter reads as it opened — empty, on a
 	// fresh context: `empty` has nothing to do until something writes.
-	// And the locks it opened with — `home`'s unlocked `main` — which `wipe`
-	// takes with every other layout key and `relock` puts back.
-	// A test may have blocked the store, which is then nothing to put back.
-	const locks = await page.evaluate(() => {
-		try {
-			return Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.startsWith('datum.layout.locked.v1.')));
-		} catch {
-			return {};
-		}
-	});
-	return app(page, errors, query, await changeCounter(page), locks, await changeCounter(page, '_internal'));
+	return app(page, errors, query, await changeCounter(page), await changeCounter(page, '_internal'));
 }
 
 /**
@@ -770,7 +754,7 @@ export async function ready(page) {
 	await page.waitForFunction(() => !document.querySelector('[data-stale]'));
 }
 
-function app(page, errors, query, clean, locks, internal) {
+function app(page, errors, query, clean, internal) {
 	/** The layouts of the reader's own the last `wipe` deleted. */
 	let wiped = [];
 	/** The draft the last `redraft` drew `main` from, and `main`'s tab as it drew it. */
@@ -1146,7 +1130,7 @@ function app(page, errors, query, clean, locks, internal) {
 				for (let i = tabs().length - 1; i >= 0; i--) if (tabs()[i].layout !== 'main') shell.close(i);
 			});
 			await self.wipe();
-			await self.relock();
+			await self.normal();
 			// A draft rebuilds `main` whole, so what it was left as is moot.
 			if (draft === undefined) await self.restoreMain();
 			await self.settleRoot();
@@ -1163,20 +1147,12 @@ function app(page, errors, query, clean, locks, internal) {
 		},
 
 		/**
-		 * The locks the page opened with, back (da-6b3dj): written where
-		 * `wipe` took them from, and every open tab's own `locked` turned to
-		 * match — a lock is the TAB's too, so a test that locked `main` would
-		 * otherwise hand the next one a locked `main`.
+		 * The page out of layout mode (da-vvcxc), keeping what the test
+		 * changed for `wipe` and `restoreMain` to put back: the mode is the
+		 * page's, so a test that entered it would otherwise hand it on.
 		 */
-		async relock() {
-			await page.evaluate((locks) => {
-				const { layout, shell } = window.datum;
-				for (const [key, value] of Object.entries(locks)) localStorage.setItem(key, value);
-				for (const tab of layout.current().root.tabs) {
-					const stored = locks[`datum.layout.locked.v1.${tab.layout}`];
-					if (stored !== undefined && !!tab.locked !== (stored === '1')) shell.toggleLock(tab.id);
-				}
-			}, locks);
+		async normal() {
+			await page.evaluate(() => window.datum.mode.accept());
 			return self;
 		},
 
@@ -1412,7 +1388,7 @@ function app(page, errors, query, clean, locks, internal) {
 			// frame of `main` put back.
 			if ((await changeCounter(page, '_internal')) !== internal) {
 				await self.wipe();
-				await self.relock();
+				await self.normal();
 				await self.restoreMain();
 			}
 			const missing = await page.evaluate((n) => window.datum.shell.openPreview(n, 'main'), name);
@@ -1426,7 +1402,7 @@ function app(page, errors, query, clean, locks, internal) {
 				}
 			}, name);
 			await self.wipe();
-			await self.relock();
+			await self.normal();
 			await self.restoreMain();
 			await self.settleRoot();
 			await self.empty();

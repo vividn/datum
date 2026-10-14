@@ -28,7 +28,7 @@ export const PHONE = { device: devices['iPhone 12'] };
  */
 export const inRoom = (room, id) => `${id}@${room}`;
 
-/** Every layout key this device has stored: the open list, the drafts, the locks. */
+/** Every layout key this device has stored: the open list, the drafts. */
 export const layoutStorage = (page) =>
 	page.evaluate(() =>
 		Object.fromEntries(
@@ -82,8 +82,8 @@ export const boxOf = (locator) => locator.boundingBox();
 /**
  * Where a tabbed holder's strip lies over the panes under it (da-cesj),
  * from the boxes on the SCREEN: every inner title the strip's box meets,
- * and every inner control its BADGES meet — the `+`, since da-bzhq the
- * `▾` beside it, and since da-efr4i the `×` after that. `titles` counts
+ * and every inner control its BADGES meet — the `+`, and since da-efr4i
+ * the `×` after it. `titles` counts
  * the inner titles looked at, so an empty holder cannot pass for a clear
  * one.
  */
@@ -92,8 +92,8 @@ export const overStrip = (page, id) =>
 		const box = (el) => el.getBoundingClientRect();
 		const meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 		const strip = holder.querySelector(':scope > .titlebar');
-		const badges = [...strip.querySelectorAll('button.add, button.manage, button.close')].map((el) => [
-			el.classList.contains('add') ? '+' : el.classList.contains('manage') ? '▾' : '×',
+		const badges = [...strip.querySelectorAll('button.add, button.close')].map((el) => [
+			el.classList.contains('add') ? '+' : '×',
 			box(el)
 		]);
 		const inner = [...holder.querySelectorAll(':scope > .content section.pane')];
@@ -158,10 +158,10 @@ export const settled = (page) =>
  * What opens a pane's menu (da-9vtw): its title, or — with several tabs —
  * the tab in front. The `…` badge is gone; the `+` beside it adds a tab.
  *
- * ⚠ A pane may have NO such button (da-z8klv): the NAME's slice is wholly
- * conditional, so a pane holding a widget whose kind declares neither
- * defaults nor options — `custom`, `aliases`, `notice` — and no
- * layout draws none. Everything done TO such a pane is under `manageButton`.
+ * ⚠ A pane may have NO such button in normal mode (da-z8klv): the NAME's
+ * slice is wholly conditional, so a pane holding a widget whose kind
+ * declares neither defaults nor options — `custom`, `aliases`, `notice` —
+ * and no layout draws none. In layout mode every pane has one (da-vvcxc).
  */
 export const menuButton = (page, id) =>
 	pane(page, id).locator('.titlebar button.title, .titlebar [role="tab"][aria-selected="true"]').first();
@@ -169,36 +169,34 @@ export const menuButton = (page, id) =>
 /** A pane's `+`: the badge where the `…` was. */
 export const addButton = (page, id) => pane(page, id).locator('.titlebar button.add').first();
 
-/**
- * A pane's `▾` (da-bzhq): the badge beside the `+`, which opens what is
- * DONE to the pane and its tabs — Change Widget (da-z8klv), Rename…,
- * Split, Break out, Bar, Close. The NAME opens the other slice
- * (`menuButton`).
- */
-export const manageButton = (page, id) => pane(page, id).locator('.titlebar button.manage').first();
-
-/** The root bar's `▾`, beside its `+`. */
-export const rootManageButton = (page) => page.locator('.root-bar button.manage');
+/** The page in layout mode (da-vvcxc): the frame says so, as the root bar does. */
+export const inLayoutMode = (page) => page.locator('.frame[data-layout-mode]').count().then((n) => n > 0);
 
 /**
- * The lock, beside the gear (da-bzhq): a BUTTON on the root bar now, not
- * an item of the layout menu. It acts on the root tab in front.
+ * Into layout mode, by its one door: the open root tab's context menu (a
+ * right click). A page already in it is left as it is.
  */
-export const lockButton = (page) => page.locator('.root-bar button.lock');
-
-/** Press the lock and wait until the bar agrees it went the other way. */
-export async function toggleRootLock(page) {
-	const was = await lockButton(page).getAttribute('aria-pressed');
-	await lockButton(page).click();
-	await page.locator(`.root-bar button.lock[aria-pressed="${was === 'true' ? 'false' : 'true'}"]`).waitFor();
+export async function enterLayoutMode(page) {
+	if (await inLayoutMode(page)) return;
+	await rootMenuButton(page).click({ button: 'right' });
+	await page.locator('.frame[data-layout-mode]').waitFor();
 }
 
-/** Unlock the root tab in front if it is locked; a layout that SHIPPED opens locked (da-gshh). */
-export async function unlockRoot(page) {
-	if ((await lockButton(page).getAttribute('aria-pressed')) === 'true') await toggleRootLock(page);
+/**
+ * Out of layout mode by the open tab's menu — `Accept`, `Save layout` or
+ * `Discard changes` — and wait for the page to say so.
+ */
+export async function leaveLayoutMode(page, how = 'Accept') {
+	if (!(await inLayoutMode(page))) return;
+	await rootMenuButton(page).click();
+	await page.getByRole('menuitem', { name: how, exact: true }).click();
+	await page.locator('.frame[data-layout-mode]').waitFor({ state: 'detached' });
 }
 
-/** A pane's maximize badge (da-00am): before the tab names (da-bzhq). Its own, not a child's. */
+/**
+ * A pane's maximize badge (da-00am): before the tab names (da-bzhq). Its
+ * own, not a child's. In layout mode it is the bar's HANDLE (da-vvcxc).
+ */
 export const maximizeButton = (page, id) => pane(page, id).locator('> .titlebar button.maximize');
 
 /**
@@ -209,22 +207,43 @@ export const maximizeButton = (page, id) => pane(page, id).locator('> .titlebar 
  */
 export const rootMenuButton = (page) => page.locator('.root-bar [role="tab"][aria-selected="true"]');
 
-/** Open the root menu and choose an item by its name — `Save layout`, `split: a new pane to the left`. */
-export async function chooseRoot(page, label) {
-	await rootMenuButton(page).click();
-	await page.getByRole('menuitem', { name: label, exact: true }).click();
+/**
+ * Open the menu `button` opens and choose `label` from it, in whichever
+ * mode the page is (da-vvcxc). In layout mode a pane's normal-mode items
+ * are one step in, under `Widget options`; the root tab's are not in its
+ * layout-mode menu at all, so the mode is left (Accept) to reach them.
+ */
+export async function pickFrom(page, button, label) {
+	await button.click();
+	const item = page.getByRole('menuitem', { name: label, exact: true });
+	if ((await item.count()) === 0 && (await inLayoutMode(page))) {
+		const options = page.getByRole('menuitem', { name: 'Widget options', exact: true });
+		if (await options.count()) await options.click();
+		else {
+			await page.keyboard.press('Escape');
+			await leaveLayoutMode(page);
+			await button.click();
+		}
+	}
+	await item.click();
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 }
 
-/** Open a pane's NAME menu and choose an item by its name — `Save layout`, `Options…`. */
-export async function choose(page, id, label) {
-	await menuButton(page, id).click();
-	await page.getByRole('menuitem', { name: label, exact: true }).click();
-	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
-}
+/** Open the root menu and choose an item by its name — `Save layout`, `split: a new pane to the left`. */
+export const chooseRoot = (page, label) => pickFrom(page, rootMenuButton(page), label);
+
+/** Open a pane's NAME menu and choose an item by its name — `Save layout`, `Reset widget`. */
+export const choose = (page, id, label) => pickFrom(page, menuButton(page, id), label);
 
 /** What opens a widget's own options: a pane's name, or the root tab's. */
 const optionMenu = (page, id) => (id === null ? rootMenuButton(page) : menuButton(page, id));
+
+/** The menu holding a widget's options open, in either mode (da-vvcxc): see `pickFrom`. */
+async function openOptions(page, id) {
+	if (id === null) await leaveLayoutMode(page);
+	await optionMenu(page, id).click();
+	if (id !== null && (await inLayoutMode(page))) await page.getByRole('menuitem', { name: 'Widget options', exact: true }).click();
+}
 
 /**
  * A widget's SWITCH in the menu its name opens (da-vhwq): pressed, waited
@@ -234,7 +253,7 @@ export const switchItem = (page, label, on) =>
 	page.locator(`[role="menuitemcheckbox"]${on === undefined ? '' : `[aria-checked="${on}"]`}`).filter({ hasText: exactly(label) });
 
 export async function toggleOption(page, id, label) {
-	await optionMenu(page, id).click();
+	await openOptions(page, id);
 	const was = (await switchItem(page, label).getAttribute('aria-checked')) === 'true';
 	await switchItem(page, label).click();
 	// The item stays, and says it went the other way: a switch does not
@@ -246,7 +265,7 @@ export async function toggleOption(page, id, label) {
 
 /** One of a widget's CHOICES, from the submenu its item opens; both menus close. */
 export async function pickOption(page, id, label, value) {
-	await optionMenu(page, id).click();
+	await openOptions(page, id);
 	await page.locator('[role="menu"] > button').filter({ hasText: exactly(label) }).click();
 	await page.locator('[role="menu"][aria-orientation="vertical"]').waitFor();
 	await page
@@ -258,7 +277,7 @@ export async function pickOption(page, id, label, value) {
 
 /** Whether a widget's switch reads ON, without changing it. */
 export async function optionChecked(page, id, label) {
-	await optionMenu(page, id).click();
+	await openOptions(page, id);
 	const on = await switchItem(page, label).getAttribute('aria-checked');
 	await page.keyboard.press('Escape');
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
@@ -267,7 +286,7 @@ export async function optionChecked(page, id, label) {
 
 /** The values a widget's CHOICE offers, and which is in force. */
 export async function choiceLines(page, id, label) {
-	await optionMenu(page, id).click();
+	await openOptions(page, id);
 	await page.locator('[role="menu"] > button').filter({ hasText: exactly(label) }).click();
 	const list = page.locator('[role="menu"][aria-orientation="vertical"]');
 	await list.waitFor();
@@ -280,22 +299,26 @@ export async function choiceLines(page, id, label) {
 	return lines;
 }
 
-/** Open a pane's `▾` and choose an item — `Change Widget`, `break out: this widget below`, `Close pane`. */
+/**
+ * In layout mode, open a pane's name and choose an item — `Change Widget`,
+ * `break out: this widget below`, `Close pane` (da-vvcxc).
+ */
 export async function manage(page, id, label) {
-	await manageButton(page, id).click();
+	await enterLayoutMode(page);
+	await menuButton(page, id).click();
 	await page.getByRole('menuitem', { name: label, exact: true }).click();
 	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 }
 
-/** Open the root bar's `▾` and choose an item — `Change Widget`, `split: a new pane to the left`, `Close tab`. */
+/** In layout mode, open the root tab's name and choose an item — `split: a new pane to the left`, `Close tab`. */
 export async function manageRoot(page, label) {
-	await rootManageButton(page).click();
-	await page.getByRole('menuitem', { name: label, exact: true }).click();
-	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+	await enterLayoutMode(page);
+	await chooseRoot(page, label);
 }
 
-/** Add a tab to a pane: the `+`, then `name` in the chooser it opens. */
+/** In layout mode, add a tab to a pane: the `+`, then `name` in the chooser it opens. */
 export async function addTab(page, id, name) {
+	await enterLayoutMode(page);
 	await addButton(page, id).click();
 	await chooser(page).waitFor();
 	await chooser(page).locator('button').filter({ hasText: exactly(name) }).click();
@@ -428,32 +451,44 @@ export const atRest = (locator) =>
 		(moving) => !moving
 	);
 
-/** The `Bar ▸` submenu, open. */
-export const barMenu = (page) => page.locator('[role="menu"][aria-label="Bar"]');
-
 /**
- * Open a pane's menu, then its `Bar ▸`.
- *
- * `Bar` is a management act, so it is under the `▾` beside the `+`
- * (da-bzhq), not under the pane's name.
- *
- * By click: a title on the page's outer edge hangs half into the page's
- * margin, and the margin is empty furniture-wise since the four `…` edge
- * handles went (da-wjob), so the pointer reaches it. It did not while
- * they were there (da-ywp1), and this opened the menu with Enter to get
- * past them; the pointer's own path is tested again now.
+ * Move a pane's bar to `edge` — `top`, `bottom`, `left`, `right` — and,
+ * given one, `align` along it, by dragging its handle (da-vvcxc): the
+ * maximize badge in layout mode, dropped on that edge, at the third of it
+ * the alignment names as the eye reads it (the left-hand bar runs bottom
+ * to top). The handle is let go a few pixels inside the pane's edge.
  */
-export async function openBar(page, id) {
-	await manageButton(page, id).click();
-	await page.locator('[role="menu"] button').filter({ hasText: exactly('Bar') }).click();
-	await barMenu(page).waitFor();
+export async function moveBar(page, id, edge, align = 'center') {
+	await enterLayoutMode(page);
+	const box = await pane(page, id).boundingBox();
+	const handle = await maximizeButton(page, id).boundingBox();
+	const along = { start: 1 / 6, center: 1 / 2, end: 5 / 6 }[align];
+	const inset = 3;
+	const at = {
+		top: { x: box.x + box.width * along, y: box.y + inset },
+		bottom: { x: box.x + box.width * along, y: box.y + box.height - inset },
+		left: { x: box.x + inset, y: box.y + box.height * (1 - along) },
+		right: { x: box.x + box.width - inset, y: box.y + box.height * along }
+	}[edge];
+	await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(at.x, at.y, { steps: 8 });
+	await page.mouse.up();
+	await pane(page, id).and(page.locator(`.edge-${edge}`)).locator(`> .titlebar > .along.align-${align}`).waitFor();
 }
 
-/** Choose a `Bar ▸` icon by its word — `left`, `end` — and wait for the menus to close. */
-export async function chooseBar(page, id, word) {
-	await openBar(page, id);
-	await barMenu(page).locator(`[aria-label="${word}"]`).click();
-	await page.waitForFunction(() => !document.querySelector('[role="menu"]'));
+/**
+ * Put a pane's bar on `word` — an edge (`left`) or an alignment (`end`),
+ * the other kept as it is — by its handle, and leave the page in the mode
+ * it was in: what the `Bar ▸` submenu's icons did (da-vvcxc).
+ */
+export async function placeBar(page, id, word) {
+	const was = await inLayoutMode(page);
+	const edge = (await pane(page, id).getAttribute('class')).match(/\bedge-(\w+)/)[1];
+	const align = (await pane(page, id).locator('> .titlebar > .along').getAttribute('class')).match(/\balign-(\w+)/)[1];
+	const edges = ['top', 'bottom', 'left', 'right'];
+	await moveBar(page, id, edges.includes(word) ? word : edge, edges.includes(word) ? align : word);
+	if (!was) await leaveLayoutMode(page);
 }
 
 /** The box of a pane's picture, as the picture says it (its `width`). */
@@ -486,6 +521,8 @@ export const finalAsks = (argvs, of) => {
  * moves is the pointer's rate, not a wait for anything.
  */
 export async function dragFor(page, border, dx, dy, ms) {
+	// A border is a handle in layout mode alone (da-vvcxc).
+	await enterLayoutMode(page);
 	const box = await border.boundingBox();
 	const x = box.x + box.width / 2;
 	const y = box.y + box.height / 2;
@@ -501,8 +538,9 @@ export async function dragFor(page, border, dx, dy, ms) {
 	return Date.now() - t0;
 }
 
-/** Press the pointer on the middle of `border`; the point pressed. */
+/** Press the pointer on the middle of `border`, in layout mode (da-vvcxc); the point pressed. */
 export async function grab(page, border) {
+	await enterLayoutMode(page);
 	const box = await border.boundingBox();
 	const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 	await page.mouse.move(at.x, at.y);

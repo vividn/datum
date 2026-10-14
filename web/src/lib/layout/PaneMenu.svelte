@@ -11,27 +11,18 @@
 	Every item is a `<button role="menuitem">`, so the keyboard reaches all
 	of them (`reachable.test.mjs` is the standard).
 
-	An item with `sub` opens a SUBMENU beside it (click, Enter, Space,
-	ArrowRight — and a mouse or a pen resting on it, without taking the
-	focus; a touch keeps the tap): one row of small icon buttons, its
-	groups split by a thin line — the pane's `Bar ▸` (da-nk4k). No words
-	on the buttons, so each carries them as its `aria-label` and `title`.
-	ArrowLeft/ArrowRight walk the row, Home/End jump, Escape — or
-	ArrowLeft on the first — goes back to the item that opened it, the
-	pointer entering any other item closes it, and choosing closes both,
-	as choosing does (da-13bc: "bar submenu should open immediately on
-	mouse over").
-
 	An item with `glyph` draws that character before its label — `Close`,
 	the last item of every menu, wears an `×` (da-ygc9). It is decoration,
 	so it is `aria-hidden`: the item's name is still its label alone.
 
-	An item with `list` opens a submenu of WORDS in the same place and by
-	the same ways in (da-vhwq): one of a set of named values, each a
-	`menuitemradio` carrying whether it is the one in force — a widget
-	option of type `choice`, where the modal had a `<select>`. It stands
-	DOWN the screen rather than across it, so ArrowUp/ArrowDown walk it and
-	ArrowLeft goes back to the item that opened it.
+	An item with `list` opens a SUBMENU of words beside it (da-vhwq) —
+	click, Enter, Space, ArrowRight, and a mouse or a pen resting on it,
+	without taking the focus; a touch keeps the tap (da-13bc). One of a set
+	of named values, each a `menuitemradio` carrying whether it is the one
+	in force — a widget option of type `choice`, where the modal had a
+	`<select>`. ArrowUp/ArrowDown walk it, Home/End jump, Escape or
+	ArrowLeft goes back to the item that opened it, the pointer entering
+	any other item closes it, and choosing closes both.
 
 	An item with `toggled` is a SWITCH: a `menuitemcheckbox` that says
 	whether it is on and turns over when it is pressed — a widget option of
@@ -44,6 +35,11 @@
 	the keyboard walks past it (da-eue7y). A `menuitem` all the same,
 	disabled as the version above it is, since a menu's children are its
 	items and a screen reader reads them as such.
+
+	An item with `items` is a menu ONE STEP IN (da-vvcxc): choosing it —
+	click, Enter, Space, ArrowRight — shows its items in the menu's place,
+	and ArrowLeft goes back. Layout mode's `Widget options ▸`, which holds
+	what a pane's name opens in normal mode, is the one.
 
 	An item with `row` is its label and a few short buttons on one line —
 	the pane's `Split | −` (da-13bc). The buttons are menu items like any
@@ -103,10 +99,24 @@
 	let at = { top: 0, left: 0 };
 	/** The open submenu: its item, and the button that opened it. */
 	let sub: { item: (typeof items)[number]; opener: HTMLButtonElement } | null = null;
-	/** Whether an item opens a submenu at all — icons (`sub`) or words (`list`). */
-	const opens = (item?: (typeof items)[number]) => !!(item?.sub || item?.list);
+	/** Whether an item opens a submenu beside it: its `list` of words. */
+	const opens = (item?: (typeof items)[number]) => !!item?.list;
 	let subMenu: HTMLDivElement | undefined;
 	let subAt = { top: 0, left: 0 };
+	/**
+	 * The item whose `items` are shown in the menu's place, by label, so a
+	 * switch turned over in there redraws from the caller's fresh list.
+	 */
+	let within: string | null = null;
+	$: shown = (within !== null && items.find((item) => item.label === within)?.items) || items;
+
+	/** One step in, or back out with null: the menu's first item takes the focus. */
+	async function step(to: string | null) {
+		within = to;
+		sub = null;
+		await tick();
+		focusItem(enabled(menu), 0);
+	}
 
 	/** `start`, moved in so that `size` from it still ends 4px inside `limit`. */
 	const fit = (start: number, size: number, limit: number) => Math.max(4, Math.min(start, limit - size - 4));
@@ -148,6 +158,7 @@
 		if (!open) return;
 		open = false;
 		sub = null;
+		within = null;
 		if (returnFocus) button.focus();
 	}
 
@@ -220,7 +231,7 @@
 				else if (el?.parentElement?.classList.contains('row')) {
 					const to = forward ? el.nextElementSibling : el.previousElementSibling;
 					if (to instanceof HTMLButtonElement) to.focus();
-				}
+				} else if (!forward && within !== null) step(null);
 				break;
 			}
 			case 'Escape':
@@ -238,25 +249,16 @@
 	function onSubKey(event: KeyboardEvent) {
 		const all = enabled(subMenu);
 		const here = all.indexOf(document.activeElement as HTMLButtonElement);
-		// The keys that walk a submenu are the ones that point ALONG it: a
-		// words submenu stands down the screen, an icons one across it. `back`
-		// is the way out, and for icons it IS `prev` — ArrowLeft walks left
-		// and leaves at the first item. Written as one map per orientation
-		// rather than two `case`s that can shadow each other, which left a
-		// dead `case 'ArrowLeft'` for icons (the panel on #64).
-		const keys = sub?.item.list
-			? { prev: 'ArrowUp', next: 'ArrowDown', back: 'ArrowLeft' }
-			: { prev: 'ArrowLeft', next: 'ArrowRight', back: null };
+		// A words submenu stands down the screen: the keys that walk it are
+		// ArrowUp/ArrowDown, and ArrowLeft is the way back out.
 		switch (event.key) {
-			case keys.next:
+			case 'ArrowDown':
 				focusItem(all, here + 1);
 				break;
-			case keys.prev:
-				// Icons: the first item's `prev` is the way back out.
-				if (keys.back === null && here <= 0) closeSub();
-				else focusItem(all, here - 1);
+			case 'ArrowUp':
+				focusItem(all, here - 1);
 				break;
-			case keys.back:
+			case 'ArrowLeft':
 				closeSub();
 				break;
 			case 'Home':
@@ -349,7 +351,7 @@
 		style:left="{at.left}px"
 		on:keydown={onMenuKey}
 	>
-		{#each items as item (item.label)}
+		{#each shown as item (item.label)}
 			{#if item.note}
 				<div class="note" role="menuitem" aria-disabled="true" tabindex="-1">{item.label}</div>
 			{:else if item.row}
@@ -375,16 +377,22 @@
 							? 'menuitem'
 							: 'menuitemradio'}
 					aria-checked={item.toggled ?? item.checked}
-					class:opens={opens(item)}
+					class:opens={opens(item) || !!item.items}
 					class:ticked={!item.glyph && (item.toggled ?? item.checked) !== undefined}
 					class:marked={item.marked}
 					disabled={item.disabled}
 					use:act={item.act}
-					aria-haspopup={opens(item) ? 'menu' : undefined}
+					aria-haspopup={opens(item) || item.items ? 'menu' : undefined}
 					aria-expanded={opens(item) ? sub?.item === item : undefined}
 					on:pointerenter={(e) => hover(e, item)}
 					on:click={(e) =>
-						opens(item) ? showSub(item, e.currentTarget) : item.toggled !== undefined ? item.run?.() : choose(item)}
+						item.items
+							? step(item.label)
+							: opens(item)
+								? showSub(item, e.currentTarget)
+								: item.toggled !== undefined
+									? item.run?.()
+									: choose(item)}
 				>{#if item.glyph}<span class="glyph" aria-hidden="true">{item.glyph}</span> {/if}{item.label}</button
 				>
 			{/if}
@@ -395,11 +403,10 @@
 {#if open && sub}
 	<div
 		class="menu"
-		class:icons={!sub.item.list}
 		role="menu"
 		tabindex="-1"
 		aria-label={sub.item.label}
-		aria-orientation={sub.item.list ? 'vertical' : 'horizontal'}
+		aria-orientation="vertical"
 		bind:this={subMenu}
 		use:portal
 		style:top="{subAt.top}px"
@@ -415,24 +422,6 @@
 				title={pick.title}
 				on:click={() => choose(pick)}>{pick.label}</button
 			>
-		{/each}
-		{#each sub.item.sub ?? [] as group, g}
-			{#if g > 0}<div class="sep" role="separator" aria-orientation="vertical" />{/if}
-			{#each group as choice (choice.label)}
-				<button
-					type="button"
-					role="menuitemradio"
-					aria-checked={choice.checked}
-					aria-label={choice.label}
-					title={choice.title}
-					on:click={() => choose(choice)}
-				>
-					<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-						<rect class="frame" x="1.5" y="1.5" width="13" height="13" rx="2.5" />
-						<rect x={choice.icon[0]} y={choice.icon[1]} width={choice.icon[2]} height={choice.icon[3]} rx="1" />
-					</svg>
-				</button>
-			{/each}
 		{/each}
 	</div>
 {/if}
@@ -625,36 +614,4 @@
 		justify-content: center;
 	}
 
-	/* The submenu: one row of icons, each a fingertip's 24px and more
-	   (reachable.test.mjs), muted until it is the one chosen. */
-	.icons {
-		flex-direction: row;
-		align-items: stretch;
-		gap: 2px;
-		min-width: 0;
-	}
-	.icons button {
-		box-sizing: border-box;
-		inline-size: 28px;
-		block-size: 28px;
-		padding: 0;
-		align-items: center;
-		justify-content: center;
-		color: var(--muted);
-	}
-	.icons button[aria-checked='true'] {
-		color: var(--accent);
-	}
-	.icons svg {
-		fill: currentColor;
-	}
-	.icons .frame {
-		fill: none;
-		stroke: currentColor;
-	}
-	.sep {
-		inline-size: 1px;
-		margin: 4px 3px;
-		background: var(--rule);
-	}
 </style>

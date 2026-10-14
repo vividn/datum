@@ -5,57 +5,37 @@
 	"is actually just a specially formatted version of the same thing —
 	make sure it is really completely aligned with the other widget picker,
 	just formatted differently". So the ACTIVE tab's name is the button of
-	the same `PaneMenu` a pane's title opens, holding the same items from
-	the same builder (`menu.ts`); an inactive tab still just switches, and
-	the arrow keys walk them. After them a `+` that opens the one chooser
-	(da-uyx1) — the layouts, then the widget kinds, where a layout opens as
-	a root tab and a widget opens that kind's built-in one-widget layout —
-	and beside the `+` a `▾` holding what is DONE to the page: `Split` and
-	`Close tab` (da-bzhq). That is the same slicing a pane's bar makes of
-	the same list (`named` and `managed`, menu.ts): the NAME opens what the
-	tab shows and what it is saved as, the `▾` what is done to it.
+	the same `PaneMenu` a pane's title opens, from the same builder
+	(`menu.ts`); an inactive tab still just switches, and the arrow keys
+	walk them. After them a `+` that opens the one chooser (da-uyx1) — the
+	layouts, then the widget kinds, where a layout opens as a root tab and
+	a widget opens that kind's built-in one-widget layout.
 
-	Unlike a pane's, this `+` does NOT go under the lock: it opens ANOTHER
-	layout beside the locked one and never touches its tree, and it is how
-	a reader leaves a page they have locked. The `▾` goes anyway, because a
-	locked tab's list is its acts alone and none of them is a management
-	act — the same answer, by the rule rather than by a second condition.
+	LAYOUT MODE (da-vvcxc, `mode.ts`) is entered HERE: a long press on the
+	open tab let go where it was, or its context menu — a right click, the
+	menu key, Shift+F10. vividn, 2026-10-14: «long pressing (and release
+	without dragging to reorder the tabs) or right clicking on a primary
+	tab name enters unlocked/layout mode». It replaced the padlock that
+	stood by the gear (da-fphjw) and the `▾` beside the `+` (da-bzhq): «no
+	more down arrow button at all or lock button for that matter». In it
+	the bar is hatched in the accent, every tab wears its close on its
+	right, and the open tab's name opens what the `▾` held — `Change
+	Widget`, `Split`, which at the root is `addEdge`, a new pane down one
+	whole side of the layout (da-a642), and `Close tab` — with the three
+	ways out: Accept, Save layout, Discard changes. Escape asks which; so does moving to another
+	tab with a change in hand.
 
-	What the root's menu is missing, and why, is `menu.ts`'s comment: no
-	`Break out` (a tab breaks out of its STRIP, and the root has no strip
-	to leave) and no `Bar` (the root draws no bar of its own — this one is
-	the shell's). Its `Split` is `addEdge`: a new pane down one whole side
-	of the layout — what the page's four `…` edge handles used to do
-	(da-qk2k) — which is what a split beside the shell can only mean
-	(da-a642). What it has that a pane's has not is `Keep tab`, on a
-	preview (below).
-
-	The layout's own acts — save, restore, save as — are in the menu too,
-	where the orange dot is (vividn: "Inside the menu there could be a lock,
-	save, and save as options. That seems more consistent. Maybe highlight
-	Restore and Save so that it is obvious that that is what the orange dot
-	is referring to"). They were a row of icons at the right end of this
-	bar until da-wjob; the row is gone, no shortcut kept. While the tab is
-	modified Save and Restore are marked in the menu and the tab keeps its
-	dot, so the dot's meaning is one press from the dot. Restore goes back
-	to the last save; with nothing to discard it opens the save's versions
-	under the bar instead, and `→ forward` undoes the last restore. A tab
-	holding a layout that SHIPPED with datum has another, `Reset layout`
-	(da-luwe), beside Restore: the other way back, to `defaults.ts` rather
-	than to the save.
-
-	THE LOCK IS NOT AMONG THEM any more (da-bzhq). vividn, 2026-09-21: "Let's
-	move the lock button outside of the layout menu and put it by the gear
-	icon to be more discoverable." So it is a padlock BUTTON beside the
-	gear — on the gear's LEFT, since "move the lock button to the other
-	side of the gear" (da-fphjw) gave the bar's far end back to the gear. Pressed rather than chosen,
-	`aria-pressed` for which way it is; HIGHLIGHTED when it is UNLOCKED,
-	that being the state with consequences (da-fphjw, see `.lock.open`).
-	It is this device's (shell.ts), not the layout's, which is why its
-	title says so in words — and which layouts open locked is untouched
-	(da-gshh). A PANE's menu keeps `Lock layout` / `Unlock
-	layout`, there being no gear beside a pane and a locked layout tab
-	needing a way out (da-crp5).
+	In normal mode the name opens what the tab shows and what it is saved
+	as — the widget's options on a tab of one widget, and the layout's acts,
+	where the orange dot is (vividn: "Maybe highlight Restore and Save so
+	that it is obvious that that is what the orange dot is referring to").
+	While the tab is modified Save and Restore are marked in the menu and
+	the tab keeps its dot, so the dot's meaning is one press from the dot.
+	Restore goes back to the last save; with nothing to discard it opens
+	the save's versions under the bar instead, and `→ forward` undoes the
+	last restore. A tab holding a layout that SHIPPED with datum has
+	another, `Reset layout` (da-luwe), beside Restore: the other way back,
+	to `defaults.ts` rather than to the save.
 
 	A root tab is one COPY of its layout and has no privilege over a copy
 	nested in a pane (da-crp5): the same acts are in that pane's menu
@@ -105,22 +85,20 @@
 	"let's move the "beta" tag to just be a little banner on the gear
 	button? Right now on mobile it takes up way too much space in the
 	header bar. move the beta info message into the gear icon by the
-	version number". It was a `beta` mark and an ⓘ before the lock
+	version number". It was a `beta` mark and an ⓘ before the gear
 	(da-y992), whose note is now the gear menu's last item, under the
-	version. So the bar's right end reads lock · gear (da-fphjw).
+	version. So the bar's right end is the gear.
 
-	Before the lock, a ⚠ (da-8fucg) while a sync notice — a new device,
+	Before the gear, a ⚠ (da-8fucg) while a sync notice — a new device,
 	a new admin, an unlock — is unacknowledged. vividn, 2026-10-09: "a little
 	warning icon in the upper bar next to the gear and stuff. If you click
 	on it it displays a message box saying that another device joined. ok
 	to dismiss. tells user to go to sync to manage". The Sync widget's own
 	`⚠ … [OK]` was the only place one showed, so a layout without that
-	widget never showed it. It is not between the lock and the gear,
-	which stay hard up against each other (brand.test.mjs).
+	widget never showed it.
 
 	On a phone the tabs scroll sideways rather than wrapping — one row,
-	always — while the `+`, the `▾`, the lock and the gear
-	stay where they are.
+	always — while the `+` and the gear stay where they are.
 
 	A tab DRAGGED along the strip moves there (da-w19ny, `reorder.ts`):
 	picked up by a mouse that moves, or by a finger that holds, so a
@@ -139,13 +117,14 @@
 	import { openBackups } from '$lib/backups.js';
 	import { confirm } from '$lib/confirm.js';
 	import { choose, fillTab } from './chooser.js';
-	import { apply, layout, loaded } from './current.js';
-	import { layoutActs, managed, menuItems, named } from './menu.js';
+	import { apply, editing, layout, loaded } from './current.js';
+	import { CHANGE, CLOSE, aimed, layoutActs, type Item } from './menu.js';
+	import { accept, discard, enter, isAsking, leave, save as saveMode } from './mode.js';
 	import { widgetOptions } from './options.js';
 	import { keyOf, session } from './session.js';
 	import PaneMenu from './PaneMenu.svelte';
 	import { labelOf, titleOf } from './registry.js';
-	import { activate, close, keepTab, modified, open, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, toggleLock, versions } from './shell.js';
+	import { activate, close, keepTab, modified, open, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, versions } from './shell.js';
 	import { reorders } from './reorder.js';
 	import { addEdge, moveTab } from './tree.js';
 	import type { BarEdge, Tab } from './types.js';
@@ -171,7 +150,6 @@
 	 * store — so it is gone on a reload. `Keep tab` below is what writes it.
 	 */
 	$: preview = name !== undefined && $previews.has(name);
-	$: locked = !!active?.locked;
 	/** When this database's sync was paused, while it is (da-wlbyx). */
 	$: paused = $syncStates[currentDb()]?.paused;
 	/** How far a sync session's apply is, while one runs (da-a7oa4). */
@@ -193,7 +171,7 @@
 	 */
 	$: sessionOf = keyOf($layout, id ?? '');
 	$: held = $session[sessionOf] ?? {};
-	$: options = widgetOptions(active, held, sessionOf, locked);
+	$: options = widgetOptions(active, held, sessionOf);
 	/** Loaded, and no act in flight: what a test waits for before pressing. */
 	$: ready = $loaded && !busy && active !== undefined;
 
@@ -204,6 +182,7 @@
 	 * so nothing is refused here.
 	 */
 	async function add(): Promise<void> {
+		await leave();
 		const picked = await choose();
 		if (picked) await attempt(() => open('layout' in picked ? picked.layout : titleOf(picked.kind)));
 	}
@@ -260,7 +239,6 @@
 			? undefined
 			: {
 					dirty,
-					locked,
 					save: doSave,
 					restore: doRestore,
 					// Only a layout that HAS a shipped tree can be sent back to
@@ -268,64 +246,64 @@
 					// here at all (da-luwe).
 					reset: shippedTree(name) ? doReset : undefined,
 					saveAs: doSaveAs
-					// No `toggleLock`: the lock is a BUTTON beside the gear now
-					// (da-bzhq), not an item of this menu. See `doToggleLock`.
 				};
 
 	/**
-	 * The lock, beside the gear (da-bzhq). vividn, 2026-09-21: "Let's move
-	 * the lock button outside of the layout menu and put it by the gear
-	 * icon to be more discoverable."
-	 *
-	 * It is THIS DEVICE'S (shell.ts), not the layout's — which is what the
-	 * button's title says in so many words, so that a control sitting in
-	 * the page's own corner is not read as a property of the layout
-	 * everyone shares. What it locks is unchanged, and so is which layouts
-	 * open locked (da-gshh): only where the press is.
-	 */
-	const doToggleLock = () => id !== undefined && toggleLock(id);
-
-	/**
-	 * `Keep tab` (da-xamd), next to the Close that is the other answer to a
-	 * preview: only a preview has it, because only a preview is not kept
-	 * already. A PLACE (da-6du3o) is one, and opens locked, being shipped —
-	 * so a lock does not take it away: keeping writes nothing into the tree.
+	 * `Keep tab` (da-xamd): only a preview has it, because only a preview is
+	 * not kept already. Keeping writes nothing into the tree.
 	 */
 	$: keep = preview ? [{ label: 'Keep tab', run: () => void attempt(async () => id !== undefined && keepTab(id)) }] : [];
 
-	$: all = locked
-		? [...options, ...(acts ? layoutActs(acts) : []), ...keep]
-		: menuItems({
-				choose: () => id !== undefined && void fillTab(id),
-				// The same rule a pane's frame reads, and it is about SHAPE: a
-				// root tab showing ONE widget — a bare one, or the one-widget
-				// layout `/repl` and `/nowview` open (da-ze1x) — offers that
-				// widget's acts beside the layout's own. On a phone that tab is
-				// the whole page, so this menu is the only door to it. A layout
-				// of several widgets shows a split here and offers neither.
-				reset: resetWidget(active),
-				options,
-				// No `breakOut`: a tab breaks out of its strip, and this bar is the
-				// shell, not a strip (da-a642, da-n632). No `bar`: this bar IS the root's.
-				split: { what: 'split: a new pane', run: (t) => apply((l) => addEdge(l, SIDE[t])) },
-				close: { label: 'Close tab', disabled: tabs.length < 2, run: () => close($layout.root.active) },
-				acts,
-				extra: keep
-			});
+	/**
+	 * What the open tab's name opens. In NORMAL MODE, what the tab shows and
+	 * what it is saved as: on a tab of one widget that widget's reset and
+	 * options (da-ze1x) — on a phone that tab is the whole page, so this menu
+	 * is the only door to them — then the layout's acts, and `Keep tab` on a
+	 * preview.
+	 *
+	 * In LAYOUT MODE (da-vvcxc), «all the down arrow actions» (vividn) — what
+	 * the root `▾` held: `Change Widget`, `Split`, which at the root is a side
+	 * of the whole layout (`addEdge`, da-a642), and `Close tab` — and the
+	 * three ways out of the mode (`mode.ts`): Accept, Save layout where the
+	 * tab holds one, Discard changes. Close last, as ever.
+	 */
+	$: arrange = [
+		{ label: CHANGE, act: 'open' as const, run: () => id !== undefined && void fillTab(id) },
+		{ label: 'Split', row: aimed('split: a new pane', (t) => apply((l) => addEdge(l, SIDE[t]))) },
+		{ label: 'Accept', run: accept },
+		...(name === undefined ? [] : [{ label: 'Save layout', act: 'run' as const, run: () => void attempt(saveMode) }]),
+		{ label: 'Discard changes', run: discard },
+		{ label: 'Close tab', glyph: CLOSE, disabled: tabs.length < 2, run: () => close($layout.root.active) }
+	] satisfies Item[];
+
+	$: reset = resetWidget(active);
+	$: items = $editing
+		? arrange
+		: [...(reset ? [{ label: 'Reset widget', run: reset }] : []), ...options, ...(acts ? layoutActs(acts) : []), ...keep];
 
 	/**
-	 * The two slices (da-bzhq, `menu.ts`): the layout's NAME opens what
-	 * this tab shows and what it is saved as; the `▾` beside the `+` opens
-	 * what is done to the page — its `Split`, which is `addEdge`, and
-	 * `Close tab`. A LOCKED root tab's list is the acts alone, none of
-	 * them a management act, so the `▾` is not drawn at all.
-	 *
-	 * The `+` is NOT hidden under a lock, unlike a pane's (PaneFrame): it
-	 * opens ANOTHER layout beside this one and never touches the locked
-	 * tree, and it is how a reader leaves a page they have locked.
+	 * Escape in layout mode asks how to leave it (vividn: «Esc Esc reverts,
+	 * Esc Enter accepts»). Next to last, as PromptBar.svelte orders Escape:
+	 * a key a menu, a dialog, a widget or the log has taken is theirs, so
+	 * this waits for the dispatch to finish, and takes it from the peel.
 	 */
-	$: items = named(all);
-	$: manage = managed(all);
+	function onEscape(event: KeyboardEvent) {
+		// A dialog's Escape is its own cancel, which marks nothing: asked at
+		// the key, since the dialog has closed by the time the dispatch has.
+		if (event.key !== 'Escape' || !$editing || isAsking() || document.querySelector('dialog[open]')) return;
+		setTimeout(() => {
+			if (event.defaultPrevented) return;
+			event.preventDefault();
+			void leave();
+		});
+	}
+
+	/** Another root tab: in layout mode, after asking how to leave it. */
+	async function go(index: number) {
+		if (index === $layout.root.active) return;
+		await leave();
+		activate(index);
+	}
 
 	/**
 	 * «Reset default layouts» (da-jbcv), behind a confirm: it writes, and
@@ -382,7 +360,7 @@
 		const next = event.key === 'ArrowRight' ? index + 1 : event.key === 'ArrowLeft' ? index - 1 : null;
 		if (next === null || next < 0 || next >= tabs.length) return;
 		event.preventDefault();
-		activate(next);
+		await go(next);
 		// After the tick: switching swaps which tab is the menu's button, so
 		// the tab to focus is the one that is there once it has (da-9vtw).
 		await tick();
@@ -401,13 +379,22 @@
 	const TEETH = [0, 45, 90, 135, 180, 225, 270, 315];
 </script>
 
-<nav class="root-bar" class:modified={dirty} aria-busy={!ready} aria-label="layouts">
+<svelte:window on:keydown={onEscape} />
+
+<nav class="root-bar" class:modified={dirty} aria-busy={!ready} aria-label="layouts" data-layout-mode={$editing ? '' : undefined}>
+	<!-- A hold on the OPEN tab, let go where it was, or its context menu —
+	     a right click, the menu key, Shift+F10 — enters layout mode
+	     (da-vvcxc); a hold that moves still reorders (`reorder.ts`). -->
 	<div
 		class="tabs"
 		role="tablist"
 		aria-orientation="horizontal"
 		bind:this={strip}
-		use:reorders={{ tabs: '[role="tab"]', move: (from, to) => apply((l) => moveTab(l, l.root.id, from, to)) }}
+		use:reorders={{
+			tabs: '[role="tab"]',
+			move: (from, to) => apply((l) => moveTab(l, l.root.id, from, to)),
+			hold: (tab) => tab.getAttribute('aria-selected') === 'true' && (enter(), true)
+		}}
 	>
 		{#each $loaded ? tabs : [] as tab, i (tab.id)}
 			{#if i === $layout.root.active && items.length > 0}
@@ -417,7 +404,7 @@
 					look="tab"
 					label="menu of the {labelOf(tab)} layout"
 					title="layout menu"
-					data-help="The layout in front, and what it is saved as: save it, restore an earlier save, save it under another name, reset it to how it shipped, and, on a tab of one widget, set that widget's options."
+					data-help="The layout in front, and what it is saved as: save it, restore an earlier save, save it under another name, reset it to how it shipped, and, on a tab of one widget, set that widget's options. Long press or right-click it for layout mode, where its panes are split, moved, resized and closed."
 					role="tab"
 					aria-selected="true"
 					tabindex="0"
@@ -434,11 +421,23 @@
 					class:preview={tab.layout !== undefined && $previews.has(tab.layout)}
 					aria-selected={i === $layout.root.active}
 					tabindex={i === $layout.root.active ? 0 : -1}
-					on:click={() => activate(i)}
+					on:click={() => go(i)}
 					on:keydown={(e) => onTabKey(e, i)}
 				>
 					{labelOf(tab)}{#if $modified.has(tab.id)}<span class="dot" title="modified">•</span>{/if}
 				</button>
+			{/if}
+			<!-- In layout mode every tab wears its close on its right (vividn:
+			     «the close button should go on the right of each tab»). -->
+			{#if $editing}
+				<button
+					type="button"
+					class="control tab-close"
+					aria-label="close the {labelOf(tab)} tab"
+					title="close this tab"
+					disabled={tabs.length < 2}
+					on:click={() => close(i)}>{CLOSE}</button
+				>
 			{/if}
 		{/each}
 	</div>
@@ -446,21 +445,6 @@
 		data-help="A layout is a page of panes, each holding a widget. Opens one as a new tab — a saved layout, or a single widget on its own; the tabs switch between them."
 		on:click={add}>+</button
 	>
-	<!-- The `▾` beside the `+` (da-bzhq): what is done to the page —
-	     `Split`, which at the root is a side of the whole layout, and
-	     `Close tab`. Drawn only when it has something in it, which is what
-	     takes it away under a lock. -->
-	{#if manage.length > 0}
-		<PaneMenu
-			items={manage}
-			look="badge"
-			label="manage the layout"
-			title="manage this layout"
-			class="manage"
-			data-help="What is done to the whole page: Split, which opens a new pane down one whole side of the layout, and Close tab, which closes the layout in front."
-			aria-label="manage the layout">▾</PaneMenu
-		>
-	{/if}
 	{#if error}<span class="error" role="alert">{error}</span>{/if}
 	<!-- Sync paused (da-wlbyx) is loud: vividn calls it risky. Every tab hears
 	     it from the database's sync leader, and a tap resumes. -->
@@ -487,42 +471,7 @@
 			on:click={doNotices}>⚠</button
 		>
 	{/if}
-	<!-- The lock, ON THE GEAR'S OTHER SIDE — vividn, 2026-09-21 (da-fphjw):
-	     "Move the lock button to the other side of the gear". It was at
-	     the bar's far end past the gear (da-bzhq); now the gear takes the
-	     end and the lock is just before it. It stays BESIDE the gear
-	     either way, which is the whole of why it was put here — "by the
-	     gear icon to be more discoverable" (brand.test.mjs).
-
-	     Its title says whose the lock is: THIS DEVICE'S (shell.ts), so a
-	     control in the page's own corner is not read as a property of the
-	     layout everyone shares. -->
 	<span class="end">
-	{#if acts}
-		<button
-			type="button"
-			class="control badge lock"
-			class:open={!locked}
-			aria-pressed={locked}
-			aria-label="{locked ? 'unlock' : 'lock'} the {name} layout on this device"
-			title="{locked ? 'unlock' : 'lock'} this layout on this device"
-			data-help="Locked, this layout's panes lose their +, ▾ and ×, and nothing you do changes the layout. The lock is this device's alone. Tap the padlock again to unlock it."
-			on:click={doToggleLock}
-		>
-			<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-				<!-- The body is the same box either way; the SHACKLE is the
-				     same arch either way too, and what says which state this
-				     is, is that OPEN it has been swung off the body about its
-				     right foot (da-fphjw). vividn: "It is hard to see that the
-				     lock is unlocked with the current icon" — which drew the
-				     two states a shackle's end apart, a difference of about a
-				     pixel at the size this is drawn. A half-turned mark is a
-				     different silhouette at any size. -->
-				<path class="shackle" d="M5 7V5a3 3 0 0 1 6 0v2" transform={locked ? null : 'rotate(34 11 7)'} />
-				<rect class="body" x="3.5" y="7" width="9" height="6.5" rx="1.5" />
-			</svg>
-		</button>
-	{/if}
 	<PaneMenu
 		items={settings}
 		look="badge"
@@ -630,52 +579,34 @@
 		color: var(--accent-bright);
 	}
 
-	/* The `+` is a badge, and does not stretch. Nor is the `▾` beside it
-	   (da-bzhq), which is the same badge with another character in it. */
-	.add,
-	.root-bar :global(button.manage) {
+	/* The `+` is a badge, and does not stretch. */
+	.add {
 		flex: none;
 	}
 
-	/* The lock (da-bzhq), right beside the gear and the same 24px badge as
-	   the `+`. A flat mono-colour mark in `currentColor`, like the
-	   maximize's. */
-	.lock {
+	/* LAYOUT MODE (da-vvcxc), very visibly: the bar is hatched and ruled in
+	   the accent, as the page under it is (routes/+page.svelte), and each
+	   tab wears its close on its right, tucked against it. The rule is
+	   thickened by a shadow, not a wider border: entering the mode moves
+	   nothing on the page. */
+	.root-bar[data-layout-mode] {
+		background: repeating-linear-gradient(
+			-45deg,
+			color-mix(in srgb, var(--accent) 16%, var(--ground)) 0 6px,
+			var(--ground) 6px 14px
+		);
+		border-bottom-color: var(--accent);
+		box-shadow: 0 1px 0 var(--accent);
+	}
+
+	.tab-close {
 		flex: none;
-	}
-
-	.lock svg {
-		display: block;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.4;
-		stroke-linecap: round;
-		stroke-linejoin: round;
-		/* The SWUNG shackle's stroke grazes the top of its own viewBox.
-		   A turn moves WHICH point of the arch is the highest, so it is not
-		   the standing apex (8,2) that decides this — that one lands at
-		   y=1.18, comfortably inside. Swept, the top of the SWUNG arch is
-		   the point 56° along the arc, (6.32, 2.51), which the 34° turn
-		   about (11,7) puts at y=0.664, and the 0.7px half-stroke takes to
-		   -0.04. A viewBox is a clip, so without this the mark would be cut
-		   there — by a hundredth of a pixel today, and by however much the
-		   angle is ever changed by. Nothing can reach the gear or the ⚠
-		   either way: this is a 16px mark centred in a 24px badge, so it has
-		   four pixels of room on every side, which shell.test.mjs measures
-		   over the drawn shackle rather than over this box. */
-		overflow: visible;
-	}
-
-	/* THE LOUD STATE IS THE UNLOCKED ONE (da-fphjw). vividn: "highlight when
-	   it is unlocked rather than locked". Being locked is the state where
-	   nothing can go wrong; being UNLOCKED is the one with consequences,
-	   since the layout can be moved under you — so the highlight marks the
-	   state that can surprise someone, not the state that cannot. It is
-	   `--warn` rather than the accent for the same reason: the accent is
-	   what this app paints a thing that is simply in force. */
-	.lock.open {
-		color: var(--warn);
-		border-color: var(--warn);
+		block-size: 24px;
+		min-inline-size: 24px;
+		margin-inline-start: -6px;
+		padding: 0 0.3rem;
+		color: var(--accent);
+		border-color: var(--accent);
 	}
 
 	.dot {
@@ -694,9 +625,8 @@
 
 	/* The gear: at the bar's right end at every width, and a badge like the
 	   `+` — so it is on its 24px floor under a fingertip too
-	   (reachable.test.mjs). It rides at the end because `.end`, two places
-	   before it, carries the `auto`; the lock rides along between them
-	   (da-fphjw).
+	   (reachable.test.mjs). It rides at the end because `.end`, just
+	   before it, carries the `auto`.
 
 	   A BIGGER badge than the rest of the bar's, and a drawn cog rather
 	   than the `⚙` character (da-jbcv). vividn: "Make the gear icon much
@@ -705,9 +635,8 @@
 	   the em it fills is the reader's font's business and not ours. A
 	   path fills the box it is given, on every device, and the box is
 	   this one. */
-	/* The bar's right end: the LOCK, then the gear (da-fphjw). `auto` here
-	   rather than on the tabs, which scroll, so the two are carried to the
-	   end together. */
+	/* The bar's right end: the gear. `auto` here rather than on the tabs,
+	   which scroll, so it is carried to the end. */
 	.end {
 		display: flex;
 		align-items: center;
@@ -716,7 +645,7 @@
 		flex: none;
 	}
 
-	/* The ⚠ (da-8fucg) rides at the end too, ahead of the lock, so while it
+	/* The ⚠ (da-8fucg) rides at the end too, ahead of the gear, so while it
 	   is drawn the `auto` is its own. A pill and not a badge: it opens a
 	   dialog, and so wears the `›` ($lib/act.ts). */
 	.notices {

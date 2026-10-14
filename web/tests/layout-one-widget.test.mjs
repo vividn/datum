@@ -20,11 +20,9 @@
 //
 // Since da-vhwq an option is THIS SESSION'S: setting one from this menu
 // changes what the tab shows and leaves the layout alone, and «Save options
-// with layout» — offered only unlocked, and only with something held — is
-// what makes it the layout's. A lock therefore leaves the option rows and
-// takes that one act away, which is also why `Reset widget`, a tree write,
-// is not in a locked menu. Since da-gshh every one of these pages opens
-// LOCKED, so the options are what a first visit finds.
+// with layout» — offered only with something held — is what makes it the
+// layout's. What is DONE to the page — Change Widget, Split, Close tab —
+// is layout mode's (da-vvcxc), with the ways out of it.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -35,10 +33,10 @@ import {
 	menuLines,
 	choiceLines,
 	pickOption,
-	rootManageButton,
+	enterLayoutMode,
+	leaveLayoutMode,
 	rootMenuButton,
-	toggleOption,
-	toggleRootLock
+	toggleOption
 } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
@@ -64,8 +62,16 @@ const ACTS = ['Save layout', 'Restore layout', RESET_LAYOUT, 'Save layout as'];
 /** Open the root menu, read its lines, close it again. */
 const rootLines = (page) => linesFrom(page, () => rootMenuButton(page).click());
 
-/** The same, for the `▾` beside the root's `+` (da-bzhq). */
-const rootManageLines = (page) => linesFrom(page, () => rootManageButton(page).click());
+/** The same in layout mode (da-vvcxc), and back out of it. */
+async function rootManageLines(page) {
+	await enterLayoutMode(page);
+	const lines = await rootLines(page);
+	await leaveLayoutMode(page);
+	return lines;
+}
+
+/** The root's layout-mode menu: what is done to the page, and the ways out. */
+const MANAGE = ['Change Widget', 'Split ← ↓ ↑ →', 'Accept', 'Save layout', 'Discard changes', '× Close tab'];
 
 async function linesFrom(page, open) {
 	await open();
@@ -92,22 +98,14 @@ const dotted = (page, name) =>
 	page.locator('.root-bar [role="tab"].modified').filter({ hasText: name }).count().then((n) => n > 0);
 
 describe('a root tab whose layout is one widget', () => {
-	// Locked is what a first visit finds (da-gshh), and da-gvdc's rule
-	// decides what a lock leaves: the settings door, not the structure.
-	test('/repl opens locked with its option; unlocked it has Change Widget and Reset widget too', async () => {
+	test('/repl opens with Reset widget, its option and the acts; layout mode has Change Widget', async () => {
 		await shared.wipe(async (app) => {
 			const { page } = app;
 			await openPage(app, 'repl');
 
-			// The lock is a button beside the gear (da-bzhq), so the locked
-			// menu is the settings door and the acts, and no lock item.
-			assert.deepEqual(await rootLines(page), [NEWEST, ...ACTS], 'the locked root menu');
-			assert.equal(await rootManageButton(page).count(), 0, 'a locked root still offers the ▾');
-
-			await toggleRootLock(page);
 			const lines = await rootLines(page);
 			assert.deepEqual(lines, [RESET_WIDGET, NEWEST, ...ACTS]);
-			assert.deepEqual(await rootManageLines(page), ['Change Widget', 'Split ← ↓ ↑ →', '× Close tab']);
+			assert.deepEqual(await rootManageLines(page), MANAGE);
 			// The two ways back are told apart by their words and by where
 			// they sit: `Reset widget` is at the head of the NAME's slice,
 			// with the options, about the widget in front; `Reset layout` is
@@ -126,9 +124,9 @@ describe('a root tab whose layout is one widget', () => {
 			const { page } = app;
 			await openPage(app, 'repl');
 			assert.ok((await rootLines(page)).includes(NEWEST), 'no option on the phone’s root menu');
-			// Locked, and the option still works: it is not the layout's.
+			// The option works, and it is not the layout's.
 			await toggleOption(page, null, NEWEST);
-			assert.equal(await dotted(page, 'repl'), false, 'a session setting dirtied a locked layout');
+			assert.equal(await dotted(page, 'repl'), false, 'a session setting dirtied the layout');
 			assert.equal((await rootSettings(page)).reversed, undefined, 'a session setting reached the tree');
 			// The menu whole on a 390px screen, wherever it is placed.
 			await rootMenuButton(page).click();
@@ -141,9 +139,8 @@ describe('a root tab whose layout is one widget', () => {
 			await app.reload();
 			await until(() => rootSettings(page), (s) => s.reversed !== true);
 
-			// Asked for — which wants the lock off — it is a draft edit of the
-			// layout the tab names, so the dot lights and it survives a reload.
-			await toggleRootLock(page);
+			// Asked for, it is a draft edit of the layout the tab names, so
+			// the dot lights and it survives a reload.
 			await toggleOption(page, null, NEWEST);
 			await chooseRoot(page, SAVE);
 			await until(() => rootSettings(page), (s) => s.reversed === true);
@@ -163,7 +160,6 @@ describe('a root tab whose layout is one widget', () => {
 		await shared.wipe(async (app) => {
 			const { page } = app;
 			await openPage(app, 'nowview');
-			await toggleRootLock(page);
 
 			await pickOption(page, null, HISTORY, '45m');
 			await chooseRoot(page, SAVE);
@@ -189,10 +185,9 @@ describe('a root tab whose layout is one widget', () => {
 		await shared.wipe(async (app) => {
 			const { page } = app;
 			await openPage(app, 'custom');
-			await toggleRootLock(page);
 			const lines = await rootLines(page);
-			// `custom` declares neither defaults nor options, so unlocked its
-			// menu is the whole list less both widget items. (`tail` was the
+			// `custom` declares neither defaults nor options, so its menu is
+			// the whole list less both widget items. (`tail` was the
 			// example until da-hkjp gave it a `type`.) A ROOT tab always
 			// holds a layout, so it keeps its acts and its menu — unlike a
 			// PANE of such a kind, which since da-z8klv has none at all.
@@ -212,7 +207,7 @@ describe('a root tab whose layout is one widget', () => {
 			assert.ok(!lines.includes(RESET_WIDGET), `main reads ${lines.join(' | ')}`);
 			assert.equal(lines[0], 'Save layout');
 			assert.equal(lines.at(-1), ACTS.at(-1));
-			assert.deepEqual(await rootManageLines(page), ['Change Widget', 'Split ← ↓ ↑ →', '× Close tab']);
+			assert.deepEqual(await rootManageLines(page), MANAGE);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -223,7 +218,6 @@ describe('a root tab whose layout is one widget', () => {
 		await shared.wipe(async (app) => {
 			const { page } = app;
 			await openPage(app, 'repl');
-			await toggleRootLock(page);
 			page.once('dialog', (dialog) => dialog.accept('mine'));
 			await chooseRoot(page, 'Save layout as');
 			await rootMenuButton(page).filter({ hasText: 'mine' }).waitFor();

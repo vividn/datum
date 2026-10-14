@@ -4,15 +4,15 @@
 // let's you close it. Long pressing or right clicking on a widget title
 // opens the change widget menu. I think that will feel natural to use.»
 //
-// So `Change Widget` keeps its home in the `▾` (da-z8klv) and gains a
-// SECOND door — a hold on the name of the widget it would replace — and
-// the row gains a `×` that closes what the title names. Both are the
-// unlocked layout's: a lock already hides the `+` and the `▾`, and these
-// two go with them.
+// So `Change Widget` keeps its home in the name's menu and gains a SECOND
+// door — a hold on the name of the widget it would replace — and the row
+// gains a `×` that closes what the title names. Both are LAYOUT MODE's
+// (da-vvcxc), which the "unlocked mode" of then became: normal mode hides
+// the `+`, and these two go with it.
 //
 // What this file holds the change to:
 //
-//   - the `×` is there unlocked, gone locked, and CLOSES — writing the
+//   - the `×` is there in layout mode, gone in normal mode, and CLOSES — writing the
 //     DRAFT and nothing else, which is the answer to a mis-tap: this
 //     device's saved layouts are byte for byte what they were, `Restore
 //     layout` is the way back, and the last pane closes to an EMPTY pane
@@ -25,11 +25,11 @@
 //   - a long press by a FINGER does what the right click does, over real
 //     milliseconds — the gesture is a timer ($lib/hold.ts), so a
 //     synthesised pair would be a test of the test.
-//   - a pane whose widget declares no options has NO title menu at all
-//     (`custom`, `aliases` — da-z8klv), and the hold still works there:
-//     the gesture is on the title's box, not on the menu's button.
-//   - the press the title already had still opens what the pane IS, and
-//     `Change Widget` is still in the `▾`. A door was added, not moved.
+//   - a pane whose widget declares no options has NO title menu in normal
+//     mode (`custom`, `aliases` — da-z8klv), and the hold works there in
+//     layout mode: the gesture is on the title's box.
+//   - the press the title already had still opens what the pane IS in
+//     normal mode, and `Change Widget` leads it in layout mode.
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -41,14 +41,13 @@ import {
 	chooser,
 	layoutStorage,
 	draft,
-	manageButton,
+	enterLayoutMode,
+	leaveLayoutMode,
 	menuLines,
 	pane,
 	rootMenuButton,
 	settled,
 	titles,
-	toggleRootLock,
-	unlockRoot,
 	widgetPane
 } from './support/layout.mjs';
 
@@ -127,7 +126,7 @@ async function longPress(page, locator) {
 describe('the × on the widget title', () => {
 	test('it closes what the title names, and writes only the draft doing it', async () => {
 		await onPage(async ({ page }) => {
-			await unlockRoot(page);
+			await enterLayoutMode(page);
 			assert.deepEqual(await titles(page), ['repl', 'aliases']);
 			const before = await layoutStorage(page);
 
@@ -147,29 +146,30 @@ describe('the × on the widget title', () => {
 			const saves = (all) => Object.fromEntries(Object.entries(all).filter(([k]) => !/\.(draft|shell)\./.test(k)));
 			assert.deepEqual(saves(after), saves(before), 'the × wrote something other than the draft');
 			assert.notDeepEqual(after, before, 'the × did not write the draft either');
+			await leaveLayoutMode(page);
 			assert.ok((await rootMenuLines(page)).includes('Restore layout'));
 		});
 	});
 
-	test('a lock takes it away, with the `+` and the `▾`', async () => {
+	test('normal mode takes it away, with the `+`', async () => {
 		await onPage(async ({ page }) => {
-			await unlockRoot(page);
+			await enterLayoutMode(page);
 			assert.equal(await page.locator('section.pane button.close').count(), 2);
 
-			await toggleRootLock(page);
+			await leaveLayoutMode(page);
 			await settled(page);
-			assert.equal(await page.locator('section.pane button.close').count(), 0, 'a locked layout kept its `×`');
+			assert.equal(await page.locator('section.pane button.close').count(), 0, 'normal mode kept its `×`');
 			assert.equal(await page.locator('section.pane button.add').count(), 0);
 
-			await toggleRootLock(page);
+			await enterLayoutMode(page);
 			await settled(page);
-			assert.equal(await page.locator('section.pane button.close').count(), 2, 'unlocking did not give it back');
+			assert.equal(await page.locator('section.pane button.close').count(), 2, 'layout mode did not give it back');
 		});
 	});
 
 	test('the last pane of a layout closes to an EMPTY pane, never to nothing', async () => {
 		await onPage(async ({ page }) => {
-			await unlockRoot(page);
+			await enterLayoutMode(page);
 			await closeButton(page, 'cmd').click();
 			await settled(page);
 			assert.deepEqual(await titles(page), ['repl']);
@@ -191,13 +191,13 @@ describe('the × on the widget title', () => {
 describe('the hold on the widget title', () => {
 	test('a right click opens Change Widget and eats the browser’s own menu', async () => {
 		await onPage(async ({ page }) => {
-			await unlockRoot(page);
+			await enterLayoutMode(page);
 			await watchMenus(page);
 
 			await titleBox(page, 'repl').click({ button: 'right' });
 			await chooser(page).waitFor();
 			// The chooser is what `Change Widget` opens — the same dialog the
-			// `▾`'s item opens, wearing the same words.
+			// menu's item opens, wearing the same words.
 			assert.match(await chooser(page).innerText(), /Change Widget/);
 			// And the title's OWN menu did not open behind it.
 			assert.equal(await page.locator('[role="menu"]').count(), 0, 'the title’s menu opened too');
@@ -218,13 +218,12 @@ describe('the hold on the widget title', () => {
 		});
 	});
 
-	test('a pane with no title menu at all is still held', async () => {
+	test('a pane with no title menu in normal mode is held in layout mode', async () => {
 		await onPage(async ({ page }) => {
-			await unlockRoot(page);
-			// The premise, and it is the point of the pane: `aliases`
-			// declares neither defaults nor options, so its name opens
-			// nothing (da-z8klv) and there is no button to hang this on.
+			// The premise: `aliases` declares neither defaults nor options, so
+			// in normal mode its name opens nothing (da-z8klv).
 			assert.equal(await pane(page, 'cmd').locator('> .titlebar button.title').count(), 0);
+			await enterLayoutMode(page);
 
 			await titleBox(page, 'cmd').click({ button: 'right' });
 			await chooser(page).waitFor();
@@ -235,7 +234,7 @@ describe('the hold on the widget title', () => {
 	test('a long press by a finger does what the right click does', async () => {
 		await withApp(
 			async ({ page }) => {
-				await unlockRoot(page);
+				await enterLayoutMode(page);
 				await longPress(page, titleBox(page, 'repl'));
 				await chooser(page).waitFor();
 				assert.match(await chooser(page).innerText(), /Change Widget/);
@@ -251,23 +250,20 @@ describe('the hold on the widget title', () => {
 		);
 	});
 
-	test('a lock closes this door too', async () => {
+	test('normal mode closes this door', async () => {
 		await onPage(async ({ page }) => {
-			await unlockRoot(page);
-			await toggleRootLock(page);
-			await settled(page);
 			await watchMenus(page);
 
 			await titleBox(page, 'repl').click({ button: 'right' });
 			await page.waitForTimeout(200);
-			assert.equal(await chooser(page).count(), 0, 'a locked title opened the chooser');
-			assert.deepEqual(await menusSeen(page), [false], 'a locked title still ate the browser’s menu');
+			assert.equal(await chooser(page).count(), 0, 'a title in normal mode opened the chooser');
+			assert.deepEqual(await menusSeen(page), [false], 'a title in normal mode still ate the browser’s menu');
 		});
 	});
 
 	test('with a strip, it is the tab IN FRONT that is held, and the `×` closes that tab', async () => {
 		await onPage(async ({ page }) => {
-			await unlockRoot(page);
+			await enterLayoutMode(page);
 			await addTab(page, 'repl', 'aliases');
 			await settled(page);
 			const tabs = pane(page, 'repl').locator('> .titlebar [role="tab"]');
@@ -299,18 +295,17 @@ describe('the hold on the widget title', () => {
 		});
 	});
 
-	test('the door it was given is a SECOND one: the press and the `▾` are unchanged', async () => {
+	test('the door it was given is a SECOND one: the press opens what the pane IS, and Change Widget leads layout mode', async () => {
 		await onPage(async ({ page }) => {
-			await unlockRoot(page);
-
-			// A press on the title still opens what the pane IS.
+			// In normal mode a press on the title opens what the pane IS.
 			await titleBox(page, 'repl').click();
 			assert.deepEqual(await menuLines(page), ['Reset widget', 'newest first']);
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 
-			// And `Change Widget` is still the first item of the `▾`.
-			await manageButton(page, 'repl').click();
+			// And `Change Widget` is the first item of layout mode's.
+			await enterLayoutMode(page);
+			await titleBox(page, 'repl').click();
 			assert.equal((await menuLines(page))[0], 'Change Widget');
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });

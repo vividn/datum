@@ -13,7 +13,8 @@ import {
 	activeTab,
 	addTab,
 	boxOf,
-	chooseBar,
+	enterLayoutMode,
+	placeBar,
 	pane
 } from './support/layout.mjs';
 
@@ -35,6 +36,8 @@ describe('the title on the frame', () => {
 
 	test('one tab: no tab strip, the title on the outline, the + right after it, on the keyboard', async () => {
 		await shared.solo(async ({ page }) => {
+			// The `+` is layout mode's (da-vvcxc).
+			await enterLayoutMode(page);
 			const tail = pane(page, 'tail');
 			assert.equal(await tail.locator('[role="tablist"]').count(), 0);
 			const [frame, h2, add] = await Promise.all([boxOf(tail), boxOf(tail.locator('h2')), boxOf(tail.locator('button.add'))]);
@@ -115,12 +118,13 @@ describe('the title on the frame', () => {
 
 	test('on a vertical bar the badge follows the title along it', async () => {
 		await shared.solo(async ({ page }) => {
+			await enterLayoutMode(page);
 			const tail = pane(page, 'tail');
-			await chooseBar(page, 'tail', 'right');
+			await placeBar(page, 'tail', 'right');
 			let [h2, more] = await Promise.all([boxOf(tail.locator('h2')), boxOf(tail.locator('button.add'))]);
 			let apart = more.y - (h2.y + h2.height);
 			assert.ok(apart >= 0 && apart <= 8, `right bar, reading down: the badge is ${apart}px below the title`);
-			await chooseBar(page, 'tail', 'left');
+			await placeBar(page, 'tail', 'left');
 			[h2, more] = await Promise.all([boxOf(tail.locator('h2')), boxOf(tail.locator('button.add'))]);
 			apart = h2.y - (more.y + more.height);
 			assert.ok(apart >= 0 && apart <= 8, `left bar, reading up: the badge is ${apart}px above the title`);
@@ -137,7 +141,7 @@ describe('the title on the frame', () => {
 describe('the title row, as tall as its words', () => {
 	/** What sits on a pane's bar, or over its corner, that could reach a neighbour. */
 	const ON_BAR =
-		':scope > .titlebar :is(h2, .own, [role="tab"], button.maximize, button.add, button.manage), [role="slider"], .nowview-steps button';
+		':scope > .titlebar :is(h2, .own, [role="tab"], button.maximize, button.add, button.close), [role="slider"], .nowview-steps button';
 
 	/** Every piece of `ON_BAR` whose DRAWING is inside another pane's border box.
 	 *
@@ -292,7 +296,7 @@ describe('the title row, as tall as its words', () => {
 			assert.deepEqual(new Set(top.colours), new Set([top.frame]), `the outline is ${top.colours}, the frame ${top.frame}`);
 			assert.deepEqual([top.padding.top, top.padding.bottom], ['0px', '0px']);
 
-			await chooseBar(page, 'tail', 'left');
+			await placeBar(page, 'tail', 'left');
 			const left = await seen();
 			assert.ok(left.box[0] <= 18, `the left bar's title is ${left.box[0]}px across`);
 			for (const side of ['left', 'right']) assert.ok(parseFloat(left.padding[side]) <= 1, `padding-${side} ${left.padding[side]}`);
@@ -346,7 +350,8 @@ describe('the margins', () => {
 		await shared.solo(async ({ page }) => {
 			await atEachScreen(t, page, [{ width: 1280, height: 900 }, { width: 390, height: 844 }], async () => {
 				const seen = await page.evaluate(() => {
-					const border = document.querySelector('.split .border:not(.static)');
+					// The gap is the same in either mode: a handle in layout mode, static outside it.
+					const border = document.querySelector('.split .border');
 					const b = border.getBoundingClientRect();
 					const body = getComputedStyle(document.querySelector('section.pane .body'));
 					return {
@@ -397,13 +402,13 @@ describe('scrollbars', () => {
 // but slightly larger". Measured in screen coordinates, on all four edges
 // (the left-hand bar is rotated), never "less than before".
 describe('the title on the line', () => {
-	// One app for the four edges: `chooseBar` walks the tail pane's bar
+	// One app for the four edges: `placeBar` walks the tail pane's bar
 	// round the frame, which is what a reader does to it (da-x6ea).
 	test('the content has no padding and the title is centred on the outline, on every edge', async (t) => {
 		await shared.solo(async ({ page }) => {
 			for (const edge of ['top', 'bottom', 'left', 'right']) {
 				await t.test(`bar on the ${edge}`, async () => {
-					if (edge !== 'top') await chooseBar(page, 'tail', edge);
+					if (edge !== 'top') await placeBar(page, 'tail', edge);
 					const tail = pane(page, 'tail');
 					const seen = await tail.evaluate((section) => {
 						const s = getComputedStyle(section.querySelector(':scope > .content'));

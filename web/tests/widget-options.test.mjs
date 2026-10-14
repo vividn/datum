@@ -21,9 +21,9 @@
 //    leaves the layout's dot alone, and a reload starts back at what the
 //    layout says. A widget moving a setting of its own (nowview's − / +)
 //    goes down that same path, which is why
-//  - a LOCKED layout cannot be modified by anything, the widget's own
-//    in-body controls included: the only writer left is «Save options with
-//    layout», and the lock hides it.
+//  - a layout in normal mode (da-vvcxc; a LOCKED one, then) is modified
+//    by nothing the reader did not ask for, the widget's own in-body
+//    controls included: the only writer is «Save options with layout».
 //  - `Reset widget` still means the kind's defaults, session and all.
 //  - a key this build does not declare is kept, not dropped.
 
@@ -37,8 +37,10 @@ import {
 	choose,
 	chooseRoot,
 	chooser,
+	enterLayoutMode,
 	exactly,
 	inRoom,
+	leaveLayoutMode,
 	manage,
 	menuButton,
 	menuLines,
@@ -49,8 +51,7 @@ import {
 	switchItem,
 	titledMenuButton,
 	titledPane,
-	toggleOption,
-	toggleRootLock
+	toggleOption
 } from './support/layout.mjs';
 
 before(startApp);
@@ -147,9 +148,10 @@ describe('widget options', () => {
 			await chooser(page).waitFor({ state: 'detached' });
 			// `aliases` declares neither options nor defaults, holds nothing
 			// in this session and holds no layout, so the NAME's slice is
-			// empty and no menu is drawn at all (da-z8klv, which moved
-			// Change Widget to the `▾`). `command` stood here until it
-			// declared an option (da-u79wl).
+			// empty and no menu is drawn at all in normal mode (da-z8klv,
+			// da-vvcxc). `command` stood here until it declared an option
+			// (da-u79wl).
+			await leaveLayoutMode(page);
 			assert.equal(await menuButton(page, 'custom').count(), 0, 'aliases has a name menu');
 		});
 	});
@@ -395,47 +397,38 @@ describe('widget options', () => {
 		});
 	});
 
-	// ⚠ THE DEFECT THIS BEAD NAMES, driven rather than read: before
-	// da-vhwq, pressing nowview's − under a locked layout moved `history`
-	// in the tree and lit the dot, because the lock hid the chrome and
-	// never defended the data path. It is not a guard that fixes it: the
-	// path itself goes to the session now, and the one act that writes the
-	// tree is the one the lock takes away.
-	test('under a lock: the options still change, the save is gone, and the widget’s own − leaves the tree alone', async () => {
-		await shared.room('wo-lock', async (app, room) => {
+	// ⚠ THE DEFECT da-vhwq NAMED, driven rather than read: before it,
+	// pressing nowview's − under a lock moved `history` in the tree and lit
+	// the dot, because the lock hid the chrome and never defended the data
+	// path. It is not a guard that fixes it: the path itself goes to the
+	// session, and the one act that writes the tree is «Save options with
+	// layout», which the reader has to choose. Normal mode (da-vvcxc) is
+	// where a reader presses − all day, so it is held there.
+	test('in normal mode: the options change the session, and the widget’s own − leaves the tree alone', async () => {
+		await shared.room('wo-normal', async (app, room) => {
 			const { page } = app;
-			await toggleRootLock(page);
-			// AFTER the lock: the lock is a field of the tree too (`setLocked`),
-			// so the tree to hold everything below to is the LOCKED one.
 			const before = await tree(page);
 
-			// The locked menu of a PANE that holds no layout of its own is the
-			// options alone — no Reset widget, no save, and no acts, which
-			// belong to the tab that HOLDS a layout (da-crp5). Change Widget
-			// is not there either: it is the `▾`'s, and the `▾` is hidden.
-			const lines = await linesOf(page, inRoom(room, 'repl'));
-			assert.deepEqual(lines, [NEWEST]);
-			// A kind that declares NO options has no menu left at all under a
-			// lock. That kind is `custom`: `tail` gained its `type` in
-			// da-hkjp, so it KEEPS its menu — and what it keeps is the option
-			// alone, which is the rule this test is about.
+			// The menu of a PANE that holds no layout of its own is the widget's
+			// reset and options — no acts, which belong to the tab that HOLDS a
+			// layout (da-crp5), and no Change Widget, which is layout mode's.
+			assert.deepEqual(await linesOf(page, inRoom(room, 'repl')), ['Reset widget', NEWEST]);
+			// A kind that declares NO options has no menu at all in normal mode.
 			assert.equal(await pane(page, inRoom(room, 'custom')).locator('button.title').count(), 0, 'a kind with no options kept a menu');
-			assert.deepEqual(await linesOf(page, inRoom(room, 'tail')), ['type'], 'a kind with options lost its menu under a lock');
 
-			// The option still works, and is still the session's.
+			// The option works, and is the session's.
 			await toggleOption(page, inRoom(room, 'repl'), NEWEST);
 			assert.ok(!(await tree(page)).includes('"reversed":true'));
-			assert.equal(await dotted(page, room), false, 'a session setting dirtied a LOCKED layout');
-			assert.equal(await page.getByRole('menuitem', { name: SAVE, exact: true }).count(), 0);
+			assert.equal(await dotted(page, room), false, 'a session setting dirtied the layout');
 
-			// And the widget's own in-body control — the one the lock never
-			// hid — leaves the tree byte for byte as it found it.
+			// And the widget's own in-body control leaves the tree byte for
+			// byte as it found it.
 			await page.locator('section.pane[data-title="nowview"] button[aria-label="shorter window"]').click();
 			await page.waitForFunction(
 				() => document.querySelectorAll('section.pane[data-title="nowview"] svg').length > 0
 			);
-			assert.equal(await dotted(page, room), false, 'the widget’s own − dirtied a LOCKED layout');
-			assert.equal(await tree(page), before, 'a locked layout was modified');
+			assert.equal(await dotted(page, room), false, 'the widget’s own − dirtied the layout');
+			assert.equal(await tree(page), before, 'the layout was modified');
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -626,7 +619,8 @@ describe('widget options', () => {
 			assert.equal(await held(), 1);
 			await page.evaluate(() => window.datum.layout.apply((l) => l));
 			assert.equal(await held(), 1, 'a change that closed nothing dropped a setting');
-			await page.locator('section.pane[data-title="repl"] .titlebar button.manage').click();
+			await enterLayoutMode(page);
+			await page.locator('section.pane[data-title="repl"] .titlebar button.title').click();
 			await page.getByRole('menuitem', { name: 'Close pane', exact: true }).click();
 			await page.locator('section.pane[data-title="repl"]').waitFor({ state: 'detached' });
 			assert.equal(await held(), 0, 'a closed tab kept its session setting');

@@ -1,20 +1,20 @@
-// The unsaved draft, which layouts this device has open, which it has
-// locked (da-wpgy, da-0a5o), and which device it is (da-lsjs9).
+// The unsaved draft, which layouts this device has open (da-wpgy, da-0a5o),
+// and which device it is (da-lsjs9).
 //
 // All per device, never synced — vividn: "Different devices will want
-// different layouts", of the draft "I lean per device", and of the lock
-// (2026-09-11 12:56) that it is the device's, never written to the saved
-// entry. So they live in `localStorage`, one draft and one lock per layout
-// name plus one list of open tabs, under versioned keys. Every access is
-// guarded: a browser that refuses storage gets no draft and the saved
-// layout, never an error.
+// different layouts", and of the draft "I lean per device". So they live in
+// `localStorage`, one draft per layout name plus one list of open tabs,
+// under versioned keys. Every access is guarded: a browser that refuses
+// storage gets no draft and the saved layout, never an error.
+//
+// The per-name LOCK that lived here went with layout mode (da-vvcxc); a
+// `datum.layout.locked.v1.*` key an older version wrote is read by nothing.
 
-import type { Layout, Pane } from './types.js';
+import type { Layout } from './types.js';
 
 /** What every key here begins with. */
 const PREFIX = 'datum.layout.';
 const DRAFT = `${PREFIX}draft.v1.`;
-const LOCKED = `${PREFIX}locked.v1.`;
 const ROOT = `${PREFIX}root.v1`;
 
 function get(key: string): string | null {
@@ -61,19 +61,6 @@ export function loadDraft(name: string): Layout | null {
 
 export const saveDraft = (layout: Layout) => set(DRAFT + layout.name, JSON.stringify(layout));
 export const clearDraft = (name: string) => set(DRAFT + name, null);
-
-/**
- * Whether this device has `name` locked — or null when it has never said,
- * which is what lets a layout that shipped open locked the first time
- * while an unlock, once made, is remembered (da-gshh).
- */
-export function loadLocked(name: string): boolean | null {
-	const stored = get(LOCKED + name);
-	return stored === null ? null : stored === '1';
-}
-export const saveLocked = (name: string, locked: boolean) => set(LOCKED + name, locked ? '1' : '0');
-/** Forget this device's say on `name`, so it opens as a first time would. */
-export const clearLocked = (name: string) => set(LOCKED + name, null);
 
 /**
  * How many of datum's new defaults (`newDefaults`, defaults.ts) this device
@@ -139,26 +126,5 @@ function canonical(value: unknown): string {
 	);
 }
 
-/**
- * The pane with every tab's `locked` dropped, all the way down — by
- * walking the tree's own shape, so a widget's settings (an open record
- * that may hold any keys) are compared as they are.
- */
-function unlocked(pane: Pane): Pane {
-	return {
-		...pane,
-		tabs: pane.tabs.map(({ locked: _, ...tab }) =>
-			'children' in tab.content
-				? { ...tab, content: { ...tab.content, children: tab.content.children.map(unlocked) } }
-				: tab
-		)
-	};
-}
-
-/**
- * Whether the draft differs from the save — ids included: a new id is a
- * change. A tab's lock is not: toggling it is not an edit of the tree
- * (da-2a5y), whether or not the lock ends up stored with the layout.
- */
-export const isModified = (draft: Layout, saved: Layout) =>
-	canonical({ ...draft, root: unlocked(draft.root) }) !== canonical({ ...saved, root: unlocked(saved.root) });
+/** Whether the draft differs from the save — ids included: a new id is a change. */
+export const isModified = (draft: Layout, saved: Layout) => canonical(draft) !== canonical(saved);

@@ -59,25 +59,21 @@ export const inForce = derived([layout, maximized], ([$layout, $maximized]) =>
 );
 
 /**
- * The maximized pane inside root tab `tab`, with the locks above it — null
- * when the state does not apply here, which is the whole of the healing.
- *
- * The lock is the OR of the tab locks on the way down (the same sum
- * Layout.svelte threads as its `locked` prop), so a pane maximized out of a
- * locked layout is still locked: it keeps its tabs and loses its `…`.
+ * The maximized pane inside root tab `tab` — null when the state does not
+ * apply here, which is the whole of the healing.
  */
-export function maximizedIn(m: Maximized | null, tab: Tab): { pane: Pane; locked: boolean } | null {
+export function maximizedIn(m: Maximized | null, tab: Tab): Pane | null {
 	if (!m || m.tab !== tab.id) return null;
-	const walk = (content: Widget | Split, locked: boolean): { pane: Pane; locked: boolean } | null => {
+	const walk = (content: Widget | Split): Pane | null => {
 		if (!isSplit(content)) return null;
 		for (const child of content.children) {
-			if (child.id === m.pane) return { pane: child, locked };
+			if (child.id === m.pane) return child;
 			for (const t of child.tabs) {
-				const found = walk(t.content, locked || !!t.locked);
+				const found = walk(t.content);
 				if (found) return found;
 			}
 		}
 		return null;
 	};
-	return walk(tab.content, !!tab.locked);
+	return walk(tab.content);
 }

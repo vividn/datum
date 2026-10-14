@@ -28,7 +28,7 @@ import {
 	addTab,
 	atRest,
 	bar,
-	chooseBar,
+	placeBar,
 	fill,
 	manage,
 	pane,
@@ -481,7 +481,7 @@ describe('the strip: never a blank between two tabs', () => {
 
 	test('up and down, under a bar on the left: the same', async () => {
 		await phone.solo(async ({ page }) => {
-			await chooseBar(page, 'side', 'left');
+			await placeBar(page, 'side', 'left');
 			await side(page, 'tail', 'nowview', 0, -150);
 			await pane(page, 'side').locator('[role="tab"]', { hasText: 'custom' }).click();
 			await side(page, 'custom', 'nowview', 0, 150);

@@ -23,10 +23,10 @@ import {
 	atRest,
 	bar,
 	boxOf,
-	chooseBar,
+	placeBar,
+	enterLayoutMode,
 	fill,
 	manage,
-	manageButton,
 	menuButton,
 	menuLines,
 	overStrip,
@@ -34,7 +34,6 @@ import {
 	settled,
 	swipe,
 	titles,
-	toggleRootLock,
 	widgetPane
 } from './support/layout.mjs';
 
@@ -97,6 +96,7 @@ describe('the default layout', () => {
 describe('the chevron', () => {
 	test('the root bar\'s +, a pane\'s + and the fields\' + wear none; Change Widget still does', async () => {
 		await shared.solo(async ({ page }) => {
+			await enterLayoutMode(page);
 			const after = (locator) => locator.evaluate((b) => getComputedStyle(b, '::after').content);
 			for (const plus of [
 				page.locator('button[aria-label="open a layout"]'),
@@ -106,7 +106,7 @@ describe('the chevron', () => {
 				assert.equal(await plus.getAttribute('data-act'), 'open', 'the + no longer says open');
 				assert.equal(await after(plus), 'none', `${await plus.textContent()} wears a chevron`);
 			}
-			await manageButton(page, 'tail').click();
+			await menuButton(page, 'tail').click();
 			const change = page.getByRole('menuitem', { name: 'Change Widget', exact: true });
 			assert.equal(await change.getAttribute('data-act'), 'open');
 			assert.match(await after(change), /›/, 'Change Widget lost its chevron');
@@ -121,7 +121,7 @@ describe('the draft', () => {
 			const { page } = app;
 			await manage(page, 'tail', 'split: a new pane to the right');
 			await fill(page, 'nowview');
-			await chooseBar(page, 'strip', 'left');
+			await placeBar(page, 'strip', 'left');
 			const arranged = await titles(page);
 			await app.reload();
 			assert.deepEqual(await titles(page), arranged);
@@ -140,9 +140,6 @@ describe('the draft', () => {
 				assert.deepEqual(await titles(app.page), ['welcome']);
 				await app.toCollect();
 				assert.deepEqual(await titles(app.page), ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields']);
-				// Nor an unlock, so `collect` opens locked as a first open
-				// does (da-gshh) — and unlocks for the visit.
-				await toggleRootLock(app.page);
 				await addTab(app.page, 'tail', 'aliases');
 				assert.equal(await activeTab(app.page, 'tail'), 'aliases');
 				assert.deepEqual(app.errors, []);
@@ -261,6 +258,8 @@ describe('review follow-ups', () => {
 describe('holders', () => {
 	test('a holder with one tab draws no bar and no menu, beside a widget pane that has both', async () => {
 		await shared.solo(async ({ page }) => {
+			// The `+` the control has is layout mode's (da-vvcxc).
+			await enterLayoutMode(page);
 			const side = page.locator('section.holder[data-pane="side"]');
 			assert.equal(await side.count(), 1);
 			assert.equal(await side.locator('> .titlebar').count(), 0);
@@ -291,16 +290,17 @@ describe('holders', () => {
 				assert.deepEqual(await menuLines(page), ['Save as layout']);
 				await page.keyboard.press('Escape');
 				await page.locator('[role="menu"]').waitFor({ state: 'detached' });
-				// The `▾`'s: in a strip, Split splits the tab in front, one
-				// level deeper (da-6ji5), and Break out takes it out of the
-				// strip.
-				await manageButton(page, 'tabbed').click();
+				// Layout mode's: in a strip, Split splits the tab in front,
+				// one level deeper (da-6ji5), and Break out takes it out of
+				// the strip.
+				await enterLayoutMode(page);
+				await menuButton(page, 'tabbed').click();
 				assert.deepEqual(await menuLines(page), [
 					'Change Widget',
 					'Rename tab',
 					'Split ← ↓ ↑ →',
 					'Break out ← ↓ ↑ →',
-					'Bar',
+					'Widget options',
 					'× Close tab'
 				]);
 				await page.keyboard.press('Escape');
@@ -470,33 +470,28 @@ describe('a tab that holds a layout', () => {
 	});
 });
 
-// The lock (da-2a5y): "Layouts should have the ability to be locked,
-// which prevents the resizing of panes […] no splitting, new tabs, or
-// resizing." Where the lock is toggled from is the shell's; here it
-// arrives as this device's lock on the `main` tab (per device, never in
-// the tree — da-0a5o), and covers the whole tree.
-describe('the lock', () => {
+// Normal mode (da-vvcxc), what the lock was (da-2a5y): "no splitting, new
+// tabs, or resizing" — the whole tree, until layout mode is entered.
+describe('normal mode', () => {
 
 	/** The cells of the row split, by width. */
 	const cellWidths = (page) =>
 		page.evaluate(() => [...document.querySelectorAll('.split.row > .cell')].map((c) => c.getBoundingClientRect().width));
 
-	test('a locked root: no separators, no …, a drag and an arrow move nothing, the tabs still switch', async () => {
-		await withApp( // own app: a `prepare` that writes a draft and a lock, and it reloads
+	test('no separators, no +, a drag and an arrow move nothing, the tabs still switch; layout mode gives them back', async () => {
+		await withApp( // own app: a `prepare` that writes a draft
 			async (app) => {
 				const { page } = app;
 				assert.deepEqual(await titles(page), ['repl', 'tail']);
 				assert.equal(await page.locator('[role="separator"]').count(), 0);
-				// The root bar's `+` and `…` (da-0a5o) are above the layout, not under its lock.
 				assert.equal(await page.locator('section.root button.add').count(), 0);
 				// A menu is left only where a widget has options (da-gvdc, and
 				// the options are its ITEMS since da-vhwq): the repl's, which
-				// reads its one switch and nothing else — no Change Widget, no
-				// Reset widget, no save. The tabbed pane shows `tail`, which
-				// declares none.
+				// reads its reset and its one switch — no Change Widget. The
+				// tabbed pane shows `tail`, which declares none.
 				assert.equal(await page.locator('section.root button.title').count(), 1);
 				await pane(page, 'repl').locator('button.title').click();
-				assert.deepEqual(await menuLines(page), ['newest first']);
+				assert.deepEqual(await menuLines(page), ['Reset widget', 'newest first']);
 				await page.keyboard.press('Escape');
 				await page.locator('[role="menu"]').waitFor({ state: 'detached' });
 				// The gap is still there, as a static border, and dragging across it moves nothing.
@@ -512,22 +507,21 @@ describe('the lock', () => {
 				for (let i = 1; i <= 5; i++) await page.mouse.move(x + i * 30, y);
 				await page.mouse.up();
 				await settled(page);
-				assert.deepEqual(await cellWidths(page), was, 'a drag across a locked border moved it');
+				assert.deepEqual(await cellWidths(page), was, 'a drag across a static border moved it');
 				await focusTop(page);
 				await page.keyboard.press('ArrowRight');
 				await settled(page);
-				assert.deepEqual(await cellWidths(page), was, 'an arrow moved a locked border');
+				assert.deepEqual(await cellWidths(page), was, 'an arrow moved a static border');
 				// Tabs are not an edit: the tabbed pane still switches.
 				await pane(page, 'tabbed').locator('[role="tab"]', { hasText: 'nowview' }).click();
 				assert.equal(await activeTab(page, 'tabbed'), 'nowview');
 				assert.deepEqual(app.errors, []);
 
-				// Unlocked, the controls are back — the one border, and on each
-				// pane a menu and a `+` (the root has none of its own): the
+				// In layout mode the controls are back — the one border, and on
+				// each pane a menu and a `+` (the root has none of its own): the
 				// title where there is one tab, the tab in front where there
 				// are two.
-				await page.evaluate(() => localStorage.removeItem('datum.layout.locked.v1.main'));
-				await app.reload();
+				await enterLayoutMode(page);
 				assert.equal(await page.locator('.split.row > [role="separator"]').count(), 1);
 				assert.equal(await pane(page, 'repl').locator('button.title').count(), 1);
 				assert.equal(
@@ -536,9 +530,7 @@ describe('the lock', () => {
 				);
 				assert.equal(await page.locator('section.root button.add').count(), 2);
 			},
-			// The init script runs on every load, the reload included: it
-			// writes the draft and the lock once and leaves the unlocked one alone.
-			{ ...DESKTOP, prepare: (context) => context.addInitScript(lockedOnce, JSON.stringify(lockable())) }
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draftOnce, JSON.stringify(lockable())) }
 		);
 	});
 });
@@ -626,8 +618,7 @@ const TWO_ROOT_TABS = JSON.stringify({
 	}
 });
 
-function lockedOnce(json) {
+function draftOnce(json) {
 	if (localStorage.getItem('datum.layout.draft.v1.main')) return;
 	localStorage.setItem('datum.layout.draft.v1.main', json);
-	localStorage.setItem('datum.layout.locked.v1.main', '1');
 }

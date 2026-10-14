@@ -534,7 +534,7 @@ describe('the beta mark', () => {
 	// the "beta" tag to just be a little banner on the gear button? Right
 	// now on mobile it takes up way too much space in the header bar. move
 	// the beta info message into the gear icon by the version number". It
-	// was a `beta` mark and an ⓘ of their own before the lock (da-y992).
+	// was a `beta` mark and an ⓘ of their own before the gear (da-y992).
 	test('is a little banner on the gear, with no width of its own in the root bar, and taps go through it', async () => {
 		for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 640 }, { width: 320, height: 664 }]) {
 			const open = viewport.width === 390 ? phone.solo : (fn) => withApp(fn, { viewport });
@@ -546,7 +546,6 @@ describe('the beta mark', () => {
 					return {
 						banner,
 						words: document.querySelector('.root-bar .gear .beta')?.textContent,
-						lock: box('.root-bar button.lock'),
 						gear: box('.root-bar .gear'),
 						end: box('.root-bar .end'),
 						pair: document.querySelectorAll('.root-bar .tag, .root-bar .hint-button').length,
@@ -562,10 +561,9 @@ describe('the beta mark', () => {
 				assert.ok(at.banner.left >= at.gear.left && at.banner.right <= at.gear.right, `${size}: the banner is off the gear's sides`);
 				assert.ok(at.banner.top > at.gear.top + at.gear.height / 2 && at.banner.top < at.gear.bottom, `${size}: the banner is not on the gear's foot`);
 				assert.ok(at.tapped, `${size}: a tap on the banner does not reach the gear`);
-				// The bar's end is the lock and the gear and nothing else, hard
-				// up against each other, the gear on the screen at the narrowest.
-				assert.ok(at.lock.right <= at.gear.left + 0.5 && at.gear.left - at.lock.right <= 8, `${size}: the lock is not beside the gear`);
-				assert.ok(at.end.width <= at.lock.width + at.gear.width + 8, `${size}: the bar's end is ${at.end.width}px wide`);
+				// The bar's end is the gear and nothing else (the padlock went
+				// with layout mode, da-vvcxc), the gear on the screen at the narrowest.
+				assert.ok(at.end.width <= at.gear.width + 0.5, `${size}: the bar's end is ${at.end.width}px wide`);
 				assert.ok(at.gear.right <= at.screen, `${size}: the gear is off the screen`);
 			});
 		}

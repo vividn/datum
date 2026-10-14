@@ -13,9 +13,7 @@
 //   and no `Break out`; its `Split` is `addEdge`, a new pane down one
 //   whole side of the layout in front — the only thing a split beside the
 //   shell can mean (da-a642).
-// - the root draws no bar of its own (PaneFrame.svelte's `bare`), so `Bar`
-//   means nothing there and is not offered.
-// - the layout's own acts — save, restore, save as, lock — are on any tab
+// - the layout's own acts — save, restore, save as — are on any tab
 //   that HOLDS a layout (da-crp5), which the root's always does and a
 //   pane's sometimes does; `Reset layout` joins them on a tab holding a
 //   layout that SHIPPED — with datum (da-luwe) or in a kit (da-gg0v) —
@@ -41,21 +39,20 @@
 // `layout-menu.test.mjs` asserts exactly that arithmetic, so any OTHER
 // divergence between the two fails.
 //
-// THE LIST IS DRAWN IN TWO SLICES (da-bzhq). Everything above is about
-// which items a caller HAS; where they are DRAWN is `named` and
-// `managed`, at the bottom of this file. The name of the thing — a pane's
-// title, a tab, the root tab — opens what it IS: the layout it holds and
-// what that is saved as, and the settings of the widget in front; a `▾`
-// beside the `+` opens what is DONE to the pane — which widget sits in it
-// among them (da-z8klv). One builder, one order, two filters: an item
-// moves between the two menus by gaining or losing `manage`, and can be
-// in neither list twice.
+// THE LIST IS DRAWN TWO WAYS, by MODE (da-vvcxc). Everything above is
+// about which items a caller HAS; how they are DRAWN is `named` and
+// `arranged`, at the bottom of this file. In normal mode the name of the
+// thing — a pane's title, a tab — opens what it IS (`named`): the layout it
+// holds and what that is saved as, and the settings of the widget in front.
+// In layout mode the same name opens what is DONE to the pane — which
+// widget sits in it, its name, Split, Break out, Close — with what it IS
+// one step in, under `Widget options ›` (`arranged`). There is no `▾`
+// (vividn, 2026-10-14: «no more down arrow button at all»), and no `Bar`:
+// the maximize badge is the bar's handle in layout mode (PaneFrame.svelte).
 
 import type { ActKind } from '../act.js';
 import type { Toward } from './tree.js';
 
-/** A submenu's button: `icon` is the thick bar `[x, y, w, h]` drawn in a 16px square. */
-export type Choice = { label: string; title: string; icon: number[]; checked: boolean; run: () => void };
 /**
  * A submenu of WORDS (da-vhwq): one of a set of named values, the one in
  * force marked — a widget option of type `choice`, drawn where a modal's
@@ -73,8 +70,7 @@ export type Item = {
 	label: string;
 	glyph?: string;
 	run?: () => void;
-	sub?: Choice[][];
-	/** Opens a submenu of words instead of icons: `Pick` above. */
+	/** Opens a submenu of words: `Pick` above. */
 	list?: Pick[];
 	row?: Short[];
 	disabled?: boolean;
@@ -87,11 +83,17 @@ export type Item = {
 	 */
 	act?: ActKind;
 	/**
-	 * A WIDGET/PANE MANAGEMENT act, and so an item of the `▾` beside the
-	 * `+` rather than of the menu the thing's NAME opens (da-bzhq). See
-	 * `named` and `managed` below: one list, one order, two slices.
+	 * A WIDGET/PANE MANAGEMENT act, and so an item of the layout-mode menu
+	 * rather than of the normal one (da-vvcxc). See `named` and `arranged`
+	 * below: one list, one order, two ways to draw it.
 	 */
 	manage?: true;
+	/**
+	 * A menu one step in (da-vvcxc): choosing the item shows these in the
+	 * menu's place — layout mode's `Widget options ›`, which holds what the
+	 * name opens in normal mode.
+	 */
+	items?: Item[];
 	/**
 	 * One of a set the menu is CHOOSING BETWEEN, and whether this is the
 	 * one — the logo's databases (da-y992). Present makes the item a
@@ -143,20 +145,11 @@ export type Aimed = { what: string; run: (toward: Toward) => void };
 export type Acts = {
 	/** Whether this copy's tree differs from its save: the orange dot's fact. */
 	dirty: boolean;
-	locked: boolean;
 	save: () => void;
 	restore: () => void;
 	/** Back to the tree that SHIPPED under this name — only a layout that HAS one (da-luwe). */
 	reset?: () => void;
 	saveAs: () => void;
-	/**
-	 * Undefined where the lock is drawn ELSEWHERE, which is the root bar:
-	 * vividn, 2026-09-21, "move the lock button outside of the layout menu
-	 * and put it by the gear icon to be more discoverable" (da-bzhq). A
-	 * PANE's menu keeps it — there is no gear beside a pane, and a layout
-	 * tab that is itself locked has to keep a way to unlock (da-crp5).
-	 */
-	toggleLock?: () => void;
 };
 
 /**
@@ -177,8 +170,7 @@ export const layoutActs = (a: Acts): Item[] => [
 	{ label: 'Save layout', marked: a.dirty, act: 'run' as const, run: a.save },
 	{ label: 'Restore layout', marked: a.dirty, run: a.restore },
 	...(a.reset ? [{ label: 'Reset layout', run: a.reset }] : []),
-	{ label: 'Save layout as', act: 'open' as const, run: a.saveAs },
-	...(a.toggleLock ? [{ label: a.locked ? 'Unlock layout' : 'Lock layout', run: a.toggleLock }] : [])
+	{ label: 'Save layout as', act: 'open' as const, run: a.saveAs }
 ];
 
 /** The glyph Close wears (da-ygc9) — the multiplication sign, not the letter x. */
@@ -194,9 +186,8 @@ export const CLOSE = '\u00d7';
  * narrower than what it opens. Shipped as asked and flagged rather than
  * renamed to a third thing.
  *
- * It is a `manage` item, so it is under the `▾` (da-z8klv). vividn,
- * 2026-09-21: "change widget belongs in the triangle menu even for
- * sublayouts". WHICH widget sits in a pane is a thing done to the pane,
+ * It is a `manage` item, so it is in layout mode's menu (da-z8klv,
+ * da-vvcxc): WHICH widget sits in a pane is a thing done to the pane,
  * beside Split and Close, and not part of what the pane is called.
  */
 export const CHANGE = 'Change Widget';
@@ -215,7 +206,7 @@ export function menuItems(spec: {
 	 * declares no defaults, which is `resetWidget` in `shell.ts` asking the
 	 * registry.
 	 * The first of the NAME's slice: `Change Widget` swaps the widget out
-	 * and is the `▾`'s (da-z8klv), this one is about the widget in front.
+	 * and is layout mode's (da-z8klv), this one is about the widget in front.
 	 */
 	reset?: () => void;
 	/**
@@ -240,7 +231,6 @@ export function menuItems(spec: {
 	split?: Aimed;
 	breakOut?: Aimed;
 	close: { label: string; disabled?: boolean; run: () => void };
-	bar?: Item;
 	acts?: Acts;
 	/** `Save as layout` (da-6ji5): a tab holding a split that is nobody's layout yet. */
 	saveAs?: () => void;
@@ -256,7 +246,6 @@ export function menuItems(spec: {
 		...(spec.breakOut
 			? [{ label: 'Break out', row: aimed(spec.breakOut.what, spec.breakOut.run), manage: true as const }]
 			: []),
-		...(spec.bar ? [{ ...spec.bar, manage: true as const }] : []),
 		...(spec.acts ? layoutActs(spec.acts) : []),
 		...(spec.saveAs ? [{ label: 'Save as layout', act: 'open' as const, run: spec.saveAs }] : []),
 		...(spec.extra ?? []),
@@ -265,23 +254,32 @@ export function menuItems(spec: {
 }
 
 /**
- * The slice the thing's NAME opens: what it IS and what it is SAVED as —
- * `Reset widget`, the widget's own options, the layout's own acts, the
- * root's `Keep tab`. A pane whose widget declares neither defaults
- * nor options, holds nothing in this session and holds no layout, has
- * none of them and wears no title menu at all (da-z8klv).
+ * What the thing's NAME opens in normal mode: what it IS and what it is
+ * SAVED as — `Reset widget`, the widget's own options, the layout's own
+ * acts, the root's `Keep tab`. A pane whose widget declares neither
+ * defaults nor options, holds nothing in this session and holds no layout,
+ * has none of them and wears no title menu at all (da-z8klv).
  */
 export const named = (items: Item[]): Item[] => items.filter((item) => !item.manage);
 
+/** The item layout mode puts what the name opens in normal mode under. */
+export const OPTIONS = 'Widget options';
+
 /**
- * The slice the `▾` beside the `+` opens (da-bzhq): what is done to the
- * PANE and its TABS — Change Widget (da-z8klv), Rename…, Split, Break
- * out, Bar, Close.
- *
- * vividn, 2026-09-21: "next to the + tab button, lets put a little down
- * arrow button, and put all the widget/pane management options there
- * (Split, Breakout, etc)." The `+` adds a tab; the `▾` beside it is the
- * rest of what can be done to the strip and the pane, which is why the
- * two hide together under a lock.
+ * What a pane's NAME opens in layout mode (da-vvcxc). vividn, 2026-10-14:
+ * «change widget / rename pane / … / Widget Options > (rather than being
+ * the primary menu, this goes in a secondary menu when in layout mode /
+ * Close Pane», and of Split and Break out «still include the split and
+ * break out in the menu as before, but of course only in layout mode». So:
+ * the management acts in their one order, then `Widget options ›` holding
+ * `named` where it has anything, then Close, last as ever.
  */
-export const managed = (items: Item[]): Item[] => items.filter((item) => item.manage);
+export function arranged(items: Item[]): Item[] {
+	const acts = items.filter((item) => item.manage);
+	const own = named(items);
+	return [
+		...acts.slice(0, -1),
+		...(own.length ? [{ label: OPTIONS, items: own }] : []),
+		...acts.slice(-1)
+	];
+}

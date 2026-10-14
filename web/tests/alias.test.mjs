@@ -15,7 +15,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
-import { fill, ONE_PANE } from './support/layout.mjs';
+import { fill, manage, ONE_PANE } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -149,9 +149,8 @@ describe('the aliases widget', () => {
 			// a name like `orange` would fall through to `md5(field)` (da-yiyj).
 			await ok(run, ['spec', 'set', 'coffee', '--verb', 'occur', '--color', '#ffa500']);
 			await ok(run, ['alias', 'set', 'cof', 'occur coffee cups=1']);
-			// Split is under the `▾` beside the `+` now (da-bzhq).
-			await page.locator('section[data-pane="tail"] .titlebar button.manage').first().click();
-			await page.getByRole('menuitem', { name: 'split: a new pane to the right', exact: true }).click();
+			// Split is layout mode's (da-vvcxc).
+			await manage(page, 'tail', 'split: a new pane to the right');
 			await fill(page, 'aliases');
 			await page.locator('section.pane[data-title="aliases"] li').nth(1).waitFor();
 			assert.deepEqual(await rows(page), ['cof → occur coffee cups=1', 'coffee → occur coffee']);

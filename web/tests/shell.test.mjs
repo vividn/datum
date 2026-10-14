@@ -41,21 +41,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, devices } from 'playwright';
-import { ON_COLLECT, inWorker, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
+import { inWorker, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
 import {
 	chooseRoot,
 	chooser,
+	enterLayoutMode,
 	fill,
-	lockButton,
+	leaveLayoutMode,
 	offers,
 	openChooser,
-	rootManageButton,
+	pickFrom,
 	rootMenuButton,
 	settled,
 	titledMenuButton,
-	titledPane,
-	toggleRootLock
+	titledPane
 } from './support/layout.mjs';
 
 before(startApp);
@@ -135,51 +135,51 @@ async function offered(page) {
  * pane is `tail@<room>` (shell.ts re-mints a second copy's ids) and its
  * title is `tail` in both.
  */
-async function choose(page, title, label) {
-	await titledMenuButton(page, title).click();
-	await page.getByRole('menuitem', { name: label, exact: true }).click();
-	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
-}
+const choose = (page, title, label) => pickFrom(page, titledMenuButton(page, title), label);
 
 /**
- * The same, for the `▾` beside a titled pane's `+` (da-bzhq): Split,
- * Break out, Bar, Rename tab, Close. By TITLE, like `choose` above,
- * because a room's pane ids are re-minted and its titles are not.
+ * The same in layout mode (da-vvcxc): Split, Break out, Rename tab, Close.
+ * By TITLE, like `choose` above, because a room's pane ids are re-minted
+ * and its titles are not.
  */
 async function manage(page, title, label) {
-	await titledPane(page, title).locator('> .titlebar button.manage').first().click();
-	await page.getByRole('menuitem', { name: label, exact: true }).click();
-	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+	await enterLayoutMode(page);
+	await choose(page, title, label);
 }
 
-/** Add a tab to a titled pane: the `+`, then `name` in the chooser it opens. */
+/** In layout mode, add a tab to a titled pane: the `+`, then `name` in the chooser it opens. */
 async function addTab(page, title, name) {
+	await enterLayoutMode(page);
 	await titledPane(page, title).locator('> .titlebar button.add').first().click();
 	await chooser(page).waitFor();
 	await chooser(page).locator('button').filter({ hasText: exactly(name) }).click();
 	await chooser(page).waitFor({ state: 'detached' });
 }
 
-/** Bring a root tab to the front by its label, and wait for it. */
+/** Bring a root tab to the front by its label, and wait for it — out of layout mode, accepting. */
 async function front(page, label) {
+	await leaveLayoutMode(page);
 	await page.locator('.root-bar [role="tab"]', { hasText: exactly(label) }).click();
 	await until(() => activeRootTab(page), (t) => t === label);
 }
 
-/**
- * The acts, as the root menu names them (da-wjob). The LOCK is not among
- * them: it is a button beside the gear now (da-bzhq, `toggleRootLock`).
- */
+/** The acts, as the root menu names them (da-wjob). */
 const ACT = { save: 'Save layout', restore: 'Restore layout', 'save-as': 'Save layout as' };
 
 /** Run one of the layout's acts from the root menu. */
 const act = (page, name) => chooseRoot(page, ACT[name]);
 
-/** The root menu's items, open: label, whether it is marked, and its colour. */
-const rootItems = (page) => openItems(page, () => rootMenuButton(page).click());
+/** The root menu's items in normal mode, open: label, whether it is marked, and its colour. */
+async function rootItems(page) {
+	await leaveLayoutMode(page);
+	return openItems(page, () => rootMenuButton(page).click());
+}
 
-/** The `▾` beside the root's `+` (da-bzhq): what is DONE to the page. */
-const rootManageItems = (page) => openItems(page, () => rootManageButton(page).click());
+/** The root's menu in layout mode (da-vvcxc): what is DONE to the page. */
+async function rootManageItems(page) {
+	await enterLayoutMode(page);
+	return openItems(page, () => rootMenuButton(page).click());
+}
 
 async function openItems(page, open) {
 	await open();
@@ -280,18 +280,18 @@ describe('the shell', () => {
 			assert.match(gear[2].label, /^3\.0\.\d+-beta · ([0-9a-f]{7}\+?|unknown)$/);
 			// The acts are in the active tab's own menu, no icon row.
 			assert.equal(await page.locator('.root-bar .act').count(), 0, 'the icon row is still there');
-			// The NAME's slice (da-bzhq): what the tab shows and what it is
-			// saved as. `main` is a built-in, so `Reset layout` is there
-			// (da-luwe); no lock, which is the button beside the gear.
+			// The NAME's slice in normal mode: what the tab shows and what it
+			// is saved as. `main` is a built-in, so `Reset layout` is there
+			// (da-luwe).
 			assert.deepEqual(
 				(await rootItems(page)).map((i) => i.label),
 				['Save layout', 'Restore layout', 'Reset layout', 'Save layout as']
 			);
-			// The `▾`'s: what is DONE to the page, Close last and wearing
-			// its × (da-ygc9). The arrows read in vim order (da-bzhq).
+			// Layout mode's: what is DONE to the page and the ways out, Close
+			// last and wearing its × (da-ygc9). The arrows read in vim order.
 			assert.deepEqual(
 				(await rootManageItems(page)).map((i) => i.label),
-				['Change Widget', 'Split ← ↓ ↑ →', '× Close tab']
+				['Change Widget', 'Split ← ↓ ↑ →', 'Accept', 'Save layout', 'Discard changes', '× Close tab']
 			);
 			assert.deepEqual(errors, []);
 		});
@@ -555,99 +555,6 @@ describe('the acts', () => {
 		});
 	});
 
-	// vividn, 2026-09-21 (da-fphjw): «highlight when it is unlocked rather
-	// than locked», and «make the unlocked icon more distinctive. It is
-	// hard to see that the lock is unlocked with the current icon».
-	//
-	// Two requests, and doing one leaves him where he started: the
-	// HIGHLIGHT says something is true, the ICON says which thing. So both
-	// are read here, and the icon is read as a SILHOUETTE — where the
-	// shackle actually lands on the screen — rather than as a `d`
-	// attribute, because what he could not see was the drawn mark and the
-	// two states used to differ by about a pixel of one shackle's end.
-	test('the lock is LOUD when unlocked, and the two states are different shapes', async () => {
-		await shared.room('act-loud', async ({ page }) => {
-			/**
-			 * The button's colour, and where the shackle is DRAWN, in the
-			 * button's own box.
-			 *
-			 * Read through `getPointAtLength` and `getScreenCTM`, not off the
-			 * `<svg>`: the mark carries a transform, and an element's rect is
-			 * its border box — it never says where transformed or overflowed
-			 * ink actually lands (canary-kimi-k3 and canary-deepseek-v4-pro on
-			 * PR 67, on a first draft of this test that measured the svg and
-			 * so could not have caught anything).
-			 *
-			 * `along` is five points, enough to say the two states are
-			 * different; `dense` is 33, enough to bound the whole mark.
-			 */
-			const mark = () =>
-				page.evaluate(() => {
-					const button = document.querySelector('.root-bar button.lock');
-					const path = button.querySelector('svg .shackle');
-					const at = button.getBoundingClientRect();
-					const m = path.getScreenCTM();
-					const total = path.getTotalLength();
-					const points = (n) =>
-						Array.from({ length: n }, (_, i) => {
-							const p = path.getPointAtLength((total * i) / (n - 1)).matrixTransform(m);
-							return [p.x - at.left, p.y - at.top];
-						});
-					return {
-						color: getComputedStyle(button).color,
-						border: getComputedStyle(button).borderTopColor,
-						box: { width: at.width, height: at.height },
-						along: points(5),
-						dense: points(33)
-					};
-				});
-
-			/** `--warn`, the orange this app paints a thing worth noticing. */
-			const WARN = 'rgb(255, 209, 102)';
-
-			assert.equal(await lockButton(page).getAttribute('aria-pressed'), 'false');
-			const open = await mark();
-			assert.equal(open.color, WARN, 'an UNLOCKED layout is not the loud state');
-			assert.equal(open.border, WARN, 'the unlocked outline is not loud either');
-
-			await toggleRootLock(page);
-			await until(() => lockButton(page).getAttribute('aria-pressed'), (p) => p === 'true');
-			const shut = await mark();
-			assert.notEqual(shut.color, WARN, 'a LOCKED layout took the loud colour');
-			assert.notEqual(shut.color, open.color, 'the two states are painted the same');
-
-			// And the shape: every sampled point of the shackle has moved,
-			// and the furthest by more than a shackle's stroke — the two
-			// states are not one mark with a different end.
-			const moved = open.along.map(([x, y], i) => Math.hypot(x - shut.along[i][0], y - shut.along[i][1]));
-			assert.ok(Math.max(...moved) >= 3, `the shackle moved at most ${Math.max(...moved).toFixed(2)}px between the two states`);
-			assert.ok(moved.filter((d) => d >= 1.5).length >= 3, `only ${moved.filter((d) => d >= 1.5).length} of 5 points moved`);
-
-			// Whatever it is drawn as, the INK stays inside its button —
-			// nothing of the swung shackle hangs out over the gear or the ⚠.
-			// The mark is 16px centred in a 24px badge, so it has 4px of room
-			// on every side; the swung shackle spends a fraction of that and
-			// nothing like all of it. Read as points and widened by the
-			// stroke's half-width, because the stroke is drawn either side of
-			// the line `getPointAtLength` walks.
-			const HALF = 0.7; // half of the 1.4px the mark is stroked with
-			for (const [state, m] of [
-				['unlocked', open],
-				['locked', shut]
-			])
-				for (const [x, y] of m.dense) {
-					assert.ok(
-						x - HALF >= 0 && x + HALF <= m.box.width,
-						`${state}: the shackle reaches x=${x.toFixed(2)} in a ${m.box.width}px button`
-					);
-					assert.ok(
-						y - HALF >= 0 && y + HALF <= m.box.height,
-						`${state}: the shackle reaches y=${y.toFixed(2)} in a ${m.box.height}px button`
-					);
-				}
-		});
-	});
-
 	test('an unmodified restore lists the versions, and one of them can be picked', async () => {
 		await shared.room('act-trail', async (app) => {
 			const { page } = app;
@@ -708,74 +615,6 @@ describe('the acts', () => {
 		await shared.room('after-save', async ({ page }) => {
 			assert.deepEqual(await titles(page), ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields']);
 		});
-	});
-
-	test('lock is per device: kept across a reload here, absent on another device and in the save; never the dot', async () => {
-		await shared.solo(async (app) => {
-			const { page } = app;
-			const locked = () => page.evaluate(() => !!window.datum.layout.current().root.tabs[0].locked);
-			/** What the button beside the gear says it is (da-bzhq). */
-			const pressed = () => lockButton(page).getAttribute('aria-pressed');
-			assert.equal(await locked(), false);
-			assert.equal(await pressed(), 'false');
-			// The lock is not IN the menu any more: it is the button.
-			assert.deepEqual(
-				(await rootItems(page)).filter((i) => /lock/i.test(i.label)),
-				[],
-				'the lock is still an item of the layout menu'
-			);
-			await toggleRootLock(page);
-			await until(locked, (l) => l === true);
-			// Under the lock the menu is the acts alone (the pane rule,
-			// da-crp5): nothing to split or close, so no `▾` at all.
-			assert.deepEqual(
-				(await rootItems(page)).map((i) => i.label),
-				['Save layout', 'Restore layout', 'Reset layout', 'Save layout as']
-			);
-			assert.equal(await rootManageButton(page).count(), 0, 'a locked layout still offers the ▾');
-			// And the way out is still one press away, where it now lives.
-			assert.equal(await pressed(), 'true');
-			assert.match(await lockButton(page).getAttribute('aria-label'), /^unlock the main layout/);
-			// «by the gear icon» (da-bzhq), on the gear's OTHER side since
-			// da-fphjw — vividn: «Move the lock button to the other side of the
-			// gear» — so the GEAR is the bar's last thing and the lock is the
-			// one before it, with nothing but the bar's own gap between.
-			const beside = await page.evaluate(() => {
-				const box = (s) => document.querySelector(s).getBoundingClientRect();
-				const [lock, gear, bar] = ['.root-bar button.lock', '.root-bar button.gear', '.root-bar'].map(box);
-				return { before: gear.left - lock.right, end: bar.right - gear.right };
-			});
-			assert.ok(beside.before >= 0 && beside.before <= 8, `the lock is ${beside.before}px from the gear`);
-			assert.ok(beside.end <= 12, `the gear is ${beside.end}px from the bar's end`);
-			assert.deepEqual(await dotted(page), [], 'the lock alone showed the modified dot');
-			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.main')), '1');
-
-			await app.reload();
-			assert.equal(await locked(), true);
-			await until(pressed, (p) => p === 'true');
-
-			// Saved while locked: the entry carries no lock.
-			await act(page, 'save');
-			await until(() => layouts(app, 'listLayouts'), (l) => l.length === 1);
-			const saved = await layouts(app, 'loadLayout', 'main');
-			assert.doesNotMatch(JSON.stringify(saved), /"locked"/, 'the lock went into the entry');
-			assert.deepEqual(await dotted(page), []);
-
-			await toggleRootLock(page);
-			await until(locked, (l) => l === false);
-			assert.equal(await pressed(), 'false');
-			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.main')), '0');
-		});
-
-		// Another device, FRESH: the unlock above did not travel — it has
-		// nothing said of `main`, and the page it logs on, `collect`, is
-		// locked as a first open is (da-gshh). Not its `welcome`, the one
-		// layout that ships unlocked (da-zhz0u).
-		await withApp(async ({ page }) => {
-			assert.equal(await page.evaluate(() => !!window.datum.layout.current().root.tabs[2].locked), true);
-			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.locked.v1.main')), null);
-			assert.equal(await lockButton(page).getAttribute('aria-pressed'), 'true');
-		}, { ...DESKTOP, home: ON_COLLECT });
 	});
 
 	// The review thread on #168: the cross-tab refresh decided "unmodified"

@@ -116,14 +116,14 @@ comment: obsessed with time</pre>
 			command's full output.
 		</p>
 		<h3>Tabs and widgets</h3>
-		<p>Tabs run across the top; each is a page of widgets. Unlocked, you can rearrange a page or build your own.</p>
+		<p>Tabs run across the top; each is a page of widgets. In layout mode you can rearrange a page or build your own.</p>
 		<ul>
 			<li>Move a tab: drag it. On a phone, hold it first.</li>
 			<li>Open a widget, or a tab you closed: the + at the top.</li>
-			<li>Close a tab: ▾ beside the +, Close tab.</li>
-			<li>Split a pane: ▾ on its bar, Split.</li>
+			<li>Change a page: hold its tab, or right-click it, for layout mode.</li>
+			<li>In layout mode a pane's name splits, changes or closes it.</li>
+			<li>Leave by the tab's name: Accept, Save layout (every device), or Discard changes.</li>
 		</ul>
-		<p>The other pages start locked, with no ▾. The padlock, top right, unlocks the one in front.</p>
 		<h3>Learn more</h3>
 		<ul class="more">
 			{#each MORE as [name, what] (name)}

@@ -18,14 +18,12 @@
 	the ratio as its value, and the arrows along the split's axis move it
 	by 2%.
 
-	Locked (da-2a5y): a tab's `locked` covers its whole SUBTREE — the
-	flag is threaded down as a prop, and under it every border is `static`
-	(no handle, no keyboard) and every frame draws no `+` and no `▾`. The
-	subtree is the whole of its reach (da-z8klv): the frame holding the
-	locked tab is a pane of the layout ABOVE, so it is told only the lock
-	from above and keeps its own chrome — which is how a sibling tab can
-	still be added beside a locked sublayout, and how the menu holding
-	`Unlock layout` stays open (da-crp5).
+	Locked is NORMAL MODE (da-vvcxc): outside layout mode (`mode.ts`) the
+	flag is threaded down as a prop from the root, and under it every
+	border is `static` (no handle, no keyboard) and every frame draws no
+	`+` and no `×`. In layout mode every border is a handle, drawn big in
+	the gap so it reads as one (vividn: «prominent handles in the gaps
+	between panes»), and every frame's outline is drawn in the accent.
 
 	Floors: a child's cell is never narrower or shorter than its frame
 	(`floorOf` over `chromeOf`: a widget pane's outline and the inside
@@ -71,7 +69,7 @@
 	export let epoch = 0;
 	/** The root pane's id: the one pane whose last tab cannot be closed. */
 	export let rootId: NodeId;
-	/** Whether a tab ABOVE this pane is locked; its own active tab's lock is added on the way DOWN. */
+	/** Normal mode: the page is not in layout mode, so nothing here moves the tree. */
 	export let locked = false;
 
 	/**
@@ -312,7 +310,7 @@
 		     maximize into a small box is not one. It keeps its own frame,
 		     and nothing in the tree changed, so the press that puts it back
 		     puts everything back with it. -->
-		<svelte:self pane={big.pane} {epoch} {rootId} locked={big.locked} />
+		<svelte:self pane={big} {epoch} {rootId} {locked} />
 	{:else}
 		<!-- Every tab of the pane is mounted, the one in front and the ones
 		     behind it (da-rjmg), so a swipe moves a picture already drawn.
@@ -340,7 +338,7 @@
 				>
 					{#each split.children as child, i (child.id)}
 						{#if i > 0}
-							{#if locked || tab.locked}
+							{#if locked}
 								<div class="border static" aria-hidden="true"></div>
 							{:else}
 								<!-- A focusable separator is a widget in ARIA (it carries a
@@ -368,7 +366,7 @@
 							style:--ratio={grow[i]}
 							style:--floor="{split.direction === 'row' ? floor(child).width : floor(child).height}px"
 						>
-							<svelte:self pane={child} {epoch} {rootId} locked={locked || !!tab.locked} />
+							<svelte:self pane={child} {epoch} {rootId} {locked} />
 						</div>
 					{/each}
 				</div>
@@ -397,8 +395,8 @@
 				     rows land — through the kind's `onChange`, which knows what
 				     the event's detail is. The layout hears of it only when the
 				     reader asks («Save options with layout»), which is what makes
-				     a locked layout safe from a widget's own in-body controls
-				     without a guard on every one of them.
+				     the layout safe from a widget's own in-body controls without
+				     a guard on every one of them.
 
 				     `fold` is given the settings as SHOWN, so a change folds onto
 				     what this session already set rather than onto the tree
@@ -471,28 +469,29 @@
 		cursor: default;
 	}
 
-	/* The handle itself is a hairline in the middle of the gap; the gap
-	   is what a finger lands on. */
+	/* A border is a handle only in layout mode (da-vvcxc), and there it is
+	   meant to be SEEN: a thick accent grip in the middle of the gap. The
+	   gap is what a finger lands on. */
 	.border:not(.static)::after {
 		content: '';
 		position: absolute;
 		inset: 50% auto auto 50%;
-		background: var(--tint);
-		border-radius: 2px;
+		background: var(--accent);
+		border-radius: 3px;
 	}
 	.row > .border:not(.static)::after {
-		width: 2px;
-		height: 2rem;
+		width: 4px;
+		height: 3rem;
 		transform: translate(-50%, -50%);
 	}
 	.column > .border:not(.static)::after {
-		width: 2rem;
-		height: 2px;
+		width: 3rem;
+		height: 4px;
 		transform: translate(-50%, -50%);
 	}
 	.border:hover::after,
 	.border:focus-visible::after {
-		background: var(--accent);
+		background: var(--accent-bright);
 	}
 	.border:focus-visible {
 		outline: none;

@@ -23,7 +23,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { ON_COLLECT, startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP, activeTab, addTab, chooser, exactly, manage, manageButton, manageRoot, pane, rootMenuButton, titledPane, titles, toggleRootLock } from './support/layout.mjs';
+import { DESKTOP, activeTab, addTab, chooser, enterLayoutMode, exactly, leaveLayoutMode, manage, manageRoot, pane, rootMenuButton, titledPane, titles } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -49,13 +49,6 @@ const words = (page) => page.locator('.host.welcome').innerText();
 
 /** The widget's last button (da-zhz0u). */
 const closeWelcome = (page) => page.getByRole('button', { name: 'Close welcome', exact: true });
-
-/** Whether the root tab in front is locked. */
-const locked = (page) =>
-	page.evaluate(() => {
-		const { tabs, active } = window.datum.layout.current().root;
-		return !!tabs[active].locked;
-	});
 
 describe('a first visit', () => {
 	for (const [what, device, collect] of [
@@ -101,11 +94,11 @@ describe('a first visit', () => {
 				'Log them as they happen: tap, or type in the input bar.',
 				'Find your patterns: visualize and analyze all that beautiful data.',
 				'Every tap shows the command it ran',
-				'Close a tab: ▾ beside the +, Close tab.',
 				'Open a widget, or a tab you closed: the + at the top.',
 				'Move a tab: drag it. On a phone, hold it first.',
-				'The other pages start locked, with no ▾. The padlock, top right, unlocks the one in front.',
-				'Split a pane: ▾ on its bar, Split.'
+				'Change a page: hold its tab, or right-click it, for layout mode.',
+				"In layout mode a pane's name splits, changes or closes it.",
+				"Leave by the tab's name: Accept, Save layout (every device), or Discard changes."
 			])
 				assert.ok(text.includes(said), `not said: ${said}\n${text}`);
 			// «a button at the bottom of the welcome widget»: the last thing in it.
@@ -174,15 +167,13 @@ describe('a first visit', () => {
 			}, device);
 		});
 
-	test('the button is the tab\'s own ×: gone under the padlock, and on the last tab of the page', async () => {
+	test('the button is the tab\'s own close: there in either mode, and gone on the last tab of the page', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await closeWelcome(page).waitFor();
-			await toggleRootLock(page);
-			assert.equal(await locked(page), true);
-			assert.equal(await closeWelcome(page).count(), 0);
-			await toggleRootLock(page);
+			await enterLayoutMode(page);
 			await closeWelcome(page).waitFor();
+			await leaveLayoutMode(page);
 
 			// The root's last tab does not close (tree.ts), so nothing offers to.
 			await page.evaluate(() => window.datum.shell.close(2));
@@ -193,14 +184,14 @@ describe('a first visit', () => {
 		}, FRESH_DESKTOP);
 	});
 
-	test('in a pane of another page it closes that tab alone, and the page\'s lock takes it away', async () => {
+	test('in a pane of another page it closes that tab alone, and normal mode takes it away', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await addTab(page, 'tail', 'welcome');
 			await until(() => activeTab(page, 'tail'), (name) => name === 'welcome');
-			await toggleRootLock(page);
+			await leaveLayoutMode(page);
 			assert.equal(await closeWelcome(page).count(), 0);
-			await toggleRootLock(page);
+			await enterLayoutMode(page);
 
 			await closeWelcome(page).click();
 			// One tab again, so no strip: the pane is titled by what is left.
@@ -212,11 +203,9 @@ describe('a first visit', () => {
 		}, DESKTOP);
 	});
 
-	test('welcome closes the way it says: the ▾ beside the +, Close tab, with no padlock first; track and collect stay, and the + brings it back', async () => {
+	test('welcome closes from layout mode: its tab held, Close tab; track and collect stay, and the + brings it back', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
-			// Unlocked from the first (da-zhz0u): the ▾ is there to find.
-			assert.equal(await locked(page), false);
 			await manageRoot(page, 'Close tab');
 			await until(() => rootNames(page), (names) => names.join() === 'track,collect');
 			assert.deepEqual(await front(page), ['track', 'field']);
@@ -241,10 +230,9 @@ describe('a first visit', () => {
 		}, FRESH_DESKTOP);
 	});
 
-	test('a pane splits the way it says: the padlock, the ▾ on its bar, Split', async () => {
+	test('a pane splits the way it says: layout mode, the pane\'s name, Split', async () => {
 		await withApp(async ({ page }) => {
-			assert.equal(await manageButton(page, 'tail').count(), 0);
-			await toggleRootLock(page);
+			assert.equal(await pane(page, 'tail').locator('button.add').count(), 0);
 			await manage(page, 'tail', 'split: a new pane to the right');
 			await titledPane(page, 'empty').waitFor();
 		}, { ...FRESH_DESKTOP, home: ON_COLLECT });

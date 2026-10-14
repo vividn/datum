@@ -9,21 +9,24 @@
 	overlay the title on the frame, with the nice ... button visible next
 	to it", da-jgrn). With more tabs the tab strip sits there instead and
 	the badges follow the LAST tab. The row reads maximize, title or tabs,
-	`+`, `▾`, `×` (da-bzhq, da-efr4i): the maximize BEFORE the names, and
-	after them the badges that add a tab, manage the pane, and close what
-	the title names — the destructive one last, at the far end from the
-	`+`, the way `Close` is the far end of the menu.
+	`+`, `×` (da-bzhq, da-efr4i): the maximize BEFORE the names, and after
+	them the badges that add a tab and close what the title names — the
+	destructive one last, at the far end from the `+`, the way `Close` is
+	the far end of the menu.
 
-	AND THE NAME ITSELF IS TWO DOORS (da-efr4i). A press on the title — or
-	on the tab in front — opens what the pane IS (`named`, menu.ts); a
-	HOLD on it opens `Change Widget`, which keeps its home in the `▾` and
-	gains a second way in from the name of the widget it would replace.
-	vividn, 2026-09-22: «Long pressing or right clicking on a widget title
-	opens the change widget menu.» It is the app's ONE hold ($lib/hold.ts,
-	the fields widget's own), and the `contextmenu` it swallows is the
-	title's alone: a reader right-clicking a pane's CONTENT still gets the
-	browser's menu, which is where text is selected and copied. Both
-	doors close under a lock, `Change Widget` being a `manage` item.
+	TWO MODES (da-vvcxc). In normal mode a press on the title — or on the
+	tab in front — opens what the pane IS (`named`, menu.ts), there is no
+	`+` and no `×`, and nothing moves the tree. In LAYOUT MODE (`mode.ts`,
+	entered from the open root tab) the same press opens what is DONE to
+	the pane (`arranged`): Change Widget, Rename, Split, Break out, `Widget
+	options ▸` holding what normal mode opens, and Close; the outline is
+	the accent, the `+` and `×` are back, and the maximize is the bar's
+	HANDLE, dragged to the edge the bar should be on. A HOLD on the name
+	in layout mode opens `Change Widget` (da-efr4i, vividn: «Long pressing or
+	right clicking on a widget title opens the change widget menu»). It is
+	the app's ONE hold ($lib/hold.ts), and the `contextmenu` it swallows
+	is the title's alone: a reader right-clicking a pane's CONTENT still
+	gets the browser's menu, which is where text is selected and copied.
 
 	The line is the edge the pane's `bar`
 	names — top or bottom running across, left or right running DOWN with
@@ -79,39 +82,14 @@
 	what says where it begins and ends. The ROOT pane is the exception at
 	the other end: it draws no bar of its own at all, however many tabs
 	it has, and no box, because the shell draws the root's tabs as the
-	page's top bar (da-0a5o). And a frame UNDER A LOCK
-	draws no `+`, no `▾` and no `×` — nothing under a lock can be split,
-	tabbed, resized or closed, and those three are how it would be (vividn,
-	da-bzhq: "Locking hides both the + and this down arrow icon menu"; and
-	da-efr4i puts the `×` there "in unlocked mode") — the hold on the title
-	goes with them, and the tabs still switch. What the title still opens
-	is the widget's own option rows (da-vhwq): they are the SESSION's and reach no tree, and a lock stops
-	the tree from moving, not a widget's own settings. What it loses is
-	«Save options with layout», the one of them that writes.
-
-	UNDER A LOCK means a lock from ABOVE, and not the active tab's own
-	(da-z8klv). A tab that holds a LAYOUT is two things at once: the
-	layout INSIDE it, whose lock says stop rearranging what is in here;
-	and the pane that HOLDS it, which is a pane of the PARENT layout — its
-	strip, its split, its position, which widget sits in it. vividn: "This
-	layout pane in many ways belongs to the super layout, and not the sub
-	layout." So this frame's own chrome follows `locked` alone, and the
-	tab's own lock reaches only the subtree, where Layout.svelte passes it
-	down. A pane holding a LOCKED layout, inside an UNLOCKED parent, draws
-	its `+` and its `▾` and opens the whole pane menu; inside that layout
-	nothing may be split, tabbed or resized, as before. What is WRITTEN
-	into the tab's own tree is the other fact and keeps the other lock
-	(`lockedWithin`): «Save options with layout» on a tab holding a locked
-	one-widget layout would write that locked layout's tree, so it stays
-	hidden there.
+	page's top bar (da-0a5o).
 
 	A layout tab's frame is also where that layout's identity is worked
 	(da-crp5): the acts the root bar draws for a root tab — save, restore,
-	save as, lock, and `Reset layout` where the layout is one that SHIPPED
-	with datum (da-luwe) — are in this menu when the tab holds a layout,
+	save as, and `Reset layout` where the layout is one that SHIPPED with
+	datum (da-luwe) — are in this menu when the tab holds a layout,
 	whatever its depth, and the orange modified dot follows the title or
-	the tab. `Unlock layout` is among them, which is why a locked layout
-	is never a trap.
+	the tab.
 
 	Swiping across the content moves between tabs along the bar's axis:
 	left/right under a horizontal bar, up/down under a vertical one. Touch
@@ -186,11 +164,11 @@
 	import { isSplit } from './types.js';
 	import { apply, layout } from './current.js';
 	import { choose, fillTab, put } from './chooser.js';
-	import { ancestorsOf, modified, resetLayout, resetWidget, restore, save, saveAs, shippedTree, sliding, toggleLock } from './shell.js';
+	import { ancestorsOf, modified, resetLayout, resetWidget, restore, save, saveAs, shippedTree, sliding } from './shell.js';
 	import { addTab, breakOut, canBreakOut, closeTab, newTab, setActive, setBar, setTitle, splitPane, splitTab } from './tree.js';
 	import { inForce, toggleMaximize } from './maximize.js';
 	import { labelOf, titleOf } from './registry.js';
-	import { CLOSE, layoutActs, managed, menuItems, named } from './menu.js';
+	import { CLOSE, arranged, menuItems, named } from './menu.js';
 	import { widgetOptions } from './options.js';
 	import { keyOf, session } from './session.js';
 	import PaneMenu from './PaneMenu.svelte';
@@ -201,14 +179,11 @@
 	/** The layout's root: the one pane whose content box is the scroller. */
 	export let root = false;
 	/**
-	 * Whether a tab ABOVE this pane is locked — the WHOLE of what this
-	 * frame's chrome follows (da-z8klv). Under it there is no `+`, no `▾`
-	 * and none of the pane items, and the tab strip still switches.
-	 *
-	 * The active tab's OWN lock is not added to it: that lock is the
-	 * layout inside the tab saying stop rearranging what is in here, and
-	 * this frame is a pane of the layout ABOVE. It reaches the subtree
-	 * instead, where Layout.svelte hands it down as this prop.
+	 * NORMAL MODE (da-vvcxc): the page is not in layout mode. Then there is
+	 * no `+` and no `×`, the name opens what the pane IS, and the tab strip
+	 * still switches; in layout mode the name opens what is DONE to the
+	 * pane, the outline is drawn in the accent, and the maximize is the
+	 * bar's handle.
 	 */
 	export let locked = false;
 	/**
@@ -219,25 +194,6 @@
 	 */
 	export let kind: string | undefined = undefined;
 
-	const EDGES: BarEdge[] = ['top', 'bottom', 'left', 'right'];
-	const ALIGNS: BarAlign[] = ['start', 'center', 'end'];
-	/**
-	 * Where `start`, `center` and `end` put the title along each edge, as
-	 * the eye sees it: the left-hand bar is turned round, so its start is
-	 * at the bottom.
-	 */
-	const SEEN: Record<BarEdge, string[]> = {
-		top: ['left', 'center', 'right'],
-		bottom: ['left', 'center', 'right'],
-		left: ['bottom', 'middle', 'top'],
-		right: ['top', 'middle', 'bottom']
-	};
-	const AT: Record<string, number> = { left: 3, top: 3, center: 5.5, middle: 5.5, right: 8, bottom: 8 };
-	/** The Bar submenu's icon: a thick bar `long` px on `edge` of a 16px square, `at` px along it. */
-	function mark(edge: BarEdge, at = 2, long = 12): number[] {
-		const across = edge === 'top' || edge === 'left' ? 2 : 11;
-		return edge === 'top' || edge === 'bottom' ? [at, across, long, 3] : [across, at, 3, long];
-	}
 	/** A swipe shorter than this is a touch, not a swipe. */
 	const SWIPE_PX = 40;
 	/**
@@ -262,9 +218,9 @@
 	/**
 	 * The `×`'s act, for a widget that offers it in its own body (the
 	 * welcome widget's «Close welcome», da-zhz0u) — or null wherever the
-	 * `×` is not offered: under the lock that hides it, which is the one
-	 * from above and at the root the tab's own (RootBar.svelte), and on
-	 * the root's last tab.
+	 * `×` is not offered: outside layout mode below the root (a root tab's
+	 * close is a way out of the page, not a change to it), and on the
+	 * root's last tab.
 	 */
 	const close = writable<(() => void) | null>(null);
 	setContext('layout-frame', { alarm, titleHost, hosted, close });
@@ -273,7 +229,7 @@
 
 	$: active = pane.tabs[pane.active];
 	$: close.set(
-		(root ? active.locked : locked) || !canClose ? null : () => apply((l) => closeTab(l, pane.id, pane.active))
+		(locked && !root) || !canClose ? null : () => apply((l) => closeTab(l, pane.id, pane.active))
 	);
 	/**
 	 * Scaffolding, not a thing: a split someone made by splitting. A tab
@@ -304,22 +260,6 @@
 	$: canBreak = canBreakOut($layout, pane.id);
 
 	/**
-	 * The lock on what this tab CONTAINS: one from above, or the tab's own
-	 * (da-z8klv). Not the same fact as `locked`, which is this FRAME's
-	 * chrome and follows only the lock from above — what may be WRITTEN
-	 * into the tab's own tree follows this one.
-	 *
-	 * On a tab holding a ONE-widget layout, `inline` lifts the widget into
-	 * the tab (shell.ts, da-ze1x), so the tab IS that widget AND names the
-	 * layout: a write to its content is a write to the locked layout's own
-	 * tree. Both such writes read this — «Save options with layout»
-	 * (`widgetOptions`) and `Reset widget` (`resetWidget`), which go down
-	 * the same `setWidget` and are gated nowhere else. A third one added
-	 * here belongs on this list.
-	 */
-	$: lockedWithin = locked || !!active.locked;
-
-	/**
 	 * What this session has set on the tab in front (da-vhwq): the option
 	 * items' state. `keyOf` walks the tab's own path, which is the ONE
 	 * derivation the renderer and the store use too — see Layout.svelte.
@@ -328,12 +268,10 @@
 	$: held = $session[sessionOf] ?? {};
 	/**
 	 * The widget's own options, inline (da-vhwq): drawn from the registry's
-	 * declarations and changed in the menu, and — unlocked, with something
-	 * held — ending in «Save options with layout». A LOCKED menu keeps the
-	 * rows and loses that one act, which is the whole of why nothing under
-	 * a lock can reach the tree any more.
+	 * declarations and changed in the menu, and — with something held —
+	 * ending in «Save options with layout».
 	 */
-	$: options = widgetOptions(active, held, sessionOf, lockedWithin);
+	$: options = widgetOptions(active, held, sessionOf);
 
 	/**
 	 * Whether this pane is the one filling the root (da-00am) — which is
@@ -355,124 +293,77 @@
 	 * The acts on the layout this tab HOLDS (da-crp5) — the same ones the
 	 * root bar offers, since a nested copy is no different in kind: `Reset
 	 * layout` among them where the name has a shipped tree (da-luwe), which
-	 * is a fact about the LAYOUT and so is the same in either menu. Not
-	 * offered under a lock from above; the tab's OWN lock leaves them, so
-	 * that `Unlock layout` can be reached.
+	 * is a fact about the LAYOUT and so is the same in either menu.
 	 */
 	$: acts =
-		active.layout === undefined || locked
+		active.layout === undefined
 			? undefined
 			: {
 					dirty: $modified.has(active.id),
-					locked: !!active.locked,
 					save: () => attempt(save(active.id)),
 					restore: () => attempt(restore(active.id)),
 					reset: shippedTree(active.layout) ? () => attempt(resetLayout(active.id)) : undefined,
 					saveAs: () => {
 						const to = prompt('Save this layout as:', '')?.trim();
 						if (to) attempt(saveAs(active.id, to));
-					},
-					toggleLock: () => toggleLock(active.id)
+					}
 				};
-
-	/** The pane's `Bar ▸` (da-nk4k): four placements, then three alignments. */
-	$: bar = {
-		label: 'Bar',
-		sub: [
-			EDGES.map((edge) => ({
-				label: edge,
-				title: `bar on the ${edge}`,
-				icon: mark(edge),
-				checked: pane.bar.edge === edge,
-				run: () => apply((l) => setBar(l, pane.id, { ...pane.bar, edge }))
-			})),
-			ALIGNS.map((align, i) => {
-				const where = SEEN[pane.bar.edge][i];
-				return {
-					label: align,
-					title: `align to the ${align} (${where})`,
-					icon: mark(pane.bar.edge, AT[where], 5),
-					checked: pane.bar.align === align,
-					run: () => apply((l) => setBar(l, pane.id, { ...pane.bar, align }))
-				};
-			})
-		]
-	};
 
 	/**
-	 * The menu, from the one builder the root bar uses too (`menu.ts`). A
-	 * pane under a lock from above keeps the widget's own option rows
-	 * alone — they are the session's and reach no tree — and a layout tab
-	 * under such a lock has no acts either (`acts`, which the same lock
-	 * withholds).
+	 * The menu, from the one builder the root bar uses too (`menu.ts`). In
+	 * normal mode it is what the pane IS (`named`): the widget's reset and
+	 * own options, and the acts of a layout it holds. In layout mode it is
+	 * what is done to it (`arranged`), with that list one step in under
+	 * `Widget options` (vividn: «Widget Options > (rather than being the
+	 * primary menu, this goes in a secondary menu when in layout mode»).
 	 */
-	$: items = locked
-		? [...options, ...(acts ? layoutActs(acts) : [])]
-		: menuItems({
-				choose: () => void fillTab(active.id),
-				// About the widget in front — and a WRITE to the tab's own
-				// tree (`setWidget`, which has no lock of its own), so it
-				// follows `lockedWithin` exactly as the options' save does.
-				// On a tab holding a locked ONE-widget layout the settings it
-				// would rewrite are that locked layout's (canary kimi-k3 on
-				// #70, which caught this branch offering it).
-				reset: lockedWithin ? undefined : resetWidget(active),
-				options,
-				// A PANE IS RENAMEABLE TOO (da-s7sdm), not just a tab of a
-				// strip: with one tab the tab IS the pane, and the name on the
-				// frame is that tab's. Named after whichever it is, as `close`
-				// is. A tab holding a LAYOUT is still named by that layout.
-				rename: active.layout === undefined ? { label: `Rename ${thing}`, run: rename(active) } : undefined,
-				// In a strip, Split splits the TAB in front (da-6ji5). A lone
-				// holder's children split themselves; its own split is a tab's.
-				split: many
-					? { what: 'split: a new pane', run: (t) => apply((l) => splitTab(l, pane.id, t)) }
-					: holder
-						? undefined
-						: { what: 'split: a new pane', run: (t) => apply((l) => splitPane(l, pane.id, t)) },
-				breakOut: canBreak ? { what: 'break out: this widget', run: (t) => apply((l) => breakOut(l, pane.id, t)) } : undefined,
-				close: {
-					label: many ? 'Close tab' : 'Close pane',
-					disabled: !canClose,
-					run: () => apply((l) => closeTab(l, pane.id, pane.active))
-				},
-				bar,
-				acts,
-				saveAs: holder && !root ? saveAsLayout(active.id) : undefined
-			});
+	$: all = menuItems({
+		choose: () => void fillTab(active.id),
+		// About the widget in front.
+		reset: resetWidget(active),
+		options,
+		// A PANE IS RENAMEABLE TOO (da-s7sdm), not just a tab of a
+		// strip: with one tab the tab IS the pane, and the name on the
+		// frame is that tab's. Named after whichever it is, as `close`
+		// is. A tab holding a LAYOUT is still named by that layout.
+		rename: active.layout === undefined ? { label: `Rename ${thing}`, run: rename(active) } : undefined,
+		// In a strip, Split splits the TAB in front (da-6ji5). A lone
+		// holder's children split themselves; its own split is a tab's.
+		split: many
+			? { what: 'split: a new pane', run: (t) => apply((l) => splitTab(l, pane.id, t)) }
+			: holder
+				? undefined
+				: { what: 'split: a new pane', run: (t) => apply((l) => splitPane(l, pane.id, t)) },
+		breakOut: canBreak ? { what: 'break out: this widget', run: (t) => apply((l) => breakOut(l, pane.id, t)) } : undefined,
+		close: {
+			label: many ? 'Close tab' : 'Close pane',
+			disabled: !canClose,
+			run: () => apply((l) => closeTab(l, pane.id, pane.active))
+		},
+		acts,
+		saveAs: holder && !root ? saveAsLayout(active.id) : undefined
+	});
+	$: own = locked ? named(all) : arranged(all);
 
 	/**
 	 * THE SECOND DOOR ON `Change Widget` (da-efr4i). vividn, 2026-09-22:
 	 * «Long pressing or right clicking on a widget title opens the change
-	 * widget menu.» The act keeps its home in the `▾` (da-z8klv) and gains
-	 * a way in from the name of the widget it would replace — a hold on
-	 * the title with one tab, on the tab in front with more.
+	 * widget menu.» A hold on the title with one tab, on the tab in front
+	 * with more.
 	 *
-	 * Undefined under a lock, which turns the gesture off entirely
-	 * ($lib/hold.ts): `Change Widget` is a `manage` item and a lock takes
-	 * the whole of that slice away, so a second door to it must close with
-	 * the first. The gesture is the app's ONE hold — the same 450ms, the
-	 * same right click, the same menu key — and it is `preventDefault`ed
-	 * only here: a reader right-clicking a pane's CONTENT still gets the
-	 * browser's own menu, which is where text is selected and copied.
+	 * Layout mode's alone, like the item itself (da-vvcxc): undefined in
+	 * normal mode, which turns the gesture off entirely ($lib/hold.ts). The
+	 * gesture is the app's ONE hold — the same 450ms, the same right click,
+	 * the same menu key — and it is `preventDefault`ed only here: a reader
+	 * right-clicking a pane's CONTENT still gets the browser's own menu,
+	 * which is where text is selected and copied.
 	 */
 	$: changeWidget = locked ? undefined : () => void fillTab(active.id);
 
 	/**
-	 * The two slices of that one list (da-bzhq, `menu.ts`): the TITLE — or
-	 * the tab in front — opens what this pane shows and what it is saved
-	 * as; the `▾` beside the `+` opens what is done to the pane and its
-	 * tabs. Under a lock `items` is `Options…` alone, not a management
-	 * act, so `manage` is empty and the `▾` is not drawn — the same answer
-	 * the `{#if !locked}` round the pair gives, by the other road.
-	 */
-	$: own = named(items);
-	$: manage = managed(items);
-
-	/**
 	 * `Rename tab` / `Rename pane` (da-6ji5, da-s7sdm): the answer is the
 	 * tab's `title`. The field starts at the name it wears now; emptied,
-	 * the title goes — the key with it, as `setLocked` drops `locked` — and
+	 * the title goes — the key with it — and
 	 * the thing wears the name it is given again (`nameOf`). A user title
 	 * OVERRIDES the default name and never replaces it as the source of one.
 	 *
@@ -504,6 +395,63 @@
 	}
 
 	const activate = (index: number) => apply((l) => setActive(l, pane.id, index));
+
+	// ---- the bar's handle (da-vvcxc) ------------------------------------
+
+	/**
+	 * In layout mode the maximize badge is the BAR'S HANDLE. vividn,
+	 * 2026-10-14: «rather than a bar menu, the maximaize button becomes a
+	 * handle where you can drag the bar to different positions on the
+	 * pane». Dropped, the bar goes to the edge of the pane nearest the
+	 * pointer, gathered at the third of that edge it is over (`bar.align`,
+	 * read the way the eye reads it: the left-hand bar runs bottom to top).
+	 * The arrows move it to an edge from the keyboard. A tap does nothing.
+	 */
+	let section: HTMLElement;
+	let handle: { id: number; x: number; y: number } | null = null;
+	/** Where a drop would put the bar now, drawn on that edge while the handle is held. */
+	let dropAt: { edge: BarEdge; align: BarAlign } | null = null;
+
+	function placeAt(x: number, y: number): { edge: BarEdge; align: BarAlign } {
+		const r = section.getBoundingClientRect();
+		const gap = { top: y - r.top, bottom: r.bottom - y, left: x - r.left, right: r.right - x };
+		const edge = (Object.keys(gap) as BarEdge[]).reduce((a, b) => (gap[b] < gap[a] ? b : a));
+		const along =
+			edge === 'top' || edge === 'bottom'
+				? (x - r.left) / r.width
+				: edge === 'right'
+					? (y - r.top) / r.height
+					: (r.bottom - y) / r.height;
+		return { edge, align: along < 1 / 3 ? 'start' : along < 2 / 3 ? 'center' : 'end' };
+	}
+
+	function grabBar(event: PointerEvent) {
+		if (locked) return;
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		handle = { id: event.pointerId, x: event.clientX, y: event.clientY };
+	}
+
+	function dragBar(event: PointerEvent) {
+		if (!handle || event.pointerId !== handle.id) return;
+		if (!dropAt && Math.hypot(event.clientX - handle.x, event.clientY - handle.y) < 4) return;
+		dropAt = placeAt(event.clientX, event.clientY);
+	}
+
+	function dropBar() {
+		const to = dropAt;
+		handle = null;
+		dropAt = null;
+		if (to) apply((l) => setBar(l, pane.id, to));
+	}
+
+	const ARROW: Record<string, BarEdge> = { ArrowUp: 'top', ArrowDown: 'bottom', ArrowLeft: 'left', ArrowRight: 'right' };
+
+	function keyBar(event: KeyboardEvent) {
+		const edge = ARROW[event.key];
+		if (locked || !edge) return;
+		event.preventDefault();
+		apply((l) => setBar(l, pane.id, { ...pane.bar, edge }));
+	}
 
 	/** The tab strip, to put the focus back on the tab switched to. */
 	let strip: HTMLElement | null = null;
@@ -552,6 +500,13 @@
 	let peek = -1;
 	/** Whether that offset is moving on its own — the slide, or the snap back. */
 	let gliding = false;
+
+	/**
+	 * Whether a swipe moves between this pane's tabs: not the root's in
+	 * layout mode, whose tabs are the layouts and which is left only by
+	 * asking how (`leave`, mode.ts — the root bar's tabs do).
+	 */
+	$: swipes = many && (locked || !root);
 
 	const inRange = (index: number) => index >= 0 && index < pane.tabs.length;
 	/** The reader asked for no motion: the swap is instant, as it was. */
@@ -753,6 +708,7 @@
 
 <div class="host {kind === undefined ? '' : titleOf(kind)}" data-widget={kind}>
 <section
+	bind:this={section}
 	class="{holder ? 'holder' : 'pane'} edge-{pane.bar.edge}"
 	class:alarm={$alarm}
 	class:vertical
@@ -760,6 +716,8 @@
 	class:nested
 	class:bare
 	class:clip={!root && kind !== undefined}
+	class:editing={!locked}
+	data-bar-drop={dropAt?.edge}
 	data-pane={pane.id}
 	data-title={title}
 	style:--row="{ROW}px"
@@ -773,9 +731,10 @@
 			     tab names, rather than on the opposite side of the bar» —
 			     which retires the far-corner placement da-jlgp asked for, so
 			     the CSS that dealt it out to a corner is gone and the DOM
-			     order is the drawn order again. Not under the lock, since a
-			     lock keeps the LAYOUT from changing and this changes nothing
-			     saved. -->
+			     order is the drawn order again. In normal mode, since it
+			     changes nothing saved; in layout mode it is the bar's HANDLE
+			     (da-vvcxc, `grabBar` above). -->
+			{#if locked}
 			<button
 				type="button"
 				class="control badge maximize"
@@ -797,6 +756,24 @@
 					{/if}
 				</svg>
 			</button>
+			{:else}
+			<button
+				type="button"
+				class="control badge maximize handle"
+				aria-label="move the {title} pane's bar"
+				title="drag to another edge to move the bar"
+				on:pointerdown={grabBar}
+				on:pointermove={dragBar}
+				on:pointerup={dropBar}
+				on:pointercancel={() => ((handle = null), (dropAt = null))}
+				on:keydown={keyBar}
+			>
+				<!-- Four arrows out of the middle: this moves. -->
+				<svg viewBox="0 0 16 16" aria-hidden="true">
+					<path d="M8 1.5v13M1.5 8h13M8 1.5 6 3.5M8 1.5l2 2M8 14.5l-2-2M8 14.5l2-2M1.5 8l2-2M1.5 8l2 2M14.5 8l-2-2M14.5 8l-2 2" />
+				</svg>
+			</button>
+			{/if}
 			{#if many}
 				<div
 					class="tabs"
@@ -857,17 +834,15 @@
 				</div>
 			{/if}
 			<!-- Inside `.along`, after the title or the last tab: the `+`
-			     and, beside it, the `▾` that holds what is done to this pane
-			     and its tabs (da-bzhq). The DOM order is the drawn order and
-			     the keyboard's both — maximize, title/tabs, `+`, `▾` — so it
-			     is asserted rather than assumed (layout-maximize.test.mjs).
+			     and the `×`. The DOM order is the drawn order and the
+			     keyboard's both — handle, title/tabs, `+`, `×` — so it is
+			     asserted rather than assumed (layout-maximize.test.mjs).
 
-			     Both go under the lock together. vividn: "Locking hides both
-			     the + and this down arrow icon menu" — nothing under a lock
-			     can be split, tabbed or resized, and these two are how it
-			     would be. The lock meant is the one from ABOVE (da-z8klv):
-			     a pane holding a locked layout keeps both, they being the
-			     PARENT's to work. -->
+			     Layout mode's alone (da-vvcxc): outside it nothing can be
+			     split, tabbed or closed, and these two are how it would be.
+			     There is no `▾` any more — vividn, 2026-10-14: «no more down
+			     arrow button at all» — what it held is the name's menu in
+			     layout mode. -->
 			{#if !locked}
 				<button
 					type="button"
@@ -877,16 +852,6 @@
 					title="add a tab"
 					on:click={() => void addChosen()}>+</button
 				>
-				{#if manage.length > 0}
-					<PaneMenu
-						items={manage}
-						look="badge"
-						label="manage the {title} pane"
-						title="manage this pane"
-						class="manage"
-						aria-label="manage the {title} pane">▾</PaneMenu
-					>
-				{/if}
 				<!-- And the × that closes what the title names (da-efr4i).
 				     vividn, 2026-09-22: «in unlocked mode, add an x to the
 				     widget titles that let's you close it.» The same act as
@@ -924,10 +889,10 @@
 		style:--front="translate{vertical ? 'Y' : 'X'}({offset}px)"
 		style:--beside="translate{vertical ? 'Y' : 'X'}(calc({offset}px + {peek > pane.active ? 100 : -100}%))"
 		style:--slide="{SLIDE_MS}ms"
-		on:touchstart={many ? onTouchStart : undefined}
-		on:touchmove|nonpassive={many ? onTouchMove : undefined}
-		on:touchend={many ? onTouchEnd : undefined}
-		on:touchcancel={many ? cancel : undefined}
+		on:touchstart={swipes ? onTouchStart : undefined}
+		on:touchmove|nonpassive={swipes ? onTouchMove : undefined}
+		on:touchend={swipes ? onTouchEnd : undefined}
+		on:touchcancel={swipes ? cancel : undefined}
 	>
 		<slot {peek} />
 	</div>
@@ -956,7 +921,7 @@
 		   read as well (da-kpjn).
 
 		   `--mark` is the box that is DRAWN — the title's ground and
-		   outline, the maximize's box and glyph, the `+` and the `▾`. One
+		   outline, the maximize's box and glyph, the `+` and the `×`. One
 		   value under either pointer, because a reader looking at a phone
 		   and a reader looking at a screen are looking at the same app.
 		   It is the row, so everything on the bar hangs half a row outside
@@ -1185,15 +1150,10 @@
 	   rather than on the opposite side of the bar» (da-bzhq). So the
 	   `order` and the auto margins that did it are gone, and the row is
 	   drawn in the order it is written, at every alignment and on a
-	   rotated bar too — which is the order the Tab walk reads.
-
-	   The `▾` needs nothing else of its own: it is the same
-	   `.control.badge` (app.css) as the `+`, one character centred in a
-	   square, and its name is its `aria-label` as the `+`'s is. */
+	   rotated bar too — which is the order the Tab walk reads. */
 	.add,
 	.close,
-	.maximize,
-	.along :global(button.manage) {
+	.maximize {
 		flex: none;
 		pointer-events: auto;
 	}
@@ -1222,7 +1182,7 @@
 	   The row's box starts at the pane's padding box, half a pixel inside
 	   that point, and `.along` holds it 0.5rem further in. So the badge
 	   gives back the 8px, that 0.5px, and half its own width. It alone:
-	   `.along`'s padding still holds the `+` and the `▾` off the curve at
+	   `.along`'s padding still holds the `+` and the `×` off the curve at
 	   the other end, and they still want that. Logical, so it is the same
 	   corner whichever edge the bar is on and on the left-hand bar's half
 	   turn too — the corner the alignment calls `start`. A holder's row
@@ -1234,7 +1194,7 @@
 	/* «reduce the distance between maximize and tabnames and then between
 	   tabnames and the + and downarrow» (vividn, 2026-09-23, da-33ves).
 	   `.along`'s gap is EVERY distance on the row, so the two he named are
-	   taken in at their ends instead, and `+`, `▾` and `×` keep theirs.
+	   taken in at their ends instead, and `+` and `×` keep theirs.
 	   Two pixels, which still leaves two between the hit areas. */
 	.along > .maximize {
 		margin-inline-end: -2px;
@@ -1269,12 +1229,12 @@
 	   measured. It comes off `--mark` now, so it is one size for everyone:
 	   12px until «now the maximize button is too small, make a little
 	   bigger» (vividn, 2026-09-23, da-33ves), and two pixels off `--mark`
-	   since — 14px, which is what the `+`, the `▾` and the `×` beside it
+	   since — 14px, which is what the `+` and the `×` beside it
 	   paint (below). It was the one badge on the row drawn smaller.
 
-	   THE OTHER THREE BADGES ARE THE SAME CLAIM, so they are the same rule
-	   (da-wyofs; the `×` joined them in da-efr4i). The `+`, the `▾` and the
-	   `×` drew their ground and outline on the
+	   THE OTHER BADGES ARE THE SAME CLAIM, so they are the same rule
+	   (da-wyofs; the `×` joined them in da-efr4i). The `+` and the `×`
+	   drew their ground and outline on the
 	   BUTTON, which is `--badge` square: on a phone that put a 24px box on
 	   a bar whose panes are eight pixels apart, and the badge of the pane
 	   below lay 3.5px over the pane above — half of vividn's «overlap with
@@ -1287,17 +1247,10 @@
 	   is a character and an anonymous grid item cannot be sent to a named
 	   cell; `isolation` makes the button the stacking context the `z-index`
 	   is measured in, so the box lands under the glyph and over nothing
-	   else.
-
-	   `.manage` is written TWICE on the rule that takes the button's own
-	   outline away. Svelte repeats its scope class four times over a bare
-	   class — which is what lets `.maximize` outweigh
-	   `.control.badge:hover:not(:disabled)` in `app.css` — but adds it only
-	   once to the compound a `:global()` sits in, and once is one class
-	   short. Without the second `.manage` the `▾` would grow the button's
-	   accent border back under the pointer, which is a second and larger
-	   outline round the drawn one, at exactly the moment a reader is
-	   looking straight at it. Asserted in layout-maximize.test.mjs.
+	   else. Svelte repeats its scope class over a bare class, which is
+	   what lets these outweigh `.control.badge:hover:not(:disabled)` in
+	   `app.css` and keep the button's own outline away under the pointer.
+	   Asserted in layout-maximize.test.mjs.
 
 	   ⚑ THE `×` WAS IN FLIGHT WHILE THIS LANDED and the two rebased past
 	   each other with no conflict, which is how a badge comes to be on the
@@ -1305,12 +1258,11 @@
 	   a cursor that is invisible, `--badge` and `--mark` being the same
 	   16px there; under a finger it was a 24px drawn box between two 16px
 	   ones, and one more of the bleeds da-wyofs removed. The tests read
-	   all FOUR badges now, and read both pointers, which is what makes the
+	   every badge now, and read both pointers, which is what makes the
 	   next one arrive noisily instead of quietly. */
 	.maximize,
 	.add,
-	.close,
-	.along :global(button.manage.manage) {
+	.close {
 		--edge: var(--rule);
 		background: none;
 		border-color: transparent;
@@ -1325,14 +1277,12 @@
 		border-radius: 5px;
 	}
 	.add,
-	.close,
-	.along :global(button.manage) {
+	.close {
 		position: relative;
 		isolation: isolate;
 	}
 	.add::before,
-	.close::before,
-	.along :global(button.manage)::before {
+	.close::before {
 		content: '';
 		position: absolute;
 		z-index: -1;
@@ -1348,10 +1298,38 @@
 	.add:hover:not(:disabled),
 	.add:focus-visible,
 	.close:hover:not(:disabled),
-	.close:focus-visible,
-	.along :global(button.manage:hover:not(:disabled)),
-	.along :global(button.manage:focus-visible) {
+	.close:focus-visible {
 		--edge: var(--accent);
+	}
+
+	/* LAYOUT MODE (da-vvcxc) is very visibly a mode: every pane's outline
+	   is the accent and twice as heavy, the maximize is a HANDLE in the
+	   accent (four arrows: this moves), and while it is held the edge a
+	   drop would put the bar on is drawn. */
+	.pane.editing {
+		border-color: var(--accent);
+		box-shadow: 0 0 0 1px var(--accent);
+	}
+	.handle {
+		--edge: var(--accent);
+		color: var(--accent);
+		cursor: grab;
+		touch-action: none;
+	}
+	.handle:active {
+		cursor: grabbing;
+	}
+	.editing[data-bar-drop='top'] {
+		box-shadow: 0 0 0 1px var(--accent), inset 0 4px 0 var(--accent-bright);
+	}
+	.editing[data-bar-drop='bottom'] {
+		box-shadow: 0 0 0 1px var(--accent), inset 0 -4px 0 var(--accent-bright);
+	}
+	.editing[data-bar-drop='left'] {
+		box-shadow: 0 0 0 1px var(--accent), inset 4px 0 0 var(--accent-bright);
+	}
+	.editing[data-bar-drop='right'] {
+		box-shadow: 0 0 0 1px var(--accent), inset -4px 0 0 var(--accent-bright);
 	}
 
 	/* A flat mono-colour mark in `currentColor` (da-tnv3's rule for the

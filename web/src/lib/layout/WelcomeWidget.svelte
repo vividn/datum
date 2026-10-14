@@ -10,8 +10,9 @@
 	field and an entry in a sentence each, the four kinds as the Track form
 	names them (`VERBS`, so the two cannot come to disagree), the flow, its
 	button, and how tabs and widgets are handled: that the + brings back
-	a tab that was closed, this one too, and that the other pages start
-	locked (da-gshh), which is why they show no ▾ until the padlock.
+	a tab that was closed, this one too, and that a page is rearranged in
+	layout mode (da-vvcxc), entered from its tab and left by Accept, Save
+	or Discard.
 
 	The first button is the field widget's door (`openField`): the Track
 	tab while it is open, the place every other door reaches once it is
@@ -21,10 +22,9 @@
 	start unlocked. Let's put a button at the bottom of the welcome widget
 	that closes the widget too … I am imagining that the welcome widget will
 	have some scrolling and reading rather than all fitting on one page».
-	So `welcome` opens unlocked (`tabHolding`, shell.ts), and the button
-	stands after the text, where the reading ends. It is the frame's own
-	`×` (PaneFrame.svelte's `close`), so it is there exactly where that is:
-	not under a lock, not on the page's last tab, not in a place's modal.
+	So the button stands after the text, where the reading ends. It is the
+	frame's own close (PaneFrame.svelte's `close`), which at the root is in
+	either mode: not on the page's last tab, not in a place's modal.
 
 	Reworked with vividn on 2026-10-14, section by section. The name is bigger
 	(«"datum" can be a bit bigger yes»), the opening says why and who

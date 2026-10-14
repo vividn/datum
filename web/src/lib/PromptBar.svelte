@@ -142,11 +142,12 @@
 	 *      editor, a field's state list or its `+` (FieldsWidget), a
 	 *      command's subcommands (CommandsWidget);
 	 *   4. the log, here;
-	 *   5. LAST, the input peels one layer (`peel` in $lib/bar.ts).
+	 *   5. layout mode asks how to leave it (RootBar.svelte, da-vvcxc);
+	 *   6. LAST, the input peels one layer (`peel` in $lib/bar.ts).
 	 * The window's listeners run in mount order, not in this one, so the
-	 * last step waits for the dispatch to finish and reads what it left —
-	 * and peels only the line the key was pressed on, never one written
-	 * since.
+	 * last two wait for the dispatch to finish and read what it left —
+	 * and the peel takes only the line the key was pressed on, never one
+	 * written since.
 	 */
 	function onKey(event: KeyboardEvent): void {
 		if (event.key !== 'Escape' || event.defaultPrevented) return;

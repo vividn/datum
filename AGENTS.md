@@ -497,24 +497,30 @@ start the installed binary. `web/tests/sync*.test.mjs` run on a pinned local `ir
 - Background Sync API queues sync when offline
 - The page is a LAYOUT TREE, not a grid (`web/src/lib/layout/`):
   panes hold widgets or splits of panes, each pane has tabs and draggable
-  borders, and its bar reads maximize · title-or-tabs · `+` · `▾` · `×`:
-  the NAME opens what the pane IS and what it is
-  saved as (Reset widget, the widget's OWN OPTIONS one item each, the
-  layout's acts), the `▾` beside the `+` what is DONE to it (Change
-  Widget, Rename tab, Split, Break out, Bar, Close), the `×` after them
-  closes what the title names — the menu's own Close, promoted to the row
-  — and a lock hides all three. One builder, `menu.ts`, one order, two
-  filters — `named` and `managed`. A HOLD on the title — the app's one
-  hold, `web/src/lib/hold.ts`: a 450ms long press, a right click, the
-  menu key, shift+click — is a SECOND door on Change Widget,
-  which keeps its home in the `▾`; the `contextmenu` is eaten on the
+  borders, and its bar reads maximize · title-or-tabs · `+` · `×`. Two
+  MODES (da-vvcxc, `mode.ts`). In normal mode nothing moves the tree: no
+  border is a handle, no `+` or `×` is drawn, and the NAME opens what the
+  pane IS and what it is saved as (Reset widget, the widget's OWN OPTIONS
+  one item each, the layout's acts). LAYOUT MODE is entered by a hold let
+  go where it was, or a right click, the menu key or Shift+F10, on the
+  OPEN root tab (a hold that moves still reorders, `reorder.ts`), and is
+  drawn loud: the page hatched, every outline the accent, a big handle in
+  every gap. There a pane's name opens what is DONE to it — Change Widget,
+  Rename, Split, Break out, `Widget options ▸` (the normal-mode list, one
+  step in), Close — the `+` and `×` are back, the maximize is the bar's
+  HANDLE (dragged to an edge and a third of it; the arrows move it), each
+  root tab wears a `×`, and the open tab's name opens Change Widget,
+  Split, Close tab and the three ways out: Accept (the draft this device
+  keeps, which a reload keeps too), Save layout (the database, so every
+  synced device), Discard changes. Escape asks which — Esc Esc discards,
+  Esc Enter accepts — and so does moving to another root tab with a
+  change in hand. There is no `▾` and no lock. One builder, `menu.ts`,
+  one order, two ways to draw it — `named` and `arranged`. A HOLD on a
+  pane's title in layout mode — the app's one hold, `web/src/lib/hold.ts`
+  — is a second door on Change Widget; the `contextmenu` is eaten on the
   title alone, so a reader still gets the browser's menu over a pane's
-  content, where text is selected and copied.
-  The lock that hides the three is the one from ABOVE: a pane
-  HOLDING a sublayout belongs to the layout above it, so its `+`, its `▾`
-  and its `×` follow the parent's lock and not the sublayout's own, which
-  reaches only the subtree. The root's `+` is never hidden by any lock — a locked
-  layout must not be able to stop you opening another beside it.
+  content, where text is selected and copied. The root's `+` is drawn in
+  either mode.
   A WIDGET OPTION IS SESSION STATE (`session.ts` + `options.ts`):
   the kind declares it in the registry, the menu draws it inline — a
   switch is a `menuitemcheckbox` that turns over without closing the menu,
@@ -522,12 +528,10 @@ start the installed binary. `web/tests/sync*.test.mjs` run on a pinned local `ir
   and never the layout. So does a widget moving a setting of its own
   (nowview's − / +, the strip's handle): `Layout.svelte`'s `on:change`
   goes to the session too. The one writer to the tree from the widget's
-  side is «Save options with layout», which only an UNLOCKED menu carries
-  and which only appears when something is held — so «when locked, nothing
-  modifies the layout» is true by construction rather than by a guard. The
-  lock it reads is the SUBTREE's (`lockedWithin`), not the
-  frame's: on a tab holding a locked one-widget layout the tree it would
-  write is that locked layout's own. The
+  side is «Save options with layout», which only appears when something
+  is held and which the reader has to choose — so «a widget's own
+  controls never modify the layout» is true by construction rather than
+  by a guard. The
   overlay is the DIFFERENCE from the tree, keyed by layout + tab + widget,
   pruned when a tab closes or its widget is changed, and gone on a reload;
   `Reset widget` drops it along with writing the kind's defaults.

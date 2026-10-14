@@ -8,7 +8,7 @@
 	pressing − under a LOCKED layout used to move `history` in the tree and
 	light the layout's dot, which is the defect that bead was written
 	against. «Save options with layout» is what hands the step to the
-	layout, and a lock takes that act away.
+	layout, and only when the reader chooses it.
 
 	The snapshot draws no axis, so it has no steps: nothing lies over its
 	chips, and the way out of it is the zoom below.

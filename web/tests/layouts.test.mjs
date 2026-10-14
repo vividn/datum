@@ -20,7 +20,6 @@ import { until } from './support/until.mjs';
 import {
 	chooseRoot,
 	chooser,
-	lockButton,
 	manageRoot,
 	menuLines,
 	offers,
@@ -527,12 +526,8 @@ describe('Reset layout', () => {
 			assert.ok(!lines.includes('Reset layout'), lines.join(' | '));
 			for (const act of ['Save layout', 'Restore layout', 'Save layout as'])
 				assert.ok(lines.includes(act), `${act} is missing: ${lines.join(' | ')}`);
-			// The lock is the button beside the gear now (da-bzhq), and a
-			// layout the reader saved opens unlocked (da-gshh).
-			assert.ok(!lines.some((l) => /lock/i.test(l)), lines.join(' | '));
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
-			assert.equal(await lockButton(page).getAttribute('aria-pressed'), 'false');
 			assert.deepEqual(app.errors, []);
 		});
 	});

@@ -45,3 +45,11 @@ export function replay(tree: Layout): Layout {
 // where that is noticed. Set here rather than in `session.ts` so the store
 // module stays a store and does not reach back for the tree.
 layout.subscribe(pruneSession);
+
+/**
+ * LAYOUT MODE (da-vvcxc): the page as it was when the mode was entered, and
+ * the root tab it was entered on — or null, which is normal mode, where
+ * nothing the reader does moves the tree. Its acts are `mode.ts`'s; it is
+ * here so the renderer and the shell read it without importing them.
+ */
+export const editing = writable<{ tab: string; before: Layout } | null>(null);

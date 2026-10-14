@@ -3,8 +3,8 @@
 // A tab carrying `layout` is a COPY of that saved layout, wherever it sits
 // — the root bar's own tabs, or a pane deep in a tree. What that means,
 // and what this file holds the app to: the copy's subtree is compared to
-// that layout's save, so it wears its own orange dot; save, restore, save
-// as and lock reach it through its pane's menu; its unsaved edits are kept
+// that layout's save, so it wears its own orange dot; save, restore and save
+// as reach it through its pane's menu; its unsaved edits are kept
 // in the same per-name draft a root tab's are, so they survive a reload.
 //
 // The bug this file was written for: an edit made INSIDE an embedded
@@ -25,24 +25,22 @@ import {
 	DESKTOP,
 	MINE,
 	addTab,
-	bar,
 	choose,
 	chooseRoot,
 	chooser,
+	enterLayoutMode,
 	exactly,
 	fill,
-	lockButton,
+	leaveLayoutMode,
 	manage,
-	manageButton,
 	menuButton,
 	manageRoot,
 	menuLines,
 	pane,
+	pickFrom,
 	rootMenuButton,
 	settled,
 	titles,
-	toggleOption,
-	toggleRootLock,
 	widgetPane
 } from './support/layout.mjs';
 
@@ -51,34 +49,15 @@ after(stopApp);
 
 // ONE APP for most of this file (da-6b3dj, sharedApp in support/app.mjs):
 // what a test here leaves behind is layout — `mine` saved and embedded,
-// `main` saved over, a sublayout or the root locked — which `solo` puts
-// back: every saved layout dropped, every lock put back as the page opened,
-// `main` restored to what it shipped as. What still opens an app of its own
+// `main` saved over, the page in layout mode — which `solo` puts back:
+// every saved layout dropped, layout mode left, `main` restored to what it
+// shipped as. What still opens an app of its own
 // reloads, opens a second tab, or holds a widget option this session, which
 // `solo` does not put back.
 const shared = sharedApp(DESKTOP);
 
-/** «Save options with layout» (da-vhwq): the one option item that writes the tree. */
-const SAVE_OPTIONS = 'Save options with layout';
-/** The repl's declared option, by its label (registry.ts). */
-const NEWEST = 'newest first';
-
 const layouts = (app, fn, ...args) =>
 	app.page.evaluate(([fn, args]) => window.datum.layouts[fn](...args), [fn, args]);
-
-/**
- * `solo`: ONE pane of ONE widget, which `inline` LIFTS into the tab that
- * holds it (shell.ts, da-ze1x) — so that tab IS the repl widget and names
- * the layout at the same time. That is the shape in which a write to the
- * tab's content is a write to the LOCKED layout's own tree, and it is the
- * shape `mine` cannot make: a two-pane split has no one widget, so both
- * writes are already undefined there for a reason that is not the lock.
- */
-const SOLO = {
-	version: 1,
-	name: 'solo',
-	root: { id: 's', active: 0, bar, tabs: [{ id: 's-tab', content: { id: 's-widget', kind: 'repl', settings: {} } }] }
-};
 
 /**
  * The pane drawing a copy of `mine` — named by an inner pane it holds,
@@ -101,11 +80,9 @@ const dotted = async (holder) => (await holder.locator('> .titlebar .dot').count
 const rootDotted = async (page, name) =>
 	(await page.locator(`.root-bar [role="tab"].modified`).filter({ hasText: name }).count()) > 0;
 
-/** Open a copy's own menu and choose an item by its words. */
+/** Open a copy's own menu and choose an item by its words, in either mode. */
 async function act(page, label, holder = copy(page)) {
-	await holder.locator('> .titlebar button.title, > .titlebar [role="tab"][aria-selected="true"]').first().click();
-	await page.getByRole('menuitem', { name: label, exact: true }).click();
-	await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+	await pickFrom(page, holder.locator('> .titlebar button.title, > .titlebar [role="tab"][aria-selected="true"]').first(), label);
 	await settled(page);
 }
 
@@ -189,32 +166,6 @@ describe('the dot and the acts on a nested layout', () => {
 			// the new pane.
 			const saved = await layouts(app, 'loadLayout', 'mine');
 			assert.equal(JSON.stringify(saved).includes('"empty"'), true, JSON.stringify(saved));
-			assert.deepEqual(app.errors, []);
-		});
-	});
-
-	test('lock reaches a nested layout, and unlock is still reachable under it', async () => {
-		await shared.solo(async (app) => {
-			const { page } = app;
-			await embed(app);
-			const inner = page.locator('section.pane[data-title="mine"]').first();
-
-			await act(page, 'Lock layout');
-			// Nothing under the lock can be split or resized: the panes inside
-			// keep a menu only for their options (nowview and fields declare
-			// some, da-gvdc), which are its ITEMS since da-vhwq, and the
-			// border between them is static.
-			await inner.locator('section.pane button.title').first().click();
-			assert.deepEqual(await menuLines(page), ['history', 'orientation']);
-			await page.keyboard.press('Escape');
-			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
-			assert.equal(await inner.locator('.border.static').count(), 1);
-
-			// The layout's own menu is still there — a lock you cannot undo
-			// is a trap.
-			await act(page, 'Unlock layout');
-			assert.equal(await inner.locator('section.pane button.title').count(), 2);
-			assert.equal(await inner.locator('.border.static').count(), 0);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -345,7 +296,7 @@ describe('a widget chosen for a tab that holds a layout', () => {
 			await settled(page);
 			assert.deepEqual(await inside(copy(page)), ['nowview', 'fields']);
 
-			// That tab’s `▾`: Change Widget → the tail widget.
+			// That tab’s layout-mode menu: Change Widget → the tail widget.
 			await manage(page, 'tail', 'Change Widget');
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('tail') }).click();
@@ -413,15 +364,14 @@ describe('a widget chosen for a tab that holds a layout', () => {
 			assert.equal(await page.locator('.root-bar [role="tab"] .dot').count(), 0, 'the built-in came up modified');
 			assert.equal(await page.locator('section.pane[data-title="mine"]').count(), 0);
 
-			// A named tab keeps the acts, and the lock beside the gear reads
-			// CLOSED, since what shipped opens locked (da-gshh, da-bzhq).
+			// A named tab keeps the acts.
+			await leaveLayoutMode(page);
 			await rootMenuButton(page).click();
 			const lines = await menuLines(page);
 			for (const act of ['Save layout', 'Restore layout', 'Save layout as'])
 				assert.ok(lines.includes(act), `${act} is missing: ${lines.join(' | ')}`);
 			await page.keyboard.press('Escape');
 			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
-			assert.equal(await lockButton(page).getAttribute('aria-pressed'), 'true');
 
 			// The name is what the device writes down, so the tab comes back.
 			await app.reload();
@@ -439,18 +389,9 @@ describe('a widget chosen for a tab that holds a layout', () => {
 });
 
 // The pane that HOLDS a sublayout is a pane of the layout ABOVE it
-// (da-z8klv).
-//
-// vividn, 2026-09-21: "If you embed a sublayout, allow adding new tabs to the
-// layout's pane (not subpanes) and accessing the pane options even if the
-// sublayout is locked (as long as the parent layout is unlocked). This
-// layout pane in many ways belongs to the super layout, and not the sub
-// layout." And: "change widget belongs in the triangle menu even for
-// sublayouts."
-//
-// So a tab holding a layout carries two locks' worth of meaning and they
-// are told apart here: the tab's OWN lock reaches the subtree and nothing
-// else; a lock from ABOVE is the one that takes this frame's chrome away.
+// (da-z8klv): its tabs, its Change Widget, its + and × are the parent's.
+// There is one mode for the whole page now (da-vvcxc), so the holder and
+// the panes inside the copy follow it alike.
 //
 // Panes are addressed by `data-pane` and never by `data-title`: a title is
 // the ACTIVE TAB's name, and this file's own `Change Widget` test changes
@@ -472,8 +413,8 @@ describe('a pane holding a sublayout', () => {
 	/** The badges a pane draws on its OWN bar, in order — never a child's. */
 	const chrome = (page, id) =>
 		pane(page, id)
-			.locator('> .titlebar button.add, > .titlebar button.manage')
-			.evaluateAll((all) => all.map((b) => (b.classList.contains('add') ? '+' : '▾')));
+			.locator('> .titlebar button.add, > .titlebar button.close')
+			.evaluateAll((all) => all.map((b) => (b.classList.contains('add') ? '+' : '×')));
 
 	/** The same, for every pane INSIDE the copy: an id and what it draws. */
 	const chromeInside = (page) =>
@@ -482,8 +423,8 @@ describe('a pane holding a sublayout', () => {
 			.evaluateAll((all) =>
 				all.map((p) => [
 					p.dataset.pane,
-					[...p.querySelectorAll(':scope > .titlebar button.add, :scope > .titlebar button.manage')].map((b) =>
-						b.classList.contains('add') ? '+' : '▾'
+					[...p.querySelectorAll(':scope > .titlebar button.add, :scope > .titlebar button.close')].map((b) =>
+						b.classList.contains('add') ? '+' : '×'
 					)
 				])
 			);
@@ -497,51 +438,28 @@ describe('a pane holding a sublayout', () => {
 		return lines;
 	}
 
-	// The three cases, walked in one app so that each is read against the
-	// same tree: the control first, then the child's lock, then the
-	// parent's on top of it.
-	test('its + and its ▾ follow the PARENT’s lock and not its own', async () => {
+	test('its + and × and those inside the copy are layout mode’s, all alike', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await embed(app);
 			const id = await holderId(page);
 			const [a, b] = (await chromeInside(page)).map(([paneId]) => paneId);
 			assert.deepEqual([a, b], ['m-a', 'm-b'], 'the copy does not hold the panes this test drives');
+			assert.deepEqual(await chrome(page, id), ['+', '×'], 'the holder');
+			assert.deepEqual(await chromeInside(page), [[a, ['+', '×']], [b, ['+', '×']]], 'inside the copy');
 
-			// 3 — unlocked parent, unlocked sublayout: the control.
-			assert.deepEqual(await chrome(page, id), ['+', '▾'], 'the holder');
-			assert.deepEqual(await chromeInside(page), [[a, ['+', '▾']], [b, ['+', '▾']]], 'inside the copy');
-
-			// 1 — unlocked parent, LOCKED sublayout. The holder is the
-			// PARENT's pane, so it keeps both; inside the lock, neither.
-			await act(page, 'Lock layout');
-			assert.deepEqual(await chrome(page, id), ['+', '▾'], 'the holder lost its chrome to the child’s lock');
-			assert.deepEqual(
-				await chromeInside(page),
-				[[a, []], [b, []]],
-				'a pane inside the locked layout still offers a + or a ▾'
-			);
-
-			// And the way out is offered ONCE, by the ordinary path now
-			// rather than by the acts-only exception it used to take.
-			const named = await linesOf(page, () => copy(page).locator('> .titlebar button.title').click());
-			assert.deepEqual(named.filter((l) => l === 'Unlock layout'), ['Unlock layout'], named.join(' | '));
-
-			// 2 — LOCKED parent, locked sublayout: nothing on either. A lock
-			// from above still hides everything, sublayout or not.
-			await toggleRootLock(page);
-			assert.deepEqual(await chrome(page, id), [], 'the holder kept its chrome under the parent’s lock');
+			await leaveLayoutMode(page);
+			assert.deepEqual(await chrome(page, id), [], 'the holder kept its chrome in normal mode');
 			assert.deepEqual(await chromeInside(page), [[a, []], [b, []]]);
 			assert.deepEqual(app.errors, []);
 		});
 	});
 
-	test('the + on a LOCKED sublayout’s pane adds a tab beside it, in the parent’s tree', async () => {
+	test('the + on a sublayout’s pane adds a tab beside it, in the parent’s tree', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await embed(app);
 			const id = await holderId(page);
-			await act(page, 'Lock layout');
 
 			await addTab(page, id, 'tail');
 			await pane(page, id).locator('> .titlebar [role="tab"]', { hasText: 'tail' }).waitFor();
@@ -556,17 +474,15 @@ describe('a pane holding a sublayout', () => {
 		});
 	});
 
-	test('Change Widget is in that ▾, and it replaces the locked sublayout', async () => {
+	test('Change Widget leads the holder’s layout-mode menu, and it replaces the sublayout', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await embed(app);
 			const id = await holderId(page);
 			const before = await layouts(app, 'loadLayout', 'mine');
-			await act(page, 'Lock layout');
 
-			// It leads the `▾`'s slice — "change widget belongs in the
-			// triangle menu even for sublayouts".
-			const lines = await linesOf(page, () => manageButton(page, id).click());
+			await enterLayoutMode(page);
+			const lines = await linesOf(page, () => menuButton(page, id).click());
 			assert.equal(lines[0], 'Change Widget', lines.join(' | '));
 
 			await manage(page, id, 'Change Widget');
@@ -575,8 +491,7 @@ describe('a pane holding a sublayout', () => {
 			await chooser(page).waitFor({ state: 'detached' });
 			await settled(page);
 
-			// The copy is gone and the pane is the widget — and the lock was
-			// the copy's, so the save is as it was.
+			// The copy is gone and the pane is the widget, and the save is as it was.
 			assert.equal(await page.locator('section.pane[data-title="mine"]').count(), 0);
 			assert.equal(await pane(page, id).getAttribute('data-title'), 'tail');
 			assert.deepEqual(await layouts(app, 'loadLayout', 'mine'), before);
@@ -584,109 +499,21 @@ describe('a pane holding a sublayout', () => {
 		});
 	});
 
-	// A ONE-WIDGET sublayout is where the two locks come apart in a way
-	// `mine` cannot show (canary kimi-k3 on #70).
-	//
-	// `inline` lifts such a layout into the tab that holds it, so that tab
-	// IS the widget and NAMES the layout. Its chrome is the parent's — `+`,
-	// `▾`, Change Widget — but anything that writes the tab's CONTENT
-	// writes the locked layout's own tree, and there are two such acts:
-	// «Save options with layout» and `Reset widget`. Both go down
-	// `setWidget`, which has no lock of its own; the menu item is the only
-	// gate either of them has.
-	//
-	// The first draft of this bead gated the first and not the second, and
-	// no test here could see it: every case ran on `mine`, a two-pane
-	// split, where `resetWidget` is undefined because there is no one
-	// widget — not because anything is locked. A fixture that cannot
-	// express the failure is not coverage.
-	test('a LOCKED one-widget sublayout: the parent’s chrome, but nothing that writes its tree', async () => {
-		await withApp(async (app) => { // own app: it holds a widget option this session
-			const { page } = app;
-			await layouts(app, 'saveLayout', SOLO);
-			await manage(page, 'tail', 'split: a new pane to the right');
-			await fill(page, 'solo');
-			const held = page.locator('section.pane[data-title="solo"]').first();
-			await held.waitFor();
-			await settled(page);
-			const id = await held.getAttribute('data-pane');
-			assert.ok((await paneIds(page)).includes(id), 'no pane holds solo');
-
-			// It really is the lifted shape: the tab names the layout AND
-			// carries the widget. Asserted, because the whole case rests on
-			// it — a fixture that quietly arrived under a split would make
-			// every assertion below pass for the wrong reason.
-			const tab = await page.evaluate((paneId) => {
-				const all = [];
-				const walk = (p) => { all.push(p); for (const t of p.tabs) if ('children' in t.content) t.content.children.forEach(walk); };
-				walk(window.datum.layout.current().root);
-				const found = all.find((p) => p.id === paneId);
-				return found ? found.tabs[found.active] : null;
-			}, id);
-			assert.equal(tab?.layout, 'solo', JSON.stringify(tab));
-			assert.equal(tab?.content?.kind, 'repl', JSON.stringify(tab));
-
-			// Unlocked: both writes are on offer.
-			const open = await linesOf(page, () => menuButton(page, id).click());
-			assert.ok(open.includes('Reset widget'), open.join(' | '));
-
-			await act(page, 'Lock layout', held);
-
-			// The PARENT's chrome stays — that is this bead.
-			assert.deepEqual(await chrome(page, id), ['+', '▾'], 'the holder lost its chrome to the child’s lock');
-
-			// What writes the locked layout's tree does not.
-			const shut = await linesOf(page, () => menuButton(page, id).click());
-			assert.ok(!shut.includes('Reset widget'), `Reset widget writes a locked layout: ${shut.join(' | ')}`);
-			assert.ok(!shut.includes(SAVE_OPTIONS), `the save writes a locked layout: ${shut.join(' | ')}`);
-			// The option ROWS remain: they are the session's and reach no
-			// tree (da-vhwq), which is the whole reason the two locks differ.
-			assert.ok(shut.includes(NEWEST), shut.join(' | '));
-			assert.ok(shut.includes('Unlock layout'), shut.join(' | '));
-
-			// And with something HELD, the save still does not appear — the
-			// gate is the lock and not merely the emptiness of the session.
-			await toggleOption(page, id, NEWEST);
-			const after = await linesOf(page, () => menuButton(page, id).click());
-			assert.ok(!after.includes(SAVE_OPTIONS), `a held option offered the save under a lock: ${after.join(' | ')}`);
-
-			// Nothing of the lock's tree moved.
-			assert.equal(
-				JSON.stringify(await layouts(app, 'loadLayout', 'solo')).includes('"reversed":true'),
-				false,
-				'the session reached the save'
-			);
-			assert.deepEqual(app.errors, []);
-		}, DESKTOP);
-	});
-
 	// vividn, asked and answered: «yes, the + should always stay on the root
 	// layout, so that you can always add new layouts and views». The root's
-	// tabs are the page's LAYOUTS (da-0a5o), and a lock on one of them has
-	// no claim on the page that holds it — the sharpest case of this bead,
-	// and the one with no way out if it were wrong.
-	test('the root’s + is never hidden, by any lock', async () => {
+	// tabs are the page's LAYOUTS (da-0a5o).
+	test('the root’s + is drawn in either mode', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			await embed(app);
-			await act(page, 'Lock layout');
-			await toggleRootLock(page);
-
-			// Both locks on, and the page's own `+` is still drawn — and
-			// still opens a layout beside the locked one.
 			const add = page.locator('.root-bar button[aria-label="open a layout"]');
-			assert.equal(await add.count(), 1, 'a lock took the root’s +');
+			assert.equal(await add.count(), 1, 'normal mode took the root’s +');
+			await enterLayoutMode(page);
+			assert.equal(await add.count(), 1, 'layout mode took the root’s +');
+			await leaveLayoutMode(page);
 			await add.click();
 			await chooser(page).locator('button').filter({ hasText: exactly('stats') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
 			await page.locator('.root-bar [role="tab"]', { hasText: 'stats' }).waitFor();
-			await settled(page);
-			// The dot is dropped: embedding `mine` modified `main`, which is
-			// not what this is about.
-			assert.deepEqual(
-				await page.locator('.root-bar [role="tab"]').evaluateAll((all) => all.map((b) => b.textContent.replace('•', '').trim())),
-				['main', 'stats']
-			);
 			assert.deepEqual(app.errors, []);
 		});
 	});

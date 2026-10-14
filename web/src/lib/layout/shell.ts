@@ -8,14 +8,14 @@
 // owns is the seam between a tab and its save: `inline` (a saved `Layout`
 // → the tab that holds it) and `extract` (the tab → the `Layout` to save
 // or compare), the boot that fills the root from this device's list of
-// open layouts, and the acts — save, restore, save as, lock, and reset for
+// open layouts, and the acts — save, restore, save as, and reset for
 // a layout that shipped with datum (da-luwe) — which the root bar's menu
 // and a pane's menu call.
 //
 // IDENTITY IS THE NAME, and a tab carrying it is a COPY (da-crp5). The
 // root bar's tabs have no privilege: a tab six panes down carrying
-// `layout` is the same kind of thing, and the baseline, the draft and the
-// lock all hang off the NAME, never off where the tab sits. So:
+// `layout` is the same kind of thing, and the baseline and the draft both
+// hang off the NAME, never off where the tab sits. So:
 //
 //   - `modified` names every COPY whose subtree differs from its save, by
 //     tab id, so each copy wears its own dot wherever it is drawn.
@@ -44,8 +44,8 @@
 // canonical form (`baselineOf`), never the save as stored: inlining drops
 // the root pane's own id and bar — the root bar draws the tab, not the
 // pane's frame — and comparing to the raw save would report that drop as
-// an edit forever. A lock is per device (vividn, 2026-09-11 12:56) and is
-// stripped by `extract`, so it is never saved and never an edit.
+// an edit forever. The per-device lock older trees carry is stripped by
+// `inline` and `extract` alike; layout mode replaced it (da-vvcxc).
 //
 // A layout is held BY REFERENCE wherever it is nested: the outer save
 // keeps only the name and the tab's id (`extract` stubs the content), so
@@ -102,18 +102,15 @@ import {
 } from './defaults.js';
 import {
 	clearDraft,
-	clearLocked,
 	isModified,
 	loadDefaults,
 	loadDevice,
 	loadDraft,
-	loadLocked,
 	loadRoot,
 	loadShell,
 	saveDefaults,
 	saveDevice,
 	saveDraft,
-	saveLocked,
 	saveRoot,
 	saveShell,
 	type RootState
@@ -130,7 +127,7 @@ import {
 	saveLayout,
 	versions
 } from './store.js';
-import { EMPTY_KIND, allIds, closeTab, findTab, newId, newWidget, normalize, setActive, setLocked, setWidget, shedLayout } from './tree.js';
+import { EMPTY_KIND, allIds, closeTab, findTab, newId, newWidget, normalize, setActive, setWidget, shedLayout } from './tree.js';
 import { unmaximize } from './maximize.js';
 import { KINDS, defaultsOfKind } from './registry.js';
 import { clearSession, keyOf } from './session.js';
@@ -199,17 +196,6 @@ const pick = (...candidates: (Layout | null)[]): Layout | null =>
 export const canonicalName = (name: string): string => ALIASES[name] ?? name;
 
 /**
- * The layout `name` means here — the save, else the kit's, else the
- * built-in — and whether it SHIPPED (a kit's or a built-in) rather than
- * being the person's own save: what a lock defaults to (da-gshh).
- */
-async function meaning(name: string): Promise<{ layout: Layout | null; shipped: boolean }> {
-	const own = provisional ? null : await loadLayout(name).catch(() => null);
-	const layout = pick(own, kitLayout(name), builtinLayout(name, mobile()));
-	return { layout, shipped: !!layout && layout !== own };
-}
-
-/**
  * While the boot draws before the CLI has answered (da-bhudz), a name means
  * what this device can say without asking it: the kit's as last cached,
  * else the built-in. A save of the reader's own waits for the real pass.
@@ -217,7 +203,10 @@ async function meaning(name: string): Promise<{ layout: Layout | null; shipped: 
 let provisional = false;
 
 /** The layout `name` means here: the save, else the kit's, else the built-in. */
-export const resolve = async (name: string): Promise<Layout | null> => (await meaning(name)).layout;
+export async function resolve(name: string): Promise<Layout | null> {
+	const own = provisional ? null : await loadLayout(name).catch(() => null);
+	return pick(own, kitLayout(name), builtinLayout(name, mobile()));
+}
 
 // ---- walking ----------------------------------------------------------
 
@@ -362,8 +351,8 @@ export function inline(saved: Layout, taken: Set<NodeId>): Tab {
 
 /**
  * The layout a tab holds, as it is saved and compared: the lift and the
- * re-minting undone, the lock (per device) and every nested layout's
- * content (its own save's) left out.
+ * re-minting undone, an old lock and every nested layout's content (its
+ * own save's) left out.
  */
 export function extract(tab: Tab): Layout {
 	const name = tab.layout ?? '';
@@ -426,20 +415,12 @@ async function expandContent(content: Widget | Split, path: string[], taken: Set
 
 /**
  * The tab holding layout `name` with `source` as its tree — its save, its
- * draft, a version restored — its own nested layouts expanded under it,
- * and this device's lock for the name on it. `path` is the names open
- * above it, `name` included.
- *
- * A device that has never locked or unlocked the name gets the lock a
- * first open does (da-gshh): a layout that SHIPPED opens locked, one a
- * person made opens unlocked. `welcome` is the one that ships unlocked
- * (da-zhz0u; vividn, 2026-10-09: «maybe start unlocked»): it is the tab a
- * reader is meant to close, by its own button or the `▾`.
+ * draft, a version restored — its own nested layouts expanded under it.
+ * `path` is the names open above it, `name` included.
  */
-async function tabHolding(name: string, source: Layout, path: string[], taken: Set<NodeId>, shipped = false): Promise<Tab> {
+async function tabHolding(name: string, source: Layout, path: string[], taken: Set<NodeId>): Promise<Tab> {
 	const inlined = inline(normalize({ ...source, name }), taken);
-	const filled: Tab = { ...inlined, content: await expandContent(inlined.content, path, taken) };
-	return (loadLocked(name) ?? (shipped && name !== 'welcome')) ? { ...filled, locked: true } : filled;
+	return { ...inlined, content: await expandContent(inlined.content, path, taken) };
 }
 
 /** A tab with its nested layouts (any depth) filled in from their drafts, else their saves. */
@@ -447,13 +428,13 @@ async function expandTab(tab: Tab, path: string[], taken: Set<NodeId>): Promise<
 	if (tab.layout === undefined) return { ...tab, content: await expandContent(tab.content, path, taken) };
 	const name = tab.layout;
 	if (path.includes(name)) return { ...tab, content: notice(`the layout “${name}” cannot hold itself`) };
-	const { layout: saved, shipped } = await meaning(name);
+	const saved = await resolve(name);
 	if (!saved) return { ...tab, content: notice(`no layout named “${name}”`) };
 	baselines.update((b) => ({ ...b, [name]: baselineOf(saved) }));
 	// The id this tab has is the one the inner root pane took last time:
 	// let it go, so it takes it again rather than minting a new one.
 	taken.delete(tab.id);
-	return tabHolding(name, loadDraft(name) ?? saved, [...path, name], taken, shipped);
+	return tabHolding(name, loadDraft(name) ?? saved, [...path, name], taken);
 }
 
 // ---- the root ---------------------------------------------------------
@@ -526,10 +507,10 @@ const tabOf = (name: string): Tab | undefined => layoutTabs(get(layout)).find((t
 
 /** A root tab for `name` — the draft this device has of it, else its save — or null for an unknown name. */
 async function openTab(name: string, taken: Set<NodeId>): Promise<Tab | null> {
-	const { layout: saved, shipped } = await meaning(name);
+	const saved = await resolve(name);
 	if (!saved) return null;
 	baselines.update((b) => ({ ...b, [name]: baselineOf(saved) }));
-	return tabHolding(name, loadDraft(name) ?? saved, [name], taken, shipped);
+	return tabHolding(name, loadDraft(name) ?? saved, [name], taken);
 }
 
 let booted = false;
@@ -765,9 +746,7 @@ async function replaceCopies(name: string, saved: Layout, unless?: (tab: Tab) =>
 			...l,
 			root: mapTabs(l.root, (was) => {
 				const to = was.layout === name ? next.get(was.id) : undefined;
-				if (!to || unless?.(was)) return was;
-				// A new tree, the same lock: the copy keeps whichever it wore.
-				return { ...without(to, 'locked'), ...(was.locked ? { locked: true } : {}) };
+				return !to || unless?.(was) ? was : to;
 			})
 		})
 	);
@@ -957,7 +936,7 @@ export async function openPlace(kind: string, asTab = false): Promise<void> {
 	}
 	// The widget the tab would hold, resolved as the tab resolves it; a place
 	// that is more than one widget is a tab on a desktop too.
-	const widget = asTab || phone() ? null : soleWidget(loadDraft(name) ?? (await meaning(name)).layout);
+	const widget = asTab || phone() ? null : soleWidget(loadDraft(name) ?? (await resolve(name)));
 	const { pushState, replaceState } = await import('$app/navigation');
 	// A modal open already has the entry; what opens next takes it over.
 	const handed = get(modalPlace)?.name === pushedFor && pushedFor !== null;
@@ -1123,13 +1102,7 @@ export async function saveAs(tabId: NodeId, newName: string): Promise<void> {
 	// This copy first, then its baseline, then the old draft: `settle` runs
 	// on each, and would write the edit back under the old name if the tab
 	// still carried it when the new baseline landed.
-	// A layout the person has just made opens unlocked (da-gshh), unless this
-	// device has said otherwise of the name.
-	const locked = !!loadLocked(newName);
-	apply((l) => ({
-		...l,
-		root: mapTabs(l.root, (t) => (t.id === tabId ? { ...without(t, 'locked'), ...(locked ? { locked } : {}), layout: newName } : t))
-	}));
+	apply((l) => ({ ...l, root: mapTabs(l.root, (t) => (t.id === tabId ? { ...t, layout: newName } : t)) }));
 	baselines.update((b) => ({ ...b, [newName]: baselineOf(copy) }));
 	if (name !== undefined) clearDraft(name);
 	await replaceCopies(newName, copy);
@@ -1188,10 +1161,9 @@ export async function resetLayout(tabId: NodeId): Promise<void> {
  * and a layout a KIT installed (which lives in the data db, not here), are
  * neither read nor written, and stay in the `+`.
  *
- * This device's lock on each built-in is forgotten too, so each opens as
- * a first open does (`tabHolding`): locked, and `welcome` unlocked — and so
- * is which device it said it was, so the trees it goes back to are the ones
- * a first visit on the screen as it is NOW would draw (`device`, da-lsjs9).
+ * Which device this said it was is forgotten too, so the trees it goes back
+ * to are the ones a first visit on the screen as it is NOW would draw
+ * (`device`, da-lsjs9).
  *
  * This one WRITES, which is what separates it from `resetLayout`: a batch
  * that only moved the drafts would leave every save still shadowing its
@@ -1207,8 +1179,6 @@ export async function resetDefaults(): Promise<void> {
 	saveDevice(null);
 	for (const name of BUILTIN_NAMES) {
 		clearDraft(name);
-		// Its lock as a first open's again (da-gshh).
-		clearLocked(name);
 		if (saved.has(name)) await deleteLayout(name);
 	}
 	// The baselines are a record of what the saves WERE; every one of them
@@ -1269,7 +1239,7 @@ async function offerDefaults(fresh: boolean): Promise<void> {
  * «defaults» means the widget as it starts, and a session setting left
  * standing over the settings just written would be exactly the thing it
  * did not go back to. It is also the one act that writes the tree from the
- * widget's side — an explicit one, and already out of a locked menu.
+ * widget's side — an explicit one, chosen from the menu.
  */
 export function resetWidget(tab: Tab | undefined): (() => void) | undefined {
 	if (!tab || isSplit(tab.content)) return undefined;
@@ -1280,24 +1250,6 @@ export function resetWidget(tab: Tab | undefined): (() => void) | undefined {
 		clearSession(keyOf(get(layout), tab.id));
 		apply((l) => setWidget(l, tab.id, { ...widget, settings }));
 	};
-}
-
-/**
- * Lock or unlock a layout, on this device only — every copy of it, since
- * the lock is the name's (`draft.ts`) and a copy that ignored it would
- * unlock itself on the next reload.
- */
-export function toggleLock(tabId: NodeId): void {
-	const tab = copyOf(tabId);
-	if (!tab) return;
-	const name = tab.layout as string;
-	const locked = !tab.locked;
-	saveLocked(name, locked);
-	apply((l) =>
-		layoutTabs(l)
-			.filter((t) => t.layout === name)
-			.reduce((acc, t) => setLocked(acc, t.id, locked), l)
-	);
 }
 
 /**

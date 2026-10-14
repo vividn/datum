@@ -30,16 +30,17 @@ import {
 	MINE,
 	PHONE,
 	addTab,
-	chooseBar,
+	placeBar,
 	chooser,
+	enterLayoutMode,
 	exactly,
 	fill,
+	leaveLayoutMode,
 	manage,
 	maximizeButton,
 	pane,
 	settled,
-	titles,
-	toggleRootLock
+	titles
 } from './support/layout.mjs';
 
 before(startApp);
@@ -55,15 +56,16 @@ const phone = sharedApp(PHONE);
 /** The desktop default (defaults.ts), as the panes are titled. */
 const SIX = ['dayview', 'repl', 'nowview', 'tail', 'custom', 'fields'];
 
-/** Maximize or restore `id`, and wait for the page to settle on it. */
+/** Maximize or restore `id`, and wait for the page to settle on it — in normal mode, where the badge maximizes. */
 async function press(page, id) {
+	await leaveLayoutMode(page);
 	await maximizeButton(page, id).click();
 	await settled(page);
 }
 
-/** Every border's ratio, in DOM order: what «the tree did not change» reads as. */
+/** Every split's ratios, as the tree holds them: what «the tree did not change» reads as. */
 const ratios = (page) =>
-	page.locator('[role="separator"]').evaluateAll((all) => all.map((el) => el.getAttribute('aria-valuenow')));
+	page.evaluate(() => JSON.stringify(window.datum.layout.current(), (key, value) => (key === 'ratios' ? value : value)).match(/"ratios":\[[^\]]*\]/g));
 
 /** The `main` layout's draft, as stored — null when nothing has been edited. */
 const draftOf = (page) => page.evaluate(() => localStorage.getItem('datum.layout.draft.v1.main'));
@@ -189,18 +191,12 @@ describe('the maximize badge', () => {
 		});
 	});
 
-	// A lock keeps the LAYOUT from changing; maximizing changes nothing
-	// saved, so it is the one badge that stays.
-	test('a locked layout keeps the badge and loses the `+` and the `▾`', async () => {
+	// Normal mode keeps the LAYOUT from changing (da-vvcxc); maximizing
+	// changes nothing saved, so it is the one badge that stays.
+	test('normal mode keeps the badge and has no `+` and no `×`', async () => {
 		await shared.solo(async ({ page }) => {
-			await toggleRootLock(page);
-			await settled(page);
-			assert.equal(await page.locator('section.pane button.add').count(), 0, 'a locked layout kept its `+`');
-			// Both go together (da-bzhq): "Locking hides both the + and this
-			// down arrow icon menu."
-			assert.equal(await page.locator('section.pane button.manage').count(), 0, 'a locked layout kept its `▾`');
-			// And the `×` goes with them (da-efr4i): «in unlocked mode».
-			assert.equal(await page.locator('section.pane button.close').count(), 0, 'a locked layout kept its `×`');
+			assert.equal(await page.locator('section.pane button.add').count(), 0, 'normal mode has a `+`');
+			assert.equal(await page.locator('section.pane button.close').count(), 0, 'normal mode has a `×`');
 
 			await press(page, 'repl');
 			assert.deepEqual(await titles(page), ['repl']);
@@ -227,25 +223,27 @@ describe('the maximize badge', () => {
 	// The DOM order is the KEYBOARD's and, since da-bzhq, the drawn order
 	// too — no `order` and no auto margin deal a badge out to a corner any
 	// more. vividn: «move the maximize button to be before the tab names,
-	// rather than on the opposite side of the bar», so: maximize, then the
-	// title or the tabs, then `+`, then `▾` — and since da-efr4i the `×`
-	// after those, the one destructive badge at the far end from the `+`.
-	test('the maximize comes first, before the title, and the `+`, `▾` and `×` after it', async () => {
+	// rather than on the opposite side of the bar», so: maximize (in layout
+	// mode, the handle in its place), then the title or the tabs, then `+`
+	// — and since da-efr4i the `×` after it, the one destructive badge at
+	// the far end from the `+`.
+	test('the maximize comes first, before the title, and the `+` and `×` after it', async () => {
 		await shared.solo(async ({ page }) => {
+			await enterLayoutMode(page);
 			const names = (id) =>
 				pane(page, id)
 					.locator('> .titlebar > .along')
 					.evaluate((el) =>
 						[...el.children].map(
 							(c) =>
-								['titlebox', 'tabs', 'add', 'maximize', 'manage', 'close'].find((name) => c.classList.contains(name)) ??
+								['titlebox', 'tabs', 'add', 'maximize', 'close'].find((name) => c.classList.contains(name)) ??
 								c.className
 						)
 					);
-			assert.deepEqual(await names('repl'), ['maximize', 'titlebox', 'add', 'manage', 'close']);
+			assert.deepEqual(await names('repl'), ['maximize', 'titlebox', 'add', 'close']);
 			// And with a strip in place of the title, the same order.
 			await addTab(page, 'repl', 'aliases');
-			assert.deepEqual(await names('repl'), ['maximize', 'tabs', 'add', 'manage', 'close']);
+			assert.deepEqual(await names('repl'), ['maximize', 'tabs', 'add', 'close']);
 		});
 	});
 });
@@ -296,7 +294,7 @@ describe('the maximize badge, drawn and placed', () => {
 		await shared.solo(async ({ page }) => {
 			for (const edge of ['top', 'right', 'left', 'bottom']) {
 				if (edge !== 'top') {
-					await chooseBar(page, 'repl', edge);
+					await placeBar(page, 'repl', edge);
 					await settled(page);
 				}
 				const { box, svg, ink } = await drawn(page, 'repl');
@@ -384,10 +382,12 @@ describe('the maximize badge, drawn and placed', () => {
 			test(`under ${pointer}, on a ${edge} bar its centre is on the pane's corner, and the box it draws is smaller than the box it offers a finger`, async () => {
 				await where.solo(async ({ page }) => {
 					if (edge !== 'top') {
-						await chooseBar(page, 'repl', edge);
+						await placeBar(page, 'repl', edge);
 						await settled(page);
 					}
 					const flip = edge === 'left';
+					// The `+` the row is read against is layout mode's (da-vvcxc).
+					await enterLayoutMode(page);
 
 					// FULLY IN THE CORNER, on both axes at once.
 					const off = await offCorner(page, 'repl');
@@ -449,9 +449,9 @@ describe('the maximize badge, drawn and placed', () => {
 	// down in two runs. A cursor's reading is the one that was already
 	// right, so a regression that moved BOTH pointers together — which is
 	// exactly what the single token did — still fails here.
-	// THE SAME CLAIM FOR THE WHOLE ROW (da-wyofs, da-efr4i): the maximize,
-	// the `+`, the `▾` and the `×` draw a `::before` inside a button that
-	// is the finger's box. One drawn size under either pointer, and no
+	// THE SAME CLAIM FOR THE WHOLE ROW (da-wyofs, da-efr4i): the maximize
+	// (the handle, in layout mode), the `+` and the `×` draw a `::before`
+	// inside a button that is the finger's box. One drawn size under either pointer, and no
 	// badge drawing on the button itself — the four are one mechanism, so
 	// a new badge that misses it is caught here rather than by eye on a
 	// phone. And one size AMONG them (da-33ves): the maximize drew 12
@@ -460,10 +460,11 @@ describe('the maximize badge, drawn and placed', () => {
 		const read = async (where) => {
 			let out;
 			await where.solo(async ({ page }) => {
+				await enterLayoutMode(page);
 				out = await page.evaluate(() => {
 					const row = document.querySelector('section[data-pane="repl"] > .titlebar > .along');
 					const seen = {};
-					for (const [name, sel] of [['maximize', 'button.maximize'], ['+', 'button.add'], ['▾', 'button.manage'], ['×', 'button.close']]) {
+					for (const [name, sel] of [['maximize', 'button.maximize'], ['+', 'button.add'], ['×', 'button.close']]) {
 						const el = row.querySelector(sel);
 						if (!el) { seen[name] = null; continue; }
 						const own = getComputedStyle(el);
@@ -488,7 +489,7 @@ describe('the maximize badge, drawn and placed', () => {
 		const [fine, coarse] = [await read(shared), await read(phone)];
 		assert.equal(fine.coarse, false);
 		assert.equal(coarse.coarse, true);
-		for (const name of ['maximize', '+', '▾', '×']) {
+		for (const name of ['maximize', '+', '×']) {
 			const [a, b] = [fine.seen[name], coarse.seen[name]];
 			assert.ok(a && b, `the ${name} was not on the row`);
 			// The hit area is the one thing that differs, which is what says
@@ -505,9 +506,9 @@ describe('the maximize badge, drawn and placed', () => {
 				assert.match(seen.ownGround, /^rgba\(.*,\s*0\)$/, `${when} the ${name} grounds its button (${seen.ownGround})`);
 			}
 		}
-		// And all four draw the SAME box as each other, which is what
+		// And all three draw the SAME box as each other, which is what
 		// «one mechanism» means and what the eye actually reads on the row.
-		const sizes = ['maximize', '+', '▾', '×'].map((n) => fine.seen[n].drawn);
+		const sizes = ['maximize', '+', '×'].map((n) => fine.seen[n].drawn);
 		assert.equal(new Set(sizes).size, 1, `the row's badges draw ${sizes.join(', ')}`);
 	});
 
@@ -540,17 +541,14 @@ describe('the maximize badge, drawn and placed', () => {
 	// the moment a reader is looking straight at it. What wins is Svelte's
 	// scope class, repeated to outrank a global rule; that is a property of
 	// the compiler rather than of this file, so it is asserted here.
-	// ALL THREE BADGES, since da-wyofs put the `+` and the `▾` on the same
-	// mechanism: what `.control.badge:hover` (app.css) colours is the
-	// BUTTON's border, and the button's border is the one that must never
-	// appear. A scoped selector wins that argument only by carrying more
-	// weight than a global one, and svelte repeats its hash for a bare
-	// class but not for the compound a `:global()` is in — so the `▾`,
-	// which can only be reached through `:global`, carries a doubled
-	// `.manage` to make up the difference. That is arithmetic about the
-	// compiler and about a file this one does not own, so it is asserted
-	// rather than trusted.
-	// The `×` (da-efr4i) is the fourth. It arrived on the row while
+	// EVERY BADGE, since da-wyofs put the `+` on the same mechanism: what
+	// `.control.badge:hover` (app.css) colours is the BUTTON's border, and
+	// the button's border is the one that must never appear. A scoped
+	// selector wins that argument only by carrying more weight than a
+	// global one, which is arithmetic about the compiler and about a file
+	// this one does not own, so it is asserted rather than trusted. The `+`
+	// and the `×` are layout mode's (da-vvcxc), so they are read there.
+	// The `×` (da-efr4i) is the last. It arrived on the row while
 	// da-wyofs was in flight and the two rebased past each other cleanly,
 	// which is exactly how a badge comes to draw on its BUTTON while its
 	// neighbours draw inside theirs — invisible under a cursor, where the
@@ -559,11 +557,11 @@ describe('the maximize badge, drawn and placed', () => {
 	for (const [what, selector] of [
 		['maximize', 'button.maximize'],
 		['+', 'button.add'],
-		['▾', 'button.manage'],
 		['×', 'button.close']
 	])
 		test(`pointing at the ${what} moves the drawn edge, and does not give the button one`, async () => {
 			await shared.solo(async ({ page }) => {
+				if (what !== 'maximize') await enterLayoutMode(page);
 				const badge = pane(page, 'repl').locator(`> .titlebar ${selector}`);
 				const look = () =>
 					badge.evaluate((el) => {
@@ -597,7 +595,8 @@ describe('the maximize badge, drawn and placed', () => {
 	// keeps the 0.5rem that holds it off the rounded corner there.
 	test('the badges at the row\'s other end keep their clearance', async () => {
 		await shared.solo(async ({ page }) => {
-			await chooseBar(page, 'repl', 'end');
+			await placeBar(page, 'repl', 'end');
+			await enterLayoutMode(page);
 			await settled(page);
 			const trail = await page.evaluate(() => {
 				const row = document.querySelector('section[data-pane="repl"] > .titlebar > .along');
@@ -617,23 +616,25 @@ describe('the maximize badge, drawn and placed', () => {
 		test(`on a ${edge} bar the badge is before the tab names, at either alignment`, async () => {
 			await shared.solo(async ({ page }) => {
 				if (edge !== 'top') {
-					await chooseBar(page, 'repl', edge);
+					await placeBar(page, 'repl', edge);
 					await settled(page);
 				}
 
 				const flip = edge === 'left';
 
+				await enterLayoutMode(page);
 				const start = await along(page, 'repl', flip);
 				assert.ok(start.max < start.title, `align start: the badge (${start.max.toFixed(1)}) is not before the title (${start.title.toFixed(1)})`);
 				assert.ok(start.title < start.add, 'align start: the `+` did not stay after the title');
 
-				await chooseBar(page, 'repl', 'end');
+				await placeBar(page, 'repl', 'end');
 				await settled(page);
 				const done = await along(page, 'repl', flip);
 				assert.ok(done.max < done.title, `align end: the badge (${done.max.toFixed(1)}) is not before the title (${done.title.toFixed(1)})`);
 				assert.ok(done.title < done.add, 'align end: the `+` did not stay after the title');
 
 				// Pressing it there still maximizes: the place is all that moved.
+				await leaveLayoutMode(page);
 				await press(page, 'repl');
 				assert.deepEqual(await titles(page), ['repl']);
 			});

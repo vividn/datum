@@ -27,7 +27,7 @@
 // - a flag of a held command (da-st2xl): its line of the CLI's own flag
 //   table, carried on the button from `datum help --json`.
 // - any other control carrying a `data-help` (da-ftj39): its `title`, and
-//   that text — the top bar's lock, layout menu, `+`, `▾`, gear and ⓘ.
+//   that text — the top bar's layout menu, `+`, gear and ⓘ.
 //
 // Anything else is general help too: the tap asked for help, so it gets
 // some.

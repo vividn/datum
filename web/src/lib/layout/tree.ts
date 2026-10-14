@@ -476,26 +476,6 @@ export function setActive(layout: Layout, paneId: NodeId, active: number): Layou
 	);
 }
 
-/**
- * Lock or unlock a tab: nothing under it may be split, tabbed or resized
- * while it is locked (the renderer threads the lock down the subtree).
- * Unlocking removes the key, so a tree that was never locked and one
- * that was locked and unlocked are the same tree.
- */
-export function setLocked(layout: Layout, tabId: NodeId, locked: boolean): Layout {
-	return withRoot(
-		layout,
-		mapPanes(layout.root, (pane) => ({
-			...pane,
-			tabs: pane.tabs.map((tab) => {
-				if (tab.id !== tabId) return tab;
-				const { locked: _, ...rest } = tab;
-				return locked ? { ...rest, locked } : rest;
-			})
-		}))
-	);
-}
-
 export function setBar(layout: Layout, paneId: NodeId, bar: Bar): Layout {
 	return withRoot(
 		layout,

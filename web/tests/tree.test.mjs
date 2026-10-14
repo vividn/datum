@@ -30,7 +30,6 @@ import {
 	normalize,
 	setActive,
 	setBar,
-	setLocked,
 	nameOf,
 	setRatios,
 	setTitle,
@@ -41,7 +40,6 @@ import {
 	floorOf,
 	rootFloorOf
 } from '../src/lib/layout/tree.ts';
-import { isModified } from '../src/lib/layout/draft.ts';
 
 const widgetTab = (kind) => newTab(newWidget(kind));
 
@@ -646,45 +644,6 @@ describe('setBar / setWidget', () => {
 		const one = single('tail');
 		const tab = one.root.tabs[0];
 		assert.deepEqual(shedLayout(one, tab.id), one);
-	});
-});
-
-// The lock (da-2a5y): a flag on a tab, which the renderer threads down
-// its subtree. Toggling it is not an edit — the draft must not report a
-// tree that differs from its save only by a lock as modified.
-describe('setLocked', () => {
-	test('sets and clears the flag on the one tab, and unlocking leaves the key out', () => {
-		const { layout } = pair();
-		const tab = layout.root.tabs[0];
-		const locked = setLocked(layout, tab.id, true);
-		assert.equal(locked.root.tabs[0].locked, true);
-		assert.ok(isCanonical(locked));
-		const [left] = locked.root.tabs[0].content.children;
-		assert.equal('locked' in left.tabs[0], false, 'a child tab was locked too');
-		const unlocked = setLocked(locked, tab.id, false);
-		assert.deepEqual(unlocked, layout);
-		assert.equal('locked' in unlocked.root.tabs[0], false);
-	});
-
-	test('is not a modification of the draft', () => {
-		const { layout } = pair();
-		const locked = setLocked(layout, layout.root.tabs[0].id, true);
-		assert.equal(isModified(locked, layout), false);
-		assert.equal(isModified(layout, locked), false);
-		// And a real change still is, lock or no lock.
-		assert.equal(isModified(addTab(locked, layout.root.id), layout), true);
-	});
-
-	test('a widget setting that happens to be shaped like a tab is still compared', () => {
-		// Copilot on #172: the lock is dropped by walking the tree, not by
-		// the shape of an object — a settings record may hold any keys.
-		const shaped = (locked) =>
-			({
-				version: 1,
-				name: 'test',
-				root: newPane([newTab({ id: 'w', kind: 'stats', settings: { content: 'x', locked } })])
-			});
-		assert.equal(isModified(shaped(true), shaped(false)), true);
 	});
 });
 

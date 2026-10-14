@@ -115,13 +115,16 @@ async function putBack(app) {
 }
 
 /**
- * The page as seeded, with `line` typed on it. `home` closes what a tap
- * opened; the layout world is put back only when the tap moved it, and the
- * database only when it wrote — and most taps do neither.
+ * The page as seeded, with `line` typed on it — in layout mode, with
+ * `layout` (da-vvcxc). `home` closes what a tap opened; the layout world is
+ * put back only when the tap moved it, and the database only when it wrote
+ * — and most taps do neither.
  */
-async function reset(app, line) {
+async function reset(app, line, layout = false) {
 	const { page } = app;
 	await app.home();
+	// Out of layout mode with the page as it was when the mode was entered.
+	await page.evaluate(() => window.datum.mode.discard());
 	// A maximize is view state no `solo` puts back (maximize.ts).
 	// Help armed (`help.ts`) explains the next tap instead of acting it:
 	// Escape disarms it.
@@ -187,6 +190,7 @@ async function reset(app, line) {
 		await page.locator('.prompt-bar input').fill(line);
 		await page.locator('.prompt-bar .send').waitFor();
 	}
+	if (layout) await page.evaluate(() => window.datum.mode.enter());
 	await app.idle();
 }
 
@@ -359,7 +363,8 @@ export function everyButton(screen, options, must) {
 // layouts live.
 //
 // A layer is surveyed once per kind: two openers whose layers hold the same
-// buttons (every pane's `▾`, say) are one survey, named for the first.
+// buttons (every pane's layout-mode menu, say) are one survey, named for
+// the first.
 
 /** A layer: a modal, a card that says it is a dialog, or a menu. */
 const LAYERS = 'dialog[open], [role="dialog"], [role="menu"]';
@@ -397,9 +402,12 @@ const SKIP = {
  * have surveyed once. Each must be met, as `SKIP`'s.
  */
 const ELSEWHERE = {
-	'page: manage the layout › page: Change Widget':
+	'page: main › page: Change Widget':
 		"the widget chooser, whose buttons a pane's «add a tab» holds too (act-taps-dialogs-pane); on the root it changes a widget `solo` does not put back"
 };
+
+/** The paths above that only layout mode opens (da-vvcxc): a normal-mode share never meets them. */
+const IN_LAYOUT_MODE = new Set(['page: main › page: Change Widget']);
 
 /**
  * Tap `key` — on the page, or in the layer tagged `data-layer` — and tag
@@ -433,17 +441,17 @@ async function press(app, key, inLayer) {
 	return { ...found, opened: opened ? (await survey(page, { layer: true })).map((b) => b.key) : null };
 }
 
-/** The seeded page, with the layers `path`'s taps open, open. */
-async function openPath(app, path) {
-	await reset(app);
+/** The seeded page, with the layers `path`'s taps open, open — in layout mode, with `layout`. */
+async function openPath(app, path, layout) {
+	await reset(app, undefined, layout);
 	for (const [i, key] of path.entries())
 		assert.ok((await press(app, key, i > 0)).opened, `${path.slice(0, i + 1).join(' › ')}: opened nothing`);
 }
 
 /** Tap `key` in the layer `path` opens, and say what the tap did. */
-async function tapIn(app, path, key) {
+async function tapIn(app, path, key, layout) {
 	const { page } = app;
-	await openPath(app, path);
+	await openPath(app, path, layout);
 	await app.clock.forward(1000);
 	await page.evaluate(() => (window.__lastRun = window.datum.bar.last()));
 	const before = [await writes(app), await changeCounter(page, '_internal')];
@@ -459,18 +467,20 @@ async function tapIn(app, path, key) {
  * idle box — more than 300 on CI's lane. What costs is the menus that
  * reshape the layout, since every split, tab or layout they make is a `solo`
  * to put back: the root bar's (`layout`) and a pane's (`pane`) are a share
- * each. A widget's own options menu (`menu`) is a share too, since the rest
- * alone reached the cap on a loaded lane (da-4j2hw), and every other layer
- * is `rest`.
+ * each, walked IN LAYOUT MODE (da-vvcxc), where those menus are — the open
+ * root tab's name is the root's, a pane's name and its `+` the pane's. A
+ * widget's own options menu (`menu`) is a share too, since the rest alone
+ * reached the cap on a loaded lane (da-4j2hw), and every other layer is
+ * `rest`; both are walked in normal mode.
  */
-const ROOT_LAYOUT = /^page: (open a layout|manage the layout)$/;
-const PANE_LAYOUT = /: (add a tab to|manage) the .* pane$/;
+const ROOT_LAYOUT = /^page: (open a layout|main)$/;
+const PANE_LAYOUT = /: (add a tab to|menu of) the .* pane$/;
 const PANE_MENU = /: menu of the .* pane$/;
 export const SHARES = {
-	layout: (key) => ROOT_LAYOUT.test(key),
-	pane: (key) => PANE_LAYOUT.test(key),
-	menu: (key) => PANE_MENU.test(key),
-	rest: (key) => !ROOT_LAYOUT.test(key) && !PANE_LAYOUT.test(key) && !PANE_MENU.test(key)
+	layout: { layout: true, test: (key) => ROOT_LAYOUT.test(key) },
+	pane: { layout: true, test: (key) => PANE_LAYOUT.test(key) },
+	menu: { layout: false, test: (key) => PANE_MENU.test(key) },
+	rest: { layout: false, test: (key) => key !== 'page: open a layout' && !PANE_MENU.test(key) }
 };
 
 /**
@@ -484,19 +494,19 @@ async function walk(app, share, depth = 3) {
 	const skipped = [];
 	const seen = new Set();
 	const visit = async (path) => {
-		await openPath(app, path);
+		await openPath(app, path, share.layout);
 		const buttons = await survey(app.page, { layer: path.length > 0 });
 		if (path.length > 0) layers.push({ path, keys: buttons.map((b) => b.key) });
 		const next = [];
 		for (const b of buttons) {
 			// A double on the page acts, which the page's own survey holds.
-			if (path.length === 0 && (b.double || !share(b.key))) continue;
+			if (path.length === 0 && (b.double || !share.test(b.key))) continue;
 			const named = [...path, b.key].join(' › ');
 			if (SKIP[named]) {
 				skipped.push(named);
 				continue;
 			}
-			const t = await tapIn(app, path, b.key);
+			const t = await tapIn(app, path, b.key, share.layout);
 			if (path.length > 0 && t.double !== t.acted)
 				wrong.push(
 					`${named} (${t.kind ?? 'no kind'}): ${t.double ? 'double, and did nothing' : `single, and ${t.wrote ? 'wrote' : 'ran'}`}`
@@ -534,7 +544,9 @@ export function everyLayer(screen, options, share, must) {
 			for (const { path, keys } of layers) console.log(`# ${path.join(' › ')}: ${keys.length} buttons`);
 			for (const path of skipped) console.log(`# skipped ${path}: ${SKIP[path] ?? ELSEWHERE[path]}`);
 			assert.deepEqual(wrong, []);
-			const mine = [...Object.keys(SKIP), ...Object.keys(ELSEWHERE)].filter((path) => SHARES[share](path.split(' › ')[0]));
+			const mine = [...Object.keys(SKIP), ...Object.keys(ELSEWHERE)].filter(
+				(path) => SHARES[share].test(path.split(' › ')[0]) && IN_LAYOUT_MODE.has(path) === SHARES[share].layout
+			);
 			assert.deepEqual(mine.filter((path) => !skipped.includes(path)), [], 'skipped, and never met');
 			const reached = layers.map((l) => l.path.join(' › '));
 			for (const path of must) assert.ok(reached.includes(path), `${path} not reached; reached ${reached.join(' | ')}`);

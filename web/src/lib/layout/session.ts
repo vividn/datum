@@ -14,8 +14,8 @@
 // So this store is now the ONE place a widget setting changes: the menu's
 // option rows write here, and so does a widget moving a setting of its own
 // (nowview's − / +, the day strip's handle, the stats widget's range
-// chips). The tree is written by `saveOptions` alone, and the lock hides
-// that act — which is what makes «when locked, nothing modifies the
+// chips). The tree is written by `saveOptions` alone, an act the reader
+// chooses — which is what makes «a widget's own controls never modify the
 // layout» true by CONSTRUCTION rather than by a guard every writer has to
 // remember.
 //

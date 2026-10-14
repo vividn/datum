@@ -73,7 +73,10 @@ export interface Tab {
 	id: NodeId;
 	/** Shown on the tab; when absent, the widget kind's own title is used. */
 	title?: string;
-	/** Nothing under this tab can be split, tabbed or resized (da-2a5y). */
+	/**
+	 * A per-device lock older trees and drafts carry (da-2a5y). Layout mode
+	 * replaced it (da-vvcxc): `inline` and `extract` drop it, nothing reads it.
+	 */
 	locked?: boolean;
 	content: Widget | Split;
 	/**

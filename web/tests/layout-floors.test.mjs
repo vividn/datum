@@ -13,6 +13,7 @@ import {
 	boxOf,
 	canvasWidth,
 	dragFor,
+	enterLayoutMode,
 	drawnRuns,
 	finalAsks,
 	grab,
@@ -35,6 +36,7 @@ const shared = sharedApp(DESKTOP);
 describe('a border', () => {
 	test('dragged 100px moves the ratio and redraws the picture at the new width', async () => {
 		await shared.solo(async ({ page }) => {
+			await enterLayoutMode(page);
 			const border = page.locator('.split.row > [role="separator"]');
 			const repl = pane(page, 'repl');
 			const before = await repl.boundingBox();
@@ -66,6 +68,7 @@ describe('a border', () => {
 	// nowview and the tail, drags down to its panes' outlines and no further.
 	test('drags the side column down to its panes\' outlines and no further', async () => {
 		await shared.solo(async ({ page }) => {
+			await enterLayoutMode(page);
 			const border = page.locator('.split.row > [role="separator"]');
 			const box = await border.boundingBox();
 			const x = box.x + box.width / 2;
@@ -233,6 +236,7 @@ describe('resizing', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const seen = await app.spyOnRunner();
+			await enterLayoutMode(page);
 			const border = page.locator('.split.row > [role="separator"]');
 			await border.focus();
 			// 30ms apart, inside one `SETTLE_MS` burst: the pacing is the
@@ -268,6 +272,7 @@ describe('resizing', () => {
 			// The tail's badges are centred on its top outline, so half of each
 			// hangs into the gap above — the column border between nowview and
 			// tail — and no further: 8px of a 16px badge in an 8px gap (da-om9v).
+			await enterLayoutMode(page);
 			const border = pane(page, 'side').locator('.split.column > [role="separator"]').first();
 			const badge = pane(page, 'tail').locator('.titlebar button.add');
 			const [gap, more, tailBefore] = await Promise.all([boxOf(border), boxOf(badge), boxOf(pane(page, 'tail'))]);

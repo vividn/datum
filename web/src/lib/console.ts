@@ -25,13 +25,14 @@ import { storedEntries, type StoredEntry } from './backup.js';
 import { tailListing, type TailColumn, type TailRow } from './tail.js';
 import * as layouts from './layout/store.js';
 import * as shell from './layout/shell.js';
+import * as mode from './layout/mode.js';
 import { last, pills, removePill, setPills, type LastRun, type Pill } from './bar.js';
 import { cursor, pointAt, setCursor, type Cursor } from './cursor.js';
 import { shellSplit } from './shellSplit.js';
 import { openField } from './fieldWidget.js';
 import type { Verb } from './track.js';
 import { get } from 'svelte/store';
-import { apply, layout } from './layout/current.js';
+import { apply, editing, layout } from './layout/current.js';
 import { forgetSession, keyOf, session, withSession } from './layout/session.js';
 import { findTab } from './layout/tree.js';
 import { isWidget } from './layout/types.js';
@@ -84,8 +85,10 @@ export interface DatumConsole {
 		/** What the widget in tab `tabId` is DRAWN from: the tree's settings with this session's over them. */
 		settings(tabId: string): Record<string, unknown> | undefined;
 	};
-	/** The root tabs (da-0a5o): open a layout by name, save, restore, save as, lock. */
+	/** The root tabs (da-0a5o): open a layout by name, save, restore, save as. */
 	shell: typeof shell;
+	/** Layout mode (da-vvcxc): whether it is on, and its doors in and out. */
+	mode: { on(): boolean; enter(): void; accept(): void; discard(): void };
 	/**
 	 * The bottom bar's pills: what the time cursor will set, and a test does.
 	 * And `last`, the bar's receipt: the newest command recorded and its
@@ -140,6 +143,7 @@ export function installConsole(target: Record<string, unknown>): void {
 			}
 		},
 		shell,
+		mode: { on: () => get(editing) !== null, enter: mode.enter, accept: mode.accept, discard: mode.discard },
 		sync: { states: () => get(syncStates), leads: syncLeads, offer: syncOffer, connect: syncConnect },
 		bar: { pills: () => get(pills), setPills, removePill, last: () => get(last) },
 		cursor: { at: () => get(cursor)?.at ?? null, set: setCursor, of: () => get(cursor), point: pointAt },

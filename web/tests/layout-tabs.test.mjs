@@ -13,7 +13,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, todayAt, withApp } from './support/app.mjs';
-import { DESKTOP, PHONE, activeTab, addTab, pane, swipeOver } from './support/layout.mjs';
+import { DESKTOP, PHONE, activeTab, addTab, leaveLayoutMode, pane, swipeOver } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -162,6 +162,8 @@ describe('a tab behind takes no focus and no key', () => {
 			await app.submit('spec set coffee --verb add');
 			await addTab(page, 'custom', 'input');
 			await addTab(page, 'tail', 'input');
+			// Out of layout mode, where Escape would ask how to leave it.
+			await leaveLayoutMode(page);
 			await pane(page, 'tail').locator('[role="tab"]', { hasText: 'tail' }).click();
 			await page.locator('.bar [data-field="coffee"]').waitFor();
 

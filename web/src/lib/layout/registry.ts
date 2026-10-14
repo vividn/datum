@@ -87,8 +87,8 @@ export interface WidgetKind {
 	 *
 	 * It is given the settings as SHOWN and what it returns lands in THIS
 	 * SESSION (da-vhwq, Layout.svelte), not in the tree — so a widget
-	 * moving one of its own settings cannot modify the layout, locked or
-	 * not.
+	 * moving one of its own settings cannot modify the layout, in either
+	 * mode.
 	 */
 	onChange?: (settings: Record<string, unknown>, detail: unknown) => Record<string, unknown>;
 	/**

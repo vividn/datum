@@ -15,6 +15,14 @@
 // marked (`data-drop`). Letting go moves it; Escape and a cancelled
 // pointer put it back. Either way the click the drag leaves behind is
 // swallowed, so a drag never also switches or opens the menu.
+//
+// A HOLD THAT NEVER MOVES is the other gesture (da-vvcxc): a press held
+// for `HOLD_MS` and let go where it was — a finger's or a mouse's — is
+// `hold`, and so is the `contextmenu` a right click, the menu key or
+// Shift+F10 raises on a tab. That is how layout mode is entered. A hold
+// that moves is still a drag, exactly as before; the undecided hold is the
+// nowview's pattern (`nowpoint.ts`): HOLD, then a drag on a move or the
+// hold's own act on the lift.
 
 import { HOLD_MS, swallowTail } from '$lib/hold.js';
 
@@ -29,6 +37,12 @@ export interface Reordering {
 	tabs: string;
 	/** Move the tab at `from` so that it ends at `to`. */
 	move: (from: number, to: number) => void;
+	/**
+	 * A tab held and let go without moving, or asked for its context menu:
+	 * whether it acted, since a context menu it did nothing with is left
+	 * to the browser.
+	 */
+	hold?: (tab: HTMLElement) => boolean;
 }
 
 export function reorders(node: HTMLElement, spec: Reordering) {
@@ -36,6 +50,8 @@ export function reorders(node: HTMLElement, spec: Reordering) {
 	let press: { id: number; x: number; y: number; scroll: number; tab: HTMLElement; from: number } | null = null;
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let dragging = false;
+	/** The press has lasted `HOLD_MS`: let go where it was, it is a hold. */
+	let still = false;
 	let frame = 0;
 	/**
 	 * The pointer's x, and the index the tab would land at in the list
@@ -53,7 +69,11 @@ export function reorders(node: HTMLElement, spec: Reordering) {
 		x = event.clientX;
 		press = { id: event.pointerId, x, y: event.clientY, scroll: node.scrollLeft, tab, from: all().indexOf(tab) };
 		to = press.from;
-		if (event.pointerType === 'touch') timer = setTimeout(start, HOLD_MS);
+		const touch = event.pointerType === 'touch';
+		timer = setTimeout(() => {
+			still = true;
+			if (touch) start();
+		}, HOLD_MS);
 		addEventListener('pointermove', move);
 		addEventListener('pointerup', up);
 		addEventListener('pointercancel', end);
@@ -115,8 +135,13 @@ export function reorders(node: HTMLElement, spec: Reordering) {
 	function up(event: PointerEvent) {
 		if (!press || event.pointerId !== press.id) return;
 		const moved = dragging && to !== press.from ? [press.from, to] : null;
+		const stayed = still && Math.hypot(event.clientX - press.x, event.clientY - press.y) <= SLOP;
+		const tab = press.tab;
+		// A drag's click is swallowed by `end`; a mouse's hold never was one.
+		if (stayed && !dragging) swallowTail();
 		end();
 		if (moved) held.move(moved[0], moved[1]);
+		else if (stayed) held.hold?.(tab);
 	}
 
 	function key(event: KeyboardEvent) {
@@ -138,6 +163,7 @@ export function reorders(node: HTMLElement, spec: Reordering) {
 		if (dragging) swallowTail();
 		press = null;
 		dragging = false;
+		still = false;
 		removeEventListener('pointermove', move);
 		removeEventListener('pointerup', up);
 		removeEventListener('pointercancel', end);
@@ -149,9 +175,20 @@ export function reorders(node: HTMLElement, spec: Reordering) {
 		if (dragging || (press && event.type === 'contextmenu')) event.preventDefault();
 	}
 
+	/**
+	 * A right click, the menu key, Shift+F10: a hold asked for at once. Not
+	 * during a press, whose `contextmenu` is a finger's long press catching
+	 * up — that one is `up`'s to decide, by whether the finger moved.
+	 */
+	function menu(event: MouseEvent) {
+		const tab = (event.target as Element).closest<HTMLElement>(held.tabs);
+		if (press || !held.hold || !tab || !node.contains(tab)) return refuse(event);
+		if (held.hold(tab)) event.preventDefault();
+	}
+
 	node.addEventListener('pointerdown', down);
 	node.addEventListener('touchmove', refuse, { passive: false });
-	node.addEventListener('contextmenu', refuse);
+	node.addEventListener('contextmenu', menu);
 
 	return {
 		update: (next: Reordering) => void (held = next),
@@ -159,7 +196,7 @@ export function reorders(node: HTMLElement, spec: Reordering) {
 			end();
 			node.removeEventListener('pointerdown', down);
 			node.removeEventListener('touchmove', refuse);
-			node.removeEventListener('contextmenu', refuse);
+			node.removeEventListener('contextmenu', menu);
 		}
 	};
 }

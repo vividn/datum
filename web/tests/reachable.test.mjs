@@ -35,7 +35,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { atEachScreen, focusTop, seedLines, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { fold, unfold } from './support/bar.mjs';
-import { chooser, inRoom } from './support/layout.mjs';
+import { chooser, enterLayoutMode, inRoom } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { FIELD_FORM } from './support/field.mjs';
 
@@ -467,8 +467,11 @@ describe('the layout engine, by keyboard', () => {
 		return seen;
 	}
 
-	test('a Tab walk reaches every menu button, every border and the nowview steps', async () => {
+	test('a Tab walk reaches every menu button, every border and the nowview steps, in layout mode', async () => {
 		await desktop.solo(async ({ page }) => {
+			// Layout mode (da-vvcxc) draws every control there is: the borders,
+			// each pane's `+`, `×` and handle, and each root tab's `×`.
+			await enterLayoutMode(page);
 			const reached = await tabWalk(page);
 			// The root bar's `+` and its active tab — which is the page's own
 			// menu button (da-wjob) — and the logo,
@@ -477,7 +480,7 @@ describe('the layout engine, by keyboard', () => {
 			const controls = await page.evaluate(() =>
 				[
 					...document.querySelectorAll(
-						'button.title, button.add, button.manage, button.maximize, [role="separator"], .nowview-steps button, .root-bar [role="tab"][aria-selected="true"], .root-bar button.gear, .root-bar button.lock, .prompt-bar .brand'
+						'button.title, button.add, button.maximize, [role="separator"], .nowview-steps button, .root-bar [role="tab"][aria-selected="true"], .root-bar button.tab-close:not(:disabled), .root-bar button.gear, .prompt-bar .brand'
 					)
 				]
 					.filter((el) => el.getClientRects().length > 0)
@@ -487,16 +490,14 @@ describe('the layout engine, by keyboard', () => {
 							? `menu of ${el.closest('section')?.dataset.title}`
 							: el.matches('.root-bar button.gear')
 								? 'the gear'
-								: el.matches('.root-bar button.lock')
-									? 'the lock'
+								: el.matches('.root-bar button.tab-close')
+									? 'the × of a root tab'
 									: el.matches('.root-bar [role="tab"]')
 										? 'menu of the root bar'
 										: el.matches('button.add')
 											? `the + of ${el.closest('section')?.dataset.title ?? 'the root bar'}`
-											: el.matches('button.manage')
-												? `the ▾ of ${el.closest('section')?.dataset.title ?? 'the root bar'}`
-												: el.matches('button.maximize')
-													? `the maximize of ${el.closest('section')?.dataset.title}`
+											: el.matches('button.maximize')
+												? `the handle of ${el.closest('section')?.dataset.title}`
 													: el.matches('.nowview-steps button')
 													? el.getAttribute('aria-label')
 													: el.matches('.brand')
@@ -507,8 +508,8 @@ describe('the layout engine, by keyboard', () => {
 			assert.equal(controls.filter((c) => c.what.endsWith('window')).length, 2, 'no nowview steps');
 			assert.equal(controls.filter((c) => c.what === 'menu of the root bar').length, 1, 'the root bar has no menu button');
 			assert.equal(controls.filter((c) => c.what === 'the gear').length, 1, 'the root bar has no gear (da-pp1a)');
-			assert.equal(controls.filter((c) => c.what === 'the lock').length, 1, 'the root bar has no lock (da-bzhq)');
-			assert.equal(controls.filter((c) => c.what === 'the ▾ of the root bar').length, 1, 'the root bar has no ▾ (da-bzhq)');
+			// The one root tab wears its ×, disabled: the page's last tab does not close.
+			assert.equal(await page.locator('.root-bar button.tab-close:disabled').count(), 1, 'the root tab wears no × in layout mode');
 			assert.equal(await page.locator('button.faint').count(), 0, 'the margin handles are back (da-wjob)');
 			assert.ok(controls.some((c) => c.what === 'border'), 'the default layout has no draggable border');
 			for (const control of controls) {
@@ -517,53 +518,58 @@ describe('the layout engine, by keyboard', () => {
 		});
 	});
 
-	test('every menu item is on screen and reachable by the arrows', async () => {
+	test('every menu item is on screen and reachable by the arrows, in either mode', async () => {
 		await desktop.solo(async ({ page }) => {
-			// A pane's title, the `▾` beside each `+` (da-bzhq), and the root
-			// bar's active tab (da-wjob) and gear.
-			const openers = page.locator(
-				'button.title:visible, button.manage:visible, .root-bar [role="tab"][aria-selected="true"], .root-bar button.gear'
-			);
-			const menus = await openers.count();
+			// A pane's title, and the root bar's active tab (da-wjob) and gear:
+			// in normal mode what each thing IS, in layout mode what is done
+			// to it (da-vvcxc).
+			const openers = page.locator('button.title:visible, .root-bar [role="tab"][aria-selected="true"], .root-bar button.gear');
 			/** Every label the arrows reached, across all the menus. */
 			const seen = new Set();
-			for (let m = 0; m < menus; m++) {
-				await openers.nth(m).focus();
-				await page.keyboard.press('Enter');
-				const items = page.locator('[role="menu"] button');
-				// The walk is over what can be FOCUSED: a menu whose every item
-				// is disabled opens, holds focus on itself, and closes on the
-				// Escape below.
-				const enabled = await items.evaluateAll((all) => all.filter((b) => !b.disabled).length);
-				const visited = new Set();
-				for (let i = 0; i < enabled; i++) {
-					// By name rather than by words: the four arrows of Split and
-					// of Break out (da-9vtw) draw the same four glyphs.
-					const label = await page.evaluate(() => {
-						const el = document.activeElement;
-						const { top, bottom, left, right } = el.getBoundingClientRect();
-						const ok = top >= 0 && left >= 0 && bottom <= innerHeight && right <= innerWidth;
-						return {
-							text: el.getAttribute('aria-label') ?? el.textContent.trim(),
-							role: el.getAttribute('role'),
-							ok,
-							disabled: el.disabled
-						};
-					});
-					assert.ok(label.role?.startsWith('menuitem'), `focus left the menu at ${label.text}`);
-					assert.ok(label.ok, `${label.text} is off-screen`);
-					visited.add(label.text);
-					await page.keyboard.press('ArrowDown');
+			for (const layoutMode of [false, true]) {
+				if (layoutMode) await enterLayoutMode(page);
+				const menus = await openers.count();
+				for (let m = 0; m < menus; m++) {
+					await openers.nth(m).focus();
+					await page.keyboard.press('Enter');
+					const items = page.locator('[role="menu"] button');
+					// The walk is over what can be FOCUSED: a menu whose every item
+					// is disabled opens, holds focus on itself, and closes on the
+					// Escape below.
+					const enabled = await items.evaluateAll((all) => all.filter((b) => !b.disabled).length);
+					const visited = new Set();
+					for (let i = 0; i < enabled; i++) {
+						// By name rather than by words: the four arrows of Split and
+						// of Break out (da-9vtw) draw the same four glyphs.
+						const label = await page.evaluate(() => {
+							const el = document.activeElement;
+							const { top, bottom, left, right } = el.getBoundingClientRect();
+							const ok = top >= 0 && left >= 0 && bottom <= innerHeight && right <= innerWidth;
+							return {
+								text: el.getAttribute('aria-label') ?? el.textContent.trim(),
+								role: el.getAttribute('role'),
+								ok,
+								disabled: el.disabled
+							};
+						});
+						assert.ok(label.role?.startsWith('menuitem'), `focus left the menu at ${label.text}`);
+						assert.ok(label.ok, `${label.text} is off-screen`);
+						visited.add(label.text);
+						await page.keyboard.press('ArrowDown');
+					}
+					assert.equal(visited.size, enabled, `menu ${m}: the arrows visited ${visited.size} of ${enabled} items`);
+					for (const label of visited) seen.add(label);
+					await page.keyboard.press('Escape');
+					await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+					assert.ok(
+						await openers.nth(m).evaluate((el) => el === document.activeElement),
+						'Escape did not hand focus back to the button'
+					);
 				}
-				assert.equal(visited.size, enabled, `menu ${m}: the arrows visited ${visited.size} of ${enabled} items`);
-				for (const label of visited) seen.add(label);
-				await page.keyboard.press('Escape');
-				await page.locator('[role="menu"]').waitFor({ state: 'detached' });
-				assert.ok(
-					await openers.nth(m).evaluate((el) => el === document.activeElement),
-					'Escape did not hand focus back to the button'
-				);
 			}
+			// Layout mode's acts were walked too.
+			for (const act of ['Change Widget', 'Accept', 'Discard changes'])
+				assert.ok(seen.has(act), `${act} was never walked: ${[...seen].join(' | ')}`);
 			// `Reset layout` (da-luwe) is an act like the other four: on the
 			// screen and on the arrows' path, in the menu of `main` — the
 			// built-in root tab this page opens with.
@@ -591,6 +597,8 @@ describe('the layout engine, by keyboard', () => {
 	]) {
 		test(`every border is ≥ 8px and every … badge is on its floor, ${name}`, async (t) => {
 			await withIt(async ({ page }) => {
+				// Layout mode draws them all: the borders, the `+`, the `×`.
+				await enterLayoutMode(page);
 				await atEachScreen(t, page, screens, async () => {
 					const sizes = await page.evaluate(() => {
 						const box = (el) => {
@@ -602,11 +610,9 @@ describe('the layout engine, by keyboard', () => {
 							coarse: matchMedia('(pointer: coarse)').matches,
 							borders: shown('[role="separator"]').map((el) => Math.min(...box(el))),
 							panes: shown(
-								'section button.title, section button.add, section button.manage, section button.maximize, section button.close'
+								'section button.title, section button.add, section button.maximize, section button.close'
 							).map(box),
-							root: shown(
-								'.root-bar button.add, .root-bar button.manage, .root-bar button.lock, .root-bar button.gear, .root-bar [role="tab"]'
-							).map(box)
+							root: shown('.root-bar button.add, .root-bar button.tab-close, .root-bar button.gear, .root-bar [role="tab"]').map(box)
 						};
 					});
 					assert.equal(sizes.coarse, name.endsWith('finger'));
@@ -620,91 +626,37 @@ describe('the layout engine, by keyboard', () => {
 		});
 	}
 
-	// The Bar submenu (da-nk4k) is icons, not words: each a fingertip's 24px
-	// each way and on screen, under a top bar and under a left-hand one —
-	// whose rotation the row, portalled to the body, does not inherit.
-	test('every Bar submenu icon is ≥ 24px and on screen, on a left-hand bar too', async (t) => {
-		await desktop.solo(async ({ page }) => {
-			const icons = page.locator('[role="menu"][aria-label="Bar"] button');
-			await atEachScreen(t, page, [{ width: 1280, height: 900 }, { width: 390, height: 844 }], async () => {
-				for (const edge of ['top', 'left']) {
-					// A pane's own `▾` (da-bzhq), not the root bar's, which has no Bar.
-					await page.locator('section.pane button.manage').first().click();
-					await page.locator('[role="menu"] button', { hasText: /^\s*Bar\s*$/ }).click();
-					const seen = await icons.evaluateAll((all) =>
-						all.map((el) => {
-							const { top, bottom, left, right, width, height } = el.getBoundingClientRect();
-							return {
-								label: el.getAttribute('aria-label'),
-								width,
-								height,
-								on: top >= 0 && left >= 0 && bottom <= innerHeight && right <= innerWidth,
-								mode: getComputedStyle(el).writingMode
-							};
-						})
-					);
-					assert.equal(seen.length, 7);
-					for (const icon of seen) {
-						assert.ok(icon.width >= 24 && icon.height >= 24, `${edge} bar: ${icon.label} is ${icon.width}x${icon.height}`);
-						assert.ok(icon.on, `${edge} bar: ${icon.label} is off-screen`);
-						assert.equal(icon.mode, 'horizontal-tb', `${edge} bar: ${icon.label}`);
-					}
-					// The icon for the OTHER edge: on the top pass it moves the bar
-					// to the left, which is the next pass; on the left pass it
-					// moves it back to the top, which is where a fresh app has it
-					// and so where the next screen starts. Pressing an item also
-					// shuts the menu, which is all the left pass used to do.
-					const next = edge === 'top' ? 'left' : 'top';
-					await icons.and(page.locator(`[aria-label="${next}"]`)).click();
-					await page.locator('[role="menu"]').waitFor({ state: 'detached' });
-				}
-			});
-		});
-	});
-
-	// Locked (da-2a5y), a layout has FEWER targets, not unreachable ones:
-	// no `+`, no `▾` (da-bzhq) and no border is in the DOM at all, a menu
-	// only where a widget has options (da-gvdc, and since da-vhwq it reads
-	// those options and nothing else), and what is left — the tabs — is
-	// still walked to. The lock is this
-	// device's, on the `main` tab (da-0a5o); the way out is the lock button
-	// beside the gear, which the walk above reaches.
-	test('a locked layout has no `+`, no `▾` and no border, a menu only for options, and its tabs are still in the Tab order', async () => {
+	// Normal mode (da-vvcxc), what a lock was (da-2a5y), has FEWER targets,
+	// not unreachable ones: no `+` and no border is in the DOM at all, a menu
+	// only where a widget has options (da-gvdc), and what is left — the tabs
+	// — is still walked to. The way into layout mode is the open root tab,
+	// which the walk above reaches.
+	test('normal mode has no `+` and no border, a menu only for options, and its tabs are still in the Tab order', async () => {
 		await withApp(
 			async ({ page }) => {
 				const reached = await tabWalk(page);
 				const controls = await page.evaluate(() => ({
-					hidden: document.querySelectorAll(
-						'section.root button.add, section.root button.manage, section.root [role="separator"]'
-					).length,
+					hidden: document.querySelectorAll('section.root button.add, section.root [role="separator"]').length,
 					// A menu is left only where a widget has options (da-gvdc): the repl's.
 					titles: [...document.querySelectorAll('section.root button.title')].map((b) => b.closest('section.pane')?.dataset.title),
 					tabs: [...document.querySelectorAll('section.root [role="tab"]')].map((el) => el.dataset.walk ?? null)
 				}));
-				assert.equal(controls.hidden, 0, 'a locked layout still offers a `+`, a `▾` or a border');
-				assert.equal(
-					await page.locator('.root-bar button.lock[aria-pressed="true"]').count(),
-					1,
-					'the way out of the lock is not on the bar'
-				);
-				assert.deepEqual(controls.titles, ['repl'], 'a locked layout offers a menu beyond a widget’s options');
+				assert.equal(controls.hidden, 0, 'normal mode still offers a `+` or a border');
+				assert.deepEqual(controls.titles, ['repl'], 'normal mode offers a menu beyond a widget’s options');
 				assert.equal(controls.tabs.length, 2);
 				// The active tab is the strip's one stop; the arrows walk the rest.
 				assert.ok(controls.tabs.some((walk) => walk && reached.has(walk)), 'the tab strip is not in the Tab order');
 			},
 			{
 				viewport: { width: 1280, height: 900 },
-				prepare: (context) =>
-					context.addInitScript((json) => {
-						localStorage.setItem('datum.layout.draft.v1.main', json);
-						localStorage.setItem('datum.layout.locked.v1.main', '1');
-					}, LOCKED)
+				prepare: (context) => context.addInitScript((json) => localStorage.setItem('datum.layout.draft.v1.main', json), TWO)
 			}
 		);
 	});
 
 	test('an arrow on a focused border moves it by 2%', async () => {
 		await desktop.solo(async ({ page }) => {
+			await enterLayoutMode(page);
 			const border = page.locator('.split.row > [role="separator"]');
 			await border.focus();
 			const was = Number(await border.getAttribute('aria-valuenow'));
@@ -722,9 +674,9 @@ describe('the layout engine, by keyboard', () => {
 	});
 });
 
-/** The `main` layout this device locks: a root holder over [the REPL | a tabbed tail/nowview pane]. */
+/** A `main` of a root holder over [the REPL | a tabbed tail/nowview pane]. */
 const bar = { edge: 'top', align: 'start' };
-const LOCKED = JSON.stringify({
+const TWO = JSON.stringify({
 	version: 1,
 	name: 'main',
 	root: {

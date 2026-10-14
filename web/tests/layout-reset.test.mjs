@@ -21,7 +21,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
-import { DESKTOP, addTab, chooseRoot, chooser, choose, exactly, manage, menuButton, menuLines, pane } from './support/layout.mjs';
+import { DESKTOP, addTab, chooseRoot, chooser, choose, exactly, leaveLayoutMode, manage, menuButton, menuLines, pane } from './support/layout.mjs';
 
 /** «Save options with layout» (da-vhwq): what makes a widget's own move the layout's. */
 const SAVE = 'Save options with layout';
@@ -125,6 +125,7 @@ describe('Reset widget', () => {
 			await chooser(page).waitFor();
 			await chooser(page).locator('button').filter({ hasText: exactly('stats') }).click();
 			await chooser(page).waitFor({ state: 'detached' });
+			await leaveLayoutMode(page);
 			await page.locator('.stats .range button', { hasText: 'week' }).click();
 			await page.waitForFunction(() => document.querySelector('.stats .argv')?.textContent === 'stats --week');
 

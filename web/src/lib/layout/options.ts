@@ -21,7 +21,7 @@
 // (nowview's −) is what the menu says the moment it is opened.
 //
 // Every change is the SESSION's (`session.ts`). `saveOptions` is the one
-// writer to the tree, and the lock hides it.
+// writer to the tree, and only when the reader asks.
 
 import { apply } from './current.js';
 import type { Item } from './menu.js';
@@ -37,17 +37,17 @@ export const SAVE_OPTIONS = 'Save options with layout';
 type Settings = Record<string, unknown>;
 
 /**
- * The option items for the tab's widget, and — unless the layout is locked
- * — the act that writes what this session holds into it.
+ * The option items for the tab's widget, and the act that writes what this
+ * session holds into it.
  *
  * Empty for a tab that holds no one widget (a split, and so a layout of
  * more than one: its panes carry their own), for a kind that declares no
- * options, and for a kind that does when nothing is held and the layout is
- * locked. The SAVE is not gated on the declarations: a widget that moves a
+ * options, and for a kind that does when nothing is held. The SAVE is not
+ * gated on the declarations: a widget that moves a
  * setting of its own without declaring it an option — the day strip's
  * height, the stats widget's range chips — still has something to save.
  */
-export function widgetOptions(tab: Tab | undefined, held: Settings, key: string, locked: boolean): Item[] {
+export function widgetOptions(tab: Tab | undefined, held: Settings, key: string): Item[] {
 	if (!tab || !isWidget(tab.content)) return [];
 	const widget = tab.content;
 	const defaults = KINDS[widget.kind]?.meta.defaultSettings ?? {};
@@ -74,7 +74,7 @@ export function widgetOptions(tab: Tab | undefined, held: Settings, key: string,
 				}
 	);
 
-	const savable = !locked && Object.keys(held).length > 0;
+	const savable = Object.keys(held).length > 0;
 	return [
 		...rows,
 		...(savable

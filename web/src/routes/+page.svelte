@@ -19,7 +19,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import Layout from '$lib/layout/Layout.svelte';
-	import { layout, loaded } from '$lib/layout/current.js';
+	import { editing, layout, loaded } from '$lib/layout/current.js';
 	import { epoch, ran } from '$lib/layout/engine.js';
 	import { onExternalChange } from '$lib/changes.js';
 	import { currentDb } from '$lib/database.js';
@@ -46,9 +46,11 @@
 	onDestroy(onExternalChange(() => ran().then(settled), currentDb()));
 </script>
 
-<div class="frame">
+<!-- Layout mode (da-vvcxc, `mode.ts`) is the one state in which the tree
+     moves; outside it every pane is `locked`. -->
+<div class="frame" data-layout-mode={$editing ? '' : undefined}>
 	{#if $loaded}
-		<Layout pane={$layout.root} epoch={$epoch} rootId={$layout.root.id} />
+		<Layout pane={$layout.root} epoch={$epoch} rootId={$layout.root.id} locked={!$editing} />
 	{/if}
 </div>
 
@@ -62,6 +64,19 @@
 		flex-direction: column;
 		height: 100%;
 		padding: 0.75rem;
+	}
+
+	/* Layout mode is VERY visibly a mode (vividn, da-vvcxc): the page behind
+	   the panes is hatched in the accent, so no glance mistakes it for the
+	   page a reader logs on. The panes' own outlines are PaneFrame's. */
+	.frame[data-layout-mode] {
+		background: repeating-linear-gradient(
+			-45deg,
+			color-mix(in srgb, var(--accent) 12%, transparent) 0 6px,
+			transparent 6px 14px
+		);
+		outline: 2px solid var(--accent);
+		outline-offset: -2px;
 	}
 
 </style>

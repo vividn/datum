@@ -16,14 +16,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
-import {
-	fill,
-	lockButton,
-	manageRoot,
-	menuLines,
-	rootManageButton,
-	rootMenuButton
-} from './support/layout.mjs';
+import { enterLayoutMode, fill, manageRoot, menuLines, rootMenuButton } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -35,8 +28,7 @@ const SCREENS = [
 
 // ONE APP for the tests at the desktop screen that stay on the page
 // (da-6b3dj, sharedApp in support/app.mjs): `solo` puts the split `main`
-// back. A reload, the phone's screen and a device that stored a lock open
-// their own.
+// back. A reload and the phone's screen open their own.
 const desk = sharedApp({ viewport: SCREENS[0] });
 
 /** Which arrow of `Split` puts a pane down each side. */
@@ -78,11 +70,12 @@ describe('extending the dashboard from its edges', () => {
 				0,
 				'an edge handle is still drawn'
 			);
-			// The act is under the `▾` beside the root's `+` (da-bzhq).
-			await rootManageButton(page).click();
+			// The act is the open tab's, in layout mode (da-vvcxc).
+			await enterLayoutMode(page);
+			await rootMenuButton(page).click();
 			const lines = await menuLines(page);
-			assert.ok(lines.includes('Split ← ↓ ↑ →'), 'the root ▾ has no Split row');
-			assert.ok(!lines.includes('Break out ← ↓ ↑ →'), 'the root ▾ still offers Break out');
+			assert.ok(lines.includes('Split ← ↓ ↑ →'), 'the root menu has no Split row');
+			assert.ok(!lines.includes('Break out ← ↓ ↑ →'), 'the root menu offers Break out');
 			await page.keyboard.press('Escape');
 		});
 	});
@@ -141,25 +134,17 @@ describe('extending the dashboard from its edges', () => {
 		});
 	}
 
-	test('under the lock there is no ▾ at all, and the root menu is the acts alone', async () => {
-		await withApp(
-			async ({ page }) => {
-				await page.locator('section.root').waitFor();
-				// Nothing to split, so the `▾` that would hold Split is not
-				// drawn (da-bzhq); the way out is the lock beside the gear.
-				assert.equal(await rootManageButton(page).count(), 0, 'a locked layout still offers the ▾');
-				assert.equal(await lockButton(page).getAttribute('aria-pressed'), 'true');
-				await rootMenuButton(page).click();
-				assert.deepEqual(await menuLines(page), [
-					'Save layout',
-					'Restore layout',
-					// `main` ships with datum, so it can be reset (da-luwe).
-					'Reset layout',
-					'Save layout as'
-				]);
-				await page.keyboard.press('Escape');
-			},
-			{ prepare: (context) => context.addInitScript(() => localStorage.setItem('datum.layout.locked.v1.main', '1')) }
-		);
+	test('in normal mode there is no Split, and the root menu is the acts alone', async () => {
+		await desk.solo(async ({ page }) => {
+			await rootMenuButton(page).click();
+			assert.deepEqual(await menuLines(page), [
+				'Save layout',
+				'Restore layout',
+				// `main` ships with datum, so it can be reset (da-luwe).
+				'Reset layout',
+				'Save layout as'
+			]);
+			await page.keyboard.press('Escape');
+		});
 	});
 });

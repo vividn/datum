@@ -14,7 +14,7 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp as withAnyApp } from './support/app.mjs';
-import { chooseRoot, unlockRoot, widgetPane } from './support/layout.mjs';
+import { chooseRoot, widgetPane } from './support/layout.mjs';
 
 before(startApp);
 after(stopApp);
@@ -348,10 +348,8 @@ describe('/stats', () => {
 			await expectStats(app, MONTH);
 
 			// `/stats` is one widget, so the acts are on the ROOT tab's menu
-			// (da-ze1x) — and a layout that shipped opens locked, which is the
-			// one thing that hides the save.
+			// (da-ze1x).
 			await pick();
-			await unlockRoot(app.page);
 			await chooseRoot(app.page, 'Save options with layout');
 			await reloaded();
 			await expectStats(app, ['stats', '--week']);

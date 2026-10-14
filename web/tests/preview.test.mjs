@@ -29,6 +29,7 @@ import {
 	chooseRoot,
 	grab,
 	layoutStorage,
+	leaveLayoutMode,
 	manageRoot,
 	settled,
 	takeRoom,
@@ -171,6 +172,7 @@ describe('a preview tab', () => {
 		const at = await grab(page, page.locator('.split.column > [role="separator"]').first());
 		await page.mouse.move(at.x, at.y + 120);
 		await page.mouse.up();
+		await leaveLayoutMode(page);
 		await settled(page);
 		const moved = await cellExtents(page, 'column');
 		assert.notDeepEqual(moved, day, 'the drag moved nothing');
@@ -284,7 +286,7 @@ describe('Keep tab', () => {
 		await a.solo();
 	});
 
-	test('is offered to a preview and to nobody else, last in the name menu, with Close under the ▾', async () => {
+	test('is offered to a preview and to nobody else, last in the name menu, with Close last in layout mode', async () => {
 		const a = await app();
 		await a.solo();
 		const { page } = a;
@@ -298,7 +300,13 @@ describe('Keep tab', () => {
 			return seen;
 		};
 		const items = () => from(() => page.locator('.root-bar [role="tab"][aria-selected="true"]').click());
-		const manage = () => from(() => page.locator('.root-bar button.manage').click());
+		const manage = async () => {
+			await page.locator('.root-bar [role="tab"][aria-selected="true"]').click({ button: 'right' });
+			await page.locator('.frame[data-layout-mode]').waitFor();
+			const seen = await items();
+			await page.evaluate(() => window.datum.mode.accept());
+			return seen;
+		};
 		assert.ok(!(await items()).includes('Keep tab'), 'main is offered Keep tab');
 
 		await a.room('t-7');
@@ -307,9 +315,7 @@ describe('Keep tab', () => {
 		// `Keep tab` WRITES the tab down, so it stayed with the other acts
 		// that write — last in the name's menu, after the layout's acts. The
 		// Close that is a preview's other answer (da-xamd) is a management
-		// act, so the slicing (da-bzhq) put it under the `▾`, last there.
-		// The two answers are one press apart either way; what they are no
-		// longer is adjacent.
+		// act, so it is layout mode's (da-vvcxc), last there.
 		assert.equal(menu.indexOf('Keep tab'), menu.length - 1, `Keep tab is not last: ${menu}`);
 		assert.equal(menu.at(-2), 'Save layout as');
 		assert.match((await manage()).at(-1), /Close tab$/);
