@@ -190,15 +190,36 @@ const drawn = (page, scope) =>
 		};
 	});
 
-/** Type a line into the bottom bar and wait for its receipt — the pills ride with it. */
+/**
+ * Type a line into the bottom bar and wait for its receipt — the pills ride with it.
+ *
+ * The RUN is `bar.last()`, a fresh object for every command, and not the
+ * receipt's text (da-k082e): a text wait cannot tell a command that failed,
+ * or drew no document, from one still running, and sat its whole 30 s cap
+ * three times in a row on CI with nothing to say. Now each says what it saw.
+ */
 const receiptNow = () => document.querySelector('.prompt-bar .doc .receipt')?.textContent ?? '';
 
 async function barRun(page, line) {
-	const before = await page.evaluate(receiptNow);
+	const before = await page.evaluate(() => {
+		window.__barRun = window.datum.bar.last();
+		return document.querySelector('.prompt-bar .doc .receipt')?.textContent ?? '';
+	});
 	await page.locator('.prompt-bar input').fill(line);
 	await page.locator('.prompt-bar input').press('Enter');
-	await page.waitForFunction(
-		`(${receiptNow})() !== ${JSON.stringify(before)} && (${receiptNow})() !== ''`
+	const ran = await until(
+		() =>
+			page.evaluate(() => {
+				const last = window.datum.bar.last();
+				if (last === window.__barRun) return { box: document.querySelector('.prompt-bar input')?.value };
+				return { line: last.line, code: last.result.code, stderr: last.result.stderr };
+			}),
+		(seen) => 'code' in seen
+	);
+	assert.equal(ran.code, 0, `\`${ran.line}\` exited ${ran.code}: ${ran.stderr}`);
+	await until(
+		() => page.evaluate(receiptNow),
+		(now) => now !== before && now !== ''
 	);
 	return page.locator('.prompt-bar .doc .receipt').last().innerText();
 }
