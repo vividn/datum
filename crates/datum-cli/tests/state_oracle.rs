@@ -57,7 +57,7 @@ fn a_switch_after_a_finished_block_is_not_a_repeat() {
     assert!(out.contains("CREATE"), "{out}");
     assert!(!out.contains("!state2"), "state1 had resumed:\n{out}");
     let check = env.ok(&["check"]);
-    assert!(!check.contains("repeated_state"), "{check}");
+    assert!(!check.contains("repeated_open"), "{check}");
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn an_occur_leaves_the_state_so_a_switch_back_is_a_repeat() {
     let out = env.ok(&["switch", "coffee", "drinking", "-q"]);
     assert!(out.contains("!drinking"), "{out}");
     let check = env.ok(&["check"]);
-    assert!(check.contains("repeated_state"), "{check}");
+    assert!(check.contains("repeated_open"), "{check}");
 }
 
 #[test]
@@ -96,7 +96,7 @@ fn a_genuine_repeat_is_still_marked_and_flagged() {
     let out = env.ok(&["switch", "field", "state2", "-q"]);
     assert!(out.contains("!state2"), "{out}");
     let check = env.ok(&["check"]);
-    assert!(check.contains("repeated_state"), "{check}");
+    assert!(check.contains("repeated_open"), "{check}");
 }
 
 /// da-22750, vividn's report: a moment (dur MOMENT, or zero) names a state
@@ -156,4 +156,88 @@ fn a_moment_state_resumes_the_state_before_it() {
             .any(|l| l.trim_start().starts_with("6h") && l.ends_with("happy")),
         "{stats}"
     );
+}
+
+/// da-vwymi, volya's db: 131 harmless double closes hid 7 repeated opens
+/// that held most of her recorded hours. The check names the two kinds
+/// apart, and lists a repeated open by the span it sits in, longest first.
+#[test]
+fn check_splits_repeated_closes_from_repeated_opens_longest_span_first() {
+    let env = Env::new();
+    let at = |day: &str, t: &str| ["-d", day, "-t", t].map(String::from);
+    let log = |args: &[&str], day: &str, t: &str| {
+        let args: Vec<String> = args
+            .iter()
+            .map(|a| a.to_string())
+            .chain(at(day, t))
+            .collect();
+        env.ok(&args.iter().map(String::as_str).collect::<Vec<_>>());
+    };
+    log(
+        &["switch", "activity", "researching"],
+        "2025-08-05",
+        "12:00",
+    );
+    log(
+        &["switch", "activity", "researching"],
+        "2025-08-05",
+        "12:01",
+    );
+    log(&["switch", "activity", "talking"], "2025-08-05", "13:00");
+    // Logged on the 8th while talking had been open since the 5th.
+    log(&["switch", "activity", "talking"], "2025-08-08", "09:00");
+    log(&["end", "activity"], "2025-08-08", "14:00");
+    log(&["end", "activity"], "2025-08-08", "14:05");
+    let check = env.ok(&["check"]);
+    assert!(check.contains("[WARN ] repeated_open (x2)"), "{check}");
+    assert!(check.contains("[WARN ] repeated_close (x1)"), "{check}");
+    assert!(check.contains("MISSING"), "{check}");
+    let long = "talking for 73h: 2025-08-05 13:00 → 2025-08-08 14:00";
+    let short = "researching for 1h: 2025-08-05 12:00 → 2025-08-05 13:00";
+    let (Some(long_at), Some(short_at)) = (check.find(long), check.find(short)) else {
+        panic!("both spans named:\n{check}");
+    };
+    assert!(long_at < short_at, "the long span first:\n{check}");
+    assert!(short_at < check.find("repeated_close").unwrap(), "{check}");
+}
+
+/// da-vwymi review: a state with a newline in it renders as two table
+/// lines, and its span still stands under its own row, on one line.
+#[test]
+fn a_multiline_state_keeps_its_span_under_its_row() {
+    let env = Env::new();
+    env.ok(&[
+        "switch",
+        "act",
+        "two\nlines",
+        "-d",
+        "2025-08-01",
+        "-t",
+        "10:00",
+    ]);
+    env.ok(&[
+        "switch",
+        "act",
+        "two\nlines",
+        "-d",
+        "2025-08-02",
+        "-t",
+        "10:00",
+    ]);
+    env.ok(&["switch", "act", "x", "-d", "2025-08-02", "-t", "11:00"]);
+    env.ok(&["switch", "act", "x", "-d", "2025-08-02", "-t", "11:30"]);
+    env.ok(&["switch", "act", "y", "-d", "2025-08-02", "-t", "12:00"]);
+    let check = env.ok(&["check"]);
+    let lines: Vec<&str> = check.lines().collect();
+    let span = |s: &str| {
+        lines
+            .iter()
+            .position(|l| l.contains(s))
+            .unwrap_or_else(|| panic!("{s}:\n{check}"))
+    };
+    let two = span("↳ two\\nlines for 25h: 2025-08-01 10:00 → 2025-08-02 11:00");
+    let x = span("↳ x for 1h: 2025-08-02 11:00 → 2025-08-02 12:00");
+    assert!(lines[x - 1].contains("!x"), "{check}");
+    assert!(lines[two - 1].contains("lines"), "{check}");
+    assert!(lines[two - 2].contains("!two"), "{check}");
 }

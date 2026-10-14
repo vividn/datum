@@ -447,6 +447,23 @@ fn detect_one(
 /// transition — reported as a repeat. Intersection stays where it
 /// belongs, on [`IntegrityKind::DoubleOpen`].
 pub fn list_repeated_states(conn: &Connection) -> Result<Vec<Entry>> {
+    Ok(list_repeats(conn)?.into_iter().map(|r| r.entry).collect())
+}
+
+/// One row [`list_repeated_states`] names, with what tells its two kinds
+/// apart (da-vwymi): a repeated CLOSE is usually a duplicate and changes
+/// nothing, while a repeated OPEN usually means a close or switch is missing
+/// before it, and `stats` counts the whole span it sits in as that state.
+pub struct Repeat {
+    pub entry: Entry,
+    /// For a repeated open — any state but closed — the span it sits in:
+    /// from when the field entered the state it repeats to when it next
+    /// left it, `None` while it is still in it. `None` for a repeated close.
+    pub span: Option<(DateTime<Utc>, Option<DateTime<Utc>>)>,
+}
+
+/// [`list_repeated_states`] with each row's [`Repeat::span`].
+pub fn list_repeats(conn: &Connection) -> Result<Vec<Repeat>> {
     let sql = format!(
         "SELECT * FROM entries
          WHERE {participation}
@@ -464,6 +481,7 @@ pub fn list_repeated_states(conn: &Connection) -> Result<Vec<Entry>> {
     let mut hits = Vec::new();
     for field in entries.chunk_by(|a, b| a.field == b.field) {
         let rows = crate::state::FieldStateRows::from_entries(field);
+        let mut changes = None;
         for entry in field {
             let (Some(new_state), Some(edge)) = (entry.state.as_ref(), entry.leading_edge_utc())
             else {
@@ -486,11 +504,28 @@ pub fn list_repeated_states(conn: &Connection) -> Result<Vec<Entry>> {
             if is_open_state(&new_norm) && is_open_state(&prior_norm) {
                 continue;
             }
-            hits.push(entry.clone());
+            let span = (!is_close_state(&new_norm)).then(|| {
+                let changes = changes.get_or_insert_with(|| rows.changes());
+                let same = |c: &&crate::state::StateChange| {
+                    let state = crate::state::normalize_state(&c.state).to_json();
+                    states_equal_set_aware(&state, &new_norm)
+                };
+                let (before, after) = changes.split_at(changes.partition_point(|c| c.at <= probe));
+                let start = before.iter().rev().take_while(same).last();
+                let end = after.iter().find(|c| !same(c));
+                (start.map_or(edge, |c| c.at), end.map(|c| c.at))
+            });
+            hits.push(Repeat {
+                entry: entry.clone(),
+                span,
+            });
         }
     }
     // Across fields, in the canonical oldest-first order.
-    hits.sort_by_cached_key(|e| (e.occur_time.as_ref().map(|t| t.utc), e.slug.to_string()));
+    hits.sort_by_cached_key(|r| {
+        let e = &r.entry;
+        (e.occur_time.as_ref().map(|t| t.utc), e.slug.to_string())
+    });
     Ok(hits)
 }
 

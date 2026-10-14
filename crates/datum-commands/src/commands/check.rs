@@ -982,9 +982,7 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
     // missing transition (or deleting the duplicate) makes the
     // warning disappear on the next run — there's no stored row to
     // mark resolved.
-    if let Some(issue) = collect_repeated_state_live(db)? {
-        issues.push(issue);
-    }
+    issues.extend(collect_repeated_state_live(db)?);
     issues.extend(collect_sync_conflicts(db)?);
     Ok(issues)
 }
@@ -1116,54 +1114,128 @@ pub fn collect_dangling_refs(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>> {
         .collect())
 }
 
-/// Live counterpart of the stored integrity-warning surface for the
-/// `repeated_state` category (da-acft). Walks `entries` through
-/// [`integrity::list_repeated_states`] and builds the same Issue
-/// shape — category, count, example, FlaggedEntry list, rendered
-/// block — that the legacy stored-row path emitted.
-fn collect_repeated_state_live(db: &Db) -> Result<Option<Issue>> {
-    let triggers = datum_core::integrity::list_repeated_states(db.conn())?;
-    if triggers.is_empty() {
-        return Ok(None);
-    }
-    let count = triggers.len();
-    let message = format!(
-        "{count} entr{y} repeat the prior state on their field. \
-         Look at the surrounding data; the right fix is usually a backfill (missing transition) \
-         or a delete (true duplicate).",
-        y = if count == 1 { "y" } else { "ies" },
+/// The live `repeated_state` rows (da-acft), as two issues of their own
+/// (da-vwymi): `repeated_open`, each with the span it sits in, longest
+/// first, so a block left open for days stands above a double switch
+/// seconds apart; and `repeated_close`, which is usually a duplicate and
+/// changes nothing.
+fn collect_repeated_state_live(db: &Db) -> Result<Vec<Issue>> {
+    use datum_core::integrity::Repeat;
+    use datum_parse::time::{format_human_duration, DurationPrecision};
+    let (mut opens, closes): (Vec<Repeat>, Vec<Repeat>) =
+        datum_core::integrity::list_repeats(db.conn())?
+            .into_iter()
+            .partition(|r| r.span.is_some());
+    let now = DatumTime::now().utc;
+    type Span = (
+        chrono::DateTime<chrono::Utc>,
+        Option<chrono::DateTime<chrono::Utc>>,
     );
-    let entries: Vec<FlaggedEntry> = triggers
-        .iter()
-        .map(|e| {
-            let state_str = match e.state.as_ref() {
-                Some(v) => render_state_for_flag(v),
-                None => String::new(),
-            };
-            FlaggedEntry {
-                hid: e.short_uid(),
-                field: e.field.clone(),
-                state: format!("!{state_str}"),
-            }
+    let secs = |(from, to): Span| (to.unwrap_or(now) - from).num_seconds();
+    opens.sort_by_key(|r| std::cmp::Reverse(r.span.map_or(0, secs)));
+    let clock = |t: chrono::DateTime<chrono::Utc>| {
+        datum_core::time::Zone::host()
+            .local_naive(t)
+            .format("%Y-%m-%d %H:%M")
+            .to_string()
+    };
+    let issue = |repeats: Vec<Repeat>, category, message: &dyn Fn(usize) -> String| {
+        let first = repeats.first()?;
+        let count = repeats.len();
+        let state = |e: &Entry| {
+            e.state
+                .as_ref()
+                .map(render_state_for_flag)
+                .unwrap_or_default()
+        };
+        // One line under each tail row: the span, said once for the human
+        // and once for the JSON, its state on one line as the span's is.
+        let spans: Vec<Option<String>> = repeats
+            .iter()
+            .map(|r| {
+                r.span.map(|(from, to)| {
+                    format!(
+                        "{} for {}: {} → {}",
+                        state(&r.entry).replace('\n', "\\n"),
+                        format_human_duration(secs((from, to)), DurationPrecision::Minutes),
+                        clock(from),
+                        to.map_or("now".to_string(), clock),
+                    )
+                })
+            })
+            .collect();
+        let entries: Vec<Entry> = repeats.iter().map(|r| r.entry.clone()).collect();
+        // The table aligns its rows, but a state with a newline in it takes
+        // two lines: then each entry is a table of its own, so every span
+        // still stands under its row.
+        let block = render_flagged_block(db, &entries);
+        let rows: Vec<String> = if block.lines().count() == entries.len() {
+            block.lines().map(String::from).collect()
+        } else {
+            entries
+                .iter()
+                .map(|e| render_flagged_block(db, std::slice::from_ref(e)))
+                .collect()
+        };
+        let rendered_block: String = rows
+            .iter()
+            .zip(&spans)
+            .map(|(row, span)| {
+                let row = row.trim_end_matches('\n');
+                match span {
+                    Some(span) => format!("{row}\n  ↳ {span}\n"),
+                    None => format!("{row}\n"),
+                }
+            })
+            .collect();
+        Some(Issue {
+            domain: Domain::Entries,
+            severity: Severity::Warning,
+            category,
+            message: message(count),
+            count,
+            example: Some(IssueExample {
+                id: Some(first.entry.short_uid()),
+                field: Some(first.entry.field.clone()),
+                detail: Some(format!("trigger slug={}", first.entry.slug)),
+            }),
+            entries: entries
+                .iter()
+                .zip(spans)
+                .map(|(e, span)| FlaggedEntry {
+                    hid: e.short_uid(),
+                    field: e.field.clone(),
+                    state: format!("!{}", span.unwrap_or_else(|| state(e))),
+                })
+                .collect(),
+            rendered_block,
         })
-        .collect();
-    let first = &triggers[0];
-    let example = Some(IssueExample {
-        id: Some(first.short_uid()),
-        field: Some(first.field.clone()),
-        detail: Some(format!("trigger slug={slug}", slug = first.slug)),
-    });
-    let rendered_block = render_flagged_block(db, &triggers);
-    Ok(Some(Issue {
-        domain: Domain::Entries,
-        severity: Severity::Warning,
-        category: "repeated_state",
-        message,
-        count,
-        example,
-        entries,
-        rendered_block,
-    }))
+    };
+    let one = |count: usize| count == 1;
+    Ok([
+        issue(opens, "repeated_open", &|count| {
+            format!(
+                "{count} entr{} switch{} into the state {} field was already in, each with the span \
+                 it sits in, longest first. Usually a close or switch is MISSING before it, and \
+                 `stats` counts the whole span as that state until it is backfilled \
+                 (`datum end <field> -t <when>`, or `datum switch <field> <state> -t <when>`).",
+                if one(count) { "y" } else { "ies" },
+                if one(count) { "es" } else { "" },
+                if one(count) { "its" } else { "their" },
+            )
+        }),
+        issue(closes, "repeated_close", &|count| {
+            format!(
+                "{count} entr{} close{} a field already closed. Usually a true duplicate, which \
+                 changes no state or `stats`; `datum del <hid>` clears one.",
+                if one(count) { "y" } else { "ies" },
+                if one(count) { "s" } else { "" },
+            )
+        }),
+    ]
+    .into_iter()
+    .flatten()
+    .collect())
 }
 
 /// da-n7tp2: a sample of `stats`' cached days, each recomputed from the
@@ -2610,8 +2682,8 @@ mod tests {
         let issues = collect_integrity_warnings(&db).unwrap();
         let issue = issues
             .iter()
-            .find(|i| i.category == "repeated_state")
-            .expect("repeated_state must be reported");
+            .find(|i| i.category == "repeated_open")
+            .expect("repeated_open must be reported");
         assert_eq!(issue.severity, Severity::Warning);
         assert_eq!(issue.count, 1);
         assert_eq!(
@@ -2753,8 +2825,8 @@ mod tests {
             collect_integrity_warnings(&db)
                 .unwrap()
                 .iter()
-                .any(|i| i.category == "repeated_state"),
-            "repeated_state should fire on consecutive `happy` switches",
+                .any(|i| i.category == "repeated_open"),
+            "repeated_open should fire on consecutive `happy` switches",
         );
 
         // User remembers the intermediate transition and backfills it.
@@ -2771,8 +2843,8 @@ mod tests {
 
         let issues = collect_integrity_warnings(&db).unwrap();
         assert!(
-            issues.iter().all(|i| i.category != "repeated_state"),
-            "repeated_state must disappear once the missing transition is backfilled, got: {issues:?}",
+            issues.iter().all(|i| i.category != "repeated_open"),
+            "repeated_open must disappear once the missing transition is backfilled, got: {issues:?}",
         );
     }
 
@@ -2820,7 +2892,7 @@ mod tests {
         assert!(!issues.is_empty(), "expected at least one integrity issue");
         for issue in &issues {
             assert!(
-                issue.category.starts_with("integrity_") || issue.category == "repeated_state",
+                issue.category.starts_with("integrity_") || issue.category.starts_with("repeated_"),
                 "unexpected category in integrity-only run: {}",
                 issue.category,
             );
