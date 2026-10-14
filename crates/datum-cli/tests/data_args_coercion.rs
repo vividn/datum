@@ -57,9 +57,12 @@ fn a_time_key_stores_v2s_instant() {
     assert_eq!(data["next_time"], berlin("2024-01-15T11:00:00.000Z"));
     assert_eq!(data["finish_time"], berlin("2024-01-13T23:00:00.000Z"));
     assert_eq!(data["c_time"], berlin("2024-01-15T06:15:00.000Z"));
-    // The instant as given, in the entry's zone as `-t` keeps it (v2
-    // named the literal's own offset, `o: 0, tz: "UTC"`).
-    assert_eq!(data["z_time"], berlin("2024-01-15T07:15:00.000Z"));
+    // The instant in the literal's own zone, as `-t` keeps it and as v2
+    // stored it: `Z` is UTC (da-kvosn).
+    assert_eq!(
+        data["z_time"],
+        json!({"utc": "2024-01-15T07:15:00.000Z", "o": 0, "tz": "UTC"})
+    );
 }
 
 /// The bug: `next_time=+16h` at 20:00 is tomorrow noon, and its day is

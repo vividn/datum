@@ -158,9 +158,9 @@ fn no_metadata_zeros_bookkeeping_fields() {
 
 /// TS #4: "stores offset" (`-z +3`)
 ///
-/// `-z +3` means "interpret -d/-t in UTC+3". The numeric form maps to
-/// `Etc/GMT-3` (POSIX sign inversion) and 12:00 local in UTC+3 = 09:00 UTC.
-/// The stored DatumTime.timezone is the resolved IANA name.
+/// `-z +3` means "interpret -d/-t in UTC+3": 12:00 local in UTC+3 = 09:00
+/// UTC. A fixed offset is not a zone, so the row stores the offset and no
+/// zone name (da-kvosn).
 #[test]
 fn numeric_offset_flag_applies() {
     let db = fresh_db();
@@ -191,12 +191,76 @@ fn numeric_offset_flag_applies() {
         start.utc, expected_utc,
         "`-z +3`: 12:00 in UTC+3 = 09:00 UTC"
     );
-    assert_eq!(
-        start.timezone.as_deref(),
-        Some("Etc/GMT-3"),
-        "POSIX-sign IANA name"
-    );
+    assert_eq!(start.timezone, None, "a fixed offset names no zone");
     assert_eq!(start.offset_minutes, 180, "UTC+3 offset in minutes");
+}
+
+/// da-kvosn: a half-hour offset, which no `Etc/GMT` name could carry, in
+/// each spelling `-z` takes.
+#[test]
+fn half_hour_offset_flag_applies() {
+    for (spec, minutes, hour) in [("+5:30", 330, 6), ("UTC+5:30", 330, 6), ("-0330", -210, 15)] {
+        let db = fresh_db();
+        run_cli(
+            &[
+                "occur",
+                "event",
+                "-d",
+                "2021-08-23",
+                "-t",
+                "1200",
+                "-z",
+                spec,
+            ],
+            &db,
+        )
+        .unwrap_or_else(|e| panic!("-z {spec}: {e:#}"));
+        let entry = &datum_core::test_util::logged_entries(&db, "event")[0];
+        let start = entry.occur_time.as_ref().unwrap();
+        assert_eq!(start.offset_minutes, minutes, "-z {spec}");
+        assert_eq!(start.timezone, None, "-z {spec}");
+        assert_eq!(
+            start.utc.format("%H:%M").to_string(),
+            format!("{hour:02}:30"),
+            "-z {spec}"
+        );
+        assert_eq!(
+            start.local_time().format("%H:%M").to_string(),
+            "12:00",
+            "-z {spec}"
+        );
+    }
+}
+
+/// da-kvosn: an offset typed in `-t` is the entry's zone, stored as an
+/// offset with no zone name, unless `-z` names one: then the zone wins and
+/// the offset is derived from it, so the row is never born mismatched.
+#[test]
+fn an_offset_in_t_sets_the_zone_unless_z_names_one() {
+    let t = "2024-06-18T22:42:00+05:00";
+    for (z, minutes, tz) in [
+        (None, 300, None),
+        (Some("Asia/Dubai"), 240, Some("Asia/Dubai")),
+        (Some("+3"), 180, None),
+    ] {
+        let db = fresh_db();
+        let mut argv = vec!["occur", "event", "-t", t];
+        argv.extend(z.iter().flat_map(|z| ["-z", *z]));
+        run_cli(&argv, &db).unwrap_or_else(|e| panic!("-z {z:?}: {e:#}"));
+        let entry = &datum_core::test_util::logged_entries(&db, "event")[0];
+        let start = entry.occur_time.as_ref().unwrap();
+        assert_eq!(
+            start.utc.to_rfc3339(),
+            "2024-06-18T17:42:00+00:00",
+            "-z {z:?}"
+        );
+        assert_eq!(start.offset_minutes, minutes, "-z {z:?}");
+        assert_eq!(start.timezone.as_deref(), tz, "-z {z:?}");
+        assert_eq!(
+            start.expected_offset_minutes().unwrap().unwrap_or(minutes),
+            minutes
+        );
+    }
 }
 
 /// TS #5: "stores offset from an IANA timezone" (`-z Europe/Berlin`)

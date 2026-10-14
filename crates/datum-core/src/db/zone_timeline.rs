@@ -97,7 +97,7 @@ impl Db {
         let mut observations: Vec<(DateTime<Utc>, Zone)> = Vec::new();
         for row in rows {
             let (occur, tz_name) = row?;
-            if let (Ok(at), Ok(zone)) = (occur.parse::<DateTime<Utc>>(), Zone::iana(&tz_name)) {
+            if let (Ok(at), Ok(zone)) = (occur.parse::<DateTime<Utc>>(), Zone::named(&tz_name)) {
                 observations.push((at, zone));
             }
         }
@@ -116,11 +116,11 @@ mod tests {
     }
 
     fn chicago() -> Zone {
-        Zone::iana("America/Chicago").unwrap()
+        Zone::named("America/Chicago").unwrap()
     }
 
     fn berlin() -> Zone {
-        Zone::iana("Europe/Berlin").unwrap()
+        Zone::named("Europe/Berlin").unwrap()
     }
 
     /// Insert an entry stamped with an explicit zone at an explicit instant.
@@ -318,7 +318,7 @@ mod tests {
                 (utc("2024-06-05T10:00:00Z"), berlin()),
                 (
                     utc("2024-07-05T10:00:00Z"),
-                    Zone::iana("Asia/Tokyo").unwrap()
+                    Zone::named("Asia/Tokyo").unwrap()
                 ),
                 (utc("2024-09-05T18:00:00Z"), chicago()),
             ]

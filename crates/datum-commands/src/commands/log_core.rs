@@ -1970,7 +1970,7 @@ pub(crate) fn build_time_anchored(
 ) -> Result<DatumTime> {
     let tz_name = zone_name(time)?;
     let own = match (own, &tz_name) {
-        (Some(_), Some(name)) => Some((Zone::iana(name)?, tz_name.clone())),
+        (Some(_), Some(name)) => Some((Zone::named(name)?, tz_name.clone())),
         (Some(t), None) => Some((Zone::of(t)?, t.timezone.clone())),
         (None, _) => None,
     };

@@ -25,7 +25,10 @@ use chrono_tz::Tz;
 
 use crate::error::{ParseError, Result};
 use crate::input::flag_registry::{FlagAction, FlagSpec};
-use crate::time::{parse_date, parse_time, DatumTime, TimeBuilder, TimeCtx, Uncertainty, Zone};
+use crate::time::{
+    fixed_offset_minutes, parse_date, parse_time, DatumTime, TimeBuilder, TimeCtx, Uncertainty,
+    Zone,
+};
 
 /// Parsed shape of the timing flag group.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -103,10 +106,13 @@ impl TimeArgs {
     /// [`builder`](Self::builder) for an anchor that is a clock of its own,
     /// an entry's time (retime): a shift beside a day has one to move.
     pub fn builder_anchored(&self, ctx: TimeCtx) -> Result<TimeBuilder> {
-        let mut builder = TimeBuilder::default()
-            .with_quick_count(i64::from(self.quick))
-            .with_quick_uncertainty(self.quick)
-            .with_full_day(self.full_day);
+        let mut builder = TimeBuilder {
+            timezone: self.timezone.as_deref().map(resolve_timezone).transpose()?,
+            ..TimeBuilder::default()
+        }
+        .with_quick_count(i64::from(self.quick))
+        .with_quick_uncertainty(self.quick)
+        .with_full_day(self.full_day);
         for t in self.time_values() {
             builder = builder.with_time_arg(parse_time(t, ctx)?);
         }
@@ -137,7 +143,7 @@ impl TimeArgs {
             None => reference.timezone.clone(),
         };
         let zone = match &name {
-            Some(name) => Zone::iana(name)?,
+            Some(name) => Zone::named(name)?,
             None => Zone::of(reference)?,
         };
         let builder = self.builder(TimeCtx::at(zone.local_naive(reference.utc)))?;
@@ -225,15 +231,14 @@ pub static FLAG_SPECS: &[FlagSpec<TimeArgs>] = &[
 
 // ─── timezone resolution ────────────────────────────────────────────────
 
-/// Resolve the `-z` / `--timezone` input into an IANA name.
+/// Resolve the `-z` / `--timezone` input into a name [`Zone::named`] reads.
 ///
 /// Accepted forms (matching `src/time/getTimezone.ts`):
 ///
 /// * IANA name (`"America/Chicago"`, `"UTC"`, …).
-/// * `"UTC±N"` / `"UTC+N"`.
-/// * A bare numeric offset in hours: `"-7"`, `"+4"`, `"0"`, `"2"`. This
-///   maps onto an `Etc/GMT∓N` name because IANA's `Etc/GMT*` zones use
-///   the POSIX sign convention (UTC+4 → `Etc/GMT-4`).
+/// * A fixed offset: `"+4"`, `"-7"`, `"0"`, `"+5:30"`, `"+0530"`, `"UTC-7"`,
+///   `"UTC+5:30"`, spelled back as `UTC±H[:MM]`. An entry written in one
+///   stores the offset and no zone name (da-kvosn).
 /// * `"system"` (case-insensitive): the OS-resolved local timezone.
 ///   Native builds only — WASM builds error since the host has no
 ///   single ambient zone to resolve to.
@@ -259,43 +264,18 @@ pub fn resolve_timezone(spec: &str) -> Result<String> {
         }
     }
 
-    // Numeric offset (hours).
-    if let Ok(hours) = spec.parse::<i32>() {
-        if !(-24..=24).contains(&hours) {
+    if let Some(minutes) = fixed_offset_minutes(spec) {
+        if minutes.abs() >= 24 * 60 {
             return Err(ParseError::InvalidArg(format!(
                 "Timezone offset out of range: {spec}"
             )));
         }
-        // POSIX-style naming: `Etc/GMT-N` is N hours ahead of UTC.
-        let name = if hours == 0 {
-            "UTC".to_string()
-        } else {
-            format!(
-                "Etc/GMT{}{}",
-                if hours > 0 { '-' } else { '+' },
-                hours.abs()
-            )
-        };
-        return validate_tz_name(&name);
-    }
-
-    // `UTC±N` form.
-    if let Some(rest) = spec.strip_prefix("UTC") {
-        if rest.is_empty() {
-            return Ok("UTC".to_string());
-        }
-        if let Ok(hours) = rest.parse::<i32>() {
-            let name = if hours == 0 {
-                "UTC".to_string()
-            } else {
-                format!(
-                    "Etc/GMT{}{}",
-                    if hours > 0 { '-' } else { '+' },
-                    hours.abs()
-                )
-            };
-            return validate_tz_name(&name);
-        }
+        let (h, m) = (minutes.abs() / 60, minutes.abs() % 60);
+        let sign = if minutes < 0 { '-' } else { '+' };
+        return Ok(match m {
+            0 => format!("UTC{sign}{h}"),
+            _ => format!("UTC{sign}{h}:{m:02}"),
+        });
     }
 
     // Fall through: treat as an IANA name.
@@ -459,6 +439,38 @@ mod tests {
                 ),
             }
         }
+    }
+
+    /// da-kvosn: a fixed offset resolves to `UTC±H[:MM]`, the name v2
+    /// writes, in ISO's sign; never to an `Etc/GMT` name, which reads
+    /// backwards and has whole hours only.
+    #[test]
+    fn z_fixed_offsets_resolve_to_utc_names() {
+        for (spec, name) in [
+            ("+2", "UTC+2"),
+            ("2", "UTC+2"),
+            ("-7", "UTC-7"),
+            ("0", "UTC+0"),
+            ("UTC+2", "UTC+2"),
+            ("UTC-9:30", "UTC-9:30"),
+            ("+5:30", "UTC+5:30"),
+            ("+0530", "UTC+5:30"),
+            ("+05:45", "UTC+5:45"),
+            ("UTC", "UTC"),
+            ("Etc/GMT-2", "Etc/GMT-2"),
+        ] {
+            assert_eq!(resolve_timezone(spec).unwrap(), name, "-z {spec}");
+        }
+        for spec in ["+24", "-25:00", "+5:60", "+5:3", "+123", "UTC+x"] {
+            assert!(resolve_timezone(spec).is_err(), "-z {spec} is refused");
+        }
+        // Each name reads back as the offset it says, `Etc/GMT`'s POSIX sign
+        // included, so a row holding either resolves (no migration).
+        let at = DatumTime::from_utc_and_tz;
+        let utc = "2024-06-18T20:42:00Z".parse().unwrap();
+        assert_eq!(at(utc, "UTC+2").unwrap().offset_minutes, 120);
+        assert_eq!(at(utc, "UTC-9:30").unwrap().offset_minutes, -570);
+        assert_eq!(at(utc, "Etc/GMT-2").unwrap().offset_minutes, 120);
     }
 
     // ── relative time strings ──────────────────────────────────────────

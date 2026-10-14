@@ -1,10 +1,10 @@
 //! `DatumTime` — the canonical timestamp stored on every entry.
 
 use chrono::{DateTime, Utc};
-use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
-use crate::error::{ParseError, Result};
+use crate::error::Result;
+use crate::time::Zone;
 
 /// A timestamp with full timezone metadata, as stored in the database.
 ///
@@ -32,7 +32,8 @@ pub struct DatumTime {
     /// offset (see da-vfbq). An offset is self-verifying; a zone name is a
     /// claim that requires a lookup. With no name, `offset_minutes` is the
     /// whole of what we know, and consumers that need a zone fall back to
-    /// that fixed offset.
+    /// that fixed offset. A fixed offset (`-z +2`) is written as `None` too;
+    /// a `UTC±H[:MM]` name, as v2 writes one, still reads ([`Zone::named`]).
     pub timezone: Option<String>,
     /// How precisely this instant is known, as the ISO-8601 duration of the
     /// ± radius (`"PT5M"` for `±5m`, `"P1D"` for a date-only entry). Written
@@ -55,19 +56,12 @@ pub struct DatumTime {
 }
 
 impl DatumTime {
-    /// Construct `DatumTime` from a UTC instant and an IANA timezone name.
-    /// Returns `InvalidTime` if the name isn't recognised.
+    /// Construct `DatumTime` from a UTC instant and a zone name
+    /// ([`Zone::named`]). Returns `InvalidTime` if the name isn't recognised.
     pub fn from_utc_and_tz(utc: DateTime<Utc>, timezone: &str) -> Result<Self> {
-        let tz: Tz = timezone
-            .parse()
-            .map_err(|_| ParseError::InvalidTime(format!("Unknown timezone: {timezone}")))?;
-        let local = utc.with_timezone(&tz);
-        // chrono-tz: convert to fixed_offset to get total UTC offset in minutes
-        let offset_secs = local.fixed_offset().offset().local_minus_utc();
-        let offset_minutes = offset_secs / 60;
         Ok(DatumTime {
             utc,
-            offset_minutes,
+            offset_minutes: Zone::named(timezone)?.offset_at(utc).local_minus_utc() / 60,
             timezone: Some(timezone.to_string()),
             uncertainty: None,
         })
@@ -77,7 +71,7 @@ impl DatumTime {
     /// `utc` — i.e. what `offset_minutes` *should* equal for the struct to
     /// be in sync. `Ok(None)` when no zone is stored: there is no claim to
     /// reconcile the offset against. Returns `InvalidTime` if `timezone`
-    /// isn't a recognised IANA name. Does not mutate; [`refresh_offset`] is
+    /// isn't a name [`Zone::named`] reads. Does not mutate; [`refresh_offset`] is
     /// the in-place form, and `datum check tz` compares this against the
     /// stored value to flag already-desynced rows.
     ///
@@ -86,16 +80,9 @@ impl DatumTime {
         let Some(name) = self.timezone.as_deref() else {
             return Ok(None);
         };
-        let tz: Tz = name
-            .parse()
-            .map_err(|_| ParseError::InvalidTime(format!("Unknown timezone: {name}")))?;
-        let offset_secs = self
-            .utc
-            .with_timezone(&tz)
-            .fixed_offset()
-            .offset()
-            .local_minus_utc();
-        Ok(Some(offset_secs / 60))
+        Ok(Some(
+            Zone::named(name)?.offset_at(self.utc).local_minus_utc() / 60,
+        ))
     }
 
     /// Re-derive `offset_minutes` from `utc` resolved at `timezone`.
@@ -104,7 +91,7 @@ impl DatumTime {
     /// across a DST boundary, to restore the struct's invariant. A no-op
     /// when no zone is stored — the offset is then the only zone information
     /// there is, so there is nothing to re-derive it from. Returns
-    /// `InvalidTime` if `timezone` isn't a recognised IANA name.
+    /// `InvalidTime` if `timezone` isn't a name [`Zone::named`] reads.
     pub fn refresh_offset(&mut self) -> Result<()> {
         if let Some(expected) = self.expected_offset_minutes()? {
             self.offset_minutes = expected;

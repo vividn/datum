@@ -1166,6 +1166,48 @@ fn import_offset_without_tz_leaves_the_zone_unset() {
     );
 }
 
+/// da-kvosn: v2 names a fixed offset `UTC+2`. The importer keeps it as
+/// written, and it resolves as the offset it says, so `check` does not read
+/// a correct offset as a mismatch.
+#[test]
+fn import_keeps_a_utc_offset_zone_and_check_reads_it() {
+    let db = fresh_db();
+    let f = write_backup(serde_json::json!([{
+        "_id": "walk:2024-06-18T20:42:00.000Z",
+        "data": {
+            "occurTime": {"utc": "2024-06-18T20:42:00.000Z", "o": 2, "tz": "UTC+2"},
+            "field": "walk"
+        },
+        "meta": {
+            "humanId": "utc2ab",
+            "createTime": {"utc": "2024-06-18T20:42:00.500Z", "o": 2, "tz": "UTC+2"}
+        }
+    }]));
+
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
+
+    let entries = datum_core::test_util::logged_all(&db);
+    let occur = entries[0].occur_time.as_ref().expect("occur_time");
+    assert_eq!(
+        occur.timezone.as_deref(),
+        Some("UTC+2"),
+        "imported as written"
+    );
+    assert_eq!(occur.offset_minutes, 120);
+    assert_eq!(occur.expected_offset_minutes().unwrap(), Some(120));
+    let report =
+        datum_commands::commands::check::collect_issues(&db, &db.list_including_deleted().unwrap())
+            .unwrap();
+    assert!(
+        !report
+            .issues
+            .iter()
+            .any(|i| ["tz_offset_mismatch", "unknown_timezone"].contains(&i.category)),
+        "UTC+2 at +120 is consistent: {:?}",
+        report.issues,
+    );
+}
+
 #[test]
 fn import_preserves_a_half_hour_offset() {
     // `o` is signed *hours* and may be fractional (India +5.5, Nepal +5.75,

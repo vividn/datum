@@ -3,7 +3,7 @@
 -  local_time: { utc: "2024-01-15T06:15:00.000Z",
 +  local_time: {"o":1,"tz":"Europe/Berlin","utc":"2024-01-15T06:15:00.000Z"}
 -                  o:  1,
-+    utc_time: {"o":1,"tz":"Europe/Berlin","utc":"2024-01-15T07:15:00.000Z"}
++    utc_time: {"o":0,"tz":"UTC","utc":"2024-01-15T07:15:00.000Z"}
 -                 tz: "Europe/Berlin"             },
 -    utc_time: { utc: "2024-01-15T07:15:00.000Z",
 -                  o:  0,

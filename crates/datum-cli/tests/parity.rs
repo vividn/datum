@@ -317,9 +317,12 @@ fn iso_datetime_goldens_route_through_correct_branch() {
 
         match kind {
             "instant" => {
-                let inst: DateTime<Utc> = arg.iso_instant.unwrap_or_else(|| {
-                    panic!("iso_datetimes line {lineno}: expected iso_instant for {input:?}")
-                });
+                let inst: DateTime<Utc> = arg
+                    .iso_instant
+                    .unwrap_or_else(|| {
+                        panic!("iso_datetimes line {lineno}: expected iso_instant for {input:?}")
+                    })
+                    .with_timezone(&Utc);
                 // Format with fractional-seconds-suppress-trailing-zeros to match the
                 // golden's compact form. chrono's `%+` includes microseconds.
                 let got = format_instant_compact(inst);

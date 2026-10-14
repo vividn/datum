@@ -947,7 +947,7 @@ fn names_a_moment(t: &TimeArgs) -> bool {
 /// named, else the zone the database says the user was in at that instant.
 fn window_zones(args: &StatsArgs, db: &Db, since: DateTime<Utc>) -> Result<ZoneTimeline> {
     match args.time.timezone.as_deref() {
-        Some(spec) => Ok(ZoneTimeline::single(Zone::iana(&resolve_timezone(spec)?)?)),
+        Some(spec) => Ok(ZoneTimeline::single(Zone::named(&resolve_timezone(spec)?)?)),
         None => Ok(db.zone_timeline(Zone::host(), Some(since))?),
     }
 }
@@ -1549,7 +1549,7 @@ mod tests {
     }
 
     fn zone(name: &str) -> ZoneTimeline {
-        ZoneTimeline::single(Zone::iana(name).unwrap())
+        ZoneTimeline::single(Zone::named(name).unwrap())
     }
 
     /// Zones with a DST rule and with none, so every boundary case below can
@@ -1766,11 +1766,11 @@ mod tests {
             [
                 (
                     utc("2026-01-01T00:00:00Z"),
-                    Zone::iana("Europe/Berlin").unwrap(),
+                    Zone::named("Europe/Berlin").unwrap(),
                 ),
-                (moved, Zone::iana("Europe/Lisbon").unwrap()),
+                (moved, Zone::named("Europe/Lisbon").unwrap()),
             ],
-            Zone::iana("UTC").unwrap(),
+            Zone::named("UTC").unwrap(),
         );
         // Now is August, in Lisbon (UTC+1 in summer): August opens at
         // 23:00 UTC on July 31 …

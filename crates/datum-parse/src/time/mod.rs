@@ -45,7 +45,7 @@ pub use self::dur::{
     format_human_duration, format_iso_duration, parse_duration, parse_iso_duration,
     quick_uncertainty_for_count, DurationPrecision,
 };
-pub use self::resolve::{Resolved, Zone, ZoneSegment, ZoneTimeline};
+pub use self::resolve::{fixed_offset_minutes, Resolved, Zone, ZoneSegment, ZoneTimeline};
 pub use self::time::{count_stacked_flag, parse_time, TimeArg};
 pub use self::uncertainty::{
     parse_uncertainty, split_direction_suffix, split_uncertainty, Direction, Uncertainty,

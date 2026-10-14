@@ -267,7 +267,8 @@ fn coerce_as(ty: KeyType, value: &str, compat: Compat) -> Option<Value> {
 }
 
 /// `value` as `-t` composes its own, from the entry's time in its zone: a
-/// day word is that day's midnight, an ISO instant keeps the entry's zone.
+/// day word is that day's midnight, and an ISO instant is read in its own
+/// offset, `Z` being UTC (da-kvosn).
 /// With it, whether the value was an instant given with its offset.
 fn instant(value: &str, compat: Compat) -> Option<(DatumTime, bool)> {
     let t = parse_time(value, time_ctx(compat)).ok()?;

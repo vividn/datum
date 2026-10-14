@@ -617,7 +617,7 @@ mod tests {
 
     #[test]
     fn a_day_is_cut_where_its_wall_clock_jumped() {
-        let zone = |name: &str| Zone::iana(name).unwrap();
+        let zone = |name: &str| Zone::named(name).unwrap();
         let berlin = ZoneTimeline::single(zone("Europe/Berlin"));
         let h = 60;
         assert_eq!(

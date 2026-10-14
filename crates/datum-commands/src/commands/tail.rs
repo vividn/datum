@@ -506,7 +506,7 @@ fn day_bounds_utc(
     tz_name: Option<&str>,
 ) -> Result<(chrono::DateTime<Utc>, chrono::DateTime<Utc>)> {
     let zone = match tz_name {
-        Some(name) => Zone::iana(name).map_err(|_| anyhow::anyhow!("Unknown timezone: {name}"))?,
+        Some(name) => Zone::named(name).map_err(|_| anyhow::anyhow!("Unknown timezone: {name}"))?,
         None => Zone::host(),
     };
     let day = zone.local_naive(utc).date();

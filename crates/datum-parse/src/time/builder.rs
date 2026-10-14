@@ -1,6 +1,6 @@
 //! `TimeBuilder` — compose stacked flags into a final `DatumTime`.
 
-use chrono::{DateTime, Duration, NaiveDateTime, NaiveTime, Utc};
+use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, NaiveTime, Utc};
 
 use crate::error::{ParseError, Result};
 use crate::time::date::DateArg;
@@ -27,10 +27,9 @@ pub struct TimeBuilder {
     pub date_override: Option<chrono::NaiveDate>,
     pub time_override: Option<NaiveTime>,
     /// ISO-8601 datetime with explicit zone (`...Z` / `...+02:00`) — a
-    /// fully-resolved instant. Replaces "now" as the build base. The
-    /// entry's `timezone` field still comes from `self.timezone` (i.e.
-    /// `-z`), so the literal sets the moment, not the display zone.
-    pub iso_instant_override: Option<DateTime<Utc>>,
+    /// fully-resolved instant. Replaces "now" as the build base, and its
+    /// offset is the entry's zone unless `self.timezone` (`-z`) names one.
+    pub iso_instant_override: Option<DateTime<FixedOffset>>,
     /// ISO-8601 datetime without zone suffix (`2024-03-16T15:30:00`).
     /// Interpreted as local-in-the-effective-zone (`self.timezone` or
     /// host local) when [`build`](Self::build) resolves it.
@@ -40,10 +39,9 @@ pub struct TimeBuilder {
     pub quick_uncertainty: Option<Uncertainty>,
     /// Explicit `±N` supplied via `-d` or `-t`. Beats `quick_uncertainty`.
     pub explicit_uncertainty: Option<Uncertainty>,
-    /// Pre-validated IANA timezone name from `-z/--timezone`. When `Some`,
-    /// `build()` anchors all date/time math in this zone instead of `Local`.
-    /// Callers must resolve numeric/UTC±N forms via
-    /// [`crate::time::resolve_timezone`] before passing the string in.
+    /// Pre-validated zone name from `-z/--timezone`. When `Some`, `build()`
+    /// anchors all date/time math in this zone instead of `Local`. Callers
+    /// must resolve it via [`crate::time::resolve_timezone`] first.
     pub timezone: Option<String>,
     /// Direction hint for the time portion (trailing `+`/`-` on `-t`).
     /// Only consumed when `time_override` is the resolution path —
@@ -162,10 +160,10 @@ impl TimeBuilder {
         self
     }
 
-    /// Anchor all date/time math in a specific IANA timezone. The string
-    /// must already be a valid IANA name (`America/New_York`, `Etc/GMT-5`,
-    /// `UTC`, …); resolve numeric/`UTC±N` forms via
-    /// [`crate::time::resolve_timezone`] at the call site first.
+    /// Anchor all date/time math in a specific zone. The string must
+    /// already be one [`Zone::named`] reads (`America/New_York`, `UTC`,
+    /// `UTC+5:30`, …); resolve it via [`crate::time::resolve_timezone`] at
+    /// the call site first.
     /// Passing `None` keeps the default `Local` behavior.
     pub fn with_timezone(mut self, tz: Option<String>) -> Self {
         self.timezone = tz;
@@ -279,13 +277,13 @@ impl TimeBuilder {
             // skipped validation — surface it loudly rather than silently
             // falling back to the host zone.
             Some(tz_name) => (
-                Zone::iana(tz_name)
-                    .expect("TimeBuilder: timezone field must be a validated IANA name"),
+                Zone::named(tz_name)
+                    .expect("TimeBuilder: timezone field must be a validated zone name"),
                 Some(tz_name.to_string()),
             ),
             None => match crate::time::clock::host_iana_tz_name() {
                 Some(name) => (
-                    Zone::iana(&name).expect("host zone name must be a valid IANA name"),
+                    Zone::named(&name).expect("host zone name must be a valid IANA name"),
                     Some(name),
                 ),
                 // A host that cannot name its zone still reports the right
@@ -321,7 +319,24 @@ impl TimeBuilder {
         zone: Zone,
         timezone_name: Option<String>,
     ) -> DatumTime {
-        let mut utc = self.iso_instant_override.unwrap_or(now);
+        // `-t`'s own offset is the zone unless `-z` named one (da-kvosn): a
+        // typed offset is believed, and stored as what it is, an offset, or
+        // as UTC by name for `Z` / `+00:00`, as v2 stores it. An offset the
+        // zone in use gives at that instant only says which instant, and the
+        // zone is kept: datum.day's cursor dates a repeated hour's second
+        // reading so, which is `+00:00` in London.
+        let (zone, timezone_name) = match self.iso_instant_override {
+            Some(t) if self.timezone.is_none() && zone.offset_at(t.to_utc()) != *t.offset() => {
+                match t.offset().local_minus_utc() {
+                    0 => (Zone::Iana(chrono_tz::UTC), Some("UTC".to_string())),
+                    _ => (Zone::Fixed(*t.offset()), None),
+                }
+            }
+            _ => (zone, timezone_name),
+        };
+        let mut utc = self
+            .iso_instant_override
+            .map_or(now, |t| t.with_timezone(&Utc));
         let mut wall = self
             .iso_naive_override
             .unwrap_or_else(|| zone.local_naive(utc));
@@ -359,7 +374,9 @@ impl TimeBuilder {
         DatumTime {
             utc,
             offset_minutes: zone.offset_at(utc).local_minus_utc() / 60,
-            timezone: timezone_name,
+            // A fixed offset is not a zone: the offset is all there is, and a
+            // name beside it (`UTC+2`) would only say it twice (da-kvosn).
+            timezone: timezone_name.filter(|_| matches!(zone, Zone::Iana(_))),
             uncertainty: None,
         }
     }
@@ -409,7 +426,7 @@ mod tests {
 
     /// da-2pgd: a host whose zone cannot be *named* still has an offset, and
     /// that offset must survive into the row. Before this, the nameless case
-    /// resolved through `Zone::iana("UTC")`, so the stored instant moved by
+    /// resolved through `Zone::named("UTC")`, so the stored instant moved by
     /// the host's whole distance from Greenwich and the row then claimed UTC
     /// as though it had been told.
     #[test]
@@ -698,7 +715,7 @@ mod tests {
     #[test]
     fn a_day_shift_is_a_calendar_day_beside_a_dst_change() {
         let berlin = |now: &str, b: TimeBuilder| {
-            let zone = Zone::iana("Europe/Berlin").unwrap();
+            let zone = Zone::named("Europe/Berlin").unwrap();
             let name = Some("Europe/Berlin".to_string());
             let dt = b.build_with_uncertainty_at(now.parse().unwrap(), zone.clone(), name);
             zone.local_naive(dt.utc).to_string()
@@ -727,6 +744,67 @@ mod tests {
         assert_eq!(
             berlin("2026-03-29T22:02:00Z", y().with_quick_count(1)),
             "2026-03-28 23:57:00"
+        );
+    }
+
+    /// da-kvosn: `-t`'s offset is the zone, unless the zone already in use
+    /// gives that offset at that instant: then it only says which instant
+    /// (datum.day's cursor dates a repeated hour's second reading so), and
+    /// the zone is kept. `Z` is UTC by name.
+    #[test]
+    fn an_instant_s_offset_is_the_zone_unless_the_zone_agrees() {
+        let berlin = || Zone::named("Europe/Berlin").unwrap();
+        let at = |t: &str| {
+            TimeBuilder {
+                iso_instant_override: Some(DateTime::parse_from_rfc3339(t).unwrap()),
+                ..TimeBuilder::default()
+            }
+            .build_at(Utc::now(), berlin(), Some("Europe/Berlin".into()))
+        };
+        let got = |t: &str| {
+            let d = at(t);
+            (d.utc.to_rfc3339(), d.offset_minutes, d.timezone)
+        };
+        assert_eq!(
+            got("2026-10-25T02:30:00+01:00"),
+            (
+                "2026-10-25T01:30:00+00:00".into(),
+                60,
+                Some("Europe/Berlin".into())
+            )
+        );
+        assert_eq!(
+            got("2024-06-18T22:42:00+05:00"),
+            ("2024-06-18T17:42:00+00:00".into(), 300, None)
+        );
+        assert_eq!(
+            got("2024-06-18T22:42:00Z"),
+            ("2024-06-18T22:42:00+00:00".into(), 0, Some("UTC".into()))
+        );
+        // Offset 0 agreeing is agreement too: London's second 01:30 on its
+        // fall-back night, as the cursor writes it, stays London.
+        let london = TimeBuilder {
+            iso_instant_override: Some(
+                DateTime::parse_from_rfc3339("2026-10-25T01:30:00+00:00").unwrap(),
+            ),
+            ..TimeBuilder::default()
+        }
+        .build_at(
+            Utc::now(),
+            Zone::named("Europe/London").unwrap(),
+            Some("Europe/London".into()),
+        );
+        assert_eq!(
+            (
+                london.utc.to_rfc3339(),
+                london.offset_minutes,
+                london.timezone
+            ),
+            (
+                "2026-10-25T01:30:00+00:00".into(),
+                0,
+                Some("Europe/London".into())
+            )
         );
     }
 }

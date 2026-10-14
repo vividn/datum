@@ -22,7 +22,7 @@ fn zone_of(a: &TimeArgs, reference: &DatumTime) -> datum_parse::Result<(Zone, Op
         Some(spec) => Some(resolve_timezone(spec)?),
         None => reference.timezone.clone(),
     };
-    Ok((Zone::iana(name.as_deref().unwrap())?, name))
+    Ok((Zone::named(name.as_deref().unwrap())?, name))
 }
 
 /// What log stores for these flags, with the reference as its clock.
@@ -43,7 +43,9 @@ fn disagreement(a: &TimeArgs, reference: &DatumTime) -> Option<String> {
         (Ok(built), _) if a.omit_timestamp => built.time.is_none(),
         (Ok(built), Ok(logged)) => {
             let t = built.time.as_ref().unwrap();
-            let (zone, _) = zone_of(a, reference).unwrap();
+            // Its own zone, as `strip_to_start_of_day` reads it: `-t`'s
+            // offset may be it (da-kvosn).
+            let zone = Zone::of(t).unwrap();
             let (at, uncertainty) = if built.only_date {
                 let midnight = zone.local_naive(t.utc).date().and_time(Default::default());
                 (zone.resolve(midnight).for_boundary(), Some("P1D".into()))

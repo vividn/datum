@@ -1515,7 +1515,11 @@ const TIME_FORMS: &[FormGroup] = &[
             },
             FormSpec {
                 example: "-z +4",
-                meaning: "UTC+4, in hours",
+                meaning: "UTC+4: an offset, kept with no zone name",
+            },
+            FormSpec {
+                example: "-z +5:30",
+                meaning: "",
             },
             FormSpec {
                 example: "-z UTC-7",

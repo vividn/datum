@@ -1,6 +1,6 @@
 //! Parse `-t` / `--time` arguments, plus stacked-flag counting helpers.
 
-use chrono::{DateTime, Duration, NaiveDateTime, NaiveTime, Utc};
+use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, NaiveTime};
 
 use crate::error::{ParseError, Result};
 use crate::time::context::TimeCtx;
@@ -19,9 +19,9 @@ pub struct TimeArg {
     pub offset: Option<Duration>,
     pub absolute: Option<NaiveTime>,
     /// Full ISO-8601 datetime with timezone suffix (`Z` or `±HH:MM`) — a
-    /// fully-resolved instant. Caller stores `utc` directly and keeps its
-    /// own `timezone` field (e.g. from `-z`).
-    pub iso_instant: Option<DateTime<Utc>>,
+    /// fully-resolved instant, its offset kept: without `-z` it is the
+    /// entry's zone (da-kvosn).
+    pub iso_instant: Option<DateTime<FixedOffset>>,
     /// ISO-8601 datetime without a timezone suffix
     /// (`2024-03-16T15:30:00`). Caller interprets the wall-clock moment
     /// in its current effective timezone.
@@ -144,7 +144,7 @@ fn parse_whole(s: &str, ctx: TimeCtx) -> Result<TimeArg> {
             return Ok(TimeArg {
                 offset: None,
                 absolute: None,
-                iso_instant: Some(dt.with_timezone(&Utc)),
+                iso_instant: Some(dt),
                 iso_naive: None,
                 date: None,
                 uncertainty,

@@ -49,19 +49,51 @@ pub enum Zone {
     Fixed(FixedOffset),
 }
 
+/// Minutes east of UTC for a fixed offset spelled `+2`, `-3:30`, `+0530`,
+/// `UTC+2` or `UTC-9:30` (ISO's sign: `UTC+2` is two hours ahead). `None`
+/// for anything else, `UTC` alone included, which is the IANA zone.
+pub fn fixed_offset_minutes(spec: &str) -> Option<i32> {
+    let s = spec.strip_prefix("UTC").unwrap_or(spec);
+    let (sign, body) = match s.as_bytes().first()? {
+        b'+' => (1, &s[1..]),
+        b'-' => (-1, &s[1..]),
+        _ => (1, s),
+    };
+    let (h, m) = match body.split_once(':') {
+        Some(hm) => hm,
+        None if body.len() == 4 => body.split_at(2),
+        None => (body, "00"),
+    };
+    let digits = |d: &str, max: usize| {
+        !d.is_empty() && d.len() <= max && d.bytes().all(|b| b.is_ascii_digit())
+    };
+    if !digits(h, 2) || m.len() != 2 || !digits(m, 2) {
+        return None;
+    }
+    let (h, m): (i32, i32) = (h.parse().ok()?, m.parse().ok()?);
+    (m < 60).then_some(sign * (h * 60 + m))
+}
+
 impl Zone {
-    /// Parse an IANA zone name. Returns `InvalidTime` if unrecognised.
-    pub fn iana(name: &str) -> Result<Self> {
-        name.parse()
-            .map(Zone::Iana)
-            .map_err(|_| ParseError::InvalidTime(format!("Unknown timezone: {name}")))
+    /// The zone a stored or typed name means: a fixed offset
+    /// ([`fixed_offset_minutes`], so v2's `UTC+2` resolves), else an IANA
+    /// name. Every zone name is read here, so no reader accepts a name
+    /// another refuses. Returns `InvalidTime` if neither.
+    pub fn named(name: &str) -> Result<Self> {
+        let unknown = || ParseError::InvalidTime(format!("Unknown timezone: {name}"));
+        match fixed_offset_minutes(name) {
+            Some(m) => FixedOffset::east_opt(m * 60)
+                .map(Zone::Fixed)
+                .ok_or_else(unknown),
+            None => name.parse().map(Zone::Iana).map_err(|_| unknown()),
+        }
     }
 
     /// The zone a [`DatumTime`] carries: its IANA name where it has one,
     /// otherwise the fixed offset stored beside it.
     pub fn of(t: &DatumTime) -> Result<Self> {
         match t.timezone.as_deref() {
-            Some(name) => Zone::iana(name),
+            Some(name) => Zone::named(name),
             None => Ok(Zone::Fixed(*t.local_time().offset())),
         }
     }
@@ -78,9 +110,8 @@ impl Zone {
     pub fn host() -> Self {
         match crate::time::clock::host_iana_tz_name() {
             // `host_iana_tz_name` only ever returns names that parse.
-            Some(name) => {
-                Zone::iana(&name).unwrap_or_else(|_| Zone::Fixed(crate::time::clock::host_offset()))
-            }
+            Some(name) => Zone::named(&name)
+                .unwrap_or_else(|_| Zone::Fixed(crate::time::clock::host_offset())),
             None => Zone::Fixed(crate::time::clock::host_offset()),
         }
     }
@@ -396,7 +427,7 @@ mod tests {
     }
 
     fn chicago() -> Zone {
-        Zone::iana("America/Chicago").unwrap()
+        Zone::named("America/Chicago").unwrap()
     }
 
     #[test]
@@ -449,7 +480,7 @@ mod tests {
     /// A half-hour zone, to prove the bisection isn't hour-aligned by luck.
     #[test]
     fn gap_transition_in_a_half_hour_zone() {
-        let lord_howe = Zone::iana("Australia/Lord_Howe").unwrap();
+        let lord_howe = Zone::named("Australia/Lord_Howe").unwrap();
         // 2024-10-06 02:00 +10:30 → 02:30 +11:00; 02:15 is inside the gap.
         assert_eq!(
             lord_howe.resolve(naive("2024-10-06T02:15:00")),
@@ -549,7 +580,7 @@ mod tests {
 
     #[test]
     fn timeline_collapses_runs_and_extends_the_first_segment_backwards() {
-        let berlin = Zone::iana("Europe/Berlin").unwrap();
+        let berlin = Zone::named("Europe/Berlin").unwrap();
         let tl = ZoneTimeline::new(
             [
                 (utc("2024-01-01T12:00:00Z"), chicago()),
@@ -568,7 +599,7 @@ mod tests {
 
     #[test]
     fn timeline_observations_need_not_be_ordered() {
-        let berlin = Zone::iana("Europe/Berlin").unwrap();
+        let berlin = Zone::named("Europe/Berlin").unwrap();
         let tl = ZoneTimeline::new(
             [
                 (utc("2024-06-01T12:00:00Z"), berlin.clone()),
@@ -592,7 +623,7 @@ mod tests {
     #[test]
     fn offsets_are_runs_cut_at_dst_and_at_a_move() {
         let east = |h: i32| FixedOffset::east_opt(h * 3600).unwrap();
-        let berlin = Zone::iana("Europe/Berlin").unwrap();
+        let berlin = Zone::named("Europe/Berlin").unwrap();
         let tl = ZoneTimeline::new(
             [
                 (utc("2026-10-20T12:00:00Z"), berlin),
@@ -656,7 +687,7 @@ mod tests {
     /// side of the relocation, and each is resolved in its own zone.
     #[test]
     fn timeline_resolves_each_local_time_in_the_zone_then_in_effect() {
-        let berlin = Zone::iana("Europe/Berlin").unwrap();
+        let berlin = Zone::named("Europe/Berlin").unwrap();
         let tl = ZoneTimeline::new(
             [
                 (utc("2024-01-01T12:00:00Z"), chicago()),
