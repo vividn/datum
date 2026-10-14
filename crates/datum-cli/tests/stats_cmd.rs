@@ -951,6 +951,38 @@ fn a_clock_still_ahead_today_is_refused_with_the_way_to_the_last_one() {
     }
 }
 
+/// da-bb059: a window that starts after now is refused, naming its start and
+/// now, though an entry is logged ahead in it: nothing in it has happened.
+#[test]
+fn a_window_that_starts_after_now_is_refused() {
+    let _g = freeze_time("2026-06-15T09:00:00Z");
+    let db = fresh_db();
+    seed_utc_zoned(&db, &[("2026-06-16T08:00:00Z", "coding")]);
+    let utc = |mut args: StatsArgs| {
+        args.time.timezone = Some("UTC".to_string());
+        args
+    };
+    let mut tomorrow = utc(selector("activity"));
+    tomorrow.time.date = Some("tomorrow".to_string());
+    let ahead = utc(StatsArgs {
+        since: Some("2026-06-16T00:00:00Z".to_string()),
+        until: Some("2026-06-17T00:00:00Z".to_string()),
+        ..selector("activity")
+    });
+    let slice = utc(StatsArgs {
+        slice: Some("2026-06-16".to_string()),
+        ..selector("activity")
+    });
+    for args in [tomorrow, ahead, slice] {
+        let err = compute_stats(&args, &db).unwrap_err().to_string();
+        assert_eq!(
+            err,
+            "the window has not begun: it starts 2026-06-16 00:00, after now \
+             (2026-06-15 09:00), local time in UTC"
+        );
+    }
+}
+
 #[test]
 fn period_and_timing_flags_parse_and_dispatch() {
     let _g = freeze_time("2026-06-15T09:00:00Z");

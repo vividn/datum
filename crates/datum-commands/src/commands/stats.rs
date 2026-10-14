@@ -887,22 +887,31 @@ fn resolve_window(
 
     // An inverted or empty window reports zero, which is indistinguishable
     // from "you did nothing" — the one reading a life-review tool must never
-    // hand back by accident. Say so instead.
+    // hand back by accident. Say so instead. So does a window that has not
+    // begun yet (da-bb059): nothing in it has happened.
     if let Some(s) = start {
+        let show = |t: DateTime<Utc>| {
+            zones
+                .zone_at(t)
+                .local_naive(t)
+                .format("%Y-%m-%d %H:%M")
+                .to_string()
+        };
         if end <= s {
-            let show = |t: DateTime<Utc>| {
-                zones
-                    .zone_at(t)
-                    .local_naive(t)
-                    .format("%Y-%m-%d %H:%M")
-                    .to_string()
-            };
             bail!(
                 "empty window: the end ({}) is not after the start ({}), local time in {}{}",
                 show(end),
                 show(s),
                 zones.zone_at(s).name(),
                 last_clock_hint(&args.time, &zones, now, end)?,
+            );
+        }
+        if s > now {
+            bail!(
+                "the window has not begun: it starts {}, after now ({}), local time in {}",
+                show(s),
+                show(now),
+                zones.zone_at(s).name(),
             );
         }
     }
