@@ -32,6 +32,8 @@ export interface VerbChoice {
 	glyph: string;
 	/** The shape's name, the one a newcomer chooses by (da-fu29p); vividn's names of 2026-10-14, shared with the welcome. */
 	what: string;
+	/** What a field of this shape is, in a line, under its name. */
+	line: string;
 }
 
 /**
@@ -39,10 +41,10 @@ export interface VerbChoice {
  * smallest claim a field can make.
  */
 export const VERBS: VerbChoice[] = [
-	{ verb: 'occur', glyph: '●', what: 'occurrence' },
-	{ verb: 'start', glyph: '█', what: 'on/off' },
-	{ verb: 'switch', glyph: '▞', what: 'switch' },
-	{ verb: 'add', glyph: '¢', what: 'card' }
+	{ verb: 'occur', glyph: '●', what: 'occurrence', line: 'a single point in time (no state)' },
+	{ verb: 'start', glyph: '█', what: 'on/off', line: 'on for a while, then off (state: true/false)' },
+	{ verb: 'switch', glyph: '▞', what: 'switch', line: 'one state until the next (custom states)' },
+	{ verb: 'add', glyph: '¢', what: 'card', line: 'keys and values, with no time' }
 ];
 
 /** A field to start from: what an example fills the form with, never the database (da-fu29p). */
@@ -51,31 +53,59 @@ export interface Example {
 	verb: Verb;
 	/** What it shows of datum, under its name. */
 	shows: string;
-	states?: string[];
-	keys?: Pick<KeyRow, 'name' | 'kind'>[];
-	remainder?: string;
+	color: string;
+	glyph?: string;
+	/** Each state and its colour, in the order they stand. */
+	states?: Record<string, string>;
+	keys?: Pick<KeyRow, 'name' | 'kind' | 'in_slug'>[];
+	/** A switch whose bare state names an entry of this field (`state_lookup_field`). */
+	lookup?: string;
+	neverFalse?: boolean;
 }
 
-const optional = (name: string) => ({ name, kind: 'optional' as const });
+const dataKey = (name: string, kind: KeyKind = 'optional', in_slug = false) => ({ name, kind, in_slug });
+/** A card's id: required, and in the slug, as `-K id` makes it — `person:vr520`. */
+const id = dataKey('id', 'required', true);
 
 /**
- * vividn's six (2026-10-08): «field by field, so that it fills out the spec
- * with an example … showcasing the various types, as well as something with
- * extra data». A spec has no range, so mood's -5 to +5 is its caption and
- * the key is a required one.
+ * vividn's starting catalog, a few per shape (2026-10-14), to be refined with
+ * him: «a nice color (potentially symbol), any extra data, states, etc is
+ * filled in for you». A spec has no range, so mood's -5 to +5 is its line.
  */
 export const EXAMPLES: Example[] = [
-	{ field: 'alcohol', verb: 'occur', shows: 'each drink, when it happens' },
-	{ field: 'sleep', verb: 'start', shows: 'start at night, end in the morning' },
-	{ field: 'activity', verb: 'switch', shows: 'admin, meeting or focus, until you end it', states: ['admin', 'meeting', 'focus'] },
+	{ field: 'coffee', verb: 'occur', shows: 'each cup, and its size', color: '#c69c6d', glyph: '☕', keys: [dataKey('size')] },
+	{ field: 'mood', verb: 'occur', shows: 'a level, -5 to +5', color: '#e8c547', keys: [dataKey('level', 'required')] },
+	{ field: 'headache', verb: 'occur', shows: 'each one, and how bad', color: '#d46a6a', glyph: '⚡', keys: [dataKey('severity')] },
+	{ field: 'medication', verb: 'occur', shows: 'what you took, and how much', color: '#7fb8d4', glyph: '✚', keys: [dataKey('name', 'required'), dataKey('dose')] },
+	{ field: 'sleep', verb: 'start', shows: 'on at night, off in the morning', color: '#7b68ee' },
+	{ field: 'screentime', verb: 'start', shows: 'on while you are on a screen', color: '#8fa3bf' },
+	{ field: 'work', verb: 'start', shows: 'on when you start, off when you stop', color: '#d4a35a' },
+	{ field: 'shower', verb: 'start', shows: 'on in, off out', color: '#5ac8d4' },
 	{
-		field: 'person',
-		verb: 'add',
-		shows: 'a note with keys: name, email, city',
-		keys: [{ name: 'id', kind: 'required' }, ...['first_name', 'last_name', 'email', 'city', 'number'].map(optional)]
+		field: 'activity',
+		verb: 'switch',
+		shows: 'email, meeting or deepwork, until the next',
+		color: '#c8c8c8',
+		states: { email: '#4f8fe8', meeting: '#d48788', deepwork: '#7bd389' }
 	},
-	{ field: 'mood', verb: 'occur', shows: 'with a number, -5 to +5', keys: [{ name: 'level', kind: 'required' }] },
-	{ field: 'emotion', verb: 'occur', shows: 'with any words after it', remainder: 'emotions' }
+	{
+		field: 'environment',
+		verb: 'switch',
+		shows: 'where you are: home, office, car, train…',
+		color: '#9acd32',
+		states: Object.fromEntries(['home', 'office', 'inside', 'outside', 'car', 'bus', 'train', 'airplane'].map((s) => [s, ''])),
+		neverFalse: true
+	},
+	{
+		field: 'reading',
+		verb: 'switch',
+		shows: 'each state a book card: reading dune is book:dune',
+		color: '#c39bd3',
+		lookup: 'book'
+	},
+	{ field: 'person', verb: 'add', shows: 'a card with a name and a city', color: '#e59866', keys: [id, dataKey('name'), dataKey('city')] },
+	{ field: 'book', verb: 'add', shows: 'a card with a title and an author', color: '#c39bd3', keys: [id, dataKey('title'), dataKey('author')] },
+	{ field: 'place', verb: 'add', shows: 'a card with a name and an address', color: '#76d7c4', keys: [id, dataKey('name'), dataKey('address')] }
 ];
 
 /** The action word `tail` prints for a field declared with `verb`. */
@@ -98,11 +128,14 @@ export interface StateRow {
  * writes one. It also un-ignores, which is what the ignored list below it
  * is for. A bare `--state` names a state the field may be switched to
  * (da-94q1) and `--state NAME=COLOR` paints it, so a switch field is
- * declared whole in one command. A state's description is not something
- * `track` carries, and so the modal does not ask for one there. Its keys
- * are (da-h119q, da-p3hxn): `--required-key NAME`, `--key NAME` for an
- * optional one, `--key NAME=DEFAULT`, and `NAME=VALUE` for an assign.
- * `-R KEY` is where a line's leftover words go (da-fu29p).
+ * declared whole in one command. Its keys are slots, in the order the
+ * form has them (da-h119q, da-p3hxn): `-k NAME` required, `-k NAME=`
+ * optional, `-k NAME=DEFAULT`, `-K` for one in the slug — a card's id —
+ * and `NAME=VALUE` for an assign. Not `--key`, whose subfields bind in the
+ * order of their names, so a card's `person vr520 vremya cantown` stored
+ * the name as the city. `-R KEY` is where a line's leftover words go
+ * (da-fu29p). What `track` cannot say, the rest of the form says over what
+ * it wrote (`restOver`).
  */
 export function trackArgv(
 	field: string,
@@ -119,9 +152,9 @@ export function trackArgv(
 		for (const { name, color } of named) if (color) argv.push('--state', `${name.trim()}=${color}`);
 	}
 	if (color) argv.push('--color', color);
-	for (const { name, kind, value } of keys.filter((k) => k.name.trim()))
+	for (const { name, kind, value, in_slug } of keys.filter((k) => k.name.trim()))
 		if (kind === 'assign') argv.push(`${name.trim()}=${value}`);
-		else argv.push(kind === 'required' ? '--required-key' : '--key', kind === 'default' && value.trim() ? `${name.trim()}=${value}` : name.trim());
+		else argv.push(in_slug ? '-K' : '-k', kind === 'required' ? name.trim() : `${name.trim()}=${kind === 'default' ? value : ''}`);
 	if (remainder.trim()) argv.push('-R', remainder.trim());
 	return argv;
 }
@@ -147,6 +180,8 @@ export interface Spec {
 	never_false?: boolean;
 	/** The key a line's leftover words go to, as `-R KEY` sends them; left out when none. */
 	remainder?: string;
+	/** The field a bare state names an entry of (`--state-lookup-field`); left out when none. */
+	state_lookup_field?: string;
 	/** The field's `<svg>` icon for the dayview (da-45wgz); the band draws `glyph` in its place. */
 	icon?: string;
 	[key: string]: unknown;
@@ -378,6 +413,8 @@ export function editedSpec(
 		icon?: string;
 		/** Where leftover words go; empty clears it, left out the spec's is kept. */
 		remainder?: string;
+		/** The field a bare state names an entry of; empty clears it, left out the spec's is kept. */
+		lookup?: string;
 	}
 ): Spec {
 	const rows = edit.states.map((s) => ({ ...s, name: s.name.trim() })).filter((s) => s.name);
@@ -407,8 +444,9 @@ export function editedSpec(
 	const icon = edit.icon === undefined ? spec.icon : edit.icon.trim();
 	const never_false = edit.neverFalse ?? (spec.never_false === true);
 	const remainder = (edit.remainder ?? spec.remainder ?? '').trim();
+	const state_lookup_field = (edit.lookup ?? spec.state_lookup_field ?? '').trim();
 	// `keys` and `keys_by_state` are the CLI's reading of the spec, not the spec: never sent (da-p3hxn).
-	const { state_descriptions: _d, glyph: _g, state_glyphs: _s, glyph_by: _b, icon: _i, keys: _k, keys_by_state: _ks, never_false: _n, remainder: _r, ...rest } = spec;
+	const { state_descriptions: _d, glyph: _g, state_glyphs: _s, glyph_by: _b, icon: _i, keys: _k, keys_by_state: _ks, never_false: _n, remainder: _r, state_lookup_field: _l, ...rest } = spec;
 	// The key rows are the whole answer: every place a key can live is written from them.
 	if (edit.keys) for (const k of ['id_keys', 'data_keys', 'assign', 'id_assign']) delete rest[k];
 	// The placement is the Placement tab's whole answer: free drops the anchor, tied drops y/height.
@@ -429,6 +467,7 @@ export function editedSpec(
 		...(icon ? { icon } : {}),
 		...(never_false ? { never_false } : {}),
 		...(remainder ? { remainder } : {}),
+		...(state_lookup_field ? { state_lookup_field } : {}),
 		...(edit.keys && placed(spec, edit.keys)),
 		...(edit.autoalias !== undefined && { no_autoalias: !edit.autoalias }),
 		// Only a list datum does not make is the person's to send; the CLI
@@ -440,6 +479,48 @@ export function editedSpec(
 					.filter((a) => a.state && a.expands_to)
 			})
 	};
+}
+
+/** The form's edits as `spec` reads: what `editedSpec(spec, formOf(spec))` leaves as it was. */
+export const formOf = (spec: Spec): Parameters<typeof editedSpec>[1] => ({
+	verb: spec.verb,
+	color: spec.color ?? '',
+	description: spec.description ?? '',
+	states: stateRows(spec),
+	glyph: spec.glyph ?? '',
+	glyph_by: spec.glyph_by ?? null,
+	keys: keyRows(spec),
+	autoalias: !spec.no_autoalias,
+	aliases: spec.derived_aliases ?? [],
+	neverFalse: !!spec.never_false,
+	place: placeOf(spec),
+	icon: spec.icon ?? '',
+	remainder: spec.remainder ?? '',
+	lookup: spec.state_lookup_field ?? ''
+});
+
+/**
+ * What a new field's form says that its `track` could not — a glyph, a
+ * state's description, a placement, anything of the tabs — as the `spec
+ * set` that says it over the spec `track` wrote, or null when there is
+ * nothing more to say.
+ */
+export const restOver =
+	(edit: Parameters<typeof editedSpec>[1]) =>
+	(written: Spec): string[] | null => {
+		const [next, same] = [edit, formOf(written)].map((e) => specArgv(editedSpec(written, e)));
+		return JSON.stringify(next) === JSON.stringify(same) ? null : next;
+	};
+
+/**
+ * What a save runs, in order: `argv`; for a new field, `rest` over the spec
+ * its `track` wrote; then `then`, the `track` or `ignore` the form's
+ * Tracked / Ignored asks for. One refused stops the rest.
+ */
+export interface Save {
+	argv: string[];
+	rest?: (written: Spec) => string[] | null;
+	then?: string[] | null;
 }
 
 /**

@@ -9,35 +9,39 @@
 	$lib/track.ts, `track_action_label` in datum-core): the row this form
 	is about to write will print `TRACK●` in every action column there is,
 	so what a person presses here is the shape they will meet again. Each is
-	named by what a field of that kind DOES — happens, lasts, switches, a
-	note — with the CLI's word under it.
+	named as the welcome names it — occurrence, on/off, switch, card — with
+	a line of what it is beside it.
 
-	A NEW field starts as its name box and the examples (`EXAMPLES`, less
-	the ones there is already a field for): one tap fills the form — never
-	the database — with a field of that kind, to be read, changed and saved
-	or not. Named, it shows Basics and nothing
-	else: the kind, the colour, the keys its entries carry (da-h119q: a name
-	and a KIND — required, optional, default or assign, da-p3hxn), the key
-	the rest of a line goes to, and a switch's states. `track` carries all
-	of that in one command, so that is all a new field is asked.
+	It opens on the SHAPES (da-uipyt), vividn, 2026-10-14: «rather than the
+	name, start with the shape buttons. I think that ends up being the most
+	important question to answer». Each is named and lined as the welcome
+	names it, and on a new field has a ▾ of examples (`EXAMPLES`, less the
+	ones there is already a field for): one tap fills the form — never the
+	database — with a field of that shape, its colour, glyph, keys and
+	states, to be read, changed and saved or not. A shape or an example
+	chosen, the name box takes the focus with its text selected. Under the
+	name, tracked or ignored, and what ignored means.
 
-	A field with a spec has the five segments — Basics · States · Keys ·
-	Aliases · Placement — and picks the GLYPH its dots draw (da-ogyxa): one
-	for the field, or one by a data key's value, and one per state beside
-	the state's colour. Keys are grouped required over the rest, and each
+	Every field, a new one too, has the five segments — Basics · States ·
+	Keys · Aliases · Placement — none of them required, and picks the
+	GLYPH its dots draw (da-ogyxa): one for the field, or one by a data
+	key's value, and one per state beside the state's colour. Keys are grouped required over the rest, and each
 	row says whether the key is IN THE SLUG. Aliases are made by datum from
 	the verb and the states until that is switched off (`no_autoalias`).
 	The rows are `spec show`'s own `keys`, parsed by the CLI, so what is
 	saved is what it reads back.
 
 	What it writes is decided by what it was opened on. A new field gets
-	`track`, the one command that writes the TRACK document. A field with a
+	`track`, the one command that writes the TRACK document, and then, if
+	the form says more than `track` can, a `spec set` of the rest over what
+	it wrote (`restOver`). A field with a
 	spec gets the whole edited spec back in ONE `spec set --from-json` — the
-	`set` shape, the list entire, never a stream of `add-state`s. Either is
-	handed up as `close`'s argv for the widget to run; null runs nothing.
+	`set` shape, the list entire, never a stream of `add-state`s. Then an
+	`ignore` or a `track` where tracked or ignored changed. It is all
+	handed up as `close`'s `Save` for the widget to run; null runs nothing.
 -->
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, tick } from 'svelte';
 	import { act } from './act.js';
 	import { fieldNameHint, suggestFieldName } from './fieldName.js';
 	import { defaultColor } from './fields.js';
@@ -52,6 +56,7 @@
 		KEY_KINDS,
 		KEY_TYPES,
 		placeOf,
+		restOver,
 		specArgv,
 		specKeys,
 		stateRows,
@@ -61,6 +66,7 @@
 		type Example,
 		type KeyRow,
 		type Place,
+		type Save,
 		type Spec,
 		type StateRow,
 		type Verb
@@ -79,7 +85,7 @@
 	/** Whether it differs from what it opened as: what leaving it now would lose. */
 	export let dirty = false;
 
-	const dispatch = createEventDispatcher<{ close: string[] | null }>();
+	const dispatch = createEventDispatcher<{ close: Save | null }>();
 	const TABS = ['basics', 'states', 'keys', 'aliases', 'placement'] as const;
 
 	let tab: (typeof TABS)[number] = 'basics';
@@ -102,6 +108,13 @@
 	let iconName = '';
 	/** The key a line's leftover words go to (`-R KEY`), or none. */
 	let remainder = spec?.remainder ?? '';
+	/** The field a bare state names an entry of (`state_lookup_field`), or none. */
+	let lookup = spec?.state_lookup_field ?? '';
+	const wasIgnored = ignored.includes(field);
+	let ignore = wasIgnored;
+	/** The shape whose examples are open, if any. */
+	let catalog: Verb | null = null;
+	let nameBox: HTMLInputElement | undefined;
 	if (spec) verb = spec.verb;
 
 	// What the name would do if it were submitted, before the press rather
@@ -117,42 +130,64 @@
 	$: glyph_by = byKey
 		? { key: glyphKey, map: Object.fromEntries(glyphMap.map((r) => [r.value, r.glyph])) }
 		: null;
+	$: edits = {
+		verb: verb ?? spec?.verb ?? 'occur',
+		color,
+		description,
+		states,
+		keys,
+		autoalias,
+		aliases,
+		neverFalse,
+		glyph,
+		glyph_by,
+		place,
+		icon,
+		remainder,
+		lookup
+	};
 	$: argv = spec
-		? specArgv(
-				editedSpec(spec, {
-					verb: verb ?? spec.verb,
-					color,
-					description,
-					states,
-					keys,
-					autoalias,
-					aliases,
-					neverFalse,
-					glyph,
-					glyph_by,
-					place,
-					icon,
-					remainder
-				})
-			)
-		: trackArgv(field.trim() || '<field>', verb ?? 'occur', states, color, keys, remainder);
+		? specArgv(editedSpec(spec, edits))
+		: trackArgv(field.trim() || '<field>', edits.verb, states, color, keys, remainder);
+	// Tracked or ignored, changed: the `track` or `ignore` that says so, after the save.
+	$: then = ignore === wasIgnored ? null : [ignore ? 'ignore' : 'track', field.trim()];
+	$: save = { argv, rest: spec ? undefined : restOver(edits), then };
 	let opened: string | undefined;
 	$: {
-		const now = JSON.stringify([verb, argv]);
+		const now = JSON.stringify([field, verb, edits, ignore]);
 		opened ??= now;
 		dirty = now !== opened;
 	}
-	// A new field with no name and no kind yet is its name box and the examples.
-	$: named = spec !== null || field.trim() !== '' || verb !== null;
-	$: examples = EXAMPLES.filter((e) => !taken.includes(e.field));
+	$: examples = EXAMPLES.filter((e) => e.verb === catalog && !taken.includes(e.field));
+	const offers = (shape: Verb) => !spec && EXAMPLES.some((e) => e.verb === shape && !taken.includes(e.field));
 
-	/** Fill the form with `example`: nothing is written until it is saved. */
+	/** The name box, focused with its text selected: what follows a shape or an example. */
+	async function toName() {
+		await tick();
+		nameBox?.focus();
+		nameBox?.select();
+	}
+
+	/**
+	 * Fill the form with `example` — the whole of it, every tab: what was
+	 * typed before it is not the example's. Nothing is written until it is saved.
+	 */
 	function fill(example: Example) {
 		field = example.field;
 		verb = example.verb;
-		states = (example.states ?? []).map((name) => ({ name, color: '', description: '', glyph: '' }));
-		keys = (example.keys ?? []).map((k) => ({ ...k, value: '', value_type: 'any', in_slug: false }));
-		remainder = example.remainder ?? '';
+		color = example.color;
+		description = '';
+		glyph = example.glyph ?? '';
+		[byKey, glyphKey, glyphMap] = [false, '', []];
+		[icon, iconName] = ['', ''];
+		[autoalias, aliases, place] = [true, [], {}];
+		states = Object.entries(example.states ?? {}).map(([name, color]) => ({ name, color, description: '', glyph: '' }));
+		keys = (example.keys ?? []).map((k) => ({ ...k, value: '', value_type: 'any' }));
+		remainder = '';
+		lookup = example.lookup ?? '';
+		neverFalse = !!example.neverFalse;
+		catalog = null;
+		void toName();
 	}
 
 	// da-45wgz: the file is read as it is; whether it is an icon — SVG,
@@ -179,24 +214,64 @@
 	}
 
 	/** Hand `next` up to run, or null to run nothing. */
-	const finish = (next: string[] | null) => dispatch('close', next);
+	const finish = (next: Save | null) => dispatch('close', next);
 </script>
 
 <div class="field-form" role="region" aria-label={spec ? `the spec of ${field}` : 'track a field'}>
-	<form on:submit|preventDefault={() => ready && finish(argv)}>
+	<form on:submit|preventDefault={() => ready && finish(save)}>
 		{#if spec}
 			<h2>{field}</h2>
-		{:else}
-			<!-- svelte-ignore a11y-autofocus -->
+		{/if}
+		<div class="verbs" role="radiogroup" aria-label="what a press logs">
+			{#each VERBS as choice (choice.verb)}
+				<div class="shape">
+					<button
+						type="button"
+						class="verb"
+						class:on={verb === choice.verb}
+						role="radio"
+						aria-checked={verb === choice.verb}
+						data-verb={choice.verb}
+						on:click={() => ((verb = choice.verb), spec || toName())}
+					>
+						<span class="glyph">{choice.glyph}</span>
+						<span class="name">{choice.what}</span>
+						<span class="line">{choice.line}</span>
+					</button>
+					{#if offers(choice.verb)}
+						<button
+							type="button"
+							class="more"
+							data-examples={choice.verb}
+							aria-expanded={catalog === choice.verb}
+							aria-label="examples of {choice.what}"
+							on:click={() => (catalog = catalog === choice.verb ? null : choice.verb)}>▾</button
+						>
+					{/if}
+				</div>
+			{/each}
+		</div>
+		{#if examples.length}
+			<!-- Each fills the form, not the database; «+ new field» is the way back to them. -->
+			<div class="examples" role="group" aria-label="examples">
+				{#each examples as example (example.field)}
+					<button type="button" data-example={example.field} on:click={() => fill(example)}>
+						<span class="name"><span class="mark" style:color={example.color}>{example.glyph ?? VERBS.find((v) => v.verb === example.verb)?.glyph}</span> {example.field}</span>
+						<span class="what">{example.shows}</span>
+					</button>
+				{/each}
+			</div>
+		{/if}
+		{#if !spec}
 			<input
 				class="field"
+				bind:this={nameBox}
 				bind:value={field}
 				placeholder="name a field"
 				aria-label="the field's name"
 				spellcheck="false"
 				autocapitalize="none"
 				autocomplete="off"
-				autofocus
 			/>
 		{/if}
 		{#if hint}
@@ -207,57 +282,39 @@
 			</p>
 		{/if}
 
-		{#if spec}
-			<div class="tabs" role="tablist">
-				{#each TABS as name (name)}
-					<button
-						type="button"
-						role="tab"
-						id="spec-tab-{name}"
-						aria-controls="spec-panel"
-						data-tab={name}
-						aria-selected={tab === name}
-						on:click={() => (tab = name)}>{name}</button
-					>
-				{/each}
+		<div class="row">
+			<div class="segmented" role="radiogroup" aria-label="tracked or ignored">
+				<button type="button" role="radio" data-tracking="tracked" aria-checked={!ignore} on:click={() => (ignore = false)}
+					>tracked</button
+				>
+				<button type="button" role="radio" data-tracking="ignored" aria-checked={ignore} on:click={() => (ignore = true)}
+					>ignored</button
+				>
 			</div>
-		{/if}
+			<span class="explain"
+				>{ignore
+					? 'left out of the now view and the field list; its entries and spec stay as they are, and logging it again tracks it'
+					: 'in the now view and the field list'}</span
+			>
+		</div>
 
-		<div class="panel" role="tabpanel" id="spec-panel" aria-labelledby={spec ? `spec-tab-${tab}` : undefined} data-panel={tab}>
-			{#if !named && examples.length}
-				<!-- Each fills the form, not the database; «+ new field» is the way back to them. -->
-				<div class="examples" role="group" aria-label="examples">
-					<span class="label">or start from an example</span>
-					{#each examples as example (example.field)}
-						<button type="button" data-example={example.field} on:click={() => fill(example)}>
-							<span class="name"
-								><span class="mark">{VERBS.find((v) => v.verb === example.verb)?.glyph}</span> {example.field}</span
-							>
-							<span class="what">{example.shows}</span>
-						</button>
-					{/each}
-				</div>
-			{/if}
-			{#if named && tab === 'basics'}
-				<div class="verbs" role="radiogroup" aria-label="what a press logs">
-					{#each VERBS as choice (choice.verb)}
-						<button
-							type="button"
-							class="verb"
-							class:on={verb === choice.verb}
-							role="radio"
-							aria-checked={verb === choice.verb}
-							data-verb={choice.verb}
-							on:click={() => (verb = choice.verb)}
-						>
-							<span class="glyph">{choice.glyph}</span>
-							<span class="name">{choice.what}</span>
-							<span class="what">{choice.verb}</span>
-						</button>
-					{/each}
-				</div>
+		<div class="tabs" role="tablist">
+			{#each TABS as name (name)}
+				<button
+					type="button"
+					role="tab"
+					id="spec-tab-{name}"
+					aria-controls="spec-panel"
+					data-tab={name}
+					aria-selected={tab === name}
+					on:click={() => (tab = name)}>{name}</button
+				>
+			{/each}
+		</div>
 
-				<div class="row top">
+		<div class="panel" role="tabpanel" id="spec-panel" aria-labelledby="spec-tab-{tab}" data-panel={tab}>
+			{#if tab === 'basics'}
+				<div class="row top early">
 					<span class="label">colour</span>
 					<Swatch bind:value={color} fallback={defaultColor(field.trim())} label="the field's colour" />
 				</div>
@@ -297,86 +354,84 @@
 					<span class="label">rest of line</span>
 					<input class="remainder" bind:value={remainder} placeholder="key" spellcheck="false" autocapitalize="none" />
 				</label>
-				{#if spec}
-					<label class="row">
-						<span class="label">description</span>
-						<input class="description" bind:value={description} />
-					</label>
-					<div class="row">
-						<span class="label">glyph</span>
-						<div class="glyph-by" role="radiogroup" aria-label="the field's glyph">
-							<button type="button" role="radio" aria-checked={!byKey} on:click={() => (byKey = false)}
-								>one glyph</button
-							>
-							<button type="button" role="radio" aria-checked={byKey} on:click={() => (byKey = true)}
-								>by a key</button
-							>
-						</div>
+				<label class="row">
+					<span class="label">description</span>
+					<input class="description" bind:value={description} />
+				</label>
+				<div class="row">
+					<span class="label">glyph</span>
+					<div class="glyph-by" role="radiogroup" aria-label="the field's glyph">
+						<button type="button" role="radio" aria-checked={!byKey} on:click={() => (byKey = false)}
+							>one glyph</button
+						>
+						<button type="button" role="radio" aria-checked={byKey} on:click={() => (byKey = true)}
+							>by a key</button
+						>
 					</div>
+				</div>
+				{#if byKey}
+					<label class="row">
+						<span class="label">key</span>
+						<input class="glyph-key" list="spec-keys" bind:value={glyphKey} spellcheck="false" autocapitalize="none" />
+						<datalist id="spec-keys">
+							{#each keyNames as key (key)}<option value={key}></option>{/each}
+						</datalist>
+					</label>
+				{/if}
+				<ul class="glyphs">
 					{#if byKey}
-						<label class="row">
-							<span class="label">key</span>
-							<input class="glyph-key" list="spec-keys" bind:value={glyphKey} spellcheck="false" autocapitalize="none" />
-							<datalist id="spec-keys">
-								{#each keyNames as key (key)}<option value={key}></option>{/each}
-							</datalist>
-						</label>
+						{#each glyphMap as row, i (row)}
+							<li>
+								<input
+									class="value"
+									bind:value={row.value}
+									placeholder="value"
+									aria-label="a value of {glyphKey || 'the key'}"
+									spellcheck="false"
+									autocapitalize="none"
+								/>
+								<Glyph bind:value={row.glyph} {color} label="the glyph for {row.value || 'this value'}" />
+								<button
+									type="button"
+									class="remove"
+									aria-label="remove {row.value}"
+									on:click={() => (glyphMap = glyphMap.filter((_, j) => j !== i))}>✕</button
+								>
+							</li>
+						{/each}
 					{/if}
-					<ul class="glyphs">
-						{#if byKey}
-							{#each glyphMap as row, i (row)}
-								<li>
-									<input
-										class="value"
-										bind:value={row.value}
-										placeholder="value"
-										aria-label="a value of {glyphKey || 'the key'}"
-										spellcheck="false"
-										autocapitalize="none"
-									/>
-									<Glyph bind:value={row.glyph} {color} label="the glyph for {row.value || 'this value'}" />
-									<button
-										type="button"
-										class="remove"
-										aria-label="remove {row.value}"
-										on:click={() => (glyphMap = glyphMap.filter((_, j) => j !== i))}>✕</button
-									>
-								</li>
-							{/each}
+					<li class="default">
+						{#if byKey}<span class="value">(other)</span>{/if}
+						<Glyph bind:value={glyph} {color} label="the field's glyph" />
+					</li>
+				</ul>
+				{#if byKey}
+					<button type="button" class="add" on:click={() => (glyphMap = [...glyphMap, { value: '', glyph: '' }])}
+						>+ value</button
+					>
+				{/if}
+				<!-- da-45wgz: an .svg dropped or picked; the input covers the box, so a drop lands on it. -->
+				<div class="row">
+					<span class="label">icon</span>
+					<label class="drop">
+						<input type="file" class="icon" accept=".svg,image/svg+xml" aria-label="the field's icon" on:change={pickIcon} />
+						{#if icon}
+							▸ {iconName || 'icon'} &nbsp;{(new Blob([icon]).size / 1024).toFixed(1)} kB
+						{:else}
+							drop an .svg here
 						{/if}
-						<li class="default">
-							{#if byKey}<span class="value">(other)</span>{/if}
-							<Glyph bind:value={glyph} {color} label="the field's glyph" />
-						</li>
-					</ul>
-					{#if byKey}
-						<button type="button" class="add" on:click={() => (glyphMap = [...glyphMap, { value: '', glyph: '' }])}
-							>+ value</button
+					</label>
+					{#if icon}
+						<button type="button" class="remove" aria-label="remove the icon" on:click={() => ((icon = ''), (iconName = ''))}
+							>✕</button
 						>
 					{/if}
-					<!-- da-45wgz: an .svg dropped or picked; the input covers the box, so a drop lands on it. -->
-					<div class="row">
-						<span class="label">icon</span>
-						<label class="drop">
-							<input type="file" class="icon" accept=".svg,image/svg+xml" aria-label="the field's icon" on:change={pickIcon} />
-							{#if icon}
-								▸ {iconName || 'icon'} &nbsp;{(new Blob([icon]).size / 1024).toFixed(1)} kB
-							{:else}
-								drop an .svg here
-							{/if}
-						</label>
-						{#if icon}
-							<button type="button" class="remove" aria-label="remove the icon" on:click={() => ((icon = ''), (iconName = ''))}
-								>✕</button
-							>
-						{/if}
-					</div>
-				{/if}
+				</div>
 			{/if}
-			<!-- A new field's states are a switch's, asked under its kind: `track` carries them for no other verb. -->
-			{#if !spec && verb === 'switch'}<span class="label">states</span>{/if}
-			{#if tab === 'states' || (!spec && verb === 'switch')}
-				<ul class="states" class:glyphed={spec}>
+			<!-- A new field's states are a switch's, asked under its kind as well: `track` carries them for no other verb. -->
+			{#if !spec && verb === 'switch' && tab === 'basics'}<span class="label late">states</span>{/if}
+			{#if tab === 'states' || (!spec && verb === 'switch' && tab === 'basics')}
+				<ul class="states" class:glyphed={tab === 'states'} class:late={tab === 'basics'}>
 					{#each states as state, i (state)}
 						<li class="state">
 							<Swatch
@@ -384,7 +439,7 @@
 								fallback={defaultColor(state.name.trim())}
 								label="the colour of {state.name || 'this state'}"
 							/>
-							{#if spec}
+							{#if tab === 'states'}
 								<Glyph
 									bind:value={state.glyph}
 									color={state.color || color}
@@ -423,7 +478,7 @@
 								aria-label="remove {state.name}"
 								on:click={() => (states = states.filter((_, j) => j !== i))}>✕</button
 							>
-							{#if spec}
+							{#if tab === 'states'}
 								<input
 									class="description"
 									bind:value={state.description}
@@ -437,10 +492,15 @@
 				<button
 					type="button"
 					class="add"
+					class:late={tab === 'basics'}
 					on:click={() => (states = [...states, { name: '', color: '', description: '', glyph: '' }])}
 					>+ state</button
 				>
-				{#if spec && verb === 'switch'}
+				{#if tab === 'states' && verb === 'switch'}
+					<label class="row" title="a bare state names the entry FIELD:<state>, as switch reading dune names book:dune">
+						<span class="label">each state is a</span>
+						<input class="lookup" bind:value={lookup} placeholder="field, e.g. book" spellcheck="false" autocapitalize="none" />
+					</label>
 					<!-- da-cwieh — vividn: «for example environment is never false». Only a switch has a ring,
 					     and a field that lists `false` as a state keeps its `end` whatever this says. -->
 					{@const listsFalse = states.some((s) => s.name.trim() === 'false')}
@@ -554,7 +614,7 @@
 			<button class="commit" use:act={'run'} type="submit" disabled={!ready}>{spec ? 'Done' : 'Save'}</button>
 		</div>
 		{#if verb !== null && !spec}
-			<code class="preview">{shellJoin(argv)}</code>
+			<code class="preview">{shellJoin(argv)}{#if then}<br />{shellJoin(then)}{/if}</code>
 		{/if}
 
 		{#if ignored.length > 0}
@@ -562,7 +622,7 @@
 			<div class="ignored">
 				<span class="label">ignored</span>
 				{#each ignored as name (name)}
-					<button type="button" use:act={'run'} data-ignored={name} title={shellJoin(['track', name])} on:click={() => finish(['track', name])}
+					<button type="button" use:act={'run'} data-ignored={name} title={shellJoin(['track', name])} on:click={() => finish({ argv: ['track', name] })}
 						>{name}</button
 					>
 				{/each}
@@ -572,13 +632,13 @@
 </div>
 
 <style>
-	/* The room under the widget's chips, and never less than its name, tabs,
-	   a few rows and Done: a pane shorter than that scrolls the widget. A
-	   long tab scrolls in the panel. */
+	/* The room under the widget's chips, and never less than its shapes,
+	   name, tabs, a few rows of the tab and Done: a pane shorter than that
+	   scrolls the widget. A long tab scrolls in the panel. */
 	.field-form {
 		display: flex;
 		flex: 1 1 0;
-		min-block-size: 14rem;
+		min-block-size: min-content;
 		color: var(--ink);
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		font-size: 0.85rem;
@@ -592,12 +652,13 @@
 		min-inline-size: 0;
 	}
 
-	/* The name, hint, tabs and buttons stay put; a long tab scrolls here. */
+	/* The shapes, name, tabs and buttons stay put; a long tab scrolls here,
+	   and is never shorter than its first few rows. */
 	.panel {
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
-		flex: 1;
+		flex: 1 1 8rem;
 		min-block-size: 0;
 		overflow: auto;
 	}
@@ -656,18 +717,36 @@
 		border-block-end-color: var(--accent);
 	}
 
-	/* Two across at every width the form has: four fingertips, not a list
-	   of words with a picture beside each — and the six examples the same. */
+	/* Two across where two fit a shape's line, else one: four fingertips,
+	   not a list of words with a picture beside each — and the examples the same. */
 	.verbs,
 	.examples {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
 		gap: 0.4rem;
 	}
 
-	.examples .label {
-		grid-column: 1 / -1;
-		inline-size: auto;
+	/* The ▾ of a shape's examples, in its corner. */
+	.shape {
+		position: relative;
+		display: grid;
+	}
+
+	.more {
+		position: absolute;
+		inset-block-start: 0;
+		inset-inline-end: 0;
+		min-inline-size: 28px;
+		min-block-size: 28px;
+		background: none;
+		border: 0;
+		color: var(--muted);
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.more[aria-expanded='true'] {
+		color: var(--accent);
 	}
 
 	.examples button {
@@ -693,21 +772,28 @@
 		color: var(--accent);
 	}
 
+	/* The pictogram beside the shape's name and line, so four fit over the
+	   name box on a phone; the ▾ keeps the top corner. */
 	.verb {
-		display: flex;
-		flex-direction: column;
+		display: grid;
+		grid-template-columns: auto 1fr;
 		align-items: center;
-		gap: 0.1rem;
+		align-content: center;
+		column-gap: 0.5rem;
 		box-sizing: border-box;
 		min-block-size: 24px;
 		background: #1a1a30;
 		border: 1px solid var(--rule);
 		border-radius: 6px;
-		padding: 0.4rem 0.3rem;
+		padding: 0.4rem 1.6rem 0.4rem 0.5rem;
 		color: var(--ink);
 		font: inherit;
 		cursor: pointer;
-		text-align: center;
+		text-align: start;
+	}
+
+	.verb .glyph {
+		grid-row: span 2;
 	}
 
 	/* The pictogram is the point of the question: big enough to be a picture
@@ -723,7 +809,8 @@
 		color: var(--ink-bright);
 	}
 
-	.what {
+	.what,
+	.line {
 		font-size: 0.65rem;
 		line-height: 1.2;
 		color: var(--muted);
@@ -843,14 +930,20 @@
 		color: var(--muted);
 	}
 
-	.glyph-by {
+	.segmented {
+		flex: none;
+	}
+
+	.glyph-by,
+	.segmented {
 		display: flex;
 		border: 1px solid var(--rule);
 		border-radius: 4px;
 		overflow: hidden;
 	}
 
-	.glyph-by button {
+	.glyph-by button,
+	.segmented button {
 		min-block-size: 24px;
 		background: #1a1a30;
 		border: 0;
@@ -861,7 +954,8 @@
 		cursor: pointer;
 	}
 
-	.glyph-by button[aria-checked='true'] {
+	.glyph-by button[aria-checked='true'],
+	.segmented button[aria-checked='true'] {
 		color: var(--ink-bright);
 		border-block-end-color: var(--accent);
 	}
@@ -967,6 +1061,15 @@
 		font-style: italic;
 	}
 
+	/* A new switch's states under its colour on Basics, before the keys: what an example fills. */
+	.early {
+		order: -2;
+	}
+
+	.late {
+		order: -1;
+	}
+
 	.buttons {
 		display: flex;
 		justify-content: flex-end;
@@ -1043,6 +1146,11 @@
 		color: var(--muted);
 		font-size: 0.75rem;
 		overflow-wrap: anywhere;
+	}
+
+	.explain {
+		color: var(--muted);
+		font-size: 0.75rem;
 	}
 
 	.hint {

@@ -85,12 +85,20 @@ describe('the argv it composes', () => {
 	});
 
 	// da-h119q: a field's keys are declared in the same `track`.
-	// da-p3hxn: the four kinds, as `track` spells them.
-	test('keys ride on the `track`: `--required-key`, `--key`, a default after `=`, an assign as `KEY=VALUE`, a blank name dropped', () => {
-		const key = (name, kind, value = '') => ({ name, kind, value, value_type: 'any', in_slug: false });
-		const keys = [key(' cups ', 'required'), key('size', 'optional', 'x'), key('temp', 'default', 'hot'), key('brand', 'assign', 'acme'), key(' ', 'required')];
+	// da-p3hxn: the four kinds, as `track` spells them — slots, in the
+	// form's order (da-uipyt): `--key` makes subfields, which bind by name.
+	test('keys ride on the `track` as slots: `-k K`, `-k K=`, a default after `=`, `-K` in the slug, an assign as `KEY=VALUE`, a blank name dropped', () => {
+		const key = (name, kind, value = '', in_slug = false) => ({ name, kind, value, value_type: 'any', in_slug });
+		const keys = [
+			key('id', 'required', '', true),
+			key(' cups ', 'required'),
+			key('size', 'optional', 'x'),
+			key('temp', 'default', 'hot'),
+			key('brand', 'assign', 'acme'),
+			key(' ', 'required')
+		];
 		assert.deepEqual(trackArgv('coffee', 'occur', [], '', keys), [
-			'track', 'coffee', '--verb', 'occur', '--required-key', 'cups', '--key', 'size', '--key', 'temp=hot', 'brand=acme'
+			'track', 'coffee', '--verb', 'occur', '-K', 'id', '-k', 'cups', '-k', 'size=', '-k', 'temp=hot', 'brand=acme'
 		]);
 	});
 
@@ -297,7 +305,7 @@ describe('in the app', () => {
 		}, { query: 'repl' });
 	});
 
-	test('the (+) opens the form: four pictograms once it is named, Save shut until a name and a verb', async () => {
+	test('the (+) opens the form on the four pictograms, Save shut until a name and a verb', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
@@ -307,9 +315,9 @@ describe('in the app', () => {
 			assert.equal(await commit.isEnabled(), false, 'a name alone is not a field');
 			const glyphs = await page.locator(`${MODAL} .verb .glyph`).allInnerTexts();
 			assert.deepEqual(glyphs.map((g) => g.trim()), VERBS.map((v) => v.glyph));
-			// Named by what it does, with the CLI's word under it.
+			// Named as the welcome names it, with its line beside it.
 			assert.deepEqual(await page.locator(`${MODAL} .verb .name`).allInnerTexts(), VERBS.map((v) => v.what));
-			assert.deepEqual(await page.locator(`${MODAL} .verb .what`).allInnerTexts(), VERBS.map((v) => v.verb));
+			assert.deepEqual(await page.locator(`${MODAL} .verb .line`).allInnerTexts(), VERBS.map((v) => v.line));
 			await page.locator(`${MODAL} button[data-verb="occur"]`).click();
 			await fill(page, '', null);
 			assert.equal(await commit.isEnabled(), false, 'a verb alone is not a field');
@@ -369,7 +377,7 @@ describe('in the app', () => {
 			const { saved: ran } = await openField(page, '', 'occur');
 			await page.locator(MODAL).waitFor();
 			assert.deepEqual(
-				await page.locator(`${MODAL} .verb[aria-checked="true"] .what`).allInnerTexts(),
+				await page.locator(`${MODAL} .verb[aria-checked="true"]`).evaluateAll((all) => all.map((b) => b.dataset.verb)),
 				['occur']
 			);
 			await fill(page, 'coffee', null);
@@ -435,8 +443,8 @@ describe('in the app', () => {
 	});
 
 	// da-ci85o: declaring is the spec's form on Basics, and it must stay as
-	// quick as the modal it absorbed — the (+), a pictogram, Save: three
-	// taps, the name typed into the box that already has the focus.
+	// quick as the modal it absorbed — the (+), a shape, Save: three taps,
+	// the name typed into the box the shape gave the focus (da-uipyt).
 	test('declaring a field is three taps, as it was before the tabs', async () => {
 		await withApp(async (app) => { // a listener of its own, which `solo` would keep
 			const { page } = app;
@@ -445,8 +453,8 @@ describe('in the app', () => {
 				document.addEventListener('pointerdown', (e) => e.isTrusted && window.__taps++, true);
 			});
 			await openIt(page);
-			await page.keyboard.type('coffee');
 			await page.locator(`${MODAL} button[data-verb="occur"]`).click();
+			await page.keyboard.type('coffee');
 			await page.locator(`${MODAL} button.commit`).click();
 			await page.locator('.bar button[data-field="coffee"]').waitFor();
 			assert.equal(await page.evaluate(() => window.__taps), 3);
@@ -464,7 +472,7 @@ describe('in the app', () => {
 			const { saved } = await openField(page, 'sleep');
 			await page.locator(MODAL).waitFor();
 			assert.equal((await page.locator(`${MODAL} h2`).innerText()).trim(), 'sleep');
-			assert.deepEqual(await page.locator(`${MODAL} .verb[aria-checked="true"] .what`).allInnerTexts(), ['start']);
+			assert.equal(await page.locator(`${MODAL} .verb[aria-checked="true"]`).getAttribute('data-verb'), 'start');
 			assert.equal(await page.locator(`${MODAL} input.description`).inputValue(), 'night');
 
 			await page.locator(`${MODAL} button[data-verb="switch"]`).click();
@@ -684,7 +692,7 @@ describe('in the app', () => {
 			await row.locator('input.name').fill('cups');
 			await row.locator('select.kind').selectOption('default');
 			await row.locator('input.kind-value').fill('2');
-			assert.match(await page.locator(`${MODAL} .preview`).innerText(), /--key cups=2$/);
+			assert.match(await page.locator(`${MODAL} .preview`).innerText(), /-k cups=2$/);
 			const before = (await app.echoes()).length;
 			await page.locator(`${MODAL} button.commit`).click();
 			await page.locator('.bar button[data-field="coffee"]').waitFor();
@@ -693,7 +701,7 @@ describe('in the app', () => {
 			assert.equal(echoes.length, 1, `one command: ${echoes.join(' | ')}`);
 			assert.match(echoes[0], /^track coffee /);
 			const shown = JSON.parse((await app.run(['spec', 'show', 'coffee'])).stdout);
-			assert.deepEqual(shown.subfields.cups, { required: false, value_type: 'any', in_slug: false, default: 2 });
+			assert.deepEqual(shown.keys, [{ name: 'cups', kind: 'default', value: '2', in_slug: false }]);
 
 			// Saved, it is on Basics with its keys there, and still no unit; and so it opens again.
 			await page.locator(`${MODAL} h2`).waitFor();
@@ -708,19 +716,17 @@ describe('in the app', () => {
 		});
 	});
 
-	// `track` carries no aliases, nor a key's type or slug, so a field being declared is Basics alone (da-fu29p).
-	test('the tabs are a spec\'s: a field being declared has none, and a saved one all five', async () => {
+	// vividn, 2026-10-14: «Display the full widget even in + new field mode» (da-uipyt), none of it required.
+	test('every tab from the start: a field being declared has all five, and so does a saved one', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
+			const tabs = async () => (await page.locator(`${MODAL} [role="tab"]`).allInnerTexts()).map((t) => t.trim().toLowerCase());
 			await openIt(page);
+			assert.deepEqual(await tabs(), ['basics', 'states', 'keys', 'aliases', 'placement']);
 			await fill(page, 'coffee', 'occur');
-			assert.equal(await page.locator(`${MODAL} [role="tab"]`).count(), 0);
 			await page.locator(`${MODAL} button.commit`).click();
 			await page.locator(`${MODAL} h2`).waitFor();
-			assert.deepEqual(
-				(await page.locator(`${MODAL} [role="tab"]`).allInnerTexts()).map((t) => t.trim().toLowerCase()),
-				['basics', 'states', 'keys', 'aliases', 'placement']
-			);
+			assert.deepEqual(await tabs(), ['basics', 'states', 'keys', 'aliases', 'placement']);
 			// Five words across a 320px phone, none of them cut.
 			await page.setViewportSize({ width: 320, height: 640 });
 			const cut = await page.locator(`${MODAL} [role="tab"]`).evaluateAll((tabs) =>
@@ -1030,6 +1036,8 @@ describe('in the app', () => {
 	});
 
 	// A pictogram a thumb cannot hit is not a pictogram (the bead's point 5).
+	// The shapes and the name are what it opens on (da-uipyt); on a screen this
+	// small the rest of the whole form is under them, a scroll away.
 	test(`every pictogram is a fingertip on a ${PHONE.width}x${PHONE.height} screen`, async () => {
 		await withApp(async ({ page }) => {
 			await openIt(page);
@@ -1040,7 +1048,6 @@ describe('in the app', () => {
 				height: document.documentElement.clientHeight
 			}));
 			assert.ok(box.x >= 0 && box.x + box.width <= screen.width + 1, `the form is ${box.x}–${box.x + box.width} on a ${screen.width}px screen`);
-			assert.ok(box.y >= 0 && box.y + box.height <= screen.height + 1, 'the form is taller than the screen');
 			const verbs = page.locator(`${MODAL} .verb`);
 			assert.equal(await verbs.count(), VERBS.length);
 			for (let i = 0; i < VERBS.length; i++) {
@@ -1049,8 +1056,9 @@ describe('in the app', () => {
 				assert.ok(item.width >= 24, `${VERBS[i].verb} is ${item.width}px wide`);
 				assert.ok(item.x >= 0 && item.x + item.width <= screen.width + 1, `${VERBS[i].verb} is off the screen`);
 			}
-			for (const control of ['input.field', 'button.commit']) {
-				const item = await page.locator(`${MODAL} ${control}`).boundingBox();
+			for (const control of ['.verb', 'input.field', 'button.commit']) {
+				if (control === 'button.commit') await page.locator(`${MODAL} ${control}`).scrollIntoViewIfNeeded();
+				const item = await page.locator(`${MODAL} ${control}`).last().boundingBox();
 				assert.ok(item.y >= 0 && item.y + item.height <= screen.height + 1, `${control} is off the screen`);
 			}
 		}, { viewport: PHONE });

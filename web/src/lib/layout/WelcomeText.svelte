@@ -11,15 +11,8 @@
 	import { act } from '$lib/act.js';
 	import { openField } from '$lib/fieldWidget.js';
 	import { explainCommand } from '$lib/help.js';
+	// Each shape's name and line are `VERBS`'s, shared with the Track form.
 	import { VERBS } from '$lib/track.js';
-
-	/** What each shape is, beside its name; the name is `VERBS`'s, shared with the Track form. */
-	const LINE: Record<string, string> = {
-		occur: 'a single point in time (no state)',
-		start: 'on for a while, then off (state: true/false)',
-		switch: 'one state until the next (custom states)',
-		add: 'keys and values, with no time'
-	};
 
 	/*
 	 * One working day, 0 to 120, shared by the three timelines so they line up (vividn, 2026-10-14: «a bit more
@@ -63,9 +56,9 @@
 		<h3>Field shapes</h3>
 		<p>Fields can take different shapes:</p>
 		<ul class="shapes">
-			{#each VERBS as { verb, glyph, what } (verb)}
+			{#each VERBS as { verb, glyph, what, line } (verb)}
 				<li>
-					<span class="head"><span class="glyph" aria-hidden="true">{glyph}</span> <b>{what}</b>: {LINE[verb]}</span>
+					<span class="head"><span class="glyph" aria-hidden="true">{glyph}</span> <b>{what}</b>: {line}</span>
 					{#if verb === 'add'}
 						<fieldset class="card">
 							<legend>person:vr520</legend>

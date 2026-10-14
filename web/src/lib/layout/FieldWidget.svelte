@@ -20,8 +20,10 @@
 	hold on a field in the fields widget brings that field here. A chip
 	asks first where the form in hand has edits nobody saved.
 
-	Save on a new field runs its one `track` and STAYS, on the field it
-	made, now with the rest of its form. Done on a field runs the one `spec
+	Save on a new field runs its `track`, then the `spec set` of what else
+	its form says over the spec `track` wrote, and STAYS, on the field it
+	made. An `ignore` or `track` follows either, where tracked or ignored
+	was changed. Done on a field runs the one `spec
 	set` and leaves the place, Cancel leaves it running nothing; in a pane
 	that is no place, the form is read afresh. A save the CLI refuses
 	leaves the form as it was typed, to be put right.
@@ -36,7 +38,7 @@
 	import type { FieldButton } from '$lib/fields.js';
 	import { answerField, editing } from '$lib/fieldWidget.js';
 	import { run } from '$lib/run.js';
-	import { VERBS, type Spec, type Verb } from '$lib/track.js';
+	import { VERBS, type Save, type Spec, type Verb } from '$lib/track.js';
 	import { fields, press } from './engine.js';
 	import { leavePlace } from './shell.js';
 
@@ -80,9 +82,15 @@
 		$editing = { field };
 	}
 
-	async function close(argv: string[] | null): Promise<void> {
-		const [asked, made] = [$editing, spec === null && argv];
-		const result = argv && (await press(argv));
+	async function close(save: Save | null): Promise<void> {
+		const [asked, made] = [$editing, spec === null && save?.argv];
+		let result = save && (await press(save.argv));
+		if (result?.code === 0 && made && save?.rest) {
+			const shown = await run(specShowArgv(made[1]));
+			const rest = shown.code === 0 ? save.rest(JSON.parse(shown.stdout)) : null;
+			if (rest) result = await press(rest);
+		}
+		if (result?.code === 0 && save?.then) result = await press(save.then);
 		answerField(result);
 		// Refused, the form stays as it was, to be put right; and a reader who
 		// went to another field while the save ran stays where they went.
