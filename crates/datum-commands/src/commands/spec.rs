@@ -86,6 +86,9 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             serde_json::from_str(json).with_context(|| "Invalid field spec JSON")?;
         if let Some(obj) = v.as_object_mut() {
             obj.insert("field".into(), args.field.clone().into());
+            // `spec show`'s reading of the keys, not the spec (`SpecJson`).
+            obj.remove("keys");
+            obj.remove("keys_by_state");
         }
         // da-eciuy: the colours it changes, as `--color` would.
         let old = db.load_spec(&args.field)?.map(serde_json::to_value);

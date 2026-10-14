@@ -32,7 +32,7 @@ mod multi;
 mod now;
 mod query;
 mod row_mapper;
-mod spec;
+pub(crate) mod spec;
 mod spec_alias_index;
 mod state;
 mod stats_cache;

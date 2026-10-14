@@ -554,6 +554,27 @@ describe('in the app', () => {
 		});
 	});
 
+	// da-klaf8: a key this datum does not know — a newer datum's — rides
+	// through the form's save, so an older datum.day editing a spec never
+	// erases what a newer copy wrote to it.
+	test('a key the form does not know is saved back as it was read', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			await app.run(['track', 'mood', '--verb', 'switch']);
+			const spec = JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout);
+			const future = { a: [1, 2.5] };
+			await app.run(['spec', 'set', 'mood', '--from-json', JSON.stringify({ ...spec, zz_future_key: future })]);
+			const { saved } = await openField(page, 'mood');
+			await page.locator(`${MODAL} input.description`).fill('how I feel');
+			await page.locator(`${MODAL} button.commit`).click();
+			const result = await saved;
+			assert.equal(result.code, 0, result.stderr);
+			const shown = JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout);
+			assert.equal(shown.description, 'how I feel');
+			assert.deepEqual(shown.zz_future_key, future);
+		});
+	});
+
 	// da-45wgz: an .svg picked on Basics is saved with the spec, and the
 	// dayview draws it; a field given an icon and nothing else SAVES, its
 	// band fallback left the standard dot. What the file must be is the

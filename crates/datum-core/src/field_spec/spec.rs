@@ -17,9 +17,11 @@ use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, HashMap};
 
 use crate::action::Action;
+use crate::db::spec::{SPEC_DISPLACED_KEY, SPEC_KIT_KEY};
 pub use datum_parse::spec_keys::{parse_key_decl, DeclaredKey, KeyKind};
 
 use super::presentation::PresentationSpec;
+use super::retired::RETIRED;
 use super::DerivedAlias;
 use super::DerivedAliasKind;
 
@@ -223,6 +225,26 @@ pub struct FieldSpec {
     /// `spec.presentation.resolve_position(...)` / `.renders_on(...)`.
     #[serde(default, flatten)]
     pub presentation: PresentationSpec,
+
+    /// Every key this datum does not know (da-klaf8) — a newer datum's —
+    /// written back as read, so a save here never erases it on every copy.
+    /// After `presentation`, which takes its own keys first; a key a later
+    /// datum names is a field there and never lands here.
+    #[serde(default, flatten, deserialize_with = "unknown_keys")]
+    pub extra: serde_json::Map<String, JsonValue>,
+}
+
+/// Keys this datum knows and keeps out of [`FieldSpec::extra`]: a spec
+/// entry's kit mark and the spec it displaced, which are not the spec's,
+/// and the keys a spec no longer has ([`super::retired`]).
+const KNOWN_NOT_SPEC: &[&str] = &[SPEC_KIT_KEY, SPEC_DISPLACED_KEY];
+
+fn unknown_keys<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<serde_json::Map<String, JsonValue>, D::Error> {
+    let mut keys = serde_json::Map::deserialize(d)?;
+    keys.retain(|k, _| !KNOWN_NOT_SPEC.contains(&k.as_str()) && !RETIRED.contains(&k.as_str()));
+    Ok(keys)
 }
 
 /// The subset of actions permitted as a field's [`FieldSpec::verb`].
@@ -281,6 +303,7 @@ impl FieldSpec {
             comment_remainder: false,
             tags: Vec::new(),
             presentation: PresentationSpec::default(),
+            extra: serde_json::Map::new(),
         }
     }
 
@@ -760,6 +783,28 @@ mod tests {
         assert!(spec.presentation.render.is_none());
         assert!(spec.presentation.renders_on("dayview"));
         assert!(spec.presentation.renders_on("nowview"));
+    }
+
+    /// A key this datum does not know is kept and written back (da-klaf8);
+    /// one it knows — a presentation key too, flattened beside it — is its
+    /// field's, and a spec entry's kit marks and a retired key are neither.
+    #[test]
+    fn unknown_keys_round_trip_and_known_ones_stay_out() {
+        let json = r#"{"field": "mood", "verb": "switch", "glyph": "x",
+            "zz_future_key": {"a": [1, 2.5]}, "kit_id": "k", "displaced": {},
+            "tracked": true}"#;
+        let spec: FieldSpec = serde_json::from_str(json).unwrap();
+        assert_eq!(spec.presentation.glyph.as_deref(), Some("x"));
+        assert_eq!(
+            spec.extra,
+            serde_json::json!({"zz_future_key": {"a": [1, 2.5]}})
+                .as_object()
+                .unwrap()
+                .clone()
+        );
+        let back = serde_json::to_value(&spec).unwrap();
+        assert_eq!(back["zz_future_key"], serde_json::json!({"a": [1, 2.5]}));
+        assert!(back.get("kit_id").is_none());
     }
 
     #[test]

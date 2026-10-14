@@ -493,3 +493,28 @@ fn update_and_from_json_hold_a_changed_colour_to_the_rule() {
     assert_eq!(spec().color, before.color);
     assert_eq!(spec().state_colors, before.state_colors);
 }
+
+/// A key this datum does not know — a newer datum's — survives a save
+/// here (da-klaf8): `spec set --from-json` of what `spec show` printed with
+/// it added, and a flag's edit after, both keep it. `keys`, `spec show`'s
+/// reading of the spec, is not stored.
+#[test]
+fn a_key_this_datum_does_not_know_survives_a_save() {
+    let db = fresh_db();
+    run_cli(&["track", "mood", "--verb", "switch"], &db).unwrap();
+    let spec = db.load_spec("mood").unwrap().unwrap();
+    let mut json = serde_json::to_value(datum_commands::commands::spec::spec_json(&spec)).unwrap();
+    json["zz_future_key"] = serde_json::json!({"a": [1, 2.5]});
+    json["description"] = "how I feel".into();
+    run_cli(
+        &["spec", "set", "mood", "--from-json", &json.to_string()],
+        &db,
+    )
+    .unwrap();
+    run_cli(&["spec", "set", "mood", "--color", "red"], &db).unwrap();
+    let stored = db.get_entry("spec:mood").unwrap().data.unwrap();
+    assert_eq!(stored["zz_future_key"], serde_json::json!({"a": [1, 2.5]}));
+    assert_eq!(stored["description"], "how I feel");
+    assert!(stored["color"].is_string());
+    assert!(stored.get("keys").is_none(), "{stored}");
+}

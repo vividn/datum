@@ -61,6 +61,10 @@ const KEEP: &[(&str, &str)] = &[
         "crates/datum-cli/tests/stored_spec_compat.rs",
         "specs stored with the old key, which must still load",
     ),
+    (
+        "crates/datum-core/src/field_spec/retired.rs",
+        "the old key, dropped from a stored spec on its next write",
+    ),
     ("crates/datum-cli/tests/unit_removed.rs", "this file"),
     ("web/src/lib/DebugBar.svelte", "a tuning knob's px / ms"),
 ];
