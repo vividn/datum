@@ -147,9 +147,24 @@ fn an_all_purge_dissolves_the_chain_on_every_copy_as_it_connects() {
     assert!(b.send(&c).0);
     for copy in [&a, &b, &c] {
         assert_eq!(data_of(copy), EMPTY);
-        for cmd in [&["sync", "chain", "list"][..], &["sync", "status"]] {
+        for cmd in [
+            &["sync", "chain", "list"][..],
+            &["sync", "admin", "list"],
+            &["sync", "status"],
+        ] {
             let out = copy.ok(cmd);
             assert!(out.contains("this copy is in no sync chain"), "{out}");
+        }
+        for cmd in [
+            &["sync", "chain", "list", "--json"][..],
+            &["sync", "admin", "list", "--json"],
+        ] {
+            let out = json(&copy.ok(cmd));
+            assert!(
+                out["chain"].is_null() && out["dissolved"].is_string(),
+                "{out}"
+            );
+            assert_eq!(out["admins"], serde_json::json!([]), "{out}");
         }
         let status = json(&copy.ok(&["sync", "status", "--json"]));
         assert!(status["chain"].is_null() && status["dissolved"].is_string());

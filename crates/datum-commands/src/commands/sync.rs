@@ -965,12 +965,21 @@ fn print_admins(chain: &Chain) {
 /// `datum sync admin list`.
 fn admins(db: &Db, json: bool) -> Result<()> {
     let chain = db.sync_chain()?;
-    ensure!(chain.exists(), NO_CHAIN);
+    // In no chain `--json` still answers, as `sync status --json` does
+    // (da-y6oh6): the state asked about must not change the format. A
+    // dissolved chain is none, as `chain list` says.
     if json {
-        println!(
-            "{}",
-            json!({"chain": chain.id, "admins": admins_json(&chain)})
-        );
+        let out = match (chain.exists(), chain.dissolved()) {
+            (true, None) => json!({"chain": chain.id, "admins": admins_json(&chain)}),
+            (true, Some(_)) => json!({"chain": null, "admins": [], "dissolved": chain.id}),
+            (false, _) => json!({"chain": null, "admins": []}),
+        };
+        println!("{out}");
+        return Ok(());
+    }
+    ensure!(chain.exists(), NO_CHAIN);
+    if let Some(words) = dissolved(&chain) {
+        println!("{words}");
         return Ok(());
     }
     println!("sync chain {}\nadmins:", chain.id);
@@ -989,22 +998,26 @@ fn members(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
     // A copy joining a chain is in none yet, and says through which copies
     // (da-idw54): datum.day reads this to resume the join.
     let through = db.sync_joining()?;
-    if !chain.exists() && !through.is_empty() {
-        match json {
-            true => println!(
-                "{}",
-                json!({"chain": null, "admins": [], "members": [], "joining": through
+    if !chain.exists() {
+        // In no chain `--json` still answers, as `sync status --json` does
+        // (da-y6oh6); `joining` is there only while a join is under way.
+        if json {
+            let mut out = json!({"chain": null, "admins": [], "members": []});
+            if !through.is_empty() {
+                out["joining"] = through
                     .iter()
                     .map(|p| json!({"endpoint": p.id, "label": p.label}))
-                    .collect::<Vec<_>>()})
-            ),
-            false => through
-                .iter()
-                .for_each(|p| println!("{}", joining(&p.label, &p.id))),
+                    .collect();
+            }
+            println!("{out}");
+            return Ok(());
         }
+        ensure!(!through.is_empty(), NO_CHAIN);
+        through
+            .iter()
+            .for_each(|p| println!("{}", joining(&p.label, &p.id)));
         return Ok(());
     }
-    ensure!(chain.exists(), NO_CHAIN);
     if let Some(words) = dissolved(&chain) {
         match json {
             true => println!(

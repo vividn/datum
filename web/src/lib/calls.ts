@@ -22,7 +22,7 @@ import type { Layout } from './layout/types.js';
 import type { DayviewJson, PaneSpec } from './panes.js';
 import type { AllFieldsStats, FieldStats } from './stats.js';
 import type { Invite } from './sync.js';
-import type { Admins, PurgePreview, SyncStatus } from './syncView.js';
+import type { Admins, ChainList, PurgePreview, SyncStatus } from './syncView.js';
 import type { TailListing, TailPage } from './tail.js';
 import type { Spec } from './track.js';
 
@@ -328,7 +328,8 @@ export interface Reads {
 	showAllArgv: AllFieldsStats | FieldStats;
 	specShowArgv: Spec;
 	syncStatusArgv: SyncStatus;
-	chainListArgv: Admins;
+	/** `joining` takes a join cut short, `dissolved` a chain-wide purge: no seeded database holds either. */
+	chainListArgv: Omit<ChainList, 'joining' | 'dissolved'>;
 	adminListArgv: Admins;
 	newInviteArgv: Invite;
 	/** The preview's: the `--yes` revert answers no JSON. */

@@ -48,7 +48,7 @@ import { chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusAr
 import { announceHere, onAnyChange } from './changes.js';
 import type { SyncEvent, SyncReport, SyncRequest, TicketAbout } from './syncProtocol.js';
 import { cliError, dbOf, type RunResult } from './run.js';
-import type { Member, Notice, SyncStatus } from './syncView.js';
+import type { ChainList, Member, Notice, SyncStatus } from './syncView.js';
 import { shellSplit } from './shellSplit.js';
 
 const PULL_MS = 30_000;
@@ -117,6 +117,18 @@ const pending = new Map<number, (e: SyncEvent) => void>();
 async function cli(argv: string[], stdin?: string, session?: boolean): Promise<RunResult> {
 	const { wasiRun } = await import('./runners/wasi.js');
 	return wasiRun(argv, stdin, undefined, undefined, undefined, [], undefined, session);
+}
+
+/**
+ * Whether a `sync chain list --json` answer is a copy's that syncs: in a
+ * chain, joining one, or passing on the purge that dissolved one. One in
+ * none answers `chain: null` and nothing more (da-y6oh6); an empty
+ * `joining`, were the CLI to print one, is no join under way.
+ */
+export function syncs(r: RunResult): boolean {
+	if (r.code !== 0) return false;
+	const l = JSON.parse(r.stdout) as ChainList;
+	return Boolean(l.chain || l.joining?.length || l.dissolved);
 }
 
 async function must(argv: string[], stdin?: string): Promise<string> {
@@ -221,10 +233,10 @@ class Leader {
 
 	/**
 	 * Read whether the database syncs, and start an endpoint if it does.
-	 * `sync chain list` fails, writing nothing, in a database in no chain;
-	 * `sync status` would mint an endpoint key there, on every fresh
-	 * device's first boot, so only a member is asked it — or a copy joining
-	 * a chain, which it names and which has its key (da-idw54). A join
+	 * `sync chain list` writes nothing; `sync status` would mint an endpoint
+	 * key in a database in no chain, on every fresh device's first boot, so
+	 * only a copy that `syncs` is asked it — a member, or a copy joining a
+	 * chain, which it names and which has its key (da-idw54). A join
 	 * cut short, by a reload say, resumes there: the endpoint starts and
 	 * dials the copies it was joining through, and once in the chain the
 	 * copy says what it is, as `connect` does.
@@ -234,12 +246,11 @@ class Leader {
 	 */
 	async refresh(): Promise<void> {
 		failInjected();
-		const members = await cli(['--db', this.db, ...chainListArgv()]);
-		const syncs = members.code === 0;
-		const status = syncs ? (JSON.parse(await must(['--db', this.db, ...syncStatusArgv()])) as SyncStatus) : undefined;
+		const listed = syncs(await cli(['--db', this.db, ...chainListArgv()]));
+		const status = listed ? (JSON.parse(await must(['--db', this.db, ...syncStatusArgv()])) as SyncStatus) : undefined;
 		const chain = Boolean(status?.chain);
 		const joined = this.joining && chain;
-		this.joining = syncs && !chain;
+		this.joining = listed && !chain;
 		this.chain = chain;
 		this.chainId = status?.chain ?? undefined;
 		this.label = status?.this.label ?? this.label;
@@ -247,7 +258,7 @@ class Leader {
 		this.paused = status?.paused ?? undefined;
 		this.notices = status?.notices ?? [];
 		this.peers = (status?.members ?? []).filter((p): p is Peer => !p.revoked && !!p.addr);
-		if (syncs) await this.start();
+		if (listed) await this.start();
 		if (joined) await cli(['--db', this.db, ...renameArgv(this.label)]);
 		this.post();
 	}

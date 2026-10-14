@@ -8,9 +8,10 @@
 // the link carries, and `sync approve` writes it — the chain refusing a
 // code it would not take.
 //
-// `sync chain list` goes first: in a database in no chain it fails, writing
-// nothing, where `sync status` would mint an endpoint key (as $lib/sync.ts
-// says of its own read). So only a member, which has its key, is asked it.
+// `sync chain list` goes first: it writes nothing, where `sync status` in a
+// database in no chain would mint an endpoint key (as $lib/sync.ts says of
+// its own read). So only a copy that syncs (`syncs`), which has its key, is
+// asked it.
 //
 // `table` is the rest, and pure: the CLI's rows and the sync worker's
 // broadcast reachability ($lib/sync.ts `syncStates`) into clients × databases.
@@ -19,7 +20,7 @@ import { writable } from 'svelte/store';
 import { ackArgv, approveArgv, canLeaveArgv, chainListArgv, newInviteArgv, qrArgv, syncStatusArgv } from './calls.js';
 import { cliError, run, type RunResult } from './run.js';
 import { approve, approveLink } from './passkey.js';
-import type { Invite, Reach, SyncState } from './sync.js';
+import { syncs, type Invite, type Reach, type SyncState } from './sync.js';
 import type { TicketAbout } from './syncProtocol.js';
 
 /** One member of a chain as `sync status --json` has it: this copy left out. */
@@ -63,6 +64,16 @@ export interface Admin {
 /** `sync chain list --json` and `sync admin list --json`. */
 export interface Admins {
 	admins: Admin[];
+}
+
+/**
+ * `sync chain list --json`: `chain` null in no chain (da-y6oh6), and then
+ * `joining` while a join is under way, or `dissolved` once a purge dissolved it.
+ */
+export interface ChainList extends Admins {
+	chain: string | null;
+	joining?: { endpoint: string; label: string }[];
+	dissolved?: string;
 }
 
 /** A new member or admin, or an unlock, not yet acknowledged (`sync chain ack`). */
@@ -198,7 +209,7 @@ export function readSync(dbs: string[]): Promise<DbSync[]> {
 	return Promise.all(
 		dbs.map(async (db): Promise<DbSync> => {
 			const members = await run(['--db', db, ...chainListArgv()]);
-			if (members.code !== 0) return { db, chain: null, members: [] };
+			if (!syncs(members)) return { db, chain: null, members: [] };
 			const status = await run(['--db', db, ...syncStatusArgv()]);
 			if (status.code !== 0) return { db, chain: null, members: [] };
 			const s = JSON.parse(status.stdout) as SyncStatus;

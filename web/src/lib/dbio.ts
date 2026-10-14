@@ -297,8 +297,8 @@ export async function purge(flags: string[] = []): Promise<RunResult> {
 	// standing in was destroyed. `dbOf` reads the argv first, so a typed
 	// `db purge --db x` names `x`.
 	const db = dbOf(dbPurgeArgv(flags));
-	// `sync chain list` fails, writing nothing, in a copy in no chain, and
-	// one joining a chain is in none: what the CLI's purge reads.
+	// `sync chain list` answers `chain: null` in a copy in no chain, and one
+	// joining a chain is in none: what the CLI's purge reads.
 	const listed = await run(['--db', db, ...chainListArgv()]);
 	const chain = listed.code === 0 ? (JSON.parse(listed.stdout) as { chain: string | null }).chain : null;
 	let way = flags.find((f) => f === '--leave' || f === '--rejoin')?.slice(2) ?? null;

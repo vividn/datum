@@ -326,6 +326,27 @@ fn a_chain_of_one_is_left_with_its_entries() {
 /// The leave `connect` makes on its own (`--alone`, da-h7pnc) is only a
 /// copy's holding nothing but its own data: another member, or a revoked
 /// one's data, refuses it, and nothing goes.
+/// Being in no chain is a state, which `--json` answers as `sync status
+/// --json` does, and writing nothing (da-y6oh6).
+/// The bare forms still refuse, naming both ways out of it.
+#[test]
+fn a_chainless_copy_lists_its_chain_and_admins_as_json() {
+    let a = Copy::new();
+    a.ok(&["occur", "tea"]);
+    let local = a.query("SELECT * FROM sync_local");
+    let list = json(&a.ok(&["sync", "chain", "list", "--json"]));
+    assert_eq!(
+        list,
+        serde_json::json!({"chain": null, "admins": [], "members": []})
+    );
+    let admins = json(&a.ok(&["sync", "admin", "list", "--json"]));
+    assert_eq!(admins, serde_json::json!({"chain": null, "admins": []}));
+    assert_eq!(a.query("SELECT * FROM sync_local"), local);
+    for argv in [&["sync", "chain", "list"][..], &["sync", "admin", "list"]] {
+        assert!(a.fails(argv, "").contains("in no sync chain"), "{argv:?}");
+    }
+}
+
 #[test]
 fn the_leave_connect_makes_is_refused_a_copy_holding_others_data() {
     let (a, b) = chained();
