@@ -150,9 +150,14 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
         }
     }
     // da-fu29p: `-R KEY`, as a log line's own, so a field whose entries are
-    // «whatever words follow» is declared in the one command too.
-    if let Some(r) = &args.remainder {
-        spec.remainder = Some(r.clone()).filter(|r| !r.is_empty());
+    // «whatever words follow» is declared in the one command too; `-S`
+    // joins them, and `-C` makes them one comment (da-zqnt3; the parser
+    // refuses `-S` alone and `-C` with `-R`). Either names the whole route,
+    // replacing the spec's.
+    if args.remainder.is_some() || args.comment_remainder {
+        spec.remainder = args.remainder.clone().filter(|r| !r.is_empty());
+        spec.string_remainder = args.string_remainder && spec.remainder.is_some();
+        spec.comment_remainder = args.comment_remainder;
     }
     spec.regenerate_derived_aliases();
     let client = client_id()?;

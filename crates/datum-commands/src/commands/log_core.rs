@@ -1452,7 +1452,7 @@ fn apply_spec_keys(action: Action, args: &mut LogArgs, db: &Db) -> Result<Option
     let words = spec_key_words(
         args,
         &spec.declared_keys(state.as_deref()),
-        spec.remainder.as_deref(),
+        &spec.spec_remainder(),
     );
     if words == SpecKeyWords::default() {
         return Ok(None);
@@ -1470,6 +1470,8 @@ pub(crate) fn bind_spec_words(args: &mut LogArgs, words: SpecKeyWords) {
     if words.remainder.is_some() {
         args.remainder = words.remainder;
     }
+    args.string_remainder |= words.string_remainder;
+    args.comment_remainder |= words.comment_remainder;
 }
 
 /// The verbs whose trailing positional can be a duration.

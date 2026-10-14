@@ -146,10 +146,11 @@ seed(
 		glyph_by: { key: 'size', map: { big: 'C' } },
 		icon: '<svg viewBox="0 0 1 1"/>',
 		remainder: 'note',
+		string_remainder: true,
 		subfields: { size: SIZE }
 	})
 );
-seed(calls.specArgv({ ...SPEC, field: 'mood', verb: 'switch', never_false: true, relative_to: 'coffee', state_descriptions: { happy: 'up' }, state_glyphs: { happy: 'h' }, state_lookup_field: 'feeling' }));
+seed(calls.specArgv({ ...SPEC, field: 'mood', verb: 'switch', never_false: true, relative_to: 'coffee', state_descriptions: { happy: 'up' }, state_glyphs: { happy: 'h' }, state_lookup_field: 'feeling', comment_remainder: true }));
 seed(['alias', 'set', 'cof', 'occur coffee']);
 seed(calls.savePlanArgv(PLAN, false));
 seed(calls.newLayoutArgv(LAYOUT, 'k'));
@@ -198,9 +199,9 @@ const SAMPLES = {
 				{ name: 'cups', kind: 'default', value: '1' },
 				{ name: 'brand', kind: 'required', value: '' },
 				{ name: 'note', kind: 'optional', value: '' },
-				{ name: 'size', kind: 'assign', value: 'big' }
-			],
-			'note'
+				{ name: 'size', kind: 'assign', value: 'big' },
+				{ name: 'words', kind: 'optional', value: '', rest: 'SR' }
+			]
 		]
 	],
 	specArgv: [[{ field: 'coffee', verb: 'occur', color: '#123456', description: 'beans', allowed_states: null, state_colors: {} }]],

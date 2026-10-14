@@ -133,17 +133,16 @@ export interface StateRow {
  * optional, `-k NAME=DEFAULT`, `-K` for one in the slug — a card's id —
  * and `NAME=VALUE` for an assign. Not `--key`, whose subfields bind in the
  * order of their names, so a card's `person vr520 vremya cantown` stored
- * the name as the city. `-R KEY` is where a line's leftover words go
- * (da-fu29p). What `track` cannot say, the rest of the form says over what
- * it wrote (`restOver`).
+ * the name as the city. The row that takes the rest of the line is `-R
+ * KEY`, `-SR KEY` or `-C` (da-fu29p, da-zqnt3). What `track` cannot say,
+ * the rest of the form says over what it wrote (`restOver`).
  */
 export function trackArgv(
 	field: string,
 	verb: Verb,
 	states: StateRow[] = [],
 	color = '',
-	keys: KeyRow[] = [],
-	remainder = ''
+	keys: KeyRow[] = []
 ): string[] {
 	const argv = ['track', field, '--verb', verb];
 	if (verb === 'switch') {
@@ -152,10 +151,12 @@ export function trackArgv(
 		for (const { name, color } of named) if (color) argv.push('--state', `${name.trim()}=${color}`);
 	}
 	if (color) argv.push('--color', color);
-	for (const { name, kind, value, in_slug } of keys.filter((k) => k.name.trim()))
+	const named = keys.filter((k) => k.name.trim() || k.rest === 'C');
+	for (const { name, kind, value, in_slug } of named.filter((k) => !k.rest))
 		if (kind === 'assign') argv.push(`${name.trim()}=${value}`);
 		else argv.push(in_slug ? '-K' : '-k', kind === 'required' ? name.trim() : `${name.trim()}=${kind === 'default' ? value : ''}`);
-	if (remainder.trim()) argv.push('-R', remainder.trim());
+	const route = named.find((k) => k.rest);
+	if (route) argv.push(...(route.rest === 'C' ? ['-C'] : [`-${route.rest}`, route.name.trim()]));
 	return argv;
 }
 
@@ -180,6 +181,10 @@ export interface Spec {
 	never_false?: boolean;
 	/** The key a line's leftover words go to, as `-R KEY` sends them; left out when none. */
 	remainder?: string;
+	/** Those words joined into one string, as `-SR KEY` (da-zqnt3); left out when false. */
+	string_remainder?: boolean;
+	/** The leftover words as one comment, as `-C`; left out when false. */
+	comment_remainder?: boolean;
 	/** The field a bare state names an entry of (`--state-lookup-field`); left out when none. */
 	state_lookup_field?: string;
 	/** The field's `<svg>` icon for the dayview (da-45wgz); the band draws `glyph` in its place. */
@@ -264,6 +269,44 @@ export interface KeyRow {
 	value_type: KeyType;
 	/** Whether the key's value is part of the entry's slug: it identifies, not annotates. */
 	in_slug: boolean;
+	/** Set on the one row that takes the rest of the line, which is no slot. */
+	rest?: Rest;
+}
+
+/** How a row takes the rest of the line: `-R KEY` a list, `-SR KEY` one string, `-C` one comment. */
+export type Rest = 'R' | 'SR' | 'C';
+/** A row's mode button — the flag that declares the key on the CLI (`datum help logging`). */
+export type KeyMode = 'k' | 'K' | Rest;
+
+/** The modes in the order the button cycles them, each with the line under a row in it. */
+export const KEY_MODES: { mode: KeyMode; line: string }[] = [
+	{ mode: 'k', line: '' },
+	{ mode: 'K', line: "goes into the entry's id: a card's id, as in book:dune" },
+	{ mode: 'R', line: 'takes the rest of the line, as a list of its words' },
+	{ mode: 'SR', line: 'takes the rest of the line, as one string' },
+	{ mode: 'C', line: 'the rest of the line is kept as a comment' }
+];
+
+export const modeOf = (row: KeyRow): KeyMode => row.rest ?? (row.in_slug ? 'K' : 'k');
+
+/** `list` with its `from`th item moved to `to`. */
+export function moved<T>(list: T[], from: number, to: number): T[] {
+	const next = [...list.slice(0, from), ...list.slice(from + 1)];
+	next.splice(to, 0, list[from]);
+	return next;
+}
+
+/**
+ * Turn `row`, one of `rows`, to its next mode, in place. Only one row takes
+ * the rest of the line, so a row taking it takes it from the one that had it.
+ */
+export function cycle(rows: KeyRow[], row: KeyRow): void {
+	const modes = KEY_MODES.map((m) => m.mode);
+	const mode = modes[(modes.indexOf(modeOf(row)) + 1) % modes.length];
+	if (mode !== 'k' && mode !== 'K') for (const other of rows) delete other.rest;
+	if (mode === 'k' || mode === 'K') delete row.rest;
+	else row.rest = mode;
+	row.in_slug = mode === 'K';
 }
 
 /**
@@ -279,16 +322,21 @@ export interface DerivedAlias {
 /**
  * The modal's key rows for `spec`: `spec show`'s `keys`, parsed by the CLI
  * and in binding order (da-p3hxn) — every key the spec declares, not only
- * its subfields — each with its subfield's type where it has one.
+ * its subfields — each with its subfield's type where it has one; then the
+ * row that takes the rest of the line, if one does.
  */
-export const keyRows = (spec: Spec): KeyRow[] =>
-	((spec.keys as SpecKey[] | undefined) ?? []).map(({ name, kind, value, in_slug }) => ({
+export function keyRows(spec: Spec): KeyRow[] {
+	const rows: KeyRow[] = ((spec.keys as SpecKey[] | undefined) ?? []).map(({ name, kind, value, in_slug }) => ({
 		name,
 		kind,
 		value: value ?? '',
 		value_type: spec.subfields?.[name]?.value_type ?? 'any',
 		in_slug
 	}));
+	const rest: Rest | null = spec.comment_remainder ? 'C' : spec.remainder ? (spec.string_remainder ? 'SR' : 'R') : null;
+	if (rest) rows.push({ name: rest === 'C' ? 'comment' : spec.remainder ?? '', kind: 'optional', value: '', value_type: 'any', in_slug: false, rest });
+	return rows;
+}
 
 /** A typed default as it is stored: blank is none, a string key's is its text, any other's is JSON if it parses. */
 function storedDefault({ value: typed, value_type }: KeyRow): unknown {
@@ -344,35 +392,39 @@ export const specKeys = (spec: Spec): string[] => keyRows(spec).map((k) => k.nam
 
 /**
  * Where the key rows are saved — a key lives in ONE place (da-ulc0v): an
- * assign in `assign`, `id_assign` in the slug; a key the spec declared as
- * a `-k`/`-K` slot stays one, spelt `key`, `key=` or `key=default` in
- * `data_keys`, `id_keys` in the slug, so its place in the binding order
- * holds; any other key — a new one, one that was an assign — is a subfield,
- * as `track --key` makes it. The maps are absent when empty, as `spec
+ * assign in `assign`, `id_assign` in the slug; any other key a slot, spelt
+ * `key`, `key=` or `key=default`, in `data_keys` or `id_keys` in the slug,
+ * in the rows' order, which is the order the words bind in (da-zqnt3). A
+ * slot has no type, so a typed key also keeps a subfield for it, which
+ * binds in its slot's place (`declared_keys`). The row that takes the rest
+ * of the line is the remainder. The maps are absent when empty, as `spec
  * show` prints them.
  */
-function placed(spec: Spec, rows: KeyRow[]): Partial<Spec> {
-	const slots = keyRows(spec).filter((k) => k.kind !== 'assign' && !spec.subfields?.[k.name]);
-	const named = rows.map((r) => ({ ...r, name: r.name.trim() })).filter((r) => r.name);
-	const slot = (r: KeyRow) => r.kind !== 'assign' && slots.some((k) => k.name === r.name);
+function placed(rows: KeyRow[]): Partial<Spec> {
+	const named = rows.map((r) => ({ ...r, name: r.name.trim() })).filter((r) => r.name || r.rest === 'C');
+	const slots = named.filter((r) => !r.rest && r.kind !== 'assign');
 	const spell = ({ name, kind, value }: KeyRow) => (kind === 'required' ? name : `${name}=${kind === 'default' ? value : ''}`);
-	const listed = (slug: boolean) => named.filter((r) => slot(r) && r.in_slug === slug).map(spell);
+	const listed = (slug: boolean) => slots.filter((r) => r.in_slug === slug).map(spell);
 	const assigned = (slug: boolean) =>
-		Object.fromEntries(named.filter((r) => r.kind === 'assign' && r.in_slug === slug).map((r) => [r.name, r.value]));
+		Object.fromEntries(named.filter((r) => !r.rest && r.kind === 'assign' && r.in_slug === slug).map((r) => [r.name, r.value]));
 	const [assign, id_assign] = [assigned(false), assigned(true)];
+	const route = named.find((r) => r.rest);
 	return {
 		id_keys: listed(true),
 		data_keys: listed(false),
 		subfields: Object.fromEntries(
-			named
-				.filter((r) => r.kind !== 'assign' && !slot(r))
+			slots
+				.filter((r) => r.value_type !== 'any')
 				.map((r) => [
 					r.name,
 					{ required: r.kind === 'required', value_type: r.value_type, in_slug: r.in_slug, default: r.kind === 'default' ? storedDefault(r) : null }
 				])
 		),
 		...(Object.keys(assign).length ? { assign } : {}),
-		...(Object.keys(id_assign).length ? { id_assign } : {})
+		...(Object.keys(id_assign).length ? { id_assign } : {}),
+		...(route?.rest === 'C' && { comment_remainder: true }),
+		...(route && route.rest !== 'C' && { remainder: route.name }),
+		...(route?.rest === 'SR' && { string_remainder: true })
 	};
 }
 
@@ -411,8 +463,6 @@ export function editedSpec(
 		neverFalse?: boolean;
 		place?: Place;
 		icon?: string;
-		/** Where leftover words go; empty clears it, left out the spec's is kept. */
-		remainder?: string;
 		/** The field a bare state names an entry of; empty clears it, left out the spec's is kept. */
 		lookup?: string;
 	}
@@ -443,12 +493,12 @@ export function editedSpec(
 	const glyph_by = edit.glyph_by === undefined ? spec.glyph_by : key ? { key, map } : undefined;
 	const icon = edit.icon === undefined ? spec.icon : edit.icon.trim();
 	const never_false = edit.neverFalse ?? (spec.never_false === true);
-	const remainder = (edit.remainder ?? spec.remainder ?? '').trim();
 	const state_lookup_field = (edit.lookup ?? spec.state_lookup_field ?? '').trim();
 	// `keys` and `keys_by_state` are the CLI's reading of the spec, not the spec: never sent (da-p3hxn).
-	const { state_descriptions: _d, glyph: _g, state_glyphs: _s, glyph_by: _b, icon: _i, keys: _k, keys_by_state: _ks, never_false: _n, remainder: _r, state_lookup_field: _l, ...rest } = spec;
+	const { state_descriptions: _d, glyph: _g, state_glyphs: _s, glyph_by: _b, icon: _i, keys: _k, keys_by_state: _ks, never_false: _n, state_lookup_field: _l, ...rest } = spec;
 	// The key rows are the whole answer: every place a key can live is written from them.
-	if (edit.keys) for (const k of ['id_keys', 'data_keys', 'assign', 'id_assign']) delete rest[k];
+	if (edit.keys)
+		for (const k of ['id_keys', 'data_keys', 'assign', 'id_assign', 'remainder', 'string_remainder', 'comment_remainder']) delete rest[k];
 	// The placement is the Placement tab's whole answer: free drops the anchor, tied drops y/height.
 	if (edit.place) for (const k of PLACE_KEYS) delete rest[k];
 	return {
@@ -466,9 +516,8 @@ export function editedSpec(
 		...(glyph_by ? { glyph_by } : {}),
 		...(icon ? { icon } : {}),
 		...(never_false ? { never_false } : {}),
-		...(remainder ? { remainder } : {}),
 		...(state_lookup_field ? { state_lookup_field } : {}),
-		...(edit.keys && placed(spec, edit.keys)),
+		...(edit.keys && placed(edit.keys)),
 		...(edit.autoalias !== undefined && { no_autoalias: !edit.autoalias }),
 		// Only a list datum does not make is the person's to send; the CLI
 		// rebuilds a made one on save whatever it is sent.
@@ -495,7 +544,6 @@ export const formOf = (spec: Spec): Parameters<typeof editedSpec>[1] => ({
 	neverFalse: !!spec.never_false,
 	place: placeOf(spec),
 	icon: spec.icon ?? '',
-	remainder: spec.remainder ?? '',
 	lookup: spec.state_lookup_field ?? ''
 });
 

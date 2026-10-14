@@ -1153,6 +1153,10 @@ pub struct TrackArgs {
     /// `-R KEY` / `--remainder KEY`: where the words no slot takes go, as
     /// `spec set --remainder` says it (da-fu29p); `''` clears it.
     pub remainder: Option<String>,
+    /// `-S`: the remainder's words joined into one string; `-C`: the
+    /// leftover words as one comment, with no `-R` (da-zqnt3).
+    pub string_remainder: bool,
+    pub comment_remainder: bool,
 }
 
 #[derive(Debug)]

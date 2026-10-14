@@ -17,7 +17,7 @@ import { atEachScreen, sharedApp, startApp, stopApp } from './support/app.mjs';
 import { ONE_PANE } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 import { FIELD_FORM as MODAL, cancelField, openField } from './support/field.mjs';
-const TABS = ['basics', 'states', 'keys', 'aliases', 'placement'];
+const TABS = ['basics', 'states', 'data', 'aliases', 'placement'];
 
 describe('the field form', () => {
 	before(startApp);

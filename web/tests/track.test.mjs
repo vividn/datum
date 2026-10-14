@@ -21,7 +21,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import {
-	editedSpec, GLYPHS, keyRows, specArgv, specKeys, stateRows, trackArgv, trackLabel, VERBS, verbAsked, wide
+	cycle, editedSpec, GLYPHS, keyRows, modeOf, specArgv, specKeys, stateRows, trackArgv, trackLabel, VERBS, verbAsked, wide
 } from '../src/lib/track.ts';
 import { stripAnsi } from './support/tail.mjs';
 import { FIELD_FORM as MODAL, cancelField, openField } from './support/field.mjs';
@@ -194,7 +194,9 @@ describe('the argv it composes', () => {
 	// da-cap5m: the keys are the whole answer, a default stored as it was
 	// typed; the aliases are sent only once datum no longer makes them.
 	// da-p3hxn: the rows are the CLI's parsed `keys`, and each is saved in
-	// ONE place — a slot stays a slot, an assign goes to the map.
+	// ONE place — a slot, or an assign in the map. da-zqnt3: every slot in
+	// the rows' order, which is the order its words bind in, and a typed key
+	// keeps a subfield for its type.
 	test('keys are saved whole, each in one place, and only a list datum does not make is sent', () => {
 		const sub = (over) => ({ required: false, value_type: 'any', in_slug: false, default: null, ...over });
 		const spec = {
@@ -223,14 +225,10 @@ describe('the argv it composes', () => {
 		keys[2].kind = 'assign';
 		keys[3].kind = 'required';
 		const made = editedSpec(spec, { ...base, keys: [...keys, row('n', 'default', '42'), row(' ', 'default')], autoalias: true, aliases: [] });
-		assert.deepEqual(made.data_keys, ['lang='], 'a slot stays a slot, where it bound');
-		assert.deepEqual(made.id_keys, []);
-		assert.deepEqual(made.assign, { reps: '3' }, 'an assign leaves the subfields, and the one that was is gone');
-		assert.deepEqual(made.subfields, {
-			pos: sub({ value_type: 'string', in_slug: true, default: '42' }),
-			src: sub({ required: true }),
-			n: sub({ default: 42 })
-		});
+		assert.deepEqual(made.data_keys, ['lang=', 'src', 'n=42'], 'every key a slot, in the rows\' order');
+		assert.deepEqual(made.id_keys, ['pos=42']);
+		assert.deepEqual(made.assign, { reps: '3' }, 'an assign leaves the slots, and the one that was is gone');
+		assert.deepEqual(made.subfields, { pos: sub({ value_type: 'string', in_slug: true, default: '42' }) }, 'only a typed key keeps a subfield');
 		assert.equal('keys' in made, false, "the CLI's reading of the spec is not sent");
 		assert.equal('id_assign' in made, false, 'an empty map is left out, as `spec show` prints it');
 		assert.equal(made.no_autoalias, false);
@@ -253,16 +251,45 @@ describe('the argv it composes', () => {
 		assert.equal(set.icon, '<svg viewBox="0 0 1 1"/>');
 	});
 
-	// da-fu29p: where a line's leftover words go rides on the `track` too,
-	// and an edit sets it, clears it — the key left out — or carries it.
-	test('a remainder key is `-R KEY` on the track, and set, cleared or carried on an edit', () => {
-		assert.deepEqual(trackArgv('emotion', 'occur', [], '', [], ' emotions ').slice(-2), ['-R', 'emotions']);
-		assert.deepEqual(trackArgv('emotion', 'occur', [], '', [], ' '), ['track', 'emotion', '--verb', 'occur']);
+	// da-fu29p: where a line's leftover words go rides on the `track` too.
+	// da-zqnt3: it is a mode of one row — `-R`, `-SR` or `-C` — saved as
+	// the spec's remainder, and carried when the keys are not edited.
+	test('the row that takes the rest of the line is `-R`, `-SR` or `-C` on the track, and the remainder on an edit', () => {
+		const key = (name, rest) => ({ name, kind: 'optional', value: '', value_type: 'any', in_slug: false, ...(rest && { rest }) });
+		assert.deepEqual(trackArgv('emotion', 'occur', [], '', [key(' emotions ', 'R')]).slice(-2), ['-R', 'emotions']);
+		assert.deepEqual(trackArgv('jot', 'occur', [], '', [key('words', 'SR'), key('n')]).slice(-4), ['-k', 'n=', '-SR', 'words']);
+		assert.deepEqual(trackArgv('tea', 'occur', [], '', [key('', 'C')]).slice(-1), ['-C']);
+		assert.deepEqual(trackArgv('emotion', 'occur', [], '', [key(' ', 'R')]), ['track', 'emotion', '--verb', 'occur']);
 		const spec = { field: 'emotion', verb: 'occur', color: null, description: null, allowed_states: null, state_colors: {}, remainder: 'emotions' };
 		const edit = { verb: 'occur', color: '', description: '', states: [] };
-		assert.equal(editedSpec(spec, edit).remainder, 'emotions');
-		assert.equal(editedSpec(spec, { ...edit, remainder: ' words ' }).remainder, 'words');
-		assert.equal('remainder' in editedSpec(spec, { ...edit, remainder: '' }), false);
+		assert.deepEqual(keyRows(spec), [key('emotions', 'R')]);
+		assert.deepEqual(keyRows({ ...spec, string_remainder: true }), [key('emotions', 'SR')]);
+		assert.deepEqual(keyRows({ ...spec, remainder: undefined, comment_remainder: true }), [key('comment', 'C')]);
+		assert.equal(editedSpec(spec, edit).remainder, 'emotions', 'carried when the keys are not edited');
+		const routed = (keys) => {
+			const { remainder, string_remainder, comment_remainder } = editedSpec({ ...spec, string_remainder: true }, { ...edit, keys });
+			return [remainder, string_remainder, comment_remainder];
+		};
+		assert.deepEqual(routed([key(' words ', 'R')]), ['words', undefined, undefined]);
+		assert.deepEqual(routed([key('words', 'SR')]), ['words', true, undefined]);
+		assert.deepEqual(routed([key('', 'C')]), [undefined, undefined, true]);
+		assert.deepEqual(routed([key('n')]), [undefined, undefined, undefined], 'no row takes it: cleared');
+	});
+
+	// vividn, 2026-10-14: «at the beginning have (-k) button that if you click
+	// let's you select -R -SR -C as well».
+	test('the mode button cycles -k -K -R -SR -C, and only one row takes the rest of the line', () => {
+		const key = (name) => ({ name, kind: 'required', value: '', value_type: 'any', in_slug: false });
+		const [a, b] = [key('a'), key('b')];
+		const rows = [a, b];
+		const seen = [];
+		for (let i = 0; i < 6; i++) seen.push([modeOf(a), a.in_slug]), cycle(rows, a);
+		assert.deepEqual(seen, [['k', false], ['K', true], ['R', false], ['SR', false], ['C', false], ['k', false]]);
+		cycle(rows, a), cycle(rows, a); // a: -R
+		cycle(rows, b), cycle(rows, b); // b: -R, which a gives up
+		assert.deepEqual(rows.map(modeOf), ['k', 'R']);
+		cycle(rows, a); // a: -K, and b keeps the rest
+		assert.deepEqual(rows.map(modeOf), ['K', 'R']);
 	});
 
 	test('the refusal is read for the field it names, and nothing else is', () => {
@@ -687,11 +714,14 @@ describe('in the app', () => {
 			await openIt(page);
 			await fill(page, 'coffee', 'occur');
 			assert.equal(await page.locator(`${MODAL} input.unit`).count(), 0, 'no unit on a new field');
-			await page.locator(`${MODAL} .basic-keys + button.add`).click();
-			const row = page.locator(`${MODAL} .basic-keys li`).last();
+			await page.locator(`${MODAL} ul.data + button.add`).click();
+			const row = page.locator(`${MODAL} ul.data li.key`).last();
 			await row.locator('input.name').fill('cups');
-			await row.locator('select.kind').selectOption('default');
-			await row.locator('input.kind-value').fill('2');
+			assert.match(await page.locator(`${MODAL} .preview`).innerText(), /-k cups$/, 'a new key is required, as `-k cups` is');
+			assert.equal(await row.locator('input.value').count(), 0, 'no default box before the =');
+			await row.locator('button.eq').click();
+			assert.match(await page.locator(`${MODAL} .preview`).innerText(), /-k cups=$/);
+			await row.locator('input.value').fill('2');
 			assert.match(await page.locator(`${MODAL} .preview`).innerText(), /-k cups=2$/);
 			const before = (await app.echoes()).length;
 			await page.locator(`${MODAL} button.commit`).click();
@@ -705,12 +735,12 @@ describe('in the app', () => {
 
 			// Saved, it is on Basics with its keys there, and still no unit; and so it opens again.
 			await page.locator(`${MODAL} h2`).waitFor();
-			assert.deepEqual(await page.locator(`${MODAL} .basic-keys input.name`).evaluateAll((els) => els.map((e) => e.value)), ['cups']);
+			assert.deepEqual(await page.locator(`${MODAL} ul.data input.name`).evaluateAll((els) => els.map((e) => e.value)), ['cups']);
 			await leave(page);
 			const { saved: shut } = await openField(page, 'coffee');
 			await page.locator(MODAL).waitFor();
 			assert.equal(await page.locator(`${MODAL} input.unit`).count(), 0, 'no unit on a spec');
-			assert.deepEqual(await page.locator(`${MODAL} .basic-keys input.name`).evaluateAll((els) => els.map((e) => e.value)), ['cups']);
+			assert.deepEqual(await page.locator(`${MODAL} ul.data input.name`).evaluateAll((els) => els.map((e) => e.value)), ['cups']);
 			await cancelField(page);
 			assert.equal(await shut, null);
 		});
@@ -722,11 +752,11 @@ describe('in the app', () => {
 			const { page } = app;
 			const tabs = async () => (await page.locator(`${MODAL} [role="tab"]`).allInnerTexts()).map((t) => t.trim().toLowerCase());
 			await openIt(page);
-			assert.deepEqual(await tabs(), ['basics', 'states', 'keys', 'aliases', 'placement']);
+			assert.deepEqual(await tabs(), ['basics', 'states', 'data', 'aliases', 'placement']);
 			await fill(page, 'coffee', 'occur');
 			await page.locator(`${MODAL} button.commit`).click();
 			await page.locator(`${MODAL} h2`).waitFor();
-			assert.deepEqual(await tabs(), ['basics', 'states', 'keys', 'aliases', 'placement']);
+			assert.deepEqual(await tabs(), ['basics', 'states', 'data', 'aliases', 'placement']);
 			// Five words across a 320px phone, none of them cut.
 			await page.setViewportSize({ width: 320, height: 640 });
 			const cut = await page.locator(`${MODAL} [role="tab"]`).evaluateAll((tabs) =>
@@ -768,76 +798,134 @@ describe('in the app', () => {
 		assert.match(echoes[0], /^spec set /);
 	}
 
-	test('a key made required moves to the required group, and `spec show` reads it back', async () => {
+	/** The rows' names, in order. */
+	const names = (page) => page.locator(`${MODAL} ul.data li.key input.name`).evaluateAll((els) => els.map((e) => e.value));
+
+	/** Drag the `from`th row's handle onto the `to`th row. */
+	async function drag(page, from, to) {
+		const rows = page.locator(`${MODAL} ul.data li.key`);
+		const handle = (await rows.nth(from).locator('.handle').boundingBox());
+		const target = await rows.nth(to).boundingBox();
+		await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+		await page.mouse.down();
+		await page.mouse.move(handle.x + handle.width / 2, target.y + target.height / 2, { steps: 8 });
+		await page.mouse.up();
+	}
+
+	// vividn, 2026-10-14: «handles to drag and reorder the keys». The order is
+	// the order a line's words bind in, so it is saved as slots (da-zqnt3),
+	// a typed key keeping its type beside its slot.
+	test('Data: a key dragged to the top binds the first word, and keeps its type', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
-			const names = (group) => page.locator(`${MODAL} .keys[data-group="${group}"] input.name`).evaluateAll((els) => els.map((e) => e.value));
-			const subfields = async () => JSON.parse((await app.run(['spec', 'show', 'word'])).stdout).subfields;
-			await app.run(['track', 'word', '--verb', 'add']);
+			const shown = async () => JSON.parse((await app.run(['spec', 'show', 'word'])).stdout);
+			await app.run(['track', 'word', '--verb', 'occur']);
 
-			let opened = await openFieldTab(app, 'word', 'keys');
-			for (const name of ['pos', 'gloss']) {
-				await page.locator(`${MODAL} button.add`).click();
-				await page.locator(`${MODAL} .key input.name`).last().fill(name);
+			let opened = await openFieldTab(app, 'word', 'data');
+			for (const name of ['pos', 'gloss', 'reps']) {
+				await page.locator(`${MODAL} ul.data + button.add`).click();
+				await page.locator(`${MODAL} li.key input.name`).last().fill(name);
 			}
-			assert.deepEqual(await names('optional'), ['pos', 'gloss']);
-			const pos = page.locator(`${MODAL} .key`).first();
-			await pos.locator('input.in-slug').check();
-			await pos.locator('select.kind').selectOption('required');
-			assert.deepEqual(await names('required'), ['pos'], 'required reads off the group, not only the kind');
-			assert.deepEqual(await names('optional'), ['gloss']);
+			await drag(page, 2, 0);
+			assert.deepEqual(await names(page), ['reps', 'pos', 'gloss']);
+			// And the arrow keys on a handle, as a drag.
+			await page.locator(`${MODAL} li.key .handle`).nth(2).press('ArrowUp');
+			assert.deepEqual(await names(page), ['reps', 'gloss', 'pos']);
+			await page.locator(`${MODAL} li.key`).first().locator('select.type').selectOption('number');
 			await save(app, opened);
-			assert.deepEqual(await subfields(), {
-				pos: { required: true, value_type: 'any', in_slug: true, default: null },
-				gloss: { required: false, value_type: 'any', in_slug: false, default: null }
-			});
+			const spec = await shown();
+			assert.deepEqual(spec.keys.map((k) => k.name), ['reps', 'gloss', 'pos']);
+			assert.deepEqual(spec.data_keys, ['reps', 'gloss', 'pos']);
+			assert.equal(spec.subfields.reps.value_type, 'number');
+			await app.clock.forward(1000);
+			assert.equal((await app.run(['occur', 'word', '3', 'run', 'verb'])).code, 0);
+			assert.deepEqual((await app.entries(1))[0].data, { reps: 3, gloss: 'run', pos: 'verb' });
 
-			opened = await openFieldTab(app, 'word', 'keys');
-			assert.deepEqual(await names('required'), ['pos']);
-			await page.locator(`${MODAL} .keys[data-group="required"] select.kind`).selectOption('optional');
-			assert.equal(await page.locator(`${MODAL} .keys[data-group="required"]`).count(), 0);
-			await save(app, opened);
-			assert.equal((await subfields()).pos.required, false);
+			// Opened again, in the order saved.
+			opened = await openFieldTab(app, 'word', 'data');
+			assert.deepEqual(await names(page), ['reps', 'gloss', 'pos']);
+			await cancelField(page);
+			assert.deepEqual(app.errors, []);
+		});
+	});
+
+	// vividn: «at the beginning have (-k) button that if you click let's you
+	// select -R -SR -C as well with a little explanation of what each does».
+	test('the mode button: -K says it is the id, and one row takes the rest of the line as a list, a string or a comment', async () => {
+		await shared.solo(async (app) => {
+			const { page } = app;
+			const rows = page.locator(`${MODAL} ul.data li.key`);
+			await openIt(page);
+			await fill(page, 'book', 'add');
+			for (const name of ['id', 'title', 'notes']) {
+				await page.locator(`${MODAL} ul.data + button.add`).click();
+				await rows.last().locator('input.name').fill(name);
+			}
+			const modes = () => rows.locator('.mode').allInnerTexts();
+			assert.deepEqual(await modes(), ['-K', '-K', '-K']);
+			assert.match(await rows.first().locator('.line').innerText(), /id/);
+			await rows.nth(1).locator('.mode').click(); // -R
+			assert.deepEqual(await modes(), ['-K', '-R', '-K']);
+			assert.match(await rows.nth(1).locator('.line').innerText(), /rest of the line, as a list/);
+			assert.equal(await rows.nth(1).locator('button.eq').count(), 0, 'the rest of the line has no default');
+			await rows.nth(1).locator('.mode').click(); // -SR
+			assert.match(await page.locator(`${MODAL} .preview`).innerText(), /-K id -K notes -SR title$/);
+			for (let i = 0; i < 3; i++) await rows.nth(2).locator('.mode').click(); // -K → -C, which -SR gives up
+			assert.deepEqual(await modes(), ['-K', '-k', '-C']);
+			assert.equal(await rows.nth(1).locator('.line').count(), 0, 'plain -k has no line');
+			assert.equal(await rows.nth(2).locator('input.name').inputValue(), 'comment');
+			assert.match(await page.locator(`${MODAL} .preview`).innerText(), /-K id -k title -C$/);
+			await page.locator(`${MODAL} button.commit`).click();
+			await page.locator(`${MODAL} h2`).waitFor();
+			const spec = JSON.parse((await app.run(['spec', 'show', 'book'])).stdout);
+			assert.equal(spec.comment_remainder, true);
+			assert.equal((await app.run(['add', 'book', 'dune', 'Dune', 'a', 'great', 'read'])).code, 0);
+			assert.deepEqual((await app.entries(1))[0].data, { id: 'dune', title: 'Dune', comment: ['a great read'] });
+			assert.deepEqual(app.errors, []);
 		});
 	});
 
 	// da-p3hxn: vividn, «required · optional · default · assign, mapping onto
-	// `-k key`, `-k key=`, `-k key=default`, `key=value`». Each kind is what
-	// `spec show` reads back, and a key lives in ONE place (da-ulc0v).
-	test('Basics: each kind round-trips through `spec show`, and a key changing kind moves, never copied', async () => {
+	// `-k key`, `-k key=`, `-k key=default`, `key=value`». da-zqnt3: `=`
+	// makes a key optional and shows its default; a fixed one is on Data.
+	// Each is what `spec show` reads back, and a key lives in ONE place (da-ulc0v).
+	test('Data: each kind round-trips through `spec show`, and a key changing kind moves, never copied', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			const shown = async () => JSON.parse((await app.run(['spec', 'show', 'tea'])).stdout);
 			const kinds = (spec) => spec.keys.map(({ name, kind, value }) => [name, kind, value]);
+			const rows = page.locator(`${MODAL} ul.data li.key`);
 			await app.run(['track', 'tea', '--verb', 'occur']);
 
-			let opened = await openFieldTab(app, 'tea');
-			await page.locator(MODAL).waitFor();
-			for (const [name, kind, value] of [['a', 'required'], ['b', 'optional'], ['c', 'default', 'hot'], ['d', 'assign', 'acme']]) {
-				await page.locator(`${MODAL} .basic-keys + button.add`).click();
-				const row = page.locator(`${MODAL} .basic-keys li`).last();
+			let opened = await openFieldTab(app, 'tea', 'data');
+			for (const [name, eq, value, fixed] of [['a'], ['b', true], ['c', true, 'hot'], ['d', true, 'acme', true]]) {
+				await page.locator(`${MODAL} ul.data + button.add`).click();
+				const row = rows.last();
 				await row.locator('input.name').fill(name);
-				await row.locator('select.kind').selectOption(kind);
-				if (value) await row.locator('input.kind-value').fill(value);
+				if (eq) await row.locator('button.eq').click();
+				if (value) await row.locator('input.value').fill(value);
+				if (fixed) await row.locator('input.fixed').check();
 			}
 			await save(app, opened);
 			let spec = await shown();
 			assert.deepEqual(kinds(spec), [['a', 'required', undefined], ['b', 'optional', undefined], ['c', 'default', 'hot'], ['d', 'assign', 'acme']]);
 			assert.deepEqual(spec.assign, { d: 'acme' });
 
-			// Opened again, the rows are what the CLI read back; a and d swap places.
-			opened = await openFieldTab(app, 'tea');
-			await page.locator(MODAL).waitFor();
-			const rows = page.locator(`${MODAL} .basic-keys li`);
-			assert.deepEqual(await rows.locator('select.kind').evaluateAll((els) => els.map((e) => e.value)), ['required', 'optional', 'default', 'assign']);
-			await rows.nth(0).locator('select.kind').selectOption('assign');
-			await rows.nth(0).locator('input.kind-value').fill('x');
-			await rows.nth(3).locator('select.kind').selectOption('required');
+			// Opened again, the rows are what the CLI read back; a and d swap kinds.
+			opened = await openFieldTab(app, 'tea', 'data');
+			assert.deepEqual(await rows.locator('button.eq').evaluateAll((els) => els.map((e) => e.getAttribute('aria-pressed'))), ['false', 'true', 'true']);
+			assert.equal(await rows.nth(3).locator('button.eq').count(), 0, 'a fixed key has no =, which would quietly unfix it');
+			assert.equal(await rows.nth(3).locator('input.value').inputValue(), 'acme');
+			await rows.nth(0).locator('button.eq').click();
+			await rows.nth(0).locator('input.value').fill('x');
+			await rows.nth(0).locator('input.fixed').check();
+			await rows.nth(3).locator('input.fixed').uncheck();
+			await rows.nth(3).locator('button.eq').click();
 			await save(app, opened);
 			spec = await shown();
 			assert.deepEqual(kinds(spec), [['b', 'optional', undefined], ['c', 'default', 'hot'], ['d', 'required', undefined], ['a', 'assign', 'x']]);
 			assert.deepEqual(spec.assign, { a: 'x' }, 'd left the map');
-			assert.equal('a' in spec.subfields, false, 'a left the subfields');
+			assert.deepEqual(spec.data_keys, ['b=', 'c=hot', 'd'], 'a left the slots');
 
 			// And a log binds it: the assign fixed, a bare word to the first slot, the default filled.
 			await app.clock.forward(1000);

@@ -202,6 +202,14 @@ pub struct FieldSpec {
     /// error.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remainder: Option<String>,
+    /// The `remainder`'s words joined into one string, as `-S -R <key>`
+    /// joins them (da-zqnt3).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub string_remainder: bool,
+    /// The leftover words appended as one comment, as `-C` appends them
+    /// (da-zqnt3); a `remainder` key wins over it, as `-R` does on a line.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub comment_remainder: bool,
 
     /// Free-form tags. Used by views and kit commands to group fields by a
     /// schema-level marker (e.g. `["chore"]`); `datum spec list --tag`
@@ -269,6 +277,8 @@ impl FieldSpec {
             only_listed_keys: false,
             only_listed_states: false,
             remainder: None,
+            string_remainder: false,
+            comment_remainder: false,
             tags: Vec::new(),
             presentation: PresentationSpec::default(),
         }
@@ -355,7 +365,9 @@ impl FieldSpec {
             .keys()
             .map(String::as_str)
             .filter(|k| {
-                !listed.iter().any(|d| d.name == *k) && self.remainder.as_deref() != Some(k)
+                !listed.iter().any(|d| d.name == *k)
+                    && self.remainder.as_deref() != Some(k)
+                    && !(self.comment_remainder && *k == "comment")
             })
             .collect();
         out.sort();
@@ -405,6 +417,16 @@ impl FieldSpec {
                     )
                 })
             }
+        }
+    }
+
+    /// Where a line's leftover words go (da-zqnt3): `remainder`, joined
+    /// or not, or one comment.
+    pub fn spec_remainder(&self) -> datum_parse::spec_keys::SpecRemainder {
+        datum_parse::spec_keys::SpecRemainder {
+            key: self.remainder.clone(),
+            string: self.string_remainder,
+            comment: self.comment_remainder,
         }
     }
 

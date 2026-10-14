@@ -558,8 +558,9 @@ impl<'a> Resolver for DbAliasResolver<'a> {
         spec.map(|s| s.declared_keys(state)).unwrap_or_default()
     }
 
-    fn spec_remainder(&self, field: &str) -> Option<String> {
-        self.db.load_spec(field).ok().flatten()?.remainder
+    fn spec_remainder(&self, field: &str) -> datum_parse::spec_keys::SpecRemainder {
+        let spec = self.db.load_spec(field).ok().flatten();
+        spec.map(|s| s.spec_remainder()).unwrap_or_default()
     }
 }
 

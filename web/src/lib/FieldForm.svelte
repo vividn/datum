@@ -23,10 +23,11 @@
 	name, tracked or ignored, and what ignored means.
 
 	Every field, a new one too, has the five segments — Basics · States ·
-	Keys · Aliases · Placement — none of them required, and picks the
+	Data · Aliases · Placement — none of them required, and picks the
 	GLYPH its dots draw (da-ogyxa): one for the field, or one by a data
-	key's value, and one per state beside the state's colour. Keys are grouped required over the rest, and each
-	row says whether the key is IN THE SLUG. Aliases are made by datum from
+	key's value, and one per state beside the state's colour. The data keys
+	are `DataKeys.svelte`'s rows, on Basics and, with each key's type, on
+	Data (da-zqnt3). Aliases are made by datum from
 	the verb and the states until that is switched off (`no_autoalias`).
 	The rows are `spec show`'s own `keys`, parsed by the CLI, so what is
 	saved is what it reads back.
@@ -43,6 +44,7 @@
 <script lang="ts">
 	import { createEventDispatcher, tick } from 'svelte';
 	import { act } from './act.js';
+	import DataKeys from './DataKeys.svelte';
 	import { fieldNameHint, suggestFieldName } from './fieldName.js';
 	import { defaultColor } from './fields.js';
 	import Glyph from './Glyph.svelte';
@@ -53,8 +55,7 @@
 		editedSpec,
 		EXAMPLES,
 		keyRows,
-		KEY_KINDS,
-		KEY_TYPES,
+		moved,
 		placeOf,
 		restOver,
 		specArgv,
@@ -86,7 +87,7 @@
 	export let dirty = false;
 
 	const dispatch = createEventDispatcher<{ close: Save | null }>();
-	const TABS = ['basics', 'states', 'keys', 'aliases', 'placement'] as const;
+	const TABS = ['basics', 'states', 'data', 'aliases', 'placement'] as const;
 
 	let tab: (typeof TABS)[number] = 'basics';
 	let color = spec?.color ?? '';
@@ -106,8 +107,6 @@
 	let icon = spec?.icon ?? '';
 	/** The file the icon came from, while this form is open; a stored icon has none. */
 	let iconName = '';
-	/** The key a line's leftover words go to (`-R KEY`), or none. */
-	let remainder = spec?.remainder ?? '';
 	/** The field a bare state names an entry of (`state_lookup_field`), or none. */
 	let lookup = spec?.state_lookup_field ?? '';
 	const wasIgnored = ignored.includes(field);
@@ -143,12 +142,11 @@
 		glyph_by,
 		place,
 		icon,
-		remainder,
 		lookup
 	};
 	$: argv = spec
 		? specArgv(editedSpec(spec, edits))
-		: trackArgv(field.trim() || '<field>', edits.verb, states, color, keys, remainder);
+		: trackArgv(field.trim() || '<field>', edits.verb, states, color, keys);
 	// Tracked or ignored, changed: the `track` or `ignore` that says so, after the save.
 	$: then = ignore === wasIgnored ? null : [ignore ? 'ignore' : 'track', field.trim()];
 	$: save = { argv, rest: spec ? undefined : restOver(edits), then };
@@ -183,7 +181,6 @@
 		[autoalias, aliases, place] = [true, [], {}];
 		states = Object.entries(example.states ?? {}).map(([name, color]) => ({ name, color, description: '', glyph: '' }));
 		keys = (example.keys ?? []).map((k) => ({ ...k, value: '', value_type: 'any' }));
-		remainder = '';
 		lookup = example.lookup ?? '';
 		neverFalse = !!example.neverFalse;
 		catalog = null;
@@ -198,19 +195,6 @@
 		if (!file) return;
 		icon = await file.text();
 		iconName = file.name;
-	}
-
-	const addKey = () =>
-		(keys = [...keys, { name: '', kind: 'optional', value: '', value_type: 'any', in_slug: false }]);
-
-	/** Whether a key's kind carries a value: a default's, an assign's. */
-	const valued = (key: KeyRow) => key.kind === 'default' || key.kind === 'assign';
-
-	/** `list` with its `from`th item moved to `to`. */
-	function moved<T>(list: T[], from: number, to: number): T[] {
-		const next = [...list.slice(0, from), ...list.slice(from + 1)];
-		next.splice(to, 0, list[from]);
-		return next;
 	}
 
 	/** Hand `next` up to run, or null to run nothing. */
@@ -318,42 +302,8 @@
 					<span class="label">colour</span>
 					<Swatch bind:value={color} fallback={defaultColor(field.trim())} label="the field's colour" />
 				</div>
-				<span class="label">keys</span>
-				<ul class="basic-keys">
-					{#each keys as key (key)}
-						<li>
-							<input
-								class="name"
-								bind:value={key.name}
-								placeholder="key"
-								aria-label="the key's name"
-								spellcheck="false"
-								autocapitalize="none"
-							/>
-							<select class="kind" bind:value={key.kind} aria-label="the kind of {key.name || 'this key'}">
-								{#each KEY_KINDS as kind (kind)}<option>{kind}</option>{/each}
-							</select>
-							<input
-								class="kind-value"
-								bind:value={key.value}
-								placeholder={key.kind}
-								disabled={!valued(key)}
-								aria-label="the {key.kind} of {key.name || 'this key'}"
-							/>
-							<button
-								type="button"
-								class="remove"
-								aria-label="remove {key.name}"
-								on:click={() => (keys = keys.filter((k) => k !== key))}>✕</button
-							>
-						</li>
-					{/each}
-				</ul>
-				<button type="button" class="add" on:click={addKey}>+ key</button>
-				<label class="row" title="the words of a line that no key takes are kept under this key, as -R KEY keeps them">
-					<span class="label">rest of line</span>
-					<input class="remainder" bind:value={remainder} placeholder="key" spellcheck="false" autocapitalize="none" />
-				</label>
+				<span class="label">data</span>
+				<DataKeys bind:keys card={verb === 'add'} />
 				<label class="row">
 					<span class="label">description</span>
 					<input class="description" bind:value={description} />
@@ -510,55 +460,8 @@
 						><input type="checkbox" class="never-false" bind:checked={neverFalse} disabled={listsFalse} /> never false: no end</label
 					>
 				{/if}
-			{:else if tab === 'keys'}
-				{#each [true, false] as required (required)}
-					{#if keys.some((k) => (k.kind === 'required') === required)}
-						<ul class="keys" data-group={required ? 'required' : 'optional'}>
-							<li class="group">{required ? 'required' : 'optional'}</li>
-							{#each keys.filter((k) => (k.kind === 'required') === required) as key (key)}
-								<li class="key">
-									<input
-										class="name"
-										bind:value={key.name}
-										placeholder="key"
-										aria-label="the key's name"
-										spellcheck="false"
-										autocapitalize="none"
-									/>
-									<button
-										type="button"
-										class="remove"
-										aria-label="remove {key.name}"
-										on:click={() => (keys = keys.filter((k) => k !== key))}>✕</button
-									>
-									<div class="flags">
-										<select class="kind" bind:value={key.kind} aria-label="the kind of {key.name || 'this key'}">
-											{#each KEY_KINDS as kind (kind)}<option>{kind}</option>{/each}
-										</select>
-										<label title="a key in the slug identifies an entry; one outside it annotates it"
-											><input type="checkbox" class="in-slug" bind:checked={key.in_slug} /> in slug</label
-										>
-										<select class="type" bind:value={key.value_type} aria-label="the type of {key.name}">
-											{#each KEY_TYPES as type (type)}<option>{type}</option>{/each}
-										</select>
-									</div>
-									<input
-										class="kind-value"
-										bind:value={key.value}
-										placeholder={key.kind}
-										disabled={!valued(key)}
-										aria-label="the {key.kind} of {key.name || 'this key'}"
-									/>
-								</li>
-							{/each}
-						</ul>
-					{/if}
-				{/each}
-				<button
-					type="button"
-					class="add"
-					on:click={addKey}>+ key</button
-				>
+			{:else if tab === 'data'}
+				<DataKeys bind:keys card={verb === 'add'} detail />
 			{:else if tab === 'placement'}
 				<Placement {field} occur={verb === 'occur'} bind:place />
 			{:else if tab === 'aliases'}
@@ -964,30 +867,6 @@
 		margin-inline-start: 7rem;
 	}
 
-	/* Basics' keys: one line each, the Keys tab's first three things. */
-	.basic-keys {
-		display: flex;
-		flex-direction: column;
-		gap: 0.3rem;
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	.basic-keys li {
-		display: grid;
-		grid-template-columns: 1fr auto 1fr auto;
-		align-items: center;
-		gap: 0.3rem;
-	}
-
-	.basic-keys input {
-		min-inline-size: 0;
-	}
-
-	/* A group's name heads its rows: which keys are required reads at a
-	   glance, before any toggle is. */
-	.keys,
 	.aliases {
 		display: flex;
 		flex-direction: column;
@@ -995,44 +874,6 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
-	}
-
-	.group {
-		color: var(--muted);
-		font-size: 0.75rem;
-		letter-spacing: 0.06em;
-	}
-
-	.keys[data-group='required'] .group {
-		color: var(--accent);
-	}
-
-	.key {
-		display: grid;
-		grid-template-columns: 1fr auto;
-		gap: 0.3rem;
-	}
-
-	.flags,
-	.key .kind-value {
-		grid-column: 1 / -1;
-	}
-
-	.flags {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		color: var(--muted);
-		font-size: 0.75rem;
-	}
-
-	.flags select.type {
-		margin-inline-start: auto;
-		background: #1a1a30;
-		border: 1px solid var(--rule);
-		border-radius: 4px;
-		color: var(--ink-bright);
-		font: inherit;
 	}
 
 	.alias {

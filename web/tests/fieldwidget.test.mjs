@@ -31,7 +31,7 @@ const chipTexts = async (page) => (await chips(page).allInnerTexts()).map((t) =>
 const marked = async (page) => (await page.locator(`${WIDGET} .chips [aria-current="true"]`).allInnerTexts()).map((t) => t.trim());
 const glyphOf = (verb) => VERBS.find((v) => v.verb === verb).glyph;
 
-const TABS = ['basics', 'states', 'keys', 'aliases', 'placement'];
+const TABS = ['basics', 'states', 'data', 'aliases', 'placement'];
 /** The shape's ▾, which opens its examples. */
 const more = (page, verb) => page.locator(`${FIELD_FORM} [data-examples="${verb}"]`);
 const offered = (page) => page.locator(`${FIELD_FORM} [data-example]`).evaluateAll((all) => all.map((b) => b.dataset.example));
@@ -155,8 +155,10 @@ describe('the field widget', () => {
 				assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).getAttribute('data-verb'), example.verb);
 				assert.deepEqual(await page.locator(`${FIELD_FORM} .state input.name`).evaluateAll((all) => all.map((i) => i.value)), Object.keys(example.states ?? {}));
 				assert.deepEqual(
-					await page.locator(`${FIELD_FORM} .basic-keys li`).evaluateAll((all) => all.map((li) => [li.querySelector('input.name').value, li.querySelector('select.kind').value])),
-					(example.keys ?? []).map((k) => [k.name, k.kind])
+					await page
+						.locator(`${FIELD_FORM} ul.data li.key`)
+						.evaluateAll((all) => all.map((li) => [li.querySelector('.mode').textContent, li.querySelector('input.name').value, li.querySelector('.eq').getAttribute('aria-pressed')])),
+					(example.keys ?? []).map((k) => [k.in_slug ? '-K' : '-k', k.name, String(k.kind !== 'required')])
 				);
 				const argv = trackArgv(
 					example.field,
@@ -398,20 +400,28 @@ describe('the field widget', () => {
 		});
 	});
 
-	// The key a line's leftover words go to is a spec's to change as well as a new field's.
-	test('the rest-of-line key of a saved field is read, changed and cleared in its one `spec set`', async () => {
+	// The key a line's leftover words go to is a spec's to change as well as
+	// a new field's: a row's mode (da-zqnt3).
+	test('the rest-of-line row of a saved field is read, renamed, made one string and removed, each in its one `spec set`', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'emotion', '--verb', 'occur', '-R', 'emotions']);
-			const remainder = async () => JSON.parse((await app.run(['spec', 'show', 'emotion'])).stdout).remainder;
-			for (const [typed, stored] of [['words', 'words'], ['', undefined]]) {
+			const route = async () => {
+				const { remainder, string_remainder } = JSON.parse((await app.run(['spec', 'show', 'emotion'])).stdout);
+				return [remainder, string_remainder];
+			};
+			const row = page.locator(`${FIELD_FORM} ul.data li.key[data-mode^="R"], ${FIELD_FORM} ul.data li.key[data-mode="SR"]`);
+			for (const [change, stored] of [
+				[() => row.locator('input.name').fill('words'), ['words', undefined]],
+				[() => row.locator('.mode').click(), ['words', true]],
+				[() => row.locator('.remove').click(), [undefined, undefined]]
+			]) {
 				const { saved } = await openField(page, 'emotion');
-				const box = page.locator(`${FIELD_FORM} input.remainder`);
-				assert.equal(await box.inputValue(), (await remainder()) ?? '');
-				await box.fill(typed);
+				assert.equal(await row.locator('input.name').inputValue(), (await route())[0]);
+				await change();
 				await page.locator(`${FIELD_FORM} button.commit`).click();
 				assert.equal((await saved).code, 0);
-				assert.equal(await remainder(), stored);
+				assert.deepEqual(await route(), stored);
 			}
 		});
 	});

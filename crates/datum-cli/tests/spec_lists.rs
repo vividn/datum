@@ -154,6 +154,39 @@ fn a_spec_remainder_takes_the_leftover_words() {
     refused(&db, &["occur", "tea", "green", "leaf"]);
 }
 
+/// da-zqnt3: `track -S -R KEY` and `track -C` store the line's `-SR` and
+/// `-C`, so a spec routes its leftover words as one string or one comment.
+#[test]
+fn a_spec_remainder_joins_or_comments_as_the_line_would() {
+    let db = fresh_db();
+    run_cli(
+        &["track", "book", "--verb", "add", "-K", "id", "-SR", "title"],
+        &db,
+    )
+    .unwrap();
+    run_cli(&["add", "book", "dune", "the", "spice"], &db).unwrap();
+    run_cli(&["track", "tea", "--verb", "occur", "-C"], &db).unwrap();
+    run_cli(&["tea", "green", "leaf"], &db).unwrap();
+    let data = |f| logged_entries(&db, f)[0].data.clone().unwrap();
+    assert_eq!(data("book"), json!({"id": "dune", "title": "the spice"}));
+    assert_eq!(data("tea"), json!({"comment": ["green leaf"]}));
+    // A route replaces the one before it whole.
+    run_cli(&["track", "tea", "-R", "kind"], &db).unwrap();
+    let spec = db.load_spec("tea").unwrap().unwrap();
+    assert_eq!(
+        (spec.remainder.as_deref(), spec.comment_remainder),
+        (Some("kind"), false)
+    );
+    // One route: `-S` joins an `-R`'s words, and `-C` is not a second route.
+    for line in [
+        &["track", "tea", "-S"][..],
+        &["track", "tea", "-R", "kind", "-C"],
+    ] {
+        let msg = refused(&db, line);
+        assert!(msg.contains("-R"), "{line:?}: {msg}");
+    }
+}
+
 #[test]
 fn the_old_spellings_are_unknown_flags() {
     let db = fresh_db();

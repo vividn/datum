@@ -580,6 +580,8 @@ mod tests {
             id_keys: vec![],
             assign: vec![],
             remainder: None,
+            string_remainder: false,
+            comment_remainder: false,
         };
         crate::commands::track::track(track_args, &db).unwrap();
 
@@ -629,6 +631,8 @@ mod tests {
                 id_keys: vec![],
                 assign: vec![],
                 remainder: None,
+                string_remainder: false,
+                comment_remainder: false,
             },
             &db,
         )

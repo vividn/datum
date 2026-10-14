@@ -57,8 +57,8 @@ pub trait Resolver {
 
     /// Where `field`'s spec sends the words no slot takes (da-eqb30).
     /// None by default.
-    fn spec_remainder(&self, _field: &str) -> Option<String> {
-        None
+    fn spec_remainder(&self, _field: &str) -> crate::spec_keys::SpecRemainder {
+        crate::spec_keys::SpecRemainder::default()
     }
 }
 
@@ -458,7 +458,7 @@ fn add_spec_keys(body: &mut Vec<String>, trailing: &[String], resolver: &dyn Res
             let state = (verb == "switch").then(|| typed_state(&line)).flatten();
             let declared = resolver.spec_keys(&line.field_or_verb, state.as_deref());
             let remainder = resolver.spec_remainder(&line.field_or_verb);
-            let words = spec_key_words(&line, &declared, remainder.as_deref());
+            let words = spec_key_words(&line, &declared, &remainder);
             let words = words.into_argv();
             added |= !words.is_empty();
             out.extend(words);

@@ -66,6 +66,22 @@ pub struct SpecKeyWords {
     /// no bucket of its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remainder: Option<String>,
+    /// The spec's `string_remainder`, as `-S` (da-zqnt3).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub string_remainder: bool,
+    /// The spec's `comment_remainder`, as `-C` (da-zqnt3).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub comment_remainder: bool,
+}
+
+/// Where a spec sends the words no slot takes, as a line's flags would:
+/// `-R key` (da-eqb30), joined into one string by `-S`, or `-C`, one
+/// comment (da-zqnt3).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct SpecRemainder {
+    pub key: Option<String>,
+    pub string: bool,
+    pub comment: bool,
 }
 
 /// Whether a `verb` line takes its field's keys: only an ACTIVE entry does
@@ -113,12 +129,13 @@ pub fn typed_state(line: &LogArgs) -> Option<String> {
 /// key as its `-k`/`-K` slot, an assigned one as a `key=value` — a `-K`
 /// one also as its slot, which the value fills. A key the line already
 /// names, as a slot or a `key=value`, is left to the line. The spec's
-/// `remainder` becomes the line's `-R` unless the line routes its leftover
-/// words itself (`-R`, `-C`, `-I`); a bare `-S` joins them into it.
+/// `remainder` becomes the line's `-R`, `-S -R` or `-C` unless the line
+/// routes its leftover words itself (`-R`, `-C`, `-I`); a bare `-S` joins
+/// them into it.
 pub fn spec_key_words(
     line: &LogArgs,
     declared: &[DeclaredKey],
-    remainder: Option<&str>,
+    remainder: &SpecRemainder,
 ) -> SpecKeyWords {
     let slots = line
         .keys
@@ -132,10 +149,12 @@ pub fn spec_key_words(
         .filter_map(|t| t.split_once('=').map(|(n, _)| n));
     let named: Vec<&str> = slots.map(|k| parse_key_decl(k).0).chain(set).collect();
     let routed = line.remainder.is_some() || line.comment_remainder || line.string_state;
-    let mut out = SpecKeyWords {
-        remainder: remainder.filter(|_| !routed).map(str::to_string),
-        ..SpecKeyWords::default()
-    };
+    let mut out = SpecKeyWords::default();
+    if !routed {
+        out.remainder = remainder.key.clone();
+        out.string_remainder = remainder.string && remainder.key.is_some();
+        out.comment_remainder = remainder.comment && remainder.key.is_none();
+    }
     for key in declared
         .iter()
         .filter(|k| !named.contains(&k.name.as_str()))
@@ -170,6 +189,8 @@ impl SpecKeyWords {
         let mut out: Vec<String> = flags("-K", self.slug_keys).collect();
         out.extend(flags("-k", self.keys));
         out.extend(self.assigned);
+        out.extend(self.string_remainder.then(|| "-S".into()));
+        out.extend(self.comment_remainder.then(|| "-C".into()));
         out.extend(self.remainder.into_iter().flat_map(|r| ["-R".into(), r]));
         out
     }

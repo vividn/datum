@@ -1,7 +1,7 @@
 use super::core::*;
 use crate::cli::*;
-use crate::error::Result;
-use crate::input::{local_value, LiftedSpec};
+use crate::error::{ParseError, Result};
+use crate::input::{local_switch, local_value, LiftedSpec};
 
 pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
     #[derive(Default)]
@@ -15,6 +15,8 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
         data_keys: Vec<String>,
         id_keys: Vec<String>,
         remainder: Option<String>,
+        string_remainder: bool,
+        comment_remainder: bool,
     }
     let registry: Vec<LiftedSpec<TrackParsing>> = vec![
         local_value(None, Some("verb"), |p, v| {
@@ -53,6 +55,14 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
             p.remainder = Some(v.to_string());
             Ok(())
         }),
+        local_switch(Some('S'), Some("string-remainder"), |p| {
+            p.string_remainder = true;
+            Ok(())
+        }),
+        local_switch(Some('C'), Some("comment-remainder"), |p| {
+            p.comment_remainder = true;
+            Ok(())
+        }),
     ];
     let mut composed = TrackParsing::default();
     let mut pos: Vec<&str> = Vec::new();
@@ -79,6 +89,18 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
             f => return Err(unknown_flag(f)),
         }
     }
+    // One route for the leftover words (da-zqnt3): `-S` joins what `-R K`
+    // sends, and `-C` is the other route, not a second one.
+    if composed.string_remainder && composed.remainder.is_none() {
+        return Err(ParseError::InvalidArg(
+            "-S joins the words -R KEY takes: give -R KEY too (-SR KEY)".into(),
+        ));
+    }
+    if composed.comment_remainder && composed.remainder.is_some() {
+        return Err(ParseError::InvalidArg(
+            "-C and -R both say where the leftover words go: give one".into(),
+        ));
+    }
     Ok(TrackArgs {
         field: require_pos(&pos, "<FIELD>")?,
         verb: composed.verb,
@@ -91,6 +113,8 @@ pub(crate) fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
         id_keys: composed.id_keys,
         assign,
         remainder: composed.remainder,
+        string_remainder: composed.string_remainder,
+        comment_remainder: composed.comment_remainder,
     })
 }
 
