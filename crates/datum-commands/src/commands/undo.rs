@@ -151,13 +151,14 @@ fn redo_stack(
     let skipped = std::mem::take(&mut action.skipped);
     action.members.retain(|m| !skipped.contains(&m.hid));
     let all_skipped = action.members.is_empty() && !skipped.is_empty();
-    if dry_run {
-        return Ok(());
-    }
     // One step, one transaction (da-pxsa8): every member moves and the
     // cursor with them, or a failure part-way rolls all of it back.
     let tx = db.conn().unchecked_transaction()?;
     refuse_if_moved(db, &action, "redo", false)?;
+    // The refusal reads only, so a dry run exits as the redo would (da-38x8z).
+    if dry_run {
+        return Ok(());
+    }
     warn_if_stale("redoing a change from", action.time);
     let mut steps: Vec<(Entry, Entry)> = Vec::new();
     for member in &action.members {

@@ -460,6 +460,12 @@ fn redo_refuses_in_its_own_words_an_entry_a_sync_changed_since() {
     b.ok(&["update", &coffee, "n=3"]);
     b.send(&a);
 
+    // The dry run, which lights the web's REDO, exits as the redo would
+    // (da-38x8z).
+    let dry = a.run(&["redo", "--dry-run"], "");
+    assert!(!dry.status.success(), "the dry run must refuse too");
+    assert_eq!(a.data(&coffee)["n"], 3, "a dry run moves nothing");
+
     let out = a.run(&["redo"], "");
     assert!(!out.status.success(), "the redo must refuse");
     let err = String::from_utf8_lossy(&out.stderr);
