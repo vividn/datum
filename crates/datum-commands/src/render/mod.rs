@@ -38,7 +38,7 @@ use std::collections::HashMap;
 
 // ─── ANSI primitives ─────────────────────────────────────────────────────────
 
-const RESET: &str = "\x1b[0m";
+use self::colors::RESET;
 const DIM: &str = "\x1b[2m";
 /// da-uxgv: the sync-conflict marker's cast — bright yellow, so a `*` on a
 /// hid reads as "look at this" without competing with a state or field

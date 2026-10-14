@@ -795,6 +795,8 @@ fn tail_table_offset_prefix_and_uncertainty_suffix_are_grey() {
     let _g = color_scope();
     const GREY: &str = "\x1b[90m";
     const RESET: &str = "\x1b[0m";
+    // The wire bytes, not the renderer's constants (which tests/ cannot
+    // see): the claim is that these exact escapes reach the terminal.
     let now = dt_off(2026, 4, 22, 15, 0, 120, "Europe/Berlin");
     let mut uncertain = entry_at(
         "coffee",

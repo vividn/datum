@@ -28,6 +28,7 @@ use datum_parse::time::{format_human_duration, DatumTime, DurationPrecision};
 use serde_json::{Map, Value as JsonValue};
 use std::collections::HashMap;
 
+use crate::render::colors::RESET;
 use crate::render::visible_width;
 
 /// Run a Level 2 command by name. `extra_args` carries the tokens after
@@ -422,8 +423,6 @@ fn ansi_for(color: &str) -> &'static str {
     }
 }
 
-const ANSI_RESET: &str = "\x1b[0m";
-
 fn render_pretty(headers: &[String], cells: &[Vec<String>], colors: &[Option<&str>]) -> String {
     if headers.is_empty() {
         return "(no columns)\n".to_string();
@@ -468,7 +467,7 @@ fn print_row(cells: &[String], widths: &[usize], color: Option<&str>) -> String 
         line.push_str(&" ".repeat(widths[i].saturating_sub(visible_width(c))));
     }
     if color.is_some() {
-        line.push_str(ANSI_RESET);
+        line.push_str(RESET);
     }
     line.push('\n');
     line
