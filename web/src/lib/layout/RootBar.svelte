@@ -89,6 +89,15 @@
 	(da-y992), whose note is now the gear menu's last item, under the
 	version. So the bar's right end is the gear.
 
+	Left of the gear, where the padlock was, a (?) (da-hibn3): the commands
+	widget's Help button, so the page's next tap is explained on any page,
+	one with no commands widget too. vividn, 2026-10-14: «replace it with a (?)
+	button which functions like the help button, so it let's you query and
+	learn more about what ever on the page, even when the command widget is
+	not visible». Its `data-command` is the button's own: pressed again while
+	armed, it is the general help. Layout mode has none: the mode's menus say
+	what they do, and on a phone its tabs' × need the room (vremya on #764).
+
 	Before the gear, a ⚠ (da-8fucg) while a sync notice — a new device,
 	a new admin, an unlock — is unacknowledged. vividn, 2026-10-09: "a little
 	warning icon in the upper bar next to the gear and stuff. If you click
@@ -116,6 +125,7 @@
 	import { storageSentence } from '$lib/storageState.js';
 	import { openBackups } from '$lib/backups.js';
 	import { confirm } from '$lib/confirm.js';
+	import { arm, helping } from '$lib/help.js';
 	import { choose, fillTab } from './chooser.js';
 	import { apply, editing, layout, loaded } from './current.js';
 	import { CHANGE, CLOSE, aimed, layoutActs, type Item } from './menu.js';
@@ -472,6 +482,18 @@
 		>
 	{/if}
 	<span class="end">
+	{#if !$editing}
+	<button
+		type="button"
+		class="control badge help"
+		class:armed={$helping}
+		data-command="help"
+		aria-pressed={$helping}
+		aria-label="help"
+		title={$helping ? 'tap anything to have it explained; Help again for general help' : 'explain the next thing you tap'}
+		on:click={arm}>?</button
+	>
+	{/if}
 	<PaneMenu
 		items={settings}
 		look="badge"
@@ -635,7 +657,7 @@
 	   the em it fills is the reader's font's business and not ours. A
 	   path fills the box it is given, on every device, and the box is
 	   this one. */
-	/* The bar's right end: the gear. `auto` here rather than on the tabs,
+	/* The bar's right end: the (?) and the gear. `auto` here rather than on the tabs,
 	   which scroll, so it is carried to the end. */
 	.end {
 		display: flex;
@@ -643,6 +665,17 @@
 		gap: 4px;
 		margin-left: auto;
 		flex: none;
+	}
+
+	/* The (?) is round, and armed it is lit as the commands widget's Help is. */
+	.help {
+		border-radius: 50%;
+	}
+
+	.help.armed {
+		background: var(--accent);
+		border-color: var(--accent);
+		color: var(--page);
 	}
 
 	/* The ⚠ (da-8fucg) rides at the end too, ahead of the gear, so while it

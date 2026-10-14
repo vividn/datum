@@ -17,6 +17,7 @@ import assert from 'node:assert/strict';
 import { startApp, stopApp, withApp } from './support/app.mjs';
 import {
 	DESKTOP,
+	PHONE,
 	addButton,
 	enterLayoutMode,
 	leaveLayoutMode,
@@ -89,6 +90,27 @@ describe('normal mode', () => {
 			assert.equal(await isOn(page), false);
 			assert.equal(await page.locator('[role="separator"]').count(), 0);
 		}, { ...DESKTOP, home: null });
+	});
+});
+
+// vremya on #764 (da-hibn3): the (?) took the bar's last 13px and put
+// `collect`'s × half under the `+`. A first visit's three tabs, each with its
+// ×, fit a 390-wide phone in layout mode, so the next control added to the
+// root bar finds out here.
+describe('on a phone', () => {
+	test("a first visit's three tabs and their × fit the strip in layout mode", async () => {
+		await withApp(async ({ page }) => {
+			await enterLayoutMode(page);
+			const at = await page.locator('.root-bar .tabs').evaluate((el) => ({
+				names: [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent.replace('•', '').trim()),
+				closes: el.querySelectorAll('.tab-close').length,
+				scroll: el.scrollWidth,
+				client: el.clientWidth
+			}));
+			assert.deepEqual(at.names, ['welcome', 'track', 'collect']);
+			assert.equal(at.closes, 3);
+			assert.ok(at.scroll <= at.client, `the strip is ${at.scroll} of ${at.client}px`);
+		}, { ...PHONE, home: null });
 	});
 });
 

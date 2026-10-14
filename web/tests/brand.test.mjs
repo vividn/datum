@@ -548,6 +548,7 @@ describe('the beta mark', () => {
 						words: document.querySelector('.root-bar .gear .beta')?.textContent,
 						gear: box('.root-bar .gear'),
 						end: box('.root-bar .end'),
+						help: box('.root-bar .end button.help'),
 						pair: document.querySelectorAll('.root-bar .tag, .root-bar .hint-button').length,
 						tapped: hit?.closest('.root-bar button.gear') !== null,
 						screen: document.documentElement.clientWidth
@@ -561,9 +562,9 @@ describe('the beta mark', () => {
 				assert.ok(at.banner.left >= at.gear.left && at.banner.right <= at.gear.right, `${size}: the banner is off the gear's sides`);
 				assert.ok(at.banner.top > at.gear.top + at.gear.height / 2 && at.banner.top < at.gear.bottom, `${size}: the banner is not on the gear's foot`);
 				assert.ok(at.tapped, `${size}: a tap on the banner does not reach the gear`);
-				// The bar's end is the gear and nothing else (the padlock went
-				// with layout mode, da-vvcxc), the gear on the screen at the narrowest.
-				assert.ok(at.end.width <= at.gear.width + 0.5, `${size}: the bar's end is ${at.end.width}px wide`);
+				// The bar's end is the (?) where the padlock was (da-hibn3) and the
+				// gear, nothing else; the gear on the screen at the narrowest.
+				assert.ok(at.end.width <= at.help.width + 4 + at.gear.width + 0.5, `${size}: the bar's end is ${at.end.width}px wide`);
 				assert.ok(at.gear.right <= at.screen, `${size}: the gear is off the screen`);
 			});
 		}

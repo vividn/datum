@@ -47,11 +47,11 @@ async function read(page, title) {
 }
 
 /**
- * Press Help, then `target`: the answer in the Help place, a transient tab
+ * Press Help (`button`), then `target`: the answer in the Help place, a transient tab
  * right of this one and in front. Back (the browser's, or a tap on the tab it
  * left) returns and closes it; then, nothing was run, echoed or output.
  */
-async function explain(page, target, title, back = () => page.goBack()) {
+async function explain(page, target, title, back = () => page.goBack(), button = help(page)) {
 	const output = () => page.locator('.prompt-bar .roll').allInnerTexts();
 	const [echoes, said, tabs, from] = [
 		await page.locator('.repl .echo').count(),
@@ -59,7 +59,7 @@ async function explain(page, target, title, back = () => page.goBack()) {
 		await rootTabs(page),
 		await shown(page)
 	];
-	await help(page).click();
+	await button.click();
 	await target.click();
 	await until(() => shown(page), (t) => t === 'help');
 	const at = tabs.indexOf(from) + 1;
@@ -259,5 +259,31 @@ describe('the Help button', () => {
 			await page.keyboard.press('Escape');
 			await modal.waitFor({ state: 'detached' });
 		}, PAGE);
+	});
+});
+
+// da-hibn3: the (?) in the root bar, where the padlock was, is the Help
+// button on every page, one with no commands widget too. vividn, 2026-10-14:
+// «even when the command widget is not visible».
+describe('the root bar (?)', () => {
+	const asks = (page) => page.locator('.root-bar button.help[data-command="help"]');
+	const bare = JSON.stringify(along('column', widgetPane('welcome', 'welcome'), widgetPane('bar', 'widgetbar')));
+
+	test("with no commands widget: pressed while armed, Escape disarms; then a pane's title explains its widget, and twice the general help", async () => {
+		await onPage(async ({ page }) => {
+			assert.equal(await page.locator('.bar.commands').count(), 0, 'a commands widget is on the page');
+			const q = asks(page);
+			assert.equal(await q.getAttribute('aria-pressed'), 'false');
+			await q.click();
+			assert.equal(await q.getAttribute('aria-pressed'), 'true');
+			await page.keyboard.press('Escape');
+			assert.equal(await q.getAttribute('aria-pressed'), 'false');
+			const title = page.locator('section.pane[data-title="welcome"] .titlebox');
+			const lines = await explain(page, title, 'welcome', undefined, q);
+			assert.match(lines[0], /^What datum is/);
+			const general = await explain(page, q, 'datum help', undefined, q);
+			assert.match(general[0], /^datum — personal data tracker/);
+			assert.equal(await q.getAttribute('aria-pressed'), 'false');
+		}, bare);
 	});
 });
