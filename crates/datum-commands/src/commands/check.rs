@@ -681,7 +681,9 @@ fn collect_slug_drift(entries: &[Entry], delim: &str) -> Result<SlugReport> {
             Some(tmpl) => field_spec::interpolate(tmpl, &ctx, delim),
             None => e.field.clone(),
         };
-        let Some(id_tmpl) = e.id_structure.as_ref() else {
+        // A v2 import's legacy `%field%` lead is read as its first edit
+        // will write it (da-ipwqb), so the slug it already has is no drift.
+        let Some(id_tmpl) = e.v2_id_template_repaired().or(e.id_structure.as_deref()) else {
             // field_structure-only rows can still drift on the field
             // half; build the slug body from the existing stored body
             // (everything after the first `:`). If the stored slug has
@@ -2390,6 +2392,32 @@ mod tests {
             report.issues.iter().any(|i| i.category == "slug_drift"),
             "slug_drift must be present"
         );
+    }
+
+    /// da-ipwqb: a v2 import whose template still leads with `%field%` has
+    /// the slug its first edit will give it, so it is no drift; the same
+    /// template on any other row is.
+    #[test]
+    fn slug_drift_reads_a_v2_imports_template_without_its_field_lead() {
+        let drift = |marker: Option<serde_json::Value>| {
+            let db = Db::open_in_memory().unwrap();
+            let mut entry = Entry::new_legacy(
+                "mood",
+                Verb::Switch,
+                Some(serde_json::json!("happy")),
+                None,
+                Some(t_at("2024-01-01T10:00:00+00:00")),
+                None,
+                "d1",
+            );
+            entry.id_structure = Some("%field%:%occur_time%".to_string());
+            entry.extra_metadata = marker;
+            db.insert_entry(&entry).unwrap();
+            collect_slug_drift(&all(&db), ":").unwrap().fixes.len()
+        };
+        let v2 = serde_json::json!({"_import": {"source": "datum-v2-couchdb"}});
+        assert_eq!(drift(Some(v2)), 0);
+        assert_eq!(drift(None), 1);
     }
 
     /// Tombstoned rows are skipped — slug drift on a soft-deleted row is

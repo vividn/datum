@@ -672,28 +672,84 @@ fn missing_precision_unit_leaves_column_null() {
 
 // ─── 13. id_structure / field_structure preservation (da-5ns.6) ──────
 
-#[test]
-fn import_preserves_id_structure_from_meta() {
-    let db = fresh_db();
-    let f = write_backup(serde_json::json!([{
+/// A one-doc backup of `coffee` at 07:00 UTC with `meta.idStructure`
+/// set to `id_structure`.
+fn coffee_with_id_structure(id_structure: &str) -> tempfile::NamedTempFile {
+    write_backup(serde_json::json!([{
         "_id": "coffee:2025-01-08T07:00:00.000Z",
         "data": {
             "occurTime": {"utc": "2025-01-08T07:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
-            "field": "coffee"
+            "field": "coffee",
+            "kind": "flat"
         },
         "meta": {
             "humanId": "abc",
             "createTime": {"utc": "2025-01-08T07:00:00.500Z", "o": 1, "tz": "Europe/Berlin"},
-            "idStructure": "%field%:%occurTime%"
+            "idStructure": id_structure
         }
-    }]));
+    }]))
+}
+
+#[test]
+fn import_preserves_id_structure_from_meta() {
+    for tmpl in [
+        "%occurTime%__%kind%",
+        "%occurTime%:%field%",
+        "%kind%_%field%_x",
+    ] {
+        let db = fresh_db();
+        let f = coffee_with_id_structure(tmpl);
+        run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
+        let e = &datum_core::test_util::logged_all(&db)[0];
+        assert_eq!(e.id_structure.as_deref(), Some(tmpl), "kept verbatim");
+        assert!(
+            e.extra_metadata.as_ref().unwrap()["_import"]
+                .get("original_id_structure")
+                .is_none(),
+            "nothing stripped, nothing recorded: {tmpl}",
+        );
+    }
+}
+
+/// da-ipwqb: datum v2 kept the field in its id template; v3's slug
+/// prefixes it implicitly, so `%field%:` is stripped and the original kept
+/// on the `_import` marker.
+#[test]
+fn import_strips_a_leading_field_from_id_structure() {
+    let db = fresh_db();
+    let f = coffee_with_id_structure("%field%:%occurTime%");
     run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
     let e = &datum_core::test_util::logged_all(&db)[0];
+    assert_eq!(e.id_structure.as_deref(), Some("%occurTime%"));
     assert_eq!(
-        e.id_structure.as_deref(),
-        Some("%field%:%occurTime%"),
-        "meta.idStructure must be preserved verbatim for re-interpolation",
+        e.extra_metadata.as_ref().unwrap()["_import"]["original_id_structure"],
+        "%field%:%occurTime%",
     );
+
+    run_cli(&["update", "abc", "kind=espresso"], &db).unwrap();
+    let e = &datum_core::test_util::logged_all(&db)[0];
+    assert_eq!(e.slug.as_str(), "coffee:2025-01-08T07:00:00.000Z");
+}
+
+/// A row imported before da-ipwqb still holds `%field%:%occurTime%`; its
+/// first edit slugs it with the field once and writes the template back
+/// without the lead, in the edit's own op.
+#[test]
+fn a_row_imported_with_a_leading_field_loses_it_at_its_first_edit() {
+    let db = fresh_db();
+    let f = coffee_with_id_structure("%field%:%occurTime%");
+    run_cli(&["db", "v2import", f.path().to_str().unwrap()], &db).unwrap();
+    db.conn()
+        .execute(
+            "UPDATE entries SET id_structure = '%field%:%occurTime%' WHERE hid = 'abc'",
+            [],
+        )
+        .unwrap();
+
+    run_cli(&["update", "abc", "kind=espresso"], &db).unwrap();
+    let e = &datum_core::test_util::logged_all(&db)[0];
+    assert_eq!(e.slug.as_str(), "coffee:2025-01-08T07:00:00.000Z");
+    assert_eq!(e.id_structure.as_deref(), Some("%occurTime%"));
 }
 
 #[test]

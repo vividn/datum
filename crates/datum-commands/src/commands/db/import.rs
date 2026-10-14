@@ -13,7 +13,8 @@ use anyhow::{Context, Result};
 use datum_core::{
     db::{ConflictStrategy, Db, InsertOutcome, IGNORED_STATE_VALUE},
     derive_verb,
-    entry::{build_slug, Entry, Verb},
+    entry::{build_slug, Entry, Verb, V2_IMPORT_SOURCE},
+    field_spec::strip_field_prefix,
     ids::Hid,
     time::{DatumTime, Zone},
 };
@@ -226,7 +227,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         let mut import_marker = serde_json::Map::new();
         import_marker.insert(
             "source".to_string(),
-            JsonValue::String("datum-v2-couchdb".to_string()),
+            JsonValue::String(V2_IMPORT_SOURCE.to_string()),
         );
         import_marker.insert(
             "backup_time".to_string(),
@@ -238,6 +239,18 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
                 JsonValue::String(orig_id.to_string()),
             );
         }
+        // v3's slug prefixes the field implicitly, so a v2 template that
+        // leads with `%field%` would name it twice; the original stays on
+        // the marker (da-ipwqb).
+        let original = meta["idStructure"].as_str();
+        let stripped = original.and_then(strip_field_prefix);
+        if let (Some(orig), Some(_)) = (original, stripped) {
+            import_marker.insert(
+                "original_id_structure".to_string(),
+                JsonValue::String(orig.to_string()),
+            );
+        }
+        let id_structure = stripped.or(original).map(str::to_string);
         let mut metadata_obj = serde_json::Map::new();
         metadata_obj.insert("_import".to_string(), JsonValue::Object(import_marker));
         let extra_metadata = Some(JsonValue::Object(metadata_obj));
@@ -263,10 +276,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         // A timeless row slugs on its create time, which is the source's,
         // not the clock `Entry::new` read (da-dvyga).
         entry.slug = build_slug(&entry.field, entry.occur_time.as_ref(), &entry.create_time);
-        entry.id_structure = meta
-            .get("idStructure")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+        entry.id_structure = id_structure;
         entry.field_structure = meta
             .get("fieldStructure")
             .and_then(|v| v.as_str())

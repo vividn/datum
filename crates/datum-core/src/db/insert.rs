@@ -659,6 +659,9 @@ impl Db {
         // interpolate(id_structure). The `<field>:` prefix is implicit
         // and never lives in id_structure; see cmd.rs's slug-precedence
         // block for write-time derivation.
+        if let Some(tmpl) = updated.v2_id_template_repaired() {
+            updated.id_structure = Some(tmpl.to_string());
+        }
         let new_slug = if let Some(tmpl) = updated.id_structure.clone() {
             let ctx = InterpolationContext::from_entry(&updated);
             let body = field_spec::interpolate(&tmpl, &ctx, slug_delimiter);

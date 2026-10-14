@@ -23,6 +23,9 @@ use crate::time::DatumTime;
 /// that derives it) live in `datum_parse::verb`.
 pub use datum_parse::verb::Verb;
 
+/// `extra_metadata._import.source` on a row `datum db v2import` wrote.
+pub const V2_IMPORT_SOURCE: &str = "datum-v2-couchdb";
+
 /// Granularity at which an uncertainty is meaningful — re-exported from
 /// `datum-parse` so `entry::UncertaintyUnit` remains a valid path.
 /// Definition lives in `datum_parse::time::uncertainty`.
@@ -145,7 +148,8 @@ pub struct Entry {
     pub client_id: String,
 
     // --- Template metadata (mirrors datum's meta.idStructure / meta.fieldStructure) ---
-    /// Template used to produce `slug`, e.g. `"%field%:%uid%"`.
+    /// Template used to produce the slug after its implicit `<field>:`
+    /// prefix, e.g. `"%uid%"`.
     #[serde(default)]
     pub id_structure: Option<String>,
     /// Template used to produce `field`, e.g. `"%srcLang%"`.
@@ -376,6 +380,19 @@ impl Entry {
             m.and_then(|m| m.get(*k))
                 .is_some_and(|v| v.as_bool() == Some(true) || v.as_f64() == Some(1.0))
         })
+    }
+
+    /// The id template of a row imported from datum v2 that still leads with
+    /// `%field%`, without it (da-ipwqb): v3's slug prefixes the field itself,
+    /// so the stored template would name it twice. `v2import` strips it now;
+    /// a row imported before loses it at its first edit, in that edit's own
+    /// op. `None` for every other row.
+    pub fn v2_id_template_repaired(&self) -> Option<&str> {
+        let source = self.extra_metadata.as_ref()?.pointer("/_import/source")?;
+        if source.as_str() != Some(V2_IMPORT_SOURCE) {
+            return None;
+        }
+        crate::field_spec::strip_field_prefix(self.id_structure.as_deref()?)
     }
 
     /// Short hid — first [`SHORT_HID_LEN`] chars of the stored hid.

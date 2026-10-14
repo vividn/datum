@@ -118,6 +118,18 @@ pub fn contains_template(s: &str) -> bool {
     false
 }
 
+/// `template` without a leading `%field%` and the one separator after it,
+/// or `None` when it does not start so (da-ipwqb). datum v2 kept the field
+/// in its id template; v3's slug prefixes it implicitly, so a v2 template
+/// carried over as-is names the field twice. A `%field%` anywhere else may
+/// be deliberate and is not this function's to remove.
+pub fn strip_field_prefix(template: &str) -> Option<&str> {
+    let rest = template.strip_prefix("%field%")?;
+    let sep = rest.chars().next()?;
+    let body = &rest[sep.len_utf8()..];
+    (!sep.is_alphanumeric() && !matches!(sep, '%' | '\\') && !body.is_empty()).then_some(body)
+}
+
 /// Interpolate a template like `"%field%:%uid%"` into a string using the
 /// lookup context. Unknown keys resolve to the empty string; runs of
 /// `delimiter` produced by empty substitutions collapse to a single delimiter
@@ -763,6 +775,26 @@ mod tests {
         let ctx = ctx_with_times(None, Some(&t));
         let got = interpolate("%modifyTime%", &ctx, "__");
         assert_eq!(got, "m2026-05-13T15:00:00.000Z");
+    }
+
+    #[test]
+    fn strip_field_prefix_takes_only_a_leading_field_and_one_separator() {
+        assert_eq!(
+            strip_field_prefix("%field%:%occurTime%"),
+            Some("%occurTime%")
+        );
+        assert_eq!(strip_field_prefix("%field%__%x%"), Some("_%x%"));
+        for kept in [
+            "%occurTime%",
+            "%occurTime%:%field%",
+            "%field%",
+            "%field%:",
+            "%field%%occurTime%",
+            "%field%x%occurTime%",
+            "%?field%:%occurTime%",
+        ] {
+            assert_eq!(strip_field_prefix(kept), None, "{kept}");
+        }
     }
 
     #[test]
