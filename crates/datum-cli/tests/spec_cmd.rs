@@ -330,3 +330,33 @@ fn spec_set_never_false_drops_the_end_alias_and_allow_false_restores_it() {
     set(&["--allow-false"]);
     assert_eq!(end_alias().as_deref(), Some("end env"));
 }
+
+/// `datum spec --help` names `--color` and its clearing form, and its
+/// example runs as the page spells it (da-44oe7: the flag worked and the
+/// page never said so).
+#[test]
+fn the_spec_help_names_color_and_its_example_runs() {
+    let page = datum_parse::help::command_help("spec");
+    assert!(page.contains("--color C"), "{page}");
+    assert!(page.contains("`--color ''` clears it"), "{page}");
+    assert!(page.contains("--state-color S=C"), "{page}");
+
+    let line = page
+        .lines()
+        .find(|l| l.trim().starts_with("datum spec set mood --color"))
+        .expect("no `datum spec set mood --color` example on spec --help");
+    // `datum` dropped, and the shell's quotes around `#…`
+    let argv: Vec<&str> = line
+        .split_whitespace()
+        .skip(1)
+        .map(|w| w.trim_matches('\''))
+        .collect();
+    let db = fresh_db();
+    run_cli(&["spec", "set", "mood", "--verb", "switch"], &db).unwrap();
+    run_cli(&argv, &db).unwrap();
+    let color = || db.load_spec("mood").unwrap().unwrap().color;
+    assert_eq!(color().as_deref(), Some("#b87333"));
+    run_cli(&["spec", "set", "mood", "--color", ""], &db).unwrap();
+    // cleared, however it is stored: no colour of its own is left
+    assert_eq!(color().filter(|c| !c.is_empty()), None);
+}
