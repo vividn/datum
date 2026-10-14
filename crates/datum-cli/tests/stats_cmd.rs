@@ -1563,3 +1563,52 @@ fn show_all_is_the_text_then_the_json_line() {
         );
     }
 }
+
+/// da-wa9fh: a window that runs up to now takes an entry stamped at exactly
+/// now, and still none after it — `occur coffee` then `stats coffee` in the
+/// same instant counts the coffee. Every such window: the default, the
+/// in-progress periods, and each one the periods line reads up to now.
+#[test]
+fn a_window_up_to_now_counts_an_entry_at_exactly_now() {
+    use chrono::Duration;
+    const NOW: &str = "2026-06-15T12:00:00Z";
+    let _g = freeze_time(NOW);
+    let db = fresh_db();
+    let ms = Duration::milliseconds(1);
+    let ns = Duration::nanoseconds(1);
+    // `occur_time` keeps nanoseconds; a slug, milliseconds — so the entry a
+    // nanosecond after now is another field's.
+    for (field, t) in [
+        ("coffee", at(NOW) - ms),
+        ("coffee", at(NOW)),
+        ("coffee", at(NOW) + ms),
+        ("tea", at(NOW) + ns),
+    ] {
+        entry_builder(field)
+            .verb(Verb::Point)
+            .state(json!(null))
+            .time_start_utc(t)
+            .insert(&db);
+    }
+
+    let count = |period| {
+        let args = StatsArgs {
+            period,
+            ..selector("coffee")
+        };
+        compute_stats(&args, &db).unwrap()
+    };
+    let tea = compute_stats(&selector("tea"), &db).unwrap();
+    assert_eq!(tea.total_count, 0, "a nanosecond after now is not yet");
+    let default = count(None);
+    assert_eq!(default.total_count, 2, "a millisecond before now, and now");
+    assert_eq!(default.periods.len(), 8);
+    for p in &default.periods {
+        // Last week is the one closed period, and it closed on Monday.
+        let want = if p.name == "last_week" { 0 } else { 2 };
+        assert_eq!(p.count, want, "the periods line's {}", p.name);
+    }
+    for period in [StatsPeriod::Today, StatsPeriod::Week, StatsPeriod::Month] {
+        assert_eq!(count(Some(period)).total_count, 2, "{period:?}");
+    }
+}

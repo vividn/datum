@@ -358,7 +358,7 @@ pub fn compute_stats(args: &StatsArgs, db: &Db) -> Result<StatsResult> {
     // The periods reach back a year and a day at most: YTD's 1 January.
     let (start, end, zones) = resolve_window(args, db, Duration::days(367))?;
     // Every period is read as of the window's end, in the window's zones.
-    let anchor = end.min(DatumTime::now().utc);
+    let anchor = end.min(DatumTime::now().utc + TICK);
     let periods = named_periods(anchor, resolve_week_start()?, &zones)?;
     // The periods line is one read of the year it reaches back, whatever the
     // window: a year of rows costs less than nine windows' cached days and
@@ -557,7 +557,7 @@ fn state_spans(
     };
     // The last span runs to the next change, or to `now` when there is
     // none: past `now`, the next change can be any later one.
-    let until = match until > DatumTime::now().utc {
+    let until = match until > DatumTime::now().utc + TICK {
         true => DateTime::<Utc>::from_timestamp(253_402_300_799, 0).expect("9999-12-31"),
         false => until,
     };
@@ -784,7 +784,7 @@ pub fn stats(args: StatsArgs, db: &Db) -> Result<()> {
 
 /// Resolve the time-slice into `(start, end)` UTC bounds — half-open
 /// `[start, end)`. `start = None` means unbounded below (everything up to
-/// `end`). `end` defaults to `now`.
+/// `end`). `end` defaults to just after `now` ([`TICK`]).
 ///
 /// Exactly one thing may name the *start*: the `SLICE` positional, a period
 /// flag, the timing flags, or `--since`. `--until` is not one of them — it
@@ -826,6 +826,7 @@ fn resolve_window(
     reach: Duration,
 ) -> Result<(Option<DateTime<Utc>>, DateTime<Utc>, ZoneTimeline)> {
     let now = DatumTime::now().utc;
+    let through_now = now + TICK;
 
     let sources = [
         (args.slice.is_some(), "a time-slice positional"),
@@ -853,7 +854,7 @@ fn resolve_window(
             let (s, e) = parse_slice(slice, zones)?;
             (Some(s), until.unwrap_or(e))
         } else if let Some(period) = args.period {
-            let (s, e) = period_window(period, resolve_week_start()?, zones, now)?;
+            let (s, e) = period_window(period, resolve_week_start()?, zones, through_now)?;
             (Some(s), until.unwrap_or(e))
         } else if names_a_moment(&args.time) {
             let zone = zones.zone_at(now);
@@ -864,11 +865,11 @@ fn resolve_window(
                 let (s, e) = day_window(zone.local_naive(at.utc).date(), zones)?;
                 (Some(s), until.unwrap_or(e))
             } else {
-                (Some(at.utc), until.unwrap_or(now))
+                (Some(at.utc), until.unwrap_or(through_now))
             }
         } else {
             let start = args.since.as_deref().map(parse_since).transpose()?;
-            (start, until.unwrap_or(now))
+            (start, until.unwrap_or(through_now))
         })
     };
     let earliest = |(start, end): (Option<DateTime<Utc>>, DateTime<Utc>)| {
@@ -952,9 +953,10 @@ fn window_zones(args: &StatsArgs, db: &Db, since: DateTime<Utc>) -> Result<ZoneT
     }
 }
 
-/// `[start, end)` for a whole calendar period, relative to `now`.
+/// `[start, end)` for a whole calendar period, as of `end`: the period of
+/// its last instant, so a window running to just after now is today's.
 ///
-/// The in-progress periods end at **now**, not at midnight: at 09:00
+/// The in-progress periods end at `end` — now — not at midnight: at 09:00
 /// `--today` is nine hours, so every ratio in the output is a share of the
 /// day so far rather than of a day mostly unlived. `--last-week` and
 /// `--last-month` are closed at both ends — `--last-month` is *the previous
@@ -963,12 +965,12 @@ fn period_window(
     period: StatsPeriod,
     week_start: Weekday,
     zones: &ZoneTimeline,
-    now: DateTime<Utc>,
+    end: DateTime<Utc>,
 ) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
-    let today = local_date_at(zones, now);
+    let today = local_date_at(zones, end - TICK);
     Ok(match period {
-        StatsPeriod::Today => (midnight(zones, today), now),
-        StatsPeriod::Week => (midnight(zones, week_open(today, week_start)), now),
+        StatsPeriod::Today => (midnight(zones, today), end),
+        StatsPeriod::Week => (midnight(zones, week_open(today, week_start)), end),
         StatsPeriod::LastWeek => {
             let this = week_open(today, week_start);
             (
@@ -978,7 +980,7 @@ fn period_window(
         }
         StatsPeriod::Month => (
             midnight(zones, first_of_month(today.year(), today.month())?),
-            now,
+            end,
         ),
         StatsPeriod::LastMonth => {
             let this = first_of_month(today.year(), today.month())?;
@@ -998,6 +1000,12 @@ fn period_window(
 /// A half-open `[start, end)`.
 type Span = (DateTime<Utc>, DateTime<Utc>);
 
+/// The resolution an `occur_time` is stored at. A window that runs up to
+/// now ends a tick after it, so it holds an entry logged at exactly now and
+/// still none after it (da-wa9fh): the comparison stays half-open, which is
+/// what lets consecutive windows tile.
+const TICK: Duration = Duration::nanoseconds(1);
+
 /// The periods line's windows as of `anchor`, keyed by the names the JSON
 /// carries (da-ehxou). The calendar ones are `--today`'s and friends' own
 /// windows; the rolling ones are whole days back from the anchor.
@@ -1008,7 +1016,7 @@ fn named_periods(
 ) -> Result<[(&'static str, Span); 8]> {
     let calendar = |p| period_window(p, week_start, zones, anchor);
     let back = |days| (anchor - Duration::days(days), anchor);
-    let year = local_date_at(zones, anchor).year();
+    let year = local_date_at(zones, anchor - TICK).year();
     Ok([
         ("today", calendar(StatsPeriod::Today)?),
         ("this_week", calendar(StatsPeriod::Week)?),
