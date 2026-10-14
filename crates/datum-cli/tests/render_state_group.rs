@@ -72,7 +72,7 @@ fn fg_escape(name: &str) -> String {
     format!("\x1b[38;2;{r};{g};{b}m")
 }
 
-/// `Rgb::IGNORED = #888888` per `render/colors.rs` — bg of LEAD/TRAIL
+/// `Rgb::GREY = #888888` per `render/colors.rs` — bg of LEAD/TRAIL
 /// slots when there's no prior or continuing state to depict (da-25l).
 const IGNORED_BG_ESC: &str = "\x1b[48;2;136;136;136m";
 

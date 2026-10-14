@@ -12,7 +12,7 @@ pub const NON_OCCUR: &str = "¢";
 /// or IGNORED just before it. Never a `null` state's — see [`NULL_STATE`].
 pub const NULL_SET: &str = "∅";
 
-/// A `null` state's body: the word, dark grey (`Rgb::IGNORED_FG`) on the
+/// A `null` state's body: the word, dark grey (`Rgb::DARK_GREY`) on the
 /// grey ground, since in v3 null is a state someone can assign and not
 /// IGNORED (da-pqdcv, vividn: «literal word null»). Where a state body is cut
 /// to fit, `null` is cut like any word (`nu…`); a one-cell LEAD/TRAIL slot

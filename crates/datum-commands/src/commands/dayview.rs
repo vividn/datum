@@ -1264,7 +1264,7 @@ mod tests {
 
     /// da-8mu: an occur entry's dot must take its fg from the field spec's
     /// `color`, not from the (typically null) value via `state_value_rgb`
-    /// — null mapped to `Rgb::IGNORED` (#888888) and made every dot grey.
+    /// — null mapped to `Rgb::GREY` (#888888) and made every dot grey.
     #[test]
     fn occur_dot_fg_uses_field_spec_color() {
         use chrono::TimeZone;

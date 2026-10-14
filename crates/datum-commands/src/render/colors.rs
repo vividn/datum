@@ -45,16 +45,17 @@ impl Rgb {
         g: 255,
         b: 255,
     };
-    /// `#888888` — the shared "ignored / null" grey per §8. Doubles as the
-    /// fg of the empty LEAD/TRAIL slot rendered when there's no prior or
-    /// continuing state.
-    pub const IGNORED: Rgb = Rgb {
+    /// `#888888` — the renderer's neutral grey. Not IGNORED's own: IGNORED
+    /// and null both paint with it (§8), as do the empty LEAD/TRAIL slot
+    /// and a parallel member with no colour of its own; it is also what
+    /// [`GRAY_FG`], the slugs' and markers' bright black, reads as.
+    pub const GREY: Rgb = Rgb {
         r: 0x88,
         g: 0x88,
         b: 0x88,
     };
-    /// `#666666` — foreground over IGNORED bg per §5.
-    pub const IGNORED_FG: Rgb = Rgb {
+    /// `#666666` — the word painted over [`Rgb::GREY`] (IGNORED's, null's) per §5.
+    pub const DARK_GREY: Rgb = Rgb {
         r: 0x66,
         g: 0x66,
         b: 0x66,
@@ -213,10 +214,10 @@ pub(crate) fn state_value_rgb(
     spec: Option<&FieldSpec>,
 ) -> Option<Rgb> {
     match value {
-        JsonValue::Null => Some(Rgb::IGNORED),
+        JsonValue::Null => Some(Rgb::GREY),
         JsonValue::Bool(true) => Some(field_rgb(field, spec)),
         v if is_off_state(v) => None,
-        JsonValue::String(s) if s == IGNORED_STATE => Some(Rgb::IGNORED),
+        JsonValue::String(s) if s == IGNORED_STATE => Some(Rgb::GREY),
         JsonValue::String(s) => Some(state_rgb(s, spec)),
         JsonValue::Array(items) => {
             // Array → first element recursive; §5.
@@ -426,7 +427,7 @@ pub struct AnsiSegment {
 /// A run's colour is its BACKGROUND where it has one, since that is what a
 /// bg-painted chip (the field badge, the state cell, a LEAD/TRAIL slot)
 /// reads as, and its foreground otherwise. The bright-grey the renderer
-/// paints slugs and markers with is [`Rgb::IGNORED`], the same `#888888` it
+/// paints slugs and markers with is [`Rgb::GREY`], the same `#888888` it
 /// uses for the ignored state.
 ///
 /// Escapes are dropped exactly as [`strip_ansi`] drops them, so
@@ -489,7 +490,7 @@ fn apply_sgr(sequence: &str, fg: &mut Option<String>, bg: &mut Option<String>) {
                 *fg = None;
                 *bg = None;
             }
-            90 => *fg = Some(Rgb::IGNORED.hex()),
+            90 => *fg = Some(Rgb::GREY.hex()),
             code @ (38 | 48) => {
                 let slot = if code == 38 { &mut *fg } else { &mut *bg };
                 match params.get(i + 1) {
@@ -656,7 +657,7 @@ mod tests {
                 },
                 AnsiSegment {
                     text: "+2".into(),
-                    color: Some(Rgb::IGNORED.hex())
+                    color: Some(Rgb::GREY.hex())
                 },
                 AnsiSegment {
                     text: "coffee".into(),
@@ -842,7 +843,7 @@ mod tests {
     /// paints with CSS rather than SGR.
     #[test]
     fn hex_is_the_colour_the_escapes_carry() {
-        assert_eq!(Rgb::IGNORED.hex(), "#888888");
+        assert_eq!(Rgb::GREY.hex(), "#888888");
         assert_eq!(field_hex("coffee", None), md5_rgb("coffee").hex());
         assert_eq!(
             state_hex(&JsonValue::String("happy".into()), "mood", None).as_deref(),

@@ -542,7 +542,7 @@ pub fn slot_hex(
 ) -> Option<String> {
     match resolve_slot(state, field, spec) {
         SlotKind::State(rgb) | SlotKind::Parallel(rgb, _) => Some(rgb.hex()),
-        SlotKind::Ignored => Some(Rgb::IGNORED.hex()),
+        SlotKind::Ignored => Some(Rgb::GREY.hex()),
         SlotKind::FieldEnded => None,
     }
 }
@@ -557,8 +557,8 @@ fn render_point_state_label(state: &JsonValue, field: &str, spec: Option<&FieldS
     match state {
         JsonValue::Bool(true) => paint(&field_rgb(field, spec).fg(), "start"),
         JsonValue::Bool(false) => paint(&field_rgb(field, spec).fg(), "end"),
-        JsonValue::Null => paint(&Rgb::IGNORED.fg(), NULL_STATE),
-        JsonValue::String(s) if s == IGNORED_STATE => paint(&Rgb::IGNORED.fg(), s),
+        JsonValue::Null => paint(&Rgb::GREY.fg(), NULL_STATE),
+        JsonValue::String(s) if s == IGNORED_STATE => paint(&Rgb::GREY.fg(), s),
         JsonValue::String(s) => paint(&state_rgb(s, spec).fg(), s),
         JsonValue::Object(obj) => {
             let body = match obj.get("id").and_then(JsonValue::as_str) {
@@ -574,7 +574,7 @@ fn render_point_state_label(state: &JsonValue, field: &str, spec: Option<&FieldS
             let mut out = String::new();
             for (i, item) in items.iter().enumerate() {
                 if i > 0 {
-                    let color = state_value_rgb(item, field, spec).unwrap_or(Rgb::IGNORED);
+                    let color = state_value_rgb(item, field, spec).unwrap_or(Rgb::GREY);
                     out.push_str(&paint(&color.fg(), ","));
                 }
                 out.push_str(&render_point_state_label(item, field, spec));
@@ -595,7 +595,7 @@ fn render_point_state_label(state: &JsonValue, field: &str, spec: Option<&FieldS
 /// (a colored glyph against the terminal bg). `bg` is reserved for ambient
 /// context derived from `state_at(field, row.start_time)`:
 ///
-/// 1. `IGNORED` (sentinel string or `Null`) → grey (`Rgb::IGNORED`)
+/// 1. `IGNORED` (sentinel string or `Null`) → grey (`Rgb::GREY`)
 /// 2. Any other ongoing-state value → that state's MD5/spec color
 /// 3. `None` or `Bool(false)` (no ongoing block) → `None` (default term bg)
 ///
@@ -618,8 +618,8 @@ pub(crate) fn compute_occur_dot_colors(
         // No prior state, or block was explicitly stopped → no bg.
         None | Some(JsonValue::Bool(false)) => None,
         // IGNORED tracking state → grey bg (sentinel string or null).
-        Some(JsonValue::Null) => Some(Rgb::IGNORED),
-        Some(JsonValue::String(s)) if s == IGNORED_STATE => Some(Rgb::IGNORED),
+        Some(JsonValue::Null) => Some(Rgb::GREY),
+        Some(JsonValue::String(s)) if s == IGNORED_STATE => Some(Rgb::GREY),
         // Any other ongoing-state value → that state's color.
         Some(v) => state_value_rgb(v, &row.field, spec),
     };
@@ -711,7 +711,7 @@ pub(crate) fn render_slot(
     match resolve_slot(state, field, spec) {
         SlotKind::State(rgb) => paint_bg(rgb, " "),
         SlotKind::Parallel(bg, fg) => paint_bg_fg(bg, fg, SHADING),
-        SlotKind::Ignored => paint_bg(Rgb::IGNORED, " "),
+        SlotKind::Ignored => paint_bg(Rgb::GREY, " "),
         SlotKind::FieldEnded => " ".to_string(),
     }
 }
@@ -795,9 +795,9 @@ fn render_switch_badge(value: Option<&JsonValue>, field: &str, spec: Option<&Fie
             paint_bg(fc, "start")
         }
         Some(JsonValue::Bool(false)) => "end".to_string(),
-        Some(JsonValue::Null) => paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, NULL_STATE),
+        Some(JsonValue::Null) => paint_bg_fg(Rgb::GREY, Rgb::DARK_GREY, NULL_STATE),
         Some(JsonValue::String(s)) if s == IGNORED_STATE => {
-            paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, s)
+            paint_bg_fg(Rgb::GREY, Rgb::DARK_GREY, s)
         }
         // da-6fvys: «tracking began» is a marker, not a state anyone
         // picked, so it gets no chip: the word alone, in grey.
@@ -808,7 +808,7 @@ fn render_switch_badge(value: Option<&JsonValue>, field: &str, spec: Option<&Fie
             let mut out = String::new();
             for (i, item) in items.iter().enumerate() {
                 if i > 0 {
-                    let color = state_value_rgb(item, field, spec).unwrap_or(Rgb::IGNORED);
+                    let color = state_value_rgb(item, field, spec).unwrap_or(Rgb::GREY);
                     out.push_str(&paint(&color.fg(), ","));
                 }
                 out.push_str(&render_switch_badge(Some(item), field, spec));
@@ -1449,11 +1449,11 @@ mod tests {
         let row = occur_row("blocked");
         let ignored_sentinel = JsonValue::String(IGNORED_STATE.to_string());
         let (_, bg_str) = compute_occur_dot_colors(&row, None, Some(&ignored_sentinel));
-        assert_eq!(bg_str, Some(Rgb::IGNORED), "IGNORED sentinel → grey bg");
+        assert_eq!(bg_str, Some(Rgb::GREY), "IGNORED sentinel → grey bg");
 
         let null = JsonValue::Null;
         let (_, bg_null) = compute_occur_dot_colors(&row, None, Some(&null));
-        assert_eq!(bg_null, Some(Rgb::IGNORED), "null state → grey bg");
+        assert_eq!(bg_null, Some(Rgb::GREY), "null state → grey bg");
     }
 
     // ─── compute_is_state_repeat / `!` LEAD marker (da-qfv0) ─────────────

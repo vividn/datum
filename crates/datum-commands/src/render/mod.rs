@@ -137,7 +137,7 @@ impl Outcome {
     /// paints, as a colour a surface that is not a terminal can use.
     ///
     /// A REPRESENTATIVE hex for each basic ANSI colour, the way
-    /// [`colors::Rgb::IGNORED`] is `#888888` for bright black: a terminal's
+    /// [`colors::Rgb::GREY`] is `#888888` for bright black: a terminal's
     /// own theme decides what its green looks like, and nothing outside one
     /// has a green until somebody names it. These are legible on a dark
     /// ground, which is every surface that asks for them. `NoDiff` is the one

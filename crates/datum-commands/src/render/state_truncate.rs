@@ -125,12 +125,12 @@ fn truncate_state_body(
         }
         Some(JsonValue::Bool(false)) => right_truncate("end", budget),
         Some(JsonValue::Null) => paint_bg_fg(
-            Rgb::IGNORED,
-            Rgb::IGNORED_FG,
+            Rgb::GREY,
+            Rgb::DARK_GREY,
             &right_truncate(NULL_STATE, budget),
         ),
         Some(JsonValue::String(s)) if s == IGNORED_STATE => {
-            paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, &right_truncate(s, budget))
+            paint_bg_fg(Rgb::GREY, Rgb::DARK_GREY, &right_truncate(s, budget))
         }
         Some(JsonValue::String(s)) if s == TRACKED_STATE_VALUE => {
             paint(GRAY_FG, &right_truncate(s, budget))
@@ -185,7 +185,7 @@ fn truncate_array(
     let mut out = String::new();
     for (i, item) in items.iter().enumerate() {
         if i > 0 {
-            let color = state_value_rgb(item, field, spec).unwrap_or(Rgb::IGNORED);
+            let color = state_value_rgb(item, field, spec).unwrap_or(Rgb::GREY);
             out.push_str(&paint(&color.fg(), ","));
         }
         let label = &labels[i];
@@ -211,7 +211,7 @@ fn render_array_full(
     let mut out = String::new();
     for (i, item) in items.iter().enumerate() {
         if i > 0 {
-            let color = state_value_rgb(item, field, spec).unwrap_or(Rgb::IGNORED);
+            let color = state_value_rgb(item, field, spec).unwrap_or(Rgb::GREY);
             out.push_str(&paint(&color.fg(), ","));
         }
         out.push_str(&paint_chip(item, &labels[i], field, spec));
@@ -256,7 +256,7 @@ fn render_drop_mode(
             break;
         }
         if shown > 0 {
-            let color = state_value_rgb(item, field, spec).unwrap_or(Rgb::IGNORED);
+            let color = state_value_rgb(item, field, spec).unwrap_or(Rgb::GREY);
             out.push_str(&paint(&color.fg(), ","));
         }
         out.push_str(&paint_chip(item, &cell, field, spec));
@@ -284,17 +284,15 @@ fn paint_chip(item: &JsonValue, body: &str, field: &str, spec: Option<&FieldSpec
     match item {
         JsonValue::Bool(true) => paint_bg(field_rgb(field, spec), body),
         JsonValue::Bool(false) => body.to_string(),
-        JsonValue::Null => paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, body),
-        JsonValue::String(s) if s == IGNORED_STATE => {
-            paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, body)
-        }
+        JsonValue::Null => paint_bg_fg(Rgb::GREY, Rgb::DARK_GREY, body),
+        JsonValue::String(s) if s == IGNORED_STATE => paint_bg_fg(Rgb::GREY, Rgb::DARK_GREY, body),
         JsonValue::String(_) => paint_bg(
-            state_value_rgb(item, field, spec).unwrap_or(Rgb::IGNORED),
+            state_value_rgb(item, field, spec).unwrap_or(Rgb::GREY),
             body,
         ),
         JsonValue::Object(obj) => paint_bg(structured_state_rgb(obj, spec), body),
         _ => paint_bg(
-            state_value_rgb(item, field, spec).unwrap_or(Rgb::IGNORED),
+            state_value_rgb(item, field, spec).unwrap_or(Rgb::GREY),
             body,
         ),
     }
@@ -492,7 +490,7 @@ mod tests {
         let _scope = color_scope();
         let ctx = RenderContext::default();
         let e = switch_entry("mood", json!(null));
-        let word = paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, "null");
+        let word = paint_bg_fg(Rgb::GREY, Rgb::DARK_GREY, "null");
         assert_eq!(format_state_body(&e, None, &ctx), word);
         assert!(truncate_state_cell(&e, None, &ctx, 20).contains(&word));
         let cut = strip_ansi(&truncate_state_cell(&e, None, &ctx, 5));
