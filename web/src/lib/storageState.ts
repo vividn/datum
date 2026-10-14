@@ -92,8 +92,8 @@ export function isDegraded(kind: StorageState): boolean {
 }
 
 /**
- * What the app says about where the entries are — the beta hint's sentence
- * (Beta.svelte), and the bottom bar's title while storage is degraded
+ * What the app says about where the entries are — the gear menu's beta note
+ * (RootBar.svelte), and the bottom bar's title while storage is degraded
  * (PromptBar.svelte). One store, because the two are the same claim and
  * must never be able to disagree, wherever each of them is drawn (da-y992
  * moved the hint to the top bar and left the alarm on the bottom one).

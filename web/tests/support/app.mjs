@@ -854,17 +854,17 @@ function app(page, errors, query, clean, locks, internal) {
 		tailRows: () => page.evaluate(() => window.datum.tailRows()),
 
 		/**
-		 * The beta hint's sentence about the data (da-0a5o: the banner's
-		 * text, behind the ⓘ beside `beta` in the root bar since da-y992).
+		 * The beta note's sentence about the data (da-0a5o: the banner's
+		 * text, in the gear's menu under the version since da-eue7y).
 		 *
-		 * The hint reads the storage that actually opened, so this is the
+		 * The note reads the storage that actually opened, so this is the
 		 * app's own on-screen claim about whether entries survive a reload.
 		 * Opened if it is not, and left open: a poll reads it again.
 		 */
 		async bannerText() {
-			const hint = page.locator('.beta-hint p');
-			if ((await hint.count()) === 0) await page.locator('.root-bar .hint-button').click();
-			return hint.innerText();
+			const note = page.locator('[role="menu"] .note');
+			if ((await note.count()) === 0) await page.locator('.root-bar button.gear').click();
+			return note.innerText();
 		},
 
 		/**

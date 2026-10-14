@@ -107,6 +107,12 @@ export type Item = {
 	 * what `checked` above means (one of a set).
 	 */
 	toggled?: boolean;
+	/**
+	 * A sentence and not an act: drawn as words that wrap, not a button,
+	 * and walked past by the keyboard — the gear's word on the beta
+	 * (da-eue7y), under the version it is about.
+	 */
+	note?: true;
 };
 
 /**

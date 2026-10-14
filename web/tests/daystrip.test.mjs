@@ -1017,7 +1017,7 @@ describe('the day strip zooms onto an hour range', () => {
 				};
 			});
 			// §12: the box a finger lands on is 24px, whatever the drawing
-			// inside it is (Beta.svelte's pattern).
+			// inside it is (the old beta ⓘ's pattern).
 			assert.ok(seen.width >= 24 && seen.height >= 24, `the ⊖ is ${seen.width}×${seen.height}`);
 			assert.ok(seen.glyph < seen.width, 'the glyph is not smaller than its hit area');
 			assert.equal(seen.fromBottom, 0, 'the ⊖ is not in the strip’s bottom corner');

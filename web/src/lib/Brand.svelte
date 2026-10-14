@@ -18,7 +18,7 @@
 	  SIL OFL, vendored — see app.css). On the default database that is `datum`, for no reason but
 	  that the default database is called `datum`: `currentDb()` is the
 	  text, with no special case. The product's own name lives in the tab
-	  title and in the ⓘ's note.
+	  title and in the gear menu's beta note.
 	- a name can be long, and it must never cost the prompt beside it any
 	  room. So the name does not size the bottom bar's brand block at all —
 	  the block is a size container of a FIXED width (PromptBar.svelte) —

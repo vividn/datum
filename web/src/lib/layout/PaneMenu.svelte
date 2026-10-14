@@ -40,6 +40,11 @@
 	switch is one press away, and «Save options with layout» appears in the
 	list the moment there is something to save.
 
+	An item with `note` is a sentence: words that wrap, not a button, so
+	the keyboard walks past it (da-eue7y). A `menuitem` all the same,
+	disabled as the version above it is, since a menu's children are its
+	items and a screen reader reads them as such.
+
 	An item with `row` is its label and a few short buttons on one line —
 	the pane's `Split | −` (da-13bc). The buttons are menu items like any
 	other, walked by ArrowUp/ArrowDown in order and by ArrowLeft/ArrowRight
@@ -345,7 +350,9 @@
 		on:keydown={onMenuKey}
 	>
 		{#each items as item (item.label)}
-			{#if item.row}
+			{#if item.note}
+				<div class="note" role="menuitem" aria-disabled="true" tabindex="-1">{item.label}</div>
+			{:else if item.row}
 				<div class="row" role="group" aria-label={item.label}>
 					<span aria-hidden="true">{item.label}</span>
 					{#each item.row as short (short.title)}
@@ -586,6 +593,15 @@
 	.menu button.ticked[aria-checked='true']::after {
 		content: '✓' / '';
 		color: var(--accent);
+	}
+
+	/* A note (da-eue7y): a sentence, as wide as a phone allows. */
+	.note {
+		max-inline-size: min(22rem, calc(100vw - 2rem));
+		margin: 0;
+		padding: 0.25rem 0.5rem;
+		color: var(--muted);
+		line-height: 1.35;
 	}
 
 	/* A row: its label where an item's words are, its buttons at the end,

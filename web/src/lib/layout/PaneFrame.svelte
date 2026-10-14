@@ -45,7 +45,7 @@
 	The MAXIMIZE is the one item that straddles BOTH borders: its centre
 	is on the corner point itself, as much of it outside the pane as in on
 	either axis (da-lihui). And it is the one whose drawn box is smaller
-	than the box a finger lands on — Beta.svelte's pattern, so that «a bit
+	than the box a finger lands on — the old beta ⓘ's pattern, so that «a bit
 	smaller» could be answered without taking the fingertip down with it.
 
 	A widget with title controls of its OWN — the custom pane's ✎ and the
@@ -1249,7 +1249,7 @@
 	   some)». da-fphjw shrank the GLYPH and he saw no change, because the
 	   box drawn around it never moved — so the box is what moves now.
 
-	   The way Beta.svelte already does it: the drawn thing is small, the
+	   The way the beta ⓘ did it: the drawn thing is small, the
 	   thing a finger lands on is not. The BUTTON keeps `--badge` square —
 	   the 16px/24px floor `reachable.test.mjs` holds every badge to — and
 	   draws nothing of its own; the ground, the outline and the radius go

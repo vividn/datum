@@ -249,16 +249,18 @@ describe('the shell', () => {
 			const bar = page.locator('.prompt-bar');
 			// The mark is the database's NAME since da-y992, and this page is
 			// on the default database, which is called `datum`. The `beta`
-			// mark went up to the root bar, beside the gear.
+			// mark went up to the root bar (da-y992), and is a banner on the
+			// gear now (da-eue7y).
 			assert.equal(await bar.locator('.brand').innerText(), 'datum');
-			assert.equal(await page.locator('.root-bar .tag').evaluate((el) => el.textContent), 'beta');
+			assert.equal(await page.locator('.root-bar .gear .beta').evaluate((el) => el.textContent), 'beta');
 			assert.equal(await bar.locator('.tag').count(), 0, 'the beta mark is still on the bottom bar');
 			assert.equal(await bar.locator('input').count(), 1);
 			// Nothing has run, so the result area has nothing to draw.
 			assert.equal(await receipt(page).count(), 0);
 			assert.equal(await rawResult(page).count(), 0);
 			// The build stamp is in the GEAR's menu now (da-pp1a): version ·
-			// sha, the bottom item and disabled. It was the bottom bar's
+			// sha, disabled, with the word on the beta under it (da-eue7y),
+			// which is words and not an item at all. It was the bottom bar's
 			// until da-wjob and the root bar's until that bead; neither bar
 			// draws it any more.
 			assert.equal(await bar.locator('.build').count(), 0, 'the build stamp is still on the bottom bar');
@@ -268,12 +270,11 @@ describe('the shell', () => {
 			// «Reset all layouts…» that deleted every saved layout on every
 			// device and went for it (da-luwe).
 			const gear = await gearItems(page);
-			assert.deepEqual(gear.map((i) => i.label.replace(/^\S+ · \S+$/, 'the build stamp')), [
-				'Backups',
-				'Reset default layouts',
-				'the build stamp'
-			]);
-			assert.deepEqual(gear.map((i) => i.disabled), [false, false, true]);
+			assert.deepEqual(
+				gear.map((i) => i.label.replace(/^\S+ · \S+$/, 'the build stamp').replace(/^datum\.day is early software\. .+/, 'the beta note')),
+				['Backups', 'Reset default layouts', 'the build stamp', 'the beta note']
+			);
+			assert.deepEqual(gear.map((i) => i.disabled), [false, false, true, false]);
 			// The stamp is the web's build, `3.0.<height>-beta · <sha7>`, and
 			// patch 0 where a shallow CI checkout cannot count (da-5172a, da-cv118).
 			assert.match(gear[2].label, /^3\.0\.\d+-beta · ([0-9a-f]{7}\+?|unknown)$/);
@@ -623,7 +624,7 @@ describe('the acts', () => {
 			assert.ok(moved.filter((d) => d >= 1.5).length >= 3, `only ${moved.filter((d) => d >= 1.5).length} of 5 points moved`);
 
 			// Whatever it is drawn as, the INK stays inside its button —
-			// nothing of the swung shackle hangs out over the gear or the ⓘ.
+			// nothing of the swung shackle hangs out over the gear or the ⚠.
 			// The mark is 16px centred in a 24px badge, so it has 4px of room
 			// on every side; the swung shackle spends a fraction of that and
 			// nothing like all of it. Read as points and widened by the
@@ -1054,18 +1055,6 @@ describe('the bottom bar', () => {
 				seen.pill.left >= seen.field.left - 1 && seen.pill.right <= seen.field.right + 1,
 				'the pill is outside the box'
 			);
-		});
-	});
-
-	test('the hint opens the beta text and the storage sentence; Escape closes it', async () => {
-		await onBar(async ({ page }) => {
-			assert.equal(await page.locator('.beta-hint').count(), 0);
-			await page.locator('.root-bar .hint-button').click();
-			const text = await page.locator('.beta-hint p').innerText();
-			assert.match(text, /^datum\.day is early software\. Your entries are stored in this browser only/);
-			await page.keyboard.press('Escape');
-			await page.locator('.beta-hint').waitFor({ state: 'detached' });
-			assert.equal(await page.locator('.root-bar .hint-button').getAttribute('aria-expanded'), 'false');
 		});
 	});
 });

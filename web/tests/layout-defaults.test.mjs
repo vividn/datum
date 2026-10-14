@@ -189,7 +189,7 @@ describe('the gear', () => {
 				`the gear is ${gear.width}x${gear.height} and the + is ${add.width}x${add.height}`
 			);
 
-			const mark = await page.locator('.root-bar button.gear > *').boundingBox();
+			const mark = await page.locator('.root-bar button.gear > svg').boundingBox();
 			assert.ok(mark.width >= 16 && mark.height >= 16, `the gear's mark is ${mark.width}x${mark.height}`);
 		}, DESKTOP);
 	});

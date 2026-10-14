@@ -47,9 +47,8 @@
 	THE LOCK IS NOT AMONG THEM any more (da-bzhq). vividn, 2026-09-21: "Let's
 	move the lock button outside of the layout menu and put it by the gear
 	icon to be more discoverable." So it is a padlock BUTTON beside the
-	gear — on the gear's LEFT, between it and the beta pair's ⓘ, since
-	"move the lock button to the other side of the gear" (da-fphjw) gave
-	the bar's far end back to the gear. Pressed rather than chosen,
+	gear — on the gear's LEFT, since "move the lock button to the other
+	side of the gear" (da-fphjw) gave the bar's far end back to the gear. Pressed rather than chosen,
 	`aria-pressed` for which way it is; HIGHLIGHTED when it is UNLOCKED,
 	that being the state with consequences (da-fphjw, see `.lock.open`).
 	It is this device's (shell.ts), not the layout's, which is why its
@@ -69,9 +68,11 @@
 	settings menu at the top right (little gear icon)? ... Maybe we can put
 	the version and hash string in that menu as well." That stamp — the
 	version, a separator and the short sha, dim and disabled because it is
-	a fact and not an act — is one of the two things it holds. It was the
+	a fact and not an act — is one of the things it holds. It was the
 	bottom bar's until da-wjob and this bar's until da-pp1a; it is out of
-	the way for good, and still one press from anyone looking for it.
+	the way for good, and still one press from anyone looking for it. Under
+	it is the word on the beta: that datum.day is early software, and
+	where this page keeps your data (da-eue7y, below).
 
 	First in it is «Backups» (da-9ow8m), the place of backup plans and
 	backup files (layout/BackupsWidget.svelte), which it opens by
@@ -100,22 +101,25 @@
 	Keeping it saves the tree under its name and the italics go; closing it
 	writes nothing at all.
 
-	Just before the lock, the `beta` mark and its ⓘ (Beta.svelte): vividn on
-	PR #25, "move the beta marker up to the top bar near the gear logo"
-	(da-y992). They were under the logo on the bottom bar until then. So
-	the bar's right end reads ⓘ · lock · gear (da-fphjw).
+	The gear wears a little `beta` banner (da-eue7y). vividn, 2026-10-14:
+	"let's move the "beta" tag to just be a little banner on the gear
+	button? Right now on mobile it takes up way too much space in the
+	header bar. move the beta info message into the gear icon by the
+	version number". It was a `beta` mark and an ⓘ before the lock
+	(da-y992), whose note is now the gear menu's last item, under the
+	version. So the bar's right end reads lock · gear (da-fphjw).
 
-	Before the beta pair, a ⚠ (da-8fucg) while a sync notice — a new device,
+	Before the lock, a ⚠ (da-8fucg) while a sync notice — a new device,
 	a new admin, an unlock — is unacknowledged. vividn, 2026-10-09: "a little
 	warning icon in the upper bar next to the gear and stuff. If you click
 	on it it displays a message box saying that another device joined. ok
 	to dismiss. tells user to go to sync to manage". The Sync widget's own
 	`⚠ … [OK]` was the only place one showed, so a layout without that
-	widget never showed it. It is not between the ⓘ, the lock and the gear,
+	widget never showed it. It is not between the lock and the gear,
 	which stay hard up against each other (brand.test.mjs).
 
 	On a phone the tabs scroll sideways rather than wrapping — one row,
-	always — while the `+`, the `▾`, the beta pair, the lock and the gear
+	always — while the `+`, the `▾`, the lock and the gear
 	stay where they are.
 
 	A tab DRAGGED along the strip moves there (da-w19ny, `reorder.ts`):
@@ -130,8 +134,8 @@
 	import { pausedArgv } from '$lib/calls.js';
 	import { syncStates } from '$lib/sync.js';
 	import { ackNotice, noticeWords } from '$lib/syncView.js';
-	import Beta from '$lib/Beta.svelte';
 	import { act } from '$lib/act.js';
+	import { storageSentence } from '$lib/storageState.js';
 	import { openBackups } from '$lib/backups.js';
 	import { confirm } from '$lib/confirm.js';
 	import { choose, fillTab } from './chooser.js';
@@ -359,15 +363,18 @@
 	/**
 	 * The gear's menu: the page's own settings, which belong to no layout
 	 * and no pane — the backups, the act above, and which build is in front of you,
-	 * disabled, because it is a fact and not an act.
+	 * disabled, because it is a fact and not an act, with the word on the
+	 * beta under it (da-eue7y).
 	 *
-	 * A constant: it does not depend on which layout is in front, which is
-	 * the whole of what makes this menu the page's and not a tab's.
+	 * It does not depend on which layout is in front, which is the whole of
+	 * what makes this menu the page's and not a tab's: only the storage
+	 * sentence moves it.
 	 */
-	const settings = [
+	$: settings = [
 		{ label: 'Backups', act: 'open' as const, run: () => void openBackups() },
 		{ label: 'Reset default layouts', act: 'open' as const, run: doResetDefaults },
-		{ label: `${__DATUM_VERSION__} · ${__DATUM_COMMIT__}`, disabled: true }
+		{ label: `${__DATUM_VERSION__} · ${__DATUM_COMMIT__}`, disabled: true },
+		{ label: `datum.day is early software. ${$storageSentence}`, note: true as const }
 	];
 
 	/** Arrow keys walk the tabs; the tab focused is the tab shown. */
@@ -480,18 +487,17 @@
 			on:click={doNotices}>⚠</button
 		>
 	{/if}
-	<span class="end"><Beta /></span>
 	<!-- The lock, ON THE GEAR'S OTHER SIDE — vividn, 2026-09-21 (da-fphjw):
 	     "Move the lock button to the other side of the gear". It was at
 	     the bar's far end past the gear (da-bzhq); now the gear takes the
-	     end and the lock is between it and the beta pair's ⓘ. It stays
-	     BESIDE the gear either way, which is the whole of why it was put
-	     here — "by the gear icon to be more discoverable" — and the ⓘ is
-	     still the thing before it (da-y992, brand.test.mjs).
+	     end and the lock is just before it. It stays BESIDE the gear
+	     either way, which is the whole of why it was put here — "by the
+	     gear icon to be more discoverable" (brand.test.mjs).
 
 	     Its title says whose the lock is: THIS DEVICE'S (shell.ts), so a
 	     control in the page's own corner is not read as a property of the
 	     layout everyone shares. -->
+	<span class="end">
 	{#if acts}
 		<button
 			type="button"
@@ -522,14 +528,15 @@
 		look="badge"
 		label="settings"
 		title="settings"
-		data-help="Settings for this whole page: Backups, where backups are planned, made and restored; Reset default layouts, which puts back the layouts datum ships with; and the version this is."
+		data-help="Settings for this whole page: Backups, where backups are planned, made and restored; Reset default layouts, which puts back the layouts datum ships with; and the version this is, with where this page keeps your data — datum.day is in beta."
 		class="gear"
 		aria-label="settings"
 		><svg class="cog" viewBox="-12 -12 24 24" width="20" height="20" aria-hidden="true">
 			{#each TEETH as angle}<rect x="-1.9" y="-11.4" width="3.8" height="5.6" rx="1" transform="rotate({angle})" />{/each}
 			<circle class="ring" r="6.2" />
-		</svg></PaneMenu
+		</svg><span class="beta" aria-hidden="true">beta</span></PaneMenu
 	>
+	</span>
 	{#if trail && !dirty}
 		<ul class="versions">
 			{#if trail.length}
@@ -652,7 +659,7 @@
 		   about (11,7) puts at y=0.664, and the 0.7px half-stroke takes to
 		   -0.04. A viewBox is a clip, so without this the mark would be cut
 		   there — by a hundredth of a pixel today, and by however much the
-		   angle is ever changed by. Nothing can reach the gear or the ⓘ
+		   angle is ever changed by. Nothing can reach the gear or the ⚠
 		   either way: this is a 16px mark centred in a 24px badge, so it has
 		   four pixels of room on every side, which shell.test.mjs measures
 		   over the drawn shackle rather than over this box. */
@@ -698,21 +705,18 @@
 	   the em it fills is the reader's font's business and not ours. A
 	   path fills the box it is given, on every device, and the box is
 	   this one. */
-	/* The bar's right end: the beta pair, then the LOCK, then the gear
-	   (da-fphjw). `auto` on the pair rather than on the tabs, which scroll,
-	   so everything after it is carried to the end together.
-
-	   NOT positioned, on purpose, and nothing between it and the bar may
-	   be: the beta note (Beta.svelte) is placed against the ROOT BAR, the
-	   nearest positioned ancestor. Placed against the pair instead, a
-	   phone-wide note ran off the screen's left by the gear's width
-	   (brand.test.mjs, «its note opens DOWN … whole on a phone»). */
+	/* The bar's right end: the LOCK, then the gear (da-fphjw). `auto` here
+	   rather than on the tabs, which scroll, so the two are carried to the
+	   end together. */
 	.end {
+		display: flex;
+		align-items: center;
+		gap: 4px;
 		margin-left: auto;
 		flex: none;
 	}
 
-	/* The ⚠ (da-8fucg) rides at the end too, ahead of the pair, so while it
+	/* The ⚠ (da-8fucg) rides at the end too, ahead of the lock, so while it
 	   is drawn the `auto` is its own. A pill and not a badge: it opens a
 	   dialog, and so wears the `›` ($lib/act.ts). */
 	.notices {
@@ -730,8 +734,29 @@
 	}
 
 	.root-bar :global(.gear) {
+		position: relative;
 		flex: none;
 		--badge: 28px;
+	}
+
+	/* The little banner across the gear's foot (da-eue7y), in the amber of
+	   its own the `beta` mark always wore: it says the software is early,
+	   which is no colour of the palette's — not `--warn`, which is unsaved
+	   work, nor the database's hue. Taps go through it to the gear. */
+	.beta {
+		position: absolute;
+		bottom: -4px;
+		left: 50%;
+		transform: translateX(-50%);
+		padding: 1px 2px;
+		border-radius: 2px;
+		background: #f0b429;
+		color: var(--page);
+		font-size: 0.5rem;
+		line-height: 1;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		pointer-events: none;
 	}
 
 	.cog {

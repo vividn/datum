@@ -122,9 +122,7 @@ async function putBack(app) {
 async function reset(app, line) {
 	const { page } = app;
 	await app.home();
-	// The ⓘ's card, which Escape closes (Beta.svelte), and a maximize, which
-	// is view state no `solo` puts back (maximize.ts).
-	if ((await page.locator('.beta-hint').count()) > 0) await page.keyboard.press('Escape');
+	// A maximize is view state no `solo` puts back (maximize.ts).
 	// Help armed (`help.ts`) explains the next tap instead of acting it:
 	// Escape disarms it.
 	if ((await page.locator('.command.help.armed').count()) > 0) await page.keyboard.press('Escape');

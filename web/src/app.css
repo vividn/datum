@@ -63,7 +63,7 @@
 		them fainter than 240 does.)
 
 		The colours that MEAN something are outside it and do not move with
-		the database: `--alarm`, `--error`, `--warn`, `--track` below, the beta mark's
+		the database: `--alarm`, `--error`, `--warn`, `--track` below, the gear's beta
 		amber, and every field's own colour, which the CLI picks.
 	*/
 	--hue: 240;

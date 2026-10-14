@@ -1820,7 +1820,7 @@
 	   DOM and carries the higher z-index.
 
 	   A fingertip's 26px, the freeze's and the grip's own, over a 16px
-	   glyph: §12's box is not the drawing (Beta.svelte's pattern). */
+	   glyph: §12's box is not the drawing (the old beta ⓘ's pattern). */
 	.unzoom {
 		position: absolute;
 		bottom: 0;

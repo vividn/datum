@@ -10,8 +10,8 @@
 // database name"; "when hovering over the "datum" word make a little down
 // arrow appear next to it, but only show when hovering over it"; "change the
 // subtle background color too, not just the accent color"; the beta marker
-// up to the top bar by the gear; "let's use Gemunu Libre"; and then "Let's
-// increase the font weight to 300".
+// up to the top bar by the gear (and on 10-14 onto the gear itself); "let's
+// use Gemunu Libre"; and then "Let's increase the font weight to 300".
 //
 // Every claim is read off the PAGE: what the mark says and in what face,
 // what the menu offers and where choosing goes, what colour the app is then
@@ -27,8 +27,8 @@ before(startApp);
 after(stopApp);
 
 // ONE APP per screen where tests share their options (da-6b3dj, sharedApp in
-// support/app.mjs): Playwright's 1280x720 and a 390x640 phone on `datum`,
-// and the beta mark's phone. `solo` empties only the page's own database,
+// support/app.mjs): Playwright's 1280x720 and a 390x640 phone on `datum`.
+// `solo` empties only the page's own database,
 // so a database another test seeded is still in the logo's menu — none of
 // the shared tests counts that list after another has grown it. What still
 // opens an app of its own is at a `?db` or screen of its own, watches the
@@ -530,65 +530,66 @@ describe('the base colour follows the database', () => {
 });
 
 describe('the beta mark', () => {
-	const PHONE = { width: 412, height: 563 };
-	const beta = sharedApp({ viewport: PHONE });
-
-	// The bar's right end reads ⓘ · lock · gear (da-fphjw): the lock came
-	// across the gear — vividn, "move the lock button to the other side of
-	// the gear" — so the ⓘ is no longer the gear's immediate neighbour.
-	// What it must still be is the LAST thing before that pair and hard up
-	// against it, which is what "near the gear logo" (da-y992) asked for,
-	// so the chain is asserted as a chain rather than as one gap.
-	test('is in the root bar, last before the lock and the gear, its ⓘ a fingertip’s 24px, and not on the bottom bar', async () => {
-		for (const viewport of [{ width: 1280, height: 900 }, PHONE, { width: 320, height: 664 }]) {
-			// The phone's app is the note's below; the other two screens are alone.
-			const open = viewport === PHONE ? beta.solo : (fn) => withApp(fn, { viewport });
-			await open(
-				async ({ page }) => {
-					const at = await page.evaluate(() => {
-						const box = (s) => document.querySelector(s)?.getBoundingClientRect() ?? null;
-						return {
-							tag: box('.root-bar .tag'),
-							hint: box('.root-bar .hint-button'),
-							lock: box('.root-bar button.lock'),
-							gear: box('.root-bar .gear'),
-							screen: document.documentElement.clientWidth,
-							below: !!document.querySelector('.prompt-bar .tag, .prompt-bar .hint-button')
-						};
-					});
-					const size = `${viewport.width}x${viewport.height}`;
-					assert.ok(at.tag && at.hint && at.gear, `${size}: the beta pair is not in the root bar`);
-					assert.ok(at.lock, `${size}: the lock is not in the root bar`);
-					assert.equal(at.below, false, `${size}: the beta pair is still on the bottom bar`);
-					// ⓘ then lock then gear, each hard up against the next with
-					// nothing wider than the bar's own gap between them.
-					assert.ok(at.hint.right <= at.lock.left + 0.5, `${size}: the ⓘ is not left of the lock`);
-					assert.ok(at.lock.right <= at.gear.left + 0.5, `${size}: the lock is not left of the gear`);
-					assert.ok(at.lock.left - at.hint.right <= 8, `${size}: the ⓘ is not beside the lock`);
-					assert.ok(at.gear.left - at.lock.right <= 8, `${size}: the lock is not beside the gear`);
-					assert.ok(at.hint.width >= 24 && at.hint.height >= 24, `${size}: the ⓘ is ${at.hint.width}x${at.hint.height}`);
-					// And the gear, now the bar's last thing, is still on the
-					// screen at the narrowest.
-					assert.ok(at.gear.right <= at.screen, `${size}: the gear is off the screen`);
-				}
-			);
+	// A little banner ON the gear (da-eue7y). vividn, 2026-10-14: "let's move
+	// the "beta" tag to just be a little banner on the gear button? Right
+	// now on mobile it takes up way too much space in the header bar. move
+	// the beta info message into the gear icon by the version number". It
+	// was a `beta` mark and an ⓘ of their own before the lock (da-y992).
+	test('is a little banner on the gear, with no width of its own in the root bar, and taps go through it', async () => {
+		for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 640 }, { width: 320, height: 664 }]) {
+			const open = viewport.width === 390 ? phone.solo : (fn) => withApp(fn, { viewport });
+			await open(async ({ page }) => {
+				const at = await page.evaluate(() => {
+					const box = (s) => document.querySelector(s)?.getBoundingClientRect().toJSON() ?? null;
+					const banner = box('.root-bar .gear .beta');
+					const hit = banner && document.elementFromPoint(banner.x + banner.width / 2, banner.y + banner.height / 2);
+					return {
+						banner,
+						words: document.querySelector('.root-bar .gear .beta')?.textContent,
+						lock: box('.root-bar button.lock'),
+						gear: box('.root-bar .gear'),
+						end: box('.root-bar .end'),
+						pair: document.querySelectorAll('.root-bar .tag, .root-bar .hint-button').length,
+						tapped: hit?.closest('.root-bar button.gear') !== null,
+						screen: document.documentElement.clientWidth
+					};
+				});
+				const size = `${viewport.width}x${viewport.height}`;
+				assert.equal(at.words, 'beta', `${size}: the gear wears no beta banner`);
+				assert.equal(at.pair, 0, `${size}: the beta pair is still in the root bar`);
+				// Small, and on the gear: across its foot, inside its width.
+				assert.ok(at.banner.width <= at.gear.width && at.banner.height <= 12, `${size}: the banner is ${at.banner.width}x${at.banner.height}`);
+				assert.ok(at.banner.left >= at.gear.left && at.banner.right <= at.gear.right, `${size}: the banner is off the gear's sides`);
+				assert.ok(at.banner.top > at.gear.top + at.gear.height / 2 && at.banner.top < at.gear.bottom, `${size}: the banner is not on the gear's foot`);
+				assert.ok(at.tapped, `${size}: a tap on the banner does not reach the gear`);
+				// The bar's end is the lock and the gear and nothing else, hard
+				// up against each other, the gear on the screen at the narrowest.
+				assert.ok(at.lock.right <= at.gear.left + 0.5 && at.gear.left - at.lock.right <= 8, `${size}: the lock is not beside the gear`);
+				assert.ok(at.end.width <= at.lock.width + at.gear.width + 8, `${size}: the bar's end is ${at.end.width}px wide`);
+				assert.ok(at.gear.right <= at.screen, `${size}: the gear is off the screen`);
+			});
 		}
 	});
 
-	test('its note opens DOWN from the top bar and is whole on a phone', async () => {
-		await beta.solo(
-			async ({ page }) => {
-				await page.locator('.root-bar .hint-button').click();
-				const at = await page.evaluate(() => ({
-					note: document.querySelector('.beta-hint').getBoundingClientRect().toJSON(),
-					bar: document.querySelector('.root-bar').getBoundingClientRect().toJSON(),
-					width: document.documentElement.clientWidth,
-					height: document.documentElement.clientHeight
-				}));
-				assert.ok(at.note.top >= at.bar.bottom, 'the note does not hang below the bar');
-				assert.ok(at.note.left >= 0 && at.note.right <= at.width, `the note is off the side: ${at.note.left}..${at.note.right}`);
-				assert.ok(at.note.bottom <= at.height, 'the note is off the bottom');
-			}
-		);
+	test("its word is in the gear's menu, under the version, and whole on a phone", async () => {
+		await phone.solo(async ({ page }) => {
+			await page.locator('.root-bar button.gear').click();
+			const at = await page.locator('[role="menu"]').evaluate((menu) => ({
+				items: [...menu.children].map((el) => el.textContent.trim()),
+				note: menu.querySelector('.note').getBoundingClientRect().toJSON(),
+				// An item of the menu as the version is: disabled, not walked to.
+				role: [menu.querySelector('.note').getAttribute('role'), menu.querySelector('.note').getAttribute('aria-disabled')],
+				width: document.documentElement.clientWidth,
+				height: document.documentElement.clientHeight
+			}));
+			const stamp = at.items.findIndex((t) => /^3\.0\.\d+-beta · /.test(t));
+			assert.ok(stamp >= 0, `no version in ${at.items}`);
+			assert.match(at.items[stamp + 1], /^datum\.day is early software\. Your entries are stored in this browser only/);
+			assert.deepEqual(at.role, ['menuitem', 'true']);
+			assert.ok(at.note.left >= 0 && at.note.right <= at.width, `the note is off the side: ${at.note.left}..${at.note.right}`);
+			assert.ok(at.note.bottom <= at.height, 'the note is off the bottom');
+			await page.keyboard.press('Escape');
+			await page.locator('[role="menu"]').waitFor({ state: 'detached' });
+		});
 	});
 });

@@ -196,15 +196,13 @@ describe('the Help button', () => {
 				bar.locator('[role="tab"][aria-selected="true"]'),
 				bar.locator('button.add'),
 				bar.locator('button.manage'),
-				bar.locator('button.gear'),
-				bar.locator('button.hint-button')
+				bar.locator('button.gear')
 			]) {
 				const title = await control.getAttribute('title');
 				const lines = await explain(page, control, title);
 				assert.doesNotMatch(lines[0], /^datum — personal data tracker/, title);
 				assert.equal(lines.join('\n'), await control.getAttribute('data-help'));
 			}
-			assert.equal(await page.locator('.beta-hint').count(), 0, 'the ⓘ opened');
 		});
 	});
 
