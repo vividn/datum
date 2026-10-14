@@ -105,7 +105,7 @@ export const storageSentence = derived([storage, persisted], ([$storage, $persis
 			? 'Checking where your entries are stored…'
 			: $storage === 'memory'
 				? 'Entries are held in memory only — reloading this page discards them.'
-				: 'Your entries are stored in this browser only: clearing site data deletes them, there is no sync yet, and ' +
+				: 'Your entries are stored in this browser only: clearing site data deletes them, and ' +
 					($persisted
 						? 'the browser has promised to keep them.'
 						: 'the browser may clear them if space runs short — install the app to keep them.')

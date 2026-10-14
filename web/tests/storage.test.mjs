@@ -626,7 +626,7 @@ const persistCalls = (app) => app.page.evaluate(() => window.__persistCalls);
 
 const DURABLE =
 	'datum.day is early software. Your entries are stored in this browser only: ' +
-	'clearing site data deletes them, there is no sync yet, and';
+	'clearing site data deletes them, and';
 const KEPT = `${DURABLE} the browser has promised to keep them.`;
 const MAY_CLEAR = `${DURABLE} the browser may clear them if space runs short — install the app to keep them.`;
 
