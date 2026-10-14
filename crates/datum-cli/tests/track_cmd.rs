@@ -154,7 +154,11 @@ fn a_colour_writes_the_verb_the_log_implies() {
     run_cli(&["track", "sleep", "--color", "blue"], &db).unwrap();
 
     let spec = db.load_spec("sleep").unwrap().unwrap();
-    assert_eq!(spec.color.as_deref(), Some("blue"));
+    let blue = datum_core::kit_color::resolve_color(Some("blue"), "sleep").unwrap();
+    assert_eq!(
+        spec.color, blue,
+        "a hue name, as a kit's `color` (da-xw1rx)"
+    );
     assert_eq!(spec.verb, Action::Start, "the log said start");
     // …and the bare-field alias every spec projects.
     let bare = spec

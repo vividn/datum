@@ -1,9 +1,9 @@
-//! Color resolution for kit field specs.
+//! Color resolution for field specs: a kit's `color` and `spec set --color`.
 //!
-//! A kit `[[field]].color` value can be one of three forms:
+//! A colour value can be one of three forms:
 //!
-//! 1. **Hex** — `#RRGGBB` or `#RRGGBBAA`. Used verbatim (validated for
-//!    length + hex digits; case-normalized to lowercase).
+//! 1. **Hex or ANSI-256** — `#RRGGBB` or `#RRGGBBAA`, `#` optional. Stored with its
+//!    `#`, lowercased; an ANSI-256 number (`196`) is kept as typed.
 //! 2. **Hue name** — `red`, `orange`, `yellow`, `lime`, `green`, `mint`,
 //!    `cyan`, `azure`, `blue`, `violet`, `magenta`, `pink`. Daydumb
 //!    extension (no datum equivalent). Resolved at install time using the
@@ -46,47 +46,46 @@ const LIGHT_MIN: f64 = 15.0;
 const LIGHT_MAX: f64 = 85.0;
 const HUE_RANGE_DEG: f64 = 30.0;
 
-/// Resolve a user-typed color into a concrete `#RRGGBB[AA]` hex string.
+/// Resolve a user-typed color into what the spec stores: the one colour
+/// rule for a kit's `color` and `spec set --color` / `--state-color` /
+/// `add-state`'s COLOR alike (da-xw1rx), and only what the renderer draws.
 ///
-/// * `Some(hex)` → normalized lowercase hex.
+/// * hex, six or eight digits, `#` optional → lowercase `#rrggbb[aa]`.
+/// * an ANSI-256 number → kept as the number (`196`).
 /// * `Some(hue_name)` → HSL-from-md5 within the named hue's 30°-wide band
 ///   (daydumb extension — see module docs).
+/// * anything else is refused, naming the accepted forms.
 /// * `None` → returns `Ok(None)`. The caller leaves `spec.color` unset so
 ///   the renderer derives the color via the datum-compatible `md5_rgb`
 ///   (first three bytes of md5(name) as RGB).
 pub fn resolve_color(input: Option<&str>, field_name: &str) -> Result<Option<String>> {
-    match input {
-        Some(s) if s.starts_with('#') => normalize_hex(s).map(Some),
-        Some(s) => {
-            let lc = s.to_lowercase();
-            if let Some((_, base_hue)) = NAMED_HUES.iter().find(|(n, _)| *n == lc) {
-                Ok(Some(hsl_from_md5(field_name, *base_hue)))
-            } else {
-                Err(DatumError::Other(format!(
-                    "kit color: unknown hue name '{s}' (expected hex like #RRGGBB or one of: {})",
-                    NAMED_HUES
-                        .iter()
-                        .map(|(n, _)| *n)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )))
-            }
-        }
-        None => Ok(None),
-    }
+    input.map(|s| resolve(s, field_name)).transpose()
 }
 
-/// Validate `#RRGGBB` or `#RRGGBBAA` and return the lowercase canonical form.
-fn normalize_hex(s: &str) -> Result<String> {
-    let body = &s[1..];
-    let valid_len = body.len() == 6 || body.len() == 8;
-    let all_hex = body.chars().all(|c| c.is_ascii_hexdigit());
-    if !valid_len || !all_hex {
-        return Err(DatumError::Other(format!(
-            "kit color: '{s}' is not a valid hex color (expected #RRGGBB or #RRGGBBAA)"
-        )));
+/// [`resolve_color`] of a colour that is given.
+pub fn resolve(s: &str, field_name: &str) -> Result<String> {
+    let hex = s.strip_prefix('#').unwrap_or(s);
+    if matches!(hex.len(), 6 | 8) && hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Ok(format!("#{}", hex.to_lowercase()));
     }
-    Ok(format!("#{}", body.to_lowercase()))
+    if s.bytes().all(|b| b.is_ascii_digit()) {
+        if let Ok(n) = s.parse::<u8>() {
+            return Ok(n.to_string());
+        }
+    }
+    let lc = s.to_lowercase();
+    match NAMED_HUES.iter().find(|(n, _)| *n == lc) {
+        Some((_, base_hue)) => Ok(hsl_from_md5(field_name, *base_hue)),
+        None => Err(DatumError::Other(format!(
+            "'{s}' is not a colour: expected six hex digits (`#` optional), \
+             an ANSI-256 number (0-255) or a hue name ({})",
+            NAMED_HUES
+                .iter()
+                .map(|(n, _)| *n)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))),
+    }
 }
 
 /// Build an HSL color from md5(field_name) constrained to the named hue's
@@ -170,7 +169,19 @@ mod tests {
     #[test]
     fn rejects_unknown_hue_name() {
         let err = resolve_color(Some("aubergine"), "f").unwrap_err();
-        assert!(format!("{err}").contains("unknown hue name"));
+        assert!(format!("{err}").contains("is not a colour"), "{err}");
+    }
+
+    #[test]
+    fn bare_hex_and_ansi_numbers_are_colours_the_renderer_draws() {
+        let c = |s| resolve_color(Some(s), "f").unwrap();
+        assert_eq!(c("B87333").as_deref(), Some("#b87333"));
+        assert_eq!(c("000000").as_deref(), Some("#000000"));
+        assert_eq!(c("196").as_deref(), Some("196"));
+        assert_eq!(c("0").as_deref(), Some("0"));
+        for bad in ["256", "-1", "+5", "#196", "abc", ""] {
+            assert!(resolve_color(Some(bad), "f").is_err(), "{bad}");
+        }
     }
 
     #[test]

@@ -487,7 +487,7 @@ describe('spec', () => {
 			assert.equal(saved.code, OK, saved.stderr);
 			assert.match(saved.stdout, /mood/);
 			// And the neighbouring subcommands did not take it down with them.
-			assert.equal((await run(['spec', 'set', 'mood', '--color', '#0f0'])).code, OK);
+			assert.equal((await run(['spec', 'set', 'mood', '--color', '#00ff00'])).code, OK);
 		});
 	});
 

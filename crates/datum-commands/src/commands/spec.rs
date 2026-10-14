@@ -6,6 +6,7 @@ use datum_core::{
     db::{Db, IGNORED_STATE_VALUE},
     entry::{Entry, Verb},
     field_spec::{parse_key_decl, FieldSpec, GlyphBy, KeyKind},
+    kit_color::resolve,
     shape::TRACKED_STATE_VALUE,
     time::DatumTime,
 };
@@ -116,8 +117,14 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             check_state_name(&spec.field, state)?;
         }
     }
+    // One colour rule, a kit's (da-xw1rx): `--color red` is the red
+    // `color = "red"` is, and one the renderer cannot draw is refused.
     if let Some(c) = &args.color {
-        spec.color = Some(c.clone());
+        spec.color = Some(c)
+            .filter(|c| !c.is_empty())
+            .map(|c| resolve(c, &spec.field))
+            .transpose()
+            .context("--color")?;
     }
     if let Some(t) = &args.id_template {
         spec.id_template = Some(t.clone());
@@ -129,9 +136,18 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         spec.state_lookup_field = Some(f.clone()).filter(|f| !f.is_empty());
     }
     let any = |_: &str, _: &str| Ok(());
+    let state_colors = args
+        .state_colors
+        .iter()
+        .map(|pair| match pair.split_once('=') {
+            Some((state, c)) if !c.is_empty() => Ok(format!("{state}={}", resolve(c, state)?)),
+            _ => Ok(pair.clone()),
+        })
+        .collect::<Result<Vec<_>>>()
+        .context("--state-color")?;
     set_pairs(
         &mut spec.state_colors,
-        &args.state_colors,
+        &state_colors,
         "--state-color",
         "STATE=COLOR",
         any,
@@ -624,7 +640,8 @@ fn spec_add_state(
         states.push(name.to_string());
     }
     if let Some(c) = color {
-        spec.state_colors.insert(name.to_string(), c.to_string());
+        let c = resolve(c, name).context("COLOR")?;
+        spec.state_colors.insert(name.to_string(), c);
     }
     if let Some(d) = description {
         spec.state_descriptions
@@ -856,7 +873,7 @@ mod tests {
 
         let spec = db.load_spec("mood").unwrap().unwrap();
         assert_eq!(spec.id_template.as_deref(), Some("%field%:%state%"));
-        assert_eq!(spec.color.as_deref(), Some("green"));
+        assert_eq!(spec.color, Some(resolve("green", "mood").unwrap()));
         let states = spec.allowed_states.as_ref().unwrap();
         assert!(states.contains(&"happy".to_string()) && states.contains(&"sad".to_string()));
         // da-2sr: --track on `spec set` writes a switch entry; the spec
@@ -976,8 +993,8 @@ mod tests {
         let states = spec.allowed_states.as_ref().unwrap();
         assert_eq!(states, &["happy", "sad", "meh"]);
         assert_eq!(
-            spec.state_colors.get("meh").map(String::as_str),
-            Some("yellow")
+            spec.state_colors.get("meh"),
+            Some(&resolve("yellow", "meh").unwrap())
         );
         assert_eq!(
             spec.state_descriptions.get("meh").map(String::as_str),
@@ -1023,8 +1040,8 @@ mod tests {
             Some(&["high".to_string()][..])
         );
         assert_eq!(
-            spec.state_colors.get("high").map(String::as_str),
-            Some("lime")
+            spec.state_colors.get("high"),
+            Some(&resolve("lime", "high").unwrap())
         );
         assert_eq!(
             spec.state_descriptions.get("high").map(String::as_str),
@@ -1051,7 +1068,7 @@ mod tests {
         let spec = db.load_spec("mood").unwrap().unwrap();
         assert_eq!(
             spec.state_colors.get("happy").map(String::as_str),
-            Some("00ff00")
+            Some("#00ff00")
         );
         assert_eq!(
             spec.state_descriptions.get("happy").map(String::as_str),

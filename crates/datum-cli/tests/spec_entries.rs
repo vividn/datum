@@ -82,13 +82,13 @@ impl Env {
 fn a_spec_edits_and_undoes_like_a_doc() {
     let env = Env::new();
     env.ok(&["switch", "mood", "happy"]);
-    env.ok(&["spec", "set", "mood", "--color", "blue"]);
-    env.ok(&["spec", "set", "mood", "--color", "red"]);
+    env.ok(&["spec", "set", "mood", "--color", "#0000ff"]);
+    env.ok(&["spec", "set", "mood", "--color", "#ff0000"]);
 
     env.ok(&["undo"]);
-    assert_eq!(env.spec("mood")["color"], "blue");
+    assert_eq!(env.spec("mood")["color"], "#0000ff");
     env.ok(&["redo"]);
-    assert_eq!(env.spec("mood")["color"], "red");
+    assert_eq!(env.spec("mood")["color"], "#ff0000");
 
     env.ok(&["update", "spec:mood", "color=green"]);
     assert_eq!(env.spec("mood")["color"], "green");

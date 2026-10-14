@@ -204,8 +204,10 @@ fn spec_add_state_merges_positionally_without_dropping_others() {
         &["happy".to_string(), "sad".to_string(), "meh".to_string()],
     );
     assert_eq!(
-        spec.state_colors.get("meh").map(String::as_str),
-        Some("yellow")
+        spec.state_colors.get("meh"),
+        datum_core::kit_color::resolve_color(Some("yellow"), "meh")
+            .unwrap()
+            .as_ref()
     );
     assert_eq!(
         spec.state_descriptions.get("meh").map(String::as_str),
@@ -359,4 +361,81 @@ fn the_spec_help_names_color_and_its_example_runs() {
     run_cli(&["spec", "set", "mood", "--color", ""], &db).unwrap();
     // cleared, however it is stored: no colour of its own is left
     assert_eq!(color().filter(|c| !c.is_empty()), None);
+}
+
+/// One colour rule (da-xw1rx): `spec set --color`, `--state-color`,
+/// `add-state`'s COLOR and `track`'s `--color` / `--state S=C` resolve a colour as a kit's `color` does, so a hue
+/// name stores the hex `kit install` would, and what the renderer cannot
+/// draw is refused and changes nothing.
+#[test]
+fn spec_set_color_takes_a_kits_colours_and_refuses_the_rest() {
+    let db = fresh_db();
+    let set = |args: &[&str]| run_cli(&[&["spec", "set", "mood"][..], args].concat(), &db);
+    let hue = |c, name| datum_core::kit_color::resolve_color(Some(c), name).unwrap();
+    let spec = || db.load_spec("mood").unwrap().unwrap();
+
+    set(&["--verb", "switch", "--color", "red"]).unwrap();
+    assert_eq!(spec().color, hue("red", "mood"));
+    set(&["--state-color", "happy=Blue"]).unwrap();
+    assert_eq!(
+        spec().state_colors.get("happy"),
+        hue("blue", "happy").as_ref()
+    );
+    run_cli(&["spec", "add-state", "mood", "sad", "violet"], &db).unwrap();
+    assert_eq!(
+        spec().state_colors.get("sad"),
+        hue("violet", "sad").as_ref()
+    );
+
+    set(&["--color", "196"]).unwrap();
+    assert_eq!(spec().color.as_deref(), Some("196"));
+    set(&["--color", "#B87333"]).unwrap();
+    assert_eq!(spec().color.as_deref(), Some("#b87333"));
+
+    let before = spec();
+    for args in [
+        &["--color", "nonsense"][..],
+        &["--color", "300"],
+        &["--state-color", "happy=abc"],
+    ] {
+        let err = format!("{:#}", set(args).unwrap_err());
+        assert!(
+            err.contains("is not a colour") && err.contains("hue name") && err.contains("pink"),
+            "{args:?}: {err}"
+        );
+    }
+    assert!(run_cli(&["spec", "add-state", "mood", "meh", "beige"], &db).is_err());
+    assert!(run_cli(&["track", "mood", "--color", "beige"], &db).is_err());
+    assert!(run_cli(&["track", "mood", "--state", "happy=beige"], &db).is_err());
+    assert!(run_cli(&["track", "mood", "--state", "happy="], &db).is_err());
+    let after = spec();
+    assert_eq!(after.color, before.color);
+    assert_eq!(after.state_colors, before.state_colors);
+    assert_eq!(after.allowed_states, before.allowed_states);
+}
+
+/// datum.day's field form saves an edited spec whole, as `spec set
+/// --from-json`, and a colour stored before the rule (da-xw1rx), which it
+/// sends back untouched, saves with it: the rule guards a colour a person
+/// gives a flag, and leaves alone one nobody touched.
+#[test]
+fn the_field_forms_save_keeps_a_colour_stored_before_the_rule() {
+    let db = fresh_db();
+    run_cli(
+        &[
+            "spec", "set", "mood", "--verb", "switch", "--state", "happy",
+        ],
+        &db,
+    )
+    .unwrap();
+    run_cli(&["update", "spec:mood", "color=#0f0"], &db).unwrap();
+    let mut spec = db.load_spec("mood").unwrap().unwrap();
+    spec.state_colors.insert("happy".into(), "beige".into());
+    spec.description = Some("edited".into());
+    let json = serde_json::to_string(&spec).unwrap();
+    run_cli(&["spec", "set", "mood", "--from-json", &json], &db).unwrap();
+    let spec = db.load_spec("mood").unwrap().unwrap();
+    assert_eq!(spec.description.as_deref(), Some("edited"));
+    assert_eq!(spec.color.as_deref(), Some("#0f0"));
+    assert_eq!(spec.state_colors["happy"], "beige");
 }

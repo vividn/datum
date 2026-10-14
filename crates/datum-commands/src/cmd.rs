@@ -588,14 +588,14 @@ mod tests {
         let tracked = db.get_tracked_fields(chrono::Utc::now()).unwrap();
         let mood = tracked.iter().find(|f| f.field == "mood").unwrap();
         assert!(!mood.ignored);
-        assert_eq!(mood.color.as_deref(), Some("ff6600"));
+        assert_eq!(mood.color.as_deref(), Some("#ff6600"));
 
         let state_colors = db.get_all_state_colors().unwrap();
         assert_eq!(
             state_colors
                 .get(&("mood".to_string(), "happy".to_string()))
                 .map(|s| s.as_str()),
-            Some("00ff00")
+            Some("#00ff00")
         );
 
         advance_time("1m");
@@ -612,7 +612,7 @@ mod tests {
         let mood2 = tracked2.iter().find(|f| f.field == "mood").unwrap();
         assert!(mood2.ignored);
         // Color survives because it lives on FieldSpec, not in the entry log.
-        assert_eq!(mood2.color.as_deref(), Some("ff6600"));
+        assert_eq!(mood2.color.as_deref(), Some("#ff6600"));
 
         advance_time("1m");
         // Re-track flips it back to tracked (most recent switch wins).

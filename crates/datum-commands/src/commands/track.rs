@@ -2,13 +2,14 @@
 //! written down (da-c8mh), plus the TRACK row that says tracking began,
 //! for a field that is IGNORED or has no entries (da-6fvys).
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use datum_core::{
     action::Action,
     db::Db,
     field_spec::{
         parse_key_decl, FieldSpec, KeyKind, SubfieldSpec, SubfieldType, VERB_CHOICES_TEXT,
     },
+    kit_color::resolve,
     shape::is_ignored_state,
     time::DatumTime,
     track::track_entry,
@@ -61,7 +62,11 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
         .unwrap_or_else(|| FieldSpec::new(&args.field, verb));
     spec.verb = verb;
     if let Some(c) = &args.color {
-        spec.color = Some(c.clone());
+        spec.color = Some(c)
+            .filter(|c| !c.is_empty())
+            .map(|c| resolve(c, &args.field))
+            .transpose()
+            .context("--color")?;
     }
     // `--state` carries both halves of a switch field's declaration
     // (da-94q1): a bare NAME is a state it may be switched to, `NAME=COLOR`
@@ -72,8 +77,8 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
     for sc in &args.states {
         match sc.split_once('=') {
             Some((state, color)) => {
-                spec.state_colors
-                    .insert(state.to_string(), color.to_string());
+                let color = resolve(color, state).context("--state")?;
+                spec.state_colors.insert(state.to_string(), color);
             }
             None => {
                 super::spec::check_state_name(&args.field, sc)?;

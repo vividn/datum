@@ -110,7 +110,9 @@ pub(crate) fn warning_fg(bg: Rgb) -> Rgb {
 
 pub(crate) fn parse_hex(s: &str) -> Option<Rgb> {
     let s = s.trim_start_matches('#');
-    if s.len() != 6 {
+    // `#rrggbbaa`, which a colour may be (`kit_color::resolve_color`), draws
+    // its `#rrggbb`.
+    if !matches!(s.len(), 6 | 8) || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
     Some(Rgb {
@@ -629,6 +631,8 @@ mod tests {
             })
         );
         assert_eq!(parse_hex("xxx"), None);
+        assert_eq!(parse_hex("#ff660080"), parse_hex("ff6600"));
+        assert_eq!(parse_hex("ff6600zz"), None);
     }
 
     #[test]
