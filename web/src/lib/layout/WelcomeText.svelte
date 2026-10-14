@@ -161,6 +161,14 @@ comment: obsessed with time</pre>
 		color: var(--ink-bright);
 	}
 
+	/* The one thing to do next, so it is drawn in the accent before it is
+	   pointed at: a phone has no hover to light it (vividn, 10-14: «very
+	   invisible right now»). */
+	button.command {
+		border-color: var(--accent);
+		color: var(--ink-bright);
+	}
+
 	.name {
 		margin: 0 0 0.3rem;
 		color: var(--ink-bright);

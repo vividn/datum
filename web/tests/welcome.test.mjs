@@ -137,6 +137,21 @@ describe('a first visit', () => {
 		}, FRESH_PHONE);
 	});
 
+	// vividn, 2026-10-14: «make the track button on the welcome page more visible like make the outline colored».
+	test('its Track button is outlined in the accent at rest, not only when pointed at', async () => {
+		await withApp(async ({ page }) => {
+			const [border, accent] = await page.locator('.host.welcome div.welcome button.command').evaluate((button) => {
+				const probe = document.createElement('div');
+				probe.style.color = 'var(--accent)';
+				button.parentElement.append(probe);
+				const accent = getComputedStyle(probe).color;
+				probe.remove();
+				return [getComputedStyle(button).borderTopColor, accent];
+			});
+			assert.equal(border, accent);
+		}, FRESH_PHONE);
+	});
+
 	for (const [what, device] of [
 		['a desktop', FRESH_DESKTOP],
 		['a phone', FRESH_PHONE]
