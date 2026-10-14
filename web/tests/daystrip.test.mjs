@@ -257,7 +257,11 @@ describe('the day strip', () => {
 			assert.equal(await ruler.count(), 1, 'the ruler is not drawn exactly once');
 			const named = await ruler.locator('text.tick-label').allTextContents();
 			assert.ok(named.length >= 4, `the ruler named ${named.length} hours`);
-			assert.deepEqual([...named].sort(), [...named], 'the ruler runs backwards');
+			// A whole day ends on midnight, so the ruler closes on it, as
+			// the CLI's axis does (da-zyfbl).
+			assert.equal(named.at(-1), '00', `the ruler does not close on midnight: ${named}`);
+			const day = named.slice(0, -1);
+			assert.deepEqual([...day].sort(), day, 'the ruler runs backwards');
 
 			// The stitching. The strip's own gridlines sit at the x the CLI
 			// reports for them, and land on each band's own 12:00 line.

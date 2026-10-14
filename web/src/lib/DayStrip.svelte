@@ -781,15 +781,16 @@
 	 * The majors (every third hour, as datum marks them), thinned until
 	 * two labels no longer touch and inset so neither runs off an end —
 	 * `fit_axis_labels` in dayview_svg.rs, at the one size the strip draws
-	 * its ruler at. The trailing 24 is never named: it is the day boundary
-	 * and it is the next band's 00.
+	 * its ruler at. Where the window ends on midnight its tick is drawn and
+	 * named `00`, inset like the leading one and the first to give way when
+	 * squeezed, as the CLI's axis closes (da-zyfbl); a window ending inside
+	 * the day has no 24 on the band to draw.
 	 */
 	$: ruler = (() => {
 		if (!geometry) return [] as { x: number; at: number; label: string }[];
 		const half = AXIS_FONT * 0.6 + 3;
 		let prev = -Infinity;
 		return geometry.hours
-			.slice(0, -1)
 			.map((hour) => ({ hour, x: bandX(hour.x) }))
 			// A window leaves most of the day off the ends of the band.
 			.filter(({ x }) => x >= -1 && x <= bandWidth + 1)
