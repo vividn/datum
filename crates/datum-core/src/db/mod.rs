@@ -80,6 +80,7 @@ pub use types::{
     IGNORED_STATE_VALUE, NOT_FLAG_OR_META_SQL,
 };
 pub use view::{InstallViewsReport, InstalledView, KitViewOutcome, ViewResult};
+pub use zone_timeline::{agreed_zone, NEIGHBOURS};
 
 // `try_insert` is a `pub(crate)` free function in `insert.rs`; re-export it
 // at `crate::db::try_insert` to preserve the historical import path used by

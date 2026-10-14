@@ -9,7 +9,7 @@
 use anyhow::Result;
 use datum_core::{
     action::Action,
-    db::{Db, InsertOutcome, IGNORED_STATE_VALUE},
+    db::{agreed_zone, Db, InsertOutcome, IGNORED_STATE_VALUE},
     dur::DurSpan,
     entry::{Entry, Verb},
     field_spec::{self, InterpolationContext},
@@ -121,6 +121,12 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // one placed from it, so `reparse` anchors where the log did, to the
     // millisecond a `*_time` value keeps (da-x15of).
     let now = DatumTime::now();
+    // da-h8dvi: a past instant with no `-z` is placed as if `-z` named the
+    // zone the entries around it agree on, recorded and said below.
+    let inferred_zone = neighbours_zone(db, &args.time, now.utc);
+    if inferred_zone.is_some() {
+        args.time.timezone = inferred_zone.clone();
+    }
     let created = args.time.omit_timestamp.then(|| now.clone());
     let base = match &created {
         Some(now) => Some(now.clone()),
@@ -523,6 +529,16 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         let base = entry.occur_time.clone().unwrap_or_else(DatumTime::now);
         let at = parse_reserved_occur_time(&t, &base)?;
         entry.occur_time = Some(if full_day { whole_day(&at)? } else { at });
+    }
+    // da-h8dvi: a zone the neighbours gave is a derivation, not something
+    // said, so the entry records it as one and the log says so — where the
+    // entry kept it: an `occur_time=` key with an offset of its own did not.
+    let kept = |t: &DatumTime| t.timezone == inferred_zone;
+    if let (Some(zone), true) = (&inferred_zone, entry.occur_time.as_ref().is_some_and(kept)) {
+        entry.extra_metadata.get_or_insert_with(|| json!({}))["tz_from"] = json!("neighbours");
+        if !args.output()?.silent() {
+            eprintln!("⚠ no -z given: used {zone}, the zone of the entries around it");
+        }
     }
 
     // da-ju71.2: stamp `Dur::moment()` ("MOMENT") to lock the entry to
@@ -1945,6 +1961,42 @@ pub(crate) fn build_time_from_flags(
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<DatumTime> {
     build_time_anchored(time, now, None, false)
+}
+
+/// The zone a past instant takes when no `-z` names one (da-h8dvi): the one
+/// the entries around it agree on ([`agreed_zone`]), where it is not the
+/// host's. The host's is where datum is now, rarely where a backfilled
+/// instant was. The zone is asked around the flags read in the host's zone,
+/// then again around them read in its own, where the entry lands, so it
+/// holds only where both agree.
+fn neighbours_zone(db: &Db, time: &TimeArgs, now: chrono::DateTime<chrono::Utc>) -> Option<String> {
+    if time.timezone.is_some() || time.omit_timestamp {
+        return None;
+    }
+    // A `-t` with an offset (`…T12:00+09:00`) is the one form the builder
+    // keeps as `iso_instant_override`; that offset is believed (da-kvosn).
+    if time
+        .builder(TimeCtx::now())
+        .ok()?
+        .iso_instant_override
+        .is_some()
+    {
+        return None;
+    }
+    let around = |time: &TimeArgs| -> Option<(String, Option<String>)> {
+        let at = build_time_from_flags(time, now).ok()?;
+        if at.utc >= now {
+            return None;
+        }
+        let (before, after) = db.zones_around(at.utc).ok()?;
+        Some((agreed_zone(&before, &after)?.clone(), at.timezone))
+    };
+    let (zone, host) = around(time)?;
+    let placed = TimeArgs {
+        timezone: Some(zone.clone()),
+        ..time.clone()
+    };
+    (host.as_ref() != Some(&zone) && around(&placed)?.0 == zone).then_some(zone)
 }
 
 /// The IANA name `-z` resolves to, `None` without one: the host's zone.

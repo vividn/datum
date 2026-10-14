@@ -2,8 +2,9 @@
 //! name nothing resolves.
 
 use anyhow::Result;
-use datum_core::db::Db;
+use datum_core::db::{agreed_zone, is_meta_field, Db, NEIGHBOURS};
 use datum_core::entry::Entry;
+use datum_core::time::DatumTime;
 
 use super::{render_flagged_block, Domain, FlaggedEntry, Issue, IssueExample, Severity};
 
@@ -33,8 +34,8 @@ use super::{render_flagged_block, Domain, FlaggedEntry, Issue, IssueExample, Sev
 pub(super) fn collect_tz_drift(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>> {
     // Two faults with two fixes (da-kvosn): an offset its zone disagrees
     // with, and a zone name nothing resolves, whose offset may be right.
-    let mut mismatched: Vec<(Entry, String)> = Vec::new();
-    let mut unknown: Vec<(Entry, String)> = Vec::new();
+    let mut mismatched: Vec<(Entry, String, String)> = Vec::new();
+    let mut unknown: Vec<(Entry, String, String)> = Vec::new();
     for e in entries {
         if e.deleted_at.is_some() {
             continue;
@@ -49,70 +50,76 @@ pub(super) fn collect_tz_drift(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>>
             // reconcile.
             Ok(None) => {}
             Ok(Some(expected)) if expected == stored => {}
+            // The stored→expected offset, or the name that failed, so the
+            // row's problem is legible without re-reading the DB.
             Ok(Some(expected)) => mismatched.push((
                 e.clone(),
                 format!("tz={tz}  stored_offset={stored}  expected_offset={expected}"),
+                format!("{stored}→{expected}"),
             )),
-            Err(err) => {
-                unknown.push((e.clone(), format!("tz={tz}  stored_offset={stored}  {err}")))
-            }
+            Err(err) => unknown.push((
+                e.clone(),
+                format!("tz={tz}  stored_offset={stored}  {err}"),
+                format!("tz={tz}"),
+            )),
         }
     }
 
-    let issue = |rows: Vec<(Entry, String)>, category, says: &str| {
-        let (flagged, details): (Vec<Entry>, Vec<String>) = rows.into_iter().unzip();
-        let first = flagged.first()?;
+    let issue = |rows: Vec<(Entry, String, String)>, severity, category, says: &str| {
+        let first = rows.first()?;
         Some(Issue {
             domain: Domain::Entries,
-            severity: Severity::Error,
+            severity,
             category,
-            message: match flagged.len() {
+            message: match rows.len() {
                 1 => format!("1 entry has {says}"),
                 n => format!("{n} entries have {says}"),
             },
-            count: flagged.len(),
+            count: rows.len(),
             example: Some(IssueExample {
-                id: Some(first.slug.to_string()),
-                field: Some(first.field.clone()),
-                detail: details.into_iter().next(),
+                id: Some(first.0.slug.to_string()),
+                field: Some(first.0.field.clone()),
+                detail: Some(first.1.clone()),
             }),
-            entries: flagged
+            entries: rows
                 .iter()
-                .map(|e| FlaggedEntry {
+                .map(|(e, _, state)| FlaggedEntry {
                     hid: e.short_uid(),
                     field: e.field.clone(),
-                    // The stored→expected offset, or the name that failed, so
-                    // the row's problem is legible without re-reading the DB.
-                    state: e
-                        .occur_time
-                        .as_ref()
-                        .map(|t| match t.expected_offset_minutes() {
-                            Ok(Some(exp)) => format!("{}→{exp}", t.offset_minutes),
-                            _ => format!("tz={}", t.timezone.as_deref().unwrap_or("—")),
-                        })
-                        .unwrap_or_default(),
+                    state: state.clone(),
                 })
                 .collect(),
-            rendered_block: render_flagged_block(db, &flagged),
+            rendered_block: render_flagged_block(
+                db,
+                &rows.iter().map(|r| r.0.clone()).collect::<Vec<_>>(),
+            ),
         })
     };
     let names: std::collections::BTreeSet<&str> = unknown
         .iter()
-        .filter_map(|(e, _)| e.occur_time.as_ref()?.timezone.as_deref())
+        .filter_map(|(e, ..)| e.occur_time.as_ref()?.timezone.as_deref())
         .collect();
     let names = names.into_iter().collect::<Vec<_>>().join(", ");
     Ok([
         issue(
             mismatched,
+            Severity::Error,
             "tz_offset_mismatch",
             "a stored UTC offset that disagrees with their timezone at that instant",
         ),
         issue(
             unknown,
+            Severity::Error,
             "unknown_timezone",
             &format!(
                 "a timezone name datum cannot resolve ({names}), so the offset cannot be checked"
             ),
+        ),
+        issue(
+            off_zone(entries),
+            Severity::Warning,
+            "tz_off_neighbours",
+            "a timezone the entries around them agree is not theirs",
         ),
     ]
     .into_iter()
@@ -120,12 +127,53 @@ pub(super) fn collect_tz_drift(db: &Db, entries: &[Entry]) -> Result<Vec<Issue>>
     .collect())
 }
 
+/// The entries in a run of fewer than [`NEIGHBOURS`] in one zone, where the
+/// entries either side of the run agree on another ([`agreed_zone`],
+/// da-h8dvi): a spike. A move is a step, and a run as long as the window
+/// is taken for one, and a run at either end of the record, with nothing on
+/// one side, is not a spike. A warning, as a short trip logged once or twice
+/// looks the same.
+fn off_zone(entries: &[Entry]) -> Vec<(Entry, String, String)> {
+    let mut zoned: Vec<(&Entry, &DatumTime, &str)> = entries
+        .iter()
+        .filter(|e| e.deleted_at.is_none() && e.superseded_by.is_none() && !is_meta_field(&e.field))
+        .filter_map(|e| {
+            let t = e.occur_time.as_ref()?;
+            Some((e, t, t.timezone.as_deref()?))
+        })
+        .collect();
+    zoned.sort_by_key(|(_, t, _)| t.utc);
+    let zones: Vec<&str> = zoned.iter().map(|(.., z)| *z).collect();
+    let mut off = Vec::new();
+    let mut start = 0;
+    for run in zoned.chunk_by(|a, b| a.2 == b.2) {
+        let end = start + run.len();
+        let before = &zones[start.saturating_sub(NEIGHBOURS)..start];
+        let after = &zones[end..(end + NEIGHBOURS).min(zones.len())];
+        let own = run[0].2;
+        let around = (run.len() < NEIGHBOURS)
+            .then(|| agreed_zone(before, after))
+            .flatten()
+            .filter(|z| **z != own);
+        if let Some(around) = around {
+            off.extend(run.iter().map(|(e, _, own)| {
+                (
+                    (*e).clone(),
+                    format!("tz={own}  around={around}"),
+                    format!("{own}, around {around}"),
+                )
+            }));
+        }
+        start = end;
+    }
+    off
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::tests::{all, t_at};
     use super::*;
     use datum_core::entry::Verb;
-    use datum_core::time::DatumTime;
 
     /// A row whose stored `occur_time_offset` disagrees with the offset its
     /// `occur_time_tz` produces at that instant is flagged by the `tz`
@@ -166,6 +214,45 @@ mod tests {
             detail.contains("stored_offset=0") && detail.contains("expected_offset=-360"),
             "detail names both offsets: {detail}",
         );
+    }
+
+    /// da-h8dvi: hourly `work` rows, `B` in Berlin and `T` in Tokyo, and the
+    /// hours `check tz` reports as off their neighbours' zone.
+    fn off_hours(zones: &str) -> Vec<String> {
+        let db = Db::open_in_memory().unwrap();
+        for (h, z) in zones.chars().enumerate() {
+            let tz = if z == 'B' {
+                "Europe/Berlin"
+            } else {
+                "Asia/Tokyo"
+            };
+            let at = t_at("2024-01-15T00:00:00+00:00").utc + chrono::Duration::hours(h as i64);
+            let occur = DatumTime::from_utc_and_tz(at, tz).unwrap();
+            let entry = Entry::new_legacy("work", Verb::Point, None, None, Some(occur), None, "d1");
+            db.insert_entry(&entry).unwrap();
+        }
+        let issues = collect_tz_drift(&db, &all(&db)).unwrap();
+        let Some(issue) = issues.iter().find(|i| i.category == "tz_off_neighbours") else {
+            return vec![];
+        };
+        assert_eq!(issue.severity, Severity::Warning);
+        issue.entries.iter().map(|e| e.state.clone()).collect()
+    }
+
+    /// A spike — one or two rows the zone around them agrees is not theirs —
+    /// is reported whole; a step, a move, is not, nor is a run as long as
+    /// the window, nor a spike at the edge with nothing past it.
+    #[test]
+    fn tz_check_flags_a_spike_and_not_a_step() {
+        let tokyo = "Asia/Tokyo, around Europe/Berlin".to_string();
+        assert_eq!(off_hours("BBBTBBB"), std::slice::from_ref(&tokyo));
+        assert_eq!(off_hours("BBBTTBBB"), [tokyo.clone(), tokyo]);
+        assert!(off_hours("BBBTTTT").is_empty());
+        assert!(off_hours("BBBTTTBBB").is_empty());
+        assert!(off_hours("BBBT").is_empty());
+        assert!(off_hours("TBBB").is_empty());
+        // Two spikes a run of two apart are each found.
+        assert_eq!(off_hours("BTBBTBBB").len(), 2);
     }
 
     /// An in-sync row (offset derived correctly at construction) produces no

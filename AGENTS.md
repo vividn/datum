@@ -116,6 +116,14 @@ exactly across midnights. `datum check stats` recomputes a sample of days and sa
   (`-y occur_time=-6` is refused), and `-D` wins over the key as over `-t`
   (`-D occur_time=18:30` is the whole day); on `update` its anchor is the
   entry's time
+- with no `-z`, a log at a past instant is placed as if `-z` named the zone
+  the entries around it agree on (`agreed_zone`: most of the three nearest on
+  each side, the same zone on both, so a move names nothing) where that is not
+  the host's; the log says so in one line and the entry carries
+  `extra_metadata.tz_from = "neighbours"` (da-h8dvi). An offset on `-t` is
+  believed. `datum check tz` warns of the converse, `tz_off_neighbours`: a run
+  of one or two entries whose neighbours agree on another zone — a spike,
+  where a move is a step
 - a duration is a trailing positional (`datum end work 30m`) or `dur=30m`
   (`1:30`, `2h`, ISO `PT30M` all work). It says how long the thing LASTED,
   so the block ENDS at the entry's time and the span precedes it —

@@ -1517,7 +1517,7 @@ const TIME_FORMS: &[FormGroup] = &[
         ],
     },
     FormGroup {
-        heading: "ZONE (what -t and -d are read in)",
+        heading: "ZONE (what -t and -d are read in; with no -z, a past time takes the zone\n  the entries either side of it agree on, and says so)",
         durations: false,
         forms: &[
             FormSpec {

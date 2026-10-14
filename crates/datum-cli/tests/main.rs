@@ -79,6 +79,7 @@ mod last_state_and_moment;
 mod mark_titles;
 mod migrate_cmd;
 mod multi_alias_e2e;
+mod neighbour_zone;
 mod no_timestamp;
 mod note_comment_remainder;
 mod now_cmd;

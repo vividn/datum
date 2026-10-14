@@ -13,6 +13,7 @@ use chrono::{DateTime, Utc};
 use crate::error::Result;
 use crate::time::{Zone, ZoneTimeline};
 
+use super::spec::NOT_META_FIELD_SQL;
 use super::Db;
 
 /// One row per *change* of zone, not one per entry.
@@ -103,6 +104,48 @@ impl Db {
         }
         Ok(ZoneTimeline::new(observations, fallback))
     }
+
+    /// The named zones of the [`NEIGHBOURS`] entries nearest before `at`
+    /// and of those nearest after it, the rows [`ZONE_CHANGES_SQL`] reads,
+    /// for [`agreed_zone`] (da-h8dvi).
+    pub fn zones_around(&self, at: DateTime<Utc>) -> Result<(Vec<String>, Vec<String>)> {
+        let side = |cmp: &str, order: &str| -> Result<Vec<String>> {
+            let sql = format!(
+                "SELECT occur_time_tz FROM entries
+                  WHERE deleted_at IS NULL
+                    AND superseded_by IS NULL
+                    AND occur_time {cmp} ?1
+                    AND occur_time_tz IS NOT NULL
+                    AND {NOT_META_FIELD_SQL}
+                  ORDER BY occur_time {order}
+                  LIMIT {NEIGHBOURS}"
+            );
+            let mut stmt = self.conn.prepare_cached(&sql)?;
+            let rows = stmt.query_map([at.to_rfc3339()], |row| row.get(0))?;
+            Ok(rows.collect::<std::result::Result<_, _>>()?)
+        };
+        Ok((side("<", "DESC")?, side(">", "ASC")?))
+    }
+}
+
+/// How many entries either side of an instant speak for its zone.
+pub const NEIGHBOURS: usize = 3;
+
+/// The zone the entries around an instant agree on (da-h8dvi): the one more
+/// than half of those `before` it share, when more than half of those
+/// `after` it share it too. An empty side agrees on nothing; a side of one
+/// is that one.
+/// A window and not the one entry beside it, so a lone mis-zoned row is
+/// outvoted rather than copied forward; and both sides, so a move — the zone
+/// changing and staying changed — names nothing. A real move looks like a
+/// step and a mistake like a spike.
+pub fn agreed_zone<'a, S: PartialEq>(before: &'a [S], after: &[S]) -> Option<&'a S> {
+    fn most<S: PartialEq>(side: &[S]) -> Option<&S> {
+        side.iter()
+            .find(|z| 2 * side.iter().filter(|o| o == z).count() > side.len())
+    }
+    let zone = most(before)?;
+    (most(after)? == zone).then_some(zone)
 }
 
 #[cfg(test)]
