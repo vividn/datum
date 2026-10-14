@@ -14,11 +14,15 @@ const ANY = '.field-form';
  * field, `verb` its kind — once any place before it has gone: a Done slides
  * back before its tab closes. `saved` is `datum.field`'s answer, what the
  * place's next save ran or null when left, BOXED: awaiting this must not
- * await the save.
+ * await the save. Nor may a test that never awaits it be failed by it: a
+ * page closed under a test that threw rejects it with «Target page closed»,
+ * which node would report in place of what the test threw (da-w3y9q).
  */
 export async function openField(page, field, verb) {
 	await page.locator(ANY).waitFor({ state: 'detached' });
-	return { saved: page.evaluate(([f, v]) => window.datum.field(f, v), [field, verb]) };
+	const saved = page.evaluate(([f, v]) => window.datum.field(f, v), [field, verb]);
+	saved.catch(() => {});
+	return { saved };
 }
 
 /** Leave the place running nothing: its Cancel. */

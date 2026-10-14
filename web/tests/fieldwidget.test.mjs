@@ -471,3 +471,16 @@ describe('the field widget', () => {
 		});
 	});
 });
+
+// A test that throws with a place open fails with what it threw, not with
+// the save's «Target page closed» as its page is closed under it (da-w3y9q).
+test('a test that throws with the place open fails as itself', async () => {
+	await assert.rejects(
+		withApp(async ({ page }) => {
+			await openField(page, 'coffee');
+			await page.locator(FIELD_FORM).waitFor();
+			throw new Error('the real assertion');
+		}),
+		/the real assertion/
+	);
+});
