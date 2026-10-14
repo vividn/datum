@@ -28,12 +28,13 @@ export function confirm(text: string, action: string, name = '', cancel = 'cance
  * Which of `actions` the reader pressed in a dialog saying `text`, or null
  * for Escape or cancel: a CLI question with more answers than yes, as a
  * chained purge's leave or rejoin (da-0hay9). Each answer opens the next
- * dialog, so each wears `open`'s chevron.
+ * dialog, so each wears `open`'s chevron. No answer is the danger, so all are
+ * the accent, unless `dangerousCancel`: the cancel throws work away and is red.
  */
-export function choose(text: string, actions: string[], cancel = 'cancel'): Promise<string | null> {
+export function choose(text: string, actions: string[], cancel = 'cancel', dangerousCancel = false): Promise<string | null> {
 	const [action, ...also] = actions;
 	return new Promise((resolve) => {
-		const dialog = new Confirm({ target: document.body, props: { text, action, also, cancel, kind: 'open' } });
+		const dialog = new Confirm({ target: document.body, props: { text, action, also, cancel, kind: 'open', danger: dangerousCancel ? 'cancel' : null } });
 		dialog.$on('chose', ({ detail }) => {
 			dialog.$destroy();
 			resolve(detail);

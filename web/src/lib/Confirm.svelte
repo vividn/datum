@@ -7,6 +7,9 @@
 	type. Escape, cancel or a wrong name are all no. A question with more
 	answers than one, a chained purge's leave or rejoin (da-0hay9), puts
 	the rest in `also`, and `chose` says which was pressed, or null.
+	`danger` names the button that destroys, drawn in `--error`: the action
+	for a confirm, the cancel for a choice whose way out throws work away
+	(layout mode's Discard changes), or none, and every action is the accent.
 -->
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
@@ -20,6 +23,7 @@
 	export let name = '';
 	export let cancel = 'cancel';
 	export let kind: ActKind = 'run';
+	export let danger: 'action' | 'cancel' | null = 'action';
 
 	const dispatch = createEventDispatcher<{ close: boolean; chose: string | null }>();
 	let dialog: HTMLDialogElement;
@@ -30,6 +34,8 @@
 
 <dialog
 	class="confirm"
+	class:danger
+	style:--act={danger === 'action' ? 'var(--error)' : 'var(--accent)'}
 	bind:this={dialog}
 	on:close={() => {
 		const pressed = typed === name && [action, ...also].includes(dialog.returnValue) ? dialog.returnValue : null;
@@ -46,7 +52,7 @@
 			{#each [action, ...also] as a}
 				<button value={a} use:act={kind}>{a}</button>
 			{/each}
-			<button type="button" on:click={() => dialog.close()}>{cancel}</button>
+			<button type="button" class:danger={danger === 'cancel'} on:click={() => dialog.close()}>{cancel}</button>
 		</div>
 	</form>
 </dialog>
@@ -56,10 +62,14 @@
 		max-width: min(26rem, calc(100vw - 2rem));
 		background: var(--ground);
 		color: var(--ink-bright);
-		border: 1px solid var(--error);
+		border: 1px solid var(--accent);
 		border-radius: 6px;
 		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		font-size: 0.9rem;
+	}
+
+	.confirm.danger {
+		border-color: var(--error);
 	}
 
 	.confirm::backdrop {
@@ -102,11 +112,16 @@
 
 	/* The action runs at once, so the double outline ($lib/act.ts). */
 	button:global([data-act='run']) {
-		border: 3px double var(--error);
+		border: 3px double var(--act);
 		padding: calc(0.2rem - 2px) calc(0.8rem - 2px);
 	}
 
 	button[value] {
+		border-color: var(--act);
+		color: var(--act);
+	}
+
+	button.danger {
 		border-color: var(--error);
 		color: var(--error);
 	}

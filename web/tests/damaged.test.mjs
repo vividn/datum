@@ -27,6 +27,16 @@ const garble = (page) =>
 		OPFS_DIR
 	);
 
+/** Whether `locator` is drawn in the colour the CSS token `token` resolves to (da-ad2lt). */
+const inks = (locator, token) =>
+	locator.evaluate((el, token) => {
+		const probe = el.appendChild(document.createElement('span'));
+		probe.style.color = `var(${token})`;
+		const same = getComputedStyle(probe).color === getComputedStyle(el).color;
+		probe.remove();
+		return same;
+	}, token);
+
 /** The page after a reload onto the damaged file: its notice, once a command has failed on it. */
 async function damaged(page) {
 	await page.reload();
@@ -40,7 +50,10 @@ async function reset(page, notice) {
 	await notice.getByRole('button', { name: 'Reset this database' }).click();
 	const dialog = page.locator('dialog.confirm');
 	await dialog.locator('input').fill('datum');
-	await dialog.getByRole('button', { name: 'reset', exact: true }).click();
+	// A confirm's action is the danger, and red.
+	const yes = dialog.getByRole('button', { name: 'reset', exact: true });
+	assert.ok(await inks(yes, '--error'));
+	await yes.click();
 }
 
 describe('a damaged database', () => {

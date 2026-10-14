@@ -19,6 +19,16 @@ import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { ONE_PANE } from './support/layout.mjs';
 import { until } from './support/until.mjs';
 
+/** Whether `locator` is drawn in the colour the CSS token `token` resolves to (da-ad2lt). */
+const inks = (locator, token) =>
+	locator.evaluate((el, token) => {
+		const probe = el.appendChild(document.createElement('span'));
+		probe.style.color = `var(${token})`;
+		const same = getComputedStyle(probe).color === getComputedStyle(el).color;
+		probe.remove();
+		return same;
+	}, token);
+
 before(startApp);
 after(stopApp);
 
@@ -388,6 +398,10 @@ describe('the seam under review', () => {
 			await dialog.waitFor();
 			assert.match(await dialog.locator('p').innerText(), /^This copy is in sync chain \S+: leave .*rejoin .*\nLeave or rejoin\?$/s);
 			assert.equal(await name.count(), 0);
+			// Neither answer destroys (the name is asked next), so neither is red.
+			assert.ok(await inks(button('leave'), '--accent'));
+			assert.ok(await inks(button('rejoin'), '--accent'));
+			assert.ok(!(await inks(button('cancel'), '--error')));
 			await button('cancel').click();
 			await said;
 			assert.match((await app.outputs()).at(-1), /aborted \(neither leave nor rejoin\)/);
