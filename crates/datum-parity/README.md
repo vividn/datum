@@ -106,13 +106,13 @@ against it, except the lock, its keys and `text/fixtures.toml`:
   (`-- --nocapture`), not failed.
 
 Only vividn changes `APPROVED`. `.forgejo/workflows/approvals.yml` runs
-`scripts/check_approvals_signed.sh` on every PR's own commits (the train
-squash-merges, so no signature reaches main): each commit touching the
+`scripts/check_approvals_signed.sh` on every PR's own commits, based on
+`staging` or `main` (a PR squash-merges, so no signature survives the merge): each commit touching the
 lock, `goldens/allowed_signers`, the script, the test or the workflow must
 be SSH-signed by a key in `goldens/allowed_signers` *as on the PR's
 base*. An author name counts for nothing. The file ships with no key;
 vividn adds his own (the file says how), and until then every change to
-`APPROVED` is red. The check must also be a required status on `main`.
+`APPROVED` is red. The check must also be a required status on `staging` and `main`.
 
 ## daydumb against the snapshots
 

@@ -10,14 +10,18 @@
 # script in the same commits it is being checked for. Nothing from the PR is
 # executed here; its commits are only read by git.
 #
-# It runs on the PR's commits because the train squash-merges through the
-# forge's API: the commit on main is the forge's, and carries no signature.
+# It runs on the PR's commits because a PR squash-merges through the forge's
+# API: the commit it lands is the forge's, and carries no signature.
+#
+# Both branches (da-2m6lv): every PR bases on staging since 2026-10-07, and
+# under `branches: [main]` alone this never ran. Staging is the base it then
+# reads the check from; main stays for a PR opened against it.
 name: Approvals
 
 on:
   pull_request_target:
     types: [opened, synchronize, reopened]
-    branches: [main]
+    branches: [staging, main]
 
 jobs:
   signed:
