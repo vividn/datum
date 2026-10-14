@@ -10,6 +10,7 @@
 // Kept free of the app — no stores, no `run` — so node can import it.
 
 import { AwsV4Signer } from 'aws4fetch';
+import { probe, type StepResult } from './probe.js';
 
 export interface S3Config {
 	/** Blank for AWS: `https://s3.<region>.amazonaws.com`. */
@@ -109,53 +110,13 @@ export function s3(c: S3Config) {
 	};
 }
 
-export type Step = 'write' | 'list' | 'read' | 'delete';
-
-/** One step of `testConnection`: done, or failed and why. */
-export interface StepResult {
-	step: Step;
-	ok: boolean;
-	cause?: string;
-}
-
 /**
  * Write, list, read and delete a small probe object under the prefix —
  * everything a plan does — stopping at the first step that fails.
+ * Listed by its own name, so the thousand-key page cannot leave it out.
  */
-export async function testConnection(c: S3Config): Promise<StepResult[]> {
-	const bucket = s3(c);
-	const file = `datum-probe-${Date.now().toString(36)}.txt`;
-	const bytes = new TextEncoder().encode('datum.day connection test\n');
-	const steps: [Step, () => Promise<unknown>][] = [
-		['write', () => bucket.put(file, bytes)],
-		[
-			'list',
-			async () => {
-				// Listed by its own name, so the thousand-key page cannot leave it out.
-				if (!(await bucket.list(file)).includes(`${c.prefix ?? ''}${file}`)) throw new Error('the probe written is not listed');
-			}
-		],
-		[
-			'read',
-			async () => {
-				const back = await bucket.get(file);
-				if (!back || new TextDecoder().decode(back) !== new TextDecoder().decode(bytes)) throw new Error('the probe read back differs');
-			}
-		],
-		['delete', () => bucket.remove(file)]
-	];
-	const results: StepResult[] = [];
-	for (const [step, go] of steps) {
-		try {
-			await go();
-			results.push({ step, ok: true });
-		} catch (e) {
-			results.push({ step, ok: false, cause: e instanceof Error ? e.message : String(e) });
-			break;
-		}
-	}
-	return results;
-}
+export const testConnection = (c: S3Config): Promise<StepResult[]> =>
+	probe(s3(c), async (file) => (await s3(c).list(file)).includes(`${c.prefix ?? ''}${file}`));
 
 /** The CORS rules a bucket needs for this page, in the JSON S3 and R2 take. LIST is a GET on the bucket. */
 export const corsRules = (origin: string): string =>

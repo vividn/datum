@@ -80,9 +80,10 @@ describe('an S3-compatible destination', () => {
 			const { page } = app;
 			assert.equal((await app.run(['occur', 'coffee'])).code, 0);
 			const sheet = await openSheet(page);
-			// The one destination on offer; the tab's memory is DEBUG's alone.
+			// The destinations on offer; the tab's memory is DEBUG's alone.
 			assert.deepEqual(await sheet.locator('select[data-plan-field="kind"] option').allInnerTexts(), [
-				'S3-compatible bucket (AWS, R2, B2, Wasabi, MinIO)'
+				'S3-compatible bucket (AWS, R2, B2, Wasabi, MinIO)',
+				'WebDAV folder (Nextcloud, ownCloud, many NAS boxes)'
 			]);
 			assert.equal(await sheet.locator('input[data-plan-field="prefix"]').inputValue(), PREFIX);
 			assert.equal(await sheet.locator('input[data-plan-field="secret"]').getAttribute('type'), 'password');

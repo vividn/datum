@@ -17,8 +17,9 @@
 // last — the order the CLI itself keeps, so a run that dies halfway leaves
 // an index naming whole files — and the file it replaced is removed.
 //
-// A destination is three calls (`Destination`). The real kind is an
-// S3-compatible bucket (da-pstzw, $lib/s3.ts); `memory`, a bucket in this
+// A destination is three calls (`Destination`). The real kinds are an
+// S3-compatible bucket (da-pstzw, $lib/s3.ts) and a WebDAV folder
+// (da-bmxbb, $lib/webdav.ts); `memory`, a bucket in this
 // tab, is offered on the DEBUG database alone (vremya on #217): a plan
 // survives a reload and a tab's bucket does not, so offered anywhere else
 // it would look like protection and hold nothing. NOT ENCRYPTED in v1
@@ -53,7 +54,9 @@ import type { RestorePreview } from './dbio.js';
 import type { Stage } from './dbProtocol.js';
 import { DEBUG_DB } from './layout/defaults.js';
 import { cliError, run, type RunResult } from './run.js';
-import { corsRules, DEFAULT_PREFIX, s3, testConnection, type StepResult } from './s3.js';
+import type { StepResult } from './probe.js';
+import { corsRules, DEFAULT_PREFIX, s3, testConnection } from './s3.js';
+import { webdav, corsHeaders as webdavCors, testConnection as testWebdav } from './webdav.js';
 
 /** Where a plan's files go. Names are flat: `index.json` and the slot files. */
 export interface Destination {
@@ -83,10 +86,10 @@ export interface DestinationKind {
 	/** Offered on the DEBUG database only: a fake, for trying the widget and for tests. */
 	debug?: boolean;
 	open(config: Record<string, string>): Destination;
-	/** Write, list, read and delete a probe, naming the step that fails. */
+	/** Write, read and delete a probe — and list it, where the kind lists — naming the step that fails. */
 	test?(config: Record<string, string>): Promise<StepResult[]>;
-	/** The CORS rules the destination needs to allow `origin`, to paste. */
-	cors?(origin: string): string;
+	/** What the destination needs to allow this page: a summary, how, and the rules for `origin` to paste. */
+	cors?: { summary: string; note: string; rules(origin: string): string };
 }
 
 /** Buckets of the `memory` kind, by name — gone with the tab. */
@@ -110,7 +113,36 @@ export const KINDS: Record<string, DestinationKind> = {
 		],
 		open: s3,
 		test: testConnection,
-		cors: corsRules
+		cors: {
+			summary: 'CORS: the bucket must allow this page',
+			note:
+				"The browser talks to the bucket directly. Paste these rules into the bucket's CORS settings (S3: Permissions → CORS; " +
+				'R2: Settings → CORS policy; B2, Wasabi and MinIO take them through their S3 API). Listing is a GET on the bucket.',
+			rules: corsRules
+		}
+	},
+	webdav: {
+		label: 'WebDAV folder (Nextcloud, ownCloud, many NAS boxes)',
+		fields: [
+			{ key: 'url', label: 'Folder URL', placeholder: 'https://cloud.example.com/remote.php/dav/files/<user>/datum-backups/' },
+			{ key: 'user', label: 'User' },
+			{
+				key: 'password',
+				label: 'App password',
+				secret: true,
+				note: "Kept in this browser, unencrypted. Use an app password made for datum.day, not the account's own."
+			}
+		],
+		open: webdav,
+		test: testWebdav,
+		cors: {
+			summary: 'CORS: the server must allow this page',
+			note:
+				'The browser talks to the server directly, and most WebDAV servers do not allow that until told to. Have the web ' +
+				'server in front of it send these headers on every response, refusals included (nginx: add_header … always), and ' +
+				'answer the OPTIONS preflight itself, without asking for a password.',
+			rules: webdavCors
+		}
 	},
 	memory: {
 		label: 'memory (this tab only, for trying it out)',

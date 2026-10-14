@@ -54,7 +54,7 @@
 		type Plan,
 		type Reach
 	} from '$lib/backups.js';
-	import type { StepResult } from '$lib/s3.js';
+	import type { StepResult } from '$lib/probe.js';
 
 	let body: HTMLElement | undefined;
 	let note = '';
@@ -70,6 +70,8 @@
 	let found: Backup[] | null = null;
 	/** «Test connection»'s steps, once run. */
 	let probe: StepResult[] | null = null;
+	/** What the new plan's destination needs to allow this page. */
+	$: cors = KINDS[fresh.kind]?.cors;
 
 	const EVERY: [number, string][] = [
 		[15 * 60, 'every 15 minutes'],
@@ -316,15 +318,11 @@
 					>
 					{#if field.note}<p class="quiet note-field">{field.note}</p>{/if}
 				{/each}
-				{#if KINDS[fresh.kind]?.cors}
+				{#if cors}
 					<details class="cors">
-						<summary>CORS: the bucket must allow this page</summary>
-						<p class="quiet">
-							The browser talks to the bucket directly. Paste these rules into the bucket's CORS settings (S3:
-							Permissions → CORS; R2: Settings → CORS policy; B2, Wasabi and MinIO take them through their S3 API). Listing
-							is a GET on the bucket.
-						</p>
-						<pre data-cors>{KINDS[fresh.kind].cors?.(location.origin)}</pre>
+						<summary>{cors.summary}</summary>
+						<p class="quiet">{cors.note}</p>
+						<pre data-cors>{cors.rules(location.origin)}</pre>
 					</details>
 				{/if}
 				<fieldset>
