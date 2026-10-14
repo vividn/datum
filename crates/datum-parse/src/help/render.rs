@@ -167,6 +167,13 @@ fn render_topic(topic: &TopicSpec) -> String {
             s.push('\n');
         }
     }
+    if !topic.env.is_empty() {
+        s.push_str("ENVIRONMENT:\n");
+        for v in topic.env {
+            let pad = topic.summary_col.saturating_sub(2 + v.name.len()).max(2);
+            s.push_str(&format!("  {}{:pad$}{}\n", v.name, "", v.summary));
+        }
+    }
     s.push_str(topic.outro);
     s
 }

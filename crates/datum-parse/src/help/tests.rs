@@ -84,6 +84,7 @@ GLOBAL OPTIONS:
   -V, --version              Show version
 
 Run `datum <command> --help` for per-command flag detail.
+Environment variables datum reads: `datum help env`.
 With no subcommand, `datum` drops into an interactive REPL (inherits `--db`).
 ";
 
@@ -533,6 +534,22 @@ fn the_logging_topic_carries_the_whole_wall() {
         page.contains("`note` is the exception"),
         "the topic has to name the one verb the shared set is not true for:\n{page}"
     );
+}
+
+/// The binary says which variables it reads, from the table the README's
+/// is generated from, so the two cannot differ (da-bread).
+#[test]
+fn the_env_topic_lists_every_variable() {
+    let page = command_help("env");
+    assert!(page.starts_with("datum help env — "), "{page}");
+    for v in super::ENV_VARS {
+        assert!(
+            page.lines()
+                .any(|l| l.starts_with(&format!("  {} ", v.name)) && l.ends_with(v.summary)),
+            "`datum help env` is missing {}:\n{page}",
+            v.name
+        );
+    }
 }
 
 /// The fold is a RENDERING choice: the machine readers still get the whole

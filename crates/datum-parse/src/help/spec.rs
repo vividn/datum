@@ -189,6 +189,9 @@ pub struct TopicSpec {
     /// Examples of the values those flags take, in groups after the
     /// table. `datum help time` has them (da-6yqu9); empty for none.
     pub forms: &'static [FormGroup],
+    /// Environment variables, as an ENVIRONMENT table after the options.
+    /// `datum help env` lists [`ENV_VARS`](super::ENV_VARS); empty for none.
+    pub env: &'static [EnvVarSpec],
     /// Prose after the option table, for the exceptions a shared set
     /// always has. Rendered verbatim; empty for none.
     pub outro: &'static str,
@@ -199,7 +202,9 @@ pub struct TopicSpec {
 /// The README used to keep this table by hand, which is how
 /// `DATUM_ID_DELIMITER` went undocumented and `DATUM_EDITOR` was
 /// described as `EDITOR` (da-ce7n3). The README's table is generated from
-/// here now, and `env_table_covers_what_the_config_layer_reads` in
+/// here now, and so is `datum help env`, which is how a binary without
+/// the checkout says what it reads (da-bread);
+/// `env_table_covers_what_the_config_layer_reads` in
 /// `datum-cli` fails if the config layer grows a variable it does not name.
 pub struct EnvVarSpec {
     pub name: &'static str,

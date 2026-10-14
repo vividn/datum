@@ -1111,6 +1111,7 @@ pub const TOP_LEVEL_USAGE: &str = "datum [--db NAME_OR_PATH] <command> [args]";
 
 /// Footer printed after `GLOBAL OPTIONS:`.
 pub const TOP_LEVEL_FOOTER: &str = "Run `datum <command> --help` for per-command flag detail.\n\
+     Environment variables datum reads: `datum help env`.\n\
      With no subcommand, `datum` drops into an interactive REPL \
      (inherits `--db`).";
 
@@ -1234,6 +1235,7 @@ pub const TOPICS: &[TopicSpec] = &[
         flags: LOG_FLAGS,
         summary_col: 24,
         forms: &[],
+        env: &[],
         outro: "\n`note` is the exception: it has no -C/--comment-remainder, because it\n\
                 always behaves as if -C had been given — every un-keyed word after\n\
                 the field joins extra_data.comment.\n\
@@ -1248,6 +1250,7 @@ pub const TOPICS: &[TopicSpec] = &[
         flags: TIME_FLAGS,
         summary_col: 24,
         forms: TIME_FORMS,
+        env: &[],
         outro: "\nNot taken: slash dates (9/28 is month-first or day-first depending on\n\
                 who types it), and words beyond the ones above (\"3 days ago at 10\").\n",
     },
@@ -1274,6 +1277,7 @@ pub const TOPICS: &[TopicSpec] = &[
         flags: &[],
         summary_col: 24,
         forms: &[],
+        env: &[],
         outro: "",
     },
     TopicSpec {
@@ -1286,6 +1290,7 @@ pub const TOPICS: &[TopicSpec] = &[
         }],
         summary_col: 24,
         forms: &[],
+        env: &[],
         outro: "\nThen the environment, as other tools read it:\n\
                 \n\
                 \x20 NO_COLOR=1          any non-empty value: no colour\n\
@@ -1293,6 +1298,16 @@ pub const TOPICS: &[TopicSpec] = &[
                 \x20 FORCE_COLOR=1       the same (not 0, false or empty)\n\
                 \n\
                 Then whether stdout is a terminal: colour on one, none in a pipe or file.\n",
+    },
+    TopicSpec {
+        name: "env",
+        summary: "the environment variables datum reads",
+        intro: "What each variable does when it is set.\n",
+        flags: &[],
+        summary_col: 24,
+        forms: &[],
+        env: ENV_VARS,
+        outro: "",
     },
 ];
 
@@ -1585,7 +1600,8 @@ pub fn find_topic(query: &str) -> Option<&'static TopicSpec> {
 //
 // The README kept this table by hand, which is how `DATUM_ID_DELIMITER`
 // went undocumented and `DATUM_EDITOR` was described as `EDITOR`. The
-// README's table is generated from here by `cargo xtask readme`, and
+// README's table is generated from here by `cargo xtask readme`, `datum
+// help env` prints it (da-bread), and
 // `env_table_covers_what_the_config_layer_reads` (datum-cli) fails when
 // the config layer reads a variable this table does not name.
 // ---------------------------------------------------------------------------
