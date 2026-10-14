@@ -1623,6 +1623,31 @@ fn a_copy_describes_itself_at_its_first_invite_and_renames_itself_without_an_adm
     assert!(a.ok(&["sync", "chain", "list"]).contains("phone"));
 }
 
+/// datum.day names itself after a join (da-uyyyg): `rename --unique` keeps
+/// a label no other member carries and adds this copy's short id to one
+/// another does, and `--check` refuses what a member may not carry, in no
+/// chain and writing nothing — before a join.
+#[test]
+fn rename_unique_grows_only_a_taken_label_and_check_needs_no_chain() {
+    let (a, b) = chained();
+    let label = |c: &Copy| member_of(c, &c.id())["label"].clone();
+    a.ok(&["sync", "chain", "rename", "--unique", "kitchen"]);
+    assert_eq!(label(&a), "kitchen");
+    // b joined as «b».
+    a.ok(&["sync", "chain", "rename", "--unique", "b"]);
+    assert_eq!(label(&a), format!("b {}", &a.id()[..10]).as_str());
+    assert!(a
+        .fails(&["sync", "chain", "rename", "--unique", &b.id(), "x"], "")
+        .contains("--unique names this copy alone"));
+
+    let c = Copy::new();
+    c.ok(&["sync", "chain", "rename", "--check", "datum.day (work)"]);
+    let why = c.fails(&["sync", "chain", "rename", "--check", "a\u{1b}[2J"], "");
+    assert!(why.contains("a control character"), "{why}");
+    // No endpoint key minted: a copy that checked a label is in no chain.
+    assert_eq!(c.query("SELECT count(*) FROM sync_local"), "0");
+}
+
 /// datum.day's client is `DATUM_CLIENT_ID`, `web-` and eight more
 /// (da-6kpj5): the copy starts a chain, is shown under it, and renames itself.
 #[test]

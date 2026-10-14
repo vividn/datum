@@ -350,6 +350,72 @@ describe('a browser joins a chain (da-l9kdr)', () => {
 	});
 });
 
+describe('the name a browser joins as (da-uyyyg)', () => {
+	/** `app`'s own label and endpoint, as its `sync status` has them. */
+	const self = async (app) => JSON.parse((await app.run(['sync', 'status', '--json'])).stdout).this;
+	/** The labels `native`'s chain holds, one per member. */
+	const labels = async (native) => JSON.parse((await native.run(['sync', 'chain', 'list', '--json'])).stdout).members.map((m) => m.label);
+
+	/** Open a join link to `native`'s chain in `app`, the card's name field filled in as it comes. */
+	async function card(app, native) {
+		const serving = native.spawn(['sync', 'chain', 'invite']);
+		const [, link] = await until(() => /datum sync chain connect '([^']+)'/.exec(serving.stdout), Boolean);
+		await app.goto(`/sync/join#${link.split('#').pop()}`);
+		const card = app.page.locator('.card.join');
+		const name = card.getByLabel('This device’s name');
+		await name.waitFor();
+		assert.equal(await name.inputValue(), 'datum.day (datum)');
+		return { card, name, join: card.getByRole('button', { name: 'Join', exact: true }) };
+	}
+
+	test('two browsers joining one chain, neither typing a name, are named apart: the second grows a short id', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			await twoBrowsers(async (a, b) => {
+				const first = await card(a, native);
+				await first.join.click();
+				await first.card.locator('.done').waitFor();
+				assert.equal((await self(a)).label, 'datum.day (datum)');
+				// The inviter holds the name from the admit, before the second joins through it.
+				assert.ok((await labels(native)).includes('datum.day (datum)'));
+
+				const second = await card(b, native);
+				await second.join.click();
+				await second.card.locator('.done').waitFor();
+				const me = await self(b);
+				assert.equal(me.label, `datum.day (datum) ${me.endpoint.slice(0, 10)}`);
+			});
+		} finally {
+			await native.close();
+		}
+	});
+
+	test('a name typed is checked before the join, and kept as typed though a member carries it', async () => {
+		const native = await nativeCopy(relay);
+		try {
+			assert.equal((await native.run(['sync', 'new-invite'])).code, 0);
+			assert.equal((await native.run(['sync', 'chain', 'rename', 'kitchen'])).code, 0);
+			await withWallClock(
+				async (app) => {
+					const { card: c, name, join } = await card(app, native);
+					await name.fill('bell\u0007');
+					await join.click();
+					await until(() => app.page.locator('.failure[role=alert]').innerText(), (t) => /a label cannot contain a control character/.test(t));
+					assert.equal(JSON.parse((await app.run(['sync', 'chain', 'list', '--json'])).stdout).chain, null);
+
+					await name.fill('kitchen');
+					await join.click();
+					await c.locator('.done').waitFor();
+					assert.equal((await self(app)).label, 'kitchen');
+				},
+				{ prepare: relayed(relay) }
+			);
+		} finally {
+			await native.close();
+		}
+	});
+});
+
 describe('two browsers', () => {
 	test('pair through the relay, converge, and a write in one appears in the other untouched', async () => {
 		await withWallClock(

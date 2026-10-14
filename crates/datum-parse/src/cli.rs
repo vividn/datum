@@ -856,11 +856,16 @@ pub enum SyncCommand {
     },
     /// `datum sync chain rename [<WHO>] <LABEL> [--admin-key <FILE>]` —
     /// relabel this copy (no admin needed), or another member (an admin
-    /// act in a locked chain).
+    /// act in a locked chain). datum.day's, unlisted: `--unique` takes
+    /// LABEL with this copy's short id after it where another member
+    /// carries it, and `--check` only says whether LABEL is one a member
+    /// may carry, before a join (da-uyyyg).
     Rename {
         who: Option<String>,
         label: String,
         admin_key: Option<String>,
+        unique: bool,
+        check: bool,
     },
     /// `datum sync chain ack [<WHO> | --all]` — acknowledge a notice: a new
     /// endpoint or admin, or (`unlock`) the chain's unlocking. Bare, the one

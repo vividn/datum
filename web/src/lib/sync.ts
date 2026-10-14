@@ -44,7 +44,7 @@
 // as `DATUM_SYNC_RELAY` names one for the CLI: the tests' local relay.
 
 import { writable, type Readable } from 'svelte/store';
-import { chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusArgv, vectorArgv } from './calls.js';
+import { chainListArgv, endpointKeyArgv, newInviteArgv, renameArgv, syncStatusArgv, uniqueRenameArgv, vectorArgv } from './calls.js';
 import { announceHere, onAnyChange } from './changes.js';
 import type { SyncEvent, SyncReport, SyncRequest, TicketAbout } from './syncProtocol.js';
 import { cliError, dbOf, type RunResult } from './run.js';
@@ -98,7 +98,7 @@ export interface Invite {
 	expires: string;
 }
 
-type Call = { op: 'offer'; invite?: Invite } | { op: 'connect'; ticket: string } | { op: 'sync' };
+type Call = { op: 'offer'; invite?: Invite } | { op: 'connect'; ticket: string; label?: string } | { op: 'sync' };
 
 const states = writable<Record<string, SyncState>>({});
 /** Every database's sync state this tab has heard, from its leader. */
@@ -259,7 +259,10 @@ class Leader {
 		this.notices = status?.notices ?? [];
 		this.peers = (status?.members ?? []).filter((p): p is Peer => !p.revoked && !!p.addr);
 		if (listed) await this.start();
-		if (joined) await cli(['--db', this.db, ...renameArgv(this.label)]);
+		// It joined as the name its admit records: one it was told stays, the
+		// suggestion grows on a collision, as after a join not cut short.
+		const named = this.label === suggestedLabel(this.db) ? uniqueRenameArgv(this.label) : renameArgv(this.label);
+		if (joined) await cli(['--db', this.db, ...named]);
 		this.post();
 	}
 
@@ -367,11 +370,15 @@ class Leader {
 		if (c.op === 'sync') return this.syncNow();
 		if (c.op === 'connect') {
 			await this.start();
-			const report = await ask<SyncReport>(this.db, { op: 'connect', ticket: c.ticket }).finally(() => this.progress());
+			// The admit records the name it joins as, so the inviter holds it at once.
+			const label = c.label ?? suggestedLabel(this.db);
+			const report = await ask<SyncReport>(this.db, { op: 'connect', ticket: c.ticket, label }).finally(() => this.progress());
 			this.done(report.id, report);
-			// Admitted to a chain, it says what it is (`datum sync chain connect`).
+			// Admitted to a chain, it says what it is (`datum sync chain connect`):
+			// a name it was told as told, else the suggestion, grown on a collision.
 			await this.refresh();
-			if (this.chain) await cli(['--db', this.db, ...renameArgv(this.label)]);
+			const named = c.label ? renameArgv(c.label) : uniqueRenameArgv(suggestedLabel(this.db));
+			if (this.chain) await cli(['--db', this.db, ...named]);
 			return report;
 		}
 		// An invite the page wrote already (the Sync widget, approved with a
@@ -548,9 +555,18 @@ async function inviteHere(argv: string[]): Promise<RunResult> {
 	return { argv, code: 0, stdout: 'the invite is in the sync widget: scan its QR with the other device, or open its link there', stderr: '' };
 }
 
-/** Redeem `ticket` and sync (`datum sync chain connect`). */
-export function syncConnect(db: string, ticket: string): Promise<SyncReport> {
-	return call(db, { op: 'connect', ticket });
+/**
+ * What a browser joining a chain is called unless told (da-uyyyg): it has no
+ * user or host to name it by, as the CLI's `<user>@<host>` does, so its
+ * database's name; a member carrying it already, it grows a short id.
+ */
+export function suggestedLabel(db: string): string {
+	return `datum.day (${db})`;
+}
+
+/** Redeem `ticket` and sync (`datum sync chain connect [--label]`): `label`, or `suggestedLabel`. */
+export function syncConnect(db: string, ticket: string, label?: string): Promise<SyncReport> {
+	return call(db, { op: 'connect', ticket, label });
 }
 
 /** Sync `db` with every member now, on its leader, and wait for it. */

@@ -40,7 +40,7 @@
 	import { onAnyChange } from '$lib/changes.js';
 	import { currentDb, INTERNAL_DB, withDb } from '$lib/database.js';
 	import { listDatabases } from '$lib/databases.js';
-	import { DELIVER_MS, inviting, joinLink, syncConnect, syncedSince, syncNow, syncOffer, syncStates, ticketAbout, type SyncState } from '$lib/sync.js';
+	import { DELIVER_MS, inviting, joinLink, suggestedLabel, syncConnect, syncedSince, syncNow, syncOffer, syncStates, ticketAbout, type SyncState } from '$lib/sync.js';
 	import {
 		ackNotice,
 		approvalWords,
@@ -72,6 +72,7 @@
 		adminAddArgv,
 		adminListArgv,
 		adminRemoveArgv,
+		labelCheckArgv,
 		leaveArgv,
 		pausedArgv,
 		revertArgv,
@@ -123,9 +124,10 @@
 	/**
 	 * The join card (da-l9kdr): the ticket of the link the page was opened
 	 * on, the page's database it joins, and what joining does — or why it
-	 * cannot — in words, before anything is dialed.
+	 * cannot — in words, before anything is dialed — and the name it joins
+	 * as, the suggestion filled in (da-uyyyg).
 	 */
-	let join: { ticket: string; db: string; words: string[]; refused?: string; done?: string } | null = null;
+	let join: { ticket: string; db: string; name: string; words: string[]; refused?: string; done?: string } | null = null;
 
 	$: if (browser) void resolve($approving);
 	$: if (browser) void resolveJoin($joining);
@@ -208,7 +210,7 @@
 			},
 			() => ({ words: [], refused: 'Not a join link: it carries no ticket.' })
 		);
-		if (ticket === $joining) join = { ticket, db, ...said };
+		if (ticket === $joining) join = { ticket, db, name: suggestedLabel(db), ...said };
 	}
 
 	/**
@@ -222,7 +224,12 @@
 
 	const joinHere = (j: NonNullable<typeof join>) =>
 		doing(async () => {
-			const r = await syncConnect(j.db, j.ticket);
+			// A name typed is kept as typed; the suggestion, untouched, grows a
+			// short id on a collision. Either is refused before the join as
+			// `--label` is.
+			const typed = j.name.trim() && j.name !== suggestedLabel(j.db) ? j.name : undefined;
+			ok(await syncAct(j.db, labelCheckArgv(typed ?? suggestedLabel(j.db))));
+			const r = await syncConnect(j.db, j.ticket, typed);
 			joining.drop();
 			join = { ...j, done: `Joined: ${r.got} op(s) came in from ${r.label}, ${r.sent} went to it.` };
 		});
@@ -404,6 +411,8 @@
 						<p class="quiet joining" role="status">{joinProgress($syncStates[join.db]?.applying)}</p>
 					{:else if join.refused}
 						<p class="failure">{join.refused}</p>
+					{:else}
+						<label class="name">This device’s name <input type="text" bind:value={join.name} spellcheck="false" autocomplete="off" /></label>
 					{/if}
 				{/if}
 				<div class="actions">
@@ -692,6 +701,22 @@
 	}
 	.card .actions {
 		margin-top: 0.5rem;
+	}
+	.join .name {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.2rem 0.6rem;
+	}
+	.join input {
+		flex: 1 1 14ch;
+		min-width: 0;
+		background: var(--page);
+		border: 1px solid var(--rule);
+		border-radius: 4px;
+		padding: 0.2rem 0.4rem;
+		color: var(--ink-bright);
+		font: inherit;
 	}
 	.head {
 		margin: 0;

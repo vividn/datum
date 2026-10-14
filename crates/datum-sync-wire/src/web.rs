@@ -30,7 +30,8 @@ struct Cli {
     progress: Function,
     /// The endpoint its node is bound as.
     id: String,
-    label: String,
+    /// What its Hello says it is: a join's name from then on (da-uyyyg).
+    label: std::cell::RefCell<String>,
     version: Version,
 }
 
@@ -85,7 +86,7 @@ struct Summary {
 
 impl Store for Cli {
     fn label(&self) -> String {
-        self.label.clone()
+        self.label.borrow().clone()
     }
 
     async fn chain(&self) -> Result<Option<(String, usize)>> {
@@ -317,7 +318,7 @@ impl Node {
                 run,
                 progress,
                 id: ep.id().to_string(),
-                label,
+                label: label.into(),
                 version: Version { datum, schema },
             },
             ep,
@@ -350,9 +351,13 @@ impl Node {
         report(dial(&self.cli, &self.ep, addr, None).await)
     }
 
-    /// `datum sync chain connect`: redeem `ticket` and sync.
-    pub async fn connect(&self, ticket: String) -> Result<String, JsError> {
+    /// `datum sync chain connect [--label]`: redeem `ticket` as `label`,
+    /// which the admit records, and sync.
+    pub async fn connect(&self, ticket: String, label: Option<String>) -> Result<String, JsError> {
         let ticket = Ticket::decode(&ticket).map_err(js)?;
+        if let Some(label) = label {
+            self.cli.label.replace(label);
+        }
         report(redeem(&self.cli, &self.ep, &ticket).await)
     }
 

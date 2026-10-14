@@ -192,12 +192,14 @@ fn parse_chain(rest: &mut Rest) -> Result<SyncCommand> {
             show_revoked: opts(rest, &[], &["show-revoked"], 0..=0)?.on("show-revoked"),
         },
         Some("rename") => {
-            let mut o = opts(rest, &["admin-key"], &[], 1..=2)?;
+            let mut o = opts(rest, &["admin-key"], &["unique", "check"], 1..=2)?;
             let label = o.positional.pop().unwrap_or_default();
             SyncCommand::Rename {
                 who: o.positional.pop(),
                 label,
                 admin_key: o.get("admin-key"),
+                unique: o.on("unique"),
+                check: o.on("check"),
             }
         }
         Some("revoke") => act(rest, SyncAdminAct::Revoke, &[], &[])?,
@@ -638,7 +640,9 @@ mod tests {
             SyncCommand::Rename {
                 who: Some("abcd".into()),
                 label: "phone".into(),
-                admin_key: Some("k".into())
+                admin_key: Some("k".into()),
+                unique: false,
+                check: false
             }
         );
         assert_eq!(

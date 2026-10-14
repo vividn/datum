@@ -56,18 +56,9 @@ pub fn label() -> String {
         "unknown".into()
     };
     match std::env::var("USER").or_else(|_| std::env::var("LOGNAME")) {
-        Ok(user) if !user.is_empty() => fit(&format!("{user}@{host}"), chain::MAX_LABEL),
-        _ => fit(&host, chain::MAX_LABEL),
+        Ok(user) if !user.is_empty() => chain::fit(&format!("{user}@{host}"), chain::MAX_LABEL),
+        _ => chain::fit(&host, chain::MAX_LABEL),
     }
-}
-
-/// `s` within the chain's label rules, whatever it holds: at most `max`
-/// characters, each one a label may carry.
-fn fit(s: &str, max: usize) -> String {
-    s.chars()
-        .filter(|c| chain::label_problem(&c.to_string()).is_none())
-        .take(max)
-        .collect()
 }
 
 /// The label this copy takes in its chain unless told one: [`label`], and
@@ -75,32 +66,15 @@ fn fit(s: &str, max: usize) -> String {
 /// then a short id too. A label is printed on every member for the chain's
 /// life, so it grows only where two would read alike (da-ey3hz).
 fn named(db: &Db) -> Result<String> {
-    let (chain, me) = (db.sync_chain()?, db.sync_endpoint_id()?);
     // The chain as its inviter held it: a member whose describe had not
     // reached the inviter carries its Hello's label here, so two copies
     // joining one after the other can both take the same longer label.
-    let taken = |l: &str| {
-        chain
-            .members
-            .iter()
-            .any(|m| m.endpoint != me && m.label == l)
-    };
     let base = label();
     let with_db = match db.path().and_then(|p| p.file_stem()) {
         Some(name) => format!("{base} ({})", name.to_string_lossy()),
         None => base.clone(),
     };
-    let id = format!(" {}", short(&me));
-    let tries = [
-        base,
-        fit(&with_db, chain::MAX_LABEL),
-        fit(&with_db, chain::MAX_LABEL - id.len()) + &id,
-    ];
-    Ok(tries
-        .iter()
-        .find(|l| !taken(l))
-        .unwrap_or(&tries[2])
-        .clone())
+    Ok(db.sync_untaken_label(&[base, chain::fit(&with_db, chain::MAX_LABEL)])?)
 }
 
 fn env<T: std::str::FromStr>(name: &str) -> Option<T> {

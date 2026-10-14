@@ -67,6 +67,8 @@ test('a browser reloaded mid-join resumes it by itself, and the inviter pushes t
 		await b.goto(link);
 		const join = b.page.locator('.card.join').getByRole('button', { name: 'Join', exact: true });
 		await join.waitFor();
+		// A name typed at the join outlives the reload (da-uyyyg).
+		await b.page.locator('.card.join').getByLabel('This device’s name').fill('kitchen');
 		await join.click();
 		// Some of the history has arrived, and none of the chain.
 		await until(() => countOf(b, 'seed'), (n) => n > 0);
@@ -84,6 +86,9 @@ test('a browser reloaded mid-join resumes it by itself, and the inviter pushes t
 			async () => JSON.parse((await a.run(['sync', 'chain', 'list', '--json'])).stdout).members,
 			(members) => members.find((m) => m.endpoint === status.this.endpoint)?.kind === 'web'
 		);
+		// The describe that told it so is the rename's, under the name typed (da-uyyyg).
+		const seen = JSON.parse((await a.run(['sync', 'chain', 'list', '--json'])).stdout).members;
+		assert.equal(seen.find((m) => m.endpoint === status.this.endpoint).label, 'kitchen');
 
 		// The inviter's page knows it has a member, and pushes to it.
 		await until(

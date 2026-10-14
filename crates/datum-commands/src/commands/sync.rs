@@ -333,10 +333,20 @@ fn command(cmd: SyncCommand, db: &Db) -> Result<()> {
             who,
             label,
             admin_key,
+            unique,
+            check,
         } => {
             let label = checked(label)?;
+            if check {
+                return Ok(());
+            }
             let chain = db.sync_chain()?;
             ensure!(chain.exists(), NO_CHAIN);
+            ensure!(!unique || who.is_none(), "--unique names this copy alone");
+            let label = match unique {
+                true => db.sync_untaken_label(&[label])?,
+                false => label,
+            };
             let mine = db.sync_endpoint_id()?;
             let target = match &who {
                 Some(who) => member(&chain, who)?,

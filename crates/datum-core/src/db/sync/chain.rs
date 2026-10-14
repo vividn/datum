@@ -143,6 +143,15 @@ pub fn label_problem(label: &str) -> Option<String> {
     (n > MAX_LABEL).then(|| format!("a label is at most {MAX_LABEL} characters, not {n}"))
 }
 
+/// `s` within a label's rules, whatever it holds: at most `max`
+/// characters, each one a label may carry.
+pub fn fit(s: &str, max: usize) -> String {
+    s.chars()
+        .filter(|c| label_problem(&c.to_string()).is_none())
+        .take(max)
+        .collect()
+}
+
 /// A client id every member can print (`<kind> on <client>`): not blank,
 /// and within a label's rules. `client_id()` mints a ULID, but
 /// `DATUM_CLIENT_ID` names any — datum.day's is `web-` and eight more
@@ -1234,6 +1243,26 @@ impl Db {
             "label": label, "kind": kind, "created": Utc::now().to_rfc3339(),
         });
         self.sync_chain_write(record, true)
+    }
+
+    /// The first of `labels` no other member of this copy's chain carries,
+    /// else the last with this copy's short id after it. A label is printed
+    /// on every member for the chain's life, so it grows only where two
+    /// would read alike (da-ey3hz, da-uyyyg).
+    pub fn sync_untaken_label(&self, labels: &[String]) -> Result<String> {
+        let (chain, me) = (self.sync_chain()?, self.sync_endpoint_id()?);
+        let taken = |l: &String| {
+            chain
+                .members
+                .iter()
+                .any(|m| m.endpoint != me && m.label == *l)
+        };
+        if let Some(l) = labels.iter().find(|l| !taken(l)) {
+            return Ok(l.clone());
+        }
+        let id = format!(" {}", &me[..me.len().min(10)]);
+        let last = labels.last().map_or("", String::as_str);
+        Ok(fit(last, MAX_LABEL - id.len()) + &id)
     }
 
     /// Redeem an invite for `endpoint`, which `holds` that many entries:
