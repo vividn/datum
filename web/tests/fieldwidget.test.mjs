@@ -81,10 +81,10 @@ describe('the field widget', () => {
 				all.map((b) => [...b.children].map((c) => c.textContent.trim()))
 			);
 			assert.deepEqual(said, [
-				['●', 'happens', 'occur'],
-				['█', 'lasts (start/end)', 'start'],
-				['▞', 'switches between states', 'switch'],
-				['¢', 'a note', 'add']
+				['●', 'occurrence', 'occur'],
+				['█', 'on/off', 'start'],
+				['▞', 'switch', 'switch'],
+				['¢', 'card', 'add']
 			]);
 			// A new field is Basics alone: the tabs come once it is saved.
 			assert.equal(await page.locator(`${FIELD_FORM} [role="tab"]`).count(), 0);

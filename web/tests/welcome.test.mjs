@@ -73,7 +73,7 @@ describe('a first visit', () => {
 				assert.equal(await page.locator('.root-bar [role="tab"].modified').count(), 0);
 				assert.equal(await page.locator('dialog.confirm').count(), 0);
 
-				await page.getByRole('button', { name: 'Choose what to track', exact: true }).click();
+				await page.getByRole('button', { name: 'Track', exact: true }).click();
 				await until(() => front(page), ([name]) => name === 'track');
 				assert.deepEqual(await front(page), ['track', 'field']);
 				// The field widget, on a new field.
@@ -92,12 +92,15 @@ describe('a first visit', () => {
 		await withApp(async ({ page }) => {
 			const text = await words(page);
 			for (const said of [
-				'A record of your life, kept on your device. No account.',
-				'A field is one thing you track',
-				'An entry is one time you logged it.',
-				'Choose a few things to track.',
-				'Log them: tap, or type in the bar below.',
-				'Watch your day and your stats fill in.',
+				'Record your life, cultivate awareness, and confront the truth.',
+				'No one else sees or can access your data.',
+				'Each field is one thing you track',
+				'For each field you log entries',
+				'which persists until the next state change.',
+				'Choose one or two fields to track.',
+				'Log them as they happen: tap, or type in the input bar.',
+				'Find your patterns: visualize and analyze all that beautiful data.',
+				'Every tap shows the command it ran',
 				'Close a tab: ▾ beside the +, Close tab.',
 				'Open a widget, or a tab you closed: the + at the top.',
 				'Move a tab: drag it. On a phone, hold it first.',
@@ -107,29 +110,29 @@ describe('a first visit', () => {
 				assert.ok(text.includes(said), `not said: ${said}\n${text}`);
 			// «a button at the bottom of the welcome widget»: the last thing in it.
 			assert.ok(text.trimEnd().endsWith('Close welcome'), text);
-			// The four kinds, glyph and all, are the ones the Track form offers.
-			const kinds = await page.locator('.host.welcome .kinds li').allInnerTexts();
+			// The four shapes, glyph and name, are the ones the Track form offers (vividn's names, 10-14).
+			const kinds = await page.locator('.host.welcome .shapes li .head').allInnerTexts();
 			assert.deepEqual(kinds.map((k) => k.replace(/\s+/g, ' ')), [
-				'● happens',
-				'█ lasts (start/end)',
-				'▞ switches between states',
-				'¢ a note'
+				'● occurrence: a single point in time (no state)',
+				'█ on/off: on for a while, then off (state: true/false)',
+				'▞ switch: one state until the next (custom states)',
+				'¢ card: keys and values, with no time'
 			]);
-			// «Readable in about half a minute»: under 150 words, 36 s at 250 a minute.
-			const count = text.split(/\s+/).filter(Boolean).length;
-			assert.ok(count < 150, `${count} words`);
 		}, FRESH_DESKTOP);
 	});
 
-	test('it fits a phone without scrolling', async () => {
+	// It was «fits a phone without scrolling» until 2026-10-14, when the welcome became the Help place's front page,
+	// sections and links and all: vividn, 10-09, «some scrolling and reading rather than all fitting on one page». What
+	// still matters on a phone is that it never scrolls sideways, and that the text past the pane can be scrolled to.
+	test('on a phone it scrolls down to its end, never sideways', async () => {
 		await withApp(async ({ page }) => {
 			const box = await page.locator('.host.welcome').evaluate((host) => {
 				let el = host.querySelector('div.welcome');
 				const bottom = el.getBoundingClientRect().bottom;
 				while (el && getComputedStyle(el).overflowY === 'visible') el = el.parentElement;
-				return { bottom, within: el.getBoundingClientRect().bottom, wide: el.scrollWidth - el.clientWidth };
+				return { bottom, within: el.getBoundingClientRect().bottom, scrolls: getComputedStyle(el).overflowY, wide: el.scrollWidth - el.clientWidth };
 			});
-			assert.ok(box.bottom <= box.within, `the text ends at ${box.bottom}, its pane at ${box.within}`);
+			assert.ok(box.bottom <= box.within || ['auto', 'scroll'].includes(box.scrolls), `the text ends at ${box.bottom}, its pane at ${box.within}, and the pane does not scroll (${box.scrolls})`);
 			assert.equal(box.wide, 0, 'the widget scrolls sideways');
 		}, FRESH_PHONE);
 	});
@@ -210,7 +213,7 @@ describe('a first visit', () => {
 			await page.locator('.root-bar button.add').first().click();
 			await chooser(page).locator('button', { hasText: exactly('welcome') }).click();
 			await until(() => rootNames(page), (names) => names.join() === 'track,collect,welcome');
-			assert.ok((await words(page)).includes('A record of your life'));
+			assert.ok((await words(page)).includes('Record your life'));
 
 			// And collect, which is no widget kind, comes back from it too.
 			await rootMenuButton(page).waitFor();
@@ -278,7 +281,7 @@ describe('a device that has been here', () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await page.evaluate(() => window.datum.shell.open('welcome'));
-			await page.getByRole('button', { name: 'Choose what to track', exact: true }).click();
+			await page.getByRole('button', { name: 'Track', exact: true }).click();
 			// A desktop's place is a modal (da-jozgv); the tabs do not move.
 			await page.locator('dialog.sheet[data-place="field"] button.new[aria-current="true"]').waitFor();
 			assert.deepEqual(await rootNames(page), ['main', 'welcome']);

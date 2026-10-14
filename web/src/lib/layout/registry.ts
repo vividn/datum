@@ -479,8 +479,8 @@ export const KINDS: Record<string, WidgetKind> = {
 		meta: meta('welcome', 'welcome'),
 		component: WelcomeWidget,
 		help: [
-			'What datum is, what a field and an entry are, and how tabs and widgets are opened, moved, split and closed.',
-			'«Choose what to track» goes to the field widget.'
+			'What datum is; what a field, an entry and a state are; the shapes a field takes; the input bar; and how tabs and widgets are opened, moved, split and closed.',
+			'«Track» goes to the field widget, and «Learn more» opens a topic of `datum help` in the Help place, whose front page is these same words.'
 		].join('\n'),
 		legible: { width: 200, height: 100 }
 	},

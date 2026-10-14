@@ -82,7 +82,15 @@ async function explain(target: Element | null): Promise<void> {
 	if (flag) return show(`datum ${flag.dataset.flag}`, flag.dataset.help ?? '');
 	if (!command && kind && KINDS[kind]) return show(titleOf(kind), KINDS[kind].help);
 	if (!command && helped) return show(helped.title, helped.dataset.help ?? '');
-	const argv = helpArgv(command);
+	return explainCommand(command);
+}
+
+/**
+ * `datum help <name>` in the Help place, as the Help button lands a command's: the
+ * welcome's «Learn more» links take this path, so what they open is the CLI's own help.
+ */
+export async function explainCommand(name?: string): Promise<void> {
+	const argv = helpArgv(name);
 	const { stdout, stderr } = await run(argv);
 	show(`datum ${argv.join(' ')}`, stdout || stderr);
 }

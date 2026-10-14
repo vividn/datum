@@ -30,7 +30,7 @@ export interface VerbChoice {
 	verb: Verb;
 	/** The glyph the CLI prints after `TRACK` for a field declared this way. */
 	glyph: string;
-	/** What a field of this kind does, in everyday words: the name a newcomer chooses by (da-fu29p). */
+	/** The shape's name, the one a newcomer chooses by (da-fu29p); vividn's names of 2026-10-14, shared with the welcome. */
 	what: string;
 }
 
@@ -39,10 +39,10 @@ export interface VerbChoice {
  * smallest claim a field can make.
  */
 export const VERBS: VerbChoice[] = [
-	{ verb: 'occur', glyph: '●', what: 'happens' },
-	{ verb: 'start', glyph: '█', what: 'lasts (start/end)' },
-	{ verb: 'switch', glyph: '▞', what: 'switches between states' },
-	{ verb: 'add', glyph: '¢', what: 'a note' }
+	{ verb: 'occur', glyph: '●', what: 'occurrence' },
+	{ verb: 'start', glyph: '█', what: 'on/off' },
+	{ verb: 'switch', glyph: '▞', what: 'switch' },
+	{ verb: 'add', glyph: '¢', what: 'card' }
 ];
 
 /** A field to start from: what an example fills the form with, never the database (da-fu29p). */
