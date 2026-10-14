@@ -265,3 +265,21 @@ pub(super) fn m58_to_59_warning_client_id(conn: &Connection) -> Result<()> {
 pub(super) fn down_59_to_58_warning_client_id(_conn: &Connection) -> Result<()> {
     Ok(())
 }
+
+/// da-2ahs4: `undo_actions.skipped`, the hids an `undo --skip-changed` left
+/// as another copy left them, so its `redo` re-applies exactly what the undo
+/// took back. Local: `undo_actions` never syncs.
+pub(super) fn m59_to_60_undo_skipped(conn: &Connection) -> Result<()> {
+    if table_exists(conn, "undo_actions")? && !has_column(conn, "undo_actions", "skipped")? {
+        conn.execute_batch("ALTER TABLE undo_actions ADD COLUMN skipped TEXT;")?;
+    }
+    Ok(())
+}
+
+/// Reverse v59→v60. The marks go: a redo of a skip refuses again.
+pub(super) fn down_60_to_59_undo_skipped(conn: &Connection) -> Result<()> {
+    if table_exists(conn, "undo_actions")? {
+        conn.execute_batch("ALTER TABLE undo_actions DROP COLUMN skipped;")?;
+    }
+    Ok(())
+}

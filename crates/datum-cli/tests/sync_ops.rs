@@ -340,6 +340,44 @@ fn undo_skip_changed_takes_back_the_rest_of_a_wipe() {
     assert!(a.deleted(&water));
 }
 
+/// da-2ahs4: the redo of that undo re-applies exactly what it took back —
+/// the wipe again, but not over the entry the undo left as the other copy
+/// left it — so the redo stack walks on past it.
+#[test]
+fn redo_after_undo_skip_changed_leaves_what_the_undo_left() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "n=1"]);
+    a.ok(&["occur", "water", "n=1"]);
+    a.send(&b);
+    let (coffee, water) = (a.hid("coffee"), a.hid("water"));
+    a.ok(&["delete", "--all"]);
+    b.ok(&["update", &coffee, "n=3"]);
+    b.send(&a);
+    a.ok(&["occur", "tea"]);
+    let tea = a.hid("tea");
+    a.ok(&["undo"]);
+    a.ok(&["undo", "--skip-changed"]);
+    assert!(!a.deleted(&water));
+    let coffee_before = (a.deleted(&coffee), a.data(&coffee));
+
+    let out = a.run(&["redo"], "");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(a.deleted(&water), "the wipe is re-applied");
+    assert_eq!(
+        (a.deleted(&coffee), a.data(&coffee)),
+        coffee_before,
+        "coffee stays as the other copy left it"
+    );
+    assert_eq!(a.data(&coffee)["n"], 3);
+    // The command undone after the wipe is redone past it.
+    a.ok(&["redo"]);
+    assert!(!a.deleted(&tea));
+}
+
 /// …and when another copy changed EVERY entry of the command, it takes
 /// back nothing, names them all, and still moves the cursor past it: the
 /// step the flag asked for, which the refusal says in those words.
@@ -379,6 +417,20 @@ fn undo_skip_changed_with_every_entry_changed_moves_only_the_cursor() {
     // which wrote coffee too, so the same change stands in its way.
     let next = String::from_utf8(a.run(&["undo"], "").stderr).unwrap();
     assert!(next.contains("1 of the 2 entries"), "{next}");
+    // Its redo has nothing to re-apply, and says why (da-2ahs4).
+    let out = a.run(&["redo"], "");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("the undo left every entry of that command as another copy left it")
+            && !err.contains("nothing moved"),
+        "{err}"
+    );
+    assert_eq!(a.data(&coffee)["n"], 3, "the other copy's change stays");
 }
 
 /// `--skip-changed` is the bare undo's: beside a named entry, which steps

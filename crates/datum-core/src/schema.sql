@@ -321,12 +321,14 @@ CREATE INDEX IF NOT EXISTS entry_history_action
 -- entries on THIS copy, its writes the `entry_history` rows naming it, plus
 -- `untracked`, a JSON array of hids it wrote with no history (v2import's bulk
 -- rows). The cursor is the newest row not `undone`; a new action drops every
--- undone one. Local: nothing here syncs.
+-- undone one. `skipped`, a JSON array, is the hids an `undo --skip-changed`
+-- left as they are, which its redo leaves too (v60). Local: nothing here syncs.
 CREATE TABLE IF NOT EXISTS undo_actions (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     time      TEXT NOT NULL,
     undone    INTEGER NOT NULL DEFAULT 0,
-    untracked TEXT
+    untracked TEXT,
+    skipped   TEXT
 );
 
 -- Easy Sync (da-k329q). Every change to an entry is a signed op, made here

@@ -206,6 +206,7 @@ fn every_pair_has_a_roundtrip_test() {
         (56, 57),
         (57, 58),
         (58, 59),
+        (59, 60),
     ];
     assert_eq!(
         covered.len(),
@@ -2658,6 +2659,17 @@ fn roundtrip_v53_to_v54_sync_peer_redeemed() {
     apply_one_down(conn, 54);
     assert!(!column_exists(conn, "sync_peers", "redeemed_at"));
     assert!(table_exists(conn, "sync_peers"));
+}
+
+#[test]
+fn roundtrip_v59_to_v60_undo_skipped() {
+    let db = fresh_at(59);
+    let conn = db.conn();
+    apply_one_up(conn, 59);
+    assert!(column_exists(conn, "undo_actions", "skipped"));
+    apply_one_down(conn, 60);
+    assert!(!column_exists(conn, "undo_actions", "skipped"));
+    assert!(table_exists(conn, "undo_actions"));
 }
 
 #[test]

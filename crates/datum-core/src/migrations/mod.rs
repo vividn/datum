@@ -57,7 +57,7 @@ use v51_v60::*;
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 59;
+pub const CURRENT_SCHEMA_VERSION: u32 = 60;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -488,5 +488,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "integrity_warnings: device_id → client_id in the entries a warning stores, which v48 skipped (da-m34q7)",
         apply: m58_to_59_warning_client_id,
         down: down_59_to_58_warning_client_id,
+    },
+    Migration {
+        from: 59,
+        to: 60,
+        summary: "undo_actions.skipped: the entries an `undo --skip-changed` left as they are, which its redo leaves too (da-2ahs4)",
+        apply: m59_to_60_undo_skipped,
+        down: down_60_to_59_undo_skipped,
     },
 ];

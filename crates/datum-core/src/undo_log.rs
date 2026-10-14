@@ -13,7 +13,9 @@
 //!
 //! The cursor is the newest action not `undone`. `undo` puts its entries
 //! back as they were before it and marks it undone, `redo` re-applies the
-//! oldest undone one, and a new action drops every undone one. The table is
+//! oldest undone one, and a new action drops every undone one. An undo that
+//! left some entries as another copy left them (`--skip-changed`) records
+//! which, and its redo leaves them too (da-2ahs4). The table is
 //! this copy's alone: nothing here syncs, and an entry a sync changed after
 //! an action is refused rather than reverted ([`blocker`]).
 
@@ -120,12 +122,14 @@ pub struct Member {
     pub last: u32,
 }
 
-/// An action on the stack, with every entry it wrote.
+/// An action on the stack, with every entry it wrote, and those of them its
+/// undo left as they are.
 #[derive(Debug, Clone)]
 pub struct Action {
     pub id: i64,
     pub time: DateTime<Utc>,
     pub members: Vec<Member>,
+    pub skipped: Vec<Hid>,
 }
 
 /// The action a bare `undo` reverts next: the newest one not undone.
@@ -138,11 +142,23 @@ pub fn next_redo(conn: &Connection) -> Result<Option<Action>> {
     load(conn, "undone = 1 ORDER BY id ASC")
 }
 
-/// Mark an action undone (by `undo`) or not (by `redo`).
-pub fn set_undone(conn: &Connection, id: i64, undone: bool) -> Result<()> {
+/// Mark an action undone, leaving `skipped` as they are.
+pub fn set_undone(conn: &Connection, id: i64, skipped: &[Hid]) -> Result<()> {
+    let skipped = (!skipped.is_empty())
+        .then(|| serde_json::to_string(skipped))
+        .transpose()?;
     conn.execute(
-        "UPDATE undo_actions SET undone = ?2 WHERE id = ?1",
-        params![id, undone],
+        "UPDATE undo_actions SET undone = 1, skipped = ?2 WHERE id = ?1",
+        params![id, skipped],
+    )?;
+    Ok(())
+}
+
+/// Mark an action redone: whole again, nothing left out.
+pub fn set_redone(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE undo_actions SET undone = 0, skipped = NULL WHERE id = ?1",
+        [id],
     )?;
     Ok(())
 }
@@ -181,19 +197,19 @@ pub fn blocker(conn: &Connection, member: &Member) -> Result<Option<(u32, Change
 /// The first action matching `filter` that still names an entry: one whose
 /// rows are gone (a `restore --hard`, a forgotten entry) has nothing to move.
 fn load(conn: &Connection, filter: &str) -> Result<Option<Action>> {
-    let row: Option<(i64, String, Option<String>)> = conn
+    let row: Option<(i64, String, Option<String>, Option<String>)> = conn
         .query_row(
             &format!(
-                "SELECT id, time, untracked FROM undo_actions a
+                "SELECT id, time, untracked, skipped FROM undo_actions a
                  WHERE (untracked IS NOT NULL
                         OR EXISTS (SELECT 1 FROM entry_history WHERE action_id = a.id))
                    AND {filter} LIMIT 1"
             ),
             [],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .optional()?;
-    let Some((id, time, untracked)) = row else {
+    let Some((id, time, untracked, skipped)) = row else {
         return Ok(None);
     };
     let mut stmt = conn.prepare(
@@ -209,10 +225,13 @@ fn load(conn: &Connection, filter: &str) -> Result<Option<Action>> {
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    let untracked: Vec<Hid> = untracked
-        .map(|s| serde_json::from_str(&s))
-        .transpose()?
-        .unwrap_or_default();
+    let hids = |json: Option<String>| -> Result<Vec<Hid>> {
+        Ok(json
+            .map(|s| serde_json::from_str(&s))
+            .transpose()?
+            .unwrap_or_default())
+    };
+    let (untracked, skipped) = (hids(untracked)?, hids(skipped)?);
     members.extend(untracked.into_iter().map(|hid| Member {
         hid,
         first: 1,
@@ -221,5 +240,10 @@ fn load(conn: &Connection, filter: &str) -> Result<Option<Action>> {
     let time = DateTime::parse_from_rfc3339(&time)
         .map(|t| t.with_timezone(&Utc))
         .unwrap_or_else(|_| Utc::now());
-    Ok(Some(Action { id, time, members }))
+    Ok(Some(Action {
+        id,
+        time,
+        members,
+        skipped,
+    }))
 }

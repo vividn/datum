@@ -123,7 +123,7 @@ fn undo_stack(
         };
         steps.push((current, after));
     }
-    undo_log::set_undone(&tx, action.id, true)?;
+    undo_log::set_undone(&tx, action.id, &skipped)?;
     tx.commit()?;
     // Said once it is true: a failure above rolls the step back.
     if !report.is_empty() {
@@ -137,15 +137,20 @@ fn undo_stack(
 }
 
 /// Bare `redo`: put every entry the oldest undone action wrote back as it
-/// left them, and move the cursor forward one.
+/// left them, and move the cursor forward one. The entries its undo left as
+/// they are (`--skip-changed`) it leaves too: redo re-applies exactly what
+/// the undo took back (da-2ahs4).
 fn redo_stack(
     db: &Db,
     dry_run: bool,
     registry: &Option<SpecRegistry>,
     output: &OutputArgs,
 ) -> Result<()> {
-    let action = undo_log::next_redo(db.conn())?
+    let mut action = undo_log::next_redo(db.conn())?
         .context("Nothing to redo — the last change here was not an undo")?;
+    let skipped = std::mem::take(&mut action.skipped);
+    action.members.retain(|m| !skipped.contains(&m.hid));
+    let all_skipped = action.members.is_empty() && !skipped.is_empty();
     if dry_run {
         return Ok(());
     }
@@ -163,8 +168,15 @@ fn redo_stack(
         let after = revert_in_tx(&tx, &member.hid, member.last.max(1), ChangeKind::Redo)?;
         steps.push((current, after));
     }
-    undo_log::set_undone(&tx, action.id, false)?;
+    undo_log::set_redone(&tx, action.id)?;
     tx.commit()?;
+    if all_skipped {
+        eprintln!(
+            "redo: the undo left every entry of that command as another copy left it, \
+             so there is nothing to re-apply"
+        );
+        return Ok(());
+    }
     finish_stack(db, &steps, "redo", registry, output)
 }
 
