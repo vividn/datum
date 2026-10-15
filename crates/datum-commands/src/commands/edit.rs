@@ -1,4 +1,4 @@
-//! `datum edit <id_or_slug>` — open an entry's user-editable fields in $EDITOR.
+//! `datum edit [id_or_slug]` — open an entry's user-editable fields in $EDITOR.
 //!
 //! da-4lov: only fields the user is allowed to mutate appear in the editor
 //! tempfile. System-only state — `extra_metadata`, `hid`, `slug`,
@@ -136,12 +136,27 @@ impl UserEditableEntry {
 
 #[cfg(feature = "native")]
 pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
-    let existing = crate::commands::helpers::resolve_prefix_or_tombstone(db, &args.id_or_slug)?;
+    // da-llcb7: a bare `datum edit` edits `_LAST`, asking first when the
+    // pointer is stale, as `update` and `retime` do.
+    let id = args
+        .id_or_slug
+        .as_deref()
+        .unwrap_or(datum_core::ids::resolve::LAST_TOKEN);
+    let existing = crate::commands::helpers::resolve_prefix_or_tombstone(db, id)?;
     if existing.deleted_at.is_some() {
-        anyhow::bail!(
-            "Cannot edit tombstoned entry {} — restore it first with `datum undo`",
-            args.id_or_slug,
-        );
+        anyhow::bail!("Cannot edit tombstoned entry {id} — restore it first with `datum undo`");
+    }
+    if args.id_or_slug.is_none()
+        && !crate::commands::helpers::confirm_default_last_if_stale(
+            db,
+            None,
+            false,
+            "Edit",
+            std::slice::from_ref(&existing),
+        )?
+    {
+        println!("Aborted.");
+        return Ok(());
     }
 
     let view = UserEditableEntry::from_entry(&existing);
@@ -401,7 +416,7 @@ mod tests {
         with_datum_editor(&editor_cmd, || {
             edit(
                 EditArgs {
-                    id_or_slug: e.slug.to_string(),
+                    id_or_slug: Some(e.slug.to_string()),
                     output: Default::default(),
                 },
                 &db,
@@ -428,7 +443,7 @@ mod tests {
         with_datum_editor("true", || {
             edit(
                 EditArgs {
-                    id_or_slug: e.slug.to_string(),
+                    id_or_slug: Some(e.slug.to_string()),
                     output: Default::default(),
                 },
                 &db,
@@ -458,7 +473,7 @@ mod tests {
             with_datum_editor_result(&format!("cp {}", prep.path().display()), || {
                 edit(
                     EditArgs {
-                        id_or_slug: "spec:mood".into(),
+                        id_or_slug: Some("spec:mood".into()),
                         output: Default::default(),
                     },
                     &db,
@@ -486,7 +501,7 @@ mod tests {
         let err = with_datum_editor_result(&format!("cp {}", prep.path().display()), || {
             edit(
                 EditArgs {
-                    id_or_slug: e.slug.to_string(),
+                    id_or_slug: Some(e.slug.to_string()),
                     output: Default::default(),
                 },
                 &db,
@@ -524,7 +539,7 @@ mod tests {
         assert_eq!(cfg.editor.value, "true");
         edit(
             EditArgs {
-                id_or_slug: e.slug.to_string(),
+                id_or_slug: Some(e.slug.to_string()),
                 output: Default::default(),
             },
             &db,
@@ -555,7 +570,7 @@ mod tests {
         let result = with_datum_editor_result(&editor_cmd, || {
             edit(
                 EditArgs {
-                    id_or_slug: e.slug.to_string(),
+                    id_or_slug: Some(e.slug.to_string()),
                     output: Default::default(),
                 },
                 &db,
@@ -607,7 +622,7 @@ mod tests {
         let result = with_datum_editor_result(&editor_cmd, || {
             edit(
                 EditArgs {
-                    id_or_slug: e.slug.to_string(),
+                    id_or_slug: Some(e.slug.to_string()),
                     output: Default::default(),
                 },
                 &db,
@@ -668,7 +683,7 @@ mod tests {
             let result = with_datum_editor_result(&editor_cmd, || {
                 edit(
                     EditArgs {
-                        id_or_slug: e.slug.to_string(),
+                        id_or_slug: Some(e.slug.to_string()),
                         output: Default::default(),
                     },
                     &db,
@@ -738,7 +753,7 @@ mod tests {
         with_datum_editor(&editor_cmd, || {
             edit(
                 EditArgs {
-                    id_or_slug: stamped_slug.to_string(),
+                    id_or_slug: Some(stamped_slug.to_string()),
                     output: Default::default(),
                 },
                 &db,
@@ -794,7 +809,7 @@ mod tests {
         with_datum_editor("true", || {
             edit(
                 EditArgs {
-                    id_or_slug: e.slug.to_string(),
+                    id_or_slug: Some(e.slug.to_string()),
                     output: Default::default(),
                 },
                 &db,

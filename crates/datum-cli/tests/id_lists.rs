@@ -227,7 +227,7 @@ fn help_json_declares_which_verbs_take_a_list() {
         );
     }
     // `edit` opens ONE entry in $EDITOR; a conflict is resolved one at a time.
-    assert_eq!(usage("edit"), "datum edit <ID_OR_SLUG>");
+    assert_eq!(usage("edit"), "datum edit [ID_OR_SLUG]");
     let conflicts = grammar.iter().find(|c| c["name"] == "conflicts").unwrap();
     assert!(
         conflicts["usage"]

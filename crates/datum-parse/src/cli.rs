@@ -526,7 +526,9 @@ pub struct RetimeArgs {
 
 #[derive(Debug)]
 pub struct EditArgs {
-    pub id_or_slug: String,
+    /// Optional. When omitted, the command edits `_LAST`, asking first when
+    /// the pointer is stale (da-llcb7).
+    pub id_or_slug: Option<String>,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
 }

@@ -71,9 +71,8 @@ pub(crate) fn parse_edit_args(tail: &[&str]) -> Result<EditArgs> {
         .map(|s| lift(|p: &mut OutputArgs| p, s))
         .collect();
     let pos = fold_args(tail, &mut composed, &registry)?;
-    let id_or_slug = require_pos(&pos, "<ID_OR_SLUG>")?;
     Ok(EditArgs {
-        id_or_slug,
+        id_or_slug: optional_pos(&pos)?,
         output: composed,
     })
 }

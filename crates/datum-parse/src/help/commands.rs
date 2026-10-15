@@ -969,7 +969,7 @@ const HISTORY_BODY: &str = "USAGE:\n  datum history <ID_OR_SLUG[,ID_OR_SLUG]...>
 
 const WHY_BODY: &str = "USAGE:\n  datum why <ID_OR_SLUG[,ID_OR_SLUG]...> [--full]\n\nA comma list answers for each entry in turn, each under its own `hid:` line.\n";
 
-const EDIT_BODY: &str = "USAGE:\n  datum edit <ID_OR_SLUG>\n\nThe editor is $DATUM_EDITOR, else the `editor` key in datumrc.toml, else\n$VISUAL, else $EDITOR, else `vi` — what `datum config show` reports.\nIt is spawned directly, never through a shell, so a value carrying\nflags — `code --wait`, `emacsclient -nw` — still works.\n";
+const EDIT_BODY: &str = "USAGE:\n  datum edit [ID_OR_SLUG]\n\nID_OR_SLUG omitted edits `_LAST`, asking first when it is stale, as `update`\ndoes.\n\nThe editor is $DATUM_EDITOR, else the `editor` key in datumrc.toml, else\n$VISUAL, else $EDITOR, else `vi` — what `datum config show` reports.\nIt is spawned directly, never through a shell, so a value carrying\nflags — `code --wait`, `emacsclient -nw` — still works.\n";
 
 const RETIME_BODY: &str = "USAGE:\n  datum retime [SLUG[,SLUG]...] [T]\n  datum retime [SLUG[,SLUG]...] [-r] [-t T] [-y]... [-q]... [-d D]\n  datum retime [SLUG[,SLUG]...] --offset DUR [--field F] [--after BND] [--before BND]\n  datum retime [SLUG[,SLUG]...] -T\n\nDEFAULTS:\n  SLUG omitted        → `_LAST` (matches update/delete/undo)\n  No time-args        → set to now\n  T, -t T             → any time -t takes (`datum help time`), read from the\n                        entry's OWN time and zone rather than from now:\n                        `retime <id> 1040` is 10:40 on the entry's day, `+5`\n                        five minutes after it, `-1h` an hour before it,\n                        `yesterday` the day before it. An unsigned number is\n                        a clock time, not minutes (`+30` is the shift). In a\n                        comma list each entry is read from its own time.\n                        Alone T takes a sign (`retime +30`): an unsigned\n                        word alone is a SLUG, since a short hid can be digits.\n  -y, -q, -d D, -z    → from the entry likewise: `-y` is the day before it.\n  -r/--relative       → the time-args as a pure shift of the entry's time:\n                        `-r -y` moves it a day back and keeps its clock.\n                        Same flag is `--reverse` on tail; namespaces don't collide.\n  --offset DUR        → explicit ISO duration shift (legacy form)\n  -T/--no-timestamp   → take the time away: the entry becomes a note. A state\n                        stays as a point; a duration or following state goes.\n\nBULK FILTERS (--field/--after/--before select rows instead of _LAST):\n  BND                 → a duration ago (1d, 30m, 1:30), a date (2026-06-01,\n                        apr29, today, yesterday), or any -t time. Both bounds\n                        are inclusive, and a bare date names that day's\n                        opening midnight — so --before 2026-06-01 excludes\n                        June 1.\n";
 
@@ -1986,7 +1986,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         category: Category::Mutate,
         summary: "open an entry in the configured editor",
         long_description: None,
-        usage: &["datum edit <ID_OR_SLUG>"],
+        usage: &["datum edit [ID_OR_SLUG]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         shared_flags: None,
