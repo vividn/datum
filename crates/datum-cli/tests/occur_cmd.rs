@@ -300,6 +300,48 @@ fn iana_timezone_flag_applies() {
     assert_eq!(start.offset_minutes, 60, "CET winter offset");
 }
 
+/// da-a32ze: a zone name is read in any case and stored in its one
+/// spelling, by every command that takes `-z`.
+#[test]
+fn a_zone_typed_in_any_case_is_stored_canonically() {
+    for (typed, canonical) in [
+        ("utc", "UTC"),
+        ("europe/berlin", "Europe/Berlin"),
+        ("EUROPE/BERLIN", "Europe/Berlin"),
+    ] {
+        let db = fresh_db();
+        for argv in [
+            vec!["occur", "event", "-t", "1200", "-z", typed],
+            vec!["start", "event", "-t", "1300", "-z", typed],
+        ] {
+            run_cli(&argv, &db).unwrap_or_else(|e| panic!("{argv:?}: {e:#}"));
+        }
+        let zones = |db| {
+            datum_core::test_util::logged_entries(db, "event")
+                .iter()
+                .map(|e| e.occur_time.as_ref().unwrap().timezone.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            zones(&db),
+            vec![Some(canonical.to_string()); 2],
+            "-z {typed}"
+        );
+
+        let hid = datum_core::test_util::logged_entries(&db, "event")[0]
+            .hid
+            .clone();
+        run_cli(&["retime", &hid, "-t", "1100", "-z", "asia/tokyo"], &db)
+            .unwrap_or_else(|e| panic!("retime -z asia/tokyo: {e:#}"));
+        assert!(
+            zones(&db).contains(&Some("Asia/Tokyo".to_string())),
+            "retime -z asia/tokyo: {:?}",
+            zones(&db)
+        );
+    }
+    assert!(run_cli(&["occur", "event", "-z", "europe/nowhere"], &fresh_db()).is_err());
+}
+
 /// da-rsa54: `flag` reads `-z` as `occur` does. It took the flag and built
 /// in the host zone, so `flag x -t 1000 -z UTC` stored 10:00 host time. Two
 /// zones, so one is not the host's wherever this runs.

@@ -21,7 +21,7 @@
 //!
 //! See `docs/parity-audit/parsing.md` ("`timeArgs.ts`") for the spec.
 
-use chrono_tz::Tz;
+use chrono_tz::TZ_VARIANTS;
 
 use crate::error::{ParseError, Result};
 use crate::input::flag_registry::{FlagAction, FlagSpec};
@@ -235,7 +235,8 @@ pub static FLAG_SPECS: &[FlagSpec<TimeArgs>] = &[
 ///
 /// Accepted forms (matching `src/time/getTimezone.ts`):
 ///
-/// * IANA name (`"America/Chicago"`, `"UTC"`, …).
+/// * IANA name (`"America/Chicago"`, `"UTC"`, …), in any case: `"utc"` and
+///   `"europe/berlin"` are spelled back `"UTC"` and `"Europe/Berlin"`.
 /// * A fixed offset: `"+4"`, `"-7"`, `"0"`, `"+5:30"`, `"+0530"`, `"UTC-7"`,
 ///   `"UTC+5:30"`, spelled back as `UTC±H[:MM]`. An entry written in one
 ///   stores the offset and no zone name (da-kvosn).
@@ -282,11 +283,15 @@ pub fn resolve_timezone(spec: &str) -> Result<String> {
     validate_tz_name(spec)
 }
 
+/// The zone's canonical spelling, matched without regard to case: a zone
+/// has one spelling, so `utc` and `europe/berlin` can only mean `UTC` and
+/// `Europe/Berlin`, which is what is stored however it was typed (da-a32ze).
 fn validate_tz_name(name: &str) -> Result<String> {
-    let _tz: Tz = name
-        .parse()
-        .map_err(|_| ParseError::InvalidArg(format!("Unknown timezone: {name}")))?;
-    Ok(name.to_string())
+    TZ_VARIANTS
+        .iter()
+        .find(|tz| tz.name().eq_ignore_ascii_case(name))
+        .map(|tz| tz.name().to_string())
+        .ok_or_else(|| ParseError::InvalidArg(format!("Unknown timezone: {name}")))
 }
 
 // ─── tests ────────────────────────────────────────────────────────────────
@@ -811,6 +816,18 @@ mod tests {
         let got = a.build(&reference).unwrap();
         assert_utc(&got, "2018-03-12T15:00:00Z");
         assert_eq!(got.time.as_ref().unwrap().offset_minutes, -5 * 60);
+    }
+
+    #[test]
+    fn a_zone_name_is_read_in_any_case_and_spelled_canonically() {
+        for (typed, canonical) in [
+            ("utc", "UTC"),
+            ("europe/berlin", "Europe/Berlin"),
+            ("EUROPE/BERLIN", "Europe/Berlin"),
+            ("America/Chicago", "America/Chicago"),
+        ] {
+            assert_eq!(resolve_timezone(typed).unwrap(), canonical, "-z {typed}");
+        }
     }
 
     #[test]

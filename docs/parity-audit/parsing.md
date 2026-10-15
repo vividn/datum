@@ -430,7 +430,8 @@ Resolves a timezone from number (UTC offset, hours), `"system"`,
 `"UTC±N"`, or IANA name. Returns a luxon `Zone`.
 
 - **Daydumb today:** `resolve_timezone` in
-  `datum_parse::input::time_args` handles IANA names, numeric UTC
+  `datum_parse::input::time_args` handles IANA names (in any case,
+  spelled back canonically: `utc` → `UTC`, da-a32ze), numeric UTC
   offset (`-z -7`), `UTC±N` literals (commit 95f3824, da-xv0), and
   the `"system"` literal which resolves to the OS local zone via
   `iana_time_zone::get_timezone()` (case-insensitive — `system`,
