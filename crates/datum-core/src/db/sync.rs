@@ -822,6 +822,19 @@ fn push_entry(
     push(conn, ep, (e.hid.as_str(), &e.slug.0, field), kind, effect).map(drop)
 }
 
+/// Sign a `baseline` for every entry no op covers, as this copy's.
+fn sign_uncovered(conn: &Connection) -> Result<()> {
+    let ep = endpoint(conn)?;
+    let uncovered: Vec<Entry> = conn
+        .prepare("SELECT * FROM entries WHERE hid NOT IN (SELECT hid FROM ops) ORDER BY hid")?
+        .query_map([], row_to_entry)?
+        .collect::<rusqlite::Result<_>>()?;
+    for e in &uncovered {
+        push_entry(conn, &ep, e, "baseline", create_effect(e))?;
+    }
+    Ok(())
+}
+
 /// The field an entry row belongs to: its own, or for a spec the field it
 /// specifies — what a reader's filter is matched against (da-u81u1).
 fn belongs_to(r: &Map<String, Value>) -> Option<String> {

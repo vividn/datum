@@ -266,6 +266,10 @@ v44); two copies found signing with one key are refused by name, and
 chain with no admin is OPEN — any member invites, revokes or renames, and
 `invite` on a copy in no chain starts one — and the first `admin add`
 LOCKS it, after which those acts take an admin key (passkey or key file).
+A copy starting a chain while it holds another endpoint's ops — piped in,
+or its own old key's — starts afresh as `chain leave` does, and signs every
+entry again as its own (da-1flih), so no joiner applies or refuses them by
+where its apply was cut.
 Removing the last admin takes `--allow-unlock` and reopens it; every copy
 keeps a notice of the unlock until `sync chain ack unlock`. A notice — a new
 device, a new admin, an unlock — not yet acknowledged is a ⚠ in datum.day's

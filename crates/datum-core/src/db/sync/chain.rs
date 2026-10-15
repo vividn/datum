@@ -107,7 +107,7 @@ use sha2::{Digest, Sha256};
 
 use super::{
     check_signature, digest, endpoint, hex, parse_hlc, push, reconsider, relabel_conflicts, settle,
-    sha256_hex, unhex, ApplySummary, Op,
+    sha256_hex, sign_uncovered, unhex, ApplySummary, Op,
 };
 use crate::db::Db;
 use crate::error::{DatumError, Refusal, Result};
@@ -1167,9 +1167,22 @@ impl Db {
         let s = self.write_with(|tx| {
             super::debug::refuse(tx)?;
             // A copy that starts a chain gives up any join it was making
-            // (da-38eye): left later, it is joining nothing.
+            // (da-38eye): left later, it is joining nothing. Holding another
+            // endpoint's ops — piped in, or its own old key's — it starts
+            // afresh as a leaving copy does, and signs every entry again as
+            // its own baseline (da-1flih): a joiner would apply those ops or
+            // refuse them by where an apply cut fell.
             if record["type"] == "genesis" {
                 tx.execute("UPDATE sync_peers SET redeemed_at = NULL", [])?;
+                let foreign =
+                    "SELECT 1 FROM ops WHERE endpoint != ?1 AND hid != ?2 AND applied != 3";
+                if tx
+                    .prepare(foreign)?
+                    .exists(params![endpoint(tx)?.id, CHAIN_HID])?
+                {
+                    leave(tx)?;
+                    sign_uncovered(tx)?;
+                }
             }
             let ep = endpoint(tx)?;
             let seq = push(tx, &ep, (CHAIN_HID, CHAIN_HID, None), "chain", record)?;

@@ -747,6 +747,48 @@ fn a_non_members_ops_are_refused_until_it_is_admitted() {
     assert!(!a.ok(&["check"]).contains("outside the sync chain"));
 }
 
+/// A copy that starts a chain holding a non-member's ops signs every entry
+/// again as its own (da-1flih), so the chain never meets that endpoint's
+/// ops: a joiner gets the founder's rows however its applies are cut, each
+/// edit either made of the other's entry included.
+#[test]
+fn a_founder_signs_a_non_members_entries_again_as_its_own() {
+    let (x, a) = (Copy::new(), Copy::new());
+    x.ok(&["occur", "tea", "-t", "2026-10-04 08:00"]);
+    let (ok, text) = x.send(&a);
+    assert!(ok, "{text}");
+    a.ok(&["occur", "coffee", "-t", "2026-10-04 09:00"]);
+    assert!(a.send(&x).0);
+    let hid = |f: &str| a.query(&format!("SELECT hid FROM entries WHERE field = '{f}'"));
+    x.ok(&["update", &hid("coffee"), "cups=2"]);
+    assert!(x.send(&a).0);
+    a.ok(&["update", &hid("tea"), "cups=3"]);
+    a.ok(&["sync", "new-invite"]);
+    let x_id = x.id();
+    assert_eq!(
+        a.query(&format!(
+            "SELECT COUNT(*) FROM ops WHERE endpoint = '{x_id}'"
+        )),
+        "0"
+    );
+    // Signed then, not at the next sync: an entry's history is its ops.
+    assert_eq!(
+        a.query("SELECT COUNT(*) FROM entries WHERE hid NOT IN (SELECT hid FROM ops)"),
+        "0"
+    );
+
+    let lines = a.ok(&["sync", "pipe", "ops"]);
+    let whole = Copy::new();
+    whole.ok_in(&["sync", "pipe", "apply"], &lines);
+    let split = Copy::new();
+    for line in lines.lines() {
+        split.ok_in(&["sync", "pipe", "apply"], &format!("{line}\n"));
+    }
+    assert!(whole.has("tea") && whole.has("coffee"));
+    assert_eq!(whole.hash(), a.hash());
+    assert_eq!(split.hash(), a.hash());
+}
+
 /// A non-member's chain act is refused, open chain or locked, and so is its
 /// handshake without an invite.
 #[test]
