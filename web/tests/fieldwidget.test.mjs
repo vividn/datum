@@ -286,7 +286,29 @@ describe('the field widget', () => {
 	const ignoredIn = async (app, field) =>
 		JSON.parse((await app.run(['fields', '--json'])).stdout).find((f) => f.field === field)?.ignored;
 	const tracking = (page) => page.locator(`${FIELD_FORM} [data-tracking][aria-checked="true"]`).getAttribute('data-tracking');
-	const explained = async (page) => (await page.locator(`${FIELD_FORM} .explain`).innerText()).trim();
+	/** What the ⓘ's bubble says, opened and closed again by a tap away. */
+	const explained = async (page) => {
+		await page.locator(`${FIELD_FORM} button.info`).click();
+		const said = (await page.locator(`${FIELD_FORM} .bubble`).innerText()).trim();
+		await page.locator(`${FIELD_FORM} input.field`).click();
+		await page.locator(`${FIELD_FORM} .bubble`).waitFor({ state: 'detached' });
+		return said;
+	};
+	/** The colours a choice of the toggle wears chosen: its words and its underline. */
+	const worn = (page, which) =>
+		page.locator(`${FIELD_FORM} [data-tracking="${which}"]`).evaluate((b) => {
+			const style = getComputedStyle(b);
+			return { color: style.color, line: style.borderBottomColor };
+		});
+	/** A token of the page's, computed. */
+	const token = (page, name) =>
+		page.evaluate((n) => {
+			const probe = document.body.appendChild(document.createElement('i'));
+			probe.style.color = `var(${n})`;
+			const rgb = getComputedStyle(probe).color;
+			probe.remove();
+			return rgb;
+		}, name);
 	// A clock that moves: under the held one, a field's `track` row and its `ignore` row are one instant, one slug.
 	const MOVING = { ...DESKTOP, clock: null };
 
@@ -299,17 +321,21 @@ describe('the field widget', () => {
 			await page.locator(`${FIELD_FORM} button[data-verb="occur"]`).click();
 			await page.keyboard.type('tea');
 			assert.equal(await tracking(page), 'tracked');
-			assert.equal(await explained(page), 'in the now view and the field list');
+			assert.equal(await page.locator(`${FIELD_FORM} .explain`).count(), 0, 'its words are always on show');
+			assert.equal(await explained(page), "I'm paying attention to this: it's on my now view and in my fields.");
+			const [green, grey, red] = [await token(page, '--track'), await token(page, '--muted'), await token(page, '--error')];
+			assert.deepEqual(await worn(page, 'tracked'), { color: green, line: green }, 'tracked is not green');
 			const top = async (sel) => (await page.locator(`${FIELD_FORM} ${sel}`).first().boundingBox()).y;
 			assert.ok((await top('input.field')) < (await top('[data-tracking]')), 'it is not under the name');
 			assert.ok((await top('[data-tracking]')) < (await top('[role="tab"]')), 'it is not above the tabs');
 
 			await page.locator(`${FIELD_FORM} [data-tracking="ignored"]`).click();
 			assert.equal(await tracking(page), 'ignored');
-			assert.equal(
-				await explained(page),
-				'left out of the now view and the field list; its entries and spec stay as they are, and logging it again tracks it'
-			);
+			assert.equal(await explained(page), "I've set this aside. Its entries stay, and logging it again brings it back.");
+			const ignored = await worn(page, 'ignored');
+			assert.equal(ignored.line, grey, 'ignored is not the grey');
+			assert.ok(![ignored.color, ignored.line].includes(red), 'ignored is red');
+			assert.ok(!Object.values(await worn(page, 'tracked')).includes(green), 'tracked is green unchosen');
 			assert.equal((await page.locator(`${FIELD_FORM} code.preview`).innerText()).trim(), 'track tea --verb occur\nignore tea');
 			const before = (await app.echoes()).length;
 			await page.locator(`${FIELD_FORM} button.commit`).click();

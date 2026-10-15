@@ -20,7 +20,8 @@
 	database — with a field of that shape, its colour, glyph, keys and
 	states, to be read, changed and saved or not. A shape or an example
 	chosen, the name box takes the focus with its text selected. Under the
-	name, tracked or ignored, and what ignored means.
+	name, tracked (green) or ignored (grey), and an ⓘ that says what each
+	means in the person's own voice.
 
 	Every field, a new one too, has the five segments — Basics · States ·
 	Data · Aliases · Placement — none of them required, and picks the
@@ -197,9 +198,26 @@
 		iconName = file.name;
 	}
 
+	// vividn, 2026-10-15: «the text should be about the user, like I will pay attention to this now,
+	// or I am not paying attention to this anymore … inside of a hint bubble» (da-iggnd).
+	const TRACKING = {
+		tracked: "I'm paying attention to this: it's on my now view and in my fields.",
+		ignored: "I've set this aside. Its entries stay, and logging it again brings it back."
+	};
+	// The ⓘ's bubble: a tap on the ⓘ opens and closes it, a tap anywhere else closes it.
+	let info = false;
+	let infoButton: HTMLElement;
+	let bubble: HTMLElement | undefined;
+	const away = (event: PointerEvent) => {
+		const at = event.target as Node;
+		if (info && !infoButton.contains(at) && !bubble?.contains(at)) info = false;
+	};
+
 	/** Hand `next` up to run, or null to run nothing. */
 	const finish = (next: Save | null) => dispatch('close', next);
 </script>
+
+<svelte:window on:pointerdown={away} />
 
 <div class="field-form" role="region" aria-label={spec ? `the spec of ${field}` : 'track a field'}>
 	<form on:submit|preventDefault={() => ready && finish(save)}>
@@ -266,7 +284,8 @@
 			</p>
 		{/if}
 
-		<div class="row">
+		<!-- The toggle's help is its ⓘ's too: Help on either says what each means. -->
+		<div class="row tracking" title="tracked or ignored" data-help={`tracked: ${TRACKING.tracked}\nignored: ${TRACKING.ignored}`}>
 			<div class="segmented" role="radiogroup" aria-label="tracked or ignored">
 				<button type="button" role="radio" data-tracking="tracked" aria-checked={!ignore} on:click={() => (ignore = false)}
 					>tracked</button
@@ -275,11 +294,10 @@
 					>ignored</button
 				>
 			</div>
-			<span class="explain"
-				>{ignore
-					? 'left out of the now view and the field list; its entries and spec stay as they are, and logging it again tracks it'
-					: 'in the now view and the field list'}</span
-			>
+			<button type="button" class="info" bind:this={infoButton} use:act={'show'} aria-label="what tracked and ignored mean" aria-expanded={info} on:click={() => (info = !info)}>ⓘ</button>
+			{#if info}
+				<p class="bubble" role="tooltip" bind:this={bubble}>{TRACKING[ignore ? 'ignored' : 'tracked']}</p>
+			{/if}
 		</div>
 
 		<div class="tabs" role="tablist">
@@ -857,10 +875,54 @@
 		cursor: pointer;
 	}
 
-	.glyph-by button[aria-checked='true'],
-	.segmented button[aria-checked='true'] {
+	.glyph-by button[aria-checked='true'] {
 		color: var(--ink-bright);
 		border-block-end-color: var(--accent);
+	}
+
+	/* Green where it is tracked, a quiet grey where it is set aside: never
+	   red, which marks only a destructive act (#757), and ignoring keeps
+	   the entries and the spec. */
+	.segmented [data-tracking='tracked'][aria-checked='true'] {
+		color: var(--track);
+		border-block-end-color: var(--track);
+	}
+
+	.segmented [data-tracking='ignored'][aria-checked='true'] {
+		color: var(--ink);
+		border-block-end-color: var(--muted);
+	}
+
+	.tracking {
+		position: relative;
+	}
+
+	.info {
+		padding: 0 0.2rem;
+		font: inherit;
+		color: var(--muted);
+		background: none;
+		border: 0;
+		cursor: pointer;
+	}
+
+	.info[aria-expanded='true'],
+	.info:hover {
+		color: var(--ink);
+	}
+
+	.bubble {
+		position: absolute;
+		inset-block-start: calc(100% + 0.3rem);
+		inset-inline-start: 0;
+		z-index: 1;
+		max-inline-size: min(22rem, 100%);
+		margin: 0;
+		padding: 0.4rem 0.6rem;
+		background: var(--ground);
+		border: 1px solid var(--rule);
+		border-radius: 4px;
+		font-size: 0.75rem;
 	}
 
 	.glyphs + .add {
@@ -987,11 +1049,6 @@
 		color: var(--muted);
 		font-size: 0.75rem;
 		overflow-wrap: anywhere;
-	}
-
-	.explain {
-		color: var(--muted);
-		font-size: 0.75rem;
 	}
 
 	.hint {

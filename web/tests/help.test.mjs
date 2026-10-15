@@ -176,6 +176,27 @@ describe('the Help button', () => {
 		}, withField);
 	});
 
+	// da-iggnd: a control in a widget with a `data-help` of its own is explained by it, not by its widget's help.
+	test('then the Track widget\'s tracked or ignored: what each means, in the person\'s voice', async () => {
+		const withField = JSON.stringify(along('column', widgetPane('field', 'field'), widgetPane('cmd', 'command'), widgetPane('bar', 'widgetbar')));
+		await onPage(async ({ page }) => {
+			// The toggle, and the ⓘ beside it (canary-deepseek-v4-pro on #775).
+			for (const target of ['[data-tracking="ignored"]', 'button.info']) {
+				const lines = await explain(page, page.locator(`.host[data-widget="field"] ${target}`), 'tracked or ignored');
+				assert.deepEqual(lines, [
+					"tracked: I'm paying attention to this: it's on my now view and in my fields.",
+					"ignored: I've set this aside. Its entries stay, and logging it again brings it back."
+				], target);
+			}
+			assert.equal(await page.locator('.host[data-widget="field"] .bubble').count(), 0, 'the ⓘ opened its bubble under Help');
+			assert.equal(
+				await page.locator('.host[data-widget="field"] [data-tracking="tracked"]').getAttribute('aria-checked'),
+				'true',
+				'the press under Help changed the toggle'
+			);
+		}, withField);
+	});
+
 	test('then a pill: what that kind of pill does, with its value; the pill stays', async () => {
 		await onPage(async ({ page }) => {
 			await page.evaluate(() => window.datum.bar.setPills([{ id: 't', kind: 'time', text: '-t 14:30' }]));
