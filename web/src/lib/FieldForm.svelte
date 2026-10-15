@@ -1,6 +1,6 @@
 <!--
 	The form a field is declared and edited in (da-94q1, da-ci85o), the body
-	of the field widget ($lib/layout/FieldWidget.svelte, da-fu29p): vividn,
+	of the setup widget ($lib/layout/FieldWidget.svelte, da-fu29p): vividn,
 	2026-10-08 — «let's fully combine track/spec widgets into just 1».
 	There is no dialog: a field is made and edited in a place.
 

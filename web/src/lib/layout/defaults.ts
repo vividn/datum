@@ -280,8 +280,8 @@ export const defaultLayoutFor = (phone: boolean): Layout =>
 // (`nowview`, `tail`, `stats`, …), so
 // `datum.day/nowview` is the nowview alone. A saved layout of the same
 // name shadows a built-in. And the three tabs a first visit opens
-// (da-u7vz8, `fresh` in shell.ts): `welcome`, a kind's own; `track`, the
-// field widget under the name its tab wears; and `collect`. vividn's
+// (da-u7vz8, `fresh` in shell.ts): `welcome` and `setup`, kinds' own; and
+// `collect`. vividn's
 // prebuilt layouts (collect / check / analyze) are his to design: one
 // object each, added to `BUILTIN` below.
 
@@ -299,7 +299,6 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	// da-u7vz8, `mobile`'s tree and `main`'s desktop one — by the device,
 	// as `main` is (da-lsjs9).
 	collect: (phone) => ({ ...(phone ? MOBILE_LAYOUT : defaultLayoutFor(false)), name: 'collect' }),
-	track: () => only('track', 'field'),
 	mobile: () => MOBILE_LAYOUT,
 	dayview: () => only('dayview', 'daystrip', { ...STRIP }),
 	repl: () => only('repl', 'repl'),
@@ -315,7 +314,7 @@ export const BUILTIN: Record<string, (phone: boolean) => Layout> = {
 	welcome: () => only('welcome', 'welcome'),
 	backups: () => only('backups', 'backups'),
 	conflicts: () => only('conflicts', 'conflicts'),
-	field: () => only('field', 'field'),
+	setup: () => only('setup', 'setup'),
 	input: () => only('input', 'input')
 };
 
@@ -332,8 +331,11 @@ export const ALIASES: Record<string, string> = {
 	daystrip: 'dayview',
 	widgets: 'fields',
 	widgetbar: 'fields',
-	// The spec widget became the field widget (da-fu29p).
-	spec: 'field'
+	// The spec widget became the field widget (da-fu29p), the first visit's
+	// `track` tab was it again, and both are the setup widget (da-rgyq8).
+	spec: 'setup',
+	field: 'setup',
+	track: 'setup'
 };
 
 /** The built-in layout `name` names, if any; `phone` picks `main`'s tree. */
@@ -355,7 +357,7 @@ export const BUILTIN_NAMES = Object.keys(BUILTIN);
  * remembers how many it has seen.
  */
 const NEW_DEFAULTS: string[] = [
-	'A first visit now opens three tabs: welcome, which says what datum is and how the page is handled; track, where you choose what to track; and collect, the page you log on.',
+	'A first visit now opens three tabs: welcome, which says what datum is and how the page is handled; setup, where you choose what to track; and collect, the page you log on.',
 	"On a phone, collect's day strip is half as tall and shows a sliver of yesterday to scroll up into, the tail has its row alone, and the fields and nowview below it have the room."
 ];
 

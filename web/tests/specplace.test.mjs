@@ -34,8 +34,8 @@ describe('the spec place, on a phone', () => {
 			const from = was.indexOf(await shown(page));
 
 			await openField(page, 'mood');
-			await until(() => shown(page), (t) => t === 'field');
-			const beside = [...was.slice(0, from + 1), 'field', ...was.slice(from + 1)];
+			await until(() => shown(page), (t) => t === 'setup');
+			const beside = [...was.slice(0, from + 1), 'setup', ...was.slice(from + 1)];
 			assert.deepEqual(await rootTabs(page), beside);
 			assert.equal((await page.locator(`${FIELD_FORM} h2`).innerText()).trim(), 'mood');
 
@@ -107,7 +107,7 @@ describe('a refused save', () => {
 			assert.notEqual(result.code, 0);
 			assert.match(result.stderr, /at most 4 kB/);
 
-			assert.equal(await shown(page), 'field', 'the refusal left the place');
+			assert.equal(await shown(page), 'setup', 'the refusal left the place');
 			assert.equal(await page.locator(`${FIELD_FORM} input.description`).inputValue(), 'green', 'the edit was lost');
 			assert.equal(await described(app, 'tea'), null, 'the refusal wrote');
 
@@ -128,7 +128,7 @@ describe('the spec place, on a desktop', () => {
 			const was = await rootTabs(page);
 
 			const { saved } = await openField(page, 'tea');
-			const modal = page.locator('dialog.sheet[data-place="field"]');
+			const modal = page.locator('dialog.sheet[data-place="setup"]');
 			await modal.locator(`${FIELD_FORM} h2`).waitFor();
 			assert.equal((await modal.locator(`${FIELD_FORM} h2`).innerText()).trim(), 'tea');
 			assert.deepEqual(await rootTabs(page), was, 'a desktop opened a tab');
@@ -153,8 +153,8 @@ describe('the field widget in a pane', () => {
 			await app.submit('track tea --verb occur');
 			const was = await rootTabs(page);
 			const tab = await page.evaluate(() => window.datum.layout.current().root.tabs[0].content.children[0].tabs[0].id);
-			await page.evaluate((tab) => window.datum.shell.widgetInto(tab, 'field'), tab);
-			const pane = page.locator('section.pane[data-title="field"]');
+			await page.evaluate((tab) => window.datum.shell.widgetInto(tab, 'setup'), tab);
+			const pane = page.locator('section.pane[data-title="setup"]');
 
 			await pane.locator('button[data-chip="tea"]').click();
 			assert.equal((await pane.locator(`${FIELD_FORM} h2`).innerText()).trim(), 'tea');

@@ -31,8 +31,7 @@ export interface Offer {
  * The layouts the modal offers, in the one order: `main` and `collect`
  * (da-u7vz8: a first visit's tab, closeable like any, so it has to be
  * here to come back), then the rest — every other built-in IS a kind's
- * one-widget layout, and is listed once, among the widgets (`track` is
- * the field widget's again), or is `mobile`, `collect`'s tree on a phone
+ * one-widget layout, and is listed once, among the widgets, or is `mobile`, `collect`'s tree on a phone
  * — less the names already open above the tab, since `main` may not hold
  * `main` (the shell refuses such names too; the modal does not offer
  * them).

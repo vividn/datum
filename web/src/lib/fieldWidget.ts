@@ -1,8 +1,8 @@
-// The field widget's door (da-fu29p): which field it is on, and opening it.
+// The setup widget's door (da-fu29p): which field it is on, and opening it.
 //
 // vividn, 2026-10-08: «let's fully combine track/spec widgets into just 1 …
 // make it so that you can switch the field you're editing inside of it more
-// easy and intuitive». So there is ONE widget (`field`,
+// easy and intuitive». So there is ONE widget (`setup`,
 // $lib/layout/FieldWidget.svelte) and one answer to «which field?»:
 // `editing`, a store every copy of the widget draws rather than a setting
 // of each — so two copies on one page cannot be on two fields: a chip
@@ -25,7 +25,7 @@ import type { RunResult } from './run.js';
 import type { Verb } from './track.js';
 
 /** The widget's kind, and the name of its place. */
-const FIELD = 'field';
+const FIELD = 'setup';
 
 /**
  * The field the widget is on — `''` is a new one — and the kind a new one
@@ -44,7 +44,7 @@ export function answerField(result: RunResult | null): void {
 }
 
 /**
- * Put the field widget on `field` — none is a new one, `verb` its kind —
+ * Put the setup widget on `field` — none is a new one, `verb` its kind —
  * and bring it into view: a pane showing it already, else its place
  * (`openPlace`). Resolves with what the place's next save ran — a refused
  * one leaves it open, to be put right — or null when it is left without

@@ -261,14 +261,14 @@ export async function press(
 /**
  * The CLI's «which verb?» refusal is a question, and the web has somewhere
  * to ask it: `track <field>` on a field with neither a spec nor a log
- * comes back asking for `--verb`, and that is the field widget's own
+ * comes back asking for `--verb`, and that is the setup widget's own
  * question (da-94q1, da-fu29p). Its place opens with the field already
  * named, and what it saves REPLACES the refused command — the answer is a
  * `track` with the verb on it, so there is nothing left to retry.
  *
  * Null whenever the result was not that refusal, or the place was left
  * without a save: the refusal then stands, as any other error does. It
- * stands too where a field widget was in view already — that one is put on
+ * stands too where a setup widget was in view already — that one is put on
  * the field and saves in its own time, which nothing here waits for.
  */
 async function answerVerb(argv: string[], result: RunResult): Promise<RunResult | null> {

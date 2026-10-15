@@ -16,7 +16,7 @@
 //
 // Pure, and away from the markup as `fields.ts` is: node loads this file
 // as it is, which is what lets the glyph table be compared with the CLI's
-// own render. The form is `FieldForm.svelte`, in the field widget
+// own render. The form is `FieldForm.svelte`, in the setup widget
 // (`fieldWidget.ts`).
 
 import type { SpecKey } from './fields.js';

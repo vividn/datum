@@ -1,5 +1,5 @@
 <!--
-	The field widget (da-fu29p): where a field is made and where it is
+	The setup widget (da-fu29p): where a field is made and where it is
 	changed — the Track dialog and the spec widget (da-hbrfg), which were the
 	same form at two doors, as ONE widget. vividn, 2026-10-08, after watching
 	a newcomer: «let's fully combine track/spec widgets into just 1, and
@@ -101,7 +101,7 @@
 	}
 </script>
 
-<Pane title="field">
+<Pane title="setup">
 	<div class="field">
 		<p class="what">A field is one thing you track: mood, coffee, sleep. Each time you log it, that's an entry.</p>
 		<div class="chips" role="group" aria-label="fields">

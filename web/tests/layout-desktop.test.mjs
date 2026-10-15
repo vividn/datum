@@ -86,7 +86,7 @@ describe('a fresh desktop', () => {
 		const { page, errors } = await fresh();
 		assert.deepEqual(
 			await page.evaluate(() => window.datum.shell.rootTabs(window.datum.layout.current()).map((t) => t.layout)),
-			['welcome', 'track', 'collect']
+			['welcome', 'setup', 'collect']
 		);
 		assert.deepEqual(await titles(page), ['dayview', 'tail', 'nowview', 'stats', 'fields', 'command']);
 		// No `input`: the bottom bar is the command line, and one is enough.

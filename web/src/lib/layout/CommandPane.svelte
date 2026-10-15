@@ -15,7 +15,7 @@
 	is a tap is focused without a phone's keyboard (`next` in
 	$lib/commands.ts, da-k34p).
 
-	`track` opens the field widget on a new field (da-fu29p), and `track`
+	`track` opens the setup widget on a new field (da-fu29p), and `track`
 	or `spec` with a FIELD pill loaded opens it on that field at once
 	(da-ybai9, vividn: «no need for sub commands or pressing enter. It should
 	just work»): the pill named the subject, so it is spent at the TAP — not

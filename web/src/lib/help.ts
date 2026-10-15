@@ -94,7 +94,7 @@ async function explain(target: Element | null): Promise<void> {
 	const helped = target?.closest<HTMLElement>('[data-help]');
 	if (pill) return show(pill.text, pillHelp(pill));
 	if (flag) return show(`datum ${flag.dataset.flag}`, flag.dataset.help ?? '');
-	// A control's own help before its widget's: the Track widget's tracked/ignored (da-iggnd).
+	// A control's own help before its widget's: the setup widget's tracked/ignored (da-iggnd).
 	if (!command && helped) return show(helped.title, helped.dataset.help ?? '');
 	if (!command && kind && GUIDES[kind]) return explainGuide(kind);
 	if (!command && kind && KINDS[kind]) return show(titleOf(kind), KINDS[kind].help);

@@ -1,5 +1,5 @@
 <!--
-	The Track widget's Data rows (da-zqnt3), vividn, 2026-10-14: «simple
+	The setup widget's Data rows (da-zqnt3), vividn, 2026-10-14: «simple
 	buttons to select if optional or not (an = button in the middle that
 	acts exactly like an = sign in the cli?) maybe with an optional? header.
 	Only after clicking it does the default value field become visible to

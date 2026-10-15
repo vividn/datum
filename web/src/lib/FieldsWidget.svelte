@@ -23,7 +23,7 @@
 	scrolled left and right (da-vu7pi). NOTHING HANGS OUT OF IT: the widget's only
 	floating surface was the `-t` / `dur` / `note` panel, and da-e78x6
 	removed it.
-	Ignored fields get no button: the field widget lists them under a new
+	Ignored fields get no button: the setup widget lists them under a new
 	field, and a press runs `track <field>`. `showIgnored` (da-xhio) is the way to SEE them
 	without going through the (+) — a switch in the menu the pane's NAME
 	opens (da-vhwq), this session's and off by default. It adds them to the
@@ -50,7 +50,7 @@
 	one through the command line they share: the list becomes the fields
 	that verb can be spent on, a press MEANS that verb and runs at once,
 	and the (+) stands at the end of the list instead of
-	before its start — the one door on the field widget that PRESETS a kind,
+	before its start — the one door on the setup widget that PRESETS a kind,
 	mapped to one a field can be DECLARED with: `end` is not, so it declares
 	the block it would have ended (`declaredVerb`). Which fields, and
 	what a press then runs, are `fieldsUnder` and `verbPress` in commands.ts.
@@ -64,7 +64,7 @@
 	say why the bar changed. Nothing moves under a finger: while a pointer
 	is over the bar the order is held until it leaves.
 
-	The (+) opens the field widget on a new field (`openField`,
+	The (+) opens the setup widget on a new field (`openField`,
 	$lib/fieldWidget.ts, da-fu29p) rather than a form hanging off the bar;
 	that widget runs its own save.
 

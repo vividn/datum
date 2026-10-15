@@ -3,7 +3,7 @@
 // the field button that was created. Then pulse the nowview … Finally pulse
 // the dayview».
 //
-// So, on a phone and on a desktop, from a first visit's tabs with track in
+// So, on a phone and on a desktop, from a first visit's tabs with setup in
 // front: the first field's Save brings collect to the front and rings its
 // button, the nowview and the dayview in that order, each with its sentence;
 // a second field's Save shows none of it. Where a fields widget is on the
@@ -18,8 +18,8 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
-const ON_TRACK = { names: ['welcome', 'track', 'collect'], active: 1 };
-const FRESH = { home: ON_TRACK, desk: null, tour: true };
+const ON_SETUP = { names: ['welcome', 'setup', 'collect'], active: 1 };
+const FRESH = { home: ON_SETUP, desk: null, tour: true };
 const PHONE = { ...FRESH, viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true } };
 const DESKTOP = { ...FRESH, viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' };
 
@@ -83,12 +83,12 @@ describe('the first field\'s tour', () => {
 
 				// A second field: saved, and no tour.
 				await page.evaluate(() => window.datum.shell.activate(1));
-				await page.locator('[data-widget="field"] .chips button.new').click();
+				await page.locator('[data-widget="setup"] .chips button.new').click();
 				await make(page, 'tea', 'occur');
-				await page.locator('[data-widget="field"] .chips [data-chip="tea"][aria-current="true"]').waitFor();
+				await page.locator('[data-widget="setup"] .chips [data-chip="tea"][aria-current="true"]').waitFor();
 				await app.idle();
 				assert.equal(await page.locator('.tour').count(), 0);
-				assert.equal(await front(page), 'track');
+				assert.equal(await front(page), 'setup');
 				assert.deepEqual(app.errors, []);
 			}, options);
 		});
@@ -101,7 +101,7 @@ describe('the first field\'s tour', () => {
 			await make(page, 'coffee', 'occur');
 			await until(() => stop(page, '[data-widget="widgetbar"] button[data-field="coffee"]'), (s) => s.round && s.say === 'Tap to log coffee.');
 			assert.equal(await front(page), 'main');
-			assert.equal(await page.locator('dialog[data-place="field"]').count(), 0);
+			assert.equal(await page.locator('dialog[data-place="setup"]').count(), 0);
 			await page.keyboard.press('Escape');
 			await page.locator('.tour').waitFor({ state: 'detached' });
 			assert.deepEqual(app.errors, []);

@@ -1,6 +1,6 @@
 // `mobile` (da-shzs, da-hkjp): the layout a phone opened first — and
 // still does, as the tree of its `collect` tab (da-u7vz8), behind
-// `welcome` and `track` (welcome.test.mjs). So the phones here are one tap
+// `welcome` and `setup` (welcome.test.mjs). So the phones here are one tap
 // into their first visit (`ON_COLLECT`), with that tree in front.
 //
 // vividn, 2026-09-17: «a layout "mobile" that is the default one loaded when
@@ -44,7 +44,7 @@ const phone = (width = 390, height = 844) => ({
 });
 
 /** The tabs a first visit opens (da-u7vz8). */
-const FIRST = ['welcome', 'track', 'collect'];
+const FIRST = ['welcome', 'setup', 'collect'];
 
 /** `collect`'s two trees, by their panes' titles: the phone's, and the shipped desktop's (`desk: null`). */
 const MOBILE_TREE = ['dayview', 'tail', 'fields', 'nowview', 'command'];

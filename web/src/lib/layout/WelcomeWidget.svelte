@@ -14,7 +14,7 @@
 	layout mode (da-vvcxc), entered from its tab and left by Accept, Save
 	or Discard.
 
-	The first button is the field widget's door (`openField`): the Track
+	The first button is the setup widget's door (`openField`): the setup
 	tab while it is open, the place every other door reaches once it is
 	closed.
 

@@ -195,7 +195,7 @@ describe('the menu the title opens', () => {
 				'welcome',
 				'backups',
 				'conflicts',
-				'field',
+				'setup',
 				'input'
 			]);
 			await chooser(page).locator('button', { hasText: 'nowview' }).click();

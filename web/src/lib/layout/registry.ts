@@ -481,7 +481,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		component: WelcomeWidget,
 		help: [
 			'What datum is; what a field, an entry and a state are; the shapes a field takes; the input bar; and how tabs and widgets are opened, moved, split and closed.',
-			'«Track» goes to the field widget, and «Learn more» opens a topic of `datum help` in the Help place, whose front page is these same words.'
+			'«Setup» goes to the setup widget, and «Learn more» opens a topic of `datum help` in the Help place, whose front page is these same words.'
 		].join('\n'),
 		legible: { width: 200, height: 100 }
 	},
@@ -511,15 +511,15 @@ export const KINDS: Record<string, WidgetKind> = {
 		].join('\n'),
 		legible: { width: 220, height: 120 }
 	},
-	// The field widget (da-fu29p): where a field is made and changed — the
-	// Track dialog and the spec widget (da-hbrfg, kind `spec`: `RETIRED_KINDS`
-	// in shell.ts) as one. Which field it is on is `editing`
+	// The setup widget (da-fu29p, named `field` until da-rgyq8): where a field
+	// is made and changed — the Track dialog and the spec widget (da-hbrfg,
+	// kinds `spec` and `field`: `RETIRED_KINDS` in shell.ts) as one. Which field it is on is `editing`
 	// ($lib/fieldWidget.ts), every copy's, so it has no setting. Legible at
 	// its sentence, a row of chips, the form's name and its Done row, with
 	// their gaps and padding — about 180px, estimated from the 28px controls
 	// rather than measured; a pane shorter scrolls the widget.
-	field: {
-		meta: meta('field', 'field'),
+	setup: {
+		meta: meta('setup', 'setup'),
 		component: FieldWidget,
 		help: [
 			'A field is one thing you track. Make one here, or pick one to change: its shape, states, data, aliases and placement.',

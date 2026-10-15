@@ -567,7 +567,7 @@ start the installed binary. `web/tests/sync*.test.mjs` run on a pinned local `ir
   `defaults.ts` (a desktop and a phone tree), which a first visit opens as
   the third of three root tabs (da-u7vz8, `fresh` in `shell.ts`):
   `welcome`, a widget saying what datum is and how tabs and widgets are
-  handled, `track`, the field widget, and `collect`, that page; the one live store is
+  handled, `setup`, the setup widget (da-rgyq8; `track` and `field` open it), and `collect`, that page; the one live store is
   `current.ts` (`layout` + `apply`), which the header's save/restore
   controls fill from the draft or the saved layout. `engine.ts`
   owns the epoch and routes a widget-bar press through whichever REPL is

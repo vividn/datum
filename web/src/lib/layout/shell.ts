@@ -144,11 +144,11 @@ const phone = () =>
 
 /**
  * The root bar a fresh install shows (da-u7vz8), `welcome` in front: what
- * datum is, the field widget to choose what to track in, and `collect`,
+ * datum is, the setup widget to choose what to track in, and `collect`,
  * the page to log on — which is what a first visit opened alone before, as
  * `mobile` on a phone (da-shzs) and `main` elsewhere.
  */
-const fresh = (): RootState => ({ names: ['welcome', 'track', 'collect'], active: 0 });
+const fresh = (): RootState => ({ names: ['welcome', 'setup', 'collect'], active: 0 });
 
 /**
  * This DEVICE, in the word a layout's `designedFor` uses: decided ONCE, by
@@ -250,7 +250,8 @@ const without = <T extends object, K extends keyof T>(o: T, key: K): Omit<T, K> 
  * `input` was the first entry (da-22vg, `input` → `repl`) and the input
  * widget is back under that very id (da-3zon), so a layout saved with one
  * opens as one again — which is the whole point of a kind's id being a
- * saved-layout key. `spec` is the field widget's old half (da-fu29p); the
+ * saved-layout key. `field` is the setup widget's name before da-rgyq8
+ * (an early user's word, vividn's call), and `spec` its old half (da-fu29p); the
  * `field` setting a saved one carries is read by nobody now, and kept as
  * it is — `RETIRED_SETTINGS` drops a known value, not a key.
  *
@@ -261,7 +262,7 @@ const without = <T extends object, K extends keyof T>(o: T, key: K): Omit<T, K> 
  * on every drag of a border instead, and would give the tree's shape
  * module an opinion about kinds, which it has never had.
  */
-const RETIRED_KINDS: Record<string, string> = { spec: 'field' };
+const RETIRED_KINDS: Record<string, string> = { spec: 'setup', field: 'setup' };
 
 /**
  * A setting a saved layout may carry that no reader ever chose, dropped so
@@ -1011,7 +1012,7 @@ layout.subscribe(($layout) => {
 });
 
 /**
- * Leave the place in front (da-hbrfg: the field widget's Done and Cancel):
+ * Leave the place in front (da-hbrfg: the setup widget's Done and Cancel):
  * the modal, closed as its × closes it, or else a place tab, for the tab it
  * opened beside, as a tap on that tab would. Anywhere else, nothing.
  */
@@ -1284,8 +1285,7 @@ export async function inlineInto(tabId: NodeId, name: string): Promise<void> {
  * At the ROOT it is the built-in ONE-WIDGET LAYOUT the kind is instead
  * (da-y2f6): every kind has a built-in that is exactly that widget alone, named
  * as its pane is titled — the others are `main`, `mobile` and `collect`, which are
- * pages, and `track`, the field widget's a second time under its tab's name
- * (da-u7vz8) — so the tab can be the widget AND have a name —
+ * pages — so the tab can be the widget AND have a name —
  * and it has to have one, because this device's open list is a list of
  * NAMES (`settle`, `saveRoot`) and a nameless root tab has nothing to
  * write there, so it would be gone after a reload. It is the same path

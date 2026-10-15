@@ -99,7 +99,7 @@ comment: obsessed with time</pre>
 		<ol>
 			<li>
 				Choose one or two fields to track.
-				<button type="button" class="command" use:act={'open'} on:click={() => openField()}>Track</button>
+				<button type="button" class="command" use:act={'open'} on:click={() => openField()}>Setup</button>
 				(or swipe to the next tab)
 			</li>
 			<li>Log them as they happen: tap, or type in the input bar.</li>

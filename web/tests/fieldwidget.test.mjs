@@ -24,7 +24,7 @@ before(startApp);
 after(stopApp);
 
 /** The widget, wherever it is drawn: the place modal on a desktop, or a pane. */
-const WIDGET = ':is(dialog.sheet[data-place="field"], section.pane[data-title="field"])';
+const WIDGET = ':is(dialog.sheet[data-place="setup"], section.pane[data-title="setup"])';
 const chips = (page) => page.locator(`${WIDGET} .chips button`);
 const chipTexts = async (page) => (await chips(page).allInnerTexts()).map((t) => t.trim());
 const marked = async (page) => (await page.locator(`${WIDGET} .chips [aria-current="true"]`).allInnerTexts()).map((t) => t.trim());
@@ -517,7 +517,7 @@ describe('the field widget', () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await app.submit('track tea --verb occur');
-			const pane = await put(page, 'field');
+			const pane = await put(page, 'setup');
 			await pane.locator(`${FIELD_FORM} input.field`).waitFor();
 
 			await page.locator('.bar button[data-field="tea"]').click({ modifiers: ['Shift'] });

@@ -1,4 +1,4 @@
-// A first visit opens welcome · track · collect (da-u7vz8).
+// A first visit opens welcome · setup · collect (da-u7vz8; the second tab was `track` until da-rgyq8).
 //
 // vividn, 2026-10-08: «let's actually start on first open with a different
 // set of tabs. So maybe a welcome widget as first tab that explains what
@@ -9,7 +9,7 @@
 // how to close tabs».
 //
 // So: a device that has never been here opens the three, `welcome` in
-// front; its button lands on `track`; it closes the way it says it does,
+// front; its button lands on `setup`; it closes the way it says it does,
 // leaving the other two, and the `+` brings it back; and a device that has
 // been here keeps the tabs it had. What the WORDS claim about the page is
 // done to the page here, by the controls they name.
@@ -22,6 +22,9 @@
 
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ON_COLLECT, startApp, stopApp, withApp } from './support/app.mjs';
 import { DESKTOP, activeTab, addTab, chooser, enterLayoutMode, exactly, leaveLayoutMode, manage, manageRoot, pane, rootMenuButton, titledPane, titles } from './support/layout.mjs';
 import { until } from './support/until.mjs';
@@ -29,7 +32,7 @@ import { until } from './support/until.mjs';
 before(startApp);
 after(stopApp);
 
-const FIRST = ['welcome', 'track', 'collect'];
+const FIRST = ['welcome', 'setup', 'collect'];
 const FRESH_DESKTOP = { ...DESKTOP, home: null, desk: null };
 const FRESH_PHONE = { viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: null };
 
@@ -55,7 +58,7 @@ describe('a first visit', () => {
 		['a desktop', FRESH_DESKTOP, ['dayview', 'tail', 'nowview', 'stats', 'fields', 'command']],
 		['a phone', FRESH_PHONE, ['dayview', 'tail', 'fields', 'nowview', 'command']]
 	])
-		test(`${what} opens welcome · track · collect on welcome; its button lands on track; collect is the page it opened before`, async () => {
+		test(`${what} opens welcome · setup · collect on welcome; its button lands on setup; collect is the page it opened before`, async () => {
 			await withApp(async (app) => {
 				const { page } = app;
 				assert.deepEqual(await rootNames(page), FIRST);
@@ -66,11 +69,11 @@ describe('a first visit', () => {
 				assert.equal(await page.locator('.root-bar [role="tab"].modified').count(), 0);
 				assert.equal(await page.locator('dialog.confirm').count(), 0);
 
-				await page.getByRole('button', { name: 'Track', exact: true }).click();
-				await until(() => front(page), ([name]) => name === 'track');
-				assert.deepEqual(await front(page), ['track', 'field']);
-				// The field widget, on a new field.
-				await page.locator('.host.field button.new[aria-current="true"]').waitFor();
+				await page.getByRole('button', { name: 'Setup', exact: true }).click();
+				await until(() => front(page), ([name]) => name === 'setup');
+				assert.deepEqual(await front(page), ['setup', 'setup']);
+				// The setup widget, on a new field.
+				await page.locator('.host.setup button.new[aria-current="true"]').waitFor();
 				assert.deepEqual(await rootNames(page), FIRST);
 
 				await page.locator('.root-bar [role="tab"]', { hasText: exactly('collect') }).click();
@@ -131,7 +134,7 @@ describe('a first visit', () => {
 	});
 
 	// vividn, 2026-10-14: «make the track button on the welcome page more visible like make the outline colored».
-	test('its Track button is outlined in the accent at rest, not only when pointed at', async () => {
+	test('its Setup button is outlined in the accent at rest, not only when pointed at', async () => {
 		await withApp(async ({ page }) => {
 			const [border, accent] = await page.locator('.host.welcome div.welcome button.command').evaluate((button) => {
 				const probe = document.createElement('div');
@@ -153,15 +156,15 @@ describe('a first visit', () => {
 			await withApp(async (app) => {
 				const { page } = app;
 				await closeWelcome(page).click();
-				await until(() => rootNames(page), (names) => names.join() === 'track,collect');
-				assert.deepEqual(await front(page), ['track', 'field']);
+				await until(() => rootNames(page), (names) => names.join() === 'setup,collect');
+				assert.deepEqual(await front(page), ['setup', 'setup']);
 
 				await app.reload();
-				assert.deepEqual(await rootNames(page), ['track', 'collect']);
+				assert.deepEqual(await rootNames(page), ['setup', 'collect']);
 
 				await page.locator('.root-bar button.add').first().click();
 				await chooser(page).locator('button', { hasText: exactly('welcome') }).click();
-				await until(() => rootNames(page), (names) => names.join() === 'track,collect,welcome');
+				await until(() => rootNames(page), (names) => names.join() === 'setup,collect,welcome');
 				await closeWelcome(page).waitFor();
 				assert.deepEqual(app.errors, []);
 			}, device);
@@ -203,29 +206,29 @@ describe('a first visit', () => {
 		}, DESKTOP);
 	});
 
-	test('welcome closes from layout mode: its tab held, Close tab; track and collect stay, and the + brings it back', async () => {
+	test('welcome closes from layout mode: its tab held, Close tab; setup and collect stay, and the + brings it back', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await manageRoot(page, 'Close tab');
-			await until(() => rootNames(page), (names) => names.join() === 'track,collect');
-			assert.deepEqual(await front(page), ['track', 'field']);
+			await until(() => rootNames(page), (names) => names.join() === 'setup,collect');
+			assert.deepEqual(await front(page), ['setup', 'setup']);
 
 			await app.reload();
-			assert.deepEqual(await rootNames(page), ['track', 'collect']);
+			assert.deepEqual(await rootNames(page), ['setup', 'collect']);
 
 			// «Open a widget, or a tab you closed: the + at the top.»
 			await page.locator('.root-bar button.add').first().click();
 			await chooser(page).locator('button', { hasText: exactly('welcome') }).click();
-			await until(() => rootNames(page), (names) => names.join() === 'track,collect,welcome');
+			await until(() => rootNames(page), (names) => names.join() === 'setup,collect,welcome');
 			assert.ok((await words(page)).includes('Record your life'));
 
 			// And collect, which is no widget kind, comes back from it too.
 			await rootMenuButton(page).waitFor();
 			await page.evaluate(() => window.datum.shell.close(1));
-			await until(() => rootNames(page), (names) => names.join() === 'track,welcome');
+			await until(() => rootNames(page), (names) => names.join() === 'setup,welcome');
 			await page.locator('.root-bar button.add').first().click();
 			await chooser(page).locator('button.layout', { hasText: exactly('collect') }).click();
-			await until(() => rootNames(page), (names) => names.join() === 'track,welcome,collect');
+			await until(() => rootNames(page), (names) => names.join() === 'setup,welcome,collect');
 			assert.deepEqual(app.errors, []);
 		}, FRESH_DESKTOP);
 	});
@@ -249,6 +252,19 @@ describe('a device that has been here', () => {
 				assert.deepEqual(await rootNames(page), [name]);
 				assert.deepEqual(await titles(page), shown);
 			}, device);
+	});
+
+	// da-rgyq8: the second tab was `track` until the widget it holds became
+	// the setup widget; a device that kept it open keeps it, under the new name.
+	test('with the old track tab open, opens it as setup', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			assert.deepEqual(await rootNames(page), FIRST);
+			assert.deepEqual(await front(page), ['setup', 'setup']);
+			await app.reload();
+			assert.deepEqual(await rootNames(page), FIRST);
+			assert.deepEqual(app.errors, []);
+		}, { ...DESKTOP, home: { names: ['welcome', 'track', 'collect'], active: 1 } });
 	});
 
 	// Against datum's OWN list of new defaults (layout/defaults.ts), which
@@ -280,15 +296,26 @@ describe('a device that has been here', () => {
 		});
 	});
 
-	test('its button opens the field widget where there is no track tab: a place', async () => {
+	test('its button opens the setup widget where there is no setup tab: a place', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await page.evaluate(() => window.datum.shell.open('welcome'));
-			await page.getByRole('button', { name: 'Track', exact: true }).click();
+			await page.getByRole('button', { name: 'Setup', exact: true }).click();
 			// A desktop's place is a modal (da-jozgv); the tabs do not move.
-			await page.locator('dialog.sheet[data-place="field"] button.new[aria-current="true"]').waitFor();
+			await page.locator('dialog.sheet[data-place="setup"] button.new[aria-current="true"]').waitFor();
 			assert.deepEqual(await rootNames(page), ['main', 'welcome']);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);
 	});
+});
+
+// da-rgyq8, vividn: an early user «suggested we call it "setup" widget and I would
+// agree». What the app ships says «Track» nowhere but as the verb of the
+// welcome's first sentence: no title, button, tab or help of the widget.
+test('the built app says «Track» only as a verb', () => {
+	const build = fileURLToPath(new URL('../build', import.meta.url));
+	const said = readdirSync(build, { recursive: true })
+		.filter((f) => /\.(js|html)$/.test(f))
+		.flatMap((f) => readFileSync(join(build, f), 'utf8').match(/\bTrack\b.{0,20}/g) ?? []);
+	assert.deepEqual([...new Set(said)], ['Track what matters to you']);
 });

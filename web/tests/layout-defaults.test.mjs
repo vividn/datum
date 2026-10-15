@@ -207,7 +207,7 @@ describe('Reset default layouts', () => {
 			// The root's tabs are the shipped set: the three a fresh install
 			// shows (da-u7vz8). `main` is no longer among them, so it is
 			// opened again to be read.
-			await until(() => rootNames(page), (names) => names.join() === 'welcome,track,collect');
+			await until(() => rootNames(page), (names) => names.join() === 'welcome,setup,collect');
 			await page.evaluate(() => window.datum.shell.open('main'));
 
 			// And the built-in is the tree it shipped with — the same tree,
