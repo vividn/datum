@@ -32,7 +32,7 @@ fn concurrent_writer_processes_lose_no_writes() {
             .expect("spawn datum")
     };
     // Create and migrate the database first, so what races is the writes.
-    assert!(spawn(&["tail".into()]).status.success());
+    assert!(spawn(&["db".into(), "setup".into()]).status.success());
 
     let failures: Vec<String> = std::thread::scope(|s| {
         let workers: Vec<_> = (0..PROCS)
@@ -112,7 +112,7 @@ fn a_write_beside_a_large_sync_apply_waits_a_chunk() {
             .args(args);
         c
     };
-    assert!(datum(&["tail"]).output().unwrap().status.success());
+    assert!(datum(&["db", "setup"]).output().unwrap().status.success());
 
     // Another copy's history, as a first sync brings it: seconds of apply
     // in one transaction on a debug build. A minute apart, so no two share

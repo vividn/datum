@@ -20,7 +20,7 @@ use anyhow::Result;
 use datum_commands::commands;
 use datum_parse::{help, ParseError};
 
-use crate::args::{Cli, Command, DbCommand, InfoArgs, Invocation, SyncCommand};
+use crate::args::{Cli, Command, DbCommand, InfoArgs, Invocation, KitCommand, SyncCommand};
 
 /// `datum 3.0.<height>-beta (<sha7>)`, from git at build time (da-5172a,
 /// da-cv118, `build.rs`).
@@ -165,6 +165,49 @@ fn spools(command: &Command) -> bool {
                 | Command::Ignore(_)
                 | Command::Flag(_)
         )
+}
+
+/// Does `command` only read the database? Then one that is not there is an
+/// error, and only a write makes it (da-oo6tr). The browser's database is
+/// made by the page.
+fn reads(command: &Command) -> bool {
+    !cfg!(target_family = "wasm")
+        && matches!(
+            command,
+            Command::Tail(_)
+                | Command::Head(_)
+                | Command::Now(_)
+                | Command::Get(_)
+                | Command::History(_)
+                | Command::Why(_)
+                | Command::Grep(_)
+                | Command::Check(_)
+                | Command::Count(_)
+                | Command::Stats(_)
+                | Command::Ids(_)
+                | Command::Fields(_)
+                | Command::Dayview(_)
+                | Command::Nowview(_)
+                | Command::View(_)
+                | Command::Kit(KitCommand::List | KitCommand::Export(_))
+                | Command::Db(DbCommand::Backup(_))
+        )
+}
+
+/// Refuse a read of a database that does not exist, before anything is made.
+fn refuse_missing(db: Option<&str>) -> Result<()> {
+    match missing(db) {
+        Some(path) => anyhow::bail!(
+            "no database at {}: a read does not create one, the first write does (e.g. `datum occur <field>`)",
+            path.display()
+        ),
+        None => Ok(()),
+    }
+}
+
+/// Where the database `db` names would be, when no file is there.
+fn missing(db: Option<&str>) -> Option<std::path::PathBuf> {
+    config::locate_db(db).filter(|path| !path.exists())
 }
 
 /// Can `command` ask its person something before it writes? `edit` always
@@ -359,11 +402,16 @@ fn dispatch_single(cli: Cli) -> Result<()> {
                 ..
             })
     ) && cli.db.is_none()
+        // A missing active database is reported `✗ (missing)`, as a TARGET is.
+        || matches!(&cli.command, Command::Info(_)) && missing(cli.db.as_deref()).is_some()
     {
         let placeholder = datum_core::db::Db::open_in_memory()?;
         return cmd::dispatch(cli, &placeholder);
     }
 
+    if reads(&cli.command) {
+        refuse_missing(cli.db.as_deref())?;
+    }
     let resolved = config::resolve_db(cli.db.as_deref())?;
 
     if resolved.created_new {
@@ -425,6 +473,10 @@ fn dispatch_multi(invocation: Invocation) -> Result<()> {
     let _color = first
         .and_then(|c| c.color)
         .map(output::colors::ColorOverride::set);
+    if matches!(&invocation, Invocation::Multi { sides, .. } if sides.iter().all(|c| reads(&c.command)))
+    {
+        refuse_missing(db_hint.as_deref())?;
+    }
     let resolved = config::resolve_db(db_hint.as_deref())?;
     if resolved.created_new {
         if let Some(name) = resolved.name.as_deref() {

@@ -19,7 +19,11 @@ pub fn info(args: InfoArgs, cli_db: Option<&str>, active_db: &Db) -> Result<()> 
             }
             None => {
                 let resolved = config::resolve_db(cli_db)?;
-                print_info_block(resolved.name.as_deref(), &resolved.path, Some(active_db))?
+                if resolved.created_new {
+                    print_info_for_path(resolved.name.as_deref(), &resolved.path)?
+                } else {
+                    print_info_block(resolved.name.as_deref(), &resolved.path, Some(active_db))?
+                }
             }
         }
     };

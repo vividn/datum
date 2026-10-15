@@ -270,23 +270,33 @@ fn subprocess_alias_set_builtin_name_warns_on_stderr() {
     );
 }
 
-/// `dm now` is a non-logging admin verb. It must exit 0 and produce
-/// some stdout but write no rows.
+/// da-oo6tr: a read of a database that does not exist exits non-zero,
+/// names the path and leaves no file; a write creates it, and then the
+/// read runs and writes no rows. `info` says it is missing and exits 0.
 #[test]
-fn subprocess_now_emits_output_without_rows() {
+fn subprocess_read_of_a_missing_db_errors_and_a_write_creates_it() {
     let env = Env::new();
+    for read in [&["now"][..], &["fields"], &["tail"]] {
+        let out = env.run(read);
+        assert!(!out.status.success(), "{read:?} on a missing db succeeded");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains(&format!("no database at {}", env.db.display())),
+            "{read:?} stderr: {stderr}"
+        );
+        assert!(!env.db.exists(), "{read:?} created the db");
+    }
+    // `info` reports it missing, as it does a TARGET, and creates nothing.
+    let out = env.run(&["info"]);
+    assert_ok(&out, "info");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("✗ (missing)"));
+    assert!(!env.db.exists(), "info created the db");
+    assert_ok(&env.run(&["occur", "coffee"]), "occur");
+    assert!(env.db.exists());
     let out = env.run(&["now"]);
     assert_ok(&out, "now");
-    assert!(
-        !out.stdout.is_empty() || !out.stderr.is_empty(),
-        "now should emit some output"
-    );
-    // `dm now` doesn't touch the entries table; the DB may not even
-    // be created (no logging verb fired), so entry_count is best-effort
-    // — only assert if the file exists.
-    if env.db.exists() {
-        assert_eq!(env.entry_count(), 0);
-    }
+    assert!(!out.stdout.is_empty() || !out.stderr.is_empty());
+    assert_eq!(env.entry_count(), 1);
 }
 
 /// da-s6no: a stale change no longer stops bare `undo`. It used to prompt
@@ -1248,9 +1258,11 @@ fn subprocess_backup_header_names_the_db_it_backed_up() {
     // An unregistered file, by path.
     let path = tmp.path().join("loose.db");
     let path = path.to_str().unwrap();
+    run(&["--db", path, "occur", "pushups"]);
     assert_eq!(source_db(&["--db", path, "db", "backup", "-"]), path);
 
     // No --db: still the default.
+    run(&["occur", "pushups"]);
     let default = tmp.path().join("home").join("datum.db");
     assert_eq!(source_db(&["db", "backup", "-"]), default.to_string_lossy());
 }

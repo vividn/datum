@@ -382,7 +382,7 @@ pub fn parse_invocation(argv: Vec<String>) -> anyhow::Result<Invocation> {
 /// when it exists — never created.
 pub fn open_existing_db(argv: &[String]) -> Option<datum_core::db::Db> {
     let cli_db = crate::config::pre_scan_db_flag(argv);
-    let db_path = crate::config::resolve_db(cli_db.as_deref()).ok()?.path;
+    let db_path = crate::config::locate_db(cli_db.as_deref())?;
     if !db_path.exists() {
         return None;
     }
