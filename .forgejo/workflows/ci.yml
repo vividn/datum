@@ -479,11 +479,15 @@ jobs:
           DATUM_TEST_CONCURRENCY: 3
           # Known flakes get ONE retry, logged as `RETRIED web/tests/<file>
           # (<bead>): …`; no other file is ever retried (da-8bmqe). An entry
-          # is added only once a flake reddens a STAGING run, as one
-          # `tests/<file>=<bead>` line appended at the list's end (under `>-`),
-          # and taking it off is part of that bead's acceptance: a retry left
-          # behind a closed bead hides any regression in exactly that file
-          # (da-pzq4s emptied three, da-ehpe5 and da-i1ok's).
+          # needs evidence that the TEST is at fault, not the diff: a red on a
+          # staging run, or reds on three or more PRs whose diffs can't reach
+          # the test. Each entry names its bead, and comes off when that
+          # bead's fix lands. (daystrip-height, daystrip: the second kind,
+          # 2026-10-15.) It is one `tests/<file>=<bead>` line appended at the
+          # list's end (under `>-`), and taking it off is part of that bead's
+          # acceptance: a retry left behind a closed bead hides any regression
+          # in exactly that file (da-pzq4s emptied three, da-ehpe5 and
+          # da-i1ok's).
           DATUM_TEST_RETRY: ""
 
       # A PR's verdict names the base it was reached on (da-kz73u): the forge's
