@@ -155,6 +155,45 @@ fn a_dash_offers_the_commands_flags() {
     assert!(has(&found, "--db"), "the global flags too: {found:?}");
 }
 
+/// A subcommand's flags are named only in its usage lines, and each one
+/// a usage line names completes after its words (da-8x1vv).
+#[test]
+fn a_dash_offers_every_flag_a_subcommands_usage_names() {
+    let env = Env::new();
+    let found = env.complete("db purge --k");
+    assert_eq!(found, ["--keep-sync-chain"]);
+    let found = env.complete("sync chain leave -");
+    assert!(
+        has(&found, "--force") && !has(&found, "--reader"),
+        "{found:?}"
+    );
+
+    let mut swept = 0;
+    for cmd in datum_parse::help::COMMANDS {
+        for line in cmd.subcommands.iter().flat_map(|s| s.usage) {
+            let words: Vec<&str> = line
+                .split(' ')
+                .skip(1)
+                .take_while(|w| {
+                    w.chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+                        && !w.starts_with('-')
+                })
+                .collect();
+            let found = env.complete(&format!("{} -", words.join(" ")));
+            let named = line.split([' ', '[', '(', '|']).filter(|w| {
+                w.starts_with('-') && w.trim_start_matches('-').starts_with(char::is_alphabetic)
+            });
+            for flag in named {
+                let flag = flag.trim_end_matches([']', ')']);
+                assert!(has(&found, flag), "{line:?}: {flag} not in {found:?}");
+                swept += 1;
+            }
+        }
+    }
+    assert!(swept > 40, "only {swept} flags swept");
+}
+
 #[test]
 fn dayview_help_names_days_and_neither_offers_the_old_spelling() {
     let env = Env::new();

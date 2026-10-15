@@ -212,13 +212,23 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
             return file_slot(v).and_then(files).unwrap_or_default();
         }
     }
+    let given = positionals(&rest, &all_flags, usage);
+    // In a group, the lines of the word after it (`sync admin add`).
+    let lines: Vec<&str> = usage
+        .iter()
+        .copied()
+        .filter(|l| sub.is_some() && group_tokens(l).get(3) == given.first().copied())
+        .collect();
     if cur.starts_with('-') {
-        return flags(all_flags.iter().copied());
+        let mut found = flags(all_flags.iter().copied());
+        // A subcommand's own flags are named only in its usage lines
+        // (`db purge --keep-sync-chain`, da-8x1vv).
+        if sub.is_some() {
+            found.extend(usage_flags(if lines.is_empty() { usage } else { &lines }));
+        }
+        return found;
     }
-    if sub.is_none()
-        && !spec.subcommands.is_empty()
-        && positionals(&rest, &all_flags, usage).is_empty()
-    {
+    if sub.is_none() && !spec.subcommands.is_empty() && given.is_empty() {
         return spec
             .subcommands
             .iter()
@@ -226,7 +236,6 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
             .collect();
     }
 
-    let given = positionals(&rest, &all_flags, usage);
     // A group of its own (`sync chain`): the word after it in its usage.
     if let Some(s) = sub.filter(|_| given.is_empty()) {
         let mut words: Vec<String> = s
@@ -241,12 +250,6 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
             return words;
         }
     }
-    // In a group, the lines of the word after it (`sync admin add`).
-    let lines: Vec<&str> = usage
-        .iter()
-        .copied()
-        .filter(|l| sub.is_some() && group_tokens(l).get(3) == given.first().copied())
-        .collect();
     let (slots, given) = if lines.is_empty() {
         (slots(usage, 2 + sub.is_some() as usize), &given[..])
     } else {
@@ -382,6 +385,21 @@ fn usage_value<'a>(usage: &[&'a str], flag: &str) -> Option<&'a str> {
             .map(|w| w[1])
             .filter(|v| !v.starts_with(['-', '|', '[', '(']))
     })
+}
+
+/// The flags usage lines name: `--leave`, `-y` in `[--yes | -y]`.
+fn usage_flags(usage: &[&str]) -> Candidates {
+    usage
+        .iter()
+        .flat_map(|l| l.split([' ', '|', '[', ']', '(', ')']))
+        .filter(|w| {
+            let name = w.trim_start_matches('-');
+            w.starts_with('-')
+                && name.starts_with(|c: char| c.is_ascii_alphabetic())
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        })
+        .map(str::to_string)
+        .collect()
 }
 
 /// A file position's answer: the shell's own completion, and `-`.
