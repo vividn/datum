@@ -60,6 +60,7 @@ export function widgetOptions(tab: Tab | undefined, held: Settings, key: string)
 		option.type === 'boolean'
 			? {
 					label: option.label,
+					glyph: option.glyph,
 					toggled: valueOf(option) === true,
 					run: () => set(option, valueOf(option) !== true)
 				}

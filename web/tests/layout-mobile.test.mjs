@@ -30,6 +30,7 @@ import assert from 'node:assert/strict';
 import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { unfold as openBar } from './support/bar.mjs';
 import { DESKTOP, pane, titles } from './support/layout.mjs';
+import { toggleFreeze } from './support/daystrip.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -46,7 +47,7 @@ const phone = (width = 390, height = 844) => ({
 const FIRST = ['welcome', 'track', 'collect'];
 
 /** `collect`'s two trees, by their panes' titles: the phone's, and the shipped desktop's (`desk: null`). */
-const MOBILE_TREE = ['dayview', 'tail', 'nowview', 'fields', 'nowview', 'command'];
+const MOBILE_TREE = ['dayview', 'tail', 'fields', 'nowview', 'command'];
 const DESKTOP_TREE = ['dayview', 'tail', 'nowview', 'stats', 'fields', 'command'];
 
 /** A desktop that has never opened the site. */
@@ -125,12 +126,14 @@ const fieldsBar = (page) => pane(page, 'bar').locator('.bar').first();
 
 /** The hour ruler under today's band (`AXIS_HEIGHT`, $lib/panes.ts). */
 const AXIS = 15;
+/** The line between the past and a pinned today (`SEAM`, $lib/panes.ts). */
+const SEAM = 3;
 
 /**
  * The day strip's own box, and how much of each band it reveals.
  *
  * «Just 1 day» (vividn, 2026-09-21) is a claim about what is DRAWN, so it is
- * read off the bands: today's whole, and nothing of yesterday. The strip
+ * read off the bands: today's whole, and how much of yesterday. The strip
  * holds a fortnight whatever its box shows (da-bewc), so counting the
  * bands in the DOM would answer fourteen at every size — what the box
  * reveals of each is the only honest count.
@@ -142,9 +145,11 @@ const bands = (page) =>
 			const el = p.querySelector(`[data-days-ago="${back}"]`);
 			if (!el) return null;
 			const r = el.getBoundingClientRect();
+			// A day in the scroller is seen through the scroller.
+			const clip = el.closest('.stack')?.getBoundingClientRect() ?? box;
 			return {
 				of: Math.round(r.height),
-				seen: Math.round(Math.max(0, Math.min(r.bottom, box.bottom) - Math.max(r.top, box.top)))
+				seen: Math.round(Math.max(0, Math.min(r.bottom, clip.bottom) - Math.max(r.top, clip.top)))
 			};
 		};
 		// FLOORED, to match what the widget derived from (da-r0ydu, canary
@@ -159,27 +164,32 @@ const bands = (page) =>
 		return { inner: Math.floor(box.height), today: seen(0), yesterday: seen(1) };
 	});
 
+/**
+ * Whether the `+` sits on the top of today's band — its middle within the
+ * seam over it (da-2hd21), frozen or not.
+ */
+const gripOnToday = (page) =>
+	pane(page, 'strip').evaluate((p) => {
+		const grip = p.querySelector('button.day-grip').getBoundingClientRect();
+		const today = p.querySelector('[data-days-ago="0"]').getBoundingClientRect();
+		return Math.abs((grip.top + grip.bottom) / 2 - today.top) <= 3;
+	});
+
 /** A pane's body type size, in px — what the tail's `type` option sets. */
 const typeSize = (page, id) =>
 	pane(page, id).evaluate((p) => parseFloat(getComputedStyle(p.querySelector('.body')).fontSize));
 
 describe('a fresh phone', () => {
-	test('`collect` is `mobile`: dayview / tail | nowview / fields + nowview / command', async () => {
+	test('`collect` is `mobile`: dayview / tail / fields + nowview / command', async () => {
 		await asOpened(async (app) => {
 			const { page } = app;
 			await app.spyOnRunner();
 			assert.deepEqual(await rootNames(page), FIRST);
-			// Six panes, not five: row 3 shows the fields widget and a
-			// nowview side by side (da-hkjp) where it used to show one of
-			// two tabs, so BOTH are on the screen and neither wears a tab.
-			assert.deepEqual(await titles(page), [
-				'dayview',
-				'tail',
-				'nowview',
-				'fields',
-				'nowview',
-				'command'
-			]);
+			// Row 3 shows the fields widget and a nowview side by side
+			// (da-hkjp) where it used to show one of two tabs, so BOTH are on
+			// the screen and neither wears a tab; row 2 is the tail alone
+			// (da-2hd21), its tiny nowview gone.
+			assert.deepEqual(await titles(page), MOBILE_TREE);
 			// The root bar's own tab is not the dashboard's: `main`'s panes
 			// are what row 3 stopped tabbing.
 			assert.equal(await page.locator('main [role="tab"]').count(), 0, 'something in `mobile` is still tabbed');
@@ -188,11 +198,9 @@ describe('a fresh phone', () => {
 			assert.equal(await page.locator('.root-bar').evaluate((el) => el.classList.contains('modified')), false);
 			assert.equal(await page.evaluate(() => localStorage.getItem('datum.layout.draft.v1.collect')), null);
 
-			// The row's nowview is the snapshot and the one beside `fields`
-			// is the default window — both drawn at once now, so both are
-			// asked for without anything being tapped.
+			// The nowview beside `fields` is the default window, asked for
+			// without anything being tapped.
 			await page.evaluate(() => window.datum.run(['occur', 'coffee']));
-			await asked(page, '0');
 			await asked(page, '30m');
 			assert.deepEqual(app.errors, []);
 		});
@@ -206,8 +214,8 @@ describe('a fresh phone', () => {
 	//
 	// The baseline has to be a plain widget pane. `command` and the fields
 	// widget draw their own 13px inside their bars, so measuring against
-	// either reads 0.89 and says nothing about the option; the strip, the
-	// snapshot and the windowed nowview are all at the shared 13.6px.
+	// either reads 0.89 and says nothing about the option; the strip and
+	// the nowview are both at the shared 13.6px.
 	test("the tail's type is 0.85 of the rule every other pane body keeps", async () => {
 		await asOpened(async ({ page }) => {
 			const tail = await typeSize(page, 'tail');
@@ -221,45 +229,73 @@ describe('a fresh phone', () => {
 	});
 
 	// vividn: «decrease dayview height to be just 1 day», and (da-r0ydu) «a
-	// day height that is equal to the height of the widget». One day is
-	// today's band WHOLE, none of yesterday under the strip's box, and the
-	// band exactly filling the box less the ruler — at every size, because
-	// the day is derived from the box and not weighed against it.
-	//
-	// The third claim is the one that says the day FOLLOWED rather than
-	// happening to fit: a band the size of its box cannot be a number
-	// written down anywhere, since the four boxes differ.
-	test('the strip shows one whole day at every size, the band filling its box', async () => {
-		const drawn = [];
+	// day height that is equal to the height of the widget» — then
+	// (da-2hd21) «it should definitely be always scrollable … make the
+	// dayview at the top a little narrower, maybe half the height it is
+	// right now, and yes show a little bit of yesterday», with today
+	// starting unfrozen. So at every size the strip opens with today in the
+	// scroller, no freeze button, and a past to scroll up into.
+	test('the strip opens unfrozen and scrollable into the past at every size', async () => {
 		for (const [width, height] of SIZES)
 			await withApp(async ({ page }) => {
-				const b = await bands(page);
-				const yesterday = b.yesterday?.seen ?? 0;
-				assert.equal(
-					yesterday,
-					0,
-					`${width}×${height}: ${yesterday}px of yesterday shows — the strip is ${b.inner}px inside, and one day is ${b.today.of} of band plus ${AXIS} of axis`
-				);
-				// Whole, at all four: da-hkjp's weight clipped today from the
-				// top at the three shorter sizes, which was the cost of
-				// holding one day with a ratio.
-				assert.equal(
-					b.today.seen,
-					b.today.of,
-					`${width}×${height}: today is clipped to ${b.today.seen} of ${b.today.of}`
-				);
-				// And the band IS the box, less the ruler the strip draws
-				// under it: `dayFilling` read back off the screen.
-				assert.equal(
-					b.today.of + AXIS,
-					b.inner,
-					`${width}×${height}: a ${b.today.of}px band and a ${AXIS}px ruler in a ${b.inner}px box`
-				);
-				drawn.push(b.today.of);
+				const strip = pane(page, 'strip');
+				assert.equal(await strip.locator('button.freeze').count(), 0, `${width}×${height}: a freeze button in the pane`);
+				assert.equal(await strip.locator('.row.pinned').count(), 0, `${width}×${height}: today is pinned`);
+				await strip.locator('.stack [data-days-ago="0"]').waitFor({ state: 'attached' });
+				const stack = await strip.locator('.stack').evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight }));
+				assert.ok(stack.scroll > stack.client, `${width}×${height}: the stack does not scroll: ${stack.scroll} in ${stack.client}`);
 			}, phone(width, height));
-		// Four boxes, four different days: a constant would have drawn one
-		// number four times, and this is what says no constant is left.
-		assert.equal(new Set(drawn).size, drawn.length, `the four sizes drew ${drawn.join(' / ')}`);
+	});
+
+	// MEASURED at 390×844 (da-2hd21): a 74px strip draws a 45px today whole,
+	// its 3px seam, and 10px of yesterday over it. The shorter three phones
+	// give the strip 40–52px, less than the shortest day it draws (40) with
+	// its ruler, so there today is cut from the top and no yesterday shows
+	// — what «half» costs below the tallest phone; the stack still scrolls.
+	// The day FOLLOWED: it is `dayUnderSliver` of the box, which no number
+	// written down anywhere could be.
+	test('at 390×844, unfrozen, a sliver of yesterday shows over today, the + on its top', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			await page.evaluate(() => window.datum.run(['occur', 'coffee', '-y']));
+			const strip = pane(page, 'strip');
+			await strip.locator('[data-days-ago="1"] svg').waitFor({ state: 'attached' });
+			const b = await bands(page);
+			assert.equal(b.today.seen, b.today.of, `today is clipped to ${b.today.seen} of ${b.today.of}`);
+			assert.equal(b.today.of, Math.round((b.inner - AXIS - SEAM) / 1.25), `a ${b.today.of}px today in a ${b.inner}px box`);
+			assert.ok(b.yesterday?.seen > 0, `none of yesterday shows: ${JSON.stringify(b)}`);
+			assert.equal(await gripOnToday(page), true, 'the + is not on the top of today');
+
+			// The freeze is the widget's option now, and pinned the same
+			// holds: yesterday over today, the + on the seam between them.
+			await toggleFreeze(app);
+			await strip.locator('.row.pinned').waitFor();
+			await page.waitForFunction(() => {
+				const stack = document.querySelector('.stack');
+				return stack.scrollTop + stack.clientHeight >= stack.scrollHeight - 1;
+			});
+			const pinned = await bands(page);
+			assert.ok(pinned.yesterday?.seen > 0, `pinned, none of yesterday shows: ${JSON.stringify(pinned)}`);
+			assert.equal(await gripOnToday(page), true, 'pinned, the + is not on the top of today');
+		}, phone());
+	});
+
+	// vividn (da-2hd21): «get rid of the nowview on the second row, so just
+	// tail for now. decrease the height of the second row, and the extra
+	// height from the shortening of row 1 and 2 give to row 3». The rows'
+	// heights are the tree's shares, 48 : 103 : 178 : 63, of one column.
+	test('the rows stand 48 : 103 : 178 : 63, the strip about half what it was', async () => {
+		await withApp(async ({ page }) => {
+			const h = await page.evaluate(() =>
+				['strip', 'tail', 'nowview', 'command'].map((id) =>
+					document.querySelector(`main section.pane[data-pane="${id}"]`).getBoundingClientRect().height
+				)
+			);
+			const total = h.reduce((a, b) => a + b, 0);
+			[48, 103, 178, 63].forEach((w, i) =>
+				assert.ok(Math.abs(h[i] - (total * w) / 392) <= 3, `row ${i + 1} is ${h[i]}px of ${total}: ${h.join(' / ')}`)
+			);
+		}, phone());
 	});
 
 	for (const [width, height] of SIZES) {
@@ -278,7 +314,7 @@ describe('a fresh phone', () => {
 					// `main` clips rather than scrolls, so the scroll metrics say
 					// nothing: each pane's own box against the screen does.
 					const s = await screen(page);
-					assert.equal(s.panes.length, 6);
+					assert.equal(s.panes.length, 5);
 					const under = s.panes.filter((p) => p.bottom > s.prompt).map((p) => p.id);
 					for (const p of s.panes)
 						assert.ok(p.left >= 0 && p.right <= s.width, `${p.id} is off the side: ${p.left}…${p.right} of ${s.width}`);
@@ -411,7 +447,7 @@ describe('who gets it', () => {
 			await app.goto('/mobile?db=x');
 			await page.locator('.root-bar [role="tab"][aria-selected="true"]', { hasText: 'mobile' }).waitFor();
 			assert.equal(await page.locator('main .notice').count(), 0);
-			assert.deepEqual(await titles(page), ['dayview', 'tail', 'nowview', 'fields', 'nowview', 'command']);
+			assert.deepEqual(await titles(page), MOBILE_TREE);
 			assert.match(await page.evaluate(() => location.search), /db=x/);
 			assert.deepEqual(app.errors, []);
 		}, DESKTOP);

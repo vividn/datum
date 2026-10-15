@@ -230,12 +230,12 @@ export const KINDS: Record<string, WidgetKind> = {
 		// which must be the follow.
 		meta: meta('daystrip', 'dayview', {
 			labelWidth: DEFAULT_LABEL_WIDTH,
-			freezeToday: true,
+			freezeToday: false,
 			hourFrom: HOUR_FROM,
 			hourTo: HOUR_TO,
 			orientation: 'horizontal'
 		}, [
-			{ key: 'freezeToday', label: 'today frozen at the bottom', type: 'boolean' },
+			{ key: 'freezeToday', label: 'today frozen at the bottom', glyph: '⤓', type: 'boolean' },
 			// A vertical dayview is a week of columns.
 			ORIENTATION
 		]),
@@ -252,7 +252,7 @@ export const KINDS: Record<string, WidgetKind> = {
 			// be a number nobody chose standing in the way of that.
 			dayHeight: typeof dayHeight === 'number' ? dayHeight : undefined,
 			labelWidth: typeof labelWidth === 'number' ? labelWidth : DEFAULT_LABEL_WIDTH,
-			freezeToday: typeof freezeToday === 'boolean' ? freezeToday : true,
+			freezeToday: typeof freezeToday === 'boolean' ? freezeToday : false,
 			hourFrom: typeof hourFrom === 'number' ? hourFrom : HOUR_FROM,
 			hourTo: typeof hourTo === 'number' ? hourTo : HOUR_TO
 		}),

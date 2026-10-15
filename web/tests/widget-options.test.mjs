@@ -136,7 +136,8 @@ describe('widget options', () => {
 				'a switch is labelled with its',
 				'show ignored fields'
 			]);
-			assert.deepEqual(await linesOf(page, 'strip'), ['Reset widget', 'today frozen at the bottom', 'orientation']);
+			// The freeze wears its icon before its words (da-2hd21).
+			assert.deepEqual(await linesOf(page, 'strip'), ['Reset widget', '⤓ today frozen at the bottom', 'orientation']);
 			assert.deepEqual(await linesOf(page, 'tail'), ['Reset widget', 'type']);
 			assert.equal(await menuButton(page, 'custom').count(), 0, 'a kind that declares nothing has a name menu');
 			// No modal is left anywhere in the app.
@@ -573,38 +574,43 @@ describe('widget options', () => {
 	test('a setting on one layout’s widget is not another layout’s', async () => {
 		await shared.room('wo-apart', async (app, room) => {
 			const { page } = app;
-			const FROZEN = 'today frozen at the bottom';
+			// `orientation`, whose default the two layouts share: the freeze
+			// is main's on by default and mobile's off (da-2hd21), so a write
+			// to it could not tell a shared setting from a default.
+			const ORIENT = 'orientation';
+			const orientation = async (id) =>
+				(await choiceLines(page, id, ORIENT)).find((l) => l.startsWith('✓ ')).replace(/^✓ | · default$/g, '');
 			const dayStrip = await titledPane(page, 'dayview').first().getAttribute('data-pane');
-			await toggleOption(page, dayStrip, FROZEN);
-			assert.equal(await optionChecked(page, dayStrip, FROZEN), false);
+			await pickOption(page, dayStrip, ORIENT, 'vertical');
+			assert.equal(await orientation(dayStrip), 'vertical');
 
 			await page.evaluate(() => window.datum.shell.open('mobile'));
 			await page.locator('.root-bar [role="tab"][aria-selected="true"]').filter({ hasText: 'mobile' }).waitFor();
 			const mobileStrip = await titledPane(page, 'dayview').first().getAttribute('data-pane');
-			assert.equal(await optionChecked(page, mobileStrip, FROZEN), true, 'the two layouts shared one tab’s setting');
+			assert.equal(await orientation(mobileStrip), 'horizontal', 'the two layouts shared one tab’s setting');
 
 			// BOTH DIRECTIONS (the panel on #64): main's write not showing on
 			// mobile is half the claim. Write on mobile too and hold the two
 			// to their own values — a collision the other way round, where the
 			// second layout's write lands on the first layout's entry, reads
 			// the same as isolation until this is asserted.
-			await toggleOption(page, mobileStrip, FROZEN);
-			assert.equal(await optionChecked(page, mobileStrip, FROZEN), false);
+			await pickOption(page, mobileStrip, ORIENT, 'vertical');
+			assert.equal(await orientation(mobileStrip), 'vertical');
 
 			// Back on `main`: its own strip still holds what was set on it, so
 			// leaving a root tab and coming back keeps this session's — and
 			// mobile's write did not reach it.
 			await page.locator('.root-bar [role="tab"]').filter({ hasText: exactly(room) }).click();
 			await page.locator('section.pane[data-title="repl"]').waitFor();
-			assert.equal(await optionChecked(page, dayStrip, FROZEN), false, 'leaving a root tab lost what it held');
+			assert.equal(await orientation(dayStrip), 'vertical', 'leaving a root tab lost what it held');
 
 			// And once more the other way, with the two now set apart: put
 			// main's back to the default and mobile's must not follow.
-			await toggleOption(page, dayStrip, FROZEN);
-			assert.equal(await optionChecked(page, dayStrip, FROZEN), true);
+			await pickOption(page, dayStrip, ORIENT, 'horizontal');
+			assert.equal(await orientation(dayStrip), 'horizontal');
 			await page.locator('.root-bar [role="tab"]').filter({ hasText: exactly('mobile') }).click();
 			await titledPane(page, 'dayview').first().waitFor();
-			assert.equal(await optionChecked(page, mobileStrip, FROZEN), false, 'main’s write reached mobile');
+			assert.equal(await orientation(mobileStrip), 'vertical', 'main’s write reached mobile');
 			assert.deepEqual(app.errors, []);
 		});
 	});

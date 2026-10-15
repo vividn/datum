@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { devices } from 'playwright';
 import { startApp, stopApp, withApp, sharedApp } from './support/app.mjs';
 import { until } from './support/until.mjs';
+import { following, settledAt } from './support/daystrip.mjs';
 
 before(startApp);
 after(stopApp);
@@ -284,7 +285,14 @@ describe('the time cursor', () => {
 	test('a drag on the notch and a scroll of the stack set no cursor', async () => {
 		await withDay(async ({ page }) => {
 			await page.evaluate(() => (document.querySelector('.cell.dayview').style.flex = '0 0 400px'));
-			await page.locator(`${PAST} svg.svg`).waitFor();
+			// Heard, not just laid out: the stack is there at any box
+			// (da-2hd21), so yesterday's band drawn is no sign the strip has
+			// taken its new box — its day following it is.
+			const day = await following({ page });
+			await settledAt({ page }, day);
+			// And yesterday drawn AT that day: the new height re-draws every
+			// band, and a picture from before it is replaced under the reads.
+			await page.locator(`${PAST} svg.svg[height="${day}"]`).waitFor();
 
 			const past = await page.locator(`${PAST} svg.svg`).boundingBox();
 			await page.mouse.move(past.x + past.width / 2, past.y + past.height - 10);

@@ -147,9 +147,8 @@ describe('a place on a desktop', () => {
 		await desktop.solo(async ({ page }) => {
 			await page.evaluate(() => window.datum.shell.openPlace('dayview'));
 			const dayview = modal(page, 'dayview');
-			await dayview.locator('button.freeze').waitFor();
+			await dayview.locator('.strip button.day-grip').waitFor();
 			assert.equal((await dayview.locator('.sheet-head > span').innerText()).trim(), 'dayview');
-			assert.equal(await dayview.locator('button.freeze').getAttribute('aria-checked'), 'true');
 			await dayview.locator('.sheet-head .close').click();
 			await dayview.waitFor({ state: 'detached' });
 			await until(() => onPlaceEntry(page), (on) => !on);

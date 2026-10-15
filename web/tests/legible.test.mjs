@@ -146,7 +146,8 @@ describe('a drawn view', () => {
 
 				const drawn = await app.page.evaluate(() => {
 					const strip = document.querySelector('.strip');
-					const stamp = strip.querySelector('.row.pinned .stamp');
+					// Today's row, pinned or in the scroller (da-2hd21).
+					const stamp = strip.querySelector('.row.now .stamp');
 					const labels = [...strip.querySelectorAll('.axis text.tick-label')];
 					const px = (el) => parseFloat(getComputedStyle(el).fontSize);
 					return {

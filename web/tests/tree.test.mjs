@@ -724,11 +724,13 @@ describe('snapsOfKind', () => {
 		// number measured at one screen (`STRIP_WEIGHT`) until the day began
 		// following the widget, and every share of its column is `legibly`'s
 		// again — which is the claim this test is.
-		const { DEFAULT_LAYOUT, DEFAULT_LAYOUT_MOBILE, MOBILE_LAYOUT } = await import('../src/lib/layout/defaults.ts');
+		// …until da-2hd21, where vividn halved its strip and gave row 3 the
+		// room: its shares are his, below the strip's legible box.
+		const { DEFAULT_LAYOUT, DEFAULT_LAYOUT_MOBILE } = await import('../src/lib/layout/defaults.ts');
 		const chrome = (pane) => ('children' in pane.tabs[pane.active].content ? { width: 0, height: 0 } : { width: 2, height: 14 });
 		const columns = (pane) =>
 			pane.tabs.flatMap(({ content }) => ('children' in content ? [content, ...content.children.flatMap(columns)] : []));
-		for (const layout of [DEFAULT_LAYOUT, DEFAULT_LAYOUT_MOBILE, MOBILE_LAYOUT]) {
+		for (const layout of [DEFAULT_LAYOUT, DEFAULT_LAYOUT_MOBILE]) {
 			for (const split of columns(layout.root).filter((s) => s.direction === 'column')) {
 				const shared = split.children.filter((c) => !KINDS[c.tabs[c.active].content.kind]?.fit);
 				const want = shared.map(

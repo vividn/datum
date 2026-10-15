@@ -31,7 +31,8 @@ const widgetPane = (id: string, kind: string, settings: Record<string, unknown> 
  * DAY HEIGHT, which is written down nowhere (da-r0ydu).
  *
  * Its absence is the setting: no day height means one day fills the
- * widget, at whatever height the layout gives the pane, and follows it
+ * widget (pinned, with a quarter of yesterday showing above it,
+ * da-2hd21), at whatever height the layout gives the pane, and follows it
  * when the pane is resized. A number here would be a height chosen at one
  * screen size for every screen size, which is the thing this replaced.
  *
@@ -44,7 +45,7 @@ const widgetPane = (id: string, kind: string, settings: Record<string, unknown> 
  */
 const STRIP = {
 	labelWidth: DEFAULT_LABEL_WIDTH,
-	freezeToday: true,
+	freezeToday: false,
 	hourFrom: HOUR_FROM,
 	hourTo: HOUR_TO
 };
@@ -150,11 +151,11 @@ export const DEFAULT_LAYOUT_MOBILE: Layout = {
 /**
  * `mobile` (vividn, 2026-09-17: "the default one loaded when the site is
  * opened on a phone"): dayview / tail | a tiny nowview / fields beside a
- * nowview / commands, one column. The tiny nowview is the snapshot
+ * nowview / commands, one column. The tiny nowview was the snapshot
  * (`history: '0'`) — each field's current state and no time axis — and
- * tail takes most of its row. His «input bar» is the app's own bottom
- * bar, which every layout already has: an `input` pane here would draw
- * the same command line twice, one above the other.
+ * went in da-2hd21, leaving tail its row alone. His «input bar» is the
+ * app's own bottom bar, which every layout already has: an `input` pane
+ * here would draw the same command line twice, one above the other.
  *
  * vividn, 2026-09-21, on what it should be instead of what da-shzs built:
  * «decrease dayview height to be just 1 day / decrease fontsize of tail a
@@ -201,17 +202,31 @@ export const DEFAULT_LAYOUT_MOBILE: Layout = {
  * not a surprise. The strip's inner box is 141 / 102 / 97 / 80 px and the
  * day drawn in it 126 / 87 / 82 / 65 — today's band WHOLE at all four,
  * where da-hkjp's weight clipped it from the top at the three shorter
- * ones, and nothing of yesterday showing at any of them. The commands
+ * ones, and nothing of yesterday showing at any of them (since da-2hd21
+ * a pinned today leaves a quarter of yesterday showing: 100 / 69 / 65 /
+ * 51 of today and 25 / 17 / 16 / 13 of yesterday). The commands
  * pane is the thing this must not cost, and it does not: 114 / 85 / 81 /
  * 69 px against the 63 it needs, where da-hkjp measured 122 / 91 / 87 /
  * 74. It went DOWN and still clears, because the strip's floor fell 45px
  * (130 to 85) while its share of the column rose.
  *
- * ⚑ WHAT IT COSTS is the SCROLL BACK: a strip whose box is exactly one day
- * has no room above today, so at rest it holds no past at all — on a desk
- * as much as on a phone. The past is reached by shrinking the day at the
- * `+` handle, which then HOLDS, and the pane may be resized afterwards
- * without taking it away.
+ * vividn, 2026-10-15 (da-2hd21): «it should definitely be always
+ * scrollable. default mobile collect view, let's make the dayview at the
+ * top a little narrower, maybe half the height it is right now, and yes
+ * show a little bit of yesterday … get rid of the nowview on the second
+ * row, so just tail for now. decrease the height of the second row, and
+ * the extra height from the shortening of row 1 and 2 give to row 3». So
+ * the strip's 85 is 48, about half its box at 390×844 and the least that
+ * still holds the shortest day it draws (40), its ruler, the seam and a
+ * sliver there; row 2 is the tail alone at its legible height in small
+ * type and its frame (103, registry.ts) where nowview's 122 held it; row 3
+ * takes the 56 the two gave up, 122 + 56 = 178; the commands keep their
+ * 63, and the column's total, so their pixels too. These four are NOT
+ * `legibly`'s, and the sweep in tree.test.mjs leaves this layout out:
+ * the strip is below its legible box by vividn's choice.
+ * A pinned today leaves a quarter of yesterday over it (`dayUnderSliver`),
+ * and in a box too short for both today gives way from the top, so the
+ * strip scrolls into the past at every size.
  */
 export const MOBILE_LAYOUT: Layout = {
 	version: LAYOUT_VERSION,
@@ -219,15 +234,9 @@ export const MOBILE_LAYOUT: Layout = {
 	designedFor: 'mobile',
 	root: holder(
 		'root',
-		split('main', 'column', legibly([85, 122, 122, 63]), [
+		split('main', 'column', legibly([48, 103, 178, 63]), [
 			strip(),
-			holder(
-				'row',
-				split('glance', 'row', [0.7, 0.3], [
-					widgetPane('tail', 'tail', { type: 'small' }),
-					widgetPane('now', 'nowview', { history: '0' })
-				])
-			),
+			widgetPane('tail', 'tail', { type: 'small' }),
 			holder(
 				'fields',
 				// `legibly` of their legible WIDTHS, which is a half each
@@ -346,7 +355,8 @@ export const BUILTIN_NAMES = Object.keys(BUILTIN);
  * remembers how many it has seen.
  */
 const NEW_DEFAULTS: string[] = [
-	'A first visit now opens three tabs: welcome, which says what datum is and how the page is handled; track, where you choose what to track; and collect, the page you log on.'
+	'A first visit now opens three tabs: welcome, which says what datum is and how the page is handled; track, where you choose what to track; and collect, the page you log on.',
+	"On a phone, collect's day strip is half as tall and shows a sliver of yesterday to scroll up into, the tail has its row alone, and the fields and nowview below it have the room."
 ];
 
 /** `NEW_DEFAULTS`, or the web suite's in its place, handed over as `pinned`'s tree is. */

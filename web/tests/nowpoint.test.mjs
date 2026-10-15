@@ -908,36 +908,6 @@ describe('on a phone', () => {
 			}
 		);
 	});
-
-	test('the tiny nowview in `mobile` shows the lines and no margin', async () => {
-		await withBand(
-			async (app) => {
-				const { page } = app;
-				const tiny = page.locator('section[data-pane="now"] .nowview');
-				const box = await tiny.boundingBox();
-				assert.ok(box.width < 200, `the tiny nowview is ${box.width}px — the margin's floor is 200`);
-				assert.equal(await tiny.locator('.nowview-margin').count(), 0, 'the margin ate the tiny nowview');
-				assert.equal(await tiny.locator('.nowview-jump').count(), 0);
-				// And it still draws the line: the selection is the one thing
-				// there is always room for.
-				await page.evaluate(() => window.datum.cursor.set(new Date(Date.UTC(2026, 8, 10, 14, 40))));
-				await until(
-					() => page.locator('section[data-pane="now"] svg.svg line.cursor').count(),
-					(n) => n === 1
-				);
-			},
-			{
-				...PHONE,
-				home: 'mobile',
-				ready: async (app) => {
-					// `mobile`'s tiny nowview is the SNAPSHOT (`history: '0'`):
-					// no axis, no gridline — its chips are what it draws.
-					await app.page.locator('section[data-pane="now"] svg.svg .now-chunk').first().waitFor({ state: 'attached' });
-					await app.idle();
-				}
-			}
-		);
-	});
 });
 
 // ── turned on its side (da-78evn) ──────────────────────────────────────

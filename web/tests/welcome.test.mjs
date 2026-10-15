@@ -53,7 +53,7 @@ const closeWelcome = (page) => page.getByRole('button', { name: 'Close welcome',
 describe('a first visit', () => {
 	for (const [what, device, collect] of [
 		['a desktop', FRESH_DESKTOP, ['dayview', 'tail', 'nowview', 'stats', 'fields', 'command']],
-		['a phone', FRESH_PHONE, ['dayview', 'tail', 'nowview', 'fields', 'nowview', 'command']]
+		['a phone', FRESH_PHONE, ['dayview', 'tail', 'fields', 'nowview', 'command']]
 	])
 		test(`${what} opens welcome · track · collect on welcome; its button lands on track; collect is the page it opened before`, async () => {
 			await withApp(async (app) => {
@@ -243,7 +243,7 @@ describe('a device that has been here', () => {
 	test('keeps the tabs it had, and the tree under them', async () => {
 		for (const [device, name, shown] of [
 			[{ ...DESKTOP, desk: null }, 'main', ['dayview', 'tail', 'nowview', 'stats', 'fields', 'command']],
-			[{ ...FRESH_PHONE, home: 'mobile' }, 'mobile', ['dayview', 'tail', 'nowview', 'fields', 'nowview', 'command']]
+			[{ ...FRESH_PHONE, home: 'mobile' }, 'mobile', ['dayview', 'tail', 'fields', 'nowview', 'command']]
 		])
 			await withApp(async ({ page }) => {
 				assert.deepEqual(await rootNames(page), [name]);

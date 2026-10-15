@@ -42,11 +42,12 @@
 	  size being previewed and re-asked only on release: one `dayview` per
 	  band per frame is a render loop, and this is the "better preview
 	  rendering when changing the day height/label width".
-	- the freeze-today toggle at the far left, wearing the same mark the
-	  pane menu's bar-on-bottom wears. On, today is pinned under the
-	  scroller and never scrolls away (what the strip has always done);
-	  off, today is simply the last band in the scroller and goes with the
-	  rest.
+	- no freeze-today toggle (da-2hd21): vividn, 2026-10-15, «Move the
+	  freeze today thing into the widget options menu, icon with words. So
+	  no button in the main view, only widget menu». `freezeToday` is that
+	  option. On, today is pinned under the scroller and never scrolls
+	  away; off — the default — today is simply the last band in the
+	  scroller and goes with the rest.
 
 	The strip also ZOOMS onto an hour range (da-ukcf): two fingers pinching
 	over it, or ctrl+wheel on a desktop, narrow the window; a two-finger
@@ -115,8 +116,8 @@
 	the `picture` action with the double tap, because every drawn picture
 	has that action on it and only these two views have a recogniser.
 
-	A press that starts on the `+` handle, the freeze toggle, the `⊖` or
-	the jagged line is THEIRS, and one that starts off a band — the date
+	A press that starts on the `+` handle, the `⊖` or the jagged line is
+	THEIRS, and one that starts off a band — the date
 	column, the ruler, the room around them — is the pane's, so a swipe there still
 	changes tabs. The bands say so themselves with `data-pans="x"`.
 
@@ -148,11 +149,13 @@
 
 	THE DAY HEIGHT IS THE ONE THAT MAY BE ABSENT (da-r0ydu). No day height
 	means ONE DAY FILLS THE WIDGET — `dayFilling(height)`, re-derived every
-	time the pane is resized — and a number means the reader's own, which
-	the box no longer moves. The handle sends `undefined` when it is
-	dragged back onto the derived value, so the follow re-arms; there is no
-	third state and no flag, because the owner keeps only the difference
-	from what the layout says and an absence is what «following» IS.
+	time the pane is resized; pinned, today leaves a quarter of yesterday
+	showing above it, `dayUnderSliver(height)` (da-2hd21) — and a number
+	means the reader's own, which the box no longer moves. The handle sends
+	`undefined` when it is dragged back onto the derived value, so the
+	follow re-arms; there is no third state and no flag, because the owner
+	keeps only the difference from what the layout says and an absence is
+	what «following» IS.
 -->
 <script lang="ts">
 	import { createEventDispatcher, onDestroy, onMount, tick } from 'svelte';
@@ -172,6 +175,8 @@
 	import {
 		AXIS_HEIGHT,
 		DIVIDER,
+		SEAM,
+		SLIVER,
 		DEFAULT_DAY_HEIGHT,
 		MIN_DAY_HEIGHT,
 		MAX_DAY_HEIGHT,
@@ -185,6 +190,7 @@
 		clampWindow,
 		dayFilling,
 		dayPitch,
+		dayUnderSliver,
 		geometryArgv,
 		pictureWidth,
 		type DayviewJson,
@@ -203,8 +209,9 @@
 	 * UNDEFINED, which is the strip following its own box (da-r0ydu).
 	 *
 	 * The absence IS the derivation: `day` below is `dayFilling(height)`
-	 * while nothing is here, so one day fills the widget at any size and
-	 * follows it when the pane is resized. A number here is the reader's
+	 * while nothing is here — `dayUnderSliver(height)` while today is
+	 * pinned — so one day fills the widget at any size and follows it when
+	 * the pane is resized. A number here is the reader's
 	 * own, held against the box; the handle sends `undefined` back when it
 	 * is dragged onto the derived value, and the follow re-arms. Nothing
 	 * flags which of the two is in force — the absence is the flag.
@@ -213,7 +220,7 @@
 	/** How wide the strip's own date-stamp column is, in pixels. */
 	export let labelWidth: number = DEFAULT_LABEL_WIDTH;
 	/** Is today pinned under the scroller, or the last band inside it? */
-	export let freezeToday = true;
+	export let freezeToday = false;
 	/** The hour range every band is drawn onto — the whole day at rest (da-ukcf). */
 	export let hourFrom: number = HOUR_FROM;
 	export let hourTo: number = HOUR_TO;
@@ -258,13 +265,15 @@
 			: null;
 	/**
 	 * The day height the strip DRAWS at: the reader's, or the one that
-	 * makes one day fill the box it was just measured at.
+	 * makes one day fill the box it was just measured at — less the sliver
+	 * of yesterday that says there is a past to scroll up to (da-2hd21),
+	 * pinned or not.
 	 *
 	 * Before the box is measured there is no box to derive from, and the
 	 * default stands in — nothing is drawn at it, since every ask is gated
 	 * on a width the same measurement supplies.
 	 */
-	$: derived = height > 0 ? dayFilling(height) : DEFAULT_DAY_HEIGHT;
+	$: derived = height > 0 ? dayUnderSliver(height) : DEFAULT_DAY_HEIGHT;
 	/** The day DRAWN: the reader's held height when there is one, else the box's. */
 	$: day = heldDay ?? derived;
 	$: labelWidth = clamp(
@@ -334,20 +343,35 @@
 	 */
 	$: room = Math.max(
 		0,
-		height - AXIS_HEIGHT - DIVIDER - (freezeToday ? bandBox(day) : 0)
+		height - AXIS_HEIGHT - (freezeToday ? SEAM + bandBox(day) : DIVIDER)
 	);
 	$: slots = room > 0 ? Math.ceil((room - bandBox(day)) / dayPitch(day)) + 1 : 0;
 	/** Of those slots, the ones the PAST gets: unfrozen, today is in the scroller too. */
 	$: fits = Math.max(0, freezeToday ? slots : slots - 1);
 	/**
 	 * The days the stack HOLDS: a fortnight at least, and as many as the
-	 * box shows when it shows more (da-bewc). Zero is a box with no room
-	 * above today at all, which has nothing to scroll either way.
+	 * box shows when it shows more (da-bewc) — at any box height, so the
+	 * strip is always scrollable into the past (da-2hd21). A box with no
+	 * room above a pinned today still gives the stack a `SLIVER` of a day,
+	 * clipping today from the top (`.stack`'s `min-height`).
 	 */
-	$: base = slots > 0 ? Math.max(FORTNIGHT, fits) : 0;
+	$: base = Math.max(FORTNIGHT, fits);
 	/** The days the reader has scrolled the stack into, above `base` (`reachBack`). */
 	let extra = 0;
-	$: depth = base > 0 ? base + extra : 0;
+	$: depth = base + extra;
+	/** What the stack keeps of the box however short it is: a sliver of a day. */
+	$: sliver = Math.round(bandBox(shownDayHeight) * SLIVER);
+	/**
+	 * The middle of the line over today, which the `+` sits on pinned or not
+	 * (da-2hd21): today's band and its ruler, less what the sliver took —
+	 * and, unpinned, the divider under today, the line being today's own
+	 * top border.
+	 */
+	$: seamAt =
+		Math.min(bandBox(shownDayHeight), Math.max(0, height - AXIS_HEIGHT - SEAM - sliver)) +
+		AXIS_HEIGHT +
+		SEAM / 2 +
+		(freezeToday ? 0 : DIVIDER);
 
 	/** The days in the scroller, oldest first — today among them when it is not frozen. */
 	$: rows = [
@@ -621,7 +645,13 @@
 
 	function onScroll(): void {
 		seenTop = stackEl?.scrollTop ?? 0;
-		atBottom = !stackEl || stackEl.scrollTop + stackEl.clientHeight >= stackEl.scrollHeight - 1;
+		// A stack squeezed to no height by a shrinking box is one nobody can
+		// have scrolled, so it keeps the newest day pinned for when the box
+		// grows back (da-2hd21).
+		atBottom =
+			!stackEl ||
+			stackEl.clientHeight === 0 ||
+			stackEl.scrollTop + stackEl.clientHeight >= stackEl.scrollHeight - 1;
 		refreshVisible();
 		void reachBack();
 	}
@@ -894,11 +924,11 @@
 		setSizes(day + up * STEP, labelWidth + right * STEP);
 	}
 
-	function toggleFreeze(): void {
-		freezeToday = !freezeToday;
-		dispatch('change', { freezeToday });
-		void anchor();
-	}
+	// Today going into the scroller or out of it, from the widget's
+	// options, changes what the bottom of the stack is: back to the newest.
+	// After the update, not inside it: what `anchor` sets of `atBottom` in
+	// the middle of one is never seen by `jagged`, declared above it.
+	$: (freezeToday, void tick().then(anchor));
 
 	// ── the zoom: two fingers, ctrl+wheel, and a button back ───────────
 
@@ -975,8 +1005,8 @@
 
 	function onPointerDown(event: PointerEvent): void {
 		// The strip's own controls are not the picture: the `+` handle, the
-		// freeze toggle, the `⊖` and the jagged line have the pointer when
-		// it is on them, and a press on one is not the start of a gesture.
+		// `⊖` and the jagged line have the pointer when it is on them, and a
+		// press on one is not the start of a gesture.
 		if ((event.target as HTMLElement).closest('button')) return;
 		if (event.pointerType === 'mouse') {
 			// The mouse has no finger to register, but its drag still needs
@@ -1332,7 +1362,10 @@
 		style:--label="{shownLabelWidth}px"
 		style:--axis="{AXIS_HEIGHT}px"
 		style:--divider="{DIVIDER}px"
-		style:--seam="{(freezeToday ? bandBox(shownDayHeight) : 0) + AXIS_HEIGHT}px"
+		style:--seam="{seamAt}px"
+		style:--tear="{freezeToday ? seamAt : AXIS_HEIGHT}px"
+		style:--seam-line="{SEAM}px"
+		style:--sliver="{sliver}px"
 		style:--sx={scaleX}
 		style:--sy={scaleY}
 	>
@@ -1369,31 +1402,16 @@
 			bar»): the divider between two dates, and the spine between the
 			date column and the bands, which is the 00 mark.
 		-->
-		<div class="divider"></div>
+		<div class="divider" class:seam={freezeToday}></div>
 		<div class="spine"></div>
 
 		<!--
-			The strip's own controls, on that line: the freeze toggle at the far
-			left of it, the `+` at the 00 mark where the stamp column meets the
-			bands. Placed against the strip rather than inside the divider, and
-			clamped into it, so a strip too short to hold a whole day — which
-			clips today's band from the TOP (da-zh2o) — still has them on screen.
+			The strip's own control, at the top of today: the `+` at the 00
+			mark where the stamp column meets the bands. Placed against the
+			strip rather than inside the divider, and clamped into it, so a
+			strip too short to hold a whole day — which clips today's band from
+			the TOP (da-zh2o) — still has it on screen.
 		-->
-		<button
-			class="freeze"
-			type="button"
-			role="switch"
-			aria-checked={freezeToday}
-			title={freezeToday ? 'today is pinned at the bottom' : 'today scrolls with the rest'}
-			aria-label="freeze today at the bottom"
-			on:click={toggleFreeze}
-		>
-			<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-				<rect class="frame" x="1.5" y="1.5" width="13" height="13" rx="2.5" />
-				<rect x="2" y="11" width="12" height="3" rx="1" />
-			</svg>
-		</button>
-
 		<button
 			class="grip day-grip"
 			role="slider"
@@ -1608,8 +1626,11 @@
 	   ruler and today's band have theirs. The past in it may run past it
 	   by up to one day (see `depth`), and then it scrolls. */
 	.stack {
-		flex: 1 1 auto;
-		min-height: 0;
+		/* No basis: the stack is the room left over, so a strip too short
+		   for everything takes from the stack first, down to its sliver,
+		   and only then from today — never in proportion to fourteen days. */
+		flex: 1 1 0;
+		min-height: var(--sliver);
 		display: flex;
 		flex-direction: column;
 		overflow-y: auto;
@@ -1652,12 +1673,27 @@
 	.row + .row {
 		border-top-color: var(--rule);
 	}
-	/* Today's band is the strip's bottom edge: a floor, not a height, so
-	   in a shorter strip it is clipped whole from the top. */
+	/* Over today, pinned or not, the seam: thicker than a day's divider. */
+	.row.now {
+		border-top-width: var(--seam-line);
+	}
+	/* Today's band is the strip's bottom edge. In a strip too short for it
+	   and the stack's sliver it gives way, clipped from the TOP: the picture
+	   sits on the band's floor and runs out past its start edge, which the
+	   band's `overflow: hidden` cuts. */
 	.row.pinned {
-		height: auto;
-		min-height: var(--band);
+		height: var(--band);
+		flex: 0 1 auto;
+		min-height: 0;
 		border-top: 0;
+	}
+	.row.pinned > .band {
+		display: flex;
+		flex-direction: column;
+		justify-content: flex-end;
+	}
+	.row.pinned .shot {
+		flex: none;
 	}
 
 	.stamp {
@@ -1740,19 +1776,22 @@
 		z-index: 2;
 	}
 
-	/* 1px, full width, and nothing else: the line itself. */
+	/* Full width, and nothing else: the line itself — the seam's over a
+	   pinned today, a day's under one that scrolls. */
 	.divider {
 		flex: none;
 		height: var(--divider);
 		background: var(--rule);
 		z-index: 2;
 	}
+	.divider.seam {
+		height: var(--seam-line);
+	}
 
 	/* The controls that sit ON that line. Absolute against the strip, at
 	   the height the seam is — `--seam` is what the flow below the divider
 	   costs — and clamped into the box, so a strip shorter than one day
 	   still has them (the old notch's rule, da-zh2o). */
-	.freeze,
 	.grip,
 	.jagged {
 		position: absolute;
@@ -1760,7 +1799,6 @@
 		transform: translateY(50%);
 		z-index: 3;
 	}
-	.freeze,
 	.grip {
 		padding: 0;
 		border: 0;
@@ -1772,12 +1810,6 @@
 		/* A fingertip, on the phone as on the desk. */
 		width: 26px;
 		height: 26px;
-	}
-	.freeze {
-		left: 0;
-		cursor: pointer;
-	}
-	.grip {
 		left: var(--label);
 		margin-left: -13px;
 		cursor: move;
@@ -1785,26 +1817,12 @@
 		   page behind it — the pointer events below are the whole gesture. */
 		touch-action: none;
 	}
-	.freeze:hover,
 	.grip:hover,
-	.freeze:focus-visible,
 	.grip:focus-visible {
 		color: var(--accent);
 	}
-	.freeze[aria-checked='true'] {
-		color: var(--accent);
-	}
-	.freeze:focus-visible,
 	.grip:focus-visible {
 		outline: 1px solid var(--accent);
-	}
-	.freeze rect {
-		fill: currentColor;
-	}
-	.freeze .frame {
-		fill: none;
-		stroke: currentColor;
-		stroke-opacity: 0.6;
 	}
 	.grip line {
 		stroke: currentColor;
@@ -1813,13 +1831,9 @@
 	}
 
 	/* The zoom reset, in the bottom corner of the date column (da-8rqb9).
-	   Right-aligned inside that column so it stands clear of the freeze
-	   toggle, which is at its left edge and drops to this same seam when
-	   today is not frozen; at a column narrower than the button the two
-	   converge, and the button wins the press because it is later in the
-	   DOM and carries the higher z-index.
+	   Right-aligned inside that column, under the `+` at its right edge.
 
-	   A fingertip's 26px, the freeze's and the grip's own, over a 16px
+	   A fingertip's 26px, the grip's own, over a 16px
 	   glyph: §12's box is not the drawing (the old beta ⓘ's pattern). */
 	.unzoom {
 		position: absolute;
@@ -1856,8 +1870,10 @@
 		stroke: none;
 	}
 
-	/* Over the divider, clear of the `+`: the tear, and the way back. */
+	/* Over the divider, clear of the `+`: the tear, and the way back — over
+	   the ruler when today scrolls with the rest, the `+` being on today. */
 	.jagged {
+		bottom: min(var(--tear), calc(100% - 13px));
 		left: calc(var(--label) + 16px);
 		right: 0;
 		height: 6px;

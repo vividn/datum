@@ -73,7 +73,8 @@ const shownDays = (page) =>
  * ⚑ THE BOX ONLY SAYS HOW MUCH PAST A STRIP HOLDS ONCE THE DAY IS HELD
  * (da-r0ydu). Untouched, the day FOLLOWS the widget — one day fills it at
  * any height — so a border dragged taller draws a taller DAY and never
- * more days, and a strip at rest has no past above today at all. The
+ * more days, and a strip at rest has no more past above today than the
+ * sliver of yesterday a pinned today leaves (da-2hd21). The
  * tests below are about the box: what a drag shows as it goes, and what
  * the notch lands on. So they enter the second state first, the way a
  * reader does with the `+` handle. The drafts further down set
@@ -289,7 +290,9 @@ describe("the strip's notch", () => {
 					return {
 						scrolls: body.scrollHeight - body.clientHeight,
 						strip: box('.strip'),
-						today: box('.row.pinned'),
+						// The band, not its row: the row gives way to the stack's
+						// sliver (da-2hd21) and the band runs out past its top.
+						today: box('.row.pinned svg'),
 						axis: box('.axis')
 					};
 				});
@@ -297,7 +300,7 @@ describe("the strip's notch", () => {
 				assert.ok(seen.today.top < seen.strip.top - 1, 'today\'s band is not clipped at the top');
 				assert.ok(Math.abs(seen.axis.bottom - seen.strip.bottom) <= 1, 'the hour ruler left the bottom of the strip');
 			},
-			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('strip', 'daystrip')))) }
+			{ ...DESKTOP, prepare: (context) => context.addInitScript(draft, JSON.stringify(along('column', widgetPane('repl', 'repl'), widgetPane('strip', 'daystrip', { freezeToday: true })))) }
 		);
 	});
 });

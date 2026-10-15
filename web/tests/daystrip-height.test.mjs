@@ -47,6 +47,9 @@ import {
 	todayBand,
 	stackScroll,
 	jagged,
+	FREEZE,
+	frozen,
+	toggleFreeze,
 	storeKeys
 } from './support/daystrip.mjs';
 
@@ -451,12 +454,14 @@ describe("the day strip's day height and its pin", () => {
 	});
 
 	// vividn, 2026-09-15: «at the very left side of the dividing line, put a
-	// little icon to freeze today at the bottom».
-	test('the freeze toggle takes today out of the pin and puts it back', async () => {
+	// little icon to freeze today at the bottom» — and 2026-10-15 (da-2hd21):
+	// «Move the freeze today thing into the widget options menu, icon with
+	// words. So no button in the main view, only widget menu».
+	test('the freeze, a widget option, takes today out of the pin and puts it back', async () => {
 		await settledRoom(shared, 'freeze', async (app) => {
 			await sizeFor(app, 3);
-			const toggle = app.page.locator('button.freeze');
-			assert.equal(await toggle.getAttribute('aria-checked'), 'true', 'today does not start frozen');
+			assert.equal(await app.page.locator('.strip button.freeze').count(), 0, 'the strip still draws a freeze button');
+			assert.equal(await frozen(app), true, 'today does not start frozen');
 			assert.equal(await app.page.locator('.stack .band[data-days-ago="0"]').count(), 0);
 
 			// Frozen: scrolled to the very top of the past, today's band is
@@ -471,8 +476,7 @@ describe("the day strip's day height and its pin", () => {
 			);
 
 			// Off: today is simply the last band in the scroller.
-			await toggle.click();
-			assert.equal(await toggle.getAttribute('aria-checked'), 'false');
+			await toggleFreeze(app);
 			await heardIs(app, false, 'freezeToday');
 			await app.page.locator('.stack .band[data-days-ago="0"]').waitFor();
 
@@ -487,7 +491,7 @@ describe("the day strip's day height and its pin", () => {
 			});
 
 			// Back on, and today is pinned again.
-			await toggle.click();
+			await toggleFreeze(app);
 			await heardIs(app, true, 'freezeToday');
 			await app.page.waitForFunction(() => !document.querySelector('.stack .band[data-days-ago="0"]'));
 			const again = await todayBand(app);
@@ -546,7 +550,7 @@ describe("the day strip's day height and its pin", () => {
 			await dragBy(app, 'button.day-grip', 0, -20);
 			await app.page.locator('button.day-grip').focus();
 			await app.page.keyboard.press('ArrowUp');
-			await app.page.locator('button.freeze').click();
+			await toggleFreeze(app);
 			await heardIs(app, false, 'freezeToday');
 			// Heard, and drawn: the strip has done what it does with it.
 			await app.idle();
@@ -637,15 +641,24 @@ describe("the day strip's day height and its pin", () => {
 	test('a re-pin does not take back a scroll the strip has not heard yet', async () => {
 		// A scroll's event fires a frame after the scroll. Anything that
 		// re-anchors the stack in that frame — a band landing, the minute's
-		// redraw of today, here the freeze toggle — used to read the stale
+		// redraw of today, here the freeze — used to read the stale
 		// «at the bottom» and pin the reader straight back down (da-6m5s:
 		// the jagged test's second scroll, lost in CI to a band landing).
 		await settledRoom(shared, 'repin', async (app) => {
 			await sizeFor(app, 5);
-			await app.page.locator('.stack').evaluate((el) => {
+			// The switch held open in its menu, so the scroll and the press
+			// land in one frame.
+			await app.page
+				.locator('section.pane[data-title="dayview"]')
+				.locator('.titlebar button.title, .titlebar [role="tab"][aria-selected="true"]')
+				.first()
+				.click();
+			await app.page.getByRole('menuitemcheckbox', { name: FREEZE, exact: true }).waitFor();
+			await app.page.locator('.stack').evaluate((el, name) => {
 				el.scrollTop = 0;
-				document.querySelector('button.freeze').click();
-			});
+				[...document.querySelectorAll('[role="menuitemcheckbox"]')].find((b) => b.textContent.includes(name)).click();
+			}, FREEZE);
+			await app.page.keyboard.press('Escape');
 			await app.page.locator('button.jagged').waitFor();
 			assert.equal((await stackScroll(app)).top, 0, 'the re-pin took the scroll back');
 		});

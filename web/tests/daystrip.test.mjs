@@ -170,9 +170,10 @@ describe('the day strip', () => {
 			await waitForDays(app, heldFor(few));
 			assert.deepEqual(await onScreen(app), short);
 
-			// A box exactly today's band, divider and ruler holds today alone.
+			// A box exactly today's band, seam and ruler still holds the past
+			// above it, to scroll up into (da-2hd21).
 			await sizeFor(app, 0);
-			assert.equal(await app.page.locator('.stack').count(), 0);
+			assert.equal(await app.page.locator('.stack .band').count(), FORTNIGHT);
 		});
 	});
 
@@ -387,20 +388,12 @@ describe('the day strip', () => {
 		// layout gives the strip, which is the box vividn could not scroll.
 		await phone.solo(
 			async (app) => {
-				// A day SHORT enough that the phone's strip holds a past at
-				// all (da-r0ydu): the day follows the widget until the reader
-				// shrinks it, so a strip nobody has touched shows exactly one
-				// day and has nothing above today to scroll to. Reaching that
-				// state is the handle's own test; what this one is about is
-				// the finger, so the height is set the way a saved layout
-				// would set it.
-				await say(app, { dayHeight: 40 });
-				await settledAt(app, 40);
-				// And ANCHORED before the scroll is read: a fresh day height
-				// re-draws every band and `anchor` puts the newest back
-				// against the divider a beat later, so a `scrollTop` read
-				// before that is 0 — and `<= 0 - 200` is a wait that cannot
-				// end.
+				// As it comes: a strip nobody has touched holds a past to
+				// scroll to (da-2hd21), where until then it showed exactly one
+				// day and had nothing above today. ANCHORED before the scroll
+				// is read: `anchor` puts the newest back against the divider a
+				// beat after the bands land, so a `scrollTop` read before that
+				// is 0 — and `<= 0 - 200` is a wait that cannot end.
 				await app.page.waitForFunction(() => {
 					const s = document.querySelector('.stack');
 					return s && s.scrollTop + s.clientHeight >= s.scrollHeight - 1 && s.scrollTop > 0;
@@ -411,9 +404,9 @@ describe('the day strip', () => {
 					rest.total - rest.client >= 200,
 					`the phone's strip holds nothing to scroll: ${JSON.stringify(rest)}`
 				);
-				const today = await todayBand(app);
 
-				// A finger pulled DOWN the stack is back in time.
+				// A finger pulled DOWN the stack is back in time — today with
+				// it, unfrozen as the phone's strip comes (da-2hd21).
 				await dragOverPast(app, 300);
 				await app.page.waitForFunction(
 					(was) => document.querySelector('.stack').scrollTop <= was - 200,
@@ -424,7 +417,6 @@ describe('the day strip', () => {
 					rest.top - moved.top >= 200,
 					`the finger moved the stack ${rest.top - moved.top}px: ${JSON.stringify(moved)}`
 				);
-				assert.deepEqual(await todayBand(app), today, "today's band moved");
 				assert.equal(await app.page.evaluate(() => window.scrollY), 0, 'the page scrolled instead');
 			}
 		);
@@ -493,7 +485,7 @@ describe('the day strip', () => {
 			// holds the band scrolled to it and not a pixel of the one above
 			// — what runs below is then a count of that one band.
 			const m = await metrics(app);
-			await setBox(app, m.band + m.divider + m.axis + m.pitch - 2 + m.chrome);
+			await setBox(app, m.band + m.seam + m.axis + m.pitch - 2 + m.chrome);
 			await waitForDays(app, heldFor(1));
 			await app.idle();
 
@@ -1024,13 +1016,13 @@ describe('the day strip zooms onto an hour range', () => {
 			assert.ok(seen.inside, 'the ⊖ hangs off the strip');
 			assert.ok(seen.clearOfThePictures, 'the ⊖ is over a picture');
 
-			// And clear of the control that shares that column: the freeze
-			// toggle, which drops to this same seam when today is not frozen.
+			// And clear of the control over that column's edge: the `+`, at
+			// the top of today (da-2hd21).
 			const boxOf = (sel) => page.locator(sel).evaluate((el) => el.getBoundingClientRect().toJSON());
-			const [reset, freeze] = [await boxOf(UNZOOM), await boxOf('.strip button.freeze')];
+			const [reset, grip] = [await boxOf(UNZOOM), await boxOf('.strip button.day-grip')];
 			assert.ok(
-				reset.left >= freeze.right - 0.5 || reset.top >= freeze.bottom - 0.5,
-				`the ⊖ (${reset.left}–${reset.right}) sits on the freeze toggle (${freeze.left}–${freeze.right})`
+				reset.right <= grip.left + 0.5 || reset.top >= grip.bottom - 0.5,
+				`the ⊖ (${reset.top}–${reset.bottom}) sits under the + (${grip.top}–${grip.bottom})`
 			);
 			assert.deepEqual(app.errors, []);
 		});

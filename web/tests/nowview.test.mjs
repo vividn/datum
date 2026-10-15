@@ -415,7 +415,8 @@ describe('the nowview widget zooms', () => {
 // bands and nothing else, and there is nothing left for a step to cover.
 
 describe('the nowview steps stay off the picture', () => {
-	test('390×664 in `mobile`: the snapshot is bands with no chips and no steps; the full window has them beside its far label', async () => {
+	// `mobile`'s snapshot pane went in da-2hd21; the full window is what is left.
+	test('390×664 in `mobile`: the full window has its steps beside its far label', async () => {
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -424,14 +425,6 @@ describe('the nowview steps stay off the picture', () => {
 				await app.runLine('switch music true -t -1');
 				await app.runLine('switch mood happy -t -1');
 				await page.evaluate(() => window.datum.run(['occur', 'coffee']));
-				const now = pane(page, 'now');
-				await now.locator('svg.svg .now-chunk').nth(1).waitFor();
-				const width = (await now.boundingBox()).width;
-				assert.ok(width < 130, `the snapshot's pane is ${width}px wide`);
-				assert.equal(await now.locator('.nowview-steps, button[aria-label$="window"]').count(), 0);
-				// Nothing is left for a step to lie over: da-7q8r put the
-				// chips behind the CLI's `--labels`, which nothing here passes.
-				assert.equal(await now.locator('svg.svg .state-label').count(), 0, 'the webview asks for no labels');
 
 				// The full window stands BESIDE the fields widget now rather
 				// than behind a tab of it (da-hkjp), so there is nothing to

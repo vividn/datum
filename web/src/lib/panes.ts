@@ -205,6 +205,14 @@ export const MAX_LABEL_WIDTH = 200;
 export const DIVIDER = 1;
 
 /**
+ * The line between the past and a pinned today, in pixels: thicker than
+ * the divider between two days of the past, so the sliver of yesterday
+ * over today reads as another day (vividn, 2026-10-15: «maybe with a little
+ * gap or line between days so that you can see the difference», da-2hd21).
+ */
+export const SEAM = 3;
+
+/**
  * The hour-axis row the strip draws under today, in pixels — datum's own
  * `--time-axis-height` default, which the bands are now asked to suppress
  * so the ruler is drawn once, by the web, from the JSON's `hours[]`.
@@ -353,6 +361,25 @@ export const todayBox = (dayHeight: number) => dayHeight + AXIS_HEIGHT;
  */
 export const dayFilling = (height: number): number =>
 	Math.min(MAX_DAY_HEIGHT, Math.max(MIN_DAY_HEIGHT, Math.round(height - AXIS_HEIGHT)));
+
+/** How much of yesterday a pinned today leaves showing above it, in days. */
+export const SLIVER = 1 / 4;
+
+/**
+ * The day height at which a PINNED today and a `SLIVER` of yesterday above
+ * it fill a strip box `height` tall (da-2hd21) — `dayFilling` with room
+ * left over the seam.
+ *
+ * vividn, 2026-10-15: «leave a little bit of yesterday visible so that it is
+ * discoverable that there is more to look at above». A today that filled
+ * the box left the stack no room, so nothing was there to scroll to and
+ * nothing said earlier days existed.
+ */
+export const dayUnderSliver = (height: number): number =>
+	Math.min(
+		MAX_DAY_HEIGHT,
+		Math.max(MIN_DAY_HEIGHT, Math.round((height - AXIS_HEIGHT - SEAM) / (1 + SLIVER)))
+	);
 
 /**
  * One picture of the day strip, as argv: the single day `end` days back.

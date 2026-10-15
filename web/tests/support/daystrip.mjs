@@ -6,6 +6,7 @@
 import { createHash } from 'node:crypto';
 import { devices } from 'playwright';
 import { swipeNoWait } from './press.mjs';
+import { optionChecked, toggleOption } from './layout.mjs';
 
 /** «Save options with layout» (da-vhwq): what hands a widget's own move to the layout. */
 export const SAVE_OPTIONS = 'Save options with layout';
@@ -20,11 +21,12 @@ export const NARROW = { viewport: { width: 360, height: 640 } };
  * where a fresh boot has long since settled. Waited FOR, not out: a room's
  * strip holds nothing, so it has heard its box once its day is the one
  * that box derives — `dayFilling` of the floored content box its
- * ResizeObserver reports (DayStrip.svelte), read off the pane's body.
+ * ResizeObserver reports (DayStrip.svelte), read off the pane's body — less
+ * the sliver of yesterday, `dayUnderSliver` (da-2hd21).
  */
 export const settledRoom = (on, name, fn) =>
 	on.room(name, async (app) => {
-		await app.page.waitForFunction(([min, max]) => {
+		await app.page.waitForFunction(([min, max, sliver]) => {
 			const strip = document.querySelector('.strip');
 			const body = strip?.closest('.body');
 			const grip = strip?.querySelector('button.day-grip');
@@ -37,10 +39,13 @@ export const settledRoom = (on, name, fn) =>
 				px('padding-bottom') -
 				px('border-top-width') -
 				px('border-bottom-width');
-			const axis = parseFloat(getComputedStyle(strip).getPropertyValue('--axis'));
-			const derived = Math.min(max, Math.max(min, Math.round(Math.floor(content) - axis)));
+			const css = getComputedStyle(strip);
+			const axis = parseFloat(css.getPropertyValue('--axis'));
+			const seam = parseFloat(css.getPropertyValue('--seam-line'));
+			const day = (Math.floor(content) - axis - seam) / (1 + sliver);
+			const derived = Math.min(max, Math.max(min, Math.round(day)));
 			return Number(grip.getAttribute('aria-valuenow')) === derived;
-		}, [MIN_DAY, MAX_DAY]);
+		}, [MIN_DAY, MAX_DAY, SLIVER]);
 		await app.idle();
 		return fn(app);
 	});
@@ -133,6 +138,7 @@ export const metrics = ({ page }) =>
 			label: px('--label'),
 			axis: px('--axis'),
 			divider: px('--divider'),
+			seam: px('--seam-line'),
 			strip: el.clientHeight,
 			chrome: box - el.clientHeight
 		};
@@ -183,8 +189,9 @@ export const boxTo = ({ page }, px) =>
 	}, px);
 
 /**
- * The day height the box would choose for itself — `dayFilling`, read off
- * the element the strip styles rather than restated (`metrics`).
+ * The day height the box would choose for itself — `dayUnderSliver`
+ * (da-2hd21), read off the element the strip styles rather than restated
+ * (`metrics`).
  *
  * ⚑ CLAMPED, because `dayFilling` is: without this the helper and the
  * strip agree only while the derived height is inside
@@ -194,12 +201,27 @@ export const boxTo = ({ page }, px) =>
  */
 export const following = async (app) => {
 	const m = await metrics(app);
-	return Math.min(MAX_DAY, Math.max(MIN_DAY, Math.round(m.strip - m.axis)));
+	const day = (m.strip - m.axis - m.seam) / (1 + SLIVER);
+	return Math.min(MAX_DAY, Math.max(MIN_DAY, Math.round(day)));
 };
+
+/** «today frozen at the bottom»: the strip's freeze, a widget option (da-2hd21). */
+export const FREEZE = 'today frozen at the bottom';
+
+/** The dayview pane's id, in `main` or in a room. */
+const stripPane = ({ page }) => page.locator('section.pane[data-title="dayview"]').first().getAttribute('data-pane');
+
+/** Whether today is frozen, read off the option's switch. */
+export const frozen = async (app) => optionChecked(app.page, await stripPane(app), FREEZE);
+
+/** Turn the freeze over, as a reader does: the switch in the dayview's options. */
+export const toggleFreeze = async (app) => toggleOption(app.page, await stripPane(app), FREEZE);
 
 /** The strip's own floor and ceiling (`panes.ts`), which `dayFilling` clamps to. */
 export const MIN_DAY = 40;
 export const MAX_DAY = 240;
+/** The part of a day a pinned today leaves of yesterday (`SLIVER`, panes.ts). */
+export const SLIVER = 1 / 4;
 
 /** Wait until the handle says `want` — the strip has heard its new box. */
 export const settledAt = ({ page }, want) =>
@@ -217,7 +239,7 @@ export const boxOf = ({ page }) =>
  * above the divider, in days, counting a partly revealed one.
  */
 export function owedAt(m) {
-	const room = Math.max(0, m.strip - m.axis - m.divider - m.band);
+	const room = Math.max(0, m.strip - m.axis - m.seam - m.band);
 	return room > 0 ? Math.ceil((room - m.band) / m.pitch) + 1 : 0;
 }
 export const owed = async (app) => owedAt(await metrics(app));
@@ -231,10 +253,11 @@ export const FORTNIGHT = 14;
  * The two numbers are not one (da-bewc): a stack holding exactly what its
  * box shows overflows it by at most the one partly revealed day, which is
  * a few dozen pixels of scroll and then nothing. So there is always a
- * fortnight of past above the box to scroll back through, and a box that
- * shows more than a fortnight holds what it shows.
+ * fortnight of past above the box to scroll back through — a box that
+ * shows none of it too (da-2hd21) — and a box that shows more than a
+ * fortnight holds what it shows.
  */
-export const heldFor = (shown) => (shown > 0 ? Math.max(FORTNIGHT, shown) : 0);
+export const heldFor = (shown) => Math.max(FORTNIGHT, shown);
 export const heldAt = (m) => heldFor(owedAt(m));
 
 /**
@@ -283,7 +306,7 @@ export async function sizeFor(app, days) {
 		await app.page.locator('section.edge-left .strip').waitFor();
 	}
 	const m = await metrics(app);
-	const floor = m.band + m.divider + m.axis;
+	const floor = m.band + m.seam + m.axis;
 	const strip = days === 0 ? floor : floor + pastHeight(m, days) - m.pitch / 2;
 	await setBox(app, Math.ceil(strip + m.chrome));
 	await waitForDays(app, heldFor(days));
@@ -292,7 +315,7 @@ export async function sizeFor(app, days) {
 /** Size the box so the room above the divider is exactly `days` whole days. */
 export async function sizeWhole(app, days) {
 	const m = await metrics(app);
-	await setBox(app, m.band + m.divider + m.axis + pastHeight(m, days) + m.chrome);
+	await setBox(app, m.band + m.seam + m.axis + pastHeight(m, days) + m.chrome);
 	await waitForDays(app, heldFor(days));
 }
 
@@ -303,7 +326,8 @@ export async function sizeWhole(app, days) {
  */
 export const waitForDays = ({ page }, depth) =>
 	page.waitForFunction((want) => {
-		const past = [...document.querySelectorAll('.stack .band')];
+		// The past alone: unfrozen, today is in the stack too.
+		const past = [...document.querySelectorAll('.stack .band:not([data-days-ago="0"])')];
 		const all = [...document.querySelectorAll('.band')];
 		return (
 			past.length === want &&

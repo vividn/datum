@@ -97,7 +97,8 @@ describe('Reset widget', () => {
 			// (da-vhwq). Split and the rest are the `▾`'s (da-bzhq), and so
 			// is Change Widget (da-z8klv).
 			const lines = await linesOf(page, 'strip');
-			assert.deepEqual(lines, [RESET, 'today frozen at the bottom', 'orientation']);
+			// The freeze wears its icon before its words (da-2hd21).
+			assert.deepEqual(lines, [RESET, '⤓ today frozen at the bottom', 'orientation']);
 
 			await choose(page, 'strip', RESET);
 			await dayHeightIs(page, fallback);

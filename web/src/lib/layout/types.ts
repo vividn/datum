@@ -149,7 +149,8 @@ export interface WidgetKindMeta {
  * with layout», and nothing else. Every option declares its default in
  * `defaultSettings`.
  */
-export type WidgetOption = { key: string; label: string } & (
+/** `glyph`: a character drawn before the label, as a menu item's (PaneMenu.svelte). */
+export type WidgetOption = { key: string; label: string; glyph?: string } & (
 	| { type: 'boolean' }
 	| { type: 'choice'; choices: { value: string; label: string }[] }
 );

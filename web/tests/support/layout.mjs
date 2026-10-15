@@ -250,7 +250,8 @@ async function openOptions(page, id) {
  * for, and the menu closed again. `id` is null for the root tab's menu.
  */
 export const switchItem = (page, label, on) =>
-	page.locator(`[role="menuitemcheckbox"]${on === undefined ? '' : `[aria-checked="${on}"]`}`).filter({ hasText: exactly(label) });
+	// By its NAME, which a glyph before the words is no part of (`aria-hidden`).
+	page.getByRole('menuitemcheckbox', { name: label, exact: true, ...(on === undefined ? {} : { checked: on }) });
 
 export async function toggleOption(page, id, label) {
 	await openOptions(page, id);

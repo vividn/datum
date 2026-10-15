@@ -178,13 +178,11 @@ describe('on a phone-sized screen', () => {
 	// toggle at the far left of the same line. Both are drawn INSIDE the
 	// strip, so a phone that leaves the strip a few dozen pixels is the
 	// case that puts them off the screen — and both are fingertips.
-	test("the strip's + handle and freeze toggle are fingertips on screen", async (t) => {
+	// The freeze-today toggle left the pane for the widget's options (da-2hd21).
+	test("the strip's + handle is a fingertip on screen", async (t) => {
 		await phone.solo(async ({ page }) => {
 			await atEachScreen(t, page, [PHONE, SHORT], async () => {
-				for (const [selector, what] of [
-					['.strip button.day-grip', "the strip's + handle"],
-					['.strip button.freeze', "the strip's freeze-today toggle"]
-				]) {
+				for (const [selector, what] of [['.strip button.day-grip', "the strip's + handle"]]) {
 					await assertOnScreen(page, selector, what);
 					const box = await page.locator(selector).boundingBox();
 					const width = await page.evaluate(() => document.documentElement.clientWidth);

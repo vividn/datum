@@ -39,7 +39,7 @@ const SEEN = 'datum.layout.defaults.v1';
  * says what changed to `NEW_DEFAULTS` (layout/defaults.ts) — that is what
  * offers it to everybody already here — and its tabs to this list.
  */
-const FIRST_VISIT = [['main'], ['welcome', 'track', 'collect']];
+const FIRST_VISIT = [['main'], ['welcome', 'track', 'collect'], ['welcome', 'track', 'collect']];
 
 /** From the next load on, datum has shipped `news`. */
 const ship = (context, news) => context.addInitScript((news) => (window.__datumNewDefaults = news), news);
