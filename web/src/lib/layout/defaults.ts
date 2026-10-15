@@ -216,12 +216,19 @@ export const DEFAULT_LAYOUT_MOBILE: Layout = {
  * show a little bit of yesterday … get rid of the nowview on the second
  * row, so just tail for now. decrease the height of the second row, and
  * the extra height from the shortening of row 1 and 2 give to row 3». So
- * the strip's 85 is 48, about half its box at 390×844 and the least that
- * still holds the shortest day it draws (40), its ruler, the seam and a
- * sliver there; row 2 is the tail alone at its legible height in small
- * type and its frame (103, registry.ts) where nowview's 122 held it; row 3
- * takes the 56 the two gave up, 122 + 56 = 178; the commands keep their
- * 63, and the column's total, so their pixels too. These four are NOT
+ * the strip's 85 was 48, about half its box at 390×844; row 2 is the
+ * tail alone at its legible height in small type and its frame (103,
+ * registry.ts) where nowview's 122 held it; row 3 took the 56 the two
+ * gave up; the commands keep their 63, and the column's total, so their
+ * pixels too. Half left the three shorter phones a strip of 52 / 49 / 40
+ * px, under the shortest day it draws (40), its ruler and the seam, so
+ * today was cut and no yesterday showed. vividn, 2026-10-15 (da-frewq),
+ * «B»: about 70% of the old height instead, so the sliver shows on every
+ * phone. MEASURED, the least share that does it at 412×563 is 70 (60, a
+ * literal 70% of 85, gives that phone 53 px and no yesterday): a strip of
+ * 114 / 82 / 77 / 64 px, about 80% of the old 141 / 102 / 97 / 80, drawing
+ * today whole at 77 / 51 / 47 / 40 and 18 / 12 / 12 / 5 px of yesterday;
+ * row 3 gives back the 22, 178 − 22 = 156. These four are NOT
  * `legibly`'s, and the sweep in tree.test.mjs leaves this layout out:
  * the strip is below its legible box by vividn's choice.
  * A pinned today leaves a quarter of yesterday over it (`dayUnderSliver`),
@@ -234,7 +241,7 @@ export const MOBILE_LAYOUT: Layout = {
 	designedFor: 'mobile',
 	root: holder(
 		'root',
-		split('main', 'column', legibly([48, 103, 178, 63]), [
+		split('main', 'column', legibly([70, 103, 156, 63]), [
 			strip(),
 			widgetPane('tail', 'tail', { type: 'small' }),
 			holder(
@@ -358,7 +365,8 @@ export const BUILTIN_NAMES = Object.keys(BUILTIN);
  */
 const NEW_DEFAULTS: string[] = [
 	'A first visit now opens three tabs: welcome, which says what datum is and how the page is handled; setup, where you choose what to track; and collect, the page you log on.',
-	"On a phone, collect's day strip is half as tall and shows a sliver of yesterday to scroll up into, the tail has its row alone, and the fields and nowview below it have the room."
+	"On a phone, collect's day strip is half as tall and shows a sliver of yesterday to scroll up into, the tail has its row alone, and the fields and nowview below it have the room.",
+	"On a phone, collect's day strip is a little taller again, so the sliver of yesterday shows on shorter phones too."
 ];
 
 /** `NEW_DEFAULTS`, or the web suite's in its place, handed over as `pinned`'s tree is. */

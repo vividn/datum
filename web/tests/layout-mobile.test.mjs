@@ -149,7 +149,9 @@ const bands = (page) =>
 			const clip = el.closest('.stack')?.getBoundingClientRect() ?? box;
 			return {
 				of: Math.round(r.height),
-				seen: Math.round(Math.max(0, Math.min(r.bottom, clip.bottom) - Math.max(r.top, clip.top)))
+				seen: Math.round(Math.max(0, Math.min(r.bottom, clip.bottom) - Math.max(r.top, clip.top))),
+				top: r.top,
+				bottom: r.bottom
 			};
 		};
 		// FLOORED, to match what the widget derived from (da-r0ydu, canary
@@ -247,23 +249,34 @@ describe('a fresh phone', () => {
 			}, phone(width, height));
 	});
 
-	// MEASURED at 390×844 (da-2hd21): a 74px strip draws a 45px today whole,
-	// its 3px seam, and 10px of yesterday over it. The shorter three phones
-	// give the strip 40–52px, less than the shortest day it draws (40) with
-	// its ruler, so there today is cut from the top and no yesterday shows
-	// — what «half» costs below the tallest phone; the stack still scrolls.
-	// The day FOLLOWED: it is `dayUnderSliver` of the box, which no number
-	// written down anywhere could be.
-	test('at 390×844, unfrozen, a sliver of yesterday shows over today, the + on its top', async () => {
+	// MEASURED at 390×844 (da-2hd21): a 74px strip drew a 45px today whole,
+	// its 3px seam, and 10px of yesterday over it — but the shorter three
+	// phones gave that strip 40–52px, less than the shortest day it draws
+	// (40) with its ruler, so there today was cut and no yesterday showed.
+	// vividn, 2026-10-15 (da-frewq), choosing «B»: the strip is about 70% of
+	// its old height instead of half, so the sliver shows on every phone.
+	// The day FOLLOWS: it is `dayUnderSliver` of the box, floored at 40.
+	for (const [width, height] of SIZES)
+		test(`at ${width}×${height}, unfrozen, today whole and a sliver of yesterday over the seam`, async () => {
+			await withApp(async ({ page }) => {
+				await page.evaluate(() => window.datum.run(['occur', 'coffee', '-y']));
+				await pane(page, 'strip').locator('[data-days-ago="1"] svg').waitFor({ state: 'attached' });
+				const b = await bands(page);
+				const at = `${width}×${height}: ${JSON.stringify(b)}`;
+				assert.equal(b.today.seen, b.today.of, `today is clipped, ${at}`);
+				assert.ok(b.yesterday?.seen >= 3, `no sliver of yesterday, ${at}`);
+				assert.ok(b.today.top - b.yesterday.bottom >= SEAM - 0.5, `no seam between them, ${at}`);
+			}, phone(width, height));
+		});
+
+	test('at 390×844, the + on top of today, frozen or not', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await page.evaluate(() => window.datum.run(['occur', 'coffee', '-y']));
 			const strip = pane(page, 'strip');
 			await strip.locator('[data-days-ago="1"] svg').waitFor({ state: 'attached' });
 			const b = await bands(page);
-			assert.equal(b.today.seen, b.today.of, `today is clipped to ${b.today.seen} of ${b.today.of}`);
 			assert.equal(b.today.of, Math.round((b.inner - AXIS - SEAM) / 1.25), `a ${b.today.of}px today in a ${b.inner}px box`);
-			assert.ok(b.yesterday?.seen > 0, `none of yesterday shows: ${JSON.stringify(b)}`);
 			assert.equal(await gripOnToday(page), true, 'the + is not on the top of today');
 
 			// The freeze is the widget's option now, and pinned the same
@@ -282,9 +295,11 @@ describe('a fresh phone', () => {
 
 	// vividn (da-2hd21): «get rid of the nowview on the second row, so just
 	// tail for now. decrease the height of the second row, and the extra
-	// height from the shortening of row 1 and 2 give to row 3». The rows'
-	// heights are the tree's shares, 48 : 103 : 178 : 63, of one column.
-	test('the rows stand 48 : 103 : 178 : 63, the strip about half what it was', async () => {
+	// height from the shortening of row 1 and 2 give to row 3» — and
+	// (da-frewq) the strip about 70% of its old height rather than half, the
+	// 22 it takes back from row 3. The rows' heights are the tree's shares,
+	// 70 : 103 : 156 : 63, of one column.
+	test('the rows stand 70 : 103 : 156 : 63', async () => {
 		await withApp(async ({ page }) => {
 			const h = await page.evaluate(() =>
 				['strip', 'tail', 'nowview', 'command'].map((id) =>
@@ -292,7 +307,7 @@ describe('a fresh phone', () => {
 				)
 			);
 			const total = h.reduce((a, b) => a + b, 0);
-			[48, 103, 178, 63].forEach((w, i) =>
+			[70, 103, 156, 63].forEach((w, i) =>
 				assert.ok(Math.abs(h[i] - (total * w) / 392) <= 3, `row ${i + 1} is ${h[i]}px of ${total}: ${h.join(' / ')}`)
 			);
 		}, phone());
