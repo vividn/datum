@@ -490,6 +490,7 @@ mod tests {
                 dry_run: false,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: true,
                 if_unchanged: None,
                 show: ShowFlag::None,

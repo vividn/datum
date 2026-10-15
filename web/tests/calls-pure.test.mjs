@@ -218,7 +218,7 @@ const SAMPLES = {
 	pausedArgv: [[true], [false]],
 	dbPurgeArgv: [[]],
 	dbPurgeProbeArgv: [[], [['--leave', '--force']], [['--rejoin']]],
-	restorePreviewArgv: [[calls.restoreArgv()], [[...calls.restoreArgv(), '--hard']], [calls.restoreStagedArgv(FILE)]],
+	restorePreviewArgv: [[calls.restoreArgv()], [[...calls.restoreArgv(), '--hard', '--leave']], [calls.restoreStagedArgv(FILE)]],
 	restoreStagedArgv: [[FILE]],
 	savePlanArgv: [[PLAN, false], [PLAN, true]],
 	deletePlanArgv: [[PLAN.name]],

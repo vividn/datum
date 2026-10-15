@@ -605,6 +605,89 @@ fn a_purge_drops_the_ops_the_chain_and_the_endpoint_key() {
     assert_ne!(b.query(CHAIN), old_chain);
 }
 
+/// `db restore --hard --leave` takes the ops and the chain with the rows,
+/// and plain `--hard` refuses a chained copy (da-95y4o):
+/// ops kept for a row it dropped fold that row back on every peer, and the
+/// two never verify. The copy is a new one, in no chain, and a fresh invite
+/// brings it back: both verify ok, and the peer's data comes back to it.
+#[test]
+fn a_hard_restore_leaves_the_chain_and_rejoins_by_invite() {
+    let (a, b) = paired();
+    let _a_runs = a.serve(&["sync", "run"]);
+    b.ok(&["occur", "tea"]);
+    let backup = b.tmp.path().join("b.jsonl");
+    b.ok(&["db", "backup", backup.to_str().unwrap()]);
+    b.ok(&["occur", "juice"]);
+    b.ok(&["sync"]);
+    assert!(a.has("juice"));
+    let (old_id, old_chain) = (b.id(), b.query(CHAIN));
+
+    let backup = backup.to_str().unwrap();
+    // Without --leave it is refused: the chain would keep what it drops.
+    let ops = b.query("SELECT COUNT(*) FROM ops");
+    let refused = b.fails(&["db", "restore", backup, "--hard", "--yes"], "");
+    assert!(
+        refused.contains(&format!("in sync chain {old_chain}")) && refused.contains("--leave"),
+        "{refused}"
+    );
+    assert!(b.has("juice"));
+    assert_eq!(
+        (b.query("SELECT COUNT(*) FROM ops"), b.id()),
+        (ops, old_id.clone())
+    );
+
+    let restored = b.ok(&["db", "restore", backup, "--hard", "--leave", "--yes"]);
+    assert!(
+        restored.contains(&format!("left sync chain {old_chain}")),
+        "{restored}"
+    );
+    assert!(!b.has("juice"));
+    assert_eq!(b.query("SELECT COUNT(*) FROM ops"), "0");
+    let list = b.fails(&["sync", "chain", "list"], "");
+    assert!(list.contains("in no sync chain"), "{list}");
+    assert_ne!(b.id(), old_id);
+
+    drop(_a_runs);
+    let (mut inviting, ticket) = a.invite(&[]);
+    assert!(b
+        .ok(&["sync", "chain", "connect", &ticket])
+        .contains("verify ok"));
+    assert!(inviting.finish().0);
+    assert_eq!(b.query(CHAIN), old_chain);
+    assert!(b.has("juice"));
+    let _a_runs = a.serve(&["sync", "run"]);
+    assert!(b.ok(&["sync"]).contains("verify ok"));
+    for x in [&a, &b] {
+        x.ok(&["check", "sync"]);
+    }
+}
+
+/// A `--hard --leave` no member can be told of is refused whole, naming `sync
+/// chain leave`, whose `--force` tells no one; then it goes through
+/// (da-95y4o). Restore's own `--force` is its conflict strategy, and
+/// `--hard` refuses it.
+#[test]
+fn a_hard_restore_no_member_hears_of_is_refused_and_names_chain_leave() {
+    let (a, b) = paired();
+    b.ok(&["occur", "tea"]);
+    let backup = b.tmp.path().join("b.jsonl");
+    let backup = backup.to_str().unwrap();
+    b.ok(&["db", "backup", backup]);
+    b.ok(&["occur", "juice"]);
+    drop(a);
+
+    let refused = b.fails(&["db", "restore", backup, "--hard", "--leave", "--yes"], "");
+    assert!(
+        refused.contains("`datum sync chain leave` again") && refused.contains("`--force`"),
+        "{refused}"
+    );
+    assert!(b.has("juice"));
+    b.ok(&["sync", "chain", "leave", "--force"]);
+    b.ok(&["db", "restore", backup, "--hard", "--yes"]);
+    assert!(!b.has("juice"));
+    assert_eq!(b.query("SELECT COUNT(*) FROM ops"), "0");
+}
+
 const CHAIN: &str =
     "SELECT json_extract(body, '$.effect.chain') FROM ops WHERE hid = '~chain' LIMIT 1";
 

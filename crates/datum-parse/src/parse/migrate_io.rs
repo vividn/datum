@@ -170,6 +170,7 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
     let mut dry_run = false;
     let mut merge = false;
     let mut hard = false;
+    let mut leave = false;
     let mut yes = false;
     let mut if_unchanged = None;
     let mut i = 0;
@@ -180,6 +181,7 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
             FlagSplit::Long("dry-run") => dry_run = true,
             FlagSplit::Long("merge") => merge = true,
             FlagSplit::Long("hard") => hard = true,
+            FlagSplit::Long("leave") => leave = true,
             FlagSplit::Long("yes") | FlagSplit::Short('y') => yes = true,
             FlagSplit::Long("if-unchanged") | FlagSplit::LongAttached("if-unchanged", _) => {
                 let attached = tail[i].split_once('=').map(|(_, v)| v);
@@ -207,6 +209,11 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
             if merge { "merge" } else { "force" }
         )));
     }
+    if leave && !hard {
+        return Err(ParseError::InvalidArg(
+            "--leave is for --hard: no other restore drops this copy's sync ops".into(),
+        ));
+    }
     let path = require_pos(&pos, "<PATH>")?;
     Ok(RestoreArgs {
         path,
@@ -214,6 +221,7 @@ pub(crate) fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
         dry_run,
         merge,
         hard,
+        leave,
         yes,
         if_unchanged,
         show: Show::default(),

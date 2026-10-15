@@ -1973,16 +1973,13 @@ fn check_sync(copy: &Copy, json: bool) -> (bool, String) {
     (out.status.success(), String::from_utf8(out.stdout).unwrap())
 }
 
-/// `db restore --hard` drops rows and keeps their ops (da-95y4o): `check
-/// sync` names each entry those ops make and this copy has no row for,
-/// with its ops, and `sync refold` leaves them as found.
+/// Rows dropped with their ops kept, as `db restore --hard` once left them
+/// (da-95y4o): `check sync` names each entry those ops make and this copy
+/// has no row for, with its ops, and `sync refold` leaves them as found.
 #[test]
 fn check_names_the_entries_whose_ops_have_no_row() {
     let a = Copy::new();
     a.ok(&["occur", "tea", "-t", "10:00"]);
-    let backup = a.tmp.path().join("b.jsonl");
-    let backup = backup.to_str().unwrap();
-    a.ok(&["db", "backup", backup]);
     a.ok(&["occur", "juice", "-t", "12:00"]);
     // Clean, it says what it read: each entry and the spec its log declared.
     let (ok, clean) = check_sync(&a, false);
@@ -1990,7 +1987,7 @@ fn check_names_the_entries_whose_ops_have_no_row() {
         ok && clean.contains("4 rows read against 4 sync ops, 0 differ"),
         "{clean}"
     );
-    a.ok(&["db", "restore", backup, "--hard", "--yes"]);
+    a.sql("DELETE FROM entries WHERE field = 'juice' OR slug = 'spec:juice'");
 
     let (ok, said) = check_sync(&a, false);
     assert!(!ok, "ops with no row are an error: {said}");

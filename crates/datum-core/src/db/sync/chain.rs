@@ -1131,6 +1131,16 @@ fn forget_chain(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// [`Db::sync_chain_leave`] in the caller's transaction: the chain, its ops
+/// and peers gone, and a new endpoint key. `db restore --hard` too
+/// (da-95y4o), whose rows the old ops would fold back on every peer.
+pub(crate) fn leave(conn: &Connection) -> Result<()> {
+    forget_chain(conn)?;
+    conn.execute_batch("DELETE FROM sync_peers; UPDATE sync_local SET endpoint_secret = '';")?;
+    endpoint(conn)?;
+    Ok(())
+}
+
 impl Db {
     /// The chain this copy holds (`exists()` is false with none).
     pub fn sync_chain(&self) -> Result<Chain> {
@@ -1316,13 +1326,7 @@ impl Db {
         if !self.sync_chain()?.exists() {
             return Err(DatumError::Other("this copy is in no sync chain".into()));
         }
-        self.write_with(|tx| {
-            forget_chain(tx)?;
-            tx.execute_batch(
-                "DELETE FROM sync_peers; UPDATE sync_local SET endpoint_secret = '';",
-            )?;
-            endpoint(tx).map(drop)
-        })
+        self.write_with(leave)
     }
 
     /// Tell this copy's chain it leaves (da-dsob1): sign its departure,

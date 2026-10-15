@@ -364,13 +364,14 @@ pub struct ReplaceCounts {
 /// What [`super::Db::hard_replace_entries`] did — or, rolled back for a
 /// dry run, would have done: backup entries `written`, and the rows DROPPED
 /// before them: live `entries`, `tombstones` (every row not live — deleted
-/// or superseded), and `history` rows.
+/// or superseded), `history` rows, and sync `ops` (da-95y4o).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct HardReplaceCounts {
     pub written: usize,
     pub entries: usize,
     pub tombstones: usize,
     pub history: usize,
+    pub ops: usize,
     /// The live set it dropped, as [`ReplaceCounts::fingerprint`].
     pub fingerprint: u64,
 }

@@ -342,6 +342,27 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
     let json = args.show == ShowFlag::Json;
     let force = args.force;
     let mut mode = Mode::of(&args);
+    // The chain a hard restore leaves (da-95y4o), as `db purge` drops it.
+    let chain = match mode.hard {
+        true => db
+            .sync_chain()
+            .ok()
+            .filter(|c| c.exists() && c.dissolved().is_none())
+            .map(|c| c.id),
+        false => None,
+    };
+    // Restoring the whole chain is da-ncmmj's; this copy alone leaves it.
+    match (&chain, args.leave) {
+        (Some(c), false) => anyhow::bail!(
+            "db restore --hard: this copy is in sync chain {c}, whose other copies would keep \
+             what it drops. --leave leaves the chain for this copy alone, telling it first; \
+             --chain, restoring the whole chain to the backup, is not built yet (da-ncmmj)"
+        ),
+        (None, true) => anyhow::bail!(
+            "db restore --hard: this copy is in no sync chain; --leave is for one that is"
+        ),
+        _ => {}
+    }
     // A hard restore asks as `db purge` does: the database's name, typed
     // (da-rle8g).
     if mode.hard && !dry_run && !args.yes {
@@ -364,18 +385,28 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
             "restore --hard",
             &format!(
                 "This replaces ALL data in {} with the backup ({} written); dropped: \
-                 {} live, {} tombstoned or superseded, {} in history. It cannot be undone: \
-                 the history `undo` reads goes with it.",
+                 {} live, {} tombstoned or superseded, {} in history, {} sync ops. It cannot \
+                 be undone: the history `undo` reads goes with it.{}",
                 super::db::current_db_path(db).unwrap_or_default(),
                 h.written,
                 h.entries,
                 h.tombstones,
-                h.history
+                h.history,
+                h.ops,
+                chain.as_ref().map_or(String::new(), |c| format!(
+                    "\nIt leaves sync chain {c} as a new copy; a fresh invite rejoins it."
+                ))
             ),
             &mut std::io::stdin().lock(),
             is_tty,
             &super::db::purge_confirmation_token(cli_db, db),
         )?;
+    }
+    // Told before its ops go, as `db purge --leave` tells it: a member
+    // left undeparted is dialled by the chain for good. Refused, it names
+    // `sync chain leave`, whose `--force` tells no one.
+    if let Some(c) = chain.as_ref().filter(|_| !dry_run) {
+        super::sync::depart(db, c, "datum sync chain leave")?;
     }
     // A replace that deletes asks first, on a TTY (da-5fooh). The count
     // comes from a dry run rather than a transaction held open across the
@@ -423,7 +454,9 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
             "mode": if report.hard.is_some() { "hard" } else if report.replace { "replace" } else { "merge" },
             "dropped": report.hard.map(|h| serde_json::json!({
                 "entries": h.entries, "tombstones": h.tombstones, "history": h.history,
+                "ops": h.ops,
             })),
+            "left_chain": chain.filter(|_| report.hard.is_some() && !report.dry_run),
             "header": {
                 "schema_version": report.header_schema_version,
                 "source_db": report.header_source_db,
@@ -448,9 +481,12 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
         println!("  Would insert: {}", report.inserted);
         if let Some(h) = report.hard {
             println!(
-                "  Would drop: {} live, {} tombstoned or superseded, {} in history",
-                h.entries, h.tombstones, h.history
+                "  Would drop: {} live, {} tombstoned or superseded, {} in history, {} sync ops",
+                h.entries, h.tombstones, h.history, h.ops
             );
+            if let Some(c) = &chain {
+                println!("  Would leave sync chain {c}");
+            }
         } else if report.replace {
             println!("  Would update: {}", report.updated);
             println!("  Would skip (already there): {}", report.skipped);
@@ -467,9 +503,14 @@ pub fn cmd_restore(args: RestoreArgs, cli_db: Option<&str>, db: &Db) -> Result<(
         }
     } else if let Some(h) = report.hard {
         println!(
-            "✓ Restore --hard: {} written; dropped {} live, {} tombstoned or superseded, {} in history — it cannot be undone",
-            report.inserted, h.entries, h.tombstones, h.history
+            "✓ Restore --hard: {} written; dropped {} live, {} tombstoned or superseded, {} in history, {} sync ops — it cannot be undone",
+            report.inserted, h.entries, h.tombstones, h.history, h.ops
         );
+        if let Some(c) = &chain {
+            println!(
+                "  left sync chain {c}: this copy is a new one, in none; a fresh invite rejoins it"
+            );
+        }
     } else if report.replace {
         println!(
             "✓ Restore: {} inserted, {} updated, {} skipped, {} deleted",
@@ -973,6 +1014,7 @@ mod tests {
                 dry_run: false,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1065,6 +1107,7 @@ mod tests {
                 dry_run: false,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1106,6 +1149,7 @@ mod tests {
                 dry_run: false,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1130,6 +1174,7 @@ mod tests {
                 dry_run: false,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1200,6 +1245,7 @@ mod tests {
                 dry_run: false,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1258,6 +1304,7 @@ mod tests {
             dry_run: false,
             merge: true,
             hard: false,
+            leave: false,
             yes: false,
             if_unchanged: None,
             show: ShowFlag::Default,
@@ -1360,6 +1407,7 @@ mod tests {
                 dry_run: false,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1415,6 +1463,7 @@ mod tests {
                 dry_run: false,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1461,6 +1510,7 @@ mod tests {
                 dry_run: false,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1498,6 +1548,7 @@ mod tests {
                 dry_run: false,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1548,6 +1599,7 @@ mod tests {
                 dry_run: false,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1599,6 +1651,7 @@ mod tests {
                 dry_run: true,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1648,6 +1701,7 @@ mod tests {
                 dry_run: false,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1670,6 +1724,7 @@ mod tests {
                 dry_run: true,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1721,6 +1776,7 @@ mod tests {
                 dry_run: false,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1738,6 +1794,7 @@ mod tests {
                 dry_run: true,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1783,6 +1840,7 @@ mod tests {
                 dry_run: true,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1834,6 +1892,7 @@ mod tests {
                 dry_run: true,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1893,6 +1952,7 @@ mod tests {
                 dry_run: false,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -1920,6 +1980,7 @@ mod tests {
             dry_run,
             merge: false,
             hard: false,
+            leave: false,
             yes: false,
             if_unchanged: None,
             show: ShowFlag::Default,
@@ -2127,6 +2188,7 @@ mod tests {
         let merge = |dry_run| RestoreArgs {
             merge: true,
             hard: false,
+            leave: false,
             ..replace_args(&path, dry_run)
         };
         let dry = cmd_restore_with_report(merge(true), &db).unwrap();
@@ -2214,6 +2276,7 @@ mod tests {
                 dry_run: false,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,
@@ -2258,6 +2321,7 @@ mod tests {
                 dry_run: true,
                 merge: true,
                 hard: false,
+                leave: false,
                 yes: false,
                 if_unchanged: None,
                 show: ShowFlag::Default,

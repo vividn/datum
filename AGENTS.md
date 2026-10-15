@@ -355,7 +355,7 @@ pipe records` and `sync handshake --records`.
 A mismatch is diagnosed natively (da-n0ruf, `db/sync/diagnose.rs`).
 `datum check sync`, in the default battery too, reads every row against its
 ops: an entry whose applied ops fold to a row this copy lacks (`sync_orphan_ops`,
-an error: what `db restore --hard` leaves, da-95y4o), a row that is not what
+an error: what `db restore --hard` left before it dropped the ops too, da-95y4o), a row that is not what
 its ops fold to (`sync_stale_row`, an error: `derived` as storage writes it,
 which derives `verb` and `content_hash` itself, and the `conflicts` column),
 each with its columns and both values, an entry whose ops fold to no row

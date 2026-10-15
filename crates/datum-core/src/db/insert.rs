@@ -463,9 +463,10 @@ impl Db {
     /// every entry row, tombstone and `entry_history` row is DROPPED, not
     /// tombstoned, and each entry is written back verbatim, hid and slug
     /// included, with no history. The integrity findings are derived again
-    /// from what was written, and the sync pull watermark goes back to 0,
-    /// so the next pull brings what the other devices pushed back in on
-    /// top. One transaction; with `commit` false it is rolled back, so a
+    /// from what was written. Its sync ops go too, with its chain and
+    /// endpoint key, as `db purge` takes them (da-95y4o): ops kept for rows
+    /// dropped fold them back on every peer. The copy is a new one, in no
+    /// chain, and rejoins by a fresh invite. One transaction; with `commit` false it is rolled back, so a
     /// dry run's counts are the real run's. `if_unchanged` pins it to the
     /// live set a dry run counted, as [`Self::replace_entries`]'s does.
     pub fn hard_replace_entries(
@@ -487,6 +488,7 @@ impl Db {
                 entries: live,
                 tombstones: count("SELECT COUNT(*) FROM entries")? - live,
                 history: count("SELECT COUNT(*) FROM entry_history")?,
+                ops: count("SELECT COUNT(*) FROM ops")?,
             })
         };
         let write = |tx: &Connection, counts: HardReplaceCounts| {
@@ -494,6 +496,7 @@ impl Db {
                 "DELETE FROM entries; DELETE FROM entry_history; DELETE FROM undo_actions;
              DELETE FROM integrity_warnings; DELETE FROM last_docs;",
             )?;
+            super::sync::chain::leave(tx)?;
             let mut written = Vec::with_capacity(entries.len());
             for (n, entry) in entries.iter().enumerate() {
                 try_insert(tx, &entry.slug, &entry.hid, entry)?;
