@@ -87,6 +87,9 @@
 	--ink: hsl(var(--hue) 41% 84.7%);
 	/* Body text under the pointer, or text that carries more than the rest. */
 	--ink-bright: hsl(var(--hue) 100% 93.9%);
+	/* A raised control's ground: a button, a chip, a field's input. Still
+	   the page's blue at every hue, as it was before it was a token. */
+	--raised: #1a1a30;
 	/* "Your data is not safe yet" — a warning about the future, not a
 	   report of a failure, which is why it is orange and not red. */
 	--alarm: #e8820c;

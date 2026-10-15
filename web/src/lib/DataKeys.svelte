@@ -219,7 +219,7 @@
 
 	.flags select {
 		margin-inline-start: auto;
-		background: #1a1a30;
+		background: var(--raised);
 		border: 1px solid var(--rule);
 		border-radius: 4px;
 		color: var(--ink-bright);
@@ -230,7 +230,7 @@
 		box-sizing: border-box;
 		min-inline-size: 0;
 		min-block-size: 24px;
-		background: #1a1a30;
+		background: var(--raised);
 		border: 1px solid var(--rule);
 		border-radius: 4px;
 		padding: 0.25rem 0.4rem;
@@ -246,7 +246,7 @@
 		box-sizing: border-box;
 		min-block-size: 24px;
 		min-inline-size: 24px;
-		background: #1a1a30;
+		background: var(--raised);
 		border: 1px solid var(--rule);
 		border-radius: 4px;
 		padding: 0.2rem 0.45rem;

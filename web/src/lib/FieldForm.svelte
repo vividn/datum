@@ -605,7 +605,7 @@
 		box-sizing: border-box;
 		min-block-size: 24px;
 		/* The buttons' ground below, and for the same reason. */
-		background: #1a1a30;
+		background: var(--raised);
 		border: 1px solid var(--rule);
 		border-radius: 4px;
 		padding: 0.25rem 0.4rem;
@@ -628,7 +628,7 @@
 		flex: 1 1 auto;
 		min-block-size: 28px;
 		padding-inline: 0.1rem;
-		background: #1a1a30;
+		background: var(--raised);
 		border: 0;
 		border-inline-start: 1px solid var(--rule);
 		border-block-end: 2px solid transparent;
@@ -671,7 +671,7 @@
 	}
 
 	.ex {
-		background: #1a1a30;
+		background: var(--raised);
 		border: 1px solid var(--rule);
 		border-inline-start: 0;
 		border-radius: 0 6px 6px 0;
@@ -703,7 +703,7 @@
 		grid-template-columns: 2rem 1fr;
 		align-items: center;
 		column-gap: 0.5rem;
-		background: #1a1a30;
+		background: var(--raised);
 		border: 1px solid var(--rule);
 		border-radius: 6px;
 		padding: 0.35rem 0.5rem;
@@ -734,7 +734,7 @@
 		column-gap: 0.5rem;
 		box-sizing: border-box;
 		min-block-size: 24px;
-		background: #1a1a30;
+		background: var(--raised);
 		border: 1px solid var(--rule);
 		border-radius: 6px;
 		padding: 0.25rem 0.5rem;
@@ -897,7 +897,7 @@
 	.glyph-by button,
 	.segmented button {
 		min-block-size: 24px;
-		background: #1a1a30;
+		background: var(--raised);
 		border: 0;
 		border-block-end: 2px solid transparent;
 		padding: 0.2rem 0.6rem;
@@ -1018,7 +1018,7 @@
 		box-sizing: border-box;
 		min-block-size: 24px;
 		min-inline-size: 24px;
-		background: #1a1a30;
+		background: var(--raised);
 		border: 1px solid var(--rule);
 		border-radius: 4px;
 		padding: 0.2rem 0.8rem;

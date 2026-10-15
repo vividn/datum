@@ -162,7 +162,7 @@
 	.find {
 		box-sizing: border-box;
 		min-block-size: 28px;
-		background: #1a1a30;
+		background: var(--raised);
 		border: 1px solid var(--c, var(--rule));
 		border-radius: 999px;
 		padding: 0.1rem 0.6rem;
@@ -179,7 +179,7 @@
 	}
 
 	.chips [aria-current='true'] {
-		background: color-mix(in srgb, var(--c, var(--accent)) 30%, #1a1a30);
+		background: color-mix(in srgb, var(--c, var(--accent)) 30%, var(--raised));
 		color: var(--ink-bright);
 		box-shadow: inset 0 0 0 1px var(--c, var(--accent));
 	}

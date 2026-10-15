@@ -330,7 +330,7 @@
 
 	select {
 		min-block-size: 28px;
-		background: #1a1a30;
+		background: var(--raised);
 		border: 1px solid var(--rule);
 		border-radius: 4px;
 		color: var(--ink-bright);

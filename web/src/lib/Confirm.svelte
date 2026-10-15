@@ -87,7 +87,7 @@
 		box-sizing: border-box;
 		margin-top: 0.4rem;
 		/* The buttons' ground below, and for the same reason. */
-		background: #1a1a30;
+		background: var(--raised);
 		border: 1px solid var(--rule);
 		color: inherit;
 		font: inherit;
@@ -102,7 +102,7 @@
 	button {
 		/* Not a token: a step between `--ground` and `--tint` that only the
 		   two buttons in this dialog stand on. */
-		background: #1a1a30;
+		background: var(--raised);
 		border: 1px solid var(--rule);
 		border-radius: 4px;
 		color: inherit;

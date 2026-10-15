@@ -103,7 +103,7 @@
 		inline-size: 28px;
 		block-size: 28px;
 		padding: 0;
-		background: #1a1a30;
+		background: var(--raised);
 		border: 1px solid var(--rule);
 		border-radius: 4px;
 		color: var(--ink-bright);
@@ -161,7 +161,7 @@
 		box-sizing: border-box;
 		flex-basis: 100%;
 		min-block-size: 24px;
-		background: #1a1a30;
+		background: var(--raised);
 		border: 1px solid var(--rule);
 		border-radius: 4px;
 		padding: 0.25rem 0.4rem;
