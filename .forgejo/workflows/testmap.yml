@@ -21,9 +21,16 @@ on:
       - scripts/testmap-*
       - xtask/src/testmap.rs
 
+# A staging build once started finishes (da-wqdmq): cancelled by each newer
+# push, 7 of the 11 runs that ended between 22:31 and 00:08 on 10-15 mapped
+# nothing. With `cancel-in-progress` false Forgejo queues every run of the
+# group behind the one running, oldest first, and cancels none (QueueBehind,
+# as ci.yml's staging runs do), so `newest` skips a run whose commit staging
+# has moved past, and the run queued behind it maps the newer tip. A PR's
+# run is still cancelled by the PR's next push.
 concurrency:
   group: testmap-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/staging' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -31,7 +38,31 @@ env:
   CARGO_BUILD_JOBS: 3
 
 jobs:
+  # ci.yml's tip read. An unreadable tip builds.
+  newest:
+    runs-on: ubuntu-latest
+    outputs:
+      superseded: ${{ steps.tip.outputs.superseded }}
+    steps:
+      - id: tip
+        if: github.ref == 'refs/heads/staging'
+        env:
+          TOKEN: ${{ github.token }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          set -uo pipefail
+          tip=$(printf 'header = "Authorization: token %s"\n' "$TOKEN" | curl -sSf -K - "${SERVER%/}/api/v1/repos/${{ github.repository }}/branches/staging" |
+            node -p 'JSON.parse(require("fs").readFileSync(0)).commit.id' 2>/dev/null) || tip=
+          if [ -n "$tip" ] && [ "$tip" != "${{ github.sha }}" ]; then
+            echo "staging has moved on to $tip, which the run queued behind this one maps"
+            echo "superseded=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "mapping ${{ github.sha }} (staging's tip: ${tip:-unread})"
+          fi
+
   testmap:
+    needs: newest
+    if: needs.newest.outputs.superseded != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 150
     steps:
