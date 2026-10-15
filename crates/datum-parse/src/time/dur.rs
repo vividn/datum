@@ -55,6 +55,18 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
     Ok(if negative { -dur } else { dur })
 }
 
+/// A duration in whole days and nothing finer (`3d`, `2days`, `P3D`): the
+/// one a full-day time takes (da-s6ech). `30m`, `13:00`, `1d2h`, `24h` and a
+/// bare number (minutes) are not.
+pub fn is_whole_days(s: &str) -> bool {
+    let s = s.strip_prefix(['+', '-']).unwrap_or(s);
+    let n = match s.strip_prefix('P') {
+        Some(iso) => iso.strip_suffix('D'),
+        None => ["days", "day", "d"].iter().find_map(|u| s.strip_suffix(u)),
+    };
+    n.is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+}
+
 fn parse_unsigned_duration(s: &str) -> Result<Duration> {
     // ISO 8601 duration
     if s.starts_with("PT") || s.starts_with("P") {
@@ -343,6 +355,18 @@ pub fn format_human_duration(secs: i64, precision: DurationPrecision) -> String 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn whole_days_are_days_and_nothing_finer() {
+        for s in ["3d", "1day", "2days", "P3D", "-1d", "+2d"] {
+            assert!(is_whole_days(s), "{s}");
+        }
+        for s in [
+            "30m", "13:00", "1d2h", "24h", "1440", "1.5d", "PT72H", "P1DT2H", "d", "P",
+        ] {
+            assert!(!is_whole_days(s), "{s}");
+        }
+    }
 
     #[test]
     fn human_duration_names_two_units_unpadded() {

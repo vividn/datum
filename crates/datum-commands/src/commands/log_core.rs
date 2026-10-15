@@ -1028,20 +1028,6 @@ pub(crate) fn parse_log_args(
     // into the primary-value remainder, which then leaked into `state`
     // for non-state-bearing verbs like `occur`.
     //
-    // da-98u27: a date-only time (`-y`, `-d`, `-D`) drops the `dur` slot,
-    // as v2 did (c7d7a69d): `start walk -y 13:00` is a mistyped `-t`, and
-    // its `13:00` must fail as extra data, not log a 13h full day. Only the
-    // slot goes; an explicit `dur=<v>` is still a duration.
-    //
-    // Date-only is the composer's own answer (da-1m0t5), so a `-t` that
-    // names a day drops the slot too. A `-t` it cannot read is reported
-    // where the time is built.
-    let date_only = dur_bearing(action)
-        && !args.time.omit_timestamp
-        && args
-            .time
-            .builder(TimeCtx::now())
-            .is_ok_and(|b| b.is_only_date());
     for spec in args.field_keys.iter().chain(&args.keys) {
         let (name, _) = spec
             .split_once('=')
@@ -1049,9 +1035,6 @@ pub(crate) fn parse_log_args(
             .unwrap_or((spec.as_str(), None));
         if name.is_empty() {
             anyhow::bail!("empty id-key name in spec '{spec}'");
-        }
-        if date_only && name == "dur" {
-            continue;
         }
         data_args.keys.push(spec.clone());
     }
@@ -1172,8 +1155,7 @@ pub(crate) fn parse_log_args(
     // in `prepare_log_args`; the peek replaces the slot there).
     data_args.peek_trailing_dur =
         (args.string_state || args.string_remainder || args.comment_remainder)
-            && dur_bearing(action)
-            && !date_only;
+            && dur_bearing(action);
 
     let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
 

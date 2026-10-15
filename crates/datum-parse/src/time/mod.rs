@@ -42,7 +42,7 @@ pub use self::context::{DefaultDirection, TimeCtx};
 pub use self::date::{parse_date, DateArg};
 pub use self::datum_time::DatumTime;
 pub use self::dur::{
-    format_human_duration, format_iso_duration, parse_duration, parse_iso_duration,
+    format_human_duration, format_iso_duration, is_whole_days, parse_duration, parse_iso_duration,
     quick_uncertainty_for_count, DurationPrecision,
 };
 pub use self::resolve::{fixed_offset_minutes, Resolved, Zone, ZoneSegment, ZoneTimeline};

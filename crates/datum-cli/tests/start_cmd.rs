@@ -332,108 +332,84 @@ fn dur_plus_extra_still_marks_verb_start() {
 
 /// TS #10: "fails when using a full day and a duration".
 ///
-/// da-98u27: v2 (c7d7a69d) drops the positional `dur` slot when the time
-/// is date-only, so a mistyped `-y` for `-t` fails as extra data instead
-/// of logging a 315-minute full day.
+/// da-s6ech: a full-day time takes a duration in whole days, so a mistyped
+/// `-y` for `-t` fails saying so instead of logging a 315-minute full day.
 #[test]
 fn full_day_with_positional_duration_fails() {
     let db = fresh_db();
 
-    let err = run_cli(&["start", "field", "-y", "315"], &db).expect_err("-y 315 is extra data");
+    let err = run_cli(&["start", "field", "-y", "315"], &db).expect_err("-y 315 is no days");
     assert!(
-        format!("{err:#}").contains("Extra data with no matching key: [\"315\"]"),
+        format!("{err:#}").contains("a full-day time takes a duration in days; 315 is not"),
         "{err:#}"
     );
     assert_count!(db, "field", 0);
 }
 
-/// da-98u27: every date-only time (`-y`, `-d`, `-D`) drops the slot on
-/// start, switch and end alike, and writes nothing.
+/// da-s6ech: every date-only time (`-y`, `-d`, `-D`, a `-t` that names a
+/// day, a lifted `start_time=` day) refuses a duration finer than days, by
+/// the slot, `dur=` or an alias's `-k dur=`, on start, switch and end
+/// alike, and writes nothing.
 #[test]
-fn date_only_time_takes_no_positional_duration() {
+fn date_only_time_refuses_a_sub_day_duration() {
     let db = fresh_db();
+    run_cli(&["alias", "set", "wk", "start walk -k dur="], &db).expect("alias");
 
-    for argv in [
-        &["start", "walk", "-y", "13:00"][..],
-        &["switch", "mood", "happy", "-y", "13:00"],
-        &["end", "walk", "-y", "13:00"],
-        &["start", "walk", "-d", "yesterday", "30m"],
-        &["start", "walk", "-D", "30m"],
+    for (argv, word) in [
+        (&["start", "walk", "-y", "13:00"][..], "13:00"),
+        (&["switch", "mood", "happy", "-y", "13:00"], "13:00"),
+        (&["end", "walk", "-y", "13:00"], "13:00"),
+        (&["start", "walk", "-d", "yesterday", "30m"], "30m"),
+        (&["start", "walk", "-D", "1d2h"], "1d2h"),
+        (&["start", "walk", "-y", "dur=24h"], "24h"),
+        (&["start", "walk", "-t", "yesterday", "dur=13h"], "13h"),
+        (
+            &[
+                "switch", "mood", "-t", "sunday", "-I", "very", "happy", "30m",
+            ],
+            "30m",
+        ),
+        (&["start", "walk", "start_time=yesterday", "30m"], "30m"),
+        (&["wk", "-y", "13:00"], "13:00"),
     ] {
-        let err = run_cli(argv, &db).expect_err("the stray word is extra data");
+        let err = run_cli(argv, &db).expect_err("a sub-day duration is refused");
         let msg = format!("{err:#}");
-        assert!(
-            msg.contains("Extra data with no matching key"),
-            "{argv:?}: {msg}"
-        );
+        let want = format!("a full-day time takes a duration in days; {word} is not");
+        assert!(msg.contains(&want), "{argv:?}: {msg}");
     }
     assert_count!(db, "walk", 0);
     assert_count!(db, "mood", 0);
 }
 
-/// da-1m0t5: a `-t` that names a day is date-only to the composer, so it
-/// drops the slot as `-y` does; with a clock beside the day it is a clock
-/// time, and a named `dur=` is still a duration.
+/// da-s6ech: a duration in whole days is applied as that many days from
+/// that day, however it is given; a bare date-only start has none, and a
+/// clock time keeps any duration.
 #[test]
-fn a_t_that_names_a_day_takes_no_positional_duration() {
+fn date_only_time_takes_a_duration_in_days() {
     let db = fresh_db();
+    run_cli(&["alias", "set", "wk", "start work -k dur="], &db).expect("alias");
 
-    for argv in [
-        &["start", "walk", "-t", "yesterday", "13:00"][..],
-        &["switch", "mood", "happy", "-t", "sunday", "13:00"],
-        &["end", "walk", "-t", "2024-03-16", "13:00"],
-        &["start", "walk", "-y", "-t", "yesterday", "30m"],
-        &["start", "walk", "start_time=yesterday", "30m"],
-    ] {
-        let err = run_cli(argv, &db).expect_err("the stray word is extra data");
-        let msg = format!("{err:#}");
-        assert!(
-            msg.contains("Extra data with no matching key"),
-            "{argv:?}: {msg}"
-        );
-    }
-    assert_count!(db, "walk", 0);
-    assert_count!(db, "mood", 0);
-
-    run_cli(&["start", "run", "-t", "yesterday 13:00", "30m"], &db).expect("a day and a clock");
-    run_cli(&["start", "swim", "-t", "yesterday", "dur=13h"], &db).expect("named dur is kept");
-
-    let dur = |f| datum_core::test_util::logged_entries(&db, f)[0].duration_seconds();
-    assert_eq!(dur("run"), Some(30 * 60));
-    assert_eq!(dur("swim"), Some(13 * 60 * 60));
-}
-
-/// da-98u27: only the positional slot goes. A bare `-y` still logs a
-/// full-day start, a clock time keeps its duration, and so does an
-/// explicit `dur=` (v2 removed only the positional key).
-#[test]
-fn date_only_keeps_a_named_duration_and_a_clock_time_keeps_its_slot() {
-    let db = fresh_db();
-
+    run_cli(&["start", "outside", "-D", "3d"], &db).expect("-D 3d");
+    run_cli(&["switch", "mood", "happy", "-y", "2days"], &db).expect("-y 2days");
+    run_cli(&["end", "trip", "-d", "yesterday", "dur=P1D"], &db).expect("dur=P1D");
+    run_cli(&["switch", "m", "-y", "-I", "very", "happy", "2d"], &db).expect("-I 2d");
+    run_cli(&["wk", "-y", "2d"], &db).expect("the alias slot");
     run_cli(&["start", "walk", "-y"], &db).expect("full-day start");
-    run_cli(&["start", "run", "-t", "13:00", "30m"], &db).expect("clock time keeps dur");
-    run_cli(&["start", "swim", "-y", "dur=30m"], &db).expect("named dur is kept");
+    run_cli(&["start", "run", "-t", "yesterday 13:00", "30m"], &db).expect("a day and a clock");
     run_cli(&["start", "bike", "-y", "start_time=10:00", "30m"], &db)
         .expect("a lifted start_time= is a clock time");
 
-    let dur = |f| datum_core::test_util::logged_entries(&db, f)[0].duration_seconds();
-    assert_eq!(dur("walk"), None);
-    assert_eq!(dur("run"), Some(30 * 60));
-    assert_eq!(dur("swim"), Some(30 * 60));
-    assert_eq!(dur("bike"), Some(30 * 60));
-}
-
-/// da-98u27: under a string join the trailing-duration peek stands down
-/// too, so the word joins the state rather than becoming a duration.
-#[test]
-fn date_only_string_state_joins_the_trailing_word() {
-    let db = fresh_db();
-
-    run_cli(&["switch", "mood", "-y", "-I", "very", "happy", "30m"], &db).expect("-I join");
-
-    let entry = &datum_core::test_util::logged_entries(&db, "mood")[0];
-    assert_eq!(entry.duration_seconds(), None);
-    assert_eq!(entry.state.as_ref(), Some(&json!("very happy 30m")));
+    let entry = |f| datum_core::test_util::logged_entries(&db, f)[0].clone();
+    let day = 24 * 60 * 60;
+    assert_eq!(entry("outside").duration_seconds(), Some(3 * day));
+    assert_eq!(entry("mood").duration_seconds(), Some(2 * day));
+    assert_eq!(entry("trip").duration_seconds(), Some(day));
+    assert_eq!(entry("m").duration_seconds(), Some(2 * day));
+    assert_eq!(entry("m").state.as_ref(), Some(&json!("very happy")));
+    assert_eq!(entry("work").duration_seconds(), Some(2 * day));
+    assert_eq!(entry("walk").duration_seconds(), None);
+    assert_eq!(entry("run").duration_seconds(), Some(30 * 60));
+    assert_eq!(entry("bike").duration_seconds(), Some(30 * 60));
 }
 
 // ─── da-l3f3: positional duration on start/stop ──────────────────────────

@@ -18,7 +18,7 @@ use crate::input::data_args::Compat;
 use crate::shape::{REF_MARK, STR_MARK};
 use crate::time::date::unsigned_days_hint;
 use crate::time::{
-    format_iso_duration, parse_date, parse_duration, parse_time, DateArg, DatumTime,
+    format_iso_duration, is_whole_days, parse_date, parse_duration, parse_time, DateArg, DatumTime,
     DefaultDirection, TimeBuilder, TimeCtx, Zone,
 };
 
@@ -204,6 +204,19 @@ pub(super) fn infer_typed_value(
         let key = parse_time(value.trim_matches('"'), time_ctx(compat));
         if let (Ok(flags), Ok(key)) = (flags.builder_anchored(TimeCtx::now()), key) {
             flags.with_time_arg(key).shift_needs_clock()?;
+        }
+    }
+    // da-s6ech: a full-day time takes a duration in whole days alone, by
+    // the slot, `dur=` or an alias's `-k dur=`: `outside -D 3d` is three
+    // days, and `start walk -y 13:00`, a mistyped `-t`, is no 13h day.
+    if let (true, Some(flags)) = (path == "dur", compat.time_flags) {
+        let only_date = flags
+            .builder(TimeCtx::now())
+            .is_ok_and(|b| b.is_only_date());
+        if only_date && !flags.omit_timestamp && value != "null" && !is_whole_days(value) {
+            return Err(ParseError::InvalidTime(format!(
+                "a full-day time takes a duration in days; {value} is not"
+            )));
         }
     }
     match coerce_as(ty, value, compat) {

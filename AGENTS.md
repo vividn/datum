@@ -162,7 +162,10 @@ Native only: the browser's database is one process's at a time.
   datum's `durationBlocks` view). There is no `--dur` flag. It was
   removed because the three spellings disagreed about which side of
   `-t` the block fell on; `crates/datum-cli/tests/dur_flag_removed.rs`
-  keeps it gone, and the two survivors now agree with the reference
+  keeps it gone, and the two survivors now agree with the reference.
+  A full-day time (`-y`, `-d`, `-D`, a `-t` naming a day) takes a duration
+  in whole days alone (`outside -D 3d`); `start walk -y 13:00`, `24h` or
+  `1d2h` is refused saying so (da-s6ech)
 - `start_time=` / `end_time=` on `add`/`note`/`start`/`switch`/`occur` are
   lifted onto `occur_time`/`dur`, parsed exactly as `-t` is: the
   pair is the block between them, `start_time=S` + a duration ends at
