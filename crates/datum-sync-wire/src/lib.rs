@@ -39,6 +39,21 @@
 //!   process that commits, and a commit rewrites every index page the chunk
 //!   touched, however few ops it held. So is the side verifying, whose hash
 //!   of a big history takes minutes (da-0mwws).
+//! - **Versions.** Two copies one version apart is the ordinary case:
+//!   datum.day deploys on its schedule, a person's CLI updates on theirs. So
+//!   a change to a frame is additive (da-2bnr6): a new field is optional and
+//!   defaulted, a reader takes the old shape and the new (no
+//!   `deny_unknown_fields`), and a new message or variant goes only to a copy
+//!   that said it reads it, as `typed` and `proves` say. A change that can't
+//!   be both bumps the ALPN, and two copies that speak different ones are
+//!   told so in words, [`Failure::Protocol`]. `tests/frames.json` holds one
+//!   frame of each kind as the previous version wrote it: this version must
+//!   read each, and write back every field it carried, or the test fails
+//!   until the ALPN is bumped on purpose. `DATUM_SYNC_RECORD_FRAMES=1 cargo
+//!   test -p datum-sync-wire frames` records them again — with a bump, or to
+//!   add a kind or a field, when the file's diff only adds. The op lines a
+//!   round carries and the rows [`Store::held`] returns are datum-core's,
+//!   opaque here.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -48,7 +63,9 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use data_encoding::BASE32_NOPAD;
 use futures_util::future::{select, Either};
-use iroh::endpoint::{presets, Incoming, RecvStream, SendStream};
+use iroh::endpoint::{
+    presets, Connection, ConnectionError, Incoming, RecvStream, SendStream, TransportErrorCode,
+};
 pub use iroh::{Endpoint, EndpointAddr};
 use iroh::{RelayMode, SecretKey, Watcher};
 use n0_future::time::{sleep, timeout};
@@ -491,6 +508,8 @@ pub enum Failure {
     TimedOut,
     /// It reached no one, and the ticket's invite had expired.
     Late,
+    /// The other copy speaks another version of the protocol (da-2bnr6).
+    Protocol,
 }
 
 /// A dial's [`Failure`], and its words.
@@ -713,9 +732,7 @@ async fn session(
 ) -> Result<Report> {
     ensure!(addr.id != ep.id(), COPY);
     let id = addr.id.to_string();
-    let conn = within(async { Ok(ep.connect(addr, ALPN).await?) })
-        .await
-        .map_err(|e| unreachable(ep, &id, e))?;
+    let conn = connect(ep, addr, ALPN).await?;
     let (mut s, mut r) = conn.open_bi().await?;
     let left = invite.and_then(|r| r.leaves.clone());
     let holds = match invite {
@@ -818,9 +835,7 @@ pub struct Diffed {
 pub async fn diff(store: &impl Store, ep: &Endpoint, addr: EndpointAddr) -> Result<Diffed> {
     ensure!(addr.id != ep.id(), COPY);
     let id = addr.id.to_string();
-    let conn = within(async { Ok(ep.connect(addr, DIFF).await?) })
-        .await
-        .map_err(|e| unreachable(ep, &id, e))?;
+    let conn = connect(ep, addr, DIFF).await?;
     let (mut s, mut r) = conn.open_bi().await?;
     let hello = Hello {
         label: store.label(),
@@ -857,6 +872,32 @@ pub async fn diff(store: &impl Store, ep: &Endpoint, addr: EndpointAddr) -> Resu
     })
 }
 
+/// Connect to `addr` over `alpn`, or say why not.
+async fn connect(ep: &Endpoint, addr: EndpointAddr, alpn: &[u8]) -> Result<Connection> {
+    let id = addr.id.to_string();
+    within(async { Ok(ep.connect(addr, alpn).await?) })
+        .await
+        .map_err(|e| match other_protocol(&e) {
+            true => Failed(Failure::Protocol, format!("{}: {OTHER}", short(&id))).into(),
+            false => unreachable(ep, &id, e),
+        })
+}
+
+/// What two copies that speak different ALPNs are told, on either side.
+const OTHER: &str =
+    "that copy speaks another version of datum sync than this one: update datum on one of them";
+
+/// TLS's `no_application_protocol` alert: the other copy offered or served
+/// no ALPN this one speaks.
+fn other_protocol(e: &anyhow::Error) -> bool {
+    let alert = TransportErrorCode::crypto(120);
+    e.chain().any(|e| match e.downcast_ref() {
+        Some(ConnectionError::ConnectionClosed(c)) => c.error_code == alert,
+        Some(ConnectionError::TransportError(t)) => t.code == alert,
+        _ => false,
+    })
+}
+
 /// Why a dial reached no one, and what to do about it (da-shfv4): this
 /// copy's own relay is down, or the other copy is not running. Either way it
 /// is [`Failure::Unreachable`], which `redeem` reads as «try the next address».
@@ -879,9 +920,17 @@ fn unreachable(ep: &Endpoint, id: &str, e: anyhow::Error) -> anyhow::Error {
     Failed(Failure::Unreachable, why).into()
 }
 
+/// An incoming connection, or why it failed.
+async fn accepted(incoming: Incoming) -> Result<Connection> {
+    incoming.await.map_err(|e| match anyhow!(e) {
+        e if other_protocol(&e) => anyhow!("a copy dialed this one, and {OTHER}"),
+        e => e,
+    })
+}
+
 /// Answer one incoming connection: a peer, or the redemption of an invite.
 pub async fn serve(store: &impl Store, ep: &Endpoint, incoming: Incoming) -> Result<Report> {
-    let conn = incoming.await?;
+    let conn = accepted(incoming).await?;
     let id = conn.remote_id().to_string();
     let (mut s, mut r) = within(async { Ok(conn.accept_bi().await?) }).await?;
     let hello: Hello = get_json(&mut r, MAX_HELLO).await?;
@@ -987,8 +1036,9 @@ pub async fn redeem(store: &impl Store, ep: &Endpoint, ticket: &Ticket) -> Resul
         rep = dial(store, ep, addr.clone(), Some(&invite)).await;
         // Unreachable, or a member not yet holding the invite: the next
         // address may admit. Any other refusal stops here, a paused inviter
-        // too: going on would report whatever the last address said, often
-        // «could not reach», in place of the refusal that says what to do.
+        // too, and so does another protocol: going on would report whatever
+        // the last address said, often «could not reach», in place of the
+        // words that say what to do.
         let next = rep.as_ref().err().and_then(failure);
         if !matches!(
             next,
@@ -1055,7 +1105,181 @@ pub async fn bind(secret: [u8; 32], net: &Net) -> Result<Endpoint> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{json, Value};
+
+    /// Whether this version reads a frame the previous one wrote, and writes
+    /// it back with every field that one reads.
+    type Reads = fn(&Value) -> Result<(), String>;
+
+    fn reads<T: Serialize + DeserializeOwned>(old: &Value) -> Result<(), String> {
+        let t: T = serde_json::from_value(old.clone()).map_err(|e| format!("unread: {e}"))?;
+        let new = serde_json::to_value(t).map_err(|e| e.to_string())?;
+        match lacks(&new, old, "") {
+            None => Ok(()),
+            Some(at) => Err(format!(
+                "written back without {at} as the previous version has it"
+            )),
+        }
+    }
+
+    /// Where `new` lacks something of `old`: a key, or a value it holds.
+    fn lacks(new: &Value, old: &Value, at: &str) -> Option<String> {
+        match (new, old) {
+            (Value::Object(n), Value::Object(o)) => o.iter().find_map(|(k, v)| {
+                let at = format!("{at}/{k}");
+                n.get(k).map_or(Some(at.clone()), |n| lacks(n, v, &at))
+            }),
+            (Value::Array(n), Value::Array(o)) if n.len() == o.len() => (n.iter().zip(o))
+                .enumerate()
+                .find_map(|(i, (n, o))| lacks(n, o, &format!("{at}/{i}"))),
+            _ => (new != old).then(|| format!("{at} = {old}")),
+        }
+    }
+
+    fn kind<T: Serialize + DeserializeOwned>(
+        name: &'static str,
+        t: T,
+    ) -> (&'static str, Value, Reads) {
+        (name, serde_json::to_value(t).unwrap(), reads::<T>)
+    }
+
+    /// One frame of each kind, as this version writes it, every field set.
+    fn kinds() -> Vec<(&'static str, Value, Reads)> {
+        let addr = EndpointAddr::new(SecretKey::from_bytes(&[1; 32]).public())
+            .with_relay_url("https://relay.example/".parse().unwrap())
+            .with_ip_addr("192.0.2.1:4433".parse().unwrap());
+        let version = Version {
+            datum: "3.0.0-beta (440b271)".into(),
+            schema: 57,
+        };
+        let line = r#"{"op":"set","endpoint":"e","seq":1}"#.to_string();
+        let vector: Vector = [("e".to_string(), 1)].into();
+        let digest: Digest = [("h".to_string(), "ab12".to_string())].into();
+        vec![
+            kind(
+                "hello",
+                Hello {
+                    label: "laptop".into(),
+                    addr: addr.clone(),
+                    invite: Some("secret".into()),
+                    chain: Some("chain".into()),
+                    holds: 3,
+                    proves: true,
+                    typed: true,
+                    known: vec![addr.clone()],
+                    version: version.clone(),
+                },
+            ),
+            kind(
+                "welcome",
+                Reply::Welcome {
+                    label: "phone".into(),
+                    addr: addr.clone(),
+                    known: vec![addr.clone()],
+                    version,
+                },
+            ),
+            kind("refused", Reply::Refused("unknown invite".into())),
+            kind(
+                "refusal",
+                Reply::Refusal {
+                    why: "invite already used".into(),
+                    kind: Why::InviteUsed,
+                },
+            ),
+            kind("prove", Reply::Prove),
+            kind(
+                "why",
+                [
+                    Why::UnknownInvite,
+                    Why::InviteUsed,
+                    Why::InviteExpired,
+                    Why::Paused,
+                    Why::NotMember,
+                    Why::Other,
+                ],
+            ),
+            kind("records", vec![line]),
+            kind("vector", vector),
+            kind("hash", "ab12".to_string()),
+            kind("digest", Some(digest)),
+            kind("hids", vec!["h".to_string()]),
+            kind(
+                "ticket",
+                Ticket {
+                    addrs: vec![addr],
+                    secret: "secret".into(),
+                    about: About {
+                        from: Some("laptop".into()),
+                        chain: Some("chain".into()),
+                        expires: Some(1_700_000_000),
+                    },
+                },
+            ),
+        ]
+    }
+
+    /// A copy one version apart reads every frame this one writes, and this
+    /// one every frame it writes (da-2bnr6): the previous version's frames,
+    /// kept in `tests/frames.json`, read here, and come back with every field
+    /// they had. A kind there that this version no longer writes fails too.
+    #[test]
+    fn frames_of_the_previous_version_read_both_ways() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/frames.json");
+        let now = kinds();
+        if std::env::var_os("DATUM_SYNC_RECORD_FRAMES").is_some() {
+            let frames: BTreeMap<_, _> = now.into_iter().map(|(k, v, _)| (k, v)).collect();
+            let text = serde_json::to_string_pretty(&frames).unwrap();
+            std::fs::write(path, text + "\n").unwrap();
+            return;
+        }
+        let old: BTreeMap<String, Value> =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let broken: Vec<String> = old
+            .iter()
+            .filter_map(|(name, frame)| match now.iter().find(|k| k.0 == name) {
+                None => Some(format!("{name}: no longer written")),
+                Some((_, _, reads)) => reads(frame).err().map(|e| format!("{name}: {e}")),
+            })
+            .collect();
+        assert!(
+            broken.is_empty(),
+            "a frame is no longer additive, so a copy one version apart cannot sync with this \
+             one; make it additive, or bump ALPN on purpose and record the frames again \
+             (the crate doc, «Versions»):\n{}",
+            broken.join("\n")
+        );
+    }
+
+    /// Two copies that speak different ALPNs are told so in a sentence, on
+    /// the side that dials and the side that answers (da-2bnr6).
+    #[cfg(not(target_family = "wasm"))]
+    #[tokio::test]
+    async fn another_protocol_is_said_in_words() {
+        let net = Net::Local("127.0.0.1:0".parse().unwrap());
+        let this = bind([1; 32], &net).await.unwrap();
+        let other = Endpoint::builder(presets::Minimal)
+            .relay_mode(RelayMode::Disabled)
+            .clear_ip_transports()
+            .bind_addr("127.0.0.1:0".parse::<std::net::SocketAddr>().unwrap())
+            .unwrap()
+            .secret_key(SecretKey::from_bytes(&[2; 32]))
+            .alpns(vec![b"datum/sync/3".to_vec()])
+            .bind()
+            .await
+            .unwrap();
+        let answering = async { accepted(other.accept().await.unwrap()).await };
+        let (dialed, answered) = tokio::join!(connect(&this, other.addr(), ALPN), answering);
+        let e = dialed.err().unwrap();
+        assert_eq!(failure(&e), Some(Failure::Protocol));
+        let id = other.id().to_string();
+        assert_eq!(format!("{e:#}"), format!("{}: {OTHER}", short(&id)));
+        let e = answered.err().unwrap();
+        assert_eq!(
+            format!("{e:#}"),
+            format!("a copy dialed this one, and {OTHER}")
+        );
+    }
 
     /// A copy one version apart keeps reading a refusal (da-b6xh6): the
     /// frames below are what a copy before it sends and reads.

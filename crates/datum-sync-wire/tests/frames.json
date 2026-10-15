@@ -1,0 +1,117 @@
+{
+  "digest": {
+    "h": "ab12"
+  },
+  "hash": "ab12",
+  "hello": {
+    "addr": {
+      "addrs": [
+        {
+          "Relay": "https://relay.example/"
+        },
+        {
+          "Ip": "192.0.2.1:4433"
+        }
+      ],
+      "id": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "chain": "chain",
+    "datum": "3.0.0-beta (440b271)",
+    "holds": 3,
+    "invite": "secret",
+    "known": [
+      {
+        "addrs": [
+          {
+            "Relay": "https://relay.example/"
+          },
+          {
+            "Ip": "192.0.2.1:4433"
+          }
+        ],
+        "id": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      }
+    ],
+    "label": "laptop",
+    "proves": true,
+    "schema": 57,
+    "typed": true
+  },
+  "hids": [
+    "h"
+  ],
+  "prove": "Prove",
+  "records": [
+    "{\"op\":\"set\",\"endpoint\":\"e\",\"seq\":1}"
+  ],
+  "refusal": {
+    "Refusal": {
+      "kind": "invite-used",
+      "why": "invite already used"
+    }
+  },
+  "refused": {
+    "Refused": "unknown invite"
+  },
+  "ticket": {
+    "addrs": [
+      {
+        "addrs": [
+          {
+            "Relay": "https://relay.example/"
+          },
+          {
+            "Ip": "192.0.2.1:4433"
+          }
+        ],
+        "id": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      }
+    ],
+    "chain": "chain",
+    "expires": 1700000000,
+    "from": "laptop",
+    "secret": "secret"
+  },
+  "vector": {
+    "e": 1
+  },
+  "welcome": {
+    "Welcome": {
+      "addr": {
+        "addrs": [
+          {
+            "Relay": "https://relay.example/"
+          },
+          {
+            "Ip": "192.0.2.1:4433"
+          }
+        ],
+        "id": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+      },
+      "datum": "3.0.0-beta (440b271)",
+      "known": [
+        {
+          "addrs": [
+            {
+              "Relay": "https://relay.example/"
+            },
+            {
+              "Ip": "192.0.2.1:4433"
+            }
+          ],
+          "id": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+        }
+      ],
+      "label": "phone",
+      "schema": 57
+    }
+  },
+  "why": [
+    "unknown-invite",
+    "invite-used",
+    "invite-expired",
+    "paused",
+    "not-member",
+    "other"
+  ]
+}

@@ -601,7 +601,7 @@ fn next_step(e: anyhow::Error, from: &str) -> anyhow::Error {
              `datum sync chain invite` there) and connect again, or ask it for a fresh invite"
         ),
         // Its own words say it already.
-        Some(Failure::Late) | None => return e,
+        Some(Failure::Late | Failure::Protocol) | None => return e,
     };
     anyhow!("{e:#}. Next: {next}")
 }
