@@ -1091,6 +1091,143 @@ fn a_retimed_merged_entry_keeps_what_was_merged_into_it() {
     }
 }
 
+/// Every order of `items`.
+fn orders<T: Clone>(items: &[T]) -> Vec<Vec<T>> {
+    if items.len() <= 1 {
+        return vec![items.to_vec()];
+    }
+    let mut out = Vec::new();
+    for i in 0..items.len() {
+        let mut rest = items.to_vec();
+        let first = rest.remove(i);
+        for mut tail in orders(&rest) {
+            tail.insert(0, first.clone());
+            out.push(tail);
+        }
+    }
+    out
+}
+
+/// What a copy holds of `field`: its verify hash, then each row's slug,
+/// occur time, data, survivor and conflicts, by hid.
+fn holds(copy: &Copy, field: &str) -> String {
+    let rows = copy.query(
+        "SELECT group_concat(r, char(10)) FROM (
+           SELECT hid || ' ' || slug || ' ' || occur_time || ' ' || data || ' '
+                  || ifnull(superseded_by, '-') || ' ' || ifnull(conflicts, '-') AS r
+           FROM entries WHERE field = ?1 ORDER BY hid)",
+        field,
+    );
+    format!("{}\n{rows}", copy.hash())
+}
+
+/// A fresh copy given `first` and then each of `ops` in turn, one apply
+/// each, in every order: what it holds of `field` after each order.
+fn in_every_order(first: &[Value], ops: &[Value], field: &str) -> Vec<String> {
+    let line = |v: &[Value]| v.iter().map(|o| format!("{o}\n")).collect::<String>();
+    orders(ops)
+        .into_iter()
+        .map(|order| {
+            let z = Copy::new();
+            z.ok_in(&["sync", "pipe", "apply"], &line(first));
+            for op in &order {
+                z.ok_in(&["sync", "pipe", "apply"], &line(std::slice::from_ref(op)));
+            }
+            holds(&z, field)
+        })
+        .collect()
+}
+
+/// vividn's A4 (da-vkeg0): x and y each log a coffee at 08:00 and one of them
+/// retimes its own to 09:00 before seeing the other's. The two creates are one entry, the retime a change to it,
+/// whatever order a copy receives the three ops in: one coffee at 09:00
+/// showing both rows, contested nowhere, the same on every copy.
+#[test]
+fn one_instant_logged_twice_and_retimed_is_one_entry_in_every_arrival_order() {
+    let (at, to) = ("2026-10-04 08:00", "2026-10-04 09:00");
+    // x logs first, so its row is the one shown: x retimes it before y logs
+    // or after, or y retimes the row merged into it.
+    for (retimer, before) in [(0, true), (0, false), (1, false)] {
+        let (x, y) = (Copy::new(), Copy::new());
+        let r = [&x, &y][retimer];
+        let retime = || {
+            let hid = r.hid("coffee");
+            r.ok(&["retime", &hid, "-t", to]);
+            r.query("SELECT slug FROM entries WHERE hid = ?1", &hid)
+        };
+        x.ok(&["occur", "coffee", "-t", at, "a=1"]);
+        let mut moved = String::new();
+        if before {
+            moved = retime();
+        }
+        y.ok(&["occur", "coffee", "-t", at, "b=2"]);
+        if !before {
+            moved = retime();
+        }
+        let when = ["after", "before"][before as usize];
+        let case = format!("{} retimed {when} y logged", ["x", "y"][retimer]);
+        let (mut first, mut coffee) = (Vec::new(), Vec::new());
+        for op in x.ops().into_iter().chain(y.ops()) {
+            match op["field"] == "coffee" && op["slug"] != "spec:coffee" {
+                true => coffee.push(op),
+                false => first.push(op),
+            }
+        }
+        assert_eq!(coffee.len(), 3, "{case}: two creates and a retime");
+        let every = in_every_order(&first, &coffee, "coffee");
+        converged(&x, &y);
+        for held in &every {
+            assert_eq!(held, &holds(&x, "coffee"), "{case}");
+        }
+        for copy in [&x, &y] {
+            assert_eq!(live(copy, "coffee"), 1, "{case}");
+            let shown = copy.query(
+                "SELECT hid FROM entries WHERE field = ?1 AND superseded_by IS NULL",
+                "coffee",
+            );
+            let data = copy.data(&shown);
+            assert_eq!((&data["a"], &data["b"]), (&1.into(), &2.into()), "{case}");
+            assert_eq!(
+                copy.query("SELECT slug FROM entries WHERE hid = ?1", &shown),
+                moved,
+                "{case}: the retime moved the one entry"
+            );
+            assert_eq!(copy.conflicts(&shown), Value::Null, "{case}");
+        }
+    }
+}
+
+/// Both retime the one coffee, neither having seen the other: the later
+/// clock's instant shows, and both are named, the same on both copies.
+#[test]
+fn two_retimes_of_one_instant_logged_twice_are_an_occur_time_conflict() {
+    let (x, y) = (Copy::new(), Copy::new());
+    let (first, second) = one_id_twice(&x, &y);
+    x.ok(&["retime", &first, "-t", "2026-10-04 09:00"]);
+    y.ok(&["retime", &second, "-t", "2026-10-04 10:00"]);
+    converged(&x, &y);
+    for copy in [&x, &y] {
+        assert_eq!(live(copy, "coffee"), 1);
+        assert_eq!(sides(&copy.conflicts(&first), "occur_time").len(), 2);
+    }
+    assert_eq!(x.conflicts(&first), y.conflicts(&first));
+}
+
+/// A coffee logged at an instant another copy's coffee was moved FROM, by a
+/// copy that had seen it move, is a coffee of its own on every copy.
+#[test]
+fn a_log_where_a_seen_entry_was_moved_from_is_an_entry_of_its_own() {
+    let (x, y) = (Copy::new(), Copy::new());
+    x.ok(&["occur", "coffee", "-t", "2026-10-04 08:00", "a=1"]);
+    x.ok(&["retime", &x.hid("coffee"), "-t", "2026-10-04 09:00"]);
+    x.send(&y);
+    y.ok(&["occur", "coffee", "-t", "2026-10-04 08:00", "b=2"]);
+    converged(&x, &y);
+    for copy in [&x, &y] {
+        assert_eq!(live(copy, "coffee"), 2);
+    }
+}
+
 #[test]
 fn a_survivor_superseded_in_turn_hands_its_rows_to_the_new_one() {
     let (x, y, z) = (Copy::new(), Copy::new(), Copy::new());

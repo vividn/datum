@@ -8,7 +8,8 @@
 //!   ([`emit`], called beside each `history::record`): `endpoint`, a gapless
 //!   per-endpoint `seq`, an `hlc`, the entry's `hid` and `slug`, the change
 //!   `kind`, the command line that made it (`raw`, `alias_chain`), what it
-//!   changed (`effect`), what this copy had seen of the entry (`deps`) and
+//!   changed (`effect`), what this copy had seen of the entry — of every
+//!   entry, for a create (`deps`) — and
 //!   `sig`, the endpoint's signature over the SHA-256 of the op's
 //!   [`canonical_json`] without `sig`. An entry's first op is a create — a
 //!   `baseline` for an entry older than its ops.
@@ -743,7 +744,14 @@ fn push(
 ) -> Result<i64> {
     let (raw, alias_chain) =
         INVOCATION.with(|i| (i.borrow().raw.clone(), i.borrow().alias_chain.clone()));
-    let deps = vector_where(conn, Some(head.0))?;
+    // A create saw everything this copy holds: where another entry had
+    // been, and whether it had left (da-vkeg0, [`met`]). Its own endpoint is
+    // always named, so such a create is told from one signed before.
+    let of = (kind != "create").then_some(head.0);
+    let mut deps = vector_where(conn, of)?;
+    if of.is_none() {
+        deps.entry(ep.id.clone()).or_insert(0);
+    }
     sign(conn, ep, head, kind, effect, (raw, alias_chain), deps)
 }
 
@@ -1033,8 +1041,19 @@ fn contention(ops: &[Op]) -> BTreeMap<String, Vec<(&Op, Value)>> {
             setters.entry(k.as_str()).or_default().push(i);
         }
     }
-    let standing = |set: &[usize]| -> Vec<usize> {
-        let settled = |i: usize| set.iter().any(|&j| settles(&ops[j], &ops[i]));
+    // Of a key two creates gave one value — rows merged into one entry, one
+    // event logged twice — an op that saw either settles both (da-vkeg0):
+    // a retime of either is a change to the one entry.
+    let create = |i: usize| ops[i].effect.get("create").is_some();
+    let standing = |k: &str, set: &[usize]| -> Vec<usize> {
+        let alike =
+            |i: usize, m: usize| m == i || create(i) && create(m) && vals[m][k] == vals[i][k];
+        let settled = |i: usize| {
+            set.iter().any(|&j| {
+                set.iter()
+                    .any(|&m| alike(i, m) && settles(&ops[j], &ops[m]))
+            })
+        };
         set.iter().copied().filter(|&i| !settled(i)).collect()
     };
     let declares: Vec<bool> = ops
@@ -1043,7 +1062,7 @@ fn contention(ops: &[Op]) -> BTreeMap<String, Vec<(&Op, Value)>> {
         .collect();
     let mut out = BTreeMap::new();
     for (k, set) in setters.iter().filter(|(k, _)| contestable(k)) {
-        let mut sides = standing(set);
+        let mut sides = standing(k, set);
         if sides.iter().any(|&i| declares[i]) {
             sides.retain(|&i| declares[i]);
         }
@@ -1062,7 +1081,7 @@ fn contention(ops: &[Op]) -> BTreeMap<String, Vec<(&Op, Value)>> {
     let Some(set) = setters.get("deleted_at") else {
         return out;
     };
-    let mut sides: Vec<(usize, bool)> = standing(set)
+    let mut sides: Vec<(usize, bool)> = standing("deleted_at", set)
         .into_iter()
         .map(|i| (i, !vals[i]["deleted_at"].is_null()))
         .collect();
@@ -1222,6 +1241,64 @@ pub(super) fn blockers(conn: &Connection, e: &Entry) -> Result<Vec<Entry>> {
     Ok(found)
 }
 
+/// Live entries `e` is one with though their slugs differ now (da-vkeg0):
+/// each had `e`'s create's slug for a stretch whose end that create did not
+/// see — a retime it had not heard of, or none yet. An entry's slug is its
+/// own create's, then whatever its edits and those of the rows merged into
+/// it set, in fold order. A create's `deps` are all its copy held, and it
+/// waits for them, so what it saw is here before it: a merge this finds is
+/// never undone by an op arriving later. A create at an instant an entry
+/// it saw had left is an entry of its own.
+fn met(conn: &Connection, e: &Entry) -> Result<Vec<Entry>> {
+    let ops = ops_of(conn, e.hid.as_str())?;
+    // A create signed before da-vkeg0 names nothing it saw: it meets only
+    // the entry at its slug now, as it always did.
+    let Some(create) = ops
+        .iter()
+        .find(|o| o.kind == "create" && !o.deps.is_empty())
+    else {
+        return Ok(Vec::new());
+    };
+    let held: Vec<String> = conn
+        .prepare_cached(
+            "SELECT DISTINCT COALESCE(e.superseded_by, e.hid) FROM ops o JOIN entries e ON e.hid = o.hid
+             WHERE o.slug = ?1 AND o.applied = 1 AND o.hid != ?2",
+        )?
+        .query_map(params![create.slug, e.hid], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut out = Vec::new();
+    for hid in held.iter().filter(|h| **h != e.hid.0) {
+        let Some(r) = fetch_by_hid(conn, hid)? else {
+            continue;
+        };
+        let mut timeline = ops_of(conn, hid)?;
+        for m in merged_into(conn, &r)? {
+            let theirs = ops_of(conn, m.hid.as_str())?;
+            timeline.extend(
+                theirs
+                    .into_iter()
+                    .filter(|o| o.effect.get("create").is_none()),
+            );
+        }
+        timeline.sort_by(|a, b| a.order().cmp(&b.order()));
+        let mut at = None;
+        let mut overlap = false;
+        for o in &timeline {
+            if o.effect.get("create").is_none() && o.effect["set"].get("slug").is_none() {
+                continue;
+            }
+            if at == Some(&create.slug) && o.slug != create.slug && !create.saw(o) {
+                overlap = true;
+            }
+            at = Some(&o.slug);
+        }
+        if overlap || at == Some(&create.slug) {
+            out.push(r);
+        }
+    }
+    Ok(out)
+}
+
 /// A row's content as [`diff`] names its keys, without its identity and the
 /// keys [`NOT_A_CONFLICT`] names: what two rows merged into one compare.
 fn content(r: &Map<String, Value>) -> Map<String, Value> {
@@ -1340,8 +1417,9 @@ fn merge_from(
         fold_into(&mut shown, &op.effect);
     }
     let mut out = entry_from(shown.unwrap_or_default())?;
+    // The slug is the fold's, like the instant it names: a retime of any
+    // of the rows moves the one entry (da-vkeg0).
     out.hid = s.hid.clone();
-    out.slug = s.slug.clone();
     out.create_time = s.create_time;
     out.superseded_by = None;
     Ok(out)
@@ -1536,7 +1614,13 @@ fn write_merged(
         let rank = |e: &Entry| {
             Ok::<_, DatumError>((restored(conn, &e.hid)?, e.create_time, e.hid.0.clone()))
         };
-        for b in blockers(conn, &next)? {
+        let mut found = blockers(conn, &next)?;
+        for m in met(conn, &next)? {
+            if found.iter().all(|b| b.hid != m.hid) {
+                found.push(m);
+            }
+        }
+        for b in found {
             if rank(&next)? < rank(&b)? {
                 history::record(conn, &b, kind)?;
                 conn.execute(repoint, params![b.hid, next.hid])?;
