@@ -177,6 +177,27 @@ fn db_offers_the_known_databases() {
     assert!(has(&env.complete("tail --db "), "other"));
 }
 
+/// `-z` offers the zones, matched without regard to case and printed in
+/// their own spelling (da-eku0h).
+#[test]
+fn timezone_offers_the_zones_whatever_the_case_typed() {
+    let env = Env::new();
+    for (line, want) in [
+        ("occur coffee -z Eur", "Europe/Berlin"),
+        ("occur coffee -z europe/b", "Europe/Berlin"),
+        ("occur coffee --timezone utc", "UTC"),
+    ] {
+        let found = env.complete(line);
+        assert!(has(&found, want), "{line:?}: {found:?}");
+        assert!(
+            found.iter().all(|z| z
+                .to_lowercase()
+                .starts_with(&line.rsplit(' ').next().unwrap().to_lowercase())),
+            "{line:?}: {found:?}"
+        );
+    }
+}
+
 #[test]
 fn switch_offers_the_fields_states_then_its_keys() {
     let env = Env::new();

@@ -200,7 +200,7 @@ fn after_command(mut rest: Vec<String>, db: Option<&Db>, cur: &str) -> Candidate
         .chain(GLOBAL_FLAGS)
         .collect();
 
-    // A flag's value: only `--db` and `--color` have anything to offer.
+    // A flag's value: only `--db`, `--color` and `-z` have anything to offer.
     if let Some(prev) = rest.last() {
         if let Some(flag) = lookup_flag(&all_flags, prev) {
             if flag.takes_value && !flag.value_optional && !prev.contains('=') {
@@ -472,10 +472,17 @@ fn field_on_line(slots: &[(Slot, bool)], given: &[&String]) -> Option<String> {
         .map(|w| w.to_string())
 }
 
-/// What a flag's value may be: the known databases for `--db`.
+/// What a flag's value may be: the known databases for `--db`, the zones
+/// for `-z` (da-eku0h).
 fn value_of(flag: &str) -> Candidates {
     if flag == "--color" {
         return ["auto", "always", "never"].map(String::from).to_vec();
+    }
+    if flag == "--timezone" {
+        return chrono_tz::TZ_VARIANTS
+            .iter()
+            .map(|tz| tz.name().to_string())
+            .collect();
     }
     if flag != "--db" {
         return Vec::new();
@@ -677,9 +684,16 @@ fn filtered(found: Candidates, cur: &str) -> Candidates {
     let mut seen = BTreeSet::new();
     // A sentinel is the shell's to filter, by the word being typed.
     let sentinel = |v: &String| v == FILES || v == DIRS;
+    // A zone has one spelling, so it is matched without regard to case
+    // (`europe/b` → `Europe/Berlin`), as `-z` reads it (da-a32ze).
+    let zone = |v: &String| {
+        v.get(..cur.len())
+            .is_some_and(|p| p.eq_ignore_ascii_case(cur))
+            && v.parse::<chrono_tz::Tz>().is_ok()
+    };
     found
         .into_iter()
-        .filter(|v| (v.starts_with(cur) || sentinel(v)) && seen.insert(v.clone()))
+        .filter(|v| (v.starts_with(cur) || sentinel(v) || zone(v)) && seen.insert(v.clone()))
         .collect()
 }
 
