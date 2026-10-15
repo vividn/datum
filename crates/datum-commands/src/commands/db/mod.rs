@@ -109,6 +109,9 @@ pub fn purge_with_io(
     if !args.yes {
         let path = current_db_path(db).unwrap_or_else(|_| "(in-memory)".to_string());
         let mut headline = purge_headline(&path, &snapshots);
+        if let n @ 1.. = db.spool_queued() {
+            headline += &format!("\nIts {n} queued change(s), not written yet, go too.");
+        }
         if rejoin {
             headline += &format!(
                 "\nIt stays a member of sync chain {}, and refetches everything from it.",
@@ -122,10 +125,11 @@ pub fn purge_with_io(
         false => None,
     };
 
-    let dropped = match rejoin {
-        true => db.sync_purge_rejoin()?,
-        false => db.force_recreate_schema()?,
-    };
+    // A change queued before the purge is the old copy's (da-owy96).
+    let (dropped, queued) = db.spool_discard_after(|| match rejoin {
+        true => db.sync_purge_rejoin(),
+        false => db.force_recreate_schema(),
+    })?;
     // Only once that succeeded: a purge it failed is run again, and removes
     // them then.
     for snapshot in &snapshots {
@@ -136,6 +140,9 @@ pub fn purge_with_io(
     println!("  dropped: {}", dropped.join(", "));
     for snapshot in &snapshots {
         println!("  removed: {}", snapshot.display());
+    }
+    if queued > 0 {
+        println!("  removed: {queued} queued change(s), never written");
     }
     println!("  file: rewritten, none of the old pages are left in it");
     println!(

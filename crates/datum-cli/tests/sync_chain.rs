@@ -638,9 +638,16 @@ fn a_purge_with_rejoin_refetches_everything_and_stays_a_member() {
         "UPDATE ops SET hid = substr(hid, 2) WHERE hid = 'x' || {coffee}"
     ));
     let id = b.id();
+    // A change queued before the purge is the old copy's, and goes with it
+    // (da-owy96).
+    let holder = rusqlite::Connection::open(b.tmp.path().join("data.db")).unwrap();
+    holder.execute_batch("BEGIN IMMEDIATE").unwrap();
+    assert!(b.ok(&["occur", "queued"]).contains("QUEUED"));
+    drop(holder);
     let purged = b.ok(&["db", "purge", "--rejoin", "--yes"]);
     assert!(
-        purged.contains("kept: this copy's endpoint key"),
+        purged.contains("kept: this copy's endpoint key")
+            && purged.contains("removed: 1 queued change(s)"),
         "{purged}"
     );
     assert!(
@@ -661,6 +668,7 @@ fn a_purge_with_rejoin_refetches_everything_and_stays_a_member() {
     b.ok(&["occur", "late"]);
     assert!(b.send(&a).0 && b.send(&c).0);
     assert!(a.has("late") && c.has("late"));
+    assert!(!a.has("queued") && !b.has("queued"));
     assert_eq!(b.hash(), a.hash());
     assert_eq!(c.hash(), a.hash());
 }

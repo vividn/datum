@@ -119,6 +119,20 @@ fn pending(conn: &Connection, all: Vec<(String, Value)>) -> Result<Vec<(String, 
     Ok(all.into_iter().skip(landed.map_or(0, |i| i + 1)).collect())
 }
 
+/// How many lines of `spool` `conn` has not committed: every line when the
+/// lines or `conn`'s mark of the last one committed will not read, as a
+/// purge meets a damaged file.
+fn queued(conn: &Connection, spool: &Path) -> usize {
+    match lines(spool) {
+        Ok(all) => {
+            let n = all.len();
+            pending(conn, all).map_or(n, |p| p.len())
+        }
+        Err(_) => std::fs::read_to_string(spool)
+            .map_or(0, |t| t.lines().filter(|l| !l.trim().is_empty()).count()),
+    }
+}
+
 /// Land one line, in its own transaction: ops computed already, so the
 /// lock is held for their writes (da-8i7f0).
 fn land(db: &Db, (id, line): &(String, Value)) -> Result<()> {
@@ -257,6 +271,42 @@ impl Db {
         self.path
             .as_ref()
             .is_some_and(|p| beside(p, ".spool").exists())
+    }
+
+    /// How many changes are queued beside this database, not landed yet.
+    pub fn spool_queued(&self) -> usize {
+        self.path
+            .as_ref()
+            .map_or(0, |p| queued(&self.conn, &beside(p, ".spool")))
+    }
+
+    /// Run `wipe` holding the spool, so no drain lands it meanwhile, and
+    /// once it succeeded remove the spool: a change queued before a purge
+    /// is the old copy's data, and landed after it would put back part of
+    /// what was purged (da-owy96). What `wipe` gave, and how many queued
+    /// changes went.
+    pub fn spool_discard_after<T, E: From<DatumError>>(
+        &self,
+        wipe: impl FnOnce() -> std::result::Result<T, E>,
+    ) -> std::result::Result<(T, usize), E> {
+        // No file (`:memory:`), or the browser's, which is one process's
+        // at a time and has no file locks: nothing spools beside it.
+        let Some(path) = self
+            .path
+            .as_ref()
+            .filter(|p| !cfg!(target_family = "wasm") && p.exists())
+        else {
+            return wipe().map(|t| (t, 0));
+        };
+        // Held with no spool too: a write the wipe's lock turns away
+        // snapshots only once the wipe is done, and so queues nothing of
+        // the old copy.
+        let _held = lock(path, true)?;
+        let spool = beside(path, ".spool");
+        let n = queued(&self.conn, &spool);
+        let out = wipe()?;
+        replace(&spool, "")?;
+        Ok((out, n))
     }
 
     /// Land the changes queued beside this database, in order, until the

@@ -702,3 +702,65 @@ fn a_repl_write_under_a_held_lock_is_queued_and_lands_later() {
     assert_eq!(fields, ["coffee", "tea"]);
     env.check_sync_clean(1);
 }
+
+/// da-owy96: a change queued before a purge is the old copy's data, so the
+/// purge takes it with the rest and says so, and the next command lands
+/// nothing.
+#[test]
+fn a_purge_removes_the_changes_queued_before_it() {
+    let env = Env::new();
+    env.ok(&["occur", "coffee"]);
+    let holder = env.hold();
+    env.queued(&["occur", "tea"]);
+    drop(holder);
+
+    let out = env.ok(&["db", "purge", "--yes"]);
+    assert!(
+        out.contains("removed: 1 queued change(s), never written"),
+        "{out}"
+    );
+    assert!(!env.spool().exists(), "the spool outlived the purge");
+    let out = env.run(&["tail"]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!err.contains("queued"), "{err}");
+    assert_eq!(env.rows(), [], "the purge left an entry");
+}
+
+/// da-owy96: a write the purge's wipe turns away snapshots the copy only
+/// once the wipe is done, so it queues nothing of the old copy: an update
+/// of an entry the purge took finds none.
+#[test]
+fn a_write_during_a_purge_queues_nothing_of_the_old_copy() {
+    let env = Env::new();
+    env.ok(&["occur", "coffee"]);
+    let hid = env.hid_of("coffee");
+    let holder = env.hold();
+    let purge = env.spawn(&["db", "purge", "--yes"], None);
+    // Into the purge's wait for the write lock, holding the spool.
+    let began = Instant::now();
+    while began.elapsed() < Duration::from_secs(3) {
+        let held = std::fs::File::open(env.spool().with_extension("spool.lock"))
+            .is_ok_and(|f| f.try_lock().is_err());
+        if held {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let update = env.spawn(&["update", &hid, "n=1"], None);
+    // Past its wait for the write lock, and at the spool's.
+    std::thread::sleep(Duration::from_millis(1500));
+    drop(holder);
+    let purged = finish(purge, 10, "the purge");
+    assert!(
+        purged.status.success(),
+        "{}",
+        String::from_utf8_lossy(&purged.stderr)
+    );
+    let out = finish(update, 10, "the update");
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(!said.contains("QUEUED"), "queued on the old copy: {said}");
+    let out = env.run(&["tail"]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!err.contains("queued"), "{err}");
+    assert_eq!(env.rows(), [], "the purge left an entry");
+}
