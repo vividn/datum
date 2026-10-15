@@ -54,7 +54,8 @@ export interface Example {
 	/** What it shows of datum, under its name. */
 	shows: string;
 	color: string;
-	glyph?: string;
+	/** Its icon in the examples, saved as the field's glyph. */
+	glyph: string;
 	/** Each state and its colour, in the order they stand. */
 	states?: Record<string, string>;
 	keys?: Pick<KeyRow, 'name' | 'kind' | 'in_slug'>[];
@@ -74,18 +75,20 @@ const id = dataKey('id', 'required', true);
  */
 export const EXAMPLES: Example[] = [
 	{ field: 'coffee', verb: 'occur', shows: 'each cup, and its size', color: '#c69c6d', glyph: '☕', keys: [dataKey('size')] },
-	{ field: 'mood', verb: 'occur', shows: 'a level, -5 to +5', color: '#e8c547', keys: [dataKey('level', 'required')] },
+	{ field: 'mood', verb: 'occur', shows: 'a level, -5 to +5', color: '#e8c547', glyph: '🙂', keys: [dataKey('level', 'required')] },
 	{ field: 'headache', verb: 'occur', shows: 'each one, and how bad', color: '#d46a6a', glyph: '⚡', keys: [dataKey('severity')] },
-	{ field: 'medication', verb: 'occur', shows: 'what you took, and how much', color: '#7fb8d4', glyph: '✚', keys: [dataKey('name', 'required'), dataKey('dose')] },
-	{ field: 'sleep', verb: 'start', shows: 'on at night, off in the morning', color: '#7b68ee' },
-	{ field: 'screentime', verb: 'start', shows: 'on while you are on a screen', color: '#8fa3bf' },
-	{ field: 'work', verb: 'start', shows: 'on when you start, off when you stop', color: '#d4a35a' },
-	{ field: 'shower', verb: 'start', shows: 'on in, off out', color: '#5ac8d4' },
+	{ field: 'medication', verb: 'occur', shows: 'what you took, and how much', color: '#7fb8d4', glyph: '💊', keys: [dataKey('name', 'required'), dataKey('dose')] },
+	{ field: 'sleep', verb: 'start', shows: 'on at night, off in the morning', color: '#7b68ee', glyph: '🌙' },
+	{ field: 'screentime', verb: 'start', shows: 'on while you are on a screen', color: '#8fa3bf', glyph: '📱' },
+	{ field: 'work', verb: 'start', shows: 'on when you start, off when you stop', color: '#d4a35a', glyph: '💼' },
+	{ field: 'shower', verb: 'start', shows: 'on in, off out', color: '#5ac8d4', glyph: '🚿' },
+	{ field: 'menstruation', verb: 'start', shows: 'on while it lasts, off when it ends', color: '#d64545', glyph: '🩸' },
 	{
 		field: 'activity',
 		verb: 'switch',
 		shows: 'email, meeting or deepwork, until the next',
 		color: '#c8c8c8',
+		glyph: '🗂',
 		states: { email: '#4f8fe8', meeting: '#d48788', deepwork: '#7bd389' }
 	},
 	{
@@ -93,7 +96,18 @@ export const EXAMPLES: Example[] = [
 		verb: 'switch',
 		shows: 'where you are: home, office, car, train…',
 		color: '#9acd32',
-		states: Object.fromEntries(['home', 'office', 'inside', 'outside', 'car', 'bus', 'train', 'airplane'].map((s) => [s, ''])),
+		glyph: '🌳',
+		// vividn gave outside a light green and airplane an off-white (da-yqx0t).
+		states: {
+			home: '#e0b070',
+			office: '#7f9cc4',
+			inside: '#cbb994',
+			outside: '#9ad48a',
+			car: '#d9825b',
+			bus: '#e2c35a',
+			train: '#5fb3a8',
+			airplane: '#ece8df'
+		},
 		neverFalse: true
 	},
 	{
@@ -101,11 +115,12 @@ export const EXAMPLES: Example[] = [
 		verb: 'switch',
 		shows: 'each state a book card: reading dune is book:dune',
 		color: '#c39bd3',
+		glyph: '📖',
 		lookup: 'book'
 	},
-	{ field: 'person', verb: 'add', shows: 'a card with a name and a city', color: '#e59866', keys: [id, dataKey('name'), dataKey('city')] },
-	{ field: 'book', verb: 'add', shows: 'a card with a title and an author', color: '#c39bd3', keys: [id, dataKey('title'), dataKey('author')] },
-	{ field: 'place', verb: 'add', shows: 'a card with a name and an address', color: '#76d7c4', keys: [id, dataKey('name'), dataKey('address')] }
+	{ field: 'person', verb: 'add', shows: 'a card with a name and a city', color: '#e59866', glyph: '👤', keys: [id, dataKey('name'), dataKey('city')] },
+	{ field: 'book', verb: 'add', shows: 'a card with a title and an author', color: '#c39bd3', glyph: '📚', keys: [id, dataKey('title'), dataKey('author')] },
+	{ field: 'place', verb: 'add', shows: 'a card with a name and an address', color: '#76d7c4', glyph: '📍', keys: [id, dataKey('name'), dataKey('address')] }
 ];
 
 /** The action word `tail` prints for a field declared with `verb`. */

@@ -15,8 +15,9 @@
 	It opens on the SHAPES (da-uipyt), vividn, 2026-10-14: «rather than the
 	name, start with the shape buttons. I think that ends up being the most
 	important question to answer». Each is named and lined as the welcome
-	names it, and on a new field has a ▾ of examples (`EXAMPLES`, less the
-	ones there is already a field for): one tap fills the form — never the
+	names it, and on a new field has an «ex.» part to the side that opens
+	its examples in a sheet (`EXAMPLES`, less the ones there is already a
+	field for, da-yqx0t), each with its icon: one tap fills the form — never the
 	database — with a field of that shape, its colour, glyph, keys and
 	states, to be read, changed and saved or not. A shape or an example
 	chosen, the name box takes the focus with its text selected. Under the
@@ -51,6 +52,7 @@
 	import Glyph from './Glyph.svelte';
 	import Placement from './Placement.svelte';
 	import { shellJoin } from './shellSplit.js';
+	import Sheet from './Sheet.svelte';
 	import Swatch from './Swatch.svelte';
 	import {
 		editedSpec,
@@ -226,7 +228,7 @@
 		{/if}
 		<div class="verbs" role="radiogroup" aria-label="what a press logs">
 			{#each VERBS as choice (choice.verb)}
-				<div class="shape">
+				<div class="shape" class:split={offers(choice.verb)}>
 					<button
 						type="button"
 						class="verb"
@@ -243,27 +245,34 @@
 					{#if offers(choice.verb)}
 						<button
 							type="button"
-							class="more"
+							class="ex"
+							use:act={'open'}
 							data-examples={choice.verb}
-							aria-expanded={catalog === choice.verb}
+							aria-haspopup="dialog"
 							aria-label="examples of {choice.what}"
-							on:click={() => (catalog = catalog === choice.verb ? null : choice.verb)}>▾</button
+							on:click={() => (catalog = choice.verb)}>ex.</button
 						>
 					{/if}
 				</div>
 			{/each}
 		</div>
-		{#if examples.length}
-			<!-- Each fills the form, not the database; «+ new field» is the way back to them. -->
+		<!-- Each fills the form, not the database; «+ new field» is the way back to them. -->
+		<Sheet
+			title="examples of {VERBS.find((v) => v.verb === catalog)?.what}"
+			open={examples.length > 0}
+			onclose={() => (catalog = null)}
+			data-catalog={catalog}
+		>
 			<div class="examples" role="group" aria-label="examples">
 				{#each examples as example (example.field)}
 					<button type="button" data-example={example.field} on:click={() => fill(example)}>
-						<span class="name"><span class="mark" style:color={example.color}>{example.glyph ?? VERBS.find((v) => v.verb === example.verb)?.glyph}</span> {example.field}</span>
+						<span class="icon" style:color={example.color}>{example.glyph}</span>
+						<span class="name">{example.field}</span>
 						<span class="what">{example.shows}</span>
 					</button>
 				{/each}
 			</div>
-		{/if}
+		</Sheet>
 		{#if !spec}
 			<input
 				class="field"
@@ -639,41 +648,61 @@
 	}
 
 	/* Two across where two fit a shape's line, else one: four fingertips,
-	   not a list of words with a picture beside each — and the examples the same. */
-	.verbs,
-	.examples {
+	   not a list of words with a picture beside each. */
+	.verbs {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
 		gap: 0.4rem;
 	}
 
-	/* The ▾ of a shape's examples, in its corner. */
+	/* A shape with examples is one card in two parts: the shape, and a
+	   quarter of it to the side that reads «ex.» (vividn, 2026-10-15). */
 	.shape {
-		position: relative;
 		display: grid;
 	}
 
-	.more {
-		position: absolute;
-		inset-block-start: 0;
-		inset-inline-end: 0;
-		min-inline-size: 28px;
-		min-block-size: 28px;
-		background: none;
-		border: 0;
+	.shape.split {
+		grid-template-columns: 3fr 1fr;
+	}
+
+	.shape.split .verb {
+		border-start-end-radius: 0;
+		border-end-end-radius: 0;
+	}
+
+	.ex {
+		background: #1a1a30;
+		border: 1px solid var(--rule);
+		border-inline-start: 0;
+		border-radius: 0 6px 6px 0;
 		color: var(--muted);
 		font: inherit;
+		font-size: 0.75rem;
+		text-align: center;
 		cursor: pointer;
 	}
 
-	.more[aria-expanded='true'] {
+	.ex:hover,
+	.ex:focus-visible {
 		color: var(--accent);
+		border-color: var(--accent);
 	}
 
+	:global(dialog.sheet[data-catalog]) {
+		width: min(24rem, calc(100vw - 2rem));
+	}
+
+	.examples {
+		display: grid;
+		gap: 0.4rem;
+	}
+
+	/* The icon, then the name over what it shows. */
 	.examples button {
-		display: flex;
-		flex-direction: column;
-		gap: 0.1rem;
+		display: grid;
+		grid-template-columns: 2rem 1fr;
+		align-items: center;
+		column-gap: 0.5rem;
 		background: #1a1a30;
 		border: 1px solid var(--rule);
 		border-radius: 6px;
@@ -689,12 +718,14 @@
 		border-color: var(--accent);
 	}
 
-	.mark {
-		color: var(--accent);
+	.examples .icon {
+		grid-row: span 2;
+		font-size: 1.5rem;
+		text-align: center;
 	}
 
 	/* The pictogram beside the shape's name and line, so four fit over the
-	   name box on a phone; the ▾ keeps the top corner. */
+	   name box on a phone. */
 	.verb {
 		display: grid;
 		grid-template-columns: auto 1fr;
@@ -706,7 +737,7 @@
 		background: #1a1a30;
 		border: 1px solid var(--rule);
 		border-radius: 6px;
-		padding: 0.4rem 1.6rem 0.4rem 0.5rem;
+		padding: 0.25rem 0.5rem;
 		color: var(--ink);
 		font: inherit;
 		cursor: pointer;

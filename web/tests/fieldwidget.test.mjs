@@ -6,8 +6,8 @@
 // what "field" actually is and means.»
 //
 // So what is held here is what a newcomer meets: the sentence, the shapes
-// first (da-uipyt), each with a ▾ of examples that fill the form and not
-// the database, tracked or ignored under the name, a save that leaves a
+// first (da-uipyt), each with an «ex.» part opening a sheet of examples
+// that fill the form and not the database (da-yqx0t), tracked or ignored under the name, a save that leaves a
 // field the bar can log, and the chips that go from one field to the next.
 // The form's own tabs are `track.test.mjs`'s, the place's coming and going
 // `specplace.test.mjs`'s.
@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { EXAMPLES, VERBS, trackArgv } from '../src/lib/track.ts';
 import { shellJoin } from '../src/lib/shellSplit.ts';
-import { DESKTOP } from './support/layout.mjs';
+import { DESKTOP, PHONE } from './support/layout.mjs';
 import { FIELD_FORM, openField } from './support/field.mjs';
 import { until } from './support/until.mjs';
 
@@ -29,12 +29,21 @@ const WIDGET = ':is(dialog.sheet[data-place="field"], section.pane[data-title="f
 const chips = (page) => page.locator(`${WIDGET} .chips button`);
 const chipTexts = async (page) => (await chips(page).allInnerTexts()).map((t) => t.trim());
 const marked = async (page) => (await page.locator(`${WIDGET} .chips [aria-current="true"]`).allInnerTexts()).map((t) => t.trim());
-const glyphOf = (verb) => VERBS.find((v) => v.verb === verb).glyph;
 
 const TABS = ['basics', 'states', 'data', 'aliases', 'placement'];
-/** The shape's ▾, which opens its examples. */
+/** The shape's «ex.» part, which opens its examples. */
 const more = (page, verb) => page.locator(`${FIELD_FORM} [data-examples="${verb}"]`);
+const SHEET = 'dialog.sheet[data-catalog]';
 const offered = (page) => page.locator(`${FIELD_FORM} [data-example]`).evaluateAll((all) => all.map((b) => b.dataset.example));
+/** The examples `verb`'s «ex.» opens, the sheet shut again with Escape. */
+async function examplesOf(page, verb) {
+	await more(page, verb).click();
+	await page.locator(SHEET).waitFor();
+	const fields = await offered(page);
+	await page.keyboard.press('Escape');
+	await page.locator(SHEET).waitFor({ state: 'detached' });
+	return fields;
+}
 /** The name box has the focus, its whole text selected. */
 const picked = (page) =>
 	page.locator(`${FIELD_FORM} input.field`).evaluate((el) => el === document.activeElement && el.selectionStart === 0 && el.selectionEnd === el.value.length);
@@ -49,6 +58,7 @@ const LOGGED = {
 	screentime: ['screentime', null],
 	work: ['work', null],
 	shower: ['shower', null],
+	menstruation: ['menstruation', null],
 	activity: ['activity meeting', null],
 	environment: ['environment train', null],
 	reading: ['reading dune', null],
@@ -87,7 +97,7 @@ describe('the field widget', () => {
 			// None chosen, and every tab there before a save, none of them required.
 			assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).count(), 0);
 			assert.deepEqual(await page.locator(`${FIELD_FORM} [role="tab"]`).evaluateAll((all) => all.map((t) => t.dataset.tab)), TABS);
-			// The examples wait behind each shape's ▾.
+			// The examples wait behind each shape's «ex.».
 			assert.equal(await page.locator(`${FIELD_FORM} [data-example]`).count(), 0);
 			assert.equal(await page.locator(`${FIELD_FORM} button.commit`).isEnabled(), false);
 			assert.deepEqual(app.errors, []);
@@ -109,28 +119,54 @@ describe('the field widget', () => {
 		});
 	});
 
-	test('each shape\'s ▾ opens its own examples, and again shuts them', async () => {
-		await shared.solo(async (app) => {
+	// vividn, 2026-10-15: «divide the shape button into a little extra chunk to the side (maybe 20-30%), and
+	// write ex. centered there … Open up examples in a separate dialog box. Use nice icons for each».
+	test('on a phone each shape\'s «ex.» part opens a sheet of its own examples, each with its icon', async () => {
+		await withApp(async (app) => {
 			const { page } = app;
-			await page.locator('.bar button[data-track]').click();
-			for (const { verb } of VERBS) {
-				await more(page, verb).click();
-				assert.equal(await more(page, verb).getAttribute('aria-expanded'), 'true');
+			await openField(page);
+			for (const { verb, what } of VERBS) {
+				const ex = more(page, verb);
+				assert.equal((await ex.innerText()).trim(), 'ex.');
+				const part = await ex.boundingBox();
+				const card = await page.locator(`${FIELD_FORM} [data-verb="${verb}"]`).boundingBox();
+				const share = part.width / (part.width + card.width);
+				assert.ok(share >= 0.2 && share <= 0.3, `${verb}'s ex. is ${share} of its card`);
+				assert.equal(Math.round(part.y), Math.round(card.y), 'the ex. part is not beside the shape');
+				assert.equal(await ex.evaluate((el) => getComputedStyle(el).textAlign), 'center');
+
+				await ex.click();
+				await page.locator(SHEET).waitFor();
+				assert.equal((await page.locator(`${SHEET} .sheet-head > span`).innerText()).trim(), `examples of ${what}`);
 				const mine = EXAMPLES.filter((e) => e.verb === verb);
 				assert.ok(mine.length >= 3, `${verb} has ${mine.length} examples`);
 				assert.deepEqual(await offered(page), mine.map((e) => e.field));
-				// Each in its colour and glyph, and what it shows under it.
-				assert.deepEqual(
-					(await page.locator(`${FIELD_FORM} [data-example] .name`).allInnerTexts()).map((t) => t.trim()),
-					mine.map((e) => `${e.glyph ?? glyphOf(verb)} ${e.field}`)
+				// Each with its icon in its colour, its name, and what it shows.
+				const rows = await page.locator(`${SHEET} [data-example]`).evaluateAll((all) =>
+					all.map((b) => [b.querySelector('.icon').textContent, getComputedStyle(b.querySelector('.icon')).color, b.querySelector('.name').textContent, b.querySelector('.what').textContent])
 				);
-				assert.deepEqual(await page.locator(`${FIELD_FORM} [data-example] .what`).allInnerTexts(), mine.map((e) => e.shows));
+				const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
+				assert.deepEqual(rows, mine.map((e) => [e.glyph, rgb(e.color), e.field, e.shows]));
+				await page.keyboard.press('Escape');
+				await page.locator(SHEET).waitFor({ state: 'detached' });
 			}
-			await more(page, 'add').click();
-			assert.deepEqual(await offered(page), []);
 			// Nothing was chosen by looking.
 			assert.equal(await page.locator(`${FIELD_FORM} .verb[aria-checked="true"]`).count(), 0);
-		});
+
+			// A tap fills the form — name, glyph, states and their colours — and shuts the sheet.
+			const environment = EXAMPLES.find((e) => e.field === 'environment');
+			await more(page, 'switch').click();
+			await page.locator(`${SHEET} [data-example="environment"]`).click();
+			await page.locator(SHEET).waitFor({ state: 'detached' });
+			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), 'environment');
+			assert.equal(await page.locator(`${FIELD_FORM} .tile[aria-label^="the field's glyph:"]`).getAttribute('data-glyph'), '🌳');
+			assert.deepEqual(await page.locator(`${FIELD_FORM} .state input.name`).evaluateAll((all) => all.map((i) => i.value)), Object.keys(environment.states));
+			const painted = Object.entries(environment.states).map(([name, color]) => ({ name, color, description: '' }));
+			assert.equal((await page.locator(`${FIELD_FORM} code.preview`).innerText()).trim(), shellJoin(trackArgv('environment', 'switch', painted, environment.color)));
+			assert.equal(environment.states.outside, '#9ad48a');
+			assert.equal(environment.states.airplane, '#ece8df');
+			assert.deepEqual(app.errors, []);
+		}, PHONE);
 	});
 
 	for (const example of EXAMPLES) {
@@ -167,8 +203,7 @@ describe('the field widget', () => {
 					example.color,
 					(example.keys ?? []).map((k) => ({ ...k, value: '' }))
 				);
-				// What `track` cannot say — a glyph, a state card, never false — is a `spec set` after it.
-				const extra = example.glyph || example.lookup || example.neverFalse;
+				// What `track` cannot say — every example's glyph, a state card, never false — is a `spec set` after it.
 				assert.equal((await page.locator(`${FIELD_FORM} code.preview`).innerText()).trim(), shellJoin(argv));
 				// And nothing is written yet.
 				await app.idle();
@@ -182,18 +217,19 @@ describe('the field widget', () => {
 				assert.equal(result.code, 0, result.stderr);
 				const echoes = (await app.echoes()).slice(before);
 				assert.equal(echoes[0], shellJoin(argv));
-				assert.equal(echoes.length, extra ? 2 : 1, echoes.join(' | '));
-				if (extra) assert.match(echoes[1], new RegExp(`^spec set ${example.field} --from-json `));
+				assert.equal(echoes.length, 2, echoes.join(' | '));
+				assert.match(echoes[1], new RegExp(`^spec set ${example.field} --from-json `));
 				const shown = JSON.parse((await app.run(['spec', 'show', example.field])).stdout);
 				assert.equal(shown.color, example.color);
 				assert.equal(shown.description, null);
 				assert.equal(shown.glyph, example.glyph);
+				assert.deepEqual(shown.state_colors, example.states ?? {});
 				assert.equal(shown.state_lookup_field, example.lookup);
 				assert.equal(shown.never_false, example.neverFalse);
 				await page.locator(`${FIELD_FORM} h2`).waitFor();
 				assert.equal((await page.locator(`${FIELD_FORM} h2`).innerText()).trim(), example.field);
 				assert.deepEqual(await page.locator(`${FIELD_FORM} [role="tab"]`).evaluateAll((all) => all.map((t) => t.dataset.tab)), TABS);
-				await until(() => marked(page), (m) => m.join() === `${example.glyph ?? glyphOf(example.verb)} ${example.field}`);
+				await until(() => marked(page), (m) => m.join() === `${example.glyph} ${example.field}`);
 				await page.keyboard.press('Escape');
 				await page.locator(FIELD_FORM).waitFor({ state: 'detached' });
 
@@ -251,12 +287,9 @@ describe('the field widget', () => {
 			assert.deepEqual(await marked(page), ['+ new field']);
 			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), '');
 			// Less the ones there is a field for already: a tap would re-declare it.
-			await more(page, 'occur').click();
-			assert.deepEqual(await offered(page), ['headache', 'medication']);
-			await more(page, 'start').click();
-			assert.deepEqual(await offered(page), ['screentime', 'work', 'shower']);
-			await more(page, 'add').click();
-			assert.deepEqual(await offered(page), ['book', 'place']);
+			assert.deepEqual(await examplesOf(page, 'occur'), ['headache', 'medication']);
+			assert.deepEqual(await examplesOf(page, 'start'), ['screentime', 'work', 'shower', 'menstruation']);
+			assert.deepEqual(await examplesOf(page, 'add'), ['book', 'place']);
 			assert.deepEqual(app.errors, []);
 		});
 	});
