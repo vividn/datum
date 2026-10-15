@@ -223,6 +223,59 @@ pub fn render_json() -> String {
     format!("{}\n", serde_json::Value::from(commands))
 }
 
+/// The headings whose sections are what the curious and the keyboarders
+/// look up — the usage forms and the flag tables — and not what a page is
+/// read for: datum.day folds them away (da-efruz).
+const REFERENCE: &[&str] = &["USAGE", "ARGS", "OPTIONS", "OUTPUT", "GLOBAL OPTIONS"];
+
+/// A section heading of a text page: `OPTIONS:`, `TIME OF DAY (today):` —
+/// a line at the margin ending in `:` whose words before any `(` are capitals.
+fn heading(line: &str) -> Option<&str> {
+    let h = line.strip_suffix(':').filter(|_| !line.starts_with(' '))?;
+    let caps = h.split('(').next().unwrap_or(h);
+    let upper = caps.chars().filter(char::is_ascii_uppercase).count();
+    (upper >= 2 && !caps.chars().any(char::is_lowercase)).then_some(h)
+}
+
+/// One help page as JSON — `datum help <NAME> --json` (da-efruz): the
+/// page's own first line (`title`), the prose before its first heading
+/// (`intro`), then its `sections` in order, each a `heading` and its
+/// `text`. Prose at the margin after a heading's indented lines is a
+/// section of its own with no heading. `reference` marks the usage forms
+/// and flag tables. Read off the text page, so every page has one: a
+/// topic, a subcommand, an alias or a kit command's too.
+pub fn render_page_json(text: &str) -> String {
+    let (title, body) = text.split_once('\n').unwrap_or((text, ""));
+    let mut intro: Vec<&str> = Vec::new();
+    let mut sections: Vec<(&str, Vec<&str>)> = Vec::new();
+    for line in body.lines() {
+        match (heading(line), sections.last_mut()) {
+            (Some(h), _) => sections.push((h, Vec::new())),
+            (None, None) => intro.push(line),
+            (None, Some((h, lines))) => {
+                let prose = !h.is_empty() && !line.is_empty() && !line.starts_with(' ');
+                if prose && lines.iter().any(|l| !l.is_empty()) {
+                    sections.push(("", vec![line]));
+                } else {
+                    lines.push(line);
+                }
+            }
+        }
+    }
+    let join = |lines: &[&str]| lines.join("\n").trim_matches('\n').to_string();
+    serde_json::json!({
+        "title": title,
+        "intro": join(&intro),
+        "sections": sections.iter().map(|(h, lines)| serde_json::json!({
+            "heading": h,
+            "text": join(lines),
+            "reference": REFERENCE.contains(h),
+        })).collect::<Vec<_>>(),
+    })
+    .to_string()
+        + "\n"
+}
+
 // ---------------------------------------------------------------------------
 // Top-level rendering — purely structural, driven by COMMANDS + GLOBAL_FLAGS.
 // ---------------------------------------------------------------------------
@@ -287,6 +340,10 @@ fn render_command(spec: &CommandSpec, input_name: &str, was_alias: bool) -> Stri
     let mut s = format!("datum {} — {}\n", displayed_name, spec.summary);
 
     s.push('\n');
+    if !spec.intro.is_empty() {
+        s.push_str(spec.intro);
+        s.push('\n');
+    }
     if let Some(body) = spec.body_override {
         s.push_str(body);
     } else {

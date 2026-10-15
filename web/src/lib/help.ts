@@ -60,10 +60,23 @@ export const pillHelp = (pill: Pill): string =>
 	`${(PILL_HELP[pill.kind] ?? ((t: string) => `${t}: a pill, added to the next command.`))(pill.text)}\n${PILL_COMMON}`;
 
 /**
+/**
+ * One page of `datum help <name> --json` (da-efruz): its header line, the
+ * prose before its first heading, and its sections, the usage forms and
+ * flag tables among them marked `reference`.
+ */
+export type HelpPage = {
+	title: string;
+	intro: string;
+	sections: { heading: string; text: string; reference: boolean }[];
+};
+
+/**
  * The last explanation asked for, titled with what it explains: what the Help place shows.
  * `guide` names a page of `GUIDES` drawn in place of the text, which it is given.
+ * A command's or a topic's is a `page`, which the place leads with its intro.
  */
-export const explained = writable<{ title: string; text: string; guide?: string } | null>(null);
+export const explained = writable<{ title: string; text: string; guide?: string; page?: HelpPage } | null>(null);
 
 /**
  * The guides, by name, and their titles: a page in plain words of how to use a
@@ -79,8 +92,8 @@ export const GUIDES: Record<string, string> = { sync: 'Syncing your devices' };
  * one, else the place `openPlace` opens. A pane's tabs behind the front one stay
  * mounted, hidden (TabBody.svelte), so a Help widget in one is not in view.
  */
-function show(title: string, text: string, guide?: string): void {
-	explained.set({ title, text, guide });
+function show(title: string, text: string, more: { guide?: string; page?: HelpPage } = {}): void {
+	explained.set({ title, text, ...more });
 	const hosts = [...document.querySelectorAll('.host[data-widget="help"]')];
 	if (!hosts.some((host) => !host.closest('.tab-body.behind'))) void openPlace('help');
 }
@@ -103,17 +116,22 @@ async function explain(target: Element | null): Promise<void> {
 
 /** A guide in the Help place, given its kind's help: the welcome's link, the Help button and the widget's own `?` open it. */
 export function explainGuide(name: string): void {
-	show(GUIDES[name], KINDS[name]?.help ?? '', name);
+	show(GUIDES[name], KINDS[name]?.help ?? '', { guide: name });
 }
 
 /**
  * `datum help <name>` in the Help place, as the Help button lands a command's: the
  * welcome's «Learn more» links take this path, so what they open is the CLI's own help.
+ * A named page is asked for as JSON, to lead with its intro (da-efruz); the general
+ * help, the list of commands, is its text.
  */
 export async function explainCommand(name?: string): Promise<void> {
 	const argv = helpArgv(name);
-	const { stdout, stderr } = await run(argv);
-	show(`datum ${argv.join(' ')}`, stdout || stderr);
+	const paged = argv.length > 1;
+	const { stdout, stderr } = await run(paged ? [...argv, '--json'] : argv);
+	const title = `datum ${argv.join(' ')}`;
+	if (paged && stdout) return show(title, '', { page: JSON.parse(stdout) });
+	show(title, stdout || stderr);
 }
 
 /** Every event a tap is made of — none of them reaches the page while armed. */

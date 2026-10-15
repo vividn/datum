@@ -333,8 +333,12 @@ pub fn parse_invocation(argv: Vec<String>) -> anyhow::Result<Invocation> {
     if asks_for_text {
         if let Err(e) = parse_invocation_inner(argv.clone(), &palias::NoResolver) {
             let answered = match e.downcast_ref::<ParseError>() {
-                Some(ParseError::VersionRequested | ParseError::GrammarRequested) => true,
-                Some(ParseError::HelpRequested(c) | ParseError::ManRequested(c)) => {
+                Some(ParseError::VersionRequested) => true,
+                Some(
+                    ParseError::HelpRequested(c)
+                    | ParseError::ManRequested(c)
+                    | ParseError::GrammarRequested(c),
+                ) => {
                     let after_help = crate::config::split_off_global_db_flag(argv.clone())
                         .0
                         .get(1)

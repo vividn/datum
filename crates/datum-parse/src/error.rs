@@ -64,10 +64,12 @@ pub enum ParseError {
     ManRequested(Option<String>),
 
     /// `datum help --json` was requested: every command's name, aliases,
-    /// usage lines and flags as one JSON document (da-r13j). Callers
-    /// print it and exit 0.
-    #[error("grammar requested")]
-    GrammarRequested,
+    /// usage lines and flags as one JSON document (da-r13j). With a page
+    /// name, `datum help <NAME> --json`, that one page as JSON instead:
+    /// its header, its intro and its sections (da-efruz). Callers print
+    /// it and exit 0.
+    #[error("grammar requested{}", .0.as_deref().map(|s| format!(" for '{s}'")).unwrap_or_default())]
+    GrammarRequested(Option<String>),
 }
 
 pub type Result<T> = std::result::Result<T, ParseError>;

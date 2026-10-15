@@ -40,7 +40,10 @@ pub fn render_parse_special(e: &ParseError, db: Option<&datum_core::db::Db>) -> 
     if let (Some(name), Some(db)) = (commands::help::asks_the_db(e), db) {
         match commands::help::page(name, db) {
             Ok(Some(text)) => {
-                print!("{text}");
+                match e {
+                    ParseError::GrammarRequested(_) => print!("{}", help::render_page_json(&text)),
+                    _ => print!("{text}"),
+                }
                 return Some(Ok(()));
             }
             Ok(None) => {}

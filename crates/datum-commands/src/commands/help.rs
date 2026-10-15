@@ -14,7 +14,7 @@ use datum_parse::{help, ParseError};
 /// (da-wd5ip): `help time` is the time page whatever `time` expands to.
 pub fn asks_the_db(e: &ParseError) -> Option<&str> {
     match e {
-        ParseError::HelpRequested(Some(name))
+        ParseError::HelpRequested(Some(name)) | ParseError::GrammarRequested(Some(name))
             if help::find_command(name).is_none() && help::find_topic(name).is_none() =>
         {
             Some(name)

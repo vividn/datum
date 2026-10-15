@@ -105,6 +105,16 @@ fn snapshot_top_level_help() {
 const EXPECTED_TAIL: &str = "\
 datum tail — show recent entries
 
+Tail shows the latest entries, newest at the bottom: the quickest way to
+check what you just logged.
+
+  datum tail                          the last ten entries
+  datum tail coffee -n 30             the last thirty coffees
+  datum tail -w                       keeps watching as entries arrive
+
+The columns are for reading and change between versions. A script asks
+for `--json`.
+
 USAGE:
   datum tail [FIELD]
 
@@ -337,6 +347,14 @@ fn snapshot_end_alias_substitutes_verb() {
     let expected = "\
 datum end — end a duration-tracked activity (alias: end)
 
+Stop, or end, closes what a `start` of the same field opened.
+
+  datum stop work                     work ends now
+  datum end work -t 17:30             work ended at 17:30
+
+A duration on stop is the BREAK, not the work: `datum end work 12m -t
+14:12` is a break from 14:00 to 14:12.
+
 USAGE:
   datum end <FIELD> [VALUE | KEY=VALUE]... [DUR]
     DUR (or dur=DUR) runs BACK from the entry's time:
@@ -508,9 +526,10 @@ fn logging_pages_point_at_the_topic_instead_of_reprinting_the_wall() {
             !page.contains("--remainder <KEY>"),
             "`datum help {verb}` still reprints the shared wall:\n{page}"
         );
-        let lines = page.lines().count();
+        // From USAGE on: the intro above it is the page's guide (da-efruz).
+        let lines = page[page.find("USAGE:").unwrap()..].lines().count();
         assert!(
-            lines <= 16,
+            lines <= 14,
             "`datum help {verb}` is {lines} lines; the wall is meant to be gone"
         );
     }
@@ -1094,4 +1113,139 @@ fn no_help_page_says_colour() {
     for page in pages {
         assert!(!page.to_lowercase().contains("colour"), "{page}");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Intros, and a page as JSON (da-efruz).
+// ---------------------------------------------------------------------------
+
+/// The pages a newcomer reaches first: the welcome's «Learn more», then the
+/// verbs and the commands met next.
+const NEWCOMER_PAGES: &[&str] = &[
+    "logging", "time", "spec", "alias", "sync", "db", "stats", "track", "occur", "start", "stop",
+    "switch", "tail", "undo",
+];
+
+fn page_json(name: &str) -> serde_json::Value {
+    serde_json::from_str(&super::render_page_json(&command_help(name))).unwrap()
+}
+
+/// Every page `datum help` answers to: each command, subcommand and topic.
+fn every_page() -> Vec<String> {
+    let commands = super::COMMANDS.iter().flat_map(|c| {
+        std::iter::once(c.name.to_string()).chain(
+            c.subcommands
+                .iter()
+                .map(|s| format!("{} {}", c.name, s.name)),
+        )
+    });
+    commands
+        .chain(super::TOPICS.iter().map(|t| t.name.to_string()))
+        .collect()
+}
+
+#[test]
+fn newcomer_pages_open_with_an_intro() {
+    for name in NEWCOMER_PAGES {
+        let intro = page_json(name)["intro"].as_str().unwrap().to_string();
+        assert!(
+            intro.lines().count() >= 2,
+            "`datum help {name}` opens with no intro"
+        );
+        for line in intro.lines() {
+            assert!(line.chars().count() <= 76, "`datum help {name}`: {line}");
+        }
+    }
+}
+
+/// Each example line of an intro, `datum …` up to its comment column,
+/// parses as the CLI reads it.
+#[test]
+fn every_intro_example_parses() {
+    let intros = super::COMMANDS.iter().map(|c| c.intro);
+    let mut n = 0;
+    for intro in intros.chain(super::TOPICS.iter().map(|t| t.intro)) {
+        for line in intro.lines().filter(|l| l.starts_with("  ")) {
+            let Some(at) = line.find("datum ").filter(|&i| !line[..i].ends_with('`')) else {
+                continue;
+            };
+            let example = line[at..].split("  ").next().unwrap();
+            // An alias the line before defines: the parser alone has no aliases.
+            if example.starts_with("datum cof5") {
+                continue;
+            }
+            let argv = crate::alias::expand::shell_split(example);
+            // The field-first order, as the CLI swaps it before parsing.
+            let argv = crate::alias::expand::maybe_swap_field_verb(argv);
+            let parsed = crate::parse_argv(&argv);
+            assert!(parsed.is_ok(), "`{example}`: {parsed:?}");
+            n += 1;
+        }
+    }
+    assert!(n >= 25, "only {n} examples");
+}
+
+/// A page as JSON is the text page cut at its headings: nothing is lost
+/// or moved, and nothing to be read is folded away, on every page.
+#[test]
+fn a_page_as_json_holds_every_line_of_the_text_page_in_order() {
+    for name in every_page() {
+        let text = command_help(&name);
+        let page = page_json(&name);
+        let mut lines = vec![page["title"].as_str().unwrap().to_string()];
+        lines.extend(page["intro"].as_str().unwrap().lines().map(String::from));
+        for s in page["sections"].as_array().unwrap() {
+            let heading = s["heading"].as_str().unwrap();
+            if !heading.is_empty() {
+                lines.push(format!("{heading}:"));
+            }
+            let text = s["text"].as_str().unwrap();
+            // A fold holds only its indented rows: prose at the margin is
+            // read, so a section that folds it away hides it (PR #792).
+            if s["reference"] == true {
+                let prose = text.lines().find(|l| !l.is_empty() && !l.starts_with(' '));
+                assert!(prose.is_none(), "`datum help {name}` folds away {prose:?}");
+            }
+            lines.extend(text.lines().map(String::from));
+        }
+        let unblank = |l: &String| !l.trim().is_empty();
+        let want: Vec<String> = text.lines().map(String::from).filter(unblank).collect();
+        let got: Vec<String> = lines.into_iter().filter(unblank).collect();
+        assert_eq!(got, want, "`datum help {name} --json` is not its page");
+    }
+}
+
+#[test]
+fn a_page_as_json_leads_with_its_intro_and_marks_its_reference_sections() {
+    let heads = |name: &str| -> Vec<(String, bool)> {
+        let page = page_json(name);
+        let sections = page["sections"].as_array().unwrap().iter();
+        sections
+            .map(|s| {
+                let heading = s["heading"].as_str().unwrap().to_string();
+                (heading, s["reference"].as_bool().unwrap())
+            })
+            .collect()
+    };
+    let h = |s: &str, r: bool| (s.to_string(), r);
+    let occur = page_json("occur");
+    assert_eq!(occur["title"], "datum occur — record a point-in-time event");
+    assert!(occur["intro"]
+        .as_str()
+        .unwrap()
+        .starts_with("Occur marks a moment"));
+    assert_eq!(
+        heads("occur"),
+        [h("USAGE", true), h("OPTIONS", true), h("OUTPUT", true)]
+    );
+    // Prose at the margin after USAGE's lines is read, not folded away.
+    assert_eq!(
+        heads("undo"),
+        [h("USAGE", true), h("", false), h("OUTPUT", true)]
+    );
+    let time = heads("time");
+    assert_eq!(time[0], h("OPTIONS", true));
+    assert!(time.contains(&h("TIME OF DAY (today)", false)), "{time:?}");
+    // `datum help --json` is still the whole command table.
+    assert!(render_json().starts_with("[{"));
 }

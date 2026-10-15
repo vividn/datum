@@ -333,14 +333,15 @@ fn parse_tail(tail: &[&str], fallback: Option<Show>) -> Result<Cli> {
         "completions" => Command::Completions(parse_completions_cmd(rest)?),
 
         "help" => {
-            // `datum help --json` → the command table itself (da-r13j).
-            if show == Some(Show::Json) {
-                return Err(ParseError::GrammarRequested);
-            }
             // `datum help <cmd> [<sub>…]` → help request with that page.
             let cmd = rest
                 .split_first()
                 .map(|(cmd, words)| crate::help::page_name(cmd, words));
+            // `datum help --json` → the command table itself (da-r13j);
+            // with a page, that page's structure (da-efruz).
+            if show == Some(Show::Json) {
+                return Err(ParseError::GrammarRequested(cmd));
+            }
             return Err(ParseError::HelpRequested(cmd));
         }
 

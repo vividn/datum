@@ -1225,13 +1225,32 @@ const ADD_SHARED_FLAGS: SharedFlags = SharedFlags {
     ],
 };
 
+/// `datum help logging`'s opening: the welcome's «Logging an entry» (da-efruz).
+const LOGGING_INTRO: &str = "\
+An entry is one line: a verb, a field, then the field's state or data.
+The verb says what kind of thing happened:
+
+  occur    a moment                  datum occur coffee
+  start    something that lasts      datum start work
+  stop     ... and its end           datum stop work
+  switch   a change of state         datum switch mood happy
+  note     a timeless jot            datum note coffee too strong
+  add      a record with a key       datum add book -K title Dune
+
+An entry is at now unless -t, -d, -q or -y say otherwise. Words after
+the field need a key (`size=large`) unless the field's spec gives them
+one; a note takes them as its text.
+
+The options below are read by all six. Each verb's own page lists only
+what is particular to it.
+";
+
 /// `datum help <NAME>` pages that are not commands.
 pub const TOPICS: &[TopicSpec] = &[
     TopicSpec {
         name: "logging",
         summary: "the options every logging verb takes",
-        intro: "These are read by `add`, `note`, `occur`, `start`, `stop` and `switch`.\n\
-                Each verb's own page lists only what is particular to it.\n",
+        intro: LOGGING_INTRO,
         flags: LOG_FLAGS,
         summary_col: 24,
         forms: &[],
@@ -1693,6 +1712,154 @@ const ALIAS_EXAMPLES: &[ExampleSpec] = &[
     },
 ];
 
+// ----- Intros (da-efruz) -----
+//
+// What a newcomer reads first on a command's page, before its usage: what
+// the command is for, an example or two, and the one thing people get
+// wrong. `datum help time` is the model. Every example here is checked
+// against the CLI it describes.
+
+const OCCUR_INTRO: &str = "\
+Occur marks a moment: something that happened at one instant and took
+no time worth measuring, such as a coffee, a headache or a sneeze.
+
+  datum occur coffee                  a coffee, now
+  datum occur coffee size=large -q    five minutes ago, with data
+
+Words after the field need a key: `datum occur coffee 2` is refused,
+`cups=2` is not. Something that lasts is `start` and `stop`, or `switch`.
+";
+
+const START_INTRO: &str = "\
+Start begins something that lasts, such as work, sleep or a run. It stays
+open until a `stop` (or `end`) of the same field closes it.
+
+  datum start work                    work, from now on
+  datum start work 25m                work for the last 25 minutes
+
+A duration reaches BACK, not forward: `datum start work 25m` is work
+that began 25 minutes ago and ended now. With -t it ends at -t, so
+`datum start work 25m -t 12:30` is work from 12:05 to 12:30.
+";
+
+const STOP_INTRO: &str = "\
+Stop, or end, closes what a `start` of the same field opened.
+
+  datum stop work                     work ends now
+  datum end work -t 17:30             work ended at 17:30
+
+A duration on stop is the BREAK, not the work: `datum end work 12m -t
+14:12` is a break from 14:00 to 14:12.
+";
+
+const SWITCH_INTRO: &str = "\
+Switch puts a field in a state, and it stays there until the next switch:
+a mood, where you are, what you are reading. No stop is needed, because
+each switch ends the state before it.
+
+  datum switch mood happy
+  datum mood switch tired             the field first works too
+
+`datum end mood` turns the field off. With states in its spec (`datum
+track mood --verb switch --state happy`), `datum happy` is enough.
+";
+
+const TAIL_INTRO: &str = "\
+Tail shows the latest entries, newest at the bottom: the quickest way to
+check what you just logged.
+
+  datum tail                          the last ten entries
+  datum tail coffee -n 30             the last thirty coffees
+  datum tail -w                       keeps watching as entries arrive
+
+The columns are for reading and change between versions. A script asks
+for `--json`.
+";
+
+const UNDO_INTRO: &str = "\
+Undo takes back the last command that changed anything, every entry it
+wrote at once. `datum redo` puts it back. Undo again to go further back,
+as in an editor.
+
+  datum undo                          take back the last command
+  datum undo k7f2a                    step that one entry back a change
+
+Looking something up does not count: after `datum tail`, undo still
+takes back the last write.
+";
+
+const TRACK_INTRO: &str = "\
+Track declares a field: what a bare `datum FIELD` does, its color and
+its states. It is how a field gets words of its own.
+
+  datum track coffee --verb occur     `datum coffee` logs a coffee
+  datum track mood --verb switch --state good --state bad
+                                      `datum good` switches mood to good
+
+A field does not need it to be seen: every field you have logged is in
+`datum now` already. Tracking gives a field its shape, not its place.
+";
+
+const SPEC_INTRO: &str = "\
+A spec is a field's shape written down: its verb, its states and their
+colors, glyphs, and the data keys every log of it carries. `datum
+track` writes the common parts; `spec` reaches the rest.
+
+  datum spec show mood
+  datum spec add-state mood calm      one more state, the others kept
+
+`spec set --state` REPLACES the whole list of states. To add one, use
+`add-state`.
+";
+
+const ALIAS_INTRO: &str = "\
+An alias is a word of your own that expands into a command. It is kept
+in the database, so it syncs to your other devices and is in your
+backups.
+
+  datum alias set cof5 \"occur coffee -t -5\"
+  datum cof5 size=large               a large coffee five minutes ago
+
+Quote the expansion: it is one argument. Whatever follows the alias
+goes on after its expansion.
+";
+
+const SYNC_INTRO: &str = "\
+Sync keeps the copies of a database on your devices alike: a laptop, a
+phone, datum.day in a browser. It is peer to peer and end to end; a relay
+only passes along what it cannot read.
+
+  datum sync chain invite             on a device you have: an invite
+  datum sync chain connect <TICKET>   on the new one: join with it
+  datum sync                          sync with every member now
+
+No server holds your data, so two copies sync while both are running.
+A computer that has joined keeps syncing in the background on its own
+(`datum sync daemon status`).
+";
+
+const DB_INTRO: &str = "\
+db looks after the database itself: backups, restores, upgrades and
+starting over. Your entries live in one file on this device.
+
+  datum db backup ~/datum.jsonl.gz
+  datum db restore ~/datum.jsonl.gz --merge
+
+A bare `restore` makes the database EXACTLY the backup, deleting what
+the backup lacks (undo brings it back); `--merge` only adds.
+";
+
+const STATS_INTRO: &str = "\
+Stats says how much: how often a field was logged, how long it ran, and
+what share of its time each state took, over a slice of time.
+
+  datum stats                         every field, ranked by time
+  datum stats work --week             work this week
+  datum stats mood:happy --month      how much of the month was happy
+
+-t is where the slice STARTS, as --since is; -d names one whole day.
+";
+
 pub const COMMANDS: &[CommandSpec] = &[
     // ----- LOGGING -----
     CommandSpec {
@@ -1700,6 +1867,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Logging,
         summary: "register a keyed timeless record (needs an id)",
+        intro: "",
         long_description: Some(
             "Timeless record identified by *what* it is. `add` requires an explicit id: derive one from a key (-K name) or set it directly (--id <value>); see --id %templates% and id= below. Sibling of `note`, which auto-ids on its create_time instead.",
         ),
@@ -1718,6 +1886,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Logging,
         summary: "jot a timeless entry (auto create_time id)",
+        intro: "",
         long_description: Some(
             "Timeless jot identified by *when* — auto-ids on its create_time (slug field:c<create_time>), so many notes per field coexist. \"Record this moment, won't look it up.\" Sibling of `add`, which instead requires an explicit id for a keyed record.\n\nBare words are the note: every un-keyed word after the field joins `extra_data.comment`, in order and single-spaced, so `datum note coffee too strong today` needs no quotes and no `-C` (`note` always behaves as if `-C` were given). `KEY=VALUE` anywhere in the line is still data, a leading `-` is still a flag, and an explicit `-R <bucket>` still names where the words go instead.",
         ),
@@ -1739,6 +1908,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Logging,
         summary: "record a point-in-time event",
+        intro: OCCUR_INTRO,
         long_description: None,
         usage: &["datum occur <FIELD> [VALUE | KEY=VALUE]..."],
         args: NO_ARGS,
@@ -1755,6 +1925,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Logging,
         summary: "begin a duration-tracked activity",
+        intro: START_INTRO,
         long_description: Some(
             "A trailing duration (`datum start work 25m`, or `dur=25m`) closes the \
              block: it ENDS at the entry's time — now, or wherever `-t`/`-d` put \
@@ -1779,6 +1950,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &["end"],
         category: Category::Logging,
         summary: "end a duration-tracked activity (alias: end)",
+        intro: STOP_INTRO,
         long_description: Some(
             "A trailing duration (`datum end work 12m`, or `dur=12m`) is how long the \
              break ran: `-t` is when it ENDED, and the span runs BACK from \
@@ -1807,6 +1979,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Logging,
         summary: "transition a field to a new state",
+        intro: SWITCH_INTRO,
         long_description: Some(
             "A `:` inside a state is reserved: the state is then a full slug \
              `field:id` naming another entry, whatever field it is logged on \
@@ -1833,6 +2006,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Read,
         summary: "show recent entries",
+        intro: TAIL_INTRO,
         long_description: Some(
             "Structured-state entries show their id only on the chip line \
              (`{id}`); use `datum get` for the full structure.\n\n\
@@ -1856,6 +2030,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Read,
         summary: "show oldest entries",
+        intro: "",
         long_description: None,
         usage: &["datum head [FIELD]"],
         args: NO_ARGS,
@@ -1872,6 +2047,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Read,
         summary: "print entries by id or slug",
+        intro: "",
         long_description: None,
         usage: &["datum get <ID_OR_SLUG[,ID_OR_SLUG]...> [--pretty]"],
         args: NO_ARGS,
@@ -1888,6 +2064,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Read,
         summary: "regex search over entry JSON content",
+        intro: "",
         long_description: None,
         usage: &["datum grep <PATTERN>... [-f FIELD]"],
         args: NO_ARGS,
@@ -1904,6 +2081,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Render,
         summary: "render a multi-day timeline as SVG/PNG/HTML",
+        intro: "",
         long_description: None,
         usage: &["datum dayview [OPTIONS]"],
         args: NO_ARGS,
@@ -1920,6 +2098,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Render,
         summary: "paint each field's state now as a terminal band (-o writes a file)",
+        intro: "",
         long_description: None,
         usage: &["datum nowview [OPTIONS]"],
         args: NO_ARGS,
@@ -1936,6 +2115,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Render,
         summary: "show the current state of tracked fields + terminal nowview band",
+        intro: "",
         long_description: None,
         usage: &["datum now [-A] [--bare]"],
         args: NO_ARGS,
@@ -1952,6 +2132,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Read,
         summary: "show the full modification trail for an entry",
+        intro: "",
         long_description: None,
         usage: &["datum history <ID_OR_SLUG[,ID_OR_SLUG]...> [--version N | --diff A B]"],
         args: NO_ARGS,
@@ -1968,6 +2149,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Read,
         summary: "explain the intent behind an entry",
+        intro: "",
         long_description: None,
         usage: &["datum why <ID_OR_SLUG[,ID_OR_SLUG]...> [--full]"],
         args: NO_ARGS,
@@ -1985,6 +2167,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Mutate,
         summary: "open an entry in the configured editor",
+        intro: "",
         long_description: None,
         usage: &["datum edit [ID_OR_SLUG]"],
         args: NO_ARGS,
@@ -2001,6 +2184,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Mutate,
         summary: "replace keys on an existing entry",
+        intro: "",
         long_description: None,
         usage: &["datum update <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]..."],
         args: UPDATE_ARGS,
@@ -2017,6 +2201,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Mutate,
         summary: "deep-merge new values into an entry",
+        intro: "",
         long_description: None,
         usage: &["datum merge <ID_OR_SLUG[,ID_OR_SLUG]...> [VALUE | KEY=VALUE]..."],
         args: NO_ARGS,
@@ -2033,6 +2218,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Mutate,
         summary: "rename an entry's data keys, in place",
+        intro: "",
         long_description: Some(
             "`rekey <id> old=new` moves `old`'s value to the key `new` on the same row: nothing is copied and no row is added. The entry's id template is read again afterwards, so its slug follows: a key renamed to one the template names fills that part of the id, and a template's key renamed away empties it.",
         ),
@@ -2051,6 +2237,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &["rt"],
         category: Category::Mutate,
         summary: "move an entry's occur_time (alias: rt)",
+        intro: "",
         long_description: None,
         usage: &[
             "datum retime [SLUG[,SLUG]...] [T]",
@@ -2071,6 +2258,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &["del"],
         category: Category::Mutate,
         summary: "delete an entry (alias: del)",
+        intro: "",
         long_description: None,
         usage: &[
             "datum delete [ID_OR_SLUG[,ID_OR_SLUG]...] [-c WHY] [--dry-run] [--all-or-nothing]",
@@ -2090,6 +2278,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Mutate,
         summary: "undo the last command, or one entry's last change",
+        intro: UNDO_INTRO,
         long_description: Some(
             "Bare, reverts the last command that changed anything, all of it, \
              and walks back one command per undo; reads never move it. Named, \
@@ -2119,6 +2308,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Mutate,
         summary: "redo the last undone change (the inverse of undo)",
+        intro: "",
         long_description: Some(
             "Bare, re-applies the oldest command a bare undo took back, and \
              walks forward one per redo; a command run since drops them. Named, \
@@ -2144,6 +2334,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Admin,
         summary: "manage field specs (schemas)",
+        intro: SPEC_INTRO,
         long_description: None,
         usage: &[
             "datum spec show <FIELD> [--text]",
@@ -2166,6 +2357,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Admin,
         summary: "manage aliases",
+        intro: ALIAS_INTRO,
         long_description: Some(ALIAS_LONG_DESCRIPTION),
         usage: &[
             "datum alias show <NAME>",
@@ -2187,6 +2379,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Logging,
         summary: "track a field in the now view",
+        intro: TRACK_INTRO,
         long_description: None,
         usage: &["datum track <FIELD> [--verb V] [--color C] [--state S|S=C]... [--tag T]... [--key K[=D]]... [--required-key K[=D]]... [-k K[=D]]... [-K K[=D]]... [-R K [-S] | -C] [K=V]..."],
         args: NO_ARGS,
@@ -2203,6 +2396,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Logging,
         summary: "ignore a field in the now view",
+        intro: "",
         long_description: None,
         usage: &["datum ignore <FIELD>"],
         args: NO_ARGS,
@@ -2219,6 +2413,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Admin,
         summary: "run database consistency checks",
+        intro: "",
         long_description: None,
         usage: &["datum check [CHECKER]... [--fix]"],
         args: NO_ARGS,
@@ -2235,6 +2430,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Admin,
         summary: "DB-lifecycle (setup, purge, backup, restore, migrate, v2import)",
+        intro: DB_INTRO,
         long_description: None,
         usage: &[
             "datum db setup",
@@ -2262,6 +2458,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Admin,
         summary: "show health/metadata for DB(s)",
+        intro: "",
         long_description: None,
         usage: &["datum info [TARGET] [--all]"],
         args: NO_ARGS,
@@ -2278,6 +2475,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Admin,
         summary: "show or manage user configuration",
+        intro: "",
         long_description: None,
         usage: &["datum config show"],
         args: NO_ARGS,
@@ -2294,6 +2492,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Admin,
         summary: "shell tab completion: print, install or remove the script",
+        intro: "",
         long_description: None,
         usage: &[
             "datum completions <zsh|bash|fish>",
@@ -2315,6 +2514,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::ViewsSync,
         summary: "count entries (optionally filtered/grouped/since-bounded)",
+        intro: "",
         long_description: None,
         usage: &["datum count [FIELD] [--group-by KEY] [--since TIME]"],
         args: NO_ARGS,
@@ -2331,6 +2531,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::ViewsSync,
         summary: "count, total duration, and per-state ratio over a time slice",
+        intro: STATS_INTRO,
         long_description: None,
         usage: &[
             "datum stats  (no FIELD: every field, ranked by tracked time)",
@@ -2355,6 +2556,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::ViewsSync,
         summary: "list entry ids (newest-first by default)",
+        intro: "",
         long_description: None,
         usage: &["datum ids [FIELD] [-n N] [--oldest-first] [--since TIME] [--slug]"],
         args: NO_ARGS,
@@ -2371,6 +2573,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::ViewsSync,
         summary: "list every field: its spec and the states it was logged with",
+        intro: "",
         long_description: None,
         usage: &["datum fields [--include-ignored | -A] [--sort frecency]"],
         args: NO_ARGS,
@@ -2387,6 +2590,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::ViewsSync,
         summary: "sync with the other copies in this database's sync chain",
+        intro: SYNC_INTRO,
         long_description: None,
         usage: &[
             "datum sync",
@@ -2427,6 +2631,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::ViewsSync,
         summary: "triage sync conflicts (see `datum check` for integrity findings)",
+        intro: "",
         long_description: None,
         usage: &[
             "datum conflicts [list] [--json]",
@@ -2446,6 +2651,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Logging,
         summary: "mark a field for review (lightweight 'come back to this')",
+        intro: "",
         long_description: None,
         usage: &["datum flag <FIELD> [COMMENT...]"],
         args: NO_ARGS,
@@ -2462,6 +2668,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Admin,
         summary: "attach or list protocol-change notes on a field",
+        intro: "",
         long_description: None,
         usage: &[
             "datum meta <FIELD> <TEXT>...",
@@ -2481,6 +2688,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Admin,
         summary: "install / export / list field-spec kits (TOML bundles)",
+        intro: "",
         long_description: None,
         usage: &[
             "datum kit install <PATH|-> [--force] [--yes] [--dry-run]",
@@ -2509,6 +2717,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::ViewsSync,
         summary: "execute a named SELECT view and render the rows",
+        intro: "",
         long_description: None,
         usage: &[
             "datum view <NAME> [--format pretty|tsv|csv|json] [--watch]",
@@ -2528,6 +2737,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Admin,
         summary: "replay an entry's stored raw_input through the current parser",
+        intro: "",
         long_description: None,
         usage: &["datum reparse <HID[,HID]...>... [--fix]"],
         args: NO_ARGS,

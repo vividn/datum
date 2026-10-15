@@ -22,7 +22,7 @@ pub mod render;
 pub mod spec;
 
 pub use commands::{find_command, find_topic, page_name, COMMANDS, ENV_VARS, GLOBAL_FLAGS, TOPICS};
-pub use render::{render_help_text, render_json, render_markdown, render_roff};
+pub use render::{render_help_text, render_json, render_markdown, render_page_json, render_roff};
 pub use spec::{
     ArgSpec, Category, CommandSpec, EnvVarSpec, ExampleSpec, FlagSpec, FormGroup, FormSpec,
     SharedFlags, TopicSpec,
@@ -65,7 +65,8 @@ pub fn special_output(e: &crate::ParseError, version: &str) -> Option<String> {
         // every caller writes the same bytes.
         E::VersionRequested => Some(format!("{version}\n")),
         E::ManRequested(cmd) => Some(render_roff(cmd.as_deref())),
-        E::GrammarRequested => Some(render_json()),
+        E::GrammarRequested(None) => Some(render_json()),
+        E::GrammarRequested(Some(page)) => Some(render_page_json(&command_help(page))),
         _ => None,
     }
 }

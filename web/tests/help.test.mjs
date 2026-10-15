@@ -66,7 +66,8 @@ async function explain(page, target, title, back = () => page.goBack(), button =
 	assert.deepEqual(await rootTabs(page), [...tabs.slice(0, at), 'help', ...tabs.slice(at)]);
 	const style = await page.locator('.root-bar [role="tab"][aria-selected="true"]').evaluate((b) => getComputedStyle(b).fontStyle);
 	assert.equal(style, 'italic', 'the place is not transient');
-	const lines = await read(page, title);
+	// The lines it leads with, and (`text`) all it holds, its folds' too.
+	const lines = Object.defineProperty(await read(page, title), 'text', { value: await place(page).textContent() });
 	await atRest(page.locator('section.root > .content'));
 	await back();
 	await until(() => rootTabs(page), (t) => t.join() === tabs.join());
@@ -134,8 +135,8 @@ describe('the Help button', () => {
 			const backup = page.locator('.bar.commands button[data-command="db backup"]');
 			const lines = await explain(page, backup, 'datum help db backup');
 			assert.equal(lines[0], 'datum db backup');
-			assert.ok(lines.some((l) => l.includes('datum db backup <PATH | ->')), lines.join('\n'));
-			assert.ok(!lines.some((l) => l.includes('datum db purge')), lines.join('\n'));
+			assert.ok(lines.text.includes('datum db backup <PATH | ->'), lines.text);
+			assert.ok(!lines.text.includes('datum db purge'), lines.text);
 			assert.equal(await page.locator('.prompt-bar input').inputValue(), '', 'backup filled the line');
 		});
 	});
@@ -292,6 +293,76 @@ describe('the Help button', () => {
 			await page.keyboard.press('Escape');
 			await modal.waitFor({ state: 'detached' });
 		}, PAGE);
+	});
+});
+
+// da-efruz: a command's or a topic's page leads with its intro, and its
+// usage forms and flag tables fold into <details>, closed until opened.
+// vividn, 2026-10-15: «better intros without getting so bogged down by
+// options … the command line options can be in expandable menus for the
+// curious or the keyboarders out there».
+describe('a help page', () => {
+	const WITH_PANE = JSON.stringify(
+		along('column', widgetPane('cmd', 'command'), widgetPane('help', 'help'), widgetPane('bar', 'widgetbar'))
+	);
+	/** The pages `datum help` answers to that are not commands (`TOPICS` in datum-parse's help). */
+	const TOPICS = ['logging', 'time', 'debug', 'color', 'env'];
+	/** The pages whose intros were written as guides for a newcomer. */
+	const GUIDES = ['logging', 'time', 'spec', 'alias', 'sync', 'db', 'stats', 'track', 'occur', 'start', 'stop', 'switch', 'tail', 'undo'];
+
+	/** Open `datum help <name>` in the Help pane, as a «Learn more» link does. */
+	async function open(page, name) {
+		await page.evaluate((n) => window.datum.help(n), name);
+		await until(() => place(page).locator('h3.asked').innerText().catch(() => ''), (t) => t.trim() === `datum help ${name}`);
+	}
+
+	test('every page shows its header and intro, with its usage and options folded away', async () => {
+		await onPage(async ({ page }) => {
+			await place(page).waitFor();
+			const grammar = JSON.parse((await page.evaluate(() => window.datum.runQuiet(['help', '--json']))).stdout);
+			const names = [...grammar.flatMap((c) => [c.name, ...c.subcommands.map((s) => `${c.name} ${s.name}`)]), ...TOPICS];
+			assert.ok(names.length > 60, `only ${names.length} pages`);
+			for (const name of names) {
+				await open(page, name);
+				const lead = (await place(page).locator('pre.help').innerText()).split('\n');
+				assert.match(lead[0], name.includes(' ') ? /^datum / : / — /, name);
+				if (GUIDES.includes(name)) assert.ok(lead.length >= 4, `datum help ${name} has no intro:\n${lead.join('\n')}`);
+				assert.equal(await place(page).locator('details[open]').count(), 0, `${name}: a fold is open`);
+				// One fold for each of the page's usage and flag sections: every one of them.
+				const json = JSON.parse((await page.evaluate((n) => window.datum.runQuiet(['help', ...n.split(' '), '--json']), name)).stdout);
+				const reference = json.sections.filter((s) => s.reference).map((s) => s.heading);
+				const folds = await place(page).locator('details').evaluateAll((all) => all.map((d) => d.dataset.section));
+				assert.deepEqual(folds, reference, name);
+				// What the reader sees: no usage heading, and no flag row.
+				const seen = await place(page).innerText();
+				assert.doesNotMatch(seen, /^(USAGE|OPTIONS|OUTPUT|ARGS):$/m, name);
+				assert.doesNotMatch(seen, /--show <MODE>|-y, --yesterday/, name);
+			}
+		}, WITH_PANE);
+	});
+
+	test('occur: the intro, then Usage, Options and Output folded; an opened fold stays open on the next page', async () => {
+		await onPage(async ({ page }) => {
+			await place(page).waitFor();
+			await open(page, 'occur');
+			const lead = await place(page).locator('pre.help').innerText();
+			assert.match(lead, /^datum occur — record a point-in-time event\n\nOccur marks a moment/);
+			assert.deepEqual(await place(page).locator('details summary').allInnerTexts(), ['Usage', 'Options', 'Output']);
+			const options = place(page).locator('details[data-section="OPTIONS"]');
+			await options.locator('summary').click();
+			assert.match(await options.locator('pre').innerText(), /common logging options: `datum help logging`/);
+			await open(page, 'start');
+			assert.equal(await options.getAttribute('open'), '', 'the opened fold closed on the next page');
+			assert.equal(await place(page).locator('details[data-section="USAGE"]').getAttribute('open'), null);
+			// A reload keeps it open; folded again, it stays folded.
+			await page.reload();
+			await place(page).waitFor();
+			await open(page, 'stop');
+			assert.equal(await options.getAttribute('open'), '');
+			await options.locator('summary').click();
+			await open(page, 'switch');
+			assert.equal(await options.getAttribute('open'), null);
+		}, WITH_PANE);
 	});
 });
 

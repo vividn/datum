@@ -62,6 +62,12 @@ pub struct CommandSpec {
     /// listing line and the page title drifted apart the whole time there
     /// were two.
     pub summary: &'static str,
+    /// The page's opening, between its header and its USAGE: what the
+    /// command is for, an example or two, and the one thing people get
+    /// wrong, for a newcomer (da-efruz). Rendered verbatim; supply the
+    /// trailing newline. Empty for none — the header's summary is then
+    /// all the page says before its usage.
+    pub intro: &'static str,
     /// Optional long-form prose for Markdown / man output.
     pub long_description: Option<&'static str>,
     /// Usage lines, rendered under the `USAGE:` heading. Each entry becomes

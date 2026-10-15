@@ -30,6 +30,7 @@ import { last, pills, removePill, setPills, type LastRun, type Pill } from './ba
 import { cursor, pointAt, setCursor, type Cursor } from './cursor.js';
 import { shellSplit } from './shellSplit.js';
 import { openField } from './fieldWidget.js';
+import { explainCommand } from './help.js';
 import type { Verb } from './track.js';
 import { get } from 'svelte/store';
 import { apply, editing, layout } from './layout/current.js';
@@ -116,6 +117,8 @@ export interface DatumConsole {
 	field(field?: string, verb?: Verb | null): Promise<RunResult | null>;
 	/** The backup destinations' kinds ($lib/backups.ts), by name: what a plan's `kind` opens. */
 	backupKinds: Record<string, DestinationKind>;
+	/** `datum help <name>` in the Help place, as a «Learn more» link opens it (da-efruz). */
+	help(name?: string): Promise<void>;
 }
 
 /** Publish the handle on `target` (the window, in the app). */
@@ -151,7 +154,8 @@ export function installConsole(target: Record<string, unknown>): void {
 		bar: { pills: () => get(pills), setPills, removePill, last: () => get(last) },
 		cursor: { at: () => get(cursor)?.at ?? null, set: setCursor, of: () => get(cursor), point: pointAt },
 		field: openField,
-		backupKinds: BACKUP_KINDS
+		backupKinds: BACKUP_KINDS,
+		help: explainCommand
 	};
 	target.datum = handle;
 }
