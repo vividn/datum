@@ -16,8 +16,8 @@
 //! Detection runs post-insert (see [`detect_for_entry`]) and the queue
 //! is reported by `datum check`. Warnings clear naturally when the user
 //! fixes the underlying data — the check re-runs against current state,
-//! and a now-resolved warning no longer fires. [`auto_resolve_pending`]
-//! remains as an internal helper for callers that need to clear obvious
+//! and a now-resolved warning no longer fires. [`auto_resolve`]
+//! remains an internal helper for callers that need to clear obvious
 //! cases (e.g. tests, future surfaces) once enough time has passed.
 //!
 //! This module is also the backing store for C4e's sync-pull integrity
@@ -891,8 +891,9 @@ fn row_to_warning(row: &rusqlite::Row<'_>) -> rusqlite::Result<IntegrityWarning>
 /// the heuristic fires. Overridable on `datum conflicts auto-resolve`.
 pub const AUTO_RESOLVE_MIN_AGE_SECS: i64 = 60;
 
-/// Run auto-resolution on pending conflicts older than `min_age_secs`.
-/// Returns the conflicts whose `resolution` was set by this pass.
+/// The pending conflicts auto-resolution takes now: those older than
+/// `min_age_secs` that one of its rules resolves. Read before the write
+/// lock; [`auto_resolve`] writes them (da-8i7f0).
 ///
 /// Rules:
 /// - `DoubleOpen`: close the older ongoing entry at the newer one's
@@ -902,8 +903,7 @@ pub const AUTO_RESOLVE_MIN_AGE_SECS: i64 = 60;
 ///   no auto-rule. The user must resolve manually — either of those
 ///   patterns can be deliberate (e.g. logging a stop on a field tracked
 ///   only via stops, or two adjacent gym sessions).
-pub fn auto_resolve_pending(
-    db: &crate::db::Db,
+pub fn auto_resolvable(
     conn: &Connection,
     now: DateTime<Utc>,
     min_age_secs: i64,
@@ -916,12 +916,22 @@ pub fn auto_resolve_pending(
             pending: Some(true),
         },
     )?;
+    Ok(pending
+        .into_iter()
+        .filter(|c| c.detected_at <= cutoff && c.remote_entry.is_some())
+        .collect())
+}
 
+/// Close the older entry of each of `pending` ([`auto_resolvable`]'s) and
+/// mark it resolved, inside the caller's transaction.
+pub fn auto_resolve(
+    db: &crate::db::Db,
+    conn: &Connection,
+    now: DateTime<Utc>,
+    pending: Vec<IntegrityWarning>,
+) -> Result<Vec<IntegrityWarning>> {
     let mut applied = Vec::new();
     for c in pending {
-        if c.detected_at > cutoff {
-            continue;
-        }
         let Some(older) = c.remote_entry.as_ref() else {
             continue;
         };

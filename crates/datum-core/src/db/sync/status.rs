@@ -152,17 +152,20 @@ impl Db {
                 return Ok(());
             }
         }
-        let tx = self.conn.unchecked_transaction()?;
-        super::endpoint(&tx)?;
-        if let Some(m) = self.sync_chain()?.member(endpoint) {
-            tx.execute(
+        // The chain is read before the lock (da-8i7f0).
+        self.compute_then_write_with(
+            |_| Ok(self.sync_chain()?.member(endpoint).map(|m| m.label.clone())),
+            |tx, label| {
+                super::endpoint(tx)?;
+                if let Some(label) = label {
+                    tx.execute(
                 "INSERT OR IGNORE INTO sync_peers (endpoint_id, label, addrs, added_at, announced)
                  VALUES (?1, ?2, '', ?3, 1)",
-                params![endpoint, m.label, now],
+                params![endpoint, label, now],
             )?;
-        }
-        let n = tx.execute(
-            "UPDATE sync_peers SET
+                }
+                let n = tx.execute(
+                    "UPDATE sync_peers SET
                last_vector = COALESCE(?2, last_vector),
                last_verify_at = CASE WHEN ?3 IS NOT NULL THEN ?5
                                      WHEN ?4 IS NOT NULL THEN last_verify_at
@@ -173,14 +176,16 @@ impl Db {
                last_error_at = CASE WHEN ?4 IS NULL THEN NULL ELSE ?5 END,
                last_seen = CASE WHEN ?4 IS NULL THEN ?5 ELSE last_seen END
              WHERE endpoint_id = ?1",
-            params![endpoint, vector, verify, error, now],
-        )?;
-        if n == 0 {
-            return Err(DatumError::Other(format!(
-                "{endpoint} is not a member of this copy's sync chain"
-            )));
-        }
-        Ok(tx.commit()?)
+                    params![endpoint, vector, verify, error, now],
+                )?;
+                if n == 0 {
+                    return Err(DatumError::Other(format!(
+                        "{endpoint} is not a member of this copy's sync chain"
+                    )));
+                }
+                Ok(())
+            },
+        )
     }
 
     /// The devices whose ops wait for this copy's clock to catch up with

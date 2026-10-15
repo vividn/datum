@@ -5,7 +5,7 @@
 //! transaction that reads before it writes cannot wait — its upgrade to a
 //! writer fails at once with SQLITE_BUSY ("database is locked") when
 //! another connection committed in between — so every write transaction
-//! opens IMMEDIATE (`Db::configure_connection`).
+//! opens IMMEDIATE (`db::write`, da-8i7f0).
 
 use std::process::Command;
 

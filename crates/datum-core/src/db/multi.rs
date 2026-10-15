@@ -45,25 +45,25 @@ impl Db {
     /// never visible. Returns `Err` on the first failure.
     pub fn insert_entries_atomic(&self, entries: Vec<Entry>) -> Result<Vec<Hid>> {
         let merged = merge_same_field_groups(entries);
-        let tx = self.conn.unchecked_transaction()?;
-        let mut hids = Vec::with_capacity(merged.len());
-        for entry in &merged {
-            match insert_entry_in_tx_pub(&tx, entry, ConflictStrategy::Ignore)? {
-                InsertOutcome::Inserted { hid, .. } => hids.push(hid),
-                InsertOutcome::Ignored { slug } => {
-                    return Err(DatumError::Duplicate(format!(
-                        "atomic multi-row insert collided with existing slug {slug}"
-                    )));
-                }
-                other => {
-                    return Err(DatumError::Other(format!(
-                        "atomic multi-row insert produced unexpected outcome: {other:?}"
-                    )));
+        self.write_with(|tx| {
+            let mut hids = Vec::with_capacity(merged.len());
+            for entry in &merged {
+                match insert_entry_in_tx_pub(tx, entry, ConflictStrategy::Ignore)? {
+                    InsertOutcome::Inserted { hid, .. } => hids.push(hid),
+                    InsertOutcome::Ignored { slug } => {
+                        return Err(DatumError::Duplicate(format!(
+                            "atomic multi-row insert collided with existing slug {slug}"
+                        )));
+                    }
+                    other => {
+                        return Err(DatumError::Other(format!(
+                            "atomic multi-row insert produced unexpected outcome: {other:?}"
+                        )));
+                    }
                 }
             }
-        }
-        tx.commit()?;
-        Ok(hids)
+            Ok(hids)
+        })
     }
 }
 

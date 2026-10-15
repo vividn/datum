@@ -221,16 +221,23 @@ impl Db {
     /// op is signed, the ops being what every copy already agrees on. The
     /// row as it stood goes to `entry_history`, as a sync's merge does.
     /// Orphans are left as found. What was found, and what still differs.
+    /// The whole database is read before the write lock and after it, and
+    /// the lock is held for the stale rows alone (da-8i7f0).
     pub fn sync_refold(&self) -> Result<(FoldCheck, Vec<Stale>)> {
-        let tx = self.conn.unchecked_transaction()?;
-        let found = fold_check(&tx)?;
-        for s in &found.stale {
-            rederive(&tx, &s.hid, ChangeKind::SyncMerge)
-                .and_then(|()| refresh_conflicts(&tx, &s.hid))
-                .map_err(|e| DatumError::Other(format!("refolding {} ({}): {e}", s.slug, s.hid)))?;
-        }
-        let left = fold_check(&tx)?.stale;
-        tx.commit()?;
+        let found = self.compute_then_write_with(
+            |view| fold_check(view.conn()),
+            |tx, found| {
+                for s in &found.stale {
+                    rederive(tx, &s.hid, ChangeKind::SyncMerge)
+                        .and_then(|()| refresh_conflicts(tx, &s.hid))
+                        .map_err(|e| {
+                            DatumError::Other(format!("refolding {} ({}): {e}", s.slug, s.hid))
+                        })?;
+                }
+                Ok(found)
+            },
+        )?;
+        let left = self.read(|view| fold_check(view.conn()))?.stale;
         Ok((found, left))
     }
 

@@ -150,27 +150,31 @@ impl Db {
     /// learns where the other is. Kept for a member this copy has not itself
     /// seen; an address a handshake gave stands.
     pub fn sync_introduce(&self, addrs: &str) -> Result<()> {
-        let tx = self.conn.unchecked_transaction()?;
-        let chain = self.sync_chain()?;
-        let mine = endpoint(&tx)?.id;
         let addrs: Vec<serde_json::Value> = serde_json::from_str(addrs)
             .map_err(|e| DatumError::Other(format!("not a list of addresses: {e}")))?;
-        for a in addrs {
-            let member = a["id"].as_str().and_then(|id| chain.member(id));
-            let Some(m) = member.filter(|m| m.endpoint != mine) else {
-                continue;
-            };
-            // Only a row no handshake has filled: one never seen takes the
-            // newest address passed on, one seen takes it while it has none.
-            tx.execute(
-                "INSERT INTO sync_peers (endpoint_id, label, addrs, added_at)
+        // The chain is read before the lock (da-8i7f0).
+        self.compute_then_write_with(
+            |_| self.sync_chain(),
+            |tx, chain| {
+                let mine = endpoint(tx)?.id;
+                for a in addrs {
+                    let member = a["id"].as_str().and_then(|id| chain.member(id));
+                    let Some(m) = member.filter(|m| m.endpoint != mine) else {
+                        continue;
+                    };
+                    // Only a row no handshake has filled: one never seen takes the
+                    // newest address passed on, one seen takes it while it has none.
+                    tx.execute(
+                        "INSERT INTO sync_peers (endpoint_id, label, addrs, added_at)
                  VALUES (?1, ?2, ?3, ?4)
                  ON CONFLICT (endpoint_id) DO UPDATE SET addrs = excluded.addrs
                  WHERE last_seen IS NULL OR addrs = ''",
-                params![m.endpoint, m.label, a.to_string(), now()],
-            )?;
-        }
-        Ok(tx.commit()?)
+                        params![m.endpoint, m.label, a.to_string(), now()],
+                    )?;
+                }
+                Ok(())
+            },
+        )
     }
 
     /// A session's handshake, as it bears on this copy: `id` introduced
@@ -252,16 +256,17 @@ impl Db {
         }
         // Asked who it is where it writes: a session's file purged since the
         // look above keeps no row of its peer (da-otz0d).
-        let tx = self.conn.unchecked_transaction()?;
-        endpoint(&tx)?;
-        self.sync_record_peer(id, label, addrs)?;
-        if dialed && invite.is_some() {
-            tx.execute(
-                "UPDATE sync_peers SET redeemed_at = ?2 WHERE endpoint_id = ?1",
-                params![id, now()],
-            )?;
-        }
-        tx.commit()?;
+        self.write_with(|tx| {
+            endpoint(tx)?;
+            self.sync_record_peer(id, label, addrs)?;
+            if dialed && invite.is_some() {
+                tx.execute(
+                    "UPDATE sync_peers SET redeemed_at = ?2 WHERE endpoint_id = ?1",
+                    params![id, now()],
+                )?;
+            }
+            Ok::<_, DatumError>(())
+        })?;
         Ok(!known)
     }
 }

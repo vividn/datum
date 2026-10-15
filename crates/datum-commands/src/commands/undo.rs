@@ -100,31 +100,42 @@ fn undo_stack(
     registry: &Option<SpecRegistry>,
     output: &OutputArgs,
 ) -> Result<()> {
-    let action = undo_log::cursor(db.conn())?
-        .context("Nothing to undo — no command has changed anything here yet")?;
     // One step, one transaction (da-pxsa8): every member moves and the
-    // cursor with them, or a failure part-way rolls all of it back.
-    let tx = db.conn().unchecked_transaction()?;
-    let (skipped, report) = refuse_if_moved(db, &action, "undo", skip_changed)?;
-    warn_if_stale("undoing a change from", action.time);
-    let mut steps: Vec<(Entry, Entry)> = Vec::new();
-    for member in action.members.iter().filter(|m| !skipped.contains(&m.hid)) {
-        let Some(current) = still_there(db, &member.hid)? else {
-            continue;
-        };
-        let after = if member.first > 1 {
-            revert_in_tx(&tx, &member.hid, member.first - 1, ChangeKind::Undo)?
-        } else if current.deleted_at.is_none() {
-            // The action created it: before it, there was nothing.
-            soft_delete_in_tx(&tx, &member.hid, ChangeKind::Undo, None)?;
-            db.get_entry_including_deleted(&member.hid)?
-        } else {
-            continue;
-        };
-        steps.push((current, after));
-    }
-    undo_log::set_undone(&tx, action.id, &skipped)?;
-    tx.commit()?;
+    // cursor with them, or a failure part-way rolls all of it back. What it
+    // moves is read before the lock, and moved on the database it was read
+    // from (da-8i7f0).
+    let (time, skipped, report, steps) = db.compute_then_write_with(
+        |_| {
+            let action = undo_log::cursor(db.conn())?
+                .context("Nothing to undo — no command has changed anything here yet")?;
+            let (skipped, report) = refuse_if_moved(db, &action, "undo", skip_changed)?;
+            let mut members = Vec::new();
+            for member in action.members.iter().filter(|m| !skipped.contains(&m.hid)) {
+                if let Some(current) = still_there(db, &member.hid)? {
+                    members.push((member.clone(), current));
+                }
+            }
+            Ok::<_, anyhow::Error>((action.id, action.time, skipped, report, members))
+        },
+        |tx, (id, time, skipped, report, members)| {
+            let mut steps: Vec<(Entry, Entry)> = Vec::new();
+            for (member, current) in members {
+                let after = if member.first > 1 {
+                    revert_in_tx(tx, &member.hid, member.first - 1, ChangeKind::Undo)?
+                } else if current.deleted_at.is_none() {
+                    // The action created it: before it, there was nothing.
+                    soft_delete_in_tx(tx, &member.hid, ChangeKind::Undo, None)?;
+                    db.get_entry_including_deleted(&member.hid)?
+                } else {
+                    continue;
+                };
+                steps.push((current, after));
+            }
+            undo_log::set_undone(tx, id, &skipped)?;
+            Ok((time, skipped, report, steps))
+        },
+    )?;
+    warn_if_stale("undoing a change from", time);
     // Said once it is true: a failure above rolls the step back.
     if !report.is_empty() {
         eprintln!("{report}");
@@ -146,31 +157,42 @@ fn redo_stack(
     registry: &Option<SpecRegistry>,
     output: &OutputArgs,
 ) -> Result<()> {
-    let mut action = undo_log::next_redo(db.conn())?
-        .context("Nothing to redo — the last change here was not an undo")?;
-    let skipped = std::mem::take(&mut action.skipped);
-    action.members.retain(|m| !skipped.contains(&m.hid));
-    let all_skipped = action.members.is_empty() && !skipped.is_empty();
-    // One step, one transaction (da-pxsa8): every member moves and the
-    // cursor with them, or a failure part-way rolls all of it back.
-    let tx = db.conn().unchecked_transaction()?;
-    refuse_if_moved(db, &action, "redo", false)?;
-    // The refusal reads only, so a dry run exits as the redo would (da-38x8z).
+    // The refusal reads only, so a dry run exits as the redo would
+    // (da-38x8z), and takes no lock.
+    let read = |_: &datum_core::db::View| {
+        let mut action = undo_log::next_redo(db.conn())?
+            .context("Nothing to redo — the last change here was not an undo")?;
+        let skipped = std::mem::take(&mut action.skipped);
+        action.members.retain(|m| !skipped.contains(&m.hid));
+        let all_skipped = action.members.is_empty() && !skipped.is_empty();
+        refuse_if_moved(db, &action, "redo", false)?;
+        let mut members = Vec::new();
+        for member in &action.members {
+            if let Some(current) = still_there(db, &member.hid)? {
+                members.push((member.clone(), current));
+            }
+        }
+        Ok::<_, anyhow::Error>((action.id, action.time, all_skipped, members))
+    };
     if dry_run {
-        return Ok(());
+        return db.read(read).map(drop);
     }
-    warn_if_stale("redoing a change from", action.time);
-    let mut steps: Vec<(Entry, Entry)> = Vec::new();
-    for member in &action.members {
-        let Some(current) = still_there(db, &member.hid)? else {
-            continue;
-        };
-        // An untracked member's state as the action left it is its version 1.
-        let after = revert_in_tx(&tx, &member.hid, member.last.max(1), ChangeKind::Redo)?;
-        steps.push((current, after));
-    }
-    undo_log::set_redone(&tx, action.id)?;
-    tx.commit()?;
+    // One step, one transaction (da-pxsa8): every member moves and the
+    // cursor with them, or a failure part-way rolls all of it back. What it
+    // moves is read before the lock (da-8i7f0).
+    let (time, all_skipped, steps) =
+        db.compute_then_write_with(read, |tx, (id, time, all_skipped, members)| {
+            let mut steps: Vec<(Entry, Entry)> = Vec::new();
+            for (member, current) in members {
+                // An untracked member's state as the action left it is its
+                // version 1.
+                let after = revert_in_tx(tx, &member.hid, member.last.max(1), ChangeKind::Redo)?;
+                steps.push((current, after));
+            }
+            undo_log::set_redone(tx, id)?;
+            Ok((time, all_skipped, steps))
+        })?;
+    warn_if_stale("redoing a change from", time);
     if all_skipped {
         eprintln!(
             "redo: the undo left every entry of that command as another copy left it, \

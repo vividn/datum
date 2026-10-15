@@ -437,7 +437,7 @@ CREATE TABLE IF NOT EXISTS sync_notices (
 -- by sync-pull reconciliation (C4e); the `detected_by` column distinguishes
 -- them. Rows start with `resolution=NULL` and clear naturally when the
 -- user fixes the underlying data and detection re-runs against current
--- state; `auto_resolve_pending` remains an internal helper for callers
+-- state; `auto_resolve` remains an internal helper for callers
 -- that need to clear obvious cases (tests, future surfaces).
 --
 -- These are local data-consistency findings — NOT cross-device sync

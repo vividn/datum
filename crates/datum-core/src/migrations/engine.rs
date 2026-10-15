@@ -192,25 +192,26 @@ pub fn apply_migrations(
              (expected ≤ {target}); upgrade datum"
         )));
     }
-    let tx = conn.unchecked_transaction()?;
-    let mut applied = Vec::new();
-    let mut version = current;
-    while version < target {
-        let next = migrations
-            .iter()
-            .find(|m| m.from == version)
-            .ok_or_else(|| {
-                DatumError::IncompatibleSchema(format!(
-                    "no migration path from schema v{version} to v{target}"
-                ))
-            })?;
-        (next.apply)(&tx)?;
-        version = next.to;
-        set_schema_version(&tx, version)?;
-        applied.push(format!("v{}→v{}: {}", next.from, next.to, next.summary));
-    }
-    tx.commit()?;
-    Ok(applied)
+    // Every step in one transaction, by design: a migration is all or nothing.
+    crate::db::write::whole(conn, |tx| {
+        let mut applied = Vec::new();
+        let mut version = current;
+        while version < target {
+            let next = migrations
+                .iter()
+                .find(|m| m.from == version)
+                .ok_or_else(|| {
+                    DatumError::IncompatibleSchema(format!(
+                        "no migration path from schema v{version} to v{target}"
+                    ))
+                })?;
+            (next.apply)(tx)?;
+            version = next.to;
+            set_schema_version(tx, version)?;
+            applied.push(format!("v{}→v{}: {}", next.from, next.to, next.summary));
+        }
+        Ok(applied)
+    })
 }
 
 /// Status row reported by [`migration_status`].
@@ -261,25 +262,26 @@ pub fn apply_migrations_down(
             "down-walk requires current ({current}) >= target ({target})"
         )));
     }
-    let tx = conn.unchecked_transaction()?;
-    let mut applied = Vec::new();
-    let mut version = current;
-    while version > target {
-        let step = migrations.iter().find(|m| m.to == version).ok_or_else(|| {
-            DatumError::IncompatibleSchema(format!(
-                "no down-migration path from schema v{version} toward v{target}"
-            ))
-        })?;
-        (step.down)(&tx)?;
-        version = step.from;
-        set_schema_version(&tx, version)?;
-        applied.push(format!(
-            "v{}→v{}: down — {}",
-            step.to, step.from, step.summary
-        ));
-    }
-    tx.commit()?;
-    Ok(applied)
+    // One transaction, by design, as `apply_migrations`.
+    crate::db::write::whole(conn, |tx| {
+        let mut applied = Vec::new();
+        let mut version = current;
+        while version > target {
+            let step = migrations.iter().find(|m| m.to == version).ok_or_else(|| {
+                DatumError::IncompatibleSchema(format!(
+                    "no down-migration path from schema v{version} toward v{target}"
+                ))
+            })?;
+            (step.down)(tx)?;
+            version = step.from;
+            set_schema_version(tx, version)?;
+            applied.push(format!(
+                "v{}→v{}: down — {}",
+                step.to, step.from, step.summary
+            ));
+        }
+        Ok(applied)
+    })
 }
 
 /// Walk the module-level [`MIGRATIONS`] registry backward to `target`.

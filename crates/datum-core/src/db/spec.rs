@@ -358,48 +358,57 @@ impl Db {
         with: Option<&Entry>,
     ) -> Result<Entry> {
         crate::slug::validate_field_name(&spec.field)?;
-        let mut data = serde_json::to_value(spec)?;
-        let existing = self.spec_entry(&spec.field)?;
-        if existing.is_none() {
-            crate::slug::validate_new_field_name(&spec.field)?;
-        }
-        let old = existing.as_ref().and_then(|e| e.data.as_ref());
-        let old_kit = old.and_then(|d| d.get(SPEC_KIT_KEY));
-        let (kit, displaced) = match kit_id {
-            Some(k) if old_kit.and_then(JsonValue::as_str) != Some(k) => (Some(k.into()), old),
-            _ => (
-                kit_id.map(JsonValue::from).or_else(|| old_kit.cloned()),
-                old.and_then(|d| d.get(SPEC_DISPLACED_KEY)),
-            ),
-        };
-        if let Some(obj) = data.as_object_mut() {
-            if let Some(kit) = kit {
-                obj.insert(SPEC_KIT_KEY.into(), kit);
-            }
-            if let Some(displaced) = displaced {
-                obj.insert(SPEC_DISPLACED_KEY.into(), displaced.clone());
-            }
-        }
-        // `with` lands in the same transaction: both or neither (da-2pbvd).
-        let tx = self.conn.unchecked_transaction()?;
-        let slug = match existing {
-            Some(row) if row.data.as_ref() == Some(&data) => row.slug,
-            Some(mut row) => {
-                row.data = Some(data);
-                save_existing_entry_with_kind_in_tx(&tx, &row, ChangeKind::UserEdit)?;
-                row.slug
-            }
-            None => {
-                let client = self.client_id.get().map_or("local", String::as_str);
-                let row = new_spec_entry(&spec.field, data, client);
-                insert_new_in_tx(&tx, &row)?;
-                row.slug
-            }
-        };
-        if let Some(entry) = with {
-            insert_new_in_tx(&tx, entry)?;
-        }
-        tx.commit()?;
+        // The spec it replaces is read before the lock, and `with` lands in
+        // the same transaction: both or neither (da-2pbvd, da-8i7f0).
+        let slug = self.compute_then_write_with(
+            |_| {
+                let mut data = serde_json::to_value(spec)?;
+                let existing = self.spec_entry(&spec.field)?;
+                if existing.is_none() {
+                    crate::slug::validate_new_field_name(&spec.field)?;
+                }
+                let old = existing.as_ref().and_then(|e| e.data.as_ref());
+                let old_kit = old.and_then(|d| d.get(SPEC_KIT_KEY));
+                let (kit, displaced) = match kit_id {
+                    Some(k) if old_kit.and_then(JsonValue::as_str) != Some(k) => {
+                        (Some(k.into()), old)
+                    }
+                    _ => (
+                        kit_id.map(JsonValue::from).or_else(|| old_kit.cloned()),
+                        old.and_then(|d| d.get(SPEC_DISPLACED_KEY)),
+                    ),
+                };
+                if let Some(obj) = data.as_object_mut() {
+                    if let Some(kit) = kit {
+                        obj.insert(SPEC_KIT_KEY.into(), kit);
+                    }
+                    if let Some(displaced) = displaced {
+                        obj.insert(SPEC_DISPLACED_KEY.into(), displaced.clone());
+                    }
+                }
+                Ok((existing, data))
+            },
+            |tx, (existing, data)| {
+                let slug = match existing {
+                    Some(row) if row.data.as_ref() == Some(&data) => row.slug,
+                    Some(mut row) => {
+                        row.data = Some(data);
+                        save_existing_entry_with_kind_in_tx(tx, &row, ChangeKind::UserEdit)?;
+                        row.slug
+                    }
+                    None => {
+                        let client = self.client_id.get().map_or("local", String::as_str);
+                        let row = new_spec_entry(&spec.field, data, client);
+                        insert_new_in_tx(tx, &row)?;
+                        row.slug
+                    }
+                };
+                if let Some(entry) = with {
+                    insert_new_in_tx(tx, entry)?;
+                }
+                Ok::<_, DatumError>(slug)
+            },
+        )?;
         self.get_entry(&slug)
     }
 

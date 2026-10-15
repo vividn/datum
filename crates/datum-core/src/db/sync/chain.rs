@@ -1152,27 +1152,30 @@ impl Db {
     /// Write a chain record as an op of this copy's, and refuse it, writing
     /// nothing, when the chain would not take it. `quiet`: see [`note`].
     pub fn sync_chain_write(&self, record: Value, quiet: bool) -> Result<()> {
-        let tx = self.conn.unchecked_transaction()?;
-        super::debug::refuse(&tx)?;
-        // A copy that starts a chain gives up any join it was making
-        // (da-38eye): left later, it is joining nothing.
-        if record["type"] == "genesis" {
-            tx.execute("UPDATE sync_peers SET redeemed_at = NULL", [])?;
-        }
-        let ep = endpoint(&tx)?;
-        let seq = push(&tx, &ep, (CHAIN_HID, CHAIN_HID, None), "chain", record)?;
-        let chain = Chain::load(&tx)?;
-        if let Some(why) = chain.rejected.get(&(ep.id, seq)) {
-            return Err(DatumError::Other(format!(
-                "the sync chain refuses it: {why}"
-            )));
-        }
-        let mut s = ApplySummary::default();
-        reconsider(&tx, &chain, &mut s)?;
-        settle(&tx, &mut s)?;
-        note(&tx, &chain, quiet)?;
-        relabel_conflicts(&tx)?;
-        tx.commit()?;
+        // A record changes the chain the entries fold under: what it
+        // refolds is its write.
+        let s = self.write_with(|tx| {
+            super::debug::refuse(tx)?;
+            // A copy that starts a chain gives up any join it was making
+            // (da-38eye): left later, it is joining nothing.
+            if record["type"] == "genesis" {
+                tx.execute("UPDATE sync_peers SET redeemed_at = NULL", [])?;
+            }
+            let ep = endpoint(tx)?;
+            let seq = push(tx, &ep, (CHAIN_HID, CHAIN_HID, None), "chain", record)?;
+            let chain = Chain::load(tx)?;
+            if let Some(why) = chain.rejected.get(&(ep.id, seq)) {
+                return Err(DatumError::Other(format!(
+                    "the sync chain refuses it: {why}"
+                )));
+            }
+            let mut s = ApplySummary::default();
+            reconsider(tx, &chain, &mut s)?;
+            settle(tx, &mut s)?;
+            note(tx, &chain, quiet)?;
+            relabel_conflicts(tx)?;
+            Ok(s)
+        })?;
         if s.wiped {
             self.after_wipe()?;
         }
@@ -1313,12 +1316,13 @@ impl Db {
         if !self.sync_chain()?.exists() {
             return Err(DatumError::Other("this copy is in no sync chain".into()));
         }
-        let tx = self.conn.unchecked_transaction()?;
-        forget_chain(&tx)?;
-        tx.execute_batch("DELETE FROM sync_peers; UPDATE sync_local SET endpoint_secret = '';")?;
-        endpoint(&tx)?;
-        tx.commit()?;
-        Ok(())
+        self.write_with(|tx| {
+            forget_chain(tx)?;
+            tx.execute_batch(
+                "DELETE FROM sync_peers; UPDATE sync_local SET endpoint_secret = '';",
+            )?;
+            endpoint(tx).map(drop)
+        })
     }
 
     /// Tell this copy's chain it leaves (da-dsob1): sign its departure,
@@ -1406,10 +1410,7 @@ impl Db {
         if dry_run {
             return Ok(());
         }
-        let tx = self.conn.unchecked_transaction()?;
-        forget_chain(&tx)?;
-        tx.commit()?;
-        Ok(())
+        self.write_with(forget_chain)
     }
 
     /// Notices not yet printed.

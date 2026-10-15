@@ -19,38 +19,37 @@ impl Db {
     /// Errors with `NotFound` if no matching tombstone exists. Records a
     /// `user_edit` history row snapshotting the pre-undelete (tombstoned) state.
     pub fn undelete(&self, slug_or_hid: &str) -> Result<()> {
-        let tx = self.conn.unchecked_transaction()?;
-        let pre: Option<Entry> = tx
-            .query_row(
-                "SELECT * FROM entries
+        self.write_with(|tx| {
+            let pre: Option<Entry> = tx
+                .query_row(
+                    "SELECT * FROM entries
                  WHERE (slug = ?1 OR hid = ?1) AND deleted_at IS NOT NULL
                  LIMIT 1",
-                params![slug_or_hid],
-                row_to_entry,
-            )
-            .optional()?;
-        let pre = match pre {
-            Some(e) => e,
-            None => return Err(DatumError::NotFound(slug_or_hid.to_string())),
-        };
-        history::record(&tx, &pre, ChangeKind::UserEdit)?;
-        // da-4vyw: deleted-ness is hashed, so clearing the tombstone moves
-        // the row's content_hash back to its live value. Without this the
-        // stored hash disagrees with `expected_content_hash` forever after.
-        let mut live = pre.clone();
-        live.deleted_at = None;
-        tx.execute(
-            "UPDATE entries SET deleted_at = NULL, modify_time = ?2, content_hash = ?3
+                    params![slug_or_hid],
+                    row_to_entry,
+                )
+                .optional()?;
+            let pre = match pre {
+                Some(e) => e,
+                None => return Err(DatumError::NotFound(slug_or_hid.to_string())),
+            };
+            history::record(tx, &pre, ChangeKind::UserEdit)?;
+            // da-4vyw: deleted-ness is hashed, so clearing the tombstone moves
+            // the row's content_hash back to its live value. Without this the
+            // stored hash disagrees with `expected_content_hash` forever after.
+            let mut live = pre.clone();
+            live.deleted_at = None;
+            tx.execute(
+                "UPDATE entries SET deleted_at = NULL, modify_time = ?2, content_hash = ?3
              WHERE hid = ?1",
-            params![
-                pre.hid,
-                Utc::now().to_rfc3339(),
-                live.expected_content_hash()
-            ],
-        )?;
-        super::sync::emit(&tx, Some(&pre), &pre.hid, ChangeKind::UserEdit)?;
-        tx.commit()?;
-        Ok(())
+                params![
+                    pre.hid,
+                    Utc::now().to_rfc3339(),
+                    live.expected_content_hash()
+                ],
+            )?;
+            super::sync::emit(tx, Some(&pre), &pre.hid, ChangeKind::UserEdit)
+        })
     }
 
     /// Hard-delete an entry by hid — not slug, which a keep-both pair
@@ -104,10 +103,7 @@ impl Db {
         kind: ChangeKind,
         comment: Option<&str>,
     ) -> Result<Entry> {
-        let tx = self.conn.unchecked_transaction()?;
-        let dead = soft_delete_in_tx(&tx, slug_or_hid, kind, comment)?;
-        tx.commit()?;
-        Ok(dead)
+        self.write_with(|tx| soft_delete_in_tx(tx, slug_or_hid, kind, comment))
     }
 
     /// Revert an entry to the state it held at a prior version, resolving
@@ -132,20 +128,14 @@ impl Db {
         target_version: u32,
         kind: ChangeKind,
     ) -> Result<Entry> {
-        let tx = self.conn.unchecked_transaction()?;
-        let restored = revert_in_tx(&tx, hid_or_slug, target_version, kind)?;
-        tx.commit()?;
-        Ok(restored)
+        self.write_with(|tx| revert_in_tx(tx, hid_or_slug, target_version, kind))
     }
 
     /// Revert `current` to `target`, the entry at a version of the history
     /// its ops make ([`Db::versions`]) — `undo --to-version`, whose number
     /// is the one `datum history` prints (da-s4erq).
     pub fn revert_entry_to_state(&self, current: &Entry, target: &Entry) -> Result<Entry> {
-        let tx = self.conn.unchecked_transaction()?;
-        let restored = revert_to(&tx, current, target, ChangeKind::Undo)?;
-        tx.commit()?;
-        Ok(restored)
+        self.write_with(|tx| revert_to(tx, current, target, ChangeKind::Undo))
     }
 }
 

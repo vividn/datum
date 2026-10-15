@@ -22,7 +22,7 @@ use super::lookup::fetch_entry_any;
 use super::row_mapper::row_to_entry;
 use super::tombstone::soft_delete_in_tx;
 use super::types::{ConflictStrategy, HardReplaceCounts, InsertOutcome, ReplaceCounts, LIVE_SQL};
-use super::Db;
+use super::{Db, View};
 
 /// Derive the storage-layer verb string and canonical state JSON for an
 /// outgoing entry write. da-5ns.3: every insert/update path runs this so
@@ -186,10 +186,7 @@ impl Db {
     /// same instant — semantically a duplicate even with different content).
     /// Preserved for call sites that pre-date the strategy API.
     pub fn insert_entry(&self, entry: &Entry) -> Result<()> {
-        let tx = self.conn.unchecked_transaction()?;
-        insert_new_in_tx(&tx, entry)?;
-        tx.commit()?;
-        Ok(())
+        self.write_with(|tx| insert_new_in_tx(tx, entry))
     }
 
     /// Rewrite just the `verb` column of the row identified by `hid`.
@@ -257,22 +254,26 @@ impl Db {
         strategy: ConflictStrategy,
         declare: Option<&crate::field_spec::FieldSpec>,
     ) -> Result<InsertOutcome> {
-        let tx = self.conn.unchecked_transaction()?;
-        let outcome = insert_entry_in_tx(&tx, entry, strategy)?;
-        let landed = matches!(
-            outcome,
-            InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. }
-        );
-        if let Some(spec) = declare.filter(|_| landed) {
-            let row = super::spec::new_spec_entry(
-                &spec.field,
-                serde_json::to_value(spec)?,
-                &entry.client_id,
+        let spec = declare
+            .map(|spec| -> Result<Entry> {
+                Ok(super::spec::new_spec_entry(
+                    &spec.field,
+                    serde_json::to_value(spec)?,
+                    &entry.client_id,
+                ))
+            })
+            .transpose()?;
+        self.write_with(|tx| {
+            let outcome = insert_entry_in_tx(tx, entry, strategy)?;
+            let landed = matches!(
+                outcome,
+                InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. }
             );
-            insert_entry_in_tx(&tx, &row, ConflictStrategy::Ignore)?;
-        }
-        tx.commit()?;
-        Ok(outcome)
+            if let Some(row) = spec.filter(|_| landed) {
+                insert_entry_in_tx(tx, &row, ConflictStrategy::Ignore)?;
+            }
+            Ok(outcome)
+        })
     }
 
     /// Bulk-insert entries inside a single SQLite transaction. Uses the
@@ -326,24 +327,26 @@ impl Db {
         commit: bool,
         on_row: &mut dyn FnMut(usize),
     ) -> Result<Vec<InsertOutcome>> {
-        let tx = self.conn.unchecked_transaction()?;
-        let mut outcomes = Vec::with_capacity(entries.len());
-        let mut written = Vec::new();
-        for entry in entries {
-            let (outcome, row) = write_entry_in_tx(&tx, entry, strategy, merge)?;
-            outcomes.push(outcome);
-            written.extend(row);
-            on_row(outcomes.len());
+        let mut write = |tx: &Connection, ()| {
+            let mut outcomes = Vec::with_capacity(entries.len());
+            let mut written = Vec::new();
+            for entry in entries {
+                let (outcome, row) = write_entry_in_tx(tx, entry, strategy, merge)?;
+                outcomes.push(outcome);
+                written.extend(row);
+                on_row(outcomes.len());
+            }
+            crate::integrity::detect_for_entries(
+                tx,
+                &written,
+                crate::integrity::DetectedBy::LocalValidator,
+            )?;
+            Ok(outcomes)
+        };
+        match commit {
+            true => self.write_with(|tx| write(tx, ())),
+            false => self.rehearse_with(|_| Ok(()), write),
         }
-        crate::integrity::detect_for_entries(
-            &tx,
-            &written,
-            crate::integrity::DetectedBy::LocalValidator,
-        )?;
-        if commit {
-            tx.commit()?;
-        }
-        Ok(outcomes)
     }
 
     /// Make `entries` the live set, in ONE transaction (da-5fooh): the
@@ -368,88 +371,92 @@ impl Db {
         if_unchanged: Option<u64>,
         on_row: &mut dyn FnMut(usize),
     ) -> Result<ReplaceCounts> {
-        let tx = self.conn.unchecked_transaction()?;
-        let keep: HashSet<&str> = entries.iter().map(|e| e.hid.0.as_str()).collect();
-        let (live, fingerprint) = live_fingerprint(&tx, if_unchanged)?;
-        let mut counts = ReplaceCounts {
-            fingerprint,
-            ..Default::default()
-        };
-        let mut deleted = HashSet::new();
-        for hid in live.into_iter().filter(|h| !keep.contains(h.0.as_str())) {
-            soft_delete_in_tx(&tx, &hid.0, ChangeKind::UserEdit, None)?;
-            deleted.insert(hid);
-        }
-        let mut written = Vec::new();
-        for (n, entry) in entries.iter().enumerate() {
-            let held = tx
-                .query_row(
-                    "SELECT * FROM entries WHERE hid = ?1",
-                    params![entry.hid],
-                    row_to_entry,
-                )
-                .optional()?;
-            match held {
-                Some(pre)
-                    if pre.deleted_at.is_none()
-                        && pre.slug == entry.slug
-                        && pre.content_hash == entry.content_hash =>
-                {
-                    counts.unchanged += 1
-                }
-                Some(pre) => {
-                    history::record(&tx, &pre, ChangeKind::UserEdit)?;
-                    tx.execute(
-                        "UPDATE entries SET deleted_at = NULL, slug = ?2 WHERE hid = ?1",
-                        params![entry.hid, entry.slug],
+        // The live set is read before the lock, and the write lands on it
+        // unmoved (da-8i7f0).
+        let compute = |view: &View| live_fingerprint(view.conn(), if_unchanged);
+        let write = |tx: &Connection, (live, fingerprint): (Vec<Hid>, u64)| {
+            let keep: HashSet<&str> = entries.iter().map(|e| e.hid.0.as_str()).collect();
+            let mut counts = ReplaceCounts {
+                fingerprint,
+                ..Default::default()
+            };
+            let mut deleted = HashSet::new();
+            for hid in live.into_iter().filter(|h| !keep.contains(h.0.as_str())) {
+                soft_delete_in_tx(tx, &hid.0, ChangeKind::UserEdit, None)?;
+                deleted.insert(hid);
+            }
+            let mut written = Vec::new();
+            for (n, entry) in entries.iter().enumerate() {
+                let held = tx
+                    .query_row(
+                        "SELECT * FROM entries WHERE hid = ?1",
+                        params![entry.hid],
+                        row_to_entry,
                     )
-                    .map_err(|e| match collision_kind(&e) {
-                        Some(CollisionKind::Slug) => DatumError::Duplicate(format!(
-                            "Cannot restore {} to {}: another entry holds that slug",
-                            entry.hid, entry.slug
-                        )),
-                        _ => DatumError::Db(e),
-                    })?;
-                    raw_overwrite_mutables(&tx, &pre.hid, &entry.slug, entry, None)?;
-                    super::sync::emit(&tx, Some(&pre), &pre.hid, ChangeKind::UserEdit)?;
-                    written.push(fetch_entry_any(&tx, &pre.hid.0)?);
-                    if pre.deleted_at.is_none() {
-                        counts.changed += 1
-                    } else {
-                        counts.added += 1
+                    .optional()?;
+                match held {
+                    Some(pre)
+                        if pre.deleted_at.is_none()
+                            && pre.slug == entry.slug
+                            && pre.content_hash == entry.content_hash =>
+                    {
+                        counts.unchanged += 1
                     }
-                }
-                None => {
-                    let (outcome, row) = write_entry_in_tx(&tx, entry, strategy, false)?;
-                    written.extend(row);
-                    match outcome {
-                        // A tombstone at the slug revives in place, keeping
-                        // its hid: one this replace just deleted was live.
-                        InsertOutcome::Inserted { hid, .. } if deleted.remove(&hid) => {
+                    Some(pre) => {
+                        history::record(tx, &pre, ChangeKind::UserEdit)?;
+                        tx.execute(
+                            "UPDATE entries SET deleted_at = NULL, slug = ?2 WHERE hid = ?1",
+                            params![entry.hid, entry.slug],
+                        )
+                        .map_err(|e| match collision_kind(&e) {
+                            Some(CollisionKind::Slug) => DatumError::Duplicate(format!(
+                                "Cannot restore {} to {}: another entry holds that slug",
+                                entry.hid, entry.slug
+                            )),
+                            _ => DatumError::Db(e),
+                        })?;
+                        raw_overwrite_mutables(tx, &pre.hid, &entry.slug, entry, None)?;
+                        super::sync::emit(tx, Some(&pre), &pre.hid, ChangeKind::UserEdit)?;
+                        written.push(fetch_entry_any(tx, &pre.hid.0)?);
+                        if pre.deleted_at.is_none() {
                             counts.changed += 1
-                        }
-                        InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. } => {
+                        } else {
                             counts.added += 1
                         }
-                        InsertOutcome::Updated { .. } | InsertOutcome::Merged { .. } => {
-                            counts.changed += 1
+                    }
+                    None => {
+                        let (outcome, row) = write_entry_in_tx(tx, entry, strategy, false)?;
+                        written.extend(row);
+                        match outcome {
+                            // A tombstone at the slug revives in place, keeping
+                            // its hid: one this replace just deleted was live.
+                            InsertOutcome::Inserted { hid, .. } if deleted.remove(&hid) => {
+                                counts.changed += 1
+                            }
+                            InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. } => {
+                                counts.added += 1
+                            }
+                            InsertOutcome::Updated { .. } | InsertOutcome::Merged { .. } => {
+                                counts.changed += 1
+                            }
+                            InsertOutcome::Ignored { .. } => counts.unchanged += 1,
                         }
-                        InsertOutcome::Ignored { .. } => counts.unchanged += 1,
                     }
                 }
+                on_row(n + 1);
             }
-            on_row(n + 1);
+            counts.deleted = deleted.len();
+            crate::integrity::detect_for_entries(
+                tx,
+                &written,
+                crate::integrity::DetectedBy::LocalValidator,
+            )?;
+            Ok(counts)
+        };
+        match commit {
+            true => self.compute_then_write_with(compute, write),
+            false => self.rehearse_with(compute, write),
         }
-        counts.deleted = deleted.len();
-        crate::integrity::detect_for_entries(
-            &tx,
-            &written,
-            crate::integrity::DetectedBy::LocalValidator,
-        )?;
-        if commit {
-            tx.commit()?;
-        }
-        Ok(counts)
     }
 
     /// Make the database exactly `entries` (da-rle8g, `db restore --hard`):
@@ -468,36 +475,42 @@ impl Db {
         if_unchanged: Option<u64>,
         on_row: &mut dyn FnMut(usize),
     ) -> Result<HardReplaceCounts> {
-        let tx = self.conn.unchecked_transaction()?;
-        let (live, fingerprint) = live_fingerprint(&tx, if_unchanged)?;
-        let live = live.len();
-        let count = |sql: &str| tx.query_row(sql, [], |row| row.get::<_, usize>(0));
-        let counts = HardReplaceCounts {
-            fingerprint,
-            written: entries.len(),
-            entries: live,
-            tombstones: count("SELECT COUNT(*) FROM entries")? - live,
-            history: count("SELECT COUNT(*) FROM entry_history")?,
+        // Counted before the lock, and the write lands on what was counted
+        // (da-8i7f0).
+        let compute = |view: &View| {
+            let (live, fingerprint) = live_fingerprint(view.conn(), if_unchanged)?;
+            let live = live.len();
+            let count = |sql: &str| view.conn().query_row(sql, [], |row| row.get::<_, usize>(0));
+            Ok(HardReplaceCounts {
+                fingerprint,
+                written: entries.len(),
+                entries: live,
+                tombstones: count("SELECT COUNT(*) FROM entries")? - live,
+                history: count("SELECT COUNT(*) FROM entry_history")?,
+            })
         };
-        tx.execute_batch(
-            "DELETE FROM entries; DELETE FROM entry_history; DELETE FROM undo_actions;
+        let write = |tx: &Connection, counts: HardReplaceCounts| {
+            tx.execute_batch(
+                "DELETE FROM entries; DELETE FROM entry_history; DELETE FROM undo_actions;
              DELETE FROM integrity_warnings; DELETE FROM last_docs;",
-        )?;
-        let mut written = Vec::with_capacity(entries.len());
-        for (n, entry) in entries.iter().enumerate() {
-            try_insert(&tx, &entry.slug, &entry.hid, entry)?;
-            written.push(fetch_entry_any(&tx, &entry.slug)?);
-            on_row(n + 1);
+            )?;
+            let mut written = Vec::with_capacity(entries.len());
+            for (n, entry) in entries.iter().enumerate() {
+                try_insert(tx, &entry.slug, &entry.hid, entry)?;
+                written.push(fetch_entry_any(tx, &entry.slug)?);
+                on_row(n + 1);
+            }
+            crate::integrity::detect_for_entries(
+                tx,
+                &written,
+                crate::integrity::DetectedBy::LocalValidator,
+            )?;
+            Ok(counts)
+        };
+        match commit {
+            true => self.compute_then_write_with(compute, write),
+            false => self.rehearse_with(compute, write),
         }
-        crate::integrity::detect_for_entries(
-            &tx,
-            &written,
-            crate::integrity::DetectedBy::LocalValidator,
-        )?;
-        if commit {
-            tx.commit()?;
-        }
-        Ok(counts)
     }
 
     /// Bulk-load fast path for one-shot ingestion (e.g. `datum db v2import`).
@@ -536,14 +549,14 @@ impl Db {
                 "insert_entries_bulk supports only ConflictStrategy::Ignore, got {strategy:?}",
             )));
         }
-        let tx = self.conn.unchecked_transaction()?;
-        let mut outcomes = Vec::with_capacity(entries.len());
-        for entry in entries {
-            outcomes.push(insert_entry_bulk_in_tx(&tx, entry)?);
-            on_row(outcomes.len());
-        }
-        tx.commit()?;
-        Ok(outcomes)
+        self.write_with(|tx| {
+            let mut outcomes = Vec::with_capacity(entries.len());
+            for entry in entries {
+                outcomes.push(insert_entry_bulk_in_tx(tx, entry)?);
+                on_row(outcomes.len());
+            }
+            Ok(outcomes)
+        })
     }
 
     /// Persist a mutation to an existing entry, matched by `entry.hid` (a
@@ -566,10 +579,7 @@ impl Db {
         entry: &Entry,
         change_kind: ChangeKind,
     ) -> Result<()> {
-        let tx = self.conn.unchecked_transaction()?;
-        save_existing_entry_with_kind_in_tx(&tx, entry, change_kind)?;
-        tx.commit()?;
-        Ok(())
+        self.write_with(|tx| save_existing_entry_with_kind_in_tx(tx, entry, change_kind))
     }
 
     /// Persist `updated` after re-interpolating its `field_structure` /
@@ -614,15 +624,14 @@ impl Db {
         slug_delimiter: &str,
         change_kind: ChangeKind,
     ) -> Result<(Entry, Option<Slug>)> {
-        let tx = self.conn.unchecked_transaction()?;
-        let out = self.save_existing_entry_with_auto_reinterp_kind_in_tx(
-            existing_slug,
-            updated,
-            slug_delimiter,
-            change_kind,
-        )?;
-        tx.commit()?;
-        Ok(out)
+        self.write_with(|_| {
+            self.save_existing_entry_with_auto_reinterp_kind_in_tx(
+                existing_slug,
+                updated,
+                slug_delimiter,
+                change_kind,
+            )
+        })
     }
 
     /// As [`Self::save_existing_entry_with_auto_reinterp_kind`] but runs
@@ -718,10 +727,9 @@ impl Db {
         entry: &Entry,
         change_kind: ChangeKind,
     ) -> Result<()> {
-        let tx = self.conn.unchecked_transaction()?;
-        save_existing_entry_with_rekey_kind_in_tx(&tx, old_slug, entry, change_kind)?;
-        tx.commit()?;
-        Ok(())
+        self.write_with(|tx| {
+            save_existing_entry_with_rekey_kind_in_tx(tx, old_slug, entry, change_kind)
+        })
     }
 }
 
@@ -908,7 +916,7 @@ fn merge_json(existing: JsonValue, incoming: JsonValue) -> JsonValue {
 // --- Free-function mutators ---------------------------------------------------
 //
 // These take an explicit `&Connection` so they can run inside caller-owned
-// transactions alongside `entry_history` writes. The public `Db` methods above
+// wrap them with `Db::write_with` to keep the entries mutation and the
 // wrap them with `unchecked_transaction` to keep the entries mutation and the
 // history row atomic.
 

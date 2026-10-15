@@ -101,31 +101,41 @@ impl Db {
         filter: &RetimeFilter,
         mut change: impl FnMut(&mut Entry) -> Result<()>,
     ) -> Result<Vec<Retimed>> {
-        let entries = select_retime_targets(self, filter)?;
-        let tx = self.conn.unchecked_transaction()?;
-        let mut moved = Vec::with_capacity(entries.len());
-        for mut e in entries {
-            let old_slug = e.slug.clone();
-            // Targets always carry an occur_time (the selector excludes
-            // timeless rows), so the `before` half of the pair is always
-            // there to render.
-            let before = e.occur_time.clone();
-            change(&mut e)?;
-            let (saved, _) = self.save_existing_entry_with_auto_reinterp_kind_in_tx(
-                &old_slug,
-                e,
-                DEFAULT_ID_DELIMITER,
-                crate::history::ChangeKind::Retime,
-            )?;
-            if let Some(before) = before {
-                moved.push(Retimed {
-                    before,
-                    entry: saved,
-                });
-            }
-        }
-        tx.commit()?;
-        Ok(moved)
+        // The targets are found and changed before the lock, and saved on
+        // the database they were read from (da-8i7f0).
+        self.compute_then_write_with(
+            |_| {
+                let mut changed = Vec::new();
+                for mut e in select_retime_targets(self, filter)? {
+                    let old_slug = e.slug.clone();
+                    // Targets always carry an occur_time (the selector
+                    // excludes timeless rows), so the `before` half of the
+                    // pair is always there to render.
+                    let before = e.occur_time.clone();
+                    change(&mut e)?;
+                    changed.push((old_slug, before, e));
+                }
+                Ok(changed)
+            },
+            |_, changed| {
+                let mut moved = Vec::with_capacity(changed.len());
+                for (old_slug, before, e) in changed {
+                    let (saved, _) = self.save_existing_entry_with_auto_reinterp_kind_in_tx(
+                        &old_slug,
+                        e,
+                        DEFAULT_ID_DELIMITER,
+                        crate::history::ChangeKind::Retime,
+                    )?;
+                    if let Some(before) = before {
+                        moved.push(Retimed {
+                            before,
+                            entry: saved,
+                        });
+                    }
+                }
+                Ok(moved)
+            },
+        )
     }
 }
 

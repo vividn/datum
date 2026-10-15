@@ -119,28 +119,29 @@ fn pending(conn: &Connection, all: Vec<(String, Value)>) -> Result<Vec<(String, 
     Ok(all.into_iter().skip(landed.map_or(0, |i| i + 1)).collect())
 }
 
-/// Land one line, in its own transaction.
-fn land(conn: &Connection, (id, line): &(String, Value)) -> Result<()> {
-    let tx = conn.unchecked_transaction()?;
-    sync::apply_spooled(&tx, line["ops"].as_array().map_or(&[], Vec::as_slice))?;
-    if let Some(last) = line.get("last").filter(|l| !l.is_null()) {
-        tx.execute(
-            "INSERT INTO last_docs (id, hids, time) VALUES (?1, ?2, ?3)
+/// Land one line, in its own transaction: ops computed already, so the
+/// lock is held for their writes (da-8i7f0).
+fn land(db: &Db, (id, line): &(String, Value)) -> Result<()> {
+    db.write_with(|tx| {
+        sync::apply_spooled(tx, line["ops"].as_array().map_or(&[], Vec::as_slice))?;
+        if let Some(last) = line.get("last").filter(|l| !l.is_null()) {
+            tx.execute(
+                "INSERT INTO last_docs (id, hids, time) VALUES (?1, ?2, ?3)
              ON CONFLICT(id) DO UPDATE SET hids = excluded.hids, time = excluded.time",
-            params![
-                crate::last_docs::LAST_DOCS_ROW,
-                last.to_string(),
-                line["at"].as_str().unwrap_or_default()
-            ],
-        )?;
-    }
-    tx.execute(
-        "INSERT INTO _meta (key, value) VALUES ('spool_drained', ?1)
+                params![
+                    crate::last_docs::LAST_DOCS_ROW,
+                    last.to_string(),
+                    line["at"].as_str().unwrap_or_default()
+                ],
+            )?;
+        }
+        tx.execute(
+            "INSERT INTO _meta (key, value) VALUES ('spool_drained', ?1)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        [id],
-    )?;
-    tx.commit()?;
-    Ok(())
+            [id],
+        )?;
+        Ok(())
+    })
 }
 
 fn last_docs(conn: &Connection) -> Result<Option<String>> {
@@ -192,12 +193,10 @@ impl Db {
     /// Take the write lock within `wait`, and let it go: whether a write
     /// now would land.
     pub fn can_write(&self, wait: Duration) -> Result<bool> {
-        match waiting(&self.conn, wait, || {
-            self.conn.execute_batch("BEGIN IMMEDIATE; ROLLBACK;")
-        })? {
+        match waiting(&self.conn, wait, || self.take_the_lock())? {
             Ok(()) => Ok(true),
             Err(e) if busy(&e) => Ok(false),
-            Err(e) => Err(e.into()),
+            Err(e) => Err(e),
         }
     }
 
@@ -241,7 +240,7 @@ impl Db {
         db.migrate(None)?;
         let spool = beside(file, ".spool");
         for line in pending(&db.conn, lines(&spool)?)? {
-            land(&db.conn, &line)?;
+            land(&db, &line)?;
         }
         let spooled = Spool {
             db: file.to_path_buf(),
@@ -278,7 +277,7 @@ impl Db {
         let mut landed = 0;
         let failed = waiting(&self.conn, DRAIN_WAIT, || {
             for line in &todo {
-                match land(&self.conn, line) {
+                match land(self, line) {
                     Ok(()) => landed += 1,
                     Err(e) if busy(&e) => return None,
                     Err(e) => return Some(e),

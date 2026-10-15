@@ -3,11 +3,12 @@
 //! `datum-commands`' `commands/stats/cache.rs`. Days are `YYYY-MM-DD` in
 //! the database's own zone, which compare as text.
 
+use rusqlite::types::Value;
 use rusqlite::{params, OptionalExtension};
 
 use crate::error::{DatumError, Result};
 
-use super::Db;
+use super::{Db, WriteBatch};
 
 /// The cache's tables, triggers and index (`stats_cache.sql`).
 pub(crate) const STATS_CACHE_SQL: &str = include_str!("stats_cache.sql");
@@ -51,6 +52,62 @@ pub struct Refill {
 /// `stats_cache.sql` describes `stats_cache_dirty`.
 pub type Dirty = (String, String, String);
 
+/// The statements that record `refill` for `field`.
+fn refill_batch(batch: &mut WriteBatch, field: &str, stamp: &str, refill: &Refill) {
+    let text = |s: &str| Value::Text(s.to_string());
+    batch.push(
+        "INSERT OR REPLACE INTO _meta (key, value) VALUES ('stats_cache', ?1)",
+        vec![text(stamp)],
+    );
+    if let Some(day) = &refill.zone {
+        batch.push(
+            "UPDATE stats_cache_through SET day = min(day, ?1)",
+            vec![text(day)],
+        );
+    }
+    let from = text(refill.from.as_deref().unwrap_or_default());
+    batch.push(
+        "DELETE FROM stats_cache WHERE field = ?1 AND day >= ?2",
+        vec![text(field), from.clone()],
+    );
+    batch.push(
+        "DELETE FROM stats_cache_days WHERE field = ?1 AND day >= ?2",
+        vec![text(field), from],
+    );
+    for d in &refill.days {
+        for s in &d.states {
+            batch.push(
+                "INSERT INTO stats_cache (field, day, state, count, seconds, class)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                vec![
+                    text(field),
+                    text(&d.day),
+                    text(&s.state),
+                    Value::Integer(s.count as i64),
+                    Value::Integer(s.seconds),
+                    Value::Integer(s.class.into()),
+                ],
+            );
+        }
+        if let Some((first, last)) = &d.span {
+            batch.push(
+                "INSERT INTO stats_cache_days (field, day, first, last) VALUES (?1, ?2, ?3, ?4)",
+                vec![text(field), text(&d.day), text(first), text(last)],
+            );
+        }
+    }
+    batch.push(
+        "INSERT OR REPLACE INTO stats_cache_through (field, lo, day) VALUES (?1, ?2, ?3)",
+        vec![text(field), text(&refill.lo), text(&refill.through)],
+    );
+    // Exactly the rows `fill` was handed: the batch lands only on the
+    // database it read.
+    batch.push(
+        "DELETE FROM stats_cache_dirty WHERE field IN (?1, '')",
+        vec![text(field)],
+    );
+}
+
 impl Db {
     /// The writes the cache has not accounted for yet, after making it this
     /// datum's: a cache stamped otherwise is wiped. Writes nothing else —
@@ -66,13 +123,17 @@ impl Db {
             )
             .optional()?;
         if held.is_some_and(|held| held != stamp) {
-            let tx = self.conn.unchecked_transaction()?;
-            tx.execute_batch(
-                "DELETE FROM stats_cache; DELETE FROM stats_cache_days;
-                 DELETE FROM stats_cache_through; DELETE FROM stats_cache_dirty;
-                 DELETE FROM _meta WHERE key = 'stats_cache';",
-            )?;
-            tx.commit()?;
+            let mut wipe = WriteBatch::default();
+            for table in [
+                "stats_cache",
+                "stats_cache_days",
+                "stats_cache_through",
+                "stats_cache_dirty",
+            ] {
+                wipe.push(format!("DELETE FROM {table}"), vec![]);
+            }
+            wipe.push("DELETE FROM _meta WHERE key = 'stats_cache'", vec![]);
+            self.write(&wipe)?;
         }
         Ok(self
             .conn
@@ -94,85 +155,37 @@ impl Db {
             .optional()?)
     }
 
-    /// Refill `field` under a write lock taken before anything is read, so
-    /// no write lands between reading what is stale and recording it fresh.
-    /// `fill` is handed the days the field has cached and the writes not
-    /// accounted for, its own and every field's (`''`), and answers with the [`Refill`], or
-    /// `None` when nothing needs one. A refill accounts for every write of
+    /// Refill `field`: `fill` is handed the days the field has cached and
+    /// the writes not accounted for, its own and every field's (`''`), and
+    /// answers with the [`Refill`], or `None` when nothing needs one. It
+    /// reads and computes on a view, before the write lock (da-8i7f0); a
+    /// write landing meanwhile has it compute again, so what it records
+    /// fresh is what it read stale. A refill accounts for every write of
     /// the field.
     pub fn stats_cache_fill<E: From<DatumError>>(
         &self,
         field: &str,
         stamp: &str,
-        fill: impl FnOnce(
+        mut fill: impl FnMut(
             Option<(String, String)>,
             Vec<Dirty>,
         ) -> std::result::Result<Option<Refill>, E>,
     ) -> std::result::Result<(), E> {
-        // IMMEDIATE, as every transaction datum opens (`configure_connection`).
-        let tx = self
-            .conn
-            .unchecked_transaction()
+        self.compute_then_write(|view| {
+            let dirty = (view
+                .conn()
+                .prepare("SELECT field, dur, at FROM stats_cache_dirty WHERE field IN (?1, '')"))
+            .and_then(|mut s| {
+                s.query_map(params![field], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                    .collect::<rusqlite::Result<_>>()
+            })
             .map_err(DatumError::from)?;
-        let dirty = (tx
-            .prepare("SELECT field, dur, at FROM stats_cache_dirty WHERE field IN (?1, '')"))
-        .and_then(|mut s| {
-            s.query_map(params![field], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
-                .collect::<rusqlite::Result<_>>()
+            let mut batch = WriteBatch::on(view.seen());
+            if let Some(refill) = fill(self.stats_cache_through(field)?, dirty)? {
+                refill_batch(&mut batch, field, stamp, &refill);
+            }
+            Ok((batch, ()))
         })
-        .map_err(DatumError::from)?;
-        if let Some(refill) = fill(self.stats_cache_through(field)?, dirty)? {
-            self.stats_cache_write(field, stamp, &refill)?;
-        }
-        tx.commit().map_err(DatumError::from)?;
-        Ok(())
-    }
-
-    fn stats_cache_write(&self, field: &str, stamp: &str, refill: &Refill) -> Result<()> {
-        self.conn.execute(
-            "INSERT OR REPLACE INTO _meta (key, value) VALUES ('stats_cache', ?1)",
-            params![stamp],
-        )?;
-        if let Some(day) = &refill.zone {
-            self.conn.execute(
-                "UPDATE stats_cache_through SET day = min(day, ?1)",
-                params![day],
-            )?;
-        }
-        let from = refill.from.as_deref().unwrap_or_default();
-        self.conn.execute(
-            "DELETE FROM stats_cache WHERE field = ?1 AND day >= ?2",
-            params![field, from],
-        )?;
-        self.conn.execute(
-            "DELETE FROM stats_cache_days WHERE field = ?1 AND day >= ?2",
-            params![field, from],
-        )?;
-        let mut state = self.conn.prepare_cached(
-            "INSERT INTO stats_cache (field, day, state, count, seconds, class)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        )?;
-        let mut span = self.conn.prepare_cached(
-            "INSERT INTO stats_cache_days (field, day, first, last) VALUES (?1, ?2, ?3, ?4)",
-        )?;
-        for d in &refill.days {
-            for s in &d.states {
-                state.execute(params![field, d.day, s.state, s.count, s.seconds, s.class])?;
-            }
-            if let Some((first, last)) = &d.span {
-                span.execute(params![field, d.day, first, last])?;
-            }
-        }
-        self.conn.execute(
-            "INSERT OR REPLACE INTO stats_cache_through (field, lo, day) VALUES (?1, ?2, ?3)",
-            params![field, refill.lo, refill.through],
-        )?;
-        // Inside the lock `fill` took: exactly the rows it was handed.
-        self.conn.execute(
-            "DELETE FROM stats_cache_dirty WHERE field IN (?1, '')",
-            params![field],
-        )?;
-        Ok(())
     }
 
     /// `field`'s cached days in `[from, until)` (from the first for

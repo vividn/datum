@@ -50,43 +50,39 @@ impl Db {
         token: &str,
         resolution: crate::integrity::Resolution,
     ) -> Result<crate::integrity::IntegrityWarning> {
-        let warning = self
-            .get_integrity_warning(token)?
-            .ok_or_else(|| DatumError::NotFound(format!("integrity warning {token}")))?;
-        if warning.resolution.is_some() {
-            return Err(DatumError::Other(format!(
-                "integrity warning {} already resolved ({})",
-                warning.hid,
-                warning.resolution.clone().unwrap_or_default()
-            )));
-        }
-        let tx = self.conn.unchecked_transaction()?;
-        match resolution {
-            crate::integrity::Resolution::CloseOlder
-            | crate::integrity::Resolution::AutoCloseOlder => {
-                if let Some(older) = warning.remote_entry.as_ref() {
-                    crate::integrity::close_older_at(
-                        self,
-                        older,
-                        warning.local_entry.occur_time.as_ref(),
-                    )?;
+        // Read before the lock, and resolved on the database it was read
+        // from (da-8i7f0).
+        let warning = self.compute_then_write_with(
+            |_| self.pending_warning(token),
+            |tx, warning| {
+                match resolution {
+                    crate::integrity::Resolution::CloseOlder
+                    | crate::integrity::Resolution::AutoCloseOlder => {
+                        if let Some(older) = warning.remote_entry.as_ref() {
+                            crate::integrity::close_older_at(
+                                self,
+                                older,
+                                warning.local_entry.occur_time.as_ref(),
+                            )?;
+                        }
+                    }
+                    crate::integrity::Resolution::TakeLocal => {
+                        rewrite_entry_to_snapshot(tx, &warning.local_entry)?;
+                    }
+                    crate::integrity::Resolution::TakeRemote => {
+                        if let Some(remote) = warning.remote_entry.as_ref() {
+                            rewrite_entry_to_snapshot(tx, remote)?;
+                        }
+                    }
+                    crate::integrity::Resolution::Edit | crate::integrity::Resolution::KeepBoth => {
+                        // Edit: caller wrote the merged entry separately (see
+                        // resolve_integrity_warning_with_edited); KeepBoth: no DB mutation.
+                    }
                 }
-            }
-            crate::integrity::Resolution::TakeLocal => {
-                rewrite_entry_to_snapshot(&tx, &warning.local_entry)?;
-            }
-            crate::integrity::Resolution::TakeRemote => {
-                if let Some(remote) = warning.remote_entry.as_ref() {
-                    rewrite_entry_to_snapshot(&tx, remote)?;
-                }
-            }
-            crate::integrity::Resolution::Edit | crate::integrity::Resolution::KeepBoth => {
-                // Edit: caller wrote the merged entry separately (see
-                // resolve_integrity_warning_with_edited); KeepBoth: no DB mutation.
-            }
-        }
-        crate::integrity::mark_resolved(&tx, &warning.id, resolution, Utc::now())?;
-        tx.commit()?;
+                crate::integrity::mark_resolved(tx, &warning.id, resolution, Utc::now())?;
+                Ok(warning)
+            },
+        )?;
         Ok(self
             .get_integrity_warning(&warning.id)?
             .expect("just-resolved warning vanished"))
@@ -100,6 +96,26 @@ impl Db {
         token: &str,
         edited: &Entry,
     ) -> Result<crate::integrity::IntegrityWarning> {
+        let warning = self.compute_then_write_with(
+            |_| self.pending_warning(token),
+            |tx, warning| {
+                rewrite_entry_to_snapshot(tx, edited)?;
+                crate::integrity::mark_resolved(
+                    tx,
+                    &warning.id,
+                    crate::integrity::Resolution::Edit,
+                    Utc::now(),
+                )?;
+                Ok(warning)
+            },
+        )?;
+        Ok(self
+            .get_integrity_warning(&warning.id)?
+            .expect("just-resolved warning vanished"))
+    }
+
+    /// The warning `token` names, while it is pending.
+    fn pending_warning(&self, token: &str) -> Result<crate::integrity::IntegrityWarning> {
         let warning = self
             .get_integrity_warning(token)?
             .ok_or_else(|| DatumError::NotFound(format!("integrity warning {token}")))?;
@@ -110,18 +126,7 @@ impl Db {
                 warning.resolution.clone().unwrap_or_default()
             )));
         }
-        let tx = self.conn.unchecked_transaction()?;
-        rewrite_entry_to_snapshot(&tx, edited)?;
-        crate::integrity::mark_resolved(
-            &tx,
-            &warning.id,
-            crate::integrity::Resolution::Edit,
-            Utc::now(),
-        )?;
-        tx.commit()?;
-        Ok(self
-            .get_integrity_warning(&warning.id)?
-            .expect("just-resolved warning vanished"))
+        Ok(warning)
     }
 
     /// Count of pending integrity warnings (`resolution IS NULL`). The
@@ -150,10 +155,11 @@ impl Db {
         now: chrono::DateTime<Utc>,
         min_age_secs: i64,
     ) -> Result<Vec<crate::integrity::IntegrityWarning>> {
-        let tx = self.conn.unchecked_transaction()?;
-        let applied = crate::integrity::auto_resolve_pending(self, &tx, now, min_age_secs)?;
-        tx.commit()?;
-        Ok(applied)
+        // The eligible warnings are found before the lock (da-8i7f0).
+        self.compute_then_write_with(
+            |view| crate::integrity::auto_resolvable(view.conn(), now, min_age_secs),
+            |tx, pending| crate::integrity::auto_resolve(self, tx, now, pending),
+        )
     }
 
     /// Count of live ongoing entries on `field`. The `now` view uses this

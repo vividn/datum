@@ -107,60 +107,62 @@ impl Db {
         )?;
         // One transaction: a run that fails leaves nothing, the device's
         // key included.
-        let tx = self.conn.unchecked_transaction()?;
-        // What the device saw of each entry (its create), and its row then.
-        let mut seen = Vec::new();
-        for i in 0..=n {
-            let mut at = DatumTime::now();
-            at.utc -= chrono::Duration::minutes(i as i64 + 1);
-            at.refresh_offset()?;
-            let state = Some(json!("logged"));
-            let e = Entry::new("debug", Verb::Point, state, None, Some(at), None, "debug");
-            insert_entry_in_tx_pub(&tx, &e, ConflictStrategy::Ignore)?;
-            let base = fetch_by_hid(&tx, e.hid.as_str())?
-                .ok_or_else(|| DatumError::NotFound(e.hid.0.clone()))?;
-            seen.push((vector_where(&tx, Some(e.hid.as_str()))?, base));
-        }
-        for (i, (_, base)) in seen.iter().enumerate() {
-            match i == n {
-                true => soft_delete_in_tx(&tx, base.hid.as_str(), ChangeKind::UserEdit, None)
-                    .map(drop)?,
-                false => save_existing_entry_with_kind_in_tx(
-                    &tx,
-                    &edited(base, "edited here"),
-                    ChangeKind::UserEdit,
-                )?,
+        // Made-up data in a scratch database: every write of it is one.
+        let (seen, applied) = self.write_with(|tx| {
+            // What the device saw of each entry (its create), and its row then.
+            let mut seen = Vec::new();
+            for i in 0..=n {
+                let mut at = DatumTime::now();
+                at.utc -= chrono::Duration::minutes(i as i64 + 1);
+                at.refresh_offset()?;
+                let state = Some(json!("logged"));
+                let e = Entry::new("debug", Verb::Point, state, None, Some(at), None, "debug");
+                insert_entry_in_tx_pub(tx, &e, ConflictStrategy::Ignore)?;
+                let base = fetch_by_hid(tx, e.hid.as_str())?
+                    .ok_or_else(|| DatumError::NotFound(e.hid.0.clone()))?;
+                seen.push((vector_where(tx, Some(e.hid.as_str()))?, base));
             }
-        }
-        // The device's edits come after this copy's, so they win the keys;
-        // the delete stands whatever the clocks say.
-        let mut at = parse_hlc(&next_hlc(&tx)?);
-        let mut lines = Vec::new();
-        for (seq, (deps, base)) in (first..).zip(&seen) {
-            let (ms, counter) = at.unwrap_or_default();
-            let mut v = json!({
-                "endpoint": device,
-                "seq": seq,
-                "hlc": format_hlc(ms, counter),
-                "slug": base.slug.0,
-                "hid": base.hid.as_str(),
-                "kind": "update",
-                "field": base.field,
-                "raw": "debug conflicts (the debug device)",
-                "alias_chain": null,
-                "effect": diff(base, &edited(base, "edited there")),
-                "deps": deps,
-            });
-            v["sig"] = hex(&key.sign(&digest(&v)).to_bytes()).into();
-            lines.push(canonical_json(&v));
-            at = Some(advance(at, now_ms()));
-        }
-        tx.execute(
-            "INSERT OR REPLACE INTO _meta (key, value) VALUES (?1, ?2)",
-            params![DEBUG_DEVICE, hex(&key.to_bytes())],
-        )?;
-        let applied = apply_in(&tx, &lines.join("\n"))?;
-        tx.commit()?;
+            for (i, (_, base)) in seen.iter().enumerate() {
+                match i == n {
+                    true => soft_delete_in_tx(tx, base.hid.as_str(), ChangeKind::UserEdit, None)
+                        .map(drop)?,
+                    false => save_existing_entry_with_kind_in_tx(
+                        tx,
+                        &edited(base, "edited here"),
+                        ChangeKind::UserEdit,
+                    )?,
+                }
+            }
+            // The device's edits come after this copy's, so they win the keys;
+            // the delete stands whatever the clocks say.
+            let mut at = parse_hlc(&next_hlc(tx)?);
+            let mut lines = Vec::new();
+            for (seq, (deps, base)) in (first..).zip(&seen) {
+                let (ms, counter) = at.unwrap_or_default();
+                let mut v = json!({
+                    "endpoint": device,
+                    "seq": seq,
+                    "hlc": format_hlc(ms, counter),
+                    "slug": base.slug.0,
+                    "hid": base.hid.as_str(),
+                    "kind": "update",
+                    "field": base.field,
+                    "raw": "debug conflicts (the debug device)",
+                    "alias_chain": null,
+                    "effect": diff(base, &edited(base, "edited there")),
+                    "deps": deps,
+                });
+                v["sig"] = hex(&key.sign(&digest(&v)).to_bytes()).into();
+                lines.push(canonical_json(&v));
+                at = Some(advance(at, now_ms()));
+            }
+            tx.execute(
+                "INSERT OR REPLACE INTO _meta (key, value) VALUES (?1, ?2)",
+                params![DEBUG_DEVICE, hex(&key.to_bytes())],
+            )?;
+            let applied = apply_in(tx, &lines.join("\n"))?;
+            Ok::<_, DatumError>((seen, applied))
+        })?;
         Ok(DebugConflicts {
             device,
             hids: seen.into_iter().map(|(_, e)| e.hid.0).collect(),

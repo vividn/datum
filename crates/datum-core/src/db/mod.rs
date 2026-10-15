@@ -43,11 +43,13 @@ mod time;
 mod tombstone;
 mod types;
 mod view;
+pub(crate) mod write;
 mod zone_timeline;
+pub use write::{Seen, View, WriteBatch};
 
 use std::cell::{Cell, OnceCell, RefCell};
 
-use rusqlite::{Connection, TransactionBehavior};
+use rusqlite::Connection;
 
 use crate::error::{DatumError, Result};
 
@@ -181,16 +183,12 @@ impl Db {
     /// 2,410, against 152 and 1,740 with this. The cache grows only as pages
     /// are read; a small command stays small.
     ///
-    /// Every transaction opens IMMEDIATE (da-5pulr): it takes the write lock
-    /// at `BEGIN`, where `busy_timeout` waits for it. A DEFERRED one takes it
-    /// at its first write, and if it read first while another connection
-    /// committed, the upgrade fails at once with SQLITE_BUSY — the busy
-    /// handler is not called, since waiting cannot refresh a stale snapshot.
-    /// Three processes logging at once lost 19 of 30 writes that way, each
-    /// in ~10 ms. Every transaction datum opens writes, so this is set once
-    /// here rather than at each site, and a new site cannot forget it.
+    /// Transactions are opened by `db::write` alone (da-8i7f0): a write
+    /// IMMEDIATE, taking the lock at `BEGIN` where `busy_timeout` waits for
+    /// it (da-5pulr: a DEFERRED write that read first fails at once with
+    /// SQLITE_BUSY when another connection committed meanwhile), and a read
+    /// DEFERRED, which takes no lock a writer waits on.
     fn configure_connection(conn: &mut Connection) -> Result<()> {
-        conn.set_transaction_behavior(TransactionBehavior::Immediate);
         // A bulk write runs a few dozen statements a row: the default 16
         // slots evicted each before its next use, and a statement on
         // `entries` compiles its triggers too (da-f4vrr).
@@ -464,25 +462,27 @@ impl Db {
         &self,
         within: impl FnOnce(&Connection) -> Result<()>,
     ) -> Result<Vec<String>> {
-        let tx = self.conn.unchecked_transaction()?;
-        let tables: Vec<String> = tx
-            .prepare(
-                "SELECT name FROM sqlite_master WHERE type = 'table' \
+        // One transaction over the whole file, by design (da-dfmg8 above).
+        let tables = write::whole(&self.conn, |tx| {
+            let tables: Vec<String> = tx
+                .prepare(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' \
                  AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' ORDER BY name",
-            )?
-            .query_map([], |row| row.get(0))?
-            .collect::<rusqlite::Result<_>>()?;
-        // IF EXISTS: dropping a virtual table drops its shadow tables,
-        // which are later in the list (da-k3uqd).
-        for t in &tables {
-            let t = t.replace('"', "\"\"");
-            tx.execute(&format!("DROP TABLE IF EXISTS \"{t}\""), [])?;
-        }
-        tx.execute_batch(include_str!("../schema.sql"))?;
-        tx.execute_batch(STATS_CACHE_SQL)?;
-        crate::migrations::set_schema_version(&tx, crate::migrations::CURRENT_SCHEMA_VERSION)?;
-        within(&tx)?;
-        tx.commit()?;
+                )?
+                .query_map([], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            // IF EXISTS: dropping a virtual table drops its shadow tables,
+            // which are later in the list (da-k3uqd).
+            for t in &tables {
+                let t = t.replace('"', "\"\"");
+                tx.execute(&format!("DROP TABLE IF EXISTS \"{t}\""), [])?;
+            }
+            tx.execute_batch(include_str!("../schema.sql"))?;
+            tx.execute_batch(STATS_CACHE_SQL)?;
+            crate::migrations::set_schema_version(tx, crate::migrations::CURRENT_SCHEMA_VERSION)?;
+            within(tx)?;
+            Ok(tables)
+        })?;
         self.conn.execute_batch("VACUUM")?;
         // A kit index is this device's, derived from the definitions the
         // file holds (da-fwwtn). One that will not build is no reason not

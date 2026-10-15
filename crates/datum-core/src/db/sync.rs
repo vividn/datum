@@ -2361,99 +2361,100 @@ impl Db {
     /// it back). Wherever the edit arrives, the conflicts are gone. The
     /// entry as it stands after.
     pub fn resolve_conflicts(&self, hid: &str, picks: &Map<String, Value>) -> Result<Entry> {
-        let tx = self.conn.unchecked_transaction()?;
-        let ep = endpoint(&tx)?;
-        if let Some(why) = read_only(&tx, &ep)? {
-            return Err(DatumError::Other(why.into()));
-        }
-        let conflicts: Option<String> = tx
-            .query_row(
-                "SELECT conflicts FROM entries WHERE hid = ?1",
-                params![hid],
-                |r| r.get(0),
-            )
-            .optional()?
-            .flatten();
-        let (Some(pre), Some(Value::Object(conflicts))) = (
-            fetch_by_hid(&tx, hid)?,
-            conflicts.map(|c| serde_json::from_str(&c)).transpose()?,
-        ) else {
-            return Err(DatumError::Other(format!("{hid} has no conflicts")));
-        };
-        // A data key is picked as it is typed, `cups` for `data.cups`.
-        let mut named = Map::new();
-        for (k, v) in picks {
-            let key = [k.clone(), format!("data.{k}")]
-                .into_iter()
-                .find(|key| conflicts.contains_key(key))
-                .ok_or_else(|| DatumError::Other(format!("{hid} has no conflict on {k}")))?;
-            named.insert(key, v.clone());
-        }
-        let picks = named;
-        let shown = row(&pre);
-        let (mut set, mut unset) = (Map::new(), Vec::new());
-        for k in conflicts.keys() {
-            let v = match (k.as_str(), picks.get(k)) {
-                ("deleted", pick) => {
-                    let gone = match pick {
-                        None => pre.deleted_at.is_some(),
-                        Some(p) => p.as_bool().ok_or_else(|| {
-                            DatumError::Other("deleted takes true or false".into())
-                        })?,
-                    };
-                    match gone {
-                        true => {
-                            let at = pre.deleted_at.unwrap_or_else(Utc::now);
-                            set.insert("deleted_at".into(), json!(at));
-                        }
-                        false => unset.push(json!("deleted_at")),
-                    }
-                    continue;
-                }
-                (_, Some(v)) => v.clone(),
-                (k, None) => match k.strip_prefix("data.") {
-                    Some(dk) => shown.get("data").and_then(|d| d.get(dk)).cloned(),
-                    None => shown.get(k).cloned(),
-                }
-                .unwrap_or(Value::Null),
+        // One entry: its reads are of the rows it writes.
+        self.write_with(|tx| {
+            let ep = endpoint(tx)?;
+            if let Some(why) = read_only(tx, &ep)? {
+                return Err(DatumError::Other(why.into()));
+            }
+            let conflicts: Option<String> = tx
+                .query_row(
+                    "SELECT conflicts FROM entries WHERE hid = ?1",
+                    params![hid],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .flatten();
+            let (Some(pre), Some(Value::Object(conflicts))) = (
+                fetch_by_hid(tx, hid)?,
+                conflicts.map(|c| serde_json::from_str(&c)).transpose()?,
+            ) else {
+                return Err(DatumError::Other(format!("{hid} has no conflicts")));
             };
-            match v {
-                Value::Null => unset.push(json!(k)),
-                v => {
-                    set.insert(k.clone(), v);
+            // A data key is picked as it is typed, `cups` for `data.cups`.
+            let mut named = Map::new();
+            for (k, v) in picks {
+                let key = [k.clone(), format!("data.{k}")]
+                    .into_iter()
+                    .find(|key| conflicts.contains_key(key))
+                    .ok_or_else(|| DatumError::Other(format!("{hid} has no conflict on {k}")))?;
+                named.insert(key, v.clone());
+            }
+            let picks = named;
+            let shown = row(&pre);
+            let (mut set, mut unset) = (Map::new(), Vec::new());
+            for k in conflicts.keys() {
+                let v = match (k.as_str(), picks.get(k)) {
+                    ("deleted", pick) => {
+                        let gone = match pick {
+                            None => pre.deleted_at.is_some(),
+                            Some(p) => p.as_bool().ok_or_else(|| {
+                                DatumError::Other("deleted takes true or false".into())
+                            })?,
+                        };
+                        match gone {
+                            true => {
+                                let at = pre.deleted_at.unwrap_or_else(Utc::now);
+                                set.insert("deleted_at".into(), json!(at));
+                            }
+                            false => unset.push(json!("deleted_at")),
+                        }
+                        continue;
+                    }
+                    (_, Some(v)) => v.clone(),
+                    (k, None) => match k.strip_prefix("data.") {
+                        Some(dk) => shown.get("data").and_then(|d| d.get(dk)).cloned(),
+                        None => shown.get(k).cloned(),
+                    }
+                    .unwrap_or(Value::Null),
+                };
+                match v {
+                    Value::Null => unset.push(json!(k)),
+                    v => {
+                        set.insert(k.clone(), v);
+                    }
                 }
             }
-        }
-        let picked = json!({ "set": set, "unset": unset });
-        let mut r = Some(shown);
-        fold_into(&mut r, &picked);
-        let mut post = entry_from(r.unwrap_or_default())?;
-        post.modify_time = Utc::now();
-        history::record(&tx, &pre, ChangeKind::UserEdit)?;
-        apply_entry_state(&tx, &post)?;
-        let post = fetch_by_hid(&tx, hid)?.unwrap_or(post);
-        // The edit's own changes, and every contested key even where it
-        // keeps the value: setting it is what says the edit saw each side.
-        let mut effect = diff(&pre, &post);
-        for (k, v) in set {
-            effect["set"][k] = v;
-        }
-        for k in unset {
-            match effect["unset"].as_array_mut() {
-                Some(a) if !a.contains(&k) => a.push(k),
-                Some(_) => {}
-                None => effect["unset"] = json!([k]),
+            let picked = json!({ "set": set, "unset": unset });
+            let mut r = Some(shown);
+            fold_into(&mut r, &picked);
+            let mut post = entry_from(r.unwrap_or_default())?;
+            post.modify_time = Utc::now();
+            history::record(tx, &pre, ChangeKind::UserEdit)?;
+            apply_entry_state(tx, &post)?;
+            let post = fetch_by_hid(tx, hid)?.unwrap_or(post);
+            // The edit's own changes, and every contested key even where it
+            // keeps the value: setting it is what says the edit saw each side.
+            let mut effect = diff(&pre, &post);
+            for (k, v) in set {
+                effect["set"][k] = v;
             }
-        }
-        let kind = match effect.get("deleted").and_then(Value::as_bool) {
-            Some(true) => "delete",
-            Some(false) => "undelete",
-            None => "update",
-        };
-        push_entry(&tx, &ep, &post, kind, effect)?;
-        refresh_conflicts(&tx, hid)?;
-        tx.commit()?;
-        Ok(post)
+            for k in unset {
+                match effect["unset"].as_array_mut() {
+                    Some(a) if !a.contains(&k) => a.push(k),
+                    Some(_) => {}
+                    None => effect["unset"] = json!([k]),
+                }
+            }
+            let kind = match effect.get("deleted").and_then(Value::as_bool) {
+                Some(true) => "delete",
+                Some(false) => "undelete",
+                None => "update",
+            };
+            push_entry(tx, &ep, &post, kind, effect)?;
+            refresh_conflicts(tx, hid)?;
+            Ok(post)
+        })
     }
 
     /// From here on this thread works on this file as the copy whose endpoint
@@ -2482,12 +2483,11 @@ impl Db {
     /// member of the chain: the copy joins it again. Returns the new id.
     /// Refused, as a session's copy is, it changes nothing (da-otz0d).
     pub fn sync_rekey(&self) -> Result<String> {
-        let tx = self.conn.unchecked_transaction()?;
-        // Blanked, not deleted: the pause is this copy's, whatever its key.
-        tx.execute("UPDATE sync_local SET endpoint_secret = ''", [])?;
-        let id = endpoint(&tx)?.id;
-        tx.commit()?;
-        Ok(id)
+        self.write_with(|tx| {
+            // Blanked, not deleted: the pause is this copy's, whatever its key.
+            tx.execute("UPDATE sync_local SET endpoint_secret = ''", [])?;
+            Ok(endpoint(tx)?.id)
+        })
     }
 
     /// This copy's version vector: per endpoint, the highest seq applied.
@@ -2518,82 +2518,98 @@ impl Db {
     ) -> Result<Vec<String>> {
         pause::refuse_paused(&self.conn)?;
         debug::refuse(&self.conn)?;
-        let tx = self.conn.unchecked_transaction()?;
+        // Outside any transaction, where minting or moving its key on first
+        // need waits for the lock as a write.
+        let (mine, signed) = own_head(&self.conn)?;
         // A vector holding more of this copy's ops than it signed was made
         // by another copy signing with this key.
-        let (mine, signed) = own_head(&tx)?;
         if since.get(&mine).is_some_and(|s| *s > signed) {
             return Err(DatumError::Other(SHARED_KEY.into()));
         }
         // A reader never relays: it serves its own ops alone, and signs no
         // baselines, which its chain would refuse.
-        let reader = read_only(&tx, &endpoint(&tx)?)?.is_some();
-        let chain = Chain::load(&tx)?;
-        let uncovered: Vec<Entry> = tx
-            .prepare("SELECT * FROM entries WHERE hid NOT IN (SELECT hid FROM ops) ORDER BY hid")?
-            .query_map([], row_to_entry)?
-            .collect::<rusqlite::Result<_>>()?;
-        if !uncovered.is_empty() && !reader {
-            let ep = endpoint(&tx)?;
-            for e in &uncovered {
-                push_entry(&tx, &ep, e, "baseline", create_effect(e))?;
+        let reader = read_only(&self.conn, &endpoint(&self.conn)?)?.is_some();
+        // The baselines are the one write a serve makes, and take the lock
+        // for themselves alone; what is served is read after, on a snapshot
+        // that holds none (da-8i7f0).
+        const UNCOVERED: &str =
+            "SELECT * FROM entries WHERE hid NOT IN (SELECT hid FROM ops) ORDER BY hid";
+        if !reader && self.conn.prepare(UNCOVERED)?.exists([])? {
+            self.compute_then_write_with(
+                |view| {
+                    view.conn()
+                        .prepare(UNCOVERED)?
+                        .query_map([], row_to_entry)?
+                        .collect::<rusqlite::Result<Vec<Entry>>>()
+                        .map_err(DatumError::from)
+                },
+                |tx, uncovered| {
+                    let ep = endpoint(tx)?;
+                    for e in &uncovered {
+                        push_entry(tx, &ep, e, "baseline", create_effect(e))?;
+                    }
+                    Ok(())
+                },
+            )?;
+        }
+        self.read(|view| {
+            let tx = view.conn();
+            let chain = Chain::load(tx)?;
+            // The seqs a purge order took (da-qzrj9) on one line after the
+            // order, so a copy behind holds it when it reads them; and of a
+            // dissolved chain nothing but they and the records.
+            let dissolved = chain.dissolved().is_some();
+            let served = Chain::served(tx)?;
+            if let Some(filter) = peer.and_then(|p| served.filter(p)).filter(|_| !dissolved) {
+                let (lines, _) =
+                    filtered_lines(tx, since, filter, &chain, reader.then_some(&mine))?;
+                return Ok(lines);
             }
-        }
-        // The seqs a purge order took (da-qzrj9) on one line after the
-        // order, so a copy behind holds it when it reads them; and of a
-        // dissolved chain nothing but they and the records.
-        let dissolved = chain.dissolved().is_some();
-        let served = Chain::served(&tx)?;
-        if let Some(filter) = peer.and_then(|p| served.filter(p)).filter(|_| !dissolved) {
-            let (lines, _) = filtered_lines(&tx, since, filter, &chain, reader.then_some(&mine))?;
-            tx.commit()?;
-            return Ok(lines);
-        }
-        let (mut lines, mut purged, mut after) = (Vec::new(), Map::new(), 0);
-        let mut stmt = tx.prepare(
-            "SELECT endpoint, seq, body, applied, hid FROM ops WHERE applied > 0
+            let (mut lines, mut purged, mut after) = (Vec::new(), Map::new(), 0);
+            let mut stmt = tx.prepare(
+                "SELECT endpoint, seq, body, applied, hid FROM ops WHERE applied > 0
              ORDER BY endpoint, seq",
-        )?;
-        let rows = stmt.query_map([], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, i64>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, i64>(3)?,
-                r.get::<_, String>(4)?,
-            ))
-        })?;
-        for row in rows {
-            let (e, seq, body, applied, hid) = row?;
-            let sent = seq > since.get(&e).copied().unwrap_or(0)
-                || overlap && e == mine && since.get(&e) == Some(&seq) && !body.is_empty();
-            // A member's refused op goes too, for every copy to refuse
-            // itself: the ops after it are counted past it. A non-member's
-            // stays here.
-            if !sent || reader && e != mine || applied == 2 && chain.member(&e).is_none() {
-                continue;
-            }
-            if applied == 3 {
-                let runs = purged.entry(e).or_insert_with(|| json!([]));
-                let runs = runs.as_array_mut().expect("an array");
-                match runs.last_mut() {
-                    Some(r) if r[1] == seq - 1 => r[1] = seq.into(),
-                    _ => runs.push(json!([seq, seq])),
+            )?;
+            let rows = stmt.query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, i64>(3)?,
+                    r.get::<_, String>(4)?,
+                ))
+            })?;
+            for row in rows {
+                let (e, seq, body, applied, hid) = row?;
+                let sent = seq > since.get(&e).copied().unwrap_or(0)
+                    || overlap && e == mine && since.get(&e) == Some(&seq) && !body.is_empty();
+                // A member's refused op goes too, for every copy to refuse
+                // itself: the ops after it are counted past it. A non-member's
+                // stays here.
+                if !sent || reader && e != mine || applied == 2 && chain.member(&e).is_none() {
+                    continue;
                 }
-            } else if hid == CHAIN_HID || !dissolved {
-                let wipe = |r: Value| r["effect"]["type"] == "wipe";
-                if hid == CHAIN_HID && serde_json::from_str(&body).is_ok_and(wipe) {
-                    after = lines.len() + 1;
+                if applied == 3 {
+                    let runs = purged.entry(e).or_insert_with(|| json!([]));
+                    let runs = runs.as_array_mut().expect("an array");
+                    match runs.last_mut() {
+                        Some(r) if r[1] == seq - 1 => r[1] = seq.into(),
+                        _ => runs.push(json!([seq, seq])),
+                    }
+                } else if hid == CHAIN_HID || !dissolved {
+                    let wipe = |r: Value| r["effect"]["type"] == "wipe";
+                    if hid == CHAIN_HID && serde_json::from_str(&body).is_ok_and(wipe) {
+                        after = lines.len() + 1;
+                    }
+                    lines.push(body);
                 }
-                lines.push(body);
             }
-        }
-        if !purged.is_empty() {
-            lines.insert(after, json!({ "purged": purged }).to_string());
-        }
-        drop(stmt);
-        tx.commit()?;
-        Ok(lines)
+            if !purged.is_empty() {
+                lines.insert(after, json!({ "purged": purged }).to_string());
+            }
+            drop(stmt);
+            Ok(lines)
+        })
     }
 
     /// Apply op lines. Each signature is checked (a bad one is refused and
@@ -2641,9 +2657,9 @@ impl Db {
                 false => chunk.join("\n"),
             };
             let t = Instant::now();
-            let tx = self.conn.unchecked_transaction()?;
-            let c = apply_in(&tx, &chunk)?;
-            tx.commit()?;
+            // Chunked by the clock (da-2ejbs): what an op folds over is
+            // its own entry's ops, read as it writes.
+            let c = self.write_with(|tx| apply_in(tx, &chunk))?;
             self.apply_run.set(Some((run, Instant::now())));
             s.applied += c.applied;
             s.already_had += c.already_had;
