@@ -523,10 +523,11 @@ export const inviting = writable<string | null>(null);
  * and the result says what native `connect` says. The argv it echoes holds
  * no ticket. A bare `sync chain invite` (da-5g0nk) waits for a redeemer, which
  * no prompt line can show, so it opens the Sync widget with the invite under
- * way there. Null for anything else — `--help` and an invite's flags too —
- * which runs as typed.
+ * way there, as a bare `sync` opens it (da-s9r58). Null for anything
+ * else — `--help` and an invite's flags too — which runs as typed.
  */
 export function syncCommand(argv: string[]): Promise<RunResult> | null {
+	if (words(argv).join(' ') === 'sync') return syncHere(argv);
 	if (chainArgs(argv, 'invite')?.length === 0) return inviteHere(argv);
 	const [ticket, ...rest] = chainArgs(argv, 'connect') ?? [];
 	if (!ticket || ticket.startsWith('-') || rest.length) return null;
@@ -546,6 +547,17 @@ export function syncCommand(argv: string[]): Promise<RunResult> | null {
 		}),
 		(e) => ({ argv: shown, code: 1, stdout: '', stderr: `error: ${(e as Error).message}` })
 	);
+}
+
+/**
+ * A bare `sync` (da-s9r58) opens the Sync widget, where its devices stand —
+ * or how to start a chain, outside one — and asks the leader for a round,
+ * which does nothing outside a chain or while paused.
+ */
+async function syncHere(argv: string[]): Promise<RunResult> {
+	void syncNow(dbOf(argv)).catch(() => {});
+	await (await import('./layout/shell.js')).openPlace('sync');
+	return { argv, code: 0, stdout: 'sync is in the sync widget: each device and how it stands, or how to start a chain', stderr: '' };
 }
 
 async function inviteHere(argv: string[]): Promise<RunResult> {
@@ -616,14 +628,19 @@ export function syncTouched(db: string): void {
 	else listen().postMessage({ db, touched: true });
 }
 
-/** The words after `sync chain <sub>` in `argv`, `--db` and its name left out wherever they stand; null for any other command. */
-function chainArgs(argv: string[], sub: string): string[] | null {
+/** `argv`'s words, `--db` and its name left out wherever they stand. */
+function words(argv: string[]): string[] {
 	const words: string[] = [];
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] === '--db') i++;
 		else if (!argv[i].startsWith('--db=')) words.push(argv[i]);
 	}
-	const [sync, chain, verb, ...rest] = words;
+	return words;
+}
+
+/** The words after `sync chain <sub>` in `argv`; null for any other command. */
+function chainArgs(argv: string[], sub: string): string[] | null {
+	const [sync, chain, verb, ...rest] = words(argv);
 	return sync === 'sync' && chain === 'chain' && verb === sub ? rest : null;
 }
 

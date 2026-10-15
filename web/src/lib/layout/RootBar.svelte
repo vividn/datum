@@ -58,7 +58,8 @@
 	backup files (layout/BackupsWidget.svelte), which it opens by
 	`openPlace` (da-ea5q2): a modal on a desktop, a tab on a phone. It
 	took the place of the root tab menu's `export backup…`, so a backup
-	has one home.
+	has one home. «Sync» beside it opens the Sync place the same way
+	(da-s9r58), a door a newcomer can see.
 
 	The other is «Reset default layouts» (da-jbcv). It held an act of that
 	shape once — «Reset all layouts…», which deleted every saved layout, on
@@ -134,7 +135,7 @@
 	import { keyOf, session } from './session.js';
 	import PaneMenu from './PaneMenu.svelte';
 	import { labelOf, titleOf } from './registry.js';
-	import { activate, close, keepTab, modified, open, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, versions } from './shell.js';
+	import { activate, close, keepTab, modified, open, openPlace, previews, resetDefaults, resetLayout, resetWidget, restore, save, saveAs, shippedTree, versions } from './shell.js';
 	import { reorders } from './reorder.js';
 	import { addEdge, moveTab } from './tree.js';
 	import type { BarEdge, Tab } from './types.js';
@@ -350,7 +351,7 @@
 
 	/**
 	 * The gear's menu: the page's own settings, which belong to no layout
-	 * and no pane — the backups, the act above, and which build is in front of you,
+	 * and no pane — the backups, sync, the act above, and which build is in front of you,
 	 * disabled, because it is a fact and not an act, with the word on the
 	 * beta under it (da-eue7y).
 	 *
@@ -360,6 +361,7 @@
 	 */
 	$: settings = [
 		{ label: 'Backups', act: 'open' as const, run: () => void openBackups() },
+		{ label: 'Sync', act: 'open' as const, run: () => void openPlace('sync') },
 		{ label: 'Reset default layouts', act: 'open' as const, run: doResetDefaults },
 		{ label: `${__DATUM_VERSION__} · ${__DATUM_COMMIT__}`, disabled: true },
 		{ label: `datum.day is early software. ${$storageSentence}`, note: true as const }
@@ -499,7 +501,7 @@
 		look="badge"
 		label="settings"
 		title="settings"
-		data-help="Settings for this whole page: Backups, where backups are planned, made and restored; Reset default layouts, which puts back the layouts datum ships with; and the version this is, with where this page keeps your data — datum.day is in beta."
+		data-help="Settings for this whole page: Backups, where backups are planned, made and restored; Sync, this page's devices and how each stands; Reset default layouts, which puts back the layouts datum ships with; and the version this is, with where this page keeps your data — datum.day is in beta."
 		class="gear"
 		aria-label="settings"
 		><svg class="cog" viewBox="-12 -12 24 24" width="20" height="20" aria-hidden="true">

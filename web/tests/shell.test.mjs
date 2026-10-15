@@ -265,19 +265,20 @@ describe('the shell', () => {
 			// draws it any more.
 			assert.equal(await bar.locator('.build').count(), 0, 'the build stamp is still on the bottom bar');
 			assert.equal(await page.locator('.root-bar .build').count(), 0, 'the build stamp is still on the root bar');
-			// Above it, the gear's acts: «Backups» (da-9ow8m), and «Reset
+			// Above it, the gear's acts: «Backups» (da-9ow8m), «Sync»
+			// (da-s9r58), and «Reset
 			// default layouts» (da-jbcv), which is the narrow half of the
 			// «Reset all layouts…» that deleted every saved layout on every
 			// device and went for it (da-luwe).
 			const gear = await gearItems(page);
 			assert.deepEqual(
 				gear.map((i) => i.label.replace(/^\S+ · \S+$/, 'the build stamp').replace(/^datum\.day is early software\. .+/, 'the beta note')),
-				['Backups', 'Reset default layouts', 'the build stamp', 'the beta note']
+				['Backups', 'Sync', 'Reset default layouts', 'the build stamp', 'the beta note']
 			);
-			assert.deepEqual(gear.map((i) => i.disabled), [false, false, true, false]);
+			assert.deepEqual(gear.map((i) => i.disabled), [false, false, false, true, false]);
 			// The stamp is the web's build, `3.0.<height>-beta · <sha7>`, and
 			// patch 0 where a shallow CI checkout cannot count (da-5172a, da-cv118).
-			assert.match(gear[2].label, /^3\.0\.\d+-beta · ([0-9a-f]{7}\+?|unknown)$/);
+			assert.match(gear[3].label, /^3\.0\.\d+-beta · ([0-9a-f]{7}\+?|unknown)$/);
 			// The acts are in the active tab's own menu, no icon row.
 			assert.equal(await page.locator('.root-bar .act').count(), 0, 'the icon row is still there');
 			// The NAME's slice in normal mode: what the tab shows and what it

@@ -498,3 +498,32 @@ describe('a place on a phone', () => {
 		);
 	});
 });
+
+// vividn, 2026-10-15: «yes typing sync should definitely open the sync widget
+// on the web, also add a sync menu in the gear» (da-s9r58). Before, a fresh
+// phone's typed `sync` left its answer behind the folded bar.
+describe('the ways into Sync, on a fresh phone', () => {
+	const fresh = { ...PHONE, home: null };
+
+	test('a typed bare `sync` opens the Sync place', async () => {
+		await withApp(async ({ page, errors }) => {
+			// Typed, not `submit`: a fresh phone's page has no REPL to echo it in.
+			const input = page.locator('.prompt-bar input');
+			await input.fill('sync');
+			await input.press('Enter');
+			await until(() => shown(page), (t) => t === 'sync');
+			await page.locator('.host[data-widget="sync"] .sync header').waitFor();
+			assert.deepEqual(errors, []);
+		}, fresh);
+	});
+
+	test('the gear lists Sync, which opens it', async () => {
+		await withApp(async ({ page, errors }) => {
+			await page.locator('.root-bar button.gear').click();
+			await page.getByRole('menuitem', { name: 'Sync', exact: true }).click();
+			await until(() => shown(page), (t) => t === 'sync');
+			await page.locator('.host[data-widget="sync"] .sync header').waitFor();
+			assert.deepEqual(errors, []);
+		}, fresh);
+	});
+});
