@@ -7,7 +7,8 @@ use common::run_cli;
 use datum_core::db::Db;
 use datum_core::field_spec::Render;
 use datum_core::kit_color::resolve_color;
-use datum_core::test_util::fresh_db;
+use datum_core::test_util::{fresh_db, logged_entries};
+use serde_json::json;
 
 /// Write `toml` as a kit file and install it with `extra` flags.
 fn install(db: &Db, toml: &str, extra: &[&str]) -> anyhow::Result<()> {
@@ -343,6 +344,52 @@ fn kit_export_round_trips_the_whole_field() {
     install(&again, &first, &[]).unwrap();
     assert_eq!(spec_json(&again, "mood"), spec_json(&db, "mood"));
     assert_eq!(export(&again), first);
+}
+
+/// da-d608p: a kit's `string_remainder` and `comment_remainder` log as
+/// `track -SR` and `track -C` do, export carries them back, and the pairs
+/// `track` refuses a kit refuses, installing nothing.
+#[test]
+fn a_kit_routes_leftover_words_as_track_does() {
+    let kit = "[kit]\nname = \"k\"\n\n[[field]]\nname = \"book\"\nverb = \"add\"\nid_keys = [\"id\"]\nremainder = \"title\"\nstring_remainder = true\n\n[[field]]\nname = \"tea\"\nverb = \"occur\"\ncomment_remainder = true\n";
+    let db = fresh_db();
+    install(&db, kit, &[]).unwrap();
+    run_cli(&["add", "book", "dune", "the", "spice"], &db).unwrap();
+    run_cli(&["tea", "green", "leaf"], &db).unwrap();
+    let data = |f| logged_entries(&db, f)[0].data.clone().unwrap();
+    assert_eq!(data("book"), json!({"id": "dune", "title": "the spice"}));
+    assert_eq!(data("tea"), json!({"comment": ["green leaf"]}));
+
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("out.toml");
+    run_cli(&["kit", "export", "k", &out.to_string_lossy()], &db).unwrap();
+    let exported = std::fs::read_to_string(&out).unwrap();
+    let again = fresh_db();
+    install(&again, &exported, &[]).unwrap();
+    for f in ["book", "tea"] {
+        assert_eq!(spec_json(&again, f), spec_json(&db, f), "{exported}");
+    }
+    assert!(spec_json(&again, "book")["string_remainder"] == true);
+    assert!(spec_json(&again, "tea")["comment_remainder"] == true);
+
+    for (bad, word) in [
+        (
+            kit.replace("remainder = \"title\"\n", ""),
+            "give remainder too",
+        ),
+        (
+            kit.replace(
+                "comment_remainder",
+                "remainder = \"kind\"\ncomment_remainder",
+            ),
+            "give one",
+        ),
+    ] {
+        let db = fresh_db();
+        let err = format!("{:#}", install(&db, &bad, &[]).unwrap_err());
+        assert!(err.contains(word), "{err}");
+        assert!(db.load_spec("book").unwrap().is_none(), "nothing installed");
+    }
 }
 
 /// An icon `spec set` refuses, a kit refuses with the same words, and a

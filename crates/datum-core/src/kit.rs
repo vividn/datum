@@ -107,6 +107,12 @@ pub struct FieldEntry {
     pub only_listed_states: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remainder: Option<String>,
+    /// The spec's `string_remainder` and `comment_remainder` (da-d608p):
+    /// `track -S -R <key>` and `track -C`, refused where `track` refuses them.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub string_remainder: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub comment_remainder: bool,
     /// No aliases are derived for the field: `[[alias]]` entries are its own.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub no_autoalias: bool,
@@ -542,6 +548,19 @@ impl FieldEntry {
             }
         };
 
+        if self.string_remainder && self.remainder.is_none() {
+            return Err(DatumError::Other(format!(
+                "kit field '{}': string_remainder joins the words remainder takes: give remainder too",
+                self.name
+            )));
+        }
+        if self.comment_remainder && self.remainder.is_some() {
+            return Err(DatumError::Other(format!(
+                "kit field '{}': comment_remainder and remainder both say where the leftover words go: give one",
+                self.name
+            )));
+        }
+
         let mut spec = FieldSpec::new(&self.name, action);
         spec.description = self.description;
         spec.subfields = self.subfields.into_iter().collect();
@@ -550,6 +569,8 @@ impl FieldEntry {
         spec.only_listed_keys = self.only_listed_keys;
         spec.only_listed_states = self.only_listed_states;
         spec.remainder = self.remainder;
+        spec.string_remainder = self.string_remainder;
+        spec.comment_remainder = self.comment_remainder;
         spec.no_autoalias = self.no_autoalias;
         spec.never_false = self.never_false;
         spec.color = color_resolved;
@@ -662,6 +683,8 @@ impl FieldEntry {
             only_listed_keys: spec.only_listed_keys,
             only_listed_states: spec.only_listed_states,
             remainder: spec.remainder.clone(),
+            string_remainder: spec.string_remainder,
+            comment_remainder: spec.comment_remainder,
             no_autoalias: spec.no_autoalias,
             never_false: spec.never_false,
             pos,
