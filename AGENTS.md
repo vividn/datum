@@ -376,7 +376,13 @@ storage takes (`sync_unfoldable`, an error naming it and why, which the check
 reads on past), and in a chain a row no op covers
 (`sync_no_op`, a warning: the next sync signs it). `datum sync refold` writes
 each stale row again from its ops and signs none, so a correct copy is
-unchanged; orphans it leaves as found. `datum sync diff <WHO>` asks one member
+unchanged; orphans it leaves as found. A copy does the same as it opens when
+its rows were folded under an older fold rule (da-sqpjt): `FOLD_RULE` in
+`db/sync.rs`, stamped in `_meta` `fold_rule` and bumped by any change to
+what the same ops fold to, schema change or not —
+`the_fold_rule_is_fingerprinted` fails on a change to that code until it is
+bumped or recorded as none. A copy on the current rule reads one row.
+`datum sync diff <WHO>` asks one member
 over a second ALPN, `datum/sync-diff/1`, which `serve` answers after the same
 handshake and a copy before it refuses: state hashes, then a hash per row by
 hid, then for each hid that differs the row and the ops each side holds

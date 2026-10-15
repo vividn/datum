@@ -334,6 +334,7 @@ impl Db {
             client_id: Default::default(),
             apply_run: Default::default(),
             last_migration: None,
+            refold_failed: Default::default(),
             path: None,
         };
         db.migrate(None)?;

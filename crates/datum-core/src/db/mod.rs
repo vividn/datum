@@ -122,6 +122,9 @@ pub struct Db {
     /// was already current. datum-core never prints; the CLI reads this
     /// and tells the user (da-ksao).
     last_migration: Option<MigrationReport>,
+    /// Why this open's refold under a newer fold rule failed, when it did
+    /// (da-sqpjt): the open goes on, and the CLI says so.
+    refold_failed: RefCell<Option<String>>,
     /// The file this handle was opened at, as it was named: what datum
     /// writes beside a database is beside this. `None` in memory.
     path: Option<std::path::PathBuf>,
@@ -245,6 +248,7 @@ impl Db {
             client_id: OnceCell::new(),
             apply_run: Cell::new(None),
             last_migration: None,
+            refold_failed: Default::default(),
             path: Some(path.into()),
         };
         db.last_migration = db.migrate(Some(std::path::Path::new(path)))?;
@@ -268,6 +272,7 @@ impl Db {
             client_id: OnceCell::new(),
             apply_run: Cell::new(None),
             last_migration: None,
+            refold_failed: Default::default(),
             path: Some(path.into()),
         })
     }
@@ -310,6 +315,7 @@ impl Db {
             client_id: OnceCell::new(),
             apply_run: Cell::new(None),
             last_migration: None,
+            refold_failed: Default::default(),
             path: Some(path.into()),
         })
     }
@@ -324,6 +330,7 @@ impl Db {
             client_id: OnceCell::new(),
             apply_run: Cell::new(None),
             last_migration: None,
+            refold_failed: Default::default(),
             path: None,
         };
         db.last_migration = db.migrate(None)?;
@@ -347,6 +354,12 @@ impl Db {
     /// database was already at the current schema version.
     pub fn last_migration(&self) -> Option<&MigrationReport> {
         self.last_migration.as_ref()
+    }
+
+    /// Why the refold this open ran under a newer fold rule failed, if it
+    /// did: the open went on, stamped (da-sqpjt).
+    pub fn refold_failed(&self) -> Option<String> {
+        self.refold_failed.borrow().clone()
     }
 
     /// Bring the schema to [`crate::migrations::CURRENT_SCHEMA_VERSION`],
@@ -410,6 +423,7 @@ impl Db {
         // file holds (da-fwwtn). One that will not build is no reason not
         // to open: it is only an index.
         let _ = self.derive_kit_indices();
+        self.refold_for_rule()?;
 
         if applied.is_empty() {
             return Ok(None);

@@ -7,20 +7,24 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Map, Value};
 
 use super::chain::{Chain, CHAIN_HID};
 use super::{
     canonical_json, conflicts_of, derived, device, endpoint, fold, has_ops, ops_of, read_only,
-    rederive, refresh_conflicts, row, sha256_hex, shared_rows, Op,
+    rederive, refresh_conflicts, row, sha256_hex, shared_rows, Op, FOLD_RULE,
 };
 use crate::db::insert::as_stored;
 use crate::db::row_mapper::row_to_entry;
-use crate::db::Db;
+use crate::db::{busy, Db, WriteBatch};
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
 use crate::history::ChangeKind;
+
+/// How many rows a refold writes a transaction, so the write lock is
+/// another's between them (da-8i7f0).
+const REFOLD_CHUNK: usize = 256;
 
 /// An entry whose applied ops fold to a row this copy does not hold: the
 /// row was dropped and its ops kept, so every copy this one syncs with
@@ -224,21 +228,75 @@ impl Db {
     /// The whole database is read before the write lock and after it, and
     /// the lock is held for the stale rows alone (da-8i7f0).
     pub fn sync_refold(&self) -> Result<(FoldCheck, Vec<Stale>)> {
-        let found = self.compute_then_write_with(
-            |view| fold_check(view.conn()),
-            |tx, found| {
-                for s in &found.stale {
-                    rederive(tx, &s.hid, ChangeKind::SyncMerge)
-                        .and_then(|()| refresh_conflicts(tx, &s.hid))
-                        .map_err(|e| {
-                            DatumError::Other(format!("refolding {} ({}): {e}", s.slug, s.hid))
-                        })?;
-                }
-                Ok(found)
-            },
-        )?;
+        let found = self.read(|view| fold_check(view.conn()))?;
+        self.refold_rows(&found.stale)?;
         let left = self.read(|view| fold_check(view.conn()))?.stale;
         Ok((found, left))
+    }
+
+    /// Write `stale` again from its ops, [`REFOLD_CHUNK`] rows a
+    /// transaction. Each is read again under the lock: one that moved since
+    /// it was found is written as its ops fold now, and one right by then
+    /// is left as it is.
+    fn refold_rows(&self, stale: &[Stale]) -> Result<()> {
+        for chunk in stale.chunks(REFOLD_CHUNK) {
+            self.write_with(|tx| {
+                chunk.iter().try_for_each(|s| {
+                    rederive(tx, &s.hid, ChangeKind::SyncMerge)
+                        .and_then(|()| refresh_conflicts(tx, &s.hid).map(drop))
+                        .map_err(|e| {
+                            DatumError::Other(format!("refolding {} ({}): {e}", s.slug, s.hid))
+                        })
+                })
+            })?;
+        }
+        Ok(())
+    }
+
+    /// On open (da-sqpjt): a copy whose rows were folded under an older
+    /// [`FOLD_RULE`], or before there was one — no stamp, or one that is no
+    /// number — writes again every row that is not what its ops fold to now,
+    /// as `sync refold` does, and stamps the rule in `_meta` `fold_rule`; a
+    /// copy on it reads that one row. A stamp newer than this build's is a
+    /// newer build's rule, which this one does not fold back to its own.
+    /// With the lock another's, nothing is checked or stamped, and the next
+    /// open tries again. A refold that fails otherwise is stamped all the same, and why
+    /// is [`Db::refold_failed`], for the CLI to say: what it left is
+    /// `datum check sync`'s to name, which a database no command could open
+    /// would not let it do.
+    pub(crate) fn refold_for_rule(&self) -> Result<()> {
+        let stamped: Option<String> = self
+            .conn
+            .query_row("SELECT value FROM _meta WHERE key = 'fold_rule'", [], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        if stamped.and_then(|v| v.parse::<u32>().ok()) >= Some(FOLD_RULE) {
+            return Ok(());
+        }
+        // The check reads every row (~3 s for 20k on a laptop): not paid
+        // by an open that could not write what it finds.
+        if !self.can_write(std::time::Duration::from_millis(100))? {
+            return Ok(());
+        }
+        let refolded = self
+            .read(|view| fold_check(view.conn()))
+            .and_then(|found| self.refold_rows(&found.stale));
+        match refolded {
+            Err(e) if busy(&e) => return Ok(()),
+            Err(e) => *self.refold_failed.borrow_mut() = Some(e.to_string()),
+            Ok(()) => {}
+        }
+        let mut stamp = WriteBatch::default();
+        stamp.push(
+            "INSERT INTO _meta (key, value) VALUES ('fold_rule', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            vec![FOLD_RULE.into()],
+        );
+        match self.write(&stamp) {
+            Err(e) if busy(&e) => Ok(()),
+            r => r.map(drop),
+        }
     }
 
     /// The state hash ([`Db::sync_state_hash`]) and, under it, each row's

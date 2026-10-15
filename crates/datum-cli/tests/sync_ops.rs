@@ -2195,6 +2195,75 @@ fn check_names_a_row_that_is_not_its_ops_fold_and_refold_writes_it_again() {
     assert!(check_sync(&b, false).0);
 }
 
+/// A copy whose rows were folded under an older fold rule refolds them as
+/// it opens (da-sqpjt): the row an older build's rule left — stood in for
+/// by one set by hand — is written again from its ops by the next command,
+/// whatever it is, signing nothing, and the copy verifies with one that
+/// never held it. On the current rule an open refolds nothing.
+#[test]
+fn a_copy_folded_under_an_older_rule_refolds_as_it_opens() {
+    let (a, b) = (Copy::new(), Copy::new());
+    a.ok(&["occur", "coffee", "cups=2"]);
+    converged(&a, &b);
+    let hid = b.hid("coffee");
+    let stale = format!("UPDATE entries SET data = '{{\"cups\":5}}' WHERE hid = '{hid}'");
+    let rule = "SELECT value FROM _meta WHERE key = ?1";
+    let current = b.query(rule, "fold_rule");
+
+    b.sql(&stale);
+    b.ok(&["tail"]);
+    assert_eq!(
+        b.data(&hid)["cups"],
+        5,
+        "on the current rule, an open refolds nothing"
+    );
+    assert!(!check_sync(&b, false).0);
+
+    b.sql("UPDATE _meta SET value = '0' WHERE key = 'fold_rule'");
+    let ops = b.ops().len();
+    assert_eq!(
+        b.data(&hid)["cups"],
+        2,
+        "the open under `sync pipe ops` refolded it"
+    );
+    assert_eq!(b.query(rule, "fold_rule"), current);
+    assert_eq!(b.ops().len(), ops, "a refold signs no op");
+    assert_eq!(a.hash(), b.hash());
+    assert!(check_sync(&b, false).0);
+    let kept = "SELECT json_extract(snapshot, '$.data.cups') FROM entry_history
+                WHERE entry_hid = ?1 AND change_kind = 'sync_merge'
+                ORDER BY version DESC LIMIT 1";
+    assert_eq!(
+        b.query(kept, &hid),
+        "5",
+        "the row as it stood is in its history"
+    );
+
+    // A copy from before there was a rule refolds too.
+    b.sql(&format!(
+        "{stale}; DELETE FROM _meta WHERE key = 'fold_rule'"
+    ));
+    b.ok(&["tail"]);
+    assert_eq!(b.data(&hid)["cups"], 2);
+    assert_eq!(b.query(rule, "fold_rule"), current);
+
+    // A refold that fails is said, and the open goes on, stamped.
+    b.sql(&format!(
+        "{stale}; UPDATE _meta SET value = '0' WHERE key = 'fold_rule';
+         CREATE TRIGGER no_refold BEFORE UPDATE ON entries
+         BEGIN SELECT RAISE(ABORT, 'refused here'); END"
+    ));
+    let out = b.run(&["tail"], "");
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{said}");
+    assert!(
+        said.contains("⚠ refolding this database's rows under the current fold rule failed")
+            && said.contains("refused here"),
+        "{said}"
+    );
+    assert_eq!(b.query(rule, "fold_rule"), current);
+}
+
 /// The `conflicts` column is the fold's as well: one this copy lost is
 /// found by name and written again.
 #[test]

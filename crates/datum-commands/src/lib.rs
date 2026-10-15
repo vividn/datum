@@ -37,6 +37,11 @@ pub mod render;
 /// report — so covering all the open sites cannot double-print, while
 /// missing one loses the notice entirely.
 pub fn announce_migration(db: &datum_core::db::Db) {
+    if let Some(why) = db.refold_failed() {
+        eprintln!(
+            "⚠ refolding this database's rows under the current fold rule failed: {why} — `datum check sync` names what is left, and `datum sync refold` tries again"
+        );
+    }
     let Some(report) = db.last_migration() else {
         return;
     };

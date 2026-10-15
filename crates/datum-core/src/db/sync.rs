@@ -951,6 +951,19 @@ fn ops_of(conn: &Connection, hid: &str) -> Result<Vec<Op>> {
     Ok(ops)
 }
 
+/// The rule ops fold into rows by, as a number: bumped by any change to
+/// what a row and its `conflicts` are for the same ops — this file's fold,
+/// conflicts and merge — schema change or not (da-sqpjt). A copy whose rows
+/// were folded under an older rule refolds them as it opens
+/// ([`Db::refold_for_rule`]); `the_fold_rule_is_fingerprinted` fails until
+/// a change to that code is either bumped here or recorded as no change.
+///
+/// 1: the first stamped. A copy with no stamp was folded by a build before
+/// it, perhaps before da-m82n0 merged a kit's spec with an automatic one.
+/// 2: da-vkeg0. Two creates' agreeing value is settled by an op that saw
+/// either, and a merged entry's slug is its fold's, not its survivor's.
+pub(crate) const FOLD_RULE: u32 = 2;
+
 /// The row an entry's ops make, folded in [`Op::order`]. `base` is
 /// the row to start from when the first op is not a create.
 fn fold(ops: &[Op], base: Option<&Entry>) -> Option<Map<String, Value>> {
@@ -2842,6 +2855,87 @@ impl Db {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The code a row and its `conflicts` are folded by, against what it was
+    /// at [`FOLD_RULE`] (da-sqpjt). A change to it fails here: if the same
+    /// ops now fold to another row, bump `FOLD_RULE`, so every copy refolds
+    /// as it opens; then record the hash beside the rule either way.
+    ///
+    /// The code is the items `ITEMS` names, each from its line to the first
+    /// line that is `;` ended (a const) or a `}` in the first column, which
+    /// rustfmt writes only where a top-level item ends. A line that is a
+    /// comment is left out; a comment after code on its line is not. What
+    /// it does not name it does not see: a helper a listed item comes to
+    /// call joins `ITEMS`, and a renamed item is renamed there.
+    #[test]
+    fn the_fold_rule_is_fingerprinted() {
+        const RECORDED: (u32, &str) = (
+            2,
+            "7e922000c35dd79549ea1a978d32963a56899978e91755b31d65a5e2ff91e1e4",
+        );
+        const ITEMS: &[&str] = &[
+            "fn fold_into",
+            "fn values",
+            "const NOT_A_CONFLICT",
+            "impl Op",
+            "fn fold",
+            "fn entry_from",
+            "const PROVENANCE",
+            "fn contestable",
+            "fn settles",
+            "fn intents",
+            "fn automatic",
+            "fn contention",
+            "fn conflicts_of",
+            "fn about",
+            "fn side",
+            "fn refresh_conflicts",
+            "fn content",
+            "fn own",
+            "const TAKEN_BACK",
+            "fn merged_into",
+            "fn merge_rows",
+            "fn merge_from",
+            "fn derived",
+            "fn rederive",
+            "fn write_merged",
+            "fn met",
+            "fn refold",
+        ];
+        let source = include_str!("sync.rs");
+        let mut code = String::new();
+        for item in ITEMS {
+            let start = source
+                .lines()
+                .position(|l| {
+                    let l = l
+                        .trim_start_matches("pub(super) ")
+                        .trim_start_matches("pub(crate) ");
+                    l.strip_prefix(item)
+                        .is_some_and(|rest| rest.starts_with([' ', '(', ':', '<']))
+                })
+                .unwrap_or_else(|| {
+                    panic!("`{item}` is not in sync.rs: name what replaced it in ITEMS")
+                });
+            let end = if item.starts_with("const") { ";" } else { "}" };
+            for line in source.lines().skip(start) {
+                if !line.trim_start().starts_with("//") {
+                    code.push_str(line);
+                    code.push('\n');
+                }
+                if line == end || end == ";" && line.ends_with(';') {
+                    break;
+                }
+            }
+        }
+        let now = (FOLD_RULE, sha256_hex(&code));
+        assert_eq!(
+            (now.0, now.1.as_str()),
+            RECORDED,
+            "the fold's code changed: if the same ops fold to another row now, bump FOLD_RULE; \
+             then record {now:?} as RECORDED"
+        );
+    }
 
     /// An op signed before v48 folds as today's (da-lfsei): its effect's
     /// `device_id` reads as `client_id`, and its body, which is signed,
