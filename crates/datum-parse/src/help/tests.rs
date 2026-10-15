@@ -1075,3 +1075,23 @@ fn every_subcommand_page_has_its_usage() {
         }
     }
 }
+
+/// da-fdu1l: help says «color», never «colour» — on every page, the
+/// top level, each command, subcommand and topic, and `help --json`.
+#[test]
+fn no_help_page_says_colour() {
+    let mut pages = vec![top_level_help(), render_json()];
+    for cmd in super::COMMANDS {
+        pages.push(command_help(cmd.name));
+        for sub in cmd.subcommands {
+            pages.push(command_help(&super::page_name(cmd.name, &[sub.name])));
+        }
+    }
+    for topic in super::TOPICS {
+        pages.push(command_help(topic.name));
+    }
+    assert!(pages.iter().any(|p| p.contains("--state-color")));
+    for page in pages {
+        assert!(!page.to_lowercase().contains("colour"), "{page}");
+    }
+}

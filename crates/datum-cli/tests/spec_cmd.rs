@@ -400,7 +400,7 @@ fn spec_set_color_takes_a_kits_colours_and_refuses_the_rest() {
     ] {
         let err = format!("{:#}", set(args).unwrap_err());
         assert!(
-            err.contains("is not a colour") && err.contains("hue name") && err.contains("pink"),
+            err.contains("is not a color") && err.contains("hue name") && err.contains("pink"),
             "{args:?}: {err}"
         );
     }
@@ -476,7 +476,7 @@ fn update_and_from_json_hold_a_changed_colour_to_the_rule() {
         "{:#}",
         run_cli(&["update", "spec:mood", "color=nonsense"], &db).unwrap_err()
     );
-    assert!(err.contains("color: 'nonsense' is not a colour"), "{err}");
+    assert!(err.contains("color: 'nonsense' is not a color"), "{err}");
     json["state_colors"]["happy"] = "beige".into();
     let err = format!(
         "{:#}",
@@ -487,7 +487,7 @@ fn update_and_from_json_hold_a_changed_colour_to_the_rule() {
         .unwrap_err()
     );
     assert!(
-        err.contains("state_colors.happy: 'beige' is not a colour"),
+        err.contains("state_colors.happy: 'beige' is not a color"),
         "{err}"
     );
     assert_eq!(spec().color, before.color);

@@ -326,8 +326,8 @@
 		<div class="panel" role="tabpanel" id="spec-panel" aria-labelledby="spec-tab-{tab}" data-panel={tab}>
 			{#if tab === 'basics'}
 				<div class="row top early">
-					<span class="label">colour</span>
-					<Swatch bind:value={color} fallback={defaultColor(field.trim())} label="the field's colour" />
+					<span class="label">color</span>
+					<Swatch bind:value={color} fallback={defaultColor(field.trim())} label="the field's color" />
 				</div>
 				<span class="label">data</span>
 				<DataKeys bind:keys card={verb === 'add'} />
@@ -414,7 +414,7 @@
 							<Swatch
 								bind:value={state.color}
 								fallback={defaultColor(state.name.trim())}
-								label="the colour of {state.name || 'this state'}"
+								label="the color of {state.name || 'this state'}"
 							/>
 							{#if tab === 'states'}
 								<Glyph

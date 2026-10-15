@@ -77,7 +77,7 @@ pub fn resolve(s: &str, field_name: &str) -> Result<String> {
     match NAMED_HUES.iter().find(|(n, _)| *n == lc) {
         Some((_, base_hue)) => Ok(hsl_from_md5(field_name, *base_hue)),
         None => Err(DatumError::Other(format!(
-            "'{s}' is not a colour: expected six hex digits (`#` optional), \
+            "'{s}' is not a color: expected six hex digits (`#` optional), \
              an ANSI-256 number (0-255) or a hue name ({})",
             NAMED_HUES
                 .iter()
@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn rejects_unknown_hue_name() {
         let err = resolve_color(Some("aubergine"), "f").unwrap_err();
-        assert!(format!("{err}").contains("is not a colour"), "{err}");
+        assert!(format!("{err}").contains("is not a color"), "{err}");
     }
 
     #[test]

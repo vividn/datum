@@ -466,7 +466,7 @@ mod tests {
             })
         };
         let err = run("nonsense").unwrap_err();
-        assert!(err.to_string().contains("is not a colour"), "{err}");
+        assert!(err.to_string().contains("is not a color"), "{err}");
         assert_eq!(db.load_spec("mood").unwrap().unwrap().color, None);
         run("red").unwrap();
         assert_eq!(

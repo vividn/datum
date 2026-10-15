@@ -29,6 +29,7 @@ mod cli_harness;
 mod client_templates;
 mod closed_pipe_last;
 mod color_flag;
+mod colour_spelling;
 mod comma_slugs;
 mod comment_appends;
 mod completion;

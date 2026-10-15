@@ -192,7 +192,9 @@ fn dispatch_multi(invocation: Invocation) -> Result<()> {
 }
 
 fn try_kit_level2_dispatch() -> Result<Option<()>> {
-    let mut raw: Vec<String> = std::env::args().collect();
+    let mut raw: Vec<String> = std::env::args()
+        .map(datum_parse::alias::spell_color)
+        .collect();
     // A leading `--db NAME` names the database the command runs against —
     // the web passes one on every named database (da-1mkej) — and a
     // `--color WHEN` beside it was already checked by the parse that failed.

@@ -145,7 +145,7 @@ One-line summaries of the model:
 
 The command `datum track` and the tracked-ness above are not the same
 thing, and it is worth keeping them apart. The COMMAND declares a field:
-it writes the spec that gives the field its verb, its colour and its
+it writes the spec that gives the field its verb, its color and its
 states, and one row saying the declaration happened (`datum help
 track`). The STATE is the default every logged field already has. A
 field you never tracked is tracked; a field you tracked and then
@@ -376,8 +376,8 @@ from the table the binary itself carries:
 | `DATUM_EDITOR`         | Editor for `datum edit`. Read FIRST, before toml `editor`, `$VISUAL`, `$EDITOR`.                |
 | `DATUM_ID_DELIMITER`   | Delimiter that collapses empty `%key%` segments in a slug template (default `:`).               |
 | `DATUM_WEEK_START`     | Weekday a week opens on (`monday`…`sunday`, or `1`-`7`; default Monday).                        |
-| `NO_COLOR`             | Any non-empty value turns colour off (`--color always` wins).                                   |
-| `CLICOLOR_FORCE`       | Colour even when stdout is not a terminal; `0` or empty does not (`NO_COLOR` wins).             |
+| `NO_COLOR`             | Any non-empty value turns color off (`--color always` wins).                                    |
+| `CLICOLOR_FORCE`       | Color even when stdout is not a terminal; `0` or empty does not (`NO_COLOR` wins).              |
 | `FORCE_COLOR`          | The same as `CLICOLOR_FORCE` (Node's name); `0` or `false` does not force.                      |
 | `DATUM_SHOW`           | `--show` for a command that has the rendering, kept out of `raw_input` (a typed `--show` wins). |
 | `DATUM_NO_TIPS`        | Set to `1` to never print the one-time tab-completion tip.                                      |

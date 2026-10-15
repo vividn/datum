@@ -400,6 +400,7 @@ fn parse_invocation_inner(
 ) -> anyhow::Result<Invocation> {
     let raw_argv: Vec<String> = argv.iter().skip(1).cloned().collect();
     let raw_input = palias::shell_join(&raw_argv);
+    let argv: Vec<String> = argv.into_iter().map(palias::spell_color).collect();
     let argv0 = argv.first().cloned().unwrap_or_default();
     let show = crate::config::env_show()?;
 

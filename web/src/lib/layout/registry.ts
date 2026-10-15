@@ -241,7 +241,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		]),
 		component: DayviewWidget,
 		help: [
-			'Your days as bands of colour: today at the bottom, the days before it above.',
+			'Your days as bands of color: today at the bottom, the days before it above.',
 			'Tap a moment for a -t time pill; hold, then drag, for a span.',
 			'Hold still, or double tap, to select the entry under your finger. Pinch zooms.'
 		].join('\n'),

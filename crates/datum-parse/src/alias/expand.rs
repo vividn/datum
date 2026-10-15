@@ -635,6 +635,7 @@ pub fn maybe_swap_field_verb(mut argv: Vec<String>) -> Vec<String> {
 pub fn expand_stacked_flags(argv: Vec<String>) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(argv.len() + 4);
     for arg in argv {
+        let arg = spell_color(arg);
         if let Some(expanded) = expand_stacked(&arg) {
             out.extend(expanded);
         } else {
@@ -642,6 +643,18 @@ pub fn expand_stacked_flags(argv: Vec<String>) -> Vec<String> {
         }
     }
     out
+}
+
+/// `--colour` is `--color` (da-fdu1l): a long flag whose name says
+/// `colour` — `--colour`, `--colour=red`, `--state-colour` — is read in the
+/// one spelling help shows, so no parser, message or help page knows the
+/// other. Its value is left as typed.
+pub fn spell_color(arg: String) -> String {
+    let name = &arg[..arg.find('=').unwrap_or(arg.len())];
+    if !arg.starts_with("--") || !name.contains("colour") || name.contains(char::is_whitespace) {
+        return arg;
+    }
+    format!("{}{}", name.replace("colour", "color"), &arg[name.len()..])
 }
 
 fn expand_stacked(s: &str) -> Option<Vec<String>> {
