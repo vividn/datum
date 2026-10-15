@@ -813,6 +813,10 @@ struct Row {
     /// truncation (da-ftw3) without re-decoding the painted cell.
     field_name: String,
     state: String,
+    /// da-gw0sh: an occur dot's declared keys' values, plain, as typed
+    /// after the field (`25 15` for `lift 25 15`). The terminal table's
+    /// alone: `table_columns_with` and `--json` never carry it.
+    keys: String,
     dur: String,
     /// da-8sx8: the `_N` quickId shorthand for this row, or empty when
     /// the row is past `QUICK_ORDINAL_CAP` / the caller supplied no
@@ -936,6 +940,7 @@ fn build_rows(
             field: ex.field.unwrap_or_default(),
             field_name: e.field.clone(),
             state: ex.state.unwrap_or_default(),
+            keys: declared_key_values(e, registry),
             dur: ex.dur.unwrap_or_default(),
             quick,
             hid,
@@ -943,6 +948,46 @@ fn build_rows(
         });
     }
     (rows, reference_offset)
+}
+
+/// An occur dot's values for its spec's declared keys, in the order a
+/// person types them (the `-K` slots, then the `-k`), space-separated
+/// (da-gw0sh, vividn: «show the first few defined keys in the spec so that
+/// it is similar to what a user would type in to log it»). A row with a
+/// state of its own, or a key the entry lacks, shows nothing for it.
+fn declared_key_values(e: &Entry, registry: Option<&SpecRegistry>) -> String {
+    use datum_parse::spec_keys::KeyKind;
+    let Some(spec) = registry.and_then(|r| r.fields.get(&e.field)) else {
+        return String::new();
+    };
+    if e.occur_time.is_none() || datum_core::shape::has_state_badge(e.verb, e.dur.as_ref()) {
+        return String::new();
+    }
+    let mut keys = spec.declared_keys(None);
+    keys.retain(|k| !matches!(k.kind, KeyKind::Assign(_)));
+    // The `-K` slots (`id`) first, as they bind; stable within each.
+    keys.sort_by_key(|k| std::cmp::Reverse(k.id));
+    keys.iter()
+        .map(|k| extract_column(e, &k.name))
+        .filter(|v| !v.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The state cell the terminal table draws in `max` columns: the state,
+/// then an occur dot's declared keys (da-gw0sh), cut with `…` where they
+/// do not fit. The keys give way; the dot never does.
+fn state_with_keys(r: &Row, max: usize) -> String {
+    let room = max.saturating_sub(colors::visible_width(&r.state) + 1);
+    if r.keys.is_empty() || room == 0 {
+        r.state.clone()
+    } else {
+        format!(
+            "{} {}",
+            r.state,
+            term_layout::truncate_visible(&r.keys, room)
+        )
+    }
 }
 
 /// Which columns the table shows: a column every row leaves empty drops
@@ -1104,7 +1149,8 @@ pub fn format_table_with(
         .max()
         .unwrap_or(0);
     let state_w = std::iter::once(state_header.len())
-        .chain(rows.iter().map(|r| vw(&r.state)))
+        // `usize::MAX`: no width to fit, so the keys' natural width.
+        .chain(rows.iter().map(|r| vw(&state_with_keys(r, usize::MAX))))
         .max()
         .unwrap_or(0);
     let dur_w = std::iter::once(dur_header.len())
@@ -1256,7 +1302,7 @@ pub fn format_table_with(
                 let ctx_ref = contexts.and_then(|c| c.get(i)).unwrap_or(&default_ctx);
                 state_truncate::truncate_state_cell(e, spec, ctx_ref, state_w)
             } else {
-                r.state.clone()
+                state_with_keys(r, state_w)
             };
             // Belt-and-braces: if the truncating path overshoots (e.g.
             // a structured chip whose `{id}` body is itself longer than
@@ -2448,5 +2494,77 @@ mod tests {
             )
         );
         assert!(!cell.contains("\x1b[48;2;"), "{cell:?}");
+    }
+
+    // ─── da-gw0sh: an occur dot's declared keys ───────────────────────────
+
+    /// `lift` declares `weightKg` then `reps` — not alphabetical, so a
+    /// row read in key order would say `15 25`.
+    fn lift(data: JsonValue) -> (Entry, SpecRegistry) {
+        let mut spec =
+            datum_core::field_spec::FieldSpec::new("lift", datum_core::action::Action::Occur);
+        spec.data_keys = vec!["weightKg".into(), "reps=".into()];
+        spec.assign.insert("gym".into(), "home".into());
+        let mut registry = SpecRegistry::new();
+        registry.register_field(spec);
+        let mut e = sample_entry("lift", Verb::Point, None);
+        e.data = Some(data);
+        (e, registry)
+    }
+
+    fn table(entries: &[Entry], registry: &SpecRegistry, width: Option<usize>) -> String {
+        let args = TableArgs {
+            max_total_width: width,
+            ..Default::default()
+        };
+        strip_ansi(&format_table_with(entries, None, None, Some(registry), &args).unwrap())
+    }
+
+    /// vividn's B7: `lift 25 15` reads back `● 25 15`, in the order typed;
+    /// an assigned key, which nobody types, is not shown.
+    #[test]
+    fn occur_row_shows_declared_keys_as_typed() {
+        let _env_lock = env_lock();
+        let _no = ScopedEnv::set("NO_COLOR", "1");
+        let (e, registry) = lift(serde_json::json!({"weightKg": 25, "reps": 15, "gym": "home"}));
+        let out = table(&[e], &registry, None);
+        assert!(out.contains("● 25 15  "), "{out}");
+        assert!(!out.contains("home"), "{out}");
+    }
+
+    /// A value too long for the terminal is cut with `…`, the dot kept,
+    /// and no line passes the width.
+    #[test]
+    fn occur_row_keys_truncate_within_the_width() {
+        let _env_lock = env_lock();
+        let _no = ScopedEnv::set("NO_COLOR", "1");
+        let long = "x".repeat(80);
+        let (e, registry) = lift(serde_json::json!({"weightKg": 30, "reps": long}));
+        for width in [40, 30, 26] {
+            let out = table(std::slice::from_ref(&e), &registry, Some(width));
+            for line in out.lines() {
+                assert!(visible_width(line) <= width, "{width}: {line:?}");
+            }
+            assert!(out.contains('●'), "{width}: the dot gives way last: {out}");
+        }
+        let out = table(&[e], &registry, Some(40));
+        assert!(out.contains("● 30 x"), "{out}");
+        assert!(out.contains("x…"), "{out}");
+    }
+
+    /// The keys are the terminal table's: `--json`'s columns and rows carry
+    /// the dot alone, as they did.
+    #[test]
+    fn occur_row_keys_stay_out_of_json() {
+        let _env_lock = env_lock();
+        let _no = ScopedEnv::set("NO_COLOR", "1");
+        let (e, registry) = lift(serde_json::json!({"weightKg": 25, "reps": 15}));
+        let entries = [e];
+        let columns =
+            table_columns_with(&entries, None, None, Some(&registry), &TableArgs::default());
+        let state = columns.iter().find(|c| c.key == "state").unwrap();
+        assert_eq!(state.cells, vec!["●".to_string()]);
+        let rows = tail_rows::tail_rows(&entries, None, TimeMetricCol::Hybrid, Some(&registry));
+        assert_eq!(rows[0].state_body, "●");
     }
 }
