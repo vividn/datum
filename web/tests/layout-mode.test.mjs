@@ -97,23 +97,37 @@ describe('normal mode', () => {
 
 // vremya on #764 (da-hibn3): the (?) took the bar's last 13px and put
 // `collect`'s × half under the `+`. A first visit's three tabs, each with its
-// ×, fit a 390-wide phone in layout mode, so the next control added to the
-// root bar finds out here.
+// ×, fit a phone in layout mode — 390 wide, and 360, a common Android width,
+// where they once measured 299 of 284px (da-yxfem) — so the next control
+// added to the root bar finds out here.
 describe('on a phone', () => {
-	test("a first visit's three tabs and their × fit the strip in layout mode", async () => {
-		await withApp(async ({ page }) => {
-			await enterLayoutMode(page);
-			const at = await page.locator('.root-bar .tabs').evaluate((el) => ({
-				names: [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent.replace('•', '').trim()),
-				closes: el.querySelectorAll('.tab-close').length,
-				scroll: el.scrollWidth,
-				client: el.clientWidth
-			}));
-			assert.deepEqual(at.names, ['welcome', 'track', 'collect']);
-			assert.equal(at.closes, 3);
-			assert.ok(at.scroll <= at.client, `the strip is ${at.scroll} of ${at.client}px`);
-		}, { ...PHONE, home: null });
-	});
+	for (const width of [390, 360]) {
+		test(`${width} wide: a first visit's three tabs and their × fit the strip in layout mode`, async () => {
+			await withApp(async ({ page }) => {
+				await enterLayoutMode(page);
+				const at = await page.locator('.root-bar .tabs').evaluate((el) => {
+					const strip = el.getBoundingClientRect();
+					const out = [...el.querySelectorAll('[role="tab"], .tab-close')]
+						.filter((b) => {
+							const r = b.getBoundingClientRect();
+							return r.left < strip.left - 0.5 || r.right > strip.right + 0.5;
+						})
+						.map((b) => b.getAttribute('aria-label') ?? b.textContent.trim());
+					return {
+						names: [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent.replace('•', '').trim()),
+						closes: el.querySelectorAll('.tab-close').length,
+						out,
+						scroll: el.scrollWidth,
+						client: el.clientWidth
+					};
+				});
+				assert.deepEqual(at.names, ['welcome', 'track', 'collect']);
+				assert.equal(at.closes, 3);
+				assert.deepEqual(at.out, [], `outside the strip's ${at.client}px`);
+				assert.ok(at.scroll <= at.client, `the strip is ${at.scroll} of ${at.client}px`);
+			}, { ...PHONE, viewport: { width, height: 640 }, home: null });
+		});
+	}
 });
 
 describe('the ways in', () => {

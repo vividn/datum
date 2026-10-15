@@ -621,6 +621,12 @@
 		box-shadow: 0 1px 0 var(--accent);
 	}
 
+	/* Its tabs give the × room (da-yxfem): at 360px wide a first visit's
+	   three tabs and their × were 299px in a 284px strip. */
+	.root-bar[data-layout-mode] .tabs :global(.tab) {
+		padding-inline: 0.4rem;
+	}
+
 	.tab-close {
 		flex: none;
 		block-size: 24px;
