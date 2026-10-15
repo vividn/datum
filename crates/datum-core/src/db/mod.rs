@@ -191,6 +191,10 @@ impl Db {
     /// here rather than at each site, and a new site cannot forget it.
     fn configure_connection(conn: &mut Connection) -> Result<()> {
         conn.set_transaction_behavior(TransactionBehavior::Immediate);
+        // A bulk write runs a few dozen statements a row: the default 16
+        // slots evicted each before its next use, and a statement on
+        // `entries` compiles its triggers too (da-f4vrr).
+        conn.set_prepared_statement_cache_capacity(256);
         conn.execute_batch(
             "PRAGMA busy_timeout = 5000;\n\
              PRAGMA journal_mode = WAL;\n\

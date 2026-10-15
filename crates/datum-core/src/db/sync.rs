@@ -70,7 +70,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, TimeZone, Utc};
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
@@ -145,23 +145,23 @@ fn client_id() -> String {
 /// Object keys sorted at every depth, no whitespace: the one serialization
 /// that is signed and hashed, so every copy computes the same bytes.
 pub fn canonical_json(v: &Value) -> String {
-    fn sorted(v: &Value) -> Value {
-        match v {
-            Value::Object(m) => {
-                let mut pairs: Vec<(&String, &Value)> = m.iter().collect();
-                pairs.sort_by(|a, b| a.0.cmp(b.0));
-                Value::Object(
-                    pairs
-                        .into_iter()
-                        .map(|(k, v)| (k.clone(), sorted(v)))
-                        .collect(),
-                )
+    /// `v` written with its keys sorted, read in place: a signed batch
+    /// writes thousands, and a sorted copy of each was most of the cost.
+    struct Sorted<'a>(&'a Value);
+    impl Serialize for Sorted<'_> {
+        fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+            match self.0 {
+                Value::Object(m) => {
+                    let mut pairs: Vec<_> = m.iter().collect();
+                    pairs.sort_by(|a, b| a.0.cmp(b.0));
+                    s.collect_map(pairs.into_iter().map(|(k, v)| (k, Sorted(v))))
+                }
+                Value::Array(a) => s.collect_seq(a.iter().map(Sorted)),
+                v => v.serialize(s),
             }
-            Value::Array(a) => Value::Array(a.iter().map(sorted).collect()),
-            v => v.clone(),
         }
     }
-    sorted(v).to_string()
+    serde_json::to_string(&Sorted(v)).expect("a Value serializes")
 }
 
 fn sha256_hex(s: &str) -> String {
@@ -600,7 +600,7 @@ struct Op {
 impl Op {
     fn parse(body: &str) -> Result<Op> {
         let v: Value = serde_json::from_str(body)?;
-        let mut op: Op = serde_json::from_value(v.clone())?;
+        let mut op = Op::deserialize(&v)?;
         op.body = canonical_json(&v);
         // An op signed before v48 names the client `device_id` (da-lfsei):
         // its body stays as signed, and its effect reads as today's.
@@ -2785,6 +2785,18 @@ mod tests {
             canonical_json(&v),
             r#"{"a":{"c":null,"d":[{"e":2,"f":1}]},"b":1}"#
         );
+    }
+
+    /// Its scalars are written as `Value` writes them, the bytes every op
+    /// so far was signed over (da-f4vrr wrote it without the sorted copy).
+    #[test]
+    fn canonical_json_writes_scalars_as_value_does() {
+        let v: Value = serde_json::from_str(
+            r#"{"z":[1.5,-0.0,1e300,18446744073709551615,-9223372036854775808,
+                "é\"\\\n\u0001😀",true,{},[]],"a":"ü"}"#,
+        )
+        .unwrap();
+        assert_eq!(canonical_json(&v), v.to_string());
     }
 
     #[test]

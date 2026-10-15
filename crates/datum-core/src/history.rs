@@ -110,11 +110,8 @@ pub struct HistoryVersion {
 /// or `1` if no rows exist yet.
 pub fn next_version(conn: &Connection, entry_hid: &str) -> Result<u32> {
     let max: Option<i64> = conn
-        .query_row(
-            "SELECT MAX(version) FROM entry_history WHERE entry_hid = ?1",
-            params![entry_hid],
-            |row| row.get(0),
-        )
+        .prepare_cached("SELECT MAX(version) FROM entry_history WHERE entry_hid = ?1")?
+        .query_row(params![entry_hid], |row| row.get(0))
         .optional()?
         .flatten();
     Ok(match max {
@@ -146,10 +143,11 @@ pub fn record(executor: &Connection, snapshot: &Entry, change_kind: ChangeKind) 
     let action = crate::undo_log::current(executor, change_kind)?;
     insert(executor, snapshot, version, change_kind)?;
     if let Some(id) = action {
-        executor.execute(
-            "UPDATE entry_history SET action_id = ?1 WHERE rowid = last_insert_rowid()",
-            [id],
-        )?;
+        executor
+            .prepare_cached(
+                "UPDATE entry_history SET action_id = ?1 WHERE rowid = last_insert_rowid()",
+            )?
+            .execute([id])?;
     }
     Ok(version)
 }
@@ -162,12 +160,14 @@ fn insert(
 ) -> Result<()> {
     let snapshot_json = serde_json::to_string(snapshot)?;
     let alias_chain_json = snapshot.alias_chain.as_ref().map(|v| v.to_string());
-    executor.execute(
-        r#"INSERT INTO entry_history (
+    executor
+        .prepare_cached(
+            r#"INSERT INTO entry_history (
             entry_hid, version, snapshot, modify_time,
             raw_input, alias_chain, client_id, change_kind
         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"#,
-        params![
+        )?
+        .execute(params![
             snapshot.hid,
             version,
             snapshot_json,
@@ -179,8 +179,7 @@ fn insert(
             alias_chain_json,
             snapshot.client_id,
             change_kind.as_str(),
-        ],
-    )?;
+        ])?;
     Ok(())
 }
 
@@ -208,14 +207,13 @@ pub fn list(conn: &Connection, entry_hid: &str, newest_first: bool) -> Result<Ve
 
 /// Fetch the row for a specific (entry_hid, version) tuple, if present.
 pub fn get(conn: &Connection, entry_hid: &str, version: u32) -> Result<Option<HistoryVersion>> {
-    conn.query_row(
+    conn.prepare_cached(
         "SELECT entry_hid, version, snapshot, modify_time, raw_input,
                 alias_chain, client_id, change_kind
          FROM entry_history
          WHERE entry_hid = ?1 AND version = ?2",
-        params![entry_hid, version],
-        row_to_version,
-    )
+    )?
+    .query_row(params![entry_hid, version], row_to_version)
     .optional()
     .map_err(DatumError::Db)
 }

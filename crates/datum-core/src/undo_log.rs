@@ -67,7 +67,8 @@ pub(crate) fn current(conn: &Connection, kind: ChangeKind) -> Result<Option<i64>
     if let Some(id) = open {
         // A rolled-back transaction takes the action's row with it.
         let alive = conn
-            .query_row("SELECT 1 FROM undo_actions WHERE id = ?1", [id], |_| Ok(()))
+            .prepare_cached("SELECT 1 FROM undo_actions WHERE id = ?1")?
+            .query_row([id], |_| Ok(()))
             .optional()?;
         if alive.is_some() {
             return Ok(Some(id));

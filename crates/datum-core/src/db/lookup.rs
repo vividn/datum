@@ -45,11 +45,10 @@ impl Db {
     /// if you need to see them.
     pub fn get_entry(&self, slug_or_hid: &str) -> Result<Entry> {
         self.conn
-            .query_row(
-                &format!("SELECT * FROM entries WHERE {BY_SLUG_OR_HID_SQL} LIMIT 1"),
-                params![slug_or_hid],
-                row_to_entry,
-            )
+            .prepare_cached(&format!(
+                "SELECT * FROM entries WHERE {BY_SLUG_OR_HID_SQL} LIMIT 1"
+            ))?
+            .query_row(params![slug_or_hid], row_to_entry)
             .map_err(|e| match e {
                 rusqlite::Error::QueryReturnedNoRows => {
                     DatumError::NotFound(slug_or_hid.to_string())
@@ -131,18 +130,7 @@ impl Db {
     /// Fetch an entry by slug or hid regardless of tombstone state.
     /// Supports undo workflows that need to reference deleted rows.
     pub fn get_entry_including_deleted(&self, slug_or_hid: &str) -> Result<Entry> {
-        self.conn
-            .query_row(
-                "SELECT * FROM entries WHERE slug = ?1 OR hid = ?1 LIMIT 1",
-                params![slug_or_hid],
-                row_to_entry,
-            )
-            .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => {
-                    DatumError::NotFound(slug_or_hid.to_string())
-                }
-                other => DatumError::Db(other),
-            })
+        fetch_entry_any(&self.conn, slug_or_hid)
     }
 
     /// Return the active state of `field` at time `at`, or `Value::Null` if
@@ -342,15 +330,12 @@ impl Db {
 /// — public callers go through [`Db::get_entry`] or
 /// [`Db::get_entry_including_deleted`].
 pub(crate) fn fetch_entry_any(conn: &Connection, slug_or_hid: &str) -> Result<Entry> {
-    conn.query_row(
-        "SELECT * FROM entries WHERE slug = ?1 OR hid = ?1 LIMIT 1",
-        params![slug_or_hid],
-        row_to_entry,
-    )
-    .map_err(|e| match e {
-        rusqlite::Error::QueryReturnedNoRows => DatumError::NotFound(slug_or_hid.to_string()),
-        other => DatumError::Db(other),
-    })
+    conn.prepare_cached("SELECT * FROM entries WHERE slug = ?1 OR hid = ?1 LIMIT 1")?
+        .query_row(params![slug_or_hid], row_to_entry)
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => DatumError::NotFound(slug_or_hid.to_string()),
+            other => DatumError::Db(other),
+        })
 }
 
 /// The oldest occur dot of `?1` stored after `?2` and at or before `?3`,

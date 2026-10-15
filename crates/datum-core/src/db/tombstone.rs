@@ -159,14 +159,7 @@ pub fn revert_in_tx(
     kind: ChangeKind,
 ) -> Result<Entry> {
     // Resolve the current row (live or tombstoned) to pin down the hid.
-    let current: Entry = conn
-        .query_row(
-            "SELECT * FROM entries WHERE slug = ?1 OR hid = ?1 LIMIT 1",
-            params![hid_or_slug],
-            row_to_entry,
-        )
-        .optional()?
-        .ok_or_else(|| DatumError::NotFound(hid_or_slug.to_string()))?;
+    let current = fetch_entry_any(conn, hid_or_slug)?;
 
     // Resolve the target state. State at version 1 = v1.snapshot;
     // state at version N>1 = v(N+1).snapshot if recorded, else the
@@ -214,17 +207,7 @@ pub fn soft_delete_in_tx(
     kind: ChangeKind,
     comment: Option<&str>,
 ) -> Result<Entry> {
-    let pre: Option<Entry> = conn
-        .query_row(
-            "SELECT * FROM entries WHERE slug = ?1 OR hid = ?1 LIMIT 1",
-            params![slug_or_hid],
-            row_to_entry,
-        )
-        .optional()?;
-    let pre = match pre {
-        Some(e) => e,
-        None => return Err(DatumError::NotFound(slug_or_hid.to_string())),
-    };
+    let pre = fetch_entry_any(conn, slug_or_hid)?;
     // da-ult68: a reason is written onto the row, so an undo must revert
     // through history rather than `undelete`, which keeps `data`. A row with
     // no trail gets its pre-delete state as v1 from `history::record`.

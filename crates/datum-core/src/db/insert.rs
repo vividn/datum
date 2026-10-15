@@ -736,32 +736,26 @@ pub(super) fn save_existing_entry_with_kind_in_tx(
     entry: &Entry,
     change_kind: ChangeKind,
 ) -> Result<()> {
-    let state: Option<Option<String>> = conn
-        .query_row(
-            "SELECT deleted_at FROM entries WHERE hid = ?1",
-            params![entry.hid],
-            |row| row.get(0),
-        )
-        .optional()?;
-    match state {
-        None => Err(DatumError::NotFound(entry.slug.to_string())),
-        Some(Some(_)) => Err(DatumError::Tombstoned(entry.slug.to_string())),
-        Some(None) => {
-            let pre = fetch_entry_any(conn, &entry.hid.0)?;
-            history::record(conn, &pre, change_kind)?;
-            raw_overwrite_mutables(conn, &pre.hid, &entry.slug, entry, None)?;
-            // An edit saves the row as fetched, so its metadata is the edit's
-            // to write too: `retime -z` drops a zone's `tz_from` (da-n79py).
-            conn.execute(
-                "UPDATE entries SET extra_metadata = ?2 WHERE hid = ?1",
-                params![
-                    pre.hid,
-                    entry.extra_metadata.as_ref().map(|v| v.to_string())
-                ],
-            )?;
-            super::sync::emit(conn, Some(&pre), &pre.hid, change_kind)
-        }
+    let pre = match fetch_entry_any(conn, &entry.hid.0) {
+        Err(DatumError::NotFound(_)) => return Err(DatumError::NotFound(entry.slug.to_string())),
+        pre => pre?,
+    };
+    if pre.deleted_at.is_some() {
+        return Err(DatumError::Tombstoned(entry.slug.to_string()));
     }
+    history::record(conn, &pre, change_kind)?;
+    raw_overwrite_mutables(conn, &pre.hid, &entry.slug, entry, None)?;
+    // An edit saves the row as fetched, so its metadata is the edit's to
+    // write too: `retime -z` drops a zone's `tz_from` (da-n79py). Only when
+    // it moved: every write to `entries` runs its triggers.
+    if entry.extra_metadata != pre.extra_metadata {
+        conn.prepare_cached("UPDATE entries SET extra_metadata = ?2 WHERE hid = ?1")?
+            .execute(params![
+                pre.hid,
+                entry.extra_metadata.as_ref().map(|v| v.to_string())
+            ])?;
+    }
+    super::sync::emit(conn, Some(&pre), &pre.hid, change_kind)
 }
 
 /// Transaction-free body of [`Db::save_existing_entry_with_rekey_kind`];
@@ -1467,7 +1461,7 @@ fn raw_overwrite_mutables(
         data_value,
     );
 
-    conn.execute(
+    conn.prepare_cached(
         r#"UPDATE entries SET
             content_hash = ?2,
             field = ?3,
@@ -1493,41 +1487,41 @@ fn raw_overwrite_mutables(
             id_structure = ?23,
             field_structure = ?24
            WHERE hid = ?1"#,
-        params![
-            hid,
-            content_hash,
-            entry.field,
-            verb_str,
-            state_str,
-            entry.dur.as_ref().map(crate::dur::Dur::to_storage_string),
-            entry.following_state.as_ref().map(|v| v.to_string()),
-            data_json,
-            occur_str,
-            occur_offset,
-            occur_tz,
-            entry.occur_uncertainty(),
-            entry.dur_uncertainty(),
-            entry.lat,
-            entry.lon,
-            entry.location.as_deref(),
-            now,
-            entry.client_id,
-            // §5 #11: nullable in the type, written as empty-string when None
-            // so the bind round-trips against historical NOT NULL versions of
-            // the column during a migration walk (m31→m32 relaxes the
-            // constraint, but earlier migrations still see the old shape).
-            // The row mapper restores None on read.
-            entry.raw_input.as_deref().unwrap_or(""),
-            entry.alias_chain.as_ref().map(|v| v.to_string()),
-            entry.parser_version,
-            entry
-                .user_asserted_last_state
-                .as_ref()
-                .map(|v| v.to_string()),
-            entry.id_structure.as_deref(),
-            entry.field_structure.as_deref(),
-        ],
-    )?;
+    )?
+    .execute(params![
+        hid,
+        content_hash,
+        entry.field,
+        verb_str,
+        state_str,
+        entry.dur.as_ref().map(crate::dur::Dur::to_storage_string),
+        entry.following_state.as_ref().map(|v| v.to_string()),
+        data_json,
+        occur_str,
+        occur_offset,
+        occur_tz,
+        entry.occur_uncertainty(),
+        entry.dur_uncertainty(),
+        entry.lat,
+        entry.lon,
+        entry.location.as_deref(),
+        now,
+        entry.client_id,
+        // §5 #11: nullable in the type, written as empty-string when None
+        // so the bind round-trips against historical NOT NULL versions of
+        // the column during a migration walk (m31→m32 relaxes the
+        // constraint, but earlier migrations still see the old shape).
+        // The row mapper restores None on read.
+        entry.raw_input.as_deref().unwrap_or(""),
+        entry.alias_chain.as_ref().map(|v| v.to_string()),
+        entry.parser_version,
+        entry
+            .user_asserted_last_state
+            .as_ref()
+            .map(|v| v.to_string()),
+        entry.id_structure.as_deref(),
+        entry.field_structure.as_deref(),
+    ])?;
     Ok(())
 }
 
@@ -1669,8 +1663,9 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
         entry.data.as_ref(),
     );
 
-    let affected = conn.execute(
-        r#"UPDATE entries SET
+    let affected = conn
+        .prepare_cached(
+            r#"UPDATE entries SET
             content_hash = ?2,
             field = ?3,
             verb = ?4,
@@ -1698,7 +1693,8 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
             extra_metadata = ?26,
             slug = ?27
            WHERE hid = ?1"#,
-        params![
+        )?
+        .execute(params![
             entry.hid,
             content_hash,
             entry.field,
@@ -1734,8 +1730,7 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
                 .map(|v| v.to_string()),
             entry.extra_metadata.as_ref().map(|v| v.to_string()),
             entry.slug,
-        ],
-    )?;
+        ])?;
     if affected == 0 {
         return Err(DatumError::NotFound(entry.hid.to_string()));
     }
