@@ -18,6 +18,9 @@ pub enum DatumError {
     #[error("Serialization error: {0}")]
     Json(#[from] serde_json::Error),
 
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+
     #[error("Invalid time: {0}")]
     InvalidTime(String),
 

@@ -116,8 +116,33 @@ pub enum Outcome {
     Failed,
 }
 
+thread_local! {
+    static QUEUED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// While held, every action word is QUEUED (da-9q3fr): the command runs on
+/// a snapshot of a database another holds the lock of, and what it prints
+/// lands when its spool drains.
+pub struct Queued;
+
+impl Queued {
+    pub fn hold() -> Self {
+        QUEUED.set(true);
+        Queued
+    }
+}
+
+impl Drop for Queued {
+    fn drop(&mut self) {
+        QUEUED.set(false);
+    }
+}
+
 impl Outcome {
     fn name(self) -> &'static str {
+        if QUEUED.get() {
+            return "QUEUED";
+        }
         match self {
             Outcome::Create => "CREATE",
             Outcome::Update => "UPDATE",
@@ -147,6 +172,9 @@ impl Outcome {
     /// `field_color` and `state_color`, so the web paints datum's own colours
     /// rather than keeping a second palette of its own.
     pub fn hex(self) -> &'static str {
+        if QUEUED.get() {
+            return "#c061cb"; // magenta
+        }
         match self {
             Outcome::Create => "#26a269",                   // green
             Outcome::Delete | Outcome::Failed => "#e01b24", // red
@@ -160,6 +188,9 @@ impl Outcome {
 
     /// Foreground ANSI color for the action tag.
     fn ansi_color(self) -> &'static str {
+        if QUEUED.get() {
+            return "\x1b[35m"; // magenta
+        }
         match self {
             Outcome::Create => "\x1b[32m",                   // green
             Outcome::Delete | Outcome::Failed => "\x1b[31m", // red
@@ -254,7 +285,8 @@ pub(crate) fn extract_with_context_at(
     // into being, shifting every other row's cells sideways to pay for it.
     // The `∅` the following row already wears says the field was IGNORED
     // before, which is the information the word carried.
-    let names_the_row = matches!(action, None | Some(Outcome::Create) | Some(Outcome::Exists));
+    let names_the_row =
+        !QUEUED.get() && matches!(action, None | Some(Outcome::Create) | Some(Outcome::Exists));
     let action_text = match datum_core::track::track_verb(entry).filter(|_| names_the_row) {
         Some(verb) => Some(paint_track(verb)),
         None => action.map(paint_action),

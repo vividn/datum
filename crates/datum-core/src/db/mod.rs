@@ -34,6 +34,7 @@ mod query;
 mod row_mapper;
 pub(crate) mod spec;
 mod spec_alias_index;
+mod spool;
 mod state;
 mod stats_cache;
 pub(crate) use stats_cache::STATS_CACHE_SQL;
@@ -66,6 +67,7 @@ pub use now::{
 };
 pub use row_mapper::row_to_entry_public;
 pub use spec::{is_meta_field, META_FIELDS, SPEC_FIELD};
+pub use spool::{busy, Spool};
 pub use stats_cache::{CachedDay, CachedState, CachedSum, Dirty, Refill};
 pub(crate) use sync::derive_all_conflicts;
 pub use sync::{

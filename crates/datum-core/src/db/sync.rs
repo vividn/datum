@@ -737,9 +737,26 @@ fn vector_where(conn: &Connection, hid: Option<&str>) -> Result<BTreeMap<String,
 fn push(
     conn: &Connection,
     ep: &Endpoint,
+    head: (&str, &str, Option<String>),
+    kind: &str,
+    effect: Value,
+) -> Result<i64> {
+    let (raw, alias_chain) =
+        INVOCATION.with(|i| (i.borrow().raw.clone(), i.borrow().alias_chain.clone()));
+    let deps = vector_where(conn, Some(head.0))?;
+    sign(conn, ep, head, kind, effect, (raw, alias_chain), deps)
+}
+
+/// Sign and store an op as this copy's next: its seq and HLC are taken
+/// now, whatever made the change and whenever.
+fn sign(
+    conn: &Connection,
+    ep: &Endpoint,
     (hid, slug, field): (&str, &str, Option<String>),
     kind: &str,
     effect: Value,
+    (raw, alias_chain): (Option<String>, Option<Value>),
+    deps: BTreeMap<String, i64>,
 ) -> Result<i64> {
     let seq: i64 = conn
         .prepare_cached("SELECT COALESCE(MAX(seq), 0) + 1 FROM ops WHERE endpoint = ?1")?
@@ -747,8 +764,6 @@ fn push(
     if seq <= rejoin::signed_before(conn, &ep.id)? {
         return Err(DatumError::Other(rejoin::REJOINING.into()));
     }
-    let (raw, alias_chain) =
-        INVOCATION.with(|i| (i.borrow().raw.clone(), i.borrow().alias_chain.clone()));
     let hlc = next_hlc(conn)?;
     let mut v = json!({
         "endpoint": ep.id,
@@ -760,7 +775,7 @@ fn push(
         "raw": raw,
         "alias_chain": alias_chain,
         "effect": effect,
-        "deps": vector_where(conn, Some(hid))?,
+        "deps": deps,
     });
     if let Some(f) = &field {
         v["field"] = f.as_str().into();
@@ -1400,6 +1415,101 @@ pub(super) fn restore(conn: &Connection, incoming: &Entry, hash: &str) -> Result
     )
     .optional()
     .map_err(DatumError::Db)
+}
+
+/// The highest seq this copy has signed: where a command run on a
+/// snapshot starts, for [`signed_since`] to read back what it signed.
+pub(super) fn own_seq(conn: &Connection) -> Result<i64> {
+    Ok(own_head(conn)?.1)
+}
+
+/// The ops this copy signed after `seq`, in order, as signed.
+pub(super) fn signed_since(conn: &Connection, seq: i64) -> Result<Vec<Value>> {
+    let id = endpoint(conn)?.id;
+    let mut stmt =
+        conn.prepare("SELECT body FROM ops WHERE endpoint = ?1 AND seq > ?2 ORDER BY seq")?;
+    let bodies = stmt
+        .query_map(params![id, seq], |r| r.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    bodies
+        .iter()
+        .map(|b| serde_json::from_str(b).map_err(Into::into))
+        .collect()
+}
+
+/// Land ops a command signed on a snapshot of this copy while another held
+/// its write lock (da-9q3fr, `db/spool.rs`): each is signed again as this
+/// copy's next, with the `deps` it was made with, and its entry written
+/// from its ops — so an op that landed since, which it never saw, stands
+/// beside it as a sync's would. One action on the undo stack, as the
+/// command was; an undo or a redo moves the stack as it did on the snapshot.
+pub(super) fn apply_spooled(conn: &Connection, ops: &[Value]) -> Result<()> {
+    let ep = endpoint(conn)?;
+    if let Some(why) = read_only(conn, &ep)? {
+        return Err(DatumError::Other(why.into()));
+    }
+    let ops = ops
+        .iter()
+        .map(|v| serde_json::from_value::<Op>(v.clone()).map_err(Into::into))
+        .collect::<Result<Vec<_>>>()?;
+    crate::undo_log::scope(|| {
+        for op in &ops {
+            if op.is_baseline() && has_ops(conn, &Hid::from(op.hid.clone()))? {
+                continue;
+            }
+            let head = (op.hid.as_str(), op.slug.as_str(), op.field.clone());
+            let made = (op.raw.clone(), op.alias_chain.clone());
+            sign(
+                conn,
+                &ep,
+                head,
+                &op.kind,
+                op.effect.clone(),
+                made,
+                op.deps.clone(),
+            )?;
+            let kind = match op.kind.as_str() {
+                "retime" => ChangeKind::Retime,
+                "undo" => ChangeKind::Undo,
+                "redo" => ChangeKind::Redo,
+                "sync_conflict_resolve" => ChangeKind::SyncConflictResolve,
+                _ => ChangeKind::UserEdit,
+            };
+            refold(conn, &op.hid, kind)?;
+        }
+        Ok::<_, DatumError>(())
+    })?;
+    // The action an undo took back is the newest on the stack that wrote
+    // one of its entries; a redo's, the oldest undone one.
+    for (kind, pick) in [
+        ("undo", "a.undone = 0 ORDER BY a.id DESC"),
+        ("redo", "a.undone = 1 ORDER BY a.id ASC"),
+    ] {
+        let hids: Vec<&str> = ops
+            .iter()
+            .filter(|o| o.kind == kind)
+            .map(|o| o.hid.as_str())
+            .collect();
+        if hids.is_empty() {
+            continue;
+        }
+        let action: Option<i64> = conn
+            .query_row(
+                &format!(
+                    "SELECT a.id FROM undo_actions a JOIN entry_history h ON h.action_id = a.id
+                     WHERE h.entry_hid IN (SELECT value FROM json_each(?1)) AND {pick} LIMIT 1"
+                ),
+                params![serde_json::to_string(&hids)?],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match (kind, action) {
+            ("undo", Some(id)) => crate::undo_log::set_undone(conn, id, &[])?,
+            (_, Some(id)) => crate::undo_log::set_redone(conn, id)?,
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// Write the row an entry's ops fold to. Two distinct entries claiming one

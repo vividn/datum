@@ -32,7 +32,7 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 # Database
 # "hooks" is dependency-free; it exposes progress_handler, which
 # execute_view uses to interrupt runaway kit views (da-sky7).
-rusqlite = { version = "0.32", features = ["bundled", "functions", "hooks"] }
+rusqlite = { version = "0.32", features = ["backup", "bundled", "functions", "hooks"] }
 
 # Time
 # `default-features = false` drops chrono's `wasmbind`, which on

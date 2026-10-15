@@ -62,6 +62,10 @@ pub fn render_parse_special(e: &ParseError, db: Option<&datum_core::db::Db>) -> 
 /// case themselves.
 pub fn run(argv: Vec<String>) -> Result<()> {
     let _ = datum_core::BUILD.set(env!("DATUM_BUILD"));
+    // Before any open: a drain or a snapshot signs ops ahead of `dispatch`,
+    // and with no client yet `sync::endpoint` would mint this copy a new
+    // key (da-9q3fr).
+    datum_core::db::set_client_source(|| config::client_id().ok());
     // Shell completion's hidden reader (da-bu09u): before any parse or db
     // open, and it never fails — a TAB must not print an error. Global
     // options may stand before it (da-ejoes).
@@ -97,10 +101,162 @@ pub fn run(argv: Vec<String>) -> Result<()> {
         }
     };
 
-    match invocation {
+    let result = match invocation {
         Invocation::Single(cli) => dispatch_single(cli),
         Invocation::Multi { .. } => dispatch_multi(invocation),
+    };
+    // Parsed again: the first parse was moved into its dispatch, and `Cli`
+    // is not `Clone`. Same argv, against the same file; an alias a drain
+    // landed in between resolves as it would for the next command.
+    if let Some(Locked(path)) = result.as_ref().err().and_then(|e| e.downcast_ref()) {
+        return queue(path, args::parse_invocation(argv)?);
     }
+    result
+}
+
+/// A command that writes, finding the database's write lock held and
+/// having written nothing (da-9q3fr): [`run`] spools it instead.
+#[derive(Debug)]
+struct Locked(String);
+
+impl std::fmt::Display for Locked {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: database is locked", self.0)
+    }
+}
+
+impl std::error::Error for Locked {}
+
+/// How long a command that writes waits for the lock before it spools: past
+/// a sync apply's 500 ms chunk and its pause (`APPLY_HOLD`, da-2ejbs), so a
+/// write beside one lands as before, and within a second to QUEUED.
+const SPOOL_AFTER: std::time::Duration = std::time::Duration::from_millis(750);
+
+/// Does `command` change entries, and so spool when it can't write? Every
+/// command that does, but sync's, `db`'s and `config`'s, which act on the
+/// file, the network or a device rather than on what it holds, and `kit`'s,
+/// whose indices are DDL no op carries. None in the browser, whose database
+/// is one process's at a time.
+fn spools(command: &Command) -> bool {
+    !cfg!(target_family = "wasm")
+        && matches!(
+            command,
+            Command::Occur(_)
+                | Command::Start(_)
+                | Command::Stop(_)
+                | Command::Switch(_)
+                | Command::Add(_)
+                | Command::Note(_)
+                | Command::Delete(_)
+                | Command::Undo(_)
+                | Command::Redo(_)
+                | Command::Edit(_)
+                | Command::Update(_)
+                | Command::Merge(_)
+                | Command::Rekey(_)
+                | Command::Retime(_)
+                | Command::Spec(_)
+                | Command::Alias(_)
+                | Command::Conflicts(_)
+                | Command::Track(_)
+                | Command::Ignore(_)
+                | Command::Flag(_)
+        )
+}
+
+/// Can `command` ask its person something before it writes? `edit` always
+/// (its editor), and a change to `_LAST` named by default (the stale-`_LAST`
+/// question).
+fn asks(command: &Command) -> bool {
+    match command {
+        Command::Edit(_) => true,
+        // `update_core::parse_update_payload`'s rule: no bare token, `_LAST`.
+        Command::Update(a) | Command::Merge(a) | Command::Rekey(a) => {
+            a.id_or_slug.iter().chain(&a.rest).all(|t| t.contains('='))
+        }
+        Command::Retime(a) => a.slug.is_none(),
+        _ => false,
+    }
+}
+
+/// Run a command that may ask its person on a snapshot from the start
+/// (vividn, 2026-10-15: «it shouldn't rerun anything. It should just write the
+/// database at the right spot»): what it asks is about the entry it finds,
+/// and what it signs is that answer, computed once. Its ops land as a
+/// drain lands a line, now when the lock is free, and else at the next
+/// drain, so a change made meanwhile to the same entry by another copy is
+/// a sync conflict (da-9q3fr). A snapshot costs ~1 ms per MB copied, which a
+/// command waiting on a person can spend and a log cannot.
+fn ask_first(path: &str, cli: Cli) -> Result<()> {
+    let (snapshot, spool) = datum_core::db::Db::spool_open(path)?;
+    cmd::dispatch(cli, &snapshot)?;
+    if !spool.append(&snapshot)? {
+        return Ok(());
+    }
+    let db = datum_core::db::Db::open(path);
+    if db
+        .as_ref()
+        .map_or(true, |db| db.drain_spool().is_err() || db.spool_waiting())
+    {
+        eprintln!("note: the database is locked: this change is queued in {path}.spool and lands at the next command");
+    }
+    Ok(())
+}
+
+/// Open `path` for `run` to write, landing what is spooled beside it, or
+/// say [`Locked`] when `spools` and another holds the write lock.
+fn open_to_write(path: &str, spools: bool) -> Result<datum_core::db::Db> {
+    let db = match datum_core::db::Db::open(path) {
+        Err(e) if spools && datum_core::db::busy(&e) => return Err(Locked(path.into()).into()),
+        r => r?,
+    };
+    datum_commands::announce_migration(&db);
+    #[cfg(not(target_family = "wasm"))]
+    match db.drain_spool() {
+        Ok(0) => {}
+        Ok(n) => eprintln!("note: {n} queued change(s) written"),
+        Err(e) => eprintln!("note: the changes queued in {path}.spool wait: {e}"),
+    }
+    // Behind changes still queued (a drain stepped aside, or a line waits),
+    // a write queues too: this copy's changes land in the order they were
+    // made, and its ops in that order (da-9q3fr).
+    if spools && (db.spool_waiting() || !db.can_write(SPOOL_AFTER)?) {
+        return Err(Locked(path.into()).into());
+    }
+    Ok(db)
+}
+
+/// Whether `result`, of a command that `spools` and changed nothing on
+/// `db` since `before`, failed for the lock: then it is [`Locked`] too.
+fn locked_out(
+    result: Result<()>,
+    db: &datum_core::db::Db,
+    before: u64,
+    spools: bool,
+    path: &str,
+) -> Result<()> {
+    match result {
+        Err(e)
+            if spools
+                && db.conn().total_changes() == before
+                && e.chain().any(datum_core::db::busy) =>
+        {
+            Err(Locked(path.into()).into())
+        }
+        r => r,
+    }
+}
+
+/// Run `invocation` on a snapshot of the database at `path`, printing
+/// QUEUED for its action word, and spool what it signed (da-9q3fr).
+fn queue(path: &str, invocation: Invocation) -> Result<()> {
+    let (snapshot, spool) = datum_core::db::Db::spool_open(path)?;
+    {
+        let _queued = output::Queued::hold();
+        cmd::dispatch_invocation(invocation, &snapshot)?;
+    }
+    spool.append(&snapshot)?;
+    Ok(())
 }
 
 fn dispatch_single(cli: Cli) -> Result<()> {
@@ -150,18 +306,28 @@ fn dispatch_single(cli: Cli) -> Result<()> {
         }
     }
 
+    let path = resolved.path.to_string_lossy().into_owned();
+    let spools = spools(&cli.command);
+    if spools && asks(&cli.command) {
+        if resolved.name.is_some() {
+            let _ = config::ensure_registered(&resolved);
+        }
+        return ask_first(&path, cli);
+    }
     let db = if matches!(&cli.command, Command::Db(DbCommand::Purge(_))) {
-        datum_core::db::Db::open_unmigrated(&resolved.path.to_string_lossy())?
+        let db = datum_core::db::Db::open_unmigrated(&path)?;
+        datum_commands::announce_migration(&db);
+        db
     } else {
-        datum_core::db::Db::open(&resolved.path.to_string_lossy())?
+        open_to_write(&path, spools)?
     };
-    datum_commands::announce_migration(&db);
 
     if resolved.name.is_some() {
         let _ = config::ensure_registered(&resolved);
     }
 
-    cmd::dispatch(cli, &db)
+    let before = db.conn().total_changes();
+    locked_out(cmd::dispatch(cli, &db), &db, before, spools, &path)
 }
 
 fn dispatch_multi(invocation: Invocation) -> Result<()> {
@@ -183,12 +349,23 @@ fn dispatch_multi(invocation: Invocation) -> Result<()> {
             );
         }
     }
-    let db = datum_core::db::Db::open(&resolved.path.to_string_lossy())?;
-    datum_commands::announce_migration(&db);
+    let path = resolved.path.to_string_lossy().into_owned();
+    let spools = match &invocation {
+        Invocation::Multi { sides, .. } => sides.iter().any(|c| spools(&c.command)),
+        Invocation::Single(c) => spools(&c.command),
+    };
+    let db = open_to_write(&path, spools)?;
     if resolved.name.is_some() {
         let _ = config::ensure_registered(&resolved);
     }
-    cmd::dispatch_invocation(invocation, &db)
+    let before = db.conn().total_changes();
+    locked_out(
+        cmd::dispatch_invocation(invocation, &db),
+        &db,
+        before,
+        spools,
+        &path,
+    )
 }
 
 fn try_kit_level2_dispatch() -> Result<Option<()>> {

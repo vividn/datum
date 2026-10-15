@@ -107,6 +107,7 @@ mod spec_cmd;
 mod spec_entries;
 mod spec_keys;
 mod spec_lists;
+mod spool;
 mod stale_last_gate_removed;
 mod start_cmd;
 mod state_id_normalize;

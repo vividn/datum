@@ -67,6 +67,9 @@ fn concurrent_writer_processes_lose_no_writes() {
         failures.first()
     );
 
+    // A write that waited past its turn was queued, not lost (da-9q3fr):
+    // the next command lands it, and the count is what landed.
+    assert!(spawn(&["tail".into()]).status.success());
     let count: usize = Connection::open(&db)
         .unwrap()
         .query_row(
@@ -179,6 +182,9 @@ fn a_write_beside_a_large_sync_apply_waits_a_chunk() {
         "{beside} of {writes} writes got in beside the apply"
     );
 
+    // One that missed every pause was queued (da-9q3fr): the next command
+    // lands it, and the count is what landed.
+    assert!(datum(&["tail"]).output().unwrap().status.success());
     let n: usize = Connection::open(&db)
         .unwrap()
         .query_row(

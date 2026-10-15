@@ -83,6 +83,28 @@ and after `schema.sql` at every open; a later migration that drops or
 rebuilds an `entries` column they name must drop them first. A span's seconds are `floor(end) − floor(start)`, which adds up
 exactly across midnights. `datum check stats` recomputes a sample of days and says how many.
 
+### The spool: a write is never lost to the lock
+A command that changes entries (every one but sync's, `db`'s, `config`'s and
+`kit`'s, whose indices are DDL no op carries)
+and can't take the write lock in 750 ms — a migration, a long sync apply,
+another command holds it — runs unchanged on a SNAPSHOT of the database in
+memory (`db/spool.rs`, da-9q3fr), with the changes already queued landed in
+it first. It prints what it would write with QUEUED as the action word, and
+the ops it signed, its resolved effect (the entry a log makes, which entry an
+undo takes back, a retime's new time), go as one fsynced JSON line to
+`<db>.spool` before it exits 0. A command that may ask its person (`edit`,
+an `update` or `retime` of `_LAST` by default) runs on the snapshot from the
+start, whatever the lock, and its line lands at once when it can: what the
+person answered is about the entry they saw, and nothing is run twice. The
+next command that opens the database,
+and a sync daemon's tick, land the lines in order, one transaction each:
+every op signed again as this copy's next with the `deps` it was made with,
+so a change that landed meanwhile meets it under the fold's conflict rules
+as a late op from another copy would, and an undo or redo moves the undo
+stack as it did on the snapshot. `_meta` `spool_drained` names the last
+line committed, so a drain run twice writes nothing more. Native only: the
+browser's database is one process's at a time.
+
 ## CLI conventions
 
 ### Time flags (datum-compatible)

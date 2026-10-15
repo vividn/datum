@@ -29,7 +29,7 @@ use crate::history::ChangeKind;
 use crate::ids::Hid;
 
 /// Singleton row id for the `last_docs` table.
-const LAST_DOCS_ROW: i64 = 1;
+pub(crate) const LAST_DOCS_ROW: i64 = 1;
 
 /// How stale `_LAST_WITH_PROTECTION` may be before it refuses to resolve.
 /// Matches datum's `LAST_DOCS_TOO_OLD_MINUTES` (15 min).

@@ -771,6 +771,12 @@ pub fn run(db: &Db, stop: impl Fn() -> Result<()>) -> Result<()> {
                         ep.close().await;
                         return Err(e);
                     }
+                    // What a command spooled while another held the lock (da-9q3fr).
+                    match db.drain_spool() {
+                        Ok(0) => {}
+                        Ok(n) => println!("{} wrote {n} queued change(s)", now()),
+                        Err(e) => eprintln!("{} queued changes wait: {e:#}", now()),
+                    }
                     // Paused (da-wlbyx), it idles: an incoming session's
                     // handshake refuses, and nothing is pushed.
                     let peers = match db.sync_paused()? {
