@@ -30,7 +30,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { defaultColor, inkOver, lookOf, pressArgv, requiredKeys, shapeFor, buttonsFor, bands, fieldRows } from '../src/lib/fields.ts';
-import { sharedApp, startApp, stopApp } from './support/app.mjs';
+import { ON_COLLECT, sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, GREEN, ORANGE, PURPLE, type, untilFieldStyle } from './support/fields.mjs';
 import { listed, rowsOf } from './support/rows.mjs';
 import { FIELD_FORM } from './support/field.mjs';
@@ -436,5 +436,22 @@ describe('in the app', () => {
 			assert.ok(Math.abs(hint.y + hint.height / 2 - (track.y + track.height / 2)) < 4, 'the hint is not beside the (+)');
 			assert.ok(hint.height < 24, `the hint is ${hint.height}px tall`);
 		});
+	});
+
+	// On a phone the fields pane is half the screen, and the hint ran on past
+	// its edge under the bar's sideways scroll: «nothing tracked yet -» and
+	// nothing more (da-dq19n). A sentence wraps; only the buttons scroll.
+	test('on a phone the empty hint is read whole inside the fields pane', async () => {
+		await withApp(
+			async ({ page }) => {
+				const hint = page.locator('section.pane[data-title="fields"] .hint.empty');
+				await hint.waitFor();
+				const [h, p] = await Promise.all([hint.boundingBox(), page.locator('section.pane[data-title="fields"] .bar').boundingBox()]);
+				assert.ok(h.x >= p.x && h.x + h.width <= p.x + p.width + 0.5, `the hint spans ${h.x}–${h.x + h.width}, the pane ${p.x}–${p.x + p.width}`);
+				assert.ok(h.y >= p.y && h.y + h.height <= p.y + p.height + 0.5, `the hint spans ${h.y}–${h.y + h.height} down, the pane ${p.y}–${p.y + p.height}`);
+				assert.equal(await hint.textContent(), 'nothing tracked yet — or type a command to log something');
+			},
+			{ viewport: { width: 390, height: 844 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT }
+		);
 	});
 });

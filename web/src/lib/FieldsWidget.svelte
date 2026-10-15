@@ -925,6 +925,8 @@
 		min-width: 0;
 		min-height: 0;
 		display: flex;
+		/* The empty hint's measure (`100cqw` below). */
+		container-type: inline-size;
 	}
 
 	/* A pinch on the bar is the widget's, not the page's; its sideways
@@ -1214,5 +1216,15 @@
 		font-size: 0.8rem;
 		font-style: italic;
 		white-space: nowrap;
+	}
+
+	/* On a row of its own, the empty hint is a sentence and wraps to the
+	   widget's width; the rows scroll sideways under it, and on a phone's
+	   half-screen pane cut it at «nothing tracked yet -» (da-dq19n). Beside
+	   the (+), on a bar one row high, wrapping would clip it top and bottom
+	   instead, so there it stays one line and scrolls. */
+	.hint.empty:only-child {
+		white-space: normal;
+		max-width: 100cqw;
 	}
 </style>
