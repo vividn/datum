@@ -35,12 +35,12 @@
 	saved is what it reads back.
 
 	What it writes is decided by what it was opened on. A new field gets
-	`track`, the one command that writes the TRACK document, and then, if
-	the form says more than `track` can, a `spec set` of the rest over what
-	it wrote (`restOver`). A field with a
+	ONE command, which one Undo takes back whole (da-2pbvd): `spec set
+	--from-json` with the whole spec and `--track`, which writes the TRACK
+	document with it, or `--ignore` (`declareArgv`). A field with a
 	spec gets the whole edited spec back in ONE `spec set --from-json` — the
-	`set` shape, the list entire, never a stream of `add-state`s. Then an
-	`ignore` or a `track` where tracked or ignored changed. It is all
+	`set` shape, the list entire, never a stream of `add-state`s — with
+	`--track` or `--ignore` where tracked or ignored changed. It is all
 	handed up as `close`'s `Save` for the widget to run; null runs nothing.
 -->
 <script lang="ts">
@@ -55,16 +55,15 @@
 	import Sheet from './Sheet.svelte';
 	import Swatch from './Swatch.svelte';
 	import {
+		declareArgv,
 		editedSpec,
 		EXAMPLES,
 		keyRows,
 		moved,
 		placeOf,
-		restOver,
 		specArgv,
 		specKeys,
 		stateRows,
-		trackArgv,
 		VERBS,
 		type DerivedAlias,
 		type Example,
@@ -147,12 +146,13 @@
 		icon,
 		lookup
 	};
+	// Tracked or ignored, changed on a field: `--track` or `--ignore` in its one `spec set`.
 	$: argv = spec
-		? specArgv(editedSpec(spec, edits))
-		: trackArgv(field.trim() || '<field>', edits.verb, states, color, keys);
-	// Tracked or ignored, changed: the `track` or `ignore` that says so, after the save.
-	$: then = ignore === wasIgnored ? null : [ignore ? 'ignore' : 'track', field.trim()];
-	$: save = { argv, rest: spec ? undefined : restOver(edits), then };
+		? [...specArgv(editedSpec(spec, edits)), ...(ignore === wasIgnored ? [] : [ignore ? '--ignore' : '--track'])]
+		: declareArgv(field.trim() || '<field>', edits, ignore);
+	$: save = { argv };
+	// The spec is `{…}` in the preview, a wall of JSON on a phone; the whole line is its title.
+	$: preview = argv.map((t, i) => (argv[i - 1] === '--from-json' ? '{…}' : shellJoin([t]))).join(' ');
 	let opened: string | undefined;
 	$: {
 		const now = JSON.stringify([field, verb, edits, ignore]);
@@ -544,7 +544,7 @@
 			<button class="commit" use:act={'run'} type="submit" disabled={!ready}>{spec ? 'Done' : 'Save'}</button>
 		</div>
 		{#if verb !== null && !spec}
-			<code class="preview">{shellJoin(argv)}{#if then}<br />{shellJoin(then)}{/if}</code>
+			<code class="preview" title={shellJoin(argv)}>{preview}</code>
 		{/if}
 
 		{#if ignored.length > 0}

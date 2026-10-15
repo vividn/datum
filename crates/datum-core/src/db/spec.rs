@@ -19,6 +19,7 @@ use crate::dur::Dur;
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
 use crate::field_spec::{verb_from_log, FieldSpec, SpecRegistry};
+use crate::history::ChangeKind;
 use crate::ids::Slug;
 use crate::shape::{is_ignored_state, TRACKED_STATE_VALUE};
 use crate::time::DatumTime;
@@ -26,6 +27,7 @@ use crate::verb::Verb;
 
 use super::alias::ALIAS_FIELD;
 use super::definition::{COMMAND_FIELD, INDEX_FIELD, KIT_FIELD, VIEW_FIELD};
+use super::insert::{insert_new_in_tx, save_existing_entry_with_kind_in_tx};
 use super::kit_layout::LAYOUT_FIELD;
 use super::types::{AliasConflict, AliasConflictReason, SaveSpecReport, LIVE_SQL};
 use super::Db;
@@ -349,7 +351,12 @@ impl Db {
     /// leaves it the kit's. A kit taking the spec over from its owner keeps
     /// the owner's data as `displaced`, for uninstall to hand back; any
     /// other write carries the `displaced` already there. Returns the entry.
-    pub(crate) fn write_spec_entry(&self, spec: &FieldSpec, kit_id: Option<&str>) -> Result<Entry> {
+    pub(crate) fn write_spec_entry(
+        &self,
+        spec: &FieldSpec,
+        kit_id: Option<&str>,
+        with: Option<&Entry>,
+    ) -> Result<Entry> {
         crate::slug::validate_field_name(&spec.field)?;
         let mut data = serde_json::to_value(spec)?;
         let existing = self.spec_entry(&spec.field)?;
@@ -373,20 +380,27 @@ impl Db {
                 obj.insert(SPEC_DISPLACED_KEY.into(), displaced.clone());
             }
         }
-        match existing {
-            Some(row) if row.data.as_ref() == Some(&data) => Ok(row),
+        // `with` lands in the same transaction: both or neither (da-2pbvd).
+        let tx = self.conn.unchecked_transaction()?;
+        let slug = match existing {
+            Some(row) if row.data.as_ref() == Some(&data) => row.slug,
             Some(mut row) => {
                 row.data = Some(data);
-                self.save_existing_entry(&row)?;
-                self.get_entry(&row.slug)
+                save_existing_entry_with_kind_in_tx(&tx, &row, ChangeKind::UserEdit)?;
+                row.slug
             }
             None => {
                 let client = self.client_id.get().map_or("local", String::as_str);
                 let row = new_spec_entry(&spec.field, data, client);
-                self.insert_entry(&row)?;
-                self.get_entry(&row.slug)
+                insert_new_in_tx(&tx, &row)?;
+                row.slug
             }
+        };
+        if let Some(entry) = with {
+            insert_new_in_tx(&tx, entry)?;
         }
+        tx.commit()?;
+        self.get_entry(&slug)
     }
 
     /// Variant of [`Db::save_field_spec`] that returns a structured
@@ -395,7 +409,17 @@ impl Db {
     /// user/kit alias or by another spec's earlier registration in
     /// the [`super::types::SpecAliasIndex`].
     pub fn save_field_spec_with_report(&self, spec: &FieldSpec) -> Result<SaveSpecReport> {
-        let written = self.write_spec_entry(spec, None)?;
+        self.save_field_spec_with(spec, None)
+    }
+
+    /// [`Db::save_field_spec_with_report`], with `status` — a field's TRACK
+    /// or IGNORED row — written in the same transaction (da-2pbvd).
+    pub fn save_field_spec_with(
+        &self,
+        spec: &FieldSpec,
+        status: Option<&Entry>,
+    ) -> Result<SaveSpecReport> {
+        let written = self.write_spec_entry(spec, None, status)?;
 
         // Compute the report by inspecting the now-current state of the
         // alias namespace. A derived alias is "saved" iff (a) no user/kit

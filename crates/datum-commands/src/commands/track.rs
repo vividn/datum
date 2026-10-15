@@ -44,19 +44,24 @@ pub fn resolve_verb(field: &str, requested: Option<&str>, db: &Db) -> Result<Act
     })
 }
 
+/// Whether declaring `field` at `now` begins tracking it, and so writes its
+/// TRACK row (da-6fvys, vividn, 2026-10-09): «track should only change the
+/// state of a field if it is IGNORED or nothing (because no data exists)».
+/// A field that is running, ended or already TRACKED gets its spec and no row.
+pub(crate) fn begins_tracking(db: &Db, field: &str, now: &DatumTime) -> Result<bool> {
+    Ok(match db.state_at(field, now.utc)? {
+        Some(state) => is_ignored_state(&state),
+        None => db.entries_for_field(field, Some(1))?.is_empty(),
+    })
+}
+
 pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
     // da-2sr: tracking lives in the entry log, as a switch entry. da-c8mh:
     // the spec is written in the same breath, so the field's verb is a
     // fact about the field rather than a re-reading of its log.
     let verb = resolve_verb(&args.field, args.verb.as_deref(), db)?;
-    // da-6fvys (vividn, 2026-10-09): «track should only change the state of a
-    // field if it is IGNORED or nothing (because no data exists)». A field
-    // that is running, ended or already TRACKED gets its spec and no row.
     let now = DatumTime::now();
-    let begins_tracking = match db.state_at(&args.field, now.utc)? {
-        Some(state) => is_ignored_state(&state),
-        None => db.entries_for_field(&args.field, Some(1))?.is_empty(),
-    };
+    let begins_tracking = begins_tracking(db, &args.field, &now)?;
     let mut spec = db
         .load_spec(&args.field)?
         .unwrap_or_else(|| FieldSpec::new(&args.field, verb));
@@ -162,11 +167,9 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
     spec.regenerate_derived_aliases();
     let client = client_id()?;
     db.set_client_id(&client);
-    db.save_field_spec(&spec)?;
-
-    if begins_tracking {
-        let entry = track_entry(&args.field, verb, now, &client);
-        db.insert_entry(&entry)?;
+    let entry = begins_tracking.then(|| track_entry(&args.field, verb, now, &client));
+    db.save_field_spec_with(&spec, entry.as_ref())?;
+    if let Some(entry) = entry {
         let _ = datum_core::last_docs::set_last_docs(db, std::slice::from_ref(&entry.hid));
     }
     println!("✓ Tracking '{}' ({verb})", args.field);

@@ -24,7 +24,7 @@ import {
 	cycle, editedSpec, GLYPHS, keyRows, modeOf, specArgv, specKeys, stateRows, trackArgv, trackLabel, VERBS, verbAsked, wide
 } from '../src/lib/track.ts';
 import { stripAnsi } from './support/tail.mjs';
-import { FIELD_FORM as MODAL, cancelField, openField } from './support/field.mjs';
+import { FIELD_FORM as MODAL, cancelField, declared, openField } from './support/field.mjs';
 
 const PHONE = { width: 320, height: 480 };
 
@@ -355,10 +355,9 @@ describe('in the app', () => {
 			assert.equal(await page.locator(`${MODAL} .states`).count(), 0);
 			await page.locator(`${MODAL} button[data-verb="switch"]`).click();
 			await addStates(page, ['good', 'bad']);
-			assert.equal(
-				(await page.locator(`${MODAL} code.preview`).innerText()).trim(),
-				'track mood --verb switch --state good --state bad'
-			);
+			const { line, spec } = declared(await page.locator(`${MODAL} code.preview`).getAttribute('title'));
+			assert.equal(line, 'spec set mood --from-json --track');
+			assert.deepEqual([spec.verb, spec.allowed_states], ['switch', ['good', 'bad']]);
 			assert.deepEqual(app.errors, []);
 		});
 	});
@@ -372,7 +371,7 @@ describe('in the app', () => {
 			await page.locator(`${MODAL} button.commit`).click();
 
 			await page.locator('.bar button[data-field="mood"]').waitFor();
-			assert.equal((await app.echoes()).at(-1), 'track mood --verb switch --state good --state bad');
+			assert.match((await app.echoes()).at(-1), /^spec set mood --from-json .* --track$/);
 			const spec = JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout);
 			assert.equal(spec.verb, 'switch');
 			assert.deepEqual(spec.allowed_states, ['good', 'bad']);
@@ -728,8 +727,8 @@ describe('in the app', () => {
 	// da-h119q: vividn, «when tracking something new something users
 	// immediately want to do is to add in keys they care about». So Basics
 	// asks for them, in place of the field-level unit nothing read, and a
-	// field being declared carries them in its one `track`.
-	test('Basics asks for keys and not a unit, and a new field\'s keys are saved in its `track`', async () => {
+	// field being declared carries them in its one `spec set --track` (da-2pbvd).
+	test('Basics asks for keys and not a unit, and a new field\'s keys are saved in its one `spec set --track`', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			await openIt(page);
@@ -738,19 +737,19 @@ describe('in the app', () => {
 			await page.locator(`${MODAL} ul.data + button.add`).click();
 			const row = page.locator(`${MODAL} ul.data li.key`).last();
 			await row.locator('input.name').fill('cups');
-			assert.match(await page.locator(`${MODAL} .preview`).innerText(), /-k cups$/, 'a new key is required, as `-k cups` is');
+			assert.deepEqual((declared(await page.locator(`${MODAL} .preview`).getAttribute('title')).spec).data_keys, ['cups'], 'a new key is required, as `-k cups` is');
 			assert.equal(await row.locator('input.value').count(), 0, 'no default box before the =');
 			await row.locator('button.eq').click();
-			assert.match(await page.locator(`${MODAL} .preview`).innerText(), /-k cups=$/);
+			assert.deepEqual((declared(await page.locator(`${MODAL} .preview`).getAttribute('title')).spec).data_keys, ['cups=']);
 			await row.locator('input.value').fill('2');
-			assert.match(await page.locator(`${MODAL} .preview`).innerText(), /-k cups=2$/);
+			assert.deepEqual((declared(await page.locator(`${MODAL} .preview`).getAttribute('title')).spec).data_keys, ['cups=2']);
 			const before = (await app.echoes()).length;
 			await page.locator(`${MODAL} button.commit`).click();
 			await page.locator('.bar button[data-field="coffee"]').waitFor();
 			await app.idle();
 			const echoes = (await app.echoes()).slice(before);
 			assert.equal(echoes.length, 1, `one command: ${echoes.join(' | ')}`);
-			assert.match(echoes[0], /^track coffee /);
+			assert.match(echoes[0], /^spec set coffee --from-json .* --track$/);
 			const shown = JSON.parse((await app.run(['spec', 'show', 'coffee'])).stdout);
 			assert.deepEqual(shown.keys, [{ name: 'cups', kind: 'default', value: '2', in_slug: false }]);
 
@@ -883,6 +882,11 @@ describe('in the app', () => {
 				await rows.last().locator('input.name').fill(name);
 			}
 			const modes = () => rows.locator('.mode').allInnerTexts();
+			/** Where the preview's spec puts the keys and the rest of the line. */
+			const routes = async () => {
+				const spec = declared(await page.locator(`${MODAL} .preview`).getAttribute('title')).spec;
+				return [spec.id_keys, spec.data_keys, spec.remainder, spec.string_remainder, spec.comment_remainder];
+			};
 			assert.deepEqual(await modes(), ['-K', '-K', '-K']);
 			assert.match(await rows.first().locator('.line').innerText(), /id/);
 			await rows.nth(1).locator('.mode').click(); // -R
@@ -890,12 +894,12 @@ describe('in the app', () => {
 			assert.match(await rows.nth(1).locator('.line').innerText(), /rest of the line, as a list/);
 			assert.equal(await rows.nth(1).locator('button.eq').count(), 0, 'the rest of the line has no default');
 			await rows.nth(1).locator('.mode').click(); // -SR
-			assert.match(await page.locator(`${MODAL} .preview`).innerText(), /-K id -K notes -SR title$/);
+			assert.deepEqual(await routes(), [['id', 'notes'], [], 'title', true, undefined]);
 			for (let i = 0; i < 3; i++) await rows.nth(2).locator('.mode').click(); // -K → -C, which -SR gives up
 			assert.deepEqual(await modes(), ['-K', '-k', '-C']);
 			assert.equal(await rows.nth(1).locator('.line').count(), 0, 'plain -k has no line');
 			assert.equal(await rows.nth(2).locator('input.name').inputValue(), 'comment');
-			assert.match(await page.locator(`${MODAL} .preview`).innerText(), /-K id -k title -C$/);
+			assert.deepEqual(await routes(), [['id'], ['title'], undefined, undefined, true]);
 			await page.locator(`${MODAL} button.commit`).click();
 			await page.locator(`${MODAL} h2`).waitFor();
 			const spec = JSON.parse((await app.run(['spec', 'show', 'book'])).stdout);

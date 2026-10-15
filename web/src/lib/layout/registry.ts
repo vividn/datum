@@ -522,7 +522,7 @@ export const KINDS: Record<string, WidgetKind> = {
 		component: FieldWidget,
 		help: [
 			'A field is one thing you track. Make one here, or pick one to change: its shape, states, data, aliases and placement.',
-			"Save makes a new field with `track`, and a `spec set` for anything `track` can't say; Done saves a change with `spec set`; Cancel leaves it as it was."
+			'Save makes a new field with one `spec set --track`, which one Undo takes back; Done saves a change with `spec set`; Cancel leaves it as it was.'
 		].join('\n'),
 		legible: { width: 240, height: 180 }
 	},

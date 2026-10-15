@@ -24,7 +24,7 @@ import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp } from './support/app.mjs';
 import { BLUE, CLEAR, FIXTURE, type, untilFieldStyle } from './support/fields.mjs';
-import { FIELD_FORM } from './support/field.mjs';
+import { FIELD_FORM, declared } from './support/field.mjs';
 
 describe('a press', () => {
 	before(startApp);
@@ -76,7 +76,9 @@ describe('a press', () => {
 			assert.equal(await modal.locator('.verb[aria-checked="true"]').count(), 0, 'a verb was chosen for them');
 
 			await modal.locator('button[data-verb="start"]').click();
-			assert.equal((await modal.locator('code.preview').innerText()).trim(), 'track sleep --verb start');
+			const { line, spec } = declared(await modal.locator('code.preview').getAttribute('title'));
+			assert.equal(line, 'spec set sleep --from-json --track');
+			assert.equal(spec.verb, 'start');
 			await modal.locator('button.commit').click();
 			await page.locator('.bar button[data-field="sleep"]').waitFor();
 			assert.equal(JSON.parse((await app.run(['spec', 'show', 'sleep'])).stdout).verb, 'start');

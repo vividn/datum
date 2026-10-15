@@ -4,11 +4,11 @@ use anyhow::{Context, Result};
 use datum_core::{
     action::Action,
     db::{Db, IGNORED_STATE_VALUE},
-    entry::{Entry, Verb},
     field_spec::{parse_key_decl, FieldSpec, GlyphBy, KeyKind},
     kit_color::resolve,
-    shape::TRACKED_STATE_VALUE,
+    shape::{is_ignored_state, TRACKED_STATE_VALUE},
     time::DatumTime,
+    track::track_entry,
 };
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
@@ -250,35 +250,6 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     pres.glyph_scale = args.glyph_scale.or(pres.glyph_scale);
     pres.glyph_aspect = args.glyph_aspect.or(pres.glyph_aspect);
     check_factors(&mut spec)?;
-    // da-2sr: --track / --ignore on `spec set` write switch entries rather
-    // than mutating the spec. The flags are kept on the parser surface for
-    // backwards compatibility; they no longer touch the spec.
-    if args.track {
-        let client = client_id()?;
-        let entry = Entry::new_legacy(
-            &args.field,
-            Verb::Switch,
-            None,
-            None,
-            Some(DatumTime::now()),
-            None,
-            client,
-        );
-        db.insert_entry(&entry)?;
-    }
-    if args.ignore {
-        let client = client_id()?;
-        let entry = Entry::new_legacy(
-            &args.field,
-            Verb::Switch,
-            Some(JsonValue::String(IGNORED_STATE_VALUE.to_string())),
-            None,
-            Some(DatumTime::now()),
-            None,
-            client,
-        );
-        db.insert_entry(&entry)?;
-    }
     // da-ulc0v: a key lives in one place — each declaration takes its name
     // out of the others first.
     for key in args.id_keys.iter().chain(&args.data_keys) {
@@ -334,7 +305,29 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     // Always regenerate derived aliases from the current shape.
     spec.regenerate_derived_aliases();
 
-    let report = db.save_field_spec_with_report(&spec)?;
+    // da-2pbvd: `--track` / `--ignore` write the field's status with its
+    // spec, in its transaction — one command, one undo — and only where the
+    // status changes: `track`'s TRACK row by `track`'s rule, an IGNORED row
+    // for a field not ignored already. The two tests differ on purpose: by
+    // `begins_tracking` (da-6fvys) a running or ended field gets no TRACK
+    // row either, its state being left alone.
+    anyhow::ensure!(
+        !(args.track && args.ignore),
+        "--track and --ignore: give one"
+    );
+    let now = DatumTime::now();
+    let status = if args.track && super::track::begins_tracking(db, &spec.field, &now)? {
+        Some(track_entry(&spec.field, spec.verb, now, &client_id()?))
+    } else if args.ignore
+        && !db
+            .state_at(&spec.field, now.utc)?
+            .is_some_and(|s| is_ignored_state(&s))
+    {
+        Some(super::ignore::ignored_entry(&spec.field, client_id()?))
+    } else {
+        None
+    };
+    let report = db.save_field_spec_with(&spec, status.as_ref())?;
     remember(db, report.hid.clone());
     println!("✓ Spec saved for '{}'", spec.field);
     warn_alias_conflicts(&report);
@@ -884,8 +877,8 @@ mod tests {
         assert_eq!(spec.color, Some(resolve("green", "mood").unwrap()));
         let states = spec.allowed_states.as_ref().unwrap();
         assert!(states.contains(&"happy".to_string()) && states.contains(&"sad".to_string()));
-        // da-2sr: --track on `spec set` writes a switch entry; the spec
-        // itself no longer carries tracked/ignored bits.
+        // da-2sr, da-2pbvd: --track on `spec set` writes the TRACK row; the
+        // spec itself carries no tracked/ignored bits.
         let mood_tracked = db.get_tracked_fields(chrono::Utc::now()).unwrap();
         let mood_row = mood_tracked.iter().find(|f| f.field == "mood").unwrap();
         assert!(!mood_row.ignored);

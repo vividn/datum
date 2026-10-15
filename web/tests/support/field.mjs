@@ -4,7 +4,20 @@
 // tab slides in as (`.beside`), which is thrown away when it lands
 // (da-6du3o): what is typed there is lost.
 
+import { shellSplit } from '../../src/lib/shellSplit.ts';
+
 export const FIELD_FORM = '.field-form:not(.beside *)';
+
+/**
+ * A new field's Save as a preview or an echo reads it — ONE `spec set F
+ * --from-json J --track` or `--ignore` (da-2pbvd) — as the line without J,
+ * and J parsed: the shell's quoting of the JSON is none of a test's business.
+ */
+export function declared(text) {
+	const argv = shellSplit(text.trim());
+	const [json] = argv.splice(4, 1);
+	return { line: argv.join(' '), spec: JSON.parse(json) };
+}
 
 /** Any copy of the form, the sliding one too: what must be gone before another opens. */
 const ANY = '.field-form';

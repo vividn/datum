@@ -149,8 +149,9 @@ export interface StateRow {
  * and `NAME=VALUE` for an assign. Not `--key`, whose subfields bind in the
  * order of their names, so a card's `person vr520 vremya cantown` stored
  * the name as the city. The row that takes the rest of the line is `-R
- * KEY`, `-SR KEY` or `-C` (da-fu29p, da-zqnt3). What `track` cannot say,
- * the rest of the form says over what it wrote (`restOver`).
+ * KEY`, `-SR KEY` or `-C` (da-fu29p, da-zqnt3). The field form declares
+ * a new field with `spec set --track` instead (`declareArgv`), which says
+ * all the form does in one command.
  */
 export function trackArgv(
 	field: string,
@@ -562,28 +563,23 @@ export const formOf = (spec: Spec): Parameters<typeof editedSpec>[1] => ({
 	lookup: spec.state_lookup_field ?? ''
 });
 
-/**
- * What a new field's form says that its `track` could not — a glyph, a
- * state's description, a placement, anything of the tabs — as the `spec
- * set` that says it over the spec `track` wrote, or null when there is
- * nothing more to say.
- */
-export const restOver =
-	(edit: Parameters<typeof editedSpec>[1]) =>
-	(written: Spec): string[] | null => {
-		const [next, same] = [edit, formOf(written)].map((e) => specArgv(editedSpec(written, e)));
-		return JSON.stringify(next) === JSON.stringify(same) ? null : next;
-	};
+/** A field nothing has declared yet: what a new field's form is laid over. */
+const blank = (field: string, verb: Verb): Spec => ({ field, verb, color: null, description: null, allowed_states: null, state_colors: {} });
 
 /**
- * What a save runs, in order: `argv`; for a new field, `rest` over the spec
- * its `track` wrote; then `then`, the `track` or `ignore` the form's
- * Tracked / Ignored asks for. One refused stops the rest.
+ * The ONE command that declares a new field, which one Undo takes back
+ * whole (da-2pbvd): `spec set --from-json` with the whole of its form, and
+ * `--track` or `--ignore`, which write its TRACK or IGNORED row in the same
+ * transaction.
  */
+export const declareArgv = (field: string, edit: Parameters<typeof editedSpec>[1], ignore = false): string[] => [
+	...specArgv(editedSpec(blank(field, edit.verb), edit)),
+	ignore ? '--ignore' : '--track'
+];
+
+/** What a save runs: ONE command, which one Undo takes back (da-2pbvd). */
 export interface Save {
 	argv: string[];
-	rest?: (written: Spec) => string[] | null;
-	then?: string[] | null;
 }
 
 /**

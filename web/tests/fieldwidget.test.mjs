@@ -15,10 +15,9 @@
 import test, { before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { sharedApp, startApp, stopApp, withApp } from './support/app.mjs';
-import { EXAMPLES, VERBS, trackArgv } from '../src/lib/track.ts';
-import { shellJoin } from '../src/lib/shellSplit.ts';
+import { EXAMPLES, VERBS } from '../src/lib/track.ts';
 import { DESKTOP, PHONE } from './support/layout.mjs';
-import { FIELD_FORM, openField } from './support/field.mjs';
+import { FIELD_FORM, declared, openField } from './support/field.mjs';
 import { until } from './support/until.mjs';
 
 before(startApp);
@@ -161,8 +160,10 @@ describe('the field widget', () => {
 			assert.equal(await page.locator(`${FIELD_FORM} input.field`).inputValue(), 'environment');
 			assert.equal(await page.locator(`${FIELD_FORM} .tile[aria-label^="the field's glyph:"]`).getAttribute('data-glyph'), '🌳');
 			assert.deepEqual(await page.locator(`${FIELD_FORM} .state input.name`).evaluateAll((all) => all.map((i) => i.value)), Object.keys(environment.states));
-			const painted = Object.entries(environment.states).map(([name, color]) => ({ name, color, description: '' }));
-			assert.equal((await page.locator(`${FIELD_FORM} code.preview`).innerText()).trim(), shellJoin(trackArgv('environment', 'switch', painted, environment.color)));
+			const { line, spec } = declared(await page.locator(`${FIELD_FORM} code.preview`).getAttribute('title'));
+			assert.equal(line, 'spec set environment --from-json --track');
+			assert.deepEqual([spec.verb, spec.color, spec.allowed_states], ['switch', environment.color, Object.keys(environment.states)]);
+			assert.deepEqual(spec.state_colors, Object.fromEntries(Object.entries(environment.states).filter(([, color]) => color)));
 			assert.equal(environment.states.outside, '#9ad48a');
 			assert.equal(environment.states.airplane, '#ece8df');
 			assert.deepEqual(app.errors, []);
@@ -196,29 +197,24 @@ describe('the field widget', () => {
 						.evaluateAll((all) => all.map((li) => [li.querySelector('.mode').textContent, li.querySelector('input.name').value, li.querySelector('.eq').getAttribute('aria-pressed')])),
 					(example.keys ?? []).map((k) => [k.in_slug ? '-K' : '-k', k.name, String(k.kind !== 'required')])
 				);
-				const argv = trackArgv(
-					example.field,
-					example.verb,
-					Object.entries(example.states ?? {}).map(([name, color]) => ({ name, color, description: '' })),
-					example.color,
-					(example.keys ?? []).map((k) => ({ ...k, value: '' }))
-				);
-				// What `track` cannot say — every example's glyph, a state card, never false — is a `spec set` after it.
-				assert.equal((await page.locator(`${FIELD_FORM} code.preview`).innerText()).trim(), shellJoin(argv));
+				// One `spec set` with the whole form, which writes its TRACK row too (da-2pbvd): the
+				// spec is `{…}` in the preview, and the whole line its title.
+				const code = page.locator(`${FIELD_FORM} code.preview`);
+				assert.equal((await code.innerText()).trim(), `spec set ${example.field} --from-json {…} --track`);
+				const preview = await code.getAttribute('title');
+				assert.equal(declared(preview).line, `spec set ${example.field} --from-json --track`);
 				// And nothing is written yet.
 				await app.idle();
 				assert.deepEqual(await app.allEntries(), []);
 				assert.equal((await app.run(['spec', 'list'])).stdout.includes(example.field), false, 'the tap declared it');
 
-				// Saved, it is its `track` and, where the form says more, one `spec set`; the widget stays on the field it made.
+				// Saved, it is the ONE command the preview showed; the widget stays on the field it made.
 				const before = (await app.echoes()).length;
 				await page.locator(`${FIELD_FORM} button.commit`).click();
 				const result = await saved;
 				assert.equal(result.code, 0, result.stderr);
 				const echoes = (await app.echoes()).slice(before);
-				assert.equal(echoes[0], shellJoin(argv));
-				assert.equal(echoes.length, 2, echoes.join(' | '));
-				assert.match(echoes[1], new RegExp(`^spec set ${example.field} --from-json `));
+				assert.deepEqual(echoes, [preview], 'one command, not a stream');
 				const shown = JSON.parse((await app.run(['spec', 'show', example.field])).stdout);
 				assert.equal(shown.color, example.color);
 				assert.equal(shown.description, null);
@@ -241,6 +237,11 @@ describe('the field widget', () => {
 				const logged = (await app.entries()).filter((e) => e.field === example.field);
 				assert.equal(logged.length, 1, JSON.stringify(await app.allEntries()));
 				if (data) assert.deepEqual(logged[0].data, data);
+
+				// Undo takes back the entry, and one more the field whole: its spec and TRACK row (da-2pbvd).
+				for (const _ of [1, 2]) assert.equal((await app.run(['undo'])).code, 0);
+				assert.match((await app.run(['spec', 'show', example.field])).stdout, /No spec defined/);
+				assert.deepEqual(await app.allEntries(), []);
 			});
 		});
 	}
@@ -347,7 +348,7 @@ describe('the field widget', () => {
 
 	// vividn, 2026-10-14: «it should be able to change a field to be IGNORED or TRACKED (maybe with an
 	// explanation of what that means. Probably right under the field name».
-	test('tracked or ignored, under the name: a new field saved ignored is its `track` and then `ignore`', async () => {
+	test('tracked or ignored, under the name: a new field saved ignored is one `spec set --ignore`', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			const { saved } = await openField(page);
@@ -369,18 +370,20 @@ describe('the field widget', () => {
 			assert.equal(ignored.line, grey, 'ignored is not the grey');
 			assert.ok(![ignored.color, ignored.line].includes(red), 'ignored is red');
 			assert.ok(!Object.values(await worn(page, 'tracked')).includes(green), 'tracked is green unchosen');
-			assert.equal((await page.locator(`${FIELD_FORM} code.preview`).innerText()).trim(), 'track tea --verb occur\nignore tea');
+			const command = await page.locator(`${FIELD_FORM} code.preview`).getAttribute('title');
+			assert.equal(declared(command).line, 'spec set tea --from-json --ignore');
+			assert.equal(declared(command).spec.verb, 'occur');
 			const before = (await app.echoes()).length;
 			await page.locator(`${FIELD_FORM} button.commit`).click();
 			assert.equal((await saved).code, 0);
-			assert.deepEqual((await app.echoes()).slice(before), ['track tea --verb occur', 'ignore tea']);
+			assert.deepEqual((await app.echoes()).slice(before), [command]);
 			assert.equal(await ignoredIn(app, 'tea'), true);
 			assert.equal(JSON.parse((await app.run(['spec', 'show', 'tea'])).stdout).verb, 'occur', 'the spec was not written');
 			assert.deepEqual(app.errors, []);
 		}, MOVING);
 	});
 
-	test('a field is ignored from here and tracked again, each with Done', async () => {
+	test('a field is ignored from here and tracked again, each with one Done and its one `spec set`', async () => {
 		await withApp(async (app) => {
 			const { page } = app;
 			await app.run(['track', 'coffee', '--verb', 'occur']);
@@ -393,9 +396,10 @@ describe('the field widget', () => {
 				const before = (await app.echoes()).length;
 				await page.locator(`${FIELD_FORM} button.commit`).click();
 				assert.equal((await saved).code, 0);
+				// One `spec set`, the status in it: one Undo takes the change back (da-2pbvd).
 				const echoes = (await app.echoes()).slice(before);
-				assert.match(echoes[0], /^spec set coffee --from-json /);
-				assert.deepEqual(echoes.slice(1), [`${to === 'ignored' ? 'ignore' : 'track'} coffee`]);
+				assert.equal(echoes.length, 1, echoes.join(' | '));
+				assert.match(echoes[0], new RegExp(`^spec set coffee --from-json .* --${to === 'ignored' ? 'ignore' : 'track'}$`));
 				assert.equal(await ignoredIn(app, 'coffee'), to === 'ignored');
 			}
 			// Left as it was, Done writes neither.
@@ -410,7 +414,7 @@ describe('the field widget', () => {
 	});
 
 	// Every tab is there before a save (da-uipyt), so what is set on one is saved with the field.
-	test('a new field\'s tabs are saved with it: its `track`, then the `spec set` of the rest over what it wrote', async () => {
+	test('a new field\'s tabs are saved with it, in one `spec set --track` that one Undo takes back (da-2pbvd)', async () => {
 		await shared.solo(async (app) => {
 			const { page } = app;
 			const { saved } = await openField(page);
@@ -426,13 +430,16 @@ describe('the field widget', () => {
 			await page.locator(`${FIELD_FORM} button.commit`).click();
 			assert.equal((await saved).code, 0);
 			const echoes = (await app.echoes()).slice(before);
-			assert.equal(echoes[0], 'track mood --verb switch --state good');
-			assert.match(echoes[1], /^spec set mood --from-json /);
-			assert.equal(echoes.length, 2);
+			assert.equal(echoes.length, 1, echoes.join(' | '));
+			assert.match(echoes[0], /^spec set mood --from-json .* --track$/);
 			const shown = JSON.parse((await app.run(['spec', 'show', 'mood'])).stdout);
 			assert.equal(shown.description, 'how it feels');
 			assert.deepEqual(shown.state_descriptions, { good: 'a good day' });
 			assert.deepEqual(shown.allowed_states, ['good']);
+			assert.equal((await app.allEntries()).filter((e) => e.field === 'mood').length, 1, 'no TRACK row');
+			assert.equal((await app.run(['undo'])).code, 0);
+			assert.match((await app.run(['spec', 'show', 'mood'])).stdout, /No spec defined/, 'one Undo left the spec');
+			assert.deepEqual(await app.allEntries(), [], 'one Undo left a row');
 		});
 	});
 

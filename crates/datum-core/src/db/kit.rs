@@ -212,7 +212,7 @@ impl Db {
                     continue;
                 }
             }
-            self.write_spec_entry(spec, Some(kit_id))?;
+            self.write_spec_entry(spec, Some(kit_id), None)?;
             report
                 .outcomes
                 .push((spec.field.clone(), KitFieldOutcome::Installed));

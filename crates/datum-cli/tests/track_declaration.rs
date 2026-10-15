@@ -552,3 +552,50 @@ fn v2import_declares_every_field_it_brings() {
         assert!(spec["default_verb"].is_null(), "{field} kept the old key");
     }
 }
+
+/// `spec set --from-json --track` declares a new field whole — the spec, a
+/// glyph and all, and its TRACK row — in one command, which one `undo`
+/// takes back whole (da-2pbvd): the web's new-field Save, which was `track`
+/// and then a `spec set` for the glyph, two undos with the field half made.
+/// On a field already tracked it writes the spec and no second row.
+#[test]
+fn spec_set_track_declares_in_one_and_undoes_in_one() {
+    let env = Env::new();
+    let spec = r##"{"verb":"occur","color":"#c69c6d","glyph":"☕"}"##;
+    env.run(&["spec", "set", "coffee", "--from-json", spec, "--track"]);
+
+    let shown: Value = serde_json::from_str(&env.run(&["spec", "show", "coffee"])).unwrap();
+    assert_eq!(shown["glyph"], "☕", "{shown}");
+    let rows = |env: &Env| {
+        env.run(&["tail"])
+            .lines()
+            .filter(|l| l.contains("coffee"))
+            .count()
+    };
+    assert_eq!(rows(&env), 1, "the TRACK row is in the log");
+
+    let undone = env.run(&["undo"]);
+    assert_eq!(
+        undone.lines().filter(|l| l.starts_with("DELETE ")).count(),
+        2,
+        "one `undo`, the TRACK row and the spec: {undone:?}"
+    );
+    assert!(env
+        .run(&["spec", "show", "coffee"])
+        .contains("No spec defined"));
+    assert!(env.run(&["tail"]).contains("[No data]"), "the row is gone");
+
+    // Already tracked: the status has no change, so the spec alone.
+    env.run(&["spec", "set", "coffee", "--from-json", spec, "--track"]);
+    let again = r##"{"verb":"occur","glyph":"☕","description":"cups"}"##;
+    env.run(&["spec", "set", "coffee", "--from-json", again, "--track"]);
+    assert_eq!(rows(&env), 1, "a second `--track` wrote a second TRACK row");
+    // And `--ignore` likewise: one IGNORED row however often it is said.
+    env.run(&["spec", "set", "coffee", "--ignore"]);
+    env.run(&["spec", "set", "coffee", "--ignore"]);
+    assert_eq!(
+        rows(&env),
+        2,
+        "the TRACK row and ONE IGNORED row: a second `--ignore` wrote another"
+    );
+}

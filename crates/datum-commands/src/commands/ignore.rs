@@ -18,16 +18,20 @@ pub fn ignore(args: IgnoreArgs, db: &Db) -> Result<()> {
     let client = client_id()?;
     // da-t3quu: a typo's IGNORED row is hidden from `fields`.
     crate::commands::helpers::note_unseen_field(db, &args.field, "ignoring")?;
-    let entry = Entry::new_legacy(
-        &args.field,
+    db.insert_entry(&ignored_entry(&args.field, client))?;
+    println!("✓ Ignoring '{}'", args.field);
+    Ok(())
+}
+
+/// The row that ignores `field` from now on.
+pub(crate) fn ignored_entry(field: &str, client: String) -> Entry {
+    Entry::new_legacy(
+        field,
         Verb::Switch,
         Some(JsonValue::String(IGNORED_STATE_VALUE.to_string())),
         None,
         Some(DatumTime::now()),
         None,
         client,
-    );
-    db.insert_entry(&entry)?;
-    println!("✓ Ignoring '{}'", args.field);
-    Ok(())
+    )
 }

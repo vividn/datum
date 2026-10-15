@@ -186,16 +186,10 @@ impl Db {
     /// same instant — semantically a duplicate even with different content).
     /// Preserved for call sites that pre-date the strategy API.
     pub fn insert_entry(&self, entry: &Entry) -> Result<()> {
-        match self.insert_entry_with_strategy(entry, ConflictStrategy::Ignore)? {
-            InsertOutcome::Inserted { .. } => Ok(()),
-            InsertOutcome::Ignored { .. } => Err(DatumError::Duplicate(format!(
-                "Entry already exists at slug {} (or identical content with hash {})",
-                entry.slug,
-                &entry.content_hash[..entry.content_hash.len().min(12)]
-            ))),
-            // Ignore strategy never produces the other outcomes.
-            other => unreachable!("Ignore strategy produced {other:?}"),
-        }
+        let tx = self.conn.unchecked_transaction()?;
+        insert_new_in_tx(&tx, entry)?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Rewrite just the `verb` column of the row identified by `hid`.
@@ -933,6 +927,21 @@ pub(super) fn insert_entry_in_tx_pub(
     strategy: ConflictStrategy,
 ) -> Result<InsertOutcome> {
     insert_entry_in_tx(conn, entry, strategy)
+}
+
+/// [`Db::insert_entry`] inside a caller's transaction, so a write can carry
+/// a row with it: a spec and its field's status (da-2pbvd).
+pub(super) fn insert_new_in_tx(conn: &Connection, entry: &Entry) -> Result<()> {
+    match insert_entry_in_tx(conn, entry, ConflictStrategy::Ignore)? {
+        InsertOutcome::Inserted { .. } => Ok(()),
+        InsertOutcome::Ignored { .. } => Err(DatumError::Duplicate(format!(
+            "Entry already exists at slug {} (or identical content with hash {})",
+            entry.slug,
+            &entry.content_hash[..entry.content_hash.len().min(12)]
+        ))),
+        // Ignore strategy never produces the other outcomes.
+        other => unreachable!("Ignore strategy produced {other:?}"),
+    }
 }
 
 /// Per-entry insert logic for `insert_entry_with_strategy` (one tx per
