@@ -448,7 +448,8 @@ export const KINDS: Record<string, WidgetKind> = {
 	// The sync widget (da-x4t0a, da-yoef7): the page's database's devices,
 	// a line each, then the other databases, then the acts. Legible at a
 	// device's line wrapped once, two lines more and the acts' row, plus
-	// padding.
+	// padding. Its help is not shown alone: the Help button opens the sync
+	// guide ($lib/help.ts `GUIDES`, da-oyvsz), where it is «Reading the widget».
 	sync: {
 		meta: meta('sync', 'sync'),
 		component: SyncWidget,

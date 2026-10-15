@@ -22,7 +22,8 @@
 // - a command: the CLI's own `datum help <command>`, run through the seam.
 //   No help copy for commands lives here.
 // - Help itself: `datum help`, the general help.
-// - a widget: its kind's `help` in the registry, where kinds are declared.
+// - a widget: its kind's `help` in the registry, where kinds are declared —
+//   or, for a kind with a GUIDE, the guide (below), which shows that help too.
 // - a pill: what its KIND is and does, with its own value in it (below).
 // - a flag of a held command (da-st2xl): its line of the CLI's own flag
 //   table, carried on the button from `datum help --json`.
@@ -58,16 +59,28 @@ const PILL_COMMON =
 export const pillHelp = (pill: Pill): string =>
 	`${(PILL_HELP[pill.kind] ?? ((t: string) => `${t}: a pill, added to the next command.`))(pill.text)}\n${PILL_COMMON}`;
 
-/** The last explanation asked for, titled with what it explains: what the Help place shows. */
-export const explained = writable<{ title: string; text: string } | null>(null);
+/**
+ * The last explanation asked for, titled with what it explains: what the Help place shows.
+ * `guide` names a page of `GUIDES` drawn in place of the text, which it is given.
+ */
+export const explained = writable<{ title: string; text: string; guide?: string } | null>(null);
+
+/**
+ * The guides, by name, and their titles: a page in plain words of how to use a
+ * widget, from the person's side, the CLI's own help folded at its end (da-oyvsz;
+ * vividn, 2026-10-15: «a nice sync widget web help text should be made as well to
+ * describe how to use it»). A name is the kind it is about, whose Help-button
+ * tap opens it: it is drawn by layout/HelpWidget.svelte.
+ */
+export const GUIDES: Record<string, string> = { sync: 'Syncing your devices' };
 
 /**
  * Land the explanation in the Help place: a Help pane in view, if there is
  * one, else the place `openPlace` opens. A pane's tabs behind the front one stay
  * mounted, hidden (TabBody.svelte), so a Help widget in one is not in view.
  */
-function show(title: string, text: string): void {
-	explained.set({ title, text });
+function show(title: string, text: string, guide?: string): void {
+	explained.set({ title, text, guide });
 	const hosts = [...document.querySelectorAll('.host[data-widget="help"]')];
 	if (!hosts.some((host) => !host.closest('.tab-body.behind'))) void openPlace('help');
 }
@@ -83,8 +96,14 @@ async function explain(target: Element | null): Promise<void> {
 	if (flag) return show(`datum ${flag.dataset.flag}`, flag.dataset.help ?? '');
 	// A control's own help before its widget's: the Track widget's tracked/ignored (da-iggnd).
 	if (!command && helped) return show(helped.title, helped.dataset.help ?? '');
+	if (!command && kind && GUIDES[kind]) return explainGuide(kind);
 	if (!command && kind && KINDS[kind]) return show(titleOf(kind), KINDS[kind].help);
 	return explainCommand(command);
+}
+
+/** A guide in the Help place, given its kind's help: the welcome's link, the Help button and the widget's own `?` open it. */
+export function explainGuide(name: string): void {
+	show(GUIDES[name], KINDS[name]?.help ?? '', name);
 }
 
 /**

@@ -20,7 +20,8 @@
 	chain; else [Add device], [Rename this device] and [More], which holds
 	pause, the other devices' rename and revoke, the admins (da-bjxts) and
 	the raw `sync` subcommands, each filling `sync <sub> ` on the line
-	(da-6du3o). [Add device], or `sync chain invite` typed on the page (da-5g0nk), opens one panel — the QR, until when it works,
+	(da-6du3o). The header's `?` opens the guide to all of it (da-oyvsz).
+	[Add device], or `sync chain invite` typed on the page (da-5g0nk), opens one panel — the QR, until when it works,
 	and its own buttons at its bottom — with the ticket under a closed
 	«connect from a terminal». The cards a link opens — `/sync/approve#…`,
 	which names what the passkey signs before it offers the passkey, since
@@ -81,6 +82,7 @@
 	} from '$lib/calls.js';
 	import { act } from '$lib/act.js';
 	import { prefill } from '$lib/bar.js';
+	import { explainGuide } from '$lib/help.js';
 	import { grammar } from './engine.js';
 
 	export let epoch = 0;
@@ -429,6 +431,8 @@
 			<span class="state {overall.mark}" data-mark={overall.mark}
 				>{SYMBOL[overall.mark]} {cur.chain && cur.paused ? 'paused' : overall.mark === 'synced' ? 'all synced' : WORD[overall.mark]}</span
 			>
+			<!-- The guide to all of this, in plain words (da-oyvsz): the Help place opens it. -->
+			<button type="button" class="info guide" use:act={'show'} aria-label="how to sync" title="how to sync" on:click={() => explainGuide('sync')}>?</button>
 		</header>
 		{#if cur.chain}
 			<ul class="devices">

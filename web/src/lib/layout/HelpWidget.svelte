@@ -6,7 +6,8 @@
 	on a phone, a modal on a desktop (da-jozgv).
 
 	The explanation is TEXT, painted as the CLI painted it: a command's is
-	`datum help <command>`'s stdout, a widget's or a pill's is plain prose.
+	`datum help <command>`'s stdout, a widget's or a pill's is plain prose —
+	but a GUIDE ($lib/help.ts `GUIDES`), which is a page of its own.
 
 	With nothing explained it shows the welcome's words as its front page,
 	and «← front page» goes back to them (vividn, 2026-10-14: «this welcome
@@ -17,6 +18,7 @@
 	import AnsiText from '$lib/AnsiText.svelte';
 	import { explained } from '$lib/help.js';
 	import Pane from '$lib/Pane.svelte';
+	import SyncGuide from './SyncGuide.svelte';
 	import WelcomeText from './WelcomeText.svelte';
 </script>
 
@@ -24,7 +26,11 @@
 	{#if $explained}
 		<button type="button" class="front" on:click={() => explained.set(null)}>← front page</button>
 		<h3 class="asked">{$explained.title}</h3>
-		<pre class="help"><AnsiText spans={ansiSpans($explained.text)} /></pre>
+		{#if $explained.guide === 'sync'}
+			<SyncGuide widget={$explained.text} />
+		{:else}
+			<pre class="help"><AnsiText spans={ansiSpans($explained.text)} /></pre>
+		{/if}
 	{:else}
 		<!-- The front page is the welcome's own words (vividn, 2026-10-14), its «Learn more» links leading here. -->
 		<p class="quiet">Press Help, then tap a command, a widget or a pill: it is explained here.</p>

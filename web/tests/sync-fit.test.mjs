@@ -103,7 +103,7 @@ describe('the sync widget fits its screen, legibly', () => {
 				// Drawn before the databases are read: measure what it settles to.
 				await widget.locator('.others li[data-db="work"]').waitFor();
 				const off = await fits(page, 'off', screen.name);
-				assert.deepEqual(off.buttons.map((b) => b.label), ['ⓘ', 'Turn on sync'], 'off: the legend, and the one act');
+				assert.deepEqual(off.buttons.map((b) => b.label), ['?', 'ⓘ', 'Turn on sync'], 'off: the guide (da-oyvsz), the legend, and the one act');
 
 				await turnOn.click();
 				const offer = widget.locator('.offer');

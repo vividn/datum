@@ -5,12 +5,14 @@
 	help widget in general … after all the preamble, maybe having links to
 	follow for more information»). The links open `datum help <topic>` in
 	the Help place, the same path the Help button takes, so what they say is
-	the CLI's own help and cannot drift from it.
+	the CLI's own help and cannot drift from it — but sync's, which opens the
+	page's own guide to the Sync widget (da-oyvsz), the CLI's help folded at
+	its end.
 -->
 <script lang="ts">
 	import { act } from '$lib/act.js';
 	import { openField } from '$lib/fieldWidget.js';
-	import { explainCommand } from '$lib/help.js';
+	import { explainCommand, explainGuide, GUIDES } from '$lib/help.js';
 	// Each shape's name and line are `VERBS`'s, shared with the Track form.
 	import { VERBS } from '$lib/track.js';
 
@@ -32,7 +34,7 @@
 		] as [number, number, string][]
 	};
 
-	/** «Learn more»: a command or topic of `datum help`, and what to call it here. Each is a real page. */
+	/** «Learn more»: a command or topic of `datum help`, or a guide of the page's own, and what to call it here. Each is a real page. */
 	const MORE: [string, string][] = [
 		['logging', 'Logging an entry'],
 		['time', 'Times, dates and durations'],
@@ -127,7 +129,7 @@ comment: obsessed with time</pre>
 		<h3>Learn more</h3>
 		<ul class="more">
 			{#each MORE as [name, what] (name)}
-				<li><button type="button" class="link" on:click={() => explainCommand(name)}>{what}</button></li>
+				<li><button type="button" class="link" on:click={() => (GUIDES[name] ? explainGuide(name) : explainCommand(name))}>{what}</button></li>
 			{/each}
 		</ul>
 </div>
