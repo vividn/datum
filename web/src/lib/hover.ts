@@ -257,10 +257,14 @@ function arrowHead(y: boolean, along: number, start: number): SVGElement {
  *
  * The CLI's own yellow line (`current-time-line`), read off the picture:
  * present only where now falls inside the window (da-5flt). It is what a
- * RELATIVE selection is measured back from — see `drawCursor`.
+ * RELATIVE selection is measured back from — see `drawCursor`. Beside a
+ * now strip the line stands a gap past now, and says where now is in
+ * `data-now` (da-9g3bf).
  */
 function nowAlong(svg: SVGSVGElement, y: boolean): number | null {
 	const line = svg.querySelector('.current-time-line');
+	const at = line?.getAttribute('data-now');
+	if (at) return Number(at);
 	const box = line?.getBoundingClientRect();
 	const p = box && userPoint(svg, box.left + box.width / 2, box.top + box.height / 2);
 	return p ? (y ? p.y : p.x) : null;

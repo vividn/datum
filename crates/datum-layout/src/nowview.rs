@@ -316,13 +316,12 @@ mod tests {
 pub const DEFAULT_HISTORY_MINUTES: f64 = 30.0;
 /// Default per-day band height for nowview's single day.
 pub const DEFAULT_DAY_HEIGHT: f64 = 250.0;
-/// How much of the picture, in minutes of the same time scale the history
-/// uses, is given to the strip right of the now-line where each field's
-/// current state is drawn. Matches the terminal band's own now panel, and
-/// reproduces the original datum's proportions: a 15m history over a
-/// 400px canvas puts the now-line at x=299, which is where it sits in
-/// `docs/parity-audit/nowview_with_history_reference.png`.
-pub const NOW_WIDTH_MINUTES: f64 = 5.0;
+/// How much of the plot the now strip takes — the chunk beside the
+/// now-line where each field's current state is drawn — whatever the
+/// window: vividn, 2026-10-15, «let's keep this now sliver relatively small»
+/// (da-9g3bf). It was five minutes of the history's scale, the original
+/// datum's, which was most of a short window's picture.
+pub const NOW_STRIP_FRACTION: f64 = 1.0 / 16.0;
 
 /// The knobs `datum nowview` exposes that affect geometry. Everything else
 /// nowview needs is derived — that derivation is [`nowview_config`], and it
@@ -370,14 +369,17 @@ impl Default for NowviewGeometry {
 /// `[now - history, now]`, no date label, relative-minute axis ticks, and a
 /// reservation on the right for the current-state panel.
 ///
-/// `now_ms` is the instant the picture is about — now, or the one a time flag names. A
-/// zero history is the snapshot (da-pcis): no time band and no axis, the
-/// whole plot the strip carrying each field's state at that instant.
+/// `at_ms` is the instant the picture is about — now, or the one a time flag
+/// names — and `now_ms` is now. A zero history is the snapshot (da-pcis): no
+/// time band and no axis, the whole plot the strip carrying each field's
+/// state at that instant. Any other window holding now has the now strip
+/// at it, the future drawn on past it (da-9g3bf).
 ///
 /// Pure: `fields` is the only data input, so the CLI (SQLite) and the PWA
 /// (SQLite-wasm) reach the same geometry from their own stores.
 pub fn nowview_config(
     fields: Vec<DayviewFieldInput>,
+    at_ms: i64,
     now_ms: i64,
     geom: &NowviewGeometry,
 ) -> DayviewConfig {
@@ -408,28 +410,38 @@ pub fn nowview_config(
     let day = DayviewDayInput {
         date: None,
         label_lines: Vec::new(),
-        start_ms: now_ms - (before * 60_000.0) as i64,
-        end_ms: now_ms + (after * 60_000.0) as i64,
+        start_ms: at_ms - (before * 60_000.0) as i64,
+        end_ms: at_ms + (after * 60_000.0) as i64,
         has_error: false,
         fields,
         spans: Vec::new(),
     };
 
-    // The now strip is `NOW_WIDTH_MINUTES` of the same scale the history
-    // is drawn at, so the now-line falls where the original datum puts it
-    // and the strip stays proportionate at any width.
+    // The yellow line is now, and only now: absent when now is outside.
+    // The snapshot has no axis to draw it on, and its chips — the panel
+    // the line gates — ARE its instant's states: at a selected time they
+    // are that time's, where they were none (da-rskp's line through them).
+    let now_ms = if snapshot { at_ms } else { now_ms };
     let plot_width = (along - 2.0 * geom.margin).max(0.0);
-    let now_width = if geom.centred && !snapshot {
-        0.0
+    let now_width = if snapshot {
+        plot_width
+    } else if day.start_ms < now_ms && now_ms <= day.end_ms {
+        plot_width * NOW_STRIP_FRACTION
     } else {
-        plot_width * NOW_WIDTH_MINUTES / (history_minutes + NOW_WIDTH_MINUTES)
+        0.0
     };
     // Pre-compute the time-axis extent so the relative-minute tick override
     // resolves to the same pixel space dayview will use. Mirrors the math in
     // `dayview::compute_dayview`. Date label is suppressed (label_width = 0)
     // so the time axis only loses the now-strip reservation.
     let time_axis_extent_for_ticks = (plot_width - now_width).max(0.0);
-    let ticks = nowview_axis_ticks_around(time_axis_extent_for_ticks, before, after);
+    let mut ticks = nowview_axis_ticks_around(time_axis_extent_for_ticks, before, after);
+    // The ticks past now are drawn past the strip, as the future is.
+    let now_pos = (now_ms - day.start_ms) as f64 / (day.end_ms - day.start_ms).max(1) as f64
+        * time_axis_extent_for_ticks;
+    for t in ticks.iter_mut().filter(|t| t.time_pos > now_pos + 1e-9) {
+        t.time_pos += now_width;
+    }
     let time_axis_height = if snapshot {
         0.0
     } else if vertical {
@@ -491,7 +503,12 @@ mod config_tests {
 
     #[test]
     fn nowview_config_scopes_the_day_to_the_history_window() {
-        let cfg = nowview_config(Vec::new(), 1_000_000, &NowviewGeometry::default());
+        let cfg = nowview_config(
+            Vec::new(),
+            1_000_000,
+            1_000_000,
+            &NowviewGeometry::default(),
+        );
         assert_eq!(cfg.days.len(), 1);
         assert_eq!(cfg.days[0].end_ms, 1_000_000);
         assert_eq!(cfg.days[0].start_ms, 1_000_000 - 30 * 60_000);
@@ -503,7 +520,7 @@ mod config_tests {
 
     #[test]
     fn nowview_config_derives_width_and_band_height() {
-        let cfg = nowview_config(Vec::new(), 0, &NowviewGeometry::default());
+        let cfg = nowview_config(Vec::new(), 0, 0, &NowviewGeometry::default());
         assert_eq!(
             cfg.width,
             default_width_for_history(DEFAULT_HISTORY_MINUTES)
@@ -516,23 +533,25 @@ mod config_tests {
             time_axis_height: 22.0,
             ..NowviewGeometry::default()
         };
-        let cfg = nowview_config(Vec::new(), 0, &geom);
+        let cfg = nowview_config(Vec::new(), 0, 0, &geom);
         assert_eq!(cfg.day_height, 300.0 - 4.0 - 22.0);
     }
 
-    /// The reference picture the original datum renders: a 15m history on
-    /// a 400px canvas puts the now-line at x=299 and leaves 99px of now
-    /// strip. `docs/parity-audit/nowview_with_history_reference.png`.
+    /// da-9g3bf: the now strip is a small sliver, the same share of the
+    /// plot whatever the window — where it was five minutes of the
+    /// history's scale, 99px of a 15m window's 400.
     #[test]
-    fn now_strip_reproduces_the_reference_proportions() {
-        let geom = NowviewGeometry {
-            history_minutes: 15.0,
-            width: Some(400.0),
-            ..NowviewGeometry::default()
-        };
-        let cfg = nowview_config(Vec::new(), 0, &geom);
-        assert_eq!(cfg.width, 400.0);
-        assert!((cfg.right_panel_width - 99.0).abs() < 1e-9);
+    fn now_strip_is_a_sixteenth_of_the_plot_at_any_window() {
+        for history_minutes in [5.0, 15.0, 360.0] {
+            let geom = NowviewGeometry {
+                history_minutes,
+                width: Some(400.0),
+                ..NowviewGeometry::default()
+            };
+            let cfg = nowview_config(Vec::new(), 0, 0, &geom);
+            assert_eq!(cfg.width, 400.0);
+            assert_eq!(cfg.right_panel_width, 396.0 / 16.0, "{history_minutes}m");
+        }
     }
 
     /// da-pcis: a zero history is the snapshot — the whole plot is the
@@ -543,7 +562,7 @@ mod config_tests {
             history_minutes: 0.0,
             ..NowviewGeometry::default()
         };
-        let cfg = nowview_config(Vec::new(), 1_000_000, &geom);
+        let cfg = nowview_config(Vec::new(), 1_000_000, 1_000_000, &geom);
         assert_eq!(cfg.width, default_width_for_history(0.0));
         assert_eq!(cfg.days[0].start_ms, cfg.days[0].end_ms);
         assert_eq!(cfg.right_panel_width, cfg.width - 2.0 * geom.margin);
@@ -551,8 +570,9 @@ mod config_tests {
         assert!(cfg.axis_ticks_override.unwrap().is_empty());
     }
 
-    /// da-pcis: a time flag centres the window on the instant, with no strip,
-    /// and the instant's unlabelled tick in the middle of the axis.
+    /// da-pcis: a time flag centres the window on the instant, with no strip
+    /// when now is not in it, and the instant's unlabelled tick in the
+    /// middle of the axis.
     #[test]
     fn centred_window_straddles_the_instant() {
         let geom = NowviewGeometry {
@@ -560,7 +580,7 @@ mod config_tests {
             centred: true,
             ..NowviewGeometry::default()
         };
-        let cfg = nowview_config(Vec::new(), 1_000_000, &geom);
+        let cfg = nowview_config(Vec::new(), 1_000_000, 1_000_000 + 3_600_000, &geom);
         assert_eq!(cfg.days[0].start_ms, 1_000_000 - 15 * 60_000);
         assert_eq!(cfg.days[0].end_ms, 1_000_000 + 15 * 60_000);
         assert_eq!(cfg.right_panel_width, 0.0);
@@ -571,5 +591,29 @@ mod config_tests {
             vec!["-15m", "-10m", "-5m", "", "+5m", "+10m", "+15m"]
         );
         assert!((ticks[3].time_pos - 200.0).abs() < 1e-9);
+    }
+
+    /// da-9g3bf: a centred window holding now has the now strip at now, and
+    /// what is after now — its ticks too — is drawn past the strip.
+    #[test]
+    fn centred_window_holding_now_has_the_strip_at_now() {
+        let geom = NowviewGeometry {
+            width: Some(404.0),
+            centred: true,
+            ..NowviewGeometry::default()
+        };
+        // The window is the instant ± 15m; now is 5m before the instant.
+        let cfg = nowview_config(Vec::new(), 1_000_000, 1_000_000 - 300_000, &geom);
+        assert_eq!(cfg.now_ms, 1_000_000 - 300_000);
+        let strip = 400.0 / 16.0;
+        assert_eq!(cfg.right_panel_width, strip);
+        let extent = 400.0 - strip;
+        let ticks = cfg.axis_ticks_override.unwrap();
+        let at = |label: &str| ticks.iter().find(|t| t.label == label).unwrap().time_pos;
+        // -5m is now: it stays, and what is after it is a strip further on.
+        assert!((at("-10m") - extent / 6.0).abs() < 1e-9);
+        assert!((at("-5m") - extent / 3.0).abs() < 1e-9);
+        assert!((at("+5m") - (extent * 2.0 / 3.0 + strip)).abs() < 1e-9);
+        assert!((at("+15m") - (extent + strip)).abs() < 1e-9);
     }
 }

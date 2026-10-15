@@ -868,7 +868,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
         colors: vec!["#4488cc".into()],
         id: None,
     }];
-    let svg = render_nowview_svg(&layout, "14:30", &current_states, false);
+    let svg = render_nowview_svg(&layout, "14:30", &current_states, false, false);
     DayviewLayoutResult { svg }
 }
 
@@ -938,7 +938,7 @@ fn nowview_scene_leading_state() -> DayviewLayoutResult {
         colors: vec!["#4488cc".into()],
         id: None,
     }];
-    let svg = render_nowview_svg(&layout, "14:30", &current_states, false);
+    let svg = render_nowview_svg(&layout, "14:30", &current_states, false, false);
     DayviewLayoutResult { svg }
 }
 

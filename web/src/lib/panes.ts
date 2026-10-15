@@ -490,12 +490,14 @@ export function zoomHistory(history: string, scale: number): string {
 /**
  * NOWVIEW at a window of `history`, centred on `at` when there is one
  * (da-pcis), and drawn with time running down the page when `vertical`
- * (da-78evn).
+ * (da-78evn). A small «now» under the now strip stands in for the clock
+ * (da-9g3bf).
  */
 export const nowviewSpec = (history: string, at?: string, vertical = false): PaneSpec => ({
 	...NOWVIEW,
 	argv: [
 		...NOWVIEW.argv,
+		'--now-label',
 		'--history',
 		history,
 		...(at ? ['-t', at] : []),

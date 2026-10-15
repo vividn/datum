@@ -1524,6 +1524,9 @@ pub struct NowviewArgs {
     /// to the right of the picture (da-7q8r). Off by default, and the SVG
     /// path's alone: the terminal band never carries labels.
     pub labels: bool,
+    /// `--now-label` — a small yellow «now» under the now strip in place
+    /// of the `HH:MM` clock (da-9g3bf). The SVG path's alone.
+    pub now_label: bool,
     /// `-t/-d/-q/-y`, the shared time flags, centre the window on the instant
     /// they name instead of ending it at now; `-z` only reframes them
     /// (da-5flt). Resolved at each render, so `--watch` follows the clock.
@@ -1574,6 +1577,7 @@ impl Default for NowviewArgs {
         Self {
             history: None,
             labels: false,
+            now_label: false,
             time: TimeArgs::default(),
             width: None,
             height: None,

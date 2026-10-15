@@ -183,7 +183,7 @@ async function drawn(app, title) {
 			.filter(([, fill]) => fill !== undefined)
 			.map(([field, fill]) => `${field}=${fill}`),
 		ticks: texts('tick-label'),
-		clock: texts('current-time-text'),
+		now: texts('now-label'),
 		fonts: [...svg.matchAll(/font-size="([\d.]+)"/g)].map((m) => Number(m[1]))
 	};
 }
@@ -287,10 +287,9 @@ describe('a pane', () => {
 					return drawn(app, 'nowview');
 				}));
 			assert.ok(shown.ticks.length >= 1, `nowview on ${name} drew no axis`);
-			// Counted, not compared: the three screens are three runs
-			// of the app, and what is claimed here is that each of
-			// them drew a clock at all, not what it said.
-			assert.equal(shown.clock.length, 1, `nowview on ${name} drew no clock`);
+			// The web asks for the small «now» in place of the clock
+			// (da-9g3bf): one on every screen, however narrow.
+			assert.equal(shown.now.length, 1, `nowview on ${name} drew no «now»`);
 			if (wide === undefined) {
 				wide = shown;
 				assert.ok(wide.states.length > 0, 'nowview drew no current state even at 1280');
@@ -302,7 +301,7 @@ describe('a pane', () => {
 				);
 			}
 			// What is left to read once the panel is gone is the
-			// axis and the clock, and both have to stay legible in a
+			// axis and the «now», and both have to stay legible in a
 			// cramped band: a pane 78px tall gets the picture drawn
 			// small rather than half of it drawn big behind a
 			// scrollbar. Asserted so a change that draws text

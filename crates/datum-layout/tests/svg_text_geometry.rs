@@ -275,6 +275,7 @@ fn nowview_at(width: f64, history_minutes: f64) -> String {
     let config = nowview_config(
         day_fields(start_ms, NOW_MS),
         NOW_MS,
+        NOW_MS,
         &NowviewGeometry {
             history_minutes,
             width: Some(width),
@@ -296,7 +297,7 @@ fn nowview_at(width: f64, history_minutes: f64) -> String {
             id: None,
         },
     ];
-    render_nowview_svg(&layout, "23:05", &panel, false)
+    render_nowview_svg(&layout, "23:05", &panel, false, false)
 }
 
 #[test]

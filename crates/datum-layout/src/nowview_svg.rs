@@ -14,12 +14,14 @@ use std::fmt::Write;
 
 use crate::dayview::{BlockFill, DayviewLayout, Orientation};
 use crate::dayview_svg::{
-    axis_label_size, render_dayview_svg, render_dayview_svg_with, text_width, DayviewSvgOpts,
-    RightPanelFill, AXIS_LABEL_GAP,
+    axis_label_size, now_chunk, render_dayview_svg_with, text_width, DayviewSvgOpts,
+    RightPanelFill, AXIS_LABEL_GAP, NOW_LINE_COLOR,
 };
 use crate::nowview::NowviewCurrentState;
 
 const TEXT_COLOR: &str = "white";
+/// What [`now_label_overlay`] writes.
+const NOW_LABEL: &str = "now";
 /// Below this strip width the clock can't be centred inside the strip
 /// without overflowing the canvas, so it centres on the now-line instead.
 /// Mirrors `isNowWidthSmall` in the original datum's `nowview.ts`.
@@ -29,14 +31,17 @@ const CLOCK_CENTER_MIN_STRIP: f64 = 40.0;
 /// to an SVG document string, then overlay the now strip: one chunk per
 /// field carrying the state it is in at "now", drawn from the now-line to
 /// the right edge, and the `HH:MM` `current_time_label` under them. An
-/// empty `current_time_label` skips the clock; a field whose entry has no
+/// empty `current_time_label` skips the clock, and `now_label` draws a
+/// small «now» in its place (da-9g3bf); a field whose entry has no
 /// `state_label` — it is in no state right now — gets no chunk.
 pub fn render_nowview_svg(
     layout: &DayviewLayout,
     current_time_label: &str,
     current_states: &[NowviewCurrentState],
     labels: bool,
+    now_label: bool,
 ) -> String {
+    let current_time_label = if now_label { "" } else { current_time_label };
     let fills = now_strip_fills(current_states);
     // The clock sits in the now strip; it only steals room from the tick
     // labels when it is wider than the strip (da-sv8c).
@@ -52,19 +57,25 @@ pub fn render_nowview_svg(
         let overlay = build_current_time_overlay(layout, current_time_label);
         inject_inside_plot_group(&mut svg, &overlay);
     }
+    if now_label {
+        inject_inside_plot_group(&mut svg, &now_label_overlay(layout));
+    }
     inject_inside_plot_group(&mut svg, &label_group);
     svg
 }
 
 /// Render a window centred on an instant (a time flag, da-pcis): the dayview
-/// picture with no now strip, and the instant's `HH:MM` as the axis label
-/// under the middle — making room like any other tick's. Its now-line is
-/// dayview's own, at now if now is in the window (da-5flt).
+/// picture, and the instant's `HH:MM` as the axis label under the middle —
+/// making room like any other tick's. Its now-line is dayview's own, at now
+/// if now is in the window (da-5flt), and so is its now strip, carrying
+/// `now_states` and, with `now_label`, a «now» (da-9g3bf).
 pub fn render_nowview_at_svg(
     layout: &DayviewLayout,
     at_label: &str,
     current_states: &[NowviewCurrentState],
+    now_states: &[NowviewCurrentState],
     labels: bool,
+    now_label: bool,
 ) -> String {
     let mut layout = layout.clone();
     if let Some(tick) = layout.axis_ticks.iter_mut().find(|t| t.label.is_empty()) {
@@ -73,10 +84,57 @@ pub fn render_nowview_at_svg(
     // `--labels` means one thing on every nowview picture (da-7q8r): the
     // states at the instant, in a gutter past the right edge.
     let (gutter, label_group) = label_gutter(&layout, current_states, labels);
-    let widened = widen_for(&layout, gutter);
-    let mut svg = render_dayview_svg(widened.as_ref().unwrap_or(&layout));
+    let layout = widen_for(&layout, gutter).unwrap_or(layout);
+    let fills = now_strip_fills(now_states);
+    let opts = DayviewSvgOpts {
+        axis_end_reserved: 0.0,
+        right_panel_fills: &fills,
+    };
+    let mut svg = render_dayview_svg_with(&layout, opts);
+    if now_label {
+        inject_inside_plot_group(&mut svg, &now_label_overlay(&layout));
+    }
     inject_inside_plot_group(&mut svg, &label_group);
     svg
+}
+
+/// The small yellow «now» in place of the clock (da-9g3bf): under the now
+/// chunk, in the time-axis strip, and sized to lie wholly between the
+/// chunk's two ends. Nothing when there is no strip, or no room in it or in
+/// the axis strip to write it legibly.
+fn now_label_overlay(layout: &DayviewLayout) -> String {
+    let Some(c) = layout.days.iter().find_map(|d| now_chunk(layout, d)) else {
+        return String::new();
+    };
+    let room = c.to - c.from;
+    let size = axis_label_size(layout.orientation, layout.time_axis_height);
+    let size = match layout.orientation {
+        Orientation::Horizontal => size.min(room / text_width(NOW_LABEL, 1.0)),
+        Orientation::Vertical => size
+            .min(room)
+            .min((layout.time_axis_height - 2.0) / text_width(NOW_LABEL, 1.0)),
+    };
+    // Smaller than any text datum draws is too small to read: none.
+    if size < 6.0 {
+        return String::new();
+    }
+    let middle = (c.from + c.to) / 2.0;
+    let cross_total = layout.days.len() as f64 * layout.day_pitch - layout.interday_margin;
+    let (x, y, anchor) = match layout.orientation {
+        Orientation::Horizontal => (
+            layout.label_width + middle,
+            cross_total + layout.time_axis_height / 2.0,
+            "middle",
+        ),
+        Orientation::Vertical => (
+            layout.time_axis_height - 1.0,
+            layout.label_width + middle,
+            "end",
+        ),
+    };
+    format!(
+        r#"<text class="now-label" x="{x}" y="{y}" text-anchor="{anchor}" dominant-baseline="middle" fill="{NOW_LINE_COLOR}" font-size="{size}">{NOW_LABEL}</text>"#
+    )
 }
 
 /// da-7q8r: the labels are off unless `--labels` asks for them, and when it
@@ -363,6 +421,7 @@ mod tests {
         compute_dayview, BlockFill, DayviewBlock, DayviewConfig, DayviewDayInput,
         DayviewFieldInput, DayviewPoint, Orientation,
     };
+    use crate::dayview_svg::NOW_GAP;
     use crate::nowview::nowview_axis_ticks;
 
     /// The `<g class="field" data-field="…">` slice for one field.
@@ -477,7 +536,7 @@ mod tests {
     #[test]
     fn renders_dayview_envelope_with_current_time() {
         let layout = nowview_layout();
-        let svg = render_nowview_svg(&layout, "15:30", &[], false);
+        let svg = render_nowview_svg(&layout, "15:30", &[], false, false);
         // Dayview envelope intact, its text not selectable (da-mu5op).
         assert!(svg.starts_with("<svg "));
         let root = &svg[..svg.find('>').unwrap()];
@@ -499,7 +558,7 @@ mod tests {
     #[test]
     fn no_current_time_label_means_no_overlay() {
         let layout = nowview_layout();
-        let svg = render_nowview_svg(&layout, "", &[], false);
+        let svg = render_nowview_svg(&layout, "", &[], false, false);
         assert!(!svg.contains("current-time-text"));
         assert!(!svg.contains("nowview-overlay"));
     }
@@ -590,13 +649,14 @@ mod tests {
                 id: None,
             },
         ];
-        let svg = render_nowview_svg(&layout, "12:00", &entries, false);
+        let svg = render_nowview_svg(&layout, "12:00", &entries, false, false);
         // The strip carries one chunk for the field that is in a state,
-        // spanning the whole reserved panel at that field's band.
+        // a gap past now and on to the picture's edge, at that field's band.
         let mood = field_group(&svg, "mood");
         let chunk = rect_attrs(&mood, "now-chunk").expect("mood now-chunk");
-        assert!((chunk.x - (layout.label_width + layout.time_axis_extent)).abs() < 1e-6);
-        assert!((chunk.w - layout.right_panel_width).abs() < 1e-6);
+        let now = layout.label_width + layout.time_axis_extent;
+        assert!((chunk.x - (now + NOW_GAP)).abs() < 1e-6);
+        assert!((chunk.w - (layout.right_panel_width - NOW_GAP)).abs() < 1e-6);
         let band = &layout.days[0]
             .fields
             .iter()
@@ -666,12 +726,12 @@ mod tests {
         }];
 
         // Unasked for, no label and no gutter: the canvas is the layout's.
-        let bare = render_nowview_svg(&layout, "", &entries, false);
+        let bare = render_nowview_svg(&layout, "", &entries, false, false);
         assert!(!bare.contains("state-label"), "{bare}");
         assert!(bare.contains(r#"width="100""#), "{bare}");
 
         // Asked for, the text starts past the band and the canvas grew.
-        let svg = render_nowview_svg(&layout, "", &entries, true);
+        let svg = render_nowview_svg(&layout, "", &entries, true, false);
         assert!(svg.contains(">mood: focused</text>"), "{svg}");
         let band_end = layout.label_width + layout.time_axis_extent + layout.right_panel_width;
         let key = r#"<text class="state-label" x=""#;
@@ -694,7 +754,7 @@ mod tests {
             colors: vec![],
             id: None,
         }];
-        let empty = render_nowview_svg(&layout, "", &none, true);
+        let empty = render_nowview_svg(&layout, "", &none, true, false);
         assert!(!empty.contains("nowview-labels"), "{empty}");
         assert!(empty.contains(r#"width="100""#), "{empty}");
     }
@@ -749,7 +809,7 @@ mod tests {
             colors: vec!["#888888".into()],
             id: None,
         }];
-        let svg = render_nowview_svg(&layout, "", &entries, false);
+        let svg = render_nowview_svg(&layout, "", &entries, false, false);
         assert!(!svg.contains(r#"data-field="ghost""#));
     }
 
@@ -821,7 +881,7 @@ mod tests {
             colors: vec!["#aa3333".into(), "#33aa33".into()],
             id: None,
         }];
-        let svg = render_nowview_svg(&layout, "12:00", &entries, false);
+        let svg = render_nowview_svg(&layout, "12:00", &entries, false, false);
         // The chunk is striped the way dayview stripes a parallel-state
         // block, sharing that machinery rather than inventing a swatch.
         assert!(
@@ -885,7 +945,7 @@ mod tests {
             colors: vec!["#abcdef".into()],
             id: None,
         }];
-        let svg = render_nowview_svg(&layout, "12:00", &entries, false);
+        let svg = render_nowview_svg(&layout, "12:00", &entries, false, false);
         assert!(
             field_group(&svg, "mood").contains(r##"<rect class="now-chunk" x="##),
             "single-state chunk must be a solid rect: {svg}"
@@ -894,5 +954,172 @@ mod tests {
             !svg.contains("multi-state"),
             "no stripes for a single state"
         );
+    }
+
+    /// The value of attribute `name` on the first `<{tag} class="{class}"`.
+    fn attr(svg: &str, tag: &str, class: &str, name: &str) -> Option<String> {
+        let open = format!(r#"<{tag} class="{class}" "#);
+        let at = svg.find(&open)? + open.len() - 1;
+        let el = &svg[at..at + svg[at..].find('>')?];
+        let key = format!(r#" {name}=""#);
+        let v = el.find(&key)? + key.len();
+        Some(el[v..v + el[v..].find('"')?].to_string())
+    }
+
+    fn num(svg: &str, tag: &str, class: &str, name: &str) -> f64 {
+        attr(svg, tag, class, name)
+            .unwrap_or_else(|| panic!("no {name} on {tag}.{class}: {svg}"))
+            .parse()
+            .unwrap()
+    }
+
+    /// da-9g3bf's picture: `mood` in a state for the 20 minutes up to now,
+    /// and an entry two to four minutes ahead of it, in a window of 30
+    /// minutes over 404px. Centred 5 minutes before now, the window runs
+    /// 10 minutes past it; otherwise it ends at now.
+    fn gap_picture(centred: bool, now_label: bool) -> (DayviewLayout, String) {
+        use crate::nowview::{nowview_config, NowviewGeometry};
+        let now = 1_700_000_000_000_i64;
+        let min = 60_000;
+        let block = |from: i64, to: i64, c: &str| DayviewBlock {
+            start_ms: now + from * min,
+            end_ms: now + to * min,
+            fill: BlockFill::Single(c.into()),
+            state_label: Some(c.into()),
+            id: None,
+            title: None,
+        };
+        let fields = vec![DayviewFieldInput {
+            field: "mood".into(),
+            y_frac: 0.0,
+            height_frac: 1.0,
+            z_index: 0.0,
+            blocks: vec![block(-20, 0, "#abcdef"), block(2, 4, "#123456")],
+            points: vec![],
+            icon: None,
+            glyph_size: Default::default(),
+        }];
+        let geom = NowviewGeometry {
+            width: Some(404.0),
+            centred,
+            ..NowviewGeometry::default()
+        };
+        let at = if centred { now - 5 * min } else { now };
+        let layout = compute_dayview(&nowview_config(fields, at, now, &geom));
+        let states = [NowviewCurrentState {
+            field: "mood".into(),
+            state_label: Some("calm".into()),
+            colors: vec!["#abcdef".into()],
+            id: None,
+        }];
+        let svg = if centred {
+            render_nowview_at_svg(&layout, "12:00", &[], &states, false, now_label)
+        } else {
+            render_nowview_svg(&layout, "12:00", &states, false, now_label)
+        };
+        (layout, svg)
+    }
+
+    /// vividn, 2026-10-15: «a tiny margin between -0 and the dotted yellow
+    /// lines so that now is slightly discontinuous with the past», «the now
+    /// dotted lines finer» (da-9g3bf). The past ends at now and the line
+    /// stands a gap past it, finer than dayview's, with the chunk from it to
+    /// the edge — and no second line, there being no future to close it off.
+    #[test]
+    fn the_past_stops_a_gap_short_of_a_finer_now_line() {
+        let (layout, svg) = gap_picture(false, false);
+        let now = layout.time_axis_extent;
+        assert_eq!(now, 400.0 * 15.0 / 16.0);
+        let past = rects(&field_group(&svg, "mood"), "block");
+        let past_end = past.iter().map(|b| b.x + b.w).fold(0.0, f64::max);
+        let line = num(&svg, "line", "current-time-line", "x1");
+        assert_eq!(past_end, now, "{svg}");
+        assert_eq!(line, now + NOW_GAP, "{svg}");
+        // ... and says where now is, for a reader measuring from it.
+        assert_eq!(
+            num(&svg, "line", "current-time-line", "data-now"),
+            layout.margin + now
+        );
+        assert_eq!(
+            attr(&svg, "line", "current-time-line", "stroke-width").unwrap(),
+            "1"
+        );
+        assert_eq!(
+            attr(&svg, "line", "current-time-line", "stroke-dasharray").unwrap(),
+            "2,2"
+        );
+        let chunk = rect_attrs(&field_group(&svg, "mood"), "now-chunk").unwrap();
+        assert_eq!((chunk.x, chunk.x + chunk.w), (line, 400.0), "{svg}");
+        assert!(!svg.contains("current-time-line-end"), "{svg}");
+    }
+
+    /// «when the future is visible then we have the now chunk surrounded in
+    /// yellow dotted lines with tiny gaps to each side and showing the
+    /// future» (da-9g3bf): past, gap, line, chunk, line, gap, future — the
+    /// future drawn at the past's scale, a strip further on.
+    #[test]
+    fn a_future_drawn_past_the_chunk_between_two_lines() {
+        let (layout, svg) = gap_picture(true, false);
+        let (extent, strip) = (layout.time_axis_extent, layout.right_panel_width);
+        assert_eq!((extent, strip), (375.0, 25.0));
+        // Now is 20 of the window's 30 minutes in.
+        let now = extent * 20.0 / 30.0;
+        let lead = num(&svg, "line", "current-time-line", "x1");
+        let end = num(&svg, "line", "current-time-line-end", "x1");
+        assert_eq!((lead, end), (now + NOW_GAP, now + strip - NOW_GAP), "{svg}");
+        assert_eq!(
+            attr(&svg, "line", "current-time-line-end", "stroke-width").unwrap(),
+            "1"
+        );
+        let mood = field_group(&svg, "mood");
+        let chunk = rect_attrs(&mood, "now-chunk").expect("a chunk");
+        assert_eq!((chunk.x, chunk.x + chunk.w), (lead, end), "{svg}");
+        // The past ends at now; the entry two minutes ahead starts past
+        // the second line, 22 minutes in plus the strip.
+        let blocks = rects(&svg, "block");
+        assert_eq!(blocks[0].x + blocks[0].w, now, "{svg}");
+        assert_eq!(blocks[1].x, extent * 22.0 / 30.0 + strip, "{svg}");
+        assert!(blocks[1].x > end + NOW_GAP, "{svg}");
+        // The two stretches say their own times, for a reader of the picture.
+        assert_eq!(svg.matches(r#"<g class="day-data""#).count(), 2, "{svg}");
+        assert!(
+            !svg.contains("dead-zone") && !svg.contains("zone-label"),
+            "{svg}"
+        );
+    }
+
+    /// «a yellow now written entirely within the bounds of the yellow dotted
+    /// lines underneath» (da-9g3bf), in place of the clock.
+    #[test]
+    fn the_now_label_lies_under_the_chunk_between_its_lines() {
+        for centred in [false, true] {
+            let (layout, svg) = gap_picture(centred, true);
+            assert!(!svg.contains("current-time-text"), "{svg}");
+            assert!(!svg.contains(">12:00<") || centred, "{svg}");
+            let lead = num(&svg, "line", "current-time-line", "x1");
+            let end = if centred {
+                num(&svg, "line", "current-time-line-end", "x1")
+            } else {
+                400.0
+            };
+            let x = num(&svg, "text", "now-label", "x");
+            let y = num(&svg, "text", "now-label", "y");
+            let size = num(&svg, "text", "now-label", "font-size");
+            let half = text_width("now", size) / 2.0;
+            assert!(lead <= x - half && x + half <= end, "{lead}..{end}: {svg}");
+            // Under the bands, in the axis strip.
+            assert!(y - size / 2.0 >= layout.day_height, "{svg}");
+            assert!(
+                y + size / 2.0 <= layout.day_height + layout.time_axis_height,
+                "{svg}"
+            );
+            assert_eq!(
+                attr(&svg, "text", "now-label", "fill").unwrap(),
+                NOW_LINE_COLOR
+            );
+            assert!(svg.contains(">now</text>"), "{svg}");
+        }
+        // Not asked for, there is none.
+        assert!(!gap_picture(false, false).1.contains("now-label"));
     }
 }

@@ -80,10 +80,11 @@ describe('the clock the web app prints', () => {
 			assert.doesNotMatch(shown, /\b[AP]M\b/i, `the tail pane is still 12-hour: ${shown}`);
 
 			// The other half of the screenshot. Its clock was never the
-			// broken one; asserting it here is what makes this a test of
-			// the two panes agreeing rather than of one of them.
+			// broken one, and the web no longer asks for it: a small «now»
+			// stands in its place (da-9g3bf). What it still must not do is
+			// print anything 12-hour.
 			const now = await paneSvg('nowview');
-			assert.match(now, /<text[^>]*>\d{2}:\d{2}<\/text>/);
+			assert.match(now, /<text class="now-label"[^>]*>now<\/text>/);
 			assert.doesNotMatch(now, /\b[AP]M\b/i, 'the nowview axis went 12-hour');
 		});
 	});

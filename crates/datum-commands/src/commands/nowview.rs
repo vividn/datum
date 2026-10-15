@@ -282,12 +282,12 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
     // The snapshot's window is an instant; a minute of lookback still
     // gives every field in a state a band for its state to be read from.
     let fields = build_dayview_fields(db, window_end, history_minutes.max(1.0))?;
-    let mut config = nowview_config(fields, anchor.timestamp_millis(), &geometry);
-    // The yellow line is now, and only now: absent when now is outside.
-    // The snapshot has no axis to draw it on, and its chips — the panel
-    // the line gates — ARE its instant's states: at a selected time they
-    // are that time's, where they were none (da-rskp's line through them).
-    config.now_ms = if history_minutes > 0.0 { now } else { anchor }.timestamp_millis();
+    let config = nowview_config(
+        fields,
+        anchor.timestamp_millis(),
+        now.timestamp_millis(),
+        &geometry,
+    );
     let window = (config.days[0].start_ms, config.days[0].end_ms);
 
     let layout = compute_dayview(&config);
@@ -319,9 +319,29 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
     let c = compute_now(args, db)?;
     let clock = format_local_hh_mm(c.anchor);
     let svg = if c.at.is_some() && c.history_minutes > 0.0 {
-        render_nowview_at_svg(&c.layout, &clock, &c.current_states, args.labels)
+        // Its now strip, when now is in it, carries the states at now
+        // (da-9g3bf).
+        let now = Utc
+            .timestamp_millis_opt(c.now_ms)
+            .single()
+            .unwrap_or(c.anchor);
+        let now_states = build_current_states(db, now, &c.layout);
+        render_nowview_at_svg(
+            &c.layout,
+            &clock,
+            &c.current_states,
+            &now_states,
+            args.labels,
+            args.now_label,
+        )
     } else {
-        render_nowview_svg(&c.layout, &clock, &c.current_states, args.labels)
+        render_nowview_svg(
+            &c.layout,
+            &clock,
+            &c.current_states,
+            args.labels,
+            args.now_label,
+        )
     };
 
     match target {

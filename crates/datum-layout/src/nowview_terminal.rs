@@ -394,6 +394,12 @@ fn push_flow_data_row(
             push_now_line_cell(out, use_color);
             continue;
         }
+        // A cell's gap before the now-line, so the past does not run up to
+        // now (da-9g3bf).
+        if Some(i + 1) == now_col {
+            out.push(' ');
+            continue;
+        }
 
         let cell_center_ms = history_start_ms + (cell_ms * (i as f64 + 0.5)) as i64;
         let cell_start_ms = history_start_ms + (cell_ms * i as f64) as i64;
@@ -1310,6 +1316,13 @@ mod tests {
         }];
         let s = render_nowview_terminal(&fields, &flow_cfg(now));
         assert!(s.contains('┊'), "expected dashed now-line glyph in:\n{s}");
+        // da-9g3bf: the state runs up to a blank cell before the line, not
+        // into it — the past is a little discontinuous with now.
+        let row = s.lines().next().unwrap();
+        assert!(
+            row.ends_with("█ ┊"),
+            "expected a gap before the now-line in:\n{s}"
+        );
     }
 
     /// da-5flt: the now-line is drawn where now falls — mid-window for a

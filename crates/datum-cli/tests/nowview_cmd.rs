@@ -566,9 +566,10 @@ fn nowview_lanes_fill_edge_to_edge_and_carry_a_now_chunk() {
             );
             x = b.x + b.w;
         }
+        // ... up to now, a gap short of the now-line (da-9g3bf).
         assert!(
-            (x - now_x).abs() < 1e-6,
-            "{field}: lane ends at {x}, not at the now-line {now_x}: {svg}"
+            (x + 2.0 - now_x).abs() < 1e-6,
+            "{field}: lane ends at {x}, not a gap before the now-line {now_x}: {svg}"
         );
 
         // Exactly one chunk past the now-line, running to the plot's edge.
@@ -790,16 +791,26 @@ fn nowview_centred_window_draws_no_yellow_for_its_instant() {
         "no {clock}: {svg}"
     );
 
-    // A centred window that still holds now draws one line, AT now: ten
-    // minutes back, a 30m window runs five minutes past now.
+    // A centred window that still holds now draws its now strip AT now:
+    // ten minutes back, a 30m window runs five minutes past now, so the
+    // chunk is between two lines, the future past the second (da-9g3bf).
+    // The window's 30 minutes take the 375px the strip leaves of 400.
     let svg = at_clock("2026-09-10T14:10:00Z", || {
         nowview_out(&db, &["-qq", "--history", "30m", "--width", "404"], ".svg")
     });
     assert_eq!(lines(&svg), 1, "{svg}");
-    let x = now_x(&svg) + 2.0;
+    assert_eq!(svg.matches(r#"class="current-time-line-end""#).count(), 1);
+    let x = now_x(&svg);
     assert!(
-        (x - 202.0 - 400.0 / 3.0).abs() <= 1.0,
+        (x - (375.0 * 5.0 / 6.0 + 2.0)).abs() < 1e-6,
         "now-line at {x}: {svg}"
+    );
+    let chunk = field_rects(&svg, "mood", "now-chunk");
+    assert_eq!(chunk.len(), 1, "{svg}");
+    assert!((chunk[0].x - x).abs() < 1e-6, "{svg}");
+    assert!(
+        (chunk[0].x + chunk[0].w - (312.5 + 25.0 - 2.0)).abs() < 1e-6,
+        "{svg}"
     );
 
     // No time flag: the line is now, at the right edge of the band.

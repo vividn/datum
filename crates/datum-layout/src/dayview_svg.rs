@@ -30,7 +30,7 @@ use crate::dayview::{
     RenderedField, RenderedSpan,
 };
 
-const NOW_LINE_COLOR: &str = "#ffcc00";
+pub(crate) const NOW_LINE_COLOR: &str = "#ffcc00";
 const BG_COLOR: &str = "black";
 const TEXT_COLOR: &str = "white";
 const AXIS_COLOR: &str = "white";
@@ -103,6 +103,52 @@ pub const VERTICAL_AXIS_LABEL_INSET: f64 = 6.0;
 /// Minimum blank space (px) between two adjacent axis labels, and between
 /// a label and whatever an overlay reserves at the end of the axis.
 pub(crate) const AXIS_LABEL_GAP: f64 = 4.0;
+
+/// The space between now and the line beside it, and between the now chunk
+/// and a future drawn past it (da-9g3bf): the past stops short of the line,
+/// so it never reads as more time spent in a state than there was.
+pub(crate) const NOW_GAP: f64 = 2.0;
+
+/// Where a day's now strip puts its chunk along the time axis.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NowChunk {
+    /// Now: where the past ends.
+    pub now: f64,
+    /// The chunk's ends: a gap past now, and the strip's far edge — or a
+    /// gap short of it, when the future is drawn on beyond.
+    pub from: f64,
+    pub to: f64,
+    pub future: bool,
+}
+
+/// How far along the time axis anything is drawn: its extent, or past it
+/// when a future is drawn beyond a now strip (da-9g3bf).
+fn drawn_extent(layout: &DayviewLayout) -> f64 {
+    (layout.days.iter().flat_map(|d| &d.spans))
+        .map(|s| s.time_offset + s.time_extent)
+        .fold(layout.time_axis_extent, f64::max)
+}
+
+/// `day`'s now chunk, or `None` when it draws no now strip. The snapshot,
+/// with no time axis, is all strip and no gap.
+pub(crate) fn now_chunk(layout: &DayviewLayout, day: &RenderedDay) -> Option<NowChunk> {
+    let (now, w) = (day.now_time_pos?, layout.right_panel_width);
+    if w <= 0.0 {
+        return None;
+    }
+    let future = now < layout.time_axis_extent - 1e-9;
+    let gap = if layout.time_axis_extent > 0.0 {
+        NOW_GAP.min(w / 4.0)
+    } else {
+        0.0
+    };
+    Some(NowChunk {
+        now,
+        from: now + gap,
+        to: now + w - if future { gap } else { 0.0 },
+        future,
+    })
+}
 
 /// What one field's band carries in the strip the layout reserved beside
 /// the data area ([`DayviewLayout::right_panel_width`]). Nowview fills it
@@ -352,7 +398,10 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                 // field's blocks so gridlines and the now-line still sit over
                 // it, and positioned through `block_rect` so it follows the
                 // orientation like any other block.
-                if layout.right_panel_width > 0.0 && day.now_time_pos.is_some() {
+                let chunk = now_chunk(layout, day).filter(|c| {
+                    (span.time_offset..=span.time_offset + span.time_extent).contains(&c.now)
+                });
+                if let Some(c) = chunk {
                     if let Some(pf) = opts
                         .right_panel_fills
                         .iter()
@@ -370,8 +419,8 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
                                 &geom,
                                 day.day_offset + field.cross_offset,
                                 field.cross_extent,
-                                layout.time_axis_extent,
-                                layout.right_panel_width,
+                                c.from,
+                                c.to - c.from,
                             ),
                             field.cross_extent,
                             &now_chunk_close(pf.id.as_deref()),
@@ -547,73 +596,99 @@ pub fn render_dayview_svg_with(layout: &DayviewLayout, opts: DayviewSvgOpts<'_>)
     // Per-day now-lines. Emitted last so they sit above gridlines and data.
     // A plot with no time axis (nowview's snapshot) has no line to draw.
     for day in &layout.days {
-        if let Some(nt) = day.now_time_pos.filter(|_| layout.time_axis_extent > 0.0) {
-            let (x1, y1, x2, y2) = match layout.orientation {
-                Orientation::Horizontal => {
-                    let x = geom.data_x + nt;
-                    (
-                        x,
-                        geom.data_y + day.now_extent_near,
-                        x,
-                        geom.data_y + day.now_extent_far,
-                    )
-                }
-                Orientation::Vertical => {
-                    // The axis strip is left of the first day, so that
-                    // day's line crosses it (da-78evn).
-                    let y = geom.data_y + nt;
-                    let near = if day.now_extent_near <= 1e-9 {
-                        layout.time_axis_height
-                    } else {
-                        0.0
-                    };
-                    (
-                        geom.data_x + day.now_extent_near - near,
-                        y,
-                        geom.data_x + day.now_extent_far,
-                        y,
-                    )
-                }
-            };
+        let Some(nt) = day.now_time_pos.filter(|_| layout.time_axis_extent > 0.0) else {
+            continue;
+        };
+        // Beside a now strip the line is finer and stands a gap past now,
+        // and a second closes the chunk when the future is drawn on beyond
+        // it (da-9g3bf).
+        let chunk = now_chunk(layout, day);
+        let (stroke, dash) = if chunk.is_some() {
+            (1, "2,2")
+        } else {
+            (2, "4,2")
+        };
+        let mut line = |class: &str, extra: &str, (x1, y1, x2, y2): (f64, f64, f64, f64)| {
             let _ = write!(
                 &mut out,
-                r#"<line class="current-time-line" x1="{x1}" x2="{x2}" y1="{y1}" y2="{y2}" stroke="{c}" stroke-width="2" stroke-dasharray="4,2"/>"#,
+                r#"<line class="{class}" x1="{x1}" x2="{x2}" y1="{y1}" y2="{y2}"{extra} stroke="{c}" stroke-width="{stroke}" stroke-dasharray="{dash}"/>"#,
                 c = NOW_LINE_COLOR,
             );
+        };
+        let across = |t: f64| match layout.orientation {
+            Orientation::Horizontal => {
+                let x = geom.data_x + t;
+                (
+                    x,
+                    geom.data_y + day.now_extent_near,
+                    x,
+                    geom.data_y + day.now_extent_far,
+                )
+            }
+            Orientation::Vertical => {
+                // The axis strip is left of the first day, so that
+                // day's line crosses it (da-78evn).
+                let y = geom.data_y + t;
+                let near = if day.now_extent_near <= 1e-9 {
+                    layout.time_axis_height
+                } else {
+                    0.0
+                };
+                (
+                    geom.data_x + day.now_extent_near - near,
+                    y,
+                    geom.data_x + day.now_extent_far,
+                    y,
+                )
+            }
+        };
+        // Standing a gap past now, the line says where now is, in the
+        // root's user units as `data-lo` is, for a reader measuring from it.
+        let (at, extra) = match chunk {
+            Some(c) => {
+                let origin = match layout.orientation {
+                    Orientation::Horizontal => geom.data_x,
+                    Orientation::Vertical => geom.data_y,
+                };
+                let now = layout.margin + origin + nt;
+                (c.from, format!(r#" data-now="{now}""#))
+            }
+            None => (nt, String::new()),
+        };
+        line("current-time-line", &extra, across(at));
+        if let Some(c) = chunk.filter(|c| c.future) {
+            line("current-time-line-end", "", across(c.to));
+        }
 
-            // The white axis baseline stops at the now-line, so the strip
-            // beyond it gets the now marker instead — the original datum's
-            // horizontal `current-time-line` (da-nk84). Only the day the
-            // axis strip sits against carries it: the last one horizontally,
-            // where the strip is below, the first vertically, where it is
-            // to the left (da-78evn).
-            let is_axis_day = match layout.orientation {
-                Orientation::Horizontal => {
-                    day.day_offset + layout.day_height >= geom.cross_total - 1e-9
-                }
-                Orientation::Vertical => day.day_offset <= 1e-9,
-            };
-            if layout.right_panel_width > 0.0 && is_axis_day && layout.time_axis_height > 0.0 {
-                let far = layout.time_axis_extent + layout.right_panel_width;
-                let (hx1, hy1, hx2, hy2) = match layout.orientation {
+        // The white axis baseline stops at the now-line, so the strip
+        // beyond it gets the now marker instead — the original datum's
+        // horizontal `current-time-line` (da-nk84). Only the day the
+        // axis strip sits against carries it: the last one horizontally,
+        // where the strip is below, the first vertically, where it is
+        // to the left (da-78evn).
+        let is_axis_day = match layout.orientation {
+            Orientation::Horizontal => {
+                day.day_offset + layout.day_height >= geom.cross_total - 1e-9
+            }
+            Orientation::Vertical => day.day_offset <= 1e-9,
+        };
+        if let Some(c) = chunk.filter(|_| is_axis_day && layout.time_axis_height > 0.0) {
+            line(
+                "current-time-line-far",
+                "",
+                match layout.orientation {
                     Orientation::Horizontal => {
                         let y = geom.data_y + geom.cross_total;
-                        (geom.data_x + nt, y, geom.data_x + far, y)
+                        (geom.data_x + c.from, y, geom.data_x + c.to, y)
                     }
                     Orientation::Vertical => {
                         let x = geom.data_x;
-                        (x, geom.data_y + nt, x, geom.data_y + far)
+                        (x, geom.data_y + c.from, x, geom.data_y + c.to)
                     }
-                };
-                let _ = write!(
-                    &mut out,
-                    r#"<line class="current-time-line-far" x1="{hx1}" x2="{hx2}" y1="{hy1}" y2="{hy2}" stroke="{c}" stroke-width="2" stroke-dasharray="4,2"/>"#,
-                    c = NOW_LINE_COLOR,
-                );
-            }
+                },
+            );
         }
     }
-
     out.push_str("</g>");
 
     if !defs.is_empty() {
@@ -1011,7 +1086,7 @@ fn emit_time_axis(
     let placed = fit_axis_labels(
         &slots,
         0.0,
-        axis_origin + layout.time_axis_extent - opts.axis_end_reserved.max(0.0),
+        axis_origin + drawn_extent(layout) - opts.axis_end_reserved.max(0.0),
     );
 
     match layout.orientation {
@@ -1024,7 +1099,7 @@ fn emit_time_axis(
                 x = geom.data_x,
                 y = axis_y,
                 t = TICK_LENGTH,
-                end = layout.time_axis_extent + 0.5,
+                end = drawn_extent(layout) + 0.5,
                 c = AXIS_COLOR,
             );
             let mut placed = placed.iter().peekable();
@@ -1061,7 +1136,7 @@ fn emit_time_axis(
                 x = axis_x,
                 y = geom.data_y,
                 t = TICK_LENGTH,
-                end = layout.time_axis_extent + 0.5,
+                end = drawn_extent(layout) + 0.5,
                 c = AXIS_COLOR,
             );
             let mut placed = placed.iter().peekable();

@@ -789,13 +789,43 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             label: String::new(),
             offset_s: None,
         }];
-        let day_spans: &[DayviewSpan] = if day.spans.is_empty() {
-            &whole
-        } else {
-            &day.spans
+        // A reserved strip with time on past now sits AT now (da-9g3bf):
+        // the past, then the strip, then the future, as two stretches
+        // `right_panel_width` apart. The future's starts a millisecond on,
+        // so what is at now is drawn in the past's.
+        let split = config.right_panel_width > 0.0
+            && day.spans.is_empty()
+            && day.start_ms < config.now_ms
+            && config.now_ms < day.end_ms;
+        let past_and_future = split.then(|| {
+            let at = |t: i64| (t - day.start_ms) as f64 / (day.end_ms - day.start_ms) as f64;
+            let strip = config.right_panel_width / time_axis_extent.max(f64::MIN_POSITIVE);
+            [
+                DayviewSpan {
+                    end_ms: config.now_ms,
+                    hi: at(config.now_ms),
+                    ..whole[0].clone()
+                },
+                DayviewSpan {
+                    start_ms: config.now_ms + 1,
+                    lo: at(config.now_ms + 1) + strip,
+                    hi: 1.0 + strip,
+                    ..whole[0].clone()
+                },
+            ]
+        });
+        let day_spans: &[DayviewSpan] = match (&past_and_future, day.spans.is_empty()) {
+            (Some(two), _) => two,
+            (None, true) => &whole,
+            (None, false) => &day.spans,
         };
-        let (spans, dead_zones, zone_labels) =
+        let (spans, mut dead_zones, mut zone_labels) =
             place_spans(day_spans, time_axis_extent, config.day_height);
+        if split {
+            // The gap between them is the strip, not a clock skipped.
+            dead_zones.clear();
+            zone_labels.clear();
+        }
         let time_to_pos = |s: &DayviewSpan, t_ms: i64| -> f64 {
             let f = (t_ms - s.start_ms) as f64 / (s.end_ms - s.start_ms).max(1) as f64;
             (s.lo + f * (s.hi - s.lo)) * time_axis_extent
