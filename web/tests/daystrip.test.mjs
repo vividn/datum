@@ -514,6 +514,16 @@ describe('the day strip', () => {
 
 	test('a scroll over bands already at this epoch asks for nothing', async () => {
 		await settledRoom(clocked, 'epoch', async (app) => {
+			// The stack drawn whole HERE, at a day height of its own (da-qs6re):
+			// the room's `empty` bumps the epoch, and under load that can land
+			// after the strip's own draw, leaving the days off screen at the
+			// epoch before — which a scroll to them rightly asks for again.
+			const was = await valueOf(app);
+			await say(app, { dayHeight: was + 7 });
+			await app.page.waitForFunction(
+				(want) => Number(document.querySelector('button.day-grip')?.getAttribute('aria-valuenow')) === want,
+				was + 7
+			);
 			await sizeWhole(app, 2);
 			await app.idle();
 
