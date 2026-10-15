@@ -33,6 +33,7 @@
 	import { damaged } from '$lib/damaged.js';
 	import RootBar from '$lib/layout/RootBar.svelte';
 	import PlaceModal from '$lib/layout/PlaceModal.svelte';
+	import Tour from '$lib/Tour.svelte';
 	import { boot as bootEngine } from '$lib/layout/engine.js';
 	import { boot as bootShell, openPlace } from '$lib/layout/shell.js';
 	import { approving, joining } from '$lib/syncView.js';
@@ -194,6 +195,8 @@
 	</div>
 	<PlaceModal />
 </div>
+<!-- Outside the shell, a size container, which would be its fixed boxes' frame. -->
+<Tour />
 
 <style>
 	/* See the note above. `100%` is the layout viewport the shell is fixed

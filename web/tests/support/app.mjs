@@ -447,7 +447,8 @@ async function openApp({
 	home = 'main',
 	desk = DESK,
 	timezone = TIMEZONE,
-	origin
+	origin,
+	tour = false
 } = {}) {
 	const options = {
 		// An origin of the test's own is served by a route, which a service
@@ -490,6 +491,13 @@ async function openApp({
 						localStorage.setItem(key, JSON.stringify(name ? { names: [name], active: 0 } : home));
 				} catch {}
 			}, home);
+		// The first field's tour (da-ii8lo) would stand over every test that
+		// saves a field: this browser has had it, but where a test asks for it.
+		if (!tour) await context.addInitScript(() => {
+			try {
+				localStorage.setItem('datum.tour', 'seen');
+			} catch {}
+		});
 		if (origin) await serveAt(context, origin);
 		await prepare?.(context);
 		const page = await context.newPage();

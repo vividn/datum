@@ -21,7 +21,8 @@
 	asks first where the form in hand has edits nobody saved.
 
 	Save on a new field runs its one command (da-2pbvd) and STAYS, on the
-	field it made. Done on a field runs its one `spec set` and leaves the place, Cancel leaves it running nothing; in a pane
+	field it made — but for the person's first, which goes on to the tour of
+	where it is logged ($lib/tour.ts). Done on a field runs its one `spec set` and leaves the place, Cancel leaves it running nothing; in a pane
 	that is no place, the form is read afresh. A save the CLI refuses
 	leaves the form as it was typed, to be put right.
 -->
@@ -35,6 +36,7 @@
 	import type { FieldButton } from '$lib/fields.js';
 	import { answerField, editing } from '$lib/fieldWidget.js';
 	import { run } from '$lib/run.js';
+	import { begin } from '$lib/tour.js';
 	import { VERBS, type Save, type Spec, type Verb } from '$lib/track.js';
 	import { fields, press } from './engine.js';
 	import { leavePlace } from './shell.js';
@@ -82,12 +84,18 @@
 	async function close(save: Save | null): Promise<void> {
 		// The field a new one's `track F` or `spec set F` names.
 		const [asked, made] = [$editing, spec === null && save && save.argv[save.argv[0] === 'spec' ? 2 : 1]];
+		// The person's first field, tracked: the tour follows its save (da-ii8lo).
+		const first = made && tracked.length === 0 && !save?.argv.includes('--ignore');
 		const result = save && (await press(save.argv));
 		answerField(result);
 		// Refused, the form stays as it was, to be put right; and a reader who
 		// went to another field while the save ran stays where they went.
 		if ((result && result.code !== 0) || asked !== $editing) return;
-		if (made) return void ($editing = { field: made });
+		if (made) {
+			$editing = { field: made };
+			if (first) void begin(made);
+			return;
+		}
 		leavePlace();
 		void load($editing);
 	}
