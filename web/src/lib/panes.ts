@@ -492,6 +492,10 @@ export function zoomHistory(history: string, scale: number): string {
  * (da-pcis), and drawn with time running down the page when `vertical`
  * (da-78evn). A small «now» under the now strip stands in for the clock
  * (da-9g3bf).
+ *
+ * With a window's worth more drawn either side of it, past the picture's
+ * box (`--surround`): a pan of a whole width or a zoom out a step shows
+ * what is there before datum is asked again (da-61nm8).
  */
 export const nowviewSpec = (history: string, at?: string, vertical = false): PaneSpec => ({
 	...NOWVIEW,
@@ -499,6 +503,8 @@ export const nowviewSpec = (history: string, at?: string, vertical = false): Pan
 		...NOWVIEW.argv,
 		'--now-label',
 		'--history',
+		history,
+		'--surround',
 		history,
 		...(at ? ['-t', at] : []),
 		...(vertical ? ['--orientation', 'vertical'] : [])

@@ -206,6 +206,15 @@ pub(crate) fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
                 out.now_label = true;
                 i += 1;
             }
+            FlagSplit::Long("surround") => {
+                let (v, ni) = take_value(tail, i, None, "--surround")?;
+                out.surround = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("surround", v) => {
+                out.surround = Some(v.to_string());
+                i += 1;
+            }
             FlagSplit::Long("width") => {
                 let (v, ni) = take_value(tail, i, None, "--width")?;
                 out.width = Some(parse_f64(v, "--width")?);

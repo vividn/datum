@@ -1,8 +1,8 @@
 // The nowview widget's − / + (da-pcis): they step how far back the picture
 // reaches, down to 0 — the snapshot — and the step is the widget's setting,
 // kept in the draft and in a saved layout. They have no label: each one's
-// title names where it goes (da-rex1). They sit, tiny, just right of the
-// axis's far label — how far back the window reaches — and the snapshot,
+// title names where it goes (da-rex1). They sit, tiny, either side of the
+// axis's far label — + before, − after (da-61nm8) — and the snapshot,
 // which draws no axis, has none: nothing lies over its chips (da-ndzl).
 //
 // Delta-blind on purpose: each step is held to the `--history` the seam was
@@ -48,41 +48,51 @@ function nowviewSettings(node, out = []) {
 
 /**
  * Where the steps of the nowview in `pane` sit against its picture: the far
- * label's words, and what is wrong — each step must be whole, right of the
- * far label, on its row, below the axis, off every band, and not over the
- * other step. Waits for the steps to be drawn.
+ * label's words, and what is wrong — each step must be whole, the + before
+ * the far label and the − after it (vividn: «move the + to the left side of
+ * the -nnm number», da-61nm8), on its row, below the axis, off every band,
+ * and not over the other step. The far label is the first the WINDOW
+ * shows: the picture is drawn past its box (`--surround`), and a label out
+ * there is not on screen. Waits for the steps to be drawn.
  */
 async function beside(page, pane) {
 	await page.locator(`${pane} .nowview-steps button`).first().waitFor();
 	return page.locator(pane).evaluate((p) => {
 		const r = (el) => el.getBoundingClientRect();
 		const over = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
-		const all = [...p.querySelectorAll('svg.svg .tick-label')];
+		const svg = p.querySelector('svg.svg');
+		const frame = r(svg.parentElement);
+		const all = [...svg.querySelectorAll('.tick-label')].filter((l) => r(l).left < frame.right && r(l).right > frame.left);
 		const far = all.reduce((a, b) => (r(b).x < r(a).x ? b : a));
 		// A label the steps take the place of is not drawn; the far one is.
 		const labels = all.filter((l) => getComputedStyle(l).visibility !== 'hidden');
 		const label = r(far);
-		const axis = r(p.querySelector('svg.svg .axis'));
-		const bands = [...p.querySelectorAll('svg.svg .day-data rect')].map(r);
-		const steps = [...p.querySelectorAll('.nowview-steps button')].map(r);
+		const axis = r(svg.querySelector('.axis'));
+		const bands = [...svg.querySelectorAll('.day-data rect')].map(r).filter((b) => b.left < frame.right && b.right > frame.left);
+		const plus = r(p.querySelector('.nowview-steps button[aria-label="longer window"]'));
+		const minus = r(p.querySelector('.nowview-steps button[aria-label="shorter window"]'));
+		const steps = [plus, minus];
 		const wrong = [];
+		if (label.left < frame.left - 0.5) wrong.push(`the far label starts at ${label.left}, the window at ${frame.left}`);
+		if (plus.left < frame.left - 0.5) wrong.push(`the + starts at ${plus.left}, the window at ${frame.left}`);
+		if (plus.right > label.left + 0.5) wrong.push(`the + ends at ${plus.right}, the label starts at ${label.left}`);
+		if (minus.left < label.right - 0.5) wrong.push(`the − starts at ${minus.left}, the label ends at ${label.right}`);
 		steps.forEach((s, i) => {
 			if (s.width < 20 || s.height < 20) wrong.push(`step ${i} is ${s.width}×${s.height}`);
-			if (s.left < label.right - 0.5) wrong.push(`step ${i} starts at ${s.left}, the label ends at ${label.right}`);
 			if (s.top > label.bottom || s.bottom < label.top) wrong.push(`step ${i} is off the label's row`);
 			if (s.top < axis.top - 0.5) wrong.push(`step ${i} reaches above the axis`);
 			for (const b of bands) if (over(s, b)) wrong.push(`step ${i} is over a band`);
 			for (const l of labels) if (over(s, r(l))) wrong.push(`step ${i} is over ${l.textContent}`);
 		});
 		if (!labels.includes(far)) wrong.push(`the far label ${far.textContent} is hidden`);
-		if (steps.length !== 2) wrong.push(`${steps.length} steps`);
-		else if (over(steps[0], steps[1])) wrong.push('the steps overlap');
+		if (p.querySelectorAll('.nowview-steps button').length !== 2) wrong.push('not two steps');
+		else if (over(plus, minus)) wrong.push('the steps overlap');
 		return { far: far.textContent, wrong };
 	});
 }
 
 describe('the nowview widget', () => {
-	test('sit just right of the far axis label, − then +, with no label', async () => {
+	test('sit either side of the far axis label, + before it and − after, with no label', async () => {
 		await shared.solo(async ({ page }) => {
 			const where = await beside(page, PANE);
 			assert.equal(where.far, '-30m');
@@ -90,8 +100,8 @@ describe('the nowview widget', () => {
 			assert.deepEqual(
 				await page.locator(`${PANE} .nowview-steps button`).evaluateAll((bs) => bs.map((b) => [b.textContent, b.ariaLabel])),
 				[
-					['−', 'shorter window'],
-					['+', 'longer window']
+					['+', 'longer window'],
+					['−', 'shorter window']
 				]
 			);
 		});
@@ -101,8 +111,9 @@ describe('the nowview widget', () => {
 		await withApp(
 			async ({ page }) => {
 				await page.evaluate((ms) => window.datum.cursor.set(new Date(ms)), todayAt(9, 0));
+				// Centred: the window's −15m to +15m, and its surroundings on to ±45m.
 				await page.waitForFunction(
-					(pane) => document.querySelector(`${pane} svg.svg .tick-label`)?.textContent === '-15m',
+					(pane) => [...document.querySelectorAll(`${pane} svg.svg .tick-label`)].some((l) => l.textContent === '+45m'),
 					PANE
 				);
 				const where = await beside(page, PANE);
@@ -357,15 +368,17 @@ describe('the nowview widget zooms', () => {
 	});
 
 	test('with -t set the pinch keeps that instant, not now', async () => {
-		// The instant is the axis label under the middle of the band; the
-		// yellow line is now (da-5flt), and 12:00 is not in 08:45–09:15.
+		// The instant is where the picture's own geometry puts 09:00 — it
+		// draws no clock under it (da-61nm8); the yellow line is now
+		// (da-5flt), and 12:00 is not in 08:45–09:15.
 		const instantX = (page) =>
-			page
-				.locator(`${PANE} svg.svg text.tick-label`, { hasText: '09:00' })
-				.evaluate((label) => {
-					const box = label.getBoundingClientRect();
-					return box.x + box.width / 2;
-				});
+			page.locator(`${PANE} svg.svg`).evaluate((svg, at) => {
+				const day = svg.querySelector('[data-lo]');
+				const [from, to] = ['data-from', 'data-to'].map((n) => Date.parse(day.getAttribute(n)));
+				const [lo, hi] = ['data-lo', 'data-hi'].map((n) => Number(day.getAttribute(n)));
+				const ctm = svg.getScreenCTM();
+				return new DOMPoint(lo + ((at - from) / (to - from)) * (hi - lo), 0).matrixTransform(ctm).x;
+			}, todayAt(9, 0));
 		await withApp(
 			async (app) => {
 				const { page } = app;
@@ -495,5 +508,78 @@ describe('the nowview steps stay off the picture', () => {
 			},
 			{ ...DESKTOP, clock: todayAt(12, 0) }
 		);
+	});
+});
+
+// ── the surroundings (da-61nm8) ──────────────────────────────────────
+//
+// vividn: «predraw enough of the surrounding time so that I can click
+// anywhere in the nowview and move my thumb mouse anywhere horizontally on
+// the screen or be able to zoom out and be able to see the data without
+// having to redraw». The picture is asked for a window's worth past its box
+// either side (`--surround`), and a gesture moves what is drawn: a coffee
+// forty minutes back, outside the thirty-minute window, is on screen
+// mid-gesture with no nowview asked for since the press.
+
+describe('the nowview draws past its box', () => {
+	const BAND = 'section[data-pane="nowview"] .nowview-band';
+
+	/** Whether the coffee's mark is drawn inside the band, and how many nowviews were asked for. */
+	const midGesture = (page) =>
+		page.evaluate((band) => {
+			const box = document.querySelector(band).getBoundingClientRect();
+			const shown = [...document.querySelectorAll(`${band} svg.svg [data-field="coffee"]:not(g)`)].some((m) => {
+				const r = m.getBoundingClientRect();
+				return r.width > 0 && r.left >= box.left && r.right <= box.right;
+			});
+			return { shown, asked: (window.__datumSeen ?? []).filter((a) => a[0] === 'nowview').length };
+		}, BAND);
+
+	const phone = { viewport: { width: 390, height: 664 }, device: { isMobile: true, hasTouch: true }, home: ON_COLLECT };
+
+	async function withCoffee(app) {
+		await app.runLine('occur coffee -t -40');
+		await app.redraw();
+		await app.page.locator(`${BAND} svg.svg [data-field="coffee"]:not(g)`).first().waitFor({ state: 'attached' });
+		await app.idle();
+		const before = await midGesture(app.page);
+		assert.equal(before.shown, false, 'the coffee is in the window before any gesture');
+		await app.spyOnRunner();
+		return app.page.locator(BAND).boundingBox();
+	}
+
+	test('a drag of a whole width shows what was before the window, and asks for nothing until the lift', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const box = await withCoffee(app);
+			const y = box.y + box.height / 2;
+			await page.mouse.move(box.x + 4, y);
+			await page.mouse.down();
+			await page.mouse.move(box.x + 4 + box.width, y, { steps: 8 });
+			const during = await midGesture(page);
+			await page.mouse.up();
+			assert.deepEqual(during, { shown: true, asked: 0 });
+			assert.deepEqual(app.errors, []);
+		}, phone);
+	});
+
+	test('a pinch out a step shows it too, with no nowview asked for under the fingers', async () => {
+		await withApp(async (app) => {
+			const { page } = app;
+			const box = await withCoffee(app);
+			let during;
+			await pinch(page, box, 160, 80, async () => (during = await midGesture(page)));
+			assert.deepEqual(during, { shown: true, asked: 0 });
+			assert.deepEqual(app.errors, []);
+		}, phone);
+	});
+
+	test('there is no clock: no HH:MM anywhere in the picture', async () => {
+		await withApp(async ({ page }) => {
+			await page.locator(`${BAND} svg.svg .tick-label`).first().waitFor({ state: 'attached' });
+			const texts = await page.locator(`${BAND} svg.svg text`).allTextContents();
+			assert.deepEqual(texts.filter((t) => /\d{1,2}:\d\d/.test(t)), []);
+			assert.equal(await page.locator(`${BAND} svg.svg .current-time-text`).count(), 0);
+		}, phone);
 	});
 });

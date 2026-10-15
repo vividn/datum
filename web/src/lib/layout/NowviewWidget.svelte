@@ -87,7 +87,7 @@
 	in devtools which gesture the machine took.
 -->
 <script lang="ts">
-	import { createEventDispatcher, onDestroy, onMount } from 'svelte';
+	import { createEventDispatcher, onDestroy, onMount, tick } from 'svelte';
 	import CliPane from '$lib/CliPane.svelte';
 	import Pill from '$lib/Pill.svelte';
 	import { pills, selected } from '$lib/bar.js';
@@ -137,7 +137,25 @@
 	$: up = NOWVIEW_STEPS[i + 1];
 	$: down = NOWVIEW_STEPS[i - 1];
 	$: instant = centre?.arg;
-	$: spec = nowviewSpec(history, instant, vertical);
+
+	/**
+	 * The `-t` the picture on screen was asked for, which is the window's
+	 * only until a pan moves it inside what that picture drew (da-61nm8):
+	 * the picture is drawn a window's worth past its box either side, and
+	 * a pan that stays in it slides the picture along (`rest`) and asks
+	 * datum for nothing. Everything else that moves the window asks.
+	 */
+	let askedFor = instant;
+	$: spec = nowviewSpec(history, askedFor, vertical);
+
+	function ask(..._because: unknown[]): void {
+		askedFor = centre?.arg;
+		// The picture on screen may already be this one, slid: slid back.
+		void tick().then(place);
+	}
+
+	// A new step or orientation is a new picture, of where the window is.
+	$: ask(history, vertical);
 	/** The axis a drag along the band travels, for the pane's tab swipe. */
 	$: pans = vertical ? 'y' : 'x';
 	/** Whether the window has left now — and so whether a tap makes an absolute pill. */
@@ -177,17 +195,20 @@
 		if (!c) {
 			followed = null;
 			centre = centre?.by === 'pan' ? centre : null;
+			ask();
 			return;
 		}
 		if (c.rel !== undefined || c.from === 'nowview') return;
 		if (+c.at === followed) return;
 		followed = +c.at;
 		centre = { arg: c.at.toISOString(), by: 'sel' };
+		ask();
 	}
 
 	/** Back to now, and the time-based pills — and so the selection — with it. */
 	function toNow(): void {
 		centre = null;
+		ask();
 		pointAt(null);
 	}
 
@@ -201,6 +222,7 @@
 	function toSelection(): void {
 		const p = $pointed;
 		if (p) centre = { arg: p.at.toISOString(), by: 'sel' };
+		ask();
 	}
 
 	// ── the picture's geometry ──────────────────────────────────────────
@@ -220,6 +242,20 @@
 
 	/** Along the axis, whichever way it runs. */
 	const along = (x: number, y: number) => (axis?.y ? y : x);
+
+	/**
+	 * The window's two ends along the axis, on screen: the picture's own box,
+	 * as its holder lays it out — the drawing past it is the surroundings,
+	 * and a transform moves the drawing, never the holder.
+	 */
+	function ends(): [number, number] {
+		const r = svgEl()?.parentElement?.getBoundingClientRect();
+		if (!r) return [NaN, NaN];
+		return axis?.y ? [r.top, r.bottom] : [r.left, r.right];
+	}
+
+	/** How far the picture is slid along its axis at rest, in px: see `askedFor`. */
+	let rest = 0;
 
 	/** The instant a point on screen is, by the picture's own geometry. */
 	const instantAt = (x: number, y: number) => (axis ? instantOn(axis, along(x, y)) : NaN);
@@ -259,7 +295,11 @@
 		const line = svg?.querySelector('.current-time-line');
 		const r = line?.getBoundingClientRect();
 		if (!r) return false;
-		return along(x, y) >= along(r.left + r.width / 2, r.top + r.height / 2) - NOW_PX;
+		// A now-line drawn in the surroundings is off the window, which then has no now region.
+		const at = along(r.left + r.width / 2, r.top + r.height / 2);
+		const [lo, hi] = ends();
+		if (!(at >= lo - 1 && at <= hi + 1)) return false;
+		return along(x, y) >= at - NOW_PX;
 	}
 
 	// ── the one-pointer gestures ───────────────────────────────────────
@@ -379,12 +419,20 @@
 		if (svg) readLanes(svg, { x, y, t: at });
 	}
 
-	/** The window the pan has dragged it to: the drag moves the content, so the span moves the other way. */
+	/**
+	 * The window the pan has dragged it to: the drag moves the content, so
+	 * the span moves the other way. The picture stays where the finger left
+	 * it, and datum is asked for another only when the window has left what
+	 * this one drew (da-61nm8).
+	 */
 	function commitPan(): void {
 		if (!axis) return drop();
-		const middle = (axis.from + axis.to) / 2 - panned * msPerPx(axis);
-		centre = { arg: new Date(middle).toISOString(), by: 'pan' };
+		const [lo, hi] = ends().map((p) => instantOn(axis!, p - panned));
+		centre = { arg: new Date((lo + hi) / 2).toISOString(), by: 'pan' };
+		rest += panned;
 		panned = 0;
+		if (lo < axis.from || hi > axis.to) ask();
+		else void tick().then(place);
 	}
 
 	function finish(event: PointerEvent): void {
@@ -421,11 +469,12 @@
 	 */
 	function anchorX(svg: Element): number {
 		const box = svg.getBoundingClientRect();
+		const start = axis?.y ? box.y : box.x;
 		const line = svg.querySelector('.current-time-line');
-		const length = axis?.y ? box.height : box.width;
-		if (instant || !line) return instant ? length / 2 : length;
+		const [lo, hi] = ends();
+		if (instant || !line) return (instant ? (lo + hi) / 2 : hi) - start;
 		const marker = line.getBoundingClientRect();
-		return axis?.y ? marker.y + marker.height / 2 - box.y : marker.x + marker.width / 2 - box.x;
+		return (axis?.y ? marker.y + marker.height / 2 : marker.x + marker.width / 2) - start;
 	}
 
 	/** Begin a gesture over the picture, if there is one to scale. */
@@ -551,10 +600,8 @@
 
 	// ── the steps, the margin and the buttons ──────────────────────────
 
-	/** The steps' row: 2px gap, then two 22px targets. See the style. */
-	const STEPS_WIDTH = 2 + 22 + 22;
-	/** And its height, which is what it takes from a vertical axis. */
-	const STEPS_HEIGHT = 24;
+	/** What one step takes along the axis, beside the far label: its target and a 2px gap. */
+	const STEP_PX = { x: 22 + 2, y: 24 + 2 };
 
 	/**
 	 * Below this width the margin strip, its pills and `now →` do not fit,
@@ -573,15 +620,45 @@
 	let roomy = true;
 
 	/**
-	 * Where the far label ends, in px across and down the widget's box:
-	 * the leftmost tick label, which is how far back the window reaches
-	 * (`-30m`, or `-15m` with the window centred on the cursor). Read off
-	 * the picture as `anchorX` reads the now-line; none when it draws no
-	 * axis — the snapshot. A nearer label the steps would lie over is not
-	 * drawn: the far one says the window, and the steps take its
-	 * neighbour's place.
+	 * Where the far label is, in px across and down the widget's box, and
+	 * how long it is along the axis: the first tick label the window shows,
+	 * which is how far back it reaches (`-30m`, or `-15m` with the window
+	 * centred on the cursor). The + goes before it and the − after (vividn:
+	 * «move the + to the left side of the -nnm number»), so it is moved in
+	 * off the window's edge, where the surroundings put it, by a step.
+	 * Read off the picture as `anchorX` reads the now-line; none when it
+	 * draws no axis — the snapshot. A nearer label the steps would lie over
+	 * is not drawn: the far one says the window.
 	 */
-	let far: { x: number; y: number } | null = null;
+	let far: { x: number; y: number; length: number } | null = null;
+
+	/** The instants at the window's two ends, as the picture on screen draws them. */
+	let view: [number, number] | null = null;
+
+	/**
+	 * How far to slide the picture, along its UNMOVED axis, so the window is
+	 * where `centre` says when the picture on screen was asked for
+	 * elsewhere — after a pan inside it, and at each redraw of it, so an
+	 * on-now picture that moves with the clock does not take a panned
+	 * window along.
+	 */
+	function restFor(unmoved: NonNullable<typeof axis>): number {
+		const target = Date.parse(instant ?? '');
+		if (instant === askedFor || !Number.isFinite(target)) return 0;
+		const [lo, hi] = ends();
+		return (lo + hi) / 2 - (unmoved.lo + (target - unmoved.from) / msPerPx(unmoved));
+	}
+
+	/** The picture's axis as it is drawn before any slide or gesture moves it. */
+	function unmovedAxis(svg: SVGSVGElement): typeof axis {
+		const moved = svg.style.transform;
+		svg.style.transform = 'none';
+		try {
+			return timeAxis(svg);
+		} finally {
+			svg.style.transform = moved;
+		}
+	}
 
 	/**
 	 * Where each margin pill sits, in px across the widget's box: over the
@@ -600,7 +677,22 @@
 		const home = el.getBoundingClientRect();
 		roomy = home.width >= TINY_PX;
 		const svg = svgEl();
-		axis = svg && timeAxis(svg);
+		// Read unmoved, then slid by `rest` alone: a redraw mid-gesture must
+		// not cache the gesture's own offset, which `commitPan` adds again.
+		const unmoved = svg && unmovedAxis(svg);
+		const slid = unmoved ? restFor(unmoved) : rest;
+		axis = unmoved && { ...unmoved, lo: unmoved.lo + slid, hi: unmoved.hi + slid };
+		// What is read off the picture below is read where it will be drawn.
+		if (Math.abs(slid - rest) >= 0.5) {
+			rest = slid;
+			return void tick().then(place);
+		}
+		view = axis ? (ends().map((p) => instantOn(axis!, p)) as [number, number]) : null;
+		// The window has left what the picture drew — the clock moved an
+		// on-now picture out from under it: a picture of the window, then.
+		// Asked once: `ask` makes `askedFor` the window's, and from then on
+		// this `place` and every one after it has nothing left to ask for.
+		if (view && axis && instant !== askedFor && (view[0] < axis.from - EDGE_MS || view[1] > axis.to + EDGE_MS)) ask();
 		// Before the early returns below: a snapshot draws no tick labels
 		// and leaves by the first of them, and a selection is drawn there
 		// too.
@@ -625,24 +717,36 @@
 			dur: held(centreOf('svg.svg .cursor-span'), '.nowview-margin .pill.dur')
 		};
 		const labels = [...(svg?.querySelectorAll<SVGElement>('.tick-label') ?? [])];
-		if (!labels.length) return void (far = null);
-		const box = (l: SVGElement) => l.getBoundingClientRect();
-		// The far label is the first along time: leftmost, or topmost when
-		// time runs down — and then the steps go UNDER it, in the axis
-		// strip, since beside it is the picture.
-		const y = !!axis?.y;
-		const first = (a: SVGElement, b: SVGElement) => (y ? box(b).y < box(a).y : box(b).x < box(a).x);
-		const label = box(labels.reduce((a, b) => (first(a, b) ? b : a)));
 		for (const l of labels) {
-			const b = box(l);
-			const under = y
-				? b.y > label.y && b.top < label.bottom + STEPS_HEIGHT
-				: b.x > label.x && b.left < label.right + STEPS_WIDTH;
-			l.style.visibility = under ? 'hidden' : '';
+			l.removeAttribute('transform');
+			l.style.visibility = '';
+		}
+		const ctm = svg?.getScreenCTM();
+		if (!labels.length || !axis || !ctm) return void (far = null);
+		// The first along time: leftmost, or topmost when time runs down —
+		// and then the steps go above and below it, in the axis strip.
+		const y = axis.y;
+		const box = (l: SVGElement) => l.getBoundingClientRect();
+		const span = (r: DOMRect) => (y ? [r.top, r.bottom] : [r.left, r.right]);
+		const [lo] = ends();
+		const shown = labels.filter((l) => {
+			const [a, b] = span(box(l));
+			return (a + b) / 2 >= lo - 1;
+		});
+		if (!shown.length) return void (far = null);
+		const label = shown.reduce((a, b) => (span(box(b))[0] < span(box(a))[0] ? b : a));
+		const step = y ? STEP_PX.y : STEP_PX.x;
+		const inset = Math.max(0, lo + step - span(box(label))[0]) / (y ? ctm.d : ctm.a);
+		if (inset) label.setAttribute('transform', y ? `translate(0 ${inset})` : `translate(${inset} 0)`);
+		const r = box(label);
+		const [from, to] = span(r);
+		for (const l of labels) {
+			const [a, b] = span(box(l));
+			if (l !== label && a < to + step && b > from - step) l.style.visibility = 'hidden';
 		}
 		far = y
-			? { x: 0, y: label.bottom + STEPS_HEIGHT / 2 - home.y }
-			: { x: label.right - home.x, y: label.y + label.height / 2 - home.y };
+			? { x: r.left + r.width / 2 - home.x, y: from - home.y, length: to - from }
+			: { x: from - home.x, y: r.top + r.height / 2 - home.y, length: to - from };
 	}
 
 	/** The pills the selection made: the ones the margin draws beside their instants. */
@@ -708,11 +812,11 @@
 	const EDGE_MS = 1000;
 
 	$: away =
-		!axis || !$pointed
+		!view || !$pointed
 			? null
-			: +$pointed.at < axis.from - EDGE_MS
+			: +$pointed.at < view[0] - EDGE_MS
 				? 'left'
-				: +$pointed.at > axis.to + EDGE_MS
+				: +$pointed.at > view[1] + EDGE_MS
 					? 'right'
 					: null;
 
@@ -754,10 +858,9 @@
 
 	<div
 		class="nowview-band"
-		class:busy={!!zoom || mode === 'pan'}
 		style:--zoom={zoom?.scale ?? 1}
 		style:--zoom-x="{zoom?.origin ?? 0}px"
-		style:--pan="{panned}px"
+		style:--pan="{rest + panned}px"
 		data-pans={pans}
 		data-points="own"
 		data-mode={mode}
@@ -787,15 +890,13 @@
 	{/if}
 
 	{#if far && !zoom}
-		<div class="nowview-steps" data-pans={pans} style:left="{far.x}px" style:top="{far.y}px">
-			<button
-				type="button"
-				class="step"
-				aria-label="shorter window"
-				title={down ? `shorter window (${down === '0' ? 'now' : down})` : 'shorter window'}
-				disabled={!down}
-				on:click={() => dispatch('change', down)}>−</button
-			>
+		<div
+			class="nowview-steps"
+			data-pans={pans}
+			style:left="{far.x}px"
+			style:top="{far.y}px"
+			style:--far="{far.length}px"
+		>
 			<button
 				type="button"
 				class="step"
@@ -803,6 +904,14 @@
 				title={up ? `longer window (${up})` : 'longer window'}
 				disabled={!up}
 				on:click={() => dispatch('change', up)}>+</button
+			>
+			<button
+				type="button"
+				class="step"
+				aria-label="shorter window"
+				title={down ? `shorter window (${down === '0' ? 'now' : down})` : 'shorter window'}
+				disabled={!down}
+				on:click={() => dispatch('change', down)}>−</button
 			>
 		</div>
 	{/if}
@@ -872,16 +981,23 @@
 		flex: 1;
 		min-width: 0;
 		min-height: 0;
+		/* The picture is drawn past its box either side (`--surround`,
+		   da-61nm8): the band is the window onto it. */
+		overflow: clip;
+	}
+
+	/* And so is the picture's holder: the pane's body scrolls, and a
+	   picture slid right would hand it the slide to scroll to. */
+	.nowview-band :global(.picture) {
+		overflow: clip;
 	}
 
 	/* The gesture's preview: the band scaled about the anchor, which is
 	   therefore the one column of it that does not move, and slid by the
-	   pan. Width only — the window is a span of time, and the field rows
-	   are not part of it. */
-	.nowview-band.busy {
-		overflow: clip;
-	}
-	.nowview-band.busy :global(svg.svg) {
+	   pan — and, at rest, by a pan that stayed inside the drawing. Width
+	   only — the window is a span of time, and the field rows are not
+	   part of it. */
+	.nowview-band :global(svg.svg) {
 		transform: translateX(var(--pan)) scaleX(var(--zoom));
 		transform-origin: var(--zoom-x) center;
 	}
@@ -892,7 +1008,7 @@
 	.nowview.vertical {
 		touch-action: pan-x;
 	}
-	.vertical .nowview-band.busy :global(svg.svg) {
+	.vertical .nowview-band :global(svg.svg) {
 		transform: translateY(var(--pan)) scaleY(var(--zoom));
 		transform-origin: center var(--zoom-x);
 	}
@@ -944,13 +1060,17 @@
 		max-width: 100%;
 	}
 
-	/* Just right of the far label, on its middle. The glyph is tiny; the
-	   target is a fingertip's, and the two sit edge to edge. */
+	/* + just before the far label and − just after it, on its middle. The
+	   glyph is tiny; the target is a fingertip's. */
 	.nowview-steps {
 		position: absolute;
 		display: flex;
-		margin-left: 2px;
-		transform: translateY(-50%);
+		gap: calc(var(--far) + 4px);
+		transform: translate(calc(-22px - 2px), -50%);
+	}
+	.vertical .nowview-steps {
+		flex-direction: column;
+		transform: translate(-50%, calc(-24px - 2px));
 	}
 
 	.step {

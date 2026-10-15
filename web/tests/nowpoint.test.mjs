@@ -90,22 +90,28 @@ const geometry = (page, scope = NOWVIEW) =>
 		const box = svg.getBoundingClientRect();
 		const view = svg.viewBox.baseVal;
 		const px = (u) => box.left + ((u - view.x) * box.width) / view.width;
-		const [lo, hi] = [px(num('data-lo')), px(num('data-hi'))];
+		const [drawnLo, drawnHi] = [px(num('data-lo')), px(num('data-hi'))];
+		const at = (x) => from + ((x - drawnLo) / (drawnHi - drawnLo)) * (to - from);
+		// The WINDOW: the picture is drawn past its box either side
+		// (`--surround`, da-61nm8), and slid when a pan stays inside it.
+		const frame = svg.parentElement.getBoundingClientRect();
+		const [lo, hi] = [Math.max(drawnLo, frame.left), Math.min(drawnHi, frame.right)];
 		const mid = (el) => {
 			const r = el.getBoundingClientRect();
 			return r.left + r.width / 2;
 		};
+		const shown = (x) => x >= frame.left - 1 && x <= frame.right + 1;
 		const line = svg.querySelector('.current-time-line');
 		return {
-			from,
-			to,
+			from: at(lo),
+			to: at(hi),
 			lo,
 			hi,
 			y: box.top + box.height / 2,
-			nowLine: line ? mid(line) : null,
-			marks: [...svg.querySelectorAll('.gridline')].map((l) => ({
+			nowLine: line && shown(mid(line)) ? mid(line) : null,
+			marks: [...svg.querySelectorAll('.gridline')].filter((l) => shown(mid(l))).map((l) => ({
 				x: mid(l),
-				back: Math.round((to - (from + ((mid(l) - lo) / (hi - lo)) * (to - from))) / 60000)
+				back: Math.round((at(hi) - at(mid(l))) / 60000)
 			}))
 		};
 	});
@@ -160,6 +166,15 @@ const asked = async (page) => {
 	const i = argv ? argv.indexOf('-t') : -1;
 	return i < 0 ? null : argv[i + 1];
 };
+
+/**
+ * The instant drawn at `px` along the band — a pan that stays inside what
+ * the picture drew slides the picture and asks datum for nothing
+ * (da-61nm8), so where the window is is read off the screen, not off the
+ * seam.
+ */
+const instantUnder = (page, px, read = geometry) =>
+	read(page).then((g) => g.from + ((px - g.lo) / (g.hi - g.lo)) * (g.to - g.from));
 
 /** Type a line into the bottom bar and wait for its receipt — the pills ride with it. */
 const receiptNow = () => document.querySelector('.prompt-bar .doc .receipt')?.textContent ?? '';
@@ -250,9 +265,10 @@ describe('the keyboard can still select in the band', () => {
 			// A mark's time is a fact of the drawing, so the pill is absolute
 			// even while the window is on now — and for a block that began
 			// before the window it is where the block is DRAWN from
-			// (`drawnStart` in $lib/hover.ts), which is this window's 14:30.
-			// The same instant vremya measured on main.
-			await saysPills(page, ['time:-t 14:30']);
+			// (`drawnStart` in $lib/hover.ts) — which, the picture being
+			// drawn a window's worth before its box (da-61nm8), is the
+			// block's own 14:00 rather than the window's 14:30.
+			await saysPills(page, ['time:-t 14:00']);
 			// And the window is the band's own: a selection made in here never
 			// moves it, by the keyboard as by a finger.
 			assert.deepEqual(await windows(page), [], 'Enter in the band asked for a window');
@@ -330,7 +346,7 @@ describe('a relative selection is measured from NOW, not from the press', () => 
 // ── a drag pans ────────────────────────────────────────────────────────
 
 describe('a drag along the band pans the window', () => {
-	test('the seam is asked for a window elsewhere, the selection stays put, and `now →` appears', async () => {
+	test('the window moves with no nowview asked for, the selection stays put, and `now →` appears', async () => {
 		await withBand(async (app) => {
 			const { page } = app;
 			// A selection first, so the pan can be seen to leave it alone.
@@ -346,15 +362,16 @@ describe('a drag along the band pans the window', () => {
 			// EARLIER by the ten minutes of band it travelled.
 			await drag(page, middle, { x: middle.x + 10 * perMinute(g), y: g.y });
 
-			await until(
-				() => asked(page),
-				(t) => t !== null
+			const centred = await until(
+				() => instantUnder(page, middle.x),
+				(t) => Math.abs(t - ((g.from + g.to) / 2 - 10 * MINUTE)) <= 90_000
 			);
-			const centred = Date.parse(await asked(page));
 			assert.ok(
 				Math.abs(centred - ((g.from + g.to) / 2 - 10 * MINUTE)) <= 90_000,
 				`centred on ${new Date(centred).toISOString()}, not ~14:35`
 			);
+			// Inside what was drawn: the picture slid, and datum was not asked.
+			assert.deepEqual(await windows(page), []);
 			// The selection is untouched: the same pill, the same minute.
 			assert.deepEqual(await pillsOf(page), ['time:-qq']);
 			await page.locator(`${NOWVIEW} .nowview-jump.right`).waitFor();
@@ -368,10 +385,7 @@ describe('a drag along the band pans the window', () => {
 			const g = await geometry(page);
 			const middle = { x: (g.lo + g.hi) / 2, y: g.y };
 			await drag(page, middle, { x: middle.x + (g.hi - g.lo) / 2, y: g.y });
-			await until(
-				() => asked(page),
-				(t) => t !== null
-			);
+			await page.locator(`${NOWVIEW} .nowview-jump.right`).waitFor();
 			await app.idle();
 
 			// The yellow line is NOW's alone and now is not in this window
@@ -383,13 +397,13 @@ describe('a drag along the band pans the window', () => {
 
 			// A tap here is the absolute pill the dayview has always made —
 			// vividn, 17:01: "off-now, yes use absolute time".
-			const panned = await geometry(page);
-			await page.mouse.click((panned.lo + panned.hi) / 2, panned.y);
+			// Where 14:45 was, 14:30 is now.
+			await page.mouse.click(middle.x, middle.y);
 			await saysPills(page, ['time:-t 14:30']);
 			await page.locator(`${NOWVIEW} .nowview-jump.right`).click();
 			await until(
-				() => asked(page),
-				(t) => t === null
+				() => geometry(page).then((n) => n.nowLine),
+				(line) => line !== null
 			);
 			assert.deepEqual(await pillsOf(page), [], '`now →` left the time pills behind');
 			assert.equal(await page.locator(`${NOWVIEW} .nowview-jump.right`).count(), 0);
@@ -446,12 +460,12 @@ describe('a drag along the band pans the window', () => {
 				await app.idle();
 
 				const g = await geometry(page);
-				await drag(page, { x: (g.lo + g.hi) / 2, y: g.y }, { x: (g.lo + g.hi) / 2 + (g.hi - g.lo) / 2, y: g.y });
-				await until(
-					() => asked(page),
-					(t) => t !== null && t !== '2026-09-10T12:00:00.000Z'
+				const x = (g.lo + g.hi) / 2;
+				await drag(page, { x, y: g.y }, { x: x + (g.hi - g.lo) / 2, y: g.y });
+				const panned = await until(
+					() => instantUnder(page, x),
+					(t) => t < Date.UTC(2026, 8, 10, 11, 55)
 				);
-				const panned = await asked(page);
 				await app.idle();
 
 				// A minute of clock on both sides of the seam, and a beat for
@@ -461,7 +475,7 @@ describe('a drag along the band pans the window', () => {
 				await page.waitForTimeout(250);
 				await app.idle();
 
-				assert.equal(await asked(page), panned, 'the minute brought the window home');
+				assert.ok(Math.abs((await instantUnder(page, x)) - panned) < 1000, 'the minute brought the window home');
 				assert.equal(
 					await page.locator(`${NOWVIEW} .nowview-jump.right`).count(),
 					1,
@@ -479,19 +493,14 @@ describe('a drag along the band pans the window', () => {
 			const g = await geometry(page);
 			const middle = { x: (g.lo + g.hi) / 2, y: g.y };
 			await drag(page, middle, { x: middle.x + (g.hi - g.lo) / 2, y: g.y });
-			await until(
-				() => asked(page),
-				(t) => t !== null
-			);
+			await page.locator(`${NOWVIEW} .nowview-jump.right`).waitFor();
 			await app.idle();
-			const held = await asked(page);
-			const span = await geometry(page).then((n) => [n.from, n.to]);
+			const held = await instantUnder(page, middle.x);
 
 			assert.equal((await app.run(['occur', 'tea', '-t', '14:10'])).code, 0);
 			await page.evaluate(() => window.datum.layout.apply((l) => l));
 			await app.idle();
-			assert.equal(await asked(page), held, 'the write snapped the window back');
-			assert.deepEqual(await geometry(page).then((n) => [n.from, n.to]), span);
+			assert.ok(Math.abs((await instantUnder(page, middle.x)) - held) < 1000, 'the write snapped the window back');
 		});
 	});
 });
@@ -714,7 +723,10 @@ describe('a selection the window has left behind', () => {
 
 			const back = page.locator(`${NOWVIEW} .nowview-jump.selection`);
 			await back.waitFor();
-			assert.equal((await drawn(page, NOWVIEW)).head, null, 'the selection is drawn in a window without it');
+			// Drawn, if at all, in the surroundings past the window (da-61nm8).
+			const head = (await drawn(page, NOWVIEW)).head;
+			const shown = await geometry(page);
+			assert.ok(!head || head.x < shown.lo || head.x > shown.hi, `the selection is drawn in a window without it, at ${head?.x}`);
 
 			await back.click();
 			await app.idle();
@@ -888,10 +900,11 @@ describe('on a phone', () => {
 				// the window. That it does NOT move the tab is
 				// `layout-swipe.test.mjs`'s, which drags the band on a phone.
 				const g = await geometry(page);
+				const was = await instantUnder(page, (g.lo + g.hi) / 2);
 				await swipeNoWait(page, (g.lo + g.hi) / 2, g.y, 60, 0);
 				await until(
-					() => asked(page),
-					(t) => t !== null
+					() => instantUnder(page, (g.lo + g.hi) / 2),
+					(t) => t < was - MINUTE
 				);
 			},
 			{
@@ -950,23 +963,28 @@ const vgeometry = (page) =>
 		const box = svg.getBoundingClientRect();
 		const view = svg.viewBox.baseVal;
 		const px = (u) => box.top + ((u - view.y) * box.height) / view.height;
-		const [lo, hi] = [px(num('data-lo')), px(num('data-hi'))];
+		const [drawnLo, drawnHi] = [px(num('data-lo')), px(num('data-hi'))];
+		const at = (y) => from + ((y - drawnLo) / (drawnHi - drawnLo)) * (to - from);
+		// The window, as `geometry` reads it.
+		const frame = svg.parentElement.getBoundingClientRect();
+		const [lo, hi] = [Math.max(drawnLo, frame.top), Math.min(drawnHi, frame.bottom)];
 		const mid = (el) => {
 			const r = el.getBoundingClientRect();
 			return r.top + r.height / 2;
 		};
+		const shown = (y) => y >= frame.top - 1 && y <= frame.bottom + 1;
 		const line = svg.querySelector('.current-time-line');
 		return {
 			axis: day.getAttribute('data-axis'),
-			from,
-			to,
+			from: at(lo),
+			to: at(hi),
 			lo,
 			hi,
 			x: box.left + box.width * 0.75,
-			nowLine: line ? mid(line) : null,
-			marks: [...svg.querySelectorAll('.gridline')].map((l) => ({
+			nowLine: line && shown(mid(line)) ? mid(line) : null,
+			marks: [...svg.querySelectorAll('.gridline')].filter((l) => shown(mid(l))).map((l) => ({
 				y: mid(l),
-				back: Math.round((to - (from + ((mid(l) - lo) / (hi - lo)) * (to - from))) / 60000)
+				back: Math.round((at(hi) - at(mid(l))) / 60000)
 			}))
 		};
 	});
@@ -1020,11 +1038,10 @@ describe('turned on its side, the band is pointed into along its own axis', () =
 			const g = await vgeometry(page);
 			const middle = { x: g.x, y: (g.lo + g.hi) / 2 };
 			await drag(page, middle, { x: g.x, y: middle.y + 10 * perMinute(g) });
-			await until(
-				() => asked(page),
-				(t) => t !== null
+			const centred = await until(
+				() => instantUnder(page, middle.y, vgeometry),
+				(t) => Math.abs(t - ((g.from + g.to) / 2 - 10 * MINUTE)) <= 90_000
 			);
-			const centred = Date.parse(await asked(page));
 			assert.ok(
 				Math.abs(centred - ((g.from + g.to) / 2 - 10 * MINUTE)) <= 90_000,
 				`centred on ${new Date(centred).toISOString()}, not ~14:35`
@@ -1033,8 +1050,8 @@ describe('turned on its side, the band is pointed into along its own axis', () =
 			assert.equal(await home.innerText(), 'now ↓');
 			await home.click();
 			await until(
-				() => asked(page),
-				(t) => t === null
+				() => vgeometry(page).then((n) => n.nowLine),
+				(line) => line !== null
 			);
 		});
 	});

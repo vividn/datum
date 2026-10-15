@@ -86,8 +86,16 @@ async function withMarks(fn) {
  */
 const aMark = (page, scope, selector = '[data-id]') =>
 	page.locator(scope).evaluate((el, sel) => {
+		// Clipped to the picture's box: a nowview is drawn past it either
+		// side (`--surround`, da-61nm8), and what is out there is not on screen.
+		const clip = (n) => {
+			const r = n.getBoundingClientRect();
+			const f = n.closest('svg.svg').parentElement.getBoundingClientRect();
+			const [left, right] = [Math.max(r.left, f.left), Math.min(r.right, f.right)];
+			return { left, right, width: Math.max(0, right - left), top: r.top, height: r.height };
+		};
 		const seen = [...el.querySelectorAll(`svg.svg ${sel}`)]
-			.map((n) => ({ n, r: n.getBoundingClientRect() }))
+			.map((n) => ({ n, r: clip(n) }))
 			.filter(({ r }) => r.width >= 2 && r.height >= 2)
 			.sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height);
 		const hit = seen[0];
@@ -289,17 +297,15 @@ describe('a deliberate gesture in the nowview selects the entry behind the mark'
 			assert.deepEqual(await litUp(page, NOWVIEW), [], 'a tap brought an entry out');
 			assert.deepEqual(await windows(page), [], 'the tap moved the window');
 
-			// And a drag with no wait is the pan it has always been: a window
-			// asked for, and no entry selected.
+			// And a drag with no wait is the pan it has always been: the
+			// window off now — slid inside what is drawn, so asked of nobody
+			// (da-61nm8) — and no entry selected.
 			await apart(page);
 			await page.mouse.move(from.x, from.y);
 			await page.mouse.down();
 			await page.mouse.move(from.x + 90, from.y, { steps: 8 });
 			await page.mouse.up();
-			await until(
-				() => windows(page),
-				(asked) => asked.length > 0
-			);
+			await page.locator(`${NOWVIEW} .nowview-jump.right`).waitFor();
 			assert.equal(
 				(await pillsOf(page)).some((p) => p.startsWith('hid:')),
 				false,

@@ -25,7 +25,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::dayview::{
-    DayviewAxisTick, DayviewConfig, DayviewDayInput, DayviewFieldInput, Orientation,
+    DayviewAxisTick, DayviewConfig, DayviewDayInput, DayviewFieldInput, DayviewLayout, Orientation,
 };
 use crate::dayview_svg::{text_width, VERTICAL_AXIS_LABEL_INSET, VERTICAL_AXIS_LABEL_MAX};
 
@@ -195,11 +195,23 @@ pub fn nowview_axis_ticks_around(
     before: f64,
     after: f64,
 ) -> Vec<DayviewAxisTick> {
+    ticks_spaced_for(time_axis_extent, before, after, before + after)
+}
+
+/// [`nowview_axis_ticks_around`] spaced as a window of `window` minutes
+/// would be, however much more the axis reaches: a picture drawn with
+/// surroundings rules them as its window does (da-61nm8).
+fn ticks_spaced_for(
+    time_axis_extent: f64,
+    before: f64,
+    after: f64,
+    window: f64,
+) -> Vec<DayviewAxisTick> {
     let span = before + after;
     if span <= 0.0 || time_axis_extent <= 0.0 {
         return Vec::new();
     }
-    let cfg = tick_config(span);
+    let cfg = tick_config(window);
     let pos = |m: f64| (before + m) / span * time_axis_extent;
     // The line's own tick (no label — the now-line owns it).
     let mut ticks = vec![DayviewAxisTick {
@@ -349,6 +361,13 @@ pub struct NowviewGeometry {
     /// along, and the defaults turn with it.
     #[serde(default)]
     pub orientation: Orientation,
+    /// How much more time to draw either side of the window, at its scale
+    /// and with its ticks (da-61nm8): before it, and after it too when it
+    /// is centred — a window ending at now has its now strip there. The
+    /// canvas grows by as much; [`crop_to_window`] crops the SVG's box back
+    /// to the window and leaves the rest drawn outside it.
+    #[serde(default)]
+    pub surround_minutes: f64,
 }
 
 impl Default for NowviewGeometry {
@@ -361,6 +380,7 @@ impl Default for NowviewGeometry {
             time_axis_height: 22.0,
             centred: false,
             orientation: Orientation::Horizontal,
+            surround_minutes: 0.0,
         }
     }
 }
@@ -403,6 +423,7 @@ pub fn nowview_config(
         0.0
     };
     let before = history_minutes - after;
+    let (pad_before, pad_after) = surround(geom);
 
     // da-34w: nowview drops the date label — it's timestamp-focused, not
     // date-focused. The HH:MM clock overlay near the now-line takes its
@@ -410,8 +431,8 @@ pub fn nowview_config(
     let day = DayviewDayInput {
         date: None,
         label_lines: Vec::new(),
-        start_ms: at_ms - (before * 60_000.0) as i64,
-        end_ms: at_ms + (after * 60_000.0) as i64,
+        start_ms: at_ms - ((before + pad_before) * 60_000.0) as i64,
+        end_ms: at_ms + ((after + pad_after) * 60_000.0) as i64,
         has_error: false,
         fields,
         spans: Vec::new(),
@@ -422,10 +443,16 @@ pub fn nowview_config(
     // the line gates — ARE its instant's states: at a selected time they
     // are that time's, where they were none (da-rskp's line through them).
     let now_ms = if snapshot { at_ms } else { now_ms };
+    // The strip is the WINDOW's: now in the surroundings alone reserves
+    // none, so the window keeps its scale whatever surrounds it.
+    let window = (
+        at_ms - (before * 60_000.0) as i64,
+        at_ms + (after * 60_000.0) as i64,
+    );
     let plot_width = (along - 2.0 * geom.margin).max(0.0);
     let now_width = if snapshot {
         plot_width
-    } else if day.start_ms < now_ms && now_ms <= day.end_ms {
+    } else if window.0 < now_ms && now_ms <= window.1 {
         plot_width * NOW_STRIP_FRACTION
     } else {
         0.0
@@ -434,8 +461,16 @@ pub fn nowview_config(
     // resolves to the same pixel space dayview will use. Mirrors the math in
     // `dayview::compute_dayview`. Date label is suppressed (label_width = 0)
     // so the time axis only loses the now-strip reservation.
-    let time_axis_extent_for_ticks = (plot_width - now_width).max(0.0);
-    let mut ticks = nowview_axis_ticks_around(time_axis_extent_for_ticks, before, after);
+    let window_extent = (plot_width - now_width).max(0.0);
+    let pad_px = surround_px(geom, window_extent);
+    let along = along + pad_px.0 + pad_px.1;
+    let time_axis_extent_for_ticks = window_extent + pad_px.0 + pad_px.1;
+    let mut ticks = ticks_spaced_for(
+        time_axis_extent_for_ticks,
+        before + pad_before,
+        after + pad_after,
+        history_minutes,
+    );
     // The ticks past now are drawn past the strip, as the future is.
     let now_pos = (now_ms - day.start_ms) as f64 / (day.end_ms - day.start_ms).max(1) as f64
         * time_axis_extent_for_ticks;
@@ -476,6 +511,69 @@ pub fn nowview_config(
         axis_ticks_override,
         right_panel_width: now_width,
     }
+}
+
+/// The minutes [`NowviewGeometry::surround_minutes`] adds before the window
+/// and after it. None for the snapshot, which has no time to add to.
+pub fn surround(geom: &NowviewGeometry) -> (f64, f64) {
+    let s = geom.surround_minutes.max(0.0);
+    if geom.history_minutes <= 0.0 {
+        (0.0, 0.0)
+    } else if geom.centred {
+        (s, s)
+    } else {
+        (s, 0.0)
+    }
+}
+
+/// [`surround`] in px, at the scale `window_extent` px draws the window at.
+fn surround_px(geom: &NowviewGeometry, window_extent: f64) -> (f64, f64) {
+    let (before, after) = surround(geom);
+    let per_minute = window_extent / geom.history_minutes.max(f64::MIN_POSITIVE);
+    (before * per_minute, after * per_minute)
+}
+
+/// Crop an SVG drawn from [`nowview_config`]'s config back to its window: the
+/// root keeps the window's size, its `viewBox` starts where the window
+/// does, and `overflow="visible"` leaves the surroundings drawn past its
+/// edges, for a viewer to move into view (da-61nm8). Unchanged without
+/// surroundings.
+pub fn crop_to_window(svg: &str, geom: &NowviewGeometry, layout: &DayviewLayout) -> String {
+    let (before, after) = surround(geom);
+    let window_extent = layout.time_axis_extent * geom.history_minutes
+        / (geom.history_minutes + before + after).max(f64::MIN_POSITIVE);
+    let (before, after) = surround_px(geom, window_extent);
+    let Some(end) = svg.find('>').filter(|_| before + after > 0.0) else {
+        return svg.to_string();
+    };
+    let root = &svg[..end];
+    let value = |name: &str| root.split(&format!(" {name}=\"")).nth(1)?.split('"').next();
+    let (Some(w), Some(h), Some(view)) = (value("width"), value("height"), value("viewBox")) else {
+        return svg.to_string();
+    };
+    let (Ok(wf), Ok(hf)) = (w.parse::<f64>(), h.parse::<f64>()) else {
+        return svg.to_string();
+    };
+    let (x, y, cw, ch) = match geom.orientation {
+        Orientation::Horizontal => (before, 0.0, wf - before - after, hf),
+        Orientation::Vertical => (0.0, before, wf, hf - before - after),
+    };
+    let root = root
+        .replacen(&format!(" width=\"{w}\""), &format!(" width=\"{cw}\""), 1)
+        .replacen(&format!(" height=\"{h}\""), &format!(" height=\"{ch}\""), 1)
+        .replacen(
+            &format!(" viewBox=\"{view}\""),
+            &format!(" viewBox=\"{x} {y} {cw} {ch}\" overflow=\"visible\""),
+            1,
+        );
+    // The ground is the viewport's 100%, which is now the window's: it
+    // is laid under the whole drawing instead.
+    let rest = svg[end..].replacen(
+        r#"<rect class="bg" width="100%" height="100%""#,
+        &format!(r#"<rect class="bg" width="{w}" height="{h}""#),
+        1,
+    );
+    format!("{root}{rest}")
 }
 
 /// How wide a vertical time-axis strip must be (da-78evn): at least what

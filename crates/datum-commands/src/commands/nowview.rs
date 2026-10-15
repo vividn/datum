@@ -29,7 +29,8 @@ use datum_core::state::FieldStateRows;
 use datum_core::time::{Zone, ZoneTimeline};
 use datum_layout::dayview::{compute_dayview, DayviewFieldInput, Orientation};
 use datum_layout::nowview::{
-    nowview_config, NowviewBlock, NowviewCurrentState, NowviewField, NowviewGeometry, NowviewPoint,
+    crop_to_window, nowview_config, surround, NowviewBlock, NowviewCurrentState, NowviewField,
+    NowviewGeometry, NowviewPoint,
 };
 use datum_layout::nowview_svg::{
     render_nowview_at_svg, render_nowview_svg, with_xml_declaration, wrap_svg_in_html,
@@ -226,6 +227,7 @@ struct NowComputed {
     history_minutes: f64,
     /// The window's two ends, in ms.
     window: (i64, i64),
+    geometry: NowviewGeometry,
     layout: datum_layout::dayview::DayviewLayout,
     current_states: Vec<NowviewCurrentState>,
 }
@@ -272,23 +274,35 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
         time_axis_height: args.time_axis_height,
         centred: at.is_some(),
         orientation,
+        surround_minutes: match &args.surround {
+            Some(s) => duration_minutes(s).with_context(|| format!("invalid --surround: '{s}'"))?,
+            None => 0.0,
+        },
     };
-    // A centred window reaches half the history past the instant.
-    let window_end = if geometry.centred {
-        anchor + chrono::Duration::milliseconds((history_minutes * 60_000.0 / 2.0) as i64)
+    // A centred window reaches half the history past the instant, and its
+    // surroundings on past that.
+    let after = if geometry.centred {
+        history_minutes / 2.0
     } else {
-        anchor
+        0.0
     };
+    let (pad, pad_after) = surround(&geometry);
+    let minutes = |m: f64| chrono::Duration::milliseconds((m * 60_000.0) as i64);
+    let window_end = anchor + minutes(after + pad_after);
     // The snapshot's window is an instant; a minute of lookback still
     // gives every field in a state a band for its state to be read from.
-    let fields = build_dayview_fields(db, window_end, history_minutes.max(1.0))?;
+    let lookback = history_minutes + pad + pad_after;
+    let fields = build_dayview_fields(db, window_end, lookback.max(1.0))?;
     let config = nowview_config(
         fields,
         anchor.timestamp_millis(),
         now.timestamp_millis(),
         &geometry,
     );
-    let window = (config.days[0].start_ms, config.days[0].end_ms);
+    let window = (
+        config.days[0].start_ms + minutes(pad).num_milliseconds(),
+        config.days[0].end_ms - minutes(pad_after).num_milliseconds(),
+    );
 
     let layout = compute_dayview(&config);
     let current_states = build_current_states(db, anchor, &layout);
@@ -299,6 +313,7 @@ fn compute_now(args: &NowviewArgs, db: &Db) -> Result<NowComputed> {
         at,
         history_minutes,
         window,
+        geometry,
         layout,
         current_states,
     })
@@ -343,6 +358,7 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
             args.now_label,
         )
     };
+    let svg = crop_to_window(&svg, &c.geometry, &c.layout);
 
     match target {
         "-" => {

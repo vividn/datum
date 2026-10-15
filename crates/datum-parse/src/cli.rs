@@ -1529,6 +1529,11 @@ pub struct NowviewArgs {
     /// `--now-label` — a small yellow «now» under the now strip in place
     /// of the `HH:MM` clock (da-9g3bf). The SVG path's alone.
     pub now_label: bool,
+    /// `--surround <DUR>` — draw this much more time either side of the
+    /// window (before it only, when it ends at now), past the SVG's own
+    /// box, for a viewer that pans or zooms without asking again
+    /// (da-61nm8). The SVG path's alone.
+    pub surround: Option<String>,
     /// `-t/-d/-q/-y`, the shared time flags, centre the window on the instant
     /// they name instead of ending it at now; `-z` only reframes them
     /// (da-5flt). Resolved at each render, so `--watch` follows the clock.
@@ -1580,6 +1585,7 @@ impl Default for NowviewArgs {
             history: None,
             labels: false,
             now_label: false,
+            surround: None,
             time: TimeArgs::default(),
             width: None,
             height: None,

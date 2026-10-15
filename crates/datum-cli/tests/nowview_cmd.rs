@@ -1291,3 +1291,64 @@ fn every_terminal_first_probe_is_on_a_live_path() {
     allowed.sort();
     assert_eq!(found, allowed, "a terminal-first probe off a --watch path?");
 }
+
+/// da-61nm8: `--surround` draws the time either side of the window outside
+/// the SVG's box — the box and the window's ticks as they were, the coffee
+/// 40 minutes back drawn though the window reaches 30.
+#[test]
+fn nowview_surround_draws_past_the_box() {
+    let db = fresh_db();
+    run_cli(&["occur", "coffee", "-t", "-40"], &db).expect("occur");
+    let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
+    let svg = |extra: &[&str]| {
+        let mut argv = vec!["nowview", "--history", "30m", "--width", "400"];
+        argv.extend_from_slice(extra);
+        argv.extend_from_slice(&["--output-file", &path]);
+        run_cli(&argv, &db).expect("nowview dispatch");
+        std::fs::read_to_string(&path).expect("read svg")
+    };
+    let plain = svg(&[]);
+    let around = svg(&["--surround", "30m"]);
+    let root = |s: &str| {
+        s[s.find("<svg").unwrap()..]
+            .split('>')
+            .next()
+            .unwrap()
+            .to_string()
+    };
+    assert!(
+        root(&plain).contains(r#"viewBox="0 0 400 300""#),
+        "{}",
+        root(&plain)
+    );
+    // The box is the window's; its view starts where the window does, the
+    // 30 minutes before it drawn left of that.
+    let r = root(&around);
+    assert!(r.contains(r#" width="400" height="300""#), "{r}");
+    assert!(r.contains(r#" overflow="visible""#), "{r}");
+    let view: Vec<f64> = r
+        .split(r#"viewBox=""#)
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .split(' ')
+        .map(|n| n.parse().unwrap())
+        .collect();
+    assert!(
+        view[0] > 300.0 && view[0] < 400.0 && view[1..] == [0.0, 400.0, 300.0],
+        "{r}"
+    );
+    assert!(
+        !plain.contains("point-bg"),
+        "the window alone drew the coffee"
+    );
+    assert!(
+        around.contains("point-bg"),
+        "the surroundings drew no coffee"
+    );
+    // The window's own ticks, carried on out: -15m apart, majors labelled.
+    assert!(around.contains(">-60m<") && around.contains(">-30m<") && around.contains(">-15m<"));
+}
