@@ -38,7 +38,8 @@ fn all_clear_over_an_empty_db_differs_from_one_over_entries() {
     datum(&seeded, &["occur", "coffee", "-q"]);
     datum(&seeded, &["alias", "set", "cf", "occur coffee"]);
 
-    let all = "checkers: base, verbs, aliases, slugs, integrity, flags, tz, refs, stats, sync";
+    let all =
+        "checkers: base, verbs, aliases, slugs, integrity, flags, tz, refs, stats, sync, spool";
     let on_empty = datum(&empty, &["check"]);
     let on_seeded = datum(&seeded, &["check"]);
     assert_ne!(
@@ -68,7 +69,7 @@ fn all_clear_over_an_empty_db_differs_from_one_over_entries() {
     assert_eq!(json["examined"]["entries"], 4);
     assert_eq!(json["examined"]["specs"], 1);
     assert_eq!(json["examined"]["aliases"], 1);
-    assert_eq!(json["examined"]["checkers"].as_array().unwrap().len(), 10);
+    assert_eq!(json["examined"]["checkers"].as_array().unwrap().len(), 11);
     assert_eq!(
         json["examined"]["sync"],
         serde_json::json!({"rows": 4, "ops": 4})

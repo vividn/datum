@@ -120,7 +120,7 @@ pub fn run(argv: Vec<String>) -> Result<()> {
 /// A command that writes, finding the database's write lock held and
 /// having written nothing (da-9q3fr): [`run`] spools it instead.
 #[derive(Debug)]
-struct Locked(String);
+pub(crate) struct Locked(String);
 
 impl std::fmt::Display for Locked {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -214,11 +214,20 @@ fn open_to_write(path: &str, spools: bool) -> Result<datum_core::db::Db> {
         r => r?,
     };
     datum_commands::announce_migration(&db);
+    ready_to_write(&db, path, spools)?;
+    Ok(db)
+}
+
+/// Land what is spooled beside `db`, at `path`, and say [`Locked`] when
+/// `spools` and a write now would not land.
+fn ready_to_write(db: &datum_core::db::Db, path: &str, spools: bool) -> Result<()> {
     #[cfg(not(target_family = "wasm"))]
     match db.drain_spool() {
         Ok(0) => {}
         Ok(n) => eprintln!("note: {n} queued change(s) written"),
-        Err(e) => eprintln!("note: the changes queued in {path}.spool wait: {e}"),
+        Err(e) => eprintln!(
+            "⚠ the changes queued in {path}.spool cannot land: {e} — `datum check spool` shows them"
+        ),
     }
     // Behind changes still queued (a drain stepped aside, or a line waits),
     // a write queues too: this copy's changes land in the order they were
@@ -226,7 +235,32 @@ fn open_to_write(path: &str, spools: bool) -> Result<datum_core::db::Db> {
     if spools && (db.spool_waiting() || !db.can_write(SPOOL_AFTER)?) {
         return Err(Locked(path.into()).into());
     }
-    Ok(db)
+    Ok(())
+}
+
+/// Run `invocation` on `db`, open at `path`, as a command of its own runs
+/// (da-3j6g7): a REPL line. What is spooled lands first, one that may ask
+/// its person runs on a snapshot from the start, and a write the lock
+/// refuses is [`Locked`], for the caller to [`queue`].
+#[cfg(feature = "native")]
+pub(crate) fn run_on(db: &datum_core::db::Db, path: &str, invocation: Invocation) -> Result<()> {
+    let spools = match &invocation {
+        Invocation::Multi { sides, .. } => sides.iter().any(|c| spools(&c.command)),
+        Invocation::Single(c) => spools(&c.command),
+    };
+    let invocation = match invocation {
+        Invocation::Single(cli) if spools && asks(&cli.command) => return ask_first(path, cli),
+        i => i,
+    };
+    ready_to_write(db, path, spools)?;
+    let before = db.conn().total_changes();
+    locked_out(
+        cmd::dispatch_invocation(invocation, db),
+        db,
+        before,
+        spools,
+        path,
+    )
 }
 
 /// Whether `result`, of a command that `spools` and changed nothing on
@@ -252,7 +286,7 @@ fn locked_out(
 
 /// Run `invocation` on a snapshot of the database at `path`, printing
 /// QUEUED for its action word, and spool what it signed (da-9q3fr).
-fn queue(path: &str, invocation: Invocation) -> Result<()> {
+pub(crate) fn queue(path: &str, invocation: Invocation) -> Result<()> {
     let (snapshot, spool) = datum_core::db::Db::spool_open(path)?;
     {
         let _queued = output::Queued::hold();

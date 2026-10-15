@@ -292,6 +292,52 @@ impl Db {
         replace(&spool, &rest)?;
         failed.map_or(Ok(landed), Err)
     }
+
+    /// What waits beside this database (da-3j6g7): when each change queued
+    /// and not landed was queued, oldest first, and the files holding lines
+    /// set aside, which never land on their own. Nothing is landed.
+    pub fn spool_queue(&self) -> Result<(Vec<String>, Vec<PathBuf>)> {
+        let Some(path) = &self.path else {
+            return Ok(Default::default());
+        };
+        let _held = lock(path, true)?;
+        let waiting = pending(&self.conn, lines(&beside(path, ".spool"))?)?
+            .into_iter()
+            .map(|(_, v)| v["at"].as_str().unwrap_or_default().to_string())
+            .collect();
+        let aside = [".spool.torn", ".spool.rejected"]
+            .into_iter()
+            .map(|ext| beside(path, ext))
+            .filter(|p| p.exists())
+            .collect();
+        Ok((waiting, aside))
+    }
+
+    /// Set the first change queued beside this database aside, appended to
+    /// `<db>.spool.rejected` after the time it was set aside and a tab, so
+    /// the lines after it can land: where it went, when one waited.
+    pub fn spool_set_aside(&self) -> Result<Option<PathBuf>> {
+        let Some(path) = &self.path else {
+            return Ok(None);
+        };
+        let _held = lock(path, true)?;
+        let spool = beside(path, ".spool");
+        let mut todo = pending(&self.conn, lines(&spool)?)?.into_iter();
+        let Some((_, first)) = todo.next() else {
+            return Ok(None);
+        };
+        // Kept before it leaves the spool: cut off between the two, it is
+        // in both, and lands at the next drain, rather than in neither.
+        let to = beside(path, ".spool.rejected");
+        let mut f = OpenOptions::new().create(true).append(true).open(&to)?;
+        writeln!(f, "{}\t{first}", chrono::Utc::now().to_rfc3339())?;
+        f.sync_all()?;
+        replace(
+            &spool,
+            &todo.map(|(_, v)| format!("{v}\n")).collect::<String>(),
+        )?;
+        Ok(Some(to))
+    }
 }
 
 impl Spool {

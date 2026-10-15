@@ -118,7 +118,7 @@
 		{
 			"argv": ["check"],
 			"code": 0,
-			"stdout": "✓ No consistency issues found: 14 entries, 5 field specs, 1 alias examined, 0 cached days recomputed, 0 differ, 14 rows read against 14 sync ops, 0 differ (checkers: base, verbs, aliases, slugs, integrity, flags, tz, refs, stats, sync)."
+			"stdout": "✓ No consistency issues found: 14 entries, 5 field specs, 1 alias examined, 0 cached days recomputed, 0 differ, 14 rows read against 14 sync ops, 0 differ (checkers: base, verbs, aliases, slugs, integrity, flags, tz, refs, stats, sync, spool)."
 		},
 		{
 			"argv": ["spec", "set", "coffee", "--color", "#884400"],

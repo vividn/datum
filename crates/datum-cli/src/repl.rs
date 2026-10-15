@@ -5,7 +5,7 @@
 //! single long-lived `Db` handle. Errors don't kill the loop.
 
 use anyhow::Result;
-use datum_commands::{cmd, config};
+use datum_commands::config;
 use datum_core::db::Db;
 use datum_parse::{shell_split, ParseError};
 use rustyline::error::ReadlineError;
@@ -26,7 +26,8 @@ pub fn run(db_hint: Option<&str>) -> Result<()> {
             );
         }
     }
-    let db = Db::open(&resolved.path.to_string_lossy())?;
+    let path = resolved.path.to_string_lossy().into_owned();
+    let db = Db::open(&path)?;
     datum_commands::announce_migration(&db);
     if resolved.name.is_some() {
         let _ = config::ensure_registered(&resolved);
@@ -53,7 +54,7 @@ pub fn run(db_hint: Option<&str>) -> Result<()> {
                     break;
                 }
                 let _ = rl.add_history_entry(trimmed);
-                if let Err(e) = run_line(trimmed, &db) {
+                if let Err(e) = run_line(trimmed, &db, &path) {
                     eprintln!("error: {e:#}");
                 }
             }
@@ -72,12 +73,20 @@ pub fn run(db_hint: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-fn run_line(line: &str, db: &Db) -> Result<()> {
+/// Run one line as `datum <line>` would run: a write the lock refuses is
+/// queued, printing QUEUED, and lands later (da-3j6g7).
+fn run_line(line: &str, db: &Db, path: &str) -> Result<()> {
     let mut argv = vec!["datum".to_string()];
     argv.extend(shell_split(line));
 
-    match datum_commands::args::parse_invocation_with_db(argv, db) {
-        Ok(invocation) => cmd::dispatch_invocation(invocation, db),
+    match datum_commands::args::parse_invocation_with_db(argv.clone(), db) {
+        Ok(invocation) => match crate::run_on(db, path, invocation) {
+            Err(e) if e.is::<crate::Locked>() => crate::queue(
+                path,
+                datum_commands::args::parse_invocation_with_db(argv, db)?,
+            ),
+            r => r,
+        },
         Err(e) => {
             // The REPL deliberately omits the kit-level-2 fallback that
             // `lib.rs::run` adds for unknown subcommands — an unknown

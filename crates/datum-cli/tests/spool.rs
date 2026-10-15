@@ -621,3 +621,84 @@ fn a_local_write_between_the_queue_and_the_drain_shifts_no_dep() {
     assert_eq!(env.query(&conflicts), None);
     env.check_sync_clean(1);
 }
+
+/// A line that fails for a reason other than the lock holds every later
+/// one behind it (da-3j6g7): `check` names it, when it was queued and why,
+/// as an error, `sync status` says so too, and `check spool --fix` sets it
+/// aside so the rest land.
+#[test]
+fn a_stuck_line_is_a_check_error_and_fix_sets_it_aside() {
+    let env = Env::new();
+    env.ok(&["occur", "coffee"]);
+    let holder = env.hold();
+    env.queued(&["occur", "tea"]);
+    drop(holder);
+    let stuck =
+        r#"{"at":"2026-10-15T10:00:00+00:00","id":"stuck","last":null,"ops":[{"bogus":1}]}"#;
+    let queued = std::fs::read_to_string(env.spool()).unwrap();
+    std::fs::write(env.spool(), format!("{stuck}\n{queued}")).unwrap();
+    let out = env.run(&["tail"]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("cannot land") && err.contains("datum check spool"),
+        "{err}"
+    );
+
+    let out = env.run(&["check", "spool"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(1), "{text}");
+    assert!(text.contains("[ERROR] spool_stuck (x2)"), "{text}");
+    assert!(
+        text.contains("queued 2026-10-15T10:00:00+00:00, fails: ")
+            && text.contains("missing field"),
+        "{text}"
+    );
+    let status = env.ok(&["sync", "status"]);
+    assert!(
+        status.contains("⚠ 2 change(s) queued in") && status.contains("cannot land"),
+        "{status}"
+    );
+
+    let out = env.run(&["check", "spool", "--fix"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("[WARN ] spool_set_aside") && !text.contains("spool_stuck"),
+        "{text}"
+    );
+    let fields: Vec<String> = env.rows().into_iter().map(|r| r.1).collect();
+    assert_eq!(fields, ["coffee", "tea"]);
+    assert!(!env.spool().exists());
+    let mut rejected = env.spool().into_os_string();
+    rejected.push(".rejected");
+    let rejected = std::fs::read_to_string(rejected).unwrap();
+    assert!(rejected.ends_with(&format!("\t{stuck}\n")), "{rejected}");
+    env.check_sync_clean(1);
+}
+
+/// A REPL line is a command (da-3j6g7): under a held lock a write prints
+/// QUEUED instead of waiting the lock out, `check` names it waiting, and
+/// it lands at the next command.
+#[test]
+fn a_repl_write_under_a_held_lock_is_queued_and_lands_later() {
+    let env = Env::new();
+    env.ok(&["occur", "coffee"]);
+    let holder = env.hold();
+    let began = Instant::now();
+    let out = env.ok_in(&[], "occur tea\n");
+    assert!(out.contains("QUEUED"), "{out}");
+    assert!(
+        began.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        began.elapsed()
+    );
+    assert_eq!(env.rows().len(), 1, "nothing lands while the lock is held");
+    let text = env.ok(&["check", "spool"]);
+    assert!(text.contains("[WARN ] spool_waiting (x1)"), "{text}");
+    drop(holder);
+
+    let out = env.run(&["tail"]);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("1 queued change(s) written"));
+    let fields: Vec<String> = env.rows().into_iter().map(|r| r.1).collect();
+    assert_eq!(fields, ["coffee", "tea"]);
+    env.check_sync_clean(1);
+}

@@ -1182,6 +1182,11 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
     let clock = db.sync_clock_waits()?;
     let upgrade = db.sync_upgrade_warnings()?;
     let unsent = db.sync_unsent()?;
+    // What `datum check spool` finds: changes queued here, not landed (da-3j6g7).
+    let spool: Vec<String> = crate::commands::check::spool_issues(db, false)?
+        .into_iter()
+        .map(|i| i.message)
+        .collect();
     if json {
         let path = db.conn().path().unwrap_or_default();
         let name = std::path::Path::new(path)
@@ -1231,13 +1236,13 @@ fn status(db: &Db, json: bool, show_revoked: bool) -> Result<()> {
                 "endpoint": w.endpoint, "label": w.label, "ops": w.ops,
                 "ahead_ms": w.ahead_ms, "text": w.to_string(),
             })).collect::<Vec<_>>(),
-            "upgrade": upgrade, "unsent": unsent,
+            "upgrade": upgrade, "unsent": unsent, "spool": spool,
         });
         println!("{out}");
         return Ok(());
     }
     // Before the chain: the pipe syncs copies in none.
-    for w in &clock {
+    for w in clock.iter().map(ToString::to_string).chain(spool) {
         println!("⚠ {w}");
     }
     if let Err(why) = db.sync_refuse_debug() {

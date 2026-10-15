@@ -64,6 +64,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     let run_refs = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "refs");
     let run_stats = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "stats");
     let run_sync = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "sync");
+    let run_spool = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "spool");
     let run_default_battery = args.checkers.is_empty();
 
     // One walk of the entries, shared by every checker that reads them, so
@@ -160,6 +161,10 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
         });
         issues.extend(of);
         issues.extend(crate::commands::sync::notice_issues(db)?);
+    }
+    if run_spool {
+        examined.checkers.push("spool");
+        issues.extend(spool_issues(db, args.fix)?);
     }
     issues.sort_by_key(|i| i.domain);
     // Counted from the slice the last checkers walked, after any `--fix`
@@ -358,6 +363,8 @@ pub enum Severity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Domain {
+    /// Changes queued beside the database, not in it yet (da-3j6g7).
+    Spool,
     Entries,
     Aliases,
     Stats,
@@ -985,6 +992,72 @@ fn collect_integrity_warnings(db: &Db) -> Result<Vec<Issue>> {
     issues.extend(collect_repeated_state_live(db)?);
     issues.extend(collect_sync_conflicts(db)?);
     Ok(issues)
+}
+
+/// da-3j6g7: changes a command queued while another held the write lock
+/// and that have not landed. A line a drain cannot land holds every later
+/// write from this copy behind it, which a note on stderr says only to a
+/// person reading it, so it is an error here, and `--fix` sets it aside.
+/// `sync status` shows the same.
+pub fn spool_issues(db: &Db, fix: bool) -> Result<Vec<Issue>> {
+    // The browser's database is one process's at a time: nothing spools.
+    let Some(path) = db.path().filter(|_| !cfg!(target_family = "wasm")) else {
+        return Ok(Vec::new());
+    };
+    let spool = format!("{}.spool", path.display());
+    let mut stuck = db.drain_spool().err();
+    let mut out = Vec::new();
+    let mut issue = |severity, category, count, message| {
+        out.push(Issue {
+            domain: Domain::Spool,
+            severity,
+            category,
+            message,
+            count,
+            example: None,
+            entries: Vec::new(),
+            rendered_block: String::new(),
+        })
+    };
+    if let (true, Some(e)) = (fix, &stuck) {
+        if let Some(to) = db.spool_set_aside()? {
+            eprintln!(
+                "set aside to {}: the first queued change ({e})",
+                to.display()
+            );
+            stuck = db.drain_spool().err();
+        }
+    }
+    let (waiting, aside) = db.spool_queue()?;
+    let n = waiting.len();
+    let since = waiting.first().map_or("", String::as_str);
+    match stuck {
+        Some(e) => issue(
+            Severity::Error,
+            "spool_stuck",
+            n,
+            format!(
+                "{n} change(s) queued in {spool} cannot land, and every later write from \
+                 this copy queues behind them: the first, queued {since}, fails: {e}. Any \
+                 command tries it again; `datum check spool --fix` sets it aside."
+            ),
+        ),
+        None if n > 0 => issue(
+            Severity::Warning,
+            "spool_waiting",
+            n,
+            format!("{n} change(s) queued in {spool} since {since} wait for the write lock; the next command lands them."),
+        ),
+        None => {}
+    }
+    for file in aside {
+        let message = format!(
+            "{} holds queued changes set aside, which never land on their own.",
+            file.display()
+        );
+        issue(Severity::Warning, "spool_set_aside", 1, message);
+    }
+    Ok(out)
 }
 
 /// da-05rkv: the entries whose ops leave a key contested — read off their

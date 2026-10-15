@@ -102,7 +102,11 @@ every op signed again as this copy's next with the `deps` it was made with,
 so a change that landed meanwhile meets it under the fold's conflict rules
 as a late op from another copy would, and an undo or redo moves the undo
 stack as it did on the snapshot. `_meta` `spool_drained` names the last
-line committed, so a drain run twice writes nothing more. Native only: the
+line committed, so a drain run twice writes nothing more. A REPL line
+spools as a command does. A line that fails to land for any reason but the
+lock holds every later one behind it: `datum check spool` (in the default
+battery, and `sync status`) names it an error, with when it was queued and
+why, and `--fix` sets it aside to `<db>.spool.rejected` (da-3j6g7). Native only: the
 browser's database is one process's at a time.
 
 ## CLI conventions
